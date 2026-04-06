@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/coach", "destination": "/vdsen-coach.html" },
+    { "source": "/cliente", "destination": "/vdsen-cliente.html" }
+  ]
+}

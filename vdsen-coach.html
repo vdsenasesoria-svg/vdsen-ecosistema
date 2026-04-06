@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>VDSEN Coach</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Inter', sans-serif; }
+    body { background: #0D0D0D; color: #F0F0F0; }
+    :root { --bg-base:#0D0D0D; --bg-surface:#141414; --bg-elevated:#1A1A1A; --border:#2A2A2A; --text-primary:#F0F0F0; --text-muted:#888; --accent:#C9A84C; --danger:#FF4444; --success:#44BB88; }
+    .card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; }
+    .input-field { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); padding: 10px 12px; width: 100%; }
+    .btn-primary { background: var(--accent); color: #0D0D0D; font-weight: 600; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-primary); padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    .sidebar { width: 260px; background: var(--bg-surface); border-right: 1px solid var(--border); position: fixed; height: 100vh; overflow-y: auto; }
+    .main-content { margin-left: 260px; padding: 24px; }
+    @media (max-width: 768px) { .sidebar { display: none; } .main-content { margin-left: 0; } .bottom-nav-mobile { display: flex; position: fixed; bottom: 0; background: var(--bg-surface); border-top: 1px solid var(--border); width: 100%; justify-content: space-around; padding: 10px 0 20px; z-index: 50; } }
+    .section { display: none; }
+    .section.active { display: block; }
+    .nav-item-mobile { text-align: center; color: var(--text-muted); cursor: pointer; }
+    .nav-item-mobile.active { color: var(--accent); }
+    .warning { background: rgba(255, 68, 68, 0.2); border-left: 3px solid var(--danger); padding: 10px; margin: 10px 0; }
+    #toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; min-width: 260px; max-width: 360px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); opacity: 1; transition: opacity 0.4s; }
+    .toast.success { border-left: 3px solid var(--success); }
+    .toast.error   { border-left: 3px solid var(--danger); }
+    .toast.fade-out { opacity: 0; }
+  </style>
+</head>
+<body>
+<div class="sidebar p-4">
+  <h2 class="text-2xl font-bold text-[#C9A84C] mb-8">VDSEN Coach</h2>
+  <nav class="space-y-3">
+    <div data-section="clientes" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded transition">👥 Clientes</div>
+    <div data-section="crearPlan" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">📝 Crear Plan</div>
+    <div data-section="catalogo" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">🏋️ Catálogo</div>
+    <div data-section="monitoreo" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">📊 Monitoreo</div>
+    <div data-section="config" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">⚙️ Configuración</div>
+  </nav>
+</div>
+<div class="main-content">
+  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
+  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 mb-4"><button id="aiModeBtn" class="btn-primary">IA (Claude)</button><button id="manualModeBtn" class="btn-secondary">Manual</button></div><div id="planBuilder"></div></div>
+  <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><button id="addExerciseBtn" class="btn-primary mb-2">+ Ejercicio</button><div id="exerciseCatalog"></div></div>
+  <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><select id="monitorClientSelect" class="input-field mb-4"></select><div id="monitorTable"></div></div>
+  <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
+    <div class="card p-4 mb-4">
+      <label class="block text-sm font-medium mb-1">🔑 API Key de Anthropic (Claude)</label>
+      <input type="password" id="apiKeyInput" class="input-field" placeholder="sk-ant-..." autocomplete="off">
+      <button id="saveApiKeyBtn" class="btn-primary mt-3">Guardar en este navegador</button>
+      <p class="text-xs text-[#888] mt-2">⚠️ La clave se almacena solo en tu navegador (localStorage). Nunca se guarda en Firestore ni en el servidor.</p>
+    </div>
+    <div class="card p-4 mb-4">
+      <label class="block text-sm font-medium mb-1">📚 Compendio (PDF)</label>
+      <input type="file" id="compendioFile" accept="application/pdf" class="mb-2">
+      <button id="uploadCompendioBtn" class="btn-primary">Subir y extraer texto</button>
+      <div id="compendioStatus" class="text-sm mt-2"></div>
+    </div>
+  </div>
+</div>
+<div class="bottom-nav-mobile hidden justify-around fixed bottom-0 w-full bg-[#141414] border-t border-[#2A2A2A] py-2">
+  <div data-section="clientes" class="nav-item-mobile">👥</div><div data-section="crearPlan" class="nav-item-mobile">📝</div><div data-section="catalogo" class="nav-item-mobile">🏋️</div><div data-section="monitoreo" class="nav-item-mobile">📊</div><div data-section="config" class="nav-item-mobile">⚙️</div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "firebase/app";
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword } from "firebase/auth";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc } from "firebase/firestore";
+  
+  // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
+  const firebaseConfig = {
+    apiKey: "TU_API_KEY",
+    authDomain: "TU_PROYECTO.firebaseapp.com",
+    projectId: "TU_PROYECTO",
+    storageBucket: "TU_PROYECTO.appspot.com",
+    messagingSenderId: "123456789",
+    appId: "1:123456789:web:abcdef"
+  };
+  
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  
+  let currentCoach = null;
+  let compendioText = "";
+  let manualPlan = null;
+  let activeMPDay = 0;
+  
+  // Helper: toast no bloqueante
+  function showToast(msg, isError = false) {
+    let container = document.getElementById("toast-container");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "toast-container";
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement("div");
+    toast.className = `toast ${isError ? "error" : "success"}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add("fade-out");
+      toast.addEventListener("transitionend", () => toast.remove());
+    }, 3000);
+  }
+  window.showToast = showToast;
+  
+  function initCoachUI() {
+    loadClientList();
+    loadExerciseCatalog();
+    loadMonitorClients();
+    loadClientsSelect();
+    const savedKey = localStorage.getItem('vdsen_apikey');
+    if (savedKey) document.getElementById("apiKeyInput").value = "••••••••••••••••";
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      const coachDoc = await getDoc(doc(db, "coaches", user.uid));
+      if (coachDoc.exists()) {
+        currentCoach = user;
+        initCoachUI();
+      } else {
+        await setDoc(doc(db, "coaches", user.uid), {
+          displayName: user.displayName || user.email.split("@")[0],
+          email: user.email,
+          role: "coach",
+          createdAt: new Date().toISOString()
+        });
+        currentCoach = user;
+        showToast("Perfil de coach creado. Bienvenido.");
+        initCoachUI();
+      }
+    } else {
+      // Login automático con credenciales de prueba (solo para demostración, en producción usar formulario)
+      signInWithEmailAndPassword(auth, "coach@vdsen.com", "password").catch(() => {
+        // Si falla, mostrar pantalla de login simple
+        document.body.innerHTML = `<div class="flex items-center justify-center h-screen"><div class="card p-6"><h2 class="text-xl mb-4">Login Coach</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email"><input id="loginPass" class="input-field mb-2" type="password"><button id="loginBtn" class="btn-primary">Ingresar</button></div></div>`;
+        document.getElementById("loginBtn")?.addEventListener("click", () => {
+          const email = document.getElementById("loginEmail").value;
+          const pass = document.getElementById("loginPass").value;
+          signInWithEmailAndPassword(auth, email, pass).catch(e => showToast(e.message, true));
+        });
+      });
+    }
+  });
+  
+  async function loadClientList() {
+    if (!currentCoach) return;
+    const q = query(collection(db, "clients"), where("coachId", "==", currentCoach.uid));
+    const snap = await getDocs(q);
+    const container = document.getElementById("clientList");
+    container.innerHTML = "";
+    snap.forEach(d => {
+      container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${d.data().displayName}</strong> (${d.data().email}) ${d.data().activePlanId ? "✅" : "⚠️"}</span><button class="text-[#C9A84C] text-sm" data-id="${d.id}" onclick="showToast('Detalles próximamente')">Ver</button></div>`;
+    });
+    document.getElementById("newClientBtn").onclick = () => createClientModal();
+  }
+  
+  async function createClientModal() {
+    const email = prompt("Email del cliente:");
+    const pass = prompt("Contraseña temporal:");
+    const name = prompt("Nombre completo:");
+    if (!email || !pass || !name) return;
+    const { initializeApp: initSecondary, deleteApp } = await import("firebase/app");
+    const secondaryApp = initSecondary(firebaseConfig, "secondary");
+    const secAuth = (await import("firebase/auth")).getAuth(secondaryApp);
+    try {
+      const userCred = await createUserWithEmailAndPassword(secAuth, email, pass);
+      await setDoc(doc(db, "clients", userCred.user.uid), {
+        coachId: currentCoach.uid,
+        email,
+        displayName: name,
+        role: "client",
+        activePlanId: null,
+        nutritionPlan: {},
+        supplementPlan: {}
+      });
+      showToast("Cliente creado correctamente");
+      await loadClientList();
+      await loadClientsSelect();
+    } catch (e) { showToast("Error: " + e.message, true); }
+    await deleteApp(secondaryApp);
+  }
+  
+  async function loadExerciseCatalog() {
+    if (!currentCoach) return;
+    const q = query(collection(db, "exercises"), where("coachId", "==", currentCoach.uid));
+    const snap = await getDocs(q);
+    const container = document.getElementById("exerciseCatalog");
+    container.innerHTML = "";
+    snap.forEach(d => {
+      container.innerHTML += `<div class="card p-3 mb-2 flex justify-between"><span><b>${d.data().name}</b> - ${d.data().motorPattern || "Sin patrón"}</span><button class="text-red-400" data-id="${d.id}" onclick="showToast('Eliminar pendiente')">🗑️</button></div>`;
+    });
+    document.getElementById("addExerciseBtn").onclick = () => {
+      const name = prompt("Nombre del ejercicio");
+      const pattern = prompt("Patrón motor (Empuje, Jalón, Pierna, etc.)");
+      if (name && pattern) addDoc(collection(db, "exercises"), { name, motorPattern: pattern, coachId: currentCoach.uid, equipment: "", notes: "" }).then(() => loadExerciseCatalog());
+    };
+  }
+  
+  async function loadMonitorClients() {
+    if (!currentCoach) return;
+    const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+    const select = document.getElementById("monitorClientSelect");
+    select.innerHTML = '<option value="">Selecciona un cliente</option>';
+    snap.forEach(d => { select.innerHTML += `<option value="${d.id}">${d.data().displayName}</option>`; });
+    select.onchange = async () => {
+      if (!select.value) return;
+      const sessionsSnap = await getDocs(query(collection(db, "sessions"), where("clientId", "==", select.value)));
+      let html = "<table class='w-full text-sm'><tr><th>Fecha</th><th>Volumen</th></tr>";
+      sessionsSnap.forEach(docSnap => {
+        html += `<tr><td>${docSnap.data().scheduledDate}</td><td>${docSnap.data().totalVolume_kg || 0} kg</td></tr>`;
+      });
+      html += "</table>";
+      document.getElementById("monitorTable").innerHTML = html || "<p>Sin sesiones registradas</p>";
+    };
+  }
+  
+  async function loadClientsSelect() {
+    if (!currentCoach) return;
+    const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+    const select = document.getElementById("planClientSelect");
+    select.innerHTML = '<option value="">-- Selecciona cliente --</option>';
+    snap.forEach(d => { select.innerHTML += `<option value="${d.id}">${d.data().displayName}</option>`; });
+  }
+  
+  // Generación con IA (segura, lee clave desde localStorage)
+  document.getElementById("aiModeBtn")?.addEventListener("click", async () => {
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa. Recarga la página.", true); return; }
+    const apiKey = localStorage.getItem("vdsen_apikey");
+    if (!apiKey || apiKey.length < 10) {
+      showToast("❌ No has configurado tu API key de Anthropic. Ve a Configuración y guárdala primero.", true);
+      return;
+    }
+    const clientId = document.getElementById("planClientSelect").value;
+    if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
+    if (!compendioText) { showToast("Sube un compendio (PDF) en la pestaña Configuración", true); return; }
+    
+    const prompt = `Eres un coach fitness. Genera un plan de entrenamiento semanal para el cliente. Devuelve ÚNICAMENTE JSON válido con esta estructura: { "weeks": 1, "daysPerWeek": 4, "days": [{ "dayIndex": 0, "label": "Día 1", "exercises": [{ "exerciseName": "Sentadilla", "sets": [{ "setIndex": 0, "repsTarget": 8, "rirTarget": 2, "load": 80, "restSeconds": 90 }], "alternatives": ["Prensa"] }] }] }`;
+    
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "claude-3-5-sonnet-20241022",
+          max_tokens: 4096,
+          stream: false,
+          system: compendioText,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      const data = await response.json();
+      const content = data.content[0].text;
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No se encontró JSON en la respuesta");
+      const planObj = JSON.parse(jsonMatch[0]);
+      // Guardar plan en Firestore y activar
+      const planRef = await addDoc(collection(db, "plans"), {
+        ...planObj,
+        coachId: currentCoach.uid,
+        clientId: clientId,
+        status: "active",
+        generatedBy: "ai",
+        createdAt: new Date().toISOString()
+      });
+      await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
+      showToast("✅ Plan generado y activado correctamente");
+    } catch (err) {
+      showToast("Error con IA: " + err.message, true);
+    }
+  });
+  
+  // ========== MODO MANUAL ==========
+  document.getElementById("manualModeBtn")?.addEventListener("click", () => {
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa. Recarga la página.", true); return; }
+    manualPlan = null;
+    activeMPDay = 0;
+    renderManualBuilder();
+  });
+
+  function renderManualBuilder() {
+    document.getElementById("planBuilder").innerHTML = `
+      <div class="card p-4 mb-4">
+        <div class="flex gap-4 mb-3">
+          <div class="flex-1">
+            <label class="block text-xs text-[#888] mb-1">Semanas</label>
+            <input id="mp-weeks" type="number" min="1" max="16" value="1" class="input-field">
+          </div>
+          <div class="flex-1">
+            <label class="block text-xs text-[#888] mb-1">Días por semana</label>
+            <input id="mp-days" type="number" min="1" max="7" value="4" class="input-field">
+          </div>
+        </div>
+        <button onclick="initManualPlan()" class="btn-primary">Generar estructura</button>
+      </div>
+      <div id="mp-editor"></div>
+    `;
+  }
+
+  function initManualPlan() {
+    const weeks = parseInt(document.getElementById("mp-weeks").value) || 1;
+    const daysPerWeek = parseInt(document.getElementById("mp-days").value) || 4;
+    manualPlan = {
+      weeks,
+      daysPerWeek,
+      days: Array.from({ length: daysPerWeek }, (_, i) => ({
+        dayIndex: i,
+        label: `Día ${i + 1}`,
+        exercises: []
+      }))
+    };
+    activeMPDay = 0;
+    renderMPEditor();
+  }
+
+  function renderMPEditor() {
+    const editor = document.getElementById("mp-editor");
+    if (!editor || !manualPlan) return;
+    const tabs = manualPlan.days.map((d, i) =>
+      `<button onclick="setMPDay(${i})" class="px-3 py-1 rounded text-sm ${activeMPDay === i ? 'bg-[#C9A84C] text-black font-semibold' : 'bg-[#1A1A1A] border border-[#2A2A2A]'}">${d.label}</button>`
+    ).join("");
+    const day = manualPlan.days[activeMPDay];
+    const exercises = day.exercises.map((ex, ei) => `
+      <div class="card p-3 mb-3">
+        <div class="flex gap-2 items-center mb-2">
+          <input type="text" value="${ex.exerciseName}" oninput="updateExName(${activeMPDay},${ei},this.value)" class="input-field flex-1" placeholder="Nombre del ejercicio">
+          <button onclick="removeExercise(${activeMPDay},${ei})" class="text-red-400 text-lg px-2">🗑️</button>
+        </div>
+        <table class="w-full text-sm mb-2">
+          <thead><tr class="text-[#888]"><th class="text-left py-1 pr-2">Set</th><th class="pr-2">Reps</th><th class="pr-2">RIR</th><th class="pr-2">Carga (kg)</th><th class="pr-2">Descanso (s)</th><th></th></tr></thead>
+          <tbody>
+            ${ex.sets.map((s, si) => `
+              <tr>
+                <td class="py-1 text-[#888] pr-2">${si + 1}</td>
+                <td class="pr-1"><input type="number" value="${s.repsTarget}" oninput="updateSet(${activeMPDay},${ei},${si},'repsTarget',+this.value)" class="input-field text-center w-16"></td>
+                <td class="pr-1"><input type="number" value="${s.rirTarget}" oninput="updateSet(${activeMPDay},${ei},${si},'rirTarget',+this.value)" class="input-field text-center w-14"></td>
+                <td class="pr-1"><input type="number" value="${s.load}" oninput="updateSet(${activeMPDay},${ei},${si},'load',+this.value)" class="input-field text-center w-20"></td>
+                <td class="pr-1"><input type="number" value="${s.restSeconds}" oninput="updateSet(${activeMPDay},${ei},${si},'restSeconds',+this.value)" class="input-field text-center w-20"></td>
+                <td><button onclick="removeSet(${activeMPDay},${ei},${si})" class="text-red-400 px-1">🗑️</button></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+        <button onclick="addSet(${activeMPDay},${ei})" class="btn-secondary text-xs py-1 px-2">+ Set</button>
+        <div class="mt-2">
+          <label class="block text-xs text-[#888] mb-1">Alternativas (separadas por coma)</label>
+          <input type="text" value="${ex.alternatives.join(', ')}" oninput="updateAlts(${activeMPDay},${ei},this.value)" class="input-field text-sm" placeholder="Prensa, Hack squat...">
+        </div>
+      </div>
+    `).join("");
+    editor.innerHTML = `
+      <div class="flex gap-2 flex-wrap mb-4">${tabs}</div>
+      <div>
+        ${exercises}
+        <button onclick="addExercise(${activeMPDay})" class="btn-secondary mb-4">+ Ejercicio</button>
+      </div>
+      <button onclick="saveManualPlan()" class="btn-primary w-full">💾 Guardar y activar plan</button>
+    `;
+  }
+
+  function setMPDay(i) { activeMPDay = i; renderMPEditor(); }
+
+  function addExercise(di) {
+    manualPlan.days[di].exercises.push({
+      exerciseName: "",
+      alternatives: [],
+      sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 90 }]
+    });
+    renderMPEditor();
+  }
+
+  function removeExercise(di, ei) {
+    manualPlan.days[di].exercises.splice(ei, 1);
+    renderMPEditor();
+  }
+
+  function addSet(di, ei) {
+    const sets = manualPlan.days[di].exercises[ei].sets;
+    const last = sets[sets.length - 1] || { repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 90 };
+    sets.push({ setIndex: sets.length, repsTarget: last.repsTarget, rirTarget: last.rirTarget, load: last.load, restSeconds: last.restSeconds });
+    renderMPEditor();
+  }
+
+  function removeSet(di, ei, si) {
+    manualPlan.days[di].exercises[ei].sets.splice(si, 1);
+    manualPlan.days[di].exercises[ei].sets.forEach((s, i) => s.setIndex = i);
+    renderMPEditor();
+  }
+
+  function updateExName(di, ei, val) { manualPlan.days[di].exercises[ei].exerciseName = val; }
+  function updateSet(di, ei, si, field, val) { manualPlan.days[di].exercises[ei].sets[si][field] = val; }
+  function updateAlts(di, ei, val) {
+    manualPlan.days[di].exercises[ei].alternatives = val.split(",").map(s => s.trim()).filter(Boolean);
+  }
+
+  async function saveManualPlan() {
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
+    const clientId = document.getElementById("planClientSelect").value;
+    if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
+    if (!manualPlan || manualPlan.days.every(d => d.exercises.length === 0)) {
+      showToast("Agrega al menos un ejercicio antes de guardar", true); return;
+    }
+    try {
+      const planRef = await addDoc(collection(db, "plans"), {
+        ...manualPlan,
+        coachId: currentCoach.uid,
+        clientId,
+        status: "active",
+        generatedBy: "manual",
+        createdAt: new Date().toISOString()
+      });
+      await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
+      showToast("✅ Plan guardado y activado correctamente");
+      manualPlan = null;
+      activeMPDay = 0;
+      document.getElementById("planBuilder").innerHTML = "";
+    } catch (e) {
+      showToast("Error al guardar: " + e.message, true);
+    }
+  }
+
+  // Exponer funciones del builder manual al scope global (usadas en onclick inline)
+  window.initManualPlan = initManualPlan;
+  window.setMPDay = setMPDay;
+  window.addExercise = addExercise;
+  window.removeExercise = removeExercise;
+  window.addSet = addSet;
+  window.removeSet = removeSet;
+  window.updateExName = updateExName;
+  window.updateSet = updateSet;
+  window.updateAlts = updateAlts;
+  window.saveManualPlan = saveManualPlan;
+
+  // Configuración: guardar API key
+  document.getElementById("saveApiKeyBtn")?.addEventListener("click", () => {
+    const key = document.getElementById("apiKeyInput").value.trim();
+    if (key && key.startsWith("sk-ant-")) {
+      localStorage.setItem("vdsen_apikey", key);
+      document.getElementById("apiKeyInput").value = "••••••••••••••••";
+      showToast("API key guardada en este navegador. No se sube a ningún servidor.");
+    } else if (key) {
+      showToast("La clave debe comenzar con 'sk-ant-'", true);
+    } else {
+      showToast("Ingresa una clave válida", true);
+    }
+  });
+  
+  // Subir compendio PDF
+  document.getElementById("uploadCompendioBtn")?.addEventListener("click", async () => {
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa. Recarga la página.", true); return; }
+    const file = document.getElementById("compendioFile").files[0];
+    if (!file) { showToast("Selecciona un archivo PDF", true); return; }
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      fullText += textContent.items.map(t => t.str).join(" ") + "\n";
+    }
+    compendioText = fullText;
+    const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fullText));
+    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+    await setDoc(doc(db, "compendio", currentCoach.uid), {
+      coachId: currentCoach.uid,
+      content: fullText,
+      contentHash: hashHex,
+      tokenEstimate: Math.ceil(fullText.length / 4),
+      updatedAt: new Date().toISOString()
+    });
+    document.getElementById("compendioStatus").innerHTML = "✅ Compendio subido y almacenado en Firestore.";
+    showToast("Compendio procesado correctamente");
+  });
+  
+  // Navegación entre secciones
+  const sections = ["clientes","crearPlan","catalogo","monitoreo","config"];
+  function showSection(sectionId) {
+    sections.forEach(s => { document.getElementById(s).classList.remove("active"); });
+    document.getElementById(sectionId).classList.add("active");
+    document.querySelectorAll("[data-section]").forEach(el => {
+      if (el.dataset.section === sectionId) el.classList.add("active"); else el.classList.remove("active");
+    });
+  }
+  document.querySelectorAll("[data-section]").forEach(el => el.addEventListener("click", () => showSection(el.dataset.section)));
+  document.querySelectorAll(".nav-item-mobile").forEach(el => el.addEventListener("click", () => showSection(el.dataset.section)));
+</script>
+</body>
+</html>
