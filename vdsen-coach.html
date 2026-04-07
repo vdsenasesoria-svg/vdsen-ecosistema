@@ -239,15 +239,44 @@
     if (!currentCoach) return;
     const container = document.getElementById("clientList");
     container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando clientes...</div>`;
-    const q = query(collection(db, "clients"), where("coachId", "==", currentCoach.uid));
-    const snap = await getDocs(q);
-    container.innerHTML = "";
-    if (snap.empty) {
-      container.innerHTML = `<p class="text-[#888] text-sm">No hay clientes aún. Crea uno con el botón de arriba.</p>`;
-    } else {
-      snap.forEach(d => {
-        container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${d.data().displayName}</strong> (${d.data().email}) ${d.data().activePlanId ? "✅" : "⚠️"}</span><button class="text-[#C9A84C] text-sm font-medium" data-id="${d.id}" onclick="showClientDetail('${d.id}')">Ver →</button></div>`;
-      });
+    try {
+      const q = query(collection(db, "clients"), where("coachId", "==", currentCoach.uid));
+      const snap = await getDocs(q);
+      container.innerHTML = "";
+      if (snap.empty) {
+        // Diagnóstico: buscar cualquier cliente sin filtro de coachId
+        const allSnap = await getDocs(collection(db, "clients"));
+        if (!allSnap.empty) {
+          let orphans = [];
+          allSnap.forEach(d => {
+            const data = d.data();
+            if (data.coachId !== currentCoach.uid) orphans.push({ id: d.id, ...data });
+          });
+          if (orphans.length > 0) {
+            // Hay clientes pero con coachId distinto o sin coachId — vincularlos automáticamente
+            container.innerHTML = `<p class="text-yellow-400 text-sm mb-2">⚠️ Se encontraron ${orphans.length} cliente(s) sin asignar a tu cuenta. Vinculando...</p>`;
+            for (const c of orphans) {
+              await setDoc(doc(db, "clients", c.id), { coachId: currentCoach.uid }, { merge: true });
+            }
+            showToast(`${orphans.length} cliente(s) vinculado(s) a tu cuenta`);
+            // Recargar lista
+            const snap2 = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+            container.innerHTML = "";
+            snap2.forEach(d => {
+              container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${d.data().displayName || d.data().email || d.id}</strong> ${d.data().email ? "("+d.data().email+")" : ""} ${d.data().activePlanId ? "✅" : "⚠️"}</span><button class="text-[#C9A84C] text-sm font-medium" onclick="showClientDetail('${d.id}')">Ver →</button></div>`;
+            });
+            return;
+          }
+        }
+        container.innerHTML = `<p class="text-[#888] text-sm">No hay clientes aún. Crea uno con el botón de arriba.</p>`;
+      } else {
+        snap.forEach(d => {
+          container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${d.data().displayName}</strong> (${d.data().email}) ${d.data().activePlanId ? "✅" : "⚠️"}</span><button class="text-[#C9A84C] text-sm font-medium" data-id="${d.id}" onclick="showClientDetail('${d.id}')">Ver →</button></div>`;
+        });
+      }
+    } catch (e) {
+      container.innerHTML = `<p class="text-red-400 text-sm">Error al cargar clientes: ${e.message}</p>`;
+      console.error("loadClientList error:", e);
     }
     document.getElementById("newClientBtn").onclick = () => createClientModal();
   }
