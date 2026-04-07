@@ -357,9 +357,15 @@
         })
       });
       const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || data.error || `HTTP ${response.status}`);
+      }
+      if (!data.content || !data.content[0]) {
+        throw new Error("Respuesta vacía de la IA. Detalle: " + JSON.stringify(data));
+      }
       const content = data.content[0].text;
       const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("No se encontró JSON en la respuesta");
+      if (!jsonMatch) throw new Error("No se encontró JSON en la respuesta de la IA");
       const planObj = JSON.parse(jsonMatch[0]);
       // Guardar plan en Firestore y activar
       const planRef = await addDoc(collection(db, "plans"), {
