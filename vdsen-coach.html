@@ -76,6 +76,42 @@
     </div>
   </div>
 </div>
+<div id="newClientModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-lg font-bold">Nuevo Cliente</h3>
+      <button onclick="document.getElementById('newClientModal').style.display='none'" class="text-[#888] hover:text-white text-xl">✕</button>
+    </div>
+    <label class="block text-xs text-[#888] mb-1">Nombre completo</label>
+    <input id="nc-name" class="input-field mb-3" placeholder="Juan Pérez">
+    <label class="block text-xs text-[#888] mb-1">Email</label>
+    <input id="nc-email" class="input-field mb-3" type="email" placeholder="juan@email.com">
+    <label class="block text-xs text-[#888] mb-1">Contraseña temporal</label>
+    <input id="nc-pass" class="input-field mb-4" type="password" placeholder="mínimo 6 caracteres">
+    <button id="nc-submit" class="btn-primary w-full">Crear cliente</button>
+  </div>
+</div>
+
+<div id="newExerciseModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-lg font-bold">Nuevo Ejercicio</h3>
+      <button onclick="document.getElementById('newExerciseModal').style.display='none'" class="text-[#888] hover:text-white text-xl">✕</button>
+    </div>
+    <label class="block text-xs text-[#888] mb-1">Nombre</label>
+    <input id="ex-name" class="input-field mb-3" placeholder="Sentadilla">
+    <label class="block text-xs text-[#888] mb-1">Patrón motor</label>
+    <select id="ex-pattern" class="input-field mb-3">
+      <option value="">Seleccionar...</option>
+      <option>Empuje</option><option>Jalón</option><option>Pierna</option>
+      <option>Bisagra</option><option>Core</option><option>Cardio</option><option>Otro</option>
+    </select>
+    <label class="block text-xs text-[#888] mb-1">Equipamiento (opcional)</label>
+    <input id="ex-equip" class="input-field mb-4" placeholder="Barra, Mancuernas...">
+    <button id="ex-submit" class="btn-primary w-full">Agregar al catálogo</button>
+  </div>
+</div>
+
 <div id="clientModal" class="modal-overlay" style="display:none;">
   <div class="modal-box">
     <div class="flex justify-between items-center mb-4">
@@ -190,30 +226,38 @@
     document.getElementById("newClientBtn").onclick = () => createClientModal();
   }
   
-  async function createClientModal() {
-    const email = prompt("Email del cliente:");
-    const pass = prompt("Contraseña temporal:");
-    const name = prompt("Nombre completo:");
-    if (!email || !pass || !name) return;
-    const { initializeApp: initSecondary, deleteApp } = await import("firebase/app");
-    const secondaryApp = initSecondary(firebaseConfig, "secondary");
-    const secAuth = (await import("firebase/auth")).getAuth(secondaryApp);
-    try {
-      const userCred = await createUserWithEmailAndPassword(secAuth, email, pass);
-      await setDoc(doc(db, "clients", userCred.user.uid), {
-        coachId: currentCoach.uid,
-        email,
-        displayName: name,
-        role: "client",
-        activePlanId: null,
-        nutritionPlan: {},
-        supplementPlan: {}
-      });
-      showToast("Cliente creado correctamente");
-      await loadClientList();
-      await loadClientsSelect();
-    } catch (e) { showToast("Error: " + e.message, true); }
-    await deleteApp(secondaryApp);
+  function createClientModal() {
+    const modal = document.getElementById("newClientModal");
+    document.getElementById("nc-name").value = "";
+    document.getElementById("nc-email").value = "";
+    document.getElementById("nc-pass").value = "";
+    modal.style.display = "flex";
+
+    document.getElementById("nc-submit").onclick = async () => {
+      const name = document.getElementById("nc-name").value.trim();
+      const email = document.getElementById("nc-email").value.trim();
+      const pass = document.getElementById("nc-pass").value;
+      if (!name || !email || !pass) { showToast("Completa todos los campos", true); return; }
+      if (pass.length < 6) { showToast("La contraseña debe tener al menos 6 caracteres", true); return; }
+      const btn = document.getElementById("nc-submit");
+      btn.disabled = true; btn.textContent = "Creando...";
+      const { initializeApp: initSecondary, deleteApp } = await import("firebase/app");
+      const secondaryApp = initSecondary(firebaseConfig, "secondary");
+      const secAuth = (await import("firebase/auth")).getAuth(secondaryApp);
+      try {
+        const userCred = await createUserWithEmailAndPassword(secAuth, email, pass);
+        await setDoc(doc(db, "clients", userCred.user.uid), {
+          coachId: currentCoach.uid, email, displayName: name,
+          role: "client", activePlanId: null, nutritionPlan: {}, supplementPlan: {}
+        });
+        modal.style.display = "none";
+        showToast(`Cliente "${name}" creado correctamente`);
+        await loadClientList();
+        await loadClientsSelect();
+      } catch (e) { showToast("Error: " + e.message, true); }
+      finally { btn.disabled = false; btn.textContent = "Crear cliente"; }
+      await deleteApp(secondaryApp);
+    };
   }
   
   async function loadExerciseCatalog() {
@@ -231,9 +275,27 @@
       });
     }
     document.getElementById("addExerciseBtn").onclick = () => {
-      const name = prompt("Nombre del ejercicio");
-      const pattern = prompt("Patrón motor (Empuje, Jalón, Pierna, etc.)");
-      if (name && pattern) addDoc(collection(db, "exercises"), { name, motorPattern: pattern, coachId: currentCoach.uid, equipment: "", notes: "" }).then(() => loadExerciseCatalog());
+      const modal = document.getElementById("newExerciseModal");
+      document.getElementById("ex-name").value = "";
+      document.getElementById("ex-pattern").value = "";
+      document.getElementById("ex-equip").value = "";
+      modal.style.display = "flex";
+
+      document.getElementById("ex-submit").onclick = async () => {
+        const name = document.getElementById("ex-name").value.trim();
+        const pattern = document.getElementById("ex-pattern").value;
+        const equipment = document.getElementById("ex-equip").value.trim();
+        if (!name || !pattern) { showToast("Nombre y patrón motor son obligatorios", true); return; }
+        const btn = document.getElementById("ex-submit");
+        btn.disabled = true; btn.textContent = "Guardando...";
+        try {
+          await addDoc(collection(db, "exercises"), { name, motorPattern: pattern, equipment, notes: "", coachId: currentCoach.uid });
+          modal.style.display = "none";
+          showToast(`"${name}" agregado al catálogo`);
+          loadExerciseCatalog();
+        } catch (e) { showToast("Error: " + e.message, true); }
+        finally { btn.disabled = false; btn.textContent = "Agregar al catálogo"; }
+      };
     };
   }
   
@@ -466,7 +528,10 @@
   }
 
   // ========== DETALLE DE CLIENTE ==========
+  let _detailClientId = null;
+
   async function showClientDetail(clientId) {
+    _detailClientId = clientId;
     const modal = document.getElementById("clientModal");
     const body = document.getElementById("modalClientBody");
     const title = document.getElementById("modalClientName");
@@ -492,16 +557,6 @@
       }
     }
 
-    const nutrition = c.nutritionPlan || {};
-    const nutHtml = Object.keys(nutrition).length
-      ? `<ul class="text-sm space-y-1">${Object.entries(nutrition).map(([k,v]) => `<li><span class="text-[#888]">${k}:</span> ${v}</li>`).join("")}</ul>`
-      : `<p class="text-[#888] text-sm">Sin plan de nutrición.</p>`;
-
-    const suppl = c.supplementPlan || {};
-    const supplHtml = Object.keys(suppl).length
-      ? `<ul class="text-sm space-y-1">${Object.entries(suppl).map(([k,v]) => `<li><span class="text-[#888]">${k}:</span> ${v}</li>`).join("")}</ul>`
-      : `<p class="text-[#888] text-sm">Sin plan de suplementación.</p>`;
-
     body.innerHTML = `
       <p class="text-sm text-[#888] mb-4">${c.email}</p>
       <div class="mb-5">
@@ -509,17 +564,103 @@
         ${planHtml}
       </div>
       <div class="mb-5">
-        <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888] mb-2">Nutrición</h4>
-        ${nutHtml}
+        <div class="flex justify-between items-center mb-2">
+          <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Nutrición</h4>
+          <button onclick="togglePlanEditor('nutrition')" class="text-[#C9A84C] text-xs">Editar</button>
+        </div>
+        <div id="nutrition-view">${renderPlanView(c.nutritionPlan || {})}</div>
+        <div id="nutrition-editor" style="display:none;">${renderPlanEditor(c.nutritionPlan || {}, 'nutrition')}</div>
       </div>
       <div>
-        <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888] mb-2">Suplementación</h4>
-        ${supplHtml}
+        <div class="flex justify-between items-center mb-2">
+          <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Suplementación</h4>
+          <button onclick="togglePlanEditor('supplement')" class="text-[#C9A84C] text-xs">Editar</button>
+        </div>
+        <div id="supplement-view">${renderPlanView(c.supplementPlan || {})}</div>
+        <div id="supplement-editor" style="display:none;">${renderPlanEditor(c.supplementPlan || {}, 'supplement')}</div>
       </div>`;
+  }
+
+  function renderPlanView(plan) {
+    const entries = Object.entries(plan);
+    if (!entries.length) return `<p class="text-[#888] text-sm">Sin datos.</p>`;
+    return `<ul class="text-sm space-y-1">${entries.map(([k,v]) => `<li><span class="text-[#888]">${k}:</span> ${v}</li>`).join("")}</ul>`;
+  }
+
+  function renderPlanEditor(plan, type) {
+    const rows = Object.entries(plan).map(([k,v], i) => `
+      <div class="flex gap-2 mb-2 items-center">
+        <input class="input-field flex-1" placeholder="Campo" value="${k}" oninput="updatePlanEditorKey('${type}',${i},this.value)">
+        <input class="input-field flex-1" placeholder="Valor" value="${v}" oninput="updatePlanEditorVal('${type}',${i},this.value)">
+        <button onclick="removePlanEditorRow('${type}',${i})" class="text-red-400 px-1">✕</button>
+      </div>`).join("");
+    return `
+      <div id="${type}-rows">${rows}</div>
+      <button onclick="addPlanEditorRow('${type}')" class="btn-secondary text-xs py-1 px-3 mb-3">+ Añadir fila</button>
+      <button onclick="savePlanEditor('${type}')" class="btn-primary text-sm py-1 px-4 w-full">Guardar</button>`;
+  }
+
+  // Estado temporal del editor
+  const _planEdits = { nutrition: null, supplement: null };
+
+  function togglePlanEditor(type) {
+    const view = document.getElementById(`${type}-view`);
+    const editor = document.getElementById(`${type}-editor`);
+    if (editor.style.display === "none") {
+      editor.style.display = "block";
+      view.style.display = "none";
+    } else {
+      editor.style.display = "none";
+      view.style.display = "block";
+    }
+  }
+
+  function _getPlanRows(type) {
+    const rows = document.querySelectorAll(`#${type}-rows > div`);
+    const result = {};
+    rows.forEach(row => {
+      const inputs = row.querySelectorAll("input");
+      const k = inputs[0]?.value.trim();
+      const v = inputs[1]?.value.trim();
+      if (k) result[k] = v || "";
+    });
+    return result;
+  }
+
+  function addPlanEditorRow(type) {
+    const container = document.getElementById(`${type}-rows`);
+    const idx = container.children.length;
+    const div = document.createElement("div");
+    div.className = "flex gap-2 mb-2 items-center";
+    div.innerHTML = `
+      <input class="input-field flex-1" placeholder="Campo" oninput="updatePlanEditorKey('${type}',${idx},this.value)">
+      <input class="input-field flex-1" placeholder="Valor" oninput="updatePlanEditorVal('${type}',${idx},this.value)">
+      <button onclick="this.parentElement.remove()" class="text-red-400 px-1">✕</button>`;
+    container.appendChild(div);
+  }
+
+  function updatePlanEditorKey() {} // los inputs leen directo del DOM al guardar
+  function updatePlanEditorVal() {}
+
+  function removePlanEditorRow(type, idx) {
+    const container = document.getElementById(`${type}-rows`);
+    if (container.children[idx]) container.children[idx].remove();
+  }
+
+  async function savePlanEditor(type) {
+    const field = type === "nutrition" ? "nutritionPlan" : "supplementPlan";
+    const data = _getPlanRows(type);
+    try {
+      await updateDoc(doc(db, "clients", _detailClientId), { [field]: data });
+      document.getElementById(`${type}-view`).innerHTML = renderPlanView(data);
+      togglePlanEditor(type);
+      showToast("Guardado correctamente");
+    } catch (e) { showToast("Error al guardar: " + e.message, true); }
   }
 
   function closeClientModal() {
     document.getElementById("clientModal").style.display = "none";
+    _detailClientId = null;
   }
 
   // ========== ELIMINAR EJERCICIO ==========
@@ -538,6 +679,12 @@
   window.showClientDetail = showClientDetail;
   window.closeClientModal = closeClientModal;
   window.deleteExercise = deleteExercise;
+  window.togglePlanEditor = togglePlanEditor;
+  window.addPlanEditorRow = addPlanEditorRow;
+  window.removePlanEditorRow = removePlanEditorRow;
+  window.updatePlanEditorKey = updatePlanEditorKey;
+  window.updatePlanEditorVal = updatePlanEditorVal;
+  window.savePlanEditor = savePlanEditor;
   window.initManualPlan = initManualPlan;
   window.setMPDay = setMPDay;
   window.addExercise = addExercise;
