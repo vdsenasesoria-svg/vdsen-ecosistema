@@ -727,25 +727,46 @@
     }
   });
   
-  // Subir compendio PDF
+  // Subir compendio PDF — extracción inteligente: descarta páginas de farmacología,
+  // nutrición, bibliografía y portada; conserva metodología de entrenamiento.
   document.getElementById("uploadCompendioBtn")?.addEventListener("click", async () => {
     if (!currentCoach) { showToast("⚠️ No hay sesión activa. Recarga la página.", true); return; }
     const file = document.getElementById("compendioFile").files[0];
     if (!file) { showToast("Selecciona un archivo PDF", true); return; }
+
+    const statusEl = document.getElementById("compendioStatus");
+    statusEl.innerHTML = `<span class="loading-row"><span class="spinner"></span> Procesando PDF...</span>`;
+
     const arrayBuffer = await file.arrayBuffer();
     const pdfjsLib = window['pdfjs-dist/build/pdf'];
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = "";
+
+    // Términos que indican página NO relevante para planes de entrenamiento
+    const SKIP_TERMS = [
+      'farmacol', 'andrógeno', 'androgeno', 'testosterona', 'esteroide',
+      'péptido', 'peptido', 'post-ciclo', 'pct', 'somatotrop', 'incretina',
+      'cofepris', 'bibliografía', 'bibliografia', 'referencias científicas',
+      'igf-1', 'endocrinolog', 'hgh', 'hormona de crecimiento humana',
+      'marco legal', 'fuentes originales', 'análisis pedro', 'analisis pedro'
+    ];
+
+    const pages = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      fullText += textContent.items.map(t => t.str).join(" ") + "\n";
+      const pageText = textContent.items.map(t => t.str).join(" ");
+      const lower = pageText.toLowerCase();
+      const isSkippable = SKIP_TERMS.some(term => lower.includes(term));
+      if (!isSkippable) pages.push(pageText);
     }
+
+    const filteredText = pages.join("\n");
     const MAX_CHARS = 20000;
-    const truncated = fullText.length > MAX_CHARS;
-    const storedText = truncated ? fullText.slice(0, MAX_CHARS) : fullText;
+    const truncated = filteredText.length > MAX_CHARS;
+    const storedText = truncated ? filteredText.slice(0, MAX_CHARS) : filteredText;
     compendioText = storedText;
+
     const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(storedText));
     const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
     await setDoc(doc(db, "compendio", currentCoach.uid), {
@@ -755,11 +776,11 @@
       tokenEstimate: Math.ceil(storedText.length / 4),
       updatedAt: new Date().toISOString()
     });
-    const statusMsg = truncated
-      ? `✅ Compendio procesado (${Math.round(fullText.length/1000)}k chars → truncado a 60k por límite de tokens).`
-      : "✅ Compendio subido y almacenado en Firestore.";
-    document.getElementById("compendioStatus").innerHTML = statusMsg;
-    showToast(truncated ? "Compendio truncado a 60 000 caracteres y guardado." : "Compendio procesado correctamente");
+
+    const pagesKept = pages.length;
+    const pagesTotal = pdf.numPages;
+    statusEl.innerHTML = `✅ Compendio procesado: ${pagesKept}/${pagesTotal} páginas relevantes extraídas → ${Math.round(storedText.length/1000)}k chars almacenados.`;
+    showToast("Compendio procesado y guardado correctamente");
   });
   
   // Navegación entre secciones
