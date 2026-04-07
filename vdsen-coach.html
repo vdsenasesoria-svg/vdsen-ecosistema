@@ -338,9 +338,18 @@
     const clientId = document.getElementById("planClientSelect").value;
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
     if (!compendioText) { showToast("Sube un compendio (PDF) en la pestaña Configuración", true); return; }
-    
+
+    // Limitar compendio a ~15 000 tokens (≈ 60 000 chars) para no exceder el rate limit
+    const MAX_COMPENDIO_CHARS = 60000;
+    const systemText = compendioText.length > MAX_COMPENDIO_CHARS
+      ? compendioText.slice(0, MAX_COMPENDIO_CHARS) + "\n\n[Compendio truncado por límite de tokens]"
+      : compendioText;
+    if (compendioText.length > MAX_COMPENDIO_CHARS) {
+      showToast("⚠️ Compendio muy extenso, se usaron los primeros 60 000 caracteres.");
+    }
+
     const prompt = `Eres un coach fitness. Genera un plan de entrenamiento semanal para el cliente. Devuelve ÚNICAMENTE JSON válido con esta estructura: { "weeks": 1, "daysPerWeek": 4, "days": [{ "dayIndex": 0, "label": "Día 1", "exercises": [{ "exerciseName": "Sentadilla", "sets": [{ "setIndex": 0, "repsTarget": 8, "rirTarget": 2, "load": 80, "restSeconds": 90 }], "alternatives": ["Prensa"] }] }] }`;
-    
+
     try {
       const response = await fetch("/api/generate-plan", {
         method: "POST",
@@ -350,9 +359,9 @@
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 4096,
+          max_tokens: 2048,
           stream: false,
-          system: compendioText,
+          system: systemText,
           messages: [{ role: "user", content: prompt }]
         })
       });
