@@ -1798,6 +1798,14 @@ function buildBoostcampExercise(ej, di, ei) {
               'border-radius:8px;color:#e8a040;font-size:14px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box"'+
               ' onfocus="this.select()">'+
             '</div>'+
+            // Copy from prev set button (solo serie 2+ y no completada)
+            (s > 0 && !completed ?
+              '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" title="Igual que serie anterior" style="'+
+                'width:36px;height:44px;border-radius:8px;border:1px solid var(--border);'+
+                'background:var(--surface2);color:var(--mt);font-size:15px;font-weight:700;'+
+                'cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;letter-spacing:-1px">'+
+                '='+'</button>'
+            : '')+
             // Complete set button
             '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
               'width:44px;height:44px;border-radius:8px;border:2px solid '+(completed?'var(--grn)':'var(--border)')+';'+
@@ -1886,6 +1894,32 @@ function buildBoostcampExercise(ej, di, ei) {
     // Sets
     '<div style="padding:0 14px 14px">'+setsHtml+'</div>'+
   '</div>';
+}
+
+function copiarSerie(key, s, di, ei) {
+  if (s === 0) return;
+  var prevKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+(s-1);
+  var prevSaved = LOGS[prevKey] || {};
+  var carga, reps, rir;
+  if (prevSaved.carga) {
+    // Serie anterior ya completada — usar valores guardados
+    carga = prevSaved.carga;
+    reps  = prevSaved.reps || '';
+    rir   = prevSaved.rir_real || '';
+  } else {
+    // Serie anterior aún sin completar — leer desde los inputs en pantalla
+    carga = document.getElementById('carga_'+prevKey)?.value || '';
+    reps  = document.getElementById('reps_'+prevKey)?.value  || '';
+    rir   = document.getElementById('rir_'+prevKey)?.value   || '';
+  }
+  if (!carga) return; // Nada que copiar
+  var cargaEl = document.getElementById('carga_'+key);
+  var repsEl  = document.getElementById('reps_'+key);
+  var rirEl   = document.getElementById('rir_'+key);
+  if (cargaEl) { cargaEl.value = carga; cargaEl.style.borderColor = 'var(--accent)'; setTimeout(()=>{ cargaEl.style.borderColor=''; }, 800); }
+  if (repsEl)  { repsEl.value  = reps; }
+  if (rirEl)   { rirEl.value   = rir; }
+  bcProgHint(key);
 }
 
 function completeSet(key, di, ei, si, unit) {
