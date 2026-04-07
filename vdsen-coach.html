@@ -107,7 +107,26 @@
       <option>Bisagra</option><option>Core</option><option>Cardio</option><option>Otro</option>
     </select>
     <label class="block text-xs text-[#888] mb-1">Equipamiento (opcional)</label>
-    <input id="ex-equip" class="input-field mb-4" placeholder="Barra, Mancuernas...">
+    <input id="ex-equip" class="input-field mb-3" placeholder="Barra, Mancuernas...">
+    <label class="block text-xs text-[#888] mb-1">Tipo de fibra <span class="text-[#C9A84C]">— afecta % de incremento de carga</span></label>
+    <select id="ex-muscletype" class="input-field mb-3">
+      <option value="typeIIx">Tipo IIx — Rápidas (Pecho, Isquios, Tríceps) +6.25%</option>
+      <option value="typeI">Tipo I — Lentas (Sóleo, Abdomen, Erectores) +2.5%</option>
+    </select>
+    <label class="block text-xs text-[#888] mb-1">Costo de fatiga SNC (1-5)</label>
+    <select id="ex-fatigue" class="input-field mb-3">
+      <option value="1">1 — Muy bajo (ej: curl bíceps)</option>
+      <option value="2">2 — Bajo (ej: extensión cuádriceps)</option>
+      <option value="3" selected>3 — Moderado (ej: press banca)</option>
+      <option value="4">4 — Alto (ej: sentadilla)</option>
+      <option value="5">5 — Muy alto (ej: peso muerto)</option>
+    </select>
+    <label class="block text-xs text-[#888] mb-1">Curva de resistencia</label>
+    <select id="ex-curve" class="input-field mb-4">
+      <option value="elongated">Elongada — máxima tensión en estiramiento (ej: RDL)</option>
+      <option value="mid" selected>Media — tensión uniforme (ej: press)</option>
+      <option value="shortened">Acortada — máxima tensión en contracción (ej: curl polea)</option>
+    </select>
     <button id="ex-submit" class="btn-primary w-full">Agregar al catálogo</button>
   </div>
 </div>
@@ -278,7 +297,12 @@
       container.innerHTML = `<p class="text-[#888] text-sm">Catálogo vacío. Agrega tu primer ejercicio.</p>`;
     } else {
       snap.forEach(d => {
-        container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><b>${d.data().name}</b> <span class="text-[#888] text-sm">· ${d.data().motorPattern || "Sin patrón"}</span></span><button class="text-red-400 hover:text-red-300 px-2" onclick="deleteExercise('${d.id}', '${d.data().name.replace(/'/g,"\\'")}')">🗑️</button></div>`;
+        const ex = d.data();
+        const mtLabel = ex.muscleType === "typeI" ? "Tipo I" : "Tipo IIx";
+        const mtColor = ex.muscleType === "typeI" ? "#60a5fa" : "#f97316";
+        const fcDots = "●".repeat(ex.fatigueCost || 3) + "○".repeat(5 - (ex.fatigueCost || 3));
+        const curveLabel = ex.resistanceCurve === "elongated" ? "Elon." : ex.resistanceCurve === "shortened" ? "Cort." : "Med.";
+        container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><b>${ex.name}</b> <span class="text-[#888] text-sm">· ${ex.motorPattern || "Sin patrón"}</span><br><span class="text-xs" style="color:${mtColor}">${mtLabel}</span> <span class="text-xs text-[#888]">· Fatiga: ${fcDots} · ${curveLabel}</span></span><button class="text-red-400 hover:text-red-300 px-2" onclick="deleteExercise('${d.id}', '${ex.name.replace(/'/g,"\\'")}')">🗑️</button></div>`;
       });
     }
     document.getElementById("addExerciseBtn").onclick = () => {
@@ -286,17 +310,23 @@
       document.getElementById("ex-name").value = "";
       document.getElementById("ex-pattern").value = "";
       document.getElementById("ex-equip").value = "";
+      document.getElementById("ex-muscletype").value = "typeIIx";
+      document.getElementById("ex-fatigue").value = "3";
+      document.getElementById("ex-curve").value = "mid";
       modal.style.display = "flex";
 
       document.getElementById("ex-submit").onclick = async () => {
         const name = document.getElementById("ex-name").value.trim();
         const pattern = document.getElementById("ex-pattern").value;
         const equipment = document.getElementById("ex-equip").value.trim();
+        const muscleType = document.getElementById("ex-muscletype").value;
+        const fatigueCost = parseInt(document.getElementById("ex-fatigue").value);
+        const resistanceCurve = document.getElementById("ex-curve").value;
         if (!name || !pattern) { showToast("Nombre y patrón motor son obligatorios", true); return; }
         const btn = document.getElementById("ex-submit");
         btn.disabled = true; btn.textContent = "Guardando...";
         try {
-          await addDoc(collection(db, "exercises"), { name, motorPattern: pattern, equipment, notes: "", coachId: currentCoach.uid });
+          await addDoc(collection(db, "exercises"), { name, motorPattern: pattern, equipment, muscleType, fatigueCost, resistanceCurve, notes: "", coachId: currentCoach.uid });
           modal.style.display = "none";
           showToast(`"${name}" agregado al catálogo`);
           loadExerciseCatalog();
