@@ -169,13 +169,20 @@
   }
   window.showToast = showToast;
   
-  function initCoachUI() {
+  async function initCoachUI() {
     loadClientList();
     loadExerciseCatalog();
     loadMonitorClients();
     loadClientsSelect();
     const savedKey = localStorage.getItem('vdsen_apikey');
     if (savedKey) document.getElementById("apiKeyInput").value = "••••••••••••••••";
+    // Cargar compendio desde Firestore si ya fue subido anteriormente
+    const compSnap = await getDoc(doc(db, "compendio", currentCoach.uid));
+    if (compSnap.exists()) {
+      compendioText = compSnap.data().content || "";
+      const status = document.getElementById("compendioStatus");
+      if (status && compendioText) status.innerHTML = "✅ Compendio cargado desde Firestore.";
+    }
   }
 
   onAuthStateChanged(auth, async (user) => {
