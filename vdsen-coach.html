@@ -846,7 +846,9 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     const c = clientSnap.data();
     title.textContent = c.displayName;
 
-    let planHtml = `<p class="text-[#888] text-sm">Sin plan activo.</p>`;
+    let planViewHtml = `<p class="text-[#888] text-sm">Sin plan activo.</p>`;
+    let planEditorHtml = '';
+    let planActionsHtml = '';
     if (c.activePlanId) {
       const planSnap = await getDoc(doc(db, "plans", c.activePlanId));
       if (planSnap.exists()) {
@@ -854,17 +856,25 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
         const dayList = (p.days || []).map(d =>
           `<li class="mb-1"><span class="font-medium text-[#C9A84C]">${d.label}</span>: ${(d.exercises || []).map(e => e.exerciseName).join(", ") || "Sin ejercicios"}</li>`
         ).join("");
-        planHtml = `
-          <p class="text-sm text-[#888] mb-2">${p.weeks || 1} sem · ${p.daysPerWeek || (p.days||[]).length} días/sem · generado por <span class="text-[#C9A84C]">${p.generatedBy === "ai" ? "IA" : "manual"}</span></p>
-          <ul class="text-sm space-y-1">${dayList}</ul>`;
+        planViewHtml = `
+          <p class="text-sm text-[#888] mb-2">${p.weeks || 1} sem · ${(p.days||[]).length} días/sem</p>
+          <ul class="text-sm space-y-1 mb-3">${dayList}</ul>`;
+        planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
+        planActionsHtml = `
+          <button onclick="toggleTrainingEditor()" class="text-[#C9A84C] text-xs underline mr-3">✏️ Editar</button>
+          <button onclick="deletePlan('${clientId}','${c.activePlanId}')" class="text-red-400 text-xs underline">🗑 Eliminar</button>`;
       }
     }
 
     body.innerHTML = `
       <p class="text-sm text-[#888] mb-4">${c.email}</p>
       <div class="mb-5">
-        <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888] mb-2">Plan de entrenamiento</h4>
-        ${planHtml}
+        <div class="flex justify-between items-center mb-2">
+          <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Plan de entrenamiento</h4>
+          <div>${planActionsHtml}</div>
+        </div>
+        <div id="training-view">${planViewHtml}</div>
+        <div id="training-editor" style="display:none">${planEditorHtml}</div>
       </div>
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2">
@@ -978,6 +988,106 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     }
   }
 
+  // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
+  let _editingPlanId = null;
+
+  function renderTrainingEditor(days, planId) {
+    _editingPlanId = planId;
+    const daysHtml = days.map((d, di) => {
+      const exRows = (d.exercises || []).map((e, ei) => {
+        const numSets = (e.sets || []).length || 3;
+        const reps    = (e.sets && e.sets[0]) ? (e.sets[0].repsTarget || 8) : 8;
+        const rir     = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
+        return `<div class="flex gap-1 mb-2 items-center" id="exrow_${di}_${ei}">
+          <input class="input-field flex-1 text-sm py-1" placeholder="Ejercicio" value="${e.exerciseName || ''}" id="exname_${di}_${ei}">
+          <input class="input-field w-10 text-sm py-1 text-center" placeholder="Series" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10">
+          <span class="text-[#888] text-xs">×</span>
+          <input class="input-field w-12 text-sm py-1 text-center" placeholder="Reps" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="30">
+          <span class="text-[#888] text-xs">RIR</span>
+          <input class="input-field w-10 text-sm py-1 text-center" placeholder="RIR" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5">
+          <button onclick="removeExRow(${di},${ei})" class="text-red-400 px-1 text-lg leading-none flex-shrink-0">×</button>
+        </div>`;
+      }).join('');
+      return `<div class="card p-3 mb-3" id="dayblock_${di}">
+        <input class="input-field w-full text-sm font-semibold mb-2 text-[#C9A84C]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}">
+        <div id="exlist_${di}">${exRows}</div>
+        <button onclick="addExRow(${di})" class="text-[#C9A84C] text-xs underline mt-1">+ Ejercicio</button>
+      </div>`;
+    }).join('');
+    return `<div id="trainingEditorDays">${daysHtml}</div>
+      <button onclick="saveTrainingPlan()" class="btn-primary w-full mt-2">💾 Guardar cambios</button>`;
+  }
+
+  function toggleTrainingEditor() {
+    const view = document.getElementById('training-view');
+    const editor = document.getElementById('training-editor');
+    if (!editor) return;
+    const open = editor.style.display !== 'none';
+    editor.style.display = open ? 'none' : 'block';
+    view.style.display   = open ? 'block' : 'none';
+  }
+
+  function addExRow(di) {
+    const list = document.getElementById('exlist_'+di);
+    const ei = list.children.length;
+    const div = document.createElement('div');
+    div.className = 'flex gap-1 mb-2 items-center';
+    div.id = 'exrow_'+di+'_'+ei;
+    div.innerHTML = `<input class="input-field flex-1 text-sm py-1" placeholder="Ejercicio" id="exname_${di}_${ei}">
+      <input class="input-field w-10 text-sm py-1 text-center" placeholder="Series" value="3" id="exsets_${di}_${ei}" type="number" min="1" max="10">
+      <span class="text-[#888] text-xs">×</span>
+      <input class="input-field w-12 text-sm py-1 text-center" placeholder="Reps" value="8" id="exreps_${di}_${ei}" type="number" min="1" max="30">
+      <span class="text-[#888] text-xs">RIR</span>
+      <input class="input-field w-10 text-sm py-1 text-center" placeholder="RIR" value="2" id="exrir_${di}_${ei}" type="number" min="0" max="5">
+      <button onclick="removeExRow(${di},${ei})" class="text-red-400 px-1 text-lg leading-none flex-shrink-0">×</button>`;
+    list.appendChild(div);
+  }
+
+  function removeExRow(di, ei) {
+    const el = document.getElementById('exrow_'+di+'_'+ei);
+    if (el) el.remove();
+  }
+
+  async function saveTrainingPlan() {
+    if (!_editingPlanId) return;
+    const dayBlocks = document.querySelectorAll('[id^="dayblock_"]');
+    const days = [];
+    dayBlocks.forEach((block, di) => {
+      const label = document.getElementById('daylabel_'+di)?.value.trim() || ('Día '+(di+1));
+      const exRows = block.querySelectorAll('[id^="exrow_'+di+'_"]');
+      const exercises = [];
+      exRows.forEach((row, ei) => {
+        const name  = document.getElementById('exname_'+di+'_'+ei)?.value.trim();
+        const sets  = parseInt(document.getElementById('exsets_'+di+'_'+ei)?.value) || 3;
+        const reps  = parseInt(document.getElementById('exreps_'+di+'_'+ei)?.value) || 8;
+        const rir   = parseInt(document.getElementById('exrir_'+di+'_'+ei)?.value)  || 2;
+        if (name) exercises.push({
+          exerciseName: name,
+          alternatives: [],
+          sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90 }))
+        });
+      });
+      days.push({ dayIndex: di, label, exercises });
+    });
+    try {
+      await updateDoc(doc(db, "plans", _editingPlanId), { days, daysPerWeek: days.length, updatedAt: new Date().toISOString() });
+      showToast('Plan actualizado ✅');
+      toggleTrainingEditor();
+      showClientDetail(_detailClientId); // recargar modal con datos nuevos
+    } catch(e) { showToast('Error al guardar: ' + e.message, true); }
+  }
+
+  async function deletePlan(clientId, planId) {
+    if (!confirm('¿Eliminar el plan activo de este cliente? El cliente quedará sin plan asignado.')) return;
+    try {
+      await updateDoc(doc(db, "clients", clientId), { activePlanId: null });
+      if (planId) await deleteDoc(doc(db, "plans", planId));
+      showToast('Plan eliminado');
+      showClientDetail(clientId);
+      loadClientList();
+    } catch(e) { showToast('Error: ' + e.message, true); }
+  }
+
   // Exponer funciones del builder manual al scope global (usadas en onclick inline)
   window.parsePlanFromText = parsePlanFromText;
   window.parsePlanFromPDF = parsePlanFromPDF;
@@ -985,6 +1095,11 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   window.showClientDetail = showClientDetail;
   window.closeClientModal = closeClientModal;
   window.deleteExercise = deleteExercise;
+  window.toggleTrainingEditor = toggleTrainingEditor;
+  window.addExRow = addExRow;
+  window.removeExRow = removeExRow;
+  window.saveTrainingPlan = saveTrainingPlan;
+  window.deletePlan = deletePlan;
   window.togglePlanEditor = togglePlanEditor;
   window.addPlanEditorRow = addPlanEditorRow;
   window.removePlanEditorRow = removePlanEditorRow;
