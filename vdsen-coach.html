@@ -313,16 +313,103 @@
     document.getElementById("monitorTable").innerHTML = "";
     const select = document.getElementById("monitorClientSelect");
     select.innerHTML = '<option value="">Selecciona un cliente</option>';
-    snap.forEach(d => { select.innerHTML += `<option value="${d.id}">${d.data().displayName}</option>`; });
+    const clientsMap = {};
+    snap.forEach(d => {
+      select.innerHTML += `<option value="${d.id}">${d.data().displayName}</option>`;
+      clientsMap[d.id] = d.data();
+    });
+
     select.onchange = async () => {
       if (!select.value) return;
-      const sessionsSnap = await getDocs(query(collection(db, "sessions"), where("clientId", "==", select.value)));
-      let html = "<table class='w-full text-sm'><tr><th>Fecha</th><th>Volumen</th></tr>";
-      sessionsSnap.forEach(docSnap => {
-        html += `<tr><td>${docSnap.data().scheduledDate}</td><td>${docSnap.data().totalVolume_kg || 0} kg</td></tr>`;
+      const container = document.getElementById("monitorTable");
+      container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos del cliente...</div>`;
+      const clientData = clientsMap[select.value];
+      if (!clientData) return;
+
+      // Cargar logs del cliente desde Firestore
+      const emailKey = (clientData.email || '').replace(/[.@]/g, '_');
+      const logsSnap = await getDoc(doc(db, 'logs', emailKey));
+      if (!logsSnap.exists()) {
+        container.innerHTML = `<p class="text-[#888] text-sm">Sin datos de entrenamiento registrados aún.</p>`;
+        return;
+      }
+      const logs = logsSnap.data().entries || {};
+      const currentWeek = logsSnap.data().currentWeek || 1;
+
+      // Semana del mesociclo y RIR objetivo
+      const weekRirObj = {1:3,2:2,3:2,4:1,5:0,6:3};
+      const rirObj = weekRirObj[currentWeek] ?? 2;
+      const isDeload = currentWeek === 6;
+
+      // Buscar la recomendación de progresión más reciente
+      let lastRec = null;
+      let lastRecWeek = 0, lastRecDay = 0;
+      Object.keys(logs).forEach(k => {
+        const m = k.match(/^progrec_(\d+)_(\d+)$/);
+        if (m) {
+          const w = parseInt(m[1]), d = parseInt(m[2]);
+          if (w > lastRecWeek || (w === lastRecWeek && d > lastRecDay)) {
+            lastRecWeek = w; lastRecDay = d; lastRec = logs[k];
+          }
+        }
       });
-      html += "</table>";
-      document.getElementById("monitorTable").innerHTML = html || "<p>Sin sesiones registradas</p>";
+
+      // Gatillos de deload activos
+      const triggers = lastRec?.deloadTriggers || [];
+
+      // Construir HTML
+      const actionLabels = {
+        deload: { label: 'DELOAD', color: '#4488cc' },
+        reduce_load: { label: 'BAJAR CARGA ⚠️', color: '#FF4444' },
+        reduce_sets: { label: 'BAJAR SERIES', color: '#FF8844' },
+        add_sets: { label: '+ SERIES', color: '#44BB88' },
+        increase_load: { label: '+ CARGA ↑', color: '#44BB88' },
+        freeze_load: { label: 'CONGELAR CARGA', color: '#C9A84C' },
+        maintain: { label: 'MANTENER', color: '#888' }
+      };
+
+      let html = `
+        <div class="card p-4 mb-3">
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="text-center px-4 py-2 rounded-lg" style="background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.3)">
+              <div class="text-2xl font-bold text-[#C9A84C]">SEM ${currentWeek}</div>
+              <div class="text-xs text-[#888] mt-1">DEL MESOCICLO</div>
+            </div>
+            <div class="text-center px-4 py-2 rounded-lg" style="background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.3)">
+              <div class="text-2xl font-bold text-[#C9A84C]">RIR ${rirObj}</div>
+              <div class="text-xs text-[#888] mt-1">OBJETIVO</div>
+            </div>
+            ${isDeload ? `<div class="px-3 py-2 rounded-lg text-sm font-bold" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc">🔵 SEMANA DELOAD</div>` : ''}
+            ${triggers.map(t => `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444">⚠️ ${t}</div>`).join('')}
+          </div>
+        </div>`;
+
+      if (lastRec && lastRec.recommendations?.length) {
+        html += `<div class="text-xs text-[#888] mb-2 uppercase tracking-wide">Recomendaciones — Sem ${lastRecWeek} · Día ${lastRecDay + 1}</div>`;
+        html += `<div class="space-y-2">`;
+        lastRec.recommendations.forEach(r => {
+          const al = actionLabels[r.action] || actionLabels.maintain;
+          html += `
+            <div class="card p-3">
+              <div class="flex justify-between items-start mb-1">
+                <span class="font-semibold text-sm">${r.exerciseName}</span>
+                <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${al.color}">${al.label}</span>
+              </div>
+              <div class="flex gap-4 text-sm mb-1">
+                <span class="text-[#888]">Carga: <strong class="text-white">${r.newLoad} kg</strong></span>
+                <span class="text-[#888]">Series: <strong class="text-white">${r.newSets}</strong></span>
+                <span class="text-[#888]">RIR obj: <strong class="text-[#C9A84C]">${r.rirTarget}</strong></span>
+              </div>
+              <div class="text-xs text-[#888]">${r.reason}</div>
+              ${r.substituteExercise ? `<div class="text-xs mt-1" style="color:#FF8844">🔄 ${r.substituteExercise}</div>` : ''}
+            </div>`;
+        });
+        html += `</div>`;
+      } else {
+        html += `<p class="text-[#888] text-sm mt-2">Sin recomendaciones aún — el cliente debe completar al menos una sesión con check-in.</p>`;
+      }
+
+      container.innerHTML = html;
     };
   }
   

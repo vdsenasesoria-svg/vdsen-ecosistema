@@ -1787,6 +1787,33 @@ function buildBoostcampExercise(ej, di, ei) {
           '<div id="hint_'+key+'" style="font-size:10px;color:var(--grn);min-height:13px;margin-top:2px;padding-left:2px">'+
             (suggestion && prev.carga ? '→ '+suggestion : '')+
           '</div>'+
+          // ICS + Pump
+          (completed ? '' :
+            '<div style="display:flex;gap:8px;margin-top:7px;align-items:flex-end">'+
+              '<div style="flex:1">'+
+                '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">ICS 1-10</div>'+
+                '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+                ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics && saved.ics<7?'var(--red)':'var(--border)')+';'+
+                'border-radius:8px;color:'+(saved.ics && saved.ics<7?'var(--red)':'var(--accent2)')+';font-size:15px;font-weight:700;padding:7px 6px;outline:none;text-align:center;box-sizing:border-box"'+
+                ' oninput="updateICSColor(\''+key+'\')">'+
+              '</div>'+
+              '<div style="flex:2">'+
+                '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">PUMP</div>'+
+                '<div style="display:flex;gap:4px">'+
+                  (function(){
+                    var opts=[{v:1,icon:'💪',c:'var(--grn)'},{v:2,icon:'👍',c:'var(--accent)'},{v:3,icon:'😐',c:'var(--mt)'}];
+                    return opts.map(function(p){
+                      var a=(saved.pump==p.v);
+                      return '<button onclick="setPump(\''+key+'\','+p.v+')" id="pump_'+key+'_'+p.v+'"'+
+                        ' style="flex:1;padding:6px 2px;border-radius:7px;font-size:16px;'+
+                        'border:2px solid '+(a?p.c:'var(--border)')+';'+
+                        'background:'+(a?'rgba(200,165,74,.12)':'var(--input-bg)')+';cursor:pointer">'+p.icon+'</button>';
+                    }).join('');
+                  })()+
+                '</div>'+
+              '</div>'+
+            '</div>'
+          )+
         '</div>'+
       '</div>';
   }
@@ -1842,10 +1869,13 @@ function completeSet(key, di, ei, si, unit) {
   var reps  = document.getElementById('reps_'+key)?.value  || '';
   var rirEl = document.getElementById('rir_'+key);
   var rirReal = rirEl ? rirEl.value : '';
+  var icsEl = document.getElementById('ics_'+key);
+  var ics = icsEl ? (parseInt(icsEl.value) || null) : null;
   var prev  = LOGS[key] || {};
+  var pump  = prev.pump || null; // set via setPump buttons
   var done  = !prev.done; // toggle
 
-  LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ts: Date.now() };
+  LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now() };
   saveLogs();
 
   // Update the row UI without full re-render
@@ -1894,6 +1924,26 @@ function bcProgHint(key) {
   } else {
     hint.textContent = '';
   }
+}
+
+function setPump(key, val) {
+  if (!LOGS[key]) LOGS[key] = {};
+  LOGS[key].pump = val;
+  var colors = {1:'var(--grn)', 2:'var(--accent)', 3:'var(--mt)'};
+  [1,2,3].forEach(function(v) {
+    var btn = document.getElementById('pump_'+key+'_'+v);
+    if (!btn) return;
+    btn.style.borderColor = v===val ? colors[v] : 'var(--border)';
+    btn.style.background  = v===val ? 'rgba(200,165,74,.12)' : 'var(--input-bg)';
+  });
+}
+
+function updateICSColor(key) {
+  var el = document.getElementById('ics_'+key);
+  if (!el) return;
+  var val = parseInt(el.value);
+  el.style.borderColor = (!isNaN(val) && val < 7) ? 'var(--red)' : 'var(--border)';
+  el.style.color       = (!isNaN(val) && val < 7) ? 'var(--red)' : 'var(--accent2)';
 }
 
 function toggleNota(id) {
@@ -1952,9 +2002,24 @@ function selDia(i) {
 
 async function markSessionDone(di) {
   var key = 'done_'+CURRENT_WEEK+'_'+di;
-  LOGS[key] = LOGS[key] ? null : { ts: Date.now() };
+  if (LOGS[key]) {
+    // Toggle off
+    LOGS[key] = null;
+    await saveLogs();
+    showToast('Marcado como pendiente');
+    renderEntrenamiento();
+    renderResumen();
+    return;
+  }
+  // Primera vez: mostrar check-in post-sesión
+  showPostSessionModal(di);
+}
+
+async function _confirmSessionDone(di) {
+  var key = 'done_'+CURRENT_WEEK+'_'+di;
+  LOGS[key] = { ts: Date.now() };
   await saveLogs();
-  showToast(LOGS[key] ? 'SESIÓN COMPLETADA ✓' : 'Marcado como pendiente');
+  showToast('SESIÓN COMPLETADA ✓');
   renderEntrenamiento();
   renderResumen();
   var sesiones = getSesiones();
@@ -3850,6 +3915,278 @@ function showToast(msg, isError=false) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && document.getElementById('scrLogin').classList.contains('on')) doLogin();
 });
+
+// ══════════════════════════════════════════════════
+// CHECK-IN POST-SESIÓN + ALGORITMO DE PROGRESIÓN
+// ══════════════════════════════════════════════════
+
+var _postSessionDi = null;
+
+function showPostSessionModal(di) {
+  _postSessionDi = di;
+  var m = document.getElementById('postSessionModal');
+  if (!m) return;
+  // Reset selecciones
+  ['eimd1','eimd2','eimd3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.borderColor='var(--border)'; el && (el.style.background='var(--surface)'); });
+  document.getElementById('psEimd').value = '';
+  document.getElementById('psArticular').value = 'no';
+  document.getElementById('psArticularPattern').style.display = 'none';
+  document.getElementById('psArticularPatternSel').value = '';
+  document.getElementById('psSueno').value = '';
+  document.getElementById('psRpe').value = '7';
+  document.getElementById('psRpeVal').textContent = '7';
+  m.style.display = 'flex';
+}
+
+function closePostSessionModal() {
+  var m = document.getElementById('postSessionModal');
+  if (m) m.style.display = 'none';
+  _postSessionDi = null;
+}
+
+function selectEimd(val) {
+  document.getElementById('psEimd').value = val;
+  var colors = {1:'var(--grn)',2:'var(--accent)',3:'var(--red)'};
+  [1,2,3].forEach(function(v){
+    var el = document.getElementById('eimd'+v);
+    if (!el) return;
+    el.style.borderColor = v===val ? colors[v] : 'var(--border)';
+    el.style.background  = v===val ? 'rgba(200,165,74,.1)' : 'var(--surface)';
+  });
+}
+
+function toggleArticularPain() {
+  var val = document.getElementById('psArticular').value;
+  var pat = document.getElementById('psArticularPattern');
+  if (pat) pat.style.display = val==='si' ? 'block' : 'none';
+}
+
+async function submitPostSession() {
+  var di = _postSessionDi;
+  if (di === null) return;
+
+  var eimd = parseInt(document.getElementById('psEimd').value);
+  if (!eimd) { showToast('Selecciona cómo está el músculo', true); return; }
+  var articularVal = document.getElementById('psArticular').value;
+  var articularPattern = document.getElementById('psArticularPatternSel').value;
+  var sueno = parseFloat(document.getElementById('psSueno').value) || 7;
+  var rpe = parseFloat(document.getElementById('psRpe').value) || 7;
+
+  var postData = {
+    eimd: eimd,
+    articularPain: { present: articularVal==='si', pattern: articularVal==='si' ? articularPattern : '' },
+    sleepHours: sueno,
+    rpeAverage: rpe,
+    ts: Date.now()
+  };
+
+  var postKey = 'postsession_'+CURRENT_WEEK+'_'+di;
+  LOGS[postKey] = postData;
+
+  // Calcular y guardar recomendaciones de progresión
+  var rec = calculateProgression(di, postData);
+  if (rec) {
+    LOGS['progrec_'+CURRENT_WEEK+'_'+di] = rec;
+  }
+
+  closePostSessionModal();
+  await _confirmSessionDone(di);
+}
+
+function _avgArr(arr) {
+  if (!arr || !arr.length) return 0;
+  return arr.reduce(function(a,b){return a+b;},0) / arr.length;
+}
+
+function calculateProgression(di, postData) {
+  var sesiones = getSesiones();
+  var dia = sesiones[di];
+  if (!dia) return null;
+
+  var weekRirObj = {1:3,2:2,3:2,4:1,5:0,6:3};
+  var rirObj = weekRirObj[CURRENT_WEEK] !== undefined ? weekRirObj[CURRENT_WEEK] : 2;
+  var eimd = postData.eimd || 2;
+  var rpe  = postData.rpeAverage || 7;
+  var sleep = postData.sleepHours || 7;
+  var articular = postData.articularPain || {present:false};
+
+  // Gatillos de deload
+  var deloadTriggers = [];
+  var ciKey = 'ci_sem_'+CURRENT_WEEK;
+  var ci = LOGS[ciKey] || {};
+  var who5 = ci.who5 ? parseInt(ci.who5) : 0;
+  if (who5 > 0 && who5 < 13) deloadTriggers.push('Bienestar WHO-5 bajo ('+who5+'/25)');
+  if (rpe > 9) deloadTriggers.push('RPE promedio > 9');
+  if (sleep < 6) deloadTriggers.push('Sueño < 6h');
+
+  var isDeload = CURRENT_WEEK === 6 || deloadTriggers.length >= 2;
+
+  // Obtener ejercicios del día (parseados desde el plan)
+  var exercises = [];
+  if (dia.exercises) {
+    exercises = dia.exercises;
+  } else {
+    // Parsear desde texto legacy del plan
+    var lines = (typeof dia === 'string' ? dia : '').split('\n');
+    lines.forEach(function(l, ei) { if (l.trim()) exercises.push({nombre: l.trim(), numSeries: 3, rir: '2'}); });
+  }
+
+  var recs = exercises.map(function(ej, ei) {
+    var sets = [];
+    for (var s = 0; s < (ej.numSeries || 3); s++) {
+      var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+      if (LOGS[k] && LOGS[k].done) sets.push(LOGS[k]);
+    }
+    if (!sets.length) return null;
+
+    var avgICS  = _avgArr(sets.map(function(s){ return parseFloat(s.ics) || 8; }));
+    var avgPump = _avgArr(sets.map(function(s){ return parseFloat(s.pump) || 2; }));
+    var avgRIR  = _avgArr(sets.map(function(s){ return parseFloat(s.rir_real) || rirObj; }));
+    var load    = parseFloat(sets[0].carga) || 0;
+    var numSets = ej.numSeries || sets.length;
+    var alpha   = 0.0625; // default typeIIx: mid de 5-7.5%
+
+    var action = 'maintain', newLoad = load, newSets = numSets, rirTarget = rirObj;
+    var reasons = [];
+
+    if (isDeload) {
+      newSets = Math.max(1, Math.round(numSets / 2));
+      rirTarget = 3; action = 'deload';
+      reasons.push('Deload: series ÷ 2, RIR objetivo 3');
+    } else if (avgICS < 7) {
+      newLoad = Math.round(load * 0.875 * 4) / 4;
+      action = 'reduce_load';
+      reasons.push('ICS '+avgICS.toFixed(1)+' < 7 → bajar carga 12.5%');
+    } else {
+      // Volumen por EIMD
+      if (eimd === 1) {
+        var add = avgICS >= 9 ? 2 : 1;
+        newSets = numSets + add; action = 'add_sets';
+        reasons.push('Sin dolor → +'+add+' serie(s)');
+      } else if (eimd === 2) {
+        if (avgICS >= 9) { newSets = numSets + 1; action = 'add_sets'; reasons.push('Recuperación + ICS alto → +1 serie'); }
+        else { reasons.push('Recuperación normal: mantener volumen'); }
+      } else {
+        var rem = avgICS < 7 ? 2 : 1;
+        newSets = Math.max(1, numSets - rem); action = 'reduce_sets';
+        reasons.push('Dolor agudo → -'+rem+' serie(s)');
+      }
+      // Pump nulo + sin dolor
+      if (avgPump === 3 && eimd === 1) {
+        if (action !== 'add_sets') { newSets = numSets + 1; action = 'add_sets'; }
+        reasons.push('Pump nulo: +1 serie adicional');
+      }
+      // Carga por RIR
+      if (avgRIR < rirObj) {
+        newLoad = Math.round(load * (1 + alpha) * 4) / 4;
+        if (action === 'maintain') action = 'increase_load';
+        reasons.push('RIR real ('+avgRIR.toFixed(1)+') < obj ('+rirObj+') → +'+Math.round(alpha*100)+'% carga');
+      } else if (avgRIR > rirObj + 1) {
+        if (action === 'maintain') action = 'freeze_load';
+        reasons.push('RIR real ('+avgRIR.toFixed(1)+') > obj → congelar carga');
+      }
+    }
+
+    var sub = articular.present ? 'Revisar alternativa para patrón: '+(articular.pattern||'—') : null;
+    if (sub) reasons.push('Fatiga articular en '+articular.pattern);
+
+    return {
+      exerciseName: ej.nombre || ej.exerciseName,
+      action: action,
+      newLoad: newLoad,
+      newSets: newSets,
+      rirTarget: rirTarget,
+      reason: reasons.join(' | '),
+      substituteExercise: sub
+    };
+  }).filter(Boolean);
+
+  return {
+    recommendations: recs,
+    deloadTriggers: deloadTriggers,
+    weekNum: CURRENT_WEEK,
+    calculatedAt: new Date().toISOString()
+  };
+}
 </script>
+
+<!-- ════ MODAL CHECK-IN POST-SESIÓN ════ -->
+<div id="postSessionModal" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:2000;overflow-y:auto;padding:20px 16px 40px;flex-direction:column;align-items:center">
+  <div style="width:100%;max-width:480px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div>
+        <div style="font-size:11px;letter-spacing:2px;color:var(--accent);font-weight:700">CHECK-IN POST-SESIÓN</div>
+        <div style="font-size:20px;font-weight:800;color:#fff;margin-top:2px">¿Cómo te fue?</div>
+      </div>
+      <button onclick="closePostSessionModal()" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--mt);font-size:18px;padding:6px 10px;cursor:pointer">✕</button>
+    </div>
+    <input type="hidden" id="psEimd">
+
+    <!-- EIMD -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:600;margin-bottom:10px">1. ESTADO MUSCULAR (EIMD)</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div id="eimd1" onclick="selectEimd(1)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .2s">
+          <div style="font-size:16px;margin-bottom:2px">✅ Sin dolor muscular</div>
+          <div style="font-size:12px;color:var(--mt)">Recuperación completa</div>
+        </div>
+        <div id="eimd2" onclick="selectEimd(2)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .2s">
+          <div style="font-size:16px;margin-bottom:2px">⚡ Recuperado a tiempo</div>
+          <div style="font-size:12px;color:var(--mt)">Hubo molestia pero estás bien ahora</div>
+        </div>
+        <div id="eimd3" onclick="selectEimd(3)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .2s">
+          <div style="font-size:16px;margin-bottom:2px">🔴 Dolor agudo / molestia</div>
+          <div style="font-size:12px;color:var(--mt)">El músculo aún duele significativamente</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fatiga articular -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:600;margin-bottom:10px">2. FATIGA ARTICULAR</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button onclick="document.getElementById('psArticular').value='si';toggleArticularPain();this.style.borderColor='var(--accent)';document.getElementById('artNoBtn').style.borderColor='var(--border)'" id="artSiBtn"
+          style="flex:1;padding:11px;background:var(--surface);border:2px solid var(--border);border-radius:10px;color:var(--tx);font-size:14px;font-weight:600;cursor:pointer">
+          Sí, siento fatiga articular</button>
+        <button onclick="document.getElementById('psArticular').value='no';toggleArticularPain();this.style.borderColor='var(--accent)';document.getElementById('artSiBtn').style.borderColor='var(--border)'" id="artNoBtn"
+          style="flex:1;padding:11px;background:var(--surface);border:2px solid var(--accent);border-radius:10px;color:var(--tx);font-size:14px;font-weight:600;cursor:pointer">
+          No</button>
+      </div>
+      <input type="hidden" id="psArticular" value="no">
+      <div id="psArticularPattern" style="display:none">
+        <div style="font-size:11px;color:var(--mt);margin-bottom:6px">¿En qué patrón?</div>
+        <select id="psArticularPatternSel" style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:15px;padding:10px 12px;outline:none">
+          <option value="">Seleccionar...</option>
+          <option value="Empuje">Empuje (hombro, codo)</option>
+          <option value="Jalón">Jalón (hombro, muñeca)</option>
+          <option value="Pierna">Pierna (rodilla, cadera)</option>
+          <option value="Bisagra">Bisagra (lumbar, cadera)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Sueño -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:600;margin-bottom:10px">3. HORAS DE SUEÑO (última noche)</div>
+      <input id="psSueno" type="number" min="1" max="12" step="0.5" placeholder="7.5" inputmode="decimal"
+        style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-size:24px;font-weight:700;padding:12px;outline:none;text-align:center;box-sizing:border-box">
+    </div>
+
+    <!-- RPE -->
+    <div style="margin-bottom:28px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:600;margin-bottom:10px">4. RPE PROMEDIO SESIÓN — <span id="psRpeVal" style="color:var(--accent)">7</span>/10</div>
+      <input id="psRpe" type="range" min="1" max="10" step="1" value="7"
+        oninput="document.getElementById('psRpeVal').textContent=this.value"
+        style="width:100%;accent-color:var(--accent)">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-top:4px">
+        <span>Muy fácil</span><span>Máximo esfuerzo</span>
+      </div>
+    </div>
+
+    <button onclick="submitPostSession()" style="width:100%;padding:16px;background:var(--accent);color:#000;font-size:16px;font-weight:800;border:none;border-radius:12px;cursor:pointer;letter-spacing:.5px">
+      GUARDAR Y CALCULAR PROGRESIÓN →
+    </button>
+  </div>
+</div>
 </body>
 </html>
