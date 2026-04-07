@@ -405,8 +405,7 @@
       if (!clientData) return;
 
       // Cargar logs del cliente desde Firestore
-      const emailKey = (clientData.email || '').replace(/[.@]/g, '_');
-      const logsSnap = await getDoc(doc(db, 'logs', emailKey));
+      const logsSnap = await getDoc(doc(db, 'logs', select.value)); // select.value = clientId = UID
       if (!logsSnap.exists()) {
         container.innerHTML = `<p class="text-[#888] text-sm">Sin datos de entrenamiento registrados aún.</p>`;
         return;

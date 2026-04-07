@@ -942,7 +942,7 @@ async function loadPlan(user) {
 
     // Cargar logs (no-fatal)
     try {
-      const logRef = FB.doc(FB.db, 'logs', user.email.replace(/[.@]/g,'_'));
+      const logRef = FB.doc(FB.db, 'logs', user.uid);
       const logSnap = await FB.getDoc(logRef);
       if (logSnap.exists()) {
         LOGS = logSnap.data().entries || {};
@@ -2113,7 +2113,7 @@ async function marcarDia(di) {
 async function saveLogs() {
   if (!USER || !FB) return;
   try {
-    const ref = FB.doc(FB.db, 'logs', USER.email.replace(/[.@]/g,'_'));
+    const ref = FB.doc(FB.db, 'logs', USER.uid);
     await FB.setDoc(ref, { entries: LOGS, currentWeek: CURRENT_WEEK, updatedAt: Date.now() });
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');

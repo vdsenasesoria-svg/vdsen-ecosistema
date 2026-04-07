@@ -4,7 +4,7 @@
 
 - HTML single-file (sin bundler, sin framework)
 - Tailwind CSS vía CDN
-- Firebase SDK modular v11.0.2 vía importmap
+- Firebase SDK modular v10.12.0 vía CDN (gstatic)
 - Firebase Auth (email/password)
 - Firebase Firestore (proyecto: vdsen-ecosistema)
 - jsPDF + PDF.js para exportación y lectura de PDFs
@@ -19,57 +19,76 @@
 
 ## Colecciones Firestore
 
-- `coaches/{uid}` — documento del coach (displayName, email, role)
-- `clients/{uid}` — clientes del coach (coachId, activePlanId, nutritionPlan, supplementPlan)
-- `exercises/{id}` — catálogo de ejercicios por coach
-- `plans/{id}` — planes de entrenamiento
-- `sessions/{clientId_fecha}` — sesiones diarias
+- `coaches/{uid}` — doc del coach (displayName, email, role)
+- `clients/{uid}` — clientes (coachId, activePlanId, nutritionPlan, supplementPlan)
+  - `nutritionPlan`: `{ calorias, proteina, carbos, grasas, texto }`
+  - `supplementPlan`: `{ texto }`
+- `exercises/{id}` — catálogo de ejercicios por coach (name, motorPattern, equipment, muscleType, fatigueCost, resistanceCurve, coachId)
+- `plans/{id}` — planes de entrenamiento `{ weeks, daysPerWeek, days:[{dayIndex, label, exercises:[{exerciseName, sets:[{setIndex, repsTarget, rirTarget, load, restSeconds}]}]}], coachId, clientId, status, generatedBy, createdAt }`
+- `logs/{uid}` — registros de entrenamiento del cliente (ID = UID del cliente) `{ entries: {key: value}, currentWeek }`
 - `compendio/{coachId}` — texto extraído del PDF del compendio
 
-## Convención de IDs
+## Estructura LOGS (cliente)
 
-- Sessions: `{clientId}_{YYYY-MM-DD}`
-- Compendio: document ID = UID del coach
+Claves en `entries`:
+- `log_{W}_{D}_{E}_s{S}` — set registrado `{ carga, reps, unit, done, rir, rir_real, ics, pump, ts }`
+- `done_{W}_{D}` — sesión completada (boolean)
+- `postsession_{W}_{D}` — check-in post-sesión `{ eimd, articular, patron, sleep, rpe }`
+- `progrec_{W}_{D}` — recomendaciones de progresión generadas `{ recommendations:[], deloadTriggers:[] }`
+- `ci_sem_{W}` — check-in semanal `{ peso, hrv, who5 }`
 
-## Coach de prueba
+## Algoritmo de progresión VDSEN v3.1
 
-- Email: coach@vdsen.com
-- UID existe en Firebase Auth
-- Documento en Firestore colección `coaches` con campos: displayName, email, role: "coach"
-- Si el doc no existe al login, se crea automáticamente en `onAuthStateChanged`
+- ICS (1-10): calidad de serie por set. <7 = técnica mala → bajar carga
+- Pump (1-3): 1=bueno, 2=ok, 3=bajo
+- EIMD post-sesión (1-3): dolor muscular
+- Articular: si/no + patrón afectado
+- Sleep: horas
+- RPE sesión: 1-10
+- Semana 6 = deload automático
+- Recomendaciones guardadas en `progrec_{W}_{D}` → coach las ve en panel de monitoreo
 
 ## Reglas de edición
 
 - NUNCA reescribir archivos completos. Usar str_replace quirúrgico.
-- Editar solo el bloque afectado (función, listener, sección HTML).
-- Confirmar cada cambio antes de continuar con el siguiente.
+- Editar solo el bloque afectado.
+- Push directo a main sin PR (flujo acordado con el usuario).
 
-## Estado actual (resuelto)
+## Estado actual — funcionalidades implementadas
 
-Los siguientes problemas fueron resueltos:
+### App Coach (`vdsen-coach.html`)
+- Login con Firebase Auth, crea doc `coaches/{uid}` si no existe
+- Lista de clientes con auto-vinculación de clientes huérfanos
+- Crear cliente: modal con nombre/email/contraseña, crea Auth + Firestore
+- Si email ya existe en Auth → recupera UID e intenta vincular
+- Ver cliente: modal con plan, nutrición y suplementación
+- Editar plan: editor por día/ejercicio (nombre, series, reps, RIR) + guardar en Firestore
+- Eliminar plan: quita `activePlanId` del cliente y borra el doc de `plans/`
+- Nutrición: editor con campos Kcal, Proteína, Carbohidratos, Grasas + texto libre
+- Suplementación: textarea libre
+- Importar plan desde texto (copiar/pegar) con parser flexible
+- Importar plan desde PDF con PDF.js + mismo parser
+- Catálogo de ejercicios: crear con muscleType/fatigueCost/resistanceCurve, eliminar
+- Panel de monitoreo: selecciona cliente → muestra semana, RIR objetivo, alertas de deload, recomendaciones de `progrec`
+- Extracción inteligente de compendio PDF (filtra farmacología/nutrición/bibliografía)
 
-- `currentCoach` null: `onAuthStateChanged` setea `currentCoach = user` y crea el doc `coaches/{uid}` si no existe. Guards con toasts en todas las funciones que lo requieren.
-- Botón "+ Nuevo Cliente": funcional, crea doc en `clients/` y muestra toast de confirmación.
-- Subida PDF compendio: `uploadCompendioBtn` extrae texto con PDF.js y lo guarda en `compendio/{uid}`.
-- Routing Vercel: `vercel.json` con rewrites para `/coach` y `/cliente`.
-- Toasts reales: `showToast()` implementado en ambos archivos (no más `alert()`).
-- Modo manual de planes: `manualModeBtn` + editor por días + `saveManualPlan()` implementados.
-
-## Mejoras pendientes
-
-- Loaders/spinners mientras cargan datos de Firestore
-- Función "Ver" detalle de cliente (actualmente muestra toast "Detalles próximamente")
-- Función "Eliminar" ejercicio del catálogo (actualmente muestra toast "Eliminar pendiente")
-
-## API Key Anthropic
-
-- NO está en el código
-- El coach la ingresa en Configuración → se guarda en localStorage como `vdsen_apikey`
-- Modelo a usar: claude-sonnet-4-20250514
+### App Cliente (`vdsen-cliente.html`)
+- Login con Firebase Auth (proyecto vdsen-ecosistema)
+- `loadPlan`: lee `clients/{uid}` → `activePlanId` → `plans/{activePlanId}`, convierte al formato del renderer
+- Si sin plan → pantalla de espera
+- Registro de series: carga, reps, RIR real, ICS (1-10), Pump (1-3)
+- Botón `=` en serie 2+: copia carga/reps/RIR/ICS/Pump de la serie anterior
+- Unidad KG/LB por ejercicio (toggle independiente por ejercicio)
+- Completar sesión → modal post-sesión (EIMD, dolor articular, sueño, RPE)
+- Algoritmo progresión: calcula recomendaciones por ejercicio y las guarda en logs
+- Semana 6 = deload automático
+- Tabs: Resumen, Entrenamiento, Nutrición, Check-in, Perfil
+- Logs guardados en `logs/{uid}` (por UID, no por email)
 
 ## Deploy
 
-- GitHub repo: vdsen-ecosistema (privado)
+- GitHub repo: vdsenasesoria-svg/vdsen-ecosistema (privado)
 - Vercel conectado al repo, auto-deploy en push a main
 - URLs: https://vdsen-ecosistema.vercel.app/vdsen-coach.html
 - URLs amigables: /coach y /cliente
+- Push directo a main (sin PRs)
