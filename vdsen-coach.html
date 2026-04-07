@@ -455,99 +455,72 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
 
   // ========== PARSER DE TEXTO → PLAN ==========
   function parsePlanText(text) {
-    // Normalizar: separar líneas pegadas por el extractor de PDF
-    // PDF suele producir texto con espacios en lugar de saltos de línea
-    text = text
-      .replace(/([a-záéíóúüñA-ZÁÉÍÓÚÜÑ\)\.])(\s{2,})([A-ZÁÉÍÓÚÜÑ])/g, '$1\n$3') // doble espacio → salto
-      .replace(/(kg|lb|reps?|series?|RIR\s*\d)\s+([A-ZÁÉÍÓÚÜÑ])/gi, '$1\n$2')    // tras parámetros → salto
-      .replace(/([.;])\s+([A-ZÁÉÍÓÚÜÑ])/g, '$1\n$2');                             // tras punto/; → salto
+    // Limpiar sin romper líneas de encabezados con puntos (ej: "Delt. Lateral")
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
 
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 1);
     const days = [];
     let currentDay = null;
 
-    // Palabras que indican cabecera de día
-    const DAY_PATTERNS = [
-      /^(?:día|dia|day|jornada|sesión|sesion|entrenamiento|workout)\s*\d+/i,
-      /^(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)/i,
-      /^\d+\s*[.)\-–]\s*(?:día|dia|empuje|jalón|jalon|pierna|espalda|pecho|hombro|brazo|gluteo|glúteo|full|cuerpo|upper|lower|push|pull|leg)/i,
-      /^(?:empuje|jalón|jalon|pierna|espalda|pecho|hombros?|brazos?|glut[eé]o|full\s*body|upper|lower|push|pull|legs?)\s*[-–:]?\s*(?:\d+|$)/i,
-      /^[A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s]{3,30}$/, // línea TODO MAYÚSCULAS de 4-30 chars (posible cabecera)
-    ];
+    // Detecta cabecera de día: "DÍA 1", "DIA 1:", "DÍA 1: PUSH", "Day 1", "Lunes", etc.
+    const DAY_RE = /^(?:d[íi]a|day|jornada|sesi[oó]n|entrenamiento)\s*\d+/i;
+    const DAY_ES_RE = /^(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)/i;
 
-    // Palabras que NUNCA son cabeceras (ejercicios comunes en mayúsculas)
-    const NOT_DAY = /^(press|curl|squat|rdl|remo|jalon|jalón|prensa|sentadilla|peso|hip|face|pull|row|bench|overhead|incline|decline|lat|cable|polea|extensi|flexi|abdomin|plancha|zancada|lunges?|step|calf|pantorrilla|fondos?|dips?|dominadas?|chin)/i;
-
-    // Palabras clave que indican línea de ejercicio (tiene NxN, kg, RIR, sets)
-    const HAS_SETS = /\d+\s*[x×X]\s*\d+/;
-    const HAS_KG   = /\d+\s*kg/i;
-    const HAS_RIR  = /RIR\s*\d/i;
+    // Detecta sets: "4 sets x 6-8", "4 series x 8", "4x8", "4 x 8-10"
+    // Captura: (numSets)(separador opcional)(x)(reps)
+    const SETS_RE = /(\d+)\s*(?:sets?|series?)?\s*[x×X]\s*(\d+(?:[-–]\d+)?)\s*(?:reps?)?/i;
+    const RIR_RE  = /\[?RIR\s*([\d]+)/i;
+    const KG_RE   = /(\d+(?:\.\d+)?)\s*kg/i;
 
     for (const line of lines) {
-      // ¿Es cabecera de día?
-      const isDay = !NOT_DAY.test(line) && !HAS_SETS.test(line) && DAY_PATTERNS.some(p => p.test(line));
-      if (isDay) {
-        currentDay = { dayIndex: days.length, label: line.replace(/^\d+\s*[.)\-–]\s*/, '').trim(), exercises: [] };
+      // ¿Cabecera de día?
+      if (DAY_RE.test(line) || DAY_ES_RE.test(line)) {
+        currentDay = { dayIndex: days.length, label: line, exercises: [] };
         days.push(currentDay);
         continue;
       }
 
-      // Si no hay día todavía, crear uno
+      // Si aún no hay día, crear uno por defecto
       if (!currentDay) {
         currentDay = { dayIndex: 0, label: 'Día 1', exercises: [] };
         days.push(currentDay);
       }
 
-      // ¿Es ejercicio con NxN?
-      const exMatch = line.match(/^[-•*\d.)\s]*(.+?)\s*[:\-–]?\s*(\d+)\s*[x×X]\s*([\d\-–]+)(?:[^](?:rir|rpe)\s*(\d+))?(?:[^]*?(\d+(?:\.\d+)?)\s*kg)?/i);
-      if (exMatch && exMatch[1] && exMatch[1].trim().length > 1) {
-        const name = exMatch[1].replace(/^[-•*\d.)\s]+/, '').trim();
-        const numSets = parseInt(exMatch[2]) || 3;
-        const repsRaw = exMatch[3] || '8';
-        const repsTarget = parseInt(repsRaw.split(/[-–]/)[0]) || 8;
-        const rirTarget = parseInt(exMatch[4] ?? 2);
-        const load = parseFloat(exMatch[5] ?? 0);
+      // ¿Línea de ejercicio? Debe tener el patrón NxN o "N sets x N"
+      const setsMatch = SETS_RE.exec(line);
+      if (setsMatch) {
+        // Nombre = todo lo que está ANTES del patrón de sets
+        const nameRaw = line.slice(0, setsMatch.index)
+          .replace(/[:\-–\s]+$/, '')   // quitar trailing : - –
+          .replace(/^[-•*\d.)\s]+/, '') // quitar bullets y numeración al inicio
+          .trim();
+
+        // Si el nombre quedó vacío, usar la parte antes del primer ":"
+        const name = nameRaw.length > 1 ? nameRaw : line.split(':')[0].replace(/^[-•*\d.)\s]+/, '').trim();
+
         if (name.length > 1) {
-          currentDay.exercises.push({
-            exerciseName: name,
-            alternatives: [],
-            sets: Array.from({ length: numSets }, (_, i) => ({ setIndex: i, repsTarget, rirTarget, load, restSeconds: 90 }))
-          });
-          continue;
-        }
-      }
+          const numSets    = parseInt(setsMatch[1]) || 3;
+          const repsStr    = setsMatch[2] || '8';
+          const repsTarget = parseInt(repsStr.split(/[-–]/)[0]) || 8;
+          const rirMatch   = RIR_RE.exec(line);
+          const kgMatch    = KG_RE.exec(line);
 
-      // ¿Es ejercicio con kg o RIR pero sin NxN explícito?
-      if ((HAS_KG.test(line) || HAS_RIR.test(line)) && line.length > 3) {
-        const name = line.replace(/\d+\s*kg.*$/i,'').replace(/RIR.*$/i,'').replace(/^[-•*\d.)\s]+/,'').trim();
-        if (name.length > 2) {
-          const loadM = line.match(/(\d+(?:\.\d+)?)\s*kg/i);
-          const rirM  = line.match(/RIR\s*(\d+)/i);
           currentDay.exercises.push({
             exerciseName: name,
             alternatives: [],
-            sets: [{ setIndex: 0, repsTarget: 8, rirTarget: parseInt(rirM?.[1] ?? 2), load: parseFloat(loadM?.[1] ?? 0), restSeconds: 90 }]
-          });
-          continue;
-        }
-      }
-
-      // Línea de texto plano que parece ejercicio (no muy corta, no es número, no es metadata)
-      const skipLine = /^(\d+[\s.]*$|semana|week|mes[eo]ciclo|objetivo|nota:|descripci|instruc|descanso entre|rpm|kcal|proteína|carboh|grasas?)/i;
-      if (!skipLine.test(line) && line.length >= 4 && line.length <= 60) {
-        const name = line.replace(/^[-•*\d.)\s]+/, '').trim();
-        if (name.length > 2) {
-          currentDay.exercises.push({
-            exerciseName: name,
-            alternatives: [],
-            sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 90 }]
+            sets: Array.from({ length: numSets }, (_, i) => ({
+              setIndex: i,
+              repsTarget,
+              rirTarget: parseInt(rirMatch?.[1] ?? 2),
+              load: parseFloat(kgMatch?.[1] ?? 0),
+              restSeconds: 90
+            }))
           });
         }
+        // Línea procesada — no agregar como texto plano
+        continue;
       }
+      // Líneas sin NxN se ignoran (notas, encabezados no reconocidos, etc.)
     }
-
-    // Si no detectó días pero sí ejercicios sueltos, agrupar en Día 1
-    if (days.length === 0 && currentDay) days.push(currentDay);
 
     return {
       weeks: 1,
