@@ -881,95 +881,101 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Nutrición</h4>
           <button onclick="togglePlanEditor('nutrition')" class="text-[#C9A84C] text-xs">Editar</button>
         </div>
-        <div id="nutrition-view">${renderPlanView(c.nutritionPlan || {})}</div>
-        <div id="nutrition-editor" style="display:none;">${renderPlanEditor(c.nutritionPlan || {}, 'nutrition')}</div>
+        <div id="nutrition-view">${renderNutritionView(c.nutritionPlan || {})}</div>
+        <div id="nutrition-editor" style="display:none;">${renderNutritionEditor(c.nutritionPlan || {})}</div>
       </div>
       <div>
         <div class="flex justify-between items-center mb-2">
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Suplementación</h4>
           <button onclick="togglePlanEditor('supplement')" class="text-[#C9A84C] text-xs">Editar</button>
         </div>
-        <div id="supplement-view">${renderPlanView(c.supplementPlan || {})}</div>
-        <div id="supplement-editor" style="display:none;">${renderPlanEditor(c.supplementPlan || {}, 'supplement')}</div>
+        <div id="supplement-view">${renderSupplementView(c.supplementPlan || {})}</div>
+        <div id="supplement-editor" style="display:none;">${renderSupplementEditor(c.supplementPlan || {})}</div>
       </div>`;
   }
 
-  function renderPlanView(plan) {
-    const entries = Object.entries(plan);
-    if (!entries.length) return `<p class="text-[#888] text-sm">Sin datos.</p>`;
-    return `<ul class="text-sm space-y-1">${entries.map(([k,v]) => `<li><span class="text-[#888]">${k}:</span> ${v}</li>`).join("")}</ul>`;
+  function renderNutritionView(n) {
+    if (!n || (!n.calorias && !n.texto)) return `<p class="text-[#888] text-sm">Sin datos.</p>`;
+    let html = '';
+    if (n.calorias || n.proteina || n.carbos || n.grasas)
+      html += `<div class="flex gap-3 mb-2 flex-wrap">
+        ${n.calorias ? `<span class="text-sm"><span class="text-[#888]">Kcal:</span> <strong>${n.calorias}</strong></span>` : ''}
+        ${n.proteina ? `<span class="text-sm"><span class="text-[#888]">P:</span> <strong>${n.proteina}g</strong></span>` : ''}
+        ${n.carbos   ? `<span class="text-sm"><span class="text-[#888]">C:</span> <strong>${n.carbos}g</strong></span>` : ''}
+        ${n.grasas   ? `<span class="text-sm"><span class="text-[#888]">G:</span> <strong>${n.grasas}g</strong></span>` : ''}
+      </div>`;
+    if (n.texto) html += `<pre class="text-xs text-[#888] whitespace-pre-wrap leading-relaxed">${n.texto}</pre>`;
+    return html;
   }
 
-  function renderPlanEditor(plan, type) {
-    const rows = Object.entries(plan).map(([k,v], i) => `
-      <div class="flex gap-2 mb-2 items-center">
-        <input class="input-field flex-1" placeholder="Campo" value="${k}" oninput="updatePlanEditorKey('${type}',${i},this.value)">
-        <input class="input-field flex-1" placeholder="Valor" value="${v}" oninput="updatePlanEditorVal('${type}',${i},this.value)">
-        <button onclick="removePlanEditorRow('${type}',${i})" class="text-red-400 px-1">✕</button>
-      </div>`).join("");
+  function renderNutritionEditor(n) {
+    n = n || {};
     return `
-      <div id="${type}-rows">${rows}</div>
-      <button onclick="addPlanEditorRow('${type}')" class="btn-secondary text-xs py-1 px-3 mb-3">+ Añadir fila</button>
-      <button onclick="savePlanEditor('${type}')" class="btn-primary text-sm py-1 px-4 w-full">Guardar</button>`;
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <div><label class="text-xs text-[#888]">Calorías (kcal)</label><input id="nut-kcal" class="input-field w-full mt-1" type="number" placeholder="2000" value="${n.calorias||''}"></div>
+        <div><label class="text-xs text-[#888]">Proteína (g)</label><input id="nut-prot" class="input-field w-full mt-1" type="number" placeholder="180" value="${n.proteina||''}"></div>
+        <div><label class="text-xs text-[#888]">Carbohidratos (g)</label><input id="nut-carb" class="input-field w-full mt-1" type="number" placeholder="220" value="${n.carbos||''}"></div>
+        <div><label class="text-xs text-[#888]">Grasas (g)</label><input id="nut-fat" class="input-field w-full mt-1" type="number" placeholder="70" value="${n.grasas||''}"></div>
+      </div>
+      <label class="text-xs text-[#888]">Plan de alimentación (texto libre)</label>
+      <textarea id="nut-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="6" placeholder="Comida 1: ...\nComida 2: ...">${n.texto||''}</textarea>
+      <button onclick="saveNutritionPlan()" class="btn-primary text-sm py-1 px-4 w-full">Guardar nutrición</button>`;
   }
 
-  // Estado temporal del editor
-  const _planEdits = { nutrition: null, supplement: null };
+  function renderSupplementView(s) {
+    if (!s || !s.texto) return `<p class="text-[#888] text-sm">Sin datos.</p>`;
+    return `<pre class="text-xs text-[#888] whitespace-pre-wrap leading-relaxed">${s.texto}</pre>`;
+  }
+
+  function renderSupplementEditor(s) {
+    s = s || {};
+    return `
+      <label class="text-xs text-[#888]">Suplementación (texto libre)</label>
+      <textarea id="sup-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="5" placeholder="Creatina: 5g post-entreno\nProteína: 30g post-entreno...">${s.texto||''}</textarea>
+      <button onclick="saveSupplementPlan()" class="btn-primary text-sm py-1 px-4 w-full">Guardar suplementación</button>`;
+  }
 
   function togglePlanEditor(type) {
-    const view = document.getElementById(`${type}-view`);
+    const view   = document.getElementById(`${type}-view`);
     const editor = document.getElementById(`${type}-editor`);
-    if (editor.style.display === "none") {
-      editor.style.display = "block";
-      view.style.display = "none";
-    } else {
-      editor.style.display = "none";
-      view.style.display = "block";
-    }
+    if (!editor) return;
+    const open = editor.style.display !== "none";
+    editor.style.display = open ? "none" : "block";
+    view.style.display   = open ? "block" : "none";
   }
 
-  function _getPlanRows(type) {
-    const rows = document.querySelectorAll(`#${type}-rows > div`);
-    const result = {};
-    rows.forEach(row => {
-      const inputs = row.querySelectorAll("input");
-      const k = inputs[0]?.value.trim();
-      const v = inputs[1]?.value.trim();
-      if (k) result[k] = v || "";
-    });
-    return result;
-  }
-
-  function addPlanEditorRow(type) {
-    const container = document.getElementById(`${type}-rows`);
-    const idx = container.children.length;
-    const div = document.createElement("div");
-    div.className = "flex gap-2 mb-2 items-center";
-    div.innerHTML = `
-      <input class="input-field flex-1" placeholder="Campo" oninput="updatePlanEditorKey('${type}',${idx},this.value)">
-      <input class="input-field flex-1" placeholder="Valor" oninput="updatePlanEditorVal('${type}',${idx},this.value)">
-      <button onclick="this.parentElement.remove()" class="text-red-400 px-1">✕</button>`;
-    container.appendChild(div);
-  }
-
-  function updatePlanEditorKey() {} // los inputs leen directo del DOM al guardar
-  function updatePlanEditorVal() {}
-
-  function removePlanEditorRow(type, idx) {
-    const container = document.getElementById(`${type}-rows`);
-    if (container.children[idx]) container.children[idx].remove();
-  }
-
-  async function savePlanEditor(type) {
-    const field = type === "nutrition" ? "nutritionPlan" : "supplementPlan";
-    const data = _getPlanRows(type);
+  async function saveNutritionPlan() {
+    const data = {
+      calorias: document.getElementById("nut-kcal")?.value.trim() || "",
+      proteina: document.getElementById("nut-prot")?.value.trim() || "",
+      carbos:   document.getElementById("nut-carb")?.value.trim() || "",
+      grasas:   document.getElementById("nut-fat")?.value.trim()  || "",
+      texto:    document.getElementById("nut-texto")?.value.trim() || ""
+    };
     try {
-      await updateDoc(doc(db, "clients", _detailClientId), { [field]: data });
-      document.getElementById(`${type}-view`).innerHTML = renderPlanView(data);
-      togglePlanEditor(type);
-      showToast("Guardado correctamente");
-    } catch (e) { showToast("Error al guardar: " + e.message, true); }
+      await updateDoc(doc(db, "clients", _detailClientId), { nutritionPlan: data });
+      document.getElementById("nutrition-view").innerHTML = renderNutritionView(data);
+      togglePlanEditor("nutrition");
+      showToast("Nutrición guardada ✅");
+    } catch(e) { showToast("Error: " + e.message, true); }
   }
+
+  async function saveSupplementPlan() {
+    const data = { texto: document.getElementById("sup-texto")?.value.trim() || "" };
+    try {
+      await updateDoc(doc(db, "clients", _detailClientId), { supplementPlan: data });
+      document.getElementById("supplement-view").innerHTML = renderSupplementView(data);
+      togglePlanEditor("supplement");
+      showToast("Suplementación guardada ✅");
+    } catch(e) { showToast("Error: " + e.message, true); }
+  }
+
+  // stubs para compatibilidad con onclick inline previos
+  function addPlanEditorRow() {}
+  function removePlanEditorRow() {}
+  function updatePlanEditorKey() {}
+  function updatePlanEditorVal() {}
+  function savePlanEditor() {}
 
   function closeClientModal() {
     document.getElementById("clientModal").style.display = "none";
@@ -1100,6 +1106,8 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   window.removeExRow = removeExRow;
   window.saveTrainingPlan = saveTrainingPlan;
   window.deletePlan = deletePlan;
+  window.saveNutritionPlan = saveNutritionPlan;
+  window.saveSupplementPlan = saveSupplementPlan;
   window.togglePlanEditor = togglePlanEditor;
   window.addPlanEditorRow = addPlanEditorRow;
   window.removePlanEditorRow = removePlanEditorRow;

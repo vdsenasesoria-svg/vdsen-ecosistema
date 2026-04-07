@@ -933,10 +933,11 @@ async function loadPlan(user) {
       objetivo: clientData.objetivo || '',
       peso: clientData.peso || '',
       entrenamiento: { sesiones: sesiones },
-      nutricion: clientData.nutritionPlan || null,
-      suplementacion: clientData.supplementPlan
-        ? { texto: clientData.supplementPlan.texto||'', items: clientData.supplementPlan.items||[] }
-        : { texto: '', items: [] }
+      nutricion: (clientData.nutritionPlan && (clientData.nutritionPlan.calorias || clientData.nutritionPlan.texto))
+        ? clientData.nutritionPlan : null,
+      suplementacion: (clientData.supplementPlan && clientData.supplementPlan.texto)
+        ? { texto: clientData.supplementPlan.texto, items: [] }
+        : null
     };
 
     // Cargar logs (no-fatal)
