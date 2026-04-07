@@ -346,9 +346,9 @@
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
     if (!compendioText) { showToast("Sube un compendio (PDF) en la pestaña Configuración", true); return; }
 
-    // Seguridad: limitar a 60 000 chars por si el doc guardado es anterior al truncado en upload
-    const systemText = compendioText.length > 60000
-      ? compendioText.slice(0, 60000)
+    // Seguridad: limitar a 20 000 chars por si el doc guardado es anterior al truncado en upload
+    const systemText = compendioText.length > 20000
+      ? compendioText.slice(0, 20000)
       : compendioText;
 
     const prompt = `Eres un coach fitness. Genera un plan de entrenamiento semanal para el cliente. Devuelve ÚNICAMENTE JSON válido con esta estructura: { "weeks": 1, "daysPerWeek": 4, "days": [{ "dayIndex": 0, "label": "Día 1", "exercises": [{ "exerciseName": "Sentadilla", "sets": [{ "setIndex": 0, "repsTarget": 8, "rirTarget": 2, "load": 80, "restSeconds": 90 }], "alternatives": ["Prensa"] }] }] }`;
@@ -742,7 +742,7 @@
       const textContent = await page.getTextContent();
       fullText += textContent.items.map(t => t.str).join(" ") + "\n";
     }
-    const MAX_CHARS = 60000;
+    const MAX_CHARS = 20000;
     const truncated = fullText.length > MAX_CHARS;
     const storedText = truncated ? fullText.slice(0, MAX_CHARS) : fullText;
     compendioText = storedText;
