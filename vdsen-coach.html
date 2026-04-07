@@ -300,18 +300,37 @@
       const secondaryApp = initSecondary(firebaseConfig, "secondary");
       const secAuth = (await import("firebase/auth")).getAuth(secondaryApp);
       try {
-        const userCred = await createUserWithEmailAndPassword(secAuth, email, pass);
-        await setDoc(doc(db, "clients", userCred.user.uid), {
+        let uid;
+        try {
+          const userCred = await createUserWithEmailAndPassword(secAuth, email, pass);
+          uid = userCred.user.uid;
+        } catch (authErr) {
+          if (authErr.code === "auth/email-already-in-use") {
+            // El usuario de Auth ya existe — recuperar UID iniciando sesión
+            btn.textContent = "Recuperando cuenta...";
+            const existing = await signInWithEmailAndPassword(secAuth, email, pass);
+            uid = existing.user.uid;
+          } else {
+            throw authErr;
+          }
+        }
+        await setDoc(doc(db, "clients", uid), {
           coachId: currentCoach.uid, email, displayName: name,
           role: "client", activePlanId: null, nutritionPlan: {}, supplementPlan: {}
-        });
+        }, { merge: true });
         modal.style.display = "none";
-        showToast(`Cliente "${name}" creado correctamente`);
+        showToast(`Cliente "${name}" vinculado correctamente`);
         await loadClientList();
         await loadClientsSelect();
-      } catch (e) { showToast("Error: " + e.message, true); }
+      } catch (e) {
+        if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password") {
+          showToast("El email ya existe con otra contraseña. Usa la contraseña original del cliente.", true);
+        } else {
+          showToast("Error: " + e.message, true);
+        }
+      }
       finally { btn.disabled = false; btn.textContent = "Crear cliente"; }
-      await deleteApp(secondaryApp);
+      try { await deleteApp(secondaryApp); } catch(_) {}
     };
   }
   
