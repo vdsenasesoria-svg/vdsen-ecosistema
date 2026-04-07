@@ -873,7 +873,6 @@ async function doLogout() {
 // ══════════════════════════════════════════════════
 async function loadPlan(user) {
   USER = user;
-  // Guardia defensiva — nunca debería llegar aquí sin email, pero por seguridad
   if (!user || !user.email) {
     showScreen('scrLogin');
     const liErr = document.getElementById('liErr');
@@ -881,31 +880,65 @@ async function loadPlan(user) {
     return;
   }
   try {
-    // Buscar plan del cliente por email
-    const planRef = FB.doc(FB.db, 'planes', user.email.replace(/[.@]/g,'_'));
-    const planSnap = await FB.getDoc(planRef);
+    // ── SISTEMA NUEVO: clients/{uid} → activePlanId → plans/{planId} ──
+    const clientRef = FB.doc(FB.db, 'clients', user.uid);
+    const clientSnap = await FB.getDoc(clientRef);
 
-    if (!planSnap.exists()) {
+    if (!clientSnap.exists()) {
+      // No hay doc de cliente — mostrar espera
       PLAN = null;
-      // Verificar si ya envió ficha de onboarding
-      const fichaKey = 'onboarding_' + user.email.replace(/[.@]/g,'_');
-      const fichaRef = FB.doc(FB.db, 'fichas_onboarding', user.email.replace(/[.@]/g,'_'));
-      const fichaSnap = await FB.getDoc(fichaRef);
-      if (fichaSnap.exists() && fichaSnap.data().enviado) {
-        // Ya envió ficha, mostrar pantalla de espera
-        renderEspera();
-        showScreen('scrOnboarding');
-      } else {
-        // Primera vez: mostrar formulario de onboarding
-        renderOnboarding(user);
-        showScreen('scrOnboarding');
-      }
+      renderEspera();
+      showScreen('scrOnboarding');
       return;
     }
 
-    PLAN = planSnap.data();
+    const clientData = clientSnap.data();
+    const activePlanId = clientData.activePlanId;
 
-    // Cargar logs guardados (no-fatal: si falla por permisos, continúa igual)
+    if (!activePlanId) {
+      // Cliente existe pero sin plan asignado
+      PLAN = null;
+      renderEspera();
+      showScreen('scrOnboarding');
+      return;
+    }
+
+    // Leer plan
+    const planSnap = await FB.getDoc(FB.doc(FB.db, 'plans', activePlanId));
+    if (!planSnap.exists()) {
+      const liErr = document.getElementById('liErr');
+      if (liErr) liErr.textContent = '⚠️ Plan no encontrado. Pide a tu coach que lo reasigne.';
+      showScreen('scrLogin');
+      return;
+    }
+
+    const planData = planSnap.data();
+
+    // Convertir formato nuevo {days:[{label, exercises:[{exerciseName,sets:[]}]}]}
+    // al formato que el renderer espera: entrenamiento.sesiones con contenido texto
+    const sesiones = (planData.days || []).map(function(d, i) {
+      var contenido = (d.exercises || []).map(function(e, ei) {
+        var numSets = (e.sets || []).length || 3;
+        var repsTarget = (e.sets && e.sets[0]) ? (e.sets[0].repsTarget || 8) : 8;
+        var rirTarget  = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
+        return (ei+1)+'. '+(e.exerciseName||e.nombre||'Ejercicio') +
+               ' | '+numSets+'x'+repsTarget+' | RIR '+rirTarget;
+      }).join('\n');
+      return { dia: d.label || ('Día '+(i+1)), nombre: d.label || ('Día '+(i+1)), contenido: contenido };
+    });
+
+    PLAN = {
+      nombre: clientData.displayName || user.email,
+      objetivo: clientData.objetivo || '',
+      peso: clientData.peso || '',
+      entrenamiento: { sesiones: sesiones },
+      nutricion: clientData.nutritionPlan || null,
+      suplementacion: clientData.supplementPlan
+        ? { texto: clientData.supplementPlan.texto||'', items: clientData.supplementPlan.items||[] }
+        : { texto: '', items: [] }
+    };
+
+    // Cargar logs (no-fatal)
     try {
       const logRef = FB.doc(FB.db, 'logs', user.email.replace(/[.@]/g,'_'));
       const logSnap = await FB.getDoc(logRef);
@@ -914,14 +947,10 @@ async function loadPlan(user) {
         CURRENT_WEEK = logSnap.data().currentWeek || 1;
       }
     } catch(logErr) {
-      console.warn('logs no disponibles (revisar reglas Firestore):', logErr.message);
-      // Intentar restaurar desde backup local
-      if (!loadBackupLogs()) {
-        LOGS = {}; CURRENT_WEEK = 1;
-      }
-      // Mostrar aviso de que usa datos locales
+      console.warn('logs no disponibles:', logErr.message);
+      if (!loadBackupLogs()) { LOGS = {}; CURRENT_WEEK = 1; }
       const errEl = document.getElementById('saveErrBadge');
-      if (errEl) { errEl.style.display='block'; errEl.textContent='⚠ Usando datos locales — verifica permisos Firestore (colección logs).'; }
+      if (errEl) { errEl.style.display='block'; errEl.textContent='⚠ Usando datos locales.'; }
     }
 
     document.getElementById('hdName').textContent = (PLAN.nombre||'').toUpperCase();
@@ -931,20 +960,15 @@ async function loadPlan(user) {
       renderAll();
     } catch(renderErr) {
       console.error('renderAll ERROR:', renderErr);
-      const liErr2 = document.getElementById('liErr');
-      if (liErr2) liErr2.textContent = 'Error render: ' + renderErr.message;
-      // Intentar renderizar pantallas individualmente
       try { renderResumen(); } catch(e2) { console.error('renderResumen fail:', e2.message); }
     }
     showScreen('scrApp');
     goTab(0);
   } catch(e) {
     console.error('loadPlan ERROR:', e);
-    // Mostrar error detallado en pantalla
     const errMsg = (e && e.message) ? e.message : String(e);
     const errCode = (e && e.code) ? ' ['+e.code+']' : '';
     showToast('Error: ' + errMsg + errCode, true);
-    // Mostrar también en login screen
     const liErr = document.getElementById('liErr');
     if (liErr) liErr.textContent = 'Error al cargar plan: ' + errMsg + errCode;
     showScreen('scrLogin');

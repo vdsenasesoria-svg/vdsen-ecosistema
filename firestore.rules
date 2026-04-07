@@ -23,5 +23,8 @@ service cloud.firestore {
     match /compendio/{docId} {
       allow read, write: if request.auth != null && request.auth.uid == docId;
     }
+    match /logs/{logId} {
+      allow read, write: if request.auth != null;
+    }
   }
 }
