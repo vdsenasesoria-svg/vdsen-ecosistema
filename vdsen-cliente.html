@@ -1794,7 +1794,7 @@ function buildBoostcampExercise(ej, di, ei) {
         '</div>';
 
     setsHtml +=
-      '<div id="setrow_'+key+'" style="'+
+      '<div id="setrow_'+key+'" data-exname="'+(ej.nombre||ej.exerciseName||'')+'" style="'+
         'border:1px solid '+borderCol+';border-radius:10px;padding:10px 12px;margin-bottom:8px;'+
         'background:'+bgCol+';transition:background .2s,border-color .2s">'+
 
@@ -1951,36 +1951,19 @@ function completeSet(key, di, ei, si, unit) {
   LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now() };
   saveLogs();
 
-  // Update the row UI without full re-render
-  var row = document.getElementById('setrow_'+key);
-  if (!row) { renderEntrenamiento(); return; }
-  row.style.opacity = done ? '0.55' : '1';
-  var badge = row.querySelector('div:first-child');
-  if (badge) {
-    badge.textContent = done ? '✓' : (si+1);
-    badge.style.background = done ? 'var(--grn)' : 'var(--border)';
-    badge.style.color = done ? '#fff' : 'var(--mt)';
-  }
-  var btn = row.querySelector('button');
-  if (btn) {
-    btn.textContent = done ? '✓' : '○';
-    btn.style.background = done ? 'var(--grn)' : 'var(--input-bg)';
-    btn.style.borderColor = done ? 'var(--grn)' : 'var(--border)';
-    btn.style.color = done ? '#fff' : 'var(--mt)';
-  }
-  var cargaEl = document.getElementById('carga_'+key);
-  var repsEl  = document.getElementById('reps_'+key);
-  if (cargaEl) cargaEl.style.borderColor = done ? 'var(--grn)' : 'var(--border)';
-  if (repsEl)  repsEl.style.borderColor  = done ? 'var(--grn)' : 'var(--border)';
+  // Leer nombre del ejercicio antes de re-render
+  var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+  // Re-render el tab de entrenamiento para reflejar el nuevo estado
+  renderEntrenamiento();
 
   if (done) {
-    // Descanso inteligente según tipo de ejercicio
-    var exName = (document.querySelector('#setrow_'+key)?.closest('[style*="border-radius:14px"]')?.querySelector('[style*="font-size:15px"]')?.textContent || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var esCompuesto = /press|squat|sentadilla|peso muerto|rdl|hip thrust|jalon|remo|dominadas|fondos|hack|prensa|bulgar|curl femoral/.test(exName);
-    var restSecs = esCompuesto ? 120 : 90;
-    startRestTimer(restSecs);
+    startRestTimer(esCompuesto ? 120 : 90);
+    showToast('Serie ✓ — descansando');
+  } else {
+    showToast('Serie desmarcada');
   }
-  showToast(done ? 'Serie ✓' : 'Serie desmarcada');
 }
 
 function bcProgHint(key) {
