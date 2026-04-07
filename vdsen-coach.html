@@ -58,7 +58,7 @@
 </div>
 <div class="main-content">
   <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
-  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 mb-4"><button id="aiModeBtn" class="btn-primary">IA (Claude)</button><button id="manualModeBtn" class="btn-secondary">Manual</button></div><div id="planBuilder"></div></div>
+  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button></div><div id="planBuilder"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><button id="addExerciseBtn" class="btn-primary mb-2">+ Ejercicio</button><div id="exerciseCatalog"></div></div>
   <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><select id="monitorClientSelect" class="input-field mb-4"></select><div id="monitorTable"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
@@ -334,66 +334,170 @@
     snap.forEach(d => { select.innerHTML += `<option value="${d.id}">${d.data().displayName}</option>`; });
   }
   
-  // Generación con IA (segura, lee clave desde localStorage)
-  document.getElementById("aiModeBtn")?.addEventListener("click", async () => {
-    if (!currentCoach) { showToast("⚠️ No hay sesión activa. Recarga la página.", true); return; }
-    const apiKey = localStorage.getItem("vdsen_apikey");
-    if (!apiKey || apiKey.length < 10) {
-      showToast("❌ No has configurado tu API key de Anthropic. Ve a Configuración y guárdala primero.", true);
-      return;
+  // ========== MODO TEXTO ==========
+  document.getElementById("textModeBtn")?.addEventListener("click", () => {
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
+    document.getElementById("planBuilder").innerHTML = `
+      <div class="card p-4 mb-4">
+        <p class="text-sm text-[#888] mb-2">Pega el plan de entrenamiento en texto libre. Ejemplo:</p>
+        <pre class="text-xs text-[#C9A84C] bg-[#0D0D0D] p-2 rounded mb-3">Día 1 - Empuje
+Sentadilla: 4x8 RIR2 80kg
+Press Banca: 3x10 RIR3 60kg
+
+Día 2 - Jalón
+Peso Muerto: 4x5 RIR1 100kg
+Remo con Barra: 3x8 RIR2 70kg</pre>
+        <textarea id="planTextInput" class="input-field mb-3" rows="12" placeholder="Pega aquí el plan..."></textarea>
+        <button onclick="parsePlanFromText()" class="btn-primary w-full">📋 Cargar plan</button>
+      </div>
+      <div id="parsedPlanPreview"></div>`;
+  });
+
+  // ========== MODO PDF ==========
+  document.getElementById("pdfPlanModeBtn")?.addEventListener("click", () => {
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
+    document.getElementById("planBuilder").innerHTML = `
+      <div class="card p-4 mb-4">
+        <label class="block text-sm font-medium mb-2">Selecciona el PDF del plan de entrenamiento</label>
+        <input type="file" id="pdfPlanFile" accept="application/pdf" class="mb-3">
+        <button onclick="parsePlanFromPDF()" class="btn-primary w-full">📄 Extraer y cargar plan</button>
+        <div id="pdfPlanStatus" class="text-sm mt-2"></div>
+      </div>
+      <div id="parsedPlanPreview"></div>`;
+  });
+
+  // ========== PARSER DE TEXTO → PLAN ==========
+  function parsePlanText(text) {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const days = [];
+    let currentDay = null;
+
+    for (const line of lines) {
+      // Detectar encabezado de día: "Día 1", "Día 1 - Empuje", "Day 1", etc.
+      const dayMatch = line.match(/^(?:día|dia|day|jornada|sesión|sesion)\s*(\d+)/i);
+      if (dayMatch) {
+        const label = line.replace(/^(?:día|dia|day|jornada|sesión|sesion)\s*\d+\s*[-–:]?\s*/i, '').trim();
+        currentDay = {
+          dayIndex: days.length,
+          label: `Día ${days.length + 1}${label ? ' - ' + label : ''}`,
+          exercises: []
+        };
+        days.push(currentDay);
+        continue;
+      }
+
+      // Si no hay día aún, crear uno por defecto
+      if (!currentDay) {
+        currentDay = { dayIndex: 0, label: 'Día 1', exercises: [] };
+        days.push(currentDay);
+      }
+
+      // Detectar ejercicio con sets: "Sentadilla: 4x8 RIR2 80kg" o "Sentadilla 4x8 80kg"
+      const exMatch = line.match(/^[-•*]?\s*(.+?)[\s:]+(\d+)\s*[x×]\s*(\d+)(?:.*?(?:rir|rpe)\s*(\d+))?(?:.*?(\d+(?:\.\d+)?)\s*kg)?/i);
+      if (exMatch) {
+        const [, name, numSets, reps, rir, load] = exMatch;
+        const sets = Array.from({ length: parseInt(numSets) }, (_, i) => ({
+          setIndex: i,
+          repsTarget: parseInt(reps),
+          rirTarget: parseInt(rir ?? 2),
+          load: parseFloat(load ?? 0),
+          restSeconds: 90
+        }));
+        currentDay.exercises.push({ exerciseName: name.trim(), alternatives: [], sets });
+        continue;
+      }
+
+      // Ejercicio sin datos de sets (solo nombre)
+      const simpleMatch = line.match(/^[-•*]?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{2,})$/);
+      if (simpleMatch) {
+        currentDay.exercises.push({
+          exerciseName: simpleMatch[1].trim(),
+          alternatives: [],
+          sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 90 }]
+        });
+      }
     }
+
+    return {
+      weeks: 1,
+      daysPerWeek: days.length || 1,
+      days: days.length > 0 ? days : [{ dayIndex: 0, label: 'Día 1', exercises: [] }]
+    };
+  }
+
+  function showParsedPreview(planObj) {
+    const preview = document.getElementById("parsedPlanPreview");
+    if (!preview) return;
+    const dayList = planObj.days.map(d => `
+      <div class="card p-3 mb-2">
+        <p class="font-semibold text-[#C9A84C] mb-1">${d.label}</p>
+        <ul class="text-sm space-y-1">
+          ${d.exercises.length
+            ? d.exercises.map(e => `<li>· ${e.exerciseName} — ${e.sets.length} serie(s) × ${e.sets[0]?.repsTarget} reps</li>`).join('')
+            : '<li class="text-[#888]">Sin ejercicios detectados</li>'}
+        </ul>
+      </div>`).join('');
+    preview.innerHTML = `
+      <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s). Revisa y guarda:</div>
+      ${dayList}
+      <button onclick="saveImportedPlan()" class="btn-primary w-full mt-2">💾 Guardar y activar plan</button>`;
+    preview._planObj = planObj;
+  }
+
+  function parsePlanFromText() {
+    const text = document.getElementById("planTextInput")?.value.trim();
+    if (!text) { showToast("Pega el texto del plan primero", true); return; }
+    const planObj = parsePlanText(text);
+    showParsedPreview(planObj);
+    window._importedPlan = planObj;
+  }
+
+  async function parsePlanFromPDF() {
+    const file = document.getElementById("pdfPlanFile")?.files[0];
+    if (!file) { showToast("Selecciona un archivo PDF primero", true); return; }
+    const statusEl = document.getElementById("pdfPlanStatus");
+    statusEl.innerHTML = `<span class="loading-row"><span class="spinner"></span> Extrayendo texto del PDF...</span>`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const tc = await page.getTextContent();
+      fullText += tc.items.map(t => t.str).join(" ") + "\n";
+    }
+    statusEl.innerHTML = `✅ PDF extraído (${pdf.numPages} páginas). Procesando...`;
+    const planObj = parsePlanText(fullText);
+    showParsedPreview(planObj);
+    window._importedPlan = planObj;
+  }
+
+  async function saveImportedPlan() {
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     const clientId = document.getElementById("planClientSelect").value;
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
-    if (!compendioText) { showToast("Sube un compendio (PDF) en la pestaña Configuración", true); return; }
-
-    // Limitar a 8 000 chars (~2 000 tokens) para no exceder rate limit
-    const systemText = compendioText.length > 8000
-      ? compendioText.slice(0, 8000)
-      : compendioText;
-
-    const prompt = `Eres un coach fitness. Genera un plan de entrenamiento semanal para el cliente. Devuelve ÚNICAMENTE JSON válido con esta estructura: { "weeks": 1, "daysPerWeek": 4, "days": [{ "dayIndex": 0, "label": "Día 1", "exercises": [{ "exerciseName": "Sentadilla", "sets": [{ "setIndex": 0, "repsTarget": 8, "rirTarget": 2, "load": 80, "restSeconds": 90 }], "alternatives": ["Prensa"] }] }] }`;
-
+    const planObj = window._importedPlan;
+    if (!planObj) { showToast("No hay plan cargado", true); return; }
     try {
-      const response = await fetch("/api/generate-plan", {
-        method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 8192,
-          stream: false,
-          system: systemText,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      const data = await response.json();
-      if (!response.ok || data.error) {
-        throw new Error(data.error?.message || data.error || `HTTP ${response.status}`);
-      }
-      if (!data.content || !data.content[0]) {
-        throw new Error("Respuesta vacía de la IA. Detalle: " + JSON.stringify(data));
-      }
-      const content = data.content[0].text;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("No se encontró JSON en la respuesta de la IA");
-      const planObj = JSON.parse(jsonMatch[0]);
-      // Guardar plan en Firestore y activar
       const planRef = await addDoc(collection(db, "plans"), {
         ...planObj,
         coachId: currentCoach.uid,
-        clientId: clientId,
+        clientId,
         status: "active",
-        generatedBy: "ai",
+        generatedBy: "import",
         createdAt: new Date().toISOString()
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
-      showToast("✅ Plan generado y activado correctamente");
-    } catch (err) {
-      showToast("Error con IA: " + err.message, true);
+      showToast("✅ Plan importado y activado correctamente");
+      window._importedPlan = null;
+      document.getElementById("planBuilder").innerHTML = "";
+      document.getElementById("parsedPlanPreview") && (document.getElementById("parsedPlanPreview").innerHTML = "");
+    } catch (e) {
+      showToast("Error al guardar: " + e.message, true);
     }
-  });
+  }
   
   // ========== MODO MANUAL ==========
   document.getElementById("manualModeBtn")?.addEventListener("click", () => {
@@ -693,6 +797,9 @@
   }
 
   // Exponer funciones del builder manual al scope global (usadas en onclick inline)
+  window.parsePlanFromText = parsePlanFromText;
+  window.parsePlanFromPDF = parsePlanFromPDF;
+  window.saveImportedPlan = saveImportedPlan;
   window.showClientDetail = showClientDetail;
   window.closeClientModal = closeClientModal;
   window.deleteExercise = deleteExercise;
