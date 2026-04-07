@@ -59,7 +59,7 @@
 <div class="main-content">
   <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
   <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button></div><div id="planBuilder"></div></div>
-  <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><button id="addExerciseBtn" class="btn-primary mb-2">+ Ejercicio</button><div id="exerciseCatalog"></div></div>
+  <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
   <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><select id="monitorClientSelect" class="input-field mb-4"></select><div id="monitorTable"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
     <div class="card p-4 mb-4">
@@ -980,6 +980,91 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     document.getElementById("clientModal").style.display = "none";
     _detailClientId = null;
   }
+
+  // ========== CATÁLOGO BASE ==========
+  const BASE_EXERCISES = [
+    // PECHO
+    { name:"Press banca plano",           motorPattern:"push", equipment:"Barra",    muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"mid" },
+    { name:"Press banca inclinado",        motorPattern:"push", equipment:"Barra",    muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"mid" },
+    { name:"Press inclinado mancuernas",   motorPattern:"push", equipment:"Mancuernas", muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated" },
+    { name:"Press banca declinado",        motorPattern:"push", equipment:"Barra",    muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"shortened" },
+    { name:"Aperturas mancuernas plano",   motorPattern:"push", equipment:"Mancuernas", muscleType:"typeI",  fatigueCost:3, resistanceCurve:"elongated" },
+    { name:"Aperturas inclinado",          motorPattern:"push", equipment:"Mancuernas", muscleType:"typeI",  fatigueCost:3, resistanceCurve:"elongated" },
+    { name:"Crossover polea alta",         motorPattern:"push", equipment:"Polea",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened" },
+    { name:"Crossover polea baja",         motorPattern:"push", equipment:"Polea",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated" },
+    { name:"Fondos pecho",                 motorPattern:"push", equipment:"Barras",   muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened" },
+    // ESPALDA
+    { name:"Jalón al pecho",              motorPattern:"pull", equipment:"Polea",    muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened" },
+    { name:"Dominadas",                   motorPattern:"pull", equipment:"Barra fija", muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"shortened" },
+    { name:"Remo con barra",              motorPattern:"pull", equipment:"Barra",    muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"shortened" },
+    { name:"Remo mancuerna unilateral",   motorPattern:"pull", equipment:"Mancuernas", muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened" },
+    { name:"Remo en polea baja",          motorPattern:"pull", equipment:"Polea",    muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened" },
+    { name:"Remo en máquina",             motorPattern:"pull", equipment:"Máquina",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened" },
+    { name:"Pullover polea",              motorPattern:"pull", equipment:"Polea",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated" },
+    { name:"Face pull",                   motorPattern:"pull", equipment:"Polea",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened" },
+    // HOMBROS
+    { name:"Press militar barra",         motorPattern:"push", equipment:"Barra",    muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"mid" },
+    { name:"Press militar mancuernas",    motorPattern:"push", equipment:"Mancuernas", muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"mid" },
+    { name:"Elevaciones laterales",       motorPattern:"push", equipment:"Mancuernas", muscleType:"typeI",  fatigueCost:2, resistanceCurve:"mid" },
+    { name:"Elevaciones laterales polea", motorPattern:"push", equipment:"Polea",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid" },
+    { name:"Elevaciones frontales",       motorPattern:"push", equipment:"Mancuernas", muscleType:"typeI",  fatigueCost:2, resistanceCurve:"mid" },
+    { name:"Pájaro / Rear delt fly",      motorPattern:"pull", equipment:"Mancuernas", muscleType:"typeI",  fatigueCost:2, resistanceCurve:"shortened" },
+    // BÍCEPS
+    { name:"Curl barra recta",            motorPattern:"pull", equipment:"Barra",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid" },
+    { name:"Curl mancuerna alterno",      motorPattern:"pull", equipment:"Mancuernas", muscleType:"typeI",  fatigueCost:2, resistanceCurve:"mid" },
+    { name:"Curl martillo",               motorPattern:"pull", equipment:"Mancuernas", muscleType:"typeI",  fatigueCost:2, resistanceCurve:"mid" },
+    { name:"Curl en polea baja",          motorPattern:"pull", equipment:"Polea",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened" },
+    { name:"Curl predicador",             motorPattern:"pull", equipment:"Máquina",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened" },
+    // TRÍCEPS
+    { name:"Press francés barra",         motorPattern:"push", equipment:"Barra",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated" },
+    { name:"Extensión polea alta",        motorPattern:"push", equipment:"Polea",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened" },
+    { name:"Extensión sobre cabeza polea",motorPattern:"push", equipment:"Polea",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated" },
+    { name:"Fondos tríceps",              motorPattern:"push", equipment:"Barras",   muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened" },
+    // CUÁDRICEPS
+    { name:"Sentadilla libre",            motorPattern:"squat", equipment:"Barra",   muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"mid" },
+    { name:"Sentadilla frontal",          motorPattern:"squat", equipment:"Barra",   muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"mid" },
+    { name:"Prensa 45°",                  motorPattern:"squat", equipment:"Máquina", muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"mid" },
+    { name:"Hack squat",                  motorPattern:"squat", equipment:"Máquina", muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"mid" },
+    { name:"Extensión de cuádriceps",     motorPattern:"squat", equipment:"Máquina", muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened" },
+    { name:"Sentadilla búlgara",          motorPattern:"squat", equipment:"Mancuernas", muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated" },
+    // ISQUIOS / GLÚTEOS
+    { name:"RDL barra",                   motorPattern:"hinge", equipment:"Barra",   muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated" },
+    { name:"RDL mancuernas",              motorPattern:"hinge", equipment:"Mancuernas", muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated" },
+    { name:"Peso muerto convencional",    motorPattern:"hinge", equipment:"Barra",   muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"mid" },
+    { name:"Curl femoral tumbado",        motorPattern:"hinge", equipment:"Máquina", muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated" },
+    { name:"Curl femoral sentado",        motorPattern:"hinge", equipment:"Máquina", muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened" },
+    { name:"Hip thrust barra",            motorPattern:"hinge", equipment:"Barra",   muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened" },
+    { name:"Hip thrust máquina",          motorPattern:"hinge", equipment:"Máquina", muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened" },
+    { name:"Abducción de cadera",         motorPattern:"hinge", equipment:"Máquina", muscleType:"typeI",   fatigueCost:1, resistanceCurve:"mid" },
+    // CORE
+    { name:"Plancha frontal",             motorPattern:"carry", equipment:"Peso corporal", muscleType:"typeI", fatigueCost:1, resistanceCurve:"mid" },
+    { name:"Crunch en polea",             motorPattern:"carry", equipment:"Polea",   muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened" },
+    { name:"Elevación de piernas",        motorPattern:"carry", equipment:"Barra fija", muscleType:"typeI", fatigueCost:1, resistanceCurve:"shortened" },
+  ];
+
+  document.getElementById("loadBaseBtn")?.addEventListener("click", async () => {
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
+    if (!confirm(`¿Cargar ${BASE_EXERCISES.length} ejercicios al catálogo? Solo agrega los que no existen.`)) return;
+    const btn = document.getElementById("loadBaseBtn");
+    btn.disabled = true; btn.textContent = "Cargando...";
+    try {
+      // Obtener nombres ya existentes para no duplicar
+      const existing = await getDocs(query(collection(db, "exercises"), where("coachId", "==", currentCoach.uid)));
+      const existingNames = new Set();
+      existing.forEach(d => existingNames.add(d.data().name.toLowerCase().trim()));
+
+      let added = 0;
+      for (const ex of BASE_EXERCISES) {
+        if (!existingNames.has(ex.name.toLowerCase().trim())) {
+          await addDoc(collection(db, "exercises"), { ...ex, notes: "", coachId: currentCoach.uid });
+          added++;
+        }
+      }
+      showToast(`✅ ${added} ejercicios agregados al catálogo`);
+      loadExerciseCatalog();
+    } catch(e) { showToast("Error: " + e.message, true); }
+    finally { btn.disabled = false; btn.textContent = "📥 Cargar catálogo base"; }
+  });
 
   // ========== ELIMINAR EJERCICIO ==========
   async function deleteExercise(id, name) {
