@@ -346,14 +346,10 @@
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
     if (!compendioText) { showToast("Sube un compendio (PDF) en la pestaña Configuración", true); return; }
 
-    // Limitar compendio a ~15 000 tokens (≈ 60 000 chars) para no exceder el rate limit
-    const MAX_COMPENDIO_CHARS = 60000;
-    const systemText = compendioText.length > MAX_COMPENDIO_CHARS
-      ? compendioText.slice(0, MAX_COMPENDIO_CHARS) + "\n\n[Compendio truncado por límite de tokens]"
+    // Seguridad: limitar a 60 000 chars por si el doc guardado es anterior al truncado en upload
+    const systemText = compendioText.length > 60000
+      ? compendioText.slice(0, 60000)
       : compendioText;
-    if (compendioText.length > MAX_COMPENDIO_CHARS) {
-      showToast("⚠️ Compendio muy extenso, se usaron los primeros 60 000 caracteres.");
-    }
 
     const prompt = `Eres un coach fitness. Genera un plan de entrenamiento semanal para el cliente. Devuelve ÚNICAMENTE JSON válido con esta estructura: { "weeks": 1, "daysPerWeek": 4, "days": [{ "dayIndex": 0, "label": "Día 1", "exercises": [{ "exerciseName": "Sentadilla", "sets": [{ "setIndex": 0, "repsTarget": 8, "rirTarget": 2, "load": 80, "restSeconds": 90 }], "alternatives": ["Prensa"] }] }] }`;
 
@@ -746,18 +742,24 @@
       const textContent = await page.getTextContent();
       fullText += textContent.items.map(t => t.str).join(" ") + "\n";
     }
-    compendioText = fullText;
-    const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fullText));
+    const MAX_CHARS = 60000;
+    const truncated = fullText.length > MAX_CHARS;
+    const storedText = truncated ? fullText.slice(0, MAX_CHARS) : fullText;
+    compendioText = storedText;
+    const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(storedText));
     const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
     await setDoc(doc(db, "compendio", currentCoach.uid), {
       coachId: currentCoach.uid,
-      content: fullText,
+      content: storedText,
       contentHash: hashHex,
-      tokenEstimate: Math.ceil(fullText.length / 4),
+      tokenEstimate: Math.ceil(storedText.length / 4),
       updatedAt: new Date().toISOString()
     });
-    document.getElementById("compendioStatus").innerHTML = "✅ Compendio subido y almacenado en Firestore.";
-    showToast("Compendio procesado correctamente");
+    const statusMsg = truncated
+      ? `✅ Compendio procesado (${Math.round(fullText.length/1000)}k chars → truncado a 60k por límite de tokens).`
+      : "✅ Compendio subido y almacenado en Firestore.";
+    document.getElementById("compendioStatus").innerHTML = statusMsg;
+    showToast(truncated ? "Compendio truncado a 60 000 caracteres y guardado." : "Compendio procesado correctamente");
   });
   
   // Navegación entre secciones
