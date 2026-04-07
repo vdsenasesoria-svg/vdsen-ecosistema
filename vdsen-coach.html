@@ -342,15 +342,14 @@
     const prompt = `Eres un coach fitness. Genera un plan de entrenamiento semanal para el cliente. Devuelve ÚNICAMENTE JSON válido con esta estructura: { "weeks": 1, "daysPerWeek": 4, "days": [{ "dayIndex": 0, "label": "Día 1", "exercises": [{ "exerciseName": "Sentadilla", "sets": [{ "setIndex": 0, "repsTarget": 8, "rirTarget": 2, "load": 80, "restSeconds": 90 }], "alternatives": ["Prensa"] }] }] }`;
     
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/generate-plan", {
         method: "POST",
         headers: {
           "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          model: "claude-3-5-sonnet-20241022",
+          model: "claude-sonnet-4-20250514",
           max_tokens: 4096,
           stream: false,
           system: compendioText,
