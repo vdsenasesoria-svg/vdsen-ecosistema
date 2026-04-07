@@ -284,11 +284,12 @@ let USER = null;
 let PLAN = null;
 let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
 let CURRENT_WEEK = 1;
-let CURRENT_UNIT = null; // null = usar PLAN.unidad, 'KG' o 'LB'
+var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 
-function getUnit() { return CURRENT_UNIT || PLAN?.unidad || 'KG'; }
-function toggleUnit() {
-  CURRENT_UNIT = getUnit() === 'KG' ? 'LB' : 'KG';
+function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
+function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
+function toggleExUnit(di, ei) {
+  EXERCISE_UNITS[di+'_'+ei] = getExUnit(di, ei) === 'KG' ? 'LB' : 'KG';
   renderEntrenamiento();
 }
 
@@ -1737,7 +1738,7 @@ function buildBoostcampExercise(ej, di, ei) {
     var completed = !!saved.done;
     var carga = saved.carga || '';
     var reps = saved.reps || '';
-    var unit = saved.unit || getUnit();
+    var unit = saved.unit || getExUnit(di, ei);
     var rirReal = saved.rir_real || '';
 
     // Auto-prog suggestion based on REAL RIR from previous week
@@ -1882,8 +1883,8 @@ function buildBoostcampExercise(ej, di, ei) {
       '<div style="width:28px;flex-shrink:0"></div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;gap:6px">'+
-          '<div onclick="toggleUnit()" style="flex:1;text-align:center;font-size:10px;font-weight:600;color:var(--accent);letter-spacing:1px;cursor:pointer;user-select:none">'+
-            getUnit()+' ⇄</div>'+
+          '<div onclick="toggleExUnit('+di+','+ei+')" style="flex:1;text-align:center;font-size:10px;font-weight:600;color:var(--accent);letter-spacing:1px;cursor:pointer;user-select:none">'+
+            getExUnit(di,ei)+' ⇄</div>'+
           '<div style="flex:1;text-align:center;font-size:10px;font-weight:600;color:var(--mt);letter-spacing:1px">REPS</div>'+
           '<div style="width:40px;text-align:center;font-size:10px;font-weight:600;color:var(--mt);letter-spacing:1px;flex-shrink:0">RIR</div>'+
           '<div style="width:44px;text-align:center;font-size:10px;font-weight:600;color:var(--mt);letter-spacing:1px;flex-shrink:0">✓</div>'+
@@ -1900,29 +1901,37 @@ function copiarSerie(key, s, di, ei) {
   if (s === 0) return;
   var prevKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+(s-1);
   var prevSaved = LOGS[prevKey] || {};
-  var carga, reps, rir;
+  var carga, reps, rir, ics, pump;
   if (prevSaved.carga) {
     // Serie anterior ya completada — usar valores guardados
     carga = prevSaved.carga;
-    reps  = prevSaved.reps || '';
+    reps  = prevSaved.reps  || '';
     rir   = prevSaved.rir_real || '';
+    ics   = prevSaved.ics   || '';
+    pump  = prevSaved.pump  || null;
   } else {
-    // Serie anterior aún sin completar — leer desde los inputs en pantalla
+    // Serie anterior aún sin completar — leer desde inputs en pantalla
     carga = document.getElementById('carga_'+prevKey)?.value || '';
     reps  = document.getElementById('reps_'+prevKey)?.value  || '';
     rir   = document.getElementById('rir_'+prevKey)?.value   || '';
+    ics   = document.getElementById('ics_'+prevKey)?.value   || '';
+    pump  = (LOGS[prevKey] || {}).pump || null;
   }
   if (!carga) return; // Nada que copiar
   var cargaEl = document.getElementById('carga_'+key);
   var repsEl  = document.getElementById('reps_'+key);
   var rirEl   = document.getElementById('rir_'+key);
-  if (cargaEl) { cargaEl.value = carga; cargaEl.style.borderColor = 'var(--accent)'; setTimeout(()=>{ cargaEl.style.borderColor=''; }, 800); }
+  var icsEl   = document.getElementById('ics_'+key);
+  if (cargaEl) { cargaEl.value = carga; cargaEl.style.borderColor = 'var(--accent)'; setTimeout(function(){ cargaEl.style.borderColor=''; }, 800); }
   if (repsEl)  { repsEl.value  = reps; }
   if (rirEl)   { rirEl.value   = rir; }
+  if (icsEl && ics)  { icsEl.value = ics; updateICSColor(key); }
+  if (pump)          { setPump(key, pump); }
   bcProgHint(key);
 }
 
 function completeSet(key, di, ei, si, unit) {
+  unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
   var reps  = document.getElementById('reps_'+key)?.value  || '';
   var rirEl = document.getElementById('rir_'+key);
