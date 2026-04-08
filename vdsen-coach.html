@@ -475,8 +475,10 @@
               <div class="flex gap-4 text-sm mb-1">
                 <span class="text-[#888]">Carga: <strong class="text-white">${r.newLoad} kg</strong></span>
                 <span class="text-[#888]">Series: <strong class="text-white">${r.newSets}</strong></span>
+                ${r.newReps ? `<span class="text-[#888]">Reps: <strong class="text-white">${r.newReps}</strong></span>` : ''}
                 <span class="text-[#888]">RIR obj: <strong class="text-[#C9A84C]">${r.rirTarget}</strong></span>
               </div>
+              ${r.trend ? `<div class="flex gap-3 text-xs mb-1"><span class="text-[#555]">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets}s · ICS ${r.trend.prevICS.toFixed(1)}</span></div>` : ''}
               <div class="text-xs text-[#888]">${r.reason}</div>
               ${r.substituteExercise ? `<div class="text-xs mt-1" style="color:#FF8844">🔄 ${r.substituteExercise}</div>` : ''}
             </div>`;

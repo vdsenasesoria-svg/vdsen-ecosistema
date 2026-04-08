@@ -285,6 +285,7 @@ let PLAN = null;
 let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
 let CURRENT_WEEK = 1;
 var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
+var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
@@ -940,6 +941,24 @@ async function loadPlan(user) {
         : null
     };
 
+    // Cargar catálogo de ejercicios del coach (para algoritmo de progresión)
+    try {
+      if (clientData.coachId) {
+        const exQ = FB.query(FB.collection(FB.db, 'exercises'), FB.where('coachId', '==', clientData.coachId));
+        const exSnap = await FB.getDocs(exQ);
+        EXERCISE_CATALOG = {};
+        exSnap.forEach(function(d) {
+          var ex = d.data();
+          EXERCISE_CATALOG[(ex.name||'').toLowerCase().trim()] = {
+            fatigueCost: ex.fatigueCost || 3,
+            resistanceCurve: ex.resistanceCurve || 'mid',
+            muscleType: ex.muscleType || 'typeIIx',
+            motorPattern: ex.motorPattern || ''
+          };
+        });
+      }
+    } catch(catErr) { console.warn('catálogo no disponible:', catErr.message); }
+
     // Cargar logs (no-fatal)
     try {
       const logRef = FB.doc(FB.db, 'logs', user.uid);
@@ -1319,6 +1338,181 @@ function buildRezagadosWidget() {
     + '</div>';
 }
 
+// ══════════════════════════════════════════════════
+// HISTORIAL — Progreso semana a semana
+// ══════════════════════════════════════════════════
+function buildHistorialWidget() {
+  if (!PLAN || !PLAN.entrenamiento) return '';
+  var sesiones = getSesiones();
+  if (!sesiones.length) return '';
+
+  // ── 1) Recopilar datos por ejercicio por semana ──
+  var exerciseMap = {}; // { "Nombre": { weeks: { 1: {load,reps,sets,ics}, 2: {...} } } }
+  for (var w = 1; w <= Math.min(CURRENT_WEEK, 6); w++) {
+    sesiones.forEach(function(ses, di) {
+      var lineas = (ses.contenido||'').split('\n').filter(function(l){return l.trim();});
+      var ei = 0;
+      lineas.forEach(function(l) {
+        if (!/\d\s*[×xX]\s*\d|RIR/i.test(l) && !/^\d+[.)]\s+/.test(l)) return;
+        // Extraer nombre del ejercicio
+        var nombre = l.replace(/^\d+[.)]\s*/,'').split('|')[0].replace(/\d+\s*[×xX]\s*[\d\-–]+/g,'').replace(/RIR\s*[\d\-–]+/gi,'').replace(/★/g,'').trim();
+        if (!nombre || nombre.length < 2) { ei++; return; }
+
+        // Buscar sets loggeados para este ejercicio en esta semana/día
+        var setsData = [];
+        for (var s = 0; s < 10; s++) {
+          var k = 'log_'+w+'_'+di+'_'+ei+'_s'+s;
+          if (LOGS[k] && LOGS[k].done) setsData.push(LOGS[k]);
+        }
+        if (setsData.length > 0) {
+          if (!exerciseMap[nombre]) exerciseMap[nombre] = { weeks: {} };
+          var loads = setsData.map(function(s){ return parseFloat(s.carga)||0; });
+          var reps = setsData.map(function(s){ return parseFloat(s.reps)||0; });
+          var icsVals = setsData.map(function(s){ return parseFloat(s.ics)||0; });
+          exerciseMap[nombre].weeks[w] = {
+            maxLoad: Math.max.apply(null, loads),
+            avgLoad: _avgArr(loads),
+            avgReps: _avgArr(reps),
+            totalSets: setsData.length,
+            avgICS: _avgArr(icsVals),
+            volume: _avgArr(loads) * _avgArr(reps) * setsData.length // tonnage approx
+          };
+        }
+        ei++;
+      });
+    });
+  }
+
+  var exNames = Object.keys(exerciseMap);
+  if (!exNames.length) return '';
+
+  // ── 2) Construir HTML del historial por ejercicio ──
+  var exHtml = exNames.map(function(name) {
+    var data = exerciseMap[name];
+    var weekNums = Object.keys(data.weeks).map(Number).sort();
+    if (weekNums.length < 1) return '';
+
+    // Calcular tendencia
+    var first = data.weeks[weekNums[0]];
+    var last = data.weeks[weekNums[weekNums.length-1]];
+    var loadDelta = last.maxLoad - first.maxLoad;
+    var loadPct = first.maxLoad > 0 ? Math.round((loadDelta/first.maxLoad)*100) : 0;
+    var volDelta = last.volume - first.volume;
+    var trendIcon = loadDelta > 0 ? '↑' : loadDelta < 0 ? '↓' : '→';
+    var trendCol = loadDelta > 0 ? 'var(--grn)' : loadDelta < 0 ? 'var(--red)' : 'var(--mt)';
+
+    // Mini barra de progreso por semana
+    var maxLoad = 0;
+    weekNums.forEach(function(w){ if (data.weeks[w].maxLoad > maxLoad) maxLoad = data.weeks[w].maxLoad; });
+
+    var barsHtml = '';
+    for (var w = 1; w <= Math.min(CURRENT_WEEK, 6); w++) {
+      var wd = data.weeks[w];
+      if (wd) {
+        var pct = maxLoad > 0 ? Math.round((wd.maxLoad / maxLoad)*100) : 0;
+        var icsCol = wd.avgICS >= 8 ? 'var(--grn)' : wd.avgICS >= 7 ? 'var(--gold)' : 'var(--red)';
+        barsHtml += '<div style="flex:1;text-align:center">'
+          + '<div style="height:40px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:3px">'
+          + '<div style="width:100%;max-width:22px;height:'+Math.max(pct,8)+'%;background:'+icsCol+';border-radius:3px 3px 0 0;opacity:0.8"></div>'
+          + '</div>'
+          + '<div style="font-size:10px;color:var(--tx);font-family:var(--ff)">'+wd.maxLoad+'</div>'
+          + '<div style="font-size:9px;color:var(--mt)">S'+w+'</div>'
+          + '</div>';
+      } else {
+        barsHtml += '<div style="flex:1;text-align:center">'
+          + '<div style="height:40px"></div>'
+          + '<div style="font-size:10px;color:var(--mt2)">—</div>'
+          + '<div style="font-size:9px;color:var(--mt)">S'+w+'</div>'
+          + '</div>';
+      }
+    }
+
+    return '<div style="background:var(--card);border:1px solid var(--bd);padding:12px;margin-bottom:8px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+      + '<div style="font-size:13px;color:var(--tx);font-weight:600">'+name+'</div>'
+      + '<div style="font-family:var(--ff);font-size:13px;color:'+trendCol+'">'+trendIcon+' '+(loadDelta>0?'+':'')+loadDelta+' kg'+(loadPct?(' ('+( loadPct>0?'+':'')+loadPct+'%)'):'' )+'</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:2px;align-items:flex-end;margin-bottom:6px">' + barsHtml + '</div>'
+      + '<div style="display:flex;gap:12px;font-size:11px;color:var(--mt)">'
+      + '<span>Sets: '+last.totalSets+'</span>'
+      + '<span>Reps: '+last.avgReps.toFixed(0)+'</span>'
+      + '<span>ICS: '+last.avgICS.toFixed(1)+'</span>'
+      + '<span style="color:var(--gold)">Vol: '+Math.round(last.volume)+'</span>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+
+  // ── 3) Check-in trends (peso, HRV, WHO-5) ──
+  var ciTrendHtml = '';
+  var ciWeeks = [];
+  for (var w = 1; w <= Math.min(CURRENT_WEEK, 6); w++) {
+    var ci = LOGS['ci_sem_'+w];
+    if (ci) ciWeeks.push({w:w, peso: parseFloat(ci.peso)||0, hrv: parseFloat(ci.hrv)||0, who5: parseInt(ci.who5)||0, energia: parseInt(ci.energia)||0});
+  }
+  if (ciWeeks.length > 0) {
+    var ciRows = ciWeeks.map(function(c) {
+      var w5col = c.who5 < 52 ? 'var(--red)' : c.who5 < 68 ? 'var(--gold)' : 'var(--grn)';
+      return '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;font-family:var(--ff)">'
+        + '<div style="color:var(--gold);font-weight:600">S'+c.w+'</div>'
+        + '<div style="text-align:center;color:'+(c.peso?'var(--tx)':'var(--mt2)')+'">'+(c.peso?c.peso+' kg':'—')+'</div>'
+        + '<div style="text-align:center;color:'+(c.hrv?'var(--tx)':'var(--mt2)')+'">'+(c.hrv||'—')+'</div>'
+        + '<div style="text-align:center;color:'+(c.who5?w5col:'var(--mt2)')+'">'+(c.who5||'—')+'</div>'
+        + '<div style="text-align:center;color:'+(c.energia?'var(--tx)':'var(--mt2)')+'">'+(c.energia||'—')+'</div>'
+        + '</div>';
+    }).join('');
+
+    ciTrendHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
+      + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">TENDENCIAS CHECK-IN</div>'
+      + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(200,165,74,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
+      + '<div>SEM</div><div style="text-align:center">PESO</div><div style="text-align:center">HRV</div><div style="text-align:center">WHO-5</div><div style="text-align:center">ENERGÍA</div>'
+      + '</div>'
+      + ciRows
+      + '</div>';
+  }
+
+  // ── 4) Progression recommendations history ──
+  var progHtml = '';
+  var progKeys = Object.keys(LOGS).filter(function(k){ return k.startsWith('progrec_'); }).sort().reverse();
+  if (progKeys.length > 0) {
+    var latestProg = LOGS[progKeys[0]];
+    if (latestProg && latestProg.recommendations) {
+      var actionColors = {
+        deload:'var(--blue)', reduce_load:'var(--red)', reduce_sets:'#FF8844',
+        add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
+      };
+      var actionLabels = {
+        deload:'DELOAD', reduce_load:'BAJAR CARGA', reduce_sets:'-SERIES',
+        add_sets:'+SERIES', increase_load:'+CARGA', freeze_load:'MANTENER', maintain:'='
+      };
+      var recCards = latestProg.recommendations.map(function(r) {
+        var col = actionColors[r.action] || 'var(--mt)';
+        var lbl = actionLabels[r.action] || r.action;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'
+          + '<div style="font-size:13px;color:var(--tx)">' + r.exerciseName + '</div>'
+          + '<div style="display:flex;gap:8px;align-items:center">'
+          + '<span style="font-size:11px;color:var(--mt)">'+ r.newLoad + ' kg · ' + r.newSets + 's</span>'
+          + '<span style="font-size:10px;font-family:var(--ff);letter-spacing:1px;padding:3px 8px;border:1px solid '+col+';color:'+col+';background:rgba(0,0,0,.3)">' + lbl + '</span>'
+          + '</div></div>';
+      }).join('');
+
+      var progParts = progKeys[0].split('_');
+      progHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
+        + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">ÚLTIMA PROGRESIÓN</div>'
+        + '<div style="font-size:11px;color:var(--mt);margin-bottom:8px">Sem '+progParts[1]+' · Día '+(parseInt(progParts[2])+1)+'</div>'
+        + recCards
+        + '</div>';
+    }
+  }
+
+  return '<div id="historialSection">'
+    + '<div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px;margin-top:16px">HISTORIAL DE PROGRESO</div>'
+    + ciTrendHtml
+    + progHtml
+    + '<div style="font-family:var(--ff);font-size:11px;letter-spacing:2px;color:var(--mt);margin-bottom:6px">EVOLUCIÓN POR EJERCICIO</div>'
+    + exHtml
+    + '</div>';
+}
+
 function renderResumen() {
   if (!PLAN) return;
   const sesionesTotal = countSessions();
@@ -1378,7 +1572,8 @@ function renderResumen() {
         ${ciDone?'✏ ACTUALIZAR CHECK-IN →':'📊 IR A CHECK-IN →'}
       </button>
     </div>
-    ${buildRezagadosWidget()}`;
+    ${buildRezagadosWidget()}
+    ${buildHistorialWidget()}`;
 }
 
 function getTodaySummary() {
@@ -4054,6 +4249,63 @@ function _avgArr(arr) {
   return arr.reduce(function(a,b){return a+b;},0) / arr.length;
 }
 
+// ── Buscar datos del catálogo para un ejercicio ──
+function _getCatalogData(exName) {
+  if (!exName) return null;
+  var key = exName.toLowerCase().trim();
+  if (EXERCISE_CATALOG[key]) return EXERCISE_CATALOG[key];
+  // Búsqueda parcial (nombre contenido)
+  var keys = Object.keys(EXERCISE_CATALOG);
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].includes(key) || key.includes(keys[i])) return EXERCISE_CATALOG[keys[i]];
+  }
+  return null;
+}
+
+// ── Alpha (incremento de carga) según curva de resistencia y tipo de fibra ──
+function _getAlpha(catData) {
+  if (!catData) return 0.0625; // 6.25% default
+  var base;
+  // Curva de resistencia: elongated = menos incremento (más estrés mecánico), shortened = más incremento
+  if (catData.resistanceCurve === 'elongated') base = 0.05;      // 5%
+  else if (catData.resistanceCurve === 'shortened') base = 0.075; // 7.5%
+  else base = 0.0625; // mid = 6.25%
+  // Tipo de fibra: typeI tolera incrementos menores pero más sostenidos
+  if (catData.muscleType === 'typeI') base *= 0.8; // 4-6% para typeI
+  return base;
+}
+
+// ── Límite de series por costo de fatiga ──
+function _getMaxSets(catData, currentSets) {
+  if (!catData) return currentSets + 3;
+  // fatigueCost 1-5: mayor fatiga = menor techo de series
+  var fc = catData.fatigueCost || 3;
+  if (fc >= 5) return Math.max(currentSets, 4);  // compuestos pesados: máx 4
+  if (fc >= 4) return Math.max(currentSets, 5);  // compuestos moderados: máx 5
+  if (fc >= 3) return Math.max(currentSets, 6);  // intermedios: máx 6
+  return Math.max(currentSets, 8);                // aislamiento: máx 8
+}
+
+// ── Obtener datos de la semana anterior para un ejercicio ──
+function _getPrevWeekData(week, di, ei, maxSets) {
+  if (week <= 1) return null;
+  var prevWeek = week - 1;
+  var sets = [];
+  for (var s = 0; s < maxSets; s++) {
+    var k = 'log_'+prevWeek+'_'+di+'_'+ei+'_s'+s;
+    if (LOGS[k] && LOGS[k].done) sets.push(LOGS[k]);
+  }
+  if (!sets.length) return null;
+  return {
+    avgLoad: _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; })),
+    avgReps: _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; })),
+    avgICS: _avgArr(sets.map(function(s){ return parseFloat(s.ics) || 8; })),
+    avgRIR: _avgArr(sets.map(function(s){ return parseFloat(s.rir_real) || 2; })),
+    numSets: sets.length,
+    topLoad: Math.max.apply(null, sets.map(function(s){ return parseFloat(s.carga) || 0; }))
+  };
+}
+
 function calculateProgression(di, postData) {
   var sesiones = getSesiones();
   var dia = sesiones[di];
@@ -4066,94 +4318,177 @@ function calculateProgression(di, postData) {
   var sleep = postData.sleepHours || 7;
   var articular = postData.articularPain || {present:false};
 
-  // Gatillos de deload
+  // ── Gatillos de deload (ampliados) ──
   var deloadTriggers = [];
   var ciKey = 'ci_sem_'+CURRENT_WEEK;
   var ci = LOGS[ciKey] || {};
   var who5 = ci.who5 ? parseInt(ci.who5) : 0;
-  if (who5 > 0 && who5 < 13) deloadTriggers.push('Bienestar WHO-5 bajo ('+who5+'/25)');
+  if (who5 > 0 && who5 < 52) deloadTriggers.push('Bienestar WHO-5 bajo ('+who5+'/100)');
   if (rpe > 9) deloadTriggers.push('RPE promedio > 9');
   if (sleep < 6) deloadTriggers.push('Sueño < 6h');
+  // HRV: tendencia descendente (comparar con semana anterior)
+  var prevCI = LOGS['ci_sem_'+(CURRENT_WEEK-1)] || {};
+  if (ci.hrv && prevCI.hrv && (parseFloat(ci.hrv) < parseFloat(prevCI.hrv) * 0.85)) {
+    deloadTriggers.push('HRV descendente (-'+ Math.round((1 - parseFloat(ci.hrv)/parseFloat(prevCI.hrv))*100) +'%)');
+  }
+  // Energía subjetiva baja
+  if (ci.energia && parseInt(ci.energia) <= 3) {
+    deloadTriggers.push('Energía subjetiva muy baja ('+ci.energia+'/10)');
+  }
 
   var isDeload = CURRENT_WEEK === 6 || deloadTriggers.length >= 2;
 
-  // Obtener ejercicios del día (parseados desde el plan)
+  // Obtener ejercicios del día
   var exercises = [];
   if (dia.exercises) {
     exercises = dia.exercises;
   } else {
-    // Parsear desde texto legacy del plan
-    var lines = (typeof dia === 'string' ? dia : '').split('\n');
+    var lines = (typeof dia === 'string' ? dia : (dia.contenido || '')).split('\n');
     lines.forEach(function(l, ei) { if (l.trim()) exercises.push({nombre: l.trim(), numSeries: 3, rir: '2'}); });
   }
 
   var recs = exercises.map(function(ej, ei) {
+    var maxSetsSearch = ej.numSeries || 6;
     var sets = [];
-    for (var s = 0; s < (ej.numSeries || 3); s++) {
+    for (var s = 0; s < Math.max(maxSetsSearch, 8); s++) {
       var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
       if (LOGS[k] && LOGS[k].done) sets.push(LOGS[k]);
     }
     if (!sets.length) return null;
 
+    var exName = ej.nombre || ej.exerciseName || '';
+    var catData = _getCatalogData(exName);
+
     var avgICS  = _avgArr(sets.map(function(s){ return parseFloat(s.ics) || 8; }));
     var avgPump = _avgArr(sets.map(function(s){ return parseFloat(s.pump) || 2; }));
     var avgRIR  = _avgArr(sets.map(function(s){ return parseFloat(s.rir_real) || rirObj; }));
+    var avgReps = _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; }));
     var load    = parseFloat(sets[0].carga) || 0;
-    var numSets = ej.numSeries || sets.length;
-    var alpha   = 0.0625; // default typeIIx: mid de 5-7.5%
+    var numSets = sets.length;
+    var alpha   = _getAlpha(catData);
+    var maxSets = _getMaxSets(catData, numSets);
+    var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
+
+    // Calcular reps target del plan
+    var repsTarget = 0;
+    if (ej.repsRange) {
+      var rp = String(ej.repsRange).split(/[-–]/);
+      repsTarget = rp.length > 1 ? parseInt(rp[1]) : parseInt(rp[0]) || 8;
+    } else { repsTarget = 8; }
 
     var action = 'maintain', newLoad = load, newSets = numSets, rirTarget = rirObj;
+    var newReps = repsTarget;
     var reasons = [];
 
     if (isDeload) {
+      // ── DELOAD: reducir volumen, mantener intensidad base ──
       newSets = Math.max(1, Math.round(numSets / 2));
+      newLoad = Math.round(load * 0.9 * 4) / 4; // -10% carga
       rirTarget = 3; action = 'deload';
-      reasons.push('Deload: series ÷ 2, RIR objetivo 3');
-    } else if (avgICS < 7) {
-      newLoad = Math.round(load * 0.875 * 4) / 4;
+      reasons.push('Deload: series ÷ 2, carga -10%, RIR 3');
+    } else if (avgICS < 6) {
+      // ── ICS MUY BAJO (<6): técnica deficiente grave → bajar carga significativamente ──
+      newLoad = Math.round(load * 0.85 * 4) / 4;
       action = 'reduce_load';
-      reasons.push('ICS '+avgICS.toFixed(1)+' < 7 → bajar carga 12.5%');
+      reasons.push('ICS '+avgICS.toFixed(1)+' < 6 → técnica deficiente, bajar carga 15%');
+    } else if (avgICS < 7) {
+      // ── ICS BAJO (6-7): técnica comprometida → bajar carga moderadamente ──
+      newLoad = Math.round(load * 0.9 * 4) / 4;
+      action = 'reduce_load';
+      reasons.push('ICS '+avgICS.toFixed(1)+' < 7 → bajar carga 10%');
     } else {
-      // Volumen por EIMD
+      // ── DECISIÓN DE VOLUMEN (basada en EIMD + fatiga) ──
+      var fcost = catData ? catData.fatigueCost : 3;
+
       if (eimd === 1) {
+        // Sin dolor: añadir series (más si ICS alto, menos si fatigue cost alto)
         var add = avgICS >= 9 ? 2 : 1;
-        newSets = numSets + add; action = 'add_sets';
-        reasons.push('Sin dolor → +'+add+' serie(s)');
+        if (fcost >= 4) add = Math.min(add, 1); // compuestos pesados: máx +1
+        newSets = Math.min(numSets + add, maxSets);
+        if (newSets > numSets) { action = 'add_sets'; reasons.push('Sin dolor + ICS '+avgICS.toFixed(1)+' → +'+( newSets - numSets)+' serie(s)'); }
+        else { reasons.push('Sin dolor pero techo de volumen alcanzado ('+maxSets+' series)'); }
       } else if (eimd === 2) {
-        if (avgICS >= 9) { newSets = numSets + 1; action = 'add_sets'; reasons.push('Recuperación + ICS alto → +1 serie'); }
-        else { reasons.push('Recuperación normal: mantener volumen'); }
+        // Recuperación normal
+        if (avgICS >= 9 && fcost <= 3) {
+          newSets = Math.min(numSets + 1, maxSets);
+          if (newSets > numSets) { action = 'add_sets'; reasons.push('Recuperación ok + ICS excelente → +1 serie'); }
+        }
+        if (action === 'maintain') reasons.push('Recuperación normal: mantener volumen');
       } else {
-        var rem = avgICS < 7 ? 2 : 1;
+        // EIMD 3: dolor significativo → reducir
+        var rem = avgICS < 8 ? 2 : 1;
         newSets = Math.max(1, numSets - rem); action = 'reduce_sets';
-        reasons.push('Dolor agudo → -'+rem+' serie(s)');
+        reasons.push('Dolor muscular elevado → -'+rem+' serie(s)');
       }
-      // Pump nulo + sin dolor
+
+      // ── Pump nulo + sin dolor → señal de estímulo insuficiente ──
       if (avgPump === 3 && eimd === 1) {
-        if (action !== 'add_sets') { newSets = numSets + 1; action = 'add_sets'; }
-        reasons.push('Pump nulo: +1 serie adicional');
+        if (newSets < maxSets) { newSets = Math.min(newSets + 1, maxSets); }
+        reasons.push('Pump nulo: considerar +1 serie o cambio de ejercicio');
       }
-      // Carga por RIR
-      if (avgRIR < rirObj) {
+
+      // ── DECISIÓN DE CARGA (basada en RIR + tendencia semanal) ──
+      var allRepsHit = avgReps >= repsTarget; // ¿alcanzó las reps target?
+
+      if (avgRIR < rirObj && allRepsHit) {
+        // RIR por debajo del objetivo Y reps cumplidas → subir carga
         newLoad = Math.round(load * (1 + alpha) * 4) / 4;
         if (action === 'maintain') action = 'increase_load';
-        reasons.push('RIR real ('+avgRIR.toFixed(1)+') < obj ('+rirObj+') → +'+Math.round(alpha*100)+'% carga');
-      } else if (avgRIR > rirObj + 1) {
+        reasons.push('RIR '+avgRIR.toFixed(1)+' < obj '+rirObj+' + reps cumplidas → +'+(alpha*100).toFixed(1)+'% carga');
+
+        // Si también subió la semana pasada, moderar el incremento (anti-spike)
+        if (prevWeek && prevWeek.avgLoad > 0 && load > prevWeek.avgLoad * 1.03) {
+          var modAlpha = alpha * 0.6; // reducir incremento al 60%
+          newLoad = Math.round(load * (1 + modAlpha) * 4) / 4;
+          reasons.push('Carga ya subió sem anterior → incremento moderado +'+(modAlpha*100).toFixed(1)+'%');
+        }
+      } else if (avgRIR < rirObj && !allRepsHit) {
+        // RIR bajo pero no alcanzó reps → mantener carga, trabajar en reps
+        reasons.push('RIR '+avgRIR.toFixed(1)+' < obj pero reps '+avgReps.toFixed(0)+'/'+repsTarget+' → mantener carga, ganar reps');
+        newReps = repsTarget; // mantener target
+      } else if (avgRIR > rirObj + 1.5) {
+        // RIR mucho mayor al objetivo → le sobra intensidad
         if (action === 'maintain') action = 'freeze_load';
-        reasons.push('RIR real ('+avgRIR.toFixed(1)+') > obj → congelar carga');
+        reasons.push('RIR real '+avgRIR.toFixed(1)+' >> obj '+rirObj+' → congelar carga');
+      } else if (avgRIR >= rirObj && avgRIR <= rirObj + 1.5 && allRepsHit) {
+        // RIR en zona objetivo con reps cumplidas → double progression: subir reps primero
+        if (avgReps < repsTarget + 2) {
+          reasons.push('RIR en objetivo, reps cumplidas → intentar +1-2 reps próxima sesión');
+          newReps = Math.min(repsTarget + 2, avgReps + 1);
+        } else {
+          // Ya excedió reps target+2 → subir carga y resetear reps
+          newLoad = Math.round(load * (1 + alpha) * 4) / 4;
+          newReps = repsTarget; // reset
+          if (action === 'maintain') action = 'increase_load';
+          reasons.push('Double progression: reps '+avgReps.toFixed(0)+' > target+2 → +'+(alpha*100).toFixed(1)+'% carga, reset reps');
+        }
+      }
+
+      // ── Curva de resistencia: elongated con pump bajo = mala conexión ──
+      if (catData && catData.resistanceCurve === 'elongated' && avgPump >= 2.5) {
+        reasons.push('⚠ Ejercicio elongado con pump bajo: revisar ROM y tempo excéntrico');
+      }
+
+      // ── Tendencia semanal negativa (carga bajó respecto a sem anterior) ──
+      if (prevWeek && prevWeek.avgLoad > 0 && load < prevWeek.avgLoad * 0.95 && action !== 'reduce_load') {
+        reasons.push('⚠ Carga descendió vs sem '+(CURRENT_WEEK-1)+' ('+prevWeek.avgLoad.toFixed(1)+' → '+load.toFixed(1)+')');
       }
     }
 
+    // ── Dolor articular → flag para el coach ──
     var sub = articular.present ? 'Revisar alternativa para patrón: '+(articular.pattern||'—') : null;
-    if (sub) reasons.push('Fatiga articular en '+articular.pattern);
+    if (sub) reasons.push('⚠ Fatiga articular en '+articular.pattern);
 
     return {
-      exerciseName: ej.nombre || ej.exerciseName,
+      exerciseName: exName,
       action: action,
       newLoad: newLoad,
       newSets: newSets,
+      newReps: newReps,
       rirTarget: rirTarget,
       reason: reasons.join(' | '),
-      substituteExercise: sub
+      substituteExercise: sub,
+      trend: prevWeek ? { prevLoad: prevWeek.avgLoad, prevSets: prevWeek.numSets, prevICS: prevWeek.avgICS } : null
     };
   }).filter(Boolean);
 
