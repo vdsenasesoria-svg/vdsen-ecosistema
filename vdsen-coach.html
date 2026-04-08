@@ -146,8 +146,8 @@
 
 <script type="module">
   import { initializeApp } from "firebase/app";
-  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword } from "firebase/auth";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc } from "firebase/firestore";
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot } from "firebase/firestore";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -225,11 +225,27 @@
       // Login automático con credenciales de prueba (solo para demostración, en producción usar formulario)
       signInWithEmailAndPassword(auth, "coach@vdsen.com", "password").catch(() => {
         // Si falla, mostrar pantalla de login simple
-        document.body.innerHTML = `<div class="flex items-center justify-center h-screen"><div class="card p-6"><h2 class="text-xl mb-4">Login Coach</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email"><input id="loginPass" class="input-field mb-2" type="password"><button id="loginBtn" class="btn-primary">Ingresar</button></div></div>`;
+        document.body.innerHTML = `<div class="flex items-center justify-center h-screen"><div class="card p-6"><h2 class="text-xl mb-4">Login Coach</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email"><input id="loginPass" class="input-field mb-2" type="password"><button id="loginBtn" class="btn-primary">Ingresar</button><div id="loginErr" class="text-sm mt-2" style="color:#c94a3a"></div><div class="text-center mt-3"><a href="#" id="forgotBtn" class="text-sm" style="color:#888;text-decoration:underline">¿Olvidaste tu contraseña?</a></div></div></div>`;
         document.getElementById("loginBtn")?.addEventListener("click", () => {
           const email = document.getElementById("loginEmail").value;
           const pass = document.getElementById("loginPass").value;
-          signInWithEmailAndPassword(auth, email, pass).catch(e => showToast(e.message, true));
+          signInWithEmailAndPassword(auth, email, pass).catch(e => {
+            document.getElementById("loginErr").textContent = e.message;
+          });
+        });
+        document.getElementById("forgotBtn")?.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          const email = document.getElementById("loginEmail").value.trim();
+          const errEl = document.getElementById("loginErr");
+          if (!email) { errEl.textContent = 'Escribe tu correo primero'; return; }
+          try {
+            await sendPasswordResetEmail(auth, email);
+            errEl.style.color = '#3a9460';
+            errEl.textContent = '✓ Enlace enviado a ' + email + '. Revisa tu correo.';
+          } catch(e) {
+            errEl.style.color = '#c94a3a';
+            errEl.textContent = e.code === 'auth/user-not-found' ? 'No existe ese correo' : e.message;
+          }
         });
       });
     }
@@ -334,23 +350,47 @@
     };
   }
   
+  let _allExercises = []; // cache para filtrar
   async function loadExerciseCatalog() {
     if (!currentCoach) return;
     const container = document.getElementById("exerciseCatalog");
     container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando catálogo...</div>`;
     const q = query(collection(db, "exercises"), where("coachId", "==", currentCoach.uid));
     const snap = await getDocs(q);
+    _allExercises = [];
+    snap.forEach(d => _allExercises.push({ id: d.id, ...d.data() }));
+    _renderExerciseList(_allExercises);
+    // Agregar buscador si no existe
+    if (!document.getElementById('exSearchInput')) {
+      const searchHtml = `<input id="exSearchInput" class="input-field mb-3" placeholder="🔍 Buscar ejercicio..." oninput="_filterExercises(this.value)" style="width:100%">`;
+      container.insertAdjacentHTML('beforebegin', searchHtml);
+    }
+  }
+
+  window._filterExercises = function(term) {
+    const t = (term||'').toLowerCase().trim();
+    if (!t) { _renderExerciseList(_allExercises); return; }
+    const filtered = _allExercises.filter(ex =>
+      (ex.name||'').toLowerCase().includes(t) ||
+      (ex.motorPattern||'').toLowerCase().includes(t) ||
+      (ex.muscleType||'').toLowerCase().includes(t) ||
+      (ex.equipment||'').toLowerCase().includes(t)
+    );
+    _renderExerciseList(filtered);
+  };
+
+  function _renderExerciseList(exercises) {
+    const container = document.getElementById("exerciseCatalog");
     container.innerHTML = "";
-    if (snap.empty) {
-      container.innerHTML = `<p class="text-[#888] text-sm">Catálogo vacío. Agrega tu primer ejercicio.</p>`;
+    if (!exercises.length) {
+      container.innerHTML = `<p class="text-[#888] text-sm">Sin resultados. ${_allExercises.length ? 'Intenta otro término.' : 'Agrega tu primer ejercicio.'}</p>`;
     } else {
-      snap.forEach(d => {
-        const ex = d.data();
+      exercises.forEach(ex => {
         const mtLabel = ex.muscleType === "typeI" ? "Tipo I" : "Tipo IIx";
         const mtColor = ex.muscleType === "typeI" ? "#60a5fa" : "#f97316";
         const fcDots = "●".repeat(ex.fatigueCost || 3) + "○".repeat(5 - (ex.fatigueCost || 3));
         const curveLabel = ex.resistanceCurve === "elongated" ? "Elon." : ex.resistanceCurve === "shortened" ? "Cort." : "Med.";
-        container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><b>${ex.name}</b> <span class="text-[#888] text-sm">· ${ex.motorPattern || "Sin patrón"}</span><br><span class="text-xs" style="color:${mtColor}">${mtLabel}</span> <span class="text-xs text-[#888]">· Fatiga: ${fcDots} · ${curveLabel}</span></span><button class="text-red-400 hover:text-red-300 px-2" onclick="deleteExercise('${d.id}', '${ex.name.replace(/'/g,"\\'")}')">🗑️</button></div>`;
+        container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><b>${ex.name}</b> <span class="text-[#888] text-sm">· ${ex.motorPattern || "Sin patrón"}</span><br><span class="text-xs" style="color:${mtColor}">${mtLabel}</span> <span class="text-xs text-[#888]">· Fatiga: ${fcDots} · ${curveLabel}</span></span><button class="text-red-400 hover:text-red-300 px-2" onclick="deleteExercise('${ex.id}', '${(ex.name||'').replace(/'/g,"\\'")}')">🗑️</button></div>`;
       });
     }
     document.getElementById("addExerciseBtn").onclick = () => {
@@ -397,21 +437,26 @@
       clientsMap[d.id] = d.data();
     });
 
+    // Limpiar listener anterior
+    let _monitorUnsub = null;
     select.onchange = async () => {
+      if (_monitorUnsub) { _monitorUnsub(); _monitorUnsub = null; }
       if (!select.value) return;
       const container = document.getElementById("monitorTable");
       container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos del cliente...</div>`;
       const clientData = clientsMap[select.value];
       if (!clientData) return;
 
-      // Cargar logs del cliente desde Firestore
-      const logsSnap = await getDoc(doc(db, 'logs', select.value)); // select.value = clientId = UID
+      // Escuchar logs del cliente en TIEMPO REAL
+      _monitorUnsub = onSnapshot(doc(db, 'logs', select.value), (logsSnap) => {
       if (!logsSnap.exists()) {
         container.innerHTML = `<p class="text-[#888] text-sm">Sin datos de entrenamiento registrados aún.</p>`;
         return;
       }
       const logs = logsSnap.data().entries || {};
       const currentWeek = logsSnap.data().currentWeek || 1;
+      const updatedAt = logsSnap.data().updatedAt;
+      const lastUpdate = updatedAt ? new Date(updatedAt).toLocaleString('es-MX') : '—';
 
       // Semana del mesociclo y RIR objetivo
       const weekRirObj = {1:3,2:2,3:2,4:1,5:0,6:3};
@@ -458,6 +503,7 @@
             </div>
             ${isDeload ? `<div class="px-3 py-2 rounded-lg text-sm font-bold" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc">🔵 SEMANA DELOAD</div>` : ''}
             ${triggers.map(t => `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444">⚠️ ${t}</div>`).join('')}
+            <div class="px-3 py-2 rounded-lg text-xs" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);color:#888">🔄 ${lastUpdate}</div>
           </div>
         </div>`;
 
@@ -489,9 +535,10 @@
       }
 
       container.innerHTML = html;
+      }); // fin onSnapshot
     };
   }
-  
+
   async function loadClientsSelect() {
     if (!currentCoach) return;
     const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));

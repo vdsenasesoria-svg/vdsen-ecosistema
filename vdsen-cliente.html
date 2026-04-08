@@ -14,7 +14,7 @@
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
@@ -37,6 +37,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 window._fb = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+               sendPasswordResetEmail,
                doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs,
                addDoc, orderBy, limit };
 window._fbReady = true;
@@ -208,6 +209,9 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
       <div class="lf"><label>Contraseña</label><input type="password" id="liPass" placeholder="••••••••" autocomplete="current-password"></div>
       <div class="login-err" id="liErr"></div>
       <button class="login-btn" onclick="doLogin()">ENTRAR</button>
+      <div style="text-align:center;margin-top:10px">
+        <a href="#" onclick="resetPassword();return false" style="color:var(--mt);font-size:12px;text-decoration:underline">¿Olvidaste tu contraseña?</a>
+      </div>
       <div class="login-foot">Tus credenciales las proporciona tu coach VDSEN</div>
     </div>
   </div>
@@ -821,6 +825,22 @@ waitFB(() => {
 // ══════════════════════════════════════════════════
 // AUTH
 // ══════════════════════════════════════════════════
+async function resetPassword() {
+  var email = document.getElementById('liEmail').value.trim();
+  var errEl = document.getElementById('liErr');
+  if (!email) { errEl.textContent = 'Escribe tu correo primero'; return; }
+  if (!FB) { errEl.textContent = 'Espera a que cargue la conexión'; return; }
+  try {
+    await FB.sendPasswordResetEmail(FB.auth, email);
+    errEl.style.color = 'var(--grn)';
+    errEl.textContent = '✓ Se envió un enlace a ' + email + '. Revisa tu correo (y spam).';
+  } catch(e) {
+    errEl.style.color = '';
+    if (e.code === 'auth/user-not-found') errEl.textContent = 'No existe una cuenta con ese correo';
+    else errEl.textContent = 'Error: ' + e.message;
+  }
+}
+
 async function doLogin() {
   const email = document.getElementById('liEmail').value.trim();
   const pass  = document.getElementById('liPass').value;
@@ -966,6 +986,7 @@ async function loadPlan(user) {
       if (logSnap.exists()) {
         LOGS = logSnap.data().entries || {};
         CURRENT_WEEK = logSnap.data().currentWeek || 1;
+        if (logSnap.data().exerciseUnits) EXERCISE_UNITS = logSnap.data().exerciseUnits;
       }
     } catch(logErr) {
       console.warn('logs no disponibles:', logErr.message);
@@ -985,6 +1006,24 @@ async function loadPlan(user) {
     }
     showScreen('scrApp');
     goTab(0);
+
+    // Escuchar cambios en el plan del cliente en tiempo real
+    try {
+      FB.onSnapshot = (await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')).onSnapshot;
+      FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(snap) {
+        if (!snap.exists()) return;
+        var newData = snap.data();
+        var newPlanId = newData.activePlanId;
+        if (newPlanId && newPlanId !== activePlanId) {
+          // El coach asignó un plan nuevo
+          showToast('Tu coach actualizó tu plan. Recargando...');
+          setTimeout(function(){ location.reload(); }, 1500);
+        }
+        // Actualizar nutrición/suplementación en vivo
+        if (newData.nutritionPlan) PLAN.nutricion = newData.nutritionPlan;
+        if (newData.supplementPlan) PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] };
+      });
+    } catch(snapErr) { console.warn('onSnapshot no disponible:', snapErr.message); }
   } catch(e) {
     console.error('loadPlan ERROR:', e);
     const errMsg = (e && e.message) ? e.message : String(e);
@@ -1775,6 +1814,21 @@ function renderEntrenamiento() {
 
   if (DIA_ACTIVO >= sesiones.length) DIA_ACTIVO = 0;
 
+  // ── Deload banner (semana 6) ─────────────────────────────────────
+  var deloadBanner = '';
+  if (CURRENT_WEEK === 6) {
+    deloadBanner = '<div style="background:rgba(68,136,204,.1);border:1px solid rgba(68,136,204,.4);padding:12px 14px;margin:0 0 8px">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+      + '<span style="font-size:18px">🔵</span>'
+      + '<span style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:#4488cc;font-weight:700">SEMANA DELOAD</span>'
+      + '</div>'
+      + '<div style="font-size:12px;color:var(--mt);line-height:1.5">'
+      + 'Esta semana es de descarga activa. El volumen se reduce a la mitad y la intensidad baja un 10%. '
+      + 'Enfócate en técnica perfecta (ICS alto) y recuperación. '
+      + 'El objetivo es <strong style="color:var(--tx)">RIR 3</strong> en todos los ejercicios.'
+      + '</div></div>';
+  }
+
   // ── Day tabs ─────────────────────────────────────────────────────
   var tabsHtml = sesiones.map(function(s, i) {
     var done = LOGS['done_'+CURRENT_WEEK+'_'+i];
@@ -1878,6 +1932,8 @@ function renderEntrenamiento() {
     '<div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border)">'+weeksHtml+'</div>'+
     // Day tabs
     '<div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto">'+tabsHtml+'</div>'+
+    // Deload banner
+    deloadBanner+
     // Session header
     '<div style="padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between">'+
       '<div>'+
@@ -2143,6 +2199,21 @@ function completeSet(key, di, ei, si, unit) {
   var pump  = prev.pump || null; // set via setPump buttons
   var done  = !prev.done; // toggle
 
+  // ── Validación: campos obligatorios antes de marcar como hecha ──
+  if (done) {
+    var cargaNum = parseFloat(carga);
+    var repsNum = parseInt(reps);
+    if (!carga || isNaN(cargaNum) || cargaNum <= 0) {
+      showToast('Ingresa la carga (> 0)', true); return;
+    }
+    if (!reps || isNaN(repsNum) || repsNum <= 0) {
+      showToast('Ingresa las repeticiones (> 0)', true); return;
+    }
+    if (ics !== null && (ics < 1 || ics > 10)) {
+      showToast('ICS debe ser entre 1 y 10', true); return;
+    }
+  }
+
   LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now() };
   saveLogs();
 
@@ -2262,7 +2333,29 @@ async function markSessionDone(di) {
     renderResumen();
     return;
   }
-  // Primera vez: mostrar check-in post-sesión
+
+  // Validar que al menos 1 set por ejercicio esté completo
+  var sesiones = getSesiones();
+  var ses = sesiones[di];
+  if (ses) {
+    var lineas = (ses.contenido||'').split('\n').filter(function(l){return l.trim() && (/\d\s*[×xX]\s*\d|RIR/i.test(l) || /^\d+[.)]\s+/.test(l));});
+    var sinRegistrar = [];
+    lineas.forEach(function(l, ei) {
+      var nombre = l.replace(/^\d+[.)]\s*/,'').split('|')[0].replace(/\d+\s*[×xX]\s*[\d\-–]+/g,'').replace(/RIR\s*[\d\-–]+/gi,'').trim();
+      var tieneSet = false;
+      for (var s = 0; s < 10; s++) {
+        var lk = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+        if (LOGS[lk] && LOGS[lk].done) { tieneSet = true; break; }
+      }
+      if (!tieneSet && nombre.length > 2) sinRegistrar.push(nombre);
+    });
+    if (sinRegistrar.length > 0) {
+      var confirmar = confirm('Ejercicios sin registrar:\n• ' + sinRegistrar.join('\n• ') + '\n\n¿Completar sesión de todos modos?');
+      if (!confirmar) return;
+    }
+  }
+
+  // Mostrar check-in post-sesión
   showPostSessionModal(di);
 }
 
@@ -2293,14 +2386,25 @@ async function marcarDia(di) {
 }
 
 
+var _saveLogsTimer = null;
 async function saveLogs() {
+  // Debounce: si se llama varias veces rápido, solo ejecuta la última
+  if (_saveLogsTimer) clearTimeout(_saveLogsTimer);
+  _saveLogsTimer = setTimeout(_doSaveLogs, 400);
+  // Backup inmediato a localStorage siempre
+  try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:CURRENT_WEEK,exerciseUnits:EXERCISE_UNITS,ts:Date.now()})); } catch(le){}
+}
+
+async function _doSaveLogs() {
   if (!USER || !FB) return;
   try {
     const ref = FB.doc(FB.db, 'logs', USER.uid);
-    await FB.setDoc(ref, { entries: LOGS, currentWeek: CURRENT_WEEK, updatedAt: Date.now() });
+    await FB.setDoc(ref, { entries: LOGS, currentWeek: CURRENT_WEEK, exerciseUnits: EXERCISE_UNITS, updatedAt: Date.now() });
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
+    // Indicador breve de guardado exitoso
+    _showSaveOk();
   } catch(e) {
     console.error('saveLogs error:', e.message);
     // Mostrar badge de error persistente
@@ -2312,10 +2416,21 @@ async function saveLogs() {
       document.body.appendChild(errEl);
     }
     errEl.style.display = 'block';
-    errEl.textContent = '⚠ Sin conexión — datos guardados localmente. Verifica Firestore.';
-    // Guardar en localStorage como respaldo
-    try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:CURRENT_WEEK,ts:Date.now()})); } catch(le){}
+    errEl.textContent = '⚠ Sin conexión — datos guardados localmente.';
   }
+}
+
+function _showSaveOk() {
+  var el = document.getElementById('saveOkBadge');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'saveOkBadge';
+    el.style.cssText = 'position:fixed;bottom:70px;right:16px;background:rgba(58,148,96,.15);border:1px solid var(--grn);color:var(--grn);font-family:var(--ff);font-size:10px;padding:4px 10px;z-index:9999;letter-spacing:1px;opacity:0;transition:opacity .3s';
+    document.body.appendChild(el);
+  }
+  el.textContent = '✓ GUARDADO';
+  el.style.opacity = '1';
+  setTimeout(function(){ el.style.opacity = '0'; }, 1200);
 }
 
 // Restaurar desde backup local si Firestore falla al cargar
@@ -2324,7 +2439,12 @@ function loadBackupLogs() {
     const bk = localStorage.getItem('vdsen_logs_backup');
     if (bk) {
       const data = JSON.parse(bk);
-      if (data.entries) { LOGS = data.entries; CURRENT_WEEK = data.currentWeek || 1; return true; }
+      if (data.entries) {
+        LOGS = data.entries;
+        CURRENT_WEEK = data.currentWeek || 1;
+        if (data.exerciseUnits) EXERCISE_UNITS = data.exerciseUnits;
+        return true;
+      }
     }
   } catch(e) {}
   return false;
