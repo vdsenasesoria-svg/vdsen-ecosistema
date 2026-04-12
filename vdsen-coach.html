@@ -133,10 +133,15 @@
 
 <div id="clientModal" class="modal-overlay" style="display:none;">
   <div class="modal-box">
-    <div class="flex justify-between items-center mb-4">
-      <h3 class="text-xl font-bold" id="modalClientName">—</h3>
+    <div class="flex justify-between items-center mb-2">
+      <div class="flex items-center gap-2">
+        <button onclick="navClient(-1)" class="text-[#888] hover:text-[#C9A84C] text-lg px-2 py-1" title="Cliente anterior">◀</button>
+        <h3 class="text-xl font-bold" id="modalClientName">—</h3>
+        <button onclick="navClient(1)" class="text-[#888] hover:text-[#C9A84C] text-lg px-2 py-1" title="Siguiente cliente">▶</button>
+      </div>
       <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
     </div>
+    <div id="clientNavBar" class="flex gap-1 mb-3 overflow-x-auto pb-1" style="scrollbar-width:thin"></div>
     <div id="modalClientBody"></div>
   </div>
 </div>
@@ -286,7 +291,11 @@
         }
         container.innerHTML = `<p class="text-[#888] text-sm">No hay clientes aún. Crea uno con el botón de arriba.</p>`;
       } else {
+        _clientIdList = [];
+        _clientNameMap = {};
         snap.forEach(d => {
+          _clientIdList.push(d.id);
+          _clientNameMap[d.id] = d.data().displayName || d.data().email || d.id;
           container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${d.data().displayName}</strong> (${d.data().email}) ${d.data().activePlanId ? "✅" : "⚠️"}</span><button class="text-[#C9A84C] text-sm font-medium" data-id="${d.id}" onclick="showClientDetail('${d.id}')">Ver →</button></div>`;
         });
       }
@@ -533,6 +542,16 @@
         html += `</div>`;
       } else {
         html += `<p class="text-[#888] text-sm mt-2">Sin recomendaciones aún — el cliente debe completar al menos una sesión con check-in.</p>`;
+      }
+
+      // Notas del cliente por ejercicio
+      const noteKeys = Object.keys(logs).filter(k => k.startsWith('exnote_'));
+      if (noteKeys.length > 0) {
+        html += `<div class="text-xs text-[#888] mb-2 mt-4 uppercase tracking-wide">Notas del cliente</div>`;
+        noteKeys.sort().reverse().slice(0, 10).forEach(k => {
+          const parts = k.split('_'); // exnote_W_D_E
+          html += `<div class="card p-2 mb-1"><span class="text-xs text-[#C9A84C]">S${parts[1]} D${parseInt(parts[2])+1} Ej${parseInt(parts[3])+1}</span> <span class="text-xs text-[#888]">${logs[k]}</span></div>`;
+        });
       }
 
       container.innerHTML = html;
@@ -894,6 +913,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     if (!clientSnap.exists()) { body.innerHTML = `<p class="text-red-400">Cliente no encontrado.</p>`; return; }
     const c = clientSnap.data();
     title.textContent = c.displayName;
+    _renderClientNavBar(clientId);
 
     let planViewHtml = `<p class="text-[#888] text-sm">Sin plan activo.</p>`;
     let planEditorHtml = '';
@@ -902,12 +922,23 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       const planSnap = await getDoc(doc(db, "plans", c.activePlanId));
       if (planSnap.exists()) {
         const p = planSnap.data();
-        const dayList = (p.days || []).map(d =>
-          `<li class="mb-1"><span class="font-medium text-[#C9A84C]">${d.label}</span>: ${(d.exercises || []).map(e => e.exerciseName).join(", ") || "Sin ejercicios"}</li>`
-        ).join("");
+        const dayList = (p.days || []).map(d => {
+          const exList = (d.exercises || []).map(e => {
+            const sets = (e.sets || []);
+            const numSets = sets.length || 3;
+            const reps = sets[0] ? (sets[0].repsTarget || 8) : 8;
+            const rir = sets[0] ? (sets[0].rirTarget || 2) : 2;
+            return `<div class="flex items-center gap-2 ml-4 py-1">
+              <span class="text-sm text-white">${e.exerciseName}</span>
+              <span class="text-xs px-2 py-0.5 rounded" style="background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.25);color:#C9A84C">${numSets}×${reps}</span>
+              <span class="text-xs text-[#888]">RIR ${rir}</span>
+            </div>`;
+          }).join("") || '<span class="text-xs text-[#555] ml-4">Sin ejercicios</span>';
+          return `<div class="mb-3"><div class="font-medium text-[#C9A84C] text-sm mb-1">${d.label}</div>${exList}</div>`;
+        }).join("");
         planViewHtml = `
-          <p class="text-sm text-[#888] mb-2">${p.weeks || 1} sem · ${(p.days||[]).length} días/sem</p>
-          <ul class="text-sm space-y-1 mb-3">${dayList}</ul>`;
+          <p class="text-sm text-[#888] mb-2">${p.weeks || 1} sem · ${(p.days||[]).length} días/sem${p.rirByWeek ? ' · RIR custom' : ''}</p>
+          <div class="mb-3">${dayList}</div>`;
         planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
         planActionsHtml = `
           <button onclick="toggleTrainingEditor()" class="text-[#C9A84C] text-xs underline mr-3">✏️ Editar</button>
@@ -1027,9 +1058,39 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   function updatePlanEditorVal() {}
   function savePlanEditor() {}
 
+  let _clientIdList = []; // lista ordenada de IDs para navegación rápida
+  let _clientNameMap = {}; // { id: nombre }
+
   function closeClientModal() {
     document.getElementById("clientModal").style.display = "none";
     _detailClientId = null;
+  }
+
+  function navClient(dir) {
+    if (!_clientIdList.length || !_detailClientId) return;
+    var idx = _clientIdList.indexOf(_detailClientId);
+    if (idx === -1) return;
+    var next = idx + dir;
+    if (next < 0) next = _clientIdList.length - 1;
+    if (next >= _clientIdList.length) next = 0;
+    showClientDetail(_clientIdList[next]);
+  }
+
+  function _renderClientNavBar(activeId) {
+    var bar = document.getElementById('clientNavBar');
+    if (!bar || !_clientIdList.length) return;
+    bar.innerHTML = _clientIdList.map(function(id) {
+      var name = (_clientNameMap[id] || '?').split(' ')[0]; // primer nombre
+      var active = id === activeId;
+      return '<button onclick="showClientDetail(\''+id+'\')" style="'+
+        'padding:4px 10px;border:1px solid '+(active?'#C9A84C':'#2A2A2A')+';'+
+        'background:'+(active?'rgba(201,168,76,.15)':'transparent')+';'+
+        'color:'+(active?'#C9A84C':'#888')+';font-size:11px;font-weight:'+(active?'700':'400')+';'+
+        'white-space:nowrap;cursor:pointer;letter-spacing:.5px">'+name+'</button>';
+    }).join('');
+    // Scroll al activo
+    var activeBtn = bar.querySelector('[style*="font-weight:700"]');
+    if (activeBtn) activeBtn.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
   }
 
   // ========== CATÁLOGO BASE ==========
@@ -1276,6 +1337,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   window.saveTrainingPlan = saveTrainingPlan;
   window.deletePlan = deletePlan;
   window.duplicatePlan = duplicatePlan;
+  window.navClient = navClient;
   window.saveNutritionPlan = saveNutritionPlan;
   window.saveSupplementPlan = saveSupplementPlan;
   window.togglePlanEditor = togglePlanEditor;
