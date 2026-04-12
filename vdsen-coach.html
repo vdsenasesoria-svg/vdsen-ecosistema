@@ -942,6 +942,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
         planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
         planActionsHtml = `
           <button onclick="toggleTrainingEditor()" class="text-[#C9A84C] text-xs underline mr-3">✏️ Editar</button>
+          <button onclick="showQuickAddExercise('${c.activePlanId}')" class="text-[#44BB88] text-xs underline mr-3">➕ Agregar ejercicio</button>
           <button onclick="duplicatePlan('${clientId}','${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">📋 Duplicar</button>
           <button onclick="deletePlan('${clientId}','${c.activePlanId}')" class="text-red-400 text-xs underline">🗑 Eliminar</button>`;
       }
@@ -1217,6 +1218,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       </div>`;
     }).join('');
     return `<div id="trainingEditorDays">${daysHtml}</div>
+      <button onclick="addDayBlock()" class="text-[#C9A84C] text-xs underline mt-1 mb-3 block">➕ Agregar día de entrenamiento</button>
       <button onclick="saveTrainingPlan()" class="btn-primary w-full mt-2">💾 Guardar cambios</button>`;
   }
 
@@ -1279,6 +1281,119 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     } catch(e) { showToast('Error al guardar: ' + e.message, true); }
   }
 
+  // ── Agregar día al editor ──
+  function addDayBlock() {
+    const container = document.getElementById('trainingEditorDays');
+    if (!container) return;
+    const di = container.children.length;
+    const div = document.createElement('div');
+    div.className = 'card p-3 mb-3';
+    div.id = 'dayblock_'+di;
+    div.innerHTML = `
+      <input class="input-field w-full text-sm font-semibold mb-2 text-[#C9A84C]" value="Día ${di+1}" id="daylabel_${di}">
+      <div id="exlist_${di}"></div>
+      <button onclick="addExRow(${di})" class="text-[#C9A84C] text-xs underline mt-1">+ Ejercicio</button>`;
+    container.appendChild(div);
+    addExRow(di); // agregar primer ejercicio vacío
+  }
+
+  // ── Quick Add: agregar ejercicio a un plan sin abrir editor completo ──
+  async function showQuickAddExercise(planId) {
+    // Crear mini-modal inline
+    var existing = document.getElementById('quickAddPanel');
+    if (existing) { existing.remove(); return; }
+
+    // Obtener días del plan
+    const planSnap = await getDoc(doc(db, "plans", planId));
+    if (!planSnap.exists()) { showToast('Plan no encontrado', true); return; }
+    const planData = planSnap.data();
+    const days = planData.days || [];
+
+    const dayOpts = days.map((d,i) => `<option value="${i}">${d.label || 'Día '+(i+1)}</option>`).join('');
+
+    // Lista de ejercicios del catálogo para autocomplete
+    const exNames = _allExercises.map(e => e.name).sort();
+
+    const panel = document.createElement('div');
+    panel.id = 'quickAddPanel';
+    panel.className = 'card p-4 mb-4';
+    panel.style.cssText = 'border:1px solid rgba(68,187,136,.4);background:rgba(68,187,136,.03)';
+    panel.innerHTML = `
+      <div class="flex justify-between items-center mb-3">
+        <span class="text-sm font-semibold text-[#44BB88]">➕ Agregar ejercicio rápido</span>
+        <button onclick="document.getElementById('quickAddPanel').remove()" class="text-[#888] text-lg">✕</button>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mb-2">
+        <div>
+          <label class="text-xs text-[#888] mb-1 block">Día</label>
+          <select id="qa_day" class="input-field w-full text-sm">${dayOpts}</select>
+        </div>
+        <div>
+          <label class="text-xs text-[#888] mb-1 block">RIR</label>
+          <input id="qa_rir" class="input-field w-full text-sm text-center" type="number" value="2" min="0" max="5">
+        </div>
+      </div>
+      <div class="mb-2">
+        <label class="text-xs text-[#888] mb-1 block">Ejercicio</label>
+        <input id="qa_name" class="input-field w-full text-sm" placeholder="Nombre del ejercicio..." list="qa_exlist" autocomplete="off">
+        <datalist id="qa_exlist">${exNames.map(n => `<option value="${n}">`).join('')}</datalist>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <div>
+          <label class="text-xs text-[#888] mb-1 block">Series</label>
+          <input id="qa_sets" class="input-field w-full text-sm text-center" type="number" value="3" min="1" max="10">
+        </div>
+        <div>
+          <label class="text-xs text-[#888] mb-1 block">Reps</label>
+          <input id="qa_reps" class="input-field w-full text-sm text-center" type="number" value="8" min="1" max="30">
+        </div>
+      </div>
+      <button id="qa_submit" class="btn-primary w-full text-sm" onclick="submitQuickAdd('${planId}')">Agregar al plan</button>`;
+
+    // Insertar después del training-view
+    const trainView = document.getElementById('training-view');
+    if (trainView) trainView.parentNode.insertBefore(panel, trainView.nextSibling);
+  }
+
+  async function submitQuickAdd(planId) {
+    const name = document.getElementById('qa_name')?.value.trim();
+    const dayIdx = parseInt(document.getElementById('qa_day')?.value) || 0;
+    const sets = parseInt(document.getElementById('qa_sets')?.value) || 3;
+    const reps = parseInt(document.getElementById('qa_reps')?.value) || 8;
+    const rir = parseInt(document.getElementById('qa_rir')?.value) || 2;
+
+    if (!name) { showToast('Escribe el nombre del ejercicio', true); return; }
+
+    const btn = document.getElementById('qa_submit');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+
+    try {
+      const planSnap = await getDoc(doc(db, "plans", planId));
+      if (!planSnap.exists()) throw new Error('Plan no encontrado');
+      const planData = planSnap.data();
+      const days = planData.days || [];
+
+      if (!days[dayIdx]) throw new Error('Día no encontrado');
+
+      // Agregar ejercicio al día
+      const newEx = {
+        exerciseName: name,
+        alternatives: [],
+        sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90 }))
+      };
+      days[dayIdx].exercises = days[dayIdx].exercises || [];
+      days[dayIdx].exercises.push(newEx);
+
+      await updateDoc(doc(db, "plans", planId), { days, updatedAt: new Date().toISOString() });
+      showToast(`"${name}" agregado a ${days[dayIdx].label} ✅`);
+      document.getElementById('quickAddPanel')?.remove();
+      showClientDetail(_detailClientId); // recargar
+    } catch(e) {
+      showToast('Error: ' + e.message, true);
+      btn.disabled = false; btn.textContent = 'Agregar al plan';
+    }
+  }
+
   async function deletePlan(clientId, planId) {
     if (!confirm('¿Eliminar el plan activo de este cliente? El cliente quedará sin plan asignado.')) return;
     try {
@@ -1338,6 +1453,9 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   window.deletePlan = deletePlan;
   window.duplicatePlan = duplicatePlan;
   window.navClient = navClient;
+  window.showQuickAddExercise = showQuickAddExercise;
+  window.submitQuickAdd = submitQuickAdd;
+  window.addDayBlock = addDayBlock;
   window.saveNutritionPlan = saveNutritionPlan;
   window.saveSupplementPlan = saveSupplementPlan;
   window.togglePlanEditor = togglePlanEditor;
