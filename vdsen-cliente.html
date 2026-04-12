@@ -958,7 +958,8 @@ async function loadPlan(user) {
         ? clientData.nutritionPlan : null,
       suplementacion: (clientData.supplementPlan && clientData.supplementPlan.texto)
         ? { texto: clientData.supplementPlan.texto, items: [] }
-        : null
+        : null,
+      rirByWeek: planData.rirByWeek || null
     };
 
     // Cargar catálogo de ejercicios del coach (para algoritmo de progresión)
@@ -1500,13 +1501,42 @@ function buildHistorialWidget() {
         + '</div>';
     }).join('');
 
+    // Mini sparklines de tendencia
+    var sparkId = 'spark_'+Date.now();
+    var pesoArr = ciWeeks.map(function(c){return c.peso;}).filter(Boolean);
+    var hrvArr = ciWeeks.map(function(c){return c.hrv;}).filter(Boolean);
+    var sparkHtml = '';
+    if (pesoArr.length >= 2 || hrvArr.length >= 2) {
+      sparkHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">';
+      if (pesoArr.length >= 2) {
+        var pDelta = pesoArr[pesoArr.length-1] - pesoArr[0];
+        var pCol = pDelta > 0 ? 'var(--red)' : pDelta < 0 ? 'var(--grn)' : 'var(--mt)';
+        sparkHtml += '<div style="text-align:center"><canvas id="'+sparkId+'_peso" width="140" height="50"></canvas>'
+          + '<div style="font-size:10px;color:'+pCol+';font-family:var(--ff)">PESO '+(pDelta>0?'+':'')+pDelta.toFixed(1)+' kg</div></div>';
+      }
+      if (hrvArr.length >= 2) {
+        var hDelta = hrvArr[hrvArr.length-1] - hrvArr[0];
+        var hCol = hDelta > 0 ? 'var(--grn)' : hDelta < 0 ? 'var(--red)' : 'var(--mt)';
+        sparkHtml += '<div style="text-align:center"><canvas id="'+sparkId+'_hrv" width="140" height="50"></canvas>'
+          + '<div style="font-size:10px;color:'+hCol+';font-family:var(--ff)">HRV '+(hDelta>0?'+':'')+hDelta.toFixed(0)+'</div></div>';
+      }
+      sparkHtml += '</div>';
+    }
+
     ciTrendHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
       + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">TENDENCIAS CHECK-IN</div>'
       + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(200,165,74,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
       + '<div>SEM</div><div style="text-align:center">PESO</div><div style="text-align:center">HRV</div><div style="text-align:center">WHO-5</div><div style="text-align:center">ENERGÍA</div>'
       + '</div>'
       + ciRows
+      + sparkHtml
       + '</div>';
+
+    // Dibujar sparklines después del render
+    setTimeout(function() {
+      _drawSparkline(sparkId+'_peso', pesoArr, '#c8a54a');
+      _drawSparkline(sparkId+'_hrv', hrvArr, '#4488cc');
+    }, 50);
   }
 
   // ── 4) Progression recommendations history ──
@@ -4369,6 +4399,51 @@ function _avgArr(arr) {
   return arr.reduce(function(a,b){return a+b;},0) / arr.length;
 }
 
+function _drawSparkline(canvasId, data, color) {
+  var c = document.getElementById(canvasId);
+  if (!c || !data || data.length < 2) return;
+  var ctx = c.getContext('2d');
+  var w = c.width, h = c.height;
+  var min = Math.min.apply(null, data);
+  var max = Math.max.apply(null, data);
+  var range = max - min || 1;
+  var pad = 4;
+
+  ctx.clearRect(0, 0, w, h);
+  // Área bajo la curva
+  ctx.beginPath();
+  ctx.moveTo(pad, h - pad);
+  data.forEach(function(v, i) {
+    var x = pad + (i / (data.length - 1)) * (w - pad * 2);
+    var y = h - pad - ((v - min) / range) * (h - pad * 2);
+    ctx.lineTo(x, y);
+  });
+  ctx.lineTo(w - pad, h - pad);
+  ctx.closePath();
+  ctx.fillStyle = color.replace(')', ',.08)').replace('rgb', 'rgba').replace('var(--', '');
+  try { ctx.fillStyle = 'rgba(200,165,74,.08)'; } catch(e) {}
+  ctx.fill();
+  // Línea
+  ctx.beginPath();
+  data.forEach(function(v, i) {
+    var x = pad + (i / (data.length - 1)) * (w - pad * 2);
+    var y = h - pad - ((v - min) / range) * (h - pad * 2);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // Puntos
+  data.forEach(function(v, i) {
+    var x = pad + (i / (data.length - 1)) * (w - pad * 2);
+    var y = h - pad - ((v - min) / range) * (h - pad * 2);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  });
+}
+
 // ── Buscar datos del catálogo para un ejercicio ──
 function _getCatalogData(exName) {
   if (!exName) return null;
@@ -4431,7 +4506,9 @@ function calculateProgression(di, postData) {
   var dia = sesiones[di];
   if (!dia) return null;
 
-  var weekRirObj = {1:3,2:2,3:2,4:1,5:0,6:3};
+  // RIR personalizable: si el plan tiene rirByWeek, usarlo. Si no, default VDSEN v3.2
+  var defaultRir = {1:3,2:2,3:2,4:1,5:0,6:3};
+  var weekRirObj = (PLAN && PLAN.rirByWeek) ? PLAN.rirByWeek : defaultRir;
   var rirObj = weekRirObj[CURRENT_WEEK] !== undefined ? weekRirObj[CURRENT_WEEK] : 2;
   var eimd = postData.eimd || 2;
   var rpe  = postData.rpeAverage || 7;

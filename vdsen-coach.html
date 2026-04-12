@@ -309,6 +309,7 @@
       const email = document.getElementById("nc-email").value.trim();
       const pass = document.getElementById("nc-pass").value;
       if (!name || !email || !pass) { showToast("Completa todos los campos", true); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast("Email inválido. Verifica el formato.", true); return; }
       if (pass.length < 6) { showToast("La contraseña debe tener al menos 6 caracteres", true); return; }
       const btn = document.getElementById("nc-submit");
       btn.disabled = true; btn.textContent = "Creando...";
@@ -910,6 +911,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
         planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
         planActionsHtml = `
           <button onclick="toggleTrainingEditor()" class="text-[#C9A84C] text-xs underline mr-3">✏️ Editar</button>
+          <button onclick="duplicatePlan('${clientId}','${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">📋 Duplicar</button>
           <button onclick="deletePlan('${clientId}','${c.activePlanId}')" class="text-red-400 text-xs underline">🗑 Eliminar</button>`;
       }
     }
@@ -1227,6 +1229,40 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     } catch(e) { showToast('Error: ' + e.message, true); }
   }
 
+  async function duplicatePlan(clientId, planId) {
+    // Duplicar plan para asignar a otro cliente (o al mismo como nuevo borrador)
+    try {
+      const planSnap = await getDoc(doc(db, "plans", planId));
+      if (!planSnap.exists()) { showToast('Plan no encontrado', true); return; }
+      const planData = planSnap.data();
+
+      // Preguntar a qué cliente asignar
+      const clientsSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+      let opts = [];
+      clientsSnap.forEach(d => opts.push({ id: d.id, name: d.data().displayName || d.data().email }));
+      const optList = opts.map((o,i) => (i+1)+'. '+o.name).join('\n');
+      const sel = prompt('Asignar plan duplicado a:\n'+optList+'\n\nEscribe el número (o "mismo" para el cliente actual):');
+      if (!sel) return;
+
+      let targetId = clientId;
+      if (sel.toLowerCase() !== 'mismo') {
+        const idx = parseInt(sel) - 1;
+        if (idx >= 0 && idx < opts.length) targetId = opts[idx].id;
+        else { showToast('Selección inválida', true); return; }
+      }
+
+      // Crear copia del plan
+      const newPlan = { ...planData, clientId: targetId, createdAt: Date.now(), status: 'active' };
+      delete newPlan.id; // limpiar ID anterior si existía
+      const newRef = await addDoc(collection(db, "plans"), newPlan);
+      await updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id });
+
+      showToast('Plan duplicado y asignado ✓');
+      showClientDetail(targetId);
+      loadClientList();
+    } catch(e) { showToast('Error: ' + e.message, true); }
+  }
+
   // Exponer funciones del builder manual al scope global (usadas en onclick inline)
   window.parsePlanFromText = parsePlanFromText;
   window.parsePlanFromPDF = parsePlanFromPDF;
@@ -1239,6 +1275,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   window.removeExRow = removeExRow;
   window.saveTrainingPlan = saveTrainingPlan;
   window.deletePlan = deletePlan;
+  window.duplicatePlan = duplicatePlan;
   window.saveNutritionPlan = saveNutritionPlan;
   window.saveSupplementPlan = saveSupplementPlan;
   window.togglePlanEditor = togglePlanEditor;
