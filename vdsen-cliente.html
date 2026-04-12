@@ -2010,6 +2010,21 @@ function buildBoostcampExercise(ej, di, ei) {
   var numSeries = ej.numSeries || 3;
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||2, CURRENT_WEEK);
 
+  // Obtener recomendación de progresión para el header del ejercicio
+  var headerRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
+  var headerRecHtml = '';
+  if (headerRec && headerRec.newLoad) {
+    var recUnit = getExUnit(di, ei);
+    var actionColors = {
+      deload:'var(--blue)', reduce_load:'var(--red)', reduce_sets:'#FF8844',
+      add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
+    };
+    var recCol = actionColors[headerRec.action] || 'var(--gold)';
+    headerRecHtml = '<div style="font-size:10px;color:'+recCol+';margin-top:3px;font-weight:600">'+
+      '⚡ '+headerRec.newLoad+' '+recUnit+' · '+headerRec.newSets+'s · RIR '+headerRec.rirTarget+
+    '</div>';
+  }
+
   // Build set rows
   var setsHtml = '';
   for (var s = 0; s < numSeries; s++) {
@@ -2023,17 +2038,28 @@ function buildBoostcampExercise(ej, di, ei) {
     var unit = saved.unit || getExUnit(di, ei);
     var rirReal = saved.rir_real || '';
 
-    // Auto-prog suggestion based on REAL RIR from previous week
+    // Auto-prog suggestion: buscar recomendación del algoritmo de progresión
     var suggestion = '';
-    if (!completed && prev.carga) {
+    var progRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
+    if (!completed && progRec) {
+      // Recomendación calculada por el algoritmo
+      var actionLabels = {
+        deload:'DELOAD', reduce_load:'↓ BAJAR', reduce_sets:'↓ SERIES',
+        add_sets:'+ SERIES', increase_load:'↑ SUBIR', freeze_load:'= MANTENER', maintain:'='
+      };
+      var lbl = actionLabels[progRec.action] || '';
+      suggestion = '⚡ ' + progRec.newLoad + ' ' + unit + ' · ' + progRec.newSets + 's' +
+        (progRec.newReps ? ' · '+progRec.newReps+'r' : '') +
+        ' · RIR '+progRec.rirTarget + ' [' + lbl + ']';
+    } else if (!completed && prev.carga) {
+      // Fallback: sugerencia simple basada en semana anterior
       var pc = parseFloat(prev.carga)||0;
-      var pr = parseInt(prev.reps)||0;
       var prir = parseInt(prev.rir_real || prev.rir);
       var step = 2.5;
       if (!isNaN(prir) && prir <= baseRIR) {
-        suggestion = (pc+step).toFixed(1)+' '+unit+' (↑ auto)';
+        suggestion = '→ ' + (pc+step).toFixed(1)+' '+unit+' (↑ auto)';
       } else {
-        suggestion = pc+' '+unit+' (= mant.)';
+        suggestion = '→ ' + pc+' '+unit+' (= mant.)';
       }
     }
 
@@ -2096,7 +2122,7 @@ function buildBoostcampExercise(ej, di, ei) {
                   '↩ '+prev.carga+' '+unit+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+
                 '</div>'
               : (suggestion
-                  ? '<div style="font-size:10px;color:rgba(108,150,255,.7);margin-bottom:4px">'+suggestion+'</div>'
+                  ? '<div style="font-size:10px;color:'+(progRec?'var(--accent)':'rgba(108,150,255,.7)')+';margin-bottom:4px;'+(progRec?'font-weight:600;background:rgba(200,165,74,.06);padding:2px 6px;border-radius:4px;border:1px solid rgba(200,165,74,.15);display:inline-block':'')+'">'+suggestion+'</div>'
                   : ''))+
             '<div style="display:flex;gap:5px">'+
               '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal"'+
@@ -2157,6 +2183,7 @@ function buildBoostcampExercise(ej, di, ei) {
           (ej.setsReps||numSeries+'×'+ej.repsRange)+' · RIR '+baseRIR+
           (machine?' · '+machine.nombre:'')+
         '</div>'+
+        headerRecHtml+
       '</div>'+
       // Expand note button + user note button
       (ej.nota?'<button onclick="toggleNota(\'nota_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--mt);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0">ⓘ</button>':'')+
@@ -4427,6 +4454,39 @@ async function submitPostSession() {
 function _avgArr(arr) {
   if (!arr || !arr.length) return 0;
   return arr.reduce(function(a,b){return a+b;},0) / arr.length;
+}
+
+// Buscar la recomendación de progresión más reciente para un ejercicio
+function _getProgRecForExercise(di, ei, exName) {
+  // Buscar progrec_ en orden descendente (semana más reciente primero)
+  var bestRec = null;
+  for (var w = CURRENT_WEEK; w >= 1; w--) {
+    // Buscar en todos los días de esa semana
+    var keys = Object.keys(LOGS).filter(function(k) { return k === 'progrec_'+w+'_'+di; });
+    if (!keys.length) {
+      // También buscar en otros días por si el ejercicio cambió de día
+      keys = Object.keys(LOGS).filter(function(k) { return k.startsWith('progrec_'+w+'_'); });
+    }
+    for (var ki = 0; ki < keys.length; ki++) {
+      var prog = LOGS[keys[ki]];
+      if (!prog || !prog.recommendations) continue;
+      // Buscar por índice de ejercicio primero (más preciso)
+      if (prog.recommendations[ei] && keys[ki] === 'progrec_'+w+'_'+di) {
+        return prog.recommendations[ei];
+      }
+      // Buscar por nombre de ejercicio (fallback)
+      if (exName) {
+        var exLower = exName.toLowerCase().trim();
+        for (var ri = 0; ri < prog.recommendations.length; ri++) {
+          var rec = prog.recommendations[ri];
+          if (rec.exerciseName && rec.exerciseName.toLowerCase().trim() === exLower) {
+            return rec;
+          }
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function _drawSparkline(canvasId, data, color) {
