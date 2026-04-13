@@ -290,6 +290,7 @@ let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
 let CURRENT_WEEK = 1;
 var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
+var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
@@ -985,9 +986,11 @@ async function loadPlan(user) {
       const logRef = FB.doc(FB.db, 'logs', user.uid);
       const logSnap = await FB.getDoc(logRef);
       if (logSnap.exists()) {
-        LOGS = logSnap.data().entries || {};
-        CURRENT_WEEK = logSnap.data().currentWeek || 1;
-        if (logSnap.data().exerciseUnits) EXERCISE_UNITS = logSnap.data().exerciseUnits;
+        var logData = logSnap.data();
+        LOGS = logData.entries || {};
+        CURRENT_WEEK = logData.currentWeek || 1;
+        if (logData.exerciseUnits) EXERCISE_UNITS = logData.exerciseUnits;
+        if (logData.exerciseHistory) EXERCISE_HISTORY = logData.exerciseHistory;
       }
     } catch(logErr) {
       console.warn('logs no disponibles:', logErr.message);
@@ -2033,10 +2036,13 @@ function buildBoostcampExercise(ej, di, ei) {
     var saved = LOGS[key] || {};
     var prev = LOGS[prevKey] || {};
     var completed = !!saved.done;
-    var carga = saved.carga || '';
-    var reps = saved.reps || '';
     var unit = saved.unit || getExUnit(di, ei);
-    var rirReal = saved.rir_real || '';
+    // Pre-fill desde historial de ejercicio si no hay dato guardado ni semana anterior
+    var exNameLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    var histEx = EXERCISE_HISTORY[exNameLower] || {};
+    var carga = saved.carga || ((!prev.carga && s === 0 && histEx.load) ? histEx.load : '');
+    var reps = saved.reps || ((!prev.reps && s === 0 && histEx.reps) ? histEx.reps : '');
+    var rirReal = saved.rir_real || ((!prev.rir_real && s === 0 && histEx.rir) ? histEx.rir : '');
 
     // Auto-prog suggestion: buscar recomendación del algoritmo de progresión
     var suggestion = '';
@@ -2116,14 +2122,18 @@ function buildBoostcampExercise(ej, di, ei) {
           '</div>'+
           // Inputs
           '<div style="flex:1;min-width:0">'+
-            // Referencia semana anterior
+            // Referencia semana anterior / historial mesociclo anterior
             (prev.carga
               ? '<div style="font-size:10px;color:var(--mt);margin-bottom:4px">'+
                   '↩ '+prev.carga+' '+unit+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+
                 '</div>'
-              : (suggestion
+              : (!prev.carga && s===0 && histEx.load && !saved.carga
+                  ? '<div style="font-size:10px;color:rgba(108,150,255,.7);margin-bottom:4px">'+
+                      '📋 Historial: '+histEx.load+' '+unit+(histEx.reps?' × '+histEx.reps+' reps':'')+
+                    '</div>'
+                  : (suggestion
                   ? '<div style="font-size:10px;color:'+(progRec?'var(--accent)':'rgba(108,150,255,.7)')+';margin-bottom:4px;'+(progRec?'font-weight:600;background:rgba(200,165,74,.06);padding:2px 6px;border-radius:4px;border:1px solid rgba(200,165,74,.15);display:inline-block':'')+'">'+suggestion+'</div>'
-                  : ''))+
+                  : '')))+
             '<div style="display:flex;gap:5px">'+
               '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
@@ -2281,17 +2291,35 @@ function completeSet(key, di, ei, si, unit) {
   }
 
   LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now() };
-  saveLogs();
 
   // Leer nombre del ejercicio antes de re-render
   var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+  // Actualizar historial de ejercicio (peso/RIR para continuidad entre mesociclos)
+  if (done && carga && parseFloat(carga) > 0) {
+    EXERCISE_HISTORY[exName] = {
+      load: carga, reps: reps, rir: rirReal || getAdjustedRIR(2, CURRENT_WEEK),
+      unit: unit, updatedAt: Date.now()
+    };
+  }
+
+  saveLogs();
 
   // Re-render el tab de entrenamiento para reflejar el nuevo estado
   renderEntrenamiento();
 
   if (done) {
-    var esCompuesto = /press|squat|sentadilla|peso muerto|rdl|hip thrust|jalon|remo|dominadas|fondos|hack|prensa|bulgar|curl femoral/.test(exName);
-    startRestTimer(esCompuesto ? 120 : 90);
+    // Timer inteligente: usa fatigueCost del catálogo si disponible
+    var catEx = _getCatalogData(exName);
+    var restTime;
+    if (catEx) {
+      var fc = catEx.fatigueCost || 3;
+      restTime = fc >= 5 ? 180 : fc >= 4 ? 150 : fc >= 3 ? 120 : fc >= 2 ? 90 : 60;
+    } else {
+      var esCompuesto = /press|squat|sentadilla|peso muerto|rdl|hip thrust|jalon|remo|dominadas|fondos|hack|prensa|bulgar|curl femoral/.test(exName);
+      restTime = esCompuesto ? 120 : 90;
+    }
+    startRestTimer(restTime);
     showToast('Serie ✓ — descansando');
   } else {
     showToast('Serie desmarcada');
@@ -2479,14 +2507,14 @@ async function saveLogs() {
   if (_saveLogsTimer) clearTimeout(_saveLogsTimer);
   _saveLogsTimer = setTimeout(_doSaveLogs, 400);
   // Backup inmediato a localStorage siempre
-  try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:CURRENT_WEEK,exerciseUnits:EXERCISE_UNITS,ts:Date.now()})); } catch(le){}
+  try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:CURRENT_WEEK,exerciseUnits:EXERCISE_UNITS,exerciseHistory:EXERCISE_HISTORY,ts:Date.now()})); } catch(le){}
 }
 
 async function _doSaveLogs() {
   if (!USER || !FB) return;
   try {
     const ref = FB.doc(FB.db, 'logs', USER.uid);
-    await FB.setDoc(ref, { entries: LOGS, currentWeek: CURRENT_WEEK, exerciseUnits: EXERCISE_UNITS, updatedAt: Date.now() });
+    await FB.setDoc(ref, { entries: LOGS, currentWeek: CURRENT_WEEK, exerciseUnits: EXERCISE_UNITS, exerciseHistory: EXERCISE_HISTORY, updatedAt: Date.now() });
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
@@ -2530,6 +2558,7 @@ function loadBackupLogs() {
         LOGS = data.entries;
         CURRENT_WEEK = data.currentWeek || 1;
         if (data.exerciseUnits) EXERCISE_UNITS = data.exerciseUnits;
+        if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
         return true;
       }
     }
