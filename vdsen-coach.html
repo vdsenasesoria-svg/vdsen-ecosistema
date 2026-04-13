@@ -1396,7 +1396,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       days.push({ dayIndex: di, label, exercises });
     });
     try {
-      await updateDoc(doc(db, "plans", _editingPlanId), { days, daysPerWeek: days.length, updatedAt: new Date().toISOString() });
+      await updateDoc(doc(db, "plans", _editingPlanId), { days, daysPerWeek: days.length, coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
       showToast('Plan actualizado ✅');
       toggleTrainingEditor();
       showClientDetail(_detailClientId);
@@ -1507,7 +1507,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       days[dayIdx].exercises = days[dayIdx].exercises || [];
       days[dayIdx].exercises.push(newEx);
 
-      await updateDoc(doc(db, "plans", planId), { days, updatedAt: new Date().toISOString() });
+      await updateDoc(doc(db, "plans", planId), { days, coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
       showToast(`"${name}" agregado a ${days[dayIdx].label} ✅`);
       document.getElementById('quickAddPanel')?.remove();
       showClientDetail(_detailClientId); // recargar
