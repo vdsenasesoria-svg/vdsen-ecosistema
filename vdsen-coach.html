@@ -764,6 +764,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
       showToast("✅ Plan importado y activado correctamente");
+      _autoAddExercisesToCatalog(planObj.days || []); // auto-agregar ejercicios al catálogo
       window._importedPlan = null;
       document.getElementById("planBuilder").innerHTML = "";
       document.getElementById("parsedPlanPreview") && (document.getElementById("parsedPlanPreview").innerHTML = "");
@@ -913,6 +914,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
       showToast("✅ Plan guardado y activado correctamente");
+      _autoAddExercisesToCatalog(manualPlan.days || []); // auto-agregar ejercicios al catálogo
       manualPlan = null;
       activeMPDay = 0;
       document.getElementById("planBuilder").innerHTML = "";
@@ -1275,6 +1277,50 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     if (el) el.remove();
   }
 
+  // ── Auto-agregar ejercicios del plan al catálogo (sin duplicados) ──
+  async function _autoAddExercisesToCatalog(days) {
+    if (!currentCoach || !days || !days.length) return;
+    try {
+      // Obtener nombres de todos los ejercicios en el plan (sin duplicados, normalizados)
+      const planNames = new Set();
+      days.forEach(d => (d.exercises || []).forEach(e => {
+        const n = (e.exerciseName || e.nombre || '').trim();
+        if (n) planNames.add(n.toLowerCase());
+      }));
+      if (!planNames.size) return;
+
+      // Comparar con catálogo existente
+      const existing = new Set(_allExercises.map(e => (e.name||'').toLowerCase()));
+      const toAdd = [...planNames].filter(n => !existing.has(n));
+      if (!toAdd.length) return;
+
+      // Agregar ejercicios nuevos con valores por defecto
+      const batch = toAdd.map(nameLower => {
+        // Recuperar el nombre original con capitalización correcta
+        let originalName = nameLower;
+        days.forEach(d => (d.exercises || []).forEach(e => {
+          const en = (e.exerciseName || e.nombre || '').trim();
+          if (en.toLowerCase() === nameLower) originalName = en;
+        }));
+        return addDoc(collection(db, 'exercises'), {
+          name: originalName,
+          coachId: currentCoach.uid,
+          motorPattern: '',
+          equipment: '',
+          muscleType: 'typeIIx',
+          fatigueCost: 3,
+          resistanceCurve: 'mid',
+          source: 'plan',
+          createdAt: new Date().toISOString()
+        });
+      });
+      await Promise.all(batch);
+      // Refrescar catálogo en cache
+      await loadExerciseCatalog();
+      showToast(`${toAdd.length} ejercicio(s) agregado(s) al catálogo ✅`);
+    } catch(e) { console.warn('_autoAddExercisesToCatalog error:', e.message); }
+  }
+
   async function saveTrainingPlan() {
     if (!_editingPlanId) return;
     const dayBlocks = document.querySelectorAll('[id^="dayblock_"]');
@@ -1301,6 +1347,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       showToast('Plan actualizado ✅');
       toggleTrainingEditor();
       showClientDetail(_detailClientId); // recargar modal con datos nuevos
+      _autoAddExercisesToCatalog(days); // agregar ejercicios nuevos al catálogo en background
     } catch(e) { showToast('Error al guardar: ' + e.message, true); }
   }
 
@@ -1411,6 +1458,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       showToast(`"${name}" agregado a ${days[dayIdx].label} ✅`);
       document.getElementById('quickAddPanel')?.remove();
       showClientDetail(_detailClientId); // recargar
+      _autoAddExercisesToCatalog(days); // auto-agregar al catálogo en background
     } catch(e) {
       showToast('Error: ' + e.message, true);
       btn.disabled = false; btn.textContent = 'Agregar al plan';
@@ -1695,6 +1743,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
       showToast('Plan asignado a '+opts[ci].name+' ✅');
+      _autoAddExercisesToCatalog(days); // auto-agregar ejercicios del template al catálogo
       loadClientList();
       loadDashboard();
     } catch(e) { showToast('Error: '+e.message, true); }
