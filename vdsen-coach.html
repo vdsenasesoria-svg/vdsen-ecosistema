@@ -49,16 +49,20 @@
 <div class="sidebar p-4">
   <h2 class="text-2xl font-bold text-[#C9A84C] mb-8">VDSEN Coach</h2>
   <nav class="space-y-3">
+    <div data-section="dashboard" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded transition font-semibold">📋 Dashboard</div>
     <div data-section="clientes" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded transition">👥 Clientes</div>
     <div data-section="crearPlan" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">📝 Crear Plan</div>
+    <div data-section="templates" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">📑 Templates</div>
     <div data-section="catalogo" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">🏋️ Catálogo</div>
     <div data-section="monitoreo" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">📊 Monitoreo</div>
     <div data-section="config" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">⚙️ Configuración</div>
   </nav>
 </div>
 <div class="main-content">
-  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
+  <div id="dashboard" class="section active"><h2 class="text-2xl font-bold mb-4">Dashboard</h2><div id="dashboardContent"></div></div>
+  <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
   <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button></div><div id="planBuilder"></div></div>
+  <div id="templates" class="section"><h2 class="text-2xl font-bold mb-4">Templates de Planes</h2><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
   <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><select id="monitorClientSelect" class="input-field mb-4"></select><div id="monitorTable"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
@@ -146,7 +150,7 @@
   </div>
 </div>
 <div class="bottom-nav-mobile hidden justify-around fixed bottom-0 w-full bg-[#141414] border-t border-[#2A2A2A] py-2">
-  <div data-section="clientes" class="nav-item-mobile">👥</div><div data-section="crearPlan" class="nav-item-mobile">📝</div><div data-section="catalogo" class="nav-item-mobile">🏋️</div><div data-section="monitoreo" class="nav-item-mobile">📊</div><div data-section="config" class="nav-item-mobile">⚙️</div>
+  <div data-section="dashboard" class="nav-item-mobile">📋</div><div data-section="clientes" class="nav-item-mobile">👥</div><div data-section="crearPlan" class="nav-item-mobile">📝</div><div data-section="catalogo" class="nav-item-mobile">🏋️</div><div data-section="monitoreo" class="nav-item-mobile">📊</div>
 </div>
 
 <script type="module">
@@ -198,6 +202,8 @@
     loadExerciseCatalog();
     loadMonitorClients();
     loadClientsSelect();
+    loadDashboard();
+    loadTemplates();
     const savedKey = localStorage.getItem('vdsen_apikey');
     if (savedKey) document.getElementById("apiKeyInput").value = "••••••••••••••••";
     // Cargar compendio desde Firestore si ya fue subido anteriormente
@@ -293,10 +299,27 @@
       } else {
         _clientIdList = [];
         _clientNameMap = {};
+        const _clientDocs = [];
         snap.forEach(d => {
           _clientIdList.push(d.id);
           _clientNameMap[d.id] = d.data().displayName || d.data().email || d.id;
-          container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${d.data().displayName}</strong> (${d.data().email}) ${d.data().activePlanId ? "✅" : "⚠️"}</span><button class="text-[#C9A84C] text-sm font-medium" data-id="${d.id}" onclick="showClientDetail('${d.id}')">Ver →</button></div>`;
+          _clientDocs.push({ id: d.id, ...d.data() });
+        });
+        // Cargar logs para badges de alerta
+        const _logPromises = _clientDocs.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));
+        const _logSnaps = await Promise.all(_logPromises);
+        _clientDocs.forEach((c, i) => {
+          const logData = (_logSnaps[i] && _logSnaps[i].exists()) ? _logSnaps[i].data() : {};
+          const entries = logData.entries || {};
+          const week = logData.currentWeek || 1;
+          const updAt = logData.updatedAt || 0;
+          const daysSince = Math.floor((Date.now() - updAt) / 86400000);
+          let alertHtml = '';
+          const ci = entries['ci_sem_'+week] || {};
+          if (ci.who5 && parseInt(ci.who5) < 52) alertHtml += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
+          if (daysSince > 3 && updAt > 0) alertHtml += '<span class="text-xs ml-1" style="color:#FFBB00">'+daysSince+'d</span>';
+          const statusIcon = c.activePlanId ? "✅" : "⚠️";
+          container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${c.displayName}</strong> (${c.email}) ${statusIcon}${alertHtml}</span><button class="text-[#C9A84C] text-sm font-medium" onclick="showClientDetail('${c.id}')">Ver →</button></div>`;
         });
       }
     } catch (e) {
@@ -1439,6 +1462,275 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     } catch(e) { showToast('Error: ' + e.message, true); }
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // DASHBOARD — Resumen de todos los clientes
+  // ══════════════════════════════════════════════════════════════════
+  async function loadDashboard() {
+    if (!currentCoach) return;
+    const cont = document.getElementById('dashboardContent');
+    if (!cont) return;
+    cont.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando dashboard...</div>`;
+
+    try {
+      const clientSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+      if (clientSnap.empty) {
+        cont.innerHTML = `<p class="text-[#888]">Sin clientes aún.</p>`;
+        return;
+      }
+
+      let clients = [];
+      clientSnap.forEach(d => clients.push({ id: d.id, ...d.data() }));
+
+      // Cargar logs de todos los clientes
+      const logsPromises = clients.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));
+      const logsSnaps = await Promise.all(logsPromises);
+      const logsMap = {};
+      logsSnaps.forEach((snap, i) => {
+        if (snap && snap.exists()) logsMap[clients[i].id] = snap.data();
+      });
+
+      // Clasificar clientes
+      const now = Date.now();
+      const DAY = 86400000;
+      let cards = clients.map(c => {
+        const logData = logsMap[c.id] || {};
+        const entries = logData.entries || {};
+        const week = logData.currentWeek || 1;
+        const updatedAt = logData.updatedAt || 0;
+        const daysSince = Math.floor((now - updatedAt) / DAY);
+
+        // Alertas
+        const alerts = [];
+        const ci = entries['ci_sem_'+week] || {};
+        if (ci.who5 && parseInt(ci.who5) < 52) alerts.push({ type:'danger', text:'WHO-5 bajo ('+ci.who5+')' });
+        if (ci.energia && parseInt(ci.energia) <= 3) alerts.push({ type:'danger', text:'Energía baja ('+ci.energia+')' });
+        if (daysSince > 3 && updatedAt > 0) alerts.push({ type:'warn', text: daysSince+'d sin entrenar' });
+        if (!c.activePlanId) alerts.push({ type:'warn', text:'Sin plan' });
+
+        // ICS promedio última sesión
+        let lastICS = 0, icsCount = 0;
+        Object.keys(entries).forEach(k => {
+          if (k.startsWith('log_'+week+'_') && entries[k].ics) {
+            lastICS += parseFloat(entries[k].ics); icsCount++;
+          }
+        });
+        if (icsCount > 0) {
+          lastICS = lastICS / icsCount;
+          if (lastICS < 7) alerts.push({ type:'danger', text:'ICS prom. '+lastICS.toFixed(1) });
+        }
+
+        // Sesiones completadas esta semana
+        let doneCount = 0;
+        Object.keys(entries).forEach(k => { if (k.startsWith('done_'+week+'_') && entries[k]) doneCount++; });
+
+        // Check-in semanal
+        const ciDone = !!(ci.peso || ci.hrv);
+
+        return { ...c, week, daysSince, alerts, doneCount, ciDone, lastICS: icsCount ? lastICS : null, updatedAt };
+      });
+
+      // Stats
+      const total = cards.length;
+      const active = cards.filter(c => c.daysSince <= 3).length;
+      const withAlerts = cards.filter(c => c.alerts.some(a => a.type === 'danger')).length;
+
+      let html = `
+        <div class="grid grid-cols-3 gap-3 mb-6">
+          <div class="card p-4 text-center"><div class="text-3xl font-bold text-[#C9A84C]">${total}</div><div class="text-xs text-[#888] mt-1">TOTAL CLIENTES</div></div>
+          <div class="card p-4 text-center"><div class="text-3xl font-bold text-[#44BB88]">${active}</div><div class="text-xs text-[#888] mt-1">ACTIVOS HOY</div></div>
+          <div class="card p-4 text-center"><div class="text-3xl font-bold ${withAlerts?'text-red-400':'text-[#888]'}">${withAlerts}</div><div class="text-xs text-[#888] mt-1">CON ALERTAS</div></div>
+        </div>`;
+
+      // Ordenar: alertas peligro primero, luego por última actividad
+      cards.sort((a, b) => {
+        const aDanger = a.alerts.filter(x => x.type === 'danger').length;
+        const bDanger = b.alerts.filter(x => x.type === 'danger').length;
+        if (aDanger !== bDanger) return bDanger - aDanger;
+        return b.updatedAt - a.updatedAt;
+      });
+
+      html += `<div class="space-y-2">`;
+      cards.forEach(c => {
+        const alertBadges = c.alerts.map(a =>
+          `<span class="text-xs px-2 py-0.5 rounded" style="background:${a.type==='danger'?'rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444':'rgba(255,187,0,.1);border:1px solid #FFBB00;color:#FFBB00'}">${a.text}</span>`
+        ).join(' ');
+
+        html += `
+          <div class="card p-3 cursor-pointer hover:border-[#C9A84C] transition" onclick="showClientDetail('${c.id}')">
+            <div class="flex justify-between items-start mb-1">
+              <div>
+                <span class="font-semibold">${c.displayName || c.email}</span>
+                <span class="text-xs text-[#888] ml-2">SEM ${c.week} ${c.week===6?'DELOAD':''}</span>
+              </div>
+              <div class="flex gap-1 items-center">
+                <span class="text-xs ${c.ciDone?'text-[#44BB88]':'text-[#555]'}">${c.ciDone?'CI ✓':'CI ✕'}</span>
+                <span class="text-xs text-[#888]">${c.doneCount}ses</span>
+              </div>
+            </div>
+            <div class="flex gap-1 flex-wrap">${alertBadges || '<span class="text-xs text-[#44BB88]">Sin alertas</span>'}</div>
+          </div>`;
+      });
+      html += `</div>`;
+      cont.innerHTML = html;
+    } catch(e) {
+      cont.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // TEMPLATES — Plantillas de planes reutilizables
+  // ══════════════════════════════════════════════════════════════════
+  const BUILTIN_TEMPLATES = [
+    {
+      name: 'Push Pull Legs (6 días)', type: 'PPL', weeks: 6, daysPerWeek: 6,
+      days: [
+        { label:'Push A', exercises:['Press banca plano|4x8|RIR 2','Press inclinado mancuernas|3x10|RIR 2','Aperturas inclinado|3x12|RIR 1','Fondos pecho|3x8|RIR 2','Press militar|3x10|RIR 2','Elevaciones laterales|4x15|RIR 1'] },
+        { label:'Pull A', exercises:['Dominadas|4x8|RIR 2','Remo con barra|4x8|RIR 2','Remo en polea baja|3x10|RIR 2','Face pull|3x15|RIR 1','Curl barra|3x10|RIR 2','Curl martillo|3x12|RIR 1'] },
+        { label:'Legs A', exercises:['Sentadilla|4x8|RIR 2','Prensa|3x10|RIR 2','Curl femoral|3x10|RIR 2','Extensión cuádriceps|3x12|RIR 1','Elevación de talones|4x15|RIR 1','Hip thrust|3x10|RIR 2'] },
+        { label:'Push B', exercises:['Press banca inclinado|4x8|RIR 2','Press mancuernas plano|3x10|RIR 2','Crossover polea alta|3x12|RIR 1','Press Arnold|3x10|RIR 2','Elevaciones laterales cable|4x15|RIR 1','Tríceps polea|3x12|RIR 1'] },
+        { label:'Pull B', exercises:['Jalón al pecho|4x10|RIR 2','Remo mancuerna unilateral|3x10|RIR 2','Remo en máquina|3x12|RIR 1','Encogimientos barra|3x12|RIR 2','Curl inclinado|3x10|RIR 2','Curl concentrado|3x12|RIR 1'] },
+        { label:'Legs B', exercises:['Peso muerto rumano|4x8|RIR 2','Sentadilla búlgara|3x10|RIR 2','Hack squat|3x10|RIR 2','Curl femoral sentado|3x12|RIR 1','Abducción cadera|3x15|RIR 1','Gemelos sentado|4x15|RIR 1'] }
+      ]
+    },
+    {
+      name: 'Upper Lower (4 días)', type: 'UL', weeks: 6, daysPerWeek: 4,
+      days: [
+        { label:'Upper A (Fuerza)', exercises:['Press banca plano|4x6|RIR 2','Remo con barra|4x6|RIR 2','Press militar|3x8|RIR 2','Jalón al pecho|3x8|RIR 2','Curl barra|3x10|RIR 1','Tríceps polea|3x10|RIR 1'] },
+        { label:'Lower A (Fuerza)', exercises:['Sentadilla|4x6|RIR 2','Peso muerto rumano|3x8|RIR 2','Prensa|3x8|RIR 2','Curl femoral|3x10|RIR 1','Elevación de talones|4x12|RIR 1'] },
+        { label:'Upper B (Volumen)', exercises:['Press inclinado mancuernas|4x10|RIR 2','Remo mancuerna unilateral|4x10|RIR 2','Aperturas inclinado|3x12|RIR 1','Face pull|3x15|RIR 1','Elevaciones laterales|4x15|RIR 1','Curl martillo|3x12|RIR 1'] },
+        { label:'Lower B (Volumen)', exercises:['Sentadilla búlgara|4x10|RIR 2','Hip thrust|4x10|RIR 2','Extensión cuádriceps|3x12|RIR 1','Curl femoral sentado|3x12|RIR 1','Abducción cadera|3x15|RIR 1','Gemelos sentado|4x15|RIR 1'] }
+      ]
+    },
+    {
+      name: 'Full Body (3 días)', type: 'FB', weeks: 6, daysPerWeek: 3,
+      days: [
+        { label:'Full Body A', exercises:['Sentadilla|4x8|RIR 2','Press banca plano|4x8|RIR 2','Remo con barra|4x8|RIR 2','Press militar|3x10|RIR 2','Curl barra|2x10|RIR 2','Elevación de talones|3x15|RIR 1'] },
+        { label:'Full Body B', exercises:['Peso muerto rumano|4x8|RIR 2','Press inclinado mancuernas|3x10|RIR 2','Jalón al pecho|4x10|RIR 2','Elevaciones laterales|3x15|RIR 1','Curl femoral|3x10|RIR 2','Fondos pecho|3x8|RIR 2'] },
+        { label:'Full Body C', exercises:['Hip thrust|4x10|RIR 2','Press banca inclinado|3x10|RIR 2','Remo en polea baja|3x10|RIR 2','Sentadilla búlgara|3x10|RIR 2','Face pull|3x15|RIR 1','Curl martillo|2x12|RIR 1'] }
+      ]
+    }
+  ];
+
+  function _parseTemplateExercise(str) {
+    const parts = str.split('|').map(s => s.trim());
+    const name = parts[0];
+    const sr = (parts[1]||'3x8').match(/(\d+)\s*[xX×]\s*(\d+)/);
+    const sets = sr ? parseInt(sr[1]) : 3;
+    const reps = sr ? parseInt(sr[2]) : 8;
+    const rirM = (parts[2]||'RIR 2').match(/(\d+)/);
+    const rir = rirM ? parseInt(rirM[1]) : 2;
+    return { exerciseName: name, alternatives: [], sets: Array.from({length:sets},(_,s)=>({setIndex:s,repsTarget:reps,rirTarget:rir,load:0,restSeconds:90})) };
+  }
+
+  async function loadTemplates() {
+    const cont = document.getElementById('templateList');
+    if (!cont) return;
+
+    // Templates custom del coach
+    let customTemplates = [];
+    try {
+      const snap = await getDocs(query(collection(db, 'templates'), where('coachId', '==', currentCoach.uid)));
+      snap.forEach(d => customTemplates.push({ id: d.id, ...d.data() }));
+    } catch(e) {}
+
+    let html = '<div class="text-xs text-[#888] uppercase tracking-wide mb-2">Plantillas base</div>';
+    BUILTIN_TEMPLATES.forEach((t, i) => {
+      html += `<div class="card p-3 mb-2 flex justify-between items-center">
+        <div><strong>${t.name}</strong><br><span class="text-xs text-[#888]">${t.daysPerWeek} días · ${t.weeks} sem</span></div>
+        <button onclick="applyTemplate(${i},'builtin')" class="text-[#C9A84C] text-sm font-medium">Usar →</button>
+      </div>`;
+    });
+
+    if (customTemplates.length) {
+      html += '<div class="text-xs text-[#888] uppercase tracking-wide mb-2 mt-4">Mis templates</div>';
+      customTemplates.forEach(t => {
+        html += `<div class="card p-3 mb-2 flex justify-between items-center">
+          <div><strong>${t.name}</strong><br><span class="text-xs text-[#888]">${(t.days||[]).length} días · ${t.weeks||6} sem</span></div>
+          <div>
+            <button onclick="applyTemplate('${t.id}','custom')" class="text-[#C9A84C] text-sm mr-2">Usar →</button>
+            <button onclick="deleteTemplate('${t.id}')" class="text-red-400 text-sm">🗑</button>
+          </div>
+        </div>`;
+      });
+    }
+
+    cont.innerHTML = html;
+
+    document.getElementById('newTemplateBtn').onclick = () => createTemplateFromPlan();
+  }
+
+  async function applyTemplate(idx, type) {
+    // Seleccionar cliente
+    const clientsSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+    let opts = [];
+    clientsSnap.forEach(d => opts.push({ id: d.id, name: d.data().displayName || d.data().email }));
+    if (!opts.length) { showToast('No hay clientes', true); return; }
+    const optList = opts.map((o,i) => (i+1)+'. '+o.name).join('\n');
+    const sel = prompt('Asignar template a:\n'+optList+'\n\nNúmero del cliente:');
+    if (!sel) return;
+    const ci = parseInt(sel) - 1;
+    if (ci < 0 || ci >= opts.length) { showToast('Selección inválida', true); return; }
+    const clientId = opts[ci].id;
+
+    let template;
+    if (type === 'builtin') {
+      template = BUILTIN_TEMPLATES[idx];
+    } else {
+      const snap = await getDoc(doc(db, 'templates', idx));
+      if (!snap.exists()) { showToast('Template no encontrado', true); return; }
+      template = snap.data();
+    }
+
+    // Convertir template a plan
+    const days = (template.days || []).map((d, di) => ({
+      dayIndex: di, label: d.label,
+      exercises: (d.exercises || []).map(e => typeof e === 'string' ? _parseTemplateExercise(e) : e)
+    }));
+
+    try {
+      const planRef = await addDoc(collection(db, "plans"), {
+        days, weeks: template.weeks || 6, daysPerWeek: days.length,
+        coachId: currentCoach.uid, clientId, status: 'active',
+        generatedBy: 'template:'+template.name, createdAt: Date.now()
+      });
+      await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
+      showToast('Plan asignado a '+opts[ci].name+' ✅');
+      loadClientList();
+      loadDashboard();
+    } catch(e) { showToast('Error: '+e.message, true); }
+  }
+
+  async function createTemplateFromPlan() {
+    const name = prompt('Nombre del template:');
+    if (!name) return;
+    // Buscar planes del coach para usar como base
+    const planSnap = await getDocs(query(collection(db, "plans"), where("coachId", "==", currentCoach.uid)));
+    let plans = [];
+    planSnap.forEach(d => plans.push({ id: d.id, ...d.data() }));
+    if (!plans.length) { showToast('No hay planes para usar como base. Crea un plan primero.', true); return; }
+    const optList = plans.map((p,i) => (i+1)+'. '+(p.days||[]).map(d=>d.label).join(', ')).join('\n');
+    const sel = prompt('Basado en qué plan:\n'+optList);
+    if (!sel) return;
+    const pi = parseInt(sel) - 1;
+    if (pi < 0 || pi >= plans.length) return;
+
+    try {
+      await addDoc(collection(db, 'templates'), {
+        name, coachId: currentCoach.uid, weeks: plans[pi].weeks || 6,
+        days: (plans[pi].days || []).map(d => ({ label: d.label, exercises: d.exercises || [] })),
+        createdAt: Date.now()
+      });
+      showToast('Template "'+name+'" creado ✅');
+      loadTemplates();
+    } catch(e) { showToast('Error: '+e.message, true); }
+  }
+
+  async function deleteTemplate(id) {
+    if (!confirm('¿Eliminar este template?')) return;
+    try { await deleteDoc(doc(db, 'templates', id)); showToast('Template eliminado'); loadTemplates(); }
+    catch(e) { showToast('Error: '+e.message, true); }
+  }
+
   // Exponer funciones del builder manual al scope global (usadas en onclick inline)
   window.parsePlanFromText = parsePlanFromText;
   window.parsePlanFromPDF = parsePlanFromPDF;
@@ -1474,6 +1766,9 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   window.updateSet = updateSet;
   window.updateAlts = updateAlts;
   window.saveManualPlan = saveManualPlan;
+  window.applyTemplate = applyTemplate;
+  window.deleteTemplate = deleteTemplate;
+  window.loadDashboard = loadDashboard;
 
   // Configuración: guardar API key
   document.getElementById("saveApiKeyBtn")?.addEventListener("click", () => {
