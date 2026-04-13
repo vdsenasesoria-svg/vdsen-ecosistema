@@ -937,17 +937,30 @@ async function loadPlan(user) {
 
     const planData = planSnap.data();
 
-    // Convertir formato nuevo {days:[{label, exercises:[{exerciseName,sets:[]}]}]}
-    // al formato que el renderer espera: entrenamiento.sesiones con contenido texto
+    // Convertir formato nuevo {days:[{label, exercises:[{exerciseName,sets,[],coachNote}]}]}
+    // al formato que el renderer espera: sesiones con contenido texto + exercises estructurado
     const sesiones = (planData.days || []).map(function(d, i) {
-      var contenido = (d.exercises || []).map(function(e, ei) {
+      var exList = (d.exercises || []).map(function(e, ei) {
         var numSets = (e.sets || []).length || 3;
         var repsTarget = (e.sets && e.sets[0]) ? (e.sets[0].repsTarget || 8) : 8;
         var rirTarget  = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
-        return (ei+1)+'. '+(e.exerciseName||e.nombre||'Ejercicio') +
-               ' | '+numSets+'x'+repsTarget+' | RIR '+rirTarget;
+        return {
+          nombre: e.exerciseName || e.nombre || 'Ejercicio',
+          exerciseName: e.exerciseName || e.nombre || 'Ejercicio',
+          numSeries: numSets,
+          repsRange: String(repsTarget),
+          rir: String(rirTarget),
+          sets: e.sets || [],
+          coachNote: e.coachNote || '',
+          rezagado: false,
+          nota: e.coachNote || '',
+          setsReps: numSets + '×' + repsTarget
+        };
+      });
+      var contenido = exList.map(function(e, ei) {
+        return (ei+1)+'. '+e.nombre+' | '+e.numSeries+'x'+e.repsRange+' | RIR '+e.rir;
       }).join('\n');
-      return { dia: d.label || ('Día '+(i+1)), nombre: d.label || ('Día '+(i+1)), contenido: contenido };
+      return { dia: d.label || ('Día '+(i+1)), nombre: d.label || ('Día '+(i+1)), contenido: contenido, exercises: exList };
     });
 
     PLAN = {
@@ -1881,54 +1894,48 @@ function renderEntrenamiento() {
   // ── Sesión activa ────────────────────────────────────────────────
   var ses = sesiones[DIA_ACTIVO];
   var isDone = !!LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
-  var lineas = (ses.contenido||'').split('\n').filter(function(l){return l.trim();});
 
-  // Parsear ejercicios de la sesión
+  // Usar exercises estructurados si existen (plan de Firestore), sino parsear texto
   var ejercicios = [];
-  var cur = null;
-  lineas.forEach(function(raw) {
-    var l = raw.trim();
-    if (!l) return;
-    if (/^[A-Z]?\d+[.)]\s+.+[\|:]\s*\d+\s*[xX×]/i.test(l) || (/^[A-Z]?\d+[.)]\s+/.test(l) && (/RIR/i.test(l) || /\d+\s*[xX×]\s*\d/.test(l) || /\d+\s*series/i.test(l))) || (/^[•\-–]\s+/.test(l) && /\d+\s*[xX×]\s*\d/.test(l))) {
-      if (cur) ejercicios.push(cur);
-      // Parse: "1. Nombre del ejercicio | 4x8-12 | RIR 1" (con o sin pipes)
-      var cleanL = l.replace(/^[A-Z]?\d+[.)]\s*/i,'').replace(/^[•\-–]\s+/,'');
-      var parts = cleanL.split('|').map(function(p){return p.trim();});
-      var nombre, setsReps, rirStr;
-      if (parts.length >= 3) {
-        // Formato con pipes: "Nombre | 4x10-12 | RIR 2"
-        nombre = parts[0] || l;
-        setsReps = parts[1] || '';
-        rirStr = parts[2] || '';
-      } else {
-        // Formato sin pipes: "Nombre 4x10-12 RIR 2" o "Nombre 4 series de 10-12 RIR 2"
-        nombre = cleanL;
-        setsReps = cleanL;
-        rirStr = cleanL;
+  if (ses.exercises && ses.exercises.length) {
+    ejercicios = ses.exercises;
+  } else {
+    var lineas = (ses.contenido||'').split('\n').filter(function(l){return l.trim();});
+    var cur = null;
+    lineas.forEach(function(raw) {
+      var l = raw.trim();
+      if (!l) return;
+      if (/^[A-Z]?\d+[.)]\s+.+[\|:]\s*\d+\s*[xX×]/i.test(l) || (/^[A-Z]?\d+[.)]\s+/.test(l) && (/RIR/i.test(l) || /\d+\s*[xX×]\s*\d/.test(l) || /\d+\s*series/i.test(l))) || (/^[•\-–]\s+/.test(l) && /\d+\s*[xX×]\s*\d/.test(l))) {
+        if (cur) ejercicios.push(cur);
+        var cleanL = l.replace(/^[A-Z]?\d+[.)]\s*/i,'').replace(/^[•\-–]\s+/,'');
+        var parts = cleanL.split('|').map(function(p){return p.trim();});
+        var nombre, setsReps, rirStr;
+        if (parts.length >= 3) {
+          nombre = parts[0] || l; setsReps = parts[1] || ''; rirStr = parts[2] || '';
+        } else {
+          nombre = cleanL; setsReps = cleanL; rirStr = cleanL;
+        }
+        var setsM = setsReps.match(/(\d+)\s*[xX×]\s*([\d\-–]+)/);
+        if (!setsM) setsM = setsReps.match(/(\d+)\s*(?:series|sets?)\s*(?:de\s*|x\s*)?([\d\-–]+)/i);
+        var numSeries = setsM ? parseInt(setsM[1]) : 3;
+        var repsRange = setsM ? setsM[2] : '8-12';
+        var rirM = rirStr.match(/RIR\s*([\d\-–]+)/i);
+        var rir = rirM ? rirM[1] : '2';
+        var rezagado = l.includes('★');
+        if (parts.length < 3) {
+          nombre = nombre.replace(/\|?\s*\d+\s*[xX×]\s*[\d\-–]+/i,'')
+                         .replace(/\|?\s*\d+\s*(?:series|sets?)\s*(?:de\s*|x\s*)?[\d\-–]+\s*(?:reps?)?/i,'')
+                         .replace(/\|?\s*RIR\s*[\d\-–]+/i,'')
+                         .replace(/^[\|\-–—\s]+|[\|\-–—\s]+$/g,'')
+                         .replace(/\s*reps?\s*$/i,'');
+        }
+        cur = { nombre: nombre.replace(/★/g,'').trim(), setsReps: numSeries+'×'+repsRange, numSeries: numSeries, repsRange: repsRange, rir: rir, rezagado: rezagado, nota: '' };
+      } else if (cur && /^(Nota:|→|•)/i.test(l)) {
+        cur.nota = l.replace(/^(Nota:|→|•)\s*/i,'');
       }
-      var setsM = setsReps.match(/(\d+)\s*[xX×]\s*([\d\-–]+)/);
-      if (!setsM) setsM = setsReps.match(/(\d+)\s*(?:series|sets?)\s*(?:de\s*|x\s*)?([\d\-–]+)/i);
-      var numSeries = setsM ? parseInt(setsM[1]) : 3;
-      var repsRange = setsM ? setsM[2] : '8-12';
-      var rirM = rirStr.match(/RIR\s*([\d\-–]+)/i);
-      var rir = rirM ? rirM[1] : '2';
-      var rezagado = l.includes('★');
-      // Limpiar nombre: quitar series/reps/RIR del nombre si no había pipes
-      if (parts.length < 3) {
-        nombre = nombre.replace(/\|?\s*\d+\s*[xX×]\s*[\d\-–]+/i,'')
-                       .replace(/\|?\s*\d+\s*(?:series|sets?)\s*(?:de\s*|x\s*)?[\d\-–]+\s*(?:reps?)?/i,'')
-                       .replace(/\|?\s*RIR\s*[\d\-–]+/i,'')
-                       .replace(/^[\|\-–—\s]+|[\|\-–—\s]+$/g,'')
-                       .replace(/\s*reps?\s*$/i,'');
-      }
-      cur = { nombre: nombre.replace(/★/g,'').trim(), setsReps: numSeries+'×'+repsRange, numSeries: numSeries, repsRange: repsRange, rir: rir, rezagado: rezagado, nota: '' };
-    } else if (cur && /^(Nota:|→|•)/i.test(l)) {
-      cur.nota = l.replace(/^(Nota:|→|•)\s*/i,'');
-    } else if (!cur && ejercicios.length === 0) {
-      // Cardio/notas generales al inicio
-    }
-  });
-  if (cur) ejercicios.push(cur);
+    });
+    if (cur) ejercicios.push(cur);
+  }
 
   // Si no parseó ejercicios estructurados, usar el render anterior como fallback
   if (!ejercicios.length) {
@@ -2010,8 +2017,9 @@ function renderEntrenamiento() {
 
 function buildBoostcampExercise(ej, di, ei) {
   var machine = getMachineForExercise(ej.nombre);
-  var numSeries = ej.numSeries || 3;
-  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||2, CURRENT_WEEK);
+  var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+  var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
+  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK);
 
   // Obtener recomendación de progresión para el header del ejercicio
   var headerRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
@@ -2189,9 +2197,11 @@ function buildBoostcampExercise(ej, di, ei) {
           ej.nombre+
           (ej.rezagado?'<span style="font-size:9px;background:rgba(200,165,74,.15);border:1px solid rgba(200,165,74,.4);color:var(--accent);padding:2px 7px;border-radius:10px;letter-spacing:1px;font-weight:700">★ REZAGADO</span>':'')+
         '</div>'+
-        '<div style="font-size:11px;color:var(--mt);margin-top:2px">'+
-          (ej.setsReps||numSeries+'×'+ej.repsRange)+' · RIR '+baseRIR+
-          (machine?' · '+machine.nombre:'')+
+        '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">'+
+          '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.25);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+numSeries+' SERIES</span>'+
+          '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+(ej.repsRange||repsTarget)+' REPS</span>'+
+          '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:2px 8px;border-radius:6px;letter-spacing:.5px">RIR '+baseRIR+'</span>'+
+          (machine?'<span style="font-size:10px;color:var(--mt)">'+machine.nombre+'</span>':'')+
         '</div>'+
         headerRecHtml+
       '</div>'+
@@ -4577,16 +4587,31 @@ function _getCatalogData(exName) {
 }
 
 // ── Alpha (incremento de carga) según curva de resistencia y tipo de fibra ──
+// Retorna { pct, capKg } — porcentaje + cap absoluto en kg
 function _getAlpha(catData) {
-  if (!catData) return 0.0625; // 6.25% default
-  var base;
-  // Curva de resistencia: elongated = menos incremento (más estrés mecánico), shortened = más incremento
-  if (catData.resistanceCurve === 'elongated') base = 0.05;      // 5%
-  else if (catData.resistanceCurve === 'shortened') base = 0.075; // 7.5%
-  else base = 0.0625; // mid = 6.25%
-  // Tipo de fibra: typeI tolera incrementos menores pero más sostenidos
-  if (catData.muscleType === 'typeI') base *= 0.8; // 4-6% para typeI
-  return base;
+  var base, capKg;
+  if (!catData) return { pct: 0.0625, capKg: 2.5 };
+  // Curva de resistencia
+  if (catData.resistanceCurve === 'elongated') base = 0.05;
+  else if (catData.resistanceCurve === 'shortened') base = 0.075;
+  else base = 0.0625;
+  // Tipo de fibra
+  if (catData.muscleType === 'typeI') base *= 0.8;
+  // Cap absoluto por fatigueCost
+  var fc = catData.fatigueCost || 3;
+  if (fc >= 5) capKg = 5;        // compuesto pesado: máx 5 kg/sem
+  else if (fc >= 4) capKg = 2.5;  // compuesto moderado: máx 2.5 kg/sem
+  else if (fc >= 3) capKg = 2.5;  // intermedio: máx 2.5 kg/sem
+  else capKg = 2;                  // aislamiento: máx 2 kg/sem
+  return { pct: base, capKg: capKg };
+}
+
+// Aplica alpha con cap: min(load * pct, capKg)
+function _applyAlpha(load, alphaObj) {
+  var increment = load * alphaObj.pct;
+  increment = Math.min(increment, alphaObj.capKg);
+  // Redondear a 0.25 kg más cercano
+  return Math.round((load + increment) * 4) / 4;
 }
 
 // ── Límite de series por costo de fatiga ──
@@ -4635,7 +4660,9 @@ function calculateProgression(di, postData) {
   // RIR personalizable: si el plan tiene rirByWeek, usarlo. Si no, default VDSEN v3.2
   var defaultRir = {1:3,2:2,3:2,4:1,5:0,6:3};
   var weekRirObj = (PLAN && PLAN.rirByWeek) ? PLAN.rirByWeek : defaultRir;
-  var rirObj = weekRirObj[CURRENT_WEEK] !== undefined ? weekRirObj[CURRENT_WEEK] : 2;
+  // Fix: Firestore puede guardar keys como string ("1") o number (1)
+  var rirObj = weekRirObj[CURRENT_WEEK] !== undefined ? weekRirObj[CURRENT_WEEK]
+             : weekRirObj[String(CURRENT_WEEK)] !== undefined ? weekRirObj[String(CURRENT_WEEK)] : 2;
   var eimd = postData.eimd || 2;
   var rpe  = postData.rpeAverage || 7;
   var sleep = postData.sleepHours || 7;
@@ -4686,7 +4713,7 @@ function calculateProgression(di, postData) {
     var avgPump = _avgArr(sets.map(function(s){ return parseFloat(s.pump) || 2; }));
     var avgRIR  = _avgArr(sets.map(function(s){ return parseFloat(s.rir_real) || rirObj; }));
     var avgReps = _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; }));
-    var load    = parseFloat(sets[0].carga) || 0;
+    var load    = _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; }));
     var numSets = sets.length;
     var alpha   = _getAlpha(catData);
     var maxSets = _getMaxSets(catData, planSets);
@@ -4727,11 +4754,13 @@ function calculateProgression(di, postData) {
       var fcost = catData ? catData.fatigueCost : 3;
 
       if (eimd === 1) {
-        // Sin dolor: añadir +1 serie (siempre máx +1 por semana)
-        if (numSets < maxSets) {
-          newSets = numSets + 1; // SIEMPRE +1, nunca +2
+        // Sin dolor: +1 serie solo si técnica buena (ICS >= 8)
+        if (avgICS >= 8 && numSets < maxSets) {
+          newSets = numSets + 1;
           action = 'add_sets';
           reasons.push('Sin dolor + ICS '+avgICS.toFixed(1)+' → +1 serie ('+numSets+'→'+newSets+')');
+        } else if (avgICS < 8) {
+          reasons.push('Sin dolor pero ICS '+avgICS.toFixed(1)+' < 8 → mantener volumen, pulir técnica');
         } else {
           reasons.push('Sin dolor pero techo de volumen alcanzado ('+maxSets+' series)');
         }
@@ -4760,15 +4789,16 @@ function calculateProgression(di, postData) {
 
       if (avgRIR < rirObj && allRepsHit) {
         // RIR por debajo del objetivo Y reps cumplidas → subir carga
-        newLoad = Math.round(load * (1 + alpha) * 4) / 4;
+        newLoad = _applyAlpha(load, alpha);
         if (action === 'maintain') action = 'increase_load';
-        reasons.push('RIR '+avgRIR.toFixed(1)+' < obj '+rirObj+' + reps cumplidas → +'+(alpha*100).toFixed(1)+'% carga');
+        var incKg = (newLoad - load).toFixed(2);
+        reasons.push('RIR '+avgRIR.toFixed(1)+' < obj '+rirObj+' + reps cumplidas → +'+incKg+' kg');
 
         // Anti-spike: si la carga ya subió la semana pasada, moderar
         if (prevWeek && prevWeek.avgLoad > 0 && load > prevWeek.avgLoad * 1.03) {
-          var modAlpha = alpha * 0.6;
-          newLoad = Math.round(load * (1 + modAlpha) * 4) / 4;
-          reasons.push('Carga ya subió sem anterior → incremento moderado +'+(modAlpha*100).toFixed(1)+'%');
+          var modAlpha = { pct: alpha.pct * 0.6, capKg: alpha.capKg * 0.6 };
+          newLoad = _applyAlpha(load, modAlpha);
+          reasons.push('Carga ya subió sem anterior → incremento moderado +'+(newLoad - load).toFixed(2)+' kg');
         }
       } else if (avgRIR < rirObj && !allRepsHit) {
         // RIR bajo pero no alcanzó reps → mantener carga, trabajar en reps
@@ -4785,10 +4815,10 @@ function calculateProgression(di, postData) {
           newReps = Math.min(repsTarget + 2, Math.round(avgReps) + 1);
         } else {
           // Excedió reps target+2 → subir carga y resetear reps
-          newLoad = Math.round(load * (1 + alpha) * 4) / 4;
+          newLoad = _applyAlpha(load, alpha);
           newReps = repsTarget;
           if (action === 'maintain') action = 'increase_load';
-          reasons.push('Double progression: reps '+avgReps.toFixed(0)+' > target+2 → +'+(alpha*100).toFixed(1)+'% carga, reset reps');
+          reasons.push('Double progression: reps '+avgReps.toFixed(0)+' > target+2 → +'+(newLoad - load).toFixed(2)+' kg, reset reps');
         }
       }
 
@@ -4800,6 +4830,19 @@ function calculateProgression(di, postData) {
       // ── Tendencia semanal negativa ──
       if (prevWeek && prevWeek.avgLoad > 0 && load < prevWeek.avgLoad * 0.95 && action !== 'reduce_load') {
         reasons.push('⚠ Carga descendió vs sem '+(CURRENT_WEEK-1)+' ('+prevWeek.avgLoad.toFixed(1)+' → '+load.toFixed(1)+')');
+      }
+
+      // ── Detección de plateau: carga estancada 2+ semanas con ICS ≥ 8 ──
+      if (prevWeek && CURRENT_WEEK >= 3) {
+        var prevPrev = _getPrevWeekData(CURRENT_WEEK - 1, di, ei, 8);
+        if (prevPrev && prevPrev.avgLoad > 0) {
+          var diffVsPrev = Math.abs(load - prevWeek.avgLoad);
+          var diffVsPrev2 = Math.abs(prevWeek.avgLoad - prevPrev.avgLoad);
+          var tolerance = load * 0.02; // 2% = estancado
+          if (diffVsPrev <= tolerance && diffVsPrev2 <= tolerance && avgICS >= 8) {
+            reasons.push('⚠ PLATEAU: carga estancada en ~'+load.toFixed(1)+' kg por 2+ semanas. Considerar: cambiar variante, ajustar tempo, o micro-salto de +1.25 kg');
+          }
+        }
       }
     }
 
