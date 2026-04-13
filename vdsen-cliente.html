@@ -2531,7 +2531,7 @@ async function _doSaveLogs() {
       document.body.appendChild(errEl);
     }
     errEl.style.display = 'block';
-    errEl.textContent = '⚠ Sin conexión — datos guardados localmente.';
+    errEl.textContent = '⚠ Error guardando: ' + (e.code || '') + ' ' + e.message;
   }
 }
 
@@ -4590,14 +4590,21 @@ function _getAlpha(catData) {
 }
 
 // ── Límite de series por costo de fatiga ──
-function _getMaxSets(catData, currentSets) {
-  if (!catData) return currentSets + 3;
-  // fatigueCost 1-5: mayor fatiga = menor techo de series
-  var fc = catData.fatigueCost || 3;
-  if (fc >= 5) return Math.max(currentSets, 4);  // compuestos pesados: máx 4
-  if (fc >= 4) return Math.max(currentSets, 5);  // compuestos moderados: máx 5
-  if (fc >= 3) return Math.max(currentSets, 6);  // intermedios: máx 6
-  return Math.max(currentSets, 8);                // aislamiento: máx 8
+// planSets = series prescritas en el plan original (ej: 3)
+function _getMaxSets(catData, planSets) {
+  // Techo absoluto por fatigueCost
+  var absCap;
+  if (!catData) { absCap = 6; }
+  else {
+    var fc = catData.fatigueCost || 3;
+    if (fc >= 5) absCap = 4;       // compuestos pesados: máx 4
+    else if (fc >= 4) absCap = 5;  // compuestos moderados: máx 5
+    else if (fc >= 3) absCap = 6;  // intermedios: máx 6
+    else absCap = 8;               // aislamiento: máx 8
+  }
+  // No exceder planSets + 2 (máximo +2 series sobre lo prescrito en todo el meso)
+  var planCap = (planSets || 3) + 2;
+  return Math.min(absCap, planCap);
 }
 
 // ── Obtener datos de la semana anterior para un ejercicio ──
@@ -4664,9 +4671,9 @@ function calculateProgression(di, postData) {
   }
 
   var recs = exercises.map(function(ej, ei) {
-    var maxSetsSearch = ej.numSeries || 6;
+    var planSets = ej.numSeries || (ej.sets ? ej.sets.length : 3);
     var sets = [];
-    for (var s = 0; s < Math.max(maxSetsSearch, 8); s++) {
+    for (var s = 0; s < Math.max(planSets, 8); s++) {
       var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
       if (LOGS[k] && LOGS[k].done) sets.push(LOGS[k]);
     }
@@ -4682,15 +4689,17 @@ function calculateProgression(di, postData) {
     var load    = parseFloat(sets[0].carga) || 0;
     var numSets = sets.length;
     var alpha   = _getAlpha(catData);
-    var maxSets = _getMaxSets(catData, numSets);
+    var maxSets = _getMaxSets(catData, planSets);
     var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
 
-    // Calcular reps target del plan
-    var repsTarget = 0;
+    // Calcular reps target del plan (leer del plan real, no solo repsRange)
+    var repsTarget = 8;
     if (ej.repsRange) {
       var rp = String(ej.repsRange).split(/[-–]/);
       repsTarget = rp.length > 1 ? parseInt(rp[1]) : parseInt(rp[0]) || 8;
-    } else { repsTarget = 8; }
+    } else if (ej.sets && ej.sets[0] && ej.sets[0].repsTarget) {
+      repsTarget = ej.sets[0].repsTarget;
+    }
 
     var action = 'maintain', newLoad = load, newSets = numSets, rirTarget = rirObj;
     var newReps = repsTarget;
@@ -4714,37 +4723,40 @@ function calculateProgression(di, postData) {
       reasons.push('ICS '+avgICS.toFixed(1)+' < 7 → bajar carga 10%');
     } else {
       // ── DECISIÓN DE VOLUMEN (basada en EIMD + fatiga) ──
+      // REGLA: máximo +1 serie por semana (nunca saltar de 3 a 5)
       var fcost = catData ? catData.fatigueCost : 3;
 
       if (eimd === 1) {
-        // Sin dolor: añadir series (más si ICS alto, menos si fatigue cost alto)
-        var add = avgICS >= 9 ? 2 : 1;
-        if (fcost >= 4) add = Math.min(add, 1); // compuestos pesados: máx +1
-        newSets = Math.min(numSets + add, maxSets);
-        if (newSets > numSets) { action = 'add_sets'; reasons.push('Sin dolor + ICS '+avgICS.toFixed(1)+' → +'+( newSets - numSets)+' serie(s)'); }
-        else { reasons.push('Sin dolor pero techo de volumen alcanzado ('+maxSets+' series)'); }
-      } else if (eimd === 2) {
-        // Recuperación normal
-        if (avgICS >= 9 && fcost <= 3) {
-          newSets = Math.min(numSets + 1, maxSets);
-          if (newSets > numSets) { action = 'add_sets'; reasons.push('Recuperación ok + ICS excelente → +1 serie'); }
+        // Sin dolor: añadir +1 serie (siempre máx +1 por semana)
+        if (numSets < maxSets) {
+          newSets = numSets + 1; // SIEMPRE +1, nunca +2
+          action = 'add_sets';
+          reasons.push('Sin dolor + ICS '+avgICS.toFixed(1)+' → +1 serie ('+numSets+'→'+newSets+')');
+        } else {
+          reasons.push('Sin dolor pero techo de volumen alcanzado ('+maxSets+' series)');
         }
-        if (action === 'maintain') reasons.push('Recuperación normal: mantener volumen');
+      } else if (eimd === 2) {
+        // Recuperación normal: +1 solo si ICS excelente y ejercicio no pesado
+        if (avgICS >= 9 && fcost <= 3 && numSets < maxSets) {
+          newSets = numSets + 1;
+          action = 'add_sets';
+          reasons.push('Recuperación ok + ICS excelente → +1 serie');
+        } else {
+          reasons.push('Recuperación normal: mantener volumen ('+numSets+' series)');
+        }
       } else {
-        // EIMD 3: dolor significativo → reducir
-        var rem = avgICS < 8 ? 2 : 1;
-        newSets = Math.max(1, numSets - rem); action = 'reduce_sets';
-        reasons.push('Dolor muscular elevado → -'+rem+' serie(s)');
+        // EIMD 3: dolor significativo → reducir 1 serie
+        newSets = Math.max(1, numSets - 1); action = 'reduce_sets';
+        reasons.push('Dolor muscular elevado → -1 serie ('+numSets+'→'+newSets+')');
       }
 
-      // ── Pump nulo + sin dolor → señal de estímulo insuficiente ──
+      // ── Pump nulo + sin dolor → flag de estímulo insuficiente (NO agregar más series) ──
       if (avgPump === 3 && eimd === 1) {
-        if (newSets < maxSets) { newSets = Math.min(newSets + 1, maxSets); }
-        reasons.push('Pump nulo: considerar +1 serie o cambio de ejercicio');
+        reasons.push('⚠ Pump nulo: considerar cambio de ejercicio o ajustar ROM/tempo');
       }
 
       // ── DECISIÓN DE CARGA (basada en RIR + tendencia semanal) ──
-      var allRepsHit = avgReps >= repsTarget; // ¿alcanzó las reps target?
+      var allRepsHit = avgReps >= repsTarget;
 
       if (avgRIR < rirObj && allRepsHit) {
         // RIR por debajo del objetivo Y reps cumplidas → subir carga
@@ -4752,40 +4764,40 @@ function calculateProgression(di, postData) {
         if (action === 'maintain') action = 'increase_load';
         reasons.push('RIR '+avgRIR.toFixed(1)+' < obj '+rirObj+' + reps cumplidas → +'+(alpha*100).toFixed(1)+'% carga');
 
-        // Si también subió la semana pasada, moderar el incremento (anti-spike)
+        // Anti-spike: si la carga ya subió la semana pasada, moderar
         if (prevWeek && prevWeek.avgLoad > 0 && load > prevWeek.avgLoad * 1.03) {
-          var modAlpha = alpha * 0.6; // reducir incremento al 60%
+          var modAlpha = alpha * 0.6;
           newLoad = Math.round(load * (1 + modAlpha) * 4) / 4;
           reasons.push('Carga ya subió sem anterior → incremento moderado +'+(modAlpha*100).toFixed(1)+'%');
         }
       } else if (avgRIR < rirObj && !allRepsHit) {
         // RIR bajo pero no alcanzó reps → mantener carga, trabajar en reps
         reasons.push('RIR '+avgRIR.toFixed(1)+' < obj pero reps '+avgReps.toFixed(0)+'/'+repsTarget+' → mantener carga, ganar reps');
-        newReps = repsTarget; // mantener target
+        newReps = repsTarget;
       } else if (avgRIR > rirObj + 1.5) {
-        // RIR mucho mayor al objetivo → le sobra intensidad
+        // RIR mucho mayor al objetivo → congelar
         if (action === 'maintain') action = 'freeze_load';
         reasons.push('RIR real '+avgRIR.toFixed(1)+' >> obj '+rirObj+' → congelar carga');
       } else if (avgRIR >= rirObj && avgRIR <= rirObj + 1.5 && allRepsHit) {
-        // RIR en zona objetivo con reps cumplidas → double progression: subir reps primero
+        // RIR en zona objetivo con reps cumplidas → double progression
         if (avgReps < repsTarget + 2) {
           reasons.push('RIR en objetivo, reps cumplidas → intentar +1-2 reps próxima sesión');
-          newReps = Math.min(repsTarget + 2, avgReps + 1);
+          newReps = Math.min(repsTarget + 2, Math.round(avgReps) + 1);
         } else {
-          // Ya excedió reps target+2 → subir carga y resetear reps
+          // Excedió reps target+2 → subir carga y resetear reps
           newLoad = Math.round(load * (1 + alpha) * 4) / 4;
-          newReps = repsTarget; // reset
+          newReps = repsTarget;
           if (action === 'maintain') action = 'increase_load';
           reasons.push('Double progression: reps '+avgReps.toFixed(0)+' > target+2 → +'+(alpha*100).toFixed(1)+'% carga, reset reps');
         }
       }
 
-      // ── Curva de resistencia: elongated con pump bajo = mala conexión ──
+      // ── Curva elongated con pump bajo = mala conexión ──
       if (catData && catData.resistanceCurve === 'elongated' && avgPump >= 2.5) {
         reasons.push('⚠ Ejercicio elongado con pump bajo: revisar ROM y tempo excéntrico');
       }
 
-      // ── Tendencia semanal negativa (carga bajó respecto a sem anterior) ──
+      // ── Tendencia semanal negativa ──
       if (prevWeek && prevWeek.avgLoad > 0 && load < prevWeek.avgLoad * 0.95 && action !== 'reduce_load') {
         reasons.push('⚠ Carga descendió vs sem '+(CURRENT_WEEK-1)+' ('+prevWeek.avgLoad.toFixed(1)+' → '+load.toFixed(1)+')');
       }
