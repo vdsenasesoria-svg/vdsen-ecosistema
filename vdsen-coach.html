@@ -1220,26 +1220,67 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   let _editingPlanId = null;
 
   function _exRowHtml(di, ei, name, numSets, reps, rir) {
-    return `<div class="mb-3 p-2 rounded-lg" id="exrow_${di}_${ei}" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)">
+    return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}"
+      draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
+      ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
+      style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);transition:opacity .15s">
       <div class="flex gap-2 items-center mb-2">
-        <input class="input-field flex-1 text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${name}" id="exname_${di}_${ei}" list="coach_exlist">
-        <button onclick="removeExRow(${di},${ei})" class="text-red-400 hover:text-red-300 text-xl leading-none flex-shrink-0 px-1" title="Eliminar ejercicio">×</button>
+        <span class="text-[#555] select-none text-base cursor-grab px-0.5" title="Arrastrar para reordenar">⠿</span>
+        <input class="input-field flex-1 text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${name}" id="exname_${di}_${ei}" list="coach_exlist" data-field="name">
+        <button onclick="_moveExRow(this, -1)" title="Subir" class="text-[#888] hover:text-white text-base px-1 leading-none">↑</button>
+        <button onclick="_moveExRow(this, 1)" title="Bajar" class="text-[#888] hover:text-white text-base px-1 leading-none">↓</button>
+        <button onclick="removeExRow(${di},${ei})" class="text-red-400 hover:text-red-300 text-xl leading-none flex-shrink-0 px-0.5" title="Eliminar">×</button>
       </div>
       <div class="grid grid-cols-3 gap-2">
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Series</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#C9A84C]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric">
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#C9A84C]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric" data-field="sets">
         </div>
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Reps</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="50" inputmode="numeric">
+          <input class="input-field w-full text-sm py-1 text-center font-bold" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="50" inputmode="numeric" data-field="reps">
         </div>
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">RIR</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric">
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir">
         </div>
       </div>
     </div>`;
+  }
+
+  // ── Drag & drop para reordenar ejercicios ──
+  var _exDragSrc = null;
+  function _exDragStart(e) {
+    _exDragSrc = e.currentTarget;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+    setTimeout(() => { if (_exDragSrc) _exDragSrc.style.opacity = '0.35'; }, 0);
+  }
+  function _exDragOver(e) {
+    e.preventDefault();
+    var target = e.currentTarget;
+    if (!_exDragSrc || target === _exDragSrc || target.dataset.di !== _exDragSrc.dataset.di) return false;
+    var rect = target.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      target.parentNode.insertBefore(_exDragSrc, target);
+    } else {
+      target.parentNode.insertBefore(_exDragSrc, target.nextSibling);
+    }
+    return false;
+  }
+  function _exDrop(e) { e.stopPropagation(); return false; }
+  function _exDragEnd() { if (_exDragSrc) { _exDragSrc.style.opacity = '1'; _exDragSrc = null; } }
+
+  // ── Botones ↑↓ para reordenar (mobile-friendly) ──
+  function _moveExRow(btn, dir) {
+    var row = btn.closest('.exrow-item');
+    if (!row) return;
+    var list = row.parentNode;
+    if (dir === -1 && row.previousElementSibling) {
+      list.insertBefore(row, row.previousElementSibling);
+    } else if (dir === 1 && row.nextElementSibling) {
+      list.insertBefore(row.nextElementSibling, row);
+    }
   }
 
   function renderTrainingEditor(days, planId) {
@@ -1338,13 +1379,14 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     const days = [];
     dayBlocks.forEach((block, di) => {
       const label = document.getElementById('daylabel_'+di)?.value.trim() || ('Día '+(di+1));
-      const exRows = block.querySelectorAll('[id^="exrow_'+di+'_"]');
+      // Lee rows en orden DOM (respeta reordenamiento por drag o botones ↑↓)
+      const exRows = block.querySelectorAll('.exrow-item');
       const exercises = [];
-      exRows.forEach((row, ei) => {
-        const name  = document.getElementById('exname_'+di+'_'+ei)?.value.trim();
-        const sets  = parseInt(document.getElementById('exsets_'+di+'_'+ei)?.value) || 3;
-        const reps  = parseInt(document.getElementById('exreps_'+di+'_'+ei)?.value) || 8;
-        const rir   = parseInt(document.getElementById('exrir_'+di+'_'+ei)?.value)  || 2;
+      exRows.forEach((row) => {
+        const name = row.querySelector('[data-field="name"]')?.value.trim();
+        const sets = parseInt(row.querySelector('[data-field="sets"]')?.value) || 3;
+        const reps = parseInt(row.querySelector('[data-field="reps"]')?.value) || 8;
+        const rir  = parseInt(row.querySelector('[data-field="rir"]')?.value)  || 2;
         if (name) exercises.push({
           exerciseName: name,
           alternatives: [],
@@ -1357,9 +1399,9 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       await updateDoc(doc(db, "plans", _editingPlanId), { days, daysPerWeek: days.length, updatedAt: new Date().toISOString() });
       showToast('Plan actualizado ✅');
       toggleTrainingEditor();
-      showClientDetail(_detailClientId); // recargar modal con datos nuevos
-      _autoAddExercisesToCatalog(days); // agregar ejercicios nuevos al catálogo en background
-    } catch(e) { showToast('Error al guardar: ' + e.message, true); }
+      showClientDetail(_detailClientId);
+      _autoAddExercisesToCatalog(days);
+    } catch(e) { showToast('Error al guardar: ' + e.message + (e.code ? ' ['+e.code+']' : ''), true); }
   }
 
   // ── Agregar día al editor ──
@@ -1808,6 +1850,11 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   window.showQuickAddExercise = showQuickAddExercise;
   window.submitQuickAdd = submitQuickAdd;
   window.addDayBlock = addDayBlock;
+  window._moveExRow = _moveExRow;
+  window._exDragStart = _exDragStart;
+  window._exDragOver = _exDragOver;
+  window._exDrop = _exDrop;
+  window._exDragEnd = _exDragEnd;
   window.saveNutritionPlan = saveNutritionPlan;
   window.saveSupplementPlan = saveSupplementPlan;
   window.togglePlanEditor = togglePlanEditor;
