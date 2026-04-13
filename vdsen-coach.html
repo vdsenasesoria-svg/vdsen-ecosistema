@@ -1219,30 +1219,47 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
+  function _exRowHtml(di, ei, name, numSets, reps, rir) {
+    return `<div class="mb-3 p-2 rounded-lg" id="exrow_${di}_${ei}" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)">
+      <div class="flex gap-2 items-center mb-2">
+        <input class="input-field flex-1 text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${name}" id="exname_${di}_${ei}" list="coach_exlist">
+        <button onclick="removeExRow(${di},${ei})" class="text-red-400 hover:text-red-300 text-xl leading-none flex-shrink-0 px-1" title="Eliminar ejercicio">×</button>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Series</div>
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#C9A84C]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric">
+        </div>
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Reps</div>
+          <input class="input-field w-full text-sm py-1 text-center font-bold" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="50" inputmode="numeric">
+        </div>
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">RIR</div>
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric">
+        </div>
+      </div>
+    </div>`;
+  }
+
   function renderTrainingEditor(days, planId) {
     _editingPlanId = planId;
+    // Construir datalist con ejercicios del catálogo para autocompletar
+    const exDatalist = `<datalist id="coach_exlist">${_allExercises.map(e => `<option value="${e.name}">`).join('')}</datalist>`;
     const daysHtml = days.map((d, di) => {
       const exRows = (d.exercises || []).map((e, ei) => {
         const numSets = (e.sets || []).length || 3;
         const reps    = (e.sets && e.sets[0]) ? (e.sets[0].repsTarget || 8) : 8;
         const rir     = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
-        return `<div class="flex gap-1 mb-2 items-center" id="exrow_${di}_${ei}">
-          <input class="input-field flex-1 text-sm py-1" placeholder="Ejercicio" value="${e.exerciseName || ''}" id="exname_${di}_${ei}">
-          <input class="input-field w-10 text-sm py-1 text-center" placeholder="Series" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10">
-          <span class="text-[#888] text-xs">×</span>
-          <input class="input-field w-12 text-sm py-1 text-center" placeholder="Reps" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="30">
-          <span class="text-[#888] text-xs">RIR</span>
-          <input class="input-field w-10 text-sm py-1 text-center" placeholder="RIR" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5">
-          <button onclick="removeExRow(${di},${ei})" class="text-red-400 px-1 text-lg leading-none flex-shrink-0">×</button>
-        </div>`;
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir);
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
-        <input class="input-field w-full text-sm font-semibold mb-2 text-[#C9A84C]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}">
+        <input class="input-field w-full text-sm font-semibold mb-3 text-[#C9A84C]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
         <div id="exlist_${di}">${exRows}</div>
         <button onclick="addExRow(${di})" class="text-[#C9A84C] text-xs underline mt-1">+ Ejercicio</button>
       </div>`;
     }).join('');
-    return `<div id="trainingEditorDays">${daysHtml}</div>
+    return `${exDatalist}<div id="trainingEditorDays">${daysHtml}</div>
       <button onclick="addDayBlock()" class="text-[#C9A84C] text-xs underline mt-1 mb-3 block">➕ Agregar día de entrenamiento</button>
       <button onclick="saveTrainingPlan()" class="btn-primary w-full mt-2">💾 Guardar cambios</button>`;
   }
@@ -1260,16 +1277,10 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     const list = document.getElementById('exlist_'+di);
     const ei = list.children.length;
     const div = document.createElement('div');
-    div.className = 'flex gap-1 mb-2 items-center';
-    div.id = 'exrow_'+di+'_'+ei;
-    div.innerHTML = `<input class="input-field flex-1 text-sm py-1" placeholder="Ejercicio" id="exname_${di}_${ei}">
-      <input class="input-field w-10 text-sm py-1 text-center" placeholder="Series" value="3" id="exsets_${di}_${ei}" type="number" min="1" max="10">
-      <span class="text-[#888] text-xs">×</span>
-      <input class="input-field w-12 text-sm py-1 text-center" placeholder="Reps" value="8" id="exreps_${di}_${ei}" type="number" min="1" max="30">
-      <span class="text-[#888] text-xs">RIR</span>
-      <input class="input-field w-10 text-sm py-1 text-center" placeholder="RIR" value="2" id="exrir_${di}_${ei}" type="number" min="0" max="5">
-      <button onclick="removeExRow(${di},${ei})" class="text-red-400 px-1 text-lg leading-none flex-shrink-0">×</button>`;
-    list.appendChild(div);
+    div.outerHTML; // placeholder
+    const tmp = document.createElement('template');
+    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2);
+    list.appendChild(tmp.content.firstElementChild);
   }
 
   function removeExRow(di, ei) {
@@ -1360,7 +1371,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
     div.className = 'card p-3 mb-3';
     div.id = 'dayblock_'+di;
     div.innerHTML = `
-      <input class="input-field w-full text-sm font-semibold mb-2 text-[#C9A84C]" value="Día ${di+1}" id="daylabel_${di}">
+      <input class="input-field w-full text-sm font-semibold mb-3 text-[#C9A84C]" value="Día ${di+1}" id="daylabel_${di}" placeholder="Nombre del día">
       <div id="exlist_${di}"></div>
       <button onclick="addExRow(${di})" class="text-[#C9A84C] text-xs underline mt-1">+ Ejercicio</button>`;
     container.appendChild(div);
