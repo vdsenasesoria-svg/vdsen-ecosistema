@@ -158,7 +158,7 @@
 <script type="module">
   import { initializeApp } from "firebase/app";
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot, arrayUnion } from "firebase/firestore";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot } from "firebase/firestore";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -581,59 +581,6 @@
       }
 
       container.innerHTML = html;
-
-      // ── Chat coach ↔ cliente ──────────────────────────────────────
-      if (!document.getElementById("coachChatSection")) {
-        const chatSection = document.createElement("div");
-        chatSection.id = "coachChatSection";
-        chatSection.innerHTML = `
-          <div class="text-xs text-[#888] mb-2 mt-4 uppercase tracking-wide">💬 Chat con cliente</div>
-          <div id="coachChatMsgs" style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:8px;padding:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);border-radius:10px">
-            <span class="text-xs text-[#555]">Cargando...</span>
-          </div>
-          <div style="display:flex;gap:8px">
-            <input id="coachChatInput" type="text" placeholder="Escribe un mensaje al cliente..." class="input-field flex-1">
-            <button id="coachChatSend" class="btn-primary" style="padding:0 16px;flex-shrink:0">↑</button>
-          </div>`;
-        container.parentNode.appendChild(chatSection);
-      }
-
-      // Escuchar mensajes del cliente en tiempo real
-      let _chatUnsub = null;
-      const setupChat = (clientId) => {
-        if (_chatUnsub) { _chatUnsub(); _chatUnsub = null; }
-        const msgRef = doc(db, 'messages', clientId);
-        _chatUnsub = onSnapshot(msgRef, (snap) => {
-          const msgs = snap.exists() ? (snap.data().msgs || []) : [];
-          const msgsDiv = document.getElementById("coachChatMsgs");
-          if (!msgsDiv) return;
-          if (!msgs.length) { msgsDiv.innerHTML = '<span class="text-xs text-[#555]">Sin mensajes aún.</span>'; return; }
-          msgsDiv.innerHTML = msgs.map(m => {
-            const isCoach = m.role === 'coach';
-            const ts = m.ts ? new Date(m.ts).toLocaleString('es-MX',{hour:'2-digit',minute:'2-digit',day:'numeric',month:'short'}) : '';
-            return `<div style="display:flex;flex-direction:column;align-items:${isCoach?'flex-end':'flex-start'}">
-              <div style="max-width:78%;padding:8px 12px;border-radius:${isCoach?'12px 12px 3px 12px':'12px 12px 12px 3px'};background:${isCoach?'rgba(201,168,76,.85)':'rgba(255,255,255,.08)'};color:${isCoach?'#000':'#eee'};font-size:12px;line-height:1.5">${m.text.replace(/</g,'&lt;')}</div>
-              <div style="font-size:10px;color:#555;margin-top:2px;padding:0 4px">${isCoach?'Tú (coach)':'Cliente'} · ${ts}</div>
-            </div>`;
-          }).join('');
-          msgsDiv.scrollTop = msgsDiv.scrollHeight;
-        });
-
-        document.getElementById("coachChatSend").onclick = async () => {
-          const input = document.getElementById("coachChatInput");
-          const text = (input.value || '').trim();
-          if (!text) return;
-          input.value = '';
-          const msg = { role: 'coach', from: currentCoach.uid, text, ts: new Date().toISOString() };
-          try {
-            await setDoc(doc(db, 'messages', clientId), { msgs: arrayUnion(msg) }, { merge: true });
-          } catch(e) { showToast("Error chat: " + e.message, true); input.value = text; }
-        };
-        document.getElementById("coachChatInput").onkeydown = (e) => {
-          if (e.key === 'Enter') document.getElementById("coachChatSend").click();
-        };
-      };
-      setupChat(select.value);
 
       // Botón PDF
       const pdfBtn = document.getElementById("pdfReportBtn");
