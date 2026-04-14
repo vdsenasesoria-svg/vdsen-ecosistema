@@ -14,9 +14,9 @@
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail }
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, setPersistence, browserLocalPersistence }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot, arrayUnion }
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ══════════════════════════════════════════════════
@@ -36,10 +36,11 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+setPersistence(auth, browserLocalPersistence).catch(() => {});
 window._fb = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateChanged,
                sendPasswordResetEmail,
                doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs,
-               addDoc, orderBy, limit, onSnapshot, arrayUnion };
+               addDoc, orderBy, limit, onSnapshot };
 window._fbReady = true;
 window.dispatchEvent(new Event('fbReady'));
 </script>
@@ -201,7 +202,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 <body>
 
 <!-- ════════════════════════ LOGIN ════════════════════════ -->
-<div class="screen on" id="scrLogin">
+<div class="screen" id="scrLogin">
   <div class="login-wrap">
     <div class="login-logo">VDSEN<em>MI PLAN · v3.2</em></div>
     <div class="login-card">
@@ -218,7 +219,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 </div>
 
 <!-- ════════════════════════ LOADING ════════════════════════ -->
-<div class="screen" id="scrLoading">
+<div class="screen on" id="scrLoading">
   <div class="loading">
     <div class="ring"></div>
     <div class="loading-txt">CARGANDO TU PLAN</div>
@@ -256,15 +257,6 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
   <div class="scroll" id="tabPerfil" style="display:none">
     <!-- Perfil y PDF -->
   </div>
-  <div id="tabChat" style="display:none;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px 100px">
-    <div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:12px;letter-spacing:.5px">💬 MENSAJES CON COACH</div>
-    <div id="chatMessages" style="display:flex;flex-direction:column;gap:8px;min-height:200px"></div>
-    <div style="position:fixed;bottom:56px;left:0;right:0;padding:10px 16px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:8px;z-index:10" id="chatInputArea" style="display:none">
-      <input id="chatInput" type="text" placeholder="Escribe un mensaje..." style="flex:1;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-size:14px;padding:10px 14px;outline:none;font-family:var(--fb)">
-      <button onclick="sendChatMsg()" style="background:var(--accent);border:none;border-radius:10px;color:#000;font-weight:700;font-size:18px;width:44px;height:44px;cursor:pointer;flex-shrink:0">↑</button>
-    </div>
-  </div>
-
   <!-- BOTTOM NAV -->
   <nav class="bnav">
     <button class="nb on" id="nb0" onclick="goTab(0)">
@@ -281,9 +273,6 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
     </button>
     <button class="nb" id="nb4" onclick="goTab(4)">
       <span class="nb-ico">👤</span><span class="nb-lbl">Perfil</span>
-    </button>
-    <button class="nb" id="nb5" onclick="goTab(5)">
-      <span class="nb-ico">💬</span><span class="nb-lbl">Chat</span>
     </button>
   </nav>
 </div>
@@ -824,11 +813,11 @@ function waitFB(cb) {
 waitFB(() => {
   FB.onAuthStateChanged(FB.auth, async (user) => {
     if (user && user.email) {
-      // Solo usuarios con email real (no anónimos)
+      localStorage.setItem('vdsen_uid', user.uid);
       showScreen('scrLoading');
       await loadPlan(user);
     } else {
-      // Sin sesión o sesión anónima — ir al login
+      localStorage.removeItem('vdsen_uid');
       showScreen('scrLogin');
     }
   });
@@ -1072,22 +1061,19 @@ function showScreen(id) {
   document.getElementById(id).classList.add('on');
 }
 
-const TABS = ['tabResumen','tabEntr','tabNutr','tabCheckin','tabPerfil','tabChat'];
+const TABS = ['tabResumen','tabEntr','tabNutr','tabCheckin','tabPerfil'];
 function goTab(i) {
   TABS.forEach((t,j) => {
-    document.getElementById(t).style.display = j===i ? (j===1?'block':'block') : 'none';
+    document.getElementById(t).style.display = j===i ? 'block' : 'none';
   });
   document.querySelectorAll('.nb').forEach((b,j) => {
     b.classList.toggle('on', j===i);
   });
-  var chatInputArea = document.getElementById('chatInputArea');
-  if (chatInputArea) chatInputArea.style.display = i===5 ? 'flex' : 'none';
   if (i === 1) renderEntrenamiento();
   else if (i === 2) renderNutricion();
   else if (i === 3) renderCheckin();
   else if (i === 4) renderPerfil();
   else if (i === 0) renderResumen();
-  else if (i === 5) renderChat();
 }
 
 // ══════════════════════════════════════════════════
@@ -1810,6 +1796,71 @@ let DIA_ACTIVO = 0;
 var _restTimer = null;
 var _restSeconds = 0;
 var _restEl = null;
+var _restEndMs = 0;
+var _restAlertFired = false;
+
+// ── Beep usando AudioContext (sin archivo externo) ──
+function playTimerBeep() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    function beep(freq, startAt, dur) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine'; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.55, ctx.currentTime + startAt);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startAt + dur);
+      osc.start(ctx.currentTime + startAt);
+      osc.stop(ctx.currentTime + startAt + dur);
+    }
+    beep(880, 0,   0.18);
+    beep(880, 0.22, 0.18);
+    beep(1100, 0.44, 0.35);
+  } catch(e) {}
+}
+
+function _onTimerFinished() {
+  if (_restAlertFired) return;
+  _restAlertFired = true;
+  localStorage.removeItem('vdsen_restEnd');
+  playTimerBeep();
+  if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 400]);
+  showToast('⏱ ¡Descanso terminado!');
+}
+
+// Reanudar timer si la app volvió al primer plano
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState !== 'visible') return;
+  var savedEnd = parseInt(localStorage.getItem('vdsen_restEnd') || '0');
+  if (!savedEnd) return;
+  _restEndMs = savedEnd;
+  _restEl = document.getElementById('restTimerNum');
+  var remaining = Math.ceil((_restEndMs - Date.now()) / 1000);
+  var overlay = document.getElementById('restTimerOverlay');
+  if (remaining <= 0) {
+    // Terminó mientras estaba en segundo plano
+    _restSeconds = remaining;
+    if (overlay) overlay.style.display = 'flex';
+    updateTimerDisplay();
+    _onTimerFinished();
+  } else {
+    // Aún corriendo: mostrar overlay y reanudar intervalo
+    _restSeconds = remaining;
+    if (overlay) overlay.style.display = 'flex';
+    updateTimerDisplay();
+    if (!_restTimer) {
+      _restTimer = setInterval(_restTimerTick, 1000);
+    }
+  }
+});
+
+function _restTimerTick() {
+  _restSeconds = Math.ceil((_restEndMs - Date.now()) / 1000);
+  updateTimerDisplay();
+  if (_restSeconds <= 0 && !_restAlertFired) {
+    _onTimerFinished();
+  }
+}
 
 // ── Helper functions requeridas por renderEntrenamiento ──────────────
 
@@ -2495,44 +2546,43 @@ function saveUserNote(di, ei, text) {
 
 function startRestTimer(seconds) {
   stopRestTimer();
+  _restAlertFired = false;
+  _restEndMs = Date.now() + seconds * 1000;
+  localStorage.setItem('vdsen_restEnd', _restEndMs);
   _restSeconds = seconds;
+  _restEl = document.getElementById('restTimerNum');
   var overlay = document.getElementById('restTimerOverlay');
   if (!overlay) return;
   overlay.style.display = 'flex';
-  _restEl = document.getElementById('restTimerNum');
-  var secEl = document.getElementById('restTimerSec');
   updateTimerDisplay();
-  _restTimer = setInterval(function() {
-    _restSeconds--;
-    updateTimerDisplay();
-    if (_restSeconds <= 0) {
-      stopRestTimer();
-      // Vibrar si disponible
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      showToast('⏱ Descanso terminado');
-    }
-  }, 1000);
+  _restTimer = setInterval(_restTimerTick, 1000);
 }
 
 function updateTimerDisplay() {
+  if (!_restEl) _restEl = document.getElementById('restTimerNum');
   if (!_restEl) return;
-  var mins = Math.floor(Math.abs(_restSeconds) / 60);
-  var secs = Math.abs(_restSeconds) % 60;
-  var sign = _restSeconds < 0 ? '+' : '';
+  var s = _restSeconds;
+  var mins = Math.floor(Math.abs(s) / 60);
+  var secs = Math.abs(s) % 60;
+  var sign = s < 0 ? '+' : '';
   _restEl.textContent = sign + mins + ':' + (secs < 10 ? '0' : '') + secs;
-  _restEl.style.color = _restSeconds <= 0 ? 'var(--red)' : _restSeconds <= 10 ? '#e8a040' : 'var(--accent)';
+  _restEl.style.color = s <= 0 ? 'var(--red)' : s <= 10 ? '#e8a040' : 'var(--accent)';
   var secEl = document.getElementById('restTimerSec');
-  if (secEl) secEl.textContent = _restSeconds > 0 ? _restSeconds + 's restantes' : 'Tiempo extra';
+  if (secEl) secEl.textContent = s > 0 ? s + 's restantes' : '¡Tiempo!';
 }
 
 function adjustRestTimer(delta) {
-  _restSeconds += delta;
-  if (_restSeconds < 0) _restSeconds = 0;
+  _restEndMs += delta * 1000;
+  if (_restEndMs < Date.now()) _restEndMs = Date.now();
+  localStorage.setItem('vdsen_restEnd', _restEndMs);
+  _restSeconds = Math.ceil((_restEndMs - Date.now()) / 1000);
   updateTimerDisplay();
 }
 
 function stopRestTimer() {
   if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
+  _restEndMs = 0;
+  localStorage.removeItem('vdsen_restEnd');
   var overlay = document.getElementById('restTimerOverlay');
   if (overlay) overlay.style.display = 'none';
 }
@@ -4583,65 +4633,6 @@ async function submitPostSession() {
 
   closePostSessionModal();
   await _confirmSessionDone(di);
-}
-
-// ══════════════════════════════════════════════════
-// CHAT COACH ↔ CLIENTE
-// ══════════════════════════════════════════════════
-var _chatUnsub = null;
-
-function renderChat() {
-  if (!USER) return;
-  var cont = document.getElementById('chatMessages');
-  if (!cont) return;
-  cont.innerHTML = '<div style="color:var(--mt);font-size:12px;text-align:center;padding:20px">Cargando mensajes...</div>';
-
-  if (_chatUnsub) { _chatUnsub(); _chatUnsub = null; }
-
-  var msgRef = FB.doc(FB.db, 'messages', USER.uid);
-  _chatUnsub = FB.onSnapshot(msgRef, function(snap) {
-    var msgs = snap.exists() ? (snap.data().msgs || []) : [];
-    if (!msgs.length) {
-      cont.innerHTML = '<div style="color:var(--mt);font-size:12px;text-align:center;padding:40px 20px">Sin mensajes aún.<br>Escribe algo a tu coach 👇</div>';
-      return;
-    }
-    cont.innerHTML = msgs.map(function(m) {
-      var isMe = m.role === 'client';
-      var ts = m.ts ? new Date(m.ts).toLocaleString('es-MX',{hour:'2-digit',minute:'2-digit',day:'numeric',month:'short'}) : '';
-      return '<div style="display:flex;flex-direction:column;align-items:'+(isMe?'flex-end':'flex-start')+';margin-bottom:6px">'+
-        '<div style="max-width:78%;padding:10px 13px;border-radius:'+(isMe?'14px 14px 4px 14px':'14px 14px 14px 4px')+';'+
-          'background:'+(isMe?'var(--accent)':'var(--surface2)')+';'+
-          'color:'+(isMe?'#000':'var(--tx)')+';font-size:13px;line-height:1.5">'+
-          _escapeHtml(m.text)+
-        '</div>'+
-        '<div style="font-size:10px;color:var(--mt);margin-top:2px;padding:0 4px">'+
-          (isMe?'Tú':'Coach')+' · '+ts+
-        '</div>'+
-      '</div>';
-    }).join('');
-    // Scroll to bottom
-    cont.scrollTop = cont.scrollHeight;
-  });
-}
-
-function _escapeHtml(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-async function sendChatMsg() {
-  if (!USER) return;
-  var input = document.getElementById('chatInput');
-  var text = (input.value || '').trim();
-  if (!text) return;
-  input.value = '';
-  var msg = { role: 'client', from: USER.uid, text: text, ts: new Date().toISOString() };
-  try {
-    var msgRef = FB.doc(FB.db, 'messages', USER.uid);
-    await FB.setDoc(msgRef, { msgs: FB.arrayUnion(msg) }, { merge: true });
-  } catch(e) {
-    showToast('Error enviando: ' + e.message, true);
-    input.value = text;
-  }
 }
 
 function _avgArr(arr) {
