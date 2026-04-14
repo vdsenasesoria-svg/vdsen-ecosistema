@@ -16,7 +16,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit }
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot, arrayUnion }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ══════════════════════════════════════════════════
@@ -39,7 +39,7 @@ const db = getFirestore(app);
 window._fb = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateChanged,
                sendPasswordResetEmail,
                doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs,
-               addDoc, orderBy, limit };
+               addDoc, orderBy, limit, onSnapshot, arrayUnion };
 window._fbReady = true;
 window.dispatchEvent(new Event('fbReady'));
 </script>
@@ -256,6 +256,14 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
   <div class="scroll" id="tabPerfil" style="display:none">
     <!-- Perfil y PDF -->
   </div>
+  <div id="tabChat" style="display:none;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px 100px">
+    <div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:12px;letter-spacing:.5px">💬 MENSAJES CON COACH</div>
+    <div id="chatMessages" style="display:flex;flex-direction:column;gap:8px;min-height:200px"></div>
+    <div style="position:fixed;bottom:56px;left:0;right:0;padding:10px 16px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:8px;z-index:10" id="chatInputArea" style="display:none">
+      <input id="chatInput" type="text" placeholder="Escribe un mensaje..." style="flex:1;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-size:14px;padding:10px 14px;outline:none;font-family:var(--fb)">
+      <button onclick="sendChatMsg()" style="background:var(--accent);border:none;border-radius:10px;color:#000;font-weight:700;font-size:18px;width:44px;height:44px;cursor:pointer;flex-shrink:0">↑</button>
+    </div>
+  </div>
 
   <!-- BOTTOM NAV -->
   <nav class="bnav">
@@ -273,6 +281,9 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
     </button>
     <button class="nb" id="nb4" onclick="goTab(4)">
       <span class="nb-ico">👤</span><span class="nb-lbl">Perfil</span>
+    </button>
+    <button class="nb" id="nb5" onclick="goTab(5)">
+      <span class="nb-ico">💬</span><span class="nb-lbl">Chat</span>
     </button>
   </nav>
 </div>
@@ -988,7 +999,8 @@ async function loadPlan(user) {
             fatigueCost: ex.fatigueCost || 3,
             resistanceCurve: ex.resistanceCurve || 'mid',
             muscleType: ex.muscleType || 'typeIIx',
-            motorPattern: ex.motorPattern || ''
+            motorPattern: ex.motorPattern || '',
+            executionNotes: ex.executionNotes || ''
           };
         });
       }
@@ -1060,20 +1072,22 @@ function showScreen(id) {
   document.getElementById(id).classList.add('on');
 }
 
-const TABS = ['tabResumen','tabEntr','tabNutr','tabCheckin','tabPerfil'];
+const TABS = ['tabResumen','tabEntr','tabNutr','tabCheckin','tabPerfil','tabChat'];
 function goTab(i) {
   TABS.forEach((t,j) => {
-    document.getElementById(t).style.display = j===i ? 'block' : 'none';
+    document.getElementById(t).style.display = j===i ? (j===1?'block':'block') : 'none';
   });
   document.querySelectorAll('.nb').forEach((b,j) => {
     b.classList.toggle('on', j===i);
   });
-  // Re-render the active tab to ensure content is fresh
+  var chatInputArea = document.getElementById('chatInputArea');
+  if (chatInputArea) chatInputArea.style.display = i===5 ? 'flex' : 'none';
   if (i === 1) renderEntrenamiento();
   else if (i === 2) renderNutricion();
   else if (i === 3) renderCheckin();
   else if (i === 4) renderPerfil();
   else if (i === 0) renderResumen();
+  else if (i === 5) renderChat();
 }
 
 // ══════════════════════════════════════════════════
@@ -2017,7 +2031,47 @@ function renderEntrenamiento() {
 
 function buildBoostcampExercise(ej, di, ei) {
   var machine = getMachineForExercise(ej.nombre);
+  var catData = _getCatalogData(ej.nombre || ej.exerciseName);
+  var displayNota = ej.nota || ej.coachNote || (catData ? catData.executionNotes : '') || '';
   var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+
+  // ── Warm-up automático ────────────────────────────────────────────
+  // Referencia de carga: prog rec > semana anterior > historial
+  var wuRefLoad = 0;
+  var progRecForWu = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
+  if (progRecForWu && progRecForWu.newLoad) {
+    wuRefLoad = parseFloat(progRecForWu.newLoad) || 0;
+  }
+  if (!wuRefLoad) {
+    var prevWuData = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
+    if (prevWuData) wuRefLoad = prevWuData.avgLoad;
+  }
+  if (!wuRefLoad) {
+    var exNLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    var histWu = EXERCISE_HISTORY[exNLower] || {};
+    if (histWu.load) wuRefLoad = parseFloat(histWu.load) || 0;
+  }
+  var wuHtml = '';
+  if (wuRefLoad > 0) {
+    var wuSets = [
+      { pct: 0.50, reps: 8 },
+      { pct: 0.70, reps: 5 },
+      { pct: 0.85, reps: 2 }
+    ];
+    var wuRows = wuSets.map(function(ws) {
+      var wLoad = Math.round(wuRefLoad * ws.pct * 4) / 4;
+      return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
+        '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
+        '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' kg × '+ws.reps+' reps</span>'+
+        '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
+      '</div>';
+    }).join('');
+    wuHtml = '<div id="wu_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;'+
+      'background:rgba(70,130,200,.06);border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0">'+
+      '<div style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px;margin-bottom:6px">CALENTAMIENTO (referencia)</div>'+
+      wuRows+
+    '</div>';
+  }
   var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK);
 
@@ -2034,6 +2088,40 @@ function buildBoostcampExercise(ej, di, ei) {
     headerRecHtml = '<div style="font-size:10px;color:'+recCol+';margin-top:3px;font-weight:600">'+
       '⚡ '+headerRec.newLoad+' '+recUnit+' · '+headerRec.newSets+'s · RIR '+headerRec.rirTarget+
     '</div>';
+  }
+
+  // ── Sustitución por ICS bajo persistente ─────────────────────────
+  // Si 2+ semanas consecutivas con ICS promedio < 7 → sugerir alternativa
+  var substHtml = '';
+  if (catData && catData.motorPattern && CURRENT_WEEK >= 2) {
+    var icsWeeks = 0;
+    for (var ww = CURRENT_WEEK - 1; ww >= Math.max(1, CURRENT_WEEK - 2); ww--) {
+      var wkICS = [];
+      for (var ss = 0; ss < 8; ss++) {
+        var wkKey = 'log_'+ww+'_'+di+'_'+ei+'_s'+ss;
+        if (LOGS[wkKey] && LOGS[wkKey].done && LOGS[wkKey].ics) wkICS.push(parseFloat(LOGS[wkKey].ics));
+      }
+      if (wkICS.length && _avgArr(wkICS) < 7) icsWeeks++;
+    }
+    if (icsWeeks >= 2) {
+      // Buscar alternativa en catálogo con mismo patrón motor, nombre diferente
+      var pattern = catData.motorPattern;
+      var exNameCurrent = (ej.nombre || ej.exerciseName || '').toLowerCase().trim();
+      var altEx = null;
+      var catKeys = Object.keys(EXERCISE_CATALOG);
+      for (var ci = 0; ci < catKeys.length; ci++) {
+        var ck = catKeys[ci];
+        if (ck !== exNameCurrent && EXERCISE_CATALOG[ck].motorPattern === pattern) {
+          altEx = ck; break;
+        }
+      }
+      var substMsg = altEx
+        ? '⚠ ICS bajo 2 sem. Considera sustituir por: <strong>'+altEx+'</strong>'
+        : '⚠ ICS bajo 2 semanas consecutivas — revisa técnica con tu coach';
+      substHtml = '<div style="margin:0 14px 8px;padding:8px 12px;background:rgba(220,60,60,.07);'+
+        'border-left:3px solid rgba(220,60,60,.5);border-radius:0 8px 8px 0;font-size:11px;color:#e05555;line-height:1.5">'+
+        substMsg+'</div>';
+    }
   }
 
   // Build set rows
@@ -2206,12 +2294,19 @@ function buildBoostcampExercise(ej, di, ei) {
         headerRecHtml+
       '</div>'+
       // Expand note button + user note button
-      (ej.nota?'<button onclick="toggleNota(\'nota_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--mt);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0">ⓘ</button>':'')+
+      (wuRefLoad>0?'<button onclick="toggleNota(\'wu_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Calentamiento">🔥</button>':'')+
+      (displayNota?'<button onclick="toggleNota(\'nota_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--mt);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0">ⓘ</button>':'')+
       '<button onclick="toggleUserNote('+di+','+ei+')" style="background:none;border:none;color:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'var(--accent)':'var(--mt2)')+';font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Mi nota">📝</button>'+
     '</div>'+
 
+    // Warm-up section (collapsible)
+    wuHtml+
+
     // Technique note from coach (collapsible)
-    (ej.nota?'<div id="nota_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;background:rgba(200,165,74,.06);border-left:3px solid rgba(200,165,74,.4);border-radius:0 8px 8px 0;font-size:12px;color:var(--mt);line-height:1.6">'+ej.nota+'</div>':'')+
+    (displayNota?'<div id="nota_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;background:rgba(200,165,74,.06);border-left:3px solid rgba(200,165,74,.4);border-radius:0 8px 8px 0;font-size:12px;color:var(--mt);line-height:1.6">'+displayNota+'</div>':'')+
+
+    // Substitution warning (ICS bajo persistente)
+    substHtml+
 
     // User note (client's own note per exercise)
     '<div id="usernote_'+di+'_'+ei+'" style="display:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'block':'none')+';margin:0 14px 10px;padding:0">'+
@@ -4488,6 +4583,65 @@ async function submitPostSession() {
 
   closePostSessionModal();
   await _confirmSessionDone(di);
+}
+
+// ══════════════════════════════════════════════════
+// CHAT COACH ↔ CLIENTE
+// ══════════════════════════════════════════════════
+var _chatUnsub = null;
+
+function renderChat() {
+  if (!USER) return;
+  var cont = document.getElementById('chatMessages');
+  if (!cont) return;
+  cont.innerHTML = '<div style="color:var(--mt);font-size:12px;text-align:center;padding:20px">Cargando mensajes...</div>';
+
+  if (_chatUnsub) { _chatUnsub(); _chatUnsub = null; }
+
+  var msgRef = FB.doc(FB.db, 'messages', USER.uid);
+  _chatUnsub = FB.onSnapshot(msgRef, function(snap) {
+    var msgs = snap.exists() ? (snap.data().msgs || []) : [];
+    if (!msgs.length) {
+      cont.innerHTML = '<div style="color:var(--mt);font-size:12px;text-align:center;padding:40px 20px">Sin mensajes aún.<br>Escribe algo a tu coach 👇</div>';
+      return;
+    }
+    cont.innerHTML = msgs.map(function(m) {
+      var isMe = m.role === 'client';
+      var ts = m.ts ? new Date(m.ts).toLocaleString('es-MX',{hour:'2-digit',minute:'2-digit',day:'numeric',month:'short'}) : '';
+      return '<div style="display:flex;flex-direction:column;align-items:'+(isMe?'flex-end':'flex-start')+';margin-bottom:6px">'+
+        '<div style="max-width:78%;padding:10px 13px;border-radius:'+(isMe?'14px 14px 4px 14px':'14px 14px 14px 4px')+';'+
+          'background:'+(isMe?'var(--accent)':'var(--surface2)')+';'+
+          'color:'+(isMe?'#000':'var(--tx)')+';font-size:13px;line-height:1.5">'+
+          _escapeHtml(m.text)+
+        '</div>'+
+        '<div style="font-size:10px;color:var(--mt);margin-top:2px;padding:0 4px">'+
+          (isMe?'Tú':'Coach')+' · '+ts+
+        '</div>'+
+      '</div>';
+    }).join('');
+    // Scroll to bottom
+    cont.scrollTop = cont.scrollHeight;
+  });
+}
+
+function _escapeHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function sendChatMsg() {
+  if (!USER) return;
+  var input = document.getElementById('chatInput');
+  var text = (input.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  var msg = { role: 'client', from: USER.uid, text: text, ts: new Date().toISOString() };
+  try {
+    var msgRef = FB.doc(FB.db, 'messages', USER.uid);
+    await FB.setDoc(msgRef, { msgs: FB.arrayUnion(msg) }, { merge: true });
+  } catch(e) {
+    showToast('Error enviando: ' + e.message, true);
+    input.value = text;
+  }
 }
 
 function _avgArr(arr) {

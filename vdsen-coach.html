@@ -64,7 +64,7 @@
   <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button></div><div id="planBuilder"></div></div>
   <div id="templates" class="section"><h2 class="text-2xl font-bold mb-4">Templates de Planes</h2><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
-  <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><select id="monitorClientSelect" class="input-field mb-4"></select><div id="monitorTable"></div></div>
+  <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><div class="flex gap-2 mb-4 flex-wrap"><select id="monitorClientSelect" class="input-field flex-1"></select><button id="pdfReportBtn" class="btn-secondary text-sm" style="display:none">📄 Reporte PDF</button></div><div id="monitorTable"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
     <div class="card p-4 mb-4">
       <label class="block text-sm font-medium mb-1">🔑 API Key de Anthropic (Claude)</label>
@@ -126,11 +126,13 @@
       <option value="5">5 — Muy alto (ej: peso muerto)</option>
     </select>
     <label class="block text-xs text-[#888] mb-1">Curva de resistencia</label>
-    <select id="ex-curve" class="input-field mb-4">
+    <select id="ex-curve" class="input-field mb-3">
       <option value="elongated">Elongada — máxima tensión en estiramiento (ej: RDL)</option>
       <option value="mid" selected>Media — tensión uniforme (ej: press)</option>
       <option value="shortened">Acortada — máxima tensión en contracción (ej: curl polea)</option>
     </select>
+    <label class="block text-xs text-[#888] mb-1">Notas de ejecución <span class="text-[#555]">(aparecen automáticamente al cliente)</span></label>
+    <textarea id="ex-notes" class="input-field mb-4" rows="3" placeholder="Ej: Tempo 3-1-1. Mantener core activo. Codos a 45°. Rodillas alineadas con pies..."></textarea>
     <button id="ex-submit" class="btn-primary w-full">Agregar al catálogo</button>
   </div>
 </div>
@@ -156,7 +158,7 @@
 <script type="module">
   import { initializeApp } from "firebase/app";
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot, arrayUnion } from "firebase/firestore";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -443,11 +445,12 @@
         const muscleType = document.getElementById("ex-muscletype").value;
         const fatigueCost = parseInt(document.getElementById("ex-fatigue").value);
         const resistanceCurve = document.getElementById("ex-curve").value;
+        const executionNotes = (document.getElementById("ex-notes").value || "").trim();
         if (!name || !pattern) { showToast("Nombre y patrón motor son obligatorios", true); return; }
         const btn = document.getElementById("ex-submit");
         btn.disabled = true; btn.textContent = "Guardando...";
         try {
-          await addDoc(collection(db, "exercises"), { name, motorPattern: pattern, equipment, muscleType, fatigueCost, resistanceCurve, notes: "", coachId: currentCoach.uid });
+          await addDoc(collection(db, "exercises"), { name, motorPattern: pattern, equipment, muscleType, fatigueCost, resistanceCurve, executionNotes, notes: "", coachId: currentCoach.uid });
           modal.style.display = "none";
           showToast(`"${name}" agregado al catálogo`);
           loadExerciseCatalog();
@@ -578,8 +581,194 @@
       }
 
       container.innerHTML = html;
+
+      // ── Chat coach ↔ cliente ──────────────────────────────────────
+      if (!document.getElementById("coachChatSection")) {
+        const chatSection = document.createElement("div");
+        chatSection.id = "coachChatSection";
+        chatSection.innerHTML = `
+          <div class="text-xs text-[#888] mb-2 mt-4 uppercase tracking-wide">💬 Chat con cliente</div>
+          <div id="coachChatMsgs" style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:8px;padding:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);border-radius:10px">
+            <span class="text-xs text-[#555]">Cargando...</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <input id="coachChatInput" type="text" placeholder="Escribe un mensaje al cliente..." class="input-field flex-1">
+            <button id="coachChatSend" class="btn-primary" style="padding:0 16px;flex-shrink:0">↑</button>
+          </div>`;
+        container.parentNode.appendChild(chatSection);
+      }
+
+      // Escuchar mensajes del cliente en tiempo real
+      let _chatUnsub = null;
+      const setupChat = (clientId) => {
+        if (_chatUnsub) { _chatUnsub(); _chatUnsub = null; }
+        const msgRef = doc(db, 'messages', clientId);
+        _chatUnsub = onSnapshot(msgRef, (snap) => {
+          const msgs = snap.exists() ? (snap.data().msgs || []) : [];
+          const msgsDiv = document.getElementById("coachChatMsgs");
+          if (!msgsDiv) return;
+          if (!msgs.length) { msgsDiv.innerHTML = '<span class="text-xs text-[#555]">Sin mensajes aún.</span>'; return; }
+          msgsDiv.innerHTML = msgs.map(m => {
+            const isCoach = m.role === 'coach';
+            const ts = m.ts ? new Date(m.ts).toLocaleString('es-MX',{hour:'2-digit',minute:'2-digit',day:'numeric',month:'short'}) : '';
+            return `<div style="display:flex;flex-direction:column;align-items:${isCoach?'flex-end':'flex-start'}">
+              <div style="max-width:78%;padding:8px 12px;border-radius:${isCoach?'12px 12px 3px 12px':'12px 12px 12px 3px'};background:${isCoach?'rgba(201,168,76,.85)':'rgba(255,255,255,.08)'};color:${isCoach?'#000':'#eee'};font-size:12px;line-height:1.5">${m.text.replace(/</g,'&lt;')}</div>
+              <div style="font-size:10px;color:#555;margin-top:2px;padding:0 4px">${isCoach?'Tú (coach)':'Cliente'} · ${ts}</div>
+            </div>`;
+          }).join('');
+          msgsDiv.scrollTop = msgsDiv.scrollHeight;
+        });
+
+        document.getElementById("coachChatSend").onclick = async () => {
+          const input = document.getElementById("coachChatInput");
+          const text = (input.value || '').trim();
+          if (!text) return;
+          input.value = '';
+          const msg = { role: 'coach', from: currentCoach.uid, text, ts: new Date().toISOString() };
+          try {
+            await setDoc(doc(db, 'messages', clientId), { msgs: arrayUnion(msg) }, { merge: true });
+          } catch(e) { showToast("Error chat: " + e.message, true); input.value = text; }
+        };
+        document.getElementById("coachChatInput").onkeydown = (e) => {
+          if (e.key === 'Enter') document.getElementById("coachChatSend").click();
+        };
+      };
+      setupChat(select.value);
+
+      // Botón PDF
+      const pdfBtn = document.getElementById("pdfReportBtn");
+      pdfBtn.style.display = "inline-flex";
+      pdfBtn.onclick = () => generateMesocyclePDF(clientData, logs, currentWeek, lastRec);
+
+      // Botón Cerrar Mesociclo (solo si semana >= 5)
+      let closeMesoBtn = document.getElementById("closeMesoBtn");
+      if (!closeMesoBtn) {
+        closeMesoBtn = document.createElement("button");
+        closeMesoBtn.id = "closeMesoBtn";
+        closeMesoBtn.className = "btn-secondary text-sm";
+        closeMesoBtn.style.cssText = "background:rgba(220,60,60,.12);border-color:rgba(220,60,60,.4);color:#e05555";
+        closeMesoBtn.textContent = "🔄 Cerrar Mesociclo";
+        pdfBtn.parentNode.insertBefore(closeMesoBtn, pdfBtn.nextSibling);
+      }
+      closeMesoBtn.style.display = currentWeek >= 5 ? "inline-flex" : "none";
+      closeMesoBtn.onclick = async () => {
+        if (!confirm(`¿Cerrar mesociclo semana ${currentWeek} de ${clientData.displayName}? Se archivan los datos y se reinicia a semana 1.`)) return;
+        closeMesoBtn.disabled = true; closeMesoBtn.textContent = "Archivando...";
+        try {
+          const logsRef = doc(db, 'logs', select.value);
+          const logsSnap2 = await getDoc(logsRef);
+          if (!logsSnap2.exists()) throw new Error("Sin logs");
+          const logsData = logsSnap2.data();
+          const archive = {
+            week: logsData.currentWeek || 1,
+            entries: logsData.entries || {},
+            archivedAt: new Date().toISOString(),
+            planId: clientData.activePlanId || null
+          };
+          const prevMesos = logsData.mesociclos || [];
+          await updateDoc(logsRef, {
+            mesociclos: [...prevMesos, archive],
+            entries: {},
+            currentWeek: 1,
+            updatedAt: new Date().toISOString()
+          });
+          showToast(`✅ Mesociclo archivado. Semana reiniciada a 1.`);
+        } catch(e) { showToast("Error: " + e.message, true); }
+        finally { closeMesoBtn.disabled = false; closeMesoBtn.textContent = "🔄 Cerrar Mesociclo"; }
+      };
       }); // fin onSnapshot
     };
+  }
+
+  function generateMesocyclePDF(clientData, logs, currentWeek, lastRec) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const W = 210, margin = 16, colW = W - margin * 2;
+    let y = margin;
+
+    const addText = (text, size, bold, color) => {
+      doc.setFontSize(size);
+      doc.setFont('helvetica', bold ? 'bold' : 'normal');
+      if (color) doc.setTextColor(...color); else doc.setTextColor(30, 30, 30);
+      doc.text(String(text), margin, y);
+      y += size * 0.45;
+    };
+    const addLine = () => { doc.setDrawColor(200,165,74); doc.setLineWidth(0.3); doc.line(margin, y, W - margin, y); y += 4; };
+    const checkPage = (need) => { if (y + need > 280) { doc.addPage(); y = margin; } };
+
+    // Header
+    doc.setFillColor(20, 20, 20);
+    doc.rect(0, 0, W, 28, 'F');
+    doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.setTextColor(200,165,74);
+    doc.text('VDSEN — Reporte de Mesociclo', margin, 12);
+    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
+    doc.text(`Cliente: ${clientData.displayName || '—'}   |   Semana: ${currentWeek}/6   |   Generado: ${new Date().toLocaleDateString('es-MX')}`, margin, 20);
+    y = 36;
+
+    addText('RESUMEN DE PROGRESIÓN', 11, true, [200,165,74]);
+    y += 2; addLine();
+
+    // Recomendaciones del algoritmo
+    if (lastRec && lastRec.recommendations?.length) {
+      lastRec.recommendations.forEach(r => {
+        checkPage(22);
+        doc.setFillColor(245,245,245); doc.rect(margin, y, colW, 20, 'F');
+        doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(30,30,30);
+        doc.text(r.exerciseName || '—', margin + 3, y + 6);
+        const actionMap = { deload:'DELOAD', reduce_load:'BAJAR CARGA', add_sets:'+SERIES',
+          increase_load:'+CARGA', freeze_load:'CONGELAR', maintain:'MANTENER', reduce_sets:'BAJAR SERIES' };
+        doc.setFontSize(8); doc.setFont('helvetica','bold');
+        doc.setTextColor(r.action === 'increase_load' || r.action === 'add_sets' ? 40 : r.action === 'reduce_load' ? 180 : 100,
+          r.action === 'increase_load' || r.action === 'add_sets' ? 140 : 100, 50);
+        doc.text(actionMap[r.action] || r.action, W - margin - 3, y + 6, { align: 'right' });
+        doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
+        doc.text(`Carga: ${r.newLoad} kg  ·  Series: ${r.newSets}  ·  RIR objetivo: ${r.rirTarget}`, margin + 3, y + 13);
+        const reason = doc.splitTextToSize(r.reason || '', colW - 6);
+        doc.setFontSize(7); doc.setTextColor(120,120,120);
+        doc.text(reason[0] || '', margin + 3, y + 18);
+        y += 23;
+      });
+    } else {
+      addText('Sin recomendaciones registradas aún.', 9, false, [120,120,120]); y += 4;
+    }
+
+    // Check-ins semanales
+    checkPage(20);
+    y += 4; addText('CHECK-INS SEMANALES', 11, true, [200,165,74]); y += 2; addLine();
+    for (let w = 1; w <= currentWeek; w++) {
+      const ci = logs['ci_sem_' + w];
+      if (!ci) continue;
+      checkPage(10);
+      doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(30,30,30);
+      doc.text(`Sem ${w}:`, margin, y);
+      doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
+      doc.text(`Peso: ${ci.peso||'—'} kg  ·  HRV: ${ci.hrv||'—'}  ·  WHO-5: ${ci.who5||'—'}`, margin + 18, y);
+      y += 6;
+    }
+
+    // Notas del cliente
+    const noteKeys = Object.keys(logs).filter(k => k.startsWith('exnote_'));
+    if (noteKeys.length) {
+      checkPage(20);
+      y += 4; addText('NOTAS DEL CLIENTE', 11, true, [200,165,74]); y += 2; addLine();
+      noteKeys.sort().reverse().slice(0, 15).forEach(k => {
+        checkPage(8);
+        const parts = k.split('_');
+        doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(100,80,30);
+        doc.text(`S${parts[1]} D${parseInt(parts[2])+1} Ej${parseInt(parts[3])+1}:`, margin, y);
+        doc.setFont('helvetica','normal'); doc.setTextColor(60,60,60);
+        const lines = doc.splitTextToSize(logs[k] || '', colW - 30);
+        doc.text(lines[0] || '', margin + 22, y);
+        y += 6;
+      });
+    }
+
+    // Footer
+    doc.setFontSize(7); doc.setTextColor(160,160,160);
+    doc.text('VDSEN Ecosistema — Reporte generado automáticamente', W / 2, 290, { align: 'center' });
+
+    doc.save(`VDSEN_Reporte_${(clientData.displayName||'cliente').replace(/\s+/g,'_')}_Sem${currentWeek}.pdf`);
+    showToast('✅ Reporte PDF generado');
   }
 
   async function loadClientsSelect() {
