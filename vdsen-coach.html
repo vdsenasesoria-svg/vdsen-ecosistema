@@ -582,10 +582,47 @@
 
       container.innerHTML = html;
 
-      // Botón PDF: guardar contexto para cuando lo presionen
+      // Botón PDF
       const pdfBtn = document.getElementById("pdfReportBtn");
       pdfBtn.style.display = "inline-flex";
       pdfBtn.onclick = () => generateMesocyclePDF(clientData, logs, currentWeek, lastRec);
+
+      // Botón Cerrar Mesociclo (solo si semana >= 5)
+      let closeMesoBtn = document.getElementById("closeMesoBtn");
+      if (!closeMesoBtn) {
+        closeMesoBtn = document.createElement("button");
+        closeMesoBtn.id = "closeMesoBtn";
+        closeMesoBtn.className = "btn-secondary text-sm";
+        closeMesoBtn.style.cssText = "background:rgba(220,60,60,.12);border-color:rgba(220,60,60,.4);color:#e05555";
+        closeMesoBtn.textContent = "🔄 Cerrar Mesociclo";
+        pdfBtn.parentNode.insertBefore(closeMesoBtn, pdfBtn.nextSibling);
+      }
+      closeMesoBtn.style.display = currentWeek >= 5 ? "inline-flex" : "none";
+      closeMesoBtn.onclick = async () => {
+        if (!confirm(`¿Cerrar mesociclo semana ${currentWeek} de ${clientData.displayName}? Se archivan los datos y se reinicia a semana 1.`)) return;
+        closeMesoBtn.disabled = true; closeMesoBtn.textContent = "Archivando...";
+        try {
+          const logsRef = doc(db, 'logs', select.value);
+          const logsSnap2 = await getDoc(logsRef);
+          if (!logsSnap2.exists()) throw new Error("Sin logs");
+          const logsData = logsSnap2.data();
+          const archive = {
+            week: logsData.currentWeek || 1,
+            entries: logsData.entries || {},
+            archivedAt: new Date().toISOString(),
+            planId: clientData.activePlanId || null
+          };
+          const prevMesos = logsData.mesociclos || [];
+          await updateDoc(logsRef, {
+            mesociclos: [...prevMesos, archive],
+            entries: {},
+            currentWeek: 1,
+            updatedAt: new Date().toISOString()
+          });
+          showToast(`✅ Mesociclo archivado. Semana reiniciada a 1.`);
+        } catch(e) { showToast("Error: " + e.message, true); }
+        finally { closeMesoBtn.disabled = false; closeMesoBtn.textContent = "🔄 Cerrar Mesociclo"; }
+      };
       }); // fin onSnapshot
     };
   }
