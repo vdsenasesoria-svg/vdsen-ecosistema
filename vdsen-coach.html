@@ -64,7 +64,7 @@
   <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button></div><div id="planBuilder"></div></div>
   <div id="templates" class="section"><h2 class="text-2xl font-bold mb-4">Templates de Planes</h2><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
-  <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><select id="monitorClientSelect" class="input-field mb-4"></select><div id="monitorTable"></div></div>
+  <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><div class="flex gap-2 mb-4 flex-wrap"><select id="monitorClientSelect" class="input-field flex-1"></select><button id="pdfReportBtn" class="btn-secondary text-sm" style="display:none">📄 Reporte PDF</button></div><div id="monitorTable"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
     <div class="card p-4 mb-4">
       <label class="block text-sm font-medium mb-1">🔑 API Key de Anthropic (Claude)</label>
@@ -581,8 +581,104 @@
       }
 
       container.innerHTML = html;
+
+      // Botón PDF: guardar contexto para cuando lo presionen
+      const pdfBtn = document.getElementById("pdfReportBtn");
+      pdfBtn.style.display = "inline-flex";
+      pdfBtn.onclick = () => generateMesocyclePDF(clientData, logs, currentWeek, lastRec);
       }); // fin onSnapshot
     };
+  }
+
+  function generateMesocyclePDF(clientData, logs, currentWeek, lastRec) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const W = 210, margin = 16, colW = W - margin * 2;
+    let y = margin;
+
+    const addText = (text, size, bold, color) => {
+      doc.setFontSize(size);
+      doc.setFont('helvetica', bold ? 'bold' : 'normal');
+      if (color) doc.setTextColor(...color); else doc.setTextColor(30, 30, 30);
+      doc.text(String(text), margin, y);
+      y += size * 0.45;
+    };
+    const addLine = () => { doc.setDrawColor(200,165,74); doc.setLineWidth(0.3); doc.line(margin, y, W - margin, y); y += 4; };
+    const checkPage = (need) => { if (y + need > 280) { doc.addPage(); y = margin; } };
+
+    // Header
+    doc.setFillColor(20, 20, 20);
+    doc.rect(0, 0, W, 28, 'F');
+    doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.setTextColor(200,165,74);
+    doc.text('VDSEN — Reporte de Mesociclo', margin, 12);
+    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
+    doc.text(`Cliente: ${clientData.displayName || '—'}   |   Semana: ${currentWeek}/6   |   Generado: ${new Date().toLocaleDateString('es-MX')}`, margin, 20);
+    y = 36;
+
+    addText('RESUMEN DE PROGRESIÓN', 11, true, [200,165,74]);
+    y += 2; addLine();
+
+    // Recomendaciones del algoritmo
+    if (lastRec && lastRec.recommendations?.length) {
+      lastRec.recommendations.forEach(r => {
+        checkPage(22);
+        doc.setFillColor(245,245,245); doc.rect(margin, y, colW, 20, 'F');
+        doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(30,30,30);
+        doc.text(r.exerciseName || '—', margin + 3, y + 6);
+        const actionMap = { deload:'DELOAD', reduce_load:'BAJAR CARGA', add_sets:'+SERIES',
+          increase_load:'+CARGA', freeze_load:'CONGELAR', maintain:'MANTENER', reduce_sets:'BAJAR SERIES' };
+        doc.setFontSize(8); doc.setFont('helvetica','bold');
+        doc.setTextColor(r.action === 'increase_load' || r.action === 'add_sets' ? 40 : r.action === 'reduce_load' ? 180 : 100,
+          r.action === 'increase_load' || r.action === 'add_sets' ? 140 : 100, 50);
+        doc.text(actionMap[r.action] || r.action, W - margin - 3, y + 6, { align: 'right' });
+        doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
+        doc.text(`Carga: ${r.newLoad} kg  ·  Series: ${r.newSets}  ·  RIR objetivo: ${r.rirTarget}`, margin + 3, y + 13);
+        const reason = doc.splitTextToSize(r.reason || '', colW - 6);
+        doc.setFontSize(7); doc.setTextColor(120,120,120);
+        doc.text(reason[0] || '', margin + 3, y + 18);
+        y += 23;
+      });
+    } else {
+      addText('Sin recomendaciones registradas aún.', 9, false, [120,120,120]); y += 4;
+    }
+
+    // Check-ins semanales
+    checkPage(20);
+    y += 4; addText('CHECK-INS SEMANALES', 11, true, [200,165,74]); y += 2; addLine();
+    for (let w = 1; w <= currentWeek; w++) {
+      const ci = logs['ci_sem_' + w];
+      if (!ci) continue;
+      checkPage(10);
+      doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(30,30,30);
+      doc.text(`Sem ${w}:`, margin, y);
+      doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
+      doc.text(`Peso: ${ci.peso||'—'} kg  ·  HRV: ${ci.hrv||'—'}  ·  WHO-5: ${ci.who5||'—'}`, margin + 18, y);
+      y += 6;
+    }
+
+    // Notas del cliente
+    const noteKeys = Object.keys(logs).filter(k => k.startsWith('exnote_'));
+    if (noteKeys.length) {
+      checkPage(20);
+      y += 4; addText('NOTAS DEL CLIENTE', 11, true, [200,165,74]); y += 2; addLine();
+      noteKeys.sort().reverse().slice(0, 15).forEach(k => {
+        checkPage(8);
+        const parts = k.split('_');
+        doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(100,80,30);
+        doc.text(`S${parts[1]} D${parseInt(parts[2])+1} Ej${parseInt(parts[3])+1}:`, margin, y);
+        doc.setFont('helvetica','normal'); doc.setTextColor(60,60,60);
+        const lines = doc.splitTextToSize(logs[k] || '', colW - 30);
+        doc.text(lines[0] || '', margin + 22, y);
+        y += 6;
+      });
+    }
+
+    // Footer
+    doc.setFontSize(7); doc.setTextColor(160,160,160);
+    doc.text('VDSEN Ecosistema — Reporte generado automáticamente', W / 2, 290, { align: 'center' });
+
+    doc.save(`VDSEN_Reporte_${(clientData.displayName||'cliente').replace(/\s+/g,'_')}_Sem${currentWeek}.pdf`);
+    showToast('✅ Reporte PDF generado');
   }
 
   async function loadClientsSelect() {
