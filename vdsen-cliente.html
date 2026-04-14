@@ -2021,6 +2021,44 @@ function buildBoostcampExercise(ej, di, ei) {
   var catData = _getCatalogData(ej.nombre || ej.exerciseName);
   var displayNota = ej.nota || ej.coachNote || (catData ? catData.executionNotes : '') || '';
   var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+
+  // ── Warm-up automático ────────────────────────────────────────────
+  // Referencia de carga: prog rec > semana anterior > historial
+  var wuRefLoad = 0;
+  var progRecForWu = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
+  if (progRecForWu && progRecForWu.newLoad) {
+    wuRefLoad = parseFloat(progRecForWu.newLoad) || 0;
+  }
+  if (!wuRefLoad) {
+    var prevWuData = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
+    if (prevWuData) wuRefLoad = prevWuData.avgLoad;
+  }
+  if (!wuRefLoad) {
+    var exNLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    var histWu = EXERCISE_HISTORY[exNLower] || {};
+    if (histWu.load) wuRefLoad = parseFloat(histWu.load) || 0;
+  }
+  var wuHtml = '';
+  if (wuRefLoad > 0) {
+    var wuSets = [
+      { pct: 0.50, reps: 8 },
+      { pct: 0.70, reps: 5 },
+      { pct: 0.85, reps: 2 }
+    ];
+    var wuRows = wuSets.map(function(ws) {
+      var wLoad = Math.round(wuRefLoad * ws.pct * 4) / 4;
+      return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
+        '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
+        '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' kg × '+ws.reps+' reps</span>'+
+        '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
+      '</div>';
+    }).join('');
+    wuHtml = '<div id="wu_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;'+
+      'background:rgba(70,130,200,.06);border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0">'+
+      '<div style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px;margin-bottom:6px">CALENTAMIENTO (referencia)</div>'+
+      wuRows+
+    '</div>';
+  }
   var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK);
 
@@ -2037,6 +2075,40 @@ function buildBoostcampExercise(ej, di, ei) {
     headerRecHtml = '<div style="font-size:10px;color:'+recCol+';margin-top:3px;font-weight:600">'+
       '⚡ '+headerRec.newLoad+' '+recUnit+' · '+headerRec.newSets+'s · RIR '+headerRec.rirTarget+
     '</div>';
+  }
+
+  // ── Sustitución por ICS bajo persistente ─────────────────────────
+  // Si 2+ semanas consecutivas con ICS promedio < 7 → sugerir alternativa
+  var substHtml = '';
+  if (catData && catData.motorPattern && CURRENT_WEEK >= 2) {
+    var icsWeeks = 0;
+    for (var ww = CURRENT_WEEK - 1; ww >= Math.max(1, CURRENT_WEEK - 2); ww--) {
+      var wkICS = [];
+      for (var ss = 0; ss < 8; ss++) {
+        var wkKey = 'log_'+ww+'_'+di+'_'+ei+'_s'+ss;
+        if (LOGS[wkKey] && LOGS[wkKey].done && LOGS[wkKey].ics) wkICS.push(parseFloat(LOGS[wkKey].ics));
+      }
+      if (wkICS.length && _avgArr(wkICS) < 7) icsWeeks++;
+    }
+    if (icsWeeks >= 2) {
+      // Buscar alternativa en catálogo con mismo patrón motor, nombre diferente
+      var pattern = catData.motorPattern;
+      var exNameCurrent = (ej.nombre || ej.exerciseName || '').toLowerCase().trim();
+      var altEx = null;
+      var catKeys = Object.keys(EXERCISE_CATALOG);
+      for (var ci = 0; ci < catKeys.length; ci++) {
+        var ck = catKeys[ci];
+        if (ck !== exNameCurrent && EXERCISE_CATALOG[ck].motorPattern === pattern) {
+          altEx = ck; break;
+        }
+      }
+      var substMsg = altEx
+        ? '⚠ ICS bajo 2 sem. Considera sustituir por: <strong>'+altEx+'</strong>'
+        : '⚠ ICS bajo 2 semanas consecutivas — revisa técnica con tu coach';
+      substHtml = '<div style="margin:0 14px 8px;padding:8px 12px;background:rgba(220,60,60,.07);'+
+        'border-left:3px solid rgba(220,60,60,.5);border-radius:0 8px 8px 0;font-size:11px;color:#e05555;line-height:1.5">'+
+        substMsg+'</div>';
+    }
   }
 
   // Build set rows
@@ -2209,12 +2281,19 @@ function buildBoostcampExercise(ej, di, ei) {
         headerRecHtml+
       '</div>'+
       // Expand note button + user note button
+      (wuRefLoad>0?'<button onclick="toggleNota(\'wu_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Calentamiento">🔥</button>':'')+
       (displayNota?'<button onclick="toggleNota(\'nota_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--mt);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0">ⓘ</button>':'')+
       '<button onclick="toggleUserNote('+di+','+ei+')" style="background:none;border:none;color:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'var(--accent)':'var(--mt2)')+';font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Mi nota">📝</button>'+
     '</div>'+
 
+    // Warm-up section (collapsible)
+    wuHtml+
+
     // Technique note from coach (collapsible)
     (displayNota?'<div id="nota_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;background:rgba(200,165,74,.06);border-left:3px solid rgba(200,165,74,.4);border-radius:0 8px 8px 0;font-size:12px;color:var(--mt);line-height:1.6">'+displayNota+'</div>':'')+
+
+    // Substitution warning (ICS bajo persistente)
+    substHtml+
 
     // User note (client's own note per exercise)
     '<div id="usernote_'+di+'_'+ei+'" style="display:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'block':'none')+';margin:0 14px 10px;padding:0">'+
