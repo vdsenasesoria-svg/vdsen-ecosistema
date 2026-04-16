@@ -2086,13 +2086,25 @@ function buildBoostcampExercise(ej, di, ei) {
   var displayNota = ej.nota || ej.coachNote || (catData ? catData.executionNotes : '') || '';
   var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
 
-  // ── Warm-up automático ────────────────────────────────────────────
-  // Referencia de carga: prog rec > semana anterior > historial
+  // ── Warm-up: solo primer ejercicio de cada patrón motor del día ─────
+  // Core y Cardio no requieren pirámide de calentamiento.
+  // Sin catData (ejercicio fuera de catálogo) → mostrar por defecto (seguro).
+  var _noWuPatterns = ['Core','Cardio'];
+  var _isFirstOfPattern = true;
+  if (catData && catData.motorPattern) {
+    if (_noWuPatterns.indexOf(catData.motorPattern) !== -1) {
+      _isFirstOfPattern = false; // Core/Cardio nunca llevan warm-up
+    } else {
+      var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : [];
+      for (var _pi = 0; _pi < ei; _pi++) {
+        var _pCat = _getCatalogData(_dayExs[_pi] ? (_dayExs[_pi].nombre || _dayExs[_pi].exerciseName || '') : '');
+        if (_pCat && _pCat.motorPattern === catData.motorPattern) { _isFirstOfPattern = false; break; }
+      }
+    }
+  }
+
   var wuRefLoad = 0;
   var progRecForWu = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
-  if (progRecForWu && progRecForWu.newLoad) {
-    wuRefLoad = parseFloat(progRecForWu.newLoad) || 0;
-  }
 
   // ── Aplicar número de series de la recomendación de progresión ──────
   // add_sets / reduce_sets / deload modifican numSeries activamente.
@@ -2106,14 +2118,21 @@ function buildBoostcampExercise(ej, di, ei) {
     }
     numSeries = Math.max(progRecForWu.newSets, _doneCount);
   }
-  if (!wuRefLoad) {
-    var prevWuData = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
-    if (prevWuData) wuRefLoad = prevWuData.avgLoad;
-  }
-  if (!wuRefLoad) {
-    var exNLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    var histWu = EXERCISE_HISTORY[exNLower] || {};
-    if (histWu.load) wuRefLoad = parseFloat(histWu.load) || 0;
+
+  // Referencia de carga para warm-up: prog rec > semana anterior > historial
+  if (_isFirstOfPattern) {
+    if (progRecForWu && progRecForWu.newLoad) {
+      wuRefLoad = parseFloat(progRecForWu.newLoad) || 0;
+    }
+    if (!wuRefLoad) {
+      var prevWuData = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
+      if (prevWuData) wuRefLoad = prevWuData.avgLoad;
+    }
+    if (!wuRefLoad) {
+      var exNLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      var histWu = EXERCISE_HISTORY[exNLower] || {};
+      if (histWu.load) wuRefLoad = parseFloat(histWu.load) || 0;
+    }
   }
   var wuHtml = '';
   if (wuRefLoad > 0) {
