@@ -2093,6 +2093,19 @@ function buildBoostcampExercise(ej, di, ei) {
   if (progRecForWu && progRecForWu.newLoad) {
     wuRefLoad = parseFloat(progRecForWu.newLoad) || 0;
   }
+
+  // ── Aplicar número de series de la recomendación de progresión ──────
+  // add_sets / reduce_sets / deload modifican numSeries activamente.
+  // Se protege contra reducir por debajo de sets ya completados en esta sesión.
+  if (progRecForWu && progRecForWu.newSets &&
+      ['add_sets','reduce_sets','deload'].indexOf(progRecForWu.action) !== -1) {
+    var _doneCount = 0;
+    for (var _sc = 0; _sc < 12; _sc++) {
+      var _sk = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc;
+      if (LOGS[_sk] && LOGS[_sk].done) _doneCount = _sc + 1;
+    }
+    numSeries = Math.max(progRecForWu.newSets, _doneCount);
+  }
   if (!wuRefLoad) {
     var prevWuData = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
     if (prevWuData) wuRefLoad = prevWuData.avgLoad;
