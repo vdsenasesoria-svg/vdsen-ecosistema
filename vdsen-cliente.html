@@ -296,7 +296,7 @@ function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
 function toggleExUnit(di, ei) {
   EXERCISE_UNITS[di+'_'+ei] = getExUnit(di, ei) === 'KG' ? 'LB' : 'KG';
-  renderEntrenamiento();
+  _refreshExPanelOnly();
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1787,6 +1787,8 @@ function getSesiones() {
 }
 
 let DIA_ACTIVO = 0;
+let EJ_ACTIVO = 0;
+var _EJERCICIOS_DIA = [];
 
 // ══════════════════════════════════════════════════════════════════════════
 // ENTRENAMIENTO — ESTILO BOOSTCAMP — Motor VDSEN v3.1
@@ -1884,6 +1886,343 @@ function setWeek(w) {
 }
 
 function goToWeek(w) { setWeek(w); goTab(1); }
+
+// ── Navegador horizontal de ejercicios ───────────────────────────────────
+function _buildExNav(ejercicios, di) {
+  var patternEmoji = {
+    'Empuje':'⬆️','Push':'⬆️','Halar':'⬇️','Pull':'⬇️','Pierna':'🦵','Legs':'🦵',
+    'Core':'🔵','Cardio':'🏃','Bisagra':'↙️','Hinge':'↙️','Squat':'🏋️','Sentadilla':'🏋️'
+  };
+  return ejercicios.map(function(ej, ei) {
+    var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+    var doneCount = 0;
+    for (var s = 0; s < numSeries; s++) {
+      if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s].done) doneCount++;
+    }
+    var allDone = doneCount >= numSeries;
+    var isActive = ei === EJ_ACTIVO;
+    var nombre = ej.nombre || ej.exerciseName || ('Ej '+(ei+1));
+    var shortName = nombre.length > 12 ? nombre.substring(0, 12)+'…' : nombre;
+    var machine = getMachineForExercise(nombre);
+    var catData = _getCatalogData(nombre);
+    var iconHtml = machine
+      ? '<div style="width:36px;height:24px;flex-shrink:0;opacity:.9;display:flex;align-items:center;justify-content:center">'+
+          machine.svg.replace(/width="[^"]*"/, 'width="36"').replace(/height="[^"]*"/, 'height="24"')+
+        '</div>'
+      : '<span style="font-size:18px;line-height:1">'+
+          (catData && patternEmoji[catData.motorPattern] ? patternEmoji[catData.motorPattern] : '💪')+
+        '</span>';
+    var badgeHtml = allDone
+      ? '<span style="font-size:9px;font-weight:800;color:var(--grn);letter-spacing:.5px">✓</span>'
+      : '<span style="font-size:9px;font-weight:700;color:var(--mt)">'+doneCount+'/'+numSeries+'</span>';
+    var borderCol = isActive ? 'rgba(200,165,74,.7)' : allDone ? 'rgba(58,148,96,.35)' : 'rgba(255,255,255,.08)';
+    var bgCol = isActive ? 'rgba(200,165,74,.1)' : allDone ? 'rgba(58,148,96,.06)' : 'var(--surface)';
+    return '<button onclick="setEjActivo('+ei+')" style="'+
+      'flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;'+
+      'padding:8px 10px;border:2px solid '+borderCol+';border-radius:12px;'+
+      'background:'+bgCol+';cursor:pointer;min-width:70px;max-width:90px">'+
+      iconHtml+
+      '<div style="font-size:9px;font-weight:700;color:'+(isActive?'var(--accent)':allDone?'var(--grn)':'var(--mt)')+
+        ';text-align:center;line-height:1.3;word-break:break-word">'+shortName+'</div>'+
+      badgeHtml+
+    '</button>';
+  }).join('');
+}
+
+// ── Panel de detalle del ejercicio activo ─────────────────────────────────
+function _buildExPanel(ejercicios, di) {
+  if (!ejercicios.length) return '';
+  var ei = EJ_ACTIVO;
+  if (ei >= ejercicios.length) ei = ejercicios.length - 1;
+  var ej = ejercicios[ei];
+  var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
+  var machine = getMachineForExercise(nombre);
+  var catData = _getCatalogData(nombre);
+  var displayNota = ej.nota || ej.coachNote || (catData ? catData.executionNotes : '') || '';
+  var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+  var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
+  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK);
+  var unit = getExUnit(di, ei);
+
+  // Apply progRec numSeries adjustment
+  var progRec = _getProgRecForExercise(di, ei, nombre);
+  if (progRec && progRec.newSets && ['add_sets','reduce_sets','deload'].indexOf(progRec.action) !== -1) {
+    var _doneCount = 0;
+    for (var _sc = 0; _sc < 12; _sc++) {
+      if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
+    }
+    numSeries = Math.max(progRec.newSets, _doneCount);
+  }
+
+  // ── A. Imagen máquina ──────────────────────────────────────────────────
+  var machineHtml = machine
+    ? '<div style="background:rgba(200,165,74,.04);border:1px solid rgba(200,165,74,.1);border-radius:16px;padding:20px;display:flex;align-items:center;justify-content:center;margin-bottom:14px">'+
+        machine.svg.replace(/width="[^"]*"/g,'').replace(/height="[^"]*"/g,'').replace('<svg ','<svg style="width:min(240px,75vw);height:auto" ')+
+      '</div>'
+    : '<div style="background:rgba(200,165,74,.04);border:1px solid rgba(200,165,74,.1);border-radius:16px;padding:20px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;font-size:72px">💪</div>';
+
+  // ── B. Header ──────────────────────────────────────────────────────────
+  var actionColors = {
+    deload:'var(--blue)', reduce_load:'var(--red)', reduce_sets:'#FF8844',
+    add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
+  };
+  var progrec = _getProgRecForExercise(di, ei, nombre);
+  var progrecHtml = '';
+  if (progrec && progrec.newLoad) {
+    var recCol = actionColors[progrec.action] || 'var(--gold)';
+    progrecHtml = '<div style="display:inline-block;margin-top:6px;font-size:11px;font-weight:700;color:'+recCol+';'+
+      'background:rgba(200,165,74,.07);border:1px solid rgba(200,165,74,.15);padding:3px 10px;border-radius:6px">'+
+      '⚡ '+progrec.newLoad+' '+unit+' · '+progrec.newSets+'s · RIR '+progrec.rirTarget+
+    '</div>';
+  }
+  var headerHtml =
+    '<div style="margin-bottom:14px">'+
+      '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+nombre+'</div>'+
+      '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
+        '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
+        '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">'+repsTarget+' REPS</span>'+
+        '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px">RIR '+baseRIR+'</span>'+
+        (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
+      '</div>'+
+      progrecHtml+
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'+
+        '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
+      '</div>'+
+    '</div>';
+
+  // ── C. Nota de ejecución ───────────────────────────────────────────────
+  var notaHtml = displayNota
+    ? '<div style="margin-bottom:14px;padding:10px 12px;background:rgba(200,165,74,.05);border-left:3px solid rgba(200,165,74,.3);border-radius:0 8px 8px 0;font-size:12px;color:var(--mt);line-height:1.6">'+
+        displayNota+
+      '</div>'
+    : '';
+
+  // ── D. Warm-up ────────────────────────────────────────────────────────
+  var wuHtml = '';
+  var _noWuPatterns = ['Core','Cardio'];
+  var _isFirstOfPattern = true;
+  if (catData && catData.motorPattern) {
+    if (_noWuPatterns.indexOf(catData.motorPattern) !== -1) {
+      _isFirstOfPattern = false;
+    } else {
+      var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : ejercicios;
+      for (var _pi = 0; _pi < ei; _pi++) {
+        var _pCat = _getCatalogData(_dayExs[_pi] ? (_dayExs[_pi].nombre || _dayExs[_pi].exerciseName || '') : '');
+        if (_pCat && _pCat.motorPattern === catData.motorPattern) { _isFirstOfPattern = false; break; }
+      }
+    }
+  }
+  if (_isFirstOfPattern) {
+    var wuRefLoad = 0;
+    if (progrec && progrec.newLoad) wuRefLoad = parseFloat(progrec.newLoad) || 0;
+    if (!wuRefLoad) {
+      var prevWuData = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
+      if (prevWuData) wuRefLoad = prevWuData.avgLoad;
+    }
+    if (!wuRefLoad) {
+      var _exNLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      var _histWu = EXERCISE_HISTORY[_exNLower] || {};
+      if (_histWu.load) wuRefLoad = parseFloat(_histWu.load) || 0;
+    }
+    if (wuRefLoad > 0) {
+      var wuSets = [{pct:0.50,reps:8},{pct:0.70,reps:5},{pct:0.85,reps:2}];
+      var wuRows = wuSets.map(function(ws) {
+        var wLoad = Math.round(wuRefLoad * ws.pct * 4) / 4;
+        return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
+          '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
+          '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' kg × '+ws.reps+' reps</span>'+
+          '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
+        '</div>';
+      }).join('');
+      wuHtml = '<div style="margin-bottom:12px;padding:10px 12px;background:rgba(70,130,200,.06);border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0">'+
+        '<div style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px;margin-bottom:6px">🔥 CALENTAMIENTO</div>'+
+        wuRows+
+      '</div>';
+    }
+  }
+
+  // ── E. Series ─────────────────────────────────────────────────────────
+  // Encontrar primer set activo
+  var activeSi = -1;
+  for (var _as = 0; _as < numSeries; _as++) {
+    if (!LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_as] || !LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_as].done) {
+      activeSi = _as; break;
+    }
+  }
+
+  var setsHtml = '';
+  for (var s = 0; s < numSeries; s++) {
+    var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+    var prevKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+s;
+    var saved = LOGS[key] || {};
+    var prev = LOGS[prevKey] || {};
+    var exNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    var histEx = EXERCISE_HISTORY[exNameLower] || {};
+    var carga = saved.carga || ((!prev.carga && s === 0 && histEx.load) ? histEx.load : '');
+    var reps = saved.reps || ((!prev.reps && s === 0 && histEx.reps) ? histEx.reps : '');
+    var rirReal = saved.rir_real || ((!prev.rir_real && s === 0 && histEx.rir) ? histEx.rir : '');
+
+    if (s < activeSi) {
+      // ── SET COMPLETADO ──────────────────────────────────────────────
+      var pumpEmoji = saved.pump===1?'💪':saved.pump===2?'👍':saved.pump===3?'😐':'';
+      setsHtml += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;'+
+        'background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.18);border-radius:12px;margin-bottom:8px">'+
+        '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
+          'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+'</div>'+
+          '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+saved.carga+' '+unit+' × '+saved.reps+' reps</div>'+
+          '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
+        '</div>'+
+        '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
+          'margin-left:auto;padding:5px 10px;border:1px solid var(--border);border-radius:8px;'+
+          'background:var(--input-bg);color:var(--mt);font-size:13px;cursor:pointer;flex-shrink:0">↩</button>'+
+      '</div>';
+    } else if (s === activeSi) {
+      // ── SET ACTIVO ───────────────────────────────────────────────────
+      var suggestion = '';
+      if (progRec && progRec.newLoad) {
+        var actionLabels = {
+          deload:'DELOAD', reduce_load:'↓ BAJAR', reduce_sets:'↓ SERIES',
+          add_sets:'+ SERIES', increase_load:'↑ SUBIR', freeze_load:'= MANTENER', maintain:'='
+        };
+        var lbl = actionLabels[progRec.action] || '';
+        suggestion = '⚡ '+progRec.newLoad+' '+unit+' · '+progRec.newSets+'s'+(progRec.newReps?' · '+progRec.newReps+'r':'')+' · RIR '+progRec.rirTarget+' ['+lbl+']';
+      } else if (prev.carga) {
+        var pc = parseFloat(prev.carga)||0;
+        var prir = parseInt(prev.rir_real || prev.rir);
+        var step = 2.5;
+        suggestion = (!isNaN(prir) && prir <= baseRIR)
+          ? '→ '+(pc+step).toFixed(1)+' '+unit+' (↑ auto)'
+          : '→ '+pc+' '+unit+' (= mant.)';
+      }
+      var prevRefHtml = prev.carga
+        ? '<div style="font-size:10px;color:var(--mt);margin-bottom:8px">↩ Sem '+(CURRENT_WEEK-1)+': '+prev.carga+' '+unit+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+' </div>'
+        : (!prev.carga && s===0 && histEx.load && !saved.carga
+            ? '<div style="font-size:10px;color:rgba(108,150,255,.7);margin-bottom:8px">📋 Historial: '+histEx.load+' '+unit+(histEx.reps?' × '+histEx.reps+' reps':'')+' </div>'
+            : (suggestion ? '<div style="font-size:10px;color:var(--accent);font-weight:600;background:rgba(200,165,74,.06);border:1px solid rgba(200,165,74,.15);display:inline-block;padding:2px 6px;border-radius:4px;margin-bottom:8px">'+suggestion+'</div>' : ''));
+
+      setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(200,165,74,.5);border-radius:14px;padding:14px;background:rgba(200,165,74,.03);margin-bottom:8px">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">SERIE '+(s+1)+'</div>'+
+        '</div>'+
+        prevRefHtml+
+        // Inputs
+        '<div style="display:flex;gap:8px;margin-bottom:10px">'+
+          '<div style="flex:1">'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">CARGA ('+unit+')</div>'+
+            '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal"'+
+            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
+            'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
+            ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
+          '</div>'+
+          '<div style="flex:1">'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">REPS</div>'+
+            '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="reps" inputmode="numeric"'+
+            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
+            'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
+            ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
+          '</div>'+
+          '<div style="width:72px;flex-shrink:0">'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">RIR REAL</div>'+
+            '<input id="rir_'+key+'" type="number" value="'+(rirReal||'')+'" placeholder="RIR" inputmode="numeric" min="0" max="5"'+
+            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
+            'border-radius:8px;color:#e8a040;font-size:18px;font-weight:700;padding:10px 6px;outline:none;text-align:center"'+
+            ' onfocus="this.select()">'+
+          '</div>'+
+        '</div>'+
+        // ICS
+        '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end">'+
+          '<div style="flex:1">'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
+            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
+            'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent2)')+';font-size:15px;font-weight:700;'+
+            'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\')">'+
+          '</div>'+
+          '<div style="flex:2">'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
+            '<div style="display:flex;gap:4px">'+
+              (function(){
+                var opts=[{v:1,icon:'💪',c:'var(--grn)'},{v:2,icon:'👍',c:'var(--accent)'},{v:3,icon:'😐',c:'var(--mt)'}];
+                return opts.map(function(p){
+                  var a=(saved.pump==p.v);
+                  return '<button onclick="setPump(\''+key+'\','+p.v+')" id="pump_'+key+'_'+p.v+'"'+
+                    ' style="flex:1;padding:8px 2px;border-radius:7px;font-size:18px;'+
+                    'border:2px solid '+(a?p.c:'var(--border)')+';'+
+                    'background:'+(a?'rgba(200,165,74,.12)':'var(--input-bg)')+';cursor:pointer">'+p.icon+'</button>';
+                }).join('');
+              })()+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        // Actions
+        '<div style="display:flex;gap:8px">'+
+          (s > 0
+            ? '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" style="'+
+                'flex:0 0 auto;padding:12px 16px;border:1px solid var(--border);border-radius:10px;'+
+                'background:var(--input-bg);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer">= Copiar</button>'
+            : '')+
+          '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
+            'flex:1;padding:13px;border:none;border-radius:10px;cursor:pointer;'+
+            'background:var(--accent);color:#fff;font-size:14px;font-weight:800;letter-spacing:.5px">'+
+            '✓ GUARDAR SERIE '+(s+1)+
+          '</button>'+
+        '</div>'+
+        '<div id="hint_'+key+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:4px"></div>'+
+      '</div>';
+    } else {
+      // ── SET PENDIENTE ────────────────────────────────────────────────
+      setsHtml += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;'+
+        'background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:12px;margin-bottom:8px;opacity:.5">'+
+        '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.15);'+
+          'display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mt);font-weight:700">'+(s+1)+'</div>'+
+        '<div style="font-size:13px;font-weight:700;color:var(--mt)">SERIE '+(s+1)+'</div>'+
+        '<div style="margin-left:auto;font-size:11px;color:var(--mt)">'+repsTarget+' reps · RIR '+baseRIR+'</div>'+
+      '</div>';
+    }
+  }
+
+  // ── F. Todos completados ───────────────────────────────────────────────
+  var completedBlockHtml = '';
+  if (activeSi === -1) {
+    var isLast = (ei === ejercicios.length - 1);
+    completedBlockHtml = '<div style="margin-top:16px;padding:14px;background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:12px;text-align:center">'+
+      '<div style="font-size:15px;font-weight:800;color:var(--grn);margin-bottom:10px">✓ Ejercicio completado</div>'+
+      (isLast
+        ? '<button onclick="markSessionDone('+di+')" style="'+
+            'width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
+            'background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
+            '🏁 FINALIZAR SESIÓN</button>'
+        : '<button onclick="setEjActivo('+(ei+1)+')" style="'+
+            'width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
+            'background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
+            'Siguiente ejercicio →</button>')+
+    '</div>';
+  }
+
+  return machineHtml + headerHtml + notaHtml + wuHtml + setsHtml + completedBlockHtml;
+}
+
+function setEjActivo(ei) {
+  EJ_ACTIVO = ei;
+  var nav = document.getElementById('exNav');
+  var panel = document.getElementById('exPanel');
+  if (nav) nav.innerHTML = _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO);
+  if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
+  if (panel) {
+    var top = panel.getBoundingClientRect().top + window.scrollY - 60;
+    window.scrollTo({top: top, behavior: 'smooth'});
+  }
+}
+window.setEjActivo = setEjActivo;
+
+function _refreshExPanelOnly() {
+  var nav = document.getElementById('exNav');
+  var panel = document.getElementById('exPanel');
+  if (nav) nav.innerHTML = _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO);
+  if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
+}
 
 function renderEntrenamiento() {
   if (!PLAN || !PLAN.entrenamiento) return;
@@ -2016,10 +2355,21 @@ function renderEntrenamiento() {
     });
   }
 
-  // ── Build exercise cards HTML ─────────────────────────────────────
-  var exHtml = ejercicios.map(function(ej, ei) {
-    return buildBoostcampExercise(ej, DIA_ACTIVO, ei);
-  }).join('');
+  // ── Populate global ejercicios + auto-select active ─────────────────
+  _EJERCICIOS_DIA = ejercicios;
+  var _foundActive = false;
+  for (var _ae = 0; _ae < ejercicios.length; _ae++) {
+    var _aej = ejercicios[_ae];
+    var _ans = _aej.numSeries || (_aej.sets ? _aej.sets.length : 3);
+    var _aAllDone = true;
+    for (var _as2 = 0; _as2 < _ans; _as2++) {
+      if (!LOGS['log_'+CURRENT_WEEK+'_'+DIA_ACTIVO+'_'+_ae+'_s'+_as2] || !LOGS['log_'+CURRENT_WEEK+'_'+DIA_ACTIVO+'_'+_ae+'_s'+_as2].done) { _aAllDone = false; break; }
+    }
+    if (!_aAllDone) { EJ_ACTIVO = _ae; _foundActive = true; break; }
+  }
+  if (!_foundActive && ejercicios.length > 0) EJ_ACTIVO = ejercicios.length - 1;
+
+  // ── Build exercise cards HTML (now uses new nav+panel) ───────────────
 
   // ── Banner rezagados ──────────────────────────────────────────────
   var rez = PLAN.rezagados || PLAN.protocoloEspecializacion;
@@ -2052,17 +2402,13 @@ function renderEntrenamiento() {
     '</div>'+
     // Rezagados banner
     rezBanner+
-    // Exercises
-    '<div style="padding:0 12px 120px">'+exHtml+'</div>'+
-    // Complete session button (fixed bottom)
-    '<div style="padding:12px 0 4px;margin-top:8px">'+
-      '<button onclick="markSessionDone('+DIA_ACTIVO+')" style="'+
-        'width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
-        'background:'+(isDone?'rgba(58,148,96,.15)':'var(--accent)')+';'+
-        'color:'+(isDone?'var(--grn)':'#fff')+';'+
-        'font-size:15px;font-weight:700;letter-spacing:.5px">'+
-        (isDone?'✓ Sesión completada — Toca para deshacer':'Completar sesión')+
-      '</button>'+
+    // Exercise navigator (horizontal scroll)
+    '<div id="exNav" style="display:flex;gap:6px;padding:10px 16px 4px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch">'+
+      _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO)+
+    '</div>'+
+    // Exercise detail panel
+    '<div id="exPanel" style="padding:0 12px 100px">'+
+      _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
     // Rest timer overlay (hidden)
     '<div id="restTimerOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;align-items:center;justify-content:center;flex-direction:column" onclick="stopRestTimer()">'+
@@ -2493,8 +2839,8 @@ function completeSet(key, di, ei, si, unit) {
 
   saveLogs();
 
-  // Re-render el tab de entrenamiento para reflejar el nuevo estado
-  renderEntrenamiento();
+  // Re-render solo el panel de ejercicio activo (no scroll reset)
+  _refreshExPanelOnly();
 
   if (done) {
     // Timer inteligente: usa fatigueCost del catálogo si disponible
