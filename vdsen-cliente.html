@@ -4605,7 +4605,7 @@ function toggleArticularPain() {
 
 async function submitPostSession() {
   var di = _postSessionDi;
-  if (di === null) return;
+  if (di == null) return;
 
   var eimd = parseInt(document.getElementById('psEimd').value);
   if (!eimd) { showToast('Selecciona cómo está el músculo', true); return; }
@@ -4740,8 +4740,8 @@ function _getAlpha(catData) {
   if (catData.resistanceCurve === 'elongated') base = 0.05;
   else if (catData.resistanceCurve === 'shortened') base = 0.075;
   else base = 0.0625;
-  // Tipo de fibra
-  if (catData.muscleType === 'typeI') base *= 0.8;
+  // Tipo de fibra: TypeI = 2.5% base, TypeIIx = 6.25% base → ratio 0.4
+  if (catData.muscleType === 'typeI') base *= 0.4;
   // Cap absoluto por fatigueCost
   var fc = catData.fatigueCost || 3;
   if (fc >= 5) capKg = 5;        // compuesto pesado: máx 5 kg/sem
@@ -4790,7 +4790,7 @@ function _getPrevWeekData(week, di, ei, maxSets) {
   return {
     avgLoad: _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; })),
     avgReps: _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; })),
-    avgICS: _avgArr(sets.map(function(s){ return parseFloat(s.ics) || 8; })),
+    avgICS: (function(){ var v=sets.map(function(s){return parseFloat(s.ics);}).filter(function(x){return x>0&&!isNaN(x);}); return v.length?_avgArr(v):8; })(),
     avgRIR: _avgArr(sets.map(function(s){ return parseFloat(s.rir_real) || 2; })),
     numSets: sets.length,
     topLoad: Math.max.apply(null, sets.map(function(s){ return parseFloat(s.carga) || 0; }))
@@ -4808,6 +4808,11 @@ function calculateProgression(di, postData) {
   // Fix: Firestore puede guardar keys como string ("1") o number (1)
   var rirObj = weekRirObj[CURRENT_WEEK] !== undefined ? weekRirObj[CURRENT_WEEK]
              : weekRirObj[String(CURRENT_WEEK)] !== undefined ? weekRirObj[String(CURRENT_WEEK)] : 2;
+  // RIR objetivo para la PRÓXIMA semana (las recs son para la siguiente sesión)
+  var nextWeekNum = Math.min(CURRENT_WEEK + 1, 6);
+  var rirObjNext  = weekRirObj[nextWeekNum]         !== undefined ? weekRirObj[nextWeekNum]
+                  : weekRirObj[String(nextWeekNum)] !== undefined ? weekRirObj[String(nextWeekNum)]
+                  : defaultRir[nextWeekNum]         !== undefined ? defaultRir[nextWeekNum] : 2;
   var eimd = postData.eimd || 2;
   var rpe  = postData.rpeAverage || 7;
   var sleep = postData.sleepHours || 7;
@@ -4831,7 +4836,8 @@ function calculateProgression(di, postData) {
     deloadTriggers.push('Energía subjetiva muy baja ('+ci.energia+'/10)');
   }
 
-  var isDeload = CURRENT_WEEK === 6 || deloadTriggers.length >= 2;
+  // Sem 5: la siguiente sesión es sem 6 (deload) → generar recs de deload ahora
+  var isDeload = CURRENT_WEEK === 6 || CURRENT_WEEK === 5 || deloadTriggers.length >= 2;
 
   // Obtener ejercicios del día
   var exercises = [];
@@ -4854,9 +4860,12 @@ function calculateProgression(di, postData) {
     var exName = ej.nombre || ej.exerciseName || '';
     var catData = _getCatalogData(exName);
 
-    var avgICS  = _avgArr(sets.map(function(s){ return parseFloat(s.ics) || 8; }));
-    var avgPump = _avgArr(sets.map(function(s){ return parseFloat(s.pump) || 2; }));
-    var avgRIR  = _avgArr(sets.map(function(s){ return parseFloat(s.rir_real) || rirObj; }));
+    // Solo promediar valores realmente registrados; evitar contaminar con fallbacks
+    var _icsRaw  = sets.map(function(s){ return parseFloat(s.ics); }).filter(function(v){ return v > 0 && !isNaN(v); });
+    var avgICS   = _icsRaw.length  ? _avgArr(_icsRaw)  : 8;   // fallback: técnica ok
+    var avgPump  = _avgArr(sets.map(function(s){ return parseFloat(s.pump) || 2; }));
+    var _rirRaw  = sets.map(function(s){ return parseFloat(s.rir_real); }).filter(function(v){ return !isNaN(v) && v >= 0; });
+    var avgRIR   = _rirRaw.length  ? _avgArr(_rirRaw)  : rirObj; // fallback: asume en objetivo
     var avgReps = _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; }));
     var load    = _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; }));
     var numSets = sets.length;
@@ -4873,7 +4882,7 @@ function calculateProgression(di, postData) {
       repsTarget = ej.sets[0].repsTarget;
     }
 
-    var action = 'maintain', newLoad = load, newSets = numSets, rirTarget = rirObj;
+    var action = 'maintain', newLoad = load, newSets = numSets, rirTarget = rirObjNext;
     var newReps = repsTarget;
     var reasons = [];
 
@@ -4881,8 +4890,9 @@ function calculateProgression(di, postData) {
       // ── DELOAD: reducir volumen, mantener intensidad base ──
       newSets = Math.max(1, Math.round(numSets / 2));
       newLoad = Math.round(load * 0.9 * 4) / 4; // -10% carga
-      rirTarget = 3; action = 'deload';
-      reasons.push('Deload: series ÷ 2, carga -10%, RIR 3');
+      rirTarget = rirObjNext; action = 'deload';
+      var _deloadLabel = CURRENT_WEEK === 5 ? 'Próx. sem = DELOAD (sem 6)' : 'DELOAD';
+      reasons.push(_deloadLabel+': vol ÷ 2, carga -10%, RIR '+rirTarget);
     } else if (avgICS < 6) {
       // ── ICS MUY BAJO (<6): técnica deficiente grave → bajar carga significativamente ──
       newLoad = Math.round(load * 0.85 * 4) / 4;
@@ -4939,11 +4949,15 @@ function calculateProgression(di, postData) {
         var incKg = (newLoad - load).toFixed(2);
         reasons.push('RIR '+avgRIR.toFixed(1)+' < obj '+rirObj+' + reps cumplidas → +'+incKg+' kg');
 
-        // Anti-spike: si la carga ya subió la semana pasada, moderar
-        if (prevWeek && prevWeek.avgLoad > 0 && load > prevWeek.avgLoad * 1.03) {
-          var modAlpha = { pct: alpha.pct * 0.6, capKg: alpha.capKg * 0.6 };
-          newLoad = _applyAlpha(load, modAlpha);
-          reasons.push('Carga ya subió sem anterior → incremento moderado +'+(newLoad - load).toFixed(2)+' kg');
+        // Anti-spike: moderar solo si el salto anterior fue anormalmente grande (> 2× alpha)
+        if (prevWeek && prevWeek.avgLoad > 0) {
+          var _lastJump   = load - prevWeek.avgLoad;
+          var _normalJump = prevWeek.avgLoad * alpha.pct;
+          if (_lastJump > _normalJump * 2 && _lastJump > 0) {
+            var modAlpha = { pct: alpha.pct * 0.5, capKg: alpha.capKg * 0.5 };
+            newLoad = _applyAlpha(load, modAlpha);
+            reasons.push('Salto anterior anormal ('+_lastJump.toFixed(1)+' kg > 2× esperado) → incremento moderado +'+(newLoad - load).toFixed(2)+' kg');
+          }
         }
       } else if (avgRIR < rirObj && !allRepsHit) {
         // RIR bajo pero no alcanzó reps → mantener carga, trabajar en reps
@@ -4952,7 +4966,7 @@ function calculateProgression(di, postData) {
       } else if (avgRIR > rirObj + 1.5) {
         // RIR mucho mayor al objetivo → congelar
         if (action === 'maintain') action = 'freeze_load';
-        reasons.push('RIR real '+avgRIR.toFixed(1)+' >> obj '+rirObj+' → congelar carga');
+        reasons.push('RIR real '+avgRIR.toFixed(1)+' >> obj '+rirObj+' → congelar carga, reducir intensidad percibida');
       } else if (avgRIR >= rirObj && avgRIR <= rirObj + 1.5 && allRepsHit) {
         // RIR en zona objetivo con reps cumplidas → double progression
         if (avgReps < repsTarget + 2) {
@@ -4983,9 +4997,10 @@ function calculateProgression(di, postData) {
         if (prevPrev && prevPrev.avgLoad > 0) {
           var diffVsPrev = Math.abs(load - prevWeek.avgLoad);
           var diffVsPrev2 = Math.abs(prevWeek.avgLoad - prevPrev.avgLoad);
-          var tolerance = load * 0.02; // 2% = estancado
+          // Tolerancia: mayor entre 2% y el mínimo incremento estándar (1.25 kg)
+          var tolerance = Math.max(load * 0.02, 1.25);
           if (diffVsPrev <= tolerance && diffVsPrev2 <= tolerance && avgICS >= 8) {
-            reasons.push('⚠ PLATEAU: carga estancada en ~'+load.toFixed(1)+' kg por 2+ semanas. Considerar: cambiar variante, ajustar tempo, o micro-salto de +1.25 kg');
+            reasons.push('⚠ PLATEAU: carga ~'+load.toFixed(1)+' kg estancada 2+ semanas. Opciones: micro-salto +1.25 kg, cambiar variante, ajustar tempo/ROM');
           }
         }
       }
