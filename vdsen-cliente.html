@@ -1954,12 +1954,14 @@ function _buildExPanel(ejercicios, di) {
     numSeries = Math.max(progRec.newSets, _doneCount);
   }
 
-  // ── A. Imagen máquina ──────────────────────────────────────────────────
-  var machineHtml = machine
-    ? '<div style="background:rgba(200,165,74,.04);border:1px solid rgba(200,165,74,.1);border-radius:16px;padding:20px;display:flex;align-items:center;justify-content:center;margin-bottom:14px">'+
-        machine.svg.replace(/width="[^"]*"/g,'').replace(/height="[^"]*"/g,'').replace('<svg ','<svg style="width:min(240px,75vw);height:auto" ')+
-      '</div>'
-    : '<div style="background:rgba(200,165,74,.04);border:1px solid rgba(200,165,74,.1);border-radius:16px;padding:20px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;font-size:72px">💪</div>';
+  // ── A. Descripción de ejecución ────────────────────────────────────────
+  var machineHtml = '<div style="background:rgba(200,165,74,.04);border:1px solid rgba(200,165,74,.15);border-radius:12px;padding:14px 16px;margin-bottom:14px">'+
+    '<div style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:2px;margin-bottom:8px">CÓMO EJECUTAR</div>'+
+    (displayNota
+      ? '<div style="font-size:13px;color:var(--mt);line-height:1.7;white-space:pre-line">'+displayNota+'</div>'
+      : '<div style="font-size:12px;color:rgba(255,255,255,.25);font-style:italic;line-height:1.6">Tu coach puede agregar instrucciones de ejecución en el catálogo de ejercicios.</div>'
+    )+
+  '</div>';
 
   // ── B. Header ──────────────────────────────────────────────────────────
   var actionColors = {
@@ -1990,12 +1992,8 @@ function _buildExPanel(ejercicios, di) {
       '</div>'+
     '</div>';
 
-  // ── C. Nota de ejecución ───────────────────────────────────────────────
-  var notaHtml = displayNota
-    ? '<div style="margin-bottom:14px;padding:10px 12px;background:rgba(200,165,74,.05);border-left:3px solid rgba(200,165,74,.3);border-radius:0 8px 8px 0;font-size:12px;color:var(--mt);line-height:1.6">'+
-        displayNota+
-      '</div>'
-    : '';
+  // ── C. Nota de ejecución (ya mostrada en sección A) ───────────────────
+  var notaHtml = '';
 
   // ── D. Warm-up ────────────────────────────────────────────────────────
   var wuHtml = '';
@@ -2705,10 +2703,10 @@ function buildBoostcampExercise(ej, di, ei) {
 
     // Header: machine icon + exercise name
     '<div style="display:flex;align-items:center;gap:12px;padding:14px 14px 10px">'+
-      // Machine icon thumbnail
-      (machine
-        ? '<div style="width:44px;height:36px;flex-shrink:0;opacity:.85">'+machine.svg+'</div>'
-        : '<div style="width:44px;height:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--border);border-radius:8px;font-size:20px">💪</div>')+
+      // Exercise initials badge
+      '<div style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.2);border-radius:10px;font-size:14px;font-weight:900;color:var(--gold)">'+
+        (ej.nombre||'E').substring(0,2).toUpperCase()+
+      '</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:15px;font-weight:700;color:var(--tx);line-height:1.3;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
           ej.nombre+
@@ -2718,7 +2716,7 @@ function buildBoostcampExercise(ej, di, ei) {
           '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.25);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+numSeries+' SERIES</span>'+
           '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+(ej.repsRange||repsTarget)+' REPS</span>'+
           '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:2px 8px;border-radius:6px;letter-spacing:.5px">RIR '+baseRIR+'</span>'+
-          (machine?'<span style="font-size:10px;color:var(--mt)">'+machine.nombre+'</span>':'')+
+          (catData&&catData.motorPattern?'<span style="font-size:10px;color:var(--mt)">'+catData.motorPattern+'</span>':'')+
         '</div>'+
         headerRecHtml+
       '</div>'+
