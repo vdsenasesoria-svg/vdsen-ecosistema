@@ -1901,7 +1901,8 @@ function _buildExNav(ejercicios, di) {
     }
     var allDone = doneCount >= numSeries;
     var isActive = ei === EJ_ACTIVO;
-    var nombre = ej.nombre || ej.exerciseName || ('Ej '+(ei+1));
+    var _navSub = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei] || null;
+    var nombre = (_navSub && _navSub.nombre) ? _navSub.nombre : (ej.nombre || ej.exerciseName || ('Ej '+(ei+1)));
     var shortName = nombre.length > 12 ? nombre.substring(0, 12)+'…' : nombre;
     var machine = getMachineForExercise(nombre);
     var catData = _getCatalogData(nombre);
@@ -1935,6 +1936,10 @@ function _buildExPanel(ejercicios, di) {
   var ei = EJ_ACTIVO;
   if (ei >= ejercicios.length) ei = ejercicios.length - 1;
   var ej = ejercicios[ei];
+  var _exSubKey = 'exsub_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  var _exSubData = LOGS[_exSubKey] || null;
+  var _originalNombre = ej.nombre || ej.exerciseName || '';
+  if (_exSubData && _exSubData.nombre) ej = Object.assign({}, ej, { nombre: _exSubData.nombre, exerciseName: _exSubData.nombre });
   var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
   var machine = getMachineForExercise(nombre);
   var catData = _getCatalogData(nombre);
@@ -1981,8 +1986,10 @@ function _buildExPanel(ejercicios, di) {
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
       progrecHtml+
-      '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
+        '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'+
+        (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
       '</div>'+
     '</div>';
 
@@ -2214,6 +2221,66 @@ function _refreshExPanelOnly() {
   var panel = document.getElementById('exPanel');
   if (nav) nav.innerHTML = _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO);
   if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
+}
+
+function showExSubModal(di, ei) {
+  var ej = (_EJERCICIOS_DIA || [])[ei] || {};
+  var _exSubKey = 'exsub_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  var _exSubData = LOGS[_exSubKey] || null;
+  var currentNombre = (_exSubData && _exSubData.nombre) ? _exSubData.nombre : (ej.nombre || ej.exerciseName || '');
+  var originalNombre = (_exSubData && _exSubData.original) ? _exSubData.original : (ej.nombre || ej.exerciseName || '');
+  var catData = _getCatalogData(currentNombre);
+  var motorPattern = catData ? catData.motorPattern : '';
+  var alts = [];
+  if (motorPattern) {
+    var currLower = currentNombre.toLowerCase().trim();
+    Object.keys(EXERCISE_CATALOG).forEach(function(k) {
+      if (k !== currLower && EXERCISE_CATALOG[k].motorPattern === motorPattern) alts.push(k);
+    });
+  }
+  var altsHtml = '';
+  if (!motorPattern) {
+    altsHtml = '<div style="padding:20px 0;text-align:center;color:var(--mt);font-size:13px;line-height:1.7">Este ejercicio no está en el catálogo.<br>Pide a tu coach que lo agregue para ver alternativas.</div>';
+  } else if (!alts.length) {
+    altsHtml = '<div style="padding:20px 0;text-align:center;color:var(--mt);font-size:13px;line-height:1.7">No hay alternativas con el mismo patrón<br><strong style="color:var(--tx)">'+motorPattern+'</strong> en el catálogo aún.</div>';
+  } else {
+    altsHtml = alts.map(function(a) {
+      var ac = EXERCISE_CATALOG[a] || {};
+      var safeA = a.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var safeO = originalNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      return '<button onclick="applyExSub('+di+','+ei+',\''+safeA+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:left;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">'+
+        a+(ac.fatigueCost?'<span style="display:block;font-size:10px;color:var(--mt);font-weight:400;margin-top:2px">Fatiga: '+ac.fatigueCost+' · '+ac.muscleType+'</span>':'')+
+      '</button>';
+    }).join('');
+  }
+  var restoreHtml = (_exSubData && _exSubData.original && _exSubData.original !== currentNombre)
+    ? (function() {
+        var safeO = originalNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        return '<button onclick="applyExSub('+di+','+ei+',\''+safeO+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:center;padding:10px;background:none;border:1px solid rgba(220,60,60,.4);border-radius:8px;color:#e05555;font-size:12px;cursor:pointer;margin-top:4px">↺ Restaurar original: '+originalNombre+'</button>';
+      })()
+    : '';
+  var content = document.getElementById('exSubContent');
+  if (!content) return;
+  content.innerHTML =
+    '<div style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:2px;margin-bottom:4px">CAMBIAR EJERCICIO</div>'+
+    '<div style="font-size:15px;font-weight:700;color:var(--tx);margin-bottom:4px">'+currentNombre+'</div>'+
+    (motorPattern?'<div style="font-size:11px;color:var(--mt);margin-bottom:16px">Patrón motor: '+motorPattern+'</div>':'<div style="margin-bottom:16px"></div>')+
+    altsHtml+restoreHtml;
+  var overlay = document.getElementById('exSubOverlay');
+  if (overlay) overlay.style.display = 'flex';
+}
+
+function applyExSub(di, ei, newNombre, originalNombre) {
+  var key = 'exsub_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  if (newNombre.toLowerCase().trim() === originalNombre.toLowerCase().trim()) {
+    delete LOGS[key];
+  } else {
+    LOGS[key] = { nombre: newNombre, original: originalNombre };
+  }
+  scheduleSaveLogs();
+  var overlay = document.getElementById('exSubOverlay');
+  if (overlay) overlay.style.display = 'none';
+  _refreshExPanelOnly();
 }
 
 function renderEntrenamiento() {
@@ -5478,6 +5545,14 @@ function calculateProgression(di, postData) {
     <button onclick="submitPostSession()" style="width:100%;padding:16px;background:var(--accent);color:#000;font-size:16px;font-weight:800;border:none;border-radius:12px;cursor:pointer;letter-spacing:.5px">
       GUARDAR Y CALCULAR PROGRESIÓN →
     </button>
+  </div>
+</div>
+
+<!-- Overlay sustitución de ejercicio -->
+<div id="exSubOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:400;align-items:flex-end;justify-content:center" onclick="this.style.display='none'">
+  <div onclick="event.stopPropagation()" style="background:var(--surface);border-radius:20px 20px 0 0;padding:20px 16px 44px;width:100%;max-width:500px;max-height:72vh;overflow-y:auto;box-sizing:border-box">
+    <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px"></div>
+    <div id="exSubContent"></div>
   </div>
 </div>
 </body>
