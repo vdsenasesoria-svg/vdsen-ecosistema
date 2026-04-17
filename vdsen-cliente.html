@@ -1954,14 +1954,8 @@ function _buildExPanel(ejercicios, di) {
     numSeries = Math.max(progRec.newSets, _doneCount);
   }
 
-  // ── A. Descripción de ejecución ────────────────────────────────────────
-  var machineHtml = '<div style="background:rgba(200,165,74,.04);border:1px solid rgba(200,165,74,.15);border-radius:12px;padding:14px 16px;margin-bottom:14px">'+
-    '<div style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:2px;margin-bottom:8px">CÓMO EJECUTAR</div>'+
-    (displayNota
-      ? '<div style="font-size:13px;color:var(--mt);line-height:1.7;white-space:pre-line">'+displayNota+'</div>'
-      : '<div style="font-size:12px;color:rgba(255,255,255,.25);font-style:italic;line-height:1.6">Tu coach puede agregar instrucciones de ejecución en el catálogo de ejercicios.</div>'
-    )+
-  '</div>';
+  // ── A. (eliminado) ─────────────────────────────────────────────────────
+  var machineHtml = '';
 
   // ── B. Header ──────────────────────────────────────────────────────────
   var actionColors = {
@@ -2439,7 +2433,7 @@ function buildBoostcampExercise(ej, di, ei) {
     if (_noWuPatterns.indexOf(catData.motorPattern) !== -1) {
       _isFirstOfPattern = false; // Core/Cardio nunca llevan warm-up
     } else {
-      var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : [];
+      var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : ejercicios;
       for (var _pi = 0; _pi < ei; _pi++) {
         var _pCat = _getCatalogData(_dayExs[_pi] ? (_dayExs[_pi].nombre || _dayExs[_pi].exerciseName || '') : '');
         if (_pCat && _pCat.motorPattern === catData.motorPattern) { _isFirstOfPattern = false; break; }
