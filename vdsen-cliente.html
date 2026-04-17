@@ -2277,7 +2277,7 @@ function applyExSub(di, ei, newNombre, originalNombre) {
   } else {
     LOGS[key] = { nombre: newNombre, original: originalNombre };
   }
-  scheduleSaveLogs();
+  saveLogs();
   var overlay = document.getElementById('exSubOverlay');
   if (overlay) overlay.style.display = 'none';
   _refreshExPanelOnly();
