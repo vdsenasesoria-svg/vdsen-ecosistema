@@ -61,7 +61,7 @@
 <div class="main-content">
   <div id="dashboard" class="section active"><h2 class="text-2xl font-bold mb-4">Dashboard</h2><div id="dashboardContent"></div></div>
   <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
-  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button></div><div id="planBuilder"></div></div>
+  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
   <div id="templates" class="section"><h2 class="text-2xl font-bold mb-4">Templates de Planes</h2><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
   <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><div class="flex gap-2 mb-4 flex-wrap"><select id="monitorClientSelect" class="input-field flex-1"></select><button id="pdfReportBtn" class="btn-secondary text-sm" style="display:none">📄 Reporte PDF</button></div><div id="monitorTable"></div></div>
@@ -757,6 +757,87 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       </div>
       <div id="parsedPlanPreview"></div>`;
   });
+
+  // ========== MODO JSON (generado por Claude) ==========
+  document.getElementById("jsonModeBtn")?.addEventListener("click", () => {
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
+    document.getElementById("planBuilder").innerHTML = `
+      <div class="card p-4 mb-4">
+        <p class="text-sm text-[#888] mb-2">Pega aquí el JSON del plan generado por Claude. Estructura esperada:</p>
+        <pre class="text-xs text-[#C9A84C] bg-[#0D0D0D] p-2 rounded mb-3 overflow-x-auto">{
+  "weeks": 6,
+  "daysPerWeek": 4,
+  "days": [
+    {
+      "dayIndex": 0,
+      "label": "Día 1 - Empuje Horizontal",
+      "exercises": [
+        {
+          "exerciseName": "Press Banca",
+          "alternatives": ["Press Inclinado Mancuernas"],
+          "sets": [
+            {"setIndex":0,"repsTarget":8,"rirTarget":2,"load":0,"restSeconds":120},
+            {"setIndex":1,"repsTarget":8,"rirTarget":2,"load":0,"restSeconds":120}
+          ]
+        }
+      ]
+    }
+  ]
+}</pre>
+        <textarea id="planJsonInput" class="input-field mb-3" rows="14" placeholder="Pega aquí el JSON..."></textarea>
+        <button onclick="parsePlanFromJSON()" class="btn-primary w-full">🧩 Cargar plan desde JSON</button>
+        <div id="jsonPlanStatus" class="text-sm mt-2"></div>
+      </div>
+      <div id="parsedPlanPreview"></div>`;
+  });
+
+  function parsePlanFromJSON() {
+    const raw = document.getElementById("planJsonInput")?.value.trim();
+    const statusEl = document.getElementById("jsonPlanStatus");
+    if (!raw) { showToast("Pega el JSON primero", true); return; }
+    let obj;
+    try { obj = JSON.parse(raw); }
+    catch (e) {
+      statusEl.innerHTML = `<span class="text-red-400">❌ JSON inválido: ${e.message}</span>`;
+      return;
+    }
+    if (!obj || !Array.isArray(obj.days) || obj.days.length === 0) {
+      statusEl.innerHTML = `<span class="text-red-400">❌ El JSON debe tener "days" como arreglo no vacío</span>`;
+      return;
+    }
+    // Normalizar: asegurar setIndex/dayIndex, defaults, campos mínimos
+    const days = obj.days.map((d, di) => ({
+      dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
+      label: String(d.label || `Día ${di + 1}`),
+      exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
+        exerciseName: String(ex.exerciseName || '').trim(),
+        alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
+        sets: Array.isArray(ex.sets) && ex.sets.length > 0
+          ? ex.sets.map((s, si) => ({
+              setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
+              repsTarget: parseInt(s.repsTarget) || 8,
+              rirTarget: parseInt(s.rirTarget ?? 2),
+              load: parseFloat(s.load ?? 0) || 0,
+              restSeconds: parseInt(s.restSeconds ?? 90) || 90
+            }))
+          : []
+      })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+    })).filter(d => d.exercises.length > 0);
+
+    if (days.length === 0) {
+      statusEl.innerHTML = `<span class="text-red-400">❌ Ningún día con ejercicios válidos tras normalizar</span>`;
+      return;
+    }
+
+    const planObj = {
+      weeks: parseInt(obj.weeks) || 6,
+      daysPerWeek: parseInt(obj.daysPerWeek) || days.length,
+      days
+    };
+    statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${planObj.weeks} semanas, ${days.length} día(s)</span>`;
+    showParsedPreview(planObj);
+    window._importedPlan = planObj;
+  }
 
   // ========== PARSER DE TEXTO → PLAN ==========
   function parsePlanText(text) {
@@ -2023,6 +2104,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   // Exponer funciones del builder manual al scope global (usadas en onclick inline)
   window.parsePlanFromText = parsePlanFromText;
   window.parsePlanFromPDF = parsePlanFromPDF;
+  window.parsePlanFromJSON = parsePlanFromJSON;
   window.saveImportedPlan = saveImportedPlan;
   window.showClientDetail = showClientDetail;
   window.closeClientModal = closeClientModal;
