@@ -5172,7 +5172,7 @@ function _getCatalogData(exName) {
 // Retorna { pct, capKg } — porcentaje + cap absoluto en kg
 function _getAlpha(catData) {
   var base, capKg;
-  if (!catData) return { pct: 0.0625, capKg: 2.5 };
+  if (!catData) return { pct: 0.025, capKg: 1.25 }; // sin catalogar → conservador (typeI-like)
   // Curva de resistencia
   if (catData.resistanceCurve === 'elongated') base = 0.05;
   else if (catData.resistanceCurve === 'shortened') base = 0.075;
@@ -5198,20 +5198,49 @@ function _applyAlpha(load, alphaObj) {
 
 // ── Límite de series por costo de fatiga ──
 // planSets = series prescritas en el plan original (ej: 3)
+// Techos alineados a literatura de hipertrofia (retornos decrecientes >5 sets/ejercicio)
 function _getMaxSets(catData, planSets) {
-  // Techo absoluto por fatigueCost
   var absCap;
-  if (!catData) { absCap = 6; }
+  if (!catData) { absCap = 4; } // sin catalogar → conservador
   else {
-    var fc = catData.fatigueCost || 3;
-    if (fc >= 5) absCap = 4;       // compuestos pesados: máx 4
-    else if (fc >= 4) absCap = 5;  // compuestos moderados: máx 5
-    else if (fc >= 3) absCap = 6;  // intermedios: máx 6
-    else absCap = 8;               // aislamiento: máx 8
+    var fc = catData.fatigueCost || 4;
+    if (fc >= 5) absCap = 3;       // compuestos pesados: máx 3
+    else if (fc >= 4) absCap = 4;  // compuestos moderados: máx 4
+    else if (fc >= 3) absCap = 5;  // intermedios: máx 5
+    else absCap = 6;               // aislamiento: máx 6
   }
-  // No exceder planSets + 2 (máximo +2 series sobre lo prescrito en todo el meso)
-  var planCap = (planSets || 3) + 2;
+  // Máx +1 serie sobre lo prescrito en todo el meso (evita saltos 3→5)
+  var planCap = (planSets || 3) + 1;
   return Math.min(absCap, planCap);
+}
+
+// ── MRV por patrón motor (sets semanales máximos agregados) ──
+// Referencia: Schoenfeld 2017, Israetel MRV guidelines
+var MRV_BY_PATTERN = {
+  'Empuje':  22, // pecho + hombro ant/med + tríceps combinados
+  'Halar':   24, // dorsal + bíceps + hombro post combinados
+  'Squat':   18, // cuádriceps dominante
+  'Bisagra': 14, // isquios + glúteos
+  'Core':    16
+};
+
+// Suma de series semanales prescritas por el plan, agrupadas por motorPattern
+function _getWeeklyVolumeByPattern(pattern) {
+  if (!pattern) return 0;
+  var total = 0;
+  var sesiones = getSesiones();
+  for (var d = 0; d < sesiones.length; d++) {
+    var dia = sesiones[d];
+    var exs = dia.exercises || [];
+    for (var e = 0; e < exs.length; e++) {
+      var ex = exs[e];
+      var cat = _getCatalogData(ex.nombre || ex.exerciseName || '');
+      if (cat && cat.motorPattern === pattern) {
+        total += (ex.sets ? ex.sets.length : (ex.numSeries || 3));
+      }
+    }
+  }
+  return total;
 }
 
 // ── Obtener datos de la semana anterior para un ejercicio ──
@@ -5341,52 +5370,67 @@ function calculateProgression(di, postData) {
       action = 'reduce_load';
       reasons.push('ICS '+avgICS.toFixed(1)+' < 7 → bajar carga 10%');
     } else {
-      // ── DECISIÓN DE VOLUMEN (basada en EIMD + fatiga) ──
-      // REGLA: máximo +1 serie por semana (nunca saltar de 3 a 5)
-      var fcost = catData ? catData.fatigueCost : 3;
+      // ── DECISIÓN DE VOLUMEN — performance-driven (no EIMD-driven) ──
+      // Gate: ¿mantuvo/superó reps vs semana anterior al MISMO RIR objetivo?
+      // EIMD solo como VETO (=3 reduce serie), no como trigger positivo.
+      var fcost = catData ? catData.fatigueCost : 4;
 
-      if (eimd === 1) {
-        // Sin dolor: +1 serie solo si técnica buena (ICS >= 8)
-        if (avgICS >= 8 && numSets < maxSets) {
-          newSets = numSets + 1;
-          action = 'add_sets';
-          reasons.push('Sin dolor + ICS '+avgICS.toFixed(1)+' → +1 serie ('+numSets+'→'+newSets+')');
-        } else if (avgICS < 8) {
-          reasons.push('Sin dolor pero ICS '+avgICS.toFixed(1)+' < 8 → mantener volumen, pulir técnica');
-        } else {
-          reasons.push('Sin dolor pero techo de volumen alcanzado ('+maxSets+' series)');
-        }
-      } else if (eimd === 2) {
-        // Recuperación normal: +1 solo si ICS excelente y ejercicio no pesado
-        if (avgICS >= 9 && fcost <= 3 && numSets < maxSets) {
-          newSets = numSets + 1;
-          action = 'add_sets';
-          reasons.push('Recuperación ok + ICS excelente → +1 serie');
-        } else {
-          reasons.push('Recuperación normal: mantener volumen ('+numSets+' series)');
-        }
+      // Señal de recuperación real: performance sostenida o mejorada
+      var performedWell = false;
+      if (prevWeek && prevWeek.avgReps > 0) {
+        // Mantuvo reps a mismo/menor RIR con misma/más carga
+        var repsHeld   = avgReps >= prevWeek.avgReps - 0.5;
+        var rirHeld    = avgRIR  <= prevWeek.avgRIR  + 0.5;
+        var loadHeld   = load    >= prevWeek.avgLoad * 0.98;
+        performedWell  = repsHeld && rirHeld && loadHeld;
       } else {
-        // EIMD 3: dolor significativo → reducir 1 serie
-        newSets = Math.max(1, numSets - 1); action = 'reduce_sets';
-        reasons.push('Dolor muscular elevado → -1 serie ('+numSets+'→'+newSets+')');
+        // Sin datos previos (sem 1): requerir reps target + RIR en objetivo
+        performedWell = (avgReps >= repsTarget) && (avgRIR <= rirObj + 0.5);
       }
 
-      // ── Pump nulo + sin dolor → flag de estímulo insuficiente (NO agregar más series) ──
+      // MRV check por patrón motor (cap de volumen semanal agregado)
+      var pattern    = catData ? catData.motorPattern : null;
+      var mrvCap     = MRV_BY_PATTERN[pattern] || null;
+      var patternVol = mrvCap ? _getWeeklyVolumeByPattern(pattern) : 0;
+      var mrvBlocked = mrvCap && (patternVol + 1 > mrvCap);
+
+      if (eimd === 3) {
+        // VETO por dolor muscular elevado → reducir 1 serie
+        newSets = Math.max(1, numSets - 1);
+        action = 'reduce_sets';
+        reasons.push('Dolor muscular elevado (EIMD 3) → -1 serie ('+numSets+'→'+newSets+')');
+      } else if (performedWell && avgICS >= 8 && numSets < maxSets && !mrvBlocked) {
+        // Performance sostenida + técnica ok + margen de techo + MRV ok → +1 serie
+        newSets = numSets + 1;
+        action = 'add_sets';
+        reasons.push('Performance sostenida (reps '+avgReps.toFixed(1)+', RIR '+avgRIR.toFixed(1)+') + ICS '+avgICS.toFixed(1)+' → +1 serie ('+numSets+'→'+newSets+')');
+      } else if (mrvBlocked) {
+        reasons.push('MRV patrón '+pattern+' alcanzado ('+patternVol+'/'+mrvCap+' sets sem) → no subir volumen');
+      } else if (numSets >= maxSets) {
+        reasons.push('Techo por ejercicio alcanzado ('+maxSets+' series)');
+      } else if (avgICS < 8) {
+        reasons.push('ICS '+avgICS.toFixed(1)+' < 8 → pulir técnica antes de subir volumen');
+      } else if (!performedWell) {
+        reasons.push('Performance no sostenida → mantener volumen, consolidar');
+      }
+
+      // Pump nulo + sin dolor → flag (NO agregar series)
       if (avgPump === 3 && eimd === 1) {
         reasons.push('⚠ Pump nulo: considerar cambio de ejercicio o ajustar ROM/tempo');
       }
 
-      // ── DECISIÓN DE CARGA (basada en RIR + tendencia semanal) ──
+      // ── DECISIÓN DE CARGA — NO simultáneo con +serie (Fix 2) ──
+      // Si ya subimos volumen en esta sesión, NO subir carga también.
       var allRepsHit = avgReps >= repsTarget;
+      var canIncreaseLoad = (action !== 'add_sets');
 
-      if (avgRIR < rirObj && allRepsHit) {
-        // RIR por debajo del objetivo Y reps cumplidas → subir carga
+      if (avgRIR < rirObj && allRepsHit && canIncreaseLoad) {
         newLoad = _applyAlpha(load, alpha);
         if (action === 'maintain') action = 'increase_load';
         var incKg = (newLoad - load).toFixed(2);
         reasons.push('RIR '+avgRIR.toFixed(1)+' < obj '+rirObj+' + reps cumplidas → +'+incKg+' kg');
 
-        // Anti-spike: moderar solo si el salto anterior fue anormalmente grande (> 2× alpha)
+        // Anti-spike
         if (prevWeek && prevWeek.avgLoad > 0) {
           var _lastJump   = load - prevWeek.avgLoad;
           var _normalJump = prevWeek.avgLoad * alpha.pct;
@@ -5397,25 +5441,23 @@ function calculateProgression(di, postData) {
           }
         }
       } else if (avgRIR < rirObj && !allRepsHit) {
-        // RIR bajo pero no alcanzó reps → mantener carga, trabajar en reps
         reasons.push('RIR '+avgRIR.toFixed(1)+' < obj pero reps '+avgReps.toFixed(0)+'/'+repsTarget+' → mantener carga, ganar reps');
         newReps = repsTarget;
-      } else if (avgRIR > rirObj + 1.5) {
-        // RIR mucho mayor al objetivo → congelar
+      } else if (avgRIR > rirObj + 1.5 && canIncreaseLoad) {
         if (action === 'maintain') action = 'freeze_load';
         reasons.push('RIR real '+avgRIR.toFixed(1)+' >> obj '+rirObj+' → congelar carga, reducir intensidad percibida');
-      } else if (avgRIR >= rirObj && avgRIR <= rirObj + 1.5 && allRepsHit) {
-        // RIR en zona objetivo con reps cumplidas → double progression
+      } else if (avgRIR >= rirObj && avgRIR <= rirObj + 1.5 && allRepsHit && canIncreaseLoad) {
         if (avgReps < repsTarget + 2) {
           reasons.push('RIR en objetivo, reps cumplidas → intentar +1-2 reps próxima sesión');
           newReps = Math.min(repsTarget + 2, Math.round(avgReps) + 1);
         } else {
-          // Excedió reps target+2 → subir carga y resetear reps
           newLoad = _applyAlpha(load, alpha);
           newReps = repsTarget;
           if (action === 'maintain') action = 'increase_load';
           reasons.push('Double progression: reps '+avgReps.toFixed(0)+' > target+2 → +'+(newLoad - load).toFixed(2)+' kg, reset reps');
         }
+      } else if (!canIncreaseLoad && avgRIR < rirObj && allRepsHit) {
+        reasons.push('+1 serie esta semana → carga se mantiene (alternar estímulo)');
       }
 
       // ── Curva elongated con pump bajo = mala conexión ──
