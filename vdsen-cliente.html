@@ -2233,41 +2233,88 @@ function showExSubModal(di, ei) {
   var originalNombre = (_exSubData && _exSubData.original) ? _exSubData.original : (ej.nombre || ej.exerciseName || '');
   var catData = _getCatalogData(currentNombre);
   var motorPattern = catData ? catData.motorPattern : '';
+  var curCurve = catData ? catData.resistanceCurve : '';
+  var curMuscle = catData ? catData.muscleType : '';
+
+  // Etiquetas amigables
+  var curveLabel = {mid:'Tensión media', elongated:'Mayor tensión en elongación', shortened:'Mayor tensión en contracción'};
+  var muscleLabel = {typeI:'Fibra lenta (resistencia)', typeIIx:'Fibra rápida (fuerza/hipertrofia)'};
+
+  // Catálogo combinado
+  var merged = _getMergedCatalog();
+  var currLower = currentNombre.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   var alts = [];
   if (motorPattern) {
-    var currLower = currentNombre.toLowerCase().trim();
-    Object.keys(EXERCISE_CATALOG).forEach(function(k) {
-      if (k !== currLower && EXERCISE_CATALOG[k].motorPattern === motorPattern) alts.push(k);
+    Object.keys(merged).forEach(function(k) {
+      var kNorm = k.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if (kNorm !== currLower && merged[k].motorPattern === motorPattern) {
+        alts.push({ key: k, data: merged[k] });
+      }
+    });
+    // Ordenar: mismo perfil de resistencia primero, luego mismo tipo muscular, luego el resto
+    alts.sort(function(a, b) {
+      var scoreA = (a.data.resistanceCurve === curCurve ? 2 : 0) + (a.data.muscleType === curMuscle ? 1 : 0);
+      var scoreB = (b.data.resistanceCurve === curCurve ? 2 : 0) + (b.data.muscleType === curMuscle ? 1 : 0);
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return a.key.localeCompare(b.key);
     });
   }
+
   var altsHtml = '';
   if (!motorPattern) {
-    altsHtml = '<div style="padding:20px 0;text-align:center;color:var(--mt);font-size:13px;line-height:1.7">Este ejercicio no está en el catálogo.<br>Pide a tu coach que lo agregue para ver alternativas.</div>';
+    altsHtml = '<div style="padding:20px 0;text-align:center;color:var(--mt);font-size:13px;line-height:1.7">'
+      + '⚠ <strong style="color:var(--tx)">'+currentNombre+'</strong><br>no está en ningún catálogo.<br>'
+      + '<span style="font-size:12px">Pide al coach que lo agregue para ver alternativas similares.</span></div>';
   } else if (!alts.length) {
-    altsHtml = '<div style="padding:20px 0;text-align:center;color:var(--mt);font-size:13px;line-height:1.7">No hay alternativas con el mismo patrón<br><strong style="color:var(--tx)">'+motorPattern+'</strong> en el catálogo aún.</div>';
+    altsHtml = '<div style="padding:20px 0;text-align:center;color:var(--mt);font-size:13px;line-height:1.7">'
+      + 'Sin alternativas para <strong style="color:var(--tx)">'+motorPattern+'</strong> en el catálogo.</div>';
   } else {
-    altsHtml = alts.map(function(a) {
-      var ac = EXERCISE_CATALOG[a] || {};
+    altsHtml = alts.map(function(alt) {
+      var a = alt.key, ac = alt.data;
       var safeA = a.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       var safeO = originalNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      return '<button onclick="applyExSub('+di+','+ei+',\''+safeA+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:left;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;color:var(--tx);font-size:13px;font-weight:600;cursor:pointer">'+
-        a+(ac.fatigueCost?'<span style="display:block;font-size:10px;color:var(--mt);font-weight:400;margin-top:2px">Fatiga: '+ac.fatigueCost+' · '+ac.muscleType+'</span>':'')+
+      var sameProfile = ac.resistanceCurve === curCurve && ac.muscleType === curMuscle;
+      var sameCurve = ac.resistanceCurve === curCurve;
+      var matchBadge = sameProfile
+        ? '<span style="font-size:9px;background:rgba(58,148,96,.2);border:1px solid rgba(58,148,96,.5);color:var(--grn);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">★ PERFIL IDÉNTICO</span>'
+        : (sameCurve ? '<span style="font-size:9px;background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);color:var(--accent);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">↻ MISMA CURVA</span>' : '');
+      var sourceTag = ac.source === 'coach'
+        ? '<span style="font-size:9px;color:rgba(108,150,255,.8)">catálogo coach</span> · '
+        : '';
+      var curveStr = curveLabel[ac.resistanceCurve] || ac.resistanceCurve || '—';
+      var muscleStr = ac.muscleType === 'typeIIx' ? 'Fuerza/Hipert.' : 'Resistencia';
+      return '<button onclick="applyExSub('+di+','+ei+',\''+safeA+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:left;padding:11px 14px;background:var(--surface2);border:1px solid '+(sameProfile?'rgba(58,148,96,.35)':sameCurve?'rgba(200,165,74,.25)':'var(--border)')+';border-radius:10px;margin-bottom:8px;cursor:pointer">'+
+        '<div style="display:flex;align-items:center;flex-wrap:wrap">'+
+          '<span style="font-size:13px;font-weight:600;color:var(--tx)">'+a+'</span>'+
+          matchBadge+
+        '</div>'+
+        '<div style="font-size:10px;color:var(--mt);margin-top:3px">'+sourceTag+'Fatiga: '+ac.fatigueCost+' · '+curveStr+' · '+muscleStr+'</div>'+
       '</button>';
     }).join('');
   }
+
   var restoreHtml = (_exSubData && _exSubData.original && _exSubData.original !== currentNombre)
     ? (function() {
         var safeO = originalNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         return '<button onclick="applyExSub('+di+','+ei+',\''+safeO+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:center;padding:10px;background:none;border:1px solid rgba(220,60,60,.4);border-radius:8px;color:#e05555;font-size:12px;cursor:pointer;margin-top:4px">↺ Restaurar original: '+originalNombre+'</button>';
       })()
     : '';
+
   var content = document.getElementById('exSubContent');
   if (!content) return;
   content.innerHTML =
     '<div style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:2px;margin-bottom:4px">CAMBIAR EJERCICIO</div>'+
     '<div style="font-size:15px;font-weight:700;color:var(--tx);margin-bottom:4px">'+currentNombre+'</div>'+
-    (motorPattern?'<div style="font-size:11px;color:var(--mt);margin-bottom:16px">Patrón motor: '+motorPattern+'</div>':'<div style="margin-bottom:16px"></div>')+
+    (motorPattern
+      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">'+
+          '<span style="font-size:10px;background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);color:var(--accent);padding:2px 8px;border-radius:5px">'+motorPattern+'</span>'+
+          (curCurve?'<span style="font-size:10px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--mt);padding:2px 8px;border-radius:5px">'+curveLabel[curCurve]+'</span>':'')+
+          (curMuscle?'<span style="font-size:10px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--mt);padding:2px 8px;border-radius:5px">'+muscleLabel[curMuscle]+'</span>':'')+
+        '</div>'
+      : '<div style="margin-bottom:16px"></div>')+
+    (alts.length ? '<div style="font-size:10px;color:var(--mt);margin-bottom:10px;letter-spacing:.5px">'+alts.length+' alternativas — ★ perfil idéntico aparece primero</div>' : '')+
     altsHtml+restoreHtml;
+
   var overlay = document.getElementById('exSubOverlay');
   if (overlay) overlay.style.display = 'flex';
 }
@@ -5241,14 +5288,30 @@ function _drawSparkline(canvasId, data, color) {
 // ── Buscar datos del catálogo para un ejercicio ──
 function _getCatalogData(exName) {
   if (!exName) return null;
-  var key = exName.toLowerCase().trim();
+  var key = exName.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  // 1. Catálogo del coach (prioridad)
   if (EXERCISE_CATALOG[key]) return EXERCISE_CATALOG[key];
-  // Búsqueda parcial (nombre contenido)
-  var keys = Object.keys(EXERCISE_CATALOG);
-  for (var i = 0; i < keys.length; i++) {
-    if (keys[i].includes(key) || key.includes(keys[i])) return EXERCISE_CATALOG[keys[i]];
+  var coachKeys = Object.keys(EXERCISE_CATALOG);
+  for (var i = 0; i < coachKeys.length; i++) {
+    var ck = coachKeys[i].normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if (ck.includes(key) || key.includes(ck)) return EXERCISE_CATALOG[coachKeys[i]];
+  }
+  // 2. Catálogo built-in (fallback)
+  if (BUILTIN_CATALOG[key]) return BUILTIN_CATALOG[key];
+  var builtKeys = Object.keys(BUILTIN_CATALOG);
+  for (var j = 0; j < builtKeys.length; j++) {
+    var bk = builtKeys[j].normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if (bk.includes(key) || key.includes(bk)) return BUILTIN_CATALOG[builtKeys[j]];
   }
   return null;
+}
+
+// Catálogo combinado: coach + built-in (coach tiene prioridad)
+function _getMergedCatalog() {
+  var merged = {};
+  Object.keys(BUILTIN_CATALOG).forEach(function(k) { merged[k] = Object.assign({source:'builtin'}, BUILTIN_CATALOG[k]); });
+  Object.keys(EXERCISE_CATALOG).forEach(function(k) { merged[k] = Object.assign({source:'coach'}, EXERCISE_CATALOG[k]); });
+  return merged;
 }
 
 // ── Alpha (incremento de carga) según curva de resistencia y tipo de fibra ──
@@ -5296,6 +5359,91 @@ function _getMaxSets(catData, planSets) {
   var planCap = (planSets || 3) + 1;
   return Math.min(absCap, planCap);
 }
+
+// ── Catálogo base integrado (fallback cuando el coach no ha llenado ejercicios) ──
+// Patrón motor, curva de resistencia, tipo muscular, costo de fatiga
+// resistanceCurve: 'mid' | 'elongated' | 'shortened'
+// muscleType: 'typeI' | 'typeIIx'
+// fatigueCost: 1(aislamiento ligero) → 5(compuesto pesado)
+var BUILTIN_CATALOG = {
+  // ── EMPUJE ──
+  'press banca barra':            {motorPattern:'Empuje', resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'press banca mancuernas':       {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
+  'press inclinado barra':        {motorPattern:'Empuje', resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
+  'press inclinado mancuernas':   {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
+  'press declinado barra':        {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:4},
+  'press máquina pecho':          {motorPattern:'Empuje', resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
+  'press pecho convergente':      {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
+  'pec deck / mariposa':          {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:2},
+  'crossover polea alta':         {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'crossover polea baja':         {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'aperturas mancuernas':         {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'fondos en paralelas':          {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
+  'press militar barra':          {motorPattern:'Empuje', resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:5},
+  'press militar mancuernas':     {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
+  'press arnold':                 {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
+  'press hombro máquina':         {motorPattern:'Empuje', resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
+  'elevaciones laterales mancuernas': {motorPattern:'Empuje', resistanceCurve:'shortened', muscleType:'typeI', fatigueCost:2},
+  'elevaciones laterales polea':  {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'elevaciones frontales':        {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'extensión tríceps polea alta': {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'extensión tríceps overhead':   {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'press francés':                {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
+  'fondos tríceps banco':         {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  // ── HALAR ──
+  'jalón al pecho barra':         {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:4},
+  'jalón al pecho neutro':        {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
+  'dominadas':                    {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:5},
+  'dominadas agarre neutro':      {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
+  'pullover mancuerna':           {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
+  'pullover polea':               {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'remo con barra':               {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:5},
+  'remo con mancuerna':           {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
+  'remo en máquina':              {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
+  'remo polea baja':              {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:3},
+  'remo polea baja agarre neutro':{motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:3},
+  'face pull polea':              {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'curl bíceps barra':            {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:3},
+  'curl bíceps mancuernas':       {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'curl bíceps polea baja':       {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'curl inclinado mancuernas':    {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'curl martillo':                {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:2},
+  'curl en máquina':              {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'pájaros mancuernas':           {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'pájaros en máquina':           {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  // ── SQUAT ──
+  'sentadilla barra':             {motorPattern:'Squat',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:5},
+  'sentadilla búlgara':           {motorPattern:'Squat',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
+  'prensa de pierna':             {motorPattern:'Squat',  resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:4},
+  'hack squat':                   {motorPattern:'Squat',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
+  'leg press':                    {motorPattern:'Squat',  resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:4},
+  'sentadilla hack máquina':      {motorPattern:'Squat',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
+  'extensión de cuádriceps':      {motorPattern:'Squat',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'zancada con mancuernas':       {motorPattern:'Squat',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
+  'sentadilla goblet':            {motorPattern:'Squat',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
+  'split squat':                  {motorPattern:'Squat',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
+  // ── BISAGRA ──
+  'peso muerto convencional':     {motorPattern:'Bisagra', resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'peso muerto rumano (rdl)':     {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'rdl mancuernas':               {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'peso muerto sumo':             {motorPattern:'Bisagra', resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'hip thrust barra':             {motorPattern:'Bisagra', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:4},
+  'hip thrust máquina':           {motorPattern:'Bisagra', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:3},
+  'curl femoral acostado':        {motorPattern:'Bisagra', resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:2},
+  'curl femoral sentado':         {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'curl nórdico':                 {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:3},
+  'patada de glúteo polea':       {motorPattern:'Bisagra', resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'abducción de cadera máquina':  {motorPattern:'Bisagra', resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'good morning':                 {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  // ── CORE ──
+  'plancha':                      {motorPattern:'Core',   resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:1},
+  'crunch máquina':               {motorPattern:'Core',   resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:1},
+  'crunch polea':                 {motorPattern:'Core',   resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'rueda abdominal':              {motorPattern:'Core',   resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'elevación de piernas colgado': {motorPattern:'Core',   resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
+  'twist ruso':                   {motorPattern:'Core',   resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:1},
+  'plank lateral':                {motorPattern:'Core',   resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:1}
+};
 
 // ── MRV por patrón motor (sets semanales máximos agregados) ──
 // Referencia: Schoenfeld 2017, Israetel MRV guidelines
