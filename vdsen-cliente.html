@@ -288,6 +288,7 @@ let USER = null;
 let PLAN = null;
 let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
 let CURRENT_WEEK = 1;
+var REAL_WEEK = 1;     // semana real de entrenamiento (no cambia al navegar)
 var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
@@ -1003,6 +1004,7 @@ async function loadPlan(user) {
         var logData = logSnap.data();
         LOGS = logData.entries || {};
         CURRENT_WEEK = logData.currentWeek || 1;
+        REAL_WEEK = CURRENT_WEEK;
         if (logData.exerciseUnits) EXERCISE_UNITS = logData.exerciseUnits;
         if (logData.exerciseHistory) EXERCISE_HISTORY = logData.exerciseHistory;
       }
@@ -2291,19 +2293,24 @@ function renderEntrenamiento() {
   // ── Semana selector ──────────────────────────────────────────────
   var weeksHtml = Array.from({length:6}, function(_,i) {
     var w = i+1;
-    var done = w < CURRENT_WEEK;
-    var active = w === CURRENT_WEEK;
+    var done = w < REAL_WEEK;
+    var active = w === CURRENT_WEEK;  // semana vista actualmente
+    var isReal = w === REAL_WEEK;     // semana real de entrenamiento
     var deload = w === 6;
+    var borderBot = active ? 'var(--accent)' : done ? 'var(--grn)' : 'transparent';
+    var labelColor = active ? '#fff' : done ? 'var(--grn)' : deload ? 'var(--blue)' : 'var(--mt)';
+    var bg = active ? 'rgba(200,165,74,.18)' : 'transparent';
     return '<button onclick="setWeek('+w+')" style="'+
       'display:flex;flex-direction:column;align-items:center;justify-content:center;'+
       'padding:10px 0;border:none;cursor:pointer;flex:1;'+
-      'background:'+(active?'var(--accent)':done?'transparent':'transparent')+';'+
-      'border-bottom:3px solid '+(active?'var(--accent)':done?'var(--grn)':'transparent')+';'+
-      'border-radius:0;">'+
-      '<span style="font-family:var(--ff);font-size:18px;font-weight:700;'+
-      'color:'+(active?'#fff':done?'var(--grn)':deload?'var(--blue)':'var(--mt)')+'">'+
+      'background:'+bg+';'+
+      'border-bottom:3px solid '+borderBot+';'+
+      'border-radius:0;position:relative">'+
+      // Pin "AQUÍ" solo en la semana real
+      (isReal ? '<span style="position:absolute;top:2px;font-size:7px;letter-spacing:.5px;color:var(--accent);font-weight:800">📍</span>' : '')+
+      '<span style="font-family:var(--ff);font-size:18px;font-weight:700;color:'+labelColor+'">'+
       (done?'✓':w)+'</span>'+
-      '<span style="font-size:9px;letter-spacing:1px;color:'+(active?'#fff':done?'var(--grn)':deload?'var(--blue)':'var(--mt)')+'">'+
+      '<span style="font-size:9px;letter-spacing:1px;color:'+labelColor+'">'+
       (deload?'DELOAD':getSemProgresion(w))+'</span>'+
       '</button>';
   }).join('');
@@ -2336,6 +2343,17 @@ function renderEntrenamiento() {
       + 'Enfócate en técnica perfecta (ICS alto) y recuperación. '
       + 'El objetivo es <strong style="color:var(--tx)">RIR 3</strong> en todos los ejercicios.'
       + '</div></div>';
+  }
+
+  // ── Banner de vista (cuando se navega a semana distinta a la real) ──
+  var viewBanner = '';
+  if (CURRENT_WEEK !== REAL_WEEK) {
+    viewBanner = '<div style="background:rgba(220,100,0,.12);border:1px solid rgba(220,100,0,.5);padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">'
+      + '<div style="font-size:12px;color:#FF8844;font-weight:700;line-height:1.4">'
+      + '👁 REVISANDO Semana '+CURRENT_WEEK+' &nbsp;·&nbsp; No estás registrando aquí'
+      + '</div>'
+      + '<button onclick="setWeek('+REAL_WEEK+')" style="font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid #FF8844;background:transparent;color:#FF8844;cursor:pointer;font-weight:700;white-space:nowrap">📍 Sem '+REAL_WEEK+' →</button>'
+      + '</div>';
   }
 
   // ── Day tabs ─────────────────────────────────────────────────────
@@ -2441,17 +2459,33 @@ function renderEntrenamiento() {
       '</div></div></div>'
     : '';
 
+  // ── Validación de volumen por sesión ──────────────────────────────
+  var totalSessionSets = ejercicios.reduce(function(acc, ej2) {
+    return acc + (ej2.numSeries || (ej2.sets ? ej2.sets.length : 3));
+  }, 0);
+  // Límites VDSEN: ≤20 series trabajadoras por sesión (Israetel MEV–MRV)
+  var volWarnHtml = '';
+  if (totalSessionSets > 20) {
+    volWarnHtml = '<div style="background:rgba(220,80,0,.1);border:1px solid rgba(220,80,0,.4);padding:8px 14px;margin-bottom:4px;display:flex;align-items:center;gap:8px">'
+      + '<span style="font-size:16px">⚠️</span>'
+      + '<span style="font-size:11px;color:#FF7744;font-weight:700;line-height:1.4">'
+      + 'Volumen de sesión: <strong>' + totalSessionSets + ' series</strong> — supera el máximo recomendado (≤20). Revisar con tu coach.'
+      + '</span></div>';
+  }
+
   cont.innerHTML =
     // Week bar
     '<div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border)">'+weeksHtml+'</div>'+
     // Day tabs
     '<div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto">'+tabsHtml+'</div>'+
+    // View-mode banner (navegando a semana distinta)
+    viewBanner+
     // Deload banner
     deloadBanner+
     // Session header
     '<div style="padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between">'+
       '<div>'+
-        '<div style="font-size:11px;font-weight:600;letter-spacing:1.5px;color:var(--accent);text-transform:uppercase;margin-bottom:2px">SEM '+CURRENT_WEEK+' · '+getSemProgresion(CURRENT_WEEK)+'</div>'+
+        '<div style="font-size:11px;font-weight:600;letter-spacing:1.5px;color:'+(CURRENT_WEEK!==REAL_WEEK?'#FF8844':'var(--accent)')+';text-transform:uppercase;margin-bottom:2px">'+(CURRENT_WEEK!==REAL_WEEK?'👁 ':'')+'SEM '+CURRENT_WEEK+' · '+getSemProgresion(CURRENT_WEEK)+(CURRENT_WEEK!==REAL_WEEK?' (VISTA)':'')+'</div>'+
         '<div style="font-size:17px;font-weight:700;color:var(--tx);line-height:1.2">'+(ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim()+'</div>'+
         '<div style="font-size:12px;color:var(--mt);margin-top:2px">'+ejercicios.length+' ejercicios</div>'+
       '</div>'+
@@ -2461,6 +2495,8 @@ function renderEntrenamiento() {
     '</div>'+
     // Rezagados banner
     rezBanner+
+    // Advertencia volumen sesión
+    volWarnHtml+
     // Exercise navigator (horizontal scroll)
     '<div id="exNav" style="display:flex;gap:6px;padding:10px 16px 4px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch">'+
       _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO)+
@@ -2576,6 +2612,20 @@ function buildBoostcampExercise(ej, di, ei) {
     headerRecHtml = '<div style="font-size:10px;color:'+recCol+';margin-top:3px;font-weight:600">'+
       '⚡ '+headerRec.newLoad+' '+recUnit+' · '+headerRec.newSets+'s · RIR '+headerRec.rirTarget+
     '</div>';
+  }
+  // Advertencia MRV por patrón motor en el ejercicio
+  var mrvWarnHtml = '';
+  if (catData && catData.motorPattern) {
+    var _p = catData.motorPattern;
+    var _mrvCap = MRV_BY_PATTERN[_p] || null;
+    if (_mrvCap) {
+      var _wkVol = _getWeeklyVolumeByPattern(_p);
+      if (_wkVol > _mrvCap) {
+        mrvWarnHtml = '<div style="font-size:9px;color:#FF7744;font-weight:700;margin-top:2px">⚠ MRV '+_p+': '+_wkVol+'/'+_mrvCap+' series sem</div>';
+      } else if (_wkVol >= _mrvCap * 0.85) {
+        mrvWarnHtml = '<div style="font-size:9px;color:var(--gold);font-weight:700;margin-top:2px">◎ '+_p+': '+_wkVol+'/'+_mrvCap+' series sem (cerca del MRV)</div>';
+      }
+    }
   }
 
   // ── Sustitución por ICS bajo persistente ─────────────────────────
@@ -2744,11 +2794,16 @@ function buildBoostcampExercise(ej, di, ei) {
               'color:'+(completed?'#fff':'var(--mt)')+';font-size:18px;cursor:pointer">'+
               (completed?'✓':'○')+
             '</button>'+
-            (s > 0 && !completed ?
+            // Botón editar (solo en sets completados de la semana real)
+            (completed ?
+              '<button onclick="editSet(\''+key+'\')" title="Corregir datos" style="'+
+                'width:44px;height:28px;border-radius:7px;border:1px solid rgba(200,165,74,.4);'+
+                'background:rgba(200,165,74,.08);color:var(--accent);font-size:13px;cursor:pointer">✏</button>'
+            : (s > 0 ?
               '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" title="Copiar serie anterior" style="'+
                 'width:44px;height:28px;border-radius:7px;border:1px solid var(--border);'+
                 'background:var(--input-bg);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer">=</button>'
-            : '<div style="width:44px;height:28px"></div>')+
+            : '<div style="width:44px;height:28px"></div>'))+ // cierra (completed ? ... : (s>0 ? ... : ...))
           '</div>'+
         '</div>'+
 
@@ -2780,6 +2835,7 @@ function buildBoostcampExercise(ej, di, ei) {
           (catData&&catData.motorPattern?'<span style="font-size:10px;color:var(--mt)">'+catData.motorPattern+'</span>':'')+
         '</div>'+
         headerRecHtml+
+        mrvWarnHtml+
       '</div>'+
       // Expand note button + user note button
       (wuRefLoad>0?'<button onclick="toggleNota(\'wu_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Calentamiento">🔥</button>':'')+
@@ -2857,6 +2913,11 @@ function copiarSerie(key, s, di, ei) {
 }
 
 function completeSet(key, di, ei, si, unit) {
+  // Bloquear si está viendo una semana distinta a la real
+  if (CURRENT_WEEK !== REAL_WEEK) {
+    showToast('👁 Semana ' + CURRENT_WEEK + ' — solo vista. Tap 📍 para ir a Sem ' + REAL_WEEK, true);
+    return;
+  }
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
   var reps  = document.getElementById('reps_'+key)?.value  || '';
@@ -2917,6 +2978,19 @@ function completeSet(key, di, ei, si, unit) {
   } else {
     showToast('Serie desmarcada');
   }
+}
+
+// ── Corregir serie ya guardada (abre el set para re-editar) ──
+function editSet(key) {
+  if (CURRENT_WEEK !== REAL_WEEK) {
+    showToast('Solo puedes corregir en la semana activa (Sem ' + REAL_WEEK + ')', true);
+    return;
+  }
+  if (!LOGS[key]) return;
+  LOGS[key].done = false;
+  saveLogs();
+  _refreshExPanelOnly();
+  showToast('✏ Edita los datos y vuelve a confirmar ✓');
 }
 
 function bcProgHint(key) {
@@ -3030,6 +3104,10 @@ function selDia(i) {
 }
 
 async function markSessionDone(di) {
+  if (CURRENT_WEEK !== REAL_WEEK) {
+    showToast('👁 Vista Sem ' + CURRENT_WEEK + ' — ir a Sem ' + REAL_WEEK + ' para registrar', true);
+    return;
+  }
   var key = 'done_'+CURRENT_WEEK+'_'+di;
   if (LOGS[key]) {
     // Toggle off
@@ -3080,6 +3158,7 @@ async function _confirmSessionDone(di) {
       showToast('🏆 SEMANA '+CURRENT_WEEK+' COMPLETA → SEM '+(CURRENT_WEEK+1));
       setTimeout(function(){
         CURRENT_WEEK++;
+        REAL_WEEK = CURRENT_WEEK; // avanzar también la semana real
         saveLogs();
         renderEntrenamiento();
         renderResumen();
@@ -3149,6 +3228,7 @@ function loadBackupLogs() {
       if (data.entries) {
         LOGS = data.entries;
         CURRENT_WEEK = data.currentWeek || 1;
+        REAL_WEEK = CURRENT_WEEK;
         if (data.exerciseUnits) EXERCISE_UNITS = data.exerciseUnits;
         if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
         return true;
@@ -3162,6 +3242,9 @@ function setWeek(w) {
   CURRENT_WEEK = w;
   renderEntrenamiento();
   renderResumen();
+  // Indicar en el tab de entrenamiento si se está en modo vista
+  var tabBtn = document.getElementById && document.querySelector && document.querySelector('[data-tab="1"]');
+  // (el banner ya aparece dentro de renderEntrenamiento)
 }
 
 function goToWeek(w) {
