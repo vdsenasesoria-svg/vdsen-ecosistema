@@ -1659,8 +1659,43 @@ function renderResumen() {
         ${ciDone?'✏ ACTUALIZAR CHECK-IN →':'📊 IR A CHECK-IN →'}
       </button>
     </div>
+    ${buildVolumenWidget()}
     ${buildRezagadosWidget()}
     ${buildHistorialWidget()}`;
+}
+
+function buildVolumenWidget() {
+  if (!PLAN || typeof MEV_MRV_BY_MUSCLE === 'undefined') return '';
+  var order = ['pectoral','dorsal_ancho','trapecio_medio','delt_anterior','delt_lateral','delt_posterior','biceps','braquial','triceps','cuadriceps','isquios','gluteo_mayor','gluteo_medio','gastrocnemio','soleo','erectores','recto_abdominal','oblicuos','serrato'];
+  var rows = '';
+  var hayDatos = false;
+  for (var i = 0; i < order.length; i++) {
+    var m = order[i], mm = MEV_MRV_BY_MUSCLE[m];
+    var vol = _getWeeklyVolumeByMuscle(m);
+    if (vol === 0 && mm.mev === 0) continue;
+    hayDatos = true;
+    var status, col, bg;
+    if (vol === 0) { status = '—'; col = 'var(--mt)'; bg = 'var(--mt)'; }
+    else if (vol < mm.mev) { status = 'Bajo MEV ('+mm.mev+')'; col = '#4A9FDC'; bg = '#4A9FDC'; }
+    else if (vol > mm.mrv) { status = 'Sobre MRV ('+mm.mrv+')'; col = '#FF7744'; bg = '#FF7744'; }
+    else if (vol >= mm.mrv * 0.85) { status = 'Alto ('+vol+'/'+mm.mrv+')'; col = 'var(--gold)'; bg = 'var(--gold)'; }
+    else { status = 'Óptimo'; col = 'var(--grn)'; bg = 'var(--grn)'; }
+    var pct = Math.min(100, Math.round((vol / mm.mrv) * 100));
+    rows += '<div style="display:grid;grid-template-columns:130px 1fr 80px;gap:8px;align-items:center;margin-bottom:6px;font-size:11px">'+
+      '<div style="color:var(--tx)">'+mm.label+'</div>'+
+      '<div style="position:relative;height:10px;background:var(--dk);border:1px solid var(--bd)">'+
+        '<div style="height:100%;width:'+pct+'%;background:'+bg+';opacity:.8"></div>'+
+        '<div style="position:absolute;top:-2px;left:'+Math.min(100,Math.round((mm.mev/mm.mrv)*100))+'%;width:1px;height:14px;background:var(--mt)"></div>'+
+      '</div>'+
+      '<div style="text-align:right;font-family:var(--ff);color:'+col+';font-size:10px">'+vol+' · '+status+'</div>'+
+    '</div>';
+  }
+  if (!hayDatos) return '';
+  return '<div class="card" style="margin-top:8px">'+
+    '<div class="card-title">VOLUMEN SEMANAL POR GRUPO</div>'+
+    '<div style="font-size:10px;color:var(--mt);margin-bottom:10px;letter-spacing:1px">Series prescritas/semana · línea gris = MEV · barra completa = MRV</div>'+
+    rows +
+  '</div>';
 }
 
 function getTodaySummary() {
@@ -2660,17 +2695,28 @@ function buildBoostcampExercise(ej, di, ei) {
       '⚡ '+headerRec.newLoad+' '+recUnit+' · '+headerRec.newSets+'s · RIR '+headerRec.rirTarget+
     '</div>';
   }
-  // Advertencia MRV por patrón motor en el ejercicio
+  // Advertencia MEV/MRV por grupo muscular (prioritario) con fallback a patrón motor
   var mrvWarnHtml = '';
-  if (catData && catData.motorPattern) {
+  if (catData && catData.targetMuscle && MEV_MRV_BY_MUSCLE[catData.targetMuscle]) {
+    var _m = catData.targetMuscle;
+    var _mm = MEV_MRV_BY_MUSCLE[_m];
+    var _wkVol = _getWeeklyVolumeByMuscle(_m);
+    if (_wkVol > _mm.mrv) {
+      mrvWarnHtml = '<div style="font-size:9px;color:#FF7744;font-weight:700;margin-top:2px">⚠ '+_mm.label+': '+_wkVol+'/'+_mm.mrv+' sem (sobre MRV)</div>';
+    } else if (_wkVol >= _mm.mrv * 0.85) {
+      mrvWarnHtml = '<div style="font-size:9px;color:var(--gold);font-weight:700;margin-top:2px">◎ '+_mm.label+': '+_wkVol+'/'+_mm.mrv+' sem (cerca del MRV)</div>';
+    } else if (_mm.mev > 0 && _wkVol < _mm.mev) {
+      mrvWarnHtml = '<div style="font-size:9px;color:#4A9FDC;font-weight:700;margin-top:2px">↑ '+_mm.label+': '+_wkVol+'/'+_mm.mev+' sem (bajo MEV)</div>';
+    }
+  } else if (catData && catData.motorPattern) {
     var _p = catData.motorPattern;
     var _mrvCap = MRV_BY_PATTERN[_p] || null;
     if (_mrvCap) {
-      var _wkVol = _getWeeklyVolumeByPattern(_p);
-      if (_wkVol > _mrvCap) {
-        mrvWarnHtml = '<div style="font-size:9px;color:#FF7744;font-weight:700;margin-top:2px">⚠ MRV '+_p+': '+_wkVol+'/'+_mrvCap+' series sem</div>';
-      } else if (_wkVol >= _mrvCap * 0.85) {
-        mrvWarnHtml = '<div style="font-size:9px;color:var(--gold);font-weight:700;margin-top:2px">◎ '+_p+': '+_wkVol+'/'+_mrvCap+' series sem (cerca del MRV)</div>';
+      var _wkVolP = _getWeeklyVolumeByPattern(_p);
+      if (_wkVolP > _mrvCap) {
+        mrvWarnHtml = '<div style="font-size:9px;color:#FF7744;font-weight:700;margin-top:2px">⚠ MRV '+_p+': '+_wkVolP+'/'+_mrvCap+' series sem</div>';
+      } else if (_wkVolP >= _mrvCap * 0.85) {
+        mrvWarnHtml = '<div style="font-size:9px;color:var(--gold);font-weight:700;margin-top:2px">◎ '+_p+': '+_wkVolP+'/'+_mrvCap+' series sem (cerca del MRV)</div>';
       }
     }
   }
@@ -5367,128 +5413,169 @@ function _getMaxSets(catData, planSets) {
 // fatigueCost: 1(aislamiento ligero) → 5(compuesto pesado)
 var BUILTIN_CATALOG = {
   // ══ EMPUJE — PECHO ══
-  'press de banca con barra':              {motorPattern:'Empuje', resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
-  'press de banca con mancuernas':         {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
-  'press inclinado con barra':             {motorPattern:'Empuje', resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
-  'press inclinado con mancuernas':        {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
-  'press declinado con barra':             {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:4},
-  'press de pecho en máquina':             {motorPattern:'Empuje', resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
-  'press convergente de pecho':            {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
-  'pec deck (aducción horizontal)':        {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'cruce de poleas alto':                  {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'cruce de poleas bajo':                  {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'aperturas con mancuernas':              {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'fondos en paralelas':                   {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
+  'press de banca con barra':              {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'press de banca con mancuernas':         {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'press inclinado con barra':             {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:4},
+  'press inclinado con mancuernas':        {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'press declinado con barra':             {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:4},
+  'press de pecho en máquina':             {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:3},
+  'press convergente de pecho':            {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:3},
+  'pec deck (aducción horizontal)':        {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'cruce de poleas alto':                  {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'cruce de poleas bajo':                  {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'aperturas con mancuernas':              {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'fondos en paralelas':                   {motorPattern:'Empuje', targetMuscle:'pectoral',            resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
   // ══ EMPUJE — HOMBRO ══
-  'press militar con barra':               {motorPattern:'Empuje', resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:5},
-  'press de hombro con mancuernas':        {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
-  'press Arnold':                          {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
-  'press de hombro en máquina':            {motorPattern:'Empuje', resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
-  'elevaciones laterales con mancuernas':  {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'elevaciones laterales en polea':        {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'elevaciones laterales con mancuerna en banco inclinado': {motorPattern:'Empuje', resistanceCurve:'elongated', muscleType:'typeI', fatigueCost:2},
-  'elevaciones frontales con mancuernas':  {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'press militar con barra':               {motorPattern:'Empuje', targetMuscle:'delt_anterior',       resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'press de hombro con mancuernas':        {motorPattern:'Empuje', targetMuscle:'delt_anterior',       resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'press Arnold':                          {motorPattern:'Empuje', targetMuscle:'delt_anterior',       resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'press de hombro en máquina':            {motorPattern:'Empuje', targetMuscle:'delt_anterior',       resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:3},
+  'elevaciones laterales con mancuernas':  {motorPattern:'Empuje', targetMuscle:'delt_lateral',        resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'elevaciones laterales en polea':        {motorPattern:'Empuje', targetMuscle:'delt_lateral',        resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'elevaciones laterales con mancuerna en banco inclinado': {motorPattern:'Empuje', targetMuscle:'delt_lateral', resistanceCurve:'elongated', muscleType:'typeI', fatigueCost:2},
+  'elevaciones frontales con mancuernas':  {motorPattern:'Empuje', targetMuscle:'delt_anterior',       resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
   // ══ EMPUJE — TRÍCEPS ══
-  'extensión de tríceps en polea alta':    {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'extensión de tríceps sobre cabeza':     {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'extensión de tríceps en polea baja':    {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'press francés (skull crusher)':         {motorPattern:'Empuje', resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
-  'press de banca agarre cerrado':         {motorPattern:'Empuje', resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
-  'fondos de tríceps en banco':            {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'kickback de tríceps':                   {motorPattern:'Empuje', resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:1},
+  'extensión de tríceps en polea alta':    {motorPattern:'Empuje', targetMuscle:'triceps',             resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'extensión de tríceps sobre cabeza':     {motorPattern:'Empuje', targetMuscle:'triceps',             resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'extensión de tríceps en polea baja':    {motorPattern:'Empuje', targetMuscle:'triceps',             resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'press francés (skull crusher)':         {motorPattern:'Empuje', targetMuscle:'triceps',             resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:3},
+  'press de banca agarre cerrado':         {motorPattern:'Empuje', targetMuscle:'triceps',             resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:4},
+  'fondos de tríceps en banco':            {motorPattern:'Empuje', targetMuscle:'triceps',             resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'kickback de tríceps':                   {motorPattern:'Empuje', targetMuscle:'triceps',             resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:1},
   // ══ HALAR — ESPALDA ══
-  'jalón al pecho con barra':              {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:4},
-  'jalón al pecho agarre neutro':          {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
-  'jalón al pecho agarre supino':          {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:3},
-  'jalón unilateral en polea (cadera contraria)': {motorPattern:'Halar', resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:3},
-  'dominadas (pull-up)':                   {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:5},
-  'dominadas agarre neutro':               {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
-  'pullover con mancuerna':                {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
-  'pullover en polea':                     {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'remo con barra':                        {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:5},
-  'remo al pecho con barra agarre ancho':  {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
-  'remo con mancuerna':                    {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
-  'remo en máquina':                       {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
-  'remo en polea baja':                    {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:3},
-  'remo en polea baja agarre neutro':      {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:3},
-  'encogimientos con barra tras espalda':  {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'face pull en polea':                    {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'jalón al pecho con barra':              {motorPattern:'Halar',  targetMuscle:'dorsal_ancho',        resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:4},
+  'jalón al pecho agarre neutro':          {motorPattern:'Halar',  targetMuscle:'dorsal_ancho',        resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:3},
+  'jalón al pecho agarre supino':          {motorPattern:'Halar',  targetMuscle:'dorsal_ancho',        resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:3},
+  'jalón unilateral en polea (cadera contraria)': {motorPattern:'Halar', targetMuscle:'dorsal_ancho',  resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:3},
+  'dominadas (pull-up)':                   {motorPattern:'Halar',  targetMuscle:'dorsal_ancho',        resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:5},
+  'dominadas agarre neutro':               {motorPattern:'Halar',  targetMuscle:'dorsal_ancho',        resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:4},
+  'pullover con mancuerna':                {motorPattern:'Halar',  targetMuscle:'dorsal_ancho',        resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:3},
+  'pullover en polea':                     {motorPattern:'Halar',  targetMuscle:'dorsal_ancho',        resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'remo con barra':                        {motorPattern:'Halar',  targetMuscle:'trapecio_medio',      resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'remo al pecho con barra agarre ancho':  {motorPattern:'Halar',  targetMuscle:'trapecio_medio',      resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:4},
+  'remo con mancuerna':                    {motorPattern:'Halar',  targetMuscle:'trapecio_medio',      resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:4},
+  'remo en máquina':                       {motorPattern:'Halar',  targetMuscle:'trapecio_medio',      resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:3},
+  'remo en polea baja':                    {motorPattern:'Halar',  targetMuscle:'trapecio_medio',      resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:3},
+  'remo en polea baja agarre neutro':      {motorPattern:'Halar',  targetMuscle:'trapecio_medio',      resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:3},
+  'encogimientos con barra tras espalda':  {motorPattern:'Halar',  targetMuscle:'trapecio_medio',      resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'face pull en polea':                    {motorPattern:'Halar',  targetMuscle:'delt_posterior',      resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
   // ══ HALAR — DELTOIDES POSTERIOR ══
-  'vuelos posteriores con mancuernas':     {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'vuelos posteriores en banco inclinado (pájaros)': {motorPattern:'Halar', resistanceCurve:'elongated', muscleType:'typeI', fatigueCost:2},
-  'pec fly invertido (reverse pec deck)':  {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'aducción horizontal en máquina':        {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'vuelos posteriores con mancuernas':     {motorPattern:'Halar',  targetMuscle:'delt_posterior',      resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'vuelos posteriores en banco inclinado (pájaros)': {motorPattern:'Halar', targetMuscle:'delt_posterior', resistanceCurve:'elongated', muscleType:'typeI', fatigueCost:2},
+  'pec fly invertido (reverse pec deck)':  {motorPattern:'Halar',  targetMuscle:'delt_posterior',      resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'aducción horizontal en máquina':        {motorPattern:'Halar',  targetMuscle:'delt_posterior',      resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
   // ══ HALAR — BÍCEPS ══
-  'curl con barra':                        {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:3},
-  'curl con barra Z (EZ)':                 {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:3},
-  'curl alternado con mancuernas':         {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'curl concentrado con mancuerna':        {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'curl en polea baja':                    {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'curl inclinado con mancuernas':         {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'curl Spider':                           {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'curl Bayesian (polea detrás)':          {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'curl martillo':                         {motorPattern:'Halar',  resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:2},
-  'curl martillo en polea':                {motorPattern:'Halar',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'curl en máquina':                       {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'curl predicador (scott)':               {motorPattern:'Halar',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
+  'curl con barra':                        {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:3},
+  'curl con barra Z (EZ)':                 {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:3},
+  'curl alternado con mancuernas':         {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'curl concentrado con mancuerna':        {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'curl en polea baja':                    {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'curl inclinado con mancuernas':         {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'curl Spider':                           {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'curl Bayesian (polea detrás)':          {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'curl martillo':                         {motorPattern:'Halar',  targetMuscle:'braquial',            resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:2},
+  'curl martillo en polea':                {motorPattern:'Halar',  targetMuscle:'braquial',            resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'curl en máquina':                       {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'curl predicador (scott)':               {motorPattern:'Halar',  targetMuscle:'biceps',              resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
   // ══ SQUAT ══
-  'sentadilla con barra':                  {motorPattern:'Squat',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:5},
-  'sentadilla frontal con barra':          {motorPattern:'Squat',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:5},
-  'sentadilla búlgara con mancuernas':     {motorPattern:'Squat',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
-  'sentadilla búlgara con barra':          {motorPattern:'Squat',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
-  'sentadilla péndulo en máquina':         {motorPattern:'Squat',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:4},
-  'prensa de pierna':                      {motorPattern:'Squat',  resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:4},
-  'hack squat en máquina':                 {motorPattern:'Squat',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:4},
-  'leg press':                             {motorPattern:'Squat',  resistanceCurve:'shortened',  muscleType:'typeIIx', fatigueCost:4},
-  'extensión de cuádriceps en máquina':    {motorPattern:'Squat',  resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:2},
-  'extensión de cuádriceps recostado':     {motorPattern:'Squat',  resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'zancada con mancuernas':                {motorPattern:'Squat',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
-  'sentadilla goblet':                     {motorPattern:'Squat',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
-  'split squat con mancuernas':            {motorPattern:'Squat',  resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3},
-  'step up con mancuernas':                {motorPattern:'Squat',  resistanceCurve:'mid',        muscleType:'typeIIx', fatigueCost:3},
+  'sentadilla con barra':                  {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'sentadilla frontal con barra':          {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'sentadilla búlgara con mancuernas':     {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'sentadilla búlgara con barra':          {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'sentadilla péndulo en máquina':         {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'prensa de pierna':                      {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:4},
+  'hack squat en máquina':                 {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:4},
+  'leg press':                             {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:4},
+  'extensión de cuádriceps en máquina':    {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'extensión de cuádriceps recostado':     {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'zancada con mancuernas':                {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:3},
+  'sentadilla goblet':                     {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:3},
+  'split squat con mancuernas':            {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:3},
+  'step up con mancuernas':                {motorPattern:'Squat',  targetMuscle:'cuadriceps',          resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:3},
   // ══ BISAGRA ══
-  'peso muerto convencional':              {motorPattern:'Bisagra', resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
-  'peso muerto rumano con barra (RDL)':    {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
-  'peso muerto rumano con mancuernas':     {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
-  'peso muerto sumo':                      {motorPattern:'Bisagra', resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
-  'hip thrust con barra':                  {motorPattern:'Bisagra', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:4},
-  'hip thrust en máquina':                 {motorPattern:'Bisagra', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:3},
-  'curl femoral acostado en máquina':      {motorPattern:'Bisagra', resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:2},
-  'curl femoral sentado en máquina':       {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
-  'curl nórdico':                          {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:3},
-  'patada de glúteo en polea':             {motorPattern:'Bisagra', resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
-  'abducción de cadera en máquina':        {motorPattern:'Bisagra', resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
-  'abducción de cadera en polea':          {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
-  'pasos laterales con banda elástica':    {motorPattern:'Bisagra', resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:1},
-  'good morning con barra':                {motorPattern:'Bisagra', resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'peso muerto convencional':              {motorPattern:'Bisagra', targetMuscle:'erectores',          resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'peso muerto rumano con barra (RDL)':    {motorPattern:'Bisagra', targetMuscle:'isquios',            resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'peso muerto rumano con mancuernas':     {motorPattern:'Bisagra', targetMuscle:'isquios',            resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
+  'peso muerto sumo':                      {motorPattern:'Bisagra', targetMuscle:'gluteo_mayor',       resistanceCurve:'mid',       muscleType:'typeIIx', fatigueCost:5},
+  'hip thrust con barra':                  {motorPattern:'Bisagra', targetMuscle:'gluteo_mayor',       resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:4},
+  'hip thrust en máquina':                 {motorPattern:'Bisagra', targetMuscle:'gluteo_mayor',       resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:3},
+  'curl femoral acostado en máquina':      {motorPattern:'Bisagra', targetMuscle:'isquios',            resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:2},
+  'curl femoral sentado en máquina':       {motorPattern:'Bisagra', targetMuscle:'isquios',            resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'curl nórdico':                          {motorPattern:'Bisagra', targetMuscle:'isquios',            resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:3},
+  'patada de glúteo en polea':             {motorPattern:'Bisagra', targetMuscle:'gluteo_mayor',       resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'abducción de cadera en máquina':        {motorPattern:'Bisagra', targetMuscle:'gluteo_medio',       resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'abducción de cadera en polea':          {motorPattern:'Bisagra', targetMuscle:'gluteo_medio',       resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'pasos laterales con banda elástica':    {motorPattern:'Bisagra', targetMuscle:'gluteo_medio',       resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:1},
+  'good morning con barra':                {motorPattern:'Bisagra', targetMuscle:'isquios',            resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:4},
   // ══ PANTORRILLA ══
-  'elevación de talones de pie en máquina':       {motorPattern:'Pantorrilla', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:2},
-  'elevación de talones de pie con barra':        {motorPattern:'Pantorrilla', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:3},
-  'elevación de talones unilateral con mancuerna':{motorPattern:'Pantorrilla', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:2},
-  'elevación de talones sentado en máquina':      {motorPattern:'Pantorrilla', resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
+  'elevación de talones de pie en máquina':       {motorPattern:'Pantorrilla', targetMuscle:'gastrocnemio', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:2},
+  'elevación de talones de pie con barra':        {motorPattern:'Pantorrilla', targetMuscle:'gastrocnemio', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:3},
+  'elevación de talones unilateral con mancuerna':{motorPattern:'Pantorrilla', targetMuscle:'gastrocnemio', resistanceCurve:'shortened', muscleType:'typeIIx', fatigueCost:2},
+  'elevación de talones sentado en máquina':      {motorPattern:'Pantorrilla', targetMuscle:'soleo',        resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:2},
   // ══ CORE ══
-  'plancha abdominal':                     {motorPattern:'Core',   resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:1},
-  'crunch en máquina':                     {motorPattern:'Core',   resistanceCurve:'shortened',  muscleType:'typeI',   fatigueCost:1},
-  'crunch en polea':                       {motorPattern:'Core',   resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'rueda abdominal':                       {motorPattern:'Core',   resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'elevación de piernas colgado':          {motorPattern:'Core',   resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:2},
-  'twist ruso con peso':                   {motorPattern:'Core',   resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:1},
-  'plancha lateral':                       {motorPattern:'Core',   resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:1},
-  'plancha con alcance':                   {motorPattern:'Core',   resistanceCurve:'elongated',  muscleType:'typeI',   fatigueCost:1},
-  'flexiones escapulares':                 {motorPattern:'Core',   resistanceCurve:'mid',        muscleType:'typeI',   fatigueCost:1},
-  'hiperextensión a 45°':                  {motorPattern:'Core',   resistanceCurve:'elongated',  muscleType:'typeIIx', fatigueCost:3}
+  'plancha abdominal':                     {motorPattern:'Core',   targetMuscle:'recto_abdominal',     resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:1},
+  'crunch en máquina':                     {motorPattern:'Core',   targetMuscle:'recto_abdominal',     resistanceCurve:'shortened', muscleType:'typeI',   fatigueCost:1},
+  'crunch en polea':                       {motorPattern:'Core',   targetMuscle:'recto_abdominal',     resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'rueda abdominal':                       {motorPattern:'Core',   targetMuscle:'recto_abdominal',     resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'elevación de piernas colgado':          {motorPattern:'Core',   targetMuscle:'recto_abdominal',     resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:2},
+  'twist ruso con peso':                   {motorPattern:'Core',   targetMuscle:'oblicuos',            resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:1},
+  'plancha lateral':                       {motorPattern:'Core',   targetMuscle:'oblicuos',            resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:1},
+  'plancha con alcance':                   {motorPattern:'Core',   targetMuscle:'serrato',             resistanceCurve:'elongated', muscleType:'typeI',   fatigueCost:1},
+  'flexiones escapulares':                 {motorPattern:'Core',   targetMuscle:'serrato',             resistanceCurve:'mid',       muscleType:'typeI',   fatigueCost:1},
+  'hiperextensión a 45°':                  {motorPattern:'Core',   targetMuscle:'erectores',           resistanceCurve:'elongated', muscleType:'typeIIx', fatigueCost:3}
 };
 
-// ── MRV por patrón motor (sets semanales máximos agregados) ──
-// Referencia: Schoenfeld 2017, Israetel MRV guidelines
+// ── MEV/MRV por grupo muscular (compendio VDSEN Módulo 2.1 + Israetel/Schoenfeld) ──
+// MEV = mínimo efectivo; MRV = máximo recuperable. Volumen óptimo hipertrofia ≈ punto medio.
+var MEV_MRV_BY_MUSCLE = {
+  'pectoral':        {mev:10, mrv:22, label:'Pectoral'},
+  'dorsal_ancho':    {mev:10, mrv:20, label:'Dorsal ancho'},
+  'trapecio_medio':  {mev: 8, mrv:18, label:'Trapecio medio/romboides'},
+  'delt_anterior':   {mev: 0, mrv:12, label:'Deltoides anterior'},  // recibe mucho indirecto de todo empuje
+  'delt_lateral':    {mev: 8, mrv:20, label:'Deltoides lateral'},
+  'delt_posterior':  {mev: 8, mrv:18, label:'Deltoides posterior'},
+  'biceps':          {mev: 8, mrv:18, label:'Bíceps'},
+  'braquial':        {mev: 4, mrv:12, label:'Braquial'},
+  'triceps':         {mev: 8, mrv:18, label:'Tríceps'},
+  'cuadriceps':      {mev:10, mrv:20, label:'Cuádriceps'},
+  'isquios':         {mev: 8, mrv:16, label:'Isquiotibiales'},
+  'gluteo_mayor':    {mev: 8, mrv:20, label:'Glúteo mayor'},
+  'gluteo_medio':    {mev: 4, mrv:12, label:'Glúteo medio'},
+  'gastrocnemio':    {mev: 8, mrv:16, label:'Gastrocnemio'},
+  'soleo':           {mev: 8, mrv:16, label:'Sóleo'},
+  'erectores':       {mev: 4, mrv:12, label:'Erectores'},
+  'recto_abdominal': {mev: 6, mrv:16, label:'Recto abdominal'},
+  'oblicuos':        {mev: 4, mrv:12, label:'Oblicuos'},
+  'serrato':         {mev: 0, mrv: 8, label:'Serrato anterior'}
+};
+
+// ── MRV por patrón motor (fallback cuando un ejercicio custom no tiene targetMuscle) ──
 var MRV_BY_PATTERN = {
-  'Empuje':      22, // pecho + hombro ant/med + tríceps combinados
-  'Halar':       24, // dorsal + bíceps + hombro post combinados
-  'Squat':       18, // cuádriceps dominante
-  'Bisagra':     14, // isquios + glúteos
+  'Empuje':      22,
+  'Halar':       24,
+  'Squat':       18,
+  'Bisagra':     14,
   'Pantorrilla': 20,
   'Core':        16
 };
+
+// Suma de series semanales prescritas por el plan, agrupadas por targetMuscle
+function _getWeeklyVolumeByMuscle(muscle) {
+  if (!muscle) return 0;
+  var total = 0;
+  var sesiones = getSesiones();
+  for (var d = 0; d < sesiones.length; d++) {
+    var exs = sesiones[d].exercises || [];
+    for (var e = 0; e < exs.length; e++) {
+      var ex = exs[e];
+      var cat = _getCatalogData(ex.nombre || ex.exerciseName || '');
+      if (cat && cat.targetMuscle === muscle) {
+        total += (ex.sets ? ex.sets.length : (ex.numSeries || 3));
+      }
+    }
+  }
+  return total;
+}
 
 // Suma de series semanales prescritas por el plan, agrupadas por motorPattern
 function _getWeeklyVolumeByPattern(pattern) {
@@ -5654,11 +5741,21 @@ function calculateProgression(di, postData) {
         performedWell = (avgReps >= repsTarget) && (avgRIR <= rirObj + 0.5);
       }
 
-      // MRV check por patrón motor (cap de volumen semanal agregado)
+      // MRV check: prioriza grupo muscular (targetMuscle). Fallback a patrón motor.
+      var muscle     = catData ? catData.targetMuscle : null;
+      var mmMuscle   = muscle ? MEV_MRV_BY_MUSCLE[muscle] : null;
       var pattern    = catData ? catData.motorPattern : null;
-      var mrvCap     = MRV_BY_PATTERN[pattern] || null;
-      var patternVol = mrvCap ? _getWeeklyVolumeByPattern(pattern) : 0;
-      var mrvBlocked = mrvCap && (patternVol + 1 > mrvCap);
+      var mrvCap, volNow, mrvLabel;
+      if (mmMuscle) {
+        mrvCap   = mmMuscle.mrv;
+        volNow   = _getWeeklyVolumeByMuscle(muscle);
+        mrvLabel = mmMuscle.label;
+      } else {
+        mrvCap   = MRV_BY_PATTERN[pattern] || null;
+        volNow   = mrvCap ? _getWeeklyVolumeByPattern(pattern) : 0;
+        mrvLabel = pattern;
+      }
+      var mrvBlocked = mrvCap && (volNow + 1 > mrvCap);
 
       if (eimd === 3) {
         // VETO por dolor muscular elevado → reducir 1 serie
@@ -5671,7 +5768,7 @@ function calculateProgression(di, postData) {
         action = 'add_sets';
         reasons.push('Performance sostenida (reps '+avgReps.toFixed(1)+', RIR '+avgRIR.toFixed(1)+') + ICS '+avgICS.toFixed(1)+' → +1 serie ('+numSets+'→'+newSets+')');
       } else if (mrvBlocked) {
-        reasons.push('MRV patrón '+pattern+' alcanzado ('+patternVol+'/'+mrvCap+' sets sem) → no subir volumen');
+        reasons.push('MRV '+mrvLabel+' alcanzado ('+volNow+'/'+mrvCap+' sets sem) → no subir volumen');
       } else if (numSets >= maxSets) {
         reasons.push('Techo por ejercicio alcanzado ('+maxSets+' series)');
       } else if (avgICS < 8) {
