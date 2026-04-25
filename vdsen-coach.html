@@ -61,14 +61,16 @@
 <div class="main-content">
   <div id="dashboard" class="section active"><h2 class="text-2xl font-bold mb-4">Dashboard</h2><div id="dashboardContent"></div></div>
   <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
-  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="iaModeBtn" class="btn-secondary">🤖 Generar con DeepSeek</button></div><div id="planBuilder"></div></div>
+  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
   <div id="templates" class="section"><h2 class="text-2xl font-bold mb-4">Templates de Planes</h2><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
   <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><div class="flex gap-2 mb-4 flex-wrap"><select id="monitorClientSelect" class="input-field flex-1"></select><button id="pdfReportBtn" class="btn-secondary text-sm" style="display:none">📄 Reporte PDF</button></div><div id="monitorTable"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
     <div class="card p-4 mb-4">
-      <label class="block text-sm font-medium mb-1">🤖 Generación con IA — DeepSeek V4-Pro</label>
-      <p class="text-xs text-[#888] mt-2">La API key de DeepSeek se configura en Vercel (variable de entorno <code class="text-[#C9A84C]">DEEPSEEK_API_KEY</code>). El compendio se cachea automáticamente entre llamadas para reducir el coste ~12×.</p>
+      <label class="block text-sm font-medium mb-1">🔑 API Key de Anthropic (Claude)</label>
+      <input type="password" id="apiKeyInput" class="input-field" placeholder="sk-ant-..." autocomplete="off">
+      <button id="saveApiKeyBtn" class="btn-primary mt-3">Guardar en este navegador</button>
+      <p class="text-xs text-[#888] mt-2">⚠️ La clave se almacena solo en tu navegador (localStorage). Nunca se guarda en Firestore ni en el servidor.</p>
     </div>
     <div class="card p-4 mb-4">
       <label class="block text-sm font-medium mb-1">📚 Compendio (PDF)</label>
@@ -204,6 +206,8 @@
     loadClientsSelect();
     loadDashboard();
     loadTemplates();
+    const savedKey = localStorage.getItem('vdsen_apikey');
+    if (savedKey) document.getElementById("apiKeyInput").value = "••••••••••••••••";
     // Cargar compendio desde Firestore si ya fue subido anteriormente
     const compSnap = await getDoc(doc(db, "compendio", currentCoach.uid));
     if (compSnap.exists()) {
@@ -754,272 +758,85 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
       <div id="parsedPlanPreview"></div>`;
   });
 
-  // ========== MODO IA (DeepSeek V4-Pro con prompt caching) ==========
-  document.getElementById("iaModeBtn")?.addEventListener("click", () => {
+  // ========== MODO JSON (generado por Claude) ==========
+  document.getElementById("jsonModeBtn")?.addEventListener("click", () => {
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     document.getElementById("planBuilder").innerHTML = `
       <div class="card p-4 mb-4">
-        <p class="text-sm text-[#888] mb-3">Genera plan de entrenamiento, nutrición y/o suplementación con DeepSeek V4-Pro usando el compendio VDSEN como contexto. El compendio se cachea automáticamente entre llamadas (cache hit ≈ 12× más barato).</p>
-
-        <div class="mb-3">
-          <label class="block text-xs text-[#888] mb-1">¿Qué generar?</label>
-          <div class="flex gap-3 flex-wrap">
-            <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="ia-gen-plan" checked> Plan entrenamiento</label>
-            <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="ia-gen-nutri"> Nutrición</label>
-            <label class="flex items-center gap-1 text-sm"><input type="checkbox" id="ia-gen-supl"> Suplementación</label>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2 mb-3">
-          <div><label class="text-xs text-[#888]">Semanas</label><input id="ia-weeks" type="number" class="input-field mt-1" value="6" min="3" max="12"></div>
-          <div><label class="text-xs text-[#888]">Días por semana</label><input id="ia-days" type="number" class="input-field mt-1" value="4" min="2" max="6"></div>
-          <div><label class="text-xs text-[#888]">Objetivo</label>
-            <select id="ia-goal" class="input-field mt-1">
-              <option value="hipertrofia">Hipertrofia</option>
-              <option value="recomp">Recomposición</option>
-              <option value="deficit">Déficit (definición)</option>
-              <option value="superavit">Superávit (volumen)</option>
-              <option value="fuerza">Fuerza</option>
-            </select>
-          </div>
-          <div><label class="text-xs text-[#888]">Nivel</label>
-            <select id="ia-level" class="input-field mt-1">
-              <option value="principiante">Principiante</option>
-              <option value="intermedio" selected>Intermedio</option>
-              <option value="avanzado">Avanzado</option>
-            </select>
-          </div>
-          <div><label class="text-xs text-[#888]">Peso (kg)</label><input id="ia-weight" type="number" step="0.1" class="input-field mt-1" placeholder="80"></div>
-          <div><label class="text-xs text-[#888]">Altura (cm)</label><input id="ia-height" type="number" class="input-field mt-1" placeholder="175"></div>
-          <div><label class="text-xs text-[#888]">Edad</label><input id="ia-age" type="number" class="input-field mt-1" placeholder="28"></div>
-          <div><label class="text-xs text-[#888]">Sexo</label>
-            <select id="ia-sex" class="input-field mt-1"><option value="M">M</option><option value="F">F</option></select>
-          </div>
-          <div class="col-span-2"><label class="text-xs text-[#888]">Actividad diaria</label>
-            <select id="ia-activity" class="input-field mt-1">
-              <option value="1.2">Sedentario (1.2)</option>
-              <option value="1.375">Ligero (1.375)</option>
-              <option value="1.55" selected>Moderado (1.55)</option>
-              <option value="1.725">Alto (1.725)</option>
-              <option value="1.9">Muy alto (1.9)</option>
-            </select>
-          </div>
-        </div>
-
-        <label class="text-xs text-[#888]">Notas / restricciones (opcional)</label>
-        <textarea id="ia-notes" class="input-field mt-1 mb-3 text-xs" rows="2" placeholder="Ej: lesión hombro derecho, sin lácteos, 4 días disponibles..."></textarea>
-
-        <div class="mb-3">
-          <label class="text-xs text-[#888]">Modelo</label>
-          <select id="ia-model" class="input-field mt-1">
-            <option value="deepseek-chat" selected>DeepSeek V4-Pro (calidad máxima)</option>
-            <option value="deepseek-chat-flash">DeepSeek V4-Flash (más barato)</option>
-          </select>
-        </div>
-
-        <button onclick="generatePlanWithIA()" class="btn-primary w-full">🤖 Generar con DeepSeek</button>
-        <div id="iaStatus" class="text-sm mt-3"></div>
+        <p class="text-sm text-[#888] mb-2">Pega aquí el JSON del plan generado por Claude. Estructura esperada:</p>
+        <pre class="text-xs text-[#C9A84C] bg-[#0D0D0D] p-2 rounded mb-3 overflow-x-auto">{
+  "weeks": 6,
+  "daysPerWeek": 4,
+  "days": [
+    {
+      "dayIndex": 0,
+      "label": "Día 1 - Empuje Horizontal",
+      "exercises": [
+        {
+          "exerciseName": "Press Banca",
+          "alternatives": ["Press Inclinado Mancuernas"],
+          "sets": [
+            {"setIndex":0,"repsTarget":8,"rirTarget":2,"load":0,"restSeconds":120},
+            {"setIndex":1,"repsTarget":8,"rirTarget":2,"load":0,"restSeconds":120}
+          ]
+        }
+      ]
+    }
+  ]
+}</pre>
+        <textarea id="planJsonInput" class="input-field mb-3" rows="14" placeholder="Pega aquí el JSON..."></textarea>
+        <button onclick="parsePlanFromJSON()" class="btn-primary w-full">🧩 Cargar plan desde JSON</button>
+        <div id="jsonPlanStatus" class="text-sm mt-2"></div>
       </div>
       <div id="parsedPlanPreview"></div>`;
   });
 
-  async function generatePlanWithIA() {
-    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
-    const clientId = document.getElementById("planClientSelect").value;
-    if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
-
-    const generate = [];
-    if (document.getElementById("ia-gen-plan").checked)  generate.push("plan");
-    if (document.getElementById("ia-gen-nutri").checked) generate.push("nutrition");
-    if (document.getElementById("ia-gen-supl").checked)  generate.push("supplements");
-    if (generate.length === 0) { showToast("Selecciona al menos una opción a generar", true); return; }
-
-    const statusEl = document.getElementById("iaStatus");
-    statusEl.innerHTML = `<span class="loading-row"><span class="spinner"></span> Generando con DeepSeek (puede tardar 30-90s en cache miss)...</span>`;
-
-    try {
-      // Catálogo del coach (solo campos relevantes para no inflar tokens)
-      const catSnap = await getDocs(query(collection(db, "exercises"), where("coachId", "==", currentCoach.uid)));
-      const catalogo = catSnap.docs.map(d => {
-        const x = d.data();
-        return { name: x.name, motorPattern: x.motorPattern, muscleType: x.muscleType, fatigueCost: x.fatigueCost, resistanceCurve: x.resistanceCurve };
-      });
-
-      // Datos del cliente
-      const clientSnap = await getDoc(doc(db, "clients", clientId));
-      const clientData = clientSnap.exists() ? clientSnap.data() : {};
-
-      const cliente = {
-        nombre: clientData.displayName || "",
-        objetivo: document.getElementById("ia-goal").value,
-        nivel: document.getElementById("ia-level").value,
-        peso_kg: parseFloat(document.getElementById("ia-weight").value) || null,
-        altura_cm: parseInt(document.getElementById("ia-height").value) || null,
-        edad: parseInt(document.getElementById("ia-age").value) || null,
-        sexo: document.getElementById("ia-sex").value,
-        factor_actividad: parseFloat(document.getElementById("ia-activity").value),
-        notas: document.getElementById("ia-notes").value.trim() || null
-      };
-
-      const parametros = {
-        semanas: parseInt(document.getElementById("ia-weeks").value) || 6,
-        diasPorSemana: parseInt(document.getElementById("ia-days").value) || 4
-      };
-
-      const model = document.getElementById("ia-model").value;
-
-      const r = await fetch('/api/generate-plan-deepseek', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          compendio: compendioText || "",
-          catalogo,
-          cliente,
-          parametros,
-          generate,
-          model
-        })
-      });
-
-      const data = await r.json();
-      if (!r.ok) {
-        statusEl.innerHTML = `<span class="text-red-400">❌ ${data.error || 'Error desconocido'}</span>`;
-        return;
-      }
-
-      // Métricas de cache
-      const u = data.usage || {};
-      const cacheHit = u.prompt_cache_hit_tokens || 0;
-      const promptTotal = u.prompt_tokens || 0;
-      const cachePct = promptTotal ? Math.round((cacheHit / promptTotal) * 100) : 0;
-      statusEl.innerHTML = `<span class="text-green-400">✅ Generado. Cache hit: ${cacheHit}/${promptTotal} tokens (${cachePct}%) · Output: ${u.completion_tokens || '?'} tokens</span>`;
-
-      const result = data.result || {};
-      window._iaResult = { result, clientId };
-      renderIAResult(result, clientId);
-    } catch (e) {
-      statusEl.innerHTML = `<span class="text-red-400">❌ ${e.message}</span>`;
+  function parsePlanFromJSON() {
+    const raw = document.getElementById("planJsonInput")?.value.trim();
+    const statusEl = document.getElementById("jsonPlanStatus");
+    if (!raw) { showToast("Pega el JSON primero", true); return; }
+    let obj;
+    try { obj = JSON.parse(raw); }
+    catch (e) {
+      statusEl.innerHTML = `<span class="text-red-400">❌ JSON inválido: ${e.message}</span>`;
+      return;
     }
-  }
+    if (!obj || !Array.isArray(obj.days) || obj.days.length === 0) {
+      statusEl.innerHTML = `<span class="text-red-400">❌ El JSON debe tener "days" como arreglo no vacío</span>`;
+      return;
+    }
+    // Normalizar: asegurar setIndex/dayIndex, defaults, campos mínimos
+    const days = obj.days.map((d, di) => ({
+      dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
+      label: String(d.label || `Día ${di + 1}`),
+      exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
+        exerciseName: String(ex.exerciseName || '').trim(),
+        alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
+        sets: Array.isArray(ex.sets) && ex.sets.length > 0
+          ? ex.sets.map((s, si) => ({
+              setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
+              repsTarget: parseInt(s.repsTarget) || 8,
+              rirTarget: parseInt(s.rirTarget ?? 2),
+              load: parseFloat(s.load ?? 0) || 0,
+              restSeconds: parseInt(s.restSeconds ?? 90) || 90
+            }))
+          : []
+      })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+    })).filter(d => d.exercises.length > 0);
 
-  function renderIAResult(result, clientId) {
-    const preview = document.getElementById("parsedPlanPreview");
-    if (!preview) return;
-    let html = '';
-
-    if (result.plan && Array.isArray(result.plan.days)) {
-      // Normalizar usando misma lógica que parsePlanFromJSON
-      const obj = result.plan;
-      const days = obj.days.map((d, di) => ({
-        dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
-        label: String(d.label || `Día ${di + 1}`),
-        exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
-          exerciseName: String(ex.exerciseName || '').trim(),
-          alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
-          sets: Array.isArray(ex.sets) && ex.sets.length > 0
-            ? ex.sets.map((s, si) => ({
-                setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
-                repsTarget: parseInt(s.repsTarget) || 8,
-                rirTarget: parseInt(s.rirTarget ?? 2),
-                load: parseFloat(s.load ?? 0) || 0,
-                restSeconds: parseInt(s.restSeconds ?? 90) || 90
-              }))
-            : []
-        })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
-      })).filter(d => d.exercises.length > 0);
-
-      const planObj = {
-        weeks: parseInt(obj.weeks) || 6,
-        daysPerWeek: parseInt(obj.daysPerWeek) || days.length,
-        days
-      };
-      window._importedPlan = planObj;
-
-      const dayList = days.map(d => `
-        <div class="card p-3 mb-2">
-          <p class="font-semibold text-[#C9A84C] mb-1">${d.label}</p>
-          <ul class="text-sm space-y-1">
-            ${d.exercises.map(e => `<li>· ${e.exerciseName} — ${e.sets.length} × ${e.sets[0]?.repsTarget} reps RIR${e.sets[0]?.rirTarget}</li>`).join('')}
-          </ul>
-        </div>`).join('');
-      html += `<h3 class="font-bold text-[#C9A84C] mt-4 mb-2">📋 Plan de entrenamiento (${days.length} días)</h3>${dayList}`;
+    if (days.length === 0) {
+      statusEl.innerHTML = `<span class="text-red-400">❌ Ningún día con ejercicios válidos tras normalizar</span>`;
+      return;
     }
 
-    if (result.nutrition) {
-      const n = result.nutrition;
-      window._iaNutrition = n;
-      html += `<h3 class="font-bold text-[#C9A84C] mt-4 mb-2">🥗 Nutrición</h3>
-        <div class="card p-3 mb-2">
-          <div class="flex gap-3 flex-wrap mb-2 text-sm">
-            <span><span class="text-[#888]">Kcal:</span> <strong>${n.calorias||'—'}</strong></span>
-            <span><span class="text-[#888]">P:</span> <strong>${n.proteina||'—'}g</strong></span>
-            <span><span class="text-[#888]">C:</span> <strong>${n.carbos||'—'}g</strong></span>
-            <span><span class="text-[#888]">G:</span> <strong>${n.grasas||'—'}g</strong></span>
-          </div>
-          <pre class="text-xs text-[#888] whitespace-pre-wrap leading-relaxed">${n.texto||''}</pre>
-        </div>`;
-    }
-
-    if (result.supplements) {
-      window._iaSupplements = result.supplements;
-      html += `<h3 class="font-bold text-[#C9A84C] mt-4 mb-2">💊 Suplementación</h3>
-        <div class="card p-3 mb-2">
-          <pre class="text-xs text-[#888] whitespace-pre-wrap leading-relaxed">${result.supplements.texto||''}</pre>
-        </div>`;
-    }
-
-    html += `<button onclick="saveIAResult('${clientId}')" class="btn-primary w-full mt-3">💾 Guardar todo y activar</button>`;
-    preview.innerHTML = html;
-  }
-
-  async function saveIAResult(clientId) {
-    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
-    if (!clientId) { showToast("Cliente no especificado", true); return; }
-
-    try {
-      // 1) Plan de entrenamiento
-      if (window._importedPlan) {
-        const planRef = await addDoc(collection(db, "plans"), {
-          ...window._importedPlan,
-          coachId: currentCoach.uid,
-          clientId,
-          status: "active",
-          generatedBy: "deepseek-v4",
-          createdAt: new Date().toISOString()
-        });
-        await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
-        _autoAddExercisesToCatalog(window._importedPlan.days || []);
-      }
-
-      // 2) Nutrición
-      if (window._iaNutrition) {
-        const n = window._iaNutrition;
-        await updateDoc(doc(db, "clients", clientId), {
-          nutritionPlan: {
-            calorias: String(n.calorias || ""),
-            proteina: String(n.proteina || ""),
-            carbos:   String(n.carbos   || ""),
-            grasas:   String(n.grasas   || ""),
-            texto:    String(n.texto    || "")
-          }
-        });
-      }
-
-      // 3) Suplementación
-      if (window._iaSupplements) {
-        await updateDoc(doc(db, "clients", clientId), {
-          supplementPlan: { texto: String(window._iaSupplements.texto || "") }
-        });
-      }
-
-      showToast("✅ Generado por IA guardado y activado");
-      window._importedPlan = null;
-      window._iaNutrition = null;
-      window._iaSupplements = null;
-      document.getElementById("planBuilder").innerHTML = "";
-    } catch (e) {
-      showToast("Error al guardar: " + e.message, true);
-    }
+    const planObj = {
+      weeks: parseInt(obj.weeks) || 6,
+      daysPerWeek: parseInt(obj.daysPerWeek) || days.length,
+      days
+    };
+    statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${planObj.weeks} semanas, ${days.length} día(s)</span>`;
+    showParsedPreview(planObj);
+    window._importedPlan = planObj;
   }
 
   // ========== PARSER DE TEXTO → PLAN ==========
@@ -2287,9 +2104,8 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   // Exponer funciones del builder manual al scope global (usadas en onclick inline)
   window.parsePlanFromText = parsePlanFromText;
   window.parsePlanFromPDF = parsePlanFromPDF;
+  window.parsePlanFromJSON = parsePlanFromJSON;
   window.saveImportedPlan = saveImportedPlan;
-  window.generatePlanWithIA = generatePlanWithIA;
-  window.saveIAResult = saveIAResult;
   window.showClientDetail = showClientDetail;
   window.closeClientModal = closeClientModal;
   window.deleteExercise = deleteExercise;
@@ -2330,6 +2146,20 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   window.deleteTemplate = deleteTemplate;
   window.loadDashboard = loadDashboard;
 
+  // Configuración: guardar API key
+  document.getElementById("saveApiKeyBtn")?.addEventListener("click", () => {
+    const key = document.getElementById("apiKeyInput").value.trim();
+    if (key && key.startsWith("sk-ant-")) {
+      localStorage.setItem("vdsen_apikey", key);
+      document.getElementById("apiKeyInput").value = "••••••••••••••••";
+      showToast("API key guardada en este navegador. No se sube a ningún servidor.");
+    } else if (key) {
+      showToast("La clave debe comenzar con 'sk-ant-'", true);
+    } else {
+      showToast("Ingresa una clave válida", true);
+    }
+  });
+  
   // Subir compendio PDF — extracción inteligente: descarta páginas de farmacología,
   // nutrición, bibliografía y portada; conserva metodología de entrenamiento.
   document.getElementById("uploadCompendioBtn")?.addEventListener("click", async () => {
