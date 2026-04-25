@@ -1993,6 +1993,16 @@ function _buildExPanel(ejercicios, di) {
         '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
       '</div>'+
+      // Nota de sustitución (si existe)
+      (_exSubData && _exSubData.nota
+        ? '<div style="margin-top:8px;padding:6px 10px;background:rgba(200,165,74,.06);border-left:3px solid rgba(200,165,74,.3);border-radius:0 6px 6px 0;font-size:11px;color:var(--mt);line-height:1.5">'+
+            '📝 '+_exSubData.nota+
+          '</div>'
+        : '')+
+      // Ejercicio original (si fue sustituido)
+      (_exSubData && _exSubData.original && _exSubData.original !== nombre
+        ? '<div style="margin-top:4px;font-size:10px;color:var(--mt2)">Original: '+_exSubData.original+'</div>'
+        : '')+
     '</div>';
 
   // ── C. Nota de ejecución (ya mostrada en sección A) ───────────────────
@@ -2225,6 +2235,17 @@ function _refreshExPanelOnly() {
   if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
 }
 
+// ── Inferir patrón motor por palabras clave (fallback para ejercicios fuera del catálogo) ──
+function _inferMotorPattern(nombre) {
+  var n = (nombre||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  if (/press\s*(de\s*)?(banca|pecho|inclinado|declinado|convergente)|apertura|cruce\s*de\s*pol|pec\s*deck|press\s*(militar|arnold|hombro)|elevacion(es)?\s*(lateral|frontal)|extension\s*(de\s*)?tricep|press\s*frances|skull|fondos\s*(en\s*parallel|de\s*tricep)|kickback|empuje/i.test(n)) return 'Empuje';
+  if (/jalon|dominadas|pullover|remo|face\s*pull|curl\s*(bic|con\s*barra|alternado|concentr|polea|inclinado|spider|bayesian|predicador|scott|martillo|maquina|ez)|vuelos?\s*posterior|pec\s*fly\s*invert|reverse\s*pec|aduc|halar/i.test(n)) return 'Halar';
+  if (/sentadilla|prensa|hack\s*squat|leg\s*press|extension\s*de\s*cuad|zancada|goblet|split\s*squat|step\s*up|squat/i.test(n)) return 'Squat';
+  if (/peso\s*muerto|rdl|hip\s*thrust|femoral|glut|abduccion|nordico|good\s*morning|bisagra/i.test(n)) return 'Bisagra';
+  if (/plancha|crunch|rueda\s*abdom|elevacion\s*de\s*piernas|twist|core/i.test(n)) return 'Core';
+  return '';
+}
+
 function showExSubModal(di, ei) {
   var ej = (_EJERCICIOS_DIA || [])[ei] || {};
   var _exSubKey = 'exsub_'+CURRENT_WEEK+'_'+di+'_'+ei;
@@ -2235,12 +2256,21 @@ function showExSubModal(di, ei) {
   var motorPattern = catData ? catData.motorPattern : '';
   var curCurve = catData ? catData.resistanceCurve : '';
   var curMuscle = catData ? catData.muscleType : '';
+  var patternInferred = false;
 
-  // Etiquetas amigables
+  // Fallback: inferir patrón por keywords si no está en catálogo
+  if (!motorPattern) {
+    motorPattern = _inferMotorPattern(currentNombre);
+    if (motorPattern) patternInferred = true;
+  }
+
+  // Nota previa (si ya hubo sustitución)
+  var prevNota = (_exSubData && _exSubData.nota) ? _exSubData.nota : '';
+
   var curveLabel = {mid:'Tensión media', elongated:'Mayor tensión en elongación', shortened:'Mayor tensión en contracción'};
   var muscleLabel = {typeI:'Fibra lenta (resistencia)', typeIIx:'Fibra rápida (fuerza/hipertrofia)'};
 
-  // Catálogo combinado
+  // ── Construir lista de alternativas ──
   var merged = _getMergedCatalog();
   var currLower = currentNombre.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   var alts = [];
@@ -2251,7 +2281,6 @@ function showExSubModal(di, ei) {
         alts.push({ key: k, data: merged[k] });
       }
     });
-    // Ordenar: mismo perfil de resistencia primero, luego mismo tipo muscular, luego el resto
     alts.sort(function(a, b) {
       var scoreA = (a.data.resistanceCurve === curCurve ? 2 : 0) + (a.data.muscleType === curMuscle ? 1 : 0);
       var scoreB = (b.data.resistanceCurve === curCurve ? 2 : 0) + (b.data.muscleType === curMuscle ? 1 : 0);
@@ -2260,43 +2289,68 @@ function showExSubModal(di, ei) {
     });
   }
 
-  var altsHtml = '';
+  // ── Campo de nota ──
+  var notaHtml =
+    '<div style="margin-bottom:16px">'+
+      '<div style="font-size:10px;font-weight:700;color:var(--mt);letter-spacing:1px;margin-bottom:6px">MOTIVO DEL CAMBIO (opcional)</div>'+
+      '<textarea id="exSubNota" placeholder="Ej: molestia en hombro, sin máquina disponible, preferencia del cliente…" rows="2"'+
+        ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;'+
+        'color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;resize:none;line-height:1.5">'+prevNota+'</textarea>'+
+    '</div>';
+
+  // ── Selector manual de patrón (si no se infirió nada) ──
+  var patternSelectorHtml = '';
   if (!motorPattern) {
-    altsHtml = '<div style="padding:20px 0;text-align:center;color:var(--mt);font-size:13px;line-height:1.7">'
-      + '⚠ <strong style="color:var(--tx)">'+currentNombre+'</strong><br>no está en ningún catálogo.<br>'
-      + '<span style="font-size:12px">Pide al coach que lo agregue para ver alternativas similares.</span></div>';
-  } else if (!alts.length) {
-    altsHtml = '<div style="padding:20px 0;text-align:center;color:var(--mt);font-size:13px;line-height:1.7">'
-      + 'Sin alternativas para <strong style="color:var(--tx)">'+motorPattern+'</strong> en el catálogo.</div>';
-  } else {
-    altsHtml = alts.map(function(alt) {
-      var a = alt.key, ac = alt.data;
-      var safeA = a.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      var safeO = originalNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      var sameProfile = ac.resistanceCurve === curCurve && ac.muscleType === curMuscle;
-      var sameCurve = ac.resistanceCurve === curCurve;
-      var matchBadge = sameProfile
-        ? '<span style="font-size:9px;background:rgba(58,148,96,.2);border:1px solid rgba(58,148,96,.5);color:var(--grn);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">★ PERFIL IDÉNTICO</span>'
-        : (sameCurve ? '<span style="font-size:9px;background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);color:var(--accent);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">↻ MISMA CURVA</span>' : '');
-      var sourceTag = ac.source === 'coach'
-        ? '<span style="font-size:9px;color:rgba(108,150,255,.8)">catálogo coach</span> · '
-        : '';
-      var curveStr = curveLabel[ac.resistanceCurve] || ac.resistanceCurve || '—';
-      var muscleStr = ac.muscleType === 'typeIIx' ? 'Fuerza/Hipert.' : 'Resistencia';
-      return '<button onclick="applyExSub('+di+','+ei+',\''+safeA+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:left;padding:11px 14px;background:var(--surface2);border:1px solid '+(sameProfile?'rgba(58,148,96,.35)':sameCurve?'rgba(200,165,74,.25)':'var(--border)')+';border-radius:10px;margin-bottom:8px;cursor:pointer">'+
-        '<div style="display:flex;align-items:center;flex-wrap:wrap">'+
-          '<span style="font-size:13px;font-weight:600;color:var(--tx)">'+a+'</span>'+
-          matchBadge+
+    var patterns = ['Empuje','Halar','Squat','Bisagra','Core'];
+    patternSelectorHtml =
+      '<div style="margin-bottom:16px">'+
+        '<div style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:1px;margin-bottom:8px">'+
+          '⚠ Ejercicio no encontrado en catálogo. Selecciona el patrón motor:</div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+        patterns.map(function(p) {
+          return '<button onclick="showExSubModalWithPattern('+di+','+ei+',\''+p+'\')" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">'+p+'</button>';
+        }).join('')+
         '</div>'+
-        '<div style="font-size:10px;color:var(--mt);margin-top:3px">'+sourceTag+'Fatiga: '+ac.fatigueCost+' · '+curveStr+' · '+muscleStr+'</div>'+
-      '</button>';
-    }).join('');
+      '</div>';
+  }
+
+  var altsHtml = '';
+  if (patternSelectorHtml) {
+    altsHtml = ''; // se muestra el selector en su lugar
+  } else if (!alts.length) {
+    altsHtml = '<div style="padding:16px 0;text-align:center;color:var(--mt);font-size:13px">Sin alternativas para <strong style="color:var(--tx)">'+motorPattern+'</strong> en el catálogo.</div>';
+  } else {
+    altsHtml =
+      (patternInferred ? '<div style="font-size:10px;color:var(--gold);margin-bottom:8px">⚡ Patrón inferido: <strong>'+motorPattern+'</strong> — verifica que sea correcto</div>' : '')+
+      '<div style="font-size:10px;color:var(--mt);margin-bottom:10px">'+alts.length+' alternativas — ★ perfil idéntico primero</div>'+
+      alts.map(function(alt) {
+        var a = alt.key, ac = alt.data;
+        var safeA = a.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        var safeO = originalNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        var sameProfile = ac.resistanceCurve === curCurve && ac.muscleType === curMuscle;
+        var sameCurve = ac.resistanceCurve === curCurve;
+        var matchBadge = sameProfile
+          ? '<span style="font-size:9px;background:rgba(58,148,96,.2);border:1px solid rgba(58,148,96,.5);color:var(--grn);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">★ PERFIL IDÉNTICO</span>'
+          : (sameCurve ? '<span style="font-size:9px;background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);color:var(--accent);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">↻ MISMA CURVA</span>' : '');
+        var sourceTag = ac.source === 'coach' ? '<span style="font-size:9px;color:rgba(108,150,255,.8)">coach</span> · ' : '';
+        var curveStr = curveLabel[ac.resistanceCurve] || ac.resistanceCurve || '—';
+        var muscleStr = ac.muscleType === 'typeIIx' ? 'Fuerza/Hipert.' : 'Resistencia';
+        return '<button onclick="applyExSub('+di+','+ei+',\''+safeA+'\',\''+safeO+'\')" '+
+          'style="display:block;width:100%;text-align:left;padding:11px 14px;background:var(--surface2);'+
+          'border:1px solid '+(sameProfile?'rgba(58,148,96,.35)':sameCurve?'rgba(200,165,74,.25)':'var(--border)')+';'+
+          'border-radius:10px;margin-bottom:8px;cursor:pointer">'+
+          '<div style="display:flex;align-items:center;flex-wrap:wrap">'+
+            '<span style="font-size:13px;font-weight:600;color:var(--tx)">'+a+'</span>'+matchBadge+
+          '</div>'+
+          '<div style="font-size:10px;color:var(--mt);margin-top:3px">'+sourceTag+'Fatiga: '+ac.fatigueCost+' · '+curveStr+' · '+muscleStr+'</div>'+
+        '</button>';
+      }).join('');
   }
 
   var restoreHtml = (_exSubData && _exSubData.original && _exSubData.original !== currentNombre)
     ? (function() {
         var safeO = originalNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return '<button onclick="applyExSub('+di+','+ei+',\''+safeO+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:center;padding:10px;background:none;border:1px solid rgba(220,60,60,.4);border-radius:8px;color:#e05555;font-size:12px;cursor:pointer;margin-top:4px">↺ Restaurar original: '+originalNombre+'</button>';
+        return '<button onclick="applyExSub('+di+','+ei+',\''+safeO+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:center;padding:10px;background:none;border:1px solid rgba(220,60,60,.4);border-radius:8px;color:#e05555;font-size:12px;cursor:pointer;margin-top:8px">↺ Restaurar original: '+originalNombre+'</button>';
       })()
     : '';
 
@@ -2304,32 +2358,85 @@ function showExSubModal(di, ei) {
   if (!content) return;
   content.innerHTML =
     '<div style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:2px;margin-bottom:4px">CAMBIAR EJERCICIO</div>'+
-    '<div style="font-size:15px;font-weight:700;color:var(--tx);margin-bottom:4px">'+currentNombre+'</div>'+
-    (motorPattern
-      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">'+
+    '<div style="font-size:15px;font-weight:700;color:var(--tx);margin-bottom:8px">'+currentNombre+'</div>'+
+    (motorPattern && !patternSelectorHtml
+      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'+
           '<span style="font-size:10px;background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);color:var(--accent);padding:2px 8px;border-radius:5px">'+motorPattern+'</span>'+
           (curCurve?'<span style="font-size:10px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--mt);padding:2px 8px;border-radius:5px">'+curveLabel[curCurve]+'</span>':'')+
           (curMuscle?'<span style="font-size:10px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--mt);padding:2px 8px;border-radius:5px">'+muscleLabel[curMuscle]+'</span>':'')+
         '</div>'
-      : '<div style="margin-bottom:16px"></div>')+
-    (alts.length ? '<div style="font-size:10px;color:var(--mt);margin-bottom:10px;letter-spacing:.5px">'+alts.length+' alternativas — ★ perfil idéntico aparece primero</div>' : '')+
-    altsHtml+restoreHtml;
+      : '')+
+    notaHtml+
+    patternSelectorHtml+
+    altsHtml+
+    restoreHtml;
 
   var overlay = document.getElementById('exSubOverlay');
   if (overlay) overlay.style.display = 'flex';
 }
 
+// Mostrar alternativas después de seleccionar patrón manualmente
+function showExSubModalWithPattern(di, ei, pattern) {
+  var ej = (_EJERCICIOS_DIA || [])[ei] || {};
+  var _exSubKey = 'exsub_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  var _exSubData = LOGS[_exSubKey] || null;
+  var currentNombre = (_exSubData && _exSubData.nombre) ? _exSubData.nombre : (ej.nombre || ej.exerciseName || '');
+  var originalNombre = (_exSubData && _exSubData.original) ? _exSubData.original : (ej.nombre || ej.exerciseName || '');
+  var prevNota = (_exSubData && _exSubData.nota) ? _exSubData.nota : '';
+  var curveLabel = {mid:'Tensión media', elongated:'Mayor tensión en elongación', shortened:'Mayor tensión en contracción'};
+  var merged = _getMergedCatalog();
+  var currLower = currentNombre.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  var alts = [];
+  Object.keys(merged).forEach(function(k) {
+    var kNorm = k.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if (kNorm !== currLower && merged[k].motorPattern === pattern) alts.push({ key: k, data: merged[k] });
+  });
+  alts.sort(function(a,b){ return a.key.localeCompare(b.key); });
+
+  var altsHtml = alts.map(function(alt) {
+    var a = alt.key, ac = alt.data;
+    var safeA = a.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var safeO = originalNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var curveStr = curveLabel[ac.resistanceCurve] || ac.resistanceCurve || '—';
+    var muscleStr = ac.muscleType === 'typeIIx' ? 'Fuerza/Hipert.' : 'Resistencia';
+    return '<button onclick="applyExSub('+di+','+ei+',\''+safeA+'\',\''+safeO+'\')" '+
+      'style="display:block;width:100%;text-align:left;padding:11px 14px;background:var(--surface2);'+
+      'border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer">'+
+      '<span style="font-size:13px;font-weight:600;color:var(--tx)">'+a+'</span>'+
+      '<div style="font-size:10px;color:var(--mt);margin-top:3px">Fatiga: '+ac.fatigueCost+' · '+curveStr+' · '+muscleStr+'</div>'+
+    '</button>';
+  }).join('');
+
+  var content = document.getElementById('exSubContent');
+  if (!content) return;
+  content.innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'+
+      '<button onclick="showExSubModal('+di+','+ei+')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--mt);font-size:12px;padding:4px 10px;cursor:pointer">← Volver</button>'+
+      '<span style="font-size:13px;font-weight:700;color:var(--tx)">'+currentNombre+'</span>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:12px">Patrón: '+pattern+' · '+alts.length+' alternativas</div>'+
+    '<div style="margin-bottom:14px">'+
+      '<div style="font-size:10px;font-weight:700;color:var(--mt);letter-spacing:1px;margin-bottom:6px">MOTIVO DEL CAMBIO (opcional)</div>'+
+      '<textarea id="exSubNota" placeholder="Ej: sin máquina disponible, molestia articular…" rows="2"'+
+        ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;'+
+        'color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;resize:none;line-height:1.5">'+prevNota+'</textarea>'+
+    '</div>'+
+    altsHtml;
+}
+
 function applyExSub(di, ei, newNombre, originalNombre) {
+  var nota = (document.getElementById('exSubNota') || {}).value || '';
   var key = 'exsub_'+CURRENT_WEEK+'_'+di+'_'+ei;
   if (newNombre.toLowerCase().trim() === originalNombre.toLowerCase().trim()) {
     delete LOGS[key];
   } else {
-    LOGS[key] = { nombre: newNombre, original: originalNombre };
+    LOGS[key] = { nombre: newNombre, original: originalNombre, nota: nota.trim() };
   }
   saveLogs();
   var overlay = document.getElementById('exSubOverlay');
   if (overlay) overlay.style.display = 'none';
   _refreshExPanelOnly();
+  showToast('🔄 Ejercicio cambiado'+(nota?' · nota guardada':''));
 }
 
 function renderEntrenamiento() {
