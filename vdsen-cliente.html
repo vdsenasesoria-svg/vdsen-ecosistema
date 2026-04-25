@@ -5099,9 +5099,23 @@ function exportPDF() {
   // ══════════════════════════════════════════════
   // ENTRENAMIENTO
   // ══════════════════════════════════════════════
-  if(PLAN.entrenamiento?.texto){
+  // Obtener texto: primero el campo texto, luego generar desde sesiones estructuradas
+  var _eText = PLAN.entrenamiento?.texto;
+  if (!_eText && PLAN.entrenamiento?.sesiones?.length) {
+    _eText = PLAN.entrenamiento.sesiones.map(function(ses, di) {
+      var header = (ses.dia || ses.nombre || ('SESIÓN ' + (di+1))).toUpperCase();
+      var body = ses.contenido || (ses.exercises||[]).map(function(ej, ei) {
+        var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+        var rr = ej.repsRange || (ej.sets && ej.sets[0] ? (ej.sets[0].repsTarget||'8-12') : '8-12');
+        var rv = ej.rir || (ej.sets && ej.sets[0] ? (ej.sets[0].rirTarget||2) : 2);
+        return (ei+1)+'. '+(ej.nombre||ej.exerciseName||'')+' | '+ns+'x'+rr+' | RIR '+rv;
+      }).join('\n');
+      return header + '\n' + body;
+    }).join('\n\n');
+  }
+  if(_eText){
     np(); secHeader('PLAN DE ENTRENAMIENTO',[45,80,150]);
-    var eLines = PLAN.entrenamiento.texto.split('\n');
+    var eLines = _eText.split('\n');
     eLines.forEach(function(line){
       var lt = line.trim();
       if(!lt){gap(2);return;}
@@ -5147,9 +5161,20 @@ function exportPDF() {
   // ══════════════════════════════════════════════
   // NUTRICIÓN
   // ══════════════════════════════════════════════
-  if(PLAN.nutricion?.texto){
+  // Obtener texto: primero el campo texto, luego generar desde campos de macros
+  var _nText = PLAN.nutricion?.texto;
+  if (!_nText && PLAN.nutricion) {
+    var _n = PLAN.nutricion;
+    var _nParts = [];
+    if (_n.calorias) _nParts.push('TOTAL: ' + _n.calorias + ' kcal/día');
+    if (_n.proteina) _nParts.push('Proteína:       ' + _n.proteina + ' g');
+    if (_n.carbos)   _nParts.push('Carbohidratos:  ' + _n.carbos   + ' g');
+    if (_n.grasas)   _nParts.push('Grasas:         ' + _n.grasas   + ' g');
+    if (_nParts.length) _nText = 'MACROS DIARIOS\n' + _nParts.join('\n');
+  }
+  if(_nText){
     np(); secHeader('PLAN NUTRICIONAL',[150,110,40]);
-    var nLines = PLAN.nutricion.texto.split('\n');
+    var nLines = _nText.split('\n');
     nLines.forEach(function(line){
       var lt = line.trim().replace(/^[─•]\s*/,'');
       if(!lt){gap(2);return;}
