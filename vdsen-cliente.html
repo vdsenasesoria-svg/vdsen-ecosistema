@@ -5044,248 +5044,323 @@ function formatTextoSup(texto) {
 function exportPDF() {
   if (!PLAN) return;
   const {jsPDF} = window.jspdf;
-  const doc = new jsPDF({format:'a4',unit:'mm'});
-  const M=15, W=180; let y=0;
+  const doc = new jsPDF({format:'a4', unit:'mm'});
+  const M=14, W=182;
 
-  function np(){
-    doc.addPage(); y=18;
-    doc.setFontSize(7); doc.setTextColor(120,95,45); doc.setFont('helvetica','bold');
-    doc.text('VDSEN v3.2 — '+(PLAN.nombre||'').toUpperCase()+' — DOCUMENTO PERSONAL',M,9);
-    doc.setDrawColor(190,155,65); doc.setLineWidth(0.2); doc.line(M,11,210-M,11);
-    doc.setTextColor(40,40,40);
+  // ── Paleta de colores ────────────────────────────────────────────
+  var G=[200,165,74], GD=[155,120,38], GB=[252,246,222];   // gold
+  var I0=[20,18,15], I1=[55,50,44], I2=[100,93,82], I3=[148,138,120]; // ink
+  var BG=[252,251,248], LN=[220,212,195];                  // bg / line
+  var BL=[40,75,148], BLB=[233,240,255];                   // blue
+  var GR=[34,120,80], GRB=[224,246,234];                   // green
+  var OR=[192,100,24], ORB=[255,238,215];                  // orange
+  var PU=[100,48,150], PUB=[243,232,255];                  // purple
+  var W2=[255,255,255], SL=[248,247,243];                  // white / slight-gray
+  var CLEAN = /[^\x00-\x7FáéíóúÁÉÍÓÚñÑüÜ¿¡·×→↑↓\-–—\/()%.,;:=+~|#@!?"']/g;
+
+  let y = 22;
+
+  // ── Cabecera de página interna ───────────────────────────────────
+  function _hdr() {
+    doc.setFillColor(242,240,234); doc.rect(0,0,210,15,'F');
+    doc.setFillColor(...G); doc.rect(0,0,5,15,'F');
+    doc.setDrawColor(...LN); doc.setLineWidth(0.2); doc.line(5,15,210,15);
+    doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+    doc.setTextColor(...G); doc.text('VDSEN', M+1, 10);
+    doc.setFont('helvetica','normal'); doc.setTextColor(...I2);
+    doc.text('v3.2  ·  '+(PLAN.nombre||'MI PLAN').toUpperCase()+'  ·  PLAN PERSONALIZADO', M+15, 10);
   }
-  function chk(n){ if(y+n>276) np(); }
-  function secHeader(txt,col){
-    chk(14); 
-    doc.setFillColor(...col); doc.rect(M,y,W,9,'F');
-    doc.setFontSize(11); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
-    doc.text(txt,M+4,y+6.5); y+=12;
+
+  // ── Pie de página con número ─────────────────────────────────────
+  function _ftr() {
+    var pn = doc.internal.getCurrentPageInfo().pageNumber;
+    doc.setFillColor(242,240,234); doc.rect(0,288,210,9,'F');
+    doc.setDrawColor(...LN); doc.setLineWidth(0.2); doc.line(0,288,210,288);
+    doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(...I3);
+    doc.text('Motor VDSEN v3.2 © 2026 — Documento personal — Uso exclusivo bajo supervisión de coach certificado.', M, 293.5);
+    doc.setFont('helvetica','bold'); doc.setTextColor(...G);
+    doc.text(''+pn, 210-M, 293.5, {align:'right'});
   }
-  function subHeader(txt){
-    chk(10);
-    doc.setDrawColor(190,155,65); doc.setLineWidth(0.3); doc.line(M,y,M+W,y); y+=2;
-    doc.setFontSize(9.5); doc.setTextColor(170,130,45); doc.setFont('helvetica','bold');
-    doc.text(txt,M,y+4); y+=8;
+
+  // ── Nueva página ─────────────────────────────────────────────────
+  function np() { _ftr(); doc.addPage(); y=22; _hdr(); }
+
+  function chk(n) { if(y+n>282) np(); }
+
+  // ── Encabezado de sección (barra coloreada) ──────────────────────
+  function secH(txt, col, icon) {
+    chk(18);
+    doc.setFillColor(...col); doc.rect(M, y, W, 12, 'F');
+    doc.setFillColor(...G);   doc.rect(M, y, 4, 12, 'F');
+    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...W2);
+    doc.text((icon||'◆')+' '+txt, M+8, y+8.5);
+    y += 15;
   }
-  function bodyText(txt,opts){
+
+  // ── Cabecera de día/sesión ───────────────────────────────────────
+  function dayH(txt) {
+    chk(15);
+    doc.setFillColor(...BLB); doc.rect(M, y, W, 10, 'F');
+    doc.setFillColor(...BL);  doc.rect(M, y, 4, 10, 'F');
+    doc.setFontSize(9.5); doc.setFont('helvetica','bold'); doc.setTextColor(...BL);
+    doc.text(txt.toUpperCase(), M+8, y+7.2);
+    y += 13;
+  }
+
+  // ── Tag de color (retorna el ancho usado) ────────────────────────
+  function tg(label, bgc, fgc, tx, ty) {
+    var p=2.5; doc.setFontSize(7); doc.setFont('helvetica','bold');
+    var tw = doc.getTextWidth(label)+p*2;
+    doc.setFillColor(...bgc); doc.rect(tx, ty-4.2, tw, 5.8, 'F');
+    doc.setTextColor(...fgc); doc.text(label, tx+p, ty);
+    return tw+2;
+  }
+
+  // ── Fila de ejercicio (card style) ───────────────────────────────
+  function exR(num, name, ns, rr, rir, odd) {
+    var rh=10; chk(rh+1);
+    // fondo alternante
+    doc.setFillColor(...(odd ? SL : W2)); doc.rect(M, y, W, rh, 'F');
+    // borde inferior sutil
+    doc.setDrawColor(...LN); doc.setLineWidth(0.12); doc.line(M+10, y+rh, M+W, y+rh);
+    // badge de número
+    doc.setFillColor(...G); doc.rect(M+2, y+2, 6.5, 6, 'F');
+    doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(...I0);
+    doc.text(''+num, M+5.25, y+6.8, {align:'center'});
+    // nombre del ejercicio
+    var nm = String(name); if(nm.length>41) nm=nm.substring(0,40)+'…';
+    doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(...I0);
+    doc.text(nm, M+11.5, y+6.8);
+    // tags a la derecha
+    var tx = M+W-52;
+    tx += tg(ns+'×'+rr, BL, W2, tx, y+6.6);
+    tg('RIR '+rir, GR, W2, tx, y+6.6);
+    y += rh;
+  }
+
+  // ── Subheader dorado (comidas, suplementos) ───────────────────────
+  function subH(txt) {
+    chk(12); y+=2;
+    doc.setFillColor(...GB); doc.rect(M, y, W, 9, 'F');
+    doc.setFillColor(...GD); doc.rect(M, y, 3, 9, 'F');
+    doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(...GD);
+    doc.text(txt.toUpperCase(), M+7, y+6.3);
+    y+=12;
+  }
+
+  // ── Texto normal ─────────────────────────────────────────────────
+  function bTxt(txt, opts) {
     opts=opts||{};
-    doc.setFontSize(opts.size||8.5); 
-    doc.setFont('helvetica',opts.style||'normal'); 
-    doc.setTextColor(...(opts.color||[38,38,38]));
-    doc.splitTextToSize(txt,W).forEach(function(l){chk(5);doc.text(l,M+(opts.indent||0),y);y+=4.5;});
+    var c=opts.col||I1; doc.setTextColor(c[0],c[1],c[2]);
+    doc.setFontSize(opts.sz||8.5); doc.setFont('helvetica', opts.st||'normal');
+    doc.splitTextToSize(txt, W-(opts.ind||0)).forEach(function(l){
+      chk(5); doc.text(l, M+(opts.ind||0), y); y+=4.8;
+    });
   }
+
+  // ── Caja visual de macro ─────────────────────────────────────────
+  function macroBox(label, val, unit, bgc, ac, x) {
+    var bw=43, bh=26;
+    doc.setFillColor(...bgc); doc.rect(x, y, bw, bh, 'F');
+    doc.setFillColor(...ac);  doc.rect(x, y+bh-2.5, bw, 2.5, 'F');
+    doc.setFontSize(6.5); doc.setFont('helvetica','bold'); doc.setTextColor(...ac);
+    doc.text(label.toUpperCase(), x+bw/2, y+7, {align:'center'});
+    doc.setFontSize(18); doc.setFont('helvetica','bold'); doc.setTextColor(...I0);
+    doc.text(String(val||'—'), x+bw/2, y+19, {align:'center'});
+    doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(...I2);
+    doc.text(unit, x+bw/2, y+23.5, {align:'center'});
+  }
+
   function gap(n){y+=n||3;}
 
-  // ══════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════
   // PORTADA
-  // ══════════════════════════════════════════════
-  doc.setFillColor(8,9,9); doc.rect(0,0,210,297,'F');
-  doc.setFillColor(200,165,74); doc.rect(0,0,6,297,'F');
-  doc.setTextColor(200,165,74); doc.setFontSize(32); doc.setFont('helvetica','bold');
-  doc.text('MI PLAN VDSEN',18,50);
-  doc.setFontSize(11); doc.setTextColor(155,145,120); doc.setFont('helvetica','normal');
-  doc.text('v3.2 — ENTRENAMIENTO · NUTRICIÓN · SUPLEMENTACIÓN',18,60);
-  doc.setDrawColor(200,165,74); doc.setLineWidth(0.4); doc.line(18,67,192,67);
-  doc.setFontSize(14); doc.setTextColor(220,210,190); doc.setFont('helvetica','bold');
-  doc.text((PLAN.nombre||'').toUpperCase(), 18, 82);
-  doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(130,120,100);
-  var coverData = [
-    'Objetivo: '+(PLAN.objetivo||'—')+'   |   '+(PLAN.sexo||'—'),
-    'Peso: '+(PLAN.peso||'—')+' kg   |   LBM: '+(PLAN.lbm||'—')+' kg   |   %BF: '+(PLAN.pct||PLAN.pctGrasa||'—')+'%',
-    'Generado: '+new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'})
+  // ══════════════════════════════════════════════════════════════════
+  doc.setFillColor(16,14,12); doc.rect(0,0,210,297,'F');
+  // franja dorada izquierda
+  doc.setFillColor(...G); doc.rect(0,0,7,297,'F');
+  // borde superior oscuro complementario
+  doc.setFillColor(...GD); doc.rect(7,0,203,3,'F');
+
+  // branding top
+  doc.setFontSize(8.5); doc.setFont('helvetica','bold');
+  doc.setTextColor(...G); doc.text('VDSEN ENTRENAMIENTO CIENTÍFICO', 18, 34);
+  doc.setFontSize(7); doc.setFont('helvetica','normal');
+  doc.setTextColor(108,98,76); doc.text('Sistema de Progresión Basado en Evidencia  ·  Motor v3.2', 18, 41);
+
+  // línea divisora
+  doc.setDrawColor(GD[0],GD[1],GD[2]); doc.setLineWidth(0.3); doc.line(18,48,192,48);
+
+  // título principal
+  doc.setFontSize(38); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+  doc.text('MI PLAN', 18, 70);
+  doc.setFontSize(11); doc.setFont('helvetica','normal'); doc.setTextColor(145,132,105);
+  doc.text('ENTRENAMIENTO  ·  NUTRICIÓN  ·  SUPLEMENTACIÓN', 18, 78);
+
+  // tarjeta del cliente
+  doc.setFillColor(28,25,20); doc.rect(18,92,174,75,'F');
+  doc.setFillColor(...G);     doc.rect(18,92,5,75,'F');
+  doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.setTextColor(218,208,180);
+  doc.text((PLAN.nombre||'CLIENTE').toUpperCase(), 30, 110);
+  doc.setDrawColor(GD[0],GD[1],GD[2]); doc.setLineWidth(0.2); doc.line(30,114,185,114);
+
+  // stats 2 columnas
+  var sts=[
+    ['OBJETIVO', PLAN.objetivo||'—'],
+    ['SEXO',     PLAN.sexo||'—'],
+    ['PESO',     (PLAN.peso||'—')+' kg'],
+    ['MASA MAGRA',(PLAN.lbm||'—')+' kg'],
+    ['% GRASA',  (PLAN.pct||PLAN.pctGrasa||'—')+'%'],
+    ['GENERADO',  new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})]
   ];
-  coverData.forEach(function(l,i){doc.text(l,18,95+i*8);});
+  var sx0=30, sy0=122, cW=87;
+  sts.forEach(function(s,i){
+    var cx=sx0+(i%2===1?cW:0), cy=sy0+Math.floor(i/2)*17;
+    doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(98,88,68);
+    doc.text(s[0], cx, cy);
+    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(195,182,150);
+    doc.text(s[1], cx, cy+7.5);
+  });
 
-  // ══════════════════════════════════════════════
+  // footer portada
+  doc.setDrawColor(58,52,40); doc.setLineWidth(0.15); doc.line(18,272,192,272);
+  doc.setFontSize(7); doc.setFont('helvetica','italic'); doc.setTextColor(65,58,46);
+  doc.text('Documento personal — Ciclo de 6 semanas — Motor VDSEN v3.2 © 2026', 18, 278);
+
+  // ══════════════════════════════════════════════════════════════════
   // ENTRENAMIENTO
-  // ══════════════════════════════════════════════
-  // Obtener texto: primero el campo texto, luego generar desde sesiones estructuradas
-  var _eText = PLAN.entrenamiento?.texto;
-  if (!_eText && PLAN.entrenamiento?.sesiones?.length) {
-    _eText = PLAN.entrenamiento.sesiones.map(function(ses, di) {
-      var header = (ses.dia || ses.nombre || ('SESIÓN ' + (di+1))).toUpperCase();
-      var body = ses.contenido || (ses.exercises||[]).map(function(ej, ei) {
+  // ══════════════════════════════════════════════════════════════════
+  var hasSes = PLAN.entrenamiento && PLAN.entrenamiento.sesiones && PLAN.entrenamiento.sesiones.length;
+  var _eText = PLAN.entrenamiento ? PLAN.entrenamiento.texto : null;
+
+  if (hasSes) {
+    // ── Formato visual de tarjetas de ejercicios ──
+    np(); secH('PLAN DE ENTRENAMIENTO', BL, '◆');
+    PLAN.entrenamiento.sesiones.forEach(function(ses, di){
+      var lbl = (ses.dia || ses.nombre || ('SESIÓN '+(di+1))).toUpperCase();
+      dayH(lbl);
+      var exs = ses.exercises || [];
+      if(!exs.length && ses.contenido){
+        ses.contenido.split('\n').forEach(function(l){
+          var lt=l.trim(); if(lt) bTxt(lt, {sz:8.5, col:I1, ind:4});
+        });
+        gap(4); return;
+      }
+      exs.forEach(function(ej, ei){
+        var nm = ej.nombre || ej.exerciseName || '';
         var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
-        var rr = ej.repsRange || (ej.sets && ej.sets[0] ? (ej.sets[0].repsTarget||'8-12') : '8-12');
-        var rv = ej.rir || (ej.sets && ej.sets[0] ? (ej.sets[0].rirTarget||2) : 2);
-        return (ei+1)+'. '+(ej.nombre||ej.exerciseName||'')+' | '+ns+'x'+rr+' | RIR '+rv;
-      }).join('\n');
-      return header + '\n' + body;
-    }).join('\n\n');
-  }
-  if(_eText){
-    np(); secHeader('PLAN DE ENTRENAMIENTO',[45,80,150]);
-    var eLines = _eText.split('\n');
-    eLines.forEach(function(line){
-      var lt = line.trim();
+        var rr = ej.repsRange || (ej.sets&&ej.sets[0] ? (ej.sets[0].repsTarget||'8-12') : '8-12');
+        var rv = ej.rir       || (ej.sets&&ej.sets[0] ? (ej.sets[0].rirTarget||2) : 2);
+        exR(ei+1, nm, ns, rr, rv, ei%2===0);
+      });
+      gap(7);
+    });
+  } else if (_eText) {
+    // ── Fallback: plan en formato texto ──
+    np(); secH('PLAN DE ENTRENAMIENTO', BL, '◆');
+    _eText.split('\n').forEach(function(line){
+      var lt=line.trim();
       if(!lt){gap(2);return;}
-      // Limpiar caracteres no soportados
-      lt = lt.replace(/[^\x00-\x7FáéíóúÁÉÍÓÚñÑüÜ¿¡·×→↑↓★☆•°²³\-–—]/g,'');
+      lt=lt.replace(CLEAN,'');
       if(!lt.trim()){gap(1);return;}
-      // Cabecera de sesión: SESION N: o DÍA N
-      if(/^(SESI[OÓ]N\s*\d|D[IÍ]A\s*\d)/i.test(lt)){
-        subHeader(lt); return;
-      }
-      // Ejercicio numerado
+      if(/^(SESI[OÓ]N\s*\d|D[IÍ]A\s*\d)/i.test(lt)){ dayH(lt); return; }
       if(/^\d+[.)]\s+/.test(lt)){
-        chk(6);
-        doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(30,30,30);
-        doc.splitTextToSize(lt,W-4).forEach(function(l){chk(5);doc.text(l,M+2,y);y+=5;});
-        doc.setFont('helvetica','normal');
+        chk(7); doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(...I0);
+        doc.splitTextToSize(lt,W-4).forEach(function(l){chk(5);doc.text(l,M+2,y);y+=5.2;});
         return;
       }
-      // Nota técnica
-      if(/^Nota:/i.test(lt)){
-        doc.setFontSize(7.5); doc.setFont('helvetica','italic'); doc.setTextColor(100,90,70);
-        doc.splitTextToSize(lt,W-8).forEach(function(l){chk(4);doc.text(l,M+6,y);y+=4;});
-        doc.setFont('helvetica','normal'); doc.setTextColor(38,38,38);
-        gap(1); return;
-      }
-      // Progresión / notas generales en mayúsculas
-      if(lt===lt.toUpperCase()&&lt.length>3&&lt.length<70&&!/^\d/.test(lt)){
-        chk(7);
-        doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(140,100,30);
-        doc.splitTextToSize(lt,W).forEach(function(l){chk(5);doc.text(l,M,y);y+=5;});
-        doc.setFont('helvetica','normal'); doc.setTextColor(38,38,38);
-        return;
-      }
-      // Separador
-      if(/^[─═\-]{5,}/.test(lt)){
-        chk(4);doc.setDrawColor(190,155,65);doc.setLineWidth(0.15);doc.line(M,y,210-M,y);y+=3;return;
-      }
-      // Texto normal
-      bodyText(lt);
+      if(lt===lt.toUpperCase()&&lt.length>3&&lt.length<70&&!/^\d/.test(lt)){ subH(lt); return; }
+      if(/^[─═\-]{5,}/.test(lt)){chk(4);doc.setDrawColor(...G);doc.setLineWidth(0.15);doc.line(M,y,210-M,y);y+=3;return;}
+      bTxt(lt);
     });
   }
 
-  // ══════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════
   // NUTRICIÓN
-  // ══════════════════════════════════════════════
-  // Obtener texto: primero el campo texto, luego generar desde campos de macros
-  var _nText = PLAN.nutricion?.texto;
-  if (!_nText && PLAN.nutricion) {
-    var _n = PLAN.nutricion;
-    var _nParts = [];
-    if (_n.calorias) _nParts.push('TOTAL: ' + _n.calorias + ' kcal/día');
-    if (_n.proteina) _nParts.push('Proteína:       ' + _n.proteina + ' g');
-    if (_n.carbos)   _nParts.push('Carbohidratos:  ' + _n.carbos   + ' g');
-    if (_n.grasas)   _nParts.push('Grasas:         ' + _n.grasas   + ' g');
-    if (_nParts.length) _nText = 'MACROS DIARIOS\n' + _nParts.join('\n');
+  // ══════════════════════════════════════════════════════════════════
+  var _nText = PLAN.nutricion ? PLAN.nutricion.texto : null;
+  // Siempre construir texto desde macros si existe el campo
+  var _nMacroBuilt = null;
+  if(PLAN.nutricion){
+    var _n=PLAN.nutricion, _np=[];
+    if(_n.calorias) _np.push('TOTAL: '+_n.calorias+' kcal/día');
+    if(_n.proteina) _np.push('Proteína: '+_n.proteina+' g');
+    if(_n.carbos)   _np.push('Carbohidratos: '+_n.carbos+' g');
+    if(_n.grasas)   _np.push('Grasas: '+_n.grasas+' g');
+    if(_np.length && !_nText) _nMacroBuilt = 'MACROS DIARIOS\n'+_np.join('\n');
   }
-  if(_nText){
-    np(); secHeader('PLAN NUTRICIONAL',[150,110,40]);
-    var nLines = _nText.split('\n');
-    nLines.forEach(function(line){
-      var lt = line.trim().replace(/^[─•]\s*/,'');
-      if(!lt){gap(2);return;}
-      lt = lt.replace(/[^\x00-\x7FáéíóúÁÉÍÓÚñÑüÜ¿¡·×→↑↓★☆•°²³\-–—\/()%.,;:=+~|]/g,'');
-      if(!lt.trim()){gap(1);return;}
-      // Cabecera de comida
-      if(/^(COMIDA\s*\d|DESAYUNO|ALMUERZO|CENA|PRE.?ENTRENO|POST.?ENTRENO|SNACK|COLACI)/i.test(lt)){
-        subHeader(lt); return;
+  var _nFinal = _nText || _nMacroBuilt;
+
+  if(_nFinal || PLAN.nutricion){
+    np(); secH('PLAN NUTRICIONAL', OR, '◈');
+
+    // ── Cajas de macros visuales ──
+    if(PLAN.nutricion){
+      var _nu=PLAN.nutricion;
+      if(_nu.calorias||_nu.proteina||_nu.carbos||_nu.grasas){
+        chk(32); var bx=M;
+        if(_nu.calorias){ macroBox('Calorías',''+_nu.calorias,'kcal / día', ORB, OR, bx); bx+=45; }
+        if(_nu.proteina){ macroBox('Proteína',''+_nu.proteina,'g / día',    BLB, BL, bx); bx+=45; }
+        if(_nu.carbos)  { macroBox('Carbos',  ''+_nu.carbos,  'g / día',   GRB, GR, bx); bx+=45; }
+        if(_nu.grasas)  { macroBox('Grasas',  ''+_nu.grasas,  'g / día',   PUB, PU, bx); }
+        y+=30; gap(5);
       }
-      // Macros por comida
-      if(/^Macros\s*:/i.test(lt)){
-        chk(5);
-        doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(170,130,45);
-        doc.text(lt,M+2,y); y+=5;
-        doc.setFont('helvetica','normal'); doc.setTextColor(38,38,38);
-        return;
-      }
-      // Total / verificación
-      if(/^(TOTAL|VERIFICACI|LBM|BMR|TDEE|EA\s*[:=]|Prote[ií]na|Carbohidratos|Grasas)/i.test(lt)){
-        chk(5);
-        doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(60,60,60);
-        doc.splitTextToSize(lt,W).forEach(function(l){chk(5);doc.text(l,M,y);y+=5;});
-        doc.setFont('helvetica','normal'); doc.setTextColor(38,38,38);
-        return;
-      }
-      // Ingrediente con gramos
-      if(/\d+\s*(g|ml|pza)/i.test(lt)){
-        chk(5);
-        // Separar nombre de cantidad
-        var igMatch = lt.match(/^(.+?)\s*[:]\s*(\d+(?:\.\d+)?\s*(?:g|ml|pza))/i);
-        if(igMatch){
-          doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(38,38,38);
-          doc.text(igMatch[1].trim(),M+4,y);
-          doc.setFont('helvetica','bold'); doc.setTextColor(170,130,45);
-          doc.text(igMatch[2],M+W-25,y); y+=5;
-          doc.setFont('helvetica','normal'); doc.setTextColor(38,38,38);
-        } else {
-          bodyText(lt,{indent:4});
+    }
+
+    // ── Detalle textual del plan nutricional ──
+    if(_nFinal){
+      _nFinal.split('\n').forEach(function(line){
+        var lt=line.trim().replace(/^[─•]\s*/,'');
+        if(!lt){gap(2);return;}
+        lt=lt.replace(CLEAN,'');
+        if(!lt.trim()){gap(1);return;}
+        if(/^(COMIDA\s*\d|DESAYUNO|ALMUERZO|CENA|PRE.?ENTRENO|POST.?ENTRENO|SNACK|COLACI)/i.test(lt)){ subH(lt); return; }
+        if(/^(TOTAL|MACROS?\s*(DIARIOS)?|LBM|BMR|TDEE|Prote[ií]na|Carbohidratos|Grasas)\s*[:]/i.test(lt)){
+          chk(6); doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(...I1);
+          doc.text(lt,M,y); y+=5.5; doc.setFont('helvetica','normal'); return;
         }
-        return;
-      }
-      // Título en mayúsculas
-      if(lt===lt.toUpperCase()&&lt.length>3&&lt.length<70){
-        chk(7);
-        doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(140,100,30);
-        doc.splitTextToSize(lt,W).forEach(function(l){chk(5);doc.text(l,M,y);y+=5;});
-        doc.setFont('helvetica','normal'); doc.setTextColor(38,38,38);
-        return;
-      }
-      // Descripción
-      if(/^Descripci[oó]n/i.test(lt)){
-        bodyText(lt,{size:7.5,style:'italic',color:[100,90,70],indent:2}); return;
-      }
-      bodyText(lt);
-    });
+        if(/\d+\s*(g|ml|pza)/i.test(lt)){
+          var igM=lt.match(/^(.+?)\s*[:]\s*(\d+(?:\.\d+)?\s*(?:g|ml|pza))/i);
+          if(igM){
+            chk(5);
+            doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(...I1);
+            doc.text(igM[1].trim(),M+4,y);
+            doc.setFont('helvetica','bold'); doc.setTextColor(...OR);
+            doc.text(igM[2],M+W-22,y); y+=5.2;
+            doc.setFont('helvetica','normal'); doc.setTextColor(...I1);
+          } else { bTxt(lt,{ind:4}); }
+          return;
+        }
+        if(lt===lt.toUpperCase()&&lt.length>3&&lt.length<70){ subH(lt); return; }
+        bTxt(lt);
+      });
+    }
   }
 
-  // ══════════════════════════════════════════════
-  // SUSTITUCIONES
-  // ══════════════════════════════════════════════
-  if(PLAN.sustituciones){
-    np(); secHeader('TABLA DE SUSTITUCIONES',[140,100,35]);
-    PLAN.sustituciones.split('\n').forEach(function(line){
-      var lt = line.trim();
-      if(!lt){gap(1.5);return;}
-      lt = lt.replace(/[^\x00-\x7FáéíóúÁÉÍÓÚñÑüÜ¿¡·×→↑↓★☆•°²³\-–—\/()%.,;:=+~|]/g,'');
-      if(!lt.trim()) return;
-      if(lt===lt.toUpperCase()&&lt.length>3&&lt.length<70){
-        chk(7); doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(140,100,30);
-        doc.text(lt,M,y); y+=6; doc.setFont('helvetica','normal'); doc.setTextColor(38,38,38);
-      } else {
-        bodyText(lt,{indent:2});
-      }
-    });
-  }
-
-  // ══════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════
   // SUPLEMENTACIÓN
-  // ══════════════════════════════════════════════
-  if(PLAN.suplementacion?.texto){
-    np(); secHeader('PROTOCOLO DE SUPLEMENTACIÓN',[100,50,140]);
+  // ══════════════════════════════════════════════════════════════════
+  if(PLAN.suplementacion && PLAN.suplementacion.texto){
+    np(); secH('PROTOCOLO DE SUPLEMENTACIÓN', PU, '◉');
     PLAN.suplementacion.texto.split('\n').forEach(function(line){
-      var lt = line.trim();
+      var lt=line.trim();
       if(!lt){gap(1.5);return;}
-      lt = lt.replace(/[^\x00-\x7FáéíóúÁÉÍÓÚñÑüÜ¿¡·×→↑↓★☆•°²³\-–—\/()%.,;:=+~|]/g,'');
+      lt=lt.replace(CLEAN,'');
       if(!lt.trim()) return;
-      // TIER headers
-      if(/^(TIER\s*\d|PRE.?ENTRENO|EVITAR|SUPLEMENTOS)/i.test(lt)){
-        subHeader(lt); return;
-      }
-      // Suplemento con dosis
+      if(/^(TIER\s*\d|PRE.?ENTRENO|EVITAR|SUPLEMENTOS|BÁSICO|AVANZADO)/i.test(lt)){ subH(lt); return; }
       if(/\d+\s*(g|mg|mcg|ui|iu|caps?)/i.test(lt)){
-        chk(5);
-        doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(38,38,38);
-        doc.splitTextToSize(lt,W-4).forEach(function(l){chk(5);doc.text(l,M+2,y);y+=5;});
-        doc.setFont('helvetica','normal');
-        return;
+        chk(6); doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(...I0);
+        doc.splitTextToSize(lt,W-4).forEach(function(l){chk(5);doc.text(l,M+2,y);y+=5.2;});
+        doc.setFont('helvetica','normal'); return;
       }
-      bodyText(lt,{indent:2});
+      bTxt(lt,{ind:3});
     });
   }
 
-  // ══════════════════════════════════════════════
-  // PIE
-  // ══════════════════════════════════════════════
-  chk(10);
-  doc.setDrawColor(190,155,65); doc.setLineWidth(0.3); doc.line(M,y,210-M,y); y+=5;
-  doc.setFontSize(7); doc.setTextColor(100,85,40); doc.setFont('helvetica','italic');
-  doc.text('Documento personal — Motor VDSEN v3.2 (c) 2026 — Solo uso del cliente bajo supervision de su coach.',M,y);
+  // ── Pie en la última página ──────────────────────────────────────
+  _ftr();
 
-  doc.save('MiPlan_VDSEN_'+(PLAN.nombre||'').replace(/\s/g,'-')+'.pdf');
+  doc.save('MiPlan_VDSEN_'+(PLAN.nombre||'Plan').replace(/\s+/g,'-')+'.pdf');
 }
 
 // ══════════════════════════════════════════════════
