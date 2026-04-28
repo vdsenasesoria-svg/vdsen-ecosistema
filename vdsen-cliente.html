@@ -1985,6 +1985,13 @@ function _buildExPanel(ejercicios, di) {
   var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK);
   var unit = getExUnit(di, ei);
+  // Sesión cerrada: no se permiten ediciones una vez marcada como completada
+  var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
+  // Modificaciones manuales de parámetros del ejercicio (coach-note + ajuste de sets/reps/RIR)
+  var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
+  if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
+  if (exMod.repsRange) repsTarget = exMod.repsRange;
+  if (exMod.rir !== undefined && exMod.rir !== '') baseRIR = parseInt(exMod.rir);
 
   // Apply progRec numSeries adjustment
   var progRec = _getProgRecForExercise(di, ei, nombre);
@@ -2025,8 +2032,15 @@ function _buildExPanel(ejercicios, di) {
       progrecHtml+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
-        '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'+
+        (!sessionDone
+          ? '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'
+          : '')+
+        (!sessionDone
+          ? '<button onclick="showExModModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">⚙ Ajustar</button>'
+          : '')+
+        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'var(--accent)':'var(--mt)')+';background:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'rgba(200,165,74,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'rgba(200,165,74,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
+        (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(68,136,204,.1);border:1px solid rgba(68,136,204,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
       '</div>'+
       // Nota de sustitución (si existe)
       (_exSubData && _exSubData.nota
@@ -2040,8 +2054,19 @@ function _buildExPanel(ejercicios, di) {
         : '')+
     '</div>';
 
-  // ── C. Nota de ejecución (ya mostrada en sección A) ───────────────────
-  var notaHtml = '';
+  // ── C. Nota del usuario por ejercicio ────────────────────────────────
+  var _noteKey = 'exnote_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  var _noteVal  = LOGS[_noteKey] || '';
+  var notaHtml =
+    '<div id="usernote_'+di+'_'+ei+'" style="display:'+(_noteVal?'block':'none')+';margin-bottom:10px">'+
+      '<div style="font-size:9px;letter-spacing:1.5px;font-weight:700;color:var(--accent);margin-bottom:4px">📝 NOTA / MENSAJE AL COACH</div>'+
+      '<textarea id="usernote_input_'+di+'_'+ei+'" placeholder="Ej: la rodilla molestó en la fase concéntrica, reduje carga a la mitad..."'+
+        ' onblur="saveUserNote('+di+','+ei+',this.value)"'+
+        ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid rgba(200,165,74,.3);'+
+        'border-radius:8px;color:var(--tx);font-size:13px;padding:10px;outline:none;resize:vertical;min-height:60px;line-height:1.5">'+
+        _noteVal+
+      '</textarea>'+
+    '</div>';
 
   // ── D. Warm-up ────────────────────────────────────────────────────────
   var wuHtml = '';
@@ -2110,8 +2135,8 @@ function _buildExPanel(ejercicios, di) {
     var reps    = saved.reps    || (_prefill && prev.reps     ? prev.reps     : (_prefill && s===0 && histEx.reps ? histEx.reps : ''));
     var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
 
-    if (s < activeSi) {
-      // ── SET COMPLETADO ──────────────────────────────────────────────
+    if (s < activeSi || (sessionDone && saved.done)) {
+      // ── SET COMPLETADO (o sesión cerrada) ────────────────────────────
       var pumpEmoji = saved.pump===1?'💪':saved.pump===2?'👍':saved.pump===3?'😐':'';
       setsHtml += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;'+
         'background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.18);border-radius:12px;margin-bottom:8px">'+
@@ -2122,9 +2147,20 @@ function _buildExPanel(ejercicios, di) {
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+saved.carga+' '+unit+' × '+saved.reps+' reps</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
-        '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
-          'margin-left:auto;padding:5px 10px;border:1px solid var(--border);border-radius:8px;'+
-          'background:var(--input-bg);color:var(--mt);font-size:13px;cursor:pointer;flex-shrink:0">↩</button>'+
+        // Botón ↩ solo disponible si la sesión NO está cerrada
+        (!sessionDone
+          ? '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
+              'margin-left:auto;padding:5px 10px;border:1px solid var(--border);border-radius:8px;'+
+              'background:var(--input-bg);color:var(--mt);font-size:13px;cursor:pointer;flex-shrink:0">↩</button>'
+          : '')+
+      '</div>';
+    } else if (sessionDone && !saved.done) {
+      // ── SET SIN DATOS (sesión cerrada) ────────────────────────────────
+      setsHtml += '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;'+
+        'background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:10px;margin-bottom:6px;opacity:.5">'+
+        '<div style="width:26px;height:26px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.12);'+
+          'display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--mt);font-weight:700">'+(s+1)+'</div>'+
+        '<div style="font-size:12px;color:var(--mt)">SERIE '+(s+1)+' — no registrada</div>'+
       '</div>';
     } else if (s === activeSi) {
       // ── SET ACTIVO ───────────────────────────────────────────────────
@@ -2249,7 +2285,15 @@ function _buildExPanel(ejercicios, di) {
     '</div>';
   }
 
-  return machineHtml + headerHtml + notaHtml + wuHtml + setsHtml + completedBlockHtml;
+  // Banner sesión cerrada
+  var closedBannerHtml = sessionDone
+    ? '<div style="background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:14px">🔒</span>'+
+        '<span style="font-size:11px;color:var(--grn);font-weight:700">Sesión guardada — sets bloqueados para edición</span>'+
+      '</div>'
+    : '';
+
+  return machineHtml + headerHtml + notaHtml + closedBannerHtml + wuHtml + setsHtml + completedBlockHtml;
 }
 
 function setEjActivo(ei) {
@@ -2682,19 +2726,7 @@ function renderEntrenamiento() {
       '</div></div></div>'
     : '';
 
-  // ── Validación de volumen por sesión ──────────────────────────────
-  var totalSessionSets = ejercicios.reduce(function(acc, ej2) {
-    return acc + (ej2.numSeries || (ej2.sets ? ej2.sets.length : 3));
-  }, 0);
-  // Límites VDSEN: ≤20 series trabajadoras por sesión (Israetel MEV–MRV)
-  var volWarnHtml = '';
-  if (totalSessionSets > 20) {
-    volWarnHtml = '<div style="background:rgba(220,80,0,.1);border:1px solid rgba(220,80,0,.4);padding:8px 14px;margin-bottom:4px;display:flex;align-items:center;gap:8px">'
-      + '<span style="font-size:16px">⚠️</span>'
-      + '<span style="font-size:11px;color:#FF7744;font-weight:700;line-height:1.4">'
-      + 'Volumen de sesión: <strong>' + totalSessionSets + ' series</strong> — supera el máximo recomendado (≤20). Revisar con tu coach.'
-      + '</span></div>';
-  }
+  // Volumen por sesión: no se alerta al cliente (el plan ya está calculado por el coach)
 
   cont.innerHTML =
     // Week bar
@@ -2718,8 +2750,6 @@ function renderEntrenamiento() {
     '</div>'+
     // Rezagados banner
     rezBanner+
-    // Advertencia volumen sesión
-    volWarnHtml+
     // Exercise navigator (horizontal scroll)
     '<div id="exNav" style="display:flex;gap:6px;padding:10px 16px 4px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch">'+
       _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO)+
@@ -3214,6 +3244,13 @@ function completeSet(key, di, ei, si, unit) {
 // ── Corregir serie ya guardada (abre el set para re-editar) ──
 function editSet(key) {
   if (!LOGS[key]) return;
+  // Bloquear si la sesión ya está guardada (done_W_D)
+  var parts = key.split('_'); // log_W_D_E_sS
+  var _di = parseInt(parts[2]);
+  if (LOGS['done_'+CURRENT_WEEK+'_'+_di]) {
+    showToast('🔒 Sesión cerrada — no se pueden editar los sets', true);
+    return;
+  }
   LOGS[key].done = false;
   saveLogs();
   _refreshExPanelOnly();
@@ -3259,6 +3296,78 @@ function updateICSColor(key) {
 function toggleNota(id) {
   var el = document.getElementById(id);
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function showExModModal(di, ei) {
+  var ej = (_EJERCICIOS_DIA||[])[ei] || {};
+  var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
+  var curSeries  = exMod.numSeries || ej.numSeries || (ej.sets ? ej.sets.length : 3);
+  var curReps    = exMod.repsRange  || ej.repsRange  || (ej.sets&&ej.sets[0] ? ej.sets[0].repsTarget : '8-12') || '8-12';
+  var curRIR     = exMod.rir !== undefined ? exMod.rir : (parseInt(ej.rir)||(ej.sets&&ej.sets[0]?ej.sets[0].rirTarget:2)||2);
+  var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
+
+  var overlay = document.getElementById('exModOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'exModOverlay';
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;align-items:flex-end;justify-content:center';
+    overlay.onclick = function(e){ if(e.target===overlay) overlay.style.display='none'; };
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML =
+    '<div onclick="event.stopPropagation()" style="background:var(--surface);border-radius:20px 20px 0 0;padding:24px 18px 44px;width:100%;max-width:480px;box-sizing:border-box">'+
+      '<div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 18px"></div>'+
+      '<div style="font-size:10px;letter-spacing:2px;color:var(--accent);font-weight:700;margin-bottom:4px">⚙ AJUSTAR EJERCICIO</div>'+
+      '<div style="font-size:17px;font-weight:800;color:var(--tx);margin-bottom:18px;text-transform:uppercase">'+nombre+'</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px">'+
+        '<div>'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:6px">SERIES</div>'+
+          '<input id="exmod_ns" type="number" value="'+curSeries+'" min="1" max="10" inputmode="numeric"'+
+            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 6px;outline:none;text-align:center">'+
+        '</div>'+
+        '<div>'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:6px">REPS</div>'+
+          '<input id="exmod_rr" type="text" value="'+curReps+'" placeholder="8-12"'+
+            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 6px;outline:none;text-align:center">'+
+        '</div>'+
+        '<div>'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:6px">RIR</div>'+
+          '<input id="exmod_rir" type="number" value="'+curRIR+'" min="0" max="5" inputmode="numeric"'+
+            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:#e8a040;font-size:20px;font-weight:700;padding:10px 6px;outline:none;text-align:center">'+
+        '</div>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--mt);margin-bottom:16px;padding:8px 10px;background:rgba(255,255,255,.03);border-left:2px solid var(--border);border-radius:0 6px 6px 0;line-height:1.5">'+
+        'Estos ajustes se guardan en tu bitácora y el coach los verá en el panel de monitoreo.'+
+      '</div>'+
+      '<div style="display:flex;gap:10px">'+
+        '<button onclick="clearExMod('+di+','+ei+')" style="flex:0 0 auto;padding:13px 16px;border:1px solid var(--border);border-radius:10px;background:var(--input-bg);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer">Resetear</button>'+
+        '<button onclick="saveExMod('+di+','+ei+')" style="flex:1;padding:13px;border:none;border-radius:10px;background:var(--accent);color:#000;font-size:15px;font-weight:800;cursor:pointer">Guardar ajuste ✓</button>'+
+      '</div>'+
+    '</div>';
+  overlay.style.display = 'flex';
+}
+
+function saveExMod(di, ei) {
+  var ns  = parseInt(document.getElementById('exmod_ns').value)  || null;
+  var rr  = (document.getElementById('exmod_rr').value  || '').trim() || null;
+  var rir = document.getElementById('exmod_rir').value;
+  var key = 'exmod_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  LOGS[key] = { numSeries: ns, repsRange: rr, rir: rir !== '' ? parseInt(rir) : undefined };
+  saveLogs();
+  var overlay = document.getElementById('exModOverlay');
+  if (overlay) overlay.style.display = 'none';
+  _refreshExPanelOnly();
+  showToast('⚙ Ajuste guardado');
+}
+
+function clearExMod(di, ei) {
+  var key = 'exmod_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  delete LOGS[key];
+  saveLogs();
+  var overlay = document.getElementById('exModOverlay');
+  if (overlay) overlay.style.display = 'none';
+  _refreshExPanelOnly();
+  showToast('Ajuste eliminado — usando valores del plan');
 }
 
 function toggleUserNote(di, ei) {
