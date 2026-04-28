@@ -2104,9 +2104,11 @@ function _buildExPanel(ejercicios, di) {
     var prev = LOGS[prevKey] || {};
     var exNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var histEx = EXERCISE_HISTORY[exNameLower] || {};
-    var carga = saved.carga || ((!prev.carga && s === 0 && histEx.load) ? histEx.load : '');
-    var reps = saved.reps || ((!prev.reps && s === 0 && histEx.reps) ? histEx.reps : '');
-    var rirReal = saved.rir_real || ((!prev.rir_real && s === 0 && histEx.rir) ? histEx.rir : '');
+    // Auto-fill: usar semana anterior primero, luego historial (solo si el set aún no se registró)
+    var _prefill = !saved.carga && !saved.reps;
+    var carga   = saved.carga   || (_prefill && prev.carga    ? prev.carga    : (_prefill && s===0 && histEx.load ? histEx.load : ''));
+    var reps    = saved.reps    || (_prefill && prev.reps     ? prev.reps     : (_prefill && s===0 && histEx.reps ? histEx.reps : ''));
+    var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
 
     if (s < activeSi) {
       // ── SET COMPLETADO ──────────────────────────────────────────────
@@ -2482,25 +2484,57 @@ function renderEntrenamiento() {
   // ── Semana selector ──────────────────────────────────────────────
   var weeksHtml = Array.from({length:6}, function(_,i) {
     var w = i+1;
-    var done = w < REAL_WEEK;
-    var active = w === CURRENT_WEEK;  // semana vista actualmente
-    var isReal = w === REAL_WEEK;     // semana real de entrenamiento
-    var deload = w === 6;
-    var borderBot = active ? 'var(--accent)' : done ? 'var(--grn)' : 'transparent';
-    var labelColor = active ? '#fff' : done ? 'var(--grn)' : deload ? 'var(--blue)' : 'var(--mt)';
-    var bg = active ? 'rgba(200,165,74,.18)' : 'transparent';
+    var done    = w < REAL_WEEK;
+    var isReal  = w === REAL_WEEK;    // semana real de entrenamiento
+    var isView  = w === CURRENT_WEEK; // semana que se está viendo
+    var deload  = w === 6;
+    // Colores base
+    var numColor, subColor, bg, borderBot;
+    if (isReal && isView) {
+      // ── SEMANA ACTIVA Y VISTA: máximo protagonismo ──
+      bg        = 'rgba(200,165,74,.22)';
+      borderBot = 'var(--accent)';
+      numColor  = '#fff';
+      subColor  = 'var(--accent)';
+    } else if (isReal && !isView) {
+      // ── SEMANA ACTIVA pero no vista ──
+      bg        = 'rgba(200,165,74,.08)';
+      borderBot = 'var(--accent)';
+      numColor  = 'var(--accent)';
+      subColor  = 'var(--accent)';
+    } else if (isView && !isReal) {
+      // ── VISTA (no activa) ──
+      bg        = 'rgba(255,140,50,.08)';
+      borderBot = '#FF8844';
+      numColor  = '#FF8844';
+      subColor  = '#FF8844';
+    } else if (done) {
+      bg        = 'transparent';
+      borderBot = 'var(--grn)';
+      numColor  = 'var(--grn)';
+      subColor  = 'var(--grn)';
+    } else {
+      bg        = 'transparent';
+      borderBot = 'transparent';
+      numColor  = 'var(--mt)';
+      subColor  = 'var(--mt)';
+    }
     return '<button onclick="setWeek('+w+')" style="'+
-      'display:flex;flex-direction:column;align-items:center;justify-content:center;'+
-      'padding:10px 0;border:none;cursor:pointer;flex:1;'+
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+
+      'padding:8px 0 6px;border:none;cursor:pointer;flex:1;'+
       'background:'+bg+';'+
       'border-bottom:3px solid '+borderBot+';'+
-      'border-radius:0;position:relative">'+
-      // Pin "AQUÍ" solo en la semana real
-      (isReal ? '<span style="position:absolute;top:2px;font-size:7px;letter-spacing:.5px;color:var(--accent);font-weight:800">📍</span>' : '')+
-      '<span style="font-family:var(--ff);font-size:18px;font-weight:700;color:'+labelColor+'">'+
-      (done?'✓':w)+'</span>'+
-      '<span style="font-size:9px;letter-spacing:1px;color:'+labelColor+'">'+
-      (deload?'DELOAD':getSemProgresion(w))+'</span>'+
+      'border-radius:0;position:relative;transition:background .15s">'+
+      // Badge ACTIVA solo en la semana real
+      (isReal
+        ? '<span style="position:absolute;top:2px;left:50%;transform:translateX(-50%);'+
+          'font-size:6.5px;letter-spacing:.8px;color:var(--accent);font-weight:800;white-space:nowrap;'+
+          'background:rgba(200,165,74,.18);padding:1px 4px;border-radius:3px">ACTIVA</span>'
+        : '')+
+      '<span style="font-family:var(--ff);font-size:'+(isReal?'20':'17')+'px;font-weight:800;color:'+numColor+';margin-top:'+(isReal?'10':'4')+'px">'+
+        (done&&!isView?'✓':w)+'</span>'+
+      '<span style="font-size:8.5px;letter-spacing:.8px;font-weight:'+(isReal?'800':'600')+';color:'+subColor+'">'+
+        (deload?'DELOAD':getSemProgresion(w))+'</span>'+
       '</button>';
   }).join('');
 
@@ -2537,11 +2571,11 @@ function renderEntrenamiento() {
   // ── Banner de vista (cuando se navega a semana distinta a la real) ──
   var viewBanner = '';
   if (CURRENT_WEEK !== REAL_WEEK) {
-    viewBanner = '<div style="background:rgba(220,100,0,.12);border:1px solid rgba(220,100,0,.5);padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">'
-      + '<div style="font-size:12px;color:#FF8844;font-weight:700;line-height:1.4">'
-      + '👁 REVISANDO Semana '+CURRENT_WEEK+' &nbsp;·&nbsp; No estás registrando aquí'
+    viewBanner = '<div style="background:rgba(255,140,50,.08);border:1px solid rgba(255,140,50,.3);padding:9px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">'
+      + '<div style="font-size:11px;color:#FF8844;font-weight:600;line-height:1.4">'
+      + '👁 Revisando Sem '+ CURRENT_WEEK +' — tu semana activa es la <strong>'+REAL_WEEK+'</strong>'
       + '</div>'
-      + '<button onclick="setWeek('+REAL_WEEK+')" style="font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid #FF8844;background:transparent;color:#FF8844;cursor:pointer;font-weight:700;white-space:nowrap">📍 Sem '+REAL_WEEK+' →</button>'
+      + '<button onclick="setWeek('+REAL_WEEK+')" style="font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid #FF8844;background:rgba(255,140,50,.12);color:#FF8844;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">Ir a Sem '+REAL_WEEK+' →</button>'
       + '</div>';
   }
 
@@ -2874,9 +2908,11 @@ function buildBoostcampExercise(ej, di, ei) {
     // Pre-fill desde historial de ejercicio si no hay dato guardado ni semana anterior
     var exNameLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var histEx = EXERCISE_HISTORY[exNameLower] || {};
-    var carga = saved.carga || ((!prev.carga && s === 0 && histEx.load) ? histEx.load : '');
-    var reps = saved.reps || ((!prev.reps && s === 0 && histEx.reps) ? histEx.reps : '');
-    var rirReal = saved.rir_real || ((!prev.rir_real && s === 0 && histEx.rir) ? histEx.rir : '');
+    // Auto-fill: usar semana anterior primero, luego historial (solo si el set aún no se registró)
+    var _prefill = !saved.carga && !saved.reps;
+    var carga   = saved.carga   || (_prefill && prev.carga    ? prev.carga    : (_prefill && s===0 && histEx.load ? histEx.load : ''));
+    var reps    = saved.reps    || (_prefill && prev.reps     ? prev.reps     : (_prefill && s===0 && histEx.reps ? histEx.reps : ''));
+    var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
 
     // Auto-prog suggestion: buscar recomendación del algoritmo de progresión
     var suggestion = '';
@@ -3113,11 +3149,6 @@ function copiarSerie(key, s, di, ei) {
 }
 
 function completeSet(key, di, ei, si, unit) {
-  // Bloquear si está viendo una semana distinta a la real
-  if (CURRENT_WEEK !== REAL_WEEK) {
-    showToast('👁 Semana ' + CURRENT_WEEK + ' — solo vista. Tap 📍 para ir a Sem ' + REAL_WEEK, true);
-    return;
-  }
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
   var reps  = document.getElementById('reps_'+key)?.value  || '';
@@ -3182,10 +3213,6 @@ function completeSet(key, di, ei, si, unit) {
 
 // ── Corregir serie ya guardada (abre el set para re-editar) ──
 function editSet(key) {
-  if (CURRENT_WEEK !== REAL_WEEK) {
-    showToast('Solo puedes corregir en la semana activa (Sem ' + REAL_WEEK + ')', true);
-    return;
-  }
   if (!LOGS[key]) return;
   LOGS[key].done = false;
   saveLogs();
@@ -3304,10 +3331,6 @@ function selDia(i) {
 }
 
 async function markSessionDone(di) {
-  if (CURRENT_WEEK !== REAL_WEEK) {
-    showToast('👁 Vista Sem ' + CURRENT_WEEK + ' — ir a Sem ' + REAL_WEEK + ' para registrar', true);
-    return;
-  }
   var key = 'done_'+CURRENT_WEEK+'_'+di;
   if (LOGS[key]) {
     // Toggle off
@@ -3352,18 +3375,21 @@ async function _confirmSessionDone(di) {
   renderEntrenamiento();
   renderResumen();
   var sesiones = getSesiones();
-  var todasDone = sesiones.every(function(_,i){ return !!LOGS['done_'+CURRENT_WEEK+'_'+i]; });
-  if (todasDone && CURRENT_WEEK < 6) {
-    setTimeout(function(){
-      showToast('🏆 SEMANA '+CURRENT_WEEK+' COMPLETA → SEM '+(CURRENT_WEEK+1));
+  // Solo avanzar si se están completando sesiones de la semana REAL activa
+  if (CURRENT_WEEK === REAL_WEEK) {
+    var todasDone = sesiones.every(function(_,i){ return !!LOGS['done_'+REAL_WEEK+'_'+i]; });
+    if (todasDone && REAL_WEEK < 6) {
       setTimeout(function(){
-        CURRENT_WEEK++;
-        REAL_WEEK = CURRENT_WEEK; // avanzar también la semana real
-        saveLogs();
-        renderEntrenamiento();
-        renderResumen();
-      }, 1200);
-    }, 600);
+        showToast('🏆 SEMANA '+REAL_WEEK+' COMPLETA → SEM '+(REAL_WEEK+1));
+        setTimeout(function(){
+          REAL_WEEK++;
+          CURRENT_WEEK = REAL_WEEK;
+          saveLogs();
+          renderEntrenamiento();
+          renderResumen();
+        }, 1200);
+      }, 600);
+    }
   }
 }
 
@@ -5397,7 +5423,13 @@ function showPostSessionModal(di) {
   document.getElementById('psSueno').value = '';
   document.getElementById('psRpe').value = '7';
   document.getElementById('psRpeVal').textContent = '7';
+  // Reset botones articular
+  var artSi=document.getElementById('artSiBtn'), artNo=document.getElementById('artNoBtn');
+  if(artSi){artSi.style.borderColor='var(--border)';artSi.style.background='var(--surface)';}
+  if(artNo){artNo.style.borderColor='var(--grn)';artNo.style.background='rgba(58,148,96,.12)';}
+  updateRpeLabel(7);
   m.style.display = 'flex';
+  m.scrollTop = 0;
 }
 
 function closePostSessionModal() {
@@ -5421,6 +5453,27 @@ function toggleArticularPain() {
   var val = document.getElementById('psArticular').value;
   var pat = document.getElementById('psArticularPattern');
   if (pat) pat.style.display = val==='si' ? 'block' : 'none';
+}
+
+function updateRpeLabel(val) {
+  var el = document.getElementById('psRpeLabel');
+  if (!el) return;
+  var v = parseInt(val);
+  var labels = {
+    1:'Muy fácil — podría hacer el doble',
+    2:'Fácil — mucho margen restante',
+    3:'Ligero — muchas reps en reserva',
+    4:'Cómodo — sin fatiga significativa',
+    5:'Moderado — podría hacer varias más',
+    6:'Moderado-alto — quedan 4-5 reps',
+    7:'Difícil — 2-3 reps más eran posibles',
+    8:'Muy difícil — 1-2 reps máximo',
+    9:'Casi al límite — 1 rep posible',
+    10:'Al fallo — no podría ni una más'
+  };
+  var colors = {5:'var(--grn)',6:'var(--grn)',7:'var(--accent)',8:'var(--accent)',9:'#e8a040',10:'var(--red)'};
+  el.textContent = labels[v] || '';
+  el.style.color = colors[v] || 'var(--accent)';
 }
 
 async function submitPostSession() {
@@ -6183,81 +6236,129 @@ function calculateProgression(di, postData) {
 </script>
 
 <!-- ════ MODAL CHECK-IN POST-SESIÓN ════ -->
-<div id="postSessionModal" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:2000;overflow-y:auto;padding:20px 16px 40px;flex-direction:column;align-items:center">
+<div id="postSessionModal" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:2000;overflow-y:auto;padding:20px 16px 44px;flex-direction:column;align-items:center">
   <div style="width:100%;max-width:480px;margin:0 auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+
+    <!-- Header -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px">
       <div>
-        <div style="font-size:11px;letter-spacing:2px;color:var(--accent);font-weight:700">CHECK-IN POST-SESIÓN</div>
-        <div style="font-size:20px;font-weight:800;color:#fff;margin-top:2px">¿Cómo te fue?</div>
+        <div style="font-size:10px;letter-spacing:2.5px;color:var(--accent);font-weight:700;margin-bottom:3px">CHECK-IN POST-SESIÓN</div>
+        <div style="font-size:22px;font-weight:800;color:#fff">¿Cómo te fue?</div>
+        <div style="font-size:11px;color:var(--mt);margin-top:3px">Tus respuestas ajustan el algoritmo de progresión</div>
       </div>
-      <button onclick="closePostSessionModal()" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--mt);font-size:18px;padding:6px 10px;cursor:pointer">✕</button>
+      <button onclick="closePostSessionModal()" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--mt);font-size:18px;padding:6px 10px;cursor:pointer;flex-shrink:0">✕</button>
     </div>
+
     <input type="hidden" id="psEimd">
 
-    <!-- EIMD -->
-    <div style="margin-bottom:20px">
-      <div style="font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:600;margin-bottom:10px">1. ESTADO MUSCULAR (EIMD)</div>
+    <!-- 1. EIMD -->
+    <div style="margin-bottom:22px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">1 · DOLOR MUSCULAR (EIMD)</div>
+      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
+        ¿Cómo están los músculos trabajados <strong style="color:var(--tx)">hoy</strong> en comparación a cuando entrenaste?
+        <span style="color:rgba(200,165,74,.6)"> · Afecta si se sube volumen o carga la próxima semana.</span>
+      </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <div id="eimd1" onclick="selectEimd(1)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .2s">
-          <div style="font-size:16px;margin-bottom:2px">✅ Sin dolor muscular</div>
-          <div style="font-size:12px;color:var(--mt)">Recuperación completa</div>
+        <div id="eimd1" onclick="selectEimd(1)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px">✅ Sin dolor muscular</div>
+          <div style="font-size:11px;color:var(--mt);line-height:1.5">Recuperación completa — el músculo está fresco. <span style="color:var(--grn)">Señal verde para subir carga o volumen.</span></div>
         </div>
-        <div id="eimd2" onclick="selectEimd(2)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .2s">
-          <div style="font-size:16px;margin-bottom:2px">⚡ Recuperado a tiempo</div>
-          <div style="font-size:12px;color:var(--mt)">Hubo molestia pero estás bien ahora</div>
+        <div id="eimd2" onclick="selectEimd(2)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px">⚡ Agujetas leves / tolerables</div>
+          <div style="font-size:11px;color:var(--mt);line-height:1.5">Hubo molestia pero no limita el movimiento. <span style="color:var(--accent)">Normal en hipertrofia — se mantiene la progresión planificada.</span></div>
         </div>
-        <div id="eimd3" onclick="selectEimd(3)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;transition:all .2s">
-          <div style="font-size:16px;margin-bottom:2px">🔴 Dolor agudo / molestia</div>
-          <div style="font-size:12px;color:var(--mt)">El músculo aún duele significativamente</div>
+        <div id="eimd3" onclick="selectEimd(3)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
+          <div style="font-size:15px;font-weight:700;margin-bottom:3px">🔴 Dolor fuerte / aún duele</div>
+          <div style="font-size:11px;color:var(--mt);line-height:1.5">Agujetas significativas que limitan movimiento. <span style="color:var(--red)">El algoritmo sube el RIR objetivo y puede reducir volumen.</span></div>
         </div>
       </div>
     </div>
 
-    <!-- Fatiga articular -->
-    <div style="margin-bottom:20px">
-      <div style="font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:600;margin-bottom:10px">2. FATIGA ARTICULAR</div>
+    <!-- 2. Fatiga articular -->
+    <div style="margin-bottom:22px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">2 · FATIGA ARTICULAR</div>
+      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
+        ¿Sientes molestia en <strong style="color:var(--tx)">articulaciones</strong> (hombro, rodilla, codo, lumbar)?
+        <span style="color:rgba(200,165,74,.6)"> · Diferente a las agujetas musculares — es tensión/dolor en la articulación misma.</span>
+      </div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
-        <button onclick="document.getElementById('psArticular').value='si';toggleArticularPain();this.style.borderColor='var(--accent)';document.getElementById('artNoBtn').style.borderColor='var(--border)'" id="artSiBtn"
-          style="flex:1;padding:11px;background:var(--surface);border:2px solid var(--border);border-radius:10px;color:var(--tx);font-size:14px;font-weight:600;cursor:pointer">
-          Sí, siento fatiga articular</button>
-        <button onclick="document.getElementById('psArticular').value='no';toggleArticularPain();this.style.borderColor='var(--accent)';document.getElementById('artSiBtn').style.borderColor='var(--border)'" id="artNoBtn"
-          style="flex:1;padding:11px;background:var(--surface);border:2px solid var(--accent);border-radius:10px;color:var(--tx);font-size:14px;font-weight:600;cursor:pointer">
-          No</button>
+        <button onclick="document.getElementById('psArticular').value='si';toggleArticularPain();this.style.background='rgba(200,100,0,.18)';this.style.borderColor='#FF8844';document.getElementById('artNoBtn').style.borderColor='var(--border)';document.getElementById('artNoBtn').style.background='var(--surface)'" id="artSiBtn"
+          style="flex:1;padding:11px;background:var(--surface);border:2px solid var(--border);border-radius:10px;color:var(--tx);font-size:13px;font-weight:700;cursor:pointer;line-height:1.4">
+          ⚠️ Sí, hay molestia articular</button>
+        <button onclick="document.getElementById('psArticular').value='no';toggleArticularPain();this.style.background='rgba(58,148,96,.12)';this.style.borderColor='var(--grn)';document.getElementById('artSiBtn').style.borderColor='var(--border)';document.getElementById('artSiBtn').style.background='var(--surface)'" id="artNoBtn"
+          style="flex:1;padding:11px;background:rgba(58,148,96,.12);border:2px solid var(--grn);border-radius:10px;color:var(--tx);font-size:13px;font-weight:700;cursor:pointer">
+          ✅ No, estoy bien</button>
       </div>
       <input type="hidden" id="psArticular" value="no">
-      <div id="psArticularPattern" style="display:none">
-        <div style="font-size:11px;color:var(--mt);margin-bottom:6px">¿En qué patrón?</div>
+      <div id="psArticularPattern" style="display:none;margin-top:8px">
+        <div style="font-size:11px;color:var(--mt);margin-bottom:6px">¿En qué patrón de movimiento sientes la molestia?</div>
         <select id="psArticularPatternSel" style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:15px;padding:10px 12px;outline:none">
           <option value="">Seleccionar...</option>
-          <option value="Empuje">Empuje (hombro, codo)</option>
-          <option value="Jalón">Jalón (hombro, muñeca)</option>
-          <option value="Pierna">Pierna (rodilla, cadera)</option>
-          <option value="Bisagra">Bisagra (lumbar, cadera)</option>
+          <option value="Empuje">Empuje — hombro anterior / codo</option>
+          <option value="Jalón">Jalón / tracción — hombro posterior / muñeca</option>
+          <option value="Pierna">Pierna — rodilla / cadera</option>
+          <option value="Bisagra">Bisagra — lumbar / sacro / cadera</option>
         </select>
+        <div style="font-size:10px;color:var(--mt);margin-top:6px;padding:8px 10px;background:rgba(200,100,0,.06);border-left:2px solid #FF8844;border-radius:0 4px 4px 0">
+          ⚠ Un "Sí" activa una reducción preventiva en la progresión de ese patrón. Si hay dolor agudo o limitación de movimiento, consulta antes de entrenar.
+        </div>
       </div>
     </div>
 
-    <!-- Sueño -->
-    <div style="margin-bottom:20px">
-      <div style="font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:600;margin-bottom:10px">3. HORAS DE SUEÑO (última noche)</div>
+    <!-- 3. Sueño -->
+    <div style="margin-bottom:22px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">3 · SUEÑO (última noche)</div>
+      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
+        ¿Cuántas horas dormiste la noche <strong style="color:var(--tx)">anterior</strong> a este entrenamiento?
+        <span style="color:rgba(200,165,74,.6)"> · Menos de 6h reduce hasta un 30% la síntesis proteica nocturna y activa alerta de recuperación.</span>
+      </div>
       <input id="psSueno" type="number" min="1" max="12" step="0.5" placeholder="7.5" inputmode="decimal"
-        style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-size:24px;font-weight:700;padding:12px;outline:none;text-align:center;box-sizing:border-box">
+        style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-size:28px;font-weight:700;padding:12px;outline:none;text-align:center;box-sizing:border-box">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-top:6px;padding:0 2px">
+        <span style="color:var(--red)">≤5h · Riesgo alto</span>
+        <span>6h · Mínimo</span>
+        <span>7h · Bueno</span>
+        <span style="color:var(--grn)">8h+ · Óptimo</span>
+      </div>
     </div>
 
-    <!-- RPE -->
+    <!-- 4. RPE -->
     <div style="margin-bottom:28px">
-      <div style="font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:600;margin-bottom:10px">4. RPE PROMEDIO SESIÓN — <span id="psRpeVal" style="color:var(--accent)">7</span>/10</div>
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">4 · RPE DE LA SESIÓN — <span id="psRpeVal" style="color:#fff;font-size:18px">7</span><span style="font-size:11px;color:var(--mt)">/10</span></div>
+      <div style="font-size:12px;color:var(--mt);margin-bottom:12px;line-height:1.5">
+        Esfuerzo percibido <strong style="color:var(--tx)">promedio</strong> de toda la sesión.
+        <span style="color:rgba(200,165,74,.6)"> · RPE crónico ≥9 activa alerta de sobreentrenamiento.</span>
+      </div>
       <input id="psRpe" type="range" min="1" max="10" step="1" value="7"
-        oninput="document.getElementById('psRpeVal').textContent=this.value"
-        style="width:100%;accent-color:var(--accent)">
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-top:4px">
-        <span>Muy fácil</span><span>Máximo esfuerzo</span>
+        oninput="document.getElementById('psRpeVal').textContent=this.value;updateRpeLabel(this.value)"
+        style="width:100%;accent-color:var(--accent);height:6px;margin-bottom:10px">
+      <div id="psRpeLabel" style="text-align:center;font-size:13px;font-weight:700;color:var(--accent);min-height:18px;margin-bottom:8px">Difícil — 2-3 reps más eran posibles</div>
+      <!-- Escala RPE visual -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;font-size:9px">
+        <div style="text-align:center;padding:5px 2px;background:rgba(58,148,96,.12);border-radius:4px;color:var(--grn)">
+          <div style="font-weight:800">5-6</div><div style="color:var(--mt);margin-top:1px">Fácil</div>
+        </div>
+        <div style="text-align:center;padding:5px 2px;background:rgba(200,165,74,.1);border-radius:4px;color:var(--accent)">
+          <div style="font-weight:800">7</div><div style="color:var(--mt);margin-top:1px">Moderado</div>
+        </div>
+        <div style="text-align:center;padding:5px 2px;background:rgba(200,165,74,.15);border-radius:4px;color:var(--accent)">
+          <div style="font-weight:800">8</div><div style="color:var(--mt);margin-top:1px">Difícil</div>
+        </div>
+        <div style="text-align:center;padding:5px 2px;background:rgba(220,120,30,.15);border-radius:4px;color:#e8a040">
+          <div style="font-weight:800">9</div><div style="color:var(--mt);margin-top:1px">Muy difícil</div>
+        </div>
+        <div style="text-align:center;padding:5px 2px;background:rgba(200,60,40,.15);border-radius:4px;color:var(--red)">
+          <div style="font-weight:800">10</div><div style="color:var(--mt);margin-top:1px">Al fallo</div>
+        </div>
       </div>
     </div>
 
     <button onclick="submitPostSession()" style="width:100%;padding:16px;background:var(--accent);color:#000;font-size:16px;font-weight:800;border:none;border-radius:12px;cursor:pointer;letter-spacing:.5px">
       GUARDAR Y CALCULAR PROGRESIÓN →
     </button>
+    <div style="text-align:center;font-size:11px;color:var(--mt);margin-top:12px;line-height:1.5">
+      El motor VDSEN analiza tus datos y genera recomendaciones<br>de carga, series y RIR para la próxima semana.
+    </div>
   </div>
 </div>
 
