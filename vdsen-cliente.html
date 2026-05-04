@@ -296,9 +296,50 @@ var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta camb
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
+
 function toggleExUnit(di, ei) {
-  EXERCISE_UNITS[di+'_'+ei] = getExUnit(di, ei) === 'KG' ? 'LB' : 'KG';
+  var oldUnit = getExUnit(di, ei);
+  var newUnit = oldUnit === 'KG' ? 'LB' : 'KG';
+  var factor  = oldUnit === 'KG' ? 2.20462 : 0.453592;
+
+  // ── 1. Convertir inputs DOM abiertos (sets aún no guardados) ──
+  var ses = getSesiones();
+  var ej  = ses && ses[di] && ses[di].exercises && ses[di].exercises[ei];
+  if (ej) {
+    var numSeries = (LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {}).numSeries
+      ? parseInt(LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei].numSeries)
+      : (ej.numSeries || 3);
+    for (var s = 0; s < numSeries; s++) {
+      var key   = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+      var input = document.getElementById('carga_'+key);
+      if (input && input.value) {
+        var converted = (parseFloat(input.value) * factor);
+        input.value = _roundUnit(converted, newUnit);
+      }
+    }
+  }
+
+  // ── 2. Convertir sets ya guardados en LOGS para este ejercicio ──
+  var prefix = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s';
+  Object.keys(LOGS).forEach(function(k) {
+    if (k.indexOf(prefix) === 0 && LOGS[k] && LOGS[k].unit === oldUnit) {
+      var converted = parseFloat(LOGS[k].carga) * factor;
+      LOGS[k].carga = String(_roundUnit(converted, newUnit));
+      LOGS[k].unit  = newUnit;
+    }
+  });
+
+  EXERCISE_UNITS[di+'_'+ei] = newUnit;
+  saveLogs();
   _refreshExPanelOnly();
+}
+
+// Redondear al incremento estándar según unidad
+function _roundUnit(val, unit) {
+  if (!val || isNaN(val)) return val;
+  // LB: redondear a 2.5 lb más cercano; KG: redondear a 0.5 kg más cercano
+  var step = unit === 'LB' ? 2.5 : 0.5;
+  return Math.round(val / step) * step;
 }
 
 // ══════════════════════════════════════════════════════════════════
