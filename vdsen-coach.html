@@ -1823,13 +1823,25 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
 
   async function deletePlan(clientId, planId) {
     if (!await _askConfirm('¿Eliminar el plan activo de este cliente?<br><span style="color:#888;font-size:12px">El cliente quedará sin plan asignado.</span>')) return;
+    // Paso 1: quitar activePlanId del cliente
     try {
       await updateDoc(doc(db, "clients", clientId), { activePlanId: null });
-      if (planId) await deleteDoc(doc(db, "plans", planId));
-      showToast('Plan eliminado');
-      showClientDetail(clientId);
-      loadClientList();
-    } catch(e) { showToast('Error: ' + e.message, true); }
+    } catch(e) {
+      showToast('Error al desvincular plan del cliente: ' + (e.code||'') + ' ' + e.message, true);
+      return;
+    }
+    // Paso 2: borrar el doc del plan (no-fatal si falla por permisos)
+    if (planId) {
+      try {
+        await deleteDoc(doc(db, "plans", planId));
+      } catch(e) {
+        console.warn('No se pudo borrar el doc del plan:', e.code, e.message);
+        // No bloqueamos el flujo — el activePlanId ya fue quitado, el cliente ya no lo ve
+      }
+    }
+    showToast('✅ Plan eliminado');
+    showClientDetail(clientId);
+    loadClientList();
   }
 
   async function duplicatePlan(clientId, planId) {

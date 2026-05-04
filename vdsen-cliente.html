@@ -292,6 +292,7 @@ var REAL_WEEK = 1;     // semana real de entrenamiento (no cambia al navegar)
 var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
+var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
@@ -997,20 +998,38 @@ async function loadPlan(user) {
     } catch(catErr) { console.warn('catálogo no disponible:', catErr.message); }
 
     // Cargar logs (no-fatal)
+    ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual
     try {
       const logRef = FB.doc(FB.db, 'logs', user.uid);
       const logSnap = await FB.getDoc(logRef);
       if (logSnap.exists()) {
         var logData = logSnap.data();
-        LOGS = logData.entries || {};
-        CURRENT_WEEK = logData.currentWeek || 1;
-        REAL_WEEK = CURRENT_WEEK;
-        if (logData.exerciseUnits) EXERCISE_UNITS = logData.exerciseUnits;
+        // Preservar siempre el historial de pesos (sobrevive a cambio de plan)
         if (logData.exerciseHistory) EXERCISE_HISTORY = logData.exerciseHistory;
+        if (logData.exerciseUnits)   EXERCISE_UNITS   = logData.exerciseUnits;
+
+        var savedPlanId = logData.planId || null;
+        var planChanged = savedPlanId && savedPlanId !== activePlanId;
+
+        if (planChanged) {
+          // ── Plan nuevo asignado por el coach ──
+          // Resetear semana y entradas de entrenamiento; conservar historial de pesos
+          LOGS         = {};
+          CURRENT_WEEK = 1;
+          REAL_WEEK    = 1;
+          // Guardar reset inmediatamente para que futuros reloads no vuelvan a detectar "plan cambiado"
+          setTimeout(function(){ if (_saveLogsTimer){clearTimeout(_saveLogsTimer);_saveLogsTimer=null;} _doSaveLogs(); }, 800);
+          showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
+        } else {
+          // Mismo plan: usar semana y entradas guardadas
+          LOGS         = logData.entries || {};
+          CURRENT_WEEK = logData.currentWeek || 1;
+          REAL_WEEK    = CURRENT_WEEK;
+        }
       }
     } catch(logErr) {
       console.warn('logs no disponibles:', logErr.message);
-      if (!loadBackupLogs()) { LOGS = {}; CURRENT_WEEK = 1; }
+      if (!loadBackupLogs()) { LOGS = {}; CURRENT_WEEK = 1; REAL_WEEK = 1; }
       const errEl = document.getElementById('saveErrBadge');
       if (errEl) { errEl.style.display='block'; errEl.textContent='⚠ Usando datos locales.'; }
     }
@@ -3549,14 +3568,14 @@ async function saveLogs() {
   _saveLogsTimer = setTimeout(_doSaveLogs, 400);
   // Backup inmediato a localStorage siempre
   // SIEMPRE guardar REAL_WEEK (no CURRENT_WEEK que puede ser una semana en revisión)
-  try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:REAL_WEEK,exerciseUnits:EXERCISE_UNITS,exerciseHistory:EXERCISE_HISTORY,ts:Date.now()})); } catch(le){}
+  try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:REAL_WEEK,planId:ACTIVE_PLAN_ID,exerciseUnits:EXERCISE_UNITS,exerciseHistory:EXERCISE_HISTORY,ts:Date.now()})); } catch(le){}
 }
 
 async function _doSaveLogs() {
   if (!USER || !FB) return;
   try {
     const ref = FB.doc(FB.db, 'logs', USER.uid);
-    await FB.setDoc(ref, { entries: LOGS, currentWeek: REAL_WEEK, exerciseUnits: EXERCISE_UNITS, exerciseHistory: EXERCISE_HISTORY, updatedAt: Date.now() });
+    await FB.setDoc(ref, { entries: LOGS, currentWeek: REAL_WEEK, planId: ACTIVE_PLAN_ID, exerciseUnits: EXERCISE_UNITS, exerciseHistory: EXERCISE_HISTORY, updatedAt: Date.now() });
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
