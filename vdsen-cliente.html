@@ -1008,13 +1008,21 @@ async function loadPlan(user) {
         if (logData.exerciseHistory) EXERCISE_HISTORY = logData.exerciseHistory;
         if (logData.exerciseUnits)   EXERCISE_UNITS   = logData.exerciseUnits;
 
-        var savedPlanId = logData.planId || null;
-        // Detectar cambio de plan por dos vías:
-        // 1. sessionStorage: el onSnapshot detectó el cambio ANTES del reload (cubre clientes sin planId previo)
-        // 2. planId guardado distinto al activo (cubre recargas manuales / sin onSnapshot)
-        var flaggedBySnapshot = false;
-        try { flaggedBySnapshot = sessionStorage.getItem('vdsen_plan_changed') === '1'; sessionStorage.removeItem('vdsen_plan_changed'); } catch(e2) {}
-        var planChanged = flaggedBySnapshot || (savedPlanId && savedPlanId !== activePlanId);
+        // ── Detectar cambio de plan por tres vías independientes ──
+        // 1. sessionStorage: onSnapshot detectó el cambio y marcó la bandera antes del reload
+        // 2. localStorage:   planId guardado localmente (persiste entre sesiones, cubre carga fresca)
+        // 3. Firestore logs: planId guardado en el doc de logs (cubre otros dispositivos)
+        var flagSession = false;
+        try { flagSession = sessionStorage.getItem('vdsen_plan_changed') === '1'; sessionStorage.removeItem('vdsen_plan_changed'); } catch(e2) {}
+        var localPlanId = null;
+        try { localPlanId = localStorage.getItem('vdsen_active_plan_id') || null; } catch(e2) {}
+        var firestorePlanId = logData.planId || null;
+        // Actualizar localStorage con el plan activo actual (para próximas comparaciones)
+        try { localStorage.setItem('vdsen_active_plan_id', activePlanId); } catch(e2) {}
+
+        var planChanged = flagSession
+          || (localPlanId   && localPlanId   !== activePlanId)
+          || (firestorePlanId && firestorePlanId !== activePlanId);
 
         if (planChanged) {
           // ── Plan nuevo asignado por el coach ──
@@ -3623,8 +3631,18 @@ function loadBackupLogs() {
     if (bk) {
       const data = JSON.parse(bk);
       if (data.entries) {
+        // Si el backup es de un plan diferente al activo, no cargar entradas ni semana
+        var bkPlanId = data.planId || null;
+        var curPlanId = ACTIVE_PLAN_ID || null;
+        if (bkPlanId && curPlanId && bkPlanId !== curPlanId) {
+          // Plan cambió — solo recuperar historial de pesos
+          if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
+          if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
+          LOGS = {}; REAL_WEEK = 1; CURRENT_WEEK = 1;
+          return true;
+        }
         LOGS = data.entries;
-        REAL_WEEK    = data.currentWeek || 1;  // currentWeek en backup SIEMPRE es REAL_WEEK
+        REAL_WEEK    = data.currentWeek || 1;
         CURRENT_WEEK = REAL_WEEK;
         if (data.exerciseUnits) EXERCISE_UNITS = data.exerciseUnits;
         if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
