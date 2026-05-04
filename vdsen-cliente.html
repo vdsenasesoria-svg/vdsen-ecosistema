@@ -1027,22 +1027,43 @@ async function loadPlan(user) {
     showScreen('scrApp');
     goTab(0);
 
-    // Escuchar cambios en el plan del cliente en tiempo real
+    // Escuchar cambios en tiempo real: cliente (nutrición, nuevo plan) + plan (ediciones del coach)
     try {
       FB.onSnapshot = (await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')).onSnapshot;
+
+      // ── 1. Listener sobre el doc del CLIENTE ──
       FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(snap) {
         if (!snap.exists()) return;
         var newData = snap.data();
         var newPlanId = newData.activePlanId;
         if (newPlanId && newPlanId !== activePlanId) {
-          // El coach asignó un plan nuevo
-          showToast('Tu coach actualizó tu plan. Recargando...');
+          // El coach asignó un plan completamente nuevo
+          showToast('🔄 Tu coach asignó un plan nuevo. Recargando...');
           setTimeout(function(){ location.reload(); }, 1500);
+          return;
         }
-        // Actualizar nutrición/suplementación en vivo
-        if (newData.nutritionPlan) PLAN.nutricion = newData.nutritionPlan;
-        if (newData.supplementPlan) PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] };
+        // Actualizar nutrición/suplementación en vivo sin recargar
+        if (newData.nutritionPlan) { PLAN.nutricion = newData.nutritionPlan; try { renderNutricion(); } catch(e){} }
+        if (newData.supplementPlan) { PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] }; }
       });
+
+      // ── 2. Listener sobre el doc del PLAN (detecta ediciones del coach al plan activo) ──
+      var _planReloadPending = false;
+      FB.onSnapshot(FB.doc(FB.db, 'plans', activePlanId), function(planSnap) {
+        if (!planSnap.exists()) return;
+        var pd = planSnap.data();
+        // Solo reaccionar si el campo updatedAt existe y cambió respecto a la carga inicial
+        var updatedAt = pd.updatedAt || '';
+        if (!updatedAt) return;                          // plan sin timestamp → ignorar
+        if (!FB._planLastUpdatedAt) { FB._planLastUpdatedAt = updatedAt; return; } // guardar baseline
+        if (updatedAt === FB._planLastUpdatedAt) return; // sin cambios reales
+        // El coach modificó el plan activo → notificar y recargar
+        if (_planReloadPending) return;
+        _planReloadPending = true;
+        showToast('✏️ Tu coach actualizó tu rutina. Recargando...');
+        setTimeout(function(){ location.reload(); }, 2000);
+      });
+
     } catch(snapErr) { console.warn('onSnapshot no disponible:', snapErr.message); }
   } catch(e) {
     console.error('loadPlan ERROR:', e);
