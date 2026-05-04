@@ -8,15 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script type="importmap">
-    {
-      "imports": {
-        "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
-        "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
-        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"
-      }
-    }
-  </script>
+  <!-- Sin importmap: URLs directas para máxima compatibilidad (Chrome, Brave, Safari, Edge, Firefox) -->
   <style>
     * { font-family: 'Inter', sans-serif; }
     body { background: #0D0D0D; color: #F0F0F0; }
@@ -37,7 +29,7 @@
       input, select, textarea { font-size: 16px !important; }
       /* Modales full-screen en móvil */
       .modal-overlay { padding: 0; align-items: flex-end; }
-      .modal-box { border-radius: 16px 16px 0 0; max-width: 100%; max-height: 92dvh; padding: 20px 16px; }
+      .modal-box { border-radius: 16px 16px 0 0; max-width: 100%; max-height: 92vh; max-height: 92dvh; padding: 20px 16px; }
       /* Títulos de sección más compactos */
       .section h2 { font-size: 18px !important; margin-bottom: 14px !important; }
     }
@@ -89,6 +81,12 @@
     .toast.success { border-left: 3px solid var(--success); }
     .toast.error   { border-left: 3px solid var(--danger); }
     .toast.fade-out { opacity: 0; }
+    /* Scrollbar cross-browser */
+    ::-webkit-scrollbar { width: 3px; height: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    /* -webkit-tap-highlight ya en nav items; asegurar en botones también */
+    button, [onclick] { -webkit-tap-highlight-color: transparent; }
   </style>
 </head>
 <body>
@@ -105,7 +103,7 @@
   </nav>
 </div>
 <!-- Header visible solo en mobile -->
-<div id="mobileHeader" style="display:none;position:sticky;top:0;z-index:35;background:var(--bg-surface);border-bottom:1px solid var(--border);padding:12px 16px;align-items:center;justify-content:space-between;">
+<div id="mobileHeader" style="display:none;position:-webkit-sticky;position:sticky;top:0;z-index:35;background:var(--bg-surface);border-bottom:1px solid var(--border);padding:12px 16px;align-items:center;justify-content:space-between;">
   <span style="font-size:15px;font-weight:700;color:var(--accent);letter-spacing:1px">VDSEN COACH</span>
   <span id="mobileHeaderSection" style="font-size:12px;color:var(--text-muted);font-weight:500;letter-spacing:.5px;text-transform:uppercase"></span>
 </div>
@@ -209,7 +207,7 @@
       </div>
       <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
     </div>
-    <div id="clientNavBar" class="flex gap-1 mb-3 overflow-x-auto pb-1" style="scrollbar-width:thin"></div>
+    <div id="clientNavBar" class="flex gap-1 mb-3 overflow-x-auto pb-1"></div>
     <div id="modalClientBody"></div>
   </div>
 </div>
@@ -223,9 +221,9 @@
 </div>
 
 <script type="module">
-  import { initializeApp } from "firebase/app";
-  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -435,9 +433,9 @@
       if (pass.length < 6) { showToast("La contraseña debe tener al menos 6 caracteres", true); return; }
       const btn = document.getElementById("nc-submit");
       btn.disabled = true; btn.textContent = "Creando...";
-      const { initializeApp: initSecondary, deleteApp } = await import("firebase/app");
+      const { initializeApp: initSecondary, deleteApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
       const secondaryApp = initSecondary(firebaseConfig, "secondary");
-      const secAuth = (await import("firebase/auth")).getAuth(secondaryApp);
+      const secAuth = (await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js")).getAuth(secondaryApp);
       try {
         let uid;
         try {
