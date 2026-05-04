@@ -25,16 +25,62 @@
     .input-field { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); padding: 10px 12px; width: 100%; }
     .btn-primary { background: var(--accent); color: #0D0D0D; font-weight: 600; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
     .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-primary); padding: 8px 16px; border-radius: 6px; cursor: pointer; }
-    .sidebar { width: 260px; background: var(--bg-surface); border-right: 1px solid var(--border); position: fixed; height: 100vh; overflow-y: auto; }
-    .main-content { margin-left: 260px; padding: 24px; }
-    @media (max-width: 768px) { .sidebar { display: none; } .main-content { margin-left: 0; } .bottom-nav-mobile { display: flex; position: fixed; bottom: 0; background: var(--bg-surface); border-top: 1px solid var(--border); width: 100%; justify-content: space-around; padding: 10px 0 20px; z-index: 50; } }
+    /* ── DESKTOP: sidebar fija ── */
+    .sidebar { width: 260px; background: var(--bg-surface); border-right: 1px solid var(--border); position: fixed; top: 0; left: 0; height: 100vh; overflow-y: auto; z-index: 40; }
+    .main-content { margin-left: 260px; padding: 24px; min-height: 100vh; }
+
+    /* ── MOBILE: sin sidebar, bottom nav completo ── */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main-content { margin-left: 0; padding: 14px 12px 90px; }
+      /* Evitar zoom en inputs iOS (font-size mínimo 16px) */
+      input, select, textarea { font-size: 16px !important; }
+      /* Modales full-screen en móvil */
+      .modal-overlay { padding: 0; align-items: flex-end; }
+      .modal-box { border-radius: 16px 16px 0 0; max-width: 100%; max-height: 92dvh; padding: 20px 16px; }
+      /* Títulos de sección más compactos */
+      .section h2 { font-size: 18px !important; margin-bottom: 14px !important; }
+    }
+
+    /* ── BOTTOM NAV MOBILE ── */
+    .bottom-nav-mobile {
+      display: none;
+    }
+    @media (max-width: 768px) {
+      .bottom-nav-mobile {
+        display: flex;
+        position: fixed;
+        bottom: 0; left: 0; right: 0;
+        background: var(--bg-surface);
+        border-top: 1px solid var(--border);
+        z-index: 50;
+        padding-bottom: env(safe-area-inset-bottom, 8px);
+      }
+    }
+    .nav-item-mobile {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 2px 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 9px;
+      letter-spacing: .5px;
+      gap: 3px;
+      -webkit-tap-highlight-color: transparent;
+      transition: color .15s;
+    }
+    .nav-item-mobile .nav-icon { font-size: 20px; line-height: 1; }
+    .nav-item-mobile.active { color: var(--accent); }
+    .nav-item-mobile.active .nav-icon { filter: drop-shadow(0 0 4px rgba(201,168,76,.5)); }
+
     .section { display: none; }
     .section.active { display: block; }
-    .nav-item-mobile { text-align: center; color: var(--text-muted); cursor: pointer; }
-    .nav-item-mobile.active { color: var(--accent); }
     .warning { background: rgba(255, 68, 68, 0.2); border-left: 3px solid var(--danger); padding: 10px; margin: 10px 0; }
-    #toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    #toast-container { position: fixed; top: 16px; right: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; max-width: calc(100vw - 32px); }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
     .modal-box { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 24px; }
     .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -58,6 +104,22 @@
     <div data-section="config" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">⚙️ Configuración</div>
   </nav>
 </div>
+<!-- Header visible solo en mobile -->
+<div id="mobileHeader" style="display:none;position:sticky;top:0;z-index:35;background:var(--bg-surface);border-bottom:1px solid var(--border);padding:12px 16px;align-items:center;justify-content:space-between;">
+  <span style="font-size:15px;font-weight:700;color:var(--accent);letter-spacing:1px">VDSEN COACH</span>
+  <span id="mobileHeaderSection" style="font-size:12px;color:var(--text-muted);font-weight:500;letter-spacing:.5px;text-transform:uppercase"></span>
+</div>
+<script>
+  if (window.innerWidth <= 768) {
+    var mh = document.getElementById('mobileHeader');
+    if (mh) mh.style.display = 'flex';
+  }
+  window.addEventListener('resize', function() {
+    var mh = document.getElementById('mobileHeader');
+    if (mh) mh.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+  });
+</script>
+
 <div class="main-content">
   <div id="dashboard" class="section active"><h2 class="text-2xl font-bold mb-4">Dashboard</h2><div id="dashboardContent"></div></div>
   <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
@@ -151,8 +213,13 @@
     <div id="modalClientBody"></div>
   </div>
 </div>
-<div class="bottom-nav-mobile hidden justify-around fixed bottom-0 w-full bg-[#141414] border-t border-[#2A2A2A] py-2">
-  <div data-section="dashboard" class="nav-item-mobile">📋</div><div data-section="clientes" class="nav-item-mobile">👥</div><div data-section="crearPlan" class="nav-item-mobile">📝</div><div data-section="catalogo" class="nav-item-mobile">🏋️</div><div data-section="monitoreo" class="nav-item-mobile">📊</div>
+<div class="bottom-nav-mobile" id="bottomNavMobile">
+  <div data-section="dashboard"  class="nav-item-mobile"><span class="nav-icon">📋</span>Dashboard</div>
+  <div data-section="clientes"   class="nav-item-mobile"><span class="nav-icon">👥</span>Clientes</div>
+  <div data-section="crearPlan"  class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
+  <div data-section="monitoreo"  class="nav-item-mobile"><span class="nav-icon">📊</span>Monitor</div>
+  <div data-section="catalogo"   class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
+  <div data-section="config"     class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
 </div>
 
 <script type="module">
@@ -2265,15 +2332,31 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   
   // Navegación entre secciones
   const sections = ["dashboard","clientes","crearPlan","templates","catalogo","monitoreo","config"];
+  const sectionLabels = { dashboard:'Dashboard', clientes:'Clientes', crearPlan:'Crear Plan', templates:'Templates', catalogo:'Catálogo', monitoreo:'Monitoreo', config:'Config' };
   function showSection(sectionId) {
-    sections.forEach(s => { document.getElementById(s).classList.remove("active"); });
-    document.getElementById(sectionId).classList.add("active");
-    document.querySelectorAll("[data-section]").forEach(el => {
-      if (el.dataset.section === sectionId) el.classList.add("active"); else el.classList.remove("active");
+    if (!sections.includes(sectionId)) return;
+    sections.forEach(s => {
+      const el = document.getElementById(s);
+      if (el) el.classList.toggle("active", s === sectionId);
     });
+    document.querySelectorAll("[data-section]").forEach(el => {
+      el.classList.toggle("active", el.dataset.section === sectionId);
+    });
+    // Actualizar header mobile
+    const hdr = document.getElementById('mobileHeaderSection');
+    if (hdr) hdr.textContent = sectionLabels[sectionId] || sectionId;
+    // Scroll al inicio del contenido al cambiar sección en móvil
+    if (window.innerWidth <= 768) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
   }
-  document.querySelectorAll("[data-section]").forEach(el => el.addEventListener("click", () => showSection(el.dataset.section)));
-  document.querySelectorAll(".nav-item-mobile").forEach(el => el.addEventListener("click", () => showSection(el.dataset.section)));
+  window.showSection = showSection;
+  // Inicializar label del header
+  showSection('dashboard');
+  // Un solo listener por elemento que tenga data-section
+  document.querySelectorAll("[data-section]").forEach(el => {
+    el.addEventListener("click", () => showSection(el.dataset.section));
+  });
 </script>
 </body>
 </html>
