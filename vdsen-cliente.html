@@ -1890,6 +1890,16 @@ function _onTimerFinished() {
 
 // Reanudar timer si la app volvió al primer plano
 document.addEventListener('visibilitychange', function() {
+  // Safari iOS: cuando la app va a segundo plano, forzar guardado inmediato
+  // si hay un write pendiente en el debounce (evita pérdida de datos)
+  if (document.visibilityState === 'hidden') {
+    if (_saveLogsTimer && USER && FB) {
+      clearTimeout(_saveLogsTimer);
+      _saveLogsTimer = null;
+      _doSaveLogs(); // fire-and-forget intencional: Safari suspende rápido
+    }
+    return;
+  }
   if (document.visibilityState !== 'visible') return;
   var savedEnd = parseInt(localStorage.getItem('vdsen_restEnd') || '0');
   if (!savedEnd) return;
@@ -1940,7 +1950,7 @@ function setWeek(w) {
   CURRENT_WEEK = w;
   renderEntrenamiento();
   renderResumen();
-  saveLogs().catch(()=>{});
+  // NO llamar saveLogs() aquí: solo cambia la semana vista, no la semana real de entrenamiento
 }
 
 function goToWeek(w) { setWeek(w); goTab(1); }
@@ -3500,7 +3510,10 @@ async function markSessionDone(di) {
 async function _confirmSessionDone(di) {
   var key = 'done_'+CURRENT_WEEK+'_'+di;
   LOGS[key] = { ts: Date.now() };
-  await saveLogs();
+  // Guardar inmediatamente (bypass debounce) — crítico en Safari iOS donde los timers
+  // se pueden cancelar al cambiar de tab o al apagar pantalla
+  if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+  await _doSaveLogs();
   showToast('SESIÓN COMPLETADA ✓');
   renderEntrenamiento();
   renderResumen();
@@ -3514,7 +3527,8 @@ async function _confirmSessionDone(di) {
         setTimeout(function(){
           REAL_WEEK++;
           CURRENT_WEEK = REAL_WEEK;
-          saveLogs();
+          if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+          _doSaveLogs();
           renderEntrenamiento();
           renderResumen();
         }, 1200);
@@ -3534,14 +3548,15 @@ async function saveLogs() {
   if (_saveLogsTimer) clearTimeout(_saveLogsTimer);
   _saveLogsTimer = setTimeout(_doSaveLogs, 400);
   // Backup inmediato a localStorage siempre
-  try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:CURRENT_WEEK,exerciseUnits:EXERCISE_UNITS,exerciseHistory:EXERCISE_HISTORY,ts:Date.now()})); } catch(le){}
+  // SIEMPRE guardar REAL_WEEK (no CURRENT_WEEK que puede ser una semana en revisión)
+  try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:REAL_WEEK,exerciseUnits:EXERCISE_UNITS,exerciseHistory:EXERCISE_HISTORY,ts:Date.now()})); } catch(le){}
 }
 
 async function _doSaveLogs() {
   if (!USER || !FB) return;
   try {
     const ref = FB.doc(FB.db, 'logs', USER.uid);
-    await FB.setDoc(ref, { entries: LOGS, currentWeek: CURRENT_WEEK, exerciseUnits: EXERCISE_UNITS, exerciseHistory: EXERCISE_HISTORY, updatedAt: Date.now() });
+    await FB.setDoc(ref, { entries: LOGS, currentWeek: REAL_WEEK, exerciseUnits: EXERCISE_UNITS, exerciseHistory: EXERCISE_HISTORY, updatedAt: Date.now() });
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
@@ -3583,8 +3598,8 @@ function loadBackupLogs() {
       const data = JSON.parse(bk);
       if (data.entries) {
         LOGS = data.entries;
-        CURRENT_WEEK = data.currentWeek || 1;
-        REAL_WEEK = CURRENT_WEEK;
+        REAL_WEEK    = data.currentWeek || 1;  // currentWeek en backup SIEMPRE es REAL_WEEK
+        CURRENT_WEEK = REAL_WEEK;
         if (data.exerciseUnits) EXERCISE_UNITS = data.exerciseUnits;
         if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
         return true;
