@@ -1009,7 +1009,12 @@ async function loadPlan(user) {
         if (logData.exerciseUnits)   EXERCISE_UNITS   = logData.exerciseUnits;
 
         var savedPlanId = logData.planId || null;
-        var planChanged = savedPlanId && savedPlanId !== activePlanId;
+        // Detectar cambio de plan por dos vías:
+        // 1. sessionStorage: el onSnapshot detectó el cambio ANTES del reload (cubre clientes sin planId previo)
+        // 2. planId guardado distinto al activo (cubre recargas manuales / sin onSnapshot)
+        var flaggedBySnapshot = false;
+        try { flaggedBySnapshot = sessionStorage.getItem('vdsen_plan_changed') === '1'; sessionStorage.removeItem('vdsen_plan_changed'); } catch(e2) {}
+        var planChanged = flaggedBySnapshot || (savedPlanId && savedPlanId !== activePlanId);
 
         if (planChanged) {
           // ── Plan nuevo asignado por el coach ──
@@ -1057,6 +1062,8 @@ async function loadPlan(user) {
         var newPlanId = newData.activePlanId;
         if (newPlanId && newPlanId !== activePlanId) {
           // El coach asignó un plan completamente nuevo
+          // Marcar en sessionStorage para que loadPlan sepa que debe resetear la semana
+          try { sessionStorage.setItem('vdsen_plan_changed', '1'); } catch(e2) {}
           showToast('🔄 Tu coach asignó un plan nuevo. Recargando...');
           setTimeout(function(){ location.reload(); }, 1500);
           return;
