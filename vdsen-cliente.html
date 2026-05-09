@@ -2852,7 +2852,9 @@ function renderEntrenamiento() {
       '</div>'+
       (isDone
         ? '<div style="background:rgba(58,148,96,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
-        : '')+
+        : (CURRENT_WEEK === REAL_WEEK
+            ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar todos los sets con datos de la semana anterior o tu histórico" style="background:rgba(200,165,74,.1);border:1px solid var(--accent);border-radius:20px;padding:6px 12px;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;letter-spacing:.5px;line-height:1.2;text-align:center">⚡ MARCAR<br>COMPLETA</button>'
+            : ''))+
     '</div>'+
     // Rezagados banner
     rezBanner+
@@ -3622,6 +3624,97 @@ async function _confirmSessionDone(di) {
 
 async function marcarDia(di) {
   await markSessionDone(di);
+}
+
+// Marca la sesión como completa rellenando todos los sets con datos de
+// referencia (semana anterior > histórico de ejercicio). Se usa cuando el
+// cliente entrenó pero no registró set por set en el momento.
+async function markSessionDoneFromHistory(di) {
+  if (CURRENT_WEEK !== REAL_WEEK) {
+    showToast('Solo en la semana activa', true); return;
+  }
+  if (LOGS['done_'+CURRENT_WEEK+'_'+di]) {
+    showToast('Esta sesión ya está completa', true); return;
+  }
+  var sesiones = getSesiones();
+  var ses = sesiones[di];
+  if (!ses) { showToast('Sesión no encontrada', true); return; }
+  var ejercicios = ses.exercises || [];
+  if (!ejercicios.length) { showToast('Sesión sin ejercicios', true); return; }
+
+  // Confirmar con el usuario antes de rellenar
+  if (!confirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.\n\n¿Continuar?')) return;
+
+  var sinReferencia = [];
+  var totalSetsRellenados = 0;
+  var defaultRIR = getAdjustedRIR(2, CURRENT_WEEK);
+
+  ejercicios.forEach(function(ej, ei) {
+    var exName = (ej.nombre || ej.exerciseName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+    // Respetar exmod (override del usuario) si existe
+    var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
+    if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
+
+    // Buscar referencia: 1) semana anterior, 2) histórico
+    var refLoad = 0, refReps = 0, refRir = defaultRIR, refUnit = getExUnit(di, ei) || 'kg';
+    var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12);
+    if (prev && prev.avgLoad > 0) {
+      refLoad = Math.round(prev.avgLoad * 4) / 4;
+      refReps = Math.round(prev.avgReps);
+      refRir = Math.round(prev.avgRIR) || defaultRIR;
+      // Tomar la unidad del set previo si existe
+      var prevSetKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0';
+      if (LOGS[prevSetKey] && LOGS[prevSetKey].unit) refUnit = LOGS[prevSetKey].unit;
+    } else {
+      var hist = EXERCISE_HISTORY[exName] || {};
+      if (hist.load && parseFloat(hist.load) > 0) {
+        refLoad = parseFloat(hist.load);
+        refReps = parseInt(hist.reps) || parseInt(ej.repsRange) || 8;
+        refRir  = parseInt(hist.rir) !== undefined && !isNaN(parseInt(hist.rir)) ? parseInt(hist.rir) : defaultRIR;
+        if (hist.unit) refUnit = hist.unit;
+      }
+    }
+
+    if (!refLoad) { sinReferencia.push(ej.nombre || ej.exerciseName || ('Ej '+(ei+1))); return; }
+
+    // Rellenar todos los sets del ejercicio (que no estén ya registrados)
+    for (var s = 0; s < numSeries; s++) {
+      var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+      if (LOGS[k] && LOGS[k].done) continue; // respetar sets ya registrados
+      LOGS[k] = {
+        carga: String(refLoad),
+        reps:  String(refReps),
+        unit:  refUnit,
+        done:  true,
+        rir:   defaultRIR,
+        rir_real: refRir,
+        ics:   8,   // calidad de set asumida (no medida)
+        pump:  2,   // ok
+        ts:    Date.now(),
+        autoFilled: true
+      };
+      totalSetsRellenados++;
+    }
+
+    // Actualizar histórico
+    EXERCISE_HISTORY[exName] = {
+      load: String(refLoad), reps: String(refReps), rir: refRir,
+      unit: refUnit, updatedAt: Date.now()
+    };
+  });
+
+  if (sinReferencia.length === ejercicios.length) {
+    showToast('Sin datos de referencia para ningún ejercicio', true);
+    return;
+  }
+  if (sinReferencia.length > 0) {
+    alert('No se encontró referencia para:\n• ' + sinReferencia.join('\n• ') + '\n\nEl resto sí se rellenó. Podrás registrar estos manualmente o también marcarlos.');
+  }
+
+  showToast('✓ '+totalSetsRellenados+' sets rellenados — completa el check-in');
+  // Disparar modal post-sesión (igual que el flujo normal)
+  showPostSessionModal(di);
 }
 
 
