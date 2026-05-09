@@ -2856,6 +2856,35 @@ function renderEntrenamiento() {
             ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar todos los sets con datos de la semana anterior o tu histórico" style="background:rgba(200,165,74,.1);border:1px solid var(--accent);border-radius:20px;padding:6px 12px;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;letter-spacing:.5px;line-height:1.2;text-align:center">⚡ MARCAR<br>COMPLETA</button>'
             : ''))+
     '</div>'+
+    // Glosario RIR + ICS (colapsable)
+    '<details style="margin:0 16px 8px;background:rgba(200,165,74,.04);border:1px solid rgba(200,165,74,.18);border-radius:10px;padding:8px 12px">'+
+      '<summary style="cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.5px;display:flex;align-items:center;gap:6px">'+
+        '<span style="font-size:13px">📖</span><span>QUÉ ES RIR Y QUÉ ES ICS</span>'+
+        '<span style="margin-left:auto;font-size:14px;color:var(--mt)">▾</span>'+
+      '</summary>'+
+      '<div style="margin-top:10px;display:grid;gap:10px;font-size:12px;line-height:1.55;color:var(--tx)">'+
+        '<div>'+
+          '<div style="color:#e8a040;font-weight:700;letter-spacing:.5px;margin-bottom:3px">RIR · Reps In Reserve</div>'+
+          '<div style="color:var(--mt2)">Repeticiones que <em>todavía podrías hacer</em> al terminar la serie, antes de fallar técnicamente.</div>'+
+          '<div style="margin-top:5px;display:grid;gap:2px;color:var(--mt);font-size:11px">'+
+            '<div><strong style="color:var(--red)">RIR 0</strong> = al fallo, no podías ni una más.</div>'+
+            '<div><strong style="color:#e8a040">RIR 1-2</strong> = muy cerca del fallo (rango típico de hipertrofia).</div>'+
+            '<div><strong style="color:var(--grn)">RIR 3+</strong> = lejos del fallo (semanas iniciales o deload).</div>'+
+          '</div>'+
+          '<div style="margin-top:5px;color:var(--mt);font-size:11px">El <strong style="color:var(--tx)">RIR objetivo</strong> lo marca tu plan según la semana. Tú reportas el <strong style="color:var(--tx)">RIR real</strong> que sentiste — diferencia mucho del objetivo = avísale al coach.</div>'+
+        '</div>'+
+        '<div style="border-top:1px solid rgba(255,255,255,.06);padding-top:8px">'+
+          '<div style="color:var(--accent2);font-weight:700;letter-spacing:.5px;margin-bottom:3px">ICS · Índice de Calidad de Serie (1–10)</div>'+
+          '<div style="color:var(--mt2)">Tu autoevaluación de qué tan <em>limpia</em> sentiste la serie: técnica, control excéntrico, contracción, ROM completo.</div>'+
+          '<div style="margin-top:5px;display:grid;gap:2px;color:var(--mt);font-size:11px">'+
+            '<div><strong style="color:var(--grn)">8-10</strong> = serie limpia, técnica perfecta, conexión mente-músculo alta.</div>'+
+            '<div><strong style="color:#e8a040">7</strong> = aceptable, alguna rep dudosa pero sin compensar.</div>'+
+            '<div><strong style="color:var(--red)">&lt;7</strong> = técnica deficiente / compensaciones / ROM incompleto → <strong style="color:var(--tx)">la próxima sesión bajará la carga</strong>.</div>'+
+          '</div>'+
+          '<div style="margin-top:5px;color:var(--mt);font-size:11px">Sé honesto: el algoritmo usa el ICS para decidir si subir, mantener o bajar peso la próxima semana. Mentir = peor progreso.</div>'+
+        '</div>'+
+      '</div>'+
+    '</details>'+
     // Rezagados banner
     rezBanner+
     // Exercise navigator (horizontal scroll)
