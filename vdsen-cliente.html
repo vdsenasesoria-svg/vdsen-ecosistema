@@ -3458,7 +3458,7 @@ function saveExMod(di, ei) {
   var rr  = (document.getElementById('exmod_rr').value  || '').trim() || null;
   var rir = document.getElementById('exmod_rir').value;
   var key = 'exmod_'+CURRENT_WEEK+'_'+di+'_'+ei;
-  LOGS[key] = { numSeries: ns, repsRange: rr, rir: rir !== '' ? parseInt(rir) : undefined };
+  LOGS[key] = { numSeries: ns, repsRange: rr, rir: rir !== '' ? parseInt(rir) : null };
   saveLogs();
   var overlay = document.getElementById('exModOverlay');
   if (overlay) overlay.style.display = 'none';
@@ -3588,7 +3588,15 @@ async function _confirmSessionDone(di) {
   // Guardar inmediatamente (bypass debounce) — crítico en Safari iOS donde los timers
   // se pueden cancelar al cambiar de tab o al apagar pantalla
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
-  await _doSaveLogs();
+  var _ok = await _doSaveLogs();
+  if (_ok === false) {
+    // No persistió en Firestore — revertir el done_ y avisar al usuario.
+    delete LOGS[key];
+    showToast('⚠ NO SE GUARDÓ — revisa conexión / errores. Reintenta.', true);
+    renderEntrenamiento();
+    renderResumen();
+    return;
+  }
   showToast('SESIÓN COMPLETADA ✓');
   renderEntrenamiento();
   renderResumen();
@@ -3628,15 +3636,21 @@ async function saveLogs() {
 }
 
 async function _doSaveLogs() {
-  if (!USER || !FB) return;
+  if (!USER || !FB) return false;
   try {
+    // Sanear: Firestore rechaza objetos con `undefined`. JSON.parse(JSON.stringify(...))
+    // descarta cualquier campo undefined heredado de versiones anteriores o de bugs.
+    const _safeEntries = JSON.parse(JSON.stringify(LOGS || {}));
+    const _safeUnits   = JSON.parse(JSON.stringify(EXERCISE_UNITS || {}));
+    const _safeHist    = JSON.parse(JSON.stringify(EXERCISE_HISTORY || {}));
     const ref = FB.doc(FB.db, 'logs', USER.uid);
-    await FB.setDoc(ref, { entries: LOGS, currentWeek: REAL_WEEK, planId: ACTIVE_PLAN_ID, exerciseUnits: EXERCISE_UNITS, exerciseHistory: EXERCISE_HISTORY, updatedAt: Date.now() });
+    await FB.setDoc(ref, { entries: _safeEntries, currentWeek: REAL_WEEK, planId: ACTIVE_PLAN_ID, exerciseUnits: _safeUnits, exerciseHistory: _safeHist, updatedAt: Date.now() });
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
     // Indicador breve de guardado exitoso
     _showSaveOk();
+    return true;
   } catch(e) {
     console.error('saveLogs error:', e.message);
     // Mostrar badge de error persistente
@@ -3649,6 +3663,7 @@ async function _doSaveLogs() {
     }
     errEl.style.display = 'block';
     errEl.textContent = '⚠ Error guardando: ' + (e.code || '') + ' ' + e.message;
+    return false;
   }
 }
 
