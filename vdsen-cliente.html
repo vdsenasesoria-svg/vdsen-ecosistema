@@ -2138,12 +2138,8 @@ function _buildExPanel(ejercicios, di) {
       progrecHtml+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
-        (!sessionDone
-          ? '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'
-          : '')+
-        (!sessionDone
-          ? '<button onclick="showExModModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">⚙ Ajustar</button>'
-          : '')+
+        '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'+
+        '<button onclick="showExModModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">⚙ Ajustar</button>'+
         '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'var(--accent)':'var(--mt)')+';background:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'rgba(200,165,74,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'rgba(200,165,74,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
         (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(68,136,204,.1);border:1px solid rgba(68,136,204,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
@@ -2253,12 +2249,10 @@ function _buildExPanel(ejercicios, di) {
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+saved.carga+' '+unit+' × '+saved.reps+' reps</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
-        // Botón ↩ solo disponible si la sesión NO está cerrada
-        (!sessionDone
-          ? '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
-              'margin-left:auto;padding:5px 10px;border:1px solid var(--border);border-radius:8px;'+
-              'background:var(--input-bg);color:var(--mt);font-size:13px;cursor:pointer;flex-shrink:0">↩</button>'
-          : '')+
+        // Botón ↩ siempre disponible — el cliente puede re-editar cualquier set
+        '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
+            'margin-left:auto;padding:5px 10px;border:1px solid var(--border);border-radius:8px;'+
+            'background:var(--input-bg);color:var(--mt);font-size:13px;cursor:pointer;flex-shrink:0">↩</button>'+
       '</div>';
     } else if (sessionDone && !saved.done) {
       // ── SET SIN DATOS (sesión cerrada) ────────────────────────────────
@@ -2270,27 +2264,12 @@ function _buildExPanel(ejercicios, di) {
       '</div>';
     } else if (s === activeSi) {
       // ── SET ACTIVO ───────────────────────────────────────────────────
-      var suggestion = '';
-      if (progRec && progRec.newLoad) {
-        var actionLabels = {
-          deload:'DELOAD', reduce_load:'↓ BAJAR', reduce_sets:'↓ SERIES',
-          add_sets:'+ SERIES', increase_load:'↑ SUBIR', freeze_load:'= MANTENER', maintain:'='
-        };
-        var lbl = actionLabels[progRec.action] || '';
-        suggestion = '⚡ '+progRec.newLoad+' '+unit+' · '+progRec.newSets+'s'+(progRec.newReps?' · '+progRec.newReps+'r':'')+' · RIR '+progRec.rirTarget+' ['+lbl+']';
-      } else if (prev.carga) {
-        var pc = parseFloat(prev.carga)||0;
-        var prir = parseInt(prev.rir_real || prev.rir);
-        var step = 2.5;
-        suggestion = (!isNaN(prir) && prir <= baseRIR)
-          ? '→ '+(pc+step).toFixed(1)+' '+unit+' (↑ auto)'
-          : '→ '+pc+' '+unit+' (= mant.)';
-      }
-      var prevRefHtml = prev.carga
-        ? '<div style="font-size:10px;color:var(--mt);margin-bottom:8px">↩ Sem '+(CURRENT_WEEK-1)+': '+prev.carga+' '+unit+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+' </div>'
-        : (!prev.carga && s===0 && histEx.load && !saved.carga
-            ? '<div style="font-size:10px;color:rgba(108,150,255,.7);margin-bottom:8px">📋 Historial: '+histEx.load+' '+unit+(histEx.reps?' × '+histEx.reps+' reps':'')+' </div>'
-            : (suggestion ? '<div style="font-size:10px;color:var(--accent);font-weight:600;background:rgba(200,165,74,.06);border:1px solid rgba(200,165,74,.15);display:inline-block;padding:2px 6px;border-radius:4px;margin-bottom:8px">'+suggestion+'</div>' : ''));
+      // Construir referencias visualmente diferenciadas:
+      //   1) PROGRESIÓN (algoritmo) → card grande dorada con flecha + acción
+      //   2) SEM ANTERIOR (datos reales) → badge naranja pequeño
+      //   3) HISTORIAL (último mesociclo) → badge azul pequeño, sólo si NO hay sem anterior
+      var refHtml = _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIR, CURRENT_WEEK);
+      var prevRefHtml = refHtml;
 
       setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(200,165,74,.5);border-radius:14px;padding:14px;background:rgba(200,165,74,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
@@ -2391,11 +2370,12 @@ function _buildExPanel(ejercicios, di) {
     '</div>';
   }
 
-  // Banner sesión cerrada
+  // Banner sesión completa — INFORMATIVO, sets siguen siendo editables
   var closedBannerHtml = sessionDone
-    ? '<div style="background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px">'+
-        '<span style="font-size:14px">🔒</span>'+
-        '<span style="font-size:11px;color:var(--grn);font-weight:700">Sesión guardada — sets bloqueados para edición</span>'+
+    ? '<div style="background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+        '<span style="font-size:14px">✓</span>'+
+        '<span style="font-size:11px;color:var(--grn);font-weight:700;flex:1">Sesión completada · puedes seguir editando series</span>'+
+        '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
       '</div>'
     : '';
 
@@ -2669,21 +2649,25 @@ function renderEntrenamiento() {
       numColor  = 'var(--mt)';
       subColor  = 'var(--mt)';
     }
+    // Refuerzo visual cuando la semana es la ACTIVA: glow lateral + badge prominente
+    var realGlow = isReal ? 'box-shadow:inset 0 -4px 0 var(--accent),0 0 18px rgba(200,165,74,.25);' : '';
     return '<button onclick="setWeek('+w+')" style="'+
       'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+
-      'padding:8px 0 6px;border:none;cursor:pointer;flex:1;'+
+      'padding:'+(isReal?'12px 0 8px':'8px 0 6px')+';border:none;cursor:pointer;flex:1;'+
       'background:'+bg+';'+
-      'border-bottom:3px solid '+borderBot+';'+
+      'border-bottom:'+(isReal?'4':'3')+'px solid '+borderBot+';'+
+      realGlow+
       'border-radius:0;position:relative;transition:background .15s">'+
-      // Badge ACTIVA solo en la semana real
+      // Badge ACTIVA solo en la semana real — ahora MUY visible
       (isReal
-        ? '<span style="position:absolute;top:2px;left:50%;transform:translateX(-50%);'+
-          'font-size:6.5px;letter-spacing:.8px;color:var(--accent);font-weight:800;white-space:nowrap;'+
-          'background:rgba(200,165,74,.18);padding:1px 4px;border-radius:3px">ACTIVA</span>'
+        ? '<span style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);'+
+          'font-size:8px;letter-spacing:1.2px;color:#000;font-weight:900;white-space:nowrap;'+
+          'background:var(--accent);padding:2px 8px;border-radius:0 0 6px 6px;box-shadow:0 2px 6px rgba(200,165,74,.5)">● ACTIVA</span>'
         : '')+
-      '<span style="font-family:var(--ff);font-size:'+(isReal?'20':'17')+'px;font-weight:800;color:'+numColor+';margin-top:'+(isReal?'10':'4')+'px">'+
+      '<span style="font-family:var(--ff);font-size:'+(isReal?'22':'17')+'px;font-weight:900;color:'+numColor+';margin-top:'+(isReal?'12':'4')+'px;'+
+        (isReal?'text-shadow:0 0 12px rgba(200,165,74,.6);':'')+'">'+
         (done&&!isView?'✓':w)+'</span>'+
-      '<span style="font-size:8.5px;letter-spacing:.8px;font-weight:'+(isReal?'800':'600')+';color:'+subColor+'">'+
+      '<span style="font-size:'+(isReal?'9':'8.5')+'px;letter-spacing:.8px;font-weight:'+(isReal?'900':'600')+';color:'+subColor+'">'+
         (deload?'DELOAD':getSemProgresion(w))+'</span>'+
       '</button>';
   }).join('');
@@ -2852,9 +2836,7 @@ function renderEntrenamiento() {
       '</div>'+
       (isDone
         ? '<div style="background:rgba(58,148,96,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
-        : (CURRENT_WEEK === REAL_WEEK
-            ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar todos los sets con datos de la semana anterior o tu histórico" style="background:rgba(200,165,74,.1);border:1px solid var(--accent);border-radius:20px;padding:6px 12px;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;letter-spacing:.5px;line-height:1.2;text-align:center">⚡ MARCAR<br>COMPLETA</button>'
-            : ''))+
+        : '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar todos los sets con datos de la semana anterior o tu histórico" style="background:rgba(200,165,74,.1);border:1px solid var(--accent);border-radius:20px;padding:6px 12px;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;letter-spacing:.5px;line-height:1.2;text-align:center">⚡ MARCAR<br>COMPLETA</button>')+
     '</div>'+
     // Glosario RIR + ICS (colapsable)
     '<details style="margin:0 16px 8px;background:rgba(200,165,74,.04);border:1px solid rgba(200,165,74,.18);border-radius:10px;padding:8px 12px">'+
@@ -3082,29 +3064,11 @@ function buildBoostcampExercise(ej, di, ei) {
     var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
 
     // Auto-prog suggestion: buscar recomendación del algoritmo de progresión
-    var suggestion = '';
     var progRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
-    if (!completed && progRec) {
-      // Recomendación calculada por el algoritmo
-      var actionLabels = {
-        deload:'DELOAD', reduce_load:'↓ BAJAR', reduce_sets:'↓ SERIES',
-        add_sets:'+ SERIES', increase_load:'↑ SUBIR', freeze_load:'= MANTENER', maintain:'='
-      };
-      var lbl = actionLabels[progRec.action] || '';
-      suggestion = '⚡ ' + progRec.newLoad + ' ' + unit + ' · ' + progRec.newSets + 's' +
-        (progRec.newReps ? ' · '+progRec.newReps+'r' : '') +
-        ' · RIR '+progRec.rirTarget + ' [' + lbl + ']';
-    } else if (!completed && prev.carga) {
-      // Fallback: sugerencia simple basada en semana anterior
-      var pc = parseFloat(prev.carga)||0;
-      var prir = parseInt(prev.rir_real || prev.rir);
-      var step = 2.5;
-      if (!isNaN(prir) && prir <= baseRIR) {
-        suggestion = '→ ' + (pc+step).toFixed(1)+' '+unit+' (↑ auto)';
-      } else {
-        suggestion = '→ ' + pc+' '+unit+' (= mant.)';
-      }
-    }
+    var baseRIRforRef = getAdjustedRIR(parseInt(ej.rir)||2, CURRENT_WEEK);
+    var refBlockHtml = (!completed)
+      ? _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK)
+      : '';
 
     var borderCol = completed ? 'rgba(58,148,96,.5)' : 'var(--border)';
     var bgCol     = completed ? 'rgba(58,148,96,.05)' : 'var(--surface2)';
@@ -3159,18 +3123,8 @@ function buildBoostcampExercise(ej, di, ei) {
           '</div>'+
           // Inputs
           '<div style="flex:1;min-width:0">'+
-            // Referencia semana anterior / historial mesociclo anterior
-            (prev.carga
-              ? '<div style="font-size:10px;color:var(--mt);margin-bottom:4px">'+
-                  '↩ '+prev.carga+' '+unit+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+
-                '</div>'
-              : (!prev.carga && s===0 && histEx.load && !saved.carga
-                  ? '<div style="font-size:10px;color:rgba(108,150,255,.7);margin-bottom:4px">'+
-                      '📋 Historial: '+histEx.load+' '+unit+(histEx.reps?' × '+histEx.reps+' reps':'')+
-                    '</div>'
-                  : (suggestion
-                  ? '<div style="font-size:10px;color:'+(progRec?'var(--accent)':'rgba(108,150,255,.7)')+';margin-bottom:4px;'+(progRec?'font-weight:600;background:rgba(200,165,74,.06);padding:2px 6px;border-radius:4px;border:1px solid rgba(200,165,74,.15);display:inline-block':'')+'">'+suggestion+'</div>'
-                  : '')))+
+            // Referencias visualmente diferenciadas: progresión > sem anterior > historial
+            refBlockHtml+
             '<div style="display:flex;gap:5px">'+
               '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
@@ -3185,9 +3139,7 @@ function buildBoostcampExercise(ej, di, ei) {
               'border-radius:8px;color:#e8a040;font-size:14px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box"'+
               ' onfocus="this.select()">'+
             '</div>'+
-            '<div id="hint_'+key+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px">'+
-              (suggestion && prev.carga ? '→ '+suggestion : '')+
-            '</div>'+
+            '<div id="hint_'+key+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px"></div>'+
           '</div>'+
           // Botones derecha
           '<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">'+
@@ -3379,15 +3331,11 @@ function completeSet(key, di, ei, si, unit) {
 }
 
 // ── Corregir serie ya guardada (abre el set para re-editar) ──
+// Permitido SIEMPRE, incluso si la sesión ya fue marcada como completa
+// y aunque sea de una semana anterior. El cliente puede corregir cualquier
+// dato de su bitácora.
 function editSet(key) {
   if (!LOGS[key]) return;
-  // Bloquear si la sesión ya está guardada (done_W_D)
-  var parts = key.split('_'); // log_W_D_E_sS
-  var _di = parseInt(parts[2]);
-  if (LOGS['done_'+CURRENT_WEEK+'_'+_di]) {
-    showToast('🔒 Sesión cerrada — no se pueden editar los sets', true);
-    return;
-  }
   LOGS[key].done = false;
   saveLogs();
   _refreshExPanelOnly();
@@ -3631,23 +3579,34 @@ async function _confirmSessionDone(di) {
   showToast('SESIÓN COMPLETADA ✓');
   renderEntrenamiento();
   renderResumen();
+  // Auto-avance de semana: NO depende de la semana que se esté viendo.
+  // Avanza mientras la semana REAL siga completa, hasta 6 (deload).
+  // Esto cubre el caso de marcar varias semanas atrasadas de un tirón.
+  await _autoAdvanceWeekIfDone(CURRENT_WEEK !== REAL_WEEK /*fromOtherWeekView*/);
+}
+
+// Avanza REAL_WEEK mientras todas las sesiones de la semana real estén completas.
+// Se llama después de cualquier marcado de sesión completa.
+async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
   var sesiones = getSesiones();
-  // Solo avanzar si se están completando sesiones de la semana REAL activa
-  if (CURRENT_WEEK === REAL_WEEK) {
+  if (!sesiones.length) return;
+  var advanced = false;
+  // Loop: puede avanzar varias semanas si el usuario marcó varias atrasadas
+  while (REAL_WEEK < 6) {
     var todasDone = sesiones.every(function(_,i){ return !!LOGS['done_'+REAL_WEEK+'_'+i]; });
-    if (todasDone && REAL_WEEK < 6) {
-      setTimeout(function(){
-        showToast('🏆 SEMANA '+REAL_WEEK+' COMPLETA → SEM '+(REAL_WEEK+1));
-        setTimeout(function(){
-          REAL_WEEK++;
-          CURRENT_WEEK = REAL_WEEK;
-          if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
-          _doSaveLogs();
-          renderEntrenamiento();
-          renderResumen();
-        }, 1200);
-      }, 600);
-    }
+    if (!todasDone) break;
+    REAL_WEEK++;
+    advanced = true;
+  }
+  if (advanced) {
+    // Solo saltar la vista a la nueva semana si el usuario estaba en la
+    // semana real (no si está revisando una semana pasada explícitamente).
+    if (!fromOtherWeekView) CURRENT_WEEK = REAL_WEEK;
+    if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+    await _doSaveLogs();
+    showToast('🏆 SEMANA COMPLETA — Avanzaste a SEM '+REAL_WEEK);
+    renderEntrenamiento();
+    renderResumen();
   }
 }
 
@@ -3659,9 +3618,6 @@ async function marcarDia(di) {
 // referencia (semana anterior > histórico de ejercicio). Se usa cuando el
 // cliente entrenó pero no registró set por set en el momento.
 async function markSessionDoneFromHistory(di) {
-  if (CURRENT_WEEK !== REAL_WEEK) {
-    showToast('Solo en la semana activa', true); return;
-  }
   if (LOGS['done_'+CURRENT_WEEK+'_'+di]) {
     showToast('Esta sesión ya está completa', true); return;
   }
@@ -6325,6 +6281,77 @@ function _getWeeklyVolumeByPattern(pattern) {
 }
 
 // ── Obtener datos de la semana anterior para un ejercicio ──
+// Construye el bloque de referencia visual para un set activo, mostrando con
+// claridad y separación las tres fuentes posibles de información:
+//   1) PROGRESIÓN (calculada por algoritmo) — card grande dorada con flecha
+//   2) SEM ANTERIOR (dato real de la semana W-1) — badge naranja pequeño
+//   3) HISTORIAL (último mesociclo registrado) — badge azul pequeño
+// Se muestran apiladas; PROGRESIÓN siempre arriba y prominente cuando existe.
+function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek) {
+  var blocks = [];
+
+  // ── 1) PROGRESIÓN del algoritmo ──
+  if (progRec && progRec.newLoad) {
+    var actionMeta = {
+      increase_load: { label:'SUBIR CARGA',   arrow:'↑', color:'var(--grn)',  bg:'rgba(58,148,96,.10)',   bd:'rgba(58,148,96,.45)'   },
+      add_sets:      { label:'+ SERIES',      arrow:'＋', color:'var(--grn)',  bg:'rgba(58,148,96,.10)',   bd:'rgba(58,148,96,.45)'   },
+      freeze_load:   { label:'MANTENER',      arrow:'＝', color:'var(--gold)', bg:'rgba(200,165,74,.10)',  bd:'rgba(200,165,74,.45)'  },
+      maintain:      { label:'MANTENER',      arrow:'＝', color:'var(--gold)', bg:'rgba(200,165,74,.10)',  bd:'rgba(200,165,74,.45)'  },
+      reduce_sets:   { label:'BAJAR SERIES',  arrow:'↓', color:'#FF8844',     bg:'rgba(255,140,50,.10)',  bd:'rgba(255,140,50,.45)'  },
+      reduce_load:   { label:'BAJAR CARGA',   arrow:'↓', color:'var(--red)',  bg:'rgba(220,60,60,.10)',   bd:'rgba(220,60,60,.45)'   },
+      deload:        { label:'DELOAD',        arrow:'⤵', color:'var(--blue)', bg:'rgba(68,136,204,.10)',  bd:'rgba(68,136,204,.45)'  }
+    };
+    var meta = actionMeta[progRec.action] || actionMeta.maintain;
+    blocks.push(
+      '<div style="margin-bottom:10px;padding:10px 12px;background:'+meta.bg+';border:1px solid '+meta.bd+';border-left:4px solid '+meta.color+';border-radius:0 10px 10px 0">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+          '<span style="font-size:14px;font-weight:900;color:'+meta.color+';line-height:1">'+meta.arrow+'</span>'+
+          '<span style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:'+meta.color+'">⚡ PROGRESIÓN · '+meta.label+'</span>'+
+        '</div>'+
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline">'+
+          '<div><span style="font-size:18px;font-weight:900;color:var(--tx)">'+progRec.newLoad+'</span> <span style="font-size:11px;color:var(--mt);font-weight:700">'+unit+'</span></div>'+
+          '<div><span style="font-size:16px;font-weight:800;color:var(--tx)">'+progRec.newSets+'</span><span style="font-size:11px;color:var(--mt);font-weight:700"> series</span></div>'+
+          (progRec.newReps ? '<div><span style="font-size:16px;font-weight:800;color:var(--tx)">'+progRec.newReps+'</span><span style="font-size:11px;color:var(--mt);font-weight:700"> reps</span></div>' : '')+
+          '<div><span style="font-size:14px;font-weight:800;color:#e8a040">RIR '+progRec.rirTarget+'</span></div>'+
+        '</div>'+
+        (progRec.reason ? '<div style="font-size:10px;color:var(--mt2);margin-top:5px;line-height:1.4">'+progRec.reason+'</div>' : '')+
+      '</div>'
+    );
+  }
+
+  // ── 2) SEM ANTERIOR ──
+  if (prev && prev.carga) {
+    blocks.push(
+      '<div style="margin-bottom:6px;font-size:10px;color:#FF8844;background:rgba(255,140,50,.06);border:1px solid rgba(255,140,50,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
+        '<span style="font-weight:800;letter-spacing:.8px">↩ SEM '+(curWeek-1)+'</span>'+
+        '<span style="color:var(--mt2)">'+prev.carga+' '+unit+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+'</span>'+
+      '</div>'
+    );
+  }
+  // ── 3) HISTORIAL (sólo si NO hubo sem anterior y es el primer set) ──
+  else if (setIdx === 0 && histEx && histEx.load) {
+    blocks.push(
+      '<div style="margin-bottom:6px;font-size:10px;color:rgba(108,150,255,.9);background:rgba(68,136,204,.06);border:1px solid rgba(68,136,204,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
+        '<span style="font-weight:800;letter-spacing:.8px">📋 HISTORIAL</span>'+
+        '<span style="color:var(--mt2)">'+histEx.load+' '+(histEx.unit||unit)+(histEx.reps?' × '+histEx.reps+' reps':'')+(histEx.rir?' · RIR '+histEx.rir:'')+'</span>'+
+      '</div>'
+    );
+  }
+
+  // Si NO hay nada todavía pero la sem anterior tiene carga, sugerir paso simple
+  if (blocks.length === 0 && prev && prev.carga) {
+    var pc = parseFloat(prev.carga)||0;
+    var prir = parseInt(prev.rir_real || prev.rir);
+    var step = 2.5;
+    var simpleSug = (!isNaN(prir) && prir <= baseRIR)
+      ? '→ '+(pc+step).toFixed(1)+' '+unit+' (subir 2.5)'
+      : '→ '+pc+' '+unit+' (mantener)';
+    blocks.push('<div style="font-size:10px;color:var(--accent);font-weight:600;margin-bottom:6px">'+simpleSug+'</div>');
+  }
+
+  return blocks.join('');
+}
+
 function _getPrevWeekData(week, di, ei, maxSets) {
   if (week <= 1) return null;
   var prevWeek = week - 1;
