@@ -151,7 +151,10 @@
     <label class="block text-xs text-[#888] mb-1">Email</label>
     <input id="nc-email" class="input-field mb-3" type="email" placeholder="juan@email.com">
     <label class="block text-xs text-[#888] mb-1">Contraseña temporal</label>
-    <input id="nc-pass" class="input-field mb-4" type="password" placeholder="mínimo 6 caracteres">
+    <div style="position:relative" class="mb-4">
+      <input id="nc-pass" class="input-field" type="password" placeholder="mínimo 6 caracteres" style="padding-right:42px;width:100%;box-sizing:border-box">
+      <button type="button" onclick="_togglePwd('nc-pass',this)" aria-label="Mostrar/ocultar contraseña" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px">👁</button>
+    </div>
     <button id="nc-submit" class="btn-primary w-full">Crear cliente</button>
   </div>
 </div>
@@ -355,7 +358,7 @@
       // Login automático con credenciales de prueba (solo para demostración, en producción usar formulario)
       signInWithEmailAndPassword(auth, "coach@vdsen.com", "password").catch(() => {
         // Si falla, mostrar pantalla de login simple
-        document.body.innerHTML = `<div class="flex items-center justify-center h-screen"><div class="card p-6"><h2 class="text-xl mb-4">Login Coach</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email"><input id="loginPass" class="input-field mb-2" type="password"><button id="loginBtn" class="btn-primary">Ingresar</button><div id="loginErr" class="text-sm mt-2" style="color:#c94a3a"></div><div class="text-center mt-3"><a href="#" id="forgotBtn" class="text-sm" style="color:#888;text-decoration:underline">¿Olvidaste tu contraseña?</a></div></div></div>`;
+        document.body.innerHTML = `<div class="flex items-center justify-center h-screen"><div class="card p-6"><h2 class="text-xl mb-4">Login Coach</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email"><div style="position:relative" class="mb-2"><input id="loginPass" class="input-field" type="password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="(function(b){var i=document.getElementById('loginPass');var s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'🙈':'👁';})(this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div><button id="loginBtn" class="btn-primary">Ingresar</button><div id="loginErr" class="text-sm mt-2" style="color:#c94a3a"></div><div class="text-center mt-3"><a href="#" id="forgotBtn" class="text-sm" style="color:#888;text-decoration:underline">¿Olvidaste tu contraseña?</a></div></div></div>`;
         document.getElementById("loginBtn")?.addEventListener("click", () => {
           const email = document.getElementById("loginEmail").value;
           const pass = document.getElementById("loginPass").value;
@@ -1394,11 +1397,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
 
     body.innerHTML = `
-      <p class="text-sm text-[#888] mb-4">${c.email}</p>
+      <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <p class="text-sm text-[#888]">${c.email}</p>
+        <button onclick="editClientInfo('${clientId}')" class="text-[#C9A84C] text-xs underline">✏️ Editar datos</button>
+      </div>
       <div class="mb-5">
-        <div class="flex justify-between items-center mb-2">
+        <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Plan de entrenamiento</h4>
-          <div>${planActionsHtml}</div>
+          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''}</div>
         </div>
         <div id="training-view">${planViewHtml}</div>
         <div id="training-editor" style="display:none">${planEditorHtml}</div>
@@ -1987,6 +1993,163 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   }
 
+  // ── Editar datos del cliente (nombre, email, password) ────────────────────
+  async function editClientInfo(clientId) {
+    const snap = await getDoc(doc(db, "clients", clientId));
+    if (!snap.exists()) { showToast('Cliente no encontrado', true); return; }
+    const c = snap.data();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:460px">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-bold">Editar datos · ${c.displayName||'(sin nombre)'}</h3>
+          <button class="text-[#888] hover:text-white text-xl" onclick="this.closest('.modal-overlay').remove()">✕</button>
+        </div>
+        <label class="block text-xs text-[#888] mb-1">Nombre / Usuario</label>
+        <input id="eci-name" class="input-field mb-3" value="${(c.displayName||'').replace(/"/g,'&quot;')}">
+        <label class="block text-xs text-[#888] mb-1">Email <span class="text-[#555]">(referencia — Auth real requiere SDK admin)</span></label>
+        <input id="eci-email" class="input-field mb-3" type="email" value="${(c.email||'').replace(/"/g,'&quot;')}">
+        <div class="p-3 mb-3 rounded" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.25)">
+          <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
+            <strong style="color:#4488cc">ℹ️ Contraseña:</strong> el SDK web no permite cambiarla directamente al cliente. Envía un enlace de reseteo al correo del cliente y él la elige.
+          </div>
+          <button id="eci-reset-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc;cursor:pointer">📧 Enviar enlace de reseteo de contraseña</button>
+          <div id="eci-reset-status" class="text-xs mt-2"></div>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn-secondary flex-1">Cancelar</button>
+          <button id="eci-save" class="btn-primary flex-1">Guardar cambios</button>
+        </div>
+        <div id="eci-status" class="text-xs mt-2"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#eci-reset-btn').onclick = async () => {
+      const st = overlay.querySelector('#eci-reset-status');
+      const targetEmail = overlay.querySelector('#eci-email').value.trim();
+      if (!targetEmail) { st.style.color='#c94a3a'; st.textContent='Sin email'; return; }
+      try {
+        await sendPasswordResetEmail(auth, targetEmail);
+        st.style.color = '#44BB88';
+        st.textContent = '✓ Enlace enviado a ' + targetEmail;
+      } catch(e) {
+        st.style.color = '#c94a3a';
+        st.textContent = 'Error: ' + (e.code || e.message);
+      }
+    };
+    overlay.querySelector('#eci-save').onclick = async () => {
+      const newName  = overlay.querySelector('#eci-name').value.trim();
+      const newEmail = overlay.querySelector('#eci-email').value.trim();
+      const st = overlay.querySelector('#eci-status');
+      if (!newName) { st.style.color='#c94a3a'; st.textContent='Nombre vacío'; return; }
+      try {
+        const updates = { displayName: newName };
+        if (newEmail && newEmail !== c.email) updates.email = newEmail;
+        await updateDoc(doc(db, "clients", clientId), updates);
+        st.style.color = '#44BB88';
+        st.textContent = '✓ Guardado' + (newEmail !== c.email ? ' (campo email del doc actualizado; Auth real no cambió)' : '');
+        loadClientList();
+        setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 600);
+      } catch(e) {
+        st.style.color = '#c94a3a';
+        st.textContent = 'Error: ' + (e.code || e.message);
+      }
+    };
+  }
+  window.editClientInfo = editClientInfo;
+
+  // ── Actualizar plan EXISTENTE (mismo planId, NO resetea semanas) ─────────
+  // Pega un JSON con la misma estructura del plan actual. Si la cantidad de
+  // días coincide, se hace updateDoc preservando planId, createdAt y los logs
+  // del cliente. Si difiere, se aborta con aviso para evitar romper la bitácora.
+  async function showUpdatePlanModal(clientId, planId) {
+    const planSnap = await getDoc(doc(db, "plans", planId));
+    if (!planSnap.exists()) { showToast('Plan no encontrado', true); return; }
+    const cur = planSnap.data();
+    const curDays = (cur.days || []).length;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:560px">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-bold">🔁 Actualizar plan en sitio</h3>
+          <button class="text-[#888] hover:text-white text-xl" onclick="this.closest('.modal-overlay').remove()">✕</button>
+        </div>
+        <div class="text-xs text-[#cfcfcf] mb-3 leading-relaxed p-3 rounded" style="background:rgba(68,187,136,.06);border:1px solid rgba(68,187,136,.25)">
+          <strong style="color:#44BB88">Mantiene</strong> el ID del plan, la semana actual del cliente y toda la bitácora.<br>
+          <strong style="color:#FF8844">Requisito:</strong> el JSON nuevo debe tener <strong>${curDays} día${curDays===1?'':'s'}</strong> (mismo número que el plan actual). Si difiere, el plan no se actualiza para evitar romper los logs ya registrados.<br>
+          <strong style="color:#888">Tip:</strong> puedes cambiar ejercicios, sets, reps, RIR, técnicas, notas, etc. — sólo no cambies la cantidad de días.
+        </div>
+        <textarea id="upd-plan-json" class="input-field mb-3" rows="12" placeholder="Pega aquí el JSON con la misma estructura de días..."></textarea>
+        <div class="flex gap-2">
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn-secondary flex-1">Cancelar</button>
+          <button id="upd-plan-apply" class="btn-primary flex-1">Aplicar actualización</button>
+        </div>
+        <div id="upd-plan-status" class="text-xs mt-2"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#upd-plan-apply').onclick = async () => {
+      const raw = overlay.querySelector('#upd-plan-json').value.trim();
+      const st  = overlay.querySelector('#upd-plan-status');
+      if (!raw) { st.style.color='#c94a3a'; st.textContent='Pega el JSON'; return; }
+      let obj; try { obj = JSON.parse(raw); } catch(e) { st.style.color='#c94a3a'; st.textContent='JSON inválido: '+e.message; return; }
+      if (!obj || !Array.isArray(obj.days) || !obj.days.length) {
+        st.style.color='#c94a3a'; st.textContent='El JSON debe tener "days" como array no vacío'; return;
+      }
+      if (obj.days.length !== curDays) {
+        st.style.color='#c94a3a'; st.textContent=`Incoherente: el plan actual tiene ${curDays} días y el JSON trae ${obj.days.length}. Si necesitas cambiar la cantidad de días, usa "Importar plan" (creará uno nuevo y reiniciará la semana).`;
+        return;
+      }
+      // Normalizar (misma lógica que parsePlanFromJSON pero sin reasignar createdAt/planId)
+      const days = obj.days.map((d, di) => ({
+        dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
+        label: String(d.label || `Día ${di + 1}`),
+        exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
+          exerciseName: String(ex.exerciseName || '').trim(),
+          alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
+          technique: String(ex.technique || 'straight').toLowerCase().trim(),
+          techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+          coachNote: String(ex.coachNote || '').trim(),
+          sets: Array.isArray(ex.sets) && ex.sets.length > 0 ? ex.sets.map((s, si) => ({
+            setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
+            repsTarget: parseInt(s.repsTarget) || 8,
+            rirTarget: parseInt(s.rirTarget ?? 2),
+            load: parseFloat(s.load ?? 0) || 0,
+            restSeconds: parseInt(s.restSeconds ?? 90) || 90,
+            setNote: String(s.setNote || s.note || '').trim(),
+            drop: s.drop === true,
+            tempo: String(s.tempo || '').trim()
+          })) : []
+        })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+      })).filter(d => d.exercises.length > 0);
+      if (days.length !== curDays) {
+        st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;
+        return;
+      }
+      try {
+        await updateDoc(doc(db, "plans", planId), {
+          days,
+          daysPerWeek: days.length,
+          weeks: obj.weeks || cur.weeks || 6,
+          rirByWeek: obj.rirByWeek || cur.rirByWeek || null,
+          coachId: currentCoach.uid,
+          updatedAt: new Date().toISOString()
+        });
+        // Auto-catalogar ejercicios nuevos (igual que importación)
+        _autoAddExercisesToCatalog(days);
+        st.style.color = '#44BB88';
+        st.textContent = '✓ Plan actualizado · semana del cliente intacta · bitácora preservada';
+        setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 900);
+      } catch(e) {
+        st.style.color = '#c94a3a';
+        st.textContent = 'Error al guardar: ' + (e.code || e.message);
+      }
+    };
+  }
+  window.showUpdatePlanModal = showUpdatePlanModal;
+
   async function deletePlan(clientId, planId) {
     if (!await _askConfirm('¿Eliminar el plan activo de este cliente?<br><span style="color:#888;font-size:12px">El cliente quedará sin plan asignado.</span>')) return;
     // Paso 1: quitar activePlanId del cliente
@@ -2319,6 +2482,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.parsePlanFromPDF = parsePlanFromPDF;
   window.parsePlanFromJSON = parsePlanFromJSON;
   window.saveImportedPlan = saveImportedPlan;
+  window._togglePwd = function(id, btn) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var show = el.type === 'password';
+    el.type = show ? 'text' : 'password';
+    if (btn) btn.textContent = show ? '🙈' : '👁';
+  };
   window.showClientDetail = showClientDetail;
   window.closeClientModal = closeClientModal;
   window.deleteExercise = deleteExercise;
