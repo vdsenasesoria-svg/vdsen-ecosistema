@@ -4814,6 +4814,11 @@ function parsearYRenderComidas(texto) {
   function esSustitucionesSection(lt) {
     // Normalizar: quitar acentos para comparación
     var n = lt.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
+    // Si la l\u00ednea contiene una cantidad (g, ml, kcal, mg, mcg, ui), NO es un
+    // encabezado de secci\u00f3n \u2014 es un alimento, suplemento o nota de macros.
+    // Esto evita que "Prote\u00edna ISO XP Applied Nutrition 50g" se confunda con
+    // el inicio de la secci\u00f3n Amerika "Proteinas Sardinas en agua 200g...".
+    if (/\d+\s*(g|ml|mg|mcg|ui|kcal)\b/i.test(lt)) return false;
     return /^(SUSTITUCIONES|TABLA DE SUSTITUCIONES)/.test(n)
         || /^PROTEINAS?[:\s]/.test(n)
         || /^CARBOHIDRATOS?[:\s]/.test(n)
@@ -6012,36 +6017,262 @@ function exportPDF() {
         if(_nu.proteina){ macroBox('Proteína',''+_nu.proteina,'g / día',    BLB, BL, bx); bx+=45; }
         if(_nu.carbos)  { macroBox('Carbos',  ''+_nu.carbos,  'g / día',   GRB, GR, bx); bx+=45; }
         if(_nu.grasas)  { macroBox('Grasas',  ''+_nu.grasas,  'g / día',   PUB, PU, bx); }
-        y+=30; gap(5);
+        y+=30; gap(7);
       }
     }
 
-    // ── Detalle textual del plan nutricional ──
-    if(_nFinal){
-      _nFinal.split('\n').forEach(function(line){
-        var lt=line.trim().replace(/^[─•]\s*/,'');
-        if(!lt){gap(2);return;}
-        lt=lt.replace(CLEAN,'');
-        if(!lt.trim()){gap(1);return;}
-        if(/^(COMIDA\s*\d|DESAYUNO|ALMUERZO|CENA|PRE.?ENTRENO|POST.?ENTRENO|SNACK|COLACI)/i.test(lt)){ subH(lt); return; }
-        if(/^(TOTAL|MACROS?\s*(DIARIOS)?|LBM|BMR|TDEE|Prote[ií]na|Carbohidratos|Grasas)\s*[:]/i.test(lt)){
-          chk(6); doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(...I1);
-          doc.text(lt,M,y); y+=5.5; doc.setFont('helvetica','normal'); return;
-        }
-        if(/\d+\s*(g|ml|pza)/i.test(lt)){
-          var igM=lt.match(/^(.+?)\s*[:]\s*(\d+(?:\.\d+)?\s*(?:g|ml|pza))/i);
-          if(igM){
-            chk(5);
-            doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(...I1);
-            doc.text(igM[1].trim(),M+4,y);
-            doc.setFont('helvetica','bold'); doc.setTextColor(...OR);
-            doc.text(igM[2],M+W-22,y); y+=5.2;
-            doc.setFont('helvetica','normal'); doc.setTextColor(...I1);
-          } else { bTxt(lt,{ind:4}); }
+    // ── Parser estructurado de comidas para el PDF ──
+    // Cada comida = { titulo, alimentos[], macros, descripcion, suplementos[], notas[] }
+    function _pdfParseComidas(texto) {
+      var lines = texto.split('\n');
+      var comidas = [];
+      var cur = null;
+      var inSuplsComida = false;
+      var inExtras = false;  // PARÁMETROS / SUPUESTOS / MONITOREO
+      var extras = { titulo: '', items: [] };
+      var encabezadoRe = /^(COMIDA\s*\d|DESAYUNO|ALMUERZO|COMIDA\s*PRINCIPAL|CENA|PRE-?ENTRENO|POST-?ENTRENO|SNACK|COLACI[OÓ]N|NOCHE)/i;
+      var alimRe = /\d+\s*(g|ml|pza|pieza|cucharada|taza|unidad)\b/i;
+      lines.forEach(function(l) {
+        var lt = l.trim();
+        if (!lt) { inSuplsComida = false; return; }
+        // Separadores
+        if (/^[─═]{2,}/.test(lt)) {
+          // Buscar título entre los separadores
+          var m = lt.match(/^[─═\s]+([A-ZÁÉÍÓÚÑ ]+)[─═\s]+$/i);
+          if (m) {
+            if (/PARAMETRO|PARÁMETRO|SUPUESTO|MONITOREO/i.test(m[1])) {
+              if (cur) { comidas.push(cur); cur = null; }
+              inSuplsComida = false; inExtras = true;
+              extras = { titulo: m[1].trim(), items: [] };
+              extras.id = m[1].toLowerCase().replace(/[^a-z]/g,'');
+              comidas.push({ tipo: 'extras', data: extras });
+              return;
+            }
+          }
           return;
         }
-        if(lt===lt.toUpperCase()&&lt.length>3&&lt.length<70){ subH(lt); return; }
-        bTxt(lt);
+        // Encabezado de comida
+        if (encabezadoRe.test(lt) && !/REDUCIR|AUMENTAR|ELIMINAR/i.test(lt)) {
+          if (cur) comidas.push(cur);
+          cur = { tipo:'comida', titulo: lt, alimentos: [], macros: null, descripcion: '', suplementos: [], notas: [] };
+          inSuplsComida = false; inExtras = false;
+          return;
+        }
+        // Estamos en sección extras (parámetros, supuestos, monitoreo)
+        if (inExtras) {
+          // Detectar nueva sub-sección
+          var m2 = lt.match(/^[─═]{0,}\s*(PARAMETRO|PARÁMETRO|SUPUESTO|MONITOREO)/i);
+          if (m2) {
+            extras = { titulo: m2[1].trim(), items: [] };
+            extras.id = m2[1].toLowerCase().replace(/[^a-z]/g,'');
+            comidas.push({ tipo: 'extras', data: extras });
+            return;
+          }
+          extras.items.push(lt);
+          return;
+        }
+        if (!cur) {
+          // Header con metadata tipo "─── CUTTING · Plan: 2026-05-17 ───"
+          if (/CUTTING|BULKING|RECOMP|MAINTENANCE|PLAN:/i.test(lt)) return;
+          return;
+        }
+        // Sub-bloque suplementos con esta comida
+        if (/SUPLEMENTOS?\s+CON\s+ESTA\s+COMIDA/i.test(lt)) { inSuplsComida = true; return; }
+        // Macros de comida
+        if (/^Macros\s*:/i.test(lt) && !/^Macros\s+(A|B)/i.test(lt)) {
+          cur.macros = lt.replace(/^Macros\s*:\s*/i,'').trim();
+          return;
+        }
+        if (/^Descripción/i.test(lt) || /^Descripcion/i.test(lt)) {
+          cur.descripcion = lt.replace(/^Descripci[oó]n\s*:\s*/i,'').trim();
+          return;
+        }
+        // Suplementos con comida (líneas con "- Nombre Dosis (nota)")
+        if (inSuplsComida) {
+          var slt = lt.replace(/^[\-•]\s*/,'').trim();
+          if (slt) cur.suplementos.push(slt);
+          return;
+        }
+        // Alimentos (con cantidad/unidad)
+        var alimLt = lt.replace(/^[\-•]\s*/,'').trim();
+        if (alimRe.test(alimLt)) {
+          cur.alimentos.push(alimLt);
+          return;
+        }
+        // Nota tras alimento ("→ ...")
+        if (/^→/.test(lt) || /^→/.test(alimLt)) {
+          var nota = lt.replace(/^→\s*/,'').trim();
+          if (cur.alimentos.length) {
+            // anexar como sub-nota al último alimento
+            var last = cur.alimentos[cur.alimentos.length - 1];
+            cur.alimentos[cur.alimentos.length - 1] = last + '\n   ↳ ' + nota;
+          } else cur.notas.push(nota);
+          return;
+        }
+        // TOTAL del día
+        if (/^TOTAL\s+PROT|^TOTAL\s+CARBS|^TOTAL\s+kcal/i.test(lt)) {
+          if (cur) { comidas.push(cur); cur = null; }
+          return;
+        }
+        // Otras notas
+        cur.notas.push(lt);
+      });
+      if (cur) comidas.push(cur);
+      return comidas;
+    }
+
+    // ── Render de comidas en formato CARD ──
+    if(_nFinal){
+      var COMIDAS = _pdfParseComidas(_nFinal);
+      COMIDAS.forEach(function(item) {
+        if (item.tipo === 'extras') {
+          // Sección informativa (Parámetros, Supuestos, Monitoreo)
+          if (!item.data.items.length) return;
+          chk(10); gap(2);
+          doc.setFillColor(245,242,235); doc.rect(M, y, W, 7, 'F');
+          doc.setFillColor(...I2); doc.rect(M, y, 2.5, 7, 'F');
+          doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...I0);
+          doc.text(item.data.titulo.toUpperCase(), M+5, y+5);
+          y += 9;
+          item.data.items.forEach(function(it) {
+            var clean = it.replace(/^[─═]+\s*|\s*[─═]+$/g,'').trim();
+            if (!clean) return;
+            bTxt(clean, {sz:7.5, col:I2, ind:3});
+          });
+          gap(3);
+          return;
+        }
+        // Comida normal — card
+        var c = item;
+        // Calcular altura aproximada
+        var nAlim = c.alimentos.length;
+        var nSupls = c.suplementos.length;
+        var nNotas = c.notas.length;
+        var estAlt = 14 + (nAlim*7) + (c.macros?6:0) + (c.descripcion?8:0) + (nSupls?(6+nSupls*5):0) + (nNotas*5) + 6;
+        chk(Math.min(estAlt, 80) + 4);
+
+        // Header de la comida
+        doc.setFillColor(...GB); doc.rect(M, y, W, 11, 'F');
+        doc.setFillColor(...GD); doc.rect(M, y, 3, 11, 'F');
+        doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...GD);
+        var tituloComida = c.titulo.replace(/\s+\(\d+:\d+\).*$/,'').trim();
+        var horarioM = c.titulo.match(/\((\d+:\d+)\)/);
+        doc.text(tituloComida.toUpperCase().substring(0,55), M+7, y+7.5);
+        if (horarioM) {
+          doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(...I2);
+          doc.text('⏱ '+horarioM[1], M+W-3, y+7.5, {align:'right'});
+        }
+        y += 13;
+
+        // Alimentos
+        c.alimentos.forEach(function(a, ai) {
+          var subNota = null;
+          var alim = a;
+          if (a.indexOf('\n   ↳ ') !== -1) {
+            var parts = a.split('\n   ↳ ');
+            alim = parts[0];
+            subNota = parts[1];
+          }
+          // Separar macros entre corchetes
+          var macrosM = alim.match(/\[([^\]]+)\]/);
+          var alimSinMacros = alim.replace(/\s*\[[^\]]+\]\s*/g,'').trim();
+          // Separar cantidad (último Xg/ml)
+          var cantM = alimSinMacros.match(/(.+?)\s+(\d+(?:\.\d+)?\s*(?:g|ml|pza|pieza|cucharada|taza|unidad)\b[^\s]*)\s*$/i);
+          var nombre = cantM ? cantM[1].trim() : alimSinMacros;
+          var cant = cantM ? cantM[2].trim() : '';
+
+          chk(7);
+          if (ai % 2 === 0) { doc.setFillColor(...SL); doc.rect(M, y-1, W, 6.5, 'F'); }
+          // Bullet
+          doc.setFillColor(...OR); doc.circle(M+3, y+2, 0.9, 'F');
+          // Nombre
+          doc.setFontSize(8.5); doc.setFont('helvetica','normal'); doc.setTextColor(...I0);
+          var maxNombreW = W - 70;
+          var nombreCorto = nombre;
+          if (doc.getTextWidth(nombre) > maxNombreW) {
+            while (doc.getTextWidth(nombreCorto + '…') > maxNombreW && nombreCorto.length > 5) nombreCorto = nombreCorto.slice(0, -1);
+            nombreCorto += '…';
+          }
+          doc.text(nombreCorto, M+6, y+3);
+          // Cantidad (derecha)
+          if (cant) {
+            doc.setFont('helvetica','bold'); doc.setTextColor(...OR);
+            doc.text(cant, M+W-30, y+3, {align:'right'});
+          }
+          // Macros breakdown (extremo derecho, gris pequeño)
+          if (macrosM) {
+            doc.setFontSize(6.8); doc.setFont('helvetica','normal'); doc.setTextColor(...I3);
+            doc.text(macrosM[1].replace(/\s*·\s*/g, ' '), M+W-2, y+3, {align:'right'});
+          }
+          y += 5.5;
+          // Sub-nota (en cursiva, indentada)
+          if (subNota) {
+            chk(4);
+            doc.setFontSize(7); doc.setFont('helvetica','italic'); doc.setTextColor(...I2);
+            doc.splitTextToSize(subNota, W-12).forEach(function(l) {
+              chk(4); doc.text(l, M+9, y+2.5); y += 3.8;
+            });
+            doc.setFont('helvetica','normal');
+            y += 1;
+          }
+        });
+        gap(1.5);
+
+        // Macros de la comida
+        if (c.macros) {
+          chk(7);
+          doc.setFillColor(...ORB); doc.rect(M+2, y, W-4, 7, 'F');
+          doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(...OR);
+          doc.text('MACROS', M+5, y+4.6);
+          doc.setFont('helvetica','normal'); doc.setTextColor(...I1);
+          // Quitar líneas de "PROT", "CARBS", etc., dejar números legibles
+          doc.text(c.macros, M+25, y+4.6);
+          y += 9;
+        }
+
+        // Preparación
+        if (c.descripcion) {
+          chk(8);
+          doc.setFontSize(7); doc.setFont('helvetica','italic'); doc.setTextColor(...I2);
+          doc.text('Preparación:', M+3, y+2.5);
+          doc.setFont('helvetica','normal');
+          var prepLines = doc.splitTextToSize(c.descripcion, W-20);
+          prepLines.forEach(function(l) {
+            chk(4); doc.text(l, M+18, y+2.5); y += 3.8;
+          });
+          y += 2;
+        }
+
+        // Suplementos con esta comida
+        if (c.suplementos.length) {
+          chk(6 + c.suplementos.length * 4);
+          doc.setFillColor(245,240,225); doc.rect(M+2, y, W-4, 5, 'F');
+          doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(...GD);
+          doc.text('Suplementos con esta comida:', M+5, y+3.5);
+          y += 6;
+          c.suplementos.forEach(function(s) {
+            chk(4.5);
+            doc.setFontSize(7.5); doc.setFont('helvetica','normal'); doc.setTextColor(...I1);
+            doc.splitTextToSize('• ' + s, W-14).forEach(function(l) {
+              chk(4); doc.text(l, M+8, y+2.5); y += 3.6;
+            });
+          });
+          y += 1;
+        }
+
+        // Notas adicionales
+        if (c.notas.length) {
+          c.notas.forEach(function(n) {
+            if (n.length < 3) return;
+            chk(4);
+            doc.setFontSize(7); doc.setFont('helvetica','italic'); doc.setTextColor(...I2);
+            doc.splitTextToSize(n, W-10).forEach(function(l) {
+              chk(4); doc.text(l, M+5, y+2.5); y += 3.6;
+            });
+          });
+        }
+
+        gap(4);
       });
     }
   }
@@ -6051,18 +6282,108 @@ function exportPDF() {
   // ══════════════════════════════════════════════════════════════════
   if(PLAN.suplementacion && PLAN.suplementacion.texto){
     np(); secH('PROTOCOLO DE SUPLEMENTACIÓN', PU, '◉');
-    PLAN.suplementacion.texto.split('\n').forEach(function(line){
-      var lt=line.trim();
-      if(!lt){gap(1.5);return;}
-      lt=lt.replace(CLEAN,'');
-      if(!lt.trim()) return;
-      if(/^(TIER\s*\d|PRE.?ENTRENO|EVITAR|SUPLEMENTOS|BÁSICO|AVANZADO)/i.test(lt)){ subH(lt); return; }
-      if(/\d+\s*(g|mg|mcg|ui|iu|caps?)/i.test(lt)){
-        chk(6); doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(...I0);
-        doc.splitTextToSize(lt,W-4).forEach(function(l){chk(5);doc.text(l,M+2,y);y+=5.2;});
-        doc.setFont('helvetica','normal'); return;
-      }
-      bTxt(lt,{ind:3});
+
+    // ── Parser estructurado de tiers ──
+    function _pdfParseTiers(texto) {
+      var lines = texto.split('\n');
+      var tiers = [];
+      var cur = null;
+      var tierHead = /^(TIER\s*[12]|PRE[-\s]?ENTRENO|EVITAR|SUPLEMENTOS\s+A\s+EVITAR|PROTOCOLO\s+PRE|B[ÁA]SICO|AVANZADO)/i;
+      lines.forEach(function(l) {
+        var lt = l.trim();
+        if (!lt) return;
+        if (tierHead.test(lt)) {
+          cur = { titulo: lt.toUpperCase(), items: [] };
+          tiers.push(cur);
+          return;
+        }
+        if (!cur) {
+          cur = { titulo: 'SUPLEMENTACIÓN', items: [] };
+          tiers.push(cur);
+        }
+        cur.items.push(lt);
+      });
+      return tiers;
+    }
+
+    // Colores por tier
+    var TIER_PDF_COLORS = {
+      'TIER 1':       { bg: GB, dark: GD, accent: G },
+      'TIER 2':       { bg: BLB, dark: [25,55,110], accent: BL },
+      'PRE-ENTRENO':  { bg: [255,225,225], dark: [180,40,40], accent: [220,68,68] },
+      'PREENTRENO':   { bg: [255,225,225], dark: [180,40,40], accent: [220,68,68] },
+      'EVITAR':       { bg: [240,225,225], dark: [120,60,60], accent: [150,80,80] },
+      'DEFAULT':      { bg: GB, dark: GD, accent: G }
+    };
+
+    var TIERS = _pdfParseTiers(PLAN.suplementacion.texto);
+    TIERS.forEach(function(t) {
+      if (!t.items.length) return;
+      var keyN = t.titulo.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'').toUpperCase();
+      var col = TIER_PDF_COLORS[keyN] ||
+                (keyN.indexOf('TIER1') >= 0 ? TIER_PDF_COLORS['TIER 1'] :
+                 keyN.indexOf('TIER2') >= 0 ? TIER_PDF_COLORS['TIER 2'] :
+                 keyN.indexOf('PRE') >= 0 ? TIER_PDF_COLORS['PRE-ENTRENO'] :
+                 keyN.indexOf('EVITAR') >= 0 ? TIER_PDF_COLORS['EVITAR'] :
+                 TIER_PDF_COLORS['DEFAULT']);
+
+      // Estimar altura
+      var estH = 14 + t.items.length * 7 + 4;
+      chk(Math.min(estH, 60) + 4);
+
+      // Header del tier
+      doc.setFillColor(...col.bg); doc.rect(M, y, W, 10, 'F');
+      doc.setFillColor(...col.dark); doc.rect(M, y, 3, 10, 'F');
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...col.dark);
+      doc.text(t.titulo.substring(0, 50), M+7, y+7);
+      doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(...I3);
+      doc.text(t.items.length + ' items', M+W-3, y+7, {align:'right'});
+      y += 13;
+
+      // Items
+      t.items.forEach(function(it, ii) {
+        if (ii % 2 === 0) { doc.setFillColor(...SL); doc.rect(M, y-1, W, 6.5, 'F'); }
+        chk(6);
+        // Separar dosis (mg/g/UI/caps)
+        var dosisM = it.match(/^(.+?)\s+(\d+[\d.,]*\s*(?:g|mg|mcg|ui|iu|caps?))\s*(.*)$/i);
+        if (dosisM) {
+          var nombre = dosisM[1].trim();
+          var dosis  = dosisM[2].trim();
+          var resto  = dosisM[3].trim();
+          // Bullet
+          doc.setFillColor(...col.accent); doc.circle(M+3, y+2, 1, 'F');
+          // Nombre
+          doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(...I0);
+          var maxNomW = W - 50;
+          var nomCorto = nombre;
+          if (doc.getTextWidth(nombre) > maxNomW) {
+            while (doc.getTextWidth(nomCorto + '…') > maxNomW && nomCorto.length > 5) nomCorto = nomCorto.slice(0, -1);
+            nomCorto += '…';
+          }
+          doc.text(nomCorto, M+7, y+3);
+          // Dosis (derecha)
+          doc.setFont('helvetica','bold'); doc.setTextColor(...col.dark);
+          doc.text(dosis.toUpperCase(), M+W-3, y+3, {align:'right'});
+          y += 5;
+          // Resto (timing / nota)
+          if (resto) {
+            chk(4);
+            doc.setFontSize(7); doc.setFont('helvetica','italic'); doc.setTextColor(...I2);
+            doc.splitTextToSize(resto, W-12).forEach(function(l) {
+              chk(4); doc.text(l, M+9, y+2); y += 3.5;
+            });
+            y += 0.5;
+          } else { y += 1; }
+        } else {
+          // Item sin dosis (nota explicativa)
+          doc.setFontSize(7.5); doc.setFont('helvetica','italic'); doc.setTextColor(...I2);
+          doc.splitTextToSize(it, W-8).forEach(function(l) {
+            chk(4); doc.text(l, M+5, y+2.5); y += 3.6;
+          });
+          y += 0.5;
+        }
+      });
+      gap(4);
     });
   }
 
