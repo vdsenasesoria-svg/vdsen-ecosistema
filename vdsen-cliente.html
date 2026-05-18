@@ -1165,6 +1165,32 @@ async function loadPlan(user) {
         setTimeout(function(){ location.reload(); }, 2000);
       });
 
+      // ── 3. Listener sobre el doc de LOGS del propio usuario ──────────────
+      // Sincroniza la semana ACTIVA y entries cuando otro dispositivo/tab
+      // modifica la bitácora. Solo reacciona si el cambio NO lo originó este
+      // tab (comparando updatedAt local vs remoto).
+      var _logsLastSeen = 0;
+      FB.onSnapshot(FB.doc(FB.db, 'logs', user.uid), function(snap) {
+        if (!snap.exists()) return;
+        var d = snap.data();
+        var ts = d.updatedAt || 0;
+        if (_logsLastSeen && ts <= _logsLastSeen + 500) return; // ignoramos el eco propio
+        _logsLastSeen = ts;
+        // Si el update viene de otro lado y la semana o las entries cambiaron,
+        // refrescar UI sin recargar la página.
+        var newWeek = parseInt(d.currentWeek || 1);
+        var entriesCount = Object.keys(d.entries || {}).length;
+        var localCount   = Object.keys(LOGS || {}).length;
+        if (newWeek !== REAL_WEEK || Math.abs(entriesCount - localCount) > 0) {
+          if (newWeek > REAL_WEEK) { REAL_WEEK = newWeek; CURRENT_WEEK = newWeek; }
+          LOGS = d.entries || {};
+          if (d.exerciseUnits)   EXERCISE_UNITS   = d.exerciseUnits;
+          if (d.exerciseHistory) EXERCISE_HISTORY = d.exerciseHistory;
+          try { renderEntrenamiento(); } catch(e){}
+          try { renderResumen();      } catch(e){}
+        }
+      });
+
     } catch(snapErr) { console.warn('onSnapshot no disponible:', snapErr.message); }
   } catch(e) {
     console.error('loadPlan ERROR:', e);
@@ -1989,11 +2015,45 @@ function _onTimerFinished() {
   showToast('⏱ ¡Descanso terminado!');
 }
 
+// Timestamp del último 'hidden' para decidir si recargar logs al volver
+var _lastHiddenAt = 0;
+
+// Re-sincronizar logs desde Firestore (usado al volver del background o al reconectar)
+// Es importante para Safari iOS y para mantener consistente la semana ACTIVA entre
+// dispositivos / pestañas del mismo usuario.
+async function _refreshLogsFromFirestore(reason) {
+  if (!USER || !FB) return;
+  try {
+    const ref = FB.doc(FB.db, 'logs', USER.uid);
+    const snap = await FB.getDoc(ref);
+    if (!snap.exists()) return;
+    const data = snap.data();
+    var fsWeek = parseInt(data.currentWeek || 1);
+    var fsEntries = data.entries || {};
+    var weekChanged = (fsWeek !== REAL_WEEK);
+    // Si Firestore tiene una semana mayor → otro dispositivo avanzó. Adoptarla.
+    if (fsWeek > REAL_WEEK) { REAL_WEEK = fsWeek; CURRENT_WEEK = fsWeek; }
+    // Si la cantidad de entries cambió significativamente, recargar LOGS en memoria
+    var entriesChanged = Object.keys(fsEntries).length !== Object.keys(LOGS || {}).length;
+    if (entriesChanged) LOGS = fsEntries;
+    if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
+    if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
+    if (weekChanged || entriesChanged) {
+      console.log('[refreshLogs]', reason, '→ week', fsWeek, 'entries', Object.keys(fsEntries).length);
+      try { renderEntrenamiento(); } catch(e){}
+      try { renderResumen();      } catch(e){}
+    }
+  } catch(e) {
+    console.warn('refreshLogs error:', e.message);
+  }
+}
+
 // Reanudar timer si la app volvió al primer plano
 document.addEventListener('visibilitychange', function() {
   // Safari iOS: cuando la app va a segundo plano, forzar guardado inmediato
   // si hay un write pendiente en el debounce (evita pérdida de datos)
   if (document.visibilityState === 'hidden') {
+    _lastHiddenAt = Date.now();
     if (_saveLogsTimer && USER && FB) {
       clearTimeout(_saveLogsTimer);
       _saveLogsTimer = null;
@@ -2002,6 +2062,12 @@ document.addEventListener('visibilitychange', function() {
     return;
   }
   if (document.visibilityState !== 'visible') return;
+  // Al volver al primer plano: si estuvo oculta >30s, re-sincronizar logs desde
+  // Firestore para evitar inconsistencias de semana activa entre dispositivos.
+  var hiddenFor = _lastHiddenAt ? (Date.now() - _lastHiddenAt) : 0;
+  if (hiddenFor > 30000) {
+    _refreshLogsFromFirestore('visibilitychange after ' + Math.round(hiddenFor/1000) + 's');
+  }
   var savedEnd = parseInt(localStorage.getItem('vdsen_restEnd') || '0');
   if (!savedEnd) return;
   _restEndMs = savedEnd;
@@ -4477,27 +4543,56 @@ function renderNutricion() {
        </div>`
     : '';
 
+  // ── Cálculo de porcentajes de macros (para barras de proporción) ──
+  const totalGr = (+prot||0) + (+carb||0) + (+gras||0);
+  const pctP = totalGr ? Math.round((+prot||0) * 100 / totalGr) : 0;
+  const pctC = totalGr ? Math.round((+carb||0) * 100 / totalGr) : 0;
+  const pctG = totalGr ? 100 - pctP - pctC : 0;
+
   const macroPanel = `
-    <div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:10px">
-      <div style="font-family:var(--ff);font-size:10px;letter-spacing:2px;color:var(--mt);margin-bottom:10px">MACRONUTRIENTES DIARIOS — MOTOR VDSEN v3.2</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid ${diffColor}">
-          <div style="font-family:var(--ff);font-size:22px;color:var(--gold);line-height:1">${kcal||'—'}</div>
-          <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">KCAL TOTALES</div>
+    <div style="background:linear-gradient(180deg,rgba(200,165,74,.06),rgba(200,165,74,.02));border:1px solid rgba(200,165,74,.25);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.2)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:20px">🥗</span>
+          <div>
+            <div style="font-family:var(--ff);font-size:13px;letter-spacing:1.5px;color:var(--gold);font-weight:800">MACROS DIARIOS</div>
+            <div style="font-size:10px;color:var(--mt);margin-top:1px">Tu objetivo nutricional</div>
+          </div>
         </div>
-        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid var(--bd)">
-          <div style="font-family:var(--ff);font-size:22px;color:#4488cc;line-height:1">${prot||'—'}</div>
-          <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">PROTEÍNA g</div>
-        </div>
-        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid var(--bd)">
-          <div style="font-family:var(--ff);font-size:22px;color:#4aaa5e;line-height:1">${carb||'—'}</div>
-          <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">CARBOS g</div>
-        </div>
-        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid var(--bd)">
-          <div style="font-family:var(--ff);font-size:22px;color:#cc8844;line-height:1">${gras||'—'}</div>
-          <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">GRASAS g</div>
+        <div style="text-align:right">
+          <div style="font-family:var(--ff);font-size:28px;color:var(--gold);line-height:1;font-weight:900">${kcal||'—'}</div>
+          <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);margin-top:2px">KCAL/DÍA</div>
         </div>
       </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+        <div style="text-align:center;padding:14px 6px;background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.3);border-radius:10px">
+          <div style="font-size:18px;margin-bottom:2px">💪</div>
+          <div style="font-family:var(--ff);font-size:24px;color:#6aacee;line-height:1;font-weight:900">${prot||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
+          <div style="font-size:9px;letter-spacing:1.5px;color:#6aacee;margin-top:4px;font-weight:700">PROTEÍNA</div>
+          <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctP}% · ${(+prot||0)*4} kcal</div>
+        </div>
+        <div style="text-align:center;padding:14px 6px;background:rgba(74,170,94,.08);border:1px solid rgba(74,170,94,.3);border-radius:10px">
+          <div style="font-size:18px;margin-bottom:2px">🌾</div>
+          <div style="font-family:var(--ff);font-size:24px;color:#6acc7e;line-height:1;font-weight:900">${carb||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
+          <div style="font-size:9px;letter-spacing:1.5px;color:#6acc7e;margin-top:4px;font-weight:700">CARBOS</div>
+          <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctC}% · ${(+carb||0)*4} kcal</div>
+        </div>
+        <div style="text-align:center;padding:14px 6px;background:rgba(204,136,68,.08);border:1px solid rgba(204,136,68,.3);border-radius:10px">
+          <div style="font-size:18px;margin-bottom:2px">🥑</div>
+          <div style="font-family:var(--ff);font-size:24px;color:#e8a060;line-height:1;font-weight:900">${gras||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
+          <div style="font-size:9px;letter-spacing:1.5px;color:#e8a060;margin-top:4px;font-weight:700">GRASAS</div>
+          <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctG}% · ${(+gras||0)*9} kcal</div>
+        </div>
+      </div>
+      ${totalGr > 0 ? `
+      <div style="margin-top:6px">
+        <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);margin-bottom:5px;font-weight:600">DISTRIBUCIÓN</div>
+        <div style="display:flex;height:8px;border-radius:6px;overflow:hidden;background:var(--dk)">
+          <div style="width:${pctP}%;background:#6aacee" title="Proteína ${pctP}%"></div>
+          <div style="width:${pctC}%;background:#6acc7e" title="Carbos ${pctC}%"></div>
+          <div style="width:${pctG}%;background:#e8a060" title="Grasas ${pctG}%"></div>
+        </div>
+      </div>` : ''}
       ${diffBadge}
     </div>`;
 
@@ -4532,10 +4627,20 @@ function renderNutricion() {
     </div>` : '';
 
   cont.innerHTML = `
-    <div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">PLAN NUTRICIONAL</div>
-    ${rdBanner}
-    ${macroPanel}
-    ${comidasHtml}`;
+    <div style="padding:14px 16px 8px;border-bottom:1px solid var(--bd);margin-bottom:14px;background:linear-gradient(180deg,rgba(200,165,74,.04),transparent)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:24px">🍽️</span>
+        <div>
+          <div style="font-family:var(--ff);font-size:18px;letter-spacing:2px;color:var(--gold);font-weight:900">PLAN NUTRICIONAL</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:1px">Tu alimentación diaria personalizada</div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:0 14px 100px">
+      ${rdBanner}
+      ${macroPanel}
+      ${comidasHtml}
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════
@@ -5404,15 +5509,133 @@ function renderPerfil() {
       </div>
     </div>
 
-    <div class="card" style="margin-top:8px">
-      <div class="card-title">SUPLEMENTACIÓN</div>
-      <div style="margin-top:8px">${supsHtml}</div>
+    <div style="margin-top:14px;padding:14px 16px 10px;background:linear-gradient(180deg,rgba(200,165,74,.04),transparent);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:24px">💊</span>
+        <div style="flex:1">
+          <div style="font-family:var(--ff);font-size:16px;letter-spacing:2px;color:var(--gold);font-weight:900">SUPLEMENTACIÓN</div>
+          <div style="font-size:10px;color:var(--mt);margin-top:1px">Stack personalizado · dosis y timing</div>
+        </div>
+      </div>
     </div>
+    <div style="padding:14px 4px 0">${supsHtml}</div>
 
+    <button onclick="showFAQModal()" style="width:100%;background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
     <button class="pdf-btn" onclick="exportPDF()" style="margin-top:10px">⬇ DESCARGAR MI PLAN PDF</button>
     <button class="logout-btn" onclick="doLogout()">CERRAR SESIÓN</button>
     <div style="text-align:center;font-size:9px;color:var(--mt);margin-top:16px;letter-spacing:1px">MOTOR VDSEN v3.2 · SOLO USO DEL CLIENTE</div>`;
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// FAQ / INSTRUCCIONES DE USO DE LA APP
+// ══════════════════════════════════════════════════════════════════════════
+function showFAQModal() {
+  var existing = document.getElementById('faqModal');
+  if (existing) { existing.style.display = 'flex'; return; }
+  var faqs = [
+    {
+      cat: '🏋 Entrenamiento',
+      items: [
+        { q: '¿Cómo registro una serie?',
+          a: 'En el tab <strong>Entrenamiento</strong>: selecciona el día, luego el ejercicio. Ingresa carga, repeticiones, RIR real, ICS (1-10) y selecciona el PUMP. Toca <strong>"✓ GUARDAR SERIE"</strong>. La serie queda en verde y empieza el cronómetro de descanso.' },
+        { q: '¿Qué es RIR?',
+          a: '<strong>RIR (Reps In Reserve)</strong>: repeticiones que aún podías hacer al terminar la serie. RIR 0 = al fallo, RIR 2 = pudiste 2 más. El RIR <em>objetivo</em> lo marca tu plan según la semana; tú reportas el RIR <em>real</em>.' },
+        { q: '¿Qué es ICS?',
+          a: '<strong>ICS (Índice de Calidad de Serie, 1-10)</strong>: tu autoevaluación de qué tan limpia sentiste la serie (técnica, control excéntrico, contracción, ROM). 8-10 = limpia · 7 = aceptable · &lt;7 = técnica deficiente → el algoritmo bajará la carga la siguiente semana.' },
+        { q: '¿Cómo copio los datos de la serie anterior?',
+          a: 'En la serie 2+ tienes un botón <strong>"= Copiar"</strong> que duplica carga, reps, RIR e ICS de la serie anterior. Útil cuando todas las series del ejercicio van iguales.' },
+        { q: '¿Qué pasa si no entrené set por set?',
+          a: 'Usa el botón <strong>⚡ MARCAR COMPLETA</strong> en el header de la sesión. Rellena automáticamente todas las series con los datos de tu semana anterior o histórico. Después llena el check-in post-sesión.' },
+        { q: '¿Puedo cambiar un ejercicio?',
+          a: 'Toca <strong>🔄 Cambiar</strong> en el header del ejercicio. Elige un sustituto del catálogo o escribe uno custom. Puedes añadir una nota explicando por qué (ej: "máquina ocupada").' },
+        { q: '¿Cómo ajusto series o reps de un ejercicio?',
+          a: 'Toca <strong>⚙ Ajustar</strong> en el header. Modifica número de series, rango de reps o RIR objetivo. El cambio queda en tu bitácora y el coach lo verá.' },
+        { q: '¿Por qué aparece "⚡ PROGRESIÓN" en algunos ejercicios?',
+          a: 'Es la recomendación del algoritmo VDSEN basado en cómo entrenaste la semana anterior (carga, ICS, RPE, recuperación). Muestra la carga sugerida, series y RIR objetivo para esta semana. <strong>Si dice "↑ SUBIR CARGA"</strong>: usa más kg. <strong>"= MANTENER"</strong>: misma carga. <strong>"↓ BAJAR"</strong>: reduce carga (técnica/recuperación deficiente).' },
+        { q: '¿Qué diferencia hay entre "SEM ANTERIOR" e "HISTORIAL"?',
+          a: '<strong>↩ SEM N-1</strong> (naranja): tu desempeño real de la semana pasada en este mismo ejercicio.<br><strong>📋 HISTORIAL</strong> (azul): tu última carga registrada en cualquier mesociclo previo. Solo aparece si no tienes semana anterior.' }
+      ]
+    },
+    {
+      cat: '📅 Semana y mesociclo',
+      items: [
+        { q: '¿Cómo sé cuál es mi semana activa?',
+          a: 'En el tab <strong>Entrenamiento</strong>, la pestaña con el badge dorado <strong>● ACTIVA</strong> arriba y número grande dorado. Las semanas previas ya completadas aparecen con ✓ verde, las futuras aparecen en gris.' },
+        { q: '¿Puedo registrar datos de una semana pasada?',
+          a: 'Sí. Toca cualquier pestaña de semana (pasada o futura). Verás un banner naranja indicando que estás en modo vista. Puedes registrar series, completar sesiones, editar — todo se guarda en su semana correcta.' },
+        { q: '¿Cuándo avanza la semana automáticamente?',
+          a: 'Cuando completas <strong>todas las sesiones</strong> de tu semana activa. La app te avisará con <strong>"🏆 SEMANA COMPLETA"</strong> y subirá REAL_WEEK +1.' },
+        { q: '¿Qué es la semana 6 (DELOAD)?',
+          a: 'Semana de descarga activa: volumen reducido a la mitad e intensidad 10% menor. El objetivo es <strong>RIR 3</strong> y técnica perfecta (ICS alto). Recuperas para el siguiente mesociclo.' }
+      ]
+    },
+    {
+      cat: '📊 Después de entrenar',
+      items: [
+        { q: '¿Qué es el check-in post-sesión?',
+          a: 'Modal que aparece al completar la sesión. Te pide: EIMD (dolor muscular 1-3), dolor articular (sí/no + patrón), horas de sueño y RPE de la sesión (1-10). El algoritmo usa estos datos para calcular tu progresión.' },
+        { q: '¿Y el check-in semanal?',
+          a: 'En el tab <strong>Check-in</strong>: peso semanal, HRV (variabilidad cardiaca, opcional) y WHO-5 (estado de ánimo). Llena uno cada semana — tu coach lo verá.' }
+      ]
+    },
+    {
+      cat: '🥗 Nutrición y suplementación',
+      items: [
+        { q: '¿Cómo veo mi plan de comidas?',
+          a: 'Tab <strong>Nutrición</strong>. Verás un panel con tus macros diarios totales (Kcal, P, C, G) y cada comida del día con sus alimentos y macros parciales.' },
+        { q: '¿Puedo sustituir un alimento?',
+          a: 'Sí. Toca el botón <strong>↻</strong> al lado de cualquier alimento. Te ofrecerá 5 alternativas con los gramos equivalentes para mantener tus macros.' },
+        { q: '¿Y los suplementos?',
+          a: 'En el tab <strong>Perfil</strong>. Verás cada suplemento con su dosis y timing (mañana, pre-entreno, post-entreno, noche). Los TIER 1 y TIER 2 son los recomendados; los EVITAR son los que NO debes tomar.' }
+      ]
+    },
+    {
+      cat: '🔧 Problemas comunes',
+      items: [
+        { q: 'Marqué una sesión completa pero después aparece como no guardada',
+          a: 'Verifica tu conexión. Si hay un badge rojo <strong>⚠ Error guardando</strong> abajo, hubo un problema con Firestore — vuelve a intentarlo cuando tengas red. La app guarda backup local mientras tanto.' },
+        { q: 'No me aparecen las instrucciones de un ejercicio',
+          a: 'Las instrucciones (📖 EJECUCIÓN DEL EJERCICIO) aparecen si el ejercicio está en el catálogo VDSEN o si el coach añadió notas específicas. Si no aparece, avisa a tu coach para que añada el ejercicio al catálogo.' },
+        { q: 'Tengo dos dispositivos (celular + tablet). ¿Se sincronizan?',
+          a: 'Sí. La app usa Firestore en tiempo real. Cuando uno marca una serie o avanza una semana, el otro se actualiza automáticamente al volver al primer plano (o instantáneamente si está abierto).' },
+        { q: 'La app no carga / queda en la pantalla de login',
+          a: 'Revisa que tu coach te haya asignado un plan activo. Si tu correo no está vinculado, contacta a tu coach. Si el error persiste, cierra sesión y vuelve a entrar.' }
+      ]
+    }
+  ];
+  var html =
+    '<div id="faqModal" style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 12px">'+
+      '<div style="background:var(--bg);max-width:560px;width:100%;border:1px solid var(--gold);border-radius:14px;padding:18px 16px;margin:20px auto;box-shadow:0 0 40px rgba(0,0,0,.6)">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;border-bottom:1px solid var(--bd);padding-bottom:12px">'+
+          '<div>'+
+            '<div style="font-family:var(--ff);font-size:16px;letter-spacing:2px;color:var(--gold);font-weight:800">❓ AYUDA · INSTRUCCIONES</div>'+
+            '<div style="font-size:11px;color:var(--mt);margin-top:2px">Cómo usar tu app VDSEN</div>'+
+          '</div>'+
+          '<button onclick="document.getElementById(\'faqModal\').style.display=\'none\'" style="background:transparent;border:1px solid var(--bd);color:var(--mt);width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer">✕</button>'+
+        '</div>'+
+        faqs.map(function(sec) {
+          return '<div style="margin-bottom:18px">'+
+            '<div style="font-size:13px;font-weight:800;color:var(--gold);letter-spacing:1px;margin-bottom:10px;padding:6px 10px;background:rgba(200,165,74,.08);border-left:3px solid var(--gold);border-radius:0 6px 6px 0">'+sec.cat+'</div>'+
+            sec.items.map(function(it) {
+              return '<details style="margin-bottom:6px;background:rgba(255,255,255,.02);border:1px solid var(--bd);border-radius:8px">'+
+                '<summary style="cursor:pointer;list-style:none;padding:10px 12px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tx);font-weight:600">'+
+                  '<span style="color:var(--gold);font-size:12px;font-weight:800;flex-shrink:0">▸</span>'+
+                  '<span style="flex:1">'+it.q+'</span>'+
+                '</summary>'+
+                '<div style="padding:0 14px 12px 32px;font-size:12px;color:var(--mt2);line-height:1.65">'+it.a+'</div>'+
+              '</details>';
+            }).join('')+
+          '</div>';
+        }).join('')+
+        '<div style="margin-top:16px;padding:10px 12px;background:rgba(200,165,74,.05);border:1px solid rgba(200,165,74,.2);border-radius:8px;font-size:11px;color:var(--mt);line-height:1.6;text-align:center">'+
+          '💡 ¿Tu pregunta no está aquí? Háblale a tu coach.'+
+        '</div>'+
+        '<button onclick="document.getElementById(\'faqModal\').style.display=\'none\'" style="width:100%;background:var(--gold);color:#000;border:none;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:800;padding:12px;border-radius:8px;cursor:pointer;margin-top:14px">CERRAR</button>'+
+      '</div>'+
+    '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+window.showFAQModal = showFAQModal;
 
 function formatTextoSup(texto) {
   if (!texto) return '<div style="color:var(--mt);font-size:11px">Sin suplementos</div>';
@@ -5471,28 +5694,57 @@ function formatTextoSup(texto) {
     }
   });
 
+  // Mapa de iconos por timing
+  const TIMING_ICON = {
+    'Mañana': '☀️', 'Pre-entreno': '⚡', 'Post-entreno': '💪',
+    'Con comida': '🍽️', 'Noche': '🌙'
+  };
+  // Mapa de iconos por suplemento (visual identificación rápida)
+  const SUP_ICON = {
+    'Creatina':'💎', 'Whey':'🥛', 'Proteína Whey':'🥛',
+    'Omega-3':'🐟', 'Omega 3':'🐟',
+    'Vitamina D':'☀️', 'Vitamina D3':'☀️',
+    'Magnesio':'🧂', 'Zinc':'🦴', 'Hierro':'🩸',
+    'Citrulina':'🔋', 'Cafeína':'☕', 'Cafeina':'☕',
+    'Beta-Alanina':'⚡', 'Beta Alanina':'⚡',
+    'HMB':'🧬', 'Ashwagandha':'🌿', 'Melatonina':'😴',
+    'Multivitamínico':'💊', 'L-Teanina':'🍵', 'Vitamina C':'🍊',
+    'Colágeno':'🦴', 'Taurina':'⚡', 'Glutamina':'🧪'
+  };
   return secciones.map(sec => {
     const style = TIER_COLORS[sec.key] || TIER_COLORS.DEFAULT;
+    const tierIcon = sec.key === 'TIER 1' ? '⭐' : sec.key === 'TIER 2' ? '✦' :
+                     sec.key === 'PRE-ENTRENO' ? '⚡' : sec.key === 'EVITAR' ? '🚫' : '💊';
     const itemsHtml = sec.items.map(item => {
-      if (item.tipo === 'sup') return `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--mt2)">
-          <div>
-            <div style="font-size:12px;color:var(--tx)">${item.nombre}</div>
-            ${item.momento ? `<div style="font-size:9px;color:var(--mt);margin-top:2px;letter-spacing:1px">${item.momento}</div>` : ''}
+      if (item.tipo === 'sup') {
+        const icon = SUP_ICON[item.nombre] || '💊';
+        const timingIcon = TIMING_ICON[item.momento] || '';
+        return `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+          <div style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${style.bg};border:1px solid ${style.border};border-radius:10px;font-size:20px">${icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;color:var(--tx);font-weight:700;line-height:1.2">${item.nombre}</div>
+            ${item.momento ? `<div style="font-size:10px;color:var(--mt);margin-top:3px;letter-spacing:.5px;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:5px;font-weight:600">${timingIcon} ${item.momento}</div>` : ''}
           </div>
-          <div style="font-family:var(--ff);font-size:14px;color:${style.color};letter-spacing:1px">${item.dosis}</div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-family:var(--ff);font-size:15px;color:${style.color};letter-spacing:1px;font-weight:800;line-height:1">${item.dosis}</div>
+            <div style="font-size:9px;color:var(--mt);margin-top:2px;letter-spacing:.5px">DOSIS</div>
+          </div>
         </div>`;
-      return `<div style="font-size:10px;color:var(--mt);padding:3px 0;font-style:italic">${item.texto}</div>`;
+      }
+      return `<div style="font-size:11px;color:var(--mt);padding:6px 0;font-style:italic;line-height:1.5;border-left:2px solid ${style.border};padding-left:10px;margin:4px 0">${item.texto}</div>`;
     }).join('');
     if (!itemsHtml) return '';
     return `
-      <div style="margin-bottom:12px;border:1px solid ${style.border};background:${style.bg}">
-        <div style="padding:8px 12px;border-bottom:1px solid ${style.border}">
-          <div style="font-family:var(--ff);font-size:12px;letter-spacing:2px;color:${style.color}">${sec.titulo}</div>
+      <div style="margin-bottom:14px;border:1px solid ${style.border};background:${style.bg};border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.15)">
+        <div style="padding:12px 14px;border-bottom:1px solid ${style.border};display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.15)">
+          <span style="font-size:16px">${tierIcon}</span>
+          <div style="font-family:var(--ff);font-size:12px;letter-spacing:2px;color:${style.color};font-weight:800;flex:1">${sec.titulo}</div>
+          <span style="font-size:9px;color:var(--mt);letter-spacing:1px">${sec.items.filter(i=>i.tipo==='sup').length} items</span>
         </div>
-        <div style="padding:4px 12px">${itemsHtml}</div>
+        <div style="padding:4px 14px 8px">${itemsHtml}</div>
       </div>`;
-  }).join('') || '<div style="color:var(--mt);font-size:11px">Sin suplementos</div>';
+  }).join('') || '<div style="color:var(--mt);font-size:11px;text-align:center;padding:20px">Sin suplementos asignados</div>';
 }
 
 // ══════════════════════════════════════════════════
