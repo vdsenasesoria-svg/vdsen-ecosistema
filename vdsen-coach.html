@@ -1444,6 +1444,48 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function renderNutritionEditor(n) {
     n = n || {};
     return `
+      <details class="mb-3" style="background:rgba(68,187,136,.05);border:1px solid rgba(68,187,136,.25);border-radius:8px;padding:10px 12px">
+        <summary style="cursor:pointer;list-style:none;font-size:12px;font-weight:700;color:#44BB88;letter-spacing:.5px;display:flex;align-items:center;gap:6px">
+          <span>🧩</span><span>CARGAR DESDE JSON</span>
+          <span style="margin-left:auto;font-size:14px;color:#888">▾</span>
+        </summary>
+        <div class="mt-3">
+          <div class="text-xs text-[#888] mb-2 leading-relaxed">
+            Pega un JSON estructurado. Macros + comidas con alimentos por porción se convierten automáticamente al formato que el cliente entiende.
+          </div>
+          <details class="mb-2" style="background:rgba(0,0,0,.2);border-radius:6px;padding:6px 10px">
+            <summary class="cursor-pointer text-xs text-[#888]">Ver ejemplo del JSON</summary>
+            <pre class="text-xs mt-2 p-2 rounded" style="background:#0a0a0a;color:#c9a84c;font-family:monospace;font-size:10px;overflow-x:auto;line-height:1.5">${(`{
+  "calorias": 2400, "proteina": 180, "carbos": 250, "grasas": 70,
+  "comidas": [
+    {
+      "nombre": "Comida 1 - Desayuno",
+      "alimentos": [
+        { "alimento": "Avena", "cantidad": "60g" },
+        { "alimento": "Whey", "cantidad": "30g" }
+      ],
+      "macros": { "p": 35, "c": 50, "g": 8, "kcal": 410 },
+      "notas": "Pre-entreno opcional"
+    },
+    {
+      "nombre": "Comida 2 - Almuerzo",
+      "alimentos": [
+        { "alimento": "Pollo", "cantidad": "200g" },
+        { "alimento": "Arroz integral", "cantidad": "100g" },
+        { "alimento": "Aguacate", "cantidad": "40g" }
+      ],
+      "macros": { "p": 50, "c": 80, "g": 12, "kcal": 628 }
+    }
+  ]
+}`).replace(/</g,'&lt;')}</pre>
+          </details>
+          <textarea id="nut-json-input" class="input-field w-full text-xs" rows="8" placeholder='Pega aquí el JSON...' style="font-family:monospace;font-size:11px"></textarea>
+          <div class="flex gap-2 mt-2">
+            <button onclick="loadNutritionFromJSON()" class="text-xs px-3 py-2 rounded" style="background:rgba(68,187,136,.15);border:1px solid #44BB88;color:#44BB88;cursor:pointer;flex:1;font-weight:700">🧩 Cargar JSON</button>
+          </div>
+          <div id="nut-json-status" class="text-xs mt-2"></div>
+        </div>
+      </details>
       <div class="grid grid-cols-2 gap-2 mb-3">
         <div><label class="text-xs text-[#888]">Calorías (kcal)</label><input id="nut-kcal" class="input-field w-full mt-1" type="number" placeholder="2000" value="${n.calorias||''}"></div>
         <div><label class="text-xs text-[#888]">Proteína (g)</label><input id="nut-prot" class="input-field w-full mt-1" type="number" placeholder="180" value="${n.proteina||''}"></div>
@@ -1451,9 +1493,57 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <div><label class="text-xs text-[#888]">Grasas (g)</label><input id="nut-fat" class="input-field w-full mt-1" type="number" placeholder="70" value="${n.grasas||''}"></div>
       </div>
       <label class="text-xs text-[#888]">Plan de alimentación (texto libre)</label>
-      <textarea id="nut-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="6" placeholder="Comida 1: ...\nComida 2: ...">${n.texto||''}</textarea>
+      <textarea id="nut-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="10" placeholder="Comida 1: ...\nComida 2: ...">${(n.texto||'').replace(/</g,'&lt;')}</textarea>
       <button onclick="saveNutritionPlan()" class="btn-primary text-sm py-1 px-4 w-full">Guardar nutrición</button>`;
   }
+
+  // ── JSON → texto formato cliente para nutrición ──
+  function loadNutritionFromJSON() {
+    const raw = document.getElementById('nut-json-input')?.value.trim();
+    const st  = document.getElementById('nut-json-status');
+    if (!raw) { st.style.color='#c94a3a'; st.textContent='Pega un JSON primero'; return; }
+    let obj; try { obj = JSON.parse(raw); } catch(e) { st.style.color='#c94a3a'; st.textContent='JSON inválido: '+e.message; return; }
+    // Macros flat
+    if (obj.calorias != null) document.getElementById('nut-kcal').value = obj.calorias;
+    if (obj.proteina != null) document.getElementById('nut-prot').value = obj.proteina;
+    if (obj.carbos   != null) document.getElementById('nut-carb').value = obj.carbos;
+    if (obj.grasas   != null) document.getElementById('nut-fat').value  = obj.grasas;
+    // Comidas estructuradas → texto compatible con parser cliente
+    let texto = '';
+    if (Array.isArray(obj.comidas) && obj.comidas.length) {
+      texto = obj.comidas.map(c => {
+        let bloque = String(c.nombre || c.titulo || 'Comida').toUpperCase().trim() + '\n';
+        if (Array.isArray(c.alimentos)) {
+          c.alimentos.forEach(a => {
+            const nombre = String(a.alimento || a.nombre || '').trim();
+            const cant   = String(a.cantidad || a.porcion || '').trim();
+            if (nombre) bloque += '- ' + nombre + (cant ? ' ' + cant : '') + '\n';
+          });
+        }
+        if (c.macros) {
+          const m = c.macros;
+          const p = m.p || m.proteina || 0;
+          const cr = m.c || m.carbos   || 0;
+          const g = m.g || m.grasas   || 0;
+          const k = m.kcal || m.calorias || Math.round(p*4 + cr*4 + g*9);
+          bloque += `Macros: ${p}g PROT | ${cr}g CARBS | ${g}g GRASAS | ${k} kcal\n`;
+        }
+        if (c.notas)       bloque += String(c.notas).trim() + '\n';
+        if (c.descripcion) bloque += 'Descripción: ' + String(c.descripcion).trim() + '\n';
+        return bloque;
+      }).join('\n');
+      // Línea final TOTAL si tenemos macros flat
+      if (obj.calorias || obj.proteina) {
+        texto += `\nTOTAL PROT: ${obj.proteina||0}g | TOTAL CARBS: ${obj.carbos||0}g | TOTAL GRASAS: ${obj.grasas||0}g | TOTAL kcal: ${obj.calorias||0}`;
+      }
+    } else if (obj.texto) {
+      texto = String(obj.texto);
+    }
+    if (texto) document.getElementById('nut-texto').value = texto;
+    st.style.color = '#44BB88';
+    st.textContent = '✓ JSON cargado · revisa los campos y pulsa "Guardar nutrición"';
+  }
+  window.loadNutritionFromJSON = loadNutritionFromJSON;
 
   function renderSupplementView(s) {
     if (!s || !s.texto) return `<p class="text-[#888] text-sm">Sin datos.</p>`;
@@ -1463,10 +1553,99 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function renderSupplementEditor(s) {
     s = s || {};
     return `
+      <details class="mb-3" style="background:rgba(68,187,136,.05);border:1px solid rgba(68,187,136,.25);border-radius:8px;padding:10px 12px">
+        <summary style="cursor:pointer;list-style:none;font-size:12px;font-weight:700;color:#44BB88;letter-spacing:.5px;display:flex;align-items:center;gap:6px">
+          <span>🧩</span><span>CARGAR DESDE JSON</span>
+          <span style="margin-left:auto;font-size:14px;color:#888">▾</span>
+        </summary>
+        <div class="mt-3">
+          <div class="text-xs text-[#888] mb-2 leading-relaxed">
+            Pega un JSON con tiers (TIER 1, TIER 2, PRE-ENTRENO, EVITAR) y suplementos. Se convertirá al formato que el cliente ya renderiza con iconos y dosis prominentes.
+          </div>
+          <details class="mb-2" style="background:rgba(0,0,0,.2);border-radius:6px;padding:6px 10px">
+            <summary class="cursor-pointer text-xs text-[#888]">Ver ejemplo del JSON</summary>
+            <pre class="text-xs mt-2 p-2 rounded" style="background:#0a0a0a;color:#c9a84c;font-family:monospace;font-size:10px;overflow-x:auto;line-height:1.5">${(`{
+  "tiers": [
+    {
+      "nombre": "TIER 1",
+      "items": [
+        { "nombre": "Creatina",   "dosis": "5g",   "timing": "Mañana" },
+        { "nombre": "Whey",       "dosis": "30g",  "timing": "Post-entreno" },
+        { "nombre": "Omega-3",    "dosis": "2g",   "timing": "Con comida" },
+        { "nombre": "Vitamina D", "dosis": "4000UI","timing": "Mañana" }
+      ]
+    },
+    {
+      "nombre": "TIER 2",
+      "items": [
+        { "nombre": "Magnesio",   "dosis": "400mg","timing": "Noche" },
+        { "nombre": "Ashwagandha","dosis": "600mg","timing": "Noche" }
+      ]
+    },
+    {
+      "nombre": "PRE-ENTRENO",
+      "items": [
+        { "nombre": "Cafeína",   "dosis": "200mg","timing": "Pre-entreno", "nota": "30 min antes" },
+        { "nombre": "Citrulina", "dosis": "6g",   "timing": "Pre-entreno" }
+      ]
+    },
+    {
+      "nombre": "EVITAR",
+      "items": [
+        { "nombre": "BCAA",          "nota": "redundante si la proteína es suficiente" },
+        { "nombre": "Glutamina sola","nota": "no muestra efecto en sujetos no clínicos" }
+      ]
+    }
+  ]
+}`).replace(/</g,'&lt;')}</pre>
+          </details>
+          <textarea id="sup-json-input" class="input-field w-full text-xs" rows="8" placeholder='Pega aquí el JSON...' style="font-family:monospace;font-size:11px"></textarea>
+          <div class="flex gap-2 mt-2">
+            <button onclick="loadSupplementsFromJSON()" class="text-xs px-3 py-2 rounded" style="background:rgba(68,187,136,.15);border:1px solid #44BB88;color:#44BB88;cursor:pointer;flex:1;font-weight:700">🧩 Cargar JSON</button>
+          </div>
+          <div id="sup-json-status" class="text-xs mt-2"></div>
+        </div>
+      </details>
       <label class="text-xs text-[#888]">Suplementación (texto libre)</label>
-      <textarea id="sup-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="5" placeholder="Creatina: 5g post-entreno\nProteína: 30g post-entreno...">${s.texto||''}</textarea>
+      <textarea id="sup-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="10" placeholder="TIER 1\nCreatina 5g mañana\nWhey 30g post-entreno\n\nTIER 2\n...">${(s.texto||'').replace(/</g,'&lt;')}</textarea>
       <button onclick="saveSupplementPlan()" class="btn-primary text-sm py-1 px-4 w-full">Guardar suplementación</button>`;
   }
+
+  // ── JSON → texto formato cliente para suplementación ──
+  function loadSupplementsFromJSON() {
+    const raw = document.getElementById('sup-json-input')?.value.trim();
+    const st  = document.getElementById('sup-json-status');
+    if (!raw) { st.style.color='#c94a3a'; st.textContent='Pega un JSON primero'; return; }
+    let obj; try { obj = JSON.parse(raw); } catch(e) { st.style.color='#c94a3a'; st.textContent='JSON inválido: '+e.message; return; }
+    if (!Array.isArray(obj.tiers) || !obj.tiers.length) {
+      st.style.color='#c94a3a'; st.textContent='El JSON debe tener "tiers" como array no vacío'; return;
+    }
+    const lines = [];
+    obj.tiers.forEach((t, ti) => {
+      if (ti > 0) lines.push(''); // línea en blanco entre tiers
+      const titulo = String(t.nombre || t.titulo || 'SUPLEMENTOS').toUpperCase().trim();
+      lines.push(titulo);
+      if (Array.isArray(t.items)) {
+        t.items.forEach(it => {
+          const nombre = String(it.nombre || '').trim();
+          if (!nombre) return;
+          const dosis  = String(it.dosis || '').trim();
+          const timing = String(it.timing || it.momento || '').trim();
+          const nota   = String(it.nota || it.observacion || '').trim();
+          let line = nombre;
+          if (dosis) line += ' ' + dosis;
+          if (timing) line += ' ' + timing.toLowerCase();
+          if (nota) line += ' (' + nota + ')';
+          lines.push(line);
+        });
+      }
+    });
+    document.getElementById('sup-texto').value = lines.join('\n');
+    st.style.color = '#44BB88';
+    const totalItems = obj.tiers.reduce((sum,t) => sum + (Array.isArray(t.items)?t.items.length:0), 0);
+    st.textContent = '✓ ' + obj.tiers.length + ' tier(s) · ' + totalItems + ' suplemento(s) cargados · revisa y pulsa "Guardar"';
+  }
+  window.loadSupplementsFromJSON = loadSupplementsFromJSON;
 
   function togglePlanEditor(type) {
     const view   = document.getElementById(`${type}-view`);
