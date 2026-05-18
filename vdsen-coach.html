@@ -1498,50 +1498,158 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   // ── JSON → texto formato cliente para nutrición ──
+  // Acepta dos esquemas:
+  //   A) Simple:  { calorias, proteina, carbos, grasas, comidas:[{nombre, alimentos:[{alimento,cantidad}], macros:{p,c,g,kcal}, notas}] }
+  //   B) Rico VDSEN: { macros:{proteina_g, grasa_g, carbohidratos_g}, calculos:{kcal_objetivo},
+  //                    comidas:[{nombre, horario_sugerido, kcal, macros:{proteina_g, grasa_g, carbohidratos_g},
+  //                              alimentos:[{nombre, cantidad_g, proteina_g, grasa_g, carbohidratos_g, nota}],
+  //                              preparacion, suplementos_con_comida:[{nombre, dosis, nota}]}],
+  //                    assumptions, monitoreo }
   function loadNutritionFromJSON() {
     const raw = document.getElementById('nut-json-input')?.value.trim();
     const st  = document.getElementById('nut-json-status');
     if (!raw) { st.style.color='#c94a3a'; st.textContent='Pega un JSON primero'; return; }
     let obj; try { obj = JSON.parse(raw); } catch(e) { st.style.color='#c94a3a'; st.textContent='JSON inválido: '+e.message; return; }
-    // Macros flat
-    if (obj.calorias != null) document.getElementById('nut-kcal').value = obj.calorias;
-    if (obj.proteina != null) document.getElementById('nut-prot').value = obj.proteina;
-    if (obj.carbos   != null) document.getElementById('nut-carb').value = obj.carbos;
-    if (obj.grasas   != null) document.getElementById('nut-fat').value  = obj.grasas;
-    // Comidas estructuradas → texto compatible con parser cliente
+
+    // ── Helpers de extracción flexible ──
+    const num = v => (v == null || v === '') ? null : (isNaN(+v) ? null : +v);
+    // Macros a nivel raíz (soporta proteina_g, carbohidratos_g, grasa_g, kcal_objetivo, etc.)
+    const rootMacros = obj.macros || {};
+    const rootCalc   = obj.calculos || {};
+    const kcalRoot   = num(obj.calorias) || num(obj.kcal) || num(rootMacros.kcal) || num(rootMacros.calorias)
+                       || num(rootCalc.kcal_objetivo) || num(rootCalc.kcal) || null;
+    const protRoot   = num(obj.proteina) || num(rootMacros.proteina_g) || num(rootMacros.proteina) || num(rootMacros.p) || null;
+    const carbRoot   = num(obj.carbos)   || num(rootMacros.carbohidratos_g) || num(rootMacros.carbos) || num(rootMacros.c) || null;
+    const grasRoot   = num(obj.grasas)   || num(rootMacros.grasa_g) || num(rootMacros.grasas) || num(rootMacros.g) || null;
+
+    if (kcalRoot != null) document.getElementById('nut-kcal').value = Math.round(kcalRoot);
+    if (protRoot != null) document.getElementById('nut-prot').value = Math.round(protRoot);
+    if (carbRoot != null) document.getElementById('nut-carb').value = Math.round(carbRoot);
+    if (grasRoot != null) document.getElementById('nut-fat').value  = Math.round(grasRoot);
+
+    // ── Bloque encabezado (metadata si existe) ──
     let texto = '';
+    const md = obj.metadata || {};
+    if (md.objetivo || md.fecha_creacion) {
+      const partes = [];
+      if (md.objetivo) partes.push(String(md.objetivo).toUpperCase());
+      if (md.fecha_creacion) partes.push('Plan: ' + md.fecha_creacion);
+      texto += '─── ' + partes.join(' · ') + ' ───\n\n';
+    }
+
+    // ── Comidas ──
     if (Array.isArray(obj.comidas) && obj.comidas.length) {
-      texto = obj.comidas.map(c => {
-        let bloque = String(c.nombre || c.titulo || 'Comida').toUpperCase().trim() + '\n';
+      texto += obj.comidas.map(c => {
+        // Encabezado: "COMIDA N - NOMBRE (HORARIO)"
+        const numStr = c.numero ? ('COMIDA ' + c.numero + ' - ') : '';
+        const horario = c.horario_sugerido || c.horario || '';
+        const titulo = (numStr + (c.nombre || c.titulo || 'Comida')).toUpperCase().trim()
+                       + (horario ? '  ('+horario+')' : '');
+        let bloque = titulo + '\n';
+
+        // Alimentos
         if (Array.isArray(c.alimentos)) {
           c.alimentos.forEach(a => {
             const nombre = String(a.alimento || a.nombre || '').trim();
-            const cant   = String(a.cantidad || a.porcion || '').trim();
-            if (nombre) bloque += '- ' + nombre + (cant ? ' ' + cant : '') + '\n';
+            if (!nombre) return;
+            // Cantidad: aceptar "cantidad" o "cantidad_g" o "porcion"
+            let cant = String(a.cantidad || a.porcion || '').trim();
+            if (!cant && a.cantidad_g != null) cant = a.cantidad_g + 'g';
+            bloque += '- ' + nombre + (cant ? ' ' + cant : '');
+            // Si vienen macros por alimento, agregarlos como nota tenue
+            const ap = num(a.proteina_g) || num(a.proteina) || num(a.p);
+            const ac = num(a.carbohidratos_g) || num(a.carbos) || num(a.c);
+            const ag = num(a.grasa_g) || num(a.grasas) || num(a.g);
+            if (ap != null || ac != null || ag != null) {
+              const partes = [];
+              if (ap != null) partes.push(ap+'g P');
+              if (ac != null) partes.push(ac+'g C');
+              if (ag != null) partes.push(ag+'g G');
+              bloque += '  [' + partes.join(' · ') + ']';
+            }
+            bloque += '\n';
+            if (a.nota) bloque += '  → ' + String(a.nota).trim() + '\n';
           });
         }
-        if (c.macros) {
-          const m = c.macros;
-          const p = m.p || m.proteina || 0;
-          const cr = m.c || m.carbos   || 0;
-          const g = m.g || m.grasas   || 0;
-          const k = m.kcal || m.calorias || Math.round(p*4 + cr*4 + g*9);
-          bloque += `Macros: ${p}g PROT | ${cr}g CARBS | ${g}g GRASAS | ${k} kcal\n`;
+
+        // Macros de la comida — formato compatible con parser cliente (suma de comidas)
+        if (c.macros || c.kcal) {
+          const m = c.macros || {};
+          const p = num(m.proteina_g) || num(m.proteina) || num(m.p) || 0;
+          const cr = num(m.carbohidratos_g) || num(m.carbos) || num(m.c) || 0;
+          const g = num(m.grasa_g) || num(m.grasas) || num(m.g) || 0;
+          const k = num(c.kcal) || num(m.kcal) || num(m.calorias) || Math.round(p*4 + cr*4 + g*9);
+          bloque += 'Macros: '+p+'g PROT | '+cr+'g CARBS | '+g+'g GRASAS | '+k+' kcal\n';
         }
-        if (c.notas)       bloque += String(c.notas).trim() + '\n';
-        if (c.descripcion) bloque += 'Descripción: ' + String(c.descripcion).trim() + '\n';
+
+        // Preparación
+        if (c.preparacion) bloque += 'Descripción: ' + String(c.preparacion).trim() + '\n';
+
+        // Notas adicionales
+        if (c.notas) {
+          if (Array.isArray(c.notas)) c.notas.forEach(n => bloque += '  • ' + String(n).trim() + '\n');
+          else bloque += String(c.notas).trim() + '\n';
+        }
+
+        // Suplementos con comida (informativo dentro del bloque de comida)
+        if (Array.isArray(c.suplementos_con_comida) && c.suplementos_con_comida.length) {
+          bloque += '  💊 Suplementos con esta comida:\n';
+          c.suplementos_con_comida.forEach(s => {
+            const nombre = String(s.nombre || '').trim();
+            const dosis  = String(s.dosis  || '').trim();
+            const nota   = String(s.nota   || '').trim();
+            bloque += '     - ' + nombre + (dosis ? ' ' + dosis : '') + (nota ? ' (' + nota + ')' : '') + '\n';
+          });
+        }
         return bloque;
       }).join('\n');
-      // Línea final TOTAL si tenemos macros flat
-      if (obj.calorias || obj.proteina) {
-        texto += `\nTOTAL PROT: ${obj.proteina||0}g | TOTAL CARBS: ${obj.carbos||0}g | TOTAL GRASAS: ${obj.grasas||0}g | TOTAL kcal: ${obj.calorias||0}`;
+
+      // Línea TOTAL final si tenemos macros raíz
+      if (kcalRoot || protRoot) {
+        texto += '\nTOTAL PROT: '+(Math.round(protRoot||0))+'g | TOTAL CARBS: '+(Math.round(carbRoot||0))+'g | TOTAL GRASAS: '+(Math.round(grasRoot||0))+'g | TOTAL kcal: '+(Math.round(kcalRoot||0))+'\n';
       }
     } else if (obj.texto) {
-      texto = String(obj.texto);
+      texto += String(obj.texto);
     }
+
+    // ── Cálculos / Assumptions / Monitoreo (informativos al final) ──
+    // No los lee el parser de comidas (se corta en SUPLEMENTACIÓN/SUSTITUCIONES),
+    // pero los dejamos para que el coach los conserve como anotaciones.
+    const extras = [];
+    if (rootCalc.ea_kcal_kg_lbm || rootCalc.tdee_ajustado_kcal) {
+      extras.push('───  PARÁMETROS  ───');
+      if (rootCalc.tdee_ajustado_kcal) extras.push('TDEE ajustado: ' + rootCalc.tdee_ajustado_kcal + ' kcal');
+      if (rootCalc.kcal_objetivo)      extras.push('Kcal objetivo: ' + rootCalc.kcal_objetivo + ' kcal');
+      if (rootCalc.ajuste_objetivo_kcal!=null) extras.push('Déficit/superávit: ' + rootCalc.ajuste_objetivo_kcal + ' kcal');
+      if (rootCalc.ea_kcal_kg_lbm)     extras.push('Energy availability: ' + rootCalc.ea_kcal_kg_lbm + ' kcal/kg LBM');
+      if (rootCalc.alerta_red_s)       extras.push('⚠ ALERTA RED-S: EA por debajo del umbral IOC — monitoreo activo requerido');
+      extras.push('');
+    }
+    if (Array.isArray(obj.assumptions) && obj.assumptions.length) {
+      extras.push('───  SUPUESTOS DEL PLAN  ───');
+      obj.assumptions.forEach((a, i) => extras.push((i+1)+'. ' + String(a).trim()));
+      extras.push('');
+    }
+    if (obj.monitoreo) {
+      extras.push('───  MONITOREO  ───');
+      if (obj.monitoreo.metrica_primaria) extras.push('Métrica primaria: ' + obj.monitoreo.metrica_primaria);
+      if (obj.monitoreo.frecuencia_revision_dias) extras.push('Revisión cada: ' + obj.monitoreo.frecuencia_revision_dias + ' días');
+      if (obj.monitoreo.proxima_revision) extras.push('Próxima revisión: ' + obj.monitoreo.proxima_revision);
+      if (Array.isArray(obj.monitoreo.alarmas_rojas) && obj.monitoreo.alarmas_rojas.length) {
+        extras.push('Alarmas rojas:');
+        obj.monitoreo.alarmas_rojas.forEach(a => extras.push('  ⚠ ' + a));
+      }
+      if (obj.monitoreo.ajuste_si_no_progresa) extras.push('Ajuste si no progresa: ' + obj.monitoreo.ajuste_si_no_progresa);
+      if (Array.isArray(obj.monitoreo.laboratorio_pendiente) && obj.monitoreo.laboratorio_pendiente.length) {
+        extras.push('Laboratorio pendiente: ' + obj.monitoreo.laboratorio_pendiente.join(', '));
+      }
+    }
+    if (extras.length) texto += '\n\n' + extras.join('\n');
+
     if (texto) document.getElementById('nut-texto').value = texto;
     st.style.color = '#44BB88';
-    st.textContent = '✓ JSON cargado · revisa los campos y pulsa "Guardar nutrición"';
+    const nC = Array.isArray(obj.comidas) ? obj.comidas.length : 0;
+    st.textContent = '✓ JSON cargado · ' + nC + ' comida(s) · revisa y pulsa "Guardar nutrición"';
   }
   window.loadNutritionFromJSON = loadNutritionFromJSON;
 
