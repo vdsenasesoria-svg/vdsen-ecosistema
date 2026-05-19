@@ -342,6 +342,29 @@ function _roundUnit(val, unit) {
   return Math.round(val / step) * step;
 }
 
+// Convertir carga entre KG y LB conservando el dato. Si fromUnit === toUnit
+// o falta info, devuelve el valor original sin tocar. Si difiere, multiplica
+// por el factor correcto y redondea al incremento de la nueva unidad.
+//   _convertCarga('100', 'KG', 'LB') → '220'  (220.46 redondeado a 2.5)
+//   _convertCarga('220', 'LB', 'KG') → '100'  (99.79 redondeado a 0.5)
+//   _convertCarga('80',  'KG', 'KG') → '80'   (sin cambio)
+function _convertCarga(val, fromUnit, toUnit) {
+  if (val == null || val === '') return val;
+  var n = parseFloat(val);
+  if (isNaN(n) || n <= 0) return val;
+  // Si no sabemos la unidad de origen, asumimos que coincide con la actual
+  // (mejor no convertir que convertir mal).
+  if (!fromUnit || !toUnit) return val;
+  fromUnit = String(fromUnit).toUpperCase();
+  toUnit   = String(toUnit).toUpperCase();
+  if (fromUnit === toUnit) return val;
+  var factor;
+  if (fromUnit === 'KG' && toUnit === 'LB') factor = 2.20462;
+  else if (fromUnit === 'LB' && toUnit === 'KG') factor = 0.453592;
+  else return val;
+  return String(_roundUnit(n * factor, toUnit));
+}
+
 // ══════════════════════════════════════════════════════════════════
 // MÁQUINAS DE GIMNASIO — Motor VDSEN v3.1
 // Iconos SVG para identificar aparatos en SmartFit y cadenas
@@ -2387,8 +2410,11 @@ function _buildExPanel(ejercicios, di) {
     var exNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var histEx = EXERCISE_HISTORY[exNameLower] || {};
     // Auto-fill: usar semana anterior primero, luego historial (solo si el set aún no se registró)
+    // Convertir KG↔LB si la unidad guardada difiere de la unidad actual del ejercicio.
     var _prefill = !saved.carga && !saved.reps;
-    var carga   = saved.carga   || (_prefill && prev.carga    ? prev.carga    : (_prefill && s===0 && histEx.load ? histEx.load : ''));
+    var _prevCargaConv = (_prefill && prev.carga) ? _convertCarga(prev.carga, prev.unit, unit) : '';
+    var _histCargaConv = (_prefill && s===0 && histEx.load) ? _convertCarga(histEx.load, histEx.unit, unit) : '';
+    var carga   = saved.carga   || _prevCargaConv || _histCargaConv || '';
     var reps    = saved.reps    || (_prefill && prev.reps     ? prev.reps     : (_prefill && s===0 && histEx.reps ? histEx.reps : ''));
     var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
 
@@ -3232,8 +3258,11 @@ function buildBoostcampExercise(ej, di, ei) {
     var exNameLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var histEx = EXERCISE_HISTORY[exNameLower] || {};
     // Auto-fill: usar semana anterior primero, luego historial (solo si el set aún no se registró)
+    // Convertir KG↔LB si la unidad guardada difiere de la unidad actual.
     var _prefill = !saved.carga && !saved.reps;
-    var carga   = saved.carga   || (_prefill && prev.carga    ? prev.carga    : (_prefill && s===0 && histEx.load ? histEx.load : ''));
+    var _prevCargaConv = (_prefill && prev.carga) ? _convertCarga(prev.carga, prev.unit, unit) : '';
+    var _histCargaConv = (_prefill && s===0 && histEx.load) ? _convertCarga(histEx.load, histEx.unit, unit) : '';
+    var carga   = saved.carga   || _prevCargaConv || _histCargaConv || '';
     var reps    = saved.reps    || (_prefill && prev.reps     ? prev.reps     : (_prefill && s===0 && histEx.reps ? histEx.reps : ''));
     var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
 
@@ -3816,22 +3845,28 @@ async function markSessionDoneFromHistory(di) {
     if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
 
     // Buscar referencia: 1) semana anterior, 2) histórico
-    var refLoad = 0, refReps = 0, refRir = defaultRIR, refUnit = getExUnit(di, ei) || 'kg';
+    // SIEMPRE rellenamos en la unidad actual del ejercicio, convirtiendo desde
+    // la unidad de origen si la referencia se registró en otra (kg↔lb).
+    var currentUnit = getExUnit(di, ei) || 'KG';
+    var refLoad = 0, refReps = 0, refRir = defaultRIR, refUnit = currentUnit;
     var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12);
     if (prev && prev.avgLoad > 0) {
-      refLoad = Math.round(prev.avgLoad * 4) / 4;
+      var prevSetKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0';
+      var prevUnit = (LOGS[prevSetKey] && LOGS[prevSetKey].unit) ? LOGS[prevSetKey].unit : currentUnit;
+      var rawLoad = Math.round(prev.avgLoad * 4) / 4;
+      // Convertir si la unidad previa difiere de la actual
+      refLoad = parseFloat(_convertCarga(String(rawLoad), prevUnit, currentUnit)) || rawLoad;
       refReps = Math.round(prev.avgReps);
       refRir = Math.round(prev.avgRIR) || defaultRIR;
-      // Tomar la unidad del set previo si existe
-      var prevSetKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0';
-      if (LOGS[prevSetKey] && LOGS[prevSetKey].unit) refUnit = LOGS[prevSetKey].unit;
+      refUnit = currentUnit;
     } else {
       var hist = EXERCISE_HISTORY[exName] || {};
       if (hist.load && parseFloat(hist.load) > 0) {
-        refLoad = parseFloat(hist.load);
+        var histUnit = hist.unit || currentUnit;
+        refLoad = parseFloat(_convertCarga(String(hist.load), histUnit, currentUnit)) || parseFloat(hist.load);
         refReps = parseInt(hist.reps) || parseInt(ej.repsRange) || 8;
         refRir  = parseInt(hist.rir) !== undefined && !isNaN(parseInt(hist.rir)) ? parseInt(hist.rir) : defaultRIR;
-        if (hist.unit) refUnit = hist.unit;
+        refUnit = currentUnit;
       }
     }
 
@@ -7199,31 +7234,38 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
   }
 
   // ── 2) SEM ANTERIOR ──
+  // Convertir carga al unit actual si el registro previo está en otra unidad.
+  // Si se convierte, agregar marca '(de LB)' o '(de KG)' para transparencia.
   if (prev && prev.carga) {
+    var prevCargaShown = _convertCarga(prev.carga, prev.unit, unit);
+    var prevConvMark = (prev.unit && prev.unit !== unit) ? ' <span style="opacity:.55">(de '+prev.unit+')</span>' : '';
     blocks.push(
       '<div style="margin-bottom:6px;font-size:10px;color:#FF8844;background:rgba(255,140,50,.06);border:1px solid rgba(255,140,50,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
         '<span style="font-weight:800;letter-spacing:.8px">↩ SEM '+(curWeek-1)+'</span>'+
-        '<span style="color:var(--mt2)">'+prev.carga+' '+unit+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+'</span>'+
+        '<span style="color:var(--mt2)">'+prevCargaShown+' '+unit+prevConvMark+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+'</span>'+
       '</div>'
     );
   }
   // ── 3) HISTORIAL (sólo si NO hubo sem anterior y es el primer set) ──
   else if (setIdx === 0 && histEx && histEx.load) {
+    var histCargaShown = _convertCarga(histEx.load, histEx.unit, unit);
+    var histConvMark = (histEx.unit && histEx.unit !== unit) ? ' <span style="opacity:.55">(de '+histEx.unit+')</span>' : '';
     blocks.push(
       '<div style="margin-bottom:6px;font-size:10px;color:rgba(108,150,255,.9);background:rgba(68,136,204,.06);border:1px solid rgba(68,136,204,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
         '<span style="font-weight:800;letter-spacing:.8px">📋 HISTORIAL</span>'+
-        '<span style="color:var(--mt2)">'+histEx.load+' '+(histEx.unit||unit)+(histEx.reps?' × '+histEx.reps+' reps':'')+(histEx.rir?' · RIR '+histEx.rir:'')+'</span>'+
+        '<span style="color:var(--mt2)">'+histCargaShown+' '+unit+histConvMark+(histEx.reps?' × '+histEx.reps+' reps':'')+(histEx.rir?' · RIR '+histEx.rir:'')+'</span>'+
       '</div>'
     );
   }
 
   // Si NO hay nada todavía pero la sem anterior tiene carga, sugerir paso simple
   if (blocks.length === 0 && prev && prev.carga) {
-    var pc = parseFloat(prev.carga)||0;
+    // Convertir primero para sugerir paso en la unidad correcta
+    var pc = parseFloat(_convertCarga(prev.carga, prev.unit, unit))||0;
     var prir = parseInt(prev.rir_real || prev.rir);
-    var step = 2.5;
+    var step = unit === 'LB' ? 5 : 2.5;
     var simpleSug = (!isNaN(prir) && prir <= baseRIR)
-      ? '→ '+(pc+step).toFixed(1)+' '+unit+' (subir 2.5)'
+      ? '→ '+(pc+step).toFixed(1)+' '+unit+' (subir '+step+')'
       : '→ '+pc+' '+unit+' (mantener)';
     blocks.push('<div style="font-size:10px;color:var(--accent);font-weight:600;margin-bottom:6px">'+simpleSug+'</div>');
   }
