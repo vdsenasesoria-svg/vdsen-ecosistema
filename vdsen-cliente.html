@@ -4843,14 +4843,17 @@ function parsearYRenderComidas(texto) {
     return /\d+\s*(g|ml|pza|pieza|cucharada|taza|unidad)/i.test(lt) && lt.length > 3;
   }
 
+  // Estado para distinguir sub-bloques dentro de cada comida
+  var inSuplBlock = false; // dentro de '💊 Suplementos con esta comida'
   lines.forEach(function(l) {
     if (stopParsing) return;
+    var rawLine = l;
     var lt = l.trim().replace(/^[\-─•]\s*/, '');
-    if (!lt) return;
+    if (!lt) { inSuplBlock = false; return; }
     // Ignorar líneas de opciones A/B (planes viejos)
     if (/^OPCI[OÓ]N\s*(A|B|SALAD|DULCE)/i.test(lt)) return;
     if (/^Macros\s+(A|B)\s*:/i.test(lt)) return;
-    // Detener cuando empieza sección de sustituciones o suplementos
+    // Detener cuando empieza sección de sustituciones o suplementos GLOBAL
     if (esSustitucionesSection(lt)) { stopParsing = true; return; }
 
     // Filtrar instrucciones de ajuste de macros — mostrar como nota coach al final
@@ -4862,14 +4865,46 @@ function parsearYRenderComidas(texto) {
 
     if (esEncabezado(lt)) {
       if (cur) comidas.push(cur);
-      cur = { titulo: lt, alimentos: [], macros: '', notas: [] };
+      cur = { titulo: lt, alimentos: [], macros: '', notas: [], suplementos: [] };
+      inSuplBlock = false;
       return;
     }
     if (!cur) return;
 
+    // ── Detectar inicio del sub-bloque "Suplementos con esta comida" ──
+    if (/SUPLEMENTOS?\s+CON\s+ESTA\s+COMIDA/i.test(lt) || /^💊/.test(lt)) {
+      inSuplBlock = true;
+      return;
+    }
+
+    // Si estamos en el bloque de suplementos: TODO va a cur.suplementos
+    // (incluso si contiene "5g", "4g", etc. — son dosis, no alimentos)
+    if (inSuplBlock) {
+      cur.suplementos.push(lt);
+      return;
+    }
+
+    // ── Sub-nota: línea empieza con → (flecha) ──
+    // Es una aclaración del alimento anterior, NO un alimento nuevo,
+    // aunque contenga "90g", "100g", etc. (ej: "90g seco rinde 200g cocido").
+    if (/^→\s*/.test(lt) || /^↳\s*/.test(lt)) {
+      var subN = lt.replace(/^[→↳]\s*/,'').trim();
+      if (cur.alimentos.length) {
+        // Anexar como sub-nota al último alimento
+        cur.alimentos[cur.alimentos.length - 1] += '\n  ↳ ' + subN;
+      } else {
+        cur.notas.push(subN);
+      }
+      return;
+    }
+
     // Línea de macros de la comida
     if (/^Macros\s*:/i.test(lt) && !/^Macros\s+(A|B)/i.test(lt)) {
       cur.macros = lt; return;
+    }
+    // Descripción (preparación de la comida)
+    if (/^Descripci[oó]n\s*:/i.test(lt)) {
+      cur.notas.push(lt); return;
     }
     // Total del día
     if (/^(TOTAL|TIMING|VERIFICACI[OÓ]N|D[IÍ]A DE DESCANSO)/i.test(lt)) return;
@@ -4916,6 +4951,20 @@ function parsearYRenderComidas(texto) {
   // ── Render cada comida ──
   return comidas.map(function(cm, ci) {
     var alimHtml = cm.alimentos.map(function(raw, ai) {
+      // Extraer sub-notas embebidas (formato "alimento\n  ↳ nota")
+      var subnotas = [];
+      if (raw.indexOf('\n  ↳ ') !== -1) {
+        var partsSn = raw.split('\n  ↳ ');
+        raw = partsSn[0];
+        for (var sni = 1; sni < partsSn.length; sni++) subnotas.push(partsSn[sni]);
+      }
+      // Extraer macros breakdown si vienen entre [...]
+      var macrosBd = '';
+      var mbM = raw.match(/\[([\d.,gP·CG\s]+)\]/);
+      if (mbM && /\d+\s*g\s*P/i.test(mbM[1])) {
+        macrosBd = mbM[1].trim();
+        raw = raw.replace(/\s*\[[\d.,gP·CG\s]+\]/, '').trim();
+      }
       // Separar alimento base de sustituciones [SUST: ...]
       var sustMatch = raw.match(/\[SUST:\s*([^\]]+)\]/i);
       var base      = raw.replace(/\[SUST:[^\]]*\]/i, '').trim();
@@ -4970,6 +5019,27 @@ function parsearYRenderComidas(texto) {
         nameOnly = displayLabel.substring(0, qtyMatch.index).replace(/[:\s]+$/, '').trim();
         qtyStr = qtyMatch[1] + qtyMatch[2].toLowerCase();
       }
+      // Render de macros breakdown del alimento (P/C/G por porción)
+      var macrosBdHtml = '';
+      if (macrosBd && !isSustd) {
+        // Parse "25g P · 10g C · 0g G" → 3 chips de colores
+        var partes = macrosBd.split(/\s*·\s*/);
+        macrosBdHtml = '<div style="display:flex;gap:6px;margin-top:3px;flex-wrap:wrap">' +
+          partes.map(function(p) {
+            var mP = p.match(/(\d+(?:\.\d+)?)\s*g\s*([PCG])/i);
+            if (!mP) return '';
+            var v = mP[1], tipo = mP[2].toUpperCase();
+            var col = tipo==='P' ? '#6aacee' : tipo==='C' ? '#6acc7e' : '#e8a060';
+            var label = tipo==='P' ? 'P' : tipo==='C' ? 'C' : 'G';
+            return '<span style="font-size:9px;color:'+col+';background:'+col+'1a;padding:1px 6px;border-radius:4px;font-weight:700;letter-spacing:.5px;font-family:var(--ff)">'+label+': '+v+'g</span>';
+          }).join('') + '</div>';
+      }
+      // Render de sub-notas (aclaraciones de pesaje, etc.)
+      var subnotasHtml = subnotas.length ? subnotas.map(function(sn) {
+        return '<div style="font-size:10px;color:var(--mt2);padding:3px 0 0 18px;font-style:italic;line-height:1.45;border-left:2px solid rgba(200,165,74,.2);margin-left:4px;margin-top:3px">'+
+          '<span style="color:var(--accent);font-style:normal;margin-right:4px">ⓘ</span>'+ sn +
+        '</div>';
+      }).join('') : '';
       return '<div id="alim_' + key + '" style="' +
         'padding:8px 0;border-bottom:1px solid rgba(30,35,48,.6);' +
         (hasSust ? 'padding-bottom:4px;' : '') + '">' +
@@ -4983,9 +5053,37 @@ function parsearYRenderComidas(texto) {
             ? '<span style="font-size:9px;color:var(--mt);margin-left:8px;flex-shrink:0;opacity:.6">↔</span>'
             : '') +
         '</div>' +
+        macrosBdHtml +
+        subnotasHtml +
         sustHtml +
         '</div>';
     }).join('');
+
+    // ── Render bloque de suplementos asignados a esta comida ──
+    var suplHtml = '';
+    if (cm.suplementos && cm.suplementos.length) {
+      var itemsSup = cm.suplementos.map(function(s) {
+        // Parse "Nombre Dosis (nota)"
+        var sM = s.match(/^(.+?)\s+(\d+[\d.,]*\s*(?:g|mg|mcg|ui|iu|caps?))\s*(?:\((.+)\))?\s*$/i);
+        if (sM) {
+          var nom = sM[1].trim(), dos = sM[2].trim(), nota = (sM[3]||'').trim();
+          return '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:rgba(200,165,74,.04);border-radius:6px;margin-bottom:3px">'+
+            '<span style="font-size:12px">💊</span>'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:12px;color:var(--tx);font-weight:600">'+nom+'</div>'+
+              (nota?'<div style="font-size:9px;color:var(--mt);font-style:italic;margin-top:1px">'+nota+'</div>':'')+
+            '</div>'+
+            '<div style="font-family:var(--ff);font-size:11px;font-weight:800;color:var(--gold);letter-spacing:.5px">'+dos.toUpperCase()+'</div>'+
+          '</div>';
+        }
+        // Sin dosis clara → línea de texto
+        return '<div style="font-size:11px;color:var(--mt);padding:3px 8px;line-height:1.5">• '+s+'</div>';
+      }).join('');
+      suplHtml = '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed rgba(200,165,74,.25)">'+
+        '<div style="font-size:9px;letter-spacing:1.5px;color:var(--gold);font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:5px">💊 SUPLEMENTOS CON ESTA COMIDA</div>'+
+        itemsSup+
+      '</div>';
+    }
 
     var notasHtml = cm.notas.slice(0,2).map(function(n) {
       return '<div style="font-size:11px;color:var(--mt);padding:2px 0;font-style:italic;line-height:1.5">' + n + '</div>';
@@ -5033,6 +5131,7 @@ function parsearYRenderComidas(texto) {
       (notasHtml ? '<div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">' + notasHtml + '</div>' : '') +
       alimHtml +
       macrosHtml +
+      suplHtml +
       '</div>' +
       '</div>';
   }).join('');
