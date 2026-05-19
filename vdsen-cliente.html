@@ -4814,6 +4814,15 @@ function parsearYRenderComidas(texto) {
   function esSustitucionesSection(lt) {
     // Normalizar: quitar acentos para comparación
     var n = lt.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
+    // \u2500\u2500 Detecci\u00f3n PRIORITARIA: separadores tipo "\u2500\u2500\u2500 TITULO \u2500\u2500\u2500" o
+    //    encabezados sueltos que marcan secciones informativas del plan
+    //    (PAR\u00c1METROS, SUPUESTOS, MONITOREO, ALARMAS, LABORATORIO, etc.).
+    //    Estas NO son comidas \u2014 el parser debe detenerse para no
+    //    interpretar "7. ISO XP Applied Nutrition: ...22g P..." como
+    //    un alimento adicional de la \u00faltima comida.
+    var sepM = n.match(/^[\u2500-\u2580\-\s]{2,}([A-Z\d\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\s]{3,40}?)[\u2500-\u2580\-\s]{2,}$/);
+    var rawTitle = sepM ? sepM[1].trim() : n;
+    if (/^(PARAMETROS?|SUPUESTOS?|MONITOREO|LABORATORIO|ALARMAS?|AJUSTE\s+SI|METRICA\s+PRIMARIA|PROXIMA\s+REVISION|FRECUENCIA\s+(DE\s+)?REVISION|OBSERVACIONES?|NOTAS?\s+DEL\s+PLAN|INSTRUCCIONES?\s+(GENERALES|DEL\s+PLAN))/.test(rawTitle)) return true;
     // Si la l\u00ednea contiene una cantidad (g, ml, kcal, mg, mcg, ui), NO es un
     // encabezado de secci\u00f3n \u2014 es un alimento, suplemento o nota de macros.
     // Esto evita que "Prote\u00edna ISO XP Applied Nutrition 50g" se confunda con
