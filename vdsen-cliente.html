@@ -2314,14 +2314,9 @@ function _buildExPanel(ejercicios, di) {
     add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
   };
   var progrec = _getProgRecForExercise(di, ei, nombre);
-  var progrecHtml = '';
-  if (progrec && progrec.newLoad) {
-    var recCol = actionColors[progrec.action] || 'var(--gold)';
-    progrecHtml = '<div style="display:inline-block;margin-top:6px;font-size:11px;font-weight:700;color:'+recCol+';'+
-      'background:rgba(200,165,74,.07);border:1px solid rgba(200,165,74,.15);padding:3px 10px;border-radius:6px">'+
-      '⚡ '+progrec.newLoad+' '+unit+' · '+progrec.newSets+'s · RIR '+progrec.rirTarget+
-    '</div>';
-  }
+  var _exNameBanner = nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  var _histExBanner = EXERCISE_HISTORY[_exNameBanner] || {};
+  var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
   var headerHtml =
     '<div style="margin-bottom:14px">'+
       '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+nombre+'</div>'+
@@ -2331,7 +2326,6 @@ function _buildExPanel(ejercicios, di) {
         '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px">RIR '+baseRIR+'</span>'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
-      progrecHtml+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
         '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'+
@@ -2599,7 +2593,8 @@ function _buildExPanel(ejercicios, di) {
       '</div>'
     : '';
 
-  return machineHtml + headerHtml + notaHtml + closedBannerHtml + wuHtml + setsHtml + completedBlockHtml;
+  var bannerHtml = _buildSessionTargetBanner(progrec, _prevWeekBanner, _histExBanner, unit, numSeries, repsTarget, baseRIR);
+  return machineHtml + headerHtml + notaHtml + closedBannerHtml + bannerHtml + wuHtml + setsHtml + completedBlockHtml;
 }
 
 function setEjActivo(ei) {
@@ -6711,6 +6706,112 @@ function _getProgRecForExercise(di, ei, exName) {
     }
   }
   return null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BANNER "OBJETIVO DE HOY" — guía clara de progresión por sesión
+// ═══════════════════════════════════════════════════════════════
+function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSeries, repsTarget, baseRIR) {
+  var hasProgrec = progrec && progrec.action;
+  var targetLoad = null, targetSets = numSeries, targetReps = repsTarget, targetRIR = baseRIR;
+  var action = 'first', reason = '', prevRef = null;
+
+  if (hasProgrec) {
+    targetLoad = progrec.newLoad;
+    targetSets = progrec.newSets || numSeries;
+    targetReps = progrec.newReps || repsTarget;
+    targetRIR  = (progrec.rirTarget !== undefined && progrec.rirTarget !== null) ? progrec.rirTarget : baseRIR;
+    action     = progrec.action || 'maintain';
+    reason     = progrec.reason || '';
+    if (progrec.trend && progrec.trend.prevLoad > 0) {
+      prevRef = { load: progrec.trend.prevLoad, sets: progrec.trend.prevSets };
+    }
+  } else if (prevWeekData && prevWeekData.avgLoad > 0) {
+    targetLoad = prevWeekData.avgLoad;
+    targetSets = prevWeekData.numSets || numSeries;
+    targetReps = prevWeekData.avgReps > 0 ? Math.round(prevWeekData.avgReps) : repsTarget;
+    targetRIR  = baseRIR;
+    action = 'reference';
+    prevRef = {
+      load: prevWeekData.avgLoad,
+      sets: prevWeekData.numSets,
+      reps: prevWeekData.avgReps > 0 ? Math.round(prevWeekData.avgReps) : null,
+      rir:  prevWeekData.avgRIR  > 0 ? Math.round(prevWeekData.avgRIR)  : null
+    };
+  } else if (histEx && histEx.load) {
+    targetLoad = parseFloat(histEx.load) || 0;
+    if (!targetLoad) return '';
+    action = 'history';
+  }
+
+  if (!targetLoad || targetLoad <= 0) return '';
+
+  // Formatear número: sin decimales innecesarios
+  function _fmtLoad(v) {
+    var n = parseFloat(v);
+    if (isNaN(n)) return String(v);
+    return n % 1 === 0 ? String(n) : n.toFixed(1);
+  }
+
+  var cfg = {
+    increase_load: { icon:'↑', label:'AUMENTAR CARGA',   color:'#3a9460', bg:'rgba(58,148,96,.12)',   border:'rgba(58,148,96,.40)'   },
+    add_sets:      { icon:'↑', label:'AGREGAR SERIE',    color:'#3a9460', bg:'rgba(58,148,96,.12)',   border:'rgba(58,148,96,.40)'   },
+    maintain:      { icon:'=', label:'MANTENER',         color:'#C9A84C', bg:'rgba(201,168,76,.10)',  border:'rgba(201,168,76,.35)'  },
+    freeze_load:   { icon:'⏸', label:'CONGELAR CARGA',  color:'#C9A84C', bg:'rgba(201,168,76,.10)',  border:'rgba(201,168,76,.35)'  },
+    reduce_load:   { icon:'↓', label:'REDUCIR CARGA',    color:'#e06040', bg:'rgba(220,80,50,.10)',   border:'rgba(220,80,50,.40)'   },
+    reduce_sets:   { icon:'↓', label:'REDUCIR SERIES',   color:'#FF8844', bg:'rgba(255,136,68,.10)',  border:'rgba(255,136,68,.40)'  },
+    deload:        { icon:'🔄',label:'DESCARGA ACTIVA',  color:'#6488CC', bg:'rgba(100,136,204,.10)', border:'rgba(100,136,204,.40)' },
+    reference:     { icon:'📋',label:'ÚLTIMA SESIÓN',    color:'#B8BEC8', bg:'rgba(184,190,200,.07)', border:'rgba(184,190,200,.25)' },
+    history:       { icon:'📊',label:'PRIMERA SESIÓN',   color:'#6488CC', bg:'rgba(100,136,204,.10)', border:'rgba(100,136,204,.40)' },
+    first:         { icon:'🆕',label:'PRIMERA SESIÓN',   color:'#6488CC', bg:'rgba(100,136,204,.10)', border:'rgba(100,136,204,.40)' }
+  };
+
+  var c = cfg[action] || cfg.maintain;
+
+  // Reason — mostrar motivos principales, separar advertencias
+  var reasonHtml = '';
+  if (reason) {
+    var parts = reason.split(' | ');
+    var main  = parts.filter(function(p){ return p && !p.startsWith('⚠'); }).slice(0, 2).join(' · ');
+    var warns = parts.filter(function(p){ return p && p.startsWith('⚠'); }).slice(0, 1);
+    if (main)  reasonHtml += '<div style="font-size:11px;color:var(--mt);line-height:1.6;margin-top:6px">'+main+'</div>';
+    if (warns.length) reasonHtml += '<div style="font-size:11px;color:#FF8844;line-height:1.5;margin-top:4px">'+warns[0]+'</div>';
+  }
+
+  // Línea de semana anterior
+  var prevLine = '';
+  if (prevRef && prevRef.load > 0) {
+    var pParts = [_fmtLoad(prevRef.load)+' '+unit];
+    if (prevRef.sets) pParts.push(prevRef.sets+'s');
+    if (prevRef.reps) pParts.push(prevRef.reps+' reps');
+    if (prevRef.rir !== null && prevRef.rir !== undefined) pParts.push('RIR '+prevRef.rir);
+    prevLine = '<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07);'+
+      'display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+      '<span style="font-size:10px;font-weight:700;letter-spacing:1px;color:var(--mt2);flex-shrink:0">SEM. ANT.:</span>'+
+      '<span style="font-size:12px;color:var(--mt)">'+pParts.join(' · ')+'</span>'+
+    '</div>';
+  }
+
+  return '<div style="margin-bottom:14px;border-radius:12px;overflow:hidden;border:1.5px solid '+c.border+'">'+
+    // ── Cabecera acción ──────────────────────────────────────────
+    '<div style="background:'+c.bg+';padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1.5px solid '+c.border+'">'+
+      '<span style="font-size:17px;font-weight:900;color:'+c.color+';line-height:1">'+c.icon+'</span>'+
+      '<span style="font-size:11px;font-weight:900;letter-spacing:2px;color:'+c.color+'">'+c.label+'</span>'+
+    '</div>'+
+    // ── Objetivo principal ───────────────────────────────────────
+    '<div style="padding:14px 16px;background:rgba(0,0,0,.2)">'+
+      '<div style="font-size:10px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:8px">OBJETIVO DE HOY</div>'+
+      '<div style="display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;margin-bottom:2px">'+
+        '<span style="font-size:38px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+'</span>'+
+        '<span style="font-size:20px;font-weight:700;color:var(--mt);margin-right:10px">'+unit+'</span>'+
+      '</div>'+
+      '<div style="font-size:17px;font-weight:800;color:'+c.color+';letter-spacing:.3px">'+
+        targetSets+' series &times; '+targetReps+' reps &middot; RIR '+targetRIR+
+      '</div>'+
+      prevLine+
+      reasonHtml+
+    '</div>'+
+  '</div>';
 }
 
 function _drawSparkline(canvasId, data, color) {
