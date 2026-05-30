@@ -9,14 +9,85 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <!-- Sin importmap: URLs directas para máxima compatibilidad (Chrome, Brave, Safari, Edge, Firefox) -->
+  <!-- Fuentes VDSEN Brand -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
-    * { font-family: 'Inter', sans-serif; }
-    body { background: #0D0D0D; color: #F0F0F0; }
-    :root { --bg-base:#0D0D0D; --bg-surface:#141414; --bg-elevated:#1A1A1A; --border:#2A2A2A; --text-primary:#F0F0F0; --text-muted:#888; --accent:#C9A84C; --danger:#FF4444; --success:#44BB88; }
-    .card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; }
-    .input-field { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); padding: 10px 12px; width: 100%; }
-    .btn-primary { background: var(--accent); color: #0D0D0D; font-weight: 600; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
-    .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-primary); padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    /* ══ VDSEN BRAND IDENTITY ══ */
+    :root {
+      --bg-base:#080808;
+      --bg-surface:#0f1010;
+      --bg-elevated:#141616;
+      --border:rgba(201,168,76,.13);
+      --border-soft:rgba(201,168,76,.07);
+      --text-primary:#E8E0D0;
+      --text-muted:#5A5448;
+      --platinum:#B8BEC8;
+      --accent:#C9A84C;
+      --accent-light:#E8C97A;
+      --gold-gradient:linear-gradient(135deg,#9A7A28 0%,#C9A84C 35%,#E8C97A 55%,#C9A84C 75%,#9A7A28 100%);
+      --danger:#c94a3a;
+      --success:#3a9460;
+      --shadow-gold:0 0 0 1px rgba(201,168,76,.15),0 4px 20px rgba(0,0,0,.6);
+      --shadow-card:0 2px 12px rgba(0,0,0,.5);
+    }
+    * { font-family: 'Inter', sans-serif; box-sizing: border-box; }
+    body { background: var(--bg-base); color: var(--text-primary); }
+
+    /* ── COMPONENTES BASE ── */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: var(--gold-gradient);
+      opacity: .4;
+    }
+    .input-field {
+      background: #060707;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-primary);
+      padding: 10px 12px;
+      width: 100%;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .input-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,168,76,.1); }
+    .btn-primary {
+      background: var(--gold-gradient);
+      color: #0A0A0A;
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 9px 18px;
+      border-radius: 7px;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 10px rgba(201,168,76,.2);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-primary:active { opacity: .9; transform: scale(.99); }
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 8px 16px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 12px;
+      letter-spacing: .5px;
+      transition: border-color .2s, color .2s;
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
     /* ── DESKTOP: sidebar fija ── */
     .sidebar { width: 260px; background: var(--bg-surface); border-right: 1px solid var(--border); position: fixed; top: 0; left: 0; height: 100vh; overflow-y: auto; z-index: 40; }
     .main-content { margin-left: 260px; padding: 24px; min-height: 100vh; }
@@ -67,6 +138,32 @@
     .nav-item-mobile .nav-icon { font-size: 20px; line-height: 1; }
     .nav-item-mobile.active { color: var(--accent); }
     .nav-item-mobile.active .nav-icon { filter: drop-shadow(0 0 4px rgba(201,168,76,.5)); }
+    /* Sidebar items activos */
+    .sidebar [data-section].active {
+      background: rgba(201,168,76,.08) !important;
+      color: var(--accent) !important;
+      border-left: 2px solid var(--accent);
+      padding-left: calc(12px - 2px) !important;
+    }
+    /* Section headings */
+    .section h2 {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-primary);
+      position: relative;
+      padding-bottom: 10px;
+      margin-bottom: 20px !important;
+    }
+    .section h2::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 40px; height: 2px;
+      background: var(--gold-gradient);
+      border-radius: 2px;
+    }
 
     .section { display: none; }
     .section.active { display: block; }
@@ -90,22 +187,31 @@
   </style>
 </head>
 <body>
-<div class="sidebar p-4">
-  <h2 class="text-2xl font-bold text-[#C9A84C] mb-8">VDSEN Coach</h2>
-  <nav class="space-y-3">
-    <div data-section="dashboard" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded transition font-semibold">📋 Dashboard</div>
-    <div data-section="clientes" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded transition">👥 Clientes</div>
-    <div data-section="crearPlan" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">📝 Crear Plan</div>
-    <div data-section="templates" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">📑 Templates</div>
-    <div data-section="catalogo" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">🏋️ Catálogo</div>
-    <div data-section="monitoreo" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">📊 Monitoreo</div>
-    <div data-section="config" class="cursor-pointer hover:text-[#C9A84C] py-2 px-3 rounded">⚙️ Configuración</div>
+<div class="sidebar" style="padding:0">
+  <!-- Logo brand sidebar -->
+  <div style="padding:24px 20px 20px;border-bottom:1px solid var(--border-soft);position:relative;overflow:hidden">
+    <div style="position:absolute;top:0;left:0;right:0;height:1px;background:var(--gold-gradient);opacity:.6"></div>
+    <div style="font-size:22px;font-weight:900;letter-spacing:3px;background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:4px">VDSEN</div>
+    <div style="font-size:8px;letter-spacing:2px;color:var(--platinum);text-transform:uppercase;font-weight:500;margin-bottom:2px">Sistema Coach</div>
+    <div style="font-size:8px;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;font-style:italic">El esfuerzo no es negociable</div>
+  </div>
+  <nav style="padding:12px 12px">
+    <div data-section="dashboard" class="cursor-pointer py-2 px-3 rounded transition font-semibold" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📋 Dashboard</div>
+    <div data-section="clientes"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">👥 Clientes</div>
+    <div data-section="crearPlan" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📝 Crear Plan</div>
+    <div data-section="templates" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📑 Templates</div>
+    <div data-section="catalogo"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🏋️ Catálogo</div>
+    <div data-section="monitoreo" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📊 Monitoreo</div>
+    <div data-section="config"    class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">⚙️ Config</div>
   </nav>
+  <div style="position:absolute;bottom:0;left:0;right:0;padding:16px 20px;border-top:1px solid var(--border-soft)">
+    <div style="font-size:8px;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;text-align:center">Ciencias Aplicadas al Deporte</div>
+  </div>
 </div>
 <!-- Header visible solo en mobile -->
-<div id="mobileHeader" style="display:none;position:-webkit-sticky;position:sticky;top:0;z-index:35;background:var(--bg-surface);border-bottom:1px solid var(--border);padding:12px 16px;align-items:center;justify-content:space-between;">
-  <span style="font-size:15px;font-weight:700;color:var(--accent);letter-spacing:1px">VDSEN COACH</span>
-  <span id="mobileHeaderSection" style="font-size:12px;color:var(--text-muted);font-weight:500;letter-spacing:.5px;text-transform:uppercase"></span>
+<div id="mobileHeader" style="display:none;position:-webkit-sticky;position:sticky;top:0;z-index:35;background:rgba(8,8,8,.97);border-bottom:1px solid var(--border);padding:12px 18px;align-items:center;justify-content:space-between;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)">
+  <span style="font-size:16px;font-weight:900;letter-spacing:2.5px;background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">VDSEN</span>
+  <span id="mobileHeaderSection" style="font-size:10px;color:var(--platinum);font-weight:600;letter-spacing:1.5px;text-transform:uppercase"></span>
 </div>
 <script>
   if (window.innerWidth <= 768) {
