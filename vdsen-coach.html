@@ -257,7 +257,10 @@
     <label class="block text-xs text-[#888] mb-1">Email</label>
     <input id="nc-email" class="input-field mb-3" type="email" placeholder="juan@email.com">
     <label class="block text-xs text-[#888] mb-1">Contraseña temporal</label>
-    <input id="nc-pass" class="input-field mb-4" type="password" placeholder="mínimo 6 caracteres">
+    <div style="position:relative" class="mb-4">
+      <input id="nc-pass" class="input-field" type="password" placeholder="mínimo 6 caracteres" style="padding-right:42px;width:100%;box-sizing:border-box">
+      <button type="button" onclick="_togglePwd('nc-pass',this)" aria-label="Mostrar/ocultar contraseña" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px">👁</button>
+    </div>
     <button id="nc-submit" class="btn-primary w-full">Crear cliente</button>
   </div>
 </div>
@@ -461,7 +464,7 @@
       // Login automático con credenciales de prueba (solo para demostración, en producción usar formulario)
       signInWithEmailAndPassword(auth, "coach@vdsen.com", "password").catch(() => {
         // Si falla, mostrar pantalla de login simple
-        document.body.innerHTML = `<div class="flex items-center justify-center h-screen"><div class="card p-6"><h2 class="text-xl mb-4">Login Coach</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email"><input id="loginPass" class="input-field mb-2" type="password"><button id="loginBtn" class="btn-primary">Ingresar</button><div id="loginErr" class="text-sm mt-2" style="color:#c94a3a"></div><div class="text-center mt-3"><a href="#" id="forgotBtn" class="text-sm" style="color:#888;text-decoration:underline">¿Olvidaste tu contraseña?</a></div></div></div>`;
+        document.body.innerHTML = `<div class="flex items-center justify-center h-screen"><div class="card p-6"><h2 class="text-xl mb-4">Login Coach</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email"><div style="position:relative" class="mb-2"><input id="loginPass" class="input-field" type="password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="(function(b){var i=document.getElementById('loginPass');var s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'🙈':'👁';})(this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div><button id="loginBtn" class="btn-primary">Ingresar</button><div id="loginErr" class="text-sm mt-2" style="color:#c94a3a"></div><div class="text-center mt-3"><a href="#" id="forgotBtn" class="text-sm" style="color:#888;text-decoration:underline">¿Olvidaste tu contraseña?</a></div></div></div>`;
         document.getElementById("loginBtn")?.addEventListener("click", () => {
           const email = document.getElementById("loginEmail").value;
           const pass = document.getElementById("loginPass").value;
@@ -1500,11 +1503,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
 
     body.innerHTML = `
-      <p class="text-sm text-[#888] mb-4">${c.email}</p>
+      <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <p class="text-sm text-[#888]">${c.email}</p>
+        <button onclick="editClientInfo('${clientId}')" class="text-[#C9A84C] text-xs underline">✏️ Editar datos</button>
+      </div>
       <div class="mb-5">
-        <div class="flex justify-between items-center mb-2">
+        <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Plan de entrenamiento</h4>
-          <div>${planActionsHtml}</div>
+          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''}</div>
         </div>
         <div id="training-view">${planViewHtml}</div>
         <div id="training-editor" style="display:none">${planEditorHtml}</div>
@@ -1544,6 +1550,48 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function renderNutritionEditor(n) {
     n = n || {};
     return `
+      <details class="mb-3" style="background:rgba(68,187,136,.05);border:1px solid rgba(68,187,136,.25);border-radius:8px;padding:10px 12px">
+        <summary style="cursor:pointer;list-style:none;font-size:12px;font-weight:700;color:#44BB88;letter-spacing:.5px;display:flex;align-items:center;gap:6px">
+          <span>🧩</span><span>CARGAR DESDE JSON</span>
+          <span style="margin-left:auto;font-size:14px;color:#888">▾</span>
+        </summary>
+        <div class="mt-3">
+          <div class="text-xs text-[#888] mb-2 leading-relaxed">
+            Pega un JSON estructurado. Macros + comidas con alimentos por porción se convierten automáticamente al formato que el cliente entiende.
+          </div>
+          <details class="mb-2" style="background:rgba(0,0,0,.2);border-radius:6px;padding:6px 10px">
+            <summary class="cursor-pointer text-xs text-[#888]">Ver ejemplo del JSON</summary>
+            <pre class="text-xs mt-2 p-2 rounded" style="background:#0a0a0a;color:#c9a84c;font-family:monospace;font-size:10px;overflow-x:auto;line-height:1.5">${(`{
+  "calorias": 2400, "proteina": 180, "carbos": 250, "grasas": 70,
+  "comidas": [
+    {
+      "nombre": "Comida 1 - Desayuno",
+      "alimentos": [
+        { "alimento": "Avena", "cantidad": "60g" },
+        { "alimento": "Whey", "cantidad": "30g" }
+      ],
+      "macros": { "p": 35, "c": 50, "g": 8, "kcal": 410 },
+      "notas": "Pre-entreno opcional"
+    },
+    {
+      "nombre": "Comida 2 - Almuerzo",
+      "alimentos": [
+        { "alimento": "Pollo", "cantidad": "200g" },
+        { "alimento": "Arroz integral", "cantidad": "100g" },
+        { "alimento": "Aguacate", "cantidad": "40g" }
+      ],
+      "macros": { "p": 50, "c": 80, "g": 12, "kcal": 628 }
+    }
+  ]
+}`).replace(/</g,'&lt;')}</pre>
+          </details>
+          <textarea id="nut-json-input" class="input-field w-full text-xs" rows="8" placeholder='Pega aquí el JSON...' style="font-family:monospace;font-size:11px"></textarea>
+          <div class="flex gap-2 mt-2">
+            <button onclick="loadNutritionFromJSON()" class="text-xs px-3 py-2 rounded" style="background:rgba(68,187,136,.15);border:1px solid #44BB88;color:#44BB88;cursor:pointer;flex:1;font-weight:700">🧩 Cargar JSON</button>
+          </div>
+          <div id="nut-json-status" class="text-xs mt-2"></div>
+        </div>
+      </details>
       <div class="grid grid-cols-2 gap-2 mb-3">
         <div><label class="text-xs text-[#888]">Calorías (kcal)</label><input id="nut-kcal" class="input-field w-full mt-1" type="number" placeholder="2000" value="${n.calorias||''}"></div>
         <div><label class="text-xs text-[#888]">Proteína (g)</label><input id="nut-prot" class="input-field w-full mt-1" type="number" placeholder="180" value="${n.proteina||''}"></div>
@@ -1551,9 +1599,165 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <div><label class="text-xs text-[#888]">Grasas (g)</label><input id="nut-fat" class="input-field w-full mt-1" type="number" placeholder="70" value="${n.grasas||''}"></div>
       </div>
       <label class="text-xs text-[#888]">Plan de alimentación (texto libre)</label>
-      <textarea id="nut-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="6" placeholder="Comida 1: ...\nComida 2: ...">${n.texto||''}</textarea>
+      <textarea id="nut-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="10" placeholder="Comida 1: ...\nComida 2: ...">${(n.texto||'').replace(/</g,'&lt;')}</textarea>
       <button onclick="saveNutritionPlan()" class="btn-primary text-sm py-1 px-4 w-full">Guardar nutrición</button>`;
   }
+
+  // ── JSON → texto formato cliente para nutrición ──
+  // Acepta dos esquemas:
+  //   A) Simple:  { calorias, proteina, carbos, grasas, comidas:[{nombre, alimentos:[{alimento,cantidad}], macros:{p,c,g,kcal}, notas}] }
+  //   B) Rico VDSEN: { macros:{proteina_g, grasa_g, carbohidratos_g}, calculos:{kcal_objetivo},
+  //                    comidas:[{nombre, horario_sugerido, kcal, macros:{proteina_g, grasa_g, carbohidratos_g},
+  //                              alimentos:[{nombre, cantidad_g, proteina_g, grasa_g, carbohidratos_g, nota}],
+  //                              preparacion, suplementos_con_comida:[{nombre, dosis, nota}]}],
+  //                    assumptions, monitoreo }
+  function loadNutritionFromJSON() {
+    const raw = document.getElementById('nut-json-input')?.value.trim();
+    const st  = document.getElementById('nut-json-status');
+    if (!raw) { st.style.color='#c94a3a'; st.textContent='Pega un JSON primero'; return; }
+    let obj; try { obj = JSON.parse(raw); } catch(e) { st.style.color='#c94a3a'; st.textContent='JSON inválido: '+e.message; return; }
+
+    // ── Helpers de extracción flexible ──
+    const num = v => (v == null || v === '') ? null : (isNaN(+v) ? null : +v);
+    // Macros a nivel raíz (soporta proteina_g, carbohidratos_g, grasa_g, kcal_objetivo, etc.)
+    const rootMacros = obj.macros || {};
+    const rootCalc   = obj.calculos || {};
+    const kcalRoot   = num(obj.calorias) || num(obj.kcal) || num(rootMacros.kcal) || num(rootMacros.calorias)
+                       || num(rootCalc.kcal_objetivo) || num(rootCalc.kcal) || null;
+    const protRoot   = num(obj.proteina) || num(rootMacros.proteina_g) || num(rootMacros.proteina) || num(rootMacros.p) || null;
+    const carbRoot   = num(obj.carbos)   || num(rootMacros.carbohidratos_g) || num(rootMacros.carbos) || num(rootMacros.c) || null;
+    const grasRoot   = num(obj.grasas)   || num(rootMacros.grasa_g) || num(rootMacros.grasas) || num(rootMacros.g) || null;
+
+    if (kcalRoot != null) document.getElementById('nut-kcal').value = Math.round(kcalRoot);
+    if (protRoot != null) document.getElementById('nut-prot').value = Math.round(protRoot);
+    if (carbRoot != null) document.getElementById('nut-carb').value = Math.round(carbRoot);
+    if (grasRoot != null) document.getElementById('nut-fat').value  = Math.round(grasRoot);
+
+    // ── Bloque encabezado (metadata si existe) ──
+    let texto = '';
+    const md = obj.metadata || {};
+    if (md.objetivo || md.fecha_creacion) {
+      const partes = [];
+      if (md.objetivo) partes.push(String(md.objetivo).toUpperCase());
+      if (md.fecha_creacion) partes.push('Plan: ' + md.fecha_creacion);
+      texto += '─── ' + partes.join(' · ') + ' ───\n\n';
+    }
+
+    // ── Comidas ──
+    if (Array.isArray(obj.comidas) && obj.comidas.length) {
+      texto += obj.comidas.map(c => {
+        // Encabezado: "COMIDA N - NOMBRE (HORARIO)"
+        const numStr = c.numero ? ('COMIDA ' + c.numero + ' - ') : '';
+        const horario = c.horario_sugerido || c.horario || '';
+        const titulo = (numStr + (c.nombre || c.titulo || 'Comida')).toUpperCase().trim()
+                       + (horario ? '  ('+horario+')' : '');
+        let bloque = titulo + '\n';
+
+        // Alimentos
+        if (Array.isArray(c.alimentos)) {
+          c.alimentos.forEach(a => {
+            const nombre = String(a.alimento || a.nombre || '').trim();
+            if (!nombre) return;
+            // Cantidad: aceptar "cantidad" o "cantidad_g" o "porcion"
+            let cant = String(a.cantidad || a.porcion || '').trim();
+            if (!cant && a.cantidad_g != null) cant = a.cantidad_g + 'g';
+            bloque += '- ' + nombre + (cant ? ' ' + cant : '');
+            // Si vienen macros por alimento, agregarlos como nota tenue
+            const ap = num(a.proteina_g) || num(a.proteina) || num(a.p);
+            const ac = num(a.carbohidratos_g) || num(a.carbos) || num(a.c);
+            const ag = num(a.grasa_g) || num(a.grasas) || num(a.g);
+            if (ap != null || ac != null || ag != null) {
+              const partes = [];
+              if (ap != null) partes.push(ap+'g P');
+              if (ac != null) partes.push(ac+'g C');
+              if (ag != null) partes.push(ag+'g G');
+              bloque += '  [' + partes.join(' · ') + ']';
+            }
+            bloque += '\n';
+            if (a.nota) bloque += '  → ' + String(a.nota).trim() + '\n';
+          });
+        }
+
+        // Macros de la comida — formato compatible con parser cliente (suma de comidas)
+        if (c.macros || c.kcal) {
+          const m = c.macros || {};
+          const p = num(m.proteina_g) || num(m.proteina) || num(m.p) || 0;
+          const cr = num(m.carbohidratos_g) || num(m.carbos) || num(m.c) || 0;
+          const g = num(m.grasa_g) || num(m.grasas) || num(m.g) || 0;
+          const k = num(c.kcal) || num(m.kcal) || num(m.calorias) || Math.round(p*4 + cr*4 + g*9);
+          bloque += 'Macros: '+p+'g PROT | '+cr+'g CARBS | '+g+'g GRASAS | '+k+' kcal\n';
+        }
+
+        // Preparación
+        if (c.preparacion) bloque += 'Descripción: ' + String(c.preparacion).trim() + '\n';
+
+        // Notas adicionales
+        if (c.notas) {
+          if (Array.isArray(c.notas)) c.notas.forEach(n => bloque += '  • ' + String(n).trim() + '\n');
+          else bloque += String(c.notas).trim() + '\n';
+        }
+
+        // Suplementos con comida (informativo dentro del bloque de comida)
+        if (Array.isArray(c.suplementos_con_comida) && c.suplementos_con_comida.length) {
+          bloque += '  💊 Suplementos con esta comida:\n';
+          c.suplementos_con_comida.forEach(s => {
+            const nombre = String(s.nombre || '').trim();
+            const dosis  = String(s.dosis  || '').trim();
+            const nota   = String(s.nota   || '').trim();
+            bloque += '     - ' + nombre + (dosis ? ' ' + dosis : '') + (nota ? ' (' + nota + ')' : '') + '\n';
+          });
+        }
+        return bloque;
+      }).join('\n');
+
+      // Línea TOTAL final si tenemos macros raíz
+      if (kcalRoot || protRoot) {
+        texto += '\nTOTAL PROT: '+(Math.round(protRoot||0))+'g | TOTAL CARBS: '+(Math.round(carbRoot||0))+'g | TOTAL GRASAS: '+(Math.round(grasRoot||0))+'g | TOTAL kcal: '+(Math.round(kcalRoot||0))+'\n';
+      }
+    } else if (obj.texto) {
+      texto += String(obj.texto);
+    }
+
+    // ── Cálculos / Assumptions / Monitoreo (informativos al final) ──
+    // No los lee el parser de comidas (se corta en SUPLEMENTACIÓN/SUSTITUCIONES),
+    // pero los dejamos para que el coach los conserve como anotaciones.
+    const extras = [];
+    if (rootCalc.ea_kcal_kg_lbm || rootCalc.tdee_ajustado_kcal) {
+      extras.push('───  PARÁMETROS  ───');
+      if (rootCalc.tdee_ajustado_kcal) extras.push('TDEE ajustado: ' + rootCalc.tdee_ajustado_kcal + ' kcal');
+      if (rootCalc.kcal_objetivo)      extras.push('Kcal objetivo: ' + rootCalc.kcal_objetivo + ' kcal');
+      if (rootCalc.ajuste_objetivo_kcal!=null) extras.push('Déficit/superávit: ' + rootCalc.ajuste_objetivo_kcal + ' kcal');
+      if (rootCalc.ea_kcal_kg_lbm)     extras.push('Energy availability: ' + rootCalc.ea_kcal_kg_lbm + ' kcal/kg LBM');
+      if (rootCalc.alerta_red_s)       extras.push('⚠ ALERTA RED-S: EA por debajo del umbral IOC — monitoreo activo requerido');
+      extras.push('');
+    }
+    if (Array.isArray(obj.assumptions) && obj.assumptions.length) {
+      extras.push('───  SUPUESTOS DEL PLAN  ───');
+      obj.assumptions.forEach((a, i) => extras.push((i+1)+'. ' + String(a).trim()));
+      extras.push('');
+    }
+    if (obj.monitoreo) {
+      extras.push('───  MONITOREO  ───');
+      if (obj.monitoreo.metrica_primaria) extras.push('Métrica primaria: ' + obj.monitoreo.metrica_primaria);
+      if (obj.monitoreo.frecuencia_revision_dias) extras.push('Revisión cada: ' + obj.monitoreo.frecuencia_revision_dias + ' días');
+      if (obj.monitoreo.proxima_revision) extras.push('Próxima revisión: ' + obj.monitoreo.proxima_revision);
+      if (Array.isArray(obj.monitoreo.alarmas_rojas) && obj.monitoreo.alarmas_rojas.length) {
+        extras.push('Alarmas rojas:');
+        obj.monitoreo.alarmas_rojas.forEach(a => extras.push('  ⚠ ' + a));
+      }
+      if (obj.monitoreo.ajuste_si_no_progresa) extras.push('Ajuste si no progresa: ' + obj.monitoreo.ajuste_si_no_progresa);
+      if (Array.isArray(obj.monitoreo.laboratorio_pendiente) && obj.monitoreo.laboratorio_pendiente.length) {
+        extras.push('Laboratorio pendiente: ' + obj.monitoreo.laboratorio_pendiente.join(', '));
+      }
+    }
+    if (extras.length) texto += '\n\n' + extras.join('\n');
+
+    if (texto) document.getElementById('nut-texto').value = texto;
+    st.style.color = '#44BB88';
+    const nC = Array.isArray(obj.comidas) ? obj.comidas.length : 0;
+    st.textContent = '✓ JSON cargado · ' + nC + ' comida(s) · revisa y pulsa "Guardar nutrición"';
+  }
+  window.loadNutritionFromJSON = loadNutritionFromJSON;
 
   function renderSupplementView(s) {
     if (!s || !s.texto) return `<p class="text-[#888] text-sm">Sin datos.</p>`;
@@ -1563,10 +1767,99 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function renderSupplementEditor(s) {
     s = s || {};
     return `
+      <details class="mb-3" style="background:rgba(68,187,136,.05);border:1px solid rgba(68,187,136,.25);border-radius:8px;padding:10px 12px">
+        <summary style="cursor:pointer;list-style:none;font-size:12px;font-weight:700;color:#44BB88;letter-spacing:.5px;display:flex;align-items:center;gap:6px">
+          <span>🧩</span><span>CARGAR DESDE JSON</span>
+          <span style="margin-left:auto;font-size:14px;color:#888">▾</span>
+        </summary>
+        <div class="mt-3">
+          <div class="text-xs text-[#888] mb-2 leading-relaxed">
+            Pega un JSON con tiers (TIER 1, TIER 2, PRE-ENTRENO, EVITAR) y suplementos. Se convertirá al formato que el cliente ya renderiza con iconos y dosis prominentes.
+          </div>
+          <details class="mb-2" style="background:rgba(0,0,0,.2);border-radius:6px;padding:6px 10px">
+            <summary class="cursor-pointer text-xs text-[#888]">Ver ejemplo del JSON</summary>
+            <pre class="text-xs mt-2 p-2 rounded" style="background:#0a0a0a;color:#c9a84c;font-family:monospace;font-size:10px;overflow-x:auto;line-height:1.5">${(`{
+  "tiers": [
+    {
+      "nombre": "TIER 1",
+      "items": [
+        { "nombre": "Creatina",   "dosis": "5g",   "timing": "Mañana" },
+        { "nombre": "Whey",       "dosis": "30g",  "timing": "Post-entreno" },
+        { "nombre": "Omega-3",    "dosis": "2g",   "timing": "Con comida" },
+        { "nombre": "Vitamina D", "dosis": "4000UI","timing": "Mañana" }
+      ]
+    },
+    {
+      "nombre": "TIER 2",
+      "items": [
+        { "nombre": "Magnesio",   "dosis": "400mg","timing": "Noche" },
+        { "nombre": "Ashwagandha","dosis": "600mg","timing": "Noche" }
+      ]
+    },
+    {
+      "nombre": "PRE-ENTRENO",
+      "items": [
+        { "nombre": "Cafeína",   "dosis": "200mg","timing": "Pre-entreno", "nota": "30 min antes" },
+        { "nombre": "Citrulina", "dosis": "6g",   "timing": "Pre-entreno" }
+      ]
+    },
+    {
+      "nombre": "EVITAR",
+      "items": [
+        { "nombre": "BCAA",          "nota": "redundante si la proteína es suficiente" },
+        { "nombre": "Glutamina sola","nota": "no muestra efecto en sujetos no clínicos" }
+      ]
+    }
+  ]
+}`).replace(/</g,'&lt;')}</pre>
+          </details>
+          <textarea id="sup-json-input" class="input-field w-full text-xs" rows="8" placeholder='Pega aquí el JSON...' style="font-family:monospace;font-size:11px"></textarea>
+          <div class="flex gap-2 mt-2">
+            <button onclick="loadSupplementsFromJSON()" class="text-xs px-3 py-2 rounded" style="background:rgba(68,187,136,.15);border:1px solid #44BB88;color:#44BB88;cursor:pointer;flex:1;font-weight:700">🧩 Cargar JSON</button>
+          </div>
+          <div id="sup-json-status" class="text-xs mt-2"></div>
+        </div>
+      </details>
       <label class="text-xs text-[#888]">Suplementación (texto libre)</label>
-      <textarea id="sup-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="5" placeholder="Creatina: 5g post-entreno\nProteína: 30g post-entreno...">${s.texto||''}</textarea>
+      <textarea id="sup-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="10" placeholder="TIER 1\nCreatina 5g mañana\nWhey 30g post-entreno\n\nTIER 2\n...">${(s.texto||'').replace(/</g,'&lt;')}</textarea>
       <button onclick="saveSupplementPlan()" class="btn-primary text-sm py-1 px-4 w-full">Guardar suplementación</button>`;
   }
+
+  // ── JSON → texto formato cliente para suplementación ──
+  function loadSupplementsFromJSON() {
+    const raw = document.getElementById('sup-json-input')?.value.trim();
+    const st  = document.getElementById('sup-json-status');
+    if (!raw) { st.style.color='#c94a3a'; st.textContent='Pega un JSON primero'; return; }
+    let obj; try { obj = JSON.parse(raw); } catch(e) { st.style.color='#c94a3a'; st.textContent='JSON inválido: '+e.message; return; }
+    if (!Array.isArray(obj.tiers) || !obj.tiers.length) {
+      st.style.color='#c94a3a'; st.textContent='El JSON debe tener "tiers" como array no vacío'; return;
+    }
+    const lines = [];
+    obj.tiers.forEach((t, ti) => {
+      if (ti > 0) lines.push(''); // línea en blanco entre tiers
+      const titulo = String(t.nombre || t.titulo || 'SUPLEMENTOS').toUpperCase().trim();
+      lines.push(titulo);
+      if (Array.isArray(t.items)) {
+        t.items.forEach(it => {
+          const nombre = String(it.nombre || '').trim();
+          if (!nombre) return;
+          const dosis  = String(it.dosis || '').trim();
+          const timing = String(it.timing || it.momento || '').trim();
+          const nota   = String(it.nota || it.observacion || '').trim();
+          let line = nombre;
+          if (dosis) line += ' ' + dosis;
+          if (timing) line += ' ' + timing.toLowerCase();
+          if (nota) line += ' (' + nota + ')';
+          lines.push(line);
+        });
+      }
+    });
+    document.getElementById('sup-texto').value = lines.join('\n');
+    st.style.color = '#44BB88';
+    const totalItems = obj.tiers.reduce((sum,t) => sum + (Array.isArray(t.items)?t.items.length:0), 0);
+    st.textContent = '✓ ' + obj.tiers.length + ' tier(s) · ' + totalItems + ' suplemento(s) cargados · revisa y pulsa "Guardar"';
+  }
+  window.loadSupplementsFromJSON = loadSupplementsFromJSON;
 
   function togglePlanEditor(type) {
     const view   = document.getElementById(`${type}-view`);
@@ -1653,99 +1946,99 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // muscleType: typeIIx (fibras rápidas) | typeI (fibras lentas) | mixed
   const BASE_EXERCISES = [
     // ── EMPUJE · Pecho ──────────────────────────────────────────────────
-    { name:"Press banca plano barra",           motorPattern:"Empuje", equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated", executionNotes:"" },
-    { name:"Press banca inclinado barra",        motorPattern:"Empuje", equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated", executionNotes:"" },
-    { name:"Press banca plano mancuernas",       motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated", executionNotes:"" },
-    { name:"Press banca inclinado mancuernas",   motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated", executionNotes:"" },
-    { name:"Press banca declinado mancuernas",   motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated", executionNotes:"" },
-    { name:"Aperturas plano mancuernas",         motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated", executionNotes:"" },
-    { name:"Aperturas inclinado mancuernas",     motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated", executionNotes:"" },
-    { name:"Crossover polea alta",               motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Crossover polea baja",               motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Crossover polea media",              motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Press pecho máquina",                motorPattern:"Empuje", equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Press inclinado máquina",            motorPattern:"Empuje", equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Fondos pecho (Dips)",                motorPattern:"Empuje", equipment:"Barras",      muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Pull-over pecho polea",              motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
+    { name:"Press banca plano barra",           motorPattern:"Empuje", equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated", executionNotes:"Banco plano. Agarre ~1.5x ancho de hombros. Retraccion escapular y arco lumbar natural; gluteos pegados al banco. Baja la barra al pecho bajo (linea de pezones) en linea recta. Empuja con codos a ~75 grados del torso para proteger el hombro." },
+    { name:"Press banca inclinado barra",        motorPattern:"Empuje", equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated", executionNotes:"Banco a 30-45 grados. Agarre ~1.5x hombros. Baja la barra a la clavicula superior. Codos a ~75 grados (no abiertos a 90). Retraccion escapular constante; no despegues gluteos del banco." },
+    { name:"Press banca plano mancuernas",       motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated", executionNotes:"Banco plano. Mancuernas a linea del pecho, palmas al frente. Baja hasta sentir estiramiento profundo en el pectoral (codos ~10-15 grados bajo el torso). ROM mayor que la barra: prioriza estiramiento sobre carga." },
+    { name:"Press banca inclinado mancuernas",   motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated", executionNotes:"Banco 30-45 grados. Mancuernas a la clavicula. Descenso lento (2-3s) buscando estiramiento maximo. En la subida, gira las munecas ligeramente hacia adentro para aumentar la activacion del pectoral superior." },
+    { name:"Press banca declinado mancuernas",   motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated", executionNotes:"Banco -15 grados (cabeza mas baja que la cadera). Baja al pecho bajo (zona xifoides). El pectoral inferior trabaja en posicion acortada: no fuerces ROM exagerado. Pies firmes en el suelo." },
+    { name:"Aperturas plano mancuernas",         motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated", executionNotes:"Banco plano. Codos LIGERAMENTE FLEXIONADOS y FIJOS (~10-15 grados) durante todo el recorrido. Baja en arco amplio hasta sentir estiramiento intenso (~60-70 grados de aduccion). Sube como si abrazaras un arbol grande." },
+    { name:"Aperturas inclinado mancuernas",     motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated", executionNotes:"Banco 30 grados. Codos fijos en flexion ligera. Baja en arco hasta maximo estiramiento del pectoral superior (no mas alla del limite articular). Aprieta arriba sin chocar mancuernas (manten tension)." },
+    { name:"Crossover polea alta",               motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Coloca AMBAS POLEAS EN POSICION ALTA. De pie en el medio, un paso adelante, agarres en cada mano. Brazos diagonales hacia abajo y al frente. Cruza las manos por delante a la altura de la cadera. Codos semiflexionados FIJOS. Activa fibras inferiores del pectoral." },
+    { name:"Crossover polea baja",               motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Coloca AMBAS POLEAS EN POSICION BAJA (~altura de cadera). Brazos en diagonal hacia arriba y al frente. Cruza las manos a la altura de los ojos. Curva elongada: maximo estiramiento en posicion baja. Activa fibras superiores del pectoral." },
+    { name:"Crossover polea media",              motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"Coloca AMBAS POLEAS A LA ALTURA DEL PECHO. Movimiento horizontal puro (aduccion). Cruza las manos al frente al nivel del esternon. Codos ligeramente flexionados y fijos. Excelente para fibras medias del pectoral." },
+    { name:"Press pecho máquina",                motorPattern:"Empuje", equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Ajusta el asiento para que las manillas queden a la ALTURA DEL PECHO (linea de pezones). Manten escapulas retraidas y pegadas al respaldo durante todo el movimiento. No extiendas completamente los codos para mantener tension continua." },
+    { name:"Press inclinado máquina",            motorPattern:"Empuje", equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Ajusta el asiento para que las manillas queden a la altura de la clavicula. Espalda pegada al respaldo. Empuja en diagonal hacia arriba y al frente. Util para series largas con tecnica estable." },
+    { name:"Fondos pecho (Dips)",                motorPattern:"Empuje", equipment:"Barras",      muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"Barras paralelas. INCLINA EL TORSO ~30 grados HACIA ADELANTE (para enfocar pecho, no triceps). Codos ligeramente abiertos. Baja hasta estiramiento profundo del pectoral (NO al limite articular). Si dominas el peso corporal, anade lastre en el cinturon." },
+    { name:"Pull-over pecho polea",              motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Coloca LA POLEA EN POSICION ALTA con cuerda o barra recta. De pie frente a la polea, brazos extendidos hacia adelante. Manten CODOS SEMIFLEXIONADOS Y FIJOS. Lleva los brazos hasta los muslos en arco. Estiramiento intenso del pectoral arriba y serrato abajo." },
     // ── EMPUJE · Hombros ────────────────────────────────────────────────
-    { name:"Press militar barra",                motorPattern:"Empuje", equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Press militar mancuernas",           motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Press hombro máquina",               motorPattern:"Empuje", equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Elevaciones laterales mancuernas",   motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Elevaciones laterales polea baja",   motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Elevaciones frontales mancuernas",   motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"" },
+    { name:"Press militar barra",                motorPattern:"Empuje", equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"mid",         executionNotes:"De pie o sentado en banco recto. Barra a la altura del menton/claviculas, agarre ~hombros + 5cm. Core APRETADO, sin hiperlordosis. Codos ligeramente adelantados (no al lado) en posicion baja para proteger el manguito. Empuja en linea vertical hasta extension completa." },
+    { name:"Press militar mancuernas",           motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"mid",         executionNotes:"Sentado en banco con respaldo a 80-90 grados. Mancuernas a la altura del oido, palmas hacia adelante. Baja hasta que los codos formen 90 grados (paralelo al suelo): mayor ROM que la barra. Sube en arco juntando ligeramente arriba." },
+    { name:"Press hombro máquina",               motorPattern:"Empuje", equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"Ajusta el asiento para que las manillas queden a la altura del HOMBRO. Espalda pegada al respaldo. Empuja vertical hasta casi-extension (no bloquees codos). Util para alto volumen con tecnica estable." },
+    { name:"Elevaciones laterales mancuernas",   motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"De pie, mancuernas a los lados, torso ligeramente inclinado ~10 grados al frente. Eleva con los CODOS GUIANDO (no con las manos), hasta que el codo quede paralelo al suelo (~90 grados). PULGAR LIGERAMENTE HACIA ABAJO para maxima activacion del deltoides lateral. Sin balanceo." },
+    { name:"Elevaciones laterales polea baja",   motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Coloca LA POLEA EN POSICION BAJA, del lado CONTRARIO al brazo que trabaja (el cable cruza por delante del cuerpo). Eleva lateralmente hasta paralelo al suelo. La resistencia es maxima en posicion BAJA (elongada). Curva elongada superior para hipertrofia del deltoides lateral." },
+    { name:"Elevaciones frontales mancuernas",   motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"De pie, mancuernas frente a los muslos. Eleva una mancuerna al frente con la palma hacia abajo hasta ~90 grados (paralelo al suelo). NO superes la horizontal: el deltoides anterior ya recibe alto volumen del press. Alterna brazos o usa ambos a la vez." },
     // ── EMPUJE · Tríceps ────────────────────────────────────────────────
-    { name:"Press francés barra EZ",             motorPattern:"Empuje", equipment:"Barra",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Press francés mancuernas",           motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Extensión tríceps polea alta",        motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Extensión tríceps sobre cabeza polea",motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Fondos tríceps banco",               motorPattern:"Empuje", equipment:"Banco",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
+    { name:"Press francés barra EZ",             motorPattern:"Empuje", equipment:"Barra",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Tumbado en banco plano. Barra EZ en posicion alta con codos extendidos. CODOS FIJOS APUNTANDO AL TECHO. Baja la barra hasta la frente (o ligeramente atras de la cabeza) flexionando solo codos. Posicion elongada del triceps. Combina con press cerrado para rest-pause." },
+    { name:"Press francés mancuernas",           motorPattern:"Empuje", equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Tumbado en banco plano. Dos mancuernas verticales sobre el pecho. Codos fijos apuntando al techo. Baja flexionando codos hasta los lados de la cabeza. El movimiento unilateral con mancuernas reduce estres en munecas y permite mayor ROM individual por brazo." },
+    { name:"Extensión tríceps polea alta",        motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Coloca LA POLEA EN POSICION ALTA con cuerda o barra. De pie frente a la polea. CODOS PEGADOS AL TORSO y FIJOS. Extiende los codos completamente hacia abajo. Al final de la extension, separa ligeramente las puntas de la cuerda para maxima contraccion de las 3 cabezas. Posicion acortada." },
+    { name:"Extensión tríceps sobre cabeza polea",motorPattern:"Empuje", equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Coloca LA POLEA EN POSICION BAJA con cuerda. De ESPALDAS a la polea, un paso al frente. Brazos verticales, codos apuntando al techo. Desciende la cuerda detras de la cabeza hasta maximo estiramiento. Extiende con codos fijos. Superior para hipertrofia de la cabeza LARGA del triceps (Wolf et al. 2023)." },
+    { name:"Fondos tríceps banco",               motorPattern:"Empuje", equipment:"Banco",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Manos en el borde del banco, dedos apuntando hacia adelante. Pies en el suelo (rodillas a 90 grados, principiante) o estirados (avanzado). Baja flexionando codos hasta ~90 grados. Activa principalmente cabezas lateral y medial. Anade lastre en muslos para progresar." },
     // ── HALAR · Espalda ─────────────────────────────────────────────────
-    { name:"Jalón al pecho agarre prono",        motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Jalón al pecho agarre supino",       motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Jalón al pecho agarre neutro",       motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Dominadas agarre prono",             motorPattern:"Halar",  equipment:"Barra fija",  muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Dominadas agarre supino",            motorPattern:"Halar",  equipment:"Barra fija",  muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Remo con barra prono",               motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Remo con barra supino",              motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Remo mancuerna unilateral",          motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Remo polea baja bilateral",          motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Remo polea baja unilateral",         motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Remo en máquina bilateral",          motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Remo en máquina unilateral",         motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Remo chest support máquina",         motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Pull-over polea alta",               motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Pull-over mancuerna",                motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
+    { name:"Jalón al pecho agarre prono",        motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"Coloca LA POLEA EN POSICION ALTA con barra recta, agarre prono ~1.5x ancho de hombros. Sientate con los muslos asegurados bajo el pad. RETRAE ESCAPULAS al iniciar el tiron. Tira la barra hacia el pecho superior en arco (codos hacia atras y abajo). Evita inclinacion excesiva (>20 grados)." },
+    { name:"Jalón al pecho agarre supino",       motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"Coloca LA POLEA EN POSICION ALTA con barra recta, agarre supino estrecho (~hombros). Codos cerca del torso al bajar la barra hacia el esternon. Mayor activacion de biceps como asistente. Retrae escapulas al inicio. ROM completo extendiendo brazos arriba." },
+    { name:"Jalón al pecho agarre neutro",       motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"Coloca LA POLEA EN POSICION ALTA con agarre paralelo/neutro (manos enfrentadas). Mejor biomecanica del hombro. Lleva los CODOS HACIA LAS CADERAS al bajar (codos cerca del torso). Permite mas carga y mayor activacion del dorsal que el agarre supino." },
+    { name:"Dominadas agarre prono",             motorPattern:"Halar",  equipment:"Barra fija",  muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"Barra fija, agarre prono ~1.5x hombros. Cuelgate con brazos extendidos, RETRAE ESCAPULAS levemente. Tira llevando el PECHO hacia la barra (no la barbilla). Codos hacia abajo y atras. Sin balanceo (kipping) en hipertrofia. Cuando superes 10 reps limpias, anade lastre." },
+    { name:"Dominadas agarre supino",            motorPattern:"Halar",  equipment:"Barra fija",  muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"Barra fija, palmas mirandote, agarre ~hombros. Cuelga con brazos extendidos. Tira llevando el pecho a la barra. Mayor activacion del biceps que en agarre prono. Codos cerca del torso al subir. ROM completo." },
+    { name:"Remo con barra prono",               motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"shortened",  executionNotes:"De pie, inclinacion del torso ~45 grados (caderas en bisagra), rodillas ligeramente flexionadas. Agarre prono ~hombros + 10cm. Retrae escapulas al tirar la barra HASTA EL ABDOMEN BAJO. Codos pegados al torso. Lumbar neutral: no redondear." },
+    { name:"Remo con barra supino",              motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"shortened",  executionNotes:"Torso mas vertical (~60-70 grados). Agarre supino ~hombros. Tira la barra al ombligo/abdomen bajo. Codos pegados al torso (no abiertos). Mayor activacion de biceps y trapecio medio comparado con el remo prono." },
+    { name:"Remo mancuerna unilateral",          motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened",  executionNotes:"Rodilla y mano IPSILATERAL apoyadas en banco plano. Mancuerna colgando vertical. Deja descender hasta maximo estiramiento del dorsal (rotacion leve del torso). Tira el codo HACIA EL TECHO (no atras). Contraccion al lado de la cadera." },
+    { name:"Remo polea baja bilateral",          motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened",  executionNotes:"Coloca LA POLEA EN POSICION BAJA con triangulo o barra recta. Sentado con rodillas semiflexionadas. Empuja pecho al frente y RETRAE ESCAPULAS COMPLETAMENTE al final de cada rep. Fase excentrica controlada: deja que los hombros protruyan hacia adelante para elongar el dorsal." },
+    { name:"Remo polea baja unilateral",         motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeIIx", fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Coloca LA POLEA EN POSICION BAJA con agarre individual. Sentado o de pie. Permite mayor ROM con rotacion natural del hombro. Tira hacia la cadera del mismo lado. Excelente para corregir asimetrias entre lados." },
+    { name:"Remo en máquina bilateral",          motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"PECHO APOYADO en el respaldo de la maquina. Agarre neutro o prono segun el diseno. Retrae escapulas completamente al final de cada rep. Aisla el movimiento escapular eliminando la fatiga lumbar: util para alto volumen." },
+    { name:"Remo en máquina unilateral",         motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Pecho apoyado en el respaldo o ajustado para 1 brazo. Permite trabajar cada lado por separado y corregir asimetrias. Tira el codo hacia atras y abajo. ROM completo con extension total al frente." },
+    { name:"Remo chest support máquina",         motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Pecho contra el pad acolchado. Agarre prono o neutro. Retrae escapulas y tira los codos hacia atras. Aisla completamente el remo eliminando la asistencia lumbar y de piernas: ideal para preagotamiento o alto volumen." },
+    { name:"Pull-over polea alta",               motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Coloca LA POLEA EN POSICION ALTA con barra recta o cuerda. De pie a 1m de la polea, brazos extendidos arriba al frente. CODOS LIGERAMENTE FLEXIONADOS Y FIJOS. Lleva las manos hasta los muslos en arco grande. Estiramiento intenso del dorsal arriba; contraccion al final." },
+    { name:"Pull-over mancuerna",                motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Tumbado TRANSVERSAL en banco plano (solo hombros apoyados, caderas mas bajas). Una mancuerna sostenida con ambas manos sobre el pecho. Lleva la mancuerna DETRAS DE LA CABEZA hasta maximo estiramiento del dorsal. Codos semiflexionados fijos. Curva elongada: excelente para hipertrofia." },
     // ── HALAR · Deltoides posterior ─────────────────────────────────────
-    { name:"Face pull polea",                    motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Pájaro mancuernas",                  motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Pájaro máquina (pec deck invertido)",motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Pájaro polea",                       motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"" },
+    { name:"Face pull polea",                    motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"Coloca LA POLEA A LA ALTURA DE LOS OJOS, con cuerda. De pie. Tira hacia la cara con CODOS A 90 GRADOS Y ABIERTOS. En la posicion final, ROTA EXTERNAMENTE los hombros (punos apuntando hacia el techo). Activa deltoides posterior, trapecio medio y manguito rotador. Vital para salud del hombro." },
+    { name:"Pájaro mancuernas",                  motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"De pie inclinado ~90 grados (torso casi paralelo al suelo) o sentado inclinado en banco a 30 grados. Mancuernas colgando, brazos con flexion LIGERA y FIJA del codo. Eleva lateralmente hasta paralelo al suelo. Pulgares apuntando ligeramente hacia abajo. Estiramiento maximo abajo." },
+    { name:"Pájaro máquina (pec deck invertido)",motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"Inverso al pec-deck. Ajusta el asiento para que los CODOS QUEDEN A LA ALTURA DE LOS HOMBROS. Pecho apoyado en el pad. Empuja hacia atras con los codos (no con las manos). Gran aislamiento del deltoides posterior." },
+    { name:"Pájaro polea",                       motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"POLEAS CRUZADAS: cada mano agarra la polea del lado OPUESTO (alta o media). De pie en el centro. Brazos cruzados al inicio. Abre lateralmente hasta T amplia. Resistencia constante a lo largo del arco: superior a mancuernas en el rango final." },
     // ── HALAR · Bíceps ──────────────────────────────────────────────────
-    { name:"Curl barra recta",                   motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Curl barra EZ",                      motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Curl mancuerna bilateral",           motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Curl mancuerna alterno",             motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Curl martillo mancuerna",            motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Curl predicador máquina",            motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Curl predicador barra EZ",           motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Curl polea baja",                    motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Curl concentrado mancuerna",         motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"" },
+    { name:"Curl barra recta",                   motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"De pie, agarre ~hombros, palmas al frente. CODOS PEGADOS AL TORSO Y FIJOS. Sube hasta maxima contraccion sin mover los codos. Baja completamente para elongar el biceps. EVITA BALANCEO del torso (kipping)." },
+    { name:"Curl barra EZ",                      motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"Agarre EZ semipronado reduce estres en munecas. Ligeramente menos activacion del biceps largo que la barra recta, pero MAYOR COMODIDAD. ROM completo, codos fijos. Util para series largas o si la barra recta molesta." },
+    { name:"Curl mancuerna bilateral",           motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"De pie, mancuernas a los lados, palmas adentro. Inicia con palmas hacia ti (supinacion). SUPINA al subir (gira el pulgar hacia afuera). ROM completo: extiende completamente abajo antes de la siguiente rep." },
+    { name:"Curl mancuerna alterno",             motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"Igual que el bilateral pero alternando brazos. Manten el brazo no-activo completamente RELAJADO y supina al subir. Permite mayor concentracion por brazo. Util para corregir asimetrias." },
+    { name:"Curl martillo mancuerna",            motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"mid",         executionNotes:"AGARRE NEUTRO (pulgar arriba). Palmas miran al cuerpo durante todo el recorrido. Activa BRAQUIAL y braquiorradial mas que el biceps. Codos fijos. Extension completa abajo para maximo ROM. Excelente para grosor del brazo." },
+    { name:"Curl predicador máquina",            motorPattern:"Halar",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Codos apoyados en el pad. Ajusta el EJE DE LA MAQUINA para alinear con tus codos. NO HIPEREXTIENDAS completamente abajo (riesgo tendinoso). Maxima contraccion arriba. Aisla la cabeza CORTA del biceps. Fase excentrica 2-3s." },
+    { name:"Curl predicador barra EZ",           motorPattern:"Halar",  equipment:"Barra",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Pad inclinado del banco predicador. Brazos APOYADOS en el pad, codos a la altura del eje. Baja completamente sin hiperextender. Sube hasta contraccion maxima. Posicion ACORTADA del biceps: combina con curl inclinado para todo el ROM." },
+    { name:"Curl polea baja",                    motorPattern:"Halar",  equipment:"Polea",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Coloca LA POLEA EN POSICION BAJA con barra recta o EZ. De pie a un paso de la polea. Codos pegados al torso. La RESISTENCIA es maxima en la posicion elongada (biceps estirado): curva elongada superior para hipertrofia (Maeo et al. 2021)." },
+    { name:"Curl concentrado mancuerna",         motorPattern:"Halar",  equipment:"Mancuernas",  muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"Sentado en el borde del banco, piernas abiertas. Codo apoyado en la CARA INTERNA del muslo. Brazo colgando vertical. Sube supinando, maxima contraccion al final (el codo adelantado maximiza el pico). El apoyo elimina cualquier balance." },
     // ── SQUAT · Cuádriceps ──────────────────────────────────────────────
-    { name:"Sentadilla trasera barra",           motorPattern:"Squat",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Sentadilla frontal barra",           motorPattern:"Squat",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Prensa 45°",                         motorPattern:"Squat",  equipment:"Máquina",     muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Hack squat máquina",                 motorPattern:"Squat",  equipment:"Máquina",     muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Leg press horizontal",               motorPattern:"Squat",  equipment:"Máquina",     muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Sentadilla búlgara mancuernas",      motorPattern:"Squat",  equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Sentadilla búlgara barra",           motorPattern:"Squat",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Extensión cuádriceps máquina",       motorPattern:"Squat",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Zancada mancuernas",                 motorPattern:"Squat",  equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Goblet squat",                       motorPattern:"Squat",  equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
+    { name:"Sentadilla trasera barra",           motorPattern:"Squat",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"elongated",  executionNotes:"Barra en trapecio (high bar) o deltoides posteriores (low bar). Pies a ancho de hombros, puntas ligeramente afuera. Core APRETADO. Descenso hasta paralelo o por debajo. Rodillas siguen la linea de los pies. Lumbar neutral (no redondear ni hiperextender)." },
+    { name:"Sentadilla frontal barra",           motorPattern:"Squat",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"elongated",  executionNotes:"Barra sobre las CLAVICULAS, codos altos (paralelos al suelo). Torso mas vertical que la sentadilla trasera: mayor activacion del cuadriceps. Requiere movilidad de tobillo, muneca y hombro. Desciende a paralelo. Core extremadamente activo." },
+    { name:"Prensa 45°",                         motorPattern:"Squat",  equipment:"Máquina",     muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"Pies en la PARTE BAJA de la plataforma y JUNTOS = mas cuadriceps. No bloquees rodillas arriba (manten tension). Baja hasta ~90 grados o mas profundo si la pelvis no se redondea. NUNCA despegues la zona lumbar del respaldo." },
+    { name:"Hack squat máquina",                 motorPattern:"Squat",  equipment:"Máquina",     muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"Espalda plana contra el respaldo inclinado. Pies BAJOS y JUNTOS para maximo trabajo de cuadriceps. Desciende a ROM completo (muslos paralelos o mas). Empuja con el mediopie. Core activo. Permite cargas pesadas con menor estres lumbar." },
+    { name:"Leg press horizontal",               motorPattern:"Squat",  equipment:"Máquina",     muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"Pies BAJOS y cercanos = mas cuadriceps. Espalda pegada al respaldo. No bloquees las rodillas arriba (manten tension continua). Baja hasta ~90 grados de rodilla controlando. NUNCA despegues la zona lumbar: si lo haces, recorta el ROM." },
+    { name:"Sentadilla búlgara mancuernas",      motorPattern:"Squat",  equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"Pie trasero ELEVADO en banco (~50cm). Da un paso largo al frente. Torso ligeramente inclinado (~10 grados). Rodilla delantera no supera la punta del pie. Baja hasta que la rodilla trasera casi roce el suelo. Estiramiento del cuadriceps en posicion baja = curva elongada." },
+    { name:"Sentadilla búlgara barra",           motorPattern:"Squat",  equipment:"Barra",       muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"Igual que la version con mancuernas pero con barra en high bar o low bar. Permite mayor carga. Manten el torso erguido para priorizar cuadriceps sobre gluteo. Equilibrio inicial requiere practica: apoyate ligeramente las primeras reps si es necesario." },
+    { name:"Extensión cuádriceps máquina",       motorPattern:"Squat",  equipment:"Máquina",     muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Sentado con rodilla a 90 grados en posicion inicial. Pad sobre los tobillos. EXTIENDE COMPLETAMENTE para maxima contraccion del cuadriceps (especialmente recto femoral). Manten 1s al final. Baja lentamente (3s) para mayor tiempo bajo tension." },
+    { name:"Zancada mancuernas",                 motorPattern:"Squat",  equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"Mancuernas a los lados. Paso largo al frente. Rodilla trasera cerca del suelo SIN TOCARLO. Torso erguido para priorizar cuadriceps. Empuja con el TALON delantero para subir. Alterna piernas o haz todas con una primero." },
+    { name:"Goblet squat",                       motorPattern:"Squat",  equipment:"Mancuernas",  muscleType:"typeIIx", fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Mancuerna o kettlebell sostenida verticalmente FRENTE AL PECHO con ambas manos. Torso erguido. Descend profundo entre las rodillas (las rodillas se abren ligeramente). Excelente para aprender mecanica de sentadilla con menor carga en columna." },
     // ── BISAGRA · Isquiotibiales / Glúteos ──────────────────────────────
-    { name:"Peso muerto convencional barra",     motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Peso muerto sumo barra",             motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"RDL barra",                          motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"RDL mancuernas",                     motorPattern:"Bisagra", equipment:"Mancuernas", muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"RDL unilateral mancuerna",           motorPattern:"Bisagra", equipment:"Mancuernas", muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Good morning barra",                 motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Hip thrust barra",                   motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Hip thrust máquina",                 motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Curl femoral acostado máquina",      motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Curl femoral sentado máquina",       motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Curl femoral unilateral máquina",    motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Curl nórdico",                       motorPattern:"Bisagra", equipment:"Peso corporal",muscleType:"typeIIx",fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Abducción cadera máquina",           motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Patada glúteo polea",                motorPattern:"Bisagra", equipment:"Polea",      muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Hiperextensión 45°",                 motorPattern:"Bisagra", equipment:"Banco",      muscleType:"typeIIx", fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
+    { name:"Peso muerto convencional barra",     motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"elongated",  executionNotes:"Pies a la altura de las caderas. Barra sobre el MEDIOPIE (cerca de las espinillas). Caderas en bisagra, espalda neutral (no arqueada ni redondeada). Agarre prono o mixto. EMPUJA EL SUELO con los pies (no tires de la barra). Bloquea caderas y rodillas juntas arriba." },
+    { name:"Peso muerto sumo barra",             motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:5, resistanceCurve:"elongated",  executionNotes:"Pies ~2x ancho de hombros, puntas giradas ~30-45 grados. AGARRE DENTRO de las piernas. Torso mas vertical que el convencional. Mayor activacion de gluteo, aductores y trapecio. Util si la movilidad de cadera limita el convencional." },
+    { name:"RDL barra",                          motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"Bisagra de cadera pura. Rodillas LIGERAMENTE flexionadas y FIJAS durante todo el movimiento. Empuja las caderas hacia atras. Baja hasta sentir estiramiento profundo en isquios (~mid-tibia, no mas). MANTEN LA BARRA PEGADA AL CUERPO. No redondees la lumbar." },
+    { name:"RDL mancuernas",                     motorPattern:"Bisagra", equipment:"Mancuernas", muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"Identico al RDL con barra pero con mancuernas a los lados. Las mancuernas permiten MAYOR ROM al pasar POR FUERA de las rodillas. Mayor estiramiento de isquios = mejor estimulo hipertrofico. Ideal si no tienes barra." },
+    { name:"RDL unilateral mancuerna",           motorPattern:"Bisagra", equipment:"Mancuernas", muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"Una pierna apoyada, otra extendida atras como contrapeso. Mancuerna en la mano CONTRARIA al pie de apoyo. Bisagra unilateral profunda. Mejora estabilidad de cadera y corrige asimetrias. Inicia con poco peso para dominar el equilibrio." },
+    { name:"Good morning barra",                 motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:4, resistanceCurve:"elongated",  executionNotes:"Barra en alto en la espalda (como sentadilla). Pies a ancho de hombros, rodillas ligeramente flexionadas. Bisagra de cadera llevando torso al frente hasta casi paralelo al suelo. LUMBAR NEUTRAL SIEMPRE. Sube apretando gluteos." },
+    { name:"Hip thrust barra",                   motorPattern:"Bisagra", equipment:"Barra",      muscleType:"typeIIx", fatigueCost:3, resistanceCurve:"shortened",  executionNotes:"Espalda alta apoyada en banco (justo debajo de las escapulas). Barra sobre las caderas (con almohadilla). Pies a la anchura de la cadera, ~30cm del gluteo. Empuja el suelo con los talones. Sube hasta EXTENSION COMPLETA DE CADERA (linea recta hombro-rodilla). Aprieta gluteos arriba 1s." },
+    { name:"Hip thrust máquina",                 motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Espalda apoyada en el pad de la maquina. Pies a la anchura de la cadera. Empuja el pad hacia arriba CON LAS CADERAS, no con cuadriceps. Extension completa arriba. Aprieta gluteos 1s. Mas comodo que la barra para alto volumen." },
+    { name:"Curl femoral acostado máquina",      motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Boca abajo en la maquina, rodillas justo en el borde. Pad sobre los tendones de Aquiles. Flexiona rodillas llevando los TALONES A LOS GLUTEOS. NO levantes la cadera del pad. Posicion elongada del isquio en estiramiento." },
+    { name:"Curl femoral sentado máquina",       motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Sentado con pad sobre los tobillos. Ajusta el respaldo para que las RODILLAS SE ALINEEN CON EL EJE. Flexiona rodillas llevando los talones HACIA ATRAS Y ABAJO. Estudios recientes (Maeo 2021) muestran HIPERTROFIA SUPERIOR vs el acostado." },
+    { name:"Curl femoral unilateral máquina",    motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Una pierna a la vez. Permite corregir asimetrias entre piernas. Ajusta el rango por pierna si tienes diferencia de movilidad. ROM completo. Fase excentrica 2-3s." },
+    { name:"Curl nórdico",                       motorPattern:"Bisagra", equipment:"Peso corporal",muscleType:"typeIIx",fatigueCost:3, resistanceCurve:"elongated",  executionNotes:"Arrodillado con pies sujetos (companero o pad). Cuerpo recto desde rodillas a cabeza. Baja LENTAMENTE controlando con los isquios hasta donde puedas (puede ser solo 30 grados al inicio). Empuja con las manos para volver a la posicion inicial. Trabajo excentrico extremo en isquios." },
+    { name:"Abducción cadera máquina",           motorPattern:"Bisagra", equipment:"Máquina",    muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"Sentado con pads al EXTERIOR de los muslos. Abre las piernas EMPUJANDO CON LAS RODILLAS hacia afuera. Aprieta gluteo medio en posicion maxima. Manten 1s arriba. Inclina ligeramente el torso al frente para mayor activacion del gluteo medio." },
+    { name:"Patada glúteo polea",                motorPattern:"Bisagra", equipment:"Polea",      muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"Coloca LA POLEA EN POSICION BAJA con tobillera. Apoyate al frente (manos en la barra de soporte). Pierna trabajando ligeramente flexionada. Patea HACIA ATRAS extendiendo cadera (no lumbar). Aprieta gluteo arriba 1s. Manten core firme para no hiperlordosear." },
+    { name:"Hiperextensión 45°",                 motorPattern:"Bisagra", equipment:"Banco",      muscleType:"typeIIx", fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"Banco a 45 grados. Caderas en el borde del pad, pies asegurados. Bisagra de cadera (no flexion lumbar). Baja hasta ~90 grados en la cadera. Sube apretando gluteos e isquios. Puedes anadir un disco al pecho para progresar." },
     // ── CORE ────────────────────────────────────────────────────────────
-    { name:"Crunch en polea",                    motorPattern:"Core",   equipment:"Polea",       muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Crunch en máquina",                  motorPattern:"Core",   equipment:"Máquina",     muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Elevación de piernas colgado",       motorPattern:"Core",   equipment:"Barra fija",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"" },
-    { name:"Ab wheel rollout",                   motorPattern:"Core",   equipment:"Rueda",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"" },
-    { name:"Plancha frontal",                    motorPattern:"Core",   equipment:"Peso corporal",muscleType:"typeI",  fatigueCost:1, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Plancha lateral",                    motorPattern:"Core",   equipment:"Peso corporal",muscleType:"typeI",  fatigueCost:1, resistanceCurve:"mid",         executionNotes:"" },
-    { name:"Rotación con polea",                 motorPattern:"Core",   equipment:"Polea",       muscleType:"typeI",   fatigueCost:1, resistanceCurve:"mid",         executionNotes:"" },
+    { name:"Crunch en polea",                    motorPattern:"Core",   equipment:"Polea",       muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"Coloca LA POLEA EN POSICION ALTA con cuerda. Arrodillate frente a la polea. Cuerda detras del cuello/orejas. FLEXIONA EL TORSO (no la cadera) llevando los codos a los muslos. Redondea la columna intencionadamente. Aprieta abdomen 1s abajo. No tires con brazos." },
+    { name:"Crunch en máquina",                  motorPattern:"Core",   equipment:"Máquina",     muscleType:"typeI",   fatigueCost:1, resistanceCurve:"shortened",  executionNotes:"Sentado en la maquina, agarre en las manijas o pad sobre el pecho. FLEXION TORACICA PURA: redondea la columna llevando esternon a pubis. NO uses los flexores de cadera (no muevas caderas). Aprieta abdomen al final 1s." },
+    { name:"Elevación de piernas colgado",       motorPattern:"Core",   equipment:"Barra fija",  muscleType:"typeI",   fatigueCost:2, resistanceCurve:"shortened",  executionNotes:"Cuelgate de barra fija, agarre prono ~hombros. Eleva las piernas (rodillas flexionadas para principiantes, rectas para avanzados) hasta que los muslos pasen la horizontal. RETROVERSION PELVICA al final (lleva el pubis al ombligo). Baja controlado, sin balanceo." },
+    { name:"Ab wheel rollout",                   motorPattern:"Core",   equipment:"Rueda",       muscleType:"typeI",   fatigueCost:2, resistanceCurve:"elongated",  executionNotes:"De rodillas con la rueda agarrada por los mangos. Rueda hacia adelante manteniendo la CADERA NEUTRA (no hiperextender lumbar). Llega tan lejos como puedas controlando con el abdomen. Vuelve apretando el core. Trabajo isometrico anti-extension." },
+    { name:"Plancha frontal",                    motorPattern:"Core",   equipment:"Peso corporal",muscleType:"typeI",  fatigueCost:1, resistanceCurve:"mid",         executionNotes:"Antebrazos en el suelo, codos bajo los hombros. Cuerpo recto desde cabeza a talones. APRIETA gluteos y abdomen. No dejes que la cadera caiga ni se eleve. Respira normal. Aguanta el tiempo prescrito." },
+    { name:"Plancha lateral",                    motorPattern:"Core",   equipment:"Peso corporal",muscleType:"typeI",  fatigueCost:1, resistanceCurve:"mid",         executionNotes:"Apoyo en un antebrazo, codo bajo el hombro, piernas estiradas con un pie sobre el otro. CADERA ELEVADA: linea recta tobillo-cadera-hombro. Mano libre en la cadera o extendida al techo. Aprieta oblicuos del lado de apoyo." },
+    { name:"Rotación con polea",                 motorPattern:"Core",   equipment:"Polea",       muscleType:"typeI",   fatigueCost:1, resistanceCurve:"mid",         executionNotes:"Coloca LA POLEA A LA ALTURA DEL PECHO. Agarre con ambas manos extendidas al frente. Brazos rectos y fijos. ROTA EL TORSO (no los brazos) llevando las manos hacia el lado opuesto. Las caderas se mantienen estables. Trabajo de oblicuos en rotacion." },
   ];
 
   document.getElementById("loadBaseBtn")?.addEventListener("click", async () => {
@@ -2093,6 +2386,163 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   }
 
+  // ── Editar datos del cliente (nombre, email, password) ────────────────────
+  async function editClientInfo(clientId) {
+    const snap = await getDoc(doc(db, "clients", clientId));
+    if (!snap.exists()) { showToast('Cliente no encontrado', true); return; }
+    const c = snap.data();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:460px">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-bold">Editar datos · ${c.displayName||'(sin nombre)'}</h3>
+          <button class="text-[#888] hover:text-white text-xl" onclick="this.closest('.modal-overlay').remove()">✕</button>
+        </div>
+        <label class="block text-xs text-[#888] mb-1">Nombre / Usuario</label>
+        <input id="eci-name" class="input-field mb-3" value="${(c.displayName||'').replace(/"/g,'&quot;')}">
+        <label class="block text-xs text-[#888] mb-1">Email <span class="text-[#555]">(referencia — Auth real requiere SDK admin)</span></label>
+        <input id="eci-email" class="input-field mb-3" type="email" value="${(c.email||'').replace(/"/g,'&quot;')}">
+        <div class="p-3 mb-3 rounded" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.25)">
+          <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
+            <strong style="color:#4488cc">ℹ️ Contraseña:</strong> el SDK web no permite cambiarla directamente al cliente. Envía un enlace de reseteo al correo del cliente y él la elige.
+          </div>
+          <button id="eci-reset-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc;cursor:pointer">📧 Enviar enlace de reseteo de contraseña</button>
+          <div id="eci-reset-status" class="text-xs mt-2"></div>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn-secondary flex-1">Cancelar</button>
+          <button id="eci-save" class="btn-primary flex-1">Guardar cambios</button>
+        </div>
+        <div id="eci-status" class="text-xs mt-2"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#eci-reset-btn').onclick = async () => {
+      const st = overlay.querySelector('#eci-reset-status');
+      const targetEmail = overlay.querySelector('#eci-email').value.trim();
+      if (!targetEmail) { st.style.color='#c94a3a'; st.textContent='Sin email'; return; }
+      try {
+        await sendPasswordResetEmail(auth, targetEmail);
+        st.style.color = '#44BB88';
+        st.textContent = '✓ Enlace enviado a ' + targetEmail;
+      } catch(e) {
+        st.style.color = '#c94a3a';
+        st.textContent = 'Error: ' + (e.code || e.message);
+      }
+    };
+    overlay.querySelector('#eci-save').onclick = async () => {
+      const newName  = overlay.querySelector('#eci-name').value.trim();
+      const newEmail = overlay.querySelector('#eci-email').value.trim();
+      const st = overlay.querySelector('#eci-status');
+      if (!newName) { st.style.color='#c94a3a'; st.textContent='Nombre vacío'; return; }
+      try {
+        const updates = { displayName: newName };
+        if (newEmail && newEmail !== c.email) updates.email = newEmail;
+        await updateDoc(doc(db, "clients", clientId), updates);
+        st.style.color = '#44BB88';
+        st.textContent = '✓ Guardado' + (newEmail !== c.email ? ' (campo email del doc actualizado; Auth real no cambió)' : '');
+        loadClientList();
+        setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 600);
+      } catch(e) {
+        st.style.color = '#c94a3a';
+        st.textContent = 'Error: ' + (e.code || e.message);
+      }
+    };
+  }
+  window.editClientInfo = editClientInfo;
+
+  // ── Actualizar plan EXISTENTE (mismo planId, NO resetea semanas) ─────────
+  // Pega un JSON con la misma estructura del plan actual. Si la cantidad de
+  // días coincide, se hace updateDoc preservando planId, createdAt y los logs
+  // del cliente. Si difiere, se aborta con aviso para evitar romper la bitácora.
+  async function showUpdatePlanModal(clientId, planId) {
+    const planSnap = await getDoc(doc(db, "plans", planId));
+    if (!planSnap.exists()) { showToast('Plan no encontrado', true); return; }
+    const cur = planSnap.data();
+    const curDays = (cur.days || []).length;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:560px">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-bold">🔁 Actualizar plan en sitio</h3>
+          <button class="text-[#888] hover:text-white text-xl" onclick="this.closest('.modal-overlay').remove()">✕</button>
+        </div>
+        <div class="text-xs text-[#cfcfcf] mb-3 leading-relaxed p-3 rounded" style="background:rgba(68,187,136,.06);border:1px solid rgba(68,187,136,.25)">
+          <strong style="color:#44BB88">Mantiene</strong> el ID del plan, la semana actual del cliente y toda la bitácora.<br>
+          <strong style="color:#FF8844">Requisito:</strong> el JSON nuevo debe tener <strong>${curDays} día${curDays===1?'':'s'}</strong> (mismo número que el plan actual). Si difiere, el plan no se actualiza para evitar romper los logs ya registrados.<br>
+          <strong style="color:#888">Tip:</strong> puedes cambiar ejercicios, sets, reps, RIR, técnicas, notas, etc. — sólo no cambies la cantidad de días.
+        </div>
+        <textarea id="upd-plan-json" class="input-field mb-3" rows="12" placeholder="Pega aquí el JSON con la misma estructura de días..."></textarea>
+        <div class="flex gap-2">
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn-secondary flex-1">Cancelar</button>
+          <button id="upd-plan-apply" class="btn-primary flex-1">Aplicar actualización</button>
+        </div>
+        <div id="upd-plan-status" class="text-xs mt-2"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#upd-plan-apply').onclick = async () => {
+      const raw = overlay.querySelector('#upd-plan-json').value.trim();
+      const st  = overlay.querySelector('#upd-plan-status');
+      if (!raw) { st.style.color='#c94a3a'; st.textContent='Pega el JSON'; return; }
+      let obj; try { obj = JSON.parse(raw); } catch(e) { st.style.color='#c94a3a'; st.textContent='JSON inválido: '+e.message; return; }
+      if (!obj || !Array.isArray(obj.days) || !obj.days.length) {
+        st.style.color='#c94a3a'; st.textContent='El JSON debe tener "days" como array no vacío'; return;
+      }
+      if (obj.days.length !== curDays) {
+        st.style.color='#c94a3a'; st.textContent=`Incoherente: el plan actual tiene ${curDays} días y el JSON trae ${obj.days.length}. Si necesitas cambiar la cantidad de días, usa "Importar plan" (creará uno nuevo y reiniciará la semana).`;
+        return;
+      }
+      // Normalizar (misma lógica que parsePlanFromJSON pero sin reasignar createdAt/planId)
+      const days = obj.days.map((d, di) => ({
+        dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
+        label: String(d.label || `Día ${di + 1}`),
+        exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
+          exerciseName: String(ex.exerciseName || '').trim(),
+          alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
+          technique: String(ex.technique || 'straight').toLowerCase().trim(),
+          techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+          coachNote: String(ex.coachNote || '').trim(),
+          sets: Array.isArray(ex.sets) && ex.sets.length > 0 ? ex.sets.map((s, si) => ({
+            setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
+            repsTarget: parseInt(s.repsTarget) || 8,
+            rirTarget: parseInt(s.rirTarget ?? 2),
+            load: parseFloat(s.load ?? 0) || 0,
+            restSeconds: parseInt(s.restSeconds ?? 90) || 90,
+            setNote: String(s.setNote || s.note || '').trim(),
+            drop: s.drop === true,
+            tempo: String(s.tempo || '').trim()
+          })) : []
+        })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+      })).filter(d => d.exercises.length > 0);
+      if (days.length !== curDays) {
+        st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;
+        return;
+      }
+      try {
+        await updateDoc(doc(db, "plans", planId), {
+          days,
+          daysPerWeek: days.length,
+          weeks: obj.weeks || cur.weeks || 6,
+          rirByWeek: obj.rirByWeek || cur.rirByWeek || null,
+          coachId: currentCoach.uid,
+          updatedAt: new Date().toISOString()
+        });
+        // Auto-catalogar ejercicios nuevos (igual que importación)
+        _autoAddExercisesToCatalog(days);
+        st.style.color = '#44BB88';
+        st.textContent = '✓ Plan actualizado · semana del cliente intacta · bitácora preservada';
+        setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 900);
+      } catch(e) {
+        st.style.color = '#c94a3a';
+        st.textContent = 'Error al guardar: ' + (e.code || e.message);
+      }
+    };
+  }
+  window.showUpdatePlanModal = showUpdatePlanModal;
+
   async function deletePlan(clientId, planId) {
     if (!await _askConfirm('¿Eliminar el plan activo de este cliente?<br><span style="color:#888;font-size:12px">El cliente quedará sin plan asignado.</span>')) return;
     // Paso 1: quitar activePlanId del cliente
@@ -2425,6 +2875,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.parsePlanFromPDF = parsePlanFromPDF;
   window.parsePlanFromJSON = parsePlanFromJSON;
   window.saveImportedPlan = saveImportedPlan;
+  window._togglePwd = function(id, btn) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var show = el.type === 'password';
+    el.type = show ? 'text' : 'password';
+    if (btn) btn.textContent = show ? '🙈' : '👁';
+  };
   window.showClientDetail = showClientDetail;
   window.closeClientModal = closeClientModal;
   window.deleteExercise = deleteExercise;
