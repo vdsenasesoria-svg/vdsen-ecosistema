@@ -1272,7 +1272,23 @@ function goTab(i) {
 // ══════════════════════════════════════════════════
 // RENDER ALL
 // ══════════════════════════════════════════════════
+// Avanza DIA_ACTIVO al primer día pendiente (no completado) de la semana activa.
+// Se llama en carga del plan, al completar sesión y al avanzar de semana.
+// Si el usuario seleccionó manualmente un día (selDia), NO se llama para respetar su elección.
+function _autoAdvanceDia() {
+  if (CURRENT_WEEK !== REAL_WEEK) return; // solo en la semana activa
+  var sesiones = getSesiones();
+  if (!sesiones.length) return;
+  if (DIA_ACTIVO >= sesiones.length) DIA_ACTIVO = 0;
+  for (var _d = 0; _d < sesiones.length; _d++) {
+    if (!LOGS['done_'+CURRENT_WEEK+'_'+_d]) { DIA_ACTIVO = _d; return; }
+  }
+  // Todas completas — quedarse en el último
+  DIA_ACTIVO = sesiones.length - 1;
+}
+
 function renderAll() {
+  _autoAdvanceDia();
   renderResumen();
   renderEntrenamiento();
   renderNutricion();
@@ -2295,14 +2311,17 @@ function _buildExPanel(ejercicios, di) {
   if (exMod.repsRange) repsTarget = exMod.repsRange;
   if (exMod.rir !== undefined && exMod.rir !== '') baseRIR = parseInt(exMod.rir);
 
-  // Apply progRec numSeries adjustment
-  var progRec = _getProgRecForExercise(di, ei, nombre);
-  if (progRec && progRec.newSets && ['add_sets','reduce_sets','deload'].indexOf(progRec.action) !== -1) {
+  // ── Recomendación de la sesión anterior (única llamada, reutilizada en todo el panel) ──
+  var progrec = _getProgRecForExercise(di, ei, nombre);
+
+  // Apply progRec numSeries: aplicar para TODAS las acciones, no solo add/reduce/deload.
+  // Así el header de "N SERIES" siempre coincide con los sets reales del ciclo anterior.
+  if (progrec && progrec.newSets) {
     var _doneCount = 0;
     for (var _sc = 0; _sc < 12; _sc++) {
       if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
     }
-    numSeries = Math.max(progRec.newSets, _doneCount);
+    numSeries = Math.max(progrec.newSets, _doneCount);
   }
 
   // ── A. (eliminado) ─────────────────────────────────────────────────────
@@ -2313,7 +2332,6 @@ function _buildExPanel(ejercicios, di) {
     deload:'var(--blue)', reduce_load:'var(--red)', reduce_sets:'#FF8844',
     add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
   };
-  var progrec = _getProgRecForExercise(di, ei, nombre);
   var _exNameBanner = nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
   var _histExBanner = EXERCISE_HISTORY[_exNameBanner] || {};
   var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
@@ -3795,6 +3813,7 @@ async function _confirmSessionDone(di) {
     return;
   }
   showToast('SESIÓN COMPLETADA ✓');
+  _autoAdvanceDia(); // avanzar al siguiente día pendiente antes de re-renderizar
   renderEntrenamiento();
   renderResumen();
   // Auto-avance de semana: NO depende de la semana que se esté viendo.
@@ -3823,6 +3842,7 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
     if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
     await _doSaveLogs();
     showToast('🏆 SEMANA COMPLETA — Avanzaste a SEM '+REAL_WEEK);
+    _autoAdvanceDia(); // primer día pendiente de la nueva semana
     renderEntrenamiento();
     renderResumen();
   }
@@ -3954,17 +3974,21 @@ async function _doSaveLogs() {
     _showSaveOk();
     return true;
   } catch(e) {
-    console.error('saveLogs error:', e.message);
-    // Mostrar badge de error persistente
+    console.error('saveLogs error:', e.code, e.message, e);
+    var _errMsg = '⚠ Error al guardar: ' + (e.code ? '['+e.code+'] ' : '') + (e.message || 'sin conexión');
+    // Toast visible + badge persistente
+    showToast(_errMsg, true);
     let errEl = document.getElementById('saveErrBadge');
     if (!errEl) {
       errEl = document.createElement('div');
       errEl.id = 'saveErrBadge';
-      errEl.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#3a0a0a;border:1px solid #c94a3a;color:#e07070;font-family:monospace;font-size:11px;padding:6px 14px;z-index:9999;border-radius:2px;text-align:center;max-width:320px;';
+      errEl.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:#3a0a0a;border:1px solid #c94a3a;color:#e07070;font-family:monospace;font-size:11px;padding:8px 16px;z-index:9999;border-radius:8px;text-align:center;max-width:340px;line-height:1.5;cursor:pointer';
+      errEl.title = 'Tap para reintentar';
+      errEl.addEventListener('click', function(){ errEl.style.display='none'; _doSaveLogs(); });
       document.body.appendChild(errEl);
     }
     errEl.style.display = 'block';
-    errEl.textContent = '⚠ Error guardando: ' + (e.code || '') + ' ' + e.message;
+    errEl.textContent = _errMsg + ' — tap para reintentar';
     return false;
   }
 }
@@ -4013,11 +4037,9 @@ function loadBackupLogs() {
 
 function setWeek(w) {
   CURRENT_WEEK = w;
+  _autoAdvanceDia(); // si vuelve a semana activa → primer día pendiente
   renderEntrenamiento();
   renderResumen();
-  // Indicar en el tab de entrenamiento si se está en modo vista
-  var tabBtn = document.getElementById && document.querySelector && document.querySelector('[data-tab="1"]');
-  // (el banner ya aparece dentro de renderEntrenamiento)
 }
 
 function goToWeek(w) {
@@ -6661,9 +6683,20 @@ async function submitPostSession() {
   LOGS[postKey] = postData;
 
   // Calcular y guardar recomendaciones de progresión
+  // Sanitizar antes de guardar: reemplazar NaN/Infinity por null para evitar
+  // rechazos silenciosos de Firestore (no acepta valores no-finitos).
   var rec = calculateProgression(di, postData);
   if (rec) {
-    LOGS['progrec_'+CURRENT_WEEK+'_'+di] = rec;
+    try {
+      var recSafe = JSON.parse(JSON.stringify(rec, function(k, v) {
+        if (typeof v === 'number' && !isFinite(v)) return null;
+        return v;
+      }));
+      LOGS['progrec_'+CURRENT_WEEK+'_'+di] = recSafe;
+    } catch(recErr) {
+      console.warn('progrec sanitize error:', recErr.message);
+      // Si falla la sanitización, omitir el progrec para no bloquear el guardado
+    }
   }
 
   closePostSessionModal();
