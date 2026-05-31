@@ -6666,10 +6666,15 @@ async function submitPostSession() {
 
   var eimd = parseInt(document.getElementById('psEimd').value);
   if (!eimd) { showToast('Selecciona cómo está el músculo', true); return; }
-  var articularVal = document.getElementById('psArticular').value;
+
+  // Leer TODOS los valores del DOM antes de cerrar el modal
+  var articularVal     = document.getElementById('psArticular').value;
   var articularPattern = document.getElementById('psArticularPatternSel').value;
   var sueno = parseFloat(document.getElementById('psSueno').value) || 7;
-  var rpe = parseFloat(document.getElementById('psRpe').value) || 7;
+  var rpe   = parseFloat(document.getElementById('psRpe').value)   || 7;
+
+  // Cerrar el modal PRIMERO — cualquier error posterior no deja al usuario bloqueado
+  closePostSessionModal();
 
   var postData = {
     eimd: eimd,
@@ -6683,23 +6688,22 @@ async function submitPostSession() {
   LOGS[postKey] = postData;
 
   // Calcular y guardar recomendaciones de progresión
-  // Sanitizar antes de guardar: reemplazar NaN/Infinity por null para evitar
-  // rechazos silenciosos de Firestore (no acepta valores no-finitos).
-  var rec = calculateProgression(di, postData);
-  if (rec) {
-    try {
+  // Todo envuelto en try/catch: si el algoritmo falla, el guardado de la sesión sigue adelante.
+  // Sanitizar NaN/Infinity → null (Firestore rechaza valores no-finitos).
+  try {
+    var rec = calculateProgression(di, postData);
+    if (rec) {
       var recSafe = JSON.parse(JSON.stringify(rec, function(k, v) {
         if (typeof v === 'number' && !isFinite(v)) return null;
         return v;
       }));
       LOGS['progrec_'+CURRENT_WEEK+'_'+di] = recSafe;
-    } catch(recErr) {
-      console.warn('progrec sanitize error:', recErr.message);
-      // Si falla la sanitización, omitir el progrec para no bloquear el guardado
     }
+  } catch(calcErr) {
+    console.warn('calculateProgression error:', calcErr.message, calcErr);
+    // Sin progrec esta vez — no bloquear el guardado de la sesión
   }
 
-  closePostSessionModal();
   await _confirmSessionDone(di);
 }
 
