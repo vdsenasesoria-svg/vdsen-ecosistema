@@ -2313,6 +2313,7 @@ function _buildExPanel(ejercicios, di) {
 
   // ── Recomendación de la sesión anterior (única llamada, reutilizada en todo el panel) ──
   var progrec = _getProgRecForExercise(di, ei, nombre);
+  var progRec = progrec; // alias PascalCase — usado en _buildSetReferenceHtml
 
   // Apply progRec numSeries: aplicar para TODAS las acciones, no solo add/reduce/deload.
   // Así el header de "N SERIES" siempre coincide con los sets reales del ciclo anterior.
