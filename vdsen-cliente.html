@@ -82,8 +82,9 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .screen.on{display:flex}
 /* ── HEADER ── */
 .hdr{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;position:-webkit-sticky;position:sticky;top:0;z-index:20}
-.logo{font-family:var(--ff);font-size:17px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1}
-.logo em{display:block;font-family:var(--ff);font-style:normal;font-size:8px;letter-spacing:2.5px;color:var(--platinum);margin-top:3px;font-weight:500;text-transform:uppercase;-webkit-text-fill-color:var(--platinum)}
+.logo{display:flex;flex-direction:column;align-items:flex-start;gap:2px;line-height:1}
+.logo img{height:34px;width:auto;display:block}
+.logo em{display:block;font-family:var(--ff);font-style:normal;font-size:8px;letter-spacing:2.5px;color:var(--platinum);font-weight:500;text-transform:uppercase}
 .hdr-user{font-size:11px;color:var(--mt);text-align:right}
 .hdr-user strong{display:block;color:var(--tx);font-size:12px;font-weight:600;letter-spacing:.3px}
 /* ── SCROLL ── */
@@ -100,8 +101,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 /* ── LOGIN ── */
 .login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:24px;background:radial-gradient(ellipse at 50% 30%,rgba(201,168,76,.04) 0%,transparent 65%)}
 .login-logo{text-align:center;line-height:1}
-.login-logo .vd-brand{font-size:52px;font-weight:900;letter-spacing:4px;text-transform:uppercase;background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:block;margin-bottom:4px}
-.login-logo .vd-descriptor{font-size:8.5px;letter-spacing:2.5px;color:var(--platinum);font-weight:500;text-transform:uppercase;display:block;margin-bottom:10px}
+.login-logo img{width:220px;max-width:80vw;height:auto;display:block;margin:0 auto 10px}
 .login-logo .vd-slogan{font-size:11px;letter-spacing:1.5px;color:var(--accent);font-style:italic;font-weight:600;display:block}
 .login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-gold)}
 .lf{display:flex;flex-direction:column;gap:6px}
@@ -220,8 +220,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 <div class="screen" id="scrLogin">
   <div class="login-wrap">
     <div class="login-logo">
-      <span class="vd-brand">VDSEN</span>
-      <span class="vd-descriptor">Ingeniería y Prescripción de Sistemas Biológicos</span>
+      <img src="vdsen-logo.jpg" alt="VDSEN">
       <span class="vd-slogan">El esfuerzo no es negociable</span>
     </div>
     <div class="login-card">
@@ -255,7 +254,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 
   <!-- HEADER -->
   <div class="hdr">
-    <div class="logo">VDSEN<em>MI PLAN · v3.2</em></div>
+    <div class="logo"><img src="vdsen-logo.jpg" alt="VDSEN"><em>MI PLAN · v3.2</em></div>
     <div class="hdr-user">
       <strong id="hdName">—</strong>
       <span id="hdGoal">—</span>
