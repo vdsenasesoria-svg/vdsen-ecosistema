@@ -2343,14 +2343,24 @@ function _buildExPanel(ejercicios, di) {
   var progrec = _getProgRecForExercise(di, ei, nombre);
   var progRec = progrec; // alias PascalCase — usado en _buildSetReferenceHtml
 
-  // Apply progRec numSeries: aplicar para TODAS las acciones, no solo add/reduce/deload.
-  // Así el header de "N SERIES" siempre coincide con los sets reales del ciclo anterior.
+  // Apply progRec numSeries.
+  // Regla: para acciones que CAMBIAN el volumen (add/reduce/deload) → override duro con progrec.newSets.
+  // Para maintain/increase_load/freeze_load → solo subir si el usuario YA hizo más sets que el plan
+  // en esta sesión; nunca bloquear la finalización por una recomendación "mantener 4" cuando el plan
+  // dice 3 y el usuario registró 3 (el caso de Ayrton).
   if (progrec && progrec.newSets) {
     var _doneCount = 0;
     for (var _sc = 0; _sc < 12; _sc++) {
       if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
     }
-    numSeries = Math.max(progrec.newSets, _doneCount);
+    if (['add_sets','reduce_sets','deload'].indexOf(progrec.action) !== -1) {
+      // El algoritmo ordenó cambiar volumen → aplicar target
+      numSeries = Math.max(progrec.newSets, _doneCount);
+    } else {
+      // Mantener/subir carga: no imponer series por encima del plan.
+      // Solo asegurar que los sets ya registrados en esta sesión sean visibles.
+      numSeries = Math.max(numSeries, _doneCount);
+    }
   }
 
   // ── A. (eliminado) ─────────────────────────────────────────────────────
@@ -2439,10 +2449,10 @@ function _buildExPanel(ejercicios, di) {
     if (wuRefLoad > 0) {
       var wuSets = [{pct:0.50,reps:8},{pct:0.70,reps:5},{pct:0.85,reps:2}];
       var wuRows = wuSets.map(function(ws) {
-        var wLoad = Math.round(wuRefLoad * ws.pct * 4) / 4;
+        var wLoad = _roundUnit(wuRefLoad * ws.pct, unit);
         return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
           '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
-          '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' kg × '+ws.reps+' reps</span>'+
+          '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' '+unit+' × '+ws.reps+' reps</span>'+
           '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
         '</div>';
       }).join('');
@@ -3160,6 +3170,7 @@ function buildBoostcampExercise(ej, di, ei) {
   var catData = _getCatalogData(ej.nombre || ej.exerciseName);
   var displayNota = ej.nota || ej.coachNote || (catData ? catData.executionNotes : '') || '';
   var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+  var unit = getExUnit(di, ei);
 
   // ── Warm-up: solo primer ejercicio de cada patrón motor del día ─────
   // Core y Cardio no requieren pirámide de calentamiento.
@@ -3220,7 +3231,7 @@ function buildBoostcampExercise(ej, di, ei) {
       var wLoad = Math.round(wuRefLoad * ws.pct * 4) / 4;
       return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
         '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
-        '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' kg × '+ws.reps+' reps</span>'+
+        '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' '+unit+' × '+ws.reps+' reps</span>'+
         '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
       '</div>';
     }).join('');
