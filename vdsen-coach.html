@@ -846,6 +846,45 @@
         pdfBtn.parentNode.insertBefore(closeMesoBtn, pdfBtn.nextSibling);
       }
       closeMesoBtn.style.display = currentWeek >= 5 ? "inline-flex" : "none";
+
+      // Control manual de semana — el coach puede avanzar/retroceder la semana del mesociclo
+      let weekCtrl = document.getElementById("weekCtrl");
+      if (!weekCtrl) {
+        weekCtrl = document.createElement("div");
+        weekCtrl.id = "weekCtrl";
+        weekCtrl.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.35);border-radius:8px;padding:4px 8px;margin-left:8px";
+        weekCtrl.innerHTML = `
+          <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Semana</span>
+          <button id="weekDec" title="Retroceder una semana" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#C9A84C;font-weight:700;cursor:pointer">−</button>
+          <input id="weekInput" type="number" min="1" max="16" step="1" style="width:48px;text-align:center;background:#0d0d0d;border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#C9A84C;font-weight:700;padding:3px 4px">
+          <button id="weekInc" title="Avanzar una semana" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#C9A84C;font-weight:700;cursor:pointer">+</button>
+          <button id="weekApply" title="Aplicar cambio de semana" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(201,168,76,.5);background:rgba(201,168,76,.18);color:#C9A84C;font-size:12px;font-weight:600;cursor:pointer">Aplicar</button>`;
+        pdfBtn.parentNode.insertBefore(weekCtrl, closeMesoBtn);
+      }
+      const weekInput = weekCtrl.querySelector('#weekInput');
+      weekInput.value = currentWeek;
+      weekCtrl.querySelector('#weekDec').onclick = () => { weekInput.value = Math.max(1, (parseInt(weekInput.value)||1) - 1); };
+      weekCtrl.querySelector('#weekInc').onclick = () => { weekInput.value = Math.min(16, (parseInt(weekInput.value)||1) + 1); };
+      weekCtrl.querySelector('#weekApply').onclick = async () => {
+        const nw = Math.max(1, Math.min(16, parseInt(weekInput.value) || 1));
+        if (nw === currentWeek) { showToast("La semana ya está en " + nw); return; }
+        const goBack = nw < currentWeek;
+        const msg = goBack
+          ? `¿Retroceder a la semana ${nw}?<br><span style="color:#888;font-size:12px">Los registros de semanas superiores quedan intactos. El cliente verá la semana ${nw} como activa.</span>`
+          : `¿Avanzar a la semana ${nw}?<br><span style="color:#888;font-size:12px">El cliente entrenará con el RIR objetivo de la semana ${nw} (${({1:3,2:2,3:2,4:1,5:0,6:3})[nw] ?? 2}).</span>`;
+        if (!await _askConfirm(msg)) return;
+        const applyBtn = weekCtrl.querySelector('#weekApply');
+        applyBtn.disabled = true; applyBtn.textContent = '…';
+        try {
+          await updateDoc(doc(db, 'logs', select.value), {
+            currentWeek: nw,
+            updatedAt: new Date().toISOString()
+          });
+          showToast(`✅ Semana actualizada a ${nw}`);
+        } catch(e) { showToast("Error: " + e.message, true); }
+        finally { applyBtn.disabled = false; applyBtn.textContent = 'Aplicar'; }
+      };
+
       closeMesoBtn.onclick = async () => {
         if (!await _askConfirm(`¿Cerrar mesociclo semana ${currentWeek} de ${clientData.displayName}?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
         closeMesoBtn.disabled = true; closeMesoBtn.textContent = "Archivando...";
