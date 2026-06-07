@@ -350,6 +350,32 @@ function toggleExUnit(di, ei) {
   });
 
   EXERCISE_UNITS[di+'_'+ei] = newUnit;
+
+  // ── 3. Convertir EXERCISE_HISTORY para este ejercicio ──
+  if (ej) {
+    var _eName = (ej.nombre || ej.exerciseName || '')
+      .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    var _hist = EXERCISE_HISTORY[_eName];
+    if (_hist && _hist.unit && _hist.unit.toUpperCase() === oldUnit && _hist.load) {
+      _hist.load = String(_roundUnit(parseFloat(_hist.load) * factor, newUnit));
+      _hist.unit = newUnit;
+    }
+  }
+
+  // ── 4. Convertir progrec.newLoad / trend.prevLoad para este día+ejercicio ──
+  Object.keys(LOGS).forEach(function(k) {
+    if (k.indexOf('progrec_') !== 0) return;
+    var parts = k.split('_'); // ['progrec', W, D]
+    if (parts.length < 3 || parseInt(parts[2]) !== di) return;
+    var prog = LOGS[k];
+    if (!prog || !prog.recommendations || !prog.recommendations[ei]) return;
+    var rec = prog.recommendations[ei];
+    if (rec.newLoad && isFinite(rec.newLoad))
+      rec.newLoad = _roundUnit(parseFloat(rec.newLoad) * factor, newUnit);
+    if (rec.trend && rec.trend.prevLoad && isFinite(rec.trend.prevLoad))
+      rec.trend.prevLoad = _roundUnit(parseFloat(rec.trend.prevLoad) * factor, newUnit);
+  });
+
   saveLogs();
   _refreshExPanelOnly();
 }
@@ -1136,10 +1162,12 @@ async function loadPlan(user) {
 
         if (planChanged) {
           // ── Plan nuevo asignado por el coach ──
-          // Resetear semana y entradas de entrenamiento; conservar historial de pesos
-          LOGS         = {};
-          CURRENT_WEEK = 1;
-          REAL_WEEK    = 1;
+          // Resetear semana, entradas y unidades por posición (di/ei cambia con el plan).
+          // EXERCISE_HISTORY sí se preserva — está indexado por nombre de ejercicio.
+          LOGS           = {};
+          EXERCISE_UNITS = {}; // limpiar — los índices di/ei del plan viejo no corresponden al nuevo
+          CURRENT_WEEK   = 1;
+          REAL_WEEK      = 1;
           // Guardar reset inmediatamente para que futuros reloads no vuelvan a detectar "plan cambiado"
           setTimeout(function(){ if (_saveLogsTimer){clearTimeout(_saveLogsTimer);_saveLogsTimer=null;} _doSaveLogs(); }, 800);
           showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
@@ -6777,8 +6805,14 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
       rir:  prevWeekData.avgRIR  > 0 ? Math.round(prevWeekData.avgRIR)  : null
     };
   } else if (histEx && histEx.load) {
-    targetLoad = parseFloat(histEx.load) || 0;
-    if (!targetLoad) return '';
+    var _hLoad = parseFloat(histEx.load) || 0;
+    if (!_hLoad) return '';
+    // Convertir al unit actual si el historial está en otra unidad
+    var _hUnit = (histEx.unit || 'KG').toUpperCase();
+    if (_hUnit !== unit) {
+      _hLoad = parseFloat(_convertCarga(String(_hLoad), _hUnit, unit)) || _hLoad;
+    }
+    targetLoad = _hLoad;
     action = 'history';
   }
 
