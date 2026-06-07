@@ -244,6 +244,12 @@
       <button id="uploadCompendioBtn" class="btn-primary">Subir y extraer texto</button>
       <div id="compendioStatus" class="text-sm mt-2"></div>
     </div>
+    <div class="card p-4 mb-4">
+      <label class="block text-sm font-medium mb-2">🔬 Diagnóstico Firebase</label>
+      <p class="text-xs text-[#888] mb-3">Comprueba conectividad, latencia y permisos. Útil cuando algo no se guarda.</p>
+      <button id="diagFirebaseBtn" class="btn-secondary text-sm">Ejecutar diagnóstico</button>
+      <div id="diagFirebaseOut" class="text-xs mt-3" style="font-family:monospace;line-height:1.6"></div>
+    </div>
   </div>
 </div>
 <div id="newClientModal" class="modal-overlay" style="display:none;">
@@ -424,6 +430,147 @@
     setTimeout(fadeOut, ms);
   }
   window.showUndoToast = showUndoToast;
+
+  // ════════════════════════════════════════════════════════════
+  //  UTILIDADES GLOBALES VDSEN — MEV/MRV, RIR scheme, reportes
+  // ════════════════════════════════════════════════════════════
+
+  // Mapeo ejercicio (substring lower-case) → targetMuscle. Orden importa: específico antes que genérico.
+  const VDSEN_MUSCLE_MAP = [
+    [/curl martillo/, 'braquial'],
+    [/extensi[oó]n de tr[ií]ceps|press franc|skull|kickback|fondos? de tr[ií]ceps|press.*agarre cerrado/, 'triceps'],
+    [/^curl |curl predicador|curl spider|curl scott|curl bayesian|curl alternado|curl concentrado|curl en (polea|m[aá]quina)|curl inclinado|curl con barra/, 'biceps'],
+    [/face pull|vuelos? posteriores|p[aá]jaros|reverse pec|aducci[oó]n horizontal/, 'delt_posterior'],
+    [/elevaci[oó]n(es)? lateral/, 'delt_lateral'],
+    [/press militar|press de hombro|press arnold|arnold|elevaci[oó]n(es)? frontal/, 'delt_anterior'],
+    [/jal[oó]n|domin|pull[- ]?up|pullover/, 'dorsal_ancho'],
+    [/remo|encogim/, 'trapecio_medio'],
+    [/press|pec deck|cruce de poleas|apertura|fondos en paralelas|fondos pec/, 'pectoral'],
+    [/extensi[oó]n de cu[aá]dr|extensi[oó]n cu[aá]dr|leg ext/, 'cuadriceps'],
+    [/sentadilla|hack squat|prensa|leg press|zancada|split squat|step up|goblet/, 'cuadriceps'],
+    [/curl femoral|nordico|nórdico|good morning|peso muerto rumano|rdl/, 'isquios'],
+    [/hip thrust|patada de gl[uú]teo|peso muerto sumo/, 'gluteo_mayor'],
+    [/abducci[oó]n|pasos? laterales/, 'gluteo_medio'],
+    [/talones sentado/, 'soleo'],
+    [/talones/, 'gastrocnemio'],
+    [/peso muerto|hiperextensi/, 'erectores'],
+    [/plancha lateral|twist/, 'oblicuos'],
+    [/plancha con alcance|flexiones escapulares/, 'serrato'],
+    [/crunch|rueda abdominal|elevaci[oó]n de piernas|plancha/, 'recto_abdominal']
+  ];
+  function exerciseToMuscle(name) {
+    const n = String(name || '').toLowerCase();
+    for (const [rx, m] of VDSEN_MUSCLE_MAP) if (rx.test(n)) return m;
+    return 'otro';
+  }
+
+  // MEV/MRV/Óptimo por grupo (compendio VDSEN sección A.10-bis)
+  const VDSEN_MEVMRV = {
+    pectoral: [10,22,'12-18'], dorsal_ancho: [10,20,'12-16'], trapecio_medio: [8,18,'10-14'],
+    delt_anterior: [0,12,'0-6'], delt_lateral: [8,20,'12-18'], delt_posterior: [8,18,'10-14'],
+    biceps: [8,18,'10-14'], braquial: [4,12,'4-8'], triceps: [8,18,'10-14'],
+    cuadriceps: [10,20,'12-16'], isquios: [8,16,'10-14'],
+    gluteo_mayor: [8,20,'10-16'], gluteo_medio: [4,12,'6-10'],
+    gastrocnemio: [8,16,'10-14'], soleo: [8,16,'10-14'],
+    erectores: [4,12,'6-10'], recto_abdominal: [6,16,'8-12'], oblicuos: [4,12,'6-10'], serrato: [0,8,'0-4']
+  };
+
+  // Suma series por grupo en un plan (asume frecuencia 1 — cada day es 1×/sem)
+  function computeWeeklyVolume(planObj) {
+    const totals = {};
+    (planObj?.days || []).forEach(d => {
+      (d.exercises || []).forEach(ex => {
+        const m = exerciseToMuscle(ex.exerciseName);
+        const sets = (ex.sets || []).length;
+        totals[m] = (totals[m] || 0) + sets;
+      });
+    });
+    return totals;
+  }
+
+  // Render HTML del panel MEV/MRV
+  function renderVolumePanel(planObj) {
+    const totals = computeWeeklyVolume(planObj);
+    const groups = Object.keys(VDSEN_MEVMRV);
+    const rows = groups.map(g => {
+      const [mev, mrv, opt] = VDSEN_MEVMRV[g];
+      const v = totals[g] || 0;
+      let badge, color;
+      if (v === 0 && mev === 0) { badge = '—'; color = '#555'; }
+      else if (v < mev) { badge = 'sub-MEV'; color = '#FF4444'; }
+      else if (v > mrv) { badge = 'sobre-MRV'; color = '#FF8844'; }
+      else { badge = 'OK'; color = '#44BB88'; }
+      return `<tr><td style="padding:4px 8px;color:#cfcfcf">${g}</td><td style="padding:4px 8px;text-align:center;font-weight:700;color:${color}">${v}</td><td style="padding:4px 8px;text-align:center;color:#888;font-size:11px">${mev}–${mrv}</td><td style="padding:4px 8px;text-align:center;color:#888;font-size:11px">${opt}</td><td style="padding:4px 8px;text-align:center"><span style="font-size:10px;font-weight:700;color:${color}">${badge}</span></td></tr>`;
+    }).join('');
+    return `<div class="card p-3 mb-3"><div class="text-xs text-[#C9A84C] mb-2 uppercase tracking-wide font-semibold">Volumen semanal por grupo · MEV / MRV</div><div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:#888;font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px 8px">Grupo</th><th style="padding:4px 8px">Series</th><th style="padding:4px 8px">MEV–MRV</th><th style="padding:4px 8px">Óptimo</th><th style="padding:4px 8px">Estado</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+  window.renderVolumePanel = renderVolumePanel;
+
+  // RIR scheme dinámico — escala según `weeks` del plan
+  function rirSchemeForWeeks(totalWeeks) {
+    const W = Math.max(1, Math.min(16, parseInt(totalWeeks) || 6));
+    const scheme = {};
+    if (W <= 3) { for (let w = 1; w <= W; w++) scheme[w] = Math.max(1, 4 - w); return scheme; }
+    // último = deload, penúltimo = pico (RIR 0), resto progresa de 3→1
+    for (let w = 1; w <= W; w++) {
+      if (w === W) scheme[w] = 3;            // deload
+      else if (w === W - 1) scheme[w] = 0;   // pico
+      else {
+        // interpolar de 3 (semana 1) a 1 (semana W-2)
+        const span = Math.max(1, W - 2 - 1);
+        const t = (w - 1) / span;
+        scheme[w] = Math.max(1, Math.round(3 - t * 2));
+      }
+    }
+    return scheme;
+  }
+  window.rirSchemeForWeeks = rirSchemeForWeeks;
+
+  // Backup automático: copia el plan actual a `plans_backup` antes de sobrescribir
+  async function backupPlanIfExists(clientId) {
+    try {
+      const clientSnap = await getDoc(doc(db, "clients", clientId));
+      if (!clientSnap.exists()) return null;
+      const activeId = clientSnap.data().activePlanId;
+      if (!activeId) return null;
+      const planSnap = await getDoc(doc(db, "plans", activeId));
+      if (!planSnap.exists()) return null;
+      const planData = planSnap.data();
+      const backupRef = await addDoc(collection(db, "plans_backup"), {
+        ...planData,
+        originalPlanId: activeId,
+        backedUpAt: new Date().toISOString(),
+        backedUpBy: currentCoach?.uid || null
+      });
+      return backupRef.id;
+    } catch(e) { console.warn('backup falló:', e); return null; }
+  }
+  window.backupPlanIfExists = backupPlanIfExists;
+
+  // Marca el editor como dirty + previene salir sin guardar
+  let _dirtyEditor = false;
+  function markEditorDirty() { _dirtyEditor = true; }
+  function markEditorClean() { _dirtyEditor = false; }
+  window.addEventListener('beforeunload', (e) => {
+    if (_dirtyEditor) { e.preventDefault(); e.returnValue = ''; return ''; }
+  });
+  window.markEditorDirty = markEditorDirty;
+  window.markEditorClean = markEditorClean;
+
+  // ¿Está entrenando ahora? (último log_ en últimos 5 min)
+  function isClientLiveTraining(logsData) {
+    if (!logsData || !logsData.entries) return false;
+    const now = Date.now();
+    for (const k of Object.keys(logsData.entries)) {
+      if (!k.startsWith('log_')) continue;
+      const ts = logsData.entries[k]?.ts;
+      if (!ts) continue;
+      const t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+      if (!isNaN(t) && (now - t) < 5 * 60 * 1000) return true;
+    }
+    return false;
+  }
+  window.isClientLiveTraining = isClientLiveTraining;
   
   async function initCoachUI() {
     loadClientList();
@@ -461,10 +608,9 @@
         initCoachUI();
       }
     } else {
-      // Login automático con credenciales de prueba (solo para demostración, en producción usar formulario)
-      signInWithEmailAndPassword(auth, "coach@vdsen.com", "password").catch(() => {
-        // Si falla, mostrar pantalla de login simple
-        document.body.innerHTML = `<div class="flex items-center justify-center h-screen"><div class="card p-6"><h2 class="text-xl mb-4">Login Coach</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email"><div style="position:relative" class="mb-2"><input id="loginPass" class="input-field" type="password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="(function(b){var i=document.getElementById('loginPass');var s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'🙈':'👁';})(this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div><button id="loginBtn" class="btn-primary">Ingresar</button><div id="loginErr" class="text-sm mt-2" style="color:#c94a3a"></div><div class="text-center mt-3"><a href="#" id="forgotBtn" class="text-sm" style="color:#888;text-decoration:underline">¿Olvidaste tu contraseña?</a></div></div></div>`;
+      // Sin auto-login — mostrar pantalla propia de login VDSEN
+      {
+        document.body.innerHTML = `<div class="flex items-center justify-center h-screen" style="background:var(--bg-base);min-height:100vh"><div class="card p-6" style="max-width:380px;width:calc(100% - 32px)"><div style="text-align:center;margin-bottom:18px"><div style="font-size:26px;font-weight:900;letter-spacing:3px;background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">VDSEN</div><div style="font-size:9px;letter-spacing:2px;color:var(--platinum);text-transform:uppercase;margin-top:4px">Sistema Coach</div></div><h2 class="text-base mb-3" style="letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);font-weight:600">Iniciar sesión</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email" autocomplete="username"><div style="position:relative" class="mb-2"><input id="loginPass" class="input-field" type="password" placeholder="Contraseña" autocomplete="current-password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="(function(b){var i=document.getElementById('loginPass');var s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'🙈':'👁';})(this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div><button id="loginBtn" class="btn-primary w-full">Ingresar</button><div id="loginErr" class="text-sm mt-2" style="color:#c94a3a"></div><div class="text-center mt-3"><a href="#" id="forgotBtn" class="text-sm" style="color:#888;text-decoration:underline">¿Olvidaste tu contraseña?</a></div></div></div>`;
         document.getElementById("loginBtn")?.addEventListener("click", () => {
           const email = document.getElementById("loginEmail").value;
           const pass = document.getElementById("loginPass").value;
@@ -486,7 +632,7 @@
             errEl.textContent = e.code === 'auth/user-not-found' ? 'No existe ese correo' : e.message;
           }
         });
-      });
+      }
     }
   });
   
@@ -536,7 +682,7 @@
         // Cargar logs para badges de alerta
         const _logPromises = _clientDocs.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));
         const _logSnaps = await Promise.all(_logPromises);
-        _clientDocs.forEach((c, i) => {
+        const rows = _clientDocs.map((c, i) => {
           const logData = (_logSnaps[i] && _logSnaps[i].exists()) ? _logSnaps[i].data() : {};
           const entries = logData.entries || {};
           const week = logData.currentWeek || 1;
@@ -547,8 +693,14 @@
           if (ci.who5 && parseInt(ci.who5) < 52) alertHtml += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
           if (daysSince > 3 && updAt > 0) alertHtml += '<span class="text-xs ml-1" style="color:#FFBB00">'+daysSince+'d</span>';
           const statusIcon = c.activePlanId ? "✅" : "⚠️";
-          container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${c.displayName}</strong> (${c.email}) ${statusIcon}${alertHtml}</span><button class="text-[#C9A84C] text-sm font-medium" onclick="showClientDetail('${c.id}')">Ver →</button></div>`;
-        });
+          const live = isClientLiveTraining(logData);
+          const liveBadge = live ? '<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite">● EN VIVO</span>' : '';
+          const search = (c.displayName + ' ' + c.email).toLowerCase();
+          return `<div class="card p-3 mb-2 flex justify-between items-center _client-row" data-search="${search}"><span><strong>${c.displayName}</strong> (${c.email}) ${statusIcon}${alertHtml}${liveBadge}</span><button class="text-[#C9A84C] text-sm font-medium" onclick="showClientDetail('${c.id}')">Ver →</button></div>`;
+        }).join('');
+        container.innerHTML = `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
+          <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'flex':'none';});})(this.value)">
+          ${rows}`;
       }
     } catch (e) {
       container.innerHTML = `<p class="text-red-400 text-sm">Error al cargar clientes: ${e.message}</p>`;
@@ -715,6 +867,15 @@
       const clientData = clientsMap[select.value];
       if (!clientData) return;
 
+      // Cargar plan activo una sola vez para panel MEV/MRV
+      let _activePlanCache = null;
+      if (clientData.activePlanId) {
+        try {
+          const _ps = await getDoc(doc(db, 'plans', clientData.activePlanId));
+          if (_ps.exists()) _activePlanCache = _ps.data();
+        } catch(e) {}
+      }
+
       // Escuchar logs del cliente en TIEMPO REAL
       _monitorUnsub = onSnapshot(doc(db, 'logs', select.value), (logsSnap) => {
       if (!logsSnap.exists()) {
@@ -775,6 +936,8 @@
           </div>
         </div>
 
+        ${_activePlanCache ? renderVolumePanel(_activePlanCache) : ''}
+
         <details class="card p-3 mb-3" style="background:rgba(201,168,76,.04);border:1px solid rgba(201,168,76,.18)">
           <summary class="cursor-pointer text-sm font-semibold text-[#C9A84C]" style="list-style:none">📖 Glosario de la bitácora — qué significa cada acotación</summary>
           <div class="mt-3 grid gap-2 text-xs leading-relaxed" style="color:#cfcfcf">
@@ -830,10 +993,23 @@
 
       container.innerHTML = html;
 
-      // Botón PDF
+      // Botón PDF (resumen breve)
       const pdfBtn = document.getElementById("pdfReportBtn");
       pdfBtn.style.display = "inline-flex";
       pdfBtn.onclick = () => generateMesocyclePDF(clientData, logs, currentWeek, lastRec);
+
+      // Botón Reporte Completo (cargas, intensidades, MEV/MRV, recomendaciones)
+      let fullBtn = document.getElementById("fullReportBtn");
+      if (!fullBtn) {
+        fullBtn = document.createElement("button");
+        fullBtn.id = "fullReportBtn";
+        fullBtn.className = "btn-secondary text-sm";
+        fullBtn.style.cssText = "background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.5);color:#C9A84C;margin-left:6px";
+        fullBtn.textContent = "📊 Reporte completo";
+        pdfBtn.parentNode.insertBefore(fullBtn, pdfBtn.nextSibling);
+      }
+      fullBtn.style.display = "inline-flex";
+      fullBtn.onclick = () => generateFullClientReport(select.value);
 
       // Botón Cerrar Mesociclo (solo si semana >= 5)
       let closeMesoBtn = document.getElementById("closeMesoBtn");
@@ -913,6 +1089,102 @@
       }); // fin onSnapshot
     };
   }
+
+  // ════════════════════════════════════════════════════════════
+  //  AGREGADO DE LOGS — convierte entries en estructura analítica
+  //  Soporta entries del mesociclo actual + opcional 'mesociclos[]' archivados
+  // ════════════════════════════════════════════════════════════
+  function aggregateClientLogs(logs, planObj, currentWeek) {
+    const entries = logs || {};
+    const days = planObj?.days || [];
+    // Diccionario de ejercicios del plan (di_ei → { name, sets })
+    const planEx = {};
+    days.forEach((d, di) => (d.exercises || []).forEach((ex, ei) => {
+      planEx[`${di}_${ei}`] = { name: ex.exerciseName, plannedSets: (ex.sets||[]).length, technique: ex.technique || 'straight', techniqueNote: ex.techniqueNote || '' };
+    }));
+
+    // Por ejercicio → semana → lista de sets
+    const perExercise = {}; // exName → { weeks: {w: [{carga,reps,rir_real,ics,pump,unit}]} }
+    const perWeek = {};     // w → { sessions: Set, sets: 0, tonnage: 0, icsSum, icsN, rirSum, rirN }
+    const postSession = {}; // w_d → {eimd, articular, patron, sleep, rpe}
+    const weeklyCheckin = {}; // w → {peso, hrv, who5}
+    const exnotes = [];     // {w,d,e,text}
+    const techHistory = {}; // exName → Set(techniques)
+
+    Object.keys(entries).forEach(k => {
+      const v = entries[k];
+      // log_W_D_E_sS
+      let m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
+      if (m) {
+        const [_, w, d, e, s] = m;
+        const key = `${d}_${e}`;
+        const ex = planEx[key];
+        const name = ex?.name || `Ej ${e}`;
+        perExercise[name] = perExercise[name] || { weeks: {}, sets: 0, techniques: new Set() };
+        perExercise[name].weeks[w] = perExercise[name].weeks[w] || [];
+        const carga = parseFloat(v.carga) || 0;
+        const reps = parseInt(v.reps) || 0;
+        let unit = (v.unit || 'kg').toLowerCase();
+        const cargaKg = unit === 'lb' ? carga / 2.2046 : carga;
+        const setData = { carga: cargaKg, reps, rir_real: parseFloat(v.rir_real ?? v.rir) || null, ics: parseFloat(v.ics) || null, pump: parseFloat(v.pump) || null, ts: v.ts, week:+w, day:+d };
+        perExercise[name].weeks[w].push(setData);
+        perExercise[name].sets++;
+        if (ex?.technique) perExercise[name].techniques.add(ex.technique);
+        // semanal
+        perWeek[w] = perWeek[w] || { sessions: new Set(), sets: 0, tonnage: 0, icsSum: 0, icsN: 0, rirSum: 0, rirN: 0 };
+        perWeek[w].sessions.add(d);
+        perWeek[w].sets++;
+        perWeek[w].tonnage += cargaKg * reps;
+        if (setData.ics != null) { perWeek[w].icsSum += setData.ics; perWeek[w].icsN++; }
+        if (setData.rir_real != null) { perWeek[w].rirSum += setData.rir_real; perWeek[w].rirN++; }
+        return;
+      }
+      // postsession_W_D
+      m = k.match(/^postsession_(\d+)_(\d+)$/);
+      if (m) { postSession[`${m[1]}_${m[2]}`] = v; return; }
+      // ci_sem_W
+      m = k.match(/^ci_sem_(\d+)$/);
+      if (m) { weeklyCheckin[m[1]] = v; return; }
+      // exnote_W_D_E
+      m = k.match(/^exnote_(\d+)_(\d+)_(\d+)$/);
+      if (m) { exnotes.push({ w: +m[1], d: +m[2], e: +m[3], text: String(v) }); return; }
+    });
+
+    // Stats por ejercicio
+    const exerciseStats = Object.keys(perExercise).map(name => {
+      const wks = perExercise[name].weeks;
+      const wKeys = Object.keys(wks).map(Number).sort((a,b)=>a-b);
+      const weekly = wKeys.map(w => {
+        const sets = wks[w];
+        const loads = sets.map(s => s.carga).filter(x => x > 0);
+        const reps = sets.map(s => s.reps);
+        const ics = sets.map(s => s.ics).filter(x => x != null);
+        const rir = sets.map(s => s.rir_real).filter(x => x != null);
+        return {
+          week: w,
+          setsCount: sets.length,
+          loadMax: loads.length ? Math.max(...loads) : 0,
+          loadAvg: loads.length ? loads.reduce((a,b)=>a+b,0)/loads.length : 0,
+          repsAvg: reps.length ? reps.reduce((a,b)=>a+b,0)/reps.length : 0,
+          tonnage: sets.reduce((a,s) => a + s.carga * s.reps, 0),
+          icsAvg: ics.length ? ics.reduce((a,b)=>a+b,0)/ics.length : null,
+          rirAvg: rir.length ? rir.reduce((a,b)=>a+b,0)/rir.length : null
+        };
+      });
+      const first = weekly[0], last = weekly[weekly.length-1];
+      const loadDelta = (first && last && first.loadAvg) ? ((last.loadAvg - first.loadAvg) / first.loadAvg) * 100 : 0;
+      const tonnageDelta = (first && last && first.tonnage) ? ((last.tonnage - first.tonnage) / first.tonnage) * 100 : 0;
+      return { name, weekly, loadDelta, tonnageDelta, techniques: [...perExercise[name].techniques], totalSets: perExercise[name].sets };
+    }).sort((a,b)=> b.tonnageDelta - a.tonnageDelta);
+
+    // Adherencia
+    const sessionsPlanned = (planObj?.daysPerWeek || days.length || 1) * Math.max(1, currentWeek);
+    const sessionsDone = Object.keys(entries).filter(k => /^done_\d+_\d+$/.test(k) && entries[k]).length;
+    const adherence = sessionsPlanned ? Math.min(100, Math.round((sessionsDone / sessionsPlanned) * 100)) : 0;
+
+    return { exerciseStats, perWeek, postSession, weeklyCheckin, exnotes, sessionsDone, sessionsPlanned, adherence };
+  }
+  window.aggregateClientLogs = aggregateClientLogs;
 
   function generateMesocyclePDF(clientData, logs, currentWeek, lastRec) {
     const { jsPDF } = window.jspdf;
@@ -1004,6 +1276,324 @@
     doc.save(`VDSEN_Reporte_${(clientData.displayName||'cliente').replace(/\s+/g,'_')}_Sem${currentWeek}.pdf`);
     showToast('✅ Reporte PDF generado');
   }
+
+  // ════════════════════════════════════════════════════════════
+  //  REPORTE COMPLETO DE CLIENTE / MESOCICLO (PDF multipágina)
+  //  Carga plan + logs + agregados y los imprime para evaluación
+  // ════════════════════════════════════════════════════════════
+  async function generateFullClientReport(clientId) {
+    showToast('Generando reporte completo…');
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      if (!clientSnap.exists()) throw new Error('Cliente no existe');
+      const client = clientSnap.data();
+      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      const logsData = logsSnap.exists() ? logsSnap.data() : { entries: {}, currentWeek: 1 };
+      const entries = logsData.entries || {};
+      const currentWeek = logsData.currentWeek || 1;
+
+      let planObj = null;
+      if (client.activePlanId) {
+        const planSnap = await getDoc(doc(db, 'plans', client.activePlanId));
+        if (planSnap.exists()) planObj = planSnap.data();
+      }
+
+      const agg = aggregateClientLogs(entries, planObj, currentWeek);
+      const volume = planObj ? computeWeeklyVolume(planObj) : {};
+      const rirScheme = rirSchemeForWeeks(planObj?.weeks || 6);
+
+      // Recomendación más reciente
+      let lastRec = null, lrW = 0, lrD = 0;
+      Object.keys(entries).forEach(k => {
+        const m = k.match(/^progrec_(\d+)_(\d+)$/);
+        if (m) {
+          const w = +m[1], d = +m[2];
+          if (w > lrW || (w === lrW && d > lrD)) { lrW = w; lrD = d; lastRec = entries[k]; }
+        }
+      });
+
+      // ── jsPDF ──
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+      const W = 210, H = 297, margin = 14, colW = W - margin*2;
+      let y = margin;
+      const checkPage = (need) => { if (y + need > H - 14) { addFooter(); pdf.addPage(); y = margin; } };
+      const addFooter = () => {
+        const page = pdf.internal.getNumberOfPages();
+        pdf.setFontSize(7); pdf.setTextColor(150);
+        pdf.text(`VDSEN · ${client.displayName || 'Cliente'} · Generado ${new Date().toLocaleDateString('es-MX')} · Pág ${page}`, W/2, H - 6, { align:'center' });
+      };
+      const h1 = (t) => { checkPage(12); pdf.setFontSize(13); pdf.setFont('helvetica','bold'); pdf.setTextColor(200,165,74); pdf.text(t, margin, y); y+=2; pdf.setDrawColor(200,165,74); pdf.setLineWidth(.4); pdf.line(margin, y, W-margin, y); y+=6; };
+      const h2 = (t) => { checkPage(8); pdf.setFontSize(10); pdf.setFont('helvetica','bold'); pdf.setTextColor(80,80,80); pdf.text(t, margin, y); y+=5; };
+      const p = (t, size=8, color=[60,60,60]) => { checkPage(size*0.5+2); pdf.setFontSize(size); pdf.setFont('helvetica','normal'); pdf.setTextColor(...color); const lines = pdf.splitTextToSize(String(t), colW); lines.forEach(l => { checkPage(size*0.5); pdf.text(l, margin, y); y += size*0.45+0.6; }); };
+      const kv = (label, val, x, w) => { pdf.setFontSize(7); pdf.setTextColor(140); pdf.text(label.toUpperCase(), x, y); pdf.setFontSize(11); pdf.setFont('helvetica','bold'); pdf.setTextColor(30,30,30); pdf.text(String(val), x, y+5); };
+
+      // ═══ PORTADA ═══
+      pdf.setFillColor(15,16,16); pdf.rect(0,0,W,42,'F');
+      pdf.setFontSize(20); pdf.setFont('helvetica','bold'); pdf.setTextColor(200,165,74); pdf.text('VDSEN', margin, 16);
+      pdf.setFontSize(8); pdf.setTextColor(160); pdf.text('REPORTE INTEGRAL DE MESOCICLO', margin, 22);
+      pdf.setFontSize(16); pdf.setFont('helvetica','bold'); pdf.setTextColor(232,224,208); pdf.text(client.displayName || 'Cliente', margin, 33);
+      pdf.setFontSize(8); pdf.setFont('helvetica','normal'); pdf.setTextColor(140);
+      pdf.text(`Email: ${client.email || '—'}  ·  Plan: ${planObj?.weeks || '—'} sem × ${planObj?.daysPerWeek || '—'} días/sem  ·  Semana actual: ${currentWeek}`, margin, 39);
+      y = 50;
+
+      // KPIs
+      const kpiBox = (x, w, label, val, sub) => {
+        pdf.setDrawColor(200,165,74); pdf.setFillColor(248,245,235); pdf.roundedRect(x, y, w, 22, 2, 2, 'FD');
+        pdf.setFontSize(7); pdf.setTextColor(120); pdf.text(label.toUpperCase(), x+4, y+6);
+        pdf.setFontSize(14); pdf.setFont('helvetica','bold'); pdf.setTextColor(40,40,40); pdf.text(String(val), x+4, y+14);
+        if (sub) { pdf.setFontSize(7); pdf.setFont('helvetica','normal'); pdf.setTextColor(120); pdf.text(String(sub), x+4, y+19); }
+      };
+      const bw = (colW - 8) / 4;
+      kpiBox(margin, bw, 'Adherencia', agg.adherence + '%', `${agg.sessionsDone}/${agg.sessionsPlanned} sesiones`);
+      kpiBox(margin + bw + 2.5, bw, 'Series totales', Object.values(agg.perWeek).reduce((a,w)=>a+w.sets,0), `${Object.keys(agg.perWeek).length} sem activas`);
+      const allIcs = Object.values(agg.perWeek).reduce((a,w) => a + (w.icsN ? w.icsSum/w.icsN : 0)*(w.icsN?1:0), 0) / Math.max(1, Object.values(agg.perWeek).filter(w=>w.icsN).length);
+      kpiBox(margin + 2*(bw + 2.5), bw, 'ICS promedio', allIcs ? allIcs.toFixed(1) : '—', 'Calidad de serie');
+      const totalTon = Object.values(agg.perWeek).reduce((a,w)=>a+w.tonnage,0);
+      kpiBox(margin + 3*(bw + 2.5), bw, 'Tonelaje total', totalTon.toFixed(0) + ' kg', 'Suma carga × reps');
+      y += 28;
+
+      // ═══ EVOLUCIÓN SEMANAL ═══
+      h1('1 · Evolución semanal');
+      const wKeys = Object.keys(agg.perWeek).map(Number).sort((a,b)=>a-b);
+      if (wKeys.length === 0) p('No hay registros aún en el mesociclo actual.', 9, [180,80,80]);
+      else {
+        // Tabla
+        const colsW = [16, 20, 26, 22, 22, 22, 26, 26];
+        const heads = ['Sem', 'RIR obj', 'Series', 'Tonelaje', 'ICS prom', 'RIR real', 'EIMD', 'RPE'];
+        checkPage(10);
+        pdf.setFillColor(200,165,74); pdf.rect(margin, y, colsW.reduce((a,b)=>a+b,0), 6, 'F');
+        pdf.setFontSize(7); pdf.setFont('helvetica','bold'); pdf.setTextColor(255,255,255);
+        let cx = margin;
+        heads.forEach((h, i) => { pdf.text(h, cx + 2, y+4); cx += colsW[i]; });
+        y += 7;
+        wKeys.forEach((w, idx) => {
+          const wd = agg.perWeek[w];
+          // EIMD y RPE de postsession_w_*
+          let eimdN=0, eimdS=0, rpeN=0, rpeS=0;
+          Object.keys(agg.postSession).forEach(k => {
+            if (k.startsWith(w+'_')) {
+              const ps = agg.postSession[k];
+              if (ps?.eimd != null) { eimdS += +ps.eimd; eimdN++; }
+              if (ps?.rpe != null)  { rpeS  += +ps.rpe;  rpeN++;  }
+            }
+          });
+          checkPage(7);
+          if (idx%2===0) { pdf.setFillColor(248,248,246); pdf.rect(margin, y, colsW.reduce((a,b)=>a+b,0), 6, 'F'); }
+          pdf.setFontSize(8); pdf.setFont('helvetica','normal'); pdf.setTextColor(40,40,40);
+          const row = [
+            String(w),
+            String(rirScheme[w] ?? '—'),
+            String(wd.sets),
+            wd.tonnage.toFixed(0) + ' kg',
+            wd.icsN ? (wd.icsSum/wd.icsN).toFixed(1) : '—',
+            wd.rirN ? (wd.rirSum/wd.rirN).toFixed(1) : '—',
+            eimdN ? (eimdS/eimdN).toFixed(1) : '—',
+            rpeN  ? (rpeS/rpeN).toFixed(1)   : '—'
+          ];
+          cx = margin;
+          row.forEach((cell, i) => { pdf.text(cell, cx + 2, y+4); cx += colsW[i]; });
+          y += 6;
+        });
+        y += 2;
+      }
+
+      // ═══ EVOLUCIÓN POR EJERCICIO ═══
+      h1('2 · Evolución por ejercicio');
+      p('Δ Carga prom. (última vs primera semana) ordenado por ganancia de tonelaje.', 8, [120,120,120]); y += 1;
+      if (agg.exerciseStats.length === 0) p('Sin registros.', 9, [180,80,80]);
+      else {
+        const eCols = [50, 14, 20, 20, 20, 18, 18, 20];
+        const eHeads = ['Ejercicio', 'Sem', 'Carga prom', 'Carga máx', 'Reps prom', 'ICS', 'RIR real', 'Δ carga'];
+        checkPage(8);
+        pdf.setFillColor(180,150,60); pdf.rect(margin, y, eCols.reduce((a,b)=>a+b,0), 6, 'F');
+        pdf.setFontSize(7); pdf.setFont('helvetica','bold'); pdf.setTextColor(255,255,255);
+        let cx = margin;
+        eHeads.forEach((h, i) => { pdf.text(h, cx + 2, y+4); cx += eCols[i]; });
+        y += 7;
+        agg.exerciseStats.forEach((es, idx) => {
+          es.weekly.forEach((wk, wi) => {
+            checkPage(6);
+            if (wi===0 && idx>0 && idx%2===0) { pdf.setFillColor(252,250,245); pdf.rect(margin, y, eCols.reduce((a,b)=>a+b,0), 5, 'F'); }
+            pdf.setFontSize(7.5); pdf.setFont('helvetica', wi===0?'bold':'normal'); pdf.setTextColor(40,40,40);
+            const isFirst = wi === 0;
+            const cells = [
+              isFirst ? (es.name + (es.techniques.length && es.techniques[0]!=='straight' ? ' ['+es.techniques.join(',')+']' : '')) : '',
+              'S' + wk.week,
+              wk.loadAvg ? wk.loadAvg.toFixed(1)+' kg' : '—',
+              wk.loadMax ? wk.loadMax.toFixed(1)+' kg' : '—',
+              wk.repsAvg ? wk.repsAvg.toFixed(1) : '—',
+              wk.icsAvg != null ? wk.icsAvg.toFixed(1) : '—',
+              wk.rirAvg != null ? wk.rirAvg.toFixed(1) : '—',
+              (isFirst && es.weekly.length>1) ? (es.loadDelta>=0?'+':'') + es.loadDelta.toFixed(1) + '%' : ''
+            ];
+            cx = margin;
+            cells.forEach((cell, i) => {
+              const txt = pdf.splitTextToSize(String(cell), eCols[i]-2)[0] || '';
+              if (i===7 && cell) {
+                pdf.setTextColor(es.loadDelta >= 0 ? 30 : 180, es.loadDelta >= 0 ? 140 : 60, 60);
+                pdf.setFont('helvetica','bold');
+                pdf.text(txt, cx + 2, y+4);
+                pdf.setFont('helvetica','normal'); pdf.setTextColor(40,40,40);
+              } else {
+                pdf.text(txt, cx + 2, y+4);
+              }
+              cx += eCols[i];
+            });
+            y += 5;
+          });
+        });
+        y += 3;
+      }
+
+      // ═══ VOLUMEN POR GRUPO (MEV/MRV) ═══
+      h1('3 · Volumen semanal por grupo · MEV/MRV');
+      const vCols = [50, 22, 26, 24, 30];
+      const vHeads = ['Grupo muscular', 'Series sem', 'MEV / MRV', 'Óptimo', 'Estado'];
+      checkPage(8);
+      pdf.setFillColor(80,80,80); pdf.rect(margin, y, vCols.reduce((a,b)=>a+b,0), 6, 'F');
+      pdf.setFontSize(7); pdf.setFont('helvetica','bold'); pdf.setTextColor(255,255,255);
+      let vx = margin; vHeads.forEach((h, i) => { pdf.text(h, vx + 2, y+4); vx += vCols[i]; });
+      y += 7;
+      Object.keys(VDSEN_MEVMRV).forEach((g, idx) => {
+        const [mev, mrv, opt] = VDSEN_MEVMRV[g];
+        const v = volume[g] || 0;
+        let badge, col;
+        if (v===0 && mev===0) { badge='—'; col=[150,150,150]; }
+        else if (v<mev) { badge='SUB-MEV'; col=[200,60,60]; }
+        else if (v>mrv) { badge='SOBRE-MRV'; col=[220,140,40]; }
+        else { badge='OK'; col=[40,140,80]; }
+        checkPage(6);
+        if (idx%2===0) { pdf.setFillColor(248,248,246); pdf.rect(margin, y, vCols.reduce((a,b)=>a+b,0), 5, 'F'); }
+        pdf.setFontSize(8); pdf.setFont('helvetica','normal'); pdf.setTextColor(40,40,40);
+        const cells = [g, String(v), `${mev}–${mrv}`, opt, badge];
+        vx = margin;
+        cells.forEach((cell, i) => {
+          if (i===4) { pdf.setTextColor(...col); pdf.setFont('helvetica','bold'); }
+          pdf.text(String(cell), vx + 2, y+4);
+          if (i===4) { pdf.setTextColor(40,40,40); pdf.setFont('helvetica','normal'); }
+          vx += vCols[i];
+        });
+        y += 5;
+      });
+      y += 3;
+
+      // ═══ CHECK-INS SEMANALES ═══
+      h1('4 · Check-ins semanales');
+      const ciKeys = Object.keys(agg.weeklyCheckin).map(Number).sort((a,b)=>a-b);
+      if (!ciKeys.length) p('Sin check-ins semanales registrados.', 9, [180,120,40]);
+      else {
+        ciKeys.forEach(w => {
+          const ci = agg.weeklyCheckin[w];
+          checkPage(7);
+          pdf.setFontSize(8); pdf.setFont('helvetica','bold'); pdf.setTextColor(40,40,40); pdf.text(`Sem ${w}:`, margin, y);
+          pdf.setFont('helvetica','normal'); pdf.setTextColor(80,80,80);
+          pdf.text(`Peso ${ci.peso ?? '—'} kg  ·  HRV ${ci.hrv ?? '—'}  ·  WHO-5 ${ci.who5 ?? '—'}`, margin + 16, y);
+          y += 5;
+        });
+        y += 2;
+      }
+
+      // ═══ POST-SESIÓN ═══
+      h1('5 · Resúmenes post-sesión');
+      const psKeys = Object.keys(agg.postSession).sort();
+      if (!psKeys.length) p('Sin check-ins post-sesión.', 9, [180,120,40]);
+      else {
+        psKeys.forEach(k => {
+          const [w, d] = k.split('_');
+          const ps = agg.postSession[k];
+          checkPage(6);
+          pdf.setFontSize(7.5); pdf.setFont('helvetica','normal'); pdf.setTextColor(40,40,40);
+          pdf.text(`S${w} D${+d+1}  ·  EIMD ${ps.eimd ?? '—'}  ·  Articular ${ps.articular ?? '—'}${ps.patron ? ' ('+ps.patron+')' : ''}  ·  Sueño ${ps.sleep ?? '—'} h  ·  RPE ${ps.rpe ?? '—'}`, margin, y);
+          y += 4.5;
+        });
+        y += 2;
+      }
+
+      // ═══ RECOMENDACIÓN ACTUAL DEL MOTOR ═══
+      h1('6 · Recomendación del motor (más reciente)');
+      if (!lastRec || !lastRec.recommendations?.length) p('Sin recomendaciones aún.', 9, [180,120,40]);
+      else {
+        p(`Generada en Sem ${lrW} · Día ${lrD+1}`, 8, [120,120,120]); y += 1;
+        const actionLab = { deload:'DELOAD', reduce_load:'BAJAR CARGA', reduce_sets:'BAJAR SERIES', add_sets:'+ SERIES', increase_load:'+ CARGA', freeze_load:'CONGELAR', maintain:'MANTENER' };
+        lastRec.recommendations.forEach(r => {
+          checkPage(14);
+          pdf.setFillColor(252,250,243); pdf.rect(margin, y, colW, 12, 'F');
+          pdf.setFontSize(8.5); pdf.setFont('helvetica','bold'); pdf.setTextColor(40,40,40);
+          pdf.text(r.exerciseName || '—', margin + 2, y+4.5);
+          pdf.setFontSize(7.5); pdf.setFont('helvetica','bold'); pdf.setTextColor(150,120,40);
+          pdf.text(actionLab[r.action] || r.action || '', W - margin - 2, y+4.5, { align:'right' });
+          pdf.setFontSize(7.5); pdf.setFont('helvetica','normal'); pdf.setTextColor(80,80,80);
+          pdf.text(`Carga ${r.newLoad} kg  ·  Series ${r.newSets}${r.newReps ? '  ·  Reps '+r.newReps : ''}  ·  RIR ${r.rirTarget}`, margin + 2, y+9);
+          if (r.reason) {
+            pdf.setFontSize(7); pdf.setTextColor(120);
+            const reason = pdf.splitTextToSize(r.reason, colW - 4);
+            pdf.text(reason[0] || '', margin + 2, y+12);
+          }
+          y += 14;
+        });
+        if (lastRec.deloadTriggers?.length) {
+          checkPage(6);
+          pdf.setFontSize(8); pdf.setFont('helvetica','bold'); pdf.setTextColor(200,60,60);
+          pdf.text('Gatillos de deload activos: ' + lastRec.deloadTriggers.join(', '), margin, y); y += 5;
+        }
+      }
+
+      // ═══ NOTAS DEL CLIENTE ═══
+      if (agg.exnotes.length) {
+        h1('7 · Notas del cliente por ejercicio');
+        agg.exnotes.sort((a,b) => a.w-b.w || a.d-b.d || a.e-b.e).forEach(n => {
+          checkPage(5);
+          pdf.setFontSize(7); pdf.setFont('helvetica','bold'); pdf.setTextColor(160,130,40);
+          pdf.text(`S${n.w} D${n.d+1} Ej${n.e+1}:`, margin, y);
+          pdf.setFont('helvetica','normal'); pdf.setTextColor(60,60,60);
+          const lines = pdf.splitTextToSize(n.text, colW - 25);
+          pdf.text(lines, margin + 22, y);
+          y += 4 * Math.max(1, lines.length);
+        });
+      }
+
+      // ═══ DIAGNÓSTICO & PRÓXIMO PASO ═══
+      h1('8 · Diagnóstico y plan para el siguiente mesociclo');
+      const insights = [];
+      if (agg.adherence < 70) insights.push(`Adherencia baja (${agg.adherence}%). Reducir días/semana o revisar barreras antes de subir volumen.`);
+      else if (agg.adherence >= 90) insights.push(`Adherencia excelente (${agg.adherence}%). Habilitado para progresar volumen y/o intensidad.`);
+      // Grupos sub-MEV
+      const subMev = [], overMrv = [];
+      Object.keys(VDSEN_MEVMRV).forEach(g => {
+        const [mev, mrv] = VDSEN_MEVMRV[g];
+        const v = volume[g] || 0;
+        if (v < mev && mev > 0) subMev.push(`${g} (${v}/${mev})`);
+        if (v > mrv) overMrv.push(`${g} (${v}/${mrv})`);
+      });
+      if (subMev.length) insights.push(`Grupos por debajo de MEV: ${subMev.join(', ')}. Considerar +1–2 series por grupo el próximo mesociclo.`);
+      if (overMrv.length) insights.push(`Grupos sobre MRV: ${overMrv.join(', ')}. Reducir 2–3 series para evitar fatiga acumulada.`);
+      // Ganancias y caídas
+      const winners = agg.exerciseStats.filter(e => e.loadDelta > 5).slice(0,5);
+      const losers  = agg.exerciseStats.filter(e => e.loadDelta < -3).slice(-5).reverse();
+      if (winners.length) insights.push(`Ejercicios con buena progresión: ${winners.map(w => `${w.name} (+${w.loadDelta.toFixed(0)}%)`).join(', ')}.`);
+      if (losers.length)  insights.push(`Ejercicios estancados o regresivos: ${losers.map(w => `${w.name} (${w.loadDelta.toFixed(0)}%)`).join(', ')}. Revisar técnica, fatiga o sustituir.`);
+      // ICS
+      const allWeekIcs = Object.values(agg.perWeek).filter(w => w.icsN).map(w => w.icsSum/w.icsN);
+      if (allWeekIcs.length) {
+        const m = allWeekIcs.reduce((a,b)=>a+b,0)/allWeekIcs.length;
+        if (m < 7) insights.push(`ICS promedio bajo (${m.toFixed(1)}/10). Técnica deficiente — bajar carga 5–10% y reforzar tempo excéntrico.`);
+        else if (m >= 8.5) insights.push(`ICS promedio alto (${m.toFixed(1)}/10). Habilitado para incrementar carga.`);
+      }
+      // Próximo mesociclo
+      insights.push('Plan sugerido siguiente mesociclo: ajustar volúmenes según MEV/MRV, sustituir ejercicios estancados, aplicar técnicas de intensificación (drop/myoreps/SST) en aislamientos de Sem 3–4.');
+
+      insights.forEach(s => { checkPage(8); p('• ' + s, 9, [40,40,40]); y += 0.5; });
+
+      addFooter();
+      pdf.save(`VDSEN_ReporteIntegral_${(client.displayName||'cliente').replace(/\s+/g,'_')}_Sem${currentWeek}.pdf`);
+      showToast('✅ Reporte integral generado');
+    } catch(e) {
+      console.error(e);
+      showToast('Error generando reporte: ' + e.message, true);
+    }
+  }
+  window.generateFullClientReport = generateFullClientReport;
 
   async function loadClientsSelect() {
     if (!currentCoach) return;
@@ -1264,8 +1854,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             : '<li class="text-[#888]">Sin ejercicios detectados</li>'}
         </ul>
       </div>`).join('');
+    const volPanel = renderVolumePanel(planObj);
     preview.innerHTML = `
-      <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s). Revisa y guarda:</div>
+      <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s) · ${planObj.weeks || 6} semanas. Revisa y guarda:</div>
+      ${volPanel}
       ${dayList}
       <button onclick="saveImportedPlan()" class="btn-primary w-full mt-2">💾 Guardar y activar plan</button>`;
     preview._planObj = planObj;
@@ -1308,12 +1900,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const planObj = window._importedPlan;
     if (!planObj) { showToast("No hay plan cargado", true); return; }
     try {
+      // Backup automático del plan anterior si existe
+      await backupPlanIfExists(clientId);
       // Limpiar plan anterior si existe (evita docs huérfanos)
       const prevClientSnap = await getDoc(doc(db, "clients", clientId));
       const prevPlanId = prevClientSnap.exists() ? prevClientSnap.data().activePlanId : null;
 
       const planRef = await addDoc(collection(db, "plans"), {
         ...planObj,
+        rirByWeek: rirSchemeForWeeks(planObj.weeks || 6),
         coachId: currentCoach.uid,
         clientId,
         status: "active",
@@ -1537,6 +2132,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <button onclick="toggleTrainingEditor()" class="text-[#C9A84C] text-xs underline mr-3">✏️ Editar</button>
           <button onclick="showQuickAddExercise('${c.activePlanId}')" class="text-[#44BB88] text-xs underline mr-3">➕ Agregar ejercicio</button>
           <button onclick="duplicatePlan('${clientId}','${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">📋 Duplicar</button>
+          <button onclick="duplicatePlanToClient('${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">👥 Copiar a otro cliente</button>
+          <button onclick="exportActivePlanJSON('${clientId}','${c.activePlanId}')" class="text-[#C9A84C] text-xs underline mr-3">📥 Exportar JSON</button>
+          <button onclick="generateFullClientReport('${clientId}')" class="text-[#E8C97A] text-xs underline mr-3">📊 Reporte completo</button>
           <button onclick="deletePlan('${clientId}','${c.activePlanId}')" class="text-red-400 text-xs underline">🗑 Eliminar</button>`;
       }
     }
@@ -2119,14 +2717,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson) {
+    const techVal = (technique || 'straight').toLowerCase();
+    const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
+      .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
+    const altsAttr = (alternativesJson || '[]').replace(/"/g,'&quot;');
     return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}"
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
+      data-alternatives="${altsAttr}"
       style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);transition:opacity .15s">
       <div class="flex gap-2 items-center mb-2">
         <span class="text-[#555] select-none text-base cursor-grab px-0.5" title="Arrastrar para reordenar">⠿</span>
-        <input class="input-field flex-1 text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${name}" id="exname_${di}_${ei}" list="coach_exlist" data-field="name">
+        <input class="input-field flex-1 text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${name}" id="exname_${di}_${ei}" list="coach_exlist" data-field="name" oninput="markEditorDirty&&markEditorDirty()">
         <button onclick="_moveExRow(this, -1)" title="Subir" class="text-[#888] hover:text-white text-base px-1 leading-none">↑</button>
         <button onclick="_moveExRow(this, 1)" title="Bajar" class="text-[#888] hover:text-white text-base px-1 leading-none">↓</button>
         <button onclick="removeExRow(${di},${ei})" class="text-red-400 hover:text-red-300 text-xl leading-none flex-shrink-0 px-0.5" title="Eliminar">×</button>
@@ -2134,18 +2737,28 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div class="grid grid-cols-3 gap-2 mb-2">
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Series</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#C9A84C]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric" data-field="sets">
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#C9A84C]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric" data-field="sets" oninput="markEditorDirty&&markEditorDirty()">
         </div>
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Reps</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="50" inputmode="numeric" data-field="reps">
+          <input class="input-field w-full text-sm py-1 text-center font-bold" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="50" inputmode="numeric" data-field="reps" oninput="markEditorDirty&&markEditorDirty()">
         </div>
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">RIR</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir">
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
-      <textarea class="input-field w-full text-xs py-1" placeholder="Nota de ejecución (tempo, ROM, cues...)" rows="1" data-field="coachNote"
+      <div class="grid grid-cols-3 gap-2 mb-2" style="grid-template-columns:1fr 2fr">
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Técnica</div>
+          <select class="input-field w-full text-xs py-1" data-field="technique" onchange="markEditorDirty&&markEditorDirty()">${techOpts}</select>
+        </div>
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Nota técnica (drop %, mini-clusters, tempo, pausa…)</div>
+          <input class="input-field w-full text-xs py-1" placeholder="Ej: Tras RIR0 bajar 30% y continuar al fallo" data-field="techniqueNote" value="${(techniqueNote||'').replace(/"/g,'&quot;')}" oninput="markEditorDirty&&markEditorDirty()">
+        </div>
+      </div>
+      <textarea class="input-field w-full text-xs py-1" placeholder="Nota de ejecución (tempo, ROM, cues...)" rows="1" data-field="coachNote" oninput="markEditorDirty&&markEditorDirty()"
         style="resize:vertical;min-height:28px;color:#aaa;border-color:rgba(255,255,255,.05)">${coachNote || ''}</textarea>
     </div>`;
   }
@@ -2195,7 +2808,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const reps    = (e.sets && e.sets[0]) ? (e.sets[0].repsTarget || 8) : 8;
         const rir     = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
         var coachNote = e.coachNote || '';
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote);
+        var tech = e.technique || 'straight';
+        var techNote = e.techniqueNote || '';
+        var altsJson = JSON.stringify(e.alternatives || []);
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson);
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#C9A84C]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -2223,7 +2839,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const div = document.createElement('div');
     div.outerHTML; // placeholder
     const tmp = document.createElement('template');
-    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2);
+    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]');
     list.appendChild(tmp.content.firstElementChild);
   }
 
@@ -2293,17 +2909,34 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const reps = parseInt(row.querySelector('[data-field="reps"]')?.value) || 8;
         const rir  = parseInt(row.querySelector('[data-field="rir"]')?.value)  || 2;
         const coachNote = row.querySelector('[data-field="coachNote"]')?.value.trim() || '';
+        const technique = (row.querySelector('[data-field="technique"]')?.value || 'straight').toLowerCase();
+        const techniqueNote = row.querySelector('[data-field="techniqueNote"]')?.value.trim() || '';
+        let alternatives = [];
+        try { alternatives = JSON.parse(row.dataset.alternatives || '[]'); } catch(e) {}
         if (name) exercises.push({
           exerciseName: name,
-          alternatives: [],
-          coachNote: coachNote,
-          sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90 }))
+          alternatives,
+          coachNote,
+          technique,
+          techniqueNote,
+          sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90, setNote: '', drop: false, tempo: '' }))
         });
       });
       days.push({ dayIndex: di, label, exercises });
     });
     try {
+      // Backup pre-sobrescribir
+      try {
+        const cur = await getDoc(doc(db, "plans", _editingPlanId));
+        if (cur.exists()) {
+          await addDoc(collection(db, "plans_backup"), {
+            ...cur.data(), originalPlanId: _editingPlanId,
+            backedUpAt: new Date().toISOString(), backedUpBy: currentCoach.uid
+          });
+        }
+      } catch(e) { console.warn('backup falló:', e); }
       await updateDoc(doc(db, "plans", _editingPlanId), { days, daysPerWeek: days.length, coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
+      markEditorClean();
       showToast('Plan actualizado ✅');
       toggleTrainingEditor();
       showClientDetail(_detailClientId);
@@ -2930,6 +3563,97 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.saveTrainingPlan = saveTrainingPlan;
   window.deletePlan = deletePlan;
   window.duplicatePlan = duplicatePlan;
+
+  // ── Exportar JSON del plan activo (copia al portapapeles + descarga .json) ──
+  async function exportActivePlanJSON(clientId, planId) {
+    try {
+      const snap = await getDoc(doc(db, "plans", planId));
+      if (!snap.exists()) { showToast('Plan no encontrado', true); return; }
+      const data = snap.data();
+      // Limpiar metadata interna para que sea importable
+      const clean = {
+        weeks: data.weeks || 6,
+        daysPerWeek: data.daysPerWeek || (data.days||[]).length,
+        days: (data.days || []).map(d => ({
+          dayIndex: d.dayIndex,
+          label: d.label,
+          exercises: (d.exercises || []).map(ex => ({
+            exerciseName: ex.exerciseName,
+            alternatives: ex.alternatives || [],
+            technique: ex.technique || 'straight',
+            techniqueNote: ex.techniqueNote || '',
+            coachNote: ex.coachNote || '',
+            sets: (ex.sets || []).map(s => ({
+              setIndex: s.setIndex, repsTarget: s.repsTarget, rirTarget: s.rirTarget,
+              load: s.load || 0, restSeconds: s.restSeconds || 90,
+              setNote: s.setNote || '', drop: !!s.drop, tempo: s.tempo || ''
+            }))
+          }))
+        }))
+      };
+      const text = JSON.stringify(clean, null, 2);
+      try { await navigator.clipboard.writeText(text); } catch(e) {}
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `VDSEN_Plan_${clientId.slice(0,6)}_${Date.now()}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('✅ JSON copiado y descargado');
+    } catch(e) { showToast('Error: ' + e.message, true); }
+  }
+  window.exportActivePlanJSON = exportActivePlanJSON;
+
+  // ── Duplicar plan a otro cliente (selector modal) ──
+  async function duplicatePlanToClient(sourcePlanId) {
+    try {
+      const snap = await getDoc(doc(db, "plans", sourcePlanId));
+      if (!snap.exists()) { showToast('Plan origen no encontrado', true); return; }
+      const planData = snap.data();
+      const clientsSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+      const clients = [];
+      clientsSnap.forEach(d => { if (d.id !== planData.clientId) clients.push({ id:d.id, ...d.data() }); });
+      if (!clients.length) { showToast('No hay otros clientes a quien copiar', true); return; }
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `
+        <div style="background:#141616;border:1px solid rgba(201,168,76,.3);border-radius:12px;padding:24px;max-width:420px;width:100%">
+          <h3 style="color:#C9A84C;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px">Copiar plan a otro cliente</h3>
+          <p style="color:#888;font-size:12px;margin-bottom:10px">Selecciona el cliente destino. Si tiene un plan activo, se hará backup antes de sobrescribir.</p>
+          <select id="_dupTarget" class="input-field mb-3">${clients.map(c => `<option value="${c.id}">${c.displayName || c.email}${c.activePlanId ? ' · ⚠️ ya tiene plan' : ''}</option>`).join('')}</select>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button id="_dupCancel" style="padding:8px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
+            <button id="_dupOk" style="padding:8px 14px;border-radius:6px;border:none;background:linear-gradient(135deg,#9A7A28,#E8C97A);color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Copiar plan</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_dupCancel').onclick = () => ov.remove();
+      ov.querySelector('#_dupOk').onclick = async () => {
+        const targetId = ov.querySelector('#_dupTarget').value;
+        ov.remove();
+        if (!targetId) return;
+        showToast('Copiando plan...');
+        try {
+          await backupPlanIfExists(targetId);
+          const newRef = await addDoc(collection(db, "plans"), {
+            ...planData,
+            clientId: targetId,
+            coachId: currentCoach.uid,
+            status: 'active',
+            generatedBy: 'duplicate-to-client',
+            createdAt: new Date().toISOString()
+          });
+          // Eliminar plan anterior del destino si existía
+          const tgtClient = await getDoc(doc(db, "clients", targetId));
+          const prevId = tgtClient.exists() ? tgtClient.data().activePlanId : null;
+          await updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id });
+          if (prevId && prevId !== newRef.id) { try { await deleteDoc(doc(db, "plans", prevId)); } catch(e) {} }
+          showToast('✅ Plan copiado al cliente destino');
+        } catch(e) { showToast('Error: ' + e.message, true); }
+      };
+    } catch(e) { showToast('Error: ' + e.message, true); }
+  }
+  window.duplicatePlanToClient = duplicatePlanToClient;
   window.navClient = navClient;
   window.showQuickAddExercise = showQuickAddExercise;
   window.submitQuickAdd = submitQuickAdd;
@@ -2960,6 +3684,46 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.applyTemplate = applyTemplate;
   window.deleteTemplate = deleteTemplate;
   window.loadDashboard = loadDashboard;
+
+  // Diagnóstico Firebase: lee/escribe doc temporal, mide latencias, valida permisos
+  document.getElementById("diagFirebaseBtn")?.addEventListener("click", async () => {
+    const out = document.getElementById("diagFirebaseOut");
+    if (!out) return;
+    const log = (msg, color='#888') => { out.innerHTML += `<div style="color:${color}">${msg}</div>`; };
+    out.innerHTML = '';
+    log('▶ Iniciando diagnóstico…', '#C9A84C');
+    // 1. Usuario autenticado
+    log(`• Auth: ${currentCoach ? '✅ ' + currentCoach.email : '❌ sin sesión'}`, currentCoach ? '#44BB88' : '#FF4444');
+    log(`• UID: ${currentCoach?.uid || '—'}`);
+    log(`• Proyecto: ${firebaseConfig.projectId}`);
+    // 2. Read coaches/{uid}
+    let t0 = performance.now();
+    try {
+      const s = await getDoc(doc(db, 'coaches', currentCoach.uid));
+      const dt = (performance.now() - t0).toFixed(0);
+      log(`• Read coaches/{uid}: ${s.exists() ? '✅' : '⚠️ no existe'} (${dt} ms)`, s.exists() ? '#44BB88' : '#FFBB00');
+    } catch(e) { log(`• Read coaches: ❌ ${e.code || e.message}`, '#FF4444'); }
+    // 3. Listar clientes
+    t0 = performance.now();
+    try {
+      const s = await getDocs(query(collection(db, 'clients'), where('coachId', '==', currentCoach.uid)));
+      log(`• Query clients (coachId): ✅ ${s.size} resultados (${(performance.now()-t0).toFixed(0)} ms)`, '#44BB88');
+    } catch(e) { log(`• Query clients: ❌ ${e.code || e.message}`, '#FF4444'); }
+    // 4. Write/Delete prueba
+    t0 = performance.now();
+    try {
+      const ref = await addDoc(collection(db, 'diag_pings'), { uid: currentCoach.uid, ts: Date.now() });
+      const dt1 = (performance.now() - t0).toFixed(0);
+      t0 = performance.now();
+      await deleteDoc(ref);
+      const dt2 = (performance.now() - t0).toFixed(0);
+      log(`• Write+Delete diag_pings: ✅ (${dt1}+${dt2} ms)`, '#44BB88');
+    } catch(e) { log(`• Write diag_pings: ❌ ${e.code || e.message} (revisa reglas Firestore)`, '#FF4444'); }
+    // 5. Online check
+    log(`• navigator.onLine: ${navigator.onLine ? '✅' : '❌'}`, navigator.onLine ? '#44BB88' : '#FF4444');
+    log(`• User-Agent: ${navigator.userAgent.slice(0, 80)}…`, '#666');
+    log('▶ Diagnóstico finalizado.', '#C9A84C');
+  });
 
   // Configuración: guardar API key
   document.getElementById("saveApiKeyBtn")?.addEventListener("click", () => {
