@@ -1049,19 +1049,29 @@
       }
       closeMesoBtn.style.display = currentWeek >= 5 ? "inline-flex" : "none";
 
-      // Control manual de semana — el coach puede avanzar/retroceder la semana del mesociclo
+      // Control manual de semana + extensión de duración del plan
+      const planTotalWeeks = _activePlanCache?.weeks || 6;
       let weekCtrl = document.getElementById("weekCtrl");
       if (!weekCtrl) {
         weekCtrl = document.createElement("div");
         weekCtrl.id = "weekCtrl";
-        weekCtrl.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.35);border-radius:8px;padding:4px 8px;margin-left:8px";
+        weekCtrl.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.35);border-radius:8px;padding:4px 8px;margin-left:8px;flex-wrap:wrap";
         weekCtrl.innerHTML = `
           <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Semana</span>
           <button id="weekDec" title="Retroceder una semana" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#C9A84C;font-weight:700;cursor:pointer">−</button>
           <input id="weekInput" type="number" min="1" max="16" step="1" style="width:48px;text-align:center;background:#0d0d0d;border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#C9A84C;font-weight:700;padding:3px 4px">
           <button id="weekInc" title="Avanzar una semana" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#C9A84C;font-weight:700;cursor:pointer">+</button>
-          <button id="weekApply" title="Aplicar cambio de semana" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(201,168,76,.5);background:rgba(201,168,76,.18);color:#C9A84C;font-size:12px;font-weight:600;cursor:pointer">Aplicar</button>`;
+          <button id="weekApply" title="Aplicar cambio de semana activa" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(201,168,76,.5);background:rgba(201,168,76,.18);color:#C9A84C;font-size:12px;font-weight:600;cursor:pointer">Aplicar</button>
+          <span style="width:1px;height:18px;background:rgba(201,168,76,.25);margin:0 4px"></span>
+          <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Plan</span>
+          <span id="planWeeksLabel" style="color:#C9A84C;font-weight:700;font-size:12px;padding:0 4px">${planTotalWeeks} sem</span>
+          <button id="planWeekAdd" title="Agregar una semana al plan (extiende duración total)" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.15);color:#44BB88;font-size:12px;font-weight:700;cursor:pointer">+ semana</button>
+          <button id="planWeekDel" title="Quitar la última semana del plan" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(220,60,60,.4);background:rgba(220,60,60,.12);color:#e05555;font-size:12px;font-weight:600;cursor:pointer">−</button>`;
         pdfBtn.parentNode.insertBefore(weekCtrl, closeMesoBtn);
+      } else {
+        // Refrescar etiqueta del plan al re-render
+        const lbl = weekCtrl.querySelector('#planWeeksLabel');
+        if (lbl) lbl.textContent = `${planTotalWeeks} sem`;
       }
       const weekInput = weekCtrl.querySelector('#weekInput');
       weekInput.value = currentWeek;
@@ -1070,10 +1080,24 @@
       weekCtrl.querySelector('#weekApply').onclick = async () => {
         const nw = Math.max(1, Math.min(16, parseInt(weekInput.value) || 1));
         if (nw === currentWeek) { showToast("La semana ya está en " + nw); return; }
+        const planW = _activePlanCache?.weeks || planTotalWeeks;
+        if (nw > planW) {
+          if (!await _askConfirm(`La semana ${nw} está más allá de la duración actual del plan (${planW} sem).<br><span style="color:#888;font-size:12px">¿Extender el plan a ${nw} semanas automáticamente y mover el puntero?</span>`)) return;
+          // Extender el plan a nw semanas
+          if (_activePlanCache && clientData.activePlanId) {
+            try {
+              const newRir = rirSchemeForWeeks(nw);
+              await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: nw, rirByWeek: newRir, updatedAt: new Date().toISOString() });
+              _activePlanCache.weeks = nw;
+              _activePlanCache.rirByWeek = newRir;
+            } catch(e) { showToast('No se pudo extender el plan: ' + e.message, true); return; }
+          }
+        }
         const goBack = nw < currentWeek;
+        const dynRir = rirSchemeForWeeks(_activePlanCache?.weeks || 6)[nw] ?? 2;
         const msg = goBack
-          ? `¿Retroceder a la semana ${nw}?<br><span style="color:#888;font-size:12px">Los registros de semanas superiores quedan intactos. El cliente verá la semana ${nw} como activa.</span>`
-          : `¿Avanzar a la semana ${nw}?<br><span style="color:#888;font-size:12px">El cliente entrenará con el RIR objetivo de la semana ${nw} (${({1:3,2:2,3:2,4:1,5:0,6:3})[nw] ?? 2}).</span>`;
+          ? `¿Retroceder a la semana ${nw}?<br><span style="color:#888;font-size:12px">Los registros de semanas superiores quedan intactos.</span>`
+          : `¿Avanzar a la semana ${nw}?<br><span style="color:#888;font-size:12px">RIR objetivo de la semana ${nw}: ${dynRir}.</span>`;
         if (!await _askConfirm(msg)) return;
         const applyBtn = weekCtrl.querySelector('#weekApply');
         applyBtn.disabled = true; applyBtn.textContent = '…';
@@ -1085,6 +1109,47 @@
           showToast(`✅ Semana actualizada a ${nw}`);
         } catch(e) { showToast("Error: " + e.message, true); }
         finally { applyBtn.disabled = false; applyBtn.textContent = 'Aplicar'; }
+      };
+
+      // ── EXTENDER plan: +1 semana a la duración total ──
+      weekCtrl.querySelector('#planWeekAdd').onclick = async () => {
+        if (!clientData.activePlanId) { showToast('El cliente no tiene plan activo', true); return; }
+        const planW = _activePlanCache?.weeks || planTotalWeeks;
+        const newW = Math.min(16, planW + 1);
+        if (newW === planW) { showToast('Tope alcanzado (16 semanas)', true); return; }
+        const newRir = rirSchemeForWeeks(newW);
+        if (!await _askConfirm(`¿Extender el plan a <strong>${newW} semanas</strong>?<br><span style="color:#888;font-size:12px">Se recalculará el RIR scheme. RIR semana ${newW}: ${newRir[newW]}.</span>`)) return;
+        const btn = weekCtrl.querySelector('#planWeekAdd');
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: newW, rirByWeek: newRir, updatedAt: new Date().toISOString() });
+          if (_activePlanCache) { _activePlanCache.weeks = newW; _activePlanCache.rirByWeek = newRir; }
+          const lbl = weekCtrl.querySelector('#planWeeksLabel');
+          if (lbl) lbl.textContent = `${newW} sem`;
+          showToast(`✅ Plan extendido a ${newW} semanas`);
+        } catch(e) { showToast('Error: ' + e.message, true); }
+        finally { btn.disabled = false; btn.textContent = '+ semana'; }
+      };
+
+      // ── REDUCIR plan: −1 semana de la duración total ──
+      weekCtrl.querySelector('#planWeekDel').onclick = async () => {
+        if (!clientData.activePlanId) { showToast('El cliente no tiene plan activo', true); return; }
+        const planW = _activePlanCache?.weeks || planTotalWeeks;
+        if (planW <= 1) { showToast('Mínimo 1 semana', true); return; }
+        const newW = planW - 1;
+        if (currentWeek > newW) { showToast(`No se puede reducir: semana activa (${currentWeek}) > nueva duración (${newW})`, true); return; }
+        if (!await _askConfirm(`¿Reducir el plan a <strong>${newW} semanas</strong>?<br><span style="color:#888;font-size:12px">Solo afecta la duración del mesociclo; los registros existentes no se borran.</span>`)) return;
+        const btn = weekCtrl.querySelector('#planWeekDel');
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          const newRir = rirSchemeForWeeks(newW);
+          await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: newW, rirByWeek: newRir, updatedAt: new Date().toISOString() });
+          if (_activePlanCache) { _activePlanCache.weeks = newW; _activePlanCache.rirByWeek = newRir; }
+          const lbl = weekCtrl.querySelector('#planWeeksLabel');
+          if (lbl) lbl.textContent = `${newW} sem`;
+          showToast(`✅ Plan reducido a ${newW} semanas`);
+        } catch(e) { showToast('Error: ' + e.message, true); }
+        finally { btn.disabled = false; btn.textContent = '−'; }
       };
 
       closeMesoBtn.onclick = async () => {
