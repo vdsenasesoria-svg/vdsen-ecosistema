@@ -1011,6 +1011,19 @@
       fullBtn.style.display = "inline-flex";
       fullBtn.onclick = () => generateFullClientReport(select.value);
 
+      // Botón "Exportar para IA" (JSON compacto, pegable en Claude/GPT/Gemini)
+      let aiBtn = document.getElementById("aiExportBtn");
+      if (!aiBtn) {
+        aiBtn = document.createElement("button");
+        aiBtn.id = "aiExportBtn";
+        aiBtn.className = "btn-secondary text-sm";
+        aiBtn.style.cssText = "background:rgba(140,90,200,.12);border-color:rgba(170,120,240,.5);color:#c89cff;margin-left:6px";
+        aiBtn.textContent = "🤖 Exportar para IA";
+        fullBtn.parentNode.insertBefore(aiBtn, fullBtn.nextSibling);
+      }
+      aiBtn.style.display = "inline-flex";
+      aiBtn.onclick = () => exportClientReportForAI(select.value);
+
       // Botón Cerrar Mesociclo (solo si semana >= 5)
       let closeMesoBtn = document.getElementById("closeMesoBtn");
       if (!closeMesoBtn) {
@@ -1595,6 +1608,178 @@
   }
   window.generateFullClientReport = generateFullClientReport;
 
+  // ════════════════════════════════════════════════════════════
+  //  EXPORTAR REPORTE PARA IA — JSON compacto, mínimo tokens
+  //  Claves abreviadas + redondeos + sin nulls innecesarios.
+  //  Pegable en Claude/ChatGPT/Gemini para análisis y plan siguiente.
+  // ════════════════════════════════════════════════════════════
+  async function exportClientReportForAI(clientId) {
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      if (!clientSnap.exists()) throw new Error('Cliente no existe');
+      const c = clientSnap.data();
+      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      const logs = logsSnap.exists() ? logsSnap.data() : { entries:{}, currentWeek:1 };
+      const entries = logs.entries || {};
+      const cw = logs.currentWeek || 1;
+      let plan = null;
+      if (c.activePlanId) {
+        const ps = await getDoc(doc(db, 'plans', c.activePlanId));
+        if (ps.exists()) plan = ps.data();
+      }
+      const agg = aggregateClientLogs(entries, plan, cw);
+      const vol = plan ? computeWeeklyVolume(plan) : {};
+
+      // Helper: redondear sin null garbage
+      const r1 = (n) => (n==null||isNaN(n))?null:Math.round(n*10)/10;
+      const r0 = (n) => (n==null||isNaN(n))?null:Math.round(n);
+
+      // Recomendación más reciente
+      let lastRec=null, lrW=0, lrD=0;
+      Object.keys(entries).forEach(k => {
+        const m = k.match(/^progrec_(\d+)_(\d+)$/);
+        if (m) { const w=+m[1], d=+m[2]; if (w>lrW||(w===lrW&&d>lrD)){lrW=w;lrD=d;lastRec=entries[k];} }
+      });
+
+      // Semanal compacto
+      const weeks = Object.keys(agg.perWeek).map(Number).sort((a,b)=>a-b).map(w => {
+        const wd = agg.perWeek[w];
+        let eN=0,eS=0,pN=0,pS=0,sN=0,sS=0;
+        Object.keys(agg.postSession).forEach(k => {
+          if (k.startsWith(w+'_')) {
+            const ps=agg.postSession[k];
+            if (ps?.eimd!=null){eS+=+ps.eimd;eN++;}
+            if (ps?.rpe!=null){pS+=+ps.rpe;pN++;}
+            if (ps?.sleep!=null){sS+=+ps.sleep;sN++;}
+          }
+        });
+        const ci = agg.weeklyCheckin[w] || {};
+        const o = { w, sets: wd.sets, ton: r0(wd.tonnage), ics: r1(wd.icsN?wd.icsSum/wd.icsN:null), rir_real: r1(wd.rirN?wd.rirSum/wd.rirN:null), eimd: r1(eN?eS/eN:null), rpe: r1(pN?pS/pN:null), sleep: r1(sN?sS/sN:null) };
+        if (ci.peso!=null) o.peso=r1(+ci.peso);
+        if (ci.hrv!=null)  o.hrv=r0(+ci.hrv);
+        if (ci.who5!=null) o.who5=r0(+ci.who5);
+        // Limpiar nulls
+        Object.keys(o).forEach(k => { if (o[k]==null) delete o[k]; });
+        return o;
+      });
+
+      // Por ejercicio
+      const exs = agg.exerciseStats.map(es => {
+        const wkly = es.weekly.map(w => {
+          const o = { w: w.week, n: w.setsCount, kg: r1(w.loadAvg), kgMax: r1(w.loadMax), reps: r1(w.repsAvg), ics: r1(w.icsAvg), rir: r1(w.rirAvg) };
+          Object.keys(o).forEach(k => { if (o[k]==null||o[k]===0&&k!=='w'&&k!=='n') delete o[k]; });
+          return o;
+        });
+        const o = { name: es.name, dKg: r1(es.loadDelta), wk: wkly };
+        if (es.techniques.length && !(es.techniques.length===1 && es.techniques[0]==='straight')) o.tech = es.techniques.filter(t=>t!=='straight');
+        return o;
+      });
+
+      // Volumen vs MEV/MRV (solo grupos con desviación o valor != 0)
+      const volReport = {};
+      Object.keys(VDSEN_MEVMRV).forEach(g => {
+        const [mev,mrv,opt] = VDSEN_MEVMRV[g];
+        const v = vol[g] || 0;
+        let st;
+        if (v===0 && mev===0) st='off';
+        else if (v<mev) st='sub';
+        else if (v>mrv) st='over';
+        else st='ok';
+        volReport[g] = { v, mev, mrv, opt, st };
+      });
+
+      // Recomendación motor compacta
+      let rec = null;
+      if (lastRec?.recommendations) {
+        rec = {
+          w: lrW, d: lrD,
+          items: lastRec.recommendations.map(r => ({ ex: r.exerciseName, act: r.action, kg: r.newLoad, sets: r.newSets, reps: r.newReps||null, rir: r.rirTarget, why: r.reason||'' })),
+          deload: lastRec.deloadTriggers || []
+        };
+      }
+
+      // Notas
+      const notes = agg.exnotes.sort((a,b)=>a.w-b.w||a.d-b.d||a.e-b.e).map(n => ({ w:n.w, d:n.d, e:n.e, t:n.t }));
+
+      // Diagnóstico precalculado
+      const diag = [];
+      if (agg.adherence < 70) diag.push('adherencia_baja');
+      if (agg.adherence >= 90) diag.push('adherencia_alta');
+      Object.keys(volReport).forEach(g => {
+        if (volReport[g].st === 'sub') diag.push('subMEV:' + g);
+        if (volReport[g].st === 'over') diag.push('sobreMRV:' + g);
+      });
+      const allIcsW = weeks.filter(w => w.ics!=null).map(w => w.ics);
+      const icsM = allIcsW.length ? allIcsW.reduce((a,b)=>a+b,0)/allIcsW.length : null;
+      if (icsM!=null && icsM<7) diag.push('ICS_bajo:'+r1(icsM));
+      if (icsM!=null && icsM>=8.5) diag.push('ICS_alto:'+r1(icsM));
+      const winners = exs.filter(e=>e.dKg>5).map(e=>e.name).slice(0,5);
+      const losers  = exs.filter(e=>e.dKg<-3).map(e=>e.name).slice(0,5);
+      if (winners.length) diag.push('progresan:'+winners.join('|'));
+      if (losers.length)  diag.push('estancan:'+losers.join('|'));
+
+      // Ensamblar
+      const payload = {
+        v: '1',
+        gen: new Date().toISOString().slice(0,10),
+        client: { name: c.displayName || '—', sex: c.sex || null, age: c.age || null, kg: c.weight || null, cm: c.height || null },
+        plan: plan ? { w: plan.weeks||6, dpw: plan.daysPerWeek||(plan.days||[]).length, days: (plan.days||[]).map(d => ({ l: d.label, ex: (d.exercises||[]).map(e => ({ n: e.exerciseName, s: (e.sets||[]).length, reps: e.sets?.[0]?.repsTarget, rir: e.sets?.[0]?.rirTarget, t: e.technique && e.technique!=='straight' ? e.technique : undefined, tn: e.techniqueNote || undefined, cn: e.coachNote || undefined })) })) } : null,
+        cw, // semana actual
+        adh: agg.adherence,
+        sess: { done: agg.sessionsDone, planned: agg.sessionsPlanned },
+        weeks,        // serie temporal semanal
+        exercises: exs, // serie temporal por ejercicio
+        volume: volReport,
+        recommendation: rec,
+        notes,
+        diag
+      };
+      // Limpia plan.days[].ex[] de keys undefined
+      JSON.stringify(payload); // smoke
+
+      const text = JSON.stringify(payload);
+      try { await navigator.clipboard.writeText(text); } catch(e) {}
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `VDSEN_AI_${(c.displayName||'cliente').replace(/\s+/g,'_')}_S${cw}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Mostrar también un mini-modal con prompt sugerido para IA
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      const tokens = Math.round(text.length / 4);
+      ov.innerHTML = `
+        <div style="background:#141616;border:1px solid rgba(201,168,76,.35);border-radius:12px;padding:22px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto">
+          <h3 style="color:#C9A84C;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">📤 Reporte exportado para IA</h3>
+          <p style="color:#888;font-size:12px;margin-bottom:12px">Archivo descargado y copiado al portapapeles. ~<strong style="color:#C9A84C">${tokens} tokens</strong> estimados (${text.length} chars).</p>
+          <div style="background:#0a0a0a;border:1px solid rgba(201,168,76,.2);border-radius:6px;padding:10px;margin-bottom:10px">
+            <div style="color:#C9A84C;font-size:11px;font-weight:600;margin-bottom:6px;letter-spacing:.05em;text-transform:uppercase">Prompt sugerido para pegar junto al JSON</div>
+            <textarea readonly style="width:100%;height:140px;background:transparent;border:none;color:#cfcfcf;font-family:monospace;font-size:11px;line-height:1.5;resize:none" id="_aiPrompt">Eres VDSEN Coach IA. Analiza el reporte adjunto (JSON v1, formato compacto VDSEN) y entrega:
+
+1. Diagnóstico del mesociclo (adherencia, progresión por ejercicio, ICS, MEV/MRV, recuperación).
+2. Top 3 hallazgos críticos.
+3. Plan para el siguiente mesociclo: ajustes de volumen por grupo (referencia MEV/MRV en campo "volume"), sustituciones de ejercicios estancados, técnicas de intensificación recomendadas (drop/myoreps/sst/etc) para semanas 3-4, y semana de deload.
+4. Devuelve el plan final en JSON v2 con campos: weeks, daysPerWeek, days[].exercises[] {exerciseName, alternatives, technique, techniqueNote, coachNote, sets[]{setIndex, repsTarget, rirTarget, load:0, restSeconds, setNote, drop, tempo}}.
+
+Reporte:
+</textarea>
+            <button onclick="(function(){var t=document.getElementById('_aiPrompt');t.select();document.execCommand('copy');})()" style="margin-top:6px;padding:5px 12px;border-radius:5px;border:1px solid rgba(201,168,76,.5);background:rgba(201,168,76,.15);color:#C9A84C;font-size:11px;cursor:pointer">📋 Copiar prompt</button>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button id="_aiClose" style="padding:8px 16px;border-radius:6px;border:none;background:linear-gradient(135deg,#9A7A28,#E8C97A);color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Listo</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_aiClose').onclick = () => ov.remove();
+      ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+
+      showToast(`✅ Reporte IA copiado (~${tokens} tokens)`);
+    } catch(e) { showToast('Error: ' + e.message, true); console.error(e); }
+  }
+  window.exportClientReportForAI = exportClientReportForAI;
+
   async function loadClientsSelect() {
     if (!currentCoach) return;
     const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
@@ -2135,6 +2320,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <button onclick="duplicatePlanToClient('${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">👥 Copiar a otro cliente</button>
           <button onclick="exportActivePlanJSON('${clientId}','${c.activePlanId}')" class="text-[#C9A84C] text-xs underline mr-3">📥 Exportar JSON</button>
           <button onclick="generateFullClientReport('${clientId}')" class="text-[#E8C97A] text-xs underline mr-3">📊 Reporte completo</button>
+          <button onclick="exportClientReportForAI('${clientId}')" class="text-xs underline mr-3" style="color:#c89cff">🤖 Exportar para IA</button>
           <button onclick="deletePlan('${clientId}','${c.activePlanId}')" class="text-red-400 text-xs underline">🗑 Eliminar</button>`;
       }
     }
