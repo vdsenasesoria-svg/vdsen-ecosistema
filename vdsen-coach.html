@@ -2131,6 +2131,49 @@ Reporte:
   }
   window.viewClientReportHTML = viewClientReportHTML;
 
+  // ── Extender / reducir la duración del plan (mesociclo) ──
+  // delta: +1 agrega 1 semana, -1 quita 1 semana
+  async function extendPlanWeeks(planId, delta) {
+    if (!planId) { showToast('Plan no encontrado', true); return; }
+    try {
+      const snap = await getDoc(doc(db, 'plans', planId));
+      if (!snap.exists()) { showToast('Plan no existe', true); return; }
+      const p = snap.data();
+      const curW = p.weeks || 6;
+      const newW = Math.max(1, Math.min(16, curW + delta));
+      if (newW === curW) {
+        showToast(delta > 0 ? 'Tope alcanzado (16 semanas)' : 'Mínimo 1 semana', true);
+        return;
+      }
+      // Si reducimos por debajo de la semana activa del cliente, bloqueamos
+      if (delta < 0) {
+        const logsSnap = await getDoc(doc(db, 'logs', p.clientId));
+        const cw = logsSnap.exists() ? (logsSnap.data().currentWeek || 1) : 1;
+        if (cw > newW) {
+          showToast(`No se puede reducir: el cliente está en semana ${cw}, sería mayor que la nueva duración ${newW}`, true);
+          return;
+        }
+      }
+      const newRir = rirSchemeForWeeks(newW);
+      const msg = delta > 0
+        ? `¿Agregar 1 semana al mesociclo?<br><span style="color:#888;font-size:12px">Nueva duración: <strong style="color:#C9A84C">${newW} semanas</strong>. RIR de la nueva semana ${newW}: ${newRir[newW]}.</span>`
+        : `¿Quitar la última semana del mesociclo?<br><span style="color:#888;font-size:12px">Nueva duración: <strong style="color:#C9A84C">${newW} semanas</strong>. Los registros existentes no se borran.</span>`;
+      if (!await _askConfirm(msg)) return;
+      await updateDoc(doc(db, 'plans', planId), {
+        weeks: newW,
+        rirByWeek: newRir,
+        updatedAt: new Date().toISOString()
+      });
+      // Actualiza el contador visible sin recargar
+      const lbl = document.getElementById('planWeeksDisplay_' + planId);
+      if (lbl) lbl.textContent = newW;
+      showToast(`✅ Mesociclo ${delta > 0 ? 'extendido' : 'reducido'} a ${newW} semanas`);
+      // Refrescar la vista del cliente
+      if (_detailClientId) showClientDetail(_detailClientId);
+    } catch(e) { showToast('Error: ' + e.message, true); console.error(e); }
+  }
+  window.extendPlanWeeks = extendPlanWeeks;
+
   async function loadClientsSelect() {
     if (!currentCoach) return;
     const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
@@ -2660,8 +2703,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           }).join("") || '<span class="text-xs text-[#555] ml-4">Sin ejercicios</span>';
           return `<div class="mb-3"><div class="font-medium text-[#C9A84C] text-sm mb-1">${d.label}</div>${exList}</div>`;
         }).join("");
+        const planWeeksNow = p.weeks || 1;
         planViewHtml = `
-          <p class="text-sm text-[#888] mb-2">${p.weeks || 1} sem · ${(p.days||[]).length} días/sem${p.rirByWeek ? ' · RIR custom' : ''}</p>
+          <div class="flex items-center gap-2 mb-3 flex-wrap" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.25);border-radius:8px;padding:8px 12px">
+            <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Duración del mesociclo</span>
+            <span id="planWeeksDisplay_${c.activePlanId}" style="color:#C9A84C;font-weight:800;font-size:18px;padding:0 6px">${planWeeksNow}</span>
+            <span class="text-xs text-[#888]">semanas</span>
+            <button onclick="extendPlanWeeks('${c.activePlanId}', 1)" title="Agregar 1 semana al mesociclo"
+              style="margin-left:auto;padding:5px 12px;border-radius:6px;border:1px solid rgba(68,187,136,.55);background:rgba(68,187,136,.18);color:#44BB88;font-size:12px;font-weight:700;cursor:pointer">
+              + 1 semana
+            </button>
+            <button onclick="extendPlanWeeks('${c.activePlanId}', -1)" title="Quitar la última semana"
+              style="padding:5px 12px;border-radius:6px;border:1px solid rgba(220,60,60,.4);background:rgba(220,60,60,.12);color:#e05555;font-size:12px;font-weight:600;cursor:pointer">
+              − 1 semana
+            </button>
+          </div>
+          <p class="text-sm text-[#888] mb-2">${(p.days||[]).length} días/semana${p.rirByWeek ? ' · RIR scheme: ' + Object.entries(p.rirByWeek).map(([w,r])=>`S${w}=${r}`).join(' · ') : ''}</p>
           <div class="mb-3">${dayList}</div>`;
         planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
         planActionsHtml = `
