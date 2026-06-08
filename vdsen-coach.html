@@ -262,6 +262,8 @@
     <input id="nc-name" class="input-field mb-3" placeholder="Juan Pérez">
     <label class="block text-xs text-[#888] mb-1">Email</label>
     <input id="nc-email" class="input-field mb-3" type="email" placeholder="juan@email.com">
+    <label class="block text-xs text-[#888] mb-1">📱 WhatsApp <span class="text-[#555]">(opcional, con código país)</span></label>
+    <input id="nc-phone" class="input-field mb-3" type="tel" placeholder="+52 155 1234 5678">
     <label class="block text-xs text-[#888] mb-1">Contraseña temporal</label>
     <div style="position:relative" class="mb-4">
       <input id="nc-pass" class="input-field" type="password" placeholder="mínimo 6 caracteres" style="padding-right:42px;width:100%;box-sizing:border-box">
@@ -557,6 +559,199 @@
   window.markEditorDirty = markEditorDirty;
   window.markEditorClean = markEditorClean;
 
+  // ════════════════════════════════════════════════════════════
+  //  ALERTAS COACH — sin registro / mesociclo terminado / WhatsApp
+  // ════════════════════════════════════════════════════════════
+  // Evalúa estado de un cliente y devuelve { type, label, color, message } o null
+  function getClientAlert(client, logsData, planData) {
+    if (!client) return null;
+    const entries = logsData?.entries || {};
+    const cw = logsData?.currentWeek || 1;
+    const planWeeks = planData?.weeks || 6;
+    const dpw = planData?.daysPerWeek || (planData?.days || []).length || 0;
+
+    // Último ts de registro (log_*)
+    let lastTs = 0;
+    Object.keys(entries).forEach(k => {
+      if (!k.startsWith('log_')) return;
+      const ts = entries[k]?.ts;
+      const t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+      if (!isNaN(t) && t > lastTs) lastTs = t;
+    });
+    // Fallback: updatedAt del doc
+    if (!lastTs && logsData?.updatedAt) {
+      const t = typeof logsData.updatedAt === 'string' ? Date.parse(logsData.updatedAt) : Number(logsData.updatedAt);
+      if (!isNaN(t)) lastTs = t;
+    }
+    const daysSince = lastTs ? Math.floor((Date.now() - lastTs) / 86400000) : null;
+
+    // ¿Mesociclo terminado? cw alcanzó o superó planWeeks Y todas las sesiones de la última semana hechas
+    if (planWeeks > 0 && cw >= planWeeks) {
+      // ¿completó todos los días de la última semana?
+      let doneLastWeek = 0;
+      for (let d = 0; d < dpw; d++) if (entries['done_' + planWeeks + '_' + d]) doneLastWeek++;
+      if (doneLastWeek >= dpw && dpw > 0) {
+        return {
+          type: 'mesoEnd',
+          label: '🏁 Mesociclo completado',
+          color: '#44BB88',
+          priority: 1,
+          context: { cw, planWeeks, daysSince }
+        };
+      }
+    }
+
+    // ¿Más de 3 días sin registrar?
+    if (daysSince != null && daysSince > 3 && client.activePlanId) {
+      return {
+        type: 'inactive',
+        label: `⏰ ${daysSince}d sin registrar`,
+        color: '#FF8844',
+        priority: 2,
+        context: { cw, planWeeks, daysSince }
+      };
+    }
+
+    return null;
+  }
+  window.getClientAlert = getClientAlert;
+
+  // Genera el mensaje WhatsApp según el tipo de alerta
+  function buildWhatsAppMessage(client, alert, coach) {
+    const name = (client.displayName || client.email || 'atleta').split(' ')[0];
+    const coachName = coach?.displayName || coach?.email?.split('@')[0] || 'tu coach';
+    if (alert?.type === 'mesoEnd') {
+      return `Hola ${name} 👋
+
+¡Felicidades! 🏁 Cerraste oficialmente tu mesociclo de ${alert.context.planWeeks} semanas. Excelente compromiso.
+
+Antes de iniciar el siguiente bloque, asegúrate de que toda la bitácora esté completa (ICS, RIR real, pump, check-in semanal). Esa información es la base con la que ajusto cargas, volumen y técnicas del próximo mesociclo — sin ella la progresión se vuelve cuesta arriba.
+
+📊 Voy a revisar tu reporte integral y te paso:
+• Diagnóstico del mesociclo cerrado
+• Plan para las próximas semanas
+• Ajustes específicos según lo que viste mejor/peor
+
+Recuerda: lo que no se mide, no se mejora.
+— ${coachName} · VDSEN`;
+    }
+    if (alert?.type === 'inactive') {
+      const d = alert.context.daysSince;
+      return `Hola ${name} 👋
+
+Veo que llevas ${d} días sin registrar entrenamientos. Sé que la vida pasa, pero quiero recordarte la importancia de la bitácora:
+
+📋 Cada serie que NO registras es información que perdemos. La carga, el ICS (calidad de serie), el RIR real y el pump son los datos con los que el motor calcula tus progresiones de la semana siguiente. Sin registro:
+• No sé si subir o bajar carga
+• No detecto fatiga acumulada
+• No puedo recomendar deload a tiempo
+• El plan deja de ser personalizado y se vuelve genérico
+
+El registro toma 30 segundos por serie. La diferencia entre un atleta promedio y uno de alto rendimiento es la consistencia en estos pequeños detalles.
+
+¿Algún problema con la app, lesión o tema personal que deba saber? Cuéntame para ajustar.
+
+El esfuerzo no es negociable.
+— ${coachName} · VDSEN`;
+    }
+    return `Hola ${name}, ¿cómo va el entrenamiento? Recuerda completar tu bitácora. — ${coachName}`;
+  }
+  window.buildWhatsAppMessage = buildWhatsAppMessage;
+
+  // Abre WhatsApp con mensaje pre-cargado (mobile = wa.me, desktop = web.whatsapp.com)
+  function openWhatsAppFor(client, alert) {
+    const msg = buildWhatsAppMessage(client, alert, currentCoach);
+    const phone = String(client.phone || '').replace(/[^\d]/g, '');
+    if (!phone) {
+      // Sin teléfono — mostrar mensaje para copiar manualmente
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `
+        <div style="background:#141616;border:1px solid rgba(201,168,76,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
+          <h3 style="color:#C9A84C;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">📲 Mensaje para WhatsApp</h3>
+          <p style="color:#888;font-size:12px;margin-bottom:12px">${client.displayName} no tiene WhatsApp guardado. Copia el mensaje y envíalo manualmente, o agrega su número desde "Editar datos".</p>
+          <textarea readonly style="width:100%;height:280px;background:#0a0a0a;border:1px solid rgba(201,168,76,.2);border-radius:6px;color:#cfcfcf;padding:12px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical" id="_waMsg">${msg.replace(/</g,'&lt;')}</textarea>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+            <button id="_waCopy" style="padding:8px 14px;border-radius:6px;border:1px solid rgba(201,168,76,.5);background:rgba(201,168,76,.18);color:#C9A84C;font-size:12px;font-weight:700;cursor:pointer">📋 Copiar</button>
+            <button id="_waClose" style="padding:8px 14px;border-radius:6px;border:none;background:linear-gradient(135deg,#9A7A28,#E8C97A);color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Cerrar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_waCopy').onclick = () => {
+        const t = ov.querySelector('#_waMsg');
+        t.select(); document.execCommand('copy');
+        showToast('✅ Mensaje copiado');
+      };
+      ov.querySelector('#_waClose').onclick = () => ov.remove();
+      ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+      return;
+    }
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  }
+  window.openWhatsAppFor = openWhatsAppFor;
+
+  // ── Lanzador manual de WhatsApp para un cliente ──
+  // Permite al coach elegir el tipo de recordatorio aunque no haya alerta activa
+  async function sendCustomWhatsApp(clientId) {
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      if (!clientSnap.exists()) { showToast('Cliente no encontrado', true); return; }
+      const client = clientSnap.data();
+      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      const logsData = logsSnap.exists() ? logsSnap.data() : {};
+      let planData = null;
+      if (client.activePlanId) {
+        const ps = await getDoc(doc(db, 'plans', client.activePlanId));
+        if (ps.exists()) planData = ps.data();
+      }
+      const detected = getClientAlert(client, logsData, planData);
+
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `
+        <div style="background:#141616;border:1px solid rgba(37,211,102,.35);border-radius:12px;padding:22px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto">
+          <h3 style="color:#25D366;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📲 Enviar recordatorio · ${client.displayName||'cliente'}</h3>
+          <p style="color:#888;font-size:11px;margin-bottom:14px">${client.phone ? 'Se abrirá WhatsApp con el mensaje pre-cargado.' : '⚠️ Este cliente no tiene WhatsApp guardado — se mostrará el mensaje para que lo copies.'}</p>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+            ${detected ? `<button data-type="${detected.type}" class="_waChoice" style="text-align:left;padding:12px;border-radius:8px;border:1px solid ${detected.color};background:${detected.color}1A;color:${detected.color};font-size:13px;font-weight:700;cursor:pointer">
+              <div>${detected.label}</div>
+              <div style="font-size:10px;font-weight:400;opacity:.85;margin-top:3px">Detectado automáticamente · recomendado</div>
+            </button>` : ''}
+            <button data-type="inactive" class="_waChoice" style="text-align:left;padding:12px;border-radius:8px;border:1px solid rgba(255,136,68,.5);background:rgba(255,136,68,.1);color:#FF8844;font-size:13px;font-weight:600;cursor:pointer">
+              <div>⏰ Recordatorio de bitácora</div>
+              <div style="font-size:10px;font-weight:400;opacity:.8;margin-top:3px">Importancia de registrar series, ICS, RIR</div>
+            </button>
+            <button data-type="mesoEnd" class="_waChoice" style="text-align:left;padding:12px;border-radius:8px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.1);color:#44BB88;font-size:13px;font-weight:600;cursor:pointer">
+              <div>🏁 Cierre de mesociclo</div>
+              <div style="font-size:10px;font-weight:400;opacity:.8;margin-top:3px">Felicitar y anunciar próximo bloque</div>
+            </button>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button id="_waCancel" style="padding:8px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_waCancel').onclick = () => ov.remove();
+      ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+      ov.querySelectorAll('._waChoice').forEach(btn => {
+        btn.onclick = () => {
+          const type = btn.dataset.type;
+          // Sintetizar alerta con contexto razonable
+          const cw = logsData.currentWeek || 1;
+          const planWeeks = planData?.weeks || 6;
+          let lastTs = 0;
+          Object.values(logsData.entries || {}).forEach(v => { const t = v?.ts ? (typeof v.ts==='string'?Date.parse(v.ts):+v.ts) : 0; if (t>lastTs) lastTs=t; });
+          const daysSince = lastTs ? Math.floor((Date.now() - lastTs) / 86400000) : 5;
+          const fakeAlert = { type, context: { cw, planWeeks, daysSince } };
+          ov.remove();
+          openWhatsAppFor(client, fakeAlert);
+        };
+      });
+    } catch(e) { showToast('Error: ' + e.message, true); }
+  }
+  window.sendCustomWhatsApp = sendCustomWhatsApp;
+
   // ¿Está entrenando ahora? (último log_ en últimos 5 min)
   function isClientLiveTraining(logsData) {
     if (!logsData || !logsData.entries) return false;
@@ -679,26 +874,58 @@
           _clientNameMap[d.id] = d.data().displayName || d.data().email || d.id;
           _clientDocs.push({ id: d.id, ...d.data() });
         });
-        // Cargar logs para badges de alerta
+        // Cargar logs Y planes para badges + alertas
         const _logPromises = _clientDocs.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));
-        const _logSnaps = await Promise.all(_logPromises);
+        const _planPromises = _clientDocs.map(c => c.activePlanId ? getDoc(doc(db, 'plans', c.activePlanId)).catch(() => null) : Promise.resolve(null));
+        const [_logSnaps, _planSnaps] = await Promise.all([Promise.all(_logPromises), Promise.all(_planPromises)]);
+
+        // Guardar cliente+alerta para botones globales (WhatsApp)
+        window._clientCache = window._clientCache || {};
+        const alerts = []; // resumen para banner top
+
         const rows = _clientDocs.map((c, i) => {
           const logData = (_logSnaps[i] && _logSnaps[i].exists()) ? _logSnaps[i].data() : {};
+          const planData = (_planSnaps[i] && _planSnaps[i].exists()) ? _planSnaps[i].data() : null;
+          window._clientCache[c.id] = { client: c, logs: logData, plan: planData };
+
           const entries = logData.entries || {};
           const week = logData.currentWeek || 1;
-          const updAt = logData.updatedAt || 0;
-          const daysSince = Math.floor((Date.now() - updAt) / 86400000);
-          let alertHtml = '';
           const ci = entries['ci_sem_'+week] || {};
-          if (ci.who5 && parseInt(ci.who5) < 52) alertHtml += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
-          if (daysSince > 3 && updAt > 0) alertHtml += '<span class="text-xs ml-1" style="color:#FFBB00">'+daysSince+'d</span>';
+          let extraBadges = '';
+          if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
+
           const statusIcon = c.activePlanId ? "✅" : "⚠️";
           const live = isClientLiveTraining(logData);
           const liveBadge = live ? '<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite">● EN VIVO</span>' : '';
+
+          // Evaluar alerta principal
+          const alert = getClientAlert(c, logData, planData);
+          let alertChip = '';
+          let waBtn = '';
+          if (alert) {
+            alerts.push({ id: c.id, name: c.displayName, alert });
+            alertChip = `<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:${alert.color}22;border:1px solid ${alert.color};color:${alert.color};font-weight:700">${alert.label}</span>`;
+            waBtn = `<button onclick="(function(){var d=window._clientCache['${c.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" title="Enviar recordatorio por WhatsApp" class="ml-2" style="padding:4px 10px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;font-size:11px;font-weight:700;cursor:pointer">📲 WhatsApp</button>`;
+          }
           const search = (c.displayName + ' ' + c.email).toLowerCase();
-          return `<div class="card p-3 mb-2 flex justify-between items-center _client-row" data-search="${search}"><span><strong>${c.displayName}</strong> (${c.email}) ${statusIcon}${alertHtml}${liveBadge}</span><button class="text-[#C9A84C] text-sm font-medium" onclick="showClientDetail('${c.id}')">Ver →</button></div>`;
+          return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
+            <span><strong>${c.displayName}</strong> <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${liveBadge}${alertChip}</span>
+            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#C9A84C] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button></span>
+          </div>`;
         }).join('');
+
+        // Banner superior con resumen de alertas
+        let banner = '';
+        if (alerts.length) {
+          banner = `<div class="card p-3 mb-3" style="background:linear-gradient(90deg,rgba(255,136,68,.08),rgba(201,168,76,.04));border:1px solid rgba(255,136,68,.3)">
+            <div class="text-xs text-[#FF8844] mb-2 uppercase tracking-wide font-bold">⚠️ Acción requerida · ${alerts.length} cliente${alerts.length>1?'s':''}</div>
+            <div class="flex flex-wrap gap-2">
+              ${alerts.map(a => `<button onclick="(function(){var d=window._clientCache['${a.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" style="padding:5px 10px;border-radius:6px;border:1px solid ${a.alert.color};background:${a.alert.color}1A;color:${a.alert.color};font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px">📲 ${a.name} <span style="opacity:.7">· ${a.alert.label.replace(/^.*? /,'')}</span></button>`).join('')}
+            </div>
+          </div>`;
+        }
         container.innerHTML = `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
+          ${banner}
           <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'flex':'none';});})(this.value)">
           ${rows}`;
       }
@@ -743,8 +970,9 @@
             throw authErr;
           }
         }
+        const phoneVal = document.getElementById("nc-phone")?.value.trim() || "";
         await setDoc(doc(db, "clients", uid), {
-          coachId: currentCoach.uid, email, displayName: name,
+          coachId: currentCoach.uid, email, displayName: name, phone: phoneVal,
           role: "client", activePlanId: null, nutritionPlan: {}, supplementPlan: {}
         }, { merge: true });
         modal.style.display = "none";
@@ -2736,8 +2964,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     body.innerHTML = `
       <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
-        <p class="text-sm text-[#888]">${c.email}</p>
-        <button onclick="editClientInfo('${clientId}')" class="text-[#C9A84C] text-xs underline">✏️ Editar datos</button>
+        <p class="text-sm text-[#888]">${c.email}${c.phone ? ' · 📱 '+c.phone : ''}</p>
+        <div class="flex gap-2 flex-wrap">
+          <button onclick="sendCustomWhatsApp('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;cursor:pointer;font-weight:600">📲 WhatsApp</button>
+          <button onclick="editClientInfo('${clientId}')" class="text-[#C9A84C] text-xs underline">✏️ Editar datos</button>
+        </div>
       </div>
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
@@ -3671,6 +3902,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <input id="eci-name" class="input-field mb-3" value="${(c.displayName||'').replace(/"/g,'&quot;')}">
         <label class="block text-xs text-[#888] mb-1">Email <span class="text-[#555]">(referencia — Auth real requiere SDK admin)</span></label>
         <input id="eci-email" class="input-field mb-3" type="email" value="${(c.email||'').replace(/"/g,'&quot;')}">
+        <label class="block text-xs text-[#888] mb-1">📱 WhatsApp <span class="text-[#555]">(con código país, ej. +52155...)</span></label>
+        <input id="eci-phone" class="input-field mb-3" type="tel" placeholder="+52 155 1234 5678" value="${(c.phone||'').replace(/"/g,'&quot;')}">
         <div class="p-3 mb-3 rounded" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.25)">
           <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
             <strong style="color:#4488cc">ℹ️ Contraseña:</strong> el SDK web no permite cambiarla directamente al cliente. Envía un enlace de reseteo al correo del cliente y él la elige.
@@ -3706,6 +3939,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       try {
         const updates = { displayName: newName };
         if (newEmail && newEmail !== c.email) updates.email = newEmail;
+        const newPhone = overlay.querySelector('#eci-phone')?.value.trim() || '';
+        if (newPhone !== (c.phone || '')) updates.phone = newPhone;
         await updateDoc(doc(db, "clients", clientId), updates);
         st.style.color = '#44BB88';
         st.textContent = '✓ Guardado' + (newEmail !== c.email ? ' (campo email del doc actualizado; Auth real no cambió)' : '');
