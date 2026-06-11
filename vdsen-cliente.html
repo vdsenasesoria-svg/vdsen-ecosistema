@@ -2240,20 +2240,31 @@ function _buildExNav(ejercicios, di) {
     var badgeHtml = allDone
       ? '<span style="font-size:9px;font-weight:800;color:var(--grn);letter-spacing:.5px">✓</span>'
       : '<span style="font-size:9px;font-weight:700;color:var(--mt)">'+doneCount+'/'+numSeries+'</span>';
-    var ssBadge = (ej.supersetGroup && String(ej.supersetGroup).trim())
-      ? '<span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#cc66aa;background:rgba(204,102,170,.12);border:1px solid rgba(204,102,170,.35);padding:1px 5px;border-radius:4px">SS·'+String(ej.supersetGroup).trim().toUpperCase()+'</span>'
-      : '';
+    var ssGroup = (ej.supersetGroup && String(ej.supersetGroup).trim()) ? String(ej.supersetGroup).trim().toUpperCase() : '';
+    var isSS = !!ssGroup;
+    // ── Estilos: cuando es SS sobreescribe colores para máxima visibilidad ──
     var borderCol = isActive ? 'rgba(200,165,74,.7)' : allDone ? 'rgba(58,148,96,.35)' : 'rgba(255,255,255,.08)';
     var bgCol = isActive ? 'rgba(200,165,74,.1)' : allDone ? 'rgba(58,148,96,.06)' : 'var(--surface)';
-    return '<button onclick="setEjActivo('+ei+')" style="'+
+    var borderWidth = '2px';
+    if (isSS) {
+      borderCol = isActive ? '#cc66aa' : 'rgba(204,102,170,.55)';
+      bgCol = isActive ? 'rgba(204,102,170,.18)' : 'rgba(204,102,170,.08)';
+      borderWidth = '3px';
+    }
+    // Tag SS grande arriba del tab (badge superpuesto en la esquina)
+    var ssTagTop = isSS
+      ? '<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#cc66aa;color:#fff;font-size:9px;font-weight:900;letter-spacing:1px;padding:2px 8px;border-radius:8px;box-shadow:0 2px 6px rgba(204,102,170,.45);white-space:nowrap">🔁 SS·'+ssGroup+'</div>'
+      : '';
+    var nameColor = isSS && !isActive ? '#e9a8d4' : (isActive?'var(--accent)':allDone?'var(--grn)':'var(--mt)');
+    return '<button onclick="setEjActivo('+ei+')" style="position:relative;'+
       'flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;'+
-      'padding:8px 10px;border:2px solid '+borderCol+';border-radius:12px;'+
-      'background:'+bgCol+';cursor:pointer;min-width:70px;max-width:90px">'+
+      'padding:'+(isSS?'12px 10px 8px':'8px 10px')+';border:'+borderWidth+' solid '+borderCol+';border-radius:12px;'+
+      'background:'+bgCol+';cursor:pointer;min-width:70px;max-width:90px;margin-top:'+(isSS?'8px':'0')+'">'+
+      ssTagTop+
       iconHtml+
-      '<div style="font-size:9px;font-weight:700;color:'+(isActive?'var(--accent)':allDone?'var(--grn)':'var(--mt)')+
+      '<div style="font-size:9px;font-weight:700;color:'+nameColor+
         ';text-align:center;line-height:1.3;word-break:break-word">'+shortName+'</div>'+
       badgeHtml+
-      ssBadge+
     '</button>';
   }).join('');
 }
@@ -2358,13 +2369,15 @@ function _buildSupersetPartnerHtml(ejercicios, di, ei) {
     return nm;
   }).join(' · ');
   var btnLabel = 'Siguiente del SS → '+pName+' ('+pDone+'/'+pNumSeries+')';
-  return '<div style="margin:6px 0 12px;padding:10px 12px;background:rgba(204,102,170,.06);border:1px solid rgba(204,102,170,.25);border-left:4px solid #cc66aa;border-radius:0 10px 10px 0">'+
-    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">'+
-      '<span style="font-size:14px">🔁</span>'+
-      '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:#cc66aa">SUPERSERIE NO COMPETITIVA · GRUPO '+grp.toUpperCase()+'</span>'+
+  return '<div style="margin:0 0 14px;padding:14px 16px;background:linear-gradient(135deg,rgba(204,102,170,.22),rgba(204,102,170,.10));border:2px solid #cc66aa;border-radius:14px;box-shadow:0 4px 18px rgba(204,102,170,.22)">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'+
+      '<span style="font-size:22px;line-height:1">🔁</span>'+
+      '<span style="font-size:14px;font-weight:900;letter-spacing:1.5px;color:#fff;background:#cc66aa;padding:4px 12px;border-radius:8px">SUPERSERIE · GRUPO '+grp.toUpperCase()+'</span>'+
     '</div>'+
-    '<div style="font-size:11px;color:var(--mt2);line-height:1.55;margin-bottom:8px">Encadena <strong style="color:var(--tx)">sin descanso</strong> con: <strong style="color:var(--tx)">'+partnerList+'</strong>. Descansa solo al cerrar la pareja completa.</div>'+
-    '<button onclick="setEjActivo('+pIdx+')" style="width:100%;padding:10px 12px;border:1px solid rgba(204,102,170,.45);border-radius:8px;background:rgba(204,102,170,.12);color:#e9a8d4;font-size:12px;font-weight:800;letter-spacing:.5px;cursor:pointer">'+btnLabel+'</button>'+
+    '<div style="font-size:13px;color:#fff;line-height:1.55;margin-bottom:10px;font-weight:600">Encadena <span style="color:#ffd6ee;font-weight:800">SIN DESCANSO</span> con:</div>'+
+    '<div style="font-size:15px;color:#fff;line-height:1.4;margin-bottom:12px;font-weight:800;padding:8px 12px;background:rgba(0,0,0,.25);border-left:3px solid #ffd6ee;border-radius:0 8px 8px 0">▸ '+partnerList+'</div>'+
+    '<div style="font-size:11px;color:rgba(255,255,255,.85);line-height:1.5;margin-bottom:10px">Descanso completo SOLO al cerrar la pareja.</div>'+
+    '<button onclick="setEjActivo('+pIdx+')" style="width:100%;padding:14px;border:none;border-radius:10px;background:#fff;color:#cc66aa;font-size:14px;font-weight:900;letter-spacing:.5px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2)">'+btnLabel+' →</button>'+
   '</div>';
 }
 
@@ -2457,9 +2470,12 @@ function _buildExPanel(ejercicios, di) {
         : '')+
     '</div>' +
     // ── B.2 Técnica de intensificación + instrucciones del ejercicio ──
-    _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) +
-    // ── B.3 Superserie no competitiva: info de pareja + salto rápido ──
-    _buildSupersetPartnerHtml(ejercicios, di, ei);
+    _buildTechniqueAndInstructionsHtml(ej, catData, di, ei);
+
+  // ── B.0 (RENDERIZADO ARRIBA DE TODO) Superserie no competitiva ──
+  // Se prepende al header para máxima visibilidad al entrar al panel.
+  var supersetHtml = _buildSupersetPartnerHtml(ejercicios, di, ei);
+  headerHtml = supersetHtml + headerHtml;
 
   // ── C. Nota del usuario por ejercicio ────────────────────────────────
   var _noteKey = 'exnote_'+CURRENT_WEEK+'_'+di+'_'+ei;
