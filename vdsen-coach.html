@@ -2067,7 +2067,8 @@ El esfuerzo no es negociable.
 1. Diagnóstico del mesociclo (adherencia, progresión por ejercicio, ICS, MEV/MRV, recuperación).
 2. Top 3 hallazgos críticos.
 3. Plan para el siguiente mesociclo: ajustes de volumen por grupo (referencia MEV/MRV en campo "volume"), sustituciones de ejercicios estancados, técnicas de intensificación recomendadas (drop/myoreps/sst/etc) para semanas 3-4, y semana de deload.
-4. Devuelve el plan final en JSON v2 con campos: weeks, daysPerWeek, days[].exercises[] {exerciseName, alternatives, technique, techniqueNote, coachNote, sets[]{setIndex, repsTarget, rirTarget, load:0, restSeconds, setNote, drop, tempo}}.
+4. Devuelve el plan final en JSON v2 con campos: weeks, daysPerWeek, days[].exercises[] {exerciseName, alternatives, technique, techniqueNote, coachNote, supersetGroup, sets[]{setIndex, repsTarget, rirTarget, load:0, restSeconds, setNote, drop, tempo}}.
+   • supersetGroup: id corto compartido (ej "A","B") entre ejercicios del mismo día que se encadenan sin descanso = superserie no competitiva (antagonistas o no relacionados). Mismo nº de series por par. Omitir o "" si el ejercicio NO es parte de una SS.
 
 Reporte:
 </textarea>
@@ -2506,7 +2507,9 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   ]
 }
 
-Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myoreps", "rest-pause", "cluster", "superset", "giant", "amrap", "tempo", "iso-hold". Usa "techniqueNote" para describirla y "setNote" / "drop":true por serie.</pre>
+Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myoreps", "rest-pause", "cluster", "superset", "giant", "amrap", "tempo", "iso-hold". Usa "techniqueNote" para describirla y "setNote" / "drop":true por serie.
+
+⚡ SUPERSERIES NO COMPETITIVAS: añade el campo "supersetGroup":"A" (cualquier id corto) a CADA ejercicio del par. Los ejercicios con el mismo supersetGroup dentro de un día se encadenan sin descanso. Ej: Press Banca {supersetGroup:"A"} + Remo Sentado {supersetGroup:"A"}. Permite también trios. El cliente verá un badge SS·A y un botón "Siguiente del SS →" para alternar series.</pre>
         <textarea id="planJsonInput" class="input-field mb-3" rows="14" placeholder="Pega aquí el JSON..."></textarea>
         <button onclick="parsePlanFromJSON()" class="btn-primary w-full">🧩 Cargar plan desde JSON</button>
         <div id="jsonPlanStatus" class="text-sm mt-2"></div>
@@ -2537,6 +2540,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
         technique: String(ex.technique || 'straight').toLowerCase().trim(),
         techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+        supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
         sets: Array.isArray(ex.sets) && ex.sets.length > 0
           ? ex.sets.map((s, si) => ({
               setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
