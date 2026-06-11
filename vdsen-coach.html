@@ -244,6 +244,12 @@
       <button id="uploadCompendioBtn" class="btn-primary">Subir y extraer texto</button>
       <div id="compendioStatus" class="text-sm mt-2"></div>
     </div>
+    <div class="card p-4 mb-4">
+      <label class="block text-sm font-medium mb-2">🔬 Diagnóstico Firebase</label>
+      <p class="text-xs text-[#888] mb-3">Comprueba conectividad, latencia y permisos. Útil cuando algo no se guarda.</p>
+      <button id="diagFirebaseBtn" class="btn-secondary text-sm">Ejecutar diagnóstico</button>
+      <div id="diagFirebaseOut" class="text-xs mt-3" style="font-family:monospace;line-height:1.6"></div>
+    </div>
   </div>
 </div>
 <div id="newClientModal" class="modal-overlay" style="display:none;">
@@ -256,6 +262,8 @@
     <input id="nc-name" class="input-field mb-3" placeholder="Juan Pérez">
     <label class="block text-xs text-[#888] mb-1">Email</label>
     <input id="nc-email" class="input-field mb-3" type="email" placeholder="juan@email.com">
+    <label class="block text-xs text-[#888] mb-1">📱 WhatsApp <span class="text-[#555]">(opcional, con código país)</span></label>
+    <input id="nc-phone" class="input-field mb-3" type="tel" placeholder="+52 155 1234 5678">
     <label class="block text-xs text-[#888] mb-1">Contraseña temporal</label>
     <div style="position:relative" class="mb-4">
       <input id="nc-pass" class="input-field" type="password" placeholder="mínimo 6 caracteres" style="padding-right:42px;width:100%;box-sizing:border-box">
@@ -424,6 +432,340 @@
     setTimeout(fadeOut, ms);
   }
   window.showUndoToast = showUndoToast;
+
+  // ════════════════════════════════════════════════════════════
+  //  UTILIDADES GLOBALES VDSEN — MEV/MRV, RIR scheme, reportes
+  // ════════════════════════════════════════════════════════════
+
+  // Mapeo ejercicio (substring lower-case) → targetMuscle. Orden importa: específico antes que genérico.
+  const VDSEN_MUSCLE_MAP = [
+    [/curl martillo/, 'braquial'],
+    [/extensi[oó]n de tr[ií]ceps|press franc|skull|kickback|fondos? de tr[ií]ceps|press.*agarre cerrado/, 'triceps'],
+    [/^curl |curl predicador|curl spider|curl scott|curl bayesian|curl alternado|curl concentrado|curl en (polea|m[aá]quina)|curl inclinado|curl con barra/, 'biceps'],
+    [/face pull|vuelos? posteriores|p[aá]jaros|reverse pec|aducci[oó]n horizontal/, 'delt_posterior'],
+    [/elevaci[oó]n(es)? lateral/, 'delt_lateral'],
+    [/press militar|press de hombro|press arnold|arnold|elevaci[oó]n(es)? frontal/, 'delt_anterior'],
+    [/jal[oó]n|domin|pull[- ]?up|pullover/, 'dorsal_ancho'],
+    [/remo|encogim/, 'trapecio_medio'],
+    [/press|pec deck|cruce de poleas|apertura|fondos en paralelas|fondos pec/, 'pectoral'],
+    [/extensi[oó]n de cu[aá]dr|extensi[oó]n cu[aá]dr|leg ext/, 'cuadriceps'],
+    [/sentadilla|hack squat|prensa|leg press|zancada|split squat|step up|goblet/, 'cuadriceps'],
+    [/curl femoral|nordico|nórdico|good morning|peso muerto rumano|rdl/, 'isquios'],
+    [/hip thrust|patada de gl[uú]teo|peso muerto sumo/, 'gluteo_mayor'],
+    [/abducci[oó]n|pasos? laterales/, 'gluteo_medio'],
+    [/talones sentado/, 'soleo'],
+    [/talones/, 'gastrocnemio'],
+    [/peso muerto|hiperextensi/, 'erectores'],
+    [/plancha lateral|twist/, 'oblicuos'],
+    [/plancha con alcance|flexiones escapulares/, 'serrato'],
+    [/crunch|rueda abdominal|elevaci[oó]n de piernas|plancha/, 'recto_abdominal']
+  ];
+  function exerciseToMuscle(name) {
+    const n = String(name || '').toLowerCase();
+    for (const [rx, m] of VDSEN_MUSCLE_MAP) if (rx.test(n)) return m;
+    return 'otro';
+  }
+
+  // MEV/MRV/Óptimo por grupo (compendio VDSEN sección A.10-bis)
+  const VDSEN_MEVMRV = {
+    pectoral: [10,22,'12-18'], dorsal_ancho: [10,20,'12-16'], trapecio_medio: [8,18,'10-14'],
+    delt_anterior: [0,12,'0-6'], delt_lateral: [8,20,'12-18'], delt_posterior: [8,18,'10-14'],
+    biceps: [8,18,'10-14'], braquial: [4,12,'4-8'], triceps: [8,18,'10-14'],
+    cuadriceps: [10,20,'12-16'], isquios: [8,16,'10-14'],
+    gluteo_mayor: [8,20,'10-16'], gluteo_medio: [4,12,'6-10'],
+    gastrocnemio: [8,16,'10-14'], soleo: [8,16,'10-14'],
+    erectores: [4,12,'6-10'], recto_abdominal: [6,16,'8-12'], oblicuos: [4,12,'6-10'], serrato: [0,8,'0-4']
+  };
+
+  // Suma series por grupo en un plan (asume frecuencia 1 — cada day es 1×/sem)
+  function computeWeeklyVolume(planObj) {
+    const totals = {};
+    (planObj?.days || []).forEach(d => {
+      (d.exercises || []).forEach(ex => {
+        const m = exerciseToMuscle(ex.exerciseName);
+        const sets = (ex.sets || []).length;
+        totals[m] = (totals[m] || 0) + sets;
+      });
+    });
+    return totals;
+  }
+
+  // Render HTML del panel MEV/MRV
+  function renderVolumePanel(planObj) {
+    const totals = computeWeeklyVolume(planObj);
+    const groups = Object.keys(VDSEN_MEVMRV);
+    const rows = groups.map(g => {
+      const [mev, mrv, opt] = VDSEN_MEVMRV[g];
+      const v = totals[g] || 0;
+      let badge, color;
+      if (v === 0 && mev === 0) { badge = '—'; color = '#555'; }
+      else if (v < mev) { badge = 'sub-MEV'; color = '#FF4444'; }
+      else if (v > mrv) { badge = 'sobre-MRV'; color = '#FF8844'; }
+      else { badge = 'OK'; color = '#44BB88'; }
+      return `<tr><td style="padding:4px 8px;color:#cfcfcf">${g}</td><td style="padding:4px 8px;text-align:center;font-weight:700;color:${color}">${v}</td><td style="padding:4px 8px;text-align:center;color:#888;font-size:11px">${mev}–${mrv}</td><td style="padding:4px 8px;text-align:center;color:#888;font-size:11px">${opt}</td><td style="padding:4px 8px;text-align:center"><span style="font-size:10px;font-weight:700;color:${color}">${badge}</span></td></tr>`;
+    }).join('');
+    return `<div class="card p-3 mb-3"><div class="text-xs text-[#C9A84C] mb-2 uppercase tracking-wide font-semibold">Volumen semanal por grupo · MEV / MRV</div><div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:#888;font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px 8px">Grupo</th><th style="padding:4px 8px">Series</th><th style="padding:4px 8px">MEV–MRV</th><th style="padding:4px 8px">Óptimo</th><th style="padding:4px 8px">Estado</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+  window.renderVolumePanel = renderVolumePanel;
+
+  // RIR scheme dinámico — escala según `weeks` del plan
+  function rirSchemeForWeeks(totalWeeks) {
+    const W = Math.max(1, Math.min(16, parseInt(totalWeeks) || 6));
+    const scheme = {};
+    if (W <= 3) { for (let w = 1; w <= W; w++) scheme[w] = Math.max(1, 4 - w); return scheme; }
+    // último = deload, penúltimo = pico (RIR 0), resto progresa de 3→1
+    for (let w = 1; w <= W; w++) {
+      if (w === W) scheme[w] = 3;            // deload
+      else if (w === W - 1) scheme[w] = 0;   // pico
+      else {
+        // interpolar de 3 (semana 1) a 1 (semana W-2)
+        const span = Math.max(1, W - 2 - 1);
+        const t = (w - 1) / span;
+        scheme[w] = Math.max(1, Math.round(3 - t * 2));
+      }
+    }
+    return scheme;
+  }
+  window.rirSchemeForWeeks = rirSchemeForWeeks;
+
+  // Backup automático: copia el plan actual a `plans_backup` antes de sobrescribir
+  async function backupPlanIfExists(clientId) {
+    try {
+      const clientSnap = await getDoc(doc(db, "clients", clientId));
+      if (!clientSnap.exists()) return null;
+      const activeId = clientSnap.data().activePlanId;
+      if (!activeId) return null;
+      const planSnap = await getDoc(doc(db, "plans", activeId));
+      if (!planSnap.exists()) return null;
+      const planData = planSnap.data();
+      const backupRef = await addDoc(collection(db, "plans_backup"), {
+        ...planData,
+        originalPlanId: activeId,
+        backedUpAt: new Date().toISOString(),
+        backedUpBy: currentCoach?.uid || null
+      });
+      return backupRef.id;
+    } catch(e) { console.warn('backup falló:', e); return null; }
+  }
+  window.backupPlanIfExists = backupPlanIfExists;
+
+  // Marca el editor como dirty + previene salir sin guardar
+  let _dirtyEditor = false;
+  function markEditorDirty() { _dirtyEditor = true; }
+  function markEditorClean() { _dirtyEditor = false; }
+  window.addEventListener('beforeunload', (e) => {
+    if (_dirtyEditor) { e.preventDefault(); e.returnValue = ''; return ''; }
+  });
+  window.markEditorDirty = markEditorDirty;
+  window.markEditorClean = markEditorClean;
+
+  // ════════════════════════════════════════════════════════════
+  //  ALERTAS COACH — sin registro / mesociclo terminado / WhatsApp
+  // ════════════════════════════════════════════════════════════
+  // Evalúa estado de un cliente y devuelve { type, label, color, message } o null
+  function getClientAlert(client, logsData, planData) {
+    if (!client) return null;
+    const entries = logsData?.entries || {};
+    const cw = logsData?.currentWeek || 1;
+    const planWeeks = planData?.weeks || 6;
+    const dpw = planData?.daysPerWeek || (planData?.days || []).length || 0;
+
+    // Último ts de registro (log_*)
+    let lastTs = 0;
+    Object.keys(entries).forEach(k => {
+      if (!k.startsWith('log_')) return;
+      const ts = entries[k]?.ts;
+      const t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+      if (!isNaN(t) && t > lastTs) lastTs = t;
+    });
+    // Fallback: updatedAt del doc
+    if (!lastTs && logsData?.updatedAt) {
+      const t = typeof logsData.updatedAt === 'string' ? Date.parse(logsData.updatedAt) : Number(logsData.updatedAt);
+      if (!isNaN(t)) lastTs = t;
+    }
+    const daysSince = lastTs ? Math.floor((Date.now() - lastTs) / 86400000) : null;
+
+    // ¿Mesociclo terminado? cw alcanzó o superó planWeeks Y todas las sesiones de la última semana hechas
+    if (planWeeks > 0 && cw >= planWeeks) {
+      // ¿completó todos los días de la última semana?
+      let doneLastWeek = 0;
+      for (let d = 0; d < dpw; d++) if (entries['done_' + planWeeks + '_' + d]) doneLastWeek++;
+      if (doneLastWeek >= dpw && dpw > 0) {
+        return {
+          type: 'mesoEnd',
+          label: '🏁 Mesociclo completado',
+          color: '#44BB88',
+          priority: 1,
+          context: { cw, planWeeks, daysSince }
+        };
+      }
+    }
+
+    // ¿Más de 3 días sin registrar?
+    if (daysSince != null && daysSince > 3 && client.activePlanId) {
+      return {
+        type: 'inactive',
+        label: `⏰ ${daysSince}d sin registrar`,
+        color: '#FF8844',
+        priority: 2,
+        context: { cw, planWeeks, daysSince }
+      };
+    }
+
+    return null;
+  }
+  window.getClientAlert = getClientAlert;
+
+  // Genera el mensaje WhatsApp según el tipo de alerta
+  function buildWhatsAppMessage(client, alert, coach) {
+    const name = (client.displayName || client.email || 'atleta').split(' ')[0];
+    const coachName = coach?.displayName || coach?.email?.split('@')[0] || 'tu coach';
+    if (alert?.type === 'mesoEnd') {
+      return `Hola ${name} 👋
+
+¡Felicidades! 🏁 Cerraste oficialmente tu mesociclo de ${alert.context.planWeeks} semanas. Excelente compromiso.
+
+Antes de iniciar el siguiente bloque, asegúrate de que toda la bitácora esté completa (ICS, RIR real, pump, check-in semanal). Esa información es la base con la que ajusto cargas, volumen y técnicas del próximo mesociclo — sin ella la progresión se vuelve cuesta arriba.
+
+📊 Voy a revisar tu reporte integral y te paso:
+• Diagnóstico del mesociclo cerrado
+• Plan para las próximas semanas
+• Ajustes específicos según lo que viste mejor/peor
+
+Recuerda: lo que no se mide, no se mejora.
+— ${coachName} · VDSEN`;
+    }
+    if (alert?.type === 'inactive') {
+      const d = alert.context.daysSince;
+      return `Hola ${name} 👋
+
+Veo que llevas ${d} días sin registrar entrenamientos. Sé que la vida pasa, pero quiero recordarte la importancia de la bitácora:
+
+📋 Cada serie que NO registras es información que perdemos. La carga, el ICS (calidad de serie), el RIR real y el pump son los datos con los que el motor calcula tus progresiones de la semana siguiente. Sin registro:
+• No sé si subir o bajar carga
+• No detecto fatiga acumulada
+• No puedo recomendar deload a tiempo
+• El plan deja de ser personalizado y se vuelve genérico
+
+El registro toma 30 segundos por serie. La diferencia entre un atleta promedio y uno de alto rendimiento es la consistencia en estos pequeños detalles.
+
+¿Algún problema con la app, lesión o tema personal que deba saber? Cuéntame para ajustar.
+
+El esfuerzo no es negociable.
+— ${coachName} · VDSEN`;
+    }
+    return `Hola ${name}, ¿cómo va el entrenamiento? Recuerda completar tu bitácora. — ${coachName}`;
+  }
+  window.buildWhatsAppMessage = buildWhatsAppMessage;
+
+  // Abre WhatsApp con mensaje pre-cargado (mobile = wa.me, desktop = web.whatsapp.com)
+  function openWhatsAppFor(client, alert) {
+    const msg = buildWhatsAppMessage(client, alert, currentCoach);
+    const phone = String(client.phone || '').replace(/[^\d]/g, '');
+    if (!phone) {
+      // Sin teléfono — mostrar mensaje para copiar manualmente
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `
+        <div style="background:#141616;border:1px solid rgba(201,168,76,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
+          <h3 style="color:#C9A84C;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">📲 Mensaje para WhatsApp</h3>
+          <p style="color:#888;font-size:12px;margin-bottom:12px">${client.displayName} no tiene WhatsApp guardado. Copia el mensaje y envíalo manualmente, o agrega su número desde "Editar datos".</p>
+          <textarea readonly style="width:100%;height:280px;background:#0a0a0a;border:1px solid rgba(201,168,76,.2);border-radius:6px;color:#cfcfcf;padding:12px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical" id="_waMsg">${msg.replace(/</g,'&lt;')}</textarea>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+            <button id="_waCopy" style="padding:8px 14px;border-radius:6px;border:1px solid rgba(201,168,76,.5);background:rgba(201,168,76,.18);color:#C9A84C;font-size:12px;font-weight:700;cursor:pointer">📋 Copiar</button>
+            <button id="_waClose" style="padding:8px 14px;border-radius:6px;border:none;background:linear-gradient(135deg,#9A7A28,#E8C97A);color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Cerrar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_waCopy').onclick = () => {
+        const t = ov.querySelector('#_waMsg');
+        t.select(); document.execCommand('copy');
+        showToast('✅ Mensaje copiado');
+      };
+      ov.querySelector('#_waClose').onclick = () => ov.remove();
+      ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+      return;
+    }
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  }
+  window.openWhatsAppFor = openWhatsAppFor;
+
+  // ── Lanzador manual de WhatsApp para un cliente ──
+  // Permite al coach elegir el tipo de recordatorio aunque no haya alerta activa
+  async function sendCustomWhatsApp(clientId) {
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      if (!clientSnap.exists()) { showToast('Cliente no encontrado', true); return; }
+      const client = clientSnap.data();
+      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      const logsData = logsSnap.exists() ? logsSnap.data() : {};
+      let planData = null;
+      if (client.activePlanId) {
+        const ps = await getDoc(doc(db, 'plans', client.activePlanId));
+        if (ps.exists()) planData = ps.data();
+      }
+      const detected = getClientAlert(client, logsData, planData);
+
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `
+        <div style="background:#141616;border:1px solid rgba(37,211,102,.35);border-radius:12px;padding:22px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto">
+          <h3 style="color:#25D366;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📲 Enviar recordatorio · ${client.displayName||'cliente'}</h3>
+          <p style="color:#888;font-size:11px;margin-bottom:14px">${client.phone ? 'Se abrirá WhatsApp con el mensaje pre-cargado.' : '⚠️ Este cliente no tiene WhatsApp guardado — se mostrará el mensaje para que lo copies.'}</p>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+            ${detected ? `<button data-type="${detected.type}" class="_waChoice" style="text-align:left;padding:12px;border-radius:8px;border:1px solid ${detected.color};background:${detected.color}1A;color:${detected.color};font-size:13px;font-weight:700;cursor:pointer">
+              <div>${detected.label}</div>
+              <div style="font-size:10px;font-weight:400;opacity:.85;margin-top:3px">Detectado automáticamente · recomendado</div>
+            </button>` : ''}
+            <button data-type="inactive" class="_waChoice" style="text-align:left;padding:12px;border-radius:8px;border:1px solid rgba(255,136,68,.5);background:rgba(255,136,68,.1);color:#FF8844;font-size:13px;font-weight:600;cursor:pointer">
+              <div>⏰ Recordatorio de bitácora</div>
+              <div style="font-size:10px;font-weight:400;opacity:.8;margin-top:3px">Importancia de registrar series, ICS, RIR</div>
+            </button>
+            <button data-type="mesoEnd" class="_waChoice" style="text-align:left;padding:12px;border-radius:8px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.1);color:#44BB88;font-size:13px;font-weight:600;cursor:pointer">
+              <div>🏁 Cierre de mesociclo</div>
+              <div style="font-size:10px;font-weight:400;opacity:.8;margin-top:3px">Felicitar y anunciar próximo bloque</div>
+            </button>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button id="_waCancel" style="padding:8px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_waCancel').onclick = () => ov.remove();
+      ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+      ov.querySelectorAll('._waChoice').forEach(btn => {
+        btn.onclick = () => {
+          const type = btn.dataset.type;
+          // Sintetizar alerta con contexto razonable
+          const cw = logsData.currentWeek || 1;
+          const planWeeks = planData?.weeks || 6;
+          let lastTs = 0;
+          Object.values(logsData.entries || {}).forEach(v => { const t = v?.ts ? (typeof v.ts==='string'?Date.parse(v.ts):+v.ts) : 0; if (t>lastTs) lastTs=t; });
+          const daysSince = lastTs ? Math.floor((Date.now() - lastTs) / 86400000) : 5;
+          const fakeAlert = { type, context: { cw, planWeeks, daysSince } };
+          ov.remove();
+          openWhatsAppFor(client, fakeAlert);
+        };
+      });
+    } catch(e) { showToast('Error: ' + e.message, true); }
+  }
+  window.sendCustomWhatsApp = sendCustomWhatsApp;
+
+  // ¿Está entrenando ahora? (último log_ en últimos 5 min)
+  function isClientLiveTraining(logsData) {
+    if (!logsData || !logsData.entries) return false;
+    const now = Date.now();
+    for (const k of Object.keys(logsData.entries)) {
+      if (!k.startsWith('log_')) continue;
+      const ts = logsData.entries[k]?.ts;
+      if (!ts) continue;
+      const t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+      if (!isNaN(t) && (now - t) < 5 * 60 * 1000) return true;
+    }
+    return false;
+  }
+  window.isClientLiveTraining = isClientLiveTraining;
   
   async function initCoachUI() {
     loadClientList();
@@ -461,10 +803,9 @@
         initCoachUI();
       }
     } else {
-      // Login automático con credenciales de prueba (solo para demostración, en producción usar formulario)
-      signInWithEmailAndPassword(auth, "coach@vdsen.com", "password").catch(() => {
-        // Si falla, mostrar pantalla de login simple
-        document.body.innerHTML = `<div class="flex items-center justify-center h-screen"><div class="card p-6"><h2 class="text-xl mb-4">Login Coach</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email"><div style="position:relative" class="mb-2"><input id="loginPass" class="input-field" type="password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="(function(b){var i=document.getElementById('loginPass');var s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'🙈':'👁';})(this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div><button id="loginBtn" class="btn-primary">Ingresar</button><div id="loginErr" class="text-sm mt-2" style="color:#c94a3a"></div><div class="text-center mt-3"><a href="#" id="forgotBtn" class="text-sm" style="color:#888;text-decoration:underline">¿Olvidaste tu contraseña?</a></div></div></div>`;
+      // Sin auto-login — mostrar pantalla propia de login VDSEN
+      {
+        document.body.innerHTML = `<div class="flex items-center justify-center h-screen" style="background:var(--bg-base);min-height:100vh"><div class="card p-6" style="max-width:380px;width:calc(100% - 32px)"><div style="text-align:center;margin-bottom:18px"><div style="font-size:26px;font-weight:900;letter-spacing:3px;background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">VDSEN</div><div style="font-size:9px;letter-spacing:2px;color:var(--platinum);text-transform:uppercase;margin-top:4px">Sistema Coach</div></div><h2 class="text-base mb-3" style="letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);font-weight:600">Iniciar sesión</h2><input id="loginEmail" class="input-field mb-2" placeholder="Email" autocomplete="username"><div style="position:relative" class="mb-2"><input id="loginPass" class="input-field" type="password" placeholder="Contraseña" autocomplete="current-password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="(function(b){var i=document.getElementById('loginPass');var s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'🙈':'👁';})(this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div><button id="loginBtn" class="btn-primary w-full">Ingresar</button><div id="loginErr" class="text-sm mt-2" style="color:#c94a3a"></div><div class="text-center mt-3"><a href="#" id="forgotBtn" class="text-sm" style="color:#888;text-decoration:underline">¿Olvidaste tu contraseña?</a></div></div></div>`;
         document.getElementById("loginBtn")?.addEventListener("click", () => {
           const email = document.getElementById("loginEmail").value;
           const pass = document.getElementById("loginPass").value;
@@ -486,7 +827,7 @@
             errEl.textContent = e.code === 'auth/user-not-found' ? 'No existe ese correo' : e.message;
           }
         });
-      });
+      }
     }
   });
   
@@ -533,22 +874,60 @@
           _clientNameMap[d.id] = d.data().displayName || d.data().email || d.id;
           _clientDocs.push({ id: d.id, ...d.data() });
         });
-        // Cargar logs para badges de alerta
+        // Cargar logs Y planes para badges + alertas
         const _logPromises = _clientDocs.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));
-        const _logSnaps = await Promise.all(_logPromises);
-        _clientDocs.forEach((c, i) => {
+        const _planPromises = _clientDocs.map(c => c.activePlanId ? getDoc(doc(db, 'plans', c.activePlanId)).catch(() => null) : Promise.resolve(null));
+        const [_logSnaps, _planSnaps] = await Promise.all([Promise.all(_logPromises), Promise.all(_planPromises)]);
+
+        // Guardar cliente+alerta para botones globales (WhatsApp)
+        window._clientCache = window._clientCache || {};
+        const alerts = []; // resumen para banner top
+
+        const rows = _clientDocs.map((c, i) => {
           const logData = (_logSnaps[i] && _logSnaps[i].exists()) ? _logSnaps[i].data() : {};
+          const planData = (_planSnaps[i] && _planSnaps[i].exists()) ? _planSnaps[i].data() : null;
+          window._clientCache[c.id] = { client: c, logs: logData, plan: planData };
+
           const entries = logData.entries || {};
           const week = logData.currentWeek || 1;
-          const updAt = logData.updatedAt || 0;
-          const daysSince = Math.floor((Date.now() - updAt) / 86400000);
-          let alertHtml = '';
           const ci = entries['ci_sem_'+week] || {};
-          if (ci.who5 && parseInt(ci.who5) < 52) alertHtml += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
-          if (daysSince > 3 && updAt > 0) alertHtml += '<span class="text-xs ml-1" style="color:#FFBB00">'+daysSince+'d</span>';
+          let extraBadges = '';
+          if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
+
           const statusIcon = c.activePlanId ? "✅" : "⚠️";
-          container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${c.displayName}</strong> (${c.email}) ${statusIcon}${alertHtml}</span><button class="text-[#C9A84C] text-sm font-medium" onclick="showClientDetail('${c.id}')">Ver →</button></div>`;
-        });
+          const live = isClientLiveTraining(logData);
+          const liveBadge = live ? '<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite">● EN VIVO</span>' : '';
+
+          // Evaluar alerta principal
+          const alert = getClientAlert(c, logData, planData);
+          let alertChip = '';
+          let waBtn = '';
+          if (alert) {
+            alerts.push({ id: c.id, name: c.displayName, alert });
+            alertChip = `<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:${alert.color}22;border:1px solid ${alert.color};color:${alert.color};font-weight:700">${alert.label}</span>`;
+            waBtn = `<button onclick="(function(){var d=window._clientCache['${c.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" title="Enviar recordatorio por WhatsApp" class="ml-2" style="padding:4px 10px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;font-size:11px;font-weight:700;cursor:pointer">📲 WhatsApp</button>`;
+          }
+          const search = (c.displayName + ' ' + c.email).toLowerCase();
+          return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
+            <span><strong>${c.displayName}</strong> <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${liveBadge}${alertChip}</span>
+            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#C9A84C] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button></span>
+          </div>`;
+        }).join('');
+
+        // Banner superior con resumen de alertas
+        let banner = '';
+        if (alerts.length) {
+          banner = `<div class="card p-3 mb-3" style="background:linear-gradient(90deg,rgba(255,136,68,.08),rgba(201,168,76,.04));border:1px solid rgba(255,136,68,.3)">
+            <div class="text-xs text-[#FF8844] mb-2 uppercase tracking-wide font-bold">⚠️ Acción requerida · ${alerts.length} cliente${alerts.length>1?'s':''}</div>
+            <div class="flex flex-wrap gap-2">
+              ${alerts.map(a => `<button onclick="(function(){var d=window._clientCache['${a.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" style="padding:5px 10px;border-radius:6px;border:1px solid ${a.alert.color};background:${a.alert.color}1A;color:${a.alert.color};font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px">📲 ${a.name} <span style="opacity:.7">· ${a.alert.label.replace(/^.*? /,'')}</span></button>`).join('')}
+            </div>
+          </div>`;
+        }
+        container.innerHTML = `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
+          ${banner}
+          <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'flex':'none';});})(this.value)">
+          ${rows}`;
       }
     } catch (e) {
       container.innerHTML = `<p class="text-red-400 text-sm">Error al cargar clientes: ${e.message}</p>`;
@@ -591,8 +970,9 @@
             throw authErr;
           }
         }
+        const phoneVal = document.getElementById("nc-phone")?.value.trim() || "";
         await setDoc(doc(db, "clients", uid), {
-          coachId: currentCoach.uid, email, displayName: name,
+          coachId: currentCoach.uid, email, displayName: name, phone: phoneVal,
           role: "client", activePlanId: null, nutritionPlan: {}, supplementPlan: {}
         }, { merge: true });
         modal.style.display = "none";
@@ -715,6 +1095,15 @@
       const clientData = clientsMap[select.value];
       if (!clientData) return;
 
+      // Cargar plan activo una sola vez para panel MEV/MRV
+      let _activePlanCache = null;
+      if (clientData.activePlanId) {
+        try {
+          const _ps = await getDoc(doc(db, 'plans', clientData.activePlanId));
+          if (_ps.exists()) _activePlanCache = _ps.data();
+        } catch(e) {}
+      }
+
       // Escuchar logs del cliente en TIEMPO REAL
       _monitorUnsub = onSnapshot(doc(db, 'logs', select.value), (logsSnap) => {
       if (!logsSnap.exists()) {
@@ -775,6 +1164,8 @@
           </div>
         </div>
 
+        ${_activePlanCache ? renderVolumePanel(_activePlanCache) : ''}
+
         <details class="card p-3 mb-3" style="background:rgba(201,168,76,.04);border:1px solid rgba(201,168,76,.18)">
           <summary class="cursor-pointer text-sm font-semibold text-[#C9A84C]" style="list-style:none">📖 Glosario de la bitácora — qué significa cada acotación</summary>
           <div class="mt-3 grid gap-2 text-xs leading-relaxed" style="color:#cfcfcf">
@@ -830,10 +1221,49 @@
 
       container.innerHTML = html;
 
-      // Botón PDF
+      // Botón PDF (resumen breve)
       const pdfBtn = document.getElementById("pdfReportBtn");
       pdfBtn.style.display = "inline-flex";
       pdfBtn.onclick = () => generateMesocyclePDF(clientData, logs, currentWeek, lastRec);
+
+      // Botón Reporte Completo (cargas, intensidades, MEV/MRV, recomendaciones)
+      let fullBtn = document.getElementById("fullReportBtn");
+      if (!fullBtn) {
+        fullBtn = document.createElement("button");
+        fullBtn.id = "fullReportBtn";
+        fullBtn.className = "btn-secondary text-sm";
+        fullBtn.style.cssText = "background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.5);color:#C9A84C;margin-left:6px";
+        fullBtn.textContent = "📊 Reporte completo";
+        pdfBtn.parentNode.insertBefore(fullBtn, pdfBtn.nextSibling);
+      }
+      fullBtn.style.display = "inline-flex";
+      fullBtn.onclick = () => generateFullClientReport(select.value);
+
+      // Botón "Exportar para IA" (JSON compacto, pegable en Claude/GPT/Gemini)
+      let aiBtn = document.getElementById("aiExportBtn");
+      if (!aiBtn) {
+        aiBtn = document.createElement("button");
+        aiBtn.id = "aiExportBtn";
+        aiBtn.className = "btn-secondary text-sm";
+        aiBtn.style.cssText = "background:rgba(140,90,200,.12);border-color:rgba(170,120,240,.5);color:#c89cff;margin-left:6px";
+        aiBtn.textContent = "🤖 Exportar para IA";
+        fullBtn.parentNode.insertBefore(aiBtn, fullBtn.nextSibling);
+      }
+      aiBtn.style.display = "inline-flex";
+      aiBtn.onclick = () => exportClientReportForAI(select.value);
+
+      // Botón "Ver reporte" (HTML legible en pestaña nueva)
+      let viewBtn = document.getElementById("viewReportBtn");
+      if (!viewBtn) {
+        viewBtn = document.createElement("button");
+        viewBtn.id = "viewReportBtn";
+        viewBtn.className = "btn-secondary text-sm";
+        viewBtn.style.cssText = "background:rgba(232,201,122,.12);border-color:rgba(232,201,122,.5);color:#E8C97A;margin-left:6px";
+        viewBtn.textContent = "📖 Ver reporte";
+        aiBtn.parentNode.insertBefore(viewBtn, aiBtn.nextSibling);
+      }
+      viewBtn.style.display = "inline-flex";
+      viewBtn.onclick = () => viewClientReportHTML(select.value);
 
       // Botón Cerrar Mesociclo (solo si semana >= 5)
       let closeMesoBtn = document.getElementById("closeMesoBtn");
@@ -846,6 +1276,110 @@
         pdfBtn.parentNode.insertBefore(closeMesoBtn, pdfBtn.nextSibling);
       }
       closeMesoBtn.style.display = currentWeek >= 5 ? "inline-flex" : "none";
+
+      // Control manual de semana + extensión de duración del plan
+      const planTotalWeeks = _activePlanCache?.weeks || 6;
+      let weekCtrl = document.getElementById("weekCtrl");
+      if (!weekCtrl) {
+        weekCtrl = document.createElement("div");
+        weekCtrl.id = "weekCtrl";
+        weekCtrl.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.35);border-radius:8px;padding:4px 8px;margin-left:8px;flex-wrap:wrap";
+        weekCtrl.innerHTML = `
+          <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Semana</span>
+          <button id="weekDec" title="Retroceder una semana" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#C9A84C;font-weight:700;cursor:pointer">−</button>
+          <input id="weekInput" type="number" min="1" max="16" step="1" style="width:48px;text-align:center;background:#0d0d0d;border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#C9A84C;font-weight:700;padding:3px 4px">
+          <button id="weekInc" title="Avanzar una semana" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#C9A84C;font-weight:700;cursor:pointer">+</button>
+          <button id="weekApply" title="Aplicar cambio de semana activa" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(201,168,76,.5);background:rgba(201,168,76,.18);color:#C9A84C;font-size:12px;font-weight:600;cursor:pointer">Aplicar</button>
+          <span style="width:1px;height:18px;background:rgba(201,168,76,.25);margin:0 4px"></span>
+          <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Plan</span>
+          <span id="planWeeksLabel" style="color:#C9A84C;font-weight:700;font-size:12px;padding:0 4px">${planTotalWeeks} sem</span>
+          <button id="planWeekAdd" title="Agregar una semana al plan (extiende duración total)" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.15);color:#44BB88;font-size:12px;font-weight:700;cursor:pointer">+ semana</button>
+          <button id="planWeekDel" title="Quitar la última semana del plan" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(220,60,60,.4);background:rgba(220,60,60,.12);color:#e05555;font-size:12px;font-weight:600;cursor:pointer">−</button>`;
+        pdfBtn.parentNode.insertBefore(weekCtrl, closeMesoBtn);
+      } else {
+        // Refrescar etiqueta del plan al re-render
+        const lbl = weekCtrl.querySelector('#planWeeksLabel');
+        if (lbl) lbl.textContent = `${planTotalWeeks} sem`;
+      }
+      const weekInput = weekCtrl.querySelector('#weekInput');
+      weekInput.value = currentWeek;
+      weekCtrl.querySelector('#weekDec').onclick = () => { weekInput.value = Math.max(1, (parseInt(weekInput.value)||1) - 1); };
+      weekCtrl.querySelector('#weekInc').onclick = () => { weekInput.value = Math.min(16, (parseInt(weekInput.value)||1) + 1); };
+      weekCtrl.querySelector('#weekApply').onclick = async () => {
+        const nw = Math.max(1, Math.min(16, parseInt(weekInput.value) || 1));
+        if (nw === currentWeek) { showToast("La semana ya está en " + nw); return; }
+        const planW = _activePlanCache?.weeks || planTotalWeeks;
+        if (nw > planW) {
+          if (!await _askConfirm(`La semana ${nw} está más allá de la duración actual del plan (${planW} sem).<br><span style="color:#888;font-size:12px">¿Extender el plan a ${nw} semanas automáticamente y mover el puntero?</span>`)) return;
+          // Extender el plan a nw semanas
+          if (_activePlanCache && clientData.activePlanId) {
+            try {
+              const newRir = rirSchemeForWeeks(nw);
+              await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: nw, rirByWeek: newRir, updatedAt: new Date().toISOString() });
+              _activePlanCache.weeks = nw;
+              _activePlanCache.rirByWeek = newRir;
+            } catch(e) { showToast('No se pudo extender el plan: ' + e.message, true); return; }
+          }
+        }
+        const goBack = nw < currentWeek;
+        const dynRir = rirSchemeForWeeks(_activePlanCache?.weeks || 6)[nw] ?? 2;
+        const msg = goBack
+          ? `¿Retroceder a la semana ${nw}?<br><span style="color:#888;font-size:12px">Los registros de semanas superiores quedan intactos.</span>`
+          : `¿Avanzar a la semana ${nw}?<br><span style="color:#888;font-size:12px">RIR objetivo de la semana ${nw}: ${dynRir}.</span>`;
+        if (!await _askConfirm(msg)) return;
+        const applyBtn = weekCtrl.querySelector('#weekApply');
+        applyBtn.disabled = true; applyBtn.textContent = '…';
+        try {
+          await updateDoc(doc(db, 'logs', select.value), {
+            currentWeek: nw,
+            updatedAt: new Date().toISOString()
+          });
+          showToast(`✅ Semana actualizada a ${nw}`);
+        } catch(e) { showToast("Error: " + e.message, true); }
+        finally { applyBtn.disabled = false; applyBtn.textContent = 'Aplicar'; }
+      };
+
+      // ── EXTENDER plan: +1 semana a la duración total ──
+      weekCtrl.querySelector('#planWeekAdd').onclick = async () => {
+        if (!clientData.activePlanId) { showToast('El cliente no tiene plan activo', true); return; }
+        const planW = _activePlanCache?.weeks || planTotalWeeks;
+        const newW = Math.min(16, planW + 1);
+        if (newW === planW) { showToast('Tope alcanzado (16 semanas)', true); return; }
+        const newRir = rirSchemeForWeeks(newW);
+        if (!await _askConfirm(`¿Extender el plan a <strong>${newW} semanas</strong>?<br><span style="color:#888;font-size:12px">Se recalculará el RIR scheme. RIR semana ${newW}: ${newRir[newW]}.</span>`)) return;
+        const btn = weekCtrl.querySelector('#planWeekAdd');
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: newW, rirByWeek: newRir, updatedAt: new Date().toISOString() });
+          if (_activePlanCache) { _activePlanCache.weeks = newW; _activePlanCache.rirByWeek = newRir; }
+          const lbl = weekCtrl.querySelector('#planWeeksLabel');
+          if (lbl) lbl.textContent = `${newW} sem`;
+          showToast(`✅ Plan extendido a ${newW} semanas`);
+        } catch(e) { showToast('Error: ' + e.message, true); }
+        finally { btn.disabled = false; btn.textContent = '+ semana'; }
+      };
+
+      // ── REDUCIR plan: −1 semana de la duración total ──
+      weekCtrl.querySelector('#planWeekDel').onclick = async () => {
+        if (!clientData.activePlanId) { showToast('El cliente no tiene plan activo', true); return; }
+        const planW = _activePlanCache?.weeks || planTotalWeeks;
+        if (planW <= 1) { showToast('Mínimo 1 semana', true); return; }
+        const newW = planW - 1;
+        if (currentWeek > newW) { showToast(`No se puede reducir: semana activa (${currentWeek}) > nueva duración (${newW})`, true); return; }
+        if (!await _askConfirm(`¿Reducir el plan a <strong>${newW} semanas</strong>?<br><span style="color:#888;font-size:12px">Solo afecta la duración del mesociclo; los registros existentes no se borran.</span>`)) return;
+        const btn = weekCtrl.querySelector('#planWeekDel');
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          const newRir = rirSchemeForWeeks(newW);
+          await updateDoc(doc(db, 'plans', clientData.activePlanId), { weeks: newW, rirByWeek: newRir, updatedAt: new Date().toISOString() });
+          if (_activePlanCache) { _activePlanCache.weeks = newW; _activePlanCache.rirByWeek = newRir; }
+          const lbl = weekCtrl.querySelector('#planWeeksLabel');
+          if (lbl) lbl.textContent = `${newW} sem`;
+          showToast(`✅ Plan reducido a ${newW} semanas`);
+        } catch(e) { showToast('Error: ' + e.message, true); }
+        finally { btn.disabled = false; btn.textContent = '−'; }
+      };
+
       closeMesoBtn.onclick = async () => {
         if (!await _askConfirm(`¿Cerrar mesociclo semana ${currentWeek} de ${clientData.displayName}?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
         closeMesoBtn.disabled = true; closeMesoBtn.textContent = "Archivando...";
@@ -874,6 +1408,102 @@
       }); // fin onSnapshot
     };
   }
+
+  // ════════════════════════════════════════════════════════════
+  //  AGREGADO DE LOGS — convierte entries en estructura analítica
+  //  Soporta entries del mesociclo actual + opcional 'mesociclos[]' archivados
+  // ════════════════════════════════════════════════════════════
+  function aggregateClientLogs(logs, planObj, currentWeek) {
+    const entries = logs || {};
+    const days = planObj?.days || [];
+    // Diccionario de ejercicios del plan (di_ei → { name, sets })
+    const planEx = {};
+    days.forEach((d, di) => (d.exercises || []).forEach((ex, ei) => {
+      planEx[`${di}_${ei}`] = { name: ex.exerciseName, plannedSets: (ex.sets||[]).length, technique: ex.technique || 'straight', techniqueNote: ex.techniqueNote || '' };
+    }));
+
+    // Por ejercicio → semana → lista de sets
+    const perExercise = {}; // exName → { weeks: {w: [{carga,reps,rir_real,ics,pump,unit}]} }
+    const perWeek = {};     // w → { sessions: Set, sets: 0, tonnage: 0, icsSum, icsN, rirSum, rirN }
+    const postSession = {}; // w_d → {eimd, articular, patron, sleep, rpe}
+    const weeklyCheckin = {}; // w → {peso, hrv, who5}
+    const exnotes = [];     // {w,d,e,text}
+    const techHistory = {}; // exName → Set(techniques)
+
+    Object.keys(entries).forEach(k => {
+      const v = entries[k];
+      // log_W_D_E_sS
+      let m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
+      if (m) {
+        const [_, w, d, e, s] = m;
+        const key = `${d}_${e}`;
+        const ex = planEx[key];
+        const name = ex?.name || `Ej ${e}`;
+        perExercise[name] = perExercise[name] || { weeks: {}, sets: 0, techniques: new Set() };
+        perExercise[name].weeks[w] = perExercise[name].weeks[w] || [];
+        const carga = parseFloat(v.carga) || 0;
+        const reps = parseInt(v.reps) || 0;
+        let unit = (v.unit || 'kg').toLowerCase();
+        const cargaKg = unit === 'lb' ? carga / 2.2046 : carga;
+        const setData = { carga: cargaKg, reps, rir_real: parseFloat(v.rir_real ?? v.rir) || null, ics: parseFloat(v.ics) || null, pump: parseFloat(v.pump) || null, ts: v.ts, week:+w, day:+d };
+        perExercise[name].weeks[w].push(setData);
+        perExercise[name].sets++;
+        if (ex?.technique) perExercise[name].techniques.add(ex.technique);
+        // semanal
+        perWeek[w] = perWeek[w] || { sessions: new Set(), sets: 0, tonnage: 0, icsSum: 0, icsN: 0, rirSum: 0, rirN: 0 };
+        perWeek[w].sessions.add(d);
+        perWeek[w].sets++;
+        perWeek[w].tonnage += cargaKg * reps;
+        if (setData.ics != null) { perWeek[w].icsSum += setData.ics; perWeek[w].icsN++; }
+        if (setData.rir_real != null) { perWeek[w].rirSum += setData.rir_real; perWeek[w].rirN++; }
+        return;
+      }
+      // postsession_W_D
+      m = k.match(/^postsession_(\d+)_(\d+)$/);
+      if (m) { postSession[`${m[1]}_${m[2]}`] = v; return; }
+      // ci_sem_W
+      m = k.match(/^ci_sem_(\d+)$/);
+      if (m) { weeklyCheckin[m[1]] = v; return; }
+      // exnote_W_D_E
+      m = k.match(/^exnote_(\d+)_(\d+)_(\d+)$/);
+      if (m) { exnotes.push({ w: +m[1], d: +m[2], e: +m[3], text: String(v) }); return; }
+    });
+
+    // Stats por ejercicio
+    const exerciseStats = Object.keys(perExercise).map(name => {
+      const wks = perExercise[name].weeks;
+      const wKeys = Object.keys(wks).map(Number).sort((a,b)=>a-b);
+      const weekly = wKeys.map(w => {
+        const sets = wks[w];
+        const loads = sets.map(s => s.carga).filter(x => x > 0);
+        const reps = sets.map(s => s.reps);
+        const ics = sets.map(s => s.ics).filter(x => x != null);
+        const rir = sets.map(s => s.rir_real).filter(x => x != null);
+        return {
+          week: w,
+          setsCount: sets.length,
+          loadMax: loads.length ? Math.max(...loads) : 0,
+          loadAvg: loads.length ? loads.reduce((a,b)=>a+b,0)/loads.length : 0,
+          repsAvg: reps.length ? reps.reduce((a,b)=>a+b,0)/reps.length : 0,
+          tonnage: sets.reduce((a,s) => a + s.carga * s.reps, 0),
+          icsAvg: ics.length ? ics.reduce((a,b)=>a+b,0)/ics.length : null,
+          rirAvg: rir.length ? rir.reduce((a,b)=>a+b,0)/rir.length : null
+        };
+      });
+      const first = weekly[0], last = weekly[weekly.length-1];
+      const loadDelta = (first && last && first.loadAvg) ? ((last.loadAvg - first.loadAvg) / first.loadAvg) * 100 : 0;
+      const tonnageDelta = (first && last && first.tonnage) ? ((last.tonnage - first.tonnage) / first.tonnage) * 100 : 0;
+      return { name, weekly, loadDelta, tonnageDelta, techniques: [...perExercise[name].techniques], totalSets: perExercise[name].sets };
+    }).sort((a,b)=> b.tonnageDelta - a.tonnageDelta);
+
+    // Adherencia
+    const sessionsPlanned = (planObj?.daysPerWeek || days.length || 1) * Math.max(1, currentWeek);
+    const sessionsDone = Object.keys(entries).filter(k => /^done_\d+_\d+$/.test(k) && entries[k]).length;
+    const adherence = sessionsPlanned ? Math.min(100, Math.round((sessionsDone / sessionsPlanned) * 100)) : 0;
+
+    return { exerciseStats, perWeek, postSession, weeklyCheckin, exnotes, sessionsDone, sessionsPlanned, adherence };
+  }
+  window.aggregateClientLogs = aggregateClientLogs;
 
   function generateMesocyclePDF(clientData, logs, currentWeek, lastRec) {
     const { jsPDF } = window.jspdf;
@@ -965,6 +1595,812 @@
     doc.save(`VDSEN_Reporte_${(clientData.displayName||'cliente').replace(/\s+/g,'_')}_Sem${currentWeek}.pdf`);
     showToast('✅ Reporte PDF generado');
   }
+
+  // ════════════════════════════════════════════════════════════
+  //  REPORTE COMPLETO DE CLIENTE / MESOCICLO (PDF multipágina)
+  //  Carga plan + logs + agregados y los imprime para evaluación
+  // ════════════════════════════════════════════════════════════
+  async function generateFullClientReport(clientId) {
+    showToast('Generando reporte completo…');
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      if (!clientSnap.exists()) throw new Error('Cliente no existe');
+      const client = clientSnap.data();
+      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      const logsData = logsSnap.exists() ? logsSnap.data() : { entries: {}, currentWeek: 1 };
+      const entries = logsData.entries || {};
+      const currentWeek = logsData.currentWeek || 1;
+
+      let planObj = null;
+      if (client.activePlanId) {
+        const planSnap = await getDoc(doc(db, 'plans', client.activePlanId));
+        if (planSnap.exists()) planObj = planSnap.data();
+      }
+
+      const agg = aggregateClientLogs(entries, planObj, currentWeek);
+      const volume = planObj ? computeWeeklyVolume(planObj) : {};
+      const rirScheme = rirSchemeForWeeks(planObj?.weeks || 6);
+
+      // Recomendación más reciente
+      let lastRec = null, lrW = 0, lrD = 0;
+      Object.keys(entries).forEach(k => {
+        const m = k.match(/^progrec_(\d+)_(\d+)$/);
+        if (m) {
+          const w = +m[1], d = +m[2];
+          if (w > lrW || (w === lrW && d > lrD)) { lrW = w; lrD = d; lastRec = entries[k]; }
+        }
+      });
+
+      // ── jsPDF ──
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+      const W = 210, H = 297, margin = 14, colW = W - margin*2;
+      let y = margin;
+      const checkPage = (need) => { if (y + need > H - 14) { addFooter(); pdf.addPage(); y = margin; } };
+      const addFooter = () => {
+        const page = pdf.internal.getNumberOfPages();
+        pdf.setFontSize(7); pdf.setTextColor(150);
+        pdf.text(`VDSEN · ${client.displayName || 'Cliente'} · Generado ${new Date().toLocaleDateString('es-MX')} · Pág ${page}`, W/2, H - 6, { align:'center' });
+      };
+      const h1 = (t) => { checkPage(12); pdf.setFontSize(13); pdf.setFont('helvetica','bold'); pdf.setTextColor(200,165,74); pdf.text(t, margin, y); y+=2; pdf.setDrawColor(200,165,74); pdf.setLineWidth(.4); pdf.line(margin, y, W-margin, y); y+=6; };
+      const h2 = (t) => { checkPage(8); pdf.setFontSize(10); pdf.setFont('helvetica','bold'); pdf.setTextColor(80,80,80); pdf.text(t, margin, y); y+=5; };
+      const p = (t, size=8, color=[60,60,60]) => { checkPage(size*0.5+2); pdf.setFontSize(size); pdf.setFont('helvetica','normal'); pdf.setTextColor(...color); const lines = pdf.splitTextToSize(String(t), colW); lines.forEach(l => { checkPage(size*0.5); pdf.text(l, margin, y); y += size*0.45+0.6; }); };
+      const kv = (label, val, x, w) => { pdf.setFontSize(7); pdf.setTextColor(140); pdf.text(label.toUpperCase(), x, y); pdf.setFontSize(11); pdf.setFont('helvetica','bold'); pdf.setTextColor(30,30,30); pdf.text(String(val), x, y+5); };
+
+      // ═══ PORTADA ═══
+      pdf.setFillColor(15,16,16); pdf.rect(0,0,W,42,'F');
+      pdf.setFontSize(20); pdf.setFont('helvetica','bold'); pdf.setTextColor(200,165,74); pdf.text('VDSEN', margin, 16);
+      pdf.setFontSize(8); pdf.setTextColor(160); pdf.text('REPORTE INTEGRAL DE MESOCICLO', margin, 22);
+      pdf.setFontSize(16); pdf.setFont('helvetica','bold'); pdf.setTextColor(232,224,208); pdf.text(client.displayName || 'Cliente', margin, 33);
+      pdf.setFontSize(8); pdf.setFont('helvetica','normal'); pdf.setTextColor(140);
+      pdf.text(`Email: ${client.email || '—'}  ·  Plan: ${planObj?.weeks || '—'} sem × ${planObj?.daysPerWeek || '—'} días/sem  ·  Semana actual: ${currentWeek}`, margin, 39);
+      y = 50;
+
+      // KPIs
+      const kpiBox = (x, w, label, val, sub) => {
+        pdf.setDrawColor(200,165,74); pdf.setFillColor(248,245,235); pdf.roundedRect(x, y, w, 22, 2, 2, 'FD');
+        pdf.setFontSize(7); pdf.setTextColor(120); pdf.text(label.toUpperCase(), x+4, y+6);
+        pdf.setFontSize(14); pdf.setFont('helvetica','bold'); pdf.setTextColor(40,40,40); pdf.text(String(val), x+4, y+14);
+        if (sub) { pdf.setFontSize(7); pdf.setFont('helvetica','normal'); pdf.setTextColor(120); pdf.text(String(sub), x+4, y+19); }
+      };
+      const bw = (colW - 8) / 4;
+      kpiBox(margin, bw, 'Adherencia', agg.adherence + '%', `${agg.sessionsDone}/${agg.sessionsPlanned} sesiones`);
+      kpiBox(margin + bw + 2.5, bw, 'Series totales', Object.values(agg.perWeek).reduce((a,w)=>a+w.sets,0), `${Object.keys(agg.perWeek).length} sem activas`);
+      const allIcs = Object.values(agg.perWeek).reduce((a,w) => a + (w.icsN ? w.icsSum/w.icsN : 0)*(w.icsN?1:0), 0) / Math.max(1, Object.values(agg.perWeek).filter(w=>w.icsN).length);
+      kpiBox(margin + 2*(bw + 2.5), bw, 'ICS promedio', allIcs ? allIcs.toFixed(1) : '—', 'Calidad de serie');
+      const totalTon = Object.values(agg.perWeek).reduce((a,w)=>a+w.tonnage,0);
+      kpiBox(margin + 3*(bw + 2.5), bw, 'Tonelaje total', totalTon.toFixed(0) + ' kg', 'Suma carga × reps');
+      y += 28;
+
+      // ═══ EVOLUCIÓN SEMANAL ═══
+      h1('1 · Evolución semanal');
+      const wKeys = Object.keys(agg.perWeek).map(Number).sort((a,b)=>a-b);
+      if (wKeys.length === 0) p('No hay registros aún en el mesociclo actual.', 9, [180,80,80]);
+      else {
+        // Tabla
+        const colsW = [16, 20, 26, 22, 22, 22, 26, 26];
+        const heads = ['Sem', 'RIR obj', 'Series', 'Tonelaje', 'ICS prom', 'RIR real', 'EIMD', 'RPE'];
+        checkPage(10);
+        pdf.setFillColor(200,165,74); pdf.rect(margin, y, colsW.reduce((a,b)=>a+b,0), 6, 'F');
+        pdf.setFontSize(7); pdf.setFont('helvetica','bold'); pdf.setTextColor(255,255,255);
+        let cx = margin;
+        heads.forEach((h, i) => { pdf.text(h, cx + 2, y+4); cx += colsW[i]; });
+        y += 7;
+        wKeys.forEach((w, idx) => {
+          const wd = agg.perWeek[w];
+          // EIMD y RPE de postsession_w_*
+          let eimdN=0, eimdS=0, rpeN=0, rpeS=0;
+          Object.keys(agg.postSession).forEach(k => {
+            if (k.startsWith(w+'_')) {
+              const ps = agg.postSession[k];
+              if (ps?.eimd != null) { eimdS += +ps.eimd; eimdN++; }
+              if (ps?.rpe != null)  { rpeS  += +ps.rpe;  rpeN++;  }
+            }
+          });
+          checkPage(7);
+          if (idx%2===0) { pdf.setFillColor(248,248,246); pdf.rect(margin, y, colsW.reduce((a,b)=>a+b,0), 6, 'F'); }
+          pdf.setFontSize(8); pdf.setFont('helvetica','normal'); pdf.setTextColor(40,40,40);
+          const row = [
+            String(w),
+            String(rirScheme[w] ?? '—'),
+            String(wd.sets),
+            wd.tonnage.toFixed(0) + ' kg',
+            wd.icsN ? (wd.icsSum/wd.icsN).toFixed(1) : '—',
+            wd.rirN ? (wd.rirSum/wd.rirN).toFixed(1) : '—',
+            eimdN ? (eimdS/eimdN).toFixed(1) : '—',
+            rpeN  ? (rpeS/rpeN).toFixed(1)   : '—'
+          ];
+          cx = margin;
+          row.forEach((cell, i) => { pdf.text(cell, cx + 2, y+4); cx += colsW[i]; });
+          y += 6;
+        });
+        y += 2;
+      }
+
+      // ═══ EVOLUCIÓN POR EJERCICIO ═══
+      h1('2 · Evolución por ejercicio');
+      p('Δ Carga prom. (última vs primera semana) ordenado por ganancia de tonelaje.', 8, [120,120,120]); y += 1;
+      if (agg.exerciseStats.length === 0) p('Sin registros.', 9, [180,80,80]);
+      else {
+        const eCols = [50, 14, 20, 20, 20, 18, 18, 20];
+        const eHeads = ['Ejercicio', 'Sem', 'Carga prom', 'Carga máx', 'Reps prom', 'ICS', 'RIR real', 'Δ carga'];
+        checkPage(8);
+        pdf.setFillColor(180,150,60); pdf.rect(margin, y, eCols.reduce((a,b)=>a+b,0), 6, 'F');
+        pdf.setFontSize(7); pdf.setFont('helvetica','bold'); pdf.setTextColor(255,255,255);
+        let cx = margin;
+        eHeads.forEach((h, i) => { pdf.text(h, cx + 2, y+4); cx += eCols[i]; });
+        y += 7;
+        agg.exerciseStats.forEach((es, idx) => {
+          es.weekly.forEach((wk, wi) => {
+            checkPage(6);
+            if (wi===0 && idx>0 && idx%2===0) { pdf.setFillColor(252,250,245); pdf.rect(margin, y, eCols.reduce((a,b)=>a+b,0), 5, 'F'); }
+            pdf.setFontSize(7.5); pdf.setFont('helvetica', wi===0?'bold':'normal'); pdf.setTextColor(40,40,40);
+            const isFirst = wi === 0;
+            const cells = [
+              isFirst ? (es.name + (es.techniques.length && es.techniques[0]!=='straight' ? ' ['+es.techniques.join(',')+']' : '')) : '',
+              'S' + wk.week,
+              wk.loadAvg ? wk.loadAvg.toFixed(1)+' kg' : '—',
+              wk.loadMax ? wk.loadMax.toFixed(1)+' kg' : '—',
+              wk.repsAvg ? wk.repsAvg.toFixed(1) : '—',
+              wk.icsAvg != null ? wk.icsAvg.toFixed(1) : '—',
+              wk.rirAvg != null ? wk.rirAvg.toFixed(1) : '—',
+              (isFirst && es.weekly.length>1) ? (es.loadDelta>=0?'+':'') + es.loadDelta.toFixed(1) + '%' : ''
+            ];
+            cx = margin;
+            cells.forEach((cell, i) => {
+              const txt = pdf.splitTextToSize(String(cell), eCols[i]-2)[0] || '';
+              if (i===7 && cell) {
+                pdf.setTextColor(es.loadDelta >= 0 ? 30 : 180, es.loadDelta >= 0 ? 140 : 60, 60);
+                pdf.setFont('helvetica','bold');
+                pdf.text(txt, cx + 2, y+4);
+                pdf.setFont('helvetica','normal'); pdf.setTextColor(40,40,40);
+              } else {
+                pdf.text(txt, cx + 2, y+4);
+              }
+              cx += eCols[i];
+            });
+            y += 5;
+          });
+        });
+        y += 3;
+      }
+
+      // ═══ VOLUMEN POR GRUPO (MEV/MRV) ═══
+      h1('3 · Volumen semanal por grupo · MEV/MRV');
+      const vCols = [50, 22, 26, 24, 30];
+      const vHeads = ['Grupo muscular', 'Series sem', 'MEV / MRV', 'Óptimo', 'Estado'];
+      checkPage(8);
+      pdf.setFillColor(80,80,80); pdf.rect(margin, y, vCols.reduce((a,b)=>a+b,0), 6, 'F');
+      pdf.setFontSize(7); pdf.setFont('helvetica','bold'); pdf.setTextColor(255,255,255);
+      let vx = margin; vHeads.forEach((h, i) => { pdf.text(h, vx + 2, y+4); vx += vCols[i]; });
+      y += 7;
+      Object.keys(VDSEN_MEVMRV).forEach((g, idx) => {
+        const [mev, mrv, opt] = VDSEN_MEVMRV[g];
+        const v = volume[g] || 0;
+        let badge, col;
+        if (v===0 && mev===0) { badge='—'; col=[150,150,150]; }
+        else if (v<mev) { badge='SUB-MEV'; col=[200,60,60]; }
+        else if (v>mrv) { badge='SOBRE-MRV'; col=[220,140,40]; }
+        else { badge='OK'; col=[40,140,80]; }
+        checkPage(6);
+        if (idx%2===0) { pdf.setFillColor(248,248,246); pdf.rect(margin, y, vCols.reduce((a,b)=>a+b,0), 5, 'F'); }
+        pdf.setFontSize(8); pdf.setFont('helvetica','normal'); pdf.setTextColor(40,40,40);
+        const cells = [g, String(v), `${mev}–${mrv}`, opt, badge];
+        vx = margin;
+        cells.forEach((cell, i) => {
+          if (i===4) { pdf.setTextColor(...col); pdf.setFont('helvetica','bold'); }
+          pdf.text(String(cell), vx + 2, y+4);
+          if (i===4) { pdf.setTextColor(40,40,40); pdf.setFont('helvetica','normal'); }
+          vx += vCols[i];
+        });
+        y += 5;
+      });
+      y += 3;
+
+      // ═══ CHECK-INS SEMANALES ═══
+      h1('4 · Check-ins semanales');
+      const ciKeys = Object.keys(agg.weeklyCheckin).map(Number).sort((a,b)=>a-b);
+      if (!ciKeys.length) p('Sin check-ins semanales registrados.', 9, [180,120,40]);
+      else {
+        ciKeys.forEach(w => {
+          const ci = agg.weeklyCheckin[w];
+          checkPage(7);
+          pdf.setFontSize(8); pdf.setFont('helvetica','bold'); pdf.setTextColor(40,40,40); pdf.text(`Sem ${w}:`, margin, y);
+          pdf.setFont('helvetica','normal'); pdf.setTextColor(80,80,80);
+          pdf.text(`Peso ${ci.peso ?? '—'} kg  ·  HRV ${ci.hrv ?? '—'}  ·  WHO-5 ${ci.who5 ?? '—'}`, margin + 16, y);
+          y += 5;
+        });
+        y += 2;
+      }
+
+      // ═══ POST-SESIÓN ═══
+      h1('5 · Resúmenes post-sesión');
+      const psKeys = Object.keys(agg.postSession).sort();
+      if (!psKeys.length) p('Sin check-ins post-sesión.', 9, [180,120,40]);
+      else {
+        psKeys.forEach(k => {
+          const [w, d] = k.split('_');
+          const ps = agg.postSession[k];
+          checkPage(6);
+          pdf.setFontSize(7.5); pdf.setFont('helvetica','normal'); pdf.setTextColor(40,40,40);
+          pdf.text(`S${w} D${+d+1}  ·  EIMD ${ps.eimd ?? '—'}  ·  Articular ${ps.articular ?? '—'}${ps.patron ? ' ('+ps.patron+')' : ''}  ·  Sueño ${ps.sleep ?? '—'} h  ·  RPE ${ps.rpe ?? '—'}`, margin, y);
+          y += 4.5;
+        });
+        y += 2;
+      }
+
+      // ═══ RECOMENDACIÓN ACTUAL DEL MOTOR ═══
+      h1('6 · Recomendación del motor (más reciente)');
+      if (!lastRec || !lastRec.recommendations?.length) p('Sin recomendaciones aún.', 9, [180,120,40]);
+      else {
+        p(`Generada en Sem ${lrW} · Día ${lrD+1}`, 8, [120,120,120]); y += 1;
+        const actionLab = { deload:'DELOAD', reduce_load:'BAJAR CARGA', reduce_sets:'BAJAR SERIES', add_sets:'+ SERIES', increase_load:'+ CARGA', freeze_load:'CONGELAR', maintain:'MANTENER' };
+        lastRec.recommendations.forEach(r => {
+          checkPage(14);
+          pdf.setFillColor(252,250,243); pdf.rect(margin, y, colW, 12, 'F');
+          pdf.setFontSize(8.5); pdf.setFont('helvetica','bold'); pdf.setTextColor(40,40,40);
+          pdf.text(r.exerciseName || '—', margin + 2, y+4.5);
+          pdf.setFontSize(7.5); pdf.setFont('helvetica','bold'); pdf.setTextColor(150,120,40);
+          pdf.text(actionLab[r.action] || r.action || '', W - margin - 2, y+4.5, { align:'right' });
+          pdf.setFontSize(7.5); pdf.setFont('helvetica','normal'); pdf.setTextColor(80,80,80);
+          pdf.text(`Carga ${r.newLoad} kg  ·  Series ${r.newSets}${r.newReps ? '  ·  Reps '+r.newReps : ''}  ·  RIR ${r.rirTarget}`, margin + 2, y+9);
+          if (r.reason) {
+            pdf.setFontSize(7); pdf.setTextColor(120);
+            const reason = pdf.splitTextToSize(r.reason, colW - 4);
+            pdf.text(reason[0] || '', margin + 2, y+12);
+          }
+          y += 14;
+        });
+        if (lastRec.deloadTriggers?.length) {
+          checkPage(6);
+          pdf.setFontSize(8); pdf.setFont('helvetica','bold'); pdf.setTextColor(200,60,60);
+          pdf.text('Gatillos de deload activos: ' + lastRec.deloadTriggers.join(', '), margin, y); y += 5;
+        }
+      }
+
+      // ═══ NOTAS DEL CLIENTE ═══
+      if (agg.exnotes.length) {
+        h1('7 · Notas del cliente por ejercicio');
+        agg.exnotes.sort((a,b) => a.w-b.w || a.d-b.d || a.e-b.e).forEach(n => {
+          checkPage(5);
+          pdf.setFontSize(7); pdf.setFont('helvetica','bold'); pdf.setTextColor(160,130,40);
+          pdf.text(`S${n.w} D${n.d+1} Ej${n.e+1}:`, margin, y);
+          pdf.setFont('helvetica','normal'); pdf.setTextColor(60,60,60);
+          const lines = pdf.splitTextToSize(n.text, colW - 25);
+          pdf.text(lines, margin + 22, y);
+          y += 4 * Math.max(1, lines.length);
+        });
+      }
+
+      // ═══ DIAGNÓSTICO & PRÓXIMO PASO ═══
+      h1('8 · Diagnóstico y plan para el siguiente mesociclo');
+      const insights = [];
+      if (agg.adherence < 70) insights.push(`Adherencia baja (${agg.adherence}%). Reducir días/semana o revisar barreras antes de subir volumen.`);
+      else if (agg.adherence >= 90) insights.push(`Adherencia excelente (${agg.adherence}%). Habilitado para progresar volumen y/o intensidad.`);
+      // Grupos sub-MEV
+      const subMev = [], overMrv = [];
+      Object.keys(VDSEN_MEVMRV).forEach(g => {
+        const [mev, mrv] = VDSEN_MEVMRV[g];
+        const v = volume[g] || 0;
+        if (v < mev && mev > 0) subMev.push(`${g} (${v}/${mev})`);
+        if (v > mrv) overMrv.push(`${g} (${v}/${mrv})`);
+      });
+      if (subMev.length) insights.push(`Grupos por debajo de MEV: ${subMev.join(', ')}. Considerar +1–2 series por grupo el próximo mesociclo.`);
+      if (overMrv.length) insights.push(`Grupos sobre MRV: ${overMrv.join(', ')}. Reducir 2–3 series para evitar fatiga acumulada.`);
+      // Ganancias y caídas
+      const winners = agg.exerciseStats.filter(e => e.loadDelta > 5).slice(0,5);
+      const losers  = agg.exerciseStats.filter(e => e.loadDelta < -3).slice(-5).reverse();
+      if (winners.length) insights.push(`Ejercicios con buena progresión: ${winners.map(w => `${w.name} (+${w.loadDelta.toFixed(0)}%)`).join(', ')}.`);
+      if (losers.length)  insights.push(`Ejercicios estancados o regresivos: ${losers.map(w => `${w.name} (${w.loadDelta.toFixed(0)}%)`).join(', ')}. Revisar técnica, fatiga o sustituir.`);
+      // ICS
+      const allWeekIcs = Object.values(agg.perWeek).filter(w => w.icsN).map(w => w.icsSum/w.icsN);
+      if (allWeekIcs.length) {
+        const m = allWeekIcs.reduce((a,b)=>a+b,0)/allWeekIcs.length;
+        if (m < 7) insights.push(`ICS promedio bajo (${m.toFixed(1)}/10). Técnica deficiente — bajar carga 5–10% y reforzar tempo excéntrico.`);
+        else if (m >= 8.5) insights.push(`ICS promedio alto (${m.toFixed(1)}/10). Habilitado para incrementar carga.`);
+      }
+      // Próximo mesociclo
+      insights.push('Plan sugerido siguiente mesociclo: ajustar volúmenes según MEV/MRV, sustituir ejercicios estancados, aplicar técnicas de intensificación (drop/myoreps/SST) en aislamientos de Sem 3–4.');
+
+      insights.forEach(s => { checkPage(8); p('• ' + s, 9, [40,40,40]); y += 0.5; });
+
+      addFooter();
+      pdf.save(`VDSEN_ReporteIntegral_${(client.displayName||'cliente').replace(/\s+/g,'_')}_Sem${currentWeek}.pdf`);
+      showToast('✅ Reporte integral generado');
+    } catch(e) {
+      console.error(e);
+      showToast('Error generando reporte: ' + e.message, true);
+    }
+  }
+  window.generateFullClientReport = generateFullClientReport;
+
+  // ════════════════════════════════════════════════════════════
+  //  EXPORTAR REPORTE PARA IA — JSON compacto, mínimo tokens
+  //  Claves abreviadas + redondeos + sin nulls innecesarios.
+  //  Pegable en Claude/ChatGPT/Gemini para análisis y plan siguiente.
+  // ════════════════════════════════════════════════════════════
+  async function exportClientReportForAI(clientId) {
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      if (!clientSnap.exists()) throw new Error('Cliente no existe');
+      const c = clientSnap.data();
+      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      const logs = logsSnap.exists() ? logsSnap.data() : { entries:{}, currentWeek:1 };
+      const entries = logs.entries || {};
+      const cw = logs.currentWeek || 1;
+      let plan = null;
+      if (c.activePlanId) {
+        const ps = await getDoc(doc(db, 'plans', c.activePlanId));
+        if (ps.exists()) plan = ps.data();
+      }
+      const agg = aggregateClientLogs(entries, plan, cw);
+      const vol = plan ? computeWeeklyVolume(plan) : {};
+
+      // Helper: redondear sin null garbage
+      const r1 = (n) => (n==null||isNaN(n))?null:Math.round(n*10)/10;
+      const r0 = (n) => (n==null||isNaN(n))?null:Math.round(n);
+
+      // Recomendación más reciente
+      let lastRec=null, lrW=0, lrD=0;
+      Object.keys(entries).forEach(k => {
+        const m = k.match(/^progrec_(\d+)_(\d+)$/);
+        if (m) { const w=+m[1], d=+m[2]; if (w>lrW||(w===lrW&&d>lrD)){lrW=w;lrD=d;lastRec=entries[k];} }
+      });
+
+      // Semanal compacto
+      const weeks = Object.keys(agg.perWeek).map(Number).sort((a,b)=>a-b).map(w => {
+        const wd = agg.perWeek[w];
+        let eN=0,eS=0,pN=0,pS=0,sN=0,sS=0;
+        Object.keys(agg.postSession).forEach(k => {
+          if (k.startsWith(w+'_')) {
+            const ps=agg.postSession[k];
+            if (ps?.eimd!=null){eS+=+ps.eimd;eN++;}
+            if (ps?.rpe!=null){pS+=+ps.rpe;pN++;}
+            if (ps?.sleep!=null){sS+=+ps.sleep;sN++;}
+          }
+        });
+        const ci = agg.weeklyCheckin[w] || {};
+        const o = { w, sets: wd.sets, ton: r0(wd.tonnage), ics: r1(wd.icsN?wd.icsSum/wd.icsN:null), rir_real: r1(wd.rirN?wd.rirSum/wd.rirN:null), eimd: r1(eN?eS/eN:null), rpe: r1(pN?pS/pN:null), sleep: r1(sN?sS/sN:null) };
+        if (ci.peso!=null) o.peso=r1(+ci.peso);
+        if (ci.hrv!=null)  o.hrv=r0(+ci.hrv);
+        if (ci.who5!=null) o.who5=r0(+ci.who5);
+        // Limpiar nulls
+        Object.keys(o).forEach(k => { if (o[k]==null) delete o[k]; });
+        return o;
+      });
+
+      // Por ejercicio
+      const exs = agg.exerciseStats.map(es => {
+        const wkly = es.weekly.map(w => {
+          const o = { w: w.week, n: w.setsCount, kg: r1(w.loadAvg), kgMax: r1(w.loadMax), reps: r1(w.repsAvg), ics: r1(w.icsAvg), rir: r1(w.rirAvg) };
+          Object.keys(o).forEach(k => { if (o[k]==null||o[k]===0&&k!=='w'&&k!=='n') delete o[k]; });
+          return o;
+        });
+        const o = { name: es.name, dKg: r1(es.loadDelta), wk: wkly };
+        if (es.techniques.length && !(es.techniques.length===1 && es.techniques[0]==='straight')) o.tech = es.techniques.filter(t=>t!=='straight');
+        return o;
+      });
+
+      // Volumen vs MEV/MRV (solo grupos con desviación o valor != 0)
+      const volReport = {};
+      Object.keys(VDSEN_MEVMRV).forEach(g => {
+        const [mev,mrv,opt] = VDSEN_MEVMRV[g];
+        const v = vol[g] || 0;
+        let st;
+        if (v===0 && mev===0) st='off';
+        else if (v<mev) st='sub';
+        else if (v>mrv) st='over';
+        else st='ok';
+        volReport[g] = { v, mev, mrv, opt, st };
+      });
+
+      // Recomendación motor compacta
+      let rec = null;
+      if (lastRec?.recommendations) {
+        rec = {
+          w: lrW, d: lrD,
+          items: lastRec.recommendations.map(r => ({ ex: r.exerciseName, act: r.action, kg: r.newLoad, sets: r.newSets, reps: r.newReps||null, rir: r.rirTarget, why: r.reason||'' })),
+          deload: lastRec.deloadTriggers || []
+        };
+      }
+
+      // Notas
+      const notes = agg.exnotes.sort((a,b)=>a.w-b.w||a.d-b.d||a.e-b.e).map(n => ({ w:n.w, d:n.d, e:n.e, t:n.t }));
+
+      // Diagnóstico precalculado
+      const diag = [];
+      if (agg.adherence < 70) diag.push('adherencia_baja');
+      if (agg.adherence >= 90) diag.push('adherencia_alta');
+      Object.keys(volReport).forEach(g => {
+        if (volReport[g].st === 'sub') diag.push('subMEV:' + g);
+        if (volReport[g].st === 'over') diag.push('sobreMRV:' + g);
+      });
+      const allIcsW = weeks.filter(w => w.ics!=null).map(w => w.ics);
+      const icsM = allIcsW.length ? allIcsW.reduce((a,b)=>a+b,0)/allIcsW.length : null;
+      if (icsM!=null && icsM<7) diag.push('ICS_bajo:'+r1(icsM));
+      if (icsM!=null && icsM>=8.5) diag.push('ICS_alto:'+r1(icsM));
+      const winners = exs.filter(e=>e.dKg>5).map(e=>e.name).slice(0,5);
+      const losers  = exs.filter(e=>e.dKg<-3).map(e=>e.name).slice(0,5);
+      if (winners.length) diag.push('progresan:'+winners.join('|'));
+      if (losers.length)  diag.push('estancan:'+losers.join('|'));
+
+      // Ensamblar
+      const payload = {
+        v: '1',
+        gen: new Date().toISOString().slice(0,10),
+        client: { name: c.displayName || '—', sex: c.sex || null, age: c.age || null, kg: c.weight || null, cm: c.height || null },
+        plan: plan ? { w: plan.weeks||6, dpw: plan.daysPerWeek||(plan.days||[]).length, days: (plan.days||[]).map(d => ({ l: d.label, ex: (d.exercises||[]).map(e => ({ n: e.exerciseName, s: (e.sets||[]).length, reps: e.sets?.[0]?.repsTarget, rir: e.sets?.[0]?.rirTarget, t: e.technique && e.technique!=='straight' ? e.technique : undefined, tn: e.techniqueNote || undefined, cn: e.coachNote || undefined })) })) } : null,
+        cw, // semana actual
+        adh: agg.adherence,
+        sess: { done: agg.sessionsDone, planned: agg.sessionsPlanned },
+        weeks,        // serie temporal semanal
+        exercises: exs, // serie temporal por ejercicio
+        volume: volReport,
+        recommendation: rec,
+        notes,
+        diag
+      };
+      // Limpia plan.days[].ex[] de keys undefined
+      JSON.stringify(payload); // smoke
+
+      const text = JSON.stringify(payload);
+      try { await navigator.clipboard.writeText(text); } catch(e) {}
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `VDSEN_AI_${(c.displayName||'cliente').replace(/\s+/g,'_')}_S${cw}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Mostrar también un mini-modal con prompt sugerido para IA
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      const tokens = Math.round(text.length / 4);
+      ov.innerHTML = `
+        <div style="background:#141616;border:1px solid rgba(201,168,76,.35);border-radius:12px;padding:22px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto">
+          <h3 style="color:#C9A84C;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">📤 Reporte exportado para IA</h3>
+          <p style="color:#888;font-size:12px;margin-bottom:12px">Archivo descargado y copiado al portapapeles. ~<strong style="color:#C9A84C">${tokens} tokens</strong> estimados (${text.length} chars).</p>
+          <div style="background:#0a0a0a;border:1px solid rgba(201,168,76,.2);border-radius:6px;padding:10px;margin-bottom:10px">
+            <div style="color:#C9A84C;font-size:11px;font-weight:600;margin-bottom:6px;letter-spacing:.05em;text-transform:uppercase">Prompt sugerido para pegar junto al JSON</div>
+            <textarea readonly style="width:100%;height:140px;background:transparent;border:none;color:#cfcfcf;font-family:monospace;font-size:11px;line-height:1.5;resize:none" id="_aiPrompt">Eres VDSEN Coach IA. Analiza el reporte adjunto (JSON v1, formato compacto VDSEN) y entrega:
+
+1. Diagnóstico del mesociclo (adherencia, progresión por ejercicio, ICS, MEV/MRV, recuperación).
+2. Top 3 hallazgos críticos.
+3. Plan para el siguiente mesociclo: ajustes de volumen por grupo (referencia MEV/MRV en campo "volume"), sustituciones de ejercicios estancados, técnicas de intensificación recomendadas (drop/myoreps/sst/etc) para semanas 3-4, y semana de deload.
+4. Devuelve el plan final en JSON v2 con campos: weeks, daysPerWeek, days[].exercises[] {exerciseName, alternatives, technique, techniqueNote, coachNote, sets[]{setIndex, repsTarget, rirTarget, load:0, restSeconds, setNote, drop, tempo}}.
+
+Reporte:
+</textarea>
+            <button onclick="(function(){var t=document.getElementById('_aiPrompt');t.select();document.execCommand('copy');})()" style="margin-top:6px;padding:5px 12px;border-radius:5px;border:1px solid rgba(201,168,76,.5);background:rgba(201,168,76,.15);color:#C9A84C;font-size:11px;cursor:pointer">📋 Copiar prompt</button>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button id="_aiClose" style="padding:8px 16px;border-radius:6px;border:none;background:linear-gradient(135deg,#9A7A28,#E8C97A);color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Listo</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_aiClose').onclick = () => ov.remove();
+      ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+
+      showToast(`✅ Reporte IA copiado (~${tokens} tokens)`);
+    } catch(e) { showToast('Error: ' + e.message, true); console.error(e); }
+  }
+  window.exportClientReportForAI = exportClientReportForAI;
+
+  // ════════════════════════════════════════════════════════════
+  //  REPORTE LEGIBLE EN HTML — abre en pestaña nueva, imprimible
+  //  Para que el coach lo lea sin necesidad de descargar PDF
+  // ════════════════════════════════════════════════════════════
+  async function viewClientReportHTML(clientId) {
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      if (!clientSnap.exists()) throw new Error('Cliente no existe');
+      const c = clientSnap.data();
+      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      const logs = logsSnap.exists() ? logsSnap.data() : { entries:{}, currentWeek:1 };
+      const entries = logs.entries || {};
+      const cw = logs.currentWeek || 1;
+      let plan = null;
+      if (c.activePlanId) {
+        const ps = await getDoc(doc(db, 'plans', c.activePlanId));
+        if (ps.exists()) plan = ps.data();
+      }
+      const agg = aggregateClientLogs(entries, plan, cw);
+      const vol = plan ? computeWeeklyVolume(plan) : {};
+      const rirScheme = rirSchemeForWeeks(plan?.weeks || 6);
+
+      // Recomendación más reciente
+      let lastRec=null, lrW=0, lrD=0;
+      Object.keys(entries).forEach(k => {
+        const m = k.match(/^progrec_(\d+)_(\d+)$/);
+        if (m) { const w=+m[1], d=+m[2]; if (w>lrW||(w===lrW&&d>lrD)){lrW=w;lrD=d;lastRec=entries[k];} }
+      });
+      const actionLab = { deload:'DELOAD', reduce_load:'BAJAR CARGA', reduce_sets:'BAJAR SERIES', add_sets:'+ SERIES', increase_load:'+ CARGA', freeze_load:'CONGELAR', maintain:'MANTENER' };
+
+      const wKeys = Object.keys(agg.perWeek).map(Number).sort((a,b)=>a-b);
+      const totalTon = Object.values(agg.perWeek).reduce((a,w)=>a+w.tonnage,0);
+      const totalSets = Object.values(agg.perWeek).reduce((a,w)=>a+w.sets,0);
+      const icsW = Object.values(agg.perWeek).filter(w=>w.icsN).map(w=>w.icsSum/w.icsN);
+      const icsAvg = icsW.length ? icsW.reduce((a,b)=>a+b,0)/icsW.length : null;
+
+      // Construir HTML
+      const esc = (s) => String(s==null?'':s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+      const weeksRows = wKeys.map(w => {
+        const wd = agg.perWeek[w];
+        let eN=0,eS=0,pN=0,pS=0;
+        Object.keys(agg.postSession).forEach(k => {
+          if (k.startsWith(w+'_')) { const ps=agg.postSession[k]; if (ps?.eimd!=null){eS+=+ps.eimd;eN++;} if (ps?.rpe!=null){pS+=+ps.rpe;pN++;} }
+        });
+        const ci = agg.weeklyCheckin[w] || {};
+        return `<tr>
+          <td><strong>Sem ${w}</strong></td>
+          <td>${rirScheme[w] ?? '—'}</td>
+          <td>${wd.sets}</td>
+          <td>${wd.tonnage.toFixed(0)} kg</td>
+          <td>${wd.icsN ? (wd.icsSum/wd.icsN).toFixed(1) : '—'}</td>
+          <td>${wd.rirN ? (wd.rirSum/wd.rirN).toFixed(1) : '—'}</td>
+          <td>${eN?(eS/eN).toFixed(1):'—'}</td>
+          <td>${pN?(pS/pN).toFixed(1):'—'}</td>
+          <td>${ci.peso ?? '—'}</td>
+          <td>${ci.hrv ?? '—'}</td>
+          <td>${ci.who5 ?? '—'}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="11" style="text-align:center;color:#888">Sin registros aún</td></tr>';
+
+      const exRows = agg.exerciseStats.map(es => {
+        const techBadge = es.techniques.filter(t=>t!=='straight').length
+          ? `<span class="tech-badge">${es.techniques.filter(t=>t!=='straight').join(', ')}</span>` : '';
+        const deltaClass = es.loadDelta > 5 ? 'pos' : es.loadDelta < -3 ? 'neg' : 'mid';
+        const deltaSign = es.loadDelta >= 0 ? '+' : '';
+        const wkRows = es.weekly.map(w => `<tr>
+          <td>S${w.week}</td><td>${w.setsCount}</td>
+          <td>${w.loadAvg ? w.loadAvg.toFixed(1)+' kg' : '—'}</td>
+          <td>${w.loadMax ? w.loadMax.toFixed(1)+' kg' : '—'}</td>
+          <td>${w.repsAvg ? w.repsAvg.toFixed(1) : '—'}</td>
+          <td>${w.tonnage ? w.tonnage.toFixed(0) : '—'}</td>
+          <td>${w.icsAvg != null ? w.icsAvg.toFixed(1) : '—'}</td>
+          <td>${w.rirAvg != null ? w.rirAvg.toFixed(1) : '—'}</td>
+        </tr>`).join('');
+        return `<div class="ex-card">
+          <div class="ex-head">
+            <span class="ex-name">${esc(es.name)} ${techBadge}</span>
+            <span class="delta ${deltaClass}">${deltaSign}${es.loadDelta.toFixed(1)}% carga</span>
+          </div>
+          <table class="ex-table">
+            <thead><tr><th>Sem</th><th>Sets</th><th>Carga prom</th><th>Carga máx</th><th>Reps</th><th>Tonelaje</th><th>ICS</th><th>RIR real</th></tr></thead>
+            <tbody>${wkRows}</tbody>
+          </table>
+        </div>`;
+      }).join('') || '<p style="color:#888">Sin ejercicios con registros aún.</p>';
+
+      const volRows = Object.keys(VDSEN_MEVMRV).map(g => {
+        const [mev,mrv,opt] = VDSEN_MEVMRV[g];
+        const v = vol[g] || 0;
+        let st, color;
+        if (v===0 && mev===0) { st='—'; color='#888'; }
+        else if (v<mev) { st='SUB-MEV'; color='#FF4444'; }
+        else if (v>mrv) { st='SOBRE-MRV'; color='#FF8844'; }
+        else { st='OK'; color='#44BB88'; }
+        return `<tr><td>${g.replace(/_/g,' ')}</td><td style="text-align:center"><strong>${v}</strong></td><td style="text-align:center;color:#888">${mev}–${mrv}</td><td style="text-align:center;color:#888">${opt}</td><td style="text-align:center;color:${color};font-weight:700">${st}</td></tr>`;
+      }).join('');
+
+      const psRows = Object.keys(agg.postSession).sort().map(k => {
+        const [w,d] = k.split('_');
+        const ps = agg.postSession[k];
+        return `<tr><td>S${w} D${+d+1}</td><td>${ps.eimd ?? '—'}</td><td>${ps.articular ?? '—'}${ps.patron ? ' ('+esc(ps.patron)+')' : ''}</td><td>${ps.sleep ?? '—'} h</td><td>${ps.rpe ?? '—'}</td></tr>`;
+      }).join('') || '<tr><td colspan="5" style="text-align:center;color:#888">Sin check-ins post-sesión</td></tr>';
+
+      const recHTML = lastRec?.recommendations?.length
+        ? `<p class="muted">Generada en Sem ${lrW} · Día ${lrD+1}</p>` + lastRec.recommendations.map(r => `
+            <div class="rec-card">
+              <div class="rec-head">
+                <strong>${esc(r.exerciseName)}</strong>
+                <span class="rec-action">${actionLab[r.action] || r.action}</span>
+              </div>
+              <div class="rec-line">Carga <strong>${r.newLoad} kg</strong> · Series <strong>${r.newSets}</strong>${r.newReps ? ' · Reps <strong>'+r.newReps+'</strong>':''} · RIR <strong>${r.rirTarget}</strong></div>
+              ${r.reason ? `<div class="muted small">${esc(r.reason)}</div>` : ''}
+            </div>`).join('') + (lastRec.deloadTriggers?.length ? `<p class="alert">⚠️ Gatillos de deload: ${lastRec.deloadTriggers.join(', ')}</p>` : '')
+        : '<p class="muted">Sin recomendaciones aún.</p>';
+
+      const notesHTML = agg.exnotes.length
+        ? '<ul class="notes">' + agg.exnotes.sort((a,b)=>a.w-b.w||a.d-b.d||a.e-b.e).map(n => `<li><strong>S${n.w} D${n.d+1} Ej${n.e+1}:</strong> ${esc(n.t)}</li>`).join('') + '</ul>'
+        : '<p class="muted">Sin notas del cliente.</p>';
+
+      // Diagnóstico (mismas reglas que el PDF)
+      const insights = [];
+      if (agg.adherence < 70) insights.push(`Adherencia baja (${agg.adherence}%). Reducir días/semana o revisar barreras antes de subir volumen.`);
+      else if (agg.adherence >= 90) insights.push(`Adherencia excelente (${agg.adherence}%). Habilitado para progresar volumen y/o intensidad.`);
+      const subMev = [], overMrv = [];
+      Object.keys(VDSEN_MEVMRV).forEach(g => {
+        const [mev, mrv] = VDSEN_MEVMRV[g];
+        const v = vol[g] || 0;
+        if (v < mev && mev > 0) subMev.push(`${g} (${v}/${mev})`);
+        if (v > mrv) overMrv.push(`${g} (${v}/${mrv})`);
+      });
+      if (subMev.length) insights.push(`Grupos por debajo de MEV: ${subMev.join(', ')}. Considerar +1–2 series por grupo el próximo mesociclo.`);
+      if (overMrv.length) insights.push(`Grupos sobre MRV: ${overMrv.join(', ')}. Reducir 2–3 series para evitar fatiga acumulada.`);
+      const winners = agg.exerciseStats.filter(e => e.loadDelta > 5).slice(0,5);
+      const losers  = agg.exerciseStats.filter(e => e.loadDelta < -3).slice(-5).reverse();
+      if (winners.length) insights.push(`Ejercicios con buena progresión: ${winners.map(w => `${w.name} (+${w.loadDelta.toFixed(0)}%)`).join(', ')}.`);
+      if (losers.length)  insights.push(`Ejercicios estancados o regresivos: ${losers.map(w => `${w.name} (${w.loadDelta.toFixed(0)}%)`).join(', ')}. Revisar técnica, fatiga o sustituir.`);
+      if (icsAvg != null) {
+        if (icsAvg < 7) insights.push(`ICS promedio bajo (${icsAvg.toFixed(1)}/10). Técnica deficiente — bajar carga 5–10% y reforzar tempo excéntrico.`);
+        else if (icsAvg >= 8.5) insights.push(`ICS promedio alto (${icsAvg.toFixed(1)}/10). Habilitado para incrementar carga.`);
+      }
+      insights.push('Plan sugerido siguiente mesociclo: ajustar volúmenes según MEV/MRV, sustituir ejercicios estancados, aplicar técnicas de intensificación (drop/myoreps/SST) en aislamientos de Sem 3–4.');
+
+      const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>VDSEN — ${esc(c.displayName)} · Sem ${cw}</title>
+<style>
+  :root { --gold:#C9A84C; --bg:#0a0a0a; --card:#141616; --border:rgba(201,168,76,.2); --text:#e8e0d0; --muted:#888; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter','Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6;padding:24px;max-width:1000px;margin:0 auto}
+  header{border-bottom:2px solid var(--gold);padding-bottom:16px;margin-bottom:24px}
+  h1{color:var(--gold);font-size:24px;font-weight:900;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px}
+  .sub{color:var(--muted);font-size:12px;letter-spacing:2px;text-transform:uppercase}
+  .name{font-size:20px;font-weight:700;color:#fff;margin-top:8px}
+  h2{color:var(--gold);font-size:14px;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid var(--border);padding-bottom:6px;margin:32px 0 16px}
+  h3{color:#fff;font-size:13px;letter-spacing:1px;text-transform:uppercase;margin:18px 0 10px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px}
+  .kpi-label{font-size:9px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+  .kpi-val{font-size:24px;font-weight:800;color:var(--gold);line-height:1.1}
+  .kpi-sub{font-size:11px;color:var(--muted);margin-top:4px}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px}
+  th{background:rgba(201,168,76,.12);color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:8px;text-align:left;font-weight:700}
+  td{padding:8px;border-top:1px solid rgba(255,255,255,.05);color:var(--text)}
+  tr:nth-child(even) td{background:rgba(255,255,255,.02)}
+  .ex-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px}
+  .ex-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px}
+  .ex-name{font-weight:700;color:#fff;font-size:14px}
+  .tech-badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(201,168,76,.15);color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-left:6px}
+  .delta{font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px}
+  .delta.pos{background:rgba(68,187,136,.15);color:#44BB88}
+  .delta.neg{background:rgba(255,68,68,.15);color:#FF4444}
+  .delta.mid{background:rgba(150,150,150,.12);color:#888}
+  .ex-table{margin:0;font-size:12px}
+  .ex-table th{font-size:9px;padding:6px 8px}
+  .ex-table td{padding:6px 8px}
+  .rec-card{background:var(--card);border-left:3px solid var(--gold);padding:10px 14px;margin-bottom:10px;border-radius:0 6px 6px 0}
+  .rec-head{display:flex;justify-content:space-between;margin-bottom:4px}
+  .rec-action{font-size:10px;color:var(--gold);font-weight:700;letter-spacing:1px}
+  .rec-line{font-size:12px;color:#cfcfcf}
+  .small{font-size:11px}
+  .muted{color:var(--muted)}
+  .alert{background:rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444;padding:10px;border-radius:6px;margin:10px 0;font-size:12px;font-weight:600}
+  .notes{list-style:none;padding:0}
+  .notes li{padding:8px 12px;background:var(--card);border-left:2px solid var(--gold);margin-bottom:6px;font-size:13px}
+  .insights{background:linear-gradient(135deg,rgba(201,168,76,.06),rgba(201,168,76,.02));border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:24px}
+  .insights li{margin-bottom:10px;padding-left:8px;border-left:2px solid var(--gold);list-style:none;line-height:1.5}
+  .topbar{display:flex;gap:10px;justify-content:flex-end;margin-bottom:20px;flex-wrap:wrap}
+  .topbar button{padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer;letter-spacing:.5px}
+  .topbar button:hover{border-color:var(--gold);color:var(--gold)}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--border);text-align:center;color:var(--muted);font-size:11px;letter-spacing:1px}
+  @media print {
+    body{background:#fff;color:#222;padding:12mm}
+    h1,h2,h3,.kpi-val,.tech-badge,.rec-action,.kpi-label{color:#9A7A28!important}
+    .kpi,table,.ex-card,.rec-card,.insights,.notes li{background:#fff!important;border-color:#ccc!important;color:#222!important}
+    td,th{color:#222!important}
+    th{background:#f5f1e6!important;color:#9A7A28!important}
+    .topbar{display:none}
+  }
+</style></head><body>
+  <div class="topbar">
+    <button onclick="window.print()">🖨️ Imprimir / PDF</button>
+    <button onclick="window.close()">✕ Cerrar</button>
+  </div>
+  <header>
+    <h1>VDSEN</h1>
+    <div class="sub">Reporte Integral de Mesociclo · ${new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'long', year:'numeric' })}</div>
+    <div class="name">${esc(c.displayName)}</div>
+    <div class="sub" style="margin-top:6px">${esc(c.email||'')} · Plan: ${plan?.weeks||'—'} sem × ${plan?.daysPerWeek||'—'} días · Semana actual: <strong style="color:var(--gold)">${cw}</strong></div>
+  </header>
+
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-label">Adherencia</div><div class="kpi-val">${agg.adherence}%</div><div class="kpi-sub">${agg.sessionsDone}/${agg.sessionsPlanned} sesiones</div></div>
+    <div class="kpi"><div class="kpi-label">Series totales</div><div class="kpi-val">${totalSets}</div><div class="kpi-sub">${wKeys.length} sem activas</div></div>
+    <div class="kpi"><div class="kpi-label">ICS promedio</div><div class="kpi-val">${icsAvg ? icsAvg.toFixed(1) : '—'}</div><div class="kpi-sub">Calidad de serie</div></div>
+    <div class="kpi"><div class="kpi-label">Tonelaje total</div><div class="kpi-val">${totalTon.toFixed(0)}</div><div class="kpi-sub">kg · suma carga × reps</div></div>
+  </div>
+
+  <h2>1 · Evolución semanal</h2>
+  <table>
+    <thead><tr><th>Semana</th><th>RIR obj</th><th>Series</th><th>Tonelaje</th><th>ICS</th><th>RIR real</th><th>EIMD</th><th>RPE</th><th>Peso</th><th>HRV</th><th>WHO-5</th></tr></thead>
+    <tbody>${weeksRows}</tbody>
+  </table>
+
+  <h2>2 · Evolución por ejercicio</h2>
+  <p class="muted small" style="margin-bottom:14px">Δ carga = comparación última vs primera semana registrada. Verde = progresión &gt;5%, rojo = caída &gt;3%.</p>
+  ${exRows}
+
+  <h2>3 · Volumen semanal por grupo · MEV/MRV</h2>
+  <table>
+    <thead><tr><th>Grupo muscular</th><th>Series</th><th>MEV–MRV</th><th>Óptimo</th><th>Estado</th></tr></thead>
+    <tbody>${volRows}</tbody>
+  </table>
+
+  <h2>4 · Check-ins post-sesión</h2>
+  <table>
+    <thead><tr><th>Sesión</th><th>EIMD</th><th>Articular</th><th>Sueño</th><th>RPE</th></tr></thead>
+    <tbody>${psRows}</tbody>
+  </table>
+
+  <h2>5 · Recomendación más reciente del motor</h2>
+  ${recHTML}
+
+  <h2>6 · Notas del cliente por ejercicio</h2>
+  ${notesHTML}
+
+  <h2>7 · Diagnóstico y plan para el siguiente mesociclo</h2>
+  <div class="insights">
+    <ul>${insights.map(s => `<li>${esc(s)}</li>`).join('')}</ul>
+  </div>
+
+  <footer>
+    VDSEN ASESORÍA · @vdsenasesoria · Motor VDSEN v3.1 · ${new Date().toLocaleString('es-MX')}<br>
+    <em style="color:var(--gold)">El esfuerzo no es negociable.</em>
+  </footer>
+</body></html>`;
+
+      // Abrir en pestaña nueva
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, '_blank');
+      if (!win) {
+        // Popup bloqueado → descargar
+        const a = document.createElement('a');
+        a.href = url; a.download = `VDSEN_Reporte_${(c.displayName||'cliente').replace(/\s+/g,'_')}_Sem${cw}.html`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        showToast('⬇️ Reporte descargado (popup bloqueado)');
+      } else {
+        showToast('📖 Reporte abierto en nueva pestaña');
+      }
+      // Liberar URL más tarde (no inmediato — la pestaña aún la usa)
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch(e) { showToast('Error: ' + e.message, true); console.error(e); }
+  }
+  window.viewClientReportHTML = viewClientReportHTML;
+
+  // ── Extender / reducir la duración del plan (mesociclo) ──
+  // delta: +1 agrega 1 semana, -1 quita 1 semana
+  async function extendPlanWeeks(planId, delta) {
+    if (!planId) { showToast('Plan no encontrado', true); return; }
+    try {
+      const snap = await getDoc(doc(db, 'plans', planId));
+      if (!snap.exists()) { showToast('Plan no existe', true); return; }
+      const p = snap.data();
+      const curW = p.weeks || 6;
+      const newW = Math.max(1, Math.min(16, curW + delta));
+      if (newW === curW) {
+        showToast(delta > 0 ? 'Tope alcanzado (16 semanas)' : 'Mínimo 1 semana', true);
+        return;
+      }
+      // Si reducimos por debajo de la semana activa del cliente, bloqueamos
+      if (delta < 0) {
+        const logsSnap = await getDoc(doc(db, 'logs', p.clientId));
+        const cw = logsSnap.exists() ? (logsSnap.data().currentWeek || 1) : 1;
+        if (cw > newW) {
+          showToast(`No se puede reducir: el cliente está en semana ${cw}, sería mayor que la nueva duración ${newW}`, true);
+          return;
+        }
+      }
+      const newRir = rirSchemeForWeeks(newW);
+      const msg = delta > 0
+        ? `¿Agregar 1 semana al mesociclo?<br><span style="color:#888;font-size:12px">Nueva duración: <strong style="color:#C9A84C">${newW} semanas</strong>. RIR de la nueva semana ${newW}: ${newRir[newW]}.</span>`
+        : `¿Quitar la última semana del mesociclo?<br><span style="color:#888;font-size:12px">Nueva duración: <strong style="color:#C9A84C">${newW} semanas</strong>. Los registros existentes no se borran.</span>`;
+      if (!await _askConfirm(msg)) return;
+      await updateDoc(doc(db, 'plans', planId), {
+        weeks: newW,
+        rirByWeek: newRir,
+        updatedAt: new Date().toISOString()
+      });
+      // Actualiza el contador visible sin recargar
+      const lbl = document.getElementById('planWeeksDisplay_' + planId);
+      if (lbl) lbl.textContent = newW;
+      showToast(`✅ Mesociclo ${delta > 0 ? 'extendido' : 'reducido'} a ${newW} semanas`);
+      // Refrescar la vista del cliente
+      if (_detailClientId) showClientDetail(_detailClientId);
+    } catch(e) { showToast('Error: ' + e.message, true); console.error(e); }
+  }
+  window.extendPlanWeeks = extendPlanWeeks;
 
   async function loadClientsSelect() {
     if (!currentCoach) return;
@@ -1225,8 +2661,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             : '<li class="text-[#888]">Sin ejercicios detectados</li>'}
         </ul>
       </div>`).join('');
+    const volPanel = renderVolumePanel(planObj);
     preview.innerHTML = `
-      <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s). Revisa y guarda:</div>
+      <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s) · ${planObj.weeks || 6} semanas. Revisa y guarda:</div>
+      ${volPanel}
       ${dayList}
       <button onclick="saveImportedPlan()" class="btn-primary w-full mt-2">💾 Guardar y activar plan</button>`;
     preview._planObj = planObj;
@@ -1269,12 +2707,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const planObj = window._importedPlan;
     if (!planObj) { showToast("No hay plan cargado", true); return; }
     try {
+      // Backup automático del plan anterior si existe
+      await backupPlanIfExists(clientId);
       // Limpiar plan anterior si existe (evita docs huérfanos)
       const prevClientSnap = await getDoc(doc(db, "clients", clientId));
       const prevPlanId = prevClientSnap.exists() ? prevClientSnap.data().activePlanId : null;
 
       const planRef = await addDoc(collection(db, "plans"), {
         ...planObj,
+        rirByWeek: rirSchemeForWeeks(planObj.weeks || 6),
         coachId: currentCoach.uid,
         clientId,
         status: "active",
@@ -1490,22 +2931,44 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           }).join("") || '<span class="text-xs text-[#555] ml-4">Sin ejercicios</span>';
           return `<div class="mb-3"><div class="font-medium text-[#C9A84C] text-sm mb-1">${d.label}</div>${exList}</div>`;
         }).join("");
+        const planWeeksNow = p.weeks || 1;
         planViewHtml = `
-          <p class="text-sm text-[#888] mb-2">${p.weeks || 1} sem · ${(p.days||[]).length} días/sem${p.rirByWeek ? ' · RIR custom' : ''}</p>
+          <div class="flex items-center gap-2 mb-3 flex-wrap" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.25);border-radius:8px;padding:8px 12px">
+            <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Duración del mesociclo</span>
+            <span id="planWeeksDisplay_${c.activePlanId}" style="color:#C9A84C;font-weight:800;font-size:18px;padding:0 6px">${planWeeksNow}</span>
+            <span class="text-xs text-[#888]">semanas</span>
+            <button onclick="extendPlanWeeks('${c.activePlanId}', 1)" title="Agregar 1 semana al mesociclo"
+              style="margin-left:auto;padding:5px 12px;border-radius:6px;border:1px solid rgba(68,187,136,.55);background:rgba(68,187,136,.18);color:#44BB88;font-size:12px;font-weight:700;cursor:pointer">
+              + 1 semana
+            </button>
+            <button onclick="extendPlanWeeks('${c.activePlanId}', -1)" title="Quitar la última semana"
+              style="padding:5px 12px;border-radius:6px;border:1px solid rgba(220,60,60,.4);background:rgba(220,60,60,.12);color:#e05555;font-size:12px;font-weight:600;cursor:pointer">
+              − 1 semana
+            </button>
+          </div>
+          <p class="text-sm text-[#888] mb-2">${(p.days||[]).length} días/semana${p.rirByWeek ? ' · RIR scheme: ' + Object.entries(p.rirByWeek).map(([w,r])=>`S${w}=${r}`).join(' · ') : ''}</p>
           <div class="mb-3">${dayList}</div>`;
         planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
         planActionsHtml = `
           <button onclick="toggleTrainingEditor()" class="text-[#C9A84C] text-xs underline mr-3">✏️ Editar</button>
           <button onclick="showQuickAddExercise('${c.activePlanId}')" class="text-[#44BB88] text-xs underline mr-3">➕ Agregar ejercicio</button>
           <button onclick="duplicatePlan('${clientId}','${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">📋 Duplicar</button>
+          <button onclick="duplicatePlanToClient('${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">👥 Copiar a otro cliente</button>
+          <button onclick="exportActivePlanJSON('${clientId}','${c.activePlanId}')" class="text-[#C9A84C] text-xs underline mr-3">📥 Exportar JSON</button>
+          <button onclick="viewClientReportHTML('${clientId}')" class="text-[#E8C97A] text-xs underline mr-3">📖 Ver reporte</button>
+          <button onclick="generateFullClientReport('${clientId}')" class="text-[#E8C97A] text-xs underline mr-3">📊 PDF</button>
+          <button onclick="exportClientReportForAI('${clientId}')" class="text-xs underline mr-3" style="color:#c89cff">🤖 Para IA</button>
           <button onclick="deletePlan('${clientId}','${c.activePlanId}')" class="text-red-400 text-xs underline">🗑 Eliminar</button>`;
       }
     }
 
     body.innerHTML = `
       <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
-        <p class="text-sm text-[#888]">${c.email}</p>
-        <button onclick="editClientInfo('${clientId}')" class="text-[#C9A84C] text-xs underline">✏️ Editar datos</button>
+        <p class="text-sm text-[#888]">${c.email}${c.phone ? ' · 📱 '+c.phone : ''}</p>
+        <div class="flex gap-2 flex-wrap">
+          <button onclick="sendCustomWhatsApp('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;cursor:pointer;font-weight:600">📲 WhatsApp</button>
+          <button onclick="editClientInfo('${clientId}')" class="text-[#C9A84C] text-xs underline">✏️ Editar datos</button>
+        </div>
       </div>
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
@@ -2080,14 +3543,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson) {
+    const techVal = (technique || 'straight').toLowerCase();
+    const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
+      .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
+    const altsAttr = (alternativesJson || '[]').replace(/"/g,'&quot;');
     return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}"
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
+      data-alternatives="${altsAttr}"
       style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);transition:opacity .15s">
       <div class="flex gap-2 items-center mb-2">
         <span class="text-[#555] select-none text-base cursor-grab px-0.5" title="Arrastrar para reordenar">⠿</span>
-        <input class="input-field flex-1 text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${name}" id="exname_${di}_${ei}" list="coach_exlist" data-field="name">
+        <input class="input-field flex-1 text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${name}" id="exname_${di}_${ei}" list="coach_exlist" data-field="name" oninput="markEditorDirty&&markEditorDirty()">
         <button onclick="_moveExRow(this, -1)" title="Subir" class="text-[#888] hover:text-white text-base px-1 leading-none">↑</button>
         <button onclick="_moveExRow(this, 1)" title="Bajar" class="text-[#888] hover:text-white text-base px-1 leading-none">↓</button>
         <button onclick="removeExRow(${di},${ei})" class="text-red-400 hover:text-red-300 text-xl leading-none flex-shrink-0 px-0.5" title="Eliminar">×</button>
@@ -2095,18 +3563,28 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div class="grid grid-cols-3 gap-2 mb-2">
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Series</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#C9A84C]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric" data-field="sets">
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#C9A84C]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric" data-field="sets" oninput="markEditorDirty&&markEditorDirty()">
         </div>
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Reps</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="50" inputmode="numeric" data-field="reps">
+          <input class="input-field w-full text-sm py-1 text-center font-bold" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="50" inputmode="numeric" data-field="reps" oninput="markEditorDirty&&markEditorDirty()">
         </div>
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">RIR</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir">
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
-      <textarea class="input-field w-full text-xs py-1" placeholder="Nota de ejecución (tempo, ROM, cues...)" rows="1" data-field="coachNote"
+      <div class="grid grid-cols-3 gap-2 mb-2" style="grid-template-columns:1fr 2fr">
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Técnica</div>
+          <select class="input-field w-full text-xs py-1" data-field="technique" onchange="markEditorDirty&&markEditorDirty()">${techOpts}</select>
+        </div>
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Nota técnica (drop %, mini-clusters, tempo, pausa…)</div>
+          <input class="input-field w-full text-xs py-1" placeholder="Ej: Tras RIR0 bajar 30% y continuar al fallo" data-field="techniqueNote" value="${(techniqueNote||'').replace(/"/g,'&quot;')}" oninput="markEditorDirty&&markEditorDirty()">
+        </div>
+      </div>
+      <textarea class="input-field w-full text-xs py-1" placeholder="Nota de ejecución (tempo, ROM, cues...)" rows="1" data-field="coachNote" oninput="markEditorDirty&&markEditorDirty()"
         style="resize:vertical;min-height:28px;color:#aaa;border-color:rgba(255,255,255,.05)">${coachNote || ''}</textarea>
     </div>`;
   }
@@ -2156,7 +3634,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const reps    = (e.sets && e.sets[0]) ? (e.sets[0].repsTarget || 8) : 8;
         const rir     = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
         var coachNote = e.coachNote || '';
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote);
+        var tech = e.technique || 'straight';
+        var techNote = e.techniqueNote || '';
+        var altsJson = JSON.stringify(e.alternatives || []);
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson);
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#C9A84C]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -2184,7 +3665,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const div = document.createElement('div');
     div.outerHTML; // placeholder
     const tmp = document.createElement('template');
-    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2);
+    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]');
     list.appendChild(tmp.content.firstElementChild);
   }
 
@@ -2254,17 +3735,34 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const reps = parseInt(row.querySelector('[data-field="reps"]')?.value) || 8;
         const rir  = parseInt(row.querySelector('[data-field="rir"]')?.value)  || 2;
         const coachNote = row.querySelector('[data-field="coachNote"]')?.value.trim() || '';
+        const technique = (row.querySelector('[data-field="technique"]')?.value || 'straight').toLowerCase();
+        const techniqueNote = row.querySelector('[data-field="techniqueNote"]')?.value.trim() || '';
+        let alternatives = [];
+        try { alternatives = JSON.parse(row.dataset.alternatives || '[]'); } catch(e) {}
         if (name) exercises.push({
           exerciseName: name,
-          alternatives: [],
-          coachNote: coachNote,
-          sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90 }))
+          alternatives,
+          coachNote,
+          technique,
+          techniqueNote,
+          sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90, setNote: '', drop: false, tempo: '' }))
         });
       });
       days.push({ dayIndex: di, label, exercises });
     });
     try {
+      // Backup pre-sobrescribir
+      try {
+        const cur = await getDoc(doc(db, "plans", _editingPlanId));
+        if (cur.exists()) {
+          await addDoc(collection(db, "plans_backup"), {
+            ...cur.data(), originalPlanId: _editingPlanId,
+            backedUpAt: new Date().toISOString(), backedUpBy: currentCoach.uid
+          });
+        }
+      } catch(e) { console.warn('backup falló:', e); }
       await updateDoc(doc(db, "plans", _editingPlanId), { days, daysPerWeek: days.length, coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
+      markEditorClean();
       showToast('Plan actualizado ✅');
       toggleTrainingEditor();
       showClientDetail(_detailClientId);
@@ -2404,6 +3902,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <input id="eci-name" class="input-field mb-3" value="${(c.displayName||'').replace(/"/g,'&quot;')}">
         <label class="block text-xs text-[#888] mb-1">Email <span class="text-[#555]">(referencia — Auth real requiere SDK admin)</span></label>
         <input id="eci-email" class="input-field mb-3" type="email" value="${(c.email||'').replace(/"/g,'&quot;')}">
+        <label class="block text-xs text-[#888] mb-1">📱 WhatsApp <span class="text-[#555]">(con código país, ej. +52155...)</span></label>
+        <input id="eci-phone" class="input-field mb-3" type="tel" placeholder="+52 155 1234 5678" value="${(c.phone||'').replace(/"/g,'&quot;')}">
         <div class="p-3 mb-3 rounded" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.25)">
           <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
             <strong style="color:#4488cc">ℹ️ Contraseña:</strong> el SDK web no permite cambiarla directamente al cliente. Envía un enlace de reseteo al correo del cliente y él la elige.
@@ -2439,6 +3939,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       try {
         const updates = { displayName: newName };
         if (newEmail && newEmail !== c.email) updates.email = newEmail;
+        const newPhone = overlay.querySelector('#eci-phone')?.value.trim() || '';
+        if (newPhone !== (c.phone || '')) updates.phone = newPhone;
         await updateDoc(doc(db, "clients", clientId), updates);
         st.style.color = '#44BB88';
         st.textContent = '✓ Guardado' + (newEmail !== c.email ? ' (campo email del doc actualizado; Auth real no cambió)' : '');
@@ -2891,6 +4393,97 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.saveTrainingPlan = saveTrainingPlan;
   window.deletePlan = deletePlan;
   window.duplicatePlan = duplicatePlan;
+
+  // ── Exportar JSON del plan activo (copia al portapapeles + descarga .json) ──
+  async function exportActivePlanJSON(clientId, planId) {
+    try {
+      const snap = await getDoc(doc(db, "plans", planId));
+      if (!snap.exists()) { showToast('Plan no encontrado', true); return; }
+      const data = snap.data();
+      // Limpiar metadata interna para que sea importable
+      const clean = {
+        weeks: data.weeks || 6,
+        daysPerWeek: data.daysPerWeek || (data.days||[]).length,
+        days: (data.days || []).map(d => ({
+          dayIndex: d.dayIndex,
+          label: d.label,
+          exercises: (d.exercises || []).map(ex => ({
+            exerciseName: ex.exerciseName,
+            alternatives: ex.alternatives || [],
+            technique: ex.technique || 'straight',
+            techniqueNote: ex.techniqueNote || '',
+            coachNote: ex.coachNote || '',
+            sets: (ex.sets || []).map(s => ({
+              setIndex: s.setIndex, repsTarget: s.repsTarget, rirTarget: s.rirTarget,
+              load: s.load || 0, restSeconds: s.restSeconds || 90,
+              setNote: s.setNote || '', drop: !!s.drop, tempo: s.tempo || ''
+            }))
+          }))
+        }))
+      };
+      const text = JSON.stringify(clean, null, 2);
+      try { await navigator.clipboard.writeText(text); } catch(e) {}
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `VDSEN_Plan_${clientId.slice(0,6)}_${Date.now()}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('✅ JSON copiado y descargado');
+    } catch(e) { showToast('Error: ' + e.message, true); }
+  }
+  window.exportActivePlanJSON = exportActivePlanJSON;
+
+  // ── Duplicar plan a otro cliente (selector modal) ──
+  async function duplicatePlanToClient(sourcePlanId) {
+    try {
+      const snap = await getDoc(doc(db, "plans", sourcePlanId));
+      if (!snap.exists()) { showToast('Plan origen no encontrado', true); return; }
+      const planData = snap.data();
+      const clientsSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+      const clients = [];
+      clientsSnap.forEach(d => { if (d.id !== planData.clientId) clients.push({ id:d.id, ...d.data() }); });
+      if (!clients.length) { showToast('No hay otros clientes a quien copiar', true); return; }
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `
+        <div style="background:#141616;border:1px solid rgba(201,168,76,.3);border-radius:12px;padding:24px;max-width:420px;width:100%">
+          <h3 style="color:#C9A84C;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px">Copiar plan a otro cliente</h3>
+          <p style="color:#888;font-size:12px;margin-bottom:10px">Selecciona el cliente destino. Si tiene un plan activo, se hará backup antes de sobrescribir.</p>
+          <select id="_dupTarget" class="input-field mb-3">${clients.map(c => `<option value="${c.id}">${c.displayName || c.email}${c.activePlanId ? ' · ⚠️ ya tiene plan' : ''}</option>`).join('')}</select>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button id="_dupCancel" style="padding:8px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
+            <button id="_dupOk" style="padding:8px 14px;border-radius:6px;border:none;background:linear-gradient(135deg,#9A7A28,#E8C97A);color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Copiar plan</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_dupCancel').onclick = () => ov.remove();
+      ov.querySelector('#_dupOk').onclick = async () => {
+        const targetId = ov.querySelector('#_dupTarget').value;
+        ov.remove();
+        if (!targetId) return;
+        showToast('Copiando plan...');
+        try {
+          await backupPlanIfExists(targetId);
+          const newRef = await addDoc(collection(db, "plans"), {
+            ...planData,
+            clientId: targetId,
+            coachId: currentCoach.uid,
+            status: 'active',
+            generatedBy: 'duplicate-to-client',
+            createdAt: new Date().toISOString()
+          });
+          // Eliminar plan anterior del destino si existía
+          const tgtClient = await getDoc(doc(db, "clients", targetId));
+          const prevId = tgtClient.exists() ? tgtClient.data().activePlanId : null;
+          await updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id });
+          if (prevId && prevId !== newRef.id) { try { await deleteDoc(doc(db, "plans", prevId)); } catch(e) {} }
+          showToast('✅ Plan copiado al cliente destino');
+        } catch(e) { showToast('Error: ' + e.message, true); }
+      };
+    } catch(e) { showToast('Error: ' + e.message, true); }
+  }
+  window.duplicatePlanToClient = duplicatePlanToClient;
   window.navClient = navClient;
   window.showQuickAddExercise = showQuickAddExercise;
   window.submitQuickAdd = submitQuickAdd;
@@ -2921,6 +4514,46 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.applyTemplate = applyTemplate;
   window.deleteTemplate = deleteTemplate;
   window.loadDashboard = loadDashboard;
+
+  // Diagnóstico Firebase: lee/escribe doc temporal, mide latencias, valida permisos
+  document.getElementById("diagFirebaseBtn")?.addEventListener("click", async () => {
+    const out = document.getElementById("diagFirebaseOut");
+    if (!out) return;
+    const log = (msg, color='#888') => { out.innerHTML += `<div style="color:${color}">${msg}</div>`; };
+    out.innerHTML = '';
+    log('▶ Iniciando diagnóstico…', '#C9A84C');
+    // 1. Usuario autenticado
+    log(`• Auth: ${currentCoach ? '✅ ' + currentCoach.email : '❌ sin sesión'}`, currentCoach ? '#44BB88' : '#FF4444');
+    log(`• UID: ${currentCoach?.uid || '—'}`);
+    log(`• Proyecto: ${firebaseConfig.projectId}`);
+    // 2. Read coaches/{uid}
+    let t0 = performance.now();
+    try {
+      const s = await getDoc(doc(db, 'coaches', currentCoach.uid));
+      const dt = (performance.now() - t0).toFixed(0);
+      log(`• Read coaches/{uid}: ${s.exists() ? '✅' : '⚠️ no existe'} (${dt} ms)`, s.exists() ? '#44BB88' : '#FFBB00');
+    } catch(e) { log(`• Read coaches: ❌ ${e.code || e.message}`, '#FF4444'); }
+    // 3. Listar clientes
+    t0 = performance.now();
+    try {
+      const s = await getDocs(query(collection(db, 'clients'), where('coachId', '==', currentCoach.uid)));
+      log(`• Query clients (coachId): ✅ ${s.size} resultados (${(performance.now()-t0).toFixed(0)} ms)`, '#44BB88');
+    } catch(e) { log(`• Query clients: ❌ ${e.code || e.message}`, '#FF4444'); }
+    // 4. Write/Delete prueba
+    t0 = performance.now();
+    try {
+      const ref = await addDoc(collection(db, 'diag_pings'), { uid: currentCoach.uid, ts: Date.now() });
+      const dt1 = (performance.now() - t0).toFixed(0);
+      t0 = performance.now();
+      await deleteDoc(ref);
+      const dt2 = (performance.now() - t0).toFixed(0);
+      log(`• Write+Delete diag_pings: ✅ (${dt1}+${dt2} ms)`, '#44BB88');
+    } catch(e) { log(`• Write diag_pings: ❌ ${e.code || e.message} (revisa reglas Firestore)`, '#FF4444'); }
+    // 5. Online check
+    log(`• navigator.onLine: ${navigator.onLine ? '✅' : '❌'}`, navigator.onLine ? '#44BB88' : '#FF4444');
+    log(`• User-Agent: ${navigator.userAgent.slice(0, 80)}…`, '#666');
+    log('▶ Diagnóstico finalizado.', '#C9A84C');
+  });
 
   // Configuración: guardar API key
   document.getElementById("saveApiKeyBtn")?.addEventListener("click", () => {
