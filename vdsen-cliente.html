@@ -2570,6 +2570,13 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     }
   }
 
+  // \u2500\u2500 Detecci\u00f3n de tipo de ejercicio para inputs apropiados \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // isIsometric: el set se registra en SEGUNDOS, no en reps (planchas, iso-hold)
+  // isBodyweight: la carga es opcional (lastre), valor base = peso corporal
+  var _techLower = (ej.technique||'').toLowerCase();
+  var isIsometric = _techLower === 'iso-hold' || /^plancha|isometric|hollow|l[- ]?sit|wall sit/i.test(nombre);
+  var isBodyweight = isIsometric || /^(dominad|fondo|plancha|burpee|abdominal|crunch(?! en polea)|rueda abdomin|elevaci[o\u00f3]n de piernas (colgad|libre)|push.?up|flexi[o\u00f3]n|muscle.?up|pull.?up|hollow)/i.test(nombre);
+
   var setsHtml = '';
   for (var s = 0; s < numSeries; s++) {
     var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
@@ -2602,22 +2609,29 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '</div>'
       : '';
 
-    if (s < activeSi || (sessionDone && saved.done)) {
-      // ── SET COMPLETADO (o sesión cerrada) ────────────────────────────
+    if (saved.done) {
+      // ── SET COMPLETADO — SIEMPRE editable con botón ✏ ────────────────
+      // Cualquier set guardado puede corregirse, aunque la sesión esté cerrada
+      // o sea un set previo. Tap ✏ → abre el set como activo con valores
+      // pre-cargados para corrección directa.
       var pumpEmoji = saved.pump===1?'💪':saved.pump===2?'👍':saved.pump===3?'😐':'';
+      var _cargaDisplay = isIsometric
+        ? ((parseFloat(saved.carga)>0 ? saved.carga+' '+unit+' · ' : '')+saved.reps+' seg')
+        : (isBodyweight
+            ? ((parseFloat(saved.carga)>0 ? 'BW + '+saved.carga+' '+unit : 'Peso corporal')+' × '+saved.reps+' reps')
+            : (saved.carga+' '+unit+' × '+saved.reps+' reps'));
       setsHtml += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;'+
         'background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.18);border-radius:12px;margin-bottom:8px">'+
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+'</div>'+
-          '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+saved.carga+' '+unit+' × '+saved.reps+' reps</div>'+
+          '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
-        // Botón ↩ siempre disponible — el cliente puede re-editar cualquier set
-        '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
-            'margin-left:auto;padding:5px 10px;border:1px solid var(--border);border-radius:8px;'+
-            'background:var(--input-bg);color:var(--mt);font-size:13px;cursor:pointer;flex-shrink:0">↩</button>'+
+        '<button onclick="editSet(\''+key+'\')" title="Corregir esta serie" style="'+
+            'margin-left:auto;padding:6px 12px;border:1px solid rgba(200,165,74,.4);border-radius:8px;'+
+            'background:rgba(200,165,74,.08);color:var(--accent);font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">✏ Corregir</button>'+
       '</div>';
     } else if (sessionDone && !saved.done) {
       // ── SET SIN DATOS (sesión cerrada) ────────────────────────────────
@@ -2642,22 +2656,31 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '</div>'+
         setSpecBlock+
         prevRefHtml+
-        // Inputs
-        '<div style="display:flex;gap:8px;margin-bottom:10px">'+
-          '<div style="flex:1">'+
-            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">CARGA ('+unit+')</div>'+
-            '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal"'+
-            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
-            'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
-            ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
-          '</div>'+
-          '<div style="flex:1">'+
-            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">REPS</div>'+
-            '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="reps" inputmode="numeric"'+
-            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
-            'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
-            ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
-          '</div>'+
+        // Inputs — adaptados a tipo de ejercicio
+        //   isometric → CARGA opcional + SEGUNDOS (en lugar de REPS)
+        //   bodyweight → LASTRE opcional (+kg/lb sobre peso corporal) + REPS
+        //   normal → CARGA + REPS
+        (function(){
+          var cargaLabel = isIsometric ? 'LASTRE (opc, '+unit+')' : (isBodyweight ? 'LASTRE +'+unit+' (opc)' : 'CARGA ('+unit+')');
+          var cargaPh    = isBodyweight ? '0' : unit;
+          var repsLabel  = isIsometric ? 'SEGUNDOS' : 'REPS';
+          var repsPh     = isIsometric ? 'seg' : 'reps';
+          return '<div style="display:flex;gap:8px;margin-bottom:10px">'+
+            '<div style="flex:1">'+
+              '<div style="font-size:9px;color:'+(isBodyweight?'var(--mt2)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+cargaLabel+'</div>'+
+              '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+cargaPh+'" step="0.5" inputmode="decimal"'+
+              ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
+              'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
+              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
+            '</div>'+
+            '<div style="flex:1">'+
+              '<div style="font-size:9px;color:'+(isIsometric?'var(--accent)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+repsLabel+'</div>'+
+              '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="'+repsPh+'" inputmode="numeric"'+
+              ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(isIsometric?'rgba(200,165,74,.3)':'var(--border)')+';'+
+              'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
+              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
+            '</div>';
+        })()+
           '<div style="width:72px;flex-shrink:0">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">RIR REAL</div>'+
             '<input id="rir_'+key+'" type="number" value="'+(rirReal||'')+'" placeholder="RIR" inputmode="numeric" min="0" max="5"'+
@@ -3685,18 +3708,31 @@ function completeSet(key, di, ei, si, unit) {
   var done  = !prev.done; // toggle
 
   // ── Validación: campos obligatorios antes de marcar como hecha ──
+  // Detección de tipo (debe coincidir con la del renderer):
+  //   isometric → solo requiere segundos; carga es opcional (lastre)
+  //   bodyweight → solo requiere reps; carga es opcional (lastre)
+  //   normal → requiere carga > 0 + reps > 0
   if (done) {
+    var _exNombre = (document.getElementById('setrow_'+key)?.dataset.exname || '').trim();
+    var _tech = '';
+    var _ejForCheck = (_EJERCICIOS_DIA || [])[ei] || null;
+    if (_ejForCheck) _tech = String(_ejForCheck.technique||'').toLowerCase();
+    var _isIso = _tech === 'iso-hold' || /^plancha|isometric|hollow|l[- ]?sit|wall sit/i.test(_exNombre);
+    var _isBW  = _isIso || /^(dominad|fondo|plancha|burpee|abdominal|crunch(?! en polea)|rueda abdomin|elevaci[oó]n de piernas (colgad|libre)|push.?up|flexi[oó]n|muscle.?up|pull.?up|hollow)/i.test(_exNombre);
+
     var cargaNum = parseFloat(carga);
     var repsNum = parseInt(reps);
-    if (!carga || isNaN(cargaNum) || cargaNum <= 0) {
+    if (!_isBW && (!carga || isNaN(cargaNum) || cargaNum <= 0)) {
       showToast('Ingresa la carga (> 0)', true); return;
     }
     if (!reps || isNaN(repsNum) || repsNum <= 0) {
-      showToast('Ingresa las repeticiones (> 0)', true); return;
+      showToast(_isIso ? 'Ingresa los segundos (> 0)' : 'Ingresa las repeticiones (> 0)', true); return;
     }
     if (ics !== null && (ics < 1 || ics > 10)) {
       showToast('ICS debe ser entre 1 y 10', true); return;
     }
+    // Para autocarga sin lastre, normalizamos carga a "0" para que se guarde como número
+    if (_isBW && (!carga || isNaN(cargaNum))) carga = '0';
   }
 
   LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now() };
