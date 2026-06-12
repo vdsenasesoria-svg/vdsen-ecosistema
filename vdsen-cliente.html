@@ -2368,23 +2368,47 @@ function _buildSupersetPartnerHtml(ejercicios, di, ei) {
       : (p.ex.nombre || p.ex.exerciseName || ('Ej '+(p.idx+1)));
     return nm;
   }).join(' · ');
-  var btnLabel = 'Siguiente del SS → '+pName+' ('+pDone+'/'+pNumSeries+')';
   return '<div style="margin:0 0 14px;padding:14px 16px;background:linear-gradient(135deg,rgba(204,102,170,.22),rgba(204,102,170,.10));border:2px solid #cc66aa;border-radius:14px;box-shadow:0 4px 18px rgba(204,102,170,.22)">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'+
       '<span style="font-size:22px;line-height:1">🔁</span>'+
       '<span style="font-size:14px;font-weight:900;letter-spacing:1.5px;color:#fff;background:#cc66aa;padding:4px 12px;border-radius:8px">SUPERSERIE · GRUPO '+grp.toUpperCase()+'</span>'+
     '</div>'+
     '<div style="font-size:13px;color:#fff;line-height:1.55;margin-bottom:10px;font-weight:600">Encadena <span style="color:#ffd6ee;font-weight:800">SIN DESCANSO</span> con:</div>'+
-    '<div style="font-size:15px;color:#fff;line-height:1.4;margin-bottom:12px;font-weight:800;padding:8px 12px;background:rgba(0,0,0,.25);border-left:3px solid #ffd6ee;border-radius:0 8px 8px 0">▸ '+partnerList+'</div>'+
-    '<div style="font-size:11px;color:rgba(255,255,255,.85);line-height:1.5;margin-bottom:10px">Descanso completo SOLO al cerrar la pareja.</div>'+
-    '<button onclick="setEjActivo('+pIdx+')" style="width:100%;padding:14px;border:none;border-radius:10px;background:#fff;color:#cc66aa;font-size:14px;font-weight:900;letter-spacing:.5px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2)">'+btnLabel+' →</button>'+
+    '<div style="font-size:15px;color:#fff;line-height:1.4;margin-bottom:6px;font-weight:800;padding:8px 12px;background:rgba(0,0,0,.25);border-left:3px solid #ffd6ee;border-radius:0 8px 8px 0">▸ '+partnerList+'</div>'+
+    '<div style="font-size:11px;color:rgba(255,255,255,.85);line-height:1.5">↓ El partner aparece abajo en esta misma pantalla. Registra ambos sets antes de descansar — el temporizador solo arranca al cerrar la pareja.</div>'+
   '</div>';
 }
 
+// ── Wrapper público: construye el panel con TODOS los miembros del SS apilados
+// para que el cliente registre ambos sin cambiar de pestaña.
 function _buildExPanel(ejercicios, di) {
   if (!ejercicios.length) return '';
   var ei = EJ_ACTIVO;
   if (ei >= ejercicios.length) ei = ejercicios.length - 1;
+  var ej = ejercicios[ei];
+  var grp = ej && ej.supersetGroup ? String(ej.supersetGroup).trim() : '';
+  // 1. Card del ejercicio activo (con banner SS arriba)
+  var html = _buildExCard(ejercicios, di, ei, false);
+  // 2. Si está en SS, apilar el resto de miembros del grupo debajo
+  if (grp) {
+    for (var k = 0; k < ejercicios.length; k++) {
+      if (k === ei) continue;
+      var p = ejercicios[k];
+      if (!p || String(p.supersetGroup||'').trim().toLowerCase() !== grp.toLowerCase()) continue;
+      html +=
+        '<div style="margin:18px 0 8px;padding:8px 14px;background:linear-gradient(90deg,rgba(204,102,170,.18),rgba(204,102,170,0));border-left:4px solid #cc66aa;border-radius:0 10px 10px 0;display:flex;align-items:center;gap:8px">'+
+          '<span style="font-size:14px">🔁</span>'+
+          '<span style="font-size:11px;font-weight:900;letter-spacing:1.5px;color:#cc66aa">PARTNER DEL SS — encadena sin descanso</span>'+
+        '</div>' +
+        _buildExCard(ejercicios, di, k, true);
+    }
+  }
+  return html;
+}
+
+// ── Card individual de un ejercicio (originalmente _buildExPanel) ──
+function _buildExCard(ejercicios, di, ei, isPartner) {
+  if (!ejercicios.length) return '';
   var ej = ejercicios[ei];
   var _exSubKey = 'exsub_'+CURRENT_WEEK+'_'+di+'_'+ei;
   var _exSubData = LOGS[_exSubKey] || null;
@@ -2473,9 +2497,11 @@ function _buildExPanel(ejercicios, di) {
     _buildTechniqueAndInstructionsHtml(ej, catData, di, ei);
 
   // ── B.0 (RENDERIZADO ARRIBA DE TODO) Superserie no competitiva ──
-  // Se prepende al header para máxima visibilidad al entrar al panel.
-  var supersetHtml = _buildSupersetPartnerHtml(ejercicios, di, ei);
-  headerHtml = supersetHtml + headerHtml;
+  // Solo se muestra arriba del card activo — los partners apilados no lo repiten.
+  if (!isPartner) {
+    var supersetHtml = _buildSupersetPartnerHtml(ejercicios, di, ei);
+    headerHtml = supersetHtml + headerHtml;
+  }
 
   // ── C. Nota del usuario por ejercicio ────────────────────────────────
   var _noteKey = 'exnote_'+CURRENT_WEEK+'_'+di+'_'+ei;
@@ -2696,21 +2722,52 @@ function _buildExPanel(ejercicios, di) {
   }
 
   // ── F. Todos completados ───────────────────────────────────────────────
+  // Para partners apilados (isPartner) suprimimos el bloque para evitar varios
+  // botones "Siguiente ejercicio →" en la misma ventana.
+  // Si está en SS y algún partner aún tiene sets pendientes → mostrar aviso en
+  // lugar del botón de avance.
+  var _ssPartnerPending = false;
+  if (!isPartner && ej.supersetGroup) {
+    var _ssGrp = String(ej.supersetGroup).trim().toLowerCase();
+    for (var _pi = 0; _pi < ejercicios.length; _pi++) {
+      if (_pi === ei) continue;
+      var _pej = ejercicios[_pi];
+      if (!_pej || String(_pej.supersetGroup||'').trim().toLowerCase() !== _ssGrp) continue;
+      var _pNum = _pej.numSeries || (_pej.sets ? _pej.sets.length : 3);
+      var _pDoneAll = true;
+      for (var _ps = 0; _ps < _pNum; _ps++) {
+        var _plg = LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+_pi+'_s'+_ps];
+        if (!_plg || !_plg.done) { _pDoneAll = false; break; }
+      }
+      if (!_pDoneAll) { _ssPartnerPending = true; break; }
+    }
+  }
   var completedBlockHtml = '';
-  if (activeSi === -1) {
-    var isLast = (ei === ejercicios.length - 1);
-    completedBlockHtml = '<div style="margin-top:16px;padding:14px;background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:12px;text-align:center">'+
-      '<div style="font-size:15px;font-weight:800;color:var(--grn);margin-bottom:10px">✓ Ejercicio completado</div>'+
-      (isLast
-        ? '<button onclick="markSessionDone('+di+')" style="'+
-            'width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
-            'background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
-            '🏁 FINALIZAR SESIÓN</button>'
-        : '<button onclick="setEjActivo('+(ei+1)+')" style="'+
-            'width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
-            'background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
-            'Siguiente ejercicio →</button>')+
-    '</div>';
+  if (activeSi === -1 && !isPartner) {
+    if (_ssPartnerPending) {
+      completedBlockHtml = '<div style="margin-top:16px;padding:12px 14px;background:rgba(204,102,170,.10);border:1px solid #cc66aa;border-radius:12px;text-align:center;color:#e9a8d4;font-size:13px;font-weight:700">🔁 Completa el partner del SS antes de avanzar</div>';
+    } else {
+      // Calcular el siguiente ejercicio saltando los partners del mismo grupo
+      // que ya están renderizados arriba.
+      var _nextEi = ei + 1;
+      if (ej.supersetGroup) {
+        var _g2 = String(ej.supersetGroup).trim().toLowerCase();
+        while (_nextEi < ejercicios.length && ejercicios[_nextEi] && String(ejercicios[_nextEi].supersetGroup||'').trim().toLowerCase() === _g2) _nextEi++;
+      }
+      var isLast = (_nextEi >= ejercicios.length);
+      completedBlockHtml = '<div style="margin-top:16px;padding:14px;background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:12px;text-align:center">'+
+        '<div style="font-size:15px;font-weight:800;color:var(--grn);margin-bottom:10px">✓ Ejercicio completado</div>'+
+        (isLast
+          ? '<button onclick="markSessionDone('+di+')" style="'+
+              'width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
+              'background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
+              '🏁 FINALIZAR SESIÓN</button>'
+          : '<button onclick="setEjActivo('+_nextEi+')" style="'+
+              'width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
+              'background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
+              'Siguiente ejercicio →</button>')+
+      '</div>';
+    }
   }
 
   // Banner sesión completa — INFORMATIVO, sets siguen siendo editables
@@ -3647,12 +3704,20 @@ function completeSet(key, di, ei, si, unit) {
   // Leer nombre del ejercicio antes de re-render
   var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
-  // Actualizar historial de ejercicio (peso/RIR para continuidad entre mesociclos)
+  // Actualizar historial de ejercicio (peso/RIR para continuidad entre mesociclos).
+  // Solo guardar SET DE TRABAJO (top set): si ya hay histórico, solo sobreescribir cuando
+  // la nueva carga sea ≥ la guardada — así drop sets y series finales con fatiga no pisan
+  // el peso real de trabajo. Convertimos unidades antes de comparar.
   if (done && carga && parseFloat(carga) > 0) {
-    EXERCISE_HISTORY[exName] = {
-      load: carga, reps: reps, rir: rirReal || getAdjustedRIR(2, CURRENT_WEEK),
-      unit: unit, updatedAt: Date.now()
-    };
+    var _prev = EXERCISE_HISTORY[exName] || {};
+    var _newLoad = parseFloat(carga) || 0;
+    var _prevLoadInUnit = _prev.load ? parseFloat(_convertCarga(_prev.load, _prev.unit, unit)) || 0 : 0;
+    if (!_prev.load || _newLoad >= _prevLoadInUnit) {
+      EXERCISE_HISTORY[exName] = {
+        load: carga, reps: reps, rir: rirReal || getAdjustedRIR(2, CURRENT_WEEK),
+        unit: unit, updatedAt: Date.now()
+      };
+    }
   }
 
   saveLogs();
@@ -3661,18 +3726,46 @@ function completeSet(key, di, ei, si, unit) {
   _refreshExPanelOnly();
 
   if (done) {
-    // Timer inteligente: usa fatigueCost del catálogo si disponible
-    var catEx = _getCatalogData(exName);
+    // ── Lógica de descanso SS-aware ────────────────────────────────────
+    // 1. Si el ejercicio está en una superserie y aún hay un partner con set s
+    //    sin registrar → NO arrancar timer, solo recordar que pasen al partner.
+    // 2. Si todos los partners ya completaron este set → arrancar timer con el
+    //    restSeconds del set del plan (cierre del par), o fallback a fatigueCost.
+    var _ejCur = (_EJERCICIOS_DIA || [])[ei] || null;
+    var _grp   = _ejCur && _ejCur.supersetGroup ? String(_ejCur.supersetGroup).trim() : '';
+    var _partnerPending = false;
+    if (_grp) {
+      for (var _pk = 0; _pk < (_EJERCICIOS_DIA || []).length; _pk++) {
+        if (_pk === ei) continue;
+        var _pej = _EJERCICIOS_DIA[_pk];
+        if (!_pej || String(_pej.supersetGroup||'').trim() !== _grp) continue;
+        var _plog = LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+_pk+'_s'+si];
+        if (!_plog || !_plog.done) { _partnerPending = true; break; }
+      }
+    }
+    if (_partnerPending) {
+      showToast('✓ → Ahora hacé el partner del SS');
+      return;
+    }
+
+    // Calcular restTime: preferir restSeconds del plan (set actual) si > 0.
+    var _setSpec = _ejCur && _ejCur.sets && _ejCur.sets[si] ? _ejCur.sets[si] : null;
+    var _planRest = _setSpec && parseInt(_setSpec.restSeconds) > 0 ? parseInt(_setSpec.restSeconds) : 0;
     var restTime;
-    if (catEx) {
-      var fc = catEx.fatigueCost || 3;
-      restTime = fc >= 5 ? 180 : fc >= 4 ? 150 : fc >= 3 ? 120 : fc >= 2 ? 90 : 60;
+    if (_planRest > 0) {
+      restTime = _planRest;
     } else {
-      var esCompuesto = /press|squat|sentadilla|peso muerto|rdl|hip thrust|jalon|remo|dominadas|fondos|hack|prensa|bulgar|curl femoral/.test(exName);
-      restTime = esCompuesto ? 120 : 90;
+      var catEx = _getCatalogData(exName);
+      if (catEx) {
+        var fc = catEx.fatigueCost || 3;
+        restTime = fc >= 5 ? 180 : fc >= 4 ? 150 : fc >= 3 ? 120 : fc >= 2 ? 90 : 60;
+      } else {
+        var esCompuesto = /press|squat|sentadilla|peso muerto|rdl|hip thrust|jalon|remo|dominadas|fondos|hack|prensa|bulgar|curl femoral/.test(exName);
+        restTime = esCompuesto ? 120 : 90;
+      }
     }
     startRestTimer(restTime);
-    showToast('Serie ✓ — descansando');
+    showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
   } else {
     showToast('Serie desmarcada');
   }
