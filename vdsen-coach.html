@@ -2958,7 +2958,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <button onclick="showQuickAddExercise('${c.activePlanId}')" class="text-[#44BB88] text-xs underline mr-3">➕ Agregar ejercicio</button>
           <button onclick="duplicatePlan('${clientId}','${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">📋 Duplicar</button>
           <button onclick="duplicatePlanToClient('${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">👥 Copiar a otro cliente</button>
-          <button onclick="exportActivePlanJSON('${clientId}','${c.activePlanId}')" class="text-[#C9A84C] text-xs underline mr-3">📥 Exportar JSON</button>
+          <button onclick="exportActivePlanJSON('${clientId}','${c.activePlanId}')" class="text-[#C9A84C] text-xs underline mr-3">📥 JSON</button>
+          <button onclick="exportActivePlanTXT('${clientId}','${c.activePlanId}')" class="text-[#C9A84C] text-xs underline mr-3">📝 TXT</button>
           <button onclick="viewClientReportHTML('${clientId}')" class="text-[#E8C97A] text-xs underline mr-3">📖 Ver reporte</button>
           <button onclick="generateFullClientReport('${clientId}')" class="text-[#E8C97A] text-xs underline mr-3">📊 PDF</button>
           <button onclick="exportClientReportForAI('${clientId}')" class="text-xs underline mr-3" style="color:#c89cff">🤖 Para IA</button>
@@ -4437,6 +4438,115 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     } catch(e) { showToast('Error: ' + e.message, true); }
   }
   window.exportActivePlanJSON = exportActivePlanJSON;
+
+  // ── Exportar plan en TXT legible — copia al portapapeles + descarga .txt ──
+  async function exportActivePlanTXT(clientId, planId) {
+    try {
+      const planSnap = await getDoc(doc(db, "plans", planId));
+      if (!planSnap.exists()) { showToast('Plan no encontrado', true); return; }
+      const p = planSnap.data();
+      let clientName = 'Cliente';
+      try {
+        const cs = await getDoc(doc(db, 'clients', clientId));
+        if (cs.exists()) clientName = cs.data().displayName || clientName;
+      } catch(e) {}
+
+      const W = (p.weeks || 6);
+      const dpw = p.daysPerWeek || (p.days||[]).length;
+      const rir = p.rirByWeek || rirSchemeForWeeks(W);
+      const lines = [];
+      const sep = (ch='═', n=58) => ch.repeat(n);
+
+      lines.push(sep());
+      lines.push(`  VDSEN — PLAN DE ENTRENAMIENTO`);
+      lines.push(sep());
+      lines.push(`  Cliente : ${clientName}`);
+      lines.push(`  Duración: ${W} semanas × ${dpw} días/semana`);
+      lines.push(`  Generado: ${new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'long', year:'numeric' })}`);
+      lines.push('');
+      lines.push(`  Esquema RIR por semana:`);
+      const rirLine = Object.keys(rir).sort((a,b)=>+a-+b).map(w => `S${w}=${rir[w]}`).join(' · ');
+      lines.push(`  ${rirLine}`);
+      lines.push(sep('─'));
+      lines.push('');
+
+      (p.days || []).forEach((d, di) => {
+        lines.push(`▌ ${d.label || 'Día ' + (di+1)}`);
+        lines.push(sep('─', 50));
+        (d.exercises || []).forEach((ex, ei) => {
+          const sets = ex.sets || [];
+          const numSets = sets.length || 1;
+          const reps = sets[0]?.repsTarget ?? 8;
+          const rirT = sets[0]?.rirTarget ?? 2;
+          const rest = sets[0]?.restSeconds ?? 90;
+          const tech = (ex.technique && ex.technique !== 'straight') ? ` [${ex.technique.toUpperCase()}]` : '';
+          lines.push(`  ${ei+1}. ${ex.exerciseName}${tech}`);
+          lines.push(`     ${numSets} × ${reps} reps · RIR ${rirT} · Descanso ${rest}s`);
+          if (ex.techniqueNote) lines.push(`     ↳ Técnica: ${ex.techniqueNote}`);
+          if (ex.coachNote) lines.push(`     ✎ Nota: ${ex.coachNote}`);
+          if (ex.alternatives && ex.alternatives.length) lines.push(`     ⇄ Alternativas: ${ex.alternatives.join(', ')}`);
+          // Detalle de sets si difieren entre sí
+          const diferentes = sets.some(s => s.repsTarget !== reps || s.rirTarget !== rirT || s.restSeconds !== rest || s.setNote || s.drop || s.tempo);
+          if (diferentes) {
+            sets.forEach((s, si) => {
+              const parts = [`Serie ${si+1}: ${s.repsTarget} reps · RIR ${s.rirTarget} · ${s.restSeconds}s`];
+              if (s.tempo) parts.push(`tempo ${s.tempo}`);
+              if (s.drop) parts.push('DROP');
+              if (s.setNote) parts.push(s.setNote);
+              lines.push(`        · ${parts.join(' · ')}`);
+            });
+          }
+          lines.push('');
+        });
+        lines.push('');
+      });
+
+      lines.push(sep('─'));
+      lines.push(`  Notas generales`);
+      lines.push(sep('─'));
+      lines.push('  • Tempo excéntrico mínimo 2s · ROM completo innegociable.');
+      lines.push('  • Registra cada serie en la app: carga, reps, RIR real, ICS, pump.');
+      lines.push('  • Check-in semanal: peso, HRV, WHO-5. Check-in post-sesión: EIMD, articular, sueño, RPE.');
+      lines.push('  • El RIR objetivo escala automáticamente según el esquema arriba.');
+      lines.push('');
+      lines.push('  — VDSEN · El esfuerzo no es negociable.');
+      lines.push(sep());
+
+      const text = lines.join('\n');
+      try { await navigator.clipboard.writeText(text); } catch(e) {}
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `VDSEN_Plan_${clientName.replace(/\s+/g,'_')}.txt`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Modal con texto pre-seleccionado para copiar manualmente si la API falla
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `
+        <div style="background:#141616;border:1px solid rgba(201,168,76,.35);border-radius:12px;padding:22px;max-width:680px;width:100%;max-height:90vh;display:flex;flex-direction:column">
+          <h3 style="color:#C9A84C;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📝 Plan en TXT — ${clientName}</h3>
+          <p style="color:#888;font-size:11px;margin-bottom:10px">Archivo descargado y copiado al portapapeles. Si tu navegador bloqueó el copy, selecciona el texto y pega:</p>
+          <textarea readonly id="_txtPlanBox" style="flex:1;min-height:320px;width:100%;background:#0a0a0a;border:1px solid rgba(201,168,76,.2);border-radius:6px;color:#cfcfcf;padding:12px;font-family:monospace;font-size:12px;line-height:1.5;resize:vertical;white-space:pre">${text.replace(/</g,'&lt;')}</textarea>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+            <button id="_txtCopy" style="padding:8px 14px;border-radius:6px;border:1px solid rgba(201,168,76,.5);background:rgba(201,168,76,.18);color:#C9A84C;font-size:12px;font-weight:700;cursor:pointer">📋 Copiar todo</button>
+            <button id="_txtClose" style="padding:8px 14px;border-radius:6px;border:none;background:linear-gradient(135deg,#9A7A28,#E8C97A);color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Listo</button>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_txtCopy').onclick = () => {
+        const t = ov.querySelector('#_txtPlanBox');
+        t.select(); document.execCommand('copy');
+        showToast('✅ Copiado');
+      };
+      ov.querySelector('#_txtClose').onclick = () => ov.remove();
+      ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+
+      showToast(`✅ TXT generado (${text.length} chars)`);
+    } catch(e) { showToast('Error: ' + e.message, true); console.error(e); }
+  }
+  window.exportActivePlanTXT = exportActivePlanTXT;
 
   // ── Duplicar plan a otro cliente (selector modal) ──
   async function duplicatePlanToClient(sourcePlanId) {
