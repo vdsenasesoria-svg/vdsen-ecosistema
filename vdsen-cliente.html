@@ -2530,25 +2530,47 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var progrec = _getProgRecForExercise(di, ei, nombre);
   var progRec = progrec; // alias PascalCase — usado en _buildSetReferenceHtml
 
-  // Apply progRec numSeries.
-  // Regla: para acciones que CAMBIAN el volumen (add/reduce/deload) → override duro con progrec.newSets.
-  // Para maintain/increase_load/freeze_load → solo subir si el usuario YA hizo más sets que el plan
-  // en esta sesión; nunca bloquear la finalización por una recomendación "mantener 4" cuando el plan
-  // dice 3 y el usuario registró 3 (el caso de Ayrton).
-  if (progrec && progrec.newSets) {
-    var _doneCount = 0;
-    for (var _sc = 0; _sc < 12; _sc++) {
-      if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
+  // ── Determinar numSeries: 3 pasos en orden ──────────────────────────────
+  //
+  // PASO 1 — continuidad desde la semana anterior (ya aplicado arriba: plan/exMod)
+  // Si el cliente realizó MÁS series que el plan la semana pasada (progresó),
+  // esas series deben mostrarse esta semana también — sin depender de la etiqueta
+  // de acción del progrec (que puede ser 'maintain' después de un 'add_sets').
+  // Esto también resuelve definitivamente el bug "Ayrton": si la semana pasada
+  // hizo 3 series (plan=3), _lastWeekDone=3 → numSeries=3; un progrec obsoleto
+  // con newSets=4 NO puede elevar el conteo por esta vía.
+  if (CURRENT_WEEK > 1) {
+    var _lastWeekDone = 0;
+    for (var _lsc = 0; _lsc < 12; _lsc++) {
+      if (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lsc] &&
+          LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lsc].done) {
+        _lastWeekDone = _lsc + 1;
+      }
     }
-    if (['add_sets','reduce_sets','deload'].indexOf(progrec.action) !== -1) {
-      // El algoritmo ordenó cambiar volumen → aplicar target
-      numSeries = Math.max(progrec.newSets, _doneCount);
-    } else {
-      // Mantener/subir carga: no imponer series por encima del plan.
-      // Solo asegurar que los sets ya registrados en esta sesión sean visibles.
-      numSeries = Math.max(numSeries, _doneCount);
-    }
+    numSeries = Math.max(numSeries, _lastWeekDone);
   }
+
+  // PASO 2 — progrec sobreescribe para cambios ACTIVOS de volumen
+  // add_sets/reduce_sets/deload son mandatos explícitos del algoritmo:
+  //   · add_sets:4   → esta semana DEBEN hacerse 4 series
+  //   · reduce_sets:2 → MÁXIMO 2 series (progrec puede bajar por debajo de la sem anterior)
+  //   · deload        → igual, reduce a la mitad
+  // maintain/increase_load/freeze_load NO fuerzan el conteo; la continuidad
+  // ya la garantiza el _lastWeekDone del paso 1.
+  var _doneCount = 0;
+  for (var _sc = 0; _sc < 12; _sc++) {
+    if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] &&
+        LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
+  }
+  if (progrec && progrec.newSets) {
+    if (['add_sets','reduce_sets','deload'].indexOf(progrec.action) !== -1) {
+      numSeries = Math.max(progrec.newSets, _doneCount);
+    }
+    // Para maintain/increase_load/freeze_load: solo proteger sets ya hechos esta sesión
+  }
+
+  // PASO 3 — nunca ocultar sets que el cliente ya registró esta sesión
+  numSeries = Math.max(numSeries, _doneCount);
 
   // ── A. (eliminado) ─────────────────────────────────────────────────────
   var machineHtml = '';
@@ -3443,18 +3465,28 @@ function buildBoostcampExercise(ej, di, ei) {
   var wuRefLoad = 0;
   var progRecForWu = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
 
-  // ── Aplicar número de series de la recomendación de progresión ──────
-  // add_sets / reduce_sets / deload modifican numSeries activamente.
-  // Se protege contra reducir por debajo de sets ya completados en esta sesión.
+  // ── Determinar numSeries (misma lógica de 3 pasos que _buildExCard) ──
+  // Paso 1: continuidad desde semana anterior
+  if (CURRENT_WEEK > 1) {
+    var _lwdBC = 0;
+    for (var _lscBC = 0; _lscBC < 12; _lscBC++) {
+      if (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lscBC] &&
+          LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lscBC].done) _lwdBC = _lscBC + 1;
+    }
+    numSeries = Math.max(numSeries, _lwdBC);
+  }
+  // Paso 2: progrec sobreescribe solo para cambios activos de volumen
+  var _dcBC = 0;
+  for (var _scBC = 0; _scBC < 12; _scBC++) {
+    if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_scBC] &&
+        LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_scBC].done) _dcBC = _scBC + 1;
+  }
   if (progRecForWu && progRecForWu.newSets &&
       ['add_sets','reduce_sets','deload'].indexOf(progRecForWu.action) !== -1) {
-    var _doneCount = 0;
-    for (var _sc = 0; _sc < 12; _sc++) {
-      var _sk = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc;
-      if (LOGS[_sk] && LOGS[_sk].done) _doneCount = _sc + 1;
-    }
-    numSeries = Math.max(progRecForWu.newSets, _doneCount);
+    numSeries = Math.max(progRecForWu.newSets, _dcBC);
   }
+  // Paso 3: nunca ocultar sets ya registrados
+  numSeries = Math.max(numSeries, _dcBC);
 
   // Referencia de carga para warm-up: prog rec > semana anterior > historial
   if (_isFirstOfPattern) {
@@ -7661,7 +7693,8 @@ var MRV_BY_PATTERN = {
   'Core':        16
 };
 
-// Suma de series semanales prescritas por el plan, agrupadas por targetMuscle
+// Suma de series semanales REALMENTE HECHAS (LOGS) agrupadas por targetMuscle.
+// Fallback a series del plan para sesiones no completadas aún esta semana.
 function _getWeeklyVolumeByMuscle(muscle) {
   if (!muscle) return 0;
   var total = 0;
@@ -7671,28 +7704,37 @@ function _getWeeklyVolumeByMuscle(muscle) {
     for (var e = 0; e < exs.length; e++) {
       var ex = exs[e];
       var cat = _getCatalogData(ex.nombre || ex.exerciseName || '');
-      if (cat && cat.targetMuscle === muscle) {
-        total += (ex.sets ? ex.sets.length : (ex.numSeries || 3));
+      if (!cat || cat.targetMuscle !== muscle) continue;
+      // Contar sets realmente completados en CURRENT_WEEK para este ejercicio
+      var doneSets = 0;
+      for (var s = 0; s < 12; s++) {
+        var k = 'log_'+CURRENT_WEEK+'_'+d+'_'+e+'_s'+s;
+        if (LOGS[k] && LOGS[k].done) doneSets++;
       }
+      // Si hay sets registrados → usar eso; si no → plan como proxy (sesión futura)
+      total += doneSets > 0 ? doneSets : (ex.sets ? ex.sets.length : (ex.numSeries || 3));
     }
   }
   return total;
 }
 
-// Suma de series semanales prescritas por el plan, agrupadas por motorPattern
+// Suma de series semanales REALMENTE HECHAS agrupadas por motorPattern.
 function _getWeeklyVolumeByPattern(pattern) {
   if (!pattern) return 0;
   var total = 0;
   var sesiones = getSesiones();
   for (var d = 0; d < sesiones.length; d++) {
-    var dia = sesiones[d];
-    var exs = dia.exercises || [];
+    var exs = sesiones[d].exercises || [];
     for (var e = 0; e < exs.length; e++) {
       var ex = exs[e];
       var cat = _getCatalogData(ex.nombre || ex.exerciseName || '');
-      if (cat && cat.motorPattern === pattern) {
-        total += (ex.sets ? ex.sets.length : (ex.numSeries || 3));
+      if (!cat || cat.motorPattern !== pattern) continue;
+      var doneSets = 0;
+      for (var s = 0; s < 12; s++) {
+        var k = 'log_'+CURRENT_WEEK+'_'+d+'_'+e+'_s'+s;
+        if (LOGS[k] && LOGS[k].done) doneSets++;
       }
+      total += doneSets > 0 ? doneSets : (ex.sets ? ex.sets.length : (ex.numSeries || 3));
     }
   }
   return total;
@@ -7874,7 +7916,11 @@ function calculateProgression(di, postData) {
     var load    = _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; }));
     var numSets = sets.length;
     var alpha   = _getAlpha(catData);
-    var maxSets = _getMaxSets(catData, planSets);
+    // Bug fix: usar numSets (series reales) en lugar de planSets (plan fijo).
+    // Con planSets=3, _getMaxSets retornaba 4 → si el cliente llegó a 4 vía
+    // add_sets, la condición numSets < maxSets era 4 < 4 = false → bloqueaba
+    // cualquier progresión futura de volumen aunque el cliente estuviera en óptimas.
+    var maxSets = _getMaxSets(catData, numSets);
     var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
 
     // Calcular reps target del plan (leer del plan real, no solo repsRange)
