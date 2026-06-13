@@ -2379,30 +2379,119 @@ function _buildSupersetPartnerHtml(ejercicios, di, ei) {
   '</div>';
 }
 
-// ── Wrapper público: construye el panel con TODOS los miembros del SS apilados
-// para que el cliente registre ambos sin cambiar de pestaña.
+// ── Wrapper público: construye el panel ──────────────────────────────────────
+// Para ejercicios simples: solo la card.
+// Para superseries: un contenedor unificado con header, bridge "SIN DESCANSO"
+// entre cada ejercicio, y footer de descanso al cerrar el bloque.
 function _buildExPanel(ejercicios, di) {
   if (!ejercicios.length) return '';
   var ei = EJ_ACTIVO;
   if (ei >= ejercicios.length) ei = ejercicios.length - 1;
   var ej = ejercicios[ei];
   var grp = ej && ej.supersetGroup ? String(ej.supersetGroup).trim() : '';
-  // 1. Card del ejercicio activo (con banner SS arriba)
-  var html = _buildExCard(ejercicios, di, ei, false);
-  // 2. Si está en SS, apilar el resto de miembros del grupo debajo
-  if (grp) {
-    for (var k = 0; k < ejercicios.length; k++) {
-      if (k === ei) continue;
-      var p = ejercicios[k];
-      if (!p || String(p.supersetGroup||'').trim().toLowerCase() !== grp.toLowerCase()) continue;
-      html +=
-        '<div style="margin:18px 0 8px;padding:8px 14px;background:linear-gradient(90deg,rgba(204,102,170,.18),rgba(204,102,170,0));border-left:4px solid #cc66aa;border-radius:0 10px 10px 0;display:flex;align-items:center;gap:8px">'+
-          '<span style="font-size:14px">🔁</span>'+
-          '<span style="font-size:11px;font-weight:900;letter-spacing:1.5px;color:#cc66aa">PARTNER DEL SS — encadena sin descanso</span>'+
-        '</div>' +
-        _buildExCard(ejercicios, di, k, true);
-    }
+
+  // ── Caso simple (sin superserie) ────────────────────────────────────────
+  if (!grp) return _buildExCard(ejercicios, di, ei, false);
+
+  // ── Caso superserie: construir bloque unificado ───────────────────────────
+  // Recolectar todos los miembros del grupo en orden de índice
+  var ssMembers = [];
+  for (var k = 0; k < ejercicios.length; k++) {
+    var pEx = ejercicios[k];
+    if (pEx && String(pEx.supersetGroup||'').trim().toLowerCase() === grp.toLowerCase()) ssMembers.push(k);
   }
+
+  // Símbolos de secuencia
+  var circleNums = ['①','②','③','④','⑤'];
+
+  // Nombres actuales (con sustituciones si existen)
+  var memberNames = ssMembers.map(function(idx) {
+    var sub = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+idx];
+    return sub && sub.nombre ? sub.nombre : (ejercicios[idx].nombre || ejercicios[idx].exerciseName || 'Ej '+(idx+1));
+  });
+
+  // Número de rondas = series del primer ejercicio del grupo
+  var numRondas = ejercicios[ssMembers[0]].numSeries || (ejercicios[ssMembers[0]].sets ? ejercicios[ssMembers[0]].sets.length : 3);
+
+  // Flujo para el header: ① Nombre → ② Nombre → ⏸ Descanso
+  var flowHtml = memberNames.map(function(n, i) {
+    return '<span style="font-weight:900;color:#fff">'+circleNums[i]+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+n+'</span>';
+  }).join('<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>')+
+    '<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>'+
+    '<span style="color:#ffe0a0;font-weight:800">⏸&nbsp;Descanso</span>';
+
+  // ── Contenedor externo
+  var html =
+    '<div style="border:2px solid #cc66aa;border-radius:18px;overflow:hidden;margin-bottom:16px;'+
+         'box-shadow:0 6px 28px rgba(204,102,170,.25)">'+
+
+    // Header del bloque SS
+    '<div style="background:linear-gradient(135deg,#9b3e88,#cc66aa);padding:13px 16px 11px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">'+
+        '<span style="font-size:20px">🔁</span>'+
+        '<div>'+
+          '<div style="font-size:13px;font-weight:900;letter-spacing:1.5px;color:#fff;line-height:1">'+
+            'BISERIE&thinsp;·&thinsp;GRUPO&thinsp;'+grp.toUpperCase()+
+          '</div>'+
+          '<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:2px">'+numRondas+' rondas en total</div>'+
+        '</div>'+
+      '</div>'+
+      // Línea de flujo
+      '<div style="font-size:11.5px;line-height:1.9;padding:7px 11px;background:rgba(0,0,0,.25);border-radius:9px">'+
+        flowHtml+
+      '</div>'+
+      '<div style="font-size:11px;color:rgba(255,255,255,.82);margin-top:7px;line-height:1.5">'+
+        'Completa <strong style="color:#fff">ambos ejercicios sin descanso</strong> entre ellos.'+
+        ' Solo descansa al terminar la pareja.'+
+      '</div>'+
+    '</div>';
+
+  // ── Ejercicios del bloque
+  ssMembers.forEach(function(idx, i) {
+    var isLast = (i === ssMembers.length - 1);
+    var stepNum = circleNums[i] || (i+1);
+    var stepLabel = isLast ? 'SEGUNDO — luego descansa' : 'PRIMERO — sin descanso después';
+    var stepBg    = isLast ? 'rgba(204,102,170,.07)' : 'rgba(204,102,170,.12)';
+    var stepColor = isLast ? '#e07ac8' : '#cc66aa';
+
+    // Pastilla de paso
+    html +=
+      '<div style="padding:7px 16px;background:'+stepBg+';border-top:1px solid rgba(204,102,170,.28);'+
+           'display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:22px;font-weight:900;color:'+stepColor+';line-height:1">'+stepNum+'</span>'+
+        '<span style="font-size:10px;font-weight:800;letter-spacing:1.2px;color:'+stepColor+'">'+stepLabel+'</span>'+
+      '</div>';
+
+    // Card del ejercicio — todos se pasan como isPartner=true para suprimir
+    // el banner interno (el contenedor externo ya da todo el contexto)
+    html += _buildExCard(ejercicios, di, idx, true);
+
+    // Puente "SIN DESCANSO" entre ejercicios
+    if (!isLast) {
+      html +=
+        '<div style="padding:11px 16px;background:linear-gradient(90deg,rgba(204,102,170,.22),rgba(204,102,170,.08));'+
+             'border-top:1px dashed rgba(204,102,170,.45);border-bottom:1px dashed rgba(204,102,170,.45);'+
+             'display:flex;align-items:center;justify-content:center;gap:10px">'+
+          '<span style="font-size:15px">⚡</span>'+
+          '<span style="font-size:12px;font-weight:900;letter-spacing:1.5px;color:#ffd6ee">'+
+            'SIN DESCANSO&thinsp;→&thinsp;CONTINÚA CON&thinsp;'+(circleNums[i+1]||'el siguiente')+
+          '</span>'+
+          '<span style="font-size:15px">⚡</span>'+
+        '</div>';
+    }
+  });
+
+  // ── Footer: recordatorio de descanso
+  html +=
+    '<div style="padding:10px 16px;background:rgba(200,165,74,.07);'+
+         'border-top:1px solid rgba(204,102,170,.3);display:flex;align-items:center;gap:8px">'+
+      '<span style="font-size:15px">⏸</span>'+
+      '<span style="font-size:11px;font-weight:700;letter-spacing:1px;color:#ffe0a0">'+
+        'PAREJA COMPLETA&thinsp;→&thinsp;AHORA DESCANSA'+
+      '</span>'+
+    '</div>'+
+    '</div>'; // cierre contenedor externo
+
   return html;
 }
 
@@ -2501,12 +2590,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // ── B.2 Técnica de intensificación + instrucciones del ejercicio ──
     _buildTechniqueAndInstructionsHtml(ej, catData, di, ei);
 
-  // ── B.0 (RENDERIZADO ARRIBA DE TODO) Superserie no competitiva ──
-  // Solo se muestra arriba del card activo — los partners apilados no lo repiten.
-  if (!isPartner) {
-    var supersetHtml = _buildSupersetPartnerHtml(ejercicios, di, ei);
-    headerHtml = supersetHtml + headerHtml;
-  }
+  // ── B.0 Banner superserie ────────────────────────────────────────────────
+  // Ya NO se usa: _buildExPanel envuelve todo el bloque SS en un contenedor
+  // externo y pasa isPartner=true a cada miembro para suprimir este banner.
+  // Se conserva solo como fallback si alguien llama _buildExCard directamente.
 
   // ── C. Nota del usuario por ejercicio ────────────────────────────────
   var _noteKey = 'exnote_'+CURRENT_WEEK+'_'+di+'_'+ei;
