@@ -339,10 +339,17 @@ function toggleExUnit(di, ei) {
     }
   }
 
-  // ── 2. Convertir sets ya guardados en LOGS para este ejercicio ──
-  var prefix = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s';
+  // ── 2. Convertir sets ya guardados en LOGS para este ejercicio — TODAS las semanas ──
+  // Bug fix: antes solo convertía la semana actual (CURRENT_WEEK). Si el cliente
+  // tenía 3 semanas en KG y cambiaba a LB en semana 4, las semanas 1-3 quedaban en KG
+  // y _getPrevWeekData comparaba cargas KG vs LB, dando recomendaciones incorrectas.
   Object.keys(LOGS).forEach(function(k) {
-    if (k.indexOf(prefix) === 0 && LOGS[k] && LOGS[k].unit === oldUnit) {
+    // Formato: log_{W}_{D}_{E}_s{S}  →  split('_') = ['log', W, D, E, 'sS']
+    if (k.indexOf('log_') !== 0) return;
+    var parts = k.split('_');
+    if (parts.length < 5) return;
+    if (parseInt(parts[2]) !== di || parseInt(parts[3]) !== ei) return;
+    if (LOGS[k] && LOGS[k].unit === oldUnit) {
       var converted = parseFloat(LOGS[k].carga) * factor;
       LOGS[k].carga = String(_roundUnit(converted, newUnit));
       LOGS[k].unit  = newUnit;
@@ -3472,7 +3479,7 @@ function buildBoostcampExercise(ej, di, ei) {
       { pct: 0.85, reps: 2 }
     ];
     var wuRows = wuSets.map(function(ws) {
-      var wLoad = Math.round(wuRefLoad * ws.pct * 4) / 4;
+      var wLoad = _roundUnit(wuRefLoad * ws.pct, unit);
       return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
         '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
         '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' '+unit+' × '+ws.reps+' reps</span>'+
@@ -4221,7 +4228,7 @@ async function markSessionDoneFromHistory(di) {
     if (prev && prev.avgLoad > 0) {
       var prevSetKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0';
       var prevUnit = (LOGS[prevSetKey] && LOGS[prevSetKey].unit) ? LOGS[prevSetKey].unit : currentUnit;
-      var rawLoad = Math.round(prev.avgLoad * 4) / 4;
+      var rawLoad = _roundUnit(prev.avgLoad, prevUnit); // fix: usar paso de redondeo correcto según unidad previa
       // Convertir si la unidad previa difiere de la actual
       refLoad = parseFloat(_convertCarga(String(rawLoad), prevUnit, currentUnit)) || rawLoad;
       refReps = Math.round(prev.avgReps);
@@ -7285,11 +7292,11 @@ function _getAlpha(catData) {
 }
 
 // Aplica alpha con cap: min(load * pct, capKg)
-function _applyAlpha(load, alphaObj) {
+// unit: 'KG' o 'LB' — determina el paso de redondeo (0.5 kg ó 2.5 lb)
+function _applyAlpha(load, alphaObj, unit) {
   var increment = load * alphaObj.pct;
   increment = Math.min(increment, alphaObj.capKg);
-  // Redondear a 0.25 kg más cercano
-  return Math.round((load + increment) * 4) / 4;
+  return _roundUnit(load + increment, unit || 'KG');
 }
 
 // ── Límite de series por costo de fatiga ──
@@ -7852,6 +7859,11 @@ function calculateProgression(di, postData) {
     var exName = ej.nombre || ej.exerciseName || '';
     var catData = _getCatalogData(exName);
 
+    // ── Unidad del ejercicio: leer del set registrado → fallback a getExUnit ──
+    // CRÍTICO: sin esta línea, `unit` no existe en este scope y el algoritmo
+    // lanza ReferenceError cuando genera razones de increase_load (nunca se guardaba progrec).
+    var unit = (sets[0] && sets[0].unit) ? sets[0].unit.toUpperCase() : (getExUnit(di, ei) || 'KG');
+
     // Solo promediar valores realmente registrados; evitar contaminar con fallbacks
     var _icsRaw  = sets.map(function(s){ return parseFloat(s.ics); }).filter(function(v){ return v > 0 && !isNaN(v); });
     var avgICS   = _icsRaw.length  ? _avgArr(_icsRaw)  : 8;   // fallback: técnica ok
@@ -7881,18 +7893,18 @@ function calculateProgression(di, postData) {
     if (isDeload) {
       // ── DELOAD: reducir volumen, mantener intensidad base ──
       newSets = Math.max(1, Math.round(numSets / 2));
-      newLoad = Math.round(load * 0.9 * 4) / 4; // -10% carga
+      newLoad = _roundUnit(load * 0.9, unit); // -10% carga
       rirTarget = rirObjNext; action = 'deload';
       var _deloadLabel = CURRENT_WEEK === 5 ? 'La próxima semana es descarga' : 'Semana de descarga';
       reasons.push(_deloadLabel+' — volumen a la mitad, carga -10%');
     } else if (avgICS < 6) {
       // ── ICS MUY BAJO (<6): técnica deficiente grave → bajar carga significativamente ──
-      newLoad = Math.round(load * 0.85 * 4) / 4;
+      newLoad = _roundUnit(load * 0.85, unit);
       action = 'reduce_load';
       reasons.push('Técnica muy comprometida — bajamos 15% para recuperar calidad');
     } else if (avgICS < 7) {
       // ── ICS BAJO (6-7): técnica comprometida → bajar carga moderadamente ──
-      newLoad = Math.round(load * 0.9 * 4) / 4;
+      newLoad = _roundUnit(load * 0.9, unit);
       action = 'reduce_load';
       reasons.push('Técnica a pulir — bajamos 10% para ejecutar mejor');
     } else {
@@ -7961,7 +7973,7 @@ function calculateProgression(di, postData) {
       var canIncreaseLoad = (action !== 'add_sets');
 
       if (avgRIR < rirObj && allRepsHit && canIncreaseLoad) {
-        newLoad = _applyAlpha(load, alpha);
+        newLoad = _applyAlpha(load, alpha, unit);
         if (action === 'maintain') action = 'increase_load';
         var incKg = (newLoad - load).toFixed(2);
         reasons.push('Reps cumplidas con margen de esfuerzo — subimos +'+incKg+' '+unit);
@@ -7972,7 +7984,7 @@ function calculateProgression(di, postData) {
           var _normalJump = prevWeek.avgLoad * alpha.pct;
           if (_lastJump > _normalJump * 2 && _lastJump > 0) {
             var modAlpha = { pct: alpha.pct * 0.5, capKg: alpha.capKg * 0.5 };
-            newLoad = _applyAlpha(load, modAlpha);
+            newLoad = _applyAlpha(load, modAlpha, unit);
             reasons.push('Subida grande la semana pasada — incremento más conservador esta vez');
           }
         }
@@ -7987,7 +7999,7 @@ function calculateProgression(di, postData) {
           reasons.push('Todo en objetivo — intentá hacer 1-2 reps más en la próxima sesión');
           newReps = Math.min(repsTarget + 2, Math.round(avgReps) + 1);
         } else {
-          newLoad = _applyAlpha(load, alpha);
+          newLoad = _applyAlpha(load, alpha, unit);
           newReps = repsTarget;
           if (action === 'maintain') action = 'increase_load';
           reasons.push('Superaste el rango de reps — subimos carga +'+(newLoad - load).toFixed(2)+' '+unit+' y volvemos al rango base');
