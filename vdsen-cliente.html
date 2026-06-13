@@ -2401,12 +2401,18 @@ function _buildExPanel(ejercicios, di) {
   if (!grp) return _buildExCard(ejercicios, di, ei, false);
 
   // ── Caso superserie: construir bloque unificado ───────────────────────────
-  // Recolectar todos los miembros del grupo en orden de índice
   var ssMembers = [];
   for (var k = 0; k < ejercicios.length; k++) {
     var pEx = ejercicios[k];
     if (pEx && String(pEx.supersetGroup||'').trim().toLowerCase() === grp.toLowerCase()) ssMembers.push(k);
   }
+
+  // Si todos los miembros son Express mode → tarjeta combinada (no separada)
+  var _SS_EX_TECHS = ['myoreps', 'rest-pause', 'cluster'];
+  var _ssAllExpress = ssMembers.every(function(idx) {
+    return _SS_EX_TECHS.indexOf((ejercicios[idx].technique||'').toLowerCase()) === -1;
+  });
+  if (_ssAllExpress) return _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp);
 
   // Símbolos de secuencia
   var circleNums = ['①','②','③','④','⑤'];
@@ -2502,6 +2508,18 @@ function _buildExPanel(ejercicios, di) {
   return html;
 }
 
+// ── Nota del cliente: clave sin semana (persistente entre semanas) ──────────
+// Lee 'exnote_di_ei' (nuevo) y cae a 'exnote_W_di_ei' por compatibilidad.
+function _getExNote(di, ei) {
+  var v = LOGS['exnote_'+di+'_'+ei];
+  if (v) return v;
+  for (var _w = CURRENT_WEEK; _w >= 1; _w--) {
+    var old = LOGS['exnote_'+_w+'_'+di+'_'+ei];
+    if (old) return old;
+  }
+  return '';
+}
+
 // ── Card individual de un ejercicio (originalmente _buildExPanel) ──
 function _buildExCard(ejercicios, di, ei, isPartner) {
   if (!ejercicios.length) return '';
@@ -2583,7 +2601,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _exNameBanner = nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
   var _histExBanner = EXERCISE_HISTORY[_exNameBanner] || {};
   var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
-  var _exNoteInline = LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei] || '';
+  var _exNoteInline = _getExNote(di, ei);
   var headerHtml =
     '<div style="margin-bottom:14px">'+
       '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+nombre+'</div>'+
@@ -2601,7 +2619,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
         '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'+
         '<button onclick="showExModModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">⚙ Ajustar</button>'+
-        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'var(--accent)':'var(--mt)')+';background:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'rgba(200,165,74,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'rgba(200,165,74,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
+        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(200,165,74,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(200,165,74,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
         (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(68,136,204,.1);border:1px solid rgba(68,136,204,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
       '</div>'+
@@ -2625,8 +2643,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // Se conserva solo como fallback si alguien llama _buildExCard directamente.
 
   // ── C. Nota del usuario por ejercicio ────────────────────────────────
-  var _noteKey = 'exnote_'+CURRENT_WEEK+'_'+di+'_'+ei;
-  var _noteVal  = LOGS[_noteKey] || '';
+  var _noteKey = 'exnote_'+di+'_'+ei;
+  var _noteVal  = _getExNote(di, ei);
   var notaHtml =
     '<div id="usernote_'+di+'_'+ei+'" style="display:'+(_noteVal?'block':'none')+';margin-bottom:10px">'+
       '<div style="font-size:9px;letter-spacing:1.5px;font-weight:700;color:var(--accent);margin-bottom:4px">📝 NOTA / MENSAJE AL COACH</div>'+
@@ -2714,14 +2732,14 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _exPfReps = repsTarget;
   var _exPfRIR = baseRIR;
   if (progrec && progrec.newLoad !== undefined && progrec.newLoad !== null) {
-    _exPfCarga = String(progrec.newLoad);
+    _exPfCarga = parseFloat(progrec.newLoad).toFixed(1);
     _exPfReps = progrec.newReps || repsTarget;
   } else if (_exPrevS0.carga) {
-    _exPfCarga = String(_convertCarga(_exPrevS0.carga, _exPrevS0.unit || 'KG', unit));
+    _exPfCarga = parseFloat(_convertCarga(_exPrevS0.carga, _exPrevS0.unit || 'KG', unit)).toFixed(1);
     _exPfReps = _exPrevS0.reps || repsTarget;
     _exPfRIR = _exPrevS0.rir_real !== undefined ? _exPrevS0.rir_real : baseRIR;
   } else if (_exHistRaw2.load) {
-    _exPfCarga = String(_convertCarga(_exHistRaw2.load, _exHistRaw2.unit || 'KG', unit));
+    _exPfCarga = parseFloat(_convertCarga(_exHistRaw2.load, _exHistRaw2.unit || 'KG', unit)).toFixed(1);
     _exPfReps = _exHistRaw2.reps || repsTarget;
   }
   _exPfRIR = Math.max(0, Math.min(4, parseInt(_exPfRIR) || 2));
@@ -2731,11 +2749,13 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (_isExpressMode && _expressDone) {
     // \u2500\u2500 Express: resumen compacto del ejercicio completado \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     var _epEmoji = _expressEntry.pump===1?'\ud83d\udcaa':_expressEntry.pump===2?'\ud83d\udc4d':_expressEntry.pump===3?'\ud83d\ude10':'';
+    var _epCargaRaw = parseFloat(_expressEntry.carga||0);
+    var _epCargaFmt = _epCargaRaw > 0 ? _epCargaRaw.toFixed(1) : '0';
     var _epCargaDisplay = isIsometric
-      ? ((parseFloat(_expressEntry.carga||0)>0 ? _expressEntry.carga+' '+unit+' \u00b7 ': '')+_expressEntry.reps+' seg')
+      ? ((_epCargaRaw>0 ? _epCargaFmt+' '+unit+' \u00b7 ': '')+_expressEntry.reps+' seg')
       : (isBodyweight
-          ? ((parseFloat(_expressEntry.carga||0)>0 ? 'BW + '+_expressEntry.carga+' '+unit : 'Peso corporal')+' \u00d7 '+_expressEntry.reps+' reps')
-          : (_expressEntry.carga+' '+unit+' \u00d7 '+_expressEntry.reps+' reps'));
+          ? ((_epCargaRaw>0 ? 'BW + '+_epCargaFmt+' '+unit : 'Peso corporal')+' \u00d7 '+_expressEntry.reps+' reps')
+          : (_epCargaFmt+' '+unit+' \u00d7 '+_expressEntry.reps+' reps'));
     setsHtml =
       '<div style="background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.22);border-radius:14px;padding:14px 16px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
@@ -2751,23 +2771,20 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _cargaLbl = isIsometric ? 'LASTRE (opc, '+unit+')' : (isBodyweight ? 'LASTRE +'+unit+' (opc)' : 'CARGA ('+unit+')');
     var _repsLbl = isIsometric ? 'SEGUNDOS' : 'REPS \u00daLTIMA SERIE';
     var _iptS = 'width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 8px;outline:none;text-align:center';
+    var _rirDescs2 = ['Fallo', '1 rep', '2 reps', '3 reps', 'Cómodo'];
     var _rirBtns2 = [0,1,2,3,4].map(function(rv){
       var sel2 = rv === _exPfRIR;
-      return '<button onclick="expressSetRIR(\''+_expK+'\','+rv+')" id="xrir_'+_expK+'_'+rv+'" style="flex:1;padding:10px 4px;border-radius:8px;font-size:16px;font-weight:800;cursor:pointer;border:2px solid '+(sel2?'#e8a040':'var(--border)')+';background:'+(sel2?'rgba(232,160,64,.15)':'var(--input-bg)')+';color:'+(sel2?'#e8a040':'var(--mt)')+'">'+rv+'</button>';
+      return '<button onclick="expressSetRIR(\''+_expK+'\','+rv+')" id="xrir_'+_expK+'_'+rv+'" style="flex:1;padding:8px 2px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;border:2px solid '+(sel2?'#e8a040':'var(--border)')+';background:'+(sel2?'rgba(232,160,64,.15)':'var(--input-bg)')+';color:'+(sel2?'#e8a040':'var(--mt)')+'">'+
+        '<span style="font-size:18px;font-weight:900;line-height:1">'+rv+'</span>'+
+        '<span style="font-size:8px;font-weight:700;line-height:1.3;text-align:center">'+_rirDescs2[rv]+'</span>'+
+        '</button>';
     }).join('');
     var _pumpBtns2 = [{v:1,icon:'\ud83d\udcaa',c:'var(--grn)'},{v:2,icon:'\ud83d\udc4d',c:'var(--accent)'},{v:3,icon:'\ud83d\ude10',c:'var(--mt)'}].map(function(p){
       return '<button onclick="expressSetPump(\''+_expK+'\','+p.v+')" id="xpump_'+_expK+'_'+p.v+'" style="flex:1;padding:9px 2px;border-radius:7px;font-size:19px;border:2px solid var(--border);background:var(--input-bg);cursor:pointer">'+p.icon+'</button>';
     }).join('');
     setsHtml =
       '<div style="background:rgba(200,165,74,.03);border:1px solid rgba(200,165,74,.18);border-radius:14px;padding:16px">'+
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'+
-        '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt)">SERIES A REALIZAR</div>'+
-        '<div style="display:flex;align-items:center;gap:14px">'+
-          '<button onclick="expressAdjustSets(\''+_expK+'\',-1)" style="width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--input-bg);color:var(--tx);font-size:22px;font-weight:700;cursor:pointer;line-height:1">\u2212</button>'+
-          '<span id="xsets_'+_expK+'" style="font-size:30px;font-weight:900;color:var(--accent);min-width:36px;text-align:center">'+numSeries+'</span>'+
-          '<button onclick="expressAdjustSets(\''+_expK+'\',1)" style="width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--input-bg);color:var(--tx);font-size:22px;font-weight:700;cursor:pointer;line-height:1">+</button>'+
-        '</div>'+
-      '</div>'+
+      '<input type="hidden" id="xsets_'+_expK+'" value="'+numSeries+'">'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isBodyweight?'var(--mt2)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cargaLbl+'</div>'+
@@ -2787,6 +2804,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="flex:1">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
           '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
+          '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 técnica mala · 6-7 ok · 8-10 buena</div>'+
         '</div>'+
         '<div style="flex:2">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
@@ -3098,7 +3116,7 @@ function markExpressDone(di, ei) {
   var reps = parseInt(repsEl.value);
   if (!reps || reps < 1) { alert('Indica las reps realizadas en la última serie'); return; }
   var carga   = cargaEl ? (cargaEl.value.trim() || '0') : '0';
-  var sets    = setsEl  ? (parseInt(setsEl.textContent)  || 3) : 3;
+  var sets    = setsEl  ? (parseInt(setsEl.value)  || 3) : 3;
   var rirLast = rirEl   ? (parseInt(rirEl.value)         || 2) : 2;
   var ics     = icsEl   ? (parseInt(icsEl.value)         || null) : null;
   var pump    = pumpEl  ? (parseInt(pumpEl.value)        || null) : null;
@@ -3139,6 +3157,217 @@ function clearExpressDone(di, ei) {
   _refreshExPanelOnly();
 }
 window.clearExpressDone = clearExpressDone;
+
+// ── Express Superserie: tarjeta combinada ─────────────────────────────────
+
+function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
+  var circleNums = ['①','②','③','④','⑤'];
+  var memberNames = ssMembers.map(function(idx) {
+    var sub = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+idx];
+    return sub && sub.nombre ? sub.nombre : (ejercicios[idx].nombre || ejercicios[idx].exerciseName || 'Ej '+(idx+1));
+  });
+  var numRondas = ejercicios[ssMembers[0]].numSeries || (ejercicios[ssMembers[0]].sets ? ejercicios[ssMembers[0]].sets.length : 3);
+  var _ssk = 'ss_'+di+'_'+ssMembers[0]; // clave de DOM para inputs compartidos
+
+  // ¿Ya completada esta ronda?
+  var allDone = ssMembers.every(function(idx) {
+    var e = LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx];
+    return e && e.done;
+  });
+
+  // Línea de flujo en header
+  var flowHtml = memberNames.map(function(n, i) {
+    return '<span style="font-weight:900;color:#fff">'+circleNums[i]+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+n+'</span>';
+  }).join('<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>')+
+    '<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>'+
+    '<span style="color:#ffe0a0;font-weight:800">⏸&thinsp;Descanso</span>';
+
+  var html =
+    '<div style="border:2px solid #cc66aa;border-radius:18px;overflow:hidden;margin-bottom:16px;box-shadow:0 6px 28px rgba(204,102,170,.25)">'+
+    '<div style="background:linear-gradient(135deg,#9b3e88,#cc66aa);padding:13px 16px 11px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">'+
+        '<span style="font-size:20px">🔁</span>'+
+        '<div>'+
+          '<div style="font-size:13px;font-weight:900;letter-spacing:1.5px;color:#fff;line-height:1">BISERIE&thinsp;·&thinsp;GRUPO&thinsp;'+grp.toUpperCase()+'</div>'+
+          '<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:2px">'+numRondas+' rondas · ejecutar ambos SIN descanso entre ellos</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="font-size:11.5px;line-height:1.9;padding:7px 11px;background:rgba(0,0,0,.25);border-radius:9px">'+flowHtml+'</div>'+
+    '</div>'+
+    '<div style="padding:16px">';
+
+  if (allDone) {
+    // ── Resumen completado ─────────────────────────────────────────────────
+    ssMembers.forEach(function(idx, i) {
+      var entry = LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] || {};
+      var unit = entry.unit || 'KG';
+      var cRaw = parseFloat(entry.carga||0);
+      var cDisp = cRaw > 0 ? cRaw.toFixed(1)+' '+unit+' × ' : '';
+      html +=
+        '<div style="margin-bottom:10px'+(i>0?';padding-top:10px;border-top:1px solid rgba(204,102,170,.15)':'')+'">' +
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#e9a8d4;margin-bottom:3px">'+circleNums[i]+' '+memberNames[i].toUpperCase()+'</div>'+
+          '<div style="font-size:20px;font-weight:900;color:var(--tx)">'+cDisp+entry.reps+' reps</div>'+
+        '</div>';
+    });
+    var e0 = LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]] || {};
+    var ep0Emoji = e0.pump===1?'💪':e0.pump===2?'👍':e0.pump===3?'😐':'';
+    html +=
+      '<div style="font-size:12px;color:var(--mt);margin-bottom:14px">'+numRondas+' rondas · RIR real '+e0.rir_last+' · ICS '+(e0.ics||'—')+' '+ep0Emoji+'</div>'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
+        '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">✓ RONDA REGISTRADA</div>'+
+        '<button onclick="clearExpressSSDone('+di+',['+ssMembers.join(',')+'])" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:4px 12px;border-radius:7px;cursor:pointer">✏ Editar</button>'+
+      '</div>';
+    // Siguiente ejercicio o finalizar sesión
+    var _ssGrpLow = grp.toLowerCase();
+    var _nextEi = ssMembers[ssMembers.length-1] + 1;
+    while (_nextEi < ejercicios.length && ejercicios[_nextEi] && String(ejercicios[_nextEi].supersetGroup||'').trim().toLowerCase() === _ssGrpLow) _nextEi++;
+    var _isLastEx = (_nextEi >= ejercicios.length);
+    html += (_isLastEx
+      ? '<button onclick="markSessionDone('+di+')" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">🏁 FINALIZAR SESIÓN</button>'
+      : '<button onclick="setEjActivo('+_nextEi+')" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">Siguiente ejercicio →</button>');
+  } else {
+    // ── Formulario Express combinado ─────────────────────────────────────
+    var _iptS2 = 'width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 8px;outline:none;text-align:center';
+
+    ssMembers.forEach(function(idx, i) {
+      var ejM = ejercicios[idx];
+      var unit2 = getExUnit(di, idx) || 'KG';
+      var _techM = (ejM.technique||'').toLowerCase();
+      var _isIsoM = _techM === 'iso-hold' || /^plancha|isometric|hollow|l[- ]?sit|wall sit/i.test(memberNames[i]);
+      var _isBwM  = _isIsoM || /^(dominad|fondo|plancha|burpee|abdominal|crunch(?! en polea)|rueda abdomin|elevaci[oó]n de piernas (colgad|libre)|push.?up|flexi[oó]n|muscle.?up|pull.?up|hollow)/i.test(memberNames[i]);
+      var _prevM  = LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+idx+'_s0'] || {};
+      var _histM  = EXERCISE_HISTORY[memberNames[i].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')] || {};
+      var _pfCM = '', _pfRM = ejM.sets ? (ejM.sets[0] ? (ejM.sets[0].repsTarget || 10) : 10) : 10;
+      var _progM = _getProgRecForExercise(di, idx, memberNames[i]);
+      if (_progM && _progM.newLoad !== undefined && _progM.newLoad !== null) {
+        _pfCM = parseFloat(_progM.newLoad).toFixed(1); _pfRM = _progM.newReps || _pfRM;
+      } else if (_prevM.carga) {
+        _pfCM = parseFloat(_convertCarga(_prevM.carga, _prevM.unit || 'KG', unit2)).toFixed(1); _pfRM = _prevM.reps || _pfRM;
+      } else if (_histM.load) {
+        _pfCM = parseFloat(_convertCarga(_histM.load, _histM.unit || 'KG', unit2)).toFixed(1); _pfRM = _histM.reps || _pfRM;
+      }
+      var _cLbl = _isIsoM ? 'LASTRE (opc, '+unit2+')' : (_isBwM ? 'LASTRE +'+unit2+' (opc)' : 'CARGA ('+unit2+')');
+      var _rLbl = _isIsoM ? 'SEGUNDOS' : 'REPS';
+      html +=
+        '<div style="margin-bottom:14px'+(i>0?';padding-top:14px;border-top:1px solid rgba(204,102,170,.2)':'')+'">' +
+          '<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#e9a8d4;margin-bottom:8px">'+circleNums[i]+' '+memberNames[i].toUpperCase()+'</div>'+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+            '<div>'+
+              '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cLbl+'</div>'+
+              '<input id="xss_carga_'+di+'_'+idx+'" type="number" value="'+(_pfCM||'')+'" placeholder="'+unit2+'" step="0.5" inputmode="decimal" style="'+_iptS2+'" onfocus="this.select()">'+
+            '</div>'+
+            '<div>'+
+              '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_rLbl+'</div>'+
+              '<input id="xss_reps_'+di+'_'+idx+'" type="number" value="'+(_pfRM||'')+'" placeholder="reps" inputmode="numeric" style="'+_iptS2+'" onfocus="this.select()">'+
+            '</div>'+
+          '</div>'+
+        '</div>';
+    });
+
+    // RIR compartido con descripciones
+    var _ssBaseRIR = (function() {
+      var def={1:3,2:2,3:2,4:1,5:0,6:3};
+      var wro=(PLAN&&PLAN.rirByWeek)?PLAN.rirByWeek:def;
+      var r=wro[CURRENT_WEEK]!==undefined?wro[CURRENT_WEEK]:wro[String(CURRENT_WEEK)]!==undefined?wro[String(CURRENT_WEEK)]:def[CURRENT_WEEK]||2;
+      return Math.max(0,Math.min(4,parseInt(r)||2));
+    })();
+    var _ssRIRprev = (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ssMembers[0]+'_s0']||{}).rir_real;
+    var _ssRIRinit = _ssRIRprev !== undefined ? Math.max(0,Math.min(4,parseInt(_ssRIRprev)||2)) : _ssBaseRIR;
+    var _rirDescsss = ['Fallo','1 rep','2 reps','3 reps','Cómodo'];
+    var _ssRirBtns = [0,1,2,3,4].map(function(rv){
+      var sel = rv === _ssRIRinit;
+      return '<button onclick="expressSetRIR(\''+_ssk+'\','+rv+')" id="xrir_'+_ssk+'_'+rv+'" '+
+        'style="flex:1;padding:8px 2px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;'+
+        'border:2px solid '+(sel?'#e8a040':'var(--border)')+';background:'+(sel?'rgba(232,160,64,.15)':'var(--input-bg)')+';color:'+(sel?'#e8a040':'var(--mt)')+'">'+
+        '<span style="font-size:18px;font-weight:900;line-height:1">'+rv+'</span>'+
+        '<span style="font-size:8px;font-weight:700;line-height:1.3">'+_rirDescsss[rv]+'</span>'+
+        '</button>';
+    }).join('');
+    var _ssPumpBtns = [{v:1,icon:'💪',c:'var(--grn)'},{v:2,icon:'👍',c:'var(--accent)'},{v:3,icon:'😐',c:'var(--mt)'}].map(function(p){
+      return '<button onclick="expressSetPump(\''+_ssk+'\','+p.v+')" id="xpump_'+_ssk+'_'+p.v+'" style="flex:1;padding:9px 2px;border-radius:7px;font-size:19px;border:2px solid var(--border);background:var(--input-bg);cursor:pointer">'+p.icon+'</button>';
+    }).join('');
+
+    html +=
+      '<div style="margin-bottom:12px">'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR ÚLTIMA RONDA</div>'+
+        '<div style="display:flex;gap:6px">'+_ssRirBtns+'</div>'+
+        '<input type="hidden" id="xrir_val_'+_ssk+'" value="'+_ssRIRinit+'">'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
+        '<div style="flex:1">'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
+          '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
+          '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala · 6-7 ok · 8-10 buena</div>'+
+        '</div>'+
+        '<div style="flex:2">'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
+          '<div style="display:flex;gap:4px">'+_ssPumpBtns+'</div>'+
+          '<input type="hidden" id="xpump_val_'+_ssk+'" value="">'+
+        '</div>'+
+      '</div>'+
+      '<button onclick="markExpressSSDone('+di+',['+ssMembers.join(',')+'])" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:#cc66aa;color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">✓ COMPLETAR RONDA</button>';
+  }
+
+  html +=
+    '</div>'+ // close padding div
+    '<div style="padding:10px 16px;background:rgba(200,165,74,.07);border-top:1px solid rgba(204,102,170,.3);display:flex;align-items:center;gap:8px">'+
+      '<span style="font-size:15px">⏸</span>'+
+      '<span style="font-size:11px;font-weight:700;letter-spacing:1px;color:#ffe0a0">PAREJA COMPLETA&thinsp;→&thinsp;DESCANSA</span>'+
+    '</div>'+
+    '</div>'; // close outer
+  return html;
+}
+
+function markExpressSSDone(di, ssMembers) {
+  var _ssk = 'ss_'+di+'_'+ssMembers[0];
+  var rirEl  = document.getElementById('xrir_val_'+_ssk);
+  var icsEl  = document.getElementById('xics_'+_ssk);
+  var pumpEl = document.getElementById('xpump_val_'+_ssk);
+  var rirLast = rirEl  ? (parseInt(rirEl.value)  || 2) : 2;
+  var ics     = icsEl  ? (parseInt(icsEl.value)  || null) : null;
+  var pump    = pumpEl ? (parseInt(pumpEl.value) || null) : null;
+  var now = Date.now();
+  for (var i = 0; i < ssMembers.length; i++) {
+    var idx = ssMembers[i];
+    var cargaEl = document.getElementById('xss_carga_'+di+'_'+idx);
+    var repsEl  = document.getElementById('xss_reps_'+di+'_'+idx);
+    if (!repsEl) continue;
+    var reps = parseInt(repsEl.value);
+    if (!reps || reps < 1) { alert('Indica las reps de todos los ejercicios'); return; }
+    var carga = cargaEl ? (cargaEl.value.trim() || '0') : '0';
+    var unit  = getExUnit(di, idx) || 'KG';
+    var _ejIdx = _EJERCICIOS_DIA && _EJERCICIOS_DIA[idx] ? _EJERCICIOS_DIA[idx] : null;
+    var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
+    // Progrec puede haber ajustado el nº de series
+    var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '');
+    if (_pcRec && _pcRec.newSets && ['add_sets','reduce_sets','deload'].indexOf(_pcRec.action) !== -1) numSets = _pcRec.newSets;
+    LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:carga, reps:String(reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:unit, done:true, ts:now };
+    for (var s = 0; s < numSets; s++) {
+      LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s] = { carga:carga, reps:String(reps), unit:unit, done:true, rir:rirLast, rir_real:rirLast, ics:ics||8, pump:pump||1, ts:now, express:true };
+    }
+    for (var s2 = numSets; s2 < 12; s2++) {
+      var stale = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s2;
+      if (LOGS[stale] && LOGS[stale].express) delete LOGS[stale];
+    }
+  }
+  saveLogs();
+  _refreshExPanelOnly();
+}
+window.markExpressSSDone = markExpressSSDone;
+
+function clearExpressSSDone(di, ssMembers) {
+  for (var i = 0; i < ssMembers.length; i++) {
+    var idx = ssMembers[i];
+    delete LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx];
+    for (var s = 0; s < 12; s++) {
+      var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s;
+      if (LOGS[k] && LOGS[k].express) delete LOGS[k];
+    }
+  }
+  saveLogs();
+  _refreshExPanelOnly();
+}
+window.clearExpressSSDone = clearExpressSSDone;
 
 // ── Inferir patrón motor por palabras clave (fallback para ejercicios fuera del catálogo) ──
 function _inferMotorPattern(nombre) {
@@ -3947,7 +4176,7 @@ function buildBoostcampExercise(ej, di, ei) {
       // Expand note button + user note button
       (wuRefLoad>0?'<button onclick="toggleNota(\'wu_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Calentamiento">🔥</button>':'')+
       (displayNota?'<button onclick="toggleNota(\'nota_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--mt);font-size:18px;cursor:pointer;padding:4px;flex-shrink:0">ⓘ</button>':'')+
-      '<button onclick="toggleUserNote('+di+','+ei+')" style="background:none;border:none;color:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'var(--accent)':'var(--mt2)')+';font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Mi nota">📝</button>'+
+      '<button onclick="toggleUserNote('+di+','+ei+')" style="background:none;border:none;color:'+(_getExNote(di,ei)?'var(--accent)':'var(--mt2)')+';font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Mi nota">📝</button>'+
     '</div>'+
 
     // Warm-up section (collapsible)
@@ -3960,11 +4189,11 @@ function buildBoostcampExercise(ej, di, ei) {
     substHtml+
 
     // User note (client's own note per exercise)
-    '<div id="usernote_'+di+'_'+ei+'" style="display:'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]?'block':'none')+';margin:0 14px 10px;padding:0">'+
+    '<div id="usernote_'+di+'_'+ei+'" style="display:'+(_getExNote(di,ei)?'block':'none')+';margin:0 14px 10px;padding:0">'+
       '<textarea id="usernote_input_'+di+'_'+ei+'" placeholder="Mi nota para este ejercicio..." '+
         'onblur="saveUserNote('+di+','+ei+',this.value)" '+
         'style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;'+
-        'color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:44px;resize:vertical;line-height:1.5">'+(LOGS['exnote_'+CURRENT_WEEK+'_'+di+'_'+ei]||'')+'</textarea>'+
+        'color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:44px;resize:vertical;line-height:1.5">'+_getExNote(di,ei)+'</textarea>'+
     '</div>'+
 
     // Column headers
@@ -4268,7 +4497,7 @@ function toggleUserNote(di, ei) {
 }
 
 function saveUserNote(di, ei, text) {
-  var key = 'exnote_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  var key = 'exnote_'+di+'_'+ei;
   if (text && text.trim()) {
     LOGS[key] = text.trim();
   } else {
