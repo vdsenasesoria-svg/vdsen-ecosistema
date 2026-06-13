@@ -1182,11 +1182,33 @@ El esfuerzo no es negociable.
           </div>
         </details>`;
 
+      // Construir mapa ejercicio-nombre → nota más reciente del cliente
+      const _exNoteByName = {};
+      Object.keys(logs).forEach(k => {
+        const m = k.match(/^exnote_(\d+)_(\d+)_(\d+)$/);
+        if (!m) return;
+        const w = +m[1], d = +m[2], e = +m[3];
+        if (_activePlanCache && _activePlanCache.days) {
+          const dayObj = _activePlanCache.days.find(day => day.dayIndex === d) || _activePlanCache.days[d];
+          if (dayObj && dayObj.exercises) {
+            const ex = dayObj.exercises[e];
+            if (ex) {
+              const exKey = (ex.exerciseName || ex.nombre || '').toLowerCase().trim();
+              if (exKey && (!_exNoteByName[exKey] || _exNoteByName[exKey].w < w || (_exNoteByName[exKey].w === w && _exNoteByName[exKey].d < d))) {
+                _exNoteByName[exKey] = { w, d, text: String(logs[k]) };
+              }
+            }
+          }
+        }
+      });
+
       if (lastRec && lastRec.recommendations?.length) {
         html += `<div class="text-xs text-[#888] mb-2 uppercase tracking-wide">Recomendaciones — Sem ${lastRecWeek} · Día ${lastRecDay + 1}</div>`;
         html += `<div class="space-y-2">`;
         lastRec.recommendations.forEach(r => {
           const al = actionLabels[r.action] || actionLabels.maintain;
+          const _rKey = (r.exerciseName || '').toLowerCase().trim();
+          const _clientNote = _exNoteByName[_rKey];
           html += `
             <div class="card p-3">
               <div class="flex justify-between items-start mb-1">
@@ -1202,6 +1224,7 @@ El esfuerzo no es negociable.
               ${r.trend ? `<div class="flex gap-3 text-xs mb-1"><span class="text-[#555]">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets}s · ICS ${r.trend.prevICS.toFixed(1)}</span></div>` : ''}
               <div class="text-xs text-[#888]">${r.reason}</div>
               ${r.substituteExercise ? `<div class="text-xs mt-1" style="color:#FF8844">🔄 ${r.substituteExercise}</div>` : ''}
+              ${_clientNote ? `<div class="mt-2 text-xs p-2 rounded" style="background:rgba(200,165,74,.08);border-left:2px solid rgba(200,165,74,.5);color:#d4b96a;line-height:1.45">📝 ${_clientNote.text}<span style="color:#888;margin-left:8px">· Sem ${_clientNote.w} Día ${_clientNote.d+1}</span></div>` : ''}
             </div>`;
         });
         html += `</div>`;
@@ -1212,10 +1235,33 @@ El esfuerzo no es negociable.
       // Notas del cliente por ejercicio
       const noteKeys = Object.keys(logs).filter(k => k.startsWith('exnote_'));
       if (noteKeys.length > 0) {
-        html += `<div class="text-xs text-[#888] mb-2 mt-4 uppercase tracking-wide">Notas del cliente</div>`;
-        noteKeys.sort().reverse().slice(0, 10).forEach(k => {
+        // Helper: obtener nombre del ejercicio desde el plan activo
+        function _exNameFromPlan(dayIdx, exIdx) {
+          if (!_activePlanCache || !_activePlanCache.days) return null;
+          const dayObj = _activePlanCache.days.find(d => d.dayIndex === dayIdx) ||
+                         _activePlanCache.days[dayIdx];
+          if (!dayObj || !dayObj.exercises) return null;
+          const ex = dayObj.exercises[exIdx];
+          return ex ? (ex.exerciseName || ex.nombre || null) : null;
+        }
+        html += `<div class="text-xs text-[#888] mb-2 mt-4 uppercase tracking-wide font-semibold">📝 Notas del cliente</div>`;
+        noteKeys.sort().reverse().slice(0, 15).forEach(k => {
           const parts = k.split('_'); // exnote_W_D_E
-          html += `<div class="card p-2 mb-1"><span class="text-xs text-[#C9A84C]">S${parts[1]} D${parseInt(parts[2])+1} Ej${parseInt(parts[3])+1}</span> <span class="text-xs text-[#888]">${logs[k]}</span></div>`;
+          const w = parts[1], d = parseInt(parts[2]), e = parseInt(parts[3]);
+          const exName = _exNameFromPlan(d, e);
+          const label = exName
+            ? `<span class="font-semibold" style="color:#fff">${exName}</span> <span style="color:#888;font-size:10px">· Sem ${w} · Día ${d+1}</span>`
+            : `<span style="color:#888">Sem ${w} · Día ${d+1} · Ej ${e+1}</span>`;
+          html += `
+            <div class="card p-3 mb-2" style="border-left:3px solid rgba(200,165,74,.5);border-radius:0 8px 8px 0">
+              <div class="flex items-start gap-2">
+                <span style="font-size:16px;flex-shrink:0">📝</span>
+                <div>
+                  <div class="text-xs mb-1">${label}</div>
+                  <div class="text-sm" style="color:#cfcfcf;line-height:1.5">${logs[k]}</div>
+                </div>
+              </div>
+            </div>`;
         });
       }
 
