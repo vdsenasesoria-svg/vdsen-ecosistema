@@ -2774,7 +2774,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _rirDescs2 = ['Fallo','1 rep','2 reps','3 reps','C\u00f3modo'];
     var _rirBtns2 = [0,1,2,3,4].map(function(rv){
       var sel2 = rv === _exPfRIR;
-      return '<button onclick="expressSetRIR(\''+_expK+'\','+rv+')" id="xrir_'+_expK+'_'+rv+'" style="flex:1;padding:8px 2px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;border:2px solid '+(sel2?'#e8a040':'var(--border)')+';background:'+(sel2?'rgba(232,160,64,.15)':'var(--input-bg)')+';color:'+(sel2?'#e8a040':'var(--mt)"')+')+
+      return '<button onclick="expressSetRIR(\''+_expK+'\','+rv+')" id="xrir_'+_expK+'_'+rv+'" style="flex:1;padding:8px 2px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;border:2px solid '+(sel2?'#e8a040':'var(--border)')+';background:'+(sel2?'rgba(232,160,64,.15)':'var(--input-bg)')+';color:'+(sel2?'#e8a040':'var(--mt)')+'">'+
         '<span style="font-size:18px;font-weight:900;line-height:1">'+rv+'</span>'+
         '<span style="font-size:8px;font-weight:700;line-height:1.3;text-align:center">'+_rirDescs2[rv]+'</span>'+
         '</button>';
