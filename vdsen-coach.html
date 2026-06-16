@@ -1185,9 +1185,10 @@ El esfuerzo no es negociable.
       // Construir mapa ejercicio-nombre → nota más reciente del cliente
       const _exNoteByName = {};
       Object.keys(logs).forEach(k => {
-        const m = k.match(/^exnote_(\d+)_(\d+)_(\d+)$/);
-        if (!m) return;
-        const w = +m[1], d = +m[2], e = +m[3];
+        const m3 = k.match(/^exnote_(\d+)_(\d+)_(\d+)$/);
+        const m2 = !m3 && k.match(/^exnote_(\d+)_(\d+)$/);
+        if (!m3 && !m2) return;
+        const w = m3 ? +m3[1] : 99, d = m3 ? +m3[2] : +m2[1], e = m3 ? +m3[3] : +m2[2];
         if (_activePlanCache && _activePlanCache.days) {
           const dayObj = _activePlanCache.days.find(day => day.dayIndex === d) || _activePlanCache.days[d];
           if (dayObj && dayObj.exercises) {
@@ -1246,12 +1247,14 @@ El esfuerzo no es negociable.
         }
         html += `<div class="text-xs text-[#888] mb-2 mt-4 uppercase tracking-wide font-semibold">📝 Notas del cliente</div>`;
         noteKeys.sort().reverse().slice(0, 15).forEach(k => {
-          const parts = k.split('_'); // exnote_W_D_E
-          const w = parts[1], d = parseInt(parts[2]), e = parseInt(parts[3]);
+          const parts = k.split('_'); // exnote_W_D_E o exnote_D_E
+          const is3 = parts.length === 4;
+          const w = is3 ? parts[1] : null, d = parseInt(is3 ? parts[2] : parts[1]), e = parseInt(is3 ? parts[3] : parts[2]);
           const exName = _exNameFromPlan(d, e);
+          const semLabel = w ? `· Sem ${w} · Día ${d+1}` : `· Día ${d+1}`;
           const label = exName
-            ? `<span class="font-semibold" style="color:#fff">${exName}</span> <span style="color:#888;font-size:10px">· Sem ${w} · Día ${d+1}</span>`
-            : `<span style="color:#888">Sem ${w} · Día ${d+1} · Ej ${e+1}</span>`;
+            ? `<span class="font-semibold" style="color:#fff">${exName}</span> <span style="color:#888;font-size:10px">${semLabel}</span>`
+            : `<span style="color:#888">Día ${d+1} · Ej ${e+1}</span>`;
           html += `
             <div class="card p-3 mb-2" style="border-left:3px solid rgba(200,165,74,.5);border-radius:0 8px 8px 0">
               <div class="flex items-start gap-2">
@@ -1510,9 +1513,11 @@ El esfuerzo no es negociable.
       // ci_sem_W
       m = k.match(/^ci_sem_(\d+)$/);
       if (m) { weeklyCheckin[m[1]] = v; return; }
-      // exnote_W_D_E
+      // exnote_W_D_E (legacy) o exnote_D_E (nuevo sin semana)
       m = k.match(/^exnote_(\d+)_(\d+)_(\d+)$/);
       if (m) { exnotes.push({ w: +m[1], d: +m[2], e: +m[3], text: String(v) }); return; }
+      m = k.match(/^exnote_(\d+)_(\d+)$/);
+      if (m) { exnotes.push({ w: null, d: +m[1], e: +m[2], text: String(v) }); return; }
     });
 
     // Stats por ejercicio
@@ -1625,8 +1630,10 @@ El esfuerzo no es negociable.
       noteKeys.sort().reverse().slice(0, 15).forEach(k => {
         checkPage(8);
         const parts = k.split('_');
+        const is3p = parts.length === 4;
+        const nw = is3p ? parts[1] : null, nd = parseInt(is3p ? parts[2] : parts[1]), ne = parseInt(is3p ? parts[3] : parts[2]);
         doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(100,80,30);
-        doc.text(`S${parts[1]} D${parseInt(parts[2])+1} Ej${parseInt(parts[3])+1}:`, margin, y);
+        doc.text(`${nw ? 'S'+nw+' ' : ''}D${nd+1} Ej${ne+1}:`, margin, y);
         doc.setFont('helvetica','normal'); doc.setTextColor(60,60,60);
         const lines = doc.splitTextToSize(logs[k] || '', colW - 30);
         doc.text(lines[0] || '', margin + 22, y);
@@ -2051,7 +2058,7 @@ El esfuerzo no es negociable.
       }
 
       // Notas
-      const notes = agg.exnotes.sort((a,b)=>a.w-b.w||a.d-b.d||a.e-b.e).map(n => ({ w:n.w, d:n.d, e:n.e, t:n.t }));
+      const notes = agg.exnotes.sort((a,b)=>(a.w||0)-(b.w||0)||a.d-b.d||a.e-b.e).map(n => ({ w:n.w, d:n.d, e:n.e, t:n.text }));
 
       // Diagnóstico precalculado
       const diag = [];
@@ -2249,7 +2256,7 @@ Reporte:
         : '<p class="muted">Sin recomendaciones aún.</p>';
 
       const notesHTML = agg.exnotes.length
-        ? '<ul class="notes">' + agg.exnotes.sort((a,b)=>a.w-b.w||a.d-b.d||a.e-b.e).map(n => `<li><strong>S${n.w} D${n.d+1} Ej${n.e+1}:</strong> ${esc(n.t)}</li>`).join('') + '</ul>'
+        ? '<ul class="notes">' + agg.exnotes.sort((a,b)=>(a.w||0)-(b.w||0)||a.d-b.d||a.e-b.e).map(n => `<li><strong>${n.w?'S'+n.w+' ':''}D${n.d+1} Ej${n.e+1}:</strong> ${esc(n.text)}</li>`).join('') + '</ul>'
         : '<p class="muted">Sin notas del cliente.</p>';
 
       // Diagnóstico (mismas reglas que el PDF)
