@@ -309,6 +309,7 @@ let PLAN = null;
 let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
 let CURRENT_WEEK = 1;
 var REAL_WEEK = 1;     // semana real de entrenamiento (no cambia al navegar)
+var _weeksExpanded = false; // selector: mostrar semanas pasadas
 var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
@@ -3715,65 +3716,72 @@ function renderEntrenamiento() {
   var sesiones = getSesiones();
 
   // ── Semana selector ──────────────────────────────────────────────
-  var weeksHtml = Array.from({length:getTotalWeeks()}, function(_,i) {
-    var w = i+1;
+  var _tw = getTotalWeeks();
+  var _pastCount = REAL_WEEK - 1;
+  var _viewingPast = CURRENT_WEEK < REAL_WEEK;
+  // Auto-expandir si el usuario está viendo una semana pasada
+  if (_viewingPast) _weeksExpanded = true;
+
+  function _weekBtn(w) {
+    var isReal  = w === REAL_WEEK;
+    var isView  = w === CURRENT_WEEK;
     var done    = w < REAL_WEEK;
-    var isReal  = w === REAL_WEEK;    // semana real de entrenamiento
-    var isView  = w === CURRENT_WEEK; // semana que se está viendo
-    var deload  = w === getTotalWeeks();
-    // Colores base
+    var deload  = w === _tw;
     var numColor, subColor, bg, borderBot;
     if (isReal && isView) {
-      // ── SEMANA ACTIVA Y VISTA: máximo protagonismo ──
-      bg        = 'rgba(200,165,74,.22)';
-      borderBot = 'var(--accent)';
-      numColor  = '#fff';
-      subColor  = 'var(--accent)';
-    } else if (isReal && !isView) {
-      // ── SEMANA ACTIVA pero no vista ──
-      bg        = 'rgba(200,165,74,.08)';
-      borderBot = 'var(--accent)';
-      numColor  = 'var(--accent)';
-      subColor  = 'var(--accent)';
-    } else if (isView && !isReal) {
-      // ── VISTA (no activa) ──
-      bg        = 'rgba(255,140,50,.08)';
-      borderBot = '#FF8844';
-      numColor  = '#FF8844';
-      subColor  = '#FF8844';
+      bg = 'rgba(200,165,74,.22)'; borderBot = 'var(--accent)'; numColor = '#fff'; subColor = 'var(--accent)';
+    } else if (isReal) {
+      bg = 'rgba(200,165,74,.08)'; borderBot = 'var(--accent)'; numColor = 'var(--accent)'; subColor = 'var(--accent)';
+    } else if (isView) {
+      bg = 'rgba(255,140,50,.08)'; borderBot = '#FF8844'; numColor = '#FF8844'; subColor = '#FF8844';
     } else if (done) {
-      bg        = 'transparent';
-      borderBot = 'var(--grn)';
-      numColor  = 'var(--grn)';
-      subColor  = 'var(--grn)';
+      bg = 'rgba(58,148,96,.04)'; borderBot = 'rgba(58,148,96,.35)'; numColor = 'var(--grn)'; subColor = 'var(--grn)';
     } else {
-      bg        = 'transparent';
-      borderBot = 'transparent';
-      numColor  = 'var(--mt)';
-      subColor  = 'var(--mt)';
+      bg = 'transparent'; borderBot = 'transparent'; numColor = 'var(--mt)'; subColor = 'var(--mt)';
     }
-    // Refuerzo visual cuando la semana es la ACTIVA: glow lateral + badge prominente
-    var realGlow = isReal ? 'box-shadow:inset 0 -4px 0 var(--accent),0 0 18px rgba(200,165,74,.25);' : '';
+    var glow = isReal ? 'box-shadow:inset 0 -4px 0 var(--accent),0 0 18px rgba(200,165,74,.25);' : '';
+    var pad  = isReal ? '12px 0 8px' : '8px 0 5px';
+    var sz   = isReal ? '20px' : '15px';
+    var mt   = isReal ? '12px' : '3px';
     return '<button onclick="setWeek('+w+')" style="'+
       'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+
-      'padding:'+(isReal?'12px 0 8px':'8px 0 6px')+';border:none;cursor:pointer;flex:1;'+
-      'background:'+bg+';'+
-      'border-bottom:'+(isReal?'4':'3')+'px solid '+borderBot+';'+
-      realGlow+
-      'border-radius:0;position:relative;transition:background .15s">'+
-      // Badge ACTIVA solo en la semana real — ahora MUY visible
-      (isReal
-        ? '<span style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);'+
-          'font-size:8px;letter-spacing:1.2px;color:#000;font-weight:900;white-space:nowrap;'+
-          'background:var(--accent);padding:2px 8px;border-radius:0 0 6px 6px;box-shadow:0 2px 6px rgba(200,165,74,.5)">● ACTIVA</span>'
-        : '')+
-      '<span style="font-family:var(--ff);font-size:'+(isReal?'22':'17')+'px;font-weight:900;color:'+numColor+';margin-top:'+(isReal?'12':'4')+'px;'+
-        (isReal?'text-shadow:0 0 12px rgba(200,165,74,.6);':'')+'">'+
+      'padding:'+pad+';border:none;cursor:pointer;flex:1;min-width:0;'+
+      'background:'+bg+';border-bottom:'+(isReal?'4':'2')+'px solid '+borderBot+';'+
+      glow+'border-radius:0;position:relative;transition:background .15s">'+
+      (isReal ? '<span style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);font-size:7px;letter-spacing:1px;color:#000;font-weight:900;white-space:nowrap;background:var(--accent);padding:2px 6px;border-radius:0 0 5px 5px">● ACTIVA</span>' : '')+
+      '<span style="font-size:'+sz+';font-weight:900;color:'+numColor+';margin-top:'+mt+';'+(isReal?'text-shadow:0 0 10px rgba(200,165,74,.6);':'')+'">'+
         (done&&!isView?'✓':w)+'</span>'+
-      '<span style="font-size:'+(isReal?'9':'8.5')+'px;letter-spacing:.8px;font-weight:'+(isReal?'900':'600')+';color:'+subColor+'">'+
+      '<span style="font-size:7.5px;letter-spacing:.5px;font-weight:'+(isReal?'800':'600')+';color:'+subColor+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;padding:0 2px">'+
         (deload?'DELOAD':getSemProgresion(w))+'</span>'+
       '</button>';
-  }).join('');
+  }
+
+  var weeksHtml = '';
+  if (_pastCount > 0) {
+    if (_weeksExpanded) {
+      // Semanas pasadas individuales (compactas) + botón ocultar
+      for (var _pw = 1; _pw < REAL_WEEK; _pw++) weeksHtml += _weekBtn(_pw);
+      weeksHtml += '<button onclick="_weeksExpanded=false;renderEntrenamiento()" style="'+
+        'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+
+        'padding:8px 4px;border:none;cursor:pointer;min-width:32px;background:rgba(255,255,255,.03);'+
+        'border-bottom:2px solid rgba(255,255,255,.1);border-radius:0;color:var(--mt)">'+
+        '<span style="font-size:15px">‹</span>'+
+        '<span style="font-size:7px;letter-spacing:.5px;font-weight:600">OCULTAR</span>'+
+        '</button>';
+    } else {
+      // Chip colapsado
+      weeksHtml += '<button onclick="_weeksExpanded=true;renderEntrenamiento()" style="'+
+        'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;'+
+        'padding:8px 10px;border:none;cursor:pointer;min-width:52px;'+
+        'background:rgba(58,148,96,.06);border-bottom:2px solid rgba(58,148,96,.3);border-radius:0;'+
+        'white-space:nowrap">'+
+        '<span style="font-size:13px;color:var(--grn);font-weight:900">✓ '+_pastCount+'</span>'+
+        '<span style="font-size:7.5px;letter-spacing:.5px;font-weight:700;color:var(--grn)">'+(_pastCount===1?'SEM':'SEMS')+' ›</span>'+
+        '</button>';
+    }
+  }
+  // Semana activa + futuras (siempre visibles)
+  for (var _fw = REAL_WEEK; _fw <= _tw; _fw++) weeksHtml += _weekBtn(_fw);
 
   if (!sesiones.length) {
     // Try to show raw text if available
