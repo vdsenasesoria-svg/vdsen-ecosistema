@@ -1188,8 +1188,11 @@ async function loadPlan(user) {
           EXERCISE_UNITS = {}; // limpiar — los índices di/ei del plan viejo no corresponden al nuevo
           CURRENT_WEEK   = 1;
           REAL_WEEK      = 1;
-          // Guardar reset inmediatamente para que futuros reloads no vuelvan a detectar "plan cambiado"
-          setTimeout(function(){ if (_saveLogsTimer){clearTimeout(_saveLogsTimer);_saveLogsTimer=null;} _doSaveLogs(); }, 800);
+          // Guardar INMEDIATAMENTE (sin debounce) antes de que se registre el onSnapshot.
+          // Si se usara setTimeout, el onSnapshot dispararía con datos viejos de Firestore
+          // (semana 6) y sobreescribiría el reset en memoria antes de que se guardara.
+          if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+          await _doSaveLogs();
           showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
         } else {
           // Mismo plan: usar semana y entradas guardadas
@@ -4866,7 +4869,7 @@ async function markSessionDoneFromHistory(di) {
   var ses = sesiones[di];
   if (!ses) { showToast('Sesión no encontrada', true); return; }
   var ejercicios = ses.exercises || [];
-  if (!ejercicios.length) { showToast('Sesión sin ejercicios', true); return; }
+  if (!ejercicios.length) { showPostSessionModal(di); return; }
 
   // Confirmar con el usuario antes de rellenar
   if (!confirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.\n\n¿Continuar?')) return;
