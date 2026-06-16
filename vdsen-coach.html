@@ -3594,16 +3594,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup) {
     const techVal = (technique || 'straight').toLowerCase();
     const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
       .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
     const altsAttr = (alternativesJson || '[]').replace(/"/g,'&quot;');
+    const ssVal = (ssGroup || '').trim();
+    const ssBorder = ssVal ? 'border:1px solid rgba(204,102,170,.4)' : 'border:1px solid rgba(255,255,255,.08)';
     return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}"
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
       data-alternatives="${altsAttr}"
-      style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);transition:opacity .15s">
+      style="background:rgba(255,255,255,.03);${ssBorder};transition:opacity .15s">
       <div class="flex gap-2 items-center mb-2">
         <span class="text-[#555] select-none text-base cursor-grab px-0.5" title="Arrastrar para reordenar">⠿</span>
         <input class="input-field flex-1 text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${name}" id="exname_${di}_${ei}" list="coach_exlist" data-field="name" oninput="markEditorDirty&&markEditorDirty()">
@@ -3625,7 +3627,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
-      <div class="grid grid-cols-3 gap-2 mb-2" style="grid-template-columns:1fr 2fr">
+      <div class="grid gap-2 mb-2" style="grid-template-columns:80px 1fr 2fr">
+        <div>
+          <div class="text-[10px] uppercase tracking-wide mb-1" style="color:#cc66aa">Biserie</div>
+          <input class="input-field w-full text-xs py-1 text-center font-bold" placeholder="A / B…" maxlength="4" data-field="supersetGroup" value="${ssVal}" oninput="markEditorDirty&&markEditorDirty();this.closest('.exrow-item').style.border=this.value.trim()?'1px solid rgba(204,102,170,.4)':'1px solid rgba(255,255,255,.08)'">
+        </div>
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Técnica</div>
           <select class="input-field w-full text-xs py-1" data-field="technique" onchange="markEditorDirty&&markEditorDirty()">${techOpts}</select>
@@ -3688,7 +3694,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         var tech = e.technique || 'straight';
         var techNote = e.techniqueNote || '';
         var altsJson = JSON.stringify(e.alternatives || []);
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson);
+        var ssGrp = e.supersetGroup || '';
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp);
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#C9A84C]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -3716,7 +3723,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const div = document.createElement('div');
     div.outerHTML; // placeholder
     const tmp = document.createElement('template');
-    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]');
+    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '');
     list.appendChild(tmp.content.firstElementChild);
   }
 
@@ -3788,6 +3795,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const coachNote = row.querySelector('[data-field="coachNote"]')?.value.trim() || '';
         const technique = (row.querySelector('[data-field="technique"]')?.value || 'straight').toLowerCase();
         const techniqueNote = row.querySelector('[data-field="techniqueNote"]')?.value.trim() || '';
+        const supersetGroup = row.querySelector('[data-field="supersetGroup"]')?.value.trim() || '';
         let alternatives = [];
         try { alternatives = JSON.parse(row.dataset.alternatives || '[]'); } catch(e) {}
         if (name) exercises.push({
@@ -3796,6 +3804,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           coachNote,
           technique,
           techniqueNote,
+          supersetGroup,
           sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90, setNote: '', drop: false, tempo: '' }))
         });
       });

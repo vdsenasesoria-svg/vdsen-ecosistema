@@ -1205,6 +1205,7 @@ async function loadPlan(user) {
     }
     showScreen('scrApp');
     goTab(0);
+    showWhatsNew();
 
     // Escuchar cambios en tiempo real: cliente (nutrición, nuevo plan) + plan (ediciones del coach)
     try {
@@ -7474,6 +7475,45 @@ function exportPDF() {
 
   doc.save('MiPlan_VDSEN_'+(PLAN.nombre||'Plan').replace(/\s+/g,'-')+'.pdf');
 }
+
+// ══════════════════════════════════════════════════
+// WHAT'S NEW MODAL
+// ══════════════════════════════════════════════════
+var _WN_VERSION = 'vdsen_wn_v4';
+var _WN_UPDATES = [
+  { icon: '🔁', title: 'Biseries en una sola tarjeta', desc: 'Las biseries ahora aparecen unidas en una única tarjeta morada. Rondas 1 a N-1 tienen botón "✓ HECHA → DESCANSAR" que activa el timer. La última ronda muestra el formulario de carga/reps/RIR.' },
+  { icon: '⏱', title: 'Temporizador en modo Express', desc: 'En ejercicios individuales Express, las series intermedias tienen su propio botón de descanso. Solo la última serie te pide los datos.' },
+  { icon: '📝', title: 'Notas visibles en todas las semanas', desc: 'Las notas que escribes sobre un ejercicio aparecen junto al título en todas las semanas, no solo la actual.' },
+  { icon: '⚖️', title: 'Peso con 1 decimal', desc: 'Los pesos ahora se muestran con 1 decimal para mayor precisión (ej: 22.5 kg).' },
+  { icon: '🎯', title: 'RIR con descripción', desc: 'Cada botón de RIR explica qué significa: Fallo / 1 rep / 2 reps / 3 reps / Cómodo.' },
+];
+function showWhatsNew() {
+  if (localStorage.getItem(_WN_VERSION)) return;
+  var rows = _WN_UPDATES.map(function(u) {
+    return '<div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.06)">'+
+      '<span style="font-size:22px;flex-shrink:0;line-height:1.2">'+u.icon+'</span>'+
+      '<div><div style="font-size:13px;font-weight:800;color:var(--tx);margin-bottom:3px">'+u.title+'</div>'+
+      '<div style="font-size:11px;color:var(--mt);line-height:1.5">'+u.desc+'</div></div></div>';
+  }).join('');
+  var el = document.createElement('div');
+  el.id = 'wnModal';
+  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center';
+  el.innerHTML =
+    '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'+
+        '<div style="font-size:18px;font-weight:900;color:var(--tx)">Novedades 🚀</div>'+
+        '<div style="font-size:10px;font-weight:700;color:var(--mt);letter-spacing:1px">Jun 2026</div>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--mt);margin-bottom:16px">Actualizaciones recientes de tu app</div>'+
+      rows+
+      '<button onclick="document.getElementById(\'wnModal\').remove();localStorage.setItem(\''+_WN_VERSION+'\',\'1\')" '+
+        'style="width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800">'+
+        '¡Entendido! →'+
+      '</button>'+
+    '</div>';
+  document.body.appendChild(el);
+}
+window.showWhatsNew = showWhatsNew;
 
 // ══════════════════════════════════════════════════
 // TOAST
