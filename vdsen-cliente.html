@@ -3241,9 +3241,26 @@ function clearExpressDone(di, ei) {
 window.clearExpressDone = clearExpressDone;
 
 function markExpressSerie(di, ei, si) {
+  var expK = String(di)+'_'+String(ei);
+  var _cargaSave = (document.getElementById('xcarga_'+expK)||{}).value || null;
+  var _repsSave  = (document.getElementById('xreps_'+expK)||{}).value || null;
+  var _icsSave   = (document.getElementById('xics_'+expK)||{}).value || null;
+  var _rirSave   = parseInt((document.getElementById('xrir_val_'+expK)||{}).value);
+  var _pumpSave  = parseInt((document.getElementById('xpump_val_'+expK)||{}).value);
+
   LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+si] = true;
   saveLogs();
   _refreshExPanelOnly();
+
+  var cEl = document.getElementById('xcarga_'+expK);
+  var rEl = document.getElementById('xreps_'+expK);
+  var iEl = document.getElementById('xics_'+expK);
+  if (cEl && _cargaSave !== null) cEl.value = _cargaSave;
+  if (rEl && _repsSave  !== null) rEl.value = _repsSave;
+  if (iEl && _icsSave   !== null) iEl.value = _icsSave;
+  if (!isNaN(_rirSave) && _rirSave > 0) expressSetRIR(expK, _rirSave);
+  if (!isNaN(_pumpSave) && _pumpSave > 0) expressSetPump(expK, _pumpSave);
+
   var _ejCur = (_EJERCICIOS_DIA || [])[ei] || null;
   var _setSpec = _ejCur && _ejCur.sets && _ejCur.sets[si] ? _ejCur.sets[si] : null;
   var _planRest = _setSpec && parseInt(_setSpec.restSeconds) > 0 ? parseInt(_setSpec.restSeconds) : 0;
