@@ -1120,7 +1120,8 @@ async function loadPlan(user) {
       suplementacion: (clientData.supplementPlan && clientData.supplementPlan.texto)
         ? { texto: clientData.supplementPlan.texto, items: [] }
         : null,
-      rirByWeek: planData.rirByWeek || null
+      rirByWeek: planData.rirByWeek || null,
+      totalWeeks: parseInt(planData.weeks) || 6
     };
 
     // Cargar catálogo de ejercicios del coach (para algoritmo de progresión)
@@ -1651,7 +1652,7 @@ function buildHistorialWidget() {
 
   // ── 1) Recopilar datos por ejercicio por semana ──
   var exerciseMap = {}; // { "Nombre": { weeks: { 1: {load,reps,sets,ics}, 2: {...} } } }
-  for (var w = 1; w <= Math.min(CURRENT_WEEK, 6); w++) {
+  for (var w = 1; w <= Math.min(CURRENT_WEEK, getTotalWeeks()); w++) {
     sesiones.forEach(function(ses, di) {
       var lineas = (ses.contenido||'').split('\n').filter(function(l){return l.trim();});
       var ei = 0;
@@ -1709,7 +1710,7 @@ function buildHistorialWidget() {
     weekNums.forEach(function(w){ if (data.weeks[w].maxLoad > maxLoad) maxLoad = data.weeks[w].maxLoad; });
 
     var barsHtml = '';
-    for (var w = 1; w <= Math.min(CURRENT_WEEK, 6); w++) {
+    for (var w = 1; w <= Math.min(CURRENT_WEEK, getTotalWeeks()); w++) {
       var wd = data.weeks[w];
       if (wd) {
         var pct = maxLoad > 0 ? Math.round((wd.maxLoad / maxLoad)*100) : 0;
@@ -1748,7 +1749,7 @@ function buildHistorialWidget() {
   // ── 3) Check-in trends (peso, HRV, WHO-5) ──
   var ciTrendHtml = '';
   var ciWeeks = [];
-  for (var w = 1; w <= Math.min(CURRENT_WEEK, 6); w++) {
+  for (var w = 1; w <= Math.min(CURRENT_WEEK, getTotalWeeks()); w++) {
     var ci = LOGS['ci_sem_'+w];
     if (ci) ciWeeks.push({w:w, peso: parseFloat(ci.peso)||0, hrv: parseFloat(ci.hrv)||0, who5: parseInt(ci.who5)||0, energia: parseInt(ci.energia)||0});
   }
@@ -2002,12 +2003,12 @@ function countSessions() {
   return Math.max(numDias, 1) * 5; // semanas 1-5
 }
 function countDone() {
-  // Only count done_ keys for current mesocycle (weeks 1-6)
+  var _tw = getTotalWeeks();
   return Object.keys(LOGS).filter(function(k) {
     if (!k.startsWith('done_')) return false;
     var parts = k.split('_');
     var week = parseInt(parts[1]);
-    return week >= 1 && week <= 6;
+    return week >= 1 && week <= _tw;
   }).length;
 }
 
@@ -2198,15 +2199,22 @@ function _restTimerTick() {
 
 // ── Helper functions requeridas por renderEntrenamiento ──────────────
 
+function getTotalWeeks() { return (PLAN && PLAN.totalWeeks) ? PLAN.totalWeeks : 6; }
+
 function getSemProgresion(week) {
-  const map = {1:'ADAPTACIÓN',2:'PROGRESIÓN',3:'PROGRESIÓN',4:'INTENSIF.',5:'PEAK',6:'DELOAD'};
-  return map[week] || 'SEM '+week;
+  var total = getTotalWeeks();
+  if (week === total) return 'DELOAD';
+  if (week === total - 1) return 'PEAK';
+  if (week >= total - 2) return 'INTENSIF.';
+  if (week === 1) return 'ADAPTACIÓN';
+  return 'PROGRESIÓN';
 }
 
 function getAdjustedRIR(baseRIR, week) {
+  var total = getTotalWeeks();
   const base = parseInt(baseRIR) || 2;
-  if (week === 6) return base + 2;
-  if (week >= 4)  return Math.max(0, base - 1);
+  if (week === total) return base + 2;           // deload
+  if (week >= total - 2) return Math.max(0, base - 1); // peak/intensif
   return base;
 }
 
@@ -3296,9 +3304,10 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     var _iptS2 = 'width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 8px;outline:none;text-align:center';
     var _rirDescsss = ['Fallo','1 rep','2 reps','3 reps','Cómodo'];
     var _ssBaseRIR = (function() {
-      var def={1:3,2:2,3:2,4:1,5:0,6:3};
-      var wro=(PLAN&&PLAN.rirByWeek)?PLAN.rirByWeek:def;
-      var r=wro[CURRENT_WEEK]!==undefined?wro[CURRENT_WEEK]:wro[String(CURRENT_WEEK)]!==undefined?wro[String(CURRENT_WEEK)]:def[CURRENT_WEEK]||2;
+      var _ssD = {}; var _ssTW = getTotalWeeks();
+      for (var _si=1;_si<=_ssTW;_si++){_ssD[_si]=_si===_ssTW?3:_si===_ssTW-1?0:_si>=_ssTW-2?1:_si===1?3:2;}
+      var wro=(PLAN&&PLAN.rirByWeek)?PLAN.rirByWeek:_ssD;
+      var r=wro[CURRENT_WEEK]!==undefined?wro[CURRENT_WEEK]:wro[String(CURRENT_WEEK)]!==undefined?wro[String(CURRENT_WEEK)]:_ssD[CURRENT_WEEK]||2;
       return Math.max(0,Math.min(4,parseInt(r)||2));
     })();
     var _ssRIRprev = (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ssMembers[0]+'_s0']||{}).rir_real;
@@ -3706,12 +3715,12 @@ function renderEntrenamiento() {
   var sesiones = getSesiones();
 
   // ── Semana selector ──────────────────────────────────────────────
-  var weeksHtml = Array.from({length:6}, function(_,i) {
+  var weeksHtml = Array.from({length:getTotalWeeks()}, function(_,i) {
     var w = i+1;
     var done    = w < REAL_WEEK;
     var isReal  = w === REAL_WEEK;    // semana real de entrenamiento
     var isView  = w === CURRENT_WEEK; // semana que se está viendo
-    var deload  = w === 6;
+    var deload  = w === getTotalWeeks();
     // Colores base
     var numColor, subColor, bg, borderBot;
     if (isReal && isView) {
@@ -3781,9 +3790,9 @@ function renderEntrenamiento() {
 
   if (DIA_ACTIVO >= sesiones.length) DIA_ACTIVO = 0;
 
-  // ── Deload banner (semana 6) ─────────────────────────────────────
+  // ── Deload banner (última semana = deload) ─────────────────────
   var deloadBanner = '';
-  if (CURRENT_WEEK === 6) {
+  if (CURRENT_WEEK === getTotalWeeks()) {
     deloadBanner = '<div style="background:rgba(68,136,204,.1);border:1px solid rgba(68,136,204,.4);padding:12px 14px;margin:0 0 8px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
       + '<span style="font-size:18px">🔵</span>'
@@ -4750,7 +4759,7 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
   if (!sesiones.length) return;
   var advanced = false;
   // Loop: puede avanzar varias semanas si el usuario marcó varias atrasadas
-  while (REAL_WEEK < 6) {
+  while (REAL_WEEK < getTotalWeeks()) {
     var todasDone = sesiones.every(function(_,i){ return !!LOGS['done_'+REAL_WEEK+'_'+i]; });
     if (!todasDone) break;
     REAL_WEEK++;
@@ -8432,13 +8441,21 @@ function calculateProgression(di, postData) {
   if (!dia) return null;
 
   // RIR personalizable: si el plan tiene rirByWeek, usarlo. Si no, default VDSEN v3.2
-  var defaultRir = {1:3,2:2,3:2,4:1,5:0,6:3};
+  var _twR = getTotalWeeks();
+  var defaultRir = {};
+  for (var _ri = 1; _ri <= _twR; _ri++) {
+    if (_ri === _twR) defaultRir[_ri] = 3;
+    else if (_ri === _twR - 1) defaultRir[_ri] = 0;
+    else if (_ri >= _twR - 2) defaultRir[_ri] = 1;
+    else if (_ri === 1) defaultRir[_ri] = 3;
+    else defaultRir[_ri] = 2;
+  }
   var weekRirObj = (PLAN && PLAN.rirByWeek) ? PLAN.rirByWeek : defaultRir;
   // Fix: Firestore puede guardar keys como string ("1") o number (1)
   var rirObj = weekRirObj[CURRENT_WEEK] !== undefined ? weekRirObj[CURRENT_WEEK]
              : weekRirObj[String(CURRENT_WEEK)] !== undefined ? weekRirObj[String(CURRENT_WEEK)] : 2;
   // RIR objetivo para la PRÓXIMA semana (las recs son para la siguiente sesión)
-  var nextWeekNum = Math.min(CURRENT_WEEK + 1, 6);
+  var nextWeekNum = Math.min(CURRENT_WEEK + 1, getTotalWeeks());
   var rirObjNext  = weekRirObj[nextWeekNum]         !== undefined ? weekRirObj[nextWeekNum]
                   : weekRirObj[String(nextWeekNum)] !== undefined ? weekRirObj[String(nextWeekNum)]
                   : defaultRir[nextWeekNum]         !== undefined ? defaultRir[nextWeekNum] : 2;
@@ -8466,7 +8483,8 @@ function calculateProgression(di, postData) {
   }
 
   // Sem 5: la siguiente sesión es sem 6 (deload) → generar recs de deload ahora
-  var isDeload = CURRENT_WEEK === 6 || CURRENT_WEEK === 5 || deloadTriggers.length >= 2;
+  var _tw2 = getTotalWeeks();
+  var isDeload = CURRENT_WEEK >= _tw2 - 1 || deloadTriggers.length >= 2;
 
   // Obtener ejercicios del día
   var exercises = [];
