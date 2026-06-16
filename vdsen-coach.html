@@ -3031,7 +3031,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Plan de entrenamiento</h4>
-          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''}</div>
+          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar semana → 1</button></div>
         </div>
         <div id="training-view">${planViewHtml}</div>
         <div id="training-editor" style="display:none">${planEditorHtml}</div>
@@ -4111,6 +4111,30 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     };
   }
   window.showUpdatePlanModal = showUpdatePlanModal;
+
+  async function resetClientWeek(clientId) {
+    if (!await _askConfirm('¿Reiniciar la semana de este cliente a Semana 1?<br><span style="color:#888;font-size:12px">Los registros de entreno se borrarán. El historial de pesos se conserva.</span>')) return;
+    try {
+      const logsRef = doc(db, 'logs', clientId);
+      const logsSnap = await getDoc(logsRef);
+      const prevHist = logsSnap.exists() ? (logsSnap.data().exerciseHistory || {}) : {};
+      const prevUnits = logsSnap.exists() ? (logsSnap.data().exerciseUnits || {}) : {};
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      const newPlanId = clientSnap.exists() ? (clientSnap.data().activePlanId || null) : null;
+      await setDoc(logsRef, {
+        entries: {},
+        currentWeek: 1,
+        planId: newPlanId,
+        exerciseHistory: prevHist,
+        exerciseUnits: {},
+        updatedAt: Date.now()
+      });
+      showToast('✅ Semana reiniciada a 1');
+      showClientDetail(clientId);
+    } catch(e) {
+      showToast('Error al reiniciar semana: ' + (e.code||'') + ' ' + e.message, true);
+    }
+  }
 
   async function deletePlan(clientId, planId) {
     if (!await _askConfirm('¿Eliminar el plan activo de este cliente?<br><span style="color:#888;font-size:12px">El cliente quedará sin plan asignado.</span>')) return;
