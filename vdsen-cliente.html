@@ -3218,42 +3218,39 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     return sub && sub.nombre ? sub.nombre : (ejercicios[idx].nombre || ejercicios[idx].exerciseName || 'Ej '+(idx+1));
   });
   var numRondas = ejercicios[ssMembers[0]].numSeries || (ejercicios[ssMembers[0]].sets ? ejercicios[ssMembers[0]].sets.length : 3);
-  var _ssk = 'ss_'+di+'_'+ssMembers[0]; // clave de DOM para inputs compartidos
+  var _ssk = 'ss_'+di+'_'+ssMembers[0];
 
-  // ¿Ya completada esta ronda?
   var allDone = ssMembers.every(function(idx) {
     var e = LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx];
     return e && e.done;
   });
 
-  // Línea de flujo en header
-  var flowHtml = memberNames.map(function(n, i) {
+  var namesFlow = memberNames.map(function(n,i) {
     return '<span style="font-weight:900;color:#fff">'+circleNums[i]+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+n+'</span>';
-  }).join('<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>')+
-    '<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>'+
-    '<span style="color:#ffe0a0;font-weight:800">⏸&thinsp;Descanso</span>';
+  }).join('<span style="color:rgba(255,255,255,.45);margin:0 6px">→</span>');
 
   var html =
     '<div style="border:2px solid #cc66aa;border-radius:18px;overflow:hidden;margin-bottom:16px;box-shadow:0 6px 28px rgba(204,102,170,.25)">'+
     '<div style="background:linear-gradient(135deg,#9b3e88,#cc66aa);padding:13px 16px 11px">'+
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
         '<span style="font-size:20px">🔁</span>'+
         '<div>'+
-          '<div style="font-size:13px;font-weight:900;letter-spacing:1.5px;color:#fff;line-height:1">BISERIE&thinsp;·&thinsp;GRUPO&thinsp;'+grp.toUpperCase()+'</div>'+
-          '<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:2px">'+numRondas+' rondas · ejecutar ambos SIN descanso entre ellos</div>'+
+          '<div style="font-size:13px;font-weight:900;letter-spacing:1.5px;color:#fff;line-height:1">BISERIE · GRUPO '+grp.toUpperCase()+'</div>'+
+          '<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:2px">'+numRondas+' rondas · ejecutar SIN descanso entre ejercicios</div>'+
         '</div>'+
       '</div>'+
-      '<div style="font-size:11.5px;line-height:1.9;padding:7px 11px;background:rgba(0,0,0,.25);border-radius:9px">'+flowHtml+'</div>'+
+      '<div style="font-size:11.5px;padding:7px 11px;background:rgba(0,0,0,.25);border-radius:9px;line-height:1.9">'+
+        namesFlow+' <span style="color:rgba(255,255,255,.45);margin:0 6px">→</span><span style="color:#ffe0a0;font-weight:800">⏸ Descanso</span>'+
+      '</div>'+
     '</div>'+
     '<div style="padding:16px">';
 
   if (allDone) {
-    // ── Resumen completado ─────────────────────────────────────────────────
     ssMembers.forEach(function(idx, i) {
       var entry = LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] || {};
-      var unit = entry.unit || 'KG';
+      var uShow = entry.unit || 'KG';
       var cRaw = parseFloat(entry.carga||0);
-      var cDisp = cRaw > 0 ? cRaw.toFixed(1)+' '+unit+' × ' : '';
+      var cDisp = cRaw > 0 ? cRaw.toFixed(1)+' '+uShow+' × ' : '';
       html +=
         '<div style="margin-bottom:10px'+(i>0?';padding-top:10px;border-top:1px solid rgba(204,102,170,.15)':'')+'">' +
           '<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#e9a8d4;margin-bottom:3px">'+circleNums[i]+' '+memberNames[i].toUpperCase()+'</div>'+
@@ -3265,29 +3262,71 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     html +=
       '<div style="font-size:12px;color:var(--mt);margin-bottom:14px">'+numRondas+' rondas · RIR real '+e0.rir_last+' · ICS '+(e0.ics||'—')+' '+ep0Emoji+'</div>'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
-        '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">✓ RONDA REGISTRADA</div>'+
+        '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">✓ BISERIE REGISTRADA</div>'+
         '<button onclick="clearExpressSSDone('+di+',['+ssMembers.join(',')+'])" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:4px 12px;border-radius:7px;cursor:pointer">✏ Editar</button>'+
       '</div>';
-    // Siguiente ejercicio o finalizar sesión
     var _ssGrpLow = grp.toLowerCase();
     var _nextEi = ssMembers[ssMembers.length-1] + 1;
     while (_nextEi < ejercicios.length && ejercicios[_nextEi] && String(ejercicios[_nextEi].supersetGroup||'').trim().toLowerCase() === _ssGrpLow) _nextEi++;
     var _isLastEx = (_nextEi >= ejercicios.length);
     html += (_isLastEx
-      ? '<button onclick="markSessionDone('+di+')" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">🏁 FINALIZAR SESIÓN</button>'
-      : '<button onclick="setEjActivo('+_nextEi+')" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">Siguiente ejercicio →</button>');
+      ? '<button onclick="markSessionDone('+di+')" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800">🏁 FINALIZAR SESIÓN</button>'
+      : '<button onclick="setEjActivo('+_nextEi+')" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800">Siguiente ejercicio →</button>');
   } else {
-    // ── Formulario Express combinado ─────────────────────────────────────
+    // ── Rondas intermedias + última con formulario ────────────────────────
     var _iptS2 = 'width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 8px;outline:none;text-align:center';
+    var _rirDescsss = ['Fallo','1 rep','2 reps','3 reps','Cómodo'];
+    var _ssBaseRIR = (function() {
+      var def={1:3,2:2,3:2,4:1,5:0,6:3};
+      var wro=(PLAN&&PLAN.rirByWeek)?PLAN.rirByWeek:def;
+      var r=wro[CURRENT_WEEK]!==undefined?wro[CURRENT_WEEK]:wro[String(CURRENT_WEEK)]!==undefined?wro[String(CURRENT_WEEK)]:def[CURRENT_WEEK]||2;
+      return Math.max(0,Math.min(4,parseInt(r)||2));
+    })();
+    var _ssRIRprev = (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ssMembers[0]+'_s0']||{}).rir_real;
+    var _ssRIRinit = _ssRIRprev !== undefined ? Math.max(0,Math.min(4,parseInt(_ssRIRprev)||2)) : _ssBaseRIR;
+
+    // Rondas 1..N-1
+    for (var _r = 0; _r < numRondas - 1; _r++) {
+      var _rKey = 'exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+_r;
+      var _rDone = !!LOGS[_rKey];
+      if (_rDone) {
+        html +=
+          '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.18);border-radius:12px;margin-bottom:8px">'+
+            '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
+            '<div style="font-size:13px;font-weight:800;color:var(--grn);flex:1">RONDA '+(_r+1)+'</div>'+
+            '<span style="font-size:10px;color:var(--mt)">Completada</span>'+
+          '</div>';
+      } else {
+        html +=
+          '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:rgba(255,255,255,.03);border:2px solid rgba(255,255,255,.09);border-radius:12px;margin-bottom:8px">'+
+            '<div style="display:flex;align-items:center;gap:10px">'+
+              '<div style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(204,102,170,.4);display:flex;align-items:center;justify-content:center;font-size:12px;color:#e9a8d4;font-weight:800">'+(_r+1)+'</div>'+
+              '<div>'+
+                '<div style="font-size:12px;font-weight:800;color:var(--tx)">RONDA '+(_r+1)+'</div>'+
+                '<div style="font-size:10px;color:var(--mt)">'+memberNames.map(function(n,i){ return circleNums[i]+' '+n; }).join(' → ')+'</div>'+
+              '</div>'+
+            '</div>'+
+            '<button onclick="markExpressSsRonda('+di+',['+ssMembers.join(',')+'],'+_r+')" style="padding:9px 14px;border:none;border-radius:10px;cursor:pointer;background:var(--grn);color:#fff;font-size:11px;font-weight:800;white-space:nowrap">✓ HECHA → DESCANSAR</button>'+
+          '</div>';
+        break; // Solo mostrar la primera ronda pendiente como activa
+      }
+    }
+
+    // Última ronda: formulario completo
+    html +=
+      '<div style="background:rgba(204,102,170,.05);border:2px solid rgba(204,102,170,.35);border-radius:12px;padding:14px;margin-top:4px">'+
+      '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:#e9a8d4;margin-bottom:12px">'+
+        'RONDA '+numRondas+(numRondas > 1 ? ' — ÚLTIMA · REGISTRA LOS DATOS' : ' — REGISTRA LOS DATOS')+
+      '</div>';
 
     ssMembers.forEach(function(idx, i) {
       var ejM = ejercicios[idx];
       var unit2 = getExUnit(di, idx) || 'KG';
       var _techM = (ejM.technique||'').toLowerCase();
       var _isIsoM = _techM === 'iso-hold' || /^plancha|isometric|hollow|l[- ]?sit|wall sit/i.test(memberNames[i]);
-      var _isBwM  = _isIsoM || /^(dominad|fondo|plancha|burpee|abdominal|crunch(?! en polea)|rueda abdomin|elevaci[oó]n de piernas (colgad|libre)|push.?up|flexi[oó]n|muscle.?up|pull.?up|hollow)/i.test(memberNames[i]);
-      var _prevM  = LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+idx+'_s0'] || {};
-      var _histM  = EXERCISE_HISTORY[memberNames[i].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')] || {};
+      var _isBwM = _isIsoM || /^(dominad|fondo|plancha|burpee|abdominal|crunch(?! en polea)|rueda abdomin|elevaci[oó]n de piernas (colgad|libre)|push.?up|flexi[óo]n|muscle.?up|pull.?up|hollow)/i.test(memberNames[i]);
+      var _prevM = LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+idx+'_s0'] || {};
+      var _histM = EXERCISE_HISTORY[memberNames[i].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')] || {};
       var _pfCM = '', _pfRM = ejM.sets ? (ejM.sets[0] ? (ejM.sets[0].repsTarget || 10) : 10) : 10;
       var _progM = _getProgRecForExercise(di, idx, memberNames[i]);
       if (_progM && _progM.newLoad !== undefined && _progM.newLoad !== null) {
@@ -3315,16 +3354,6 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '</div>';
     });
 
-    // RIR compartido con descripciones
-    var _ssBaseRIR = (function() {
-      var def={1:3,2:2,3:2,4:1,5:0,6:3};
-      var wro=(PLAN&&PLAN.rirByWeek)?PLAN.rirByWeek:def;
-      var r=wro[CURRENT_WEEK]!==undefined?wro[CURRENT_WEEK]:wro[String(CURRENT_WEEK)]!==undefined?wro[String(CURRENT_WEEK)]:def[CURRENT_WEEK]||2;
-      return Math.max(0,Math.min(4,parseInt(r)||2));
-    })();
-    var _ssRIRprev = (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ssMembers[0]+'_s0']||{}).rir_real;
-    var _ssRIRinit = _ssRIRprev !== undefined ? Math.max(0,Math.min(4,parseInt(_ssRIRprev)||2)) : _ssBaseRIR;
-    var _rirDescsss = ['Fallo','1 rep','2 reps','3 reps','Cómodo'];
     var _ssRirBtns = [0,1,2,3,4].map(function(rv){
       var sel = rv === _ssRIRinit;
       return '<button onclick="expressSetRIR(\''+_ssk+'\','+rv+')" id="xrir_'+_ssk+'_'+rv+'" '+
@@ -3334,7 +3363,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '<span style="font-size:8px;font-weight:700;line-height:1.3">'+_rirDescsss[rv]+'</span>'+
         '</button>';
     }).join('');
-    var _ssPumpBtns = [{v:1,icon:'💪',c:'var(--grn)'},{v:2,icon:'👍',c:'var(--accent)'},{v:3,icon:'😐',c:'var(--mt)'}].map(function(p){
+    var _ssPumpBtns = [{v:1,icon:'💪'},{v:2,icon:'👍'},{v:3,icon:'😐'}].map(function(p){
       return '<button onclick="expressSetPump(\''+_ssk+'\','+p.v+')" id="xpump_'+_ssk+'_'+p.v+'" style="flex:1;padding:9px 2px;border-radius:7px;font-size:19px;border:2px solid var(--border);background:var(--input-bg);cursor:pointer">'+p.icon+'</button>';
     }).join('');
 
@@ -3356,18 +3385,14 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
           '<input type="hidden" id="xpump_val_'+_ssk+'" value="">'+
         '</div>'+
       '</div>'+
-      '<button onclick="markExpressSSDone('+di+',['+ssMembers.join(',')+'])" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:#cc66aa;color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">✓ COMPLETAR RONDA</button>';
+      '<button onclick="markExpressSSDone('+di+',['+ssMembers.join(',')+'])" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:#cc66aa;color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">✓ COMPLETAR BISERIE</button>'+
+      '</div>';
   }
 
-  html +=
-    '</div>'+ // close padding div
-    '<div style="padding:10px 16px;background:rgba(200,165,74,.07);border-top:1px solid rgba(204,102,170,.3);display:flex;align-items:center;gap:8px">'+
-      '<span style="font-size:15px">⏸</span>'+
-      '<span style="font-size:11px;font-weight:700;letter-spacing:1px;color:#ffe0a0">PAREJA COMPLETA&thinsp;→&thinsp;DESCANSA</span>'+
-    '</div>'+
-    '</div>'; // close outer
+  html += '</div></div>';
   return html;
 }
+
 
 function markExpressSSDone(di, ssMembers) {
   var _ssk = 'ss_'+di+'_'+ssMembers[0];
@@ -3403,10 +3428,18 @@ function markExpressSSDone(di, ssMembers) {
   }
   saveLogs();
   _refreshExPanelOnly();
+  // Rest timer after completing biserie
+  var _ejSS0 = (_EJERCICIOS_DIA || [])[ssMembers[0]] || null;
+  var _ssSets = _ejSS0 && _ejSS0.sets;
+  var _ssRest = _ssSets && _ssSets[0] && parseInt(_ssSets[0].restSeconds) > 0 ? parseInt(_ssSets[0].restSeconds) : 0;
+  if (!_ssRest) { var _ssCat = _getCatalogData(_ejSS0 ? (_ejSS0.nombre||_ejSS0.exerciseName||"") : ""); _ssRest = _ssCat ? (function(fc){ return fc>=5?180:fc>=4?150:fc>=3?120:fc>=2?90:60; })(_ssCat.fatigueCost||3) : 120; }
+  startRestTimer(_ssRest);
+  showToast("Biserie ✓ — descansando");
 }
 window.markExpressSSDone = markExpressSSDone;
 
 function clearExpressSSDone(di, ssMembers) {
+  for (var r = 0; r < 12; r++) delete LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+r];
   for (var i = 0; i < ssMembers.length; i++) {
     var idx = ssMembers[i];
     delete LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx];
@@ -3419,6 +3452,30 @@ function clearExpressSSDone(di, ssMembers) {
   _refreshExPanelOnly();
 }
 window.clearExpressSSDone = clearExpressSSDone;
+
+function markExpressSsRonda(di, ssMembers, rondaIdx) {
+  LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+rondaIdx] = true;
+  saveLogs();
+  _refreshExPanelOnly();
+  var _ejCur = (_EJERCICIOS_DIA || [])[ssMembers[0]] || null;
+  var _setSpec = _ejCur && _ejCur.sets && _ejCur.sets[rondaIdx] ? _ejCur.sets[rondaIdx] : null;
+  var _planRest = _setSpec && parseInt(_setSpec.restSeconds) > 0 ? parseInt(_setSpec.restSeconds) : 0;
+  var restTime;
+  if (_planRest > 0) {
+    restTime = _planRest;
+  } else {
+    var catEx = _getCatalogData(_ejCur ? (_ejCur.nombre || _ejCur.exerciseName || '') : '');
+    if (catEx) {
+      var fc = catEx.fatigueCost || 3;
+      restTime = fc >= 5 ? 180 : fc >= 4 ? 150 : fc >= 3 ? 120 : fc >= 2 ? 90 : 60;
+    } else {
+      restTime = 120;
+    }
+  }
+  startRestTimer(restTime);
+  showToast('Ronda ✓ — descansando');
+}
+window.markExpressSsRonda = markExpressSsRonda;
 
 // ── Inferir patrón motor por palabras clave (fallback para ejercicios fuera del catálogo) ──
 function _inferMotorPattern(nombre) {
