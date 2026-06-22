@@ -1931,9 +1931,55 @@ function renderResumen() {
         ${ciDone?'✏ ACTUALIZAR CHECK-IN →':'📊 IR A CHECK-IN →'}
       </button>
     </div>
+    ${buildStreakWidget()}
     ${buildVolumenWidget()}
     ${buildRezagadosWidget()}
     ${buildHistorialWidget()}`;
+}
+
+function buildStreakWidget() {
+  var numDias = getSesiones().length || 1;
+
+  // Secuencia cronológica de sesiones hasta la sesión actual (incluida): semanas completas
+  // anteriores + días ya alcanzados en la semana activa. Una racha se rompe en el primer
+  // hueco (sesión que ya tocaba y no se marcó como hecha).
+  var seq = [];
+  for (var w = 1; w <= CURRENT_WEEK; w++) {
+    var diasEnEstaSemana = (w < CURRENT_WEEK) ? numDias : Math.min(DIA_ACTIVO + 1, numDias);
+    for (var d = 0; d < diasEnEstaSemana; d++) {
+      seq.push(!!LOGS['done_'+w+'_'+d]);
+    }
+  }
+
+  var current = 0;
+  for (var i = seq.length - 1; i >= 0; i--) {
+    if (seq[i]) current++; else break;
+  }
+  var best = 0, run = 0;
+  for (var j = 0; j < seq.length; j++) {
+    if (seq[j]) { run++; if (run > best) best = run; } else run = 0;
+  }
+
+  var fireOpacity = current > 0 ? 1 : .35;
+  var msg = current === 0 ? 'Completa tu próxima sesión para arrancar racha'
+    : current === 1 ? '¡Vas arrancando! Sigue así'
+    : 'Sesiones consecutivas sin fallar';
+
+  return `
+    <div class="card" style="margin-top:8px">
+      <div class="card-title">RACHA DE CUMPLIMIENTO</div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="font-size:36px;opacity:${fireOpacity}">🔥</div>
+        <div style="flex:1">
+          <div style="font-family:var(--ff);font-size:28px;color:var(--gold);line-height:1">${current}</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:2px">${msg}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--ff);font-size:16px;color:var(--tx)">${best}</div>
+          <div style="font-size:10px;color:var(--mt);letter-spacing:1px">RÉCORD</div>
+        </div>
+      </div>
+    </div>`;
 }
 
 function buildVolumenWidget() {
@@ -2908,13 +2954,16 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var prev = LOGS[prevKey] || {};
     var exNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var histEx = EXERCISE_HISTORY[exNameLower] || {};
-    // Auto-fill: usar semana anterior primero, luego historial (solo si el set aún no se registró)
+    // Auto-fill: prioridad progrec (sugerencia de carga del algoritmo de progresión) →
+    // semana anterior → historial (solo si el set aún no se registró). progrec sólo aplica
+    // al primer set (s===0): es una recomendación por ejercicio, no por set individual.
     // Convertir KG↔LB si la unidad guardada difiere de la unidad actual del ejercicio.
     var _prefill = !saved.carga && !saved.reps;
+    var _progCargaConv = (_prefill && s===0 && progrec && progrec.newLoad !== undefined && progrec.newLoad !== null) ? parseFloat(progrec.newLoad).toFixed(1) : '';
     var _prevCargaConv = (_prefill && prev.carga) ? _convertCarga(prev.carga, prev.unit, unit) : '';
     var _histCargaConv = (_prefill && s===0 && histEx.load) ? _convertCarga(histEx.load, histEx.unit, unit) : '';
-    var carga   = saved.carga   || _prevCargaConv || _histCargaConv || '';
-    var reps    = saved.reps    || (_prefill && prev.reps     ? prev.reps     : (_prefill && s===0 && histEx.reps ? histEx.reps : ''));
+    var carga   = saved.carga   || _progCargaConv || _prevCargaConv || _histCargaConv || '';
+    var reps    = saved.reps    || (_prefill && s===0 && progrec && progrec.newReps ? progrec.newReps : (_prefill && prev.reps ? prev.reps : (_prefill && s===0 && histEx.reps ? histEx.reps : '')));
     var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
 
     // ── Datos específicos del set (del plan): setNote, drop, tempo ──
@@ -3227,6 +3276,12 @@ function markExpressDone(di, ei) {
     var stale = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s2;
     if (LOGS[stale] && LOGS[stale].express) delete LOGS[stale];
   }
+
+  // Actualizar historial de ejercicio + detectar récord personal (igual que en modo normal)
+  var _ejExpr = (_EJERCICIOS_DIA || [])[ei] || null;
+  var _exNombreExpr = (_ejExpr && (_ejExpr.nombre || _ejExpr.exerciseName)) || ('Ejercicio '+(ei+1));
+  var _exNameKeyExpr = _exNombreExpr.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  _recordExerciseHistoryAndPR(_exNameKeyExpr, _exNombreExpr, carga, reps, rirLast, unit);
 
   saveLogs();
   _refreshExPanelOnly();
@@ -4469,6 +4524,38 @@ function copiarSerie(key, s, di, ei) {
   bcProgHint(key);
 }
 
+// Actualiza EXERCISE_HISTORY con la misma regla que ya existía (solo sobreescribe si la
+// nueva carga es ≥ la guardada) y detecta si la serie registrada es un récord personal
+// (carga mayor a la histórica, o misma carga con más reps) para mostrar una celebración.
+function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir, unit) {
+  if (!carga || parseFloat(carga) <= 0) return;
+  var prev = EXERCISE_HISTORY[exNameKey] || {};
+  var newLoad = parseFloat(carga) || 0;
+  var prevLoadInUnit = prev.load ? (parseFloat(_convertCarga(prev.load, prev.unit, unit)) || 0) : 0;
+  var isPR = !!prev.load && (newLoad > prevLoadInUnit || (newLoad === prevLoadInUnit && parseInt(reps) > (parseInt(prev.reps) || 0)));
+  if (!prev.load || newLoad >= prevLoadInUnit) {
+    EXERCISE_HISTORY[exNameKey] = { load: carga, reps: String(reps), rir: rir, unit: unit, updatedAt: Date.now() };
+  }
+  if (isPR) showPRCelebration(exDisplayName, carga, unit, reps);
+}
+window._recordExerciseHistoryAndPR = _recordExerciseHistoryAndPR;
+
+function showPRCelebration(exDisplayName, load, unit, reps) {
+  var old = document.getElementById('prCeleb');
+  if (old) old.remove();
+  var el = document.createElement('div');
+  el.id = 'prCeleb';
+  el.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-20px);z-index:10000;background:linear-gradient(135deg,#C9A84C,#E8C766);color:#1a1a1a;padding:14px 20px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-weight:800;font-size:13px;display:flex;align-items:center;gap:10px;max-width:90vw;opacity:0;transition:opacity .3s, transform .3s';
+  el.innerHTML = '<span style="font-size:22px">🏆</span><span>¡Nuevo récord en '+exDisplayName+'! '+load+' '+unit+' × '+reps+'</span>';
+  document.body.appendChild(el);
+  requestAnimationFrame(function(){ el.style.opacity='1'; el.style.transform='translateX(-50%) translateY(0)'; });
+  setTimeout(function(){
+    el.style.opacity='0'; el.style.transform='translateX(-50%) translateY(-20px)';
+    setTimeout(function(){ el.remove(); }, 300);
+  }, 3500);
+}
+window.showPRCelebration = showPRCelebration;
+
 function completeSet(key, di, ei, si, unit) {
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
@@ -4514,20 +4601,11 @@ function completeSet(key, di, ei, si, unit) {
   // Leer nombre del ejercicio antes de re-render
   var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
-  // Actualizar historial de ejercicio (peso/RIR para continuidad entre mesociclos).
-  // Solo guardar SET DE TRABAJO (top set): si ya hay histórico, solo sobreescribir cuando
-  // la nueva carga sea ≥ la guardada — así drop sets y series finales con fatiga no pisan
-  // el peso real de trabajo. Convertimos unidades antes de comparar.
-  if (done && carga && parseFloat(carga) > 0) {
-    var _prev = EXERCISE_HISTORY[exName] || {};
-    var _newLoad = parseFloat(carga) || 0;
-    var _prevLoadInUnit = _prev.load ? parseFloat(_convertCarga(_prev.load, _prev.unit, unit)) || 0 : 0;
-    if (!_prev.load || _newLoad >= _prevLoadInUnit) {
-      EXERCISE_HISTORY[exName] = {
-        load: carga, reps: reps, rir: rirReal || getAdjustedRIR(2, CURRENT_WEEK),
-        unit: unit, updatedAt: Date.now()
-      };
-    }
+  // Actualizar historial de ejercicio (peso/RIR para continuidad entre mesociclos) y
+  // detectar récord personal. Solo cuenta el SET DE TRABAJO (top set): drop sets y series
+  // finales con fatiga no pisan el peso real de trabajo (ver _recordExerciseHistoryAndPR).
+  if (done) {
+    _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(2, CURRENT_WEEK), unit);
   }
 
   saveLogs();
