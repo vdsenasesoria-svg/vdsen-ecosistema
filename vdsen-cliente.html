@@ -1155,6 +1155,7 @@ async function loadPlan(user) {
 
     // Cargar logs (no-fatal)
     ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual
+    var _showBitacoraInfo = false;
     try {
       const logRef = FB.doc(FB.db, 'logs', user.uid);
       const logSnap = await FB.getDoc(logRef);
@@ -1194,6 +1195,7 @@ async function loadPlan(user) {
           if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
           await _doSaveLogs();
           showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
+          _showBitacoraInfo = true;
         } else {
           // Mismo plan: usar semana y entradas guardadas
           LOGS         = logData.entries || {};
@@ -1207,6 +1209,7 @@ async function loadPlan(user) {
       const errEl = document.getElementById('saveErrBadge');
       if (errEl) { errEl.style.display='block'; errEl.textContent='⚠ Usando datos locales.'; }
     }
+    try { if (sessionStorage.getItem('vdsen_plan_updated_info') === '1') { sessionStorage.removeItem('vdsen_plan_updated_info'); _showBitacoraInfo = true; } } catch(e2) {}
 
     document.getElementById('hdName').textContent = (PLAN.nombre||'').toUpperCase();
     document.getElementById('hdGoal').textContent = PLAN.objetivo || '—';
@@ -1227,6 +1230,7 @@ async function loadPlan(user) {
     CURRENT_WEEK = _rWk;
     goTab(_rTab);
     showWhatsNew();
+    if (_showBitacoraInfo) { setTimeout(function(){ showBitacoraInfoModal(); }, 500); }
 
     // Escuchar cambios en tiempo real: cliente (nutrición, nuevo plan) + plan (ediciones del coach)
     try {
@@ -1263,6 +1267,7 @@ async function loadPlan(user) {
         // El coach modificó el plan activo → notificar y recargar
         if (_planReloadPending) return;
         _planReloadPending = true;
+        try { sessionStorage.setItem('vdsen_plan_updated_info', '1'); } catch(e3) {}
         showToast('✏️ Tu coach actualizó tu rutina. Recargando...');
         setTimeout(function(){ location.reload(); }, 2000);
       });
@@ -7635,6 +7640,37 @@ function showWhatsNew() {
   document.body.appendChild(el);
 }
 window.showWhatsNew = showWhatsNew;
+
+// Modal informativo: importancia de la bitácora + cómo usarla.
+// Se muestra cada vez que el coach asigna un plan nuevo o actualiza el plan activo.
+function showBitacoraInfoModal() {
+  if (document.getElementById('biModal')) return;
+  var el = document.createElement('div');
+  el.id = 'biModal';
+  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center';
+  el.innerHTML =
+    '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'+
+      '<div style="font-size:18px;font-weight:900;color:var(--tx);margin-bottom:4px">📋 Llena tu bitácora cada sesión</div>'+
+      '<div style="font-size:11px;color:var(--mt);margin-bottom:16px">Es la base para que tu coach ajuste tu plan</div>'+
+      '<div style="font-size:13px;color:var(--tx);line-height:1.6;margin-bottom:16px">'+
+        'Cada serie que registras (carga, reps, RIR, ICS) le dice a tu coach cómo vas: si subir peso, mantener o bajar la intensidad. '+
+        'Sin esos datos no se puede progresar tu plan ni detectar fatiga o molestias a tiempo.'+
+      '</div>'+
+      '<div style="background:rgba(255,255,255,.04);border-radius:14px;padding:14px 16px;margin-bottom:8px">'+
+        '<div style="font-size:12px;font-weight:800;color:var(--tx);margin-bottom:10px">Cómo registrar cada serie:</div>'+
+        '<div style="display:flex;gap:10px;margin-bottom:10px"><span style="font-weight:900;color:var(--accent)">1</span><span style="font-size:12px;color:var(--mt);line-height:1.5">Entra a la pestaña <strong style="color:var(--tx)">Entrenamiento</strong> y elige tu ejercicio.</span></div>'+
+        '<div style="display:flex;gap:10px;margin-bottom:10px"><span style="font-weight:900;color:var(--accent)">2</span><span style="font-size:12px;color:var(--mt);line-height:1.5">Por cada serie anota <strong style="color:var(--tx)">carga, reps, RIR e ICS</strong> (calidad técnica 1-10).</span></div>'+
+        '<div style="display:flex;gap:10px;margin-bottom:10px"><span style="font-weight:900;color:var(--accent)">3</span><span style="font-size:12px;color:var(--mt);line-height:1.5">Marca <strong style="color:var(--tx)">✓</strong> al terminar la serie — así arranca tu descanso.</span></div>'+
+        '<div style="display:flex;gap:10px"><span style="font-weight:900;color:var(--accent)">4</span><span style="font-size:12px;color:var(--mt);line-height:1.5">Al final de la sesión presiona <strong style="color:var(--tx)">Completar sesión</strong> y responde el check-in.</span></div>'+
+      '</div>'+
+      '<button onclick="document.getElementById(\'biModal\').remove()" '+
+        'style="width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800">'+
+        '¡Entendido! →'+
+      '</button>'+
+    '</div>';
+  document.body.appendChild(el);
+}
+window.showBitacoraInfoModal = showBitacoraInfoModal;
 
 // ══════════════════════════════════════════════════
 // TOAST
