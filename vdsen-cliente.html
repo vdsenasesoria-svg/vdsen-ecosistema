@@ -6138,6 +6138,7 @@ function parsearYRenderComidas(texto) {
 
   // ── Render cada comida ──
   return comidas.map(function(cm, ci) {
+    var sumP = 0, sumC = 0, sumG = 0; // suma real de macros por alimento (fallback si la línea "Macros:" viene en 0)
     var alimHtml = cm.alimentos.map(function(raw, ai) {
       // Extraer sub-notas embebidas (formato "alimento\n  ↳ nota")
       var subnotas = [];
@@ -6146,6 +6147,9 @@ function parsearYRenderComidas(texto) {
         raw = partsSn[0];
         for (var sni = 1; sni < partsSn.length; sni++) subnotas.push(partsSn[sni]);
       }
+      // Ocultar notas de verificación de etiqueta (ruido interno del coach,
+      // sin valor para el cliente — ej. "Label MX verificado — 110 kcal...")
+      subnotas = subnotas.filter(function(sn) { return !/\b(label|etiqueta)\b|\bverificad[oa]s?\b/i.test(sn); });
       // Extraer macros breakdown si vienen entre [...]
       var macrosBd = '';
       var mbM = raw.match(/\[([\d.,gP·CG\s]+)\]/);
@@ -6217,6 +6221,7 @@ function parsearYRenderComidas(texto) {
             var mP = p.match(/(\d+(?:\.\d+)?)\s*g\s*([PCG])/i);
             if (!mP) return '';
             var v = mP[1], tipo = mP[2].toUpperCase();
+            if (tipo==='P') sumP += parseFloat(v); else if (tipo==='C') sumC += parseFloat(v); else sumG += parseFloat(v);
             var col = tipo==='P' ? '#6aacee' : tipo==='C' ? '#6acc7e' : '#e8a060';
             var label = tipo==='P' ? 'P' : tipo==='C' ? 'C' : 'G';
             return '<span style="font-size:9px;color:'+col+';background:'+col+'1a;padding:1px 6px;border-radius:4px;font-weight:700;letter-spacing:.5px;font-family:var(--ff)">'+label+': '+v+'g</span>';
@@ -6229,8 +6234,10 @@ function parsearYRenderComidas(texto) {
         '</div>';
       }).join('') : '';
       return '<div id="alim_' + key + '" style="' +
-        'padding:8px 0;border-bottom:1px solid rgba(30,35,48,.6);' +
+        'display:flex;gap:9px;padding:8px 0;border-bottom:1px solid rgba(30,35,48,.6);' +
         (hasSust ? 'padding-bottom:4px;' : '') + '">' +
+        '<div style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.25);display:flex;align-items:center;justify-content:center;font-family:var(--ff);font-size:9px;font-weight:700;color:var(--gold);margin-top:1px">' + (ai + 1) + '</div>' +
+        '<div style="flex:1;min-width:0">' +
         // Main ingredient line
         '<div style="display:flex;justify-content:space-between;align-items:center">' +
           '<span style="font-size:13px;color:' + (isSustd ? '#4a9a6a' : 'var(--tx)') + ';line-height:1.4;flex:1;font-weight:' + (isSustd ? '600' : '400') + '">' +
@@ -6244,6 +6251,7 @@ function parsearYRenderComidas(texto) {
         macrosBdHtml +
         subnotasHtml +
         sustHtml +
+        '</div>' +
         '</div>';
     }).join('');
 
@@ -6284,12 +6292,18 @@ function parsearYRenderComidas(texto) {
       var mc = cm.macros.match(/(\d+)\s*g?\s*CARBS?/i);
       var mg = cm.macros.match(/(\d+)\s*g?\s*GRAS/i);
       var mk = cm.macros.match(/(\d+)\s*kcal/i);
+      // Fallback: si la línea declara 0g pero los alimentos sí traen macros marcadas
+      // entre [], mostrar la suma real en vez del 0 (texto del coach incompleto)
+      var fmtG = function(n) { return (n % 1 === 0) ? String(n) : n.toFixed(1); };
+      var pTxt = (mp && mp[1] === '0' && sumP > 0) ? fmtG(sumP) : (mp ? mp[1] : null);
+      var cTxt = (mc && mc[1] === '0' && sumC > 0) ? fmtG(sumC) : (mc ? mc[1] : null);
+      var gTxt = (mg && mg[1] === '0' && sumG > 0) ? fmtG(sumG) : (mg ? mg[1] : null);
       if (mp || mc || mg || mk) {
         macrosHtml = '<div style="display:flex;gap:6px;padding:8px 0 2px;border-top:1px solid var(--border);margin-top:6px;flex-wrap:wrap">' +
           (mk ? '<span style="font-size:10px;font-weight:700;color:var(--gold);font-family:var(--ff);letter-spacing:.5px">' + mk[1] + ' kcal</span>' : '') +
-          (mp ? '<span style="font-size:10px;color:#4488cc;font-family:var(--ff)">P: ' + mp[1] + 'g</span>' : '') +
-          (mc ? '<span style="font-size:10px;color:#4aaa5e;font-family:var(--ff)">C: ' + mc[1] + 'g</span>' : '') +
-          (mg ? '<span style="font-size:10px;color:#cc8844;font-family:var(--ff)">G: ' + mg[1] + 'g</span>' : '') +
+          (pTxt ? '<span style="font-size:10px;color:#4488cc;font-family:var(--ff)">P: ' + pTxt + 'g</span>' : '') +
+          (cTxt ? '<span style="font-size:10px;color:#4aaa5e;font-family:var(--ff)">C: ' + cTxt + 'g</span>' : '') +
+          (gTxt ? '<span style="font-size:10px;color:#cc8844;font-family:var(--ff)">G: ' + gTxt + 'g</span>' : '') +
           '</div>';
       } else {
         macrosHtml = '<div style="font-size:10px;color:var(--gold);padding:6px 0 0;border-top:1px solid var(--border);margin-top:4px;font-family:var(--ff)">' + cm.macros + '</div>';
