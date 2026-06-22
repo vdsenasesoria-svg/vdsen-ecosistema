@@ -5988,7 +5988,8 @@ function parsearYRenderComidas(texto) {
   function esEncabezado(lt) {
     // Excluir líneas de ajuste de macros (instrucciones del Motor, no comidas reales)
     if (/^COMIDA\s*\d+\s*:/i.test(lt) && /REDUCIR|AUMENTAR|ELIMINAR|AJUSTE|AGREGAR|QUITAR|CAMBIAR|REEMPLAZAR|SUSTITUIR|-\d+\s*g|\+\d+\s*g|-\d+\s*kcal|\+\d+\s*kcal/i.test(lt)) return false;
-    return /^(COMIDA\s*\d|DESAYUNO|ALMUERZO|COMIDA\s*PRINCIPAL|CENA|PRE-?ENTRENO|POST-?ENTRENO|SNACK|COLACI[OÓ]N)/i.test(lt);
+    // "COMIDA" sola (sin número), usada como separador genérico en algunos planes
+    return /^(COMIDA\s*\d|COMIDA\s*$|DESAYUNO|ALMUERZO|COMIDA\s*PRINCIPAL|CENA|PRE-?ENTRENO|POST-?ENTRENO|SNACK|COLACI[OÓ]N)/i.test(lt);
   }
   function esSustitucionesSection(lt) {
     // Normalizar: quitar acentos para comparación
