@@ -1124,6 +1124,9 @@ async function loadPlan(user) {
       nombre: clientData.displayName || user.email,
       objetivo: clientData.objetivo || '',
       peso: clientData.peso || '',
+      // Perfil del cliente: 'hipertrofia' (default) | 'rendimiento' | 'hibrido'
+      // Define qué tipo de planes/dosificación recibe (fuerza pura vs deportivo vs combinado).
+      profileType: (clientData.profileType || 'hipertrofia'),
       entrenamiento: { sesiones: sesiones },
       nutricion: (clientData.nutritionPlan && (clientData.nutritionPlan.calorias || clientData.nutritionPlan.texto))
         ? clientData.nutritionPlan : null,
@@ -1249,9 +1252,10 @@ async function loadPlan(user) {
           setTimeout(function(){ location.reload(); }, 1500);
           return;
         }
-        // Actualizar nutrición/suplementación en vivo sin recargar
+        // Actualizar nutrición/suplementación/perfil en vivo sin recargar
         if (newData.nutritionPlan) { PLAN.nutricion = newData.nutritionPlan; try { renderNutricion(); } catch(e){} }
         if (newData.supplementPlan) { PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] }; }
+        if (newData.profileType && newData.profileType !== PLAN.profileType) { PLAN.profileType = newData.profileType; try { renderPerfil(); } catch(e){} }
       });
 
       // ── 2. Listener sobre el doc del PLAN (detecta ediciones del coach al plan activo) ──
@@ -2308,25 +2312,38 @@ function _buildExNav(ejercicios, di) {
     'Core':'🔵','Cardio':'🏃','Bisagra':'↙️','Hinge':'↙️','Squat':'🏋️','Sentadilla':'🏋️'
   };
   return ejercicios.map(function(ej, ei) {
-    var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
-    var doneCount = 0;
-    for (var s = 0; s < numSeries; s++) {
-      if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s].done) doneCount++;
+    var _navType = _getExType(ej);
+    var _navSingleLog = (_navType === 'cardio' || _navType === 'circuito');
+    var numSeries, doneCount, allDone;
+    if (_navSingleLog) {
+      numSeries = 1;
+      var _navOneLog = LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei];
+      doneCount = (_navOneLog && _navOneLog.done) ? 1 : 0;
+      allDone = doneCount === 1;
+    } else {
+      numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+      doneCount = 0;
+      for (var s = 0; s < numSeries; s++) {
+        if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s].done) doneCount++;
+      }
+      allDone = doneCount >= numSeries;
     }
-    var allDone = doneCount >= numSeries;
     var isActive = ei === EJ_ACTIVO;
     var _navSub = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei] || null;
     var nombre = (_navSub && _navSub.nombre) ? _navSub.nombre : (ej.nombre || ej.exerciseName || ('Ej '+(ei+1)));
     var shortName = nombre.length > 12 ? nombre.substring(0, 12)+'…' : nombre;
     var machine = getMachineForExercise(nombre);
     var catData = _getCatalogData(nombre);
-    var iconHtml = machine
-      ? '<div style="width:36px;height:24px;flex-shrink:0;opacity:.9;display:flex;align-items:center;justify-content:center">'+
-          machine.svg.replace(/width="[^"]*"/, 'width="36"').replace(/height="[^"]*"/, 'height="24"')+
-        '</div>'
-      : '<span style="font-size:18px;line-height:1">'+
-          (catData && patternEmoji[catData.motorPattern] ? patternEmoji[catData.motorPattern] : '💪')+
-        '</span>';
+    var _navChip = _exTypeChip(_navType);
+    var iconHtml = _navChip
+      ? '<span style="font-size:18px;line-height:1">'+_navChip.icon+'</span>'
+      : (machine
+        ? '<div style="width:36px;height:24px;flex-shrink:0;opacity:.9;display:flex;align-items:center;justify-content:center">'+
+            machine.svg.replace(/width="[^"]*"/, 'width="36"').replace(/height="[^"]*"/, 'height="24"')+
+          '</div>'
+        : '<span style="font-size:18px;line-height:1">'+
+            (catData && patternEmoji[catData.motorPattern] ? patternEmoji[catData.motorPattern] : '💪')+
+          '</span>');
     var badgeHtml = allDone
       ? '<span style="font-size:9px;font-weight:800;color:var(--grn);letter-spacing:.5px">✓</span>'
       : '<span style="font-size:9px;font-weight:700;color:var(--mt)">'+doneCount+'/'+numSeries+'</span>';
@@ -2627,10 +2644,37 @@ function _getExNote(di, ei) {
   return '';
 }
 
+// ── Tipo de ejercicio: 'fuerza' (default), 'calistenia', 'cardio', 'estacion', 'circuito' ─
+// Permite que la app dosifique distintos perfiles de cliente (hipertrofia / rendimiento / híbrido)
+// sin romper retro-compatibilidad: cualquier ejercicio sin exerciseType cae a 'fuerza'.
+function _getExType(ej) {
+  if (!ej) return 'fuerza';
+  var t = String(ej.exerciseType || ej.tipo || '').toLowerCase().trim();
+  if (t === 'calistenia' || t === 'cardio' || t === 'estacion' || t === 'circuito') return t;
+  return 'fuerza';
+}
+
+// Etiqueta visual + color por tipo (chip en header del ejercicio)
+function _exTypeChip(t) {
+  if (t === 'calistenia') return {label:'CALISTENIA', color:'#7ec0ff', bg:'rgba(126,192,255,.12)', border:'rgba(126,192,255,.32)', icon:'🤸'};
+  if (t === 'cardio')     return {label:'CARDIO',     color:'#ff8aa6', bg:'rgba(255,138,166,.12)', border:'rgba(255,138,166,.32)', icon:'🏃'};
+  if (t === 'estacion')   return {label:'ESTACIÓN',   color:'#ffb86b', bg:'rgba(255,184,107,.12)', border:'rgba(255,184,107,.34)', icon:'⚙️'};
+  if (t === 'circuito')   return {label:'CIRCUITO',   color:'#c89cff', bg:'rgba(200,156,255,.12)', border:'rgba(200,156,255,.34)', icon:'🔄'};
+  return null;
+}
+
 // ── Card individual de un ejercicio (originalmente _buildExPanel) ──
 function _buildExCard(ejercicios, di, ei, isPartner) {
   if (!ejercicios.length) return '';
   var ej = ejercicios[ei];
+  // ── Dispatcher por tipo de ejercicio ──
+  // Los ejercicios de rendimiento (cardio/calistenia/estación/circuito) usan
+  // renderers dedicados con inputs propios y log shape distinto a fuerza.
+  var _ejType = _getExType(ej);
+  if (_ejType === 'calistenia') return _buildCalisteniaCard(ejercicios, di, ei, isPartner);
+  if (_ejType === 'cardio')     return _buildCardioCard(ejercicios, di, ei, isPartner);
+  if (_ejType === 'estacion')   return _buildEstacionCard(ejercicios, di, ei, isPartner);
+  if (_ejType === 'circuito')   return _buildCircuitoCard(ejercicios, di, ei, isPartner);
   var _exSubKey = 'exsub_'+CURRENT_WEEK+'_'+di+'_'+ei;
   var _exSubData = LOGS[_exSubKey] || null;
   var _originalNombre = ej.nombre || ej.exerciseName || '';
@@ -3177,6 +3221,371 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
 
   var bannerHtml = _buildSessionTargetBanner(progrec, _prevWeekBanner, _histExBanner, unit, numSeries, repsTarget, baseRIR);
   return machineHtml + headerHtml + notaHtml + closedBannerHtml + bannerHtml + wuHtml + setsHtml + completedBlockHtml;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RENDERERS Y HANDLERS PARA TIPOS DE EJERCICIO NO-FUERZA
+// Activados por exerciseType en cada ejercicio del plan.
+// Usados para clientes con perfil 'rendimiento' o 'hibrido' (HYROX/DEKA/calistenia/cardio).
+// Cada tipo tiene su propio shape de log en LOGS y su propio handler de "completar".
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Header común reutilizable: chip de tipo + nombre + nota coach ─────────
+function _perfHeader(ej, di, ei, chip, statsHtml) {
+  var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
+  var displayNota = ej.nota || ej.coachNote || '';
+  var _exNoteInline = _getExNote(di, ei);
+  var chipHtml = chip
+    ? '<span style="font-size:10px;font-weight:800;letter-spacing:1.2px;color:'+chip.color+';background:'+chip.bg+';border:1px solid '+chip.border+';padding:3px 9px;border-radius:6px;display:inline-flex;align-items:center;gap:5px">'+
+        '<span style="font-size:11px">'+chip.icon+'</span>'+chip.label+
+      '</span>'
+    : '';
+  return '<div style="margin-bottom:14px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">'+chipHtml+'</div>'+
+      '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+nombre+'</div>'+
+      (_exNoteInline
+        ? '<div onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(200,165,74,.08);border-left:3px solid rgba(200,165,74,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_exNoteInline+'</div>'
+        : '')+
+      (statsHtml || '')+
+      (displayNota ? '<div style="margin-top:10px;padding:10px 12px;background:rgba(255,255,255,.03);border-left:3px solid '+(chip?chip.border:'var(--border)')+';border-radius:0 8px 8px 0;font-size:12px;color:var(--mt);line-height:1.55">'+displayNota+'</div>' : '')+
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(200,165,74,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(200,165,74,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
+      '</div>'+
+    '</div>';
+}
+
+// ── Helper genérico para guardar log y refrescar ──────────────────────────
+function _saveExLog(key, payload) {
+  LOGS[key] = Object.assign({}, payload, { ts: Date.now() });
+  saveLogs();
+  _refreshExPanelOnly();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 1. CALISTENIA — reps + asistencia/lastre + RPE + ICS
+//    Shape de log: log_{W}_{D}_{E}_s{S} = { reps, asistencia, lastre, rpe, ics, done, ts, exType:'calistenia' }
+// ════════════════════════════════════════════════════════════════════════════
+function _buildCalisteniaCard(ejercicios, di, ei, isPartner) {
+  var ej = ejercicios[ei];
+  var chip = _exTypeChip('calistenia');
+  var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
+  var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+  var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : '8-12') || '8-12';
+  var rpeTarget = ej.rpeTarget || (ej.sets && ej.sets[0] ? ej.sets[0].rpeTarget : 8) || 8;
+  var rest = (ej.sets && ej.sets[0] && ej.sets[0].restSeconds) || ej.restSeconds || 90;
+
+  var statsHtml =
+    '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
+      '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
+      '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">'+repsTarget+' REPS</span>'+
+      '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px">RPE '+rpeTarget+'</span>'+
+      '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">⏱ '+rest+'s desc</span>'+
+    '</div>';
+
+  var setsHtml = '';
+  for (var s = 0; s < numSeries; s++) {
+    var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+    var saved = LOGS[key] || {};
+    var done = !!saved.done;
+    var bgCol = done ? 'rgba(58,148,96,.06)' : 'var(--surface)';
+    var borderCol = done ? 'var(--grn)' : 'var(--border)';
+
+    setsHtml +=
+      '<div style="border:1px solid '+borderCol+';border-radius:10px;padding:10px 12px;margin-bottom:8px;background:'+bgCol+'">'+
+        '<div style="display:flex;align-items:center;gap:8px">'+
+          '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:'+(done?'var(--grn)':'var(--border)')+';color:'+(done?'#fff':'var(--mt)')+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">'+(done?'✓':(s+1))+'</div>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="display:flex;gap:5px">'+
+              '<div style="flex:1;min-width:0">'+
+                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">REPS</div>'+
+                '<input id="cal_reps_'+key+'" type="number" value="'+(saved.reps||'')+'" placeholder="reps" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+              '</div>'+
+              '<div style="flex:1;min-width:0">'+
+                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">LASTRE/ASIST (kg)</div>'+
+                '<input id="cal_load_'+key+'" type="number" step="0.5" value="'+(saved.lastre!=null?saved.lastre:(saved.asistencia!=null?-saved.asistencia:''))+'" placeholder="±kg" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:var(--tx);font-size:15px;font-weight:600;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()" title="Positivo=lastre añadido. Negativo=asistencia (banda/máquina).">'+
+              '</div>'+
+              '<div style="width:54px;flex-shrink:0">'+
+                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">RPE</div>'+
+                '<input id="cal_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#e8a040;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+              '</div>'+
+              '<div style="width:54px;flex-shrink:0">'+
+                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">ICS</div>'+
+                '<input id="cal_ics_'+key+'" type="number" min="1" max="10" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#7ec0ff;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+              '</div>'+
+            '</div>'+
+          '</div>'+
+          '<button onclick="completeCalisteniaSet(\''+key+'\','+di+','+ei+','+s+','+rest+')" style="width:44px;height:44px;border-radius:8px;border:2px solid '+borderCol+';background:'+(done?'var(--grn)':'var(--input-bg)')+';color:'+(done?'#fff':'var(--mt)')+';font-size:18px;cursor:pointer;flex-shrink:0">'+(done?'✓':'○')+'</button>'+
+        '</div>'+
+      '</div>';
+  }
+
+  return '<div style="background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;border:1px solid '+chip.border+';padding:14px">'+
+    _perfHeader(ej, di, ei, chip, statsHtml)+
+    setsHtml+
+    '</div>';
+}
+
+function completeCalisteniaSet(key, di, ei, si, restSec) {
+  var saved = LOGS[key] || {};
+  var done = !saved.done;
+  if (done) {
+    var reps = parseInt(document.getElementById('cal_reps_'+key)?.value);
+    var rpe = parseInt(document.getElementById('cal_rpe_'+key)?.value);
+    var ics = parseInt(document.getElementById('cal_ics_'+key)?.value);
+    var loadRaw = parseFloat(document.getElementById('cal_load_'+key)?.value);
+    if (!reps || reps <= 0) { showToast('Ingresa las repeticiones (> 0)', true); return; }
+    if (rpe && (rpe < 1 || rpe > 10)) { showToast('RPE 1-10', true); return; }
+    if (ics && (ics < 1 || ics > 10)) { showToast('ICS 1-10', true); return; }
+    var lastre = (!isNaN(loadRaw) && loadRaw > 0) ? loadRaw : 0;
+    var asistencia = (!isNaN(loadRaw) && loadRaw < 0) ? Math.abs(loadRaw) : 0;
+    _saveExLog(key, { exType:'calistenia', reps:reps, lastre:lastre, asistencia:asistencia, rpe:rpe||null, ics:ics||null, done:true });
+    startRestTimer(restSec || 90);
+    showToast('Serie ✓ — descansando');
+  } else {
+    _saveExLog(key, Object.assign({}, saved, { done:false }));
+    showToast('Serie desmarcada');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 2. CARDIO — modo (z2/intervalos/tempo/sprint) + duración + distancia + FC + RPE
+//    Shape de log: log_{W}_{D}_{E} = { modo, duracionMin, distanciaKm, fcMedia, fcMax, rpe, ritmo, notas, done, ts, exType:'cardio' }
+//    Un solo log por ejercicio (no por set).
+// ════════════════════════════════════════════════════════════════════════════
+function _buildCardioCard(ejercicios, di, ei, isPartner) {
+  var ej = ejercicios[ei];
+  var chip = _exTypeChip('cardio');
+  var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
+  var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  var saved = LOGS[key] || {};
+  var done = !!saved.done;
+  var modo = ej.modo || ej.cardioMode || 'z2';
+  var modoLbl = {z2:'ZONA 2', intervalos:'INTERVALOS', tempo:'TEMPO', sprint:'SPRINT', comprometida:'COMPROMETIDA'}[modo] || String(modo).toUpperCase();
+  var tDuracion = ej.duracionMin || ej.targetMinutes || '';
+  var tDistancia = ej.distanciaKm || ej.targetKm || '';
+  var tFcMin = ej.fcZonaMin || ej.fcMin || '';
+  var tFcMax = ej.fcZonaMax || ej.fcMax || '';
+  var tRitmo = ej.ritmoObjetivo || ej.targetPace || '';
+  var tRepeticiones = ej.repeticiones || (ej.sets ? ej.sets.length : null);
+  var tBloqueTrabajo = ej.bloqueTrabajo || ej.workInterval || '';
+  var tBloqueDescanso = ej.bloqueDescanso || ej.restInterval || '';
+
+  var targetsHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">'+
+    '<span style="font-size:11px;font-weight:800;color:'+chip.color+';background:'+chip.bg+';border:1px solid '+chip.border+';padding:3px 9px;border-radius:6px">'+modoLbl+'</span>'+
+    (tDuracion?'<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">⏱ '+tDuracion+' min</span>':'')+
+    (tDistancia?'<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">🛣 '+tDistancia+' km</span>':'')+
+    (tFcMin||tFcMax?'<span style="font-size:11px;font-weight:700;color:#ff8aa6;background:rgba(255,138,166,.1);border:1px solid rgba(255,138,166,.25);padding:3px 9px;border-radius:6px">❤ '+(tFcMin&&tFcMax?tFcMin+'-'+tFcMax:tFcMin||tFcMax)+' lpm</span>':'')+
+    (tRitmo?'<span style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">🎯 '+tRitmo+'</span>':'')+
+    (tRepeticiones?'<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);padding:3px 9px;border-radius:6px">✕ '+tRepeticiones+' reps</span>':'')+
+    (tBloqueTrabajo||tBloqueDescanso?'<span style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+(tBloqueTrabajo?'W:'+tBloqueTrabajo:'')+(tBloqueTrabajo&&tBloqueDescanso?' / ':'')+(tBloqueDescanso?'R:'+tBloqueDescanso:'')+'</span>':'')+
+    '</div>';
+
+  var inputsHtml =
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">DURACIÓN (min)</div><input id="card_dur_'+key+'" type="number" step="0.5" value="'+(saved.duracionMin||'')+'" placeholder="'+(tDuracion||'min')+'" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">DISTANCIA (km)</div><input id="card_dist_'+key+'" type="number" step="0.01" value="'+(saved.distanciaKm||'')+'" placeholder="'+(tDistancia||'km')+'" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">FC MEDIA (lpm)</div><input id="card_fcm_'+key+'" type="number" value="'+(saved.fcMedia||'')+'" placeholder="lpm" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">FC MÁX (lpm)</div><input id="card_fcx_'+key+'" type="number" value="'+(saved.fcMax||'')+'" placeholder="lpm" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">RITMO</div><input id="card_pace_'+key+'" type="text" value="'+(saved.ritmo||'')+'" placeholder="'+(tRitmo||'min/km')+'" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:14px;font-weight:600;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">RPE (1-10)</div><input id="card_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#e8a040;font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+    '</div>'+
+    '<div style="margin-top:10px"><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">NOTAS (opcional)</div>'+
+    '<textarea id="card_notes_'+key+'" placeholder="Sensaciones, clima, terreno..." '+(sessionDone&&done?'disabled':'')+' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:50px;resize:vertical;line-height:1.5">'+(saved.notas||'')+'</textarea></div>'+
+    '<button onclick="completeCardio(\''+key+'\','+di+','+ei+')" style="margin-top:12px;width:100%;padding:13px;border:2px solid '+(done?'var(--grn)':chip.border)+';background:'+(done?'var(--grn)':chip.bg)+';color:'+(done?'#fff':chip.color)+';font-size:14px;font-weight:800;letter-spacing:1.5px;border-radius:10px;cursor:pointer">'+(done?'✓ COMPLETADO — TOCAR PARA EDITAR':'CONFIRMAR CARDIO ✓')+'</button>';
+
+  return '<div style="background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;border:1px solid '+chip.border+';padding:14px">'+
+    _perfHeader(ej, di, ei, chip, targetsHtml)+
+    inputsHtml+
+    '</div>';
+}
+
+function completeCardio(key, di, ei) {
+  var saved = LOGS[key] || {};
+  if (saved.done) {
+    _saveExLog(key, Object.assign({}, saved, { done:false }));
+    showToast('Cardio desmarcado — edita y vuelve a confirmar');
+    return;
+  }
+  var dur = parseFloat(document.getElementById('card_dur_'+key)?.value);
+  var dist = parseFloat(document.getElementById('card_dist_'+key)?.value);
+  var fcMed = parseInt(document.getElementById('card_fcm_'+key)?.value);
+  var fcMax = parseInt(document.getElementById('card_fcx_'+key)?.value);
+  var ritmo = (document.getElementById('card_pace_'+key)?.value || '').trim();
+  var rpe = parseInt(document.getElementById('card_rpe_'+key)?.value);
+  var notas = (document.getElementById('card_notes_'+key)?.value || '').trim();
+  if ((!dur || dur <= 0) && (!dist || dist <= 0)) { showToast('Ingresa duración o distancia', true); return; }
+  if (rpe && (rpe < 1 || rpe > 10)) { showToast('RPE 1-10', true); return; }
+  var ej = (_EJERCICIOS_DIA || [])[ei] || {};
+  _saveExLog(key, { exType:'cardio', modo:ej.modo||ej.cardioMode||'z2', duracionMin:isNaN(dur)?null:dur, distanciaKm:isNaN(dist)?null:dist, fcMedia:isNaN(fcMed)?null:fcMed, fcMax:isNaN(fcMax)?null:fcMax, ritmo:ritmo||null, rpe:isNaN(rpe)?null:rpe, notas:notas||null, done:true });
+  showToast('Cardio registrado ✓');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 3. ESTACIÓN — HYROX/DEKA: dosis (reps o metros) + tiempo + RPE
+//    Shape de log: log_{W}_{D}_{E}_s{S} = { dosis, dosisUnit, tiempoSeg, rpe, done, ts, exType:'estacion' }
+// ════════════════════════════════════════════════════════════════════════════
+function _buildEstacionCard(ejercicios, di, ei, isPartner) {
+  var ej = ejercicios[ei];
+  var chip = _exTypeChip('estacion');
+  var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
+  var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 1);
+  var dosis = ej.dosis || ej.targetDose || (ej.sets && ej.sets[0] ? (ej.sets[0].dosis||ej.sets[0].repsTarget) : '');
+  var dosisUnit = ej.dosisUnit || ej.doseUnit || (typeof dosis === 'string' && /m\b/i.test(dosis) ? 'm' : 'reps');
+  var tTiempo = ej.tiempoObjetivoSeg || ej.targetTimeSec || '';
+  var rest = (ej.sets && ej.sets[0] && ej.sets[0].restSeconds) || ej.restSeconds || 60;
+
+  var statsHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">'+
+    '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.25);padding:3px 9px;border-radius:6px">'+numSeries+' ROUNDS</span>'+
+    (dosis?'<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">📏 '+dosis+' '+dosisUnit+'</span>':'')+
+    (tTiempo?'<span style="font-size:11px;font-weight:700;color:#ff8aa6;background:rgba(255,138,166,.1);border:1px solid rgba(255,138,166,.25);padding:3px 9px;border-radius:6px">🎯 ≤'+tTiempo+'s</span>':'')+
+    '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">⏱ '+rest+'s desc</span>'+
+    '</div>';
+
+  var setsHtml = '';
+  for (var s = 0; s < numSeries; s++) {
+    var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+    var saved = LOGS[key] || {};
+    var done = !!saved.done;
+    var borderCol = done ? 'var(--grn)' : 'var(--border)';
+    var bgCol = done ? 'rgba(58,148,96,.06)' : 'var(--surface)';
+    setsHtml +=
+      '<div style="border:1px solid '+borderCol+';border-radius:10px;padding:10px 12px;margin-bottom:8px;background:'+bgCol+'">'+
+        '<div style="display:flex;align-items:center;gap:8px">'+
+          '<div style="width:32px;height:32px;border-radius:8px;flex-shrink:0;background:'+(done?'var(--grn)':'var(--border)')+';color:'+(done?'#fff':'var(--mt)')+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">R'+(s+1)+'</div>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="display:flex;gap:5px">'+
+              '<div style="flex:1.2;min-width:0">'+
+                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">DOSIS ('+dosisUnit+')</div>'+
+                '<input id="est_dose_'+key+'" type="number" step="0.5" value="'+(saved.dosis||'')+'" placeholder="'+(dosis||dosisUnit)+'" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+              '</div>'+
+              '<div style="flex:1;min-width:0">'+
+                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">TIEMPO (s)</div>'+
+                '<input id="est_time_'+key+'" type="number" step="1" value="'+(saved.tiempoSeg||'')+'" placeholder="seg" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+              '</div>'+
+              '<div style="width:54px;flex-shrink:0">'+
+                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">RPE</div>'+
+                '<input id="est_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#e8a040;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+              '</div>'+
+            '</div>'+
+          '</div>'+
+          '<button onclick="completeEstacionSet(\''+key+'\','+di+','+ei+','+s+','+rest+',\''+dosisUnit+'\')" style="width:44px;height:44px;border-radius:8px;border:2px solid '+borderCol+';background:'+(done?'var(--grn)':'var(--input-bg)')+';color:'+(done?'#fff':'var(--mt)')+';font-size:18px;cursor:pointer;flex-shrink:0">'+(done?'✓':'○')+'</button>'+
+        '</div>'+
+      '</div>';
+  }
+
+  return '<div style="background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;border:1px solid '+chip.border+';padding:14px">'+
+    _perfHeader(ej, di, ei, chip, statsHtml)+
+    setsHtml+
+    '</div>';
+}
+
+function completeEstacionSet(key, di, ei, si, restSec, dosisUnit) {
+  var saved = LOGS[key] || {};
+  if (saved.done) {
+    _saveExLog(key, Object.assign({}, saved, { done:false }));
+    showToast('Round desmarcado');
+    return;
+  }
+  var dosis = parseFloat(document.getElementById('est_dose_'+key)?.value);
+  var tiempo = parseFloat(document.getElementById('est_time_'+key)?.value);
+  var rpe = parseInt(document.getElementById('est_rpe_'+key)?.value);
+  if (!dosis || dosis <= 0) { showToast('Ingresa la dosis ('+dosisUnit+')', true); return; }
+  if (!tiempo || tiempo <= 0) { showToast('Ingresa el tiempo (s)', true); return; }
+  if (rpe && (rpe < 1 || rpe > 10)) { showToast('RPE 1-10', true); return; }
+  _saveExLog(key, { exType:'estacion', dosis:dosis, dosisUnit:dosisUnit, tiempoSeg:tiempo, rpe:rpe||null, done:true });
+  startRestTimer(restSec || 60);
+  showToast('Round ✓ — descansando');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 4. CIRCUITO — EMOM/AMRAP/Rounds-for-time. Rounds + tiempo total + RPE + notas
+//    Shape de log: log_{W}_{D}_{E} = { estructura, rounds, tiempoTotalSeg, rpe, notas, done, ts, exType:'circuito' }
+// ════════════════════════════════════════════════════════════════════════════
+function _buildCircuitoCard(ejercicios, di, ei, isPartner) {
+  var ej = ejercicios[ei];
+  var chip = _exTypeChip('circuito');
+  var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
+  var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  var saved = LOGS[key] || {};
+  var done = !!saved.done;
+  var estructura = ej.estructura || ej.structure || 'AMRAP';
+  var tRounds = ej.roundsObjetivo || ej.targetRounds || (ej.sets ? ej.sets.length : '');
+  var tCap = ej.timeCapMin || ej.timecap || '';
+  var movimientos = ej.movimientos || ej.movements || [];
+
+  var movHtml = '';
+  if (movimientos && movimientos.length) {
+    movHtml = '<div style="margin-top:10px;padding:10px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px">'+
+      '<div style="font-size:9px;letter-spacing:1px;color:'+chip.color+';font-weight:800;margin-bottom:6px">MOVIMIENTOS DEL CIRCUITO</div>'+
+      movimientos.map(function(m, idx) {
+        var nom = typeof m === 'string' ? m : (m.nombre || m.exerciseName || '');
+        var dos = typeof m === 'object' ? (m.dosis || m.reps || m.distancia || '') : '';
+        var unit = typeof m === 'object' ? (m.unit || m.unidad || '') : '';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:var(--tx)">'+
+          '<span style="width:22px;height:22px;border-radius:50%;background:'+chip.bg+';color:'+chip.color+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0">'+(idx+1)+'</span>'+
+          '<span style="flex:1;min-width:0">'+nom+'</span>'+
+          (dos?'<span style="font-size:12px;font-weight:700;color:var(--accent)">'+dos+(unit?' '+unit:'')+'</span>':'')+
+          '</div>';
+      }).join('')+
+      '</div>';
+  }
+
+  var statsHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">'+
+    '<span style="font-size:11px;font-weight:800;color:'+chip.color+';background:'+chip.bg+';border:1px solid '+chip.border+';padding:3px 9px;border-radius:6px">'+estructura+'</span>'+
+    (tRounds?'<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">🎯 '+tRounds+' rounds</span>':'')+
+    (tCap?'<span style="font-size:11px;font-weight:700;color:#ff8aa6;background:rgba(255,138,166,.1);border:1px solid rgba(255,138,166,.25);padding:3px 9px;border-radius:6px">⏱ cap '+tCap+'min</span>':'')+
+    '</div>';
+
+  var inputsHtml =
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">ROUNDS</div><input id="cir_rds_'+key+'" type="number" step="1" value="'+(saved.rounds||'')+'" placeholder="'+(tRounds||'#')+'" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:18px;font-weight:800;padding:9px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">TIEMPO TOTAL (min)</div><input id="cir_time_'+key+'" type="number" step="0.5" value="'+(saved.tiempoTotalMin||'')+'" placeholder="min" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:9px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">RPE (1-10)</div><input id="cir_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#e8a040;font-size:16px;font-weight:700;padding:9px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+    '</div>'+
+    '<div style="margin-top:10px"><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">NOTAS / DESGLOSE</div>'+
+    '<textarea id="cir_notes_'+key+'" placeholder="Rounds parciales, fallos, sensaciones..." '+(sessionDone&&done?'disabled':'')+' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:50px;resize:vertical;line-height:1.5">'+(saved.notas||'')+'</textarea></div>'+
+    '<button onclick="completeCircuito(\''+key+'\','+di+','+ei+')" style="margin-top:12px;width:100%;padding:13px;border:2px solid '+(done?'var(--grn)':chip.border)+';background:'+(done?'var(--grn)':chip.bg)+';color:'+(done?'#fff':chip.color)+';font-size:14px;font-weight:800;letter-spacing:1.5px;border-radius:10px;cursor:pointer">'+(done?'✓ COMPLETADO — TOCAR PARA EDITAR':'CONFIRMAR CIRCUITO ✓')+'</button>';
+
+  return '<div style="background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;border:1px solid '+chip.border+';padding:14px">'+
+    _perfHeader(ej, di, ei, chip, statsHtml)+
+    movHtml+
+    inputsHtml+
+    '</div>';
+}
+
+function completeCircuito(key, di, ei) {
+  var saved = LOGS[key] || {};
+  if (saved.done) {
+    _saveExLog(key, Object.assign({}, saved, { done:false }));
+    showToast('Circuito desmarcado — edita y vuelve a confirmar');
+    return;
+  }
+  var rounds = parseFloat(document.getElementById('cir_rds_'+key)?.value);
+  var tiempo = parseFloat(document.getElementById('cir_time_'+key)?.value);
+  var rpe = parseInt(document.getElementById('cir_rpe_'+key)?.value);
+  var notas = (document.getElementById('cir_notes_'+key)?.value || '').trim();
+  if ((!rounds || rounds <= 0) && (!tiempo || tiempo <= 0)) { showToast('Ingresa rounds o tiempo', true); return; }
+  if (rpe && (rpe < 1 || rpe > 10)) { showToast('RPE 1-10', true); return; }
+  var ej = (_EJERCICIOS_DIA || [])[ei] || {};
+  _saveExLog(key, { exType:'circuito', estructura:ej.estructura||ej.structure||'AMRAP', rounds:isNaN(rounds)?null:rounds, tiempoTotalMin:isNaN(tiempo)?null:tiempo, tiempoTotalSeg:isNaN(tiempo)?null:Math.round(tiempo*60), rpe:isNaN(rpe)?null:rpe, notas:notas||null, done:true });
+  showToast('Circuito registrado ✓');
+}
+
+// ── Helper para saber si un ejercicio de cualquier tipo está terminado ──
+// Cardio/Circuito: 1 log key (sin _s{S}). Fuerza/Calistenia/Estacion: por sets.
+function _isExerciseFullyDone(di, ei, ej) {
+  if (!ej) return false;
+  var t = _getExType(ej);
+  if (t === 'cardio' || t === 'circuito') {
+    var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei;
+    return !!(LOGS[key] && LOGS[key].done);
+  }
+  var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+  for (var s = 0; s < ns; s++) {
+    var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+    if (!LOGS[k] || !LOGS[k].done) return false;
+  }
+  return true;
 }
 
 function setEjActivo(ei) {
@@ -4012,13 +4421,9 @@ function renderEntrenamiento() {
   _EJERCICIOS_DIA = ejercicios;
   var _foundActive = false;
   for (var _ae = 0; _ae < ejercicios.length; _ae++) {
-    var _aej = ejercicios[_ae];
-    var _ans = _aej.numSeries || (_aej.sets ? _aej.sets.length : 3);
-    var _aAllDone = true;
-    for (var _as2 = 0; _as2 < _ans; _as2++) {
-      if (!LOGS['log_'+CURRENT_WEEK+'_'+DIA_ACTIVO+'_'+_ae+'_s'+_as2] || !LOGS['log_'+CURRENT_WEEK+'_'+DIA_ACTIVO+'_'+_ae+'_s'+_as2].done) { _aAllDone = false; break; }
+    if (!_isExerciseFullyDone(DIA_ACTIVO, _ae, ejercicios[_ae])) {
+      EJ_ACTIVO = _ae; _foundActive = true; break;
     }
-    if (!_aAllDone) { EJ_ACTIVO = _ae; _foundActive = true; break; }
   }
   if (!_foundActive && ejercicios.length > 0) EJ_ACTIVO = ejercicios.length - 1;
 
@@ -4979,6 +5384,12 @@ async function markSessionDoneFromHistory(di) {
   var defaultRIR = getAdjustedRIR(2, CURRENT_WEEK);
 
   ejercicios.forEach(function(ej, ei) {
+    // Auto-fill solo aplica a fuerza (que tiene hist\u00f3rico de carga/reps).
+    // Cardio/circuito/calistenia/estaci\u00f3n los registra el cliente manualmente.
+    if (_getExType(ej) !== 'fuerza') {
+      sinReferencia.push((ej.nombre || ej.exerciseName || ('Ej '+(ei+1))) + ' (registro manual)');
+      return;
+    }
     var exName = (ej.nombre || ej.exerciseName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
     // Respetar exmod (override del usuario) si existe
@@ -6800,7 +7211,24 @@ function renderPerfil() {
       <div class="sup-dose">${s.dosis}</div>
     </div>`).join('') || '<div style="color:var(--mt);font-size:11px">Sin suplementos</div>';
 
+  // Chip de perfil de cliente (hipertrofia / rendimiento / hibrido) — define la dosificación que recibe
+  var _profType = (PLAN.profileType || 'hipertrofia').toLowerCase();
+  var _PROF_META = {
+    hipertrofia: { label:'HIPERTROFIA / RECOMPOSICIÓN', icon:'💪', color:'#c9a84c', bg:'rgba(200,165,74,.12)', border:'rgba(200,165,74,.35)', desc:'Fuerza, hipertrofia y recomposición corporal' },
+    rendimiento: { label:'RENDIMIENTO DEPORTIVO',       icon:'🏃', color:'#ff8aa6', bg:'rgba(255,138,166,.12)', border:'rgba(255,138,166,.4)',  desc:'HYROX / DEKA / híbrido competitivo' },
+    hibrido:     { label:'HÍBRIDO (HIPERTROFIA + RENDIMIENTO)', icon:'⚡', color:'#c89cff', bg:'rgba(200,156,255,.12)', border:'rgba(200,156,255,.4)', desc:'Combinado: musculatura + capacidad aeróbica/funcional' }
+  };
+  var _profMeta = _PROF_META[_profType] || _PROF_META.hipertrofia;
+
   cont.innerHTML = `
+    <div style="margin-bottom:14px;padding:14px 16px;background:${_profMeta.bg};border:1px solid ${_profMeta.border};border-radius:12px;display:flex;align-items:center;gap:14px">
+      <div style="font-size:28px;flex-shrink:0">${_profMeta.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);font-weight:700;margin-bottom:3px">PERFIL DE COACHING</div>
+        <div style="font-family:var(--ff);font-size:14px;letter-spacing:1.3px;color:${_profMeta.color};font-weight:900;line-height:1.2">${_profMeta.label}</div>
+        <div style="font-size:11px;color:var(--mt);margin-top:4px;line-height:1.4">${_profMeta.desc}</div>
+      </div>
+    </div>
     <div class="card">
       <div class="card-title">MI PERFIL</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
