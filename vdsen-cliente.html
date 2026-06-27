@@ -6419,6 +6419,10 @@ function parsearYRenderComidas(texto) {
     // Esto evita que "Prote\u00edna ISO XP Applied Nutrition 50g" se confunda con
     // el inicio de la secci\u00f3n Amerika "Proteinas Sardinas en agua 200g...".
     if (/\d+\s*(g|ml|mg|mcg|ui|kcal)\b/i.test(lt)) return false;
+    // Las notas descriptivas del coach (ej. "Proteina animal + vegetal complementaria.
+    // Carbohidrato bajo IG...") son oraciones con punto final y no deben confundirse
+    // con encabezados reales de tabla de sustituciones (que son cortos, sin punto).
+    if (/\./.test(lt)) return false;
     return /^(SUSTITUCIONES|TABLA DE SUSTITUCIONES)/.test(n)
         || /^PROTEINAS?[:\s]/.test(n)
         || /^CARBOHIDRATOS?[:\s]/.test(n)
