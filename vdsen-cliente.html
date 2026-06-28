@@ -2810,16 +2810,18 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // ── D. Warm-up ────────────────────────────────────────────────────────
   var wuHtml = '';
   var _noWuPatterns = ['Core','Cardio'];
+  // Sin catData → clave "desconocida" común, así solo el PRIMER ejercicio
+  // sin catálogo del día muestra calentamiento (no todos los sin match).
+  var _wuPatternKey = (catData && catData.motorPattern) ? catData.motorPattern : '__unknown__';
   var _isFirstOfPattern = true;
-  if (catData && catData.motorPattern) {
-    if (_noWuPatterns.indexOf(catData.motorPattern) !== -1) {
-      _isFirstOfPattern = false;
-    } else {
-      var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : ejercicios;
-      for (var _pi = 0; _pi < ei; _pi++) {
-        var _pCat = _getCatalogData(_dayExs[_pi] ? (_dayExs[_pi].nombre || _dayExs[_pi].exerciseName || '') : '');
-        if (_pCat && _pCat.motorPattern === catData.motorPattern) { _isFirstOfPattern = false; break; }
-      }
+  if (_noWuPatterns.indexOf(_wuPatternKey) !== -1) {
+    _isFirstOfPattern = false;
+  } else {
+    var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : ejercicios;
+    for (var _pi = 0; _pi < ei; _pi++) {
+      var _pCat = _getCatalogData(_dayExs[_pi] ? (_dayExs[_pi].nombre || _dayExs[_pi].exerciseName || '') : '');
+      var _pKey = (_pCat && _pCat.motorPattern) ? _pCat.motorPattern : '__unknown__';
+      if (_pKey === _wuPatternKey) { _isFirstOfPattern = false; break; }
     }
   }
   if (_isFirstOfPattern) {
@@ -4550,18 +4552,20 @@ function buildBoostcampExercise(ej, di, ei) {
 
   // ── Warm-up: solo primer ejercicio de cada patrón motor del día ─────
   // Core y Cardio no requieren pirámide de calentamiento.
-  // Sin catData (ejercicio fuera de catálogo) → mostrar por defecto (seguro).
+  // Sin catData (ejercicio fuera de catálogo) → se agrupa bajo una clave
+  // "desconocida" común, así solo el PRIMER ejercicio sin catálogo del día
+  // muestra calentamiento, no todos los que carezcan de match.
   var _noWuPatterns = ['Core','Cardio'];
+  var _wuPatternKey = (catData && catData.motorPattern) ? catData.motorPattern : '__unknown__';
   var _isFirstOfPattern = true;
-  if (catData && catData.motorPattern) {
-    if (_noWuPatterns.indexOf(catData.motorPattern) !== -1) {
-      _isFirstOfPattern = false; // Core/Cardio nunca llevan warm-up
-    } else {
-      var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : ejercicios;
-      for (var _pi = 0; _pi < ei; _pi++) {
-        var _pCat = _getCatalogData(_dayExs[_pi] ? (_dayExs[_pi].nombre || _dayExs[_pi].exerciseName || '') : '');
-        if (_pCat && _pCat.motorPattern === catData.motorPattern) { _isFirstOfPattern = false; break; }
-      }
+  if (_noWuPatterns.indexOf(_wuPatternKey) !== -1) {
+    _isFirstOfPattern = false; // Core/Cardio nunca llevan warm-up
+  } else {
+    var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : ejercicios;
+    for (var _pi = 0; _pi < ei; _pi++) {
+      var _pCat = _getCatalogData(_dayExs[_pi] ? (_dayExs[_pi].nombre || _dayExs[_pi].exerciseName || '') : '');
+      var _pKey = (_pCat && _pCat.motorPattern) ? _pCat.motorPattern : '__unknown__';
+      if (_pKey === _wuPatternKey) { _isFirstOfPattern = false; break; }
     }
   }
 
