@@ -3263,6 +3263,57 @@ function _saveExLog(key, payload) {
   _refreshExPanelOnly();
 }
 
+// ── Datos UNIVERSALES de wearable (todos opcionales, copia manual desde reloj) ──
+// Disponibles en cardio / circuito / estación. Render colapsable + lectura.
+// fields: subconjunto de ['fcMedia','fcMax','calorias','cadencia','elevacion','zonaTiempo']
+var _WEARABLE_FIELDS = {
+  fcMedia:    { label:'FC media (lpm)',          color:'#ff8aa6', placeholder:'lpm',       step:1,   type:'number' },
+  fcMax:      { label:'FC máx (lpm)',            color:'#ff8aa6', placeholder:'lpm',       step:1,   type:'number' },
+  calorias:   { label:'Calorías (kcal)',         color:'#ffb86b', placeholder:'kcal',      step:1,   type:'number' },
+  cadencia:   { label:'Cadencia (spm/rpm)',      color:'#7ec0ff', placeholder:'spm',       step:1,   type:'number' },
+  elevacion:  { label:'Elevación ganada (m)',    color:'#c89cff', placeholder:'m',         step:1,   type:'number' },
+  zonaTiempo: { label:'Tiempo en zona obj (min)', color:'#c9a84c', placeholder:'min',      step:0.5, type:'number' }
+};
+function _buildWearableBlock(key, prefix, saved, disabled, fields) {
+  saved = saved || {};
+  var anyData = fields.some(function(f){ return saved[f] != null && saved[f] !== ''; });
+  var openAttr = anyData ? ' open' : '';
+  var inputsHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">';
+  fields.forEach(function(f) {
+    var meta = _WEARABLE_FIELDS[f]; if (!meta) return;
+    var iid = 'wear_'+prefix+'_'+f+'_'+key;
+    var val = (saved[f] != null) ? saved[f] : '';
+    inputsHtml +=
+      '<div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">'+meta.label.toUpperCase()+'</div>'+
+        '<input id="'+iid+'" type="'+meta.type+'" step="'+meta.step+'" value="'+val+'" placeholder="'+meta.placeholder+'" inputmode="decimal" '+(disabled?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:'+meta.color+';font-size:14px;font-weight:700;padding:8px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+      '</div>';
+  });
+  inputsHtml += '</div>';
+  return '<details'+openAttr+' style="margin-top:10px;border:1px dashed var(--border);border-radius:10px;padding:10px 12px;background:rgba(255,255,255,.02)">'+
+    '<summary style="cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:var(--mt);letter-spacing:.8px;display:flex;align-items:center;gap:8px">'+
+      '<span style="font-size:14px">📊</span>'+
+      '<span>DATOS DEL RELOJ (OPCIONAL)</span>'+
+      (anyData ? '<span style="margin-left:6px;font-size:9px;background:rgba(58,148,96,.15);color:var(--grn);padding:2px 6px;border-radius:4px;font-weight:800;letter-spacing:.5px">CON DATOS</span>' : '')+
+      '<span style="margin-left:auto;font-size:13px">▾</span>'+
+    '</summary>'+
+    inputsHtml+
+    '<div style="font-size:10px;color:var(--mt2);margin-top:8px;line-height:1.45">Copia manualmente desde tu reloj (Garmin / Apple Watch / Polar / Strava / Coros). Si no tienes, déjalo vacío — no afecta el registro principal.</div>'+
+  '</details>';
+}
+function _readWearableInputs(key, prefix, fields) {
+  var out = {};
+  fields.forEach(function(f) {
+    var el = document.getElementById('wear_'+prefix+'_'+f+'_'+key);
+    if (!el) return;
+    var v = (el.value || '').trim();
+    if (v === '') return;
+    var n = parseFloat(v);
+    if (!isNaN(n) && n > 0) out[f] = n;
+  });
+  return out;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 1. CALISTENIA — reps + asistencia/lastre + RPE + ICS
 //    Shape de log: log_{W}_{D}_{E}_s{S} = { reps, asistencia, lastre, rpe, ics, done, ts, exType:'calistenia' }
@@ -3393,6 +3444,9 @@ function _buildCardioCard(ejercicios, di, ei, isPartner) {
     '</div>'+
     '<div style="margin-top:10px"><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">NOTAS (opcional)</div>'+
     '<textarea id="card_notes_'+key+'" placeholder="Sensaciones, clima, terreno..." '+(sessionDone&&done?'disabled':'')+' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:50px;resize:vertical;line-height:1.5">'+(saved.notas||'')+'</textarea></div>'+
+    // ── Bloque colapsable: datos universales de wearable (todos opcionales) ──
+    // Copiar manualmente desde Garmin / Apple Watch / Polar / Strava sin que sean obligatorios.
+    _buildWearableBlock(key, 'card', saved.wearable || {}, sessionDone && done, ['calorias','cadencia','elevacion','zonaTiempo'])+
     '<button onclick="completeCardio(\''+key+'\','+di+','+ei+')" style="margin-top:12px;width:100%;padding:13px;border:2px solid '+(done?'var(--grn)':chip.border)+';background:'+(done?'var(--grn)':chip.bg)+';color:'+(done?'#fff':chip.color)+';font-size:14px;font-weight:800;letter-spacing:1.5px;border-radius:10px;cursor:pointer">'+(done?'✓ COMPLETADO — TOCAR PARA EDITAR':'CONFIRMAR CARDIO ✓')+'</button>';
 
   return '<div style="background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;border:1px solid '+chip.border+';padding:14px">'+
@@ -3418,7 +3472,8 @@ function completeCardio(key, di, ei) {
   if ((!dur || dur <= 0) && (!dist || dist <= 0)) { showToast('Ingresa duración o distancia', true); return; }
   if (rpe && (rpe < 1 || rpe > 10)) { showToast('RPE 1-10', true); return; }
   var ej = (_EJERCICIOS_DIA || [])[ei] || {};
-  _saveExLog(key, { exType:'cardio', modo:ej.modo||ej.cardioMode||'z2', duracionMin:isNaN(dur)?null:dur, distanciaKm:isNaN(dist)?null:dist, fcMedia:isNaN(fcMed)?null:fcMed, fcMax:isNaN(fcMax)?null:fcMax, ritmo:ritmo||null, rpe:isNaN(rpe)?null:rpe, notas:notas||null, done:true });
+  var wearable = _readWearableInputs(key, 'card', ['calorias','cadencia','elevacion','zonaTiempo']);
+  _saveExLog(key, { exType:'cardio', modo:ej.modo||ej.cardioMode||'z2', duracionMin:isNaN(dur)?null:dur, distanciaKm:isNaN(dist)?null:dist, fcMedia:isNaN(fcMed)?null:fcMed, fcMax:isNaN(fcMax)?null:fcMax, ritmo:ritmo||null, rpe:isNaN(rpe)?null:rpe, notas:notas||null, wearable:Object.keys(wearable).length?wearable:null, done:true });
   showToast('Cardio registrado ✓');
 }
 
@@ -3475,10 +3530,27 @@ function _buildEstacionCard(ejercicios, di, ei, isPartner) {
       '</div>';
   }
 
+  // Bloque opcional de wearable a nivel ejercicio (resumen de toda la estación)
+  var wearKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_w';
+  var wearSaved = LOGS[wearKey] || {};
+  var wearHtml = _buildWearableBlock(wearKey, 'est', wearSaved.wearable || {}, false, ['fcMedia','fcMax','calorias']) +
+    '<div style="margin-top:6px;display:flex;justify-content:flex-end">'+
+      '<button onclick="saveEstacionWearable(\''+wearKey+'\')" style="font-size:10px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:5px 12px;border-radius:6px;cursor:pointer">💾 Guardar datos del reloj</button>'+
+    '</div>';
+
   return '<div style="background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;border:1px solid '+chip.border+';padding:14px">'+
     _perfHeader(ej, di, ei, chip, statsHtml)+
     setsHtml+
+    wearHtml+
     '</div>';
+}
+
+function saveEstacionWearable(wearKey) {
+  var w = _readWearableInputs(wearKey, 'est', ['fcMedia','fcMax','calorias']);
+  if (Object.keys(w).length === 0) { showToast('Nada para guardar', true); return; }
+  LOGS[wearKey] = { wearable: w, ts: Date.now() };
+  saveLogs();
+  showToast('📊 Datos del reloj guardados');
 }
 
 function completeEstacionSet(key, di, ei, si, restSec, dosisUnit) {
@@ -3546,6 +3618,8 @@ function _buildCircuitoCard(ejercicios, di, ei, isPartner) {
     '</div>'+
     '<div style="margin-top:10px"><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">NOTAS / DESGLOSE</div>'+
     '<textarea id="cir_notes_'+key+'" placeholder="Rounds parciales, fallos, sensaciones..." '+(sessionDone&&done?'disabled':'')+' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:50px;resize:vertical;line-height:1.5">'+(saved.notas||'')+'</textarea></div>'+
+    // ── Datos universales de wearable (opcionales) ──
+    _buildWearableBlock(key, 'cir', saved.wearable || {}, sessionDone && done, ['fcMedia','fcMax','calorias','zonaTiempo'])+
     '<button onclick="completeCircuito(\''+key+'\','+di+','+ei+')" style="margin-top:12px;width:100%;padding:13px;border:2px solid '+(done?'var(--grn)':chip.border)+';background:'+(done?'var(--grn)':chip.bg)+';color:'+(done?'#fff':chip.color)+';font-size:14px;font-weight:800;letter-spacing:1.5px;border-radius:10px;cursor:pointer">'+(done?'✓ COMPLETADO — TOCAR PARA EDITAR':'CONFIRMAR CIRCUITO ✓')+'</button>';
 
   return '<div style="background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;border:1px solid '+chip.border+';padding:14px">'+
@@ -3569,7 +3643,8 @@ function completeCircuito(key, di, ei) {
   if ((!rounds || rounds <= 0) && (!tiempo || tiempo <= 0)) { showToast('Ingresa rounds o tiempo', true); return; }
   if (rpe && (rpe < 1 || rpe > 10)) { showToast('RPE 1-10', true); return; }
   var ej = (_EJERCICIOS_DIA || [])[ei] || {};
-  _saveExLog(key, { exType:'circuito', estructura:ej.estructura||ej.structure||'AMRAP', rounds:isNaN(rounds)?null:rounds, tiempoTotalMin:isNaN(tiempo)?null:tiempo, tiempoTotalSeg:isNaN(tiempo)?null:Math.round(tiempo*60), rpe:isNaN(rpe)?null:rpe, notas:notas||null, done:true });
+  var wearable = _readWearableInputs(key, 'cir', ['fcMedia','fcMax','calorias','zonaTiempo']);
+  _saveExLog(key, { exType:'circuito', estructura:ej.estructura||ej.structure||'AMRAP', rounds:isNaN(rounds)?null:rounds, tiempoTotalMin:isNaN(tiempo)?null:tiempo, tiempoTotalSeg:isNaN(tiempo)?null:Math.round(tiempo*60), rpe:isNaN(rpe)?null:rpe, notas:notas||null, wearable:Object.keys(wearable).length?wearable:null, done:true });
   showToast('Circuito registrado ✓');
 }
 
