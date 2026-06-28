@@ -2188,6 +2188,25 @@ function _onTimerFinished() {
   playTimerBeep();
   if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 400]);
   showToast('⏱ ¡Descanso terminado!');
+  _notifyRestDone();
+}
+
+// Notificación real del navegador (no solo el toast interno). En Android,
+// el sistema espeja automáticamente las notificaciones al wearable
+// emparejado (Wear OS / Galaxy Watch) sin código adicional. En iOS/Safari
+// el soporte es limitado — solo funciona mientras la PWA siga activa.
+function _notifyRestDone() {
+  if (!window.Notification || Notification.permission !== 'granted') return;
+  try {
+    var n = new Notification('⏱ VDSEN — Descanso terminado', {
+      body: 'Lista la siguiente serie 💪',
+      tag: 'vdsen-rest-timer',
+      renotify: true,
+      silent: false
+    });
+    n.onclick = function() { try { window.focus(); } catch(e) {} n.close(); };
+    setTimeout(function(){ try { n.close(); } catch(e) {} }, 10000);
+  } catch(e) {}
 }
 
 // Timestamp del último 'hidden' para decidir si recargar logs al volver
@@ -5290,6 +5309,12 @@ function saveUserNote(di, ei, text) {
 }
 
 function startRestTimer(seconds) {
+  // Pedir permiso de notificaciones aquí (dentro de un onclick) para que
+  // cuente como gesto de usuario — los navegadores bloquean el prompt si
+  // se dispara sin interacción directa.
+  if (window.Notification && Notification.permission === 'default') {
+    try { Notification.requestPermission(); } catch(e) {}
+  }
   stopRestTimer();
   _restAlertFired = false;
   _restEndMs = Date.now() + seconds * 1000;
