@@ -12,7 +12,7 @@
 //   --supplements <archivo.json> Plan de suplementación → clients.supplementPlan
 //   --evaluation <archivo.json> Evaluación fotogramétrica → clients.evaluation
 //   --note "<texto>"            Mensaje al atleta → clients.coachMessage
-//   --profile "<tipo>"          Setea perfil del cliente: hipertrofia | rendimiento | hibrido → clients.profileType
+//   --profile "<tipo>"          Setea perfil del cliente: hipertrofia | rendimiento | hibrido | funcional → clients.profileType
 //   --no-backup                 No respaldar plan anterior (default: respalda en plans_backup)
 //   --dry-run                   Solo muestra qué se haría, sin escribir
 //
@@ -242,7 +242,7 @@ function comidasToTexto(np) {
 
   // ── PROFILE ──
   if (args.profile) {
-    const validProfiles = ['hipertrofia', 'rendimiento', 'hibrido'];
+    const validProfiles = ['hipertrofia', 'rendimiento', 'hibrido', 'funcional'];
     const prof = String(args.profile).toLowerCase().trim();
     if (!validProfiles.includes(prof)) {
       console.error(`ERROR: --profile debe ser uno de: ${validProfiles.join(', ')} (recibido: "${args.profile}")`);
