@@ -2368,6 +2368,15 @@ function _buildExNav(ejercicios, di) {
       : '<span style="font-size:9px;font-weight:700;color:var(--mt)">'+doneCount+'/'+numSeries+'</span>';
     var ssGroup = (ej.supersetGroup && String(ej.supersetGroup).trim()) ? String(ej.supersetGroup).trim().toUpperCase() : '';
     var isSS = !!ssGroup;
+    // Posición del ejercicio dentro de su grupo de biserie (1-based) → etiqueta A1, A2…
+    var ssPos = 0;
+    if (isSS) {
+      for (var _spk = 0; _spk < ejercicios.length; _spk++) {
+        var _spg = ejercicios[_spk] && ejercicios[_spk].supersetGroup ? String(ejercicios[_spk].supersetGroup).trim().toUpperCase() : '';
+        if (_spg === ssGroup) { ssPos++; if (_spk === ei) break; }
+      }
+    }
+    var ssLabelTag = ssGroup + (ssPos || 1);
     // ── Estilos: cuando es SS sobreescribe colores para máxima visibilidad ──
     var borderCol = isActive ? 'rgba(200,165,74,.75)' : allDone ? 'rgba(58,148,96,.4)' : 'rgba(255,255,255,.09)';
     var bgCol = isActive ? 'rgba(200,165,74,.13)' : allDone ? 'rgba(58,148,96,.07)' : 'rgba(15,16,16,.8)';
@@ -2380,7 +2389,7 @@ function _buildExNav(ejercicios, di) {
       glowStyle = isActive ? 'box-shadow:0 0 16px rgba(204,102,170,.3);' : '';
     }
     var ssTagTop = isSS
-      ? '<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#cc66aa;color:#fff;font-size:8px;font-weight:900;letter-spacing:1px;padding:2px 7px;border-radius:8px;box-shadow:0 2px 6px rgba(204,102,170,.45);white-space:nowrap">🔁 SS·'+ssGroup+'</div>'
+      ? '<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#cc66aa;color:#fff;font-size:8px;font-weight:900;letter-spacing:1px;padding:2px 7px;border-radius:8px;box-shadow:0 2px 6px rgba(204,102,170,.45);white-space:nowrap">🔁 '+ssLabelTag+'</div>'
       : '';
     var nameColor = isSS && !isActive ? '#e9a8d4' : (isActive?'var(--accent)':allDone?'var(--grn)':'var(--mt)');
     var numLabel = isActive
@@ -2557,8 +2566,8 @@ function _buildExPanel(ejercicios, di) {
   });
   if (_ssAllExpress) return _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp);
 
-  // Símbolos de secuencia
-  var circleNums = ['①','②','③','④','⑤'];
+  // Etiqueta de posición A1, A2… (grupo + nº de orden dentro del grupo)
+  var ssLabel = function(i) { return grp.toUpperCase()+(i+1); };
 
   // Nombres actuales (con sustituciones si existen)
   var memberNames = ssMembers.map(function(idx) {
@@ -2569,9 +2578,9 @@ function _buildExPanel(ejercicios, di) {
   // Número de rondas = series del primer ejercicio del grupo
   var numRondas = ejercicios[ssMembers[0]].numSeries || (ejercicios[ssMembers[0]].sets ? ejercicios[ssMembers[0]].sets.length : 3);
 
-  // Flujo para el header: ① Nombre → ② Nombre → ⏸ Descanso
+  // Flujo para el header: A1 Nombre → A2 Nombre → ⏸ Descanso
   var flowHtml = memberNames.map(function(n, i) {
-    return '<span style="font-weight:900;color:#fff">'+circleNums[i]+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+n+'</span>';
+    return '<span style="font-weight:900;color:#fff">'+ssLabel(i)+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+n+'</span>';
   }).join('<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>')+
     '<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>'+
     '<span style="color:#ffe0a0;font-weight:800">⏸&nbsp;Descanso</span>';
@@ -2605,8 +2614,8 @@ function _buildExPanel(ejercicios, di) {
   // ── Ejercicios del bloque
   ssMembers.forEach(function(idx, i) {
     var isLast = (i === ssMembers.length - 1);
-    var stepNum = circleNums[i] || (i+1);
-    var stepLabel = isLast ? 'SEGUNDO — luego descansa' : 'PRIMERO — sin descanso después';
+    var stepNum = ssLabel(i);
+    var stepLabel = isLast ? 'LUEGO DESCANSA' : 'SIN DESCANSO DESPUÉS';
     var stepBg    = isLast ? 'rgba(204,102,170,.07)' : 'rgba(204,102,170,.12)';
     var stepColor = isLast ? '#e07ac8' : '#cc66aa';
 
@@ -2630,7 +2639,7 @@ function _buildExPanel(ejercicios, di) {
              'display:flex;align-items:center;justify-content:center;gap:10px">'+
           '<span style="font-size:15px">⚡</span>'+
           '<span style="font-size:12px;font-weight:900;letter-spacing:1.5px;color:#ffd6ee">'+
-            'SIN DESCANSO&thinsp;→&thinsp;CONTINÚA CON&thinsp;'+(circleNums[i+1]||'el siguiente')+
+            'SIN DESCANSO&thinsp;→&thinsp;CONTINÚA CON&thinsp;'+(ssLabel(i+1)||'el siguiente')+
           '</span>'+
           '<span style="font-size:15px">⚡</span>'+
         '</div>';
@@ -3850,7 +3859,8 @@ window.markExpressSerie = markExpressSerie;
 // ── Express Superserie: tarjeta combinada ─────────────────────────────────
 
 function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
-  var circleNums = ['①','②','③','④','⑤'];
+  // Etiqueta de posición A1, A2… (grupo + nº de orden dentro del grupo)
+  var ssLabel = function(i) { return grp.toUpperCase()+(i+1); };
   var memberNames = ssMembers.map(function(idx) {
     var sub = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+idx];
     return sub && sub.nombre ? sub.nombre : (ejercicios[idx].nombre || ejercicios[idx].exerciseName || 'Ej '+(idx+1));
@@ -3864,7 +3874,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
   });
 
   var namesFlow = memberNames.map(function(n,i) {
-    return '<span style="font-weight:900;color:#fff">'+circleNums[i]+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+n+'</span>';
+    return '<span style="font-weight:900;color:#fff">'+ssLabel(i)+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+n+'</span>';
   }).join('<span style="color:rgba(255,255,255,.45);margin:0 6px">→</span>');
 
   var html =
@@ -3891,7 +3901,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       var cDisp = cRaw > 0 ? cRaw.toFixed(1)+' '+uShow+' × ' : '';
       html +=
         '<div style="margin-bottom:10px'+(i>0?';padding-top:10px;border-top:1px solid rgba(204,102,170,.15)':'')+'">' +
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#e9a8d4;margin-bottom:3px">'+circleNums[i]+' '+memberNames[i].toUpperCase()+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#e9a8d4;margin-bottom:3px">'+ssLabel(i)+' '+memberNames[i].toUpperCase()+'</div>'+
           '<div style="font-size:20px;font-weight:900;color:var(--tx)">'+cDisp+entry.reps+' reps</div>'+
         '</div>';
     });
@@ -3942,7 +3952,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
               '<div style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(204,102,170,.4);display:flex;align-items:center;justify-content:center;font-size:12px;color:#e9a8d4;font-weight:800">'+(_r+1)+'</div>'+
               '<div>'+
                 '<div style="font-size:12px;font-weight:800;color:var(--tx)">RONDA '+(_r+1)+'</div>'+
-                '<div style="font-size:10px;color:var(--mt)">'+memberNames.map(function(n,i){ return circleNums[i]+' '+n; }).join(' → ')+'</div>'+
+                '<div style="font-size:10px;color:var(--mt)">'+memberNames.map(function(n,i){ return ssLabel(i)+' '+n; }).join(' → ')+'</div>'+
               '</div>'+
             '</div>'+
             '<button onclick="markExpressSsRonda('+di+',['+ssMembers.join(',')+'],'+_r+')" style="padding:9px 14px;border:none;border-radius:10px;cursor:pointer;background:var(--grn);color:#fff;font-size:11px;font-weight:800;white-space:nowrap">✓ HECHA → DESCANSAR</button>'+
@@ -3979,7 +3989,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       var _rLbl = _isIsoM ? 'SEGUNDOS' : 'REPS';
       html +=
         '<div style="margin-bottom:14px'+(i>0?';padding-top:14px;border-top:1px solid rgba(204,102,170,.2)':'')+'">' +
-          '<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#e9a8d4;margin-bottom:8px">'+circleNums[i]+' '+memberNames[i].toUpperCase()+'</div>'+
+          '<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#e9a8d4;margin-bottom:8px">'+ssLabel(i)+' '+memberNames[i].toUpperCase()+'</div>'+
           '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
             '<div>'+
               '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cLbl+'</div>'+
