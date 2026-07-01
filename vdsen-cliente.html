@@ -1676,12 +1676,10 @@ function buildRezagadosWidget() {
 // ══════════════════════════════════════════════════
 // HISTORIAL — Progreso semana a semana
 // ══════════════════════════════════════════════════
-function buildHistorialWidget() {
-  if (!PLAN || !PLAN.entrenamiento) return '';
+// Recopila datos por ejercicio por semana (carga/reps/ICS/tonelaje) parseando `ses.contenido`.
+// Compartido por buildHistorialWidget() y buildMesocicloReportWidget().
+function _buildExerciseWeekMap() {
   var sesiones = getSesiones();
-  if (!sesiones.length) return '';
-
-  // ── 1) Recopilar datos por ejercicio por semana ──
   var exerciseMap = {}; // { "Nombre": { weeks: { 1: {load,reps,sets,ics}, 2: {...} } } }
   for (var w = 1; w <= Math.min(CURRENT_WEEK, getTotalWeeks()); w++) {
     sesiones.forEach(function(ses, di) {
@@ -1717,7 +1715,15 @@ function buildHistorialWidget() {
       });
     });
   }
+  return exerciseMap;
+}
 
+function buildHistorialWidget() {
+  if (!PLAN || !PLAN.entrenamiento) return '';
+  var sesiones = getSesiones();
+  if (!sesiones.length) return '';
+
+  var exerciseMap = _buildExerciseWeekMap();
   var exNames = Object.keys(exerciseMap);
   if (!exNames.length) return '';
 
@@ -1818,6 +1824,17 @@ function buildHistorialWidget() {
       sparkHtml += '</div>';
     }
 
+    // Peso de TENDENCIA (media móvil 3 semanas) — RP recomienda no reaccionar al dato
+    // crudo de una sola semana (retención de líquidos/sal); esto muestra la tendencia real.
+    var pesoTrendArr = pesoArr.length >= 3 ? _movingAvg(pesoArr, 3) : [];
+    var trendSparkHtml = '';
+    if (pesoTrendArr.length >= 2) {
+      var tDelta = pesoTrendArr[pesoTrendArr.length-1] - pesoTrendArr[0];
+      var tCol = tDelta > 0 ? 'var(--red)' : tDelta < 0 ? 'var(--grn)' : 'var(--mt)';
+      trendSparkHtml = '<div style="text-align:center;margin-top:8px"><canvas id="'+sparkId+'_pesotrend" width="290" height="50"></canvas>'
+        + '<div style="font-size:10px;color:'+tCol+';font-family:var(--ff)">TENDENCIA DE PESO (media móvil 3 sem) '+(tDelta>0?'+':'')+tDelta.toFixed(1)+' kg</div></div>';
+    }
+
     ciTrendHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
       + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">TENDENCIAS CHECK-IN</div>'
       + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(200,165,74,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
@@ -1825,12 +1842,14 @@ function buildHistorialWidget() {
       + '</div>'
       + ciRows
       + sparkHtml
+      + trendSparkHtml
       + '</div>';
 
     // Dibujar sparklines después del render
     setTimeout(function() {
       _drawSparkline(sparkId+'_peso', pesoArr, '#c8a54a');
       _drawSparkline(sparkId+'_hrv', hrvArr, '#4488cc');
+      _drawSparkline(sparkId+'_pesotrend', pesoTrendArr, '#6acc7e');
     }, 50);
   }
 
@@ -1993,7 +2012,9 @@ function renderResumen() {
         ${ciDone?'✏ ACTUALIZAR CHECK-IN →':'📊 IR A CHECK-IN →'}
       </button>
     </div>
+    ${buildMesocicloReportWidget()}
     ${buildStreakWidget()}
+    ${buildBodyMapWidget()}
     ${buildVolumenWidget()}
     ${buildVolumenMesocicloWidget()}
     ${buildRezagadosWidget()}
@@ -2045,30 +2066,40 @@ function buildStreakWidget() {
     </div>`;
 }
 
+// Estado MEV/MRV de un músculo para la semana actual — usado por buildVolumenWidget()
+// y por buildBodyMapWidget() para no duplicar la clasificación de color/estado.
+function _muscleVolStatus(muscle) {
+  var mm = typeof MEV_MRV_BY_MUSCLE !== 'undefined' ? MEV_MRV_BY_MUSCLE[muscle] : null;
+  if (!mm) return null;
+  var vol = _getWeeklyVolumeByMuscle(muscle);
+  var status, col;
+  if (vol === 0) { status = '—'; col = 'var(--mt)'; }
+  else if (vol < mm.mev) { status = 'Bajo MEV ('+mm.mev+')'; col = '#4A9FDC'; }
+  else if (vol > mm.mrv) { status = 'Sobre MRV ('+mm.mrv+')'; col = '#FF7744'; }
+  else if (vol >= mm.mrv * 0.85) { status = 'Alto ('+vol+'/'+mm.mrv+')'; col = 'var(--gold)'; }
+  else { status = 'Óptimo'; col = 'var(--grn)'; }
+  return { vol: vol, mm: mm, status: status, col: col };
+}
+
 function buildVolumenWidget() {
   if (!PLAN || typeof MEV_MRV_BY_MUSCLE === 'undefined') return '';
   var order = ['pectoral','dorsal_ancho','trapecio_medio','delt_anterior','delt_lateral','delt_posterior','biceps','braquial','triceps','cuadriceps','isquios','gluteo_mayor','gluteo_medio','gastrocnemio','soleo','erectores','recto_abdominal','oblicuos','serrato'];
   var rows = '';
   var hayDatos = false;
   for (var i = 0; i < order.length; i++) {
-    var m = order[i], mm = MEV_MRV_BY_MUSCLE[m];
-    var vol = _getWeeklyVolumeByMuscle(m);
-    if (vol === 0 && mm.mev === 0) continue;
+    var m = order[i];
+    var st = _muscleVolStatus(m);
+    if (!st) continue;
+    if (st.vol === 0 && st.mm.mev === 0) continue;
     hayDatos = true;
-    var status, col, bg;
-    if (vol === 0) { status = '—'; col = 'var(--mt)'; bg = 'var(--mt)'; }
-    else if (vol < mm.mev) { status = 'Bajo MEV ('+mm.mev+')'; col = '#4A9FDC'; bg = '#4A9FDC'; }
-    else if (vol > mm.mrv) { status = 'Sobre MRV ('+mm.mrv+')'; col = '#FF7744'; bg = '#FF7744'; }
-    else if (vol >= mm.mrv * 0.85) { status = 'Alto ('+vol+'/'+mm.mrv+')'; col = 'var(--gold)'; bg = 'var(--gold)'; }
-    else { status = 'Óptimo'; col = 'var(--grn)'; bg = 'var(--grn)'; }
-    var pct = Math.min(100, Math.round((vol / mm.mrv) * 100));
+    var pct = Math.min(100, Math.round((st.vol / st.mm.mrv) * 100));
     rows += '<div style="display:grid;grid-template-columns:130px 1fr 80px;gap:8px;align-items:center;margin-bottom:6px;font-size:11px">'+
-      '<div style="color:var(--tx)">'+mm.label+'</div>'+
+      '<div style="color:var(--tx)">'+st.mm.label+'</div>'+
       '<div style="position:relative;height:10px;background:var(--dk);border:1px solid var(--bd)">'+
-        '<div style="height:100%;width:'+pct+'%;background:'+bg+';opacity:.8"></div>'+
-        '<div style="position:absolute;top:-2px;left:'+Math.min(100,Math.round((mm.mev/mm.mrv)*100))+'%;width:1px;height:14px;background:var(--mt)"></div>'+
+        '<div style="height:100%;width:'+pct+'%;background:'+st.col+';opacity:.8"></div>'+
+        '<div style="position:absolute;top:-2px;left:'+Math.min(100,Math.round((st.mm.mev/st.mm.mrv)*100))+'%;width:1px;height:14px;background:var(--mt)"></div>'+
       '</div>'+
-      '<div style="text-align:right;font-family:var(--ff);color:'+col+';font-size:10px">'+vol+' · '+status+'</div>'+
+      '<div style="text-align:right;font-family:var(--ff);color:'+st.col+';font-size:10px">'+st.vol+' · '+st.status+'</div>'+
     '</div>';
   }
   if (!hayDatos) return '';
@@ -2077,6 +2108,79 @@ function buildVolumenWidget() {
     '<div style="font-size:10px;color:var(--mt);margin-bottom:10px;letter-spacing:1px">Series prescritas/semana · línea gris = MEV · barra completa = MRV</div>'+
     rows +
   '</div>';
+}
+
+// Diagrama esquemático (no anatómico) frente/espalda que colorea cada grupo muscular
+// principal según su estado MEV/MRV de la semana — misma clasificación que la tabla
+// de barras, en formato visual. Los grupos secundarios (delt lateral/posterior, glúteo
+// medio, sóleo, braquial, serrato) quedan solo en la tabla por simplicidad del dibujo.
+function buildBodyMapWidget() {
+  if (!PLAN || typeof MEV_MRV_BY_MUSCLE === 'undefined') return '';
+  var mapped = ['pectoral','delt_anterior','biceps','recto_abdominal','oblicuos','cuadriceps','dorsal_ancho','trapecio_medio','triceps','erectores','gluteo_mayor','isquios','gastrocnemio'];
+  var status = {};
+  var hayDatos = false;
+  mapped.forEach(function(m) {
+    var st = _muscleVolStatus(m);
+    status[m] = st;
+    if (st && st.vol > 0) hayDatos = true;
+  });
+  if (!hayDatos) return '';
+
+  function fill(m) {
+    var st = status[m];
+    return (st && st.vol > 0) ? st.col : 'rgba(255,255,255,.08)';
+  }
+  function region(tag, attrs, muscle) {
+    return '<'+tag+' '+attrs+' style="fill:'+fill(muscle)+';cursor:pointer" onclick="_showMuscleInfo(\''+muscle+'\')"><title>'+muscle+'</title></'+tag+'>';
+  }
+
+  var svg = ''
+    + '<svg viewBox="0 0 300 245" style="width:100%;max-width:320px;display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg">'
+    // ── FRENTE ──
+    + '<text x="65" y="12" text-anchor="middle" font-size="9" fill="var(--mt)" letter-spacing="1">FRENTE</text>'
+    + '<circle cx="65" cy="26" r="12" fill="rgba(255,255,255,.08)"></circle>'
+    + '<rect x="59" y="36" width="12" height="9" fill="rgba(255,255,255,.08)"></rect>'
+    + region('ellipse', 'cx="36" cy="55" rx="11" ry="9"', 'delt_anterior')
+    + region('ellipse', 'cx="94" cy="55" rx="11" ry="9"', 'delt_anterior')
+    + region('rect',    'x="46" y="49" width="38" height="26" rx="8"', 'pectoral')
+    + region('ellipse', 'cx="27" cy="79" rx="8" ry="16"', 'biceps')
+    + region('ellipse', 'cx="103" cy="79" rx="8" ry="16"', 'biceps')
+    + region('rect',    'x="52" y="77" width="26" height="32" rx="6"', 'recto_abdominal')
+    + region('rect',    'x="42" y="81" width="9" height="26" rx="4"', 'oblicuos')
+    + region('rect',    'x="79" y="81" width="9" height="26" rx="4"', 'oblicuos')
+    + region('ellipse', 'cx="47" cy="162" rx="13" ry="34"', 'cuadriceps')
+    + region('ellipse', 'cx="83" cy="162" rx="13" ry="34"', 'cuadriceps')
+    // ── ESPALDA ──
+    + '<text x="235" y="12" text-anchor="middle" font-size="9" fill="var(--mt)" letter-spacing="1">ESPALDA</text>'
+    + '<circle cx="235" cy="26" r="12" fill="rgba(255,255,255,.08)"></circle>'
+    + '<rect x="229" y="36" width="12" height="9" fill="rgba(255,255,255,.08)"></rect>'
+    + region('rect',    'x="205" y="45" width="60" height="16" rx="7"', 'trapecio_medio')
+    + region('path',    'd="M205,61 Q198,92 210,115 L235,105 L260,115 Q272,92 265,61 Z"', 'dorsal_ancho')
+    + region('ellipse', 'cx="197" cy="79" rx="8" ry="16"', 'triceps')
+    + region('ellipse', 'cx="273" cy="79" rx="8" ry="16"', 'triceps')
+    + region('rect',    'x="222" y="105" width="26" height="22" rx="6"', 'erectores')
+    + region('ellipse', 'cx="222" cy="142" rx="14" ry="15"', 'gluteo_mayor')
+    + region('ellipse', 'cx="248" cy="142" rx="14" ry="15"', 'gluteo_mayor')
+    + region('ellipse', 'cx="219" cy="179" rx="11" ry="26"', 'isquios')
+    + region('ellipse', 'cx="251" cy="179" rx="11" ry="26"', 'isquios')
+    + region('ellipse', 'cx="219" cy="219" rx="8" ry="18"', 'gastrocnemio')
+    + region('ellipse', 'cx="251" cy="219" rx="8" ry="18"', 'gastrocnemio')
+    + '</svg>';
+
+  return '<div class="card" style="margin-top:8px">'+
+    '<div class="card-title">MAPA DE ESTÍMULO SEMANAL</div>'+
+    '<div style="font-size:10px;color:var(--mt);margin-bottom:6px;letter-spacing:1px">Tocá un músculo para el detalle · azul=bajo MEV · verde=óptimo · dorado=cerca MRV · naranja=sobre MRV</div>'+
+    svg +
+    '<div style="font-size:9px;color:var(--mt);text-align:center;margin-top:6px">Diagrama esquemático · grupos secundarios en la tabla de abajo</div>'+
+  '</div>';
+}
+
+function _showMuscleInfo(muscle) {
+  var mm = typeof MEV_MRV_BY_MUSCLE !== 'undefined' ? MEV_MRV_BY_MUSCLE[muscle] : null;
+  if (!mm) return;
+  var st = _muscleVolStatus(muscle);
+  if (!st || st.vol === 0) { showToast(mm.label+': sin series registradas esta semana'); return; }
+  showToast(mm.label+': '+st.vol+' series/sem (MEV '+mm.mev+' · MRV '+mm.mrv+') — '+st.status);
 }
 
 // Tendencia de volumen (series/semana) por músculo a lo largo de TODO el mesociclo,
@@ -2127,6 +2231,73 @@ function buildVolumenMesocicloWidget() {
     '<div class="card-title">PROGRESIÓN DE VOLUMEN — MESOCICLO</div>'+
     '<div style="font-size:10px;color:var(--mt);margin-bottom:12px;letter-spacing:1px">Series/semana por músculo · azul=bajo MEV · verde=óptimo · dorado=cerca MRV · naranja=sobre MRV</div>'+
     rows +
+  '</div>';
+}
+
+// Informe de cierre de bloque — visible en la semana de deload: adherencia total,
+// tonelaje acumulado, progreso de carga promedio, cambio de peso y bienestar (WHO-5)
+// de TODO el mesociclo (no solo la semana actual). Reusa _buildExerciseWeekMap() para
+// no duplicar la lógica de agregación por ejercicio/semana que ya usa buildHistorialWidget().
+function buildMesocicloReportWidget() {
+  if (!PLAN || !PLAN.entrenamiento) return '';
+  if (CURRENT_WEEK !== getTotalWeeks()) return '';
+
+  var totalSes = countSessions();
+  var doneSes  = countDone();
+  var adherPct = totalSes > 0 ? Math.round(doneSes / totalSes * 100) : 0;
+
+  var firstCI = null, lastCI = null;
+  for (var w = 1; w <= CURRENT_WEEK; w++) {
+    var ci = LOGS['ci_sem_'+w];
+    if (ci && ci.peso) {
+      var entry = { w: w, peso: parseFloat(ci.peso), who5: ci.who5 ? parseInt(ci.who5) : null };
+      if (!firstCI) firstCI = entry;
+      lastCI = entry;
+    }
+  }
+  var pesoDelta = (firstCI && lastCI && firstCI.w !== lastCI.w) ? (lastCI.peso - firstCI.peso) : null;
+  var who5Delta = (firstCI && lastCI && firstCI.w !== lastCI.w && firstCI.who5 !== null && lastCI.who5 !== null)
+    ? (lastCI.who5 - firstCI.who5) : null;
+
+  var exerciseMap = _buildExerciseWeekMap();
+  var totalTonnage = 0;
+  var loadPcts = [];
+  Object.keys(exerciseMap).forEach(function(name) {
+    var wks = Object.keys(exerciseMap[name].weeks).map(Number).sort(function(a,b){ return a-b; });
+    wks.forEach(function(w){ totalTonnage += exerciseMap[name].weeks[w].volume || 0; });
+    if (wks.length >= 2) {
+      var f = exerciseMap[name].weeks[wks[0]].maxLoad;
+      var l = exerciseMap[name].weeks[wks[wks.length-1]].maxLoad;
+      if (f > 0) loadPcts.push(((l - f) / f) * 100);
+    }
+  });
+  var avgLoadPct = loadPcts.length ? _avgArr(loadPcts) : null;
+
+  var pesoCol = pesoDelta === null ? 'var(--mt)' : pesoDelta < 0 ? 'var(--grn)' : pesoDelta > 0 ? 'var(--red)' : 'var(--mt)';
+  var loadCol = avgLoadPct === null ? 'var(--mt)' : avgLoadPct > 0 ? 'var(--grn)' : 'var(--red)';
+
+  return '<div class="card" style="margin-top:8px;border-color:rgba(200,165,74,.4)">'+
+    '<div class="card-title">🏁 CIERRE DE MESOCICLO — '+CURRENT_WEEK+' SEMANAS</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">'+
+      '<div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center">'+
+        '<div style="font-family:var(--ff);font-size:20px;color:var(--gold)">'+adherPct+'%</div>'+
+        '<div style="font-size:9px;letter-spacing:1px;color:var(--mt);margin-top:3px">ADHERENCIA</div>'+
+      '</div>'+
+      '<div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center">'+
+        '<div style="font-family:var(--ff);font-size:20px;color:var(--gold)">'+Math.round(totalTonnage).toLocaleString()+'</div>'+
+        '<div style="font-size:9px;letter-spacing:1px;color:var(--mt);margin-top:3px">TONELAJE TOTAL</div>'+
+      '</div>'+
+      '<div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center">'+
+        '<div style="font-family:var(--ff);font-size:20px;color:'+loadCol+'">'+(avgLoadPct===null?'—':(avgLoadPct>0?'+':'')+avgLoadPct.toFixed(1)+'%')+'</div>'+
+        '<div style="font-size:9px;letter-spacing:1px;color:var(--mt);margin-top:3px">CARGA PROMEDIO</div>'+
+      '</div>'+
+      '<div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center">'+
+        '<div style="font-family:var(--ff);font-size:20px;color:'+pesoCol+'">'+(pesoDelta===null?'—':(pesoDelta>0?'+':'')+pesoDelta.toFixed(1)+' kg')+'</div>'+
+        '<div style="font-size:9px;letter-spacing:1px;color:var(--mt);margin-top:3px">CAMBIO DE PESO</div>'+
+      '</div>'+
+    '</div>'+
+    (who5Delta !== null ? '<div style="margin-top:10px;font-size:11px;color:var(--mt);text-align:center">Bienestar WHO-5: '+(who5Delta>0?'+':'')+who5Delta+' pts vs. semana 1</div>' : '')+
+    '<div style="margin-top:10px;font-size:11px;color:var(--mt);line-height:1.5;text-align:center">Resumen de todo el bloque — tu coach lo usa para armar el próximo mesociclo.</div>'+
   '</div>';
 }
 
@@ -4566,6 +4737,7 @@ function renderEntrenamiento() {
   // ── Sesión activa ────────────────────────────────────────────────
   var ses = sesiones[DIA_ACTIVO];
   var isDone = !!LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
+  var readinessBanner = buildReadinessBanner(DIA_ACTIVO, isDone);
 
   // Usar exercises estructurados si existen (plan de Firestore), sino parsear texto
   var ejercicios = [];
@@ -4657,6 +4829,8 @@ function renderEntrenamiento() {
     viewBanner+
     // Deload banner
     deloadBanner+
+    // Readiness pre-sesión
+    readinessBanner+
     // Session header
     '<div class="tab-appear" style="padding:14px 16px 8px;display:flex;align-items:center;justify-content:space-between;'+
       'background:linear-gradient(180deg,rgba(201,168,76,.04) 0%,transparent 100%);border-bottom:1px solid rgba(201,168,76,.06)">'+
@@ -5578,6 +5752,78 @@ function stopRestTimer() {
 function selDia(i) {
   DIA_ACTIVO = i;
   try { localStorage.setItem('vdsen_last_dia', i); } catch(e) {}
+  renderEntrenamiento();
+}
+
+// ══════════════════════════════════════════════════════
+// READINESS PRE-SESIÓN
+// A diferencia del check-in post-sesión (que evalúa cómo fue el entreno),
+// esto pregunta ANTES de arrancar: sueño / dolor / motivación. Es puramente
+// informativo para el cliente — no modifica el plan ni las series; solo
+// muestra un aviso propio cuando conviene ser cauteloso hoy.
+// ══════════════════════════════════════════════════════
+var _readinessTemp = {};
+
+function buildReadinessBanner(di, isDone) {
+  if (CURRENT_WEEK !== REAL_WEEK || isDone) return ''; // solo tiene sentido antes de la sesión de hoy
+  var rKey = 'readiness_'+CURRENT_WEEK+'_'+di;
+  var r = LOGS[rKey];
+  if (r && r.completed) {
+    if (r.advisory) {
+      return '<div style="margin:0 16px 8px;padding:10px 14px;background:rgba(255,140,50,.08);border:1px solid rgba(255,140,50,.35);border-radius:10px;font-size:11px;color:#FF8844;line-height:1.5">⚠ '+r.advisory+'</div>';
+    }
+    return '';
+  }
+  _readinessTemp = {};
+  return '<div id="readinessCard" style="margin:0 16px 10px;padding:14px;background:var(--card);border:1px solid var(--bd);border-radius:12px">'
+    + '<div style="font-family:var(--ff);font-size:12px;letter-spacing:1.5px;color:var(--gold);font-weight:800;margin-bottom:10px">🎯 ANTES DE EMPEZAR — ¿CÓMO LLEGÁS HOY?</div>'
+    + '<div style="display:grid;gap:10px">'
+    +   _readinessRow('sueno', '¿Cómo dormiste anoche?', [{v:1,l:'Mal'},{v:2,l:'Regular'},{v:3,l:'Bien'}])
+    +   _readinessRow('dolor', '¿Dolor/molestia hoy?', [{v:1,l:'Sí, notable'},{v:2,l:'Leve'},{v:3,l:'Ninguno'}])
+    +   _readinessRow('motivacion', '¿Motivación hoy?', [{v:1,l:'Baja'},{v:2,l:'Media'},{v:3,l:'Alta'}])
+    + '</div>'
+    + '<button onclick="submitReadiness('+di+')" style="width:100%;margin-top:12px;padding:11px;background:var(--gdim);border:1px solid var(--gold);color:var(--gold);font-family:var(--ff);font-size:12px;letter-spacing:1.5px;cursor:pointer;border-radius:8px;font-weight:700">✓ LISTO, A ENTRENAR</button>'
+    + '</div>';
+}
+
+function _readinessRow(campo, label, opts) {
+  var btns = opts.map(function(o) {
+    return '<button onclick="_setReadinessVal(\''+campo+'\','+o.v+',this)" style="flex:1;padding:8px 4px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--mt);font-size:11px;font-weight:700;cursor:pointer">'+o.l+'</button>';
+  }).join('');
+  return '<div><div style="font-size:11px;color:var(--tx);margin-bottom:6px">'+label+'</div><div style="display:flex;gap:6px">'+btns+'</div></div>';
+}
+
+function _setReadinessVal(campo, val, btnEl) {
+  _readinessTemp[campo] = val;
+  var siblings = btnEl.parentElement.querySelectorAll('button');
+  siblings.forEach(function(b) {
+    var active = b === btnEl;
+    b.style.borderColor = active ? 'var(--gold)' : 'var(--border)';
+    b.style.background  = active ? 'var(--gdim)' : 'var(--input-bg)';
+    b.style.color       = active ? 'var(--gold)' : 'var(--mt)';
+  });
+}
+
+function submitReadiness(di) {
+  if (!_readinessTemp.sueno || !_readinessTemp.dolor || !_readinessTemp.motivacion) {
+    showToast('Respondé las 3 preguntas', true);
+    return;
+  }
+  var s = _readinessTemp.sueno, d = _readinessTemp.dolor, m = _readinessTemp.motivacion;
+  var advisory = null;
+  var lowCount = (s===1?1:0) + (d===1?1:0) + (m===1?1:0);
+  if (lowCount >= 2) {
+    advisory = 'Dormiste mal, tenés molestias y/o poca motivación hoy — considerá bajar 1 serie por ejercicio o el peso si lo sentís pesado. Esto no cambia tu plan automáticamente, es una sugerencia para vos.';
+  } else if (s === 1 || d === 1) {
+    var partes = [];
+    if (s === 1) partes.push('dormiste poco');
+    if (d === 1) partes.push('tenés molestias');
+    advisory = 'Prestá atención a la técnica hoy — ' + partes.join(' y ') + '. Si algo duele, avisale a tu coach.';
+  }
+  LOGS['readiness_'+CURRENT_WEEK+'_'+di] = { sueno:s, dolor:d, motivacion:m, advisory:advisory, completed:true, ts: Date.now() };
+  saveLogs();
+  showToast(advisory ? '✓ Registrado — revisá el aviso' : '✓ Buen día para entrenar 💪');
+  _readinessTemp = {};
   renderEntrenamiento();
 }
 
@@ -6539,9 +6785,93 @@ function renderNutricion() {
     <div style="padding:0 14px 100px">
       ${rdBanner}
       ${macroPanel}
+      ${buildCalorieAdjustWidget(+kcal||0)}
       ${buildNutriLogWidget(+kcal||0, +prot||0, +carb||0, +gras||0)}
       ${comidasHtml}
     </div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// AJUSTE DE CALORÍAS SEGÚN TENDENCIA DE PESO
+// Compara la pendiente real de peso (regresión sobre los check-ins semanales)
+// contra el rango esperado para el objetivo elegido por el cliente, y sugiere
+// (no aplica automáticamente — el plan lo controla el coach) subir o bajar
+// kcal cuando el peso no se mueve como corresponde.
+// ══════════════════════════════════════════════════════
+function _getWeightTrendKgPerWeek() {
+  var pts = [];
+  for (var w = 1; w <= Math.min(CURRENT_WEEK, getTotalWeeks()); w++) {
+    var ci = LOGS['ci_sem_'+w];
+    if (ci && ci.peso) pts.push({ x: w, y: parseFloat(ci.peso) });
+  }
+  if (pts.length < 3) return null;
+  pts = pts.slice(-4); // tendencia reciente, no todo el histórico
+  return _linRegSlope(pts);
+}
+
+function setMetaPeso(val) {
+  LOGS.metaPeso = val;
+  saveLogs();
+  renderNutricion();
+}
+
+function buildCalorieAdjustWidget(kcalTarget) {
+  var slope = _getWeightTrendKgPerWeek();
+  var pesoActual = null;
+  for (var w = CURRENT_WEEK; w >= 1; w--) {
+    var ci = LOGS['ci_sem_'+w];
+    if (ci && ci.peso) { pesoActual = parseFloat(ci.peso); break; }
+  }
+  if (!pesoActual) pesoActual = parseFloat(PLAN.peso) || 0;
+  var meta = LOGS.metaPeso || null;
+
+  var metaOpts = [
+    { v:'bajar',     l:'⬇ Bajar de peso' },
+    { v:'mantener',  l:'➡ Mantener' },
+    { v:'subir',     l:'⬆ Subir de peso' }
+  ];
+  var metaSelHtml = '<div style="display:flex;gap:6px;margin-bottom:12px">' + metaOpts.map(function(o) {
+    var on = meta === o.v;
+    return '<button onclick="setMetaPeso(\''+o.v+'\')" style="flex:1;padding:9px 4px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid '+(on?'var(--gold)':'var(--bd)')+';background:'+(on?'var(--gdim)':'var(--bk)')+';color:'+(on?'var(--gold)':'var(--mt)')+'">'+o.l+'</button>';
+  }).join('') + '</div>';
+
+  var body;
+  if (!meta) {
+    body = '<div style="font-size:11px;color:var(--mt);line-height:1.5">Elegí tu objetivo actual para que la app compare tu tendencia real de peso y te avise si conviene ajustar las calorías.</div>';
+  } else if (slope === null) {
+    body = '<div style="font-size:11px;color:var(--mt);line-height:1.5">Necesitás al menos 3 check-ins semanales con peso cargado para calcular tu tendencia real.</div>';
+  } else {
+    var pctPerWeek = pesoActual ? (slope / pesoActual) * 100 : 0;
+    // Rangos saludables aproximados (%peso corporal/semana)
+    var ranges = { bajar: { lo:-1.0, hi:-0.3 }, subir: { lo:0.15, hi:0.5 }, mantener: { lo:-0.2, hi:0.2 } };
+    var rg = ranges[meta];
+    var trendLbl = (slope>0?'+':'')+slope.toFixed(2)+' kg/sem ('+(pctPerWeek>0?'+':'')+pctPerWeek.toFixed(2)+'%/sem)';
+    var status, statusCol, sugerencia = '';
+    var stepDown = Math.round(kcalTarget*0.06/25)*25 || 100;
+    var stepUp   = Math.round(kcalTarget*0.07/25)*25 || 125;
+
+    if (pctPerWeek < rg.lo) {
+      if (meta === 'bajar') { status='Bajando más rápido de lo recomendado'; statusCol='var(--gold)'; sugerencia='Subí ~'+stepUp+' kcal para preservar masa muscular.'; }
+      else if (meta === 'mantener') { status='Peso bajando — desviación de mantenimiento'; statusCol='var(--gold)'; sugerencia='Subí ~'+stepUp+' kcal.'; }
+      else { status='No estás subiendo — muy por debajo del objetivo'; statusCol='var(--red)'; sugerencia='Subí ~'+stepUp+' kcal.'; }
+    } else if (pctPerWeek > rg.hi) {
+      if (meta === 'subir') { status='Subiendo más rápido de lo recomendado'; statusCol='var(--gold)'; sugerencia='Bajá ~'+stepDown+' kcal para minimizar grasa ganada.'; }
+      else if (meta === 'mantener') { status='Peso subiendo — desviación de mantenimiento'; statusCol='var(--gold)'; sugerencia='Bajá ~'+stepDown+' kcal.'; }
+      else { status='No estás bajando — por encima del objetivo'; statusCol='var(--red)'; sugerencia='Bajá ~'+stepDown+' kcal.'; }
+    } else {
+      status='✓ En rango esperado para tu objetivo'; statusCol='var(--grn)';
+    }
+
+    body = '<div style="font-family:var(--ff);font-size:20px;color:'+statusCol+';margin-bottom:4px">'+trendLbl+'</div>'
+      + '<div style="font-size:12px;color:'+statusCol+';font-weight:700;margin-bottom:'+(sugerencia?'6':'0')+'px">'+status+'</div>'
+      + (sugerencia ? '<div style="font-size:11px;color:var(--tx);background:var(--dk);border:1px solid var(--bd);padding:8px 10px;border-radius:8px;line-height:1.5">💡 '+sugerencia+' Comentalo con tu coach antes de cambiar el plan — el objetivo de macros lo define él.</div>' : '');
+  }
+
+  return '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:14px;border-radius:14px">'
+    + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);font-weight:800;margin-bottom:10px">⚖ TENDENCIA DE PESO vs. OBJETIVO</div>'
+    + metaSelHtml
+    + body
+    + '</div>';
 }
 
 // ══════════════════════════════════════════════════════
@@ -8765,6 +9095,29 @@ async function submitPostSession() {
 function _avgArr(arr) {
   if (!arr || !arr.length) return 0;
   return arr.reduce(function(a,b){return a+b;},0) / arr.length;
+}
+
+// Media móvil trailing (ventana por defecto 3) — suaviza fluctuaciones día a día/semana a
+// semana (retención de líquidos, sal, etc.) para reflejar la tendencia real, no el punto crudo.
+function _movingAvg(arr, window) {
+  window = window || 3;
+  return arr.map(function(_, i) {
+    var start = Math.max(0, i - window + 1);
+    var slice = arr.slice(start, i + 1);
+    return _avgArr(slice);
+  });
+}
+
+// Pendiente de regresión lineal simple (mínimos cuadrados) sobre puntos {x,y}.
+// Se usa para estimar kg/semana de cambio real de peso.
+function _linRegSlope(points) {
+  var n = points.length;
+  if (n < 2) return null;
+  var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  points.forEach(function(p) { sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x; });
+  var denom = (n * sumXX - sumX * sumX);
+  if (!denom) return null;
+  return (n * sumXY - sumX * sumY) / denom;
 }
 
 // Buscar la recomendación de progresión más reciente para un ejercicio
