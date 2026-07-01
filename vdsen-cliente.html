@@ -1331,6 +1331,7 @@ function goTab(i) {
     b.classList.toggle('on', j===i);
   });
   try { localStorage.setItem('vdsen_last_tab', i); } catch(e) {}
+  if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();
   if (i === 1) renderEntrenamiento();
   else if (i === 2) renderNutricion();
   else if (i === 3) renderCheckin();
@@ -1833,6 +1834,62 @@ function buildHistorialWidget() {
     }, 50);
   }
 
+  // ── 3b) Medidas corporales trend (opcional) ──
+  var medTrendHtml = '';
+  var medWeeks = [];
+  for (var wM = 1; wM <= Math.min(CURRENT_WEEK, getTotalWeeks()); wM++) {
+    var ciM = LOGS['ci_sem_'+wM];
+    if (ciM && (ciM.cintura || ciM.brazo || ciM.pierna || ciM.pecho)) {
+      medWeeks.push({w:wM, cintura:parseFloat(ciM.cintura)||0, brazo:parseFloat(ciM.brazo)||0, pierna:parseFloat(ciM.pierna)||0, pecho:parseFloat(ciM.pecho)||0});
+    }
+  }
+  if (medWeeks.length > 0) {
+    var medRows = medWeeks.map(function(c) {
+      return '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px;font-family:var(--ff)">'
+        + '<div style="color:var(--gold);font-weight:600">S'+c.w+'</div>'
+        + '<div style="text-align:center;color:'+(c.cintura?'var(--tx)':'var(--mt2)')+'">'+(c.cintura||'—')+'</div>'
+        + '<div style="text-align:center;color:'+(c.brazo?'var(--tx)':'var(--mt2)')+'">'+(c.brazo||'—')+'</div>'
+        + '<div style="text-align:center;color:'+(c.pierna?'var(--tx)':'var(--mt2)')+'">'+(c.pierna||'—')+'</div>'
+        + '<div style="text-align:center;color:'+(c.pecho?'var(--tx)':'var(--mt2)')+'">'+(c.pecho||'—')+'</div>'
+        + '</div>';
+    }).join('');
+
+    var medSparkId = 'spark_med_'+Date.now();
+    var cinturaArr = medWeeks.map(function(c){return c.cintura;}).filter(Boolean);
+    var brazoArr = medWeeks.map(function(c){return c.brazo;}).filter(Boolean);
+    var medSparkHtml = '';
+    if (cinturaArr.length >= 2 || brazoArr.length >= 2) {
+      medSparkHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">';
+      if (cinturaArr.length >= 2) {
+        var cDelta = cinturaArr[cinturaArr.length-1] - cinturaArr[0];
+        var cCol = cDelta > 0 ? 'var(--red)' : cDelta < 0 ? 'var(--grn)' : 'var(--mt)';
+        medSparkHtml += '<div style="text-align:center"><canvas id="'+medSparkId+'_cintura" width="140" height="50"></canvas>'
+          + '<div style="font-size:10px;color:'+cCol+';font-family:var(--ff)">CINTURA '+(cDelta>0?'+':'')+cDelta.toFixed(1)+' cm</div></div>';
+      }
+      if (brazoArr.length >= 2) {
+        var bDelta = brazoArr[brazoArr.length-1] - brazoArr[0];
+        var bCol = bDelta > 0 ? 'var(--grn)' : bDelta < 0 ? 'var(--red)' : 'var(--mt)';
+        medSparkHtml += '<div style="text-align:center"><canvas id="'+medSparkId+'_brazo" width="140" height="50"></canvas>'
+          + '<div style="font-size:10px;color:'+bCol+';font-family:var(--ff)">BRAZO '+(bDelta>0?'+':'')+bDelta.toFixed(1)+' cm</div></div>';
+      }
+      medSparkHtml += '</div>';
+    }
+
+    medTrendHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
+      + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">TENDENCIAS MEDIDAS (CM)</div>'
+      + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(200,165,74,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
+      + '<div>SEM</div><div style="text-align:center">CINTURA</div><div style="text-align:center">BRAZO</div><div style="text-align:center">PIERNA</div><div style="text-align:center">PECHO</div>'
+      + '</div>'
+      + medRows
+      + medSparkHtml
+      + '</div>';
+
+    setTimeout(function() {
+      _drawSparkline(medSparkId+'_cintura', cinturaArr, '#c8a54a');
+      _drawSparkline(medSparkId+'_brazo', brazoArr, '#3a9460');
+    }, 50);
+  }
+
   // ── 4) Progression recommendations history ──
   var progHtml = '';
   var progKeys = Object.keys(LOGS).filter(function(k){ return k.startsWith('progrec_'); }).sort().reverse();
@@ -1870,6 +1927,7 @@ function buildHistorialWidget() {
   return '<div id="historialSection">'
     + '<div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px;margin-top:16px">HISTORIAL DE PROGRESO</div>'
     + ciTrendHtml
+    + medTrendHtml
     + progHtml
     + '<div style="font-family:var(--ff);font-size:11px;letter-spacing:2px;color:var(--mt);margin-bottom:6px">EVOLUCIÓN POR EJERCICIO</div>'
     + exHtml
@@ -1937,6 +1995,7 @@ function renderResumen() {
     </div>
     ${buildStreakWidget()}
     ${buildVolumenWidget()}
+    ${buildVolumenMesocicloWidget()}
     ${buildRezagadosWidget()}
     ${buildHistorialWidget()}`;
 }
@@ -2016,6 +2075,57 @@ function buildVolumenWidget() {
   return '<div class="card" style="margin-top:8px">'+
     '<div class="card-title">VOLUMEN SEMANAL POR GRUPO</div>'+
     '<div style="font-size:10px;color:var(--mt);margin-bottom:10px;letter-spacing:1px">Series prescritas/semana · línea gris = MEV · barra completa = MRV</div>'+
+    rows +
+  '</div>';
+}
+
+// Tendencia de volumen (series/semana) por músculo a lo largo de TODO el mesociclo,
+// no solo la semana actual — muestra cómo el plan rampa hacia el MRV antes del deload.
+function buildVolumenMesocicloWidget() {
+  if (!PLAN || typeof MEV_MRV_BY_MUSCLE === 'undefined') return '';
+  if (CURRENT_WEEK < 2) return ''; // con 1 semana no hay tendencia que mostrar
+  var order = ['pectoral','dorsal_ancho','trapecio_medio','delt_anterior','delt_lateral','delt_posterior','biceps','braquial','triceps','cuadriceps','isquios','gluteo_mayor','gluteo_medio','gastrocnemio','soleo','erectores','recto_abdominal','oblicuos','serrato'];
+  var totalW = Math.min(CURRENT_WEEK, getTotalWeeks());
+  var rows = '';
+  var hayDatos = false;
+  for (var i = 0; i < order.length; i++) {
+    var m = order[i], mm = MEV_MRV_BY_MUSCLE[m];
+    var vols = [];
+    var anyVol = false;
+    for (var w = 1; w <= totalW; w++) {
+      var v = _getWeeklyVolumeByMuscle(m, w);
+      if (v > 0) anyVol = true;
+      vols.push(v);
+    }
+    if (!anyVol) continue;
+    hayDatos = true;
+    var barsHtml = vols.map(function(v, wi) {
+      var pct = mm.mrv > 0 ? Math.min(100, Math.round((v / mm.mrv) * 100)) : 0;
+      var col;
+      if (v === 0) col = 'var(--mt)';
+      else if (v < mm.mev) col = '#4A9FDC';
+      else if (v > mm.mrv) col = '#FF7744';
+      else if (v >= mm.mrv * 0.85) col = 'var(--gold)';
+      else col = 'var(--grn)';
+      return '<div style="flex:1;text-align:center">'+
+        '<div style="height:32px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:2px">'+
+          '<div style="width:100%;max-width:16px;height:'+Math.max(pct,v>0?6:2)+'%;background:'+col+';border-radius:2px 2px 0 0;opacity:.85"></div>'+
+        '</div>'+
+        '<div style="font-size:8px;color:var(--mt)">S'+(wi+1)+'</div>'+
+      '</div>';
+    }).join('');
+    rows += '<div style="margin-bottom:12px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'+
+        '<div style="font-size:11px;color:var(--tx)">'+mm.label+'</div>'+
+        '<div style="font-size:9px;color:var(--mt)">MEV '+mm.mev+' · MRV '+mm.mrv+'</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:2px;align-items:flex-end">'+barsHtml+'</div>'+
+    '</div>';
+  }
+  if (!hayDatos) return '';
+  return '<div class="card" style="margin-top:8px">'+
+    '<div class="card-title">PROGRESIÓN DE VOLUMEN — MESOCICLO</div>'+
+    '<div style="font-size:10px;color:var(--mt);margin-bottom:12px;letter-spacing:1px">Series/semana por músculo · azul=bajo MEV · verde=óptimo · dorado=cerca MRV · naranja=sobre MRV</div>'+
     rows +
   '</div>';
 }
@@ -5059,6 +5169,100 @@ function showPRCelebration(exDisplayName, load, unit, reps) {
 }
 window.showPRCelebration = showPRCelebration;
 
+// ── Autorregulación intra-sesión ────────────────────────────────────────
+// A diferencia de `calculateProgression` (que recalcula recomendaciones recién
+// al cerrar la sesión, para la SIGUIENTE semana), esto evalúa en vivo, apenas
+// se completa la última serie planificada de un ejercicio: si la técnica fue
+// sólida, hubo buen pump y quedó margen de esfuerzo real, sugiere sumar una
+// serie extra HOY MISMO (sin esperar a la próxima semana), respetando el MRV
+// semanal del músculo para no proponer volumen que ya está en el techo.
+function _maybeSuggestExtraSet(di, ei, si) {
+  try {
+    var offeredKey = 'autoregOffered_'+CURRENT_WEEK+'_'+di+'_'+ei;
+    if (LOGS[offeredKey]) return;
+    var ej = (_EJERCICIOS_DIA || [])[ei];
+    if (!ej) return;
+
+    var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
+    var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+    if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
+    if (si !== numSeries - 1) return; // sólo tras la última serie planificada de hoy
+
+    var exName = ej.nombre || ej.exerciseName || '';
+    var catData = _getCatalogData(exName);
+    if (!catData) return; // sin catálogo no hay MRV/músculo confiable → no sugerir
+
+    var sets = [];
+    for (var s = 0; s < numSeries; s++) {
+      var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+      if (LOGS[k] && LOGS[k].done) sets.push(LOGS[k]);
+    }
+    if (sets.length < numSeries) return; // faltan series por completar todavía
+
+    var avgICS  = _avgArr(sets.map(function(x){ return parseFloat(x.ics)||0; }).filter(function(v){ return v > 0; }));
+    var avgPump = _avgArr(sets.map(function(x){ return parseFloat(x.pump) || 2; }));
+    var rirVals = sets.map(function(x){ return parseFloat(x.rir_real); }).filter(function(v){ return !isNaN(v); });
+    if (!rirVals.length) return;
+    var avgRIR  = _avgArr(rirVals);
+    var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK);
+
+    if (!avgICS || avgICS < 8) return;   // técnica no lo suficientemente sólida
+    if (avgPump > 2) return;             // pump bajo → no forzar más volumen
+    if (avgRIR < baseRIR) return;        // sin margen real de esfuerzo
+
+    // No exceder el MRV semanal del músculo objetivo
+    var muscle = catData.targetMuscle;
+    if (muscle && typeof MEV_MRV_BY_MUSCLE !== 'undefined' && MEV_MRV_BY_MUSCLE[muscle]) {
+      var mrv = MEV_MRV_BY_MUSCLE[muscle].mrv;
+      var volNow = _getWeeklyVolumeByMuscle(muscle);
+      if (mrv && volNow + 1 > mrv) return;
+    }
+
+    LOGS[offeredKey] = true;
+    _showAddSetSuggestion(di, ei, 'Técnica sólida (ICS '+avgICS.toFixed(1)+'), buen pump y RIR por encima del objetivo — hay margen para más volumen hoy.');
+  } catch (e) { /* nunca bloquear el guardado de la serie por un error acá */ }
+}
+
+function _showAddSetSuggestion(di, ei, reasonText) {
+  var el = document.getElementById('addSetSuggestion');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'addSetSuggestion';
+    document.body.appendChild(el);
+  }
+  el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:90px;max-width:456px;margin:0 auto;background:rgba(18,18,16,.97);border:1px solid rgba(58,148,96,.5);border-radius:14px;padding:12px 14px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)';
+  el.innerHTML =
+    '<div style="display:flex;align-items:flex-start;gap:10px">'+
+      '<div style="font-size:22px;line-height:1">💪</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-family:var(--ff);font-size:12px;color:var(--grn);letter-spacing:.5px;font-weight:800">RINDIENDO BIEN — ¿SUMAR 1 SERIE?</div>'+
+        '<div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">'+reasonText+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px">'+
+      '<button onclick="_dismissAddSetSuggestion()" style="flex:0 0 auto;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">No, gracias</button>'+
+      '<button onclick="addExtraSetNow('+di+','+ei+')" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--grn);color:#06170c;font-size:13px;font-weight:800;cursor:pointer">➕ Agregar serie extra</button>'+
+    '</div>';
+  el.style.display = 'block';
+}
+
+function _dismissAddSetSuggestion() {
+  var el = document.getElementById('addSetSuggestion');
+  if (el) el.style.display = 'none';
+}
+
+function addExtraSetNow(di, ei) {
+  var key = 'exmod_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  var ej = (_EJERCICIOS_DIA || [])[ei] || {};
+  var exMod = LOGS[key] || {};
+  var curNumSeries = exMod.numSeries ? parseInt(exMod.numSeries) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+  LOGS[key] = Object.assign({}, exMod, { numSeries: curNumSeries + 1 });
+  saveLogs();
+  _dismissAddSetSuggestion();
+  _refreshExPanelOnly();
+  showToast('➕ Serie extra agregada — ¡a por ella!');
+}
+
 function completeSet(key, di, ei, si, unit) {
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
@@ -5138,6 +5342,8 @@ function completeSet(key, di, ei, si, unit) {
       showToast('✓ → Ahora hacé el partner del SS');
       return;
     }
+
+    _maybeSuggestExtraSet(di, ei, si);
 
     // Calcular restTime: preferir restSeconds del plan (set actual) si > 0.
     var _setSpec = _ejCur && _ejCur.sets && _ejCur.sets[si] ? _ejCur.sets[si] : null;
@@ -6333,8 +6539,102 @@ function renderNutricion() {
     <div style="padding:0 14px 100px">
       ${rdBanner}
       ${macroPanel}
+      ${buildNutriLogWidget(+kcal||0, +prot||0, +carb||0, +gras||0)}
       ${comidasHtml}
     </div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// REGISTRO DIARIO DE MACROS — lo que el cliente REALMENTE comió,
+// comparado contra el objetivo del plan (kcal/prot/carb/gras).
+// Guardado por día (no por semana) en LOGS['nutrilog_YYYY-MM-DD'].
+// ══════════════════════════════════════════════════════
+function _todayKey() { return new Date().toISOString().split('T')[0]; }
+
+function nutriLogSet(campo, val) {
+  var k = 'nutrilog_'+_todayKey();
+  if (!LOGS[k]) LOGS[k] = {};
+  LOGS[k][campo] = val;
+}
+
+async function guardarNutriLog() {
+  var k = 'nutrilog_'+_todayKey();
+  if (!LOGS[k]) LOGS[k] = {};
+  ['nl_kcal','nl_prot','nl_carb','nl_gras'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var campo = id.replace('nl_','');
+    if (el.value !== '') LOGS[k][campo] = el.value;
+  });
+  LOGS[k].fecha = _todayKey();
+  LOGS[k].ts = Date.now();
+  await saveLogs();
+  showToast('✓ Registro nutricional guardado');
+  renderNutricion();
+}
+
+function buildNutriLogWidget(kcalTarget, protTarget, carbTarget, grasTarget) {
+  var k = 'nutrilog_'+_todayKey();
+  var d = LOGS[k] || {};
+  var kcalVal = parseFloat(d.kcal)||0, protVal = parseFloat(d.prot)||0, carbVal = parseFloat(d.carb)||0, grasVal = parseFloat(d.gras)||0;
+
+  function pctBar(val, target, color) {
+    if (!target || !val) return '';
+    var pct = Math.round((val/target)*100);
+    var barCol = (pct >= 85 && pct <= 115) ? color : (pct < 85 ? '#4A9FDC' : '#FF7744');
+    return '<div style="height:6px;background:var(--dk);border-radius:3px;overflow:hidden;margin-top:5px">'
+      + '<div style="height:100%;width:'+Math.min(100,pct)+'%;background:'+barCol+'"></div></div>';
+  }
+
+  function field(id, label, val, target, color) {
+    return '<div><div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+label+'</div>'
+      + '<input id="'+id+'" type="number" inputmode="numeric" value="'+(val||'')+'" placeholder="'+(target||'—')+'" oninput="nutriLogSet(\''+id.replace('nl_','')+'\',this.value)"'
+      + ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(val?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:17px;font-weight:700;padding:9px 6px;text-align:center;outline:none;border-radius:8px">'
+      + pctBar(val, target, color)
+      + '</div>';
+  }
+
+  return '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:14px;border-radius:14px">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+    +   '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);font-weight:800">📝 REGISTRO DE HOY</div>'
+    +   '<div style="font-size:10px;color:var(--mt)">'+_todayKey()+'</div>'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--mt);margin-bottom:12px;line-height:1.4">Cargá lo que realmente comiste hoy para comparar contra tu objetivo</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'
+    +   field('nl_kcal', 'KCAL', kcalVal, kcalTarget, '#c8a54a')
+    +   field('nl_prot', 'PROTEÍNA (g)', protVal, protTarget, '#6aacee')
+    +   field('nl_carb', 'CARBOS (g)', carbVal, carbTarget, '#6acc7e')
+    +   field('nl_gras', 'GRASAS (g)', grasVal, grasTarget, '#e8a060')
+    + '</div>'
+    + '<button onclick="guardarNutriLog()" style="width:100%;padding:12px;background:var(--gdim);border:1px solid var(--gold);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:2px;cursor:pointer;border-radius:10px;font-weight:700">✓ GUARDAR REGISTRO</button>'
+    + buildNutriAdherenceWidget(kcalTarget)
+    + '</div>';
+}
+
+function buildNutriAdherenceWidget(kcalTarget) {
+  var days = [];
+  for (var i = 6; i >= 0; i--) {
+    var dt = new Date();
+    dt.setDate(dt.getDate() - i);
+    var ds = dt.toISOString().split('T')[0];
+    var log = LOGS['nutrilog_'+ds];
+    if (log && (log.kcal || log.prot)) {
+      days.push({ ds: ds, kcal: parseFloat(log.kcal)||0, prot: parseFloat(log.prot)||0 });
+    }
+  }
+  if (!days.length) return '';
+  var rows = days.map(function(dd) {
+    var diffK = kcalTarget ? dd.kcal - kcalTarget : null;
+    var col = diffK === null ? 'var(--mt)' : Math.abs(diffK) <= 100 ? 'var(--grn)' : Math.abs(diffK) <= 200 ? 'var(--gold)' : 'var(--red)';
+    return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px solid var(--bd)">'
+      + '<span style="color:var(--mt)">'+dd.ds.slice(5)+'</span>'
+      + '<span style="color:'+col+'">'+(dd.kcal||'—')+' kcal · '+(dd.prot||'—')+'g P</span>'
+      + '</div>';
+  }).join('');
+  return '<div style="margin-top:2px;padding-top:10px;border-top:1px solid var(--bd)">'
+    + '<div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);margin-bottom:6px;font-weight:700">ÚLTIMOS 7 DÍAS</div>'
+    + rows
+    + '</div>';
 }
 
 // ══════════════════════════════════════════════════════
@@ -6974,7 +7274,7 @@ async function guardarCI() {
   if (!LOGS[k]) LOGS[k] = {};
   var d = LOGS[k];
   // Leer inputs por si el usuario escribió sin disparar oninput
-  ['ci_peso','ci_hrv','ci_sleep','ci_notas'].forEach(function(id) {
+  ['ci_peso','ci_hrv','ci_sleep','ci_notas','ci_cintura','ci_brazo','ci_pierna','ci_pecho'].forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
     var campo = id.replace('ci_','');
@@ -7263,6 +7563,31 @@ function renderCheckin() {
     +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">SUEÑO (h)</div>'
     +   '<input id="ci_sleep" type="number" step="0.5" inputmode="decimal" value="' + (d.sleep||'') + '" placeholder="7.5" oninput="ciSet(\'sleep\',this.value)"'
     +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.sleep?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:22px;padding:10px;text-align:center;outline:none"></div>'
+
+    +   '</div>'
+    + '</div>'
+
+    // ── MEDIDAS CORPORALES (opcional) ─────────────────
+    + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
+    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">MEDIDAS CORPORALES</div>'
+    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:14px">Opcional — cargalas 1 vez por semana, siempre en el mismo momento del día</div>'
+    +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+
+    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">CINTURA (cm)</div>'
+    +   '<input id="ci_cintura" type="number" step="0.1" inputmode="decimal" value="' + (d.cintura||'') + '" placeholder="—" oninput="ciSet(\'cintura\',this.value)"'
+    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.cintura?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:20px;padding:10px;text-align:center;outline:none"></div>'
+
+    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">BRAZO (cm)</div>'
+    +   '<input id="ci_brazo" type="number" step="0.1" inputmode="decimal" value="' + (d.brazo||'') + '" placeholder="—" oninput="ciSet(\'brazo\',this.value)"'
+    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.brazo?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:20px;padding:10px;text-align:center;outline:none"></div>'
+
+    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">PIERNA (cm)</div>'
+    +   '<input id="ci_pierna" type="number" step="0.1" inputmode="decimal" value="' + (d.pierna||'') + '" placeholder="—" oninput="ciSet(\'pierna\',this.value)"'
+    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.pierna?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:20px;padding:10px;text-align:center;outline:none"></div>'
+
+    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">PECHO (cm)</div>'
+    +   '<input id="ci_pecho" type="number" step="0.1" inputmode="decimal" value="' + (d.pecho||'') + '" placeholder="—" oninput="ciSet(\'pecho\',this.value)"'
+    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.pecho?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:20px;padding:10px;text-align:center;outline:none"></div>'
 
     +   '</div>'
     + '</div>'
@@ -8327,6 +8652,7 @@ function showPostSessionModal(di) {
   _postSessionDi = di;
   var m = document.getElementById('postSessionModal');
   if (!m) return;
+  if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();
   // Reset selecciones
   ['eimd1','eimd2','eimd3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.borderColor='var(--border)'; el && (el.style.background='var(--surface)'); });
   document.getElementById('psEimd').value = '';
@@ -9052,8 +9378,9 @@ var MRV_BY_PATTERN = {
 
 // Suma de series semanales REALMENTE HECHAS (LOGS) agrupadas por targetMuscle.
 // Fallback a series del plan para sesiones no completadas aún esta semana.
-function _getWeeklyVolumeByMuscle(muscle) {
+function _getWeeklyVolumeByMuscle(muscle, week) {
   if (!muscle) return 0;
+  week = week || CURRENT_WEEK;
   var total = 0;
   var sesiones = getSesiones();
   for (var d = 0; d < sesiones.length; d++) {
@@ -9062,14 +9389,14 @@ function _getWeeklyVolumeByMuscle(muscle) {
       var ex = exs[e];
       var cat = _getCatalogData(ex.nombre || ex.exerciseName || '');
       if (!cat || cat.targetMuscle !== muscle) continue;
-      // Contar sets realmente completados en CURRENT_WEEK para este ejercicio
+      // Contar sets realmente completados en la semana pedida para este ejercicio
       var doneSets = 0;
       for (var s = 0; s < 12; s++) {
-        var k = 'log_'+CURRENT_WEEK+'_'+d+'_'+e+'_s'+s;
+        var k = 'log_'+week+'_'+d+'_'+e+'_s'+s;
         if (LOGS[k] && LOGS[k].done) doneSets++;
       }
-      // Si hay sets registrados → usar eso; si no → plan como proxy (sesión futura)
-      total += doneSets > 0 ? doneSets : (ex.sets ? ex.sets.length : (ex.numSeries || 3));
+      // Si hay sets registrados → usar eso; si no y es la semana actual → plan como proxy (sesión futura)
+      total += doneSets > 0 ? doneSets : (week === CURRENT_WEEK ? (ex.sets ? ex.sets.length : (ex.numSeries || 3)) : 0);
     }
   }
   return total;
