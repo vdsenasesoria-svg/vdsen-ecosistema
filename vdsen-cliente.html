@@ -1126,7 +1126,8 @@ async function loadPlan(user) {
           }),
           coachNote: e.coachNote || '',
           // ── Técnica de intensificación a nivel de ejercicio ──
-          technique: (e.technique || 'straight').toLowerCase(),
+          // Normalizar variantes de superset a "superset" (único valor reconocido por TECHNIQUE_META)
+          technique: (function(t){ t=(t||'straight').toLowerCase(); return t==='superset-antagonist'||t==='superset-agonist'?'superset':t; })(e.technique),
           techniqueNote: e.techniqueNote || '',
           // ── Superserie no competitiva: id de grupo compartido con el/los ejercicios pareja ──
           supersetGroup: e.supersetGroup ? String(e.supersetGroup).trim() : '',
@@ -1140,6 +1141,25 @@ async function loadPlan(user) {
         return (ei+1)+'. '+e.nombre+' | '+e.numSeries+'x'+e.repsRange+' | RIR '+e.rir;
       }).join('\n');
       return { dia: d.label || ('Día '+(i+1)), nombre: d.label || ('Día '+(i+1)), contenido: contenido, exercises: exList };
+    });
+
+    // Auto-detectar pares de biserie cuando technique contiene "superset" pero supersetGroup no está definido.
+    // Empareja ejercicios adyacentes con técnica superset*, asignando letras A, B, C… por sesión.
+    sesiones.forEach(function(ses) {
+      var exs = ses.exercises;
+      var code = 65; // 'A'
+      for (var _i = 0; _i < exs.length; _i++) {
+        var _ex = exs[_i];
+        if (!_ex.supersetGroup && _ex.technique && _ex.technique.indexOf('superset') !== -1) {
+          var _nx = exs[_i + 1];
+          if (_nx && !_nx.supersetGroup && _nx.technique && _nx.technique.indexOf('superset') !== -1) {
+            var _g = String.fromCharCode(code++);
+            _ex.supersetGroup = _g;
+            _nx.supersetGroup = _g;
+            _i++; // saltar partner
+          }
+        }
+      }
     });
 
     PLAN = {
