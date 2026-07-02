@@ -4279,19 +4279,14 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
           '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.18);border-radius:12px;margin-bottom:8px">'+
             '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
             '<div style="font-size:13px;font-weight:800;color:var(--grn);flex:1">RONDA '+(_r+1)+'</div>'+
-            '<span style="font-size:10px;color:var(--mt)">Completada</span>'+
+            '<button onclick="unmarkExpressSsRonda('+di+',['+ssMembers.join(',')+'],'+_r+')" style="padding:5px 10px;border:1px solid rgba(200,165,74,.35);border-radius:8px;cursor:pointer;background:rgba(200,165,74,.08);color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap">↺ Deshacer</button>'+
           '</div>';
       } else {
         html +=
-          '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:rgba(255,255,255,.03);border:2px solid rgba(255,255,255,.09);border-radius:12px;margin-bottom:8px">'+
-            '<div style="display:flex;align-items:center;gap:10px">'+
-              '<div style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(204,102,170,.4);display:flex;align-items:center;justify-content:center;font-size:12px;color:#e9a8d4;font-weight:800">'+(_r+1)+'</div>'+
-              '<div>'+
-                '<div style="font-size:12px;font-weight:800;color:var(--tx)">RONDA '+(_r+1)+'</div>'+
-                '<div style="font-size:10px;color:var(--mt)">'+memberNames.map(function(n,i){ return ssLabel(i)+' '+n; }).join(' → ')+'</div>'+
-              '</div>'+
-            '</div>'+
-            '<button onclick="markExpressSsRonda('+di+',['+ssMembers.join(',')+'],'+_r+')" style="padding:9px 14px;border:none;border-radius:10px;cursor:pointer;background:var(--grn);color:#fff;font-size:11px;font-weight:800;white-space:nowrap">✓ HECHA → DESCANSAR</button>'+
+          '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:rgba(255,255,255,.03);border:2px solid rgba(204,102,170,.28);border-radius:12px;margin-bottom:8px">'+
+            '<div style="width:32px;height:32px;border-radius:8px;flex-shrink:0;background:rgba(204,102,170,.12);color:#e9a8d4;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;letter-spacing:0">'+(_r+1)+'</div>'+
+            '<div style="flex:1;font-size:13px;font-weight:800;color:var(--tx)">RONDA '+(_r+1)+'</div>'+
+            '<button onclick="markExpressSsRonda('+di+',['+ssMembers.join(',')+'],'+_r+')" style="padding:9px 14px;border:none;border-radius:10px;cursor:pointer;background:var(--grn);color:#fff;font-size:11px;font-weight:800;white-space:nowrap;flex-shrink:0">✓ HECHA → DESCANSAR</button>'+
           '</div>';
         break; // Solo mostrar la primera ronda pendiente como activa
       }
@@ -4461,6 +4456,15 @@ function markExpressSsRonda(di, ssMembers, rondaIdx) {
   showToast('Ronda ✓ — descansando');
 }
 window.markExpressSsRonda = markExpressSsRonda;
+
+function unmarkExpressSsRonda(di, ssMembers, rondaIdx) {
+  delete LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+rondaIdx];
+  saveLogs();
+  if (typeof stopRestTimer === 'function') { try { stopRestTimer(); } catch(_){} }
+  _refreshExPanelOnly();
+  showToast('Ronda deshecha');
+}
+window.unmarkExpressSsRonda = unmarkExpressSsRonda;
 
 // ── Inferir patrón motor por palabras clave (fallback para ejercicios fuera del catálogo) ──
 function _inferMotorPattern(nombre) {
