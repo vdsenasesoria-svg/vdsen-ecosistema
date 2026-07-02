@@ -2702,7 +2702,7 @@ function _buildExNav(ejercicios, di) {
     var ssLabelTag = ssGroup + (ssPos || 1);
     // ── Estilos: cuando es SS sobreescribe colores para máxima visibilidad ──
     var borderCol = isActive ? 'rgba(200,165,74,.75)' : allDone ? 'rgba(58,148,96,.4)' : 'rgba(255,255,255,.09)';
-    var bgCol = isActive ? 'rgba(200,165,74,.13)' : allDone ? 'rgba(58,148,96,.07)' : 'rgba(15,16,16,.8)';
+    var bgCol = isActive ? 'rgba(200,165,74,.13)' : allDone ? 'rgba(58,148,96,.07)' : 'rgba(12,22,38,.9)';
     var glowStyle = isActive ? 'box-shadow:0 0 16px rgba(200,165,74,.25),0 4px 12px rgba(0,0,0,.4);' : allDone ? 'box-shadow:0 0 10px rgba(58,148,96,.15);' : '';
     var borderWidth = '2px';
     if (isSS) {
@@ -3548,17 +3548,26 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         while (_nextEi < ejercicios.length && ejercicios[_nextEi] && String(ejercicios[_nextEi].supersetGroup||'').trim().toLowerCase() === _g2) _nextEi++;
       }
       var isLast = (_nextEi >= ejercicios.length);
-      completedBlockHtml = '<div style="margin-top:16px;padding:14px;background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:12px;text-align:center">'+
-        '<div style="font-size:15px;font-weight:800;color:var(--grn);margin-bottom:10px">✓ Ejercicio completado</div>'+
-        (isLast
-          ? '<button onclick="markSessionDone('+di+')" style="'+
-              'width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
-              'background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
-              '🏁 FINALIZAR SESIÓN</button>'
-          : '<button onclick="setEjActivo('+_nextEi+')" style="'+
-              'width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
-              'background:var(--accent);color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
-              'Siguiente ejercicio →</button>')+
+      var _prevBtn = ei > 0
+        ? '<button onclick="setEjActivo('+(ei-1)+')" style="'+
+            'flex:0 0 auto;padding:14px 18px;border:1px solid var(--border);border-radius:10px;cursor:pointer;'+
+            'background:var(--surface2);color:var(--mt);font-size:15px;font-weight:700">'+
+            '← Anterior</button>'
+        : '';
+      completedBlockHtml = '<div style="margin-top:16px;padding:14px;background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:12px">'+
+        '<div style="font-size:13px;font-weight:800;color:var(--grn);margin-bottom:10px;text-align:center;letter-spacing:.5px">✓ EJERCICIO COMPLETADO</div>'+
+        '<div style="display:flex;gap:8px">'+
+          _prevBtn+
+          (isLast
+            ? '<button onclick="markSessionDone('+di+')" style="'+
+                'flex:1;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
+                'background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900;letter-spacing:.5px">'+
+                '🏁 FINALIZAR SESIÓN</button>'
+            : '<button onclick="setEjActivo('+_nextEi+')" style="'+
+                'flex:1;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
+                'background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900;letter-spacing:.5px">'+
+                'Siguiente ejercicio →</button>')+
+        '</div>'+
       '</div>';
     }
   }
@@ -4240,9 +4249,13 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     var _nextEi = ssMembers[ssMembers.length-1] + 1;
     while (_nextEi < ejercicios.length && ejercicios[_nextEi] && String(ejercicios[_nextEi].supersetGroup||'').trim().toLowerCase() === _ssGrpLow) _nextEi++;
     var _isLastEx = (_nextEi >= ejercicios.length);
-    html += (_isLastEx
-      ? '<button onclick="markSessionDone('+di+')" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800">🏁 FINALIZAR SESIÓN</button>'
-      : '<button onclick="setEjActivo('+_nextEi+')" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800">Siguiente ejercicio →</button>');
+    var _ssPrevEi = ssMembers[0] - 1;
+    var _ssPrevBtn = _ssPrevEi >= 0
+      ? '<button onclick="setEjActivo('+_ssPrevEi+')" style="flex:0 0 auto;padding:14px 18px;border:1px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2);color:var(--mt);font-size:14px;font-weight:700">← Anterior</button>'
+      : '';
+    html += '<div style="display:flex;gap:8px">'+_ssPrevBtn+(_isLastEx
+      ? '<button onclick="markSessionDone('+di+')" style="flex:1;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900">🏁 FINALIZAR SESIÓN</button>'
+      : '<button onclick="setEjActivo('+_nextEi+')" style="flex:1;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900">Siguiente ejercicio →</button>')+'</div>';
   } else {
     // ── Rondas intermedias + última con formulario ────────────────────────
     var _iptS2 = 'width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 8px;outline:none;text-align:center';
