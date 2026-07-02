@@ -5357,12 +5357,41 @@ function _maybeSuggestExtraSet(di, ei, si) {
     var ej = (_EJERCICIOS_DIA || [])[ei];
     if (!ej) return;
 
-    var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
+    var exName = ej.nombre || ej.exerciseName || '';
+
+    // numSeries DEBE calcularse igual que _buildExCard (mismo orden de pasos), o
+    // "última serie planificada" nunca coincide con la última fila que el cliente
+    // realmente ve/completa en pantalla y esta función jamás dispara.
     var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+    var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
     if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
+
+    // PASO 1 — continuidad desde la semana anterior
+    if (CURRENT_WEEK > 1) {
+      var _lastWeekDone = 0;
+      for (var _lsc = 0; _lsc < 12; _lsc++) {
+        if (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lsc] && LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lsc].done) {
+          _lastWeekDone = _lsc + 1;
+        }
+      }
+      numSeries = Math.max(numSeries, _lastWeekDone);
+    }
+
+    // PASO 2 — progrec sobreescribe para cambios activos de volumen
+    var _doneCount = 0;
+    for (var _sc = 0; _sc < 12; _sc++) {
+      if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
+    }
+    var progrec = _getProgRecForExercise(di, ei, exName);
+    if (progrec && progrec.newSets && ['add_sets','reduce_sets','deload'].indexOf(progrec.action) !== -1) {
+      numSeries = Math.max(progrec.newSets, _doneCount);
+    }
+
+    // PASO 3 — nunca ocultar sets ya registrados esta sesión
+    numSeries = Math.max(numSeries, _doneCount);
+
     if (si !== numSeries - 1) return; // sólo tras la última serie planificada de hoy
 
-    var exName = ej.nombre || ej.exerciseName || '';
     var catData = _getCatalogData(exName);
     if (!catData) return; // sin catálogo no hay MRV/músculo confiable → no sugerir
 
