@@ -2700,6 +2700,7 @@ function _buildExNav(ejercicios, di) {
       }
     }
     var ssLabelTag = ssGroup + (ssPos || 1);
+    if (isSS && ssPos > 1) return ''; // miembros no-primarios se muestran dentro del panel combinado
     // ── Estilos: cuando es SS sobreescribe colores para máxima visibilidad ──
     var borderCol = isActive ? 'rgba(200,165,74,.75)' : allDone ? 'rgba(58,148,96,.4)' : 'rgba(255,255,255,.09)';
     var bgCol = isActive ? 'rgba(200,165,74,.13)' : allDone ? 'rgba(58,148,96,.07)' : 'rgba(12,22,38,.9)';
@@ -4188,10 +4189,9 @@ function markExpressSerie(di, ei, si) {
 }
 window.markExpressSerie = markExpressSerie;
 
-// ── Express Superserie: tarjeta combinada ─────────────────────────────────
+// ── Express Superserie: tarjeta combinada (UX paso a paso) ───────────────
 
 function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
-  // Etiqueta de posición A1, A2… (grupo + nº de orden dentro del grupo)
   var ssLabel = function(i) { return grp.toUpperCase()+(i+1); };
   var memberNames = ssMembers.map(function(idx) {
     var sub = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+idx];
@@ -4199,6 +4199,25 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
   });
   var numRondas = ejercicios[ssMembers[0]].numSeries || (ejercicios[ssMembers[0]].sets ? ejercicios[ssMembers[0]].sets.length : 3);
   var _ssk = 'ss_'+di+'_'+ssMembers[0];
+
+  // ── Estado paso a paso (persiste en memoria; se reconstruye desde logs al recargar) ──
+  window._ssStep = window._ssStep || {};
+  var stateKey = di + '_' + grp.toLowerCase();
+  if (!window._ssStep[stateKey]) {
+    var _completedRounds = 0;
+    for (var _cr = 0; _cr < numRondas; _cr++) {
+      if (LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+_cr]) _completedRounds = _cr + 1; else break;
+    }
+    var _memberIdx = 0;
+    if (_completedRounds < numRondas) {
+      for (var _cm = 0; _cm < ssMembers.length; _cm++) {
+        if (LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+_completedRounds+'_m'+_cm]) _memberIdx = _cm + 1; else break;
+      }
+      _memberIdx = Math.min(_memberIdx, ssMembers.length - 1);
+    }
+    window._ssStep[stateKey] = {round: _completedRounds, memberIdx: _memberIdx};
+  }
+  var state = window._ssStep[stateKey];
 
   var allDone = ssMembers.every(function(idx) {
     var e = LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx];
@@ -4215,17 +4234,18 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
         '<span style="font-size:20px">🔁</span>'+
         '<div>'+
-          '<div style="font-size:13px;font-weight:900;letter-spacing:1.5px;color:#fff;line-height:1">BISERIE · GRUPO '+grp.toUpperCase()+'</div>'+
-          '<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:2px">'+numRondas+' rondas · ejecutar SIN descanso entre ejercicios</div>'+
+          '<div style="font-size:13px;font-weight:900;letter-spacing:1.5px;color:#fff;line-height:1">BISERIE · GRUPO '+grp.toUpperCase()+'</div>'+
+          '<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:2px">'+numRondas+' rondas · SIN descanso entre ejercicios</div>'+
         '</div>'+
       '</div>'+
       '<div style="font-size:11.5px;padding:7px 11px;background:rgba(0,0,0,.25);border-radius:9px;line-height:1.9">'+
-        namesFlow+' <span style="color:rgba(255,255,255,.45);margin:0 6px">→</span><span style="color:#ffe0a0;font-weight:800">⏸ Descanso</span>'+
+        namesFlow+' <span style="color:rgba(255,255,255,.45);margin:0 6px">→</span><span style="color:#ffe0a0;font-weight:800">⏸ Descanso</span>'+
       '</div>'+
     '</div>'+
     '<div style="padding:16px">';
 
   if (allDone) {
+    // ── Vista "completado" ─────────────────────────────────────────────────
     ssMembers.forEach(function(idx, i) {
       var entry = LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] || {};
       var uShow = entry.unit || 'KG';
@@ -4243,7 +4263,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       '<div style="font-size:12px;color:var(--mt);margin-bottom:14px">'+numRondas+' rondas · RIR real '+e0.rir_last+' · ICS '+(e0.ics||'—')+' '+ep0Emoji+'</div>'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
         '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">✓ BISERIE REGISTRADA</div>'+
-        '<button onclick="clearExpressSSDone('+di+',['+ssMembers.join(',')+'])" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:4px 12px;border-radius:7px;cursor:pointer">✏ Editar</button>'+
+        '<button onclick="clearExpressSSDone('+di+',['+ssMembers.join(',')+'],\''+grp+'\')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:4px 12px;border-radius:7px;cursor:pointer">✏ Editar</button>'+
       '</div>';
     var _ssGrpLow = grp.toLowerCase();
     var _nextEi = ssMembers[ssMembers.length-1] + 1;
@@ -4257,7 +4277,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       ? '<button onclick="markSessionDone('+di+')" style="flex:1;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900">🏁 FINALIZAR SESIÓN</button>'
       : '<button onclick="setEjActivo('+_nextEi+')" style="flex:1;padding:14px;border:none;border-radius:10px;cursor:pointer;background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900">Siguiente ejercicio →</button>')+'</div>';
   } else {
-    // ── Rondas intermedias + última con formulario ────────────────────────
+    // ── UX paso a paso ────────────────────────────────────────────────────
     var _iptS2 = 'width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 8px;outline:none;text-align:center';
     var _rirDescsss = ['Fallo','1 rep','2 reps','3 reps','Cómodo'];
     var _ssBaseRIR = (function() {
@@ -4270,109 +4290,136 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     var _ssRIRprev = (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ssMembers[0]+'_s0']||{}).rir_real;
     var _ssRIRinit = _ssRIRprev !== undefined ? Math.max(0,Math.min(4,parseInt(_ssRIRprev)||2)) : _ssBaseRIR;
 
-    // Rondas 1..N-1
-    for (var _r = 0; _r < numRondas - 1; _r++) {
-      var _rKey = 'exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+_r;
-      var _rDone = !!LOGS[_rKey];
-      if (_rDone) {
-        html +=
-          '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.18);border-radius:12px;margin-bottom:8px">'+
-            '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
-            '<div style="font-size:13px;font-weight:800;color:var(--grn);flex:1">RONDA '+(_r+1)+'</div>'+
-            '<button onclick="unmarkExpressSsRonda('+di+',['+ssMembers.join(',')+'],'+_r+')" style="padding:5px 10px;border:1px solid rgba(200,165,74,.35);border-radius:8px;cursor:pointer;background:rgba(200,165,74,.08);color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap">↺ Deshacer</button>'+
-          '</div>';
-      } else {
-        html +=
-          '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:rgba(255,255,255,.03);border:2px solid rgba(204,102,170,.28);border-radius:12px;margin-bottom:8px">'+
-            '<div style="width:32px;height:32px;border-radius:8px;flex-shrink:0;background:rgba(204,102,170,.12);color:#e9a8d4;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;letter-spacing:0">'+(_r+1)+'</div>'+
-            '<div style="flex:1;font-size:13px;font-weight:800;color:var(--tx)">RONDA '+(_r+1)+'</div>'+
-            '<button onclick="markExpressSsRonda('+di+',['+ssMembers.join(',')+'],'+_r+')" style="padding:9px 14px;border:none;border-radius:10px;cursor:pointer;background:var(--grn);color:#fff;font-size:11px;font-weight:800;white-space:nowrap;flex-shrink:0">✓ HECHA → DESCANSAR</button>'+
-          '</div>';
-        break; // Solo mostrar la primera ronda pendiente como activa
-      }
+    // Chips de rondas completadas
+    if (state.round > 0) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">';
+      for (var _dr = 0; _dr < state.round; _dr++) {
+        var _drChips = ssMembers.map(function(midx, mi) {
+          var sd = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+_dr+'_m'+mi] || {};
+          var cVal = parseFloat(sd.carga||0);
+          return '<span style="font-size:10px;color:var(--mt)">'+ssLabel(mi)+'&thinsp;'+sd.reps+'r'+(cVal>0?' @'+cVal.toFixed(1):'')+'</span>';
+        }).join('<span style="color:rgba(255,255,255,.25);margin:0 3px">·</span>');
+        html += '<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:rgba(58,148,96,.1);border:1px solid rgba(58,148,96,.3);border-radius:20px">'+
+          '<span style="font-size:11px;color:var(--grn);font-weight:800">✓ R'+(_dr+1)+'</span>'+_drChips+'</div>';      }
+      html += '</div>';
     }
 
-    // Última ronda: formulario completo
-    html +=
-      '<div style="background:rgba(204,102,170,.05);border:2px solid rgba(204,102,170,.35);border-radius:12px;padding:14px;margin-top:4px">'+
-      '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:#e9a8d4;margin-bottom:12px">'+
-        'RONDA '+numRondas+(numRondas > 1 ? ' — ÚLTIMA · REGISTRA LOS DATOS' : ' — REGISTRA LOS DATOS')+
-      '</div>';
+    // Cabecera ronda actual
+    html += '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:#e9a8d4;margin-bottom:10px">RONDA '+(state.round+1)+' DE '+numRondas+'</div>';
 
-    ssMembers.forEach(function(idx, i) {
-      var ejM = ejercicios[idx];
-      var unit2 = getExUnit(di, idx) || 'KG';
-      var _techM = (ejM.technique||'').toLowerCase();
-      var _isIsoM = _techM === 'iso-hold' || /^plancha|isometric|hollow|l[- ]?sit|wall sit/i.test(memberNames[i]);
-      var _isBwM = _isIsoM || /^(dominad|fondo|plancha|burpee|abdominal|crunch(?! en polea)|rueda abdomin|elevaci[oó]n de piernas (colgad|libre)|push.?up|flexi[óo]n|muscle.?up|pull.?up|hollow)/i.test(memberNames[i]);
-      var _prevM = LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+idx+'_s0'] || {};
-      var _histM = EXERCISE_HISTORY[memberNames[i].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')] || {};
-      var _pfCM = '', _pfRM = ejM.sets ? (ejM.sets[0] ? (ejM.sets[0].repsTarget || 10) : 10) : 10;
-      var _progM = _getProgRecForExercise(di, idx, memberNames[i]);
-      if (_progM && _progM.newLoad !== undefined && _progM.newLoad !== null) {
-        _pfCM = parseFloat(_progM.newLoad).toFixed(1); _pfRM = _progM.newReps || _pfRM;
-      } else if (_prevM.carga) {
-        _pfCM = parseFloat(_convertCarga(_prevM.carga, _prevM.unit || 'KG', unit2)).toFixed(1); _pfRM = _prevM.reps || _pfRM;
-      } else if (_histM.load) {
-        _pfCM = parseFloat(_convertCarga(_histM.load, _histM.unit || 'KG', unit2)).toFixed(1); _pfRM = _histM.reps || _pfRM;
-      }
-      var _cLbl = _isIsoM ? 'LASTRE (opc, '+unit2+')' : (_isBwM ? 'LASTRE +'+unit2+' (opc)' : 'CARGA ('+unit2+')');
-      var _rLbl = _isIsoM ? 'SEGUNDOS' : 'REPS';
-      html +=
-        '<div style="margin-bottom:14px'+(i>0?';padding-top:14px;border-top:1px solid rgba(204,102,170,.2)':'')+'">' +
-          '<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#e9a8d4;margin-bottom:8px">'+ssLabel(i)+' '+memberNames[i].toUpperCase()+'</div>'+
-          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-            '<div>'+
-              '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cLbl+'</div>'+
-              '<input id="xss_carga_'+di+'_'+idx+'" type="number" value="'+(_pfCM||'')+'" placeholder="'+unit2+'" step="0.5" inputmode="decimal" style="'+_iptS2+'" onfocus="this.select()">'+
-            '</div>'+
-            '<div>'+
-              '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_rLbl+'</div>'+
-              '<input id="xss_reps_'+di+'_'+idx+'" type="number" value="'+(_pfRM||'')+'" placeholder="reps" inputmode="numeric" style="'+_iptS2+'" onfocus="this.select()">'+
-            '</div>'+
-          '</div>'+
+    // Chips de miembros ya completados en la ronda actual
+    if (state.memberIdx > 0) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">';
+      for (var _dm = 0; _dm < state.memberIdx; _dm++) {
+        var _dmSd = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+state.round+'_m'+_dm] || {};
+        var _dmC = parseFloat(_dmSd.carga||0);
+        html += '<div style="display:flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(204,102,170,.1);border:1px solid rgba(204,102,170,.3);border-radius:20px">'+
+          '<span style="font-size:11px;color:#e9a8d4;font-weight:800">✓ '+ssLabel(_dm)+'</span>'+
+          '<span style="font-size:10px;color:var(--mt)">'+_dmSd.reps+'r'+(_dmC>0?' @'+_dmC.toFixed(1)+' '+_dmSd.unit:'')+'</span>'+
         '</div>';
-    });
+      }
+      html += '</div>';
+    }
 
-    var _ssRirBtns = [0,1,2,3,4].map(function(rv){
-      var sel = rv === _ssRIRinit;
-      return '<button onclick="expressSetRIR(\''+_ssk+'\','+rv+')" id="xrir_'+_ssk+'_'+rv+'" '+
-        'style="flex:1;padding:8px 2px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;'+
-        'border:2px solid '+(sel?'#e8a040':'var(--border)')+';background:'+(sel?'rgba(232,160,64,.15)':'var(--input-bg)')+';color:'+(sel?'#e8a040':'var(--mt)')+'">'+
-        '<span style="font-size:18px;font-weight:900;line-height:1">'+rv+'</span>'+
-        '<span style="font-size:8px;font-weight:700;line-height:1.3">'+_rirDescsss[rv]+'</span>'+
-        '</button>';
-    }).join('');
-    var _ssPumpBtns = [{v:1,icon:'💪'},{v:2,icon:'👍'},{v:3,icon:'😐'}].map(function(p){
-      return '<button onclick="expressSetPump(\''+_ssk+'\','+p.v+')" id="xpump_'+_ssk+'_'+p.v+'" style="flex:1;padding:9px 2px;border-radius:7px;font-size:19px;border:2px solid var(--border);background:var(--input-bg);cursor:pointer">'+p.icon+'</button>';
-    }).join('');
+    // Formulario del miembro actual
+    var curMIdx = state.memberIdx;
+    var curIdx = ssMembers[curMIdx];
+    var ejM = ejercicios[curIdx];
+    var unit2 = getExUnit(di, curIdx) || 'KG';
+    var _techM = (ejM.technique||'').toLowerCase();
+    var _isIsoM = _techM === 'iso-hold' || /^plancha|isometric|hollow|l[- ]?sit|wall sit/i.test(memberNames[curMIdx]);
+    var _isBwM = _isIsoM || /^(dominad|fondo|plancha|burpee|abdominal|crunch(?! en polea)|rueda abdomin|elevaci[oó]n de piernas (colgad|libre)|push.?up|flexi[óo]n|muscle.?up|pull.?up|hollow)/i.test(memberNames[curMIdx]);
+    var _prevM = LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+curIdx+'_s0'] || {};
+    var _histM = EXERCISE_HISTORY[memberNames[curMIdx].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')] || {};
+    var _pfCM = '', _pfRM = ejM.sets ? (ejM.sets[0] ? (ejM.sets[0].repsTarget || 10) : 10) : 10;
+    var _progM = _getProgRecForExercise(di, curIdx, memberNames[curMIdx]);
+    if (_progM && _progM.newLoad !== undefined && _progM.newLoad !== null) {
+      _pfCM = parseFloat(_progM.newLoad).toFixed(1); _pfRM = _progM.newReps || _pfRM;
+    } else if (_prevM.carga) {
+      _pfCM = parseFloat(_convertCarga(_prevM.carga, _prevM.unit || 'KG', unit2)).toFixed(1); _pfRM = _prevM.reps || _pfRM;
+    } else if (_histM.load) {
+      _pfCM = parseFloat(_convertCarga(_histM.load, _histM.unit || 'KG', unit2)).toFixed(1); _pfRM = _histM.reps || _pfRM;
+    }
+    // Pre-rellenar con datos de la ronda anterior si existen
+    if (state.round > 0) {
+      var _prevRndSd = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+(state.round-1)+'_m'+curMIdx] || {};
+      if (_prevRndSd.carga) _pfCM = _prevRndSd.carga;
+      if (_prevRndSd.reps) _pfRM = _prevRndSd.reps;
+    }
+    var _cLbl = _isIsoM ? 'LASTRE (opc, '+unit2+')' : (_isBwM ? 'LASTRE +'+unit2+' (opc)' : 'CARGA ('+unit2+')');
+    var _rLbl = _isIsoM ? 'SEGUNDOS' : 'REPS';
 
     html +=
-      '<div style="margin-bottom:12px">'+
-        '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR ÚLTIMA RONDA</div>'+
-        '<div style="display:flex;gap:6px">'+_ssRirBtns+'</div>'+
-        '<input type="hidden" id="xrir_val_'+_ssk+'" value="'+_ssRIRinit+'">'+
-      '</div>'+
-      '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
-        '<div style="flex:1">'+
-          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
-          '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
-          '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala · 6-7 ok · 8-10 buena</div>'+
+      '<div style="background:rgba(204,102,170,.07);border:2px solid rgba(204,102,170,.45);border-radius:12px;padding:14px;margin-bottom:12px">'+
+        '<div style="font-size:11px;font-weight:900;letter-spacing:1px;color:#e9a8d4;margin-bottom:10px">'+ssLabel(curMIdx)+' '+memberNames[curMIdx].toUpperCase()+'</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+          '<div>'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cLbl+'</div>'+
+            '<input id="xss_carga_'+di+'_'+curIdx+'" type="number" value="'+(_pfCM||'')+'" placeholder="'+unit2+'" step="0.5" inputmode="decimal" style="'+_iptS2+'" onfocus="this.select()">'+
+          '</div>'+
+          '<div>'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_rLbl+'</div>'+
+            '<input id="xss_reps_'+di+'_'+curIdx+'" type="number" value="'+(_pfRM||'')+'" placeholder="reps" inputmode="numeric" style="'+_iptS2+'" onfocus="this.select()">'+
+          '</div>'+
         '</div>'+
-        '<div style="flex:2">'+
-          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
-          '<div style="display:flex;gap:4px">'+_ssPumpBtns+'</div>'+
-          '<input type="hidden" id="xpump_val_'+_ssk+'" value="">'+
-        '</div>'+
-      '</div>'+
-      '<button onclick="markExpressSSDone('+di+',['+ssMembers.join(',')+'])" style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:#cc66aa;color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">✓ COMPLETAR BISERIE</button>'+
       '</div>';
+
+    var isLastMember = (curMIdx === ssMembers.length - 1);
+    var isLastRound  = (state.round === numRondas - 1);
+
+    if (!isLastMember) {
+      var nextLabel = ssLabel(curMIdx + 1);
+      var nextName  = memberNames[curMIdx + 1];
+      html += '<button onclick="ssMoveNextMember('+di+',['+ssMembers.join(',')+'],\''+grp+'\','+state.round+','+curMIdx+')" '+
+        'style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
+        'background:linear-gradient(135deg,#9b3e88,#cc66aa);color:#fff;font-size:14px;font-weight:800">'+
+        'SIN DESCANSO → '+nextLabel+' '+nextName.toUpperCase()+'</button>';
+    } else if (!isLastRound) {
+      html += '<button onclick="ssCompleteRound('+di+',['+ssMembers.join(',')+'],\''+grp+'\','+state.round+','+curMIdx+')" '+
+        'style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
+        'background:var(--grn);color:#fff;font-size:14px;font-weight:800">'+
+        '✓ RONDA '+(state.round+1)+' COMPLETA → DESCANSAR</button>';
+    } else {
+      // Última ronda, último miembro → RIR / ICS / Pump + botón final
+      var _ssRirBtns = [0,1,2,3,4].map(function(rv){
+        var sel = rv === _ssRIRinit;
+        return '<button onclick="expressSetRIR(\''+_ssk+'\','+rv+')" id="xrir_'+_ssk+'_'+rv+'" '+
+          'style="flex:1;padding:8px 2px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;'+
+          'border:2px solid '+(sel?'#e8a040':'var(--border)')+';background:'+(sel?'rgba(232,160,64,.15)':'var(--input-bg)')+';color:'+(sel?'#e8a040':'var(--mt)')+'">'+
+          '<span style="font-size:18px;font-weight:900;line-height:1">'+rv+'</span>'+
+          '<span style="font-size:8px;font-weight:700;line-height:1.3">'+_rirDescsss[rv]+'</span>'+
+          '</button>';
+      }).join('');
+      var _ssPumpBtns = [{v:1,icon:'💪'},{v:2,icon:'👍'},{v:3,icon:'😐'}].map(function(p){
+        return '<button onclick="expressSetPump(\''+_ssk+'\','+p.v+')" id="xpump_'+_ssk+'_'+p.v+'" style="flex:1;padding:9px 2px;border-radius:7px;font-size:19px;border:2px solid var(--border);background:var(--input-bg);cursor:pointer">'+p.icon+'</button>';
+      }).join('');
+      html +=
+        '<div style="margin-bottom:12px">'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR ÚLTIMA RONDA</div>'+
+          '<div style="display:flex;gap:6px">'+_ssRirBtns+'</div>'+
+          '<input type="hidden" id="xrir_val_'+_ssk+'" value="'+_ssRIRinit+'">'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
+          '<div style="flex:1">'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
+            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
+            '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala · 6-7 ok · 8-10 buena</div>'+
+          '</div>'+
+          '<div style="flex:2">'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
+            '<div style="display:flex;gap:4px">'+_ssPumpBtns+'</div>'+
+            '<input type="hidden" id="xpump_val_'+_ssk+'" value="">'+
+          '</div>'+
+        '</div>'+
+        '<button onclick="ssCompleteLastRound('+di+',['+ssMembers.join(',')+'],\''+grp+'\','+curMIdx+')" '+
+          'style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:#cc66aa;color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
+          '✓ COMPLETAR BISERIE</button>';
+    }
   }
 
   html += '</div></div>';
   return html;
 }
-
 
 function markExpressSSDone(di, ssMembers) {
   var _ssk = 'ss_'+di+'_'+ssMembers[0];
@@ -4418,8 +4465,19 @@ function markExpressSSDone(di, ssMembers) {
 }
 window.markExpressSSDone = markExpressSSDone;
 
-function clearExpressSSDone(di, ssMembers) {
-  for (var r = 0; r < 12; r++) delete LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+r];
+function clearExpressSSDone(di, ssMembers, grp) {
+  for (var r = 0; r < 12; r++) {
+    delete LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+r];
+    if (grp) {
+      for (var m = 0; m < ssMembers.length; m++) {
+        delete LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+r+'_m'+m];
+      }
+    }
+  }
+  if (grp) {
+    window._ssStep = window._ssStep || {};
+    delete window._ssStep[di+'_'+grp.toLowerCase()];
+  }
   for (var i = 0; i < ssMembers.length; i++) {
     var idx = ssMembers[i];
     delete LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx];
@@ -4456,6 +4514,100 @@ function markExpressSsRonda(di, ssMembers, rondaIdx) {
   showToast('Ronda ✓ — descansando');
 }
 window.markExpressSsRonda = markExpressSsRonda;
+function ssMoveNextMember(di, ssMembers, grp, round, mIdx) {
+  window._ssStep = window._ssStep || {};
+  var stateKey = di + '_' + grp.toLowerCase();
+  var curIdx = ssMembers[mIdx];
+  var cargaEl = document.getElementById('xss_carga_'+di+'_'+curIdx);
+  var repsEl  = document.getElementById('xss_reps_'+di+'_'+curIdx);
+  if (!repsEl) return;
+  var reps = parseInt(repsEl.value);
+  if (!reps || reps < 1) { alert('Indica las reps'); return; }
+  var carga = cargaEl ? (cargaEl.value.trim() || '0') : '0';
+  var unit = getExUnit(di, curIdx) || 'KG';
+  LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+round+'_m'+mIdx] = {carga:carga, reps:String(reps), unit:unit};
+  window._ssStep[stateKey] = {round: round, memberIdx: mIdx+1};
+  saveLogs();
+  _refreshExPanelOnly();
+}
+window.ssMoveNextMember = ssMoveNextMember;
+
+function ssCompleteRound(di, ssMembers, grp, round, lastMIdx) {
+  window._ssStep = window._ssStep || {};
+  var stateKey = di + '_' + grp.toLowerCase();
+  var curIdx = ssMembers[lastMIdx];
+  var cargaEl = document.getElementById('xss_carga_'+di+'_'+curIdx);
+  var repsEl  = document.getElementById('xss_reps_'+di+'_'+curIdx);
+  if (!repsEl) return;
+  var reps = parseInt(repsEl.value);
+  if (!reps || reps < 1) { alert('Indica las reps'); return; }
+  var carga = cargaEl ? (cargaEl.value.trim() || '0') : '0';
+  var unit = getExUnit(di, curIdx) || 'KG';
+  LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+round+'_m'+lastMIdx] = {carga:carga, reps:String(reps), unit:unit};
+  LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+round] = true;
+  window._ssStep[stateKey] = {round: round+1, memberIdx: 0};
+  saveLogs();
+  _refreshExPanelOnly();
+  var _ejSS0 = (_EJERCICIOS_DIA || [])[ssMembers[0]] || null;
+  var _ssSets = _ejSS0 && _ejSS0.sets;
+  var _ssRest = _ssSets && _ssSets[round] && parseInt(_ssSets[round].restSeconds) > 0 ? parseInt(_ssSets[round].restSeconds) : 0;
+  if (!_ssRest) { var _ssCat = _getCatalogData(_ejSS0 ? (_ejSS0.nombre||_ejSS0.exerciseName||"") : ""); _ssRest = _ssCat ? (function(fc){ return fc>=5?180:fc>=4?150:fc>=3?120:fc>=2?90:60; })(_ssCat.fatigueCost||3) : 120; }
+  startRestTimer(_ssRest);
+  showToast('Ronda '+(round+1)+' ✓ — descansando');
+}
+window.ssCompleteRound = ssCompleteRound;
+
+function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
+  window._ssStep = window._ssStep || {};
+  var stateKey = di + '_' + grp.toLowerCase();
+  var state = window._ssStep[stateKey] || {round:0, memberIdx:0};
+  var round = state.round;
+  var _ssk = 'ss_'+di+'_'+ssMembers[0];
+  var rirEl  = document.getElementById('xrir_val_'+_ssk);
+  var icsEl  = document.getElementById('xics_'+_ssk);
+  var pumpEl = document.getElementById('xpump_val_'+_ssk);
+  var rirLast = rirEl  ? (parseInt(rirEl.value)  || 2) : 2;
+  var ics     = icsEl  ? (parseInt(icsEl.value)  || null) : null;
+  var pump    = pumpEl ? (parseInt(pumpEl.value) || null) : null;
+  var curIdx = ssMembers[lastMIdx];
+  var cargaEl = document.getElementById('xss_carga_'+di+'_'+curIdx);
+  var repsEl  = document.getElementById('xss_reps_'+di+'_'+curIdx);
+  if (!repsEl) return;
+  var reps = parseInt(repsEl.value);
+  if (!reps || reps < 1) { alert('Indica las reps'); return; }
+  var carga = cargaEl ? (cargaEl.value.trim() || '0') : '0';
+  var unit = getExUnit(di, curIdx) || 'KG';
+  LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+round+'_m'+lastMIdx] = {carga:carga, reps:String(reps), unit:unit};
+  var now = Date.now();
+  for (var i = 0; i < ssMembers.length; i++) {
+    var idx = ssMembers[i];
+    var unit_i = getExUnit(di, idx) || 'KG';
+    var lastSD = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+round+'_m'+i] || {};
+    var _ejIdx = (_EJERCICIOS_DIA || [])[idx] || null;
+    var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
+    var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '');
+    if (_pcRec && _pcRec.newSets && ['add_sets','reduce_sets','deload'].indexOf(_pcRec.action) !== -1) numSets = _pcRec.newSets;
+    LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:lastSD.carga||'0', reps:String(lastSD.reps||reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:lastSD.unit||unit_i, done:true, ts:now };
+    for (var s = 0; s < numSets; s++) {
+      var sdS = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+s+'_m'+i] || lastSD;
+      LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s] = { carga:sdS.carga||'0', reps:String(sdS.reps||reps), unit:sdS.unit||unit_i, done:true, rir:rirLast, rir_real:rirLast, ics:ics||8, pump:pump||1, ts:now, express:true };
+    }
+    for (var s2 = numSets; s2 < 12; s2++) {
+      var stale = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s2;
+      if (LOGS[stale] && LOGS[stale].express) delete LOGS[stale];
+    }
+  }
+  delete window._ssStep[stateKey];
+  saveLogs();
+  _refreshExPanelOnly();
+  var _ejSS0 = (_EJERCICIOS_DIA || [])[ssMembers[0]] || null;
+  var _ssSets = _ejSS0 && _ejSS0.sets;
+  var _ssRest = _ssSets && _ssSets[0] && parseInt(_ssSets[0].restSeconds) > 0 ? parseInt(_ssSets[0].restSeconds) : 0;
+  if (!_ssRest) { var _ssCat2 = _getCatalogData(_ejSS0 ? (_ejSS0.nombre||_ejSS0.exerciseName||"") : ""); _ssRest = _ssCat2 ? (function(fc){ return fc>=5?180:fc>=4?150:fc>=3?120:fc>=2?90:60; })(_ssCat2.fatigueCost||3) : 120; }
+  startRestTimer(_ssRest);
+  showToast("Biserie ✓ — descansando");
+}
+window.ssCompleteLastRound = ssCompleteLastRound;
 
 function unmarkExpressSsRonda(di, ssMembers, rondaIdx) {
   delete LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+rondaIdx];
