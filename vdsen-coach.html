@@ -183,6 +183,10 @@
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
     /* -webkit-tap-highlight ya en nav items; asegurar en botones también */
     button, [onclick] { -webkit-tap-highlight-color: transparent; }
+    /* ── Intake / Evaluación ── */
+    .intake-chip { border:1px solid var(--border); border-radius:20px; padding:6px 12px; font-size:12px; cursor:pointer; color:var(--text-muted); transition:all .15s; user-select:none; -webkit-tap-highlight-color:transparent; }
+    .intake-chip.on { border-color:var(--accent); color:var(--accent); background:rgba(196,255,0,.08); }
+    .intake-section { transition:opacity .15s; }
   </style>
 </head>
 <body>
@@ -197,6 +201,7 @@
   <nav style="padding:12px 12px">
     <div data-section="dashboard" class="cursor-pointer py-2 px-3 rounded transition font-semibold" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📋 Dashboard</div>
     <div data-section="clientes"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">👥 Clientes</div>
+    <div data-section="evaluacion" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🧩 Evaluación</div>
     <div data-section="crearPlan" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📝 Crear Plan</div>
     <div data-section="templates" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📑 Templates</div>
     <div data-section="catalogo"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🏋️ Catálogo</div>
@@ -226,6 +231,18 @@
 <div class="main-content">
   <div id="dashboard" class="section active"><h2 class="text-2xl font-bold mb-4">Dashboard</h2><div id="dashboardContent"></div></div>
   <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
+  <div id="evaluacion" class="section"><h2 class="text-2xl font-bold mb-4">Evaluación / Intake</h2>
+    <div class="flex gap-2 mb-3 flex-wrap items-center">
+      <select id="intakeClientSelect" class="input-field" style="flex:1;min-width:200px"></select>
+      <button id="intakeNewClientBtn" class="btn-secondary text-sm">+ Nuevo cliente</button>
+    </div>
+    <div id="intakeStatus" class="text-xs mb-4" style="color:var(--text-muted)"></div>
+    <form id="intakeForm" autocomplete="off"></form>
+    <div id="intakeActions" class="flex gap-2 mt-2 flex-wrap" style="display:none">
+      <button type="button" id="intakeSaveBtn" class="btn-primary">💾 Guardar evaluación</button>
+      <button type="button" id="intakeExportBtn" class="btn-secondary text-sm">📋 Copiar JSON</button>
+    </div>
+  </div>
   <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
   <div id="templates" class="section"><h2 class="text-2xl font-bold mb-4">Templates de Planes</h2><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
@@ -330,6 +347,7 @@
 <div class="bottom-nav-mobile" id="bottomNavMobile">
   <div data-section="dashboard"  class="nav-item-mobile"><span class="nav-icon">📋</span>Dashboard</div>
   <div data-section="clientes"   class="nav-item-mobile"><span class="nav-icon">👥</span>Clientes</div>
+  <div data-section="evaluacion" class="nav-item-mobile"><span class="nav-icon">🧩</span>Intake</div>
   <div data-section="crearPlan"  class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
   <div data-section="monitoreo"  class="nav-item-mobile"><span class="nav-icon">📊</span>Monitor</div>
   <div data-section="catalogo"   class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
@@ -4902,9 +4920,254 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     showToast("Compendio procesado y guardado correctamente");
   });
   
+  // ========== EVALUACIÓN / INTAKE ==========
+  const INTAKE_SCHEMA = {
+    "schemaVersion": "1.0",
+    "titulo": "Intake VDSEN — Cliente",
+    "descripcion": "Formulario unificado de recopilación de datos. Los campos base se llenan una sola vez y alimentan todos los módulos. Los condicionales solo se muestran según la regla indicada en 'showIf'.",
+    "sections": [
+      { "id": "base", "titulo": "Datos base", "nota": "Compartidos por todos los módulos.", "fields": [
+        {"id":"nombre","label":"Nombre completo","type":"text","required":true},
+        {"id":"sexo","label":"Sexo","type":"select","options":["H","M"],"required":true},
+        {"id":"edad","label":"Edad","type":"number","unit":"años","required":true},
+        {"id":"peso_kg","label":"Peso actual","type":"number","unit":"kg","step":0.1,"required":true},
+        {"id":"talla_cm","label":"Talla","type":"number","unit":"cm","required":true},
+        {"id":"porcentaje_grasa","label":"% de grasa (si lo conoces)","type":"number","unit":"%","step":0.1,"required":false,"nota":"InBody 270S o M8-BIO. Si se deja vacío se estima por fotogrametría."},
+        {"id":"perfil","label":"Perfil farmacológico","type":"select","options":["natural","PED"],"required":true,"default":"natural","nota":"Define MRV, frecuencia, tolerancia al fallo, soporte hepático/lipídico y activa el módulo de farmacología."}
+      ]},
+      { "id": "entrenamiento", "titulo": "Entrenamiento", "fields": [
+        {"id":"nivel","label":"Nivel","type":"select","options":["principiante","intermedio","avanzado"],"required":true},
+        {"id":"dias_semana","label":"Días disponibles por semana","type":"number","unit":"días","min":1,"max":7,"required":true},
+        {"id":"duracion_sesion_min","label":"Duración por sesión","type":"number","unit":"min","required":true},
+        {"id":"gimnasio","label":"Gimnasio de referencia","type":"select","options":["San Diego","Bugambilias","otro"],"required":true,"nota":"Define el inventario de máquinas disponibles."},
+        {"id":"gimnasio_otro_maquinas","label":"¿Qué máquinas especializadas tiene tu gimnasio?","type":"textarea","required":false,"showIf":{"field":"gimnasio","equals":"otro"}},
+        {"id":"objetivo_mesociclo","label":"Objetivo del mesociclo","type":"select","options":["hipertrofia","definición","recomposición","deload"],"required":true},
+        {"id":"lesiones","label":"Lesiones o restricciones articulares","type":"textarea","required":false,"placeholder":"Ej: molestia lumbar, hombro derecho, rodilla…"},
+        {"id":"semana_actual_mesociclo","label":"Semana actual del mesociclo (si es continuación)","type":"number","min":1,"max":8,"required":false}
+      ]},
+      { "id": "nutricion", "titulo": "Nutrición", "fields": [
+        {"id":"actividad_pasos_dia","label":"Actividad no-entreno (pasos/día promedio)","type":"number","unit":"pasos","required":true,"default":8000},
+        {"id":"objetivo_calorico","label":"Objetivo calórico","type":"select","options":["superávit","mantenimiento","déficit"],"required":true},
+        {"id":"magnitud_ajuste_pct","label":"Magnitud del ajuste","type":"number","unit":"%","required":false,"nota":"% sobre mantenimiento. Vacío = default por objetivo.","showIf":{"field":"objetivo_calorico","notEquals":"mantenimiento"}},
+        {"id":"num_comidas","label":"Nº de comidas preferido","type":"number","min":2,"max":8,"required":true},
+        {"id":"horarios_comidas","label":"Horarios aproximados","type":"text","required":false,"placeholder":"Ej: 07:30 / 12:00 / 16:00 / 20:00"},
+        {"id":"restricciones_alimentarias","label":"Preferencias / restricciones","type":"multiselect","options":["ninguna","vegano","vegetariano","celíaco","intolerancia lactosa","otra"],"required":true},
+        {"id":"restriccion_otra","label":"Especifica la restricción","type":"text","required":false,"showIf":{"field":"restricciones_alimentarias","contains":"otra"}},
+        {"id":"presupuesto_alimentos","label":"Presupuesto semanal de alimentos (MXN)","type":"number","unit":"MXN","required":false},
+        {"id":"alimentos_disponibles","label":"Alimentos disponibles / preferidos","type":"textarea","required":false},
+        {"id":"fase_ciclo_menstrual","label":"Fase del ciclo menstrual","type":"select","options":["menstrual","folicular","ovulatoria","lútea","amenorrea","no aplica"],"required":false,"nota":"Para cálculo de EA y RED-S.","showIf":{"field":"sexo","equals":"M"}}
+      ]},
+      { "id": "suplementacion", "titulo": "Suplementación", "fields": [
+        {"id":"presupuesto_mensual_mxn","label":"Presupuesto mensual","type":"number","unit":"MXN","required":true},
+        {"id":"restricciones_suplementos","label":"Restricciones","type":"select","options":["ninguna","sin cafeína","sin estimulantes"],"required":true,"default":"ninguna"},
+        {"id":"objetivo_primario_supp","label":"Objetivo primario","type":"select","options":["rendimiento","recomposición","salud"],"required":true}
+      ]},
+      { "id": "farmacologia", "titulo": "Farmacología", "showIf": {"field":"perfil","equals":"PED"}, "nota": "Solo se muestra si el perfil es PED. Si faltan biomarcadores baseline, la prescripción opera en ceguera clínica.", "fields": [
+        {"id":"experiencia_peds","label":"Experiencia previa con PEDs","type":"select","options":["primer_ciclo","2_a_5_ciclos","mas_de_5_ciclos"],"required":true},
+        {"id":"objetivo_farmaco","label":"Objetivo y fase","type":"select","options":["off_season","pre_comp_inicial","pre_comp_final","peaking","pct","cruise"],"required":true},
+        {"id":"timeline_semanas","label":"Timeline disponible","type":"number","unit":"semanas","required":true},
+        {"id":"bio_hct","label":"Hematocrito (Hct)","type":"number","unit":"%","required":false,"group":"biomarcadores"},
+        {"id":"bio_alt","label":"ALT","type":"number","unit":"U/L","required":false,"group":"biomarcadores"},
+        {"id":"bio_ast","label":"AST","type":"number","unit":"U/L","required":false,"group":"biomarcadores"},
+        {"id":"bio_col_total","label":"Colesterol total","type":"number","unit":"mg/dL","required":false,"group":"biomarcadores"},
+        {"id":"bio_hdl","label":"HDL","type":"number","unit":"mg/dL","required":false,"group":"biomarcadores"},
+        {"id":"bio_ldl","label":"LDL","type":"number","unit":"mg/dL","required":false,"group":"biomarcadores"},
+        {"id":"bio_trigliceridos","label":"Triglicéridos","type":"number","unit":"mg/dL","required":false,"group":"biomarcadores"},
+        {"id":"bio_e2","label":"Estradiol (E2)","type":"number","unit":"pg/mL","required":false,"group":"biomarcadores"},
+        {"id":"bio_lh","label":"LH","type":"number","unit":"mUI/mL","required":false,"group":"biomarcadores"},
+        {"id":"bio_fsh","label":"FSH","type":"number","unit":"mUI/mL","required":false,"group":"biomarcadores"},
+        {"id":"bio_psa","label":"PSA","type":"number","unit":"ng/mL","required":false,"group":"biomarcadores","showIf":{"field":"sexo","equals":"H"}},
+        {"id":"bio_pa_sistolica","label":"PA sistólica","type":"number","unit":"mmHg","required":false,"group":"biomarcadores"},
+        {"id":"bio_pa_diastolica","label":"PA diastólica","type":"number","unit":"mmHg","required":false,"group":"biomarcadores"},
+        {"id":"bio_fc_reposo","label":"FC en reposo (AM)","type":"number","unit":"lpm","required":false,"group":"biomarcadores"},
+        {"id":"ecocardiograma_disponible","label":"¿Tienes ecocardiograma?","type":"boolean","required":true,"group":"screening_cardiologico"},
+        {"id":"ecg_disponible","label":"¿Tienes ECG?","type":"boolean","required":true,"group":"screening_cardiologico"},
+        {"id":"score_agatston","label":"Score de Agatston","type":"number","required":false,"group":"screening_cardiologico","nota":"Requerido si >35 años o >5 años de uso."},
+        {"id":"limitaciones","label":"Limitaciones / antecedentes","type":"multiselect","options":["ninguna","alopecia_familiar","acne_severo","antecedente_cardiovascular","antecedente_renal","antecedente_hepatico"],"required":true},
+        {"id":"estado_hormonal_femenino","label":"Estado hormonal / uso de anticonceptivos","type":"select","options":["ACO_levonorgestrel","ERT_transdermica","ninguno","menopausia"],"required":false,"nota":"Para soporte estrogénico obligatorio en mujeres con PEDs.","showIf":{"field":"sexo","equals":"M"}}
+      ]}
+    ]
+  };
+
+  const INTAKE_FIELDS = {};
+  INTAKE_SCHEMA.sections.forEach(s => s.fields.forEach(f => { INTAKE_FIELDS[f.id] = f; }));
+  let _intakeCurrentClient = null;
+
+  function _intEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function _intOptions(opts, cur){ return opts.map(o=>`<option value="${_intEsc(o)}"${String(cur)===String(o)?' selected':''}>${_intEsc(o)}</option>`).join(''); }
+
+  function intakeVal(fid){
+    const f = INTAKE_FIELDS[fid];
+    if(!f) return null;
+    if(f.type==='multiselect'){
+      return Array.from(document.querySelectorAll(`#intake-${fid} input:checked`)).map(c=>c.value);
+    }
+    const el = document.getElementById('intake-'+fid);
+    if(!el) return null;
+    if(f.type==='boolean') return el.value===''? null : (el.value==='true');
+    if(f.type==='number') return el.value===''? null : parseFloat(el.value);
+    return el.value;
+  }
+
+  function _intEvalShowIf(cond){
+    if(!cond) return true;
+    const cur = intakeVal(cond.field);
+    if('equals' in cond) return cur === cond.equals;
+    if('notEquals' in cond) return cur !== cond.notEquals;
+    if('contains' in cond) return Array.isArray(cur) && cur.includes(cond.contains);
+    return true;
+  }
+
+  function applyIntakeVisibility(){
+    document.querySelectorAll('.intake-section').forEach(sec=>{
+      const cond = sec.dataset.showif ? JSON.parse(sec.dataset.showif) : null;
+      sec.style.display = _intEvalShowIf(cond) ? '' : 'none';
+    });
+    document.querySelectorAll('#intakeForm [data-fieldwrap]').forEach(w=>{
+      const cond = w.dataset.showif ? JSON.parse(w.dataset.showif) : null;
+      w.style.display = _intEvalShowIf(cond) ? '' : 'none';
+    });
+  }
+
+  function intakeFieldHtml(f, val){
+    const id = 'intake-'+f.id;
+    const showif = f.showIf ? ` data-showif='${JSON.stringify(f.showIf)}'` : '';
+    const wide = (f.type==='textarea'||f.type==='multiselect') ? 'grid-column:1/-1;' : '';
+    const req = f.required ? ' <span style="color:var(--accent)">*</span>' : '';
+    const unit = f.unit ? ` <span style="color:var(--text-muted)">· ${_intEsc(f.unit)}</span>` : '';
+    const v = (val!==undefined && val!==null && val!=='') ? val : (f.default!==undefined ? f.default : '');
+    let control='';
+    if(f.type==='select'){
+      control = `<select id="${id}" class="input-field"><option value="">-- Seleccionar --</option>${_intOptions(f.options, v)}</select>`;
+    } else if(f.type==='textarea'){
+      control = `<textarea id="${id}" class="input-field" rows="3" placeholder="${_intEsc(f.placeholder||'')}">${_intEsc(v)}</textarea>`;
+    } else if(f.type==='number'){
+      const mn = f.min!=null?` min="${f.min}"`:''; const mx = f.max!=null?` max="${f.max}"`:''; const st = f.step!=null?` step="${f.step}"`:'';
+      control = `<input type="number" id="${id}" class="input-field"${mn}${mx}${st} placeholder="${_intEsc(f.placeholder||'')}" value="${_intEsc(v)}">`;
+    } else if(f.type==='boolean'){
+      control = `<select id="${id}" class="input-field"><option value="">-- Seleccionar --</option><option value="true"${v===true?' selected':''}>Sí</option><option value="false"${v===false?' selected':''}>No</option></select>`;
+    } else if(f.type==='multiselect'){
+      const arr = Array.isArray(v)?v:[];
+      control = `<div id="${id}" class="flex flex-wrap gap-2">`+f.options.map(o=>{
+        const on = arr.includes(o);
+        return `<label class="intake-chip${on?' on':''}"><input type="checkbox" value="${_intEsc(o)}"${on?' checked':''} style="display:none">${_intEsc(o)}</label>`;
+      }).join('')+`</div>`;
+    } else {
+      control = `<input type="text" id="${id}" class="input-field" placeholder="${_intEsc(f.placeholder||'')}" value="${_intEsc(v)}">`;
+    }
+    return `<div data-fieldwrap data-fid="${f.id}"${showif} style="${wide}">
+      <label class="block text-xs mb-1" style="color:var(--text-muted)">${_intEsc(f.label)}${req}${unit}</label>
+      ${control}
+      ${f.nota?`<p style="font-size:11px;margin-top:4px;color:var(--text-muted);line-height:1.4">${_intEsc(f.nota)}</p>`:''}
+    </div>`;
+  }
+
+  function renderIntakeForm(data){
+    data = data || {};
+    let html = '';
+    INTAKE_SCHEMA.sections.forEach(sec=>{
+      const secShowIf = sec.showIf ? ` data-showif='${JSON.stringify(sec.showIf)}'` : '';
+      html += `<div class="card p-4 mb-4 intake-section" data-secid="${sec.id}"${secShowIf}>`;
+      html += `<h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">${_intEsc(sec.titulo)}</h3>`;
+      if(sec.nota) html += `<p class="text-xs mb-3" style="color:var(--text-muted)">${_intEsc(sec.nota)}</p>`;
+      html += `<div class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">`;
+      sec.fields.forEach(f=>{ html += intakeFieldHtml(f, data[f.id]); });
+      html += `</div></div>`;
+    });
+    document.getElementById('intakeForm').innerHTML = html;
+    applyIntakeVisibility();
+  }
+
+  function collectIntake(){
+    const out = {};
+    Object.keys(INTAKE_FIELDS).forEach(fid=>{
+      if(!document.querySelector(`#intakeForm [data-fid="${fid}"]`)) return;
+      const v = intakeVal(fid);
+      if(v===null || v==='' || (Array.isArray(v)&&v.length===0)) return;
+      out[fid] = v;
+    });
+    return out;
+  }
+
+  function validateIntake(){
+    const missing = [];
+    document.querySelectorAll('#intakeForm [data-fieldwrap]').forEach(w=>{
+      if(w.style.display==='none') return;
+      const sec = w.closest('.intake-section');
+      if(sec && sec.style.display==='none') return;
+      const f = INTAKE_FIELDS[w.dataset.fid];
+      if(!f || !f.required) return;
+      const v = intakeVal(f.id);
+      if(v===null || v==='' || (Array.isArray(v)&&v.length===0)) missing.push(f.label);
+    });
+    return missing;
+  }
+
+  async function loadIntakeClients(){
+    if(!currentCoach) return;
+    const sel = document.getElementById('intakeClientSelect');
+    if(!sel) return;
+    const prev = sel.value;
+    const snap = await getDocs(query(collection(db,'clients'), where('coachId','==',currentCoach.uid)));
+    sel.innerHTML = '<option value="">-- Selecciona cliente --</option>';
+    snap.forEach(d=>{ const c=d.data(); sel.innerHTML += `<option value="${d.id}">${_intEsc(c.displayName||c.email||d.id)}</option>`; });
+    if(prev) sel.value = prev;
+  }
+
+  async function loadIntakeForClient(clientId){
+    const form = document.getElementById('intakeForm');
+    const actions = document.getElementById('intakeActions');
+    const status = document.getElementById('intakeStatus');
+    if(!clientId){ form.innerHTML=''; actions.style.display='none'; status.textContent=''; _intakeCurrentClient=null; return; }
+    _intakeCurrentClient = clientId;
+    status.textContent = 'Cargando…';
+    try {
+      const ds = await getDoc(doc(db,'clients',clientId));
+      const cd = ds.exists()? ds.data() : {};
+      const intake = cd.intake && cd.intake.data ? cd.intake.data : {};
+      if(!intake.nombre && cd.displayName) intake.nombre = cd.displayName;
+      renderIntakeForm(intake);
+      actions.style.display = 'flex';
+      status.textContent = (cd.intake && cd.intake.updatedAt)
+        ? ('Última actualización: ' + new Date(cd.intake.updatedAt).toLocaleString('es-MX'))
+        : 'Sin evaluación previa — formulario nuevo.';
+    } catch(e){ status.textContent = 'Error al cargar: '+e.message; }
+  }
+
+  async function saveIntake(){
+    if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
+    const missing = validateIntake();
+    if(missing.length){ showToast('Faltan obligatorios: '+missing.slice(0,4).join(', ')+(missing.length>4?'…':''), true); return; }
+    const btn = document.getElementById('intakeSaveBtn'); btn.disabled=true; const t=btn.textContent; btn.textContent='Guardando…';
+    try {
+      const payload = { schemaVersion: INTAKE_SCHEMA.schemaVersion, updatedAt: Date.now(), data: collectIntake() };
+      await setDoc(doc(db,'clients',_intakeCurrentClient), { intake: payload }, { merge:true });
+      document.getElementById('intakeStatus').textContent = 'Guardado: ' + new Date(payload.updatedAt).toLocaleString('es-MX');
+      showToast('Evaluación guardada');
+    } catch(e){ showToast('Error: '+e.message, true); }
+    finally { btn.disabled=false; btn.textContent=t; }
+  }
+
+  function exportIntake(){
+    if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
+    const payload = { schemaVersion: INTAKE_SCHEMA.schemaVersion, clienteId: _intakeCurrentClient, data: collectIntake() };
+    const txt = JSON.stringify(payload, null, 2);
+    if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(()=>showToast('JSON copiado al portapapeles')).catch(()=>showToast('No se pudo copiar', true)); }
+    else showToast('Portapapeles no disponible', true);
+  }
+
+  document.getElementById('intakeClientSelect').addEventListener('change', e=> loadIntakeForClient(e.target.value));
+  document.getElementById('intakeSaveBtn').addEventListener('click', saveIntake);
+  document.getElementById('intakeExportBtn').addEventListener('click', exportIntake);
+  document.getElementById('intakeNewClientBtn').addEventListener('click', ()=>{ if(typeof createClientModal==='function') createClientModal(); });
+  document.getElementById('intakeForm').addEventListener('change', (e)=>{
+    if(e.target.matches('.intake-chip input')) e.target.closest('.intake-chip').classList.toggle('on', e.target.checked);
+    applyIntakeVisibility();
+  });
+
   // Navegación entre secciones
-  const sections = ["dashboard","clientes","crearPlan","templates","catalogo","monitoreo","config"];
-  const sectionLabels = { dashboard:'Dashboard', clientes:'Clientes', crearPlan:'Crear Plan', templates:'Templates', catalogo:'Catálogo', monitoreo:'Monitoreo', config:'Config' };
+  const sections = ["dashboard","clientes","evaluacion","crearPlan","templates","catalogo","monitoreo","config"];
+  const sectionLabels = { dashboard:'Dashboard', clientes:'Clientes', evaluacion:'Evaluación', crearPlan:'Crear Plan', templates:'Templates', catalogo:'Catálogo', monitoreo:'Monitoreo', config:'Config' };
   function showSection(sectionId) {
     if (!sections.includes(sectionId)) return;
     sections.forEach(s => {
@@ -4917,6 +5180,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // Actualizar header mobile
     const hdr = document.getElementById('mobileHeaderSection');
     if (hdr) hdr.textContent = sectionLabels[sectionId] || sectionId;
+    if (sectionId === 'evaluacion') { try { loadIntakeClients(); } catch(_){} }
     // Scroll al inicio del contenido al cambiar sección en móvil
     if (window.innerWidth <= 768) {
       window.scrollTo({ top: 0, behavior: 'instant' });
