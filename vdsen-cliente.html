@@ -2720,6 +2720,16 @@ var _restEl = null;
 var _restEndMs = 0;
 var _restAlertFired = false;
 
+// ── Preferencia: temporizador de descanso activado/desactivado ──
+function isRestTimerDisabled() {
+  try { return localStorage.getItem('vdsen_timer_off') === '1'; } catch(e) { return false; }
+}
+function setRestTimerDisabled(off) {
+  try { localStorage.setItem('vdsen_timer_off', off ? '1' : '0'); } catch(e) {}
+  if (off) { try { stopRestTimer(); } catch(_){} }
+  try { renderPerfil(); } catch(_){}
+}
+
 // ── Beep usando AudioContext (sin archivo externo) ──
 function playTimerBeep() {
   try {
@@ -6175,6 +6185,8 @@ function saveUserNote(di, ei, text) {
 }
 
 function startRestTimer(seconds) {
+  // Si el cliente desactivó el temporizador, no mostrar overlay ni arrancar cuenta.
+  if (isRestTimerDisabled()) { try { stopRestTimer(); } catch(_){} return; }
   // Pedir permiso de notificaciones aquí (dentro de un onclick) para que
   // cuente como gesto de usuario — los navegadores bloquean el prompt si
   // se dispara sin interacción directa.
@@ -8504,6 +8516,20 @@ function renderPerfil() {
       </div>
     </div>
     <div style="padding:14px 4px 0">${supsHtml}</div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-title">AJUSTES</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <div style="font-size:22px;flex-shrink:0">⏱</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--tx);font-weight:700">Temporizador de descanso</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">${isRestTimerDisabled()?'Desactivado — no aparecerá el conteo entre series.':'Activado — cuenta el descanso tras cada serie.'}</div>
+        </div>
+        <button onclick="setRestTimerDisabled(${isRestTimerDisabled()?'false':'true'})" role="switch" aria-checked="${isRestTimerDisabled()?'false':'true'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isRestTimerDisabled()?'var(--bd)':'rgba(200,165,74,.5)'};background:${isRestTimerDisabled()?'var(--dk)':'var(--gold-gradient)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
+          <span style="position:absolute;top:2px;left:${isRestTimerDisabled()?'2px':'24px'};width:24px;height:24px;border-radius:50%;background:${isRestTimerDisabled()?'var(--mt)':'#0a0a0a'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
+        </button>
+      </div>
+    </div>
 
     <button onclick="openIntake()" style="width:100%;background:rgba(196,255,0,.08);border:1px solid rgba(196,255,0,.30);color:var(--accent);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">📋 FICHA DE EVALUACIÓN COMPLETA</button>
     <button onclick="showFAQModal()" style="width:100%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
