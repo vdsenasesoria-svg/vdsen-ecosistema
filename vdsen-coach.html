@@ -797,7 +797,44 @@ Cualquier duda me escribes. ¡Vamos con todo esta semana! 💪`;
   }
   window.buildAccessMessage = buildAccessMessage;
 
-  async function generateAccessMessage(clientId) {
+  // ── Mensaje de bienvenida: acceso + ficha inicial + fotos ──
+  function buildOnboardingMessage(client, password) {
+    const name = client.displayName || 'cliente';
+    const email = client.email || '';
+    const pass = password || '[CONTRASEÑA]';
+    return `¡Hola ${name}! 👋 Bienvenido/a al TEAM VDSEN.
+
+Para empezar necesito 2 cosas: que actives tu acceso a la app y que llenes tu *ficha inicial de evaluación*. Con eso diseño tu plan 100% personalizado.
+
+━━━━━━━━━━━━━
+1️⃣ TU ACCESO A LA APP
+🔗 Link: https://vdsen-ecosistema.vercel.app/cliente
+📧 Usuario (correo): ${email}
+🔑 Contraseña: ${pass}
+
+• Ábrelo desde tu celular (guárdalo en tu pantalla de inicio).
+• Ingresa con tu correo y contraseña.
+
+━━━━━━━━━━━━━
+2️⃣ TU FICHA INICIAL (importante)
+Dentro de la app:
+• Entra a la pestaña *Perfil*.
+• Toca *📋 Ficha de evaluación completa*.
+• Llena los campos marcados con * y guarda.
+
+Me da tus datos base, objetivo, nutrición y salud para armar tu plan. Tómate 5 minutos con calma.
+
+━━━━━━━━━━━━━
+3️⃣ TUS FOTOS 📸
+Envíame por aquí 3 fotos (frente, espalda y lateral), con buena luz, para tu análisis de composición corporal.
+
+📌 No compartas tu acceso con nadie.
+Cualquier duda me escribes. ¡Vamos con todo! 💪`;
+  }
+  window.buildOnboardingMessage = buildOnboardingMessage;
+
+  async function generateAccessMessage(clientId, mode) {
+    let _mode = mode === 'onboarding' ? 'onboarding' : 'access';
     try {
       const clientSnap = await getDoc(doc(db, 'clients', clientId));
       if (!clientSnap.exists()) { showToast('Cliente no encontrado', true); return; }
@@ -809,7 +846,11 @@ Cualquier duda me escribes. ¡Vamos con todo esta semana! 💪`;
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
       ov.innerHTML = `
         <div style="background:#141616;border:1px solid rgba(244,244,240,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
-          <h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">📩 Mensaje de acceso · ${client.displayName || 'cliente'}</h3>
+          <h3 id="_amTitle" style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px">📩 Mensaje · ${client.displayName || 'cliente'}</h3>
+          <div style="display:flex;gap:6px;margin-bottom:12px">
+            <button id="_amModeAccess" class="_amModeBtn" data-mode="access" style="flex:1;padding:8px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📩 Solo acceso</button>
+            <button id="_amModeOnb" class="_amModeBtn" data-mode="onboarding" style="flex:1;padding:8px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📋 Acceso + Ficha inicial</button>
+          </div>
           <label style="display:block;font-size:11px;color:#888;margin-bottom:4px">Contraseña a incluir en el mensaje</label>
           <input id="_amPass" type="text" value="${savedPass.replace(/"/g,'&quot;')}" placeholder="Escribe la contraseña del cliente" style="width:100%;margin-bottom:12px;padding:8px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.3);background:#0a0a0a;color:#eee;font-size:13px;box-sizing:border-box">
           <textarea readonly id="_amMsg" style="width:100%;height:260px;background:#0a0a0a;border:1px solid rgba(244,244,240,.2);border-radius:6px;color:#cfcfcf;padding:12px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box"></textarea>
@@ -823,7 +864,22 @@ Cualquier duda me escribes. ¡Vamos con todo esta semana! 💪`;
 
       const passInput = ov.querySelector('#_amPass');
       const msgArea = ov.querySelector('#_amMsg');
-      const refresh = () => { msgArea.value = buildAccessMessage(client, passInput.value.trim()); };
+      const titleEl = ov.querySelector('#_amTitle');
+      const refresh = () => {
+        msgArea.value = _mode === 'onboarding'
+          ? buildOnboardingMessage(client, passInput.value.trim())
+          : buildAccessMessage(client, passInput.value.trim());
+        titleEl.textContent = (_mode === 'onboarding' ? '📋 Acceso + Ficha inicial · ' : '📩 Mensaje de acceso · ') + (client.displayName || 'cliente');
+        ov.querySelectorAll('._amModeBtn').forEach(b => {
+          const on = b.dataset.mode === _mode;
+          b.style.border = on ? '1px solid #C4FF00' : '1px solid rgba(244,244,240,.25)';
+          b.style.background = on ? 'rgba(196,255,0,.15)' : 'transparent';
+          b.style.color = on ? '#C4FF00' : '#888';
+        });
+      };
+      ov.querySelectorAll('._amModeBtn').forEach(b => {
+        b.onclick = () => { _mode = b.dataset.mode; refresh(); };
+      });
       refresh();
       passInput.addEventListener('input', refresh);
       passInput.addEventListener('change', async () => {
@@ -3123,6 +3179,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <div class="flex gap-2 flex-wrap">
           <button onclick="sendCustomWhatsApp('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;cursor:pointer;font-weight:600">📲 WhatsApp</button>
           <button onclick="generateAccessMessage('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #F4F4F0;background:rgba(244,244,240,.15);color:#F4F4F0;cursor:pointer;font-weight:600">📩 Mensaje de acceso</button>
+          <button onclick="generateAccessMessage('${clientId}','onboarding')" class="text-xs px-3 py-1 rounded" style="border:1px solid #C4FF00;background:rgba(196,255,0,.15);color:#C4FF00;cursor:pointer;font-weight:600">📋 Acceso + Ficha inicial</button>
           <button onclick="editClientInfo('${clientId}')" class="text-[#F4F4F0] text-xs underline">✏️ Editar datos</button>
         </div>
       </div>
