@@ -238,9 +238,13 @@
     </div>
     <div id="intakeStatus" class="text-xs mb-4" style="color:var(--text-muted)"></div>
     <form id="intakeForm" autocomplete="off"></form>
-    <div id="intakeActions" class="flex gap-2 mt-2 flex-wrap" style="display:none">
+    <div id="intakeActions" class="flex gap-2 mt-2 flex-wrap items-center" style="display:none">
       <button type="button" id="intakeSaveBtn" class="btn-primary">💾 Guardar evaluación</button>
-      <button type="button" id="intakeExportBtn" class="btn-secondary text-sm">📋 Copiar JSON</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
+      <span class="text-xs" style="color:var(--text-muted)">Extraer:</span>
+      <button type="button" id="intakeCopyTxt" class="btn-secondary text-sm" title="Texto plano — menos tokens/créditos">📄 TXT</button>
+      <button type="button" id="intakeCopyMd" class="btn-secondary text-sm" title="Markdown — para Notion/documentos">📝 MD</button>
+      <button type="button" id="intakeCopyJson" class="btn-secondary text-sm" title="JSON estructurado — para el motor/skill">🧩 JSON</button>
     </div>
   </div>
   <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
@@ -5122,14 +5126,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _intakeCurrentClient = clientId;
     status.textContent = 'Cargando…';
     try {
-      const ds = await getDoc(doc(db,'clients',clientId));
-      const cd = ds.exists()? ds.data() : {};
-      const intake = cd.intake && cd.intake.data ? cd.intake.data : {};
+      const cd = (await getDoc(doc(db,'clients',clientId))).data() || {};
+      // Fuente única: fichas_onboarding/{uid} (lecto-escribible por coach y cliente)
+      const fs = await getDoc(doc(db,'fichas_onboarding',clientId));
+      const ficha = fs.exists()? fs.data() : null;
+      // Fallback de migración: intake antiguo guardado en clients/{uid}.intake
+      const legacy = (cd.intake && cd.intake.data) ? cd.intake : null;
+      const src = (ficha && ficha.data) ? ficha : legacy;
+      const intake = (src && src.data) ? { ...src.data } : {};
       if(!intake.nombre && cd.displayName) intake.nombre = cd.displayName;
       renderIntakeForm(intake);
       actions.style.display = 'flex';
-      status.textContent = (cd.intake && cd.intake.updatedAt)
-        ? ('Última actualización: ' + new Date(cd.intake.updatedAt).toLocaleString('es-MX'))
+      status.textContent = (src && src.updatedAt)
+        ? ('Última actualización: ' + new Date(src.updatedAt).toLocaleString('es-MX') + (src.updatedBy? ' · por '+(src.updatedBy==='client'?'el cliente':'ti') : ''))
         : 'Sin evaluación previa — formulario nuevo.';
     } catch(e){ status.textContent = 'Error al cargar: '+e.message; }
   }
@@ -5140,25 +5149,54 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if(missing.length){ showToast('Faltan obligatorios: '+missing.slice(0,4).join(', ')+(missing.length>4?'…':''), true); return; }
     const btn = document.getElementById('intakeSaveBtn'); btn.disabled=true; const t=btn.textContent; btn.textContent='Guardando…';
     try {
-      const payload = { schemaVersion: INTAKE_SCHEMA.schemaVersion, updatedAt: Date.now(), data: collectIntake() };
-      await setDoc(doc(db,'clients',_intakeCurrentClient), { intake: payload }, { merge:true });
-      document.getElementById('intakeStatus').textContent = 'Guardado: ' + new Date(payload.updatedAt).toLocaleString('es-MX');
+      const payload = { schemaVersion: INTAKE_SCHEMA.schemaVersion, updatedAt: Date.now(), updatedBy: 'coach', data: collectIntake() };
+      await setDoc(doc(db,'fichas_onboarding',_intakeCurrentClient), payload, { merge:true });
+      document.getElementById('intakeStatus').textContent = 'Guardado: ' + new Date(payload.updatedAt).toLocaleString('es-MX') + ' · por ti';
       showToast('Evaluación guardada');
     } catch(e){ showToast('Error: '+e.message, true); }
     finally { btn.disabled=false; btn.textContent=t; }
   }
 
-  function exportIntake(){
+  function _intFmtValue(f, v){
+    if(f.type==='boolean') return v ? 'Sí' : 'No';
+    if(Array.isArray(v)) return v.join(', ');
+    return String(v) + (f.unit ? ' '+f.unit : '');
+  }
+  function intakeFormat(data, fmt){
+    const nombre = data.nombre || '—';
+    const parts = [];
+    if(fmt==='md') parts.push('# Intake VDSEN — '+nombre, '');
+    else parts.push('INTAKE VDSEN — '+nombre.toUpperCase(), '');
+    INTAKE_SCHEMA.sections.forEach(sec=>{
+      const filled = sec.fields.filter(f=>{ const v=data[f.id]; return !(v===undefined||v===null||v===''||(Array.isArray(v)&&v.length===0)); });
+      if(!filled.length) return;
+      if(fmt==='md') parts.push('## '+sec.titulo);
+      else parts.push('['+sec.titulo.toUpperCase()+']');
+      filled.forEach(f=>{
+        const val = _intFmtValue(f, data[f.id]);
+        if(fmt==='md') parts.push('- **'+f.label+':** '+val);
+        else parts.push(f.label+': '+val);
+      });
+      parts.push('');
+    });
+    return parts.join('\n').trim();
+  }
+  function intakeExport(fmt){
     if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
-    const payload = { schemaVersion: INTAKE_SCHEMA.schemaVersion, clienteId: _intakeCurrentClient, data: collectIntake() };
-    const txt = JSON.stringify(payload, null, 2);
-    if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(()=>showToast('JSON copiado al portapapeles')).catch(()=>showToast('No se pudo copiar', true)); }
+    const data = collectIntake();
+    let out, label;
+    if(fmt==='json'){ out = JSON.stringify({ schemaVersion: INTAKE_SCHEMA.schemaVersion, clienteId: _intakeCurrentClient, data }, null, 2); label='JSON'; }
+    else if(fmt==='md'){ out = intakeFormat(data,'md'); label='Markdown'; }
+    else { out = intakeFormat(data,'txt'); label='TXT'; }
+    if(navigator.clipboard){ navigator.clipboard.writeText(out).then(()=>showToast(label+' copiado al portapapeles')).catch(()=>showToast('No se pudo copiar', true)); }
     else showToast('Portapapeles no disponible', true);
   }
 
   document.getElementById('intakeClientSelect').addEventListener('change', e=> loadIntakeForClient(e.target.value));
   document.getElementById('intakeSaveBtn').addEventListener('click', saveIntake);
-  document.getElementById('intakeExportBtn').addEventListener('click', exportIntake);
+  document.getElementById('intakeCopyTxt').addEventListener('click', ()=>intakeExport('txt'));
+  document.getElementById('intakeCopyMd').addEventListener('click', ()=>intakeExport('md'));
+  document.getElementById('intakeCopyJson').addEventListener('click', ()=>intakeExport('json'));
   document.getElementById('intakeNewClientBtn').addEventListener('click', ()=>{ if(typeof createClientModal==='function') createClientModal(); });
   document.getElementById('intakeForm').addEventListener('change', (e)=>{
     if(e.target.matches('.intake-chip input')) e.target.closest('.intake-chip').classList.toggle('on', e.target.checked);

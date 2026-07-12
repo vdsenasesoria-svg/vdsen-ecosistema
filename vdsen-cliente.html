@@ -282,6 +282,9 @@ button:active{opacity:.85}
 <div class="screen" id="scrOnboarding" style="background:var(--bk);overflow-y:auto;padding:0">
 </div>
 
+<div class="screen" id="scrIntake" style="background:var(--bk);overflow-y:auto;padding:0">
+</div>
+
 <div class="screen" id="scrApp">
 
   <!-- OFFLINE BANNER -->
@@ -1660,6 +1663,234 @@ async function guardarFicha() {
   }
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════
+// INTAKE / FICHA DE EVALUACIÓN COMPLETA (schema-driven)
+// Fuente única: fichas_onboarding/{uid} — lecto-escribible por cliente y coach
+// ══════════════════════════════════════════════════════════════════════════
+var CI_INTAKE_SCHEMA = {
+  "schemaVersion": "1.0",
+  "sections": [
+    { "id":"base", "titulo":"Datos base", "nota":"Compartidos por todos los módulos.", "fields":[
+      {"id":"nombre","label":"Nombre completo","type":"text","required":true},
+      {"id":"sexo","label":"Sexo","type":"select","options":["H","M"],"required":true},
+      {"id":"edad","label":"Edad","type":"number","unit":"años","required":true},
+      {"id":"peso_kg","label":"Peso actual","type":"number","unit":"kg","step":0.1,"required":true},
+      {"id":"talla_cm","label":"Talla","type":"number","unit":"cm","required":true},
+      {"id":"porcentaje_grasa","label":"% de grasa (si lo conoces)","type":"number","unit":"%","step":0.1,"required":false,"nota":"InBody 270S o M8-BIO. Si se deja vacío se estima por fotogrametría."},
+      {"id":"perfil","label":"Perfil farmacológico","type":"select","options":["natural","PED"],"required":true,"default":"natural","nota":"Define MRV, frecuencia, tolerancia al fallo, soporte hepático/lipídico y activa el módulo de farmacología."}
+    ]},
+    { "id":"entrenamiento", "titulo":"Entrenamiento", "fields":[
+      {"id":"nivel","label":"Nivel","type":"select","options":["principiante","intermedio","avanzado"],"required":true},
+      {"id":"dias_semana","label":"Días disponibles por semana","type":"number","unit":"días","min":1,"max":7,"required":true},
+      {"id":"duracion_sesion_min","label":"Duración por sesión","type":"number","unit":"min","required":true},
+      {"id":"gimnasio","label":"Gimnasio de referencia","type":"select","options":["San Diego","Bugambilias","otro"],"required":true,"nota":"Define el inventario de máquinas disponibles."},
+      {"id":"gimnasio_otro_maquinas","label":"¿Qué máquinas especializadas tiene tu gimnasio?","type":"textarea","required":false,"showIf":{"field":"gimnasio","equals":"otro"}},
+      {"id":"objetivo_mesociclo","label":"Objetivo del mesociclo","type":"select","options":["hipertrofia","definición","recomposición","deload"],"required":true},
+      {"id":"lesiones","label":"Lesiones o restricciones articulares","type":"textarea","required":false,"placeholder":"Ej: molestia lumbar, hombro derecho, rodilla…"},
+      {"id":"semana_actual_mesociclo","label":"Semana actual del mesociclo (si es continuación)","type":"number","min":1,"max":8,"required":false}
+    ]},
+    { "id":"nutricion", "titulo":"Nutrición", "fields":[
+      {"id":"actividad_pasos_dia","label":"Actividad no-entreno (pasos/día promedio)","type":"number","unit":"pasos","required":true,"default":8000},
+      {"id":"objetivo_calorico","label":"Objetivo calórico","type":"select","options":["superávit","mantenimiento","déficit"],"required":true},
+      {"id":"magnitud_ajuste_pct","label":"Magnitud del ajuste","type":"number","unit":"%","required":false,"nota":"% sobre mantenimiento. Vacío = default por objetivo.","showIf":{"field":"objetivo_calorico","notEquals":"mantenimiento"}},
+      {"id":"num_comidas","label":"Nº de comidas preferido","type":"number","min":2,"max":8,"required":true},
+      {"id":"horarios_comidas","label":"Horarios aproximados","type":"text","required":false,"placeholder":"Ej: 07:30 / 12:00 / 16:00 / 20:00"},
+      {"id":"restricciones_alimentarias","label":"Preferencias / restricciones","type":"multiselect","options":["ninguna","vegano","vegetariano","celíaco","intolerancia lactosa","otra"],"required":true},
+      {"id":"restriccion_otra","label":"Especifica la restricción","type":"text","required":false,"showIf":{"field":"restricciones_alimentarias","contains":"otra"}},
+      {"id":"presupuesto_alimentos","label":"Presupuesto semanal de alimentos (MXN)","type":"number","unit":"MXN","required":false},
+      {"id":"alimentos_disponibles","label":"Alimentos disponibles / preferidos","type":"textarea","required":false},
+      {"id":"fase_ciclo_menstrual","label":"Fase del ciclo menstrual","type":"select","options":["menstrual","folicular","ovulatoria","lútea","amenorrea","no aplica"],"required":false,"nota":"Para cálculo de EA y RED-S.","showIf":{"field":"sexo","equals":"M"}}
+    ]},
+    { "id":"suplementacion", "titulo":"Suplementación", "fields":[
+      {"id":"presupuesto_mensual_mxn","label":"Presupuesto mensual","type":"number","unit":"MXN","required":true},
+      {"id":"restricciones_suplementos","label":"Restricciones","type":"select","options":["ninguna","sin cafeína","sin estimulantes"],"required":true,"default":"ninguna"},
+      {"id":"objetivo_primario_supp","label":"Objetivo primario","type":"select","options":["rendimiento","recomposición","salud"],"required":true}
+    ]},
+    { "id":"farmacologia", "titulo":"Farmacología", "showIf":{"field":"perfil","equals":"PED"}, "nota":"Solo se muestra si el perfil es PED. Si faltan biomarcadores baseline, la prescripción opera en ceguera clínica.", "fields":[
+      {"id":"experiencia_peds","label":"Experiencia previa con PEDs","type":"select","options":["primer_ciclo","2_a_5_ciclos","mas_de_5_ciclos"],"required":true},
+      {"id":"objetivo_farmaco","label":"Objetivo y fase","type":"select","options":["off_season","pre_comp_inicial","pre_comp_final","peaking","pct","cruise"],"required":true},
+      {"id":"timeline_semanas","label":"Timeline disponible","type":"number","unit":"semanas","required":true},
+      {"id":"bio_hct","label":"Hematocrito (Hct)","type":"number","unit":"%","required":false},
+      {"id":"bio_alt","label":"ALT","type":"number","unit":"U/L","required":false},
+      {"id":"bio_ast","label":"AST","type":"number","unit":"U/L","required":false},
+      {"id":"bio_col_total","label":"Colesterol total","type":"number","unit":"mg/dL","required":false},
+      {"id":"bio_hdl","label":"HDL","type":"number","unit":"mg/dL","required":false},
+      {"id":"bio_ldl","label":"LDL","type":"number","unit":"mg/dL","required":false},
+      {"id":"bio_trigliceridos","label":"Triglicéridos","type":"number","unit":"mg/dL","required":false},
+      {"id":"bio_e2","label":"Estradiol (E2)","type":"number","unit":"pg/mL","required":false},
+      {"id":"bio_lh","label":"LH","type":"number","unit":"mUI/mL","required":false},
+      {"id":"bio_fsh","label":"FSH","type":"number","unit":"mUI/mL","required":false},
+      {"id":"bio_psa","label":"PSA","type":"number","unit":"ng/mL","required":false,"showIf":{"field":"sexo","equals":"H"}},
+      {"id":"bio_pa_sistolica","label":"PA sistólica","type":"number","unit":"mmHg","required":false},
+      {"id":"bio_pa_diastolica","label":"PA diastólica","type":"number","unit":"mmHg","required":false},
+      {"id":"bio_fc_reposo","label":"FC en reposo (AM)","type":"number","unit":"lpm","required":false},
+      {"id":"ecocardiograma_disponible","label":"¿Tienes ecocardiograma?","type":"boolean","required":true},
+      {"id":"ecg_disponible","label":"¿Tienes ECG?","type":"boolean","required":true},
+      {"id":"score_agatston","label":"Score de Agatston","type":"number","required":false,"nota":"Requerido si >35 años o >5 años de uso."},
+      {"id":"limitaciones","label":"Limitaciones / antecedentes","type":"multiselect","options":["ninguna","alopecia_familiar","acne_severo","antecedente_cardiovascular","antecedente_renal","antecedente_hepatico"],"required":true},
+      {"id":"estado_hormonal_femenino","label":"Estado hormonal / uso de anticonceptivos","type":"select","options":["ACO_levonorgestrel","ERT_transdermica","ninguno","menopausia"],"required":false,"nota":"Para soporte estrogénico obligatorio en mujeres con PEDs.","showIf":{"field":"sexo","equals":"M"}}
+    ]}
+  ]
+};
+var CI_FIELDS = {};
+CI_INTAKE_SCHEMA.sections.forEach(function(s){ s.fields.forEach(function(f){ CI_FIELDS[f.id]=f; }); });
+
+function ciEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function ciOpts(opts, cur){ return opts.map(function(o){ return '<option value="'+ciEsc(o)+'"'+(String(cur)===String(o)?' selected':'')+'>'+ciEsc(o)+'</option>'; }).join(''); }
+var CI_INP = "width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:16px;padding:12px;outline:none";
+
+function ciVal(fid){
+  var f = CI_FIELDS[fid]; if(!f) return null;
+  if(f.type==='multiselect'){ return Array.prototype.slice.call(document.querySelectorAll('#ci-'+fid+' input:checked')).map(function(c){return c.value;}); }
+  var el = document.getElementById('ci-'+fid); if(!el) return null;
+  if(f.type==='boolean') return el.value===''? null : (el.value==='true');
+  if(f.type==='number') return el.value===''? null : parseFloat(el.value);
+  return el.value;
+}
+function ciEvalShowIf(cond){
+  if(!cond) return true;
+  var cur = ciVal(cond.field);
+  if('equals' in cond) return cur === cond.equals;
+  if('notEquals' in cond) return cur !== cond.notEquals;
+  if('contains' in cond) return Array.isArray(cur) && cur.indexOf(cond.contains)>=0;
+  return true;
+}
+function ciApplyVisibility(){
+  document.querySelectorAll('#scrIntake [data-secid]').forEach(function(sec){
+    var cond = sec.dataset.showif ? JSON.parse(sec.dataset.showif) : null;
+    sec.style.display = ciEvalShowIf(cond) ? '' : 'none';
+  });
+  document.querySelectorAll('#scrIntake [data-fieldwrap]').forEach(function(w){
+    var cond = w.dataset.showif ? JSON.parse(w.dataset.showif) : null;
+    w.style.display = ciEvalShowIf(cond) ? '' : 'none';
+  });
+}
+function ciFieldHtml(f, val){
+  var id='ci-'+f.id;
+  var showif = f.showIf ? " data-showif='"+JSON.stringify(f.showIf)+"'" : '';
+  var req = f.required ? ' <span style="color:var(--accent)">*</span>' : '';
+  var unit = f.unit ? ' · '+ciEsc(f.unit) : '';
+  var v = (val!==undefined && val!==null && val!=='') ? val : (f.default!==undefined ? f.default : '');
+  var control='';
+  if(f.type==='select'){
+    control = '<select id="'+id+'" style="'+CI_INP+'"><option value="">-- Seleccionar --</option>'+ciOpts(f.options, v)+'</select>';
+  } else if(f.type==='textarea'){
+    control = '<textarea id="'+id+'" rows="3" placeholder="'+ciEsc(f.placeholder||'')+'" style="'+CI_INP+';resize:vertical;line-height:1.5">'+ciEsc(v)+'</textarea>';
+  } else if(f.type==='number'){
+    var mn=f.min!=null?' min="'+f.min+'"':''; var mx=f.max!=null?' max="'+f.max+'"':''; var st=f.step!=null?' step="'+f.step+'"':'';
+    control = '<input type="number" id="'+id+'" inputmode="decimal"'+mn+mx+st+' placeholder="'+ciEsc(f.placeholder||'')+'" value="'+ciEsc(v)+'" style="'+CI_INP+'">';
+  } else if(f.type==='boolean'){
+    control = '<select id="'+id+'" style="'+CI_INP+'"><option value="">-- Seleccionar --</option><option value="true"'+(v===true?' selected':'')+'>Sí</option><option value="false"'+(v===false?' selected':'')+'>No</option></select>';
+  } else if(f.type==='multiselect'){
+    var arr = Array.isArray(v)?v:[];
+    control = '<div id="'+id+'" style="display:flex;flex-wrap:wrap;gap:8px">'+f.options.map(function(o){
+      var on = arr.indexOf(o)>=0;
+      return '<label class="ci-chip'+(on?' on':'')+'" style="border:1px solid '+(on?'var(--accent)':'var(--bd)')+';color:'+(on?'var(--accent)':'var(--mt)')+';background:'+(on?'rgba(196,255,0,.08)':'transparent')+';border-radius:20px;padding:8px 14px;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" value="'+ciEsc(o)+'"'+(on?' checked':'')+' style="display:none">'+ciEsc(o)+'</label>';
+    }).join('')+'</div>';
+  } else {
+    control = '<input type="text" id="'+id+'" placeholder="'+ciEsc(f.placeholder||'')+'" value="'+ciEsc(v)+'" style="'+CI_INP+'">';
+  }
+  return '<div data-fieldwrap data-fid="'+f.id+'"'+showif+' style="margin-bottom:14px">'
+    + '<div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:.5px;margin-bottom:5px">'+ciEsc(f.label)+req+unit+'</div>'
+    + control
+    + (f.nota?'<div style="font-size:11px;color:var(--mt);margin-top:4px;line-height:1.4">'+ciEsc(f.nota)+'</div>':'')
+    + '</div>';
+}
+function ciRenderForm(data){
+  data = data || {};
+  var html = '';
+  CI_INTAKE_SCHEMA.sections.forEach(function(sec){
+    var secShowIf = sec.showIf ? " data-showif='"+JSON.stringify(sec.showIf)+"'" : '';
+    html += '<div data-secid="'+sec.id+'"'+secShowIf+' style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:14px">';
+    html += '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--tx);text-transform:uppercase;font-weight:800;margin-bottom:4px">'+ciEsc(sec.titulo)+'</div>';
+    if(sec.nota) html += '<div style="font-size:12px;color:var(--mt);margin-bottom:12px;line-height:1.5">'+ciEsc(sec.nota)+'</div>';
+    else html += '<div style="height:8px"></div>';
+    sec.fields.forEach(function(f){ html += ciFieldHtml(f, data[f.id]); });
+    html += '</div>';
+  });
+  document.getElementById('ciIntakeForm').innerHTML = html;
+  ciApplyVisibility();
+}
+function ciCollect(){
+  var out = {};
+  Object.keys(CI_FIELDS).forEach(function(fid){
+    if(!document.querySelector('#ciIntakeForm [data-fid="'+fid+'"]')) return;
+    var v = ciVal(fid);
+    if(v===null || v==='' || (Array.isArray(v)&&v.length===0)) return;
+    out[fid]=v;
+  });
+  return out;
+}
+function ciValidate(){
+  var missing = [];
+  document.querySelectorAll('#ciIntakeForm [data-fieldwrap]').forEach(function(w){
+    if(w.style.display==='none') return;
+    var sec = w.closest('[data-secid]');
+    if(sec && sec.style.display==='none') return;
+    var f = CI_FIELDS[w.dataset.fid];
+    if(!f || !f.required) return;
+    var v = ciVal(f.id);
+    if(v===null || v==='' || (Array.isArray(v)&&v.length===0)) missing.push(f.label);
+  });
+  return missing;
+}
+async function openIntake(){
+  var scr = document.getElementById('scrIntake');
+  scr.innerHTML =
+    '<div style="background:rgba(6,14,26,.97);border-bottom:1px solid var(--bd);padding:14px 18px;display:flex;align-items:center;gap:12px;position:-webkit-sticky;position:sticky;top:0;z-index:10">'
+    + '<button onclick="closeIntake()" style="background:none;border:1px solid var(--bd);color:var(--tx);font-size:16px;padding:6px 12px;cursor:pointer;border-radius:6px">←</button>'
+    + '<div style="font-family:var(--ff);font-size:18px;letter-spacing:2px;color:var(--tx)">FICHA DE EVALUACIÓN<span style="display:block;font-family:var(--fb);font-size:9px;letter-spacing:1.5px;color:var(--mt)">INTAKE VDSEN</span></div>'
+    + '</div>'
+    + '<div style="padding:16px 16px 120px">'
+    + '<div style="background:var(--card);border:1px solid var(--bd);border-left:2px solid var(--accent);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--mt);line-height:1.6">Completa tus datos para que tu coach afine tu plan. Los campos con <span style="color:var(--accent)">*</span> son obligatorios. Puedes volver y editarlos cuando quieras.</div>'
+    + '<div id="ciIntakeStatus" style="font-size:11px;color:var(--mt);margin-bottom:12px"></div>'
+    + '<form id="ciIntakeForm" autocomplete="off"></form>'
+    + '<button onclick="saveIntakeClient()" id="ciIntakeSave" style="width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:\'Big Shoulders Display\',var(--ff);font-weight:800;font-size:17px;letter-spacing:2px;border:none;border-radius:2px;cursor:pointer;margin-top:8px">💾 GUARDAR FICHA</button>'
+    + '<div id="ciIntakeErr" style="color:var(--red);font-size:13px;text-align:center;margin-top:8px;min-height:20px"></div>'
+    + '</div>';
+  showScreen('scrIntake');
+  window.scrollTo(0,0);
+  var data = {}; var meta = null;
+  try {
+    if (FB && USER) {
+      var fs = await FB.getDoc(FB.doc(FB.db,'fichas_onboarding',USER.uid));
+      if (fs.exists()) { var fd = fs.data(); if(fd.data){ data = fd.data; meta = fd; } }
+    }
+  } catch(e){}
+  if(!data.nombre && USER && USER.displayName) data.nombre = USER.displayName;
+  ciRenderForm(data);
+  var st = document.getElementById('ciIntakeStatus');
+  if(st) st.textContent = (meta && meta.updatedAt) ? ('Última actualización: '+new Date(meta.updatedAt).toLocaleString('es-MX')) : 'Ficha nueva — aún sin guardar.';
+  var form = document.getElementById('ciIntakeForm');
+  form.addEventListener('change', function(e){
+    if(e.target.matches('.ci-chip input')){
+      var lab = e.target.closest('.ci-chip'); var on = e.target.checked;
+      lab.classList.toggle('on', on);
+      lab.style.borderColor = on?'var(--accent)':'var(--bd)';
+      lab.style.color = on?'var(--accent)':'var(--mt)';
+      lab.style.background = on?'rgba(196,255,0,.08)':'transparent';
+    }
+    ciApplyVisibility();
+  });
+}
+function closeIntake(){ showScreen('scrApp'); }
+async function saveIntakeClient(){
+  var err = document.getElementById('ciIntakeErr');
+  err.textContent = '';
+  var missing = ciValidate();
+  if(missing.length){ err.textContent = '⚠ Faltan: '+missing.slice(0,5).join(', ')+(missing.length>5?'…':''); window.scrollTo({top:0,behavior:'smooth'}); return; }
+  if(!FB || !USER){ err.textContent = '⚠ Sin conexión. Intenta de nuevo.'; return; }
+  var btn = document.getElementById('ciIntakeSave'); btn.disabled=true; var t=btn.textContent; btn.textContent='GUARDANDO…';
+  try {
+    var payload = { schemaVersion: CI_INTAKE_SCHEMA.schemaVersion, updatedAt: Date.now(), updatedBy: 'client', data: ciCollect() };
+    await FB.setDoc(FB.doc(FB.db,'fichas_onboarding',USER.uid), payload, { merge:true });
+    document.getElementById('ciIntakeStatus').textContent = 'Guardado: '+new Date(payload.updatedAt).toLocaleString('es-MX');
+    err.style.color = 'var(--accent)'; err.textContent = '✓ Ficha guardada. Tu coach ya puede verla.';
+  } catch(e){ err.style.color='var(--red)'; err.textContent = '⚠ Error al guardar: '+(e.message||e); }
+  finally { btn.disabled=false; btn.textContent=t; }
+}
+window.openIntake = openIntake; window.closeIntake = closeIntake; window.saveIntakeClient = saveIntakeClient;
 
 function renderEmpty() {
   const tabs = ['tabResumen','tabEntr','tabNutr','tabCheckin','tabPerfil'];
@@ -8274,6 +8505,7 @@ function renderPerfil() {
     </div>
     <div style="padding:14px 4px 0">${supsHtml}</div>
 
+    <button onclick="openIntake()" style="width:100%;background:rgba(196,255,0,.08);border:1px solid rgba(196,255,0,.30);color:var(--accent);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">📋 FICHA DE EVALUACIÓN COMPLETA</button>
     <button onclick="showFAQModal()" style="width:100%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
     <button class="pdf-btn" onclick="exportPDF()" style="margin-top:10px">⬇ DESCARGAR MI PLAN PDF</button>
     <button class="logout-btn" onclick="doLogout()">CERRAR SESIÓN</button>
