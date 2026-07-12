@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#0a0a0a">
 <title>VDSEN — Mi Plan v14</title>
 <link rel="manifest" href="manifest.json">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <!-- Service Worker (offline support) -->
 <script>
@@ -63,43 +63,44 @@ window.addEventListener('load',    _updateOfflineBanner);
 </script>
 <style>
 :root{
-  /* ══ VDSEN — Azul Marina + Oro Bruñido ══ */
-  --bg:#060E1A;                          /* Azul marina muy profundo */
-  --surface:#0C1626;                     /* Marina superficie */
-  --surface2:#091220;                    /* Marina profundo */
-  --border:rgba(201,168,76,.14);         /* Oro tenue */
-  --border-soft:rgba(201,168,76,.07);
-  --accent:#C9A84C;                      /* Oro Bruñido */
-  --accent2:#E8C97A;                     /* Oro claro */
-  --platinum:#9AAFC8;                    /* Platina con tinte azul — datos */
-  --grn:#3a9460;
-  --red:#c94a3a;
-  --ink:#1E5FA8;                         /* Azul acero — segundo color */
-  --ink-light:rgba(30,95,168,.14);       /* Azul para fondos */
-  --ink-border:rgba(30,95,168,.28);      /* Azul para bordes */
-  --gold:#C9A84C;
-  --tx:#E6DFD4;                          /* Crema cálida */
-  --mt:#4A5668;                          /* Muted azul-gris */
-  --mt2:#182030;
-  --input-bg:#040C18;
-  --gold-gradient:linear-gradient(135deg,#8A6B1E 0%,#C9A84C 35%,#E8C97A 55%,#C9A84C 75%,#8A6B1E 100%);
-  --shadow-gold:0 0 0 1px rgba(201,168,76,.16),0 4px 20px rgba(0,0,0,.7);
-  --shadow-card:0 2px 16px rgba(0,0,0,.6);
-  --shadow-ink:0 0 0 1px rgba(30,95,168,.2),0 4px 16px rgba(0,0,0,.5);
+  /* ══ VDSEN 2.0 — Off-Black · Hueso · Gris · Lima ══ */
+  --bg:#0A0A0A;                          /* Off-Black — nunca #000 */
+  --surface:#111111;                     /* Panel apenas elevado */
+  --surface2:#0D0D0D;                    /* Fondo profundo */
+  --border:rgba(244,244,240,.09);        /* Hairline hueso */
+  --border-soft:rgba(244,244,240,.045);
+  --accent:#C4FF00;                      /* Lima ácido — solo métricas + 1 CTA */
+  --accent2:#C4FF00;
+  --platinum:#A5A59E;                    /* Neutro secundario legible */
+  --grn:#6E9A6E;                         /* Verde apagado — estado hecho */
+  --red:#C0564A;                         /* Rojo apagado — error */
+  --ink:#6B6B66;                         /* Gris funcional (2º neutro) */
+  --ink-light:rgba(244,244,240,.05);
+  --ink-border:rgba(244,244,240,.16);
+  --gold:#F4F4F0;                        /* Compat: títulos/labels → hueso (no lima) */
+  --tx:#F4F4F0;                          /* Hueso — texto principal */
+  --mt:#6B6B66;                          /* Gris funcional — metadatos */
+  --mt2:#1A1A18;
+  --input-bg:#0E0E0E;
+  --gold-gradient:#C4FF00;               /* Sin degradados: lima sólido */
+  --shadow-gold:0 0 0 1px rgba(244,244,240,.07),0 6px 24px rgba(0,0,0,.55);
+  --shadow-card:0 1px 0 rgba(244,244,240,.02),0 4px 18px rgba(0,0,0,.5);
+  --shadow-ink:0 0 0 1px rgba(244,244,240,.06),0 4px 16px rgba(0,0,0,.5);
   /* legacy compat */
-  --bk:#060E1A;--dk:#091220;--card:#0C1626;--bd:rgba(201,168,76,.14);
-  --g2:#E8C97A;--gdim:rgba(200,165,74,.1);--blue:#1E5FA8;
+  --bk:#0A0A0A;--dk:#0D0D0D;--card:#111111;--bd:rgba(244,244,240,.09);
+  --g2:#C4FF00;--gdim:rgba(244,244,240,.06);--blue:#6B6B66;
   --ff:'Inter',system-ui,sans-serif;--fb:'Inter',system-ui,sans-serif;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
-body{background:var(--bg);background-image:radial-gradient(ellipse at 60% 0%,rgba(30,95,168,.08) 0%,transparent 55%);color:var(--tx);font-family:var(--ff);font-size:16px;line-height:1.5;display:flex;flex-direction:column}
+body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;line-height:1.5;display:flex;flex-direction:column}
 /* ── SCREENS ── */
 .screen{display:none;flex-direction:column;height:100%;overflow:hidden}
 .screen.on{display:flex}
 /* ── HEADER ── */
-.hdr{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;background:rgba(6,14,26,.92);border-bottom:1px solid var(--border);flex-shrink:0;position:-webkit-sticky;position:sticky;top:0;z-index:20;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 1px 0 rgba(201,168,76,.08),0 4px 24px rgba(0,0,0,.5)}
-.logo{font-family:var(--ff);font-size:17px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1}
+.hdr{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;background:rgba(6,14,26,.92);border-bottom:1px solid var(--border);flex-shrink:0;position:-webkit-sticky;position:sticky;top:0;z-index:20;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 1px 0 rgba(196,255,0,.08),0 4px 24px rgba(0,0,0,.5)}
+.logo{font-family:'Big Shoulders Display',var(--ff);font-size:22px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--tx);line-height:1}
+.logo::after{content:'';display:inline-block;width:5px;height:5px;background:var(--accent);transform:rotate(45deg);margin-left:5px;vertical-align:baseline}
 .logo em{display:block;font-family:var(--ff);font-style:normal;font-size:8px;letter-spacing:2.5px;color:var(--platinum);margin-top:3px;font-weight:500;text-transform:uppercase;-webkit-text-fill-color:var(--platinum)}
 .hdr-user{font-size:11px;color:var(--mt);text-align:right}
 .hdr-user strong{display:block;color:var(--tx);font-size:12px;font-weight:600;letter-spacing:.3px}
@@ -108,47 +109,48 @@ body{background:var(--bg);background-image:radial-gradient(ellipse at 60% 0%,rgb
 .scroll::-webkit-scrollbar{width:2px}
 .scroll::-webkit-scrollbar-thumb{background:var(--border)}
 /* ── BOTTOM NAV ── */
-.bnav{display:flex;background:rgba(6,14,26,.96);border-top:1px solid rgba(201,168,76,.12);flex-shrink:0;padding-bottom:env(safe-area-inset-bottom);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 -4px 32px rgba(0,0,0,.6)}
+.bnav{display:flex;background:rgba(6,14,26,.96);border-top:1px solid rgba(196,255,0,.12);flex-shrink:0;padding-bottom:env(safe-area-inset-bottom);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 -4px 32px rgba(0,0,0,.6)}
 .nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px;gap:3px;background:none;border:none;cursor:pointer;color:var(--mt);transition:color .15s;-webkit-tap-highlight-color:transparent;position:relative}
 .nb.on{color:var(--accent)}
-.nb.on::before{content:'';position:absolute;top:0;left:15%;right:15%;height:2.5px;background:var(--gold-gradient);border-radius:0 0 4px 4px;box-shadow:0 0 10px rgba(201,168,76,.5)}
-.nb-ico{font-size:22px;line-height:1;transition:transform .15s,filter .15s}
-.nb.on .nb-ico{filter:drop-shadow(0 0 5px rgba(201,168,76,.55));transform:scale(1.08)}
+.nb.on::before{content:'';position:absolute;top:0;left:15%;right:15%;height:2px;background:var(--accent)}
+.nb-ico{font-size:22px;line-height:1;transition:transform .15s}
+.nb.on .nb-ico{transform:scale(1.08)}
 .nb-lbl{font-size:9px;letter-spacing:.8px;font-weight:700;text-transform:uppercase;transition:color .15s}
 /* ── LOGIN ── */
-.login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:24px;background:radial-gradient(ellipse at 50% 20%,rgba(30,95,168,.1) 0%,transparent 60%),radial-gradient(ellipse at 50% 80%,rgba(201,168,76,.05) 0%,transparent 50%)}
+.login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:24px}
 .login-logo{text-align:center;line-height:1}
-.login-logo .vd-brand{font-size:52px;font-weight:900;letter-spacing:4px;text-transform:uppercase;background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:block;margin-bottom:4px}
+.login-logo .vd-brand{font-family:'Big Shoulders Display',var(--ff);font-size:60px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--tx);display:block;margin-bottom:4px}
+.login-logo .vd-brand::after{content:'';display:inline-block;width:9px;height:9px;background:var(--accent);transform:rotate(45deg);margin-left:8px;vertical-align:baseline}
 .login-logo .vd-descriptor{font-size:8.5px;letter-spacing:2.5px;color:var(--platinum);font-weight:500;text-transform:uppercase;display:block;margin-bottom:10px}
-.login-logo .vd-slogan{font-size:11px;letter-spacing:1.5px;color:var(--accent);font-style:italic;font-weight:600;display:block}
+.login-logo .vd-slogan{font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:500;display:block}
 .login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-gold)}
 .lf{display:flex;flex-direction:column;gap:6px}
 .lf label{font-size:10px;letter-spacing:1.5px;color:var(--platinum);font-weight:600;text-transform:uppercase}
 .lf input{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-family:var(--ff);font-size:16px;padding:13px 14px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
-.lf input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(201,168,76,.12)}
-.login-btn{background:var(--gold-gradient);color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;border:none;border-radius:10px;padding:15px;cursor:pointer;width:100%;box-shadow:0 2px 12px rgba(201,168,76,.25)}
+.lf input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(196,255,0,.12)}
+.login-btn{background:var(--accent);color:#0A0A0A;font-family:'Big Shoulders Display',var(--ff);font-size:17px;font-weight:800;letter-spacing:3px;text-transform:uppercase;border:none;border-radius:2px;padding:15px;cursor:pointer;width:100%}
 .login-btn:active{opacity:.9;transform:scale(.99)}
 .login-err{color:var(--red);font-size:12px;text-align:center;min-height:16px}
 .login-foot{font-size:10px;letter-spacing:1px;color:var(--mt);text-align:center;text-transform:uppercase}
 /* ── CARDS ── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;box-shadow:var(--shadow-card);position:relative;overflow:hidden}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--gold-gradient);opacity:.65}
-.card-title{font-family:'Bebas Neue',var(--ff);font-size:17px;font-weight:400;color:var(--tx);margin-bottom:4px;letter-spacing:.8px}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--border)}
+.card-title{font-family:'Big Shoulders Display',var(--ff);font-size:17px;font-weight:400;color:var(--tx);margin-bottom:4px;letter-spacing:.8px}
 .card-sub{font-size:11px;color:var(--platinum);letter-spacing:.5px}
 /* ── RESUMEN stats ── */
 .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
 .stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;position:relative;overflow:hidden}
-.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--gold-gradient);opacity:.4}
-.stat-val{font-family:'Bebas Neue',var(--ff);font-size:32px;font-weight:400;background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1;filter:drop-shadow(0 0 8px rgba(201,168,76,.25))}
+.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--border)}
+.stat-val{font-family:'Big Shoulders Display',var(--ff);font-size:34px;font-weight:800;color:var(--tx);line-height:1}
 .stat-lbl{font-size:9px;color:var(--platinum);letter-spacing:1.5px;margin-top:4px;text-transform:uppercase;font-weight:600}
 .week-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:16px}
 .wk{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 4px;text-align:center;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent}
-.wk.done{border-color:rgba(58,148,96,.4);background:rgba(58,148,96,.06)}
-.wk.active{border-color:var(--accent);background:rgba(201,168,76,.08);box-shadow:0 0 8px rgba(201,168,76,.12)}
-.wk.deload{border-color:rgba(68,136,204,.4);background:rgba(68,136,204,.06)}
-.wk-num{font-family:'Bebas Neue',var(--ff);font-size:24px;font-weight:400;color:var(--mt);line-height:1}
+.wk.done{border-color:rgba(110,154,110,.4);background:rgba(110,154,110,.06)}
+.wk.active{border-color:var(--accent);background:rgba(196,255,0,.08);box-shadow:0 0 8px rgba(196,255,0,.12)}
+.wk.deload{border-color:rgba(140,140,134,.4);background:rgba(140,140,134,.06)}
+.wk-num{font-family:'Big Shoulders Display',var(--ff);font-size:24px;font-weight:400;color:var(--mt);line-height:1}
 .wk.done .wk-num{color:var(--grn)}
-.wk.active .wk-num{background:var(--gold-gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.wk.active .wk-num{color:var(--accent)}
 .wk.deload .wk-num{color:var(--blue)}
 .wk-lbl{font-size:8px;color:var(--mt);letter-spacing:.8px;margin-top:3px;text-transform:uppercase;font-weight:600}
 .progress-bar{height:2px;background:var(--mt2);margin-bottom:14px;border-radius:99px}
@@ -156,26 +158,26 @@ body{background:var(--bg);background-image:radial-gradient(ellipse at 60% 0%,rgb
 /* ── EXERCISE (old classes kept for compat) ── */
 .exercise{padding:12px 14px;border-bottom:1px solid var(--border)}
 .exercise:last-child{border-bottom:none}
-.ex-name{font-family:'Bebas Neue',var(--ff);font-size:18px;font-weight:400;letter-spacing:.5px;color:var(--tx);margin-bottom:3px;display:flex;align-items:center;gap:6px}
-.ex-badge{font-size:10px;padding:2px 8px;background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.3);color:var(--gold);border-radius:10px}
+.ex-name{font-family:'Big Shoulders Display',var(--ff);font-size:18px;font-weight:400;letter-spacing:.5px;color:var(--tx);margin-bottom:3px;display:flex;align-items:center;gap:6px}
+.ex-badge{font-size:10px;padding:2px 8px;background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.3);color:var(--gold);border-radius:10px}
 .ex-params{font-size:12px;color:var(--mt);margin-bottom:8px}
 .ex-note{font-size:12px;color:var(--platinum);font-style:italic;margin-bottom:10px;padding:8px 12px;border-left:2px solid var(--ink-border);background:var(--ink-light);border-radius:0 8px 8px 0}
 .log-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px}
 .log-field{display:flex;flex-direction:column;gap:3px}
 .log-label{font-size:11px;letter-spacing:1px;color:var(--mt);font-weight:600;text-transform:uppercase}
-.log-input{background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-family:'Bebas Neue',var(--ff);font-size:26px;font-weight:400;letter-spacing:.5px;padding:11px 10px;outline:none;text-align:center;width:100%;transition:border-color .2s,box-shadow .2s;appearance:textfield}
-.log-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(201,168,76,.2),0 0 12px rgba(201,168,76,.12)}
+.log-input{background:var(--input-bg);border:1px solid var(--border);border-radius:2px;color:var(--tx);font-family:'Courier Prime',monospace;font-size:24px;font-weight:700;letter-spacing:0;padding:11px 10px;outline:none;text-align:center;width:100%;transition:border-color .2s,box-shadow .2s;appearance:textfield}
+.log-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(196,255,0,.2),0 0 12px rgba(196,255,0,.12)}
 .log-input::-webkit-outer-spin-button,.log-input::-webkit-inner-spin-button{-webkit-appearance:none}
 .prog-hint{font-size:12px;color:var(--grn);margin-top:4px;min-height:16px;text-align:center}
 .save-ex-btn{width:100%;padding:9px;background:var(--ink-light);border:1px solid var(--ink-border);border-radius:8px;color:var(--accent2);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;transition:background .15s}
-.save-ex-btn:hover{background:rgba(30,95,168,.22)}
-.save-ex-btn.saved{background:rgba(58,148,96,.1);border-color:rgba(58,148,96,.3);color:var(--grn)}
+.save-ex-btn:hover{background:rgba(244,244,240,.22)}
+.save-ex-btn.saved{background:rgba(110,154,110,.1);border-color:rgba(110,154,110,.3);color:var(--grn)}
 .log-input.auto-fill{border-color:var(--ink-border);background:var(--ink-light);color:var(--accent2)}
 .unit-toggle{display:flex;gap:3px}
 .unit-btn{background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--mt);font-size:11px;font-weight:700;letter-spacing:1px;padding:5px 12px;cursor:pointer;transition:all .15s}
 .unit-btn.active{background:var(--ink-light);border-color:var(--ink-border);color:var(--accent)}
 .ws-btn{padding:7px 14px;border:1px solid var(--border);border-radius:8px;background:none;color:var(--mt);font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;flex-shrink:0}
-.ws-btn.on{border-color:var(--accent);color:var(--accent);background:rgba(201,168,76,.07)}
+.ws-btn.on{border-color:var(--accent);color:var(--accent);background:rgba(196,255,0,.07)}
 .ws-btn.done{border-color:var(--grn);color:var(--grn)}
 .ws-btn.deload{border-color:var(--ink);color:var(--platinum)}
 /* ── NUTRICIÓN ── */
@@ -201,7 +203,7 @@ body{background:var(--bg);background-image:radial-gradient(ellipse at 60% 0%,rgb
 .sup-dose{font-size:16px;font-weight:700;color:var(--accent)}
 .sup-time{font-size:11px;color:var(--mt);margin-top:2px}
 /* ── TOAST ── */
-.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);background:rgba(10,18,32,.96);color:var(--tx);font-size:13px;font-weight:700;padding:11px 24px;border-radius:24px;border:1px solid rgba(201,168,76,.2);opacity:0;transition:all .22s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:999;white-space:nowrap;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);background:rgba(10,18,32,.96);color:var(--tx);font-size:13px;font-weight:700;padding:11px 24px;border-radius:24px;border:1px solid rgba(196,255,0,.2);opacity:0;transition:all .22s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:999;white-space:nowrap;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,.6)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.error{background:var(--red);color:#fff;border-color:var(--red)}
 /* ── LOADING ── */
@@ -218,13 +220,12 @@ body{background:var(--bg);background-image:radial-gradient(ellipse at 60% 0%,rgb
 .week-selector{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px}
 .day-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden}
 .day-hdr{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
-.day-name{font-family:'Bebas Neue',var(--ff);font-size:21px;font-weight:400;letter-spacing:.5px;color:var(--tx)}
+.day-name{font-family:'Big Shoulders Display',var(--ff);font-size:21px;font-weight:400;letter-spacing:.5px;color:var(--tx)}
 .day-muscles{font-size:11px;color:var(--mt);margin-top:2px}
 .day-body{display:none;border-top:1px solid var(--border)}
 .day-body.open{display:block}
-.done-session-btn{width:100%;padding:16px;background:var(--gold-gradient);color:#0A0A0A;font-weight:900;font-size:13px;letter-spacing:2.5px;text-transform:uppercase;border:none;border-radius:14px;cursor:pointer;margin-top:14px;box-shadow:0 4px 24px rgba(201,168,76,.35),0 0 0 0 rgba(201,168,76,.4);-webkit-tap-highlight-color:transparent;animation:sessionBtnPulse 2.5s ease-in-out infinite}
+.done-session-btn{width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:'Big Shoulders Display',var(--ff);font-weight:800;font-size:16px;letter-spacing:2.5px;text-transform:uppercase;border:none;border-radius:2px;cursor:pointer;margin-top:14px;-webkit-tap-highlight-color:transparent}
 .done-session-btn:active{opacity:.9;transform:scale(.98)}
-@keyframes sessionBtnPulse{0%,100%{box-shadow:0 4px 24px rgba(201,168,76,.35),0 0 0 0 rgba(201,168,76,.3)}60%{box-shadow:0 4px 24px rgba(201,168,76,.35),0 0 0 8px rgba(201,168,76,.0)}}
 .pdf-btn{width:100%;padding:13px;background:transparent;color:var(--red);font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase;border:1px solid var(--red);border-radius:10px;cursor:pointer;margin-bottom:10px}
 .logout-btn{width:100%;padding:12px;background:transparent;color:var(--mt);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--border);border-radius:10px;cursor:pointer}
 .logout-btn:hover,.logout-btn:active{border-color:var(--red);color:var(--red)}
@@ -237,8 +238,12 @@ body{background:var(--bg);background-image:radial-gradient(ellipse at 60% 0%,rgb
 button:active{opacity:.85}
 /* ── Scrollbar horizontal invisible ── */
 ::-webkit-scrollbar{width:2px;height:2px}
+/* ══ VDSEN 2.0 — bordes editoriales (≤2px), sin cajas redondeadas ══ */
+.login-card,.card,.stat,.wk,.meal-card,.day-card,.macro-chip,.log-input,.login-btn,.lf input,.unit-btn,.ws-btn,.save-ex-btn,.pdf-btn,.logout-btn,.done-session-btn,.ex-badge,.progress-bar,.pb-fill{border-radius:2px}
+/* Cifras técnicas siempre en Courier Prime (datos) */
+.stat-val,.mc-val,.food-grams,.sup-dose{font-family:'Courier Prime',monospace;font-weight:700}
 </style>
-<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&family=Bebas+Neue&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&family=Big+Shoulders+Display:wght@600;700;800&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -280,7 +285,7 @@ button:active{opacity:.85}
 <div class="screen" id="scrApp">
 
   <!-- OFFLINE BANNER -->
-  <div id="offlineBanner" style="display:none;background:#0A1525;border-bottom:1px solid rgba(30,95,168,.3);padding:6px 16px;font-size:11px;color:var(--platinum);letter-spacing:.06em;text-align:center;">
+  <div id="offlineBanner" style="display:none;background:#141414;border-bottom:1px solid var(--border);padding:6px 16px;font-size:11px;color:var(--platinum);letter-spacing:.06em;text-align:center;">
     SIN CONEXIÓN · Los registros se sincronizarán al reconectar
   </div>
 
@@ -458,279 +463,279 @@ const MACHINE_ICONS = {
 
   leg_curl_sentado:{nombre:'Curl Femoral Sentado',cat:'Máquina de Pierna',buscar:'seated leg curl machine',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="40" width="82" height="3" rx="1.5" fill="#c8a54a" opacity=".4"/>
-    <rect x="5" y="14" width="3.5" height="29" rx="1.5" fill="#c8a54a" opacity=".7"/>
-    <rect x="8.5" y="28" width="23" height="9" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="8.5" y="14" width="8" height="16" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="31" y1="37" x2="68" y2="37" stroke="#c8a54a" stroke-width="2" stroke-linecap="round"/>
-    <rect x="64" y="30" width="6" height="14" rx="3" fill="#c8a54a"/>
-    <rect x="74" y="12" width="9" height="24" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="74" y1="18" x2="83" y2="18" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="74" y1="22" x2="83" y2="22" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="74" y1="26" x2="83" y2="26" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="74" y1="30" x2="83" y2="30" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="40" width="82" height="3" rx="1.5" fill="#6b6b66" opacity=".4"/>
+    <rect x="5" y="14" width="3.5" height="29" rx="1.5" fill="#6b6b66" opacity=".7"/>
+    <rect x="8.5" y="28" width="23" height="9" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="8.5" y="14" width="8" height="16" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="31" y1="37" x2="68" y2="37" stroke="#6b6b66" stroke-width="2" stroke-linecap="round"/>
+    <rect x="64" y="30" width="6" height="14" rx="3" fill="#6b6b66"/>
+    <rect x="74" y="12" width="9" height="24" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="74" y1="18" x2="83" y2="18" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="74" y1="22" x2="83" y2="22" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="74" y1="26" x2="83" y2="26" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="74" y1="30" x2="83" y2="30" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   leg_curl_acostado:{nombre:'Curl Femoral Acostado',cat:'Máquina de Pierna',buscar:'lying leg curl machine',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="42" width="82" height="3" rx="1.5" fill="#c8a54a" opacity=".4"/>
-    <rect x="5" y="28" width="60" height="10" rx="4" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="4" y="22" width="8" height="20" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="62" y="24" width="5" height="14" rx="2.5" fill="#c8a54a"/>
-    <rect x="70" y="14" width="9" height="24" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="70" y1="20" x2="79" y2="20" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="70" y1="24" x2="79" y2="24" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="70" y1="28" x2="79" y2="28" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="42" width="82" height="3" rx="1.5" fill="#6b6b66" opacity=".4"/>
+    <rect x="5" y="28" width="60" height="10" rx="4" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="4" y="22" width="8" height="20" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="62" y="24" width="5" height="14" rx="2.5" fill="#6b6b66"/>
+    <rect x="70" y="14" width="9" height="24" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="70" y1="20" x2="79" y2="20" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="70" y1="24" x2="79" y2="24" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="70" y1="28" x2="79" y2="28" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   leg_extension:{nombre:'Extensión de Cuádriceps',cat:'Máquina de Pierna',buscar:'leg extension machine',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="40" width="82" height="3" rx="1.5" fill="#c8a54a" opacity=".4"/>
-    <rect x="5" y="14" width="3.5" height="29" rx="1.5" fill="#c8a54a" opacity=".7"/>
-    <rect x="8.5" y="28" width="23" height="9" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="8.5" y="14" width="8" height="16" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="28" y1="37" x2="38" y2="37" stroke="#c8a54a" stroke-width="2" stroke-linecap="round"/>
-    <line x1="38" y1="37" x2="68" y2="22" stroke="#c8a54a" stroke-width="2" stroke-linecap="round"/>
-    <rect x="64" y="16" width="6" height="12" rx="3" fill="#c8a54a"/>
-    <rect x="74" y="12" width="9" height="24" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="74" y1="18" x2="83" y2="18" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="74" y1="22" x2="83" y2="22" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="74" y1="26" x2="83" y2="26" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="40" width="82" height="3" rx="1.5" fill="#6b6b66" opacity=".4"/>
+    <rect x="5" y="14" width="3.5" height="29" rx="1.5" fill="#6b6b66" opacity=".7"/>
+    <rect x="8.5" y="28" width="23" height="9" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="8.5" y="14" width="8" height="16" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="28" y1="37" x2="38" y2="37" stroke="#6b6b66" stroke-width="2" stroke-linecap="round"/>
+    <line x1="38" y1="37" x2="68" y2="22" stroke="#6b6b66" stroke-width="2" stroke-linecap="round"/>
+    <rect x="64" y="16" width="6" height="12" rx="3" fill="#6b6b66"/>
+    <rect x="74" y="12" width="9" height="24" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="74" y1="18" x2="83" y2="18" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="74" y1="22" x2="83" y2="22" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="74" y1="26" x2="83" y2="26" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   hack_squat:{nombre:'Hack Squat / Péndulo',cat:'Máquina de Pierna',buscar:'hack squat machine SmartFit',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <line x1="10" y1="8" x2="30" y2="48" stroke="#c8a54a" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="58" y1="8" x2="78" y2="48" stroke="#c8a54a" stroke-width="2.5" stroke-linecap="round"/>
-    <rect x="3" y="44" width="82" height="5" rx="2" fill="#c8a54a" opacity=".5"/>
-    <rect x="18" y="42" width="52" height="4" rx="2" fill="#c8a54a" opacity=".35"/>
-    <rect x="14" y="28" width="60" height="10" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="24" y="8" width="40" height="8" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <circle cx="12" cy="8" r="3.5" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <circle cx="76" cy="8" r="3.5" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
+    <line x1="10" y1="8" x2="30" y2="48" stroke="#6b6b66" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="58" y1="8" x2="78" y2="48" stroke="#6b6b66" stroke-width="2.5" stroke-linecap="round"/>
+    <rect x="3" y="44" width="82" height="5" rx="2" fill="#6b6b66" opacity=".5"/>
+    <rect x="18" y="42" width="52" height="4" rx="2" fill="#6b6b66" opacity=".35"/>
+    <rect x="14" y="28" width="60" height="10" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="24" y="8" width="40" height="8" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <circle cx="12" cy="8" r="3.5" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <circle cx="76" cy="8" r="3.5" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
   </svg>`},
 
   leg_press:{nombre:'Prensa de Piernas 45°',cat:'Máquina de Pierna',buscar:'45 degree leg press machine',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="50" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <line x1="20" y1="44" x2="55" y2="12" stroke="#c8a54a" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
-    <line x1="30" y1="44" x2="65" y2="12" stroke="#c8a54a" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
-    <rect x="52" y="8" width="34" height="20" rx="3" fill="#c8a54a" opacity=".85"/>
-    <rect x="5" y="28" width="30" height="16" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="3" y="36" width="8" height="12" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
+    <rect x="3" y="44" width="50" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <line x1="20" y1="44" x2="55" y2="12" stroke="#6b6b66" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
+    <line x1="30" y1="44" x2="65" y2="12" stroke="#6b6b66" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
+    <rect x="52" y="8" width="34" height="20" rx="3" fill="#6b6b66" opacity=".85"/>
+    <rect x="5" y="28" width="30" height="16" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="3" y="36" width="8" height="12" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
   </svg>`},
 
   hip_thrust:{nombre:'Hip Thrust / Máquina Glúteo',cat:'Máquina de Glúteos',buscar:'hip thrust machine glute',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="10" y="30" width="68" height="14" rx="4" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="10" y="30" width="68" height="5" rx="2" fill="#c8a54a" opacity=".25"/>
-    <rect x="6" y="24" width="12" height="20" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="70" y="24" width="12" height="20" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="20" y="14" width="48" height="9" rx="4" fill="#c8a54a"/>
-    <rect x="16" y="10" width="8" height="14" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="64" y="10" width="8" height="14" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="10" y="30" width="68" height="14" rx="4" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="10" y="30" width="68" height="5" rx="2" fill="#6b6b66" opacity=".25"/>
+    <rect x="6" y="24" width="12" height="20" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="70" y="24" width="12" height="20" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="20" y="14" width="48" height="9" rx="4" fill="#6b6b66"/>
+    <rect x="16" y="10" width="8" height="14" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="64" y="10" width="8" height="14" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
   </svg>`},
 
   calf_standing:{nombre:'Pantorrilla de Pie',cat:'Máquina de Pantorrilla',buscar:'standing calf raise machine',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="36" y="8" width="16" height="38" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="22" y="40" width="44" height="6" rx="2" fill="#c8a54a" opacity=".6"/>
-    <rect x="20" y="20" width="48" height="9" rx="4" fill="#c8a54a"/>
-    <circle cx="44" cy="10" r="5" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="28" y="8" width="32" height="5" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="36" y="8" width="16" height="38" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="22" y="40" width="44" height="6" rx="2" fill="#6b6b66" opacity=".6"/>
+    <rect x="20" y="20" width="48" height="9" rx="4" fill="#6b6b66"/>
+    <circle cx="44" cy="10" r="5" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="28" y="8" width="32" height="5" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
   </svg>`},
 
   calf_seated:{nombre:'Pantorrilla Sentado',cat:'Máquina de Pantorrilla',buscar:'seated calf raise machine',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="5" y="14" width="3.5" height="33" rx="1.5" fill="#c8a54a" opacity=".7"/>
-    <rect x="8.5" y="28" width="24" height="8" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="8.5" y="14" width="8" height="16" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="24" y="36" width="40" height="6" rx="2" fill="#c8a54a" opacity=".6"/>
-    <rect x="20" y="24" width="48" height="9" rx="3" fill="#c8a54a"/>
-    <rect x="18" y="36" width="8" height="12" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="62" y="36" width="8" height="12" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="5" y="14" width="3.5" height="33" rx="1.5" fill="#6b6b66" opacity=".7"/>
+    <rect x="8.5" y="28" width="24" height="8" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="8.5" y="14" width="8" height="16" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="24" y="36" width="40" height="6" rx="2" fill="#6b6b66" opacity=".6"/>
+    <rect x="20" y="24" width="48" height="9" rx="3" fill="#6b6b66"/>
+    <rect x="18" y="36" width="8" height="12" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="62" y="36" width="8" height="12" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
   </svg>`},
 
   press_convergente:{nombre:'Press en Máquina Convergente',cat:'Máquina de Pecho',buscar:'chest press machine convergent',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="42" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="10" y="16" width="12" height="30" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="14" y="26" width="24" height="9" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="22" y1="22" x2="56" y2="12" stroke="#c8a54a" stroke-width="2" stroke-linecap="round"/>
-    <line x1="22" y1="38" x2="56" y2="48" stroke="#c8a54a" stroke-width="2" stroke-linecap="round"/>
-    <rect x="52" y="8" width="9" height="9" rx="2" fill="#c8a54a"/>
-    <rect x="52" y="43" width="9" height="9" rx="2" fill="#c8a54a"/>
-    <rect x="64" y="10" width="9" height="36" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="64" y1="18" x2="73" y2="18" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="64" y1="23" x2="73" y2="23" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="64" y1="28" x2="73" y2="28" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="64" y1="33" x2="73" y2="33" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="64" y1="38" x2="73" y2="38" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="42" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="10" y="16" width="12" height="30" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="14" y="26" width="24" height="9" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="22" y1="22" x2="56" y2="12" stroke="#6b6b66" stroke-width="2" stroke-linecap="round"/>
+    <line x1="22" y1="38" x2="56" y2="48" stroke="#6b6b66" stroke-width="2" stroke-linecap="round"/>
+    <rect x="52" y="8" width="9" height="9" rx="2" fill="#6b6b66"/>
+    <rect x="52" y="43" width="9" height="9" rx="2" fill="#6b6b66"/>
+    <rect x="64" y="10" width="9" height="36" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="64" y1="18" x2="73" y2="18" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="64" y1="23" x2="73" y2="23" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="64" y1="28" x2="73" y2="28" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="64" y1="33" x2="73" y2="33" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="64" y1="38" x2="73" y2="38" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   lat_pulldown:{nombre:'Jalón al Pecho / Lat Pulldown',cat:'Máquina de Espalda',buscar:'lat pulldown machine',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="38" y="6" width="12" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="4" y="6" width="80" height="6" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <circle cx="44" cy="9" r="4" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <line x1="24" y1="14" x2="44" y2="9" stroke="#c8a54a" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="64" y1="14" x2="44" y2="9" stroke="#c8a54a" stroke-width="1.5" stroke-linecap="round"/>
-    <rect x="16" y="12" width="16" height="5" rx="2" fill="#c8a54a"/>
-    <rect x="56" y="12" width="16" height="5" rx="2" fill="#c8a54a"/>
-    <rect x="70" y="10" width="9" height="30" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="70" y1="16" x2="79" y2="16" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="70" y1="20" x2="79" y2="20" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="70" y1="24" x2="79" y2="24" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="70" y1="28" x2="79" y2="28" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="38" y="6" width="12" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="4" y="6" width="80" height="6" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <circle cx="44" cy="9" r="4" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <line x1="24" y1="14" x2="44" y2="9" stroke="#6b6b66" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="64" y1="14" x2="44" y2="9" stroke="#6b6b66" stroke-width="1.5" stroke-linecap="round"/>
+    <rect x="16" y="12" width="16" height="5" rx="2" fill="#6b6b66"/>
+    <rect x="56" y="12" width="16" height="5" rx="2" fill="#6b6b66"/>
+    <rect x="70" y="10" width="9" height="30" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="70" y1="16" x2="79" y2="16" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="70" y1="20" x2="79" y2="20" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="70" y1="24" x2="79" y2="24" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="70" y1="28" x2="79" y2="28" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   cable_bajo:{nombre:'Polea Baja / Cable Bajo',cat:'Torre de Polea',buscar:'cable machine low pulley',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="20" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="6" y="6" width="14" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <circle cx="13" cy="40" r="4" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <line x1="17" y1="40" x2="78" y2="22" stroke="#c8a54a" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3,2"/>
-    <rect x="75" y="18" width="9" height="9" rx="2" fill="#c8a54a"/>
-    <line x1="6" y1="14" x2="20" y2="14" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="19" x2="20" y2="19" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="24" x2="20" y2="24" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="29" x2="20" y2="29" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="34" x2="20" y2="34" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="44" width="20" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="6" y="6" width="14" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <circle cx="13" cy="40" r="4" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <line x1="17" y1="40" x2="78" y2="22" stroke="#6b6b66" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3,2"/>
+    <rect x="75" y="18" width="9" height="9" rx="2" fill="#6b6b66"/>
+    <line x1="6" y1="14" x2="20" y2="14" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="19" x2="20" y2="19" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="24" x2="20" y2="24" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="29" x2="20" y2="29" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="34" x2="20" y2="34" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   cable_alto:{nombre:'Polea Alta / Cable Alto',cat:'Torre de Polea',buscar:'cable machine high pulley',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="20" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="6" y="6" width="14" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <circle cx="13" cy="10" r="4" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <line x1="17" y1="10" x2="78" y2="34" stroke="#c8a54a" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3,2"/>
-    <rect x="75" y="30" width="9" height="9" rx="2" fill="#c8a54a"/>
-    <line x1="6" y1="18" x2="20" y2="18" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="23" x2="20" y2="23" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="28" x2="20" y2="28" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="33" x2="20" y2="33" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="38" x2="20" y2="38" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="44" width="20" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="6" y="6" width="14" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <circle cx="13" cy="10" r="4" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <line x1="17" y1="10" x2="78" y2="34" stroke="#6b6b66" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3,2"/>
+    <rect x="75" y="30" width="9" height="9" rx="2" fill="#6b6b66"/>
+    <line x1="6" y1="18" x2="20" y2="18" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="23" x2="20" y2="23" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="28" x2="20" y2="28" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="33" x2="20" y2="33" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="38" x2="20" y2="38" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   cable_medio:{nombre:'Polea Media / Face Pull',cat:'Torre de Polea',buscar:'cable machine face pull',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="20" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="6" y="6" width="14" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <circle cx="13" cy="25" r="4" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <line x1="17" y1="25" x2="76" y2="25" stroke="#c8a54a" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3,2"/>
-    <rect x="73" y="19" width="9" height="12" rx="3" fill="#c8a54a"/>
-    <line x1="6" y1="14" x2="20" y2="14" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="32" x2="20" y2="32" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="6" y1="37" x2="20" y2="37" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="44" width="20" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="6" y="6" width="14" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <circle cx="13" cy="25" r="4" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <line x1="17" y1="25" x2="76" y2="25" stroke="#6b6b66" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3,2"/>
+    <rect x="73" y="19" width="9" height="12" rx="3" fill="#6b6b66"/>
+    <line x1="6" y1="14" x2="20" y2="14" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="32" x2="20" y2="32" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="6" y1="37" x2="20" y2="37" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   remo_maquina:{nombre:'Remo en Máquina / Chest Supported',cat:'Máquina de Espalda',buscar:'chest supported row machine',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="5" y="20" width="45" height="12" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="10" y1="20" x2="30" y2="8" stroke="#c8a54a" stroke-width="2" stroke-linecap="round"/>
-    <rect x="26" y="5" width="16" height="8" rx="2" fill="#c8a54a"/>
-    <line x1="50" y1="25" x2="78" y2="25" stroke="#c8a54a" stroke-width="2" stroke-linecap="round" stroke-dasharray="3,2"/>
-    <rect x="74" y="19" width="9" height="12" rx="3" fill="#c8a54a"/>
-    <rect x="5" y="32" width="20" height="16" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="55" y="12" width="9" height="28" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="55" y1="18" x2="64" y2="18" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="55" y1="23" x2="64" y2="23" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="55" y1="28" x2="64" y2="28" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="55" y1="33" x2="64" y2="33" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="5" y="20" width="45" height="12" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="10" y1="20" x2="30" y2="8" stroke="#6b6b66" stroke-width="2" stroke-linecap="round"/>
+    <rect x="26" y="5" width="16" height="8" rx="2" fill="#6b6b66"/>
+    <line x1="50" y1="25" x2="78" y2="25" stroke="#6b6b66" stroke-width="2" stroke-linecap="round" stroke-dasharray="3,2"/>
+    <rect x="74" y="19" width="9" height="12" rx="3" fill="#6b6b66"/>
+    <rect x="5" y="32" width="20" height="16" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="55" y="12" width="9" height="28" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="55" y1="18" x2="64" y2="18" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="55" y1="23" x2="64" y2="23" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="55" y1="28" x2="64" y2="28" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="55" y1="33" x2="64" y2="33" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   smith_machine:{nombre:'Máquina Smith',cat:'Rack Guiado',buscar:'smith machine gym',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="8" y="6" width="6" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="74" y="6" width="6" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="8" y="6" width="72" height="6" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="14" y="24" width="60" height="6" rx="2" fill="#c8a54a"/>
-    <rect x="6" y="24" width="10" height="6" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="72" y="24" width="10" height="6" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="10" y1="14" x2="14" y2="14" stroke="#c8a54a" stroke-width="1.5"/>
-    <line x1="74" y1="14" x2="78" y2="14" stroke="#c8a54a" stroke-width="1.5"/>
-    <line x1="10" y1="19" x2="14" y2="19" stroke="#c8a54a" stroke-width="1.5"/>
-    <line x1="74" y1="19" x2="78" y2="19" stroke="#c8a54a" stroke-width="1.5"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="8" y="6" width="6" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="74" y="6" width="6" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="8" y="6" width="72" height="6" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="14" y="24" width="60" height="6" rx="2" fill="#6b6b66"/>
+    <rect x="6" y="24" width="10" height="6" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="72" y="24" width="10" height="6" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="10" y1="14" x2="14" y2="14" stroke="#6b6b66" stroke-width="1.5"/>
+    <line x1="74" y1="14" x2="78" y2="14" stroke="#6b6b66" stroke-width="1.5"/>
+    <line x1="10" y1="19" x2="14" y2="19" stroke="#6b6b66" stroke-width="1.5"/>
+    <line x1="74" y1="19" x2="78" y2="19" stroke="#6b6b66" stroke-width="1.5"/>
   </svg>`},
 
   banco_libre:{nombre:'Banco Inclinado / Mancuernas',cat:'Banco y Peso Libre',buscar:'incline dumbbell bench',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <line x1="10" y1="40" x2="70" y2="16" stroke="#c8a54a" stroke-width="8" stroke-linecap="round" opacity=".25"/>
-    <line x1="10" y1="40" x2="70" y2="16" stroke="#c8a54a" stroke-width="5" stroke-linecap="round"/>
-    <rect x="8" y="36" width="8" height="12" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="58" y="34" width="12" height="12" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="22" y="10" width="18" height="6" rx="3" fill="#c8a54a" opacity=".8"/>
-    <rect x="20" y="12" width="22" height="3" rx="1.5" fill="#c8a54a"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <line x1="10" y1="40" x2="70" y2="16" stroke="#6b6b66" stroke-width="8" stroke-linecap="round" opacity=".25"/>
+    <line x1="10" y1="40" x2="70" y2="16" stroke="#6b6b66" stroke-width="5" stroke-linecap="round"/>
+    <rect x="8" y="36" width="8" height="12" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="58" y="34" width="12" height="12" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="22" y="10" width="18" height="6" rx="3" fill="#6b6b66" opacity=".8"/>
+    <rect x="20" y="12" width="22" height="3" rx="1.5" fill="#6b6b66"/>
   </svg>`},
 
   barra_libre:{nombre:'Barra Libre / Peso Muerto',cat:'Barra y Discos',buscar:'barbell deadlift gym',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="16" y="26" width="56" height="5" rx="2" fill="#c8a54a"/>
-    <ellipse cx="14" cy="28.5" rx="4" ry="12" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <ellipse cx="8" cy="28.5" rx="3" ry="9" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <ellipse cx="74" cy="28.5" rx="4" ry="12" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <ellipse cx="80" cy="28.5" rx="3" ry="9" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="16" y="26" width="56" height="5" rx="2" fill="#6b6b66"/>
+    <ellipse cx="14" cy="28.5" rx="4" ry="12" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <ellipse cx="8" cy="28.5" rx="3" ry="9" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <ellipse cx="74" cy="28.5" rx="4" ry="12" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <ellipse cx="80" cy="28.5" rx="3" ry="9" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
   </svg>`},
 
   mancuernas:{nombre:'Mancuernas',cat:'Peso Libre',buscar:'dumbbell curl bench',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="28" y="25" width="32" height="6" rx="3" fill="#c8a54a"/>
-    <ellipse cx="25" cy="28" rx="4" ry="10" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <ellipse cx="20" cy="28" rx="3" ry="7" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <ellipse cx="63" cy="28" rx="4" ry="10" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <ellipse cx="68" cy="28" rx="3" ry="7" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.5"/>
-    <rect x="8" y="12" width="15" height="7" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1"/>
-    <rect x="10" y="14" width="11" height="4" rx="1.5" fill="#c8a54a" opacity=".4"/>
-    <rect x="65" y="12" width="15" height="7" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1"/>
-    <rect x="67" y="14" width="11" height="4" rx="1.5" fill="#c8a54a" opacity=".4"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="28" y="25" width="32" height="6" rx="3" fill="#6b6b66"/>
+    <ellipse cx="25" cy="28" rx="4" ry="10" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <ellipse cx="20" cy="28" rx="3" ry="7" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <ellipse cx="63" cy="28" rx="4" ry="10" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <ellipse cx="68" cy="28" rx="3" ry="7" fill="#141414" stroke="#6b6b66" stroke-width="1.5"/>
+    <rect x="8" y="12" width="15" height="7" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1"/>
+    <rect x="10" y="14" width="11" height="4" rx="1.5" fill="#6b6b66" opacity=".4"/>
+    <rect x="65" y="12" width="15" height="7" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1"/>
+    <rect x="67" y="14" width="11" height="4" rx="1.5" fill="#6b6b66" opacity=".4"/>
   </svg>`},
 
   abductor_maquina:{nombre:'Abductor / Aductor de Cadera',cat:'Máquina de Glúteos',buscar:'hip abduction adduction machine',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="30" y="16" width="28" height="30" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="30" y="28" width="28" height="8" rx="2" fill="#c8a54a" opacity=".3"/>
-    <line x1="30" y1="26" x2="8" y2="38" stroke="#c8a54a" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="58" y1="26" x2="80" y2="38" stroke="#c8a54a" stroke-width="2.5" stroke-linecap="round"/>
-    <rect x="4" y="34" width="8" height="10" rx="3" fill="#c8a54a" opacity=".7"/>
-    <rect x="76" y="34" width="8" height="10" rx="3" fill="#c8a54a" opacity=".7"/>
-    <rect x="62" y="8" width="9" height="28" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="62" y1="14" x2="71" y2="14" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="62" y1="19" x2="71" y2="19" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="62" y1="24" x2="71" y2="24" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
-    <line x1="62" y1="29" x2="71" y2="29" stroke="#c8a54a" stroke-width=".5" opacity=".6"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="30" y="16" width="28" height="30" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="30" y="28" width="28" height="8" rx="2" fill="#6b6b66" opacity=".3"/>
+    <line x1="30" y1="26" x2="8" y2="38" stroke="#6b6b66" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="58" y1="26" x2="80" y2="38" stroke="#6b6b66" stroke-width="2.5" stroke-linecap="round"/>
+    <rect x="4" y="34" width="8" height="10" rx="3" fill="#6b6b66" opacity=".7"/>
+    <rect x="76" y="34" width="8" height="10" rx="3" fill="#6b6b66" opacity=".7"/>
+    <rect x="62" y="8" width="9" height="28" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="62" y1="14" x2="71" y2="14" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="62" y1="19" x2="71" y2="19" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="62" y1="24" x2="71" y2="24" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
+    <line x1="62" y1="29" x2="71" y2="29" stroke="#6b6b66" stroke-width=".5" opacity=".6"/>
   </svg>`},
 
   paralelas:{nombre:'Paralelas / Fondos',cat:'Peso Corporal',buscar:'dip bars gym parallel bars',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="10" y="6" width="6" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="72" y="6" width="6" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="6" y="6" width="76" height="8" rx="3" fill="#c8a54a" opacity=".9"/>
-    <rect x="26" y="6" width="6" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="56" y="6" width="6" height="40" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="10" y="6" width="6" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="72" y="6" width="6" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="6" y="6" width="76" height="8" rx="3" fill="#6b6b66" opacity=".9"/>
+    <rect x="26" y="6" width="6" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="56" y="6" width="6" height="40" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
   </svg>`},
 
   predicador:{nombre:'Banco Predicador / Scott',cat:'Banco de Bíceps',buscar:'preacher curl bench scott curl',
   svg:`<svg viewBox="0 0 88 56" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="44" width="82" height="4" rx="2" fill="#c8a54a" opacity=".4"/>
-    <rect x="30" y="30" width="28" height="14" rx="3" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <line x1="30" y1="30" x2="16" y2="8" stroke="#c8a54a" stroke-width="6" stroke-linecap="round" opacity=".35"/>
-    <line x1="30" y1="30" x2="16" y2="8" stroke="#c8a54a" stroke-width="4" stroke-linecap="round"/>
-    <line x1="58" y1="30" x2="72" y2="8" stroke="#c8a54a" stroke-width="6" stroke-linecap="round" opacity=".35"/>
-    <line x1="58" y1="30" x2="72" y2="8" stroke="#c8a54a" stroke-width="4" stroke-linecap="round"/>
-    <rect x="12" y="5" width="64" height="6" rx="3" fill="#c8a54a" opacity=".8"/>
-    <rect x="8" y="40" width="10" height="8" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
-    <rect x="70" y="40" width="10" height="8" rx="2" fill="#1a1f2e" stroke="#c8a54a" stroke-width="1.2"/>
+    <rect x="3" y="44" width="82" height="4" rx="2" fill="#6b6b66" opacity=".4"/>
+    <rect x="30" y="30" width="28" height="14" rx="3" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <line x1="30" y1="30" x2="16" y2="8" stroke="#6b6b66" stroke-width="6" stroke-linecap="round" opacity=".35"/>
+    <line x1="30" y1="30" x2="16" y2="8" stroke="#6b6b66" stroke-width="4" stroke-linecap="round"/>
+    <line x1="58" y1="30" x2="72" y2="8" stroke="#6b6b66" stroke-width="6" stroke-linecap="round" opacity=".35"/>
+    <line x1="58" y1="30" x2="72" y2="8" stroke="#6b6b66" stroke-width="4" stroke-linecap="round"/>
+    <rect x="12" y="5" width="64" height="6" rx="3" fill="#6b6b66" opacity=".8"/>
+    <rect x="8" y="40" width="10" height="8" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
+    <rect x="70" y="40" width="10" height="8" rx="2" fill="#141414" stroke="#6b6b66" stroke-width="1.2"/>
   </svg>`}
 };
 
@@ -1427,7 +1432,7 @@ function renderEspera() {
     + 'Tu coach recibió tu información y está preparando tu plan personalizado.<br><br>'
     + 'Te avisará cuando esté listo.'
     + '</div>'
-    + '<div style="background:var(--card);border:1px solid rgba(200,165,74,.3);padding:16px 20px;font-size:13px;color:var(--mt);line-height:1.7;max-width:320px">'
+    + '<div style="background:var(--card);border:1px solid rgba(107,107,102,.3);padding:16px 20px;font-size:13px;color:var(--mt);line-height:1.7;max-width:320px">'
     + '📸 Recuerda enviar tus fotos de evaluación por WhatsApp para que tu coach pueda completar el análisis.'
     + '</div>'
     + '<button onclick="doLogout()" style="margin-top:40px;background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
@@ -1449,10 +1454,10 @@ function renderOnboarding(user) {
     + '<div style="padding:20px 16px 60px">'
 
     // Bienvenida
-    + '<div style="background:var(--card);border:1px solid rgba(200,165,74,.3);padding:16px;margin-bottom:16px">'
+    + '<div style="background:var(--card);border:1px solid rgba(107,107,102,.3);padding:16px;margin-bottom:16px">'
     + '<div style="font-family:var(--ff);font-size:17px;color:var(--gold);letter-spacing:2px;margin-bottom:6px">BIENVENIDO AL TEAM</div>'
     + '<div style="font-size:14px;color:var(--mt);line-height:1.6">Llena esta ficha para que tu coach pueda diseñar tu plan personalizado. Solo toma 3 minutos.</div>'
-    + '<div style="margin-top:10px;padding:10px;background:rgba(200,165,74,.06);border-left:2px solid var(--gold);font-size:13px;color:var(--mt)">'
+    + '<div style="margin-top:10px;padding:10px;background:rgba(107,107,102,.06);border-left:2px solid var(--gold);font-size:13px;color:var(--mt)">'
     + '📸 Al terminar, envía tus fotos de evaluación (frente, espalda, lateral) directamente a WhatsApp con tu coach.'
     + '</div>'
     + '</div>'
@@ -1548,13 +1553,13 @@ function renderOnboarding(user) {
     + ob_textarea('ob_notas', 'ALGO MÁS QUE QUIERAS QUE TU COACH SEPA', 'Contexto adicional, metas específicas, horarios, etc.')
 
     // ── AVISO FOTOS ────────────────────────────────────────────
-    + '<div style="background:var(--card);border:1px solid rgba(200,165,74,.25);padding:14px;margin:16px 0">'
+    + '<div style="background:var(--card);border:1px solid rgba(107,107,102,.25);padding:14px;margin:16px 0">'
     + '<div style="font-family:var(--ff);font-size:13px;color:var(--gold);letter-spacing:1px;margin-bottom:6px">📸 FOTOS DE EVALUACIÓN</div>'
     + '<div style="font-size:13px;color:var(--mt);line-height:1.6">Envía tus fotos de evaluación (frente, espalda, lateral) directamente por <strong style="color:var(--tx)">WhatsApp a tu coach</strong> después de enviar esta ficha. Las fotos son necesarias para completar tu análisis de composición corporal.</div>'
     + '</div>'
 
     // ── BOTÓN ENVIAR ───────────────────────────────────────────
-    + '<button onclick="guardarFicha()" id="btnFicha" style="width:100%;padding:16px;background:linear-gradient(135deg,var(--gold),#7a5018);color:var(--bk);font-family:var(--ff);font-size:18px;letter-spacing:3px;border:none;cursor:pointer;margin-top:8px">'
+    + '<button onclick="guardarFicha()" id="btnFicha" style="width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:\'Big Shoulders Display\',var(--ff);font-weight:800;font-size:18px;letter-spacing:3px;border:none;border-radius:2px;cursor:pointer;margin-top:8px">'
     + '✓ ENVIAR FICHA A MI COACH'
     + '</button>'
     + '<div id="ob_error" style="color:var(--red);font-size:13px;text-align:center;margin-top:8px;min-height:20px"></div>'
@@ -1702,11 +1707,11 @@ function buildRezagadosWidget() {
   if (rezGrupos.length === 0) return '';
 
   var badgesHtml = rezGrupos.slice(0,6).map(function(g) {
-    return '<span style="background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.4);color:var(--gold);'
+    return '<span style="background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.4);color:var(--gold);'
       + 'font-family:var(--ff);font-size:12px;letter-spacing:1px;padding:5px 10px">' + g + '</span>';
   }).join('');
 
-  return '<div style="background:var(--card);border:1px solid rgba(200,165,74,.3);padding:14px;margin-top:8px">'
+  return '<div style="background:var(--card);border:1px solid rgba(107,107,102,.3);padding:14px;margin-top:8px">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
     +   '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold)">★ GRUPOS EN PROTOCOLO ESPECIALIZACIÓN</div>'
     + '</div>'
@@ -1879,7 +1884,7 @@ function buildHistorialWidget() {
 
     ciTrendHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
       + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">TENDENCIAS CHECK-IN</div>'
-      + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(200,165,74,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
+      + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(107,107,102,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
       + '<div>SEM</div><div style="text-align:center">PESO</div><div style="text-align:center">HRV</div><div style="text-align:center">WHO-5</div><div style="text-align:center">ENERGÍA</div>'
       + '</div>'
       + ciRows
@@ -1889,7 +1894,7 @@ function buildHistorialWidget() {
 
     // Dibujar sparklines después del render
     setTimeout(function() {
-      _drawSparkline(sparkId+'_peso', pesoArr, '#c8a54a');
+      _drawSparkline(sparkId+'_peso', pesoArr, '#6b6b66');
       _drawSparkline(sparkId+'_hrv', hrvArr, '#4488cc');
       _drawSparkline(sparkId+'_pesotrend', pesoTrendArr, '#6acc7e');
     }, 50);
@@ -1938,7 +1943,7 @@ function buildHistorialWidget() {
 
     medTrendHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
       + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">TENDENCIAS MEDIDAS (CM)</div>'
-      + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(200,165,74,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
+      + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(107,107,102,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
       + '<div>SEM</div><div style="text-align:center">CINTURA</div><div style="text-align:center">BRAZO</div><div style="text-align:center">PIERNA</div><div style="text-align:center">PECHO</div>'
       + '</div>'
       + medRows
@@ -1946,7 +1951,7 @@ function buildHistorialWidget() {
       + '</div>';
 
     setTimeout(function() {
-      _drawSparkline(medSparkId+'_cintura', cinturaArr, '#c8a54a');
+      _drawSparkline(medSparkId+'_cintura', cinturaArr, '#6b6b66');
       _drawSparkline(medSparkId+'_brazo', brazoArr, '#3a9460');
     }, 50);
   }
@@ -2031,7 +2036,7 @@ function renderResumen() {
       ${getTodaySummary()}
     </div>
 
-    <div class="card" style="margin-top:8px;border-color:${ciDone?'rgba(200,165,74,.4)':'rgba(201,74,58,.25)'}">
+    <div class="card" style="margin-top:8px;border-color:${ciDone?'rgba(107,107,102,.4)':'rgba(201,74,58,.25)'}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div class="card-title" style="margin-bottom:0">CHECK-IN SEM ${semActiva}</div>
         <span style="font-family:var(--ff);font-size:12px;color:${ciDone?'var(--grn)':'var(--red)'}">${ciDone?'✓ COMPLETADO':'⚠ PENDIENTE'}</span>
@@ -2050,7 +2055,7 @@ function renderResumen() {
           <div style="font-family:var(--ff);font-size:20px;color:${ci.peso?'var(--gold)':'var(--mt)'}">${ci.peso?ci.peso+' kg':'—'}</div>
         </div>
       </div>
-      <button onclick="goTab(3)" style="width:100%;padding:11px;background:var(--gdim);border:1px solid rgba(200,165,74,.3);color:var(--gold);font-family:var(--ff);font-size:15px;letter-spacing:2px;cursor:pointer">
+      <button onclick="goTab(3)" style="width:100%;padding:11px;background:var(--gdim);border:1px solid rgba(107,107,102,.3);color:var(--gold);font-family:var(--ff);font-size:15px;letter-spacing:2px;cursor:pointer">
         ${ciDone?'✏ ACTUALIZAR CHECK-IN →':'📊 IR A CHECK-IN →'}
       </button>
     </div>
@@ -2318,7 +2323,7 @@ function buildMesocicloReportWidget() {
   var pesoCol = pesoDelta === null ? 'var(--mt)' : pesoDelta < 0 ? 'var(--grn)' : pesoDelta > 0 ? 'var(--red)' : 'var(--mt)';
   var loadCol = avgLoadPct === null ? 'var(--mt)' : avgLoadPct > 0 ? 'var(--grn)' : 'var(--red)';
 
-  return '<div class="card" style="margin-top:8px;border-color:rgba(200,165,74,.4)">'+
+  return '<div class="card" style="margin-top:8px;border-color:rgba(107,107,102,.4)">'+
     '<div class="card-title">🏁 CIERRE DE MESOCICLO — '+CURRENT_WEEK+' SEMANAS</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">'+
       '<div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center">'+
@@ -2346,14 +2351,14 @@ function buildMesocicloReportWidget() {
 function getTodaySummary() {
   if (!PLAN || !PLAN.entrenamiento) return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
   const sesiones = getSesiones();
-  if (sesiones.length === 0) return `<button onclick="goTab(1)" style="width:100%;padding:9px;background:var(--gdim);border:1px solid rgba(200,165,74,.25);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:2px;cursor:pointer">VER ENTRENAMIENTO →</button>`;
+  if (sesiones.length === 0) return `<button onclick="goTab(1)" style="width:100%;padding:9px;background:var(--gdim);border:1px solid rgba(107,107,102,.25);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:2px;cursor:pointer">VER ENTRENAMIENTO →</button>`;
   const dow = new Date().getDay(); // 0=Dom
   const idx = dow === 0 ? sesiones.length - 1 : Math.min(dow - 1, sesiones.length - 1);
   const hoy = sesiones[idx];
   const ejercicios = (hoy.contenido||'').split('\n').filter(l=>/\d\s*[×x]\s*\d|RIR/i.test(l)).length;
   return `<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:4px">${hoy.dia}</div>
     <div style="font-size:10px;color:var(--mt)">${ejercicios} ejercicios</div>
-    <button onclick="selDia(${idx});goTab(1)" style="margin-top:10px;width:100%;padding:9px;background:var(--gdim);border:1px solid rgba(200,165,74,.25);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:2px;cursor:pointer">IR A SESIÓN DE HOY →</button>`;
+    <button onclick="selDia(${idx});goTab(1)" style="margin-top:10px;width:100%;padding:9px;background:var(--gdim);border:1px solid rgba(107,107,102,.25);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:2px;cursor:pointer">IR A SESIÓN DE HOY →</button>`;
 }
 
 function getSupToday() {
@@ -2702,20 +2707,20 @@ function _buildExNav(ejercicios, di) {
     var ssLabelTag = ssGroup + (ssPos || 1);
     if (isSS && ssPos > 1) return ''; // miembros no-primarios se muestran dentro del panel combinado
     // ── Estilos: cuando es SS sobreescribe colores para máxima visibilidad ──
-    var borderCol = isActive ? 'rgba(200,165,74,.75)' : allDone ? 'rgba(58,148,96,.4)' : 'rgba(255,255,255,.09)';
-    var bgCol = isActive ? 'rgba(200,165,74,.13)' : allDone ? 'rgba(58,148,96,.07)' : 'rgba(12,22,38,.9)';
-    var glowStyle = isActive ? 'box-shadow:0 0 16px rgba(200,165,74,.25),0 4px 12px rgba(0,0,0,.4);' : allDone ? 'box-shadow:0 0 10px rgba(58,148,96,.15);' : '';
+    var borderCol = isActive ? 'rgba(107,107,102,.75)' : allDone ? 'rgba(110,154,110,.4)' : 'rgba(255,255,255,.09)';
+    var bgCol = isActive ? 'rgba(107,107,102,.13)' : allDone ? 'rgba(110,154,110,.07)' : 'rgba(12,22,38,.9)';
+    var glowStyle = isActive ? 'box-shadow:0 0 16px rgba(107,107,102,.25),0 4px 12px rgba(0,0,0,.4);' : allDone ? 'box-shadow:0 0 10px rgba(110,154,110,.15);' : '';
     var borderWidth = '2px';
     if (isSS) {
-      borderCol = isActive ? '#cc66aa' : 'rgba(204,102,170,.55)';
-      bgCol = isActive ? 'rgba(204,102,170,.18)' : 'rgba(204,102,170,.08)';
+      borderCol = isActive ? '#6B6B66' : 'rgba(107,107,102,.55)';
+      bgCol = isActive ? 'rgba(107,107,102,.18)' : 'rgba(107,107,102,.08)';
       borderWidth = '2px';
-      glowStyle = isActive ? 'box-shadow:0 0 16px rgba(204,102,170,.3);' : '';
+      glowStyle = isActive ? 'box-shadow:0 0 16px rgba(107,107,102,.3);' : '';
     }
     var ssTagTop = isSS
-      ? '<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#cc66aa;color:#fff;font-size:8px;font-weight:900;letter-spacing:1px;padding:2px 7px;border-radius:8px;box-shadow:0 2px 6px rgba(204,102,170,.45);white-space:nowrap">🔁 '+ssLabelTag+'</div>'
+      ? '<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#6B6B66;color:#fff;font-size:8px;font-weight:900;letter-spacing:1px;padding:2px 7px;border-radius:8px;box-shadow:0 2px 6px rgba(107,107,102,.45);white-space:nowrap">🔁 '+ssLabelTag+'</div>'
       : '';
-    var nameColor = isSS && !isActive ? '#e9a8d4' : (isActive?'var(--accent)':allDone?'var(--grn)':'var(--mt)');
+    var nameColor = isSS && !isActive ? '#A5A59E' : (isActive?'var(--accent)':allDone?'var(--grn)':'var(--mt)');
     var numLabel = isActive
       ? '<div style="position:absolute;top:5px;right:5px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:#000;font-size:8px;font-weight:900;display:flex;align-items:center;justify-content:center">'+(ei+1)+'</div>'
       : '';
@@ -2747,8 +2752,8 @@ var TECHNIQUE_META = {
   myoreps:     { label:'MYO-REPS',     color:'#44BB88', icon:'🔂', def:'Serie de activación 12-20 reps hasta RIR 0-1. Descansa 15 s. Hacer mini-clusters de 3-5 reps con 15 s de descanso entre cada uno, hasta cumplir el total programado o fallo.' },
   'rest-pause':{ label:'REST-PAUSE',   color:'#e8a040', icon:'⏸', def:'Serie principal al fallo o cercana. Descansa 10-15 s respirando profundo y reanuda con el mismo peso hasta nuevo fallo. Repite por el número de mini-series indicadas.' },
   cluster:     { label:'CLUSTER',      color:'#4488cc', icon:'🧩', def:'Mini-series con descanso intra-serie (10-20 s) entre cada grupo de reps. Permite mantener velocidad e intensidad alta sin acumular tanta fatiga.' },
-  superset:    { label:'SUPERSERIE',   color:'#cc66aa', icon:'🔁', def:'Dos ejercicios encadenados SIN descanso entre ellos. Sólo descansa al terminar la pareja completa. Antagonistas o sinergistas según indique el coach.' },
-  giant:       { label:'GIGANTE',      color:'#cc66aa', icon:'🔁', def:'3+ ejercicios encadenados sin descanso entre ellos. Descanso completo al cerrar el bloque.' },
+  superset:    { label:'SUPERSERIE',   color:'#6B6B66', icon:'🔁', def:'Dos ejercicios encadenados SIN descanso entre ellos. Sólo descansa al terminar la pareja completa. Antagonistas o sinergistas según indique el coach.' },
+  giant:       { label:'GIGANTE',      color:'#6B6B66', icon:'🔁', def:'3+ ejercicios encadenados sin descanso entre ellos. Descanso completo al cerrar el bloque.' },
   amrap:       { label:'AMRAP',        color:'#FF4444', icon:'🔥', def:'As Many Reps As Possible: tantas reps como puedas con técnica limpia. Para al primer fallo técnico (ICS<7) — NO al fallo absoluto.' },
   tempo:       { label:'TEMPO',        color:'#888888', icon:'⏱', def:'Cada rep sigue una cadencia específica (excéntrica · pausa · concéntrica · pausa). Cuenta mentalmente cada fase.' },
   'iso-hold':  { label:'ISO-HOLD',     color:'#888888', icon:'🧱', def:'Mantén la posición de máxima tensión por el tiempo indicado al final (o inicio) de la serie. Cuenta en voz alta para no aguantar la respiración.' }
@@ -2765,15 +2770,15 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
   // ── 1) NOTA DE TÉCNICA DEL COACH (techniqueNote) — banner dorado prominente ──
   if (techNote) {
     html +=
-      '<div style="margin:0 0 12px;border-radius:12px;overflow:hidden;border:2px solid rgba(200,165,74,.5)">' +
-        '<div style="background:rgba(200,165,74,.18);padding:7px 12px;display:flex;align-items:center;gap:7px">' +
+      '<div style="margin:0 0 12px;border-radius:12px;overflow:hidden;border:2px solid rgba(107,107,102,.5)">' +
+        '<div style="background:rgba(107,107,102,.18);padding:7px 12px;display:flex;align-items:center;gap:7px">' +
           '<span style="font-size:16px">📌</span>' +
           '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:var(--accent)">INSTRUCCIÓN DEL COACH</span>' +
           (meta ? '<span style="margin-left:auto;font-size:10px;font-weight:800;padding:2px 8px;border-radius:5px;background:'+meta.color+';color:#fff">'+meta.icon+' '+meta.label+'</span>' : '') +
         '</div>' +
-        '<div style="padding:11px 14px;background:rgba(200,165,74,.06)">' +
+        '<div style="padding:11px 14px;background:rgba(107,107,102,.06)">' +
           '<div style="font-size:14px;font-weight:700;color:var(--tx);line-height:1.6">'+techNote+'</div>' +
-          (meta ? '<div style="font-size:11px;color:var(--mt);line-height:1.5;margin-top:8px;padding-top:8px;border-top:1px solid rgba(200,165,74,.2)"><span style="color:'+meta.color+';font-weight:700">Protocolo '+meta.label+':</span> '+meta.def+'</div>' : '') +
+          (meta ? '<div style="font-size:11px;color:var(--mt);line-height:1.5;margin-top:8px;padding-top:8px;border-top:1px solid rgba(107,107,102,.2)"><span style="color:'+meta.color+';font-weight:700">Protocolo '+meta.label+':</span> '+meta.def+'</div>' : '') +
         '</div>' +
       '</div>';
   } else if (meta) {
@@ -2851,10 +2856,10 @@ function _buildSupersetPartnerHtml(ejercicios, di, ei) {
       : (p.ex.nombre || p.ex.exerciseName || ('Ej '+(p.idx+1)));
     return nm;
   }).join(' · ');
-  return '<div style="margin:0 0 14px;padding:14px 16px;background:linear-gradient(135deg,rgba(204,102,170,.22),rgba(204,102,170,.10));border:2px solid #cc66aa;border-radius:14px;box-shadow:0 4px 18px rgba(204,102,170,.22)">'+
+  return '<div style="margin:0 0 14px;padding:14px 16px;background:linear-gradient(135deg,rgba(107,107,102,.22),rgba(107,107,102,.10));border:2px solid #6B6B66;border-radius:14px;box-shadow:0 4px 18px rgba(107,107,102,.22)">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'+
       '<span style="font-size:22px;line-height:1">🔁</span>'+
-      '<span style="font-size:14px;font-weight:900;letter-spacing:1.5px;color:#fff;background:#cc66aa;padding:4px 12px;border-radius:8px">SUPERSERIE · GRUPO '+grp.toUpperCase()+'</span>'+
+      '<span style="font-size:14px;font-weight:900;letter-spacing:1.5px;color:#fff;background:#6B6B66;padding:4px 12px;border-radius:8px">SUPERSERIE · GRUPO '+grp.toUpperCase()+'</span>'+
     '</div>'+
     '<div style="font-size:13px;color:#fff;line-height:1.55;margin-bottom:10px;font-weight:600">Encadena <span style="color:#ffd6ee;font-weight:800">SIN DESCANSO</span> con:</div>'+
     '<div style="font-size:15px;color:#fff;line-height:1.4;margin-bottom:6px;font-weight:800;padding:8px 12px;background:rgba(0,0,0,.25);border-left:3px solid #ffd6ee;border-radius:0 8px 8px 0">▸ '+partnerList+'</div>'+
@@ -2911,11 +2916,11 @@ function _buildExPanel(ejercicios, di) {
 
   // ── Contenedor externo
   var html =
-    '<div style="border:2px solid #cc66aa;border-radius:18px;overflow:hidden;margin-bottom:16px;'+
-         'box-shadow:0 6px 28px rgba(204,102,170,.25)">'+
+    '<div style="border:2px solid #6B6B66;border-radius:18px;overflow:hidden;margin-bottom:16px;'+
+         'box-shadow:0 6px 28px rgba(107,107,102,.25)">'+
 
     // Header del bloque SS
-    '<div style="background:linear-gradient(135deg,#9b3e88,#cc66aa);padding:13px 16px 11px">'+
+    '<div style="background:#161616;padding:13px 16px 11px">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">'+
         '<span style="font-size:20px">🔁</span>'+
         '<div>'+
@@ -2940,12 +2945,12 @@ function _buildExPanel(ejercicios, di) {
     var isLast = (i === ssMembers.length - 1);
     var stepNum = ssLabel(i);
     var stepLabel = isLast ? 'LUEGO DESCANSA' : 'SIN DESCANSO DESPUÉS';
-    var stepBg    = isLast ? 'rgba(204,102,170,.07)' : 'rgba(204,102,170,.12)';
-    var stepColor = isLast ? '#e07ac8' : '#cc66aa';
+    var stepBg    = isLast ? 'rgba(107,107,102,.07)' : 'rgba(107,107,102,.12)';
+    var stepColor = isLast ? '#e07ac8' : '#6B6B66';
 
     // Pastilla de paso
     html +=
-      '<div style="padding:7px 16px;background:'+stepBg+';border-top:1px solid rgba(204,102,170,.28);'+
+      '<div style="padding:7px 16px;background:'+stepBg+';border-top:1px solid rgba(107,107,102,.28);'+
            'display:flex;align-items:center;gap:8px">'+
         '<span style="font-size:22px;font-weight:900;color:'+stepColor+';line-height:1">'+stepNum+'</span>'+
         '<span style="font-size:10px;font-weight:800;letter-spacing:1.2px;color:'+stepColor+'">'+stepLabel+'</span>'+
@@ -2958,8 +2963,8 @@ function _buildExPanel(ejercicios, di) {
     // Puente "SIN DESCANSO" entre ejercicios
     if (!isLast) {
       html +=
-        '<div style="padding:11px 16px;background:linear-gradient(90deg,rgba(204,102,170,.22),rgba(204,102,170,.08));'+
-             'border-top:1px dashed rgba(204,102,170,.45);border-bottom:1px dashed rgba(204,102,170,.45);'+
+        '<div style="padding:11px 16px;background:linear-gradient(90deg,rgba(107,107,102,.22),rgba(107,107,102,.08));'+
+             'border-top:1px dashed rgba(107,107,102,.45);border-bottom:1px dashed rgba(107,107,102,.45);'+
              'display:flex;align-items:center;justify-content:center;gap:10px">'+
           '<span style="font-size:15px">⚡</span>'+
           '<span style="font-size:12px;font-weight:900;letter-spacing:1.5px;color:#ffd6ee">'+
@@ -2972,8 +2977,8 @@ function _buildExPanel(ejercicios, di) {
 
   // ── Footer: recordatorio de descanso
   html +=
-    '<div style="padding:10px 16px;background:rgba(200,165,74,.07);'+
-         'border-top:1px solid rgba(204,102,170,.3);display:flex;align-items:center;gap:8px">'+
+    '<div style="padding:10px 16px;background:rgba(107,107,102,.07);'+
+         'border-top:1px solid rgba(107,107,102,.3);display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:15px">⏸</span>'+
       '<span style="font-size:11px;font-weight:700;letter-spacing:1px;color:#ffe0a0">'+
         'PAREJA COMPLETA&thinsp;→&thinsp;AHORA DESCANSA'+
@@ -3110,25 +3115,25 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+nombre+'</div>'+
       // Nota del cliente — visible siempre cuando existe, editable al tocar
       (_exNoteInline
-        ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(200,165,74,.08);border-left:3px solid rgba(200,165,74,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_exNoteInline+'</div>'
+        ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_exNoteInline+'</div>'
         : '')+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
-        '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
+        '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
         '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">'+repsTarget+' REPS</span>'+
         '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px">RIR '+baseRIR+'</span>'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
-        '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
+        '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
         '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'+
         '<button onclick="showExModModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">⚙ Ajustar</button>'+
-        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(200,165,74,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(200,165,74,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
-        (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
-        (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(68,136,204,.1);border:1px solid rgba(68,136,204,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
+        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(107,107,102,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(107,107,102,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
+        (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
+        (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
       '</div>'+
       // Nota de sustitución (si existe)
       (_exSubData && _exSubData.nota
-        ? '<div style="margin-top:8px;padding:6px 10px;background:rgba(200,165,74,.06);border-left:3px solid rgba(200,165,74,.3);border-radius:0 6px 6px 0;font-size:11px;color:var(--mt);line-height:1.5">'+
+        ? '<div style="margin-top:8px;padding:6px 10px;background:rgba(107,107,102,.06);border-left:3px solid rgba(107,107,102,.3);border-radius:0 6px 6px 0;font-size:11px;color:var(--mt);line-height:1.5">'+
             '📝 '+_exSubData.nota+
           '</div>'
         : '')+
@@ -3153,7 +3158,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="font-size:9px;letter-spacing:1.5px;font-weight:700;color:var(--accent);margin-bottom:4px">📝 NOTA / MENSAJE AL COACH</div>'+
       '<textarea id="usernote_input_'+di+'_'+ei+'" placeholder="Ej: la rodilla molestó en la fase concéntrica, reduje carga a la mitad..."'+
         ' onblur="saveUserNote('+di+','+ei+',this.value)"'+
-        ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid rgba(200,165,74,.3);'+
+        ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid rgba(107,107,102,.3);'+
         'border-radius:8px;color:var(--tx);font-size:13px;padding:10px;outline:none;resize:vertical;min-height:60px;line-height:1.5">'+
         _noteVal+
       '</textarea>'+
@@ -3262,10 +3267,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           ? ((_epCargaRaw>0 ? 'BW + '+_epCargaFmt+' '+unit : 'Peso corporal')+' \u00d7 '+_expressEntry.reps+' reps')
           : (_epCargaFmt+' '+unit+' \u00d7 '+_expressEntry.reps+' reps'));
     setsHtml =
-      '<div style="background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.22);border-radius:14px;padding:14px 16px">'+
+      '<div style="background:rgba(110,154,110,.07);border:1px solid rgba(110,154,110,.22);border-radius:14px;padding:14px 16px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">\u2713 EJERCICIO REGISTRADO</div>'+
-          '<button onclick="clearExpressDone('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:4px 12px;border-radius:7px;cursor:pointer">\u270f Editar</button>'+
+          '<button onclick="clearExpressDone('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:4px 12px;border-radius:7px;cursor:pointer">\u270f Editar</button>'+
         '</div>'+
         '<div style="font-size:22px;font-weight:900;color:var(--tx);margin-bottom:4px">'+_epCargaDisplay+'</div>'+
         '<div style="font-size:12px;color:var(--mt)">'+_expressEntry.sets+' series \u00b7 RIR real '+_expressEntry.rir_last+' \u00b7 ICS '+(_expressEntry.ics||'\u2014')+' '+_epEmoji+'</div>'+
@@ -3293,7 +3298,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var _xDone = !!LOGS[_xKey];
       if (_xDone) {
         setsHtml +=
-          '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.18);border-radius:12px;margin-bottom:8px">'+
+          '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(110,154,110,.07);border:1px solid rgba(110,154,110,.18);border-radius:12px;margin-bottom:8px">'+
             '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">\u2713</div>'+
             '<div style="font-size:13px;font-weight:800;color:var(--grn);flex:1">SERIE '+(_xs+1)+'</div>'+
             '<span style="font-size:10px;color:var(--mt)">Completada</span>'+
@@ -3311,7 +3316,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       }
     }
     setsHtml +=
-      '<div style="background:rgba(200,165,74,.04);border:2px solid rgba(200,165,74,.3);border-radius:12px;padding:14px;margin-top:4px">'+
+      '<div style="background:rgba(107,107,102,.04);border:2px solid rgba(107,107,102,.3);border-radius:12px;padding:14px;margin-top:4px">'+
       '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px">'+
         'SERIE '+numSeries+(numSeries > 1 ? ' \u2014 \u00daLTIMA \u00b7 REGISTRA LOS DATOS' : ' \u2014 REGISTRA LOS DATOS')+
       '</div>'+
@@ -3342,7 +3347,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<input type="hidden" id="xpump_val_'+_expK+'" value="">'+
         '</div>'+
       '</div>'+
-      '<button onclick="markExpressDone('+di+','+ei+')" style="width:100%;padding:15px;border:none;border-radius:14px;cursor:pointer;background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(201,168,76,.35);-webkit-tap-highlight-color:transparent">\u2713 COMPLETAR EJERCICIO</button>'+
+      '<button onclick="markExpressDone('+di+','+ei+')" style="width:100%;padding:15px;border:none;border-radius:14px;cursor:pointer;background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.35);-webkit-tap-highlight-color:transparent">\u2713 COMPLETAR EJERCICIO</button>'+
       '</div>';
   } else {
   for (var s = 0; s < numSeries; s++) {
@@ -3391,7 +3396,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             ? ((parseFloat(saved.carga)>0 ? 'BW + '+saved.carga+' '+unit : 'Peso corporal')+' × '+saved.reps+' reps')
             : (saved.carga+' '+unit+' × '+saved.reps+' reps'));
       setsHtml += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;'+
-        'background:rgba(58,148,96,.07);border:1px solid rgba(58,148,96,.18);border-radius:12px;margin-bottom:8px">'+
+        'background:rgba(110,154,110,.07);border:1px solid rgba(110,154,110,.18);border-radius:12px;margin-bottom:8px">'+
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
@@ -3400,8 +3405,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
         '<button onclick="editSet(\''+key+'\')" title="Corregir esta serie" style="'+
-            'margin-left:auto;padding:6px 12px;border:1px solid rgba(200,165,74,.4);border-radius:8px;'+
-            'background:rgba(200,165,74,.08);color:var(--accent);font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">✏ Corregir</button>'+
+            'margin-left:auto;padding:6px 12px;border:1px solid rgba(107,107,102,.4);border-radius:8px;'+
+            'background:rgba(107,107,102,.08);color:var(--accent);font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">✏ Corregir</button>'+
       '</div>';
     } else if (s === activeSi) {
       // ── SET ACTIVO ───────────────────────────────────────────────────
@@ -3412,7 +3417,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var refHtml = _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIR, CURRENT_WEEK);
       var prevRefHtml = refHtml;
 
-      setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(200,165,74,.5);border-radius:14px;padding:14px;background:rgba(200,165,74,.03);margin-bottom:8px">'+
+      setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(107,107,102,.5);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">SERIE '+(s+1)+'</div>'+
         '</div>'+
@@ -3438,7 +3443,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '<div style="flex:1">'+
               '<div style="font-size:9px;color:'+(isIsometric?'var(--accent)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+repsLabel+'</div>'+
               '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="'+repsPh+'" inputmode="numeric"'+
-              ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(isIsometric?'rgba(200,165,74,.3)':'var(--border)')+';'+
+              ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(isIsometric?'rgba(107,107,102,.3)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
             '</div>';
@@ -3470,7 +3475,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
                   return '<button onclick="setPump(\''+key+'\','+p.v+')" id="pump_'+key+'_'+p.v+'"'+
                     ' style="flex:1;padding:8px 2px;border-radius:7px;font-size:18px;'+
                     'border:2px solid '+(a?p.c:'var(--border)')+';'+
-                    'background:'+(a?'rgba(200,165,74,.12)':'var(--input-bg)')+';cursor:pointer">'+p.icon+'</button>';
+                    'background:'+(a?'rgba(107,107,102,.12)':'var(--input-bg)')+';cursor:pointer">'+p.icon+'</button>';
                 }).join('');
               })()+
             '</div>'+
@@ -3539,7 +3544,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var completedBlockHtml = '';
   if (activeSi === -1 && !isPartner) {
     if (_ssPartnerPending) {
-      completedBlockHtml = '<div style="margin-top:16px;padding:12px 14px;background:rgba(204,102,170,.10);border:1px solid #cc66aa;border-radius:12px;text-align:center;color:#e9a8d4;font-size:13px;font-weight:700">🔁 Completa el partner del SS antes de avanzar</div>';
+      completedBlockHtml = '<div style="margin-top:16px;padding:12px 14px;background:rgba(107,107,102,.10);border:1px solid #6B6B66;border-radius:12px;text-align:center;color:#A5A59E;font-size:13px;font-weight:700">🔁 Completa el partner del SS antes de avanzar</div>';
     } else {
       // Calcular el siguiente ejercicio saltando los partners del mismo grupo
       // que ya están renderizados arriba.
@@ -3555,7 +3560,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             'background:var(--surface2);color:var(--mt);font-size:15px;font-weight:700">'+
             '← Anterior</button>'
         : '';
-      completedBlockHtml = '<div style="margin-top:16px;padding:14px;background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:12px">'+
+      completedBlockHtml = '<div style="margin-top:16px;padding:14px;background:rgba(110,154,110,.08);border:1px solid rgba(110,154,110,.25);border-radius:12px">'+
         '<div style="font-size:13px;font-weight:800;color:var(--grn);margin-bottom:10px;text-align:center;letter-spacing:.5px">✓ EJERCICIO COMPLETADO</div>'+
         '<div style="display:flex;gap:8px">'+
           _prevBtn+
@@ -3575,7 +3580,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
 
   // Banner sesión completa — INFORMATIVO, sets siguen siendo editables
   var closedBannerHtml = sessionDone
-    ? '<div style="background:rgba(58,148,96,.08);border:1px solid rgba(58,148,96,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+    ? '<div style="background:rgba(110,154,110,.08);border:1px solid rgba(110,154,110,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
         '<span style="font-size:14px">✓</span>'+
         '<span style="font-size:11px;color:var(--grn);font-weight:700;flex:1">Sesión completada · puedes seguir editando series</span>'+
         '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
@@ -3607,12 +3612,12 @@ function _perfHeader(ej, di, ei, chip, statsHtml) {
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">'+chipHtml+'</div>'+
       '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+nombre+'</div>'+
       (_exNoteInline
-        ? '<div onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(200,165,74,.08);border-left:3px solid rgba(200,165,74,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_exNoteInline+'</div>'
+        ? '<div onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_exNoteInline+'</div>'
         : '')+
       (statsHtml || '')+
       (displayNota ? '<div style="margin-top:10px;padding:10px 12px;background:rgba(255,255,255,.03);border-left:3px solid '+(chip?chip.border:'var(--border)')+';border-radius:0 8px 8px 0;font-size:12px;color:var(--mt);line-height:1.55">'+displayNota+'</div>' : '')+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">'+
-        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(200,165,74,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(200,165,74,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
+        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(107,107,102,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(107,107,102,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
       '</div>'+
     '</div>';
 }
@@ -3633,7 +3638,7 @@ var _WEARABLE_FIELDS = {
   calorias:   { label:'Calorías (kcal)',         color:'#ffb86b', placeholder:'kcal',      step:1,   type:'number' },
   cadencia:   { label:'Cadencia (spm/rpm)',      color:'#7ec0ff', placeholder:'spm',       step:1,   type:'number' },
   elevacion:  { label:'Elevación ganada (m)',    color:'#c89cff', placeholder:'m',         step:1,   type:'number' },
-  zonaTiempo: { label:'Tiempo en zona obj (min)', color:'#c9a84c', placeholder:'min',      step:0.5, type:'number' }
+  zonaTiempo: { label:'Tiempo en zona obj (min)', color:'#C4FF00', placeholder:'min',      step:0.5, type:'number' }
 };
 function _buildWearableBlock(key, prefix, saved, disabled, fields) {
   saved = saved || {};
@@ -3655,7 +3660,7 @@ function _buildWearableBlock(key, prefix, saved, disabled, fields) {
     '<summary style="cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:var(--mt);letter-spacing:.8px;display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:14px">📊</span>'+
       '<span>DATOS DEL RELOJ (OPCIONAL)</span>'+
-      (anyData ? '<span style="margin-left:6px;font-size:9px;background:rgba(58,148,96,.15);color:var(--grn);padding:2px 6px;border-radius:4px;font-weight:800;letter-spacing:.5px">CON DATOS</span>' : '')+
+      (anyData ? '<span style="margin-left:6px;font-size:9px;background:rgba(110,154,110,.15);color:var(--grn);padding:2px 6px;border-radius:4px;font-weight:800;letter-spacing:.5px">CON DATOS</span>' : '')+
       '<span style="margin-left:auto;font-size:13px">▾</span>'+
     '</summary>'+
     inputsHtml+
@@ -3690,7 +3695,7 @@ function _buildCalisteniaCard(ejercicios, di, ei, isPartner) {
 
   var statsHtml =
     '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
-      '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
+      '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
       '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">'+repsTarget+' REPS</span>'+
       '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px">RPE '+rpeTarget+'</span>'+
       '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">⏱ '+rest+'s desc</span>'+
@@ -3701,7 +3706,7 @@ function _buildCalisteniaCard(ejercicios, di, ei, isPartner) {
     var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
     var saved = LOGS[key] || {};
     var done = !!saved.done;
-    var bgCol = done ? 'rgba(58,148,96,.06)' : 'var(--surface)';
+    var bgCol = done ? 'rgba(110,154,110,.06)' : 'var(--surface)';
     var borderCol = done ? 'var(--grn)' : 'var(--border)';
 
     setsHtml +=
@@ -3790,7 +3795,7 @@ function _buildCardioCard(ejercicios, di, ei, isPartner) {
     (tDistancia?'<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">🛣 '+tDistancia+' km</span>':'')+
     (tFcMin||tFcMax?'<span style="font-size:11px;font-weight:700;color:#ff8aa6;background:rgba(255,138,166,.1);border:1px solid rgba(255,138,166,.25);padding:3px 9px;border-radius:6px">❤ '+(tFcMin&&tFcMax?tFcMin+'-'+tFcMax:tFcMin||tFcMax)+' lpm</span>':'')+
     (tRitmo?'<span style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">🎯 '+tRitmo+'</span>':'')+
-    (tRepeticiones?'<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);padding:3px 9px;border-radius:6px">✕ '+tRepeticiones+' reps</span>':'')+
+    (tRepeticiones?'<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">✕ '+tRepeticiones+' reps</span>':'')+
     (tBloqueTrabajo||tBloqueDescanso?'<span style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+(tBloqueTrabajo?'W:'+tBloqueTrabajo:'')+(tBloqueTrabajo&&tBloqueDescanso?' / ':'')+(tBloqueDescanso?'R:'+tBloqueDescanso:'')+'</span>':'')+
     '</div>';
 
@@ -3853,7 +3858,7 @@ function _buildEstacionCard(ejercicios, di, ei, isPartner) {
   var rest = (ej.sets && ej.sets[0] && ej.sets[0].restSeconds) || ej.restSeconds || 60;
 
   var statsHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">'+
-    '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.25);padding:3px 9px;border-radius:6px">'+numSeries+' ROUNDS</span>'+
+    '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">'+numSeries+' ROUNDS</span>'+
     (dosis?'<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">📏 '+dosis+' '+dosisUnit+'</span>':'')+
     (tTiempo?'<span style="font-size:11px;font-weight:700;color:#ff8aa6;background:rgba(255,138,166,.1);border:1px solid rgba(255,138,166,.25);padding:3px 9px;border-radius:6px">🎯 ≤'+tTiempo+'s</span>':'')+
     '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">⏱ '+rest+'s desc</span>'+
@@ -3865,7 +3870,7 @@ function _buildEstacionCard(ejercicios, di, ei, isPartner) {
     var saved = LOGS[key] || {};
     var done = !!saved.done;
     var borderCol = done ? 'var(--grn)' : 'var(--border)';
-    var bgCol = done ? 'rgba(58,148,96,.06)' : 'var(--surface)';
+    var bgCol = done ? 'rgba(110,154,110,.06)' : 'var(--surface)';
     setsHtml +=
       '<div style="border:1px solid '+borderCol+';border-radius:10px;padding:10px 12px;margin-bottom:8px;background:'+bgCol+'">'+
         '<div style="display:flex;align-items:center;gap:8px">'+
@@ -4079,7 +4084,7 @@ function expressSetPump(expK, val) {
     if (!btn) return;
     var sel = pv === val;
     btn.style.borderColor = sel ? cols[pv] : 'var(--border)';
-    btn.style.background  = sel ? 'rgba(200,165,74,.12)' : 'var(--input-bg)';
+    btn.style.background  = sel ? 'rgba(107,107,102,.12)' : 'var(--input-bg)';
   });
   var h = document.getElementById('xpump_val_'+expK);
   if (h) h.value = val;
@@ -4229,8 +4234,8 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
   }).join('<span style="color:rgba(255,255,255,.45);margin:0 6px">→</span>');
 
   var html =
-    '<div style="border:2px solid #cc66aa;border-radius:18px;overflow:hidden;margin-bottom:16px;box-shadow:0 6px 28px rgba(204,102,170,.25)">'+
-    '<div style="background:linear-gradient(135deg,#9b3e88,#cc66aa);padding:13px 16px 11px">'+
+    '<div style="border:2px solid #6B6B66;border-radius:18px;overflow:hidden;margin-bottom:16px;box-shadow:0 6px 28px rgba(107,107,102,.25)">'+
+    '<div style="background:#161616;padding:13px 16px 11px">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
         '<span style="font-size:20px">🔁</span>'+
         '<div>'+
@@ -4252,8 +4257,8 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       var cRaw = parseFloat(entry.carga||0);
       var cDisp = cRaw > 0 ? cRaw.toFixed(1)+' '+uShow+' × ' : '';
       html +=
-        '<div style="margin-bottom:10px'+(i>0?';padding-top:10px;border-top:1px solid rgba(204,102,170,.15)':'')+'">' +
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#e9a8d4;margin-bottom:3px">'+ssLabel(i)+' '+memberNames[i].toUpperCase()+'</div>'+
+        '<div style="margin-bottom:10px'+(i>0?';padding-top:10px;border-top:1px solid rgba(107,107,102,.15)':'')+'">' +
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#A5A59E;margin-bottom:3px">'+ssLabel(i)+' '+memberNames[i].toUpperCase()+'</div>'+
           '<div style="font-size:20px;font-weight:900;color:var(--tx)">'+cDisp+entry.reps+' reps</div>'+
         '</div>';
     });
@@ -4263,7 +4268,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       '<div style="font-size:12px;color:var(--mt);margin-bottom:14px">'+numRondas+' rondas · RIR real '+e0.rir_last+' · ICS '+(e0.ics||'—')+' '+ep0Emoji+'</div>'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
         '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">✓ BISERIE REGISTRADA</div>'+
-        '<button onclick="clearExpressSSDone('+di+',['+ssMembers.join(',')+'],\''+grp+'\')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);padding:4px 12px;border-radius:7px;cursor:pointer">✏ Editar</button>'+
+        '<button onclick="clearExpressSSDone('+di+',['+ssMembers.join(',')+'],\''+grp+'\')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:4px 12px;border-radius:7px;cursor:pointer">✏ Editar</button>'+
       '</div>';
     var _ssGrpLow = grp.toLowerCase();
     var _nextEi = ssMembers[ssMembers.length-1] + 1;
@@ -4305,7 +4310,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     }
 
     // Cabecera ronda actual
-    html += '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:#e9a8d4;margin-bottom:10px">RONDA '+(state.round+1)+' DE '+numRondas+'</div>';
+    html += '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:#A5A59E;margin-bottom:10px">RONDA '+(state.round+1)+' DE '+numRondas+'</div>';
 
     // Chips de miembros ya completados en la ronda actual
     if (state.memberIdx > 0) {
@@ -4313,8 +4318,8 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       for (var _dm = 0; _dm < state.memberIdx; _dm++) {
         var _dmSd = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+state.round+'_m'+_dm] || {};
         var _dmC = parseFloat(_dmSd.carga||0);
-        html += '<div style="display:flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(204,102,170,.1);border:1px solid rgba(204,102,170,.3);border-radius:20px">'+
-          '<span style="font-size:11px;color:#e9a8d4;font-weight:800">✓ '+ssLabel(_dm)+'</span>'+
+        html += '<div style="display:flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);border-radius:20px">'+
+          '<span style="font-size:11px;color:#A5A59E;font-weight:800">✓ '+ssLabel(_dm)+'</span>'+
           '<span style="font-size:10px;color:var(--mt)">'+_dmSd.reps+'r'+(_dmC>0?' @'+_dmC.toFixed(1)+' '+_dmSd.unit:'')+'</span>'+
         '</div>';
       }
@@ -4350,8 +4355,8 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     var _rLbl = _isIsoM ? 'SEGUNDOS' : 'REPS';
 
     html +=
-      '<div style="background:rgba(204,102,170,.07);border:2px solid rgba(204,102,170,.45);border-radius:12px;padding:14px;margin-bottom:12px">'+
-        '<div style="font-size:11px;font-weight:900;letter-spacing:1px;color:#e9a8d4;margin-bottom:10px">'+ssLabel(curMIdx)+' '+memberNames[curMIdx].toUpperCase()+'</div>'+
+      '<div style="background:rgba(107,107,102,.07);border:2px solid rgba(107,107,102,.45);border-radius:12px;padding:14px;margin-bottom:12px">'+
+        '<div style="font-size:11px;font-weight:900;letter-spacing:1px;color:#A5A59E;margin-bottom:10px">'+ssLabel(curMIdx)+' '+memberNames[curMIdx].toUpperCase()+'</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
           '<div>'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cLbl+'</div>'+
@@ -4372,7 +4377,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       var nextName  = memberNames[curMIdx + 1];
       html += '<button onclick="ssMoveNextMember('+di+',['+ssMembers.join(',')+'],\''+grp+'\','+state.round+','+curMIdx+')" '+
         'style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
-        'background:linear-gradient(135deg,#9b3e88,#cc66aa);color:#fff;font-size:14px;font-weight:800">'+
+        'background:#6B6B66;color:#fff;font-size:14px;font-weight:800">'+
         'SIN DESCANSO → '+nextLabel+' '+nextName.toUpperCase()+'</button>';
     } else if (!isLastRound) {
       html += '<button onclick="ssCompleteRound('+di+',['+ssMembers.join(',')+'],\''+grp+'\','+state.round+','+curMIdx+')" '+
@@ -4412,7 +4417,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
           '</div>'+
         '</div>'+
         '<button onclick="ssCompleteLastRound('+di+',['+ssMembers.join(',')+'],\''+grp+'\','+curMIdx+')" '+
-          'style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:#cc66aa;color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
+          'style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;background:#6B6B66;color:#fff;font-size:15px;font-weight:800;letter-spacing:.5px">'+
           '✓ COMPLETAR BISERIE</button>';
     }
   }
@@ -4713,14 +4718,14 @@ function showExSubModal(di, ei) {
         var sameProfile = ac.resistanceCurve === curCurve && ac.muscleType === curMuscle;
         var sameCurve = ac.resistanceCurve === curCurve;
         var matchBadge = sameProfile
-          ? '<span style="font-size:9px;background:rgba(58,148,96,.2);border:1px solid rgba(58,148,96,.5);color:var(--grn);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">★ PERFIL IDÉNTICO</span>'
-          : (sameCurve ? '<span style="font-size:9px;background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.3);color:var(--accent);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">↻ MISMA CURVA</span>' : '');
+          ? '<span style="font-size:9px;background:rgba(110,154,110,.2);border:1px solid rgba(110,154,110,.5);color:var(--grn);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">★ PERFIL IDÉNTICO</span>'
+          : (sameCurve ? '<span style="font-size:9px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);color:var(--accent);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">↻ MISMA CURVA</span>' : '');
         var sourceTag = ac.source === 'coach' ? '<span style="font-size:9px;color:rgba(108,150,255,.8)">coach</span> · ' : '';
         var curveStr = curveLabel[ac.resistanceCurve] || ac.resistanceCurve || '—';
         var muscleStr = ac.muscleType === 'typeIIx' ? 'Fuerza/Hipert.' : 'Resistencia';
         return '<button onclick="applyExSub('+di+','+ei+',\''+safeA+'\',\''+safeO+'\')" '+
           'style="display:block;width:100%;text-align:left;padding:11px 14px;background:var(--surface2);'+
-          'border:1px solid '+(sameProfile?'rgba(58,148,96,.35)':sameCurve?'rgba(200,165,74,.25)':'var(--border)')+';'+
+          'border:1px solid '+(sameProfile?'rgba(110,154,110,.35)':sameCurve?'rgba(107,107,102,.25)':'var(--border)')+';'+
           'border-radius:10px;margin-bottom:8px;cursor:pointer">'+
           '<div style="display:flex;align-items:center;flex-wrap:wrap">'+
             '<span style="font-size:13px;font-weight:600;color:var(--tx)">'+a+'</span>'+matchBadge+
@@ -4744,7 +4749,7 @@ function showExSubModal(di, ei) {
     '<div style="font-size:15px;font-weight:700;color:var(--tx);margin-bottom:8px">'+currentNombre+'</div>'+
     (motorPattern && !patternSelectorHtml
       ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'+
-          '<span style="font-size:10px;background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.25);color:var(--accent);padding:2px 8px;border-radius:5px">'+motorPattern+'</span>'+
+          '<span style="font-size:10px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);color:var(--accent);padding:2px 8px;border-radius:5px">'+motorPattern+'</span>'+
           (curCurve?'<span style="font-size:10px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--mt);padding:2px 8px;border-radius:5px">'+curveLabel[curCurve]+'</span>':'')+
           (curMuscle?'<span style="font-size:10px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--mt);padding:2px 8px;border-radius:5px">'+muscleLabel[curMuscle]+'</span>':'')+
         '</div>'
@@ -4841,17 +4846,17 @@ function renderEntrenamiento() {
     var deload  = w === _tw;
     var numColor, subColor, bg, borderBot;
     if (isReal && isView) {
-      bg = 'rgba(200,165,74,.22)'; borderBot = 'var(--accent)'; numColor = '#fff'; subColor = 'var(--accent)';
+      bg = 'rgba(107,107,102,.22)'; borderBot = 'var(--accent)'; numColor = '#fff'; subColor = 'var(--accent)';
     } else if (isReal) {
-      bg = 'rgba(200,165,74,.08)'; borderBot = 'var(--accent)'; numColor = 'var(--accent)'; subColor = 'var(--accent)';
+      bg = 'rgba(107,107,102,.08)'; borderBot = 'var(--accent)'; numColor = 'var(--accent)'; subColor = 'var(--accent)';
     } else if (isView) {
       bg = 'rgba(255,140,50,.08)'; borderBot = '#FF8844'; numColor = '#FF8844'; subColor = '#FF8844';
     } else if (done) {
-      bg = 'rgba(58,148,96,.04)'; borderBot = 'rgba(58,148,96,.35)'; numColor = 'var(--grn)'; subColor = 'var(--grn)';
+      bg = 'rgba(110,154,110,.04)'; borderBot = 'rgba(110,154,110,.35)'; numColor = 'var(--grn)'; subColor = 'var(--grn)';
     } else {
       bg = 'transparent'; borderBot = 'transparent'; numColor = 'var(--mt)'; subColor = 'var(--mt)';
     }
-    var glow = isReal ? 'box-shadow:inset 0 -4px 0 var(--accent),0 0 18px rgba(200,165,74,.25);' : '';
+    var glow = isReal ? 'box-shadow:inset 0 -4px 0 var(--accent),0 0 18px rgba(107,107,102,.25);' : '';
     var pad  = isReal ? '12px 0 8px' : '8px 0 5px';
     var sz   = isReal ? '20px' : '15px';
     var mt   = isReal ? '12px' : '3px';
@@ -4861,7 +4866,7 @@ function renderEntrenamiento() {
       'background:'+bg+';border-bottom:'+(isReal?'4':'2')+'px solid '+borderBot+';'+
       glow+'border-radius:0;position:relative;transition:background .15s">'+
       (isReal ? '<span style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);font-size:7px;letter-spacing:1px;color:#000;font-weight:900;white-space:nowrap;background:var(--accent);padding:2px 6px;border-radius:0 0 5px 5px">● ACTIVA</span>' : '')+
-      '<span style="font-size:'+sz+';font-weight:900;color:'+numColor+';margin-top:'+mt+';'+(isReal?'text-shadow:0 0 10px rgba(200,165,74,.6);':'')+'">'+
+      '<span style="font-size:'+sz+';font-weight:900;color:'+numColor+';margin-top:'+mt+';'+(isReal?'text-shadow:0 0 10px rgba(107,107,102,.6);':'')+'">'+
         (done&&!isView?'✓':w)+'</span>'+
       '<span style="font-size:7.5px;letter-spacing:.5px;font-weight:'+(isReal?'800':'600')+';color:'+subColor+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;padding:0 2px">'+
         (deload?'DELOAD':getSemProgresion(w))+'</span>'+
@@ -4885,7 +4890,7 @@ function renderEntrenamiento() {
       weeksHtml += '<button onclick="_weeksExpanded=true;renderEntrenamiento()" style="'+
         'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;'+
         'padding:8px 10px;border:none;cursor:pointer;min-width:52px;'+
-        'background:rgba(58,148,96,.06);border-bottom:2px solid rgba(58,148,96,.3);border-radius:0;'+
+        'background:rgba(110,154,110,.06);border-bottom:2px solid rgba(110,154,110,.3);border-radius:0;'+
         'white-space:nowrap">'+
         '<span style="font-size:13px;color:var(--grn);font-weight:900">✓ '+_pastCount+'</span>'+
         '<span style="font-size:7.5px;letter-spacing:.5px;font-weight:700;color:var(--grn)">'+(_pastCount===1?'SEM':'SEMS')+' ›</span>'+
@@ -4913,10 +4918,10 @@ function renderEntrenamiento() {
   // ── Deload banner (última semana = deload) ─────────────────────
   var deloadBanner = '';
   if (CURRENT_WEEK === getTotalWeeks()) {
-    deloadBanner = '<div style="background:rgba(68,136,204,.1);border:1px solid rgba(68,136,204,.4);padding:12px 14px;margin:0 0 8px">'
+    deloadBanner = '<div style="background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.4);padding:12px 14px;margin:0 0 8px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
       + '<span style="font-size:18px">🔵</span>'
-      + '<span style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:#4488cc;font-weight:700">SEMANA DELOAD</span>'
+      + '<span style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:#8C8C86;font-weight:700">SEMANA DELOAD</span>'
       + '</div>'
       + '<div style="font-size:12px;color:var(--mt);line-height:1.5">'
       + 'Esta semana es de descarga activa. El volumen se reduce a la mitad y la intensidad baja un 10%. '
@@ -4943,14 +4948,14 @@ function renderEntrenamiento() {
     var rawLabel = (s.dia||'').replace(/^(SESI[OÓ]N\s*\d+[:\s]+|D[IÍ]A\s*\d+[:\s]+)/i,'').replace(/\([^)]+\)/,'').trim().substring(0,10)||('DÍA '+(i+1));
     var icon = done ? '✓' : (active ? '▶' : String(i+1));
     var iconColor = active ? 'var(--accent)' : done ? 'var(--grn)' : 'var(--mt)';
-    var txtColor  = active ? 'var(--tx)' : done ? 'rgba(58,148,96,.8)' : 'var(--mt)';
-    var bg = active ? 'rgba(201,168,76,.06)' : 'var(--surface)';
-    var borderB = active ? '3px solid var(--accent)' : done ? '3px solid rgba(58,148,96,.5)' : '3px solid transparent';
+    var txtColor  = active ? 'var(--tx)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
+    var bg = active ? 'rgba(196,255,0,.06)' : 'var(--surface)';
+    var borderB = active ? '3px solid var(--accent)' : done ? '3px solid rgba(110,154,110,.5)' : '3px solid transparent';
     return '<button onclick="selDia('+i+')" style="'+
       'flex:1;min-width:0;padding:10px 6px 8px;border:none;cursor:pointer;'+
       'background:'+bg+';border-bottom:'+borderB+';'+
       'border-right:1px solid var(--border);transition:background .15s;-webkit-tap-highlight-color:transparent">'+
-      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:3px'+(active?';text-shadow:0 0 8px rgba(201,168,76,.4)':'')+'">'+(done?'✓':'·')+'</div>'+
+      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:3px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(done?'✓':'·')+'</div>'+
       '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+rawLabel+'</div>'+
       '</button>';
   }).join('');
@@ -5054,7 +5059,7 @@ function renderEntrenamiento() {
     readinessBanner+
     // Session header
     '<div class="tab-appear" style="padding:14px 16px 8px;display:flex;align-items:center;justify-content:space-between;'+
-      'background:linear-gradient(180deg,rgba(201,168,76,.04) 0%,transparent 100%);border-bottom:1px solid rgba(201,168,76,.06)">'+
+      'background:linear-gradient(180deg,rgba(196,255,0,.04) 0%,transparent 100%);border-bottom:1px solid rgba(196,255,0,.06)">'+
       '<div>'+
         '<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:'+(CURRENT_WEEK!==REAL_WEEK?'#FF8844':'var(--accent)')+';text-transform:uppercase;margin-bottom:4px">'+(CURRENT_WEEK!==REAL_WEEK?'👁 ':'🗓 ')+'SEM '+CURRENT_WEEK+' · '+getSemProgresion(CURRENT_WEEK)+(CURRENT_WEEK!==REAL_WEEK?' (VISTA)':'')+'</div>'+
         '<div style="font-size:20px;font-weight:800;color:var(--tx);line-height:1.15;letter-spacing:-.3px">'+(ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim()+'</div>'+
@@ -5064,11 +5069,11 @@ function renderEntrenamiento() {
         '</div>'+
       '</div>'+
       (isDone
-        ? '<div style="background:rgba(58,148,96,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
-        : '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar todos los sets con datos de la semana anterior o tu histórico" style="background:rgba(200,165,74,.1);border:1px solid var(--accent);border-radius:20px;padding:6px 12px;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;letter-spacing:.5px;line-height:1.2;text-align:center">⚡ MARCAR<br>COMPLETA</button>')+
+        ? '<div style="background:rgba(110,154,110,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
+        : '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar todos los sets con datos de la semana anterior o tu histórico" style="background:rgba(107,107,102,.1);border:1px solid var(--accent);border-radius:20px;padding:6px 12px;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;letter-spacing:.5px;line-height:1.2;text-align:center">⚡ MARCAR<br>COMPLETA</button>')+
     '</div>'+
     // Glosario RIR + ICS (colapsable)
-    '<details style="margin:0 16px 8px;background:rgba(200,165,74,.04);border:1px solid rgba(200,165,74,.18);border-radius:10px;padding:8px 12px">'+
+    '<details style="margin:0 16px 8px;background:rgba(107,107,102,.04);border:1px solid rgba(107,107,102,.18);border-radius:10px;padding:8px 12px">'+
       '<summary style="cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.5px;display:flex;align-items:center;gap:6px">'+
         '<span style="font-size:13px">📖</span><span>QUÉ ES RIR Y QUÉ ES ICS</span>'+
         '<span style="margin-left:auto;font-size:14px;color:var(--mt)">▾</span>'+
@@ -5110,20 +5115,20 @@ function renderEntrenamiento() {
     '<div id="restTimerOverlay" style="display:none;position:fixed;inset:0;background:rgba(6,14,26,.88);z-index:200;align-items:center;justify-content:center;flex-direction:column;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)">'+
       '<div onclick="event.stopPropagation()" style="'+
         'background:linear-gradient(160deg,rgba(10,18,32,1) 0%,rgba(6,14,26,1) 100%);'+
-        'border:1px solid rgba(201,168,76,.28);border-radius:28px;padding:36px 40px 32px;'+
+        'border:1px solid rgba(196,255,0,.28);border-radius:28px;padding:36px 40px 32px;'+
         'text-align:center;min-width:280px;max-width:320px;width:calc(100vw - 48px);'+
-        'box-shadow:0 0 0 1px rgba(201,168,76,.08),0 32px 64px rgba(0,0,0,.7),0 0 80px rgba(201,168,76,.06)">'+
+        'box-shadow:0 0 0 1px rgba(196,255,0,.08),0 32px 64px rgba(0,0,0,.7),0 0 80px rgba(196,255,0,.06)">'+
         '<div style="font-size:10px;color:var(--platinum);letter-spacing:3px;margin-bottom:20px;font-weight:700;text-transform:uppercase;opacity:.7">DESCANSO ACTIVO</div>'+
         '<div style="position:relative;width:160px;height:160px;margin:0 auto 20px">'+
           '<svg viewBox="0 0 160 160" style="position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)">'+
-            '<circle cx="80" cy="80" r="70" fill="none" stroke="rgba(201,168,76,.1)" stroke-width="6"/>'+
+            '<circle cx="80" cy="80" r="70" fill="none" stroke="rgba(196,255,0,.1)" stroke-width="6"/>'+
             '<circle id="restRing" cx="80" cy="80" r="70" fill="none" stroke="url(#rg1)" stroke-width="6" stroke-linecap="round" stroke-dasharray="439.8" stroke-dashoffset="0" style="transition:stroke-dashoffset .9s linear,stroke .5s"/>'+
             '<defs><linearGradient id="rg1" x1="0%" y1="0%" x2="100%" y2="0%">'+
-              '<stop offset="0%" stop-color="#9A7A28"/><stop offset="50%" stop-color="#C9A84C"/><stop offset="100%" stop-color="#E8C97A"/>'+
+              '<stop offset="0%" stop-color="#C4FF00"/><stop offset="50%" stop-color="#C4FF00"/><stop offset="100%" stop-color="#C4FF00"/>'+
             '</linearGradient></defs>'+
           '</svg>'+
           '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">'+
-            '<div id="restTimerNum" style="font-size:66px;font-weight:400;color:var(--accent);line-height:1;font-family:\'Bebas Neue\',var(--ff);letter-spacing:2px;text-shadow:0 0 24px rgba(201,168,76,.35)">—</div>'+
+            '<div id="restTimerNum" style="font-size:60px;font-weight:700;color:var(--accent);line-height:1;font-family:\'Courier Prime\',monospace;letter-spacing:1px">—</div>'+
             '<div id="restTimerSec" style="font-size:10px;color:var(--mt);letter-spacing:1px;font-weight:600"></div>'+
           '</div>'+
         '</div>'+
@@ -5133,7 +5138,7 @@ function renderEntrenamiento() {
           '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+15s</button>'+
           '<button onclick="event.stopPropagation();adjustRestTimer(30)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+30s</button>'+
         '</div>'+
-        '<button onclick="stopRestTimer()" style="width:100%;background:var(--gold-gradient);border:none;border-radius:14px;color:#0a0a0a;font-size:14px;font-weight:800;padding:15px;cursor:pointer;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(201,168,76,.3)">SIGUIENTE SERIE ▶</button>'+
+        '<button onclick="stopRestTimer()" style="width:100%;background:var(--gold-gradient);border:none;border-radius:14px;color:#0a0a0a;font-size:14px;font-weight:800;padding:15px;cursor:pointer;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.3)">SIGUIENTE SERIE ▶</button>'+
       '</div>'+
     '</div>';
   // Inicializar anillo SVG si el timer está activo
@@ -5335,8 +5340,8 @@ function buildBoostcampExercise(ej, di, ei) {
       ? _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK)
       : '';
 
-    var borderCol = completed ? 'rgba(58,148,96,.5)' : 'var(--border)';
-    var bgCol     = completed ? 'rgba(58,148,96,.05)' : 'var(--surface2)';
+    var borderCol = completed ? 'rgba(110,154,110,.5)' : 'var(--border)';
+    var bgCol     = completed ? 'rgba(110,154,110,.05)' : 'var(--surface2)';
 
     // ICS display
     var icsHtml = completed
@@ -5365,7 +5370,7 @@ function buildBoostcampExercise(ej, di, ei) {
                   return '<button onclick="setPump(\''+key+'\','+p.v+')" id="pump_'+key+'_'+p.v+'"'+
                     ' style="flex:1;padding:6px 2px;border-radius:7px;font-size:16px;'+
                     'border:2px solid '+(a?p.c:'var(--border)')+';'+
-                    'background:'+(a?'rgba(200,165,74,.12)':'var(--input-bg)')+';cursor:pointer">'+p.icon+'</button>';
+                    'background:'+(a?'rgba(107,107,102,.12)':'var(--input-bg)')+';cursor:pointer">'+p.icon+'</button>';
                 }).join('');
               })()+
             '</div>'+
@@ -5417,8 +5422,8 @@ function buildBoostcampExercise(ej, di, ei) {
             // Botón editar (solo en sets completados de la semana real)
             (completed ?
               '<button onclick="editSet(\''+key+'\')" title="Corregir datos" style="'+
-                'width:44px;height:28px;border-radius:7px;border:1px solid rgba(200,165,74,.4);'+
-                'background:rgba(200,165,74,.08);color:var(--accent);font-size:13px;cursor:pointer">✏</button>'
+                'width:44px;height:28px;border-radius:7px;border:1px solid rgba(107,107,102,.4);'+
+                'background:rgba(107,107,102,.08);color:var(--accent);font-size:13px;cursor:pointer">✏</button>'
             : (s > 0 ?
               '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" title="Copiar serie anterior" style="'+
                 'width:44px;height:28px;border-radius:7px;border:1px solid var(--border);'+
@@ -5435,21 +5440,21 @@ function buildBoostcampExercise(ej, di, ei) {
 
   return '<div style="'+
     'background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;'+
-    'border:1px solid '+(ej.rezagado?'rgba(200,165,74,.4)':'var(--border)')+'">'+
+    'border:1px solid '+(ej.rezagado?'rgba(107,107,102,.4)':'var(--border)')+'">'+
 
     // Header: machine icon + exercise name
     '<div style="display:flex;align-items:center;gap:12px;padding:14px 14px 10px">'+
       // Exercise initials badge
-      '<div style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(200,165,74,.1);border:1px solid rgba(200,165,74,.2);border-radius:10px;font-size:14px;font-weight:900;color:var(--gold)">'+
+      '<div style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.2);border-radius:10px;font-size:14px;font-weight:900;color:var(--gold)">'+
         (ej.nombre||'E').substring(0,2).toUpperCase()+
       '</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:15px;font-weight:700;color:var(--tx);line-height:1.3;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
           ej.nombre+
-          (ej.rezagado?'<span style="font-size:9px;background:rgba(200,165,74,.15);border:1px solid rgba(200,165,74,.4);color:var(--accent);padding:2px 7px;border-radius:10px;letter-spacing:1px;font-weight:700">★ REZAGADO</span>':'')+
+          (ej.rezagado?'<span style="font-size:9px;background:rgba(107,107,102,.15);border:1px solid rgba(107,107,102,.4);color:var(--accent);padding:2px 7px;border-radius:10px;letter-spacing:1px;font-weight:700">★ REZAGADO</span>':'')+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">'+
-          '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(200,165,74,.12);border:1px solid rgba(200,165,74,.25);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+numSeries+' SERIES</span>'+
+          '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+numSeries+' SERIES</span>'+
           '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+(ej.repsRange||repsTarget)+' REPS</span>'+
           '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:2px 8px;border-radius:6px;letter-spacing:.5px">RIR '+baseRIR+'</span>'+
           (catData&&catData.motorPattern?'<span style="font-size:10px;color:var(--mt)">'+catData.motorPattern+'</span>':'')+
@@ -5467,7 +5472,7 @@ function buildBoostcampExercise(ej, di, ei) {
     wuHtml+
 
     // Technique note from coach (collapsible)
-    (displayNota?'<div id="nota_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;background:rgba(200,165,74,.06);border-left:3px solid rgba(200,165,74,.4);border-radius:0 8px 8px 0;font-size:12px;color:var(--mt);line-height:1.6">'+displayNota+'</div>':'')+
+    (displayNota?'<div id="nota_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;background:rgba(107,107,102,.06);border-left:3px solid rgba(107,107,102,.4);border-radius:0 8px 8px 0;font-size:12px;color:var(--mt);line-height:1.6">'+displayNota+'</div>':'')+
 
     // Substitution warning (ICS bajo persistente)
     substHtml+
@@ -5553,7 +5558,7 @@ function showPRCelebration(exDisplayName, load, unit, reps) {
   if (old) old.remove();
   var el = document.createElement('div');
   el.id = 'prCeleb';
-  el.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-20px);z-index:10000;background:linear-gradient(135deg,#C9A84C,#E8C766);color:#1a1a1a;padding:14px 20px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-weight:800;font-size:13px;display:flex;align-items:center;gap:10px;max-width:90vw;opacity:0;transition:opacity .3s, transform .3s';
+  el.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-20px);z-index:10000;background:#C4FF00;color:#0A0A0A;padding:14px 20px;border-radius:2px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-weight:800;font-size:13px;display:flex;align-items:center;gap:10px;max-width:90vw;opacity:0;transition:opacity .3s, transform .3s';
   el.innerHTML = '<span style="font-size:22px">🏆</span><span>¡Nuevo récord en '+exDisplayName+'! '+load+' '+unit+' × '+reps+'</span>';
   document.body.appendChild(el);
   requestAnimationFrame(function(){ el.style.opacity='1'; el.style.transform='translateX(-50%) translateY(0)'; });
@@ -5654,7 +5659,7 @@ function _showAddSetSuggestion(di, ei, reasonText) {
     el.id = 'addSetSuggestion';
     document.body.appendChild(el);
   }
-  el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:90px;max-width:456px;margin:0 auto;background:rgba(18,18,16,.97);border:1px solid rgba(58,148,96,.5);border-radius:14px;padding:12px 14px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)';
+  el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:90px;max-width:456px;margin:0 auto;background:rgba(18,18,16,.97);border:1px solid rgba(110,154,110,.5);border-radius:14px;padding:12px 14px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)';
   el.innerHTML =
     '<div style="display:flex;align-items:flex-start;gap:10px">'+
       '<div style="font-size:22px;line-height:1">💪</div>'+
@@ -5828,7 +5833,7 @@ function setPump(key, val) {
     var btn = document.getElementById('pump_'+key+'_'+v);
     if (!btn) return;
     btn.style.borderColor = v===val ? colors[v] : 'var(--border)';
-    btn.style.background  = v===val ? 'rgba(200,165,74,.12)' : 'var(--input-bg)';
+    btn.style.background  = v===val ? 'rgba(107,107,102,.12)' : 'var(--input-bg)';
   });
 }
 
@@ -5977,7 +5982,7 @@ function updateTimerDisplay() {
   var sign = s < 0 ? '+' : '';
   _restEl.textContent = sign + mins + ':' + (secs < 10 ? '0' : '') + secs;
   _restEl.style.color = s <= 0 ? 'var(--red)' : s <= 10 ? '#e8a040' : 'var(--accent)';
-  _restEl.style.textShadow = s <= 0 ? '0 0 24px rgba(201,74,58,.5)' : s <= 10 ? '0 0 24px rgba(232,160,64,.5)' : '0 0 24px rgba(201,168,76,.4)';
+  _restEl.style.textShadow = s <= 0 ? '0 0 24px rgba(201,74,58,.5)' : s <= 10 ? '0 0 24px rgba(232,160,64,.5)' : '0 0 24px rgba(196,255,0,.4)';
   var secEl = document.getElementById('restTimerSec');
   if (secEl) secEl.textContent = s > 0 ? s + 's restantes' : '¡Tiempo!';
   _updateRestRing();
@@ -6321,7 +6326,7 @@ function _showSaveOk() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'saveOkBadge';
-    el.style.cssText = 'position:fixed;bottom:70px;right:16px;background:rgba(58,148,96,.15);border:1px solid var(--grn);color:var(--grn);font-family:var(--ff);font-size:10px;padding:4px 10px;z-index:9999;letter-spacing:1px;opacity:0;transition:opacity .3s';
+    el.style.cssText = 'position:fixed;bottom:70px;right:16px;background:rgba(110,154,110,.15);border:1px solid var(--grn);color:var(--grn);font-family:var(--ff);font-size:10px;padding:4px 10px;z-index:9999;letter-spacing:1px;opacity:0;transition:opacity .3s';
     document.body.appendChild(el);
   }
   el.textContent = '✓ GUARDADO';
@@ -6844,14 +6849,14 @@ function renderNutricion() {
     const semActual = rd.semana_actual || CURRENT_WEEK || 1;
     const tablaHtml = (rd.tabla || []).map(function(row, i) {
       var isCurrent = (i + 1) === semActual;
-      return '<tr style="background:' + (isCurrent ? 'rgba(200,165,74,.1)' : 'transparent') + ';border-bottom:1px solid var(--bd)">'
+      return '<tr style="background:' + (isCurrent ? 'rgba(107,107,102,.1)' : 'transparent') + ';border-bottom:1px solid var(--bd)">'
         + '<td style="padding:8px 10px;font-family:var(--ff);font-size:14px;color:' + (isCurrent?'var(--gold)':'var(--mt)') + '">'
         + (isCurrent ? '▶ ' : '') + 'SEM ' + (i+1) + (isCurrent?'  ← HOY':'') + '</td>'
         + '<td style="padding:8px 10px;text-align:center;font-family:var(--ff);font-size:14px;color:var(--tx)">' + (row.calorias||'—') + '</td>'
         + '<td style="padding:8px 10px;text-align:center;font-size:12px;color:var(--mt)">' + (row.proteina||'—') + 'g P · ' + (row.carbos||'—') + 'g C · ' + (row.grasas||'—') + 'g G</td>'
         + '</tr>';
     }).join('');
-    cont.innerHTML = '<div style="background:rgba(200,165,74,.06);border:1px solid rgba(200,165,74,.5);padding:16px;margin-bottom:14px">'
+    cont.innerHTML = '<div style="background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.5);padding:16px;margin-bottom:14px">'
       + '<div style="font-family:var(--ff);font-size:18px;letter-spacing:2px;color:var(--gold);margin-bottom:6px">🔄 REVERSE DIET ACTIVA</div>'
       + '<div style="font-size:13px;color:var(--mt);margin-bottom:4px">Protocolo post-competencia · Semana ' + semActual + ' de ' + (rd.tabla||[]).length + '</div>'
       + '<div style="font-size:12px;color:var(--tx);margin-bottom:14px">' + (rd.descripcion || 'Incremento progresivo de calorías para restaurar metabolismo.') + '</div>'
@@ -6929,7 +6934,7 @@ function renderNutricion() {
   const diff     = kcalObj ? (kcalReal - kcalObj) : null;
   const diffColor = diff === null ? '#555'
                   : Math.abs(diff) <= 50 ? '#4aaa5e'   // ✅ dentro de ±50
-                  : Math.abs(diff) <= 100 ? '#c8a54a'  // ⚠ advertencia
+                  : Math.abs(diff) <= 100 ? '#6b6b66'  // ⚠ advertencia
                   : '#c94a3a';                          // ❌ fuera de rango
 
   const diffBadge = diff !== null
@@ -6946,7 +6951,7 @@ function renderNutricion() {
   const pctG = totalGr ? 100 - pctP - pctC : 0;
 
   const macroPanel = `
-    <div style="background:linear-gradient(180deg,rgba(200,165,74,.06),rgba(200,165,74,.02));border:1px solid rgba(200,165,74,.25);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.2)">
+    <div style="background:linear-gradient(180deg,rgba(107,107,102,.06),rgba(107,107,102,.02));border:1px solid rgba(107,107,102,.25);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.2)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:20px">🥗</span>
@@ -6961,7 +6966,7 @@ function renderNutricion() {
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
-        <div style="text-align:center;padding:14px 6px;background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.3);border-radius:10px">
+        <div style="text-align:center;padding:14px 6px;background:rgba(140,140,134,.08);border:1px solid rgba(140,140,134,.3);border-radius:10px">
           <div style="font-size:18px;margin-bottom:2px">💪</div>
           <div style="font-family:var(--ff);font-size:24px;color:#6aacee;line-height:1;font-weight:900">${prot||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
           <div style="font-size:9px;letter-spacing:1.5px;color:#6aacee;margin-top:4px;font-weight:700">PROTEÍNA</div>
@@ -6997,33 +7002,33 @@ function renderNutricion() {
   // ── GAP 3: Banner Reverse Diet si está activo en el plan ──
   const rd = PLAN.reverseDiet || PLAN.reverse_diet || null;
   const rdBanner = (rd && rd.activo) ? `
-    <div style="background:var(--card);border:1px solid rgba(68,136,204,.5);padding:14px;margin-bottom:10px">
-      <div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:#4488cc;margin-bottom:6px">📈 REVERSE DIET ACTIVO — GAP 3</div>
+    <div style="background:var(--card);border:1px solid rgba(140,140,134,.5);padding:14px;margin-bottom:10px">
+      <div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:#8C8C86;margin-bottom:6px">📈 REVERSE DIET ACTIVO — GAP 3</div>
       <div style="font-size:12px;color:var(--mt);line-height:1.7;margin-bottom:10px">
         Estás en protocolo de restauración metabólica post-competencia. Las calorías suben progresivamente cada semana.
         <strong style="color:var(--tx)">Sigue el plan tal como aparece.</strong>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
-        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid rgba(68,136,204,.3)">
-          <div style="font-family:var(--ff);font-size:20px;color:#4488cc;line-height:1">${rd.semanaActual||'?'}</div>
+        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid rgba(140,140,134,.3)">
+          <div style="font-family:'Courier Prime',monospace;font-size:20px;color:var(--accent);line-height:1">${rd.semanaActual||'?'}</div>
           <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">SEMANA RD</div>
         </div>
-        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid rgba(68,136,204,.3)">
-          <div style="font-family:var(--ff);font-size:20px;color:#4488cc;line-height:1">${rd.kcalActual||'—'}</div>
+        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid rgba(140,140,134,.3)">
+          <div style="font-family:'Courier Prime',monospace;font-size:20px;color:var(--accent);line-height:1">${rd.kcalActual||'—'}</div>
           <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">KCAL ESTA SEM</div>
         </div>
-        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid rgba(68,136,204,.3)">
-          <div style="font-family:var(--ff);font-size:20px;color:#4488cc;line-height:1">${rd.kcalObjetivo||'—'}</div>
+        <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid rgba(140,140,134,.3)">
+          <div style="font-family:'Courier Prime',monospace;font-size:20px;color:var(--accent);line-height:1">${rd.kcalObjetivo||'—'}</div>
           <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">META KCAL</div>
         </div>
       </div>
-      <div style="background:var(--dk);border:1px solid rgba(68,136,204,.25);padding:10px;font-size:11px;color:var(--mt);line-height:1.6">
+      <div style="background:var(--dk);border:1px solid rgba(140,140,134,.25);padding:10px;font-size:11px;color:var(--mt);line-height:1.6">
         ⚠ Durante Reverse Diet: no comparar estos macros con tu fase anterior · Tu coach monitorea el progreso semanalmente
       </div>
     </div>` : '';
 
   cont.innerHTML = `
-    <div style="padding:14px 16px 8px;border-bottom:1px solid var(--bd);margin-bottom:14px;background:linear-gradient(180deg,rgba(200,165,74,.04),transparent)">
+    <div style="padding:14px 16px 8px;border-bottom:1px solid var(--bd);margin-bottom:14px;background:linear-gradient(180deg,rgba(107,107,102,.04),transparent)">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:24px">🍽️</span>
         <div>
@@ -7181,7 +7186,7 @@ function buildNutriLogWidget(kcalTarget, protTarget, carbTarget, grasTarget) {
     + '</div>'
     + '<div style="font-size:11px;color:var(--mt);margin-bottom:12px;line-height:1.4">Cargá lo que realmente comiste hoy para comparar contra tu objetivo</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'
-    +   field('nl_kcal', 'KCAL', kcalVal, kcalTarget, '#c8a54a')
+    +   field('nl_kcal', 'KCAL', kcalVal, kcalTarget, '#6b6b66')
     +   field('nl_prot', 'PROTEÍNA (g)', protVal, protTarget, '#6aacee')
     +   field('nl_carb', 'CARBOS (g)', carbVal, carbTarget, '#6acc7e')
     +   field('nl_gras', 'GRASAS (g)', grasVal, grasTarget, '#e8a060')
@@ -7514,7 +7519,7 @@ function parsearYRenderComidas(texto) {
       if (!lt) return '<div style="height:8px"></div>';
       // Títulos principales (MAYÚSCULAS con más de 3 chars)
       if (/^[A-ZÁÉÍÓÚÑ\s\-–—:]{4,}$/.test(lt) && lt.length < 80) 
-        return '<div style="font-family:var(--ff);font-size:13px;font-weight:700;letter-spacing:2px;color:var(--gold);padding:12px 0 4px;border-bottom:1px solid rgba(200,165,74,.2);margin-bottom:4px">' + lt + '</div>';
+        return '<div style="font-family:var(--ff);font-size:13px;font-weight:700;letter-spacing:2px;color:var(--gold);padding:12px 0 4px;border-bottom:1px solid rgba(107,107,102,.2);margin-bottom:4px">' + lt + '</div>';
       // Subtítulos (COMIDA N, encabezados con :)
       if (/^(COMIDA\s*\d|DESAYUNO|ALMUERZO|CENA|PRE.?ENTRENO|POST.?ENTRENO|SNACK|COLACI)/i.test(lt))
         return '<div style="font-family:var(--ff);font-size:12px;font-weight:700;letter-spacing:1.5px;color:var(--accent);padding:10px 0 4px">' + lt + '</div>';
@@ -7523,7 +7528,7 @@ function parsearYRenderComidas(texto) {
         return '<div style="font-size:10px;color:var(--gold);padding:4px 0 8px;font-family:var(--ff);letter-spacing:.5px;opacity:.85">' + lt + '</div>';
       // Líneas de totales / verificación
       if (/^(TOTAL|VERIFICACI|EA\s*[:=])/i.test(lt))
-        return '<div style="font-size:11px;font-weight:700;color:var(--accent);padding:6px 0;border-top:1px solid rgba(200,165,74,.2);margin-top:4px">' + lt + '</div>';
+        return '<div style="font-size:11px;font-weight:700;color:var(--accent);padding:6px 0;border-top:1px solid rgba(107,107,102,.2);margin-top:4px">' + lt + '</div>';
       // Ingredientes con gramos
       if (/\d+\s*(g|ml|pza)/i.test(lt))
         return '<div style="font-size:13px;color:var(--tx);padding:3px 0 3px 8px;border-left:2px solid var(--border);margin:2px 0">' + lt + '</div>';
@@ -7629,14 +7634,14 @@ function parsearYRenderComidas(texto) {
       }
       // Render de sub-notas (aclaraciones de pesaje, etc.)
       var subnotasHtml = subnotas.length ? subnotas.map(function(sn) {
-        return '<div style="font-size:10px;color:var(--mt2);padding:3px 0 0 18px;font-style:italic;line-height:1.45;border-left:2px solid rgba(200,165,74,.2);margin-left:4px;margin-top:3px">'+
+        return '<div style="font-size:10px;color:var(--mt2);padding:3px 0 0 18px;font-style:italic;line-height:1.45;border-left:2px solid rgba(107,107,102,.2);margin-left:4px;margin-top:3px">'+
           '<span style="color:var(--accent);font-style:normal;margin-right:4px">ⓘ</span>'+ sn +
         '</div>';
       }).join('') : '';
       return '<div id="alim_' + key + '" style="' +
         'display:flex;gap:9px;padding:8px 0;border-bottom:1px solid rgba(30,35,48,.6);' +
         (hasSust ? 'padding-bottom:4px;' : '') + '">' +
-        '<div style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.25);display:flex;align-items:center;justify-content:center;font-family:var(--ff);font-size:9px;font-weight:700;color:var(--gold);margin-top:1px">' + (ai + 1) + '</div>' +
+        '<div style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.25);display:flex;align-items:center;justify-content:center;font-family:var(--ff);font-size:9px;font-weight:700;color:var(--gold);margin-top:1px">' + (ai + 1) + '</div>' +
         '<div style="flex:1;min-width:0">' +
         // Main ingredient line
         '<div style="display:flex;justify-content:space-between;align-items:center">' +
@@ -7663,7 +7668,7 @@ function parsearYRenderComidas(texto) {
         var sM = s.match(/^(.+?)\s+(\d+[\d.,]*\s*(?:g|mg|mcg|ui|iu|caps?))\s*(?:\((.+)\))?\s*$/i);
         if (sM) {
           var nom = sM[1].trim(), dos = sM[2].trim(), nota = (sM[3]||'').trim();
-          return '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:rgba(200,165,74,.04);border-radius:6px;margin-bottom:3px">'+
+          return '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:rgba(107,107,102,.04);border-radius:6px;margin-bottom:3px">'+
             '<span style="font-size:12px">💊</span>'+
             '<div style="flex:1;min-width:0">'+
               '<div style="font-size:12px;color:var(--tx);font-weight:600">'+nom+'</div>'+
@@ -7675,7 +7680,7 @@ function parsearYRenderComidas(texto) {
         // Sin dosis clara → línea de texto
         return '<div style="font-size:11px;color:var(--mt);padding:3px 8px;line-height:1.5">• '+s+'</div>';
       }).join('');
-      suplHtml = '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed rgba(200,165,74,.25)">'+
+      suplHtml = '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed rgba(107,107,102,.25)">'+
         '<div style="font-size:9px;letter-spacing:1.5px;color:var(--gold);font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:5px">💊 SUPLEMENTOS CON ESTA COMIDA</div>'+
         itemsSup+
       '</div>';
@@ -7721,7 +7726,7 @@ function parsearYRenderComidas(texto) {
 
     return '<div style="background:var(--card);border:1px solid var(--bd);border-radius:14px;margin-bottom:10px;overflow:hidden">' +
       // Header with meal number, name and time
-      '<div style="padding:12px 14px;background:rgba(200,165,74,.06);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between">' +
+      '<div style="padding:12px 14px;background:rgba(107,107,102,.06);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between">' +
         '<div>' +
           '<div style="font-family:var(--ff);font-size:11px;letter-spacing:2px;color:var(--gold);font-weight:700">' + tituloNum + '</div>' +
           (tituloNombre ? '<div style="font-size:14px;color:var(--tx);font-weight:600;margin-top:2px;line-height:1.3">' + tituloNombre + '</div>' : '') +
@@ -7948,7 +7953,7 @@ function icsColor(v) {
   v = parseFloat(v);
   if (!v || isNaN(v)) return 'var(--mt)';
   if (v <= 3)  return '#c94a3a';
-  if (v <= 5)  return '#c8a54a';
+  if (v <= 5)  return '#6b6b66';
   if (v <= 7)  return '#a8c850';
   return '#3a9460';
 }
@@ -7976,7 +7981,7 @@ function buildICSSection(d, sem) {
   // ── Escala explicativa ─────────────────────────────────────────────
   var escala = [
     ['1–3', '#c94a3a', 'Técnica rota, ROM incompleto o dolor. Reduce carga inmediatamente.'],
-    ['4–5', '#c8a54a', 'Técnica aceptable pero falta conexión o ROM en algún punto. Mejorable.'],
+    ['4–5', '#6b6b66', 'Técnica aceptable pero falta conexión o ROM en algún punto. Mejorable.'],
     ['6–7', '#a8c850', 'Buena ejecución, sientes el músculo, ROM correcto. Serie válida.'],
     ['8–9', '#3a9460', 'Técnica sólida, contracción máxima, concentración alta.'],
     ['10',  '#3a9460', 'Serie perfecta. Úsala como referencia de estándar.']
@@ -7988,11 +7993,11 @@ function buildICSSection(d, sem) {
       + '</div>';
   }).join('');
 
-  var escalaHtml = '<div style="background:var(--dk);border:1px solid rgba(200,165,74,.2);padding:12px;margin-bottom:14px">'
+  var escalaHtml = '<div style="background:var(--dk);border:1px solid rgba(107,107,102,.2);padding:12px;margin-bottom:14px">'
     + '<div style="font-family:var(--ff);font-size:11px;letter-spacing:2px;color:var(--gold);margin-bottom:8px">¿CÓMO CALIFICAR CADA SERIE?</div>'
     + '<div style="font-size:11px;color:var(--mt);margin-bottom:10px">Al <b style="color:var(--tx)">terminar cada ejercicio</b>, asigna del 1 al 10 según la calidad real de ejecución:</div>'
     + escalaRows
-    + '<div style="margin-top:10px;padding:8px;background:rgba(200,165,74,.07);border-left:2px solid var(--gold);font-size:10px;color:var(--mt);line-height:1.6">'
+    + '<div style="margin-top:10px;padding:8px;background:rgba(107,107,102,.07);border-left:2px solid var(--gold);font-size:10px;color:var(--mt);line-height:1.6">'
     + '💡 <b style="color:var(--tx)">Bajan el ICS:</b> carga excesiva, fatiga, distracción, ROM reducido, robar la rep. &nbsp;'
     + '<b style="color:var(--tx)">Lo suben:</b> calentamiento, concentración, tempo controlado, peso apropiado al RIR objetivo.'
     + '</div></div>';
@@ -8113,10 +8118,10 @@ function renderCheckin() {
   var eng = d.energia || null;
   var engHtml = [1,2,3,4,5,6,7,8,9,10].map(function(v) {
     var on = eng === v;
-    var col = v<=3?'#c94a3a':v<=6?'#c8a54a':'#3a9460';
+    var col = v<=3?'#c94a3a':v<=6?'#6b6b66':'#3a9460';
     return '<button onclick="ciEnergia(' + v + ')" style="flex:1;padding:10px 2px;border:1px solid '
       + (on ? col : 'var(--bd)') + ';background:'
-      + (on ? 'rgba(200,165,74,.12)' : 'var(--dk)') + ';color:'
+      + (on ? 'rgba(107,107,102,.12)' : 'var(--dk)') + ';color:'
       + (on ? col : 'var(--mt)') + ';font-family:var(--ff);font-size:15px;cursor:pointer">'
       + v + '</button>';
   }).join('');
@@ -8227,7 +8232,7 @@ function renderPerfil() {
   // Chip de perfil de cliente (hipertrofia / rendimiento / hibrido) — define la dosificación que recibe
   var _profType = (PLAN.profileType || 'hipertrofia').toLowerCase();
   var _PROF_META = {
-    hipertrofia: { label:'HIPERTROFIA / RECOMPOSICIÓN', icon:'💪', color:'#c9a84c', bg:'rgba(200,165,74,.12)', border:'rgba(200,165,74,.35)', desc:'Fuerza, hipertrofia y recomposición corporal' },
+    hipertrofia: { label:'HIPERTROFIA / RECOMPOSICIÓN', icon:'💪', color:'#C4FF00', bg:'rgba(196,255,0,.10)', border:'rgba(196,255,0,.30)', desc:'Fuerza, hipertrofia y recomposición corporal' },
     rendimiento: { label:'RENDIMIENTO DEPORTIVO',       icon:'🏃', color:'#ff8aa6', bg:'rgba(255,138,166,.12)', border:'rgba(255,138,166,.4)',  desc:'HYROX / DEKA / híbrido competitivo' },
     hibrido:     { label:'HÍBRIDO (HIPERTROFIA + RENDIMIENTO)', icon:'⚡', color:'#c89cff', bg:'rgba(200,156,255,.12)', border:'rgba(200,156,255,.4)', desc:'Combinado: musculatura + capacidad aeróbica/funcional' },
     funcional:   { label:'FUNCIONAL · SALUD Y LONGEVIDAD', icon:'🧬', color:'#7ec0ff', bg:'rgba(126,192,255,.12)', border:'rgba(126,192,255,.35)', desc:'Adulto activo: capacidad funcional, movilidad, hipertrofia sostenible y cardio' }
@@ -8258,7 +8263,7 @@ function renderPerfil() {
       </div>
     </div>
 
-    <div style="margin-top:14px;padding:14px 16px 10px;background:linear-gradient(180deg,rgba(200,165,74,.04),transparent);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)">
+    <div style="margin-top:14px;padding:14px 16px 10px;background:linear-gradient(180deg,rgba(107,107,102,.04),transparent);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:24px">💊</span>
         <div style="flex:1">
@@ -8269,7 +8274,7 @@ function renderPerfil() {
     </div>
     <div style="padding:14px 4px 0">${supsHtml}</div>
 
-    <button onclick="showFAQModal()" style="width:100%;background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
+    <button onclick="showFAQModal()" style="width:100%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
     <button class="pdf-btn" onclick="exportPDF()" style="margin-top:10px">⬇ DESCARGAR MI PLAN PDF</button>
     <button class="logout-btn" onclick="doLogout()">CERRAR SESIÓN</button>
     <div style="text-align:center;font-size:9px;color:var(--mt);margin-top:16px;letter-spacing:1px">MOTOR VDSEN v3.2 · SOLO USO DEL CLIENTE</div>`;
@@ -8364,7 +8369,7 @@ function showFAQModal() {
         '</div>'+
         faqs.map(function(sec) {
           return '<div style="margin-bottom:18px">'+
-            '<div style="font-size:13px;font-weight:800;color:var(--gold);letter-spacing:1px;margin-bottom:10px;padding:6px 10px;background:rgba(200,165,74,.08);border-left:3px solid var(--gold);border-radius:0 6px 6px 0">'+sec.cat+'</div>'+
+            '<div style="font-size:13px;font-weight:800;color:var(--gold);letter-spacing:1px;margin-bottom:10px;padding:6px 10px;background:rgba(107,107,102,.08);border-left:3px solid var(--gold);border-radius:0 6px 6px 0">'+sec.cat+'</div>'+
             sec.items.map(function(it) {
               return '<details style="margin-bottom:6px;background:rgba(255,255,255,.02);border:1px solid var(--bd);border-radius:8px">'+
                 '<summary style="cursor:pointer;list-style:none;padding:10px 12px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tx);font-weight:600">'+
@@ -8376,7 +8381,7 @@ function showFAQModal() {
             }).join('')+
           '</div>';
         }).join('')+
-        '<div style="margin-top:16px;padding:10px 12px;background:rgba(200,165,74,.05);border:1px solid rgba(200,165,74,.2);border-radius:8px;font-size:11px;color:var(--mt);line-height:1.6;text-align:center">'+
+        '<div style="margin-top:16px;padding:10px 12px;background:rgba(107,107,102,.05);border:1px solid rgba(107,107,102,.2);border-radius:8px;font-size:11px;color:var(--mt);line-height:1.6;text-align:center">'+
           '💡 ¿Tu pregunta no está aquí? Háblale a tu coach.'+
         '</div>'+
         '<button onclick="document.getElementById(\'faqModal\').style.display=\'none\'" style="width:100%;background:var(--gold);color:#000;border:none;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:800;padding:12px;border-radius:8px;cursor:pointer;margin-top:14px">CERRAR</button>'+
@@ -8394,8 +8399,8 @@ function formatTextoSup(texto) {
     'Multivitamínico','L-Teanina','Vitamina C','Hierro','Colágeno','Taurina','Glutamina'];
   
   const TIER_COLORS = {
-    'TIER 1': { bg:'rgba(200,165,74,.12)', border:'rgba(200,165,74,.4)', color:'var(--gold)' },
-    'TIER 2': { bg:'rgba(68,136,204,.10)', border:'rgba(68,136,204,.35)', color:'#6aacee' },
+    'TIER 1': { bg:'rgba(107,107,102,.12)', border:'rgba(107,107,102,.4)', color:'var(--gold)' },
+    'TIER 2': { bg:'rgba(140,140,134,.10)', border:'rgba(140,140,134,.35)', color:'#6aacee' },
     'PRE-ENTRENO': { bg:'rgba(204,68,68,.10)', border:'rgba(204,68,68,.3)', color:'#ee6a6a' },
     'EVITAR': { bg:'rgba(100,100,100,.10)', border:'rgba(100,100,100,.3)', color:'var(--mt)' },
     'DEFAULT': { bg:'var(--dk)', border:'var(--bd)', color:'var(--tx)' },
@@ -8506,7 +8511,7 @@ function exportPDF() {
   const M=14, W=182;
 
   // ── Paleta de colores ────────────────────────────────────────────
-  var G=[200,165,74], GD=[155,120,38], GB=[252,246,222];   // gold
+  var G=[10,10,10], GD=[90,90,86], GB=[244,244,240];   // off-black / gris / hueso (oro retirado)
   var I0=[20,18,15], I1=[55,50,44], I2=[100,93,82], I3=[148,138,120]; // ink
   var BG=[252,251,248], LN=[220,212,195];                  // bg / line
   var BL=[40,75,148], BLB=[233,240,255];                   // blue
@@ -8521,7 +8526,7 @@ function exportPDF() {
   // ── Cabecera de página interna ───────────────────────────────────
   function _hdr() {
     doc.setFillColor(242,240,234); doc.rect(0,0,210,15,'F');
-    doc.setFillColor(...G); doc.rect(0,0,5,15,'F');
+    doc.setFillColor(196,255,0); doc.rect(0,0,5,15,'F');
     doc.setDrawColor(...LN); doc.setLineWidth(0.2); doc.line(5,15,210,15);
     doc.setFontSize(7.5); doc.setFont('helvetica','bold');
     doc.setTextColor(...G); doc.text('VDSEN', M+1, 10);
@@ -8549,7 +8554,7 @@ function exportPDF() {
   function secH(txt, col, icon) {
     chk(18);
     doc.setFillColor(...col); doc.rect(M, y, W, 12, 'F');
-    doc.setFillColor(...G);   doc.rect(M, y, 4, 12, 'F');
+    doc.setFillColor(196,255,0);   doc.rect(M, y, 4, 12, 'F');
     doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...W2);
     doc.text((icon||'◆')+' '+txt, M+8, y+8.5);
     y += 15;
@@ -9245,7 +9250,7 @@ function showPostSessionModal(di) {
   // Reset botones articular
   var artSi=document.getElementById('artSiBtn'), artNo=document.getElementById('artNoBtn');
   if(artSi){artSi.style.borderColor='var(--border)';artSi.style.background='var(--surface)';}
-  if(artNo){artNo.style.borderColor='var(--grn)';artNo.style.background='rgba(58,148,96,.12)';}
+  if(artNo){artNo.style.borderColor='var(--grn)';artNo.style.background='rgba(110,154,110,.12)';}
   updateRpeLabel(7);
   m.style.display = 'flex';
   m.scrollTop = 0;
@@ -9264,7 +9269,7 @@ function selectEimd(val) {
     var el = document.getElementById('eimd'+v);
     if (!el) return;
     el.style.borderColor = v===val ? colors[v] : 'var(--border)';
-    el.style.background  = v===val ? 'rgba(200,165,74,.1)' : 'var(--surface)';
+    el.style.background  = v===val ? 'rgba(107,107,102,.1)' : 'var(--surface)';
   });
 }
 
@@ -9455,10 +9460,10 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
   }
 
   var cfg = {
-    increase_load: { icon:'↑', label:'AUMENTAR CARGA',   color:'#3a9460', bg:'rgba(58,148,96,.12)',   border:'rgba(58,148,96,.40)'   },
-    add_sets:      { icon:'↑', label:'AGREGAR SERIE',    color:'#3a9460', bg:'rgba(58,148,96,.12)',   border:'rgba(58,148,96,.40)'   },
-    maintain:      { icon:'=', label:'MANTENER',         color:'#C9A84C', bg:'rgba(201,168,76,.10)',  border:'rgba(201,168,76,.35)'  },
-    freeze_load:   { icon:'⏸', label:'CONGELAR CARGA',  color:'#C9A84C', bg:'rgba(201,168,76,.10)',  border:'rgba(201,168,76,.35)'  },
+    increase_load: { icon:'↑', label:'AUMENTAR CARGA',   color:'#3a9460', bg:'rgba(110,154,110,.12)',   border:'rgba(110,154,110,.40)'   },
+    add_sets:      { icon:'↑', label:'AGREGAR SERIE',    color:'#3a9460', bg:'rgba(110,154,110,.12)',   border:'rgba(110,154,110,.40)'   },
+    maintain:      { icon:'=', label:'MANTENER',         color:'#C4FF00', bg:'rgba(196,255,0,.10)',  border:'rgba(196,255,0,.35)'  },
+    freeze_load:   { icon:'⏸', label:'CONGELAR CARGA',  color:'#C4FF00', bg:'rgba(196,255,0,.10)',  border:'rgba(196,255,0,.35)'  },
     reduce_load:   { icon:'↓', label:'REDUCIR CARGA',    color:'#e06040', bg:'rgba(220,80,50,.10)',   border:'rgba(220,80,50,.40)'   },
     reduce_sets:   { icon:'↓', label:'REDUCIR SERIES',   color:'#FF8844', bg:'rgba(255,136,68,.10)',  border:'rgba(255,136,68,.40)'  },
     deload:        { icon:'🔄',label:'DESCARGA ACTIVA',  color:'#6488CC', bg:'rgba(100,136,204,.10)', border:'rgba(100,136,204,.40)' },
@@ -9537,7 +9542,7 @@ function _drawSparkline(canvasId, data, color) {
   ctx.lineTo(w - pad, h - pad);
   ctx.closePath();
   ctx.fillStyle = color.replace(')', ',.08)').replace('rgb', 'rgba').replace('var(--', '');
-  try { ctx.fillStyle = 'rgba(200,165,74,.08)'; } catch(e) {}
+  try { ctx.fillStyle = 'rgba(107,107,102,.08)'; } catch(e) {}
   ctx.fill();
   // Línea
   ctx.beginPath();
@@ -10040,13 +10045,13 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
   // ── 1) PROGRESIÓN del algoritmo ──
   if (progRec && progRec.newLoad) {
     var actionMeta = {
-      increase_load: { label:'SUBIR CARGA',   arrow:'↑', color:'var(--grn)',  bg:'rgba(58,148,96,.10)',   bd:'rgba(58,148,96,.45)'   },
-      add_sets:      { label:'+ SERIES',      arrow:'＋', color:'var(--grn)',  bg:'rgba(58,148,96,.10)',   bd:'rgba(58,148,96,.45)'   },
-      freeze_load:   { label:'MANTENER',      arrow:'＝', color:'var(--gold)', bg:'rgba(200,165,74,.10)',  bd:'rgba(200,165,74,.45)'  },
-      maintain:      { label:'MANTENER',      arrow:'＝', color:'var(--gold)', bg:'rgba(200,165,74,.10)',  bd:'rgba(200,165,74,.45)'  },
+      increase_load: { label:'SUBIR CARGA',   arrow:'↑', color:'var(--grn)',  bg:'rgba(110,154,110,.10)',   bd:'rgba(110,154,110,.45)'   },
+      add_sets:      { label:'+ SERIES',      arrow:'＋', color:'var(--grn)',  bg:'rgba(110,154,110,.10)',   bd:'rgba(110,154,110,.45)'   },
+      freeze_load:   { label:'MANTENER',      arrow:'＝', color:'var(--gold)', bg:'rgba(107,107,102,.10)',  bd:'rgba(107,107,102,.45)'  },
+      maintain:      { label:'MANTENER',      arrow:'＝', color:'var(--gold)', bg:'rgba(107,107,102,.10)',  bd:'rgba(107,107,102,.45)'  },
       reduce_sets:   { label:'BAJAR SERIES',  arrow:'↓', color:'#FF8844',     bg:'rgba(255,140,50,.10)',  bd:'rgba(255,140,50,.45)'  },
       reduce_load:   { label:'BAJAR CARGA',   arrow:'↓', color:'var(--red)',  bg:'rgba(220,60,60,.10)',   bd:'rgba(220,60,60,.45)'   },
-      deload:        { label:'DELOAD',        arrow:'⤵', color:'var(--blue)', bg:'rgba(68,136,204,.10)',  bd:'rgba(68,136,204,.45)'  }
+      deload:        { label:'DELOAD',        arrow:'⤵', color:'var(--blue)', bg:'rgba(140,140,134,.10)',  bd:'rgba(140,140,134,.45)'  }
     };
     var meta = actionMeta[progRec.action] || actionMeta.maintain;
     blocks.push(
@@ -10084,7 +10089,7 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
     var histCargaShown = _convertCarga(histEx.load, histEx.unit, unit);
     var histConvMark = (histEx.unit && histEx.unit !== unit) ? ' <span style="opacity:.55">(de '+histEx.unit+')</span>' : '';
     blocks.push(
-      '<div style="margin-bottom:6px;font-size:10px;color:rgba(108,150,255,.9);background:rgba(68,136,204,.06);border:1px solid rgba(68,136,204,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
+      '<div style="margin-bottom:6px;font-size:10px;color:rgba(108,150,255,.9);background:rgba(140,140,134,.06);border:1px solid rgba(140,140,134,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
         '<span style="font-weight:800;letter-spacing:.8px">📋 HISTORIAL</span>'+
         '<span style="color:var(--mt2)">'+histCargaShown+' '+unit+histConvMark+(histEx.reps?' × '+histEx.reps+' reps':'')+(histEx.rir?' · RIR '+histEx.rir:'')+'</span>'+
       '</div>'
@@ -10422,7 +10427,7 @@ function calculateProgression(di, postData) {
       <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">1 · DOLOR MUSCULAR (EIMD)</div>
       <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
         ¿Cómo están los músculos trabajados <strong style="color:var(--tx)">hoy</strong> en comparación a cuando entrenaste?
-        <span style="color:rgba(200,165,74,.6)"> · Afecta si se sube volumen o carga la próxima semana.</span>
+        <span style="color:rgba(107,107,102,.6)"> · Afecta si se sube volumen o carga la próxima semana.</span>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <div id="eimd1" onclick="selectEimd(1)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
@@ -10445,14 +10450,14 @@ function calculateProgression(di, postData) {
       <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">2 · FATIGA ARTICULAR</div>
       <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
         ¿Sientes molestia en <strong style="color:var(--tx)">articulaciones</strong> (hombro, rodilla, codo, lumbar)?
-        <span style="color:rgba(200,165,74,.6)"> · Diferente a las agujetas musculares — es tensión/dolor en la articulación misma.</span>
+        <span style="color:rgba(107,107,102,.6)"> · Diferente a las agujetas musculares — es tensión/dolor en la articulación misma.</span>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
         <button onclick="document.getElementById('psArticular').value='si';toggleArticularPain();this.style.background='rgba(200,100,0,.18)';this.style.borderColor='#FF8844';document.getElementById('artNoBtn').style.borderColor='var(--border)';document.getElementById('artNoBtn').style.background='var(--surface)'" id="artSiBtn"
           style="flex:1;padding:11px;background:var(--surface);border:2px solid var(--border);border-radius:10px;color:var(--tx);font-size:13px;font-weight:700;cursor:pointer;line-height:1.4">
           ⚠️ Sí, hay molestia articular</button>
-        <button onclick="document.getElementById('psArticular').value='no';toggleArticularPain();this.style.background='rgba(58,148,96,.12)';this.style.borderColor='var(--grn)';document.getElementById('artSiBtn').style.borderColor='var(--border)';document.getElementById('artSiBtn').style.background='var(--surface)'" id="artNoBtn"
-          style="flex:1;padding:11px;background:rgba(58,148,96,.12);border:2px solid var(--grn);border-radius:10px;color:var(--tx);font-size:13px;font-weight:700;cursor:pointer">
+        <button onclick="document.getElementById('psArticular').value='no';toggleArticularPain();this.style.background='rgba(110,154,110,.12)';this.style.borderColor='var(--grn)';document.getElementById('artSiBtn').style.borderColor='var(--border)';document.getElementById('artSiBtn').style.background='var(--surface)'" id="artNoBtn"
+          style="flex:1;padding:11px;background:rgba(110,154,110,.12);border:2px solid var(--grn);border-radius:10px;color:var(--tx);font-size:13px;font-weight:700;cursor:pointer">
           ✅ No, estoy bien</button>
       </div>
       <input type="hidden" id="psArticular" value="no">
@@ -10476,7 +10481,7 @@ function calculateProgression(di, postData) {
       <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">3 · SUEÑO (última noche)</div>
       <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
         ¿Cuántas horas dormiste la noche <strong style="color:var(--tx)">anterior</strong> a este entrenamiento?
-        <span style="color:rgba(200,165,74,.6)"> · Menos de 6h reduce hasta un 30% la síntesis proteica nocturna y activa alerta de recuperación.</span>
+        <span style="color:rgba(107,107,102,.6)"> · Menos de 6h reduce hasta un 30% la síntesis proteica nocturna y activa alerta de recuperación.</span>
       </div>
       <input id="psSueno" type="number" min="1" max="12" step="0.5" placeholder="7.5" inputmode="decimal"
         style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-size:28px;font-weight:700;padding:12px;outline:none;text-align:center;box-sizing:border-box">
@@ -10493,7 +10498,7 @@ function calculateProgression(di, postData) {
       <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">4 · RPE DE LA SESIÓN — <span id="psRpeVal" style="color:#fff;font-size:18px">7</span><span style="font-size:11px;color:var(--mt)">/10</span></div>
       <div style="font-size:12px;color:var(--mt);margin-bottom:12px;line-height:1.5">
         Esfuerzo percibido <strong style="color:var(--tx)">promedio</strong> de toda la sesión.
-        <span style="color:rgba(200,165,74,.6)"> · RPE crónico ≥9 activa alerta de sobreentrenamiento.</span>
+        <span style="color:rgba(107,107,102,.6)"> · RPE crónico ≥9 activa alerta de sobreentrenamiento.</span>
       </div>
       <input id="psRpe" type="range" min="1" max="10" step="1" value="7"
         oninput="document.getElementById('psRpeVal').textContent=this.value;updateRpeLabel(this.value)"
@@ -10501,13 +10506,13 @@ function calculateProgression(di, postData) {
       <div id="psRpeLabel" style="text-align:center;font-size:13px;font-weight:700;color:var(--accent);min-height:18px;margin-bottom:8px">Difícil — 2-3 reps más eran posibles</div>
       <!-- Escala RPE visual -->
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;font-size:9px">
-        <div style="text-align:center;padding:5px 2px;background:rgba(58,148,96,.12);border-radius:4px;color:var(--grn)">
+        <div style="text-align:center;padding:5px 2px;background:rgba(110,154,110,.12);border-radius:4px;color:var(--grn)">
           <div style="font-weight:800">5-6</div><div style="color:var(--mt);margin-top:1px">Fácil</div>
         </div>
-        <div style="text-align:center;padding:5px 2px;background:rgba(200,165,74,.1);border-radius:4px;color:var(--accent)">
+        <div style="text-align:center;padding:5px 2px;background:rgba(107,107,102,.1);border-radius:4px;color:var(--accent)">
           <div style="font-weight:800">7</div><div style="color:var(--mt);margin-top:1px">Moderado</div>
         </div>
-        <div style="text-align:center;padding:5px 2px;background:rgba(200,165,74,.15);border-radius:4px;color:var(--accent)">
+        <div style="text-align:center;padding:5px 2px;background:rgba(107,107,102,.15);border-radius:4px;color:var(--accent)">
           <div style="font-weight:800">8</div><div style="color:var(--mt);margin-top:1px">Difícil</div>
         </div>
         <div style="text-align:center;padding:5px 2px;background:rgba(220,120,30,.15);border-radius:4px;color:#e8a040">
