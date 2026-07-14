@@ -5201,6 +5201,26 @@ function renderEntrenamiento() {
       '</button>';
   }).join('');
 
+  // ── Cerrar semana con datos parciales ──────────────────────────────
+  // Se ofrece cuando el usuario está viendo la semana activa, ya cerró al menos
+  // una sesión pero le quedan pendientes — le permite avanzar sin registrar todo
+  // set por set (útil si entrenó y no logueó, o si perdió una sesión).
+  var closeWeekBanner = '';
+  if (CURRENT_WEEK === REAL_WEEK && sesiones.length > 0) {
+    var _doneCnt = 0, _pendCnt = 0;
+    for (var _cw = 0; _cw < sesiones.length; _cw++) {
+      if (LOGS['done_'+REAL_WEEK+'_'+_cw]) _doneCnt++; else _pendCnt++;
+    }
+    if (_doneCnt > 0 && _pendCnt > 0) {
+      closeWeekBanner = '<div style="margin:0 16px 8px;padding:10px 12px;background:rgba(200,165,74,.06);border:1px dashed rgba(200,165,74,.35);border-radius:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+        '<div style="flex:1;min-width:180px;font-size:11px;color:var(--mt);line-height:1.4">'+
+          'Quedan <strong style="color:var(--tx)">'+_pendCnt+'</strong> sesión(es) sin cerrar en la SEM '+REAL_WEEK+'. Puedes cerrar la semana con los datos que sí registraste.'+
+        '</div>'+
+        '<button onclick="markWeekDoneWithPartialData()" style="padding:8px 12px;border:1px solid var(--accent);border-radius:8px;cursor:pointer;background:rgba(200,165,74,.12);color:var(--accent);font-size:11px;font-weight:800;letter-spacing:.5px;white-space:nowrap">✓ CERRAR SEMANA</button>'+
+      '</div>';
+    }
+  }
+
   // ── Sesión activa ────────────────────────────────────────────────
   var ses = sesiones[DIA_ACTIVO];
   var isDone = !!LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
@@ -5294,6 +5314,8 @@ function renderEntrenamiento() {
     '<div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto">'+tabsHtml+'</div>'+
     // View-mode banner (navegando a semana distinta)
     viewBanner+
+    // Cerrar semana con datos parciales (semana activa con sesiones pendientes)
+    closeWeekBanner+
     // Deload banner
     deloadBanner+
     // Readiness pre-sesión
@@ -6517,6 +6539,80 @@ async function markSessionDoneFromHistory(di) {
   showPostSessionModal(di);
 }
 
+
+// Cierra la SEMANA ACTIVA (REAL_WEEK) marcando como completas todas las
+// sesiones pendientes. Para las sesiones que ya tienen algún set registrado,
+// corre calculateProgression con valores post-sesión por defecto para que la
+// progresión de la siguiente semana use esa data real. Las sesiones sin
+// ningún set se marcan como skipped (no generan progrec — se cae al histórico).
+async function markWeekDoneWithPartialData() {
+  if (CURRENT_WEEK !== REAL_WEEK) {
+    showToast('Ve a la semana activa (SEM '+REAL_WEEK+') para cerrarla', true);
+    return;
+  }
+  var sesiones = getSesiones();
+  if (!sesiones.length) return;
+  var pendientes = [];
+  for (var i = 0; i < sesiones.length; i++) {
+    if (!LOGS['done_'+REAL_WEEK+'_'+i]) pendientes.push(i);
+  }
+  if (!pendientes.length) { showToast('Todas las sesiones ya están completas'); return; }
+
+  var _sesionTieneData = function(di) {
+    var pfx = 'log_'+REAL_WEEK+'_'+di+'_';
+    for (var k in LOGS) {
+      if (k.indexOf(pfx) === 0 && LOGS[k] && LOGS[k].done) return true;
+    }
+    return false;
+  };
+  var conData = 0, sinData = 0;
+  pendientes.forEach(function(di){ _sesionTieneData(di) ? conData++ : sinData++; });
+
+  var msg = 'Vas a cerrar la SEM '+REAL_WEEK+' con '+pendientes.length+' sesión(es) pendiente(s):\n\n'+
+    (conData ? '• '+conData+' con datos parciales → se usarán para la progresión\n' : '')+
+    (sinData ? '• '+sinData+' sin registro → se saltarán (la progresión caerá al histórico)\n' : '')+
+    '\nDespués avanzarás a la siguiente semana. ¿Continuar?';
+  if (!confirm(msg)) return;
+
+  var defaultPost = {
+    eimd: 2,
+    articularPain: { present: false, pattern: '' },
+    sleepHours: 7,
+    rpeAverage: 7,
+    ts: Date.now(),
+    autoClosed: true
+  };
+  pendientes.forEach(function(di) {
+    var hasData = _sesionTieneData(di);
+    var postKey = 'postsession_'+REAL_WEEK+'_'+di;
+    if (!LOGS[postKey]) LOGS[postKey] = defaultPost;
+    if (hasData) {
+      try {
+        var rec = calculateProgression(di, LOGS[postKey]);
+        if (rec) {
+          var recSafe = JSON.parse(JSON.stringify(rec, function(k, v) {
+            if (typeof v === 'number' && !isFinite(v)) return null;
+            return v;
+          }));
+          LOGS['progrec_'+REAL_WEEK+'_'+di] = recSafe;
+        }
+      } catch(e) { console.warn('progression on close-week failed:', e && e.message); }
+    }
+    LOGS['done_'+REAL_WEEK+'_'+di] = { ts: Date.now(), autoClosed: true, skipped: !hasData };
+  });
+
+  if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+  var ok = await _doSaveLogs();
+  if (ok === false) {
+    showToast('⚠ NO SE GUARDÓ — revisa conexión y reintenta', true);
+    return;
+  }
+  showToast('✓ Semana '+REAL_WEEK+' cerrada — '+conData+' con data, '+sinData+' saltada(s)');
+  await _autoAdvanceWeekIfDone(false);
+  renderEntrenamiento();
+  renderResumen();
+}
+window.markWeekDoneWithPartialData = markWeekDoneWithPartialData;
 
 var _saveLogsTimer = null;
 async function saveLogs() {
