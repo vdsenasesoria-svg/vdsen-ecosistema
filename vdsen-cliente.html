@@ -256,7 +256,7 @@ button:active{opacity:.85}
       <span class="vd-slogan">El esfuerzo no es negociable</span>
     </div>
     <div class="login-card">
-      <div class="lf"><label>Usuario / Correo</label><input type="email" id="liEmail" placeholder="tucorreo@email.com" autocomplete="email"></div>
+      <div class="lf"><label>Celular o correo</label><input type="text" id="liEmail" placeholder="10 dígitos (celular) o tucorreo@email.com" autocomplete="username" inputmode="text"></div>
       <div class="lf"><label>Contraseña</label><div style="position:relative"><input type="password" id="liPass" placeholder="••••••••" autocomplete="current-password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="_togglePwd('liPass',this)" aria-label="Mostrar/ocultar contraseña" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:var(--mt);font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div></div>
       <div class="login-err" id="liErr"></div>
       <button class="login-btn" onclick="doLogin()">ACCEDER</button>
@@ -986,10 +986,18 @@ waitFB(() => {
 // AUTH
 // ══════════════════════════════════════════════════
 async function resetPassword() {
-  var email = document.getElementById('liEmail').value.trim();
+  var raw = document.getElementById('liEmail').value.trim();
   var errEl = document.getElementById('liErr');
-  if (!email) { errEl.textContent = 'Escribe tu correo primero'; return; }
+  if (!raw) { errEl.textContent = 'Escribe tu correo primero'; return; }
   if (!FB) { errEl.textContent = 'Espera a que cargue la conexión'; return; }
+  var norm = _normalizeLoginId(raw);
+  if (!norm) { errEl.textContent = 'Escribe un correo válido'; return; }
+  if (norm.kind === 'phone') {
+    errEl.style.color = '';
+    errEl.textContent = 'Para recuperar contraseña necesitas correo. Pide a tu coach que te lo asigne o que reinicie tu contraseña.';
+    return;
+  }
+  var email = norm.email;
   try {
     await FB.sendPasswordResetEmail(FB.auth, email);
     errEl.style.color = 'var(--grn)';
@@ -1011,13 +1019,35 @@ function _togglePwd(inputId, btn) {
 }
 window._togglePwd = _togglePwd;
 
+// ── Normalización de identificador de login (teléfono o correo) ─────────
+// Devuelve {kind:'email', email, phone:null} o {kind:'phone', email, phone}
+// donde `email` es el que efectivamente se manda a Firebase Auth (para
+// teléfonos se usa un correo sintético <digits>@phone.vdsen.app).
+// Los clientes viejos con correo real siguen funcionando sin cambios.
+function _normalizeLoginId(raw) {
+  var s = String(raw || '').trim();
+  if (!s) return null;
+  if (s.indexOf('@') !== -1) {
+    return { kind: 'email', email: s.toLowerCase(), phone: null };
+  }
+  var digits = s.replace(/[^\d]/g, '');
+  if (digits.length < 10) return null;
+  // Si son 10 dígitos, asume México (52). Si ya trae código de país (≥11), úsalo tal cual.
+  if (digits.length === 10) digits = '52' + digits;
+  return { kind: 'phone', email: digits + '@phone.vdsen.app', phone: '+' + digits };
+}
+
 async function doLogin() {
-  const email = document.getElementById('liEmail').value.trim();
+  const rawId = document.getElementById('liEmail').value.trim();
   const pass  = document.getElementById('liPass').value;
   const errEl = document.getElementById('liErr');
   const btn   = document.querySelector('.login-btn');
   errEl.textContent = '';
-  if (!email || !pass) { errEl.textContent = 'Ingresa correo y contraseña'; return; }
+  if (!rawId || !pass) { errEl.textContent = 'Ingresa tu celular (o correo) y contraseña'; return; }
+  const norm = _normalizeLoginId(rawId);
+  if (!norm) { errEl.textContent = '❌ Escribe un celular válido (10 dígitos) o un correo'; return; }
+  const email = norm.email;
+  window._pendingPhoneToSave = norm.phone; // se guarda tras autenticar
 
   // Firebase aún no cargó — esperar hasta 5s
   if (!FB) {
@@ -1085,6 +1115,17 @@ async function loadPlan(user) {
     }
 
     const clientData = clientSnap.data();
+
+    // Si el usuario entró con celular, dejarlo guardado en su ficha (una sola vez).
+    // window._pendingPhoneToSave es "+52..." si el login fue por teléfono; null si fue por correo.
+    if (window._pendingPhoneToSave && clientData.phone !== window._pendingPhoneToSave) {
+      try {
+        await FB.updateDoc(clientRef, { phone: window._pendingPhoneToSave });
+        clientData.phone = window._pendingPhoneToSave;
+      } catch(_e) { console.warn('No se pudo guardar phone:', _e && _e.message); }
+    }
+    window._pendingPhoneToSave = null;
+
     const activePlanId = clientData.activePlanId;
 
     if (!activePlanId) {

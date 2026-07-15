@@ -280,10 +280,10 @@
     </div>
     <label class="block text-xs text-[#888] mb-1">Nombre completo</label>
     <input id="nc-name" class="input-field mb-3" placeholder="Juan Pérez">
-    <label class="block text-xs text-[#888] mb-1">Email</label>
-    <input id="nc-email" class="input-field mb-3" type="email" placeholder="juan@email.com">
-    <label class="block text-xs text-[#888] mb-1">📱 WhatsApp <span class="text-[#555]">(opcional, con código país)</span></label>
-    <input id="nc-phone" class="input-field mb-3" type="tel" placeholder="+52 155 1234 5678">
+    <label class="block text-xs text-[#888] mb-1">📱 Celular <span class="text-[#555]">(10 dígitos MX o con código país)</span></label>
+    <input id="nc-phone" class="input-field mb-3" type="tel" placeholder="5551234567" inputmode="tel">
+    <label class="block text-xs text-[#888] mb-1">Email <span class="text-[#555]">(opcional — si no lo pones, se genera desde el celular)</span></label>
+    <input id="nc-email" class="input-field mb-3" type="email" placeholder="juan@email.com (opcional)">
     <label class="block text-xs text-[#888] mb-1">Contraseña temporal</label>
     <div style="position:relative" class="mb-4">
       <input id="nc-pass" class="input-field" type="password" placeholder="mínimo 6 caracteres" style="padding-right:42px;width:100%;box-sizing:border-box">
@@ -675,6 +675,21 @@ El registro toma 30 segundos por serie. La diferencia entre un atleta promedio y
 El esfuerzo no es negociable.
 — ${coachName} · VDSEN`;
     }
+    if (alert?.type === 'renewMembership') {
+      return `Hola ${name} 👋
+
+Te escribo para recordarte que toca *renovar tu membresía de entrenamiento personal* con VDSEN. 💳
+
+Renovar a tiempo te asegura:
+• Continuidad en tu progresión (sin perder la data del mesociclo actual)
+• Ajuste inmediato del próximo bloque según tus resultados
+• Acceso a la app, planes y seguimiento sin cortes
+
+Cuando confirmes el pago te reactivo el acceso y arrancamos el siguiente ciclo. Cualquier duda con el proceso, aquí estoy.
+
+El esfuerzo no es negociable — y la consistencia se construye ciclo a ciclo.
+— ${coachName} · VDSEN`;
+    }
     return `Hola ${name}, ¿cómo va el entrenamiento? Recuerda completar tu bitácora. — ${coachName}`;
   }
   window.buildWhatsAppMessage = buildWhatsAppMessage;
@@ -747,6 +762,10 @@ El esfuerzo no es negociable.
               <div>🏁 Cierre de mesociclo</div>
               <div style="font-size:10px;font-weight:400;opacity:.8;margin-top:3px">Felicitar y anunciar próximo bloque</div>
             </button>
+            <button data-type="renewMembership" class="_waChoice" style="text-align:left;padding:12px;border-radius:8px;border:1px solid rgba(196,255,0,.5);background:rgba(196,255,0,.08);color:#C4FF00;font-size:13px;font-weight:600;cursor:pointer">
+              <div>💳 Renovar membresía</div>
+              <div style="font-size:10px;font-weight:400;opacity:.8;margin-top:3px">Recordatorio de pago de entrenamiento personal</div>
+            </button>
           </div>
           <div style="display:flex;gap:8px;justify-content:flex-end">
             <button id="_waCancel" style="padding:8px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
@@ -776,19 +795,25 @@ El esfuerzo no es negociable.
   // ── Mensaje de acceso individual (credenciales + link app cliente) ──
   function buildAccessMessage(client, password) {
     const name = client.displayName || 'cliente';
+    const phone = client.phone || '';
     const email = client.email || '';
     const pass = password || '[CONTRASEÑA]';
+    // Si el email es sintético (phone.vdsen.app), mostrar sólo el celular como usuario.
+    const isSynth = /@phone\.vdsen\.app$/i.test(email);
+    const userLine = phone
+      ? `📱 Usuario (celular): ${phone}${isSynth ? '' : `\n📧 (o correo): ${email}`}`
+      : `📧 Usuario (correo): ${email}`;
     return `¡Hola ${name}! 👋
 
 Ya está listo tu acceso a la app de VDSEN para registrar tus entrenamientos, nutrición y seguimiento semanal.
 
 🔗 Link: https://vdsen-ecosistema.vercel.app/cliente
-📧 Usuario (correo): ${email}
+${userLine}
 🔑 Contraseña: ${pass}
 
 Pasos:
 1. Abre el link desde tu celular (te recomiendo guardarlo en tu pantalla de inicio).
-2. Ingresa con tu correo y contraseña.
+2. Ingresa con tu ${phone ? 'celular' : 'correo'} y contraseña.
 3. Ahí vas a ver tu plan de entrenamiento, nutrición y suplementación.
 
 📌 Importante: no compartas tu acceso con nadie.
@@ -1098,11 +1123,28 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
     document.getElementById("nc-submit").onclick = async () => {
       const name = document.getElementById("nc-name").value.trim();
-      const email = document.getElementById("nc-email").value.trim();
+      let email = document.getElementById("nc-email").value.trim();
+      const rawPhone = document.getElementById("nc-phone").value.trim();
       const pass = document.getElementById("nc-pass").value;
-      if (!name || !email || !pass) { showToast("Completa todos los campos", true); return; }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast("Email inválido. Verifica el formato.", true); return; }
+
+      // Normalizar celular a E.164 (+52...): 10 dígitos = MX, ≥11 = usar código país tal cual
+      let phoneNormalized = "";
+      if (rawPhone) {
+        let digits = rawPhone.replace(/[^\d]/g, "");
+        if (digits.length === 10) digits = "52" + digits;
+        if (digits.length >= 11) phoneNormalized = "+" + digits;
+      }
+
+      if (!name || !pass) { showToast("Completa nombre y contraseña", true); return; }
+      if (!email && !phoneNormalized) { showToast("Escribe celular o email (al menos uno)", true); return; }
+      if (rawPhone && !phoneNormalized) { showToast("Celular inválido — mínimo 10 dígitos", true); return; }
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast("Email inválido. Verifica el formato.", true); return; }
       if (pass.length < 6) { showToast("La contraseña debe tener al menos 6 caracteres", true); return; }
+
+      // Si no dio email pero sí celular, generar email sintético (mismo formato que usa la app cliente)
+      if (!email && phoneNormalized) {
+        email = phoneNormalized.replace(/^\+/, "") + "@phone.vdsen.app";
+      }
       const btn = document.getElementById("nc-submit");
       btn.disabled = true; btn.textContent = "Creando...";
       const { initializeApp: initSecondary, deleteApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
@@ -1123,9 +1165,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             throw authErr;
           }
         }
-        const phoneVal = document.getElementById("nc-phone")?.value.trim() || "";
         await setDoc(doc(db, "clients", uid), {
-          coachId: currentCoach.uid, email, displayName: name, phone: phoneVal,
+          coachId: currentCoach.uid, email, displayName: name, phone: phoneNormalized,
           role: "client", activePlanId: null, nutritionPlan: {}, supplementPlan: {}, tempPassword: pass
         }, { merge: true });
         modal.style.display = "none";
