@@ -280,8 +280,13 @@
     </div>
     <label class="block text-xs text-[#888] mb-1">Nombre completo</label>
     <input id="nc-name" class="input-field mb-3" placeholder="Juan Pérez">
-    <label class="block text-xs text-[#888] mb-1">📱 Celular <span class="text-[#555]">(10 dígitos MX o con código país)</span></label>
-    <input id="nc-phone" class="input-field mb-3" type="tel" placeholder="5551234567" inputmode="tel">
+    <label class="block text-xs text-[#888] mb-1">📱 Celular</label>
+    <input id="nc-phone" class="input-field" type="tel" placeholder="5551234567" inputmode="numeric" autocomplete="tel-national" maxlength="15">
+    <div class="text-[10px] text-[#666] leading-relaxed mb-1 mt-1">
+      📌 <strong class="text-[#cfcfcf]">10 dígitos</strong> si es México · sin espacios, guiones ni paréntesis (ej. <span class="text-[#c8a54a] font-bold">5551234567</span>).<br>
+      Si es de otro país, incluye código país (ej. <span class="text-[#c8a54a] font-bold">15551234567</span> para EEUU).
+    </div>
+    <div id="nc-phone-preview" class="text-[11px] mb-3 min-h-[14px] font-semibold" style="color:#44BB88"></div>
     <label class="block text-xs text-[#888] mb-1">Email <span class="text-[#555]">(opcional — si no lo pones, se genera desde el celular)</span></label>
     <input id="nc-email" class="input-field mb-3" type="email" placeholder="juan@email.com (opcional)">
     <label class="block text-xs text-[#888] mb-1">Contraseña temporal</label>
@@ -1114,12 +1119,39 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     document.getElementById("newClientBtn").onclick = () => createClientModal();
   }
   
+  // Preview en vivo + auto-limpieza para inputs de celular.
+  // Muestra cómo se guardará el número (E.164) mientras el usuario escribe.
+  function _wirePhonePreview(inputEl, previewEl) {
+    if (!inputEl || !previewEl) return;
+    const upd = () => {
+      const raw = inputEl.value;
+      const cleaned = raw.replace(/[^\d]/g, '');
+      if (raw !== cleaned) inputEl.value = cleaned;
+      if (!cleaned) { previewEl.textContent = ''; return; }
+      if (cleaned.length < 10) {
+        previewEl.style.color = '#888';
+        previewEl.textContent = 'Faltan ' + (10 - cleaned.length) + ' dígito(s)…';
+        return;
+      }
+      const e164 = cleaned.length === 10 ? '+52' + cleaned : '+' + cleaned;
+      previewEl.style.color = '#44BB88';
+      previewEl.textContent = '✓ Se guardará como: ' + e164;
+    };
+    inputEl.addEventListener('input', upd);
+    inputEl.addEventListener('paste', () => setTimeout(upd, 0));
+    upd();
+  }
+  window._wirePhonePreview = _wirePhonePreview;
+
   function createClientModal() {
     const modal = document.getElementById("newClientModal");
     document.getElementById("nc-name").value = "";
     document.getElementById("nc-email").value = "";
+    document.getElementById("nc-phone").value = "";
     document.getElementById("nc-pass").value = "";
+    document.getElementById("nc-phone-preview").textContent = "";
     modal.style.display = "flex";
+    _wirePhonePreview(document.getElementById("nc-phone"), document.getElementById("nc-phone-preview"));
 
     document.getElementById("nc-submit").onclick = async () => {
       const name = document.getElementById("nc-name").value.trim();
@@ -4176,8 +4208,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <input id="eci-name" class="input-field mb-3" value="${(c.displayName||'').replace(/"/g,'&quot;')}">
         <label class="block text-xs text-[#888] mb-1">Email <span class="text-[#555]">(referencia — Auth real requiere SDK admin)</span></label>
         <input id="eci-email" class="input-field mb-3" type="email" value="${(c.email||'').replace(/"/g,'&quot;')}">
-        <label class="block text-xs text-[#888] mb-1">📱 WhatsApp <span class="text-[#555]">(con código país, ej. +52155...)</span></label>
-        <input id="eci-phone" class="input-field mb-3" type="tel" placeholder="+52 155 1234 5678" value="${(c.phone||'').replace(/"/g,'&quot;')}">
+        <label class="block text-xs text-[#888] mb-1">📱 Celular / WhatsApp</label>
+        <input id="eci-phone" class="input-field" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="15" placeholder="5551234567" value="${String(c.phone||'').replace(/[^\d]/g,'').replace(/"/g,'&quot;')}">
+        <div class="text-[10px] text-[#666] leading-relaxed mb-1 mt-1">
+          📌 <strong class="text-[#cfcfcf]">10 dígitos</strong> si es México · sin espacios, guiones ni paréntesis (ej. <span class="text-[#c8a54a] font-bold">5551234567</span>).<br>
+          Otro país: incluye código país (ej. <span class="text-[#c8a54a] font-bold">15551234567</span> para EEUU).
+        </div>
+        <div id="eci-phone-preview" class="text-[11px] mb-3 min-h-[14px] font-semibold" style="color:#44BB88"></div>
         <div class="p-3 mb-3 rounded" style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.35)">
           <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
             <strong style="color:#c8a54a">📲 Migrar login a celular:</strong> permite que el cliente entre con su número (10 dígitos MX o con código país) además de con su correo. Su contraseña actual no cambia.
@@ -4199,6 +4236,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <div id="eci-status" class="text-xs mt-2"></div>
       </div>`;
     document.body.appendChild(overlay);
+    _wirePhonePreview(overlay.querySelector('#eci-phone'), overlay.querySelector('#eci-phone-preview'));
     overlay.querySelector('#eci-reset-btn').onclick = async () => {
       const st = overlay.querySelector('#eci-reset-status');
       const targetEmail = overlay.querySelector('#eci-email').value.trim();

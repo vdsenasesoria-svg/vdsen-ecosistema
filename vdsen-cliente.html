@@ -256,7 +256,13 @@ button:active{opacity:.85}
       <span class="vd-slogan">El esfuerzo no es negociable</span>
     </div>
     <div class="login-card">
-      <div class="lf"><label>Celular o correo</label><input type="text" id="liEmail" placeholder="10 dígitos (celular) o tucorreo@email.com" autocomplete="username" inputmode="text"></div>
+      <div class="lf">
+        <label>Celular o correo</label>
+        <input type="text" id="liEmail" placeholder="5551234567 o tucorreo@email.com" autocomplete="username" inputmode="text">
+        <div id="liHint" style="font-size:10px;color:var(--mt);line-height:1.5;margin-top:4px">
+          📌 Si usás celular: <strong style="color:var(--tx)">10 dígitos</strong> (sin espacios, guiones ni paréntesis). Ej. <span style="color:var(--accent);font-weight:700">5551234567</span>
+        </div>
+      </div>
       <div class="lf"><label>Contraseña</label><div style="position:relative"><input type="password" id="liPass" placeholder="••••••••" autocomplete="current-password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="_togglePwd('liPass',this)" aria-label="Mostrar/ocultar contraseña" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:var(--mt);font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div></div>
       <div class="login-err" id="liErr"></div>
       <button class="login-btn" onclick="doLogin()">ACCEDER</button>
@@ -1126,9 +1132,15 @@ function showPhoneConfirmModal(clientRef, clientData) {
           ? 'Tenemos registrado: <strong style="color:var(--tx,#F4F4F0)">'+currentPhone+'</strong>. Confírmalo o corrígelo si cambió — tu coach lo usa para mandarte recordatorios por WhatsApp.'
           : 'Aún no tenemos tu celular. Escríbelo abajo — tu coach lo usa para mandarte recordatorios por WhatsApp.')+
       '</div>'+
-      '<label style="display:block;font-size:10px;letter-spacing:1px;color:var(--mt,#888);font-weight:700;margin-bottom:4px">CELULAR (10 dígitos MX o con código país)</label>'+
-      '<input id="pcfInput" type="tel" inputmode="tel" value="'+prefill.replace(/"/g,'&quot;')+'" placeholder="5551234567" '+
-        'style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;background:var(--input-bg,#0a0a0a);border:1px solid var(--border,rgba(255,255,255,.15));border-radius:8px;color:var(--tx,#F4F4F0);outline:none;margin-bottom:6px">'+
+      '<label style="display:block;font-size:10px;letter-spacing:1px;color:var(--mt,#888);font-weight:700;margin-bottom:4px">CELULAR</label>'+
+      '<input id="pcfInput" type="tel" inputmode="numeric" autocomplete="tel-national" value="'+prefill.replace(/"/g,'&quot;')+'" placeholder="5551234567" maxlength="15" '+
+        'style="width:100%;box-sizing:border-box;padding:12px;font-size:17px;letter-spacing:1px;background:var(--input-bg,#0a0a0a);border:1px solid var(--border,rgba(255,255,255,.15));border-radius:8px;color:var(--tx,#F4F4F0);outline:none;margin-bottom:6px">'+
+      '<div style="font-size:10.5px;color:var(--mt2,#666);line-height:1.5;margin-bottom:6px">'+
+        '<div>📌 <strong style="color:var(--tx,#F4F4F0)">10 dígitos</strong> si es de México · sin espacios, guiones ni paréntesis.</div>'+
+        '<div>Ejemplo válido: <span style="color:var(--accent,#c8a54a);font-weight:700">5551234567</span></div>'+
+        '<div>Si es de otro país: incluye el código país (ej. <span style="color:var(--accent,#c8a54a);font-weight:700">15551234567</span> para EEUU).</div>'+
+      '</div>'+
+      '<div id="pcfPreview" style="font-size:11px;color:#44BB88;min-height:14px;margin-bottom:4px;font-weight:600"></div>'+
       '<div id="pcfErr" style="font-size:11px;color:#e87a6a;min-height:14px;margin-bottom:10px"></div>'+
       '<div style="display:flex;gap:8px">'+
         (currentPhone
@@ -1176,6 +1188,27 @@ function showPhoneConfirmModal(clientRef, clientData) {
   };
   if (btnKeep) btnKeep.onclick = function() { _persist(null); };
   input.addEventListener('keydown', function(e){ if (e.key === 'Enter') btnSave.click(); });
+
+  // Preview en vivo + auto-limpieza de caracteres no numéricos al pegar/escribir.
+  var previewEl = ov.querySelector('#pcfPreview');
+  function _updatePreview() {
+    var raw = input.value;
+    var cleaned = raw.replace(/[^\d]/g, '');
+    if (raw !== cleaned) input.value = cleaned;
+    errEl.textContent = '';
+    if (!cleaned) { previewEl.textContent = ''; return; }
+    if (cleaned.length < 10) {
+      previewEl.style.color = 'var(--mt,#888)';
+      previewEl.textContent = 'Faltan ' + (10 - cleaned.length) + ' dígito(s)…';
+      return;
+    }
+    var e164 = cleaned.length === 10 ? '+52' + cleaned : '+' + cleaned;
+    previewEl.style.color = '#44BB88';
+    previewEl.textContent = '✓ Se guardará como: ' + e164;
+  }
+  input.addEventListener('input', _updatePreview);
+  input.addEventListener('paste', function(){ setTimeout(_updatePreview, 0); });
+  _updatePreview();
 }
 window.showPhoneConfirmModal = showPhoneConfirmModal;
 
