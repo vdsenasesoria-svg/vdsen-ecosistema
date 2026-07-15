@@ -1135,13 +1135,13 @@ function showPhoneConfirmModal(clientRef, clientData) {
       '<label style="display:block;font-size:10px;letter-spacing:1px;color:var(--mt,#888);font-weight:700;margin-bottom:4px">CELULAR</label>'+
       '<input id="pcfInput" type="tel" inputmode="numeric" autocomplete="tel-national" value="'+prefill.replace(/"/g,'&quot;')+'" placeholder="5551234567" maxlength="15" '+
         'style="width:100%;box-sizing:border-box;padding:12px;font-size:17px;letter-spacing:1px;background:var(--input-bg,#0a0a0a);border:1px solid var(--border,rgba(255,255,255,.15));border-radius:8px;color:var(--tx,#F4F4F0);outline:none;margin-bottom:6px">'+
-      '<div style="font-size:10.5px;color:var(--mt2,#666);line-height:1.5;margin-bottom:6px">'+
-        '<div>📌 <strong style="color:var(--tx,#F4F4F0)">10 dígitos</strong> si es de México · sin espacios, guiones ni paréntesis.</div>'+
-        '<div>Ejemplo válido: <span style="color:var(--accent,#c8a54a);font-weight:700">5551234567</span></div>'+
-        '<div>Si es de otro país: incluye el código país (ej. <span style="color:var(--accent,#c8a54a);font-weight:700">15551234567</span> para EEUU).</div>'+
+      '<div style="font-size:10.5px;color:#9a9a9a;line-height:1.55;margin-bottom:10px">'+
+        '<div style="margin-bottom:3px">📌 <strong style="color:var(--tx,#F4F4F0)">10 dígitos</strong> si es de México · sin espacios, guiones ni paréntesis.</div>'+
+        '<div style="margin-bottom:3px">Ejemplo válido: <span style="color:var(--accent,#c8a54a);font-weight:700">5551234567</span></div>'+
+        '<div>Otro país: incluye código país (ej. <span style="color:var(--accent,#c8a54a);font-weight:700">15551234567</span>).</div>'+
       '</div>'+
-      '<div id="pcfPreview" style="font-size:11px;color:#44BB88;min-height:14px;margin-bottom:4px;font-weight:600"></div>'+
-      '<div id="pcfErr" style="font-size:11px;color:#e87a6a;min-height:14px;margin-bottom:10px"></div>'+
+      '<div id="pcfPreview" style="font-size:11.5px;color:#44BB88;min-height:16px;margin-bottom:6px;font-weight:700"></div>'+
+      '<div id="pcfErr" style="font-size:11.5px;color:#e87a6a;min-height:16px;margin-bottom:10px;line-height:1.4"></div>'+
       '<div style="display:flex;gap:8px">'+
         (currentPhone
           ? '<button id="pcfKeep" style="flex:1;padding:12px;border-radius:8px;border:1px solid var(--border,rgba(255,255,255,.2));background:transparent;color:var(--mt,#888);font-size:12px;font-weight:700;cursor:pointer">Es correcto</button>'
@@ -1174,10 +1174,24 @@ function showPhoneConfirmModal(clientRef, clientData) {
       ov.remove();
       showToast('✓ Celular confirmado — gracias');
     } catch(e) {
-      errEl.textContent = 'No se pudo guardar. Revisa tu conexión.';
+      var code = (e && e.code) || '';
+      console.warn('phoneConfirm save error:', code, e && e.message);
+      if (code === 'permission-denied') {
+        errEl.innerHTML = 'No se pudo guardar el celular (permisos). El coach está enterado — podés continuar.';
+      } else {
+        errEl.textContent = 'No se pudo guardar (' + (code || 'error') + '). Continuá con la app; se reintenta la próxima vez.';
+      }
+      // Mostrar botón de escape para que el usuario no quede atrapado
+      if (!ov.querySelector('#pcfSkip')) {
+        var skip = document.createElement('button');
+        skip.id = 'pcfSkip';
+        skip.textContent = 'Continuar sin guardar';
+        skip.style.cssText = 'margin-top:8px;width:100%;padding:11px;border-radius:8px;border:1px solid var(--border,rgba(255,255,255,.2));background:transparent;color:var(--mt,#888);font-size:12px;font-weight:700;cursor:pointer';
+        skip.onclick = function(){ ov.remove(); };
+        errEl.parentNode.insertBefore(skip, errEl.nextSibling);
+      }
       btnSave.disabled = false; if (btnKeep) btnKeep.disabled = false;
-      btnSave.textContent = 'GUARDAR';
-      console.warn('phoneConfirm save error:', e && e.message);
+      btnSave.textContent = 'REINTENTAR';
     }
   }
   btnSave.onclick = function() {

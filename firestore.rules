@@ -6,7 +6,14 @@ service cloud.firestore {
     }
     match /clients/{clientId} {
       allow read: if request.auth != null && (request.auth.uid == clientId || exists(/databases/$(database)/documents/coaches/$(request.auth.uid)));
+      // Coach: escritura completa sobre docs de sus clientes.
       allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+      // Cliente: puede actualizar SOLO campos seguros en su propio doc
+      // (confirmar/corregir su celular). No puede tocar activePlanId,
+      // coachId, role, ni nada crítico.
+      allow update: if request.auth != null && request.auth.uid == clientId
+        && request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['phone', 'phoneConfirmedAt']);
     }
     match /exercises/{exerciseId} {
       allow read: if request.auth != null;
