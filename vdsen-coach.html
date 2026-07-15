@@ -1169,6 +1169,17 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           coachId: currentCoach.uid, email, displayName: name, phone: phoneNormalized,
           role: "client", activePlanId: null, nutritionPlan: {}, supplementPlan: {}, tempPassword: pass
         }, { merge: true });
+        // Índice público celular → email de Auth para permitir login por
+        // teléfono aunque el email de Auth sea real (no sintético).
+        if (phoneNormalized) {
+          const _idxKey = phoneNormalized.replace(/^\+/, "");
+          try {
+            await setDoc(doc(db, "phone_index", _idxKey), {
+              email: email.toLowerCase(), uid, updatedAt: new Date().toISOString(),
+              migratedBy: currentCoach.uid
+            }, { merge: true });
+          } catch(_ie) { console.warn("No se pudo escribir phone_index:", _ie && _ie.message); }
+        }
         modal.style.display = "none";
         showToast(`Cliente "${name}" vinculado correctamente`);
         await loadClientList();
@@ -4167,6 +4178,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <input id="eci-email" class="input-field mb-3" type="email" value="${(c.email||'').replace(/"/g,'&quot;')}">
         <label class="block text-xs text-[#888] mb-1">📱 WhatsApp <span class="text-[#555]">(con código país, ej. +52155...)</span></label>
         <input id="eci-phone" class="input-field mb-3" type="tel" placeholder="+52 155 1234 5678" value="${(c.phone||'').replace(/"/g,'&quot;')}">
+        <div class="p-3 mb-3 rounded" style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.35)">
+          <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
+            <strong style="color:#c8a54a">📲 Migrar login a celular:</strong> permite que el cliente entre con su número (10 dígitos MX o con código país) además de con su correo. Su contraseña actual no cambia.
+          </div>
+          <button id="eci-migrate-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(200,165,74,.15);border:1px solid #c8a54a;color:#c8a54a;cursor:pointer;font-weight:700">✓ Habilitar login por celular</button>
+          <div id="eci-migrate-status" class="text-xs mt-2"></div>
+        </div>
         <div class="p-3 mb-3 rounded" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.25)">
           <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
             <strong style="color:#4488cc">ℹ️ Contraseña:</strong> el SDK web no permite cambiarla directamente al cliente. Envía un enlace de reseteo al correo del cliente y él la elige.
@@ -4194,6 +4212,45 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         st.textContent = 'Error: ' + (e.code || e.message);
       }
     };
+
+    // Habilitar login por celular: escribe phone_index/{digits} → email real de Auth.
+    // El cliente conserva su cuenta y su contraseña; sólo gana el celular como
+    // identificador alterno. La lectura de phone_index es pública, la escritura
+    // es sólo del coach (rules).
+    overlay.querySelector('#eci-migrate-btn').onclick = async () => {
+      const st = overlay.querySelector('#eci-migrate-status');
+      const btnM = overlay.querySelector('#eci-migrate-btn');
+      const rawPhone = overlay.querySelector('#eci-phone').value.trim();
+      const targetEmail = overlay.querySelector('#eci-email').value.trim();
+      if (!targetEmail) { st.style.color='#c94a3a'; st.textContent='Falta email de Auth del cliente'; return; }
+      if (!rawPhone) { st.style.color='#c94a3a'; st.textContent='Escribe el celular arriba primero'; return; }
+      let digits = rawPhone.replace(/[^\d]/g, '');
+      if (digits.length === 10) digits = '52' + digits;
+      if (digits.length < 11) { st.style.color='#c94a3a'; st.textContent='Celular inválido (mín 10 dígitos MX o 11+ con código país)'; return; }
+      const phoneE164 = '+' + digits;
+      btnM.disabled = true; btnM.textContent = 'Migrando...';
+      try {
+        await setDoc(doc(db, 'phone_index', digits), {
+          email: targetEmail.toLowerCase(),
+          uid: clientId,
+          updatedAt: new Date().toISOString(),
+          migratedBy: currentCoach.uid
+        }, { merge: true });
+        // Asegurar que el phone quede guardado en el doc del cliente (E.164)
+        const clientUpdates = {};
+        if (c.phone !== phoneE164) clientUpdates.phone = phoneE164;
+        if (Object.keys(clientUpdates).length) await updateDoc(doc(db, 'clients', clientId), clientUpdates);
+        st.style.color = '#44BB88';
+        st.innerHTML = '✓ Listo — el cliente ya puede entrar con <strong>' + phoneE164 + '</strong> (usando su misma contraseña).';
+        // Reflejar en el input
+        overlay.querySelector('#eci-phone').value = phoneE164;
+      } catch(e) {
+        st.style.color = '#c94a3a';
+        st.textContent = 'Error: ' + (e.code || e.message);
+      } finally {
+        btnM.disabled = false; btnM.textContent = '✓ Habilitar login por celular';
+      }
+    };
     overlay.querySelector('#eci-save').onclick = async () => {
       const newName  = overlay.querySelector('#eci-name').value.trim();
       const newEmail = overlay.querySelector('#eci-email').value.trim();
@@ -4205,6 +4262,25 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const newPhone = overlay.querySelector('#eci-phone')?.value.trim() || '';
         if (newPhone !== (c.phone || '')) updates.phone = newPhone;
         await updateDoc(doc(db, "clients", clientId), updates);
+
+        // Mantener sincronizado phone_index: si cambió el celular o el email,
+        // reescribir el índice para el celular actual (borrar el viejo si aplica).
+        const _oldDigits = String(c.phone || '').replace(/[^\d]/g, '');
+        const _newDigits = String(newPhone || '').replace(/[^\d]/g, '');
+        if (_oldDigits && _oldDigits !== _newDigits) {
+          try { await deleteDoc(doc(db, 'phone_index', _oldDigits)); } catch(_de){}
+        }
+        if (_newDigits && _newDigits.length >= 11 && (newEmail || c.email)) {
+          try {
+            await setDoc(doc(db, 'phone_index', _newDigits), {
+              email: String(newEmail || c.email).toLowerCase(),
+              uid: clientId,
+              updatedAt: new Date().toISOString(),
+              migratedBy: currentCoach.uid
+            }, { merge: true });
+          } catch(_ie){ console.warn('phone_index sync:', _ie && _ie.message); }
+        }
+
         st.style.color = '#44BB88';
         st.textContent = '✓ Guardado' + (newEmail !== c.email ? ' (campo email del doc actualizado; Auth real no cambió)' : '');
         loadClientList();

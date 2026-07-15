@@ -1066,7 +1066,20 @@ async function doLogin() {
   // Feedback visual en botón
   if (btn) { btn.disabled = true; btn.textContent = 'VERIFICANDO...'; }
   try {
-    await FB.signInWithEmailAndPassword(FB.auth, email, pass);
+    // Si entró por celular, primero intentar resolver el email real vía
+    // phone_index (para clientes viejos migrados que conservan su email de
+    // Auth original). Si no hay entrada, se cae al email sintético.
+    let authEmail = email;
+    if (norm.kind === 'phone') {
+      try {
+        const digits = norm.phone.replace(/[^\d]/g, '');
+        const idxSnap = await FB.getDoc(FB.doc(FB.db, 'phone_index', digits));
+        if (idxSnap.exists() && idxSnap.data().email) {
+          authEmail = String(idxSnap.data().email).toLowerCase();
+        }
+      } catch(_lookupErr) { /* sin phone_index seguimos con sintético */ }
+    }
+    await FB.signInWithEmailAndPassword(FB.auth, authEmail, pass);
     // onAuthStateChanged se dispara automáticamente → loadPlan → showScreen('scrApp')
   } catch(e) {
     const msgs = {
