@@ -1090,6 +1090,82 @@ async function doLogout() {
   PLAN = null; USER = null; LOGS = {};
 }
 
+// ── Modal one-shot: confirmar/actualizar celular ────────────────────────
+// Se dispara la primera vez que el cliente entra a la app tras el rollout.
+// Escribe phone (E.164) y phoneConfirmedAt en clients/{uid}. Modal no
+// dismissable — el usuario tiene que confirmar o corregir para cerrar.
+function showPhoneConfirmModal(clientRef, clientData) {
+  if (document.getElementById('phoneConfirmOverlay')) return; // ya está abierto
+  var currentPhone = String(clientData.phone || '').trim();
+  // Sacar los dígitos "amigables" para pre-rellenar el input (sin + inicial)
+  var currentDigits = currentPhone.replace(/[^\d]/g, '');
+  var prefill = currentDigits;
+
+  var ov = document.createElement('div');
+  ov.id = 'phoneConfirmOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML =
+    '<div style="background:var(--surface,#141616);border:1px solid rgba(200,165,74,.35);border-radius:12px;padding:22px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)">'+
+      '<div style="font-family:var(--ff,inherit);font-size:11px;letter-spacing:2px;color:var(--accent,#c8a54a);font-weight:800;margin-bottom:6px">📱 CONFIRMA TU CELULAR</div>'+
+      '<div style="font-size:14px;color:var(--tx,#F4F4F0);font-weight:700;line-height:1.3;margin-bottom:6px">Ayúdanos a tener tus datos al día</div>'+
+      '<div style="font-size:12px;color:var(--mt,#888);line-height:1.5;margin-bottom:14px">'+
+        (currentPhone
+          ? 'Tenemos registrado: <strong style="color:var(--tx,#F4F4F0)">'+currentPhone+'</strong>. Confírmalo o corrígelo si cambió — tu coach lo usa para mandarte recordatorios por WhatsApp.'
+          : 'Aún no tenemos tu celular. Escríbelo abajo — tu coach lo usa para mandarte recordatorios por WhatsApp.')+
+      '</div>'+
+      '<label style="display:block;font-size:10px;letter-spacing:1px;color:var(--mt,#888);font-weight:700;margin-bottom:4px">CELULAR (10 dígitos MX o con código país)</label>'+
+      '<input id="pcfInput" type="tel" inputmode="tel" value="'+prefill.replace(/"/g,'&quot;')+'" placeholder="5551234567" '+
+        'style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;background:var(--input-bg,#0a0a0a);border:1px solid var(--border,rgba(255,255,255,.15));border-radius:8px;color:var(--tx,#F4F4F0);outline:none;margin-bottom:6px">'+
+      '<div id="pcfErr" style="font-size:11px;color:#e87a6a;min-height:14px;margin-bottom:10px"></div>'+
+      '<div style="display:flex;gap:8px">'+
+        (currentPhone
+          ? '<button id="pcfKeep" style="flex:1;padding:12px;border-radius:8px;border:1px solid var(--border,rgba(255,255,255,.2));background:transparent;color:var(--mt,#888);font-size:12px;font-weight:700;cursor:pointer">Es correcto</button>'
+          : '')+
+        '<button id="pcfSave" style="flex:2;padding:12px;border-radius:8px;border:none;background:var(--accent,#c8a54a);color:#0A0A0A;font-size:12px;font-weight:900;letter-spacing:1px;cursor:pointer">GUARDAR</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  var input = ov.querySelector('#pcfInput');
+  var errEl = ov.querySelector('#pcfErr');
+  var btnSave = ov.querySelector('#pcfSave');
+  var btnKeep = ov.querySelector('#pcfKeep');
+  setTimeout(function(){ try { input.focus(); input.select && input.select(); } catch(_){} }, 100);
+
+  function _norm(raw) {
+    var d = String(raw||'').replace(/[^\d]/g, '');
+    if (d.length < 10) return null;
+    if (d.length === 10) d = '52' + d;
+    return '+' + d;
+  }
+  async function _persist(newPhone) {
+    btnSave.disabled = true; if (btnKeep) btnKeep.disabled = true;
+    btnSave.textContent = 'GUARDANDO...';
+    try {
+      var payload = { phoneConfirmedAt: Date.now() };
+      if (newPhone) payload.phone = newPhone;
+      await FB.updateDoc(clientRef, payload);
+      if (newPhone) clientData.phone = newPhone;
+      clientData.phoneConfirmedAt = payload.phoneConfirmedAt;
+      ov.remove();
+      showToast('✓ Celular confirmado — gracias');
+    } catch(e) {
+      errEl.textContent = 'No se pudo guardar. Revisa tu conexión.';
+      btnSave.disabled = false; if (btnKeep) btnKeep.disabled = false;
+      btnSave.textContent = 'GUARDAR';
+      console.warn('phoneConfirm save error:', e && e.message);
+    }
+  }
+  btnSave.onclick = function() {
+    errEl.textContent = '';
+    var newPhone = _norm(input.value);
+    if (!newPhone) { errEl.textContent = 'Celular inválido — mínimo 10 dígitos'; return; }
+    _persist(newPhone);
+  };
+  if (btnKeep) btnKeep.onclick = function() { _persist(null); };
+  input.addEventListener('keydown', function(e){ if (e.key === 'Enter') btnSave.click(); });
+}
+window.showPhoneConfirmModal = showPhoneConfirmModal;
+
 // ══════════════════════════════════════════════════
 // LOAD PLAN
 // ══════════════════════════════════════════════════
@@ -1325,6 +1401,12 @@ async function loadPlan(user) {
     goTab(_rTab);
     showWhatsNew();
     if (_showBitacoraInfo) { setTimeout(function(){ showBitacoraInfoModal(); }, 500); }
+
+    // Pedir confirmar/actualizar celular la primera vez tras esta actualización
+    // (una sola vez por cliente — se guarda phoneConfirmedAt en Firestore)
+    if (!clientData.phoneConfirmedAt) {
+      setTimeout(function(){ showPhoneConfirmModal(clientRef, clientData); }, 900);
+    }
 
     // Escuchar cambios en tiempo real: cliente (nutrición, nuevo plan) + plan (ediciones del coach)
     try {
