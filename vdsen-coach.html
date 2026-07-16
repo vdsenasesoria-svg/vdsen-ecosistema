@@ -247,7 +247,16 @@
       <button type="button" id="intakeCopyJson" class="btn-secondary text-sm" title="JSON estructurado — para el motor/skill">🧩 JSON</button>
     </div>
   </div>
-  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select><div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
+  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select>
+    <div class="card p-4 mb-4">
+      <div class="flex items-center gap-3 flex-wrap">
+        <button id="autoGenBtn" onclick="autoGeneratePlan()" class="btn-primary">🤖 Generar plan automático (motor VDSEN)</button>
+        <span class="text-xs" style="color:var(--text-muted);max-width:420px;line-height:1.4">Lee la ficha del cliente y genera <b>entrenamiento + nutrición + suplementación</b> 100% con el modelo VDSEN. Los guarda y activa solos — el cliente los ve al instante en su app.</span>
+      </div>
+      <div id="autoGenStatus" class="text-sm mt-3"></div>
+    </div>
+    <div class="text-xs mb-2" style="color:var(--text-muted)">O crea el plan manualmente:</div>
+    <div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
   <div id="templates" class="section"><h2 class="text-2xl font-bold mb-4">Templates de Planes</h2><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
   <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><div class="flex gap-2 mb-4 flex-wrap"><select id="monitorClientSelect" class="input-field flex-1"></select><button id="pdfReportBtn" class="btn-secondary text-sm" style="display:none">📄 Reporte PDF</button></div><div id="monitorTable"></div></div>
@@ -3101,7 +3110,228 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       showToast("Error al guardar: " + e.message, true);
     }
   }
-  
+
+  // ========== AUTO-GENERACIÓN (Motor VDSEN vía Claude API) ==========
+  let _motorPromptCache = null;
+  async function _loadMotorPrompt() {
+    if (_motorPromptCache) return _motorPromptCache;
+    const res = await fetch('/references/instrucciones-maestras-motor-vdsen.md', { cache: 'force-cache' });
+    if (!res.ok) throw new Error('No se pudo cargar el motor VDSEN (' + res.status + '). ¿Se desplegó la carpeta references/?');
+    _motorPromptCache = await res.text();
+    return _motorPromptCache;
+  }
+
+  function _extractJsonBlocks(text) {
+    const blocks = [];
+    const re = /```(?:json)?\s*([\s\S]*?)```/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const bodyRaw = m[1].trim();
+      if (!bodyRaw) continue;
+      try { blocks.push(JSON.parse(bodyRaw)); } catch (e) { /* fence no-JSON: ignorar */ }
+    }
+    // Fallback: sin fences, intentar objetos {...} de primer nivel
+    if (!blocks.length) {
+      const objRe = /\{[\s\S]*?\}(?=\s*(?:\{|$))/g; let o;
+      while ((o = objRe.exec(text)) !== null) { try { blocks.push(JSON.parse(o[0])); } catch (e) {} }
+    }
+    return blocks;
+  }
+
+  function _classifyBlocks(blocks) {
+    let training = null, nutrition = null, supplements = null;
+    blocks.forEach(b => {
+      if (!b || typeof b !== 'object') return;
+      if (Array.isArray(b.days)) training = b;
+      else if (Array.isArray(b.tiers)) supplements = b;
+      else if (Array.isArray(b.comidas) || b.calorias != null || b.macros) nutrition = b;
+    });
+    return { training, nutrition, supplements };
+  }
+
+  function _normalizeTrainingPlan(obj) {
+    if (!obj || !Array.isArray(obj.days)) return null;
+    const days = obj.days.map((d, di) => ({
+      dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
+      label: String(d.label || ('Día ' + (di + 1))),
+      exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
+        exerciseName: String(ex.exerciseName || '').trim(),
+        alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
+        technique: String(ex.technique || 'straight').toLowerCase().trim(),
+        techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+        supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
+        sets: Array.isArray(ex.sets) && ex.sets.length ? ex.sets.map((s, si) => ({
+          setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
+          repsTarget: parseInt(s.repsTarget) || 8,
+          rirTarget: parseInt(s.rirTarget ?? 2),
+          load: parseFloat(s.load ?? 0) || 0,
+          restSeconds: parseInt(s.restSeconds ?? 90) || 90,
+          setNote: String(s.setNote || s.note || '').trim(),
+          drop: s.drop === true,
+          tempo: String(s.tempo || '').trim()
+        })) : []
+      })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+    })).filter(d => d.exercises.length > 0);
+    if (!days.length) return null;
+    return { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
+  }
+
+  function _nutritionJsonToPlan(obj) {
+    const num = v => (v == null || v === '') ? null : (isNaN(+v) ? null : +v);
+    const rootCalc = obj.calculos || {};
+    const kcal = num(obj.calorias) ?? num(rootCalc.kcal_objetivo);
+    const prot = num(obj.proteina), carb = num(obj.carbos), gras = num(obj.grasas);
+    let texto = '';
+    const md = obj.metadata || {};
+    if (md.objetivo || md.fecha_creacion) {
+      const p = [];
+      if (md.objetivo) p.push(String(md.objetivo).toUpperCase());
+      if (md.fecha_creacion) p.push('Plan: ' + md.fecha_creacion);
+      texto += '─── ' + p.join(' · ') + ' ───\n\n';
+    }
+    if (rootCalc.ea_kcal_kg_lbm != null) texto += 'EA: ' + rootCalc.ea_kcal_kg_lbm + ' kcal/kg LBM' + (rootCalc.alerta_red_s ? '  ⚠ RED-S' : '') + '\n\n';
+    if (Array.isArray(obj.comidas)) {
+      texto += obj.comidas.map(c => {
+        const numStr = c.numero ? ('COMIDA ' + c.numero + ' - ') : '';
+        const horario = c.horario_sugerido || c.horario || '';
+        let bloque = (numStr + (c.nombre || 'Comida')).toUpperCase().trim() + (horario ? '  (' + horario + ')' : '') + '\n';
+        if (Array.isArray(c.alimentos)) c.alimentos.forEach(a => {
+          const nombre = String(a.nombre || a.alimento || '').trim(); if (!nombre) return;
+          let cant = String(a.cantidad || a.porcion || '').trim();
+          if (!cant && a.cantidad_g != null) cant = a.cantidad_g + 'g';
+          bloque += '- ' + nombre + (cant ? ' ' + cant : '') + '\n';
+        });
+        const mm = c.macros || {}; const mk = [];
+        if (num(mm.proteina_g) != null) mk.push(num(mm.proteina_g) + 'P');
+        if (num(mm.carbohidratos_g) != null) mk.push(num(mm.carbohidratos_g) + 'C');
+        if (num(mm.grasa_g) != null) mk.push(num(mm.grasa_g) + 'G');
+        if (c.kcal || mk.length) bloque += '  → ' + (c.kcal ? ('~' + c.kcal + ' kcal') : '') + (mk.length ? ('  ' + mk.join(' ')) : '') + '\n';
+        if (c.preparacion) bloque += '  Prep: ' + String(c.preparacion).trim() + '\n';
+        if (Array.isArray(c.suplementos_con_comida)) c.suplementos_con_comida.forEach(s => {
+          const sn = String(s.nombre || '').trim(); if (sn) bloque += '  Supl: ' + sn + (s.dosis ? (' ' + s.dosis) : '') + '\n';
+        });
+        return bloque;
+      }).join('\n');
+    }
+    if (Array.isArray(obj.assumptions) && obj.assumptions.length) texto += '\nSUPUESTOS\n' + obj.assumptions.map(a => '- ' + a).join('\n') + '\n';
+    const mon = obj.monitoreo || {};
+    if (mon.metrica_primaria || mon.ajuste_si_no_progresa) {
+      texto += '\nMONITOREO\n';
+      if (mon.metrica_primaria) texto += '- Métrica: ' + mon.metrica_primaria + '\n';
+      if (mon.frecuencia_revision_dias) texto += '- Revisión cada ' + mon.frecuencia_revision_dias + ' días\n';
+      if (mon.ajuste_si_no_progresa) texto += '- Ajuste: ' + mon.ajuste_si_no_progresa + '\n';
+    }
+    return {
+      calorias: kcal != null ? String(Math.round(kcal)) : '',
+      proteina: prot != null ? String(Math.round(prot)) : '',
+      carbos: carb != null ? String(Math.round(carb)) : '',
+      grasas: gras != null ? String(Math.round(gras)) : '',
+      texto: texto.trim()
+    };
+  }
+
+  function _supplementsJsonToPlan(obj) {
+    if (!Array.isArray(obj.tiers)) return null;
+    const lines = [];
+    obj.tiers.forEach((t, ti) => {
+      if (ti > 0) lines.push('');
+      lines.push(String(t.nombre || t.titulo || 'SUPLEMENTOS').toUpperCase().trim());
+      if (Array.isArray(t.items)) t.items.forEach(it => {
+        const nombre = String(it.nombre || '').trim(); if (!nombre) return;
+        let line = nombre;
+        if (it.dosis) line += ' ' + String(it.dosis).trim();
+        if (it.timing || it.momento) line += ' ' + String(it.timing || it.momento).trim().toLowerCase();
+        if (it.nota || it.observacion) line += ' (' + String(it.nota || it.observacion).trim() + ')';
+        lines.push(line);
+      });
+    });
+    return { texto: lines.join('\n') };
+  }
+
+  async function autoGeneratePlan() {
+    if (!currentCoach) { showToast('⚠️ No hay sesión activa.', true); return; }
+    const clientId = document.getElementById('planClientSelect').value;
+    if (!clientId) { showToast('Selecciona un cliente primero', true); return; }
+    const apiKey = localStorage.getItem('vdsen_apikey');
+    if (!apiKey || !apiKey.startsWith('sk-ant-')) { showToast('Configura tu API key de Anthropic en Config primero', true); return; }
+    const statusBox = document.getElementById('autoGenStatus');
+    const setStatus = html => { if (statusBox) statusBox.innerHTML = html; };
+    const btn = document.getElementById('autoGenBtn');
+    if (btn) { btn.disabled = true; btn._t = btn.textContent; btn.textContent = '⏳ Generando…'; }
+    try {
+      setStatus('<span style="color:var(--text-muted)">Leyendo ficha…</span>');
+      const fs = await getDoc(doc(db, 'fichas_onboarding', clientId));
+      let ficha = fs.exists() ? fs.data() : null;
+      if (!ficha || !ficha.data) {
+        const cd = (await getDoc(doc(db, 'clients', clientId))).data() || {};
+        if (cd.intake && cd.intake.data) ficha = cd.intake;
+      }
+      if (!ficha || !ficha.data || !Object.keys(ficha.data).length) {
+        throw new Error('Este cliente no tiene ficha. Llena la ficha en la pestaña Evaluación primero.');
+      }
+      const fichaTxt = (typeof intakeFormat === 'function') ? intakeFormat(ficha.data, 'md') : JSON.stringify(ficha.data, null, 2);
+
+      setStatus('<span style="color:var(--text-muted)">Cargando motor VDSEN…</span>');
+      const motor = await _loadMotorPrompt();
+
+      setStatus('<span style="color:var(--text-muted)">Generando con el motor VDSEN… (10–40 s)</span>');
+      const userMsg = [
+        'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
+        'Con la ficha de abajo, genera en UNA sola respuesta los TRES artefactos JSON del cliente:',
+        '1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3), en ese orden.',
+        'Emite exactamente tres bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON.',
+        'Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
+        'Cumple el CHECKLIST final del motor antes de responder.',
+        '', 'FICHA DEL CLIENTE:', fichaTxt
+      ].join('\n');
+      const body = {
+        model: 'claude-sonnet-5',
+        max_tokens: 8000,
+        system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: userMsg }]
+      };
+      const resp = await fetch('/api/generate-plan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
+        body: JSON.stringify(body)
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error((data && (data.error?.message || data.error)) || ('API ' + resp.status));
+      const text = Array.isArray(data.content) ? data.content.filter(c => c.type === 'text').map(c => c.text).join('\n') : '';
+      if (!text) throw new Error('Respuesta vacía del modelo');
+
+      setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
+      const { training, nutrition, supplements } = _classifyBlocks(_extractJsonBlocks(text));
+      if (!training && !nutrition && !supplements) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
+
+      const saved = [];
+      const planObj = training ? _normalizeTrainingPlan(training) : null;
+      if (planObj) {
+        window._importedPlan = planObj;
+        await saveImportedPlan();  // usa planClientSelect (== clientId) y activa el plan
+        saved.push(planObj.days.length + ' día(s) de entrenamiento');
+      }
+      const clientUpdates = {};
+      if (nutrition) { clientUpdates.nutritionPlan = _nutritionJsonToPlan(nutrition); saved.push('nutrición'); }
+      const supPlan = supplements ? _supplementsJsonToPlan(supplements) : null;
+      if (supPlan) { clientUpdates.supplementPlan = supPlan; saved.push('suplementación'); }
+      if (Object.keys(clientUpdates).length) await updateDoc(doc(db, 'clients', clientId), clientUpdates);
+
+      const u = data.usage || {};
+      const trunc = data.stop_reason === 'max_tokens' ? '<div style="color:var(--danger);font-size:11px;margin-top:4px">⚠ La respuesta se truncó (max_tokens). Revisa el plan; puede faltar contenido.</div>' : '';
+      const cacheNote = u.cache_read_input_tokens ? ' · caché ✓' : (u.cache_creation_input_tokens ? ' · caché creado' : '');
+      setStatus('<div style="color:var(--success);font-weight:700">✅ Generado y cargado: ' + saved.join(' · ') + '</div>'
+        + '<div style="color:var(--text-muted);font-size:11px;margin-top:4px">Tokens: ' + (u.input_tokens || '?') + ' in / ' + (u.output_tokens || '?') + ' out' + cacheNote + ' · Ya visible para el cliente en su app.</div>' + trunc);
+      showToast('✅ Plan generado y activado');
+    } catch (e) {
+      setStatus('<div style="color:var(--danger);font-weight:700">❌ ' + (e.message || e) + '</div>');
+      showToast('Error: ' + (e.message || e), true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = btn._t || '🤖 Generar plan automático (motor VDSEN)'; }
+    }
+  }
+  window.autoGeneratePlan = autoGeneratePlan;
+
   // ========== MODO MANUAL ==========
   document.getElementById("manualModeBtn")?.addEventListener("click", () => {
     if (!currentCoach) { showToast("⚠️ No hay sesión activa. Recarga la página.", true); return; }
