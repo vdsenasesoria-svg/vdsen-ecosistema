@@ -230,7 +230,7 @@
 
 <div class="main-content">
   <div id="dashboard" class="section active"><h2 class="text-2xl font-bold mb-4">Dashboard</h2><div id="dashboardContent"></div></div>
-  <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button id="repairPhoneBtn" class="btn-secondary text-xs" title="Sincronizar acceso por celular para todos los clientes">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
+  <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button id="repairPhoneBtn" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
   <div id="evaluacion" class="section"><h2 class="text-2xl font-bold mb-4">Evaluación / Intake</h2>
     <div class="flex gap-2 mb-3 flex-wrap items-center">
       <select id="intakeClientSelect" class="input-field" style="flex:1;min-width:200px"></select>
@@ -951,6 +951,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   window.isClientLiveTraining = isClientLiveTraining;
   
   async function initCoachUI() {
+    document.getElementById("repairPhoneBtn").onclick = () => repairPhoneIndexAll();
     loadClientList();
     loadExerciseCatalog();
     loadMonitorClients();
@@ -1091,9 +1092,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             waBtn = `<button onclick="(function(){var d=window._clientCache['${c.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" title="Enviar recordatorio por WhatsApp" class="ml-2" style="padding:4px 10px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;font-size:11px;font-weight:700;cursor:pointer">📲 WhatsApp</button>`;
           }
           const search = (c.displayName + ' ' + c.email).toLowerCase();
+          const safeName = (c.displayName || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
           return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
             <span><strong>${c.displayName}</strong> <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${liveBadge}${alertChip}</span>
-            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button></span>
+            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="deleteClient('${c.id}','${safeName}')" title="Eliminar cliente" style="padding:3px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:13px;cursor:pointer">🗑</button></span>
           </div>`;
         }).join('');
 
@@ -1117,7 +1119,6 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       console.error("loadClientList error:", e);
     }
     document.getElementById("newClientBtn").onclick = () => createClientModal();
-    document.getElementById("repairPhoneBtn").onclick = () => repairPhoneIndexAll();
   }
 
   // Repair/populate phone_index for ALL clients that have a phone + real email
@@ -1155,6 +1156,40 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     }
   }
   window.repairPhoneIndexAll = repairPhoneIndexAll;
+
+  async function deleteClient(uid, name) {
+    if (!confirm(`¿Eliminar a "${name}" de tu lista de clientes?\n\nEsto borra sus datos en Firestore (plan, logs, perfil). La cuenta de acceso en Firebase Auth no se elimina automáticamente.\n\nEsta acción no se puede deshacer.`)) return;
+    try {
+      // Get client doc first to clean up phone_index
+      const cSnap = await getDoc(doc(db, 'clients', uid));
+      if (cSnap.exists()) {
+        const cData = cSnap.data();
+        const planId = cData.activePlanId;
+        const phone = cData.phone || '';
+        // Delete phone_index entry
+        if (phone) {
+          let digits = phone.replace(/[^\d]/g, '');
+          if (digits.length === 10) digits = '52' + digits;
+          if (digits.length >= 11) {
+            try { await deleteDoc(doc(db, 'phone_index', digits)); } catch(_){}
+          }
+        }
+        // Delete active plan
+        if (planId) {
+          try { await deleteDoc(doc(db, 'plans', planId)); } catch(_){}
+        }
+      }
+      // Delete logs
+      try { await deleteDoc(doc(db, 'logs', uid)); } catch(_){}
+      // Delete client doc
+      await deleteDoc(doc(db, 'clients', uid));
+      showToast(`Cliente "${name}" eliminado`);
+      await loadClientList();
+    } catch(e) {
+      showToast('Error al eliminar: ' + (e.message || e.code), true);
+    }
+  }
+  window.deleteClient = deleteClient;
 
   // Preview en vivo + auto-limpieza para inputs de celular.
   // Muestra cómo se guardará el número (E.164) mientras el usuario escribe.
