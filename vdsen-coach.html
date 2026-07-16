@@ -230,7 +230,7 @@
 
 <div class="main-content">
   <div id="dashboard" class="section active"><h2 class="text-2xl font-bold mb-4">Dashboard</h2><div id="dashboardContent"></div></div>
-  <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><button id="newClientBtn" class="btn-primary mb-4">+ Nuevo Cliente</button><div id="clientList"></div></div>
+  <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button id="repairPhoneBtn" class="btn-secondary text-xs" title="Sincronizar acceso por celular para todos los clientes">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
   <div id="evaluacion" class="section"><h2 class="text-2xl font-bold mb-4">Evaluación / Intake</h2>
     <div class="flex gap-2 mb-3 flex-wrap items-center">
       <select id="intakeClientSelect" class="input-field" style="flex:1;min-width:200px"></select>
@@ -1117,8 +1117,45 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       console.error("loadClientList error:", e);
     }
     document.getElementById("newClientBtn").onclick = () => createClientModal();
+    document.getElementById("repairPhoneBtn").onclick = () => repairPhoneIndexAll();
   }
-  
+
+  // Repair/populate phone_index for ALL clients that have a phone + real email
+  // (clients created before phone login existed, or edited with 10-digit phone that wasn't normalized)
+  async function repairPhoneIndexAll() {
+    const btn = document.getElementById("repairPhoneBtn");
+    if (!btn || !currentCoach) return;
+    btn.disabled = true; btn.textContent = '⏳ Reparando...';
+    try {
+      const snap = await getDocs(collection(db, "clients"));
+      let fixed = 0, skipped = 0;
+      for (const d of snap.docs) {
+        const c = d.data();
+        if (!c.phone || !c.email) { skipped++; continue; }
+        // Skip clients whose Auth account already uses the synthetic email (no phone_index needed)
+        if (String(c.email).endsWith('@phone.vdsen.app')) { skipped++; continue; }
+        let digits = String(c.phone).replace(/[^\d]/g, '');
+        if (digits.length === 10) digits = '52' + digits;
+        if (digits.length < 11) { skipped++; continue; }
+        try {
+          await setDoc(doc(db, 'phone_index', digits), {
+            email: String(c.email).toLowerCase(),
+            uid: d.id,
+            updatedAt: new Date().toISOString(),
+            migratedBy: currentCoach.uid
+          }, { merge: true });
+          fixed++;
+        } catch(_e) { console.warn('phone_index repair', d.id, _e.message); skipped++; }
+      }
+      showToast(`✓ Reparado: ${fixed} clientes sincronizados (${skipped} sin celular/ya correctos)`);
+    } catch(e) {
+      showToast('Error al reparar: ' + (e.message || e.code), true);
+    } finally {
+      btn.disabled = false; btn.textContent = '🔧 Reparar acceso celular';
+    }
+  }
+  window.repairPhoneIndexAll = repairPhoneIndexAll;
+
   // Preview en vivo + auto-limpieza para inputs de celular.
   // Muestra cómo se guardará el número (E.164) mientras el usuario escribe.
   function _wirePhonePreview(inputEl, previewEl) {
@@ -4297,14 +4334,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       try {
         const updates = { displayName: newName };
         if (newEmail && newEmail !== c.email) updates.email = newEmail;
-        const newPhone = overlay.querySelector('#eci-phone')?.value.trim() || '';
+        // Normalize phone to E.164 before saving (10 digits MX → +52...)
+        const _rawPhone = overlay.querySelector('#eci-phone')?.value.trim() || '';
+        let _npDigits = _rawPhone.replace(/[^\d]/g, '');
+        if (_npDigits.length === 10) _npDigits = '52' + _npDigits;
+        const newPhone = _npDigits.length >= 11 ? '+' + _npDigits : '';
         if (newPhone !== (c.phone || '')) updates.phone = newPhone;
         await updateDoc(doc(db, "clients", clientId), updates);
 
         // Mantener sincronizado phone_index: si cambió el celular o el email,
         // reescribir el índice para el celular actual (borrar el viejo si aplica).
-        const _oldDigits = String(c.phone || '').replace(/[^\d]/g, '');
-        const _newDigits = String(newPhone || '').replace(/[^\d]/g, '');
+        let _oldDigits = String(c.phone || '').replace(/[^\d]/g, '');
+        if (_oldDigits.length === 10) _oldDigits = '52' + _oldDigits;
+        const _newDigits = _npDigits; // already normalized above
         if (_oldDigits && _oldDigits !== _newDigits) {
           try { await deleteDoc(doc(db, 'phone_index', _oldDigits)); } catch(_de){}
         }
