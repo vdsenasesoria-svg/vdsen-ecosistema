@@ -1075,7 +1075,8 @@ async function doLogin() {
     // Si entró por celular, primero intentar resolver el email real vía
     // phone_index (para clientes viejos migrados que conservan su email de
     // Auth original). Si no hay entrada, se cae al email sintético.
-    let authEmail = email;
+    let authEmail = email; // synthetic by default
+    const syntheticEmail = email;
     if (norm.kind === 'phone') {
       try {
         const digits = norm.phone.replace(/[^\d]/g, '');
@@ -1085,7 +1086,17 @@ async function doLogin() {
         }
       } catch(_lookupErr) { /* sin phone_index seguimos con sintético */ }
     }
-    await FB.signInWithEmailAndPassword(FB.auth, authEmail, pass);
+    try {
+      await FB.signInWithEmailAndPassword(FB.auth, authEmail, pass);
+    } catch(firstErr) {
+      // If phone_index pointed to a real email and it failed, try synthetic as fallback
+      // (handles stale phone_index or clients created with only phone after being edited)
+      if (norm.kind === 'phone' && authEmail !== syntheticEmail && firstErr.code === 'auth/invalid-credential') {
+        await FB.signInWithEmailAndPassword(FB.auth, syntheticEmail, pass);
+      } else {
+        throw firstErr;
+      }
+    }
     // onAuthStateChanged se dispara automáticamente → loadPlan → showScreen('scrApp')
   } catch(e) {
     const msgs = {
