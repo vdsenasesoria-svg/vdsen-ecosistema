@@ -8823,7 +8823,7 @@ function renderPerfil() {
 
     <button onclick="openIntake()" style="width:100%;background:rgba(196,255,0,.08);border:1px solid rgba(196,255,0,.30);color:var(--accent);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">📋 FICHA DE EVALUACIÓN COMPLETA</button>
     <button onclick="showFAQModal()" style="width:100%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
-    <button class="pdf-btn" onclick="exportPDF()" style="margin-top:10px">⬇ DESCARGAR MI PLAN PDF</button>
+    <button class="pdf-btn" onclick="downloadMyPlanPDF()" style="margin-top:10px">⬇ DESCARGAR MI PLAN PDF</button>
     <button class="logout-btn" onclick="doLogout()">CERRAR SESIÓN</button>
     <div style="text-align:center;font-size:9px;color:var(--mt);margin-top:16px;letter-spacing:1px">MOTOR VDSEN v3.2 · SOLO USO DEL CLIENTE</div>`;
 }
@@ -9052,6 +9052,170 @@ function formatTextoSup(texto) {
 // ══════════════════════════════════════════════════
 // PDF EXPORT (CLIENT)
 // ══════════════════════════════════════════════════
+// ── Generador PDF con identidad VDSEN 2.0 (mismo que la app coach) ──
+const VDSEN_PDF = (() => {
+  const OFFBLACK=[10,10,10], HUESO=[244,244,240], GRIS=[107,107,102], LIMA=[196,255,0], HAIR=[207,207,201];
+  const PAPER=HUESO, PW=210, PH=297, ML=20, MR=15, MT=18, MB=18, CW=PW-ML-MR;
+  const F_DISP='vdsenDisplay', F_BODY='vdsenBody', F_DATA='vdsenData';
+  function _ab2b64(buf){ let bin=''; const b=new Uint8Array(buf); const CH=0x8000;
+    for(let i=0;i<b.length;i+=CH) bin+=String.fromCharCode.apply(null,b.subarray(i,i+CH)); return btoa(bin); }
+  async function _loadFonts(doc){
+    const defs=[['/fonts/BigShouldersDisplay-800.ttf',F_DISP,'normal'],
+                ['/fonts/Inter-400.ttf',F_BODY,'normal'],
+                ['/fonts/CourierPrime-Regular.ttf',F_DATA,'normal'],
+                ['/fonts/CourierPrime-Bold.ttf',F_DATA,'bold']];
+    for(const [url,fam,style] of defs){
+      const buf=await (await fetch(url,{cache:'force-cache'})).arrayBuffer();
+      const fn=url.split('/').pop(); doc.addFileToVFS(fn,_ab2b64(buf)); doc.addFont(fn,fam,style);
+    }
+  }
+  function _st(doc){ return { doc, y: MT }; }
+  function _furniture(s, meta){
+    const d=s.doc;
+    d.setFillColor(...PAPER); d.rect(0,0,PW,PH,'F');
+    d.setFont(F_DISP,'normal'); d.setFontSize(15); d.setTextColor(...OFFBLACK); d.text('VDSEN', ML, MT-6);
+    const ww=d.getTextWidth('VDSEN'); const cx=ML+ww+2.4, cy=MT-8, hs=1.5; d.setFillColor(...LIMA);
+    d.lines([[hs,hs],[-hs,hs],[-hs,-hs],[hs,-hs]], cx, cy-hs, [1,1],'F',true);
+    if(meta){ d.setFont(F_DATA,'normal'); d.setFontSize(8); d.setTextColor(...GRIS); d.text(meta, PW-MR, MT-6.5, {align:'right'}); }
+    d.setDrawColor(...HAIR); d.setLineWidth(0.2); d.line(ML, MT-3.5, PW-MR, MT-3.5); d.line(ML, PH-MB+4, PW-MR, PH-MB+4);
+    d.setFont(F_DATA,'normal'); d.setFontSize(7.5); d.setTextColor(...GRIS);
+    d.text('VDSEN · Asesoría Científica', ML, PH-MB+8);
+    d.text('pág '+d.internal.getCurrentPageInfo().pageNumber, PW-MR, PH-MB+8, {align:'right'});
+  }
+  function _newpage(s, meta){ s.doc.addPage(); _furniture(s, meta); s.y=MT; }
+  function _need(s, h, meta){ if(s.y+h > PH-MB-2){ _newpage(s, meta); return true;} return false; }
+  function sectionBand(s, title, meta, hm){
+    _need(s, 16, hm); const d=s.doc, h=10, y=s.y;
+    d.setFillColor(...OFFBLACK); d.rect(ML,y,CW,h,'F'); d.setFillColor(...LIMA); d.rect(ML,y,1.3,h,'F');
+    d.setFont(F_DISP,'normal'); d.setFontSize(13); d.setTextColor(...HUESO);
+    d.text(String(title).toUpperCase(), ML+4, y+h/2+1.4, {baseline:'middle'});
+    if(meta){ d.setFont(F_DATA,'normal'); d.setFontSize(8); d.setTextColor(185,185,178);
+      d.text(String(meta), PW-MR-3, y+h/2+1.2, {align:'right', baseline:'middle'}); }
+    s.y=y+h+3;
+  }
+  function heroMetrics(s, pairs, limaIdx, note, hm){
+    _need(s, 20, hm); const d=s.doc, n=pairs.length, cw=CW/n, y=s.y, h=16;
+    d.setDrawColor(...HAIR); d.setLineWidth(0.2); d.line(ML,y,ML+CW,y); d.line(ML,y+h,ML+CW,y+h);
+    pairs.forEach((p,i)=>{ const x=ML+i*cw;
+      if(i===limaIdx){ d.setFillColor(...LIMA); d.rect(x,y,cw,h,'F'); }
+      d.setFont(F_DATA,'bold'); d.setFontSize(11); d.setTextColor(...OFFBLACK);
+      d.text(d.splitTextToSize(String(p[1]), cw-6), x+3, y+5.5);
+      d.setFont(F_DATA,'normal'); d.setFontSize(6.5); d.setTextColor(...(i===limaIdx?OFFBLACK:GRIS));
+      d.text(String(p[0]).toUpperCase(), x+3, y+h-2.5);
+    });
+    s.y=y+h+1;
+    if(note){ d.setFont(F_BODY,'normal'); d.setFontSize(8); d.setTextColor(...GRIS);
+      const nl=d.splitTextToSize(note, CW); d.text(nl, ML, s.y+3); s.y+=3+nl.length*3.4; }
+    s.y+=2;
+  }
+  function labeledRows(s, rows, hm){
+    const d=s.doc, lw=CW*0.22, vw=CW*0.78-3;
+    rows.forEach(([k,v])=>{ d.setFont(F_BODY,'normal'); d.setFontSize(9.5);
+      const vl=d.splitTextToSize(String(v), vw); const rh=Math.max(6, vl.length*4.2)+3; _need(s, rh, hm); const y=s.y;
+      d.setFont(F_DATA,'normal'); d.setFontSize(8); d.setTextColor(...GRIS); d.text(String(k).toUpperCase(), ML, y+3.4);
+      d.setFont(F_BODY,'normal'); d.setFontSize(9.5); d.setTextColor(...OFFBLACK); d.text(vl, ML+lw, y+3.4);
+      d.setDrawColor(...HAIR); d.setLineWidth(0.15); d.line(ML,y+rh-1.5,ML+CW,y+rh-1.5); s.y=y+rh;
+    });
+    s.y+=2;
+  }
+  function dataTable(s, headers, rows, fracs, hm){
+    const d=s.doc, n=headers.length; const ws=(fracs&&fracs.length===n)?fracs.map(f=>CW*f):headers.map(()=>CW/n);
+    const xs=[]; let acc=ML; ws.forEach(w=>{xs.push(acc); acc+=w;});
+    const drawHead=()=>{ const y=s.y, hh=7; d.setFillColor(...OFFBLACK); d.rect(ML,y,CW,hh,'F');
+      d.setFont(F_DATA,'bold'); d.setFontSize(8); d.setTextColor(...HUESO);
+      headers.forEach((h,i)=>d.text(String(h).toUpperCase(), xs[i]+2.5, y+hh/2+1.2, {baseline:'middle'})); s.y=y+hh; };
+    _need(s,16,hm); drawHead();
+    rows.forEach(r=>{ const cells=r.map((c,i)=>d.splitTextToSize(String(c), ws[i]-4));
+      const rh=Math.max(6, Math.max(...cells.map(c=>c.length))*3.6)+3; if(_need(s,rh,hm)) drawHead(); const y=s.y;
+      d.setFont(F_DATA,'normal'); d.setFontSize(8.5); d.setTextColor(...OFFBLACK);
+      cells.forEach((c,i)=>d.text(c, xs[i]+2.5, y+3.6));
+      d.setDrawColor(...HAIR); d.setLineWidth(0.15); d.line(ML,y+rh-1,ML+CW,y+rh-1); s.y=y+rh;
+    });
+    s.y+=3;
+  }
+  function paragraph(s, text, style, hm){
+    const d=s.doc, isFoot=style==='foot';
+    d.setFont(isFoot?F_DATA:F_BODY,'normal'); d.setFontSize(isFoot?8:9.5); d.setTextColor(...(isFoot?GRIS:OFFBLACK));
+    String(text).split('\n').forEach(par=>{ if(par.trim()===''){ s.y+=2.5; return; }
+      const lines=d.splitTextToSize(par, CW); _need(s, lines.length*4.3+1, hm); d.text(lines, ML, s.y+3.4); s.y+=lines.length*4.3+1.5; });
+    s.y+=2;
+  }
+  async function buildPlanPDF(data){
+    const { jsPDF } = window.jspdf; const doc = new jsPDF({unit:'mm', format:'a4', compress:true});
+    await _loadFonts(doc);
+    const hm=[data.cliente||'', data.fecha||''].filter(Boolean).join(' · ');
+    const s=_st(doc); _furniture(s, hm);
+    sectionBand(s, 'Plan '+(data.tipo||'Integral')+' — '+(data.cliente||'Cliente'), data.fecha||'', hm); s.y+=1;
+    const nu=data.nutrition;
+    if(nu){
+      sectionBand(s,'Nutrición', (nu.calorias?nu.calorias+' kcal/día':''), hm);
+      const ea=nu.calculos&&nu.calculos.ea_kcal_kg_lbm;
+      const hero=[['Calorías/día',(nu.calorias||'—')+' kcal'],['Proteína',(nu.proteina||'—')+' g'],
+                  ['Carbos',(nu.carbos||'—')+' g'],['Grasas',(nu.grasas||'—')+' g']];
+      if(ea) hero.push(['EA', ea+' kcal/kg']);
+      heroMetrics(s, hero, 0, nu.nota||'', hm);
+      if(Array.isArray(nu.comidas)&&nu.comidas.length){
+        nu.comidas.forEach(c=>{
+          const meta=[c.horario_sugerido||c.horario, (c.kcal?c.kcal+' kcal':'')].filter(Boolean).join(' / ');
+          sectionBand(s,(c.numero?('Comida '+c.numero+' — '):'')+(c.nombre||'Comida'), meta, hm);
+          const rows=(c.alimentos||[]).map(a=>{ const cant=a.cantidad||(a.cantidad_g!=null?a.cantidad_g+'g':'');
+            const mac=[a.proteina_g!=null?a.proteina_g+'P':'',a.carbohidratos_g!=null?a.carbohidratos_g+'C':'',a.grasa_g!=null?a.grasa_g+'G':''].filter(Boolean).join(' ');
+            return [a.nombre||a.alimento||'', cant, mac]; });
+          if(rows.length) dataTable(s,['Alimento','Cantidad','Macros'],rows,[0.5,0.2,0.3],hm);
+          const lr=[]; if(c.preparacion) lr.push(['Prep.', c.preparacion]);
+          if(Array.isArray(c.suplementos_con_comida)&&c.suplementos_con_comida.length)
+            lr.push(['Supl.', c.suplementos_con_comida.map(x=>x.nombre+(x.dosis?' '+x.dosis:'')).join(' · ')]);
+          if(lr.length) labeledRows(s, lr, hm);
+        });
+      } else if(nu.texto){ paragraph(s, nu.texto, 'body', hm); }
+    }
+    const tr=data.training;
+    if(tr && Array.isArray(tr.days) && tr.days.length){
+      sectionBand(s,'Entrenamiento', (tr.weeks?tr.weeks+' semanas':'')+(tr.daysPerWeek?' · '+tr.daysPerWeek+' días/sem':''), hm);
+      tr.days.forEach(day=>{
+        sectionBand(s, day.label||'Día', '', hm);
+        const rows=(day.exercises||[]).map(ex=>{ const nn=ex.sets?ex.sets.length:0, reps=ex.sets&&ex.sets[0]?ex.sets[0].repsTarget:'';
+          const rir=ex.sets&&ex.sets[0]?('RIR '+ex.sets[0].rirTarget):''; const tec=(ex.technique&&ex.technique!=='straight')?ex.technique:'';
+          return [ex.exerciseName||'', nn+'×'+reps, rir, tec]; });
+        if(rows.length) dataTable(s,['Ejercicio','Series','Intensidad','Técnica'],rows,[0.46,0.16,0.18,0.20],hm);
+      });
+    }
+    const su=data.supplements;
+    if(su && Array.isArray(su.tiers) && su.tiers.length){
+      sectionBand(s,'Suplementación','', hm);
+      su.tiers.forEach(t=>{ const rows=(t.items||[]).map(it=>[it.nombre||'', it.dosis||'', it.timing||it.momento||'', it.nota||it.observacion||'']);
+        if(rows.length){ sectionBand(s, t.nombre||'Suplementos','', hm); dataTable(s,['Suplemento','Dosis','Timing','Nota'],rows,[0.3,0.14,0.24,0.32],hm); } });
+    } else if(su && su.texto){ sectionBand(s,'Suplementación','', hm); paragraph(s, su.texto, 'body', hm); }
+    if(data.foot) paragraph(s, data.foot, 'foot', hm);
+    return doc;
+  }
+  return { buildPlanPDF };
+})();
+
+async function downloadMyPlanPDF(){
+  try{
+    if(!FB){ showToast('Cargando…', true); return; }
+    const uid = (FB.auth && FB.auth.currentUser && FB.auth.currentUser.uid) || localStorage.getItem('vdsen_uid');
+    if(!uid){ showToast('Inicia sesión primero', true); return; }
+    showToast('Generando PDF…');
+    const cd = (await FB.getDoc(FB.doc(FB.db,'clients',uid))).data() || {};
+    let training=null;
+    if(cd.activePlanId){ const ps=await FB.getDoc(FB.doc(FB.db,'plans',cd.activePlanId)); if(ps.exists()) training=ps.data(); }
+    const np=cd.nutritionPlan||{};
+    const nu = cd.nutritionRaw || ((np.calorias||np.texto) ? {calorias:np.calorias||'',proteina:np.proteina||'',carbos:np.carbos||'',grasas:np.grasas||'',texto:np.texto||''} : null);
+    const su = cd.supplementsRaw || (cd.supplementPlan && cd.supplementPlan.texto ? {texto:cd.supplementPlan.texto} : null);
+    if(!nu && !su && !training){ showToast('Aún no tienes plan asignado', true); return; }
+    const data={ cliente: cd.displayName||'Mi plan',
+      fecha: new Date().toLocaleDateString('es-MX',{month:'long',year:'numeric'}).toUpperCase(),
+      tipo:'Integral', nutrition:nu, supplements:su, training:training,
+      foot:'VDSEN · Motor VDSEN v3.2. Documento personal.' };
+    const pdf = await VDSEN_PDF.buildPlanPDF(data);
+    pdf.save('VDSEN_Plan_'+(cd.displayName||'mi_plan').replace(/\s+/g,'_')+'.pdf');
+    showToast('✅ PDF descargado');
+  }catch(e){ showToast('Error PDF: '+(e.message||e), true); }
+}
+window.downloadMyPlanPDF = downloadMyPlanPDF;
+
 function exportPDF() {
   if (!PLAN) return;
   const {jsPDF} = window.jspdf;
