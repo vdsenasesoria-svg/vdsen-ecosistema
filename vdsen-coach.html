@@ -5695,7 +5695,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   
   // ========== EVALUACIÓN / INTAKE ==========
   const INTAKE_SCHEMA = {
-    "schemaVersion": "1.0",
+    "schemaVersion": "1.1",
     "titulo": "Intake VDSEN — Cliente",
     "descripcion": "Formulario unificado de recopilación de datos. Los campos base se llenan una sola vez y alimentan todos los módulos. Los condicionales solo se muestran según la regla indicada en 'showIf'.",
     "sections": [
@@ -5717,6 +5717,29 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         {"id":"objetivo_mesociclo","label":"Objetivo del mesociclo","type":"select","options":["hipertrofia","definición","recomposición","deload"],"required":true},
         {"id":"lesiones","label":"Lesiones o restricciones articulares","type":"textarea","required":false,"placeholder":"Ej: molestia lumbar, hombro derecho, rodilla…"},
         {"id":"semana_actual_mesociclo","label":"Semana actual del mesociclo (si es continuación)","type":"number","min":1,"max":8,"required":false}
+      ]},
+      { "id": "biomecanica", "titulo": "Ficha biomecánica", "nota": "Evaluación estructural y de movimiento (la observa el coach). Guía la selección de ejercicios y correctivos.", "fields": [
+        {"id":"biotipo","label":"Biotipo / estructura","type":"textarea","required":false,"placeholder":"Ej: fémures largos y torso corto (sentadilla profunda difícil), inserciones altas de bíceps…"},
+        {"id":"movilidad","label":"Movilidad y ROM","type":"textarea","required":false,"placeholder":"Ej: dorsiflexión de tobillo limitada, poca movilidad de hombro para press por encima de cabeza…"},
+        {"id":"patrones_fuertes","label":"Patrones motores fuertes","type":"multiselect","options":["Empuje","Halar","Squat","Bisagra","Core"],"required":false},
+        {"id":"patrones_debiles","label":"Patrones a reforzar","type":"multiselect","options":["Empuje","Halar","Squat","Bisagra","Core"],"required":false},
+        {"id":"asimetrias","label":"Asimetrías / desequilibrios","type":"textarea","required":false,"placeholder":"Ej: escápula derecha alada, pierna izquierda más fuerte, pelvis rotada…"},
+        {"id":"postura","label":"Observaciones posturales","type":"textarea","required":false,"placeholder":"Ej: hombros adelantados, hiperlordosis lumbar, valgo de rodilla en sentadilla…"},
+        {"id":"dolor_actual","label":"Dolor / molestia actual","type":"textarea","required":false,"placeholder":"Zona, intensidad y en qué movimiento aparece."}
+      ]},
+      { "id": "prioridades", "titulo": "Prioridades actuales", "nota": "Qué priorizar en este mesociclo.", "fields": [
+        {"id":"grupos_prioritarios","label":"Grupos musculares a priorizar","type":"textarea","required":false,"placeholder":"Ej: glúteo, dorsal, deltoides posterior."},
+        {"id":"enfoque_actual","label":"Enfoque del mesociclo","type":"select","options":["hipertrofia","fuerza","recomposición","definición","mantenimiento","rehabilitación"],"required":false},
+        {"id":"objetivo_corto","label":"Objetivo corto plazo (4-8 sem)","type":"textarea","required":false,"placeholder":"Qué quiere lograr en este bloque."},
+        {"id":"evento_objetivo","label":"Evento / fecha objetivo","type":"text","required":false,"placeholder":"Ej: competencia NPC 15-oct, sesión de fotos, viaje…"}
+      ]},
+      { "id": "preferencias", "titulo": "Preferencias", "nota": "Clave para la adherencia: lo que disfruta y lo que evita.", "fields": [
+        {"id":"ejercicios_favoritos","label":"Ejercicios / máquinas favoritas","type":"textarea","required":false},
+        {"id":"ejercicios_evitar","label":"Ejercicios que no tolera o no le gustan","type":"textarea","required":false},
+        {"id":"estilo_entreno","label":"Estilo de entrenamiento preferido","type":"multiselect","options":["series rectas","biseries / superseries","técnicas de intensidad","alto volumen","bajo volumen / alta intensidad"],"required":false},
+        {"id":"alimentos_favoritos","label":"Alimentos preferidos","type":"textarea","required":false},
+        {"id":"alimentos_evitar","label":"Alimentos que evita / no le gustan","type":"textarea","required":false},
+        {"id":"disponibilidad","label":"Disponibilidad horaria real","type":"textarea","required":false,"placeholder":"Días y horas que puede entrenar de verdad."}
       ]},
       { "id": "nutricion", "titulo": "Nutrición", "fields": [
         {"id":"actividad_pasos_dia","label":"Actividad no-entreno (pasos/día promedio)","type":"number","unit":"pasos","required":true,"default":8000},
