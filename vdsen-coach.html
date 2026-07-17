@@ -3339,7 +3339,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const OFFBLACK=[10,10,10], HUESO=[244,244,240], GRIS=[107,107,102], LIMA=[196,255,0], HAIR=[207,207,201];
     const PAPER=HUESO, PW=210, PH=297, ML=20, MR=15, MT=18, MB=18, CW=PW-ML-MR;
     const F_DISP='vdsenDisplay', F_BODY='vdsenBody', F_DATA='vdsenData';
-    let _vfsDone=false;
+    let _vfsDone=false, _wmName='';
     function _ab2b64(buf){ let bin=''; const b=new Uint8Array(buf); const CH=0x8000;
       for(let i=0;i<b.length;i+=CH) bin+=String.fromCharCode.apply(null,b.subarray(i,i+CH)); return btoa(bin); }
     async function _loadFonts(doc){
@@ -3359,7 +3359,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const d=s.doc;
       d.setFillColor(...PAPER); d.rect(0,0,PW,PH,'F');
       // marca de agua sutil
-      try{ d.saveGraphicsState(); d.setGState(d.GState({opacity:0.05})); d.setFont(F_DISP,'normal'); d.setFontSize(120); d.setTextColor(...GRIS); d.text('VDSEN', PW/2, PH/2+32, {align:'center', angle:32}); d.restoreGraphicsState(); }catch(e){}
+      try{ d.saveGraphicsState(); d.setGState(d.GState({opacity:0.05})); d.setFont(F_DISP,'normal'); d.setTextColor(...GRIS); d.setFontSize(110); d.text('VDSEN', PW/2, PH/2+16, {align:'center', angle:32}); if(_wmName){ d.setFontSize(22); d.text(_wmName.toUpperCase(), PW/2, PH/2+40, {align:'center', angle:32}); } d.restoreGraphicsState(); }catch(e){}
       d.setFont(F_DISP,'normal'); d.setFontSize(15); d.setTextColor(...OFFBLACK);
       d.text('VDSEN', ML, MT-6);
       const ww=d.getTextWidth('VDSEN');
@@ -3450,6 +3450,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const doc = new jsPDF({unit:'mm', format:'a4', compress:true});
       await _loadFonts(doc);
       const hm=[data.cliente||'', data.fecha||''].filter(Boolean).join(' · ');
+      _wmName = data.cliente || '';
       const s=_st(doc); _furniture(s, hm);
       sectionBand(s, 'Plan '+(data.tipo||'Integral')+' — '+(data.cliente||'Cliente'), data.fecha||'', hm); s.y+=1;
       const nu=data.nutrition;
