@@ -371,3 +371,26 @@ Cuando el coach reporta estas métricas, úsalas directamente:
 - [ ] ¿No hay comentarios ni comas colgantes dentro del JSON?
 
 Si algo falla, no entregues — corrige y vuelve a validar.
+
+---
+
+## PARTE F — ESTRUCTURA DE LA FICHA DEL CLIENTE (app VDSEN · schema 1.1)
+
+La app coach exporta la ficha del cliente (TXT o JSON) con estos campos. Úsala como **input directo** para generar los artefactos. Notación: `[tipo*]` = obligatorio · `= a | b` = opciones válidas · `(si …)` = campo condicional.
+
+```
+base:            nombre [text*] · sexo [select*]=H|M · edad [number*] · peso_kg [number*] · talla_cm [number*] · porcentaje_grasa [number] · perfil [select*]=natural|PED
+entrenamiento:   nivel [select*]=principiante|intermedio|avanzado · dias_semana [number*] · duracion_sesion_min [number*] · gimnasio [select*]=San Diego|Bugambilias|otro · gimnasio_otro_maquinas [textarea] (si gimnasio=otro) · objetivo_mesociclo [select*]=hipertrofia|definición|recomposición|deload · lesiones [textarea] · semana_actual_mesociclo [number]
+biomecanica:     biotipo [textarea] · movilidad [textarea] · patrones_fuertes [multiselect]=Empuje|Halar|Squat|Bisagra|Core · patrones_debiles [multiselect]=(idem) · asimetrias [textarea] · postura [textarea] · dolor_actual [textarea]
+prioridades:     grupos_prioritarios [textarea] · enfoque_actual [select]=hipertrofia|fuerza|recomposición|definición|mantenimiento|rehabilitación · objetivo_corto [textarea] · evento_objetivo [text]
+preferencias:    ejercicios_favoritos [textarea] · ejercicios_evitar [textarea] · estilo_entreno [multiselect]=series rectas|biseries / superseries|técnicas de intensidad|alto volumen|bajo volumen / alta intensidad · alimentos_favoritos [textarea] · alimentos_evitar [textarea] · disponibilidad [textarea]
+nutricion:       actividad_pasos_dia [number*] · objetivo_calorico [select*]=superávit|mantenimiento|déficit · magnitud_ajuste_pct [number] (si objetivo_calorico≠mantenimiento) · num_comidas [number*] · horarios_comidas [text] · restricciones_alimentarias [multiselect*]=ninguna|vegano|vegetariano|celíaco|intolerancia lactosa|otra · restriccion_otra [text] (si contains otra) · alimentos_disponibles [textarea] · fase_ciclo_menstrual [select]=menstrual|folicular|ovulatoria|lútea|amenorrea|no aplica (si sexo=M)
+suplementacion:  restricciones_suplementos [select*]=ninguna|sin cafeína|sin estimulantes · objetivo_primario_supp [select*]=rendimiento|recomposición|salud
+farmacologia:    (si perfil=PED) experiencia_peds · objetivo_farmaco · timeline_semanas · bio_* (biomarcadores) · ecocardiograma_disponible · ecg_disponible · score_agatston · limitaciones · estado_hormonal_femenino (si sexo=M)
+```
+
+### Cómo usar la ficha al generar
+1. **Ficha biomecánica** → SELECCIÓN de ejercicios y correctivos: prioriza `patrones_debiles`, evita rangos donde hay `dolor_actual`, elige variantes acordes al `biotipo` y `movilidad`, corrige lo que indique `asimetrias`/`postura`. Justifica en `techniqueNote`.
+2. **Prioridades** → DISTRIBUCIÓN de volumen y agresividad: `grupos_prioritarios` y `enfoque_actual` mandan sobre el reparto de series; `objetivo_corto` y `evento_objetivo` definen cuán agresivo es el mesociclo.
+3. **Preferencias** → ADHERENCIA: respeta `ejercicios_favoritos`/`ejercicios_evitar` y `estilo_entreno`; usa `alimentos_favoritos`/`alimentos_evitar` y `disponibilidad` en la nutrición.
+4. **Presupuestos**: ya NO forman parte de la ficha. No los pidas ni los asumas.
