@@ -246,6 +246,15 @@
       <button type="button" id="intakeCopyMd" class="btn-secondary text-sm" title="Markdown — para Notion/documentos">📝 MD</button>
       <button type="button" id="intakeCopyJson" class="btn-secondary text-sm" title="JSON estructurado — para el motor/skill">🧩 JSON</button>
     </div>
+    <div class="card p-4 mt-4">
+      <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">Cargar plan desde el Motor VDSEN</h3>
+      <p class="text-xs mb-2" style="color:var(--text-muted)">Extrae la ficha (🧩 JSON o 📄 TXT), pégala en tu proyecto <b>Motor VDSEN</b> de Claude y pega aquí su respuesta con los 3 bloques <code>json</code> (entrenamiento · nutrición · suplementación). Se cargará y activará el plan del cliente seleccionado arriba — sin gastar créditos de API.</p>
+      <textarea id="motorAnalysisInput" class="input-field" rows="8" placeholder="Pega aquí la respuesta del Motor VDSEN (incluye los bloques ```json …)…" style="font-family:'Courier Prime',monospace;font-size:12px"></textarea>
+      <div class="flex gap-2 mt-2 items-center flex-wrap">
+        <button type="button" id="motorPasteBtn" onclick="loadPlanFromPastedAnalysis()" class="btn-primary">📥 Cargar plan desde análisis</button>
+        <div id="motorPasteStatus" class="text-sm" style="color:var(--text-muted)"></div>
+      </div>
+    </div>
   </div>
   <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select>
     <div class="card p-4 mb-4">
@@ -3076,9 +3085,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     window._importedPlan = planObj;
   }
 
-  async function saveImportedPlan() {
+  async function saveImportedPlan(clientIdArg) {
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
-    const clientId = document.getElementById("planClientSelect").value;
+    const clientId = clientIdArg || document.getElementById("planClientSelect").value;
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
     const planObj = window._importedPlan;
     if (!planObj) { showToast("No hay plan cargado", true); return; }
@@ -3309,7 +3318,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const planObj = training ? _normalizeTrainingPlan(training) : null;
       if (planObj) {
         window._importedPlan = planObj;
-        await saveImportedPlan();  // usa planClientSelect (== clientId) y activa el plan
+        await saveImportedPlan(clientId);  // activa el plan del cliente
         saved.push(planObj.days.length + ' día(s) de entrenamiento');
       }
       const clientUpdates = {};
@@ -3333,6 +3342,42 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   }
   window.autoGeneratePlan = autoGeneratePlan;
+
+  // ========== CARGAR PLAN DESDE ANÁLISIS PEGADO (proyecto Motor VDSEN) ==========
+  async function loadPlanFromPastedAnalysis() {
+    if (!currentCoach) { showToast('⚠️ No hay sesión activa.', true); return; }
+    const clientId = (typeof _intakeCurrentClient !== 'undefined' && _intakeCurrentClient)
+      || document.getElementById('intakeClientSelect')?.value;
+    if (!clientId) { showToast('Selecciona un cliente en Evaluación primero', true); return; }
+    const raw = document.getElementById('motorAnalysisInput')?.value.trim();
+    const statusBox = document.getElementById('motorPasteStatus');
+    const setStatus = html => { if (statusBox) statusBox.innerHTML = html; };
+    if (!raw) { showToast('Pega la respuesta del Motor VDSEN primero', true); return; }
+    const btn = document.getElementById('motorPasteBtn');
+    if (btn) { btn.disabled = true; btn._t = btn.textContent; btn.textContent = '⏳ Cargando…'; }
+    try {
+      const { training, nutrition, supplements } = _classifyBlocks(_extractJsonBlocks(raw));
+      if (!training && !nutrition && !supplements)
+        throw new Error('No encontré bloques JSON válidos (entrenamiento/nutrición/suplementación) en el texto pegado.');
+      const saved = [];
+      const planObj = training ? _normalizeTrainingPlan(training) : null;
+      if (planObj) { window._importedPlan = planObj; await saveImportedPlan(clientId); saved.push(planObj.days.length + ' día(s) de entrenamiento'); }
+      const upd = {};
+      if (nutrition) { upd.nutritionPlan = _nutritionJsonToPlan(nutrition); upd.nutritionRaw = nutrition; saved.push('nutrición'); }
+      const sp = supplements ? _supplementsJsonToPlan(supplements) : null;
+      if (sp) { upd.supplementPlan = sp; upd.supplementsRaw = supplements; saved.push('suplementación'); }
+      if (Object.keys(upd).length) await updateDoc(doc(db, 'clients', clientId), upd);
+      setStatus('<div style="color:var(--success);font-weight:700">✅ Cargado y activado: ' + saved.join(' · ') + '</div>'
+        + '<button onclick="downloadPlanPDF(\'' + clientId + '\')" class="btn-secondary" style="margin-top:8px">📄 Descargar PDF del plan</button>');
+      showToast('✅ Plan cargado desde el análisis');
+    } catch (e) {
+      setStatus('<div style="color:var(--danger);font-weight:700">❌ ' + (e.message || e) + '</div>');
+      showToast('Error: ' + (e.message || e), true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = btn._t || '📥 Cargar plan desde análisis'; }
+    }
+  }
+  window.loadPlanFromPastedAnalysis = loadPlanFromPastedAnalysis;
 
   // ========== PDF DEL PLAN (identidad VDSEN 2.0, jsPDF client-side) ==========
   const VDSEN_PDF = (() => {
