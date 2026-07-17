@@ -9073,6 +9073,8 @@ const VDSEN_PDF = (() => {
   function _furniture(s, meta){
     const d=s.doc;
     d.setFillColor(...PAPER); d.rect(0,0,PW,PH,'F');
+    // marca de agua sutil
+    try{ d.saveGraphicsState(); d.setGState(d.GState({opacity:0.05})); d.setFont(F_DISP,'normal'); d.setFontSize(120); d.setTextColor(...GRIS); d.text('VDSEN', PW/2, PH/2+32, {align:'center', angle:32}); d.restoreGraphicsState(); }catch(e){}
     d.setFont(F_DISP,'normal'); d.setFontSize(15); d.setTextColor(...OFFBLACK); d.text('VDSEN', ML, MT-6);
     const ww=d.getTextWidth('VDSEN'); const cx=ML+ww+2.4, cy=MT-8, hs=1.5; d.setFillColor(...LIMA);
     d.lines([[hs,hs],[-hs,hs],[-hs,-hs],[hs,-hs]], cx, cy-hs, [1,1],'F',true);
