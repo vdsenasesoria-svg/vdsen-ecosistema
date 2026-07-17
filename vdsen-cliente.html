@@ -1863,7 +1863,7 @@ async function guardarFicha() {
 // Fuente única: fichas_onboarding/{uid} — lecto-escribible por cliente y coach
 // ══════════════════════════════════════════════════════════════════════════
 var CI_INTAKE_SCHEMA = {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
   "sections": [
     { "id":"base", "titulo":"Datos base", "nota":"Compartidos por todos los módulos.", "fields":[
       {"id":"nombre","label":"Nombre completo","type":"text","required":true},
@@ -1884,6 +1884,19 @@ var CI_INTAKE_SCHEMA = {
       {"id":"lesiones","label":"Lesiones o restricciones articulares","type":"textarea","required":false,"placeholder":"Ej: molestia lumbar, hombro derecho, rodilla…"},
       {"id":"semana_actual_mesociclo","label":"Semana actual del mesociclo (si es continuación)","type":"number","min":1,"max":8,"required":false}
     ]},
+    { "id":"prioridades", "titulo":"Tus prioridades", "nota":"Ayuda a tu coach a enfocar tu plan.", "fields":[
+      {"id":"grupos_prioritarios","label":"¿Qué zonas quieres priorizar?","type":"textarea","required":false,"placeholder":"Ej: glúteo, espalda, hombros…"},
+      {"id":"objetivo_corto","label":"Tu objetivo para las próximas semanas","type":"textarea","required":false},
+      {"id":"evento_objetivo","label":"¿Tienes una fecha o evento objetivo?","type":"text","required":false,"placeholder":"Ej: boda, vacaciones, competencia…"}
+    ]},
+    { "id":"preferencias", "titulo":"Tus preferencias", "nota":"Lo que disfrutas y lo que prefieres evitar — para que el plan se sienta tuyo.", "fields":[
+      {"id":"ejercicios_favoritos","label":"Ejercicios o máquinas que te gustan","type":"textarea","required":false},
+      {"id":"ejercicios_evitar","label":"Ejercicios que no toleras o no te gustan","type":"textarea","required":false},
+      {"id":"estilo_entreno","label":"Estilo de entrenamiento que prefieres","type":"multiselect","options":["series rectas","biseries / superseries","técnicas de intensidad","alto volumen","bajo volumen / alta intensidad"],"required":false},
+      {"id":"alimentos_favoritos","label":"Alimentos que te gustan","type":"textarea","required":false},
+      {"id":"alimentos_evitar","label":"Alimentos que evitas o no te gustan","type":"textarea","required":false},
+      {"id":"disponibilidad","label":"Días y horas que realmente puedes entrenar","type":"textarea","required":false}
+    ]},
     { "id":"nutricion", "titulo":"Nutrición", "fields":[
       {"id":"actividad_pasos_dia","label":"Actividad no-entreno (pasos/día promedio)","type":"number","unit":"pasos","required":true,"default":8000},
       {"id":"objetivo_calorico","label":"Objetivo calórico","type":"select","options":["superávit","mantenimiento","déficit"],"required":true},
@@ -1892,12 +1905,10 @@ var CI_INTAKE_SCHEMA = {
       {"id":"horarios_comidas","label":"Horarios aproximados","type":"text","required":false,"placeholder":"Ej: 07:30 / 12:00 / 16:00 / 20:00"},
       {"id":"restricciones_alimentarias","label":"Preferencias / restricciones","type":"multiselect","options":["ninguna","vegano","vegetariano","celíaco","intolerancia lactosa","otra"],"required":true},
       {"id":"restriccion_otra","label":"Especifica la restricción","type":"text","required":false,"showIf":{"field":"restricciones_alimentarias","contains":"otra"}},
-      {"id":"presupuesto_alimentos","label":"Presupuesto semanal de alimentos (MXN)","type":"number","unit":"MXN","required":false},
       {"id":"alimentos_disponibles","label":"Alimentos disponibles / preferidos","type":"textarea","required":false},
       {"id":"fase_ciclo_menstrual","label":"Fase del ciclo menstrual","type":"select","options":["menstrual","folicular","ovulatoria","lútea","amenorrea","no aplica"],"required":false,"nota":"Para cálculo de EA y RED-S.","showIf":{"field":"sexo","equals":"M"}}
     ]},
     { "id":"suplementacion", "titulo":"Suplementación", "fields":[
-      {"id":"presupuesto_mensual_mxn","label":"Presupuesto mensual","type":"number","unit":"MXN","required":true},
       {"id":"restricciones_suplementos","label":"Restricciones","type":"select","options":["ninguna","sin cafeína","sin estimulantes"],"required":true,"default":"ninguna"},
       {"id":"objetivo_primario_supp","label":"Objetivo primario","type":"select","options":["rendimiento","recomposición","salud"],"required":true}
     ]},

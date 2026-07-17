@@ -5749,12 +5749,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         {"id":"horarios_comidas","label":"Horarios aproximados","type":"text","required":false,"placeholder":"Ej: 07:30 / 12:00 / 16:00 / 20:00"},
         {"id":"restricciones_alimentarias","label":"Preferencias / restricciones","type":"multiselect","options":["ninguna","vegano","vegetariano","celíaco","intolerancia lactosa","otra"],"required":true},
         {"id":"restriccion_otra","label":"Especifica la restricción","type":"text","required":false,"showIf":{"field":"restricciones_alimentarias","contains":"otra"}},
-        {"id":"presupuesto_alimentos","label":"Presupuesto semanal de alimentos (MXN)","type":"number","unit":"MXN","required":false},
         {"id":"alimentos_disponibles","label":"Alimentos disponibles / preferidos","type":"textarea","required":false},
         {"id":"fase_ciclo_menstrual","label":"Fase del ciclo menstrual","type":"select","options":["menstrual","folicular","ovulatoria","lútea","amenorrea","no aplica"],"required":false,"nota":"Para cálculo de EA y RED-S.","showIf":{"field":"sexo","equals":"M"}}
       ]},
       { "id": "suplementacion", "titulo": "Suplementación", "fields": [
-        {"id":"presupuesto_mensual_mxn","label":"Presupuesto mensual","type":"number","unit":"MXN","required":true},
         {"id":"restricciones_suplementos","label":"Restricciones","type":"select","options":["ninguna","sin cafeína","sin estimulantes"],"required":true,"default":"ninguna"},
         {"id":"objetivo_primario_supp","label":"Objetivo primario","type":"select","options":["rendimiento","recomposición","salud"],"required":true}
       ]},
