@@ -232,6 +232,17 @@
   <div id="dashboard" class="section active"><h2 class="text-2xl font-bold mb-4">Dashboard</h2><div id="dashboardContent"></div></div>
   <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button id="repairPhoneBtn" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
   <div id="evaluacion" class="section"><h2 class="text-2xl font-bold mb-4">Evaluación / Intake</h2>
+    <div class="card p-4 mb-4">
+      <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">Ficha en blanco para nuevos clientes</h3>
+      <p class="text-xs mb-3" style="color:var(--text-muted)">Envía este link a un prospecto: llena su nombre, teléfono y todos sus datos <b>sin necesidad de cuenta</b>. Lo que envíe aparece abajo en «Fichas recibidas» y puedes convertirlo en cliente con un clic.</p>
+      <div class="flex gap-2 flex-wrap mb-4">
+        <button type="button" onclick="copyFichaLink()" class="btn-primary">🔗 Copiar link de la ficha</button>
+        <button type="button" onclick="shareFichaWhatsApp()" class="btn-secondary">📲 Enviar por WhatsApp</button>
+        <button type="button" onclick="loadFichasRecibidas()" class="btn-secondary text-sm">🔄 Actualizar</button>
+      </div>
+      <h4 class="text-sm font-semibold uppercase tracking-wide mb-2" style="color:var(--text-muted)">Fichas recibidas</h4>
+      <div id="fichasRecibidas"><div class="text-xs" style="color:var(--text-muted)">Cargando…</div></div>
+    </div>
     <div class="flex gap-2 mb-3 flex-wrap items-center">
       <select id="intakeClientSelect" class="input-field" style="flex:1;min-width:200px"></select>
       <button id="intakeNewClientBtn" class="btn-secondary text-sm">+ Nuevo cliente</button>
@@ -1234,11 +1245,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   }
   window._wirePhonePreview = _wirePhonePreview;
 
-  function createClientModal() {
+  function createClientModal(prefill) {
+    prefill = prefill || {};
     const modal = document.getElementById("newClientModal");
-    document.getElementById("nc-name").value = "";
-    document.getElementById("nc-email").value = "";
-    document.getElementById("nc-phone").value = "";
+    document.getElementById("nc-name").value = prefill.name || "";
+    document.getElementById("nc-email").value = prefill.email || "";
+    document.getElementById("nc-phone").value = prefill.phone || "";
     document.getElementById("nc-pass").value = "";
     document.getElementById("nc-phone-preview").textContent = "";
     modal.style.display = "flex";
@@ -1303,10 +1315,15 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             }, { merge: true });
           } catch(_ie) { console.warn("No se pudo escribir phone_index:", _ie && _ie.message); }
         }
+        if (prefill.fichaData) {
+          try { await setDoc(doc(db, "fichas_onboarding", uid), { schemaVersion: prefill.schemaVersion || "1.1", data: prefill.fichaData, updatedAt: Date.now(), updatedBy: "client" }, { merge: true }); } catch(_fe){}
+          if (prefill.fichaId) { try { await updateDoc(doc(db, "fichas_publicas", prefill.fichaId), { status: "convertida", clientUid: uid }); } catch(_fu){} }
+        }
         modal.style.display = "none";
         showToast(`Cliente "${name}" vinculado correctamente`);
         await loadClientList();
         await loadClientsSelect();
+        if (prefill.fichaData) { try { loadFichasRecibidas(); } catch(_){} }
       } catch (e) {
         if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password") {
           showToast("El email ya existe con otra contraseña. Usa la contraseña original del cliente.", true);
@@ -5897,6 +5914,93 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return missing;
   }
 
+  // ══════════ FICHA EN BLANCO PÚBLICA (prospectos) ══════════
+  function _fichaLinkUrl(){
+    const base = (location.origin && location.origin.indexOf('http')===0) ? location.origin : 'https://vdsen-ecosistema.vercel.app';
+    return base.replace(/\/$/,'') + '/ficha?c=' + (currentCoach ? currentCoach.uid : '');
+  }
+  function copyFichaLink(){
+    if(!currentCoach){ showToast('Inicia sesión', true); return; }
+    const url=_fichaLinkUrl();
+    if(navigator.clipboard) navigator.clipboard.writeText(url).then(()=>showToast('🔗 Link copiado')).catch(()=>prompt('Copia el link:', url));
+    else prompt('Copia el link:', url);
+  }
+  function shareFichaWhatsApp(){
+    if(!currentCoach){ showToast('Inicia sesión', true); return; }
+    const url=_fichaLinkUrl();
+    const msg = 'Hola 👋 Soy tu coach VDSEN. Antes de empezar, llena tu ficha de evaluación (5 min) para diseñar tu plan 100% personalizado:\n\n' + url + '\n\nEn cuanto la envíes te doy acceso a tu app. 💪';
+    window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+  }
+  window.copyFichaLink = copyFichaLink;
+  window.shareFichaWhatsApp = shareFichaWhatsApp;
+
+  function _fichaDataToText(data){
+    const lines=[];
+    if(typeof INTAKE_SCHEMA!=='undefined'){
+      INTAKE_SCHEMA.sections.forEach(sec=>{
+        const filled = sec.fields.filter(f=>{const v=data[f.id];return !(v==null||v===''||(Array.isArray(v)&&v.length===0));});
+        if(!filled.length) return;
+        lines.push('['+sec.titulo.toUpperCase()+']');
+        filled.forEach(f=>{ let v=data[f.id]; if(Array.isArray(v)) v=v.join(', '); lines.push('  '+f.label+': '+v); });
+        lines.push('');
+      });
+    }
+    const known = new Set(); if(typeof INTAKE_FIELDS!=='undefined') Object.keys(INTAKE_FIELDS).forEach(k=>known.add(k));
+    const extra = Object.keys(data).filter(k=>!known.has(k)&&['telefono','email'].indexOf(k)<0);
+    if(extra.length){ lines.push('[OTROS]'); extra.forEach(k=>{let v=data[k];if(Array.isArray(v))v=v.join(', ');lines.push('  '+k+': '+v);}); }
+    return lines.join('\n').trim() || '(sin datos)';
+  }
+
+  async function loadFichasRecibidas(){
+    const box = document.getElementById('fichasRecibidas');
+    if(!box || !currentCoach) return;
+    box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Cargando…</div>';
+    try {
+      const snap = await getDocs(query(collection(db,'fichas_publicas'), where('coachId','==',currentCoach.uid)));
+      const items = []; snap.forEach(d=>items.push(Object.assign({id:d.id}, d.data())));
+      items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+      if(!items.length){ box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Aún no hay fichas recibidas. Comparte el link de arriba.</div>'; return; }
+      box.innerHTML = items.map(f=>{
+        const fecha = f.createdAt ? new Date(f.createdAt).toLocaleString('es-MX') : '';
+        const conv = f.status==='convertida';
+        const dataTxt = _fichaDataToText(f.data||{});
+        return '<div class="card p-3 mb-2" style="'+(conv?'opacity:.6':'')+'">'
+          + '<div class="flex justify-between items-center gap-2 flex-wrap">'
+          + '<div><strong style="color:var(--text-primary)">'+_intEsc(f.nombre||'—')+'</strong>'
+          + '<span class="text-xs" style="color:var(--text-muted)"> · 📱 '+_intEsc(f.telefono||'—')+(f.email?' · '+_intEsc(f.email):'')+'</span>'
+          + '<div class="text-xs" style="color:var(--text-muted)">'+fecha+(conv?' · ✅ convertida':'')+'</div></div>'
+          + '<div class="flex gap-2 flex-wrap">'
+          + (conv?'':'<button onclick="convertFicha(\''+f.id+'\')" class="text-xs px-3 py-1 rounded" style="border:1px solid #C4FF00;background:rgba(196,255,0,.15);color:#C4FF00;cursor:pointer;font-weight:600">➕ Convertir a cliente</button>')
+          + '<button onclick="_toggleFicha(\''+f.id+'\')" class="btn-secondary text-xs">👁 Ver datos</button>'
+          + '<button onclick="discardFicha(\''+f.id+'\')" class="text-xs px-2 py-1 rounded" style="border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;cursor:pointer">🗑</button>'
+          + '</div></div>'
+          + '<pre id="fd_'+f.id+'" style="display:none;white-space:pre-wrap;font-family:\'Courier Prime\',monospace;font-size:11px;color:var(--text-primary);margin-top:8px;background:#0D0D0D;padding:8px;border-radius:2px;overflow-x:auto">'+_intEsc(dataTxt)+'</pre>'
+          + '</div>';
+      }).join('');
+    } catch(e){ box.innerHTML = '<div class="text-xs" style="color:var(--danger)">Error al cargar: '+_intEsc(e.message||e)+'</div>'; }
+  }
+  window.loadFichasRecibidas = loadFichasRecibidas;
+  window._toggleFicha = function(id){ const el=document.getElementById('fd_'+id); if(el) el.style.display = (el.style.display==='none'?'block':'none'); };
+
+  async function convertFicha(fichaId){
+    if(!currentCoach) return;
+    try {
+      const fs = await getDoc(doc(db,'fichas_publicas',fichaId));
+      if(!fs.exists()){ showToast('Ficha no encontrada', true); return; }
+      const f = fs.data(); const fd = f.data || {};
+      createClientModal({ name: f.nombre || fd.nombre || '', email: f.email || fd.email || '', phone: f.telefono || fd.telefono || '', fichaData: fd, fichaId: fichaId, schemaVersion: f.schemaVersion });
+      showToast('Revisa los datos y crea la cuenta (pon una contraseña).');
+    } catch(e){ showToast('Error: '+(e.message||e), true); }
+  }
+  window.convertFicha = convertFicha;
+
+  async function discardFicha(fichaId){
+    if(!confirm('¿Descartar esta ficha recibida? No se puede deshacer.')) return;
+    try { await deleteDoc(doc(db,'fichas_publicas',fichaId)); showToast('Ficha descartada'); loadFichasRecibidas(); }
+    catch(e){ showToast('Error: '+(e.message||e), true); }
+  }
+  window.discardFicha = discardFicha;
+
   async function loadIntakeClients(){
     if(!currentCoach) return;
     const sel = document.getElementById('intakeClientSelect');
@@ -6008,7 +6112,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // Actualizar header mobile
     const hdr = document.getElementById('mobileHeaderSection');
     if (hdr) hdr.textContent = sectionLabels[sectionId] || sectionId;
-    if (sectionId === 'evaluacion') { try { loadIntakeClients(); } catch(_){} }
+    if (sectionId === 'evaluacion') { try { loadIntakeClients(); } catch(_){} try { loadFichasRecibidas(); } catch(_){} }
     // Scroll al inicio del contenido al cambiar sección en móvil
     if (window.innerWidth <= 768) {
       window.scrollTo({ top: 0, behavior: 'instant' });

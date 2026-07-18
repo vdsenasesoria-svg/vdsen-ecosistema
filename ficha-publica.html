@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0a0a">
+<title>VDSEN — Ficha de evaluación</title>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Inter:wght@400;500;600&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0A0A0A;--surface:#111;--border:rgba(244,244,240,.10);--tx:#F4F4F0;--mt:#6B6B66;--accent:#C4FF00;--red:#C0564A;--input:#0E0E0E}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--tx);font-family:'Inter',system-ui,sans-serif;font-size:16px;line-height:1.5;padding:0 0 60px}
+  .wrap{max-width:640px;margin:0 auto;padding:0 18px}
+  header{padding:26px 18px 18px;max-width:640px;margin:0 auto}
+  .logo{font-family:'Big Shoulders Display',sans-serif;font-size:30px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+  .logo::after{content:'';display:inline-block;width:7px;height:7px;background:var(--accent);transform:rotate(45deg);margin-left:6px;vertical-align:baseline}
+  .logo em{display:block;font-family:'Courier Prime',monospace;font-style:normal;font-size:10px;letter-spacing:2px;color:var(--mt);margin-top:4px;text-transform:uppercase}
+  h1{font-family:'Big Shoulders Display',sans-serif;font-size:24px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 4px}
+  .sub{font-size:13px;color:var(--mt);margin-bottom:18px}
+  .sec{background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:16px;margin-bottom:14px;position:relative}
+  .sec::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent);opacity:.0}
+  .sec h2{font-family:'Big Shoulders Display',sans-serif;font-size:17px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:3px}
+  .sec .snote{font-size:12px;color:var(--mt);margin-bottom:12px}
+  .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+  .fld{display:flex;flex-direction:column}
+  .fld.wide{grid-column:1/-1}
+  label{font-size:12px;color:var(--mt);margin-bottom:5px}
+  label .req{color:var(--accent)}
+  input,select,textarea{background:var(--input);border:1px solid var(--border);border-radius:2px;color:var(--tx);font-family:'Inter',sans-serif;font-size:15px;padding:11px 12px;outline:none;width:100%;transition:border-color .15s}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  textarea{resize:vertical;min-height:64px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{border:1px solid var(--border);border-radius:2px;padding:7px 12px;font-size:13px;cursor:pointer;color:var(--mt);user-select:none}
+  .chip.on{border-color:var(--accent);color:var(--accent);background:rgba(196,255,0,.08)}
+  .submit{width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:17px;letter-spacing:2px;text-transform:uppercase;border:none;border-radius:2px;cursor:pointer;margin-top:6px}
+  .submit:disabled{opacity:.5;cursor:default}
+  .err{color:var(--red);font-size:13px;text-align:center;margin-top:10px;min-height:18px}
+  .foot{font-size:11px;color:var(--mt);text-align:center;margin-top:22px;letter-spacing:.5px}
+  .done{text-align:center;padding:60px 20px}
+  .done .big{font-family:'Big Shoulders Display',sans-serif;font-size:40px;font-weight:800;color:var(--accent);text-transform:uppercase}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">VDSEN<em>Asesoría Científica</em></div>
+</header>
+<div class="wrap">
+  <div id="formView">
+    <h1>Ficha de evaluación</h1>
+    <p class="sub">Completa todos los datos que puedas. Con esto tu coach diseña tu programa 100% personalizado. Toma ~5 minutos.</p>
+    <form id="fichaForm" autocomplete="on"></form>
+    <button id="submitBtn" class="submit" type="button">Enviar ficha a mi coach</button>
+    <div id="err" class="err"></div>
+    <div class="foot">VDSEN · Ciencias aplicadas al deporte</div>
+  </div>
+  <div id="doneView" class="done hide">
+    <div class="big">¡Listo!</div>
+    <p style="margin-top:14px;color:var(--tx)">Tu ficha se envió a tu coach.</p>
+    <p style="margin-top:6px;color:var(--mt);font-size:14px">Pronto se pondrá en contacto contigo para darte acceso a tu app y tu plan.</p>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { initializeFirestore, persistentLocalCache, collection, addDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+const firebaseConfig = {
+  apiKey: "AIzaSyBlOmyQEDjjpCxkm7UBqnMJDyqV3NLnCNI",
+  authDomain: "vdsen-ecosistema.firebaseapp.com",
+  projectId: "vdsen-ecosistema",
+  storageBucket: "vdsen-ecosistema.firebasestorage.app",
+  messagingSenderId: "1066774387899",
+  appId: "1:1066774387899:web:77e7f3570636b71bf61d9e"
+};
+const app = initializeApp(firebaseConfig);
+const db = initializeFirestore(app, { localCache: persistentLocalCache() });
+
+const coachId = new URLSearchParams(location.search).get('c') || '';
+
+// ── Esquema (v1.1) + contacto (nombre/teléfono/email) ──
+const SCHEMA = {
+  schemaVersion: "1.1",
+  sections: [
+    { id:"contacto", titulo:"Tus datos", nota:"Para que tu coach te contacte.", fields:[
+      {id:"nombre",label:"Nombre completo",type:"text",required:true},
+      {id:"telefono",label:"Teléfono (WhatsApp)",type:"tel",required:true,placeholder:"10 dígitos"},
+      {id:"email",label:"Correo electrónico",type:"email",required:false},
+      {id:"sexo",label:"Sexo",type:"select",options:["H","M"],required:true},
+      {id:"edad",label:"Edad",type:"number",unit:"años",required:true},
+      {id:"peso_kg",label:"Peso actual",type:"number",unit:"kg",step:0.1,required:true},
+      {id:"talla_cm",label:"Talla",type:"number",unit:"cm",required:true},
+      {id:"porcentaje_grasa",label:"% de grasa (si lo conoces)",type:"number",unit:"%",step:0.1,required:false},
+      {id:"perfil",label:"Perfil",type:"select",options:["natural","PED"],required:true,default:"natural",nota:"Deja 'natural' si no usas fármacos."}
+    ]},
+    { id:"entrenamiento", titulo:"Entrenamiento", fields:[
+      {id:"nivel",label:"Nivel",type:"select",options:["principiante","intermedio","avanzado"],required:true},
+      {id:"dias_semana",label:"Días disponibles por semana",type:"number",unit:"días",min:1,max:7,required:true},
+      {id:"duracion_sesion_min",label:"Duración por sesión",type:"number",unit:"min",required:true},
+      {id:"gimnasio",label:"Gimnasio de referencia",type:"select",options:["San Diego","Bugambilias","otro"],required:true},
+      {id:"gimnasio_otro_maquinas",label:"¿Qué máquinas tiene tu gimnasio?",type:"textarea",required:false,showIf:{field:"gimnasio",equals:"otro"}},
+      {id:"objetivo_mesociclo",label:"Objetivo principal",type:"select",options:["hipertrofia","definición","recomposición","deload"],required:true},
+      {id:"lesiones",label:"Lesiones o restricciones articulares",type:"textarea",required:false,placeholder:"Ej: molestia lumbar, hombro derecho, rodilla…"},
+      {id:"semana_actual_mesociclo",label:"Semana actual del mesociclo (si continúas uno)",type:"number",min:1,max:8,required:false}
+    ]},
+    { id:"prioridades", titulo:"Tus prioridades", nota:"Ayuda a tu coach a enfocar tu plan.", fields:[
+      {id:"grupos_prioritarios",label:"¿Qué zonas quieres priorizar?",type:"textarea",required:false,placeholder:"Ej: glúteo, espalda, hombros…"},
+      {id:"objetivo_corto",label:"Tu objetivo para las próximas semanas",type:"textarea",required:false},
+      {id:"evento_objetivo",label:"¿Tienes una fecha o evento objetivo?",type:"text",required:false,placeholder:"Ej: boda, vacaciones, competencia…"}
+    ]},
+    { id:"preferencias", titulo:"Tus preferencias", nota:"Lo que disfrutas y lo que prefieres evitar.", fields:[
+      {id:"ejercicios_favoritos",label:"Ejercicios o máquinas que te gustan",type:"textarea",required:false},
+      {id:"ejercicios_evitar",label:"Ejercicios que no toleras o no te gustan",type:"textarea",required:false},
+      {id:"estilo_entreno",label:"Estilo de entrenamiento que prefieres",type:"multiselect",options:["series rectas","biseries / superseries","técnicas de intensidad","alto volumen","bajo volumen / alta intensidad"],required:false},
+      {id:"alimentos_favoritos",label:"Alimentos que te gustan",type:"textarea",required:false},
+      {id:"alimentos_evitar",label:"Alimentos que evitas o no te gustan",type:"textarea",required:false},
+      {id:"disponibilidad",label:"Días y horas que realmente puedes entrenar",type:"textarea",required:false}
+    ]},
+    { id:"nutricion", titulo:"Nutrición", fields:[
+      {id:"actividad_pasos_dia",label:"Pasos/día promedio (aprox)",type:"number",unit:"pasos",required:true,default:8000},
+      {id:"objetivo_calorico",label:"Objetivo",type:"select",options:["superávit","mantenimiento","déficit"],required:true},
+      {id:"num_comidas",label:"Nº de comidas preferido",type:"number",min:2,max:8,required:true},
+      {id:"horarios_comidas",label:"Horarios aproximados",type:"text",required:false,placeholder:"Ej: 07:30 / 12:00 / 16:00 / 20:00"},
+      {id:"restricciones_alimentarias",label:"Preferencias / restricciones",type:"multiselect",options:["ninguna","vegano","vegetariano","celíaco","intolerancia lactosa","otra"],required:false},
+      {id:"restriccion_otra",label:"Especifica la restricción",type:"text",required:false,showIf:{field:"restricciones_alimentarias",contains:"otra"}},
+      {id:"alimentos_disponibles",label:"Alimentos disponibles / preferidos",type:"textarea",required:false},
+      {id:"fase_ciclo_menstrual",label:"Fase del ciclo menstrual (si aplica)",type:"select",options:["menstrual","folicular","ovulatoria","lútea","amenorrea","no aplica"],required:false,showIf:{field:"sexo",equals:"M"}}
+    ]},
+    { id:"suplementacion", titulo:"Suplementación", fields:[
+      {id:"restricciones_suplementos",label:"Restricciones",type:"select",options:["ninguna","sin cafeína","sin estimulantes"],required:false,default:"ninguna"},
+      {id:"objetivo_primario_supp",label:"Objetivo primario",type:"select",options:["rendimiento","recomposición","salud"],required:false}
+    ]},
+    { id:"farmacologia", titulo:"Farmacología", showIf:{field:"perfil",equals:"PED"}, nota:"Solo si tu perfil es PED.", fields:[
+      {id:"experiencia_peds",label:"Experiencia previa con PEDs",type:"select",options:["primer_ciclo","2_a_5_ciclos","mas_de_5_ciclos"],required:false},
+      {id:"objetivo_farmaco",label:"Objetivo y fase",type:"select",options:["off_season","pre_comp_inicial","pre_comp_final","peaking","pct","cruise"],required:false},
+      {id:"timeline_semanas",label:"Timeline disponible",type:"number",unit:"semanas",required:false}
+    ]}
+  ]
+};
+
+const FIELDS = {};
+SCHEMA.sections.forEach(s=>s.fields.forEach(f=>FIELDS[f.id]=f));
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function fieldHtml(f){
+  const id='f_'+f.id, req=f.required?' <span class="req">*</span>':'';
+  const unit=f.unit?` · ${esc(f.unit)}`:'';
+  const showif=f.showIf?` data-showif='${JSON.stringify(f.showIf)}'`:'';
+  const wide=(f.type==='textarea'||f.type==='multiselect')?' wide':'';
+  const v=f.default!=null?f.default:'';
+  let ctl='';
+  if(f.type==='select') ctl=`<select id="${id}"><option value="">— Seleccionar —</option>${f.options.map(o=>`<option${String(v)===o?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  else if(f.type==='textarea') ctl=`<textarea id="${id}" placeholder="${esc(f.placeholder||'')}"></textarea>`;
+  else if(f.type==='number'){const mn=f.min!=null?` min="${f.min}"`:'',mx=f.max!=null?` max="${f.max}"`:'',st=f.step!=null?` step="${f.step}"`:'';ctl=`<input type="number" id="${id}"${mn}${mx}${st} inputmode="decimal" placeholder="${esc(f.placeholder||'')}" value="${esc(v)}">`;}
+  else if(f.type==='multiselect') ctl=`<div class="chips" id="${id}">${f.options.map(o=>`<span class="chip" data-v="${esc(o)}">${esc(o)}</span>`).join('')}</div>`;
+  else if(f.type==='tel') ctl=`<input type="tel" id="${id}" inputmode="tel" placeholder="${esc(f.placeholder||'')}" value="${esc(v)}">`;
+  else if(f.type==='email') ctl=`<input type="email" id="${id}" inputmode="email" placeholder="${esc(f.placeholder||'')}" value="${esc(v)}">`;
+  else ctl=`<input type="text" id="${id}" placeholder="${esc(f.placeholder||'')}" value="${esc(v)}">`;
+  return `<div class="fld${wide}" data-fid="${f.id}"${showif}>
+    <label>${esc(f.label)}${req}${unit}</label>${ctl}
+    ${f.nota?`<label style="margin-top:5px">${esc(f.nota)}</label>`:''}
+  </div>`;
+}
+
+function render(){
+  const form=document.getElementById('fichaForm');
+  form.innerHTML = SCHEMA.sections.map(sec=>{
+    const secShow=sec.showIf?` data-showif='${JSON.stringify(sec.showIf)}'`:'';
+    return `<div class="sec" data-secid="${sec.id}"${secShow}>
+      <h2>${esc(sec.titulo)}</h2>${sec.nota?`<div class="snote">${esc(sec.nota)}</div>`:''}
+      <div class="grid">${sec.fields.map(fieldHtml).join('')}</div>
+    </div>`;
+  }).join('');
+  form.addEventListener('click', e=>{
+    const chip=e.target.closest('.chip'); if(chip){ chip.classList.toggle('on'); applyVis(); }
+  });
+  form.addEventListener('input', applyVis);
+  form.addEventListener('change', applyVis);
+  applyVis();
+}
+function val(fid){
+  const f=FIELDS[fid]; const el=document.getElementById('f_'+fid); if(!el) return null;
+  if(f.type==='multiselect') return Array.from(el.querySelectorAll('.chip.on')).map(c=>c.dataset.v);
+  if(f.type==='number') return el.value===''?null:parseFloat(el.value);
+  return el.value.trim();
+}
+function evalShow(cond){
+  if(!cond) return true; const cur=val(cond.field);
+  if('equals' in cond) return cur===cond.equals;
+  if('notEquals' in cond) return cur!==cond.notEquals;
+  if('contains' in cond) return Array.isArray(cur)&&cur.includes(cond.contains);
+  return true;
+}
+function applyVis(){
+  document.querySelectorAll('#fichaForm .sec').forEach(s=>{ const c=s.dataset.showif?JSON.parse(s.dataset.showif):null; s.style.display=evalShow(c)?'':'none'; });
+  document.querySelectorAll('#fichaForm .fld[data-showif]').forEach(w=>{ const c=JSON.parse(w.dataset.showif); w.style.display=evalShow(c)?'':'none'; });
+}
+function collect(){
+  const out={};
+  Object.keys(FIELDS).forEach(fid=>{
+    const w=document.querySelector(`#fichaForm .fld[data-fid="${fid}"]`); if(!w||w.style.display==='none') return;
+    const v=val(fid); if(v===null||v===''||(Array.isArray(v)&&v.length===0)) return; out[fid]=v;
+  });
+  return out;
+}
+function validate(){
+  const miss=[];
+  document.querySelectorAll('#fichaForm .fld[data-fid]').forEach(w=>{
+    if(w.style.display==='none') return; const sec=w.closest('.sec'); if(sec&&sec.style.display==='none') return;
+    const f=FIELDS[w.dataset.fid]; if(!f||!f.required) return;
+    const v=val(f.id); if(v===null||v===''||(Array.isArray(v)&&v.length===0)) miss.push(f.label);
+  });
+  return miss;
+}
+
+render();
+document.getElementById('submitBtn').addEventListener('click', async ()=>{
+  const errEl=document.getElementById('err'); errEl.textContent='';
+  if(!coachId){ errEl.textContent='Link inválido. Pide a tu coach el enlace correcto.'; return; }
+  const miss=validate();
+  if(miss.length){ errEl.textContent='Faltan datos obligatorios: '+miss.slice(0,5).join(', ')+(miss.length>5?'…':''); window.scrollTo({top:0,behavior:'smooth'}); return; }
+  const data=collect();
+  const btn=document.getElementById('submitBtn'); btn.disabled=true; btn.textContent='Enviando…';
+  try{
+    await addDoc(collection(db,'fichas_publicas'), {
+      coachId, nombre:data.nombre||'', telefono:data.telefono||'', email:data.email||'',
+      schemaVersion: SCHEMA.schemaVersion, data, status:'nueva', createdAt: Date.now()
+    });
+    document.getElementById('formView').classList.add('hide');
+    document.getElementById('doneView').classList.remove('hide');
+    window.scrollTo({top:0});
+  }catch(e){ errEl.textContent='No se pudo enviar: '+(e.message||e); btn.disabled=false; btn.textContent='Enviar ficha a mi coach'; }
+});
+</script>
+</body>
+</html>

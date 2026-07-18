@@ -49,5 +49,15 @@ service cloud.firestore {
       allow read: if true;
       allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
     }
+    // Fichas públicas: un prospecto llena la ficha en blanco (sin cuenta)
+    // desde /ficha?c=<coachId>. Cualquiera puede CREAR (debe traer coachId
+    // y nombre); solo el coach puede leer/gestionar sus fichas recibidas.
+    match /fichas_publicas/{docId} {
+      allow create: if request.resource.data.coachId is string
+                    && request.resource.data.nombre is string
+                    && request.resource.data.nombre.size() > 0;
+      allow read, update, delete: if request.auth != null
+                    && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+    }
   }
 }
