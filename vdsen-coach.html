@@ -4845,6 +4845,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <button id="eci-reset-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc;cursor:pointer">📧 Enviar enlace de reseteo de contraseña</button>
           <div id="eci-reset-status" class="text-xs mt-2"></div>
         </div>
+        <div class="p-3 mb-3 rounded" style="background:rgba(30,30,30,.6);border:1px solid var(--border)">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-bold" style="color:#aaa">🔍 Diagnóstico de acceso</span>
+            <button id="eci-diag-btn" class="text-[10px] px-2 py-1 rounded" style="background:rgba(255,255,255,.06);border:1px solid var(--border);color:#aaa;cursor:pointer">Verificar</button>
+          </div>
+          <div id="eci-diag-result" class="text-[11px] leading-relaxed" style="color:#888">Presiona "Verificar" para revisar el estado de acceso de este cliente.</div>
+        </div>
         <div class="flex gap-2">
           <button onclick="this.closest('.modal-overlay').remove()" class="btn-secondary flex-1">Cancelar</button>
           <button id="eci-save" class="btn-primary flex-1">Guardar cambios</button>
@@ -4948,6 +4955,61 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         st.style.color = '#c94a3a';
         st.textContent = 'Error: ' + (e.code || e.message);
       }
+    };
+
+    overlay.querySelector('#eci-diag-btn').onclick = async () => {
+      const diagEl = overlay.querySelector('#eci-diag-result');
+      diagEl.textContent = '⏳ Verificando...';
+      const lines = [];
+      // 1. Client doc
+      lines.push(`<b>UID:</b> ${clientId}`);
+      lines.push(`<b>Email (Firestore):</b> ${c.email || '<span style="color:#FF6B6B">sin email</span>'}`);
+      lines.push(`<b>Celular (Firestore):</b> ${c.phone || '<span style="color:#aaa">sin celular</span>'}`);
+      lines.push(`<b>coachId:</b> ${c.coachId === currentCoach.uid ? '<span style="color:#44BB88">✓ correcto</span>' : '<span style="color:#FF6B6B">✗ no coincide ('+c.coachId+')</span>'}`);
+      // 2. activePlanId
+      const pid = c.activePlanId;
+      if (!pid) {
+        lines.push(`<b>Plan:</b> <span style="color:#FF8844">sin plan asignado → verá pantalla de espera</span>`);
+      } else {
+        lines.push(`<b>activePlanId:</b> ${pid}`);
+        try {
+          const pSnap = await getDoc(doc(db, 'plans', pid));
+          lines.push(`<b>Doc del plan:</b> ${pSnap.exists() ? '<span style="color:#44BB88">✓ existe</span>' : '<span style="color:#FF6B6B">✗ no encontrado → error al cargar</span>'}`);
+        } catch(_pe) { lines.push(`<b>Doc del plan:</b> <span style="color:#FF6B6B">error leyendo: ${_pe.message}</span>`); }
+      }
+      // 3. phone_index
+      if (c.phone) {
+        let digits = String(c.phone).replace(/[^\d]/g, '');
+        if (digits.length === 10) digits = '52' + digits;
+        if (digits.length >= 11) {
+          try {
+            const idxSnap = await getDoc(doc(db, 'phone_index', digits));
+            if (idxSnap.exists()) {
+              const idxEmail = idxSnap.data().email || '';
+              const ok = idxEmail.toLowerCase() === (c.email||'').toLowerCase();
+              lines.push(`<b>phone_index:</b> <span style="color:${ok?'#44BB88':'#FF8844'}">✓ existe → email: ${idxEmail}${ok?' (coincide)':' ⚠ no coincide con Firestore email'}</span>`);
+            } else {
+              const isSynth = (c.email||'').endsWith('@phone.vdsen.app');
+              lines.push(`<b>phone_index:</b> ${isSynth ? '<span style="color:#aaa">no necesario (email sintético)</span>' : '<span style="color:#FF8844">⚠ falta — si su Auth usa email real, no puede entrar con celular</span>'}`);
+            }
+          } catch(_ie) { lines.push(`<b>phone_index:</b> <span style="color:#FF6B6B">error: ${_ie.message}</span>`); }
+        }
+      } else {
+        lines.push(`<b>phone_index:</b> <span style="color:#aaa">sin celular registrado</span>`);
+      }
+      // 4. Email sintético vs real
+      const isSynthEmail = (c.email||'').endsWith('@phone.vdsen.app');
+      lines.push(`<b>Tipo de cuenta Auth:</b> ${isSynthEmail ? '<span style="color:#aaa">celular (email sintético)</span>' : '<span style="color:#4488cc">email real</span>'}`);
+      // 5. Credenciales de acceso
+      if (isSynthEmail) {
+        let d = String(c.phone||'').replace(/[^\d]/g,'');
+        if(d.length===10) d='52'+d;
+        lines.push(`<b>Entrar con:</b> celular <code>${c.phone||'(no registrado)'}</code>`);
+      } else {
+        lines.push(`<b>Entrar con:</b> correo <code>${c.email}</code>${c.phone?' o celular <code>'+c.phone+'</code>':''}`);
+      }
+
+      diagEl.innerHTML = lines.join('<br>');
     };
   }
   window.editClientInfo = editClientInfo;
