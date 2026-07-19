@@ -5840,21 +5840,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     "descripcion": "Formulario unificado de recopilación de datos. Los campos base se llenan una sola vez y alimentan todos los módulos. Los condicionales solo se muestran según la regla indicada en 'showIf'.",
     "sections": [
       { "id": "base", "titulo": "Datos base", "nota": "Compartidos por todos los módulos.", "fields": [
-        {"id":"nombre","label":"Nombre completo","type":"text","required":true},
-        {"id":"sexo","label":"Sexo","type":"select","options":["H","M"],"required":true},
-        {"id":"edad","label":"Edad","type":"number","unit":"años","required":true},
-        {"id":"peso_kg","label":"Peso actual","type":"number","unit":"kg","step":0.1,"required":true},
-        {"id":"talla_cm","label":"Talla","type":"number","unit":"cm","required":true},
+        {"id":"nombre","label":"Nombre completo","type":"text","required":false},
+        {"id":"sexo","label":"Sexo","type":"select","options":["H","M"],"required":false},
+        {"id":"edad","label":"Edad","type":"number","unit":"años","required":false},
+        {"id":"peso_kg","label":"Peso actual","type":"number","unit":"kg","step":0.1,"required":false},
+        {"id":"talla_cm","label":"Talla","type":"number","unit":"cm","required":false},
         {"id":"porcentaje_grasa","label":"% de grasa (si lo conoces)","type":"number","unit":"%","step":0.1,"required":false,"nota":"InBody 270S o M8-BIO. Si se deja vacío se estima por fotogrametría."},
-        {"id":"perfil","label":"Perfil farmacológico","type":"select","options":["natural","PED"],"required":true,"default":"natural","nota":"Define MRV, frecuencia, tolerancia al fallo, soporte hepático/lipídico y activa el módulo de farmacología."}
+        {"id":"perfil","label":"Perfil farmacológico","type":"select","options":["natural","PED"],"required":false,"default":"natural","nota":"Define MRV, frecuencia, tolerancia al fallo, soporte hepático/lipídico y activa el módulo de farmacología."}
       ]},
       { "id": "entrenamiento", "titulo": "Entrenamiento", "fields": [
-        {"id":"nivel","label":"Nivel","type":"select","options":["principiante","intermedio","avanzado"],"required":true},
-        {"id":"dias_semana","label":"Días disponibles por semana","type":"number","unit":"días","min":1,"max":7,"required":true},
-        {"id":"duracion_sesion_min","label":"Duración por sesión","type":"number","unit":"min","required":true},
-        {"id":"gimnasio","label":"Gimnasio de referencia","type":"select","options":["San Diego","Bugambilias","otro"],"required":true,"nota":"Define el inventario de máquinas disponibles."},
+        {"id":"nivel","label":"Nivel","type":"select","options":["principiante","intermedio","avanzado"],"required":false},
+        {"id":"dias_semana","label":"Días disponibles por semana","type":"number","unit":"días","min":1,"max":7,"required":false},
+        {"id":"duracion_sesion_min","label":"Duración por sesión","type":"number","unit":"min","required":false},
+        {"id":"gimnasio","label":"Gimnasio de referencia","type":"select","options":["San Diego","Bugambilias","otro"],"required":false,"nota":"Define el inventario de máquinas disponibles."},
         {"id":"gimnasio_otro_maquinas","label":"¿Qué máquinas especializadas tiene tu gimnasio?","type":"textarea","required":false,"showIf":{"field":"gimnasio","equals":"otro"}},
-        {"id":"objetivo_mesociclo","label":"Objetivo del mesociclo","type":"select","options":["hipertrofia","definición","recomposición","deload"],"required":true},
+        {"id":"objetivo_mesociclo","label":"Objetivo del mesociclo","type":"select","options":["hipertrofia","definición","recomposición","deload"],"required":false},
         {"id":"lesiones","label":"Lesiones o restricciones articulares","type":"textarea","required":false,"placeholder":"Ej: molestia lumbar, hombro derecho, rodilla…"},
         {"id":"semana_actual_mesociclo","label":"Semana actual del mesociclo (si es continuación)","type":"number","min":1,"max":8,"required":false}
       ]},
@@ -5882,24 +5882,24 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         {"id":"disponibilidad","label":"Disponibilidad horaria real","type":"textarea","required":false,"placeholder":"Días y horas que puede entrenar de verdad."}
       ]},
       { "id": "nutricion", "titulo": "Nutrición", "fields": [
-        {"id":"actividad_pasos_dia","label":"Actividad no-entreno (pasos/día promedio)","type":"number","unit":"pasos","required":true,"default":8000},
-        {"id":"objetivo_calorico","label":"Objetivo calórico","type":"select","options":["superávit","mantenimiento","déficit"],"required":true},
+        {"id":"actividad_pasos_dia","label":"Actividad no-entreno (pasos/día promedio)","type":"number","unit":"pasos","required":false,"default":8000},
+        {"id":"objetivo_calorico","label":"Objetivo calórico","type":"select","options":["superávit","mantenimiento","déficit"],"required":false},
         {"id":"magnitud_ajuste_pct","label":"Magnitud del ajuste","type":"number","unit":"%","required":false,"nota":"% sobre mantenimiento. Vacío = default por objetivo.","showIf":{"field":"objetivo_calorico","notEquals":"mantenimiento"}},
-        {"id":"num_comidas","label":"Nº de comidas preferido","type":"number","min":2,"max":8,"required":true},
+        {"id":"num_comidas","label":"Nº de comidas preferido","type":"number","min":2,"max":8,"required":false},
         {"id":"horarios_comidas","label":"Horarios aproximados","type":"text","required":false,"placeholder":"Ej: 07:30 / 12:00 / 16:00 / 20:00"},
-        {"id":"restricciones_alimentarias","label":"Preferencias / restricciones","type":"multiselect","options":["ninguna","vegano","vegetariano","celíaco","intolerancia lactosa","otra"],"required":true},
+        {"id":"restricciones_alimentarias","label":"Preferencias / restricciones","type":"multiselect","options":["ninguna","vegano","vegetariano","celíaco","intolerancia lactosa","otra"],"required":false},
         {"id":"restriccion_otra","label":"Especifica la restricción","type":"text","required":false,"showIf":{"field":"restricciones_alimentarias","contains":"otra"}},
         {"id":"alimentos_disponibles","label":"Alimentos disponibles / preferidos","type":"textarea","required":false},
         {"id":"fase_ciclo_menstrual","label":"Fase del ciclo menstrual","type":"select","options":["menstrual","folicular","ovulatoria","lútea","amenorrea","no aplica"],"required":false,"nota":"Para cálculo de EA y RED-S.","showIf":{"field":"sexo","equals":"M"}}
       ]},
       { "id": "suplementacion", "titulo": "Suplementación", "fields": [
-        {"id":"restricciones_suplementos","label":"Restricciones","type":"select","options":["ninguna","sin cafeína","sin estimulantes"],"required":true,"default":"ninguna"},
-        {"id":"objetivo_primario_supp","label":"Objetivo primario","type":"select","options":["rendimiento","recomposición","salud"],"required":true}
+        {"id":"restricciones_suplementos","label":"Restricciones","type":"select","options":["ninguna","sin cafeína","sin estimulantes"],"required":false,"default":"ninguna"},
+        {"id":"objetivo_primario_supp","label":"Objetivo primario","type":"select","options":["rendimiento","recomposición","salud"],"required":false}
       ]},
       { "id": "farmacologia", "titulo": "Farmacología", "showIf": {"field":"perfil","equals":"PED"}, "nota": "Solo se muestra si el perfil es PED. Si faltan biomarcadores baseline, la prescripción opera en ceguera clínica.", "fields": [
-        {"id":"experiencia_peds","label":"Experiencia previa con PEDs","type":"select","options":["primer_ciclo","2_a_5_ciclos","mas_de_5_ciclos"],"required":true},
-        {"id":"objetivo_farmaco","label":"Objetivo y fase","type":"select","options":["off_season","pre_comp_inicial","pre_comp_final","peaking","pct","cruise"],"required":true},
-        {"id":"timeline_semanas","label":"Timeline disponible","type":"number","unit":"semanas","required":true},
+        {"id":"experiencia_peds","label":"Experiencia previa con PEDs","type":"select","options":["primer_ciclo","2_a_5_ciclos","mas_de_5_ciclos"],"required":false},
+        {"id":"objetivo_farmaco","label":"Objetivo y fase","type":"select","options":["off_season","pre_comp_inicial","pre_comp_final","peaking","pct","cruise"],"required":false},
+        {"id":"timeline_semanas","label":"Timeline disponible","type":"number","unit":"semanas","required":false},
         {"id":"bio_hct","label":"Hematocrito (Hct)","type":"number","unit":"%","required":false,"group":"biomarcadores"},
         {"id":"bio_alt","label":"ALT","type":"number","unit":"U/L","required":false,"group":"biomarcadores"},
         {"id":"bio_ast","label":"AST","type":"number","unit":"U/L","required":false,"group":"biomarcadores"},
@@ -5914,10 +5914,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         {"id":"bio_pa_sistolica","label":"PA sistólica","type":"number","unit":"mmHg","required":false,"group":"biomarcadores"},
         {"id":"bio_pa_diastolica","label":"PA diastólica","type":"number","unit":"mmHg","required":false,"group":"biomarcadores"},
         {"id":"bio_fc_reposo","label":"FC en reposo (AM)","type":"number","unit":"lpm","required":false,"group":"biomarcadores"},
-        {"id":"ecocardiograma_disponible","label":"¿Tienes ecocardiograma?","type":"boolean","required":true,"group":"screening_cardiologico"},
-        {"id":"ecg_disponible","label":"¿Tienes ECG?","type":"boolean","required":true,"group":"screening_cardiologico"},
+        {"id":"ecocardiograma_disponible","label":"¿Tienes ecocardiograma?","type":"boolean","required":false,"group":"screening_cardiologico"},
+        {"id":"ecg_disponible","label":"¿Tienes ECG?","type":"boolean","required":false,"group":"screening_cardiologico"},
         {"id":"score_agatston","label":"Score de Agatston","type":"number","required":false,"group":"screening_cardiologico","nota":"Requerido si >35 años o >5 años de uso."},
-        {"id":"limitaciones","label":"Limitaciones / antecedentes","type":"multiselect","options":["ninguna","alopecia_familiar","acne_severo","antecedente_cardiovascular","antecedente_renal","antecedente_hepatico"],"required":true},
+        {"id":"limitaciones","label":"Limitaciones / antecedentes","type":"multiselect","options":["ninguna","alopecia_familiar","acne_severo","antecedente_cardiovascular","antecedente_renal","antecedente_hepatico"],"required":false},
         {"id":"estado_hormonal_femenino","label":"Estado hormonal / uso de anticonceptivos","type":"select","options":["ACO_levonorgestrel","ERT_transdermica","ninguno","menopausia"],"required":false,"nota":"Para soporte estrogénico obligatorio en mujeres con PEDs.","showIf":{"field":"sexo","equals":"M"}}
       ]}
     ]
@@ -6224,32 +6224,82 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     } catch(e){ showToast('Error: '+e.message, true); }
   }
 
-  // Vuelca datos base del análisis a la ficha (solo campos vacíos)
+  // Derivación fotogrametría → mapa de campos de ficha (foto tiene prioridad absoluta)
+  function _fotoToIntakeMap(obj){
+    if(!obj||typeof obj!=='object') return {};
+    const m=obj.metadata||{},cc=obj.composicion_corporal||{},bm=obj.biomecanica||{};
+    const jm=obj.jerarquia_muscular||{},nu=obj.nutricion||{},ep=obj.ejercicios_prescritos||{};
+    const mb=Array.isArray(obj.modificaciones_biomecanicas)?obj.modificaciones_biomecanicas:[];
+    const GPAR={pectoral:'Empuje',deltoides_lat:'Empuje',triceps:'Empuje',
+                dorsal_ancho:'Halar',espalda_media:'Halar',biceps:'Halar',
+                cuadriceps:'Squat',gluteo_mayor:'Squat',
+                isquiotibiales:'Bisagra',gluteo_medio:'Bisagra'};
+    const toP=gs=>{ const s={}; (gs||[]).forEach(g=>{if(GPAR[g])s[GPAR[g]]=1;}); return Object.keys(s); };
+    const FCAL={volumen:'superávit',definicion:'déficit','definición':'déficit',mantenimiento:'mantenimiento'};
+    const FENF={volumen:'hipertrofia',definicion:'definición','definición':'definición',mantenimiento:'mantenimiento'};
+    const FOBJ={volumen:'hipertrofia',definicion:'definición','definición':'definición',mantenimiento:'recomposición'};
+    const fase=m.fase_actual||nu.fase||'';
+    const bio=[];
+    if(bm.clasificacion_femur) bio.push('Fémur '+bm.clasificacion_femur);
+    if(bm.clasificacion_ape)   bio.push('Ape index '+bm.clasificacion_ape);
+    if(bm.SWR)                 bio.push('SWR '+bm.SWR);
+    if(bm.sweep_cuadricipital) bio.push('Sweep cuadricipital '+bm.sweep_cuadricipital);
+    if(bm.insercion_gemelo)    bio.push('Ins. gemelo '+bm.insercion_gemelo);
+    if(bm.insercion_biceps)    bio.push('Ins. bíceps '+bm.insercion_biceps);
+    const rez=(jm.rezagados_declarados||[]).concat(jm.rezagados_no_declarados||[]);
+    let evitar=[];
+    Object.keys(ep).forEach(k=>{ const ez=ep[k]; if(ez&&Array.isArray(ez.contraindicados)) evitar=evitar.concat(ez.contraindicados); });
+    mb.forEach(mod=>{ if(typeof mod==='string') evitar.push(mod); });
+    const out={};
+    if(m.sexo!=null&&m.sexo!=='')          out.sexo=m.sexo;
+    if(m.edad!=null)                        out.edad=m.edad;
+    if(m.peso_kg!=null)                     out.peso_kg=m.peso_kg;
+    if(m.talla_cm!=null)                    out.talla_cm=m.talla_cm;
+    if(cc.porcentaje_grasa_midpoint!=null)  out.porcentaje_grasa=cc.porcentaje_grasa_midpoint;
+    if(FOBJ[fase])                          out.objetivo_mesociclo=FOBJ[fase];
+    if(bio.length)                          out.biotipo=bio.join(' · ');
+    if((bm.limitaciones_movimiento||[]).length) out.movilidad=bm.limitaciones_movimiento.join('; ');
+    const ptF=toP(jm.dominantes||[]);  if(ptF.length) out.patrones_fuertes=ptF;
+    const ptD=toP(rez);                if(ptD.length) out.patrones_debiles=ptD;
+    if((bm.asimetrias_detectadas||[]).length) out.asimetrias=bm.asimetrias_detectadas.join('; ');
+    if(mb.length)                           out.postura=mb.join('; ');
+    if(rez.length)                          out.grupos_prioritarios=rez.join(', ');
+    if(FENF[fase])                          out.enfoque_actual=FENF[fase];
+    if(FCAL[fase])                          out.objetivo_calorico=FCAL[fase];
+    if(evitar.length)                       out.ejercicios_evitar=evitar.join('; ');
+    if(m.sexo==='H')                        out.fase_ciclo_menstrual='no aplica';
+    return out;
+  }
+
+  // Vuelca todos los campos derivables de la fotogrametría a la ficha (foto sobreescribe)
   function applyFotometriaToIntake(){
-    let obj = _intakeFotometria;
-    if(!obj){ const raw = document.getElementById('intakeFotoInput').value.trim(); try { obj = JSON.parse(raw); } catch(e){} }
+    let obj=_intakeFotometria;
+    if(!obj){ const raw=document.getElementById('intakeFotoInput').value.trim(); try{obj=JSON.parse(raw);}catch(e){} }
     if(!obj){ showToast('Primero pega/guarda el análisis', true); return; }
-    const m = obj.metadata||{}, cc = obj.composicion_corporal||{};
-    const map = { sexo:m.sexo, edad:m.edad, peso_kg:m.peso_kg, talla_cm:m.talla_cm, porcentaje_grasa:(cc.porcentaje_grasa_midpoint!=null?cc.porcentaje_grasa_midpoint:undefined) };
-    let n=0;
+    const map=_fotoToIntakeMap(obj); let n=0;
     Object.keys(map).forEach(fid=>{
-      const v = map[fid];
-      if(v===undefined || v===null || v==='') return;
-      const el = document.getElementById('intake-'+fid);
-      if(!el) return;
-      if(el.value===''){ el.value = v; n++; }
+      const v=map[fid];
+      if(v===null||v===undefined||v===''||(Array.isArray(v)&&v.length===0)) return;
+      const f=INTAKE_FIELDS[fid]; if(!f) return;
+      if(f.type==='multiselect'){
+        const c=document.getElementById('intake-'+fid); if(!c) return;
+        const arr=Array.isArray(v)?v:[v];
+        c.querySelectorAll('input[type=checkbox]').forEach(inp=>{
+          const on=arr.indexOf(inp.value)>=0;
+          inp.checked=on; inp.parentElement.classList.toggle('on',on);
+        });
+        n++;
+      } else {
+        const el=document.getElementById('intake-'+fid); if(!el) return;
+        el.value=v; n++;
+      }
     });
     applyIntakeVisibility();
-    showToast(n? ('Volcados '+n+' campos base vacíos') : 'Los campos base ya tenían datos — sin cambios');
+    showToast('Fotogrametría volcada — '+n+' campos actualizados');
   }
 
   async function saveIntake(){
     if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
-    const missing = validateIntake();
-    if(missing.length){
-      const ok = await _askConfirm('Faltan campos: '+missing.slice(0,4).join(', ')+(missing.length>4?' y '+(missing.length-4)+' más…':'')+'\n\n¿Guardar como borrador de todas formas?');
-      if(!ok) return;
-    }
     const btn = document.getElementById('intakeSaveBtn'); btn.disabled=true; const t=btn.textContent; btn.textContent='Guardando…';
     try {
       const payload = { schemaVersion: INTAKE_SCHEMA.schemaVersion, updatedAt: Date.now(), updatedBy: 'coach', data: collectIntake() };
