@@ -249,6 +249,20 @@
     </div>
     <div id="intakeStatus" class="text-xs mb-4" style="color:var(--text-muted)"></div>
     <form id="intakeForm" autocomplete="off"></form>
+    <div id="intakeFotoCard" class="card p-4 mb-4" style="display:none">
+      <div class="flex justify-between items-center mb-1 flex-wrap gap-2">
+        <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent)">🔬 Análisis de fotogrametría</h3>
+        <span id="intakeFotoStatus" class="text-xs" style="color:var(--text-muted)"></span>
+      </div>
+      <p class="text-xs mb-2" style="color:var(--text-muted)">Pega el JSON del análisis (VDSEN-ANALYSIS…). Se guarda junto a la ficha y se incluye al exportar para complementar los datos del alumno.</p>
+      <textarea id="intakeFotoInput" class="input-field mb-2" rows="5" placeholder='{ "codigo_diagnostico": "VDSEN-ANALYSIS-…", "metadata": { … }, "composicion_corporal": { … } }' style="font-family:'Courier Prime',monospace;font-size:12px"></textarea>
+      <div class="flex gap-2 flex-wrap">
+        <button type="button" id="intakeFotoSave" class="btn-secondary text-sm">💾 Analizar y guardar</button>
+        <button type="button" id="intakeFotoApply" class="btn-secondary text-sm" title="Rellena sexo/edad/peso/talla/%grasa vacíos de la ficha desde el análisis">🔗 Volcar datos base a la ficha</button>
+        <button type="button" id="intakeFotoClear" class="btn-secondary text-sm">🗑 Quitar</button>
+      </div>
+      <div id="intakeFotoSummary" class="mt-3"></div>
+    </div>
     <div id="intakeActions" class="flex gap-2 mt-2 flex-wrap items-center" style="display:none">
       <button type="button" id="intakeSaveBtn" class="btn-primary">💾 Guardar evaluación</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
@@ -5912,6 +5926,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   const INTAKE_FIELDS = {};
   INTAKE_SCHEMA.sections.forEach(s => s.fields.forEach(f => { INTAKE_FIELDS[f.id] = f; }));
   let _intakeCurrentClient = null;
+  let _intakeFotometria = null;
 
   function _intEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   function _intOptions(opts, cur){ return opts.map(o=>`<option value="${_intEsc(o)}"${String(cur)===String(o)?' selected':''}>${_intEsc(o)}</option>`).join(''); }
@@ -6125,8 +6140,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const form = document.getElementById('intakeForm');
     const actions = document.getElementById('intakeActions');
     const status = document.getElementById('intakeStatus');
-    if(!clientId){ form.innerHTML=''; actions.style.display='none'; status.textContent=''; _intakeCurrentClient=null; return; }
+    const fotoCard = document.getElementById('intakeFotoCard');
+    if(!clientId){ form.innerHTML=''; actions.style.display='none'; fotoCard.style.display='none'; status.textContent=''; _intakeCurrentClient=null; _intakeFotometria=null; return; }
     _intakeCurrentClient = clientId;
+    _intakeFotometria = null;
     status.textContent = 'Cargando…';
     try {
       const cd = (await getDoc(doc(db,'clients',clientId))).data() || {};
@@ -6143,7 +6160,86 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       status.textContent = (src && src.updatedAt)
         ? ('Última actualización: ' + new Date(src.updatedAt).toLocaleString('es-MX') + (src.updatedBy? ' · por '+(src.updatedBy==='client'?'el cliente':'ti') : ''))
         : 'Sin evaluación previa — formulario nuevo.';
+      // Fotogrametría guardada en el mismo doc (nivel raíz)
+      _intakeFotometria = (ficha && ficha.fotometria) ? ficha.fotometria : null;
+      fotoCard.style.display = 'block';
+      const fotoInput = document.getElementById('intakeFotoInput');
+      fotoInput.value = _intakeFotometria ? JSON.stringify(_intakeFotometria, null, 2) : '';
+      document.getElementById('intakeFotoStatus').textContent = (ficha && ficha.fotometriaUpdatedAt)
+        ? ('Guardado: ' + new Date(ficha.fotometriaUpdatedAt).toLocaleString('es-MX'))
+        : (_intakeFotometria ? '' : 'Sin análisis');
+      renderFotometriaSummary(_intakeFotometria);
     } catch(e){ status.textContent = 'Error al cargar: '+e.message; }
+  }
+
+  function renderFotometriaSummary(o){
+    const el = document.getElementById('intakeFotoSummary');
+    if(!o){ el.innerHTML=''; return; }
+    const m=o.metadata||{}, cc=o.composicion_corporal||{}, bm=o.biomecanica||{}, jm=o.jerarquia_muscular||{}, vs=o.volumen_semanal||{}, nu=o.nutricion||{}, md=nu.macros_diarios||{};
+    const roi=o.prioridades_ROI_estetico_tarima||[];
+    const row = (s)=> s ? '<div>'+s+'</div>' : '';
+    el.innerHTML = '<div class="text-xs" style="color:var(--text-muted);line-height:1.7;background:#060707;border:1px solid var(--border);border-radius:6px;padding:10px">'
+      + '<div><b style="color:var(--text-primary)">'+_intEsc(o.codigo_diagnostico||'Análisis')+'</b> · '+_intEsc(o.fecha_diagnostico||'')+'</div>'
+      + row(m.categoria_objetivo?('🎯 '+_intEsc(m.categoria_objetivo)+(m.fase_actual?' · '+_intEsc(m.fase_actual):'')):'')
+      + row(cc.porcentaje_grasa_rango?('📊 %Grasa '+_intEsc(cc.porcentaje_grasa_rango)+' · LBM '+_intEsc(cc.LBM_kg||'—')+' kg'):'')
+      + row((bm.SWR!=null)?('📐 SWR '+_intEsc(bm.SWR)+(bm.SWR_objetivo_competitivo?' (obj '+_intEsc(bm.SWR_objetivo_competitivo)+')':'')+(bm.WHR!=null?' · WHR '+_intEsc(bm.WHR):'')):'')
+      + row((jm.rezagados_declarados&&jm.rezagados_declarados.length)?('⬇️ Rezagados: '+_intEsc(jm.rezagados_declarados.join(', '))):'')
+      + row(vs.total_series_semana?('🏋️ '+_intEsc(vs.bloque_actual||'')+' · '+_intEsc(vs.total_series_semana)+' series/sem'):'')
+      + row(nu.meta_calorica_kcal?('🍽️ '+_intEsc(nu.meta_calorica_kcal)+' kcal · P'+_intEsc((md.proteina||{}).gramos||'—')+'/C'+_intEsc((md.carbohidratos||{}).gramos||'—')+'/G'+_intEsc((md.grasas||{}).gramos||'—')):'')
+      + row(roi.length?('⭐ ROI: '+_intEsc(roi.slice(0,3).map(r=>r.grupo).filter(Boolean).join(', '))):'')
+      + '</div>';
+  }
+
+  async function saveFotometria(){
+    if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
+    const input = document.getElementById('intakeFotoInput');
+    const raw = input.value.trim();
+    if(!raw){ showToast('Pega el JSON del análisis', true); return; }
+    let obj; try { obj = JSON.parse(raw); } catch(e){ showToast('JSON inválido: '+e.message, true); return; }
+    if(!obj || typeof obj!=='object' || Array.isArray(obj)){ showToast('El JSON debe ser un objeto de análisis', true); return; }
+    const btn = document.getElementById('intakeFotoSave'); btn.disabled=true; const t=btn.textContent; btn.textContent='Guardando…';
+    try {
+      const ts = Date.now();
+      await setDoc(doc(db,'fichas_onboarding',_intakeCurrentClient), { fotometria: obj, fotometriaUpdatedAt: ts }, { merge:true });
+      _intakeFotometria = obj;
+      input.value = JSON.stringify(obj, null, 2);
+      document.getElementById('intakeFotoStatus').textContent = 'Guardado: ' + new Date(ts).toLocaleString('es-MX');
+      renderFotometriaSummary(obj);
+      showToast('Análisis de fotogrametría guardado');
+    } catch(e){ showToast('Error: '+e.message, true); }
+    finally { btn.disabled=false; btn.textContent=t; }
+  }
+
+  async function clearFotometria(){
+    if(!_intakeCurrentClient || !_intakeFotometria){ return; }
+    if(!await _askConfirm('¿Quitar el análisis de fotogrametría de esta ficha?')) return;
+    try {
+      await setDoc(doc(db,'fichas_onboarding',_intakeCurrentClient), { fotometria: null, fotometriaUpdatedAt: null }, { merge:true });
+      _intakeFotometria = null;
+      document.getElementById('intakeFotoInput').value = '';
+      document.getElementById('intakeFotoStatus').textContent = 'Sin análisis';
+      renderFotometriaSummary(null);
+      showToast('Análisis quitado');
+    } catch(e){ showToast('Error: '+e.message, true); }
+  }
+
+  // Vuelca datos base del análisis a la ficha (solo campos vacíos)
+  function applyFotometriaToIntake(){
+    let obj = _intakeFotometria;
+    if(!obj){ const raw = document.getElementById('intakeFotoInput').value.trim(); try { obj = JSON.parse(raw); } catch(e){} }
+    if(!obj){ showToast('Primero pega/guarda el análisis', true); return; }
+    const m = obj.metadata||{}, cc = obj.composicion_corporal||{};
+    const map = { sexo:m.sexo, edad:m.edad, peso_kg:m.peso_kg, talla_cm:m.talla_cm, porcentaje_grasa:(cc.porcentaje_grasa_midpoint!=null?cc.porcentaje_grasa_midpoint:undefined) };
+    let n=0;
+    Object.keys(map).forEach(fid=>{
+      const v = map[fid];
+      if(v===undefined || v===null || v==='') return;
+      const el = document.getElementById('intake-'+fid);
+      if(!el) return;
+      if(el.value===''){ el.value = v; n++; }
+    });
+    applyIntakeVisibility();
+    showToast(n? ('Volcados '+n+' campos base vacíos') : 'Los campos base ya tenían datos — sin cambios');
   }
 
   async function saveIntake(){
@@ -6184,14 +6280,44 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     });
     return parts.join('\n').trim();
   }
+  // Aplanador genérico JSON → texto indentado (para cualquier estructura de análisis)
+  function jsonToIndentedText(obj, level){
+    level = level||0;
+    const pad = '  '.repeat(level);
+    const lines = [];
+    if(Array.isArray(obj)){
+      obj.forEach(item=>{
+        if(item && typeof item==='object'){ lines.push(pad+'-'); lines.push(jsonToIndentedText(item, level+1)); }
+        else if(item!==null && item!==undefined && item!=='') lines.push(pad+'- '+item);
+      });
+    } else if(obj && typeof obj==='object'){
+      Object.keys(obj).forEach(k=>{
+        const v = obj[k];
+        if(v===null || v===undefined || v==='' || (Array.isArray(v)&&v.length===0)) return;
+        if(typeof v==='object'){ lines.push(pad+k+':'); lines.push(jsonToIndentedText(v, level+1)); }
+        else lines.push(pad+k+': '+v);
+      });
+    } else if(obj!==null && obj!==undefined){ lines.push(pad+String(obj)); }
+    return lines.filter(Boolean).join('\n');
+  }
   function intakeExport(fmt){
     if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
     const data = collectIntake();
+    const fot = _intakeFotometria;
     let out, label;
-    if(fmt==='json'){ out = JSON.stringify({ schemaVersion: INTAKE_SCHEMA.schemaVersion, clienteId: _intakeCurrentClient, data }, null, 2); label='JSON'; }
-    else if(fmt==='md'){ out = intakeFormat(data,'md'); label='Markdown'; }
-    else { out = intakeFormat(data,'txt'); label='TXT'; }
-    if(navigator.clipboard){ navigator.clipboard.writeText(out).then(()=>showToast(label+' copiado al portapapeles')).catch(()=>showToast('No se pudo copiar', true)); }
+    if(fmt==='json'){
+      out = JSON.stringify({ schemaVersion: INTAKE_SCHEMA.schemaVersion, clienteId: _intakeCurrentClient, alumno: data, fotogrametria: fot||null }, null, 2);
+      label='JSON';
+    } else if(fmt==='md'){
+      out = intakeFormat(data,'md');
+      if(fot) out += '\n\n## Fotogrametría (análisis coach)\n\n```json\n' + JSON.stringify(fot, null, 2) + '\n```';
+      label='Markdown';
+    } else {
+      out = intakeFormat(data,'txt');
+      if(fot) out += '\n\n[FOTOGRAMETRÍA — ANÁLISIS COACH]\n' + jsonToIndentedText(fot);
+      label='TXT';
+    }
+    if(navigator.clipboard){ navigator.clipboard.writeText(out).then(()=>showToast(label+' copiado'+(fot?' (alumno + fotogrametría)':''))).catch(()=>showToast('No se pudo copiar', true)); }
     else showToast('Portapapeles no disponible', true);
   }
 
@@ -6200,6 +6326,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   document.getElementById('intakeCopyTxt').addEventListener('click', ()=>intakeExport('txt'));
   document.getElementById('intakeCopyMd').addEventListener('click', ()=>intakeExport('md'));
   document.getElementById('intakeCopyJson').addEventListener('click', ()=>intakeExport('json'));
+  document.getElementById('intakeFotoSave').addEventListener('click', saveFotometria);
+  document.getElementById('intakeFotoApply').addEventListener('click', applyFotometriaToIntake);
+  document.getElementById('intakeFotoClear').addEventListener('click', clearFotometria);
   document.getElementById('intakeNewClientBtn').addEventListener('click', ()=>{ if(typeof createClientModal==='function') createClientModal(); });
   document.getElementById('intakeForm').addEventListener('change', (e)=>{
     if(e.target.matches('.intake-chip input')) e.target.closest('.intake-chip').classList.toggle('on', e.target.checked);
