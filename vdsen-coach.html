@@ -6205,7 +6205,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       input.value = JSON.stringify(obj, null, 2);
       document.getElementById('intakeFotoStatus').textContent = 'Guardado: ' + new Date(ts).toLocaleString('es-MX');
       renderFotometriaSummary(obj);
-      showToast('Análisis de fotogrametría guardado');
+      applyFotometriaToIntake();
+      showToast('Análisis guardado · datos base volcados a la ficha');
     } catch(e){ showToast('Error: '+e.message, true); }
     finally { btn.disabled=false; btn.textContent=t; }
   }
@@ -6245,7 +6246,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   async function saveIntake(){
     if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
     const missing = validateIntake();
-    if(missing.length){ showToast('Faltan obligatorios: '+missing.slice(0,4).join(', ')+(missing.length>4?'…':''), true); return; }
+    if(missing.length){
+      const ok = await _askConfirm('Faltan campos: '+missing.slice(0,4).join(', ')+(missing.length>4?' y '+(missing.length-4)+' más…':'')+'\n\n¿Guardar como borrador de todas formas?');
+      if(!ok) return;
+    }
     const btn = document.getElementById('intakeSaveBtn'); btn.disabled=true; const t=btn.textContent; btn.textContent='Guardando…';
     try {
       const payload = { schemaVersion: INTAKE_SCHEMA.schemaVersion, updatedAt: Date.now(), updatedBy: 'coach', data: collectIntake() };
