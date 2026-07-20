@@ -3180,14 +3180,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   function _classifyBlocks(blocks) {
-    let training = null, nutrition = null, supplements = null;
+    let training = null, nutrition = null, supplements = null, pharma = null;
     blocks.forEach(b => {
       if (!b || typeof b !== 'object') return;
       if (Array.isArray(b.days)) training = b;
       else if (Array.isArray(b.tiers)) supplements = b;
       else if (Array.isArray(b.comidas) || b.calorias != null || b.macros) nutrition = b;
+      else if (b.protocolo != null || Array.isArray(b.compuestos)) pharma = b;
     });
-    return { training, nutrition, supplements };
+    return { training, nutrition, supplements, pharma };
   }
 
   function _normalizeTrainingPlan(obj) {
@@ -3311,6 +3312,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         throw new Error('Este cliente no tiene ficha. Llena la ficha en la pestaña Evaluación primero.');
       }
       const fichaTxt = (typeof intakeFormat === 'function') ? intakeFormat(ficha.data, 'md') : JSON.stringify(ficha.data, null, 2);
+      const isPED = String(ficha.data.perfil || '').toLowerCase() === 'ped';
 
       setStatus('<span style="color:var(--text-muted)">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();
@@ -3318,9 +3320,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       setStatus('<span style="color:var(--text-muted)">Generando con el motor VDSEN… (10–40 s)</span>');
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
-        'Con la ficha de abajo, genera en UNA sola respuesta los TRES artefactos JSON del cliente:',
-        '1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3), en ese orden.',
-        'Emite exactamente tres bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON.',
+        isPED
+          ? 'Con la ficha de abajo, genera en UNA sola respuesta los CUATRO artefactos JSON del cliente: 1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3)  4) Farmacología (PARTE D4), en ese orden.'
+          : 'Con la ficha de abajo, genera en UNA sola respuesta los TRES artefactos JSON del cliente: 1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3), en ese orden.',
+        isPED
+          ? 'Emite exactamente cuatro bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON. El bloque D4 debe tener protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct.'
+          : 'Emite exactamente tres bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON.',
         'Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
         '', 'FICHA DEL CLIENTE:', fichaTxt
@@ -3342,8 +3347,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (!text) throw new Error('Respuesta vacía del modelo');
 
       setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
-      const { training, nutrition, supplements } = _classifyBlocks(_extractJsonBlocks(text));
-      if (!training && !nutrition && !supplements) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
+      const { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(text));
+      if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
 
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
@@ -3356,6 +3361,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (nutrition) { clientUpdates.nutritionPlan = _nutritionJsonToPlan(nutrition); clientUpdates.nutritionRaw = nutrition; saved.push('nutrición'); }
       const supPlan = supplements ? _supplementsJsonToPlan(supplements) : null;
       if (supPlan) { clientUpdates.supplementPlan = supPlan; clientUpdates.supplementsRaw = supplements; saved.push('suplementación'); }
+      if (pharma) { clientUpdates.pharmacoPlan = pharma; saved.push('farmacología'); }
       if (Object.keys(clientUpdates).length) await updateDoc(doc(db, 'clients', clientId), clientUpdates);
 
       const u = data.usage || {};
@@ -3388,9 +3394,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const btn = document.getElementById('motorPasteBtn');
     if (btn) { btn.disabled = true; btn._t = btn.textContent; btn.textContent = '⏳ Cargando…'; }
     try {
-      const { training, nutrition, supplements } = _classifyBlocks(_extractJsonBlocks(raw));
-      if (!training && !nutrition && !supplements)
-        throw new Error('No encontré bloques JSON válidos (entrenamiento/nutrición/suplementación) en el texto pegado.');
+      const { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(raw));
+      if (!training && !nutrition && !supplements && !pharma)
+        throw new Error('No encontré bloques JSON válidos (entrenamiento/nutrición/suplementación/farmacología) en el texto pegado.');
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
       if (planObj) { window._importedPlan = planObj; await saveImportedPlan(clientId); saved.push(planObj.days.length + ' día(s) de entrenamiento'); }
@@ -3398,6 +3404,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (nutrition) { upd.nutritionPlan = _nutritionJsonToPlan(nutrition); upd.nutritionRaw = nutrition; saved.push('nutrición'); }
       const sp = supplements ? _supplementsJsonToPlan(supplements) : null;
       if (sp) { upd.supplementPlan = sp; upd.supplementsRaw = supplements; saved.push('suplementación'); }
+      if (pharma) { upd.pharmacoPlan = pharma; saved.push('farmacología'); }
       if (Object.keys(upd).length) await updateDoc(doc(db, 'clients', clientId), upd);
       setStatus('<div style="color:var(--success);font-weight:700">✅ Cargado y activado: ' + saved.join(' · ') + '</div>'
         + '<button onclick="downloadPlanPDF(\'' + clientId + '\')" class="btn-secondary" style="margin-top:8px">📄 Descargar PDF del plan</button>'
