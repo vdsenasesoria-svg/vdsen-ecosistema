@@ -284,6 +284,8 @@
       <button type="button" id="intakeCopyTxt" class="btn-secondary text-sm" title="Texto plano — menos tokens/créditos">📄 TXT</button>
       <button type="button" id="intakeCopyMd" class="btn-secondary text-sm" title="Markdown — para Notion/documentos">📝 MD</button>
       <button type="button" id="intakeCopyJson" class="btn-secondary text-sm" title="JSON estructurado — para el motor/skill">🧩 JSON</button>
+      <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
+      <button type="button" id="intakeFichaWA" onclick="sendFichaClientePdf()" class="btn-secondary text-sm" title="Generar PDF con diagnóstico para el cliente y compartir por WhatsApp">📱 PDF → Cliente</button>
     </div>
     <div class="card p-4 mt-4">
       <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">Cargar plan desde el Motor VDSEN</h3>
@@ -3611,7 +3613,84 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if(data.foot) paragraph(s, data.foot, 'foot', hm);
       return doc;
     }
-    return { buildPlanPDF };
+    // ── Etiquetas de grupos musculares (para ficha cliente) ──
+    const _GRP_LABEL = {
+      'cuadriceps':'Cuádriceps','isquiosurales':'Isquiosurales',
+      'gluteo_mayor':'Glúteo mayor','gluteo_medio':'Glúteo medio',
+      'dorsal_ancho':'Dorsal ancho','espalda_media':'Espalda media',
+      'pectoral':'Pectoral','deltoides_lat':'Deltoides lateral',
+      'biceps':'Bíceps','triceps':'Tríceps','gemelos':'Gemelos',
+      'recto_femoral':'Recto femoral'
+    };
+
+    // ── PDF cliente (panorama general, sin prescripción) ──
+    async function buildFichaPDF({ nombre, codigoDx, fechaDx, fot }) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({unit:'mm', format:'a4', compress:true});
+      await _loadFonts(doc);
+      _wmName = nombre || '';
+      const hm = [nombre||'', codigoDx||fechaDx||''].filter(Boolean).join(' · ');
+      const s = _st(doc); _furniture(s, hm);
+      const meta=(fot&&fot.metadata)||{}, cc=(fot&&fot.composicion_corporal)||{},
+            bm=(fot&&fot.biomecanica)||{}, jm=(fot&&fot.jerarquia_muscular)||{};
+
+      // Título
+      sectionBand(s,'Diagnóstico Corporal VDSEN', fechaDx||'', hm); s.y+=2;
+
+      // Datos básicos
+      const basicRows=[];
+      if(nombre) basicRows.push(['Cliente', nombre]);
+      if(meta.edad) basicRows.push(['Edad', meta.edad+' años']);
+      if(meta.peso_kg) basicRows.push(['Peso actual', meta.peso_kg+' kg']);
+      if(meta.talla_cm) basicRows.push(['Talla', meta.talla_cm+' cm']);
+      if(basicRows.length) labeledRows(s, basicRows, hm);
+
+      // Composición corporal
+      sectionBand(s,'Composición Corporal','', hm);
+      const heroP=[];
+      if(cc.porcentaje_grasa_rango) heroP.push(['% Grasa corporal', cc.porcentaje_grasa_rango]);
+      if(cc.LBM_kg) heroP.push(['Masa magra estimada', cc.LBM_kg+' kg']);
+      const faseMap={volumen:'Volumen',definicion:'Definición',mantenimiento:'Mantenimiento'};
+      if(meta.fase_actual) heroP.push(['Fase actual', faseMap[meta.fase_actual]||meta.fase_actual]);
+      if(heroP.length) heroMetrics(s, heroP, 0, 'Estimación por análisis visual ±3–5%. Triangular con InBody para mayor precisión.', hm);
+
+      // Evaluación muscular (sin mencionar ejercicios ni protocolos)
+      const muscleRows=[];
+      (jm.dominantes||[]).forEach(g=>muscleRows.push([_GRP_LABEL[g]||g,'Destacado','★']));
+      (jm.equilibrados||[]).forEach(g=>muscleRows.push([_GRP_LABEL[g]||g,'Equilibrado','✓']));
+      (jm.rezagados_declarados||[]).forEach(g=>muscleRows.push([_GRP_LABEL[g]||g,'En desarrollo','◎']));
+      (jm.rezagados_no_declarados||[]).forEach(g=>muscleRows.push([_GRP_LABEL[g]||g,'Con potencial','◎']));
+      if(muscleRows.length){
+        sectionBand(s,'Evaluación Muscular','', hm);
+        dataTable(s,['Grupo muscular','Estado',''],muscleRows,[0.58,0.32,0.10],hm);
+      }
+
+      // Estructura corporal (solo clasificaciones, sin implicaciones técnicas)
+      const strRows=[];
+      if(bm.clasificacion_femur) strRows.push(['Tipo de fémur', {corto:'Corto',moderado:'Moderado',largo:'Largo'}[bm.clasificacion_femur]||bm.clasificacion_femur]);
+      if(bm.SWR) strRows.push(['Ratio hombro-cintura (SWR)', String(Number(bm.SWR).toFixed(2))]);
+      if(bm.WHR) strRows.push(['Ratio cintura-cadera (WHR)', String(Number(bm.WHR).toFixed(2))]);
+      if(bm.sweep_cuadricipital) strRows.push(['Sweep cuadricipital', bm.sweep_cuadricipital.charAt(0).toUpperCase()+bm.sweep_cuadricipital.slice(1)]);
+      if(bm.insercion_gemelo) strRows.push(['Inserción de gemelo', bm.insercion_gemelo.charAt(0).toUpperCase()+bm.insercion_gemelo.slice(1)]);
+      if(bm.insercion_biceps) strRows.push(['Inserción de bíceps', bm.insercion_biceps.charAt(0).toUpperCase()+bm.insercion_biceps.slice(1)]);
+      if(bm.clasificacion_postura) strRows.push(['Observación postural', bm.clasificacion_postura]);
+      if(strRows.length){ sectionBand(s,'Estructura Corporal','', hm); labeledRows(s, strRows, hm); }
+
+      // Asimetrías — solo mención general, sin protocolo
+      const asim=(bm.asimetrias_detectadas||[]).filter(Boolean);
+      if(asim.length){
+        sectionBand(s,'Observaciones','', hm);
+        paragraph(s,'Se detectaron diferencias de desarrollo interlateral en: '+asim.join(', ')+'. Tu coach tiene un protocolo específico integrado en tu plan de entrenamiento para abordarlas progresivamente.','body',hm);
+      }
+
+      // Nota de cierre
+      s.y+=8; _need(s,28,hm);
+      paragraph(s,'Este diagnóstico es un panorama general de tu evaluación corporal. La selección de ejercicios, volúmenes de entrenamiento y prescripciones específicas son parte de tu plan personalizado VDSEN y quedan bajo la supervisión de tu coach.','foot',hm);
+      if(codigoDx) paragraph(s,'Código de diagnóstico: '+codigoDx+' · Marco Operativo VDSEN v3.4','foot',hm);
+      return doc;
+    }
+
+    return { buildPlanPDF, buildFichaPDF };
   })();
 
   function _nutFromPlan(np){
@@ -6437,6 +6516,45 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if(navigator.clipboard){ navigator.clipboard.writeText(out).then(()=>showToast(label+' copiado'+(fot?' (alumno + fotogrametría)':''))).catch(()=>showToast('No se pudo copiar', true)); }
     else showToast('Portapapeles no disponible', true);
   }
+
+  async function sendFichaClientePdf(){
+    if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
+    if(!_intakeFotometria){ showToast('No hay análisis fotométrico guardado para este cliente. Carga el BLOQUE 1 primero.', true); return; }
+    const btn = document.getElementById('intakeFichaWA');
+    const orig = btn ? btn.textContent : '';
+    if(btn){ btn.disabled=true; btn.textContent='⏳ Generando…'; }
+    try {
+      const intake = collectIntake();
+      const nombre = intake.nombre || '';
+      const fot = _intakeFotometria;
+      const codigoDx = fot.codigo_diagnostico || '';
+      const fechaDx  = fot.fecha_diagnostico  || new Date().toLocaleDateString('es-MX');
+      const doc = await VDSEN_PDF.buildFichaPDF({ nombre, codigoDx, fechaDx, fot });
+      const slug = (nombre||'cliente').toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
+      const fileName = 'diagnostico-vdsen-'+slug+'.pdf';
+      const blob = doc.output('blob');
+      const file = new File([blob], fileName, {type:'application/pdf'});
+      // Intentar Web Share API (permite elegir WhatsApp en móvil)
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({
+          files:[file],
+          title:'Diagnóstico VDSEN — '+nombre,
+          text:'¡Hola! Adjunto tu diagnóstico corporal VDSEN. Cualquier duda la revisamos en nuestra próxima sesión. 💪'
+        });
+      } else {
+        // Fallback: descargar PDF + abrir WhatsApp
+        doc.save(fileName);
+        const msg = encodeURIComponent('¡Hola! Te envío tu diagnóstico corporal VDSEN. (Adjunta el PDF que acabas de descargar al enviar este mensaje)');
+        setTimeout(()=>window.open('https://wa.me/?text='+msg,'_blank'), 700);
+        showToast('PDF descargado — ábrelo desde tu galería y adjúntalo en WhatsApp');
+      }
+    } catch(e){
+      if(e && e.name!=='AbortError') showToast('Error: '+e.message, true);
+    } finally {
+      if(btn){ btn.disabled=false; btn.textContent=orig; }
+    }
+  }
+  window.sendFichaClientePdf = sendFichaClientePdf;
 
   document.getElementById('intakeClientSelect').addEventListener('change', e=> loadIntakeForClient(e.target.value));
   document.getElementById('intakeSaveBtn').addEventListener('click', saveIntake);
