@@ -3185,6 +3185,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (!bodyRaw) continue;
       try { blocks.push(JSON.parse(bodyRaw)); } catch (e) { /* fence no-JSON: ignorar */ }
     }
+    // Bloques delimitados por marcadores ---VDSEN-*--- / ---FIN-*--- (v3.4)
+    const markerRe = /---VDSEN-[A-Z-]+---\s*([\s\S]*?)\s*---FIN-[A-Z-]+---/g;
+    while ((m = markerRe.exec(text)) !== null) {
+      const bodyRaw = m[1].trim();
+      if (!bodyRaw) continue;
+      try { blocks.push(JSON.parse(bodyRaw)); } catch (e) {}
+    }
     // Fallback: sin fences, intentar objetos {...} de primer nivel
     if (!blocks.length) {
       const objRe = /\{[\s\S]*?\}(?=\s*(?:\{|$))/g; let o;
@@ -5921,6 +5928,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         {"id":"experiencia_peds","label":"Experiencia previa con PEDs","type":"select","options":["primer_ciclo","2_a_5_ciclos","mas_de_5_ciclos"],"required":false},
         {"id":"objetivo_farmaco","label":"Objetivo y fase","type":"select","options":["off_season","pre_comp_inicial","pre_comp_final","peaking","pct","cruise"],"required":false},
         {"id":"timeline_semanas","label":"Timeline disponible","type":"number","unit":"semanas","required":false},
+        {"id":"compuestos_actuales","label":"Compuestos actuales en uso","type":"textarea","required":false,"placeholder":"Ej: Test Enantato 300 mg/sem, Masteron 300 mg/sem","showIf":{"field":"experiencia_peds","notEquals":"primer_ciclo"}},
+        {"id":"dosis_semana_mg","label":"Dosis total equiv. de andrógenos","type":"number","unit":"mg/sem","required":false,"showIf":{"field":"experiencia_peds","notEquals":"primer_ciclo"}},
         {"id":"bio_hct","label":"Hematocrito (Hct)","type":"number","unit":"%","required":false,"group":"biomarcadores"},
         {"id":"bio_alt","label":"ALT","type":"number","unit":"U/L","required":false,"group":"biomarcadores"},
         {"id":"bio_ast","label":"AST","type":"number","unit":"U/L","required":false,"group":"biomarcadores"},
@@ -5935,6 +5944,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         {"id":"bio_pa_sistolica","label":"PA sistólica","type":"number","unit":"mmHg","required":false,"group":"biomarcadores"},
         {"id":"bio_pa_diastolica","label":"PA diastólica","type":"number","unit":"mmHg","required":false,"group":"biomarcadores"},
         {"id":"bio_fc_reposo","label":"FC en reposo (AM)","type":"number","unit":"lpm","required":false,"group":"biomarcadores"},
+        {"id":"bio_tsh","label":"TSH","type":"number","unit":"μUI/mL","required":false,"group":"biomarcadores"},
+        {"id":"bio_glucosa","label":"Glucosa en ayunas","type":"number","unit":"mg/dL","required":false,"group":"biomarcadores"},
+        {"id":"bio_creat","label":"Creatinina sérica","type":"number","unit":"mg/dL","required":false,"group":"biomarcadores"},
+        {"id":"bio_cistatina_c","label":"Cistatina C","type":"number","unit":"mg/L","required":false,"group":"biomarcadores"},
+        {"id":"bio_te_ratio","label":"Ratio T/E (testosterona/epiandrosterona)","type":"number","required":false,"group":"biomarcadores"},
+        {"id":"bio_prolactina","label":"Prolactina","type":"number","unit":"ng/mL","required":false,"group":"biomarcadores"},
+        {"id":"bio_nt_probnp","label":"NT-proBNP","type":"number","unit":"pg/mL","required":false,"group":"biomarcadores"},
         {"id":"ecocardiograma_disponible","label":"¿Tienes ecocardiograma?","type":"boolean","required":false,"group":"screening_cardiologico"},
         {"id":"ecg_disponible","label":"¿Tienes ECG?","type":"boolean","required":false,"group":"screening_cardiologico"},
         {"id":"score_agatston","label":"Score de Agatston","type":"number","required":false,"group":"screening_cardiologico","nota":"Requerido si >35 años o >5 años de uso."},
@@ -6326,8 +6342,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const raw = document.getElementById('intakeJsonInput').value.trim();
     const statusEl = document.getElementById('intakeJsonStatus');
     if(!raw){ showToast('Pega un JSON primero', true); return; }
+    // Soporta bloque delimitado por marcadores VDSEN v3.4
+    const _markerM = raw.match(/---VDSEN-INTAKE-COMPLEMENT---\s*([\s\S]*?)\s*---FIN-INTAKE-COMPLEMENT---/);
+    if (_markerM) raw = _markerM[1].trim();
     let obj; try { obj = JSON.parse(raw); } catch(e){ showToast('JSON inválido: '+e.message, true); return; }
-    // Soporta { data: {...} } (formato BLOQUE 3 GEM) o flat { campo: valor, … }
+    // Soporta { data: {...} } (formato legacy GEM) o flat { campo: valor, … }
     const incoming = (obj && obj.data && typeof obj.data==='object' && !Array.isArray(obj.data)) ? obj.data : obj;
     if(!incoming || typeof incoming!=='object' || Array.isArray(incoming)){
       showToast('El JSON no es un objeto de ficha válido', true); return;
