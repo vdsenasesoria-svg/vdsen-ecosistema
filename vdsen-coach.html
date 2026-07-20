@@ -263,6 +263,20 @@
       </div>
       <div id="intakeFotoSummary" class="mt-3"></div>
     </div>
+    <details id="intakeJsonCard" class="card p-4 mb-4" style="display:none">
+      <summary style="cursor:pointer;list-style:none;font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.5px;text-transform:uppercase;display:flex;align-items:center;gap:6px">
+        <span>🧩</span><span>Cargar ficha desde JSON</span>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:14px">▾</span>
+      </summary>
+      <div class="mt-3">
+        <p class="text-xs mb-2" style="color:var(--text-muted)">Pega el JSON de intake del GEM VDSEN (BLOQUE 3 / INTAKE-COMPLEMENT, o cualquier objeto con campos de ficha). Se mezcla con lo existente; el JSON nuevo tiene prioridad.</p>
+        <textarea id="intakeJsonInput" class="input-field mb-2" rows="5" placeholder='{ "nombre": "…", "sexo": "H", "nivel": "intermedio", "dias_semana": 4, "gimnasio": "San Diego", … }' style="font-family:&apos;Courier Prime&apos;,monospace;font-size:12px"></textarea>
+        <div class="flex gap-2 flex-wrap items-center">
+          <button type="button" onclick="loadIntakeFromJson()" class="btn-secondary text-sm">🧩 Aplicar a ficha</button>
+          <span id="intakeJsonStatus" class="text-xs" style="color:var(--text-muted)"></span>
+        </div>
+      </div>
+    </details>
     <div id="intakeActions" class="flex gap-2 mt-2 flex-wrap items-center" style="display:none">
       <button type="button" id="intakeSaveBtn" class="btn-primary">💾 Guardar evaluación</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
@@ -6170,6 +6184,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       // Fotogrametría guardada en el mismo doc (nivel raíz)
       _intakeFotometria = (ficha && ficha.fotometria) ? ficha.fotometria : null;
       fotoCard.style.display = 'block';
+      const jsonCard = document.getElementById('intakeJsonCard');
+      if(jsonCard) jsonCard.style.display = '';
       const fotoInput = document.getElementById('intakeFotoInput');
       fotoInput.value = _intakeFotometria ? JSON.stringify(_intakeFotometria, null, 2) : '';
       document.getElementById('intakeFotoStatus').textContent = (ficha && ficha.fotometriaUpdatedAt)
@@ -6304,6 +6320,27 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     applyIntakeVisibility();
     showToast('Fotogrametría volcada — '+n+' campos actualizados');
   }
+
+  function loadIntakeFromJson(){
+    if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
+    const raw = document.getElementById('intakeJsonInput').value.trim();
+    const statusEl = document.getElementById('intakeJsonStatus');
+    if(!raw){ showToast('Pega un JSON primero', true); return; }
+    let obj; try { obj = JSON.parse(raw); } catch(e){ showToast('JSON inválido: '+e.message, true); return; }
+    // Soporta { data: {...} } (formato BLOQUE 3 GEM) o flat { campo: valor, … }
+    const incoming = (obj && obj.data && typeof obj.data==='object' && !Array.isArray(obj.data)) ? obj.data : obj;
+    if(!incoming || typeof incoming!=='object' || Array.isArray(incoming)){
+      showToast('El JSON no es un objeto de ficha válido', true); return;
+    }
+    const validKeys = Object.keys(incoming).filter(k => INTAKE_FIELDS[k]);
+    if(!validKeys.length){ showToast('No se encontraron campos de ficha reconocidos en el JSON', true); return; }
+    // Mezclar: datos actuales del formulario + incoming (incoming tiene prioridad)
+    const merged = Object.assign({}, collectIntake(), incoming);
+    renderIntakeForm(merged);
+    if(statusEl) statusEl.textContent = validKeys.length + ' campo(s) cargado(s)';
+    showToast('✅ ' + validKeys.length + ' campos cargados desde JSON');
+  }
+  window.loadIntakeFromJson = loadIntakeFromJson;
 
   async function saveIntake(){
     if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
