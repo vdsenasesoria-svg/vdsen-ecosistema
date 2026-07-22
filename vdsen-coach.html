@@ -1119,6 +1119,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
           const entries = logData.entries || {};
           const week = logData.currentWeek || 1;
+          const totalWeeks = planData?.weeks || 6;
           const ci = entries['ci_sem_'+week] || {};
           let extraBadges = '';
           if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
@@ -1126,6 +1127,15 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const statusIcon = c.activePlanId ? "✅" : "⚠️";
           const live = isClientLiveTraining(logData);
           const liveBadge = live ? '<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite">● EN VIVO</span>' : '';
+
+          const isDeload = week === totalWeeks;
+          const weekColor = isDeload ? '#7ec0ff' : '#C4FF00';
+          const weekBorder = isDeload ? 'rgba(126,192,255,.35)' : 'rgba(196,255,0,.35)';
+          const weekBg = isDeload ? 'rgba(126,192,255,.08)' : 'rgba(196,255,0,.08)';
+          const weekLabel = isDeload ? `S${week} DELOAD` : `S${week}/${totalWeeks}`;
+          const weekBadge = c.activePlanId
+            ? `<span style="font-size:11px;font-weight:800;color:${weekColor};background:${weekBg};border:1px solid ${weekBorder};padding:2px 8px;border-radius:6px;letter-spacing:.5px;margin-left:8px">${weekLabel}</span>`
+            : '';
 
           // Evaluar alerta principal
           const alert = getClientAlert(c, logData, planData);
@@ -1139,7 +1149,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const search = (c.displayName + ' ' + c.email).toLowerCase();
           const safeName = (c.displayName || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
           return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
-            <span><strong>${c.displayName}</strong> <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${liveBadge}${alertChip}</span>
+            <span><strong>${c.displayName}</strong>${weekBadge} <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${liveBadge}${alertChip}</span>
             <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="deleteClient('${c.id}','${safeName}')" title="Eliminar cliente" style="padding:3px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:13px;cursor:pointer">🗑</button></span>
           </div>`;
         }).join('');
