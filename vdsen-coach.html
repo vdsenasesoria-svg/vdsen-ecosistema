@@ -1402,24 +1402,52 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     _allExercises = [];
     snap.forEach(d => _allExercises.push({ id: d.id, ...d.data() }));
     _renderExerciseList(_allExercises);
-    // Agregar buscador si no existe
+    // Agregar buscador + filtros si no existen
     if (!document.getElementById('exSearchInput')) {
-      const searchHtml = `<input id="exSearchInput" class="input-field mb-3" placeholder="🔍 Buscar ejercicio..." oninput="_filterExercises(this.value)" style="width:100%">`;
-      container.insertAdjacentHTML('beforebegin', searchHtml);
+      // Obtener valores únicos para los filtros
+      const patterns  = [...new Set(_allExercises.map(e=>e.motorPattern).filter(Boolean))].sort();
+      const equips    = [...new Set(_allExercises.map(e=>e.equipment).filter(Boolean))].sort();
+      const patOpts   = patterns.map(p=>`<option value="${p}">${p}</option>`).join('');
+      const equipOpts = equips.map(e=>`<option value="${e}">${e}</option>`).join('');
+      const filterHtml = `
+        <input id="exSearchInput" class="input-field mb-2" placeholder="🔍 Buscar ejercicio..." oninput="_filterExercisesAdv()" style="width:100%">
+        <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+          <select id="exFilterPattern" onchange="_filterExercisesAdv()" class="input-field" style="flex:1;min-width:120px;font-size:12px">
+            <option value="">Todos los patrones</option>${patOpts}
+          </select>
+          <select id="exFilterMuscle" onchange="_filterExercisesAdv()" class="input-field" style="flex:1;min-width:100px;font-size:12px">
+            <option value="">Tipo muscular</option>
+            <option value="typeI">Tipo I (lento)</option>
+            <option value="typeIIx">Tipo IIx (rápido)</option>
+          </select>
+          <select id="exFilterEquip" onchange="_filterExercisesAdv()" class="input-field" style="flex:1;min-width:100px;font-size:12px">
+            <option value="">Todo el equipo</option>${equipOpts}
+          </select>
+        </div>`;
+      container.insertAdjacentHTML('beforebegin', filterHtml);
     }
   }
 
-  window._filterExercises = function(term) {
-    const t = (term||'').toLowerCase().trim();
-    if (!t) { _renderExerciseList(_allExercises); return; }
-    const filtered = _allExercises.filter(ex =>
-      (ex.name||'').toLowerCase().includes(t) ||
-      (ex.motorPattern||'').toLowerCase().includes(t) ||
-      (ex.muscleType||'').toLowerCase().includes(t) ||
-      (ex.equipment||'').toLowerCase().includes(t)
-    );
+  window._filterExercisesAdv = function() {
+    const term    = (document.getElementById('exSearchInput')?.value||'').toLowerCase().trim();
+    const pattern = (document.getElementById('exFilterPattern')?.value||'').toLowerCase();
+    const muscle  = (document.getElementById('exFilterMuscle')?.value||'').toLowerCase();
+    const equip   = (document.getElementById('exFilterEquip')?.value||'').toLowerCase();
+    const filtered = _allExercises.filter(ex => {
+      if (term && !(
+        (ex.name||'').toLowerCase().includes(term) ||
+        (ex.motorPattern||'').toLowerCase().includes(term) ||
+        (ex.equipment||'').toLowerCase().includes(term)
+      )) return false;
+      if (pattern && (ex.motorPattern||'').toLowerCase() !== pattern) return false;
+      if (muscle  && (ex.muscleType||'').toLowerCase() !== muscle) return false;
+      if (equip   && (ex.equipment||'').toLowerCase() !== equip) return false;
+      return true;
+    });
     _renderExerciseList(filtered);
   };
+  // Mantener compatibilidad con oninput legacy
+  window._filterExercises = function(term) { if(document.getElementById('exSearchInput')) document.getElementById('exSearchInput').value=term||''; window._filterExercisesAdv(); };
 
   function _renderExerciseList(exercises) {
     const container = document.getElementById("exerciseCatalog");
@@ -4171,20 +4199,52 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // ── Gráfica de tendencia de peso
     if (weightPts.length >= 2) html += _buildMiniTrendChart(weightPts, 'Tendencia de peso (kg)', '#C4FF00');
 
-    // ── Grid de consistencia
+    // ── Grid multi-semana del mesociclo
     const dpw = (p && p.daysPerWeek) || (p && p.days ? p.days.length : 0) || 1;
     const totalWeeks = (p && p.weeks) || 6;
-    html += `<div class="text-xs text-[#888] mb-2 mt-1 uppercase tracking-wide font-semibold">Consistencia del mesociclo</div>`;
-    html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:16px">`;
-    for (let w = 1; w <= totalWeeks; w++) {
-      let done = 0;
-      for (let d = 0; d < dpw; d++) if (entries['done_'+w+'_'+d]) done++;
-      const pct = dpw > 0 ? done / dpw : 0;
-      const bg = pct >= 1 ? '#44BB88' : pct > 0 ? '#C4FF00' : w > currentWeek ? 'rgba(244,244,240,.05)' : 'rgba(255,68,68,.25)';
-      const isCur = w === currentWeek;
-      html += `<div title="Sem ${w}: ${done}/${dpw} sesiones" style="width:34px;height:34px;border-radius:6px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${pct>0?'#000':'#666'};border:${isCur?'2px solid #C4FF00':'1px solid rgba(244,244,240,.08)'}">S${w}</div>`;
+    html += `<div class="text-xs text-[#888] mb-2 mt-1 uppercase tracking-wide font-semibold">Vista del mesociclo</div>`;
+    html += `<div class="card p-3 mb-3" style="overflow-x:auto">`;
+    // Header row: days
+    html += `<div style="display:grid;grid-template-columns:40px ${Array(dpw).fill('1fr').join(' ')};gap:3px;margin-bottom:3px">`;
+    html += `<div></div>`;
+    for (let d = 0; d < dpw; d++) {
+      const dayObj = p && p.days ? (p.days.find(x => x.dayIndex === d) || p.days[d]) : null;
+      const label = dayObj ? (dayObj.label||('D'+(d+1))).substring(0,6) : 'D'+(d+1);
+      html += `<div style="text-align:center;font-size:9px;color:#888;font-weight:600;padding:2px">${label}</div>`;
     }
     html += `</div>`;
+    // Week rows
+    for (let w = 1; w <= totalWeeks; w++) {
+      const isCur = w === currentWeek;
+      const isFuture = w > currentWeek;
+      html += `<div style="display:grid;grid-template-columns:40px ${Array(dpw).fill('1fr').join(' ')};gap:3px;margin-bottom:3px">`;
+      html += `<div style="display:flex;align-items:center;font-size:9px;font-weight:700;color:${isCur?'#C4FF00':'#888'};padding-right:4px">S${w}${w===totalWeeks?'🔵':''}</div>`;
+      for (let d = 0; d < dpw; d++) {
+        const done = !!entries['done_'+w+'_'+d];
+        const hasAny = Object.keys(entries).some(k => k.startsWith('log_'+w+'_'+d+'_'));
+        const bg = done ? '#44BB88' : hasAny ? 'rgba(196,255,0,.5)' : isFuture ? 'rgba(244,244,240,.04)' : w < currentWeek ? 'rgba(255,68,68,.22)' : 'rgba(244,244,240,.06)';
+        const textColor = done ? '#000' : hasAny ? '#000' : '#555';
+        const icon = done ? '✓' : hasAny ? '◑' : isFuture ? '' : w < currentWeek ? '✗' : '·';
+        html += `<div title="Sem ${w} · Día ${d+1}: ${done?'Completa':hasAny?'Parcial':isFuture?'Pendiente':'Faltó'}" style="height:28px;border-radius:5px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${textColor};border:${isCur&&!done?'1px solid rgba(196,255,0,.4)':'1px solid transparent'}">${icon}</div>`;
+      }
+      html += `</div>`;
+    }
+    // Leyenda
+    html += `<div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">`;
+    [['#44BB88','✓ Completa'],['rgba(196,255,0,.5)','◑ Parcial'],['rgba(255,68,68,.22)','✗ Faltó'],['rgba(244,244,240,.04)','— Pendiente']].forEach(([c,l])=>{
+      html += `<div style="display:flex;align-items:center;gap:4px;font-size:9px;color:#888"><div style="width:10px;height:10px;border-radius:2px;background:${c}"></div>${l}</div>`;
+    });
+    html += `</div></div>`;
+
+    // ── Gráfica de RPE por sesión
+    const rpePts = [];
+    for (let w = 1; w <= currentWeek; w++) {
+      for (let d = 0; d < dpw; d++) {
+        const ps = entries['postsession_'+w+'_'+d];
+        if (ps && ps.rpe) rpePts.push({ w, label: 'S'+w+'D'+(d+1), v: parseFloat(ps.rpe) });
+      }
+    }
+    if (rpePts.length >= 2) html += _buildMiniTrendChart(rpePts, 'RPE por sesión', '#FF8844');
 
     // ── Datos reales de la última sesión
     if (lastDoneW > 0) {
@@ -4219,18 +4279,28 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
               ${avgICS?`<span class="text-xs font-bold" style="color:${icsCol}">ICS ${avgICS}</span>`:''}
             </div>
             <div style="overflow-x:auto">
-            <table style="width:100%;font-size:11px;border-collapse:collapse;min-width:300px">
+            <table style="width:100%;font-size:11px;border-collapse:collapse;min-width:360px">
               <thead><tr style="color:#888;border-bottom:1px solid rgba(244,244,240,.08)">
-                <th style="text-align:left;padding:3px 6px">Set</th><th style="padding:3px 6px">Carga</th><th style="padding:3px 6px">Reps</th><th style="padding:3px 6px">RIR real</th><th style="padding:3px 6px">ICS</th><th style="padding:3px 6px">Pump</th>
+                <th style="text-align:left;padding:3px 6px">Set</th>
+                <th style="padding:3px 6px;color:#555">Obj reps</th><th style="padding:3px 6px;color:#555">Obj RIR</th>
+                <th style="padding:3px 6px">Carga real</th><th style="padding:3px 6px">Reps real</th><th style="padding:3px 6px">RIR real</th>
+                <th style="padding:3px 6px">ICS</th><th style="padding:3px 6px">Pump</th>
               </tr></thead>
               <tbody>${sets.map((s,si)=>{
                 const ic=parseFloat(s.ics);
                 const icC=!isNaN(ic)?(ic>=8?'#44BB88':ic>=7?'#C4FF00':'#FF4444'):'#888';
-                const pump=['','✓ Bueno','OK','↓ Bajo'][s.pump]||s.pump||'—';
+                const pump=['','✓','OK','↓'][s.pump]||'—';
+                const planSet = exObj.sets && exObj.sets[si] ? exObj.sets[si] : null;
+                const tReps = planSet ? (planSet.repsTarget||planSet.reps||'—') : '—';
+                const tRIR  = planSet ? (planSet.rirTarget!==undefined?planSet.rirTarget:'—') : '—';
+                const repsReal = parseInt(s.reps); const tRepsN = parseInt(tReps);
+                const repsColor = !isNaN(repsReal)&&!isNaN(tRepsN) ? (repsReal>=tRepsN?'#44BB88':'#FF8844') : 'inherit';
                 return `<tr style="border-top:1px solid rgba(244,244,240,.05)">
                   <td style="padding:4px 6px;color:#888">${si+1}</td>
+                  <td style="padding:4px 6px;text-align:center;color:#555">${tReps}</td>
+                  <td style="padding:4px 6px;text-align:center;color:#555">${tRIR}</td>
                   <td style="padding:4px 6px;text-align:center;font-weight:600">${s.carga||'—'}${s.carga?' '+(s.unit||'kg'):''}</td>
-                  <td style="padding:4px 6px;text-align:center">${s.reps||'—'}</td>
+                  <td style="padding:4px 6px;text-align:center;color:${repsColor};font-weight:600">${s.reps||'—'}</td>
                   <td style="padding:4px 6px;text-align:center">${s.rir_real??'—'}</td>
                   <td style="padding:4px 6px;text-align:center;font-weight:700;color:${icC}">${s.ics||'—'}</td>
                   <td style="padding:4px 6px;text-align:center;color:#888">${pump}</td>
@@ -4289,7 +4359,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const circlesHtml = data.map((d,i)=>{
       const x=(pad+(i/(data.length-1))*(W-pad*2)).toFixed(1);
       const y=(H-pad-((d.v-min)/range)*(H-pad*2)).toFixed(1);
-      return `<circle cx="${x}" cy="${y}" r="3" fill="${color}"/><text x="${x}" y="${(parseFloat(y)-7).toFixed(1)}" text-anchor="middle" font-size="8" fill="#888">S${d.w}</text>`;
+      return `<circle cx="${x}" cy="${y}" r="3" fill="${color}"/><text x="${x}" y="${(parseFloat(y)-7).toFixed(1)}" text-anchor="middle" font-size="8" fill="#888">${d.label||('S'+d.w)}</text>`;
     }).join('');
     return `<div class="card p-3 mb-3">
       <div class="text-xs text-[#888] mb-2 uppercase tracking-wide font-semibold">${label}</div>

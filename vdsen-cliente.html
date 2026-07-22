@@ -91,6 +91,15 @@ window.addEventListener('load',    _updateOfflineBanner);
   --g2:#C4FF00;--gdim:rgba(244,244,240,.06);--blue:#6B6B66;
   --ff:'Inter',system-ui,sans-serif;--fb:'Inter',system-ui,sans-serif;
 }
+:root.light-mode{
+  --bg:#F0F0EC;--surface:#FFFFFF;--surface2:#E8E8E4;
+  --border:rgba(0,0,0,.10);--border-soft:rgba(0,0,0,.05);
+  --tx:#0A0A0A;--mt:#666;--mt2:#E8E8E4;--input-bg:#F8F8F4;
+  --shadow-card:0 1px 0 rgba(0,0,0,.06),0 4px 18px rgba(0,0,0,.1);
+  --bk:#F0F0EC;--dk:#F5F5F1;--card:#FFFFFF;--bd:rgba(0,0,0,.10);
+  --gdim:rgba(0,0,0,.06);--ink-light:rgba(0,0,0,.04);--ink-border:rgba(0,0,0,.15);
+  --gold:#0A0A0A;--platinum:#333;
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;line-height:1.5;display:flex;flex-direction:column}
@@ -975,6 +984,9 @@ function waitFB(cb) {
   if (window._fbReady) { FB = window._fb; cb(); }
   else window.addEventListener('fbReady', () => { FB = window._fb; cb(); });
 }
+
+// Aplicar modo claro/oscuro guardado antes de renderizar
+try { if (localStorage.getItem('vdsen_light_mode') === '1') document.documentElement.classList.add('light-mode'); } catch(e) {}
 
 waitFB(() => {
   FB.onAuthStateChanged(FB.auth, async (user) => {
@@ -5704,6 +5716,10 @@ function renderEntrenamiento() {
   if (_restEndMs && _restEndMs > Date.now()) {
     setTimeout(function(){_updateRestRing();},50);
   }
+  // Check-in pre-sesión si la sesión no está completa
+  if (!isDone && !LOGS['presession_pre_'+CURRENT_WEEK+'_'+DIA_ACTIVO]) {
+    setTimeout(function(){ _showPresessionCheck(DIA_ACTIVO); }, 300);
+  }
 }
 
 function buildBoostcampExercise(ej, di, ei) {
@@ -6127,6 +6143,93 @@ function showPRCelebration(exDisplayName, load, unit, reps) {
   }, 3500);
 }
 window.showPRCelebration = showPRCelebration;
+
+// ── Modo claro / oscuro ──────────────────────────────────────────────────
+function isLightMode() { return document.documentElement.classList.contains('light-mode'); }
+function toggleLightMode() {
+  var lm = !isLightMode();
+  document.documentElement.classList.toggle('light-mode', lm);
+  try { localStorage.setItem('vdsen_light_mode', lm ? '1' : '0'); } catch(e) {}
+  renderPerfil();
+}
+window.toggleLightMode = toggleLightMode;
+
+// ── Check-in pre-sesión ──────────────────────────────────────────────────
+var _preSelState = {};
+function _showPresessionCheck(di) {
+  var key = 'presession_pre_'+CURRENT_WEEK+'_'+di;
+  if (LOGS[key]) return;
+  if (document.getElementById('presessionCheckOv')) return;
+  var ov = document.createElement('div');
+  ov.id = 'presessionCheckOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:3000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 20px;overflow-y:auto';
+  var mkBtns = function(prefix, field, ids) {
+    return [1,2,3,4,5].map(function(v){
+      return '<button onclick="_preSelect(\''+field+'\','+v+')" id="'+ids+v+'" style="flex:1;padding:11px 4px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--mt);font-size:15px;font-weight:700;cursor:pointer;transition:all .15s">'+v+'</button>';
+    }).join('');
+  };
+  ov.innerHTML = '<div style="max-width:340px;width:100%">'
+    +'<div style="font-size:10px;letter-spacing:2px;color:var(--mt);font-weight:700;margin-bottom:8px;text-align:center">ANTES DE EMPEZAR</div>'
+    +'<div style="font-size:22px;font-weight:800;color:var(--tx);margin-bottom:4px;text-align:center">¿Cómo llegas hoy?</div>'
+    +'<div style="font-size:12px;color:var(--mt);margin-bottom:24px;text-align:center">15 segundos · ayuda a tu coach a personalizar el plan</div>'
+    +'<div style="margin-bottom:18px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--tx);margin-bottom:8px">⚡ Nivel de energía</div>'
+      +'<div style="display:flex;gap:7px">'+mkBtns('E','energia','preE')+'</div>'
+      +'<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--mt)"><span>Sin energía</span><span>Máxima energía</span></div>'
+    +'</div>'
+    +'<div style="margin-bottom:18px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--tx);margin-bottom:8px">😴 Calidad de sueño anoche</div>'
+      +'<div style="display:flex;gap:7px">'+mkBtns('S','sueno','preS')+'</div>'
+      +'<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--mt)"><span>Muy mal</span><span>Perfecto</span></div>'
+    +'</div>'
+    +'<div style="margin-bottom:24px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--tx);margin-bottom:8px">🔥 Motivación</div>'
+      +'<div style="display:flex;gap:7px">'+mkBtns('M','motivacion','preM')+'</div>'
+      +'<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--mt)"><span>Sin ganas</span><span>Listo/a</span></div>'
+    +'</div>'
+    +'<button id="preContinueBtn" onclick="_submitPresession('+di+')" disabled style="width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:800;letter-spacing:2px;border:none;border-radius:8px;cursor:not-allowed;opacity:.4">EMPEZAR →</button>'
+    +'<button onclick="_skipPresession('+di+')" style="width:100%;padding:12px;background:none;border:none;color:var(--mt);font-size:12px;cursor:pointer;margin-top:8px">Saltar</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+}
+window._showPresessionCheck = _showPresessionCheck;
+
+function _preSelect(field, val) {
+  _preSelState[field] = val;
+  var idMap = { energia:'preE', sueno:'preS', motivacion:'preM' };
+  var prefix = idMap[field] || 'preE';
+  var colors = {1:'#FF4444',2:'#FF8844',3:'#C4FF00',4:'#44BB88',5:'#44BB88'};
+  [1,2,3,4,5].forEach(function(v){
+    var btn = document.getElementById(prefix+v);
+    if (!btn) return;
+    var sel = v === val;
+    btn.style.borderColor = sel ? colors[val] : 'var(--border)';
+    btn.style.background  = sel ? 'rgba(196,255,0,.1)' : 'var(--surface)';
+    btn.style.color       = sel ? colors[val] : 'var(--mt)';
+  });
+  var all = _preSelState.energia && _preSelState.sueno && _preSelState.motivacion;
+  var btn = document.getElementById('preContinueBtn');
+  if (btn) { btn.disabled = !all; btn.style.opacity = all ? '1' : '.4'; btn.style.cursor = all ? 'pointer' : 'not-allowed'; }
+}
+window._preSelect = _preSelect;
+
+function _submitPresession(di) {
+  if (!_preSelState.energia || !_preSelState.sueno || !_preSelState.motivacion) return;
+  var key = 'presession_pre_'+CURRENT_WEEK+'_'+di;
+  LOGS[key] = { energia: _preSelState.energia, sueno: _preSelState.sueno, motivacion: _preSelState.motivacion, ts: Date.now() };
+  _preSelState = {};
+  saveLogs();
+  var ov = document.getElementById('presessionCheckOv'); if (ov) ov.remove();
+}
+window._submitPresession = _submitPresession;
+
+function _skipPresession(di) {
+  LOGS['presession_pre_'+CURRENT_WEEK+'_'+di] = { skipped: true, ts: Date.now() };
+  _preSelState = {};
+  saveLogs();
+  var ov = document.getElementById('presessionCheckOv'); if (ov) ov.remove();
+}
+window._skipPresession = _skipPresession;
 
 // ── Autorregulación intra-sesión ────────────────────────────────────────
 // A diferencia de `calculateProgression` (que recalcula recomendaciones recién
@@ -8954,6 +9057,16 @@ function renderPerfil() {
         </div>
         <button onclick="setRestTimerDisabled(${isRestTimerDisabled()?'false':'true'})" role="switch" aria-checked="${isRestTimerDisabled()?'false':'true'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isRestTimerDisabled()?'var(--bd)':'rgba(200,165,74,.5)'};background:${isRestTimerDisabled()?'var(--dk)':'var(--gold-gradient)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
           <span style="position:absolute;top:2px;left:${isRestTimerDisabled()?'2px':'24px'};width:24px;height:24px;border-radius:50%;background:${isRestTimerDisabled()?'var(--mt)':'#0a0a0a'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
+        </button>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+        <div style="font-size:22px;flex-shrink:0">☀️</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--tx);font-weight:700">Modo de visualización</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:2px">${isLightMode()?'Modo claro — fondo blanco.':'Modo oscuro — fondo negro.'}</div>
+        </div>
+        <button onclick="toggleLightMode()" role="switch" aria-checked="${isLightMode()?'true':'false'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isLightMode()?'rgba(196,255,0,.5)':'var(--bd)'};background:${isLightMode()?'var(--accent)':'var(--dk)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
+          <span style="position:absolute;top:2px;left:${isLightMode()?'24px':'2px'};width:24px;height:24px;border-radius:50%;background:${isLightMode()?'#0a0a0a':'var(--mt)'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
         </button>
       </div>
     </div>
