@@ -3992,7 +3992,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Plan de entrenamiento</h4>
-          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar semana → 1</button> <button onclick="resetClientWeekKeepSessions('${clientId}')" style="font-size:11px;color:#e0a020;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:4px">🔄 Reiniciar → Sem 1 (guardar ses. 1-2)</button></div>
+          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar semana → 1</button></div>
         </div>
         <div id="training-view">${planViewHtml}</div>
         <div id="training-editor" style="display:none">${planEditorHtml}</div>
