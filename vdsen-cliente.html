@@ -2499,8 +2499,10 @@ function renderResumen() {
   const semActiva = CURRENT_WEEK;
 
   let weekHtml = '';
+  const _numDiasGrid = getSesiones().length;
   for (let w=1; w<=6; w++) {
-    const cls = w<semActiva?'done':w===semActiva?'active':w===6?'deload':'';
+    const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => !!LOGS['done_'+w+'_'+i]).every(Boolean);
+    const cls = w===semActiva?'active':(_wDone?'done':(w===6?'deload':''));
     const lbl = w===6?'DELOAD':w===semActiva?'ACTIVA':'';
     weekHtml += `<div class="wk ${cls}" onclick="goToWeek(${w})">
       <div class="wk-num">${w}</div>
@@ -6612,6 +6614,21 @@ async function markSessionDone(di) {
   if (LOGS[key]) {
     // Toggle off
     LOGS[key] = null;
+    // Recalcular REAL_WEEK: buscar hacia atrás la primera semana incompleta
+    var _ses = getSesiones();
+    if (_ses.length) {
+      var _newRW = REAL_WEEK;
+      for (var _w = 1; _w <= REAL_WEEK; _w++) {
+        var _allDone = _ses.every(function(_, i) { return !!LOGS['done_'+_w+'_'+i]; });
+        if (!_allDone) { _newRW = _w; break; }
+        _newRW = _w + 1;
+      }
+      _newRW = Math.min(_newRW, getTotalWeeks());
+      if (_newRW < REAL_WEEK) {
+        REAL_WEEK = _newRW;
+        if (CURRENT_WEEK > REAL_WEEK) CURRENT_WEEK = REAL_WEEK;
+      }
+    }
     await saveLogs();
     showToast('Marcado como pendiente');
     renderEntrenamiento();
