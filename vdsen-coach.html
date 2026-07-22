@@ -3992,7 +3992,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Plan de entrenamiento</h4>
-          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar semana → 1</button></div>
+          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar semana → 1</button> <button onclick="resetClientWeekKeepSessions('${clientId}')" style="font-size:11px;color:#e0a020;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:4px">🔄 Reiniciar → Sem 1 (guardar ses. 1-2)</button></div>
         </div>
         <div id="training-view">${planViewHtml}</div>
         <div id="training-editor" style="display:none">${planEditorHtml}</div>
@@ -5235,6 +5235,37 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   }
 
+  async function resetClientWeekKeepSessions(clientId) {
+    if (!await _askConfirm('¿Reiniciar a Semana 1 conservando los registros de las sesiones 1 y 2?<br><span style="color:#888;font-size:12px">Se borran semanas 2-6 y los marcadores de "completado". Los registros de sets de la semana 1 (días 0 y 1) se conservan.</span>')) return;
+    try {
+      const logsRef = doc(db, 'logs', clientId);
+      const logsSnap = await getDoc(logsRef);
+      if (!logsSnap.exists()) { showToast('Sin registros para este cliente', true); return; }
+      const data = logsSnap.data();
+      const allEntries = data.entries || {};
+      const keptEntries = {};
+      for (const k of Object.keys(allEntries)) {
+        if (/^log_1_(0|1)_/.test(k) && allEntries[k] !== null) {
+          keptEntries[k] = allEntries[k];
+        }
+      }
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      const newPlanId = clientSnap.exists() ? (clientSnap.data().activePlanId || null) : null;
+      await setDoc(logsRef, {
+        entries: keptEntries,
+        currentWeek: 1,
+        planId: newPlanId,
+        exerciseHistory: data.exerciseHistory || {},
+        exerciseUnits: data.exerciseUnits || {},
+        updatedAt: Date.now()
+      });
+      showToast('✅ Reiniciada a semana 1 — sesiones 1 y 2 conservadas');
+      showClientDetail(clientId);
+    } catch(e) {
+      showToast('Error: ' + (e.code||'') + ' ' + e.message, true);
+    }
+  }
+
   async function deletePlan(clientId, planId) {
     if (!await _askConfirm('¿Eliminar el plan activo de este cliente?<br><span style="color:#888;font-size:12px">El cliente quedará sin plan asignado.</span>')) return;
     // Paso 1: quitar activePlanId del cliente
@@ -5584,6 +5615,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.deletePlan = deletePlan;
   window.duplicatePlan = duplicatePlan;
   window.resetClientWeek = resetClientWeek;
+  window.resetClientWeekKeepSessions = resetClientWeekKeepSessions;
 
   // ── Exportar JSON del plan activo (copia al portapapeles + descarga .json) ──
   async function exportActivePlanJSON(clientId, planId) {
