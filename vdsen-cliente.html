@@ -310,9 +310,12 @@ button:active{opacity:.85}
   <!-- HEADER -->
   <div class="hdr">
     <div class="logo">VDSEN<em>MI PLAN · v3.2</em></div>
-    <div class="hdr-user">
-      <strong id="hdName">—</strong>
-      <span id="hdGoal">—</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button id="themeTglBtn" onclick="toggleLightMode()" title="Cambiar modo claro/oscuro" style="background:none;border:1px solid rgba(244,244,240,.15);border-radius:20px;padding:5px 10px;cursor:pointer;font-size:14px;color:var(--mt);transition:all .2s;flex-shrink:0">🌙</button>
+      <div class="hdr-user">
+        <strong id="hdName">—</strong>
+        <span id="hdGoal">—</span>
+      </div>
     </div>
   </div>
 
@@ -987,6 +990,7 @@ function waitFB(cb) {
 
 // Aplicar modo claro/oscuro guardado antes de renderizar
 try { if (localStorage.getItem('vdsen_light_mode') === '1') document.documentElement.classList.add('light-mode'); } catch(e) {}
+document.addEventListener('DOMContentLoaded', function(){ _applyThemeBtn && _applyThemeBtn(); });
 
 waitFB(() => {
   FB.onAuthStateChanged(FB.auth, async (user) => {
@@ -5716,10 +5720,6 @@ function renderEntrenamiento() {
   if (_restEndMs && _restEndMs > Date.now()) {
     setTimeout(function(){_updateRestRing();},50);
   }
-  // Check-in pre-sesión si la sesión no está completa
-  if (!isDone && !LOGS['presession_pre_'+CURRENT_WEEK+'_'+DIA_ACTIVO]) {
-    setTimeout(function(){ _showPresessionCheck(DIA_ACTIVO); }, 300);
-  }
 }
 
 function buildBoostcampExercise(ej, di, ei) {
@@ -6150,8 +6150,11 @@ function toggleLightMode() {
   var lm = !isLightMode();
   document.documentElement.classList.toggle('light-mode', lm);
   try { localStorage.setItem('vdsen_light_mode', lm ? '1' : '0'); } catch(e) {}
+  var btn = document.getElementById('themeTglBtn');
+  if (btn) btn.textContent = lm ? '☀️' : '🌙';
   renderPerfil();
 }
+function _applyThemeBtn() { var b=document.getElementById('themeTglBtn'); if(b) b.textContent=isLightMode()?'☀️':'🌙'; }
 window.toggleLightMode = toggleLightMode;
 
 // ── Check-in pre-sesión ──────────────────────────────────────────────────
@@ -6704,15 +6707,23 @@ function selDia(i) {
 var _readinessTemp = {};
 
 function buildReadinessBanner(di, isDone) {
-  if (CURRENT_WEEK !== REAL_WEEK || isDone) return ''; // solo tiene sentido antes de la sesión de hoy
+  if (CURRENT_WEEK !== REAL_WEEK) return '';
   var rKey = 'readiness_'+CURRENT_WEEK+'_'+di;
   var r = LOGS[rKey];
   if (r && r.completed) {
-    if (r.advisory) {
-      return '<div style="margin:0 16px 8px;padding:10px 14px;background:rgba(255,140,50,.08);border:1px solid rgba(255,140,50,.35);border-radius:10px;font-size:11px;color:#FF8844;line-height:1.5">⚠ '+r.advisory+'</div>';
-    }
-    return '';
+    // Ya respondido: mostrar resumen compacto siempre (incluso si sesión completada)
+    var labels = {sueno:{1:'😴 Mal',2:'😴 Regular',3:'😴 Bien'},dolor:{1:'⚠️ Dolor notable',2:'🟡 Molestia leve',3:'✅ Sin dolor'},motivacion:{1:'🔋 Motivación baja',2:'🔋 Motivación media',3:'🔥 Motivación alta'}};
+    var chips = ['sueno','dolor','motivacion'].map(function(k){
+      return '<span style="padding:3px 8px;border-radius:12px;border:1px solid rgba(244,244,240,.12);font-size:10px;color:var(--mt);background:var(--surface)">'+(labels[k][r[k]]||'—')+'</span>';
+    }).join('');
+    var advisoryHtml = r.advisory ? '<div style="margin-top:6px;font-size:10px;color:#FF8844;line-height:1.4">⚠ '+r.advisory+'</div>' : '';
+    return '<div style="margin:0 16px 8px;padding:8px 12px;background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.06);border-radius:10px">'
+      +'<div style="font-size:9px;letter-spacing:1px;color:var(--mt);font-weight:700;margin-bottom:5px">🎯 CÓMO LLEGASTE HOY</div>'
+      +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+chips+'</div>'
+      +advisoryHtml
+      +'</div>';
   }
+  if (isDone) return ''; // no mostrar formulario si ya completó sin responder
   _readinessTemp = {};
   return '<div id="readinessCard" style="margin:0 16px 10px;padding:14px;background:var(--card);border:1px solid var(--bd);border-radius:12px">'
     + '<div style="font-family:var(--ff);font-size:12px;letter-spacing:1.5px;color:var(--gold);font-weight:800;margin-bottom:10px">🎯 ANTES DE EMPEZAR — ¿CÓMO LLEGÁS HOY?</div>'

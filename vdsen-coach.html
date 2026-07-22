@@ -4244,7 +4244,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         if (ps && ps.rpe) rpePts.push({ w, label: 'S'+w+'D'+(d+1), v: parseFloat(ps.rpe) });
       }
     }
-    if (rpePts.length >= 2) html += _buildMiniTrendChart(rpePts, 'RPE por sesión', '#FF8844');
+    if (rpePts.length >= 2) {
+      html += _buildMiniTrendChart(rpePts, 'RPE por sesión', '#FF8844');
+    } else if (rpePts.length === 1) {
+      html += `<div class="card p-3 mb-3 text-xs text-[#888]">📊 RPE registrado en 1 sesión — el gráfico de tendencia aparece a partir de 2 sesiones completadas.</div>`;
+    } else {
+      html += `<div class="card p-3 mb-3 text-xs text-[#888]">📊 El gráfico de RPE aparecerá cuando el cliente complete su primera sesión.</div>`;
+    }
 
     // ── Datos reales de la última sesión
     if (lastDoneW > 0) {
