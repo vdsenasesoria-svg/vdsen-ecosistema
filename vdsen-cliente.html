@@ -359,6 +359,7 @@ var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
+var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el tab de entreno
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
@@ -1567,6 +1568,19 @@ function showScreen(id) {
 }
 
 const TABS = ['tabResumen','tabEntr','tabNutr','tabCheckin','tabPerfil'];
+// ── Wake Lock: mantiene la pantalla encendida mientras se entrena ──────────
+async function _acquireWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    if (_wakeLock && !_wakeLock.released) return;
+    _wakeLock = await navigator.wakeLock.request('screen');
+    _wakeLock.addEventListener('release', function() { _wakeLock = null; });
+  } catch(e) {}
+}
+function _releaseWakeLock() {
+  if (_wakeLock) { try { _wakeLock.release(); } catch(e) {} _wakeLock = null; }
+}
+
 function goTab(i) {
   TABS.forEach((t,j) => {
     document.getElementById(t).style.display = j===i ? 'block' : 'none';
@@ -1576,6 +1590,8 @@ function goTab(i) {
   });
   try { localStorage.setItem('vdsen_last_tab', i); } catch(e) {}
   if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();
+  // Wake Lock: activar solo en tab de entreno, liberar en todos los demás
+  if (i === 1) { _acquireWakeLock(); } else { _releaseWakeLock(); }
   if (i === 1) renderEntrenamiento();
   else if (i === 2) renderNutricion();
   else if (i === 3) renderCheckin();
@@ -3087,6 +3103,8 @@ document.addEventListener('visibilitychange', function() {
     return;
   }
   if (document.visibilityState !== 'visible') return;
+  // Re-adquirir Wake Lock si el tab activo es Entreno (el sistema lo libera al ir a background)
+  try { var _curTab = parseInt(localStorage.getItem('vdsen_last_tab')||'0'); if (_curTab===1) _acquireWakeLock(); } catch(_){}
   // Al volver al primer plano: si estuvo oculta >30s, re-sincronizar logs desde
   // Firestore para evitar inconsistencias de semana activa entre dispositivos.
   var hiddenFor = _lastHiddenAt ? (Date.now() - _lastHiddenAt) : 0;
@@ -3860,17 +3878,25 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var prev = LOGS[prevKey] || {};
     var exNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var histEx = EXERCISE_HISTORY[exNameLower] || {};
-    // Auto-fill: prioridad progrec (sugerencia de carga del algoritmo de progresión) →
-    // semana anterior → historial (solo si el set aún no se registró). progrec sólo aplica
-    // al primer set (s===0): es una recomendación por ejercicio, no por set individual.
+    // Auto-fill: prioridad progrec (s=0 solo) → serie anterior DE ESTA SESIÓN (s>0) →
+    // semana anterior mismo set → historial. Solo si el set aún no fue registrado.
     // Convertir KG↔LB si la unidad guardada difiere de la unidad actual del ejercicio.
     var _prefill = !saved.carga && !saved.reps;
     var _progCargaConv = (_prefill && s===0 && progrec && progrec.newLoad !== undefined && progrec.newLoad !== null) ? parseFloat(progrec.newLoad).toFixed(1) : '';
     var _prevCargaConv = (_prefill && prev.carga) ? _convertCarga(prev.carga, prev.unit, unit) : '';
     var _histCargaConv = (_prefill && s===0 && histEx.load) ? _convertCarga(histEx.load, histEx.unit, unit) : '';
-    var carga   = saved.carga   || _progCargaConv || _prevCargaConv || _histCargaConv || '';
-    var reps    = saved.reps    || (_prefill && s===0 && progrec && progrec.newReps ? progrec.newReps : (_prefill && prev.reps ? prev.reps : (_prefill && s===0 && histEx.reps ? histEx.reps : '')));
-    var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
+    // Auto-fill desde la serie anterior de ESTA sesión (s>0): si ya la completaron, copiar sus valores
+    var _prevSesKey  = s > 0 ? 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+(s-1) : null;
+    var _prevSesDat  = _prevSesKey ? (LOGS[_prevSesKey] || {}) : {};
+    var _hasPrevSes  = _prefill && s > 0 && !!_prevSesDat.done;
+    var _prevSesCarga= _hasPrevSes && _prevSesDat.carga ? _convertCarga(_prevSesDat.carga, _prevSesDat.unit, unit) : '';
+    var _prevSesReps = _hasPrevSes ? (_prevSesDat.reps || '') : '';
+    var _prevSesRir  = _hasPrevSes ? (_prevSesDat.rir_real || '') : '';
+    var _prevSesIcs  = _hasPrevSes ? (_prevSesDat.ics || null) : null;
+    var _prevSesPump = _hasPrevSes ? (_prevSesDat.pump || null) : null;
+    var carga   = saved.carga   || _progCargaConv || _prevSesCarga || _prevCargaConv || _histCargaConv || '';
+    var reps    = saved.reps    || (_prefill && s===0 && progrec && progrec.newReps ? progrec.newReps : (_prevSesReps || (_prefill && prev.reps ? prev.reps : (_prefill && s===0 && histEx.reps ? histEx.reps : ''))));
+    var rirReal = saved.rir_real|| (_prevSesRir || (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : '')));
 
     // ── Datos específicos del set (del plan): setNote, drop, tempo ──
     var setSpec = (ej.sets && ej.sets[s]) ? ej.sets[s] : null;
@@ -3963,18 +3989,26 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end">'+
           '<div style="flex:1">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
-            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
-            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
-            'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent2)')+';font-size:15px;font-weight:700;'+
-            'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\')">'+
+            (function(){
+              var _icsVal = saved.ics || (_prevSesIcs || '');
+              var _icsNum = parseInt(_icsVal);
+              var _icsBorder = (_icsNum&&_icsNum<7)?'var(--red)':'var(--border)';
+              var _icsColor  = (_icsNum&&_icsNum<7)?'var(--red)':'var(--accent2)';
+              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+                ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+_icsBorder+';'+
+                'border-radius:8px;color:'+_icsColor+';font-size:15px;font-weight:700;'+
+                'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\')">';
+            })()+
           '</div>'+
           '<div style="flex:2">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
             '<div style="display:flex;gap:4px">'+
               (function(){
                 var opts=[{v:1,icon:'💪',c:'var(--grn)'},{v:2,icon:'👍',c:'var(--accent)'},{v:3,icon:'😐',c:'var(--mt)'}];
+                // Usar pump guardado o, si no hay, el de la serie anterior de esta sesión
+                var _initPump = saved.pump || _prevSesPump;
                 return opts.map(function(p){
-                  var a=(saved.pump==p.v);
+                  var a=(_initPump==p.v);
                   return '<button onclick="setPump(\''+key+'\','+p.v+')" id="pump_'+key+'_'+p.v+'"'+
                     ' style="flex:1;padding:8px 2px;border-radius:7px;font-size:18px;'+
                     'border:2px solid '+(a?p.c:'var(--border)')+';'+
@@ -6270,6 +6304,26 @@ function completeSet(key, di, ei, si, unit) {
   }
 
   saveLogs();
+
+  // Auto-avance al siguiente ejercicio incompleto cuando se termina el actual
+  if (done) {
+    var _ejForAdv = (_EJERCICIOS_DIA || [])[ei] || null;
+    if (_ejForAdv && _isExerciseFullyDone(di, ei, _ejForAdv)) {
+      for (var _nxEj = ei + 1; _nxEj < (_EJERCICIOS_DIA || []).length; _nxEj++) {
+        var _nxEjObj = (_EJERCICIOS_DIA || [])[_nxEj] || null;
+        if (_nxEjObj && !_isExerciseFullyDone(di, _nxEj, _nxEjObj)) {
+          EJ_ACTIVO = _nxEj;
+          setTimeout(function() {
+            var navEl = document.getElementById('exNav');
+            if (navEl && navEl.children[EJ_ACTIVO]) {
+              navEl.children[EJ_ACTIVO].scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+            }
+          }, 300);
+          break;
+        }
+      }
+    }
+  }
 
   // Re-render solo el panel de ejercicio activo (no scroll reset)
   _refreshExPanelOnly();
@@ -10144,6 +10198,72 @@ async function submitPostSession() {
   }
 
   await _confirmSessionDone(di);
+  showSessionSummary(di);
+}
+
+// ── Resumen visual post-sesión ────────────────────────────────────────────────
+function showSessionSummary(di) {
+  var sesiones = getSesiones();
+  var ses = sesiones && sesiones[di];
+  if (!ses) return;
+
+  var ejercicios = (ses.exercises && ses.exercises.length) ? ses.exercises : (_EJERCICIOS_DIA || []);
+  var totalSets = 0, totalVol = 0, icsVals = [], exDoneCount = 0;
+  ejercicios.forEach(function(ej, ei) {
+    var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+    var exHasDone = false;
+    for (var s = 0; s < ns; s++) {
+      var lg = LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s];
+      if (lg && lg.done) {
+        totalSets++;
+        exHasDone = true;
+        var load = parseFloat(lg.carga) || 0;
+        var reps = parseFloat(lg.reps)  || 0;
+        if (load > 0 && reps > 0) totalVol += load * reps;
+        if (lg.ics) icsVals.push(parseFloat(lg.ics));
+      }
+    }
+    if (exHasDone) exDoneCount++;
+  });
+
+  var avgICS  = icsVals.length ? _avgArr(icsVals).toFixed(1) : '—';
+  var icsColor = icsVals.length ? (parseFloat(avgICS) >= 8 ? 'var(--grn)' : parseFloat(avgICS) >= 7 ? 'var(--accent)' : 'var(--red)') : 'var(--mt)';
+  var volStr  = totalVol > 999 ? (totalVol/1000).toFixed(1)+' t' : Math.round(totalVol)+' kg';
+  var sesName = (ses.dia || 'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim();
+
+  var ov = document.createElement('div');
+  ov.id = 'sessionSummaryOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:3000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 20px;animation:fadeSlideIn .25s ease-out both';
+  ov.innerHTML =
+    '<div style="text-align:center;margin-bottom:28px">'+
+      '<div style="font-size:52px;line-height:1;margin-bottom:12px">🏆</div>'+
+      '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:30px;font-weight:800;color:var(--accent);letter-spacing:2px;text-transform:uppercase;line-height:1">SESIÓN COMPLETA</div>'+
+      '<div style="font-size:12px;color:var(--mt);margin-top:6px;letter-spacing:1.5px;text-transform:uppercase">'+sesName+' · SEM '+CURRENT_WEEK+'</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;width:100%;max-width:340px;margin-bottom:10px">'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:30px;font-weight:700;color:var(--tx);line-height:1">'+totalSets+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">SERIES</div>'+
+      '</div>'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:30px;font-weight:700;color:'+icsColor+';line-height:1">'+avgICS+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">ICS PROM</div>'+
+      '</div>'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:22px;font-weight:700;color:var(--tx);line-height:1.2">'+volStr+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">TONELAJE</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="width:100%;max-width:340px;margin-bottom:20px;font-size:12px;color:var(--mt);text-align:center">'+
+      exDoneCount+' ejercicio'+(exDoneCount!==1?'s':'')+' completado'+(exDoneCount!==1?'s':'')+
+    '</div>'+
+    '<button onclick="document.getElementById(\'sessionSummaryOv\').remove()" style="'+
+      'width:100%;max-width:340px;padding:17px;background:var(--accent);color:#0a0a0a;'+
+      'font-family:\'Big Shoulders Display\',var(--ff);font-size:17px;font-weight:800;letter-spacing:3px;'+
+      'border:none;border-radius:2px;cursor:pointer;text-transform:uppercase">CONTINUAR →</button>';
+
+  document.body.appendChild(ov);
+  setTimeout(function(){ var el = document.getElementById('sessionSummaryOv'); if (el) el.remove(); }, 12000);
 }
 
 function _avgArr(arr) {
@@ -11203,6 +11323,38 @@ function calculateProgression(di, postData) {
     calculatedAt: new Date().toISOString()
   };
 }
+
+// ── Swipe horizontal entre tabs ─────────────────────────────────
+(function() {
+  var _sx = 0, _sy = 0, _st = 0;
+  document.addEventListener('touchstart', function(e) {
+    if (e.touches.length !== 1) return;
+    _sx = e.touches[0].clientX;
+    _sy = e.touches[0].clientY;
+    _st = Date.now();
+  }, { passive: true });
+  document.addEventListener('touchend', function(e) {
+    if (!_st) return;
+    var dt = Date.now() - _st;
+    if (dt > 400) { _st = 0; return; }
+    var dx = e.changedTouches[0].clientX - _sx;
+    var dy = e.changedTouches[0].clientY - _sy;
+    // Ignorar si el desplazamiento es más vertical que horizontal, o si es muy corto
+    if (Math.abs(dx) < 55 || Math.abs(dy) > Math.abs(dx) * 0.75) { _st = 0; return; }
+    // Ignorar si el swipe ocurre sobre un input o sobre un elemento scrollable (ej: listas)
+    var target = e.target;
+    while (target && target !== document.body) {
+      var tag = (target.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') { _st = 0; return; }
+      if (target.scrollWidth > target.clientWidth + 4) { _st = 0; return; }
+      target = target.parentElement;
+    }
+    var cur = parseInt(localStorage.getItem('vdsen_last_tab') || '0');
+    if (dx < 0 && cur < 4) goTab(cur + 1);
+    else if (dx > 0 && cur > 0) goTab(cur - 1);
+    _st = 0;
+  }, { passive: true });
+})();
 </script>
 
 <!-- ════ MODAL CHECK-IN POST-SESIÓN ════ -->
