@@ -4105,7 +4105,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Plan de entrenamiento</h4>
-          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar</button>` : ''} <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar→S1</button></div>
+          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeekKeepSessions('${clientId}')" style="font-size:11px;color:#e0a020;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar → Sem 1 (conservar registros)</button> <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🗑 Reiniciar semana → 1 (borrar todo)</button></div>
         </div>
         <div id="training-view">${planViewHtml}</div>
         <div id="training-editor" style="display:none">${planEditorHtml}</div>
@@ -5640,7 +5640,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   async function resetClientWeekKeepSessions(clientId) {
-    if (!await _askConfirm('¿Reiniciar a Semana 1 conservando los registros de las sesiones 1 y 2?<br><span style="color:#888;font-size:12px">Se borran semanas 2-6 y los marcadores de "completado". Los registros de sets de la semana 1 (días 0 y 1) se conservan.</span>')) return;
+    if (!await _askConfirm('¿Reiniciar a Semana 1 conservando los registros ya completados de esa semana?<br><span style="color:#888;font-size:12px">Se borran semanas 2-6 y sus marcadores. Los sets y sesiones completadas de la semana 1 se conservan intactos.</span>')) return;
     try {
       const logsRef = doc(db, 'logs', clientId);
       const logsSnap = await getDoc(logsRef);
@@ -5649,7 +5649,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const allEntries = data.entries || {};
       const keptEntries = {};
       for (const k of Object.keys(allEntries)) {
-        if (/^log_1_(0|1)_/.test(k) && allEntries[k] !== null) {
+        // Conservar sets (log_1_*), sesiones completadas (done_1_*) y post-sesión (postsession_1_*) de semana 1
+        if (/^(log_1_|done_1_|postsession_1_)/.test(k) && allEntries[k] !== null) {
           keptEntries[k] = allEntries[k];
         }
       }
@@ -5663,7 +5664,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         exerciseUnits: data.exerciseUnits || {},
         updatedAt: Date.now()
       });
-      showToast('✅ Reiniciada a semana 1 — sesiones 1 y 2 conservadas');
+      showToast('✅ Reiniciada a semana 1 — registros de la semana 1 conservados');
       showClientDetail(clientId);
     } catch(e) {
       showToast('Error: ' + (e.code||'') + ' ' + e.message, true);
