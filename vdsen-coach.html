@@ -1150,7 +1150,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           let extraBadges = '';
           if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
 
-          const statusIcon = c.activePlanId ? "✅" : "⚠️";
+          const statusIcon = c.activePlanId
+            ? (planData ? "✅" : '<span title="activePlanId referencia un plan eliminado" style="cursor:help">🔴</span>')
+            : "⚠️";
           const live = isClientLiveTraining(logData);
           const liveBadge = live ? '<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite">● EN VIVO</span>' : '';
 
@@ -4051,7 +4053,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const c = _detailClientData;
     const p = _detailPlanData;
 
-    let planViewHtml = `<p class="text-[#888] text-sm">Sin plan activo.</p>`;
+    let planViewHtml = c.activePlanId && !p
+      ? `<div style="background:rgba(220,60,60,.1);border:1px solid rgba(220,60,60,.4);border-radius:8px;padding:14px 16px;margin-bottom:12px">
+           <div style="color:#e05555;font-weight:700;font-size:13px;margin-bottom:6px">🔴 Referencia de plan rota</div>
+           <div style="color:#888;font-size:12px;line-height:1.6;margin-bottom:10px">El cliente tiene <code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px">${c.activePlanId}</code> como plan activo, pero ese documento ya no existe en Firestore.<br>El cliente ve una pantalla de espera hasta que se reasigne un plan válido.</div>
+           <button onclick="clearBrokenPlanRef('${clientId}')" style="padding:7px 16px;border-radius:6px;border:1px solid rgba(220,60,60,.6);background:rgba(220,60,60,.18);color:#e05555;font-size:12px;font-weight:700;cursor:pointer">🗑 Limpiar referencia rota</button>
+         </div>`
+      : `<p class="text-[#888] text-sm">Sin plan activo.</p>`;
     let planEditorHtml = '';
     let planActionsHtml = '';
     if (c.activePlanId && p) {
@@ -5670,6 +5678,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       showToast('Error: ' + (e.code||'') + ' ' + e.message, true);
     }
   }
+
+  async function clearBrokenPlanRef(clientId) {
+    if (!await _askConfirm('¿Limpiar la referencia de plan rota?<br><span style="color:#888;font-size:12px">Se borra el activePlanId del cliente. El cliente verá la pantalla de espera hasta que se asigne un nuevo plan.</span>')) return;
+    try {
+      await updateDoc(doc(db, "clients", clientId), { activePlanId: null });
+      showToast('✅ Referencia limpiada — el cliente ya puede entrar a la app (pantalla de espera)');
+      showClientDetail(clientId);
+      loadClientList();
+    } catch(e) {
+      showToast('Error: ' + (e.code||'') + ' ' + e.message, true);
+    }
+  }
+  window.clearBrokenPlanRef = clearBrokenPlanRef;
 
   async function deletePlan(clientId, planId) {
     if (!await _askConfirm('¿Eliminar el plan activo de este cliente?<br><span style="color:#888;font-size:12px">El cliente quedará sin plan asignado.</span>')) return;

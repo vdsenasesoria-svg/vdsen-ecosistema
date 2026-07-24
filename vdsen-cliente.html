@@ -1303,9 +1303,9 @@ async function loadPlan(user) {
     // Leer plan
     const planSnap = await FB.getDoc(FB.doc(FB.db, 'plans', activePlanId));
     if (!planSnap.exists()) {
-      const liErr = document.getElementById('liErr');
-      if (liErr) liErr.textContent = '⚠️ Plan no encontrado. Pide a tu coach que lo reasigne.';
-      showScreen('scrLogin');
+      PLAN = null;
+      renderPlanRoto();
+      showScreen('scrOnboarding');
       return;
     }
 
@@ -1665,6 +1665,24 @@ function renderEspera() {
     + '📸 Recuerda enviar tus fotos de evaluación por WhatsApp para que tu coach pueda completar el análisis.'
     + '</div>'
     + '<button onclick="doLogout()" style="margin-top:40px;background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
+    + '</div>';
+}
+
+function renderPlanRoto() {
+  var cont = document.getElementById('scrOnboarding');
+  if (!cont) return;
+  cont.innerHTML =
+    '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center">'
+    + '<div style="font-family:var(--ff);font-size:52px;color:var(--gold);letter-spacing:4px;margin-bottom:8px">VDSEN</div>'
+    + '<div style="font-family:var(--fb);font-size:11px;color:var(--mt);letter-spacing:3px;margin-bottom:40px">MI PLAN · v3.2</div>'
+    + '<div style="font-size:48px;margin-bottom:20px">🔄</div>'
+    + '<div style="font-family:var(--ff);font-size:22px;color:var(--tx);letter-spacing:2px;margin-bottom:12px">PLAN EN ACTUALIZACIÓN</div>'
+    + '<div style="font-size:15px;color:var(--mt);line-height:1.7;max-width:340px;margin-bottom:32px">'
+    + 'Tu coach está actualizando tu plan de entrenamiento.<br><br>'
+    + 'En unos momentos estará disponible. Vuelve a intentarlo más tarde o cierra sesión y vuelve a entrar.'
+    + '</div>'
+    + '<button onclick="location.reload()" style="margin-bottom:12px;padding:14px 32px;background:var(--accent);color:#0A0A0A;font-family:var(--ff);font-weight:800;font-size:15px;letter-spacing:2px;border:none;border-radius:2px;cursor:pointer">REINTENTAR</button>'
+    + '<button onclick="doLogout()" style="background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
     + '</div>';
 }
 
