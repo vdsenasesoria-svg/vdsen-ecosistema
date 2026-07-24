@@ -91,6 +91,15 @@ window.addEventListener('load',    _updateOfflineBanner);
   --g2:#C4FF00;--gdim:rgba(244,244,240,.06);--blue:#6B6B66;
   --ff:'Inter',system-ui,sans-serif;--fb:'Inter',system-ui,sans-serif;
 }
+:root.light-mode{
+  --bg:#F0F0EC;--surface:#FFFFFF;--surface2:#E8E8E4;
+  --border:rgba(0,0,0,.10);--border-soft:rgba(0,0,0,.05);
+  --tx:#0A0A0A;--mt:#666;--mt2:#E8E8E4;--input-bg:#F8F8F4;
+  --shadow-card:0 1px 0 rgba(0,0,0,.06),0 4px 18px rgba(0,0,0,.1);
+  --bk:#F0F0EC;--dk:#F5F5F1;--card:#FFFFFF;--bd:rgba(0,0,0,.10);
+  --gdim:rgba(0,0,0,.06);--ink-light:rgba(0,0,0,.04);--ink-border:rgba(0,0,0,.15);
+  --gold:#0A0A0A;--platinum:#333;
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;line-height:1.5;display:flex;flex-direction:column}
@@ -301,9 +310,12 @@ button:active{opacity:.85}
   <!-- HEADER -->
   <div class="hdr">
     <div class="logo">VDSEN<em>MI PLAN · v3.2</em></div>
-    <div class="hdr-user">
-      <strong id="hdName">—</strong>
-      <span id="hdGoal">—</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button id="themeTglBtn" onclick="toggleLightMode()" title="Cambiar modo claro/oscuro" style="background:none;border:1px solid rgba(244,244,240,.15);border-radius:20px;padding:5px 10px;cursor:pointer;font-size:14px;color:var(--mt);transition:all .2s;flex-shrink:0">🌙</button>
+      <div class="hdr-user">
+        <strong id="hdName">—</strong>
+        <span id="hdGoal">—</span>
+      </div>
     </div>
   </div>
 
@@ -359,6 +371,7 @@ var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
+var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el tab de entreno
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
@@ -975,6 +988,10 @@ function waitFB(cb) {
   else window.addEventListener('fbReady', () => { FB = window._fb; cb(); });
 }
 
+// Aplicar modo claro/oscuro guardado antes de renderizar
+try { if (localStorage.getItem('vdsen_light_mode') === '1') document.documentElement.classList.add('light-mode'); } catch(e) {}
+document.addEventListener('DOMContentLoaded', function(){ _applyThemeBtn && _applyThemeBtn(); });
+
 waitFB(() => {
   FB.onAuthStateChanged(FB.auth, async (user) => {
     if (user && user.email) {
@@ -1286,9 +1303,9 @@ async function loadPlan(user) {
     // Leer plan
     const planSnap = await FB.getDoc(FB.doc(FB.db, 'plans', activePlanId));
     if (!planSnap.exists()) {
-      const liErr = document.getElementById('liErr');
-      if (liErr) liErr.textContent = '⚠️ Plan no encontrado. Pide a tu coach que lo reasigne.';
-      showScreen('scrLogin');
+      PLAN = null;
+      renderPlanRoto();
+      showScreen('scrOnboarding');
       return;
     }
 
@@ -1567,6 +1584,19 @@ function showScreen(id) {
 }
 
 const TABS = ['tabResumen','tabEntr','tabNutr','tabCheckin','tabPerfil'];
+// ── Wake Lock: mantiene la pantalla encendida mientras se entrena ──────────
+async function _acquireWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    if (_wakeLock && !_wakeLock.released) return;
+    _wakeLock = await navigator.wakeLock.request('screen');
+    _wakeLock.addEventListener('release', function() { _wakeLock = null; });
+  } catch(e) {}
+}
+function _releaseWakeLock() {
+  if (_wakeLock) { try { _wakeLock.release(); } catch(e) {} _wakeLock = null; }
+}
+
 function goTab(i) {
   TABS.forEach((t,j) => {
     document.getElementById(t).style.display = j===i ? 'block' : 'none';
@@ -1576,6 +1606,8 @@ function goTab(i) {
   });
   try { localStorage.setItem('vdsen_last_tab', i); } catch(e) {}
   if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();
+  // Wake Lock: activar solo en tab de entreno, liberar en todos los demás
+  if (i === 1) { _acquireWakeLock(); } else { _releaseWakeLock(); }
   if (i === 1) renderEntrenamiento();
   else if (i === 2) renderNutricion();
   else if (i === 3) renderCheckin();
@@ -1633,6 +1665,24 @@ function renderEspera() {
     + '📸 Recuerda enviar tus fotos de evaluación por WhatsApp para que tu coach pueda completar el análisis.'
     + '</div>'
     + '<button onclick="doLogout()" style="margin-top:40px;background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
+    + '</div>';
+}
+
+function renderPlanRoto() {
+  var cont = document.getElementById('scrOnboarding');
+  if (!cont) return;
+  cont.innerHTML =
+    '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center">'
+    + '<div style="font-family:var(--ff);font-size:52px;color:var(--gold);letter-spacing:4px;margin-bottom:8px">VDSEN</div>'
+    + '<div style="font-family:var(--fb);font-size:11px;color:var(--mt);letter-spacing:3px;margin-bottom:40px">MI PLAN · v3.2</div>'
+    + '<div style="font-size:48px;margin-bottom:20px">🔄</div>'
+    + '<div style="font-family:var(--ff);font-size:22px;color:var(--tx);letter-spacing:2px;margin-bottom:12px">PLAN EN ACTUALIZACIÓN</div>'
+    + '<div style="font-size:15px;color:var(--mt);line-height:1.7;max-width:340px;margin-bottom:32px">'
+    + 'Tu coach está actualizando tu plan de entrenamiento.<br><br>'
+    + 'En unos momentos estará disponible. Vuelve a intentarlo más tarde o cierra sesión y vuelve a entrar.'
+    + '</div>'
+    + '<button onclick="location.reload()" style="margin-bottom:12px;padding:14px 32px;background:var(--accent);color:#0A0A0A;font-family:var(--ff);font-weight:800;font-size:15px;letter-spacing:2px;border:none;border-radius:2px;cursor:pointer">REINTENTAR</button>'
+    + '<button onclick="doLogout()" style="background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
     + '</div>';
 }
 
@@ -2499,8 +2549,10 @@ function renderResumen() {
   const semActiva = CURRENT_WEEK;
 
   let weekHtml = '';
+  const _numDiasGrid = getSesiones().length;
   for (let w=1; w<=6; w++) {
-    const cls = w<semActiva?'done':w===semActiva?'active':w===6?'deload':'';
+    const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => !!LOGS['done_'+w+'_'+i]).every(Boolean);
+    const cls = w===semActiva?'active':(_wDone?'done':(w===6?'deload':''));
     const lbl = w===6?'DELOAD':w===semActiva?'ACTIVA':'';
     weekHtml += `<div class="wk ${cls}" onclick="goToWeek(${w})">
       <div class="wk-num">${w}</div>
@@ -3085,6 +3137,8 @@ document.addEventListener('visibilitychange', function() {
     return;
   }
   if (document.visibilityState !== 'visible') return;
+  // Re-adquirir Wake Lock si el tab activo es Entreno (el sistema lo libera al ir a background)
+  try { var _curTab = parseInt(localStorage.getItem('vdsen_last_tab')||'0'); if (_curTab===1) _acquireWakeLock(); } catch(_){}
   // Al volver al primer plano: si estuvo oculta >30s, re-sincronizar logs desde
   // Firestore para evitar inconsistencias de semana activa entre dispositivos.
   var hiddenFor = _lastHiddenAt ? (Date.now() - _lastHiddenAt) : 0;
@@ -3858,17 +3912,25 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var prev = LOGS[prevKey] || {};
     var exNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var histEx = EXERCISE_HISTORY[exNameLower] || {};
-    // Auto-fill: prioridad progrec (sugerencia de carga del algoritmo de progresión) →
-    // semana anterior → historial (solo si el set aún no se registró). progrec sólo aplica
-    // al primer set (s===0): es una recomendación por ejercicio, no por set individual.
+    // Auto-fill: prioridad progrec (s=0 solo) → serie anterior DE ESTA SESIÓN (s>0) →
+    // semana anterior mismo set → historial. Solo si el set aún no fue registrado.
     // Convertir KG↔LB si la unidad guardada difiere de la unidad actual del ejercicio.
     var _prefill = !saved.carga && !saved.reps;
     var _progCargaConv = (_prefill && s===0 && progrec && progrec.newLoad !== undefined && progrec.newLoad !== null) ? parseFloat(progrec.newLoad).toFixed(1) : '';
     var _prevCargaConv = (_prefill && prev.carga) ? _convertCarga(prev.carga, prev.unit, unit) : '';
     var _histCargaConv = (_prefill && s===0 && histEx.load) ? _convertCarga(histEx.load, histEx.unit, unit) : '';
-    var carga   = saved.carga   || _progCargaConv || _prevCargaConv || _histCargaConv || '';
-    var reps    = saved.reps    || (_prefill && s===0 && progrec && progrec.newReps ? progrec.newReps : (_prefill && prev.reps ? prev.reps : (_prefill && s===0 && histEx.reps ? histEx.reps : '')));
-    var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
+    // Auto-fill desde la serie anterior de ESTA sesión (s>0): si ya la completaron, copiar sus valores
+    var _prevSesKey  = s > 0 ? 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+(s-1) : null;
+    var _prevSesDat  = _prevSesKey ? (LOGS[_prevSesKey] || {}) : {};
+    var _hasPrevSes  = _prefill && s > 0 && !!_prevSesDat.done;
+    var _prevSesCarga= _hasPrevSes && _prevSesDat.carga ? _convertCarga(_prevSesDat.carga, _prevSesDat.unit, unit) : '';
+    var _prevSesReps = _hasPrevSes ? (_prevSesDat.reps || '') : '';
+    var _prevSesRir  = _hasPrevSes ? (_prevSesDat.rir_real || '') : '';
+    var _prevSesIcs  = _hasPrevSes ? (_prevSesDat.ics || null) : null;
+    var _prevSesPump = _hasPrevSes ? (_prevSesDat.pump || null) : null;
+    var carga   = saved.carga   || _progCargaConv || _prevSesCarga || _prevCargaConv || _histCargaConv || '';
+    var reps    = saved.reps    || (_prefill && s===0 && progrec && progrec.newReps ? progrec.newReps : (_prevSesReps || (_prefill && prev.reps ? prev.reps : (_prefill && s===0 && histEx.reps ? histEx.reps : ''))));
+    var rirReal = saved.rir_real|| (_prevSesRir || (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : '')));
 
     // ── Datos específicos del set (del plan): setNote, drop, tempo ──
     var setSpec = (ej.sets && ej.sets[s]) ? ej.sets[s] : null;
@@ -3961,18 +4023,26 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end">'+
           '<div style="flex:1">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
-            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
-            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
-            'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent2)')+';font-size:15px;font-weight:700;'+
-            'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\')">'+
+            (function(){
+              var _icsVal = saved.ics || (_prevSesIcs || '');
+              var _icsNum = parseInt(_icsVal);
+              var _icsBorder = (_icsNum&&_icsNum<7)?'var(--red)':'var(--border)';
+              var _icsColor  = (_icsNum&&_icsNum<7)?'var(--red)':'var(--accent2)';
+              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+                ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+_icsBorder+';'+
+                'border-radius:8px;color:'+_icsColor+';font-size:15px;font-weight:700;'+
+                'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\')">';
+            })()+
           '</div>'+
           '<div style="flex:2">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
             '<div style="display:flex;gap:4px">'+
               (function(){
                 var opts=[{v:1,icon:'💪',c:'var(--grn)'},{v:2,icon:'👍',c:'var(--accent)'},{v:3,icon:'😐',c:'var(--mt)'}];
+                // Usar pump guardado o, si no hay, el de la serie anterior de esta sesión
+                var _initPump = saved.pump || _prevSesPump;
                 return opts.map(function(p){
-                  var a=(saved.pump==p.v);
+                  var a=(_initPump==p.v);
                   return '<button onclick="setPump(\''+key+'\','+p.v+')" id="pump_'+key+'_'+p.v+'"'+
                     ' style="flex:1;padding:8px 2px;border-radius:7px;font-size:18px;'+
                     'border:2px solid '+(a?p.c:'var(--border)')+';'+
@@ -4218,19 +4288,19 @@ function _buildCalisteniaCard(ejercicios, di, ei, isPartner) {
             '<div style="display:flex;gap:5px">'+
               '<div style="flex:1;min-width:0">'+
                 '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">REPS</div>'+
-                '<input id="cal_reps_'+key+'" type="number" value="'+(saved.reps||'')+'" placeholder="reps" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+                '<input id="cal_reps_'+key+'" type="number" value="'+(saved.reps||'')+'" placeholder="reps" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
               '<div style="flex:1;min-width:0">'+
                 '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">LASTRE/ASIST (kg)</div>'+
-                '<input id="cal_load_'+key+'" type="number" step="0.5" value="'+(saved.lastre!=null?saved.lastre:(saved.asistencia!=null?-saved.asistencia:''))+'" placeholder="±kg" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:var(--tx);font-size:15px;font-weight:600;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()" title="Positivo=lastre añadido. Negativo=asistencia (banda/máquina).">'+
+                '<input id="cal_load_'+key+'" type="number" step="0.5" value="'+(saved.lastre!=null?saved.lastre:(saved.asistencia!=null?-saved.asistencia:''))+'" placeholder="±kg" inputmode="decimal" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:var(--tx);font-size:15px;font-weight:600;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()" title="Positivo=lastre añadido. Negativo=asistencia (banda/máquina).">'+
               '</div>'+
               '<div style="width:54px;flex-shrink:0">'+
                 '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">RPE</div>'+
-                '<input id="cal_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#e8a040;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+                '<input id="cal_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#e8a040;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
               '<div style="width:54px;flex-shrink:0">'+
                 '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">ICS</div>'+
-                '<input id="cal_ics_'+key+'" type="number" min="1" max="10" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#7ec0ff;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+                '<input id="cal_ics_'+key+'" type="number" min="1" max="10" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#7ec0ff;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
             '</div>'+
           '</div>'+
@@ -4302,18 +4372,18 @@ function _buildCardioCard(ejercicios, di, ei, isPartner) {
 
   var inputsHtml =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">'+
-      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">DURACIÓN (min)</div><input id="card_dur_'+key+'" type="number" step="0.5" value="'+(saved.duracionMin||'')+'" placeholder="'+(tDuracion||'min')+'" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
-      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">DISTANCIA (km)</div><input id="card_dist_'+key+'" type="number" step="0.01" value="'+(saved.distanciaKm||'')+'" placeholder="'+(tDistancia||'km')+'" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
-      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">FC MEDIA (lpm)</div><input id="card_fcm_'+key+'" type="number" value="'+(saved.fcMedia||'')+'" placeholder="lpm" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
-      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">FC MÁX (lpm)</div><input id="card_fcx_'+key+'" type="number" value="'+(saved.fcMax||'')+'" placeholder="lpm" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
-      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">RITMO</div><input id="card_pace_'+key+'" type="text" value="'+(saved.ritmo||'')+'" placeholder="'+(tRitmo||'min/km')+'" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:14px;font-weight:600;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
-      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">RPE (1-10)</div><input id="card_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#e8a040;font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">DURACIÓN (min)</div><input id="card_dur_'+key+'" type="number" step="0.5" value="'+(saved.duracionMin||'')+'" placeholder="'+(tDuracion||'min')+'" inputmode="decimal" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">DISTANCIA (km)</div><input id="card_dist_'+key+'" type="number" step="0.01" value="'+(saved.distanciaKm||'')+'" placeholder="'+(tDistancia||'km')+'" inputmode="decimal" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">FC MEDIA (lpm)</div><input id="card_fcm_'+key+'" type="number" value="'+(saved.fcMedia||'')+'" placeholder="lpm" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">FC MÁX (lpm)</div><input id="card_fcx_'+key+'" type="number" value="'+(saved.fcMax||'')+'" placeholder="lpm" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">RITMO</div><input id="card_pace_'+key+'" type="text" value="'+(saved.ritmo||'')+'" placeholder="'+(tRitmo||'min/km')+'" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:14px;font-weight:600;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">RPE (1-10)</div><input id="card_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#e8a040;font-size:16px;font-weight:700;padding:9px 8px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
     '</div>'+
     '<div style="margin-top:10px"><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">NOTAS (opcional)</div>'+
-    '<textarea id="card_notes_'+key+'" placeholder="Sensaciones, clima, terreno..." '+(sessionDone&&done?'disabled':'')+' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:50px;resize:vertical;line-height:1.5">'+(saved.notas||'')+'</textarea></div>'+
+    '<textarea id="card_notes_'+key+'" placeholder="Sensaciones, clima, terreno..." '+''+' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:50px;resize:vertical;line-height:1.5">'+(saved.notas||'')+'</textarea></div>'+
     // ── Bloque colapsable: datos universales de wearable (todos opcionales) ──
     // Copiar manualmente desde Garmin / Apple Watch / Polar / Strava sin que sean obligatorios.
-    _buildWearableBlock(key, 'card', saved.wearable || {}, sessionDone && done, ['calorias','cadencia','elevacion','zonaTiempo'])+
+    _buildWearableBlock(key, 'card', saved.wearable || {}, false, ['calorias','cadencia','elevacion','zonaTiempo'])+
     '<button onclick="completeCardio(\''+key+'\','+di+','+ei+')" style="margin-top:12px;width:100%;padding:13px;border:2px solid '+(done?'var(--grn)':chip.border)+';background:'+(done?'var(--grn)':chip.bg)+';color:'+(done?'#fff':chip.color)+';font-size:14px;font-weight:800;letter-spacing:1.5px;border-radius:10px;cursor:pointer">'+(done?'✓ COMPLETADO — TOCAR PARA EDITAR':'CONFIRMAR CARDIO ✓')+'</button>';
 
   return '<div style="background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;border:1px solid '+chip.border+';padding:14px">'+
@@ -4380,15 +4450,15 @@ function _buildEstacionCard(ejercicios, di, ei, isPartner) {
             '<div style="display:flex;gap:5px">'+
               '<div style="flex:1.2;min-width:0">'+
                 '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">DOSIS ('+dosisUnit+')</div>'+
-                '<input id="est_dose_'+key+'" type="number" step="0.5" value="'+(saved.dosis||'')+'" placeholder="'+(dosis||dosisUnit)+'" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+                '<input id="est_dose_'+key+'" type="number" step="0.5" value="'+(saved.dosis||'')+'" placeholder="'+(dosis||dosisUnit)+'" inputmode="decimal" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:var(--tx);font-size:16px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
               '<div style="flex:1;min-width:0">'+
                 '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">TIEMPO (s)</div>'+
-                '<input id="est_time_'+key+'" type="number" step="1" value="'+(saved.tiempoSeg||'')+'" placeholder="seg" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+                '<input id="est_time_'+key+'" type="number" step="1" value="'+(saved.tiempoSeg||'')+'" placeholder="seg" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
               '<div style="width:54px;flex-shrink:0">'+
                 '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">RPE</div>'+
-                '<input id="est_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#e8a040;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+                '<input id="est_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#e8a040;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
             '</div>'+
           '</div>'+
@@ -4479,14 +4549,14 @@ function _buildCircuitoCard(ejercicios, di, ei, isPartner) {
 
   var inputsHtml =
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">'+
-      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">ROUNDS</div><input id="cir_rds_'+key+'" type="number" step="1" value="'+(saved.rounds||'')+'" placeholder="'+(tRounds||'#')+'" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:18px;font-weight:800;padding:9px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
-      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">TIEMPO TOTAL (min)</div><input id="cir_time_'+key+'" type="number" step="0.5" value="'+(saved.tiempoTotalMin||'')+'" placeholder="min" inputmode="decimal" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:9px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
-      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">RPE (1-10)</div><input id="cir_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+(sessionDone&&done?'disabled':'')+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#e8a040;font-size:16px;font-weight:700;padding:9px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">ROUNDS</div><input id="cir_rds_'+key+'" type="number" step="1" value="'+(saved.rounds||'')+'" placeholder="'+(tRounds||'#')+'" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-size:18px;font-weight:800;padding:9px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">TIEMPO TOTAL (min)</div><input id="cir_time_'+key+'" type="number" step="0.5" value="'+(saved.tiempoTotalMin||'')+'" placeholder="min" inputmode="decimal" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#ff8aa6;font-size:16px;font-weight:700;padding:9px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
+      '<div><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">RPE (1-10)</div><input id="cir_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:#e8a040;font-size:16px;font-weight:700;padding:9px 6px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()"></div>'+
     '</div>'+
     '<div style="margin-top:10px"><div style="font-size:9px;color:var(--mt);letter-spacing:.8px;margin-bottom:3px">NOTAS / DESGLOSE</div>'+
-    '<textarea id="cir_notes_'+key+'" placeholder="Rounds parciales, fallos, sensaciones..." '+(sessionDone&&done?'disabled':'')+' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:50px;resize:vertical;line-height:1.5">'+(saved.notas||'')+'</textarea></div>'+
+    '<textarea id="cir_notes_'+key+'" placeholder="Rounds parciales, fallos, sensaciones..." '+''+' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(done?'var(--grn)':'var(--border)')+';border-radius:8px;color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:50px;resize:vertical;line-height:1.5">'+(saved.notas||'')+'</textarea></div>'+
     // ── Datos universales de wearable (opcionales) ──
-    _buildWearableBlock(key, 'cir', saved.wearable || {}, sessionDone && done, ['fcMedia','fcMax','calorias','zonaTiempo'])+
+    _buildWearableBlock(key, 'cir', saved.wearable || {}, false, ['fcMedia','fcMax','calorias','zonaTiempo'])+
     '<button onclick="completeCircuito(\''+key+'\','+di+','+ei+')" style="margin-top:12px;width:100%;padding:13px;border:2px solid '+(done?'var(--grn)':chip.border)+';background:'+(done?'var(--grn)':chip.bg)+';color:'+(done?'#fff':chip.color)+';font-size:14px;font-weight:800;letter-spacing:1.5px;border-radius:10px;cursor:pointer">'+(done?'✓ COMPLETADO — TOCAR PARA EDITAR':'CONFIRMAR CIRCUITO ✓')+'</button>';
 
   return '<div style="background:var(--surface);border-radius:14px;margin-bottom:10px;overflow:hidden;border:1px solid '+chip.border+';padding:14px">'+
@@ -6092,6 +6162,96 @@ function showPRCelebration(exDisplayName, load, unit, reps) {
 }
 window.showPRCelebration = showPRCelebration;
 
+// ── Modo claro / oscuro ──────────────────────────────────────────────────
+function isLightMode() { return document.documentElement.classList.contains('light-mode'); }
+function toggleLightMode() {
+  var lm = !isLightMode();
+  document.documentElement.classList.toggle('light-mode', lm);
+  try { localStorage.setItem('vdsen_light_mode', lm ? '1' : '0'); } catch(e) {}
+  var btn = document.getElementById('themeTglBtn');
+  if (btn) btn.textContent = lm ? '☀️' : '🌙';
+  renderPerfil();
+}
+function _applyThemeBtn() { var b=document.getElementById('themeTglBtn'); if(b) b.textContent=isLightMode()?'☀️':'🌙'; }
+window.toggleLightMode = toggleLightMode;
+
+// ── Check-in pre-sesión ──────────────────────────────────────────────────
+var _preSelState = {};
+function _showPresessionCheck(di) {
+  var key = 'presession_pre_'+CURRENT_WEEK+'_'+di;
+  if (LOGS[key]) return;
+  if (document.getElementById('presessionCheckOv')) return;
+  var ov = document.createElement('div');
+  ov.id = 'presessionCheckOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:3000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 20px;overflow-y:auto';
+  var mkBtns = function(prefix, field, ids) {
+    return [1,2,3,4,5].map(function(v){
+      return '<button onclick="_preSelect(\''+field+'\','+v+')" id="'+ids+v+'" style="flex:1;padding:11px 4px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--mt);font-size:15px;font-weight:700;cursor:pointer;transition:all .15s">'+v+'</button>';
+    }).join('');
+  };
+  ov.innerHTML = '<div style="max-width:340px;width:100%">'
+    +'<div style="font-size:10px;letter-spacing:2px;color:var(--mt);font-weight:700;margin-bottom:8px;text-align:center">ANTES DE EMPEZAR</div>'
+    +'<div style="font-size:22px;font-weight:800;color:var(--tx);margin-bottom:4px;text-align:center">¿Cómo llegas hoy?</div>'
+    +'<div style="font-size:12px;color:var(--mt);margin-bottom:24px;text-align:center">15 segundos · ayuda a tu coach a personalizar el plan</div>'
+    +'<div style="margin-bottom:18px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--tx);margin-bottom:8px">⚡ Nivel de energía</div>'
+      +'<div style="display:flex;gap:7px">'+mkBtns('E','energia','preE')+'</div>'
+      +'<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--mt)"><span>Sin energía</span><span>Máxima energía</span></div>'
+    +'</div>'
+    +'<div style="margin-bottom:18px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--tx);margin-bottom:8px">😴 Calidad de sueño anoche</div>'
+      +'<div style="display:flex;gap:7px">'+mkBtns('S','sueno','preS')+'</div>'
+      +'<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--mt)"><span>Muy mal</span><span>Perfecto</span></div>'
+    +'</div>'
+    +'<div style="margin-bottom:24px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--tx);margin-bottom:8px">🔥 Motivación</div>'
+      +'<div style="display:flex;gap:7px">'+mkBtns('M','motivacion','preM')+'</div>'
+      +'<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--mt)"><span>Sin ganas</span><span>Listo/a</span></div>'
+    +'</div>'
+    +'<button id="preContinueBtn" onclick="_submitPresession('+di+')" disabled style="width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:800;letter-spacing:2px;border:none;border-radius:8px;cursor:not-allowed;opacity:.4">EMPEZAR →</button>'
+    +'<button onclick="_skipPresession('+di+')" style="width:100%;padding:12px;background:none;border:none;color:var(--mt);font-size:12px;cursor:pointer;margin-top:8px">Saltar</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+}
+window._showPresessionCheck = _showPresessionCheck;
+
+function _preSelect(field, val) {
+  _preSelState[field] = val;
+  var idMap = { energia:'preE', sueno:'preS', motivacion:'preM' };
+  var prefix = idMap[field] || 'preE';
+  var colors = {1:'#FF4444',2:'#FF8844',3:'#C4FF00',4:'#44BB88',5:'#44BB88'};
+  [1,2,3,4,5].forEach(function(v){
+    var btn = document.getElementById(prefix+v);
+    if (!btn) return;
+    var sel = v === val;
+    btn.style.borderColor = sel ? colors[val] : 'var(--border)';
+    btn.style.background  = sel ? 'rgba(196,255,0,.1)' : 'var(--surface)';
+    btn.style.color       = sel ? colors[val] : 'var(--mt)';
+  });
+  var all = _preSelState.energia && _preSelState.sueno && _preSelState.motivacion;
+  var btn = document.getElementById('preContinueBtn');
+  if (btn) { btn.disabled = !all; btn.style.opacity = all ? '1' : '.4'; btn.style.cursor = all ? 'pointer' : 'not-allowed'; }
+}
+window._preSelect = _preSelect;
+
+function _submitPresession(di) {
+  if (!_preSelState.energia || !_preSelState.sueno || !_preSelState.motivacion) return;
+  var key = 'presession_pre_'+CURRENT_WEEK+'_'+di;
+  LOGS[key] = { energia: _preSelState.energia, sueno: _preSelState.sueno, motivacion: _preSelState.motivacion, ts: Date.now() };
+  _preSelState = {};
+  saveLogs();
+  var ov = document.getElementById('presessionCheckOv'); if (ov) ov.remove();
+}
+window._submitPresession = _submitPresession;
+
+function _skipPresession(di) {
+  LOGS['presession_pre_'+CURRENT_WEEK+'_'+di] = { skipped: true, ts: Date.now() };
+  _preSelState = {};
+  saveLogs();
+  var ov = document.getElementById('presessionCheckOv'); if (ov) ov.remove();
+}
+window._skipPresession = _skipPresession;
+
 // ── Autorregulación intra-sesión ────────────────────────────────────────
 // A diferencia de `calculateProgression` (que recalcula recomendaciones recién
 // al cerrar la sesión, para la SIGUIENTE semana), esto evalúa en vivo, apenas
@@ -6268,6 +6428,26 @@ function completeSet(key, di, ei, si, unit) {
   }
 
   saveLogs();
+
+  // Auto-avance al siguiente ejercicio incompleto cuando se termina el actual
+  if (done) {
+    var _ejForAdv = (_EJERCICIOS_DIA || [])[ei] || null;
+    if (_ejForAdv && _isExerciseFullyDone(di, ei, _ejForAdv)) {
+      for (var _nxEj = ei + 1; _nxEj < (_EJERCICIOS_DIA || []).length; _nxEj++) {
+        var _nxEjObj = (_EJERCICIOS_DIA || [])[_nxEj] || null;
+        if (_nxEjObj && !_isExerciseFullyDone(di, _nxEj, _nxEjObj)) {
+          EJ_ACTIVO = _nxEj;
+          setTimeout(function() {
+            var navEl = document.getElementById('exNav');
+            if (navEl && navEl.children[EJ_ACTIVO]) {
+              navEl.children[EJ_ACTIVO].scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+            }
+          }, 300);
+          break;
+        }
+      }
+    }
+  }
 
   // Re-render solo el panel de ejercicio activo (no scroll reset)
   _refreshExPanelOnly();
@@ -6545,15 +6725,23 @@ function selDia(i) {
 var _readinessTemp = {};
 
 function buildReadinessBanner(di, isDone) {
-  if (CURRENT_WEEK !== REAL_WEEK || isDone) return ''; // solo tiene sentido antes de la sesión de hoy
+  if (CURRENT_WEEK !== REAL_WEEK) return '';
   var rKey = 'readiness_'+CURRENT_WEEK+'_'+di;
   var r = LOGS[rKey];
   if (r && r.completed) {
-    if (r.advisory) {
-      return '<div style="margin:0 16px 8px;padding:10px 14px;background:rgba(255,140,50,.08);border:1px solid rgba(255,140,50,.35);border-radius:10px;font-size:11px;color:#FF8844;line-height:1.5">⚠ '+r.advisory+'</div>';
-    }
-    return '';
+    // Ya respondido: mostrar resumen compacto siempre (incluso si sesión completada)
+    var labels = {sueno:{1:'😴 Mal',2:'😴 Regular',3:'😴 Bien'},dolor:{1:'⚠️ Dolor notable',2:'🟡 Molestia leve',3:'✅ Sin dolor'},motivacion:{1:'🔋 Motivación baja',2:'🔋 Motivación media',3:'🔥 Motivación alta'}};
+    var chips = ['sueno','dolor','motivacion'].map(function(k){
+      return '<span style="padding:3px 8px;border-radius:12px;border:1px solid rgba(244,244,240,.12);font-size:10px;color:var(--mt);background:var(--surface)">'+(labels[k][r[k]]||'—')+'</span>';
+    }).join('');
+    var advisoryHtml = r.advisory ? '<div style="margin-top:6px;font-size:10px;color:#FF8844;line-height:1.4">⚠ '+r.advisory+'</div>' : '';
+    return '<div style="margin:0 16px 8px;padding:8px 12px;background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.06);border-radius:10px">'
+      +'<div style="font-size:9px;letter-spacing:1px;color:var(--mt);font-weight:700;margin-bottom:5px">🎯 CÓMO LLEGASTE HOY</div>'
+      +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+chips+'</div>'
+      +advisoryHtml
+      +'</div>';
   }
+  if (isDone) return ''; // no mostrar formulario si ya completó sin responder
   _readinessTemp = {};
   return '<div id="readinessCard" style="margin:0 16px 10px;padding:14px;background:var(--card);border:1px solid var(--bd);border-radius:12px">'
     + '<div style="font-family:var(--ff);font-size:12px;letter-spacing:1.5px;color:var(--gold);font-weight:800;margin-bottom:10px">🎯 ANTES DE EMPEZAR — ¿CÓMO LLEGÁS HOY?</div>'
@@ -6612,6 +6800,21 @@ async function markSessionDone(di) {
   if (LOGS[key]) {
     // Toggle off
     LOGS[key] = null;
+    // Recalcular REAL_WEEK: buscar hacia atrás la primera semana incompleta
+    var _ses = getSesiones();
+    if (_ses.length) {
+      var _newRW = REAL_WEEK;
+      for (var _w = 1; _w <= REAL_WEEK; _w++) {
+        var _allDone = _ses.every(function(_, i) { return !!LOGS['done_'+_w+'_'+i]; });
+        if (!_allDone) { _newRW = _w; break; }
+        _newRW = _w + 1;
+      }
+      _newRW = Math.min(_newRW, getTotalWeeks());
+      if (_newRW < REAL_WEEK) {
+        REAL_WEEK = _newRW;
+        if (CURRENT_WEEK > REAL_WEEK) CURRENT_WEEK = REAL_WEEK;
+      }
+    }
     await saveLogs();
     showToast('Marcado como pendiente');
     renderEntrenamiento();
@@ -8885,6 +9088,16 @@ function renderPerfil() {
           <span style="position:absolute;top:2px;left:${isRestTimerDisabled()?'2px':'24px'};width:24px;height:24px;border-radius:50%;background:${isRestTimerDisabled()?'var(--mt)':'#0a0a0a'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
         </button>
       </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+        <div style="font-size:22px;flex-shrink:0">☀️</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--tx);font-weight:700">Modo de visualización</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:2px">${isLightMode()?'Modo claro — fondo blanco.':'Modo oscuro — fondo negro.'}</div>
+        </div>
+        <button onclick="toggleLightMode()" role="switch" aria-checked="${isLightMode()?'true':'false'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isLightMode()?'rgba(196,255,0,.5)':'var(--bd)'};background:${isLightMode()?'var(--accent)':'var(--dk)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
+          <span style="position:absolute;top:2px;left:${isLightMode()?'24px':'2px'};width:24px;height:24px;border-radius:50%;background:${isLightMode()?'#0a0a0a':'var(--mt)'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
+        </button>
+      </div>
     </div>
 
     <button onclick="openIntake()" style="width:100%;background:rgba(196,255,0,.08);border:1px solid rgba(196,255,0,.30);color:var(--accent);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">📋 FICHA DE EVALUACIÓN COMPLETA</button>
@@ -10127,6 +10340,72 @@ async function submitPostSession() {
   }
 
   await _confirmSessionDone(di);
+  showSessionSummary(di);
+}
+
+// ── Resumen visual post-sesión ────────────────────────────────────────────────
+function showSessionSummary(di) {
+  var sesiones = getSesiones();
+  var ses = sesiones && sesiones[di];
+  if (!ses) return;
+
+  var ejercicios = (ses.exercises && ses.exercises.length) ? ses.exercises : (_EJERCICIOS_DIA || []);
+  var totalSets = 0, totalVol = 0, icsVals = [], exDoneCount = 0;
+  ejercicios.forEach(function(ej, ei) {
+    var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+    var exHasDone = false;
+    for (var s = 0; s < ns; s++) {
+      var lg = LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s];
+      if (lg && lg.done) {
+        totalSets++;
+        exHasDone = true;
+        var load = parseFloat(lg.carga) || 0;
+        var reps = parseFloat(lg.reps)  || 0;
+        if (load > 0 && reps > 0) totalVol += load * reps;
+        if (lg.ics) icsVals.push(parseFloat(lg.ics));
+      }
+    }
+    if (exHasDone) exDoneCount++;
+  });
+
+  var avgICS  = icsVals.length ? _avgArr(icsVals).toFixed(1) : '—';
+  var icsColor = icsVals.length ? (parseFloat(avgICS) >= 8 ? 'var(--grn)' : parseFloat(avgICS) >= 7 ? 'var(--accent)' : 'var(--red)') : 'var(--mt)';
+  var volStr  = totalVol > 999 ? (totalVol/1000).toFixed(1)+' t' : Math.round(totalVol)+' kg';
+  var sesName = (ses.dia || 'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim();
+
+  var ov = document.createElement('div');
+  ov.id = 'sessionSummaryOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:3000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 20px;animation:fadeSlideIn .25s ease-out both';
+  ov.innerHTML =
+    '<div style="text-align:center;margin-bottom:28px">'+
+      '<div style="font-size:52px;line-height:1;margin-bottom:12px">🏆</div>'+
+      '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:30px;font-weight:800;color:var(--accent);letter-spacing:2px;text-transform:uppercase;line-height:1">SESIÓN COMPLETA</div>'+
+      '<div style="font-size:12px;color:var(--mt);margin-top:6px;letter-spacing:1.5px;text-transform:uppercase">'+sesName+' · SEM '+CURRENT_WEEK+'</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;width:100%;max-width:340px;margin-bottom:10px">'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:30px;font-weight:700;color:var(--tx);line-height:1">'+totalSets+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">SERIES</div>'+
+      '</div>'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:30px;font-weight:700;color:'+icsColor+';line-height:1">'+avgICS+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">ICS PROM</div>'+
+      '</div>'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:22px;font-weight:700;color:var(--tx);line-height:1.2">'+volStr+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">TONELAJE</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="width:100%;max-width:340px;margin-bottom:20px;font-size:12px;color:var(--mt);text-align:center">'+
+      exDoneCount+' ejercicio'+(exDoneCount!==1?'s':'')+' completado'+(exDoneCount!==1?'s':'')+
+    '</div>'+
+    '<button onclick="document.getElementById(\'sessionSummaryOv\').remove()" style="'+
+      'width:100%;max-width:340px;padding:17px;background:var(--accent);color:#0a0a0a;'+
+      'font-family:\'Big Shoulders Display\',var(--ff);font-size:17px;font-weight:800;letter-spacing:3px;'+
+      'border:none;border-radius:2px;cursor:pointer;text-transform:uppercase">CONTINUAR →</button>';
+
+  document.body.appendChild(ov);
+  setTimeout(function(){ var el = document.getElementById('sessionSummaryOv'); if (el) el.remove(); }, 12000);
 }
 
 function _avgArr(arr) {
@@ -11186,6 +11465,38 @@ function calculateProgression(di, postData) {
     calculatedAt: new Date().toISOString()
   };
 }
+
+// ── Swipe horizontal entre tabs ─────────────────────────────────
+(function() {
+  var _sx = 0, _sy = 0, _st = 0;
+  document.addEventListener('touchstart', function(e) {
+    if (e.touches.length !== 1) return;
+    _sx = e.touches[0].clientX;
+    _sy = e.touches[0].clientY;
+    _st = Date.now();
+  }, { passive: true });
+  document.addEventListener('touchend', function(e) {
+    if (!_st) return;
+    var dt = Date.now() - _st;
+    if (dt > 400) { _st = 0; return; }
+    var dx = e.changedTouches[0].clientX - _sx;
+    var dy = e.changedTouches[0].clientY - _sy;
+    // Ignorar si el desplazamiento es más vertical que horizontal, o si es muy corto
+    if (Math.abs(dx) < 55 || Math.abs(dy) > Math.abs(dx) * 0.75) { _st = 0; return; }
+    // Ignorar si el swipe ocurre sobre un input o sobre un elemento scrollable (ej: listas)
+    var target = e.target;
+    while (target && target !== document.body) {
+      var tag = (target.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') { _st = 0; return; }
+      if (target.scrollWidth > target.clientWidth + 4) { _st = 0; return; }
+      target = target.parentElement;
+    }
+    var cur = parseInt(localStorage.getItem('vdsen_last_tab') || '0');
+    if (dx < 0 && cur < 4) goTab(cur + 1);
+    else if (dx > 0 && cur > 0) goTab(cur - 1);
+    _st = 0;
+  }, { passive: true });
+})();
 </script>
 
 <!-- ════ MODAL CHECK-IN POST-SESIÓN ════ -->

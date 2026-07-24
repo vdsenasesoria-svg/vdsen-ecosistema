@@ -511,22 +511,23 @@
   // Mapeo ejercicio (substring lower-case) → targetMuscle. Orden importa: específico antes que genérico.
   const VDSEN_MUSCLE_MAP = [
     [/curl martillo/, 'braquial'],
-    [/extensi[oó]n de tr[ií]ceps|press franc|skull|kickback|fondos? de tr[ií]ceps|press.*agarre cerrado/, 'triceps'],
+    // isquios ANTES que biceps para que "curl femoral" no sea capturado por ^curl
+    [/curl femoral|leg curl|n[oó]rdico|good morning|peso muerto rumano|rdl/, 'isquios'],
+    [/extensi[oó]n de tr[ií]ceps|tr[ií]ceps overhead|extensi[oó]n.*overhead|extensiones overhead|press franc|skull|kickback|patada de tr[ií]ceps|fondos? de tr[ií]ceps|press.*agarre cerrado/, 'triceps'],
     [/^curl |curl predicador|curl spider|curl scott|curl bayesian|curl alternado|curl concentrado|curl en (polea|m[aá]quina)|curl inclinado|curl con barra/, 'biceps'],
     [/face pull|vuelos? posteriores|p[aá]jaros|reverse pec|aducci[oó]n horizontal/, 'delt_posterior'],
     [/elevaci[oó]n(es)? lateral/, 'delt_lateral'],
-    [/press militar|press de hombro|press arnold|arnold|elevaci[oó]n(es)? frontal/, 'delt_anterior'],
+    [/overhead press|press militar|press de hombro|press arnold|arnold|elevaci[oó]n(es)? frontal/, 'delt_anterior'],
     [/jal[oó]n|domin|pull[- ]?up|pullover/, 'dorsal_ancho'],
     [/remo|encogim/, 'trapecio_medio'],
     [/press|pec deck|cruce de poleas|apertura|fondos en paralelas|fondos pec/, 'pectoral'],
     [/extensi[oó]n de cu[aá]dr|extensi[oó]n cu[aá]dr|leg ext/, 'cuadriceps'],
-    [/sentadilla|hack squat|prensa|leg press|zancada|split squat|step up|goblet/, 'cuadriceps'],
-    [/curl femoral|nordico|nórdico|good morning|peso muerto rumano|rdl/, 'isquios'],
-    [/hip thrust|patada de gl[uú]teo|peso muerto sumo/, 'gluteo_mayor'],
+    [/belt squat|sissy squat|sentadilla|hack squat|prensa|leg press|zancada|split squat|step up|goblet/, 'cuadriceps'],
+    [/hip thrust|patada de gl[uú]teo|glute bridge|puente de gl[uú]teo|peso muerto sumo/, 'gluteo_mayor'],
     [/abducci[oó]n|pasos? laterales/, 'gluteo_medio'],
-    [/talones sentado/, 'soleo'],
-    [/talones/, 'gastrocnemio'],
-    [/peso muerto|hiperextensi/, 'erectores'],
+    [/gemelo sentado|talones sentado/, 'soleo'],
+    [/gemelo|talones/, 'gastrocnemio'],
+    [/rango ghd|peso muerto|hiperextensi/, 'erectores'],
     [/plancha lateral|twist/, 'oblicuos'],
     [/plancha con alcance|flexiones escapulares/, 'serrato'],
     [/crunch|rueda abdominal|elevaci[oó]n de piernas|plancha/, 'recto_abdominal']
@@ -776,6 +777,31 @@ El esfuerzo no es negociable — y la consistencia se construye ciclo a ciclo.
     window.open(url, '_blank');
   }
   window.openWhatsAppFor = openWhatsAppFor;
+
+  // ── WhatsApp masivo para todos los clientes inactivos ──
+  function _sendBulkWhatsApp(clientIds) {
+    if (!clientIds || !clientIds.length) return;
+    const pending = [...clientIds];
+    let sent = 0;
+    function sendNext() {
+      if (!pending.length) { showToast(`WhatsApp enviado a ${sent} cliente${sent!==1?'s':''} ✓`); return; }
+      const id = pending.shift();
+      const d  = window._clientCache && window._clientCache[id];
+      if (!d) { sendNext(); return; }
+      const alert = getClientAlert(d.client, d.logs, d.plan);
+      const msg  = buildWhatsAppMessage(d.client, alert, currentCoach);
+      const phone = String(d.client.phone || '').replace(/[^\d]/g,'');
+      if (phone) {
+        sent++;
+        window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg), '_blank');
+      }
+      // Pequeña pausa para no saturar el navegador con pestañas simultáneas
+      setTimeout(sendNext, 800);
+    }
+    if (!confirm(`¿Enviar recordatorio por WhatsApp a ${clientIds.length} cliente${clientIds.length!==1?'s':''} inactivos?`)) return;
+    sendNext();
+  }
+  window._sendBulkWhatsApp = _sendBulkWhatsApp;
 
   // ── Lanzador manual de WhatsApp para un cliente ──
   // Permite al coach elegir el tipo de recordatorio aunque no haya alerta activa
@@ -1119,13 +1145,25 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
           const entries = logData.entries || {};
           const week = logData.currentWeek || 1;
+          const totalWeeks = planData?.weeks || 6;
           const ci = entries['ci_sem_'+week] || {};
           let extraBadges = '';
           if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
 
-          const statusIcon = c.activePlanId ? "✅" : "⚠️";
+          const statusIcon = c.activePlanId
+            ? (planData ? "✅" : '<span title="activePlanId referencia un plan eliminado" style="cursor:help">🔴</span>')
+            : "⚠️";
           const live = isClientLiveTraining(logData);
           const liveBadge = live ? '<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite">● EN VIVO</span>' : '';
+
+          const isDeload = week === totalWeeks;
+          const weekColor = isDeload ? '#7ec0ff' : '#C4FF00';
+          const weekBorder = isDeload ? 'rgba(126,192,255,.35)' : 'rgba(196,255,0,.35)';
+          const weekBg = isDeload ? 'rgba(126,192,255,.08)' : 'rgba(196,255,0,.08)';
+          const weekLabel = isDeload ? `S${week} DELOAD` : `S${week}/${totalWeeks}`;
+          const weekBadge = c.activePlanId
+            ? `<span style="font-size:11px;font-weight:800;color:${weekColor};background:${weekBg};border:1px solid ${weekBorder};padding:2px 8px;border-radius:6px;letter-spacing:.5px;margin-left:8px">${weekLabel}</span>`
+            : '';
 
           // Evaluar alerta principal
           const alert = getClientAlert(c, logData, planData);
@@ -1139,7 +1177,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const search = (c.displayName + ' ' + c.email).toLowerCase();
           const safeName = (c.displayName || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
           return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
-            <span><strong>${c.displayName}</strong> <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${liveBadge}${alertChip}</span>
+            <span><strong>${c.displayName}</strong>${weekBadge} <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${liveBadge}${alertChip}</span>
             <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="deleteClient('${c.id}','${safeName}')" title="Eliminar cliente" style="padding:3px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:13px;cursor:pointer">🗑</button></span>
           </div>`;
         }).join('');
@@ -1147,11 +1185,17 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         // Banner superior con resumen de alertas
         let banner = '';
         if (alerts.length) {
+          // Verificar inactivos para WhatsApp masivo
+          const inactiveAlerts = alerts.filter(a => a.alert.type === 'inactive');
+          const bulkWABtn = inactiveAlerts.length > 1
+            ? `<button onclick="_sendBulkWhatsApp(${JSON.stringify(inactiveAlerts.map(a=>a.id))})" style="margin-top:8px;padding:6px 14px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.18);color:#25D366;font-size:11px;font-weight:700;cursor:pointer;display:block">📲 WhatsApp a todos los inactivos (${inactiveAlerts.length})</button>`
+            : '';
           banner = `<div class="card p-3 mb-3" style="background:linear-gradient(90deg,rgba(255,136,68,.08),rgba(244,244,240,.04));border:1px solid rgba(255,136,68,.3)">
             <div class="text-xs text-[#FF8844] mb-2 uppercase tracking-wide font-bold">⚠️ Acción requerida · ${alerts.length} cliente${alerts.length>1?'s':''}</div>
             <div class="flex flex-wrap gap-2">
               ${alerts.map(a => `<button onclick="(function(){var d=window._clientCache['${a.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" style="padding:5px 10px;border-radius:6px;border:1px solid ${a.alert.color};background:${a.alert.color}1A;color:${a.alert.color};font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px">📲 ${a.name} <span style="opacity:.7">· ${a.alert.label.replace(/^.*? /,'')}</span></button>`).join('')}
             </div>
+            ${bulkWABtn}
           </div>`;
         }
         container.innerHTML = `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
@@ -1361,24 +1405,52 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     _allExercises = [];
     snap.forEach(d => _allExercises.push({ id: d.id, ...d.data() }));
     _renderExerciseList(_allExercises);
-    // Agregar buscador si no existe
+    // Agregar buscador + filtros si no existen
     if (!document.getElementById('exSearchInput')) {
-      const searchHtml = `<input id="exSearchInput" class="input-field mb-3" placeholder="🔍 Buscar ejercicio..." oninput="_filterExercises(this.value)" style="width:100%">`;
-      container.insertAdjacentHTML('beforebegin', searchHtml);
+      // Obtener valores únicos para los filtros
+      const patterns  = [...new Set(_allExercises.map(e=>e.motorPattern).filter(Boolean))].sort();
+      const equips    = [...new Set(_allExercises.map(e=>e.equipment).filter(Boolean))].sort();
+      const patOpts   = patterns.map(p=>`<option value="${p}">${p}</option>`).join('');
+      const equipOpts = equips.map(e=>`<option value="${e}">${e}</option>`).join('');
+      const filterHtml = `
+        <input id="exSearchInput" class="input-field mb-2" placeholder="🔍 Buscar ejercicio..." oninput="_filterExercisesAdv()" style="width:100%">
+        <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+          <select id="exFilterPattern" onchange="_filterExercisesAdv()" class="input-field" style="flex:1;min-width:120px;font-size:12px">
+            <option value="">Todos los patrones</option>${patOpts}
+          </select>
+          <select id="exFilterMuscle" onchange="_filterExercisesAdv()" class="input-field" style="flex:1;min-width:100px;font-size:12px">
+            <option value="">Tipo muscular</option>
+            <option value="typeI">Tipo I (lento)</option>
+            <option value="typeIIx">Tipo IIx (rápido)</option>
+          </select>
+          <select id="exFilterEquip" onchange="_filterExercisesAdv()" class="input-field" style="flex:1;min-width:100px;font-size:12px">
+            <option value="">Todo el equipo</option>${equipOpts}
+          </select>
+        </div>`;
+      container.insertAdjacentHTML('beforebegin', filterHtml);
     }
   }
 
-  window._filterExercises = function(term) {
-    const t = (term||'').toLowerCase().trim();
-    if (!t) { _renderExerciseList(_allExercises); return; }
-    const filtered = _allExercises.filter(ex =>
-      (ex.name||'').toLowerCase().includes(t) ||
-      (ex.motorPattern||'').toLowerCase().includes(t) ||
-      (ex.muscleType||'').toLowerCase().includes(t) ||
-      (ex.equipment||'').toLowerCase().includes(t)
-    );
+  window._filterExercisesAdv = function() {
+    const term    = (document.getElementById('exSearchInput')?.value||'').toLowerCase().trim();
+    const pattern = (document.getElementById('exFilterPattern')?.value||'').toLowerCase();
+    const muscle  = (document.getElementById('exFilterMuscle')?.value||'').toLowerCase();
+    const equip   = (document.getElementById('exFilterEquip')?.value||'').toLowerCase();
+    const filtered = _allExercises.filter(ex => {
+      if (term && !(
+        (ex.name||'').toLowerCase().includes(term) ||
+        (ex.motorPattern||'').toLowerCase().includes(term) ||
+        (ex.equipment||'').toLowerCase().includes(term)
+      )) return false;
+      if (pattern && (ex.motorPattern||'').toLowerCase() !== pattern) return false;
+      if (muscle  && (ex.muscleType||'').toLowerCase() !== muscle) return false;
+      if (equip   && (ex.equipment||'').toLowerCase() !== equip) return false;
+      return true;
+    });
     _renderExerciseList(filtered);
   };
+  // Mantener compatibilidad con oninput legacy
+  window._filterExercises = function(term) { if(document.getElementById('exSearchInput')) document.getElementById('exSearchInput').value=term||''; window._filterExercisesAdv(); };
 
   function _renderExerciseList(exercises) {
     const container = document.getElementById("exerciseCatalog");
@@ -3796,9 +3868,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function renderMPEditor() {
     const editor = document.getElementById("mp-editor");
     if (!editor || !manualPlan) return;
-    const tabs = manualPlan.days.map((d, i) =>
-      `<button onclick="setMPDay(${i})" class="px-3 py-1 rounded text-sm ${activeMPDay === i ? 'bg-[#F4F4F0] text-black font-semibold' : 'bg-[#1A1A1A] border border-[#2A2A2A]'}">${d.label}</button>`
-    ).join("");
+    // Tab del día activo tiene un input editable para el nombre; los demás son botones
+    const tabs = manualPlan.days.map((d, i) => {
+      if (i === activeMPDay) {
+        return `<div style="display:inline-flex;align-items:center;background:#F4F4F0;border-radius:4px;padding:2px 4px 2px 8px;gap:4px">
+          <input type="text" value="${d.label.replace(/"/g,'&quot;')}" oninput="manualPlan.days[${i}].label=this.value" class="text-sm text-black font-semibold" style="background:transparent;border:none;outline:none;width:${Math.max(60,d.label.length*8)}px">
+        </div>`;
+      }
+      return `<button onclick="setMPDay(${i})" class="px-3 py-1 rounded text-sm bg-[#1A1A1A] border border-[#2A2A2A]">${d.label}</button>`;
+    }).join("");
     const day = manualPlan.days[activeMPDay];
     const exercises = day.exercises.map((ex, ei) => `
       <div class="card p-3 mb-3">
@@ -3909,90 +3987,133 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   // ========== DETALLE DE CLIENTE ==========
   let _detailClientId = null;
+  let _detailClientData = null;
+  let _detailPlanData   = null;
+  let _detailActiveTab  = 'plan';
 
   async function showClientDetail(clientId) {
-    _detailClientId = clientId;
+    _detailClientId   = clientId;
+    _detailActiveTab  = 'plan';
     const modal = document.getElementById("clientModal");
-    const body = document.getElementById("modalClientBody");
+    const body  = document.getElementById("modalClientBody");
     const title = document.getElementById("modalClientName");
     body.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos...</div>`;
     modal.style.display = "flex";
 
     const clientSnap = await getDoc(doc(db, "clients", clientId));
     if (!clientSnap.exists()) { body.innerHTML = `<p class="text-red-400">Cliente no encontrado.</p>`; return; }
-    const c = clientSnap.data();
+    _detailClientData = clientSnap.data();
+    const c = _detailClientData;
     title.textContent = c.displayName;
     _renderClientNavBar(clientId);
 
-    let planViewHtml = `<p class="text-[#888] text-sm">Sin plan activo.</p>`;
-    let planEditorHtml = '';
-    let planActionsHtml = '';
+    _detailPlanData = null;
     if (c.activePlanId) {
       const planSnap = await getDoc(doc(db, "plans", c.activePlanId));
-      if (planSnap.exists()) {
-        const p = planSnap.data();
-        const dayList = (p.days || []).map(d => {
-          const exList = (d.exercises || []).map(e => {
-            const sets = (e.sets || []);
-            const numSets = sets.length || 3;
-            const reps = sets[0] ? (sets[0].repsTarget || 8) : 8;
-            const rir = sets[0] ? (sets[0].rirTarget || 2) : 2;
-            return `<div class="flex items-center gap-2 ml-4 py-1">
-              <span class="text-sm text-white">${e.exerciseName}</span>
-              <span class="text-xs px-2 py-0.5 rounded" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.25);color:#F4F4F0">${numSets}×${reps}</span>
-              <span class="text-xs text-[#888]">RIR ${rir}</span>
-            </div>`;
-          }).join("") || '<span class="text-xs text-[#555] ml-4">Sin ejercicios</span>';
-          return `<div class="mb-3"><div class="font-medium text-[#F4F4F0] text-sm mb-1">${d.label}</div>${exList}</div>`;
-        }).join("");
-        const planWeeksNow = p.weeks || 1;
-        planViewHtml = `
-          <div class="flex items-center gap-2 mb-3 flex-wrap" style="background:rgba(244,244,240,.06);border:1px solid rgba(244,244,240,.25);border-radius:8px;padding:8px 12px">
-            <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Duración del mesociclo</span>
-            <span id="planWeeksDisplay_${c.activePlanId}" style="color:#F4F4F0;font-weight:800;font-size:18px;padding:0 6px">${planWeeksNow}</span>
-            <span class="text-xs text-[#888]">semanas</span>
-            <button onclick="extendPlanWeeks('${c.activePlanId}', 1)" title="Agregar 1 semana al mesociclo"
-              style="margin-left:auto;padding:5px 12px;border-radius:6px;border:1px solid rgba(68,187,136,.55);background:rgba(68,187,136,.18);color:#44BB88;font-size:12px;font-weight:700;cursor:pointer">
-              + 1 semana
-            </button>
-            <button onclick="extendPlanWeeks('${c.activePlanId}', -1)" title="Quitar la última semana"
-              style="padding:5px 12px;border-radius:6px;border:1px solid rgba(220,60,60,.4);background:rgba(220,60,60,.12);color:#e05555;font-size:12px;font-weight:600;cursor:pointer">
-              − 1 semana
-            </button>
-          </div>
-          <p class="text-sm text-[#888] mb-2">${(p.days||[]).length} días/semana${p.rirByWeek ? ' · RIR scheme: ' + Object.entries(p.rirByWeek).map(([w,r])=>`S${w}=${r}`).join(' · ') : ''}</p>
-          <div class="mb-3">${dayList}</div>`;
-        planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
-        planActionsHtml = `
-          <button onclick="toggleTrainingEditor()" class="text-[#F4F4F0] text-xs underline mr-3">✏️ Editar</button>
-          <button onclick="showQuickAddExercise('${c.activePlanId}')" class="text-[#44BB88] text-xs underline mr-3">➕ Agregar ejercicio</button>
-          <button onclick="duplicatePlan('${clientId}','${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">📋 Duplicar</button>
-          <button onclick="duplicatePlanToClient('${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">👥 Copiar a otro cliente</button>
-          <button onclick="exportActivePlanJSON('${clientId}','${c.activePlanId}')" class="text-[#F4F4F0] text-xs underline mr-3">📥 JSON</button>
-          <button onclick="exportActivePlanTXT('${clientId}','${c.activePlanId}')" class="text-[#F4F4F0] text-xs underline mr-3">📝 TXT</button>
-          <button onclick="viewClientReportHTML('${clientId}')" class="text-[#F4F4F0] text-xs underline mr-3">📖 Ver reporte</button>
-          <button onclick="generateFullClientReport('${clientId}')" class="text-[#F4F4F0] text-xs underline mr-3">📊 PDF</button>
-          <button onclick="exportClientReportForAI('${clientId}')" class="text-xs underline mr-3" style="color:#c89cff">🤖 Para IA</button>
-          <button onclick="deletePlan('${clientId}','${c.activePlanId}')" class="text-red-400 text-xs underline">🗑 Eliminar</button>`;
-      }
+      if (planSnap.exists()) _detailPlanData = planSnap.data();
     }
 
     body.innerHTML = `
-      <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <p class="text-sm text-[#888]">${c.email}${c.phone ? ' · 📱 '+c.phone : ''}</p>
         <div class="flex gap-2 flex-wrap">
           <button onclick="sendCustomWhatsApp('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;cursor:pointer;font-weight:600">📲 WhatsApp</button>
-          <button onclick="generateAccessMessage('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #F4F4F0;background:rgba(244,244,240,.15);color:#F4F4F0;cursor:pointer;font-weight:600">📩 Mensaje de acceso</button>
-          <button onclick="generateAccessMessage('${clientId}','onboarding')" class="text-xs px-3 py-1 rounded" style="border:1px solid #C4FF00;background:rgba(196,255,0,.15);color:#C4FF00;cursor:pointer;font-weight:600">📋 Acceso + Ficha inicial</button>
-          <button onclick="downloadPlanPDF('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #F4F4F0;background:rgba(244,244,240,.12);color:#F4F4F0;cursor:pointer;font-weight:600">📄 PDF del plan</button>
-          <button onclick="notifyPlanReady('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #25D366;background:rgba(37,211,102,.12);color:#25D366;cursor:pointer;font-weight:600">📣 Avisar plan listo</button>
-          <button onclick="editClientInfo('${clientId}')" class="text-[#F4F4F0] text-xs underline">✏️ Editar datos</button>
+          <button onclick="generateAccessMessage('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #F4F4F0;background:rgba(244,244,240,.15);color:#F4F4F0;cursor:pointer;font-weight:600">📩 Acceso</button>
+          <button onclick="generateAccessMessage('${clientId}','onboarding')" class="text-xs px-3 py-1 rounded" style="border:1px solid #C4FF00;background:rgba(196,255,0,.15);color:#C4FF00;cursor:pointer;font-weight:600">📋 Onboarding</button>
+          <button onclick="downloadPlanPDF('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #F4F4F0;background:rgba(244,244,240,.12);color:#F4F4F0;cursor:pointer;font-weight:600">📄 PDF</button>
+          <button onclick="notifyPlanReady('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #25D366;background:rgba(37,211,102,.12);color:#25D366;cursor:pointer;font-weight:600">📣 Avisar</button>
+          <button onclick="editClientInfo('${clientId}')" class="text-[#F4F4F0] text-xs underline">✏️ Editar</button>
         </div>
       </div>
+      <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(244,244,240,.1)">
+        <button id="ctab_plan"    onclick="_switchClientTab('plan')"    style="padding:8px 18px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;transition:all .15s">Plan</button>
+        <button id="ctab_monitor" onclick="_switchClientTab('monitor')" style="padding:8px 18px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;transition:all .15s">Monitor</button>
+        <button id="ctab_notas"   onclick="_switchClientTab('notas')"   style="padding:8px 18px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;transition:all .15s">Notas</button>
+      </div>
+      <div id="clientDetailTabContent"></div>`;
+    _switchClientTab('plan');
+  }
+
+  function _switchClientTab(tab) {
+    _detailActiveTab = tab;
+    ['plan','monitor','notas'].forEach(t => {
+      const btn = document.getElementById('ctab_'+t);
+      if (btn) { btn.style.color = t===tab?'#F4F4F0':'#888'; btn.style.borderBottomColor = t===tab?'#C4FF00':'transparent'; }
+    });
+    const cont = document.getElementById('clientDetailTabContent');
+    if (!cont) return;
+    if (tab === 'plan')    _renderClientTabPlan(cont);
+    else if (tab === 'monitor') _renderClientTabMonitor(cont);
+    else if (tab === 'notas')   _renderClientTabNotas(cont);
+  }
+  window._switchClientTab = _switchClientTab;
+
+  function _renderClientTabPlan(cont) {
+    const clientId = _detailClientId;
+    const c = _detailClientData;
+    const p = _detailPlanData;
+
+    let planViewHtml = c.activePlanId && !p
+      ? `<div style="background:rgba(220,60,60,.1);border:1px solid rgba(220,60,60,.4);border-radius:8px;padding:14px 16px;margin-bottom:12px">
+           <div style="color:#e05555;font-weight:700;font-size:13px;margin-bottom:6px">🔴 Referencia de plan rota</div>
+           <div style="color:#888;font-size:12px;line-height:1.6;margin-bottom:10px">El cliente tiene <code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px">${c.activePlanId}</code> como plan activo, pero ese documento ya no existe en Firestore.<br>El cliente ve una pantalla de espera hasta que se reasigne un plan válido.</div>
+           <button onclick="clearBrokenPlanRef('${clientId}')" style="padding:7px 16px;border-radius:6px;border:1px solid rgba(220,60,60,.6);background:rgba(220,60,60,.18);color:#e05555;font-size:12px;font-weight:700;cursor:pointer">🗑 Limpiar referencia rota</button>
+         </div>`
+      : `<p class="text-[#888] text-sm">Sin plan activo.</p>`;
+    let planEditorHtml = '';
+    let planActionsHtml = '';
+    if (c.activePlanId && p) {
+      const dayList = (p.days || []).map(d => {
+        const exList = (d.exercises || []).map(e => {
+          const sets = (e.sets || []);
+          const numSets = sets.length || 3;
+          const reps = sets[0] ? (sets[0].repsTarget || 8) : 8;
+          const rir  = sets[0] ? (sets[0].rirTarget  || 2) : 2;
+          return `<div class="flex items-center gap-2 ml-4 py-1">
+            <span class="text-sm text-white">${e.exerciseName}</span>
+            <span class="text-xs px-2 py-0.5 rounded" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.25);color:#F4F4F0">${numSets}×${reps}</span>
+            <span class="text-xs text-[#888]">RIR ${rir}</span>
+          </div>`;
+        }).join("") || '<span class="text-xs text-[#555] ml-4">Sin ejercicios</span>';
+        return `<div class="mb-3"><div class="font-medium text-[#F4F4F0] text-sm mb-1">${d.label}</div>${exList}</div>`;
+      }).join("");
+      const planWeeksNow = p.weeks || 1;
+      planViewHtml = `
+        <div class="flex items-center gap-2 mb-3 flex-wrap" style="background:rgba(244,244,240,.06);border:1px solid rgba(244,244,240,.25);border-radius:8px;padding:8px 12px">
+          <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Duración del mesociclo</span>
+          <span id="planWeeksDisplay_${c.activePlanId}" style="color:#F4F4F0;font-weight:800;font-size:18px;padding:0 6px">${planWeeksNow}</span>
+          <span class="text-xs text-[#888]">semanas</span>
+          <button onclick="extendPlanWeeks('${c.activePlanId}', 1)" title="Agregar 1 semana al mesociclo"
+            style="margin-left:auto;padding:5px 12px;border-radius:6px;border:1px solid rgba(68,187,136,.55);background:rgba(68,187,136,.18);color:#44BB88;font-size:12px;font-weight:700;cursor:pointer">
+            + 1 semana
+          </button>
+          <button onclick="extendPlanWeeks('${c.activePlanId}', -1)" title="Quitar la última semana"
+            style="padding:5px 12px;border-radius:6px;border:1px solid rgba(220,60,60,.4);background:rgba(220,60,60,.12);color:#e05555;font-size:12px;font-weight:600;cursor:pointer">
+            − 1 semana
+          </button>
+        </div>
+        <p class="text-sm text-[#888] mb-2">${(p.days||[]).length} días/semana${p.rirByWeek ? ' · RIR scheme: ' + Object.entries(p.rirByWeek).map(([w,r])=>`S${w}=${r}`).join(' · ') : ''}</p>
+        <div class="mb-3">${dayList}</div>`;
+      planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
+      planActionsHtml = `
+        <button onclick="toggleTrainingEditor()" class="text-[#F4F4F0] text-xs underline mr-3">✏️ Editar</button>
+        <button onclick="showQuickAddExercise('${c.activePlanId}')" class="text-[#44BB88] text-xs underline mr-3">➕ Agregar ejercicio</button>
+        <button onclick="duplicatePlan('${clientId}','${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">📋 Duplicar</button>
+        <button onclick="duplicatePlanToClient('${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">👥 Copiar a otro</button>
+        <button onclick="_saveCurrentPlanAsTemplate('${c.activePlanId}')" class="text-xs underline mr-3" style="color:#C4FF00">⭐ Template</button>
+        <button onclick="exportActivePlanJSON('${clientId}','${c.activePlanId}')" class="text-[#F4F4F0] text-xs underline mr-3">📥 JSON</button>
+        <button onclick="exportActivePlanTXT('${clientId}','${c.activePlanId}')" class="text-[#F4F4F0] text-xs underline mr-3">📝 TXT</button>
+        <button onclick="viewClientReportHTML('${clientId}')" class="text-[#F4F4F0] text-xs underline mr-3">📖 Reporte</button>
+        <button onclick="generateFullClientReport('${clientId}')" class="text-[#F4F4F0] text-xs underline mr-3">📊 PDF</button>
+        <button onclick="exportClientReportForAI('${clientId}')" class="text-xs underline mr-3" style="color:#c89cff">🤖 IA</button>
+        <button onclick="deletePlan('${clientId}','${c.activePlanId}')" class="text-red-400 text-xs underline">🗑 Eliminar</button>`;
+    }
+
+    cont.innerHTML = `
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Plan de entrenamiento</h4>
-          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar semana → 1</button></div>
+          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeekKeepSessions('${clientId}')" style="font-size:11px;color:#e0a020;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar → Sem 1 (conservar registros)</button> <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🗑 Reiniciar semana → 1 (borrar todo)</button></div>
         </div>
         <div id="training-view">${planViewHtml}</div>
         <div id="training-editor" style="display:none">${planEditorHtml}</div>
@@ -4014,6 +4135,297 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <div id="supplement-editor" style="display:none;">${renderSupplementEditor(c.supplementPlan || {})}</div>
       </div>`;
   }
+
+  async function _renderClientTabMonitor(cont) {
+    cont.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos...</div>`;
+    const clientId = _detailClientId;
+    const c = _detailClientData;
+    const p = _detailPlanData;
+
+    const logsSnap = await getDoc(doc(db, 'logs', clientId)).catch(() => null);
+    if (!logsSnap || !logsSnap.exists()) {
+      cont.innerHTML = `<p class="text-[#888] text-sm mt-2">Sin datos de entrenamiento registrados aún.</p>`; return;
+    }
+    const logsData  = logsSnap.data();
+    const entries   = logsData.entries || {};
+    const currentWeek = logsData.currentWeek || 1;
+    const ci = entries['ci_sem_' + currentWeek] || {};
+
+    // Última sesión completada
+    let lastDoneW = 0, lastDoneD = 0;
+    Object.keys(entries).forEach(k => {
+      const m = k.match(/^done_(\d+)_(\d+)$/);
+      if (m && entries[k]) {
+        const w = +m[1], d = +m[2];
+        if (w > lastDoneW || (w === lastDoneW && d > lastDoneD)) { lastDoneW = w; lastDoneD = d; }
+      }
+    });
+
+    // Sets reales de la última sesión: ei → [sets]
+    const lastSets = {};
+    if (lastDoneW > 0) {
+      Object.keys(entries).forEach(k => {
+        const m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
+        if (m && +m[1] === lastDoneW && +m[2] === lastDoneD) {
+          const ei = +m[3], si = +m[4];
+          if (!lastSets[ei]) lastSets[ei] = [];
+          lastSets[ei].push({ si, ...entries[k] });
+        }
+      });
+    }
+
+    // Última progrec
+    let lastRec = null, lastRecW = 0, lastRecD = 0;
+    Object.keys(entries).forEach(k => {
+      const m = k.match(/^progrec_(\d+)_(\d+)$/);
+      if (m) {
+        const w = +m[1], d = +m[2];
+        if (w > lastRecW || (w === lastRecW && d > lastRecD)) { lastRecW = w; lastRecD = d; lastRec = entries[k]; }
+      }
+    });
+
+    // Datos de peso por semana para la gráfica
+    const weightPts = [];
+    for (let w = 1; w <= currentWeek; w++) {
+      const wci = entries['ci_sem_'+w];
+      if (wci && wci.peso) weightPts.push({ w, v: parseFloat(wci.peso) });
+    }
+
+    let html = '';
+
+    // ── Check-in semanal actual
+    html += `<div class="card p-3 mb-3" style="border-left:3px solid #C4FF00;border-radius:0 8px 8px 0">
+      <div class="text-xs text-[#888] mb-2 uppercase font-semibold tracking-wide">Check-in semanal — Sem ${currentWeek}</div>
+      <div class="flex gap-4 flex-wrap">
+        ${ci.peso   ? `<div><div class="text-xs text-[#888]">PESO</div><div class="text-xl font-bold">${ci.peso} kg</div></div>` : '<div class="text-xs text-[#555]">Peso no registrado</div>'}
+        ${ci.hrv    ? `<div><div class="text-xs text-[#888]">HRV</div><div class="text-xl font-bold">${ci.hrv}</div></div>` : ''}
+        ${ci.who5   ? `<div><div class="text-xs text-[#888]">WHO-5</div><div class="text-xl font-bold" style="color:${parseInt(ci.who5)<52?'#FF4444':'#44BB88'}">${ci.who5}</div></div>` : ''}
+        ${ci.energia? `<div><div class="text-xs text-[#888]">ENERGÍA</div><div class="text-xl font-bold">${ci.energia}/5</div></div>` : ''}
+        ${ci.sueno  ? `<div><div class="text-xs text-[#888]">SUEÑO</div><div class="text-xl font-bold">${ci.sueno}h</div></div>` : ''}
+      </div>
+    </div>`;
+
+    // ── Gráfica de tendencia de peso
+    if (weightPts.length >= 2) html += _buildMiniTrendChart(weightPts, 'Tendencia de peso (kg)', '#C4FF00');
+
+    // ── Grid multi-semana del mesociclo
+    const dpw = (p && p.daysPerWeek) || (p && p.days ? p.days.length : 0) || 1;
+    const totalWeeks = (p && p.weeks) || 6;
+    html += `<div class="text-xs text-[#888] mb-2 mt-1 uppercase tracking-wide font-semibold">Vista del mesociclo</div>`;
+    html += `<div class="card p-3 mb-3" style="overflow-x:auto">`;
+    // Header row: days
+    html += `<div style="display:grid;grid-template-columns:40px ${Array(dpw).fill('1fr').join(' ')};gap:3px;margin-bottom:3px">`;
+    html += `<div></div>`;
+    for (let d = 0; d < dpw; d++) {
+      const dayObj = p && p.days ? (p.days.find(x => x.dayIndex === d) || p.days[d]) : null;
+      const label = dayObj ? (dayObj.label||('D'+(d+1))).substring(0,6) : 'D'+(d+1);
+      html += `<div style="text-align:center;font-size:9px;color:#888;font-weight:600;padding:2px">${label}</div>`;
+    }
+    html += `</div>`;
+    // Week rows
+    for (let w = 1; w <= totalWeeks; w++) {
+      const isCur = w === currentWeek;
+      const isFuture = w > currentWeek;
+      html += `<div style="display:grid;grid-template-columns:40px ${Array(dpw).fill('1fr').join(' ')};gap:3px;margin-bottom:3px">`;
+      html += `<div style="display:flex;align-items:center;font-size:9px;font-weight:700;color:${isCur?'#C4FF00':'#888'};padding-right:4px">S${w}${w===totalWeeks?'🔵':''}</div>`;
+      for (let d = 0; d < dpw; d++) {
+        const done = !!entries['done_'+w+'_'+d];
+        const hasAny = Object.keys(entries).some(k => k.startsWith('log_'+w+'_'+d+'_'));
+        const bg = done ? '#44BB88' : hasAny ? 'rgba(196,255,0,.5)' : isFuture ? 'rgba(244,244,240,.04)' : w < currentWeek ? 'rgba(255,68,68,.22)' : 'rgba(244,244,240,.06)';
+        const textColor = done ? '#000' : hasAny ? '#000' : '#555';
+        const icon = done ? '✓' : hasAny ? '◑' : isFuture ? '' : w < currentWeek ? '✗' : '·';
+        html += `<div title="Sem ${w} · Día ${d+1}: ${done?'Completa':hasAny?'Parcial':isFuture?'Pendiente':'Faltó'}" style="height:28px;border-radius:5px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${textColor};border:${isCur&&!done?'1px solid rgba(196,255,0,.4)':'1px solid transparent'}">${icon}</div>`;
+      }
+      html += `</div>`;
+    }
+    // Leyenda
+    html += `<div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">`;
+    [['#44BB88','✓ Completa'],['rgba(196,255,0,.5)','◑ Parcial'],['rgba(255,68,68,.22)','✗ Faltó'],['rgba(244,244,240,.04)','— Pendiente']].forEach(([c,l])=>{
+      html += `<div style="display:flex;align-items:center;gap:4px;font-size:9px;color:#888"><div style="width:10px;height:10px;border-radius:2px;background:${c}"></div>${l}</div>`;
+    });
+    html += `</div></div>`;
+
+    // ── Gráfica de RPE por sesión
+    const rpePts = [];
+    for (let w = 1; w <= currentWeek; w++) {
+      for (let d = 0; d < dpw; d++) {
+        const ps = entries['postsession_'+w+'_'+d];
+        if (ps && ps.rpe) rpePts.push({ w, label: 'S'+w+'D'+(d+1), v: parseFloat(ps.rpe) });
+      }
+    }
+    if (rpePts.length >= 2) {
+      html += _buildMiniTrendChart(rpePts, 'RPE por sesión', '#FF8844');
+    } else if (rpePts.length === 1) {
+      html += `<div class="card p-3 mb-3 text-xs text-[#888]">📊 RPE registrado en 1 sesión — el gráfico de tendencia aparece a partir de 2 sesiones completadas.</div>`;
+    } else {
+      html += `<div class="card p-3 mb-3 text-xs text-[#888]">📊 El gráfico de RPE aparecerá cuando el cliente complete su primera sesión.</div>`;
+    }
+
+    // ── Datos reales de la última sesión
+    if (lastDoneW > 0) {
+      const dayObj = p && p.days ? (p.days.find(d => d.dayIndex === lastDoneD) || p.days[lastDoneD]) : null;
+      const sesLabel = dayObj ? dayObj.label : `Día ${lastDoneD+1}`;
+      html += `<div class="text-xs text-[#888] mb-2 uppercase tracking-wide font-semibold">Última sesión — ${sesLabel} · Sem ${lastDoneW}</div>`;
+      const ps = entries['postsession_'+lastDoneW+'_'+lastDoneD];
+      if (ps) html += `<div class="card p-3 mb-3" style="border-left:2px solid rgba(244,244,240,.15);border-radius:0 8px 8px 0">
+        <div class="flex gap-4 flex-wrap text-sm">
+          ${ps.rpe    ? `<span><span class="text-[#888]">RPE</span> <strong>${ps.rpe}/10</strong></span>` : ''}
+          ${ps.eimd   ? `<span><span class="text-[#888]">EIMD</span> <strong>${['','Leve','Moderado','Alto'][ps.eimd]||ps.eimd}</strong></span>` : ''}
+          ${ps.sleep  ? `<span><span class="text-[#888]">Sueño</span> <strong>${ps.sleep}h</strong></span>` : ''}
+          ${ps.articular==='si' ? `<span style="color:#FF8844">⚠️ Dolor articular${ps.patron?' · '+ps.patron:''}</span>` : ''}
+        </div>
+      </div>`;
+
+      const exList = p && p.days ? ((p.days.find(d => d.dayIndex === lastDoneD) || p.days[lastDoneD] || {}).exercises || []) : [];
+      const eiKeys = Object.keys(lastSets).map(Number).sort((a,b)=>a-b);
+      if (eiKeys.length === 0) {
+        html += `<p class="text-[#888] text-sm">Sin sets registrados en esta sesión.</p>`;
+      } else {
+        eiKeys.forEach(ei => {
+          const exObj = exList[ei] || {};
+          const exName = exObj.exerciseName || `Ejercicio ${ei+1}`;
+          const sets = (lastSets[ei] || []).sort((a,b)=>a.si-b.si);
+          const icsArr = sets.map(s=>parseFloat(s.ics)).filter(x=>!isNaN(x));
+          const avgICS = icsArr.length ? (icsArr.reduce((a,b)=>a+b,0)/icsArr.length).toFixed(1) : null;
+          const icsCol = avgICS ? (parseFloat(avgICS)>=8?'#44BB88':parseFloat(avgICS)>=7?'#C4FF00':'#FF4444') : '#888';
+          html += `<div class="card p-3 mb-2">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-semibold text-sm">${exName}</span>
+              ${avgICS?`<span class="text-xs font-bold" style="color:${icsCol}">ICS ${avgICS}</span>`:''}
+            </div>
+            <div style="overflow-x:auto">
+            <table style="width:100%;font-size:11px;border-collapse:collapse;min-width:360px">
+              <thead><tr style="color:#888;border-bottom:1px solid rgba(244,244,240,.08)">
+                <th style="text-align:left;padding:3px 6px">Set</th>
+                <th style="padding:3px 6px;color:#555">Obj reps</th><th style="padding:3px 6px;color:#555">Obj RIR</th>
+                <th style="padding:3px 6px">Carga real</th><th style="padding:3px 6px">Reps real</th><th style="padding:3px 6px">RIR real</th>
+                <th style="padding:3px 6px">ICS</th><th style="padding:3px 6px">Pump</th>
+              </tr></thead>
+              <tbody>${sets.map((s,si)=>{
+                const ic=parseFloat(s.ics);
+                const icC=!isNaN(ic)?(ic>=8?'#44BB88':ic>=7?'#C4FF00':'#FF4444'):'#888';
+                const pump=['','✓','OK','↓'][s.pump]||'—';
+                const planSet = exObj.sets && exObj.sets[si] ? exObj.sets[si] : null;
+                const tReps = planSet ? (planSet.repsTarget||planSet.reps||'—') : '—';
+                const tRIR  = planSet ? (planSet.rirTarget!==undefined?planSet.rirTarget:'—') : '—';
+                const repsReal = parseInt(s.reps); const tRepsN = parseInt(tReps);
+                const repsColor = !isNaN(repsReal)&&!isNaN(tRepsN) ? (repsReal>=tRepsN?'#44BB88':'#FF8844') : 'inherit';
+                return `<tr style="border-top:1px solid rgba(244,244,240,.05)">
+                  <td style="padding:4px 6px;color:#888">${si+1}</td>
+                  <td style="padding:4px 6px;text-align:center;color:#555">${tReps}</td>
+                  <td style="padding:4px 6px;text-align:center;color:#555">${tRIR}</td>
+                  <td style="padding:4px 6px;text-align:center;font-weight:600">${s.carga||'—'}${s.carga?' '+(s.unit||'kg'):''}</td>
+                  <td style="padding:4px 6px;text-align:center;color:${repsColor};font-weight:600">${s.reps||'—'}</td>
+                  <td style="padding:4px 6px;text-align:center">${s.rir_real??'—'}</td>
+                  <td style="padding:4px 6px;text-align:center;font-weight:700;color:${icC}">${s.ics||'—'}</td>
+                  <td style="padding:4px 6px;text-align:center;color:#888">${pump}</td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table>
+            </div>
+          </div>`;
+        });
+      }
+    }
+
+    // ── Recomendaciones de progresión
+    if (lastRec && lastRec.recommendations && lastRec.recommendations.length) {
+      const aL = { deload:{label:'DELOAD',color:'#4488cc'}, reduce_load:{label:'↓ CARGA',color:'#FF4444'}, reduce_sets:{label:'↓ SERIES',color:'#FF8844'}, add_sets:{label:'+ SERIES',color:'#44BB88'}, increase_load:{label:'↑ CARGA',color:'#44BB88'}, freeze_load:{label:'CONGELAR',color:'#F4F4F0'}, maintain:{label:'MANTENER',color:'#888'} };
+      html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Progresión recomendada — Sem ${lastRecW} · Día ${lastRecD+1}</div>
+        <div class="space-y-2">`;
+      lastRec.recommendations.forEach(r => {
+        const al = aL[r.action] || aL.maintain;
+        html += `<div class="card p-3">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-semibold text-sm">${r.exerciseName}</span>
+            <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${al.color}">${al.label}</span>
+          </div>
+          <div class="flex gap-3 text-xs flex-wrap">
+            <span class="text-[#888]">Carga: <strong class="text-white">${r.newLoad} kg</strong></span>
+            <span class="text-[#888]">Series: <strong class="text-white">${r.newSets}</strong></span>
+            ${r.newReps?`<span class="text-[#888]">Reps: <strong class="text-white">${r.newReps}</strong></span>`:''}
+            <span class="text-[#888]">RIR obj: <strong>${r.rirTarget}</strong></span>
+          </div>
+          ${r.trend?`<div class="text-xs text-[#555] mt-1">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets}s · ICS ${r.trend.prevICS.toFixed(1)}</div>`:''}
+          <div class="text-xs text-[#888] mt-1">${r.reason}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    } else if (!lastRec) {
+      html += `<p class="text-[#888] text-sm mt-2">Sin recomendaciones de progresión aún — el cliente debe completar una sesión con check-in.</p>`;
+    }
+    cont.innerHTML = html;
+  }
+
+  function _buildMiniTrendChart(data, label, color) {
+    if (!data || data.length < 2) return '';
+    const W = 300, H = 72, pad = 14;
+    const vals = data.map(d => d.v);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const range = max - min || 1;
+    const pts = data.map((d,i) => {
+      const x = (pad + (i/(data.length-1))*(W-pad*2)).toFixed(1);
+      const y = (H-pad-((d.v-min)/range)*(H-pad*2)).toFixed(1);
+      return x+','+y;
+    }).join(' ');
+    const last = data[data.length-1];
+    const lastX = (pad + ((data.length-1)/(data.length-1))*(W-pad*2)).toFixed(1);
+    const lastY = (H-pad-((last.v-min)/range)*(H-pad*2)).toFixed(1);
+    const circlesHtml = data.map((d,i)=>{
+      const x=(pad+(i/(data.length-1))*(W-pad*2)).toFixed(1);
+      const y=(H-pad-((d.v-min)/range)*(H-pad*2)).toFixed(1);
+      return `<circle cx="${x}" cy="${y}" r="3" fill="${color}"/><text x="${x}" y="${(parseFloat(y)-7).toFixed(1)}" text-anchor="middle" font-size="8" fill="#888">${d.label||('S'+d.w)}</text>`;
+    }).join('');
+    return `<div class="card p-3 mb-3">
+      <div class="text-xs text-[#888] mb-2 uppercase tracking-wide font-semibold">${label}</div>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;overflow:visible">
+        <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${circlesHtml}
+        <text x="${parseFloat(lastX)+4}" y="${lastY}" font-size="9" fill="${color}" font-weight="700">${last.v}</text>
+      </svg>
+    </div>`;
+  }
+  window._buildMiniTrendChart = _buildMiniTrendChart;
+
+  function _renderClientTabNotas(cont) {
+    const c  = _detailClientData;
+    const note = c ? (c.coachNote || '') : '';
+    cont.innerHTML = `
+      <div class="mb-2">
+        <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Notas privadas del coach</div>
+        <div class="text-xs text-[#555] mb-3">Visibles solo para ti. Lesiones, contexto personal, comportamiento, recordatorios.</div>
+        <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="12" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
+        <button onclick="saveCoachNote()" class="btn-primary mt-3 w-full">💾 Guardar nota</button>
+      </div>`;
+  }
+
+  async function saveCoachNote() {
+    const val = (document.getElementById('coachNoteTA')?.value || '').trim();
+    if (!_detailClientId) return;
+    try {
+      await updateDoc(doc(db,'clients',_detailClientId), { coachNote: val });
+      if (_detailClientData) _detailClientData.coachNote = val;
+      showToast('Nota guardada ✅');
+    } catch(e) { showToast('Error al guardar: '+e.message, true); }
+  }
+  window.saveCoachNote = saveCoachNote;
+
+  async function _saveCurrentPlanAsTemplate(planId) {
+    const name = prompt('Nombre para el template:');
+    if (!name || !name.trim()) return;
+    try {
+      const snap = await getDoc(doc(db,'plans',planId));
+      if (!snap.exists()) { showToast('Plan no encontrado', true); return; }
+      const p = snap.data();
+      await addDoc(collection(db,'templates'), {
+        name: name.trim(), coachId: currentCoach.uid, weeks: p.weeks || 6,
+        days: (p.days || []).map(d => ({ label: d.label, exercises: d.exercises || [] })),
+        createdAt: Date.now()
+      });
+      showToast('Template "'+name.trim()+'" guardado ⭐');
+    } catch(e) { showToast('Error: '+e.message, true); }
+  }
+  window._saveCurrentPlanAsTemplate = _saveCurrentPlanAsTemplate;
 
   function renderNutritionView(n) {
     if (!n || (!n.calorias && !n.texto)) return `<p class="text-[#888] text-sm">Sin datos.</p>`;
@@ -5235,6 +5647,51 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   }
 
+  async function resetClientWeekKeepSessions(clientId) {
+    if (!await _askConfirm('¿Reiniciar a Semana 1 conservando los registros ya completados de esa semana?<br><span style="color:#888;font-size:12px">Se borran semanas 2-6 y sus marcadores. Los sets y sesiones completadas de la semana 1 se conservan intactos.</span>')) return;
+    try {
+      const logsRef = doc(db, 'logs', clientId);
+      const logsSnap = await getDoc(logsRef);
+      if (!logsSnap.exists()) { showToast('Sin registros para este cliente', true); return; }
+      const data = logsSnap.data();
+      const allEntries = data.entries || {};
+      const keptEntries = {};
+      for (const k of Object.keys(allEntries)) {
+        // Conservar sets (log_1_*), sesiones completadas (done_1_*) y post-sesión (postsession_1_*) de semana 1
+        if (/^(log_1_|done_1_|postsession_1_)/.test(k) && allEntries[k] !== null) {
+          keptEntries[k] = allEntries[k];
+        }
+      }
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      const newPlanId = clientSnap.exists() ? (clientSnap.data().activePlanId || null) : null;
+      await setDoc(logsRef, {
+        entries: keptEntries,
+        currentWeek: 1,
+        planId: newPlanId,
+        exerciseHistory: data.exerciseHistory || {},
+        exerciseUnits: data.exerciseUnits || {},
+        updatedAt: Date.now()
+      });
+      showToast('✅ Reiniciada a semana 1 — registros de la semana 1 conservados');
+      showClientDetail(clientId);
+    } catch(e) {
+      showToast('Error: ' + (e.code||'') + ' ' + e.message, true);
+    }
+  }
+
+  async function clearBrokenPlanRef(clientId) {
+    if (!await _askConfirm('¿Limpiar la referencia de plan rota?<br><span style="color:#888;font-size:12px">Se borra el activePlanId del cliente. El cliente verá la pantalla de espera hasta que se asigne un nuevo plan.</span>')) return;
+    try {
+      await updateDoc(doc(db, "clients", clientId), { activePlanId: null });
+      showToast('✅ Referencia limpiada — el cliente ya puede entrar a la app (pantalla de espera)');
+      showClientDetail(clientId);
+      loadClientList();
+    } catch(e) {
+      showToast('Error: ' + (e.code||'') + ' ' + e.message, true);
+    }
+  }
+  window.clearBrokenPlanRef = clearBrokenPlanRef;
+
   async function deletePlan(clientId, planId) {
     if (!await _askConfirm('¿Eliminar el plan activo de este cliente?<br><span style="color:#888;font-size:12px">El cliente quedará sin plan asignado.</span>')) return;
     // Paso 1: quitar activePlanId del cliente
@@ -5311,30 +5768,33 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       let clients = [];
       clientSnap.forEach(d => clients.push({ id: d.id, ...d.data() }));
 
-      // Cargar logs de todos los clientes
+      // Cargar logs y planes de todos los clientes en paralelo
       const logsPromises = clients.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));
-      const logsSnaps = await Promise.all(logsPromises);
-      const logsMap = {};
-      logsSnaps.forEach((snap, i) => {
-        if (snap && snap.exists()) logsMap[clients[i].id] = snap.data();
-      });
+      const planPromises = clients.map(c => c.activePlanId ? getDoc(doc(db, 'plans', c.activePlanId)).catch(() => null) : Promise.resolve(null));
+      const [logsSnaps, planSnaps] = await Promise.all([Promise.all(logsPromises), Promise.all(planPromises)]);
+      const logsMap = {}, planMap = {};
+      logsSnaps.forEach((snap, i) => { if (snap && snap.exists()) logsMap[clients[i].id] = snap.data(); });
+      planSnaps.forEach((snap, i) => { if (snap && snap.exists()) planMap[clients[i].id] = snap.data(); });
 
       // Clasificar clientes
       const now = Date.now();
       const DAY = 86400000;
       let cards = clients.map(c => {
         const logData = logsMap[c.id] || {};
+        const planData = planMap[c.id] || null;
         const entries = logData.entries || {};
         const week = logData.currentWeek || 1;
         const updatedAt = logData.updatedAt || 0;
         const daysSince = Math.floor((now - updatedAt) / DAY);
 
-        // Alertas
+        // Alertas — usar getClientAlert para detectar mesoEnd correctamente
         const alerts = [];
+        const sysAlert = getClientAlert(c, logData, planData);
+        if (sysAlert) alerts.push({ type: sysAlert.type || 'warn', text: sysAlert.label, alertType: sysAlert.type });
+
         const ci = entries['ci_sem_'+week] || {};
         if (ci.who5 && parseInt(ci.who5) < 52) alerts.push({ type:'danger', text:'WHO-5 bajo ('+ci.who5+')' });
         if (ci.energia && parseInt(ci.energia) <= 3) alerts.push({ type:'danger', text:'Energía baja ('+ci.energia+')' });
-        if (daysSince > 3 && updatedAt > 0) alerts.push({ type:'warn', text: daysSince+'d sin entrenar' });
         if (!c.activePlanId) alerts.push({ type:'warn', text:'Sin plan' });
 
         // ICS promedio última sesión
@@ -5361,14 +5821,49 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
       // Stats
       const total = cards.length;
-      const active = cards.filter(c => c.daysSince <= 3).length;
-      const withAlerts = cards.filter(c => c.alerts.some(a => a.type === 'danger')).length;
+      const active = cards.filter(c => c.daysSince <= 1).length;
+      const withAlerts = cards.filter(c => c.alerts.some(a => a.type === 'danger' || a.alertType === 'mesoEnd')).length;
+
+      // ── Digest de hoy ──
+      const trainedToday   = cards.filter(c => c.daysSince === 0 && c.updatedAt > 0);
+      const inactive3plus  = cards.filter(c => c.daysSince > 3  && c.updatedAt > 0 && c.activePlanId);
+      const mesoComplete   = cards.filter(c => c.alerts.some(a => a.alertType === 'mesoEnd'));
+      const noPlan         = cards.filter(c => !c.activePlanId);
+      const lowWHO5        = cards.filter(c => c.alerts.some(a => a.text && a.text.startsWith('WHO-5')));
+
+      let digestItems = '';
+      if (trainedToday.length)
+        digestItems += `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+          <span style="color:#44BB88;font-size:13px">✅</span>
+          <div><span class="text-xs text-[#888]">Entrenaron hoy: </span>${trainedToday.map(c=>`<button onclick="showClientDetail('${c.id}')" style="color:#44BB88;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;padding:0 2px">${(c.displayName||c.email).split(' ')[0]}</button>`).join(', ')}</div></div>`;
+      if (mesoComplete.length)
+        digestItems += `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+          <span style="font-size:13px">🏁</span>
+          <div><span class="text-xs text-[#888]">Mesociclo terminado → crear nuevo plan: </span>${mesoComplete.map(c=>`<button onclick="showClientDetail('${c.id}')" style="color:#C4FF00;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;padding:0 2px">${(c.displayName||c.email).split(' ')[0]}</button>`).join(', ')}</div></div>`;
+      if (noPlan.length)
+        digestItems += `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+          <span style="color:#FF8844;font-size:13px">📝</span>
+          <div><span class="text-xs text-[#888]">Sin plan asignado: </span>${noPlan.map(c=>`<button onclick="showClientDetail('${c.id}')" style="color:#FF8844;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;padding:0 2px">${(c.displayName||c.email).split(' ')[0]}</button>`).join(', ')}</div></div>`;
+      if (inactive3plus.length)
+        digestItems += `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+          <span style="color:#FF8844;font-size:13px">⏰</span>
+          <div><span class="text-xs text-[#888]">Sin registrar ${'>'}3 días: </span>${inactive3plus.map(c=>`<button onclick="showClientDetail('${c.id}')" style="color:#FF8844;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;padding:0 2px">${(c.displayName||c.email).split(' ')[0]}</button>`).join(', ')}</div></div>`;
+      if (lowWHO5.length)
+        digestItems += `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+          <span style="color:#FF4444;font-size:13px">🧠</span>
+          <div><span class="text-xs text-[#888]">Bienestar bajo (WHO-5): </span>${lowWHO5.map(c=>`<button onclick="showClientDetail('${c.id}')" style="color:#FF4444;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;padding:0 2px">${(c.displayName||c.email).split(' ')[0]}</button>`).join(', ')}</div></div>`;
+      if (!digestItems)
+        digestItems = `<div class="text-xs text-[#44BB88]">Todo en orden — sin acciones urgentes hoy ✓</div>`;
 
       let html = `
-        <div class="grid grid-cols-3 gap-3 mb-6">
-          <div class="card p-4 text-center"><div class="text-3xl font-bold text-[#F4F4F0]">${total}</div><div class="text-xs text-[#888] mt-1">TOTAL CLIENTES</div></div>
+        <div class="grid grid-cols-3 gap-3 mb-4">
+          <div class="card p-4 text-center"><div class="text-3xl font-bold text-[#F4F4F0]">${total}</div><div class="text-xs text-[#888] mt-1">CLIENTES</div></div>
           <div class="card p-4 text-center"><div class="text-3xl font-bold text-[#44BB88]">${active}</div><div class="text-xs text-[#888] mt-1">ACTIVOS HOY</div></div>
           <div class="card p-4 text-center"><div class="text-3xl font-bold ${withAlerts?'text-red-400':'text-[#888]'}">${withAlerts}</div><div class="text-xs text-[#888] mt-1">CON ALERTAS</div></div>
+        </div>
+        <div class="card p-4 mb-5" style="border-left:3px solid #C4FF00;border-radius:0 8px 8px 0">
+          <div class="text-xs uppercase tracking-wide font-bold mb-3" style="color:#C4FF00">Hoy necesitas:</div>
+          ${digestItems}
         </div>`;
 
       // Ordenar: alertas peligro primero, luego por última actividad
@@ -5379,7 +5874,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         return b.updatedAt - a.updatedAt;
       });
 
-      html += `<div class="space-y-2">`;
+      html += `<div class="text-xs text-[#888] uppercase tracking-wide font-semibold mb-2">Todos los clientes</div><div class="space-y-2">`;
       cards.forEach(c => {
         const alertBadges = c.alerts.map(a =>
           `<span class="text-xs px-2 py-0.5 rounded" style="background:${a.type==='danger'?'rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444':'rgba(255,187,0,.1);border:1px solid #FFBB00;color:#FFBB00'}">${a.text}</span>`
@@ -5584,6 +6079,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.deletePlan = deletePlan;
   window.duplicatePlan = duplicatePlan;
   window.resetClientWeek = resetClientWeek;
+  window.resetClientWeekKeepSessions = resetClientWeekKeepSessions;
 
   // ── Exportar JSON del plan activo (copia al portapapeles + descarga .json) ──
   async function exportActivePlanJSON(clientId, planId) {
