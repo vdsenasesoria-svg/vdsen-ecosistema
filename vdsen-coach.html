@@ -199,13 +199,11 @@
     <div style="font-size:8px;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;font-style:italic">El esfuerzo no es negociable</div>
   </div>
   <nav style="padding:12px 12px">
-    <div data-section="dashboard" class="cursor-pointer py-2 px-3 rounded transition font-semibold" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📋 Dashboard</div>
-    <div data-section="clientes"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">👥 Clientes</div>
+    <div data-section="clientes"  class="cursor-pointer py-2 px-3 rounded transition font-semibold" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📋 Clientes</div>
     <div data-section="evaluacion" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🧩 Evaluación</div>
     <div data-section="crearPlan" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📝 Crear Plan</div>
     <div data-section="templates" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📑 Templates</div>
     <div data-section="catalogo"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🏋️ Catálogo</div>
-    <div data-section="monitoreo" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📊 Monitoreo</div>
     <div data-section="config"    class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">⚙️ Config</div>
   </nav>
   <div style="position:absolute;bottom:0;left:0;right:0;padding:16px 20px;border-top:1px solid var(--border-soft)">
@@ -229,8 +227,7 @@
 </script>
 
 <div class="main-content">
-  <div id="dashboard" class="section active"><h2 class="text-2xl font-bold mb-4">Dashboard</h2><div id="dashboardContent"></div></div>
-  <div id="clientes" class="section"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button id="repairPhoneBtn" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
+  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button id="repairPhoneBtn" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
   <div id="evaluacion" class="section"><h2 class="text-2xl font-bold mb-4">Evaluación / Intake</h2>
     <div class="card p-4 mb-4">
       <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">Ficha en blanco para nuevos clientes</h3>
@@ -295,7 +292,6 @@
     <div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
   <div id="templates" class="section"><h2 class="text-2xl font-bold mb-4">Templates de Planes</h2><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
-  <div id="monitoreo" class="section"><h2 class="text-2xl font-bold mb-4">Monitoreo</h2><div class="flex gap-2 mb-4 flex-wrap"><select id="monitorClientSelect" class="input-field flex-1"></select><button id="pdfReportBtn" class="btn-secondary text-sm" style="display:none">📄 Reporte PDF</button></div><div id="monitorTable"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
     <div class="card p-4 mb-4">
       <label class="block text-sm font-medium mb-1">🔑 API Key de Anthropic (Claude)</label>
@@ -399,11 +395,9 @@
   </div>
 </div>
 <div class="bottom-nav-mobile" id="bottomNavMobile">
-  <div data-section="dashboard"  class="nav-item-mobile"><span class="nav-icon">📋</span>Dashboard</div>
-  <div data-section="clientes"   class="nav-item-mobile"><span class="nav-icon">👥</span>Clientes</div>
+  <div data-section="clientes"   class="nav-item-mobile"><span class="nav-icon">📋</span>Clientes</div>
   <div data-section="evaluacion" class="nav-item-mobile"><span class="nav-icon">🧩</span>Intake</div>
   <div data-section="crearPlan"  class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
-  <div data-section="monitoreo"  class="nav-item-mobile"><span class="nav-icon">📊</span>Monitor</div>
   <div data-section="catalogo"   class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
   <div data-section="config"     class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
 </div>
@@ -1025,9 +1019,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     document.getElementById("repairPhoneBtn").onclick = () => repairPhoneIndexAll();
     loadClientList();
     loadExerciseCatalog();
-    loadMonitorClients();
     loadClientsSelect();
-    loadDashboard();
     loadTemplates();
     const savedKey = localStorage.getItem('vdsen_apikey');
     if (savedKey) document.getElementById("apiKeyInput").value = "••••••••••••••••";
@@ -1088,6 +1080,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   
   async function loadClientList() {
     if (!currentCoach) return;
+    loadDashboard(); // Carga resumen/stats en paralelo al inicio de la sección unificada
     const container = document.getElementById("clientList");
     container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando clientes...</div>`;
     try {
@@ -3196,11 +3189,36 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const planObj = window._importedPlan;
     if (!planObj) { showToast("No hay plan cargado", true); return; }
     try {
-      // Backup automático del plan anterior si existe
-      await backupPlanIfExists(clientId);
-      // Limpiar plan anterior si existe (evita docs huérfanos)
+      // Confirmación si ya hay plan activo
       const prevClientSnap = await getDoc(doc(db, "clients", clientId));
       const prevPlanId = prevClientSnap.exists() ? prevClientSnap.data().activePlanId : null;
+      if (prevPlanId) {
+        const prevPlanSnap = await getDoc(doc(db, "plans", prevPlanId)).catch(() => null);
+        const prevDays = prevPlanSnap && prevPlanSnap.exists() ? (prevPlanSnap.data().days || []) : [];
+        const newDays  = planObj.days || [];
+        const confirmed = await new Promise(resolve => {
+          const ov = document.createElement('div');
+          ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+          ov.innerHTML = `<div style="background:#141616;border:1px solid rgba(244,244,240,.25);border-radius:12px;padding:24px;max-width:400px;width:100%">
+            <div style="font-size:14px;font-weight:700;color:#FF8844;margin-bottom:10px">⚠️ Reemplazar plan activo</div>
+            <div style="font-size:12px;color:#888;margin-bottom:14px;line-height:1.6">
+              Plan actual: <strong style="color:#F4F4F0">${prevDays.length} días · ${prevPlanSnap?.data()?.weeks||'?'} semanas</strong><br>
+              Plan nuevo: <strong style="color:#C4FF00">${newDays.length} días · ${newDays[0]?.exercises?.length||'?'} ej. el primer día</strong>
+            </div>
+            <div style="font-size:11px;color:#555;margin-bottom:16px">El plan actual se archivará antes de reemplazarlo.</div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button id="_confCancel" style="padding:8px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
+              <button id="_confOk" style="padding:8px 16px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Reemplazar</button>
+            </div>
+          </div>`;
+          document.body.appendChild(ov);
+          ov.querySelector('#_confCancel').onclick = () => { ov.remove(); resolve(false); };
+          ov.querySelector('#_confOk').onclick    = () => { ov.remove(); resolve(true);  };
+        });
+        if (!confirmed) return;
+      }
+      // Backup automático del plan anterior
+      await backupPlanIfExists(clientId);
 
       const planRef = await addDoc(collection(db, "plans"), {
         ...planObj,
@@ -3958,6 +3976,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (!manualPlan || manualPlan.days.every(d => d.exercises.length === 0)) {
       showToast("Agrega al menos un ejercicio antes de guardar", true); return;
     }
+    const emptyEx = manualPlan.days.some(d => d.exercises.some(e => !e.exerciseName || !e.exerciseName.trim()));
+    if (emptyEx) { showToast("⚠️ Hay ejercicios sin nombre — completa todos los campos antes de guardar", true); return; }
     try {
       // Limpiar plan anterior si existe
       const prevClientSnap2 = await getDoc(doc(db, "clients", clientId));
@@ -4133,8 +4153,75 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         </div>
         <div id="supplement-view">${renderSupplementView(c.supplementPlan || {})}</div>
         <div id="supplement-editor" style="display:none;">${renderSupplementEditor(c.supplementPlan || {})}</div>
+      </div>
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(244,244,240,.08)">
+        <div class="text-xs uppercase tracking-wide font-bold mb-3" style="color:#888">Cargar nuevo plan</div>
+        <div class="flex gap-2 flex-wrap mb-3">
+          <button onclick="_modalImportPlan('json','${clientId}')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:12px;font-weight:600;cursor:pointer">📋 Pegar JSON</button>
+          <button onclick="_modalImportPlan('texto','${clientId}')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📝 Pegar texto</button>
+          <button onclick="_modalImportPlan('ia','${clientId}')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(200,156,255,.4);background:rgba(200,156,255,.08);color:#c89cff;font-size:12px;font-weight:600;cursor:pointer">🤖 Generar con IA</button>
+        </div>
+        <div id="_importPlanArea"></div>
       </div>`;
   }
+
+  window._modalImportPlan = function(mode, clientId) {
+    const area = document.getElementById('_importPlanArea');
+    if (!area) return;
+    if (mode === 'ia') {
+      // Apuntar el selector global al cliente del modal y lanzar generación
+      const sel = document.getElementById('planClientSelect');
+      if (sel) sel.value = clientId;
+      area.innerHTML = `<div class="text-xs text-[#888] mt-2">🤖 Iniciando generación automática — el resultado se guardará en este cliente.</div>`;
+      autoGeneratePlan().catch(e => {
+        area.innerHTML = `<div class="text-xs text-red-400 mt-1">Error: ${e.message}</div>`;
+      });
+      return;
+    }
+    const placeholder = mode === 'json'
+      ? 'Pega aquí el JSON del plan (objeto con campo "days": [...])…'
+      : 'Pega aquí el texto del plan (Día 1 / Ejercicio: 3x10 RIR 2…)';
+    area.innerHTML = `
+      <textarea id="_importPlanTa" class="input-field" rows="8" style="font-family:monospace;font-size:11px" placeholder="${placeholder}"></textarea>
+      <div class="flex gap-2 mt-2 items-center">
+        <button onclick="_submitModalImport('${mode}','${clientId}')" style="padding:7px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">💾 Guardar plan</button>
+        <button onclick="document.getElementById('_importPlanArea').innerHTML=''" style="padding:7px 12px;border-radius:6px;border:1px solid #444;background:none;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
+        <span id="_importPlanStatus" class="text-xs" style="color:var(--text-muted)"></span>
+      </div>`;
+  };
+
+  window._submitModalImport = async function(mode, clientId) {
+    const ta = document.getElementById('_importPlanTa');
+    const status = document.getElementById('_importPlanStatus');
+    if (!ta || !ta.value.trim()) { if(status) status.textContent='⚠ El campo está vacío'; return; }
+    if (status) status.textContent = 'Analizando…';
+    try {
+      let planObj = null;
+      if (mode === 'json') {
+        const blocks = _extractJsonBlocks(ta.value);
+        if (!blocks.length) { const raw = JSON.parse(ta.value); blocks.push(raw); }
+        const classified = _classifyBlocks(blocks);
+        planObj = classified.training;
+        if (classified.nutrition) {
+          try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: classified.nutrition }); } catch(_){}
+        }
+        if (classified.supplements) {
+          try { await updateDoc(doc(db, 'clients', clientId), { supplementPlan: classified.supplements }); } catch(_){}
+        }
+      } else {
+        planObj = parsePlanText(ta.value);
+      }
+      if (!planObj || !planObj.days || !planObj.days.length) {
+        if (status) status.textContent = '⚠ No se pudo leer un plan válido';
+        return;
+      }
+      window._importedPlan = planObj;
+      await saveImportedPlan(clientId);
+      document.getElementById('_importPlanArea').innerHTML = '';
+    } catch(e) {
+      if (status) status.textContent = 'Error: ' + e.message;
+    }
+  };
 
   async function _renderClientTabMonitor(cont) {
     cont.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos...</div>`;
@@ -4311,7 +4398,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                 const repsReal = parseInt(s.reps); const tRepsN = parseInt(tReps);
                 const repsColor = !isNaN(repsReal)&&!isNaN(tRepsN) ? (repsReal>=tRepsN?'#44BB88':'#FF8844') : 'inherit';
                 return `<tr style="border-top:1px solid rgba(244,244,240,.05)">
-                  <td style="padding:4px 6px;color:#888">${si+1}</td>
+                  <td style="padding:4px 6px;color:#888">${si+1}${s.express?'<span title="Express" style="margin-left:3px;font-size:9px">⚡</span>':''}</td>
                   <td style="padding:4px 6px;text-align:center;color:#555">${tReps}</td>
                   <td style="padding:4px 6px;text-align:center;color:#555">${tRIR}</td>
                   <td style="padding:4px 6px;text-align:center;font-weight:600">${s.carga||'—'}${s.carga?' '+(s.unit||'kg'):''}</td>
@@ -5754,9 +5841,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // ══════════════════════════════════════════════════════════════════
   async function loadDashboard() {
     if (!currentCoach) return;
-    const cont = document.getElementById('dashboardContent');
+    const cont = document.getElementById('dashSummary');
     if (!cont) return;
-    cont.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando dashboard...</div>`;
+    cont.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando resumen...</div>`;
 
     try {
       const clientSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
@@ -6246,7 +6333,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <div style="background:#141616;border:1px solid rgba(244,244,240,.3);border-radius:12px;padding:24px;max-width:420px;width:100%">
           <h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px">Copiar plan a otro cliente</h3>
           <p style="color:#888;font-size:12px;margin-bottom:10px">Selecciona el cliente destino. Si tiene un plan activo, se hará backup antes de sobrescribir.</p>
-          <select id="_dupTarget" class="input-field mb-3">${clients.map(c => `<option value="${c.id}">${c.displayName || c.email}${c.activePlanId ? ' · ⚠️ ya tiene plan' : ''}</option>`).join('')}</select>
+          <input id="_dupSearch" placeholder="Buscar cliente…" class="input-field mb-2" oninput="(function(){var q=(this.value||'').toLowerCase();document.querySelectorAll('#_dupTarget option').forEach(o=>{o.style.display=o.text.toLowerCase().includes(q)?'':'none'});}).call(this)" style="font-size:12px">
+          <select id="_dupTarget" class="input-field mb-3" size="5" style="height:auto">${clients.map(c => `<option value="${c.id}">${c.displayName || c.email}${c.activePlanId ? ' · ⚠️ ya tiene plan' : ''}</option>`).join('')}</select>
           <div style="display:flex;gap:8px;justify-content:flex-end">
             <button id="_dupCancel" style="padding:8px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
             <button id="_dupOk" style="padding:8px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Copiar plan</button>
@@ -7103,8 +7191,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   });
 
   // Navegación entre secciones
-  const sections = ["dashboard","clientes","evaluacion","crearPlan","templates","catalogo","monitoreo","config"];
-  const sectionLabels = { dashboard:'Dashboard', clientes:'Clientes', evaluacion:'Evaluación', crearPlan:'Crear Plan', templates:'Templates', catalogo:'Catálogo', monitoreo:'Monitoreo', config:'Config' };
+  const sections = ["clientes","evaluacion","crearPlan","templates","catalogo","config"];
+  const sectionLabels = { clientes:'Clientes', evaluacion:'Evaluación', crearPlan:'Crear Plan', templates:'Templates', catalogo:'Catálogo', config:'Config' };
   function showSection(sectionId) {
     if (!sections.includes(sectionId)) return;
     sections.forEach(s => {
@@ -7125,7 +7213,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
   window.showSection = showSection;
   // Inicializar label del header
-  showSection('dashboard');
+  showSection('clientes');
   // Un solo listener por elemento que tenga data-section
   document.querySelectorAll("[data-section]").forEach(el => {
     el.addEventListener("click", () => showSection(el.dataset.section));

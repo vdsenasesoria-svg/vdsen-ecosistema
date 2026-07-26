@@ -1271,10 +1271,13 @@ async function loadPlan(user) {
     const clientSnap = await FB.getDoc(clientRef);
 
     if (!clientSnap.exists()) {
-      // No hay doc de cliente — mostrar espera
       PLAN = null;
       renderEspera();
       showScreen('scrOnboarding');
+      // Listener: cuando el coach cree el doc del cliente, recargar
+      try {
+        var _waitUnsubDoc = FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(s){ if (s.exists()) { _waitUnsubDoc && _waitUnsubDoc(); location.reload(); } });
+      } catch(_){}
       return;
     }
 
@@ -1293,10 +1296,19 @@ async function loadPlan(user) {
     const activePlanId = clientData.activePlanId;
 
     if (!activePlanId) {
-      // Cliente existe pero sin plan asignado
       PLAN = null;
       renderEspera();
       showScreen('scrOnboarding');
+      // Listener en tiempo real: cuando el coach asigne un plan, navegar automáticamente
+      try {
+        var _waitUnsubPlan = FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(s){
+          if (s.exists() && s.data().activePlanId) {
+            _waitUnsubPlan && _waitUnsubPlan();
+            showToast('🎉 ¡Tu coach ya cargó tu plan! Cargando...');
+            setTimeout(function(){ location.reload(); }, 1200);
+          }
+        });
+      } catch(_){}
       return;
     }
 
@@ -1441,17 +1453,16 @@ async function loadPlan(user) {
 
         if (planChanged) {
           // ── Plan nuevo asignado por el coach ──
+          // Flush cualquier save pendiente CON los datos del plan viejo ANTES de limpiar,
+          // para no perder series registradas en vuelo si el coach cambió el plan mid-workout.
+          if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; await _doSaveLogs(); }
           // Resetear semana, entradas y unidades por posición (di/ei cambia con el plan).
           // EXERCISE_HISTORY sí se preserva — está indexado por nombre de ejercicio.
           LOGS           = {};
           EXERCISE_UNITS = {}; // limpiar — los índices di/ei del plan viejo no corresponden al nuevo
           CURRENT_WEEK   = 1;
           REAL_WEEK      = 1;
-          // Guardar INMEDIATAMENTE (sin debounce) antes de que se registre el onSnapshot.
-          // Si se usara setTimeout, el onSnapshot dispararía con datos viejos de Firestore
-          // (semana 6) y sobreescribiría el reset en memoria antes de que se guardara.
-          if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
-          await _doSaveLogs();
+          await _doSaveLogs(); // Guardar el estado limpio de la semana 1
           showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
           _showBitacoraInfo = true;
         } else {
@@ -1597,7 +1608,11 @@ function _releaseWakeLock() {
   if (_wakeLock) { try { _wakeLock.release(); } catch(e) {} _wakeLock = null; }
 }
 
+var _tabScrollY = {}; // guarda posición de scroll por tab index
 function goTab(i) {
+  // Guardar scroll del tab actual antes de ocultarlo
+  var curTab = parseInt(localStorage.getItem('vdsen_last_tab')||'0');
+  try { _tabScrollY[curTab] = window.scrollY; } catch(_){}
   TABS.forEach((t,j) => {
     document.getElementById(t).style.display = j===i ? 'block' : 'none';
   });
@@ -1613,6 +1628,8 @@ function goTab(i) {
   else if (i === 3) renderCheckin();
   else if (i === 4) renderPerfil();
   else if (i === 0) renderResumen();
+  // Restaurar posición de scroll del tab destino
+  try { var saved = _tabScrollY[i]; if (saved != null) setTimeout(function(){ window.scrollTo(0, saved); }, 30); else window.scrollTo(0, 0); } catch(_){}
 }
 
 // ══════════════════════════════════════════════════
