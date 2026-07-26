@@ -4287,7 +4287,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         ${ci.peso   ? `<div><div class="text-xs text-[#888]">PESO</div><div class="text-xl font-bold">${ci.peso} kg</div></div>` : '<div class="text-xs text-[#555]">Peso no registrado</div>'}
         ${ci.hrv    ? `<div><div class="text-xs text-[#888]">HRV</div><div class="text-xl font-bold">${ci.hrv}</div></div>` : ''}
         ${ci.who5   ? `<div><div class="text-xs text-[#888]">WHO-5</div><div class="text-xl font-bold" style="color:${parseInt(ci.who5)<52?'#FF4444':'#44BB88'}">${ci.who5}</div></div>` : ''}
-        ${ci.energia? `<div><div class="text-xs text-[#888]">ENERGÍA</div><div class="text-xl font-bold">${ci.energia}/5</div></div>` : ''}
+        ${ci.energia? `<div><div class="text-xs text-[#888]">ENERGÍA</div><div class="text-xl font-bold">${ci.energia}/10</div></div>` : ''}
         ${ci.sueno  ? `<div><div class="text-xs text-[#888]">SUEÑO</div><div class="text-xl font-bold">${ci.sueno}h</div></div>` : ''}
       </div>
     </div>`;
@@ -4415,6 +4415,37 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }
     }
 
+    // ── Tendencias de carga por ejercicio (S1 → sem actual)
+    if (p && p.days && currentWeek > 1) {
+      // Recoger todos los nombres únicos de ejercicios del plan
+      const allExNames = [];
+      (p.days || []).forEach(day => {
+        (day.exercises || []).forEach((ex, ei) => {
+          const nm = ex.exerciseName || ex.name || `Ej ${ei+1}`;
+          if (!allExNames.find(e => e.name === nm)) allExNames.push({ name: nm, ei });
+        });
+      });
+      const sparklines = allExNames.map(({ name }) => {
+        const pts = [];
+        for (let w = 1; w <= currentWeek; w++) {
+          let maxLoad = 0;
+          Object.keys(entries).forEach(k => {
+            if (!k.startsWith('log_'+w+'_')) return;
+            const e = entries[k];
+            const c = parseFloat(e.carga);
+            if (e.done && !isNaN(c) && c > maxLoad) maxLoad = c;
+          });
+          if (maxLoad > 0) pts.push({ w, v: maxLoad });
+        }
+        if (pts.length < 2) return '';
+        return _buildMiniTrendChart(pts, name + ' — carga máx (kg)', '#C4FF00');
+      }).filter(Boolean);
+      if (sparklines.length) {
+        html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Tendencia de carga por ejercicio</div>`;
+        html += sparklines.join('');
+      }
+    }
+
     // ── Recomendaciones de progresión
     if (lastRec && lastRec.recommendations && lastRec.recommendations.length) {
       const aL = { deload:{label:'DELOAD',color:'#4488cc'}, reduce_load:{label:'↓ CARGA',color:'#FF4444'}, reduce_sets:{label:'↓ SERIES',color:'#FF8844'}, add_sets:{label:'+ SERIES',color:'#44BB88'}, increase_load:{label:'↑ CARGA',color:'#44BB88'}, freeze_load:{label:'CONGELAR',color:'#F4F4F0'}, maintain:{label:'MANTENER',color:'#888'} };
@@ -4477,12 +4508,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function _renderClientTabNotas(cont) {
     const c  = _detailClientData;
     const note = c ? (c.coachNote || '') : '';
+    const clientMsg = c ? (c.clientMessage || '') : '';
+    const noteTs = c ? (c.coachNoteUpdatedAt || '') : '';
+    const noteDate = noteTs ? new Date(noteTs).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
     cont.innerHTML = `
-      <div class="mb-2">
+      <div class="mb-4">
         <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Notas privadas del coach</div>
-        <div class="text-xs text-[#555] mb-3">Visibles solo para ti. Lesiones, contexto personal, comportamiento, recordatorios.</div>
-        <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="12" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
-        <button onclick="saveCoachNote()" class="btn-primary mt-3 w-full">💾 Guardar nota</button>
+        <div class="text-xs text-[#555] mb-2">Visibles solo para ti. Lesiones, contexto personal, comportamiento, recordatorios.</div>
+        ${noteDate ? `<div class="text-xs text-[#444] mb-2">Última actualización: ${noteDate}</div>` : ''}
+        <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="10" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
+        <button onclick="saveCoachNote()" class="btn-primary mt-2 w-full">💾 Guardar nota</button>
+      </div>
+      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:16px">
+        <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Mensaje para el cliente</div>
+        <div class="text-xs text-[#555] mb-2">Visible en el Perfil del cliente. Úsalo para motivación, indicaciones o recordatorios.</div>
+        <textarea id="clientMsgTA" class="input-field w-full text-sm" rows="5" placeholder="Ej: Esta semana enfócate en la técnica del peso muerto — bajamos carga al 80%...">${clientMsg.replace(/</g,'&lt;')}</textarea>
+        <button onclick="saveClientMessage()" class="btn-primary mt-2 w-full">📨 Enviar mensaje al cliente</button>
       </div>`;
   }
 
@@ -4490,12 +4531,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const val = (document.getElementById('coachNoteTA')?.value || '').trim();
     if (!_detailClientId) return;
     try {
-      await updateDoc(doc(db,'clients',_detailClientId), { coachNote: val });
-      if (_detailClientData) _detailClientData.coachNote = val;
+      await updateDoc(doc(db,'clients',_detailClientId), { coachNote: val, coachNoteUpdatedAt: new Date().toISOString() });
+      if (_detailClientData) { _detailClientData.coachNote = val; _detailClientData.coachNoteUpdatedAt = new Date().toISOString(); }
       showToast('Nota guardada ✅');
     } catch(e) { showToast('Error al guardar: '+e.message, true); }
   }
   window.saveCoachNote = saveCoachNote;
+
+  async function saveClientMessage() {
+    const val = (document.getElementById('clientMsgTA')?.value || '').trim();
+    if (!_detailClientId) return;
+    try {
+      await updateDoc(doc(db,'clients',_detailClientId), { clientMessage: val, clientMessageUpdatedAt: new Date().toISOString() });
+      if (_detailClientData) _detailClientData.clientMessage = val;
+      showToast('Mensaje enviado al cliente ✅');
+    } catch(e) { showToast('Error: '+e.message, true); }
+  }
+  window.saveClientMessage = saveClientMessage;
 
   async function _saveCurrentPlanAsTemplate(planId) {
     const name = prompt('Nombre para el template:');
@@ -4573,12 +4625,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <div id="nut-json-status" class="text-xs mt-2"></div>
         </div>
       </details>
-      <div class="grid grid-cols-2 gap-2 mb-3">
-        <div><label class="text-xs text-[#888]">Calorías (kcal)</label><input id="nut-kcal" class="input-field w-full mt-1" type="number" placeholder="2000" value="${n.calorias||''}"></div>
-        <div><label class="text-xs text-[#888]">Proteína (g)</label><input id="nut-prot" class="input-field w-full mt-1" type="number" placeholder="180" value="${n.proteina||''}"></div>
-        <div><label class="text-xs text-[#888]">Carbohidratos (g)</label><input id="nut-carb" class="input-field w-full mt-1" type="number" placeholder="220" value="${n.carbos||''}"></div>
-        <div><label class="text-xs text-[#888]">Grasas (g)</label><input id="nut-fat" class="input-field w-full mt-1" type="number" placeholder="70" value="${n.grasas||''}"></div>
+      <div class="grid grid-cols-2 gap-2 mb-1">
+        <div class="col-span-2">
+          <label class="text-xs text-[#888]">Calorías (kcal)</label>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+            <input id="nut-kcal" class="input-field flex-1" type="number" placeholder="2000" value="${n.calorias||''}">
+            <span id="nut-kcal-hint" class="text-xs" style="color:#888;white-space:nowrap;min-width:90px"></span>
+          </div>
+        </div>
+        <div><label class="text-xs text-[#888]">Proteína (g)</label><input id="nut-prot" class="input-field w-full mt-1" type="number" placeholder="180" value="${n.proteina||''}" oninput="_calcNutKcal()"></div>
+        <div><label class="text-xs text-[#888]">Carbohidratos (g)</label><input id="nut-carb" class="input-field w-full mt-1" type="number" placeholder="220" value="${n.carbos||''}" oninput="_calcNutKcal()"></div>
+        <div><label class="text-xs text-[#888]">Grasas (g)</label><input id="nut-fat" class="input-field w-full mt-1" type="number" placeholder="70" value="${n.grasas||''}" oninput="_calcNutKcal()"></div>
       </div>
+      <div class="text-xs text-[#555] mb-3">Proteína × 4 + Carbos × 4 + Grasas × 9 = Kcal</div>
       <label class="text-xs text-[#888]">Plan de alimentación (texto libre)</label>
       <textarea id="nut-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="10" placeholder="Comida 1: ...\nComida 2: ...">${(n.texto||'').replace(/</g,'&lt;')}</textarea>
       <button onclick="saveNutritionPlan()" class="btn-primary text-sm py-1 px-4 w-full">Guardar nutrición</button>`;
@@ -4850,6 +4909,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     editor.style.display = open ? "none" : "block";
     view.style.display   = open ? "block" : "none";
   }
+
+  window._calcNutKcal = function() {
+    const p = parseFloat(document.getElementById('nut-prot')?.value) || 0;
+    const c = parseFloat(document.getElementById('nut-carb')?.value) || 0;
+    const g = parseFloat(document.getElementById('nut-fat')?.value) || 0;
+    const hint = document.getElementById('nut-kcal-hint');
+    if (!hint) return;
+    if (!p && !c && !g) { hint.textContent = ''; return; }
+    const calc = Math.round(p * 4 + c * 4 + g * 9);
+    const kcalEl = document.getElementById('nut-kcal');
+    const kcalVal = parseFloat(kcalEl?.value) || 0;
+    hint.style.color = (!kcalVal || Math.abs(kcalVal - calc) < 20) ? '#44BB88' : '#FF8844';
+    hint.textContent = 'Calculado: ' + calc + ' kcal';
+    if (!kcalVal) kcalEl.value = calc; // auto-fill si estaba vacío
+  };
 
   async function saveNutritionPlan() {
     const data = {
@@ -5901,7 +5975,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         Object.keys(entries).forEach(k => { if (k.startsWith('done_'+week+'_') && entries[k]) doneCount++; });
 
         // Check-in semanal
-        const ciDone = !!(ci.peso || ci.hrv);
+        const ciDone = !!(ci.peso || ci.hrv || ci.who5 || ci.energia || ci.sueno);
 
         return { ...c, week, daysSince, alerts, doneCount, ciDone, lastICS: icsCount ? lastICS : null, updatedAt };
       });
@@ -5939,6 +6013,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         digestItems += `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
           <span style="color:#FF4444;font-size:13px">🧠</span>
           <div><span class="text-xs text-[#888]">Bienestar bajo (WHO-5): </span>${lowWHO5.map(c=>`<button onclick="showClientDetail('${c.id}')" style="color:#FF4444;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;padding:0 2px">${(c.displayName||c.email).split(' ')[0]}</button>`).join(', ')}</div></div>`;
+      // Check-in rate
+      const withPlan = cards.filter(c => c.activePlanId);
+      const ciCount  = withPlan.filter(c => c.ciDone).length;
+      if (withPlan.length > 0)
+        digestItems += `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+          <span style="color:${ciCount===withPlan.length?'#44BB88':'#888'};font-size:13px">📊</span>
+          <div><span class="text-xs text-[#888]">Check-in semanal: </span><span class="text-xs font-bold" style="color:${ciCount===withPlan.length?'#44BB88':'#FF8844'}">${ciCount}/${withPlan.length} clientes</span></div></div>`;
       if (!digestItems)
         digestItems = `<div class="text-xs text-[#44BB88]">Todo en orden — sin acciones urgentes hoy ✓</div>`;
 
