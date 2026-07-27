@@ -1651,6 +1651,8 @@ function renderAll() {
 function renderEspera() {
   var cont = document.getElementById('scrOnboarding');
   if (!cont) return;
+  var uid = (FB.auth && FB.auth.currentUser && FB.auth.currentUser.uid) || '—';
+  var email = (FB.auth && FB.auth.currentUser && FB.auth.currentUser.email) || '—';
   cont.innerHTML =
     '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center">'
     + '<div style="font-family:var(--ff);font-size:52px;color:var(--gold);letter-spacing:4px;margin-bottom:8px">VDSEN</div>'
@@ -1665,6 +1667,7 @@ function renderEspera() {
     + '📸 Recuerda enviar tus fotos de evaluación por WhatsApp para que tu coach pueda completar el análisis.'
     + '</div>'
     + '<button onclick="doLogout()" style="margin-top:40px;background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
+    + '<div style="margin-top:28px;font-size:10px;color:rgba(107,107,102,.5);letter-spacing:1px;max-width:320px;word-break:break-all">UID: ' + uid + '<br>' + email + '</div>'
     + '</div>';
 }
 

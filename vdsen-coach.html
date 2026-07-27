@@ -1217,6 +1217,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     if (!btn || !currentCoach) return;
     btn.disabled = true; btn.textContent = '⏳ Reparando...';
     try {
+      await ensureCoachDoc();
       const snap = await getDocs(collection(db, "clients"));
       let fixed = 0, skipped = 0;
       for (const d of snap.docs) {
@@ -5623,9 +5624,20 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
   window.showUpdatePlanModal = showUpdatePlanModal;
 
+  // Garantiza que el doc coaches/{uid} exista antes de cualquier escritura que dependa de él en las reglas.
+  async function ensureCoachDoc() {
+    if (!currentCoach) return;
+    await setDoc(doc(db, 'coaches', currentCoach.uid), {
+      displayName: currentCoach.displayName || currentCoach.email.split('@')[0],
+      email: currentCoach.email,
+      role: 'coach'
+    }, { merge: true });
+  }
+
   async function resetClientWeek(clientId) {
     if (!await _askConfirm('¿Reiniciar la semana de este cliente a Semana 1?<br><span style="color:#888;font-size:12px">Los registros de entreno se borrarán. El historial de pesos se conserva.</span>')) return;
     try {
+      await ensureCoachDoc();
       const logsRef = doc(db, 'logs', clientId);
       const logsSnap = await getDoc(logsRef);
       const prevHist = logsSnap.exists() ? (logsSnap.data().exerciseHistory || {}) : {};
@@ -5650,6 +5662,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   async function resetClientWeekKeepSessions(clientId) {
     if (!await _askConfirm('¿Reiniciar a Semana 1 conservando los registros ya completados de esa semana?<br><span style="color:#888;font-size:12px">Se borran semanas 2-6 y sus marcadores. Los sets y sesiones completadas de la semana 1 se conservan intactos.</span>')) return;
     try {
+      await ensureCoachDoc();
       const logsRef = doc(db, 'logs', clientId);
       const logsSnap = await getDoc(logsRef);
       if (!logsSnap.exists()) { showToast('Sin registros para este cliente', true); return; }
@@ -5682,6 +5695,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   async function clearBrokenPlanRef(clientId) {
     if (!await _askConfirm('¿Limpiar la referencia de plan rota?<br><span style="color:#888;font-size:12px">Se borra el activePlanId del cliente. El cliente verá la pantalla de espera hasta que se asigne un nuevo plan.</span>')) return;
     try {
+      await ensureCoachDoc();
       await updateDoc(doc(db, "clients", clientId), { activePlanId: null });
       showToast('✅ Referencia limpiada — el cliente ya puede entrar a la app (pantalla de espera)');
       showClientDetail(clientId);
@@ -5696,6 +5710,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (!await _askConfirm('¿Eliminar el plan activo de este cliente?<br><span style="color:#888;font-size:12px">El cliente quedará sin plan asignado.</span>')) return;
     // Paso 1: quitar activePlanId del cliente
     try {
+      await ensureCoachDoc();
       await updateDoc(doc(db, "clients", clientId), { activePlanId: null });
     } catch(e) {
       showToast('Error al desvincular plan del cliente: ' + (e.code||'') + ' ' + e.message, true);
