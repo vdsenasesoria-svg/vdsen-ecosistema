@@ -398,6 +398,7 @@
   <div data-section="clientes"   class="nav-item-mobile"><span class="nav-icon">📋</span>Clientes</div>
   <div data-section="evaluacion" class="nav-item-mobile"><span class="nav-icon">🧩</span>Intake</div>
   <div data-section="crearPlan"  class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
+  <div data-section="templates"  class="nav-item-mobile"><span class="nav-icon">⭐</span>Templates</div>
   <div data-section="catalogo"   class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
   <div data-section="config"     class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
 </div>
@@ -1541,10 +1542,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       const updatedAt = logsSnap.data().updatedAt;
       const lastUpdate = updatedAt ? new Date(updatedAt).toLocaleString('es-MX') : '—';
 
-      // Semana del mesociclo y RIR objetivo
-      const weekRirObj = {1:3,2:2,3:2,4:1,5:0,6:3};
+      // Semana del mesociclo y RIR objetivo (usa esquema dinámico del plan)
+      const weekRirObj = rirSchemeForWeeks(totalWeeks);
       const rirObj = weekRirObj[currentWeek] ?? 2;
-      const isDeload = currentWeek === 6;
+      const isDeload = currentWeek === totalWeeks;
 
       // Buscar la recomendación de progresión más reciente
       let lastRec = null;
@@ -1588,6 +1589,28 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             ${triggers.map(t => `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444">⚠️ ${t}</div>`).join('')}
             <div class="px-3 py-2 rounded-lg text-xs" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);color:#888">🔄 ${lastUpdate}</div>
           </div>
+          ${(function() {
+            // Session adherence for current week
+            const planDays = planData?.days?.length || 0;
+            const doneDays = Object.keys(logs).filter(k => k.match(/^done_(\d+)_(\d+)$/) && parseInt(k.split('_')[1]) === currentWeek).length;
+            const adherBadge = planDays > 0 ? `<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs" style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3)"><span style="color:#888">Sesiones S${currentWeek}:</span> <span style="color:#44BB88;font-weight:700">${doneDays}/${planDays}</span></div>` : '';
+            // Latest weekly check-in
+            const ci = logs['ci_sem_'+currentWeek] || {};
+            const ciPrev = logs['ci_sem_'+(currentWeek-1)] || {};
+            const who5 = ci.who5 != null ? parseInt(ci.who5) : null;
+            const who5Color = who5 == null ? '#888' : (who5 >= 68 ? '#44BB88' : who5 >= 52 ? '#C4FF00' : '#FF4444');
+            const pesoBadge = ci.peso ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">Peso:</span> <span style="color:#F4F4F0;font-weight:700">${ci.peso} kg</span>${ciPrev.peso?`<span style="color:#555"> (prev:${ciPrev.peso})</span>`:''}</div>` : '';
+            const who5Badge = who5 != null ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid ${who5Color}40"><span style="color:#888">WHO-5:</span> <span style="color:${who5Color};font-weight:700">${who5}</span></div>` : '';
+            const hrvBadge = ci.hrv ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">HRV:</span> <span style="color:#c89cff;font-weight:700">${ci.hrv}</span></div>` : '';
+            // Last postsession
+            let lastPost = null; let lastPostW = 0, lastPostD = 0;
+            Object.keys(logs).forEach(k => { const m = k.match(/^postsession_(\d+)_(\d+)$/); if(m){ const w=+m[1],d=+m[2]; if(w>lastPostW||(w===lastPostW&&d>lastPostD)){lastPostW=w;lastPostD=d;lastPost=logs[k];} } });
+            const eimds = lastPost ? ['—','Leve','Moderado','Alto'][parseInt(lastPost.eimd)||0]||'—' : null;
+            const eimdColor = lastPost ? ['#888','#44BB88','#FF8844','#FF4444'][parseInt(lastPost.eimd)||0]||'#888' : '#888';
+            const postBadge = lastPost ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">EIMD:</span> <span style="color:${eimdColor};font-weight:700">${eimds}</span>${lastPost.rpe?` · <span style="color:#888">RPE</span> <span style="font-weight:700">${lastPost.rpe}</span>`:''}</div>` : '';
+            const badges = [adherBadge, pesoBadge, who5Badge, hrvBadge, postBadge].filter(Boolean).join('');
+            return badges ? `<div class="flex gap-2 flex-wrap mt-3">${badges}</div>` : '';
+          })()}
         </div>
 
         ${_activePlanCache ? renderVolumePanel(_activePlanCache) : ''}

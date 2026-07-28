@@ -1918,7 +1918,7 @@ async function guardarFicha() {
   };
 
   try {
-    var docId = email.replace(/[.@]/g, '_');
+    var docId = (USER && USER.uid) ? USER.uid : email.replace(/[.@]/g, '_');
     await FB.setDoc(FB.doc(FB.db, 'fichas_onboarding', docId), ficha);
     // Mostrar pantalla de espera
     renderEspera();
@@ -2918,8 +2918,11 @@ function getTodaySummary() {
   if (!PLAN || !PLAN.entrenamiento) return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
   const sesiones = getSesiones();
   if (sesiones.length === 0) return `<button onclick="goTab(1)" style="width:100%;padding:9px;background:var(--gdim);border:1px solid rgba(107,107,102,.25);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:2px;cursor:pointer">VER ENTRENAMIENTO →</button>`;
-  const dow = new Date().getDay(); // 0=Dom
-  const idx = dow === 0 ? sesiones.length - 1 : Math.min(dow - 1, sesiones.length - 1);
+  // Find first incomplete session in current week; fall back to last session
+  var idx = sesiones.length - 1;
+  for (var _si = 0; _si < sesiones.length; _si++) {
+    if (!LOGS['done_' + CURRENT_WEEK + '_' + _si]) { idx = _si; break; }
+  }
   const hoy = sesiones[idx];
   const ejercicios = (hoy.contenido||'').split('\n').filter(l=>/\d\s*[×x]\s*\d|RIR/i.test(l)).length;
   return `<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:4px">${hoy.dia}</div>
@@ -2932,23 +2935,28 @@ function getSupToday() {
   const supItems = PLAN?.suplementacion?.items || [];
   if (!supTexto && supItems.length === 0) return '<div style="color:var(--mt);font-size:11px">—</div>';
   if (supTexto) {
-    // Extraer los primeros 5 suplementos del texto
-    const SUPS = ['Creatina','Omega-3','Omega 3','Vitamina D','Magnesio','Citrulina','Cafeína','Cafeina','Whey','Proteína Whey','Beta-Alanina','Zinc','Ashwagandha'];
     const encontrados = [];
     supTexto.split('\n').forEach(l => {
-      if (encontrados.length >= 5) return;
-      const esSup = SUPS.some(s => l.toLowerCase().includes(s.toLowerCase()));
-      const dosis = l.match(/(\d[\d.,]*\s*(?:g|mg|mcg|ui|iu|caps?))/i);
-      if (esSup && dosis) {
-        let momento = 'Con comida';
-        if (/pre.?entreno/i.test(l)) momento = 'Pre-entreno';
-        else if (/post.?entreno/i.test(l)) momento = 'Post-entreno';
-        else if (/noche|dormir/i.test(l)) momento = 'Noche';
-        else if (/ma[ñn]ana|ayunas/i.test(l)) momento = 'Mañana';
-        let nombre = '';
-        SUPS.forEach(s => { if (l.toLowerCase().includes(s.toLowerCase()) && !nombre) nombre = s; });
-        if (nombre && !encontrados.find(x=>x.nombre===nombre))
-          encontrados.push({nombre, dosis: dosis[1].toUpperCase(), momento});
+      if (encontrados.length >= 6) return;
+      l = l.trim();
+      if (!l || l.startsWith('─') || l.startsWith('[') || l.startsWith('TOTAL') || l.length < 4) return;
+      // Skip section headers / pure-text lines without a dosage marker
+      const dosis = l.match(/(\d[\d.,]*\s*(?:g|mg|mcg|ui|iu|caps?|ml|gotas|tableta|pastilla)s?)/i);
+      // Accept lines that have a dose OR look like a bullet point with a supplement-like name
+      const bullet = l.match(/^[-•*]\s+(.+)/);
+      const rawNombre = bullet ? bullet[1] : l;
+      // Extract timing from text
+      let momento = '';
+      if (/pre.?entreno/i.test(l)) momento = 'Pre-entreno';
+      else if (/post.?entreno/i.test(l)) momento = 'Post-entreno';
+      else if (/noche|dormir/i.test(l)) momento = 'Noche';
+      else if (/ma[ñn]ana|ayunas/i.test(l)) momento = 'Mañana';
+      else if (/con.?comida/i.test(l)) momento = 'Con comida';
+      // Trim name: take text before the first digit (dosage) or timing keyword
+      var nombre = rawNombre.replace(/\s*[\d].*$/, '').replace(/\s*(pre.?entreno|post.?entreno|noche|mañana|ayunas|con.?comida).*/i, '').trim();
+      nombre = nombre.replace(/[-:,]+$/, '').trim();
+      if (nombre && nombre.length > 2 && !encontrados.find(x => x.nombre.toLowerCase() === nombre.toLowerCase())) {
+        encontrados.push({ nombre, dosis: dosis ? dosis[1].toUpperCase() : '', momento });
       }
     });
     if (encontrados.length > 0)
@@ -2970,7 +2978,8 @@ function countSessions() {
   else if (typeof dias === 'number') numDias = dias;
   else numDias = getSesiones().length;
   if (!numDias) numDias = getSesiones().length;
-  return Math.max(numDias, 1) * 5; // semanas 1-5
+  var totalW = (typeof getTotalWeeks === 'function') ? (getTotalWeeks() - 1) : 5; // exclude deload week
+  return Math.max(numDias, 1) * Math.max(totalW, 1);
 }
 function countDone() {
   var _tw = getTotalWeeks();
@@ -4177,6 +4186,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     ? '<div style="background:rgba(110,154,110,.08);border:1px solid rgba(110,154,110,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
         '<span style="font-size:14px">✓</span>'+
         '<span style="font-size:11px;color:var(--grn);font-weight:700;flex:1">Sesión completada · puedes seguir editando series</span>'+
+        '<button onclick="goTab(0)" style="font-size:10px;font-weight:700;color:#C4FF00;background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.35);padding:3px 10px;border-radius:6px;cursor:pointer">📊 Ver Resumen</button>'+
         '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
       '</div>'
     : '';
@@ -4701,7 +4711,7 @@ function markExpressDone(di, ei) {
   var pumpEl  = document.getElementById('xpump_val_'+expK);
   if (!repsEl) return;
   var reps = parseInt(repsEl.value);
-  if (!reps || reps < 1) { alert('Indica las reps realizadas en la última serie'); return; }
+  if (!reps || reps < 1) { showToast('Indica las reps realizadas en la última serie', true); return; }
   var carga   = cargaEl ? (cargaEl.value.trim() || '0') : '0';
   var sets    = setsEl  ? (parseInt(setsEl.value)  || 3) : 3;
   var rirLast = rirEl   ? (parseInt(rirEl.value)         || 2) : 2;
@@ -5041,7 +5051,7 @@ function markExpressSSDone(di, ssMembers) {
     var repsEl  = document.getElementById('xss_reps_'+di+'_'+idx);
     if (!repsEl) continue;
     var reps = parseInt(repsEl.value);
-    if (!reps || reps < 1) { alert('Indica las reps de todos los ejercicios'); return; }
+    if (!reps || reps < 1) { showToast('Indica las reps de todos los ejercicios', true); return; }
     var carga = cargaEl ? (cargaEl.value.trim() || '0') : '0';
     var unit  = getExUnit(di, idx) || 'KG';
     var _ejIdx = _EJERCICIOS_DIA && _EJERCICIOS_DIA[idx] ? _EJERCICIOS_DIA[idx] : null;
@@ -5127,7 +5137,7 @@ function ssMoveNextMember(di, ssMembers, grp, round, mIdx) {
   var repsEl  = document.getElementById('xss_reps_'+di+'_'+curIdx);
   if (!repsEl) return;
   var reps = parseInt(repsEl.value);
-  if (!reps || reps < 1) { alert('Indica las reps'); return; }
+  if (!reps || reps < 1) { showToast('Indica las reps', true); return; }
   var carga = cargaEl ? (cargaEl.value.trim() || '0') : '0';
   var unit = getExUnit(di, curIdx) || 'KG';
   LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+round+'_m'+mIdx] = {carga:carga, reps:String(reps), unit:unit};
@@ -5145,7 +5155,7 @@ function ssCompleteRound(di, ssMembers, grp, round, lastMIdx) {
   var repsEl  = document.getElementById('xss_reps_'+di+'_'+curIdx);
   if (!repsEl) return;
   var reps = parseInt(repsEl.value);
-  if (!reps || reps < 1) { alert('Indica las reps'); return; }
+  if (!reps || reps < 1) { showToast('Indica las reps', true); return; }
   var carga = cargaEl ? (cargaEl.value.trim() || '0') : '0';
   var unit = getExUnit(di, curIdx) || 'KG';
   LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+round+'_m'+lastMIdx] = {carga:carga, reps:String(reps), unit:unit};
@@ -5179,7 +5189,7 @@ function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
   var repsEl  = document.getElementById('xss_reps_'+di+'_'+curIdx);
   if (!repsEl) return;
   var reps = parseInt(repsEl.value);
-  if (!reps || reps < 1) { alert('Indica las reps'); return; }
+  if (!reps || reps < 1) { showToast('Indica las reps', true); return; }
   var carga = cargaEl ? (cargaEl.value.trim() || '0') : '0';
   var unit = getExUnit(di, curIdx) || 'KG';
   LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+round+'_m'+lastMIdx] = {carga:carga, reps:String(reps), unit:unit};
@@ -9178,6 +9188,27 @@ function renderPerfil() {
       </div>
     </div>
 
+    ${(function() {
+      var prEntries = Object.entries(EXERCISE_HISTORY || {})
+        .filter(function(e){ return e[1] && e[1].load && parseFloat(e[1].load) > 0; })
+        .sort(function(a,b){ return (b[1].updatedAt||0)-(a[1].updatedAt||0); })
+        .slice(0, 12);
+      if (!prEntries.length) return '';
+      var rows = prEntries.map(function(e){
+        var k = e[0], v = e[1];
+        var name = k.replace(/-/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
+        var date = v.updatedAt ? new Date(v.updatedAt).toLocaleDateString('es-MX',{day:'numeric',month:'short'}) : '';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(244,244,240,.05)">'
+          + '<div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+name+'</div>'
+          + (date?'<div style="font-size:10px;color:var(--mt)">'+date+'</div>':'')+'</div>'
+          + '<div style="text-align:right;flex-shrink:0"><div style="font-family:var(--ff);font-size:15px;color:var(--gold);font-weight:900">'+v.load+' '+(v.unit||'KG')+'</div>'
+          + '<div style="font-size:10px;color:var(--mt)">'+(v.reps?v.reps+' reps':'')+(v.rir!=null?' · RIR '+v.rir:'')+'</div></div>'
+          + '</div>';
+      }).join('');
+      return '<div style="margin-top:14px;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 16px">'
+        + '<div style="font-family:var(--ff);font-size:10px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">🏆 MIS RÉCORDS PERSONALES</div>'
+        + rows + '</div>';
+    })()}
     ${PLAN.clientMessage ? `<div style="margin-top:14px;padding:14px 16px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.2);border-radius:10px">
       <div style="font-family:var(--ff);font-size:10px;letter-spacing:2px;color:var(--gold);margin-bottom:8px">💬 MENSAJE DE TU COACH</div>
       <div style="font-size:13px;color:var(--tx);line-height:1.65;white-space:pre-wrap">${PLAN.clientMessage.replace(/</g,'&lt;')}</div>
