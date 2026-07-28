@@ -1493,13 +1493,11 @@ async function loadPlan(user) {
     }
     showScreen('scrApp');
     // Restaurar posición de la última sesión (tab, día, semana)
-    var _rTab = 0, _rDia = DIA_ACTIVO, _rWk = REAL_WEEK;
+    var _rTab = 0, _rDia = DIA_ACTIVO;
     try { var _t = parseInt(localStorage.getItem('vdsen_last_tab')); if (!isNaN(_t) && _t >= 0 && _t <= 4) _rTab = _t; } catch(e) {}
     try { var _d = parseInt(localStorage.getItem('vdsen_last_dia')); if (!isNaN(_d) && _d >= 0) _rDia = _d; } catch(e) {}
-    // vdsen_last_week eliminado: siempre iniciar en la semana activa para evitar que
-    // los clientes queden entrenando en la semana incorrecta sin darse cuenta.
     DIA_ACTIVO = _rDia;
-    CURRENT_WEEK = _rWk; // _rWk ya vale REAL_WEEK por defecto
+    CURRENT_WEEK = REAL_WEEK;
     goTab(_rTab);
     showWhatsNew();
     if (_showBitacoraInfo) { setTimeout(function(){ showBitacoraInfoModal(); }, 500); }
@@ -5490,15 +5488,12 @@ function renderEntrenamiento() {
   if (_viewingPast) _weeksExpanded = true;
 
   // ── Header prominente con número de semana activa ────────────────
-  var _faseLabel = CURRENT_WEEK === _tw ? 'DELOAD' : getSemProgresion(REAL_WEEK);
-  var _reviewLabel = (CURRENT_WEEK !== REAL_WEEK)
-    ? ' &nbsp;<span style="font-size:10px;color:#FF8844;font-weight:700;vertical-align:middle">[ revisando sem '+CURRENT_WEEK+' ]</span>'
-    : '';
+  var _isDeload   = CURRENT_WEEK === _tw;
+  var _faseLabel  = _isDeload ? 'DELOAD' : getSemProgresion(CURRENT_WEEK);
   var weekHeaderHtml = '<div style="padding:10px 16px 8px;background:var(--surface);display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(107,107,102,.15)">'
-    + '<span style="font-family:\'Big Shoulders Display\',var(--ff);font-size:28px;font-weight:900;color:var(--tx);line-height:1;letter-spacing:.5px">SEM '+REAL_WEEK+'</span>'
+    + '<span style="font-family:\'Big Shoulders Display\',var(--ff);font-size:28px;font-weight:900;color:var(--tx);line-height:1;letter-spacing:.5px">SEM '+CURRENT_WEEK+'</span>'
     + '<span style="font-size:11px;color:var(--mt);font-weight:700;letter-spacing:1px">/ '+_tw+'</span>'
     + '<span style="font-size:10px;color:var(--accent);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;background:rgba(107,107,102,.12);padding:2px 8px;border-radius:20px;margin-left:4px">'+_faseLabel+'</span>'
-    + _reviewLabel
     + '</div>';
 
   function _weekBtn(w) {
@@ -5585,7 +5580,7 @@ function renderEntrenamiento() {
 
   // ── Deload banner (última semana = deload) ─────────────────────
   var deloadBanner = '';
-  if (CURRENT_WEEK === getTotalWeeks()) {
+  if (_isDeload) {
     deloadBanner = '<div style="background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.4);padding:12px 14px;margin:0 0 8px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
       + '<span style="font-size:18px">🔵</span>'
