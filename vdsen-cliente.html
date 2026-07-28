@@ -4087,6 +4087,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
             'border-radius:8px;color:#e8a040;font-size:18px;font-weight:700;padding:10px 6px;outline:none;text-align:center"'+
             ' onfocus="this.select()">'+
+            '<div style="font-size:8px;color:var(--mt2);margin-top:3px;text-align:center">reps sobrantes · 0=fallo</div>'+
           '</div>'+
         '</div>'+
         // ICS
@@ -4101,7 +4102,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
                 ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+_icsBorder+';'+
                 'border-radius:8px;color:'+_icsColor+';font-size:15px;font-weight:700;'+
-                'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\')">';
+                'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\')">'
+                + '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala · 6-7 ok · 8-10 buena</div>';
             })()+
           '</div>'+
           '<div style="flex:2">'+
@@ -4120,6 +4122,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
                 }).join('');
               })()+
             '</div>'+
+            '<div style="font-size:9px;color:var(--mt2);margin-top:3px;text-align:center">💪 excelente · 👍 ok · 😐 bajo</div>'+
           '</div>'+
         '</div>'+
         // Actions
@@ -9067,6 +9070,15 @@ function renderCheckin() {
 
   var ciDone = !!(d.peso || d.hrv);
 
+  function _ciField(id, label, step, imode, ph, fz, note) {
+    var v = d[id] || '';
+    return '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">'+label+'</div>'
+      + '<input id="ci_'+id+'" type="number" step="'+step+'" inputmode="'+imode+'" value="'+v+'" placeholder="'+ph+'" oninput="ciSet(\''+id+'\',this.value)"'
+      + ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(v?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:'+fz+'px;padding:10px;text-align:center;outline:none">'
+      + (note ? '<div style="font-size:10px;color:var(--mt2);margin-top:4px">'+note+'</div>' : '')
+      + '</div>';
+  }
+
   cont.innerHTML =
     '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:2px">CHECK-IN SEMANAL</div>'
     + '<div style="font-size:13px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">SEM ' + sem + ' · MOTOR VDSEN MOD. 15+16 GAP1-2</div>'
@@ -9075,19 +9087,9 @@ function renderCheckin() {
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:14px">MEDIDAS DEL DÍA</div>'
     +   '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'
-
-    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">PESO (kg)</div>'
-    +   '<input id="ci_peso" type="number" step="0.1" inputmode="decimal" value="' + (d.peso||'') + '" placeholder="' + (PLAN.peso||'') + '" oninput="ciSet(\'peso\',this.value)"'
-    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.peso?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:22px;padding:10px;text-align:center;outline:none"></div>'
-
-    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">HRV</div>'
-    +   '<input id="ci_hrv" type="number" inputmode="numeric" value="' + (d.hrv||'') + '" placeholder="65" oninput="ciSet(\'hrv\',this.value)"'
-    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.hrv?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:22px;padding:10px;text-align:center;outline:none"></div>'
-
-    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">SUEÑO (h)</div>'
-    +   '<input id="ci_sleep" type="number" step="0.5" inputmode="decimal" value="' + (d.sleep||'') + '" placeholder="7.5" oninput="ciSet(\'sleep\',this.value)"'
-    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.sleep?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:22px;padding:10px;text-align:center;outline:none"></div>'
-
+    +   _ciField('peso',  'PESO (kg)', '0.1', 'decimal', (PLAN.peso||''), 22, 'En ayunas · mismo día cada semana')
+    +   _ciField('hrv',   'HRV',       '1',   'numeric', '65',            22, 'De tu reloj/app (Polar, Oura, Garmin…)')
+    +   _ciField('sleep', 'SUEÑO (h)', '0.5', 'decimal', '7.5',          22, 'Noche anterior al entrenamiento')
     +   '</div>'
     + '</div>'
 
@@ -9096,23 +9098,10 @@ function renderCheckin() {
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">MEDIDAS CORPORALES</div>'
     +   '<div style="font-size:11px;color:var(--mt);margin-bottom:14px">Opcional — cargalas 1 vez por semana, siempre en el mismo momento del día</div>'
     +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-
-    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">CINTURA (cm)</div>'
-    +   '<input id="ci_cintura" type="number" step="0.1" inputmode="decimal" value="' + (d.cintura||'') + '" placeholder="—" oninput="ciSet(\'cintura\',this.value)"'
-    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.cintura?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:20px;padding:10px;text-align:center;outline:none"></div>'
-
-    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">BRAZO (cm)</div>'
-    +   '<input id="ci_brazo" type="number" step="0.1" inputmode="decimal" value="' + (d.brazo||'') + '" placeholder="—" oninput="ciSet(\'brazo\',this.value)"'
-    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.brazo?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:20px;padding:10px;text-align:center;outline:none"></div>'
-
-    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">PIERNA (cm)</div>'
-    +   '<input id="ci_pierna" type="number" step="0.1" inputmode="decimal" value="' + (d.pierna||'') + '" placeholder="—" oninput="ciSet(\'pierna\',this.value)"'
-    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.pierna?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:20px;padding:10px;text-align:center;outline:none"></div>'
-
-    +   '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">PECHO (cm)</div>'
-    +   '<input id="ci_pecho" type="number" step="0.1" inputmode="decimal" value="' + (d.pecho||'') + '" placeholder="—" oninput="ciSet(\'pecho\',this.value)"'
-    +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(d.pecho?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:20px;padding:10px;text-align:center;outline:none"></div>'
-
+    +   _ciField('cintura', 'CINTURA (cm)', '0.1', 'decimal', '—', 20, null)
+    +   _ciField('brazo',   'BRAZO (cm)',   '0.1', 'decimal', '—', 20, null)
+    +   _ciField('pierna',  'PIERNA (cm)',  '0.1', 'decimal', '—', 20, null)
+    +   _ciField('pecho',   'PECHO (cm)',   '0.1', 'decimal', '—', 20, null)
     +   '</div>'
     + '</div>'
 
@@ -9120,7 +9109,8 @@ function renderCheckin() {
 
     // ── ENERGÍA ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
-    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:12px">ENERGÍA SUBJETIVA</div>'
+    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:6px">ENERGÍA SUBJETIVA</div>'
+    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:12px">¿Cómo te has sentido en general esta semana? No solo hoy.</div>'
     +   '<div style="display:flex;gap:3px" id="ci_eng_row">' + engHtml + '</div>'
     +   '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--mt);margin-top:5px">'
     +   '<span>Muy baja (1)</span><span>Óptima (10)</span></div>'
