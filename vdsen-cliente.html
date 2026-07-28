@@ -2636,15 +2636,18 @@ function renderResumen() {
 
 function buildStreakWidget() {
   var numDias = getSesiones().length || 1;
+  var totalWeeks = (typeof getTotalWeeks === 'function') ? getTotalWeeks() : 6;
 
   // Secuencia cronológica de sesiones hasta la sesión actual (incluida): semanas completas
   // anteriores + días ya alcanzados en la semana activa. Una racha se rompe en el primer
   // hueco (sesión que ya tocaba y no se marcó como hecha).
+  // Excepción: semana de deload (última semana) nunca rompe racha — es recuperación intencionada.
   var seq = [];
   for (var w = 1; w <= CURRENT_WEEK; w++) {
     var diasEnEstaSemana = (w < CURRENT_WEEK) ? numDias : Math.min(DIA_ACTIVO + 1, numDias);
+    var isDeloadWeek = (w === totalWeeks);
     for (var d = 0; d < diasEnEstaSemana; d++) {
-      seq.push(!!LOGS['done_'+w+'_'+d]);
+      seq.push(isDeloadWeek || !!LOGS['done_'+w+'_'+d]);
     }
   }
 
@@ -2853,10 +2856,43 @@ function buildVolumenMesocicloWidget() {
 // no duplicar la lógica de agregación por ejercicio/semana que ya usa buildHistorialWidget().
 function buildMesocicloReportWidget() {
   if (!PLAN || !PLAN.entrenamiento) return '';
-  if (CURRENT_WEEK !== getTotalWeeks()) return '';
+  var totalW = getTotalWeeks();
+  var isFinalWeek = (CURRENT_WEEK === totalW);
+  if (CURRENT_WEEK < 2) return '';
 
   var totalSes = countSessions();
   var doneSes  = countDone();
+
+  // Condensed mid-meso progress widget for weeks 2..N-1
+  if (!isFinalWeek) {
+    var progressPct = Math.round((CURRENT_WEEK - 1) / Math.max(totalW - 1, 1) * 100);
+    var adherPctMid = totalSes > 0 ? Math.round(doneSes / totalSes * 100) : 0;
+    return '<div class="card" style="margin-top:8px;border-color:rgba(107,107,102,.3)">'+
+      '<div class="card-title">PROGRESO DEL MESOCICLO</div>'+
+      '<div style="margin-top:8px">'+
+        '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-bottom:5px">'+
+          '<span>Semana '+CURRENT_WEEK+' de '+totalW+'</span>'+
+          '<span>'+progressPct+'% completado</span>'+
+        '</div>'+
+        '<div style="background:var(--dk);border-radius:3px;height:5px;overflow:hidden">'+
+          '<div style="background:var(--gold);height:5px;width:'+progressPct+'%;border-radius:3px"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">'+
+        '<div style="background:var(--dk);border:1px solid var(--bd);padding:9px;text-align:center">'+
+          '<div style="font-family:var(--ff);font-size:18px;color:var(--gold)">'+adherPctMid+'%</div>'+
+          '<div style="font-size:9px;letter-spacing:1px;color:var(--mt);margin-top:2px">ADHERENCIA</div>'+
+        '</div>'+
+        '<div style="background:var(--dk);border:1px solid var(--bd);padding:9px;text-align:center">'+
+          '<div style="font-family:var(--ff);font-size:18px;color:var(--gold)">'+doneSes+'/'+totalSes+'</div>'+
+          '<div style="font-size:9px;letter-spacing:1px;color:var(--mt);margin-top:2px">SESIONES</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="margin-top:8px;font-size:10px;color:var(--mt);text-align:center">Informe completo disponible en semana de deload (sem '+totalW+')</div>'+
+    '</div>';
+  }
+
+  // Full meso report on final/deload week
   var adherPct = totalSes > 0 ? Math.round(doneSes / totalSes * 100) : 0;
 
   var firstCI = null, lastCI = null;
@@ -3152,6 +3188,7 @@ async function _refreshLogsFromFirestore(reason) {
     }
   } catch(e) {
     console.warn('refreshLogs error:', e.message);
+    showToast('⚠️ Error al sincronizar datos. Recarga si ves info desactualizada.', true);
   }
 }
 
@@ -3311,7 +3348,7 @@ function _buildExNav(ejercicios, di) {
     var numLabel = isActive
       ? '<div style="position:absolute;top:5px;right:5px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:#000;font-size:8px;font-weight:900;display:flex;align-items:center;justify-content:center">'+(ei+1)+'</div>'
       : '';
-    return '<button onclick="setEjActivo('+ei+')" style="position:relative;'+
+    return '<button onclick="setEjActivo('+ei+')" title="'+nombre.replace(/"/g,'&quot;')+'" style="position:relative;'+
       'flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;'+
       'padding:'+(isSS?'14px 10px 8px':'9px 10px 7px')+';border:'+borderWidth+' solid '+borderCol+';border-radius:14px;'+
       'background:'+bgCol+';cursor:pointer;min-width:72px;max-width:92px;margin-top:'+(isSS?'10px':'0')+';'+
@@ -8786,7 +8823,7 @@ async function guardarCI() {
       await FB.addDoc(histRef, checkinDoc);
     }
 
-    showToast('CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓');
+    showToast('CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · Tu coach lo revisará en el panel de monitoreo');
     renderResumen(); // actualizar widget de inicio
   } catch(e) {
     showToast('ERROR AL GUARDAR: ' + e.message);

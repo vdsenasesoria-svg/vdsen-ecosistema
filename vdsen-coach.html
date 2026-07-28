@@ -793,8 +793,9 @@ El esfuerzo no es negociable — y la consistencia se construye ciclo a ciclo.
       // Pequeña pausa para no saturar el navegador con pestañas simultáneas
       setTimeout(sendNext, 800);
     }
-    if (!confirm(`¿Enviar recordatorio por WhatsApp a ${clientIds.length} cliente${clientIds.length!==1?'s':''} inactivos?`)) return;
-    sendNext();
+    _askConfirm(`¿Enviar recordatorio por WhatsApp a ${clientIds.length} cliente${clientIds.length!==1?'s':''} inactivos?`).then(function(ok) {
+      if (ok) sendNext();
+    });
   }
   window._sendBulkWhatsApp = _sendBulkWhatsApp;
 
@@ -1187,7 +1188,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           banner = `<div class="card p-3 mb-3" style="background:linear-gradient(90deg,rgba(255,136,68,.08),rgba(244,244,240,.04));border:1px solid rgba(255,136,68,.3)">
             <div class="text-xs text-[#FF8844] mb-2 uppercase tracking-wide font-bold">⚠️ Acción requerida · ${alerts.length} cliente${alerts.length>1?'s':''}</div>
             <div class="flex flex-wrap gap-2">
-              ${alerts.map(a => `<button onclick="(function(){var d=window._clientCache['${a.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" style="padding:5px 10px;border-radius:6px;border:1px solid ${a.alert.color};background:${a.alert.color}1A;color:${a.alert.color};font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px">📲 ${a.name} <span style="opacity:.7">· ${a.alert.label.replace(/^.*? /,'')}</span></button>`).join('')}
+              ${alerts.map(a => `<button onclick="showClientDetail('${a.id}')" style="padding:5px 10px;border-radius:6px;border:1px solid ${a.alert.color};background:${a.alert.color}1A;color:${a.alert.color};font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px">${a.name} <span style="opacity:.7">· ${a.alert.label.replace(/^.*? /,'')}</span></button>`).join('')}
             </div>
             ${bulkWABtn}
           </div>`;
@@ -1242,7 +1243,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   window.repairPhoneIndexAll = repairPhoneIndexAll;
 
   async function deleteClient(uid, name) {
-    if (!confirm(`¿Eliminar a "${name}" de tu lista de clientes?\n\nEsto borra sus datos en Firestore (plan, logs, perfil). La cuenta de acceso en Firebase Auth no se elimina automáticamente.\n\nEsta acción no se puede deshacer.`)) return;
+    if (!await _askConfirm(`¿Eliminar a "${name}" de tu lista de clientes?\n\nEsto borra sus datos en Firestore (plan, logs, perfil). La cuenta de acceso en Firebase Auth no se elimina automáticamente.\n\nEsta acción no se puede deshacer.`)) return;
     try {
       // Get client doc first to clean up phone_index
       const cSnap = await getDoc(doc(db, 'clients', uid));
@@ -3192,10 +3193,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     const arrayBuffer = await file.arrayBuffer();
     const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    if (!pdfjsLib) { statusEl.innerHTML = '❌ PDF.js no disponible — recarga la página e inténtalo de nuevo.'; return; }
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     let fullText = "";
     for (let i = 1; i <= pdf.numPages; i++) {
+      statusEl.innerHTML = `<span class="loading-row"><span class="spinner"></span> Extrayendo página ${i}/${pdf.numPages}…</span>`;
       const page = await pdf.getPage(i);
       const tc = await page.getTextContent();
       fullText += tc.items.map(t => t.str).join(" ") + "\n";
@@ -3206,12 +3209,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     window._importedPlan = planObj;
   }
 
+  let _savingImportedPlan = false;
   async function saveImportedPlan(clientIdArg) {
+    if (_savingImportedPlan && !clientIdArg) return;
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     const clientId = clientIdArg || document.getElementById("planClientSelect").value;
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
     const planObj = window._importedPlan;
     if (!planObj) { showToast("No hay plan cargado", true); return; }
+    _savingImportedPlan = true;
+    const _importBtn = document.querySelector('[onclick="saveImportedPlan()"]');
+    if (_importBtn) { _importBtn.disabled = true; _importBtn.textContent = '⏳ Guardando...'; }
     try {
       // Confirmación si ya hay plan activo
       const prevClientSnap = await getDoc(doc(db, "clients", clientId));
@@ -3264,6 +3272,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       document.getElementById("parsedPlanPreview") && (document.getElementById("parsedPlanPreview").innerHTML = "");
     } catch (e) {
       showToast("Error al guardar: " + e.message, true);
+    } finally {
+      _savingImportedPlan = false;
+      const _importBtnF = document.querySelector('[onclick="saveImportedPlan()"]');
+      if (_importBtnF) { _importBtnF.disabled = false; _importBtnF.textContent = '💾 Guardar y activar plan'; }
     }
   }
 
@@ -3992,7 +4004,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     manualPlan.days[di].exercises[ei].alternatives = val.split(",").map(s => s.trim()).filter(Boolean);
   }
 
+  let _savingManualPlan = false;
   async function saveManualPlan() {
+    if (_savingManualPlan) return;
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     const clientId = document.getElementById("planClientSelect").value;
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
@@ -4001,6 +4015,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
     const emptyEx = manualPlan.days.some(d => d.exercises.some(e => !e.exerciseName || !e.exerciseName.trim()));
     if (emptyEx) { showToast("⚠️ Hay ejercicios sin nombre — completa todos los campos antes de guardar", true); return; }
+    _savingManualPlan = true;
+    const _saveBtn = document.querySelector('[onclick="saveManualPlan()"]');
+    if (_saveBtn) { _saveBtn.disabled = true; _saveBtn.textContent = '⏳ Guardando...'; }
     try {
       // Limpiar plan anterior si existe
       const prevClientSnap2 = await getDoc(doc(db, "clients", clientId));
@@ -4025,6 +4042,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       document.getElementById("planBuilder").innerHTML = "";
     } catch (e) {
       showToast("Error al guardar: " + e.message, true);
+    } finally {
+      _savingManualPlan = false;
+      const _saveBtnF = document.querySelector('[onclick="saveManualPlan()"]');
+      if (_saveBtnF) { _saveBtnF.disabled = false; _saveBtnF.textContent = '💾 Guardar y activar plan'; }
     }
   }
 
@@ -7137,7 +7158,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.convertFicha = convertFicha;
 
   async function discardFicha(fichaId){
-    if(!confirm('¿Descartar esta ficha recibida? No se puede deshacer.')) return;
+    if(!await _askConfirm('¿Descartar esta ficha recibida? No se puede deshacer.')) return;
     try { await deleteDoc(doc(db,'fichas_publicas',fichaId)); showToast('Ficha descartada'); loadFichasRecibidas(); }
     catch(e){ showToast('Error: '+(e.message||e), true); }
   }
