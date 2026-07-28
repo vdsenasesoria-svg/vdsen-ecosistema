@@ -200,9 +200,7 @@
   </div>
   <nav style="padding:12px 12px">
     <div data-section="clientes"  class="cursor-pointer py-2 px-3 rounded transition font-semibold" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📋 Clientes</div>
-    <div data-section="evaluacion" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🧩 Evaluación</div>
-    <div data-section="crearPlan" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📝 Crear Plan</div>
-    <div data-section="templates" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📑 Templates</div>
+    <div data-section="crearPlan" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📝 Plan</div>
     <div data-section="catalogo"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🏋️ Catálogo</div>
     <div data-section="config"    class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">⚙️ Config</div>
   </nav>
@@ -227,8 +225,8 @@
 </script>
 
 <div class="main-content">
-  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button id="repairPhoneBtn" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
-  <div id="evaluacion" class="section"><h2 class="text-2xl font-bold mb-4">Evaluación / Intake</h2>
+  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button onclick="showSection('evaluacion')" class="btn-secondary text-sm">📥 Fichas recibidas</button><button id="repairPhoneBtn" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
+  <div id="evaluacion" class="section"><div class="flex items-center gap-3 mb-4"><button onclick="showSection('clientes')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">← Clientes</button><h2 class="text-2xl font-bold" style="margin:0">Fichas / Intake</h2></div>
     <div class="card p-4 mb-4">
       <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">Ficha en blanco para nuevos clientes</h3>
       <p class="text-xs mb-3" style="color:var(--text-muted)">Envía este link a un prospecto: llena su nombre, teléfono y todos sus datos <b>sin necesidad de cuenta</b>. Lo que envíe aparece abajo en «Fichas recibidas» y puedes convertirlo en cliente con un clic.</p>
@@ -279,7 +277,7 @@
       </div>
     </div>
   </div>
-  <div id="crearPlan" class="section"><h2 class="text-2xl font-bold mb-4">Crear Plan</h2><select id="planClientSelect" class="input-field mb-2"></select>
+  <div id="crearPlan" class="section"><div class="flex items-center justify-between mb-4 flex-wrap gap-2"><h2 class="text-2xl font-bold" style="margin:0">Plan</h2><button onclick="showSection('templates')" style="padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">📑 Templates →</button></div><select id="planClientSelect" class="input-field mb-2"></select>
     <div class="card p-4 mb-4">
       <div class="flex items-center gap-3 flex-wrap">
         <button id="autoGenBtn" onclick="autoGeneratePlan()" class="btn-primary">🤖 Generar plan automático (motor VDSEN)</button>
@@ -290,7 +288,7 @@
     </div>
     <div class="text-xs mb-2" style="color:var(--text-muted)">O crea el plan manualmente:</div>
     <div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
-  <div id="templates" class="section"><h2 class="text-2xl font-bold mb-4">Templates de Planes</h2><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
+  <div id="templates" class="section"><div class="flex items-center gap-3 mb-4"><button onclick="showSection('crearPlan')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">← Plan</button><h2 class="text-2xl font-bold" style="margin:0">Templates</h2></div><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
     <div class="card p-4 mb-4">
@@ -395,12 +393,10 @@
   </div>
 </div>
 <div class="bottom-nav-mobile" id="bottomNavMobile">
-  <div data-section="clientes"   class="nav-item-mobile"><span class="nav-icon">📋</span>Clientes</div>
-  <div data-section="evaluacion" class="nav-item-mobile"><span class="nav-icon">🧩</span>Intake</div>
-  <div data-section="crearPlan"  class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
-  <div data-section="templates"  class="nav-item-mobile"><span class="nav-icon">⭐</span>Templates</div>
-  <div data-section="catalogo"   class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
-  <div data-section="config"     class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
+  <div data-section="clientes"  class="nav-item-mobile"><span class="nav-icon">📋</span>Clientes</div>
+  <div data-section="crearPlan" class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
+  <div data-section="catalogo"  class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
+  <div data-section="config"    class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
 </div>
 
 <script type="module">
