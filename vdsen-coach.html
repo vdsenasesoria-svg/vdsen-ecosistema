@@ -4443,7 +4443,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2 gap-2 flex-wrap">
           <h4 class="text-sm font-semibold uppercase tracking-wide text-[#888]">Plan de entrenamiento</h4>
-          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeekKeepSessions('${clientId}')" style="font-size:11px;color:#e0a020;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar → Sem 1 (conservar registros)</button> <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🗑 Reiniciar semana → 1 (borrar todo)</button></div>
+          <div>${planActionsHtml} ${c.activePlanId ? `<button onclick="showUpdatePlanModal('${clientId}','${c.activePlanId}')" class="text-[#44BB88] text-xs underline ml-2">🔁 Actualizar plan (mantener semana)</button>` : ''} <button onclick="resetClientWeekKeepSessions('${clientId}')" style="font-size:11px;color:#e0a020;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🔄 Reiniciar → Sem 1 (conservar registros)</button> <button onclick="resetClientWeek('${clientId}')" style="font-size:11px;color:#e05555;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">🗑 Reiniciar semana → 1 (borrar todo)</button> <button onclick="setClientWeekManual('${clientId}')" style="font-size:11px;color:#7788cc;text-decoration:underline;background:none;border:none;cursor:pointer;margin-left:8px">📅 Cambiar semana actual</button></div>
         </div>
         <div id="training-view">${planViewHtml}</div>
         <div id="training-editor" style="display:none">${planEditorHtml}</div>
@@ -5880,6 +5880,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const phoneE164 = '+' + digits;
       btnM.disabled = true; btnM.textContent = 'Migrando...';
       try {
+        await ensureCoachDoc();
         await setDoc(doc(db, 'phone_index', digits), {
           email: targetEmail.toLowerCase(),
           uid: clientId,
@@ -5907,6 +5908,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const st = overlay.querySelector('#eci-status');
       if (!newName) { st.style.color='#c94a3a'; st.textContent='Nombre vacío'; return; }
       try {
+        await ensureCoachDoc();
         const updates = { displayName: newName };
         if (newEmail && newEmail !== c.email) updates.email = newEmail;
         // Normalize phone to E.164 before saving (10 digits MX → +52...)
@@ -6103,6 +6105,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       role: 'coach'
     }, { merge: true });
   }
+
+  async function setClientWeekManual(clientId) {
+    const w = parseInt(prompt('¿A qué semana mover a este cliente? (1 – 6)'));
+    if (!w || w < 1 || w > 6) { showToast('Semana inválida (1-6)', true); return; }
+    try {
+      await ensureCoachDoc();
+      const logsRef = doc(db, 'logs', clientId);
+      const logsSnap = await getDoc(logsRef);
+      if (!logsSnap.exists()) { showToast('Sin registros de logs para este cliente', true); return; }
+      await updateDoc(logsRef, { currentWeek: w, updatedAt: Date.now() });
+      showToast('✅ Semana cambiada a ' + w + ' — el cliente verá el cambio al recargar');
+      showClientDetail(clientId);
+    } catch(e) {
+      showToast('Error: ' + (e.code || '') + ' ' + e.message, true);
+    }
+  }
+  window.setClientWeekManual = setClientWeekManual;
 
   async function resetClientWeek(clientId) {
     if (!await _askConfirm('¿Reiniciar la semana de este cliente a Semana 1?<br><span style="color:#888;font-size:12px">Los registros de entreno se borrarán. El historial de pesos se conserva.</span>')) return;
