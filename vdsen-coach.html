@@ -4180,14 +4180,26 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const updatedAtTs = ficha && ficha.updatedAt ? new Date(ficha.updatedAt).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'}) : null;
 
     cont.innerHTML = `
-      <div style="margin-bottom:20px">
+      <div style="margin-bottom:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700">Ficha del cliente${updatedAtTs ? ' · ' + updatedAtTs : ''}</div>
           <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:5px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:11px;font-weight:600;cursor:pointer">📝 Editar ficha completa</button>
         </div>
         ${summaryHtml}
       </div>
-      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:20px">
+
+      <!-- Análisis fotometría / intake JSON -->
+      <div style="border:1px solid rgba(107,107,102,.35);border-radius:10px;padding:14px;margin-bottom:16px;background:rgba(107,107,102,.05)">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700;margin-bottom:8px">🔬 Cargar análisis (fotometría / intake JSON)</div>
+        <div style="font-size:11px;color:#666;margin-bottom:8px;line-height:1.5">Pega aquí la salida del Evaluador VDSEN — fotogrametría (BLOQUE 1), ficha de intake (BLOQUE 3), o ambos. Se detecta y aplica automáticamente.</div>
+        <textarea id="_modalAnalysisInput_${clientId}" rows="4" placeholder="Pega el JSON del Evaluador VDSEN aquí…" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid rgba(244,244,240,.15);background:#0d1117;color:#F4F4F0;font-family:'Courier Prime',monospace;font-size:11px;resize:vertical;box-sizing:border-box"></textarea>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button id="_modalAnalysisBtn_${clientId}" onclick="_modalApplyAnalisis('${clientId}')" style="padding:6px 14px;border-radius:6px;border:none;background:rgba(107,107,102,.35);color:#F4F4F0;font-size:12px;font-weight:700;cursor:pointer">📋 Aplicar análisis</button>
+          <span id="_modalAnalysisStatus_${clientId}" style="font-size:11px;color:#555"></span>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:16px">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700;margin-bottom:12px">🤖 Generación automática — Motor VDSEN</div>
         <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.2);border-radius:10px;padding:16px;margin-bottom:12px">
           <div style="font-size:12px;color:#aaa;line-height:1.6;margin-bottom:14px">
@@ -4199,13 +4211,74 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <div style="margin-top:12px">
           <div style="font-size:11px;color:#555;margin-bottom:8px">O carga un plan manualmente:</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('json','${clientId}'),100)" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:12px;font-weight:600;cursor:pointer">📋 Pegar JSON</button>
-            <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('texto','${clientId}'),100)" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📝 Pegar texto</button>
+            <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('json','${clientId}'),100)" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:12px;font-weight:600;cursor:pointer">📋 Pegar JSON plan</button>
+            <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('texto','${clientId}'),100)" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📝 Pegar texto plan</button>
           </div>
         </div>
       </div>`;
   }
   window._renderClientTabFicha = _renderClientTabFicha;
+
+  async function _modalApplyAnalisis(clientId) {
+    const inputEl  = document.getElementById('_modalAnalysisInput_' + clientId);
+    const btn      = document.getElementById('_modalAnalysisBtn_' + clientId);
+    const statusEl = document.getElementById('_modalAnalysisStatus_' + clientId);
+    if (!inputEl) return;
+    const raw = inputEl.value.trim();
+    if (!raw) { showToast('Pega el análisis del Evaluador VDSEN primero', true); return; }
+    const origTxt = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Aplicando…'; statusEl.textContent = '';
+    try {
+      let fotObj = null, intakeObj = null;
+      const markerM = raw.match(/---VDSEN-INTAKE-COMPLEMENT---\s*([\s\S]*?)\s*---FIN-INTAKE-COMPLEMENT---/);
+      if (markerM) { try { intakeObj = JSON.parse(markerM[1].trim()); } catch(e){} }
+      const blocks = _extractJsonBlocks(raw);
+      for (const b of blocks) {
+        if (!b || typeof b !== 'object' || Array.isArray(b)) continue;
+        if (!fotObj && (b.composicion_corporal || b.biomecanica)) { fotObj = b; continue; }
+        if (!intakeObj) {
+          const inc = (b.data && typeof b.data === 'object' && !Array.isArray(b.data)) ? b.data : b;
+          if (Object.keys(inc).filter(k => INTAKE_FIELDS[k]).length >= 3) intakeObj = inc;
+        }
+      }
+      if (!fotObj && !intakeObj) {
+        try {
+          const p = JSON.parse(raw);
+          if (p && typeof p === 'object' && !Array.isArray(p)) {
+            if (p.composicion_corporal || p.biomecanica) fotObj = p;
+            else {
+              const inc = (p.data && typeof p.data === 'object') ? p.data : p;
+              if (Object.keys(inc).filter(k => INTAKE_FIELDS[k]).length >= 3) intakeObj = inc;
+            }
+          }
+        } catch(e) {}
+      }
+      const applied = [];
+      const ts = Date.now();
+      if (fotObj) {
+        await setDoc(doc(db, 'fichas_onboarding', clientId), { fotometria: fotObj, fotometriaUpdatedAt: ts }, { merge: true });
+        applied.push('Fotogrametría guardada');
+      }
+      if (intakeObj) {
+        const existSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
+        const existData = existSnap.exists() ? (existSnap.data().data || {}) : {};
+        await setDoc(doc(db, 'fichas_onboarding', clientId), { data: Object.assign({}, existData, intakeObj), updatedAt: ts, updatedBy: 'coach' }, { merge: true });
+        applied.push(Object.keys(intakeObj).filter(k => INTAKE_FIELDS[k]).length + ' campos de ficha cargados');
+      }
+      if (!applied.length) { showToast('No se detectó fotogrametría ni intake en el texto pegado', true); return; }
+      showToast('✅ ' + applied.join(' · '));
+      statusEl.textContent = '✅ ' + applied.join(' · ') + ' — ' + new Date(ts).toLocaleTimeString('es-MX');
+      // Reload ficha data and re-render tab
+      const newSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
+      _detailFichaData = newSnap.exists() ? newSnap.data() : null;
+      const cont2 = document.getElementById('clientDetailTabContent');
+      if (cont2) _renderClientTabFicha(cont2);
+    } catch(e) {
+      showToast('Error: ' + e.message, true);
+    } finally {
+      btn.disabled = false; btn.textContent = origTxt;
+    }
+  }
+  window._modalApplyAnalisis = _modalApplyAnalisis;
 
   window._openEvaluacionForClient = function(clientId) {
     // Close modal and navigate to Evaluación with this client pre-selected
