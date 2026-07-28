@@ -770,8 +770,9 @@ El esfuerzo no es negociable — y la consistencia se construye ciclo a ciclo.
   window.openWhatsAppFor = openWhatsAppFor;
 
   // ── WhatsApp masivo para todos los clientes inactivos ──
-  function _sendBulkWhatsApp(clientIds) {
+  async function _sendBulkWhatsApp(clientIds) {
     if (!clientIds || !clientIds.length) return;
+    if (!await _askConfirm(`¿Enviar recordatorio por WhatsApp a ${clientIds.length} cliente${clientIds.length!==1?'s':''} inactivos?`)) return;
     const pending = [...clientIds];
     let sent = 0;
     function sendNext() {
@@ -789,9 +790,7 @@ El esfuerzo no es negociable — y la consistencia se construye ciclo a ciclo.
       // Pequeña pausa para no saturar el navegador con pestañas simultáneas
       setTimeout(sendNext, 800);
     }
-    _askConfirm(`¿Enviar recordatorio por WhatsApp a ${clientIds.length} cliente${clientIds.length!==1?'s':''} inactivos?`).then(function(ok) {
-      if (ok) sendNext();
-    });
+    sendNext();
   }
   window._sendBulkWhatsApp = _sendBulkWhatsApp;
 
@@ -3169,7 +3168,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s) · ${planObj.weeks || 6} semanas. Revisa y guarda:</div>
       ${volPanel}
       ${dayList}
-      <button onclick="saveImportedPlan()" class="btn-primary w-full mt-2">💾 Guardar y activar plan</button>`;
+      <button id="saveImportedPlanBtn" onclick="saveImportedPlan()" class="btn-primary w-full mt-2">💾 Guardar y activar plan</button>`;
     preview._planObj = planObj;
   }
 
@@ -3214,7 +3213,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const planObj = window._importedPlan;
     if (!planObj) { showToast("No hay plan cargado", true); return; }
     _savingImportedPlan = true;
-    const _importBtn = document.querySelector('[onclick="saveImportedPlan()"]');
+    const _importBtn = document.getElementById('saveImportedPlanBtn');
     if (_importBtn) { _importBtn.disabled = true; _importBtn.textContent = '⏳ Guardando...'; }
     try {
       // Confirmación si ya hay plan activo
@@ -3224,25 +3223,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const prevPlanSnap = await getDoc(doc(db, "plans", prevPlanId)).catch(() => null);
         const prevDays = prevPlanSnap && prevPlanSnap.exists() ? (prevPlanSnap.data().days || []) : [];
         const newDays  = planObj.days || [];
-        const confirmed = await new Promise(resolve => {
-          const ov = document.createElement('div');
-          ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
-          ov.innerHTML = `<div style="background:#141616;border:1px solid rgba(244,244,240,.25);border-radius:12px;padding:24px;max-width:400px;width:100%">
-            <div style="font-size:14px;font-weight:700;color:#FF8844;margin-bottom:10px">⚠️ Reemplazar plan activo</div>
-            <div style="font-size:12px;color:#888;margin-bottom:14px;line-height:1.6">
-              Plan actual: <strong style="color:#F4F4F0">${prevDays.length} días · ${prevPlanSnap?.data()?.weeks||'?'} semanas</strong><br>
-              Plan nuevo: <strong style="color:#C4FF00">${newDays.length} días · ${newDays[0]?.exercises?.length||'?'} ej. el primer día</strong>
-            </div>
-            <div style="font-size:11px;color:#555;margin-bottom:16px">El plan actual se archivará antes de reemplazarlo.</div>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button id="_confCancel" style="padding:8px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
-              <button id="_confOk" style="padding:8px 16px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Reemplazar</button>
-            </div>
-          </div>`;
-          document.body.appendChild(ov);
-          ov.querySelector('#_confCancel').onclick = () => { ov.remove(); resolve(false); };
-          ov.querySelector('#_confOk').onclick    = () => { ov.remove(); resolve(true);  };
-        });
+        const confirmed = await _askConfirm(`⚠️ Reemplazar plan activo\n\nPlan actual: ${prevDays.length} días · ${prevPlanSnap?.data()?.weeks||'?'} semanas\nPlan nuevo: ${newDays.length} días · ${newDays[0]?.exercises?.length||'?'} ej. el primer día\n\nEl plan actual se archivará antes de reemplazarlo.`);
         if (!confirmed) return;
       }
       // Backup automático del plan anterior
@@ -3270,8 +3251,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       showToast("Error al guardar: " + e.message, true);
     } finally {
       _savingImportedPlan = false;
-      const _importBtnF = document.querySelector('[onclick="saveImportedPlan()"]');
-      if (_importBtnF) { _importBtnF.disabled = false; _importBtnF.textContent = '💾 Guardar y activar plan'; }
+      if (_importBtn) { _importBtn.disabled = false; _importBtn.textContent = '💾 Guardar y activar plan'; }
     }
   }
 
@@ -3961,7 +3941,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         ${exercises}
         <button onclick="addExercise(${activeMPDay})" class="btn-secondary mb-4">+ Ejercicio</button>
       </div>
-      <button onclick="saveManualPlan()" class="btn-primary w-full">💾 Guardar y activar plan</button>
+      <button id="saveManualPlanBtn" onclick="saveManualPlan()" class="btn-primary w-full">💾 Guardar y activar plan</button>
     `;
   }
 
@@ -4012,7 +3992,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const emptyEx = manualPlan.days.some(d => d.exercises.some(e => !e.exerciseName || !e.exerciseName.trim()));
     if (emptyEx) { showToast("⚠️ Hay ejercicios sin nombre — completa todos los campos antes de guardar", true); return; }
     _savingManualPlan = true;
-    const _saveBtn = document.querySelector('[onclick="saveManualPlan()"]');
+    const _saveBtn = document.getElementById('saveManualPlanBtn');
     if (_saveBtn) { _saveBtn.disabled = true; _saveBtn.textContent = '⏳ Guardando...'; }
     try {
       // Limpiar plan anterior si existe
@@ -4040,8 +4020,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       showToast("Error al guardar: " + e.message, true);
     } finally {
       _savingManualPlan = false;
-      const _saveBtnF = document.querySelector('[onclick="saveManualPlan()"]');
-      if (_saveBtnF) { _saveBtnF.disabled = false; _saveBtnF.textContent = '💾 Guardar y activar plan'; }
+      if (_saveBtn) { _saveBtn.disabled = false; _saveBtn.textContent = '💾 Guardar y activar plan'; }
     }
   }
 
@@ -4233,6 +4212,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (markerM) { try { intakeObj = JSON.parse(markerM[1].trim()); } catch(e){} }
       const blocks = _extractJsonBlocks(raw);
       for (const b of blocks) {
+        if (fotObj && intakeObj) break;
         if (!b || typeof b !== 'object' || Array.isArray(b)) continue;
         if (!fotObj && (b.composicion_corporal || b.biomecanica)) { fotObj = b; continue; }
         if (!intakeObj) {
@@ -4259,17 +4239,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         applied.push('Fotogrametría guardada');
       }
       if (intakeObj) {
-        const existSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
-        const existData = existSnap.exists() ? (existSnap.data().data || {}) : {};
+        const existData = _detailFichaData?.data || {};
         await setDoc(doc(db, 'fichas_onboarding', clientId), { data: Object.assign({}, existData, intakeObj), updatedAt: ts, updatedBy: 'coach' }, { merge: true });
         applied.push(Object.keys(intakeObj).filter(k => INTAKE_FIELDS[k]).length + ' campos de ficha cargados');
       }
       if (!applied.length) { showToast('No se detectó fotogrametría ni intake en el texto pegado', true); return; }
       showToast('✅ ' + applied.join(' · '));
       statusEl.textContent = '✅ ' + applied.join(' · ') + ' — ' + new Date(ts).toLocaleTimeString('es-MX');
-      // Reload ficha data and re-render tab
-      const newSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
-      _detailFichaData = newSnap.exists() ? newSnap.data() : null;
+      // Update in-memory ficha data and re-render tab
+      const _existing = _detailFichaData || {};
+      _detailFichaData = Object.assign({}, _existing,
+        fotObj    ? { fotometria: fotObj, fotometriaUpdatedAt: ts } : {},
+        intakeObj ? { data: Object.assign({}, _existing.data || {}, intakeObj), updatedAt: ts, updatedBy: 'coach' } : {}
+      );
       const cont2 = document.getElementById('clientDetailTabContent');
       if (cont2) _renderClientTabFicha(cont2);
     } catch(e) {
