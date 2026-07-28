@@ -5754,13 +5754,14 @@ function renderEntrenamiento() {
         '<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:'+(CURRENT_WEEK!==REAL_WEEK?'#FF8844':'var(--accent)')+';text-transform:uppercase;margin-bottom:4px">'+(CURRENT_WEEK!==REAL_WEEK?'👁 ':'🗓 ')+'SEM '+CURRENT_WEEK+' · '+getSemProgresion(CURRENT_WEEK)+(CURRENT_WEEK!==REAL_WEEK?' (VISTA)':'')+'</div>'+
         '<div style="font-size:20px;font-weight:800;color:var(--tx);line-height:1.15;letter-spacing:-.3px">'+(ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim()+'</div>'+
         '<div style="font-size:11px;color:var(--mt);margin-top:3px;display:flex;align-items:center;gap:8px">'+
-          '<span>'+ejercicios.length+' ejercicios</span>'+
-          (isDone ? '<span style="color:var(--grn);font-weight:700">· COMPLETA ✓</span>' : '')+
-        '</div>'+
+          (function(){var _dn=ejercicios.filter(function(_,_ei){return _isExerciseFullyDone(DIA_ACTIVO,_ei,ejercicios[_ei]);}).length;return _dn===ejercicios.length&&ejercicios.length>0?'<span style="color:var(--grn);font-weight:700">'+ejercicios.length+'/'+ejercicios.length+' ejercicios ✓</span>':'<span>'+_dn+'/'+ejercicios.length+' ejercicios</span>';})()+'</div>'+
       '</div>'+
       (isDone
         ? '<div style="background:rgba(110,154,110,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
-        : '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar todos los sets con datos de la semana anterior o tu histórico" style="background:rgba(107,107,102,.1);border:1px solid var(--accent);border-radius:20px;padding:6px 12px;font-size:11px;font-weight:700;color:var(--accent);cursor:pointer;letter-spacing:.5px;line-height:1.2;text-align:center">⚡ MARCAR<br>COMPLETA</button>')+
+        : '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">'+
+          '<button onclick="markSessionDone('+DIA_ACTIVO+')" title="Marcar esta sesión como completada" style="background:rgba(196,255,0,.12);border:1px solid var(--accent);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:800;color:var(--accent);cursor:pointer;letter-spacing:.5px">✓ COMPLETAR</button>'+
+          '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar sets con datos de la semana anterior y completar" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:4px 10px;font-size:9px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px">⚡ desde historial</button>'+
+          '</div>')+
     '</div>'+
     // Glosario RIR + ICS (colapsable)
     '<details style="margin:0 16px 8px;background:rgba(107,107,102,.04);border:1px solid rgba(107,107,102,.18);border-radius:10px;padding:8px 12px">'+
@@ -6847,7 +6848,7 @@ function buildReadinessBanner(di, isDone) {
     +   _readinessRow('dolor', '¿Dolor/molestia hoy?', [{v:1,l:'Sí, notable'},{v:2,l:'Leve'},{v:3,l:'Ninguno'}])
     +   _readinessRow('motivacion', '¿Motivación hoy?', [{v:1,l:'Baja'},{v:2,l:'Media'},{v:3,l:'Alta'}])
     + '</div>'
-    + '<button onclick="submitReadiness('+di+')" style="width:100%;margin-top:12px;padding:11px;background:var(--gdim);border:1px solid var(--gold);color:var(--gold);font-family:var(--ff);font-size:12px;letter-spacing:1.5px;cursor:pointer;border-radius:8px;font-weight:700">✓ LISTO, A ENTRENAR</button>'
+    + '<button onclick="submitReadiness('+di+')" style="width:100%;margin-top:12px;padding:13px;background:var(--accent);border:none;color:#000;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;cursor:pointer;border-radius:8px;font-weight:800">→ EMPEZAR SESIÓN</button>'
     + '</div>';
 }
 
@@ -6935,7 +6936,7 @@ async function markSessionDone(di) {
       if (!tieneSet && nombre.length > 2) sinRegistrar.push(nombre);
     });
     if (sinRegistrar.length > 0) {
-      var confirmar = confirm('Ejercicios sin registrar:\n• ' + sinRegistrar.join('\n• ') + '\n\n¿Completar sesión de todos modos?');
+      var confirmar = await _askConfirm('Ejercicios sin registrar:\n• ' + sinRegistrar.join('\n• ') + '\n\n¿Completar sesión de todos modos?');
       if (!confirmar) return;
     }
   }
@@ -7013,7 +7014,7 @@ async function markSessionDoneFromHistory(di) {
   if (!ejercicios.length) { showPostSessionModal(di); return; }
 
   // Confirmar con el usuario antes de rellenar
-  if (!confirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.\n\n¿Continuar?')) return;
+  if (!await _askConfirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.\n\n¿Continuar?')) return;
 
   var sinReferencia = [];
   var totalSetsRellenados = 0;
@@ -7091,7 +7092,7 @@ async function markSessionDoneFromHistory(di) {
     return;
   }
   if (sinReferencia.length > 0) {
-    alert('No se encontró referencia para:\n• ' + sinReferencia.join('\n• ') + '\n\nEl resto sí se rellenó. Podrás registrar estos manualmente o también marcarlos.');
+    showToast('Sin referencia: ' + sinReferencia.join(', ') + ' — el resto sí se rellenó', true);
   }
 
   showToast('✓ '+totalSetsRellenados+' sets rellenados — completa el check-in');
