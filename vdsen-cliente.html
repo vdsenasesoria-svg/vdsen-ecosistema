@@ -1391,6 +1391,8 @@ async function loadPlan(user) {
       nombre: clientData.displayName || user.email,
       objetivo: clientData.objetivo || '',
       peso: clientData.peso || '',
+      coachId: clientData.coachId || null,
+      clientMessage: clientData.clientMessage || '',
       // Perfil del cliente: 'hipertrofia' (default) | 'rendimiento' | 'hibrido'
       // Define qué tipo de planes/dosificación recibe (fuerza pura vs deportivo vs combinado).
       profileType: (clientData.profileType || 'hipertrofia'),
@@ -2567,10 +2569,11 @@ function renderResumen() {
 
   let weekHtml = '';
   const _numDiasGrid = getSesiones().length;
-  for (let w=1; w<=6; w++) {
+  const _totalWeeksGrid = getTotalWeeks();
+  for (let w=1; w<=_totalWeeksGrid; w++) {
     const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => !!LOGS['done_'+w+'_'+i]).every(Boolean);
-    const cls = w===semActiva?'active':(_wDone?'done':(w===6?'deload':''));
-    const lbl = w===6?'DELOAD':w===semActiva?'ACTIVA':'';
+    const cls = w===semActiva?'active':(_wDone?'done':(w===_totalWeeksGrid?'deload':''));
+    const lbl = w===_totalWeeksGrid?'DELOAD':w===semActiva?'ACTIVA':'';
     weekHtml += `<div class="wk ${cls}" onclick="goToWeek(${w})">
       <div class="wk-num">${w}</div>
       <div class="wk-lbl">${lbl||'SEM'}</div>
@@ -2588,7 +2591,7 @@ function renderResumen() {
     </div>
     <div class="progress-bar" style="margin-bottom:12px"><div class="pb-fill" style="width:${pct}%"></div></div>
 
-    <div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px">PROGRESIÓN — 6 SEMANAS</div>
+    <div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px">PROGRESIÓN — ${_totalWeeksGrid} SEMANAS</div>
     <div class="week-grid">${weekHtml}</div>
 
     <div class="card" style="margin-top:10px">
@@ -2621,11 +2624,11 @@ function renderResumen() {
     </div>
     ${buildMesocicloReportWidget()}
     ${buildStreakWidget()}
+    ${buildHistorialWidget()}
     ${buildBodyMapWidget()}
     ${buildVolumenWidget()}
     ${buildVolumenMesocicloWidget()}
-    ${buildRezagadosWidget()}
-    ${buildHistorialWidget()}`;
+    ${buildRezagadosWidget()}`;
 }
 
 function buildStreakWidget() {
@@ -4176,7 +4179,13 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     : '';
 
   var bannerHtml = _buildSessionTargetBanner(progrec, _prevWeekBanner, _histExBanner, unit, numSeries, repsTarget, baseRIR);
-  return machineHtml + headerHtml + notaHtml + closedBannerHtml + bannerHtml + wuHtml + setsHtml + completedBlockHtml;
+  var expressTipHtml = (ei === 0 && !sessionDone && _isExpressMode)
+    ? '<div style="margin-bottom:10px;padding:8px 12px;background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.12);border-radius:8px;display:flex;align-items:flex-start;gap:8px">'
+      + '<span style="font-size:14px;flex-shrink:0">⚡</span>'
+      + '<div style="font-size:11px;color:var(--mt);line-height:1.5">Usa <strong style="color:var(--accent)">⚡ MARCAR COMPLETA</strong> (arriba) si ya terminaste la sesión y solo quieres anotar los datos rápido — rellena todas las series de golpe.</div>'
+      + '</div>'
+    : '';
+  return machineHtml + headerHtml + notaHtml + closedBannerHtml + bannerHtml + expressTipHtml + wuHtml + setsHtml + completedBlockHtml;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -8650,10 +8659,17 @@ function toggleMeal(id) {
 
 function ciKey() { return 'ci_sem_' + CURRENT_WEEK; }
 
+var _ciAutoSaveTimer = null;
 function ciSet(campo, valor) {
   var k = ciKey();
   if (!LOGS[k]) LOGS[k] = {};
   LOGS[k][campo] = valor;
+  // Auto-save debounced 2s after last change
+  if (_ciAutoSaveTimer) clearTimeout(_ciAutoSaveTimer);
+  _ciAutoSaveTimer = setTimeout(function() {
+    _ciAutoSaveTimer = null;
+    guardarCI().catch(function(){});
+  }, 2000);
 }
 
 function ciW5(qi, val) {
@@ -8888,6 +8904,42 @@ function buildICSSection(d, sem) {
     + '</div>';
 }
 
+function _buildWeightSparkline() {
+  var pts = [];
+  var tw = getTotalWeeks();
+  for (var w = 1; w <= Math.min(CURRENT_WEEK, tw); w++) {
+    var ci = LOGS['ci_sem_' + w];
+    if (ci && ci.peso) pts.push({ w: w, v: parseFloat(ci.peso) });
+  }
+  if (pts.length < 2) return '';
+  var vals = pts.map(function(p){ return p.v; });
+  var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+  var range = mx - mn || 1;
+  var W = 280, H = 50, pad = 10;
+  var polyPts = pts.map(function(p, i) {
+    var x = (pad + (i / (pts.length - 1)) * (W - pad * 2)).toFixed(1);
+    var y = (H - pad - ((p.v - mn) / range) * (H - pad * 2)).toFixed(1);
+    return x + ',' + y;
+  }).join(' ');
+  var circles = pts.map(function(p, i) {
+    var x = (pad + (i / (pts.length - 1)) * (W - pad * 2)).toFixed(1);
+    var y = (H - pad - ((p.v - mn) / range) * (H - pad * 2)).toFixed(1);
+    return '<circle cx="' + x + '" cy="' + y + '" r="3" fill="var(--gold)"/>'
+      + '<text x="' + x + '" y="' + (parseFloat(y) - 6).toFixed(1) + '" text-anchor="middle" font-size="8" fill="var(--mt)">S' + p.w + '</text>'
+      + '<text x="' + x + '" y="' + (parseFloat(y) + 16).toFixed(1) + '" text-anchor="middle" font-size="8" fill="var(--gold)">' + p.v + '</text>';
+  }).join('');
+  var delta = pts[pts.length-1].v - pts[0].v;
+  var deltaStr = (delta > 0 ? '+' : '') + delta.toFixed(1) + ' kg vs. S1';
+  var deltaCol = delta < 0 ? 'var(--grn)' : delta > 0 ? 'var(--red)' : 'var(--mt)';
+  return '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:10px">'
+    + '<div style="font-family:var(--ff);font-size:11px;letter-spacing:2px;color:var(--mt);margin-bottom:8px">TENDENCIA DE PESO · kg <span style="color:' + deltaCol + ';font-size:10px;margin-left:6px">' + deltaStr + '</span></div>'
+    + '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:' + H + 'px;overflow:visible">'
+    + '<polyline points="' + polyPts + '" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
+    + circles
+    + '</svg>'
+    + '</div>';
+}
+
 function renderCheckin() {
   var cont = document.getElementById('tabCheckin');
   if (!cont || !PLAN) return;
@@ -8996,6 +9048,8 @@ function renderCheckin() {
     +   '</div>'
     + '</div>'
 
+    + _buildWeightSparkline()
+
     // ── ENERGÍA ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:12px">ENERGÍA SUBJETIVA</div>'
@@ -9007,7 +9061,11 @@ function renderCheckin() {
     // ── WHO-5 ─────────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">ÍNDICE WHO-5 — BIENESTAR OMS</div>'
-    +   '<div style="font-size:12px;color:var(--mt);margin-bottom:16px">¿Con qué frecuencia en los últimos 14 días?</div>'
+    +   '<div style="font-size:12px;color:var(--mt);margin-bottom:4px">¿Con qué frecuencia en los últimos 14 días?</div>'
+    +   '<div style="font-size:11px;color:var(--mt);background:var(--dk);border:1px solid var(--bd);padding:10px;margin-bottom:14px;line-height:1.6">'
+    +   '0=Nunca · 1=Alguna vez · 2=Menos de la mitad · 3=Más de la mitad · 4=Casi siempre · 5=Siempre<br>'
+    +   '<span style="color:var(--grn)">≥68 pts = bienestar óptimo</span> · <span style="color:var(--gold)">52–67 = moderado</span> · <span style="color:var(--red)">&lt;52 = riesgo, avisa a tu coach</span>'
+    +   '</div>'
     +   who5Html
     +   '<div style="background:var(--dk);border:1px solid ' + w5col + ';padding:14px;text-align:center">'
     +   '<div style="font-family:var(--ff);font-size:' + (w5t!==null?'32':'16') + 'px;color:' + w5col + ';margin-bottom:' + (w5t!==null?'4':'0') + 'px">'
@@ -9117,11 +9175,35 @@ function renderPerfil() {
       </div>
     </div>
 
+    ${PLAN.clientMessage ? `<div style="margin-top:14px;padding:14px 16px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.2);border-radius:10px">
+      <div style="font-family:var(--ff);font-size:10px;letter-spacing:2px;color:var(--gold);margin-bottom:8px">💬 MENSAJE DE TU COACH</div>
+      <div style="font-size:13px;color:var(--tx);line-height:1.65;white-space:pre-wrap">${PLAN.clientMessage.replace(/</g,'&lt;')}</div>
+    </div>` : ''}
     <button onclick="openIntake()" style="width:100%;background:rgba(196,255,0,.08);border:1px solid rgba(196,255,0,.30);color:var(--accent);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">📋 FICHA DE EVALUACIÓN COMPLETA</button>
     <button onclick="showFAQModal()" style="width:100%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
+    <div id="_coachContactBtn" style="margin-top:10px"><button onclick="_loadCoachContact()" style="width:100%;background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.4);color:#25D166;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer">💬 CONTACTAR A MI COACH</button></div>
     <button class="pdf-btn" onclick="downloadMyPlanPDF()" style="margin-top:10px">⬇ DESCARGAR MI PLAN PDF</button>
     <button class="logout-btn" onclick="doLogout()">CERRAR SESIÓN</button>
     <div style="text-align:center;font-size:9px;color:var(--mt);margin-top:16px;letter-spacing:1px">MOTOR VDSEN v3.2 · SOLO USO DEL CLIENTE</div>`;
+}
+
+async function _loadCoachContact() {
+  var btn = document.getElementById('_coachContactBtn');
+  if (!btn) return;
+  if (!PLAN || !PLAN.coachId) { btn.innerHTML = '<p style="color:var(--mt);font-size:12px;text-align:center;padding:10px">No se encontró información del coach.</p>'; return; }
+  btn.innerHTML = '<p style="color:var(--mt);font-size:12px;text-align:center;padding:10px">Buscando contacto...</p>';
+  try {
+    var coachSnap = await FB.getDoc(FB.doc(FB.db, 'coaches', PLAN.coachId));
+    var phone = coachSnap.exists() ? (coachSnap.data().phone || '') : '';
+    if (phone) {
+      var clean = phone.replace(/[^\d+]/g,'');
+      btn.innerHTML = '<a href="https://wa.me/' + clean.replace(/^\+/,'') + '" target="_blank" style="display:block;width:100%;background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.5);color:#25D166;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;text-align:center;text-decoration:none;box-sizing:border-box">💬 HABLAR CON MI COACH EN WHATSAPP</a>';
+    } else {
+      btn.innerHTML = '<p style="color:var(--mt);font-size:12px;text-align:center;padding:10px">Tu coach no tiene teléfono registrado. Escríbele directamente.</p>';
+    }
+  } catch(e) {
+    btn.innerHTML = '<p style="color:var(--red);font-size:12px;text-align:center;padding:10px">Error al cargar contacto: ' + e.message + '</p>';
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════

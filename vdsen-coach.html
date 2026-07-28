@@ -4009,6 +4009,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   let _detailClientId = null;
   let _detailClientData = null;
   let _detailPlanData   = null;
+  let _detailFichaData  = null;
   let _detailActiveTab  = 'plan';
 
   async function showClientDetail(clientId) {
@@ -4033,6 +4034,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (planSnap.exists()) _detailPlanData = planSnap.data();
     }
 
+    _detailFichaData = null;
+    try {
+      const fichaSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
+      if (fichaSnap.exists()) {
+        _detailFichaData = fichaSnap.data();
+      } else {
+        // legacy fallback
+        if (c.intake && c.intake.data) _detailFichaData = c.intake;
+      }
+    } catch(_) {}
+
     body.innerHTML = `
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <p class="text-sm text-[#888]">${c.email}${c.phone ? ' · 📱 '+c.phone : ''}</p>
@@ -4045,28 +4057,231 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <button onclick="editClientInfo('${clientId}')" class="text-[#F4F4F0] text-xs underline">✏️ Editar</button>
         </div>
       </div>
-      <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(244,244,240,.1)">
-        <button id="ctab_plan"    onclick="_switchClientTab('plan')"    style="padding:8px 18px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;transition:all .15s">Plan</button>
-        <button id="ctab_monitor" onclick="_switchClientTab('monitor')" style="padding:8px 18px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;transition:all .15s">Monitor</button>
-        <button id="ctab_notas"   onclick="_switchClientTab('notas')"   style="padding:8px 18px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;transition:all .15s">Notas</button>
+      <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(244,244,240,.1);overflow-x:auto">
+        <button id="ctab_ficha"   onclick="_switchClientTab('ficha')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📋 Ficha</button>
+        <button id="ctab_plan"    onclick="_switchClientTab('plan')"    style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🏋️ Plan</button>
+        <button id="ctab_monitor" onclick="_switchClientTab('monitor')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📊 Monitor</button>
+        <button id="ctab_notas"   onclick="_switchClientTab('notas')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📝 Notas</button>
       </div>
       <div id="clientDetailTabContent"></div>`;
-    _switchClientTab('plan');
+    _switchClientTab('ficha');
   }
 
   function _switchClientTab(tab) {
     _detailActiveTab = tab;
-    ['plan','monitor','notas'].forEach(t => {
+    ['ficha','plan','monitor','notas'].forEach(t => {
       const btn = document.getElementById('ctab_'+t);
       if (btn) { btn.style.color = t===tab?'#F4F4F0':'#888'; btn.style.borderBottomColor = t===tab?'#C4FF00':'transparent'; }
     });
     const cont = document.getElementById('clientDetailTabContent');
     if (!cont) return;
-    if (tab === 'plan')    _renderClientTabPlan(cont);
+    if (tab === 'ficha')   _renderClientTabFicha(cont);
+    else if (tab === 'plan')    _renderClientTabPlan(cont);
     else if (tab === 'monitor') _renderClientTabMonitor(cont);
     else if (tab === 'notas')   _renderClientTabNotas(cont);
   }
   window._switchClientTab = _switchClientTab;
+
+  // ── Ficha tab ──
+  function _renderClientTabFicha(cont) {
+    const clientId = _detailClientId;
+    const ficha = _detailFichaData;
+    const fichaData = ficha && ficha.data ? ficha.data : (ficha || null);
+    const hasFicha = fichaData && Object.keys(fichaData).length > 0;
+
+    // Summary of key ficha fields
+    const KEY_FIELDS = [
+      { id: 'nombre',            label: 'Nombre' },
+      { id: 'sexo',              label: 'Sexo' },
+      { id: 'edad',              label: 'Edad',      unit: 'años' },
+      { id: 'peso_kg',           label: 'Peso',      unit: 'kg' },
+      { id: 'talla_cm',          label: 'Talla',     unit: 'cm' },
+      { id: 'porcentaje_grasa',  label: '% grasa',   unit: '%' },
+      { id: 'perfil',            label: 'Perfil' },
+      { id: 'nivel',             label: 'Nivel' },
+      { id: 'dias_semana',       label: 'Días/sem',  unit: 'días' },
+      { id: 'duracion_sesion_min', label: 'Duración sesión', unit: 'min' },
+      { id: 'objetivo_mesociclo', label: 'Objetivo mesociclo' },
+      { id: 'enfoque_actual',    label: 'Enfoque actual' },
+      { id: 'objetivo_calorico', label: 'Obj calórico' },
+      { id: 'grupos_prioritarios', label: 'Grupos prioritarios' },
+      { id: 'lesiones',          label: 'Lesiones / restricciones' },
+      { id: 'objetivo_corto',    label: 'Objetivo corto plazo' },
+      { id: 'evento_objetivo',   label: 'Evento / fecha objetivo' },
+      { id: 'restricciones_alimentarias', label: 'Restricciones alimentarias' },
+      { id: 'ejercicios_evitar', label: 'Ejercicios a evitar' },
+    ];
+
+    let summaryHtml = '';
+    if (hasFicha) {
+      const rows = KEY_FIELDS.map(f => {
+        const v = fichaData[f.id];
+        if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) return '';
+        const disp = Array.isArray(v) ? v.join(', ') : String(v) + (f.unit ? ' ' + f.unit : '');
+        return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid rgba(244,244,240,.05)">
+          <span style="color:#888;font-size:12px;min-width:140px;flex-shrink:0">${f.label}</span>
+          <span style="color:#F4F4F0;font-size:12px;font-weight:600">${disp.replace(/</g,'&lt;')}</span>
+        </div>`;
+      }).filter(Boolean).join('');
+      const updatedAt = ficha && ficha.updatedAt ? new Date(ficha.updatedAt).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'}) : '';
+      summaryHtml = `
+        <div style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.12);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+          ${updatedAt ? `<div style="font-size:11px;color:#555;margin-bottom:8px">Actualizado: ${updatedAt}</div>` : ''}
+          ${rows || '<div style="color:#555;font-size:12px">Sin datos en la ficha todavía.</div>'}
+        </div>`;
+    } else {
+      summaryHtml = `
+        <div style="background:rgba(255,200,0,.06);border:1px solid rgba(255,200,0,.25);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+          <div style="color:#e0a020;font-weight:700;font-size:13px;margin-bottom:4px">⚠ Sin ficha de evaluación</div>
+          <div style="color:#888;font-size:12px">Este cliente no tiene ficha. Pídele que complete el onboarding o llénala tú en la sección Evaluación.</div>
+        </div>`;
+    }
+
+    const updatedAtTs = ficha && ficha.updatedAt ? new Date(ficha.updatedAt).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'}) : null;
+
+    cont.innerHTML = `
+      <div style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700">Ficha del cliente${updatedAtTs ? ' · ' + updatedAtTs : ''}</div>
+          <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:5px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:11px;font-weight:600;cursor:pointer">📝 Editar ficha completa</button>
+        </div>
+        ${summaryHtml}
+      </div>
+      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:20px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700;margin-bottom:12px">🤖 Generación automática — Motor VDSEN</div>
+        <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.2);border-radius:10px;padding:16px;margin-bottom:12px">
+          <div style="font-size:12px;color:#aaa;line-height:1.6;margin-bottom:14px">
+            Genera en un solo clic el <strong style="color:#C4FF00">plan de entrenamiento</strong>, <strong style="color:#44BB88">plan nutricional</strong> y <strong style="color:#c89cff">suplementación</strong> personalizados según la ficha VDSEN del cliente. Requiere API key configurada y ficha completa.
+          </div>
+          <button id="_fichaGenBtn_${clientId}" onclick="_autoGenerateForModal('${clientId}')" style="width:100%;padding:12px;border-radius:8px;border:none;background:#C4FF00;color:#0A0A0A;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.02em">🤖 GENERAR PLAN COMPLETO (Motor VDSEN)</button>
+        </div>
+        <div id="_fichaGenStatus_${clientId}" style="font-size:12px;line-height:1.7"></div>
+        <div style="margin-top:12px">
+          <div style="font-size:11px;color:#555;margin-bottom:8px">O carga un plan manualmente:</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('json','${clientId}'),100)" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:12px;font-weight:600;cursor:pointer">📋 Pegar JSON</button>
+            <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('texto','${clientId}'),100)" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📝 Pegar texto</button>
+          </div>
+        </div>
+      </div>`;
+  }
+  window._renderClientTabFicha = _renderClientTabFicha;
+
+  window._openEvaluacionForClient = function(clientId) {
+    // Close modal and navigate to Evaluación with this client pre-selected
+    document.getElementById('clientModal').style.display = 'none';
+    showSection('evaluacion');
+    setTimeout(() => {
+      const sel = document.getElementById('intakeClientSelect');
+      if (sel) { sel.value = clientId; sel.dispatchEvent(new Event('change')); }
+    }, 300);
+  };
+
+  async function _autoGenerateForModal(clientId) {
+    const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
+    const btn      = document.getElementById('_fichaGenBtn_' + clientId);
+    const setStatus = html => { if (statusEl) statusEl.innerHTML = html; };
+    if (!currentCoach) { setStatus('<div style="color:#e05555">⚠ No hay sesión activa.</div>'); return; }
+    const apiKey = localStorage.getItem('vdsen_apikey');
+    if (!apiKey || !apiKey.startsWith('sk-ant-')) {
+      setStatus('<div style="color:#e05555">⚠ Configura tu API key de Anthropic en <strong>Config</strong> primero.</div>'); return;
+    }
+    if (btn) { btn.disabled = true; btn._t = btn.innerHTML; btn.innerHTML = '⏳ Generando plan…'; }
+    try {
+      setStatus('<span style="color:#888">Leyendo ficha…</span>');
+      const fs = await getDoc(doc(db, 'fichas_onboarding', clientId));
+      let ficha = fs.exists() ? fs.data() : null;
+      if (!ficha || !ficha.data) {
+        const cd = (await getDoc(doc(db, 'clients', clientId))).data() || {};
+        if (cd.intake && cd.intake.data) ficha = cd.intake;
+      }
+      if (!ficha || !ficha.data || !Object.keys(ficha.data).length) {
+        throw new Error('Sin ficha de evaluación. Completa la ficha del cliente primero.');
+      }
+      const fichaTxt = (typeof intakeFormat === 'function') ? intakeFormat(ficha.data, 'md') : JSON.stringify(ficha.data, null, 2);
+      const isPED = String(ficha.data.perfil || '').toLowerCase() === 'ped';
+
+      setStatus('<span style="color:#888">Cargando motor VDSEN…</span>');
+      const motor = await _loadMotorPrompt();
+
+      setStatus('<span style="color:#888">Generando con el motor VDSEN… (10–40 s)</span>');
+      const userMsg = [
+        'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
+        isPED
+          ? 'Con la ficha de abajo, genera en UNA sola respuesta los CUATRO artefactos JSON del cliente: 1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3)  4) Farmacología (PARTE D4), en ese orden.'
+          : 'Con la ficha de abajo, genera en UNA sola respuesta los TRES artefactos JSON del cliente: 1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3), en ese orden.',
+        isPED
+          ? 'Emite exactamente cuatro bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON. El bloque D4 debe tener protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct.'
+          : 'Emite exactamente tres bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON.',
+        'Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
+        'Cumple el CHECKLIST final del motor antes de responder.',
+        '', 'FICHA DEL CLIENTE:', fichaTxt
+      ].join('\n');
+      const reqBody = {
+        model: 'claude-sonnet-5',
+        max_tokens: 8000,
+        system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: userMsg }]
+      };
+      const resp = await fetch('/api/generate-plan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
+        body: JSON.stringify(reqBody)
+      });
+      const respData = await resp.json();
+      if (!resp.ok) throw new Error((respData && (respData.error?.message || respData.error)) || ('API ' + resp.status));
+      const text = Array.isArray(respData.content) ? respData.content.filter(c => c.type === 'text').map(c => c.text).join('\n') : '';
+      if (!text) throw new Error('Respuesta vacía del modelo');
+
+      setStatus('<span style="color:#888">Procesando y guardando…</span>');
+      const { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(text));
+      if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
+
+      const saved = [];
+      const planObj = training ? _normalizeTrainingPlan(training) : null;
+      if (planObj) {
+        window._importedPlan = planObj;
+        await saveImportedPlan(clientId);
+        saved.push(planObj.days.length + ' día(s) de entrenamiento');
+        // Reload plan data for the Plan tab
+        const newPlanId = (await getDoc(doc(db, 'clients', clientId))).data()?.activePlanId;
+        if (newPlanId) {
+          const ps = await getDoc(doc(db, 'plans', newPlanId));
+          if (ps.exists()) { _detailPlanData = ps.data(); _detailClientData.activePlanId = newPlanId; }
+        }
+      }
+      const clientUpdates = {};
+      if (nutrition) { clientUpdates.nutritionPlan = _nutritionJsonToPlan(nutrition); clientUpdates.nutritionRaw = nutrition; saved.push('nutrición'); }
+      const supPlan = supplements ? _supplementsJsonToPlan(supplements) : null;
+      if (supPlan) { clientUpdates.supplementPlan = supPlan; clientUpdates.supplementsRaw = supplements; saved.push('suplementación'); }
+      if (pharma) { clientUpdates.pharmacoPlan = pharma; saved.push('farmacología'); }
+      if (Object.keys(clientUpdates).length) {
+        await updateDoc(doc(db, 'clients', clientId), clientUpdates);
+        Object.assign(_detailClientData, clientUpdates);
+      }
+
+      const u = respData.usage || {};
+      const trunc = respData.stop_reason === 'max_tokens' ? '<div style="color:#e05555;font-size:11px;margin-top:4px">⚠ Respuesta truncada — revisa que el plan esté completo.</div>' : '';
+      const cacheNote = u.cache_read_input_tokens ? ' · caché ✓' : (u.cache_creation_input_tokens ? ' · caché creado' : '');
+      setStatus(`<div style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);border-radius:8px;padding:12px;margin-top:4px">
+        <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Generado: ${saved.join(' · ')}</div>
+        <div style="color:#888;font-size:11px">Tokens: ${u.input_tokens||'?'} in / ${u.output_tokens||'?'} out${cacheNote}</div>
+        ${trunc}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button onclick="_switchClientTab('plan')" style="padding:6px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">🏋️ Ver Plan</button>
+          <button onclick="downloadPlanPDF('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.25);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📄 PDF</button>
+          <button onclick="notifyPlanReady('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.1);color:#25D366;font-size:12px;font-weight:600;cursor:pointer">📣 Avisar cliente</button>
+        </div>
+      </div>`);
+      showToast('✅ Plan completo generado y activado');
+    } catch (e) {
+      setStatus(`<div style="background:rgba(220,60,60,.08);border:1px solid rgba(220,60,60,.3);border-radius:8px;padding:12px"><div style="color:#e05555;font-weight:700">❌ ${(e.message || e).replace(/</g,'&lt;')}</div></div>`);
+      showToast('Error: ' + (e.message || e), true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = btn._t || '🤖 GENERAR PLAN COMPLETO (Motor VDSEN)'; }
+    }
+  }
+  window._autoGenerateForModal = _autoGenerateForModal;
 
   function _renderClientTabPlan(cont) {
     const clientId = _detailClientId;
@@ -4159,7 +4374,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <div class="flex gap-2 flex-wrap mb-3">
           <button onclick="_modalImportPlan('json','${clientId}')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:12px;font-weight:600;cursor:pointer">📋 Pegar JSON</button>
           <button onclick="_modalImportPlan('texto','${clientId}')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📝 Pegar texto</button>
-          <button onclick="_modalImportPlan('ia','${clientId}')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(200,156,255,.4);background:rgba(200,156,255,.08);color:#c89cff;font-size:12px;font-weight:600;cursor:pointer">🤖 Generar con IA</button>
+          <button onclick="_switchClientTab('ficha')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:12px;font-weight:600;cursor:pointer">🤖 Generar con IA → Ficha</button>
         </div>
         <div id="_importPlanArea"></div>
       </div>`;
@@ -4287,7 +4502,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         ${ci.peso   ? `<div><div class="text-xs text-[#888]">PESO</div><div class="text-xl font-bold">${ci.peso} kg</div></div>` : '<div class="text-xs text-[#555]">Peso no registrado</div>'}
         ${ci.hrv    ? `<div><div class="text-xs text-[#888]">HRV</div><div class="text-xl font-bold">${ci.hrv}</div></div>` : ''}
         ${ci.who5   ? `<div><div class="text-xs text-[#888]">WHO-5</div><div class="text-xl font-bold" style="color:${parseInt(ci.who5)<52?'#FF4444':'#44BB88'}">${ci.who5}</div></div>` : ''}
-        ${ci.energia? `<div><div class="text-xs text-[#888]">ENERGÍA</div><div class="text-xl font-bold">${ci.energia}/5</div></div>` : ''}
+        ${ci.energia? `<div><div class="text-xs text-[#888]">ENERGÍA</div><div class="text-xl font-bold">${ci.energia}/10</div></div>` : ''}
         ${ci.sueno  ? `<div><div class="text-xs text-[#888]">SUEÑO</div><div class="text-xl font-bold">${ci.sueno}h</div></div>` : ''}
       </div>
     </div>`;
@@ -4415,6 +4630,37 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }
     }
 
+    // ── Tendencias de carga por ejercicio (S1 → sem actual)
+    if (p && p.days && currentWeek > 1) {
+      // Recoger todos los nombres únicos de ejercicios del plan
+      const allExNames = [];
+      (p.days || []).forEach(day => {
+        (day.exercises || []).forEach((ex, ei) => {
+          const nm = ex.exerciseName || ex.name || `Ej ${ei+1}`;
+          if (!allExNames.find(e => e.name === nm)) allExNames.push({ name: nm, ei });
+        });
+      });
+      const sparklines = allExNames.map(({ name }) => {
+        const pts = [];
+        for (let w = 1; w <= currentWeek; w++) {
+          let maxLoad = 0;
+          Object.keys(entries).forEach(k => {
+            if (!k.startsWith('log_'+w+'_')) return;
+            const e = entries[k];
+            const c = parseFloat(e.carga);
+            if (e.done && !isNaN(c) && c > maxLoad) maxLoad = c;
+          });
+          if (maxLoad > 0) pts.push({ w, v: maxLoad });
+        }
+        if (pts.length < 2) return '';
+        return _buildMiniTrendChart(pts, name + ' — carga máx (kg)', '#C4FF00');
+      }).filter(Boolean);
+      if (sparklines.length) {
+        html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Tendencia de carga por ejercicio</div>`;
+        html += sparklines.join('');
+      }
+    }
+
     // ── Recomendaciones de progresión
     if (lastRec && lastRec.recommendations && lastRec.recommendations.length) {
       const aL = { deload:{label:'DELOAD',color:'#4488cc'}, reduce_load:{label:'↓ CARGA',color:'#FF4444'}, reduce_sets:{label:'↓ SERIES',color:'#FF8844'}, add_sets:{label:'+ SERIES',color:'#44BB88'}, increase_load:{label:'↑ CARGA',color:'#44BB88'}, freeze_load:{label:'CONGELAR',color:'#F4F4F0'}, maintain:{label:'MANTENER',color:'#888'} };
@@ -4477,12 +4723,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function _renderClientTabNotas(cont) {
     const c  = _detailClientData;
     const note = c ? (c.coachNote || '') : '';
+    const clientMsg = c ? (c.clientMessage || '') : '';
+    const noteTs = c ? (c.coachNoteUpdatedAt || '') : '';
+    const noteDate = noteTs ? new Date(noteTs).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
     cont.innerHTML = `
-      <div class="mb-2">
+      <div class="mb-4">
         <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Notas privadas del coach</div>
-        <div class="text-xs text-[#555] mb-3">Visibles solo para ti. Lesiones, contexto personal, comportamiento, recordatorios.</div>
-        <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="12" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
-        <button onclick="saveCoachNote()" class="btn-primary mt-3 w-full">💾 Guardar nota</button>
+        <div class="text-xs text-[#555] mb-2">Visibles solo para ti. Lesiones, contexto personal, comportamiento, recordatorios.</div>
+        ${noteDate ? `<div class="text-xs text-[#444] mb-2">Última actualización: ${noteDate}</div>` : ''}
+        <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="10" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
+        <button onclick="saveCoachNote()" class="btn-primary mt-2 w-full">💾 Guardar nota</button>
+      </div>
+      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:16px">
+        <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Mensaje para el cliente</div>
+        <div class="text-xs text-[#555] mb-2">Visible en el Perfil del cliente. Úsalo para motivación, indicaciones o recordatorios.</div>
+        <textarea id="clientMsgTA" class="input-field w-full text-sm" rows="5" placeholder="Ej: Esta semana enfócate en la técnica del peso muerto — bajamos carga al 80%...">${clientMsg.replace(/</g,'&lt;')}</textarea>
+        <button onclick="saveClientMessage()" class="btn-primary mt-2 w-full">📨 Enviar mensaje al cliente</button>
       </div>`;
   }
 
@@ -4490,12 +4746,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const val = (document.getElementById('coachNoteTA')?.value || '').trim();
     if (!_detailClientId) return;
     try {
-      await updateDoc(doc(db,'clients',_detailClientId), { coachNote: val });
-      if (_detailClientData) _detailClientData.coachNote = val;
+      await updateDoc(doc(db,'clients',_detailClientId), { coachNote: val, coachNoteUpdatedAt: new Date().toISOString() });
+      if (_detailClientData) { _detailClientData.coachNote = val; _detailClientData.coachNoteUpdatedAt = new Date().toISOString(); }
       showToast('Nota guardada ✅');
     } catch(e) { showToast('Error al guardar: '+e.message, true); }
   }
   window.saveCoachNote = saveCoachNote;
+
+  async function saveClientMessage() {
+    const val = (document.getElementById('clientMsgTA')?.value || '').trim();
+    if (!_detailClientId) return;
+    try {
+      await updateDoc(doc(db,'clients',_detailClientId), { clientMessage: val, clientMessageUpdatedAt: new Date().toISOString() });
+      if (_detailClientData) _detailClientData.clientMessage = val;
+      showToast('Mensaje enviado al cliente ✅');
+    } catch(e) { showToast('Error: '+e.message, true); }
+  }
+  window.saveClientMessage = saveClientMessage;
 
   async function _saveCurrentPlanAsTemplate(planId) {
     const name = prompt('Nombre para el template:');
@@ -4573,12 +4840,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <div id="nut-json-status" class="text-xs mt-2"></div>
         </div>
       </details>
-      <div class="grid grid-cols-2 gap-2 mb-3">
-        <div><label class="text-xs text-[#888]">Calorías (kcal)</label><input id="nut-kcal" class="input-field w-full mt-1" type="number" placeholder="2000" value="${n.calorias||''}"></div>
-        <div><label class="text-xs text-[#888]">Proteína (g)</label><input id="nut-prot" class="input-field w-full mt-1" type="number" placeholder="180" value="${n.proteina||''}"></div>
-        <div><label class="text-xs text-[#888]">Carbohidratos (g)</label><input id="nut-carb" class="input-field w-full mt-1" type="number" placeholder="220" value="${n.carbos||''}"></div>
-        <div><label class="text-xs text-[#888]">Grasas (g)</label><input id="nut-fat" class="input-field w-full mt-1" type="number" placeholder="70" value="${n.grasas||''}"></div>
+      <div class="grid grid-cols-2 gap-2 mb-1">
+        <div class="col-span-2">
+          <label class="text-xs text-[#888]">Calorías (kcal)</label>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+            <input id="nut-kcal" class="input-field flex-1" type="number" placeholder="2000" value="${n.calorias||''}">
+            <span id="nut-kcal-hint" class="text-xs" style="color:#888;white-space:nowrap;min-width:90px"></span>
+          </div>
+        </div>
+        <div><label class="text-xs text-[#888]">Proteína (g)</label><input id="nut-prot" class="input-field w-full mt-1" type="number" placeholder="180" value="${n.proteina||''}" oninput="_calcNutKcal()"></div>
+        <div><label class="text-xs text-[#888]">Carbohidratos (g)</label><input id="nut-carb" class="input-field w-full mt-1" type="number" placeholder="220" value="${n.carbos||''}" oninput="_calcNutKcal()"></div>
+        <div><label class="text-xs text-[#888]">Grasas (g)</label><input id="nut-fat" class="input-field w-full mt-1" type="number" placeholder="70" value="${n.grasas||''}" oninput="_calcNutKcal()"></div>
       </div>
+      <div class="text-xs text-[#555] mb-3">Proteína × 4 + Carbos × 4 + Grasas × 9 = Kcal</div>
       <label class="text-xs text-[#888]">Plan de alimentación (texto libre)</label>
       <textarea id="nut-texto" class="input-field w-full mt-1 mb-3 text-xs" rows="10" placeholder="Comida 1: ...\nComida 2: ...">${(n.texto||'').replace(/</g,'&lt;')}</textarea>
       <button onclick="saveNutritionPlan()" class="btn-primary text-sm py-1 px-4 w-full">Guardar nutrición</button>`;
@@ -4850,6 +5124,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     editor.style.display = open ? "none" : "block";
     view.style.display   = open ? "block" : "none";
   }
+
+  window._calcNutKcal = function() {
+    const p = parseFloat(document.getElementById('nut-prot')?.value) || 0;
+    const c = parseFloat(document.getElementById('nut-carb')?.value) || 0;
+    const g = parseFloat(document.getElementById('nut-fat')?.value) || 0;
+    const hint = document.getElementById('nut-kcal-hint');
+    if (!hint) return;
+    if (!p && !c && !g) { hint.textContent = ''; return; }
+    const calc = Math.round(p * 4 + c * 4 + g * 9);
+    const kcalEl = document.getElementById('nut-kcal');
+    const kcalVal = parseFloat(kcalEl?.value) || 0;
+    hint.style.color = (!kcalVal || Math.abs(kcalVal - calc) < 20) ? '#44BB88' : '#FF8844';
+    hint.textContent = 'Calculado: ' + calc + ' kcal';
+    if (!kcalVal) kcalEl.value = calc; // auto-fill si estaba vacío
+  };
 
   async function saveNutritionPlan() {
     const data = {
@@ -5901,7 +6190,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         Object.keys(entries).forEach(k => { if (k.startsWith('done_'+week+'_') && entries[k]) doneCount++; });
 
         // Check-in semanal
-        const ciDone = !!(ci.peso || ci.hrv);
+        const ciDone = !!(ci.peso || ci.hrv || ci.who5 || ci.energia || ci.sueno);
 
         return { ...c, week, daysSince, alerts, doneCount, ciDone, lastICS: icsCount ? lastICS : null, updatedAt };
       });
@@ -5939,6 +6228,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         digestItems += `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
           <span style="color:#FF4444;font-size:13px">🧠</span>
           <div><span class="text-xs text-[#888]">Bienestar bajo (WHO-5): </span>${lowWHO5.map(c=>`<button onclick="showClientDetail('${c.id}')" style="color:#FF4444;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;padding:0 2px">${(c.displayName||c.email).split(' ')[0]}</button>`).join(', ')}</div></div>`;
+      // Check-in rate
+      const withPlan = cards.filter(c => c.activePlanId);
+      const ciCount  = withPlan.filter(c => c.ciDone).length;
+      if (withPlan.length > 0)
+        digestItems += `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+          <span style="color:${ciCount===withPlan.length?'#44BB88':'#888'};font-size:13px">📊</span>
+          <div><span class="text-xs text-[#888]">Check-in semanal: </span><span class="text-xs font-bold" style="color:${ciCount===withPlan.length?'#44BB88':'#FF8844'}">${ciCount}/${withPlan.length} clientes</span></div></div>`;
       if (!digestItems)
         digestItems = `<div class="text-xs text-[#44BB88]">Todo en orden — sin acciones urgentes hoy ✓</div>`;
 
