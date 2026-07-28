@@ -1496,9 +1496,10 @@ async function loadPlan(user) {
     var _rTab = 0, _rDia = DIA_ACTIVO, _rWk = REAL_WEEK;
     try { var _t = parseInt(localStorage.getItem('vdsen_last_tab')); if (!isNaN(_t) && _t >= 0 && _t <= 4) _rTab = _t; } catch(e) {}
     try { var _d = parseInt(localStorage.getItem('vdsen_last_dia')); if (!isNaN(_d) && _d >= 0) _rDia = _d; } catch(e) {}
-    try { var _w = parseInt(localStorage.getItem('vdsen_last_week')); if (!isNaN(_w) && _w >= 1 && _w <= getTotalWeeks()) _rWk = _w; } catch(e) {}
+    // vdsen_last_week eliminado: siempre iniciar en la semana activa para evitar que
+    // los clientes queden entrenando en la semana incorrecta sin darse cuenta.
     DIA_ACTIVO = _rDia;
-    CURRENT_WEEK = _rWk;
+    CURRENT_WEEK = _rWk; // _rWk ya vale REAL_WEEK por defecto
     goTab(_rTab);
     showWhatsNew();
     if (_showBitacoraInfo) { setTimeout(function(){ showBitacoraInfoModal(); }, 500); }
@@ -1625,7 +1626,9 @@ function goTab(i) {
   if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();
   // Wake Lock: activar solo en tab de entreno, liberar en todos los demás
   if (i === 1) { _acquireWakeLock(); } else { _releaseWakeLock(); }
-  if (i === 1) renderEntrenamiento();
+  // Al entrar al tab de entrenamiento, siempre volver a la semana activa.
+  // Evita que el cliente quede viendo (y registrando en) una semana incorrecta.
+  if (i === 1) { CURRENT_WEEK = REAL_WEEK; renderEntrenamiento(); }
   else if (i === 2) renderNutricion();
   else if (i === 3) renderCheckin();
   else if (i === 4) renderPerfil();
@@ -5486,7 +5489,20 @@ function renderEntrenamiento() {
   // Auto-expandir si el usuario está viendo una semana pasada
   if (_viewingPast) _weeksExpanded = true;
 
+  // ── Header prominente con número de semana activa ────────────────
+  var _faseLabel = CURRENT_WEEK === _tw ? 'DELOAD' : getSemProgresion(REAL_WEEK);
+  var _reviewLabel = (CURRENT_WEEK !== REAL_WEEK)
+    ? ' &nbsp;<span style="font-size:10px;color:#FF8844;font-weight:700;vertical-align:middle">[ revisando sem '+CURRENT_WEEK+' ]</span>'
+    : '';
+  var weekHeaderHtml = '<div style="padding:10px 16px 8px;background:var(--surface);display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(107,107,102,.15)">'
+    + '<span style="font-family:\'Big Shoulders Display\',var(--ff);font-size:28px;font-weight:900;color:var(--tx);line-height:1;letter-spacing:.5px">SEM '+REAL_WEEK+'</span>'
+    + '<span style="font-size:11px;color:var(--mt);font-weight:700;letter-spacing:1px">/ '+_tw+'</span>'
+    + '<span style="font-size:10px;color:var(--accent);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;background:rgba(107,107,102,.12);padding:2px 8px;border-radius:20px;margin-left:4px">'+_faseLabel+'</span>'
+    + _reviewLabel
+    + '</div>';
+
   function _weekBtn(w) {
+    var isFuture = w > REAL_WEEK;
     var isReal  = w === REAL_WEEK;
     var isView  = w === CURRENT_WEEK;
     var done    = w < REAL_WEEK;
@@ -5501,15 +5517,19 @@ function renderEntrenamiento() {
     } else if (done) {
       bg = 'rgba(110,154,110,.04)'; borderBot = 'rgba(110,154,110,.35)'; numColor = 'var(--grn)'; subColor = 'var(--grn)';
     } else {
-      bg = 'transparent'; borderBot = 'transparent'; numColor = 'var(--mt)'; subColor = 'var(--mt)';
+      // Semana futura: apagada, no clickeable
+      bg = 'transparent'; borderBot = 'transparent'; numColor = 'rgba(107,107,102,.3)'; subColor = 'rgba(107,107,102,.3)';
     }
     var glow = isReal ? 'box-shadow:inset 0 -4px 0 var(--accent),0 0 18px rgba(107,107,102,.25);' : '';
     var pad  = isReal ? '12px 0 8px' : '8px 0 5px';
     var sz   = isReal ? '20px' : '15px';
     var mt   = isReal ? '12px' : '3px';
-    return '<button onclick="setWeek('+w+')" style="'+
+    // Semanas futuras no son clickeables (sólo referencia visual)
+    var clickAttr = isFuture ? '' : 'onclick="setWeek('+w+')"';
+    var cursor    = isFuture ? 'default' : 'pointer';
+    return '<button '+clickAttr+' style="'+
       'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+
-      'padding:'+pad+';border:none;cursor:pointer;flex:1;min-width:0;'+
+      'padding:'+pad+';border:none;cursor:'+cursor+';flex:1;min-width:0;'+
       'background:'+bg+';border-bottom:'+(isReal?'4':'2')+'px solid '+borderBot+';'+
       glow+'border-radius:0;position:relative;transition:background .15s">'+
       (isReal ? '<span style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);font-size:7px;letter-spacing:1px;color:#000;font-weight:900;white-space:nowrap;background:var(--accent);padding:2px 6px;border-radius:0 0 5px 5px">● ACTIVA</span>' : '')+
@@ -5544,7 +5564,7 @@ function renderEntrenamiento() {
         '</button>';
     }
   }
-  // Semana activa + futuras (siempre visibles)
+  // Semana activa + futuras (futuras sólo de referencia, no clickeables)
   for (var _fw = REAL_WEEK; _fw <= _tw; _fw++) weeksHtml += _weekBtn(_fw);
 
   if (!sesiones.length) {
@@ -5555,6 +5575,7 @@ function renderEntrenamiento() {
         textoRaw.replace(/</g,'&lt;').substring(0,3000) + '</div>'
       : '<div style="padding:48px 24px;text-align:center;color:var(--mt)"><div style="font-size:32px;margin-bottom:12px">💪</div><div style="font-weight:700;margin-bottom:8px">Sin plan de entrenamiento</div><div style="font-size:12px">El coach aún no ha cargado tu plan.</div></div>';
     cont.innerHTML =
+      weekHeaderHtml+
       '<div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border)">'+weeksHtml+'</div>'+
       rawHtml;
     return;
@@ -5714,6 +5735,8 @@ function renderEntrenamiento() {
   // Volumen por sesión: no se alerta al cliente (el plan ya está calculado por el coach)
 
   cont.innerHTML =
+    // Semana activa — header prominente
+    weekHeaderHtml+
     // Week bar
     '<div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border)">'+weeksHtml+'</div>'+
     // Day tabs
@@ -7165,6 +7188,7 @@ async function saveLogs() {
 
 async function _doSaveLogs() {
   if (!USER || !FB) return false;
+  _saveLogsTimer = null; // limpiar ID del timer que ya disparó (evita false-positive en visibilitychange)
   try {
     // Sanear: Firestore rechaza objetos con `undefined`. JSON.parse(JSON.stringify(...))
     // descarta cualquier campo undefined heredado de versiones anteriores o de bugs.
@@ -7243,7 +7267,6 @@ function loadBackupLogs() {
 
 function setWeek(w) {
   CURRENT_WEEK = w;
-  try { localStorage.setItem('vdsen_last_week', w); } catch(e) {}
   _autoAdvanceDia();
   renderEntrenamiento();
   renderResumen();
