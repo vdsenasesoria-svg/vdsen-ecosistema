@@ -4104,20 +4104,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window._switchClientTab = _switchClientTab;
 
   // ── InBody tab ──
-  // Campos en el orden exacto que muestra la app InBody Dial H30
-  // Fuente: manual oficial InBody + app (H30 no incluye TBW, ICW, ECW, proteína, minerales ni análisis segmentado)
+  // Campos en el orden y con los labels exactos de la app InBody Dial H30
+  // (verificado en captura de pantalla real del dispositivo)
   const _INBODY_FIELDS = [
-    { id:'score',          label:'Puntuación InBody',          unit:'/100', step:'1',    hib:true,  type:'number' },
-    { id:'peso',           label:'Peso',                       unit:'kg',   step:'0.1',  hib:false, type:'number' },
-    { id:'musculo',        label:'Masa Muscular Esquelética',  unit:'kg',   step:'0.1',  hib:true,  type:'number' },
-    { id:'grasa_kg',       label:'Masa de Grasa Corporal',     unit:'kg',   step:'0.1',  hib:false, type:'number' },
-    { id:'imc',            label:'IMC',                        unit:'kg/m²',step:'0.1',  hib:false, type:'number' },
-    { id:'pct_grasa',      label:'% Grasa Corporal',           unit:'%',    step:'0.1',  hib:false, type:'number' },
-    { id:'cintura_cadera', label:'Relación Cintura-Cadera',    unit:'',     step:'0.01', hib:false, type:'number' },
-    { id:'grasa_visceral', label:'Nivel de Grasa Visceral',    unit:'niv.', step:'1',    hib:false, type:'number' },
-    { id:'masa_magra',     label:'Masa Magra Blanda',          unit:'kg',   step:'0.1',  hib:true,  type:'number' },
-    { id:'tmb',            label:'Metabolismo Basal (TMB)',     unit:'kcal', step:'1',    hib:true,  type:'number' },
-    { id:'tipo_cuerpo',    label:'Tipo de Cuerpo',             unit:'',     step:null,   hib:null,  type:'select', options:['','C','I','D'] },
+    // ── Bloque principal — visible en pantalla ──
+    { id:'peso',           label:'Peso',                          unit:'kg',   step:'0.1',  hib:false, type:'number' },
+    { id:'musculo',        label:'Masa muscular',                 unit:'kg',   step:'0.1',  hib:true,  type:'number' },
+    { id:'grasa_kg',       label:'Grasa Corporal',                unit:'kg',   step:'0.1',  hib:false, type:'number' },
+    { id:'pct_grasa',      label:'Percentaje de grasa corporal',  unit:'%',    step:'0.1',  hib:false, type:'number' },
+    { id:'imc',            label:'IMC',                           unit:'kg/m²',step:'0.1',  hib:false, type:'number' },
+    { id:'grasa_visceral', label:'Nivel de Grasa Visceral',       unit:'Nivel',step:'1',    hib:false, type:'number' },
+    // ── Bloque secundario — puede aparecer más abajo según versión ──
+    { id:'score',          label:'Puntuación InBody',             unit:'/100', step:'1',    hib:true,  type:'number' },
+    { id:'cintura_cadera', label:'Relación Cintura-Cadera',       unit:'',     step:'0.01', hib:false, type:'number' },
+    { id:'masa_magra',     label:'Masa Magra Blanda',             unit:'kg',   step:'0.1',  hib:true,  type:'number' },
+    { id:'tmb',            label:'Metabolismo Basal (TMB)',        unit:'kcal', step:'1',    hib:true,  type:'number' },
+    { id:'tipo_cuerpo',    label:'Tipo de Cuerpo',                unit:'',     step:null,   hib:null,  type:'select', options:['','C','I','D'] },
   ];
 
   function _trendArrow(curr, prev, higherIsBetter) {
@@ -4205,14 +4207,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     // ── Add form — fields in H30 screen order ──
     const _inStyle = 'width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:9px 10px;border-radius:6px;font-size:14px;outline:none';
-    const formFields = _INBODY_FIELDS.map(f => {
+    function _inbField(f) {
       const lbl = `<label style="display:block;font-size:11px;color:#888;margin-bottom:3px">${f.label}${f.unit?' ('+f.unit+')':''}</label>`;
       if (f.type === 'select') {
         const opts = f.options.map(o => `<option value="${o}">${o||'— seleccionar —'}</option>`).join('');
         return `<div style="grid-column:1/-1">${lbl}<select id="inb_${f.id}" style="${_inStyle}">${opts}</select></div>`;
       }
       return `<div>${lbl}<input id="inb_${f.id}" type="number" step="${f.step}" inputmode="decimal" style="${_inStyle}"></div>`;
-    }).join('');
+    }
+    const _primaryFields   = _INBODY_FIELDS.slice(0,6).map(_inbField).join('');
+    const _secondaryFields = _INBODY_FIELDS.slice(6).map(_inbField).join('');
 
     cont.innerHTML = `
       ${snapshotHtml}
@@ -4222,14 +4226,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           style="width:100%;padding:10px;background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.3);border-radius:8px;color:#C4FF00;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.5px">+ Agregar medición</button>
         <div style="display:none;margin-top:12px;background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.1);border-radius:10px;padding:16px">
           <div style="font-size:10px;letter-spacing:2px;color:#888;font-weight:700;margin-bottom:4px">NUEVA MEDICIÓN · INBODY DIAL H30</div>
-          <div style="font-size:11px;color:#555;margin-bottom:14px">Ingresá los valores exactamente como aparecen en la app InBody.</div>
+          <div style="font-size:11px;color:#555;margin-bottom:14px">Ingresá los valores tal como aparecen en la app InBody, de arriba a abajo.</div>
           <div style="margin-bottom:12px">
             <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Fecha de la medición</label>
             <input id="inb_fecha" type="date" value="${new Date().toISOString().slice(0,10)}"
               style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:9px 10px;border-radius:6px;font-size:14px;outline:none">
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px">
+            ${_primaryFields}
+          </div>
+          <div style="font-size:9px;letter-spacing:1.5px;color:#444;font-weight:700;margin:10px 0 8px;border-top:1px solid rgba(244,244,240,.06);padding-top:10px">DATOS ADICIONALES (si aparecen en tu versión)</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-            ${formFields}
+            ${_secondaryFields}
           </div>
           <div style="margin-bottom:14px">
             <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Nota del coach (opcional)</label>
