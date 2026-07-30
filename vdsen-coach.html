@@ -4107,19 +4107,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // Campos en el orden y con los labels exactos de la app InBody Dial H30
   // (verificado en captura de pantalla real del dispositivo)
   const _INBODY_FIELDS = [
-    // ── Bloque principal — visible en pantalla ──
-    { id:'peso',           label:'Peso',                          unit:'kg',   step:'0.1',  hib:false, type:'number' },
-    { id:'musculo',        label:'Masa muscular',                 unit:'kg',   step:'0.1',  hib:true,  type:'number' },
-    { id:'grasa_kg',       label:'Grasa Corporal',                unit:'kg',   step:'0.1',  hib:false, type:'number' },
-    { id:'pct_grasa',      label:'Percentaje de grasa corporal',  unit:'%',    step:'0.1',  hib:false, type:'number' },
-    { id:'imc',            label:'IMC',                           unit:'kg/m²',step:'0.1',  hib:false, type:'number' },
-    { id:'grasa_visceral', label:'Nivel de Grasa Visceral',       unit:'Nivel',step:'1',    hib:false, type:'number' },
-    // ── Bloque secundario — puede aparecer más abajo según versión ──
-    { id:'score',          label:'Puntuación InBody',             unit:'/100', step:'1',    hib:true,  type:'number' },
-    { id:'cintura_cadera', label:'Relación Cintura-Cadera',       unit:'',     step:'0.01', hib:false, type:'number' },
-    { id:'masa_magra',     label:'Masa Magra Blanda',             unit:'kg',   step:'0.1',  hib:true,  type:'number' },
-    { id:'tmb',            label:'Metabolismo Basal (TMB)',        unit:'kcal', step:'1',    hib:true,  type:'number' },
-    { id:'tipo_cuerpo',    label:'Tipo de Cuerpo',                unit:'',     step:null,   hib:null,  type:'select', options:['','C','I','D'] },
+    { id:'peso', label:'Peso', unit:'kg',  step:'0.1', hib:false, type:'number' },
+    { id:'smm',  label:'SMM',  unit:'kg',  step:'0.1', hib:true,  type:'number' }, // Skeletal Muscle Mass
+    { id:'pbf',  label:'PBF',  unit:'%',   step:'0.1', hib:false, type:'number' }, // Percent Body Fat
+    { id:'vfl',  label:'VFL',  unit:'',    step:'1',   hib:false, type:'number' }, // Visceral Fat Level
   ];
 
   function _trendArrow(curr, prev, higherIsBetter) {
@@ -4143,12 +4134,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     let progressHtml = '';
     if (results.length >= 2) {
       const PMETS = [
-        { id:'peso',           label:'Peso',        unit:'kg',   hib:false },
-        { id:'musculo',        label:'Muscular',    unit:'kg',   hib:true  },
-        { id:'pct_grasa',      label:'% Grasa',     unit:'%',    hib:false },
-        { id:'grasa_visceral', label:'G. Visceral', unit:'niv.', hib:false },
-        { id:'score',          label:'Score',       unit:'/100', hib:true  },
-        { id:'tmb',            label:'TMB',         unit:'kcal', hib:true  },
+        { id:'peso', label:'Peso', unit:'kg', hib:false },
+        { id:'smm',  label:'SMM',  unit:'kg', hib:true  },
+        { id:'pbf',  label:'PBF',  unit:'%',  hib:false },
+        { id:'vfl',  label:'VFL',  unit:'',   hib:false },
       ];
       const pcards = PMETS.map(m => {
         const vals = chrono.map(r => r[m.id] != null && r[m.id] !== '' ? parseFloat(r[m.id]) : null).filter(v => v !== null);
@@ -4256,8 +4245,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }
       return `<div>${lbl}<input id="inb_${f.id}" type="number" step="${f.step}" inputmode="decimal" style="${_inStyle}"></div>`;
     }
-    const _primaryFields   = _INBODY_FIELDS.slice(0,6).map(_inbField).join('');
-    const _secondaryFields = _INBODY_FIELDS.slice(6).map(_inbField).join('');
+    const _allFields = _INBODY_FIELDS.map(_inbField).join('');
 
     cont.innerHTML = `
       ${snapshotHtml}
@@ -4268,18 +4256,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           style="width:100%;padding:10px;background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.3);border-radius:8px;color:#C4FF00;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.5px">+ Agregar medición</button>
         <div style="display:none;margin-top:12px;background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.1);border-radius:10px;padding:16px">
           <div style="font-size:10px;letter-spacing:2px;color:#888;font-weight:700;margin-bottom:4px">NUEVA MEDICIÓN · INBODY DIAL H30</div>
-          <div style="font-size:11px;color:#555;margin-bottom:14px">Ingresá los valores tal como aparecen en la app InBody, de arriba a abajo.</div>
+          <div style="font-size:11px;color:#555;margin-bottom:14px">Peso · SMM (masa muscular esquelética) · PBF (% grasa corporal) · VFL (grasa visceral).</div>
           <div style="margin-bottom:12px">
             <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Fecha de la medición</label>
             <input id="inb_fecha" type="date" value="${new Date().toISOString().slice(0,10)}"
               style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:9px 10px;border-radius:6px;font-size:14px;outline:none">
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px">
-            ${_primaryFields}
-          </div>
-          <div style="font-size:9px;letter-spacing:1.5px;color:#444;font-weight:700;margin:10px 0 8px;border-top:1px solid rgba(244,244,240,.06);padding-top:10px">DATOS ADICIONALES (si aparecen en tu versión)</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-            ${_secondaryFields}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+            ${_allFields}
           </div>
           <div style="margin-bottom:14px">
             <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Nota del coach (opcional)</label>
@@ -4344,73 +4328,71 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       ? new Date(result.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})
       : new Date(result.ts).toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'});
 
-    function _line(label, fid, unit, emoji) {
-      const v = result[fid];
-      if (v == null || v === '') return '';
-      let trend = '';
-      if (prev && prev[fid] != null) {
-        const d = parseFloat(v) - parseFloat(prev[fid]);
-        if (Math.abs(d) >= 0.1) trend = ' (' + (d>0?'+':'') + d.toFixed(1) + ')';
+    function _v(fid) { const v = result[fid]; return (v != null && v !== '') ? parseFloat(v) : null; }
+    function _delta(fid) {
+      if (!prev || prev[fid] == null || result[fid] == null) return null;
+      return +(parseFloat(result[fid]) - parseFloat(prev[fid])).toFixed(1);
+    }
+    function _trend(fid) { const d = _delta(fid); return (d !== null && Math.abs(d) >= 0.1) ? ` (${d>0?'+':''}${d})` : ''; }
+    function _line(emoji, label, fid, unit) {
+      const v = _v(fid); if (v === null) return '';
+      return `${emoji} ${label}: *${v}${unit?' '+unit:''}*${_trend(fid)}`;
+    }
+
+    const datos = [
+      _line('⚖️', 'Peso', 'peso', 'kg'),
+      _line('💪', 'SMM',  'smm',  'kg'),
+      _line('📊', 'PBF',  'pbf',  '%'),
+      _line('🔴', 'VFL',  'vfl',  ''),
+    ].filter(Boolean).join('\n');
+
+    // ── Análisis breve y claro ──
+    const parts = [];
+    const pbf = _v('pbf'), smm = _v('smm'), vfl = _v('vfl');
+    const dPbf = _delta('pbf'), dSmm = _delta('smm'), dVfl = _delta('vfl');
+
+    // VFL — marcador metabólico prioritario
+    if (vfl !== null) {
+      const dVflStr = (dVfl !== null && Math.abs(dVfl) >= 1) ? `, ${dVfl < 0 ? 'bajó ↓' : 'subió ↑'} ${Math.abs(dVfl)} vs anterior` : '';
+      if (vfl <= 9)       parts.push(`Grasa visceral en rango saludable (VFL ${vfl}${dVflStr}).`);
+      else if (vfl <= 14) parts.push(`Grasa visceral elevada (VFL ${vfl}${dVflStr}) — reducir grasa abdominal es prioridad metabólica.`);
+      else                parts.push(`Grasa visceral muy alta (VFL ${vfl}) — requiere atención urgente. Déficit calórico + cardio moderado no negociables.`);
+    }
+
+    // Composición: tendencia vs anterior o lectura inicial
+    if (prev && (dPbf !== null || dSmm !== null)) {
+      if (dSmm !== null && dPbf !== null) {
+        if      (dSmm > 0 && dPbf < 0) parts.push(`Recomposición en curso: +${dSmm} kg de músculo y ${dPbf}% menos grasa — el plan está funcionando.`);
+        else if (dSmm > 0)              parts.push(`Músculo en aumento (+${dSmm} kg). Mantener déficit controlado para también bajar PBF.`);
+        else if (dPbf < 0)              parts.push(`Grasa bajando (${dPbf}%). Asegurar estímulo de fuerza suficiente para proteger SMM.`);
+        else if (dSmm < 0 && dPbf > 0) parts.push(`Período desfavorable: músculo perdido y grasa ganada. Revisar nutrición, sueño y adherencia al plan.`);
+        else                            parts.push(`Composición estable sin cambios significativos. Consistencia y paciencia.`);
+      } else if (dPbf !== null) {
+        parts.push(dPbf < 0 ? `Grasa bajando (${dPbf}% vs anterior) — buen progreso.` : `Grasa subió (+${dPbf}% vs anterior) — revisar balance calórico.`);
+      } else {
+        parts.push(dSmm > 0 ? `Músculo en aumento (+${dSmm} kg vs anterior).` : `SMM bajó (${dSmm} kg) — revisar proteína y volumen de entrenamiento.`);
       }
-      return `${emoji} ${label}: *${v}${unit?' '+unit:''}*${trend}`;
+    } else if (pbf !== null) {
+      if      (pbf < 15) parts.push(`Composición atlética — excelente punto de partida.`);
+      else if (pbf < 22) parts.push(`Buena composición corporal — el plan la va a optimizar semana a semana.`);
+      else if (pbf < 30) parts.push(`Composición mejorable — fuerza + nutrición van a mover estos números.`);
+      else               parts.push(`Alta grasa corporal como punto de partida — el plan está diseñado exactamente para reducirla protegiendo músculo.`);
     }
 
-    const tcLabel = result.tipo_cuerpo ? `\n🔠 Tipo de cuerpo: *${result.tipo_cuerpo}* (${result.tipo_cuerpo==='C'?'músculo bajo, grasa alta':result.tipo_cuerpo==='D'?'atlético, músculo alto':'equilibrado'})` : '';
-    const lines = [
-      _line('Puntuación InBody',         'score',          '/100',   '🏆'),
-      _line('Peso',                      'peso',           'kg',     '⚖️'),
-      _line('Masa muscular esquelética', 'musculo',        'kg',     '💪'),
-      _line('Masa de grasa corporal',    'grasa_kg',       'kg',     '🔥'),
-      _line('% Grasa corporal',          'pct_grasa',      '%',      '📊'),
-      _line('IMC',                       'imc',            'kg/m²',  '📐'),
-      _line('Relación cintura-cadera',   'cintura_cadera', '',       '📏'),
-      _line('Grasa visceral',            'grasa_visceral', 'niv.',   '🔴'),
-      _line('Masa magra blanda',         'masa_magra',     'kg',     '🦴'),
-      _line('Metabolismo basal',         'tmb',            'kcal',   '🔋'),
-    ].filter(Boolean).join('\n') + tcLabel;
-
-    // Resumen de cambios vs medición anterior
-    let cambiosHtml = '';
-    if (prev) {
-      const prevFecha = prev.fecha
-        ? new Date(prev.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})
-        : new Date(prev.ts).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
-      const dPeso   = prev.peso    != null && result.peso    != null ? (parseFloat(result.peso)    - parseFloat(prev.peso)).toFixed(1)    : null;
-      const dMusc   = prev.musculo != null && result.musculo != null ? (parseFloat(result.musculo) - parseFloat(prev.musculo)).toFixed(1) : null;
-      const dGrasa  = prev.grasa_kg!= null && result.grasa_kg!= null? (parseFloat(result.grasa_kg)- parseFloat(prev.grasa_kg)).toFixed(1): null;
-      const cambios = [
-        dPeso  != null ? `⚖️ Peso: ${dPeso>0?'+':''}${dPeso} kg` : '',
-        dMusc  != null ? `💪 Músculo: ${dMusc>0?'+':''}${dMusc} kg` : '',
-        dGrasa != null ? `🔥 Grasa: ${dGrasa>0?'+':''}${dGrasa} kg` : '',
-      ].filter(Boolean).join('\n');
-      if (cambios) cambiosHtml = `\n━━━━━━━━━━━━━\n📈 VS MEDICIÓN ANTERIOR (${prevFecha})\n${cambios}`;
-    }
-
-    // Interpretación breve basada en score
-    const sc = result.score != null ? parseFloat(result.score) : null;
-    let interpretacion = '';
-    if (sc != null) {
-      if (sc >= 80)      interpretacion = 'Excelente composición corporal. Mantené el estímulo de entrenamiento y la ingesta proteica.';
-      else if (sc >= 70) interpretacion = 'Buena base. Hay margen para optimizar músculo o reducir grasa — el plan está calibrado para eso.';
-      else if (sc >= 60) interpretacion = 'En progreso. Consistencia en entrenamiento + nutrición es la clave para mover estos números.';
-      else               interpretacion = 'Hay trabajo por hacer — esto es el punto de partida. El plan está diseñado exactamente para mejorar esta composición.';
-    }
-
-    const notaCoach = result.nota ? `\n💬 Nota del coach: ${result.nota}` : '';
+    const analisis = parts.length ? `\n━━━━━━━━━━━━━\n🧠 ANÁLISIS\n${parts.join('\n')}` : '';
+    const notaCoach = result.nota ? `\n\n💬 ${result.nota}` : '';
 
     return `¡Hola ${nombre}! 👋
 
-Registré tu última medición InBody Dial H30. Aquí está tu reporte de composición corporal:
+Registré tu medición InBody Dial H30. Acá están tus resultados:
 
 ━━━━━━━━━━━━━
 📏 MEDICIÓN · ${fecha}
 
-${lines}${cambiosHtml}
+${datos}${analisis}${notaCoach}
 
 ━━━━━━━━━━━━━
-${interpretacion}${notaCoach}
-
-Recuerda: el número en la báscula es solo una parte de la historia. Lo que importa es la tendencia medición a medición.
+Lo que importa es la tendencia — una medición sola no dice nada, la dirección sí.
 
 El esfuerzo no es negociable.
 — ${coach} · VDSEN`;
@@ -4496,12 +4478,10 @@ El esfuerzo no es negociable.
     const chrono = Array.isArray(c.inbodyResults) ? [...c.inbodyResults].sort((a,b)=>a.ts-b.ts) : [];
     if (chrono.length < 2) return null;
     const MDEFS = [
-      { id:'peso',           label:'PESO',          unit:'kg',   hib:false },
-      { id:'musculo',        label:'MASA MUSCULAR',  unit:'kg',   hib:true  },
-      { id:'pct_grasa',      label:'% GRASA',        unit:'%',    hib:false },
-      { id:'grasa_visceral', label:'GRASA VISCERAL', unit:'niv.', hib:false },
-      { id:'score',          label:'SCORE INBODY',   unit:'/100', hib:true  },
-      { id:'tmb',            label:'TMB',            unit:'kcal', hib:true  },
+      { id:'peso', label:'PESO', unit:'kg',  hib:false },
+      { id:'smm',  label:'SMM',  unit:'kg',  hib:true  },
+      { id:'pbf',  label:'PBF',  unit:'%',   hib:false },
+      { id:'vfl',  label:'VFL',  unit:'',    hib:false },
     ];
     const metrics = MDEFS
       .map(m => ({ ...m, values: chrono.map(r => r[m.id] != null && r[m.id] !== '' ? parseFloat(r[m.id]) : null).filter(v => v !== null) }))
