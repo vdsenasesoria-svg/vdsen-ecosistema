@@ -1,73 +1,90 @@
-// VDSEN Service Worker — offline support
-const CACHE = 'vdsen-v1';
+// VDSEN Service Worker — offline v3
+const CACHE = 'vdsen-v3';
 
-// Assets to pre-cache on install (propio HTML)
 const PRECACHE = [
   '/vdsen-cliente.html',
+  '/vdsen-coach.html',
   '/cliente',
-  '/manifest.json'
+  '/coach',
+  '/manifest.json',
+  '/icon-180.png',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
+
+// Firebase SDK & Auth endpoints — never intercept (el SDK lo gestiona con IndexedDB)
+const FIREBASE_BYPASS = [
+  'firestore.googleapis.com',
+  'identitytoolkit.googleapis.com',
+  'securetoken.googleapis.com',
+  'firebaseinstallations.googleapis.com',
+  'fcmregistrations.googleapis.com',
+  'firebase.googleapis.com',
+];
+
+// CDN externos que se cachean on-demand (cache-first)
+function isCDNHost(hostname) {
+  return (
+    hostname.includes('gstatic.com') ||
+    hostname.includes('cdnjs.cloudflare.com') ||
+    hostname.includes('cdn.tailwindcss.com') ||
+    hostname.includes('fonts.googleapis.com') ||
+    hostname.includes('fonts.gstatic.com')
+  );
+}
 
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE)
-      .then(c => c.addAll(PRECACHE))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE).then(c =>
+      // addAll individual para que un fallo no bloquee todo
+      Promise.allSettled(PRECACHE.map(url => c.add(url)))
+    ).then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+      ))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', e => {
   const req = e.request;
-  const url = new URL(req.url);
-
-  // Solo GET
   if (req.method !== 'GET') return;
 
-  // Peticiones a Firebase Auth/Firestore API → nunca interceptar (el SDK las maneja)
-  if (url.hostname.includes('googleapis.com') && url.pathname.includes('/google.firestore')) return;
-  if (url.hostname.includes('identitytoolkit.googleapis.com')) return;
-  if (url.hostname.includes('securetoken.googleapis.com')) return;
-  if (url.hostname.includes('firebaseinstallations.googleapis.com')) return;
+  const url = new URL(req.url);
 
-  // CDN externos (gstatic, cdnjs, fonts) → cache-first, cae a red si no está
-  const isCDN = url.hostname !== self.location.hostname && (
-    url.hostname.includes('gstatic.com') ||
-    url.hostname.includes('cdnjs.cloudflare.com') ||
-    url.hostname.includes('fonts.googleapis.com') ||
-    url.hostname.includes('fonts.gstatic.com')
-  );
+  // Firebase SDK calls: nunca interceptar
+  if (FIREBASE_BYPASS.some(h => url.hostname.includes(h))) return;
+  // googleapis catch-all para cualquier otro endpoint Firebase
+  if (url.hostname.includes('googleapis.com')) return;
 
-  if (isCDN) {
+  // CDN externos → cache-first, fallback red
+  if (isCDNHost(url.hostname)) {
     e.respondWith(
       caches.match(req).then(cached => {
         if (cached) return cached;
         return fetch(req).then(res => {
           if (res && res.ok) {
-            const clone = res.clone();
-            caches.open(CACHE).then(c => c.put(req, clone));
+            caches.open(CACHE).then(c => c.put(req, res.clone()));
           }
           return res;
-        }).catch(() => cached || new Response('', { status: 503 }));
+        }).catch(() => new Response('', { status: 503 }));
       })
     );
     return;
   }
 
-  // HTML propio → network-first, fallback a cache
+  // Recursos propios (HTML, iconos, manifest) → network-first, fallback cache
   e.respondWith(
     fetch(req)
       .then(res => {
         if (res && res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(req, clone));
+          caches.open(CACHE).then(c => c.put(req, res.clone()));
         }
         return res;
       })

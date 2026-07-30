@@ -3,7 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VDSEN Coach">
+  <meta name="theme-color" content="#0a0a0a">
   <title>VDSEN Coach</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js').catch(function(){});
+      });
+    }
+  </script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -190,6 +203,10 @@
   </style>
 </head>
 <body>
+<!-- Banner offline -->
+<div id="offlineBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#7a4f00;color:#fff;font-size:12px;font-weight:600;letter-spacing:.5px;text-align:center;padding:6px 12px">
+  Sin conexión — los datos guardados están disponibles
+</div>
 <div class="sidebar" style="padding:0">
   <!-- Logo brand sidebar -->
   <div style="padding:24px 20px 20px;border-bottom:1px solid var(--border-soft);position:relative;overflow:hidden">
@@ -402,7 +419,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -417,7 +434,7 @@
   
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = getFirestore(app);
+  const db = initializeFirestore(app, { localCache: persistentLocalCache() });
 
   // Persistencia robusta: prioriza IndexedDB (sobrevive cierre de navegador en Safari/iOS), fallback a localStorage
   setPersistence(auth, indexedDBLocalPersistence).catch(() => setPersistence(auth, browserLocalPersistence)).catch(() => {});
@@ -7947,6 +7964,15 @@ El esfuerzo no es negociable.
   document.querySelectorAll("[data-section]").forEach(el => {
     el.addEventListener("click", () => showSection(el.dataset.section));
   });
+
+  // Banner offline
+  function _syncOfflineBanner() {
+    const b = document.getElementById('offlineBanner');
+    if (b) b.style.display = navigator.onLine ? 'none' : 'block';
+  }
+  window.addEventListener('online', _syncOfflineBanner);
+  window.addEventListener('offline', _syncOfflineBanner);
+  _syncOfflineBanner();
 </script>
 </body>
 </html>
