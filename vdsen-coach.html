@@ -4104,125 +4104,156 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window._switchClientTab = _switchClientTab;
 
   // ── InBody tab ──
+  // Campos en el orden exacto que muestra la app InBody Dial H30
+  // Fuente: manual oficial InBody + app (H30 no incluye TBW, ICW, ECW, proteína, minerales ni análisis segmentado)
+  const _INBODY_FIELDS = [
+    { id:'score',          label:'Puntuación InBody',          unit:'/100', step:'1',    hib:true,  type:'number' },
+    { id:'peso',           label:'Peso',                       unit:'kg',   step:'0.1',  hib:false, type:'number' },
+    { id:'musculo',        label:'Masa Muscular Esquelética',  unit:'kg',   step:'0.1',  hib:true,  type:'number' },
+    { id:'grasa_kg',       label:'Masa de Grasa Corporal',     unit:'kg',   step:'0.1',  hib:false, type:'number' },
+    { id:'imc',            label:'IMC',                        unit:'kg/m²',step:'0.1',  hib:false, type:'number' },
+    { id:'pct_grasa',      label:'% Grasa Corporal',           unit:'%',    step:'0.1',  hib:false, type:'number' },
+    { id:'cintura_cadera', label:'Relación Cintura-Cadera',    unit:'',     step:'0.01', hib:false, type:'number' },
+    { id:'grasa_visceral', label:'Nivel de Grasa Visceral',    unit:'niv.', step:'1',    hib:false, type:'number' },
+    { id:'masa_magra',     label:'Masa Magra Blanda',          unit:'kg',   step:'0.1',  hib:true,  type:'number' },
+    { id:'tmb',            label:'Metabolismo Basal (TMB)',     unit:'kcal', step:'1',    hib:true,  type:'number' },
+    { id:'tipo_cuerpo',    label:'Tipo de Cuerpo',             unit:'',     step:null,   hib:null,  type:'select', options:['','C','I','D'] },
+  ];
+
+  function _trendArrow(curr, prev, higherIsBetter) {
+    if (prev == null || curr == null) return '';
+    const diff = parseFloat(curr) - parseFloat(prev);
+    if (Math.abs(diff) < 0.05) return '<span style="color:#888;font-size:10px"> ±0</span>';
+    const good = higherIsBetter ? diff > 0 : diff < 0;
+    const col = good ? '#44BB88' : '#FF8844';
+    return `<span style="color:${col};font-size:10px"> ${diff>0?'▲':'▼'}${Math.abs(diff).toFixed(1)}</span>`;
+  }
+
   function _renderClientTabInBody(cont) {
     const clientId = _detailClientId;
     const c = _detailClientData || {};
     const results = Array.isArray(c.inbodyResults) ? [...c.inbodyResults].sort((a,b)=>b.ts-a.ts) : [];
     const latest = results[0] || null;
+    const prev   = results[1] || null;
 
-    const FIELDS = [
-      { id:'peso',           label:'Peso',             unit:'kg',   step:'0.1' },
-      { id:'musculo',        label:'Masa muscular (SMM)', unit:'kg', step:'0.1' },
-      { id:'grasa_kg',       label:'Masa grasa (BFM)', unit:'kg',   step:'0.1' },
-      { id:'pct_grasa',      label:'% Grasa (PBF)',    unit:'%',    step:'0.1' },
-      { id:'imc',            label:'IMC',              unit:'',     step:'0.1' },
-      { id:'grasa_visceral', label:'Grasa visceral',   unit:'niv.', step:'1'   },
-      { id:'agua',           label:'Agua corporal (TBW)', unit:'L', step:'0.1' },
-      { id:'score',          label:'InBody Score',     unit:'/100', step:'1'   },
-      { id:'tmb',            label:'TMB',              unit:'kcal', step:'1'   },
-    ];
+    // ── Score ring color ──
+    function _scoreColor(s) { return s>=80?'#44BB88':s>=60?'#C4FF00':'#FF8844'; }
 
-    function _trendArrow(curr, prev, higherIsBetter) {
-      if (prev == null || curr == null) return '';
-      const diff = parseFloat(curr) - parseFloat(prev);
-      if (Math.abs(diff) < 0.05) return '<span style="color:#888;font-size:10px"> ±0</span>';
-      const good = higherIsBetter ? diff > 0 : diff < 0;
-      const arrow = diff > 0 ? '▲' : '▼';
-      const col = good ? '#44BB88' : '#FF8844';
-      return `<span style="color:${col};font-size:10px"> ${arrow}${Math.abs(diff).toFixed(1)}</span>`;
-    }
-
-    // ── Current snapshot ──
+    // ── Snapshot card ──
     let snapshotHtml = '';
     if (latest) {
-      const prev = results[1] || null;
-      const row = (fid, label, unit, hib) => {
-        const v = latest[fid];
+      const fechaDisp = latest.fecha
+        ? new Date(latest.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})
+        : new Date(latest.ts).toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'});
+      const sc = latest.score != null ? parseFloat(latest.score) : null;
+      const scoreBlock = sc != null
+        ? `<div style="text-align:center;padding:12px 0 8px">
+            <div style="font-size:44px;font-weight:900;color:${_scoreColor(sc)};line-height:1">${sc}</div>
+            <div style="font-size:10px;letter-spacing:2px;color:#888;margin-top:2px">INBODY SCORE / 100</div>
+           </div>`
+        : '';
+      const rows = _INBODY_FIELDS.filter(f=>f.id!=='score').map(f => {
+        const v = latest[f.id];
         if (v == null || v === '') return '';
-        const pv = prev ? prev[fid] : null;
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(244,244,240,.05)">
-          <span style="color:#888;font-size:12px">${label}</span>
-          <span style="color:#F4F4F0;font-size:13px;font-weight:700">${v}${unit?' '+unit:''} ${_trendArrow(v,pv,hib)}</span>
+        const pv = prev ? prev[f.id] : null;
+        const trend = f.type === 'number' ? _trendArrow(v, pv, f.hib) : '';
+        const valDisplay = f.id === 'tipo_cuerpo'
+          ? `${v} <span style="font-size:10px;color:#888;font-weight:400">(${v==='C'?'músculo bajo':v==='D'?'atlético':'equilibrado'})</span>`
+          : `${v}${f.unit?' '+f.unit:''}`;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(244,244,240,.05)">
+          <span style="color:#888;font-size:12px">${f.label}</span>
+          <span style="color:#F4F4F0;font-size:13px;font-weight:700">${valDisplay} ${trend}</span>
         </div>`;
-      };
-      const fechaDisp = latest.fecha || new Date(latest.ts).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
+      }).join('');
+      const phone = (c.phone || '').replace(/[^\d]/g,'');
+      const waBtn = `<button onclick="_inbodyWA('${clientId}',0)"
+        style="flex:1;padding:9px 12px;border-radius:8px;border:1px solid #25D366;background:rgba(37,211,102,.12);color:#25D366;font-size:12px;font-weight:700;cursor:pointer">📲 Enviar resultado</button>`;
       snapshotHtml = `
-        <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.2);border-radius:12px;padding:14px 16px;margin-bottom:16px">
-          <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#C4FF00;margin-bottom:2px">ÚLTIMA MEDICIÓN</div>
-          <div style="font-size:11px;color:#888;margin-bottom:10px">${fechaDisp}</div>
-          ${row('peso','Peso','kg',false)}
-          ${row('musculo','Masa muscular','kg',true)}
-          ${row('grasa_kg','Masa grasa','kg',false)}
-          ${row('pct_grasa','% Grasa','%',false)}
-          ${row('grasa_visceral','Grasa visceral','niv.',false)}
-          ${row('agua','Agua corporal','L',true)}
-          ${row('score','InBody Score','/100',true)}
-          ${row('tmb','TMB','kcal',true)}
-          ${latest.nota ? `<div style="margin-top:8px;font-size:11px;color:#888;font-style:italic">${latest.nota}</div>` : ''}
+        <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.18);border-radius:12px;padding:14px 16px;margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#C4FF00">ÚLTIMA MEDICIÓN</div>
+              <div style="font-size:11px;color:#888;margin-top:2px">${fechaDisp}</div>
+            </div>
+          </div>
+          ${scoreBlock}
+          ${rows}
+          ${latest.nota ? `<div style="margin-top:8px;font-size:11px;color:#888;font-style:italic">💬 ${latest.nota}</div>` : ''}
+          <div style="display:flex;gap:8px;margin-top:12px">${waBtn}</div>
         </div>`;
     }
 
     // ── History rows ──
-    const histHtml = results.length > 1 ? results.slice(1).map((r,i) => {
-      const fechaDisp = r.fecha || new Date(r.ts).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
-      const chips = FIELDS.map(f => r[f.id]!=null&&r[f.id]!=='' ? `<span style="font-size:11px;color:#888">${f.label}: <strong style="color:#F4F4F0">${r[f.id]}${f.unit?' '+f.unit:''}</strong></span>` : '').filter(Boolean).join(' · ');
-      const origIdx = results.length - 1 - i; // reversed index for deletion
-      return `<div style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.08);border-radius:10px;padding:10px 14px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+    const histHtml = results.length > 1 ? results.slice(1).map((r,ri) => {
+      const fechaDisp = r.fecha
+        ? new Date(r.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})
+        : new Date(r.ts).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
+      const chips = _INBODY_FIELDS.map(f => { if(r[f.id]==null||r[f.id]==='') return ''; const disp=f.id==='tipo_cuerpo'?r[f.id]:(r[f.id]+(f.unit?' '+f.unit:'')); return `<span style="font-size:11px;color:#888">${f.label}: <strong style="color:#F4F4F0">${disp}</strong></span>`; }).filter(Boolean).join(' · ');
+      const realIdx = ri + 1; // index in sorted results array (0 = latest)
+      return `<div style="background:rgba(244,244,240,.03);border:1px solid rgba(244,244,240,.07);border-radius:10px;padding:10px 14px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
           <span style="font-size:12px;font-weight:700;color:#F4F4F0">${fechaDisp}</span>
-          <button onclick="_inbodyDelete('${clientId}',${results.indexOf(r)})" style="background:none;border:none;color:#c94a3a;font-size:12px;cursor:pointer;padding:2px 6px" title="Eliminar">✕</button>
+          <div style="display:flex;gap:6px">
+            <button onclick="_inbodyWA('${clientId}',${realIdx})" style="background:none;border:1px solid rgba(37,211,102,.4);border-radius:6px;color:#25D366;font-size:10px;cursor:pointer;padding:2px 7px">📲</button>
+            <button onclick="_inbodyDelete('${clientId}',${realIdx})" style="background:none;border:none;color:#c94a3a;font-size:12px;cursor:pointer;padding:2px 6px" title="Eliminar">✕</button>
+          </div>
         </div>
-        <div style="font-size:11px;color:#666;line-height:1.6">${chips}</div>
-        ${r.nota ? `<div style="margin-top:4px;font-size:11px;color:#555;font-style:italic">${r.nota}</div>` : ''}
+        <div style="font-size:11px;color:#666;line-height:1.8">${chips}</div>
+        ${r.nota ? `<div style="margin-top:4px;font-size:11px;color:#555;font-style:italic">💬 ${r.nota}</div>` : ''}
       </div>`;
     }).join('') : '';
 
-    // ── Add form ──
-    const formFields = FIELDS.map(f =>
-      `<div>
-        <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">${f.label}${f.unit?' ('+f.unit+')':''}</label>
-        <input id="inb_${f.id}" type="number" step="${f.step}" inputmode="decimal"
-          style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:8px 10px;border-radius:6px;font-size:13px;outline:none">
-      </div>`
-    ).join('');
+    // ── Add form — fields in H30 screen order ──
+    const _inStyle = 'width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:9px 10px;border-radius:6px;font-size:14px;outline:none';
+    const formFields = _INBODY_FIELDS.map(f => {
+      const lbl = `<label style="display:block;font-size:11px;color:#888;margin-bottom:3px">${f.label}${f.unit?' ('+f.unit+')':''}</label>`;
+      if (f.type === 'select') {
+        const opts = f.options.map(o => `<option value="${o}">${o||'— seleccionar —'}</option>`).join('');
+        return `<div style="grid-column:1/-1">${lbl}<select id="inb_${f.id}" style="${_inStyle}">${opts}</select></div>`;
+      }
+      return `<div>${lbl}<input id="inb_${f.id}" type="number" step="${f.step}" inputmode="decimal" style="${_inStyle}"></div>`;
+    }).join('');
 
     cont.innerHTML = `
       ${snapshotHtml}
 
       <div style="margin-bottom:16px">
-        <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.nextElementSibling.style.display==='none'?'+ Agregar medición':'− Cerrar'"
+        <button id="_inbAddBtn" onclick="(function(btn){var p=btn.nextElementSibling;var open=p.style.display!=='none';p.style.display=open?'none':'block';btn.textContent=open?'+ Agregar medición':'− Cerrar';})(this)"
           style="width:100%;padding:10px;background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.3);border-radius:8px;color:#C4FF00;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.5px">+ Agregar medición</button>
         <div style="display:none;margin-top:12px;background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.1);border-radius:10px;padding:16px">
-          <div style="font-size:10px;letter-spacing:2px;color:#888;font-weight:700;margin-bottom:12px">NUEVA MEDICIÓN · INBODY DIAL H30</div>
-          <div style="margin-bottom:10px">
-            <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Fecha</label>
+          <div style="font-size:10px;letter-spacing:2px;color:#888;font-weight:700;margin-bottom:4px">NUEVA MEDICIÓN · INBODY DIAL H30</div>
+          <div style="font-size:11px;color:#555;margin-bottom:14px">Ingresá los valores exactamente como aparecen en la app InBody.</div>
+          <div style="margin-bottom:12px">
+            <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Fecha de la medición</label>
             <input id="inb_fecha" type="date" value="${new Date().toISOString().slice(0,10)}"
-              style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:8px 10px;border-radius:6px;font-size:13px;outline:none">
+              style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:9px 10px;border-radius:6px;font-size:14px;outline:none">
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
             ${formFields}
           </div>
-          <div style="margin-bottom:12px">
-            <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Nota (opcional)</label>
-            <input id="inb_nota" type="text" placeholder="Observación, contexto..."
-              style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:8px 10px;border-radius:6px;font-size:13px;outline:none">
+          <div style="margin-bottom:14px">
+            <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Nota del coach (opcional)</label>
+            <input id="inb_nota" type="text" placeholder="Contexto, observación, comparativa..."
+              style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:9px 10px;border-radius:6px;font-size:13px;outline:none">
           </div>
           <button onclick="_inbodySave('${clientId}')"
-            style="width:100%;padding:11px;background:#C4FF00;border:none;border-radius:8px;color:#000;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.5px">Guardar medición</button>
+            style="width:100%;padding:12px;background:#C4FF00;border:none;border-radius:8px;color:#000;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.5px">Guardar medición</button>
         </div>
       </div>
 
-      ${results.length > 1 ? '<div style="font-size:10px;letter-spacing:2px;color:#888;font-weight:700;margin-bottom:8px">HISTORIAL</div>'+histHtml : ''}
-      ${results.length === 0 ? '<div style="color:#555;font-size:13px;text-align:center;padding:24px 0">Sin mediciones registradas todavía.</div>' : ''}
+      ${results.length > 1 ? '<div style="font-size:10px;letter-spacing:2px;color:#888;font-weight:700;margin-bottom:10px">HISTORIAL</div>'+histHtml : ''}
+      ${results.length === 0 ? '<div style="color:#555;font-size:13px;text-align:center;padding:32px 0">Sin mediciones registradas todavía.</div>' : ''}
     `;
   }
 
   async function _inbodySave(clientId) {
-    const FIDS = ['peso','musculo','grasa_kg','pct_grasa','imc','grasa_visceral','agua','score','tmb'];
     const entry = { ts: Date.now(), fecha: document.getElementById('inb_fecha')?.value || '' };
-    FIDS.forEach(fid => {
-      const v = document.getElementById('inb_'+fid)?.value;
-      if (v !== '' && v != null) entry[fid] = parseFloat(v);
+    _INBODY_FIELDS.forEach(f => {
+      const el = document.getElementById('inb_'+f.id);
+      if (!el) return;
+      const v = el.value;
+      if (v === '' || v == null) return;
+      entry[f.id] = f.type === 'select' ? v : parseFloat(v);
     });
     const nota = document.getElementById('inb_nota')?.value?.trim();
     if (nota) entry.nota = nota;
@@ -4234,8 +4265,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       existing.push(entry);
       await updateDoc(ref, { inbodyResults: existing });
       showToast('✅ Medición guardada');
-      _detailClientData = snap.data();
-      _detailClientData.inbodyResults = existing;
+      _detailClientData = Object.assign({}, snap.data(), { inbodyResults: existing });
       _switchClientTab('inbody');
     } catch(e) { showToast('Error: '+e.message, true); }
   }
@@ -4246,16 +4276,127 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     try {
       const ref = doc(db, 'clients', clientId);
       const snap = await getDoc(ref);
-      const arr = snap.exists() && Array.isArray(snap.data().inbodyResults) ? [...snap.data().inbodyResults] : [];
-      arr.splice(idx, 1);
-      await updateDoc(ref, { inbodyResults: arr });
+      const sorted = snap.exists() && Array.isArray(snap.data().inbodyResults)
+        ? [...snap.data().inbodyResults].sort((a,b)=>b.ts-a.ts) : [];
+      sorted.splice(idx, 1);
+      await updateDoc(ref, { inbodyResults: sorted });
       showToast('Medición eliminada');
-      _detailClientData = snap.data();
-      _detailClientData.inbodyResults = arr;
+      _detailClientData = Object.assign({}, snap.data(), { inbodyResults: sorted });
       _switchClientTab('inbody');
     } catch(e) { showToast('Error: '+e.message, true); }
   }
   window._inbodyDelete = _inbodyDelete;
+
+  function _buildInBodyWAMsg(result, prev, clientName, coachName) {
+    const nombre = (clientName || 'atleta').split(' ')[0];
+    const coach  = coachName || 'Tu coach';
+    const fecha  = result.fecha
+      ? new Date(result.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})
+      : new Date(result.ts).toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'});
+
+    function _line(label, fid, unit, emoji) {
+      const v = result[fid];
+      if (v == null || v === '') return '';
+      let trend = '';
+      if (prev && prev[fid] != null) {
+        const d = parseFloat(v) - parseFloat(prev[fid]);
+        if (Math.abs(d) >= 0.1) trend = ' (' + (d>0?'+':'') + d.toFixed(1) + ')';
+      }
+      return `${emoji} ${label}: *${v}${unit?' '+unit:''}*${trend}`;
+    }
+
+    const tcLabel = result.tipo_cuerpo ? `\n🔠 Tipo de cuerpo: *${result.tipo_cuerpo}* (${result.tipo_cuerpo==='C'?'músculo bajo, grasa alta':result.tipo_cuerpo==='D'?'atlético, músculo alto':'equilibrado'})` : '';
+    const lines = [
+      _line('Puntuación InBody',         'score',          '/100',   '🏆'),
+      _line('Peso',                      'peso',           'kg',     '⚖️'),
+      _line('Masa muscular esquelética', 'musculo',        'kg',     '💪'),
+      _line('Masa de grasa corporal',    'grasa_kg',       'kg',     '🔥'),
+      _line('% Grasa corporal',          'pct_grasa',      '%',      '📊'),
+      _line('IMC',                       'imc',            'kg/m²',  '📐'),
+      _line('Relación cintura-cadera',   'cintura_cadera', '',       '📏'),
+      _line('Grasa visceral',            'grasa_visceral', 'niv.',   '🔴'),
+      _line('Masa magra blanda',         'masa_magra',     'kg',     '🦴'),
+      _line('Metabolismo basal',         'tmb',            'kcal',   '🔋'),
+    ].filter(Boolean).join('\n') + tcLabel;
+
+    // Resumen de cambios vs medición anterior
+    let cambiosHtml = '';
+    if (prev) {
+      const prevFecha = prev.fecha
+        ? new Date(prev.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})
+        : new Date(prev.ts).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
+      const dPeso   = prev.peso    != null && result.peso    != null ? (parseFloat(result.peso)    - parseFloat(prev.peso)).toFixed(1)    : null;
+      const dMusc   = prev.musculo != null && result.musculo != null ? (parseFloat(result.musculo) - parseFloat(prev.musculo)).toFixed(1) : null;
+      const dGrasa  = prev.grasa_kg!= null && result.grasa_kg!= null? (parseFloat(result.grasa_kg)- parseFloat(prev.grasa_kg)).toFixed(1): null;
+      const cambios = [
+        dPeso  != null ? `⚖️ Peso: ${dPeso>0?'+':''}${dPeso} kg` : '',
+        dMusc  != null ? `💪 Músculo: ${dMusc>0?'+':''}${dMusc} kg` : '',
+        dGrasa != null ? `🔥 Grasa: ${dGrasa>0?'+':''}${dGrasa} kg` : '',
+      ].filter(Boolean).join('\n');
+      if (cambios) cambiosHtml = `\n━━━━━━━━━━━━━\n📈 VS MEDICIÓN ANTERIOR (${prevFecha})\n${cambios}`;
+    }
+
+    // Interpretación breve basada en score
+    const sc = result.score != null ? parseFloat(result.score) : null;
+    let interpretacion = '';
+    if (sc != null) {
+      if (sc >= 80)      interpretacion = 'Excelente composición corporal. Mantené el estímulo de entrenamiento y la ingesta proteica.';
+      else if (sc >= 70) interpretacion = 'Buena base. Hay margen para optimizar músculo o reducir grasa — el plan está calibrado para eso.';
+      else if (sc >= 60) interpretacion = 'En progreso. Consistencia en entrenamiento + nutrición es la clave para mover estos números.';
+      else               interpretacion = 'Hay trabajo por hacer — esto es el punto de partida. El plan está diseñado exactamente para mejorar esta composición.';
+    }
+
+    const notaCoach = result.nota ? `\n💬 Nota del coach: ${result.nota}` : '';
+
+    return `¡Hola ${nombre}! 👋
+
+Registré tu última medición InBody Dial H30. Aquí está tu reporte de composición corporal:
+
+━━━━━━━━━━━━━
+📏 MEDICIÓN · ${fecha}
+
+${lines}${cambiosHtml}
+
+━━━━━━━━━━━━━
+${interpretacion}${notaCoach}
+
+Recuerda: el número en la báscula es solo una parte de la historia. Lo que importa es la tendencia medición a medición.
+
+El esfuerzo no es negociable.
+— ${coach} · VDSEN`;
+  }
+
+  async function _inbodyWA(clientId, idx) {
+    const c = _detailClientData || {};
+    const results = Array.isArray(c.inbodyResults) ? [...c.inbodyResults].sort((a,b)=>b.ts-a.ts) : [];
+    const result = results[idx];
+    if (!result) { showToast('Medición no encontrada', true); return; }
+    const prev = results[idx+1] || null;
+    const coachName = currentCoach?.displayName || currentCoach?.email?.split('@')[0] || 'Tu coach';
+    const msg = _buildInBodyWAMsg(result, prev, c.displayName || c.email, coachName);
+    const phone = (c.phone || '').replace(/[^\d]/g,'');
+    if (phone) {
+      window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg), '_blank');
+    } else {
+      // Sin teléfono — modal de copia
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `<div style="background:#141616;border:1px solid rgba(37,211,102,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
+        <h3 style="color:#25D366;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📲 Resultado InBody para WhatsApp</h3>
+        <p style="color:#888;font-size:12px;margin-bottom:12px">${c.displayName} no tiene WhatsApp guardado. Copia el mensaje y envíalo manualmente.</p>
+        <textarea readonly style="width:100%;height:320px;background:#0a0a0a;border:1px solid rgba(244,244,240,.2);border-radius:6px;color:#cfcfcf;padding:12px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box" id="_inbWaMsg">${msg.replace(/</g,'&lt;')}</textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          <button id="_inbWaCopy" style="padding:8px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.5);background:rgba(244,244,240,.18);color:#F4F4F0;font-size:12px;font-weight:700;cursor:pointer">📋 Copiar</button>
+          <button id="_inbWaClose" style="padding:8px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Cerrar</button>
+        </div>
+      </div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#_inbWaCopy').onclick = () => { const t=ov.querySelector('#_inbWaMsg'); t.select(); document.execCommand('copy'); showToast('✅ Mensaje copiado'); };
+      ov.querySelector('#_inbWaClose').onclick = () => ov.remove();
+      ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+    }
+  }
+  window._inbodyWA = _inbodyWA;
 
   // ── Ficha tab ──
   function _renderClientTabFicha(cont) {
