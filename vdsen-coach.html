@@ -4081,6 +4081,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <button id="ctab_plan"    onclick="_switchClientTab('plan')"    style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🏋️ Plan</button>
         <button id="ctab_monitor" onclick="_switchClientTab('monitor')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📊 Monitor</button>
         <button id="ctab_notas"   onclick="_switchClientTab('notas')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📝 Notas</button>
+        <button id="ctab_inbody"  onclick="_switchClientTab('inbody')"  style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📏 InBody</button>
       </div>
       <div id="clientDetailTabContent"></div>`;
     _switchClientTab('ficha');
@@ -4088,18 +4089,173 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   function _switchClientTab(tab) {
     _detailActiveTab = tab;
-    ['ficha','plan','monitor','notas'].forEach(t => {
+    ['ficha','plan','monitor','notas','inbody'].forEach(t => {
       const btn = document.getElementById('ctab_'+t);
       if (btn) { btn.style.color = t===tab?'#F4F4F0':'#888'; btn.style.borderBottomColor = t===tab?'#C4FF00':'transparent'; }
     });
     const cont = document.getElementById('clientDetailTabContent');
     if (!cont) return;
-    if (tab === 'ficha')   _renderClientTabFicha(cont);
+    if (tab === 'ficha')        _renderClientTabFicha(cont);
     else if (tab === 'plan')    _renderClientTabPlan(cont);
     else if (tab === 'monitor') _renderClientTabMonitor(cont);
     else if (tab === 'notas')   _renderClientTabNotas(cont);
+    else if (tab === 'inbody')  _renderClientTabInBody(cont);
   }
   window._switchClientTab = _switchClientTab;
+
+  // ── InBody tab ──
+  function _renderClientTabInBody(cont) {
+    const clientId = _detailClientId;
+    const c = _detailClientData || {};
+    const results = Array.isArray(c.inbodyResults) ? [...c.inbodyResults].sort((a,b)=>b.ts-a.ts) : [];
+    const latest = results[0] || null;
+
+    const FIELDS = [
+      { id:'peso',           label:'Peso',             unit:'kg',   step:'0.1' },
+      { id:'musculo',        label:'Masa muscular (SMM)', unit:'kg', step:'0.1' },
+      { id:'grasa_kg',       label:'Masa grasa (BFM)', unit:'kg',   step:'0.1' },
+      { id:'pct_grasa',      label:'% Grasa (PBF)',    unit:'%',    step:'0.1' },
+      { id:'imc',            label:'IMC',              unit:'',     step:'0.1' },
+      { id:'grasa_visceral', label:'Grasa visceral',   unit:'niv.', step:'1'   },
+      { id:'agua',           label:'Agua corporal (TBW)', unit:'L', step:'0.1' },
+      { id:'score',          label:'InBody Score',     unit:'/100', step:'1'   },
+      { id:'tmb',            label:'TMB',              unit:'kcal', step:'1'   },
+    ];
+
+    function _trendArrow(curr, prev, higherIsBetter) {
+      if (prev == null || curr == null) return '';
+      const diff = parseFloat(curr) - parseFloat(prev);
+      if (Math.abs(diff) < 0.05) return '<span style="color:#888;font-size:10px"> ±0</span>';
+      const good = higherIsBetter ? diff > 0 : diff < 0;
+      const arrow = diff > 0 ? '▲' : '▼';
+      const col = good ? '#44BB88' : '#FF8844';
+      return `<span style="color:${col};font-size:10px"> ${arrow}${Math.abs(diff).toFixed(1)}</span>`;
+    }
+
+    // ── Current snapshot ──
+    let snapshotHtml = '';
+    if (latest) {
+      const prev = results[1] || null;
+      const row = (fid, label, unit, hib) => {
+        const v = latest[fid];
+        if (v == null || v === '') return '';
+        const pv = prev ? prev[fid] : null;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(244,244,240,.05)">
+          <span style="color:#888;font-size:12px">${label}</span>
+          <span style="color:#F4F4F0;font-size:13px;font-weight:700">${v}${unit?' '+unit:''} ${_trendArrow(v,pv,hib)}</span>
+        </div>`;
+      };
+      const fechaDisp = latest.fecha || new Date(latest.ts).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
+      snapshotHtml = `
+        <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.2);border-radius:12px;padding:14px 16px;margin-bottom:16px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#C4FF00;margin-bottom:2px">ÚLTIMA MEDICIÓN</div>
+          <div style="font-size:11px;color:#888;margin-bottom:10px">${fechaDisp}</div>
+          ${row('peso','Peso','kg',false)}
+          ${row('musculo','Masa muscular','kg',true)}
+          ${row('grasa_kg','Masa grasa','kg',false)}
+          ${row('pct_grasa','% Grasa','%',false)}
+          ${row('grasa_visceral','Grasa visceral','niv.',false)}
+          ${row('agua','Agua corporal','L',true)}
+          ${row('score','InBody Score','/100',true)}
+          ${row('tmb','TMB','kcal',true)}
+          ${latest.nota ? `<div style="margin-top:8px;font-size:11px;color:#888;font-style:italic">${latest.nota}</div>` : ''}
+        </div>`;
+    }
+
+    // ── History rows ──
+    const histHtml = results.length > 1 ? results.slice(1).map((r,i) => {
+      const fechaDisp = r.fecha || new Date(r.ts).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
+      const chips = FIELDS.map(f => r[f.id]!=null&&r[f.id]!=='' ? `<span style="font-size:11px;color:#888">${f.label}: <strong style="color:#F4F4F0">${r[f.id]}${f.unit?' '+f.unit:''}</strong></span>` : '').filter(Boolean).join(' · ');
+      const origIdx = results.length - 1 - i; // reversed index for deletion
+      return `<div style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.08);border-radius:10px;padding:10px 14px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:12px;font-weight:700;color:#F4F4F0">${fechaDisp}</span>
+          <button onclick="_inbodyDelete('${clientId}',${results.indexOf(r)})" style="background:none;border:none;color:#c94a3a;font-size:12px;cursor:pointer;padding:2px 6px" title="Eliminar">✕</button>
+        </div>
+        <div style="font-size:11px;color:#666;line-height:1.6">${chips}</div>
+        ${r.nota ? `<div style="margin-top:4px;font-size:11px;color:#555;font-style:italic">${r.nota}</div>` : ''}
+      </div>`;
+    }).join('') : '';
+
+    // ── Add form ──
+    const formFields = FIELDS.map(f =>
+      `<div>
+        <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">${f.label}${f.unit?' ('+f.unit+')':''}</label>
+        <input id="inb_${f.id}" type="number" step="${f.step}" inputmode="decimal"
+          style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:8px 10px;border-radius:6px;font-size:13px;outline:none">
+      </div>`
+    ).join('');
+
+    cont.innerHTML = `
+      ${snapshotHtml}
+
+      <div style="margin-bottom:16px">
+        <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.nextElementSibling.style.display==='none'?'+ Agregar medición':'− Cerrar'"
+          style="width:100%;padding:10px;background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.3);border-radius:8px;color:#C4FF00;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.5px">+ Agregar medición</button>
+        <div style="display:none;margin-top:12px;background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.1);border-radius:10px;padding:16px">
+          <div style="font-size:10px;letter-spacing:2px;color:#888;font-weight:700;margin-bottom:12px">NUEVA MEDICIÓN · INBODY DIAL H30</div>
+          <div style="margin-bottom:10px">
+            <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Fecha</label>
+            <input id="inb_fecha" type="date" value="${new Date().toISOString().slice(0,10)}"
+              style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:8px 10px;border-radius:6px;font-size:13px;outline:none">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            ${formFields}
+          </div>
+          <div style="margin-bottom:12px">
+            <label style="display:block;font-size:11px;color:#888;margin-bottom:3px">Nota (opcional)</label>
+            <input id="inb_nota" type="text" placeholder="Observación, contexto..."
+              style="width:100%;box-sizing:border-box;background:#0C1626;border:1px solid #1E2D40;color:#F4F4F0;padding:8px 10px;border-radius:6px;font-size:13px;outline:none">
+          </div>
+          <button onclick="_inbodySave('${clientId}')"
+            style="width:100%;padding:11px;background:#C4FF00;border:none;border-radius:8px;color:#000;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.5px">Guardar medición</button>
+        </div>
+      </div>
+
+      ${results.length > 1 ? '<div style="font-size:10px;letter-spacing:2px;color:#888;font-weight:700;margin-bottom:8px">HISTORIAL</div>'+histHtml : ''}
+      ${results.length === 0 ? '<div style="color:#555;font-size:13px;text-align:center;padding:24px 0">Sin mediciones registradas todavía.</div>' : ''}
+    `;
+  }
+
+  async function _inbodySave(clientId) {
+    const FIDS = ['peso','musculo','grasa_kg','pct_grasa','imc','grasa_visceral','agua','score','tmb'];
+    const entry = { ts: Date.now(), fecha: document.getElementById('inb_fecha')?.value || '' };
+    FIDS.forEach(fid => {
+      const v = document.getElementById('inb_'+fid)?.value;
+      if (v !== '' && v != null) entry[fid] = parseFloat(v);
+    });
+    const nota = document.getElementById('inb_nota')?.value?.trim();
+    if (nota) entry.nota = nota;
+    if (Object.keys(entry).length <= 2) { showToast('Ingresá al menos un valor', true); return; }
+    try {
+      const ref = doc(db, 'clients', clientId);
+      const snap = await getDoc(ref);
+      const existing = (snap.exists() && Array.isArray(snap.data().inbodyResults)) ? snap.data().inbodyResults : [];
+      existing.push(entry);
+      await updateDoc(ref, { inbodyResults: existing });
+      showToast('✅ Medición guardada');
+      _detailClientData = snap.data();
+      _detailClientData.inbodyResults = existing;
+      _switchClientTab('inbody');
+    } catch(e) { showToast('Error: '+e.message, true); }
+  }
+  window._inbodySave = _inbodySave;
+
+  async function _inbodyDelete(clientId, idx) {
+    if (!await _askConfirm('¿Eliminar esta medición?')) return;
+    try {
+      const ref = doc(db, 'clients', clientId);
+      const snap = await getDoc(ref);
+      const arr = snap.exists() && Array.isArray(snap.data().inbodyResults) ? [...snap.data().inbodyResults] : [];
+      arr.splice(idx, 1);
+      await updateDoc(ref, { inbodyResults: arr });
+      showToast('Medición eliminada');
+      _detailClientData = snap.data();
+      _detailClientData.inbodyResults = arr;
+      _switchClientTab('inbody');
+    } catch(e) { showToast('Error: '+e.message, true); }
+  }
+  window._inbodyDelete = _inbodyDelete;
 
   // ── Ficha tab ──
   function _renderClientTabFicha(cont) {

@@ -6920,28 +6920,7 @@ async function markSessionDone(di) {
     return;
   }
 
-  // Validar que al menos 1 set por ejercicio esté completo
-  var sesiones = getSesiones();
-  var ses = sesiones[di];
-  if (ses) {
-    var lineas = (ses.contenido||'').split('\n').filter(function(l){return l.trim() && (/\d\s*[×xX]\s*\d|RIR/i.test(l) || /^\d+[.)]\s+/.test(l));});
-    var sinRegistrar = [];
-    lineas.forEach(function(l, ei) {
-      var nombre = l.replace(/^\d+[.)]\s*/,'').split('|')[0].replace(/\d+\s*[×xX]\s*[\d\-–]+/g,'').replace(/RIR\s*[\d\-–]+/gi,'').trim();
-      var tieneSet = false;
-      for (var s = 0; s < 10; s++) {
-        var lk = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
-        if (LOGS[lk] && LOGS[lk].done) { tieneSet = true; break; }
-      }
-      if (!tieneSet && nombre.length > 2) sinRegistrar.push(nombre);
-    });
-    if (sinRegistrar.length > 0) {
-      var confirmar = await _askConfirm('Ejercicios sin registrar:\n• ' + sinRegistrar.join('\n• ') + '\n\n¿Completar sesión de todos modos?');
-      if (!confirmar) return;
-    }
-  }
-
-  // Mostrar check-in post-sesión
+  // Mostrar check-in post-sesión (sin bloquear por sets no registrados)
   showPostSessionModal(di);
 }
 
@@ -7088,8 +7067,7 @@ async function markSessionDoneFromHistory(di) {
   });
 
   if (sinReferencia.length === ejercicios.length) {
-    showToast('Sin datos de referencia para ningún ejercicio', true);
-    return;
+    showToast('Sin historial previo — completá el check-in de todos modos', false);
   }
   if (sinReferencia.length > 0) {
     showToast('Sin referencia: ' + sinReferencia.join(', ') + ' — el resto sí se rellenó', true);
