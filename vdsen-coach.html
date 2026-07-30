@@ -4137,6 +4137,47 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const results = Array.isArray(c.inbodyResults) ? [...c.inbodyResults].sort((a,b)=>b.ts-a.ts) : [];
     const latest = results[0] || null;
     const prev   = results[1] || null;
+    const chrono = [...results].reverse(); // oldest-first for charts
+
+    // ── Progress sparklines section (only when 2+ measurements) ──
+    let progressHtml = '';
+    if (results.length >= 2) {
+      const PMETS = [
+        { id:'peso',           label:'Peso',        unit:'kg',   hib:false },
+        { id:'musculo',        label:'Muscular',    unit:'kg',   hib:true  },
+        { id:'pct_grasa',      label:'% Grasa',     unit:'%',    hib:false },
+        { id:'grasa_visceral', label:'G. Visceral', unit:'niv.', hib:false },
+        { id:'score',          label:'Score',       unit:'/100', hib:true  },
+        { id:'tmb',            label:'TMB',         unit:'kcal', hib:true  },
+      ];
+      const pcards = PMETS.map(m => {
+        const vals = chrono.map(r => r[m.id] != null && r[m.id] !== '' ? parseFloat(r[m.id]) : null).filter(v => v !== null);
+        if (vals.length < 2) return '';
+        const first = vals[0], last = vals[vals.length-1], diff = +(last-first).toFixed(1);
+        const neutral = Math.abs(diff) < 0.1, good = m.hib ? diff > 0 : diff < 0;
+        const clr = neutral ? '#888' : (good ? '#C4FF00' : '#FF8844');
+        const dStr = neutral ? '±0' : (diff>0?'+':'')+diff+' '+m.unit;
+        return `<div style="background:rgba(244,244,240,.03);border:1px solid rgba(244,244,240,.07);border-radius:8px;padding:10px 12px">
+          <div style="font-size:9px;color:#666;font-weight:700;letter-spacing:1px;margin-bottom:4px">${m.label.toUpperCase()}</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px">
+            <div>
+              <div style="font-size:17px;font-weight:700;color:#F4F4F0;line-height:1.1">${last}<span style="font-size:9px;color:#666;font-weight:400;margin-left:2px">${m.unit}</span></div>
+              <div style="font-size:9px;color:${neutral?'#555':clr};margin-top:3px">${dStr}</div>
+            </div>
+            ${_inbodySparklineSVG(vals, 100, 44, clr)}
+          </div>
+        </div>`;
+      }).filter(Boolean).join('');
+      if (pcards) {
+        progressHtml = `<div style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:10px;letter-spacing:2px;color:#888;font-weight:700">PROGRESO</div>
+            <button onclick="_inbodyExportPNG('${clientId}')" style="padding:5px 12px;background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.3);border-radius:6px;color:#C4FF00;font-size:11px;font-weight:700;cursor:pointer">📥 Exportar imagen</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${pcards}</div>
+        </div>`;
+      }
+    }
 
     // ── Score ring color ──
     function _scoreColor(s) { return s>=80?'#44BB88':s>=60?'#C4FF00':'#FF8844'; }
@@ -4220,6 +4261,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     cont.innerHTML = `
       ${snapshotHtml}
+      ${progressHtml}
 
       <div style="margin-bottom:16px">
         <button id="_inbAddBtn" onclick="(function(btn){var p=btn.nextElementSibling;var open=p.style.display!=='none';p.style.display=open?'none':'block';btn.textContent=open?'+ Agregar medición':'− Cerrar';})(this)"
@@ -4405,6 +4447,128 @@ El esfuerzo no es negociable.
     }
   }
   window._inbodyWA = _inbodyWA;
+
+  // Inline SVG sparkline for the progress grid
+  function _inbodySparklineSVG(vals, w, h, clr) {
+    if (!vals || vals.length < 2) return '';
+    const mn = Math.min(...vals), mx = Math.max(...vals), rng = mx - mn || 1;
+    const px = 5, py = 5;
+    const pts = vals.map((v,i) =>
+      (px + (i/(vals.length-1))*(w-2*px)).toFixed(1) + ',' +
+      (h - py - ((v-mn)/rng)*(h-2*py)).toFixed(1)
+    );
+    const dots = vals.map((v,i) => {
+      const x = (px + (i/(vals.length-1))*(w-2*px)).toFixed(1);
+      const y = (h - py - ((v-mn)/rng)*(h-2*py)).toFixed(1);
+      return `<circle cx="${x}" cy="${y}" r="2.5" fill="${clr}" stroke="#0A0A0A" stroke-width="1"/>`;
+    }).join('');
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;flex-shrink:0"><polyline points="${pts.join(' ')}" fill="none" stroke="${clr}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}</svg>`;
+  }
+
+  // Canvas-based PNG export — draws all metric charts off-screen
+  async function _inbodyExportPNG(clientId) {
+    const c = _detailClientData || {};
+    const chrono = Array.isArray(c.inbodyResults) ? [...c.inbodyResults].sort((a,b)=>a.ts-b.ts) : [];
+    if (chrono.length < 2) { showToast('Se necesitan al menos 2 mediciones', true); return; }
+    const MDEFS = [
+      { id:'peso',           label:'PESO',          unit:'kg',   hib:false },
+      { id:'musculo',        label:'MASA MUSCULAR',  unit:'kg',   hib:true  },
+      { id:'pct_grasa',      label:'% GRASA',        unit:'%',    hib:false },
+      { id:'grasa_visceral', label:'GRASA VISCERAL', unit:'niv.', hib:false },
+      { id:'score',          label:'SCORE INBODY',   unit:'/100', hib:true  },
+      { id:'tmb',            label:'TMB',            unit:'kcal', hib:true  },
+    ];
+    const metrics = MDEFS
+      .map(m => ({ ...m, values: chrono.map(r => r[m.id] != null && r[m.id] !== '' ? parseFloat(r[m.id]) : null).filter(v => v !== null) }))
+      .filter(m => m.values.length >= 2);
+    if (!metrics.length) { showToast('No hay suficientes datos para graficar', true); return; }
+
+    const CW=340, CH=180, COLS=Math.min(3,metrics.length), ROWS=Math.ceil(metrics.length/COLS), PAD=28, GAP=14, HDR=96;
+    const W = PAD*2 + COLS*CW + (COLS-1)*GAP;
+    const H = HDR + PAD + ROWS*CH + (ROWS-1)*GAP + PAD + 44;
+    const cv = document.createElement('canvas'); cv.width = W*2; cv.height = H*2;
+    const ctx = cv.getContext('2d'); ctx.scale(2,2);
+
+    // Background + accent bar
+    ctx.fillStyle = '#0A0A0A'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#C4FF00'; ctx.fillRect(0,0,W,4);
+
+    // Header
+    const cname = c.displayName || c.email || 'Cliente';
+    function _fmtD(r) { const iso = r.fecha || new Date(r.ts).toISOString().slice(0,10); const [y,mo,d] = iso.split('-'); return `${d}/${mo}/${y}`; }
+    ctx.fillStyle = '#C4FF00'; ctx.font = '600 10px sans-serif';
+    ctx.fillText('COMPOSICIÓN CORPORAL · INBODY DIAL H30', PAD, 26);
+    ctx.fillStyle = '#F4F4F0'; ctx.font = '700 20px sans-serif';
+    ctx.fillText(cname, PAD, 52);
+    ctx.fillStyle = '#555'; ctx.font = '400 11px sans-serif';
+    ctx.fillText(`${_fmtD(chrono[0])} → ${_fmtD(chrono[chrono.length-1])} · ${chrono.length} mediciones`, PAD, 72);
+    ctx.fillStyle = 'rgba(244,244,240,0.07)'; ctx.fillRect(PAD, 82, W-PAD*2, 1);
+
+    // Rounded rect path helper
+    function rrect(x,y,w,h,r) {
+      ctx.beginPath(); ctx.moveTo(x+r,y);
+      ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+      ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+      ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+      ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+    }
+
+    // Sparkline + fill helper
+    function spark(vals,ox,oy,ow,oh,clr) {
+      const mn=Math.min(...vals), mx=Math.max(...vals), rng=mx-mn||1;
+      const pts = vals.map((v,i) => ({ x: ox+(i/(vals.length-1))*ow, y: oy+oh-((v-mn)/rng)*oh }));
+      ctx.beginPath(); ctx.moveTo(pts[0].x,oy+oh); pts.forEach(p=>ctx.lineTo(p.x,p.y));
+      ctx.lineTo(pts[pts.length-1].x,oy+oh); ctx.closePath(); ctx.fillStyle=clr+'22'; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y); pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));
+      ctx.strokeStyle=clr; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.stroke();
+      pts.forEach(p => {
+        ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2); ctx.fillStyle=clr; ctx.fill();
+        ctx.strokeStyle='#111'; ctx.lineWidth=1; ctx.stroke();
+      });
+    }
+
+    // Metric cards
+    metrics.forEach((m,i) => {
+      const col=i%COLS, row=Math.floor(i/COLS);
+      const cx=PAD+col*(CW+GAP), cy=HDR+PAD+row*(CH+GAP);
+      const first=m.values[0], last=m.values[m.values.length-1];
+      const diff = +(last-first).toFixed(2);
+      const neutral = Math.abs(diff)<0.1, good = m.hib ? diff>0 : diff<0;
+      const clr = neutral ? '#888' : (good ? '#C4FF00' : '#FF8844');
+
+      ctx.fillStyle='#141616'; rrect(cx,cy,CW,CH,10); ctx.fill();
+      ctx.strokeStyle='rgba(244,244,240,0.08)'; ctx.lineWidth=1; rrect(cx,cy,CW,CH,10); ctx.stroke();
+      ctx.fillStyle=clr; ctx.fillRect(cx,cy+10,3,CH-20); // accent bar
+
+      ctx.fillStyle='#666'; ctx.font='600 10px sans-serif'; ctx.fillText(m.label, cx+16, cy+20);
+      ctx.fillStyle='#F4F4F0'; ctx.font='700 28px sans-serif'; ctx.fillText(String(last), cx+16, cy+52);
+      const vw = ctx.measureText(String(last)).width;
+      ctx.fillStyle='#666'; ctx.font='400 12px sans-serif'; ctx.fillText(' '+m.unit, cx+16+vw, cy+48);
+      const dSign=diff>0?'+':'', dStr=neutral?'±0 vs inicio':`${dSign}${diff} ${m.unit} vs inicio`;
+      ctx.fillStyle=neutral?'#444':clr; ctx.font='600 11px sans-serif'; ctx.fillText(dStr, cx+16, cy+68);
+
+      spark(m.values, cx+16, cy+80, CW-32, CH-90, clr);
+
+      const mn=Math.min(...m.values), mx2=Math.max(...m.values);
+      ctx.fillStyle='#444'; ctx.font='400 9px sans-serif';
+      ctx.fillText(String(mn), cx+16, cy+CH-6);
+      ctx.textAlign='right'; ctx.fillText(String(mx2), cx+CW-16, cy+CH-6); ctx.textAlign='left';
+    });
+
+    // Footer
+    const fy = H-36;
+    ctx.fillStyle='rgba(244,244,240,0.05)'; ctx.fillRect(0, fy-8, W, 1);
+    ctx.fillStyle='#C4FF00'; ctx.font='700 11px sans-serif'; ctx.fillText('VDSEN', PAD, fy+18);
+    const vw2 = ctx.measureText('VDSEN').width;
+    ctx.fillStyle='#444'; ctx.font='400 11px sans-serif';
+    ctx.fillText(' · '+new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})+' · InBody Dial H30', PAD+vw2, fy+18);
+
+    const a = document.createElement('a');
+    a.download = `InBody_${cname.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.png`;
+    a.href = cv.toDataURL('image/png', 1.0); a.click();
+    showToast('📥 Imagen descargada');
+  }
+  window._inbodyExportPNG = _inbodyExportPNG;
 
   // ── Ficha tab ──
   function _renderClientTabFicha(cont) {
