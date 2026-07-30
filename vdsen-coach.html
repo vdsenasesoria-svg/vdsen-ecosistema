@@ -4425,28 +4425,54 @@ El esfuerzo no es negociable.
     const coachName = currentCoach?.displayName || currentCoach?.email?.split('@')[0] || 'Tu coach';
     const msg = _buildInBodyWAMsg(result, prev, c.displayName || c.email, coachName);
     const phone = (c.phone || '').replace(/[^\d]/g,'');
-    if (phone) {
-      window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg), '_blank');
-    } else {
-      // Sin teléfono — modal de copia
-      const ov = document.createElement('div');
-      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
-      ov.innerHTML = `<div style="background:#141616;border:1px solid rgba(37,211,102,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
-        <h3 style="color:#25D366;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📲 Resultado InBody para WhatsApp</h3>
-        <p style="color:#888;font-size:12px;margin-bottom:12px">${c.displayName} no tiene WhatsApp guardado. Copia el mensaje y envíalo manualmente.</p>
-        <textarea readonly style="width:100%;height:320px;background:#0a0a0a;border:1px solid rgba(244,244,240,.2);border-radius:6px;color:#cfcfcf;padding:12px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box" id="_inbWaMsg">${msg.replace(/</g,'&lt;')}</textarea>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-          <button id="_inbWaCopy" style="padding:8px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.5);background:rgba(244,244,240,.18);color:#F4F4F0;font-size:12px;font-weight:700;cursor:pointer">📋 Copiar</button>
-          <button id="_inbWaClose" style="padding:8px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Cerrar</button>
-        </div>
-      </div>`;
-      document.body.appendChild(ov);
-      ov.querySelector('#_inbWaCopy').onclick = () => { const t=ov.querySelector('#_inbWaMsg'); t.select(); document.execCommand('copy'); showToast('✅ Mensaje copiado'); };
-      ov.querySelector('#_inbWaClose').onclick = () => ov.remove();
-      ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+    const cname = c.displayName || c.email || 'Cliente';
+
+    // Intentar adjuntar gráfico de progreso si hay 2+ mediciones
+    const cv = _inbodyBuildCanvas(c);
+    if (cv) {
+      const blob = await new Promise(res => cv.toBlob(res, 'image/png', 1.0));
+      const fname = `InBody_${cname.replace(/\s+/g,'_')}.png`;
+      const file = new File([blob], fname, { type: 'image/png' });
+      // Web Share API — en móvil abre el selector nativo (WhatsApp, etc.) con imagen + texto
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], text: msg }); return; }
+        catch(e) { if (e.name === 'AbortError') return; }
+      }
+      // Fallback: descargar imagen primero, luego abrir WhatsApp con el texto
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = fname; a.click();
+      URL.revokeObjectURL(url);
+      showToast('📥 Imagen descargada — adjuntala en WhatsApp junto al texto');
+      setTimeout(() => {
+        if (phone) window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg), '_blank');
+        else _inbodyShowCopyModal(c, msg);
+      }, 900);
+      return;
     }
+
+    // Solo 1 medición — enviar texto
+    if (phone) window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg), '_blank');
+    else _inbodyShowCopyModal(c, msg);
   }
   window._inbodyWA = _inbodyWA;
+
+  function _inbodyShowCopyModal(c, msg) {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML = `<div style="background:#141616;border:1px solid rgba(37,211,102,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
+      <h3 style="color:#25D366;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📲 Resultado InBody para WhatsApp</h3>
+      <p style="color:#888;font-size:12px;margin-bottom:12px">${c.displayName||c.email||'Cliente'} no tiene WhatsApp guardado. Copia el mensaje y envíalo manualmente.</p>
+      <textarea readonly style="width:100%;height:320px;background:#0a0a0a;border:1px solid rgba(244,244,240,.2);border-radius:6px;color:#cfcfcf;padding:12px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box" id="_inbWaMsg">${msg.replace(/</g,'&lt;')}</textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button id="_inbWaCopy" style="padding:8px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.5);background:rgba(244,244,240,.18);color:#F4F4F0;font-size:12px;font-weight:700;cursor:pointer">📋 Copiar</button>
+        <button id="_inbWaClose" style="padding:8px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Cerrar</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#_inbWaCopy').onclick = () => { const t=ov.querySelector('#_inbWaMsg'); t.select(); document.execCommand('copy'); showToast('✅ Mensaje copiado'); };
+    ov.querySelector('#_inbWaClose').onclick = () => ov.remove();
+    ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+  }
 
   // Inline SVG sparkline for the progress grid
   function _inbodySparklineSVG(vals, w, h, clr) {
@@ -4465,11 +4491,10 @@ El esfuerzo no es negociable.
     return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;flex-shrink:0"><polyline points="${pts.join(' ')}" fill="none" stroke="${clr}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}</svg>`;
   }
 
-  // Canvas-based PNG export — draws all metric charts off-screen
-  async function _inbodyExportPNG(clientId) {
-    const c = _detailClientData || {};
+  // Draws all progress metric charts on a 2× off-screen canvas. Returns canvas or null.
+  function _inbodyBuildCanvas(c) {
     const chrono = Array.isArray(c.inbodyResults) ? [...c.inbodyResults].sort((a,b)=>a.ts-b.ts) : [];
-    if (chrono.length < 2) { showToast('Se necesitan al menos 2 mediciones', true); return; }
+    if (chrono.length < 2) return null;
     const MDEFS = [
       { id:'peso',           label:'PESO',          unit:'kg',   hib:false },
       { id:'musculo',        label:'MASA MUSCULAR',  unit:'kg',   hib:true  },
@@ -4481,7 +4506,7 @@ El esfuerzo no es negociable.
     const metrics = MDEFS
       .map(m => ({ ...m, values: chrono.map(r => r[m.id] != null && r[m.id] !== '' ? parseFloat(r[m.id]) : null).filter(v => v !== null) }))
       .filter(m => m.values.length >= 2);
-    if (!metrics.length) { showToast('No hay suficientes datos para graficar', true); return; }
+    if (!metrics.length) return null;
 
     const CW=340, CH=180, COLS=Math.min(3,metrics.length), ROWS=Math.ceil(metrics.length/COLS), PAD=28, GAP=14, HDR=96;
     const W = PAD*2 + COLS*CW + (COLS-1)*GAP;
@@ -4489,22 +4514,18 @@ El esfuerzo no es negociable.
     const cv = document.createElement('canvas'); cv.width = W*2; cv.height = H*2;
     const ctx = cv.getContext('2d'); ctx.scale(2,2);
 
-    // Background + accent bar
     ctx.fillStyle = '#0A0A0A'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle = '#C4FF00'; ctx.fillRect(0,0,W,4);
 
-    // Header
     const cname = c.displayName || c.email || 'Cliente';
     function _fmtD(r) { const iso = r.fecha || new Date(r.ts).toISOString().slice(0,10); const [y,mo,d] = iso.split('-'); return `${d}/${mo}/${y}`; }
     ctx.fillStyle = '#C4FF00'; ctx.font = '600 10px sans-serif';
     ctx.fillText('COMPOSICIÓN CORPORAL · INBODY DIAL H30', PAD, 26);
-    ctx.fillStyle = '#F4F4F0'; ctx.font = '700 20px sans-serif';
-    ctx.fillText(cname, PAD, 52);
+    ctx.fillStyle = '#F4F4F0'; ctx.font = '700 20px sans-serif'; ctx.fillText(cname, PAD, 52);
     ctx.fillStyle = '#555'; ctx.font = '400 11px sans-serif';
     ctx.fillText(`${_fmtD(chrono[0])} → ${_fmtD(chrono[chrono.length-1])} · ${chrono.length} mediciones`, PAD, 72);
     ctx.fillStyle = 'rgba(244,244,240,0.07)'; ctx.fillRect(PAD, 82, W-PAD*2, 1);
 
-    // Rounded rect path helper
     function rrect(x,y,w,h,r) {
       ctx.beginPath(); ctx.moveTo(x+r,y);
       ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
@@ -4512,8 +4533,6 @@ El esfuerzo no es negociable.
       ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
       ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
     }
-
-    // Sparkline + fill helper
     function spark(vals,ox,oy,ow,oh,clr) {
       const mn=Math.min(...vals), mx=Math.max(...vals), rng=mx-mn||1;
       const pts = vals.map((v,i) => ({ x: ox+(i/(vals.length-1))*ow, y: oy+oh-((v-mn)/rng)*oh }));
@@ -4527,7 +4546,6 @@ El esfuerzo no es negociable.
       });
     }
 
-    // Metric cards
     metrics.forEach((m,i) => {
       const col=i%COLS, row=Math.floor(i/COLS);
       const cx=PAD+col*(CW+GAP), cy=HDR+PAD+row*(CH+GAP);
@@ -4535,34 +4553,36 @@ El esfuerzo no es negociable.
       const diff = +(last-first).toFixed(2);
       const neutral = Math.abs(diff)<0.1, good = m.hib ? diff>0 : diff<0;
       const clr = neutral ? '#888' : (good ? '#C4FF00' : '#FF8844');
-
       ctx.fillStyle='#141616'; rrect(cx,cy,CW,CH,10); ctx.fill();
       ctx.strokeStyle='rgba(244,244,240,0.08)'; ctx.lineWidth=1; rrect(cx,cy,CW,CH,10); ctx.stroke();
-      ctx.fillStyle=clr; ctx.fillRect(cx,cy+10,3,CH-20); // accent bar
-
+      ctx.fillStyle=clr; ctx.fillRect(cx,cy+10,3,CH-20);
       ctx.fillStyle='#666'; ctx.font='600 10px sans-serif'; ctx.fillText(m.label, cx+16, cy+20);
       ctx.fillStyle='#F4F4F0'; ctx.font='700 28px sans-serif'; ctx.fillText(String(last), cx+16, cy+52);
       const vw = ctx.measureText(String(last)).width;
       ctx.fillStyle='#666'; ctx.font='400 12px sans-serif'; ctx.fillText(' '+m.unit, cx+16+vw, cy+48);
       const dSign=diff>0?'+':'', dStr=neutral?'±0 vs inicio':`${dSign}${diff} ${m.unit} vs inicio`;
       ctx.fillStyle=neutral?'#444':clr; ctx.font='600 11px sans-serif'; ctx.fillText(dStr, cx+16, cy+68);
-
       spark(m.values, cx+16, cy+80, CW-32, CH-90, clr);
-
-      const mn=Math.min(...m.values), mx2=Math.max(...m.values);
+      const mn2=Math.min(...m.values), mx2=Math.max(...m.values);
       ctx.fillStyle='#444'; ctx.font='400 9px sans-serif';
-      ctx.fillText(String(mn), cx+16, cy+CH-6);
+      ctx.fillText(String(mn2), cx+16, cy+CH-6);
       ctx.textAlign='right'; ctx.fillText(String(mx2), cx+CW-16, cy+CH-6); ctx.textAlign='left';
     });
 
-    // Footer
     const fy = H-36;
     ctx.fillStyle='rgba(244,244,240,0.05)'; ctx.fillRect(0, fy-8, W, 1);
     ctx.fillStyle='#C4FF00'; ctx.font='700 11px sans-serif'; ctx.fillText('VDSEN', PAD, fy+18);
     const vw2 = ctx.measureText('VDSEN').width;
     ctx.fillStyle='#444'; ctx.font='400 11px sans-serif';
     ctx.fillText(' · '+new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})+' · InBody Dial H30', PAD+vw2, fy+18);
+    return cv;
+  }
 
+  async function _inbodyExportPNG(clientId) {
+    const c = _detailClientData || {};
+    const cv = _inbodyBuildCanvas(c);
+    if (!cv) { showToast('Se necesitan al menos 2 mediciones para exportar', true); return; }
+    const cname = c.displayName || c.email || 'Cliente';
     const a = document.createElement('a');
     a.download = `InBody_${cname.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.png`;
     a.href = cv.toDataURL('image/png', 1.0); a.click();
