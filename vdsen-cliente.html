@@ -214,7 +214,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .sup-dose{font-size:16px;font-weight:700;color:var(--accent)}
 .sup-time{font-size:11px;color:var(--mt);margin-top:2px}
 /* ── TOAST ── */
-.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);background:rgba(10,18,32,.96);color:var(--tx);font-size:13px;font-weight:700;padding:11px 24px;border-radius:24px;border:1px solid rgba(196,255,0,.2);opacity:0;transition:all .22s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:999;white-space:nowrap;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);background:rgba(10,18,32,.96);color:var(--tx);font-size:13px;font-weight:700;padding:11px 24px;border-radius:24px;border:1px solid rgba(196,255,0,.2);opacity:0;transition:all .22s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:999;white-space:normal;text-align:center;max-width:calc(100vw - 48px);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,.6)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.error{background:var(--red);color:#fff;border-color:var(--red)}
 /* ── LOADING ── */
@@ -1597,6 +1597,7 @@ function showScreen(id) {
 }
 
 const TABS = ['tabResumen','tabEntr','tabNutr','tabCheckin','tabPerfil'];
+var _goTabSkipWeekReset = false;
 // ── Wake Lock: mantiene la pantalla encendida mientras se entrena ──────────
 async function _acquireWakeLock() {
   if (!('wakeLock' in navigator)) return;
@@ -1627,9 +1628,9 @@ function goTab(i) {
   if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();
   // Wake Lock: activar solo en tab de entreno, liberar en todos los demás
   if (i === 1) { _acquireWakeLock(); } else { _releaseWakeLock(); }
-  // Al entrar al tab de entrenamiento, siempre volver a la semana activa.
-  // Evita que el cliente quede viendo (y registrando en) una semana incorrecta.
-  if (i === 1) { CURRENT_WEEK = REAL_WEEK; renderEntrenamiento(); }
+  // Al entrar al tab de entrenamiento, volver a la semana activa
+  // EXCEPTO cuando viene de goToWeek() que ya fijó la semana deseada.
+  if (i === 1) { if (!_goTabSkipWeekReset) CURRENT_WEEK = REAL_WEEK; _goTabSkipWeekReset = false; renderEntrenamiento(); }
   else if (i === 2) renderNutricion();
   else if (i === 3) renderCheckin();
   else if (i === 4) renderPerfil();
@@ -3279,8 +3280,6 @@ function setWeek(w) {
   // NO llamar saveLogs() aquí: solo cambia la semana vista, no la semana real de entrenamiento
 }
 
-function goToWeek(w) { setWeek(w); goTab(1); }
-
 // ── Navegador horizontal de ejercicios ───────────────────────────────────
 function _buildExNav(ejercicios, di) {
   var patternEmoji = {
@@ -4138,7 +4137,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             : '')+
           '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
             'flex:1;padding:13px;border:none;border-radius:10px;cursor:pointer;'+
-            'background:var(--accent);color:#fff;font-size:14px;font-weight:800;letter-spacing:.5px">'+
+            'background:var(--accent);color:#0a0a0a;font-size:14px;font-weight:800;letter-spacing:.5px">'+
             '✓ GUARDAR SERIE '+(s+1)+
           '</button>'+
         '</div>'+
@@ -5527,7 +5526,7 @@ function renderEntrenamiento() {
     var sz   = isReal ? '20px' : '15px';
     var mt   = isReal ? '12px' : '3px';
     // Semanas futuras no son clickeables (sólo referencia visual)
-    var clickAttr = isFuture ? '' : 'onclick="setWeek('+w+')"';
+    var clickAttr = isFuture ? 'title="Semana no disponible aún"' : 'onclick="setWeek('+w+')" title="Ir a semana '+w+'"';
     var cursor    = isFuture ? 'default' : 'pointer';
     return '<button '+clickAttr+' style="'+
       'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+
@@ -5764,7 +5763,7 @@ function renderEntrenamiento() {
         ? '<div style="background:rgba(110,154,110,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
         : '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">'+
           '<button onclick="markSessionDone('+DIA_ACTIVO+')" title="Marcar esta sesión como completada" style="background:rgba(196,255,0,.12);border:1px solid var(--accent);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:800;color:var(--accent);cursor:pointer;letter-spacing:.5px">✓ COMPLETAR</button>'+
-          '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar sets con datos de la semana anterior y completar" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:4px 10px;font-size:9px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px">⚡ desde historial</button>'+
+          '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar sets con datos de la semana anterior y completar" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ desde historial</button>'+
           '</div>')+
     '</div>'+
     // Glosario RIR + ICS (colapsable)
@@ -5807,7 +5806,7 @@ function renderEntrenamiento() {
       _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
     // Rest timer overlay (hidden) — premium design
-    '<div id="restTimerOverlay" style="display:none;position:fixed;inset:0;background:rgba(6,14,26,.88);z-index:200;align-items:center;justify-content:center;flex-direction:column;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)">'+
+    '<div id="restTimerOverlay" onclick="stopRestTimer()" style="display:none;position:fixed;inset:0;background:rgba(6,14,26,.88);z-index:200;align-items:center;justify-content:center;flex-direction:column;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)">'+
       '<div onclick="event.stopPropagation()" style="'+
         'background:linear-gradient(160deg,rgba(10,18,32,1) 0%,rgba(6,14,26,1) 100%);'+
         'border:1px solid rgba(196,255,0,.28);border-radius:28px;padding:36px 40px 32px;'+
@@ -6997,7 +6996,7 @@ async function markSessionDoneFromHistory(di) {
   if (!ejercicios.length) { showPostSessionModal(di); return; }
 
   // Confirmar con el usuario antes de rellenar
-  if (!await _askConfirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.\n\n¿Continuar?')) return;
+  if (!confirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.\n\n¿Continuar?')) return;
 
   var sinReferencia = [];
   var totalSetsRellenados = 0;
@@ -7255,6 +7254,7 @@ function setWeek(w) {
 
 function goToWeek(w) {
   setWeek(w);
+  _goTabSkipWeekReset = true;
   goTab(1);
 }
 
@@ -8830,7 +8830,7 @@ async function guardarCI() {
     showToast('CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · Tu coach lo revisará en el panel de monitoreo');
     renderResumen(); // actualizar widget de inicio
   } catch(e) {
-    showToast('ERROR AL GUARDAR: ' + e.message);
+    showToast('ERROR AL GUARDAR: ' + e.message, true);
     console.error('guardarCI error:', e);
   }
 }
@@ -10329,7 +10329,7 @@ function showWhatsNew() {
       '<div style="font-size:11px;color:var(--mt);margin-bottom:16px">Actualizaciones recientes de tu app</div>'+
       rows+
       '<button onclick="document.getElementById(\'wnModal\').remove();localStorage.setItem(\''+_WN_VERSION+'\',\'1\')" '+
-        'style="width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800">'+
+        'style="width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;cursor:pointer;background:var(--accent);color:#0a0a0a;font-size:15px;font-weight:800">'+
         '¡Entendido! →'+
       '</button>'+
     '</div>';
@@ -10360,7 +10360,7 @@ function showBitacoraInfoModal() {
         '<div style="display:flex;gap:10px"><span style="font-weight:900;color:var(--accent)">4</span><span style="font-size:12px;color:var(--mt);line-height:1.5">Al final de la sesión presiona <strong style="color:var(--tx)">Completar sesión</strong> y responde el check-in.</span></div>'+
       '</div>'+
       '<button onclick="document.getElementById(\'biModal\').remove()" '+
-        'style="width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;cursor:pointer;background:var(--accent);color:#fff;font-size:15px;font-weight:800">'+
+        'style="width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;cursor:pointer;background:var(--accent);color:#0a0a0a;font-size:15px;font-weight:800">'+
         '¡Entendido! →'+
       '</button>'+
     '</div>';
@@ -10375,7 +10375,8 @@ function showToast(msg, isError=false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast show' + (isError?' error':'');
-  setTimeout(()=>t.classList.remove('show'), 2200);
+  clearTimeout(t._toastTimer);
+  t._toastTimer = setTimeout(()=>t.classList.remove('show'), isError ? 4500 : 2500);
 }
 
 // ── ENTER on login ──
@@ -10572,7 +10573,6 @@ function showSessionSummary(di) {
       'border:none;border-radius:2px;cursor:pointer;text-transform:uppercase">CONTINUAR →</button>';
 
   document.body.appendChild(ov);
-  setTimeout(function(){ var el = document.getElementById('sessionSummaryOv'); if (el) el.remove(); }, 12000);
 }
 
 function _avgArr(arr) {
