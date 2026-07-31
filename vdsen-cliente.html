@@ -121,10 +121,12 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .bnav{display:flex;background:rgba(6,14,26,.96);border-top:1px solid rgba(196,255,0,.12);flex-shrink:0;padding-bottom:env(safe-area-inset-bottom);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 -4px 32px rgba(0,0,0,.6)}
 .nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px;gap:3px;background:none;border:none;cursor:pointer;color:var(--mt);transition:color .15s;-webkit-tap-highlight-color:transparent;position:relative}
 .nb.on{color:var(--accent)}
-.nb.on::before{content:'';position:absolute;top:0;left:15%;right:15%;height:2px;background:var(--accent)}
+.nb.on::before{content:'';position:absolute;top:6px;left:8%;right:8%;height:36px;background:rgba(196,255,0,.1);border-radius:12px;pointer-events:none}
 .nb-ico{font-size:22px;line-height:1;transition:transform .15s}
 .nb.on .nb-ico{transform:scale(1.08)}
 .nb-lbl{font-size:11px;letter-spacing:.8px;font-weight:700;text-transform:uppercase;transition:color .15s}
+@keyframes _tabIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.tab-in{animation:_tabIn .16s ease both}
 /* ── LOGIN ── */
 .login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:24px}
 .login-logo{text-align:center;line-height:1}
@@ -1494,7 +1496,7 @@ async function loadPlan(user) {
     }
     showScreen('scrApp');
     // Restaurar posición de la última sesión (tab, día, semana)
-    var _rTab = 0, _rDia = DIA_ACTIVO;
+    var _rTab = 1, _rDia = DIA_ACTIVO;
     try { var _t = parseInt(localStorage.getItem('vdsen_last_tab')); if (!isNaN(_t) && _t >= 0 && _t <= 4) _rTab = _t; } catch(e) {}
     try { var _d = parseInt(localStorage.getItem('vdsen_last_dia')); if (!isNaN(_d) && _d >= 0) _rDia = _d; } catch(e) {}
     DIA_ACTIVO = _rDia;
@@ -1614,7 +1616,9 @@ function goTab(i) {
   var curTab = parseInt(localStorage.getItem('vdsen_last_tab')||'0');
   try { _tabScrollY[curTab] = window.scrollY; } catch(_){}
   TABS.forEach((t,j) => {
-    document.getElementById(t).style.display = j===i ? 'block' : 'none';
+    var el = document.getElementById(t);
+    el.style.display = j===i ? 'block' : 'none';
+    if (j===i) { el.classList.remove('tab-in'); void el.offsetWidth; el.classList.add('tab-in'); }
   });
   document.querySelectorAll('.nb').forEach((b,j) => {
     b.classList.toggle('on', j===i);
@@ -2622,8 +2626,8 @@ function renderResumen() {
           <div style="font-family:var(--ff);font-size:20px;color:${ci.peso?'var(--gold)':'var(--mt)'}">${ci.peso?ci.peso+' kg':'—'}</div>
         </div>
       </div>
-      <button onclick="goTab(3)" style="width:100%;padding:11px;background:var(--gdim);border:1px solid rgba(107,107,102,.3);color:var(--gold);font-family:var(--ff);font-size:15px;letter-spacing:2px;cursor:pointer">
-        ${ciDone?'✏ ACTUALIZAR CHECK-IN →':'📊 IR A CHECK-IN →'}
+      <button onclick="goTab(3)" style="width:100%;padding:11px;background:${ciDone?'var(--gdim)':'rgba(196,255,0,.12)'};border:1px solid ${ciDone?'rgba(107,107,102,.3)':'rgba(196,255,0,.4)'};color:${ciDone?'var(--gold)':'var(--accent)'};font-family:var(--ff);font-size:13px;font-weight:700;letter-spacing:2px;cursor:pointer;border-radius:6px">
+        ${ciDone?'✏ ACTUALIZAR →':'📊 COMPLETAR CHECK-IN →'}
       </button>
     </div>
     ${buildMesocicloReportWidget()}
@@ -2954,7 +2958,7 @@ function buildMesocicloReportWidget() {
 function getTodaySummary() {
   if (!PLAN || !PLAN.entrenamiento) return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
   const sesiones = getSesiones();
-  if (sesiones.length === 0) return `<button onclick="goTab(1)" style="width:100%;padding:9px;background:var(--gdim);border:1px solid rgba(107,107,102,.25);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:2px;cursor:pointer">VER ENTRENAMIENTO →</button>`;
+  if (sesiones.length === 0) return `<button onclick="goTab(1)" style="width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">VER ENTRENAMIENTO ▶</button>`;
   // Find first incomplete session in current week; fall back to last session
   var idx = sesiones.length - 1;
   for (var _si = 0; _si < sesiones.length; _si++) {
@@ -2964,7 +2968,7 @@ function getTodaySummary() {
   const ejercicios = (hoy.contenido||'').split('\n').filter(l=>/\d\s*[×x]\s*\d|RIR/i.test(l)).length;
   return `<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:4px">${hoy.dia}</div>
     <div style="font-size:10px;color:var(--mt)">${ejercicios} ejercicios</div>
-    <button onclick="selDia(${idx});goTab(1)" style="margin-top:10px;width:100%;padding:9px;background:var(--gdim);border:1px solid rgba(107,107,102,.25);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:2px;cursor:pointer">IR A SESIÓN DE HOY →</button>`;
+    <button onclick="selDia(${idx});goTab(1)" style="margin-top:10px;width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">ENTRENAR AHORA ▶</button>`;
 }
 
 function getSupToday() {
