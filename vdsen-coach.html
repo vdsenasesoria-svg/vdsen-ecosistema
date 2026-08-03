@@ -2565,7 +2565,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 1. Diagnóstico del mesociclo (adherencia, progresión por ejercicio, ICS, MEV/MRV, recuperación).
 2. Top 3 hallazgos críticos.
 3. Plan para el siguiente mesociclo: ajustes de volumen por grupo (referencia MEV/MRV en campo "volume"), sustituciones de ejercicios estancados, técnicas de intensificación recomendadas (drop/myoreps/sst/etc) para semanas 3-4, y semana de deload.
-4. Devuelve el plan final en JSON v2 con campos: weeks, daysPerWeek, days[].exercises[] {exerciseName, alternatives, technique, techniqueNote, coachNote, supersetGroup, sets[]{setIndex, repsTarget, rirTarget, load:0, restSeconds, setNote, drop, tempo}}.
+4. Devuelve el plan final en JSON v2 con campos: weeks, daysPerWeek, days[].exercises[] {exerciseName, alternatives, technique, techniqueFromWeek, techniqueNote, coachNote, supersetGroup, sets[]{setIndex, repsTarget, rirTarget, load:0, restSeconds, setNote, drop, tempo}}.
    • supersetGroup: id corto compartido (ej "A","B") entre ejercicios del mismo día que se encadenan sin descanso = superserie no competitiva (antagonistas o no relacionados). Mismo nº de series por par. Omitir o "" si el ejercicio NO es parte de una SS.
 
 Reporte:
@@ -2977,6 +2977,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
         {
           "exerciseName": "Press Inclinado",
           "technique": "sst",
+          "techniqueFromWeek": 3,
           "techniqueNote": "Stretch-mediated hypertrophy: 3 series largas en estiramiento",
           "sets": [
             {"setIndex":0,"repsTarget":15,"rirTarget":1,"load":0,"restSeconds":150,"setNote":"Pausa 2s en estiramiento"}
@@ -3005,7 +3006,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
   ]
 }
 
-Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myoreps", "rest-pause", "cluster", "superset", "giant", "amrap", "tempo", "iso-hold". Usa "techniqueNote" para describirla y "setNote" / "drop":true por serie.
+Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myoreps", "rest-pause", "cluster", "superset", "giant", "amrap", "tempo", "iso-hold". Usa "techniqueNote" para describirla y "setNote" / "drop":true por serie. Usa "techniqueFromWeek" (1-6, default 1) para activar la técnica solo a partir de esa semana — ideal para intensificación progresiva: Sem 1-2 normales, SST/myoreps/drop desde Sem 3.
 
 ⚡ SUPERSERIES NO COMPETITIVAS: añade el campo "supersetGroup":"A" (cualquier id corto) a CADA ejercicio del par. Los ejercicios con el mismo supersetGroup dentro de un día se encadenan sin descanso. Ej: Press Banca {supersetGroup:"A"} + Remo Sentado {supersetGroup:"A"}. Permite también trios. El cliente verá un badge SS·A y un botón "Siguiente del SS →" para alternar series.</pre>
         <textarea id="planJsonInput" class="input-field mb-3" rows="14" placeholder="Pega aquí el JSON..."></textarea>
@@ -3038,6 +3039,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
         technique: String(ex.technique || 'straight').toLowerCase().trim(),
         techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+        techniqueFromWeek: parseInt(ex.techniqueFromWeek) || 1,
         supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
         sets: Array.isArray(ex.sets) && ex.sets.length > 0
           ? ex.sets.map((s, si) => ({
@@ -3157,8 +3159,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           ${d.exercises.length
             ? d.exercises.map(e => {
                 const tech = (e.technique && e.technique !== 'straight') ? ` <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:rgba(244,244,240,.15);color:#F4F4F0;text-transform:uppercase;font-weight:600">${e.technique}</span>` : '';
+                const fromW = (e.techniqueFromWeek && e.techniqueFromWeek > 1) ? ` <span class="text-[10px] px-1 py-0.5 rounded" style="background:rgba(153,102,204,.2);color:#9966cc;font-weight:700">S${e.techniqueFromWeek}+</span>` : '';
                 const tnote = e.techniqueNote ? `<div class="text-[11px] text-[#888] ml-3 italic">↳ ${e.techniqueNote}</div>` : '';
-                return `<li>· ${e.exerciseName}${tech} — ${e.sets.length} serie(s) × ${e.sets[0]?.repsTarget} reps${tnote}</li>`;
+                return `<li>· ${e.exerciseName}${tech}${fromW} — ${e.sets.length} serie(s) × ${e.sets[0]?.repsTarget} reps${tnote}</li>`;
               }).join('')
             : '<li class="text-[#888]">Sin ejercicios detectados</li>'}
         </ul>
@@ -3310,6 +3313,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
         technique: String(ex.technique || 'straight').toLowerCase().trim(),
         techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+        techniqueFromWeek: parseInt(ex.techniqueFromWeek) || 1,
         supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
         sets: Array.isArray(ex.sets) && ex.sets.length ? ex.sets.map((s, si) => ({
           setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
@@ -5914,7 +5918,7 @@ El esfuerzo no es negociable.
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, techniqueFromWeek) {
     const techVal = (technique || 'straight').toLowerCase();
     const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
       .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
@@ -5947,10 +5951,14 @@ El esfuerzo no es negociable.
           <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
-      <div class="grid gap-2 mb-2" style="grid-template-columns:80px 1fr 2fr">
+      <div class="grid gap-2 mb-2" style="grid-template-columns:80px 52px 1fr 2fr">
         <div>
           <div class="text-[10px] uppercase tracking-wide mb-1" style="color:#cc66aa">Biserie</div>
           <input class="input-field w-full text-xs py-1 text-center font-bold" placeholder="A / B…" maxlength="4" data-field="supersetGroup" value="${ssVal}" oninput="markEditorDirty&&markEditorDirty();this.closest('.exrow-item').style.border=this.value.trim()?'1px solid rgba(204,102,170,.4)':'1px solid rgba(255,255,255,.08)'">
+        </div>
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1" title="Semana desde la que se activa la técnica">Desde</div>
+          <input type="number" min="1" max="6" class="input-field w-full text-xs py-1 text-center font-bold" style="color:#9966cc" data-field="techniqueFromWeek" value="${parseInt(techniqueFromWeek)||1}" title="Técnica activa desde esta semana (1 = siempre)" oninput="markEditorDirty&&markEditorDirty()">
         </div>
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Técnica</div>
@@ -6013,9 +6021,10 @@ El esfuerzo no es negociable.
         var coachNote = e.coachNote || '';
         var tech = e.technique || 'straight';
         var techNote = e.techniqueNote || '';
+        var techFromWeek = parseInt(e.techniqueFromWeek) || 1;
         var altsJson = JSON.stringify(e.alternatives || []);
         var ssGrp = e.supersetGroup || '';
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp);
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, techFromWeek);
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -6043,7 +6052,7 @@ El esfuerzo no es negociable.
     const div = document.createElement('div');
     div.outerHTML; // placeholder
     const tmp = document.createElement('template');
-    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '');
+    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '', 1);
     list.appendChild(tmp.content.firstElementChild);
   }
 
@@ -6115,6 +6124,7 @@ El esfuerzo no es negociable.
         const coachNote = row.querySelector('[data-field="coachNote"]')?.value.trim() || '';
         const technique = (row.querySelector('[data-field="technique"]')?.value || 'straight').toLowerCase();
         const techniqueNote = row.querySelector('[data-field="techniqueNote"]')?.value.trim() || '';
+        const techniqueFromWeek = parseInt(row.querySelector('[data-field="techniqueFromWeek"]')?.value) || 1;
         const supersetGroup = row.querySelector('[data-field="supersetGroup"]')?.value.trim() || '';
         let alternatives = [];
         try { alternatives = JSON.parse(row.dataset.alternatives || '[]'); } catch(e) {}
@@ -6124,6 +6134,7 @@ El esfuerzo no es negociable.
           coachNote,
           technique,
           techniqueNote,
+          techniqueFromWeek,
           supersetGroup,
           sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90, setNote: '', drop: false, tempo: '' }))
         });
@@ -6526,6 +6537,7 @@ El esfuerzo no es negociable.
           alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
           technique: String(ex.technique || 'straight').toLowerCase().trim(),
           techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+          techniqueFromWeek: parseInt(ex.techniqueFromWeek) || 1,
           coachNote: String(ex.coachNote || '').trim(),
           sets: Array.isArray(ex.sets) && ex.sets.length > 0 ? ex.sets.map((s, si) => ({
             setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,

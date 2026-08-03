@@ -1354,6 +1354,7 @@ async function loadPlan(user) {
           // Normalizar variantes de superset a "superset" (único valor reconocido por TECHNIQUE_META)
           technique: (function(t){ t=(t||'straight').toLowerCase(); return t==='superset-antagonist'||t==='superset-agonist'?'superset':t; })(e.technique),
           techniqueNote: e.techniqueNote || '',
+          techniqueFromWeek: parseInt(e.techniqueFromWeek) || 1,
           // ── Superserie no competitiva: id de grupo compartido con el/los ejercicios pareja ──
           supersetGroup: e.supersetGroup ? String(e.supersetGroup).trim() : '',
           alternatives: Array.isArray(e.alternatives) ? e.alternatives : [],
@@ -3386,11 +3387,27 @@ var TECHNIQUE_META = {
 
 function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
   var html = '';
-  var tech = (ej.technique || 'straight').toLowerCase();
+  // ── Resolver técnica efectiva según semana actual ──
+  var _tfw = parseInt(ej.techniqueFromWeek) || 1;
+  var _techActive = CURRENT_WEEK >= _tfw;
+  var tech = _techActive ? (ej.technique || 'straight').toLowerCase() : 'straight';
   var meta = TECHNIQUE_META[tech];
-  var techNote = (ej.techniqueNote || '').trim();
+  var techNote = _techActive ? (ej.techniqueNote || '').trim() : '';
   var coachNote = (ej.coachNote || ej.nota || '').trim();
   var exNotes = catData && catData.executionNotes ? String(catData.executionNotes).trim() : '';
+
+  // ── 0) Técnica pendiente — badge sutil cuando aún no aplica esta semana ──
+  if (!_techActive && ej.technique && ej.technique !== 'straight') {
+    var _pm = TECHNIQUE_META[(ej.technique||'').toLowerCase()];
+    var _pc = _pm ? _pm.color : '#6B6B66';
+    html +=
+      '<div style="margin:0 0 10px;padding:7px 12px;border-radius:8px;border:1px dashed '+_pc+';opacity:.7">' +
+        '<span style="font-size:10px;font-weight:800;letter-spacing:1px;color:'+_pc+'">' +
+          (_pm ? _pm.icon+' '+_pm.label : (ej.technique||'').toUpperCase()) + ' · ACTIVA DESDE SEM ' + _tfw +
+        '</span>' +
+        '<div style="font-size:11px;color:var(--mt);margin-top:2px">Series normales hasta semana ' + (_tfw - 1) + '</div>' +
+      '</div>';
+  }
 
   // ── 1) NOTA DE TÉCNICA DEL COACH (techniqueNote) — banner dorado prominente ──
   if (techNote) {
