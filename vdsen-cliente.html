@@ -1330,25 +1330,53 @@ async function loadPlan(user) {
         var numSets = (e.sets || []).length || 3;
         var repsTarget = (e.sets && e.sets[0]) ? (e.sets[0].repsTarget || 8) : 8;
         var rirTarget  = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
+        // Detectar specs Y3T por serie en coachNote (ej: "S1=4-6 reps RIR1 | S2=8-12 | S3=15-25")
+        // Solo aplica cuando todos los sets tienen el mismo repsTarget (el coach no los diferenció en el editor)
+        var _allSetsEqual = (e.sets||[]).every(function(s){ return String(s.repsTarget||repsTarget)===String(repsTarget); });
+        var _y3tSpecs = (function(note, n) {
+          if (!note || !_allSetsEqual) return null;
+          var re = /S(\d+)\s*=\s*(\d+(?:\s*[-–]\s*\d+)?)\s*reps?(?:[^|]*?RIR\s*(\d+))?/gi, specs=[], m;
+          while ((m=re.exec(note))!==null) specs.push({sn:parseInt(m[1]), r:m[2].replace(/\s+/g,''), rir:m[3]!==undefined?parseInt(m[3]):null});
+          if (!specs.length) return null;
+          var res=[];
+          for (var i=0; i<n; i++) {
+            var sp=specs.find(function(x){return x.sn===i+1;})||null;
+            if (!sp && specs.length && i+1>specs[specs.length-1].sn) sp=specs[specs.length-1];
+            res.push(sp);
+          }
+          return res;
+        })(e.coachNote, numSets);
+        // Construir sets aplicando overrides Y3T cuando se detectaron
+        var _builtSets = (e.sets || []).map(function(s, si){
+          var y3t = _y3tSpecs && _y3tSpecs[si];
+          return {
+            setIndex: typeof s.setIndex === 'number' ? s.setIndex : si,
+            repsTarget: (y3t&&y3t.r) ? y3t.r : (s.repsTarget || repsTarget),
+            rirTarget:  (y3t&&y3t.rir!==null) ? y3t.rir : (s.rirTarget !== undefined ? s.rirTarget : rirTarget),
+            load: s.load || 0,
+            restSeconds: s.restSeconds || 90,
+            setNote: s.setNote || '',
+            drop: s.drop === true,
+            tempo: s.tempo || ''
+          };
+        });
+        // Calcular repsRange real a partir del rango completo entre todas las series
+        var _repsRange = (function(sets, def) {
+          if (!sets||!sets.length) return String(def);
+          var pmin=function(v){var p=String(v).split(/[-–]/);return parseInt(p[0])||parseInt(def)||8;};
+          var pmax=function(v){var p=String(v).split(/[-–]/);return parseInt(p[p.length-1])||parseInt(def)||8;};
+          var mn=Math.min.apply(null,sets.map(function(s){return pmin(s.repsTarget);}));
+          var mx=Math.max.apply(null,sets.map(function(s){return pmax(s.repsTarget);}));
+          return mn===mx ? String(mn) : mn+'-'+mx;
+        })(_builtSets, repsTarget);
         return {
           nombre: e.exerciseName || e.nombre || 'Ejercicio',
           exerciseName: e.exerciseName || e.nombre || 'Ejercicio',
           numSeries: numSets,
-          repsRange: String(repsTarget),
+          repsRange: _repsRange,
           rir: String(rirTarget),
           // Pasar TODOS los campos de los sets (setNote, drop, tempo, restSeconds)
-          sets: (e.sets || []).map(function(s, si){
-            return {
-              setIndex: typeof s.setIndex === 'number' ? s.setIndex : si,
-              repsTarget: s.repsTarget || repsTarget,
-              rirTarget:  s.rirTarget !== undefined ? s.rirTarget : rirTarget,
-              load: s.load || 0,
-              restSeconds: s.restSeconds || 90,
-              setNote: s.setNote || '',
-              drop: s.drop === true,
-              tempo: s.tempo || ''
-            };
-          }),
+          sets: _builtSets,
           coachNote: e.coachNote || '',
           // ── Técnica de intensificación a nivel de ejercicio ──
           // Normalizar variantes de superset a "superset" (único valor reconocido por TECHNIQUE_META)
@@ -1359,7 +1387,7 @@ async function loadPlan(user) {
           alternatives: Array.isArray(e.alternatives) ? e.alternatives : [],
           rezagado: false,
           nota: e.coachNote || '',
-          setsReps: numSets + '×' + repsTarget
+          setsReps: numSets + '×' + _repsRange
         };
       });
       var contenido = exList.map(function(e, ei) {
