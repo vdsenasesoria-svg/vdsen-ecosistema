@@ -70,7 +70,6 @@ window.addEventListener('load',    _updateOfflineBanner);
   --border:rgba(244,244,240,.09);        /* Hairline hueso */
   --border-soft:rgba(244,244,240,.045);
   --accent:#C4FF00;                      /* Lima ácido — solo métricas + 1 CTA */
-  --accent2:#C4FF00;
   --platinum:#A5A59E;                    /* Neutro secundario legible */
   --grn:#6E9A6E;                         /* Verde apagado — estado hecho */
   --red:#C0564A;                         /* Rojo apagado — error */
@@ -80,7 +79,7 @@ window.addEventListener('load',    _updateOfflineBanner);
   --gold:#F4F4F0;                        /* Compat: títulos/labels → hueso (no lima) */
   --tx:#F4F4F0;                          /* Hueso — texto principal */
   --mt:#6B6B66;                          /* Gris funcional — metadatos */
-  --mt2:#1A1A18;
+  --mt2:#454542;
   --input-bg:#0E0E0E;
   --gold-gradient:#C4FF00;               /* Sin degradados: lima sólido */
   --shadow-gold:0 0 0 1px rgba(244,244,240,.07),0 6px 24px rgba(0,0,0,.55);
@@ -88,7 +87,7 @@ window.addEventListener('load',    _updateOfflineBanner);
   --shadow-ink:0 0 0 1px rgba(244,244,240,.06),0 4px 16px rgba(0,0,0,.5);
   /* legacy compat */
   --bk:#0A0A0A;--dk:#0D0D0D;--card:#111111;--bd:rgba(244,244,240,.09);
-  --g2:#C4FF00;--gdim:rgba(244,244,240,.06);--blue:#6B6B66;
+  --g2:#C4FF00;--gdim:rgba(244,244,240,.06);--blue:#4A9FDC;
   --ff:'Inter',system-ui,sans-serif;--fb:'Inter',system-ui,sans-serif;
 }
 :root.light-mode{
@@ -146,7 +145,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 /* ── CARDS ── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;box-shadow:var(--shadow-card);position:relative;overflow:hidden}
 .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--border)}
-.card-title{font-family:'Big Shoulders Display',var(--ff);font-size:17px;font-weight:400;color:var(--tx);margin-bottom:4px;letter-spacing:.8px}
+.card-title{font-family:'Big Shoulders Display',var(--ff);font-size:17px;font-weight:700;color:var(--tx);margin-bottom:4px;letter-spacing:.8px}
 .card-sub{font-size:11px;color:var(--platinum);letter-spacing:.5px}
 /* ── RESUMEN stats ── */
 .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
@@ -180,10 +179,10 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .log-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(196,255,0,.2),0 0 12px rgba(196,255,0,.12)}
 .log-input::-webkit-outer-spin-button,.log-input::-webkit-inner-spin-button{-webkit-appearance:none}
 .prog-hint{font-size:12px;color:var(--grn);margin-top:4px;min-height:16px;text-align:center}
-.save-ex-btn{width:100%;padding:9px;background:var(--ink-light);border:1px solid var(--ink-border);border-radius:8px;color:var(--accent2);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;transition:background .15s}
+.save-ex-btn{width:100%;padding:9px;background:var(--ink-light);border:1px solid var(--ink-border);border-radius:8px;color:var(--accent);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;transition:background .15s}
 .save-ex-btn:hover{background:rgba(244,244,240,.22)}
 .save-ex-btn.saved{background:rgba(110,154,110,.1);border-color:rgba(110,154,110,.3);color:var(--grn)}
-.log-input.auto-fill{border-color:var(--ink-border);background:var(--ink-light);color:var(--accent2)}
+.log-input.auto-fill{border-color:var(--ink-border);background:var(--ink-light);color:var(--accent)}
 .unit-toggle{display:flex;gap:3px}
 .unit-btn{background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--mt);font-size:11px;font-weight:700;letter-spacing:1px;padding:5px 12px;cursor:pointer;transition:all .15s}
 .unit-btn.active{background:var(--ink-light);border-color:var(--ink-border);color:var(--accent)}
@@ -214,7 +213,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .sup-dose{font-size:16px;font-weight:700;color:var(--accent)}
 .sup-time{font-size:11px;color:var(--mt);margin-top:2px}
 /* ── TOAST ── */
-.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);background:rgba(10,18,32,.96);color:var(--tx);font-size:13px;font-weight:700;padding:11px 24px;border-radius:24px;border:1px solid rgba(196,255,0,.2);opacity:0;transition:all .22s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:999;white-space:normal;text-align:center;max-width:calc(100vw - 48px);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);background:rgba(17,17,17,.97);color:var(--tx);font-size:13px;font-weight:700;padding:11px 24px;border-radius:24px;border:1px solid rgba(196,255,0,.2);opacity:0;transition:all .22s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:999;white-space:normal;text-align:center;max-width:calc(100vw - 48px);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,.6)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.error{background:var(--red);color:#fff;border-color:var(--red)}
 /* ── LOADING ── */
@@ -237,7 +236,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .day-body.open{display:block}
 .done-session-btn{width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:'Big Shoulders Display',var(--ff);font-weight:800;font-size:16px;letter-spacing:2.5px;text-transform:uppercase;border:none;border-radius:2px;cursor:pointer;margin-top:14px;-webkit-tap-highlight-color:transparent}
 .done-session-btn:active{opacity:.9;transform:scale(.98)}
-.pdf-btn{width:100%;padding:13px;background:transparent;color:var(--red);font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase;border:1px solid var(--red);border-radius:10px;cursor:pointer;margin-bottom:10px}
+.pdf-btn{width:100%;padding:13px;background:transparent;color:var(--platinum);font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase;border:1px solid rgba(165,165,158,.4);border-radius:10px;cursor:pointer;margin-bottom:10px}
 .logout-btn{width:100%;padding:12px;background:transparent;color:var(--mt);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--border);border-radius:10px;cursor:pointer}
 .logout-btn:hover,.logout-btn:active{border-color:var(--red);color:var(--red)}
 ::-webkit-scrollbar{width:2px}
@@ -2614,17 +2613,17 @@ function renderResumen() {
         <span style="font-family:var(--ff);font-size:12px;color:${ciDone?'var(--grn)':'var(--red)'}">${ciDone?'✓ COMPLETADO':'⚠ PENDIENTE'}</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
-        <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center">
+        <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center;border-radius:6px">
           <div style="font-size:11px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:3px">HRV</div>
-          <div style="font-family:var(--ff);font-size:22px;color:${ci.hrv?'var(--gold)':'var(--mt)'}">${ci.hrv||'—'}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:26px;font-weight:800;color:${ci.hrv?'var(--gold)':'var(--mt)'}">${ci.hrv||'—'}</div>
         </div>
-        <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center">
+        <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center;border-radius:6px">
           <div style="font-size:11px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:3px">WHO-5</div>
-          <div style="font-family:var(--ff);font-size:22px;color:${ci.who5?((+ci.who5<52?'var(--red)':(+ci.who5<68?'var(--gold)':'var(--grn)'))):'var(--mt)'}">${ci.who5||'—'}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:26px;font-weight:800;color:${ci.who5?((+ci.who5<52?'var(--red)':(+ci.who5<68?'var(--gold)':'var(--grn)'))):'var(--mt)'}">${ci.who5||'—'}</div>
         </div>
-        <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center">
+        <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center;border-radius:6px">
           <div style="font-size:11px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:3px">PESO</div>
-          <div style="font-family:var(--ff);font-size:20px;color:${ci.peso?'var(--gold)':'var(--mt)'}">${ci.peso?ci.peso+' kg':'—'}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:24px;font-weight:800;color:${ci.peso?'var(--gold)':'var(--mt)'}">${ci.peso?ci.peso+' kg':'—'}</div>
         </div>
       </div>
       <button onclick="goTab(3)" style="width:100%;padding:11px;background:${ciDone?'var(--gdim)':'rgba(196,255,0,.12)'};border:1px solid ${ciDone?'rgba(107,107,102,.3)':'rgba(196,255,0,.4)'};color:${ciDone?'var(--gold)':'var(--accent)'};font-family:var(--ff);font-size:13px;font-weight:700;letter-spacing:2px;cursor:pointer;border-radius:6px">
@@ -2677,8 +2676,8 @@ function buildStreakWidget() {
       <div style="display:flex;align-items:center;gap:16px">
         <div style="font-size:36px;opacity:${fireOpacity}">🔥</div>
         <div style="flex:1">
-          <div style="font-family:var(--ff);font-size:28px;color:var(--gold);line-height:1">${current}</div>
-          <div style="font-size:11px;color:var(--mt);margin-top:2px">${msg}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:42px;font-weight:800;color:var(--accent);line-height:1">${current}</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:4px">${msg}</div>
         </div>
         <div style="text-align:right">
           <div style="font-family:var(--ff);font-size:16px;color:var(--tx)">${best}</div>
@@ -4104,7 +4103,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               var _icsVal = saved.ics || (_prevSesIcs || '');
               var _icsNum = parseInt(_icsVal);
               var _icsBorder = (_icsNum&&_icsNum<7)?'var(--red)':'var(--border)';
-              var _icsColor  = (_icsNum&&_icsNum<7)?'var(--red)':'var(--accent2)';
+              var _icsColor  = (_icsNum&&_icsNum<7)?'var(--red)':'var(--accent)';
               return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
                 ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+_icsBorder+';'+
                 'border-radius:8px;color:'+_icsColor+';font-size:15px;font-weight:700;'+
@@ -5788,7 +5787,7 @@ function renderEntrenamiento() {
           '<div style="margin-top:5px;color:var(--mt);font-size:11px">El <strong style="color:var(--tx)">RIR objetivo</strong> lo marca tu plan según la semana. Tú reportas el <strong style="color:var(--tx)">RIR real</strong> que sentiste — diferencia mucho del objetivo = avísale al coach.</div>'+
         '</div>'+
         '<div style="border-top:1px solid rgba(255,255,255,.06);padding-top:8px">'+
-          '<div style="color:var(--accent2);font-weight:700;letter-spacing:.5px;margin-bottom:3px">ICS · Índice de Calidad de Serie (1–10)</div>'+
+          '<div style="color:var(--accent);font-weight:700;letter-spacing:.5px;margin-bottom:3px">ICS · Índice de Calidad de Serie (1–10)</div>'+
           '<div style="color:var(--mt2)">Tu autoevaluación de qué tan <em>limpia</em> sentiste la serie: técnica, control excéntrico, contracción, ROM completo.</div>'+
           '<div style="margin-top:5px;display:grid;gap:2px;color:var(--mt);font-size:11px">'+
             '<div><strong style="color:var(--grn)">8-10</strong> = serie limpia, técnica perfecta, conexión mente-músculo alta.</div>'+
@@ -6045,7 +6044,7 @@ function buildBoostcampExercise(ej, di, ei) {
     var icsHtml = completed
       ? '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">'+
           '<span style="font-size:9px;color:var(--mt);letter-spacing:1px;font-weight:600">ICS</span>'+
-          '<span style="font-size:14px;font-weight:700;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent2)')+'">'+
+          '<span style="font-size:14px;font-weight:700;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+'">'+
             (saved.ics||'—')+'</span>'+
           '<span style="font-size:9px;color:var(--mt);margin-left:8px;letter-spacing:1px;font-weight:600">PUMP</span>'+
           '<span style="font-size:15px">'+(saved.pump===1?'💪':saved.pump===2?'👍':saved.pump===3?'😐':'—')+'</span>'+
@@ -6055,7 +6054,7 @@ function buildBoostcampExercise(ej, di, ei) {
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">ICS 1-10</div>'+
             '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
-            'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent2)')+';font-size:15px;font-weight:700;'+
+            'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+
             'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box" oninput="updateICSColor(\''+key+'\')">'+
           '</div>'+
           '<div style="flex:2">'+
@@ -6650,7 +6649,7 @@ function updateICSColor(key) {
   if (!el) return;
   var val = parseInt(el.value);
   el.style.borderColor = (!isNaN(val) && val < 7) ? 'var(--red)' : 'var(--border)';
-  el.style.color       = (!isNaN(val) && val < 7) ? 'var(--red)' : 'var(--accent2)';
+  el.style.color       = (!isNaN(val) && val < 7) ? 'var(--red)' : 'var(--accent)';
 }
 
 function toggleNota(id) {
@@ -9032,7 +9031,7 @@ function renderCheckin() {
       return '<button onclick="ciW5(' + qi + ',' + v + ')" style="flex:1;padding:10px 2px;border:1px solid '
         + (on ? 'var(--gold)' : 'var(--bd)') + ';background:'
         + (on ? 'var(--gdim)' : 'var(--dk)') + ';color:'
-        + (on ? 'var(--gold)' : 'var(--mt)') + ';font-family:var(--ff);font-size:16px;cursor:pointer">'
+        + (on ? 'var(--gold)' : 'var(--mt)') + ';font-family:var(--ff);font-size:16px;cursor:pointer;border-radius:4px">'
         + v + '</button>';
     }).join('');
     return '<div style="margin-bottom:16px">'
@@ -9052,7 +9051,7 @@ function renderCheckin() {
     return '<button onclick="ciEnergia(' + v + ')" style="flex:1;padding:10px 2px;border:1px solid '
       + (on ? col : 'var(--bd)') + ';background:'
       + (on ? 'rgba(107,107,102,.12)' : 'var(--dk)') + ';color:'
-      + (on ? col : 'var(--mt)') + ';font-family:var(--ff);font-size:15px;cursor:pointer">'
+      + (on ? col : 'var(--mt)') + ';font-family:var(--ff);font-size:15px;cursor:pointer;border-radius:4px">'
       + v + '</button>';
   }).join('');
 
@@ -9132,7 +9131,7 @@ function renderCheckin() {
     + '</div>'
 
     // ── GUARDAR ───────────────────────────────────────
-    + '<button onclick="guardarCI()" style="width:100%;padding:15px;background:var(--gdim);border:1px solid var(--gold);color:var(--gold);font-family:var(--ff);font-size:18px;letter-spacing:3px;cursor:pointer;margin-bottom:16px">'
+    + '<button onclick="guardarCI()" style="width:100%;padding:15px;background:var(--accent);border:none;color:#0A0A0A;font-family:\'Big Shoulders Display\',var(--ff);font-size:18px;font-weight:900;letter-spacing:3px;cursor:pointer;margin-bottom:16px;border-radius:4px">'
     + '✓ GUARDAR CHECK-IN SEM ' + sem
     + '</button>';
 }
@@ -9179,9 +9178,9 @@ function renderPerfil() {
           ['PESO',`${PLAN.peso||'—'} kg`],['LBM',`${PLAN.lbm||'—'} kg`],
           ['% GRASA',`${PLAN.pct||PLAN.pctGrasa||'—'}%`],['EXPERIENCIA',PLAN.exp||PLAN.experiencia||'—'],
           ['DÍAS/SEM',PLAN.dias||PLAN.diasEntr||'—'],['COMIDAS/DÍA',PLAN.comidas||'—']
-        ].map(([l,v])=>`<div style="background:var(--dk);border:1px solid var(--bd);padding:8px">
-          <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt)">${l}</div>
-          <div style="font-family:var(--ff);font-size:14px;color:var(--tx);margin-top:2px">${v||'—'}</div>
+        ].map(([l,v])=>`<div style="background:var(--dk);border:1px solid var(--bd);padding:8px;border-radius:4px">
+          <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt)">${l}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:16px;font-weight:700;color:var(--tx);margin-top:2px">${v||'—'}</div>
         </div>`).join('')}
       </div>
     </div>
@@ -9369,7 +9368,7 @@ function showFAQModal() {
                   '<span style="color:var(--gold);font-size:12px;font-weight:800;flex-shrink:0">▸</span>'+
                   '<span style="flex:1">'+it.q+'</span>'+
                 '</summary>'+
-                '<div style="padding:0 14px 12px 32px;font-size:12px;color:var(--mt2);line-height:1.65">'+it.a+'</div>'+
+                '<div style="padding:0 14px 12px 32px;font-size:12px;color:var(--platinum);line-height:1.65">'+it.a+'</div>'+
               '</details>';
             }).join('')+
           '</div>';
