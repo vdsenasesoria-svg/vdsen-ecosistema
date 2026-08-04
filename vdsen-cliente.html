@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="VDSEN">
@@ -152,7 +152,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;position:relative;overflow:hidden}
 .stat::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--border)}
 .stat-val{font-family:'Big Shoulders Display',var(--ff);font-size:34px;font-weight:800;color:var(--tx);line-height:1}
-.stat-lbl{font-size:9px;color:var(--platinum);letter-spacing:1.5px;margin-top:4px;text-transform:uppercase;font-weight:600}
+.stat-lbl{font-size:11px;color:var(--platinum);letter-spacing:1.5px;margin-top:4px;text-transform:uppercase;font-weight:600}
 .week-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:16px}
 .wk{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 4px;text-align:center;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent}
 .wk.done{border-color:rgba(110,154,110,.4);background:rgba(110,154,110,.06)}
@@ -1691,7 +1691,6 @@ function renderEspera() {
     + '📸 Recuerda enviar tus fotos de evaluación por WhatsApp para que tu coach pueda completar el análisis.'
     + '</div>'
     + '<button onclick="doLogout()" style="margin-top:40px;background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
-    + '<div style="margin-top:28px;font-size:10px;color:rgba(107,107,102,.5);letter-spacing:1px;max-width:320px;word-break:break-all">UID: ' + uid + '<br>' + email + '</div>'
     + '</div>';
 }
 
@@ -3354,8 +3353,8 @@ function _buildExNav(ejercicios, di) {
       : '';
     return '<button onclick="setEjActivo('+ei+')" title="'+nombre.replace(/"/g,'&quot;')+'" style="position:relative;'+
       'flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;'+
-      'padding:'+(isSS?'14px 10px 8px':'9px 10px 7px')+';border:'+borderWidth+' solid '+borderCol+';border-radius:14px;'+
-      'background:'+bgCol+';cursor:pointer;min-width:72px;max-width:92px;margin-top:'+(isSS?'10px':'0')+';'+
+      'padding:'+(isSS?'14px 10px 8px':'11px 10px 9px')+';border:'+borderWidth+' solid '+borderCol+';border-radius:14px;'+
+      'background:'+bgCol+';cursor:pointer;min-width:72px;max-width:92px;min-height:44px;margin-top:'+(isSS?'10px':'0')+';'+
       glowStyle+'transition:all .15s;-webkit-tap-highlight-color:transparent">'+
       ssTagTop+
       (isActive ? numLabel : '')+
@@ -4283,6 +4282,7 @@ function _perfHeader(ej, di, ei, chip, statsHtml) {
 function _saveExLog(key, payload) {
   LOGS[key] = Object.assign({}, payload, { ts: Date.now() });
   saveLogs();
+  if (payload.done && navigator.vibrate) navigator.vibrate(40);
   _refreshExPanelOnly();
 }
 
@@ -7212,12 +7212,12 @@ function _showSaveOk() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'saveOkBadge';
-    el.style.cssText = 'position:fixed;bottom:70px;right:16px;background:rgba(110,154,110,.15);border:1px solid var(--grn);color:var(--grn);font-family:var(--ff);font-size:10px;padding:4px 10px;z-index:9999;letter-spacing:1px;opacity:0;transition:opacity .3s';
+    el.style.cssText = 'position:fixed;bottom:90px;right:16px;background:rgba(110,154,110,.15);border:1px solid var(--grn);color:var(--grn);font-family:var(--ff);font-size:11px;font-weight:700;padding:6px 12px;border-radius:8px;z-index:9999;letter-spacing:1px;opacity:0;transition:opacity .3s';
     document.body.appendChild(el);
   }
   el.textContent = '✓ GUARDADO';
   el.style.opacity = '1';
-  setTimeout(function(){ el.style.opacity = '0'; }, 1200);
+  setTimeout(function(){ el.style.opacity = '0'; }, 2000);
 }
 
 // Restaurar desde backup local si Firestore falla al cargar
@@ -7712,8 +7712,9 @@ const DB_ALIMENTOS = {
     {n:'Hierbabuena',u:'g',p:3.3,c:8.4,g:0.7,kcal:44,ref:100,cat:'🌿 Otros'},
   ]
 };
-// Estado del menu personalizado
-let MENU_CUSTOM = {};
+// Estado del menu personalizado — persiste en localStorage
+let MENU_CUSTOM = (function(){ try { return JSON.parse(localStorage.getItem('vdsen_menu_custom')||'{}'); } catch(e){ return {}; } })();
+function _saveMenuCustom(){ try { localStorage.setItem('vdsen_menu_custom', JSON.stringify(MENU_CUSTOM)); } catch(e){} }
 
 function calcEquivalente(orig, nuevoAlim, macroTarget) {
   // Calcular gramos necesarios para igualar el macro principal
@@ -7726,7 +7727,15 @@ function calcEquivalente(orig, nuevoAlim, macroTarget) {
 }
 
 function renderNutricion() {
-  if (!PLAN || !PLAN.nutricion) return;
+  if (!PLAN || !PLAN.nutricion) {
+    var cont = document.getElementById('tabNutr');
+    if (cont) cont.innerHTML = '<div style="padding:48px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px">'
+      + '<div style="font-size:36px;opacity:.35">🥗</div>'
+      + '<div style="font-family:var(--ff);font-size:15px;font-weight:700;color:var(--tx)">Plan nutricional no disponible</div>'
+      + '<div style="font-size:13px;color:var(--mt);line-height:1.6;max-width:280px">Tu coach aún no ha configurado tu plan nutricional. Escríbele para solicitarlo.</div>'
+      + '</div>';
+    return;
+  }
   const cont = document.getElementById('tabNutr');
 
   // ── REVERSE DIET: si está activo, mostrar banner y tabla GAP 3 ───
@@ -7824,9 +7833,10 @@ function renderNutricion() {
                   : '#c94a3a';                          // ❌ fuera de rango
 
   const diffBadge = diff !== null
-    ? `<div style="font-size:8px;color:${diffColor};margin-top:6px;text-align:center;letter-spacing:.5px">
-        ${Math.abs(diff) <= 50 ? '✅' : Math.abs(diff) <= 100 ? '⚠' : '❌'}
-        OBJETIVO: ${kcalObj} kcal · REAL: ${kcalReal} kcal · DIFERENCIA: ${diff > 0 ? '+' : ''}${diff} kcal
+    ? `<div style="font-size:12px;color:${diffColor};margin-top:8px;padding:8px 12px;background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.15);border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span>${Math.abs(diff) <= 50 ? '✅' : Math.abs(diff) <= 100 ? '⚠️' : '❌'}</span>
+        <span style="flex:1">Objetivo: <strong>${kcalObj}</strong> kcal · Real: <strong>${kcalReal}</strong> kcal</span>
+        <span style="font-weight:800">${diff > 0 ? '+' : ''}${diff} kcal</span>
        </div>`
     : '';
 
@@ -8029,6 +8039,8 @@ function nutriLogSet(campo, val) {
 }
 
 async function guardarNutriLog() {
+  var _nlBtn = document.querySelector('[onclick="guardarNutriLog()"]');
+  if (_nlBtn) { _nlBtn.disabled = true; _nlBtn.textContent = 'GUARDANDO...'; }
   var k = 'nutrilog_'+_todayKey();
   if (!LOGS[k]) LOGS[k] = {};
   ['nl_kcal','nl_prot','nl_carb','nl_gras'].forEach(function(id) {
@@ -8039,9 +8051,13 @@ async function guardarNutriLog() {
   });
   LOGS[k].fecha = _todayKey();
   LOGS[k].ts = Date.now();
-  await saveLogs();
-  showToast('✓ Registro nutricional guardado');
-  renderNutricion();
+  try {
+    await saveLogs();
+    showToast('✓ Registro nutricional guardado');
+    renderNutricion();
+  } finally {
+    if (_nlBtn) { _nlBtn.disabled = false; _nlBtn.textContent = '✓ GUARDAR REGISTRO'; }
+  }
 }
 
 function buildNutriLogWidget(kcalTarget, protTarget, carbTarget, grasTarget) {
@@ -8093,7 +8109,7 @@ function buildNutriAdherenceWidget(kcalTarget) {
       days.push({ ds: ds, kcal: parseFloat(log.kcal)||0, prot: parseFloat(log.prot)||0 });
     }
   }
-  if (!days.length) return '';
+  if (!days.length) return '<div style="text-align:center;color:var(--mt);font-size:11px;padding:12px 0;line-height:1.5">Registra tus macros diarios para ver el historial de 7 días.</div>';
   var rows = days.map(function(dd) {
     var diffK = kcalTarget ? dd.kcal - kcalTarget : null;
     var col = diffK === null ? 'var(--mt)' : Math.abs(diffK) <= 100 ? 'var(--grn)' : Math.abs(diffK) <= 200 ? 'var(--gold)' : 'var(--red)';
@@ -8639,13 +8655,12 @@ function parsearYRenderComidas(texto) {
 function aplicarSustInlineIdx(key, idx) {
   var data = (window._sustData || {})[key];
   if (!data) { renderNutricion(); return; } // idx=-1 sin data = restaurar
-  if (idx === -1) { delete MENU_CUSTOM[key]; renderNutricion(); return; }
+  if (idx === -1) { delete MENU_CUSTOM[key]; _saveMenuCustom(); renderNutricion(); return; }
   aplicarSustInline(key, idx, data.base, data.list);
 }
 
 function aplicarSustInline(key, idx, base, sustList) {
   if (idx === -1) {
-    // Restaurar original
     delete MENU_CUSTOM[key];
   } else if (sustList && sustList[idx]) {
     var sustTxt = sustList[idx];
@@ -8672,12 +8687,14 @@ function aplicarSustInline(key, idx, base, sustList) {
       MENU_CUSTOM[key] = { nombre: nombre, gramos: Math.round(gramos), u: unidad, p:0, c:0, g:0 };
     }
   }
+  _saveMenuCustom();
   renderNutricion();
 }
 
 function aplicarSust(key, idx, macroTarget, original) {
   if (idx === '' || idx === null || idx === undefined) {
     delete MENU_CUSTOM[key];
+    _saveMenuCustom();
     renderNutricion();
     return;
   }
@@ -8697,6 +8714,7 @@ function aplicarSust(key, idx, macroTarget, original) {
     c:      Math.round(alim.c * factor),
     g:      Math.round(alim.g * factor)
   };
+  _saveMenuCustom();
   renderNutricion();
 }
 
@@ -8748,6 +8766,8 @@ function ciEnergia(val) {
 }
 
 async function guardarCI() {
+  var _ciBtn = document.querySelector('[onclick="guardarCI()"]');
+  if (_ciBtn) { _ciBtn.disabled = true; _ciBtn.textContent = 'GUARDANDO...'; }
   var k = ciKey();
   if (!LOGS[k]) LOGS[k] = {};
   var d = LOGS[k];
@@ -8832,10 +8852,12 @@ async function guardarCI() {
     }
 
     showToast('CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · Tu coach lo revisará en el panel de monitoreo');
-    renderResumen(); // actualizar widget de inicio
+    renderResumen();
   } catch(e) {
     showToast('ERROR AL GUARDAR: ' + e.message, true);
     console.error('guardarCI error:', e);
+  } finally {
+    if (_ciBtn) { _ciBtn.disabled = false; _ciBtn.textContent = '✓ GUARDAR CHECK-IN SEM ' + CURRENT_WEEK; }
   }
 }
 
@@ -8969,7 +8991,7 @@ function _buildWeightSparkline() {
     var ci = LOGS['ci_sem_' + w];
     if (ci && ci.peso) pts.push({ w: w, v: parseFloat(ci.peso) });
   }
-  if (pts.length < 2) return '';
+  if (pts.length < 2) return '<div style="padding:12px 0;text-align:center;color:var(--mt);font-size:11px">Registra tu peso en 2+ semanas para ver la tendencia.</div>';
   var vals = pts.map(function(p){ return p.v; });
   var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
   var range = mx - mn || 1;
@@ -9028,7 +9050,7 @@ function renderCheckin() {
     var cur = w5s[qi];
     var btns = [0,1,2,3,4,5].map(function(v) {
       var on = cur === v;
-      return '<button onclick="ciW5(' + qi + ',' + v + ')" style="flex:1;padding:10px 2px;border:1px solid '
+      return '<button onclick="ciW5(' + qi + ',' + v + ')" style="flex:1;padding:13px 2px;min-height:44px;border:1px solid '
         + (on ? 'var(--gold)' : 'var(--bd)') + ';background:'
         + (on ? 'var(--gdim)' : 'var(--dk)') + ';color:'
         + (on ? 'var(--gold)' : 'var(--mt)') + ';font-family:var(--ff);font-size:16px;cursor:pointer;border-radius:4px">'
@@ -9048,7 +9070,7 @@ function renderCheckin() {
   var engHtml = [1,2,3,4,5,6,7,8,9,10].map(function(v) {
     var on = eng === v;
     var col = v<=3?'#c94a3a':v<=6?'#6b6b66':'#3a9460';
-    return '<button onclick="ciEnergia(' + v + ')" style="flex:1;padding:10px 2px;border:1px solid '
+    return '<button onclick="ciEnergia(' + v + ')" style="flex:1;padding:13px 2px;min-height:44px;border:1px solid '
       + (on ? col : 'var(--bd)') + ';background:'
       + (on ? 'rgba(107,107,102,.12)' : 'var(--dk)') + ';color:'
       + (on ? col : 'var(--mt)') + ';font-family:var(--ff);font-size:15px;cursor:pointer;border-radius:4px">'
@@ -9056,12 +9078,16 @@ function renderCheckin() {
   }).join('');
 
   var ciDone = !!(d.peso || d.hrv);
+  var prevCI = LOGS['ci_sem_' + (CURRENT_WEEK - 1)] || {};
 
   function _ciField(id, label, step, imode, ph, fz, note) {
     var v = d[id] || '';
+    var prevVal = prevCI[id];
+    var prevHint = prevVal ? '<div style="font-size:10px;color:var(--mt);margin-top:3px">Sem. ant.: <strong style="color:var(--platinum)">' + prevVal + '</strong></div>' : '';
     return '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">'+label+'</div>'
       + '<input id="ci_'+id+'" type="number" step="'+step+'" inputmode="'+imode+'" value="'+v+'" placeholder="'+ph+'" oninput="ciSet(\''+id+'\',this.value)"'
       + ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(v?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:'+fz+'px;padding:10px;text-align:center;outline:none">'
+      + prevHint
       + (note ? '<div style="font-size:10px;color:var(--mt2);margin-top:4px">'+note+'</div>' : '')
       + '</div>';
   }
