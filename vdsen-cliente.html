@@ -1328,19 +1328,23 @@ async function loadPlan(user) {
     const sesiones = (planData.days || []).map(function(d, i) {
       var exList = (d.exercises || []).map(function(e, ei) {
         var numSets = (e.sets || []).length || 3;
-        var repsTarget = (e.sets && e.sets[0]) ? (e.sets[0].repsTarget || 8) : 8;
+        var _rt0 = (e.sets && e.sets[0]) ? e.sets[0].repsTarget : 8;
+        // Preservar "SST-PROTOCOL" como string; coercionar solo valores numéricos
+        var repsTarget = (_rt0 === 'SST-PROTOCOL') ? 'SST-PROTOCOL' : (_rt0 || 8);
         var rirTarget  = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
-        return {
+        var techNorm = (function(t){ t=(t||'straight').toLowerCase(); return t==='superset-antagonist'||t==='superset-agonist'?'superset':t; })(e.technique);
+        var ex = {
           nombre: e.exerciseName || e.nombre || 'Ejercicio',
           exerciseName: e.exerciseName || e.nombre || 'Ejercicio',
           numSeries: numSets,
-          repsRange: String(repsTarget),
+          repsRange: repsTarget === 'SST-PROTOCOL' ? 'SST' : String(repsTarget),
           rir: String(rirTarget),
           // Pasar TODOS los campos de los sets (setNote, drop, tempo, restSeconds)
           sets: (e.sets || []).map(function(s, si){
             return {
               setIndex: typeof s.setIndex === 'number' ? s.setIndex : si,
-              repsTarget: s.repsTarget || repsTarget,
+              // Preservar "SST-PROTOCOL" tal cual
+              repsTarget: (s.repsTarget !== undefined && s.repsTarget !== null) ? s.repsTarget : repsTarget,
               rirTarget:  s.rirTarget !== undefined ? s.rirTarget : rirTarget,
               load: s.load || 0,
               restSeconds: s.restSeconds || 90,
@@ -1351,16 +1355,18 @@ async function loadPlan(user) {
           }),
           coachNote: e.coachNote || '',
           // ── Técnica de intensificación a nivel de ejercicio ──
-          // Normalizar variantes de superset a "superset" (único valor reconocido por TECHNIQUE_META)
-          technique: (function(t){ t=(t||'straight').toLowerCase(); return t==='superset-antagonist'||t==='superset-agonist'?'superset':t; })(e.technique),
+          technique: techNorm,
           techniqueNote: e.techniqueNote || '',
+          // ── Activación condicional por semana de mesociclo (Y3T/SST) ──
+          techniqueFromWeek: e.techniqueFromWeek ? parseInt(e.techniqueFromWeek) : null,
           // ── Superserie no competitiva: id de grupo compartido con el/los ejercicios pareja ──
           supersetGroup: e.supersetGroup ? String(e.supersetGroup).trim() : '',
           alternatives: Array.isArray(e.alternatives) ? e.alternatives : [],
           rezagado: false,
           nota: e.coachNote || '',
-          setsReps: numSets + '×' + repsTarget
+          setsReps: numSets + '×' + (repsTarget === 'SST-PROTOCOL' ? 'SST' : repsTarget)
         };
+        return ex;
       });
       var contenido = exList.map(function(e, ei) {
         return (ei+1)+'. '+e.nombre+' | '+e.numSeries+'x'+e.repsRange+' | RIR '+e.rir;
@@ -3277,6 +3283,16 @@ function setWeek(w) {
 
 function goToWeek(w) { setWeek(w); goTab(1); }
 
+// ── Activación condicional por semana de mesociclo (Y3T / SST) ──────────
+// Devuelve true si el ejercicio debe mostrarse en la semana actual.
+// SST se fuerza inactivo en la semana de deload (última semana del plan).
+function isTechniqueActive(ej, week) {
+  if (!ej || !ej.techniqueFromWeek) return true;
+  var totalW = (PLAN && PLAN.totalWeeks) ? PLAN.totalWeeks : 6;
+  if ((ej.technique||'').toLowerCase() === 'sst' && week >= totalW) return false;
+  return week >= ej.techniqueFromWeek;
+}
+
 // ── Navegador horizontal de ejercicios ───────────────────────────────────
 function _buildExNav(ejercicios, di) {
   var patternEmoji = {
@@ -3284,6 +3300,8 @@ function _buildExNav(ejercicios, di) {
     'Core':'🔵','Cardio':'🏃','Bisagra':'↙️','Hinge':'↙️','Squat':'🏋️','Sentadilla':'🏋️'
   };
   return ejercicios.map(function(ej, ei) {
+    // Ocultar ejercicios cuya semana de activación aún no llegó (Y3T/SST)
+    if (!isTechniqueActive(ej, CURRENT_WEEK)) return '';
     var _navType = _getExType(ej);
     var _navSingleLog = (_navType === 'cardio' || _navType === 'circuito');
     var numSeries, doneCount, allDone;
@@ -3500,6 +3518,12 @@ function _buildExPanel(ejercicios, di) {
   if (!ejercicios.length) return '';
   var ei = EJ_ACTIVO;
   if (ei >= ejercicios.length) ei = ejercicios.length - 1;
+  // Si el ejercicio activo no está activo esta semana, usar el primero activo disponible
+  if (!isTechniqueActive(ejercicios[ei], CURRENT_WEEK)) {
+    for (var _fa = 0; _fa < ejercicios.length; _fa++) {
+      if (isTechniqueActive(ejercicios[_fa], CURRENT_WEEK)) { ei = _fa; break; }
+    }
+  }
   var ej = ejercicios[ei];
   var grp = ej && ej.supersetGroup ? String(ej.supersetGroup).trim() : '';
 
@@ -4156,7 +4180,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.15);'+
             'display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mt);font-weight:700">'+(s+1)+'</div>'+
           '<div style="font-size:13px;font-weight:700;color:var(--mt)">SERIE '+(s+1)+'</div>'+
-          '<div style="margin-left:auto;font-size:11px;color:var(--mt)">'+(setSpec?setSpec.repsTarget:repsTarget)+' reps · RIR '+(setSpec&&setSpec.rirTarget!==undefined?setSpec.rirTarget:baseRIR)+'</div>'+
+          '<div style="margin-left:auto;font-size:11px;color:var(--mt)">'+(setSpec?(setSpec.repsTarget==='SST-PROTOCOL'?'Ver protocolo SST':setSpec.repsTarget):repsTarget)+' reps · RIR '+(setSpec&&setSpec.rirTarget!==undefined?setSpec.rirTarget:baseRIR)+'</div>'+
         '</div>'+
         (setSpecBlock ? '<div style="margin-top:6px;margin-left:38px">'+setSpecBlock+'</div>' : '')+
       '</div>';
@@ -4683,6 +4707,8 @@ function _isExerciseFullyDone(di, ei, ej) {
 }
 
 function setEjActivo(ei) {
+  // No activar ejercicios inactivos esta semana
+  if (_EJERCICIOS_DIA[ei] && !isTechniqueActive(_EJERCICIOS_DIA[ei], CURRENT_WEEK)) return;
   EJ_ACTIVO = ei;
   var nav = document.getElementById('exNav');
   var panel = document.getElementById('exPanel');
@@ -5711,11 +5737,18 @@ function renderEntrenamiento() {
   _EJERCICIOS_DIA = ejercicios;
   var _foundActive = false;
   for (var _ae = 0; _ae < ejercicios.length; _ae++) {
+    // Saltar ejercicios inactivos esta semana (techniqueFromWeek)
+    if (!isTechniqueActive(ejercicios[_ae], CURRENT_WEEK)) continue;
     if (!_isExerciseFullyDone(DIA_ACTIVO, _ae, ejercicios[_ae])) {
       EJ_ACTIVO = _ae; _foundActive = true; break;
     }
   }
-  if (!_foundActive && ejercicios.length > 0) EJ_ACTIVO = ejercicios.length - 1;
+  if (!_foundActive) {
+    // Buscar el último ejercicio activo como fallback
+    for (var _fb = ejercicios.length - 1; _fb >= 0; _fb--) {
+      if (isTechniqueActive(ejercicios[_fb], CURRENT_WEEK)) { EJ_ACTIVO = _fb; break; }
+    }
+  }
 
   // ── Build exercise cards HTML (now uses new nav+panel) ───────────────
 
