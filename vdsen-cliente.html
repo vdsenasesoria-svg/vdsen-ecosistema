@@ -1332,7 +1332,7 @@ async function loadPlan(user) {
         // Preservar "SST-PROTOCOL" como string; coercionar solo valores numéricos
         var repsTarget = (_rt0 === 'SST-PROTOCOL') ? 'SST-PROTOCOL' : (_rt0 || 8);
         var rirTarget  = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
-        var techNorm = (function(t){ t=(t||'straight').toLowerCase(); return t==='superset-antagonist'||t==='superset-agonist'?'superset':t; })(e.technique);
+        var techNorm = (function(t){ t=(t||'straight').toLowerCase().trim(); if(t==='rest_pause')return 'rest-pause'; if(t==='superset-antagonist'||t==='superset_antagonist'||t==='superset-agonist'||t==='superset_agonist')return 'superset'; return t; })(e.technique);
         var ex = {
           nombre: e.exerciseName || e.nombre || 'Ejercicio',
           exerciseName: e.exerciseName || e.nombre || 'Ejercicio',
@@ -1374,22 +1374,37 @@ async function loadPlan(user) {
       return { dia: d.label || ('Día '+(i+1)), nombre: d.label || ('Día '+(i+1)), contenido: contenido, exercises: exList };
     });
 
-    // Auto-detectar pares de biserie cuando technique contiene "superset" pero supersetGroup no está definido.
-    // Empareja ejercicios adyacentes con técnica superset*, asignando letras A, B, C… por sesión.
+    // Auto-detectar grupos cuando technique es "superset*" (pareja) o "giant" (3+) sin supersetGroup.
     sesiones.forEach(function(ses) {
       var exs = ses.exercises;
       var code = 65; // 'A'
-      for (var _i = 0; _i < exs.length; _i++) {
+      var _i = 0;
+      while (_i < exs.length) {
         var _ex = exs[_i];
-        if (!_ex.supersetGroup && _ex.technique && _ex.technique.indexOf('superset') !== -1) {
-          var _nx = exs[_i + 1];
-          if (_nx && !_nx.supersetGroup && _nx.technique && _nx.technique.indexOf('superset') !== -1) {
+        if (!_ex.supersetGroup && _ex.technique) {
+          var _t = _ex.technique;
+          if (_t === 'giant') {
+            // Agrupar todos los ejercicios consecutivos con giant
             var _g = String.fromCharCode(code++);
             _ex.supersetGroup = _g;
-            _nx.supersetGroup = _g;
-            _i++; // saltar partner
-          }
-        }
+            var _j = _i + 1;
+            while (_j < exs.length) {
+              var _gx = exs[_j];
+              if (_gx && !_gx.supersetGroup && _gx.technique === 'giant') { _gx.supersetGroup = _g; _j++; }
+              else break;
+            }
+            _i = _j;
+          } else if (_t.indexOf('superset') !== -1) {
+            // Emparejar con el siguiente si también es superset
+            var _nx = exs[_i + 1];
+            if (_nx && !_nx.supersetGroup && _nx.technique && _nx.technique.indexOf('superset') !== -1) {
+              var _g = String.fromCharCode(code++);
+              _ex.supersetGroup = _g;
+              _nx.supersetGroup = _g;
+              _i += 2;
+            } else { _i++; }
+          } else { _i++; }
+        } else { _i++; }
       }
     });
 

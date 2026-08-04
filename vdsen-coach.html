@@ -3041,7 +3041,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
       label: String(d.label || `Día ${di + 1}`),
       exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => {
-        const techRaw = String(ex.technique || 'straight').toLowerCase().trim();
+        const techRaw = (function(t){ t=String(t||'straight').toLowerCase().trim(); if(t==='rest_pause')return 'rest-pause'; if(t==='superset_antagonist'||t==='superset-antagonist')return 'superset'; if(t==='superset_agonist'||t==='superset-agonist')return 'superset'; return t; })(ex.technique);
         const normEx = {
           exerciseName: String(ex.exerciseName || '').trim(),
           alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
