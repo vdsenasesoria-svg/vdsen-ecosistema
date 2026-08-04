@@ -3259,7 +3259,16 @@ function getTotalWeeks() { return (PLAN && PLAN.totalWeeks) ? PLAN.totalWeeks : 
 
 function getSemProgresion(week) {
   var total = getTotalWeeks();
-  if (week === total) return 'DELOAD';
+  if (week >= total) return 'DELOAD';
+  // Detectar plan Y3T: al menos un ejercicio con patrón Y3T en cualquier sesión
+  var _ses = (typeof getSesiones === 'function') ? getSesiones() : [];
+  var _hasY3T = _ses.some(function(ses){
+    return (ses.exercises||[]).some(function(ej){ return isY3TExercise(ej); });
+  });
+  if (_hasY3T) {
+    var pMeta = Y3T_PHASE_META[getY3TPhase(week, total)];
+    if (pMeta) return pMeta.label;
+  }
   if (week === total - 1) return 'PEAK';
   if (week >= total - 2) return 'INTENSIF.';
   if (week === 1) return 'ADAPTACIÓN';
@@ -3293,6 +3302,42 @@ function isTechniqueActive(ej, week) {
   return week >= ej.techniqueFromWeek;
 }
 
+// ── Helpers Y3T — progresión de tres semanas (S1 fuerza / S2 hiper / S3 metabólica) ──
+
+// Detecta un ejercicio Y3T: exactamente 4 sets rectos donde los 2 primeros
+// tienen repsTarget ≤ 6 y los 2 últimos tienen repsTarget ≥ 8.
+function isY3TExercise(ej) {
+  var sets = (ej.sets || []).filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
+  if (sets.length !== 4) return false;
+  return sets[0].repsTarget <= 6 && sets[2].repsTarget >= 8;
+}
+
+// Fase del ciclo Y3T para la semana dada. El patrón repite cada 3 semanas.
+// Devuelve 's1' | 's2' | 's3' | 'deload'
+function getY3TPhase(week, totalWeeks) {
+  if (!totalWeeks) totalWeeks = getTotalWeeks();
+  if (week >= totalWeeks) return 'deload';
+  var phase = ((week - 1) % 3) + 1;
+  return phase === 1 ? 's1' : (phase === 2 ? 's2' : 's3');
+}
+
+var Y3T_PHASE_META = {
+  s1:     { label:'S1 · FUERZA',        color:'#7ec0ff', range:'4-6 reps',  rest:'3-4 min', tip:'Carga máxima con técnica perfecta.' },
+  s2:     { label:'S2 · HIPERTROFIA',   color:'#44BB88', range:'8-12 reps', rest:'2-2.5 min',tip:'Rango de hipertrofia clásico. Llega a RIR objetivo.' },
+  s3:     { label:'S3 · METABÓLICA',    color:'#9966cc', range:'8-12 reps', rest:'2 min',    tip:'Máximo estrés metabólico. SST activo esta semana.' },
+  deload: { label:'DELOAD',             color:'var(--blue)', range:'10-15 reps', rest:'90 s',tip:'Recuperación activa. RIR mínimo 3, técnica perfecta.' }
+};
+
+// Devuelve el subconjunto de sets que corresponde ejecutar en la semana actual.
+// En S1: solo los sets con repsTarget ≤ 6 (fuerza). En S2/S3/deload: todos.
+function getEffectiveSets(ej, week, totalWeeks) {
+  var sets = ej.sets || [];
+  if (!isY3TExercise(ej)) return sets;
+  var phase = getY3TPhase(week, totalWeeks);
+  if (phase === 's1') return sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget <= 6; });
+  return sets;
+}
+
 // ── Navegador horizontal de ejercicios ───────────────────────────────────
 function _buildExNav(ejercicios, di) {
   var patternEmoji = {
@@ -3311,7 +3356,9 @@ function _buildExNav(ejercicios, di) {
       doneCount = (_navOneLog && _navOneLog.done) ? 1 : 0;
       allDone = doneCount === 1;
     } else {
-      numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+      // Para Y3T: usar solo los sets de la fase actual (S1=2 sets, S2/S3=4 sets)
+      var _navEffSets = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
+      numSeries = _navEffSets.length || ej.numSeries || (ej.sets ? ej.sets.length : 3);
       doneCount = 0;
       for (var s = 0; s < numSeries; s++) {
         if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s].done) doneCount++;
@@ -3409,6 +3456,20 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
   var techNote = (ej.techniqueNote || '').trim();
   var coachNote = (ej.coachNote || ej.nota || '').trim();
   var exNotes = catData && catData.executionNotes ? String(catData.executionNotes).trim() : '';
+
+  // ── 0) Badge "NUEVA ESTA SEMANA" cuando la técnica se activa por primera vez ──
+  var _fromWeek = ej.techniqueFromWeek ? parseInt(ej.techniqueFromWeek) : null;
+  var _isNewThisWeek = _fromWeek && _fromWeek === CURRENT_WEEK;
+  if (_isNewThisWeek) {
+    html +=
+      '<div style="margin:0 0 10px;padding:7px 12px;border-radius:8px;background:rgba(153,102,204,.15);border:2px solid rgba(153,102,204,.6);display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:16px">✨</span>' +
+        '<div>' +
+          '<div style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:#c080ff;margin-bottom:2px">NUEVA ESTA SEMANA</div>' +
+          '<div style="font-size:11px;color:var(--mt2);line-height:1.4">Tu coach activó esta técnica a partir de la semana '+_fromWeek+'. Léela con atención antes de empezar.</div>' +
+        '</div>' +
+      '</div>';
+  }
 
   // ── 1) NOTA DE TÉCNICA DEL COACH (techniqueNote) — banner dorado prominente ──
   if (techNote) {
@@ -3689,9 +3750,18 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var machine = getMachineForExercise(nombre);
   var catData = _getCatalogData(nombre);
   var displayNota = ej.nota || ej.coachNote || (catData ? catData.executionNotes : '') || '';
-  var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
-  var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
-  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK);
+  // ── Y3T: detectar fase y sets efectivos para esta semana ──────────────
+  var _isY3T = isY3TExercise(ej);
+  var _y3tPhase = _isY3T ? getY3TPhase(CURRENT_WEEK, getTotalWeeks()) : null;
+  var _effectiveSets = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
+  var _firstEffSet = _effectiveSets[0] || (ej.sets && ej.sets[0]) || null;
+
+  // numSeries base: Y3T usa los sets de la fase; no puede heredar la semana anterior
+  // (en S1→S2 el conteo sube por diseño, y en S2→S1 baja por diseño).
+  var numSeries = _isY3T ? _effectiveSets.length : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+  var repsTarget = ej.repsRange || (_firstEffSet ? _firstEffSet.repsTarget : 8) || 8;
+  if (repsTarget === 'SST-PROTOCOL') repsTarget = 'SST';
+  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK);
   var unit = getExUnit(di, ei);
   // Sesión cerrada: no se permiten ediciones una vez marcada como completada
   var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
@@ -3711,10 +3781,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // Si el cliente realizó MÁS series que el plan la semana pasada (progresó),
   // esas series deben mostrarse esta semana también — sin depender de la etiqueta
   // de acción del progrec (que puede ser 'maintain' después de un 'add_sets').
-  // Esto también resuelve definitivamente el bug "Ayrton": si la semana pasada
-  // hizo 3 series (plan=3), _lastWeekDone=3 → numSeries=3; un progrec obsoleto
-  // con newSets=4 NO puede elevar el conteo por esta vía.
-  if (CURRENT_WEEK > 1) {
+  // EXCEPCIÓN: en Y3T el número de sets cambia por diseño según la fase S1/S2/S3,
+  // por lo que no se hereda de la semana anterior (S2 tiene más sets que S1 por diseño,
+  // y S1 del segundo ciclo tiene menos que S3 — esto es intencional, no una reducción).
+  if (CURRENT_WEEK > 1 && !_isY3T) {
     var _lastWeekDone = 0;
     for (var _lsc = 0; _lsc < 12; _lsc++) {
       if (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lsc] &&
@@ -3766,6 +3836,17 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       (_exNoteInline
         ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_exNoteInline+'</div>'
         : '')+
+      // ── Banner Y3T de fase: S1/S2/S3 ──
+      (function(){
+        if (!_isY3T || !_y3tPhase) return '';
+        var pm = Y3T_PHASE_META[_y3tPhase];
+        if (!pm) return '';
+        return '<div style="margin-top:8px;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.25);border:2px solid '+pm.color+';display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+          '<span style="font-size:13px;font-weight:900;letter-spacing:1px;color:'+pm.color+'">'+pm.label+'</span>'+
+          '<span style="font-size:10px;color:var(--mt);flex:1">'+pm.range+' · Descanso '+pm.rest+'</span>'+
+          '<span style="font-size:10px;color:var(--mt2);font-style:italic">'+pm.tip+'</span>'+
+        '</div>';
+      })()+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
         '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">'+repsTarget+' REPS</span>'+
@@ -4057,7 +4138,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+(_isY3T&&ej.sets&&ej.sets[s]?(' <span style="font-size:8px;font-weight:900;color:'+(ej.sets[s].repsTarget<=6?'#7ec0ff':'#44BB88')+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+(ej.sets[s].repsTarget<=6?'S1':'S2')+'</span>'):'')+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
@@ -4074,9 +4155,17 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var refHtml = _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIR, CURRENT_WEEK);
       var prevRefHtml = refHtml;
 
+      // Etiqueta de sub-fase Y3T por set: S1 (sets 0-1) o S2 (sets 2-3)
+      var _setSubLabel = '';
+      if (_isY3T && ej.sets && ej.sets[s]) {
+        var _setReps = ej.sets[s].repsTarget;
+        var _isFuerzaSet = _setReps !== 'SST-PROTOCOL' && _setReps <= 6;
+        var _setSubColor = _isFuerzaSet ? '#7ec0ff' : '#44BB88';
+        _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:'+_setSubColor+';background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+(_isFuerzaSet?'S1 · '+_setReps+' reps':'S2 · '+_setReps+' reps')+'</span>';
+      }
       setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(107,107,102,.5);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">SERIE '+(s+1)+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">SERIE '+(s+1)+_setSubLabel+'</div>'+
         '</div>'+
         setSpecBlock+
         prevRefHtml+
@@ -4698,7 +4787,9 @@ function _isExerciseFullyDone(di, ei, ej) {
     var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei;
     return !!(LOGS[key] && LOGS[key].done);
   }
-  var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+  // Para Y3T: usar solo los sets activos de la fase actual
+  var _effS = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
+  var ns = _effS.length || ej.numSeries || (ej.sets ? ej.sets.length : 3);
   for (var s = 0; s < ns; s++) {
     var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
     if (!LOGS[k] || !LOGS[k].done) return false;
@@ -6566,7 +6657,7 @@ function completeSet(key, di, ei, si, unit) {
     if (_ejForAdv && _isExerciseFullyDone(di, ei, _ejForAdv)) {
       for (var _nxEj = ei + 1; _nxEj < (_EJERCICIOS_DIA || []).length; _nxEj++) {
         var _nxEjObj = (_EJERCICIOS_DIA || [])[_nxEj] || null;
-        if (_nxEjObj && !_isExerciseFullyDone(di, _nxEj, _nxEjObj)) {
+        if (_nxEjObj && isTechniqueActive(_nxEjObj, CURRENT_WEEK) && !_isExerciseFullyDone(di, _nxEj, _nxEjObj)) {
           EJ_ACTIVO = _nxEj;
           setTimeout(function() {
             var navEl = document.getElementById('exNav');
