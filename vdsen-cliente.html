@@ -7908,7 +7908,7 @@ function renderNutricion() {
       + '</div>';
     return;
   }
-  const cont = document.getElementById('tabNutr');
+  var cont = document.getElementById('tabNutr');
 
   // ── REVERSE DIET: si está activo, mostrar banner y tabla GAP 3 ───
   if (PLAN.reverse_diet && PLAN.reverse_diet.activo) {
@@ -9337,7 +9337,7 @@ function renderCheckin() {
 
 function renderPerfil() {
   if (!PLAN) return;
-  const cont = document.getElementById('tabPerfil');
+  var cont = document.getElementById('tabPerfil');
 
   // Suplementacion: mostrar texto completo formateado
   const supTexto = PLAN.suplementacion?.texto || '';
