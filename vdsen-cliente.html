@@ -5645,17 +5645,32 @@ function renderEntrenamiento() {
     var done = LOGS['done_'+CURRENT_WEEK+'_'+i];
     var active = i === DIA_ACTIVO;
     var rawLabel = (s.dia||'').replace(/^(SESI[OÓ]N\s*\d+[:\s]+|D[IÍ]A\s*\d+[:\s]+)/i,'').replace(/\([^)]+\)/,'').trim().substring(0,10)||('DÍA '+(i+1));
-    var icon = done ? '✓' : (active ? '▶' : String(i+1));
     var iconColor = active ? 'var(--accent)' : done ? 'var(--grn)' : 'var(--mt)';
     var txtColor  = active ? 'var(--tx)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
     var bg = active ? 'rgba(196,255,0,.06)' : 'var(--surface)';
     var borderB = active ? '3px solid var(--accent)' : done ? '3px solid rgba(110,154,110,.5)' : '3px solid transparent';
+    // Progreso parcial de sets
+    var _exs = s.exercises || [];
+    var _tSets = 0, _dSets = 0;
+    _exs.forEach(function(ej, ei) {
+      var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+      for (var ss = 0; ss < ns; ss++) {
+        _tSets++;
+        if ((LOGS['log_'+CURRENT_WEEK+'_'+i+'_'+ei+'_s'+ss]||{}).done) _dSets++;
+      }
+    });
+    var _partial = !done && _dSets > 0;
+    var _pPct = _tSets > 0 ? Math.round(_dSets / _tSets * 100) : 0;
+    var _barColor = done ? 'var(--grn)' : 'var(--accent)';
     return '<button onclick="selDia('+i+')" style="'+
-      'flex:1;min-width:0;padding:10px 6px 8px;border:none;cursor:pointer;'+
+      'flex:1;min-width:0;padding:8px 6px 6px;border:none;cursor:pointer;'+
       'background:'+bg+';border-bottom:'+borderB+';'+
       'border-right:1px solid var(--border);transition:background .15s;-webkit-tap-highlight-color:transparent">'+
-      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:3px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(done?'✓':'·')+'</div>'+
-      '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+rawLabel+'</div>'+
+      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:2px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(done?'✓':(_partial?_dSets+'/'+_tSets:'·'))+'</div>'+
+      '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'+rawLabel+'</div>'+
+      '<div style="height:2px;border-radius:1px;background:var(--border);overflow:hidden">'+
+        '<div style="height:100%;width:'+(done?100:_pPct)+'%;background:'+_barColor+';border-radius:1px;transition:width .3s"></div>'+
+      '</div>'+
       '</button>';
   }).join('');
 
@@ -5842,7 +5857,8 @@ function renderEntrenamiento() {
         'border:1px solid rgba(196,255,0,.28);border-radius:28px;padding:36px 40px 32px;'+
         'text-align:center;min-width:280px;max-width:320px;width:calc(100vw - 48px);'+
         'box-shadow:0 0 0 1px rgba(196,255,0,.08),0 32px 64px rgba(0,0,0,.7),0 0 80px rgba(196,255,0,.06)">'+
-        '<div style="font-size:10px;color:var(--platinum);letter-spacing:3px;margin-bottom:20px;font-weight:700;text-transform:uppercase;opacity:.7">DESCANSO ACTIVO</div>'+
+        '<div style="font-size:10px;color:var(--platinum);letter-spacing:3px;margin-bottom:8px;font-weight:700;text-transform:uppercase;opacity:.7">DESCANSO ACTIVO</div>'+
+        '<div id="restLastSet" style="font-size:12px;color:var(--grn);font-weight:700;min-height:18px;margin-bottom:14px;letter-spacing:.5px"></div>'+
         '<div style="position:relative;width:160px;height:160px;margin:0 auto 20px">'+
           '<svg viewBox="0 0 160 160" style="position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)">'+
             '<circle cx="80" cy="80" r="70" fill="none" stroke="rgba(196,255,0,.1)" stroke-width="6"/>'+
@@ -6146,20 +6162,21 @@ function buildBoostcampExercise(ej, di, ei) {
             // Referencias visualmente diferenciadas: progresión > sem anterior > historial
             refBlockHtml+
             '<div style="display:flex;gap:5px">'+
-              '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal"'+
+              '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal" enterkeyhint="next"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:16px;font-weight:600;padding:8px 6px;outline:none;text-align:center;box-sizing:border-box"'+
-              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
-              '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="reps" inputmode="numeric"'+
+              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'reps_'+key+'\');if(r)r.focus();}">'+
+              '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="reps" inputmode="numeric" enterkeyhint="next"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:16px;font-weight:600;padding:8px 6px;outline:none;text-align:center;box-sizing:border-box"'+
-              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
-              '<input id="rir_'+key+'" type="number" value="'+(rirReal||'')+'" placeholder="RIR" inputmode="numeric" min="0" max="5"'+
+              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'ics_'+key+'\');if(r)r.focus();}">'+
+              '<input id="rir_'+key+'" type="number" value="'+(rirReal||'')+'" placeholder="RIR" inputmode="numeric" min="0" max="5" enterkeyhint="done"'+
               ' style="width:46px;flex-shrink:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:#e8a040;font-size:14px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box"'+
               ' onfocus="this.select()">'+
             '</div>'+
             '<div id="hint_'+key+'" data-base-rir="'+baseRIR+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px"></div>'+
+            '<div id="plates_'+key+'" style="font-size:10px;color:var(--blue);min-height:0;margin-top:1px"></div>'+
           '</div>'+
           // Botones derecha
           '<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">'+
@@ -6664,7 +6681,7 @@ function completeSet(key, di, ei, si, unit) {
         restTime = esCompuesto ? 120 : 90;
       }
     }
-    startRestTimer(restTime);
+    startRestTimer(restTime, key);
     showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
   } else {
     showToast('Serie desmarcada');
@@ -6681,6 +6698,22 @@ function editSet(key) {
   saveLogs();
   _refreshExPanelOnly();
   showToast('✏ Edita los datos y vuelve a confirmar ✓');
+}
+
+function _isBarbellEx(name) {
+  name = (name||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  return /\bbarra\b|peso muerto|sentadilla|squat|bench press|press (de )?banca|press militar|deadlift|remo.{0,10}barra|hip thrust.{0,10}barra|overhead press|rdl\b|clean|snatch/.test(name);
+}
+function _calcPlates(total, bar, unit) {
+  var perSide = (total - bar) / 2;
+  if (perSide <= 0) return '';
+  var sizes = unit === 'LB' ? [45,35,25,10,5,2.5] : [20,15,10,5,2.5,1.25];
+  var parts = [], rem = perSide;
+  sizes.forEach(function(p) {
+    var n = Math.floor(rem / p + 0.001);
+    if (n > 0) { parts.push(n + '×' + p); rem = parseFloat((rem - n * p).toFixed(3)); }
+  });
+  return parts.length ? parts.join(' + ') + ' / lado' : '';
 }
 
 function bcProgHint(key) {
@@ -6704,6 +6737,18 @@ function bcProgHint(key) {
     hint.style.color = 'var(--grn)';
   } else {
     hint.textContent = '';
+  }
+  // Calculadora de discos (solo barras)
+  var plEl = document.getElementById('plates_'+key);
+  if (plEl) {
+    var exN = document.getElementById('setrow_'+key)?.dataset.exname || '';
+    if (_isBarbellEx(exN) && !isNaN(carga) && carga > 0) {
+      var barWt = unit === 'LB' ? 45 : 20;
+      var plStr = _calcPlates(carga, barWt, unit);
+      plEl.textContent = plStr ? '🏋 ' + plStr : (carga <= barWt ? '🏋 solo barra' : '');
+    } else {
+      plEl.textContent = '';
+    }
   }
 }
 
@@ -6827,7 +6872,7 @@ function saveUserNote(di, ei, text) {
   _refreshExPanelOnly();
 }
 
-function startRestTimer(seconds) {
+function startRestTimer(seconds, lastSetKey) {
   // Si el cliente desactivó el temporizador, no mostrar overlay ni arrancar cuenta.
   if (isRestTimerDisabled()) { try { stopRestTimer(); } catch(_){} return; }
   // Pedir permiso de notificaciones aquí (dentro de un onclick) para que
@@ -6847,6 +6892,18 @@ function startRestTimer(seconds) {
   var overlay = document.getElementById('restTimerOverlay');
   if (!overlay) return;
   overlay.style.display = 'flex';
+  // Mostrar datos del último set completado
+  var lsEl = document.getElementById('restLastSet');
+  if (lsEl) {
+    var ls = lastSetKey ? (LOGS[lastSetKey] || {}) : {};
+    if (ls.carga && ls.reps) {
+      var lsTxt = '✓ ' + ls.carga + ' ' + (ls.unit||'KG') + ' × ' + ls.reps + ' reps';
+      if (ls.rir_real !== '' && ls.rir_real !== null && ls.rir_real !== undefined) lsTxt += ' · RIR ' + ls.rir_real;
+      lsEl.textContent = lsTxt;
+    } else {
+      lsEl.textContent = '';
+    }
+  }
   updateTimerDisplay();
   _restTimer = setInterval(_restTimerTick, 1000);
 }
