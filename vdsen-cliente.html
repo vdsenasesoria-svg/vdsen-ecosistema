@@ -9319,7 +9319,17 @@ async function _loadCoachContact() {
     var phone = coachSnap.exists() ? (coachSnap.data().phone || '') : '';
     if (phone) {
       var clean = phone.replace(/[^\d+]/g,'');
-      btn.innerHTML = '<a href="https://wa.me/' + clean.replace(/^\+/,'') + '" target="_blank" style="display:block;width:100%;background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.5);color:#25D166;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;text-align:center;text-decoration:none;box-sizing:border-box">💬 HABLAR CON MI COACH EN WHATSAPP</a>';
+      var _waMsg = '🏋 Hola, soy ' + (PLAN.nombre||'tu cliente') + '. Mis datos InBody actuales:\n\n'
+        + '⚖️ Peso corporal: ' + (PLAN.peso||'—') + ' kg\n'
+        + '💪 LBM (masa magra): ' + (PLAN.lbm||'—') + ' kg\n'
+        + '📉 % Grasa: ' + (PLAN.pct||PLAN.pctGrasa||'—') + '%\n\n'
+        + '— ¿Qué significa cada dato? —\n'
+        + '• Peso: masa total (músculo + grasa + agua + huesos). Solo tiene sentido como tendencia semanal.\n'
+        + '• LBM: todo lo que no es grasa. Base para calcular proteína óptima (1.6–2.2 g × kg LBM).\n'
+        + '• % Grasa: fracción adiposa medida por impedancia bioeléctrica (BIA). Varía con la hidratación — comparar siempre en las mismas condiciones.\n';
+      var _waBase = 'https://wa.me/' + clean.replace(/^\+/,'');
+      btn.innerHTML = '<a href="' + _waBase + '?text=' + encodeURIComponent(_waMsg) + '" target="_blank" style="display:block;width:100%;background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.5);color:#25D166;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;text-align:center;text-decoration:none;box-sizing:border-box">📊 ENVIAR MIS DATOS INBODY AL COACH</a>'
+        + '<a href="' + _waBase + '" target="_blank" style="display:block;width:100%;margin-top:8px;background:rgba(37,211,102,.06);border:1px solid rgba(37,211,102,.25);color:#25D166;font-family:var(--ff);font-size:12px;letter-spacing:1.5px;font-weight:700;padding:11px;border-radius:10px;text-align:center;text-decoration:none;box-sizing:border-box">💬 ABRIR CHAT CON MI COACH</a>';
     } else {
       btn.innerHTML = '<p style="color:var(--mt);font-size:12px;text-align:center;padding:10px">Tu coach no tiene teléfono registrado. Escríbele directamente.</p>';
     }
