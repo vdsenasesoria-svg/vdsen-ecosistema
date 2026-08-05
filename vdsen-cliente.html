@@ -6041,6 +6041,21 @@ function buildBoostcampExercise(ej, di, ei) {
     }
   }
 
+  // Session progress summary
+  var _sdone = 0, _ston = 0;
+  for (var _sc = 0; _sc < numSeries; _sc++) {
+    var _sv = LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] || {};
+    if (_sv.done) { _sdone++; _ston += (parseFloat(_sv.carga)||0) * (parseInt(_sv.reps)||0); }
+  }
+  var _spct = numSeries > 0 ? Math.round(_sdone / numSeries * 100) : 0;
+  var summaryBarHtml = '<div style="display:flex;align-items:center;gap:8px;padding:0 14px 8px">'+
+    '<div style="flex:1;height:3px;border-radius:2px;background:var(--border);overflow:hidden">'+
+      '<div style="height:100%;width:'+_spct+'%;background:var(--grn);transition:width .3s;border-radius:2px"></div>'+
+    '</div>'+
+    '<span style="font-size:10px;color:'+(_sdone===numSeries&&numSeries>0?'var(--grn)':'var(--mt)')+';flex-shrink:0;font-weight:700">'+_sdone+'/'+numSeries+'</span>'+
+    (_ston > 0 ? '<span style="font-size:10px;color:var(--mt2);flex-shrink:0">· '+_ston.toFixed(0)+' vol</span>' : '')+
+  '</div>';
+
   // Build set rows
   var setsHtml = '';
   for (var s = 0; s < numSeries; s++) {
@@ -6074,13 +6089,19 @@ function buildBoostcampExercise(ej, di, ei) {
 
     // ICS display
     var icsHtml = completed
-      ? '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">'+
-          '<span style="font-size:9px;color:var(--mt);letter-spacing:1px;font-weight:600">ICS</span>'+
-          '<span style="font-size:14px;font-weight:700;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+'">'+
-            (saved.ics||'—')+'</span>'+
-          '<span style="font-size:9px;color:var(--mt);margin-left:8px;letter-spacing:1px;font-weight:600">PUMP</span>'+
-          '<span style="font-size:15px">'+(saved.pump===1?'💪':saved.pump===2?'👍':saved.pump===3?'😐':'—')+'</span>'+
-        '</div>'
+      ? (function(){
+          var _vol  = (saved.carga && saved.reps) ? (parseFloat(saved.carga)*parseInt(saved.reps)).toFixed(0) : null;
+          var _e1rm = (saved.carga && saved.reps) ? (parseFloat(saved.carga)*(1+parseInt(saved.reps)/30)).toFixed(1) : null;
+          return '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">'+
+            '<span style="font-size:9px;color:var(--mt);letter-spacing:1px;font-weight:600">ICS</span>'+
+            '<span style="font-size:14px;font-weight:700;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+'">'+
+              (saved.ics||'—')+'</span>'+
+            '<span style="font-size:9px;color:var(--mt);margin-left:8px;letter-spacing:1px;font-weight:600">PUMP</span>'+
+            '<span style="font-size:15px">'+(saved.pump===1?'💪':saved.pump===2?'👍':saved.pump===3?'😐':'—')+'</span>'+
+            (_vol ? '<span style="margin-left:auto;font-size:10px;color:var(--mt);font-weight:600">'+_vol+' '+unit+'</span>'+
+                    '<span style="font-size:10px;color:var(--mt2)">e1RM '+_e1rm+'</span>' : '')+
+          '</div>';
+        })()
       : '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
           '<div style="flex:1">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">ICS 1-10</div>'+
@@ -6138,7 +6159,7 @@ function buildBoostcampExercise(ej, di, ei) {
               'border-radius:8px;color:#e8a040;font-size:14px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box"'+
               ' onfocus="this.select()">'+
             '</div>'+
-            '<div id="hint_'+key+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px"></div>'+
+            '<div id="hint_'+key+'" data-base-rir="'+baseRIR+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px"></div>'+
           '</div>'+
           // Botones derecha
           '<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">'+
@@ -6228,7 +6249,8 @@ function buildBoostcampExercise(ej, di, ei) {
       '</div>'+
     '</div>'+
 
-    // Sets
+    // Progress bar + sets
+    summaryBarHtml+
     '<div style="padding:0 14px 14px">'+setsHtml+'</div>'+
   '</div>';
 }
@@ -6260,7 +6282,7 @@ function copiarSerie(key, s, di, ei) {
   var icsEl   = document.getElementById('ics_'+key);
   if (cargaEl) { cargaEl.value = carga; cargaEl.style.borderColor = 'var(--accent)'; setTimeout(function(){ cargaEl.style.borderColor=''; }, 800); }
   if (repsEl)  { repsEl.value  = reps; }
-  if (rirEl)   { rirEl.value   = rir; }
+  if (rirEl) { rirEl.value = rir; if (rir !== '' && !isNaN(parseInt(rir))) { setRirReal(key, parseInt(rir)); } }
   if (icsEl && ics)  { icsEl.value = ics; updateICSColor(key); }
   if (pump)          { setPump(key, pump); }
   bcProgHint(key);
@@ -6667,10 +6689,18 @@ function bcProgHint(key) {
   var carga = parseFloat(document.getElementById('carga_'+key)?.value);
   var reps  = parseInt(document.getElementById('reps_'+key)?.value);
   var unit  = getUnit();
-  var step  = 2.5;
-  if (!isNaN(carga) && !isNaN(reps)) {
-    var nextCarga = (carga + step).toFixed(1);
-    hint.textContent = '→ Próx: '+nextCarga+' '+unit;
+  if (!isNaN(carga) && !isNaN(reps) && carga > 0 && reps > 0) {
+    var e1rm = (carga * (1 + reps / 30)).toFixed(1);
+    var msg  = 'e1RM: ' + e1rm + ' ' + unit;
+    var rir     = parseInt(document.getElementById('rir_'+key)?.value);
+    var baseRIR = parseInt(hint.dataset.baseRir);
+    if (!isNaN(rir) && !isNaN(baseRIR)) {
+      if (rir > baseRIR + 1)     msg += ' · 📈 muy fácil';
+      else if (rir > baseRIR)    msg += ' · 📈 fácil';
+      else if (rir === baseRIR)  msg += ' · ✓ en target';
+      else                       msg += ' · 🔥 duro';
+    }
+    hint.textContent = msg;
     hint.style.color = 'var(--grn)';
   } else {
     hint.textContent = '';
