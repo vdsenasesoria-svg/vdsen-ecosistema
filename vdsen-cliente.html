@@ -4150,9 +4150,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             ? '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" style="'+
                 'flex:0 0 auto;padding:12px 16px;border:1px solid var(--border);border-radius:10px;'+
                 'background:var(--input-bg);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer">= Copiar</button>'
-            : (numSeries > 1 ? '<button onclick="applyLoadToAll(\''+key+'\','+di+','+ei+','+numSeries+')" style="'+
-                'flex:0 0 auto;padding:12px 14px;border:1px solid var(--border);border-radius:10px;'+
-                'background:var(--input-bg);color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">= Todas</button>' : ''))+
+            : '')+
           '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
             'flex:1;padding:13px;border:none;border-radius:10px;cursor:pointer;'+
             'background:var(--accent);color:#0a0a0a;font-size:14px;font-weight:800;letter-spacing:.5px">'+
@@ -6872,18 +6870,6 @@ function setRirReal(key, val) {
 }
 window.setRirReal = setRirReal;
 
-function applyLoadToAll(key0, di, ei, numSeries) {
-  var el0 = document.getElementById('carga_'+key0);
-  if (!el0 || !el0.value) { showToast('Ingresa la carga primero', true); return; }
-  var val = el0.value;
-  for (var s2 = 1; s2 < numSeries; s2++) {
-    var k2 = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s2;
-    var el2 = document.getElementById('carga_'+k2);
-    if (el2) el2.value = val;
-  }
-  showToast('Carga copiada a todas las series');
-}
-window.applyLoadToAll = applyLoadToAll;
 
 function adjustRestTimer(delta) {
   if (navigator.vibrate) navigator.vibrate(12);
