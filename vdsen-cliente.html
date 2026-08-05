@@ -6701,7 +6701,7 @@ function editSet(key) {
 }
 
 function _isBarbellEx(name) {
-  name = (name||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  name = (name||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   return /\bbarra\b|peso muerto|sentadilla|squat|bench press|press (de )?banca|press militar|deadlift|remo.{0,10}barra|hip thrust.{0,10}barra|overhead press|rdl\b|clean|snatch/.test(name);
 }
 function _calcPlates(total, bar, unit) {
