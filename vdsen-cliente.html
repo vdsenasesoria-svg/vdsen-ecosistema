@@ -1332,12 +1332,14 @@ async function loadPlan(user) {
         // Preservar "SST-PROTOCOL" como string; coercionar solo valores numéricos
         var repsTarget = (_rt0 === 'SST-PROTOCOL') ? 'SST-PROTOCOL' : (_rt0 || 8);
         var rirTarget  = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
+        // Rango real de reps (heterogéneo Y3T: "5-10", homogéneo: "10", SST puro: "SST")
+        var _repsRangeStr = _setsRepsLabel(e.sets);
         var techNorm = (function(t){ t=(t||'straight').toLowerCase().trim(); if(t==='rest_pause')return 'rest-pause'; if(t==='superset-antagonist'||t==='superset_antagonist'||t==='superset-agonist'||t==='superset_agonist')return 'superset'; return t; })(e.technique);
         var ex = {
           nombre: e.exerciseName || e.nombre || 'Ejercicio',
           exerciseName: e.exerciseName || e.nombre || 'Ejercicio',
           numSeries: numSets,
-          repsRange: repsTarget === 'SST-PROTOCOL' ? 'SST' : String(repsTarget),
+          repsRange: _repsRangeStr,
           rir: String(rirTarget),
           // Pasar TODOS los campos de los sets (setNote, drop, tempo, restSeconds)
           sets: (e.sets || []).map(function(s, si){
@@ -1364,7 +1366,7 @@ async function loadPlan(user) {
           alternatives: Array.isArray(e.alternatives) ? e.alternatives : [],
           rezagado: false,
           nota: e.coachNote || '',
-          setsReps: numSets + '×' + (repsTarget === 'SST-PROTOCOL' ? 'SST' : repsTarget)
+          setsReps: numSets + '×' + _repsRangeStr
         };
         return ex;
       });
@@ -3317,6 +3319,18 @@ function isTechniqueActive(ej, week) {
   return week >= ej.techniqueFromWeek;
 }
 
+// Devuelve etiqueta de reps para un array de sets.
+// Homogéneo [10,10,10] → "10" | Heterogéneo [5,5,10,10] → "5-10" | SST puro → "SST" | mixto → "5-10+SST"
+function _setsRepsLabel(sets) {
+  if (!sets || !sets.length) return '—';
+  var hasSst = sets.some(function(s){ return s.repsTarget === 'SST-PROTOCOL'; });
+  var nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; }).map(function(s){ return s.repsTarget; });
+  if (!nums.length) return 'SST';
+  var mn = Math.min.apply(null, nums), mx = Math.max.apply(null, nums);
+  var base = mn === mx ? String(mn) : (mn + '-' + mx);
+  return hasSst ? base + '+SST' : base;
+}
+
 // ── Helpers Y3T — progresión de tres semanas (S1 fuerza / S2 hiper / S3 metabólica) ──
 
 // Detecta un ejercicio Y3T: exactamente 4 sets rectos donde los 2 primeros
@@ -3774,7 +3788,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // numSeries base: Y3T usa los sets de la fase; no puede heredar la semana anterior
   // (en S1→S2 el conteo sube por diseño, y en S2→S1 baja por diseño).
   var numSeries = _isY3T ? _effectiveSets.length : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
-  var repsTarget = ej.repsRange || (_firstEffSet ? _firstEffSet.repsTarget : 8) || 8;
+  // Y3T: usar el repsTarget del set efectivo de la fase actual, no el rango global (5-10)
+  var repsTarget = (_isY3T ? null : ej.repsRange) || (_firstEffSet ? _firstEffSet.repsTarget : 8) || 8;
   if (repsTarget === 'SST-PROTOCOL') repsTarget = 'SST';
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK);
   var unit = getExUnit(di, ei);
@@ -9753,10 +9768,22 @@ const VDSEN_PDF = (() => {
       sectionBand(s,'Entrenamiento', (tr.weeks?tr.weeks+' semanas':'')+(tr.daysPerWeek?' · '+tr.daysPerWeek+' días/sem':''), hm);
       tr.days.forEach(day=>{
         sectionBand(s, day.label||'Día', '', hm);
-        const rows=(day.exercises||[]).map(ex=>{ const nn=ex.sets?ex.sets.length:0, reps=ex.sets&&ex.sets[0]?ex.sets[0].repsTarget:'';
-          const rir=ex.sets&&ex.sets[0]?('RIR '+ex.sets[0].rirTarget):''; const tec=(ex.technique&&ex.technique!=='straight')?ex.technique:'';
-          return [ex.exerciseName||'', nn+'×'+reps, rir, tec]; });
-        if(rows.length) dataTable(s,['Ejercicio','Series','Intensidad','Técnica'],rows,[0.46,0.16,0.18,0.20],hm);
+        const rows=(day.exercises||[]).flatMap(ex=>{
+          const sets=ex.sets||[]; const tec=(ex.technique&&ex.technique!=='straight')?ex.technique:'';
+          const repsVals=new Set(sets.map(s=>s.repsTarget));
+          const isHetero=repsVals.size>1||sets.some(s=>s.repsTarget==='SST-PROTOCOL');
+          if(!isHetero){
+            const reps=sets[0]?(sets[0].repsTarget==='SST-PROTOCOL'?'SST':sets[0].repsTarget):'';
+            const rir=sets[0]?('RIR '+sets[0].rirTarget):'';
+            return [[ex.exerciseName||'', sets.length+'×'+reps, rir, tec]];
+          }
+          return sets.map((s,si)=>{
+            const lbl=s.setNote||(si===0&&sets.length>1?'Serie 1':'Serie '+(si+1));
+            const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':s.repsTarget;
+            return [si===0?(ex.exerciseName||''):'', lbl, rStr+' reps · RIR '+s.rirTarget, si===0?tec:''];
+          });
+        });
+        if(rows.length) dataTable(s,['Ejercicio','Set / Nota','Reps · RIR','Técnica'],rows,[0.44,0.20,0.20,0.16],hm);
       });
     }
     const su=data.supplements;
@@ -10003,7 +10030,7 @@ function exportPDF() {
       exs.forEach(function(ej, ei){
         var nm = ej.nombre || ej.exerciseName || '';
         var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
-        var rr = ej.repsRange || (ej.sets&&ej.sets[0] ? (ej.sets[0].repsTarget||'8-12') : '8-12');
+        var rr = ej.repsRange || _setsRepsLabel(ej.sets) || '8-12';
         var rv = ej.rir       || (ej.sets&&ej.sets[0] ? (ej.sets[0].rirTarget||2) : 2);
         exR(ei+1, nm, ns, rr, rv, ei%2===0);
       });

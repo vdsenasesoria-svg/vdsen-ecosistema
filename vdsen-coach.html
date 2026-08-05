@@ -3022,6 +3022,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div id="parsedPlanPreview"></div>`;
   });
 
+  function _setsRepsLabel(sets) {
+    if (!sets || !sets.length) return '—';
+    const hasSst = sets.some(function(s){ return s.repsTarget === 'SST-PROTOCOL'; });
+    const nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; }).map(function(s){ return s.repsTarget; });
+    if (!nums.length) return 'SST';
+    const mn = Math.min.apply(null, nums), mx = Math.max.apply(null, nums);
+    const base = mn === mx ? String(mn) : (mn + '-' + mx);
+    return hasSst ? base + '+SST' : base;
+  }
+
   function parsePlanFromJSON() {
     const raw = document.getElementById("planJsonInput")?.value.trim();
     const statusEl = document.getElementById("jsonPlanStatus");
@@ -3206,7 +3216,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                 const tech = (e.technique && e.technique !== 'straight') ? ` <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:rgba(244,244,240,.15);color:#F4F4F0;text-transform:uppercase;font-weight:600">${e.technique}</span>` : '';
                 const fromW = e.techniqueFromWeek ? ` <span style="font-size:9px;color:#9966cc;font-weight:700">desde sem ${e.techniqueFromWeek}</span>` : '';
                 const tnote = e.techniqueNote ? `<div class="text-[11px] text-[#888] ml-3 italic">↳ ${e.techniqueNote}</div>` : '';
-                const repsDisp = e.sets[0]?.repsTarget === 'SST-PROTOCOL' ? 'SST' : e.sets[0]?.repsTarget;
+                const repsDisp = _setsRepsLabel(e.sets);
                 return `<li>· ${e.exerciseName}${tech}${fromW} — ${e.sets.length} serie(s) × ${repsDisp} reps${tnote}</li>`;
               }).join('')
             : '<li class="text-[#888]">Sin ejercicios detectados</li>'}
@@ -3728,13 +3738,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         sectionBand(s,'Entrenamiento', (tr.weeks?tr.weeks+' semanas':'')+(tr.daysPerWeek?' · '+tr.daysPerWeek+' días/sem':''), hm);
         tr.days.forEach(day=>{
           sectionBand(s, day.label||'Día', '', hm);
-          const rows=(day.exercises||[]).map(ex=>{
-            const nn=ex.sets?ex.sets.length:0, reps=ex.sets&&ex.sets[0]?ex.sets[0].repsTarget:'';
-            const rir=ex.sets&&ex.sets[0]?('RIR '+ex.sets[0].rirTarget):'';
-            const tec=(ex.technique&&ex.technique!=='straight')?ex.technique:'';
-            return [ex.exerciseName||'', nn+'×'+reps, rir, tec];
+          const rows=(day.exercises||[]).flatMap(ex=>{
+            const sets=ex.sets||[]; const tec=(ex.technique&&ex.technique!=='straight')?ex.technique:'';
+            const repsVals=new Set(sets.map(s=>s.repsTarget));
+            const isHetero=repsVals.size>1||sets.some(s=>s.repsTarget==='SST-PROTOCOL');
+            if(!isHetero){
+              const reps=sets[0]?(sets[0].repsTarget==='SST-PROTOCOL'?'SST':sets[0].repsTarget):'';
+              const rir=sets[0]?('RIR '+sets[0].rirTarget):'';
+              return [[ex.exerciseName||'', sets.length+'×'+reps, rir, tec]];
+            }
+            return sets.map((s,si)=>{
+              const lbl=s.setNote||(sets.length>1?'Serie '+(si+1):'Serie 1');
+              const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':s.repsTarget;
+              return [si===0?(ex.exerciseName||''):'', lbl, rStr+' reps · RIR '+s.rirTarget, si===0?tec:''];
+            });
           });
-          if(rows.length) dataTable(s,['Ejercicio','Series','Intensidad','Técnica'],rows,[0.46,0.16,0.18,0.20],hm);
+          if(rows.length) dataTable(s,['Ejercicio','Set / Nota','Reps · RIR','Técnica'],rows,[0.44,0.20,0.20,0.16],hm);
         });
       }
       const su=data.supplements;
@@ -4916,7 +4935,7 @@ El esfuerzo no es negociable.
         const exList = (d.exercises || []).map(e => {
           const sets = (e.sets || []);
           const numSets = sets.length || 3;
-          const reps = sets[0] ? (sets[0].repsTarget || 8) : 8;
+          const reps = _setsRepsLabel(sets);
           const rir  = sets[0] ? (sets[0].rirTarget  || 2) : 2;
           return `<div class="flex items-center gap-2 ml-4 py-1">
             <span class="text-sm text-white">${e.exerciseName}</span>
@@ -7188,17 +7207,17 @@ El esfuerzo no es negociable.
         (d.exercises || []).forEach((ex, ei) => {
           const sets = ex.sets || [];
           const numSets = sets.length || 1;
-          const reps = sets[0]?.repsTarget ?? 8;
+          const repsLabel = _setsRepsLabel(sets);
           const rirT = sets[0]?.rirTarget ?? 2;
           const rest = sets[0]?.restSeconds ?? 90;
           const tech = (ex.technique && ex.technique !== 'straight') ? ` [${ex.technique.toUpperCase()}]` : '';
           lines.push(`  ${ei+1}. ${ex.exerciseName}${tech}`);
-          lines.push(`     ${numSets} × ${reps} reps · RIR ${rirT} · Descanso ${rest}s`);
+          lines.push(`     ${numSets} × ${repsLabel} reps · RIR ${rirT} · Descanso ${rest}s`);
           if (ex.techniqueNote) lines.push(`     ↳ Técnica: ${ex.techniqueNote}`);
           if (ex.coachNote) lines.push(`     ✎ Nota: ${ex.coachNote}`);
           if (ex.alternatives && ex.alternatives.length) lines.push(`     ⇄ Alternativas: ${ex.alternatives.join(', ')}`);
           // Detalle de sets si difieren entre sí
-          const diferentes = sets.some(s => s.repsTarget !== reps || s.rirTarget !== rirT || s.restSeconds !== rest || s.setNote || s.drop || s.tempo);
+          const _r0 = sets[0]?.repsTarget; const diferentes = sets.some(s => s.repsTarget !== _r0 || s.rirTarget !== rirT || s.restSeconds !== rest || s.setNote || s.drop || s.tempo);
           if (diferentes) {
             sets.forEach((s, si) => {
               const parts = [`Serie ${si+1}: ${s.repsTarget} reps · RIR ${s.rirTarget} · ${s.restSeconds}s`];
