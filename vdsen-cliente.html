@@ -3922,7 +3922,19 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _pumpBtns2 = [{v:1,icon:'💪',c:'var(--grn)'},{v:2,icon:'👍',c:'var(--accent)'},{v:3,icon:'😐',c:'var(--mt)'}].map(function(p){
       return '<button onclick="expressSetPump(\''+_expK+'\','+p.v+')" id="xpump_'+_expK+'_'+p.v+'" style="flex:1;padding:9px 2px;border-radius:7px;font-size:19px;border:2px solid var(--border);background:var(--input-bg);cursor:pointer">'+p.icon+'</button>';
     }).join('');
-    setsHtml = '<input type="hidden" id="xsets_'+_expK+'" value="'+numSeries+'">';
+    // Barra de progreso express
+    var _xDoneC = 0;
+    for (var _xpc = 0; _xpc < numSeries - 1; _xpc++) {
+      if (LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_xpc]) _xDoneC++;
+    }
+    var _xPct = numSeries > 0 ? Math.round(_xDoneC / numSeries * 100) : 0;
+    var _xPBar = '<div style="display:flex;align-items:center;gap:8px;padding:0 0 8px">'+
+      '<div style="flex:1;height:3px;border-radius:2px;background:var(--border);overflow:hidden">'+
+        '<div style="height:100%;width:'+_xPct+'%;background:var(--grn);transition:width .3s;border-radius:2px"></div>'+
+      '</div>'+
+      '<span style="font-size:10px;color:var(--mt);flex-shrink:0;font-weight:700">'+_xDoneC+'/'+numSeries+'</span>'+
+    '</div>';
+    setsHtml = _xPBar + '<input type="hidden" id="xsets_'+_expK+'" value="'+numSeries+'">';
     for (var _xs = 0; _xs < numSeries - 1; _xs++) {
       var _xKey = 'exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_xs;
       var _xDone = !!LOGS[_xKey];
@@ -3953,13 +3965,15 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isBodyweight?'var(--mt2)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cargaLbl+'</div>'+
-          '<input id="xcarga_'+_expK+'" type="number" value="'+(_exPfCarga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal" style="'+_iptS+'" onfocus="this.select()">'+
+          '<input id="xcarga_'+_expK+'" type="number" value="'+(_exPfCarga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal" enterkeyhint="next" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+unit+'\','+baseRIR+')" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'xreps_'+_expK+'\');if(r)r.focus();}">'+
         '</div>'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isIsometric?'var(--accent)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_repsLbl+'</div>'+
-          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" style="'+_iptS+'" onfocus="this.select()">'+
+          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="done" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+unit+'\','+baseRIR+')">'+
         '</div>'+
       '</div>'+
+      '<div id="xhint_'+_expK+'" data-exname="'+nombre+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-bottom:2px"></div>'+
+      '<div id="xplates_'+_expK+'" style="font-size:10px;color:var(--blue);min-height:0;margin-bottom:6px"></div>'+
       '<div style="margin-bottom:12px">'+
         '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR \u00daLTIMA SERIE</div>'+
         '<div style="display:flex;gap:6px">'+_rirBtns2+'</div>'+
@@ -3980,6 +3994,20 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<button onclick="markExpressDone('+di+','+ei+')" style="width:100%;padding:15px;border:none;border-radius:14px;cursor:pointer;background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.35);-webkit-tap-highlight-color:transparent">\u2713 COMPLETAR EJERCICIO</button>'+
       '</div>';
   } else {
+  // Barra de progreso (modo normal: myoreps/rest-pause/cluster)
+  var _ndone = 0, _nvol = 0;
+  for (var _nc = 0; _nc < numSeries; _nc++) {
+    var _ns = LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_nc] || {};
+    if (_ns.done) { _ndone++; _nvol += (parseFloat(_ns.carga)||0)*(parseInt(_ns.reps)||0); }
+  }
+  var _nPct = numSeries > 0 ? Math.round(_ndone / numSeries * 100) : 0;
+  setsHtml += '<div style="display:flex;align-items:center;gap:8px;padding:0 0 8px">'+
+    '<div style="flex:1;height:3px;border-radius:2px;background:var(--border);overflow:hidden">'+
+      '<div style="height:100%;width:'+_nPct+'%;background:var(--grn);transition:width .3s;border-radius:2px"></div>'+
+    '</div>'+
+    '<span style="font-size:10px;color:'+(_ndone===numSeries&&numSeries>0?'var(--grn)':'var(--mt)')+';flex-shrink:0;font-weight:700">'+_ndone+'/'+numSeries+'</span>'+
+    (_nvol > 0 ? '<span style="font-size:10px;color:var(--mt2);flex-shrink:0">· '+_nvol.toFixed(0)+' vol</span>' : '')+
+  '</div>';
   for (var s = 0; s < numSeries; s++) {
     var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
     var prevKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+s;
@@ -4157,7 +4185,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '✓ GUARDAR SERIE '+(s+1)+
           '</button>'+
         '</div>'+
-        '<div id="hint_'+key+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:4px"></div>'+
+        '<div id="hint_'+key+'" data-base-rir="'+baseRIR+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px"></div>'+
+        '<div id="plates_'+key+'" style="font-size:10px;color:var(--blue);min-height:0;margin-top:1px"></div>'+
       '</div>';
     } else if (sessionDone) {
       // ── SET SIN DATOS (sesión cerrada, set no registrado) ────────────
@@ -6749,6 +6778,39 @@ function bcProgHint(key) {
     } else {
       plEl.textContent = '';
     }
+  }
+}
+
+function xBcHint(k, unit, baseRIR) {
+  var hint = document.getElementById('xhint_'+k);
+  if (!hint) return;
+  var carga = parseFloat(document.getElementById('xcarga_'+k)?.value);
+  var reps  = parseInt(document.getElementById('xreps_'+k)?.value);
+  if (!isNaN(carga) && !isNaN(reps) && carga > 0 && reps > 0) {
+    var e1rm = (carga * (1 + reps / 30)).toFixed(1);
+    var msg  = 'e1RM: ' + e1rm + ' ' + unit;
+    var rir  = parseInt(document.getElementById('xrir_val_'+k)?.value);
+    if (!isNaN(rir) && !isNaN(baseRIR)) {
+      if (rir > baseRIR + 1)    msg += ' · 📈 muy fácil';
+      else if (rir > baseRIR)   msg += ' · 📈 fácil';
+      else if (rir === baseRIR) msg += ' · ✓ en target';
+      else                      msg += ' · 🔥 duro';
+    }
+    hint.textContent = msg;
+    hint.style.color = 'var(--grn)';
+    var plEl = document.getElementById('xplates_'+k);
+    if (plEl) {
+      var exN = hint.dataset.exname || '';
+      if (_isBarbellEx(exN) && carga > 0) {
+        var barWt = unit === 'LB' ? 45 : 20;
+        var plStr = _calcPlates(carga, barWt, unit);
+        plEl.textContent = plStr ? '🏋 ' + plStr : (carga <= barWt ? '🏋 solo barra' : '');
+      } else { plEl.textContent = ''; }
+    }
+  } else {
+    hint.textContent = '';
+    var plEl2 = document.getElementById('xplates_'+k);
+    if (plEl2) plEl2.textContent = '';
   }
 }
 
