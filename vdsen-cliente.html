@@ -422,7 +422,7 @@ function toggleExUnit(di, ei) {
   // ── 3. Convertir EXERCISE_HISTORY para este ejercicio ──
   if (ej) {
     var _eName = (ej.nombre || ej.exerciseName || '')
-      .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+      .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var _hist = EXERCISE_HISTORY[_eName];
     if (_hist && _hist.unit && _hist.unit.toUpperCase() === oldUnit && _hist.load) {
       _hist.load = String(_roundUnit(parseFloat(_hist.load) * factor, newUnit));
@@ -3736,7 +3736,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     deload:'var(--blue)', reduce_load:'var(--red)', reduce_sets:'#FF8844',
     add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
   };
-  var _exNameBanner = nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  var _exNameBanner = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   var _histExBanner = EXERCISE_HISTORY[_exNameBanner] || {};
   var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
   var _exNoteInline = _getExNote(di, ei);
@@ -4816,7 +4816,7 @@ function markExpressDone(di, ei) {
   // Actualizar historial de ejercicio + detectar récord personal (igual que en modo normal)
   var _ejExpr = (_EJERCICIOS_DIA || [])[ei] || null;
   var _exNombreExpr = (_ejExpr && (_ejExpr.nombre || _ejExpr.exerciseName)) || ('Ejercicio '+(ei+1));
-  var _exNameKeyExpr = _exNombreExpr.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  var _exNameKeyExpr = _exNombreExpr.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   _recordExerciseHistoryAndPR(_exNameKeyExpr, _exNombreExpr, carga, reps, rirLast, unit);
 
   saveLogs();
@@ -5019,7 +5019,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     var _isIsoM = _techM === 'iso-hold' || /^plancha|isometric|hollow|l[- ]?sit|wall sit/i.test(memberNames[curMIdx]);
     var _isBwM = _isIsoM || /^(dominad|fondo|plancha|burpee|abdominal|crunch(?! en polea)|rueda abdomin|elevaci[oó]n de piernas (colgad|libre)|push.?up|flexi[óo]n|muscle.?up|pull.?up|hollow)/i.test(memberNames[curMIdx]);
     var _prevM = LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+curIdx+'_s0'] || {};
-    var _histM = EXERCISE_HISTORY[memberNames[curMIdx].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')] || {};
+    var _histM = EXERCISE_HISTORY[memberNames[curMIdx].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')] || {};
     var _pfCM = '', _pfRM = ejM.sets ? (ejM.sets[0] ? (ejM.sets[0].repsTarget || 10) : 10) : 10;
     var _progM = _getProgRecForExercise(di, curIdx, memberNames[curMIdx]);
     if (_progM && _progM.newLoad !== undefined && _progM.newLoad !== null) {
@@ -10466,7 +10466,7 @@ function exportPDF() {
     var TIERS = _pdfParseTiers(PLAN.suplementacion.texto);
     TIERS.forEach(function(t) {
       if (!t.items.length) return;
-      var keyN = t.titulo.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'').toUpperCase();
+      var keyN = t.titulo.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'').toUpperCase();
       var col = TIER_PDF_COLORS[keyN] ||
                 (keyN.indexOf('TIER1') >= 0 ? TIER_PDF_COLORS['TIER 1'] :
                  keyN.indexOf('TIER2') >= 0 ? TIER_PDF_COLORS['TIER 2'] :
