@@ -4381,6 +4381,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     const analisis = parts.length ? `\n━━━━━━━━━━━━━\n🧠 ANÁLISIS\n${parts.join('\n')}` : '';
     const notaCoach = result.nota ? `\n\n💬 ${result.nota}` : '';
+    const _glosMap = {
+      peso: '⚖️ *Peso*: masa total (músculo + grasa + agua + huesos). La tendencia semanal importa más que el número aislado.',
+      smm:  '💪 *SMM* (masa muscular esquelética): solo el músculo voluntario. Refleja directamente el efecto del entrenamiento.',
+      pbf:  '📊 *PBF* (% grasa corporal): fracción adiposa medida por impedancia bioeléctrica (BIA). Varía con la hidratación — comparar siempre en las mismas condiciones.',
+      vfl:  '🔴 *VFL* (grasa visceral): grasa acumulada alrededor de los órganos. Saludable: ≤9 · Elevada: 10–14 · Alta prioridad: >14.',
+    };
+    const glosario = ['peso','smm','pbf','vfl'].filter(fid => _v(fid) !== null).map(fid => _glosMap[fid]).join('\n');
+    const glosarioBlock = glosario ? `\n\n━━━━━━━━━━━━━\n📚 QUÉ SIGNIFICA CADA DATO\n${glosario}` : '';
 
     return `¡Hola ${nombre}! 👋
 
@@ -4389,7 +4397,7 @@ Registré tu medición InBody Dial H30. Acá están tus resultados:
 ━━━━━━━━━━━━━
 📏 MEDICIÓN · ${fecha}
 
-${datos}${analisis}${notaCoach}
+${datos}${analisis}${notaCoach}${glosarioBlock}
 
 ━━━━━━━━━━━━━
 Lo que importa es la tendencia — una medición sola no dice nada, la dirección sí.
