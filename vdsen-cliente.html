@@ -9211,6 +9211,36 @@ function renderPerfil() {
       </div>
     </div>
 
+    <style>#inbody-guide summary::-webkit-details-marker{display:none}#inbody-guide summary::marker{display:none}#inbody-guide[open] .ib-chevron{transform:rotate(180deg)}</style>
+    <details id="inbody-guide" style="margin:12px 0">
+      <summary style="cursor:pointer;padding:12px 16px;background:var(--card);border:1px solid var(--bd);border-radius:10px;display:flex;align-items:center;gap:10px;list-style:none;outline:none;-webkit-tap-highlight-color:transparent">
+        <span style="font-size:18px">⚖️</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);font-weight:700">COMPOSICIÓN CORPORAL</div>
+          <div style="font-size:12px;color:var(--tx);margin-top:2px">¿Qué significa cada parámetro InBody?</div>
+        </div>
+        <span class="ib-chevron" style="font-size:11px;color:var(--mt);transition:transform .2s">▼</span>
+      </summary>
+      <div style="background:var(--card);border:1px solid var(--bd);border-top:none;border-radius:0 0 10px 10px;overflow:hidden">
+        ${[
+          ['💪','LBM — MASA MAGRA','Todo lo que no es tejido adiposo: músculo, huesos, agua y órganos. Base para tu ingesta de proteína óptima: 1.6–2.2 g × kg de LBM.','Aumentar LBM mientras baja % grasa = recomposición real.'],
+          ['📉','% GRASA (PBF)','Fracción de tu peso que es tejido adiposo, medida por impedancia bioeléctrica (BIA). Varía con la hidratación — mídete siempre en las mismas condiciones.','Hombre: &lt;20% saludable · Mujer: &lt;30% saludable'],
+          ['⚖️','PESO CORPORAL','Tu masa total (músculo + grasa + agua + huesos). Solo cobra sentido como tendencia — compáralo siempre junto a LBM y % grasa, nunca de forma aislada.',''],
+          ['🦵','SMM — MÚSCULO ESQUELÉTICO','Solo el músculo voluntario (los que entrenas). El indicador más relevante de tu progreso atlético; aumenta con fuerza + proteína adecuada.',''],
+          ['💧','AGUA CORPORAL (TBW)','Representa ~55–65% de la masa magra. Un TBW bajo indica deshidratación, lo que infla artificialmente el % grasa y reduce el rendimiento.',''],
+          ['🔬','RATIO ECW/TBW','Cociente entre el agua extracelular (fuera de células) y el agua total. Un valor elevado puede indicar inflamación o retención de líquidos.','Normal: 0.360–0.380 · Atención: &gt;0.38'],
+          ['🫀','GRASA VISCERAL','Grasa acumulada alrededor de los órganos abdominales. Más peligrosa metabólicamente que la subcutánea; el InBody la estima por impedancia segmental.','Riesgo: &gt;10 · Alto riesgo: &gt;13']
+        ].map(([icon,title,desc,ref],i)=>`<div style="padding:11px 16px;${i>0?'border-top:1px solid rgba(244,244,240,.05)':''}">
+          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px">
+            <span style="font-size:12px">${icon}</span>
+            <span style="font-family:var(--ff);font-size:10px;letter-spacing:1.5px;color:var(--accent);font-weight:700">${title}</span>
+          </div>
+          <div style="font-size:12px;color:var(--platinum);line-height:1.6;padding-left:18px">${desc}</div>
+          ${ref?`<div style="font-size:10px;color:var(--mt);margin-top:3px;padding-left:18px">${ref}</div>`:''}
+        </div>`).join('')}
+      </div>
+    </details>
+
     <div style="margin-top:14px;padding:14px 16px 10px;background:linear-gradient(180deg,rgba(107,107,102,.04),transparent);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:24px">💊</span>
