@@ -220,6 +220,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px}
 .ring{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes setDone{from{background:rgba(110,154,110,.28)}to{background:transparent}}
 .loading-txt{font-size:13px;font-weight:600;letter-spacing:2px;color:var(--mt)}
 /* ── EMPTY ── */
 .empty{text-align:center;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -4069,13 +4070,20 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           var cargaPh    = isBodyweight ? '0' : unit;
           var repsLabel  = isIsometric ? 'SEGUNDOS' : 'REPS';
           var repsPh     = isIsometric ? 'seg' : 'reps';
-          return '<div style="display:flex;gap:8px;margin-bottom:10px">'+
+          var _stepHtml  = (!isBodyweight && !isIsometric)
+            ? '<div style="display:flex;gap:4px;margin-top:5px">'+
+                '<button onclick="adjCarga(\''+key+'\',-2.5)" style="flex:1;padding:6px 0;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">−2.5</button>'+
+                '<button onclick="adjCarga(\''+key+'\',2.5)" style="flex:1;padding:6px 0;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer">+2.5</button>'+
+              '</div>'
+            : '';
+          return '<div style="display:flex;gap:8px;margin-bottom:8px">'+
             '<div style="flex:1">'+
               '<div style="font-size:9px;color:'+(isBodyweight?'var(--mt2)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+cargaLabel+'</div>'+
               '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+cargaPh+'" step="0.5" inputmode="decimal"'+
               ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
               'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
+              _stepHtml+
             '</div>'+
             '<div style="flex:1">'+
               '<div style="font-size:9px;color:'+(isIsometric?'var(--accent)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+repsLabel+'</div>'+
@@ -4083,15 +4091,22 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(isIsometric?'rgba(107,107,102,.3)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
-            '</div>';
+            '</div>'+
+          '</div>';
         })()+
-          '<div style="width:72px;flex-shrink:0">'+
-            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">RIR REAL</div>'+
-            '<input id="rir_'+key+'" type="number" value="'+(rirReal||'')+'" placeholder="RIR" inputmode="numeric" min="0" max="5"'+
-            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
-            'border-radius:8px;color:#e8a040;font-size:18px;font-weight:700;padding:10px 6px;outline:none;text-align:center"'+
-            ' onfocus="this.select()">'+
-            '<div style="font-size:8px;color:var(--mt2);margin-top:3px;text-align:center">reps sobrantes · 0=fallo</div>'+
+        '<div style="margin-bottom:10px">'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR REAL <span style="font-weight:400;color:var(--mt2)">· reps sobrantes · 0=fallo</span></div>'+
+          '<input type="hidden" id="rir_'+key+'" value="'+(rirReal||'')+'">'+
+          '<div style="display:flex;gap:4px">'+
+            (function(){return[0,1,2,3,4].map(function(rv){
+              var _rs=(rirReal!==''&&rirReal!=null&&parseInt(rirReal)===rv);
+              var _rl=rv===0?'0 Fallo':rv===4?'4+ Fácil':''+rv;
+              return'<button onclick="setRirReal(\''+key+'\','+rv+')" id="rir_btn_'+key+'_'+rv+'"'+
+                ' style="flex:1;padding:10px 2px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;'+
+                'border:2px solid '+(_rs?'#e8a040':'var(--border)')+';'+
+                'background:'+(_rs?'rgba(232,160,64,.15)':'var(--input-bg)')+';'+
+                'color:'+(_rs?'#e8a040':'var(--mt)')+'">'+_rl+'</button>';
+            }).join('');})()+
           '</div>'+
         '</div>'+
         // ICS
@@ -4135,7 +4150,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             ? '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" style="'+
                 'flex:0 0 auto;padding:12px 16px;border:1px solid var(--border);border-radius:10px;'+
                 'background:var(--input-bg);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer">= Copiar</button>'
-            : '')+
+            : (numSeries > 1 ? '<button onclick="applyLoadToAll(\''+key+'\','+di+','+ei+','+numSeries+')" style="'+
+                'flex:0 0 auto;padding:12px 14px;border:1px solid var(--border);border-radius:10px;'+
+                'background:var(--input-bg);color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">= Todas</button>' : ''))+
           '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
             'flex:1;padding:13px;border:none;border-radius:10px;cursor:pointer;'+
             'background:var(--accent);color:#0a0a0a;font-size:14px;font-weight:800;letter-spacing:.5px">'+
@@ -4284,6 +4301,12 @@ function _saveExLog(key, payload) {
   saveLogs();
   if (payload.done && navigator.vibrate) navigator.vibrate(40);
   _refreshExPanelOnly();
+  if (payload.done) {
+    setTimeout(function() {
+      var row = document.querySelector('[id="setrow_'+key+'"]');
+      if (row) { row.style.animation = 'none'; row.offsetHeight; row.style.animation = 'setDone .5s ease-out'; }
+    }, 70);
+  }
 }
 
 // ── Datos UNIVERSALES de wearable (todos opcionales, copia manual desde reloj) ──
@@ -4706,6 +4729,12 @@ function _refreshExPanelOnly() {
   var panel = document.getElementById('exPanel');
   if (nav) nav.innerHTML = _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO);
   if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
+  setTimeout(function() {
+    var navEl = document.getElementById('exNav');
+    if (navEl && navEl.children[EJ_ACTIVO]) navEl.children[EJ_ACTIVO].scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+    var firstLoad = document.querySelector('#exPanel input[id^="carga_"]');
+    if (firstLoad && document.activeElement !== firstLoad) firstLoad.focus({ preventScroll: true });
+  }, 60);
 }
 
 // ── Express mode helpers ───────────────────────────────────────────────────
@@ -5830,6 +5859,11 @@ function renderEntrenamiento() {
           '</div>'+
         '</div>'+
         '<div style="font-size:11px;color:var(--mt);margin-bottom:20px;letter-spacing:.5px">Toca en cualquier lugar para cerrar</div>'+
+        '<div style="display:flex;gap:6px;justify-content:center;margin-bottom:10px">'+
+          [['30s',30],['1m',60],['1:30',90],['2m',120],['3m',180]].map(function(p){
+            return'<button onclick="event.stopPropagation();resetRestTimer('+p[1]+')" style="flex:1;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18);border-radius:10px;color:var(--platinum);font-size:11px;font-weight:700;padding:8px 2px;cursor:pointer">'+p[0]+'</button>';
+          }).join('')+
+        '</div>'+
         '<div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px">'+
           '<button onclick="event.stopPropagation();adjustRestTimer(-15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">−15s</button>'+
           '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+15s</button>'+
@@ -6253,16 +6287,29 @@ window._recordExerciseHistoryAndPR = _recordExerciseHistoryAndPR;
 function showPRCelebration(exDisplayName, load, unit, reps) {
   var old = document.getElementById('prCeleb');
   if (old) old.remove();
+  if (navigator.vibrate) navigator.vibrate([40, 60, 80]);
   var el = document.createElement('div');
   el.id = 'prCeleb';
-  el.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-20px);z-index:10000;background:#C4FF00;color:#0A0A0A;padding:14px 20px;border-radius:2px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-weight:800;font-size:13px;display:flex;align-items:center;gap:10px;max-width:90vw;opacity:0;transition:opacity .3s, transform .3s';
-  el.innerHTML = '<span style="font-size:22px">🏆</span><span>¡Nuevo récord en '+exDisplayName+'! '+load+' '+unit+' × '+reps+'</span>';
+  el.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(6,14,26,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;opacity:0;transition:opacity .25s;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)';
+  var confetti = Array.from({length:18},function(_,i){
+    var colors=['#C4FF00','#e8a040','#4A9FDC','#6E9A6E','#F4F4F0'];
+    var c=colors[i%colors.length];
+    var left=Math.random()*100;
+    var delay=(Math.random()*0.6).toFixed(2);
+    var dur=(1.2+Math.random()*0.8).toFixed(2);
+    return'<div style="position:absolute;top:-10px;left:'+left+'%;width:7px;height:7px;background:'+c+';border-radius:2px;animation:confettiFall '+dur+'s '+delay+'s linear forwards;opacity:0"></div>';
+  }).join('');
+  el.innerHTML = '<style>@keyframes confettiFall{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(100vh) rotate(720deg);opacity:0}}@keyframes prPop{0%{transform:scale(.4);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}</style>'+
+    '<div style="position:absolute;inset:0;overflow:hidden;pointer-events:none">'+confetti+'</div>'+
+    '<div style="font-size:72px;animation:prPop .4s cubic-bezier(.34,1.56,.64,1) forwards">🏆</div>'+
+    '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:13px;letter-spacing:4px;color:var(--mt);font-weight:700">NUEVO RÉCORD PERSONAL</div>'+
+    '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:28px;font-weight:900;color:var(--accent);letter-spacing:1px;text-align:center;max-width:280px">'+exDisplayName+'</div>'+
+    '<div style="font-size:22px;font-weight:800;color:var(--tx)">'+load+' '+unit+' × '+reps+' reps</div>'+
+    '<div style="font-size:11px;color:var(--mt);margin-top:4px">Toca para continuar</div>';
   document.body.appendChild(el);
-  requestAnimationFrame(function(){ el.style.opacity='1'; el.style.transform='translateX(-50%) translateY(0)'; });
-  setTimeout(function(){
-    el.style.opacity='0'; el.style.transform='translateX(-50%) translateY(-20px)';
-    setTimeout(function(){ el.remove(); }, 300);
-  }, 3500);
+  el.addEventListener('click', function(){ el.style.opacity='0'; setTimeout(function(){ el.remove(); }, 250); });
+  requestAnimationFrame(function(){ el.style.opacity='1'; });
+  setTimeout(function(){ el.style.opacity='0'; setTimeout(function(){ el.remove(); }, 250); }, 4000);
 }
 window.showPRCelebration = showPRCelebration;
 
@@ -6633,6 +6680,7 @@ function bcProgHint(key) {
 }
 
 function setPump(key, val) {
+  if (navigator.vibrate) navigator.vibrate(12);
   if (!LOGS[key]) LOGS[key] = {};
   LOGS[key].pump = val;
   var colors = {1:'var(--grn)', 2:'var(--accent)', 3:'var(--mt)'};
@@ -6798,13 +6846,64 @@ function updateTimerDisplay() {
   _updateRestRing();
 }
 
+function adjCarga(key, delta) {
+  var el = document.getElementById('carga_'+key);
+  if (!el) return;
+  var v = (parseFloat(el.value) || 0) + delta;
+  if (v < 0) v = 0;
+  el.value = v % 1 === 0 ? v : v.toFixed(1);
+  bcProgHint(key);
+  el.focus({ preventScroll: true });
+}
+window.adjCarga = adjCarga;
+
+function setRirReal(key, val) {
+  if (navigator.vibrate) navigator.vibrate(12);
+  var hidden = document.getElementById('rir_'+key);
+  if (hidden) hidden.value = val;
+  for (var rv = 0; rv <= 4; rv++) {
+    var btn = document.getElementById('rir_btn_'+key+'_'+rv);
+    if (!btn) continue;
+    var sel = rv === val;
+    btn.style.borderColor = sel ? '#e8a040' : 'var(--border)';
+    btn.style.background  = sel ? 'rgba(232,160,64,.15)' : 'var(--input-bg)';
+    btn.style.color       = sel ? '#e8a040' : 'var(--mt)';
+  }
+}
+window.setRirReal = setRirReal;
+
+function applyLoadToAll(key0, di, ei, numSeries) {
+  var el0 = document.getElementById('carga_'+key0);
+  if (!el0 || !el0.value) { showToast('Ingresa la carga primero', true); return; }
+  var val = el0.value;
+  for (var s2 = 1; s2 < numSeries; s2++) {
+    var k2 = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s2;
+    var el2 = document.getElementById('carga_'+k2);
+    if (el2) el2.value = val;
+  }
+  showToast('Carga copiada a todas las series');
+}
+window.applyLoadToAll = applyLoadToAll;
+
 function adjustRestTimer(delta) {
+  if (navigator.vibrate) navigator.vibrate(12);
   _restEndMs += delta * 1000;
   if (_restEndMs < Date.now()) _restEndMs = Date.now();
   localStorage.setItem('vdsen_restEnd', _restEndMs);
   _restSeconds = Math.ceil((_restEndMs - Date.now()) / 1000);
   updateTimerDisplay();
 }
+
+function resetRestTimer(seconds) {
+  if (navigator.vibrate) navigator.vibrate(12);
+  _restEndMs = Date.now() + seconds * 1000;
+  _restTotalSeconds = seconds;
+  _restSeconds = seconds;
+  localStorage.setItem('vdsen_restEnd', _restEndMs);
+  localStorage.setItem('vdsen_restTotal', seconds);
+  updateTimerDisplay();
+}
+window.resetRestTimer = resetRestTimer;
 
 function stopRestTimer() {
   if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
