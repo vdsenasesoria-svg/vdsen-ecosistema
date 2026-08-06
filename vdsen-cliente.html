@@ -1368,6 +1368,8 @@ async function loadPlan(user) {
           nota: e.coachNote || '',
           setsReps: numSets + '×' + _repsRangeStr
         };
+        // Auto-detectar Y3T en loadPlan para que todos los render paths hereden technique:'y3t'
+        if (ex.technique !== 'y3t' && isY3TExercise(ex)) ex.technique = 'y3t';
         return ex;
       });
       var contenido = exList.map(function(e, ei) {
@@ -3356,10 +3358,10 @@ function isY3TExercise(ej) {
   var sets = ej.sets || [];
   // Detectar por setNote (S1 · FUERZA / S2 · HIPERTROFIA) aunque no haya technique explícito
   if (sets.some(function(s){ return s.setNote && (s.setNote.indexOf('S1') !== -1 || s.setNote.indexOf('S2') !== -1); })) return true;
-  // Fallback numérico: exactamente 4 non-SST donde primeros ≤6 y últimos ≥8
+  // Fallback numérico: ≥3 non-SST donde el primer set ≤6 reps y el último ≥8 reps
   var nonSst = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
-  if (nonSst.length !== 4) return false;
-  return nonSst[0].repsTarget <= 6 && nonSst[2].repsTarget >= 8;
+  if (nonSst.length < 3) return false;
+  return Number(nonSst[0].repsTarget) <= 6 && Number(nonSst[nonSst.length - 1].repsTarget) >= 8;
 }
 
 // Fase del ciclo Y3T para la semana dada. El patrón repite cada 3 semanas.
@@ -3894,6 +3896,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
 
   // PASO 3 — nunca ocultar sets que el cliente ya registró esta sesión
   numSeries = Math.max(numSeries, _doneCount);
+  // Para Y3T: la fase define el techo — cambio de fase reduce sets intencionalmente (S3→S1)
+  if (_isY3T && _effectiveSets.length > 0) numSeries = Math.min(numSeries, _effectiveSets.length);
 
   // ── A. (eliminado) ─────────────────────────────────────────────────────
   var machineHtml = '';
