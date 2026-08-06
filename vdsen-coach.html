@@ -545,8 +545,15 @@
     const totals = {};
     (planObj?.days || []).forEach(d => {
       (d.exercises || []).forEach(ex => {
+        const tech = (ex.technique || 'straight').toLowerCase();
+        // Hold como ejercicio separado = bug conocido, no contar series extra
+        if (tech === 'hold') return;
         const m = exerciseToMuscle(ex.exerciseName);
-        const sets = (ex.sets || []).length;
+        let sets = (ex.sets || []).length;
+        // SST con techniqueFromWeek solo activo a partir de esa semana
+        // En el panel de preview se muestra el volumen máximo (sem 3+), no filtrado por semana
+        // SST equivale a 2× las series directas en cómputo MEV/MRV
+        if (tech === 'sst') sets = sets * 2;
         totals[m] = (totals[m] || 0) + sets;
       });
     });
@@ -3015,6 +3022,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div id="parsedPlanPreview"></div>`;
   });
 
+  function _setsRepsLabel(sets) {
+    if (!sets || !sets.length) return '—';
+    const hasSst = sets.some(function(s){ return s.repsTarget === 'SST-PROTOCOL'; });
+    const nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; }).map(function(s){ return s.repsTarget; });
+    if (!nums.length) return 'SST';
+    const mn = Math.min.apply(null, nums), mx = Math.max.apply(null, nums);
+    const base = mn === mx ? String(mn) : (mn + '-' + mx);
+    return hasSst ? base + '+SST' : base;
+  }
+
   function parsePlanFromJSON() {
     const raw = document.getElementById("planJsonInput")?.value.trim();
     const statusEl = document.getElementById("jsonPlanStatus");
@@ -3033,25 +3050,32 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const days = obj.days.map((d, di) => ({
       dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
       label: String(d.label || `Día ${di + 1}`),
-      exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
-        exerciseName: String(ex.exerciseName || '').trim(),
-        alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
-        technique: String(ex.technique || 'straight').toLowerCase().trim(),
-        techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
-        supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
-        sets: Array.isArray(ex.sets) && ex.sets.length > 0
-          ? ex.sets.map((s, si) => ({
-              setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
-              repsTarget: parseInt(s.repsTarget) || 8,
-              rirTarget: parseInt(s.rirTarget ?? 2),
-              load: parseFloat(s.load ?? 0) || 0,
-              restSeconds: parseInt(s.restSeconds ?? 90) || 90,
-              setNote: String(s.setNote || s.note || '').trim(),
-              drop: s.drop === true,
-              tempo: String(s.tempo || '').trim()
-            }))
-          : []
-      })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+      exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => {
+        const techRaw = (function(t){ t=String(t||'straight').toLowerCase().trim(); if(t==='rest_pause')return 'rest-pause'; if(t==='superset_antagonist'||t==='superset-antagonist')return 'superset'; if(t==='superset_agonist'||t==='superset-agonist')return 'superset'; return t; })(ex.technique);
+        const normEx = {
+          exerciseName: String(ex.exerciseName || '').trim(),
+          alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
+          technique: techRaw,
+          techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+          supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
+          sets: Array.isArray(ex.sets) && ex.sets.length > 0
+            ? ex.sets.map((s, si) => ({
+                setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
+                // Preservar "SST-PROTOCOL" tal cual; convertir números normalmente
+                repsTarget: s.repsTarget === 'SST-PROTOCOL' ? 'SST-PROTOCOL' : (parseInt(s.repsTarget) || 8),
+                rirTarget: parseInt(s.rirTarget ?? 2),
+                load: parseFloat(s.load ?? 0) || 0,
+                restSeconds: parseInt(s.restSeconds ?? 90) || 90,
+                setNote: String(s.setNote || s.note || '').trim(),
+                drop: s.drop === true,
+                tempo: String(s.tempo || '').trim()
+              }))
+            : []
+        };
+        // Preservar techniqueFromWeek para activación condicional (Y3T/SST)
+        if (ex.techniqueFromWeek) normEx.techniqueFromWeek = parseInt(ex.techniqueFromWeek);
+        return normEx;
+      }).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
     })).filter(d => d.exercises.length > 0);
 
     if (days.length === 0) {
@@ -3147,9 +3171,42 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     };
   }
 
+  function validateTrainingPlan(plan) {
+    const errors = [];
+    (plan.days || []).forEach(day => {
+      (day.exercises || []).forEach(ex => {
+        if (ex.technique === 'hold') {
+          errors.push({ day: day.label, exercise: ex.exerciseName, type: 'HOLD_AS_EXERCISE',
+            msg: 'Hold declarado como ejercicio separado — integrar en techniqueNote del ejercicio base' });
+        }
+        if ((ex.technique === 'straight' || ex.technique === 'superset') && (ex.techniqueNote||'').includes('Y3T')) {
+          const straight = (ex.sets||[]).filter(s => s.repsTarget !== 'SST-PROTOCOL');
+          if (straight.length > 4) errors.push({ day: day.label, exercise: ex.exerciseName, type: 'Y3T_SETS_OVERFLOW',
+            msg: `${straight.length} sets rectos — máximo 4 en Y3T (2×S1 + 2×S2)` });
+        }
+        if (ex.technique === 'sst' && !ex.techniqueFromWeek) {
+          errors.push({ day: day.label, exercise: ex.exerciseName, type: 'SST_MISSING_WEEK',
+            msg: 'SST sin techniqueFromWeek — se mostrará siempre (considera añadirlo)' });
+        }
+        if ((ex.techniqueNote||'').length > 160) {
+          errors.push({ day: day.label, exercise: ex.exerciseName, type: 'NOTE_TOO_LONG',
+            msg: `techniqueNote ${ex.techniqueNote.length} chars — máximo 160` });
+        }
+      });
+    });
+    return errors;
+  }
+
   function showParsedPreview(planObj) {
     const preview = document.getElementById("parsedPlanPreview");
     if (!preview) return;
+    const validationErrors = validateTrainingPlan(planObj);
+    const errorsHtml = validationErrors.length > 0
+      ? `<div style="background:rgba(255,80,80,.08);border:1px solid rgba(255,80,80,.3);border-radius:10px;padding:10px 12px;margin-bottom:10px">
+          <div style="font-size:11px;font-weight:700;color:#ff6060;letter-spacing:.5px;margin-bottom:6px">⚠ ${validationErrors.length} advertencia(s) Y3T</div>
+          ${validationErrors.map(e => `<div style="font-size:11px;color:#ff9090;margin-bottom:3px">· <strong>${e.type}</strong> — ${e.exercise||''}: ${e.msg}</div>`).join('')}
+        </div>`
+      : '';
     const dayList = planObj.days.map(d => `
       <div class="card p-3 mb-2">
         <p class="font-semibold text-[#F4F4F0] mb-1">${d.label}</p>
@@ -3157,8 +3214,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           ${d.exercises.length
             ? d.exercises.map(e => {
                 const tech = (e.technique && e.technique !== 'straight') ? ` <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:rgba(244,244,240,.15);color:#F4F4F0;text-transform:uppercase;font-weight:600">${e.technique}</span>` : '';
+                const fromW = e.techniqueFromWeek ? ` <span style="font-size:9px;color:#9966cc;font-weight:700">desde sem ${e.techniqueFromWeek}</span>` : '';
                 const tnote = e.techniqueNote ? `<div class="text-[11px] text-[#888] ml-3 italic">↳ ${e.techniqueNote}</div>` : '';
-                return `<li>· ${e.exerciseName}${tech} — ${e.sets.length} serie(s) × ${e.sets[0]?.repsTarget} reps${tnote}</li>`;
+                const repsDisp = _setsRepsLabel(e.sets);
+                return `<li>· ${e.exerciseName}${tech}${fromW} — ${e.sets.length} serie(s) × ${repsDisp} reps${tnote}</li>`;
               }).join('')
             : '<li class="text-[#888]">Sin ejercicios detectados</li>'}
         </ul>
@@ -3166,6 +3225,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const volPanel = renderVolumePanel(planObj);
     preview.innerHTML = `
       <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s) · ${planObj.weeks || 6} semanas. Revisa y guarda:</div>
+      ${errorsHtml}
       ${volPanel}
       ${dayList}
       <button id="saveImportedPlanBtn" onclick="saveImportedPlan()" class="btn-primary w-full mt-2">💾 Guardar y activar plan</button>`;
@@ -3678,13 +3738,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         sectionBand(s,'Entrenamiento', (tr.weeks?tr.weeks+' semanas':'')+(tr.daysPerWeek?' · '+tr.daysPerWeek+' días/sem':''), hm);
         tr.days.forEach(day=>{
           sectionBand(s, day.label||'Día', '', hm);
-          const rows=(day.exercises||[]).map(ex=>{
-            const nn=ex.sets?ex.sets.length:0, reps=ex.sets&&ex.sets[0]?ex.sets[0].repsTarget:'';
-            const rir=ex.sets&&ex.sets[0]?('RIR '+ex.sets[0].rirTarget):'';
-            const tec=(ex.technique&&ex.technique!=='straight')?ex.technique:'';
-            return [ex.exerciseName||'', nn+'×'+reps, rir, tec];
+          const rows=(day.exercises||[]).flatMap(ex=>{
+            const sets=ex.sets||[]; const tec=(ex.technique&&ex.technique!=='straight')?ex.technique:'';
+            const repsVals=new Set(sets.map(s=>s.repsTarget));
+            const isHetero=repsVals.size>1||sets.some(s=>s.repsTarget==='SST-PROTOCOL');
+            if(!isHetero){
+              const reps=sets[0]?(sets[0].repsTarget==='SST-PROTOCOL'?'SST':sets[0].repsTarget):'';
+              const rir=sets[0]?('RIR '+sets[0].rirTarget):'';
+              return [[ex.exerciseName||'', sets.length+'×'+reps, rir, tec]];
+            }
+            return sets.map((s,si)=>{
+              const lbl=s.setNote||(sets.length>1?'Serie '+(si+1):'Serie 1');
+              const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':s.repsTarget;
+              return [si===0?(ex.exerciseName||''):'', lbl, rStr+' reps · RIR '+s.rirTarget, si===0?tec:''];
+            });
           });
-          if(rows.length) dataTable(s,['Ejercicio','Series','Intensidad','Técnica'],rows,[0.46,0.16,0.18,0.20],hm);
+          if(rows.length) dataTable(s,['Ejercicio','Set / Nota','Reps · RIR','Técnica'],rows,[0.44,0.20,0.20,0.16],hm);
         });
       }
       const su=data.supplements;
@@ -4874,7 +4943,7 @@ El esfuerzo no es negociable.
         const exList = (d.exercises || []).map(e => {
           const sets = (e.sets || []);
           const numSets = sets.length || 3;
-          const reps = sets[0] ? (sets[0].repsTarget || 8) : 8;
+          const reps = _setsRepsLabel(sets);
           const rir  = sets[0] ? (sets[0].rirTarget  || 2) : 2;
           return `<div class="flex items-center gap-2 ml-4 py-1">
             <span class="text-sm text-white">${e.exerciseName}</span>
@@ -7146,17 +7215,17 @@ El esfuerzo no es negociable.
         (d.exercises || []).forEach((ex, ei) => {
           const sets = ex.sets || [];
           const numSets = sets.length || 1;
-          const reps = sets[0]?.repsTarget ?? 8;
+          const repsLabel = _setsRepsLabel(sets);
           const rirT = sets[0]?.rirTarget ?? 2;
           const rest = sets[0]?.restSeconds ?? 90;
           const tech = (ex.technique && ex.technique !== 'straight') ? ` [${ex.technique.toUpperCase()}]` : '';
           lines.push(`  ${ei+1}. ${ex.exerciseName}${tech}`);
-          lines.push(`     ${numSets} × ${reps} reps · RIR ${rirT} · Descanso ${rest}s`);
+          lines.push(`     ${numSets} × ${repsLabel} reps · RIR ${rirT} · Descanso ${rest}s`);
           if (ex.techniqueNote) lines.push(`     ↳ Técnica: ${ex.techniqueNote}`);
           if (ex.coachNote) lines.push(`     ✎ Nota: ${ex.coachNote}`);
           if (ex.alternatives && ex.alternatives.length) lines.push(`     ⇄ Alternativas: ${ex.alternatives.join(', ')}`);
           // Detalle de sets si difieren entre sí
-          const diferentes = sets.some(s => s.repsTarget !== reps || s.rirTarget !== rirT || s.restSeconds !== rest || s.setNote || s.drop || s.tempo);
+          const _r0 = sets[0]?.repsTarget; const diferentes = sets.some(s => s.repsTarget !== _r0 || s.rirTarget !== rirT || s.restSeconds !== rest || s.setNote || s.drop || s.tempo);
           if (diferentes) {
             sets.forEach((s, si) => {
               const parts = [`Serie ${si+1}: ${s.repsTarget} reps · RIR ${s.rirTarget} · ${s.restSeconds}s`];
