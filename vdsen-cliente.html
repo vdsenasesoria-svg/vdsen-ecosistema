@@ -4287,7 +4287,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+(_isY3T&&_effectiveSets&&_effectiveSets[s]?(' <span style="font-size:8px;font-weight:900;color:'+(_effectiveSets[s].repsTarget<=6?'#7ec0ff':'#44BB88')+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+(_effectiveSets[s].repsTarget<=6?'S1':'S2')+'</span>'):'')+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+(function(){ if (!_isY3T||!_effectiveSets||!_effectiveSets[s]) return ''; var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:8px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; })()+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
@@ -4308,9 +4308,12 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var _setSubLabel = '';
       if (_isY3T && _effectiveSets && _effectiveSets[s]) {
         var _setReps = _effectiveSets[s].repsTarget;
-        var _isFuerzaSet = _setReps !== 'SST-PROTOCOL' && _setReps <= 6;
-        var _setSubColor = _isFuerzaSet ? '#7ec0ff' : '#44BB88';
-        _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:'+_setSubColor+';background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+(_isFuerzaSet?'S1 · '+_setReps+' reps':'S2 · '+_setReps+' reps')+'</span>';
+        var _isSST = _setReps === 'SST-PROTOCOL';
+        var _isFuerzaSet = !_isSST && _setReps <= 6;
+        var _isS3Set = _y3tPhase === 's3' || _isSST;
+        var _setSubColor = _isFuerzaSet ? '#7ec0ff' : (_isS3Set ? '#FF8844' : '#44BB88');
+        var _setSubText = _isSST ? 'SST' : (_isFuerzaSet ? 'S1 · '+_setReps+' reps' : (_isS3Set ? 'S3 · '+_setReps+' reps' : 'S2 · '+_setReps+' reps'));
+        _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:'+_setSubColor+';background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+_setSubText+'</span>';
       }
       setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(107,107,102,.5);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
@@ -4509,7 +4512,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</div>'
     : '';
 
-  var bannerHtml = _buildSessionTargetBanner(progrec, _prevWeekBanner, _histExBanner, unit, numSeries, repsTarget, baseRIR);
+  var bannerHtml = _buildSessionTargetBanner(progrec, _prevWeekBanner, _histExBanner, unit, numSeries, repsTarget, baseRIR, _isY3T ? numSeries : undefined);
   var expressTipHtml = (ei === 0 && !sessionDone && _isExpressMode)
     ? '<div style="margin-bottom:10px;padding:8px 12px;background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.12);border-radius:8px;display:flex;align-items:flex-start;gap:8px">'
       + '<span style="font-size:14px;flex-shrink:0">⚡</span>'
@@ -5120,7 +5123,8 @@ function markExpressSerie(di, ei, si) {
   if (!isNaN(_pumpSave) && _pumpSave > 0) expressSetPump(expK, _pumpSave);
 
   var _ejCur = (_EJERCICIOS_DIA || [])[ei] || null;
-  var _setSpec = _ejCur && _ejCur.sets && _ejCur.sets[si] ? _ejCur.sets[si] : null;
+  var _effSetsExpRest = isY3TExercise(_ejCur) ? getEffectiveSets(_ejCur, CURRENT_WEEK, getTotalWeeks()) : (_ejCur && _ejCur.sets || []);
+  var _setSpec = _effSetsExpRest[si] || (_ejCur && _ejCur.sets && _ejCur.sets[si]) || null;
   var _planRest = _setSpec && parseInt(_setSpec.restSeconds) > 0 ? parseInt(_setSpec.restSeconds) : 0;
   var restTime;
   if (_planRest > 0) {
@@ -5133,6 +5137,12 @@ function markExpressSerie(di, ei, si) {
     } else {
       var esComp = /press|squat|sentadilla|peso muerto|rdl|hip thrust|jalon|remo|dominadas|fondos|hack|prensa|bulgar|curl femoral/.test((_ejCur ? (_ejCur.nombre || '') : '').toLowerCase());
       restTime = esComp ? 120 : 90;
+    }
+    // Y3T phase override: S1 needs 210 s, S2 needs 150 s minimum
+    if (isY3TExercise(_ejCur)) {
+      var _rPhaseExp = getY3TPhase(CURRENT_WEEK, getTotalWeeks());
+      if (_rPhaseExp === 's1') restTime = Math.max(restTime, 210);
+      else if (_rPhaseExp === 's2') restTime = Math.max(restTime, 150);
     }
   }
   startRestTimer(restTime);
@@ -6762,6 +6772,11 @@ function _maybeSuggestExtraSet(di, ei, si) {
 
     // PASO 3 — nunca ocultar sets ya registrados esta sesión
     numSeries = Math.max(numSeries, _doneCount);
+    // Y3T: la fase define el techo; sin esto PASO 1 inflaría con datos de S3 anterior
+    if (isY3TExercise(ej)) {
+      var _effSetsEx = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
+      if (_effSetsEx.length > 0) numSeries = Math.min(numSeries, _effSetsEx.length);
+    }
 
     if (si !== numSeries - 1) return; // sólo tras la última serie planificada de hoy
 
@@ -6942,7 +6957,8 @@ function completeSet(key, di, ei, si, unit) {
     _maybeSuggestExtraSet(di, ei, si);
 
     // Calcular restTime: preferir restSeconds del plan (set actual) si > 0.
-    var _setSpec = _ejCur && _ejCur.sets && _ejCur.sets[si] ? _ejCur.sets[si] : null;
+    var _effSetsRest = isY3TExercise(_ejCur) ? getEffectiveSets(_ejCur, CURRENT_WEEK, getTotalWeeks()) : (_ejCur && _ejCur.sets || []);
+    var _setSpec = _effSetsRest[si] || (_ejCur && _ejCur.sets && _ejCur.sets[si]) || null;
     var _planRest = _setSpec && parseInt(_setSpec.restSeconds) > 0 ? parseInt(_setSpec.restSeconds) : 0;
     var restTime;
     if (_planRest > 0) {
@@ -6955,6 +6971,12 @@ function completeSet(key, di, ei, si, unit) {
       } else {
         var esCompuesto = /press|squat|sentadilla|peso muerto|rdl|hip thrust|jalon|remo|dominadas|fondos|hack|prensa|bulgar|curl femoral/.test(exName);
         restTime = esCompuesto ? 120 : 90;
+      }
+      // Y3T phase override: S1 needs 210 s, S2 needs 150 s minimum
+      if (isY3TExercise(_ejCur)) {
+        var _rPhase = getY3TPhase(CURRENT_WEEK, getTotalWeeks());
+        if (_rPhase === 's1') restTime = Math.max(restTime, 210);
+        else if (_rPhase === 's2') restTime = Math.max(restTime, 150);
       }
     }
     startRestTimer(restTime, key);
@@ -11214,14 +11236,14 @@ function _getProgRecForExercise(di, ei, exName) {
 // ═══════════════════════════════════════════════════════════════
 // BANNER "OBJETIVO DE HOY" — guía clara de progresión por sesión
 // ═══════════════════════════════════════════════════════════════
-function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSeries, repsTarget, baseRIR) {
+function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSeries, repsTarget, baseRIR, effectiveSetsCount) {
   var hasProgrec = progrec && progrec.action;
   var targetLoad = null, targetSets = numSeries, targetReps = repsTarget, targetRIR = baseRIR;
   var action = 'first', reason = '', prevRef = null;
 
   if (hasProgrec) {
     targetLoad = progrec.newLoad;
-    targetSets = progrec.newSets || numSeries;
+    targetSets = (effectiveSetsCount != null) ? effectiveSetsCount : (progrec.newSets || numSeries);
     targetReps = progrec.newReps || repsTarget;
     targetRIR  = (progrec.rirTarget !== undefined && progrec.rirTarget !== null) ? progrec.rirTarget : baseRIR;
     action     = progrec.action || 'maintain';
@@ -12037,8 +12059,9 @@ function calculateProgression(di, postData) {
     if (ej.repsRange) {
       var rp = String(ej.repsRange).split(/[-–]/);
       repsTarget = rp.length > 1 ? parseInt(rp[1]) : parseInt(rp[0]) || 8;
-    } else if (ej.sets && ej.sets[0] && ej.sets[0].repsTarget) {
-      repsTarget = ej.sets[0].repsTarget;
+    } else if (ej.sets && ej.sets[0]) {
+      var _effS = isY3TExercise(ej) ? (getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks())[0] || ej.sets[0]) : ej.sets[0];
+      if (_effS && _effS.repsTarget && _effS.repsTarget !== 'SST-PROTOCOL') repsTarget = _effS.repsTarget;
     }
 
     var action = 'maintain', newLoad = load, newSets = numSets, rirTarget = rirObjNext;
