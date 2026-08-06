@@ -4301,7 +4301,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       //   1) PROGRESIÓN (algoritmo) → card grande dorada con flecha + acción
       //   2) SEM ANTERIOR (datos reales) → badge naranja pequeño
       //   3) HISTORIAL (último mesociclo) → badge azul pequeño, sólo si NO hay sem anterior
-      var refHtml = _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIR, CURRENT_WEEK);
+      var refHtml = _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIR, CURRENT_WEEK, _isY3T ? numSeries : undefined);
       var prevRefHtml = refHtml;
 
       // Etiqueta de sub-fase Y3T por set: S1 (sets 0-1) o S2 (sets 2-3)
@@ -6212,6 +6212,12 @@ function buildBoostcampExercise(ej, di, ei) {
   }
   // Paso 3: nunca ocultar sets ya registrados
   numSeries = Math.max(numSeries, _dcBC);
+  // Para Y3T: la fase define el techo de series (igual que en _buildExCard)
+  var _isY3TBC = isY3TExercise(ej);
+  if (_isY3TBC) {
+    var _effSetsBC = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
+    if (_effSetsBC.length > 0) numSeries = Math.min(numSeries, _effSetsBC.length);
+  }
 
   // Referencia de carga para warm-up: prog rec > semana anterior > historial
   if (_isFirstOfPattern) {
@@ -6262,8 +6268,9 @@ function buildBoostcampExercise(ej, di, ei) {
       add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
     };
     var recCol = actionColors[headerRec.action] || 'var(--gold)';
+    var _recSetsBC = (_isY3TBC && numSeries > 0) ? numSeries : headerRec.newSets;
     headerRecHtml = '<div style="font-size:10px;color:'+recCol+';margin-top:3px;font-weight:600">'+
-      '⚡ '+headerRec.newLoad+' '+recUnit+' · '+headerRec.newSets+'s · RIR '+headerRec.rirTarget+
+      '⚡ '+headerRec.newLoad+' '+recUnit+' · '+_recSetsBC+'s · RIR '+headerRec.rirTarget+
     '</div>';
   }
   // Advertencia MEV/MRV por grupo muscular (prioritario) con fallback a patrón motor
@@ -6366,7 +6373,7 @@ function buildBoostcampExercise(ej, di, ei) {
     var progRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
     var baseRIRforRef = getAdjustedRIR(parseInt(ej.rir)||2, CURRENT_WEEK);
     var refBlockHtml = (!completed)
-      ? _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK)
+      ? _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK, _isY3TBC ? numSeries : undefined)
       : '';
 
     var borderCol = completed ? 'rgba(110,154,110,.5)' : 'var(--border)';
@@ -11839,7 +11846,7 @@ function _getWeeklyVolumeByPattern(pattern) {
 //   2) SEM ANTERIOR (dato real de la semana W-1) — badge naranja pequeño
 //   3) HISTORIAL (último mesociclo registrado) — badge azul pequeño
 // Se muestran apiladas; PROGRESIÓN siempre arriba y prominente cuando existe.
-function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek) {
+function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount) {
   var blocks = [];
 
   // ── 1) PROGRESIÓN del algoritmo ──
@@ -11854,6 +11861,7 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
       deload:        { label:'DELOAD',        arrow:'⤵', color:'var(--blue)', bg:'rgba(140,140,134,.10)',  bd:'rgba(140,140,134,.45)'  }
     };
     var meta = actionMeta[progRec.action] || actionMeta.maintain;
+    var _displaySets = (effectiveSetsCount != null) ? effectiveSetsCount : progRec.newSets;
     blocks.push(
       '<div style="margin-bottom:10px;padding:10px 12px;background:'+meta.bg+';border:1px solid '+meta.bd+';border-left:4px solid '+meta.color+';border-radius:0 10px 10px 0">'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
@@ -11862,7 +11870,7 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
         '</div>'+
         '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline">'+
           '<div><span style="font-size:18px;font-weight:900;color:var(--tx)">'+progRec.newLoad+'</span> <span style="font-size:11px;color:var(--mt);font-weight:700">'+unit+'</span></div>'+
-          '<div><span style="font-size:16px;font-weight:800;color:var(--tx)">'+progRec.newSets+'</span><span style="font-size:11px;color:var(--mt);font-weight:700"> series</span></div>'+
+          '<div><span style="font-size:16px;font-weight:800;color:var(--tx)">'+_displaySets+'</span><span style="font-size:11px;color:var(--mt);font-weight:700"> series</span></div>'+
           (progRec.newReps ? '<div><span style="font-size:16px;font-weight:800;color:var(--tx)">'+progRec.newReps+'</span><span style="font-size:11px;color:var(--mt);font-weight:700"> reps</span></div>' : '')+
           '<div><span style="font-size:14px;font-weight:800;color:#e8a040">RIR '+progRec.rirTarget+'</span></div>'+
         '</div>'+
