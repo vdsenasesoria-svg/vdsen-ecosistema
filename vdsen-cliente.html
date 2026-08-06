@@ -3345,6 +3345,7 @@ function isY3TExercise(ej) {
 // Fase del ciclo Y3T para la semana dada. El patrón repite cada 3 semanas.
 // Devuelve 's1' | 's2' | 's3' | 'deload'
 function getY3TPhase(week, totalWeeks) {
+  if (!week || week < 1) week = 1; // guard: null/undefined/0 → semana 1 (S1)
   if (!totalWeeks) totalWeeks = getTotalWeeks();
   if (week >= totalWeeks) return 'deload';
   var phase = ((week - 1) % 3) + 1;
@@ -3364,7 +3365,9 @@ var Y3T_PHASE_META = {
 function getEffectiveSets(ej, week, totalWeeks) {
   var sets = ej.sets || [];
   if (!isY3TExercise(ej)) return sets;
+  if (!week || week < 1) week = 1; // mismo guard que getY3TPhase
   var phase = getY3TPhase(week, totalWeeks);
+  console.log('[Y3T debug]', (ej.exerciseName||ej.nombre||'?'), '| week:', week, '| fase:', phase, '| sets totales:', sets.length);
   if (phase === 's3') return sets; // Semana metabólica: todos los sets incluyendo SST
 
   var hasNotes = sets.some(function(s){ return s.setNote && (s.setNote.indexOf('S1') !== -1 || s.setNote.indexOf('S2') !== -1); });
