@@ -1497,6 +1497,22 @@ async function loadPlan(user) {
           REAL_WEEK    = CURRENT_WEEK;
         }
       }
+      // ── DIAG Y3T loadPlan (remover tras verificar) ──
+      (function(){
+        if (!PLAN || !PLAN.entrenamiento) return;
+        var _tw = PLAN.weeks || getTotalWeeks();
+        (PLAN.entrenamiento.sesiones || []).forEach(function(ses, di) {
+          (ses.exercises || []).forEach(function(ej) {
+            var _isY = isY3TExercise(ej);
+            var _sts = ej.sets || [];
+            if (_isY || ej.technique || _sts.some(function(s){ return s.setNote; })) {
+              var _fase = getY3TPhase(CURRENT_WEEK, _tw);
+              var _efec = getEffectiveSets(ej, CURRENT_WEEK, _tw);
+              console.log('[DIAG Y3T loadPlan]', ej.exerciseName||ej.nombre, {tech: ej.technique, isY3T: _isY, semana: CURRENT_WEEK, fase: _fase, totalSets: _sts.length, setsEfectivos: _efec.length, setNotes: _sts.map(function(s){ return s.setNote||''; }).filter(Boolean)});
+            }
+          });
+        });
+      })();
     } catch(logErr) {
       console.warn('logs no disponibles:', logErr.message);
       if (!loadBackupLogs()) { LOGS = {}; CURRENT_WEEK = 1; REAL_WEEK = 1; }
@@ -3333,13 +3349,17 @@ function _setsRepsLabel(sets) {
 
 // ── Helpers Y3T — progresión de tres semanas (S1 fuerza / S2 hiper / S3 metabólica) ──
 
-// Detecta un ejercicio Y3T: campo technique === 'y3t' o patrón numérico
-// (4 sets no-SST donde los 2 primeros tienen repsTarget ≤ 6 y los 2 últimos ≥ 8).
+// Detecta un ejercicio Y3T: technique === 'y3t', setNote con S1/S2, o patrón numérico
+// (4 non-SST sets donde los 2 primeros tienen repsTarget ≤ 6 y los 2 últimos ≥ 8).
 function isY3TExercise(ej) {
   if ((ej.technique || '').toLowerCase() === 'y3t') return true;
-  var sets = (ej.sets || []).filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
-  if (sets.length !== 4) return false;
-  return sets[0].repsTarget <= 6 && sets[2].repsTarget >= 8;
+  var sets = ej.sets || [];
+  // Detectar por setNote (S1 · FUERZA / S2 · HIPERTROFIA) aunque no haya technique explícito
+  if (sets.some(function(s){ return s.setNote && (s.setNote.indexOf('S1') !== -1 || s.setNote.indexOf('S2') !== -1); })) return true;
+  // Fallback numérico: exactamente 4 non-SST donde primeros ≤6 y últimos ≥8
+  var nonSst = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
+  if (nonSst.length !== 4) return false;
+  return nonSst[0].repsTarget <= 6 && nonSst[2].repsTarget >= 8;
 }
 
 // Fase del ciclo Y3T para la semana dada. El patrón repite cada 3 semanas.
@@ -3807,6 +3827,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _isY3T = isY3TExercise(ej);
   var _y3tPhase = _isY3T ? getY3TPhase(CURRENT_WEEK, getTotalWeeks()) : null;
   var _effectiveSets = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
+  // ── DIAG Y3T render (remover tras verificar) ──
+  if (_isY3T || ej.technique || (ej.sets||[]).length > 3) {
+    console.log('[Y3T RENDER]', nombre, {isY3T: _isY3T, week: CURRENT_WEEK, phase: _y3tPhase, tech: ej.technique, totalSets: (ej.sets||[]).length, effSets: _effectiveSets.length, setNotes: (ej.sets||[]).map(function(s){ return s.setNote||''; }).filter(Boolean)});
+  }
   var _firstEffSet = _effectiveSets[0] || (ej.sets && ej.sets[0]) || null;
 
   // numSeries base: Y3T usa los sets de la fase; no puede heredar la semana anterior
