@@ -4257,7 +4257,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var rirReal = saved.rir_real|| (_prevSesRir || (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : '')));
 
     // ── Datos específicos del set (del plan): setNote, drop, tempo ──
-    var setSpec = (ej.sets && ej.sets[s]) ? ej.sets[s] : null;
+    var setSpec = (_isY3T && _effectiveSets && _effectiveSets[s]) ? _effectiveSets[s] : (ej.sets && ej.sets[s] ? ej.sets[s] : null);
     var setNote = setSpec && setSpec.setNote ? String(setSpec.setNote).trim() : '';
     var setIsDrop = setSpec && setSpec.drop === true;
     var setTempo = setSpec && setSpec.tempo ? String(setSpec.tempo).trim() : '';
@@ -4287,7 +4287,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+(_isY3T&&ej.sets&&ej.sets[s]?(' <span style="font-size:8px;font-weight:900;color:'+(ej.sets[s].repsTarget<=6?'#7ec0ff':'#44BB88')+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+(ej.sets[s].repsTarget<=6?'S1':'S2')+'</span>'):'')+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+(_isY3T&&_effectiveSets&&_effectiveSets[s]?(' <span style="font-size:8px;font-weight:900;color:'+(_effectiveSets[s].repsTarget<=6?'#7ec0ff':'#44BB88')+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+(_effectiveSets[s].repsTarget<=6?'S1':'S2')+'</span>'):'')+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
@@ -4306,8 +4306,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
 
       // Etiqueta de sub-fase Y3T por set: S1 (sets 0-1) o S2 (sets 2-3)
       var _setSubLabel = '';
-      if (_isY3T && ej.sets && ej.sets[s]) {
-        var _setReps = ej.sets[s].repsTarget;
+      if (_isY3T && _effectiveSets && _effectiveSets[s]) {
+        var _setReps = _effectiveSets[s].repsTarget;
         var _isFuerzaSet = _setReps !== 'SST-PROTOCOL' && _setReps <= 6;
         var _setSubColor = _isFuerzaSet ? '#7ec0ff' : '#44BB88';
         _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:'+_setSubColor+';background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+(_isFuerzaSet?'S1 · '+_setReps+' reps':'S2 · '+_setReps+' reps')+'</span>';
