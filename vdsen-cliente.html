@@ -4438,6 +4438,22 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">SERIE '+(s+1)+_setSubLabel+'</div>'+
         '</div>'+
+        (function(){
+          var _tR = setSpec && setSpec.repsTarget !== undefined ? setSpec.repsTarget : repsTarget;
+          var _tRirV = setSpec && setSpec.rirTarget !== undefined ? setSpec.rirTarget : baseRIR;
+          var _tRStr = _tR === 'SST-PROTOCOL' ? 'SST' : (_tR === 999 ? 'AMRAP' : String(_tR));
+          return '<div style="display:flex;align-items:stretch;gap:0;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.2);border-radius:10px;margin-bottom:10px;overflow:hidden">'+
+            '<div style="flex:1;padding:10px 16px;text-align:center">'+
+              '<div style="font-size:9px;letter-spacing:2px;color:var(--mt2);font-weight:700;margin-bottom:4px">REPS OBJETIVO</div>'+
+              '<div style="font-size:48px;font-weight:900;line-height:1;color:var(--gold);font-family:var(--ff)">'+_tRStr+'</div>'+
+            '</div>'+
+            '<div style="width:1px;background:rgba(255,255,255,.08)"></div>'+
+            '<div style="flex:1;padding:10px 16px;text-align:center">'+
+              '<div style="font-size:9px;letter-spacing:2px;color:var(--mt2);font-weight:700;margin-bottom:4px">RIR OBJETIVO</div>'+
+              '<div style="font-size:48px;font-weight:900;line-height:1;color:#e8a040;font-family:var(--ff)">'+_tRirV+'</div>'+
+            '</div>'+
+          '</div>';
+        })()+
         setSpecBlock+
         prevRefHtml+
         // Inputs — adaptados a tipo de ejercicio
