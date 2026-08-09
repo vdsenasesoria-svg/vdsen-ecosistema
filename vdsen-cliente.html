@@ -4647,7 +4647,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</div>'
     : '';
 
-  var bannerHtml = _buildSessionTargetBanner(progrec, _prevWeekBanner, _histExBanner, unit, numSeries, repsTarget, baseRIR, _isY3T ? numSeries : undefined);
+  var bannerHtml = '';
   var expressTipHtml = (ei === 0 && !sessionDone && _isExpressMode)
     ? '<div style="margin-bottom:10px;padding:8px 12px;background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.12);border-radius:8px;display:flex;align-items:flex-start;gap:8px">'
       + '<span style="font-size:14px;flex-shrink:0">⚡</span>'
@@ -12209,10 +12209,8 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
           '<span style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:'+meta.color+'">⚡ PROGRESIÓN · '+meta.label+'</span>'+
         '</div>'+
         '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline">'+
-          '<div><span style="font-size:18px;font-weight:900;color:var(--tx)">'+progRec.newLoad+'</span> <span style="font-size:11px;color:var(--mt);font-weight:700">'+unit+'</span></div>'+
-          '<div><span style="font-size:16px;font-weight:800;color:var(--tx)">'+_displaySets+'</span><span style="font-size:11px;color:var(--mt);font-weight:700"> series</span></div>'+
-          (progRec.newReps ? '<div><span style="font-size:16px;font-weight:800;color:var(--tx)">'+progRec.newReps+'</span><span style="font-size:11px;color:var(--mt);font-weight:700"> reps</span></div>' : '')+
-          '<div><span style="font-size:14px;font-weight:800;color:#e8a040">RIR '+progRec.rirTarget+'</span></div>'+
+          '<div><span style="font-size:22px;font-weight:900;color:var(--tx)">'+progRec.newLoad+'</span> <span style="font-size:13px;color:var(--mt);font-weight:700">'+unit+'</span></div>'+
+          '<div><span style="font-size:14px;font-weight:800;color:var(--mt)">'+_displaySets+' series</span></div>'+
         '</div>'+
         (progRec.reason ? '<div style="font-size:10px;color:var(--mt2);margin-top:5px;line-height:1.4">'+progRec.reason+'</div>' : '')+
       '</div>'
