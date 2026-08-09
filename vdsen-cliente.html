@@ -1431,7 +1431,8 @@ async function loadPlan(user) {
         ? { texto: clientData.supplementPlan.texto, items: [] }
         : null,
       rirByWeek: planData.rirByWeek || null,
-      totalWeeks: parseInt(planData.weeks) || 6
+      totalWeeks: parseInt(planData.weeks) || 6,
+      carb_cycling_y3t: planData.carb_cycling_y3t || null
     };
 
     // Cargar catálogo de ejercicios del coach (para algoritmo de progresión)
@@ -3347,7 +3348,8 @@ function goToWeek(w) { setWeek(w); goTab(1); }
 function isTechniqueActive(ej, week) {
   if (!ej || !ej.techniqueFromWeek) return true;
   var totalW = (PLAN && PLAN.totalWeeks) ? PLAN.totalWeeks : 6;
-  if ((ej.technique||'').toLowerCase() === 'sst' && week >= totalW) return false;
+  var tech = (ej.technique || '').toLowerCase();
+  if ((tech === 'sst' || tech === 'fst7') && week >= totalW) return false;
   return week >= ej.techniqueFromWeek;
 }
 
@@ -3356,11 +3358,15 @@ function isTechniqueActive(ej, week) {
 function _setsRepsLabel(sets) {
   if (!sets || !sets.length) return '—';
   var hasSst = sets.some(function(s){ return s.repsTarget === 'SST-PROTOCOL'; });
-  var nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; }).map(function(s){ return s.repsTarget; });
-  if (!nums.length) return 'SST';
+  var hasAmrap = sets.some(function(s){ return s.repsTarget === 999; });
+  var nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 999; }).map(function(s){ return s.repsTarget; });
+  if (!nums.length && hasSst) return 'SST';
+  if (!nums.length && hasAmrap) return 'AMRAP';
+  if (!nums.length) return '—';
   var mn = Math.min.apply(null, nums), mx = Math.max.apply(null, nums);
   var base = mn === mx ? String(mn) : (mn + '-' + mx);
-  return hasSst ? base + '+SST' : base;
+  var suffix = hasSst ? '+SST' : (hasAmrap ? '+AMRAP' : '');
+  return base + suffix;
 }
 
 // ── Helpers Y3T — progresión de tres semanas (S1 fuerza / S2 hiper / S3 metabólica) ──
@@ -3400,6 +3406,11 @@ var Y3T_PHASE_META = {
 // Fallback numérico si no hay setNote: repsTarget ≤ 6 = S1, resto = S2.
 function getEffectiveSets(ej, week, totalWeeks) {
   var sets = ej.sets || [];
+  var tech = (ej.technique || '').toLowerCase();
+  // FST7 y lengthened_partials: vacío si inactivo, todos los sets si activo
+  if (tech === 'fst7' || tech === 'lengthened_partials') {
+    return isTechniqueActive(ej, week) ? sets : [];
+  }
   if (!isY3TExercise(ej)) return sets;
   if (!week || week < 1) week = 1; // mismo guard que getY3TPhase
   var phase = getY3TPhase(week, totalWeeks);
@@ -3425,6 +3436,14 @@ function getEffectiveSets(ej, week, totalWeeks) {
     ? sets.filter(function(s){ return s.repsTarget!=='SST-PROTOCOL'&&(s.setNote||'').indexOf('S2')!==-1; })
     : sets.filter(function(s){ return s.repsTarget!=='SST-PROTOCOL'&&s.repsTarget>=8; });
   return deloads.length ? deloads : sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
+}
+
+// Cuenta "series efectivas" para MEV/MRV. FST7 cuenta como 3.5 (7 × 0.5).
+function getEffectiveSetCount(ej, week, totalWeeks) {
+  if (!isTechniqueActive(ej, week)) return 0;
+  var tech = (ej.technique || '').toLowerCase();
+  if (tech === 'fst7') return 3.5;
+  return getEffectiveSets(ej, week, totalWeeks).length;
 }
 
 // ── Navegador horizontal de ejercicios ───────────────────────────────────
@@ -3538,7 +3557,9 @@ var TECHNIQUE_META = {
   giant:       { label:'GIGANTE',      color:'#6B6B66', icon:'🔁', def:'3+ ejercicios encadenados sin descanso entre ellos. Descanso completo al cerrar el bloque.' },
   amrap:       { label:'AMRAP',        color:'#FF4444', icon:'🔥', def:'As Many Reps As Possible: tantas reps como puedas con técnica limpia. Para al primer fallo técnico (ICS<7) — NO al fallo absoluto.' },
   tempo:       { label:'TEMPO',        color:'#888888', icon:'⏱', def:'Cada rep sigue una cadencia específica (excéntrica · pausa · concéntrica · pausa). Cuenta mentalmente cada fase.' },
-  'iso-hold':  { label:'ISO-HOLD',     color:'#888888', icon:'🧱', def:'Mantén la posición de máxima tensión por el tiempo indicado al final (o inicio) de la serie. Cuenta en voz alta para no aguantar la respiración.' }
+  'iso-hold':  { label:'ISO-HOLD',     color:'#888888', icon:'🧱', def:'Mantén la posición de máxima tensión por el tiempo indicado al final (o inicio) de la serie. Cuenta en voz alta para no aguantar la respiración.' },
+  fst7:        { label:'FST-7',        color:'#cc44aa', icon:'7️⃣', def:'7 series con 40 s de descanso entre cada una. Usa carga moderada — no es máximo esfuerzo, es bombeo fascial. Después de la serie 7 descansa 3 min completos antes del siguiente ejercicio.' },
+  lengthened_partials: { label:'PARCIALES ROM ELONGADO', color:'#22aadd', icon:'📏', def:'Realiza el movimiento solo en el rango de estiramiento máximo (parte baja del ROM). AMRAP: tantas reps como puedas manteniendo tensión constante en el músculo elongado, sin llegar a fallo técnico.' }
 };
 
 function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
@@ -3858,6 +3879,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // Y3T: usar el repsTarget del set efectivo de la fase actual, no el rango global (5-10)
   var repsTarget = (_isY3T ? null : ej.repsRange) || (_firstEffSet ? _firstEffSet.repsTarget : 8) || 8;
   if (repsTarget === 'SST-PROTOCOL') repsTarget = 'SST';
+  if (repsTarget === 999) repsTarget = 'AMRAP';
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK);
   var unit = getExUnit(di, ei);
   // Sesión cerrada: no se permiten ediciones una vez marcada como completada
@@ -4140,7 +4162,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var _xSetLabel = '';
       if (_xSet) {
         var _xNote = _xSet.setNote || '';
-        var _xReps = _xSet.repsTarget === 'SST-PROTOCOL' ? 'SST' : _xSet.repsTarget;
+        var _xReps = _xSet.repsTarget === 'SST-PROTOCOL' ? 'SST' : (_xSet.repsTarget === 999 ? 'AMRAP' : _xSet.repsTarget);
         var _xIsS1 = _xNote.indexOf('S1') !== -1 || (_xSet.repsTarget !== 'SST-PROTOCOL' && _xSet.repsTarget <= 6);
         var _xColor = _xSet.repsTarget === 'SST-PROTOCOL' ? '#9966cc' : (_xIsS1 ? '#7ec0ff' : '#44BB88');
         var _xPhaseTag = _xNote ? _xNote.split('\u00b7')[0].trim() : (_xIsS1 ? 'S1' : 'S2');
@@ -4170,13 +4192,13 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _xLastLabel = '';
     if (_xLastSet) {
       var _xLNote = _xLastSet.setNote || '';
-      var _xLReps = _xLastSet.repsTarget === 'SST-PROTOCOL' ? 'SST' : _xLastSet.repsTarget;
+      var _xLReps = _xLastSet.repsTarget === 'SST-PROTOCOL' ? 'SST' : (_xLastSet.repsTarget === 999 ? 'AMRAP' : _xLastSet.repsTarget);
       var _xLIsS1 = _xLNote.indexOf('S1') !== -1 || (_xLastSet.repsTarget !== 'SST-PROTOCOL' && _xLastSet.repsTarget <= 6);
       var _xLColor = _xLastSet.repsTarget === 'SST-PROTOCOL' ? '#9966cc' : (_xLIsS1 ? '#7ec0ff' : '#44BB88');
       var _xLPhase = _xLNote ? _xLNote.split('\u00b7')[0].trim() : (_xLIsS1 ? 'S1' : 'S2');
       _xLastLabel = ' <span style="font-size:9px;font-weight:900;color:'+_xLColor+';background:rgba(0,0,0,.25);padding:1px 6px;border-radius:3px">'+_xLPhase+' \u00b7 '+_xLReps+' reps</span>';
       // Ajustar reps target del formulario al set real de la \u00faltima serie
-      if (_xLastSet.repsTarget !== 'SST-PROTOCOL' && !_exPfReps) _exPfReps = _xLastSet.repsTarget;
+      if (_xLastSet.repsTarget !== 'SST-PROTOCOL' && _xLastSet.repsTarget !== 999 && !_exPfReps) _exPfReps = _xLastSet.repsTarget;
     }
     setsHtml +=
       '<div style="background:rgba(107,107,102,.04);border:2px solid rgba(107,107,102,.3);border-radius:12px;padding:14px;margin-top:4px">'+
@@ -4287,7 +4309,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+(function(){ if (!_isY3T||!_effectiveSets||!_effectiveSets[s]) return ''; var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:8px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; })()+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+(function(){ var _tl=(ej.technique||'').toLowerCase(); if (_isY3T&&_effectiveSets&&_effectiveSets[s]) { var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:8px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; } if (_tl==='fst7') { var _ft=(ej.sets||[]).length||7; return ' <span style="font-size:8px;font-weight:900;color:#cc44aa;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">FST-7 · '+(s+1)+'/'+_ft+'</span>'; } if (_tl==='lengthened_partials') { return ' <span style="font-size:8px;font-weight:900;color:#22aadd;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">PARCIALES</span>'; } return ''; })()+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
@@ -4304,8 +4326,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var refHtml = _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIR, CURRENT_WEEK, _isY3T ? numSeries : undefined);
       var prevRefHtml = refHtml;
 
-      // Etiqueta de sub-fase Y3T por set: S1 (sets 0-1) o S2 (sets 2-3)
+      // Etiqueta de sub-fase por set: Y3T (S1/S2/S3/SST) / FST-7 (N/7) / PARCIALES (AMRAP)
       var _setSubLabel = '';
+      var _ejTechLower = (ej.technique || '').toLowerCase();
       if (_isY3T && _effectiveSets && _effectiveSets[s]) {
         var _setReps = _effectiveSets[s].repsTarget;
         var _isSST = _setReps === 'SST-PROTOCOL';
@@ -4314,6 +4337,11 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         var _setSubColor = _isFuerzaSet ? '#7ec0ff' : (_isS3Set ? '#FF8844' : '#44BB88');
         var _setSubText = _isSST ? 'SST' : (_isFuerzaSet ? 'S1 · '+_setReps+' reps' : (_isS3Set ? 'S3 · '+_setReps+' reps' : 'S2 · '+_setReps+' reps'));
         _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:'+_setSubColor+';background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+_setSubText+'</span>';
+      } else if (_ejTechLower === 'fst7') {
+        var _fst7Total = (ej.sets || []).length || 7;
+        _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#cc44aa;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">FST-7 · '+(s+1)+'/'+_fst7Total+'</span>';
+      } else if (_ejTechLower === 'lengthened_partials') {
+        _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#22aadd;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">PARCIALES · AMRAP</span>';
       }
       setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(107,107,102,.5);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
@@ -4436,7 +4464,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.15);'+
             'display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mt);font-weight:700">'+(s+1)+'</div>'+
           '<div style="font-size:13px;font-weight:700;color:var(--mt)">SERIE '+(s+1)+'</div>'+
-          '<div style="margin-left:auto;font-size:11px;color:var(--mt)">'+(setSpec?(setSpec.repsTarget==='SST-PROTOCOL'?'Ver protocolo SST':setSpec.repsTarget):repsTarget)+' reps · RIR '+(setSpec&&setSpec.rirTarget!==undefined?setSpec.rirTarget:baseRIR)+'</div>'+
+          '<div style="margin-left:auto;font-size:11px;color:var(--mt)">'+(function(){ var _rt=setSpec?setSpec.repsTarget:repsTarget; return _rt==='SST-PROTOCOL'?'Ver protocolo SST':(_rt===999?'AMRAP':_rt); }())+' reps · RIR '+(setSpec&&setSpec.rirTarget!==undefined?setSpec.rirTarget:baseRIR)+'</div>'+
         '</div>'+
         (setSpecBlock ? '<div style="margin-top:6px;margin-left:38px">'+setSpecBlock+'</div>' : '')+
       '</div>';
@@ -6978,6 +7006,11 @@ function completeSet(key, di, ei, si, unit) {
         if (_rPhase === 's1') restTime = Math.max(restTime, 210);
         else if (_rPhase === 's2') restTime = Math.max(restTime, 150);
       }
+      // FST7: 40s entre series 1-6, 180s tras la serie 7
+      if ((_ejCur && ((_ejCur.technique||'').toLowerCase() === 'fst7'))) {
+        var _fstTotal = (_ejCur.sets || []).length;
+        restTime = (si >= _fstTotal - 1) ? 180 : 40;
+      }
     }
     startRestTimer(restTime, key);
     showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
@@ -8426,6 +8459,48 @@ function renderNutricion() {
       </div>
     </div>` : '';
 
+  // ── Carb Cycling Y3T banner ──────────────────────────────────────────────
+  var carbCyclingBanner = '';
+  var _cc = PLAN.carb_cycling_y3t;
+  if (_cc) {
+    var _ccPhase = getY3TPhase(CURRENT_WEEK, PLAN.totalWeeks || 6);
+    var _ccPhaseLabel = {s1:'S1 · FUERZA', s2:'S2 · HIPERTROFIA', s3:'S3 · METABÓLICA', deload:'DELOAD'}[_ccPhase] || _ccPhase.toUpperCase();
+    var _ccPhaseColor = {s1:'#7ec0ff', s2:'#44BB88', s3:'#FF8844', deload:'var(--blue)'}[_ccPhase] || 'var(--accent)';
+    var _ccMacros = null;
+    if (_cc.activo !== false && _cc.semanas) {
+      // buscar por semana actual, luego por fase
+      _ccMacros = _cc.semanas[CURRENT_WEEK] || _cc.semanas[String(CURRENT_WEEK)] || _cc.semanas[_ccPhase] || null;
+    }
+    var _ccProtStr = _cc.proteina_g ? (_cc.proteina_g + ' g') : (prot ? prot + ' g' : '—');
+    if (_cc.activo === false) {
+      carbCyclingBanner = '<div style="background:var(--card);border:1px solid rgba(140,140,134,.4);border-left:3px solid var(--mt);padding:12px 14px;margin-bottom:10px"><div style="font-family:var(--ff);font-size:11px;letter-spacing:1.5px;color:var(--mt)">CARB CYCLING Y3T · INACTIVO</div><div style="font-size:11px;color:var(--mt);margin-top:4px">Macros base activos. Tu coach activará el ciclado cuando corresponda.</div></div>';
+    } else if (_ccMacros) {
+      var _ccC = _ccMacros.carbos_g != null ? _ccMacros.carbos_g : (_ccMacros.carbos != null ? _ccMacros.carbos : '—');
+      var _ccG = _ccMacros.grasas_g != null ? _ccMacros.grasas_g : (_ccMacros.grasas != null ? _ccMacros.grasas : '—');
+      carbCyclingBanner = '<div style="background:var(--card);border:1px solid ' + _ccPhaseColor + ';border-left:3px solid ' + _ccPhaseColor + ';padding:12px 14px;margin-bottom:10px">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+          '<div style="font-family:var(--ff);font-size:11px;letter-spacing:1.5px;color:' + _ccPhaseColor + '">⚡ CARB CYCLING Y3T</div>' +
+          '<span style="font-size:10px;background:' + _ccPhaseColor + '22;border:1px solid ' + _ccPhaseColor + '44;color:' + _ccPhaseColor + ';padding:2px 8px;border-radius:4px;letter-spacing:1px">' + _ccPhaseLabel + '</span>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">' +
+          '<div style="text-align:center;padding:8px 4px;background:var(--dk);border:1px solid rgba(106,172,238,.3);border-radius:8px">' +
+            '<div style="font-family:var(--ff);font-size:18px;color:#6aacee;font-weight:900">' + _ccProtStr + '</div>' +
+            '<div style="font-size:8px;letter-spacing:1.5px;color:#6aacee;margin-top:2px">PROTEÍNA</div>' +
+          '</div>' +
+          '<div style="text-align:center;padding:8px 4px;background:var(--dk);border:1px solid rgba(106,204,126,.3);border-radius:8px">' +
+            '<div style="font-family:var(--ff);font-size:18px;color:#6acc7e;font-weight:900">' + _ccC + '<span style="font-size:10px;color:var(--mt)"> g</span></div>' +
+            '<div style="font-size:8px;letter-spacing:1.5px;color:#6acc7e;margin-top:2px">CARBOS</div>' +
+          '</div>' +
+          '<div style="text-align:center;padding:8px 4px;background:var(--dk);border:1px solid rgba(232,160,96,.3);border-radius:8px">' +
+            '<div style="font-family:var(--ff);font-size:18px;color:#e8a060;font-weight:900">' + _ccG + '<span style="font-size:10px;color:var(--mt)"> g</span></div>' +
+            '<div style="font-size:8px;letter-spacing:1.5px;color:#e8a060;margin-top:2px">GRASAS</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--mt);margin-top:8px">Proteína fija · Carbos y grasas varían según fase Y3T</div>' +
+      '</div>';
+    }
+  }
+
   cont.innerHTML = `
     <div style="padding:14px 16px 8px;border-bottom:1px solid var(--bd);margin-bottom:14px;background:linear-gradient(180deg,rgba(107,107,102,.04),transparent)">
       <div style="display:flex;align-items:center;gap:10px">
@@ -8438,6 +8513,7 @@ function renderNutricion() {
     </div>
     <div style="padding:0 14px 100px">
       ${rdBanner}
+      ${carbCyclingBanner}
       ${macroPanel}
       ${buildCalorieAdjustWidget(+kcal||0)}
       ${buildNutriLogWidget(+kcal||0, +prot||0, +carb||0, +gras||0)}
@@ -10206,13 +10282,14 @@ const VDSEN_PDF = (() => {
           const repsVals=new Set(sets.map(s=>s.repsTarget));
           const isHetero=repsVals.size>1||sets.some(s=>s.repsTarget==='SST-PROTOCOL');
           if(!isHetero){
-            const reps=sets[0]?(sets[0].repsTarget==='SST-PROTOCOL'?'SST':sets[0].repsTarget):'';
+            const _rt0=sets[0]?sets[0].repsTarget:null;
+            const reps=_rt0==='SST-PROTOCOL'?'SST':(_rt0===999?'AMRAP':(_rt0!=null?_rt0:''));
             const rir=sets[0]?('RIR '+sets[0].rirTarget):'';
             return [[ex.exerciseName||'', sets.length+'×'+reps, rir, tec]];
           }
           return sets.map((s,si)=>{
             const lbl=s.setNote||(si===0&&sets.length>1?'Serie 1':'Serie '+(si+1));
-            const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':s.repsTarget;
+            const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':(s.repsTarget===999?'AMRAP':s.repsTarget);
             return [si===0?(ex.exerciseName||''):'', lbl, rStr+' reps · RIR '+s.rirTarget, si===0?tec:''];
           });
         });
@@ -11830,9 +11907,8 @@ function _getWeeklyVolumeByMuscle(muscle, week) {
       }
       // Si hay sets registrados → usar eso; si no y es la semana actual → plan como proxy (sesión futura)
       // Para Y3T, el proxy usa los sets activos de la fase actual (no el total del array)
-      var _proxyCount = isY3TExercise(ex)
-        ? getEffectiveSets(ex, week, getTotalWeeks()).length
-        : (ex.sets ? ex.sets.length : (ex.numSeries || 3));
+      var _proxyCount = Math.round(getEffectiveSetCount(ex, week, getTotalWeeks())) ||
+        (ex.sets ? ex.sets.length : (ex.numSeries || 3));
       total += doneSets > 0 ? doneSets : (week === CURRENT_WEEK ? _proxyCount : 0);
     }
   }
@@ -12061,7 +12137,7 @@ function calculateProgression(di, postData) {
       repsTarget = rp.length > 1 ? parseInt(rp[1]) : parseInt(rp[0]) || 8;
     } else if (ej.sets && ej.sets[0]) {
       var _effS = isY3TExercise(ej) ? (getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks())[0] || ej.sets[0]) : ej.sets[0];
-      if (_effS && _effS.repsTarget && _effS.repsTarget !== 'SST-PROTOCOL') repsTarget = _effS.repsTarget;
+      if (_effS && _effS.repsTarget && _effS.repsTarget !== 'SST-PROTOCOL' && _effS.repsTarget !== 999) repsTarget = _effS.repsTarget;
     }
 
     var action = 'maintain', newLoad = load, newSets = numSets, rirTarget = rirObjNext;
