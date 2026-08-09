@@ -3025,11 +3025,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function _setsRepsLabel(sets) {
     if (!sets || !sets.length) return '—';
     const hasSst = sets.some(function(s){ return s.repsTarget === 'SST-PROTOCOL'; });
-    const nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; }).map(function(s){ return s.repsTarget; });
-    if (!nums.length) return 'SST';
+    const hasAmrap = sets.some(function(s){ return s.repsTarget === 999; });
+    const nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 999; }).map(function(s){ return s.repsTarget; });
+    if (!nums.length && hasSst) return 'SST';
+    if (!nums.length && hasAmrap) return 'AMRAP';
+    if (!nums.length) return '—';
     const mn = Math.min.apply(null, nums), mx = Math.max.apply(null, nums);
     const base = mn === mx ? String(mn) : (mn + '-' + mx);
-    return hasSst ? base + '+SST' : base;
+    const suffix = hasSst ? '+SST' : (hasAmrap ? '+AMRAP' : '');
+    return base + suffix;
   }
 
   function parsePlanFromJSON() {
@@ -3061,8 +3065,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           sets: Array.isArray(ex.sets) && ex.sets.length > 0
             ? ex.sets.map((s, si) => ({
                 setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
-                // Preservar "SST-PROTOCOL" tal cual; convertir números normalmente
-                repsTarget: s.repsTarget === 'SST-PROTOCOL' ? 'SST-PROTOCOL' : (parseInt(s.repsTarget) || 8),
+                // Preservar "SST-PROTOCOL" y 999 (AMRAP) tal cual; convertir números normalmente
+                repsTarget: s.repsTarget === 'SST-PROTOCOL' ? 'SST-PROTOCOL' : (s.repsTarget === 999 || s.repsTarget === '999' ? 999 : (parseInt(s.repsTarget) || 8)),
                 rirTarget: parseInt(s.rirTarget ?? 2),
                 load: parseFloat(s.load ?? 0) || 0,
                 restSeconds: parseInt(s.restSeconds ?? 90) || 90,
@@ -3088,6 +3092,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       daysPerWeek: parseInt(obj.daysPerWeek) || days.length,
       days
     };
+    // Preservar campos especiales del root (carb_cycling_y3t, rirByWeek, reverse_diet, etc.)
+    if (obj.carb_cycling_y3t) planObj.carb_cycling_y3t = obj.carb_cycling_y3t;
+    if (obj.rirByWeek) planObj.rirByWeek = obj.rirByWeek;
+    if (obj.reverse_diet) planObj.reverse_diet = obj.reverse_diet;
     statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${planObj.weeks} semanas, ${days.length} día(s)</span>`;
     showParsedPreview(planObj);
     window._importedPlan = planObj;
@@ -3187,6 +3195,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         if (ex.technique === 'sst' && !ex.techniqueFromWeek) {
           errors.push({ day: day.label, exercise: ex.exerciseName, type: 'SST_MISSING_WEEK',
             msg: 'SST sin techniqueFromWeek — se mostrará siempre (considera añadirlo)' });
+        }
+        if (ex.technique === 'fst7') {
+          const setCount = (ex.sets || []).length;
+          if (setCount !== 7) errors.push({ day: day.label, exercise: ex.exerciseName, type: 'FST7_WRONG_SETS',
+            msg: `FST7 tiene ${setCount} sets — deben ser exactamente 7` });
+          if (!ex.techniqueFromWeek) errors.push({ day: day.label, exercise: ex.exerciseName, type: 'FST7_MISSING_WEEK',
+            msg: 'FST7 sin techniqueFromWeek — se mostrará siempre y no se desactivará en deload' });
+        }
+        if (ex.technique === 'lengthened_partials') {
+          const amrapSets = (ex.sets || []).filter(s => s.repsTarget === 999);
+          if (amrapSets.length === 0) errors.push({ day: day.label, exercise: ex.exerciseName, type: 'LP_NO_AMRAP',
+            msg: 'lengthened_partials sin ningún set con repsTarget=999 (AMRAP)' });
         }
         if ((ex.techniqueNote||'').length > 160) {
           errors.push({ day: day.label, exercise: ex.exerciseName, type: 'NOTE_TOO_LONG',
@@ -3743,13 +3763,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             const repsVals=new Set(sets.map(s=>s.repsTarget));
             const isHetero=repsVals.size>1||sets.some(s=>s.repsTarget==='SST-PROTOCOL');
             if(!isHetero){
-              const reps=sets[0]?(sets[0].repsTarget==='SST-PROTOCOL'?'SST':sets[0].repsTarget):'';
+              const _rt0=sets[0]?sets[0].repsTarget:null;
+              const reps=_rt0==='SST-PROTOCOL'?'SST':(_rt0===999?'AMRAP':(_rt0!=null?_rt0:''));
               const rir=sets[0]?('RIR '+sets[0].rirTarget):'';
               return [[ex.exerciseName||'', sets.length+'×'+reps, rir, tec]];
             }
             return sets.map((s,si)=>{
               const lbl=s.setNote||(sets.length>1?'Serie '+(si+1):'Serie 1');
-              const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':s.repsTarget;
+              const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':(s.repsTarget===999?'AMRAP':s.repsTarget);
               return [si===0?(ex.exerciseName||''):'', lbl, rStr+' reps · RIR '+s.rirTarget, si===0?tec:''];
             });
           });
@@ -7228,7 +7249,8 @@ El esfuerzo no es negociable.
           const _r0 = sets[0]?.repsTarget; const diferentes = sets.some(s => s.repsTarget !== _r0 || s.rirTarget !== rirT || s.restSeconds !== rest || s.setNote || s.drop || s.tempo);
           if (diferentes) {
             sets.forEach((s, si) => {
-              const parts = [`Serie ${si+1}: ${s.repsTarget} reps · RIR ${s.rirTarget} · ${s.restSeconds}s`];
+              const _rLabel = s.repsTarget === 'SST-PROTOCOL' ? 'SST' : (s.repsTarget === 999 ? 'AMRAP' : s.repsTarget);
+              const parts = [`Serie ${si+1}: ${_rLabel} reps · RIR ${s.rirTarget} · ${s.restSeconds}s`];
               if (s.tempo) parts.push(`tempo ${s.tempo}`);
               if (s.drop) parts.push('DROP');
               if (s.setNote) parts.push(s.setNote);
