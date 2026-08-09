@@ -7490,7 +7490,7 @@ function selDia(i) {
 var _readinessTemp = {};
 
 function buildReadinessBanner(di, isDone) {
-  if (CURRENT_WEEK !== REAL_WEEK) return '';
+  return '';
   var rKey = 'readiness_'+CURRENT_WEEK+'_'+di;
   var r = LOGS[rKey];
   if (r && r.completed) {
