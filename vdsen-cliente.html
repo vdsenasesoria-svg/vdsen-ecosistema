@@ -6082,12 +6082,18 @@ function renderEntrenamiento() {
     for (var _cw = 0; _cw < sesiones.length; _cw++) {
       if (LOGS['done_'+REAL_WEEK+'_'+_cw]) _doneCnt++; else _pendCnt++;
     }
-    if (_doneCnt > 0 && _pendCnt > 0) {
-      closeWeekBanner = '<div style="margin:0 16px 8px;padding:10px 12px;background:rgba(200,165,74,.06);border:1px dashed rgba(200,165,74,.35);border-radius:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
-        '<div style="flex:1;min-width:180px;font-size:11px;color:var(--mt);line-height:1.4">'+
-          'Quedan <strong style="color:var(--tx)">'+_pendCnt+'</strong> sesión(es) sin cerrar en la SEM '+REAL_WEEK+'. Puedes cerrar la semana con los datos que sí registraste.'+
+    if (_pendCnt > 0) {
+      closeWeekBanner = '<div style="margin:0 16px 8px;padding:10px 14px;background:rgba(200,165,74,.05);border:1px dashed rgba(200,165,74,.3);border-radius:12px">'+
+        '<div style="font-size:11px;color:var(--mt);line-height:1.4;margin-bottom:10px">'+
+          'SEM '+REAL_WEEK+' — <strong style="color:var(--tx)">'+_pendCnt+'</strong> sesión(es) pendiente(s)'+
+          (_doneCnt > 0 ? ' · '+_doneCnt+' ya completada(s)' : '')+
         '</div>'+
-        '<button onclick="markWeekDoneWithPartialData()" style="padding:8px 12px;border:1px solid var(--accent);border-radius:8px;cursor:pointer;background:rgba(200,165,74,.12);color:var(--accent);font-size:11px;font-weight:800;letter-spacing:.5px;white-space:nowrap">✓ CERRAR SEMANA</button>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+          '<button onclick="markWeekCompleteFromHistory()" style="flex:1;min-width:140px;padding:9px 12px;border:1px solid #C4FF00;border-radius:10px;cursor:pointer;background:rgba(196,255,0,.1);color:#C4FF00;font-size:11px;font-weight:800;letter-spacing:.5px;white-space:nowrap">⚡ DESDE HISTORIAL</button>'+
+          (_doneCnt > 0
+            ? '<button onclick="markWeekDoneWithPartialData()" style="flex:1;min-width:120px;padding:9px 12px;border:1px solid rgba(200,165,74,.45);border-radius:10px;cursor:pointer;background:rgba(200,165,74,.07);color:#C8A54A;font-size:11px;font-weight:700;letter-spacing:.5px;white-space:nowrap">✓ DATOS PARCIALES</button>'
+            : '')+
+        '</div>'+
       '</div>';
     }
   }
@@ -7797,6 +7803,107 @@ async function markWeekDoneWithPartialData() {
   renderResumen();
 }
 window.markWeekDoneWithPartialData = markWeekDoneWithPartialData;
+
+// Rellena TODAS las sesiones pendientes de la semana activa con datos de la
+// semana anterior (o EXERCISE_HISTORY) y las marca como completas de golpe.
+async function markWeekCompleteFromHistory() {
+  if (CURRENT_WEEK !== REAL_WEEK) {
+    showToast('Ve a la semana activa (SEM '+REAL_WEEK+') para cerrarla', true); return;
+  }
+  var sesiones = getSesiones();
+  if (!sesiones.length) return;
+  var pendientes = [];
+  for (var _pi = 0; _pi < sesiones.length; _pi++) {
+    if (!LOGS['done_'+REAL_WEEK+'_'+_pi]) pendientes.push(_pi);
+  }
+  if (!pendientes.length) { showToast('Todas las sesiones ya están completas'); return; }
+
+  var msg = '⚡ Rellenar SEM '+REAL_WEEK+' desde historial\n\n'+
+    'Se tomarán los pesos, reps, RIR e ICS de la semana anterior (o tu histórico) '+
+    'para completar las '+pendientes.length+' sesión(es) pendiente(s).\n\n'+
+    'Los datos que ya registraste manualmente se respetan.\n\n¿Continuar?';
+  if (!confirm(msg)) return;
+
+  var defaultRIR = getAdjustedRIR(2, CURRENT_WEEK);
+  var defaultPost = { eimd: 2, articularPain: { present: false, pattern: '' }, sleepHours: 7, rpeAverage: 7, ts: Date.now(), autoClosed: true };
+  var totalFilled = 0;
+
+  for (var _pdi = 0; _pdi < pendientes.length; _pdi++) {
+    var di = pendientes[_pdi];
+    var ses = sesiones[di];
+    var ejercicios = ses.exercises || [];
+
+    for (var ei = 0; ei < ejercicios.length; ei++) {
+      var ej = ejercicios[ei];
+      if (_getExType(ej) !== 'fuerza') continue;
+
+      var exName = (ej.nombre || ej.exerciseName || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+      var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
+      var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
+      if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
+
+      var currentUnit = getExUnit(di, ei) || 'KG';
+      var refLoad = 0, refReps = 0, refRir = defaultRIR;
+
+      var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12);
+      if (prev && prev.avgLoad > 0) {
+        var prevSetKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0';
+        var prevUnit = (LOGS[prevSetKey] && LOGS[prevSetKey].unit) ? LOGS[prevSetKey].unit : currentUnit;
+        var rawLoad = _roundUnit(prev.avgLoad, prevUnit);
+        refLoad = parseFloat(_convertCarga(String(rawLoad), prevUnit, currentUnit)) || rawLoad;
+        refReps = Math.round(prev.avgReps);
+        refRir  = Math.round(prev.avgRIR) || defaultRIR;
+      } else {
+        var hist = EXERCISE_HISTORY[exName] || {};
+        if (hist.load && parseFloat(hist.load) > 0) {
+          var histUnit = hist.unit || currentUnit;
+          refLoad = parseFloat(_convertCarga(String(hist.load), histUnit, currentUnit)) || parseFloat(hist.load);
+          refReps = parseInt(hist.reps) || parseInt(ej.repsRange) || 8;
+          refRir  = !isNaN(parseInt(hist.rir)) ? parseInt(hist.rir) : defaultRIR;
+        }
+      }
+
+      if (!refLoad) continue;
+
+      for (var _s = 0; _s < numSeries; _s++) {
+        var _k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_s;
+        if (LOGS[_k] && LOGS[_k].done) continue; // respetar sets ya registrados
+        LOGS[_k] = {
+          carga: String(refLoad), reps: String(refReps), unit: currentUnit,
+          done: true, rir: defaultRIR, rir_real: refRir, ics: 8, pump: 2,
+          ts: Date.now(), autoFilled: true
+        };
+        totalFilled++;
+      }
+      EXERCISE_HISTORY[exName] = { load: String(refLoad), reps: String(refReps), rir: refRir, unit: currentUnit, updatedAt: Date.now() };
+    }
+
+    var postKey = 'postsession_'+REAL_WEEK+'_'+di;
+    if (!LOGS[postKey]) LOGS[postKey] = defaultPost;
+
+    try {
+      var rec = calculateProgression(di, LOGS[postKey]);
+      if (rec) {
+        var recSafe = JSON.parse(JSON.stringify(rec, function(_k2, v) {
+          return (typeof v === 'number' && !isFinite(v)) ? null : v;
+        }));
+        LOGS['progrec_'+REAL_WEEK+'_'+di] = recSafe;
+      }
+    } catch(e) { console.warn('progrec failed in markWeekCompleteFromHistory:', e && e.message); }
+
+    LOGS['done_'+REAL_WEEK+'_'+di] = { ts: Date.now(), autoClosed: true, fromHistory: true };
+  }
+
+  if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+  var ok = await _doSaveLogs();
+  if (ok === false) { showToast('⚠ NO SE GUARDÓ — revisa conexión y reintenta', true); return; }
+
+  showToast('✓ '+totalFilled+' sets rellenados · SEM '+REAL_WEEK+' cerrada desde historial');
+  await _autoAdvanceWeekIfDone(false);
+  renderEntrenamiento();
+  renderResumen();
+}
+window.markWeekCompleteFromHistory = markWeekCompleteFromHistory;
 
 var _saveLogsTimer = null;
 async function saveLogs() {
