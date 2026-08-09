@@ -1277,41 +1277,53 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         <select id="merge-del-sel" class="input-field mb-3">
           ${others.map(o=>`<option value="${o.id}">${o.displayName||o.id} (${o.email||'sin email'})</option>`).join('')}
         </select>
-        <div id="merge-compare" class="mb-3 text-xs" style="color:#aaa">Selecciona y presiona Comparar.</div>
+        <div id="merge-compare" class="mb-3 text-xs" style="color:#aaa">⏳ Cargando datos...</div>
         <div class="flex gap-2">
-          <button id="merge-compare-btn" class="btn-secondary flex-1">🔍 Comparar</button>
           <button id="merge-confirm-btn" class="btn-primary flex-1" style="background:#c94a3a;border-color:#c94a3a" disabled>🔀 Fusionar y eliminar duplicado</button>
         </div>
         <div id="merge-status" class="text-xs mt-2"></div>
       </div>`;
     document.body.appendChild(overlay);
 
-    overlay.querySelector('#merge-compare-btn').onclick = async () => {
+    const loadCompare = async () => {
       const delId = overlay.querySelector('#merge-del-sel').value;
-      const [delSnap, keepLogsSnap, delLogsSnap, keepFichaSnap2, delFichaSnap2] = await Promise.all([
-        getDoc(doc(db, 'clients', delId)),
-        getDoc(doc(db, 'logs', keepId)),
-        getDoc(doc(db, 'logs', delId)),
-        getDoc(doc(db, 'fichas_onboarding', keepId)),
-        getDoc(doc(db, 'fichas_onboarding', delId))
-      ]);
-      const dd = delSnap.exists() ? delSnap.data() : {};
-      const row = (label, a, b) =>
-        `<tr><td style="color:#888;padding:2px 8px 2px 0">${label}</td><td style="color:#F4F4F0;padding:2px 8px 2px 0">${a||'—'}</td><td style="color:#F4F4F0">${b||'—'}</td></tr>`;
-      overlay.querySelector('#merge-compare').innerHTML =
-        `<table style="width:100%;border-collapse:collapse">
-          <thead><tr><th style="text-align:left;color:#aaa;padding:0 8px 4px 0"></th><th style="text-align:left;color:#44BB88;padding-bottom:4px">✓ CONSERVAR</th><th style="text-align:left;color:#e05555;padding-bottom:4px">✗ ELIMINAR</th></tr></thead>
-          <tbody>
-            ${row('Nombre', keepData.displayName, dd.displayName)}
-            ${row('Email', keepData.email, dd.email)}
-            ${row('Celular', keepData.phone, dd.phone)}
-            ${row('Plan activo', keepData.activePlanId ? '✓ tiene plan' : '✗ sin plan', dd.activePlanId ? '✓ tiene plan' : '✗ sin plan')}
-            ${row('Logs', keepLogsSnap.exists() ? '✓ tiene registros' : '✗ sin registros', delLogsSnap.exists() ? '✓ tiene registros' : '✗ sin registros')}
-            ${row('Ficha inicial', keepFichaSnap2.exists() ? '✓ tiene ficha' : '✗ sin ficha', delFichaSnap2.exists() ? '✓ tiene ficha' : '✗ sin ficha')}
-          </tbody>
-        </table>`;
-      overlay.querySelector('#merge-confirm-btn').disabled = false;
+      overlay.querySelector('#merge-confirm-btn').disabled = true;
+      overlay.querySelector('#merge-compare').textContent = '⏳ Cargando...';
+      try {
+        const [delSnap, keepLogsSnap, delLogsSnap, keepFichaSnap2, delFichaSnap2] = await Promise.all([
+          getDoc(doc(db, 'clients', delId)),
+          getDoc(doc(db, 'logs', keepId)),
+          getDoc(doc(db, 'logs', delId)),
+          getDoc(doc(db, 'fichas_onboarding', keepId)),
+          getDoc(doc(db, 'fichas_onboarding', delId))
+        ]);
+        const dd = delSnap.exists() ? delSnap.data() : {};
+        const v = (val, ok) => `<span style="color:${ok?'#44BB88':'#888'}">${val}</span>`;
+        const row = (label, a, b) =>
+          `<tr><td style="color:#888;padding:3px 10px 3px 0;white-space:nowrap">${label}</td><td style="padding:3px 10px 3px 0">${a}</td><td style="padding:3px 0">${b}</td></tr>`;
+        overlay.querySelector('#merge-compare').innerHTML =
+          `<table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr>
+              <th style="text-align:left;color:#888;padding-bottom:6px"></th>
+              <th style="text-align:left;color:#44BB88;padding-bottom:6px">✓ CONSERVAR</th>
+              <th style="text-align:left;color:#e05555;padding-bottom:6px">✗ ELIMINAR</th>
+            </tr></thead>
+            <tbody>
+              ${row('Nombre',    v(keepData.displayName||'—', !!keepData.displayName), v(dd.displayName||'—', !!dd.displayName))}
+              ${row('Email',     v(keepData.email||'—', !!keepData.email),              v(dd.email||'—', !!dd.email))}
+              ${row('Celular',   v(keepData.phone||'—', !!keepData.phone),              v(dd.phone||'—', !!dd.phone))}
+              ${row('Plan',      v(keepData.activePlanId?'✓ tiene':'✗ sin', !!keepData.activePlanId), v(dd.activePlanId?'✓ tiene':'✗ sin', !!dd.activePlanId))}
+              ${row('Logs',      v(keepLogsSnap.exists()?'✓ tiene':'✗ sin', keepLogsSnap.exists()), v(delLogsSnap.exists()?'✓ tiene':'✗ sin', delLogsSnap.exists()))}
+              ${row('Ficha',     v(keepFichaSnap2.exists()?'✓ tiene':'✗ sin', keepFichaSnap2.exists()), v(delFichaSnap2.exists()?'✓ tiene':'✗ sin', delFichaSnap2.exists()))}
+            </tbody>
+          </table>`;
+        overlay.querySelector('#merge-confirm-btn').disabled = false;
+      } catch(e) {
+        overlay.querySelector('#merge-compare').textContent = 'Error al cargar: ' + e.message;
+      }
     };
+    overlay.querySelector('#merge-del-sel').addEventListener('change', loadCompare);
+    loadCompare();
 
     overlay.querySelector('#merge-confirm-btn').onclick = async () => {
       const delId = overlay.querySelector('#merge-del-sel').value;
@@ -1378,8 +1390,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       }
     }
 
-    // Eliminar duplicado (logs + doc)
+    // Eliminar duplicado (logs + ficha + doc)
     try { await deleteDoc(doc(db, 'logs', deleteId)); } catch(_) {}
+    try { await deleteDoc(doc(db, 'fichas_onboarding', deleteId)); } catch(_) {}
     await deleteDoc(doc(db, 'clients', deleteId));
   }
   window.mergeClients = mergeClients;
