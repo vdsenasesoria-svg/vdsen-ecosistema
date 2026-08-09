@@ -4832,96 +4832,180 @@ El esfuerzo no es negociable.
 
   // ── Ficha tab ──
   function _renderClientTabFicha(cont) {
-    const clientId = _detailClientId;
-    const ficha = _detailFichaData;
+    const clientId  = _detailClientId;
+    const ficha     = _detailFichaData;
     const fichaData = ficha && ficha.data ? ficha.data : (ficha || null);
-    const hasFicha = fichaData && Object.keys(fichaData).length > 0;
+    const hasFicha  = fichaData && Object.keys(fichaData).length > 0;
+    const d         = fichaData || {};
 
-    // Summary of key ficha fields
-    const KEY_FIELDS = [
-      { id: 'nombre',            label: 'Nombre' },
-      { id: 'sexo',              label: 'Sexo' },
-      { id: 'edad',              label: 'Edad',      unit: 'años' },
-      { id: 'peso_kg',           label: 'Peso',      unit: 'kg' },
-      { id: 'talla_cm',          label: 'Talla',     unit: 'cm' },
-      { id: 'porcentaje_grasa',  label: '% grasa',   unit: '%' },
-      { id: 'perfil',            label: 'Perfil' },
-      { id: 'nivel',             label: 'Nivel' },
-      { id: 'dias_semana',       label: 'Días/sem',  unit: 'días' },
-      { id: 'duracion_sesion_min', label: 'Duración sesión', unit: 'min' },
-      { id: 'objetivo_mesociclo', label: 'Objetivo mesociclo' },
-      { id: 'enfoque_actual',    label: 'Enfoque actual' },
-      { id: 'objetivo_calorico', label: 'Obj calórico' },
-      { id: 'grupos_prioritarios', label: 'Grupos prioritarios' },
-      { id: 'lesiones',          label: 'Lesiones / restricciones' },
-      { id: 'objetivo_corto',    label: 'Objetivo corto plazo' },
-      { id: 'evento_objetivo',   label: 'Evento / fecha objetivo' },
-      { id: 'restricciones_alimentarias', label: 'Restricciones alimentarias' },
-      { id: 'ejercicios_evitar', label: 'Ejercicios a evitar' },
-    ];
+    const updatedAt = ficha && ficha.updatedAt
+      ? new Date(ficha.updatedAt).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' })
+      : null;
 
-    let summaryHtml = '';
+    // ── helpers ──────────────────────────────────────────────────────────────
+    const _v = (id) => {
+      const v = d[id];
+      if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) return null;
+      return Array.isArray(v) ? v.join(', ') : String(v);
+    };
+
+    const _row = (label, id, unit) => {
+      const v = _v(id);
+      if (!v) return '';
+      const disp = (unit ? v + ' ' + unit : v).replace(/</g,'&lt;');
+      return `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid rgba(244,244,240,.04);align-items:baseline">
+        <span style="color:#666;font-size:11px;min-width:138px;flex-shrink:0;line-height:1.5">${label}</span>
+        <span style="color:#e4e4e0;font-size:12px;font-weight:600;line-height:1.5;word-break:break-word">${disp}</span>
+      </div>`;
+    };
+
+    const _sec = (color, icon, title, rows) => {
+      if (!rows.trim()) return '';
+      return `<div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:7px">
+          <span style="font-size:12px">${icon}</span>
+          <span style="font-size:10px;font-weight:700;color:${color};letter-spacing:.09em;text-transform:uppercase">${title}</span>
+        </div>
+        <div style="padding-left:2px">${rows}</div>
+      </div>`;
+    };
+
+    const _chip = (label, id, unit, color) => {
+      const v = _v(id); if (!v) return '';
+      return `<div style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.1);border-radius:8px;padding:9px 13px;text-align:center;flex:1;min-width:60px">
+        <div style="font-size:19px;font-weight:800;color:${color};letter-spacing:-.5px;line-height:1">${v}<span style="font-size:9px;font-weight:400;color:#555;margin-left:2px">${unit||''}</span></div>
+        <div style="font-size:9px;color:#555;margin-top:3px;letter-spacing:.05em;text-transform:uppercase">${label}</div>
+      </div>`;
+    };
+
+    const _badge = (text, color, bg, border) =>
+      `<span style="font-size:11px;padding:3px 10px;border-radius:10px;background:${bg};border:1px solid ${border};color:${color};font-weight:600">${text}</span>`;
+
+    // ── build sections ────────────────────────────────────────────────────────
+    const secEntrenamiento = _sec('#C4FF00','🏋️','Entrenamiento',
+      _row('Nivel',            'nivel') +
+      _row('Días / semana',    'dias_semana',           'días') +
+      _row('Duración sesión',  'duracion_sesion_min',   'min') +
+      _row('Gimnasio',         'gimnasio') +
+      _row('Semana mesociclo', 'semana_actual_mesociclo')
+    );
+
+    const secObjetivos = _sec('#44BB88','🎯','Objetivos',
+      _row('Objetivo mesociclo',   'objetivo_mesociclo') +
+      _row('Enfoque',              'enfoque_actual') +
+      _row('Objetivo corto plazo', 'objetivo_corto') +
+      _row('Evento / fecha',       'evento_objetivo')
+    );
+
+    const secPrioridades = _sec('#c89cff','💪','Prioridades musculares',
+      _row('Grupos prioritarios', 'grupos_prioritarios') +
+      _row('Lesiones / restricciones', 'lesiones') +
+      _row('Patrones fuertes',    'patrones_fuertes') +
+      _row('Patrones a reforzar', 'patrones_debiles') +
+      _row('Asimetrías',          'asimetrias') +
+      _row('Ejercicios a evitar', 'ejercicios_evitar') +
+      _row('Ejercicios favoritos','ejercicios_favoritos') +
+      _row('Estilo entreno',      'estilo_entreno')
+    );
+
+    const secNutricion = _sec('#FF8844','🥗','Nutrición',
+      _row('Objetivo calórico',    'objetivo_calorico') +
+      _row('Ajuste',               'magnitud_ajuste_pct', '%') +
+      _row('Comidas / día',        'num_comidas') +
+      _row('Horarios',             'horarios_comidas') +
+      _row('Restricciones',        'restricciones_alimentarias') +
+      _row('Detalle restricción',  'restriccion_otra') +
+      _row('Alimentos disponibles','alimentos_disponibles')
+    );
+
+    const secSupp = _sec('#7ec0ff','💊','Suplementación',
+      _row('Restricciones',    'restricciones_suplementos') +
+      _row('Objetivo primario','objetivo_primario_supp')
+    );
+
+    const secFarma = d.perfil === 'PED' ? _sec('#FF4488','💉','Farmacología',
+      _row('Experiencia',        'experiencia_peds') +
+      _row('Objetivo',           'objetivo_farmaco') +
+      _row('Timeline',           'timeline_semanas',   'sem') +
+      _row('Compuestos actuales','compuestos_actuales') +
+      _row('Dosis androGénos',   'dosis_semana_mg',    'mg/sem') +
+      _row('Hematocrito',        'bio_hct', '%') +
+      _row('ALT / AST',          'bio_alt') +
+      _row('Col. total',         'bio_col_total', 'mg/dL') +
+      _row('HDL',                'bio_hdl',  'mg/dL') +
+      _row('LDL',                'bio_ldl',  'mg/dL') +
+      _row('Estradiol (E2)',      'bio_e2',   'pg/mL') +
+      _row('PA sistólica',       'bio_pa_sistolica', 'mmHg') +
+      _row('PA diastólica',      'bio_pa_diastolica','mmHg') +
+      _row('FC reposo',          'bio_fc_reposo',    'lpm')
+    ) : '';
+
+    const allSecs = secEntrenamiento + secObjetivos + secPrioridades + secNutricion + secSupp + secFarma;
+
+    // ── badges row ───────────────────────────────────────────────────────────
+    const badges = [
+      d.sexo   ? _badge(d.sexo==='H'?'Hombre':d.sexo==='M'?'Mujer':d.sexo, '#aaa', 'rgba(244,244,240,.06)', 'rgba(244,244,240,.18)') : '',
+      d.nivel  ? _badge(d.nivel, '#c8a54a', 'rgba(200,165,74,.08)', 'rgba(200,165,74,.4)') : '',
+      d.perfil ? _badge(d.perfil, d.perfil==='PED'?'#FF4488':'#44BB88',
+                        d.perfil==='PED'?'rgba(255,68,136,.08)':'rgba(68,187,136,.08)',
+                        d.perfil==='PED'?'rgba(255,68,136,.45)':'rgba(68,187,136,.45)') : '',
+    ].filter(Boolean).join('');
+
+    // ── main content ─────────────────────────────────────────────────────────
+    let mainContent = '';
     if (hasFicha) {
-      const rows = KEY_FIELDS.map(f => {
-        const v = fichaData[f.id];
-        if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) return '';
-        const disp = Array.isArray(v) ? v.join(', ') : String(v) + (f.unit ? ' ' + f.unit : '');
-        return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid rgba(244,244,240,.05)">
-          <span style="color:#888;font-size:12px;min-width:140px;flex-shrink:0">${f.label}</span>
-          <span style="color:#F4F4F0;font-size:12px;font-weight:600">${disp.replace(/</g,'&lt;')}</span>
-        </div>`;
-      }).filter(Boolean).join('');
-      const updatedAt = ficha && ficha.updatedAt ? new Date(ficha.updatedAt).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'}) : '';
-      summaryHtml = `
-        <div style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.12);border-radius:10px;padding:14px 16px;margin-bottom:16px">
-          ${updatedAt ? `<div style="font-size:11px;color:#555;margin-bottom:8px">Actualizado: ${updatedAt}</div>` : ''}
-          ${rows || '<div style="color:#555;font-size:12px">Sin datos en la ficha todavía.</div>'}
+      const chips = ['edad','peso_kg','talla_cm','porcentaje_grasa'];
+      const chipLabels = ['EDAD','PESO','TALLA','% GRASA'];
+      const chipUnits  = ['años','kg','cm','%'];
+      const chipColors = ['#c8a54a','#F4F4F0','#F4F4F0','#44BB88'];
+      const chipsHtml  = chips.map((id,i) => _chip(chipLabels[i], id, chipUnits[i], chipColors[i])).filter(Boolean).join('');
+
+      mainContent = `
+        ${chipsHtml ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${chipsHtml}</div>` : ''}
+        ${badges ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${badges}</div>` : ''}
+        <div style="background:rgba(244,244,240,.02);border:1px solid rgba(244,244,240,.07);border-radius:10px;padding:14px 16px">
+          ${allSecs || '<div style="color:#555;font-size:12px;text-align:center;padding:8px">Sin campos completados todavía.</div>'}
         </div>`;
     } else {
-      summaryHtml = `
-        <div style="background:rgba(255,200,0,.06);border:1px solid rgba(255,200,0,.25);border-radius:10px;padding:14px 16px;margin-bottom:16px">
-          <div style="color:#e0a020;font-weight:700;font-size:13px;margin-bottom:4px">⚠ Sin ficha de evaluación</div>
-          <div style="color:#888;font-size:12px">Este cliente no tiene ficha. Pídele que complete el onboarding o llénala tú en la sección Evaluación.</div>
+      mainContent = `
+        <div style="background:rgba(255,200,0,.05);border:1px solid rgba(255,200,0,.22);border-radius:10px;padding:20px;margin-bottom:4px;text-align:center">
+          <div style="font-size:28px;margin-bottom:8px">📋</div>
+          <div style="color:#e0a020;font-weight:700;font-size:13px;margin-bottom:6px">Sin ficha de evaluación</div>
+          <div style="color:#666;font-size:12px;line-height:1.6">Pídele que complete el onboarding o llénala desde la sección Evaluación.</div>
         </div>`;
     }
 
-    const updatedAtTs = ficha && ficha.updatedAt ? new Date(ficha.updatedAt).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'}) : null;
-
     cont.innerHTML = `
-      <div style="margin-bottom:16px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700">Ficha del cliente${updatedAtTs ? ' · ' + updatedAtTs : ''}</div>
-          <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:5px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:11px;font-weight:600;cursor:pointer">📝 Editar ficha completa</button>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#F4F4F0">${(d.nombre || (_detailClientData && _detailClientData.displayName) || 'Ficha').replace(/</g,'&lt;')}</div>
+          ${updatedAt ? `<div style="font-size:10px;color:#555;margin-top:2px">Actualizado ${updatedAt}</div>` : '<div style="font-size:10px;color:#555;margin-top:2px">Sin ficha</div>'}
         </div>
-        ${summaryHtml}
+        <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.07);color:#C4FF00;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">📝 Editar ficha</button>
       </div>
 
-      <!-- Análisis fotometría / intake JSON -->
-      <div style="border:1px solid rgba(107,107,102,.35);border-radius:10px;padding:14px;margin-bottom:16px;background:rgba(107,107,102,.05)">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700;margin-bottom:8px">🔬 Cargar análisis (fotometría / intake JSON)</div>
-        <div style="font-size:11px;color:#666;margin-bottom:8px;line-height:1.5">Pega aquí la salida del Evaluador VDSEN — fotogrametría (BLOQUE 1), ficha de intake (BLOQUE 3), o ambos. Se detecta y aplica automáticamente.</div>
-        <textarea id="_modalAnalysisInput_${clientId}" rows="4" placeholder="Pega el JSON del Evaluador VDSEN aquí…" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid rgba(244,244,240,.15);background:#0d1117;color:#F4F4F0;font-family:'Courier Prime',monospace;font-size:11px;resize:vertical;box-sizing:border-box"></textarea>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
-          <button id="_modalAnalysisBtn_${clientId}" onclick="_modalApplyAnalisis('${clientId}')" style="padding:6px 14px;border-radius:6px;border:none;background:rgba(107,107,102,.35);color:#F4F4F0;font-size:12px;font-weight:700;cursor:pointer">📋 Aplicar análisis</button>
+      ${mainContent}
+
+      <div style="margin:16px 0;border-top:1px solid rgba(244,244,240,.06)"></div>
+
+      <div style="background:rgba(107,107,102,.05);border:1px solid rgba(107,107,102,.22);border-radius:10px;padding:13px;margin-bottom:12px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#666;font-weight:700;margin-bottom:6px">🔬 Cargar análisis (JSON del Evaluador)</div>
+        <div style="font-size:11px;color:#555;margin-bottom:8px;line-height:1.5">Pega la salida del Evaluador VDSEN — fotogrametría (BLOQUE 1), ficha de intake (BLOQUE 3), o ambos.</div>
+        <textarea id="_modalAnalysisInput_${clientId}" rows="3" placeholder="Pega el JSON del Evaluador VDSEN aquí…" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.12);background:#0d1117;color:#F4F4F0;font-family:'Courier Prime',monospace;font-size:11px;resize:vertical;box-sizing:border-box"></textarea>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <button id="_modalAnalysisBtn_${clientId}" onclick="_modalApplyAnalisis('${clientId}')" style="padding:6px 14px;border-radius:6px;border:none;background:rgba(107,107,102,.3);color:#F4F4F0;font-size:11px;font-weight:700;cursor:pointer">📋 Aplicar análisis</button>
           <span id="_modalAnalysisStatus_${clientId}" style="font-size:11px;color:#555"></span>
         </div>
       </div>
 
-      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:16px">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700;margin-bottom:12px">🤖 Generación automática — Motor VDSEN</div>
-        <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.2);border-radius:10px;padding:16px;margin-bottom:12px">
-          <div style="font-size:12px;color:#aaa;line-height:1.6;margin-bottom:14px">
-            Genera en un solo clic el <strong style="color:#C4FF00">plan de entrenamiento</strong>, <strong style="color:#44BB88">plan nutricional</strong> y <strong style="color:#c89cff">suplementación</strong> personalizados según la ficha VDSEN del cliente. Requiere API key configurada y ficha completa.
-          </div>
-          <button id="_fichaGenBtn_${clientId}" onclick="_autoGenerateForModal('${clientId}')" style="width:100%;padding:12px;border-radius:8px;border:none;background:#C4FF00;color:#0A0A0A;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.02em">🤖 GENERAR PLAN COMPLETO (Motor VDSEN)</button>
-        </div>
-        <div id="_fichaGenStatus_${clientId}" style="font-size:12px;line-height:1.7"></div>
-        <div style="margin-top:12px">
-          <div style="font-size:11px;color:#555;margin-bottom:8px">O carga un plan manualmente:</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('json','${clientId}'),100)" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:12px;font-weight:600;cursor:pointer">📋 Pegar JSON plan</button>
-            <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('texto','${clientId}'),100)" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📝 Pegar texto plan</button>
-          </div>
+      <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.16);border-radius:10px;padding:13px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#8aaa44;font-weight:700;margin-bottom:6px">🤖 Motor VDSEN</div>
+        <div style="font-size:11px;color:#666;line-height:1.6;margin-bottom:10px">Genera plan de entrenamiento, nutricional y suplementación según la ficha. Requiere API key y ficha completa.</div>
+        <button id="_fichaGenBtn_${clientId}" onclick="_autoGenerateForModal('${clientId}')" style="width:100%;padding:10px;border-radius:7px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.03em">🤖 GENERAR PLAN COMPLETO</button>
+        <div id="_fichaGenStatus_${clientId}" style="font-size:11px;line-height:1.7;margin-top:8px"></div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('json','${clientId}'),100)" style="padding:5px 11px;border-radius:6px;border:1px solid rgba(196,255,0,.3);background:rgba(196,255,0,.06);color:#C4FF00;font-size:11px;font-weight:600;cursor:pointer">📋 Pegar JSON plan</button>
+          <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('texto','${clientId}'),100)" style="padding:5px 11px;border-radius:6px;border:1px solid rgba(244,244,240,.14);background:rgba(244,244,240,.03);color:#888;font-size:11px;font-weight:600;cursor:pointer">📝 Pegar texto plan</button>
         </div>
       </div>`;
   }
