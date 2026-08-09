@@ -1181,7 +1181,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const safeName = (c.displayName || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
           return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
             <span><strong>${c.displayName}</strong>${weekBadge} <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${ciStatusBadge}${sessBadge}${liveBadge}${alertChip}</span>
-            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="deleteClient('${c.id}','${safeName}')" title="Eliminar cliente" style="padding:3px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:13px;cursor:pointer">🗑</button></span>
+            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="showMergeModal('${c.id}')" title="Fusionar con cliente duplicado" style="padding:3px 8px;border-radius:6px;border:1px solid #7788cc;background:rgba(119,136,204,.1);color:#7788cc;font-size:13px;cursor:pointer">⇌</button><button onclick="deleteClient('${c.id}','${safeName}')" title="Eliminar cliente" style="padding:3px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:13px;cursor:pointer">🗑</button></span>
           </div>`;
         }).join('');
 
@@ -1249,6 +1249,128 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     }
   }
   window.repairPhoneIndexAll = repairPhoneIndexAll;
+
+  async function showMergeModal(keepId) {
+    const [keepSnap, allSnap] = await Promise.all([
+      getDoc(doc(db, 'clients', keepId)),
+      getDocs(query(collection(db, 'clients'), where('coachId', '==', currentCoach.uid)))
+    ]);
+    if (!keepSnap.exists()) { showToast('Cliente no encontrado', true); return; }
+    const keepData = keepSnap.data();
+    const others = [];
+    allSnap.forEach(d => { if (d.id !== keepId) others.push({ id: d.id, ...d.data() }); });
+    if (!others.length) { showToast('No hay otros clientes para fusionar', true); return; }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:520px">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-bold">🔀 Fusionar clientes</h3>
+          <button class="text-[#888] hover:text-white text-xl" onclick="this.closest('.modal-overlay').remove()">✕</button>
+        </div>
+        <p class="text-sm mb-3" style="color:#aaa">Se conservará <strong style="color:#c8a54a">${keepData.displayName||keepId}</strong> y se eliminará el duplicado que elijas. Los datos faltantes (plan, logs, celular) se copian automáticamente antes de borrar.</p>
+        <label class="block text-xs text-[#888] mb-1">Perfil duplicado a ELIMINAR:</label>
+        <select id="merge-del-sel" class="input-field mb-3">
+          ${others.map(o=>`<option value="${o.id}">${o.displayName||o.id} (${o.email||'sin email'})</option>`).join('')}
+        </select>
+        <div id="merge-compare" class="mb-3 text-xs" style="color:#aaa">Selecciona y presiona Comparar.</div>
+        <div class="flex gap-2">
+          <button id="merge-compare-btn" class="btn-secondary flex-1">🔍 Comparar</button>
+          <button id="merge-confirm-btn" class="btn-primary flex-1" style="background:#c94a3a;border-color:#c94a3a" disabled>🔀 Fusionar y eliminar duplicado</button>
+        </div>
+        <div id="merge-status" class="text-xs mt-2"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#merge-compare-btn').onclick = async () => {
+      const delId = overlay.querySelector('#merge-del-sel').value;
+      const [delSnap, keepLogsSnap, delLogsSnap] = await Promise.all([
+        getDoc(doc(db, 'clients', delId)),
+        getDoc(doc(db, 'logs', keepId)),
+        getDoc(doc(db, 'logs', delId))
+      ]);
+      const dd = delSnap.exists() ? delSnap.data() : {};
+      const row = (label, a, b) =>
+        `<tr><td style="color:#888;padding:2px 8px 2px 0">${label}</td><td style="color:#F4F4F0;padding:2px 8px 2px 0">${a||'—'}</td><td style="color:#F4F4F0">${b||'—'}</td></tr>`;
+      overlay.querySelector('#merge-compare').innerHTML =
+        `<table style="width:100%;border-collapse:collapse">
+          <thead><tr><th style="text-align:left;color:#aaa;padding:0 8px 4px 0"></th><th style="text-align:left;color:#44BB88;padding-bottom:4px">✓ CONSERVAR</th><th style="text-align:left;color:#e05555;padding-bottom:4px">✗ ELIMINAR</th></tr></thead>
+          <tbody>
+            ${row('Nombre', keepData.displayName, dd.displayName)}
+            ${row('Email', keepData.email, dd.email)}
+            ${row('Celular', keepData.phone, dd.phone)}
+            ${row('Plan activo', keepData.activePlanId ? '✓ tiene plan' : '✗ sin plan', dd.activePlanId ? '✓ tiene plan' : '✗ sin plan')}
+            ${row('Logs', keepLogsSnap.exists() ? '✓ tiene registros' : '✗ sin registros', delLogsSnap.exists() ? '✓ tiene registros' : '✗ sin registros')}
+          </tbody>
+        </table>`;
+      overlay.querySelector('#merge-confirm-btn').disabled = false;
+    };
+
+    overlay.querySelector('#merge-confirm-btn').onclick = async () => {
+      const delId = overlay.querySelector('#merge-del-sel').value;
+      const st = overlay.querySelector('#merge-status');
+      overlay.querySelector('#merge-confirm-btn').disabled = true;
+      st.textContent = '⏳ Fusionando...';
+      try {
+        await mergeClients(keepId, delId);
+        overlay.remove();
+        showToast('✅ Clientes fusionados. Solo queda ' + (keepData.displayName||keepId));
+        await loadClientList();
+      } catch(e) {
+        st.style.color = '#c94a3a';
+        st.textContent = 'Error: ' + (e.code||'') + ' ' + e.message;
+        overlay.querySelector('#merge-confirm-btn').disabled = false;
+      }
+    };
+  }
+  window.showMergeModal = showMergeModal;
+
+  async function mergeClients(keepId, deleteId) {
+    await ensureCoachDoc();
+    const [keepSnap, delSnap, keepLogsSnap, delLogsSnap] = await Promise.all([
+      getDoc(doc(db, 'clients', keepId)),
+      getDoc(doc(db, 'clients', deleteId)),
+      getDoc(doc(db, 'logs', keepId)),
+      getDoc(doc(db, 'logs', deleteId))
+    ]);
+    if (!keepSnap.exists() || !delSnap.exists()) throw new Error('Cliente no encontrado');
+    const keepData = keepSnap.data();
+    const delData  = delSnap.data();
+
+    // Copiar al keeper los campos que le falten
+    const updates = {};
+    if (!keepData.activePlanId && delData.activePlanId) updates.activePlanId = delData.activePlanId;
+    if (!keepData.phone       && delData.phone)         updates.phone       = delData.phone;
+    if (!keepData.email       && delData.email)         updates.email       = delData.email;
+    if (Object.keys(updates).length) await updateDoc(doc(db, 'clients', keepId), updates);
+
+    // Copiar logs si el keeper no tiene pero el duplicado sí
+    if (!keepLogsSnap.exists() && delLogsSnap.exists()) {
+      await setDoc(doc(db, 'logs', keepId), { ...delLogsSnap.data(), updatedAt: Date.now() });
+    }
+
+    // Redirigir phone_index del duplicado al keeper
+    const phoneToMigrate = delData.phone || updates.phone || '';
+    if (phoneToMigrate) {
+      let digits = phoneToMigrate.replace(/[^\d]/g, '');
+      if (digits.length === 10) digits = '52' + digits;
+      if (digits.length >= 11) {
+        try {
+          await setDoc(doc(db, 'phone_index', digits), {
+            email: (keepData.email || delData.email || '').toLowerCase(),
+            uid: keepId, updatedAt: new Date().toISOString(), migratedBy: currentCoach.uid
+          }, { merge: true });
+        } catch(_) {}
+      }
+    }
+
+    // Eliminar duplicado (logs + doc)
+    try { await deleteDoc(doc(db, 'logs', deleteId)); } catch(_) {}
+    await deleteDoc(doc(db, 'clients', deleteId));
+  }
+  window.mergeClients = mergeClients;
 
   async function deleteClient(uid, name) {
     if (!await _askConfirm(`¿Eliminar a "${name}" de tu lista de clientes?\n\nEsto borra sus datos en Firestore (plan, logs, perfil). La cuenta de acceso en Firebase Auth no se elimina automáticamente.\n\nEsta acción no se puede deshacer.`)) return;
