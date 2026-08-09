@@ -3346,10 +3346,11 @@ function goToWeek(w) { setWeek(w); goTab(1); }
 // Devuelve true si el ejercicio debe mostrarse en la semana actual.
 // SST se fuerza inactivo en la semana de deload (última semana del plan).
 function isTechniqueActive(ej, week) {
-  if (!ej || !ej.techniqueFromWeek) return true;
+  if (!ej) return true;
   var totalW = (PLAN && PLAN.totalWeeks) ? PLAN.totalWeeks : 6;
   var tech = (ej.technique || '').toLowerCase();
   if ((tech === 'sst' || tech === 'fst7') && week >= totalW) return false;
+  if (!ej.techniqueFromWeek) return true;
   return week >= ej.techniqueFromWeek;
 }
 
@@ -3937,6 +3938,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   numSeries = Math.max(numSeries, _doneCount);
   // Para Y3T: la fase define el techo — cambio de fase reduce sets intencionalmente (S3→S1)
   if (_isY3T && _effectiveSets.length > 0) numSeries = Math.min(numSeries, _effectiveSets.length);
+  // Para FST7: siempre exactamente 7 sets (nunca inflar con progrec)
+  if ((ej.technique || '').toLowerCase() === 'fst7') numSeries = Math.min(numSeries, (ej.sets || []).length || 7);
 
   // ── A. (eliminado) ─────────────────────────────────────────────────────
   var machineHtml = '';
@@ -5113,6 +5116,11 @@ function markExpressDone(di, ei) {
   _recordExerciseHistoryAndPR(_exNameKeyExpr, _exNombreExpr, carga, reps, rirLast, unit);
 
   saveLogs();
+  // FST7: 180 s de descanso tras la \u00faltima serie (igual que en modo normal)
+  if (_ejExpr && (_ejExpr.technique || '').toLowerCase() === 'fst7') {
+    startRestTimer(180);
+    showToast('Serie 7/7 \u2713 \u2014 descansando 3 min');
+  }
   _refreshExPanelOnly();
 }
 window.markExpressDone = markExpressDone;
@@ -5172,6 +5180,8 @@ function markExpressSerie(di, ei, si) {
       if (_rPhaseExp === 's1') restTime = Math.max(restTime, 210);
       else if (_rPhaseExp === 's2') restTime = Math.max(restTime, 150);
     }
+    // FST7: 40 s entre sets intermedios (set final → 180 s en markExpressDone)
+    if (_ejCur && (_ejCur.technique || '').toLowerCase() === 'fst7') restTime = 40;
   }
   startRestTimer(restTime);
   showToast('Serie ✓ — descansando');
@@ -6256,6 +6266,8 @@ function buildBoostcampExercise(ej, di, ei) {
     var _effSetsBC = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
     if (_effSetsBC.length > 0) numSeries = Math.min(numSeries, _effSetsBC.length);
   }
+  // FST7: techo fijo de 7 sets en warm-up también
+  if ((ej.technique || '').toLowerCase() === 'fst7') numSeries = Math.min(numSeries, (ej.sets || []).length || 7);
 
   // Referencia de carga para warm-up: prog rec > semana anterior > historial
   if (_isFirstOfPattern) {
@@ -6805,6 +6817,8 @@ function _maybeSuggestExtraSet(di, ei, si) {
       var _effSetsEx = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
       if (_effSetsEx.length > 0) numSeries = Math.min(numSeries, _effSetsEx.length);
     }
+    // FST7: techo fijo de 7 sets — nunca sugerir una octava serie
+    if ((ej.technique || '').toLowerCase() === 'fst7') numSeries = Math.min(numSeries, (ej.sets || []).length || 7);
 
     if (si !== numSeries - 1) return; // sólo tras la última serie planificada de hoy
 
