@@ -1126,6 +1126,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           _clientNameMap[d.id] = d.data().displayName || d.data().email || d.id;
           _clientDocs.push({ id: d.id, ...d.data() });
         });
+        // Orden alfabético por nombre
+        _clientDocs.sort((a, b) => (a.displayName || a.email || '').localeCompare(b.displayName || b.email || '', 'es', { sensitivity: 'base' }));
         // Cargar logs Y planes para badges + alertas
         const _logPromises = _clientDocs.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));
         const _planPromises = _clientDocs.map(c => c.activePlanId ? getDoc(doc(db, 'plans', c.activePlanId)).catch(() => null) : Promise.resolve(null));
@@ -1286,10 +1288,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
     overlay.querySelector('#merge-compare-btn').onclick = async () => {
       const delId = overlay.querySelector('#merge-del-sel').value;
-      const [delSnap, keepLogsSnap, delLogsSnap] = await Promise.all([
+      const [delSnap, keepLogsSnap, delLogsSnap, keepFichaSnap2, delFichaSnap2] = await Promise.all([
         getDoc(doc(db, 'clients', delId)),
         getDoc(doc(db, 'logs', keepId)),
-        getDoc(doc(db, 'logs', delId))
+        getDoc(doc(db, 'logs', delId)),
+        getDoc(doc(db, 'fichas_onboarding', keepId)),
+        getDoc(doc(db, 'fichas_onboarding', delId))
       ]);
       const dd = delSnap.exists() ? delSnap.data() : {};
       const row = (label, a, b) =>
@@ -1303,6 +1307,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             ${row('Celular', keepData.phone, dd.phone)}
             ${row('Plan activo', keepData.activePlanId ? '✓ tiene plan' : '✗ sin plan', dd.activePlanId ? '✓ tiene plan' : '✗ sin plan')}
             ${row('Logs', keepLogsSnap.exists() ? '✓ tiene registros' : '✗ sin registros', delLogsSnap.exists() ? '✓ tiene registros' : '✗ sin registros')}
+            ${row('Ficha inicial', keepFichaSnap2.exists() ? '✓ tiene ficha' : '✗ sin ficha', delFichaSnap2.exists() ? '✓ tiene ficha' : '✗ sin ficha')}
           </tbody>
         </table>`;
       overlay.querySelector('#merge-confirm-btn').disabled = false;
@@ -1329,11 +1334,13 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
   async function mergeClients(keepId, deleteId) {
     await ensureCoachDoc();
-    const [keepSnap, delSnap, keepLogsSnap, delLogsSnap] = await Promise.all([
+    const [keepSnap, delSnap, keepLogsSnap, delLogsSnap, keepFichaSnap, delFichaSnap] = await Promise.all([
       getDoc(doc(db, 'clients', keepId)),
       getDoc(doc(db, 'clients', deleteId)),
       getDoc(doc(db, 'logs', keepId)),
-      getDoc(doc(db, 'logs', deleteId))
+      getDoc(doc(db, 'logs', deleteId)),
+      getDoc(doc(db, 'fichas_onboarding', keepId)),
+      getDoc(doc(db, 'fichas_onboarding', deleteId))
     ]);
     if (!keepSnap.exists() || !delSnap.exists()) throw new Error('Cliente no encontrado');
     const keepData = keepSnap.data();
@@ -1349,6 +1356,11 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     // Copiar logs si el keeper no tiene pero el duplicado sí
     if (!keepLogsSnap.exists() && delLogsSnap.exists()) {
       await setDoc(doc(db, 'logs', keepId), { ...delLogsSnap.data(), updatedAt: Date.now() });
+    }
+
+    // Copiar ficha si el keeper no tiene pero el duplicado sí
+    if (!keepFichaSnap.exists() && delFichaSnap.exists()) {
+      await setDoc(doc(db, 'fichas_onboarding', keepId), delFichaSnap.data());
     }
 
     // Redirigir phone_index del duplicado al keeper
