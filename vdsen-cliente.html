@@ -3666,7 +3666,7 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
         // Header: solo la etiqueta de técnica + badge compacto
         '<div style="padding:7px 12px;background:rgba(107,107,102,.14);display:flex;align-items:center;gap:8px">' +
           '<span style="font-size:15px">📌</span>' +
-          '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:var(--accent)">INSTRUCCIONES</span>' +
+          '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:var(--accent)">NOTA DEL COACH</span>' +
           (meta ? '<span style="margin-left:auto;font-size:9px;font-weight:800;padding:2px 8px;border-radius:5px;background:'+meta.color+';color:#fff">'+meta.icon+' '+meta.label+'</span>' : '') +
         '</div>' +
         '<div style="padding:12px 14px">' +
@@ -11652,14 +11652,12 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
     '</div>'+
     // ── Objetivo principal ───────────────────────────────────────
     '<div style="padding:14px 16px;background:rgba(0,0,0,.2)">'+
-      '<div style="font-size:10px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:8px">OBJETIVO DE HOY</div>'+
+      '<div style="font-size:10px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:8px">CARGA DE HOY</div>'+
       '<div style="display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;margin-bottom:2px">'+
         '<span style="font-size:38px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+'</span>'+
         '<span style="font-size:20px;font-weight:700;color:var(--mt);margin-right:10px">'+unit+'</span>'+
       '</div>'+
-      '<div style="font-size:17px;font-weight:800;color:'+c.color+';letter-spacing:.3px">'+
-        targetSets+' series &times; '+targetReps+' reps &middot; RIR '+targetRIR+
-      '</div>'+
+      '<div style="font-size:13px;color:var(--mt);letter-spacing:.3px">'+targetSets+' series</div>'+
       prevLine+
       reasonHtml+
     '</div>'+
