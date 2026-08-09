@@ -3563,10 +3563,80 @@ var TECHNIQUE_META = {
   lengthened_partials: { label:'PARCIALES ROM ELONGADO', color:'#22aadd', icon:'📏', def:'Realiza el movimiento solo en el rango de estiramiento máximo (parte baja del ROM). AMRAP: tantas reps como puedas manteniendo tensión constante en el músculo elongado, sin llegar a fallo técnico.' }
 };
 
+// Descripciones cortas (siempre visibles) y detalle expandible (HTML) por técnica.
+var TECHNIQUE_DESCRIPTIONS = {
+  straight:    { short: 'Haz todas las series con el mismo peso y la misma técnica.', detail: null },
+  drop:        { short: 'Al fallo, baja el peso de inmediato y sigue sin descansar.',
+    detail: '<div class="space-y-2 text-sm"><p class="font-semibold" style="color:#FF8844">📉 DROP SET — pasos:</p><ul class="space-y-1 list-none"><li>• Haz la serie hasta el <strong>fallo técnico</strong></li><li>• Baja el peso <strong>20–30%</strong> de inmediato (sin descanso)</li><li>• Continúa hasta el siguiente fallo</li><li>• Repite según indique el plan</li></ul></div>' },
+  sst:         { short: 'Protocolo de estiramiento al final de la última serie.',
+    detail: '<div class="space-y-2 text-sm"><p class="font-semibold text-orange-400">🔴 PROTOCOLO FINAL — sigue los pasos en orden:</p><ol class="space-y-1 list-none"><li>1. Lleva el peso a fallo — no puedas hacer ni una rep más</li><li>2. Descansa <strong>15 segundos</strong> sin soltar</li><li>3. Baja el peso <strong>20%</strong> → haz reps bajando en 4 segundos</li><li>4. Descansa <strong>15 segundos</strong></li><li>5. Baja otro <strong>20%</strong> → sigue hasta no poder más</li><li>6. Descansa <strong>15 segundos</strong></li><li>7. Mantén la posición de <strong>máximo estiramiento 45–60 seg</strong></li></ol><p class="text-gray-400 text-xs mt-2">Descansa 5 minutos completos antes del siguiente ejercicio.</p></div>' },
+  fst7:        { short: '7 series rápidas con el mismo peso. Objetivo: máximo pump.',
+    detail: '<div class="space-y-2 text-sm"><p class="font-semibold" style="color:#cc44aa">⚡ FST-7 — cómo ejecutarlo:</p><ul class="space-y-1 list-none"><li>• Elige un peso al <strong>60–65% de tu máximo</strong> y no lo cambies</li><li>• Descansa exactamente <strong>40 segundos</strong> entre las series 1 y 6</li><li>• Serie 7: ve hasta el <strong>fallo total</strong> — da todo lo que tengas</li><li>• No importa el peso — importa el <strong>pump y la congestión</strong></li></ul><p class="text-gray-400 text-xs mt-2">Si te quedas sin reps antes del fallo en la serie 7, el peso era demasiado alto.</p></div>' },
+  lengthened_partials: { short: 'Solo la mitad inferior del movimiento — donde más se estira el músculo.',
+    detail: '<div class="space-y-2 text-sm"><p class="font-semibold" style="color:#22aadd">📐 PARCIALES EN ESTIRAMIENTO — cómo hacerlo:</p><ul class="space-y-1 list-none"><li>• Mueve el peso <strong>solo en la parte baja del recorrido</strong> (posición de máximo estiramiento)</li><li>• <strong>No cuentes reps</strong> — continúa hasta que la técnica falle</li><li>• Baja <strong>lento</strong> y siente el estiramiento en cada rep</li><li>• Para cuando ya no puedas mantener la posición correcta</li></ul><p class="text-gray-400 text-xs mt-2">Más lento y más estiramiento = mejor señal de crecimiento.</p></div>' },
+  myoreps:     { short: 'Serie larga hasta casi el fallo, luego mini-series con descansos cortos.',
+    detail: '<div class="space-y-2 text-sm"><p class="font-semibold" style="color:#44BB88">🔁 MYO-REPS — pasos:</p><ul class="space-y-1 list-none"><li>• Haz la <strong>serie de activación</strong> (15–20 reps) dejando 1–2 en el tanque</li><li>• Descansa <strong>15–20 segundos</strong></li><li>• Haz <strong>3–5 reps</strong>, descansa, repite 3–5 veces</li><li>• Para si no llegas a 3 reps limpias</li></ul></div>' },
+  'rest-pause':{ short: 'Lleva al fallo, descansa 15 segundos, sigue — repite 2–3 veces.',
+    detail: '<div class="space-y-2 text-sm"><p class="font-semibold text-yellow-400">⏸ REST-PAUSE — pasos:</p><ul class="space-y-1 list-none"><li>• Haz reps hasta el <strong>fallo técnico</strong></li><li>• Descansa <strong>15–20 segundos</strong> (respira profundo)</li><li>• Continúa hasta el siguiente fallo</li><li>• Repite <strong>2–3 veces</strong> en total</li></ul></div>' },
+  cluster:     { short: 'Serie pesada dividida en bloques cortos con micro-pausas.',
+    detail: '<div class="space-y-2 text-sm"><p class="font-semibold text-red-400">🧱 CLUSTER — pasos:</p><ul class="space-y-1 list-none"><li>• Haz <strong>2–3 reps pesadas</strong>, rack o suelta</li><li>• Descansa <strong>10–20 segundos</strong></li><li>• Repite hasta completar el total de reps</li><li>• El objetivo es mantener <strong>alta calidad con peso máximo</strong></li></ul></div>' },
+  amrap:       { short: 'Haz todas las reps que puedas con buena técnica.', detail: null },
+  'iso-hold':  { short: 'Mantén la posición de mayor tensión durante el tiempo indicado.', detail: null },
+  tempo:       { short: 'Controla la velocidad del movimiento según los números indicados.',
+    detail: '<div class="space-y-1 text-sm"><p class="font-semibold" style="color:#888">🕐 TEMPO — cómo leer los números (ej. 4010):</p><ul class="space-y-1 list-none"><li>• 1er número: <strong>bajada</strong> (excéntrico) en segundos</li><li>• 2do número: <strong>pausa abajo</strong></li><li>• 3er número: <strong>subida</strong> (concéntrico)</li><li>• 4to número: <strong>pausa arriba</strong></li></ul><p class="text-gray-400 text-xs">4010 = 4s bajando, 0s pausa, 1s subiendo, 0s pausa.</p></div>' },
+  superset:    { short: 'Dos ejercicios seguidos sin descanso entre ellos.', detail: null },
+  giant:       { short: 'Tres o más ejercicios seguidos sin descanso.', detail: null },
+};
+
+// Descripciones por fase Y3T — badge, texto corto y detalle expandible.
+var Y3T_PHASE_DESCRIPTIONS = {
+  s1:     { badge: '💪 SEMANA PESADA',  short: 'Pocas reps con el mayor peso posible. Descansa completo entre series.',
+    detail: '<div class="space-y-1 text-sm"><p>• Usa el <strong>peso más alto que puedas mover con técnica limpia</strong></p><p>• Descansa <strong>3–4 minutos completos</strong> entre series</p><p>• Si llegas a las reps indicadas con facilidad, sube el peso la próxima sesión</p></div>' },
+  s2:     { badge: '📈 SEMANA VOLUMEN', short: 'Peso moderado-alto, más reps. En las últimas 2 series mantén el estiramiento 45–60 s.',
+    detail: '<div class="space-y-1 text-sm"><p>• Peso moderado-alto — deberías llegar al final con esfuerzo real</p><p>• Descansa <strong>2–3 minutos</strong> entre series</p><p class="font-semibold text-yellow-400">• Últimas 2 series: al terminar las reps, mantén la posición de máximo estiramiento <strong>45–60 segundos</strong> antes de soltar</p></div>' },
+  s3:     { badge: '🔥 SEMANA INTENSA', short: 'Más series, más reps, mayor esfuerzo. Termina con el protocolo SST.',
+    detail: '<div class="space-y-1 text-sm"><p>• Peso más ligero — el objetivo son las reps y la congestión</p><p>• Descansa <strong>90 seg–2 min</strong> entre series</p><p class="font-semibold text-orange-400">• Al terminar todas las series: ejecuta el <strong>protocolo SST</strong> (ver instrucciones del set final)</p></div>' },
+  deload: { badge: '🔄 SEMANA DESCARGA', short: 'Semana de recuperación. Menos peso, menos series — técnica perfecta.',
+    detail: '<div class="space-y-1 text-sm"><p>• Usa el <strong>70–80% del peso habitual</strong></p><p>• El SST y FST-7 están <strong>desactivados esta semana</strong></p><p>• Descansa bien — esta semana es parte del plan</p></div>' },
+};
+
+// Badges para notas de sets individuales del plan.
+var SET_NOTE_LABELS = {
+  'S1 · FUERZA':                                  { icon: '💪', text: 'PESADO' },
+  'S2 · HIPERTROFIA':                             { icon: '📈', text: 'VOLUMEN' },
+  'S3 · SST':                                     { icon: '🔥', text: 'PROTOCOLO FINAL' },
+  'FST7 · Serie 7 FALLO':                         { icon: '⚡', text: 'FALLO TOTAL' },
+  'PARCIALES ELONGADOS · hasta fallo técnico':    { icon: '📐', text: 'ESTIRAMIENTO · AMRAP' },
+};
+
+function getTechniqueUI(exercise, y3tPhase) {
+  var tech  = (exercise.technique || 'straight').toLowerCase();
+  if (tech === 'y3t') {
+    var phase = Y3T_PHASE_DESCRIPTIONS[y3tPhase] || Y3T_PHASE_DESCRIPTIONS.s1;
+    return { badge: phase.badge, short: phase.short, detail: phase.detail };
+  }
+  var meta  = TECHNIQUE_META[tech];
+  var tdesc = TECHNIQUE_DESCRIPTIONS[tech];
+  var tn    = (exercise.techniqueNote || '').trim();
+  return {
+    badge:  meta ? (meta.icon + ' ' + meta.label) : tech,
+    short:  (tdesc && tdesc.short) ? tdesc.short : (tn || (meta && meta.def) || null),
+    detail: (tdesc && tdesc.detail) ? tdesc.detail : null,
+  };
+}
+
+function getSetNoteBadge(setNote) {
+  if (!setNote) return null;
+  var match = SET_NOTE_LABELS[setNote];
+  if (match) return match.icon + ' ' + match.text;
+  return setNote;
+}
+
 function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
   var html = '';
   var tech = (ej.technique || 'straight').toLowerCase();
   var meta = TECHNIQUE_META[tech];
+  var _tdesc = TECHNIQUE_DESCRIPTIONS[tech] || null;
   var techNote = (ej.techniqueNote || '').trim();
   var coachNote = (ej.coachNote || ej.nota || '').trim();
   var exNotes = catData && catData.executionNotes ? String(catData.executionNotes).trim() : '';
@@ -3596,18 +3666,23 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
         '</div>' +
         '<div style="padding:11px 14px;background:rgba(107,107,102,.06)">' +
           '<div style="font-size:14px;font-weight:700;color:var(--tx);line-height:1.6">'+techNote+'</div>' +
-          (meta ? '<div style="font-size:11px;color:var(--mt);line-height:1.5;margin-top:8px;padding-top:8px;border-top:1px solid rgba(107,107,102,.2)"><span style="color:'+meta.color+';font-weight:700">Protocolo '+meta.label+':</span> '+meta.def+'</div>' : '') +
+          (meta ? '<div style="font-size:11px;color:var(--mt);line-height:1.5;margin-top:8px;padding-top:8px;border-top:1px solid rgba(107,107,102,.2)"><span style="color:'+meta.color+';font-weight:700">Protocolo '+meta.label+':</span> '+((_tdesc && _tdesc.short) ? _tdesc.short : meta.def)+'</div>'+(_tdesc && _tdesc.detail ? '<details style="margin-top:6px"><summary style="font-size:10px;color:'+meta.color+';font-weight:700;cursor:pointer;user-select:none;letter-spacing:.5px">▸ CÓMO HACERLO</summary><div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_tdesc.detail+'</div></details>' : '') : '') +
         '</div>' +
       '</div>';
   } else if (meta) {
-    // Técnica sin nota → banner más compacto solo con la definición genérica
+    // Técnica sin nota → banner con short text + detalle expandible cuando disponible
+    var _shortTxt  = (_tdesc && _tdesc.short) ? _tdesc.short : meta.def;
+    var _detailHtml = (_tdesc && _tdesc.detail) ? _tdesc.detail : '';
     html +=
       '<div style="margin:0 0 12px;padding:9px 12px;border-radius:10px;border:1px solid '+meta.color+';background:rgba(255,255,255,.02)">' +
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">' +
           '<span style="font-size:14px">'+meta.icon+'</span>' +
           '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:'+meta.color+'">TÉCNICA · '+meta.label+'</span>' +
         '</div>' +
-        '<div style="font-size:11px;color:var(--mt2);line-height:1.55">'+meta.def+'</div>' +
+        '<div style="font-size:11px;color:var(--mt2);line-height:1.55">'+_shortTxt+'</div>' +
+        (_detailHtml
+          ? '<details style="margin-top:8px"><summary style="font-size:10px;color:'+meta.color+';font-weight:700;cursor:pointer;user-select:none;letter-spacing:.5px">▸ CÓMO HACERLO</summary><div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_detailHtml+'</div></details>'
+          : '') +
       '</div>';
   }
 
@@ -3963,10 +4038,14 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         if (!_isY3T || !_y3tPhase) return '';
         var pm = Y3T_PHASE_META[_y3tPhase];
         if (!pm) return '';
-        return '<div style="margin-top:8px;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.25);border:2px solid '+pm.color+';display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
-          '<span style="font-size:13px;font-weight:900;letter-spacing:1px;color:'+pm.color+'">'+pm.label+'</span>'+
-          '<span style="font-size:10px;color:var(--mt);flex:1">'+pm.range+' · Descanso '+pm.rest+'</span>'+
-          '<span style="font-size:10px;color:var(--mt2);font-style:italic">'+pm.tip+'</span>'+
+        var _pd = Y3T_PHASE_DESCRIPTIONS[_y3tPhase] || null;
+        return '<div style="margin-top:8px;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.25);border:2px solid '+pm.color+'">' +
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:'+(_pd ? '4px' : '0')+'">'+
+            '<span style="font-size:13px;font-weight:900;letter-spacing:1px;color:'+pm.color+'">'+(_pd ? _pd.badge : pm.label)+'</span>'+
+            '<span style="font-size:10px;color:var(--mt)">'+pm.range+' · Descanso '+pm.rest+'</span>'+
+          '</div>'+
+          (_pd ? '<div style="font-size:11px;color:var(--mt2);line-height:1.5">'+_pd.short+'</div>'+
+            (_pd.detail ? '<details style="margin-top:6px"><summary style="font-size:10px;color:'+pm.color+';font-weight:700;cursor:pointer;user-select:none;letter-spacing:.5px">▸ VER CÓMO</summary><div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_pd.detail+'</div></details>' : '') : '') +
         '</div>';
       })()+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
@@ -4345,6 +4424,14 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#cc44aa;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">FST-7 · '+(s+1)+'/'+_fst7Total+'</span>';
       } else if (_ejTechLower === 'lengthened_partials') {
         _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#22aadd;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">PARCIALES · AMRAP</span>';
+      }
+      // Badge de setNote cuando no hay otro badge asignado
+      if (!_setSubLabel) {
+        var _rawSN = (_effectiveSets && _effectiveSets[s] && _effectiveSets[s].setNote) || (ej.sets && ej.sets[s] && ej.sets[s].setNote) || '';
+        if (_rawSN) {
+          var _snBadge = getSetNoteBadge(_rawSN);
+          if (_snBadge) _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#e8a040;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+_snBadge+'</span>';
+        }
       }
       setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(107,107,102,.5);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
