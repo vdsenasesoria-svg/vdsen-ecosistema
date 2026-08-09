@@ -4118,7 +4118,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   let _detailClientId = null;
   let _detailClientData = null;
   let _detailPlanData   = null;
-  let _detailFichaData  = null;
+  let _detailFichaData      = null;
+  let _detailRenovacionData = null;
   let _detailActiveTab  = 'plan';
 
   async function showClientDetail(clientId) {
@@ -4154,6 +4155,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }
     } catch(_) {}
 
+    _detailRenovacionData = null;
+    try {
+      const renovSnap = await getDoc(doc(db, 'fichas_renovacion', clientId));
+      if (renovSnap.exists()) _detailRenovacionData = renovSnap.data();
+    } catch(_) {}
+
     body.innerHTML = `
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <p class="text-sm text-[#888]">${c.email}${c.phone ? ' · 📱 '+c.phone : ''}</p>
@@ -4172,6 +4179,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <button id="ctab_monitor" onclick="_switchClientTab('monitor')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📊 Monitor</button>
         <button id="ctab_notas"   onclick="_switchClientTab('notas')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📝 Notas</button>
         <button id="ctab_inbody"  onclick="_switchClientTab('inbody')"  style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📏 InBody</button>
+        <button id="ctab_renovar" onclick="_switchClientTab('renovar')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🔄 Renovar</button>
       </div>
       <div id="clientDetailTabContent"></div>`;
     _switchClientTab('ficha');
@@ -4179,7 +4187,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   function _switchClientTab(tab) {
     _detailActiveTab = tab;
-    ['ficha','plan','monitor','notas','inbody'].forEach(t => {
+    ['ficha','plan','monitor','notas','inbody','renovar'].forEach(t => {
       const btn = document.getElementById('ctab_'+t);
       if (btn) { btn.style.color = t===tab?'#F4F4F0':'#888'; btn.style.borderBottomColor = t===tab?'#C4FF00':'transparent'; }
     });
@@ -4190,6 +4198,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     else if (tab === 'monitor') _renderClientTabMonitor(cont);
     else if (tab === 'notas')   _renderClientTabNotas(cont);
     else if (tab === 'inbody')  _renderClientTabInBody(cont);
+    else if (tab === 'renovar') _renderClientTabRenovar(cont);
   }
   window._switchClientTab = _switchClientTab;
 
@@ -4764,6 +4773,253 @@ El esfuerzo no es negociable.
       </div>`;
   }
   window._renderClientTabFicha = _renderClientTabFicha;
+
+  // ── Tab Renovar ──────────────────────────────────────────────────────────
+  function _renderClientTabRenovar(cont) {
+    const clientId  = _detailClientId;
+    const c         = _detailClientData || {};
+    const ficha     = _detailFichaData;
+    const fichaData = ficha && ficha.data ? ficha.data : (ficha || {});
+    const ren       = _detailRenovacionData && _detailRenovacionData.data ? _detailRenovacionData.data : {};
+    const renAt     = _detailRenovacionData && _detailRenovacionData.updatedAt
+      ? new Date(_detailRenovacionData.updatedAt).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})
+      : null;
+    const planWeeks = _detailPlanData && _detailPlanData.weeks ? _detailPlanData.weeks : 6;
+
+    const _inp = (id, label, type, val, ph, extra) => `
+      <div style="margin-bottom:10px">
+        <label style="display:block;font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${label}</label>
+        ${type === 'textarea'
+          ? `<textarea id="ren_${id}" rows="2" placeholder="${ph||''}" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.15);background:#060707;color:#F4F4F0;font-size:12px;resize:vertical;box-sizing:border-box;line-height:1.4">${String(val||'').replace(/</g,'&lt;')}</textarea>`
+          : `<input id="ren_${id}" type="${type||'text'}" value="${String(val||'').replace(/"/g,'&quot;')}" placeholder="${ph||''}" ${extra||''} style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.15);background:#060707;color:#F4F4F0;font-size:12px;box-sizing:border-box">`
+        }
+      </div>`;
+
+    const _sel = (id, label, opts, val) => `
+      <div style="margin-bottom:10px">
+        <label style="display:block;font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${label}</label>
+        <select id="ren_${id}" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.15);background:#060707;color:#F4F4F0;font-size:12px;box-sizing:border-box">
+          ${opts.map(o=>`<option value="${o.v}" ${(String(val||'')).trim()===o.v?'selected':''}>${o.l}</option>`).join('')}
+        </select>
+      </div>`;
+
+    const _sec = (color, icon, title) =>
+      `<div style="font-size:10px;font-weight:700;color:${color};letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px">${icon} ${title}</div>`;
+
+    const _grid2 = (a, b) =>
+      `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${a}${b}</div>`;
+
+    cont.innerHTML = `
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;font-weight:700;margin-bottom:12px">
+        🔄 Ficha de renovación${renAt ? ' <span style="color:#555;font-size:10px;text-transform:none;font-weight:400">· guardada '+renAt+'</span>' : ''}
+      </div>
+
+      ${!renAt ? `<div style="background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.18);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#8aaa44;line-height:1.5">
+        Rellena esta ficha antes de generar el nuevo plan. Se guarda en Firestore y puedes copiar el bloque para el Motor VDSEN.
+      </div>` : ''}
+
+      <div style="background:rgba(244,244,240,.025);border:1px solid rgba(244,244,240,.07);border-radius:8px;padding:14px;margin-bottom:12px">
+        ${_sec('#C4FF00','📊','Biometría actual')}
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          ${_inp('peso','Peso (kg)','number',ren.peso,'80.5','step="0.1" min="30" max="250"')}
+          ${_inp('pct_grasa','% Grasa','number',ren.pct_grasa,'18.0','step="0.1" min="3" max="60"')}
+          ${_inp('smm','SMM (kg)','number',ren.smm,'35.0','step="0.1" min="10" max="80"')}
+        </div>
+        ${_inp('fecha_medicion','Fecha de medición','date',ren.fecha_medicion||new Date().toISOString().slice(0,10),'')}
+      </div>
+
+      <div style="background:rgba(244,244,240,.025);border:1px solid rgba(244,244,240,.07);border-radius:8px;padding:14px;margin-bottom:12px">
+        ${_sec('#44BB88','📋','Balance del plan anterior ('+planWeeks+' semanas)')}
+        ${_grid2(
+          _inp('semanas_completadas','Semanas completadas','number',ren.semanas_completadas,planWeeks,'min="0" max="'+planWeeks+'"'),
+          _sel('adherencia','Adherencia general',[
+            {v:'',l:'— seleccionar —'},
+            {v:'>90%',l:'> 90% — Excelente'},
+            {v:'75-90%',l:'75-90% — Buena'},
+            {v:'50-75%',l:'50-75% — Regular'},
+            {v:'<50%',l:'< 50% — Baja'},
+          ],ren.adherencia)
+        )}
+        ${_inp('ejercicios_favoritos','Ejercicios que más gustaron / respondieron bien','textarea',ren.ejercicios_favoritos,'Ej: Hip thrust, jalón al pecho, prensa inclinada…')}
+        ${_inp('ejercicios_cambiar','Ejercicios a eliminar o cambiar','textarea',ren.ejercicios_cambiar,'Ej: Sentadilla hack — molestia rodilla, curl femoral — aburrimiento…')}
+        ${_inp('tecnicas_ok','Técnicas que funcionaron bien','textarea',ren.tecnicas_ok,'Ej: Myo-reps en bíceps, SST en pecho…')}
+      </div>
+
+      <div style="background:rgba(244,244,240,.025);border:1px solid rgba(244,244,240,.07);border-radius:8px;padding:14px;margin-bottom:12px">
+        ${_sec('#9966cc','🎯','Objetivo actualizado')}
+        ${_grid2(
+          _sel('objetivo','Objetivo principal',[
+            {v:'',l:'— seleccionar —'},
+            {v:'volumen',l:'Volumen / Hipertrofia'},
+            {v:'definicion',l:'Definición / Déficit'},
+            {v:'fuerza',l:'Fuerza'},
+            {v:'recomposicion',l:'Recomposición corporal'},
+            {v:'mantenimiento',l:'Mantenimiento'},
+          ],ren.objetivo),
+          _sel('enfoque_calorico','Enfoque calórico',[
+            {v:'',l:'— seleccionar —'},
+            {v:'superavit',l:'Superávit'},
+            {v:'deficit',l:'Déficit'},
+            {v:'mantenimiento',l:'Mantenimiento / TDEE'},
+            {v:'carb_cycling',l:'Carb cycling'},
+          ],ren.enfoque_calorico)
+        )}
+        ${_inp('grupos_prioritarios','Grupos musculares prioritarios','textarea',ren.grupos_prioritarios,'Ej: Glúteo, espalda dorsal, tríceps…')}
+        ${_inp('evento_objetivo','Evento / fecha objetivo','text',ren.evento_objetivo,'Ej: Competencia 15 mar, viaje playa 1 jun…','')}
+      </div>
+
+      <div style="background:rgba(244,244,240,.025);border:1px solid rgba(244,244,240,.07);border-radius:8px;padding:14px;margin-bottom:12px">
+        ${_sec('#FF8844','💤','Estado de recuperación')}
+        ${_grid2(
+          _sel('estres','Nivel de estrés (1 bajo · 5 alto)',[
+            {v:'',l:'—'},
+            {v:'1',l:'1 — Muy bajo'},
+            {v:'2',l:'2 — Bajo'},
+            {v:'3',l:'3 — Moderado'},
+            {v:'4',l:'4 — Alto'},
+            {v:'5',l:'5 — Muy alto'},
+          ],ren.estres),
+          _inp('sueno_h','Sueño promedio (h/noche)','number',ren.sueno_h,'7.5','step="0.5" min="3" max="12"')
+        )}
+        ${_inp('lesiones_nuevas','Lesiones nuevas o limitaciones','textarea',ren.lesiones_nuevas,'Ninguna / Molestia hombro derecho…')}
+        ${_inp('ejercicios_evitar','Ejercicios a evitar en el nuevo plan','textarea',ren.ejercicios_evitar,'Ej: Press militar, peso muerto convencional…')}
+      </div>
+
+      <div style="background:rgba(244,244,240,.025);border:1px solid rgba(244,244,240,.07);border-radius:8px;padding:14px;margin-bottom:12px">
+        ${_sec('#22aadd','📅','Logística')}
+        ${_grid2(
+          _inp('dias_semana','Días / semana','number',ren.dias_semana||fichaData.dias_semana,'4','min="1" max="7"'),
+          _inp('duracion_min','Duración sesión (min)','number',ren.duracion_min||fichaData.duracion_sesion_min,'75','min="20" max="180"')
+        )}
+        ${_inp('equipamiento','Equipamiento disponible / cambios','textarea',ren.equipamiento,'Sin cambios / Ahora tiene barra olímpica en casa…')}
+      </div>
+
+      <div style="background:rgba(244,244,240,.025);border:1px solid rgba(244,244,240,.07);border-radius:8px;padding:14px;margin-bottom:14px">
+        ${_sec('#F4F4F0','📝','Notas del coach')}
+        ${_inp('notas_coach','Observaciones y prioridades para el nuevo plan','textarea',ren.notas_coach,'Ej: Priorizar glúteo este mesociclo, bajar volumen en pierna, introducir FST-7 en bíceps…')}
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <button onclick="saveRenovacion('${clientId}')" id="renSaveBtn_${clientId}" style="flex:1;min-width:140px;padding:10px 16px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:.02em">💾 Guardar ficha</button>
+        <button onclick="_copyRenovacionText('${clientId}')" style="flex:1;min-width:140px;padding:10px 16px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.07);color:#C4FF00;font-size:13px;font-weight:700;cursor:pointer">📋 Copiar para Motor VDSEN</button>
+      </div>
+      <div id="renStatus_${clientId}" style="font-size:11px;color:#555;min-height:18px"></div>`;
+  }
+  window._renderClientTabRenovar = _renderClientTabRenovar;
+
+  async function saveRenovacion(clientId) {
+    const btn    = document.getElementById('renSaveBtn_'+clientId);
+    const status = document.getElementById('renStatus_'+clientId);
+    const fld    = id => { const el = document.getElementById('ren_'+id); return el ? el.value : ''; };
+    const data   = {
+      peso: fld('peso'), pct_grasa: fld('pct_grasa'), smm: fld('smm'),
+      fecha_medicion: fld('fecha_medicion'),
+      semanas_completadas: fld('semanas_completadas'), adherencia: fld('adherencia'),
+      ejercicios_favoritos: fld('ejercicios_favoritos'),
+      ejercicios_cambiar: fld('ejercicios_cambiar'),
+      tecnicas_ok: fld('tecnicas_ok'),
+      objetivo: fld('objetivo'), enfoque_calorico: fld('enfoque_calorico'),
+      grupos_prioritarios: fld('grupos_prioritarios'), evento_objetivo: fld('evento_objetivo'),
+      estres: fld('estres'), sueno_h: fld('sueno_h'),
+      lesiones_nuevas: fld('lesiones_nuevas'), ejercicios_evitar: fld('ejercicios_evitar'),
+      dias_semana: fld('dias_semana'), duracion_min: fld('duracion_min'),
+      equipamiento: fld('equipamiento'), notas_coach: fld('notas_coach'),
+    };
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
+    try {
+      await setDoc(doc(db, 'fichas_renovacion', clientId), { updatedAt: Date.now(), updatedBy: 'coach', data }, { merge: true });
+      _detailRenovacionData = { updatedAt: Date.now(), data };
+      if (status) { status.textContent = '✅ Guardado correctamente'; status.style.color = '#44BB88'; }
+      showToast('Ficha de renovación guardada');
+    } catch(e) {
+      if (status) { status.textContent = '❌ ' + e.message; status.style.color = '#FF6060'; }
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar ficha'; }
+    }
+  }
+  window.saveRenovacion = saveRenovacion;
+
+  function _copyRenovacionText(clientId) {
+    const fld       = id => { const el = document.getElementById('ren_'+id); return el ? el.value.trim() : ''; };
+    const c         = _detailClientData || {};
+    const ficha     = _detailFichaData;
+    const fichaData = ficha && ficha.data ? ficha.data : (ficha || {});
+    const planWeeks = _detailPlanData && _detailPlanData.weeks ? _detailPlanData.weeks : 6;
+    const fecha     = new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'});
+    const nombre    = c.displayName || fichaData.nombre || 'Cliente';
+    const L         = (label, val) => val ? label + ': ' + val + '\n' : '';
+
+    let txt = 'FICHA DE RENOVACIÓN DE PLAN — ' + nombre.toUpperCase() + '\n';
+    txt += 'Generada: ' + fecha + '\n';
+    txt += '─'.repeat(50) + '\n\n';
+
+    txt += 'DATOS PERSONALES (ficha original)\n';
+    txt += L('Nombre', c.displayName || fichaData.nombre);
+    txt += L('Sexo', fichaData.sexo);
+    txt += L('Edad', fichaData.edad ? fichaData.edad + ' años' : '');
+    txt += L('Talla', fichaData.talla_cm ? fichaData.talla_cm + ' cm' : '');
+    txt += L('Nivel', fichaData.nivel);
+    txt += L('Perfil', fichaData.perfil);
+    txt += '\n';
+
+    txt += 'BIOMETRÍA ACTUAL\n';
+    txt += L('Peso', fld('peso') ? fld('peso') + ' kg' : '');
+    txt += L('% Grasa', fld('pct_grasa') ? fld('pct_grasa') + '%' : '');
+    txt += L('SMM', fld('smm') ? fld('smm') + ' kg' : '');
+    txt += L('Fecha medición', fld('fecha_medicion'));
+    txt += '\n';
+
+    txt += 'BALANCE DEL PLAN ANTERIOR (' + planWeeks + ' semanas)\n';
+    txt += L('Semanas completadas', fld('semanas_completadas') ? fld('semanas_completadas') + '/' + planWeeks : '');
+    txt += L('Adherencia', fld('adherencia'));
+    txt += L('Ejercicios favoritos', fld('ejercicios_favoritos'));
+    txt += L('Ejercicios a cambiar/eliminar', fld('ejercicios_cambiar'));
+    txt += L('Técnicas que funcionaron', fld('tecnicas_ok'));
+    txt += '\n';
+
+    txt += 'OBJETIVO ACTUALIZADO\n';
+    txt += L('Objetivo principal', fld('objetivo'));
+    txt += L('Enfoque calórico', fld('enfoque_calorico'));
+    txt += L('Grupos prioritarios', fld('grupos_prioritarios'));
+    txt += L('Evento / fecha objetivo', fld('evento_objetivo'));
+    txt += '\n';
+
+    txt += 'ESTADO DE RECUPERACIÓN\n';
+    txt += L('Nivel de estrés (1-5)', fld('estres'));
+    txt += L('Sueño promedio', fld('sueno_h') ? fld('sueno_h') + ' h/noche' : '');
+    txt += L('Lesiones nuevas', fld('lesiones_nuevas'));
+    txt += L('Ejercicios a evitar', fld('ejercicios_evitar'));
+    txt += '\n';
+
+    txt += 'LOGÍSTICA\n';
+    txt += L('Días / semana', fld('dias_semana'));
+    txt += L('Duración sesión', fld('duracion_min') ? fld('duracion_min') + ' min' : '');
+    txt += L('Equipamiento', fld('equipamiento'));
+    txt += '\n';
+
+    if (fld('notas_coach')) {
+      txt += 'NOTAS DEL COACH\n';
+      txt += fld('notas_coach') + '\n\n';
+    }
+
+    const limOrig = [fichaData.lesiones, fichaData.ejercicios_evitar].filter(Boolean).join(' / ');
+    if (limOrig) {
+      txt += 'LIMITACIONES DE LA FICHA ORIGINAL\n';
+      txt += limOrig + '\n';
+    }
+
+    try {
+      navigator.clipboard.writeText(txt);
+    } catch(_) {
+      const ta = document.createElement('textarea');
+      ta.value = txt; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    const status = document.getElementById('renStatus_'+clientId);
+    if (status) { status.textContent = '✅ Copiado al portapapeles — pega en Motor VDSEN'; status.style.color = '#44BB88'; }
+    showToast('Ficha de renovación copiada');
+  }
+  window._copyRenovacionText = _copyRenovacionText;
 
   async function _modalApplyAnalisis(clientId) {
     const inputEl  = document.getElementById('_modalAnalysisInput_' + clientId);
