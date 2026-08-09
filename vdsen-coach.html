@@ -1147,6 +1147,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           let extraBadges = '';
           if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
 
+          const ciDone = !!(ci.peso || ci.hrv || ci.who5 || ci.energia || ci.sueno);
+          let doneCount = 0;
+          Object.keys(entries).forEach(k => { if (k.startsWith('done_'+week+'_') && entries[k]) doneCount++; });
+          const ciStatusBadge = `<span class="text-[10px] ml-2" style="color:${ciDone?'#44BB88':'#555'}">${ciDone?'CI ✓':'CI ✕'}</span>`;
+          const sessBadge = doneCount > 0 ? `<span class="text-[10px] ml-1" style="color:#888">${doneCount}ses</span>` : '';
+
           const statusIcon = c.activePlanId
             ? (planData ? "✅" : '<span title="activePlanId referencia un plan eliminado" style="cursor:help">🔴</span>')
             : "⚠️";
@@ -1174,7 +1180,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const search = (c.displayName + ' ' + c.email).toLowerCase();
           const safeName = (c.displayName || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
           return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
-            <span><strong>${c.displayName}</strong>${weekBadge} <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${liveBadge}${alertChip}</span>
+            <span><strong>${c.displayName}</strong>${weekBadge} <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${ciStatusBadge}${sessBadge}${liveBadge}${alertChip}</span>
             <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="deleteClient('${c.id}','${safeName}')" title="Eliminar cliente" style="padding:3px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:13px;cursor:pointer">🗑</button></span>
           </div>`;
         }).join('');
@@ -7200,36 +7206,6 @@ El esfuerzo no es negociable.
           ${digestItems}
         </div>`;
 
-      // Ordenar: alertas peligro primero, luego por última actividad
-      cards.sort((a, b) => {
-        const aDanger = a.alerts.filter(x => x.type === 'danger').length;
-        const bDanger = b.alerts.filter(x => x.type === 'danger').length;
-        if (aDanger !== bDanger) return bDanger - aDanger;
-        return b.updatedAt - a.updatedAt;
-      });
-
-      html += `<div class="text-xs text-[#888] uppercase tracking-wide font-semibold mb-2">Todos los clientes</div><div class="space-y-2">`;
-      cards.forEach(c => {
-        const alertBadges = c.alerts.map(a =>
-          `<span class="text-xs px-2 py-0.5 rounded" style="background:${a.type==='danger'?'rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444':'rgba(255,187,0,.1);border:1px solid #FFBB00;color:#FFBB00'}">${a.text}</span>`
-        ).join(' ');
-
-        html += `
-          <div class="card p-3 cursor-pointer hover:border-[#F4F4F0] transition" onclick="showClientDetail('${c.id}')">
-            <div class="flex justify-between items-start mb-1">
-              <div>
-                <span class="font-semibold">${c.displayName || c.email}</span>
-                <span class="text-xs text-[#888] ml-2">SEM ${c.week} ${c.week===6?'DELOAD':''}</span>
-              </div>
-              <div class="flex gap-1 items-center">
-                <span class="text-xs ${c.ciDone?'text-[#44BB88]':'text-[#555]'}">${c.ciDone?'CI ✓':'CI ✕'}</span>
-                <span class="text-xs text-[#888]">${c.doneCount}ses</span>
-              </div>
-            </div>
-            <div class="flex gap-1 flex-wrap">${alertBadges || '<span class="text-xs text-[#44BB88]">Sin alertas</span>'}</div>
-          </div>`;
-      });
-      html += `</div>`;
       cont.innerHTML = html;
     } catch(e) {
       cont.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;

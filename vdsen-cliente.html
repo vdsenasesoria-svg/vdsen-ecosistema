@@ -9434,11 +9434,30 @@ function ciW5(qi, val) {
   if (!LOGS[k]) LOGS[k] = {};
   if (!LOGS[k].w5s) LOGS[k].w5s = [null,null,null,null,null];
   LOGS[k].w5s[qi] = val;
-  // Calcular total si están todos
   if (LOGS[k].w5s.every(function(s){ return s !== null; })) {
     LOGS[k].who5 = String(LOGS[k].w5s.reduce(function(a,b){ return a+b; },0) * 4);
   }
   renderCheckin();
+  if (_ciAutoSaveTimer) clearTimeout(_ciAutoSaveTimer);
+  _ciAutoSaveTimer = setTimeout(function() { _ciAutoSaveTimer = null; guardarCI().catch(function(){}); }, 2000);
+}
+
+function ciICSSet(key, val) {
+  var k = ciKey();
+  if (!LOGS[k]) LOGS[k] = {};
+  if (!LOGS[k].ics) LOGS[k].ics = {};
+  if (val !== '' && val !== null && val !== undefined) {
+    LOGS[k].ics[key] = val;
+    var icsVals = Object.keys(LOGS[k].ics)
+      .filter(function(k2) { return /^(ej|libre)_/.test(k2); })
+      .map(function(k2) { return parseFloat(LOGS[k].ics[k2]); })
+      .filter(function(v) { return v > 0 && !isNaN(v); });
+    if (icsVals.length) {
+      LOGS[k].ics_promedio = Math.round(icsVals.reduce(function(a,b){return a+b;},0) / icsVals.length * 10) / 10;
+    }
+  }
+  if (_ciAutoSaveTimer) clearTimeout(_ciAutoSaveTimer);
+  _ciAutoSaveTimer = setTimeout(function() { _ciAutoSaveTimer = null; guardarCI().catch(function(){}); }, 2000);
 }
 
 function ciEnergia(val) {
