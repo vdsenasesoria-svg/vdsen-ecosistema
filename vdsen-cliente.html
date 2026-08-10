@@ -6304,43 +6304,9 @@ function renderEntrenamiento() {
     '<div id="exPanel" style="padding:0 12px 100px">'+
       _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
-    // Rest timer overlay (hidden) — premium design
-    '<div id="restTimerOverlay" onclick="stopRestTimer()" style="display:none;position:fixed;inset:0;background:rgba(6,14,26,.88);z-index:200;align-items:center;justify-content:center;flex-direction:column;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)">'+
-      '<div onclick="event.stopPropagation()" style="'+
-        'background:linear-gradient(160deg,rgba(10,18,32,1) 0%,rgba(6,14,26,1) 100%);'+
-        'border:1px solid rgba(196,255,0,.28);border-radius:28px;padding:36px 40px 32px;'+
-        'text-align:center;min-width:280px;max-width:320px;width:calc(100vw - 48px);'+
-        'box-shadow:0 0 0 1px rgba(196,255,0,.08),0 32px 64px rgba(0,0,0,.7),0 0 80px rgba(196,255,0,.06)">'+
-        '<div style="font-size:10px;color:var(--platinum);letter-spacing:3px;margin-bottom:8px;font-weight:700;text-transform:uppercase;opacity:.7">DESCANSO ACTIVO</div>'+
-        '<div id="restLastSet" style="font-size:12px;color:var(--grn);font-weight:700;min-height:18px;margin-bottom:14px;letter-spacing:.5px"></div>'+
-        '<div style="position:relative;width:160px;height:160px;margin:0 auto 20px">'+
-          '<svg viewBox="0 0 160 160" style="position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)">'+
-            '<circle cx="80" cy="80" r="70" fill="none" stroke="rgba(196,255,0,.1)" stroke-width="6"/>'+
-            '<circle id="restRing" cx="80" cy="80" r="70" fill="none" stroke="url(#rg1)" stroke-width="6" stroke-linecap="round" stroke-dasharray="439.8" stroke-dashoffset="0" style="transition:stroke-dashoffset .9s linear,stroke .5s"/>'+
-            '<defs><linearGradient id="rg1" x1="0%" y1="0%" x2="100%" y2="0%">'+
-              '<stop offset="0%" stop-color="#C4FF00"/><stop offset="50%" stop-color="#C4FF00"/><stop offset="100%" stop-color="#C4FF00"/>'+
-            '</linearGradient></defs>'+
-          '</svg>'+
-          '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">'+
-            '<div id="restTimerNum" style="font-size:60px;font-weight:700;color:var(--accent);line-height:1;font-family:\'Courier Prime\',monospace;letter-spacing:1px">—</div>'+
-            '<div id="restTimerSec" style="font-size:10px;color:var(--mt);letter-spacing:1px;font-weight:600"></div>'+
-          '</div>'+
-        '</div>'+
-        '<div style="font-size:11px;color:var(--mt);margin-bottom:20px;letter-spacing:.5px">Toca en cualquier lugar para cerrar</div>'+
-        '<div style="display:flex;gap:6px;justify-content:center;margin-bottom:10px">'+
-          [['30s',30],['1m',60],['1:30',90],['2m',120],['3m',180]].map(function(p){
-            return'<button onclick="event.stopPropagation();resetRestTimer('+p[1]+')" style="flex:1;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18);border-radius:10px;color:var(--platinum);font-size:11px;font-weight:700;padding:8px 2px;cursor:pointer">'+p[0]+'</button>';
-          }).join('')+
-        '</div>'+
-        '<div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px">'+
-          '<button onclick="event.stopPropagation();adjustRestTimer(-15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">−15s</button>'+
-          '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+15s</button>'+
-          '<button onclick="event.stopPropagation();adjustRestTimer(30)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+30s</button>'+
-        '</div>'+
-        '<button onclick="stopRestTimer()" style="width:100%;background:var(--gold-gradient);border:none;border-radius:14px;color:#0a0a0a;font-size:14px;font-weight:800;padding:15px;cursor:pointer;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.3)">SIGUIENTE SERIE ▶</button>'+
-      '</div>'+
-    '</div>';
-  // Inicializar anillo SVG si el timer está activo
+    '';
+  // Asegurar que el overlay existe en body (persiste entre re-renders)
+  _ensureRestTimerOverlay();
   if (_restEndMs && _restEndMs > Date.now()) {
     setTimeout(function(){_updateRestRing();},50);
   }
@@ -7379,6 +7345,41 @@ function saveUserNote(di, ei, text) {
   _refreshExPanelOnly();
 }
 
+function _ensureRestTimerOverlay() {
+  if (document.getElementById('restTimerOverlay')) return;
+  var el = document.createElement('div');
+  el.id = 'restTimerOverlay';
+  el.style.cssText = 'display:none;position:fixed;bottom:65px;left:8px;right:8px;z-index:2000;pointer-events:auto';
+  el.innerHTML =
+    '<div onclick="event.stopPropagation()" style="'+
+      'background:rgba(6,14,26,.97);border:1px solid rgba(196,255,0,.28);border-radius:20px;'+
+      'padding:12px 14px;display:flex;align-items:center;gap:14px;'+
+      'box-shadow:0 -4px 32px rgba(0,0,0,.6),0 0 0 1px rgba(196,255,0,.06),0 4px 24px rgba(0,0,0,.5);'+
+      'backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)">'+
+      '<div style="position:relative;width:60px;height:60px;flex-shrink:0">'+
+        '<svg viewBox="0 0 60 60" style="position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)">'+
+          '<circle cx="30" cy="30" r="26" fill="none" stroke="rgba(196,255,0,.1)" stroke-width="5"/>'+
+          '<circle id="restRing" cx="30" cy="30" r="26" fill="none" stroke="#C4FF00" stroke-width="5" stroke-linecap="round" stroke-dasharray="163.4" stroke-dashoffset="0" style="transition:stroke-dashoffset .9s linear,stroke .5s"/>'+
+        '</svg>'+
+        '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0">'+
+          '<div id="restTimerNum" style="font-size:16px;font-weight:700;color:#C4FF00;line-height:1;font-family:\'Courier Prime\',monospace">—</div>'+
+          '<div id="restTimerSec" style="font-size:7px;color:rgba(255,255,255,.4);font-weight:600;letter-spacing:.5px"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:9px;color:rgba(255,255,255,.4);letter-spacing:2px;font-weight:700;text-transform:uppercase">Descanso activo</div>'+
+        '<div id="restLastSet" style="font-size:11px;color:#6E9A6E;font-weight:700;margin:2px 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'+
+        '<div style="display:flex;gap:5px">'+
+          '<button onclick="event.stopPropagation();adjustRestTimer(-15)" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;padding:6px 0;cursor:pointer">−15s</button>'+
+          '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;padding:6px 0;cursor:pointer">+15s</button>'+
+          '<button onclick="stopRestTimer()" style="flex:2;background:#C4FF00;border:none;border-radius:8px;color:#0a0a0a;font-size:11px;font-weight:800;padding:6px 0;cursor:pointer;letter-spacing:.5px">SIGUIENTE ▶</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(el);
+}
+window._ensureRestTimerOverlay = _ensureRestTimerOverlay;
+
 function startRestTimer(seconds, lastSetKey) {
   // Si el cliente desactivó el temporizador, no mostrar overlay ni arrancar cuenta.
   if (isRestTimerDisabled()) { try { stopRestTimer(); } catch(_){} return; }
@@ -7395,10 +7396,11 @@ function startRestTimer(seconds, lastSetKey) {
   localStorage.setItem('vdsen_restEnd', _restEndMs);
   localStorage.setItem('vdsen_restTotal', seconds);
   _restSeconds = seconds;
+  _ensureRestTimerOverlay();
   _restEl = document.getElementById('restTimerNum');
   var overlay = document.getElementById('restTimerOverlay');
   if (!overlay) return;
-  overlay.style.display = 'flex';
+  overlay.style.display = 'block';
   // Mostrar datos del último set completado
   var lsEl = document.getElementById('restLastSet');
   if (lsEl) {
@@ -7420,7 +7422,7 @@ function _updateRestRing() {
   if (!ring || !_restEndMs || !_restTotalSeconds) return;
   var remaining = Math.max(0, (_restEndMs - Date.now()) / 1000);
   var pct = Math.max(0, Math.min(1, remaining / _restTotalSeconds));
-  ring.style.strokeDashoffset = 439.8 * (1 - pct);
+  ring.style.strokeDashoffset = 163.4 * (1 - pct);
   ring.style.stroke = _restSeconds <= 0 ? 'var(--red)' : _restSeconds <= 10 ? '#e8a040' : 'url(#rg1)';
 }
 function updateTimerDisplay() {
