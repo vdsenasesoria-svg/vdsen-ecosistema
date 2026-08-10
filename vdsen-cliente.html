@@ -1332,8 +1332,8 @@ async function loadPlan(user) {
       var exList = (d.exercises || []).map(function(e, ei) {
         var numSets = (e.sets || []).length || 3;
         var _rt0 = (e.sets && e.sets[0]) ? e.sets[0].repsTarget : 8;
-        // Preservar "SST-PROTOCOL" como string; coercionar solo valores numéricos
-        var repsTarget = (_rt0 === 'SST-PROTOCOL') ? 'SST-PROTOCOL' : (_rt0 || 8);
+        // Preservar string literals tal cual; coercionar solo valores numéricos
+        var repsTarget = (_rt0 === 'SST-PROTOCOL' || _rt0 === 'SST-RIV-PROTOCOL') ? _rt0 : (_rt0 || 8);
         var rirTarget  = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
         // Rango real de reps (heterogéneo Y3T: "5-10", homogéneo: "10", SST puro: "SST")
         var _repsRangeStr = _setsRepsLabel(e.sets);
@@ -1348,7 +1348,7 @@ async function loadPlan(user) {
           sets: (e.sets || []).map(function(s, si){
             return {
               setIndex: typeof s.setIndex === 'number' ? s.setIndex : si,
-              // Preservar "SST-PROTOCOL" tal cual
+              // Preservar string literals tal cual (SST-PROTOCOL, SST-RIV-PROTOCOL)
               repsTarget: (s.repsTarget !== undefined && s.repsTarget !== null) ? s.repsTarget : repsTarget,
               rirTarget:  s.rirTarget !== undefined ? s.rirTarget : rirTarget,
               load: s.load || 0,
@@ -3349,7 +3349,7 @@ function isTechniqueActive(ej, week) {
   if (!ej) return true;
   var totalW = (PLAN && PLAN.totalWeeks) ? PLAN.totalWeeks : 6;
   var tech = (ej.technique || '').toLowerCase();
-  if ((tech === 'sst' || tech === 'fst7') && week >= totalW) return false;
+  if ((tech === 'sst' || tech === 'sst_riv' || tech === 'fst7') && week >= totalW) return false;
   if (!ej.techniqueFromWeek) return true;
   return week >= ej.techniqueFromWeek;
 }
@@ -3358,9 +3358,11 @@ function isTechniqueActive(ej, week) {
 // Homogéneo [10,10,10] → "10" | Heterogéneo [5,5,10,10] → "5-10" | SST puro → "SST" | mixto → "5-10+SST"
 function _setsRepsLabel(sets) {
   if (!sets || !sets.length) return '—';
-  var hasSst = sets.some(function(s){ return s.repsTarget === 'SST-PROTOCOL'; });
+  var hasRiv  = sets.some(function(s){ return s.repsTarget === 'SST-RIV-PROTOCOL'; });
+  var hasSst  = sets.some(function(s){ return s.repsTarget === 'SST-PROTOCOL'; });
   var hasAmrap = sets.some(function(s){ return s.repsTarget === 999; });
-  var nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 999; }).map(function(s){ return s.repsTarget; });
+  if (!hasSst && !hasAmrap && hasRiv) return 'SST-RIV · 8 sets';
+  var nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 'SST-RIV-PROTOCOL' && s.repsTarget !== 999; }).map(function(s){ return s.repsTarget; });
   if (!nums.length && hasSst) return 'SST';
   if (!nums.length && hasAmrap) return 'AMRAP';
   if (!nums.length) return '—';
@@ -3380,7 +3382,7 @@ function isY3TExercise(ej) {
   // Detectar por setNote (S1 · FUERZA / S2 · HIPERTROFIA) aunque no haya technique explícito
   if (sets.some(function(s){ return s.setNote && (s.setNote.indexOf('S1') !== -1 || s.setNote.indexOf('S2') !== -1); })) return true;
   // Fallback numérico: ≥3 non-SST donde el primer set ≤6 reps y el último ≥8 reps
-  var nonSst = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
+  var nonSst = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 'SST-RIV-PROTOCOL'; });
   if (nonSst.length < 3) return false;
   return Number(nonSst[0].repsTarget) <= 6 && Number(nonSst[nonSst.length - 1].repsTarget) >= 8;
 }
@@ -3408,8 +3410,8 @@ var Y3T_PHASE_META = {
 function getEffectiveSets(ej, week, totalWeeks) {
   var sets = ej.sets || [];
   var tech = (ej.technique || '').toLowerCase();
-  // FST7 y lengthened_partials: vacío si inactivo, todos los sets si activo
-  if (tech === 'fst7' || tech === 'lengthened_partials') {
+  // FST7, sst_riv y lengthened_partials: vacío si inactivo, todos los sets si activo
+  if (tech === 'fst7' || tech === 'sst_riv' || tech === 'lengthened_partials') {
     return isTechniqueActive(ej, week) ? sets : [];
   }
   if (!isY3TExercise(ej)) return sets;
@@ -3420,30 +3422,34 @@ function getEffectiveSets(ej, week, totalWeeks) {
 
   var hasNotes = sets.some(function(s){ return s.setNote && (s.setNote.indexOf('S1') !== -1 || s.setNote.indexOf('S2') !== -1); });
 
+  function _isStrLiteral(r){ return r === 'SST-PROTOCOL' || r === 'SST-RIV-PROTOCOL'; }
   if (phase === 's1') {
     var s1 = hasNotes
-      ? sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && (s.setNote||'').indexOf('S1') !== -1; })
-      : sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget <= 6; });
-    return s1.length ? s1 : sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
+      ? sets.filter(function(s){ return !_isStrLiteral(s.repsTarget) && (s.setNote||'').indexOf('S1') !== -1; })
+      : sets.filter(function(s){ return !_isStrLiteral(s.repsTarget) && s.repsTarget <= 6; });
+    return s1.length ? s1 : sets.filter(function(s){ return !_isStrLiteral(s.repsTarget); });
   }
   if (phase === 's2') {
     var s12 = hasNotes
-      ? sets.filter(function(s){ var n=s.setNote||''; return s.repsTarget!=='SST-PROTOCOL'&&(n.indexOf('S1')!==-1||n.indexOf('S2')!==-1); })
-      : sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
-    return s12.length ? s12 : sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
+      ? sets.filter(function(s){ var n=s.setNote||''; return !_isStrLiteral(s.repsTarget)&&(n.indexOf('S1')!==-1||n.indexOf('S2')!==-1); })
+      : sets.filter(function(s){ return !_isStrLiteral(s.repsTarget); });
+    return s12.length ? s12 : sets.filter(function(s){ return !_isStrLiteral(s.repsTarget); });
   }
   // deload: solo sets S2 (recuperación — sin fuerza máxima ni SST); RIR ajustado por getAdjustedRIR
   var deloads = hasNotes
-    ? sets.filter(function(s){ return s.repsTarget!=='SST-PROTOCOL'&&(s.setNote||'').indexOf('S2')!==-1; })
-    : sets.filter(function(s){ return s.repsTarget!=='SST-PROTOCOL'&&s.repsTarget>=8; });
-  return deloads.length ? deloads : sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL'; });
+    ? sets.filter(function(s){ return !_isStrLiteral(s.repsTarget)&&(s.setNote||'').indexOf('S2')!==-1; })
+    : sets.filter(function(s){ return !_isStrLiteral(s.repsTarget)&&s.repsTarget>=8; });
+  return deloads.length ? deloads : sets.filter(function(s){ return !_isStrLiteral(s.repsTarget); });
 }
 
-// Cuenta "series efectivas" para MEV/MRV. FST7 cuenta como 3.5 (7 × 0.5).
+// Cuenta "series efectivas" para MEV/MRV.
+// fst7 = 3.5 (7 × 0.5) | sst/sst_riv = 4 | lengthened_partials = 0 (post-fallo, no suma al conteo base)
 function getEffectiveSetCount(ej, week, totalWeeks) {
   if (!isTechniqueActive(ej, week)) return 0;
   var tech = (ej.technique || '').toLowerCase();
   if (tech === 'fst7') return 3.5;
+  if (tech === 'sst' || tech === 'sst_riv') return 4;
+  if (tech === 'lengthened_partials') return 0;
   return getEffectiveSets(ej, week, totalWeeks).length;
 }
 
@@ -3560,7 +3566,9 @@ var TECHNIQUE_META = {
   tempo:       { label:'TEMPO',        color:'#888888', icon:'⏱', def:'Cada rep sigue una cadencia específica (excéntrica · pausa · concéntrica · pausa). Cuenta mentalmente cada fase.' },
   'iso-hold':  { label:'ISO-HOLD',     color:'#888888', icon:'🧱', def:'Mantén la posición de máxima tensión por el tiempo indicado al final (o inicio) de la serie. Cuenta en voz alta para no aguantar la respiración.' },
   fst7:        { label:'FST-7',        color:'#cc44aa', icon:'7️⃣', def:'7 series con 40 s de descanso entre cada una. Usa carga moderada — no es máximo esfuerzo, es bombeo fascial. Después de la serie 7 descansa 3 min completos antes del siguiente ejercicio.' },
-  lengthened_partials: { label:'PARCIALES ROM ELONGADO', color:'#22aadd', icon:'📏', def:'Realiza el movimiento solo en el rango de estiramiento máximo (parte baja del ROM). AMRAP: tantas reps como puedas manteniendo tensión constante en el músculo elongado, sin llegar a fallo técnico.' }
+  lengthened_partials: { label:'PARCIALES ROM ELONGADO', color:'#22aadd', icon:'📏', def:'Realiza el movimiento solo en el rango de estiramiento máximo (parte baja del ROM). AMRAP: tantas reps como puedas manteniendo tensión constante en el músculo elongado, sin llegar a fallo técnico.' },
+  sst_riv:     { label:'SST-RIV',      color:'#9966cc', icon:'🔻', def:'8 sets con pirámide de descanso 45-30-15-5-5-15-30-45 s. Protocolo de estiramiento piramidal Tuor: el descanso baja y sube en espejo. Descansa 5 min completos tras el bloque.' },
+  negatives:   { label:'NEGATIVAS',    color:'#cc4444', icon:'⬇️', def:'Excéntrico asistido post-fallo: haz la serie principal hasta RIR 0, luego ejecuta 4-6 repeticiones negativas (bajada de 4-6 s) con ayuda de un partner. Requiere compañero de entrenamiento.' }
 };
 
 // Descripciones cortas (siempre visibles) y detalle expandible (HTML) por técnica.
@@ -3586,6 +3594,10 @@ var TECHNIQUE_DESCRIPTIONS = {
     detail: '<div class="space-y-1 text-sm"><p class="font-semibold" style="color:#888">🕐 TEMPO — cómo leer los números (ej. 4010):</p><ul class="space-y-1 list-none"><li>• 1er número: <strong>bajada</strong> (excéntrico) en segundos</li><li>• 2do número: <strong>pausa abajo</strong></li><li>• 3er número: <strong>subida</strong> (concéntrico)</li><li>• 4to número: <strong>pausa arriba</strong></li></ul><p class="text-gray-400 text-xs">4010 = 4s bajando, 0s pausa, 1s subiendo, 0s pausa.</p></div>' },
   superset:    { short: 'Dos ejercicios seguidos sin descanso entre ellos.', detail: null },
   giant:       { short: 'Tres o más ejercicios seguidos sin descanso.', detail: null },
+  sst_riv:     { short: '8 sets con pirámide de descanso espejo: 45-30-15-5-5-15-30-45 s.',
+    detail: '<div class="space-y-2 text-sm"><p class="font-semibold" style="color:#9966cc">🔻 SST-RIV (Tuor) — secuencia de descansos:</p><ol class="space-y-1 list-none"><li>• 8 series con el mismo peso</li><li>• Descansos: <strong>45 · 30 · 15 · 5 · 5 · 15 · 30 · 45 s</strong></li><li>• En el pico del estímulo (series 4 y 5, descanso 5 s) el músculo está al límite</li><li>• Al terminar las 8 series: descanso completo de <strong>5 minutos</strong></li></ol><p class="text-gray-400 text-xs mt-2">Protocolo de estiramiento piramidal. Mantén la técnica impecable en las series de descanso corto.</p></div>' },
+  negatives:   { short: 'Serie principal al fallo + repeticiones negativas asistidas.',
+    detail: '<div class="space-y-2 text-sm"><p class="font-semibold" style="color:#cc4444">⬇️ NEGATIVAS — cómo ejecutarlas:</p><ul class="space-y-1 list-none"><li>• Haz la serie principal hasta <strong>RIR 0</strong> (fallo real)</li><li>• Con ayuda de tu partner: sube el peso</li><li>• Baja solo, en <strong>4-6 segundos</strong>, controlando hasta el fondo</li><li>• Repite <strong>4-6 negativas</strong> o hasta que ya no puedas frenar la bajada</li></ul><p class="text-gray-400 text-xs mt-2">⚠️ Requiere compañero de entrenamiento. Genera alta fatiga — recuperación 48-72 h.</p></div>' },
 };
 
 // Descripciones por fase Y3T — badge, texto corto y detalle expandible.
@@ -3602,11 +3614,14 @@ var Y3T_PHASE_DESCRIPTIONS = {
 
 // Badges para notas de sets individuales del plan.
 var SET_NOTE_LABELS = {
-  'S1 · FUERZA':                                  { icon: '💪', text: 'PESADO' },
-  'S2 · HIPERTROFIA':                             { icon: '📈', text: 'VOLUMEN' },
-  'S3 · SST':                                     { icon: '🔥', text: 'PROTOCOLO FINAL' },
-  'FST7 · Serie 7 FALLO':                         { icon: '⚡', text: 'FALLO TOTAL' },
-  'PARCIALES ELONGADOS · hasta fallo técnico':    { icon: '📐', text: 'ESTIRAMIENTO · AMRAP' },
+  'S1 · FUERZA':                                              { icon: '💪', text: 'PESADO' },
+  'S2 · HIPERTROFIA':                                         { icon: '📈', text: 'VOLUMEN' },
+  'S3 · SST':                                                 { icon: '🔥', text: 'PROTOCOLO FINAL' },
+  'FST7 · Serie 7 FALLO':                                     { icon: '⚡', text: 'FALLO TOTAL' },
+  'PARCIALES ELONGADOS · hasta fallo técnico':                { icon: '📐', text: 'ESTIRAMIENTO · AMRAP' },
+  'Serie principal':                                          { icon: '💪', text: 'SERIE PRINCIPAL' },
+  'RIR 0 → N negativas asistidas · 4-6s excéntrico':        { icon: '⬇️', text: 'NEGATIVAS' },
+  'SST-RIV-PROTOCOL · 8 sets piramidal':                     { icon: '🔻', text: 'SST-RIV · 8 SETS' },
 };
 
 function getTechniqueUI(exercise, y3tPhase) {
@@ -3956,6 +3971,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // Y3T: usar el repsTarget del set efectivo de la fase actual, no el rango global (5-10)
   var repsTarget = (_isY3T ? null : ej.repsRange) || (_firstEffSet ? _firstEffSet.repsTarget : 8) || 8;
   if (repsTarget === 'SST-PROTOCOL') repsTarget = 'SST';
+  if (repsTarget === 'SST-RIV-PROTOCOL') repsTarget = 'SST-RIV';
   if (repsTarget === 999) repsTarget = 'AMRAP';
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK);
   var unit = getExUnit(di, ei);
@@ -4125,6 +4141,11 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var _histWu = EXERCISE_HISTORY[_exNLower] || {};
       if (_histWu.load) wuRefLoad = parseFloat(_histWu.load) || 0;
     }
+    // Fallback semana 1: usar la carga planificada del primer set
+    if (!wuRefLoad) {
+      var _planLoad = (ej.sets && ej.sets[0] && ej.sets[0].load) ? parseFloat(ej.sets[0].load) : 0;
+      if (_planLoad > 0) wuRefLoad = _planLoad;
+    }
     if (wuRefLoad > 0) {
       var wuSets = [{pct:0.50,reps:8},{pct:0.70,reps:5},{pct:0.85,reps:2}];
       var wuRows = wuSets.map(function(ws) {
@@ -4245,9 +4266,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var _xSetLabel = '';
       if (_xSet) {
         var _xNote = _xSet.setNote || '';
-        var _xReps = _xSet.repsTarget === 'SST-PROTOCOL' ? 'SST' : (_xSet.repsTarget === 999 ? 'AMRAP' : _xSet.repsTarget);
-        var _xIsS1 = _xNote.indexOf('S1') !== -1 || (_xSet.repsTarget !== 'SST-PROTOCOL' && _xSet.repsTarget <= 6);
-        var _xColor = _xSet.repsTarget === 'SST-PROTOCOL' ? '#9966cc' : (_xIsS1 ? '#7ec0ff' : '#44BB88');
+        var _xReps = _xSet.repsTarget === 'SST-PROTOCOL' ? 'SST' : (_xSet.repsTarget === 'SST-RIV-PROTOCOL' ? 'SST-RIV' : (_xSet.repsTarget === 999 ? 'AMRAP' : _xSet.repsTarget));
+        var _xIsLiteral = _xSet.repsTarget === 'SST-PROTOCOL' || _xSet.repsTarget === 'SST-RIV-PROTOCOL';
+        var _xIsS1 = _xNote.indexOf('S1') !== -1 || (!_xIsLiteral && _xSet.repsTarget <= 6);
+        var _xColor = _xIsLiteral ? '#9966cc' : (_xIsS1 ? '#7ec0ff' : '#44BB88');
         var _xPhaseTag = _xNote ? _xNote.split('\u00b7')[0].trim() : (_xIsS1 ? 'S1' : 'S2');
         _xSetLabel = ' <span style="font-size:9px;font-weight:900;color:'+_xColor+';background:rgba(0,0,0,.25);padding:1px 6px;border-radius:3px">'+_xPhaseTag+' \u00b7 '+_xReps+' reps</span>';
       }
@@ -4275,13 +4297,14 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _xLastLabel = '';
     if (_xLastSet) {
       var _xLNote = _xLastSet.setNote || '';
-      var _xLReps = _xLastSet.repsTarget === 'SST-PROTOCOL' ? 'SST' : (_xLastSet.repsTarget === 999 ? 'AMRAP' : _xLastSet.repsTarget);
-      var _xLIsS1 = _xLNote.indexOf('S1') !== -1 || (_xLastSet.repsTarget !== 'SST-PROTOCOL' && _xLastSet.repsTarget <= 6);
-      var _xLColor = _xLastSet.repsTarget === 'SST-PROTOCOL' ? '#9966cc' : (_xLIsS1 ? '#7ec0ff' : '#44BB88');
+      var _xLReps = _xLastSet.repsTarget === 'SST-PROTOCOL' ? 'SST' : (_xLastSet.repsTarget === 'SST-RIV-PROTOCOL' ? 'SST-RIV' : (_xLastSet.repsTarget === 999 ? 'AMRAP' : _xLastSet.repsTarget));
+      var _xLIsLiteral = _xLastSet.repsTarget === 'SST-PROTOCOL' || _xLastSet.repsTarget === 'SST-RIV-PROTOCOL';
+      var _xLIsS1 = _xLNote.indexOf('S1') !== -1 || (!_xLIsLiteral && _xLastSet.repsTarget <= 6);
+      var _xLColor = _xLIsLiteral ? '#9966cc' : (_xLIsS1 ? '#7ec0ff' : '#44BB88');
       var _xLPhase = _xLNote ? _xLNote.split('\u00b7')[0].trim() : (_xLIsS1 ? 'S1' : 'S2');
       _xLastLabel = ' <span style="font-size:9px;font-weight:900;color:'+_xLColor+';background:rgba(0,0,0,.25);padding:1px 6px;border-radius:3px">'+_xLPhase+' \u00b7 '+_xLReps+' reps</span>';
       // Ajustar reps target del formulario al set real de la \u00faltima serie
-      if (_xLastSet.repsTarget !== 'SST-PROTOCOL' && _xLastSet.repsTarget !== 999 && !_exPfReps) _exPfReps = _xLastSet.repsTarget;
+      if (!_xLIsLiteral && _xLastSet.repsTarget !== 999 && !_exPfReps) _exPfReps = _xLastSet.repsTarget;
     }
     setsHtml +=
       '<div style="background:rgba(107,107,102,.04);border:2px solid rgba(107,107,102,.3);border-radius:12px;padding:14px;margin-top:4px">'+
@@ -4415,14 +4438,21 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       if (_isY3T && _effectiveSets && _effectiveSets[s]) {
         var _setReps = _effectiveSets[s].repsTarget;
         var _isSST = _setReps === 'SST-PROTOCOL';
-        var _isFuerzaSet = !_isSST && _setReps <= 6;
-        var _isS3Set = _y3tPhase === 's3' || _isSST;
+        var _isRIV = _setReps === 'SST-RIV-PROTOCOL';
+        var _isFuerzaSet = !_isSST && !_isRIV && _setReps <= 6;
+        var _isS3Set = _y3tPhase === 's3' || _isSST || _isRIV;
         var _setSubColor = _isFuerzaSet ? '#7ec0ff' : (_isS3Set ? '#FF8844' : '#44BB88');
-        var _setSubText = _isSST ? 'SST' : (_isFuerzaSet ? 'S1 · '+_setReps+' reps' : (_isS3Set ? 'S3 · '+_setReps+' reps' : 'S2 · '+_setReps+' reps'));
+        var _setSubText = _isSST ? 'SST' : (_isRIV ? 'SST-RIV' : (_isFuerzaSet ? 'S1 · '+_setReps+' reps' : (_isS3Set ? 'S3 · '+_setReps+' reps' : 'S2 · '+_setReps+' reps')));
         _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:'+_setSubColor+';background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+_setSubText+'</span>';
       } else if (_ejTechLower === 'fst7') {
         var _fst7Total = (ej.sets || []).length || 7;
         _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#cc44aa;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">FST-7 · '+(s+1)+'/'+_fst7Total+'</span>';
+      } else if (_ejTechLower === 'sst_riv') {
+        _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#9966cc;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">SST-RIV · '+(s+1)+'/8</span>';
+      } else if (_ejTechLower === 'negatives') {
+        var _negNote = (ej.sets && ej.sets[s] && ej.sets[s].setNote) || '';
+        var _negIsMain = _negNote === 'Serie principal' || s === 0;
+        _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#cc4444;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+(_negIsMain ? 'PRINCIPAL' : 'NEGATIVAS')+'</span>';
       } else if (_ejTechLower === 'lengthened_partials') {
         _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#22aadd;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">PARCIALES · AMRAP</span>';
       }
@@ -4441,7 +4471,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         (function(){
           var _tR = setSpec && setSpec.repsTarget !== undefined ? setSpec.repsTarget : repsTarget;
           var _tRirV = setSpec && setSpec.rirTarget !== undefined ? setSpec.rirTarget : baseRIR;
-          var _tRStr = _tR === 'SST-PROTOCOL' ? 'SST' : (_tR === 999 ? 'AMRAP' : String(_tR));
+          var _tRStr = _tR === 'SST-PROTOCOL' ? 'SST' : (_tR === 'SST-RIV-PROTOCOL' ? 'SST-RIV' : (_tR === 999 ? 'AMRAP' : String(_tR)));
           return '<div style="display:flex;align-items:stretch;gap:0;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.2);border-radius:10px;margin-bottom:10px;overflow:hidden">'+
             '<div style="flex:1;padding:10px 16px;text-align:center">'+
               '<div style="font-size:9px;letter-spacing:2px;color:var(--mt2);font-weight:700;margin-bottom:4px">REPS OBJETIVO</div>'+
@@ -4571,7 +4601,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.15);'+
             'display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mt);font-weight:700">'+(s+1)+'</div>'+
           '<div style="font-size:13px;font-weight:700;color:var(--mt)">SERIE '+(s+1)+'</div>'+
-          '<div style="margin-left:auto;font-size:11px;color:var(--mt)">'+(function(){ var _rt=setSpec?setSpec.repsTarget:repsTarget; return _rt==='SST-PROTOCOL'?'Ver protocolo SST':(_rt===999?'AMRAP':_rt); }())+' reps · RIR '+(setSpec&&setSpec.rirTarget!==undefined?setSpec.rirTarget:baseRIR)+'</div>'+
+          '<div style="margin-left:auto;font-size:11px;color:var(--mt)">'+(function(){ var _rt=setSpec?setSpec.repsTarget:repsTarget; return _rt==='SST-PROTOCOL'?'Ver protocolo SST':(_rt==='SST-RIV-PROTOCOL'?'SST-RIV · 8 sets':(_rt===999?'AMRAP':_rt)); }())+' reps · RIR '+(setSpec&&setSpec.rirTarget!==undefined?setSpec.rirTarget:baseRIR)+'</div>'+
         '</div>'+
         (setSpecBlock ? '<div style="margin-top:6px;margin-left:38px">'+setSpecBlock+'</div>' : '')+
       '</div>';
@@ -5176,6 +5206,7 @@ function expressSetPump(expK, val) {
 window.expressSetPump = expressSetPump;
 
 function markExpressDone(di, ei) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var expK = String(di)+'_'+String(ei);
   var cargaEl = document.getElementById('xcarga_'+expK);
   var repsEl  = document.getElementById('xreps_'+expK);
@@ -5242,6 +5273,7 @@ function clearExpressDone(di, ei) {
 window.clearExpressDone = clearExpressDone;
 
 function markExpressSerie(di, ei, si) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var expK = String(di)+'_'+String(ei);
   var _cargaSave = (document.getElementById('xcarga_'+expK)||{}).value || null;
   var _repsSave  = (document.getElementById('xreps_'+expK)||{}).value || null;
@@ -5525,6 +5557,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
 }
 
 function markExpressSSDone(di, ssMembers) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var _ssk = 'ss_'+di+'_'+ssMembers[0];
   var rirEl  = document.getElementById('xrir_val_'+_ssk);
   var icsEl  = document.getElementById('xics_'+_ssk);
@@ -5595,6 +5628,7 @@ function clearExpressSSDone(di, ssMembers, grp) {
 window.clearExpressSSDone = clearExpressSSDone;
 
 function markExpressSsRonda(di, ssMembers, rondaIdx) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+rondaIdx] = true;
   saveLogs();
   _refreshExPanelOnly();
@@ -5962,16 +5996,15 @@ function renderEntrenamiento() {
     } else if (done) {
       bg = 'rgba(110,154,110,.04)'; borderBot = 'rgba(110,154,110,.35)'; numColor = 'var(--grn)'; subColor = 'var(--grn)';
     } else {
-      // Semana futura: apagada, no clickeable
-      bg = 'transparent'; borderBot = 'transparent'; numColor = 'rgba(107,107,102,.3)'; subColor = 'rgba(107,107,102,.3)';
+      // Semana futura: visible y navegable (preview del plan)
+      bg = 'transparent'; borderBot = 'rgba(107,107,102,.18)'; numColor = 'rgba(244,244,240,.35)'; subColor = 'rgba(107,107,102,.45)';
     }
     var glow = isReal ? 'box-shadow:inset 0 -4px 0 var(--accent),0 0 18px rgba(107,107,102,.25);' : '';
     var pad  = isReal ? '12px 0 8px' : '8px 0 5px';
     var sz   = isReal ? '20px' : '15px';
     var mt   = isReal ? '12px' : '3px';
-    // Semanas futuras no son clickeables (sólo referencia visual)
-    var clickAttr = isFuture ? 'title="Semana no disponible aún"' : 'onclick="setWeek('+w+')" title="Ir a semana '+w+'"';
-    var cursor    = isFuture ? 'default' : 'pointer';
+    var clickAttr = 'onclick="setWeek('+w+')" title="'+(isFuture?'Vista previa Sem '+w:'Ir a semana '+w)+'"';
+    var cursor    = 'pointer';
     return '<button '+clickAttr+' style="'+
       'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+
       'padding:'+pad+';border:none;cursor:'+cursor+';flex:1;min-width:0;'+
@@ -6046,11 +6079,17 @@ function renderEntrenamiento() {
   // ── Banner de vista (cuando se navega a semana distinta a la real) ──
   var viewBanner = '';
   if (CURRENT_WEEK !== REAL_WEEK) {
-    viewBanner = '<div style="background:rgba(255,140,50,.08);border:1px solid rgba(255,140,50,.3);padding:9px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">'
-      + '<div style="font-size:11px;color:#FF8844;font-weight:600;line-height:1.4">'
-      + '👁 Revisando Sem '+ CURRENT_WEEK +' — tu semana activa es la <strong>'+REAL_WEEK+'</strong>'
+    var _isFutureView = CURRENT_WEEK > REAL_WEEK;
+    var _bannerColor  = _isFutureView ? 'rgba(107,107,200,.35)' : 'rgba(255,140,50,.3)';
+    var _bannerBg     = _isFutureView ? 'rgba(107,107,200,.06)' : 'rgba(255,140,50,.08)';
+    var _bannerText   = _isFutureView
+      ? '📋 Vista previa Sem '+ CURRENT_WEEK +' — no puedes registrar series en semanas futuras'
+      : '👁 Revisando Sem '+ CURRENT_WEEK +' — tu semana activa es la <strong>'+REAL_WEEK+'</strong>';
+    viewBanner = '<div style="background:'+_bannerBg+';border:1px solid '+_bannerColor+';padding:9px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">'
+      + '<div style="font-size:11px;color:'+(_isFutureView?'rgba(160,160,255,.9)':'#FF8844')+';font-weight:600;line-height:1.4">'
+      + _bannerText
       + '</div>'
-      + '<button onclick="setWeek('+REAL_WEEK+')" style="font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid #FF8844;background:rgba(255,140,50,.12);color:#FF8844;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">Ir a Sem '+REAL_WEEK+' →</button>'
+      + '<button onclick="setWeek('+REAL_WEEK+')" style="font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid '+(_isFutureView?'rgba(107,107,200,.5)':'#FF8844')+';background:'+(_isFutureView?'rgba(107,107,200,.12)':'rgba(255,140,50,.12)')+';color:'+(_isFutureView?'rgba(160,160,255,.9)':'#FF8844')+';cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">Sem '+REAL_WEEK+' →</button>'
       + '</div>';
   }
 
@@ -6392,6 +6431,11 @@ function buildBoostcampExercise(ej, di, ei) {
       var exNLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
       var histWu = EXERCISE_HISTORY[exNLower] || {};
       if (histWu.load) wuRefLoad = parseFloat(histWu.load) || 0;
+    }
+    // Fallback semana 1: usar la carga planificada del primer set
+    if (!wuRefLoad) {
+      var _bcPlanLoad = (ej.sets && ej.sets[0] && ej.sets[0].load) ? parseFloat(ej.sets[0].load) : 0;
+      if (_bcPlanLoad > 0) wuRefLoad = _bcPlanLoad;
     }
   }
   var wuHtml = '';
@@ -7007,6 +7051,7 @@ function addExtraSetNow(di, ei) {
 }
 
 function completeSet(key, di, ei, si, unit) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
   var reps  = document.getElementById('reps_'+key)?.value  || '';
@@ -7561,6 +7606,7 @@ function submitReadiness(di) {
 }
 
 async function markSessionDone(di) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var key = 'done_'+CURRENT_WEEK+'_'+di;
   if (LOGS[key]) {
     // Toggle off
@@ -10524,16 +10570,16 @@ const VDSEN_PDF = (() => {
         const rows=(day.exercises||[]).flatMap(ex=>{
           const sets=ex.sets||[]; const tec=(ex.technique&&ex.technique!=='straight')?ex.technique:'';
           const repsVals=new Set(sets.map(s=>s.repsTarget));
-          const isHetero=repsVals.size>1||sets.some(s=>s.repsTarget==='SST-PROTOCOL');
+          const isHetero=repsVals.size>1||sets.some(s=>s.repsTarget==='SST-PROTOCOL'||s.repsTarget==='SST-RIV-PROTOCOL');
           if(!isHetero){
             const _rt0=sets[0]?sets[0].repsTarget:null;
-            const reps=_rt0==='SST-PROTOCOL'?'SST':(_rt0===999?'AMRAP':(_rt0!=null?_rt0:''));
+            const reps=_rt0==='SST-PROTOCOL'?'SST':(_rt0==='SST-RIV-PROTOCOL'?'SST-RIV':(_rt0===999?'AMRAP':(_rt0!=null?_rt0:'')));
             const rir=sets[0]?('RIR '+sets[0].rirTarget):'';
             return [[ex.exerciseName||'', sets.length+'×'+reps, rir, tec]];
           }
           return sets.map((s,si)=>{
             const lbl=s.setNote||(si===0&&sets.length>1?'Serie 1':'Serie '+(si+1));
-            const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':(s.repsTarget===999?'AMRAP':s.repsTarget);
+            const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':(s.repsTarget==='SST-RIV-PROTOCOL'?'SST-RIV':(s.repsTarget===999?'AMRAP':s.repsTarget));
             return [si===0?(ex.exerciseName||''):'', lbl, rStr+' reps · RIR '+s.rirTarget, si===0?tec:''];
           });
         });
@@ -12377,7 +12423,7 @@ function calculateProgression(di, postData) {
       repsTarget = rp.length > 1 ? parseInt(rp[1]) : parseInt(rp[0]) || 8;
     } else if (ej.sets && ej.sets[0]) {
       var _effS = isY3TExercise(ej) ? (getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks())[0] || ej.sets[0]) : ej.sets[0];
-      if (_effS && _effS.repsTarget && _effS.repsTarget !== 'SST-PROTOCOL' && _effS.repsTarget !== 999) repsTarget = _effS.repsTarget;
+      if (_effS && _effS.repsTarget && _effS.repsTarget !== 'SST-PROTOCOL' && _effS.repsTarget !== 'SST-RIV-PROTOCOL' && _effS.repsTarget !== 999) repsTarget = _effS.repsTarget;
     }
 
     var action = 'maintain', newLoad = load, newSets = numSets, rirTarget = rirObjNext;
