@@ -4141,6 +4141,11 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var _histWu = EXERCISE_HISTORY[_exNLower] || {};
       if (_histWu.load) wuRefLoad = parseFloat(_histWu.load) || 0;
     }
+    // Fallback semana 1: usar la carga planificada del primer set
+    if (!wuRefLoad) {
+      var _planLoad = (ej.sets && ej.sets[0] && ej.sets[0].load) ? parseFloat(ej.sets[0].load) : 0;
+      if (_planLoad > 0) wuRefLoad = _planLoad;
+    }
     if (wuRefLoad > 0) {
       var wuSets = [{pct:0.50,reps:8},{pct:0.70,reps:5},{pct:0.85,reps:2}];
       var wuRows = wuSets.map(function(ws) {
@@ -5201,6 +5206,7 @@ function expressSetPump(expK, val) {
 window.expressSetPump = expressSetPump;
 
 function markExpressDone(di, ei) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var expK = String(di)+'_'+String(ei);
   var cargaEl = document.getElementById('xcarga_'+expK);
   var repsEl  = document.getElementById('xreps_'+expK);
@@ -5267,6 +5273,7 @@ function clearExpressDone(di, ei) {
 window.clearExpressDone = clearExpressDone;
 
 function markExpressSerie(di, ei, si) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var expK = String(di)+'_'+String(ei);
   var _cargaSave = (document.getElementById('xcarga_'+expK)||{}).value || null;
   var _repsSave  = (document.getElementById('xreps_'+expK)||{}).value || null;
@@ -5550,6 +5557,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
 }
 
 function markExpressSSDone(di, ssMembers) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var _ssk = 'ss_'+di+'_'+ssMembers[0];
   var rirEl  = document.getElementById('xrir_val_'+_ssk);
   var icsEl  = document.getElementById('xics_'+_ssk);
@@ -5620,6 +5628,7 @@ function clearExpressSSDone(di, ssMembers, grp) {
 window.clearExpressSSDone = clearExpressSSDone;
 
 function markExpressSsRonda(di, ssMembers, rondaIdx) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]+'_r'+rondaIdx] = true;
   saveLogs();
   _refreshExPanelOnly();
@@ -5987,16 +5996,15 @@ function renderEntrenamiento() {
     } else if (done) {
       bg = 'rgba(110,154,110,.04)'; borderBot = 'rgba(110,154,110,.35)'; numColor = 'var(--grn)'; subColor = 'var(--grn)';
     } else {
-      // Semana futura: apagada, no clickeable
-      bg = 'transparent'; borderBot = 'transparent'; numColor = 'rgba(107,107,102,.3)'; subColor = 'rgba(107,107,102,.3)';
+      // Semana futura: visible y navegable (preview del plan)
+      bg = 'transparent'; borderBot = 'rgba(107,107,102,.18)'; numColor = 'rgba(244,244,240,.35)'; subColor = 'rgba(107,107,102,.45)';
     }
     var glow = isReal ? 'box-shadow:inset 0 -4px 0 var(--accent),0 0 18px rgba(107,107,102,.25);' : '';
     var pad  = isReal ? '12px 0 8px' : '8px 0 5px';
     var sz   = isReal ? '20px' : '15px';
     var mt   = isReal ? '12px' : '3px';
-    // Semanas futuras no son clickeables (sólo referencia visual)
-    var clickAttr = isFuture ? 'title="Semana no disponible aún"' : 'onclick="setWeek('+w+')" title="Ir a semana '+w+'"';
-    var cursor    = isFuture ? 'default' : 'pointer';
+    var clickAttr = 'onclick="setWeek('+w+')" title="'+(isFuture?'Vista previa Sem '+w:'Ir a semana '+w)+'"';
+    var cursor    = 'pointer';
     return '<button '+clickAttr+' style="'+
       'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+
       'padding:'+pad+';border:none;cursor:'+cursor+';flex:1;min-width:0;'+
@@ -6071,11 +6079,17 @@ function renderEntrenamiento() {
   // ── Banner de vista (cuando se navega a semana distinta a la real) ──
   var viewBanner = '';
   if (CURRENT_WEEK !== REAL_WEEK) {
-    viewBanner = '<div style="background:rgba(255,140,50,.08);border:1px solid rgba(255,140,50,.3);padding:9px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">'
-      + '<div style="font-size:11px;color:#FF8844;font-weight:600;line-height:1.4">'
-      + '👁 Revisando Sem '+ CURRENT_WEEK +' — tu semana activa es la <strong>'+REAL_WEEK+'</strong>'
+    var _isFutureView = CURRENT_WEEK > REAL_WEEK;
+    var _bannerColor  = _isFutureView ? 'rgba(107,107,200,.35)' : 'rgba(255,140,50,.3)';
+    var _bannerBg     = _isFutureView ? 'rgba(107,107,200,.06)' : 'rgba(255,140,50,.08)';
+    var _bannerText   = _isFutureView
+      ? '📋 Vista previa Sem '+ CURRENT_WEEK +' — no puedes registrar series en semanas futuras'
+      : '👁 Revisando Sem '+ CURRENT_WEEK +' — tu semana activa es la <strong>'+REAL_WEEK+'</strong>';
+    viewBanner = '<div style="background:'+_bannerBg+';border:1px solid '+_bannerColor+';padding:9px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">'
+      + '<div style="font-size:11px;color:'+(_isFutureView?'rgba(160,160,255,.9)':'#FF8844')+';font-weight:600;line-height:1.4">'
+      + _bannerText
       + '</div>'
-      + '<button onclick="setWeek('+REAL_WEEK+')" style="font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid #FF8844;background:rgba(255,140,50,.12);color:#FF8844;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">Ir a Sem '+REAL_WEEK+' →</button>'
+      + '<button onclick="setWeek('+REAL_WEEK+')" style="font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid '+(_isFutureView?'rgba(107,107,200,.5)':'#FF8844')+';background:'+(_isFutureView?'rgba(107,107,200,.12)':'rgba(255,140,50,.12)')+';color:'+(_isFutureView?'rgba(160,160,255,.9)':'#FF8844')+';cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">Sem '+REAL_WEEK+' →</button>'
       + '</div>';
   }
 
@@ -6417,6 +6431,11 @@ function buildBoostcampExercise(ej, di, ei) {
       var exNLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
       var histWu = EXERCISE_HISTORY[exNLower] || {};
       if (histWu.load) wuRefLoad = parseFloat(histWu.load) || 0;
+    }
+    // Fallback semana 1: usar la carga planificada del primer set
+    if (!wuRefLoad) {
+      var _bcPlanLoad = (ej.sets && ej.sets[0] && ej.sets[0].load) ? parseFloat(ej.sets[0].load) : 0;
+      if (_bcPlanLoad > 0) wuRefLoad = _bcPlanLoad;
     }
   }
   var wuHtml = '';
@@ -7032,6 +7051,7 @@ function addExtraSetNow(di, ei) {
 }
 
 function completeSet(key, di, ei, si, unit) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
   var reps  = document.getElementById('reps_'+key)?.value  || '';
@@ -7586,6 +7606,7 @@ function submitReadiness(di) {
 }
 
 async function markSessionDone(di) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var key = 'done_'+CURRENT_WEEK+'_'+di;
   if (LOGS[key]) {
     // Toggle off
