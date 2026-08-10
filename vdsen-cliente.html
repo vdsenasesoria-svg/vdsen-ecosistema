@@ -4112,23 +4112,11 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</textarea>'+
     '</div>';
 
-  // ── D. Warm-up ────────────────────────────────────────────────────────
+  // ── D. Warm-up ─────────────────────────────────────────────────────────
+  // Solo en el primer ejercicio del día; Core/Cardio nunca calientan.
   var wuHtml = '';
-  var _noWuPatterns = ['Core','Cardio'];
-  // Sin catData → clave "desconocida" común, así solo el PRIMER ejercicio
-  // sin catálogo del día muestra calentamiento (no todos los sin match).
-  var _wuPatternKey = (catData && catData.motorPattern) ? catData.motorPattern : '__unknown__';
-  var _isFirstOfPattern = true;
-  if (_noWuPatterns.indexOf(_wuPatternKey) !== -1) {
-    _isFirstOfPattern = false;
-  } else {
-    var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : ejercicios;
-    for (var _pi = 0; _pi < ei; _pi++) {
-      var _pCat = _getCatalogData(_dayExs[_pi] ? (_dayExs[_pi].nombre || _dayExs[_pi].exerciseName || '') : '');
-      var _pKey = (_pCat && _pCat.motorPattern) ? _pCat.motorPattern : '__unknown__';
-      if (_pKey === _wuPatternKey) { _isFirstOfPattern = false; break; }
-    }
-  }
+  var _wuPatternKey = (catData && catData.motorPattern) ? catData.motorPattern : '';
+  var _isFirstOfPattern = (ei === 0) && (_wuPatternKey !== 'Core') && (_wuPatternKey !== 'Cardio');
   if (_isFirstOfPattern) {
     var wuRefLoad = 0;
     if (progrec && progrec.newLoad) wuRefLoad = parseFloat(progrec.newLoad) || 0;
@@ -6365,24 +6353,10 @@ function buildBoostcampExercise(ej, di, ei) {
   var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
   var unit = getExUnit(di, ei);
 
-  // ── Warm-up: solo primer ejercicio de cada patrón motor del día ─────
+  // ── Warm-up: solo el primer ejercicio del día ────────────────────────
   // Core y Cardio no requieren pirámide de calentamiento.
-  // Sin catData (ejercicio fuera de catálogo) → se agrupa bajo una clave
-  // "desconocida" común, así solo el PRIMER ejercicio sin catálogo del día
-  // muestra calentamiento, no todos los que carezcan de match.
-  var _noWuPatterns = ['Core','Cardio'];
-  var _wuPatternKey = (catData && catData.motorPattern) ? catData.motorPattern : '__unknown__';
-  var _isFirstOfPattern = true;
-  if (_noWuPatterns.indexOf(_wuPatternKey) !== -1) {
-    _isFirstOfPattern = false; // Core/Cardio nunca llevan warm-up
-  } else {
-    var _dayExs = (getSesiones()[di] && getSesiones()[di].exercises) ? getSesiones()[di].exercises : ejercicios;
-    for (var _pi = 0; _pi < ei; _pi++) {
-      var _pCat = _getCatalogData(_dayExs[_pi] ? (_dayExs[_pi].nombre || _dayExs[_pi].exerciseName || '') : '');
-      var _pKey = (_pCat && _pCat.motorPattern) ? _pCat.motorPattern : '__unknown__';
-      if (_pKey === _wuPatternKey) { _isFirstOfPattern = false; break; }
-    }
-  }
+  var _wuPatternKey = (catData && catData.motorPattern) ? catData.motorPattern : '';
+  var _isFirstOfPattern = (ei === 0) && (_wuPatternKey !== 'Core') && (_wuPatternKey !== 'Cardio');
 
   var wuRefLoad = 0;
   var progRecForWu = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
