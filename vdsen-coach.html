@@ -3177,9 +3177,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   function _setsRepsLabel(sets) {
     if (!sets || !sets.length) return '—';
-    const hasSst = sets.some(function(s){ return s.repsTarget === 'SST-PROTOCOL'; });
+    const hasRiv  = sets.some(function(s){ return s.repsTarget === 'SST-RIV-PROTOCOL'; });
+    const hasSst  = sets.some(function(s){ return s.repsTarget === 'SST-PROTOCOL'; });
     const hasAmrap = sets.some(function(s){ return s.repsTarget === 999; });
-    const nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 999; }).map(function(s){ return s.repsTarget; });
+    if (!hasSst && !hasAmrap && hasRiv) return 'SST-RIV · 8 sets';
+    const nums = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 'SST-RIV-PROTOCOL' && s.repsTarget !== 999; }).map(function(s){ return s.repsTarget; });
     if (!nums.length && hasSst) return 'SST';
     if (!nums.length && hasAmrap) return 'AMRAP';
     if (!nums.length) return '—';
@@ -3218,8 +3220,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           sets: Array.isArray(ex.sets) && ex.sets.length > 0
             ? ex.sets.map((s, si) => ({
                 setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
-                // Preservar "SST-PROTOCOL" y 999 (AMRAP) tal cual; convertir números normalmente
-                repsTarget: s.repsTarget === 'SST-PROTOCOL' ? 'SST-PROTOCOL' : (s.repsTarget === 999 || s.repsTarget === '999' ? 999 : (parseInt(s.repsTarget) || 8)),
+                // Preservar string literals y 999 (AMRAP) tal cual; convertir números normalmente
+                repsTarget: (s.repsTarget === 'SST-PROTOCOL' || s.repsTarget === 'SST-RIV-PROTOCOL') ? s.repsTarget : (s.repsTarget === 999 || s.repsTarget === '999' ? 999 : (parseInt(s.repsTarget) || 8)),
                 rirTarget: parseInt(s.rirTarget ?? 2),
                 load: parseFloat(s.load ?? 0) || 0,
                 restSeconds: parseInt(s.restSeconds ?? 90) || 90,
@@ -3341,13 +3343,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             msg: 'Hold declarado como ejercicio separado — integrar en techniqueNote del ejercicio base' });
         }
         if ((ex.technique === 'straight' || ex.technique === 'superset') && (ex.techniqueNote||'').includes('Y3T')) {
-          const straight = (ex.sets||[]).filter(s => s.repsTarget !== 'SST-PROTOCOL');
+          const straight = (ex.sets||[]).filter(s => s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 'SST-RIV-PROTOCOL');
           if (straight.length > 4) errors.push({ day: day.label, exercise: ex.exerciseName, type: 'Y3T_SETS_OVERFLOW',
             msg: `${straight.length} sets rectos — máximo 4 en Y3T (2×S1 + 2×S2)` });
         }
-        if (ex.technique === 'sst' && !ex.techniqueFromWeek) {
+        if ((ex.technique === 'sst' || ex.technique === 'sst_riv') && !ex.techniqueFromWeek) {
           errors.push({ day: day.label, exercise: ex.exerciseName, type: 'SST_MISSING_WEEK',
-            msg: 'SST sin techniqueFromWeek — se mostrará siempre (considera añadirlo)' });
+            msg: `${ex.technique.toUpperCase()} sin techniqueFromWeek — se mostrará siempre (considera añadirlo)` });
+        }
+        if (ex.technique === 'sst_riv') {
+          const rivSets = (ex.sets || []).filter(s => s.repsTarget === 'SST-RIV-PROTOCOL');
+          if (rivSets.length === 0) errors.push({ day: day.label, exercise: ex.exerciseName, type: 'SST_RIV_MISSING_PROTOCOL',
+            msg: 'sst_riv sin ningún set con repsTarget="SST-RIV-PROTOCOL"' });
+        }
+        if (ex.technique === 'negatives') {
+          const mainSets = (ex.sets || []).filter(s => s.setNote === 'Serie principal');
+          if (mainSets.length === 0) errors.push({ day: day.label, exercise: ex.exerciseName, type: 'NEGATIVES_NO_MAIN_SET',
+            msg: 'negatives sin ningún set marcado setNote="Serie principal"' });
         }
         if (ex.technique === 'fst7') {
           const setCount = (ex.sets || []).length;
@@ -3914,16 +3926,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           const rows=(day.exercises||[]).flatMap(ex=>{
             const sets=ex.sets||[]; const tec=(ex.technique&&ex.technique!=='straight')?ex.technique:'';
             const repsVals=new Set(sets.map(s=>s.repsTarget));
-            const isHetero=repsVals.size>1||sets.some(s=>s.repsTarget==='SST-PROTOCOL');
+            const isHetero=repsVals.size>1||sets.some(s=>s.repsTarget==='SST-PROTOCOL'||s.repsTarget==='SST-RIV-PROTOCOL');
             if(!isHetero){
               const _rt0=sets[0]?sets[0].repsTarget:null;
-              const reps=_rt0==='SST-PROTOCOL'?'SST':(_rt0===999?'AMRAP':(_rt0!=null?_rt0:''));
+              const reps=_rt0==='SST-PROTOCOL'?'SST':(_rt0==='SST-RIV-PROTOCOL'?'SST-RIV':(_rt0===999?'AMRAP':(_rt0!=null?_rt0:'')));
               const rir=sets[0]?('RIR '+sets[0].rirTarget):'';
               return [[ex.exerciseName||'', sets.length+'×'+reps, rir, tec]];
             }
             return sets.map((s,si)=>{
               const lbl=s.setNote||(sets.length>1?'Serie '+(si+1):'Serie 1');
-              const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':(s.repsTarget===999?'AMRAP':s.repsTarget);
+              const rStr=s.repsTarget==='SST-PROTOCOL'?'SST':(s.repsTarget==='SST-RIV-PROTOCOL'?'SST-RIV':(s.repsTarget===999?'AMRAP':s.repsTarget));
               return [si===0?(ex.exerciseName||''):'', lbl, rStr+' reps · RIR '+s.rirTarget, si===0?tec:''];
             });
           });
@@ -7712,7 +7724,7 @@ El esfuerzo no es negociable.
           const _r0 = sets[0]?.repsTarget; const diferentes = sets.some(s => s.repsTarget !== _r0 || s.rirTarget !== rirT || s.restSeconds !== rest || s.setNote || s.drop || s.tempo);
           if (diferentes) {
             sets.forEach((s, si) => {
-              const _rLabel = s.repsTarget === 'SST-PROTOCOL' ? 'SST' : (s.repsTarget === 999 ? 'AMRAP' : s.repsTarget);
+              const _rLabel = s.repsTarget === 'SST-PROTOCOL' ? 'SST' : (s.repsTarget === 'SST-RIV-PROTOCOL' ? 'SST-RIV' : (s.repsTarget === 999 ? 'AMRAP' : s.repsTarget));
               const parts = [`Serie ${si+1}: ${_rLabel} reps · RIR ${s.rirTarget} · ${s.restSeconds}s`];
               if (s.tempo) parts.push(`tempo ${s.tempo}`);
               if (s.drop) parts.push('DROP');
