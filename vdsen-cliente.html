@@ -4408,10 +4408,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
     var _setTargetHtml = '';
     if (_isHeteroSets && _psReps !== null && _psReps !== 'SST-PROTOCOL' && _psReps !== 'SST-RIV-PROTOCOL' && _psReps !== 999) {
-      _setTargetHtml = '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:5px">'+
-        '<span style="font-size:9px;font-weight:700;letter-spacing:1px;color:var(--mt2)">OBJETIVO:</span>'+
-        '<span style="font-size:14px;font-weight:900;color:var(--tx)">'+_psReps+' reps</span>'+
-        (_psRir !== null ? '<span style="font-size:12px;font-weight:700;color:var(--mt)">· RIR '+_psRir+'</span>' : '')+
+      _setTargetHtml = '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
+        '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
+        '<span style="font-size:18px;font-weight:900;color:var(--tx);line-height:1">'+_psReps+' reps</span>'+
+        (_psRir !== null ? '<span style="font-size:13px;font-weight:700;color:var(--mt)">· RIR '+_psRir+'</span>' : '')+
       '</div>';
     }
     var setSpecBlock = (setNote || setSpecBadges || _setTargetHtml)
@@ -4678,9 +4678,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</div>'
     : '';
 
-  var bannerHtml = _buildSessionTargetBanner(progrec, _prevWeekBanner, _histExBanner, unit, numSeries, repsTarget, baseRIR);
   var expressTipHtml = '';
-  return machineHtml + headerHtml + notaHtml + closedBannerHtml + bannerHtml + expressTipHtml + wuHtml + setsHtml + completedBlockHtml;
+  return machineHtml + headerHtml + notaHtml + closedBannerHtml + expressTipHtml + wuHtml + setsHtml + completedBlockHtml;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
