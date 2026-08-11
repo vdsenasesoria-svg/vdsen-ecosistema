@@ -4234,7 +4234,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const data={ cliente: cd.displayName||'Cliente',
         fecha: new Date().toLocaleDateString('es-MX',{month:'long',year:'numeric'}).toUpperCase(),
         tipo:'Integral', nutrition:nu, supplements:su, training:training,
-        foot:'VDSEN · Motor VDSEN v3.2. Documento personal — uso bajo supervisión de coach certificado.' };
+        foot:'VDSEN · Motor VDSEN v3.3. Documento personal — uso bajo supervisión de coach certificado.' };
       const pdf = await VDSEN_PDF.buildPlanPDF(data);
       pdf.save('VDSEN_Plan_'+(cd.displayName||'cliente').replace(/\s+/g,'_')+'.pdf');
       showToast('✅ PDF descargado');
