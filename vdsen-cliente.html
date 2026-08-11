@@ -3626,7 +3626,7 @@ var TECHNIQUE_DESCRIPTIONS = {
     detail: '<div class="space-y-2 text-sm"><p class="font-semibold" style="color:#9966cc">🔻 SST-RIV — cómo hacerlo:</p><ol class="space-y-1 list-none"><li>• 8 series con el mismo peso</li><li>• Descansos: <strong>45 · 30 · 15 · 5 · 5 · 15 · 30 · 45 segundos</strong></li><li>• Las series con 5 segundos de descanso son las más duras — es normal</li><li>• Mantén buena postura aunque cueste</li><li>• Al terminar las 8 series: descansa <strong>5 minutos completos</strong></li></ol></div>' },
   negatives:   { short: 'Tu serie normal, luego bajas el peso muy lento con ayuda de un compañero.',
     detail: '<div class="space-y-2 text-sm"><p class="font-semibold" style="color:#cc4444">⬇️ NEGATIVAS — así se hacen:</p><ul class="space-y-1 list-none"><li>• Haz tu serie normal hasta no poder hacer ninguna rep más</li><li>• Tu compañero te ayuda a <strong>subir el peso</strong></li><li>• Tú solo lo <strong>bajas lentísimo</strong> — cuenta 4-6 segundos al bajar</li><li>• Haz así <strong>4-6 veces</strong> o hasta que ya no puedas frenar la bajada</li></ul><p class="text-gray-400 text-xs mt-2">⚠️ Necesitas un compañero. Son muy exigentes — descansa bien el día siguiente.</p></div>' },
-  y3t:         { short: 'Semana 1 — pocas reps con el mayor peso posible, descansa 3-4 min. Semana 2 — reps moderadas, al terminar cada serie estira el músculo 45-60 segundos. Semana 3 — muchas reps con protocolo SST al final.',
+  y3t:         { short: 'Semana 1 — pocas reps con el mayor peso posible, descansa 3-4 min. Semana 2 — reps moderadas, al terminar las últimas 2 series estira el músculo 45-60 segundos. Semana 3 — muchas reps con protocolo SST al final.',
     detail: '<div class="space-y-2 text-sm"><p class="font-semibold" style="color:#f0c040">🔄 Y3T — cómo funciona el método:</p><ul class="space-y-1 list-none"><li><strong>Semana 1 (Pesada):</strong> pocas reps con el mayor peso posible. Descansa 3-4 minutos entre series.</li><li><strong>Semana 2 (Volumen):</strong> reps moderadas. Al terminar cada serie estira el músculo 45-60 segundos antes de la siguiente.</li><li><strong>Semana 3 (Intensa):</strong> muchas reps. Al terminar la última serie aplica el protocolo SST.</li></ul><p style="font-size:11px;color:rgba(255,255,255,.4);margin-top:6px">El método cambia cada semana — lee bien qué toca esta semana antes de empezar.</p></div>' },
 };
 
@@ -3634,7 +3634,7 @@ var TECHNIQUE_DESCRIPTIONS = {
 var Y3T_PHASE_DESCRIPTIONS = {
   s1:     { badge: '💪 SEMANA PESADA',  short: 'Pocas reps con el mayor peso posible. Descansa completo entre series.',
     detail: '<div class="space-y-1 text-sm"><p>• Usa el <strong>peso más alto que puedas levantar con buena postura</strong></p><p>• Descansa <strong>3-4 minutos completos</strong> entre series — no te apures</p><p>• Si llegas a todas las reps con facilidad, sube el peso la próxima sesión</p></div>' },
-  s2:     { badge: '📈 SEMANA VOLUMEN', short: 'Más reps que la semana pasada. Al terminar cada serie estira el músculo 45-60 s.',
+  s2:     { badge: '📈 SEMANA VOLUMEN', short: 'Más reps que la semana pasada. Al terminar las últimas 2 series estira el músculo 45-60 segundos.',
     detail: '<div class="space-y-1 text-sm"><p>• Usa un peso un poco más moderado que la semana anterior</p><p>• Descansa <strong>2-3 minutos</strong> entre series</p><p class="font-semibold text-yellow-400">• En las últimas 2 series: al terminar las reps, lleva el músculo a la posición de máximo estiramiento y <strong>aguanta 45-60 segundos</strong> antes de soltar</p></div>' },
   s3:     { badge: '🔥 SEMANA INTENSA', short: 'Más series y más reps. Al terminar la última serie aplica el protocolo SST.',
     detail: '<div class="space-y-1 text-sm"><p>• Peso más ligero — el objetivo es hacer muchas reps y sentir el músculo trabajar</p><p>• Descansa <strong>90 segundos-2 minutos</strong> entre series</p><p class="font-semibold text-orange-400">• Al terminar todas las series: aplica el <strong>protocolo SST</strong> (ver instrucciones del último set)</p></div>' },
@@ -4382,8 +4382,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // Instrucción específica del set (técnica + nota del coach)
     var _setInstrHtml = '';
     var _techLowerS = (ej.technique || 'straight').toLowerCase();
-    var _coachNoteEx = (ej.coachNote || '').trim();
-    var _techNoteEx  = (ej.techniqueNote || '').trim();
     var _instrLines = [];
     if (_isY3T && _effectiveSets && _effectiveSets[s]) {
       var _sRepsV = _effectiveSets[s].repsTarget;
@@ -4391,14 +4389,17 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var _sIsFuerza = !_sIsSSTV && typeof _sRepsV === 'number' && _sRepsV <= 6;
       var _sIsS3V = _y3tPhase === 's3' || _sIsSSTV;
       var _sPhKey = _sIsSSTV ? 's3' : (_sIsFuerza ? 's1' : (_sIsS3V ? 's3' : 's2'));
-      var _sPhDesc = Y3T_PHASE_DESCRIPTIONS[_sPhKey];
-      if (_sPhDesc && _sPhDesc.short) _instrLines.push(_sPhDesc.short);
+      // S2: solo recordar el estiramiento en las últimas 2 series
+      if (_sPhKey === 's2') {
+        if (s >= numSeries - 2) _instrLines.push('⏸ Al terminar esta serie: estira el músculo 45-60 segundos.');
+      } else {
+        var _sPhDesc = Y3T_PHASE_DESCRIPTIONS[_sPhKey];
+        if (_sPhDesc && _sPhDesc.short) _instrLines.push(_sPhDesc.short);
+      }
     } else if (_techLowerS !== 'straight') {
       var _tdescS = TECHNIQUE_DESCRIPTIONS[_techLowerS];
-      var _tShortS = (_tdescS && _tdescS.short) ? _tdescS.short : (_techNoteEx || '');
-      if (_tShortS) _instrLines.push(_tShortS);
+      if (_tdescS && _tdescS.short) _instrLines.push(_tdescS.short);
     }
-    if (_coachNoteEx && _instrLines.indexOf(_coachNoteEx) === -1) _instrLines.push(_coachNoteEx);
     if (_instrLines.length) {
       _setInstrHtml = '<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;background:rgba(107,107,102,.07);border-left:2px solid rgba(107,107,102,.4);font-size:11.5px;color:var(--mt);line-height:1.6">'+
         _instrLines.join('<br>')+
