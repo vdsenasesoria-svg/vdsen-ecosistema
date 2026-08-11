@@ -4070,6 +4070,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             const sets=ex.sets||[];
             if(!sets.length&&!ex.exerciseName) return;
             const d=s.doc;
+            // separador entre ejercicios (excepto el primero)
+            if(ei>0){ _need(s,4,hm); d.setDrawColor(...HAIR); d.setLineWidth(0.3); d.line(ML,s.y,ML+CW,s.y); s.y+=4; }
             const tec=((ex.technique||'straight').toLowerCase().trim());
             const tecLabel=TECH_LABELS_PDF[tec]||(tec!=='straight'?tec.toUpperCase():'');
             const rawTecDesc=(ex.techniqueNote||'').trim()||TECH_DESCS_PDF[tec]||'';
@@ -4080,7 +4082,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             d.setFillColor(220,220,214); d.rect(ML,yH,CW,8,'F');
             d.setFont(F_BODY,'normal'); d.setFontSize(10.5); d.setTextColor(...OFFBLACK);
             d.text((ei+1)+'. '+(ex.exerciseName||''), ML+4, yH+4.5, {baseline:'middle'});
-            if(tecLabel){ d.setFont(F_DATA,'normal'); d.setFontSize(7.5); d.setTextColor(...GRIS);
+            if(tecLabel){ d.setFont(F_DATA,'bold'); d.setFontSize(7); d.setTextColor(60,60,55);
               d.text(tecLabel, PW-MR-2, yH+4.5, {align:'right', baseline:'middle'}); }
             s.y=yH+8+2;
             // ── Sets ──
@@ -4103,18 +4105,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             // ── Technique instructions ──
             const instrText=(tecDesc&&coachNote)?tecDesc+'\nNota del coach: '+coachNote:(coachNote||tecDesc);
             if(instrText){
-              _need(s,16,hm);
-              const instrLines=d.splitTextToSize(instrText,CW-8);
-              const instrH=instrLines.length*3.8+5;
-              d.setFillColor(236,236,230); d.rect(ML,s.y,CW,instrH,'F');
-              d.setFillColor(...GRIS); d.rect(ML,s.y,1.5,instrH,'F');
-              d.setFont(F_BODY,'normal'); d.setFontSize(8.5); d.setTextColor(65,65,60);
-              d.text(instrLines, ML+5, s.y+3.6);
-              s.y+=instrH+2;
+              // setFont/Size ANTES de splitTextToSize para que jsPDF calcule anchos correctamente
+              d.setFont(F_BODY,'normal'); d.setFontSize(8.5);
+              const instrLines=d.splitTextToSize(instrText, CW-10);
+              const lh=3.9;
+              const instrH=instrLines.length*lh+6;
+              _need(s, instrH+2, hm);
+              const iy=s.y;
+              d.setFillColor(230,230,224); d.rect(ML,iy,CW,instrH,'F');
+              d.setFillColor(...GRIS); d.rect(ML,iy,2,instrH,'F');
+              d.setTextColor(45,45,40);
+              instrLines.forEach((ln,li)=>d.text(ln, ML+6, iy+3.8+li*lh));
+              s.y=iy+instrH+3;
             }
-            s.y+=5;
           });
-          s.y+=2;
+          s.y+=4;
         });
       }
       const su=data.supplements;
