@@ -9467,7 +9467,11 @@ function renderCheckin() {
   }
 
   cont.innerHTML =
-    '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:2px">CHECK-IN SEM ' + sem + '</div>'
+    // Botón flotante de guardar
+    + '<div id="ciFloatSave" style="position:fixed;bottom:80px;right:14px;z-index:300">'
+    +   '<button onclick="guardarCI()" style="padding:12px 18px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:1.5px;cursor:pointer;border-radius:50px;box-shadow:0 4px 20px rgba(196,255,0,.35);white-space:nowrap">💾 GUARDAR</button>'
+    + '</div>'
+    + '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:2px">CHECK-IN SEM ' + sem + '</div>'
     + '<div style="font-size:12px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">Rellena al inicio de cada semana — tu coach lo usa para ajustar el plan</div>'
 
     // ── MEDIDAS ──────────────────────────────────────
@@ -9538,7 +9542,7 @@ function renderCheckin() {
     + '</div>'
 
     // ── GUARDAR ───────────────────────────────────────
-    + '<button onclick="guardarCI()" style="width:100%;padding:15px;background:var(--accent);border:none;color:#0A0A0A;font-family:\'Big Shoulders Display\',var(--ff);font-size:18px;font-weight:900;letter-spacing:3px;cursor:pointer;margin-bottom:16px;border-radius:4px">'
+    + '<button onclick="guardarCI()" style="width:100%;padding:15px;background:var(--accent);border:none;color:#0A0A0A;font-family:\'Big Shoulders Display\',var(--ff);font-size:18px;font-weight:900;letter-spacing:3px;cursor:pointer;margin-bottom:80px;border-radius:4px">'
     + '✓ GUARDAR CHECK-IN SEM ' + sem
     + '</button>';
 }
