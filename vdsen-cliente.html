@@ -269,7 +269,7 @@ button:active{opacity:.85}
     <div class="login-card">
       <div class="lf">
         <label>Celular o correo</label>
-        <input type="text" id="liEmail" placeholder="5551234567 o tucorreo@email.com" autocomplete="username" inputmode="text">
+        <input type="text" id="liEmail" placeholder="5551234567 o tucorreo@email.com" autocomplete="username" inputmode="tel">
         <div id="liHint" style="font-size:10px;color:var(--mt);line-height:1.5;margin-top:4px">
           📌 Si usás celular: <strong style="color:var(--tx)">10 dígitos</strong> (sin espacios, guiones ni paréntesis). Ej. <span style="color:var(--accent);font-weight:700">5551234567</span>
         </div>
@@ -1200,7 +1200,10 @@ function showPhoneConfirmModal(clientRef, clientData) {
   var btnSave = ov.querySelector('#pcfSave');
   var btnKeep = ov.querySelector('#pcfKeep');
   var btnSkip = ov.querySelector('#pcfSkip');
-  if (btnSkip) btnSkip.onclick = function(){ ov.remove(); };
+  if (btnSkip) btnSkip.onclick = async function(){
+    try { await FB.updateDoc(clientRef, { phoneSkippedAt: Date.now() }); } catch(_){}
+    ov.remove();
+  };
   setTimeout(function(){ try { input.focus(); input.select && input.select(); } catch(_){} }, 100);
 
   function _norm(raw) {
@@ -1523,7 +1526,7 @@ async function loadPlan(user) {
 
     // Pedir confirmar/actualizar celular la primera vez tras esta actualización
     // (una sola vez por cliente — se guarda phoneConfirmedAt en Firestore)
-    if (!clientData.phoneConfirmedAt) {
+    if (!clientData.phoneConfirmedAt && !(clientData.phoneSkippedAt && Date.now() - clientData.phoneSkippedAt < 7*86400000)) {
       setTimeout(function(){ showPhoneConfirmModal(clientRef, clientData); }, 900);
     }
 
@@ -2469,7 +2472,7 @@ function buildHistorialWidget() {
     ciTrendHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
       + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">TENDENCIAS CHECK-IN</div>'
       + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(107,107,102,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
-      + '<div>SEM</div><div style="text-align:center">PESO</div><div style="text-align:center">HRV</div><div style="text-align:center">WHO-5</div><div style="text-align:center">ENERGÍA</div>'
+      + '<div>SEM</div><div style="text-align:center">PESO</div><div style="text-align:center">HRV(ms)</div><div style="text-align:center">BIENESTAR</div><div style="text-align:center">ENERGÍA</div>'
       + '</div>'
       + ciRows
       + sparkHtml
@@ -4016,7 +4019,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</div>'+
       '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
         '<div style="flex:1">'+
-          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
           '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
           '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala \u00b7 6-7 ok \u00b7 8-10 buena</div>'+
         '</div>'+
@@ -4175,7 +4178,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         // ICS
         '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end">'+
           '<div style="flex:1">'+
-            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
             (function(){
               var _icsVal = saved.ics || (_prevSesIcs || '');
               var _icsNum = parseInt(_icsVal);
@@ -4470,7 +4473,7 @@ function _buildCalisteniaCard(ejercicios, di, ei, isPartner) {
                 '<input id="cal_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#e8a040;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
               '<div style="width:54px;flex-shrink:0">'+
-                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">ICS</div>'+
+                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">Calidad</div>'+
                 '<input id="cal_ics_'+key+'" type="number" min="1" max="10" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#7ec0ff;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
             '</div>'+
@@ -5154,7 +5157,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '</div>'+
         '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
           '<div style="flex:1">'+
-            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
             '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
             '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala · 6-7 ok · 8-10 buena</div>'+
           '</div>'+
@@ -6193,7 +6196,7 @@ function buildBoostcampExercise(ej, di, ei) {
         })()
       : '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
           '<div style="flex:1">'+
-            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">ICS 1-10</div>'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">Calidad (1-10)</div>'+
             '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
             'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+

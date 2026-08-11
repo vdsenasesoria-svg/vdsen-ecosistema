@@ -226,7 +226,7 @@
 </script>
 
 <div class="main-content">
-  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button onclick="showSection('evaluacion')" class="btn-secondary text-sm">📥 Fichas recibidas</button><button id="repairPhoneBtn" style="display:none;padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
+  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button onclick="showSection('evaluacion')" class="btn-secondary text-sm">📥 Fichas recibidas</button></div><div id="clientList"></div></div>
   <div id="evaluacion" class="section"><div class="flex items-center gap-3 mb-4"><button onclick="showSection('clientes')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">← Clientes</button><h2 class="text-2xl font-bold" style="margin:0">Fichas / Intake</h2></div>
     <div class="card p-4 mb-4">
       <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">Ficha en blanco para nuevos clientes</h3>
@@ -325,7 +325,7 @@
     <div class="card p-4 mb-4">
       <label class="block text-sm font-medium mb-2">🔧 Herramientas de mantenimiento</label>
       <p class="text-xs text-[#888] mb-3">Úsalas solo si hay problemas de acceso con celular.</p>
-      <button onclick="repairPhoneIndexAll()" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer">🔧 Reparar acceso celular</button>
+      <button id="repairPhoneBtn" onclick="repairPhoneIndexAll()" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer">🔧 Reparar acceso celular</button>
     </div>
   </div>
 </div>
@@ -422,7 +422,10 @@
         <h3 class="text-xl font-bold" id="modalClientName">—</h3>
         <button onclick="navClient(1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" title="Siguiente cliente">▶</button>
       </div>
-      <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
+      <div class="flex items-center gap-2">
+        <button id="modalDeleteClientBtn" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:12px;cursor:pointer" title="Eliminar cliente">🗑 Eliminar</button>
+        <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
+      </div>
     </div>
     <div id="clientNavBar" class="flex gap-1 mb-3 overflow-x-auto pb-1"></div>
     <div id="modalClientBody"></div>
@@ -1106,7 +1109,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   window.isClientLiveTraining = isClientLiveTraining;
   
   async function initCoachUI() {
-    document.getElementById("repairPhoneBtn").onclick = () => repairPhoneIndexAll();
+    const _rpb = document.getElementById("repairPhoneBtn"); if (_rpb) _rpb.onclick = () => repairPhoneIndexAll();
     loadClientList();
     loadExerciseCatalog();
     loadClientsSelect();
@@ -1261,7 +1264,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const safeName = (c.displayName || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
           return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
             <span><strong>${c.displayName}</strong>${weekBadge} <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${liveBadge}${alertChip}</span>
-            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="deleteClient('${c.id}','${safeName}')" title="Eliminar cliente" style="padding:3px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:13px;cursor:pointer">🗑</button></span>
+            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button></span>
           </div>`;
         }).join('');
 
@@ -1357,6 +1360,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       // Delete client doc
       await deleteDoc(doc(db, 'clients', uid));
       showToast(`Cliente "${name}" eliminado`);
+      closeClientModal();
       await loadClientList();
     } catch(e) {
       showToast('Error al eliminar: ' + (e.message || e.code), true);
@@ -4163,6 +4167,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailClientData = clientSnap.data();
     const c = _detailClientData;
     title.textContent = c.displayName;
+    const _delBtn = document.getElementById('modalDeleteClientBtn');
+    if (_delBtn) {
+      _delBtn.style.display = '';
+      _delBtn.onclick = () => deleteClient(clientId, c.displayName || c.email || clientId);
+    }
     _renderClientNavBar(clientId);
 
     _detailPlanData = null;
