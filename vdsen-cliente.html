@@ -3700,31 +3700,8 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
       '</div>';
   }
 
-  // ── 1+2) INSTRUCCIONES UNIFICADAS: techniqueNote + coachNote + descripción ──
-  if (techNote || coachNote) {
-    // Card unificada cuando el coach dejó alguna nota
-    var _borderCol = meta ? meta.color : 'rgba(107,107,102,.5)';
-    var _shortTxt2  = (_tdesc && _tdesc.short) ? _tdesc.short : (meta ? meta.def : '');
-    var _detailHtml2 = (_tdesc && _tdesc.detail) ? _tdesc.detail : '';
-    var _noteId = 'cnote_'+di+'_'+ei;
-    html +=
-      '<div style="margin:0 0 14px;border-radius:12px;overflow:hidden;border:1px solid '+_borderCol+';background:rgba(107,107,102,.04)">' +
-        '<button onclick="(function(el){el.style.display=el.style.display===\'none\'?\'block\':\'none\';})(document.getElementById(\''+_noteId+'\'))" style="width:100%;text-align:left;padding:7px 12px;background:rgba(107,107,102,.14);display:flex;align-items:center;gap:8px;border:none;cursor:pointer">' +
-          '<span style="font-size:15px">📌</span>' +
-          '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:var(--accent)">NOTA DEL COACH</span>' +
-          (meta ? '<span style="margin-left:auto;font-size:9px;font-weight:800;padding:2px 8px;border-radius:5px;background:'+meta.color+';color:#fff">'+meta.icon+' '+meta.label+'</span>' : '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>') +
-        '</button>' +
-        '<div id="'+_noteId+'" style="display:block;padding:12px 14px">' +
-          (techNote ? '<div style="font-size:14px;font-weight:700;color:var(--tx);line-height:1.6'+(coachNote||_shortTxt2?';margin-bottom:10px':'')+'">' + techNote + '</div>' : '') +
-          (coachNote ? (techNote ? '<div style="height:1px;background:rgba(107,107,102,.25);margin-bottom:10px"></div>' : '') +
-            '<div style="font-size:13px;color:var(--mt2);line-height:1.6'+(techNote?'':';font-weight:600;color:var(--tx)')+'">'+coachNote+'</div>' : '') +
-          (_shortTxt2 && !coachNote ?
-            '<div style="font-size:11px;color:var(--mt);line-height:1.55;margin-top:'+(techNote?'10':'0')+'px'+(techNote?';padding-top:10px;border-top:1px solid rgba(107,107,102,.2)':'')+'">' +
-              (meta ? '<span style="color:'+meta.color+';font-weight:700">Protocolo: </span>' : '') + _shortTxt2 +
-            '</div>' : '') +
-        '</div>' +
-      '</div>';
-  } else if (meta) {
+  // ── Descripción de técnica (siempre desde TECHNIQUE_DESCRIPTIONS) ──────────
+  if (meta) {
     // Sin notas del coach → banner compacto solo con descripción de técnica
     var _shortTxt  = (_tdesc && _tdesc.short) ? _tdesc.short : meta.def;
     var _detailHtml = (_tdesc && _tdesc.detail) ? _tdesc.detail : '';
