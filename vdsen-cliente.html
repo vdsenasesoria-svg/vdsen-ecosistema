@@ -9039,6 +9039,18 @@ function ciEnergia(val) {
   renderCheckin();
 }
 
+function ciICSSet(key, val) {
+  var k = ciKey();
+  if (!LOGS[k]) LOGS[k] = {};
+  if (!LOGS[k].ics) LOGS[k].ics = {};
+  if (val !== '' && val !== null && val !== undefined) {
+    LOGS[k].ics[key] = parseFloat(val) || val;
+  } else {
+    delete LOGS[k].ics[key];
+  }
+}
+window.ciICSSet = ciICSSet;
+
 async function guardarCI() {
   var _ciBtn = document.querySelector('[onclick="guardarCI()"]');
   if (_ciBtn) { _ciBtn.disabled = true; _ciBtn.textContent = 'GUARDANDO...'; }
@@ -9058,6 +9070,13 @@ async function guardarCI() {
     if (!el) return;
     var campo = id.replace('ci_','');
     if (el.value !== '') d[campo] = parseFloat(el.value);
+  });
+  // Leer inputs de ICS por ejercicio (por si oninput no disparó)
+  document.querySelectorAll('[data-icskey]').forEach(function(el) {
+    var key = el.getAttribute('data-icskey');
+    if (!key || el.value === '') return;
+    if (!d.ics) d.ics = {};
+    d.ics[key] = parseFloat(el.value) || el.value;
   });
   d.semana = CURRENT_WEEK;
   d.fecha  = new Date().toISOString().split('T')[0];
@@ -9243,9 +9262,15 @@ function buildICSSection(d, sem) {
       var key  = 'ej_' + i;
       var savedVal = icsData[key];
       var logVal   = icsFromLogs[i];
-      var val      = savedVal || (logVal || '');
+      // Pre-write to LOGS if not already saved and we have log data
+      if (!savedVal && logVal) {
+        if (!d.ics) d.ics = {};
+        d.ics[key] = logVal;
+        savedVal = logVal; // treat as saved so hint shows correctly
+      }
+      var val  = savedVal || '';
       var name = ej.length > 32 ? ej.substring(0, 30) + '…' : ej;
-      var hint = (!savedVal && logVal)
+      var hint = (logVal && icsFromLogs[i])
         ? '<div style="font-size:10px;color:var(--mt);margin-top:2px">⚡ promedio de tus series</div>'
         : '';
       rowsHtml += fila(
