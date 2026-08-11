@@ -3966,35 +3966,25 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       if (LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_xpc]) _xDoneC++;
     }
     var _xPct = numSeries > 0 ? Math.round(_xDoneC / numSeries * 100) : 0;
-    var _xPBar = '<div style="display:flex;align-items:center;gap:8px;padding:0 0 8px">'+
-      '<div style="flex:1;height:3px;border-radius:2px;background:var(--border);overflow:hidden">'+
-        '<div style="height:100%;width:'+_xPct+'%;background:var(--grn);transition:width .3s;border-radius:2px"></div>'+
-      '</div>'+
-      '<span style="font-size:10px;color:var(--mt);flex-shrink:0;font-weight:700">'+_xDoneC+'/'+numSeries+'</span>'+
-    '</div>';
-    setsHtml = _xPBar + '<input type="hidden" id="xsets_'+_expK+'" value="'+numSeries+'">';
+    var _pillsHtml = '';
     for (var _xs = 0; _xs < numSeries - 1; _xs++) {
-      var _xKey = 'exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_xs;
-      var _xDone = !!LOGS[_xKey];
+      var _xDone = !!LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_xs];
       if (_xDone) {
-        setsHtml +=
-          '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(110,154,110,.07);border:1px solid rgba(110,154,110,.18);border-radius:12px;margin-bottom:8px">'+
-            '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">\u2713</div>'+
-            '<div style="font-size:13px;font-weight:800;color:var(--grn);flex:1">SERIE '+(_xs+1)+'</div>'+
-            '<span style="font-size:10px;color:var(--mt)">Completada</span>'+
-          '</div>';
+        _pillsHtml += '<div style="display:inline-flex;align-items:center;gap:5px;padding:0 16px;height:44px;background:rgba(110,154,110,.15);border:1.5px solid rgba(110,154,110,.45);border-radius:24px">'+
+          '<span style="color:var(--grn);font-size:15px;font-weight:800">\u2713</span>'+
+          '<span style="font-size:13px;font-weight:800;color:var(--grn)">S'+(_xs+1)+'</span>'+
+        '</div>';
       } else {
-        setsHtml +=
-          '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:rgba(255,255,255,.03);border:2px solid rgba(255,255,255,.09);border-radius:12px;margin-bottom:8px">'+
-            '<div style="display:flex;align-items:center;gap:10px">'+
-              '<div style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--mt);font-weight:800">'+(_xs+1)+'</div>'+
-              '<span style="font-size:13px;font-weight:700;color:var(--tx)">SERIE '+(_xs+1)+'</span>'+
-            '</div>'+
-            '<button onclick="markExpressSerie('+di+','+ei+','+_xs+')" style="padding:9px 16px;border:none;border-radius:10px;cursor:pointer;background:var(--grn);color:#fff;font-size:12px;font-weight:800;letter-spacing:.5px">'+
-              '\u2713 Serie hecha</button>'+
-          '</div>';
+        _pillsHtml += '<button onclick="markExpressSerie('+di+','+ei+','+_xs+')" style="display:inline-flex;align-items:center;gap:5px;padding:0 16px;height:44px;background:var(--input-bg);border:1.5px solid var(--border);border-radius:24px;cursor:pointer;-webkit-tap-highlight-color:transparent">'+
+          '<span style="font-size:15px;color:var(--mt)">\u25cb</span>'+
+          '<span style="font-size:13px;font-weight:700;color:var(--mt)">S'+(_xs+1)+'</span>'+
+        '</button>';
       }
     }
+    setsHtml = (numSeries > 1
+      ? '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+_pillsHtml+'</div>'
+      : '')+
+      '<input type="hidden" id="xsets_'+_expK+'" value="'+numSeries+'">';
     setsHtml +=
       '<div style="background:rgba(107,107,102,.04);border:2px solid rgba(107,107,102,.3);border-radius:12px;padding:14px;margin-top:4px">'+
       '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px">'+
@@ -4021,7 +4011,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="flex:1">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
           '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
-          '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala \u00b7 6-7 ok \u00b7 8-10 buena</div>'+
         '</div>'+
         '<div style="flex:2">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
@@ -4104,7 +4093,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
@@ -4161,7 +4149,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '</div>';
         })()+
         '<div style="margin-bottom:10px">'+
-          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR REAL <span style="font-weight:400;color:var(--mt2)">· reps sobrantes · 0=fallo</span></div>'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR REAL</div>'+
           '<input type="hidden" id="rir_'+key+'" value="'+(rirReal||'')+'">'+
           '<div style="display:flex;gap:4px">'+
             (function(){return[0,1,2,3,4].map(function(rv){
@@ -4187,8 +4175,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
                 ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+_icsBorder+';'+
                 'border-radius:8px;color:'+_icsColor+';font-size:15px;font-weight:700;'+
-                'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\')">'
-                + '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala · 6-7 ok · 8-10 buena</div>';
+                'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\''+')">';
             })()+
           '</div>'+
           '<div style="flex:2">'+
@@ -4207,7 +4194,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
                 }).join('');
               })()+
             '</div>'+
-            '<div style="font-size:9px;color:var(--mt2);margin-top:3px;text-align:center">💪 excelente · 👍 ok · 😐 bajo</div>'+
           '</div>'+
         '</div>'+
         // Actions
@@ -4319,12 +4305,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     : '';
 
   var bannerHtml = _buildSessionTargetBanner(progrec, _prevWeekBanner, _histExBanner, unit, numSeries, repsTarget, baseRIR);
-  var expressTipHtml = (ei === 0 && !sessionDone && _isExpressMode)
-    ? '<div style="margin-bottom:10px;padding:8px 12px;background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.12);border-radius:8px;display:flex;align-items:flex-start;gap:8px">'
-      + '<span style="font-size:14px;flex-shrink:0">⚡</span>'
-      + '<div style="font-size:11px;color:var(--mt);line-height:1.5">Usa <strong style="color:var(--accent)">⚡ MARCAR COMPLETA</strong> (arriba) si ya terminaste la sesión y solo quieres anotar los datos rápido — rellena todas las series de golpe.</div>'
-      + '</div>'
-    : '';
+  var expressTipHtml = '';
   return machineHtml + headerHtml + notaHtml + closedBannerHtml + bannerHtml + expressTipHtml + wuHtml + setsHtml + completedBlockHtml;
 }
 
@@ -11228,25 +11209,14 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
     '</div>';
   }
 
-  return '<div style="margin-bottom:14px;border-radius:12px;overflow:hidden;border:1.5px solid '+c.border+'">'+
-    // ── Cabecera acción ──────────────────────────────────────────
-    '<div style="background:'+c.bg+';padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1.5px solid '+c.border+'">'+
-      '<span style="font-size:17px;font-weight:900;color:'+c.color+';line-height:1">'+c.icon+'</span>'+
-      '<span style="font-size:11px;font-weight:900;letter-spacing:2px;color:'+c.color+'">'+c.label+'</span>'+
+  return '<div style="margin-bottom:10px;padding:9px 14px;border-radius:10px;background:'+c.bg+';border:1.5px solid '+c.border+';display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+    '<span style="font-size:16px;font-weight:900;color:'+c.color+';line-height:1;flex-shrink:0">'+c.icon+'</span>'+
+    '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;flex:1;min-width:0">'+
+      '<span style="font-size:22px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+' '+unit+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:'+c.color+'">'+targetSets+'s &times; '+targetReps+' &middot; RIR '+targetRIR+'</span>'+
+      (prevRef && prevRef.load > 0 ? '<span style="font-size:10px;color:var(--mt2)">ant: '+_fmtLoad(prevRef.load)+' '+unit+'</span>' : '')+
     '</div>'+
-    // ── Objetivo principal ───────────────────────────────────────
-    '<div style="padding:14px 16px;background:rgba(0,0,0,.2)">'+
-      '<div style="font-size:10px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:8px">OBJETIVO DE HOY</div>'+
-      '<div style="display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;margin-bottom:2px">'+
-        '<span style="font-size:38px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+'</span>'+
-        '<span style="font-size:20px;font-weight:700;color:var(--mt);margin-right:10px">'+unit+'</span>'+
-      '</div>'+
-      '<div style="font-size:17px;font-weight:800;color:'+c.color+';letter-spacing:.3px">'+
-        targetSets+' series &times; '+targetReps+' reps &middot; RIR '+targetRIR+
-      '</div>'+
-      prevLine+
-      reasonHtml+
-    '</div>'+
+    (reasonHtml ? '<div style="width:100%;padding-top:5px;border-top:1px solid rgba(255,255,255,.06)">'+reasonHtml+'</div>' : '')+
   '</div>';
 }
 
