@@ -3169,6 +3169,9 @@ function _onTimerFinished() {
   if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 400]);
   showToast('⏱ ¡Descanso terminado!');
   _notifyRestDone();
+  // Si estaba minimizado, expandir automáticamente
+  var pill = document.getElementById('timerPill');
+  if (pill && pill.style.display !== 'none') maximizeTimer();
 }
 
 // Notificación real del navegador (no solo el toast interno). En Android,
@@ -5933,6 +5936,9 @@ function renderEntrenamiento() {
             '<div id="restTimerSec" style="font-size:10px;color:var(--mt);letter-spacing:1px;font-weight:600"></div>'+
           '</div>'+
         '</div>'+
+        '<div style="display:flex;justify-content:flex-end;margin-bottom:8px">'+
+          '<button onclick="event.stopPropagation();minimizeTimer()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--mt);font-size:11px;font-weight:600;padding:6px 12px;cursor:pointer">⊟ Minimizar</button>'+
+        '</div>'+
         '<div style="font-size:11px;color:var(--mt);margin-bottom:20px;letter-spacing:.5px">Toca en cualquier lugar para cerrar</div>'+
         '<div style="display:flex;gap:6px;justify-content:center;margin-bottom:10px">'+
           [['30s',30],['1m',60],['1:30',90],['2m',120],['3m',180]].map(function(p){
@@ -5946,6 +5952,12 @@ function renderEntrenamiento() {
         '</div>'+
         '<button onclick="stopRestTimer()" style="width:100%;background:var(--gold-gradient);border:none;border-radius:14px;color:#0a0a0a;font-size:14px;font-weight:800;padding:15px;cursor:pointer;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.3)">SIGUIENTE SERIE ▶</button>'+
       '</div>'+
+    '</div>'+
+    // Pastilla flotante (timer minimizado)
+    '<div id="timerPill" onclick="maximizeTimer()" style="display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:201;background:rgba(10,18,32,.95);border:1.5px solid rgba(196,255,0,.5);border-radius:28px;padding:10px 22px;align-items:center;gap:10px;cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.6),0 0 20px rgba(196,255,0,.12);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">'+
+      '<span style="font-size:18px">⏱</span>'+
+      '<span id="timerPillNum" style="font-size:22px;font-weight:800;color:var(--accent);font-family:monospace;letter-spacing:1px">—</span>'+
+      '<span style="font-size:11px;color:var(--mt);font-weight:600">Toca para ver</span>'+
     '</div>';
   // Inicializar anillo SVG si el timer está activo
   if (_restEndMs && _restEndMs > Date.now()) {
@@ -6458,7 +6470,7 @@ function _showPresessionCheck(di) {
       +'<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--mt)"><span>Sin ganas</span><span>Listo/a</span></div>'
     +'</div>'
     +'<button id="preContinueBtn" onclick="_submitPresession('+di+')" disabled style="width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:800;letter-spacing:2px;border:none;border-radius:8px;cursor:not-allowed;opacity:.4">EMPEZAR →</button>'
-    +'<button onclick="_skipPresession('+di+')" style="width:100%;padding:12px;background:none;border:none;color:var(--mt);font-size:12px;cursor:pointer;margin-top:8px">Saltar</button>'
+    +'<button onclick="_skipPresession('+di+')" style="width:100%;padding:12px;background:none;border:1px solid var(--bd);border-radius:8px;color:var(--mt);font-size:13px;cursor:pointer;margin-top:10px">Saltar esta vez</button>'
     +'</div>';
   document.body.appendChild(ov);
 }
@@ -6477,9 +6489,15 @@ function _preSelect(field, val) {
     btn.style.background  = sel ? 'rgba(196,255,0,.1)' : 'var(--surface)';
     btn.style.color       = sel ? colors[val] : 'var(--mt)';
   });
-  var all = _preSelState.energia && _preSelState.sueno && _preSelState.motivacion;
+  var filled = [_preSelState.energia, _preSelState.sueno, _preSelState.motivacion].filter(Boolean).length;
   var btn = document.getElementById('preContinueBtn');
-  if (btn) { btn.disabled = !all; btn.style.opacity = all ? '1' : '.4'; btn.style.cursor = all ? 'pointer' : 'not-allowed'; }
+  var ok = filled >= 2;
+  if (btn) {
+    btn.disabled = !ok;
+    btn.style.opacity = ok ? '1' : '.4';
+    btn.style.cursor = ok ? 'pointer' : 'not-allowed';
+    btn.textContent = ok ? 'EMPEZAR →' : filled + '/3 respondidas';
+  }
 }
 window._preSelect = _preSelect;
 
@@ -7012,18 +7030,43 @@ function _updateRestRing() {
 }
 function updateTimerDisplay() {
   if (!_restEl) _restEl = document.getElementById('restTimerNum');
-  if (!_restEl) return;
   var s = _restSeconds;
   var mins = Math.floor(Math.abs(s) / 60);
   var secs = Math.abs(s) % 60;
   var sign = s < 0 ? '+' : '';
-  _restEl.textContent = sign + mins + ':' + (secs < 10 ? '0' : '') + secs;
-  _restEl.style.color = s <= 0 ? 'var(--red)' : s <= 10 ? '#e8a040' : 'var(--accent)';
-  _restEl.style.textShadow = s <= 0 ? '0 0 24px rgba(201,74,58,.5)' : s <= 10 ? '0 0 24px rgba(232,160,64,.5)' : '0 0 24px rgba(196,255,0,.4)';
+  var timeStr = sign + mins + ':' + (secs < 10 ? '0' : '') + secs;
+  var col = s <= 0 ? 'var(--red)' : s <= 10 ? '#e8a040' : 'var(--accent)';
+  if (_restEl) {
+    _restEl.textContent = timeStr;
+    _restEl.style.color = col;
+    _restEl.style.textShadow = s <= 0 ? '0 0 24px rgba(201,74,58,.5)' : s <= 10 ? '0 0 24px rgba(232,160,64,.5)' : '0 0 24px rgba(196,255,0,.4)';
+  }
   var secEl = document.getElementById('restTimerSec');
   if (secEl) secEl.textContent = s > 0 ? s + 's restantes' : '¡Tiempo!';
+  var pill = document.getElementById('timerPill');
+  var pillNum = document.getElementById('timerPillNum');
+  if (pill && pill.style.display !== 'none') {
+    if (pillNum) { pillNum.textContent = timeStr; pillNum.style.color = col; }
+    pill.style.borderColor = s <= 0 ? 'rgba(255,68,68,.8)' : s <= 10 ? 'rgba(232,160,64,.6)' : 'rgba(196,255,0,.5)';
+  }
   _updateRestRing();
 }
+
+function minimizeTimer() {
+  var overlay = document.getElementById('restTimerOverlay');
+  var pill = document.getElementById('timerPill');
+  if (overlay) overlay.style.display = 'none';
+  if (pill) { pill.style.display = 'flex'; updateTimerDisplay(); }
+}
+
+function maximizeTimer() {
+  var overlay = document.getElementById('restTimerOverlay');
+  var pill = document.getElementById('timerPill');
+  if (overlay) overlay.style.display = 'flex';
+  if (pill) pill.style.display = 'none';
+}
+window.minimizeTimer = minimizeTimer;
+window.maximizeTimer = maximizeTimer;
 
 function adjCarga(key, delta) {
   var el = document.getElementById('carga_'+key);
@@ -7078,6 +7121,8 @@ function stopRestTimer() {
   localStorage.removeItem('vdsen_restEnd');
   var overlay = document.getElementById('restTimerOverlay');
   if (overlay) overlay.style.display = 'none';
+  var pill = document.getElementById('timerPill');
+  if (pill) pill.style.display = 'none';
 }
 
 function selDia(i) {
