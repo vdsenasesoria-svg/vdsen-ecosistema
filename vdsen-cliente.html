@@ -3711,7 +3711,7 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
           '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:var(--accent)">NOTA DEL COACH</span>' +
           (meta ? '<span style="margin-left:auto;font-size:9px;font-weight:800;padding:2px 8px;border-radius:5px;background:'+meta.color+';color:#fff">'+meta.icon+' '+meta.label+'</span>' : '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>') +
         '</button>' +
-        '<div id="'+_noteId+'" style="display:none;padding:12px 14px">' +
+        '<div id="'+_noteId+'" style="display:block;padding:12px 14px">' +
           (techNote ? '<div style="font-size:14px;font-weight:700;color:var(--tx);line-height:1.6'+(coachNote||_shortTxt2?';margin-bottom:10px':'')+'">' + techNote + '</div>' : '') +
           (coachNote ? (techNote ? '<div style="height:1px;background:rgba(107,107,102,.25);margin-bottom:10px"></div>' : '') +
             '<div style="font-size:13px;color:var(--mt2);line-height:1.6'+(techNote?'':';font-weight:600;color:var(--tx)')+'">'+coachNote+'</div>' : '') +
@@ -3733,7 +3733,7 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
           '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:'+meta.color+'">TÉCNICA · '+meta.label+'</span>' +
           '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>' +
         '</button>' +
-        '<div id="'+_techId+'" style="display:none;padding:0 12px 10px">' +
+        '<div id="'+_techId+'" style="display:block;padding:0 12px 10px">' +
           '<div style="font-size:11px;color:var(--mt2);line-height:1.55">'+_shortTxt+'</div>' +
         '</div>' +
       '</div>';
@@ -11840,14 +11840,18 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
     '</div>';
   }
 
-  return '<div style="margin-bottom:10px;padding:9px 14px;border-radius:10px;background:'+c.bg+';border:1.5px solid '+c.border+';display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
-    '<span style="font-size:16px;font-weight:900;color:'+c.color+';line-height:1;flex-shrink:0">'+c.icon+'</span>'+
-    '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;flex:1;min-width:0">'+
-      '<span style="font-size:22px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+' '+unit+'</span>'+
-      '<span style="font-size:13px;font-weight:700;color:'+c.color+'">'+targetSets+'s × '+targetReps+' · RIR '+targetRIR+'</span>'+
-      (prevRef && prevRef.load > 0 ? '<span style="font-size:10px;color:var(--mt2)">ant: '+_fmtLoad(prevRef.load)+' '+unit+'</span>' : '')+
+  return '<div style="margin-bottom:10px;padding:9px 14px;border-radius:10px;background:'+c.bg+';border:1.5px solid '+c.border+'">'+
+    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'+
+      '<span style="font-size:16px;font-weight:900;color:'+c.color+';line-height:1">'+c.icon+'</span>'+
+      '<span style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:'+c.color+';opacity:.8">OBJETIVO HOY</span>'+
+      '<span style="margin-left:auto;font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--mt2)">'+c.label+'</span>'+
     '</div>'+
-    (reasonHtml ? '<div style="width:100%;padding-top:5px;border-top:1px solid rgba(255,255,255,.06)">'+reasonHtml+'</div>' : '')+
+    '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'+
+      '<span style="font-size:24px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+' '+unit+'</span>'+
+      '<span style="font-size:14px;font-weight:700;color:'+c.color+'">'+targetSets+'s × '+targetReps+' reps · RIR '+targetRIR+'</span>'+
+    '</div>'+
+    (prevRef && prevRef.load > 0 ? prevLine : '')+
+    (reasonHtml ? '<div style="padding-top:6px;border-top:1px solid rgba(255,255,255,.06)">'+reasonHtml+'</div>' : '')+
   '</div>';
 }
 
