@@ -7265,7 +7265,7 @@ async function markSessionDoneFromHistory(di) {
   if (!ejercicios.length) { showPostSessionModal(di); return; }
 
   // Confirmar con el usuario antes de rellenar
-  if (!confirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.\n\n¿Continuar?')) return;
+  if (!await _askConfirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.')) return;
 
   var sinReferencia = [];
   var totalSetsRellenados = 0;
@@ -7379,11 +7379,11 @@ async function markWeekDoneWithPartialData() {
   var conData = 0, sinData = 0;
   pendientes.forEach(function(di){ _sesionTieneData(di) ? conData++ : sinData++; });
 
-  var msg = 'Vas a cerrar la SEM '+REAL_WEEK+' con '+pendientes.length+' sesión(es) pendiente(s):\n\n'+
-    (conData ? '• '+conData+' con datos parciales → se usarán para la progresión\n' : '')+
-    (sinData ? '• '+sinData+' sin registro → se saltarán (la progresión caerá al histórico)\n' : '')+
-    '\nDespués avanzarás a la siguiente semana. ¿Continuar?';
-  if (!confirm(msg)) return;
+  var msg = 'Vas a cerrar la SEM '+REAL_WEEK+' con '+pendientes.length+' sesión(es) pendiente(s).<br><br>'
+    +(conData ? '• '+conData+' con datos parciales → se usarán para la progresión<br>' : '')
+    +(sinData ? '• '+sinData+' sin registro → se saltarán<br>' : '')
+    +'<br>Después avanzarás a la siguiente semana.';
+  if (!await _askConfirm(msg)) return;
 
   var defaultPost = {
     eimd: 2,
@@ -10782,6 +10782,24 @@ window.showBitacoraInfoModal = showBitacoraInfoModal;
 // ══════════════════════════════════════════════════
 // TOAST
 // ══════════════════════════════════════════════════
+function _askConfirm(msg) {
+  return new Promise(function(resolve) {
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:320px;width:100%;font-family:var(--ff)">'
+      + '<p style="color:var(--tx);font-size:14px;line-height:1.5;margin:0 0 18px">' + msg + '</p>'
+      + '<div style="display:flex;gap:10px;justify-content:flex-end">'
+      + '<button id="_ac_no" style="padding:9px 18px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mt);font-size:13px;cursor:pointer">Cancelar</button>'
+      + '<button id="_ac_si" style="padding:9px 18px;border-radius:8px;border:none;background:#c94a3a;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Confirmar</button>'
+      + '</div></div>';
+    document.body.appendChild(ov);
+    function done(v) { ov.remove(); resolve(v); }
+    ov.querySelector('#_ac_si').onclick = function() { done(true); };
+    ov.querySelector('#_ac_no').onclick = function() { done(false); };
+    ov.onclick = function(e) { if (e.target === ov) done(false); };
+  });
+}
+
 function showToast(msg, isError=false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
