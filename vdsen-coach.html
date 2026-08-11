@@ -6913,6 +6913,13 @@ El esfuerzo no es negociable.
           </div>
           <div id="eci-diag-result" class="text-[11px] leading-relaxed" style="color:#888">Presiona "Verificar" para revisar el estado de acceso de este cliente.</div>
         </div>
+        <div class="p-3 mb-3 rounded" style="background:rgba(192,86,74,.06);border:1px solid rgba(192,86,74,.25)">
+          <div class="text-xs font-bold mb-1" style="color:#c0564a">🔧 Reparar UID (mismatch)</div>
+          <div class="text-[10px] mb-2" style="color:#888;line-height:1.4">Si el cliente ve "ficha enviada" y el diagnóstico es correcto, su UID de Auth difiere del UID en Firestore. Pídele que te mande el UID que aparece al fondo de la pantalla de espera y pégalo aquí.</div>
+          <input id="eci-newuid" type="text" placeholder="UID real del cliente (de la pantalla de espera)" class="w-full text-xs p-2 rounded mb-2" style="background:#111;border:1px solid #444;color:#eee;font-family:monospace">
+          <button id="eci-repairuid-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(192,86,74,.2);border:1px solid #c0564a;color:#c0564a;cursor:pointer;font-weight:700">⚡ Reparar UID</button>
+          <div id="eci-repairuid-status" class="text-xs mt-2"></div>
+        </div>
         <div class="flex gap-2">
           <button onclick="this.closest('.modal-overlay').remove()" class="btn-secondary flex-1">Cancelar</button>
           <button id="eci-save" class="btn-primary flex-1">Guardar cambios</button>
@@ -7073,6 +7080,53 @@ El esfuerzo no es negociable.
       }
 
       diagEl.innerHTML = lines.join('<br>');
+    };
+
+    // ── Reparar UID mismatch ─────────────────────────────────────────────────
+    // Copia clients/{clientId} y logs/{clientId} al nuevo UID real del cliente,
+    // actualiza phone_index, y opcionalmente elimina el doc viejo.
+    overlay.querySelector('#eci-repairuid-btn').onclick = async () => {
+      const st = overlay.querySelector('#eci-repairuid-status');
+      const newUid = (overlay.querySelector('#eci-newuid').value || '').trim();
+      if (!newUid) { st.style.color='#c94a3a'; st.textContent='Pega el UID del cliente primero'; return; }
+      if (newUid === clientId) { st.style.color='#c8a54a'; st.textContent='El UID es el mismo — no hay nada que reparar'; return; }
+      if (!confirm(`Se copiará el perfil de ${c.displayName||c.email} al UID:\n${newUid}\n\nEl doc anterior (${clientId}) se eliminará después.\n\n¿Continuar?`)) return;
+      const btn = overlay.querySelector('#eci-repairuid-btn');
+      btn.disabled = true; btn.textContent = 'Reparando...';
+      try {
+        await ensureCoachDoc();
+        // 1. Leer doc actual del cliente
+        const oldClientSnap = await getDoc(doc(db, 'clients', clientId));
+        if (!oldClientSnap.exists()) throw new Error('Doc del cliente no encontrado');
+        const clientData = { ...oldClientSnap.data(), _repairedFrom: clientId, _repairedAt: Date.now() };
+        // 2. Crear doc en el nuevo UID
+        await setDoc(doc(db, 'clients', newUid), clientData);
+        // 3. Copiar logs si existen
+        const oldLogsSnap = await getDoc(doc(db, 'logs', clientId));
+        if (oldLogsSnap.exists()) {
+          await setDoc(doc(db, 'logs', newUid), oldLogsSnap.data());
+        }
+        // 4. Actualizar phone_index para que apunte al nuevo UID
+        if (c.phone) {
+          let digits = String(c.phone).replace(/[^\d]/g, '');
+          if (digits.length === 10) digits = '52' + digits;
+          if (digits.length >= 11) {
+            await setDoc(doc(db, 'phone_index', digits), { email: (c.email||'').toLowerCase(), uid: newUid, updatedAt: new Date().toISOString(), migratedBy: currentCoach.uid }, { merge: true });
+          }
+        }
+        // 5. Eliminar docs viejos
+        await deleteDoc(doc(db, 'clients', clientId));
+        if (oldLogsSnap.exists()) { try { await deleteDoc(doc(db, 'logs', clientId)); } catch(_){} }
+        st.style.color = '#44BB88';
+        st.innerHTML = '✓ UID reparado — el cliente ya puede entrar normalmente.<br><small style="color:#888">Nuevo UID: '+newUid+'</small>';
+        showToast('✓ UID de '+( c.displayName||c.email)+' reparado');
+        loadClients();
+      } catch(e) {
+        st.style.color = '#c94a3a';
+        st.textContent = 'Error: ' + (e.code || e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = '⚡ Reparar UID';
+      }
     };
   }
   window.editClientInfo = editClientInfo;
