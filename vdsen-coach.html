@@ -207,6 +207,7 @@
   </nav>
   <div style="position:absolute;bottom:0;left:0;right:0;padding:16px 20px;border-top:1px solid var(--border-soft)">
     <div style="font-size:8px;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;text-align:center">Ciencias Aplicadas al Deporte</div>
+    <div style="font-size:7px;letter-spacing:1px;color:var(--text-muted);text-align:center;margin-top:4px;opacity:.6">Motor VDSEN v3.3 · Build 20260811</div>
   </div>
 </div>
 <!-- Header visible solo en mobile -->
@@ -215,6 +216,7 @@
   <span id="mobileHeaderSection" style="font-size:10px;color:var(--platinum);font-weight:600;letter-spacing:1.5px;text-transform:uppercase"></span>
 </div>
 <script>
+  console.log('%c VDSEN Coach · Motor v3.3 · Build 20260811 ', 'background:#1a1a1a;color:#c9b96e;font-weight:bold;padding:4px 8px;border-radius:4px');
   if (window.innerWidth <= 768) {
     var mh = document.getElementById('mobileHeader');
     if (mh) mh.style.display = 'flex';
