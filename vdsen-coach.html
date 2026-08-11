@@ -199,10 +199,11 @@
     <div style="font-size:8px;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;font-style:italic">El esfuerzo no es negociable</div>
   </div>
   <nav style="padding:12px 12px">
-    <div data-section="clientes"  class="cursor-pointer py-2 px-3 rounded transition font-semibold" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📋 Clientes</div>
-    <div data-section="crearPlan" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📝 Plan</div>
-    <div data-section="catalogo"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🏋️ Catálogo</div>
-    <div data-section="config"    class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">⚙️ Config</div>
+    <div data-section="clientes"   class="cursor-pointer py-2 px-3 rounded transition font-semibold" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📋 Clientes</div>
+    <div data-section="crearPlan"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📝 Plan</div>
+    <div data-section="evaluacion" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📥 Evaluación</div>
+    <div data-section="catalogo"   class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🏋️ Catálogo</div>
+    <div data-section="config"     class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">⚙️ Config</div>
   </nav>
   <div style="position:absolute;bottom:0;left:0;right:0;padding:16px 20px;border-top:1px solid var(--border-soft)">
     <div style="font-size:8px;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;text-align:center">Ciencias Aplicadas al Deporte</div>
@@ -225,7 +226,7 @@
 </script>
 
 <div class="main-content">
-  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button onclick="showSection('evaluacion')" class="btn-secondary text-sm">📥 Fichas recibidas</button><button id="repairPhoneBtn" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
+  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button onclick="showSection('evaluacion')" class="btn-secondary text-sm">📥 Fichas recibidas</button><button id="repairPhoneBtn" style="display:none;padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
   <div id="evaluacion" class="section"><div class="flex items-center gap-3 mb-4"><button onclick="showSection('clientes')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">← Clientes</button><h2 class="text-2xl font-bold" style="margin:0">Fichas / Intake</h2></div>
     <div class="card p-4 mb-4">
       <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">Ficha en blanco para nuevos clientes</h3>
@@ -260,10 +261,14 @@
     <div id="intakeActions" class="flex gap-2 mt-2 flex-wrap items-center" style="display:none">
       <button type="button" id="intakeSaveBtn" class="btn-primary">💾 Guardar evaluación</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
-      <span class="text-xs" style="color:var(--text-muted)">Extraer:</span>
-      <button type="button" id="intakeCopyTxt" class="btn-secondary text-sm" title="Texto plano — menos tokens/créditos">📄 TXT</button>
-      <button type="button" id="intakeCopyMd" class="btn-secondary text-sm" title="Markdown — para Notion/documentos">📝 MD</button>
-      <button type="button" id="intakeCopyJson" class="btn-secondary text-sm" title="JSON estructurado — para el motor/skill">🧩 JSON</button>
+      <div style="position:relative">
+        <button type="button" id="intakeCopyTxt" class="btn-secondary text-sm" title="Copiar ficha como texto (por defecto)">📋 Copiar ficha</button>
+        <button type="button" onclick="document.getElementById('exportDropdown').style.display=document.getElementById('exportDropdown').style.display==='block'?'none':'block'" class="btn-secondary text-sm" style="padding:6px 8px;margin-left:2px">▾</button>
+        <div id="exportDropdown" style="display:none;position:absolute;left:0;top:calc(100%+4px);background:#1a1a18;border:1px solid var(--border);border-radius:8px;min-width:180px;z-index:50;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.5)">
+          <button type="button" id="intakeCopyMd" class="text-sm w-full text-left" style="padding:10px 14px;background:none;border:none;color:var(--text-muted);cursor:pointer;border-bottom:1px solid rgba(244,244,240,.06)">📝 Copiar como Markdown</button>
+          <button type="button" id="intakeCopyJson" class="text-sm w-full text-left" style="padding:10px 14px;background:none;border:none;color:var(--text-muted);cursor:pointer">🧩 Copiar como JSON (Motor)</button>
+        </div>
+      </div>
       <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
       <button type="button" id="intakeFichaWA" onclick="sendFichaClientePdf()" class="btn-secondary text-sm" title="Generar PDF con diagnóstico para el cliente y compartir por WhatsApp">📱 PDF → Cliente</button>
     </div>
@@ -309,6 +314,11 @@
       <button id="diagFirebaseBtn" class="btn-secondary text-sm">Ejecutar diagnóstico</button>
       <div id="diagFirebaseOut" class="text-xs mt-3" style="font-family:monospace;line-height:1.6"></div>
     </div>
+    <div class="card p-4 mb-4">
+      <label class="block text-sm font-medium mb-2">🔧 Herramientas de mantenimiento</label>
+      <p class="text-xs text-[#888] mb-3">Úsalas solo si hay problemas de acceso con celular.</p>
+      <button onclick="repairPhoneIndexAll()" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer">🔧 Reparar acceso celular</button>
+    </div>
   </div>
 </div>
 <div id="newClientModal" class="modal-overlay" style="display:none;">
@@ -351,29 +361,46 @@
       <option>Empuje</option><option>Jalón</option><option>Pierna</option>
       <option>Bisagra</option><option>Core</option><option>Cardio</option><option>Otro</option>
     </select>
-    <label class="block text-xs text-[#888] mb-1">Equipamiento (opcional)</label>
-    <input id="ex-equip" class="input-field mb-3" placeholder="Barra, Mancuernas...">
-    <label class="block text-xs text-[#888] mb-1">Tipo de fibra <span class="text-[#F4F4F0]">— afecta % de incremento de carga</span></label>
-    <select id="ex-muscletype" class="input-field mb-3">
-      <option value="typeIIx">Tipo IIx — Rápidas (Pecho, Isquios, Tríceps) +6.25%</option>
-      <option value="typeI">Tipo I — Lentas (Sóleo, Abdomen, Erectores) +2.5%</option>
-    </select>
-    <label class="block text-xs text-[#888] mb-1">Costo de fatiga SNC (1-5)</label>
-    <select id="ex-fatigue" class="input-field mb-3">
-      <option value="1">1 — Muy bajo (ej: curl bíceps)</option>
-      <option value="2">2 — Bajo (ej: extensión cuádriceps)</option>
-      <option value="3" selected>3 — Moderado (ej: press banca)</option>
-      <option value="4">4 — Alto (ej: sentadilla)</option>
-      <option value="5">5 — Muy alto (ej: peso muerto)</option>
-    </select>
-    <label class="block text-xs text-[#888] mb-1">Curva de resistencia</label>
-    <select id="ex-curve" class="input-field mb-3">
-      <option value="elongated">Elongada — máxima tensión en estiramiento (ej: RDL)</option>
-      <option value="mid" selected>Media — tensión uniforme (ej: press)</option>
-      <option value="shortened">Acortada — máxima tensión en contracción (ej: curl polea)</option>
-    </select>
-    <label class="block text-xs text-[#888] mb-1">Notas de ejecución <span class="text-[#555]">(aparecen automáticamente al cliente)</span></label>
-    <textarea id="ex-notes" class="input-field mb-4" rows="3" placeholder="Ej: Tempo 3-1-1. Mantener core activo. Codos a 45°. Rodillas alineadas con pies..."></textarea>
+    <details style="margin-bottom:12px">
+      <summary style="cursor:pointer;font-size:11px;color:var(--text-muted);letter-spacing:.5px;list-style:none;display:flex;align-items:center;gap:4px">
+        <span>▸</span><span>Detalles avanzados (equipamiento, fibra, fatiga, curva, notas)</span>
+      </summary>
+      <div style="margin-top:10px;display:grid;gap:10px">
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Equipamiento (opcional)</label>
+          <input id="ex-equip" class="input-field" placeholder="Barra, Mancuernas...">
+        </div>
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Tipo de fibra — afecta % de incremento de carga</label>
+          <select id="ex-muscletype" class="input-field">
+            <option value="typeIIx">Tipo IIx — Rápidas (Pecho, Isquios, Tríceps) +6.25%</option>
+            <option value="typeI">Tipo I — Lentas (Sóleo, Abdomen, Erectores) +2.5%</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Costo de fatiga SNC (1-5)</label>
+          <select id="ex-fatigue" class="input-field">
+            <option value="1">1 — Muy bajo (ej: curl bíceps)</option>
+            <option value="2">2 — Bajo (ej: extensión cuádriceps)</option>
+            <option value="3" selected>3 — Moderado (ej: press banca)</option>
+            <option value="4">4 — Alto (ej: sentadilla)</option>
+            <option value="5">5 — Muy alto (ej: peso muerto)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Curva de resistencia</label>
+          <select id="ex-curve" class="input-field">
+            <option value="elongated">Elongada — máxima tensión en estiramiento (ej: RDL)</option>
+            <option value="mid" selected>Media — tensión uniforme (ej: press)</option>
+            <option value="shortened">Acortada — máxima tensión en contracción (ej: curl polea)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Notas de ejecución (aparecen al cliente)</label>
+          <textarea id="ex-notes" class="input-field" rows="3" placeholder="Ej: Tempo 3-1-1. Mantener core activo. Codos a 45°..."></textarea>
+        </div>
+      </div>
+    </details>
     <button id="ex-submit" class="btn-primary w-full">Agregar al catálogo</button>
   </div>
 </div>
@@ -393,10 +420,11 @@
   </div>
 </div>
 <div class="bottom-nav-mobile" id="bottomNavMobile">
-  <div data-section="clientes"  class="nav-item-mobile"><span class="nav-icon">📋</span>Clientes</div>
-  <div data-section="crearPlan" class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
-  <div data-section="catalogo"  class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
-  <div data-section="config"    class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
+  <div data-section="clientes"   class="nav-item-mobile"><span class="nav-icon">📋</span>Clientes</div>
+  <div data-section="crearPlan"  class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
+  <div data-section="evaluacion" class="nav-item-mobile"><span class="nav-icon">📥</span>Evaluación</div>
+  <div data-section="catalogo"   class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
+  <div data-section="config"     class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
 </div>
 
 <script type="module">
@@ -5303,15 +5331,14 @@ El esfuerzo no es negociable.
         <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Notas privadas del coach</div>
         <div class="text-xs text-[#555] mb-2">Visibles solo para ti. Lesiones, contexto personal, comportamiento, recordatorios.</div>
         ${noteDate ? `<div class="text-xs text-[#444] mb-2">Última actualización: ${noteDate}</div>` : ''}
-        <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="10" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
-        <button onclick="saveCoachNote()" class="btn-primary mt-2 w-full">💾 Guardar nota</button>
+        <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="8" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
       </div>
-      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:16px">
+      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:16px;margin-bottom:16px">
         <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Mensaje para el cliente</div>
         <div class="text-xs text-[#555] mb-2">Visible en el Perfil del cliente. Úsalo para motivación, indicaciones o recordatorios.</div>
-        <textarea id="clientMsgTA" class="input-field w-full text-sm" rows="5" placeholder="Ej: Esta semana enfócate en la técnica del peso muerto — bajamos carga al 80%...">${clientMsg.replace(/</g,'&lt;')}</textarea>
-        <button onclick="saveClientMessage()" class="btn-primary mt-2 w-full">📨 Enviar mensaje al cliente</button>
-      </div>`;
+        <textarea id="clientMsgTA" class="input-field w-full text-sm" rows="4" placeholder="Ej: Esta semana enfócate en la técnica del peso muerto — bajamos carga al 80%...">${clientMsg.replace(/</g,'&lt;')}</textarea>
+      </div>
+      <button onclick="saveAllNotes()" class="btn-primary w-full">💾 Guardar notas</button>`;
   }
 
   async function saveCoachNote() {
@@ -5320,8 +5347,7 @@ El esfuerzo no es negociable.
     try {
       await updateDoc(doc(db,'clients',_detailClientId), { coachNote: val, coachNoteUpdatedAt: new Date().toISOString() });
       if (_detailClientData) { _detailClientData.coachNote = val; _detailClientData.coachNoteUpdatedAt = new Date().toISOString(); }
-      showToast('Nota guardada ✅');
-    } catch(e) { showToast('Error al guardar: '+e.message, true); }
+    } catch(e) { throw e; }
   }
   window.saveCoachNote = saveCoachNote;
 
@@ -5331,10 +5357,19 @@ El esfuerzo no es negociable.
     try {
       await updateDoc(doc(db,'clients',_detailClientId), { clientMessage: val, clientMessageUpdatedAt: new Date().toISOString() });
       if (_detailClientData) _detailClientData.clientMessage = val;
-      showToast('Mensaje enviado al cliente ✅');
-    } catch(e) { showToast('Error: '+e.message, true); }
+    } catch(e) { throw e; }
   }
   window.saveClientMessage = saveClientMessage;
+
+  async function saveAllNotes() {
+    if (!_detailClientId) return;
+    try {
+      await saveCoachNote();
+      await saveClientMessage();
+      showToast('Notas guardadas ✅');
+    } catch(e) { showToast('Error al guardar: '+e.message, true); }
+  }
+  window.saveAllNotes = saveAllNotes;
 
   async function _saveCurrentPlanAsTemplate(planId) {
     const name = prompt('Nombre para el template:');
@@ -8081,9 +8116,10 @@ El esfuerzo no es negociable.
 
   document.getElementById('intakeClientSelect').addEventListener('change', e=> loadIntakeForClient(e.target.value));
   document.getElementById('intakeSaveBtn').addEventListener('click', saveIntake);
-  document.getElementById('intakeCopyTxt').addEventListener('click', ()=>intakeExport('txt'));
-  document.getElementById('intakeCopyMd').addEventListener('click', ()=>intakeExport('md'));
-  document.getElementById('intakeCopyJson').addEventListener('click', ()=>intakeExport('json'));
+  document.getElementById('intakeCopyTxt').addEventListener('click', ()=>{ intakeExport('txt'); document.getElementById('exportDropdown').style.display='none'; });
+  document.getElementById('intakeCopyMd').addEventListener('click', ()=>{ intakeExport('md'); document.getElementById('exportDropdown').style.display='none'; });
+  document.getElementById('intakeCopyJson').addEventListener('click', ()=>{ intakeExport('json'); document.getElementById('exportDropdown').style.display='none'; });
+  document.addEventListener('click', e=>{ var dd=document.getElementById('exportDropdown'); if(dd && !e.target.closest('#exportDropdown') && e.target.id!=='intakeCopyTxt') dd.style.display='none'; });
   document.getElementById('intakeFotoClear').addEventListener('click', clearFotometria);
   document.getElementById('intakeNewClientBtn').addEventListener('click', ()=>{ if(typeof createClientModal==='function') createClientModal(); });
   document.getElementById('intakeForm').addEventListener('change', (e)=>{

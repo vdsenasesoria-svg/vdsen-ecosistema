@@ -313,7 +313,6 @@ button:active{opacity:.85}
   <div class="hdr">
     <div class="logo">VDSEN<em>MI PLAN · v3.2</em></div>
     <div style="display:flex;align-items:center;gap:10px">
-      <button id="themeTglBtn" onclick="toggleLightMode()" title="Cambiar modo claro/oscuro" style="background:none;border:1px solid rgba(244,244,240,.15);border-radius:20px;padding:5px 10px;cursor:pointer;font-size:14px;color:var(--mt);transition:all .2s;flex-shrink:0">🌙</button>
       <div class="hdr-user">
         <strong id="hdName">—</strong>
         <span id="hdGoal">—</span>
@@ -377,6 +376,23 @@ var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el t
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
+
+function toggleExOpts(di, ei) {
+  var menu = document.getElementById('exOptsMenu_'+di+'_'+ei);
+  if (!menu) return;
+  var open = menu.style.display !== 'none';
+  document.querySelectorAll('[id^="exOptsMenu_"]').forEach(function(m){ m.style.display='none'; });
+  menu.style.display = open ? 'none' : 'block';
+  if (!open) {
+    setTimeout(function(){ document.addEventListener('click', function _cl(e){ if (!e.target.closest('#exOptsMenu_'+di+'_'+ei) && !e.target.closest('#exOpts_'+di+'_'+ei)){ menu.style.display='none'; document.removeEventListener('click',_cl); } }); }, 0);
+  }
+}
+function closeExOpts(di, ei) {
+  var menu = document.getElementById('exOptsMenu_'+di+'_'+ei);
+  if (menu) menu.style.display = 'none';
+}
+window.toggleExOpts = toggleExOpts;
+window.closeExOpts = closeExOpts;
 
 function toggleExUnit(di, ei) {
   var oldUnit = getExUnit(di, ei);
@@ -3760,16 +3776,22 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
         '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">'+repsTarget+' REPS</span>'+
-        '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px">RIR '+baseRIR+'</span>'+
+        '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px" title="RIR objetivo del plan">OBJ RIR '+baseRIR+'</span>'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
-        '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'+
-        '<button onclick="showExModModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">⚙ Ajustar</button>'+
-        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(107,107,102,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(107,107,102,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
         (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
+        (_exNoteInline?'<span style="font-size:10px;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">📝 Nota</span>':'')+
+        '<div style="position:relative;margin-left:auto">'+
+          '<button id="exOpts_'+di+'_'+ei+'" onclick="toggleExOpts('+di+','+ei+')" style="font-size:13px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 11px;border-radius:6px;cursor:pointer;line-height:1">⋮</button>'+
+          '<div id="exOptsMenu_'+di+'_'+ei+'" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;min-width:160px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.4);overflow:hidden">'+
+            '<button onclick="showExSubModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">🔄 Cambiar ejercicio</button>'+
+            '<button onclick="showExModModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">⚙ Ajustar series/reps</button>'+
+            '<button onclick="toggleUserNote('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:none;border:none;cursor:pointer">📝 '+(	_exNoteInline?'Editar nota':'Añadir nota')+'</button>'+
+          '</div>'+
+        '</div>'+
       '</div>'+
       // Nota de sustitución (si existe)
       (_exSubData && _exSubData.nota
@@ -3963,7 +3985,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               '<span style="font-size:13px;font-weight:700;color:var(--tx)">SERIE '+(_xs+1)+'</span>'+
             '</div>'+
             '<button onclick="markExpressSerie('+di+','+ei+','+_xs+')" style="padding:9px 16px;border:none;border-radius:10px;cursor:pointer;background:var(--grn);color:#fff;font-size:12px;font-weight:800;letter-spacing:.5px">'+
-              '\u2713 HECHA \u2192 DESCANSAR</button>'+
+              '\u2713 Serie hecha</button>'+
           '</div>';
       }
     }
@@ -5847,7 +5869,7 @@ function renderEntrenamiento() {
         ? '<div style="background:rgba(110,154,110,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
         : '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">'+
           '<button onclick="markSessionDone('+DIA_ACTIVO+')" title="Marcar esta sesión como completada" style="background:rgba(196,255,0,.12);border:1px solid var(--accent);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:800;color:var(--accent);cursor:pointer;letter-spacing:.5px">✓ COMPLETAR</button>'+
-          '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar sets con datos de la semana anterior y completar" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ desde historial</button>'+
+          '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Copia los datos de la semana anterior en todos los sets y marca la sesión como completada" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ Copiar sem. anterior</button>'+
           '</div>')+
     '</div>'+
     // Glosario RIR + ICS (colapsable)
@@ -7079,9 +7101,11 @@ function buildReadinessBanner(di, isDone) {
   var r = LOGS[rKey];
   if (r && r.completed) {
     // Ya respondido: mostrar resumen compacto siempre (incluso si sesión completada)
-    var labels = {sueno:{1:'😴 Mal',2:'😴 Regular',3:'😴 Bien'},dolor:{1:'⚠️ Dolor notable',2:'🟡 Molestia leve',3:'✅ Sin dolor'},motivacion:{1:'🔋 Motivación baja',2:'🔋 Motivación media',3:'🔥 Motivación alta'}};
-    var chips = ['sueno','dolor','motivacion'].map(function(k){
-      return '<span style="padding:3px 8px;border-radius:12px;border:1px solid rgba(244,244,240,.12);font-size:10px;color:var(--mt);background:var(--surface)">'+(labels[k][r[k]]||'—')+'</span>';
+    var labels = {dolor:{1:'⚠️ Dolor notable',2:'🟡 Molestia leve',3:'✅ Sin dolor'},motivacion:{1:'🔋 Motivación baja',2:'🔋 Motivación media',3:'🔥 Motivación alta'}};
+    var visibles = r.sueno ? ['sueno','dolor','motivacion'] : ['dolor','motivacion'];
+    var allLabels = Object.assign({sueno:{1:'😴 Mal',2:'😴 Regular',3:'😴 Bien'}}, labels);
+    var chips = visibles.map(function(k){
+      return '<span style="padding:3px 8px;border-radius:12px;border:1px solid rgba(244,244,240,.12);font-size:10px;color:var(--mt);background:var(--surface)">'+(allLabels[k][r[k]]||'—')+'</span>';
     }).join('');
     var advisoryHtml = r.advisory ? '<div style="margin-top:6px;font-size:10px;color:#FF8844;line-height:1.4">⚠ '+r.advisory+'</div>' : '';
     return '<div style="margin:0 16px 8px;padding:8px 12px;background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.06);border-radius:10px">'
@@ -7095,9 +7119,8 @@ function buildReadinessBanner(di, isDone) {
   return '<div id="readinessCard" style="margin:0 16px 10px;padding:14px;background:var(--card);border:1px solid var(--bd);border-radius:12px">'
     + '<div style="font-family:var(--ff);font-size:12px;letter-spacing:1.5px;color:var(--gold);font-weight:800;margin-bottom:10px">🎯 ANTES DE EMPEZAR — ¿CÓMO LLEGÁS HOY?</div>'
     + '<div style="display:grid;gap:10px">'
-    +   _readinessRow('sueno', '¿Cómo dormiste anoche?', [{v:1,l:'Mal'},{v:2,l:'Regular'},{v:3,l:'Bien'}])
-    +   _readinessRow('dolor', '¿Dolor/molestia hoy?', [{v:1,l:'Sí, notable'},{v:2,l:'Leve'},{v:3,l:'Ninguno'}])
-    +   _readinessRow('motivacion', '¿Motivación hoy?', [{v:1,l:'Baja'},{v:2,l:'Media'},{v:3,l:'Alta'}])
+    +   _readinessRow('dolor', '¿Dolor o molestia?', [{v:1,l:'Sí, notable'},{v:2,l:'Leve'},{v:3,l:'Ninguno'}])
+    +   _readinessRow('motivacion', '¿Motivación?', [{v:1,l:'Baja'},{v:2,l:'Media'},{v:3,l:'Alta'}])
     + '</div>'
     + '<button onclick="submitReadiness('+di+')" style="width:100%;margin-top:12px;padding:13px;background:var(--accent);border:none;color:#000;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;cursor:pointer;border-radius:8px;font-weight:800">→ EMPEZAR SESIÓN</button>'
     + '</div>';
@@ -7122,22 +7145,20 @@ function _setReadinessVal(campo, val, btnEl) {
 }
 
 function submitReadiness(di) {
-  if (!_readinessTemp.sueno || !_readinessTemp.dolor || !_readinessTemp.motivacion) {
-    showToast('Respondé las 3 preguntas', true);
+  if (!_readinessTemp.dolor || !_readinessTemp.motivacion) {
+    showToast('Respondé las 2 preguntas', true);
     return;
   }
-  var s = _readinessTemp.sueno, d = _readinessTemp.dolor, m = _readinessTemp.motivacion;
+  var d = _readinessTemp.dolor, m = _readinessTemp.motivacion;
   var advisory = null;
-  var lowCount = (s===1?1:0) + (d===1?1:0) + (m===1?1:0);
-  if (lowCount >= 2) {
-    advisory = 'Dormiste mal, tenés molestias y/o poca motivación hoy — considerá bajar 1 serie por ejercicio o el peso si lo sentís pesado. Esto no cambia tu plan automáticamente, es una sugerencia para vos.';
-  } else if (s === 1 || d === 1) {
-    var partes = [];
-    if (s === 1) partes.push('dormiste poco');
-    if (d === 1) partes.push('tenés molestias');
-    advisory = 'Prestá atención a la técnica hoy — ' + partes.join(' y ') + '. Si algo duele, avisale a tu coach.';
+  if (d === 1 && m === 1) {
+    advisory = 'Tenés molestias y poca motivación hoy — considerá bajar 1 serie por ejercicio o el peso si lo sentís pesado. Esto no cambia tu plan automáticamente, es una sugerencia para vos.';
+  } else if (d === 1) {
+    advisory = 'Prestá atención a la técnica hoy — tenés molestias. Si algo duele, avisale a tu coach.';
+  } else if (m === 1) {
+    advisory = 'Motivación baja hoy — arrancá tranquilo, el cuerpo suele responder bien una vez en movimiento.';
   }
-  LOGS['readiness_'+CURRENT_WEEK+'_'+di] = { sueno:s, dolor:d, motivacion:m, advisory:advisory, completed:true, ts: Date.now() };
+  LOGS['readiness_'+CURRENT_WEEK+'_'+di] = { dolor:d, motivacion:m, advisory:advisory, completed:true, ts: Date.now() };
   saveLogs();
   showToast(advisory ? '✓ Registrado — revisá el aviso' : '✓ Buen día para entrenar 💪');
   _readinessTemp = {};
@@ -8183,6 +8204,15 @@ function renderNutricion() {
       ${buildCalorieAdjustWidget(+kcal||0)}
       ${buildNutriLogWidget(+kcal||0, +prot||0, +carb||0, +gras||0)}
       ${comidasHtml}
+      ${(function(){
+        var st = PLAN.suplementacion && PLAN.suplementacion.texto;
+        var si = PLAN.suplementacion && PLAN.suplementacion.items;
+        if (!st && (!si || !si.length)) return '';
+        var sh = st ? formatTextoSup(st) : (si||[]).map(function(s){ return '<div class="sup-row"><div><div class="sup-name">'+s.nombre+'</div><div class="sup-time">'+(s.momento||'')+'</div></div><div class="sup-dose">'+s.dosis+'</div></div>'; }).join('');
+        return '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">'
+          +'<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);font-weight:900;margin-bottom:12px">💊 SUPLEMENTACIÓN</div>'
+          +sh+'</div>';
+      })()}
     </div>`;
 }
 
@@ -9338,7 +9368,7 @@ function renderCheckin() {
 
   cont.innerHTML =
     '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:2px">CHECK-IN SEMANAL</div>'
-    + '<div style="font-size:13px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">SEM ' + sem + ' · MOTOR VDSEN MOD. 15+16 GAP1-2</div>'
+    + '<div style="font-size:13px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">SEM ' + sem + ' · CHECK-IN SEMANAL</div>'
 
     // ── MEDIDAS ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
@@ -9521,8 +9551,8 @@ function renderPerfil() {
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
         <div style="font-size:22px;flex-shrink:0">📋</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;color:var(--tx);font-weight:700">Registro por serie</div>
-          <div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">${isExpressDisabled()?'Modo detallado — registras cada serie con su timer individual.':'Modo express — registras solo la última serie (más rápido).'}</div>
+          <div style="font-size:13px;color:var(--tx);font-weight:700">Modo detallado</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">${isExpressDisabled()?'Activado — cada serie tiene su propio formulario y timer.':'Desactivado — modo express: se registra solo la última serie.'}</div>
         </div>
         <button onclick="setExpressDisabled(${isExpressDisabled()?'false':'true'})" role="switch" aria-checked="${isExpressDisabled()?'true':'false'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isExpressDisabled()?'rgba(126,192,255,.5)':'var(--bd)'};background:${isExpressDisabled()?'rgba(126,192,255,.2)':'var(--dk)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
           <span style="position:absolute;top:2px;left:${isExpressDisabled()?'24px':'2px'};width:24px;height:24px;border-radius:50%;background:${isExpressDisabled()?'#7ec0ff':'var(--mt)'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
@@ -10867,38 +10897,38 @@ function showSessionSummary(di) {
   var volStr  = totalVol > 999 ? (totalVol/1000).toFixed(1)+' t' : Math.round(totalVol)+' kg';
   var sesName = (ses.dia || 'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim();
 
+  var old = document.getElementById('sessionSummaryOv');
+  if (old) old.remove();
   var ov = document.createElement('div');
   ov.id = 'sessionSummaryOv';
-  ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:3000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 20px;animation:fadeSlideIn .25s ease-out both';
+  ov.style.cssText = 'position:fixed;left:12px;right:12px;bottom:90px;max-width:456px;margin:0 auto;background:var(--card);border:1px solid rgba(196,255,0,.4);border-radius:16px;padding:14px 16px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:fadeSlideIn .25s ease-out both';
   ov.innerHTML =
-    '<div style="text-align:center;margin-bottom:28px">'+
-      '<div style="font-size:52px;line-height:1;margin-bottom:12px">🏆</div>'+
-      '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:30px;font-weight:800;color:var(--accent);letter-spacing:2px;text-transform:uppercase;line-height:1">SESIÓN COMPLETA</div>'+
-      '<div style="font-size:12px;color:var(--mt);margin-top:6px;letter-spacing:1.5px;text-transform:uppercase">'+sesName+' · SEM '+CURRENT_WEEK+'</div>'+
-    '</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;width:100%;max-width:340px;margin-bottom:10px">'+
-      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
-        '<div style="font-family:\'Courier Prime\',monospace;font-size:30px;font-weight:700;color:var(--tx);line-height:1">'+totalSets+'</div>'+
-        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">SERIES</div>'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'+
+      '<div style="font-size:28px;line-height:1">🏆</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:16px;font-weight:800;color:var(--accent);letter-spacing:2px;text-transform:uppercase">SESIÓN COMPLETA</div>'+
+        '<div style="font-size:11px;color:var(--mt);margin-top:2px;letter-spacing:1px">'+sesName+' · SEM '+CURRENT_WEEK+'</div>'+
       '</div>'+
-      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
-        '<div style="font-family:\'Courier Prime\',monospace;font-size:30px;font-weight:700;color:'+icsColor+';line-height:1">'+avgICS+'</div>'+
-        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">ICS PROM</div>'+
+      '<button onclick="document.getElementById(\'sessionSummaryOv\').remove()" style="padding:4px 10px;background:none;border:1px solid var(--border);border-radius:8px;color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">✕</button>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:22px;font-weight:700;color:var(--tx);line-height:1">'+totalSets+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:4px;font-weight:700">SERIES</div>'+
       '</div>'+
-      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
-        '<div style="font-family:\'Courier Prime\',monospace;font-size:22px;font-weight:700;color:var(--tx);line-height:1.2">'+volStr+'</div>'+
-        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">TONELAJE</div>'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:22px;font-weight:700;color:'+icsColor+';line-height:1">'+avgICS+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:4px;font-weight:700">ICS PROM</div>'+
+      '</div>'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:18px;font-weight:700;color:var(--tx);line-height:1.2">'+volStr+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:4px;font-weight:700">TONELAJE</div>'+
       '</div>'+
     '</div>'+
-    '<div style="width:100%;max-width:340px;margin-bottom:20px;font-size:12px;color:var(--mt);text-align:center">'+
-      exDoneCount+' ejercicio'+(exDoneCount!==1?'s':'')+' completado'+(exDoneCount!==1?'s':'')+
-    '</div>'+
-    '<button onclick="document.getElementById(\'sessionSummaryOv\').remove()" style="'+
-      'width:100%;max-width:340px;padding:17px;background:var(--accent);color:#0a0a0a;'+
-      'font-family:\'Big Shoulders Display\',var(--ff);font-size:17px;font-weight:800;letter-spacing:3px;'+
-      'border:none;border-radius:2px;cursor:pointer;text-transform:uppercase">CONTINUAR →</button>';
+    '<div style="font-size:11px;color:var(--mt);text-align:center">'+exDoneCount+' ejercicio'+(exDoneCount!==1?'s':'')+' completado'+(exDoneCount!==1?'s':'')+'</div>';
 
   document.body.appendChild(ov);
+  setTimeout(function(){ var el = document.getElementById('sessionSummaryOv'); if(el) el.remove(); }, 8000);
 }
 
 function _avgArr(arr) {
