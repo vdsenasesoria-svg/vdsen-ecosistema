@@ -199,10 +199,11 @@
     <div style="font-size:8px;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;font-style:italic">El esfuerzo no es negociable</div>
   </div>
   <nav style="padding:12px 12px">
-    <div data-section="clientes"  class="cursor-pointer py-2 px-3 rounded transition font-semibold" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📋 Clientes</div>
-    <div data-section="crearPlan" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📝 Plan</div>
-    <div data-section="catalogo"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🏋️ Catálogo</div>
-    <div data-section="config"    class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">⚙️ Config</div>
+    <div data-section="clientes"   class="cursor-pointer py-2 px-3 rounded transition font-semibold" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📋 Clientes</div>
+    <div data-section="crearPlan"  class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📝 Plan</div>
+    <div data-section="evaluacion" class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">📥 Evaluación</div>
+    <div data-section="catalogo"   class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">🏋️ Catálogo</div>
+    <div data-section="config"     class="cursor-pointer py-2 px-3 rounded" style="font-size:13px;letter-spacing:.5px;color:var(--text-muted);margin-bottom:2px;border-radius:8px;transition:all .15s;-webkit-tap-highlight-color:transparent">⚙️ Config</div>
   </nav>
   <div style="position:absolute;bottom:0;left:0;right:0;padding:16px 20px;border-top:1px solid var(--border-soft)">
     <div style="font-size:8px;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;text-align:center">Ciencias Aplicadas al Deporte</div>
@@ -225,7 +226,7 @@
 </script>
 
 <div class="main-content">
-  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button onclick="showSection('evaluacion')" class="btn-secondary text-sm">📥 Fichas recibidas</button><button id="repairPhoneBtn" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer" title="Crea las entradas phone_index que faltan para que todos los clientes puedan entrar con su celular">🔧 Reparar acceso celular</button></div><div id="clientList"></div></div>
+  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button onclick="showSection('evaluacion')" class="btn-secondary text-sm">📥 Fichas recibidas</button></div><div id="clientList"></div></div>
   <div id="evaluacion" class="section"><div class="flex items-center gap-3 mb-4"><button onclick="showSection('clientes')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">← Clientes</button><h2 class="text-2xl font-bold" style="margin:0">Fichas / Intake</h2></div>
     <div class="card p-4 mb-4">
       <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">Ficha en blanco para nuevos clientes</h3>
@@ -260,10 +261,14 @@
     <div id="intakeActions" class="flex gap-2 mt-2 flex-wrap items-center" style="display:none">
       <button type="button" id="intakeSaveBtn" class="btn-primary">💾 Guardar evaluación</button>
       <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
-      <span class="text-xs" style="color:var(--text-muted)">Extraer:</span>
-      <button type="button" id="intakeCopyTxt" class="btn-secondary text-sm" title="Texto plano — menos tokens/créditos">📄 TXT</button>
-      <button type="button" id="intakeCopyMd" class="btn-secondary text-sm" title="Markdown — para Notion/documentos">📝 MD</button>
-      <button type="button" id="intakeCopyJson" class="btn-secondary text-sm" title="JSON estructurado — para el motor/skill">🧩 JSON</button>
+      <div style="position:relative">
+        <button type="button" id="intakeCopyTxt" class="btn-secondary text-sm" title="Copiar ficha como texto (por defecto)">📋 Copiar ficha</button>
+        <button type="button" onclick="document.getElementById('exportDropdown').style.display=document.getElementById('exportDropdown').style.display==='block'?'none':'block'" class="btn-secondary text-sm" style="padding:6px 8px;margin-left:2px">▾</button>
+        <div id="exportDropdown" style="display:none;position:absolute;left:0;top:calc(100%+4px);background:#1a1a18;border:1px solid var(--border);border-radius:8px;min-width:180px;z-index:50;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.5)">
+          <button type="button" id="intakeCopyMd" class="text-sm w-full text-left" style="padding:10px 14px;background:none;border:none;color:var(--text-muted);cursor:pointer;border-bottom:1px solid rgba(244,244,240,.06)">📝 Copiar como Markdown</button>
+          <button type="button" id="intakeCopyJson" class="text-sm w-full text-left" style="padding:10px 14px;background:none;border:none;color:var(--text-muted);cursor:pointer">🧩 Copiar como JSON (Motor)</button>
+        </div>
+      </div>
       <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
       <button type="button" id="intakeFichaWA" onclick="sendFichaClientePdf()" class="btn-secondary text-sm" title="Generar PDF con diagnóstico para el cliente y compartir por WhatsApp">📱 PDF → Cliente</button>
     </div>
@@ -286,8 +291,16 @@
       </div>
       <div id="autoGenStatus" class="text-sm mt-3"></div>
     </div>
-    <div class="text-xs mb-2" style="color:var(--text-muted)">O crea el plan manualmente:</div>
-    <div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
+    <div style="position:relative;display:inline-block;margin-bottom:16px" id="importPlanMenuWrap">
+      <button onclick="toggleImportPlanMenu()" style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;font-weight:600;cursor:pointer">📥 Importar / crear plan <span>▾</span></button>
+      <div id="importPlanMenu" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:6px;min-width:230px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+        <button id="manualModeBtn" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">✏️ Manual — editar serie a serie</button>
+        <button id="textModeBtn" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">📋 Pegar texto — formato libre</button>
+        <button id="pdfPlanModeBtn" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">📄 Subir PDF del plan</button>
+        <button id="jsonModeBtn" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">🧩 Pegar JSON (Claude)</button>
+      </div>
+    </div>
+    <div id="planBuilder"></div></div>
   <div id="templates" class="section"><div class="flex items-center gap-3 mb-4"><button onclick="showSection('crearPlan')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">← Plan</button><h2 class="text-2xl font-bold" style="margin:0">Templates</h2></div><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
@@ -309,6 +322,11 @@
       <button id="diagFirebaseBtn" class="btn-secondary text-sm">Ejecutar diagnóstico</button>
       <div id="diagFirebaseOut" class="text-xs mt-3" style="font-family:monospace;line-height:1.6"></div>
     </div>
+    <div class="card p-4 mb-4">
+      <label class="block text-sm font-medium mb-2">🔧 Herramientas de mantenimiento</label>
+      <p class="text-xs text-[#888] mb-3">Úsalas solo si hay problemas de acceso con celular.</p>
+      <button id="repairPhoneBtn" onclick="repairPhoneIndexAll()" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer">🔧 Reparar acceso celular</button>
+    </div>
   </div>
 </div>
 <div id="newClientModal" class="modal-overlay" style="display:none;">
@@ -329,10 +347,11 @@
     <label class="block text-xs text-[#888] mb-1">Email <span class="text-[#555]">(opcional — si no lo pones, se genera desde el celular)</span></label>
     <input id="nc-email" class="input-field mb-3" type="email" placeholder="juan@email.com (opcional)">
     <label class="block text-xs text-[#888] mb-1">Contraseña temporal</label>
-    <div style="position:relative" class="mb-4">
-      <input id="nc-pass" class="input-field" type="password" placeholder="mínimo 6 caracteres" style="padding-right:42px;width:100%;box-sizing:border-box">
-      <button type="button" onclick="_togglePwd('nc-pass',this)" aria-label="Mostrar/ocultar contraseña" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#888;font-size:18px;cursor:pointer;padding:4px 8px">👁</button>
+    <div style="position:relative" class="mb-1">
+      <input id="nc-pass" class="input-field" type="text" placeholder="mínimo 6 caracteres" style="padding-right:76px;width:100%;box-sizing:border-box">
+      <button type="button" onclick="_genPass('nc-pass')" title="Generar contraseña" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.3);color:#c4ff00;font-size:11px;font-weight:700;cursor:pointer;padding:4px 8px;border-radius:6px">🔀 Generar</button>
     </div>
+    <div class="text-[10px] text-[#666] mb-3">Se mostrará en texto plano para que puedas copiarla y enviársela al cliente.</div>
     <button id="nc-submit" class="btn-primary w-full">Crear cliente</button>
   </div>
 </div>
@@ -351,29 +370,46 @@
       <option>Empuje</option><option>Jalón</option><option>Pierna</option>
       <option>Bisagra</option><option>Core</option><option>Cardio</option><option>Otro</option>
     </select>
-    <label class="block text-xs text-[#888] mb-1">Equipamiento (opcional)</label>
-    <input id="ex-equip" class="input-field mb-3" placeholder="Barra, Mancuernas...">
-    <label class="block text-xs text-[#888] mb-1">Tipo de fibra <span class="text-[#F4F4F0]">— afecta % de incremento de carga</span></label>
-    <select id="ex-muscletype" class="input-field mb-3">
-      <option value="typeIIx">Tipo IIx — Rápidas (Pecho, Isquios, Tríceps) +6.25%</option>
-      <option value="typeI">Tipo I — Lentas (Sóleo, Abdomen, Erectores) +2.5%</option>
-    </select>
-    <label class="block text-xs text-[#888] mb-1">Costo de fatiga SNC (1-5)</label>
-    <select id="ex-fatigue" class="input-field mb-3">
-      <option value="1">1 — Muy bajo (ej: curl bíceps)</option>
-      <option value="2">2 — Bajo (ej: extensión cuádriceps)</option>
-      <option value="3" selected>3 — Moderado (ej: press banca)</option>
-      <option value="4">4 — Alto (ej: sentadilla)</option>
-      <option value="5">5 — Muy alto (ej: peso muerto)</option>
-    </select>
-    <label class="block text-xs text-[#888] mb-1">Curva de resistencia</label>
-    <select id="ex-curve" class="input-field mb-3">
-      <option value="elongated">Elongada — máxima tensión en estiramiento (ej: RDL)</option>
-      <option value="mid" selected>Media — tensión uniforme (ej: press)</option>
-      <option value="shortened">Acortada — máxima tensión en contracción (ej: curl polea)</option>
-    </select>
-    <label class="block text-xs text-[#888] mb-1">Notas de ejecución <span class="text-[#555]">(aparecen automáticamente al cliente)</span></label>
-    <textarea id="ex-notes" class="input-field mb-4" rows="3" placeholder="Ej: Tempo 3-1-1. Mantener core activo. Codos a 45°. Rodillas alineadas con pies..."></textarea>
+    <details style="margin-bottom:12px">
+      <summary style="cursor:pointer;font-size:11px;color:var(--text-muted);letter-spacing:.5px;list-style:none;display:flex;align-items:center;gap:4px">
+        <span>▸</span><span>Detalles avanzados (equipamiento, fibra, fatiga, curva, notas)</span>
+      </summary>
+      <div style="margin-top:10px;display:grid;gap:10px">
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Equipamiento (opcional)</label>
+          <input id="ex-equip" class="input-field" placeholder="Barra, Mancuernas...">
+        </div>
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Tipo de fibra — afecta % de incremento de carga</label>
+          <select id="ex-muscletype" class="input-field">
+            <option value="typeIIx">Tipo IIx — Rápidas (Pecho, Isquios, Tríceps) +6.25%</option>
+            <option value="typeI">Tipo I — Lentas (Sóleo, Abdomen, Erectores) +2.5%</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Costo de fatiga SNC (1-5)</label>
+          <select id="ex-fatigue" class="input-field">
+            <option value="1">1 — Muy bajo (ej: curl bíceps)</option>
+            <option value="2">2 — Bajo (ej: extensión cuádriceps)</option>
+            <option value="3" selected>3 — Moderado (ej: press banca)</option>
+            <option value="4">4 — Alto (ej: sentadilla)</option>
+            <option value="5">5 — Muy alto (ej: peso muerto)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Curva de resistencia</label>
+          <select id="ex-curve" class="input-field">
+            <option value="elongated">Elongada — máxima tensión en estiramiento (ej: RDL)</option>
+            <option value="mid" selected>Media — tensión uniforme (ej: press)</option>
+            <option value="shortened">Acortada — máxima tensión en contracción (ej: curl polea)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-[#888] mb-1">Notas de ejecución (aparecen al cliente)</label>
+          <textarea id="ex-notes" class="input-field" rows="3" placeholder="Ej: Tempo 3-1-1. Mantener core activo. Codos a 45°..."></textarea>
+        </div>
+      </div>
+    </details>
     <button id="ex-submit" class="btn-primary w-full">Agregar al catálogo</button>
   </div>
 </div>
@@ -386,17 +422,21 @@
         <h3 class="text-xl font-bold" id="modalClientName">—</h3>
         <button onclick="navClient(1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" title="Siguiente cliente">▶</button>
       </div>
-      <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
+      <div class="flex items-center gap-2">
+        <button id="modalDeleteClientBtn" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:12px;cursor:pointer" title="Eliminar cliente">🗑 Eliminar</button>
+        <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
+      </div>
     </div>
     <div id="clientNavBar" class="flex gap-1 mb-3 overflow-x-auto pb-1"></div>
     <div id="modalClientBody"></div>
   </div>
 </div>
 <div class="bottom-nav-mobile" id="bottomNavMobile">
-  <div data-section="clientes"  class="nav-item-mobile"><span class="nav-icon">📋</span>Clientes</div>
-  <div data-section="crearPlan" class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
-  <div data-section="catalogo"  class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
-  <div data-section="config"    class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
+  <div data-section="clientes"   class="nav-item-mobile"><span class="nav-icon">📋</span>Clientes</div>
+  <div data-section="crearPlan"  class="nav-item-mobile"><span class="nav-icon">📝</span>Plan</div>
+  <div data-section="evaluacion" class="nav-item-mobile"><span class="nav-icon">📥</span>Evaluación</div>
+  <div data-section="catalogo"   class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
+  <div data-section="config"     class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
 </div>
 
 <script type="module">
@@ -447,6 +487,62 @@
       ov.querySelector('#_ack_cancel').addEventListener('click', () => cleanup(false));
       ov.addEventListener('click', e => { if (e.target === ov) cleanup(false); });
     });
+  }
+
+  function _promptModal(title, placeholder, defaultVal) {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:24px;max-width:340px;width:100%;font-family:inherit">
+        <p style="color:#f0ece4;font-size:14px;line-height:1.5;margin:0 0 14px">${title}</p>
+        <input id="_pm_inp" type="text" value="${defaultVal||''}" placeholder="${placeholder||''}" autocomplete="off" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid #444;background:#111;color:#f0ece4;font-size:14px;box-sizing:border-box;margin-bottom:16px;outline:none">
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button id="_pm_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer">Cancelar</button>
+          <button id="_pm_ok" style="padding:8px 18px;border-radius:8px;border:none;background:#c4ff00;color:#000;font-size:13px;font-weight:700;cursor:pointer">Aceptar</button>
+        </div></div>`;
+      document.body.appendChild(ov);
+      const inp = ov.querySelector('#_pm_inp');
+      inp.focus(); inp.select();
+      const done = v => { ov.remove(); resolve(v); };
+      ov.querySelector('#_pm_ok').onclick = () => done(inp.value.trim() || null);
+      ov.querySelector('#_pm_cancel').onclick = () => done(null);
+      ov.onclick = e => { if (e.target === ov) done(null); };
+      inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value.trim() || null); if (e.key === 'Escape') done(null); };
+    });
+  }
+
+  function _selectModal(title, options) {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      const listHtml = options.map((o,i) => `<button data-idx="${i}" style="display:block;width:100%;text-align:left;padding:10px 12px;border-radius:8px;border:1px solid #333;background:#111;color:#f0ece4;font-size:13px;cursor:pointer;margin-bottom:6px;transition:background .15s" onmouseover="this.style.background='#1e1e1e'" onmouseout="this.style.background='#111'">${o.name}</button>`).join('');
+      ov.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:24px;max-width:380px;width:100%;font-family:inherit">
+        <p style="color:#f0ece4;font-size:14px;line-height:1.5;margin:0 0 14px">${title}</p>
+        <div style="max-height:280px;overflow-y:auto;margin-bottom:16px">${listHtml}</div>
+        <div style="display:flex;justify-content:flex-end">
+          <button id="_sm_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer">Cancelar</button>
+        </div></div>`;
+      document.body.appendChild(ov);
+      const done = v => { ov.remove(); resolve(v); };
+      ov.querySelectorAll('[data-idx]').forEach(btn => btn.onclick = () => done(options[+btn.dataset.idx]));
+      ov.querySelector('#_sm_cancel').onclick = () => done(null);
+      ov.onclick = e => { if (e.target === ov) done(null); };
+    });
+  }
+
+  function _showCopyFallback(text) {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML = `<div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px;max-width:360px;width:100%">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px">Copia este link:</p>
+      <input id="_cfb_inp" readonly value="${text}" style="width:100%;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:#F4F4F0;font-size:12px;font-family:monospace;box-sizing:border-box">
+      <button id="_cfb_ok" style="margin-top:12px;width:100%;padding:11px;border-radius:10px;border:none;background:var(--accent);color:#0A0A0A;font-weight:700;cursor:pointer;font-size:13px">Cerrar</button>
+    </div>`;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('#_cfb_inp');
+    setTimeout(() => { inp.focus(); inp.select(); }, 50);
+    ov.querySelector('#_cfb_ok').onclick = () => ov.remove();
+    ov.onclick = e => { if (e.target === ov) ov.remove(); };
   }
 
   function showToast(msg, isError = false) {
@@ -1020,7 +1116,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   window.isClientLiveTraining = isClientLiveTraining;
   
   async function initCoachUI() {
-    document.getElementById("repairPhoneBtn").onclick = () => repairPhoneIndexAll();
+    const _rpb = document.getElementById("repairPhoneBtn"); if (_rpb) _rpb.onclick = () => repairPhoneIndexAll();
     loadClientList();
     loadExerciseCatalog();
     loadClientsSelect();
@@ -1183,7 +1279,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const safeName = (c.displayName || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
           return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
             <span><strong>${c.displayName}</strong>${weekBadge} <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${ciStatusBadge}${sessBadge}${liveBadge}${alertChip}</span>
-            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="showMergeModal('${c.id}')" title="Fusionar con cliente duplicado" style="padding:3px 8px;border-radius:6px;border:1px solid #7788cc;background:rgba(119,136,204,.1);color:#7788cc;font-size:13px;cursor:pointer">⇌</button><button onclick="deleteClient('${c.id}','${safeName}')" title="Eliminar cliente" style="padding:3px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:13px;cursor:pointer">🗑</button></span>
+            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="showMergeModal('${c.id}')" title="Fusionar con cliente duplicado" style="padding:3px 8px;border-radius:6px;border:1px solid #7788cc;background:rgba(119,136,204,.1);color:#7788cc;font-size:13px;cursor:pointer">⇌</button></span>
           </div>`;
         }).join('');
 
@@ -1424,6 +1520,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       // Delete client doc
       await deleteDoc(doc(db, 'clients', uid));
       showToast(`Cliente "${name}" eliminado`);
+      closeClientModal();
       await loadClientList();
     } catch(e) {
       showToast('Error al eliminar: ' + (e.message || e.code), true);
@@ -1536,7 +1633,13 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         if (prefill.fichaData) { try { loadFichasRecibidas(); } catch(_){} }
       } catch (e) {
         if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password") {
-          showToast("El email ya existe con otra contraseña. Usa la contraseña original del cliente.", true);
+          // Mostrar opción de recuperar contraseña
+          const ncEmail = document.getElementById('nc-email')?.value?.trim() || email;
+          const useReset = await _askConfirm(`El email ya existe con otra contraseña.<br><span style="color:#888;font-size:12px">¿Enviar un enlace de reseteo de contraseña al correo ${ncEmail}?</span>`);
+          if (useReset) {
+            try { await sendPasswordResetEmail(auth, ncEmail); showToast('Enlace de reseteo enviado a ' + ncEmail); }
+            catch(re) { showToast('Error al enviar: ' + re.message, true); }
+          }
         } else {
           showToast("Error: " + e.message, true);
         }
@@ -3069,8 +3172,24 @@ Reporte:
     snap.forEach(d => { select.innerHTML += `<option value="${d.id}">${d.data().displayName}</option>`; });
   }
   
+  function toggleImportPlanMenu() {
+    var menu = document.getElementById('importPlanMenu');
+    if (!menu) return;
+    var open = menu.style.display !== 'none';
+    menu.style.display = open ? 'none' : 'block';
+    if (!open) setTimeout(function() {
+      document.addEventListener('click', function _cl(e) {
+        if (!e.target.closest('#importPlanMenuWrap')) { menu.style.display='none'; document.removeEventListener('click',_cl); }
+      });
+    }, 0);
+  }
+  window.toggleImportPlanMenu = toggleImportPlanMenu;
+
+  function _closeImportPlanMenu() { var m=document.getElementById('importPlanMenu'); if(m) m.style.display='none'; }
+
   // ========== MODO TEXTO ==========
   document.getElementById("textModeBtn")?.addEventListener("click", () => {
+    _closeImportPlanMenu();
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     document.getElementById("planBuilder").innerHTML = `
       <div class="card p-4 mb-4">
@@ -3090,6 +3209,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
 
   // ========== MODO PDF ==========
   document.getElementById("pdfPlanModeBtn")?.addEventListener("click", () => {
+    _closeImportPlanMenu();
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     document.getElementById("planBuilder").innerHTML = `
       <div class="card p-4 mb-4">
@@ -3103,6 +3223,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
 
   // ========== MODO JSON (generado por Claude) ==========
   document.getElementById("jsonModeBtn")?.addEventListener("click", () => {
+    _closeImportPlanMenu();
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     document.getElementById("planBuilder").innerHTML = `
       <div class="card p-4 mb-4">
@@ -4108,6 +4229,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   // ========== MODO MANUAL ==========
   document.getElementById("manualModeBtn")?.addEventListener("click", () => {
+    _closeImportPlanMenu();
     if (!currentCoach) { showToast("⚠️ No hay sesión activa. Recarga la página.", true); return; }
     manualPlan = null;
     activeMPDay = 0;
@@ -4301,6 +4423,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailClientData = clientSnap.data();
     const c = _detailClientData;
     title.textContent = c.displayName;
+    const _delBtn = document.getElementById('modalDeleteClientBtn');
+    if (_delBtn) {
+      _delBtn.style.display = '';
+      _delBtn.onclick = () => deleteClient(clientId, c.displayName || c.email || clientId);
+    }
     _renderClientNavBar(clientId);
 
     _detailPlanData = null;
@@ -5898,15 +6025,14 @@ El esfuerzo no es negociable.
         <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Notas privadas del coach</div>
         <div class="text-xs text-[#555] mb-2">Visibles solo para ti. Lesiones, contexto personal, comportamiento, recordatorios.</div>
         ${noteDate ? `<div class="text-xs text-[#444] mb-2">Última actualización: ${noteDate}</div>` : ''}
-        <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="10" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
-        <button onclick="saveCoachNote()" class="btn-primary mt-2 w-full">💾 Guardar nota</button>
+        <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="8" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
       </div>
-      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:16px">
+      <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:16px;margin-bottom:16px">
         <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Mensaje para el cliente</div>
         <div class="text-xs text-[#555] mb-2">Visible en el Perfil del cliente. Úsalo para motivación, indicaciones o recordatorios.</div>
-        <textarea id="clientMsgTA" class="input-field w-full text-sm" rows="5" placeholder="Ej: Esta semana enfócate en la técnica del peso muerto — bajamos carga al 80%...">${clientMsg.replace(/</g,'&lt;')}</textarea>
-        <button onclick="saveClientMessage()" class="btn-primary mt-2 w-full">📨 Enviar mensaje al cliente</button>
-      </div>`;
+        <textarea id="clientMsgTA" class="input-field w-full text-sm" rows="4" placeholder="Ej: Esta semana enfócate en la técnica del peso muerto — bajamos carga al 80%...">${clientMsg.replace(/</g,'&lt;')}</textarea>
+      </div>
+      <button onclick="saveAllNotes()" class="btn-primary w-full">💾 Guardar notas</button>`;
   }
 
   async function saveCoachNote() {
@@ -5915,8 +6041,7 @@ El esfuerzo no es negociable.
     try {
       await updateDoc(doc(db,'clients',_detailClientId), { coachNote: val, coachNoteUpdatedAt: new Date().toISOString() });
       if (_detailClientData) { _detailClientData.coachNote = val; _detailClientData.coachNoteUpdatedAt = new Date().toISOString(); }
-      showToast('Nota guardada ✅');
-    } catch(e) { showToast('Error al guardar: '+e.message, true); }
+    } catch(e) { throw e; }
   }
   window.saveCoachNote = saveCoachNote;
 
@@ -5926,14 +6051,23 @@ El esfuerzo no es negociable.
     try {
       await updateDoc(doc(db,'clients',_detailClientId), { clientMessage: val, clientMessageUpdatedAt: new Date().toISOString() });
       if (_detailClientData) _detailClientData.clientMessage = val;
-      showToast('Mensaje enviado al cliente ✅');
-    } catch(e) { showToast('Error: '+e.message, true); }
+    } catch(e) { throw e; }
   }
   window.saveClientMessage = saveClientMessage;
 
+  async function saveAllNotes() {
+    if (!_detailClientId) return;
+    try {
+      await saveCoachNote();
+      await saveClientMessage();
+      showToast('Notas guardadas ✅');
+    } catch(e) { showToast('Error al guardar: '+e.message, true); }
+  }
+  window.saveAllNotes = saveAllNotes;
+
   async function _saveCurrentPlanAsTemplate(planId) {
-    const name = prompt('Nombre para el template:');
-    if (!name || !name.trim()) return;
+    const name = await _promptModal('Nombre para el template:', 'Ej: Fuerza 4 días');
+    if (!name) return;
     try {
       const snap = await getDoc(doc(db,'plans',planId));
       if (!snap.exists()) { showToast('Plan no encontrado', true); return; }
@@ -6892,34 +7026,32 @@ El esfuerzo no es negociable.
           Otro país: incluye código país (ej. <span class="text-[#c8a54a] font-bold">15551234567</span> para EEUU).
         </div>
         <div id="eci-phone-preview" class="text-[11px] mb-3 min-h-[14px] font-semibold" style="color:#44BB88"></div>
-        <div class="p-3 mb-3 rounded" style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.35)">
-          <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
-            <strong style="color:#c8a54a">📲 Migrar login a celular:</strong> permite que el cliente entre con su número (10 dígitos MX o con código país) además de con su correo. Su contraseña actual no cambia.
+        <details class="mb-3">
+          <summary style="cursor:pointer;list-style:none;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.03);color:#aaa;font-size:12px;font-weight:600;user-select:none">🔧 Opciones de acceso avanzadas ▾</summary>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+            <div class="p-3 rounded" style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.35)">
+              <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
+                <strong style="color:#c8a54a">📲 Migrar login a celular:</strong> el cliente podrá entrar con su número (MX o código país). La contraseña no cambia.
+              </div>
+              <button id="eci-migrate-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(200,165,74,.15);border:1px solid #c8a54a;color:#c8a54a;cursor:pointer;font-weight:700">✓ Habilitar login por celular</button>
+              <div id="eci-migrate-status" class="text-xs mt-2"></div>
+            </div>
+            <div class="p-3 rounded" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.25)">
+              <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
+                <strong style="color:#4488cc">📧 Contraseña:</strong> envía un enlace de reseteo al correo del cliente.
+              </div>
+              <button id="eci-reset-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc;cursor:pointer">📧 Enviar enlace de reseteo</button>
+              <div id="eci-reset-status" class="text-xs mt-2"></div>
+            </div>
+            <div class="p-3 rounded" style="background:rgba(30,30,30,.6);border:1px solid var(--border)">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-bold" style="color:#aaa">🔍 Diagnóstico de acceso</span>
+                <button id="eci-diag-btn" class="text-[10px] px-2 py-1 rounded" style="background:rgba(255,255,255,.06);border:1px solid var(--border);color:#aaa;cursor:pointer">Verificar</button>
+              </div>
+              <div id="eci-diag-result" class="text-[11px] leading-relaxed" style="color:#888">Presiona "Verificar" para revisar el estado de acceso.</div>
+            </div>
           </div>
-          <button id="eci-migrate-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(200,165,74,.15);border:1px solid #c8a54a;color:#c8a54a;cursor:pointer;font-weight:700">✓ Habilitar login por celular</button>
-          <div id="eci-migrate-status" class="text-xs mt-2"></div>
-        </div>
-        <div class="p-3 mb-3 rounded" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.25)">
-          <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
-            <strong style="color:#4488cc">ℹ️ Contraseña:</strong> el SDK web no permite cambiarla directamente al cliente. Envía un enlace de reseteo al correo del cliente y él la elige.
-          </div>
-          <button id="eci-reset-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc;cursor:pointer">📧 Enviar enlace de reseteo de contraseña</button>
-          <div id="eci-reset-status" class="text-xs mt-2"></div>
-        </div>
-        <div class="p-3 mb-3 rounded" style="background:rgba(30,30,30,.6);border:1px solid var(--border)">
-          <div class="flex justify-between items-center mb-2">
-            <span class="text-xs font-bold" style="color:#aaa">🔍 Diagnóstico de acceso</span>
-            <button id="eci-diag-btn" class="text-[10px] px-2 py-1 rounded" style="background:rgba(255,255,255,.06);border:1px solid var(--border);color:#aaa;cursor:pointer">Verificar</button>
-          </div>
-          <div id="eci-diag-result" class="text-[11px] leading-relaxed" style="color:#888">Presiona "Verificar" para revisar el estado de acceso de este cliente.</div>
-        </div>
-        <div class="p-3 mb-3 rounded" style="background:rgba(192,86,74,.06);border:1px solid rgba(192,86,74,.25)">
-          <div class="text-xs font-bold mb-1" style="color:#c0564a">🔧 Reparar UID (mismatch)</div>
-          <div class="text-[10px] mb-2" style="color:#888;line-height:1.4">Si el cliente ve "ficha enviada" y el diagnóstico es correcto, su UID de Auth difiere del UID en Firestore. Pídele que te mande el UID que aparece al fondo de la pantalla de espera y pégalo aquí.</div>
-          <input id="eci-newuid" type="text" placeholder="UID real del cliente (de la pantalla de espera)" class="w-full text-xs p-2 rounded mb-2" style="background:#111;border:1px solid #444;color:#eee;font-family:monospace">
-          <button id="eci-repairuid-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(192,86,74,.2);border:1px solid #c0564a;color:#c0564a;cursor:pointer;font-weight:700">⚡ Reparar UID</button>
-          <div id="eci-repairuid-status" class="text-xs mt-2"></div>
-        </div>
+        </details>
         <div class="flex gap-2">
           <button onclick="this.closest('.modal-overlay').remove()" class="btn-secondary flex-1">Cancelar</button>
           <button id="eci-save" class="btn-primary flex-1">Guardar cambios</button>
@@ -7235,8 +7367,12 @@ El esfuerzo no es negociable.
   }
 
   async function setClientWeekManual(clientId) {
-    const w = parseInt(prompt('¿A qué semana mover a este cliente? (1 – 6)'));
-    if (!w || w < 1 || w > 6) { showToast('Semana inválida (1-6)', true); return; }
+    const totalW = (_detailPlanData && _detailPlanData.weeks) ? _detailPlanData.weeks : 6;
+    const opts = Array.from({length:totalW}, (_,i) => ({ id: String(i+1), name: 'Semana ' + (i+1) + (i+1===totalW?' (DELOAD)':'') }));
+    const sel = await _selectModal('¿A qué semana mover al cliente?', opts);
+    if (!sel) return;
+    const w = parseInt(sel.id);
+    if (!w || w < 1 || w > totalW) { showToast('Semana inválida', true); return; }
     try {
       await ensureCoachDoc();
       const logsRef = doc(db, 'logs', clientId);
@@ -7356,18 +7492,11 @@ El esfuerzo no es negociable.
 
       // Preguntar a qué cliente asignar
       const clientsSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
-      let opts = [];
-      clientsSnap.forEach(d => opts.push({ id: d.id, name: d.data().displayName || d.data().email }));
-      const optList = opts.map((o,i) => (i+1)+'. '+o.name).join('\n');
-      const sel = prompt('Asignar plan duplicado a:\n'+optList+'\n\nEscribe el número (o "mismo" para el cliente actual):');
+      let opts = [{ id: clientId, name: '↩ Mismo cliente (nuevo borrador)' }];
+      clientsSnap.forEach(d => { if (d.id !== clientId) opts.push({ id: d.id, name: d.data().displayName || d.data().email }); });
+      const sel = await _selectModal('Asignar plan duplicado a:', opts);
       if (!sel) return;
-
-      let targetId = clientId;
-      if (sel.toLowerCase() !== 'mismo') {
-        const idx = parseInt(sel) - 1;
-        if (idx >= 0 && idx < opts.length) targetId = opts[idx].id;
-        else { showToast('Selección inválida', true); return; }
-      }
+      const targetId = sel.id;
 
       // Crear copia del plan
       const newPlan = { ...planData, clientId: targetId, createdAt: Date.now(), status: 'active' };
@@ -7599,12 +7728,9 @@ El esfuerzo no es negociable.
     let opts = [];
     clientsSnap.forEach(d => opts.push({ id: d.id, name: d.data().displayName || d.data().email }));
     if (!opts.length) { showToast('No hay clientes', true); return; }
-    const optList = opts.map((o,i) => (i+1)+'. '+o.name).join('\n');
-    const sel = prompt('Asignar template a:\n'+optList+'\n\nNúmero del cliente:');
+    const sel = await _selectModal('Asignar template a:', opts);
     if (!sel) return;
-    const ci = parseInt(sel) - 1;
-    if (ci < 0 || ci >= opts.length) { showToast('Selección inválida', true); return; }
-    const clientId = opts[ci].id;
+    const clientId = sel.id;
 
     let template;
     if (type === 'builtin') {
@@ -7636,23 +7762,22 @@ El esfuerzo no es negociable.
   }
 
   async function createTemplateFromPlan() {
-    const name = prompt('Nombre del template:');
+    const name = await _promptModal('Nombre del template:', 'Ej: Fuerza 4 días');
     if (!name) return;
     // Buscar planes del coach para usar como base
     const planSnap = await getDocs(query(collection(db, "plans"), where("coachId", "==", currentCoach.uid)));
     let plans = [];
     planSnap.forEach(d => plans.push({ id: d.id, ...d.data() }));
     if (!plans.length) { showToast('No hay planes para usar como base. Crea un plan primero.', true); return; }
-    const optList = plans.map((p,i) => (i+1)+'. '+(p.days||[]).map(d=>d.label).join(', ')).join('\n');
-    const sel = prompt('Basado en qué plan:\n'+optList);
+    const planOpts = plans.map(p => ({ id: p.id, name: (p.days||[]).map(d=>d.label).join(', ') || p.id }));
+    const sel = await _selectModal('Basado en qué plan:', planOpts);
     if (!sel) return;
-    const pi = parseInt(sel) - 1;
-    if (pi < 0 || pi >= plans.length) return;
+    const basePlan = plans.find(p => p.id === sel.id);
 
     try {
       await addDoc(collection(db, 'templates'), {
-        name, coachId: currentCoach.uid, weeks: plans[pi].weeks || 6,
-        days: (plans[pi].days || []).map(d => ({ label: d.label, exercises: d.exercises || [] })),
+        name, coachId: currentCoach.uid, weeks: basePlan.weeks || 6,
+        days: (basePlan.days || []).map(d => ({ label: d.label, exercises: d.exercises || [] })),
         createdAt: Date.now()
       });
       showToast('Template "'+name+'" creado ✅');
@@ -7677,6 +7802,15 @@ El esfuerzo no es negociable.
     var show = el.type === 'password';
     el.type = show ? 'text' : 'password';
     if (btn) btn.textContent = show ? '🙈' : '👁';
+  };
+
+  window._genPass = function(id) {
+    var adj = ['Fuerte','Rapido','Ligero','Potente','Firme','Solido','Activo','Directo'];
+    var sust = ['Toro','Leon','Tigre','Agui','Perro','Lobo','Puma','Cond'];
+    var num = Math.floor(Math.random()*90)+10;
+    var pass = adj[Math.floor(Math.random()*adj.length)] + sust[Math.floor(Math.random()*sust.length)] + num;
+    var el = document.getElementById(id);
+    if (el) { el.value = pass; el.type = 'text'; el.focus(); el.select(); }
   };
   window.showClientDetail = showClientDetail;
   window.closeClientModal = closeClientModal;
@@ -8254,8 +8388,8 @@ El esfuerzo no es negociable.
   function copyFichaLink(){
     if(!currentCoach){ showToast('Inicia sesión', true); return; }
     const url=_fichaLinkUrl();
-    if(navigator.clipboard) navigator.clipboard.writeText(url).then(()=>showToast('🔗 Link copiado')).catch(()=>prompt('Copia el link:', url));
-    else prompt('Copia el link:', url);
+    if(navigator.clipboard) navigator.clipboard.writeText(url).then(()=>showToast('🔗 Link copiado')).catch(()=>_showCopyFallback(url));
+    else _showCopyFallback(url);
   }
   function shareFichaWhatsApp(){
     if(!currentCoach){ showToast('Inicia sesión', true); return; }
@@ -8703,9 +8837,10 @@ El esfuerzo no es negociable.
 
   document.getElementById('intakeClientSelect').addEventListener('change', e=> loadIntakeForClient(e.target.value));
   document.getElementById('intakeSaveBtn').addEventListener('click', saveIntake);
-  document.getElementById('intakeCopyTxt').addEventListener('click', ()=>intakeExport('txt'));
-  document.getElementById('intakeCopyMd').addEventListener('click', ()=>intakeExport('md'));
-  document.getElementById('intakeCopyJson').addEventListener('click', ()=>intakeExport('json'));
+  document.getElementById('intakeCopyTxt').addEventListener('click', ()=>{ intakeExport('txt'); document.getElementById('exportDropdown').style.display='none'; });
+  document.getElementById('intakeCopyMd').addEventListener('click', ()=>{ intakeExport('md'); document.getElementById('exportDropdown').style.display='none'; });
+  document.getElementById('intakeCopyJson').addEventListener('click', ()=>{ intakeExport('json'); document.getElementById('exportDropdown').style.display='none'; });
+  document.addEventListener('click', e=>{ var dd=document.getElementById('exportDropdown'); if(dd && !e.target.closest('#exportDropdown') && e.target.id!=='intakeCopyTxt') dd.style.display='none'; });
   document.getElementById('intakeFotoClear').addEventListener('click', clearFotometria);
   document.getElementById('intakeNewClientBtn').addEventListener('click', ()=>{ if(typeof createClientModal==='function') createClientModal(); });
   document.getElementById('intakeForm').addEventListener('change', (e)=>{

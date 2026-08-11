@@ -269,7 +269,7 @@ button:active{opacity:.85}
     <div class="login-card">
       <div class="lf">
         <label>Celular o correo</label>
-        <input type="text" id="liEmail" placeholder="5551234567 o tucorreo@email.com" autocomplete="username" inputmode="text">
+        <input type="text" id="liEmail" placeholder="5551234567 o tucorreo@email.com" autocomplete="username" inputmode="tel">
         <div id="liHint" style="font-size:10px;color:var(--mt);line-height:1.5;margin-top:4px">
           📌 Si usás celular: <strong style="color:var(--tx)">10 dígitos</strong> (sin espacios, guiones ni paréntesis). Ej. <span style="color:var(--accent);font-weight:700">5551234567</span>
         </div>
@@ -313,7 +313,6 @@ button:active{opacity:.85}
   <div class="hdr">
     <div class="logo">VDSEN<em>MI PLAN · v3.2</em></div>
     <div style="display:flex;align-items:center;gap:10px">
-      <button id="themeTglBtn" onclick="toggleLightMode()" title="Cambiar modo claro/oscuro" style="background:none;border:1px solid rgba(244,244,240,.15);border-radius:20px;padding:5px 10px;cursor:pointer;font-size:14px;color:var(--mt);transition:all .2s;flex-shrink:0">🌙</button>
       <div class="hdr-user">
         <strong id="hdName">—</strong>
         <span id="hdGoal">—</span>
@@ -377,6 +376,23 @@ var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el t
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
+
+function toggleExOpts(di, ei) {
+  var menu = document.getElementById('exOptsMenu_'+di+'_'+ei);
+  if (!menu) return;
+  var open = menu.style.display !== 'none';
+  document.querySelectorAll('[id^="exOptsMenu_"]').forEach(function(m){ m.style.display='none'; });
+  menu.style.display = open ? 'none' : 'block';
+  if (!open) {
+    setTimeout(function(){ document.addEventListener('click', function _cl(e){ if (!e.target.closest('#exOptsMenu_'+di+'_'+ei) && !e.target.closest('#exOpts_'+di+'_'+ei)){ menu.style.display='none'; document.removeEventListener('click',_cl); } }); }, 0);
+  }
+}
+function closeExOpts(di, ei) {
+  var menu = document.getElementById('exOptsMenu_'+di+'_'+ei);
+  if (menu) menu.style.display = 'none';
+}
+window.toggleExOpts = toggleExOpts;
+window.closeExOpts = closeExOpts;
 
 function toggleExUnit(di, ei) {
   var oldUnit = getExUnit(di, ei);
@@ -1184,7 +1200,10 @@ function showPhoneConfirmModal(clientRef, clientData) {
   var btnSave = ov.querySelector('#pcfSave');
   var btnKeep = ov.querySelector('#pcfKeep');
   var btnSkip = ov.querySelector('#pcfSkip');
-  if (btnSkip) btnSkip.onclick = function(){ ov.remove(); };
+  if (btnSkip) btnSkip.onclick = async function(){
+    try { await FB.updateDoc(clientRef, { phoneSkippedAt: Date.now() }); } catch(_){}
+    ov.remove();
+  };
   setTimeout(function(){ try { input.focus(); input.select && input.select(); } catch(_){} }, 100);
 
   function _norm(raw) {
@@ -1549,7 +1568,7 @@ async function loadPlan(user) {
 
     // Pedir confirmar/actualizar celular la primera vez tras esta actualización
     // (una sola vez por cliente — se guarda phoneConfirmedAt en Firestore)
-    if (!clientData.phoneConfirmedAt) {
+    if (!clientData.phoneConfirmedAt && !(clientData.phoneSkippedAt && Date.now() - clientData.phoneSkippedAt < 7*86400000)) {
       setTimeout(function(){ showPhoneConfirmModal(clientRef, clientData); }, 900);
     }
 
@@ -2500,7 +2519,7 @@ function buildHistorialWidget() {
     ciTrendHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
       + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">TENDENCIAS CHECK-IN</div>'
       + '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr 1fr;gap:6px;padding-bottom:6px;border-bottom:1px solid rgba(107,107,102,.3);font-size:10px;letter-spacing:1px;color:var(--mt);font-family:var(--ff)">'
-      + '<div>SEM</div><div style="text-align:center">PESO</div><div style="text-align:center">HRV</div><div style="text-align:center">WHO-5</div><div style="text-align:center">ENERGÍA</div>'
+      + '<div>SEM</div><div style="text-align:center">PESO</div><div style="text-align:center">HRV(ms)</div><div style="text-align:center">BIENESTAR</div><div style="text-align:center">ENERGÍA</div>'
       + '</div>'
       + ciRows
       + sparkHtml
@@ -3200,6 +3219,9 @@ function _onTimerFinished() {
   if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 400]);
   showToast('⏱ ¡Descanso terminado!');
   _notifyRestDone();
+  // Si estaba minimizado, expandir automáticamente
+  var pill = document.getElementById('timerPill');
+  if (pill && pill.style.display !== 'none') maximizeTimer();
 }
 
 // Notificación real del navegador (no solo el toast interno). En Android,
@@ -4073,16 +4095,22 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
         '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">'+repsTarget+' REPS</span>'+
-        '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px">RIR '+baseRIR+'</span>'+
+        '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px" title="RIR objetivo del plan">OBJ RIR '+baseRIR+'</span>'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
-        '<button onclick="showExSubModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">🔄 Cambiar</button>'+
-        '<button onclick="showExModModal('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 12px;border-radius:6px;cursor:pointer">⚙ Ajustar</button>'+
-        '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(107,107,102,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(107,107,102,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
         (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
+        (_exNoteInline?'<span style="font-size:10px;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">📝 Nota</span>':'')+
+        '<div style="position:relative;margin-left:auto">'+
+          '<button id="exOpts_'+di+'_'+ei+'" onclick="toggleExOpts('+di+','+ei+')" style="font-size:13px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 11px;border-radius:6px;cursor:pointer;line-height:1">⋮</button>'+
+          '<div id="exOptsMenu_'+di+'_'+ei+'" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;min-width:160px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.4);overflow:hidden">'+
+            '<button onclick="showExSubModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">🔄 Cambiar ejercicio</button>'+
+            '<button onclick="showExModModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">⚙ Ajustar series/reps</button>'+
+            '<button onclick="toggleUserNote('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:none;border:none;cursor:pointer">📝 '+(	_exNoteInline?'Editar nota':'Añadir nota')+'</button>'+
+          '</div>'+
+        '</div>'+
       '</div>'+
       // Nota de sustitución (si existe)
       (_exSubData && _exSubData.nota
@@ -4244,45 +4272,33 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       if (LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_xpc]) _xDoneC++;
     }
     var _xPct = numSeries > 0 ? Math.round(_xDoneC / numSeries * 100) : 0;
-    var _xPBar = '<div style="display:flex;align-items:center;gap:8px;padding:0 0 8px">'+
-      '<div style="flex:1;height:3px;border-radius:2px;background:var(--border);overflow:hidden">'+
-        '<div style="height:100%;width:'+_xPct+'%;background:var(--grn);transition:width .3s;border-radius:2px"></div>'+
-      '</div>'+
-      '<span style="font-size:10px;color:var(--mt);flex-shrink:0;font-weight:700">'+_xDoneC+'/'+numSeries+'</span>'+
-    '</div>';
-    setsHtml = _xPBar + '<input type="hidden" id="xsets_'+_expK+'" value="'+numSeries+'">';
+    var _pillsHtml = '';
     for (var _xs = 0; _xs < numSeries - 1; _xs++) {
       var _xKey = 'exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_xs;
       var _xDone = !!LOGS[_xKey];
-      // Y3T: etiqueta de sub-fase y objetivo de reps para esta serie intermedia
+      // Y3T: tag de sub-fase para mostrar dentro de la pill
       var _xSet = _isY3T ? (_effectiveSets[_xs] || null) : null;
-      var _xSetLabel = '';
+      var _xPhaseTag = '', _xTagColor = '';
       if (_xSet) {
         var _xNote = _xSet.setNote || '';
-        var _xReps = _xSet.repsTarget === 'SST-PROTOCOL' ? 'SST' : (_xSet.repsTarget === 'SST-RIV-PROTOCOL' ? 'SST-RIV' : (_xSet.repsTarget === 999 ? 'AMRAP' : _xSet.repsTarget));
-        var _xIsLiteral = _xSet.repsTarget === 'SST-PROTOCOL' || _xSet.repsTarget === 'SST-RIV-PROTOCOL';
-        var _xIsS1 = _xNote.indexOf('S1') !== -1 || (!_xIsLiteral && _xSet.repsTarget <= 6);
-        var _xColor = _xIsLiteral ? '#9966cc' : (_xIsS1 ? '#7ec0ff' : '#44BB88');
-        var _xPhaseTag = _xNote ? _xNote.split('\u00b7')[0].trim() : (_xIsS1 ? 'S1' : 'S2');
-        _xSetLabel = ' <span style="font-size:9px;font-weight:900;color:'+_xColor+';background:rgba(0,0,0,.25);padding:1px 6px;border-radius:3px">'+_xPhaseTag+' \u00b7 '+_xReps+' reps</span>';
+        var _xRepsV = _xSet.repsTarget;
+        var _xIsLiteral = _xRepsV === 'SST-PROTOCOL' || _xRepsV === 'SST-RIV-PROTOCOL';
+        var _xIsS1 = _xNote.indexOf('S1') !== -1 || (!_xIsLiteral && _xRepsV <= 6);
+        _xTagColor = _xIsLiteral ? '#9966cc' : (_xIsS1 ? '#7ec0ff' : '#44BB88');
+        _xPhaseTag = _xNote ? _xNote.split('\u00b7')[0].trim() : (_xIsLiteral ? 'SST' : (_xIsS1 ? 'S1' : 'S2'));
       }
       if (_xDone) {
-        setsHtml +=
-          '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(110,154,110,.07);border:1px solid rgba(110,154,110,.18);border-radius:12px;margin-bottom:8px">'+
-            '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">\u2713</div>'+
-            '<div style="font-size:13px;font-weight:800;color:var(--grn);flex:1">SERIE '+(_xs+1)+_xSetLabel+'</div>'+
-            '<span style="font-size:10px;color:var(--mt)">Completada</span>'+
-          '</div>';
+        _pillsHtml += '<div style="display:inline-flex;align-items:center;gap:5px;padding:0 16px;height:44px;background:rgba(110,154,110,.15);border:1.5px solid rgba(110,154,110,.45);border-radius:24px">'+
+          '<span style="color:var(--grn);font-size:15px;font-weight:800">\u2713</span>'+
+          '<span style="font-size:13px;font-weight:800;color:var(--grn)">S'+(_xs+1)+'</span>'+
+          (_xPhaseTag ? '<span style="font-size:9px;font-weight:900;color:'+_xTagColor+';background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px">'+_xPhaseTag+'</span>' : '')+
+        '</div>';
       } else {
-        setsHtml +=
-          '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:rgba(255,255,255,.03);border:2px solid rgba(255,255,255,.09);border-radius:12px;margin-bottom:8px">'+
-            '<div style="display:flex;align-items:center;gap:10px">'+
-              '<div style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--mt);font-weight:800">'+(_xs+1)+'</div>'+
-              '<span style="font-size:13px;font-weight:700;color:var(--tx)">SERIE '+(_xs+1)+_xSetLabel+'</span>'+
-            '</div>'+
-            '<button onclick="markExpressSerie('+di+','+ei+','+_xs+')" style="padding:9px 16px;border:none;border-radius:10px;cursor:pointer;background:var(--grn);color:#fff;font-size:12px;font-weight:800;letter-spacing:.5px">'+
-              '\u2713 HECHA \u2192 DESCANSAR</button>'+
-          '</div>';
+        _pillsHtml += '<button onclick="markExpressSerie('+di+','+ei+','+_xs+')" style="display:inline-flex;align-items:center;gap:5px;padding:0 16px;height:44px;background:var(--input-bg);border:1.5px solid var(--border);border-radius:24px;cursor:pointer;-webkit-tap-highlight-color:transparent">'+
+          '<span style="font-size:15px;color:var(--mt)">\u25cb</span>'+
+          '<span style="font-size:13px;font-weight:700;color:var(--mt)">S'+(_xs+1)+'</span>'+
+          (_xPhaseTag ? '<span style="font-size:9px;font-weight:900;color:'+_xTagColor+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_xPhaseTag+'</span>' : '')+
+        '</button>';
       }
     }
     // Y3T: etiqueta de sub-fase para la \u00faltima serie (formulario)
@@ -4296,9 +4312,12 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       var _xLColor = _xLIsLiteral ? '#9966cc' : (_xLIsS1 ? '#7ec0ff' : '#44BB88');
       var _xLPhase = _xLNote ? _xLNote.split('\u00b7')[0].trim() : (_xLIsS1 ? 'S1' : 'S2');
       _xLastLabel = ' <span style="font-size:9px;font-weight:900;color:'+_xLColor+';background:rgba(0,0,0,.25);padding:1px 6px;border-radius:3px">'+_xLPhase+' \u00b7 '+_xLReps+' reps</span>';
-      // Ajustar reps target del formulario al set real de la \u00faltima serie
       if (!_xLIsLiteral && _xLastSet.repsTarget !== 999 && !_exPfReps) _exPfReps = _xLastSet.repsTarget;
     }
+    setsHtml = (numSeries > 1
+      ? '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+_pillsHtml+'</div>'
+      : '')+
+      '<input type="hidden" id="xsets_'+_expK+'" value="'+numSeries+'">';
     setsHtml +=
       '<div style="background:rgba(107,107,102,.04);border:2px solid rgba(107,107,102,.3);border-radius:12px;padding:14px;margin-top:4px">'+
       '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px">'+
@@ -4323,9 +4342,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</div>'+
       '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
         '<div style="flex:1">'+
-          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
           '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
-          '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala \u00b7 6-7 ok \u00b7 8-10 buena</div>'+
         '</div>'+
         '<div style="flex:2">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
@@ -4513,7 +4531,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '</div>';
         })()+
         '<div style="margin-bottom:10px">'+
-          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR REAL <span style="font-weight:400;color:var(--mt2)">· reps sobrantes · 0=fallo</span></div>'+
+          '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR REAL</div>'+
           '<input type="hidden" id="rir_'+key+'" value="'+(rirReal||'')+'">'+
           '<div style="display:flex;gap:4px">'+
             (function(){return[0,1,2,3,4].map(function(rv){
@@ -4530,7 +4548,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         // ICS
         '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end">'+
           '<div style="flex:1">'+
-            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
             (function(){
               var _icsVal = saved.ics || (_prevSesIcs || '');
               var _icsNum = parseInt(_icsVal);
@@ -4539,8 +4557,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
                 ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+_icsBorder+';'+
                 'border-radius:8px;color:'+_icsColor+';font-size:15px;font-weight:700;'+
-                'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\')">'
-                + '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala · 6-7 ok · 8-10 buena</div>';
+                'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\''+')">';
             })()+
           '</div>'+
           '<div style="flex:2">'+
@@ -4559,7 +4576,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
                 }).join('');
               })()+
             '</div>'+
-            '<div style="font-size:9px;color:var(--mt2);margin-top:3px;text-align:center">💪 excelente · 👍 ok · 😐 bajo</div>'+
           '</div>'+
         '</div>'+
         // Actions
@@ -4670,13 +4686,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</div>'
     : '';
 
-  var bannerHtml = '';
-  var expressTipHtml = (ei === 0 && !sessionDone && _isExpressMode)
-    ? '<div style="margin-bottom:10px;padding:8px 12px;background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.12);border-radius:8px;display:flex;align-items:flex-start;gap:8px">'
-      + '<span style="font-size:14px;flex-shrink:0">⚡</span>'
-      + '<div style="font-size:11px;color:var(--mt);line-height:1.5">Usa <strong style="color:var(--accent)">⚡ MARCAR COMPLETA</strong> (arriba) si ya terminaste la sesión y solo quieres anotar los datos rápido — rellena todas las series de golpe.</div>'
-      + '</div>'
-    : '';
+  var bannerHtml = _buildSessionTargetBanner(progrec, _prevWeekBanner, _histExBanner, unit, numSeries, repsTarget, baseRIR);
+  var expressTipHtml = '';
   return machineHtml + headerHtml + notaHtml + closedBannerHtml + bannerHtml + expressTipHtml + wuHtml + setsHtml + completedBlockHtml;
 }
 
@@ -4825,7 +4836,7 @@ function _buildCalisteniaCard(ejercicios, di, ei, isPartner) {
                 '<input id="cal_rpe_'+key+'" type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#e8a040;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
               '<div style="width:54px;flex-shrink:0">'+
-                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">ICS</div>'+
+                '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">Calidad</div>'+
                 '<input id="cal_ics_'+key+'" type="number" min="1" max="10" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#7ec0ff;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
               '</div>'+
             '</div>'+
@@ -5529,7 +5540,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '</div>'+
         '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
           '<div style="flex:1">'+
-            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">ICS 1-10</div>'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
             '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
             '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala · 6-7 ok · 8-10 buena</div>'+
           '</div>'+
@@ -6267,7 +6278,7 @@ function renderEntrenamiento() {
         ? '<div style="background:rgba(110,154,110,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
         : '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">'+
           '<button onclick="markSessionDone('+DIA_ACTIVO+')" title="Marcar esta sesión como completada" style="background:rgba(196,255,0,.12);border:1px solid var(--accent);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:800;color:var(--accent);cursor:pointer;letter-spacing:.5px">✓ COMPLETAR</button>'+
-          '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Rellenar sets con datos de la semana anterior y completar" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ desde historial</button>'+
+          (CURRENT_WEEK > 1 ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Copia los datos de la semana anterior en todos los sets y marca la sesión como completada" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ Copiar sem. anterior</button>' : '') +
           '</div>')+
     '</div>'+
     // Glosario RIR + ICS (colapsable)
@@ -6309,9 +6320,51 @@ function renderEntrenamiento() {
     '<div id="exPanel" style="padding:0 12px 100px">'+
       _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
-    '';
-  // Asegurar que el overlay existe en body (persiste entre re-renders)
-  _ensureRestTimerOverlay();
+    // Rest timer overlay (hidden) — premium design
+    '<div id="restTimerOverlay" onclick="stopRestTimer()" style="display:none;position:fixed;inset:0;background:rgba(6,14,26,.88);z-index:200;align-items:center;justify-content:center;flex-direction:column;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)">'+
+      '<div onclick="event.stopPropagation()" style="'+
+        'background:linear-gradient(160deg,rgba(10,18,32,1) 0%,rgba(6,14,26,1) 100%);'+
+        'border:1px solid rgba(196,255,0,.28);border-radius:28px;padding:36px 40px 32px;'+
+        'text-align:center;min-width:280px;max-width:320px;width:calc(100vw - 48px);'+
+        'box-shadow:0 0 0 1px rgba(196,255,0,.08),0 32px 64px rgba(0,0,0,.7),0 0 80px rgba(196,255,0,.06)">'+
+        '<div style="font-size:10px;color:var(--platinum);letter-spacing:3px;margin-bottom:8px;font-weight:700;text-transform:uppercase;opacity:.7">DESCANSO ACTIVO</div>'+
+        '<div id="restLastSet" style="font-size:12px;color:var(--grn);font-weight:700;min-height:18px;margin-bottom:14px;letter-spacing:.5px"></div>'+
+        '<div style="position:relative;width:160px;height:160px;margin:0 auto 20px">'+
+          '<svg viewBox="0 0 160 160" style="position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)">'+
+            '<circle cx="80" cy="80" r="70" fill="none" stroke="rgba(196,255,0,.1)" stroke-width="6"/>'+
+            '<circle id="restRing" cx="80" cy="80" r="70" fill="none" stroke="url(#rg1)" stroke-width="6" stroke-linecap="round" stroke-dasharray="439.8" stroke-dashoffset="0" style="transition:stroke-dashoffset .9s linear,stroke .5s"/>'+
+            '<defs><linearGradient id="rg1" x1="0%" y1="0%" x2="100%" y2="0%">'+
+              '<stop offset="0%" stop-color="#C4FF00"/><stop offset="50%" stop-color="#C4FF00"/><stop offset="100%" stop-color="#C4FF00"/>'+
+            '</linearGradient></defs>'+
+          '</svg>'+
+          '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">'+
+            '<div id="restTimerNum" style="font-size:60px;font-weight:700;color:var(--accent);line-height:1;font-family:\'Courier Prime\',monospace;letter-spacing:1px">—</div>'+
+            '<div id="restTimerSec" style="font-size:10px;color:var(--mt);letter-spacing:1px;font-weight:600"></div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="display:flex;justify-content:flex-end;margin-bottom:8px">'+
+          '<button onclick="event.stopPropagation();minimizeTimer()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--mt);font-size:11px;font-weight:600;padding:6px 12px;cursor:pointer">⊟ Minimizar</button>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--mt);margin-bottom:20px;letter-spacing:.5px">Toca en cualquier lugar para cerrar</div>'+
+        '<div style="display:flex;gap:6px;justify-content:center;margin-bottom:10px">'+
+          [['30s',30],['1m',60],['1:30',90],['2m',120],['3m',180]].map(function(p){
+            return'<button onclick="event.stopPropagation();resetRestTimer('+p[1]+')" style="flex:1;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18);border-radius:10px;color:var(--platinum);font-size:11px;font-weight:700;padding:8px 2px;cursor:pointer">'+p[0]+'</button>';
+          }).join('')+
+        '</div>'+
+        '<div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px">'+
+          '<button onclick="event.stopPropagation();adjustRestTimer(-15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">−15s</button>'+
+          '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+15s</button>'+
+          '<button onclick="event.stopPropagation();adjustRestTimer(30)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+30s</button>'+
+        '</div>'+
+        '<button onclick="stopRestTimer()" style="width:100%;background:var(--gold-gradient);border:none;border-radius:14px;color:#0a0a0a;font-size:14px;font-weight:800;padding:15px;cursor:pointer;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.3)">SIGUIENTE SERIE ▶</button>'+
+      '</div>'+
+    '</div>'+
+    // Pastilla flotante (timer minimizado)
+    '<div id="timerPill" onclick="maximizeTimer()" style="display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:201;background:rgba(10,18,32,.95);border:1.5px solid rgba(196,255,0,.5);border-radius:28px;padding:10px 22px;align-items:center;gap:10px;cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.6),0 0 20px rgba(196,255,0,.12);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">'+
+      '<span style="font-size:18px">⏱</span>'+
+      '<span id="timerPillNum" style="font-size:22px;font-weight:800;color:var(--accent);font-family:monospace;letter-spacing:1px">—</span>'+
+      '<span style="font-size:11px;color:var(--mt);font-weight:600">Toca para ver</span>'+
+    '</div>';
   if (_restEndMs && _restEndMs > Date.now()) {
     setTimeout(function(){_updateRestRing();},50);
   }
@@ -6545,7 +6598,7 @@ function buildBoostcampExercise(ej, di, ei) {
         })()
       : '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
           '<div style="flex:1">'+
-            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">ICS 1-10</div>'+
+            '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">Calidad (1-10)</div>'+
             '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
             'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+
@@ -6822,7 +6875,7 @@ function _showPresessionCheck(di) {
       +'<div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:var(--mt)"><span>Sin ganas</span><span>Listo/a</span></div>'
     +'</div>'
     +'<button id="preContinueBtn" onclick="_submitPresession('+di+')" disabled style="width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:800;letter-spacing:2px;border:none;border-radius:8px;cursor:not-allowed;opacity:.4">EMPEZAR →</button>'
-    +'<button onclick="_skipPresession('+di+')" style="width:100%;padding:12px;background:none;border:none;color:var(--mt);font-size:12px;cursor:pointer;margin-top:8px">Saltar</button>'
+    +'<button onclick="_skipPresession('+di+')" style="width:100%;padding:12px;background:none;border:1px solid var(--bd);border-radius:8px;color:var(--mt);font-size:13px;cursor:pointer;margin-top:10px">Saltar esta vez</button>'
     +'</div>';
   document.body.appendChild(ov);
 }
@@ -6841,9 +6894,15 @@ function _preSelect(field, val) {
     btn.style.background  = sel ? 'rgba(196,255,0,.1)' : 'var(--surface)';
     btn.style.color       = sel ? colors[val] : 'var(--mt)';
   });
-  var all = _preSelState.energia && _preSelState.sueno && _preSelState.motivacion;
+  var filled = [_preSelState.energia, _preSelState.sueno, _preSelState.motivacion].filter(Boolean).length;
   var btn = document.getElementById('preContinueBtn');
-  if (btn) { btn.disabled = !all; btn.style.opacity = all ? '1' : '.4'; btn.style.cursor = all ? 'pointer' : 'not-allowed'; }
+  var ok = filled >= 2;
+  if (btn) {
+    btn.disabled = !ok;
+    btn.style.opacity = ok ? '1' : '.4';
+    btn.style.cursor = ok ? 'pointer' : 'not-allowed';
+    btn.textContent = ok ? 'EMPEZAR →' : filled + '/3 respondidas';
+  }
 }
 window._preSelect = _preSelect;
 
@@ -7432,18 +7491,43 @@ function _updateRestRing() {
 }
 function updateTimerDisplay() {
   if (!_restEl) _restEl = document.getElementById('restTimerNum');
-  if (!_restEl) return;
   var s = _restSeconds;
   var mins = Math.floor(Math.abs(s) / 60);
   var secs = Math.abs(s) % 60;
   var sign = s < 0 ? '+' : '';
-  _restEl.textContent = sign + mins + ':' + (secs < 10 ? '0' : '') + secs;
-  _restEl.style.color = s <= 0 ? 'var(--red)' : s <= 10 ? '#e8a040' : 'var(--accent)';
-  _restEl.style.textShadow = s <= 0 ? '0 0 24px rgba(201,74,58,.5)' : s <= 10 ? '0 0 24px rgba(232,160,64,.5)' : '0 0 24px rgba(196,255,0,.4)';
+  var timeStr = sign + mins + ':' + (secs < 10 ? '0' : '') + secs;
+  var col = s <= 0 ? 'var(--red)' : s <= 10 ? '#e8a040' : 'var(--accent)';
+  if (_restEl) {
+    _restEl.textContent = timeStr;
+    _restEl.style.color = col;
+    _restEl.style.textShadow = s <= 0 ? '0 0 24px rgba(201,74,58,.5)' : s <= 10 ? '0 0 24px rgba(232,160,64,.5)' : '0 0 24px rgba(196,255,0,.4)';
+  }
   var secEl = document.getElementById('restTimerSec');
   if (secEl) secEl.textContent = s > 0 ? s + 's restantes' : '¡Tiempo!';
+  var pill = document.getElementById('timerPill');
+  var pillNum = document.getElementById('timerPillNum');
+  if (pill && pill.style.display !== 'none') {
+    if (pillNum) { pillNum.textContent = timeStr; pillNum.style.color = col; }
+    pill.style.borderColor = s <= 0 ? 'rgba(255,68,68,.8)' : s <= 10 ? 'rgba(232,160,64,.6)' : 'rgba(196,255,0,.5)';
+  }
   _updateRestRing();
 }
+
+function minimizeTimer() {
+  var overlay = document.getElementById('restTimerOverlay');
+  var pill = document.getElementById('timerPill');
+  if (overlay) overlay.style.display = 'none';
+  if (pill) { pill.style.display = 'flex'; updateTimerDisplay(); }
+}
+
+function maximizeTimer() {
+  var overlay = document.getElementById('restTimerOverlay');
+  var pill = document.getElementById('timerPill');
+  if (overlay) overlay.style.display = 'flex';
+  if (pill) pill.style.display = 'none';
+}
+window.minimizeTimer = minimizeTimer;
+window.maximizeTimer = maximizeTimer;
 
 function adjCarga(key, delta) {
   var el = document.getElementById('carga_'+key);
@@ -7498,6 +7582,8 @@ function stopRestTimer() {
   localStorage.removeItem('vdsen_restEnd');
   var overlay = document.getElementById('restTimerOverlay');
   if (overlay) overlay.style.display = 'none';
+  var pill = document.getElementById('timerPill');
+  if (pill) pill.style.display = 'none';
 }
 
 function selDia(i) {
@@ -7521,9 +7607,11 @@ function buildReadinessBanner(di, isDone) {
   var r = LOGS[rKey];
   if (r && r.completed) {
     // Ya respondido: mostrar resumen compacto siempre (incluso si sesión completada)
-    var labels = {sueno:{1:'😴 Mal',2:'😴 Regular',3:'😴 Bien'},dolor:{1:'⚠️ Dolor notable',2:'🟡 Molestia leve',3:'✅ Sin dolor'},motivacion:{1:'🔋 Motivación baja',2:'🔋 Motivación media',3:'🔥 Motivación alta'}};
-    var chips = ['sueno','dolor','motivacion'].map(function(k){
-      return '<span style="padding:3px 8px;border-radius:12px;border:1px solid rgba(244,244,240,.12);font-size:10px;color:var(--mt);background:var(--surface)">'+(labels[k][r[k]]||'—')+'</span>';
+    var labels = {dolor:{1:'⚠️ Dolor notable',2:'🟡 Molestia leve',3:'✅ Sin dolor'},motivacion:{1:'🔋 Motivación baja',2:'🔋 Motivación media',3:'🔥 Motivación alta'}};
+    var visibles = r.sueno ? ['sueno','dolor','motivacion'] : ['dolor','motivacion'];
+    var allLabels = Object.assign({sueno:{1:'😴 Mal',2:'😴 Regular',3:'😴 Bien'}}, labels);
+    var chips = visibles.map(function(k){
+      return '<span style="padding:3px 8px;border-radius:12px;border:1px solid rgba(244,244,240,.12);font-size:10px;color:var(--mt);background:var(--surface)">'+(allLabels[k][r[k]]||'—')+'</span>';
     }).join('');
     var advisoryHtml = r.advisory ? '<div style="margin-top:6px;font-size:10px;color:#FF8844;line-height:1.4">⚠ '+r.advisory+'</div>' : '';
     return '<div style="margin:0 16px 8px;padding:8px 12px;background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.06);border-radius:10px">'
@@ -7537,9 +7625,8 @@ function buildReadinessBanner(di, isDone) {
   return '<div id="readinessCard" style="margin:0 16px 10px;padding:14px;background:var(--card);border:1px solid var(--bd);border-radius:12px">'
     + '<div style="font-family:var(--ff);font-size:12px;letter-spacing:1.5px;color:var(--gold);font-weight:800;margin-bottom:10px">🎯 ANTES DE EMPEZAR — ¿CÓMO LLEGÁS HOY?</div>'
     + '<div style="display:grid;gap:10px">'
-    +   _readinessRow('sueno', '¿Cómo dormiste anoche?', [{v:1,l:'Mal'},{v:2,l:'Regular'},{v:3,l:'Bien'}])
-    +   _readinessRow('dolor', '¿Dolor/molestia hoy?', [{v:1,l:'Sí, notable'},{v:2,l:'Leve'},{v:3,l:'Ninguno'}])
-    +   _readinessRow('motivacion', '¿Motivación hoy?', [{v:1,l:'Baja'},{v:2,l:'Media'},{v:3,l:'Alta'}])
+    +   _readinessRow('dolor', '¿Dolor o molestia?', [{v:1,l:'Sí, notable'},{v:2,l:'Leve'},{v:3,l:'Ninguno'}])
+    +   _readinessRow('motivacion', '¿Motivación?', [{v:1,l:'Baja'},{v:2,l:'Media'},{v:3,l:'Alta'}])
     + '</div>'
     + '<button onclick="submitReadiness('+di+')" style="width:100%;margin-top:12px;padding:13px;background:var(--accent);border:none;color:#000;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;cursor:pointer;border-radius:8px;font-weight:800">→ EMPEZAR SESIÓN</button>'
     + '</div>';
@@ -7564,22 +7651,20 @@ function _setReadinessVal(campo, val, btnEl) {
 }
 
 function submitReadiness(di) {
-  if (!_readinessTemp.sueno || !_readinessTemp.dolor || !_readinessTemp.motivacion) {
-    showToast('Respondé las 3 preguntas', true);
+  if (!_readinessTemp.dolor || !_readinessTemp.motivacion) {
+    showToast('Respondé las 2 preguntas', true);
     return;
   }
-  var s = _readinessTemp.sueno, d = _readinessTemp.dolor, m = _readinessTemp.motivacion;
+  var d = _readinessTemp.dolor, m = _readinessTemp.motivacion;
   var advisory = null;
-  var lowCount = (s===1?1:0) + (d===1?1:0) + (m===1?1:0);
-  if (lowCount >= 2) {
-    advisory = 'Dormiste mal, tenés molestias y/o poca motivación hoy — considerá bajar 1 serie por ejercicio o el peso si lo sentís pesado. Esto no cambia tu plan automáticamente, es una sugerencia para vos.';
-  } else if (s === 1 || d === 1) {
-    var partes = [];
-    if (s === 1) partes.push('dormiste poco');
-    if (d === 1) partes.push('tenés molestias');
-    advisory = 'Prestá atención a la técnica hoy — ' + partes.join(' y ') + '. Si algo duele, avisale a tu coach.';
+  if (d === 1 && m === 1) {
+    advisory = 'Tenés molestias y poca motivación hoy — considerá bajar 1 serie por ejercicio o el peso si lo sentís pesado. Esto no cambia tu plan automáticamente, es una sugerencia para vos.';
+  } else if (d === 1) {
+    advisory = 'Prestá atención a la técnica hoy — tenés molestias. Si algo duele, avisale a tu coach.';
+  } else if (m === 1) {
+    advisory = 'Motivación baja hoy — arrancá tranquilo, el cuerpo suele responder bien una vez en movimiento.';
   }
-  LOGS['readiness_'+CURRENT_WEEK+'_'+di] = { sueno:s, dolor:d, motivacion:m, advisory:advisory, completed:true, ts: Date.now() };
+  LOGS['readiness_'+CURRENT_WEEK+'_'+di] = { dolor:d, motivacion:m, advisory:advisory, completed:true, ts: Date.now() };
   saveLogs();
   showToast(advisory ? '✓ Registrado — revisá el aviso' : '✓ Buen día para entrenar 💪');
   _readinessTemp = {};
@@ -7687,7 +7772,7 @@ async function markSessionDoneFromHistory(di) {
   if (!ejercicios.length) { showPostSessionModal(di); return; }
 
   // Confirmar con el usuario antes de rellenar
-  if (!confirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.\n\n¿Continuar?')) return;
+  if (!await _askConfirm('Se rellenarán todos los sets con los datos de la semana anterior o tu histórico, y se marcará la sesión como completa.')) return;
 
   var sinReferencia = [];
   var totalSetsRellenados = 0;
@@ -7801,11 +7886,11 @@ async function markWeekDoneWithPartialData() {
   var conData = 0, sinData = 0;
   pendientes.forEach(function(di){ _sesionTieneData(di) ? conData++ : sinData++; });
 
-  var msg = 'Vas a cerrar la SEM '+REAL_WEEK+' con '+pendientes.length+' sesión(es) pendiente(s):\n\n'+
-    (conData ? '• '+conData+' con datos parciales → se usarán para la progresión\n' : '')+
-    (sinData ? '• '+sinData+' sin registro → se saltarán (la progresión caerá al histórico)\n' : '')+
-    '\nDespués avanzarás a la siguiente semana. ¿Continuar?';
-  if (!confirm(msg)) return;
+  var msg = 'Vas a cerrar la SEM '+REAL_WEEK+' con '+pendientes.length+' sesión(es) pendiente(s).<br><br>'
+    +(conData ? '• '+conData+' con datos parciales → se usarán para la progresión<br>' : '')
+    +(sinData ? '• '+sinData+' sin registro → se saltarán<br>' : '')
+    +'<br>Después avanzarás a la siguiente semana.';
+  if (!await _askConfirm(msg)) return;
 
   var defaultPost = {
     eimd: 2,
@@ -8770,6 +8855,15 @@ function renderNutricion() {
       ${buildCalorieAdjustWidget(+kcal||0)}
       ${buildNutriLogWidget(+kcal||0, +prot||0, +carb||0, +gras||0)}
       ${comidasHtml}
+      ${(function(){
+        var st = PLAN.suplementacion && PLAN.suplementacion.texto;
+        var si = PLAN.suplementacion && PLAN.suplementacion.items;
+        if (!st && (!si || !si.length)) return '';
+        var sh = st ? formatTextoSup(st) : (si||[]).map(function(s){ return '<div class="sup-row"><div><div class="sup-name">'+s.nombre+'</div><div class="sup-time">'+(s.momento||'')+'</div></div><div class="sup-dose">'+s.dosis+'</div></div>'; }).join('');
+        return '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">'
+          +'<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);font-weight:900;margin-bottom:12px">💊 SUPLEMENTACIÓN</div>'
+          +sh+'</div>';
+      })()}
     </div>`;
 }
 
@@ -9615,6 +9709,18 @@ function ciEnergia(val) {
   renderCheckin();
 }
 
+function ciICSSet(key, val) {
+  var k = ciKey();
+  if (!LOGS[k]) LOGS[k] = {};
+  if (!LOGS[k].ics) LOGS[k].ics = {};
+  if (val !== '' && val !== null && val !== undefined) {
+    LOGS[k].ics[key] = parseFloat(val) || val;
+  } else {
+    delete LOGS[k].ics[key];
+  }
+}
+window.ciICSSet = ciICSSet;
+
 async function guardarCI() {
   var _ciBtn = document.querySelector('[onclick="guardarCI()"]');
   if (_ciBtn) { _ciBtn.disabled = true; _ciBtn.textContent = 'GUARDANDO...'; }
@@ -9634,6 +9740,13 @@ async function guardarCI() {
     if (!el) return;
     var campo = id.replace('ci_','');
     if (el.value !== '') d[campo] = parseFloat(el.value);
+  });
+  // Leer inputs de ICS por ejercicio (por si oninput no disparó)
+  document.querySelectorAll('[data-icskey]').forEach(function(el) {
+    var key = el.getAttribute('data-icskey');
+    if (!key || el.value === '') return;
+    if (!d.ics) d.ics = {};
+    d.ics[key] = parseFloat(el.value) || el.value;
   });
   d.semana = CURRENT_WEEK;
   d.fecha  = new Date().toISOString().split('T')[0];
@@ -9725,10 +9838,10 @@ function icsColor(v) {
 
 function buildICSSection(d, sem) {
   var ejercicios = [];
+  var diaIdx = typeof DIA_ACTIVO !== 'undefined' ? DIA_ACTIVO : 0;
   try {
     var sesiones = getSesiones();
-    var idx = typeof DIA_ACTIVO !== 'undefined' ? DIA_ACTIVO : 0;
-    var hoy = sesiones[idx] || {};
+    var hoy = sesiones[diaIdx] || {};
     var lines = (hoy.contenido || '').split('\n');
     lines.forEach(function(l) {
       var trimmed = l.trim();
@@ -9736,6 +9849,28 @@ function buildICSSection(d, sem) {
         var nombre = trimmed.split(/\d+\s*[x×]/)[0].replace(/^\d+\.?\s*/, '').trim();
         if (nombre.length > 2) ejercicios.push(nombre);
       }
+    });
+  } catch(e) {}
+
+  // Calcular ICS promedio por ejercicio desde los logs ya registrados
+  var icsFromLogs = {};
+  try {
+    var wk = sem || CURRENT_WEEK;
+    var prefix = 'log_' + wk + '_' + diaIdx + '_';
+    var icsSums = {}, icsCounts = {};
+    Object.keys(LOGS).forEach(function(lk) {
+      if (lk.indexOf(prefix) !== 0) return;
+      var entry = LOGS[lk];
+      if (!entry || !entry.ics || isNaN(+entry.ics)) return;
+      // key format: log_{W}_{D}_{E}_s{N}
+      var parts = lk.split('_');
+      var ei = parts[3]; // exercise index
+      if (!icsSums[ei]) { icsSums[ei] = 0; icsCounts[ei] = 0; }
+      icsSums[ei] += +entry.ics;
+      icsCounts[ei]++;
+    });
+    Object.keys(icsSums).forEach(function(ei) {
+      icsFromLogs[+ei] = Math.round(icsSums[ei] / icsCounts[ei]);
     });
   } catch(e) {}
 
@@ -9795,9 +9930,23 @@ function buildICSSection(d, sem) {
   } else {
     ejercicios.slice(0, 8).forEach(function(ej, i) {
       var key  = 'ej_' + i;
-      var val  = icsData[key] || '';
+      var savedVal = icsData[key];
+      var logVal   = icsFromLogs[i];
+      // Pre-write to LOGS if not already saved and we have log data
+      if (!savedVal && logVal) {
+        if (!d.ics) d.ics = {};
+        d.ics[key] = logVal;
+        savedVal = logVal; // treat as saved so hint shows correctly
+      }
+      var val  = savedVal || '';
       var name = ej.length > 32 ? ej.substring(0, 30) + '…' : ej;
-      rowsHtml += fila('<div style="font-size:12px;color:var(--tx);line-height:1.4">' + name + '</div>', key, val);
+      var hint = (logVal && icsFromLogs[i])
+        ? '<div style="font-size:10px;color:var(--mt);margin-top:2px">⚡ promedio de tus series</div>'
+        : '';
+      rowsHtml += fila(
+        '<div style="font-size:12px;color:var(--tx);line-height:1.4">' + name + hint + '</div>',
+        key, val
+      );
     });
   }
 
@@ -9943,23 +10092,33 @@ function renderCheckin() {
   }
 
   cont.innerHTML =
-    '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:2px">CHECK-IN SEMANAL</div>'
-    + '<div style="font-size:13px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">SEM ' + sem + ' · MOTOR VDSEN MOD. 15+16 GAP1-2</div>'
+    // Botón flotante de guardar
+    + '<div id="ciFloatSave" style="position:fixed;bottom:80px;right:14px;z-index:300">'
+    +   '<button onclick="guardarCI()" style="padding:12px 18px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:1.5px;cursor:pointer;border-radius:50px;box-shadow:0 4px 20px rgba(196,255,0,.35);white-space:nowrap">💾 GUARDAR</button>'
+    + '</div>'
+    + '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:2px">CHECK-IN SEM ' + sem + '</div>'
+    + '<div style="font-size:12px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">Rellena al inicio de cada semana — tu coach lo usa para ajustar el plan</div>'
 
     // ── MEDIDAS ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:14px">MEDIDAS DEL DÍA</div>'
     +   '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'
-    +   _ciField('peso',  'PESO (kg)', '0.1', 'decimal', (PLAN.peso||''), 22, 'En ayunas · mismo día cada semana')
-    +   _ciField('hrv',   'HRV',       '1',   'numeric', '65',            22, 'De tu reloj/app (Polar, Oura, Garmin…)')
-    +   _ciField('sleep', 'SUEÑO (h)', '0.5', 'decimal', '7.5',          22, 'Noche anterior al entrenamiento')
+    +   _ciField('peso',  'PESO (kg)', '0.1', 'decimal', (PLAN.peso||''), 22, 'En ayunas · mismo día')
+    +   _ciField('hrv',   'HRV',       '1',   'numeric', '65',            22, 'Polar, Oura, Garmin…')
+    +   _ciField('sleep', 'SUEÑO (h)', '0.5', 'decimal', '7.5',          22, 'Noche más representativa')
     +   '</div>'
     + '</div>'
 
-    // ── MEDIDAS CORPORALES (opcional) ─────────────────
-    + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
-    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">MEDIDAS CORPORALES</div>'
-    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:14px">Opcional — cargalas 1 vez por semana, siempre en el mismo momento del día</div>'
+    // ── MEDIDAS CORPORALES (opcional, colapsable) ─────────────────
+    + '<details style="margin-bottom:10px">'
+    + '<summary style="background:var(--card);border:1px solid var(--bd);padding:12px 16px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;user-select:none">'
+    +   '<span style="font-family:var(--ff);font-size:13px;letter-spacing:1.5px;color:var(--mt)">MEDIDAS CORPORALES</span>'
+    +   '<span style="font-size:11px;color:var(--mt2)">'
+    +   ((d.cintura||d.brazo||d.pierna||d.pecho) ? '✓ registradas ▾' : 'opcional ▾')
+    +   '</span>'
+    + '</summary>'
+    + '<div style="background:var(--card);border:1px solid var(--bd);border-top:none;padding:16px">'
+    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:14px">Cargalas 1 vez por semana, siempre en el mismo momento del día</div>'
     +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
     +   _ciField('cintura', 'CINTURA (cm)', '0.1', 'decimal', '—', 20, null)
     +   _ciField('brazo',   'BRAZO (cm)',   '0.1', 'decimal', '—', 20, null)
@@ -9967,6 +10126,7 @@ function renderCheckin() {
     +   _ciField('pecho',   'PECHO (cm)',   '0.1', 'decimal', '—', 20, null)
     +   '</div>'
     + '</div>'
+    + '</details>'
 
     + _buildWeightSparkline()
 
@@ -10007,7 +10167,7 @@ function renderCheckin() {
     + '</div>'
 
     // ── GUARDAR ───────────────────────────────────────
-    + '<button onclick="guardarCI()" style="width:100%;padding:15px;background:var(--accent);border:none;color:#0A0A0A;font-family:\'Big Shoulders Display\',var(--ff);font-size:18px;font-weight:900;letter-spacing:3px;cursor:pointer;margin-bottom:16px;border-radius:4px">'
+    + '<button onclick="guardarCI()" style="width:100%;padding:15px;background:var(--accent);border:none;color:#0A0A0A;font-family:\'Big Shoulders Display\',var(--ff);font-size:18px;font-weight:900;letter-spacing:3px;cursor:pointer;margin-bottom:80px;border-radius:4px">'
     + '✓ GUARDAR CHECK-IN SEM ' + sem
     + '</button>';
 }
@@ -10127,8 +10287,8 @@ function renderPerfil() {
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
         <div style="font-size:22px;flex-shrink:0">📋</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;color:var(--tx);font-weight:700">Registro por serie</div>
-          <div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">${isExpressDisabled()?'Modo detallado — registras cada serie con su timer individual.':'Modo express — registras solo la última serie (más rápido).'}</div>
+          <div style="font-size:13px;color:var(--tx);font-weight:700">Modo detallado</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">${isExpressDisabled()?'Activado — cada serie tiene su propio formulario y timer.':'Desactivado — modo express: se registra solo la última serie.'}</div>
         </div>
         <button onclick="setExpressDisabled(${isExpressDisabled()?'false':'true'})" role="switch" aria-checked="${isExpressDisabled()?'true':'false'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isExpressDisabled()?'rgba(126,192,255,.5)':'var(--bd)'};background:${isExpressDisabled()?'rgba(126,192,255,.2)':'var(--dk)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
           <span style="position:absolute;top:2px;left:${isExpressDisabled()?'24px':'2px'};width:24px;height:24px;border-radius:50%;background:${isExpressDisabled()?'#7ec0ff':'var(--mt)'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
@@ -11244,14 +11404,13 @@ function exportPDF() {
 // ══════════════════════════════════════════════════
 // WHAT'S NEW MODAL
 // ══════════════════════════════════════════════════
-var _WN_VERSION = 'vdsen_wn_v5';
+var _WN_VERSION = 'vdsen_wn_v6';
 var _WN_UPDATES = [
-  { icon: '📊', title: 'Progreso de series en tiempo real', desc: 'Una barra fina y el contador X/N encima de las series te muestran cuántas completaste de un vistazo.' },
-  { icon: '⚡', title: 'e1RM calculado al vuelo', desc: 'Mientras escribes carga y reps en la última serie, aparece el e1RM estimado y una señal de intensidad (📈 muy fácil · ✓ en target · 🔥 duro) comparada con el RIR objetivo del plan.' },
-  { icon: '🏋', title: 'Calculadora de discos para barras', desc: 'En ejercicios de barra (sentadilla, press, peso muerto…) el app calcula automáticamente qué discos poner a cada lado. Ej: 1×20 + 1×5 / lado.' },
-  { icon: '⌨️', title: 'Teclado más ágil', desc: 'Pulsa Enter o Tab en el campo Carga para saltar directamente a Reps. Menos toques, más flujo.' },
-  { icon: '🔁', title: 'Biseries en una sola tarjeta', desc: 'Las biseries ahora aparecen unidas en una única tarjeta morada. Rondas 1 a N-1 tienen botón "✓ HECHA → DESCANSAR" que activa el timer. La última ronda muestra el formulario de carga/reps/RIR.' },
-  { icon: '⏱', title: 'Temporizador en modo Express', desc: 'En ejercicios individuales Express, las series intermedias tienen su propio botón de descanso. Solo la última serie te pide los datos.' },
+  { icon: '⚙️', title: 'Modo detallado — timer en todas las series', desc: 'En Perfil → Ajustes activá "Modo detallado" para que cada serie tenga su propio formulario y temporizador, sin saltarte ninguna.' },
+  { icon: '⋮', title: 'Menú de opciones por ejercicio', desc: 'El botón ⋮ en cada ejercicio agrupa Cambiar, Ajustar series/reps y Añadir nota. La tarjeta queda más limpia.' },
+  { icon: '💊', title: 'Suplementación visible en Nutrición', desc: 'Tu protocolo de suplementación aparece al final del tab Nutrición, junto a tu plan alimentario.' },
+  { icon: '⚡', title: 'ICS pre-cargado en Check-in', desc: 'El check-in semanal pre-rellena automáticamente el ICS con el promedio de tus series ya registradas esa semana.' },
+  { icon: '📋', title: 'Resumen de sesión compacto', desc: 'Al completar una sesión aparece una tarjeta pequeña abajo que se cierra sola — sin bloquear el entrenamiento.' },
   { icon: '🎯', title: 'RIR con descripción', desc: 'Cada botón de RIR explica qué significa: Fallo / 1 rep / 2 reps / 3 reps / Cómodo.' },
 ];
 function showWhatsNew() {
@@ -11316,6 +11475,24 @@ window.showBitacoraInfoModal = showBitacoraInfoModal;
 // ══════════════════════════════════════════════════
 // TOAST
 // ══════════════════════════════════════════════════
+function _askConfirm(msg) {
+  return new Promise(function(resolve) {
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:320px;width:100%;font-family:var(--ff)">'
+      + '<p style="color:var(--tx);font-size:14px;line-height:1.5;margin:0 0 18px">' + msg + '</p>'
+      + '<div style="display:flex;gap:10px;justify-content:flex-end">'
+      + '<button id="_ac_no" style="padding:9px 18px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mt);font-size:13px;cursor:pointer">Cancelar</button>'
+      + '<button id="_ac_si" style="padding:9px 18px;border-radius:8px;border:none;background:#c94a3a;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Confirmar</button>'
+      + '</div></div>';
+    document.body.appendChild(ov);
+    function done(v) { ov.remove(); resolve(v); }
+    ov.querySelector('#_ac_si').onclick = function() { done(true); };
+    ov.querySelector('#_ac_no').onclick = function() { done(false); };
+    ov.onclick = function(e) { if (e.target === ov) done(false); };
+  });
+}
+
 function showToast(msg, isError=false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -11386,6 +11563,21 @@ function toggleArticularPain() {
   var pat = document.getElementById('psArticularPattern');
   if (pat) pat.style.display = val==='si' ? 'block' : 'none';
 }
+
+function psSuenoSel(btn, val) {
+  document.querySelectorAll('#psSuenoGrid button').forEach(function(b) {
+    b.style.borderColor = 'var(--bd)';
+    b.style.background = 'var(--dk)';
+    var v = +b.dataset.val;
+    b.style.color = v <= 5 ? 'var(--red)' : 'var(--mt)';
+  });
+  btn.style.borderColor = 'var(--grn)';
+  btn.style.background = 'rgba(58,148,96,.2)';
+  btn.style.color = 'var(--grn)';
+  var inp = document.getElementById('psSueno');
+  if (inp) inp.value = val;
+}
+window.psSuenoSel = psSuenoSel;
 
 function updateRpeLabel(val) {
   var el = document.getElementById('psRpeLabel');
@@ -11486,38 +11678,38 @@ function showSessionSummary(di) {
   var volStr  = totalVol > 999 ? (totalVol/1000).toFixed(1)+' t' : Math.round(totalVol)+' kg';
   var sesName = (ses.dia || 'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim();
 
+  var old = document.getElementById('sessionSummaryOv');
+  if (old) old.remove();
   var ov = document.createElement('div');
   ov.id = 'sessionSummaryOv';
-  ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:3000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 20px;animation:fadeSlideIn .25s ease-out both';
+  ov.style.cssText = 'position:fixed;left:12px;right:12px;bottom:90px;max-width:456px;margin:0 auto;background:var(--card);border:1px solid rgba(196,255,0,.4);border-radius:16px;padding:14px 16px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:fadeSlideIn .25s ease-out both';
   ov.innerHTML =
-    '<div style="text-align:center;margin-bottom:28px">'+
-      '<div style="font-size:52px;line-height:1;margin-bottom:12px">🏆</div>'+
-      '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:30px;font-weight:800;color:var(--accent);letter-spacing:2px;text-transform:uppercase;line-height:1">SESIÓN COMPLETA</div>'+
-      '<div style="font-size:12px;color:var(--mt);margin-top:6px;letter-spacing:1.5px;text-transform:uppercase">'+sesName+' · SEM '+CURRENT_WEEK+'</div>'+
-    '</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;width:100%;max-width:340px;margin-bottom:10px">'+
-      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
-        '<div style="font-family:\'Courier Prime\',monospace;font-size:30px;font-weight:700;color:var(--tx);line-height:1">'+totalSets+'</div>'+
-        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">SERIES</div>'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'+
+      '<div style="font-size:28px;line-height:1">🏆</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:16px;font-weight:800;color:var(--accent);letter-spacing:2px;text-transform:uppercase">SESIÓN COMPLETA</div>'+
+        '<div style="font-size:11px;color:var(--mt);margin-top:2px;letter-spacing:1px">'+sesName+' · SEM '+CURRENT_WEEK+'</div>'+
       '</div>'+
-      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
-        '<div style="font-family:\'Courier Prime\',monospace;font-size:30px;font-weight:700;color:'+icsColor+';line-height:1">'+avgICS+'</div>'+
-        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">ICS PROM</div>'+
+      '<button onclick="document.getElementById(\'sessionSummaryOv\').remove()" style="padding:4px 10px;background:none;border:1px solid var(--border);border-radius:8px;color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">✕</button>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:22px;font-weight:700;color:var(--tx);line-height:1">'+totalSets+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:4px;font-weight:700">SERIES</div>'+
       '</div>'+
-      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 8px;text-align:center">'+
-        '<div style="font-family:\'Courier Prime\',monospace;font-size:22px;font-weight:700;color:var(--tx);line-height:1.2">'+volStr+'</div>'+
-        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:5px;text-transform:uppercase;font-weight:700">TONELAJE</div>'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:22px;font-weight:700;color:'+icsColor+';line-height:1">'+avgICS+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:4px;font-weight:700">ICS PROM</div>'+
+      '</div>'+
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center">'+
+        '<div style="font-family:\'Courier Prime\',monospace;font-size:18px;font-weight:700;color:var(--tx);line-height:1.2">'+volStr+'</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:4px;font-weight:700">TONELAJE</div>'+
       '</div>'+
     '</div>'+
-    '<div style="width:100%;max-width:340px;margin-bottom:20px;font-size:12px;color:var(--mt);text-align:center">'+
-      exDoneCount+' ejercicio'+(exDoneCount!==1?'s':'')+' completado'+(exDoneCount!==1?'s':'')+
-    '</div>'+
-    '<button onclick="document.getElementById(\'sessionSummaryOv\').remove()" style="'+
-      'width:100%;max-width:340px;padding:17px;background:var(--accent);color:#0a0a0a;'+
-      'font-family:\'Big Shoulders Display\',var(--ff);font-size:17px;font-weight:800;letter-spacing:3px;'+
-      'border:none;border-radius:2px;cursor:pointer;text-transform:uppercase">CONTINUAR →</button>';
+    '<div style="font-size:11px;color:var(--mt);text-align:center">'+exDoneCount+' ejercicio'+(exDoneCount!==1?'s':'')+' completado'+(exDoneCount!==1?'s':'')+'</div>';
 
   document.body.appendChild(ov);
+  setTimeout(function(){ var el = document.getElementById('sessionSummaryOv'); if(el) el.remove(); }, 8000);
 }
 
 function _avgArr(arr) {
@@ -11671,23 +11863,14 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
     '</div>';
   }
 
-  return '<div style="margin-bottom:14px;border-radius:12px;overflow:hidden;border:1.5px solid '+c.border+'">'+
-    // ── Cabecera acción ──────────────────────────────────────────
-    '<div style="background:'+c.bg+';padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1.5px solid '+c.border+'">'+
-      '<span style="font-size:17px;font-weight:900;color:'+c.color+';line-height:1">'+c.icon+'</span>'+
-      '<span style="font-size:11px;font-weight:900;letter-spacing:2px;color:'+c.color+'">'+c.label+'</span>'+
+  return '<div style="margin-bottom:10px;padding:9px 14px;border-radius:10px;background:'+c.bg+';border:1.5px solid '+c.border+';display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+    '<span style="font-size:16px;font-weight:900;color:'+c.color+';line-height:1;flex-shrink:0">'+c.icon+'</span>'+
+    '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;flex:1;min-width:0">'+
+      '<span style="font-size:22px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+' '+unit+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:'+c.color+'">'+targetSets+'s × '+targetReps+' · RIR '+targetRIR+'</span>'+
+      (prevRef && prevRef.load > 0 ? '<span style="font-size:10px;color:var(--mt2)">ant: '+_fmtLoad(prevRef.load)+' '+unit+'</span>' : '')+
     '</div>'+
-    // ── Objetivo principal ───────────────────────────────────────
-    '<div style="padding:14px 16px;background:rgba(0,0,0,.2)">'+
-      '<div style="font-size:10px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:8px">CARGA DE HOY</div>'+
-      '<div style="display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;margin-bottom:2px">'+
-        '<span style="font-size:38px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+'</span>'+
-        '<span style="font-size:20px;font-weight:700;color:var(--mt);margin-right:10px">'+unit+'</span>'+
-      '</div>'+
-      '<div style="font-size:13px;color:var(--mt);letter-spacing:.3px">'+targetSets+' series</div>'+
-      prevLine+
-      reasonHtml+
-    '</div>'+
+    (reasonHtml ? '<div style="width:100%;padding-top:5px;border-top:1px solid rgba(255,255,255,.06)">'+reasonHtml+'</div>' : '')+
   '</div>';
 }
 
@@ -12677,7 +12860,7 @@ function calculateProgression(di, postData) {
           <option value="Bisagra">Bisagra — lumbar / sacro / cadera</option>
         </select>
         <div style="font-size:10px;color:var(--mt);margin-top:6px;padding:8px 10px;background:rgba(200,100,0,.06);border-left:2px solid #FF8844;border-radius:0 4px 4px 0">
-          ⚠ Un "Sí" activa una reducción preventiva en la progresión de ese patrón. Si hay dolor agudo o limitación de movimiento, consulta antes de entrenar.
+          ⚠ Si hay dolor agudo o limitación de movimiento, consulta con tu coach antes de continuar entrenando.
         </div>
       </div>
     </div>
@@ -12685,17 +12868,16 @@ function calculateProgression(di, postData) {
     <!-- 3. Sueño -->
     <div style="margin-bottom:22px">
       <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">3 · SUEÑO (última noche)</div>
-      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
-        ¿Cuántas horas dormiste la noche <strong style="color:var(--tx)">anterior</strong> a este entrenamiento?
-        <span style="color:rgba(107,107,102,.6)"> · Menos de 6h reduce hasta un 30% la síntesis proteica nocturna y activa alerta de recuperación.</span>
-      </div>
-      <input id="psSueno" type="number" min="1" max="12" step="0.5" placeholder="7.5" inputmode="decimal"
-        style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-size:28px;font-weight:700;padding:12px;outline:none;text-align:center;box-sizing:border-box">
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-top:6px;padding:0 2px">
-        <span style="color:var(--red)">≤5h · Riesgo alto</span>
-        <span>6h · Mínimo</span>
-        <span>7h · Bueno</span>
-        <span style="color:var(--grn)">8h+ · Óptimo</span>
+      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">¿Cuántas horas dormiste la noche <strong style="color:var(--tx)">anterior</strong> a este entrenamiento?</div>
+      <input id="psSueno" type="hidden" value="7">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px" id="psSuenoGrid">
+        <button onclick="psSuenoSel(this,'4')" data-val="4" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--red);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">4h</button>
+        <button onclick="psSuenoSel(this,'5')" data-val="5" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--red);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">5h</button>
+        <button onclick="psSuenoSel(this,'6')" data-val="6" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">6h</button>
+        <button onclick="psSuenoSel(this,'7')" data-val="7" style="padding:12px 2px;border:1px solid var(--grn);background:rgba(58,148,96,.15);color:var(--grn);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">7h</button>
+        <button onclick="psSuenoSel(this,'8')" data-val="8" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">8h</button>
+        <button onclick="psSuenoSel(this,'9')" data-val="9" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">9h</button>
+        <button onclick="psSuenoSel(this,'10')" data-val="10" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">9h+</button>
       </div>
     </div>
 
