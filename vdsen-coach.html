@@ -7095,17 +7095,19 @@ El esfuerzo no es negociable.
       btn.disabled = true; btn.textContent = 'Reparando...';
       try {
         await ensureCoachDoc();
-        // 1. Leer doc actual del cliente
-        const oldClientSnap = await getDoc(doc(db, 'clients', clientId));
-        if (!oldClientSnap.exists()) throw new Error('Doc del cliente no encontrado');
-        const clientData = { ...oldClientSnap.data(), _repairedFrom: clientId, _repairedAt: Date.now() };
+        // 1. Usar datos ya cargados en memoria (el doc puede no existir si fue fusionado/borrado)
+        const clientData = { ...c, _repairedFrom: clientId, _repairedAt: Date.now() };
         // 2. Crear doc en el nuevo UID
         await setDoc(doc(db, 'clients', newUid), clientData);
         // 3. Copiar logs si existen
-        const oldLogsSnap = await getDoc(doc(db, 'logs', clientId));
-        if (oldLogsSnap.exists()) {
-          await setDoc(doc(db, 'logs', newUid), oldLogsSnap.data());
-        }
+        let oldLogsExist = false;
+        try {
+          const oldLogsSnap = await getDoc(doc(db, 'logs', clientId));
+          if (oldLogsSnap.exists()) {
+            oldLogsExist = true;
+            await setDoc(doc(db, 'logs', newUid), oldLogsSnap.data());
+          }
+        } catch(_le) { console.warn('logs copy skipped:', _le && _le.message); }
         // 4. Actualizar phone_index para que apunte al nuevo UID
         if (c.phone) {
           let digits = String(c.phone).replace(/[^\d]/g, '');
@@ -7114,9 +7116,9 @@ El esfuerzo no es negociable.
             await setDoc(doc(db, 'phone_index', digits), { email: (c.email||'').toLowerCase(), uid: newUid, updatedAt: new Date().toISOString(), migratedBy: currentCoach.uid }, { merge: true });
           }
         }
-        // 5. Eliminar docs viejos
-        await deleteDoc(doc(db, 'clients', clientId));
-        if (oldLogsSnap.exists()) { try { await deleteDoc(doc(db, 'logs', clientId)); } catch(_){} }
+        // 5. Intentar eliminar docs viejos (pueden no existir — ok)
+        try { await deleteDoc(doc(db, 'clients', clientId)); } catch(_) {}
+        if (oldLogsExist) { try { await deleteDoc(doc(db, 'logs', clientId)); } catch(_){} }
         st.style.color = '#44BB88';
         st.innerHTML = '✓ UID reparado — el cliente ya puede entrar normalmente.<br><small style="color:#888">Nuevo UID: '+newUid+'</small>';
         showToast('✓ UID de '+( c.displayName||c.email)+' reparado');
