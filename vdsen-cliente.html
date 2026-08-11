@@ -4388,20 +4388,35 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _prevSesRir  = _hasPrevSes ? (_prevSesDat.rir_real || '') : '';
     var _prevSesIcs  = _hasPrevSes ? (_prevSesDat.ics || null) : null;
     var _prevSesPump = _hasPrevSes ? (_prevSesDat.pump || null) : null;
-    var carga   = saved.carga   || _progCargaConv || _prevSesCarga || _prevCargaConv || _histCargaConv || '';
-    var reps    = saved.reps    || (_prefill && s===0 && progrec && progrec.newReps ? progrec.newReps : (_prevSesReps || (_prefill && prev.reps ? prev.reps : (_prefill && s===0 && histEx.reps ? histEx.reps : ''))));
-    var rirReal = saved.rir_real|| (_prevSesRir || (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : '')));
-
     // ── Datos específicos del set (del plan): setNote, drop, tempo ──
     var setSpec = (_isY3T && _effectiveSets && _effectiveSets[s]) ? _effectiveSets[s] : (ej.sets && ej.sets[s] ? ej.sets[s] : null);
+    // Detectar ejercicio heterogéneo (distintos reps por set — Y3T o plan mixto)
+    var _allSetsArr = _isY3T ? (_effectiveSets || []) : (ej.sets || []);
+    var _isHeteroSets = _allSetsArr.length > 1 && (new Set(_allSetsArr.map(function(sv){ return sv ? sv.repsTarget : null; }))).size > 1;
+    var carga   = saved.carga   || _progCargaConv || _prevSesCarga || _prevCargaConv || _histCargaConv || '';
+    // Para ejercicios heterogéneos no usar progrec.newReps (corresponde a otra fase, no a este set)
+    var reps    = saved.reps    || (_prefill && s===0 && progrec && progrec.newReps && !_isHeteroSets ? progrec.newReps : (_prevSesReps || (_prefill && prev.reps ? prev.reps : (_prefill && s===0 && histEx.reps ? histEx.reps : ''))));
+    var rirReal = saved.rir_real|| (_prevSesRir || (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : '')));
     var setNote = setSpec && setSpec.setNote ? String(setSpec.setNote).trim() : '';
     var setIsDrop = setSpec && setSpec.drop === true;
     var setTempo = setSpec && setSpec.tempo ? String(setSpec.tempo).trim() : '';
     var setSpecBadges = '';
     if (setIsDrop) setSpecBadges += '<span style="display:inline-block;font-size:9px;font-weight:900;letter-spacing:1px;color:#FF8844;background:rgba(255,140,50,.12);border:1px solid #FF8844;padding:2px 7px;border-radius:5px;margin-right:5px">⬇ DROP</span>';
     if (setTempo) setSpecBadges += '<span style="display:inline-block;font-size:9px;font-weight:800;letter-spacing:1px;color:var(--mt2);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:2px 7px;border-radius:5px;margin-right:5px">⏱ '+setTempo+'</span>';
-    var setSpecBlock = (setNote || setSpecBadges)
-      ? '<div style="margin-bottom:6px;font-size:11px;color:var(--mt2);line-height:1.5">'+
+    // Objetivo por set — solo para ejercicios heterogéneos (S1·FUERZA ≠ S2·HIPERTROFIA, etc.)
+    var _psReps = setSpec ? setSpec.repsTarget : null;
+    var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
+    var _setTargetHtml = '';
+    if (_isHeteroSets && _psReps !== null && _psReps !== 'SST-PROTOCOL' && _psReps !== 'SST-RIV-PROTOCOL' && _psReps !== 999) {
+      _setTargetHtml = '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:5px">'+
+        '<span style="font-size:9px;font-weight:700;letter-spacing:1px;color:var(--mt2)">OBJETIVO:</span>'+
+        '<span style="font-size:14px;font-weight:900;color:var(--tx)">'+_psReps+' reps</span>'+
+        (_psRir !== null ? '<span style="font-size:12px;font-weight:700;color:var(--mt)">· RIR '+_psRir+'</span>' : '')+
+      '</div>';
+    }
+    var setSpecBlock = (setNote || setSpecBadges || _setTargetHtml)
+      ? '<div style="margin-bottom:8px;font-size:11px;color:var(--mt2);line-height:1.5">'+
+          _setTargetHtml+
           setSpecBadges+
           (setNote ? '<span style="color:var(--accent);font-weight:600">📌 '+setNote+'</span>' : '')+
         '</div>'
