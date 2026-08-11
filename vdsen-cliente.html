@@ -5869,7 +5869,7 @@ function renderEntrenamiento() {
         ? '<div style="background:rgba(110,154,110,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
         : '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">'+
           '<button onclick="markSessionDone('+DIA_ACTIVO+')" title="Marcar esta sesión como completada" style="background:rgba(196,255,0,.12);border:1px solid var(--accent);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:800;color:var(--accent);cursor:pointer;letter-spacing:.5px">✓ COMPLETAR</button>'+
-          '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Copia los datos de la semana anterior en todos los sets y marca la sesión como completada" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ Copiar sem. anterior</button>'+
+          (CURRENT_WEEK > 1 ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Copia los datos de la semana anterior en todos los sets y marca la sesión como completada" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ Copiar sem. anterior</button>' : '') +
           '</div>')+
     '</div>'+
     // Glosario RIR + ICS (colapsable)
@@ -10870,6 +10870,21 @@ function toggleArticularPain() {
   if (pat) pat.style.display = val==='si' ? 'block' : 'none';
 }
 
+function psSuenoSel(btn, val) {
+  document.querySelectorAll('#psSuenoGrid button').forEach(function(b) {
+    b.style.borderColor = 'var(--bd)';
+    b.style.background = 'var(--dk)';
+    var v = +b.dataset.val;
+    b.style.color = v <= 5 ? 'var(--red)' : 'var(--mt)';
+  });
+  btn.style.borderColor = 'var(--grn)';
+  btn.style.background = 'rgba(58,148,96,.2)';
+  btn.style.color = 'var(--grn)';
+  var inp = document.getElementById('psSueno');
+  if (inp) inp.value = val;
+}
+window.psSuenoSel = psSuenoSel;
+
 function updateRpeLabel(val) {
   var el = document.getElementById('psRpeLabel');
   if (!el) return;
@@ -12159,7 +12174,7 @@ function calculateProgression(di, postData) {
           <option value="Bisagra">Bisagra — lumbar / sacro / cadera</option>
         </select>
         <div style="font-size:10px;color:var(--mt);margin-top:6px;padding:8px 10px;background:rgba(200,100,0,.06);border-left:2px solid #FF8844;border-radius:0 4px 4px 0">
-          ⚠ Un "Sí" activa una reducción preventiva en la progresión de ese patrón. Si hay dolor agudo o limitación de movimiento, consulta antes de entrenar.
+          ⚠ Si hay dolor agudo o limitación de movimiento, consulta con tu coach antes de continuar entrenando.
         </div>
       </div>
     </div>
@@ -12167,17 +12182,16 @@ function calculateProgression(di, postData) {
     <!-- 3. Sueño -->
     <div style="margin-bottom:22px">
       <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">3 · SUEÑO (última noche)</div>
-      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
-        ¿Cuántas horas dormiste la noche <strong style="color:var(--tx)">anterior</strong> a este entrenamiento?
-        <span style="color:rgba(107,107,102,.6)"> · Menos de 6h reduce hasta un 30% la síntesis proteica nocturna y activa alerta de recuperación.</span>
-      </div>
-      <input id="psSueno" type="number" min="1" max="12" step="0.5" placeholder="7.5" inputmode="decimal"
-        style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-size:28px;font-weight:700;padding:12px;outline:none;text-align:center;box-sizing:border-box">
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-top:6px;padding:0 2px">
-        <span style="color:var(--red)">≤5h · Riesgo alto</span>
-        <span>6h · Mínimo</span>
-        <span>7h · Bueno</span>
-        <span style="color:var(--grn)">8h+ · Óptimo</span>
+      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">¿Cuántas horas dormiste la noche <strong style="color:var(--tx)">anterior</strong> a este entrenamiento?</div>
+      <input id="psSueno" type="hidden" value="7">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px" id="psSuenoGrid">
+        <button onclick="psSuenoSel(this,'4')" data-val="4" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--red);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">4h</button>
+        <button onclick="psSuenoSel(this,'5')" data-val="5" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--red);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">5h</button>
+        <button onclick="psSuenoSel(this,'6')" data-val="6" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">6h</button>
+        <button onclick="psSuenoSel(this,'7')" data-val="7" style="padding:12px 2px;border:1px solid var(--grn);background:rgba(58,148,96,.15);color:var(--grn);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">7h</button>
+        <button onclick="psSuenoSel(this,'8')" data-val="8" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">8h</button>
+        <button onclick="psSuenoSel(this,'9')" data-val="9" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">9h</button>
+        <button onclick="psSuenoSel(this,'10')" data-val="10" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">9h+</button>
       </div>
     </div>
 
