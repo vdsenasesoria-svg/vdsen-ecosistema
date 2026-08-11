@@ -9149,10 +9149,10 @@ function icsColor(v) {
 
 function buildICSSection(d, sem) {
   var ejercicios = [];
+  var diaIdx = typeof DIA_ACTIVO !== 'undefined' ? DIA_ACTIVO : 0;
   try {
     var sesiones = getSesiones();
-    var idx = typeof DIA_ACTIVO !== 'undefined' ? DIA_ACTIVO : 0;
-    var hoy = sesiones[idx] || {};
+    var hoy = sesiones[diaIdx] || {};
     var lines = (hoy.contenido || '').split('\n');
     lines.forEach(function(l) {
       var trimmed = l.trim();
@@ -9160,6 +9160,28 @@ function buildICSSection(d, sem) {
         var nombre = trimmed.split(/\d+\s*[x×]/)[0].replace(/^\d+\.?\s*/, '').trim();
         if (nombre.length > 2) ejercicios.push(nombre);
       }
+    });
+  } catch(e) {}
+
+  // Calcular ICS promedio por ejercicio desde los logs ya registrados
+  var icsFromLogs = {};
+  try {
+    var wk = sem || CURRENT_WEEK;
+    var prefix = 'log_' + wk + '_' + diaIdx + '_';
+    var icsSums = {}, icsCounts = {};
+    Object.keys(LOGS).forEach(function(lk) {
+      if (lk.indexOf(prefix) !== 0) return;
+      var entry = LOGS[lk];
+      if (!entry || !entry.ics || isNaN(+entry.ics)) return;
+      // key format: log_{W}_{D}_{E}_s{N}
+      var parts = lk.split('_');
+      var ei = parts[3]; // exercise index
+      if (!icsSums[ei]) { icsSums[ei] = 0; icsCounts[ei] = 0; }
+      icsSums[ei] += +entry.ics;
+      icsCounts[ei]++;
+    });
+    Object.keys(icsSums).forEach(function(ei) {
+      icsFromLogs[+ei] = Math.round(icsSums[ei] / icsCounts[ei]);
     });
   } catch(e) {}
 
@@ -9219,9 +9241,17 @@ function buildICSSection(d, sem) {
   } else {
     ejercicios.slice(0, 8).forEach(function(ej, i) {
       var key  = 'ej_' + i;
-      var val  = icsData[key] || '';
+      var savedVal = icsData[key];
+      var logVal   = icsFromLogs[i];
+      var val      = savedVal || (logVal || '');
       var name = ej.length > 32 ? ej.substring(0, 30) + '…' : ej;
-      rowsHtml += fila('<div style="font-size:12px;color:var(--tx);line-height:1.4">' + name + '</div>', key, val);
+      var hint = (!savedVal && logVal)
+        ? '<div style="font-size:10px;color:var(--mt);margin-top:2px">⚡ promedio de tus series</div>'
+        : '';
+      rowsHtml += fila(
+        '<div style="font-size:12px;color:var(--tx);line-height:1.4">' + name + hint + '</div>',
+        key, val
+      );
     });
   }
 

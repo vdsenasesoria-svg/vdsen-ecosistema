@@ -291,8 +291,16 @@
       </div>
       <div id="autoGenStatus" class="text-sm mt-3"></div>
     </div>
-    <div class="text-xs mb-2" style="color:var(--text-muted)">O crea el plan manualmente:</div>
-    <div class="flex gap-2 flex-wrap mb-4"><button id="manualModeBtn" class="btn-secondary">✏️ Manual</button><button id="textModeBtn" class="btn-secondary">📋 Pegar texto</button><button id="pdfPlanModeBtn" class="btn-secondary">📄 Subir PDF</button><button id="jsonModeBtn" class="btn-secondary">🧩 Pegar JSON (Claude)</button></div><div id="planBuilder"></div></div>
+    <div style="position:relative;display:inline-block;margin-bottom:16px" id="importPlanMenuWrap">
+      <button onclick="toggleImportPlanMenu()" style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;font-weight:600;cursor:pointer">📥 Importar / crear plan <span>▾</span></button>
+      <div id="importPlanMenu" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:6px;min-width:230px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+        <button id="manualModeBtn" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">✏️ Manual — editar serie a serie</button>
+        <button id="textModeBtn" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">📋 Pegar texto — formato libre</button>
+        <button id="pdfPlanModeBtn" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">📄 Subir PDF del plan</button>
+        <button id="jsonModeBtn" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:transparent;color:var(--text);font-size:13px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='transparent'">🧩 Pegar JSON (Claude)</button>
+      </div>
+    </div>
+    <div id="planBuilder"></div></div>
   <div id="templates" class="section"><div class="flex items-center gap-3 mb-4"><button onclick="showSection('crearPlan')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">← Plan</button><h2 class="text-2xl font-bold" style="margin:0">Templates</h2></div><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
@@ -474,6 +482,47 @@
       ov.querySelector('#_ack_ok').addEventListener('click', () => cleanup(true));
       ov.querySelector('#_ack_cancel').addEventListener('click', () => cleanup(false));
       ov.addEventListener('click', e => { if (e.target === ov) cleanup(false); });
+    });
+  }
+
+  function _promptModal(title, placeholder, defaultVal) {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:24px;max-width:340px;width:100%;font-family:inherit">
+        <p style="color:#f0ece4;font-size:14px;line-height:1.5;margin:0 0 14px">${title}</p>
+        <input id="_pm_inp" type="text" value="${defaultVal||''}" placeholder="${placeholder||''}" autocomplete="off" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid #444;background:#111;color:#f0ece4;font-size:14px;box-sizing:border-box;margin-bottom:16px;outline:none">
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button id="_pm_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer">Cancelar</button>
+          <button id="_pm_ok" style="padding:8px 18px;border-radius:8px;border:none;background:#c4ff00;color:#000;font-size:13px;font-weight:700;cursor:pointer">Aceptar</button>
+        </div></div>`;
+      document.body.appendChild(ov);
+      const inp = ov.querySelector('#_pm_inp');
+      inp.focus(); inp.select();
+      const done = v => { ov.remove(); resolve(v); };
+      ov.querySelector('#_pm_ok').onclick = () => done(inp.value.trim() || null);
+      ov.querySelector('#_pm_cancel').onclick = () => done(null);
+      ov.onclick = e => { if (e.target === ov) done(null); };
+      inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value.trim() || null); if (e.key === 'Escape') done(null); };
+    });
+  }
+
+  function _selectModal(title, options) {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      const listHtml = options.map((o,i) => `<button data-idx="${i}" style="display:block;width:100%;text-align:left;padding:10px 12px;border-radius:8px;border:1px solid #333;background:#111;color:#f0ece4;font-size:13px;cursor:pointer;margin-bottom:6px;transition:background .15s" onmouseover="this.style.background='#1e1e1e'" onmouseout="this.style.background='#111'">${o.name}</button>`).join('');
+      ov.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:24px;max-width:380px;width:100%;font-family:inherit">
+        <p style="color:#f0ece4;font-size:14px;line-height:1.5;margin:0 0 14px">${title}</p>
+        <div style="max-height:280px;overflow-y:auto;margin-bottom:16px">${listHtml}</div>
+        <div style="display:flex;justify-content:flex-end">
+          <button id="_sm_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer">Cancelar</button>
+        </div></div>`;
+      document.body.appendChild(ov);
+      const done = v => { ov.remove(); resolve(v); };
+      ov.querySelectorAll('[data-idx]').forEach(btn => btn.onclick = () => done(options[+btn.dataset.idx]));
+      ov.querySelector('#_sm_cancel').onclick = () => done(null);
+      ov.onclick = e => { if (e.target === ov) done(null); };
     });
   }
 
@@ -2937,8 +2986,24 @@ Reporte:
     snap.forEach(d => { select.innerHTML += `<option value="${d.id}">${d.data().displayName}</option>`; });
   }
   
+  function toggleImportPlanMenu() {
+    var menu = document.getElementById('importPlanMenu');
+    if (!menu) return;
+    var open = menu.style.display !== 'none';
+    menu.style.display = open ? 'none' : 'block';
+    if (!open) setTimeout(function() {
+      document.addEventListener('click', function _cl(e) {
+        if (!e.target.closest('#importPlanMenuWrap')) { menu.style.display='none'; document.removeEventListener('click',_cl); }
+      });
+    }, 0);
+  }
+  window.toggleImportPlanMenu = toggleImportPlanMenu;
+
+  function _closeImportPlanMenu() { var m=document.getElementById('importPlanMenu'); if(m) m.style.display='none'; }
+
   // ========== MODO TEXTO ==========
   document.getElementById("textModeBtn")?.addEventListener("click", () => {
+    _closeImportPlanMenu();
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     document.getElementById("planBuilder").innerHTML = `
       <div class="card p-4 mb-4">
@@ -2958,6 +3023,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
 
   // ========== MODO PDF ==========
   document.getElementById("pdfPlanModeBtn")?.addEventListener("click", () => {
+    _closeImportPlanMenu();
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     document.getElementById("planBuilder").innerHTML = `
       <div class="card p-4 mb-4">
@@ -2971,6 +3037,7 @@ Remo con Barra: 3x8 RIR2 70kg</pre>
 
   // ========== MODO JSON (generado por Claude) ==========
   document.getElementById("jsonModeBtn")?.addEventListener("click", () => {
+    _closeImportPlanMenu();
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     document.getElementById("planBuilder").innerHTML = `
       <div class="card p-4 mb-4">
@@ -3881,6 +3948,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   // ========== MODO MANUAL ==========
   document.getElementById("manualModeBtn")?.addEventListener("click", () => {
+    _closeImportPlanMenu();
     if (!currentCoach) { showToast("⚠️ No hay sesión activa. Recarga la página.", true); return; }
     manualPlan = null;
     activeMPDay = 0;
@@ -5372,8 +5440,8 @@ El esfuerzo no es negociable.
   window.saveAllNotes = saveAllNotes;
 
   async function _saveCurrentPlanAsTemplate(planId) {
-    const name = prompt('Nombre para el template:');
-    if (!name || !name.trim()) return;
+    const name = await _promptModal('Nombre para el template:', 'Ej: Fuerza 4 días');
+    if (!name) return;
     try {
       const snap = await getDoc(doc(db,'plans',planId));
       if (!snap.exists()) { showToast('Plan no encontrado', true); return; }
@@ -6332,27 +6400,32 @@ El esfuerzo no es negociable.
           Otro país: incluye código país (ej. <span class="text-[#c8a54a] font-bold">15551234567</span> para EEUU).
         </div>
         <div id="eci-phone-preview" class="text-[11px] mb-3 min-h-[14px] font-semibold" style="color:#44BB88"></div>
-        <div class="p-3 mb-3 rounded" style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.35)">
-          <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
-            <strong style="color:#c8a54a">📲 Migrar login a celular:</strong> permite que el cliente entre con su número (10 dígitos MX o con código país) además de con su correo. Su contraseña actual no cambia.
+        <details class="mb-3">
+          <summary style="cursor:pointer;list-style:none;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.03);color:#aaa;font-size:12px;font-weight:600;user-select:none">🔧 Opciones de acceso avanzadas ▾</summary>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+            <div class="p-3 rounded" style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.35)">
+              <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
+                <strong style="color:#c8a54a">📲 Migrar login a celular:</strong> el cliente podrá entrar con su número (MX o código país). La contraseña no cambia.
+              </div>
+              <button id="eci-migrate-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(200,165,74,.15);border:1px solid #c8a54a;color:#c8a54a;cursor:pointer;font-weight:700">✓ Habilitar login por celular</button>
+              <div id="eci-migrate-status" class="text-xs mt-2"></div>
+            </div>
+            <div class="p-3 rounded" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.25)">
+              <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
+                <strong style="color:#4488cc">📧 Contraseña:</strong> envía un enlace de reseteo al correo del cliente.
+              </div>
+              <button id="eci-reset-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc;cursor:pointer">📧 Enviar enlace de reseteo</button>
+              <div id="eci-reset-status" class="text-xs mt-2"></div>
+            </div>
+            <div class="p-3 rounded" style="background:rgba(30,30,30,.6);border:1px solid var(--border)">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-bold" style="color:#aaa">🔍 Diagnóstico de acceso</span>
+                <button id="eci-diag-btn" class="text-[10px] px-2 py-1 rounded" style="background:rgba(255,255,255,.06);border:1px solid var(--border);color:#aaa;cursor:pointer">Verificar</button>
+              </div>
+              <div id="eci-diag-result" class="text-[11px] leading-relaxed" style="color:#888">Presiona "Verificar" para revisar el estado de acceso.</div>
+            </div>
           </div>
-          <button id="eci-migrate-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(200,165,74,.15);border:1px solid #c8a54a;color:#c8a54a;cursor:pointer;font-weight:700">✓ Habilitar login por celular</button>
-          <div id="eci-migrate-status" class="text-xs mt-2"></div>
-        </div>
-        <div class="p-3 mb-3 rounded" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.25)">
-          <div class="text-xs text-[#cfcfcf] mb-2 leading-relaxed">
-            <strong style="color:#4488cc">ℹ️ Contraseña:</strong> el SDK web no permite cambiarla directamente al cliente. Envía un enlace de reseteo al correo del cliente y él la elige.
-          </div>
-          <button id="eci-reset-btn" class="text-xs px-3 py-1 rounded" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc;cursor:pointer">📧 Enviar enlace de reseteo de contraseña</button>
-          <div id="eci-reset-status" class="text-xs mt-2"></div>
-        </div>
-        <div class="p-3 mb-3 rounded" style="background:rgba(30,30,30,.6);border:1px solid var(--border)">
-          <div class="flex justify-between items-center mb-2">
-            <span class="text-xs font-bold" style="color:#aaa">🔍 Diagnóstico de acceso</span>
-            <button id="eci-diag-btn" class="text-[10px] px-2 py-1 rounded" style="background:rgba(255,255,255,.06);border:1px solid var(--border);color:#aaa;cursor:pointer">Verificar</button>
-          </div>
-          <div id="eci-diag-result" class="text-[11px] leading-relaxed" style="color:#888">Presiona "Verificar" para revisar el estado de acceso de este cliente.</div>
-        </div>
+        </details>
         <div class="flex gap-2">
           <button onclick="this.closest('.modal-overlay').remove()" class="btn-secondary flex-1">Cancelar</button>
           <button id="eci-save" class="btn-primary flex-1">Guardar cambios</button>
@@ -6740,18 +6813,11 @@ El esfuerzo no es negociable.
 
       // Preguntar a qué cliente asignar
       const clientsSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
-      let opts = [];
-      clientsSnap.forEach(d => opts.push({ id: d.id, name: d.data().displayName || d.data().email }));
-      const optList = opts.map((o,i) => (i+1)+'. '+o.name).join('\n');
-      const sel = prompt('Asignar plan duplicado a:\n'+optList+'\n\nEscribe el número (o "mismo" para el cliente actual):');
+      let opts = [{ id: clientId, name: '↩ Mismo cliente (nuevo borrador)' }];
+      clientsSnap.forEach(d => { if (d.id !== clientId) opts.push({ id: d.id, name: d.data().displayName || d.data().email }); });
+      const sel = await _selectModal('Asignar plan duplicado a:', opts);
       if (!sel) return;
-
-      let targetId = clientId;
-      if (sel.toLowerCase() !== 'mismo') {
-        const idx = parseInt(sel) - 1;
-        if (idx >= 0 && idx < opts.length) targetId = opts[idx].id;
-        else { showToast('Selección inválida', true); return; }
-      }
+      const targetId = sel.id;
 
       // Crear copia del plan
       const newPlan = { ...planData, clientId: targetId, createdAt: Date.now(), status: 'active' };
@@ -7013,12 +7079,9 @@ El esfuerzo no es negociable.
     let opts = [];
     clientsSnap.forEach(d => opts.push({ id: d.id, name: d.data().displayName || d.data().email }));
     if (!opts.length) { showToast('No hay clientes', true); return; }
-    const optList = opts.map((o,i) => (i+1)+'. '+o.name).join('\n');
-    const sel = prompt('Asignar template a:\n'+optList+'\n\nNúmero del cliente:');
+    const sel = await _selectModal('Asignar template a:', opts);
     if (!sel) return;
-    const ci = parseInt(sel) - 1;
-    if (ci < 0 || ci >= opts.length) { showToast('Selección inválida', true); return; }
-    const clientId = opts[ci].id;
+    const clientId = sel.id;
 
     let template;
     if (type === 'builtin') {
@@ -7050,23 +7113,22 @@ El esfuerzo no es negociable.
   }
 
   async function createTemplateFromPlan() {
-    const name = prompt('Nombre del template:');
+    const name = await _promptModal('Nombre del template:', 'Ej: Fuerza 4 días');
     if (!name) return;
     // Buscar planes del coach para usar como base
     const planSnap = await getDocs(query(collection(db, "plans"), where("coachId", "==", currentCoach.uid)));
     let plans = [];
     planSnap.forEach(d => plans.push({ id: d.id, ...d.data() }));
     if (!plans.length) { showToast('No hay planes para usar como base. Crea un plan primero.', true); return; }
-    const optList = plans.map((p,i) => (i+1)+'. '+(p.days||[]).map(d=>d.label).join(', ')).join('\n');
-    const sel = prompt('Basado en qué plan:\n'+optList);
+    const planOpts = plans.map(p => ({ id: p.id, name: (p.days||[]).map(d=>d.label).join(', ') || p.id }));
+    const sel = await _selectModal('Basado en qué plan:', planOpts);
     if (!sel) return;
-    const pi = parseInt(sel) - 1;
-    if (pi < 0 || pi >= plans.length) return;
+    const basePlan = plans.find(p => p.id === sel.id);
 
     try {
       await addDoc(collection(db, 'templates'), {
-        name, coachId: currentCoach.uid, weeks: plans[pi].weeks || 6,
-        days: (plans[pi].days || []).map(d => ({ label: d.label, exercises: d.exercises || [] })),
+        name, coachId: currentCoach.uid, weeks: basePlan.weeks || 6,
+        days: (basePlan.days || []).map(d => ({ label: d.label, exercises: d.exercises || [] })),
         createdAt: Date.now()
       });
       showToast('Template "'+name+'" creado ✅');
