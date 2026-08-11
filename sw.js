@@ -1,5 +1,5 @@
 // VDSEN Service Worker — offline support
-const CACHE = 'vdsen-v4';
+const CACHE = 'vdsen-v5';
 
 // Assets to pre-cache on install (propio HTML)
 const PRECACHE = [

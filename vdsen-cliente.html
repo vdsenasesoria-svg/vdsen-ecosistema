@@ -4703,7 +4703,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     : '';
 
   var expressTipHtml = '';
-  return machineHtml + headerHtml + notaHtml + closedBannerHtml + expressTipHtml + wuHtml + setsHtml + completedBlockHtml;
+  var techInstrHtml = _buildTechniqueAndInstructionsHtml(ej, catData, di, ei);
+  return machineHtml + headerHtml + techInstrHtml + notaHtml + closedBannerHtml + expressTipHtml + wuHtml + setsHtml + completedBlockHtml;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -7479,7 +7480,7 @@ function startRestTimer(seconds, lastSetKey) {
   _restEl = document.getElementById('restTimerNum');
   var overlay = document.getElementById('restTimerOverlay');
   if (!overlay) return;
-  overlay.style.display = 'block';
+  overlay.style.display = 'flex';
   // Mostrar datos del último set completado
   var lsEl = document.getElementById('restLastSet');
   if (lsEl) {
