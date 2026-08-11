@@ -3704,52 +3704,51 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
     var _shortTxt2  = (_tdesc && _tdesc.short) ? _tdesc.short : (meta ? meta.def : '');
     var _detailHtml2 = (_tdesc && _tdesc.detail) ? _tdesc.detail : '';
     html +=
-      '<div style="margin:0 0 14px;border-radius:12px;overflow:hidden;border:1px solid '+_borderCol+';background:rgba(107,107,102,.04)">' +
-        // Header: solo la etiqueta de técnica + badge compacto
-        '<div style="padding:7px 12px;background:rgba(107,107,102,.14);display:flex;align-items:center;gap:8px">' +
+      '<details style="margin:0 0 14px;border-radius:12px;overflow:hidden;border:1px solid '+_borderCol+';background:rgba(107,107,102,.04)">' +
+        '<summary style="list-style:none;padding:7px 12px;background:rgba(107,107,102,.14);display:flex;align-items:center;gap:8px;cursor:pointer">' +
           '<span style="font-size:15px">📌</span>' +
           '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:var(--accent)">NOTA DEL COACH</span>' +
-          (meta ? '<span style="margin-left:auto;font-size:9px;font-weight:800;padding:2px 8px;border-radius:5px;background:'+meta.color+';color:#fff">'+meta.icon+' '+meta.label+'</span>' : '') +
-        '</div>' +
+          (meta ? '<span style="margin-left:auto;font-size:9px;font-weight:800;padding:2px 8px;border-radius:5px;background:'+meta.color+';color:#fff">'+meta.icon+' '+meta.label+'</span>' : '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸ ver</span>') +
+        '</summary>' +
         '<div style="padding:12px 14px">' +
-          // Técnica del coach (prominente)
           (techNote ? '<div style="font-size:14px;font-weight:700;color:var(--tx);line-height:1.6'+(coachNote||_shortTxt2?';margin-bottom:10px':'')+'">' + techNote + '</div>' : '') +
-          // Nota de ejecución del coach
           (coachNote ? (techNote ? '<div style="height:1px;background:rgba(107,107,102,.25);margin-bottom:10px"></div>' : '') +
             '<div style="font-size:13px;color:var(--mt2);line-height:1.6'+(techNote?'':';font-weight:600;color:var(--tx)')+'">'+coachNote+'</div>' : '') +
-          // Descripción de protocolo (siempre que no la repita coachNote)
           (_shortTxt2 && !coachNote ?
             '<div style="font-size:11px;color:var(--mt);line-height:1.55;margin-top:'+(techNote?'10':'0')+'px'+(techNote?';padding-top:10px;border-top:1px solid rgba(107,107,102,.2)':'')+'">' +
               (meta ? '<span style="color:'+meta.color+';font-weight:700">Protocolo: </span>' : '') + _shortTxt2 +
             '</div>' : '') +
-          // Pasos detallados expandibles
           (_detailHtml2 ? '<details style="margin-top:8px"><summary style="font-size:10px;color:'+_borderCol+';font-weight:700;cursor:pointer;user-select:none;letter-spacing:.5px">▸ PASOS DETALLADOS</summary><div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_detailHtml2+'</div></details>' : '') +
         '</div>' +
-      '</div>';
+      '</details>';
   } else if (meta) {
     // Sin notas del coach → banner compacto solo con descripción de técnica
     var _shortTxt  = (_tdesc && _tdesc.short) ? _tdesc.short : meta.def;
     var _detailHtml = (_tdesc && _tdesc.detail) ? _tdesc.detail : '';
     html +=
-      '<div style="margin:0 0 12px;padding:9px 12px;border-radius:10px;border:1px solid '+meta.color+';background:rgba(255,255,255,.02)">' +
-        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">' +
+      '<details style="margin:0 0 12px;border-radius:10px;border:1px solid '+meta.color+';background:rgba(255,255,255,.02);overflow:hidden">' +
+        '<summary style="list-style:none;padding:9px 12px;display:flex;align-items:center;gap:6px;cursor:pointer">' +
           '<span style="font-size:14px">'+meta.icon+'</span>' +
           '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:'+meta.color+'">TÉCNICA · '+meta.label+'</span>' +
+          '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸ ver</span>' +
+        '</summary>' +
+        '<div style="padding:0 12px 10px">' +
+          '<div style="font-size:11px;color:var(--mt2);line-height:1.55">'+_shortTxt+'</div>' +
+          (_detailHtml ? '<details style="margin-top:8px"><summary style="font-size:10px;color:'+meta.color+';font-weight:700;cursor:pointer;user-select:none;letter-spacing:.5px">▸ CÓMO HACERLO</summary><div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_detailHtml+'</div></details>' : '') +
         '</div>' +
-        '<div style="font-size:11px;color:var(--mt2);line-height:1.55">'+_shortTxt+'</div>' +
-        (_detailHtml
-          ? '<details style="margin-top:8px"><summary style="font-size:10px;color:'+meta.color+';font-weight:700;cursor:pointer;user-select:none;letter-spacing:.5px">▸ CÓMO HACERLO</summary><div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_detailHtml+'</div></details>'
-          : '') +
-      '</div>';
+      '</details>';
   }
 
   // ── 3) Notas del catálogo (secundario, compacto) ──────────────────────────
   if (exNotes && !coachNote) {
     html +=
-      '<div style="margin:0 0 10px;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)">' +
-        '<div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--mt);margin-bottom:4px">📖 EJECUCIÓN</div>' +
-        '<div style="font-size:12px;color:var(--mt2);line-height:1.55">'+exNotes+'</div>' +
-      '</div>';
+      '<details style="margin:0 0 10px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);overflow:hidden">' +
+        '<summary style="list-style:none;padding:8px 12px;display:flex;align-items:center;gap:6px;cursor:pointer">' +
+          '<span style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--mt)">📖 EJECUCIÓN</span>' +
+          '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸ ver</span>' +
+        '</summary>' +
+        '<div style="padding:0 12px 10px;font-size:12px;color:var(--mt2);line-height:1.55">'+exNotes+'</div>' +
+      '</details>';
   }
 
   return html;
@@ -4083,19 +4082,17 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         var pm = Y3T_PHASE_META[_y3tPhase];
         if (!pm) return '';
         var _pd = Y3T_PHASE_DESCRIPTIONS[_y3tPhase] || null;
-        return '<div style="margin-top:8px;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.25);border:2px solid '+pm.color+'">' +
-          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:'+(_pd ? '4px' : '0')+'">'+
+        return '<details style="margin-top:8px;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.25);border:2px solid '+pm.color+'">' +
+          '<summary style="list-style:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer">'+
             '<span style="font-size:13px;font-weight:900;letter-spacing:1px;color:'+pm.color+'">'+(_pd ? _pd.badge : pm.label)+'</span>'+
             '<span style="font-size:10px;color:var(--mt)">'+pm.range+' · Descanso '+pm.rest+'</span>'+
-          '</div>'+
-          (_pd ? '<div style="font-size:11px;color:var(--mt2);line-height:1.5">'+_pd.short+'</div>'+
+            '<span style="font-size:10px;color:var(--mt2);margin-left:auto">▸ ver</span>'+
+          '</summary>'+
+          (_pd ? '<div style="margin-top:8px;font-size:11px;color:var(--mt2);line-height:1.5">'+_pd.short+'</div>'+
             (_pd.detail ? '<div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_pd.detail+'</div>' : '') : '') +
-        '</div>';
+        '</details>';
       })()+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
-        '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
-        '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">'+repsTarget+' REPS</span>'+
-        '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px" title="RIR objetivo del plan">OBJ RIR '+baseRIR+'</span>'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
@@ -4177,10 +4174,13 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
         '</div>';
       }).join('');
-      wuHtml = '<div style="margin-bottom:12px;padding:10px 12px;background:rgba(70,130,200,.06);border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0">'+
-        '<div style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px;margin-bottom:6px">🔥 CALENTAMIENTO</div>'+
-        wuRows+
-      '</div>';
+      wuHtml = '<details style="margin-bottom:12px;border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0;background:rgba(70,130,200,.06)">'+
+        '<summary style="list-style:none;padding:7px 12px;display:flex;align-items:center;gap:6px;cursor:pointer">'+
+          '<span style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px">🔥 CALENTAMIENTO</span>'+
+          '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸ ver cargas</span>'+
+        '</summary>'+
+        '<div style="padding:0 12px 10px">'+wuRows+'</div>'+
+      '</details>';
     }
   }
 
@@ -4476,27 +4476,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         }
       }
       setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(107,107,102,.5);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">SERIE '+(s+1)+_setSubLabel+'</div>'+
-        '</div>'+
-        (function(){
-          var _tR = setSpec && setSpec.repsTarget !== undefined ? setSpec.repsTarget : repsTarget;
-          var _tRirV = setSpec && setSpec.rirTarget !== undefined ? setSpec.rirTarget : baseRIR;
-          var _tRStr = _tR === 'SST-PROTOCOL' ? 'SST' : (_tR === 'SST-RIV-PROTOCOL' ? 'SST-RIV' : (_tR === 999 ? 'AMRAP' : String(_tR)));
-          return '<div style="display:flex;align-items:stretch;gap:0;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.2);border-radius:10px;margin-bottom:10px;overflow:hidden">'+
-            '<div style="flex:1;padding:10px 16px;text-align:center">'+
-              '<div style="font-size:9px;letter-spacing:2px;color:var(--mt2);font-weight:700;margin-bottom:4px">REPS OBJETIVO</div>'+
-              '<div style="font-size:48px;font-weight:900;line-height:1;color:var(--gold);font-family:var(--ff)">'+_tRStr+'</div>'+
-            '</div>'+
-            '<div style="width:1px;background:rgba(255,255,255,.08)"></div>'+
-            '<div style="flex:1;padding:10px 16px;text-align:center">'+
-              '<div style="font-size:9px;letter-spacing:2px;color:var(--mt2);font-weight:700;margin-bottom:4px">RIR OBJETIVO</div>'+
-              '<div style="font-size:48px;font-weight:900;line-height:1;color:#e8a040;font-family:var(--ff)">'+_tRirV+'</div>'+
-            '</div>'+
-          '</div>';
-        })()+
-        setSpecBlock+
-        prevRefHtml+
+        (setSpecBlock ? setSpecBlock : '')+
         // Inputs — adaptados a tipo de ejercicio
         //   isometric → CARGA opcional + SEGUNDOS (en lugar de REPS)
         //   bodyweight → LASTRE opcional (+kg/lb sobre peso corporal) + REPS
