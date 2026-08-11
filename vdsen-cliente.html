@@ -9467,23 +9467,29 @@ function renderCheckin() {
   }
 
   cont.innerHTML =
-    '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:2px">CHECK-IN SEMANAL</div>'
-    + '<div style="font-size:13px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">SEM ' + sem + ' · CHECK-IN SEMANAL</div>'
+    '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:2px">CHECK-IN SEM ' + sem + '</div>'
+    + '<div style="font-size:12px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">Rellena al inicio de cada semana — tu coach lo usa para ajustar el plan</div>'
 
     // ── MEDIDAS ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:14px">MEDIDAS DEL DÍA</div>'
     +   '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'
-    +   _ciField('peso',  'PESO (kg)', '0.1', 'decimal', (PLAN.peso||''), 22, 'En ayunas · mismo día cada semana')
-    +   _ciField('hrv',   'HRV',       '1',   'numeric', '65',            22, 'De tu reloj/app (Polar, Oura, Garmin…)')
-    +   _ciField('sleep', 'SUEÑO (h)', '0.5', 'decimal', '7.5',          22, 'Noche anterior al entrenamiento')
+    +   _ciField('peso',  'PESO (kg)', '0.1', 'decimal', (PLAN.peso||''), 22, 'En ayunas · mismo día')
+    +   _ciField('hrv',   'HRV',       '1',   'numeric', '65',            22, 'Polar, Oura, Garmin…')
+    +   _ciField('sleep', 'SUEÑO (h)', '0.5', 'decimal', '7.5',          22, 'Noche más representativa')
     +   '</div>'
     + '</div>'
 
-    // ── MEDIDAS CORPORALES (opcional) ─────────────────
-    + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
-    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">MEDIDAS CORPORALES</div>'
-    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:14px">Opcional — cargalas 1 vez por semana, siempre en el mismo momento del día</div>'
+    // ── MEDIDAS CORPORALES (opcional, colapsable) ─────────────────
+    + '<details style="margin-bottom:10px">'
+    + '<summary style="background:var(--card);border:1px solid var(--bd);padding:12px 16px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;user-select:none">'
+    +   '<span style="font-family:var(--ff);font-size:13px;letter-spacing:1.5px;color:var(--mt)">MEDIDAS CORPORALES</span>'
+    +   '<span style="font-size:11px;color:var(--mt2)">'
+    +   ((d.cintura||d.brazo||d.pierna||d.pecho) ? '✓ registradas ▾' : 'opcional ▾')
+    +   '</span>'
+    + '</summary>'
+    + '<div style="background:var(--card);border:1px solid var(--bd);border-top:none;padding:16px">'
+    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:14px">Cargalas 1 vez por semana, siempre en el mismo momento del día</div>'
     +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
     +   _ciField('cintura', 'CINTURA (cm)', '0.1', 'decimal', '—', 20, null)
     +   _ciField('brazo',   'BRAZO (cm)',   '0.1', 'decimal', '—', 20, null)
@@ -9491,6 +9497,7 @@ function renderCheckin() {
     +   _ciField('pecho',   'PECHO (cm)',   '0.1', 'decimal', '—', 20, null)
     +   '</div>'
     + '</div>'
+    + '</details>'
 
     + _buildWeightSparkline()
 
