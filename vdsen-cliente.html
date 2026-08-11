@@ -3703,14 +3703,15 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
     var _borderCol = meta ? meta.color : 'rgba(107,107,102,.5)';
     var _shortTxt2  = (_tdesc && _tdesc.short) ? _tdesc.short : (meta ? meta.def : '');
     var _detailHtml2 = (_tdesc && _tdesc.detail) ? _tdesc.detail : '';
+    var _noteId = 'cnote_'+di+'_'+ei;
     html +=
-      '<details style="margin:0 0 14px;border-radius:12px;overflow:hidden;border:1px solid '+_borderCol+';background:rgba(107,107,102,.04)">' +
-        '<summary style="list-style:none;padding:7px 12px;background:rgba(107,107,102,.14);display:flex;align-items:center;gap:8px;cursor:pointer">' +
+      '<div style="margin:0 0 14px;border-radius:12px;overflow:hidden;border:1px solid '+_borderCol+';background:rgba(107,107,102,.04)">' +
+        '<button onclick="(function(el){el.style.display=el.style.display===\'none\'?\'block\':\'none\';})(document.getElementById(\''+_noteId+'\'))" style="width:100%;text-align:left;padding:7px 12px;background:rgba(107,107,102,.14);display:flex;align-items:center;gap:8px;border:none;cursor:pointer">' +
           '<span style="font-size:15px">📌</span>' +
           '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:var(--accent)">NOTA DEL COACH</span>' +
-          (meta ? '<span style="margin-left:auto;font-size:9px;font-weight:800;padding:2px 8px;border-radius:5px;background:'+meta.color+';color:#fff">'+meta.icon+' '+meta.label+'</span>' : '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸ ver</span>') +
-        '</summary>' +
-        '<div style="padding:12px 14px">' +
+          (meta ? '<span style="margin-left:auto;font-size:9px;font-weight:800;padding:2px 8px;border-radius:5px;background:'+meta.color+';color:#fff">'+meta.icon+' '+meta.label+'</span>' : '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>') +
+        '</button>' +
+        '<div id="'+_noteId+'" style="display:none;padding:12px 14px">' +
           (techNote ? '<div style="font-size:14px;font-weight:700;color:var(--tx);line-height:1.6'+(coachNote||_shortTxt2?';margin-bottom:10px':'')+'">' + techNote + '</div>' : '') +
           (coachNote ? (techNote ? '<div style="height:1px;background:rgba(107,107,102,.25);margin-bottom:10px"></div>' : '') +
             '<div style="font-size:13px;color:var(--mt2);line-height:1.6'+(techNote?'':';font-weight:600;color:var(--tx)')+'">'+coachNote+'</div>' : '') +
@@ -3718,37 +3719,37 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
             '<div style="font-size:11px;color:var(--mt);line-height:1.55;margin-top:'+(techNote?'10':'0')+'px'+(techNote?';padding-top:10px;border-top:1px solid rgba(107,107,102,.2)':'')+'">' +
               (meta ? '<span style="color:'+meta.color+';font-weight:700">Protocolo: </span>' : '') + _shortTxt2 +
             '</div>' : '') +
-          (_detailHtml2 ? '<details style="margin-top:8px"><summary style="font-size:10px;color:'+_borderCol+';font-weight:700;cursor:pointer;user-select:none;letter-spacing:.5px">▸ PASOS DETALLADOS</summary><div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_detailHtml2+'</div></details>' : '') +
         '</div>' +
-      '</details>';
+      '</div>';
   } else if (meta) {
     // Sin notas del coach → banner compacto solo con descripción de técnica
     var _shortTxt  = (_tdesc && _tdesc.short) ? _tdesc.short : meta.def;
     var _detailHtml = (_tdesc && _tdesc.detail) ? _tdesc.detail : '';
+    var _techId = 'tech_'+di+'_'+ei;
     html +=
-      '<details style="margin:0 0 12px;border-radius:10px;border:1px solid '+meta.color+';background:rgba(255,255,255,.02);overflow:hidden">' +
-        '<summary style="list-style:none;padding:9px 12px;display:flex;align-items:center;gap:6px;cursor:pointer">' +
+      '<div style="margin:0 0 12px;border-radius:10px;border:1px solid '+meta.color+';background:rgba(255,255,255,.02);overflow:hidden">' +
+        '<button onclick="(function(el){el.style.display=el.style.display===\'none\'?\'block\':\'none\';})(document.getElementById(\''+_techId+'\'))" style="width:100%;text-align:left;padding:9px 12px;display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer">' +
           '<span style="font-size:14px">'+meta.icon+'</span>' +
           '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:'+meta.color+'">TÉCNICA · '+meta.label+'</span>' +
-          '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸ ver</span>' +
-        '</summary>' +
-        '<div style="padding:0 12px 10px">' +
+          '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>' +
+        '</button>' +
+        '<div id="'+_techId+'" style="display:none;padding:0 12px 10px">' +
           '<div style="font-size:11px;color:var(--mt2);line-height:1.55">'+_shortTxt+'</div>' +
-          (_detailHtml ? '<details style="margin-top:8px"><summary style="font-size:10px;color:'+meta.color+';font-weight:700;cursor:pointer;user-select:none;letter-spacing:.5px">▸ CÓMO HACERLO</summary><div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_detailHtml+'</div></details>' : '') +
         '</div>' +
-      '</details>';
+      '</div>';
   }
 
   // ── 3) Notas del catálogo (secundario, compacto) ──────────────────────────
   if (exNotes && !coachNote) {
+    var _exId = 'exnotes_'+di+'_'+ei;
     html +=
-      '<details style="margin:0 0 10px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);overflow:hidden">' +
-        '<summary style="list-style:none;padding:8px 12px;display:flex;align-items:center;gap:6px;cursor:pointer">' +
+      '<div style="margin:0 0 10px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);overflow:hidden">' +
+        '<button onclick="(function(el){el.style.display=el.style.display===\'none\'?\'block\':\'none\';})(document.getElementById(\''+_exId+'\'))" style="width:100%;text-align:left;padding:8px 12px;display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer">' +
           '<span style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--mt)">📖 EJECUCIÓN</span>' +
-          '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸ ver</span>' +
-        '</summary>' +
-        '<div style="padding:0 12px 10px;font-size:12px;color:var(--mt2);line-height:1.55">'+exNotes+'</div>' +
-      '</details>';
+          '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>' +
+        '</button>' +
+        '<div id="'+_exId+'" style="display:none;padding:0 12px 10px;font-size:12px;color:var(--mt2);line-height:1.55">'+exNotes+'</div>' +
+      '</div>';
   }
 
   return html;
@@ -4081,16 +4082,11 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         if (!_isY3T || !_y3tPhase) return '';
         var pm = Y3T_PHASE_META[_y3tPhase];
         if (!pm) return '';
-        var _pd = Y3T_PHASE_DESCRIPTIONS[_y3tPhase] || null;
-        return '<details style="margin-top:8px;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.25);border:2px solid '+pm.color+'">' +
-          '<summary style="list-style:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer">'+
-            '<span style="font-size:13px;font-weight:900;letter-spacing:1px;color:'+pm.color+'">'+(_pd ? _pd.badge : pm.label)+'</span>'+
-            '<span style="font-size:10px;color:var(--mt)">'+pm.range+' · Descanso '+pm.rest+'</span>'+
-            '<span style="font-size:10px;color:var(--mt2);margin-left:auto">▸ ver</span>'+
-          '</summary>'+
-          (_pd ? '<div style="margin-top:8px;font-size:11px;color:var(--mt2);line-height:1.5">'+_pd.short+'</div>'+
-            (_pd.detail ? '<div style="margin-top:6px;padding:8px;background:rgba(0,0,0,.2);border-radius:6px">'+_pd.detail+'</div>' : '') : '') +
-        '</details>';
+        // Solo mostrar el badge de fase — sin descripción (la nota del coach ya la incorpora)
+        return '<div style="margin-top:8px;display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border-radius:8px;background:rgba(0,0,0,.2);border:1.5px solid '+pm.color+'">'+
+          '<span style="font-size:12px;font-weight:900;letter-spacing:1px;color:'+pm.color+'">'+pm.label+'</span>'+
+          '<span style="font-size:10px;color:var(--mt)">'+pm.range+' · '+pm.rest+'</span>'+
+        '</div>';
       })()+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
@@ -4174,13 +4170,14 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
         '</div>';
       }).join('');
-      wuHtml = '<details style="margin-bottom:12px;border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0;background:rgba(70,130,200,.06)">'+
-        '<summary style="list-style:none;padding:7px 12px;display:flex;align-items:center;gap:6px;cursor:pointer">'+
+      var _wuId = 'wu_'+di+'_'+ei;
+      wuHtml = '<div style="margin-bottom:12px;border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0;background:rgba(70,130,200,.06)">'+
+        '<button onclick="(function(el){el.style.display=el.style.display===\'none\'?\'block\':\'none\';})(document.getElementById(\''+_wuId+'\'))" style="width:100%;text-align:left;padding:7px 12px;display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer">'+
           '<span style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px">🔥 CALENTAMIENTO</span>'+
-          '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸ ver cargas</span>'+
-        '</summary>'+
-        '<div style="padding:0 12px 10px">'+wuRows+'</div>'+
-      '</details>';
+          '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>'+
+        '</button>'+
+        '<div id="'+_wuId+'" style="display:none;padding:0 12px 10px">'+wuRows+'</div>'+
+      '</div>';
     }
   }
 
