@@ -6695,6 +6695,9 @@ function buildBoostcampExercise(ej, di, ei) {
     // Warm-up section (collapsible)
     wuHtml+
 
+    // Technique instructions (same as _buildExCard)
+    '<div style="padding:0 14px 2px">'+_buildTechniqueAndInstructionsHtml(ej, catData, di, ei)+'</div>'+
+
     // Substitution warning (ICS bajo persistente)
     substHtml+
 

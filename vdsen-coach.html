@@ -4056,7 +4056,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           tempo:'Haz el movimiento contando el tiempo en voz baja: 4 segundos bajando, 1 segundo subiendo (o el tiempo que tu plan indique). No hagas las reps rapido, la lentitud es el ejercicio. Cuenta cada fase para no hacer trampa.',
           amrap:'Haz tantas repeticiones como puedas manteniendo buena postura. Para en el momento en que ya no puedas hacer ni una mas correctamente. No pares antes, da todo lo que tienes en esa serie.',
           superset:'Haz el primer ejercicio y sin descansar pasa directamente al segundo ejercicio. Solo descansas cuando termines ambos. Ahorra tiempo y mantiene el ritmo alto.',
-          y3t:'Este metodo cambia cada semana del bloque: Semana 1 — pocas reps con el mayor peso posible, descansa 3-4 min entre series. Semana 2 — reps moderadas, al terminar cada serie estira el musculo 45-60 segundos. Semana 3 — muchas reps y al terminar la ultima serie aplicas el protocolo SST (ver descripcion arriba). Cada semana se vuelve mas exigente.',
+          y3t:'Este metodo cambia cada semana del bloque: Semana 1 — pocas reps con el mayor peso posible, descansa 3-4 min entre series. Semana 2 — reps moderadas, al terminar las ultimas 2 series estira el musculo 45-60 segundos. Semana 3 — muchas reps y al terminar la ultima serie aplicas el protocolo SST (ver descripcion arriba). Cada semana se vuelve mas exigente.',
           'iso-hold':'Para el movimiento en el punto donde mas sientas trabajar el musculo y mantien esa posicion por los segundos indicados. Respira con normalidad, no aguantes la respiracion. Cuenta los segundos en voz baja para saber cuando terminas.',
         };
         const TECH_LABELS_PDF={
@@ -4079,9 +4079,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             if(ei>0){ _need(s,4,hm); d.setDrawColor(...HAIR); d.setLineWidth(0.3); d.line(ML,s.y,ML+CW,s.y); s.y+=4; }
             const tec=((ex.technique||'straight').toLowerCase().trim());
             const tecLabel=TECH_LABELS_PDF[tec]||(tec!=='straight'?tec.toUpperCase():'');
-            const rawTecDesc=(ex.techniqueNote||'').trim()||TECH_DESCS_PDF[tec]||'';
-            const coachNote=(ex.coachNote||'').trim();
-            const tecDesc=(rawTecDesc&&rawTecDesc!==coachNote)?rawTecDesc:'';
+            const instrText=TECH_DESCS_PDF[tec]||'';
             // ── Barra de encabezado del ejercicio ──
             _need(s,14,hm); const yH=s.y;
             d.setFillColor(215,215,209); d.rect(ML,yH,CW,9,'F');
@@ -4091,7 +4089,6 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
               d.text('▶ '+tecLabel, PW-MR-2, yH+4.5, {align:'right', baseline:'middle'}); }
             s.y=yH+9+2;
             // ── Bloque de técnica / instrucción (ANTES de los sets) ──
-            const instrText=(tecDesc&&coachNote)?tecDesc+'\nNota del coach: '+coachNote:(coachNote||tecDesc);
             if(instrText){
               d.setFont(F_BODY,'normal'); d.setFontSize(9);  // setFont ANTES de splitTextToSize
               const instrLines=d.splitTextToSize(instrText, CW-14);
