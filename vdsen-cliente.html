@@ -11760,7 +11760,7 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
 
   if (hasProgrec) {
     targetLoad = progrec.newLoad;
-    targetSets = (effectiveSetsCount != null) ? effectiveSetsCount : (progrec.newSets || numSeries);
+    targetSets = effectiveSetsCount != null ? effectiveSetsCount : numSeries;
     targetReps = progrec.newReps || repsTarget;
     targetRIR  = (progrec.rirTarget !== undefined && progrec.rirTarget !== null) ? progrec.rirTarget : baseRIR;
     action     = progrec.action || 'maintain';
