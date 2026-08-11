@@ -4115,9 +4115,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       (_exSubData && _exSubData.original && _exSubData.original !== nombre
         ? '<div style="margin-top:4px;font-size:10px;color:var(--mt2)">Original: '+_exSubData.original+'</div>'
         : '')+
-    '</div>' +
-    // ── B.2 Técnica de intensificación + instrucciones del ejercicio ──
-    _buildTechniqueAndInstructionsHtml(ej, catData, di, ei);
+    '</div>';
 
   // ── B.0 Banner superserie ────────────────────────────────────────────────
   // Ya NO se usa: _buildExPanel envuelve todo el bloque SS en un contenedor
@@ -4408,15 +4406,41 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
     var _setTargetHtml = '';
     if (_isHeteroSets && _psReps !== null && _psReps !== 'SST-PROTOCOL' && _psReps !== 'SST-RIV-PROTOCOL' && _psReps !== 999) {
-      _setTargetHtml = '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
+      _setTargetHtml = '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
         '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
         '<span style="font-size:18px;font-weight:900;color:var(--tx);line-height:1">'+_psReps+' reps</span>'+
         (_psRir !== null ? '<span style="font-size:13px;font-weight:700;color:var(--mt)">· RIR '+_psRir+'</span>' : '')+
       '</div>';
     }
-    var setSpecBlock = (setNote || setSpecBadges || _setTargetHtml)
+    // Instrucción específica del set (técnica + nota del coach)
+    var _setInstrHtml = '';
+    var _techLowerS = (ej.technique || 'straight').toLowerCase();
+    var _coachNoteEx = (ej.coachNote || '').trim();
+    var _techNoteEx  = (ej.techniqueNote || '').trim();
+    var _instrLines = [];
+    if (_isY3T && _effectiveSets && _effectiveSets[s]) {
+      var _sRepsV = _effectiveSets[s].repsTarget;
+      var _sIsSSTV = _sRepsV === 'SST-PROTOCOL' || _sRepsV === 'SST-RIV-PROTOCOL';
+      var _sIsFuerza = !_sIsSSTV && typeof _sRepsV === 'number' && _sRepsV <= 6;
+      var _sIsS3V = _y3tPhase === 's3' || _sIsSSTV;
+      var _sPhKey = _sIsSSTV ? 's3' : (_sIsFuerza ? 's1' : (_sIsS3V ? 's3' : 's2'));
+      var _sPhDesc = Y3T_PHASE_DESCRIPTIONS[_sPhKey];
+      if (_sPhDesc && _sPhDesc.short) _instrLines.push(_sPhDesc.short);
+    } else if (_techLowerS !== 'straight') {
+      var _tdescS = TECHNIQUE_DESCRIPTIONS[_techLowerS];
+      var _tShortS = (_tdescS && _tdescS.short) ? _tdescS.short : (_techNoteEx || '');
+      if (_tShortS) _instrLines.push(_tShortS);
+    }
+    if (_coachNoteEx && _instrLines.indexOf(_coachNoteEx) === -1) _instrLines.push(_coachNoteEx);
+    if (_instrLines.length) {
+      _setInstrHtml = '<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;background:rgba(107,107,102,.07);border-left:2px solid rgba(107,107,102,.4);font-size:11.5px;color:var(--mt);line-height:1.6">'+
+        _instrLines.join('<br>')+
+      '</div>';
+    }
+    var setSpecBlock = (setNote || setSpecBadges || _setTargetHtml || _setInstrHtml)
       ? '<div style="margin-bottom:8px;font-size:11px;color:var(--mt2);line-height:1.5">'+
           _setTargetHtml+
+          _setInstrHtml+
           setSpecBadges+
           (setNote ? '<span style="color:var(--accent);font-weight:600">📌 '+setNote+'</span>' : '')+
         '</div>'
