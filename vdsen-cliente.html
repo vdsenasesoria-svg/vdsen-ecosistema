@@ -3674,7 +3674,7 @@ function getSetNoteBadge(setNote) {
   if (!setNote) return null;
   var match = SET_NOTE_LABELS[setNote];
   if (match) return match.icon + ' ' + match.text;
-  return setNote;
+  return null;
 }
 
 function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
@@ -4432,7 +4432,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           _setTargetHtml+
           _setInstrHtml+
           setSpecBadges+
-          (setNote ? '<span style="color:var(--accent);font-weight:600">📌 '+setNote+'</span>' : '')+
+          (setNote && SET_NOTE_LABELS[setNote] ? '<span style="color:var(--accent);font-weight:600">📌 '+getSetNoteBadge(setNote)+'</span>' : '')+
         '</div>'
       : '';
 
