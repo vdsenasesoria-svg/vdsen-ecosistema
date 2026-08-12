@@ -1430,6 +1430,14 @@ async function loadPlan(user) {
               _i += 2;
             } else { _i++; }
           } else { _i++; }
+        } else if (_ex.supersetGroup) {
+          // Tiene grupo desde Firestore pero sin compañero detectado — adoptar el siguiente
+          // si tiene técnica superset y aún no tiene grupo asignado.
+          var _nxP = exs[_i + 1];
+          if (_nxP && !_nxP.supersetGroup && _nxP.technique && _nxP.technique.indexOf('superset') !== -1) {
+            _nxP.supersetGroup = String(_ex.supersetGroup).trim();
+            _i += 2;
+          } else { _i++; }
         } else { _i++; }
       }
     });
@@ -4279,9 +4287,16 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<input type="hidden" id="xsets_'+_expK+'" value="'+numSeries+'">';
     setsHtml +=
       '<div style="background:rgba(107,107,102,.04);border:2px solid rgba(107,107,102,.3);border-radius:12px;padding:14px;margin-top:4px">'+
-      '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px">'+
+      '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent);margin-bottom:8px">'+
         'SERIE '+numSeries+(numSeries > 1 ? ' \u2014 \u00daLTIMA \u00b7 REGISTRA LOS DATOS' : ' \u2014 REGISTRA LOS DATOS')+_xLastLabel+
       '</div>'+
+      (!_isY3T && repsTarget && repsTarget !== 'SST' && repsTarget !== 'SST-RIV' && repsTarget !== 'AMRAP'
+        ? '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px;padding:5px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
+            '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
+            '<span style="font-size:15px;font-weight:900;color:var(--tx);line-height:1">'+repsTarget+' reps</span>'+
+            '<span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7 RIR '+baseRIR+'</span>'+
+          '</div>'
+        : '')+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isBodyweight?'var(--mt2)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cargaLbl+'</div>'+
@@ -5115,6 +5130,7 @@ function _isExerciseFullyDone(di, ei, ej) {
   // Para Y3T: usar solo los sets activos de la fase actual
   var _effS = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
   var ns = _effS.length || ej.numSeries || (ej.sets ? ej.sets.length : 3);
+  if (ns === 0) return false;
   for (var s = 0; s < ns; s++) {
     var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
     if (!LOGS[k] || !LOGS[k].done) return false;
@@ -5243,10 +5259,23 @@ function markExpressDone(di, ei) {
   _recordExerciseHistoryAndPR(_exNameKeyExpr, _exNombreExpr, carga, reps, rirLast, unit);
 
   saveLogs();
-  // FST7: 180 s de descanso tras la \u00faltima serie (igual que en modo normal)
-  if (_ejExpr && (_ejExpr.technique || '').toLowerCase() === 'fst7') {
+  // Timer de descanso tras completar el ejercicio (entre ejercicios / \u00faltima serie)
+  var _techExpr = (_ejExpr && (_ejExpr.technique || '')).toLowerCase();
+  if (_techExpr === 'fst7') {
     startRestTimer(180);
     showToast('Serie 7/7 \u2713 \u2014 descansando 3 min');
+  } else {
+    var _catExpr = _getCatalogData(_ejExpr ? (_ejExpr.nombre || _ejExpr.exerciseName || '') : '');
+    var _restExpr;
+    if (_catExpr) {
+      var _fcExpr = _catExpr.fatigueCost || 3;
+      _restExpr = _fcExpr >= 5 ? 180 : _fcExpr >= 4 ? 150 : _fcExpr >= 3 ? 120 : _fcExpr >= 2 ? 90 : 60;
+    } else {
+      var _esCompExpr = /press|squat|sentadilla|peso muerto|rdl|hip thrust|jalon|remo|dominadas|fondos|hack|prensa|bulgar|curl femoral/.test((_ejExpr ? (_ejExpr.nombre || _ejExpr.exerciseName || '') : '').toLowerCase());
+      _restExpr = _esCompExpr ? 120 : 90;
+    }
+    startRestTimer(_restExpr);
+    showToast('Ejercicio \u2713 \u2014 descansando');
   }
   _refreshExPanelOnly();
 }
