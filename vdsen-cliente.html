@@ -4072,13 +4072,23 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<span style="font-size:10px;color:var(--mt)">'+pm.range+' · '+pm.rest+'</span>'+
         '</div>';
       })()+
-      (!_isY3T && repsTarget && repsTarget !== 'SST' && repsTarget !== 'SST-RIV' && repsTarget !== 'AMRAP' && numSeries > 0
-        ? '<div style="margin-top:10px;display:inline-flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:6px 12px;border-radius:9px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
-            '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
-            '<span style="font-size:17px;font-weight:900;color:var(--tx);line-height:1">'+numSeries+' &times; '+repsTarget+' reps</span>'+
-            '<span style="font-size:13px;font-weight:700;color:var(--mt)">&middot; RIR '+baseRIR+'</span>'+
-            '<span style="font-size:12px;font-weight:700;color:var(--blue)">&middot; &#9201; '+_planRestFmt+'</span>'+
-          '</div>'
+      (!_isY3T && numSeries > 0
+        ? (function(){
+            var _cells = [
+              { lbl:'SERIES',   val: String(numSeries), unit: '' },
+              { lbl:'REPS',     val: (repsTarget && repsTarget !== 'SST' && repsTarget !== 'SST-RIV' && repsTarget !== 'AMRAP') ? String(repsTarget) : (repsTarget||'—'), unit: '' },
+              { lbl:'RIR',      val: String(baseRIR), unit: '' },
+              { lbl:'DESCANSO', val: _planRestFmt, unit: '' }
+            ];
+            return '<div style="margin-top:10px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px">'+
+              _cells.map(function(c){
+                return '<div style="padding:8px 6px;border-radius:9px;background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.2);text-align:center">'+
+                  '<div style="font-size:8px;font-weight:800;letter-spacing:1.2px;color:var(--mt2);margin-bottom:3px">'+c.lbl+'</div>'+
+                  '<div style="font-size:18px;font-weight:900;color:var(--tx);line-height:1">'+c.val+'</div>'+
+                '</div>';
+              }).join('')+
+            '</div>';
+          })()
         : '')+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
