@@ -5145,16 +5145,16 @@ function _refreshExPanelOnly() {
   setTimeout(function() {
     var navEl = document.getElementById('exNav');
     if (navEl && navEl.children[EJ_ACTIVO]) navEl.children[EJ_ACTIVO].scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
-    // Scroll al set activo (el que tiene el botón GUARDAR) para no volver al inicio
+    // Scroll al set activo — buscar el botón GUARDAR (primer set sin completar)
     var guardarBtn = document.querySelector('#exPanel button[onclick*="completeSet"]');
     var activeRow = guardarBtn && guardarBtn.closest('[id^="setrow_"]');
     if (activeRow) {
-      var top = activeRow.getBoundingClientRect().top + window.scrollY - 80;
-      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      activeRow.scrollIntoView({ behavior: 'instant', block: 'start' });
+      // Compensar header fijo (~70px)
+      window.scrollBy(0, -70);
     }
-    var firstLoad = document.querySelector('#exPanel input[id^="carga_"]');
-    if (firstLoad && document.activeElement !== firstLoad) firstLoad.focus({ preventScroll: true });
-  }, 60);
+    // Sin focus() automático: en móvil dispara teclado y anula el scroll
+  }, 80);
 }
 
 // ── Express mode helpers ───────────────────────────────────────────────────
