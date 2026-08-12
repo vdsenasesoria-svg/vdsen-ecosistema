@@ -1431,12 +1431,22 @@ async function loadPlan(user) {
             } else { _i++; }
           } else { _i++; }
         } else if (_ex.supersetGroup) {
-          // Tiene grupo desde Firestore pero sin compañero detectado — adoptar el siguiente
-          // si tiene técnica superset y aún no tiene grupo asignado.
-          var _nxP = exs[_i + 1];
-          if (_nxP && !_nxP.supersetGroup && _nxP.technique && _nxP.technique.indexOf('superset') !== -1) {
-            _nxP.supersetGroup = String(_ex.supersetGroup).trim();
-            _i += 2;
+          // Ya tiene grupo asignado desde Firestore.
+          // Si nadie más en la sesión comparte ese grupo, adoptar el ejercicio siguiente
+          // independientemente de su técnica (partner puede ser straight/superset/etc.).
+          var _grpStr = String(_ex.supersetGroup).trim().toLowerCase();
+          var _grpHasPartner = false;
+          for (var _pk = 0; _pk < exs.length; _pk++) {
+            if (_pk !== _i && exs[_pk] && String(exs[_pk].supersetGroup||'').trim().toLowerCase() === _grpStr) {
+              _grpHasPartner = true; break;
+            }
+          }
+          if (!_grpHasPartner) {
+            var _nxP = exs[_i + 1];
+            if (_nxP && !_nxP.supersetGroup) {
+              _nxP.supersetGroup = String(_ex.supersetGroup).trim();
+              _i += 2;
+            } else { _i++; }
           } else { _i++; }
         } else { _i++; }
       }
@@ -3974,6 +3984,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (repsTarget === 999) repsTarget = 'AMRAP';
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK);
   var unit = getExUnit(di, ei);
+  var _planRestSecs = (_firstEffSet && parseInt(_firstEffSet.restSeconds) > 0) ? parseInt(_firstEffSet.restSeconds) : (ej.restSeconds || 90);
+  var _planRestFmt = _planRestSecs >= 60 ? Math.floor(_planRestSecs/60)+'min'+(_planRestSecs%60>0?' '+(_planRestSecs%60)+'s':'') : _planRestSecs+'s';
   // Sesión cerrada: no se permiten ediciones una vez marcada como completada
   var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
   // Modificaciones manuales de parámetros del ejercicio (coach-note + ajuste de sets/reps/RIR)
@@ -4060,6 +4072,14 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<span style="font-size:10px;color:var(--mt)">'+pm.range+' · '+pm.rest+'</span>'+
         '</div>';
       })()+
+      (!_isY3T && repsTarget && repsTarget !== 'SST' && repsTarget !== 'SST-RIV' && repsTarget !== 'AMRAP' && numSeries > 0
+        ? '<div style="margin-top:10px;display:inline-flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:6px 12px;border-radius:9px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
+            '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
+            '<span style="font-size:17px;font-weight:900;color:var(--tx);line-height:1">'+numSeries+' &times; '+repsTarget+' reps</span>'+
+            '<span style="font-size:13px;font-weight:700;color:var(--mt)">&middot; RIR '+baseRIR+'</span>'+
+            '<span style="font-size:12px;font-weight:700;color:var(--blue)">&middot; &#9201; '+_planRestFmt+'</span>'+
+          '</div>'
+        : '')+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
