@@ -3584,21 +3584,21 @@ function _buildExNav(ejercicios, di) {
 // arriba en color destacado.
 var TECHNIQUE_META = {
   straight:    null, // serie normal — no se muestra nada
-  drop:        { label:'BAJAR PESO Y SEGUIR',       color:'#FF8844', icon:'⬇️', def:'Cuando ya no puedas hacer ni una rep más con buena postura, baja el peso un 20-30% de inmediato y sigue sin descansar.' },
-  sst:         { label:'SERIE CON ESTIRAMIENTO',    color:'#9966cc', icon:'🧘', def:'Después de tu última serie: baja el peso dos veces (sin descansar entre ellos) y termina estirando el músculo 45-60 segundos.' },
-  myoreps:     { label:'SERIES CORTAS CON PAUSA',   color:'#44BB88', icon:'🔂', def:'Haz 12-20 reps hasta casi el límite. Descansa 15 segundos. Haz 3-5 reps más. Repite ese ciclo hasta cumplir el total.' },
-  'rest-pause':{ label:'PAUSA CORTA Y SIGUE',       color:'#e8a040', icon:'⏸', def:'Haz reps hasta no poder más. Descansa solo 10-15 segundos. Sigue con el mismo peso. Repite 2-3 veces en total.' },
-  cluster:     { label:'PAUSAS ENTRE REPETICIONES', color:'#4488cc', icon:'🧩', def:'En lugar de hacer todas las reps seguidas: haz 2-3 reps, descansa 10-20 segundos, otras 2-3 reps. Repite hasta completar el total.' },
-  superset:    { label:'DOS EJERCICIOS SEGUIDOS',   color:'#6B6B66', icon:'🔁', def:'Haz el primer ejercicio y sin descansar pasa directamente al segundo. Solo descansas cuando termines ambos.' },
-  giant:       { label:'VARIOS EJERCICIOS SEGUIDOS',color:'#6B6B66', icon:'🔁', def:'Tres o más ejercicios seguidos sin descanso entre ellos. Descansas solo al terminar todos.' },
-  amrap:       { label:'TODAS LAS QUE PUEDAS',      color:'#FF4444', icon:'🔥', def:'Haz tantas repeticiones como puedas con buena postura. Para cuando ya no puedas hacer ni una más correctamente.' },
-  tempo:       { label:'VELOCIDAD CONTROLADA',      color:'#888888', icon:'⏱', def:'Controla la velocidad: cuenta los segundos al bajar y al subir el peso según el número indicado. No hagas las reps rápido.' },
-  'iso-hold':  { label:'AGUANTAR EN POSICIÓN',      color:'#888888', icon:'🧱', def:'Para el movimiento en el punto donde más sientas el músculo y mantén esa posición el tiempo indicado. Respira con normalidad.' },
-  fst7:        { label:'7 SERIES SEGUIDAS',         color:'#cc44aa', icon:'7️⃣', def:'7 series seguidas con solo 40 segundos de descanso entre cada una. Peso moderado. La última serie la llevas al límite.' },
-  lengthened_partials: { label:'SOLO LA POSICIÓN DE ABAJO', color:'#22aadd', icon:'📏', def:'Haz el movimiento solo en la parte baja, donde el músculo está más estirado. Continúa hasta no poder mantener buena postura.' },
-  sst_riv:     { label:'8 SERIES EN PIRÁMIDE',      color:'#9966cc', icon:'🔻', def:'8 series seguidas con estos descansos: 45-30-15-5-5-15-30-45 segundos. Al terminar las 8, descansa 5 minutos.' },
-  negatives:   { label:'NEGATIVAS CON COMPAÑERO',   color:'#cc4444', icon:'⬇️', def:'Después de tu serie, el compañero te ayuda a subir el peso y tú lo bajas solo, contando 4-6 segundos. Necesitas un compañero.' },
-  y3t:         { label:'MÉTODO SEMANAL Y3T',         color:'#f0c040', icon:'🔄', def:'Este método cambia cada semana: Semana 1 — pocas reps con el mayor peso. Semana 2 — más reps y estiramiento. Semana 3 — muchas reps con SST al final.' }
+  drop:        { label:'BAJAR PESO Y SEGUIR (Drop Set)',         color:'#FF8844', icon:'⬇️', def:'Cuando ya no puedas hacer ni una rep más con buena postura, baja el peso un 20-30% de inmediato y sigue sin descansar.' },
+  sst:         { label:'SERIE CON ESTIRAMIENTO (Stretch Set)',   color:'#9966cc', icon:'🧘', def:'Después de tu última serie: baja el peso dos veces (sin descansar entre ellos) y termina estirando el músculo 45-60 segundos.' },
+  myoreps:     { label:'SERIES CORTAS CON PAUSA (Myo-Reps)',    color:'#44BB88', icon:'🔂', def:'Haz 12-20 reps hasta casi el límite. Descansa 15 segundos. Haz 3-5 reps más. Repite ese ciclo hasta cumplir el total.' },
+  'rest-pause':{ label:'PAUSA CORTA Y SIGUE (Rest-Pause)',      color:'#e8a040', icon:'⏸', def:'Haz reps hasta no poder más. Descansa solo 10-15 segundos. Sigue con el mismo peso. Repite 2-3 veces en total.' },
+  cluster:     { label:'PAUSAS ENTRE REPETICIONES (Cluster)',   color:'#4488cc', icon:'🧩', def:'En lugar de hacer todas las reps seguidas: haz 2-3 reps, descansa 10-20 segundos, otras 2-3 reps. Repite hasta completar el total.' },
+  superset:    { label:'DOS EJERCICIOS SEGUIDOS (Superserie)',  color:'#6B6B66', icon:'🔁', def:'Haz el primer ejercicio y sin descansar pasa directamente al segundo. Solo descansas cuando termines ambos.' },
+  giant:       { label:'VARIOS EJERCICIOS SEGUIDOS (Gigante)',  color:'#6B6B66', icon:'🔁', def:'Tres o más ejercicios seguidos sin descanso entre ellos. Descansas solo al terminar todos.' },
+  amrap:       { label:'TODAS LAS QUE PUEDAS (AMRAP)',          color:'#FF4444', icon:'🔥', def:'Haz tantas repeticiones como puedas con buena postura. Para cuando ya no puedas hacer ni una más correctamente.' },
+  tempo:       { label:'VELOCIDAD CONTROLADA (Tempo)',          color:'#888888', icon:'⏱', def:'Controla la velocidad: cuenta los segundos al bajar y al subir el peso según el número indicado. No hagas las reps rápido.' },
+  'iso-hold':  { label:'AGUANTAR EN POSICIÓN (Iso-Hold)',       color:'#888888', icon:'🧱', def:'Para el movimiento en el punto donde más sientas el músculo y mantén esa posición el tiempo indicado. Respira con normalidad.' },
+  fst7:        { label:'7 SERIES SEGUIDAS (FST-7)',             color:'#cc44aa', icon:'7️⃣', def:'7 series seguidas con solo 40 segundos de descanso entre cada una. Peso moderado. La última serie la llevas al límite.' },
+  lengthened_partials: { label:'SOLO LA POSICIÓN DE ABAJO (Parciales)',  color:'#22aadd', icon:'📏', def:'Haz el movimiento solo en la parte baja, donde el músculo está más estirado. Continúa hasta no poder mantener buena postura.' },
+  sst_riv:     { label:'8 SERIES EN PIRÁMIDE (SST-RIV)',        color:'#9966cc', icon:'🔻', def:'8 series seguidas con estos descansos: 45-30-15-5-5-15-30-45 segundos. Al terminar las 8, descansa 5 minutos.' },
+  negatives:   { label:'NEGATIVAS CON COMPAÑERO (Negativas)',   color:'#cc4444', icon:'⬇️', def:'Después de tu serie, el compañero te ayuda a subir el peso y tú lo bajas solo, contando 4-6 segundos. Necesitas un compañero.' },
+  y3t:         { label:'MÉTODO SEMANAL (Y3T)',                  color:'#f0c040', icon:'🔄', def:'Este método cambia cada semana: Semana 1 — pocas reps con el mayor peso. Semana 2 — más reps y estiramiento. Semana 3 — muchas reps con SST al final.' }
 };
 
 // Descripciones cortas (siempre visibles) y detalle expandible (HTML) por técnica.
