@@ -3595,7 +3595,6 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
         '</div>' +
         '<div style="padding:11px 14px;background:rgba(107,107,102,.06)">' +
           '<div style="font-size:14px;font-weight:700;color:var(--tx);line-height:1.6">'+techNote+'</div>' +
-          (meta ? '<div style="font-size:11px;color:var(--mt);line-height:1.5;margin-top:8px;padding-top:8px;border-top:1px solid rgba(107,107,102,.2)"><span style="color:'+meta.color+';font-weight:700">Protocolo '+meta.label+':</span> '+meta.def+'</div>' : '') +
         '</div>' +
       '</div>';
   } else if (meta) {
@@ -3881,6 +3880,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (repsTarget === 'SST-PROTOCOL') repsTarget = 'SST';
   if (repsTarget === 999) repsTarget = 'AMRAP';
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK);
+  var _seriesLabel = ((ej.technique||'').toLowerCase() === 'cluster') ? 'CLUSTERS' : 'SERIES';
   var unit = getExUnit(di, ei);
   // Sesión cerrada: no se permiten ediciones una vez marcada como completada
   var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
@@ -3967,7 +3967,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '</div>';
       })()+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
-        '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">'+numSeries+' SERIES</span>'+
+        '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:3px 9px;border-radius:6px">'+numSeries+' '+_seriesLabel+'</span>'+
         '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:3px 9px;border-radius:6px">'+repsTarget+' REPS</span>'+
         '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:3px 9px;border-radius:6px">RIR '+baseRIR+'</span>'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
