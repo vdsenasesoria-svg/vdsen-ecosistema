@@ -20,9 +20,12 @@
 ## Colecciones Firestore
 
 - `coaches/{uid}` — doc del coach (displayName, email, role)
-- `clients/{uid}` — clientes (coachId, activePlanId, nutritionPlan, supplementPlan)
-  - `nutritionPlan`: `{ calorias, proteina, carbos, grasas, texto }`
-  - `supplementPlan`: `{ texto }`
+- `clients/{uid}` — clientes (coachId, activePlanId, nutritionPlan, nutritionRaw, supplementPlan, supplementsRaw, pharmacoPlan)
+  - `nutritionPlan`: `{ calorias, proteina, carbos, grasas, texto }` (formato display)
+  - `nutritionRaw`: objeto `nutricion` completo del schema `vdsen-plan-v2` (con comidas[], calculos, monitoreo)
+  - `supplementPlan`: `{ texto }` (formato display)
+  - `supplementsRaw`: objeto `suplementacion` completo del schema `vdsen-plan-v2` (con tiers[])
+  - `pharmacoPlan`: objeto `farmacologia` del schema `vdsen-plan-v2` (solo clientes PED)
 - `exercises/{id}` — catálogo de ejercicios por coach (name, motorPattern, equipment, muscleType, fatigueCost, resistanceCurve, coachId)
 - `plans/{id}` — planes de entrenamiento `{ weeks, daysPerWeek, days:[{dayIndex, label, exercises:[{exerciseName, sets:[{setIndex, repsTarget, rirTarget, load, restSeconds}]}]}], coachId, clientId, status, generatedBy, createdAt }`
 - `logs/{uid}` — registros de entrenamiento del cliente (ID = UID del cliente) `{ entries: {key: value}, currentWeek }`
@@ -48,6 +51,28 @@ Claves en `entries`:
 - Semana 6 = deload automático
 - Recomendaciones guardadas en `progrec_{W}_{D}` → coach las ve en panel de monitoreo
 
+## Schemas JSON (Motor VDSEN)
+
+### vdsen-plan-v2 — Output del Motor (1 JSON unificado)
+El Motor VDSEN genera **1 solo bloque JSON** con `"schema": "vdsen-plan-v2"`. La app coach lo parsea con `_classifyBlocks()` y distribuye cada sección a Firestore.
+
+```
+{
+  "schema": "vdsen-plan-v2",
+  "entrenamiento": { "weeks", "daysPerWeek", "days": [{dayIndex, label, exercises:[{exerciseName, technique, supersetGroup, sets:[{setIndex, repsTarget, rirTarget, load, restSeconds}]}]}] },
+  "nutricion":     { "calorias", "proteina", "carbos", "grasas", "comidas": [...], "calculos": {...}, "monitoreo": {...} },
+  "suplementacion":{ "tiers": [{nombre, items:[{nombre, dosis, timing, nota}]}] },
+  "farmacologia":  { "protocolo", "compuestos": [...], "ancilares": [...], "biomarcadores_basales": [...], "monitoreo": [...], "pct": {...} }  // solo si perfil=PED
+}
+```
+
+Compatibilidad v1: si no hay `schema`, `_classifyBlocks()` cae a detección por shape (days[] → entrenamiento, tiers[] → suplementación, calorias → nutrición).
+
+### vdsen-ficha-v2 — Ficha unificada del cliente (1 JSON)
+Exporta / importa todos los datos del cliente en un solo objeto con `"schema": "vdsen-ficha-v2"`.
+
+Secciones: `base` (datos personales/biométricos), `entrenamiento` (nivel/días/objetivo), `biomecanica`, `prioridades`, `preferencias`, `nutricion`, `suplementacion`, `farmacologia` (null si natural), `fotometria` (circunferencias + pliegues).
+
 ## Reglas de edición
 
 - NUNCA reescribir archivos completos. Usar str_replace quirúrgico.
@@ -66,8 +91,9 @@ Claves en `entries`:
 - Eliminar plan: quita `activePlanId` del cliente y borra el doc de `plans/`
 - Nutrición: editor con campos Kcal, Proteína, Carbohidratos, Grasas + texto libre
 - Suplementación: textarea libre
-- Importar plan desde texto (copiar/pegar) con parser flexible
+- Importar plan desde texto (copiar/pegar) con parser flexible — soporta `vdsen-plan-v2` (JSON unificado) y v1 (3 bloques separados)
 - Importar plan desde PDF con PDF.js + mismo parser
+- Generar plan automático con Motor VDSEN (API claude-sonnet-5) → emite `vdsen-plan-v2`
 - Catálogo de ejercicios: crear con muscleType/fatigueCost/resistanceCurve, eliminar
 - Panel de monitoreo: selecciona cliente → muestra semana, RIR objetivo, alertas de deload, recomendaciones de `progrec`
 - Extracción inteligente de compendio PDF (filtra farmacología/nutrición/bibliografía)
