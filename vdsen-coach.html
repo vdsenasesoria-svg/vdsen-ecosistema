@@ -3657,6 +3657,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   function _classifyBlocks(blocks) {
+    // Detección prioritaria: vdsen-plan-v2 (JSON unificado)
+    for (const b of blocks) {
+      if (b && b.schema === 'vdsen-plan-v2') {
+        return {
+          training:    b.entrenamiento  || null,
+          nutrition:   b.nutricion      || null,
+          supplements: b.suplementacion || null,
+          pharma:      b.farmacologia   || null
+        };
+      }
+    }
+    // Fallback: clasificación por shape (compatibilidad v1)
     let training = null, nutrition = null, supplements = null, pharma = null;
     blocks.forEach(b => {
       if (!b || typeof b !== 'object') return;
@@ -3797,16 +3809,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       setStatus('<span style="color:var(--text-muted)">Generando con el motor VDSEN… (10–40 s)</span>');
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
-        isPED
-          ? 'Con la ficha de abajo, genera en UNA sola respuesta los CUATRO artefactos JSON del cliente: 1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3)  4) Farmacología (PARTE D4), en ese orden.'
-          : 'Con la ficha de abajo, genera en UNA sola respuesta los TRES artefactos JSON del cliente: 1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3), en ese orden.',
-        isPED
-          ? 'Emite exactamente cuatro bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON. El bloque D4 debe tener protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct.'
-          : 'Emite exactamente tres bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON.',
-        'Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
+        'Con la ficha de abajo, genera en UNA sola respuesta UN ÚNICO bloque JSON con schema "vdsen-plan-v2" que integre:',
+        '  • "entrenamiento": objeto con days[], weeks, daysPerWeek (PARTE D)',
+        '  • "nutricion": objeto con calorias, proteina, carbos, grasas, comidas[] (PARTE D2)',
+        '  • "suplementacion": objeto con tiers[] (PARTE D3)',
+        isPED ? '  • "farmacologia": objeto con protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct (PARTE D4)' : '',
+        'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
+        'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
         '', 'FICHA DEL CLIENTE:', fichaTxt
-      ].join('\n');
+      ].filter(Boolean).join('\n');
       const body = {
         model: 'claude-sonnet-5',
         max_tokens: 8000,
@@ -5564,16 +5576,16 @@ El esfuerzo no es negociable.
       setStatus('<span style="color:#888">Generando con el motor VDSEN… (10–40 s)</span>');
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
-        isPED
-          ? 'Con la ficha de abajo, genera en UNA sola respuesta los CUATRO artefactos JSON del cliente: 1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3)  4) Farmacología (PARTE D4), en ese orden.'
-          : 'Con la ficha de abajo, genera en UNA sola respuesta los TRES artefactos JSON del cliente: 1) Entrenamiento (PARTE D)  2) Nutrición (PARTE D2)  3) Suplementación (PARTE D3), en ese orden.',
-        isPED
-          ? 'Emite exactamente cuatro bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON. El bloque D4 debe tener protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct.'
-          : 'Emite exactamente tres bloques ' + '```json' + ' separados, sin texto ni comentarios dentro del JSON.',
-        'Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
+        'Con la ficha de abajo, genera en UNA sola respuesta UN ÚNICO bloque JSON con schema "vdsen-plan-v2" que integre:',
+        '  • "entrenamiento": objeto con days[], weeks, daysPerWeek (PARTE D)',
+        '  • "nutricion": objeto con calorias, proteina, carbos, grasas, comidas[] (PARTE D2)',
+        '  • "suplementacion": objeto con tiers[] (PARTE D3)',
+        isPED ? '  • "farmacologia": objeto con protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct (PARTE D4)' : '',
+        'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
+        'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
         '', 'FICHA DEL CLIENTE:', fichaTxt
-      ].join('\n');
+      ].filter(Boolean).join('\n');
       const reqBody = {
         model: 'claude-sonnet-5',
         max_tokens: 8000,
