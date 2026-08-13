@@ -1503,22 +1503,6 @@ async function loadPlan(user) {
           REAL_WEEK    = CURRENT_WEEK;
         }
       }
-      // ── DIAG Y3T loadPlan (remover tras verificar) ──
-      (function(){
-        if (!PLAN || !PLAN.entrenamiento) return;
-        var _tw = PLAN.weeks || getTotalWeeks();
-        (PLAN.entrenamiento.sesiones || []).forEach(function(ses, di) {
-          (ses.exercises || []).forEach(function(ej) {
-            var _isY = isY3TExercise(ej);
-            var _sts = ej.sets || [];
-            if (_isY || ej.technique || _sts.some(function(s){ return s.setNote; })) {
-              var _fase = getY3TPhase(CURRENT_WEEK, _tw);
-              var _efec = getEffectiveSets(ej, CURRENT_WEEK, _tw);
-              console.log('[DIAG Y3T loadPlan]', ej.exerciseName||ej.nombre, {tech: ej.technique, isY3T: _isY, semana: CURRENT_WEEK, fase: _fase, totalSets: _sts.length, setsEfectivos: _efec.length, setNotes: _sts.map(function(s){ return s.setNote||''; }).filter(Boolean)});
-            }
-          });
-        });
-      })();
     } catch(logErr) {
       console.warn('logs no disponibles:', logErr.message);
       if (!loadBackupLogs()) { LOGS = {}; CURRENT_WEEK = 1; REAL_WEEK = 1; }
@@ -3861,15 +3845,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
   var machine = getMachineForExercise(nombre);
   var catData = _getCatalogData(nombre);
-  var displayNota = ej.nota || ej.coachNote || (catData ? catData.executionNotes : '') || '';
   // ── Y3T: detectar fase y sets efectivos para esta semana ──────────────
   var _isY3T = isY3TExercise(ej);
   var _y3tPhase = _isY3T ? getY3TPhase(CURRENT_WEEK, getTotalWeeks()) : null;
   var _effectiveSets = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
-  // ── DIAG Y3T render (remover tras verificar) ──
-  if (_isY3T || ej.technique || (ej.sets||[]).length > 3) {
-    console.log('[Y3T RENDER]', nombre, {isY3T: _isY3T, week: CURRENT_WEEK, phase: _y3tPhase, tech: ej.technique, totalSets: (ej.sets||[]).length, effSets: _effectiveSets.length, setNotes: (ej.sets||[]).map(function(s){ return s.setNote||''; }).filter(Boolean)});
-  }
   var _firstEffSet = _effectiveSets[0] || (ej.sets && ej.sets[0]) || null;
 
   // numSeries base: Y3T usa los sets de la fase; no puede heredar la semana anterior
@@ -4309,7 +4288,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">SERIE '+(s+1)+(function(){ var _tl=(ej.technique||'').toLowerCase(); if (_isY3T&&_effectiveSets&&_effectiveSets[s]) { var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:8px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; } if (_tl==='fst7') { var _ft=(ej.sets||[]).length||7; return ' <span style="font-size:8px;font-weight:900;color:#cc44aa;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">FST-7 · '+(s+1)+'/'+_ft+'</span>'; } if (_tl==='lengthened_partials') { return ' <span style="font-size:8px;font-weight:900;color:#22aadd;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">PARCIALES</span>'; } return ''; })()+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">'+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+(function(){ var _tl=(ej.technique||'').toLowerCase(); if (_isY3T&&_effectiveSets&&_effectiveSets[s]) { var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:8px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; } if (_tl==='fst7') { var _ft=(ej.sets||[]).length||7; return ' <span style="font-size:8px;font-weight:900;color:#cc44aa;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">FST-7 · '+(s+1)+'/'+_ft+'</span>'; } if (_tl==='lengthened_partials') { return ' <span style="font-size:8px;font-weight:900;color:#22aadd;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">PARCIALES</span>'; } return ''; })()+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+'</div>'+
         '</div>'+
@@ -4345,7 +4324,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       }
       setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(107,107,102,.5);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">SERIE '+(s+1)+_setSubLabel+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+'</div>'+
         '</div>'+
         setSpecBlock+
         prevRefHtml+
@@ -4442,7 +4421,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
             'flex:1;padding:13px;border:none;border-radius:10px;cursor:pointer;'+
             'background:var(--accent);color:#0a0a0a;font-size:14px;font-weight:800;letter-spacing:.5px">'+
-            '✓ GUARDAR SERIE '+(s+1)+
+            '✓ GUARDAR '+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+
           '</button>'+
         '</div>'+
         '<div id="hint_'+key+'" data-base-rir="'+baseRIR+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px"></div>'+
@@ -4454,7 +4433,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         'background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:10px;margin-bottom:6px;opacity:.5">'+
         '<div style="width:26px;height:26px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.12);'+
           'display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--mt);font-weight:700">'+(s+1)+'</div>'+
-        '<div style="font-size:12px;color:var(--mt)">SERIE '+(s+1)+' — no registrada</div>'+
+        '<div style="font-size:12px;color:var(--mt)">'+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+' — no registrada</div>'+
       '</div>';
     } else {
       // ── SET PENDIENTE ────────────────────────────────────────────────
@@ -4463,7 +4442,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="display:flex;align-items:center;gap:10px">'+
           '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.15);'+
             'display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mt);font-weight:700">'+(s+1)+'</div>'+
-          '<div style="font-size:13px;font-weight:700;color:var(--mt)">SERIE '+(s+1)+'</div>'+
+          '<div style="font-size:13px;font-weight:700;color:var(--mt)">'+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+'</div>'+
           '<div style="margin-left:auto;font-size:11px;color:var(--mt)">'+(function(){ var _rt=setSpec?setSpec.repsTarget:repsTarget; return _rt==='SST-PROTOCOL'?'Ver protocolo SST':(_rt===999?'AMRAP':_rt); }())+' reps · RIR '+(setSpec&&setSpec.rirTarget!==undefined?setSpec.rirTarget:baseRIR)+'</div>'+
         '</div>'+
         (setSpecBlock ? '<div style="margin-top:6px;margin-left:38px">'+setSpecBlock+'</div>' : '')+
