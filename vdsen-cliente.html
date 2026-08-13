@@ -9784,7 +9784,7 @@ async function guardarCI() {
   if (!LOGS[k]) LOGS[k] = {};
   var d = LOGS[k];
   // Leer inputs por si el usuario escribió sin disparar oninput
-  ['ci_peso','ci_hrv','ci_sleep','ci_notas','ci_cintura','ci_brazo','ci_pierna','ci_pecho'].forEach(function(id) {
+  ['ci_peso','ci_hrv','ci_sleep','ci_notas','ci_cintura','ci_brazo','ci_pierna','ci_pecho','ci_ib_pct_grasa','ci_ib_masa_muscular','ci_ib_grasa_visceral'].forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
     var campo = id.replace('ci_','');
@@ -10040,39 +10040,90 @@ function buildICSSection(d, sem) {
 }
 
 function _buildWeightSparkline() {
-  var pts = [];
   var tw = getTotalWeeks();
+  var METRICS = [
+    { key: 'peso',              label: 'PESO',     unit: 'kg', color: '#C4A54A', lib: false },
+    { key: 'ib_pct_grasa',     label: '% GRASA',  unit: '%',  color: '#e05050', lib: true  },
+    { key: 'ib_masa_muscular', label: 'MÚSCULO',  unit: 'kg', color: '#3A9460', lib: false },
+    { key: 'ib_grasa_visceral',label: 'VISCERAL', unit: '',   color: '#FF8844', lib: true  }
+  ];
+  var pts = {};
+  METRICS.forEach(function(m) { pts[m.key] = []; });
   for (var w = 1; w <= Math.min(CURRENT_WEEK, tw); w++) {
     var ci = LOGS['ci_sem_' + w];
-    if (ci && ci.peso) pts.push({ w: w, v: parseFloat(ci.peso) });
+    if (!ci) continue;
+    METRICS.forEach(function(m) {
+      var v = parseFloat(ci[m.key]);
+      if (!isNaN(v) && v > 0) pts[m.key].push({ w: w, v: v });
+    });
   }
-  if (pts.length < 2) return '<div style="padding:12px 0;text-align:center;color:var(--mt);font-size:11px">Registra tu peso en 2+ semanas para ver la tendencia.</div>';
-  var vals = pts.map(function(p){ return p.v; });
-  var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
-  var range = mx - mn || 1;
-  var W = 280, H = 50, pad = 10;
-  var polyPts = pts.map(function(p, i) {
-    var x = (pad + (i / (pts.length - 1)) * (W - pad * 2)).toFixed(1);
-    var y = (H - pad - ((p.v - mn) / range) * (H - pad * 2)).toFixed(1);
-    return x + ',' + y;
-  }).join(' ');
-  var circles = pts.map(function(p, i) {
-    var x = (pad + (i / (pts.length - 1)) * (W - pad * 2)).toFixed(1);
-    var y = (H - pad - ((p.v - mn) / range) * (H - pad * 2)).toFixed(1);
-    return '<circle cx="' + x + '" cy="' + y + '" r="3" fill="var(--gold)"/>'
-      + '<text x="' + x + '" y="' + (parseFloat(y) - 6).toFixed(1) + '" text-anchor="middle" font-size="8" fill="var(--mt)">S' + p.w + '</text>'
-      + '<text x="' + x + '" y="' + (parseFloat(y) + 16).toFixed(1) + '" text-anchor="middle" font-size="8" fill="var(--gold)">' + p.v + '</text>';
+  var anyData = METRICS.some(function(m) { return pts[m.key].length > 0; });
+  if (!anyData) return '<div style="padding:12px 0;text-align:center;color:var(--mt);font-size:11px">Registra tus datos InBody en 2+ semanas para ver la gráfica.</div>';
+
+  var weekSet = {};
+  METRICS.forEach(function(m) { pts[m.key].forEach(function(p) { weekSet[p.w] = true; }); });
+  var allWeeks = Object.keys(weekSet).map(Number).sort(function(a,b){return a-b;});
+
+  var W = 280, H = 72, padL = 2, padR = 2, padT = 8, padB = 16;
+  var cW = W - padL - padR, cH = H - padT - padB;
+
+  var ranges = {};
+  METRICS.forEach(function(m) {
+    var vals = pts[m.key].map(function(p){return p.v;});
+    if (!vals.length) { ranges[m.key] = null; return; }
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    var exp = (mx - mn) * 0.15 || 1;
+    ranges[m.key] = { mn: mn - exp, mx: mx + exp };
+  });
+  function toX(w) {
+    if (allWeeks.length === 1) return padL + cW / 2;
+    return padL + (allWeeks.indexOf(w) / (allWeeks.length - 1)) * cW;
+  }
+  function toY(key, v) {
+    var r = ranges[key];
+    if (!r || r.mx === r.mn) return padT + cH / 2;
+    return padT + cH - ((v - r.mn) / (r.mx - r.mn)) * cH;
+  }
+
+  var svgContent = '';
+  [0.25, 0.5, 0.75].forEach(function(f) {
+    var y = (padT + cH - f * cH).toFixed(1);
+    svgContent += '<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="rgba(255,255,255,.05)" stroke-width="0.5"/>';
+  });
+  METRICS.forEach(function(m) {
+    var mp = pts[m.key];
+    if (!mp.length) return;
+    if (mp.length >= 2) {
+      var lp = mp.map(function(p){ return toX(p.w).toFixed(1)+','+toY(m.key,p.v).toFixed(1); }).join(' ');
+      svgContent += '<polyline points="'+lp+'" fill="none" stroke="'+m.color+'" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    }
+    mp.forEach(function(p) {
+      svgContent += '<circle cx="'+toX(p.w).toFixed(1)+'" cy="'+toY(m.key,p.v).toFixed(1)+'" r="2.5" fill="'+m.color+'"/>';
+    });
+  });
+  allWeeks.forEach(function(w) {
+    svgContent += '<text x="'+toX(w).toFixed(1)+'" y="'+(H-1)+'" text-anchor="middle" font-size="7" fill="rgba(255,255,255,.25)" font-family="monospace">S'+w+'</text>';
+  });
+
+  var legend = METRICS.map(function(m) {
+    var mp = pts[m.key];
+    if (!mp.length) return '<div style="display:flex;align-items:center;gap:4px;opacity:.35"><span style="width:14px;height:2px;background:'+m.color+';display:inline-block;flex-shrink:0"></span><span style="font-size:9px;color:var(--mt)">'+m.label+'</span><span style="font-size:10px;color:var(--mt)">—</span></div>';
+    var cur = mp[mp.length-1].v, first = mp[0].v, delta = cur - first;
+    var dSign = delta > 0 ? '+' : '';
+    var dCol = delta === 0 ? 'var(--mt)' : (m.lib ? (delta < 0 ? 'var(--grn)' : 'var(--red)') : (delta > 0 ? 'var(--grn)' : 'var(--red)'));
+    var dHtml = mp.length >= 2 ? ' <span style="font-size:8px;color:'+dCol+'">'+dSign+delta.toFixed(1)+'</span>' : '';
+    return '<div style="display:flex;align-items:center;gap:4px;min-width:0">'
+      +'<span style="width:14px;height:2px;background:'+m.color+';display:inline-block;flex-shrink:0;border-radius:2px"></span>'
+      +'<span style="font-size:9px;color:var(--mt);white-space:nowrap">'+m.label+'</span>'
+      +'<span style="font-family:var(--ff);font-size:11px;color:'+m.color+';font-weight:700;margin-left:2px;white-space:nowrap">'+cur.toFixed(1)+(m.unit?' '+m.unit:'')+dHtml+'</span>'
+      +'</div>';
   }).join('');
-  var delta = pts[pts.length-1].v - pts[0].v;
-  var deltaStr = (delta > 0 ? '+' : '') + delta.toFixed(1) + ' kg vs. S1';
-  var deltaCol = delta < 0 ? 'var(--grn)' : delta > 0 ? 'var(--red)' : 'var(--mt)';
+
   return '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:10px">'
-    + '<div style="font-family:var(--ff);font-size:11px;letter-spacing:2px;color:var(--mt);margin-bottom:8px">TENDENCIA DE PESO · kg <span style="color:' + deltaCol + ';font-size:10px;margin-left:6px">' + deltaStr + '</span></div>'
-    + '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:' + H + 'px;overflow:visible">'
-    + '<polyline points="' + polyPts + '" fill="none" stroke="var(--gold)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
-    + circles
-    + '</svg>'
-    + '</div>';
+    +'<div style="font-family:var(--ff);font-size:10px;letter-spacing:2px;color:var(--mt);margin-bottom:8px">TENDENCIA INBODY</div>'
+    +'<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:'+H+'px;overflow:visible">'+svgContent+'</svg>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 10px;margin-top:8px">'+legend+'</div>'
+    +'</div>';
 }
 
 function renderCheckin() {
@@ -10180,6 +10231,27 @@ function renderCheckin() {
     +   _ciField('brazo',   'BRAZO (cm)',   '0.1', 'decimal', '—', 20, null)
     +   _ciField('pierna',  'PIERNA (cm)',  '0.1', 'decimal', '—', 20, null)
     +   _ciField('pecho',   'PECHO (cm)',   '0.1', 'decimal', '—', 20, null)
+    +   '</div>'
+    + '</div>'
+    + '</details>'
+
+    // ── DATOS INBODY (opcional, colapsable) ──────────
+    + '<details style="margin-bottom:10px">'
+    + '<summary style="background:var(--card);border:1px solid var(--bd);padding:12px 16px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;user-select:none">'
+    +   '<div style="display:flex;align-items:center;gap:8px">'
+    +     '<span style="font-size:16px">⚖️</span>'
+    +     '<span style="font-family:var(--ff);font-size:13px;letter-spacing:1.5px;color:var(--mt)">DATOS INBODY</span>'
+    +   '</div>'
+    +   '<span style="font-size:11px;color:var(--mt2)">'
+    +   ((d.ib_pct_grasa||d.ib_masa_muscular||d.ib_grasa_visceral) ? '✓ registrados ▾' : 'opcional ▾')
+    +   '</span>'
+    + '</summary>'
+    + '<div style="background:var(--card);border:1px solid var(--bd);border-top:none;padding:16px">'
+    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:14px">Datos del escaneo InBody de esta semana — se grafican junto con el peso</div>'
+    +   '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'
+    +   _ciField('ib_pct_grasa',     '% GRASA',      '0.1', 'decimal', 'ej: 18.5', 18, 'PBF · % grasa')
+    +   _ciField('ib_masa_muscular', 'MÚSCULO (kg)', '0.1', 'decimal', 'ej: 65.2', 18, 'SMM · masa muscular')
+    +   _ciField('ib_grasa_visceral','VISCERAL',     '0.1', 'decimal', 'ej: 5',    18, 'Nivel 1-20')
     +   '</div>'
     + '</div>'
     + '</details>'
