@@ -3716,14 +3716,6 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
       '</div>';
   }
 
-  // ── 2) Notas del catálogo (secundario) ──────────────────────────────────
-  if (exNotes) {
-    html +=
-      '<div style="margin:0 0 10px;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)">' +
-        '<div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--mt);margin-bottom:4px">📖 EJECUCIÓN</div>' +
-        '<div style="font-size:12px;color:var(--mt2);line-height:1.55">'+exNotes+'</div>' +
-      '</div>';
-  }
 
   // ── 4) Descripción de técnica (siempre desde TECHNIQUE_DESCRIPTIONS) ──────
   if (meta) {
@@ -4317,10 +4309,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</div>'+
       (function(){
         if (_isY3T || !repsTarget || repsTarget === 'SST' || repsTarget === 'SST-RIV' || repsTarget === 'AMRAP') return '';
-        var _exPlanLoad = ej.sets && ej.sets[0] && ej.sets[0].load !== undefined && ej.sets[0].load !== null && ej.sets[0].load !== '' ? ej.sets[0].load : null;
+        var _exLoad = (progrec && progrec.newLoad !== undefined && progrec.newLoad !== null) ? progrec.newLoad : null;
         return '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px;padding:5px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
           '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
-          (_exPlanLoad !== null ? '<span style="font-size:15px;font-weight:900;color:var(--tx);line-height:1">'+_exPlanLoad+' '+unit+'</span><span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7</span>' : '')+
+          (_exLoad !== null ? '<span style="font-size:16px;font-weight:900;color:var(--tx);line-height:1">'+_exLoad+' '+unit+'</span><span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7</span>' : '')+
           '<span style="font-size:15px;font-weight:900;color:var(--tx);line-height:1">'+repsTarget+' reps</span>'+
           '<span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7 RIR '+baseRIR+'</span>'+
         '</div>';
@@ -4410,12 +4402,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // Objetivo por set — solo para ejercicios heterogéneos (S1·FUERZA ≠ S2·HIPERTROFIA, etc.)
     var _psReps = setSpec ? setSpec.repsTarget : null;
     var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
-    var _psLoad = (setSpec && setSpec.load !== undefined && setSpec.load !== null && setSpec.load !== '') ? setSpec.load : null;
     var _setTargetHtml = '';
     if (_isHeteroSets && _psReps !== null && _psReps !== 'SST-PROTOCOL' && _psReps !== 'SST-RIV-PROTOCOL' && _psReps !== 999) {
-      _setTargetHtml = '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
-        '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
-        (_psLoad !== null ? '<span style="font-size:18px;font-weight:900;color:var(--tx);line-height:1">'+_psLoad+' '+unit+'</span><span style="font-size:13px;font-weight:700;color:var(--mt)">·</span>' : '')+
+      _setTargetHtml = '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)">'+
+        '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">ESTA SERIE</span>'+
         '<span style="font-size:18px;font-weight:900;color:var(--tx);line-height:1">'+_psReps+' reps</span>'+
         (_psRir !== null ? '<span style="font-size:13px;font-weight:700;color:var(--mt)">· RIR '+_psRir+'</span>' : '')+
       '</div>';
@@ -12523,36 +12513,17 @@ function _getWeeklyVolumeByPattern(pattern) {
 function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount) {
   var blocks = [];
 
-  // ── 1) PROGRESIÓN del algoritmo ──
+  // ── 1) OBJETIVO: carga recomendada por el algoritmo ──
   if (progRec && progRec.newLoad) {
-    var actionMeta = {
-      increase_load: { label:'SUBIR CARGA',   arrow:'↑', color:'var(--grn)',  bg:'rgba(110,154,110,.10)',   bd:'rgba(110,154,110,.45)'   },
-      add_sets:      { label:'+ SERIES',      arrow:'＋', color:'var(--grn)',  bg:'rgba(110,154,110,.10)',   bd:'rgba(110,154,110,.45)'   },
-      freeze_load:   { label:'MANTENER',      arrow:'＝', color:'var(--gold)', bg:'rgba(107,107,102,.10)',  bd:'rgba(107,107,102,.45)'  },
-      maintain:      { label:'MANTENER',      arrow:'＝', color:'var(--gold)', bg:'rgba(107,107,102,.10)',  bd:'rgba(107,107,102,.45)'  },
-      reduce_sets:   { label:'BAJAR SERIES',  arrow:'↓', color:'#FF8844',     bg:'rgba(255,140,50,.10)',  bd:'rgba(255,140,50,.45)'  },
-      reduce_load:   { label:'BAJAR CARGA',   arrow:'↓', color:'var(--red)',  bg:'rgba(220,60,60,.10)',   bd:'rgba(220,60,60,.45)'   },
-      deload:        { label:'DELOAD',        arrow:'⤵', color:'var(--blue)', bg:'rgba(140,140,134,.10)',  bd:'rgba(140,140,134,.45)'  }
-    };
-    var meta = actionMeta[progRec.action] || actionMeta.maintain;
-    var _displaySets = (effectiveSetsCount != null) ? effectiveSetsCount : progRec.newSets;
     blocks.push(
-      '<div style="margin-bottom:10px;padding:10px 12px;background:'+meta.bg+';border:1px solid '+meta.bd+';border-left:4px solid '+meta.color+';border-radius:0 10px 10px 0">'+
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
-          '<span style="font-size:14px;font-weight:900;color:'+meta.color+';line-height:1">'+meta.arrow+'</span>'+
-          '<span style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:'+meta.color+'">⚡ PROGRESIÓN · '+meta.label+'</span>'+
-        '</div>'+
-        '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline">'+
-          '<div><span style="font-size:22px;font-weight:900;color:var(--tx)">'+progRec.newLoad+'</span> <span style="font-size:13px;color:var(--mt);font-weight:700">'+unit+'</span></div>'+
-          '<div><span style="font-size:14px;font-weight:800;color:var(--mt)">'+_displaySets+' series</span></div>'+
-        '</div>'+
+      '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
+        '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
+        '<span style="font-size:20px;font-weight:900;color:var(--tx);line-height:1">'+progRec.newLoad+' '+unit+'</span>'+
       '</div>'
     );
   }
 
   // ── 2) SEM ANTERIOR ──
-  // Convertir carga al unit actual si el registro previo está en otra unidad.
-  // Si se convierte, agregar marca '(de LB)' o '(de KG)' para transparencia.
   if (prev && prev.carga) {
     var prevCargaShown = _convertCarga(prev.carga, prev.unit, unit);
     var prevConvMark = (prev.unit && prev.unit !== unit) ? ' <span style="opacity:.55">(de '+prev.unit+')</span>' : '';
@@ -12563,7 +12534,7 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
       '</div>'
     );
   }
-  // ── 3) HISTORIAL (sólo si NO hubo sem anterior y es el primer set) ──
+  // ── 3) HISTORIAL (solo si no hay sem anterior y es el primer set) ──
   else if (setIdx === 0 && histEx && histEx.load) {
     var histCargaShown = _convertCarga(histEx.load, histEx.unit, unit);
     var histConvMark = (histEx.unit && histEx.unit !== unit) ? ' <span style="opacity:.55">(de '+histEx.unit+')</span>' : '';
@@ -12575,9 +12546,8 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
     );
   }
 
-  // Si NO hay nada todavía pero la sem anterior tiene carga, sugerir paso simple
+  // Sin progrec ni historial pero hay semana anterior: sugerir paso simple
   if (blocks.length === 0 && prev && prev.carga) {
-    // Convertir primero para sugerir paso en la unidad correcta
     var pc = parseFloat(_convertCarga(prev.carga, prev.unit, unit))||0;
     var prir = parseInt(prev.rir_real || prev.rir);
     var step = unit === 'LB' ? 5 : 2.5;
