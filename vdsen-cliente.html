@@ -4217,21 +4217,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _exHistLow2 = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   var _exHistRaw2 = EXERCISE_HISTORY[_exHistLow2] || {};
   var _exPfCarga = '';
-  var _exPfReps = repsTarget;
-  var _exPfRIR = baseRIR;
-  if (progrec && progrec.newLoad !== undefined && progrec.newLoad !== null) {
-    _exPfCarga = parseFloat(progrec.newLoad).toFixed(1);
-    _exPfReps = progrec.newReps || repsTarget;
-  } else if (_exPrevS0.carga) {
-    _exPfCarga = parseFloat(_convertCarga(_exPrevS0.carga, _exPrevS0.unit || 'KG', unit)).toFixed(1);
-    _exPfReps = _exPrevS0.reps || repsTarget;
-    _exPfRIR = _exPrevS0.rir_real !== undefined ? _exPrevS0.rir_real : baseRIR;
-  } else if (_exHistRaw2.load) {
-    _exPfCarga = parseFloat(_convertCarga(_exHistRaw2.load, _exHistRaw2.unit || 'KG', unit)).toFixed(1);
-    _exPfReps = _exHistRaw2.reps || repsTarget;
-  }
-  _exPfRIR = Math.max(0, Math.min(4, parseInt(_exPfRIR) || 2));
-  var _exPfICS = _exPrevS0.ics || '';
+  var _exPfReps = '';
+  var _exPfRIR = Math.max(0, Math.min(4, parseInt(baseRIR) || 2));
+  var _exPfICS = '';
 
   var setsHtml = '';
   if (_isExpressMode && _expressDone) {
@@ -4327,13 +4315,16 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent);margin-bottom:8px">'+
         'SERIE '+numSeries+(numSeries > 1 ? ' \u2014 \u00daLTIMA \u00b7 REGISTRA LOS DATOS' : ' \u2014 REGISTRA LOS DATOS')+_xLastLabel+
       '</div>'+
-      (!_isY3T && repsTarget && repsTarget !== 'SST' && repsTarget !== 'SST-RIV' && repsTarget !== 'AMRAP'
-        ? '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px;padding:5px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
-            '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
-            '<span style="font-size:15px;font-weight:900;color:var(--tx);line-height:1">'+repsTarget+' reps</span>'+
-            '<span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7 RIR '+baseRIR+'</span>'+
-          '</div>'
-        : '')+
+      (function(){
+        if (_isY3T || !repsTarget || repsTarget === 'SST' || repsTarget === 'SST-RIV' || repsTarget === 'AMRAP') return '';
+        var _exPlanLoad = ej.sets && ej.sets[0] && ej.sets[0].load !== undefined && ej.sets[0].load !== null && ej.sets[0].load !== '' ? ej.sets[0].load : null;
+        return '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px;padding:5px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
+          '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
+          (_exPlanLoad !== null ? '<span style="font-size:15px;font-weight:900;color:var(--tx);line-height:1">'+_exPlanLoad+' '+unit+'</span><span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7</span>' : '')+
+          '<span style="font-size:15px;font-weight:900;color:var(--tx);line-height:1">'+repsTarget+' reps</span>'+
+          '<span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7 RIR '+baseRIR+'</span>'+
+        '</div>';
+      })()+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isBodyweight?'var(--mt2)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cargaLbl+'</div>'+
@@ -4407,10 +4398,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // Detectar ejercicio heterogéneo (distintos reps por set — Y3T o plan mixto)
     var _allSetsArr = _isY3T ? (_effectiveSets || []) : (ej.sets || []);
     var _isHeteroSets = _allSetsArr.length > 1 && (new Set(_allSetsArr.map(function(sv){ return sv ? sv.repsTarget : null; }))).size > 1;
-    var carga   = saved.carga   || _progCargaConv || _prevSesCarga || _prevCargaConv || _histCargaConv || '';
-    // Para ejercicios heterogéneos no usar progrec.newReps (corresponde a otra fase, no a este set)
-    var reps    = saved.reps    || (_prefill && s===0 && progrec && progrec.newReps && !_isHeteroSets ? progrec.newReps : (_prevSesReps || (_prefill && prev.reps ? prev.reps : (_prefill && s===0 && histEx.reps ? histEx.reps : ''))));
-    var rirReal = saved.rir_real|| (_prevSesRir || (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : '')));
+    var carga   = saved.carga   || '';
+    var reps    = saved.reps    || '';
+    var rirReal = saved.rir_real|| '';
     var setNote = setSpec && setSpec.setNote ? String(setSpec.setNote).trim() : '';
     var setIsDrop = setSpec && setSpec.drop === true;
     var setTempo = setSpec && setSpec.tempo ? String(setSpec.tempo).trim() : '';
@@ -4420,10 +4410,12 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // Objetivo por set — solo para ejercicios heterogéneos (S1·FUERZA ≠ S2·HIPERTROFIA, etc.)
     var _psReps = setSpec ? setSpec.repsTarget : null;
     var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
+    var _psLoad = (setSpec && setSpec.load !== undefined && setSpec.load !== null && setSpec.load !== '') ? setSpec.load : null;
     var _setTargetHtml = '';
     if (_isHeteroSets && _psReps !== null && _psReps !== 'SST-PROTOCOL' && _psReps !== 'SST-RIV-PROTOCOL' && _psReps !== 999) {
       _setTargetHtml = '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
         '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
+        (_psLoad !== null ? '<span style="font-size:18px;font-weight:900;color:var(--tx);line-height:1">'+_psLoad+' '+unit+'</span><span style="font-size:13px;font-weight:700;color:var(--mt)">·</span>' : '')+
         '<span style="font-size:18px;font-weight:900;color:var(--tx);line-height:1">'+_psReps+' reps</span>'+
         (_psRir !== null ? '<span style="font-size:13px;font-weight:700;color:var(--mt)">· RIR '+_psRir+'</span>' : '')+
       '</div>';
@@ -12554,7 +12546,6 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
           '<div><span style="font-size:22px;font-weight:900;color:var(--tx)">'+progRec.newLoad+'</span> <span style="font-size:13px;color:var(--mt);font-weight:700">'+unit+'</span></div>'+
           '<div><span style="font-size:14px;font-weight:800;color:var(--mt)">'+_displaySets+' series</span></div>'+
         '</div>'+
-        (progRec.reason ? '<div style="font-size:10px;color:var(--mt2);margin-top:5px;line-height:1.4">'+progRec.reason+'</div>' : '')+
       '</div>'
     );
   }
