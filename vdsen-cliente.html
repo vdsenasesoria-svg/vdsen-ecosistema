@@ -372,6 +372,7 @@ var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
+var CALIB_VOLUMETRICA = null; // Módulo A Ehrenstein — calibración volumétrica {VME_individual, VMR_individual}
 var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el tab de entreno
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
@@ -493,6 +494,32 @@ function _convertCarga(val, fromUnit, toUnit) {
   else if (fromUnit === 'LB' && toUnit === 'KG') factor = 0.453592;
   else return val;
   return String(_roundUnit(n * factor, toUnit));
+}
+
+// ── Módulo B — Badge de zona de carga (Ehrenstein v4.2) ─────────
+function _getZonaBadge(repsTarget) {
+  if (!repsTarget || typeof repsTarget !== 'number') return '';
+  var zona, color, bg;
+  if (repsTarget <= 5)       { zona = 'PESADAS';      color = '#7ec0ff'; bg = 'rgba(126,192,255,.12)'; }
+  else if (repsTarget <= 8)  { zona = 'MOD. PESADAS'; color = '#88bbff'; bg = 'rgba(136,187,255,.12)'; }
+  else if (repsTarget <= 12) { zona = 'MODERADAS';    color = '#44BB88'; bg = 'rgba(68,187,136,.12)'; }
+  else if (repsTarget <= 15) { zona = 'MOD. LIGERAS'; color = '#99cc44'; bg = 'rgba(153,204,68,.12)'; }
+  else                       { zona = 'LIGERAS';      color = '#C4FF00'; bg = 'rgba(196,255,0,.12)'; }
+  return '<span style="font-size:8px;font-weight:900;letter-spacing:.8px;color:'+color+';background:'+bg+';border:1px solid '+color+';padding:2px 6px;border-radius:4px;margin-left:6px">'+zona+'</span>';
+}
+
+// ── Módulo C — Badge de nivel del medio (Ehrenstein v4.2) ───────
+function _getNivelMedioBadge(nivelMedio) {
+  if (!nivelMedio) return '';
+  var labels = {
+    fundamental:          { t: 'FUNDAMENTAL',   c: '#cc4444', bg: 'rgba(204,68,68,.1)' },
+    suplementario:        { t: 'SUPLEMENTARIO', c: '#FF8844', bg: 'rgba(255,136,68,.1)' },
+    asistencia_mayor:     { t: 'ASISTENCIA+',   c: '#C4FF00', bg: 'rgba(196,255,0,.08)' },
+    asistencia_secundario:{ t: 'ASISTENCIA',    c: '#888888', bg: 'rgba(136,136,136,.08)' }
+  };
+  var m = labels[nivelMedio];
+  if (!m) return '';
+  return '<span style="font-size:8px;font-weight:900;letter-spacing:.8px;color:'+m.c+';background:'+m.bg+';border:1px solid '+m.c+';padding:2px 6px;border-radius:4px;margin-left:4px">'+m.t+'</span>';
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1471,6 +1498,10 @@ async function loadPlan(user) {
       totalWeeks: parseInt(planData.weeks) || 6,
       carb_cycling_y3t: planData.carb_cycling_y3t || null
     };
+
+    // Módulo A — Ehrenstein: calibración volumétrica (solo lectura en cliente)
+    CALIB_VOLUMETRICA = (clientData.calibracion_volumetrica && clientData.calibracion_volumetrica.resultados)
+      ? clientData.calibracion_volumetrica.resultados : null;
 
     // Cargar catálogo de ejercicios del coach (para algoritmo de progresión)
     try {
@@ -4289,7 +4320,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     setsHtml +=
       '<div style="background:rgba(107,107,102,.04);border:2px solid rgba(107,107,102,.3);border-radius:12px;padding:14px;margin-top:4px">'+
       '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent);margin-bottom:8px">'+
-        'SERIE '+numSeries+(numSeries > 1 ? ' \u2014 \u00daLTIMA \u00b7 REGISTRA LOS DATOS' : ' \u2014 REGISTRA LOS DATOS')+_xLastLabel+
+        'SERIE '+numSeries+(numSeries > 1 ? ' \u2014 \u00daLTIMA \u00b7 REGISTRA LOS DATOS' : ' \u2014 REGISTRA LOS DATOS')+_xLastLabel+_getZonaBadge(typeof repsTarget === 'number' ? repsTarget : null)+
       '</div>'+
       (function(){
         if (_isY3T || !repsTarget || repsTarget === 'SST' || repsTarget === 'SST-RIV' || repsTarget === 'AMRAP') return '';
@@ -4498,7 +4529,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       }
       setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(107,107,102,.5);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+_getZonaBadge(_psReps || repsTarget)+'</div>'+
         '</div>'+
         (setSpecBlock ? setSpecBlock : '')+
         prevRefHtml+
@@ -6720,6 +6751,7 @@ function buildBoostcampExercise(ej, di, ei) {
         '<div style="font-size:15px;font-weight:700;color:var(--tx);line-height:1.3;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
           ej.nombre+
           (ej.rezagado?'<span style="font-size:9px;background:rgba(107,107,102,.15);border:1px solid rgba(107,107,102,.4);color:var(--accent);padding:2px 7px;border-radius:10px;letter-spacing:1px;font-weight:700">★ REZAGADO</span>':'')+
+          _getNivelMedioBadge(ej.nivel_medio)+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">'+
           '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+numSeries+' SERIES</span>'+
@@ -9743,6 +9775,37 @@ function ciICSSet(key, val) {
 }
 window.ciICSSet = ciICSSet;
 
+// ── Módulo E — Cuestionario Subjetivo Ehrenstein ────────────────
+function _cuestionarioScale(fieldId, n, labels) {
+  var saved = (LOGS['ci_sem_'+CURRENT_WEEK] || {})[fieldId] || 0;
+  return '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
+    Array.from({length:n}, function(_,i) {
+      var v = i+1, sel = parseInt(saved) === v;
+      return '<button onclick="setCISubj(\''+fieldId+'\','+v+')" id="csubj_'+fieldId+'_'+v+'" '+
+        'style="flex:1;min-width:36px;padding:8px 4px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:800;'+
+        'border:2px solid '+(sel?'#C4FF00':'var(--border)')+';'+
+        'background:'+(sel?'rgba(196,255,0,.15)':'var(--input-bg)')+';'+
+        'color:'+(sel?'#C4FF00':'var(--mt)')+'">'+v+'</button>';
+    }).join('') +
+  '</div>';
+}
+window._cuestionarioScale = _cuestionarioScale;
+
+function setCISubj(fieldId, val) {
+  var n = fieldId === 'ci_vulner' ? 7 : 5;
+  for (var i=1; i<=n; i++) {
+    var btn = document.getElementById('csubj_'+fieldId+'_'+i);
+    if (!btn) continue;
+    var sel = i === val;
+    btn.style.border = '2px solid '+(sel?'#C4FF00':'var(--border)');
+    btn.style.background = sel?'rgba(196,255,0,.15)':'var(--input-bg)';
+    btn.style.color = sel?'#C4FF00':'var(--mt)';
+  }
+  window._ciSubjTemp = window._ciSubjTemp || {};
+  window._ciSubjTemp[fieldId] = val;
+}
+window.setCISubj = setCISubj;
+
 async function guardarCI() {
   var _ciBtn = document.querySelector('[onclick="guardarCI()"]');
   if (_ciBtn) { _ciBtn.disabled = true; _ciBtn.textContent = 'GUARDANDO...'; }
@@ -9750,7 +9813,7 @@ async function guardarCI() {
   if (!LOGS[k]) LOGS[k] = {};
   var d = LOGS[k];
   // Leer inputs por si el usuario escribió sin disparar oninput
-  ['ci_peso','ci_hrv','ci_sleep','ci_notas','ci_cintura','ci_brazo','ci_pierna','ci_pecho','ci_ib_pct_grasa','ci_ib_masa_muscular','ci_ib_grasa_visceral'].forEach(function(id) {
+  ['ci_peso','ci_hrv','ci_sleep','ci_notas','ci_cintura','ci_brazo','ci_pierna','ci_pecho','ci_ib_pct_grasa','ci_ib_masa_muscular','ci_ib_grasa_visceral','ci_fatiga','ci_sueno_cal','ci_dolor_gral','ci_estres','ci_animo','ci_vulner'].forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
     var campo = id.replace('ci_','');
@@ -9802,6 +9865,17 @@ async function guardarCI() {
       : null;
   } catch(e) { d.rir_real_prom = null; }
 
+  // ── Módulo E — Cuestionario subjetivo Ehrenstein ────────────────
+  // Merge valores de botones (almacenados en _ciSubjTemp al clickear)
+  if (window._ciSubjTemp) {
+    Object.keys(window._ciSubjTemp).forEach(function(fk) { d[fk] = window._ciSubjTemp[fk]; });
+  }
+  // Calcular score de bienestar subjetivo (5 ítems 1-5 = máx 25)
+  var _subj_score = (['ci_fatiga','ci_sueno_cal','ci_dolor_gral','ci_estres','ci_animo']
+    .reduce(function(s,fk){ return s + (parseInt(d[fk])||0); }, 0));
+  d.subj_score  = _subj_score;
+  d.subj_vulner = parseInt(d['ci_vulner']) || 0;
+
   try {
     await saveLogs();
 
@@ -9827,6 +9901,14 @@ async function guardarCI() {
         ics_detalle   : d.ics          || {},
         rir_real_prom : d.rir_real_prom !== undefined ? d.rir_real_prom : null,
         adherencia_pct: d.adherencia_pct!== undefined ? d.adherencia_pct: null,
+        // Eje 4 — Cuestionario subjetivo Ehrenstein (Módulo E)
+        subj_fatiga    : parseInt(d['ci_fatiga'])     || null,
+        subj_sueno_cal : parseInt(d['ci_sueno_cal'])  || null,
+        subj_dolor_gral: parseInt(d['ci_dolor_gral']) || null,
+        subj_estres    : parseInt(d['ci_estres'])     || null,
+        subj_animo     : parseInt(d['ci_animo'])      || null,
+        subj_vulner    : d.subj_vulner || null,
+        subj_score     : d.subj_score  || null,
         // Meta
         notas         : d.notas   || '',
         ts            : Date.now()
@@ -10252,6 +10334,33 @@ function renderCheckin() {
         // ── ICS POR SESIÓN (GAP 1) ──────────────────────
     + buildICSSection(d, sem)
 
+    // ── CUESTIONARIO SUBJETIVO EHRENSTEIN (Módulo E) ──
+    + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
+    +   '<div style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:var(--accent);margin-bottom:12px;display:flex;align-items:center;gap:6px">'
+    +     '🧠 CÓMO TE SIENTES ESTA SEMANA'
+    +   '</div>'
+    + (function(){
+        return [
+          { id:'ci_fatiga',    label:'ENERGÍA',           desc:'5 = Muy energético · 1 = Siempre cansado' },
+          { id:'ci_sueno_cal', label:'CALIDAD DE SUEÑO',  desc:'5 = Muy reposado · 1 = Insomnio' },
+          { id:'ci_dolor_gral',label:'DOLOR MUSCULAR',    desc:'5 = Sin dolor · 1 = Muy dolorido' },
+          { id:'ci_estres',    label:'NIVEL DE ESTRÉS',   desc:'5 = Muy relajado · 1 = Muy estresado' },
+          { id:'ci_animo',     label:'ESTADO DE ÁNIMO',   desc:'5 = Muy positivo · 1 = Irritado' }
+        ].map(function(item) {
+          return '<div style="margin-bottom:12px">'
+            + '<div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--mt2);margin-bottom:2px">'+item.label+'</div>'
+            + '<div style="font-size:8px;color:var(--mt);margin-bottom:6px">'+item.desc+'</div>'
+            + _cuestionarioScale(item.id, 5, null)
+          + '</div>';
+        }).join('');
+      })()
+    + '<div style="margin-bottom:12px">'
+    +   '<div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--mt2);margin-bottom:2px">VULNERABILIDAD A LESIONES</div>'
+    +   '<div style="font-size:8px;color:var(--mt);margin-bottom:6px">1 = Nunca · 4 = A menudo · 7 = Siempre</div>'
+    +   _cuestionarioScale('ci_vulner', 7, null)
+    + '</div>'
+    + '</div>'
+
     // ── NOTAS PARA COACH ──────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">NOTAS PARA TU COACH</div>'
@@ -10314,6 +10423,15 @@ function renderPerfil() {
         </div>`).join('')}
       </div>
     </div>
+
+    ${CALIB_VOLUMETRICA ? `
+    <div style="margin-bottom:12px;padding:14px 16px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.2);border-radius:10px">
+      <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);font-weight:700;margin-bottom:6px">TU RANGO DE VOLUMEN PERSONALIZADO</div>
+      <div style="font-family:'Big Shoulders Display',var(--ff);font-size:22px;font-weight:900;color:var(--accent);line-height:1.2">
+        ${CALIB_VOLUMETRICA.VME_individual} – ${CALIB_VOLUMETRICA.VMR_individual} <span style="font-size:13px;font-weight:700;color:var(--mt)">series/semana</span>
+      </div>
+      <div style="font-size:10px;color:var(--mt);margin-top:4px;letter-spacing:.5px">Calculado con calibración Ehrenstein</div>
+    </div>` : ''}
 
     <style>#inbody-guide summary::-webkit-details-marker{display:none}#inbody-guide summary::marker{display:none}#inbody-guide[open] .ib-chevron{transform:rotate(180deg)}</style>
     <details id="inbody-guide" style="margin:12px 0">
