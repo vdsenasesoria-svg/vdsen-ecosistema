@@ -6203,6 +6203,108 @@ El esfuerzo no es negociable.
       }
     }
 
+    // ── Módulo D — Micro-ajuste Ehrenstein
+    if (lastDoneW > 0 && p && p.days) {
+      const _mdDayExercises = ((p.days.find(d => d.dayIndex === lastDoneD) || p.days[lastDoneD] || {}).exercises || []);
+      const _mdResults = [];
+      Object.keys(lastSets).map(Number).sort((a,b)=>a-b).forEach(ei => {
+        const exObj = _mdDayExercises[ei] || {};
+        const sets = (lastSets[ei] || []).sort((a,b)=>a.si-b.si);
+        if (!sets.length || !exObj.sets || !exObj.sets.length) return;
+        const setsWithRIR = sets.filter(s => s.rir_real !== null && s.rir_real !== undefined && s.rir_real !== '');
+        if (!setsWithRIR.length) return;
+        const rirFinal = parseFloat(setsWithRIR[setsWithRIR.length-1].rir_real);
+        if (isNaN(rirFinal)) return;
+        const planLastSet = exObj.sets[exObj.sets.length-1] || exObj.sets[0];
+        const rirObjetivo = parseFloat(planLastSet.rirTarget !== undefined ? planLastSet.rirTarget : 2);
+        const repsTarget = parseFloat(planLastSet.repsTarget || planLastSet.reps || 0);
+        const repsArr = sets.map(s=>parseFloat(s.reps)).filter(x=>!isNaN(x));
+        const lastRepsReal = repsArr.length ? repsArr[repsArr.length-1] : null;
+        const loadArr = sets.map(s=>parseFloat(s.carga)).filter(x=>!isNaN(x));
+        const carga = loadArr.length ? Math.max(...loadArr) : null;
+        const rirDiff = rirFinal - rirObjetivo;
+        let diagnostico='', ajuste='', color='#888', tipo='mantiene', nuevaCarga=carga, nuevasReps=repsTarget, puedeAgregarSerie=false;
+        if (lastRepsReal !== null && !isNaN(repsTarget) && lastRepsReal < repsTarget) {
+          // Regla E: no completa reps
+          const falt = repsTarget - lastRepsReal;
+          const pctD = falt * 5;
+          nuevaCarga = carga ? +(carga*(1-pctD/100)).toFixed(1) : null;
+          diagnostico=`Reps incompletas (${lastRepsReal}/${repsTarget})`;
+          ajuste=`−${pctD}% carga${nuevaCarga?' → '+nuevaCarga+' kg':''} (o −${falt*2} reps)`;
+          color='#FF4444'; tipo='reduce';
+        } else if (rirDiff > 0) {
+          // Regla A: RIR sobró
+          diagnostico=`RIR real ${rirFinal} > obj ${rirObjetivo}`;
+          if (rirObjetivo >= 2) {
+            const pctU = rirDiff*2.5;
+            nuevaCarga = carga ? +(carga*(1+pctU/100)).toFixed(1) : null;
+            ajuste=`+${pctU}% carga${nuevaCarga?' → '+nuevaCarga+' kg':''}`;
+          } else {
+            nuevasReps = repsTarget + rirDiff;
+            ajuste=`+${rirDiff} rep${rirDiff>1?'s':''}`;
+          }
+          color='#44BB88'; tipo='progresa';
+          if (repsArr.length >= 2) {
+            const l2 = repsArr.slice(-2);
+            if (l2.filter(r=>r>=repsTarget+2).length >= 2) puedeAgregarSerie=true;
+          }
+        } else if (rirDiff < 0) {
+          // Regla D: RIR más difícil
+          diagnostico=`RIR real ${rirFinal} < obj ${rirObjetivo}`;
+          const pctD = Math.abs(rirDiff)*2.5;
+          nuevaCarga = carga ? +(carga*(1-pctD/100)).toFixed(1) : null;
+          ajuste=`−${pctD}% carga${nuevaCarga?' → '+nuevaCarga+' kg':''}`;
+          color='#FF8844'; tipo='reduce';
+        } else {
+          // Regla C: RIR correcto
+          diagnostico=`RIR correcto (${rirFinal})`;
+          ajuste='+30s descanso si no completa reps';
+          color='#C4FF00'; tipo='mantiene';
+        }
+        _mdResults.push({ name: exObj.exerciseName||`Ejercicio ${ei+1}`, rirObjetivo, rirFinal, repsTarget, lastRepsReal, carga, nuevaCarga: tipo!=='mantiene'?nuevaCarga:carga, nuevasReps, diagnostico, ajuste, color, tipo, puedeAgregarSerie, ei });
+      });
+      if (_mdResults.length) {
+        const nProg=_mdResults.filter(r=>r.tipo==='progresa').length;
+        const nRed=_mdResults.filter(r=>r.tipo==='reduce').length;
+        const nMant=_mdResults.filter(r=>r.tipo==='mantiene').length;
+        const fatSist=nRed>=3;
+        window._moduloDPending = _mdResults;
+        window._moduloDDayIndex = lastDoneD;
+        html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Micro-ajuste Ehrenstein — Sem ${lastDoneW} · Día ${lastDoneD+1}</div>
+          <div class="card p-3 mb-3" style="border-left:3px solid #C4FF00;border-radius:0 8px 8px 0">
+            <div class="flex gap-4 flex-wrap mb-2">
+              <div><div class="text-xs text-[#888]">PROGRESAN</div><div class="text-xl font-bold" style="color:#44BB88">${nProg}</div></div>
+              <div><div class="text-xs text-[#888]">MANTIENEN</div><div class="text-xl font-bold" style="color:#C4FF00">${nMant}</div></div>
+              <div><div class="text-xs text-[#888]">REDUCEN</div><div class="text-xl font-bold" style="color:#FF4444">${nRed}</div></div>
+            </div>
+            ${fatSist?`<div style="padding:6px 10px;border-radius:6px;background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.25);font-size:11px;color:#FF4444">⚠️ Fatiga sistémica: ≥3 ejercicios reducen carga. Considerar deload o semana de recuperación.</div>`:''}
+          </div>
+          <div class="card p-3 mb-3" style="overflow-x:auto">
+            <table style="width:100%;font-size:11px;border-collapse:collapse;min-width:440px">
+              <thead><tr style="color:#888;border-bottom:1px solid rgba(244,244,240,.1)">
+                <th style="text-align:left;padding:4px 6px">Ejercicio</th>
+                <th style="padding:4px 6px;text-align:center">RIR obj</th>
+                <th style="padding:4px 6px;text-align:center">RIR real</th>
+                <th style="padding:4px 6px;text-align:center">Reps</th>
+                <th style="padding:4px 6px;text-align:left">Ajuste</th>
+                <th style="padding:4px 6px;text-align:center">Nueva carga</th>
+              </tr></thead>
+              <tbody>
+              ${_mdResults.map(r=>`<tr style="border-top:1px solid rgba(244,244,240,.05)">
+                <td style="padding:5px 6px;font-weight:600">${r.name}${r.puedeAgregarSerie?' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(68,187,136,.15);color:#44BB88;border:1px solid rgba(68,187,136,.3)">+SER</span>':''}</td>
+                <td style="padding:5px 6px;text-align:center;color:#555">${r.rirObjetivo}</td>
+                <td style="padding:5px 6px;text-align:center;font-weight:700;color:${r.color}">${r.rirFinal}</td>
+                <td style="padding:5px 6px;text-align:center;color:#888">${r.lastRepsReal!==null?r.lastRepsReal+'/'+r.repsTarget:'—'}</td>
+                <td style="padding:5px 6px;text-align:left;font-size:10px;color:${r.color}">${r.ajuste}</td>
+                <td style="padding:5px 6px;text-align:center;font-weight:700;color:${r.color}">${r.nuevaCarga!==null&&r.tipo!=='mantiene'?r.nuevaCarga+' kg':'—'}</td>
+              </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+          <button onclick="_applyAllModuloD()" class="btn-primary w-full mb-3" style="background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.3);color:#C4FF00">⚡ Aplicar ajustes al plan</button>`;
+      }
+    }
+
     // ── Tendencias de carga por ejercicio (S1 → sem actual)
     if (p && p.days && currentWeek > 1) {
       // Recoger todos los nombres únicos de ejercicios del plan
@@ -6262,6 +6364,40 @@ El esfuerzo no es negociable.
     }
     cont.innerHTML = html;
   }
+
+  async function _applyAllModuloD() {
+    const results = window._moduloDPending;
+    if (!results || !results.length) return;
+    const planId = _detailClientData && _detailClientData.activePlanId;
+    if (!planId) { alert('No hay plan activo.'); return; }
+    const toApply = results.filter(r => r.tipo !== 'mantiene' && r.nuevaCarga !== null);
+    if (!toApply.length) { alert('No hay ajustes que aplicar.'); return; }
+    try {
+      const planSnap = await getDoc(doc(db,'plans',planId));
+      if (!planSnap.exists()) { alert('Plan no encontrado.'); return; }
+      const plan = planSnap.data();
+      const dayIdx = window._moduloDDayIndex;
+      const updatedDays = (plan.days||[]).map(day => {
+        if (day.dayIndex !== dayIdx) return day;
+        const exercises = (day.exercises||[]).map((ex,ei) => {
+          const adj = toApply.find(r=>r.ei===ei);
+          if (!adj) return ex;
+          const updSets = (ex.sets||[]).map(s => {
+            const ns = {...s};
+            if (adj.nuevaCarga !== null) ns.load = adj.nuevaCarga;
+            if (adj.tipo==='progresa' && parseFloat(adj.rirObjetivo)<2 && adj.nuevasReps) ns.repsTarget = adj.nuevasReps;
+            return ns;
+          });
+          return {...ex, sets: updSets};
+        });
+        return {...day, exercises};
+      });
+      await updateDoc(doc(db,'plans',planId),{days:updatedDays});
+      if (_detailPlanData) _detailPlanData.days = updatedDays;
+      alert(`✓ ${toApply.length} ejercicio(s) actualizados en el plan.`);
+    } catch(e) { alert('Error al aplicar: '+e.message); }
+  }
+  window._applyAllModuloD = _applyAllModuloD;
 
   function _buildMiniTrendChart(data, label, color) {
     if (!data || data.length < 2) return '';
