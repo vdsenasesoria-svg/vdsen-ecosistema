@@ -556,12 +556,18 @@
     }
     const toast = document.createElement("div");
     toast.className = `toast ${isError ? "error" : "success"}`;
-    toast.textContent = msg;
+    const duration = isError ? 6000 : 3000;
+    if (isError) {
+      toast.style.cssText = "display:flex;align-items:center;gap:10px;min-width:220px";
+      toast.innerHTML = `<span style="flex:1">${msg}</span><button onclick="this.closest('.toast').remove()" style="padding:2px 8px;border-radius:4px;border:1px solid rgba(244,244,240,.4);background:rgba(244,244,240,.1);color:#F4F4F0;font-size:12px;cursor:pointer">×</button>`;
+    } else {
+      toast.textContent = msg;
+    }
     container.appendChild(toast);
     setTimeout(() => {
       toast.classList.add("fade-out");
-      toast.addEventListener("transitionend", () => toast.remove());
-    }, 3000);
+      toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+    }, duration);
   }
   window.showToast = showToast;
 
@@ -667,9 +673,9 @@
       const v = totals[g] || 0;
       let badge, color;
       if (v === 0 && mev === 0) { badge = '—'; color = '#555'; }
-      else if (v < mev) { badge = 'sub-MEV'; color = '#FF4444'; }
-      else if (v > mrv) { badge = 'sobre-MRV'; color = '#FF8844'; }
-      else { badge = 'OK'; color = '#44BB88'; }
+      else if (v < mev) { badge = 'sub-MEV'; color = 'var(--danger)'; }
+      else if (v > mrv) { badge = 'sobre-MRV'; color = '#CC7733'; }
+      else { badge = 'OK'; color = 'var(--success)'; }
       return `<tr><td style="padding:4px 8px;color:#cfcfcf">${g}</td><td style="padding:4px 8px;text-align:center;font-weight:700;color:${color}">${v}</td><td style="padding:4px 8px;text-align:center;color:#888;font-size:11px">${mev}–${mrv}</td><td style="padding:4px 8px;text-align:center;color:#888;font-size:11px">${opt}</td><td style="padding:4px 8px;text-align:center"><span style="font-size:10px;font-weight:700;color:${color}">${badge}</span></td></tr>`;
     }).join('');
     return `<div class="card p-3 mb-3"><div class="text-xs text-[#F4F4F0] mb-2 uppercase tracking-wide font-semibold">Volumen semanal por grupo · MEV / MRV</div><div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:#888;font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px 8px">Grupo</th><th style="padding:4px 8px">Series</th><th style="padding:4px 8px">MEV–MRV</th><th style="padding:4px 8px">Óptimo</th><th style="padding:4px 8px">Estado</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
@@ -1257,7 +1263,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             ? (planData ? "✅" : '<span title="activePlanId referencia un plan eliminado" style="cursor:help">🔴</span>')
             : "⚠️";
           const live = isClientLiveTraining(logData);
-          const liveBadge = live ? '<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite">● EN VIVO</span>' : '';
+          const liveBadge = `<span id="lv_${c.id}" class="text-[10px] ml-2 px-2 py-0.5 rounded" style="${live?'background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite':''}">${live?'● EN VIVO':''}</span>`;
 
           const isDeload = week === totalWeeks;
           const weekColor = isDeload ? '#7ec0ff' : '#C4FF00';
@@ -1305,6 +1311,23 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           ${banner}
           <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'flex':'none';});})(this.value)">
           ${rows}`;
+        // Auto-refresh badge EN VIVO cada 60s sin re-renderizar la lista
+        if (window._liveTimer) clearInterval(window._liveTimer);
+        window._liveTimer = setInterval(() => {
+          if (!window._clientCache) return;
+          Object.keys(window._clientCache).forEach(id => {
+            const el = document.getElementById('lv_' + id);
+            if (!el) { clearInterval(window._liveTimer); return; }
+            const d = window._clientCache[id];
+            const live = d && isClientLiveTraining(d.logs);
+            if (live) {
+              el.textContent = '● EN VIVO';
+              el.style.cssText = 'background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite;padding:2px 8px;border-radius:4px';
+            } else {
+              el.textContent = ''; el.style.cssText = '';
+            }
+          });
+        }, 60000);
       }
     } catch (e) {
       container.innerHTML = `<p class="text-red-400 text-sm">Error al cargar clientes: ${e.message}</p>`;
@@ -1762,6 +1785,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   
   async function loadMonitorClients() {
     if (!currentCoach) return;
+    if (window._monitorUnsub) { window._monitorUnsub(); window._monitorUnsub = null; }
     document.getElementById("monitorTable").innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando...</div>`;
     const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
     document.getElementById("monitorTable").innerHTML = "";
@@ -1773,10 +1797,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       clientsMap[d.id] = d.data();
     });
 
-    // Limpiar listener anterior
-    let _monitorUnsub = null;
     select.onchange = async () => {
-      if (_monitorUnsub) { _monitorUnsub(); _monitorUnsub = null; }
+      if (window._monitorUnsub) { window._monitorUnsub(); window._monitorUnsub = null; }
       if (!select.value) return;
       const container = document.getElementById("monitorTable");
       container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos del cliente...</div>`;
@@ -1793,7 +1815,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       }
 
       // Escuchar logs del cliente en TIEMPO REAL
-      _monitorUnsub = onSnapshot(doc(db, 'logs', select.value), (logsSnap) => {
+      window._monitorUnsub = onSnapshot(doc(db, 'logs', select.value), (logsSnap) => {
       if (!logsSnap.exists()) {
         container.innerHTML = `<p class="text-[#888] text-sm">Sin datos de entrenamiento registrados aún.</p>`;
         return;
@@ -3591,7 +3613,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const prevPlanSnap = await getDoc(doc(db, "plans", prevPlanId)).catch(() => null);
         const prevDays = prevPlanSnap && prevPlanSnap.exists() ? (prevPlanSnap.data().days || []) : [];
         const newDays  = planObj.days || [];
-        const confirmed = await _askConfirm(`⚠️ Reemplazar plan activo\n\nPlan actual: ${prevDays.length} días · ${prevPlanSnap?.data()?.weeks||'?'} semanas\nPlan nuevo: ${newDays.length} días · ${newDays[0]?.exercises?.length||'?'} ej. el primer día\n\nEl plan actual se archivará antes de reemplazarlo.`);
+        const confirmed = await _askConfirm(`⚠️ Reemplazar plan activo\n\nPlan actual: ${prevDays.length} días · ${prevPlanSnap?.data()?.weeks||'?'} semanas\nPlan nuevo: ${newDays.length} días · ${newDays[0]?.exercises?.length||'?'} ej. el primer día\n\nEl plan actual se guardará como respaldo y será reemplazado.`);
         if (!confirmed) return;
       }
       // Backup automático del plan anterior

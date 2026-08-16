@@ -4186,7 +4186,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       }).join('');
       var _wuId = 'wu_'+di+'_'+ei;
       wuHtml = '<div style="margin-bottom:12px;border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0;background:rgba(70,130,200,.06)">'+
-        '<button onclick="(function(el){el.style.display=el.style.display===\'none\'?\'block\':\'none\';})(document.getElementById(\''+_wuId+'\'))" style="width:100%;text-align:left;padding:7px 12px;display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer">'+
+        '<button onclick="(function(el,btn){var open=el.style.display===\'none\';el.style.display=open?\'block\':\'none\';btn.querySelector(\'span:last-child\').textContent=open?\'▾\':\'▸\';})(document.getElementById(\''+_wuId+'\'),this)" style="width:100%;text-align:left;padding:7px 12px;display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer">'+
           '<span style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px">🔥 CALENTAMIENTO</span>'+
           '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>'+
         '</button>'+
@@ -7461,6 +7461,7 @@ function saveUserNote(di, ei, text) {
   }
   saveLogs();
   _refreshExPanelOnly();
+  showToast('📝 Nota guardada');
 }
 
 function _ensureRestTimerOverlay() {
