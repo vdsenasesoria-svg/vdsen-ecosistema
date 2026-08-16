@@ -5189,6 +5189,8 @@ El esfuerzo no es negociable.
         </div>`;
     }
 
+    var _calibSection = _buildCalibSection(clientId);
+
     cont.innerHTML = `
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap">
         <div>
@@ -5201,6 +5203,8 @@ El esfuerzo no es negociable.
       ${mainContent}
 
       <div style="margin:16px 0;border-top:1px solid rgba(244,244,240,.06)"></div>
+
+      ${_calibSection}
 
       <div style="background:rgba(107,107,102,.05);border:1px solid rgba(107,107,102,.22);border-radius:10px;padding:13px;margin-bottom:12px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#666;font-weight:700;margin-bottom:6px">🔬 Cargar análisis (JSON del Evaluador)</div>
@@ -5224,6 +5228,139 @@ El esfuerzo no es negociable.
       </div>`;
   }
   window._renderClientTabFicha = _renderClientTabFicha;
+
+  // ── Ehrenstein — Calibración Volumétrica (Módulo A) ──────────────────────
+  function _calcVMEVMR(f) {
+    if (!f) return { VME: 6, VMR: 16, adjVME: 0, adjVMR: 0 };
+    var e = 0, r = 0;
+    // Género
+    if (f.genero === 'F') { e += 1.5; r += 3.0; }
+    // Edad
+    var ea = { '50s':[1.0,-3.0],'40s':[0.5,-1.0],'30s':[0,0],'20s':[-0.5,1.0],'<19':[-1.0,2.0] };
+    if (ea[f.edad_decada]) { e += ea[f.edad_decada][0]; r += ea[f.edad_decada][1]; }
+    // Altura
+    var aa = { baja:[1.0,3.0], media:[0,1.0], alta:[-0.5,-1.0], muy_alta:[-1.5,-3.0] };
+    if (aa[f.altura_clasificacion]) { e += aa[f.altura_clasificacion][0]; r += aa[f.altura_clasificacion][1]; }
+    // Peso
+    var pa = { ligero:[1.5,1.0], medio:[0.5,1.0], semipesado:[-0.5,-1.0], pesado:[-1.5,-3.0] };
+    if (pa[f.peso_clasificacion]) { e += pa[f.peso_clasificacion][0]; r += pa[f.peso_clasificacion][1]; }
+    // Nivel de fuerza
+    var fa = { muy_alto:[1.0,-3.0], alto:[0,-1.0], medio:[-0.5,0], bajo:[-0.5,1.0] };
+    if (fa[f.nivel_fuerza]) { e += fa[f.nivel_fuerza][0]; r += fa[f.nivel_fuerza][1]; }
+    // Capacidad trabajo histórica (1-5)
+    var ca = { 5:[1.0,2.0], 4:[0.5,1.0], 3:[0,0], 2:[-0.5,-1.0], 1:[-1.0,-2.0] };
+    var ct = parseInt(f.capacidad_trabajo_historica);
+    if (ca[ct]) { e += ca[ct][0]; r += ca[ct][1]; }
+    // Recuperación histórica (1-5)
+    var rha = { 5:[1.0,2.0], 4:[0,1.0], 3:[0,0], 2:[-0.5,-1.0], 1:[-1.0,-2.0] };
+    var rh = parseInt(f.recuperacion_historica);
+    if (rha[rh]) { e += rha[rh][0]; r += rha[rh][1]; }
+    // Recuperación externa
+    if (f.recuperacion_externa === 'si') r += 1.0;
+    // Novedad del programa
+    var na = { nulo:[0,0], bajo:[0,1.0], intermedio:[0,0], alto:[-0.5,-1.0] };
+    if (na[f.novedad_programa]) { e += na[f.novedad_programa][0]; r += na[f.novedad_programa][1]; }
+    // Estrés físico externo
+    var efa = { nulo:[-0.5,0], bajo:[0,1.0], intermedio:[0,0], alto:[-0.5,-1.0] };
+    if (efa[f.estres_fisico_externo]) { e += efa[f.estres_fisico_externo][0]; r += efa[f.estres_fisico_externo][1]; }
+    // Estrés no-físico
+    var nfa = { bajo:[0,1.0], promedio:[-0.5,0], alto:[-0.5,-2.0] };
+    if (nfa[f.estres_no_fisico]) { e += nfa[f.estres_no_fisico][0]; r += nfa[f.estres_no_fisico][1]; }
+    // Reposo/descanso
+    var rpa = { alta:[-0.5,1.0], promedio:[0,0], baja:[0,-2.0] };
+    if (rpa[f.reposo_descanso]) { e += rpa[f.reposo_descanso][0]; r += rpa[f.reposo_descanso][1]; }
+    // Hábitos alimenticios
+    var ha = { ISO:[0,0], DCA:[1.0,-3.0], DCM:[1.0,-2.0], DCB:[0.5,-1.0], SCB:[-0.5,1.0], SCM:[-1.0,2.0], SCA:[-1.5,3.0] };
+    if (ha[f.habitos_alimenticios]) { e += ha[f.habitos_alimenticios][0]; r += ha[f.habitos_alimenticios][1]; }
+    // AAS
+    if (f.uso_aas === 'si') { e -= 1.5; r += 3.0; }
+    var VME = Math.max(4, Math.round((6 + e) * 2) / 2);
+    var VMR = Math.round((16 + r) * 2) / 2;
+    return { VME, VMR, adjVME: Math.round(e * 2) / 2, adjVMR: Math.round(r * 2) / 2 };
+  }
+  window._calcVMEVMR = _calcVMEVMR;
+
+  function _showCalibForm(clientId) {
+    var panel = document.getElementById('_calibForm_' + clientId);
+    if (!panel) return;
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  }
+  window._showCalibForm = _showCalibForm;
+
+  async function _saveCalibVolumetrica(clientId) {
+    var fieldIds = ['genero','edad_decada','altura_clasificacion','peso_clasificacion','nivel_fuerza','capacidad_trabajo_historica','recuperacion_historica','recuperacion_externa','novedad_programa','estres_fisico_externo','estres_no_fisico','reposo_descanso','habitos_alimenticios','uso_aas'];
+    var f = {};
+    fieldIds.forEach(function(id) {
+      var el = document.getElementById('_cf_' + clientId + '_' + id);
+      if (el) f[id] = el.value;
+    });
+    var res = _calcVMEVMR(f);
+    var calibData = {
+      schema_version: 'ehrenstein-v1',
+      fecha_calibracion: new Date().toISOString().slice(0,10),
+      factores: f,
+      resultados: {
+        VME_base: 6, VME_ajuste: res.adjVME, VME_individual: res.VME,
+        VMR_base: 16, VMR_ajuste: res.adjVMR, VMR_individual: res.VMR,
+        rango_operativo: res.VME + '–' + res.VMR + ' series/semana'
+      }
+    };
+    try {
+      await updateDoc(doc(db, 'clients', clientId), { calibracion_volumetrica: calibData });
+      // Update in-memory data
+      if (_detailClientData) _detailClientData.calibracion_volumetrica = calibData;
+      showToast('Calibración guardada ✓ VME=' + res.VME + ' VMR=' + res.VMR);
+      _switchClientTab('ficha');
+    } catch(err) { showToast('Error: ' + err.message, true); }
+  }
+  window._saveCalibVolumetrica = _saveCalibVolumetrica;
+
+  function _buildCalibSection(clientId) {
+    var _cCalib = _detailClientData && _detailClientData.calibracion_volumetrica;
+    var _cRes = _cCalib && _cCalib.resultados;
+    var _cFact = (_cCalib && _cCalib.factores) || {};
+    function sel(id, label, opts) {
+      var cur = String(_cFact[id] !== undefined ? _cFact[id] : '');
+      return '<div><div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">' + label + '</div>' +
+        '<select id="_cf_' + clientId + '_' + id + '" style="width:100%;padding:4px 6px;border-radius:5px;border:1px solid rgba(244,244,240,.1);background:#111;color:#e4e4e0;font-size:11px">' +
+        opts.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select></div>';
+    }
+    function numSel(id, label, min, max) {
+      var cur = String(_cFact[id] !== undefined ? _cFact[id] : '');
+      var opts = [['','—']];
+      for (var i = min; i <= max; i++) opts.push([String(i), String(i)]);
+      return sel(id, label, opts);
+    }
+    var formRows = [
+      sel('genero','Género',[['','—'],['H','Hombre'],['F','Mujer']]),
+      sel('edad_decada','Edad',[['','—'],['<19','< 19 años'],['20s','20s'],['30s','30s'],['40s','40s'],['50s','50s']]),
+      sel('altura_clasificacion','Altura',[['','—'],['baja','Baja'],['media','Media'],['alta','Alta'],['muy_alta','Muy alta']]),
+      sel('peso_clasificacion','Peso corporal',[['','—'],['ligero','Ligero'],['medio','Medio'],['semipesado','Semipesado'],['pesado','Pesado']]),
+      sel('nivel_fuerza','Nivel fuerza',[['','—'],['bajo','Bajo (Cl.III–VI)'],['medio','Medio (Cl.I–II)'],['alto','Alto (Master-Elite)'],['muy_alto','Muy alto (MA/Élite)']]),
+      numSel('capacidad_trabajo_historica','Cap. trabajo histórica',1,5),
+      numSel('recuperacion_historica','Recuperación histórica',1,5),
+      sel('recuperacion_externa','Recuperación activa',[['','—'],['si','Sí'],['no','No']]),
+      sel('novedad_programa','Novedad programa',[['','—'],['nulo','Nulo'],['bajo','Bajo'],['intermedio','Intermedio'],['alto','Alto']]),
+      sel('estres_fisico_externo','Estrés físico',[['','—'],['nulo','Nulo'],['bajo','Bajo'],['intermedio','Intermedio'],['alto','Alto']]),
+      sel('estres_no_fisico','Estrés no-físico',[['','—'],['bajo','Bajo'],['promedio','Promedio'],['alto','Alto']]),
+      sel('reposo_descanso','Reposo/sueño',[['','—'],['baja','Bajo (<5h)'],['promedio','Promedio (5–7h)'],['alta','Alto (>7h)']]),
+      sel('habitos_alimenticios','Hábitos alimenticios',[['','—'],['DCA','DCA - Déficit avanzado'],['DCM','DCM - Déficit moderado'],['DCB','DCB - Déficit bajo'],['ISO','ISO - Isocalórico'],['SCB','SCB - Superávit bajo'],['SCM','SCM - Superávit moderado'],['SCA','SCA - Superávit alto']]),
+      sel('uso_aas','Esteroides anabólicos',[['','—'],['no','No'],['si','Sí (activo)']])
+    ].join('');
+    return '<div style="background:rgba(255,160,0,.04);border:1px solid rgba(255,160,0,.18);border-radius:10px;padding:13px;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap">' +
+        '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#f09030;font-weight:700">⚡ Calibración VME/VMR (Ehrenstein)</div>' +
+        (_cRes ? '<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:11px;color:#888">Rango personal:</span><span style="font-size:15px;font-weight:800;color:#f09030">' + _cRes.VME_individual + '</span><span style="font-size:13px;color:#555">–</span><span style="font-size:15px;font-weight:800;color:#44BB88">' + _cRes.VMR_individual + '</span><span style="font-size:10px;color:#555"> s/sem</span></div>' : '') +
+      '</div>' +
+      '<button onclick="_showCalibForm(\'' + clientId + '\')" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(255,160,0,.3);background:rgba(255,160,0,.06);color:#f09030;font-size:11px;font-weight:600;cursor:pointer">' + (_cRes ? '✏️ Editar' : '⚙️ Calcular') + ' calibración</button>' +
+      '<div id="_calibForm_' + clientId + '" style="display:none;margin-top:12px">' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">' + formRows + '</div>' +
+        '<button onclick="_saveCalibVolumetrica(\'' + clientId + '\')" style="width:100%;padding:8px;border-radius:7px;border:none;background:#f09030;color:#0a0a0a;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.04em">💾 Calcular y guardar VME/VMR</button>' +
+      '</div>' +
+    '</div>';
+  }
+  window._buildCalibSection = _buildCalibSection;
 
   // ── Tab Renovar ──────────────────────────────────────────────────────────
   function _renderClientTabRenovar(cont) {
@@ -5668,12 +5805,17 @@ El esfuerzo no es negociable.
     let planActionsHtml = '';
     if (c.activePlanId && p) {
       const dayList = (p.days || []).map(d => {
+        const _nmCoach = { fundamental:'#FF6644', suplementario:'#FF9900', asistencia_mayor:'#CCAA00', asistencia_secundario:'#777' };
+        const _nmLbl   = { fundamental:'F', suplementario:'S', asistencia_mayor:'AM', asistencia_secundario:'AS' };
         const exList = (d.exercises || []).map(e => {
           const sets = (e.sets || []);
           const numSets = sets.length || 3;
           const reps = _setsRepsLabel(sets);
           const rir  = sets[0] ? (sets[0].rirTarget  || 2) : 2;
+          const nmC  = e.nivel_medio ? (_nmCoach[e.nivel_medio] || '#777') : null;
+          const nmBadge = nmC ? `<span style="font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;background:${nmC}22;border:1px solid ${nmC}55;color:${nmC}">${_nmLbl[e.nivel_medio]||e.nivel_medio}</span>` : '';
           return `<div class="flex items-center gap-2 ml-4 py-1">
+            ${nmBadge}
             <span class="text-sm text-white">${e.exerciseName}</span>
             <span class="text-xs px-2 py-0.5 rounded" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.25);color:#F4F4F0">${numSets}×${reps}</span>
             <span class="text-xs text-[#888]">RIR ${rir}</span>
@@ -5875,6 +6017,68 @@ El esfuerzo no es negociable.
         ${ci.sueno  ? `<div><div class="text-xs text-[#888]">SUEÑO</div><div class="text-xl font-bold">${ci.sueno}h</div></div>` : ''}
       </div>
     </div>`;
+
+    // ── Ehrenstein — Cuestionario Subjetivo + Semáforo integrado (Módulo E)
+    {
+      const subjScore   = ci.subj_score != null ? ci.subj_score : null;
+      const subjVulner  = ci.subj_vulner != null ? ci.subj_vulner : null;
+      const prevCi      = entries['ci_sem_' + (currentWeek - 1)] || {};
+      const prevScore   = prevCi.subj_score != null ? prevCi.subj_score : null;
+      const calibClient = _detailClientData && _detailClientData.calibracion_volumetrica;
+      const calibRes    = calibClient && calibClient.resultados;
+      const umbral      = (_detailClientData && _detailClientData.score_umbral_sobrealcance) != null ? _detailClientData.score_umbral_sobrealcance : 12;
+
+      // ICS promedio de la última sesión (reutiliza lastSets ya calculado)
+      let icsVals = [];
+      Object.values(lastSets).forEach(setArr => setArr.forEach(s => { if (s.ics) icsVals.push(parseFloat(s.ics)); }));
+      const avgICS = icsVals.length ? icsVals.reduce((a,b)=>a+b,0)/icsVals.length : null;
+
+      if (subjScore !== null) {
+        const scoreOk   = subjScore >= umbral;
+        const icsOk     = avgICS === null || avgICS >= 7;
+        const vuln      = subjVulner >= 4;
+        let semColor, semLabel, semIcon;
+        if (!scoreOk && !icsOk) { semColor='#FF4444'; semLabel='Rojo'; semIcon='🔴'; }
+        else if (!scoreOk || !icsOk || vuln) { semColor='#FF8844'; semLabel='Naranja'; semIcon='🟠'; }
+        else { semColor='#44BB88'; semLabel='Verde'; semIcon='🟢'; }
+
+        const items = [
+          ['Fatiga', ci.subj_fatiga], ['Sueño', ci.subj_sueno_cal],
+          ['Dolor', ci.subj_dolor_gral], ['Estrés', ci.subj_estres], ['Ánimo', ci.subj_animo]
+        ].filter(([,v]) => v != null);
+
+        html += `<div class="card p-3 mb-3" style="border-left:3px solid ${semColor};border-radius:0 8px 8px 0">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+            <div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">Monitoreo Subjetivo Ehrenstein — Sem ${currentWeek}</div>
+            <div style="font-size:13px;font-weight:800;color:${semColor}">${semIcon} ${semLabel}</div>
+          </div>
+          <div class="flex gap-4 flex-wrap mb-2">
+            <div>
+              <div class="text-xs text-[#888]">SCORE SUBJETIVO</div>
+              <div class="text-xl font-bold" style="color:${scoreOk?'#44BB88':'#FF4444'}">${subjScore}<span class="text-xs text-[#555] font-normal">/25</span></div>
+              ${prevScore !== null ? `<div class="text-xs" style="color:${subjScore >= prevScore?'#44BB88':'#FF8844'}">${subjScore >= prevScore?'▲':'▼'} ${Math.abs(subjScore - prevScore)} vs sem ant.</div>` : ''}
+            </div>
+            ${subjVulner !== null ? `<div>
+              <div class="text-xs text-[#888]">VULNERABILIDAD LESIÓN</div>
+              <div class="text-xl font-bold" style="color:${vuln?'#FF4444':'#888'}">${subjVulner}<span class="text-xs text-[#555] font-normal">/7</span></div>
+              ${vuln ? '<div class="text-xs font-bold" style="color:#FF4444">⚠️ Riesgo alto</div>' : ''}
+            </div>` : ''}
+            ${avgICS !== null ? `<div>
+              <div class="text-xs text-[#888]">ICS PROM. SESIÓN</div>
+              <div class="text-xl font-bold" style="color:${icsOk?'#44BB88':'#FF4444'}">${avgICS.toFixed(1)}</div>
+            </div>` : ''}
+            ${calibRes ? `<div>
+              <div class="text-xs text-[#888]">VME / VMR PERSONAL</div>
+              <div style="font-size:14px;font-weight:800"><span style="color:#f09030">${calibRes.VME_individual}</span><span style="color:#555;font-size:11px"> – </span><span style="color:#44BB88">${calibRes.VMR_individual}</span><span style="font-size:9px;color:#555"> s/sem</span></div>
+            </div>` : ''}
+          </div>
+          ${items.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;margin-bottom:6px">
+            ${items.map(([lbl,v])=>`<span style="padding:2px 7px;border-radius:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:${v>=3?'#888':'#FF8844'}">${lbl}: <strong>${v}</strong>/5</span>`).join('')}
+          </div>` : ''}
+          ${(!scoreOk || vuln) ? `<div style="padding:6px 10px;border-radius:6px;background:rgba(255,136,68,.08);border:1px solid rgba(255,136,68,.25);font-size:11px;color:#FF8844">⚠️ ${!scoreOk ? 'Score bajo umbral ('+umbral+')' : ''}${!scoreOk && vuln ? ' · ' : ''}${vuln ? 'Vulnerabilidad a lesiones elevada' : ''} — Considerar deload o −20% volumen.</div>` : ''}
+        </div>`;
+      }
+    }
 
     // ── Gráfica de tendencia de peso
     if (weightPts.length >= 2) html += _buildMiniTrendChart(weightPts, 'Tendencia de peso (kg)', '#C4FF00');
@@ -6726,13 +6930,17 @@ El esfuerzo no es negociable.
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio) {
     const techVal = (technique || 'straight').toLowerCase();
     const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
       .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
     const altsAttr = (alternativesJson || '[]').replace(/"/g,'&quot;');
     const ssVal = (ssGroup || '').trim();
     const ssBorder = ssVal ? 'border:1px solid rgba(204,102,170,.4)' : 'border:1px solid rgba(255,255,255,.08)';
+    const nmVal = (nivelMedio || '').toLowerCase();
+    const nmColors = { fundamental:'#FF6644', suplementario:'#FF9900', asistencia_mayor:'#CCAA00', asistencia_secundario:'#888' };
+    const nmOpts = [['','—'],['fundamental','Fundamental'],['suplementario','Suplementario'],['asistencia_mayor','Asist. Mayor'],['asistencia_secundario','Asist. Sec.']]
+      .map(([v,l]) => `<option value="${v}"${v===nmVal?' selected':''}>${l}</option>`).join('');
     return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}"
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
@@ -6759,7 +6967,7 @@ El esfuerzo no es negociable.
           <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
-      <div class="grid gap-2 mb-2" style="grid-template-columns:80px 1fr 2fr">
+      <div class="grid gap-2 mb-2" style="grid-template-columns:60px 1fr 1fr 2fr">
         <div>
           <div class="text-[10px] uppercase tracking-wide mb-1" style="color:#cc66aa">Biserie</div>
           <input class="input-field w-full text-xs py-1 text-center font-bold" placeholder="A / B…" maxlength="4" data-field="supersetGroup" value="${ssVal}" oninput="markEditorDirty&&markEditorDirty();this.closest('.exrow-item').style.border=this.value.trim()?'1px solid rgba(204,102,170,.4)':'1px solid rgba(255,255,255,.08)'">
@@ -6769,7 +6977,11 @@ El esfuerzo no es negociable.
           <select class="input-field w-full text-xs py-1" data-field="technique" onchange="markEditorDirty&&markEditorDirty()">${techOpts}</select>
         </div>
         <div>
-          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Nota técnica (drop %, mini-clusters, tempo, pausa…)</div>
+          <div class="text-[10px] uppercase tracking-wide mb-1" style="color:${nmColors[nmVal]||'#f09030'}">Nivel medio</div>
+          <select class="input-field w-full text-xs py-1" data-field="nivel_medio" onchange="markEditorDirty&&markEditorDirty();this.previousElementSibling.style.color=(this.value?{'fundamental':'#FF6644','suplementario':'#FF9900','asistencia_mayor':'#CCAA00','asistencia_secundario':'#888'}[this.value]||'#f09030':'#f09030')">${nmOpts}</select>
+        </div>
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Nota técnica (drop %, mini-clusters, tempo…)</div>
           <input class="input-field w-full text-xs py-1" placeholder="Ej: Tras RIR0 bajar 30% y continuar al fallo" data-field="techniqueNote" value="${(techniqueNote||'').replace(/"/g,'&quot;')}" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
@@ -6827,7 +7039,8 @@ El esfuerzo no es negociable.
         var techNote = e.techniqueNote || '';
         var altsJson = JSON.stringify(e.alternatives || []);
         var ssGrp = e.supersetGroup || '';
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp);
+        var nivelMedio = e.nivel_medio || '';
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio);
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -6855,7 +7068,7 @@ El esfuerzo no es negociable.
     const div = document.createElement('div');
     div.outerHTML; // placeholder
     const tmp = document.createElement('template');
-    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '');
+    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '', '');
     list.appendChild(tmp.content.firstElementChild);
   }
 
@@ -6928,6 +7141,7 @@ El esfuerzo no es negociable.
         const technique = (row.querySelector('[data-field="technique"]')?.value || 'straight').toLowerCase();
         const techniqueNote = row.querySelector('[data-field="techniqueNote"]')?.value.trim() || '';
         const supersetGroup = row.querySelector('[data-field="supersetGroup"]')?.value.trim() || '';
+        const nivelMedio = row.querySelector('[data-field="nivel_medio"]')?.value || '';
         let alternatives = [];
         try { alternatives = JSON.parse(row.dataset.alternatives || '[]'); } catch(e) {}
         if (name) exercises.push({
@@ -6937,6 +7151,7 @@ El esfuerzo no es negociable.
           technique,
           techniqueNote,
           supersetGroup,
+          ...(nivelMedio ? { nivel_medio: nivelMedio } : {}),
           sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90, setNote: '', drop: false, tempo: '' }))
         });
       });
