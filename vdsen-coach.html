@@ -3396,6 +3396,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (obj.carb_cycling_y3t) planObj.carb_cycling_y3t = obj.carb_cycling_y3t;
     if (obj.rirByWeek) planObj.rirByWeek = obj.rirByWeek;
     if (obj.reverse_diet) planObj.reverse_diet = obj.reverse_diet;
+    if (obj.distribucion_zonas_carga) planObj.distribucion_zonas_carga = obj.distribucion_zonas_carga;
     statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${planObj.weeks} semanas, ${days.length} día(s)</span>`;
     showParsedPreview(planObj);
     window._importedPlan = planObj;
@@ -3712,7 +3713,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
         technique: String(ex.technique || 'straight').toLowerCase().trim(),
         techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
+        coachNote: String(ex.coachNote || '').trim(),
         supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
+        nivel_medio: ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'].includes(ex.nivel_medio) ? ex.nivel_medio : null,
+        variacion_vertical: ex.variacion_vertical && typeof ex.variacion_vertical === 'object' ? {
+          semana_inicio: parseInt(ex.variacion_vertical.semana_inicio) || 1,
+          semana_variacion: ex.variacion_vertical.semana_variacion != null ? parseInt(ex.variacion_vertical.semana_variacion) : null,
+          ejercicio_sustituto: ex.variacion_vertical.ejercicio_sustituto ? String(ex.variacion_vertical.ejercicio_sustituto).trim() : null,
+          nivel_sustituto: ex.variacion_vertical.nivel_sustituto || null
+        } : null,
         sets: Array.isArray(ex.sets) && ex.sets.length ? ex.sets.map((s, si) => ({
           setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
           repsTarget: parseInt(s.repsTarget) || 8,
@@ -3726,7 +3735,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
     })).filter(d => d.exercises.length > 0);
     if (!days.length) return null;
-    return { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
+    const _norm = { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
+    if (obj.distribucion_zonas_carga) _norm.distribucion_zonas_carga = obj.distribucion_zonas_carga;
+    return _norm;
   }
 
   function _nutritionJsonToPlan(obj) {
@@ -5836,8 +5847,12 @@ El esfuerzo no es negociable.
           const rir  = sets[0] ? (sets[0].rirTarget  || 2) : 2;
           const nmC  = e.nivel_medio ? (_nmCoach[e.nivel_medio] || '#777') : null;
           const nmBadge = nmC ? `<span style="font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;background:${nmC}22;border:1px solid ${nmC}55;color:${nmC}">${_nmLbl[e.nivel_medio]||e.nivel_medio}</span>` : '';
+          const _vv = e.variacion_vertical;
+          const vvBadge = _vv && _vv.semana_variacion != null
+            ? `<span title="${_vv.ejercicio_sustituto||'sustituto'} desde sem ${_vv.semana_variacion}${_vv.nivel_sustituto?' ('+_vv.nivel_sustituto+')':''}" style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(100,150,255,.12);border:1px solid rgba(100,150,255,.3);color:#7aabff;cursor:default">↻ S${_vv.semana_variacion}</span>`
+            : '';
           return `<div class="flex items-center gap-2 ml-4 py-1">
-            ${nmBadge}
+            ${nmBadge}${vvBadge}
             <span class="text-sm text-white">${e.exerciseName}</span>
             <span class="text-xs px-2 py-0.5 rounded" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.25);color:#F4F4F0">${numSets}×${reps}</span>
             <span class="text-xs text-[#888]">RIR ${rir}</span>
@@ -5846,6 +5861,17 @@ El esfuerzo no es negociable.
         return `<div class="mb-3"><div class="font-medium text-[#F4F4F0] text-sm mb-1">${d.label}</div>${exList}</div>`;
       }).join("");
       const planWeeksNow = p.weeks || 1;
+      const _dzc = p.distribucion_zonas_carga;
+      const _zonaLabels = ['P','MP','M','ML','L'];
+      const _zonaColors = {P:'#2255bb',MP:'#2277cc',M:'#227799',ML:'#228866',L:'#777700'};
+      const zonaHtml = _dzc && _dzc.por_grupo && Object.keys(_dzc.por_grupo).length ? `
+        <div style="margin-top:8px;margin-bottom:8px;border:1px solid rgba(244,244,240,.12);border-radius:6px;padding:8px 10px">
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Zonas de Carga — Ehrenstein</div>
+          <div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px;width:100%">
+            <tr><th style="color:#555;padding:2px 8px 2px 0;text-align:left;font-weight:600;white-space:nowrap">Grupo</th>${_zonaLabels.map(z=>`<th style="color:${_zonaColors[z]};padding:2px 6px;text-align:center;font-weight:700">${z}</th>`).join('')}</tr>
+            ${Object.entries(_dzc.por_grupo).map(([grp,vals])=>`<tr><td style="color:#888;padding:2px 8px 2px 0;white-space:nowrap">${grp}</td>${_zonaLabels.map(z=>{const v=vals[z]||0;return `<td style="text-align:center;padding:2px 6px;color:${v?_zonaColors[z]:'#333'};font-weight:${v?700:400}">${v?v+'%':'—'}</td>`;}).join('')}</tr>`).join('')}
+          </table></div>
+        </div>` : '';
       planViewHtml = `
         <div class="flex items-center gap-2 mb-3 flex-wrap" style="background:rgba(244,244,240,.06);border:1px solid rgba(244,244,240,.25);border-radius:8px;padding:8px 12px">
           <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Duración del mesociclo</span>
@@ -5861,7 +5887,7 @@ El esfuerzo no es negociable.
           </button>
         </div>
         <p class="text-sm text-[#888] mb-2">${(p.days||[]).length} días/semana${p.rirByWeek ? ' · RIR scheme: ' + Object.entries(p.rirByWeek).map(([w,r])=>`S${w}=${r}`).join(' · ') : ''}</p>
-        <div class="mb-3">${dayList}</div>`;
+        <div class="mb-3">${dayList}</div>${zonaHtml}`;
       planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
       planActionsHtml = `
         <button onclick="toggleTrainingEditor()" class="text-[#F4F4F0] text-xs underline mr-3">✏️ Editar</button>
@@ -7088,11 +7114,12 @@ El esfuerzo no es negociable.
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson) {
     const techVal = (technique || 'straight').toLowerCase();
     const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
       .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
     const altsAttr = (alternativesJson || '[]').replace(/"/g,'&quot;');
+    const vvAttr = (variacionVerticalJson || 'null').replace(/"/g,'&quot;');
     const ssVal = (ssGroup || '').trim();
     const ssBorder = ssVal ? 'border:1px solid rgba(204,102,170,.4)' : 'border:1px solid rgba(255,255,255,.08)';
     const nmVal = (nivelMedio || '').toLowerCase();
@@ -7102,7 +7129,7 @@ El esfuerzo no es negociable.
     return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}"
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
-      data-alternatives="${altsAttr}"
+      data-alternatives="${altsAttr}" data-variacion-vertical="${vvAttr}"
       style="background:rgba(255,255,255,.03);${ssBorder};transition:opacity .15s">
       <div class="flex gap-2 items-center mb-2">
         <span class="text-[#555] select-none text-base cursor-grab px-0.5" title="Arrastrar para reordenar">⠿</span>
@@ -7198,7 +7225,8 @@ El esfuerzo no es negociable.
         var altsJson = JSON.stringify(e.alternatives || []);
         var ssGrp = e.supersetGroup || '';
         var nivelMedio = e.nivel_medio || '';
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio);
+        var vvJson = e.variacion_vertical ? JSON.stringify(e.variacion_vertical) : 'null';
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson);
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -7226,7 +7254,7 @@ El esfuerzo no es negociable.
     const div = document.createElement('div');
     div.outerHTML; // placeholder
     const tmp = document.createElement('template');
-    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '', '');
+    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '', '', 'null');
     list.appendChild(tmp.content.firstElementChild);
   }
 
@@ -7302,6 +7330,8 @@ El esfuerzo no es negociable.
         const nivelMedio = row.querySelector('[data-field="nivel_medio"]')?.value || '';
         let alternatives = [];
         try { alternatives = JSON.parse(row.dataset.alternatives || '[]'); } catch(e) {}
+        let variacionVertical = null;
+        try { variacionVertical = JSON.parse(row.dataset.variacionVertical || 'null'); } catch(e) {}
         if (name) exercises.push({
           exerciseName: name,
           alternatives,
@@ -7310,6 +7340,7 @@ El esfuerzo no es negociable.
           techniqueNote,
           supersetGroup,
           ...(nivelMedio ? { nivel_medio: nivelMedio } : {}),
+          ...(variacionVertical ? { variacion_vertical: variacionVertical } : {}),
           sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90, setNote: '', drop: false, tempo: '' }))
         });
       });
@@ -7766,6 +7797,14 @@ El esfuerzo no es negociable.
           technique: String(ex.technique || 'straight').toLowerCase().trim(),
           techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
           coachNote: String(ex.coachNote || '').trim(),
+          supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
+          nivel_medio: ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'].includes(ex.nivel_medio) ? ex.nivel_medio : null,
+          variacion_vertical: ex.variacion_vertical && typeof ex.variacion_vertical === 'object' ? {
+            semana_inicio: parseInt(ex.variacion_vertical.semana_inicio) || 1,
+            semana_variacion: ex.variacion_vertical.semana_variacion != null ? parseInt(ex.variacion_vertical.semana_variacion) : null,
+            ejercicio_sustituto: ex.variacion_vertical.ejercicio_sustituto ? String(ex.variacion_vertical.ejercicio_sustituto).trim() : null,
+            nivel_sustituto: ex.variacion_vertical.nivel_sustituto || null
+          } : null,
           sets: Array.isArray(ex.sets) && ex.sets.length > 0 ? ex.sets.map((s, si) => ({
             setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
             repsTarget: parseInt(s.repsTarget) || 8,
@@ -7783,14 +7822,16 @@ El esfuerzo no es negociable.
         return;
       }
       try {
-        await updateDoc(doc(db, "plans", planId), {
+        const _planUpd = {
           days,
           daysPerWeek: days.length,
           weeks: obj.weeks || cur.weeks || 6,
           rirByWeek: obj.rirByWeek || cur.rirByWeek || null,
           coachId: currentCoach.uid,
           updatedAt: new Date().toISOString()
-        });
+        };
+        if (obj.distribucion_zonas_carga) _planUpd.distribucion_zonas_carga = obj.distribucion_zonas_carga;
+        await updateDoc(doc(db, "plans", planId), _planUpd);
         // Auto-catalogar ejercicios nuevos (igual que importación)
         _autoAddExercisesToCatalog(days);
         st.style.color = '#44BB88';
