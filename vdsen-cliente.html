@@ -3437,7 +3437,10 @@ function _setsRepsLabel(sets) {
 // Detecta un ejercicio Y3T: technique === 'y3t', setNote con S1/S2, o patrón numérico
 // (≥3 non-SST sets donde el primer set ≤6 reps y el último ≥8 reps).
 function isY3TExercise(ej) {
-  if ((ej.technique || '').toLowerCase() === 'y3t') return true;
+  var tech = (ej.technique || '').toLowerCase();
+  if (tech === 'y3t') return true;
+  // Detectar por techniqueNote o coachNote que mencione Y3T
+  if ((ej.techniqueNote || ej.coachNote || '').toUpperCase().indexOf('Y3T') !== -1) return true;
   var sets = ej.sets || [];
   // Detectar por setNote (S1 · FUERZA / S2 · HIPERTROFIA) aunque no haya technique explícito
   if (sets.some(function(s){ return s.setNote && (s.setNote.indexOf('S1') !== -1 || s.setNote.indexOf('S2') !== -1); })) return true;
@@ -3487,7 +3490,10 @@ function getEffectiveSets(ej, week, totalWeeks) {
     var s1 = hasNotes
       ? sets.filter(function(s){ return !_isStrLiteral(s.repsTarget) && (s.setNote||'').indexOf('S1') !== -1; })
       : sets.filter(function(s){ return !_isStrLiteral(s.repsTarget) && s.repsTarget <= 6; });
-    return s1.length ? s1 : sets.filter(function(s){ return !_isStrLiteral(s.repsTarget); });
+    if (s1.length) return s1;
+    // Fallback: sin sets ≤6 reps ni notas S1 → usar primera mitad (redondeando arriba, mín 1)
+    var nonSstAll = sets.filter(function(s){ return !_isStrLiteral(s.repsTarget); });
+    return nonSstAll.slice(0, Math.max(1, Math.ceil(nonSstAll.length / 2)));
   }
   if (phase === 's2') {
     var s12 = hasNotes
