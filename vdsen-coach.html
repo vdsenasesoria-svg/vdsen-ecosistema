@@ -5977,10 +5977,10 @@ El esfuerzo no es negociable.
         const classified = _classifyBlocks(blocks);
         planObj = classified.training;
         if (classified.nutrition) {
-          try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: classified.nutrition }); } catch(_){}
+          try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: _nutritionJsonToPlan(classified.nutrition), nutritionRaw: classified.nutrition }); } catch(_){}
         }
         if (classified.supplements) {
-          try { await updateDoc(doc(db, 'clients', clientId), { supplementPlan: classified.supplements }); } catch(_){}
+          try { const sp = _supplementsJsonToPlan(classified.supplements); if (sp) await updateDoc(doc(db, 'clients', clientId), { supplementPlan: sp, supplementsRaw: classified.supplements }); } catch(_){}
         }
       } else {
         planObj = parsePlanText(ta.value);
