@@ -3681,8 +3681,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   function _classifyBlocks(blocks) {
     // Detección prioritaria: vdsen-plan-v2 (JSON unificado)
+    // Detecta tanto por campo "schema" como por estructura (nutricion + entrenamiento/suplementacion)
     for (const b of blocks) {
-      if (b && b.schema === 'vdsen-plan-v2') {
+      const isV2BySchema = b && b.schema === 'vdsen-plan-v2';
+      const isV2ByShape  = b && b.nutricion && typeof b.nutricion === 'object'
+        && (Array.isArray(b.nutricion.comidas) || b.nutricion.calorias != null)
+        && (b.entrenamiento || b.suplementacion || b.farmacologia);
+      if (isV2BySchema || isV2ByShape) {
         return {
           training:    b.entrenamiento  || null,
           nutrition:   b.nutricion      || null,
@@ -3916,7 +3921,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const btn = document.getElementById('motorPasteBtn');
     if (btn) { btn.disabled = true; btn._t = btn.textContent; btn.textContent = '⏳ Cargando…'; }
     try {
-      const { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(raw));
+      const _blocks = _extractJsonBlocks(raw);
+      if (!_blocks.length) { try { _blocks.push(JSON.parse(raw.trim())); } catch(e) {} }
+      const { training, nutrition, supplements, pharma } = _classifyBlocks(_blocks);
       if (!training && !nutrition && !supplements && !pharma)
         throw new Error('No encontré bloques JSON válidos (entrenamiento/nutrición/suplementación/farmacología) en el texto pegado.');
       const saved = [];
