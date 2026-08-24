@@ -3655,6 +3655,212 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return _motorPromptCache;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  VDSEN DECISION ENGINE — Decision Engine + Validator + Longitudinal Engine
+  //  Prioridades 2, 3, 4, 7
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // buildPrescriptionContext — Lee plan anterior, logs y engine_state del ciclo
+  // para informar la siguiente generación con datos reales del cliente. (P2 + P7)
+  async function buildPrescriptionContext(clientId) {
+    try {
+      const ctx = {
+        hasPreviousPlan: false,
+        previousPlan: null,
+        engineState: null,
+        progressionSummary: [],
+        checkinSummary: null,
+        clientFlags: { stalled: [], progressing: [], articularIssues: [] }
+      };
+
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      const clientData = clientSnap.exists() ? clientSnap.data() : {};
+      const activePlanId = clientData.activePlanId;
+
+      if (activePlanId) {
+        const planSnap = await getDoc(doc(db, 'plans', activePlanId));
+        if (planSnap.exists()) {
+          const p = planSnap.data();
+          ctx.hasPreviousPlan = true;
+          ctx.previousPlan = {
+            weeks: p.weeks,
+            daysPerWeek: p.daysPerWeek,
+            dayLabels: (p.days || []).map(d => d.label),
+            exercises: (p.days || []).flatMap(d => (d.exercises || []).map(e => e.exerciseName)).filter(Boolean)
+          };
+        }
+      }
+
+      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      if (logsSnap.exists()) {
+        const entries = logsSnap.data().entries || {};
+
+        if (entries.engine_state) ctx.engineState = entries.engine_state;
+
+        const progrecKeys = Object.keys(entries).filter(k => k.startsWith('progrec_')).sort();
+        const progByExercise = {};
+        progrecKeys.forEach(k => {
+          const pg = entries[k];
+          if (!pg || !Array.isArray(pg.recommendations)) return;
+          pg.recommendations.forEach(r => {
+            if (!r.exerciseName) return;
+            if (!progByExercise[r.exerciseName]) progByExercise[r.exerciseName] = [];
+            progByExercise[r.exerciseName].push({ week: pg.weekNum, action: r.action, load: r.newLoad });
+          });
+        });
+        Object.entries(progByExercise).forEach(([name, history]) => {
+          const lastAction = history[history.length - 1]?.action;
+          const lastLoad   = history[history.length - 1]?.load;
+          const stalled    = history.length >= 2 && history.slice(-2).every(h => h.action === 'maintain' || h.action === 'freeze_load');
+          if (stalled) ctx.clientFlags.stalled.push({ name, lastLoad });
+          else if (lastAction === 'increase_load' || lastAction === 'add_sets') ctx.clientFlags.progressing.push({ name, lastLoad });
+          ctx.progressionSummary.push({ name, lastAction, lastLoad, weeks: history.length });
+        });
+
+        const ciKeys = Object.keys(entries).filter(k => k.startsWith('ci_sem_')).sort();
+        if (ciKeys.length) {
+          const cis = ciKeys.map(k => entries[k]).filter(Boolean);
+          const avg = arr => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null;
+          const hrv  = cis.map(c => parseFloat(c.hrv)).filter(v => !isNaN(v) && v > 0);
+          const who5 = cis.map(c => parseFloat(c.who5)).filter(v => !isNaN(v) && v > 0);
+          const peso = cis.map(c => parseFloat(c.peso)).filter(v => !isNaN(v) && v > 0);
+          ctx.checkinSummary = {
+            weeksTracked: cis.length,
+            avgHRV: avg(hrv),
+            avgWHO5: avg(who5),
+            weightRange: peso.length ? { min: Math.min(...peso).toFixed(1), max: Math.max(...peso).toFixed(1), last: peso[peso.length - 1]?.toFixed(1) } : null
+          };
+        }
+
+        const postKeys = Object.keys(entries).filter(k => k.startsWith('postsession_'));
+        postKeys.forEach(k => {
+          const ps = entries[k];
+          if (ps?.articularPain?.present && ps.articularPain.pattern) {
+            const pat = ps.articularPain.pattern;
+            if (!ctx.clientFlags.articularIssues.includes(pat)) ctx.clientFlags.articularIssues.push(pat);
+          }
+        });
+      }
+
+      return ctx;
+    } catch (e) {
+      console.warn('buildPrescriptionContext error:', e.message);
+      return null;
+    }
+  }
+
+  // _prescriptionContextToText — Serializa el contexto longitudinal como texto
+  // inyectable en el prompt de Claude. Solo incluye secciones con datos reales.
+  function _prescriptionContextToText(ctx) {
+    if (!ctx) return '';
+    const lines = [];
+    lines.push('\n--- CONTEXTO LONGITUDINAL VDSEN (usa esto para personalizar el nuevo plan) ---');
+
+    if (ctx.hasPreviousPlan && ctx.previousPlan) {
+      const p = ctx.previousPlan;
+      lines.push('\nPLAN ANTERIOR: ' + (p.weeks || '?') + ' semanas · ' + (p.daysPerWeek || '?') + ' días/sem');
+      if (p.dayLabels?.length) lines.push('Días: ' + p.dayLabels.join(', '));
+      if (p.exercises?.length) lines.push('Ejercicios previos: ' + p.exercises.slice(0, 14).join(', ') + (p.exercises.length > 14 ? '…' : ''));
+    }
+
+    if (ctx.engineState) {
+      const es = ctx.engineState;
+      lines.push('\nESTADO MOTOR (sem ' + (es.weekNum || '?') + '/' + (es.totalWeeks || '?') + '): acción global=' + (es.globalAction || '?'));
+      if (es.deloadTriggered) lines.push('  ⚠ Deload reactivo activado: ' + (es.deloadTriggers || []).join(', '));
+    }
+
+    if (ctx.clientFlags.progressing.length) {
+      lines.push('\nEJERCICIOS PROGRESANDO: ' + ctx.clientFlags.progressing.map(e => e.name + (e.lastLoad ? ' @' + e.lastLoad : '')).join(', '));
+    }
+    if (ctx.clientFlags.stalled.length) {
+      lines.push('EJERCICIOS ESTANCADOS 2+ sem: ' + ctx.clientFlags.stalled.map(e => e.name).join(', ') + ' → considera variante o cambio de estímulo');
+    }
+    if (ctx.clientFlags.articularIssues.length) {
+      lines.push('⚠ PATRONES CON DOLOR ARTICULAR PREVIO: ' + ctx.clientFlags.articularIssues.join(', ') + ' → evitar o sustituir');
+    }
+
+    if (ctx.checkinSummary) {
+      const ci = ctx.checkinSummary;
+      lines.push('\nCHECK-INS (' + ci.weeksTracked + ' sem):');
+      if (ci.avgHRV) lines.push('  HRV promedio: ' + ci.avgHRV + ' ms');
+      if (ci.avgWHO5) lines.push('  Bienestar WHO-5 promedio: ' + ci.avgWHO5 + '/100');
+      if (ci.weightRange?.last) lines.push('  Peso actual: ' + ci.weightRange.last + ' kg (rango ciclo: ' + ci.weightRange.min + '–' + ci.weightRange.max + ' kg)');
+    }
+
+    lines.push('--- FIN CONTEXTO LONGITUDINAL ---\n');
+    return lines.join('\n');
+  }
+
+  // validatePlan — Valida estructura del plan generado ANTES de guardar en
+  // Firestore. Detecta errores que romperían la app cliente. (P3)
+  function validatePlan({ training, nutrition, supplements }) {
+    const errors = [];
+    const warnings = [];
+
+    if (training) {
+      if (!Array.isArray(training.days) || training.days.length === 0) {
+        errors.push('entrenamiento.days vacío o no es array');
+      } else {
+        training.days.forEach((day, di) => {
+          if (!Array.isArray(day.exercises) || day.exercises.length === 0) {
+            errors.push('Día ' + (di + 1) + ' (' + (day.label || '?') + ') sin ejercicios');
+          } else {
+            day.exercises.forEach((ex, ei) => {
+              if (!ex.exerciseName || ex.exerciseName.trim().length < 2)
+                warnings.push('Día ' + (di + 1) + ' ej ' + (ei + 1) + ': exerciseName vacío');
+              if (!Array.isArray(ex.sets) || ex.sets.length === 0)
+                errors.push('Día ' + (di + 1) + ' / ' + (ex.exerciseName || 'Ej' + (ei + 1)) + ': sin sets');
+            });
+          }
+        });
+      }
+      if (!training.weeks || isNaN(parseInt(training.weeks)))
+        warnings.push('entrenamiento.weeks faltante → se usará 6');
+    }
+
+    if (nutrition) {
+      ['calorias', 'proteina', 'carbos', 'grasas'].forEach(m => {
+        if (nutrition[m] == null || isNaN(parseFloat(nutrition[m])))
+          warnings.push('nutricion.' + m + ' faltante o no numérico');
+      });
+    }
+
+    return { valid: errors.length === 0, errors, warnings };
+  }
+
+  // repairPlan — Repara campos faltantes/nulos en el plan antes de guardar.
+  // Solo toca campos estructuralmente nulos; nunca altera semántica clínica. (P4)
+  function repairPlan({ training, nutrition, supplements, pharma }, _errors) {
+    let changed = false;
+
+    if (training && Array.isArray(training.days)) {
+      if (!training.weeks) { training.weeks = 6; changed = true; }
+      if (!training.daysPerWeek) { training.daysPerWeek = training.days.length; changed = true; }
+
+      training.days.forEach((day, di) => {
+        if (day.dayIndex == null) { day.dayIndex = di; changed = true; }
+        if (!day.label) { day.label = 'Día ' + (di + 1); changed = true; }
+        if (!Array.isArray(day.exercises)) { day.exercises = []; changed = true; }
+        day.exercises.forEach((ex, ei) => {
+          if (!ex.exerciseName || ex.exerciseName.trim().length < 2) { ex.exerciseName = 'Ejercicio ' + (ei + 1); changed = true; }
+          if (!Array.isArray(ex.sets)) { ex.sets = []; changed = true; }
+          ex.sets.forEach((s, si) => {
+            if (s.setIndex == null) { s.setIndex = si; changed = true; }
+            if (s.load == null) { s.load = 0; changed = true; }
+            if (s.restSeconds == null) { s.restSeconds = 90; changed = true; }
+            if (!s.repsTarget) { s.repsTarget = 8; changed = true; }
+            if (s.rirTarget == null) { s.rirTarget = 2; changed = true; }
+          });
+        });
+      });
+    }
+
+    const reValidation = validatePlan({ training, nutrition, supplements });
+    return { repaired: { training, nutrition, supplements, pharma }, changed, remaining: reValidation.errors };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+
   function _extractJsonBlocks(text) {
     const blocks = [];
     const re = /```(?:json)?\s*([\s\S]*?)```/g;
@@ -3841,6 +4047,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const fichaTxt = (typeof intakeFormat === 'function') ? intakeFormat(ficha.data, 'md') : JSON.stringify(ficha.data, null, 2);
       const isPED = String(ficha.data.perfil || '').toLowerCase() === 'ped';
 
+      // P2 + P7: Decision Engine — leer contexto longitudinal antes de llamar a Claude
+      setStatus('<span style="color:var(--text-muted)">Leyendo historial del cliente…</span>');
+      const prescCtx = await buildPrescriptionContext(clientId);
+      const prescCtxTxt = _prescriptionContextToText(prescCtx);
+
       setStatus('<span style="color:var(--text-muted)">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();
 
@@ -3855,7 +4066,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
-        '', 'FICHA DEL CLIENTE:', fichaTxt
+        prescCtxTxt,
+        'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
       const body = {
         model: 'claude-sonnet-5',
@@ -3873,10 +4085,29 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const text = Array.isArray(data.content) ? data.content.filter(c => c.type === 'text').map(c => c.text).join('\n') : '';
       if (!text) throw new Error('Respuesta vacía del modelo');
 
-      setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
-      const { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(text));
+      setStatus('<span style="color:var(--text-muted)">Validando plan…</span>');
+      let { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(text));
       if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
 
+      // P3: Validator — verificar estructura antes de Firestore
+      const validation = validatePlan({ training, nutrition, supplements });
+      if (!validation.valid) {
+        // P4: Controlled repair — reparar campos faltantes/nulos
+        const repairResult = repairPlan({ training, nutrition, supplements, pharma }, validation.errors);
+        if (repairResult.remaining.length) {
+          throw new Error('Plan con errores estructurales irrecuperables: ' + repairResult.remaining.join('; '));
+        }
+        if (repairResult.changed) {
+          training    = repairResult.repaired.training;
+          nutrition   = repairResult.repaired.nutrition;
+          supplements = repairResult.repaired.supplements;
+          pharma      = repairResult.repaired.pharma;
+          console.info('[VDSEN] repairPlan aplicado:', validation.errors);
+        }
+      }
+      if (validation.warnings.length) console.info('[VDSEN] validatePlan warnings:', validation.warnings);
+
+      setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
       if (planObj) {
@@ -5747,6 +5978,11 @@ El esfuerzo no es negociable.
       const fichaTxt = (typeof intakeFormat === 'function') ? intakeFormat(ficha.data, 'md') : JSON.stringify(ficha.data, null, 2);
       const isPED = String(ficha.data.perfil || '').toLowerCase() === 'ped';
 
+      // P2 + P7: Decision Engine — leer contexto longitudinal antes de llamar a Claude
+      setStatus('<span style="color:#888">Leyendo historial del cliente…</span>');
+      const prescCtx = await buildPrescriptionContext(clientId);
+      const prescCtxTxt = _prescriptionContextToText(prescCtx);
+
       setStatus('<span style="color:#888">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();
 
@@ -5761,7 +5997,8 @@ El esfuerzo no es negociable.
         'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
-        '', 'FICHA DEL CLIENTE:', fichaTxt
+        prescCtxTxt,
+        'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
       const reqBody = {
         model: 'claude-sonnet-5',
@@ -5779,9 +6016,27 @@ El esfuerzo no es negociable.
       const text = Array.isArray(respData.content) ? respData.content.filter(c => c.type === 'text').map(c => c.text).join('\n') : '';
       if (!text) throw new Error('Respuesta vacía del modelo');
 
-      setStatus('<span style="color:#888">Procesando y guardando…</span>');
-      const { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(text));
+      setStatus('<span style="color:#888">Validando plan…</span>');
+      let { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(text));
       if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
+
+      // P3: Validator — verificar estructura antes de Firestore
+      const validation = validatePlan({ training, nutrition, supplements });
+      if (!validation.valid) {
+        // P4: Controlled repair — reparar campos faltantes/nulos
+        const repairResult = repairPlan({ training, nutrition, supplements, pharma }, validation.errors);
+        if (repairResult.remaining.length) {
+          throw new Error('Plan con errores estructurales irrecuperables: ' + repairResult.remaining.join('; '));
+        }
+        if (repairResult.changed) {
+          training    = repairResult.repaired.training;
+          nutrition   = repairResult.repaired.nutrition;
+          supplements = repairResult.repaired.supplements;
+          pharma      = repairResult.repaired.pharma;
+          console.info('[VDSEN] repairPlan aplicado:', validation.errors);
+        }
+      }
+      if (validation.warnings.length) console.info('[VDSEN] validatePlan warnings:', validation.warnings);
 
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
