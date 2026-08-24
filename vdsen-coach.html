@@ -3656,92 +3656,281 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  VDSEN DECISION ENGINE — Decision Engine + Validator + Longitudinal Engine
-  //  Prioridades 2, 3, 4, 7
+  //  VDSEN DECISION ENGINE v2 — P9 Hardening
+  //  Prioridades 2, 3, 4, 7 + hardening P9.1–P9.8
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // buildPrescriptionContext — Lee plan anterior, logs y engine_state del ciclo
-  // para informar la siguiente generación con datos reales del cliente. (P2 + P7)
+  var VDSEN_ENGINE_VERSION = '2.0.0';
+
+  // ─── Motor pattern → muscle groups map ───────────────────────────────────
+  var _MOTOR_MUSCLES = {
+    'press_horizontal': { direct: ['pectoral','deltoides_anterior'],         indirect: ['triceps'] },
+    'press_vertical':   { direct: ['deltoides','triceps'],                   indirect: ['trapecio_superior','pectoral_clavicular'] },
+    'pull_horizontal':  { direct: ['dorsales','romboides','trapecio_medio'], indirect: ['biceps','deltoides_posterior'] },
+    'pull_vertical':    { direct: ['dorsales','biceps'],                     indirect: ['teres_mayor','romboides'] },
+    'hip_hinge':        { direct: ['isquiotibiales','gluteos'],              indirect: ['erectores','aductores'] },
+    'rdl':              { direct: ['isquiotibiales','gluteos'],              indirect: ['erectores'] },
+    'squat':            { direct: ['cuadriceps','gluteos'],                  indirect: ['isquiotibiales','erectores'] },
+    'lunge':            { direct: ['cuadriceps','gluteos'],                  indirect: ['isquiotibiales','aductores'] },
+    'curl':             { direct: ['biceps','braquial'],                     indirect: ['braquiorradial'] },
+    'extension':        { direct: ['triceps'],                               indirect: ['deltoides_posterior'] },
+    'fly':              { direct: ['pectoral'],                              indirect: ['deltoides_anterior'] },
+    'lateral_raise':    { direct: ['deltoides_lateral'],                     indirect: ['trapecio_superior'] },
+    'row':              { direct: ['dorsales','romboides'],                  indirect: ['biceps','deltoides_posterior'] },
+    'abdominal':        { direct: ['abdominales','oblicuos'],                indirect: [] },
+    'carry':            { direct: ['trapecio_superior'],                     indirect: ['deltoides'] },
+    'glute_isolation':  { direct: ['gluteos'],                               indirect: ['aductores'] },
+    'calf':             { direct: ['gastrocnemio','soleo'],                  indirect: [] },
+    'face_pull':        { direct: ['deltoides_posterior','rotadores_ext'],   indirect: ['trapecio_medio','romboides'] }
+  };
+
+  // Pain pattern → motor patterns to avoid (P9.4)
+  var _PAIN_PATTERN_AVOIDANCE = {
+    'rodilla': ['squat','lunge'],
+    'hombro':  ['press_vertical','press_horizontal','lateral_raise','fly'],
+    'lumbar':  ['hip_hinge','squat'],
+    'codo':    ['curl','extension'],
+    'cuello':  ['press_vertical','carry'],
+    'cadera':  ['squat','lunge','hip_hinge'],
+    'tobillo': ['squat','lunge','calf']
+  };
+
+  // ─── auditFractionalVolume (P9.3) ────────────────────────────────────────
+  // direct ×1, indirect significant ×0.5, stabilizer ×0
+  // exercisesCatalog: [{name, motorPattern}] from exercises Firestore (optional)
+  function auditFractionalVolume(training, exercisesCatalog) {
+    var muscleVolume = {};
+    var unclassified = [];
+    var warnings = [];
+    var catalog = exercisesCatalog || [];
+
+    if (!training || !Array.isArray(training.days)) {
+      return { muscleVolume: {}, unclassified: [], warnings: [] };
+    }
+
+    training.days.forEach(function(day) {
+      (day.exercises || []).forEach(function(ex) {
+        var name = (ex.exerciseName || '').trim();
+        var entry = catalog.find(function(c) { return (c.name||'').toLowerCase() === name.toLowerCase(); });
+        var pattern = entry ? entry.motorPattern : null;
+        if (!pattern) {
+          var nl = name.toLowerCase();
+          if (/sentadilla|squat/.test(nl))                             pattern = 'squat';
+          else if (/\brdl\b|rumano/.test(nl))                         pattern = 'rdl';
+          else if (/peso muerto/.test(nl))                             pattern = 'hip_hinge';
+          else if (/press.*banca|bench press/.test(nl))                pattern = 'press_horizontal';
+          else if (/press.*militar|overhead press|\bohp\b/.test(nl))   pattern = 'press_vertical';
+          else if (/jalón|pull.?down|dominada/.test(nl))               pattern = 'pull_vertical';
+          else if (/remo|row|cable row/.test(nl))                      pattern = 'pull_horizontal';
+          else if (/\bcurl\b/.test(nl))                                pattern = 'curl';
+          else if (/triceps|skull crusher|extensi.*tricep/.test(nl))   pattern = 'extension';
+          else if (/apertura|fly/.test(nl))                            pattern = 'fly';
+          else if (/elev.*lateral|lateral raise/.test(nl))             pattern = 'lateral_raise';
+          else if (/hip thrust|glute bridge/.test(nl))                 pattern = 'glute_isolation';
+          else if (/pantorrilla|calf/.test(nl))                        pattern = 'calf';
+          else if (/abdom|crunch|plancha|plank/.test(nl))              pattern = 'abdominal';
+          else if (/zancada|estocada|lunge/.test(nl))                  pattern = 'lunge';
+          else if (/face pull/.test(nl))                               pattern = 'face_pull';
+        }
+        var muscles = pattern ? _MOTOR_MUSCLES[pattern] : null;
+        var numSets = (ex.sets || []).length;
+        if (!muscles) { if (name) unclassified.push(name); return; }
+        (muscles.direct || []).forEach(function(m) {
+          if (!muscleVolume[m]) muscleVolume[m] = { direct: 0, indirect: 0, fractionalTotal: 0 };
+          muscleVolume[m].direct += numSets;
+          muscleVolume[m].fractionalTotal += numSets;
+        });
+        (muscles.indirect || []).forEach(function(m) {
+          if (!muscleVolume[m]) muscleVolume[m] = { direct: 0, indirect: 0, fractionalTotal: 0 };
+          muscleVolume[m].indirect += numSets;
+          muscleVolume[m].fractionalTotal += numSets * 0.5;
+        });
+      });
+    });
+
+    Object.keys(muscleVolume).forEach(function(muscle) {
+      var vol = muscleVolume[muscle];
+      vol.fractionalTotal = parseFloat(vol.fractionalTotal.toFixed(1));
+      if (vol.fractionalTotal < 8)  warnings.push({ code: 'VOL_LOW_PRIORITY',  muscle: muscle, fractionalTotal: vol.fractionalTotal });
+      if (vol.fractionalTotal > 26) warnings.push({ code: 'VOL_HIGH_UNCERTAIN', muscle: muscle, fractionalTotal: vol.fractionalTotal });
+    });
+    if (unclassified.length) warnings.push({ code: 'EXERCISES_UNCLASSIFIED', count: unclassified.length, exercises: unclassified });
+
+    return { muscleVolume: muscleVolume, unclassified: unclassified, warnings: warnings };
+  }
+
+  // ─── buildPrescriptionContext (P2 + P7 + P9.4) ───────────────────────────
+  // Returns a structured PrescriptionContext (not just text). Text for Claude
+  // is derived from this object via _prescriptionContextToText().
   async function buildPrescriptionContext(clientId) {
     try {
-      const ctx = {
+      var ctx = {
         hasPreviousPlan: false,
         previousPlan: null,
         engineState: null,
         progressionSummary: [],
         checkinSummary: null,
-        clientFlags: { stalled: [], progressing: [], articularIssues: [] }
+        clientFlags: { stalled: [], progressing: [], articularIssues: [] },
+        prescriptionTargets: {
+          globalReadiness: 'neutral',
+          deloadCandidate: false,
+          reasonCodes: [],
+          volumeGuidance: {}
+        },
+        restrictions: {
+          ejerciciosEvitar: [],
+          motorPatternsAvoid: [],
+          substitutionNotes: []
+        }
       };
 
-      const clientSnap = await getDoc(doc(db, 'clients', clientId));
-      const clientData = clientSnap.exists() ? clientSnap.data() : {};
-      const activePlanId = clientData.activePlanId;
+      var clientSnap = await getDoc(doc(db, 'clients', clientId));
+      var clientData = clientSnap.exists() ? clientSnap.data() : {};
+      var activePlanId = clientData.activePlanId;
 
       if (activePlanId) {
-        const planSnap = await getDoc(doc(db, 'plans', activePlanId));
+        var planSnap = await getDoc(doc(db, 'plans', activePlanId));
         if (planSnap.exists()) {
-          const p = planSnap.data();
+          var p = planSnap.data();
           ctx.hasPreviousPlan = true;
           ctx.previousPlan = {
             weeks: p.weeks,
             daysPerWeek: p.daysPerWeek,
-            dayLabels: (p.days || []).map(d => d.label),
-            exercises: (p.days || []).flatMap(d => (d.exercises || []).map(e => e.exerciseName)).filter(Boolean)
+            dayLabels: (p.days || []).map(function(d) { return d.label; }),
+            exercises: (p.days || []).flatMap(function(d) {
+              return (d.exercises || []).map(function(e) { return e.exerciseName; });
+            }).filter(Boolean)
           };
         }
       }
 
-      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      // P9.5: Read ficha for ejercicios_evitar and biomecanica restrictions
+      try {
+        var fichaSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
+        if (fichaSnap.exists()) {
+          var fd = fichaSnap.data().data || {};
+          var evitar = (fd.preferencias && (fd.preferencias.ejercicios_evitar || fd.preferencias.ejerciciosEvitar)) ||
+                       (fd.biomecanica  && (fd.biomecanica.ejercicios_evitar  || fd.biomecanica.ejerciciosEvitar))  ||
+                       fd.ejercicios_evitar || [];
+          if (Array.isArray(evitar) && evitar.length) {
+            ctx.restrictions.ejerciciosEvitar = evitar.filter(Boolean).map(function(e) { return String(e).trim(); });
+          }
+          var painPatterns = (fd.biomecanica && (fd.biomecanica.patrones_dolor || fd.biomecanica.patrones)) || [];
+          if (!Array.isArray(painPatterns)) painPatterns = [];
+          painPatterns.forEach(function(pat) {
+            var patStr = String(pat).toLowerCase();
+            var avoid = _PAIN_PATTERN_AVOIDANCE[patStr] || [];
+            avoid.forEach(function(mp) {
+              if (!ctx.restrictions.motorPatternsAvoid.includes(mp)) ctx.restrictions.motorPatternsAvoid.push(mp);
+            });
+            if (avoid.length) ctx.restrictions.substitutionNotes.push('Evitar patrón ' + patStr + ': ' + avoid.join(', '));
+          });
+        }
+      } catch (_fe) { /* ficha read optional — no blocker */ }
+
+      var logsSnap = await getDoc(doc(db, 'logs', clientId));
       if (logsSnap.exists()) {
-        const entries = logsSnap.data().entries || {};
+        var entries = logsSnap.data().entries || {};
 
-        if (entries.engine_state) ctx.engineState = entries.engine_state;
+        if (entries.engine_state) {
+          ctx.engineState = entries.engine_state;
+          var es = entries.engine_state;
+          if (es.deloadTriggered) {
+            ctx.prescriptionTargets.deloadCandidate = true;
+            ctx.prescriptionTargets.reasonCodes.push('DELOAD_TRIGGERED_PREV_CYCLE');
+          }
+          if (es.globalAction) {
+            ctx.prescriptionTargets.globalReadiness =
+              es.globalAction === 'deload'                               ? 'fatigued'
+              : (es.globalAction === 'volume_up' || es.globalAction === 'load_up') ? 'progressing'
+              : 'neutral';
+          }
+          if (Array.isArray(es.exerciseSummary)) {
+            var stalledCount = es.exerciseSummary.filter(function(s) {
+              return s.action === 'maintain' || s.action === 'freeze_load';
+            }).length;
+            if (stalledCount > es.exerciseSummary.length * 0.5) {
+              ctx.prescriptionTargets.reasonCodes.push('MAJORITY_STALLED');
+            }
+          }
+        }
 
-        const progrecKeys = Object.keys(entries).filter(k => k.startsWith('progrec_')).sort();
-        const progByExercise = {};
-        progrecKeys.forEach(k => {
-          const pg = entries[k];
+        var progrecKeys = Object.keys(entries).filter(function(k) { return k.startsWith('progrec_'); }).sort();
+        var progByExercise = {};
+        progrecKeys.forEach(function(k) {
+          var pg = entries[k];
           if (!pg || !Array.isArray(pg.recommendations)) return;
-          pg.recommendations.forEach(r => {
+          pg.recommendations.forEach(function(r) {
             if (!r.exerciseName) return;
             if (!progByExercise[r.exerciseName]) progByExercise[r.exerciseName] = [];
             progByExercise[r.exerciseName].push({ week: pg.weekNum, action: r.action, load: r.newLoad });
           });
         });
-        Object.entries(progByExercise).forEach(([name, history]) => {
-          const lastAction = history[history.length - 1]?.action;
-          const lastLoad   = history[history.length - 1]?.load;
-          const stalled    = history.length >= 2 && history.slice(-2).every(h => h.action === 'maintain' || h.action === 'freeze_load');
-          if (stalled) ctx.clientFlags.stalled.push({ name, lastLoad });
-          else if (lastAction === 'increase_load' || lastAction === 'add_sets') ctx.clientFlags.progressing.push({ name, lastLoad });
-          ctx.progressionSummary.push({ name, lastAction, lastLoad, weeks: history.length });
+        Object.keys(progByExercise).forEach(function(name) {
+          var history = progByExercise[name];
+          var lastAction = history[history.length - 1] ? history[history.length - 1].action : null;
+          var lastLoad   = history[history.length - 1] ? history[history.length - 1].load   : null;
+          var stalled = history.length >= 2 && history.slice(-2).every(function(h) {
+            return h.action === 'maintain' || h.action === 'freeze_load';
+          });
+          if (stalled) {
+            ctx.clientFlags.stalled.push({ name: name, lastLoad: lastLoad });
+            ctx.prescriptionTargets.reasonCodes.push('STALLED_' + name.replace(/\s+/g,'_').toUpperCase().substring(0, 20));
+          } else if (lastAction === 'increase_load' || lastAction === 'add_sets') {
+            ctx.clientFlags.progressing.push({ name: name, lastLoad: lastLoad });
+          }
+          ctx.progressionSummary.push({ name: name, lastAction: lastAction, lastLoad: lastLoad, weeks: history.length });
         });
-
-        const ciKeys = Object.keys(entries).filter(k => k.startsWith('ci_sem_')).sort();
-        if (ciKeys.length) {
-          const cis = ciKeys.map(k => entries[k]).filter(Boolean);
-          const avg = arr => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null;
-          const hrv  = cis.map(c => parseFloat(c.hrv)).filter(v => !isNaN(v) && v > 0);
-          const who5 = cis.map(c => parseFloat(c.who5)).filter(v => !isNaN(v) && v > 0);
-          const peso = cis.map(c => parseFloat(c.peso)).filter(v => !isNaN(v) && v > 0);
-          ctx.checkinSummary = {
-            weeksTracked: cis.length,
-            avgHRV: avg(hrv),
-            avgWHO5: avg(who5),
-            weightRange: peso.length ? { min: Math.min(...peso).toFixed(1), max: Math.max(...peso).toFixed(1), last: peso[peso.length - 1]?.toFixed(1) } : null
-          };
+        if (ctx.clientFlags.stalled.length && !ctx.prescriptionTargets.reasonCodes.includes('MAJORITY_STALLED')) {
+          ctx.prescriptionTargets.reasonCodes.push('STALLED_EXERCISES');
         }
 
-        const postKeys = Object.keys(entries).filter(k => k.startsWith('postsession_'));
-        postKeys.forEach(k => {
-          const ps = entries[k];
-          if (ps?.articularPain?.present && ps.articularPain.pattern) {
-            const pat = ps.articularPain.pattern;
-            if (!ctx.clientFlags.articularIssues.includes(pat)) ctx.clientFlags.articularIssues.push(pat);
+        var ciKeys = Object.keys(entries).filter(function(k) { return k.startsWith('ci_sem_'); }).sort();
+        if (ciKeys.length) {
+          var cis = ciKeys.map(function(k) { return entries[k]; }).filter(Boolean);
+          var avg = function(arr) { return arr.length ? (arr.reduce(function(a,b){return a+b;},0)/arr.length).toFixed(1) : null; };
+          var hrvArr  = cis.map(function(c){return parseFloat(c.hrv); }).filter(function(v){return !isNaN(v)&&v>0;});
+          var who5Arr = cis.map(function(c){return parseFloat(c.who5);}).filter(function(v){return !isNaN(v)&&v>0;});
+          var pesoArr = cis.map(function(c){return parseFloat(c.peso);}).filter(function(v){return !isNaN(v)&&v>0;});
+          ctx.checkinSummary = {
+            weeksTracked: cis.length,
+            avgHRV:   avg(hrvArr),
+            avgWHO5:  avg(who5Arr),
+            weightRange: pesoArr.length ? {
+              min: Math.min.apply(null,pesoArr).toFixed(1),
+              max: Math.max.apply(null,pesoArr).toFixed(1),
+              last: pesoArr[pesoArr.length-1] != null ? pesoArr[pesoArr.length-1].toFixed(1) : null
+            } : null
+          };
+          var lastWho5 = who5Arr[who5Arr.length - 1];
+          if (lastWho5 && lastWho5 < 50) {
+            ctx.prescriptionTargets.globalReadiness = 'fatigued';
+            ctx.prescriptionTargets.reasonCodes.push('LOW_WELLNESS_WHO5');
+          }
+        }
+
+        var postKeys = Object.keys(entries).filter(function(k){ return k.startsWith('postsession_'); });
+        postKeys.forEach(function(k) {
+          var ps = entries[k];
+          if (ps && ps.articularPain && ps.articularPain.present && ps.articularPain.pattern) {
+            var pat = ps.articularPain.pattern;
+            if (!ctx.clientFlags.articularIssues.includes(pat)) {
+              ctx.clientFlags.articularIssues.push(pat);
+              var avoidPats = _PAIN_PATTERN_AVOIDANCE[pat.toLowerCase()] || [];
+              avoidPats.forEach(function(mp) {
+                if (!ctx.restrictions.motorPatternsAvoid.includes(mp)) ctx.restrictions.motorPatternsAvoid.push(mp);
+              });
+              if (avoidPats.length) {
+                ctx.prescriptionTargets.reasonCodes.push('ARTICULAR_PAIN_' + pat.toUpperCase().replace(/\s+/g,'_').substring(0,20));
+              }
+            }
           }
         });
+        if (ctx.clientFlags.articularIssues.length) ctx.prescriptionTargets.reasonCodes.push('ARTICULAR_ISSUES');
       }
 
+      // Deduplicate reason codes
+      ctx.prescriptionTargets.reasonCodes = ctx.prescriptionTargets.reasonCodes.filter(function(v,i,a){ return a.indexOf(v)===i; });
       return ctx;
     } catch (e) {
       console.warn('buildPrescriptionContext error:', e.message);
@@ -3749,115 +3938,361 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   }
 
-  // _prescriptionContextToText — Serializa el contexto longitudinal como texto
-  // inyectable en el prompt de Claude. Solo incluye secciones con datos reales.
+  // _prescriptionContextToText — Derives injectable text from the structured ctx.
+  // The ctx object is the source of truth; text is presentation only.
   function _prescriptionContextToText(ctx) {
     if (!ctx) return '';
-    const lines = [];
-    lines.push('\n--- CONTEXTO LONGITUDINAL VDSEN (usa esto para personalizar el nuevo plan) ---');
+    var lines = ['\n--- CONTEXTO LONGITUDINAL VDSEN (personaliza el nuevo plan con esto) ---'];
 
     if (ctx.hasPreviousPlan && ctx.previousPlan) {
-      const p = ctx.previousPlan;
-      lines.push('\nPLAN ANTERIOR: ' + (p.weeks || '?') + ' semanas · ' + (p.daysPerWeek || '?') + ' días/sem');
-      if (p.dayLabels?.length) lines.push('Días: ' + p.dayLabels.join(', '));
-      if (p.exercises?.length) lines.push('Ejercicios previos: ' + p.exercises.slice(0, 14).join(', ') + (p.exercises.length > 14 ? '…' : ''));
+      var p = ctx.previousPlan;
+      lines.push('\nPLAN ANTERIOR: ' + (p.weeks||'?') + ' semanas · ' + (p.daysPerWeek||'?') + ' días/sem');
+      if (p.dayLabels && p.dayLabels.length) lines.push('Días: ' + p.dayLabels.join(', '));
+      if (p.exercises && p.exercises.length) lines.push('Ejercicios previos: ' + p.exercises.slice(0,14).join(', ') + (p.exercises.length>14?'…':''));
     }
 
+    var pt = ctx.prescriptionTargets;
+    if (pt) {
+      lines.push('\nREADINESS GLOBAL: ' + pt.globalReadiness.toUpperCase());
+      if (pt.deloadCandidate) lines.push('⚠ CANDIDATO A DELOAD inicial (fatiga acumulada del ciclo anterior)');
+      if (pt.reasonCodes.length) lines.push('SEÑALES: ' + pt.reasonCodes.join(', '));
+    }
+
+    if (ctx.restrictions.ejerciciosEvitar.length) {
+      lines.push('\n⛔ EJERCICIOS PROHIBIDOS (no incluir en absoluto): ' + ctx.restrictions.ejerciciosEvitar.join(', '));
+    }
+    if (ctx.restrictions.motorPatternsAvoid.length) {
+      lines.push('⚠ PATRONES MOTORES A EVITAR: ' + ctx.restrictions.motorPatternsAvoid.join(', '));
+    }
+    ctx.restrictions.substitutionNotes.forEach(function(n) { lines.push('  → ' + n); });
+
     if (ctx.engineState) {
-      const es = ctx.engineState;
-      lines.push('\nESTADO MOTOR (sem ' + (es.weekNum || '?') + '/' + (es.totalWeeks || '?') + '): acción global=' + (es.globalAction || '?'));
-      if (es.deloadTriggered) lines.push('  ⚠ Deload reactivo activado: ' + (es.deloadTriggers || []).join(', '));
+      var es = ctx.engineState;
+      lines.push('\nESTADO MOTOR (sem ' + (es.weekNum||'?') + '/' + (es.totalWeeks||'?') + '): acción global=' + (es.globalAction||'?'));
+      if (es.deloadTriggered) lines.push('  ⚠ Deload reactivo activado: ' + (es.deloadTriggers||[]).join(', '));
     }
 
     if (ctx.clientFlags.progressing.length) {
-      lines.push('\nEJERCICIOS PROGRESANDO: ' + ctx.clientFlags.progressing.map(e => e.name + (e.lastLoad ? ' @' + e.lastLoad : '')).join(', '));
+      lines.push('\nEJERCICIOS PROGRESANDO: ' + ctx.clientFlags.progressing.map(function(e){return e.name+(e.lastLoad?' @'+e.lastLoad:'');}).join(', '));
     }
     if (ctx.clientFlags.stalled.length) {
-      lines.push('EJERCICIOS ESTANCADOS 2+ sem: ' + ctx.clientFlags.stalled.map(e => e.name).join(', ') + ' → considera variante o cambio de estímulo');
+      lines.push('EJERCICIOS ESTANCADOS 2+ sem: ' + ctx.clientFlags.stalled.map(function(e){return e.name;}).join(', ') + ' → considera variante o cambio estímulo');
     }
     if (ctx.clientFlags.articularIssues.length) {
       lines.push('⚠ PATRONES CON DOLOR ARTICULAR PREVIO: ' + ctx.clientFlags.articularIssues.join(', ') + ' → evitar o sustituir');
     }
 
     if (ctx.checkinSummary) {
-      const ci = ctx.checkinSummary;
+      var ci = ctx.checkinSummary;
       lines.push('\nCHECK-INS (' + ci.weeksTracked + ' sem):');
-      if (ci.avgHRV) lines.push('  HRV promedio: ' + ci.avgHRV + ' ms');
+      if (ci.avgHRV)  lines.push('  HRV promedio: ' + ci.avgHRV + ' ms');
       if (ci.avgWHO5) lines.push('  Bienestar WHO-5 promedio: ' + ci.avgWHO5 + '/100');
-      if (ci.weightRange?.last) lines.push('  Peso actual: ' + ci.weightRange.last + ' kg (rango ciclo: ' + ci.weightRange.min + '–' + ci.weightRange.max + ' kg)');
+      if (ci.weightRange && ci.weightRange.last) lines.push('  Peso actual: ' + ci.weightRange.last + ' kg (rango: ' + ci.weightRange.min + '–' + ci.weightRange.max + ' kg)');
     }
 
     lines.push('--- FIN CONTEXTO LONGITUDINAL ---\n');
     return lines.join('\n');
   }
 
-  // validatePlan — Valida estructura del plan generado ANTES de guardar en
-  // Firestore. Detecta errores que romperían la app cliente. (P3)
-  function validatePlan({ training, nutrition, supplements }) {
-    const errors = [];
-    const warnings = [];
+  // ─── validatePlan (P3 + P9.2) ────────────────────────────────────────────
+  // Validates the generated plan against the VDSEN contract before Firestore.
+  // restrictions: { ejerciciosEvitar: [] } — deterministic veto (P9.5)
+  // rawJson: first extracted JSON object — for schema check (optional)
+  function validatePlan({ training, nutrition, supplements }, restrictions, rawJson) {
+    var errors   = [];
+    var warnings = [];
+    var evitar = (restrictions && Array.isArray(restrictions.ejerciciosEvitar)) ? restrictions.ejerciciosEvitar : [];
+
+    if (rawJson && rawJson.schema && rawJson.schema !== 'vdsen-plan-v2') {
+      warnings.push('Schema inesperado: ' + rawJson.schema + ' (esperado vdsen-plan-v2)');
+    }
 
     if (training) {
       if (!Array.isArray(training.days) || training.days.length === 0) {
         errors.push('entrenamiento.days vacío o no es array');
       } else {
-        training.days.forEach((day, di) => {
+        if (training.daysPerWeek != null && training.daysPerWeek !== training.days.length) {
+          warnings.push('daysPerWeek (' + training.daysPerWeek + ') ≠ days.length (' + training.days.length + ')');
+        }
+        var seenNames = [];
+        training.days.forEach(function(day, di) {
           if (!Array.isArray(day.exercises) || day.exercises.length === 0) {
-            errors.push('Día ' + (di + 1) + ' (' + (day.label || '?') + ') sin ejercicios');
+            errors.push('Día ' + (di+1) + ' (' + (day.label||'?') + ') sin ejercicios');
           } else {
-            day.exercises.forEach((ex, ei) => {
-              if (!ex.exerciseName || ex.exerciseName.trim().length < 2)
-                warnings.push('Día ' + (di + 1) + ' ej ' + (ei + 1) + ': exerciseName vacío');
-              if (!Array.isArray(ex.sets) || ex.sets.length === 0)
-                errors.push('Día ' + (di + 1) + ' / ' + (ex.exerciseName || 'Ej' + (ei + 1)) + ': sin sets');
+            day.exercises.forEach(function(ex, ei) {
+              var exName = (ex.exerciseName || '').trim();
+              if (exName.length < 2) warnings.push('Día ' + (di+1) + ' ej ' + (ei+1) + ': exerciseName vacío');
+
+              // P9.5: deterministic veto
+              if (exName && evitar.length) {
+                var vetoed = evitar.some(function(v) {
+                  return exName.toLowerCase().includes(v.toLowerCase()) || v.toLowerCase().includes(exName.toLowerCase());
+                });
+                if (vetoed) errors.push('VETO: ' + exName + ' está en ejercicios_evitar del cliente');
+              }
+
+              // P9.6: RAP → warning only, never blocking
+              if (exName && seenNames.indexOf(exName) !== -1) {
+                warnings.push('RAP_REDUNDANCY_WARNING: ' + exName + ' aparece más de una vez en el plan');
+              }
+              if (exName) seenNames.push(exName);
+
+              if (!ex.nivel_medio)       warnings.push('Ej "' + (exName||ei+1) + '": nivel_medio ausente');
+              if (!ex.variacion_vertical) warnings.push('Ej "' + (exName||ei+1) + '": variacion_vertical ausente');
+
+              if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
+                errors.push('Día ' + (di+1) + ' / ' + (exName||'Ej'+(ei+1)) + ': sin sets');
+              } else {
+                ex.sets.forEach(function(s, si) {
+                  var sid = (exName||'Ej'+(ei+1)) + ' s' + (si+1);
+                  // P9.2: prescription fields are ERRORS, not repaired with defaults
+                  if (s.repsTarget  == null || isNaN(parseInt(s.repsTarget)))  errors.push(sid + ': repsTarget ausente');
+                  if (s.rirTarget   == null || isNaN(parseInt(s.rirTarget)))   errors.push(sid + ': rirTarget ausente');
+                  if (s.restSeconds == null || isNaN(parseInt(s.restSeconds))) errors.push(sid + ': restSeconds ausente');
+                  if (s.load == null) {
+                    warnings.push(sid + ': load ausente → se asumirá 0');
+                  } else if (s.load === 0) {
+                    warnings.push(sid + ': load=0 (¿peso corporal?)');
+                  }
+                });
+              }
             });
           }
         });
       }
-      if (!training.weeks || isNaN(parseInt(training.weeks)))
-        warnings.push('entrenamiento.weeks faltante → se usará 6');
+      if (!training.weeks || isNaN(parseInt(training.weeks))) warnings.push('entrenamiento.weeks faltante → se usará 6');
     }
 
     if (nutrition) {
-      ['calorias', 'proteina', 'carbos', 'grasas'].forEach(m => {
-        if (nutrition[m] == null || isNaN(parseFloat(nutrition[m])))
-          warnings.push('nutricion.' + m + ' faltante o no numérico');
+      ['calorias','proteina','carbos','grasas'].forEach(function(m) {
+        if (nutrition[m] == null || isNaN(parseFloat(nutrition[m]))) warnings.push('nutricion.' + m + ' faltante o no numérico');
       });
+
+      if (!Array.isArray(nutrition.comidas)) {
+        warnings.push('nutricion.comidas no es array');
+      } else {
+        var mealKcalSum = 0;
+        var subWarnings = [];
+        nutrition.comidas.forEach(function(meal, mi) {
+          var alimentos = meal.alimentos || meal.items || [];
+          if (!Array.isArray(alimentos)) return;
+          alimentos.forEach(function(al) {
+            var kcal = parseFloat(al.calorias || al.kcal || 0);
+            if (!isNaN(kcal)) mealKcalSum += kcal;
+            if (al.cantidad_g != null && isNaN(parseFloat(al.cantidad_g))) {
+              warnings.push('nutricion comida ' + (mi+1) + ' / ' + (al.nombre||'?') + ': cantidad_g no numérico');
+            }
+            var subs = al.sustituciones || al.substitutions || [];
+            if (!Array.isArray(subs) || subs.length < 3) subWarnings.push(al.nombre || ('alimento comida '+(mi+1)));
+          });
+        });
+        var rootKcal = parseFloat(nutrition.calorias || 0);
+        if (rootKcal > 0 && mealKcalSum > 0) {
+          var diff = Math.abs(rootKcal - mealKcalSum) / rootKcal;
+          if (diff > 0.03) warnings.push('Macros raíz (' + rootKcal + ' kcal) difieren ' + (diff*100).toFixed(1) + '% de suma de comidas (' + Math.round(mealKcalSum) + ' kcal) — excede ±3%');
+        }
+        if (subWarnings.length) warnings.push('≥3 sustituciones faltantes en: ' + subWarnings.slice(0,5).join(', ') + (subWarnings.length>5?' (+más)':''));
+      }
     }
 
-    return { valid: errors.length === 0, errors, warnings };
+    return { valid: errors.length === 0, errors: errors, warnings: warnings };
   }
 
-  // repairPlan — Repara campos faltantes/nulos en el plan antes de guardar.
-  // Solo toca campos estructuralmente nulos; nunca altera semántica clínica. (P4)
+  // ─── repairPlan (P4 + P9.1) ──────────────────────────────────────────────
+  // Repairs ONLY deterministic structural nulls (indexes, derived values, load=0).
+  // NEVER invents prescription values (repsTarget, rirTarget, restSeconds).
+  // Missing prescription fields → needsControlledRepair = true + incompleteItems list.
   function repairPlan({ training, nutrition, supplements, pharma }, _errors) {
-    let changed = false;
+    var changed = false;
+    var incompleteItems = [];
 
     if (training && Array.isArray(training.days)) {
-      if (!training.weeks) { training.weeks = 6; changed = true; }
-      if (!training.daysPerWeek) { training.daysPerWeek = training.days.length; changed = true; }
+      if (!training.weeks)      { training.weeks = 6;                    changed = true; }
+      if (!training.daysPerWeek){ training.daysPerWeek = training.days.length; changed = true; }
 
-      training.days.forEach((day, di) => {
-        if (day.dayIndex == null) { day.dayIndex = di; changed = true; }
-        if (!day.label) { day.label = 'Día ' + (di + 1); changed = true; }
-        if (!Array.isArray(day.exercises)) { day.exercises = []; changed = true; }
-        day.exercises.forEach((ex, ei) => {
-          if (!ex.exerciseName || ex.exerciseName.trim().length < 2) { ex.exerciseName = 'Ejercicio ' + (ei + 1); changed = true; }
-          if (!Array.isArray(ex.sets)) { ex.sets = []; changed = true; }
-          ex.sets.forEach((s, si) => {
+      training.days.forEach(function(day, di) {
+        if (day.dayIndex == null)                          { day.dayIndex = di;          changed = true; }
+        if (!day.label)                                    { day.label = 'Día '+(di+1);  changed = true; }
+        if (!Array.isArray(day.exercises))                 { day.exercises = [];          changed = true; }
+        day.exercises.forEach(function(ex, ei) {
+          if (!ex.exerciseName || ex.exerciseName.trim().length < 2) { ex.exerciseName = 'Ejercicio '+(ei+1); changed = true; }
+          if (!Array.isArray(ex.sets))                     { ex.sets = [];               changed = true; }
+          ex.sets.forEach(function(s, si) {
             if (s.setIndex == null) { s.setIndex = si; changed = true; }
-            if (s.load == null) { s.load = 0; changed = true; }
-            if (s.restSeconds == null) { s.restSeconds = 90; changed = true; }
-            if (!s.repsTarget) { s.repsTarget = 8; changed = true; }
-            if (s.rirTarget == null) { s.rirTarget = 2; changed = true; }
+            if (s.load == null)     { s.load = 0;      changed = true; }
+            // P9.1: collect missing prescription fields for controlled repair
+            var missing = [];
+            if (s.repsTarget  == null || isNaN(parseInt(s.repsTarget)))  missing.push('repsTarget');
+            if (s.rirTarget   == null || isNaN(parseInt(s.rirTarget)))   missing.push('rirTarget');
+            if (s.restSeconds == null || isNaN(parseInt(s.restSeconds))) missing.push('restSeconds');
+            if (missing.length) incompleteItems.push({ dayLabel: day.label, exerciseName: ex.exerciseName, setIndex: si, missing: missing });
           });
         });
       });
     }
 
-    const reValidation = validatePlan({ training, nutrition, supplements });
-    return { repaired: { training, nutrition, supplements, pharma }, changed, remaining: reValidation.errors };
+    var reVal = validatePlan({ training: training, nutrition: nutrition, supplements: supplements }, {});
+    // Remaining blocking errors exclude prescription fields (those go to controlled repair)
+    var remaining = reVal.errors.filter(function(e) {
+      return !e.includes('repsTarget') && !e.includes('rirTarget') && !e.includes('restSeconds');
+    });
+
+    return {
+      repaired: { training: training, nutrition: nutrition, supplements: supplements, pharma: pharma },
+      changed: changed,
+      remaining: remaining,
+      needsControlledRepair: incompleteItems.length > 0,
+      incompleteItems: incompleteItems
+    };
   }
+
+  // ─── _controlledRepairViaClaude (P4 + P9.1) ──────────────────────────────
+  // Re-asks Claude to fill ONLY the missing prescription fields in incomplete sets.
+  async function _controlledRepairViaClaude(training, incompleteItems, apiKey, motor) {
+    if (!incompleteItems || !incompleteItems.length) return training;
+    var missingDesc = incompleteItems.map(function(it) {
+      return 'Día "' + it.dayLabel + '" / Ejercicio "' + it.exerciseName + '" / Set ' + (it.setIndex+1) + ': faltan ' + it.missing.join(', ');
+    }).join('\n');
+    var repairMsg = [
+      'REPARACIÓN CONTROLADA — responde SOLO con el JSON corregido, sin texto adicional.',
+      'Los siguientes sets tienen campos de prescripción ausentes. Completa ÚNICAMENTE esos campos con valores clínicamente apropiados.',
+      'NO cambies ejercicios, cargas existentes ni estructura del plan.',
+      'Sets a completar:\n' + missingDesc,
+      'Devuelve el objeto "entrenamiento" completo (con todos los días y sets) con los campos rellenados.'
+    ].join('\n');
+    var body = {
+      model: 'claude-sonnet-5', max_tokens: 4000,
+      system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
+      messages: [
+        { role: 'user', content: repairMsg },
+        { role: 'assistant', content: '```json\n' + JSON.stringify({ schema: 'vdsen-plan-v2', entrenamiento: training }, null, 2) + '\n```' },
+        { role: 'user', content: 'Devuelve el JSON completo de "entrenamiento" con todos los sets corregidos en un bloque ```json.' }
+      ]
+    };
+    var resp = await fetch('/api/generate-plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
+      body: JSON.stringify(body)
+    });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error('Controlled repair API: ' + ((data && (data.error && (data.error.message || data.error))) || resp.status));
+    var txt = Array.isArray(data.content) ? data.content.filter(function(c){return c.type==='text';}).map(function(c){return c.text;}).join('\n') : '';
+    if (!txt) throw new Error('Controlled repair: respuesta vacía del modelo');
+    var blocks = _extractJsonBlocks(txt);
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i];
+      if (b.entrenamiento) return b.entrenamiento;
+      if (b.days)          return b;
+    }
+    throw new Error('Controlled repair: no se encontró bloque entrenamiento en la respuesta');
+  }
+
+  // ─── _runP9Tests ──────────────────────────────────────────────────────────
+  // Call window._runP9Tests() from the browser console to verify P9 guarantees.
+  function _runP9Tests() {
+    var results = [];
+    function test(name, fn) {
+      try { var r = fn(); results.push({ name: name, passed: r === true, message: r === true ? 'OK' : String(r) }); }
+      catch(e) { results.push({ name: name, passed: false, message: 'Threw: ' + e.message }); }
+    }
+    var _ok = function(t) { return t === true; };
+    var _set = function(extra) { return Object.assign({ setIndex:0, load:0, repsTarget:8, rirTarget:2, restSeconds:90 }, extra||{}); };
+    var _day = function(sets) { return { label:'A', exercises:[{ exerciseName:'Press Banca', sets: sets||[_set()] }] }; };
+    var _plan = function(days) { return { training:{ weeks:6, daysPerWeek:(days||[_day()]).length, days: days||[_day()] }, nutrition:null, supplements:null }; };
+
+    test('T1  validatePlan: days[] vacío → error', function() {
+      return validatePlan({ training:{days:[]}, nutrition:null, supplements:null }).valid === false;
+    });
+    test('T2  validatePlan: repsTarget ausente → error', function() {
+      var r = validatePlan({ training:{days:[{label:'A',exercises:[{exerciseName:'X',sets:[{setIndex:0,load:0,rirTarget:2,restSeconds:90}]}]}]}, nutrition:null, supplements:null });
+      return r.valid === false && r.errors.some(function(e){return e.includes('repsTarget');});
+    });
+    test('T3  validatePlan: rirTarget ausente → error', function() {
+      var r = validatePlan({ training:{days:[{label:'A',exercises:[{exerciseName:'X',sets:[{setIndex:0,load:0,repsTarget:8,restSeconds:90}]}]}]}, nutrition:null, supplements:null });
+      return r.valid === false && r.errors.some(function(e){return e.includes('rirTarget');});
+    });
+    test('T4  validatePlan: restSeconds ausente → error', function() {
+      var r = validatePlan({ training:{days:[{label:'A',exercises:[{exerciseName:'X',sets:[{setIndex:0,load:0,repsTarget:8,rirTarget:2}]}]}]}, nutrition:null, supplements:null });
+      return r.valid === false && r.errors.some(function(e){return e.includes('restSeconds');});
+    });
+    test('T5  validatePlan: set completo → válido', function() {
+      return validatePlan(_plan()).valid === true;
+    });
+    test('T6  validatePlan: VETO ejercicios_evitar → error', function() {
+      var r = validatePlan(_plan(), { ejerciciosEvitar:['Press Banca'] });
+      return r.errors.some(function(e){return e.includes('VETO');});
+    });
+    test('T7  validatePlan: RAP duplicado → warning, válido', function() {
+      var d = { label:'A', exercises:[{ exerciseName:'Press Banca', sets:[_set()] }, { exerciseName:'Press Banca', sets:[_set()] }] };
+      var r = validatePlan({ training:{days:[d]}, nutrition:null, supplements:null });
+      return r.valid === true && r.warnings.some(function(w){return w.includes('RAP_REDUNDANCY');});
+    });
+    test('T8  validatePlan: daysPerWeek ≠ days.length → warning, válido', function() {
+      var r = validatePlan({ training:{weeks:6,daysPerWeek:4,days:[_day()]}, nutrition:null, supplements:null });
+      return r.valid === true && r.warnings.some(function(w){return w.includes('daysPerWeek');});
+    });
+    test('T9  repairPlan: NO rellena repsTarget/rirTarget/restSeconds', function() {
+      var s = { setIndex:0, load:0 };
+      var t = { days:[{ label:'A', exercises:[{ exerciseName:'X', sets:[s] }] }] };
+      repairPlan({ training:t, nutrition:null, supplements:null, pharma:null }, []);
+      return s.repsTarget === undefined && s.rirTarget === undefined && s.restSeconds === undefined;
+    });
+    test('T10 repairPlan: load=null → 0', function() {
+      var s = { repsTarget:8, rirTarget:2, restSeconds:90 };
+      var t = { days:[{ label:'A', exercises:[{ exerciseName:'X', sets:[s] }] }] };
+      repairPlan({ training:t, nutrition:null, supplements:null, pharma:null }, []);
+      return s.load === 0;
+    });
+    test('T11 repairPlan: needsControlledRepair=true para repsTarget ausente', function() {
+      var t = { days:[{ label:'A', exercises:[{ exerciseName:'X', sets:[{ setIndex:0, load:0 }] }] }] };
+      var r = repairPlan({ training:t, nutrition:null, supplements:null, pharma:null }, []);
+      return r.needsControlledRepair === true && r.incompleteItems.length > 0;
+    });
+    test('T12 repairPlan: weeks=null → 6', function() {
+      var t = { days:[_day()] };
+      repairPlan({ training:t, nutrition:null, supplements:null, pharma:null }, []);
+      return t.weeks === 6;
+    });
+    test('T13 auditFractionalVolume: estructura de retorno', function() {
+      var r = auditFractionalVolume({ days:[] }, []);
+      return r && typeof r.muscleVolume === 'object' && Array.isArray(r.unclassified) && Array.isArray(r.warnings);
+    });
+    test('T14 auditFractionalVolume: sentadilla → cuadriceps directo', function() {
+      var t = { days:[{ label:'A', exercises:[{ exerciseName:'Sentadilla', sets:[{},{},{}] }] }] };
+      var r = auditFractionalVolume(t, []);
+      return r.muscleVolume.cuadriceps && r.muscleVolume.cuadriceps.direct === 3;
+    });
+    test('T15 auditFractionalVolume: press banca → triceps 0.5×indirect', function() {
+      var t = { days:[{ label:'A', exercises:[{ exerciseName:'Press Banca', sets:[{},{}] }] }] };
+      var r = auditFractionalVolume(t, []);
+      return r.muscleVolume.triceps && r.muscleVolume.triceps.indirect === 2 && r.muscleVolume.triceps.fractionalTotal === 1;
+    });
+    test('T16 validatePlan: macros raíz vs suma comidas >3% → warning', function() {
+      var nut = { calorias:2000, proteina:150, carbos:200, grasas:60, comidas:[{ alimentos:[{ nombre:'X', calorias:1000 }] }] };
+      var r = validatePlan({ training:null, nutrition:nut, supplements:null });
+      return r.warnings.some(function(w){return w.includes('kcal');});
+    });
+    test('T17 validatePlan: alimento con <3 sustituciones → warning', function() {
+      var nut = { calorias:2000, proteina:150, carbos:200, grasas:60, comidas:[{ alimentos:[{ nombre:'Pollo', calorias:300, sustituciones:['Pechuga'] }] }] };
+      var r = validatePlan({ training:null, nutrition:nut, supplements:null });
+      return r.warnings.some(function(w){return w.includes('sustituciones');});
+    });
+    test('T18 VDSEN_ENGINE_VERSION definida', function() {
+      return typeof VDSEN_ENGINE_VERSION === 'string' && VDSEN_ENGINE_VERSION.length > 0;
+    });
+
+    var passed = results.filter(function(r){return r.passed;}).length;
+    var total  = results.length;
+    console.group('%c[VDSEN P9 Tests] ' + passed + '/' + total + ' passed', passed === total ? 'color:green;font-weight:bold' : 'color:orange;font-weight:bold');
+    results.forEach(function(r) {
+      console.log('%c' + (r.passed?'✅':'❌') + ' ' + r.name, r.passed?'color:green':'color:red');
+      if (!r.passed) console.warn('   → ' + r.message);
+    });
+    console.groupEnd();
+    window._p9TestResults = results;
+    return { passed: passed, total: total, results: results };
+  }
+  window._runP9Tests = _runP9Tests;
 
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -4086,26 +4521,42 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (!text) throw new Error('Respuesta vacía del modelo');
 
       setStatus('<span style="color:var(--text-muted)">Validando plan…</span>');
-      let { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(text));
+      const _rawBlocks = _extractJsonBlocks(text);
+      const _rawJson   = _rawBlocks[0] || null;
+      let { training, nutrition, supplements, pharma } = _classifyBlocks(_rawBlocks);
       if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
 
-      // P3: Validator — verificar estructura antes de Firestore
-      const validation = validatePlan({ training, nutrition, supplements });
+      // P3 + P9.2 + P9.5: Full validation with restrictions and schema check
+      const _restrictions = (prescCtx && prescCtx.restrictions) || {};
+      const validation = validatePlan({ training, nutrition, supplements }, _restrictions, _rawJson);
+
+      // P9.5: VETO errors are immediate — unrecoverable
+      const _vetoErrs = validation.errors.filter(e => e.includes('VETO'));
+      if (_vetoErrs.length) throw new Error('Plan vetado por restricciones del cliente: ' + _vetoErrs.join('; '));
+
       if (!validation.valid) {
-        // P4: Controlled repair — reparar campos faltantes/nulos
+        // P4 + P9.1: Deterministic repair for structural nulls only
         const repairResult = repairPlan({ training, nutrition, supplements, pharma }, validation.errors);
         if (repairResult.remaining.length) {
           throw new Error('Plan con errores estructurales irrecuperables: ' + repairResult.remaining.join('; '));
         }
         if (repairResult.changed) {
-          training    = repairResult.repaired.training;
-          nutrition   = repairResult.repaired.nutrition;
-          supplements = repairResult.repaired.supplements;
-          pharma      = repairResult.repaired.pharma;
+          ({ training, nutrition, supplements, pharma } = repairResult.repaired);
           console.info('[VDSEN] repairPlan aplicado:', validation.errors);
+        }
+        // P9.1: Controlled repair for missing prescription fields (no defaults invented)
+        if (repairResult.needsControlledRepair) {
+          setStatus('<span style="color:var(--text-muted)">Reparación controlada (campos prescripción ausentes)…</span>');
+          training = await _controlledRepairViaClaude(training, repairResult.incompleteItems, apiKey, motor);
+          const _reVal = validatePlan({ training, nutrition, supplements }, _restrictions, null);
+          if (!_reVal.valid) throw new Error('Plan irrecuperable tras reparación controlada: ' + _reVal.errors.join('; '));
         }
       }
       if (validation.warnings.length) console.info('[VDSEN] validatePlan warnings:', validation.warnings);
+
+      // P9.3: Volume audit — informational, non-blocking
+      const _volAudit = auditFractionalVolume(training, []);
+      if (_volAudit.warnings.length) console.info('[VDSEN] Volume audit:', _volAudit.warnings);
 
       setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
       const saved = [];
@@ -6017,26 +6468,42 @@ El esfuerzo no es negociable.
       if (!text) throw new Error('Respuesta vacía del modelo');
 
       setStatus('<span style="color:#888">Validando plan…</span>');
-      let { training, nutrition, supplements, pharma } = _classifyBlocks(_extractJsonBlocks(text));
+      const _rawBlocks2 = _extractJsonBlocks(text);
+      const _rawJson2   = _rawBlocks2[0] || null;
+      let { training, nutrition, supplements, pharma } = _classifyBlocks(_rawBlocks2);
       if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
 
-      // P3: Validator — verificar estructura antes de Firestore
-      const validation = validatePlan({ training, nutrition, supplements });
+      // P3 + P9.2 + P9.5: Full validation with restrictions and schema check
+      const _restrictions2 = (prescCtx && prescCtx.restrictions) || {};
+      const validation = validatePlan({ training, nutrition, supplements }, _restrictions2, _rawJson2);
+
+      // P9.5: VETO errors are immediate — unrecoverable
+      const _vetoErrs2 = validation.errors.filter(e => e.includes('VETO'));
+      if (_vetoErrs2.length) throw new Error('Plan vetado por restricciones del cliente: ' + _vetoErrs2.join('; '));
+
       if (!validation.valid) {
-        // P4: Controlled repair — reparar campos faltantes/nulos
+        // P4 + P9.1: Deterministic repair for structural nulls only
         const repairResult = repairPlan({ training, nutrition, supplements, pharma }, validation.errors);
         if (repairResult.remaining.length) {
           throw new Error('Plan con errores estructurales irrecuperables: ' + repairResult.remaining.join('; '));
         }
         if (repairResult.changed) {
-          training    = repairResult.repaired.training;
-          nutrition   = repairResult.repaired.nutrition;
-          supplements = repairResult.repaired.supplements;
-          pharma      = repairResult.repaired.pharma;
+          ({ training, nutrition, supplements, pharma } = repairResult.repaired);
           console.info('[VDSEN] repairPlan aplicado:', validation.errors);
+        }
+        // P9.1: Controlled repair for missing prescription fields (no defaults invented)
+        if (repairResult.needsControlledRepair) {
+          setStatus('<span style="color:#888">Reparación controlada (campos prescripción ausentes)…</span>');
+          training = await _controlledRepairViaClaude(training, repairResult.incompleteItems, apiKey, motor);
+          const _reVal2 = validatePlan({ training, nutrition, supplements }, _restrictions2, null);
+          if (!_reVal2.valid) throw new Error('Plan irrecuperable tras reparación controlada: ' + _reVal2.errors.join('; '));
         }
       }
       if (validation.warnings.length) console.info('[VDSEN] validatePlan warnings:', validation.warnings);
+
+      // P9.3: Volume audit — informational, non-blocking
+      const _volAudit2 = auditFractionalVolume(training, []);
+      if (_volAudit2.warnings.length) console.info('[VDSEN] Volume audit:', _volAudit2.warnings);
 
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;

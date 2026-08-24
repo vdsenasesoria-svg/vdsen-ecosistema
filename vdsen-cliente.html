@@ -12973,8 +12973,17 @@ function calculateProgression(di, postData) {
     : (_actionCounts['increase_load'] > 0 ? 'load_up'
     : (_actionCounts['reduce_load'] > 0 || _actionCounts['reduce_sets'] > 0 ? 'reduce'
     : 'maintain')));
+  // P9.7: observationsCount and confidence distinguish initial vs. learned state
+  var _loggedSetsCount = Object.keys(LOGS).filter(function(k){ return k.startsWith('log_'); }).length;
+  var _confidence = _loggedSetsCount === 0 ? 'none'
+    : _loggedSetsCount < 20  ? 'low'
+    : _loggedSetsCount < 60  ? 'medium'
+    : 'high';
+  var _nowIso = new Date().toISOString();
   var engineState = {
-    generatedAt: new Date().toISOString(),
+    engineVersion: '3.1.0',
+    generatedAt: _nowIso,
+    updatedAt: _nowIso,
     weekNum: CURRENT_WEEK,
     totalWeeks: getTotalWeeks(),
     deloadTriggered: isDeload,
@@ -12986,7 +12995,9 @@ function calculateProgression(di, postData) {
       return { name: r.exerciseName, action: r.action, newLoad: r.newLoad, newSets: r.newSets };
     }),
     avgNewLoad: _avgNewLoad > 0 ? parseFloat(_avgNewLoad.toFixed(2)) : null,
-    checkinRef: LOGS['ci_sem_'+CURRENT_WEEK] || null
+    checkinRef: LOGS['ci_sem_'+CURRENT_WEEK] || null,
+    observationsCount: _loggedSetsCount,
+    confidence: _confidence
   };
 
   return {
