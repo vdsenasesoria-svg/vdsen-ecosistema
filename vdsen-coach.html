@@ -3660,7 +3660,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   //  Prioridades 2, 3, 4, 7 + hardening P9.1–P9.8
   // ═══════════════════════════════════════════════════════════════════════════
 
-  var VDSEN_ENGINE_VERSION = '2.0.0';
+  var VDSEN_ENGINE_VERSION = '3.0.0';
 
   // ─── Motor pattern → muscle groups map ───────────────────────────────────
   var _MOTOR_MUSCLES = {
@@ -3695,9 +3695,226 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     'tobillo': ['squat','lunge','calf']
   };
 
-  // ─── auditFractionalVolume (P9.3) ────────────────────────────────────────
-  // direct ×1, indirect significant ×0.5, stabilizer ×0
-  // exercisesCatalog: [{name, motorPattern}] from exercises Firestore (optional)
+  // ─── Population priors — P10.2-3 ──────────────────────────────────────────
+  // MEV/MAV/MRV as fractional-set RANGES (direct×1 + indirect×0.5).
+  // Based on Israetel et al.; treat as population starting points, not absolutes.
+  var _POPULATION_PRIORS = {
+    'pectoral':            { mev: 8,  mav: 14, mrv: 22 },
+    'dorsales':            { mev: 8,  mav: 16, mrv: 25 },
+    'deltoides_lateral':   { mev: 6,  mav: 16, mrv: 26 },
+    'deltoides_anterior':  { mev: 0,  mav:  8, mrv: 16 },
+    'deltoides_posterior': { mev: 6,  mav: 12, mrv: 20 },
+    'cuadriceps':          { mev: 8,  mav: 14, mrv: 20 },
+    'isquiotibiales':      { mev: 6,  mav: 12, mrv: 18 },
+    'gluteos':             { mev: 4,  mav: 10, mrv: 16 },
+    'triceps':             { mev: 4,  mav: 12, mrv: 18 },
+    'biceps':              { mev: 6,  mav: 14, mrv: 20 },
+    'braquial':            { mev: 4,  mav: 10, mrv: 16 },
+    'trapecio_superior':   { mev: 0,  mav:  8, mrv: 16 },
+    'trapecio_medio':      { mev: 4,  mav: 10, mrv: 16 },
+    'romboides':           { mev: 4,  mav: 10, mrv: 16 },
+    'abdominales':         { mev: 0,  mav: 10, mrv: 20 },
+    'oblicuos':            { mev: 0,  mav:  8, mrv: 16 },
+    'gastrocnemio':        { mev: 4,  mav: 14, mrv: 22 },
+    'soleo':               { mev: 4,  mav: 14, mrv: 22 },
+    'aductores':           { mev: 4,  mav: 10, mrv: 16 },
+    'erectores':           { mev: 0,  mav:  6, mrv: 12 },
+    'rotadores_ext':       { mev: 4,  mav:  8, mrv: 12 }
+  };
+
+  // Muscles where compound, high-fatigue exercises dominate → higher RIR floors
+  var _COMPOUND_MUSCLES = ['pectoral','dorsales','cuadriceps','isquiotibiales','gluteos','erectores'];
+
+  // ─── Canonical exercise metadata — P10.7 ──────────────────────────────────
+  // Key = lowercase exercise name. primaryMuscles → direct, secondaryMuscles → indirect.
+  // resistanceProfile: 'AP'=ascending, 'DP'=descending, 'BP'=bell/peak, null=N/A
+  var _EXERCISE_CANONICAL_METADATA = {
+    'press banca':          { primaryMuscles:['pectoral'], secondaryMuscles:['triceps','deltoides_anterior'], stabilizers:['rotadores_ext'], movementPattern:'press_horizontal', resistanceProfile:'DP', longLengthBias:false, stability:'high' },
+    'press inclinado':      { primaryMuscles:['pectoral','pectoral_clavicular'], secondaryMuscles:['triceps','deltoides_anterior'], stabilizers:['rotadores_ext'], movementPattern:'press_horizontal', resistanceProfile:'DP', longLengthBias:false, stability:'high' },
+    'press declinado':      { primaryMuscles:['pectoral'], secondaryMuscles:['triceps'], stabilizers:['rotadores_ext'], movementPattern:'press_horizontal', resistanceProfile:'DP', longLengthBias:false, stability:'high' },
+    'press con mancuernas': { primaryMuscles:['pectoral'], secondaryMuscles:['triceps','deltoides_anterior'], stabilizers:['rotadores_ext'], movementPattern:'press_horizontal', resistanceProfile:'DP', longLengthBias:false, stability:'medium' },
+    'press militar':        { primaryMuscles:['deltoides'], secondaryMuscles:['triceps','trapecio_superior'], stabilizers:['abdominales','rotadores_ext'], movementPattern:'press_vertical', resistanceProfile:'DP', longLengthBias:false, stability:'medium' },
+    'press arnold':         { primaryMuscles:['deltoides'], secondaryMuscles:['triceps'], stabilizers:['rotadores_ext'], movementPattern:'press_vertical', resistanceProfile:'DP', longLengthBias:false, stability:'medium' },
+    'sentadilla':           { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales','erectores'], stabilizers:['abdominales'], movementPattern:'squat', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'sentadilla frontal':   { primaryMuscles:['cuadriceps'], secondaryMuscles:['gluteos','erectores'], stabilizers:['abdominales'], movementPattern:'squat', resistanceProfile:'BP', longLengthBias:true, stability:'medium' },
+    'sentadilla búlgara':   { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:['abdominales'], movementPattern:'lunge', resistanceProfile:'BP', longLengthBias:true, stability:'low' },
+    'sentadilla bulgara':   { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:['abdominales'], movementPattern:'lunge', resistanceProfile:'BP', longLengthBias:true, stability:'low' },
+    'peso muerto':          { primaryMuscles:['isquiotibiales','gluteos','erectores'], secondaryMuscles:['trapecio_superior','dorsales'], stabilizers:['abdominales'], movementPattern:'hip_hinge', resistanceProfile:'AP', longLengthBias:false, stability:'high' },
+    'rdl':                  { primaryMuscles:['isquiotibiales','gluteos'], secondaryMuscles:['erectores'], stabilizers:['abdominales'], movementPattern:'rdl', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'peso muerto rumano':   { primaryMuscles:['isquiotibiales','gluteos'], secondaryMuscles:['erectores'], stabilizers:['abdominales'], movementPattern:'rdl', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'jalón al pecho':       { primaryMuscles:['dorsales'], secondaryMuscles:['biceps','romboides'], stabilizers:[], movementPattern:'pull_vertical', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'jalón agarre neutro':  { primaryMuscles:['dorsales'], secondaryMuscles:['biceps','braquial'], stabilizers:[], movementPattern:'pull_vertical', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'jalón al frente':      { primaryMuscles:['dorsales'], secondaryMuscles:['biceps','romboides'], stabilizers:[], movementPattern:'pull_vertical', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'dominadas':            { primaryMuscles:['dorsales','biceps'], secondaryMuscles:['romboides','teres_mayor'], stabilizers:[], movementPattern:'pull_vertical', resistanceProfile:'BP', longLengthBias:true, stability:'medium' },
+    'remo con barra':       { primaryMuscles:['dorsales','romboides'], secondaryMuscles:['biceps','deltoides_posterior'], stabilizers:['erectores'], movementPattern:'pull_horizontal', resistanceProfile:'AP', longLengthBias:false, stability:'high' },
+    'remo en máquina':      { primaryMuscles:['dorsales','romboides'], secondaryMuscles:['biceps','deltoides_posterior'], stabilizers:[], movementPattern:'pull_horizontal', resistanceProfile:'AP', longLengthBias:false, stability:'high' },
+    'remo en maquina':      { primaryMuscles:['dorsales','romboides'], secondaryMuscles:['biceps','deltoides_posterior'], stabilizers:[], movementPattern:'pull_horizontal', resistanceProfile:'AP', longLengthBias:false, stability:'high' },
+    'remo cable':           { primaryMuscles:['dorsales','romboides'], secondaryMuscles:['biceps','deltoides_posterior'], stabilizers:[], movementPattern:'row', resistanceProfile:'AP', longLengthBias:false, stability:'high' },
+    'remo en polea':        { primaryMuscles:['dorsales','romboides'], secondaryMuscles:['biceps','deltoides_posterior'], stabilizers:[], movementPattern:'row', resistanceProfile:'AP', longLengthBias:false, stability:'high' },
+    'remo con mancuerna':   { primaryMuscles:['dorsales','romboides'], secondaryMuscles:['biceps','deltoides_posterior'], stabilizers:['erectores'], movementPattern:'pull_horizontal', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'curl bíceps':          { primaryMuscles:['biceps','braquial'], secondaryMuscles:['braquiorradial'], stabilizers:[], movementPattern:'curl', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'curl biceps':          { primaryMuscles:['biceps','braquial'], secondaryMuscles:['braquiorradial'], stabilizers:[], movementPattern:'curl', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'curl martillo':        { primaryMuscles:['braquial','braquiorradial'], secondaryMuscles:['biceps'], stabilizers:[], movementPattern:'curl', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'curl predicador':      { primaryMuscles:['biceps'], secondaryMuscles:['braquial'], stabilizers:[], movementPattern:'curl', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'curl en polea':        { primaryMuscles:['biceps'], secondaryMuscles:['braquial'], stabilizers:[], movementPattern:'curl', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'extensión tríceps':    { primaryMuscles:['triceps'], secondaryMuscles:[], stabilizers:[], movementPattern:'extension', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'extension triceps':    { primaryMuscles:['triceps'], secondaryMuscles:[], stabilizers:[], movementPattern:'extension', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'press francés':        { primaryMuscles:['triceps'], secondaryMuscles:[], stabilizers:[], movementPattern:'extension', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'press frances':        { primaryMuscles:['triceps'], secondaryMuscles:[], stabilizers:[], movementPattern:'extension', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'fondos':               { primaryMuscles:['triceps','pectoral'], secondaryMuscles:['deltoides_anterior'], stabilizers:['rotadores_ext'], movementPattern:'press_horizontal', resistanceProfile:'BP', longLengthBias:false, stability:'medium' },
+    'elevación lateral':    { primaryMuscles:['deltoides_lateral'], secondaryMuscles:['trapecio_superior'], stabilizers:[], movementPattern:'lateral_raise', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'elevacion lateral':    { primaryMuscles:['deltoides_lateral'], secondaryMuscles:['trapecio_superior'], stabilizers:[], movementPattern:'lateral_raise', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'elevación frontal':    { primaryMuscles:['deltoides_anterior'], secondaryMuscles:[], stabilizers:[], movementPattern:'lateral_raise', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'face pull':            { primaryMuscles:['deltoides_posterior','rotadores_ext'], secondaryMuscles:['trapecio_medio','romboides'], stabilizers:[], movementPattern:'face_pull', resistanceProfile:'AP', longLengthBias:false, stability:'high' },
+    'apertura pecho':       { primaryMuscles:['pectoral'], secondaryMuscles:['deltoides_anterior'], stabilizers:[], movementPattern:'fly', resistanceProfile:'BP', longLengthBias:true, stability:'high' },
+    'hip thrust':           { primaryMuscles:['gluteos'], secondaryMuscles:['isquiotibiales','aductores'], stabilizers:['abdominales'], movementPattern:'glute_isolation', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'prensa pierna':        { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:[], movementPattern:'squat', resistanceProfile:'DP', longLengthBias:true, stability:'high' },
+    'leg extension':        { primaryMuscles:['cuadriceps'], secondaryMuscles:[], stabilizers:[], movementPattern:'squat', resistanceProfile:'DP', longLengthBias:false, stability:'high' },
+    'leg curl':             { primaryMuscles:['isquiotibiales'], secondaryMuscles:['gastrocnemio'], stabilizers:[], movementPattern:'rdl', resistanceProfile:'DP', longLengthBias:false, stability:'high' },
+    'pantorrilla':          { primaryMuscles:['gastrocnemio','soleo'], secondaryMuscles:[], stabilizers:[], movementPattern:'calf', resistanceProfile:'DP', longLengthBias:false, stability:'high' },
+    'zancada':              { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:['abdominales'], movementPattern:'lunge', resistanceProfile:'BP', longLengthBias:true, stability:'medium' },
+    'estocada':             { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:['abdominales'], movementPattern:'lunge', resistanceProfile:'BP', longLengthBias:true, stability:'medium' },
+    'plancha':              { primaryMuscles:['abdominales','oblicuos'], secondaryMuscles:['erectores','deltoides'], stabilizers:[], movementPattern:'abdominal', resistanceProfile:null, longLengthBias:null, stability:'high' },
+    'crunch':               { primaryMuscles:['abdominales'], secondaryMuscles:['oblicuos'], stabilizers:[], movementPattern:'abdominal', resistanceProfile:null, longLengthBias:null, stability:'high' },
+    'pull-over':            { primaryMuscles:['dorsales','pectoral'], secondaryMuscles:['triceps'], stabilizers:[], movementPattern:'pull_vertical', resistanceProfile:'AP', longLengthBias:true, stability:'high' }
+  };
+
+  // ─── _computeConfidenceScore (P10.6) ─────────────────────────────────────
+  // More nuanced than raw set count: considers weeks, RIR consistency, check-ins, density.
+  function _computeConfidenceScore(entries, checkinSummary) {
+    var score = 0;
+    var logKeys = Object.keys(entries).filter(function(k){ return k.startsWith('log_'); });
+    var loggedSets = logKeys.length;
+    // Factor 1: set count (capped at 3 pts)
+    if      (loggedSets >= 60) score += 3;
+    else if (loggedSets >= 30) score += 2;
+    else if (loggedSets >= 10) score += 1;
+    // Factor 2: weeks tracked via check-ins
+    var weeksTracked = checkinSummary ? (checkinSummary.weeksTracked || 0) : 0;
+    if      (weeksTracked >= 4) score += 2;
+    else if (weeksTracked >= 2) score += 1;
+    // Factor 3: RIR consistency
+    if (logKeys.length > 0) {
+      var rirFilled = logKeys.filter(function(k){
+        var v = entries[k]; return v && (v.rir_real != null || v.rir != null);
+      }).length;
+      if (rirFilled / logKeys.length > 0.7) score += 1;
+    }
+    // Factor 4: check-in quality
+    if (checkinSummary && (checkinSummary.avgHRV != null || checkinSummary.avgWHO5 != null)) score += 1;
+    // Factor 5: density penalty — many sets in very few sessions = low reliability
+    var doneDays = Object.keys(entries).filter(function(k){ return k.startsWith('done_'); }).length;
+    if (doneDays > 0 && loggedSets / doneDays > 25) score -= 2;
+    if (score <= 1) return 'none';
+    if (score <= 2) return 'low';
+    if (score <= 4) return 'medium';
+    return 'high';
+  }
+
+  // ─── _computeMuscleTargets (P10.2-5) ─────────────────────────────────────
+  // Core Decision Engine: returns per-muscle physiological targets.
+  // Hierarchy: learned_state (medium/high conf + previous volume) → population_prior.
+  // frequencyTarget derives from volumeTarget, not chosen independently (P10.4).
+  // rirRange varies by muscle type (compound vs isolation) and client nivel (P10.5).
+  function _computeMuscleTargets(engineState, clientFlags, opts) {
+    opts = opts || {};
+    var priorityMuscles    = Array.isArray(opts.priorityMuscles)    ? opts.priorityMuscles    : [];
+    var maintenanceMuscles = Array.isArray(opts.maintenanceMuscles) ? opts.maintenanceMuscles : [];
+    var nivel     = opts.nivel     || 'intermedio';
+    var readiness = opts.readiness || 'neutral';
+    var prevVolumes = opts.previousPlanVolumes || null;
+    var targets = {};
+
+    Object.keys(_POPULATION_PRIORS).forEach(function(muscle) {
+      var prior = _POPULATION_PRIORS[muscle];
+      var isPriority    = priorityMuscles.indexOf(muscle) >= 0;
+      var isMaintenance = !isPriority && maintenanceMuscles.indexOf(muscle) >= 0;
+
+      // Source hierarchy (P10.3): learned individual state → population prior
+      var source    = 'population_prior';
+      var confLevel = 'low';
+      var volumeTarget = prior.mav;
+      var volumeMin    = prior.mev;
+      var volumeMax    = prior.mrv;
+      var esConf = engineState ? (engineState.confidence || 'none') : 'none';
+
+      if ((esConf === 'high' || esConf === 'medium') && prevVolumes && prevVolumes[muscle]) {
+        source = 'learned_state';
+        confLevel = esConf;
+        var prevFrac = prevVolumes[muscle].fractionalTotal;
+        volumeTarget = Math.round(prevFrac);
+        var spread = esConf === 'high' ? 0.15 : 0.20;
+        volumeMin = Math.max(prior.mev, Math.round(prevFrac * (1 - spread)));
+        volumeMax = Math.min(prior.mrv + 4, Math.round(prevFrac * (1 + spread)));
+      }
+
+      // Goal modifiers
+      if (source === 'population_prior') {
+        if (isPriority) {
+          volumeTarget = Math.min(prior.mrv, Math.round(prior.mav * 1.2));
+          volumeMax    = prior.mrv;
+        } else if (isMaintenance) {
+          volumeTarget = Math.max(prior.mev, Math.round(prior.mev + (prior.mav - prior.mev) * 0.3));
+          volumeMax    = Math.round(prior.mav * 0.65);
+        }
+      } else {
+        if (isPriority)     volumeTarget = Math.min(prior.mrv, Math.round(volumeTarget * 1.1));
+        else if (isMaintenance) {
+          volumeTarget = Math.max(prior.mev, Math.round(volumeTarget * 0.8));
+          volumeMax    = Math.round(volumeTarget * 1.1);
+        }
+      }
+
+      // Readiness reduction
+      if (readiness === 'fatigued') {
+        volumeTarget = Math.max(prior.mev, Math.round(volumeTarget * 0.8));
+        volumeMax    = Math.round(volumeMax * 0.85);
+      }
+
+      // Frequency derived from volume (P10.4) — not chosen independently
+      var setsPerSession  = isPriority ? 5 : 4;
+      var frequencyTarget = Math.min(3, Math.max(1, Math.ceil(volumeTarget / setsPerSession)));
+      if (isMaintenance)            frequencyTarget = Math.min(2, frequencyTarget);
+      if (readiness === 'fatigued') frequencyTarget = Math.max(1, frequencyTarget - 1);
+
+      // RIR by muscle type and nivel (P10.5)
+      var isCompound = _COMPOUND_MUSCLES.indexOf(muscle) >= 0;
+      var rirMin, rirMax;
+      if (nivel === 'principiante') {
+        rirMin = 2; rirMax = 4;
+      } else if (nivel === 'avanzado') {
+        rirMin = isCompound ? 2 : 1; rirMax = isCompound ? 4 : 3;
+      } else { // intermedio default
+        rirMin = isCompound ? 2 : 1; rirMax = 3;
+      }
+      if (readiness === 'fatigued') { rirMin = Math.min(rirMin + 1, 4); rirMax = Math.min(rirMax + 1, 5); }
+
+      var reasonCodes = [];
+      if (isPriority)                 reasonCodes.push('MUSCLE_PRIORITY');
+      if (isMaintenance)              reasonCodes.push('MAINTENANCE_MODE');
+      if (source === 'learned_state') reasonCodes.push('LEARNED_STATE_USED');
+      if (readiness === 'fatigued')   reasonCodes.push('FATIGUED_READINESS_REDUCTION');
+      if (frequencyTarget > 3)        reasonCodes.push('HIGH_FREQUENCY_CONTEXTUAL');
+
+      targets[muscle] = {
+        goal: isMaintenance ? 'maintenance' : 'progress',
+        priority: isPriority ? 'high' : (isMaintenance ? 'maintenance' : 'normal'),
+        volumeTarget: volumeTarget,
+        volumeRange: { min: volumeMin, max: volumeMax },
+        frequencyTarget: frequencyTarget,
+        rirRange: { min: rirMin, max: rirMax },
+        source: source,
+        confidence: confLevel,
+        reasonCodes: reasonCodes
+      };
+    });
+
+    return targets;
+  }
+
+  // ─── auditFractionalVolume (P9.3 + P10.7) ────────────────────────────────
+  // direct ×1, indirect ×0.5, stabilizer ×0.
+  // Lookup order: _EXERCISE_CANONICAL_METADATA → Firestore catalog motorPattern → name-keyword fallback.
   function auditFractionalVolume(training, exercisesCatalog) {
     var muscleVolume = {};
     var unclassified = [];
@@ -3710,30 +3927,51 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     training.days.forEach(function(day) {
       (day.exercises || []).forEach(function(ex) {
-        var name = (ex.exerciseName || '').trim();
-        var entry = catalog.find(function(c) { return (c.name||'').toLowerCase() === name.toLowerCase(); });
-        var pattern = entry ? entry.motorPattern : null;
-        if (!pattern) {
-          var nl = name.toLowerCase();
-          if (/sentadilla|squat/.test(nl))                             pattern = 'squat';
-          else if (/\brdl\b|rumano/.test(nl))                         pattern = 'rdl';
-          else if (/peso muerto/.test(nl))                             pattern = 'hip_hinge';
-          else if (/press.*banca|bench press/.test(nl))                pattern = 'press_horizontal';
-          else if (/press.*militar|overhead press|\bohp\b/.test(nl))   pattern = 'press_vertical';
-          else if (/jalón|pull.?down|dominada/.test(nl))               pattern = 'pull_vertical';
-          else if (/remo|row|cable row/.test(nl))                      pattern = 'pull_horizontal';
-          else if (/\bcurl\b/.test(nl))                                pattern = 'curl';
-          else if (/triceps|skull crusher|extensi.*tricep/.test(nl))   pattern = 'extension';
-          else if (/apertura|fly/.test(nl))                            pattern = 'fly';
-          else if (/elev.*lateral|lateral raise/.test(nl))             pattern = 'lateral_raise';
-          else if (/hip thrust|glute bridge/.test(nl))                 pattern = 'glute_isolation';
-          else if (/pantorrilla|calf/.test(nl))                        pattern = 'calf';
-          else if (/abdom|crunch|plancha|plank/.test(nl))              pattern = 'abdominal';
-          else if (/zancada|estocada|lunge/.test(nl))                  pattern = 'lunge';
-          else if (/face pull/.test(nl))                               pattern = 'face_pull';
-        }
-        var muscles = pattern ? _MOTOR_MUSCLES[pattern] : null;
+        var name   = (ex.exerciseName || '').trim();
+        var nameLc = name.toLowerCase();
         var numSets = (ex.sets || []).length;
+
+        // P10.7: canonical metadata first
+        var canonical = _EXERCISE_CANONICAL_METADATA[nameLc];
+        if (canonical) {
+          (canonical.primaryMuscles || []).forEach(function(m) {
+            if (!muscleVolume[m]) muscleVolume[m] = { direct: 0, indirect: 0, fractionalTotal: 0 };
+            muscleVolume[m].direct += numSets;
+            muscleVolume[m].fractionalTotal += numSets;
+          });
+          (canonical.secondaryMuscles || []).forEach(function(m) {
+            if (!muscleVolume[m]) muscleVolume[m] = { direct: 0, indirect: 0, fractionalTotal: 0 };
+            muscleVolume[m].indirect += numSets;
+            muscleVolume[m].fractionalTotal += numSets * 0.5;
+          });
+          return;
+        }
+
+        // Firestore catalog motorPattern
+        var catalogEntry = catalog.find(function(c) { return (c.name||'').toLowerCase() === nameLc; });
+        var pattern = catalogEntry ? catalogEntry.motorPattern : null;
+
+        // Name-keyword fallback (legacy exercises without canonical metadata)
+        if (!pattern) {
+          if      (/sentadilla|squat/.test(nameLc))                           pattern = 'squat';
+          else if (/\brdl\b|rumano/.test(nameLc))                             pattern = 'rdl';
+          else if (/peso muerto/.test(nameLc))                                pattern = 'hip_hinge';
+          else if (/press.*banca|bench press/.test(nameLc))                   pattern = 'press_horizontal';
+          else if (/press.*militar|overhead press|\bohp\b/.test(nameLc))      pattern = 'press_vertical';
+          else if (/jal[oó]n|pull.?down|dominada/.test(nameLc))              pattern = 'pull_vertical';
+          else if (/remo|row|cable row/.test(nameLc))                         pattern = 'pull_horizontal';
+          else if (/\bcurl\b/.test(nameLc))                                   pattern = 'curl';
+          else if (/triceps|skull crusher|extensi.*tricep/.test(nameLc))      pattern = 'extension';
+          else if (/apertura|fly/.test(nameLc))                               pattern = 'fly';
+          else if (/elev.*lateral|lateral raise/.test(nameLc))                pattern = 'lateral_raise';
+          else if (/hip thrust|glute bridge/.test(nameLc))                    pattern = 'glute_isolation';
+          else if (/pantorrilla|calf/.test(nameLc))                           pattern = 'calf';
+          else if (/abdom|crunch|plancha|plank/.test(nameLc))                 pattern = 'abdominal';
+          else if (/zancada|estocada|lunge/.test(nameLc))                     pattern = 'lunge';
+          else if (/face pull/.test(nameLc))                                  pattern = 'face_pull';
+        }
+
+        var muscles = pattern ? _MOTOR_MUSCLES[pattern] : null;
         if (!muscles) { if (name) unclassified.push(name); return; }
         (muscles.direct || []).forEach(function(m) {
           if (!muscleVolume[m]) muscleVolume[m] = { direct: 0, indirect: 0, fractionalTotal: 0 };
@@ -3759,9 +3997,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return { muscleVolume: muscleVolume, unclassified: unclassified, warnings: warnings };
   }
 
-  // ─── buildPrescriptionContext (P2 + P7 + P9.4) ───────────────────────────
-  // Returns a structured PrescriptionContext (not just text). Text for Claude
-  // is derived from this object via _prescriptionContextToText().
+  // ─── buildPrescriptionContext (P2 + P7 + P9.4 + P10.2-6) ────────────────
+  // Returns a structured PrescriptionContext. Text for Claude derived via
+  // _prescriptionContextToText(). prescriptionTargets.muscles populated by
+  // _computeMuscleTargets() — the core Decision Engine call (P10.2-5).
   async function buildPrescriptionContext(clientId) {
     try {
       var ctx = {
@@ -3775,7 +4014,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           globalReadiness: 'neutral',
           deloadCandidate: false,
           reasonCodes: [],
-          volumeGuidance: {}
+          volumeGuidance: {},
+          muscles: {}
         },
         restrictions: {
           ejerciciosEvitar: [],
@@ -3799,12 +4039,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             dayLabels: (p.days || []).map(function(d) { return d.label; }),
             exercises: (p.days || []).flatMap(function(d) {
               return (d.exercises || []).map(function(e) { return e.exerciseName; });
-            }).filter(Boolean)
+            }).filter(Boolean),
+            _rawDays: p.days || []  // kept for auditFractionalVolume in P10
           };
         }
       }
 
-      // P9.5: Read ficha for ejercicios_evitar and biomecanica restrictions
+      // P9.5 + P10.2: Read ficha for restrictions, priorities, nivel
+      var priorityMuscles    = [];
+      var maintenanceMuscles = [];
+      var clientNivel        = 'intermedio';
       try {
         var fichaSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
         if (fichaSnap.exists()) {
@@ -3825,6 +4069,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             });
             if (avoid.length) ctx.restrictions.substitutionNotes.push('Evitar patrón ' + patStr + ': ' + avoid.join(', '));
           });
+          // P10.2: priority and maintenance muscles from prioridades section
+          if (fd.prioridades) {
+            if (Array.isArray(fd.prioridades.grupos_musculares))    priorityMuscles    = fd.prioridades.grupos_musculares;
+            if (Array.isArray(fd.prioridades.grupos_mantenimiento)) maintenanceMuscles = fd.prioridades.grupos_mantenimiento;
+          }
+          // P10.5: client global training level
+          clientNivel = (fd.entrenamiento && fd.entrenamiento.nivel) ||
+                        (fd.base && fd.base.nivel) ||
+                        'intermedio';
         }
       } catch (_fe) { /* ficha read optional — no blocker */ }
 
@@ -3931,6 +4184,30 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
       // Deduplicate reason codes
       ctx.prescriptionTargets.reasonCodes = ctx.prescriptionTargets.reasonCodes.filter(function(v,i,a){ return a.indexOf(v)===i; });
+
+      // P10.2-6: Compute per-muscle physiological targets (core Decision Engine)
+      var _prevPlanVolumes = null;
+      if (ctx.previousPlan && ctx.previousPlan._rawDays) {
+        _prevPlanVolumes = auditFractionalVolume({ days: ctx.previousPlan._rawDays }, []).muscleVolume;
+      }
+      var _enhancedConf = logsSnap && logsSnap.exists()
+        ? _computeConfidenceScore(logsSnap.data().entries || {}, ctx.checkinSummary)
+        : 'none';
+      var _engineStateForTargets = ctx.engineState
+        ? Object.assign({}, ctx.engineState, { confidence: _enhancedConf })
+        : { confidence: _enhancedConf };
+      ctx.prescriptionTargets.muscles = _computeMuscleTargets(
+        _engineStateForTargets,
+        ctx.clientFlags,
+        {
+          priorityMuscles:    priorityMuscles,
+          maintenanceMuscles: maintenanceMuscles,
+          nivel:              clientNivel,
+          readiness:          ctx.prescriptionTargets.globalReadiness,
+          previousPlanVolumes: _prevPlanVolumes
+        }
+      );
+
       return ctx;
     } catch (e) {
       console.warn('buildPrescriptionContext error:', e.message);
@@ -3990,21 +4267,47 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (ci.weightRange && ci.weightRange.last) lines.push('  Peso actual: ' + ci.weightRange.last + ' kg (rango: ' + ci.weightRange.min + '–' + ci.weightRange.max + ' kg)');
     }
 
+    // P10.10: Per-muscle targets — only actionable muscles shown to Claude
+    var muscleTgts = pt && pt.muscles;
+    if (muscleTgts && Object.keys(muscleTgts).length) {
+      var actionableMuscles = Object.keys(muscleTgts).filter(function(m) {
+        var t = muscleTgts[m];
+        return t.priority === 'high' || t.priority === 'maintenance' || t.source === 'learned_state';
+      });
+      if (actionableMuscles.length) {
+        lines.push('\nTARGETS FISIOLÓGICOS — CONSTRUYE EL PLAN DENTRO DE ESTOS LÍMITES (Claude compone sesiones; no recalcula targets):');
+        actionableMuscles.forEach(function(m) {
+          var t = muscleTgts[m];
+          var arrow = t.priority === 'high' ? '⬆' : (t.priority === 'maintenance' ? '↓' : '↔');
+          var label = t.priority === 'high' ? 'PRIORIDAD ALTA' : (t.priority === 'maintenance' ? 'MANTENIMIENTO' : 'normal');
+          var rir   = 'RIR ' + t.rirRange.min + '–' + t.rirRange.max;
+          if (t.goal === 'maintenance') {
+            lines.push('  ' + arrow + ' ' + m + ' (' + label + '): ' + t.volumeRange.min + '–' + t.volumeRange.max + ' series · ' + t.frequencyTarget + 'x/sem · ' + rir);
+          } else {
+            lines.push('  ' + arrow + ' ' + m + ' (' + label + '): target ' + t.volumeTarget + ' series fraccionales [' + t.volumeRange.min + '–' + t.volumeRange.max + '] · ' + t.frequencyTarget + 'x/sem · ' + rir);
+          }
+        });
+        lines.push('  (músculos no listados: usar rangos MAV poblacionales; el validador los auditará post-generación)');
+      }
+    }
+
     lines.push('--- FIN CONTEXTO LONGITUDINAL ---\n');
     return lines.join('\n');
   }
 
-  // ─── validatePlan (P3 + P9.2) ────────────────────────────────────────────
-  // Validates the generated plan against the VDSEN contract before Firestore.
-  // restrictions: { ejerciciosEvitar: [] } — deterministic veto (P9.5)
-  // rawJson: first extracted JSON object — for schema check (optional)
+  // ─── validatePlan (P3 + P9.2 + P10.1 + P10.8) ───────────────────────────
+  // Validates the generated plan against the VDSEN contract before persisting.
+  // P10.1: schema, nivel_medio, variacion_vertical, macros ±3%, <3 subs → ERRORS.
+  // P10.8: DUPLICATE_EXERCISE_WARNING (same name) ≠ RAP_REDUNDANCY_WARNING (same muscle+profile).
+  // restrictions: { ejerciciosEvitar: [] }; rawJson: first JSON block (optional).
   function validatePlan({ training, nutrition, supplements }, restrictions, rawJson) {
     var errors   = [];
     var warnings = [];
     var evitar = (restrictions && Array.isArray(restrictions.ejerciciosEvitar)) ? restrictions.ejerciciosEvitar : [];
 
+    // P10.1: schema mismatch is a blocking error for new plans
     if (rawJson && rawJson.schema && rawJson.schema !== 'vdsen-plan-v2') {
-      warnings.push('Schema inesperado: ' + rawJson.schema + ' (esperado vdsen-plan-v2)');
+      errors.push('Schema incorrecto: "' + rawJson.schema + '" — se requiere "vdsen-plan-v2". El parser depende de este campo.');
     }
 
     if (training) {
@@ -4016,6 +4319,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         }
         var seenNames = [];
         training.days.forEach(function(day, di) {
+          var dayMuscleProfiles = {}; // P10.8: {muscle: [resistanceProfile, ...]} for RAP check
+
           if (!Array.isArray(day.exercises) || day.exercises.length === 0) {
             errors.push('Día ' + (di+1) + ' (' + (day.label||'?') + ') sin ejercicios');
           } else {
@@ -4031,21 +4336,31 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                 if (vetoed) errors.push('VETO: ' + exName + ' está en ejercicios_evitar del cliente');
               }
 
-              // P9.6: RAP → warning only, never blocking
+              // P10.8: same name across whole plan → DUPLICATE_EXERCISE_WARNING (not RAP)
               if (exName && seenNames.indexOf(exName) !== -1) {
-                warnings.push('RAP_REDUNDANCY_WARNING: ' + exName + ' aparece más de una vez en el plan');
+                warnings.push('DUPLICATE_EXERCISE_WARNING: ' + exName + ' aparece más de una vez en el plan');
               }
               if (exName) seenNames.push(exName);
 
-              if (!ex.nivel_medio)       warnings.push('Ej "' + (exName||ei+1) + '": nivel_medio ausente');
-              if (!ex.variacion_vertical) warnings.push('Ej "' + (exName||ei+1) + '": variacion_vertical ausente');
+              // P10.8: collect per-day muscle+resistanceProfile for RAP detection
+              var _meta = _EXERCISE_CANONICAL_METADATA[exName.toLowerCase()];
+              if (_meta && _meta.resistanceProfile) {
+                (_meta.primaryMuscles || []).forEach(function(m) {
+                  if (!dayMuscleProfiles[m]) dayMuscleProfiles[m] = [];
+                  dayMuscleProfiles[m].push({ exName: exName, rp: _meta.resistanceProfile });
+                });
+              }
+
+              // P10.1: nivel_medio and variacion_vertical are blocking errors for new plans
+              if (!ex.nivel_medio)        errors.push('Ej "' + (exName||ei+1) + '": nivel_medio ausente (obligatorio en vdsen-plan-v2)');
+              if (!ex.variacion_vertical) errors.push('Ej "' + (exName||ei+1) + '": variacion_vertical ausente (obligatorio en vdsen-plan-v2)');
 
               if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
                 errors.push('Día ' + (di+1) + ' / ' + (exName||'Ej'+(ei+1)) + ': sin sets');
               } else {
                 ex.sets.forEach(function(s, si) {
                   var sid = (exName||'Ej'+(ei+1)) + ' s' + (si+1);
-                  // P9.2: prescription fields are ERRORS, not repaired with defaults
+                  // P9.2: prescription fields are ERRORS
                   if (s.repsTarget  == null || isNaN(parseInt(s.repsTarget)))  errors.push(sid + ': repsTarget ausente');
                   if (s.rirTarget   == null || isNaN(parseInt(s.rirTarget)))   errors.push(sid + ': rirTarget ausente');
                   if (s.restSeconds == null || isNaN(parseInt(s.restSeconds))) errors.push(sid + ': restSeconds ausente');
@@ -4056,6 +4371,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                   }
                 });
               }
+            });
+
+            // P10.8: RAP check per day — same muscle + same resistanceProfile ≥ 2 exercises
+            // RAP (Bennett redundancy) ≠ duplicate name; requires matching resistance profile
+            Object.keys(dayMuscleProfiles).forEach(function(muscle) {
+              var rpGroups = {};
+              dayMuscleProfiles[muscle].forEach(function(e) {
+                if (!rpGroups[e.rp]) rpGroups[e.rp] = [];
+                rpGroups[e.rp].push(e.exName);
+              });
+              Object.keys(rpGroups).forEach(function(rp) {
+                if (rpGroups[rp].length >= 2) {
+                  warnings.push('RAP_REDUNDANCY_WARNING: Día ' + (di+1) + ' / ' + muscle + ': ' + rpGroups[rp].join(' + ') + ' comparten resistanceProfile=' + rp + ' (revisa variedad de estímulo)');
+                }
+              });
             });
           }
         });
@@ -4072,7 +4402,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         warnings.push('nutricion.comidas no es array');
       } else {
         var mealKcalSum = 0;
-        var subWarnings = [];
+        var subErrors = [];
         nutrition.comidas.forEach(function(meal, mi) {
           var alimentos = meal.alimentos || meal.items || [];
           if (!Array.isArray(alimentos)) return;
@@ -4083,25 +4413,27 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
               warnings.push('nutricion comida ' + (mi+1) + ' / ' + (al.nombre||'?') + ': cantidad_g no numérico');
             }
             var subs = al.sustituciones || al.substitutions || [];
-            if (!Array.isArray(subs) || subs.length < 3) subWarnings.push(al.nombre || ('alimento comida '+(mi+1)));
+            // P10.1: <3 sustituciones is now a blocking error
+            if (!Array.isArray(subs) || subs.length < 3) subErrors.push(al.nombre || ('alimento comida '+(mi+1)));
           });
         });
         var rootKcal = parseFloat(nutrition.calorias || 0);
         if (rootKcal > 0 && mealKcalSum > 0) {
           var diff = Math.abs(rootKcal - mealKcalSum) / rootKcal;
-          if (diff > 0.03) warnings.push('Macros raíz (' + rootKcal + ' kcal) difieren ' + (diff*100).toFixed(1) + '% de suma de comidas (' + Math.round(mealKcalSum) + ' kcal) — excede ±3%');
+          // P10.1: macros ±3% is now a blocking error
+          if (diff > 0.03) errors.push('Macros raíz (' + rootKcal + ' kcal) difieren ' + (diff*100).toFixed(1) + '% de suma de comidas (' + Math.round(mealKcalSum) + ' kcal) — excede ±3% (plan nutricional inválido)');
         }
-        if (subWarnings.length) warnings.push('≥3 sustituciones faltantes en: ' + subWarnings.slice(0,5).join(', ') + (subWarnings.length>5?' (+más)':''));
+        if (subErrors.length) errors.push('≥3 sustituciones faltantes en: ' + subErrors.slice(0,5).join(', ') + (subErrors.length>5?' (+más)':'') + ' — obligatorio en vdsen-plan-v2');
       }
     }
 
     return { valid: errors.length === 0, errors: errors, warnings: warnings };
   }
 
-  // ─── repairPlan (P4 + P9.1) ──────────────────────────────────────────────
+  // ─── repairPlan (P4 + P9.1 + P10.1) ─────────────────────────────────────
   // Repairs ONLY deterministic structural nulls (indexes, derived values, load=0).
   // NEVER invents prescription values (repsTarget, rirTarget, restSeconds).
-  // Missing prescription fields → needsControlledRepair = true + incompleteItems list.
+  // Missing prescription fields OR nivel_medio/variacion_vertical → needsControlledRepair.
   function repairPlan({ training, nutrition, supplements, pharma }, _errors) {
     var changed = false;
     var incompleteItems = [];
@@ -4117,6 +4449,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         day.exercises.forEach(function(ex, ei) {
           if (!ex.exerciseName || ex.exerciseName.trim().length < 2) { ex.exerciseName = 'Ejercicio '+(ei+1); changed = true; }
           if (!Array.isArray(ex.sets))                     { ex.sets = [];               changed = true; }
+          // P10.1: collect missing exercise-level fields for controlled repair
+          var exMissing = [];
+          if (!ex.nivel_medio)        exMissing.push('nivel_medio');
+          if (!ex.variacion_vertical) exMissing.push('variacion_vertical');
+          if (exMissing.length) incompleteItems.push({ dayLabel: day.label, exerciseName: ex.exerciseName, setIndex: -1, missing: exMissing });
+
           ex.sets.forEach(function(s, si) {
             if (s.setIndex == null) { s.setIndex = si; changed = true; }
             if (s.load == null)     { s.load = 0;      changed = true; }
@@ -4197,22 +4535,24 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
     var _ok = function(t) { return t === true; };
     var _set = function(extra) { return Object.assign({ setIndex:0, load:0, repsTarget:8, rirTarget:2, restSeconds:90 }, extra||{}); };
-    var _day = function(sets) { return { label:'A', exercises:[{ exerciseName:'Press Banca', sets: sets||[_set()] }] }; };
+    // P10.1: nivel_medio and variacion_vertical now required → include in default fixtures
+    var _ex = function(nm, sets) { return { exerciseName: nm||'Press Banca', nivel_medio:'intermedio', variacion_vertical:'completa', sets: sets||[_set()] }; };
+    var _day = function(sets) { return { label:'A', exercises:[_ex('Press Banca', sets)] }; };
     var _plan = function(days) { return { training:{ weeks:6, daysPerWeek:(days||[_day()]).length, days: days||[_day()] }, nutrition:null, supplements:null }; };
 
     test('T1  validatePlan: days[] vacío → error', function() {
       return validatePlan({ training:{days:[]}, nutrition:null, supplements:null }).valid === false;
     });
     test('T2  validatePlan: repsTarget ausente → error', function() {
-      var r = validatePlan({ training:{days:[{label:'A',exercises:[{exerciseName:'X',sets:[{setIndex:0,load:0,rirTarget:2,restSeconds:90}]}]}]}, nutrition:null, supplements:null });
+      var r = validatePlan({ training:{days:[{label:'A',exercises:[_ex('X',[{setIndex:0,load:0,rirTarget:2,restSeconds:90}])]}]}, nutrition:null, supplements:null });
       return r.valid === false && r.errors.some(function(e){return e.includes('repsTarget');});
     });
     test('T3  validatePlan: rirTarget ausente → error', function() {
-      var r = validatePlan({ training:{days:[{label:'A',exercises:[{exerciseName:'X',sets:[{setIndex:0,load:0,repsTarget:8,restSeconds:90}]}]}]}, nutrition:null, supplements:null });
+      var r = validatePlan({ training:{days:[{label:'A',exercises:[_ex('X',[{setIndex:0,load:0,repsTarget:8,restSeconds:90}])]}]}, nutrition:null, supplements:null });
       return r.valid === false && r.errors.some(function(e){return e.includes('rirTarget');});
     });
     test('T4  validatePlan: restSeconds ausente → error', function() {
-      var r = validatePlan({ training:{days:[{label:'A',exercises:[{exerciseName:'X',sets:[{setIndex:0,load:0,repsTarget:8,rirTarget:2}]}]}]}, nutrition:null, supplements:null });
+      var r = validatePlan({ training:{days:[{label:'A',exercises:[_ex('X',[{setIndex:0,load:0,repsTarget:8,rirTarget:2}])]}]}, nutrition:null, supplements:null });
       return r.valid === false && r.errors.some(function(e){return e.includes('restSeconds');});
     });
     test('T5  validatePlan: set completo → válido', function() {
@@ -4222,10 +4562,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var r = validatePlan(_plan(), { ejerciciosEvitar:['Press Banca'] });
       return r.errors.some(function(e){return e.includes('VETO');});
     });
-    test('T7  validatePlan: RAP duplicado → warning, válido', function() {
-      var d = { label:'A', exercises:[{ exerciseName:'Press Banca', sets:[_set()] }, { exerciseName:'Press Banca', sets:[_set()] }] };
+    test('T7  validatePlan: ejercicio duplicado → DUPLICATE_EXERCISE_WARNING (no RAP), válido', function() {
+      var d = { label:'A', exercises:[_ex('Press Banca'), _ex('Press Banca')] };
       var r = validatePlan({ training:{days:[d]}, nutrition:null, supplements:null });
-      return r.valid === true && r.warnings.some(function(w){return w.includes('RAP_REDUNDANCY');});
+      return r.valid === true && r.warnings.some(function(w){return w.includes('DUPLICATE_EXERCISE_WARNING');});
     });
     test('T8  validatePlan: daysPerWeek ≠ days.length → warning, válido', function() {
       var r = validatePlan({ training:{weeks:6,daysPerWeek:4,days:[_day()]}, nutrition:null, supplements:null });
@@ -4267,15 +4607,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var r = auditFractionalVolume(t, []);
       return r.muscleVolume.triceps && r.muscleVolume.triceps.indirect === 2 && r.muscleVolume.triceps.fractionalTotal === 1;
     });
-    test('T16 validatePlan: macros raíz vs suma comidas >3% → warning', function() {
-      var nut = { calorias:2000, proteina:150, carbos:200, grasas:60, comidas:[{ alimentos:[{ nombre:'X', calorias:1000 }] }] };
+    test('T16 validatePlan: macros raíz vs suma comidas >3% → ERROR (P10.1)', function() {
+      var nut = { calorias:2000, proteina:150, carbos:200, grasas:60, comidas:[{ alimentos:[{ nombre:'X', calorias:1000, sustituciones:['A','B','C'] }] }] };
       var r = validatePlan({ training:null, nutrition:nut, supplements:null });
-      return r.warnings.some(function(w){return w.includes('kcal');});
+      return r.valid === false && r.errors.some(function(e){return e.includes('kcal');});
     });
-    test('T17 validatePlan: alimento con <3 sustituciones → warning', function() {
-      var nut = { calorias:2000, proteina:150, carbos:200, grasas:60, comidas:[{ alimentos:[{ nombre:'Pollo', calorias:300, sustituciones:['Pechuga'] }] }] };
+    test('T17 validatePlan: alimento con <3 sustituciones → ERROR (P10.1)', function() {
+      var nut = { calorias:2000, proteina:150, carbos:200, grasas:60, comidas:[{ alimentos:[{ nombre:'Pollo', calorias:2000, sustituciones:['Pechuga'] }] }] };
       var r = validatePlan({ training:null, nutrition:nut, supplements:null });
-      return r.warnings.some(function(w){return w.includes('sustituciones');});
+      return r.valid === false && r.errors.some(function(e){return e.includes('sustituciones');});
     });
     test('T18 VDSEN_ENGINE_VERSION definida', function() {
       return typeof VDSEN_ENGINE_VERSION === 'string' && VDSEN_ENGINE_VERSION.length > 0;
@@ -4293,6 +4633,165 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return { passed: passed, total: total, results: results };
   }
   window._runP9Tests = _runP9Tests;
+
+  // ─── _auditVolumeVsTargets (P10.9) ───────────────────────────────────────
+  // Compares post-generation fractional volume against prescriptionTargets.
+  // Returns warnings for priority muscles below range or unknowns over range.
+  function _auditVolumeVsTargets(volAudit, muscleTargets) {
+    var warnings = [];
+    if (!volAudit || !muscleTargets) return warnings;
+    Object.keys(muscleTargets).forEach(function(muscle) {
+      var target = muscleTargets[muscle];
+      var actual = volAudit.muscleVolume && volAudit.muscleVolume[muscle];
+      var actualFrac = actual ? actual.fractionalTotal : 0;
+      if (target.priority === 'high' && actualFrac < target.volumeRange.min) {
+        warnings.push('VOL_TARGET_MISS: ' + muscle + ' (prioridad alta) solo tiene ' + actualFrac + ' series fraccionales — target min ' + target.volumeRange.min);
+      }
+      if (actualFrac > target.volumeRange.max && target.confidence !== 'high') {
+        warnings.push('VOL_HIGH_UNCERTAIN: ' + muscle + ' con ' + actualFrac + ' series excede rango (' + target.volumeRange.max + ') sin soporte longitudinal suficiente');
+      }
+    });
+    return warnings;
+  }
+
+  // ─── _runP10Tests (P10.11) ────────────────────────────────────────────────
+  // Call window._runP10Tests() from console to verify P10 guarantees.
+  function _runP10Tests() {
+    var results = [];
+    function test(name, fn) {
+      try { var r = fn(); results.push({ name: name, passed: r === true, message: r === true ? 'OK' : String(r) }); }
+      catch(e) { results.push({ name: name, passed: false, message: 'Threw: ' + e.message }); }
+    }
+    var _set = function(extra) { return Object.assign({ setIndex:0, load:0, repsTarget:8, rirTarget:2, restSeconds:90 }, extra||{}); };
+    var _ex  = function(nm, sets) { return { exerciseName:nm||'Press Banca', nivel_medio:'intermedio', variacion_vertical:'completa', sets:sets||[_set()] }; };
+    var _day = function(exs) { return { label:'A', exercises: exs||[_ex()] }; };
+
+    // T19: schema incorrecto → ERROR (P10.1)
+    test('T19 validatePlan: schema incorrecto → ERROR bloqueante', function() {
+      var rawJ = { schema: 'vdsen-plan-v1' };
+      var r = validatePlan({ training:{ days:[_day()] }, nutrition:null, supplements:null }, {}, rawJ);
+      return r.valid === false && r.errors.some(function(e){ return e.includes('Schema'); });
+    });
+
+    // T20: nivel_medio ausente → ERROR (P10.1)
+    test('T20 validatePlan: nivel_medio ausente → ERROR bloqueante', function() {
+      var ex = { exerciseName:'Sentadilla', variacion_vertical:'completa', sets:[_set()] };
+      var r = validatePlan({ training:{ days:[{ label:'A', exercises:[ex] }] }, nutrition:null, supplements:null });
+      return r.valid === false && r.errors.some(function(e){ return e.includes('nivel_medio'); });
+    });
+
+    // T21: variacion_vertical ausente → ERROR (P10.1)
+    test('T21 validatePlan: variacion_vertical ausente → ERROR bloqueante', function() {
+      var ex = { exerciseName:'Sentadilla', nivel_medio:'intermedio', sets:[_set()] };
+      var r = validatePlan({ training:{ days:[{ label:'A', exercises:[ex] }] }, nutrition:null, supplements:null });
+      return r.valid === false && r.errors.some(function(e){ return e.includes('variacion_vertical'); });
+    });
+
+    // T22: macros >3% → ERROR (P10.1)
+    test('T22 validatePlan: macros >3% → ERROR bloqueante', function() {
+      var nut = { calorias:2000, proteina:150, carbos:200, grasas:60, comidas:[{ alimentos:[{ nombre:'X', calorias:1000, sustituciones:['A','B','C'] }] }] };
+      var r = validatePlan({ training:null, nutrition:nut, supplements:null });
+      return r.valid === false && r.errors.some(function(e){ return e.includes('kcal'); });
+    });
+
+    // T23: <3 sustituciones → ERROR (P10.1)
+    test('T23 validatePlan: <3 sustituciones → ERROR bloqueante', function() {
+      var nut = { calorias:2000, proteina:150, carbos:200, grasas:60, comidas:[{ alimentos:[{ nombre:'Pollo', calorias:2000, sustituciones:['A'] }] }] };
+      var r = validatePlan({ training:null, nutrition:nut, supplements:null });
+      return r.valid === false && r.errors.some(function(e){ return e.includes('sustituciones'); });
+    });
+
+    // T24: músculo prioritario obtiene volumeTarget mayor (P10.2)
+    test('T24 _computeMuscleTargets: prioritario → volumeTarget > MAV poblacional', function() {
+      var t = _computeMuscleTargets(null, {stalled:[]}, { priorityMuscles:['deltoides_lateral'] });
+      var prior = _POPULATION_PRIORS['deltoides_lateral'];
+      return t.deltoides_lateral && t.deltoides_lateral.volumeTarget >= prior.mav && t.deltoides_lateral.priority === 'high';
+    });
+
+    // T25: músculo mantenimiento obtiene volumeTarget reducido (P10.2)
+    test('T25 _computeMuscleTargets: mantenimiento → volumeTarget < MAV poblacional', function() {
+      var t = _computeMuscleTargets(null, {stalled:[]}, { maintenanceMuscles:['deltoides_lateral'] });
+      var prior = _POPULATION_PRIORS['deltoides_lateral'];
+      return t.deltoides_lateral && t.deltoides_lateral.volumeTarget < prior.mav && t.deltoides_lateral.goal === 'maintenance';
+    });
+
+    // T26: learned_state tiene prioridad cuando confidence≥medium (P10.3)
+    test('T26 _computeMuscleTargets: learned_state prioridad sobre prior cuando confidence≥medium', function() {
+      var es = { confidence: 'medium' };
+      var prevVol = { 'pectoral': { fractionalTotal: 18 } };
+      var t = _computeMuscleTargets(es, {stalled:[]}, { previousPlanVolumes: prevVol });
+      return t.pectoral && t.pectoral.source === 'learned_state' && t.pectoral.volumeTarget === 18;
+    });
+
+    // T27: frequencyTarget se deriva del volumeTarget (P10.4)
+    test('T27 _computeMuscleTargets: frecuencia ≤ 3 y derivada del volume', function() {
+      var t = _computeMuscleTargets(null, {stalled:[]}, {});
+      var allValid = Object.keys(t).every(function(m) {
+        return t[m].frequencyTarget >= 1 && t[m].frequencyTarget <= 3;
+      });
+      return allValid;
+    });
+
+    // T28: RIR varía según nivel (P10.5)
+    test('T28 _computeMuscleTargets: RIR varía según nivel', function() {
+      var tAdv  = _computeMuscleTargets(null, {stalled:[]}, { nivel:'avanzado' });
+      var tPrin = _computeMuscleTargets(null, {stalled:[]}, { nivel:'principiante' });
+      var compoundMuscle = 'cuadriceps';
+      // Principiante: min=2,max=4. Avanzado compound: min=2,max=4. Let's compare isolation (biceps)
+      var isol = 'biceps';
+      var advMin  = tAdv[isol].rirRange.min;
+      var prinMin = tPrin[isol].rirRange.min;
+      // Both valid ranges exist and principiante max >= avanzado max for isolation
+      return typeof advMin === 'number' && typeof prinMin === 'number' && tAdv[isol].rirRange.max <= tPrin[isol].rirRange.max;
+    });
+
+    // T29: auditFractionalVolume usa metadata canónica para press banca (P10.7)
+    test('T29 auditFractionalVolume: usa metadata canónica (press banca → pectoral directo)', function() {
+      var t = { days:[{ label:'A', exercises:[{ exerciseName:'press banca', sets:[{},{},{}] }] }] };
+      var r = auditFractionalVolume(t, []);
+      return r.muscleVolume.pectoral && r.muscleVolume.pectoral.direct === 3;
+    });
+
+    // T30: RAP real (mismo primaryMuscle + mismo resistanceProfile en mismo día) → RAP_REDUNDANCY_WARNING (P10.8)
+    test('T30 validatePlan: RAP por resistanceProfile → RAP_REDUNDANCY_WARNING', function() {
+      // Press Banca (DP) + Press Inclinado (DP) → ambos pectoral DP → RAP
+      var d = { label:'A', exercises:[_ex('press banca'), _ex('press inclinado')] };
+      var r = validatePlan({ training:{ days:[d] }, nutrition:null, supplements:null });
+      return r.warnings.some(function(w){ return w.includes('RAP_REDUNDANCY_WARNING'); });
+    });
+
+    // T31: mismo nombre → DUPLICATE_EXERCISE_WARNING (distinto de RAP) (P10.8)
+    test('T31 validatePlan: mismo nombre → DUPLICATE_EXERCISE_WARNING (reason code propio)', function() {
+      var d = { label:'A', exercises:[_ex('jalón al pecho'), _ex('jalón al pecho')] };
+      var r = validatePlan({ training:{ days:[d] }, nutrition:null, supplements:null });
+      var hasDupe = r.warnings.some(function(w){ return w.includes('DUPLICATE_EXERCISE_WARNING'); });
+      var hasRap  = r.warnings.some(function(w){ return w.includes('RAP_REDUNDANCY_WARNING'); });
+      return hasDupe; // RAP_REDUNDANCY may also fire (same AP profile) — that's valid; what we test is DUPLICATE fires
+    });
+
+    // T32: _auditVolumeVsTargets: prioritario bajo target → VOL_TARGET_MISS (P10.9)
+    test('T32 _auditVolumeVsTargets: prioridad alta bajo target → VOL_TARGET_MISS', function() {
+      var muscleTargets = {
+        deltoides_lateral: { priority:'high', volumeRange:{ min:12, max:20 }, confidence:'low' }
+      };
+      var volAudit = { muscleVolume: { deltoides_lateral: { fractionalTotal: 6 } } };
+      var w = _auditVolumeVsTargets(volAudit, muscleTargets);
+      return w.some(function(msg){ return msg.includes('VOL_TARGET_MISS') && msg.includes('deltoides_lateral'); });
+    });
+
+    var passed = results.filter(function(r){return r.passed;}).length;
+    var total  = results.length;
+    console.group('%c[VDSEN P10 Tests] ' + passed + '/' + total + ' passed', passed === total ? 'color:green;font-weight:bold' : 'color:orange;font-weight:bold');
+    results.forEach(function(r) {
+      console.log('%c' + (r.passed?'✅':'❌') + ' ' + r.name, r.passed?'color:green':'color:red');
+      if (!r.passed) console.warn('   → ' + r.message);
+    });
+    console.groupEnd();
+    window._p10TestResults = results;
+    return { passed: passed, total: total, results: results };
+  }
+  window._runP10Tests = _runP10Tests;
+  window._auditVolumeVsTargets = _auditVolumeVsTargets;
 
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -4554,9 +5053,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }
       if (validation.warnings.length) console.info('[VDSEN] validatePlan warnings:', validation.warnings);
 
-      // P9.3: Volume audit — informational, non-blocking
+      // P9.3 + P10.9: Volume audit + comparison against prescriptionTargets
       const _volAudit = auditFractionalVolume(training, []);
       if (_volAudit.warnings.length) console.info('[VDSEN] Volume audit:', _volAudit.warnings);
+      const _muscleTargets = prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles;
+      const _volTargetWarnings = _auditVolumeVsTargets(_volAudit, _muscleTargets || {});
+      if (_volTargetWarnings.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings);
 
       setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
       const saved = [];
@@ -6501,9 +7003,12 @@ El esfuerzo no es negociable.
       }
       if (validation.warnings.length) console.info('[VDSEN] validatePlan warnings:', validation.warnings);
 
-      // P9.3: Volume audit — informational, non-blocking
+      // P9.3 + P10.9: Volume audit + comparison against prescriptionTargets
       const _volAudit2 = auditFractionalVolume(training, []);
       if (_volAudit2.warnings.length) console.info('[VDSEN] Volume audit:', _volAudit2.warnings);
+      const _muscleTargets2 = prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles;
+      const _volTargetWarnings2 = _auditVolumeVsTargets(_volAudit2, _muscleTargets2 || {});
+      if (_volTargetWarnings2.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings2);
 
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
