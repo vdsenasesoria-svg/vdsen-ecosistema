@@ -3811,11 +3811,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return 'high';
   }
 
-  // ─── _computeMuscleTargets (P10.2-5) ─────────────────────────────────────
+  // ─── _computeMuscleTargets (P10.2-5, P10.1) ─────────────────────────────
   // Core Decision Engine: returns per-muscle physiological targets.
-  // Hierarchy: learned_state (medium/high conf + previous volume) → population_prior.
+  // Hierarchy (P10.1): learned_state (medium/high conf + previous volume)
+  //   → ehrenstein_prior (calibracion_volumetrica if available)
+  //   → population_prior.
   // frequencyTarget derives from volumeTarget, not chosen independently (P10.4).
   // rirRange varies by muscle type (compound vs isolation) and client nivel (P10.5).
+  // opts.ehrensteinCalib: calibracion_volumetrica from Firestore (optional).
   function _computeMuscleTargets(engineState, clientFlags, opts) {
     opts = opts || {};
     var priorityMuscles    = Array.isArray(opts.priorityMuscles)    ? opts.priorityMuscles    : [];
@@ -3823,6 +3826,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     var nivel     = opts.nivel     || 'intermedio';
     var readiness = opts.readiness || 'neutral';
     var prevVolumes = opts.previousPlanVolumes || null;
+    var ehrenstein  = (opts.ehrensteinCalib && opts.ehrensteinCalib.resultados) ? opts.ehrensteinCalib.resultados : null;
     var targets = {};
 
     Object.keys(_POPULATION_PRIORS).forEach(function(muscle) {
@@ -3830,7 +3834,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var isPriority    = priorityMuscles.indexOf(muscle) >= 0;
       var isMaintenance = !isPriority && maintenanceMuscles.indexOf(muscle) >= 0;
 
-      // Source hierarchy (P10.3): learned individual state → population prior
+      // Source hierarchy (P10.1/P10.3): learned_state → ehrenstein_prior → population_prior
       var source    = 'population_prior';
       var confLevel = 'low';
       var volumeTarget = prior.mav;
@@ -3846,6 +3850,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         var spread = esConf === 'high' ? 0.15 : 0.20;
         volumeMin = Math.max(prior.mev, Math.round(prevFrac * (1 - spread)));
         volumeMax = Math.min(prior.mrv + 4, Math.round(prevFrac * (1 + spread)));
+      } else if (ehrenstein && ehrenstein.VME_individual != null && ehrenstein.VMR_individual != null) {
+        // Ehrenstein estimated prior: scales population ranges by client's individual VME/VMR.
+        // Base references used in _calcVMEVMR: VME_base=6, VMR_base=16.
+        // Heuristic only — not a biological limit; overridden by learned_state.
+        source    = 'ehrenstein_prior';
+        confLevel = 'low';
+        var scaleE = ehrenstein.VME_individual / 6;
+        var scaleR = ehrenstein.VMR_individual / 16;
+        volumeMin    = Math.max(0, Math.round(prior.mev * scaleE));
+        volumeMax    = Math.round(prior.mrv * scaleR);
+        volumeTarget = Math.round(prior.mav * (scaleE + scaleR) / 2);
       }
 
       // Goal modifiers
@@ -4204,7 +4219,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           maintenanceMuscles: maintenanceMuscles,
           nivel:              clientNivel,
           readiness:          ctx.prescriptionTargets.globalReadiness,
-          previousPlanVolumes: _prevPlanVolumes
+          previousPlanVolumes: _prevPlanVolumes,
+          ehrensteinCalib:    clientData.calibracion_volumetrica || null
         }
       );
 
@@ -4351,9 +4367,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                 });
               }
 
-              // P10.1: nivel_medio and variacion_vertical are blocking errors for new plans
-              if (!ex.nivel_medio)        errors.push('Ej "' + (exName||ei+1) + '": nivel_medio ausente (obligatorio en vdsen-plan-v2)');
-              if (!ex.variacion_vertical) errors.push('Ej "' + (exName||ei+1) + '": variacion_vertical ausente (obligatorio en vdsen-plan-v2)');
+              // P10.1: nivel_medio enum check (fundamental|suplementario|asistencia_mayor|asistencia_secundario)
+              var _validNM = ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'];
+              if (!ex.nivel_medio || !_validNM.includes(ex.nivel_medio))
+                errors.push('Ej "' + (exName||ei+1) + '": nivel_medio inválido ("' + (ex.nivel_medio||'') + '") — debe ser fundamental|suplementario|asistencia_mayor|asistencia_secundario');
+              // P10.1: variacion_vertical must be an object with semana_inicio
+              if (!ex.variacion_vertical || typeof ex.variacion_vertical !== 'object' || ex.variacion_vertical.semana_inicio == null)
+                errors.push('Ej "' + (exName||ei+1) + '": variacion_vertical ausente o malformado — debe ser objeto {semana_inicio, semana_variacion, ejercicio_sustituto, nivel_sustituto}');
 
               if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
                 errors.push('Día ' + (di+1) + ' / ' + (exName||'Ej'+(ei+1)) + ': sin sets');
@@ -4449,10 +4469,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         day.exercises.forEach(function(ex, ei) {
           if (!ex.exerciseName || ex.exerciseName.trim().length < 2) { ex.exerciseName = 'Ejercicio '+(ei+1); changed = true; }
           if (!Array.isArray(ex.sets))                     { ex.sets = [];               changed = true; }
-          // P10.1: collect missing exercise-level fields for controlled repair
+          // P10.1: collect missing/invalid exercise-level fields for controlled repair
+          var _vnm = ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'];
           var exMissing = [];
-          if (!ex.nivel_medio)        exMissing.push('nivel_medio');
-          if (!ex.variacion_vertical) exMissing.push('variacion_vertical');
+          if (!ex.nivel_medio || !_vnm.includes(ex.nivel_medio)) exMissing.push('nivel_medio');
+          if (!ex.variacion_vertical || typeof ex.variacion_vertical !== 'object' || ex.variacion_vertical.semana_inicio == null) exMissing.push('variacion_vertical');
           if (exMissing.length) incompleteItems.push({ dayLabel: day.label, exerciseName: ex.exerciseName, setIndex: -1, missing: exMissing });
 
           ex.sets.forEach(function(s, si) {
@@ -4535,8 +4556,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
     var _ok = function(t) { return t === true; };
     var _set = function(extra) { return Object.assign({ setIndex:0, load:0, repsTarget:8, rirTarget:2, restSeconds:90 }, extra||{}); };
-    // P10.1: nivel_medio and variacion_vertical now required → include in default fixtures
-    var _ex = function(nm, sets) { return { exerciseName: nm||'Press Banca', nivel_medio:'intermedio', variacion_vertical:'completa', sets: sets||[_set()] }; };
+    // P10.1: nivel_medio (exercise classification enum) and variacion_vertical (object) required
+    var _vvObj = { semana_inicio: 3, semana_variacion: null, ejercicio_sustituto: null, nivel_sustituto: null };
+    var _ex = function(nm, sets) { return { exerciseName: nm||'Press Banca', nivel_medio:'fundamental', variacion_vertical: _vvObj, sets: sets||[_set()] }; };
     var _day = function(sets) { return { label:'A', exercises:[_ex('Press Banca', sets)] }; };
     var _plan = function(days) { return { training:{ weeks:6, daysPerWeek:(days||[_day()]).length, days: days||[_day()] }, nutrition:null, supplements:null }; };
 
@@ -4663,7 +4685,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       catch(e) { results.push({ name: name, passed: false, message: 'Threw: ' + e.message }); }
     }
     var _set = function(extra) { return Object.assign({ setIndex:0, load:0, repsTarget:8, rirTarget:2, restSeconds:90 }, extra||{}); };
-    var _ex  = function(nm, sets) { return { exerciseName:nm||'Press Banca', nivel_medio:'intermedio', variacion_vertical:'completa', sets:sets||[_set()] }; };
+    var _vv  = { semana_inicio:3, semana_variacion:null, ejercicio_sustituto:null, nivel_sustituto:null };
+    var _ex  = function(nm, sets) { return { exerciseName:nm||'Press Banca', nivel_medio:'fundamental', variacion_vertical:_vv, sets:sets||[_set()] }; };
     var _day = function(exs) { return { label:'A', exercises: exs||[_ex()] }; };
 
     // T19: schema incorrecto → ERROR (P10.1)
@@ -4675,14 +4698,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     // T20: nivel_medio ausente → ERROR (P10.1)
     test('T20 validatePlan: nivel_medio ausente → ERROR bloqueante', function() {
-      var ex = { exerciseName:'Sentadilla', variacion_vertical:'completa', sets:[_set()] };
+      var ex = { exerciseName:'Sentadilla', variacion_vertical:{semana_inicio:3,semana_variacion:null,ejercicio_sustituto:null,nivel_sustituto:null}, sets:[_set()] };
       var r = validatePlan({ training:{ days:[{ label:'A', exercises:[ex] }] }, nutrition:null, supplements:null });
       return r.valid === false && r.errors.some(function(e){ return e.includes('nivel_medio'); });
     });
 
     // T21: variacion_vertical ausente → ERROR (P10.1)
     test('T21 validatePlan: variacion_vertical ausente → ERROR bloqueante', function() {
-      var ex = { exerciseName:'Sentadilla', nivel_medio:'intermedio', sets:[_set()] };
+      var ex = { exerciseName:'Sentadilla', nivel_medio:'fundamental', sets:[_set()] };
       var r = validatePlan({ training:{ days:[{ label:'A', exercises:[ex] }] }, nutrition:null, supplements:null });
       return r.valid === false && r.errors.some(function(e){ return e.includes('variacion_vertical'); });
     });
@@ -4779,6 +4802,40 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       return w.some(function(msg){ return msg.includes('VOL_TARGET_MISS') && msg.includes('deltoides_lateral'); });
     });
 
+    // ─── P10.1 Contract tests ─────────────────────────────────────────────────
+    // T33: nivel_medio con valor inválido ('intermedio' es nivel atleta, no ejercicio) → ERROR
+    test('T33 (P10.1) nivel_medio valor inválido ("intermedio") → ERROR bloqueante', function() {
+      var ex = { exerciseName:'Curl Biceps', nivel_medio:'intermedio', variacion_vertical:{semana_inicio:3,semana_variacion:null,ejercicio_sustituto:null,nivel_sustituto:null}, sets:[_set()] };
+      var r = validatePlan({ training:{ days:[{ label:'A', exercises:[ex] }] }, nutrition:null, supplements:null });
+      return r.valid === false && r.errors.some(function(e){ return e.includes('nivel_medio'); });
+    });
+
+    // T34: variacion_vertical como string ('completa') es inválido — debe ser objeto → ERROR
+    test('T34 (P10.1) variacion_vertical string inválido → ERROR bloqueante', function() {
+      var ex = { exerciseName:'Curl Biceps', nivel_medio:'fundamental', variacion_vertical:'completa', sets:[_set()] };
+      var r = validatePlan({ training:{ days:[{ label:'A', exercises:[ex] }] }, nutrition:null, supplements:null });
+      return r.valid === false && r.errors.some(function(e){ return e.includes('variacion_vertical'); });
+    });
+
+    // T35: _classifyBlocks con farmacologia ausente → pharma null (natural plan contract)
+    test('T35 (P10.1) _classifyBlocks: farmacologia ausente → pharma null', function() {
+      var block = { schema:'vdsen-plan-v2', entrenamiento:{ days:[] }, nutricion:{ calorias:2000 }, suplementacion:{ tiers:[] } };
+      var r = _classifyBlocks([block]);
+      return r.pharma === null;
+    });
+
+    // T36: Ehrenstein prior usada cuando calibracion disponible y sin learned_state
+    test('T36 (P10.1) _computeMuscleTargets: Ehrenstein prior como tier intermedio', function() {
+      var calib = { resultados: { VME_individual: 9, VMR_individual: 20 } };
+      var popPrior = _POPULATION_PRIORS['pectoral'];
+      var tEhren = _computeMuscleTargets(null, {stalled:[]}, { ehrensteinCalib: calib });
+      var tPop   = _computeMuscleTargets(null, {stalled:[]}, {});
+      // With VME=9>6, VMR=20>16 the target should differ from plain population prior
+      var ehrenTarget = tEhren.pectoral && tEhren.pectoral.volumeTarget;
+      var popTarget   = tPop.pectoral   && tPop.pectoral.volumeTarget;
+      return tEhren.pectoral && tEhren.pectoral.source === 'ehrenstein_prior' && ehrenTarget !== popTarget;
+    });
+
     var passed = results.filter(function(r){return r.passed;}).length;
     var total  = results.length;
     console.group('%c[VDSEN P10 Tests] ' + passed + '/' + total + ' passed', passed === total ? 'color:green;font-weight:bold' : 'color:orange;font-weight:bold');
@@ -4792,6 +4849,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
   window._runP10Tests = _runP10Tests;
   window._auditVolumeVsTargets = _auditVolumeVsTargets;
+  window._classifyBlocks = _classifyBlocks;
 
   // ═══════════════════════════════════════════════════════════════════════════
 
