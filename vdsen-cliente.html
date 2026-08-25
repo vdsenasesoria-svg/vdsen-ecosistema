@@ -7969,11 +7969,10 @@ async function markWeekDoneWithPartialData() {
       try {
         var rec = calculateProgression(di, LOGS[postKey]);
         if (rec) {
-          var recSafe = JSON.parse(JSON.stringify(rec, function(k, v) {
-            if (typeof v === 'number' && !isFinite(v)) return null;
-            return v;
-          }));
+          var _san = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
+          var recSafe = JSON.parse(JSON.stringify(rec, _san));
           LOGS['progrec_'+REAL_WEEK+'_'+di] = recSafe;
+          if (rec.engineState) LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _san));
         }
       } catch(e) { console.warn('progression on close-week failed:', e && e.message); }
     }
@@ -8073,10 +8072,10 @@ async function markWeekCompleteFromHistory() {
     try {
       var rec = calculateProgression(di, LOGS[postKey]);
       if (rec) {
-        var recSafe = JSON.parse(JSON.stringify(rec, function(_k2, v) {
-          return (typeof v === 'number' && !isFinite(v)) ? null : v;
-        }));
+        var _san2 = function(_k2, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
+        var recSafe = JSON.parse(JSON.stringify(rec, _san2));
         LOGS['progrec_'+REAL_WEEK+'_'+di] = recSafe;
+        if (rec.engineState) LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _san2));
       }
     } catch(e) { console.warn('progrec failed in markWeekCompleteFromHistory:', e && e.message); }
 
@@ -11852,11 +11851,13 @@ async function submitPostSession() {
   try {
     var rec = calculateProgression(di, postData);
     if (rec) {
-      var recSafe = JSON.parse(JSON.stringify(rec, function(k, v) {
-        if (typeof v === 'number' && !isFinite(v)) return null;
-        return v;
-      }));
+      var _sanitize = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
+      var recSafe = JSON.parse(JSON.stringify(rec, _sanitize));
       LOGS['progrec_'+CURRENT_WEEK+'_'+di] = recSafe;
+      // P5: Longitudinal Engine — engine_state persiste en logs para la próxima generación
+      if (rec.engineState) {
+        LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _sanitize));
+      }
     }
   } catch(calcErr) {
     console.warn('calculateProgression error:', calcErr.message, calcErr);
@@ -12735,9 +12736,11 @@ function calculateProgression(di, postData) {
     deloadTriggers.push('Energía subjetiva muy baja ('+ci.energia+'/10)');
   }
 
-  // Sem 5: la siguiente sesión es sem 6 (deload) → generar recs de deload ahora
+  // P6: Deload reactivo — el deload se activa por señales reales, no por
+  // semana fija. La última semana del plan puede ser deload pero no lo fuerza.
   var _tw2 = getTotalWeeks();
-  var isDeload = CURRENT_WEEK >= _tw2 - 1 || deloadTriggers.length >= 2;
+  var isLastWeek = CURRENT_WEEK >= _tw2;
+  var isDeload = deloadTriggers.length >= 2;
 
   // Obtener ejercicios del día
   var exercises = [];
@@ -12797,12 +12800,16 @@ function calculateProgression(di, postData) {
     var reasons = [];
 
     if (isDeload) {
-      // ── DELOAD: reducir volumen, mantener intensidad base ──
+      // Deload reactivo (≥2 señales de fatiga acumuladas)
       newSets = Math.max(1, Math.round(numSets / 2));
-      newLoad = _roundUnit(load * 0.9, unit); // -10% carga
+      newLoad = _roundUnit(load * 0.9, unit);
       rirTarget = rirObjNext; action = 'deload';
-      var _deloadLabel = CURRENT_WEEK === 5 ? 'La próxima semana es descarga' : 'Semana de descarga';
+      var _deloadLabel = isLastWeek ? 'Última semana + señales de fatiga — semana de descarga' : 'Señales de fatiga acumuladas — semana de descarga reactiva';
       reasons.push(_deloadLabel+' — volumen a la mitad, carga -10%');
+    } else if (isLastWeek) {
+      // Última semana sin señales suficientes → solo transición suave, no deload completo
+      reasons.push('Última semana del bloque — consolida técnica, prepara el siguiente ciclo');
+      // No modificar newSets ni newLoad: mantener lo que viene del algoritmo normal
     } else if (avgICS < 6) {
       // ── ICS MUY BAJO (<6): técnica deficiente grave → bajar carga significativamente ──
       newLoad = _roundUnit(load * 0.85, unit);
@@ -12956,11 +12963,49 @@ function calculateProgression(di, postData) {
     };
   }).filter(Boolean);
 
+  // P5: engine_state — resumen agregado del ciclo para informar la próxima generación
+  var _allLoads = recs.map(function(r){ return r.newLoad; }).filter(function(v){ return v > 0; });
+  var _avgNewLoad = _allLoads.length ? (_allLoads.reduce(function(a,b){return a+b;},0)/_allLoads.length) : 0;
+  var _actionCounts = {};
+  recs.forEach(function(r){ _actionCounts[r.action] = (_actionCounts[r.action]||0)+1; });
+  var _globalAction = isDeload ? 'deload'
+    : (_actionCounts['add_sets'] > 0 ? 'volume_up'
+    : (_actionCounts['increase_load'] > 0 ? 'load_up'
+    : (_actionCounts['reduce_load'] > 0 || _actionCounts['reduce_sets'] > 0 ? 'reduce'
+    : 'maintain')));
+  // P9.7: observationsCount and confidence distinguish initial vs. learned state
+  var _loggedSetsCount = Object.keys(LOGS).filter(function(k){ return k.startsWith('log_'); }).length;
+  var _confidence = _loggedSetsCount === 0 ? 'none'
+    : _loggedSetsCount < 20  ? 'low'
+    : _loggedSetsCount < 60  ? 'medium'
+    : 'high';
+  var _nowIso = new Date().toISOString();
+  var engineState = {
+    engineVersion: '3.1.0',
+    generatedAt: _nowIso,
+    updatedAt: _nowIso,
+    weekNum: CURRENT_WEEK,
+    totalWeeks: getTotalWeeks(),
+    deloadTriggered: isDeload,
+    isLastWeek: isLastWeek,
+    deloadTriggers: deloadTriggers,
+    globalAction: _globalAction,
+    actionCounts: _actionCounts,
+    exerciseSummary: recs.map(function(r){
+      return { name: r.exerciseName, action: r.action, newLoad: r.newLoad, newSets: r.newSets };
+    }),
+    avgNewLoad: _avgNewLoad > 0 ? parseFloat(_avgNewLoad.toFixed(2)) : null,
+    checkinRef: LOGS['ci_sem_'+CURRENT_WEEK] || null,
+    observationsCount: _loggedSetsCount,
+    confidence: _confidence
+  };
+
   return {
     recommendations: recs,
     deloadTriggers: deloadTriggers,
     weekNum: CURRENT_WEEK,
-    calculatedAt: new Date().toISOString()
+    calculatedAt: new Date().toISOString(),
+    engineState: engineState
   };
 }
 
