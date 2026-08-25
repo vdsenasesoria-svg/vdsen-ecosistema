@@ -2,68 +2,156 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0a0a0a">
-<title>VDSEN — Ficha de evaluación</title>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Inter:wght@400;500;600&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<title>VDSEN — Tu ficha de evaluación</title>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root{--bg:#0A0A0A;--surface:#111;--border:rgba(244,244,240,.10);--tx:#F4F4F0;--mt:#6B6B66;--accent:#C4FF00;--red:#C0564A;--input:#0E0E0E}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--tx);font-family:'Inter',system-ui,sans-serif;font-size:16px;line-height:1.5;padding:0 0 60px}
-  .wrap{max-width:640px;margin:0 auto;padding:0 18px}
-  header{padding:26px 18px 18px;max-width:640px;margin:0 auto}
-  .logo{font-family:'Big Shoulders Display',sans-serif;font-size:30px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
-  .logo::after{content:'';display:inline-block;width:7px;height:7px;background:var(--accent);transform:rotate(45deg);margin-left:6px;vertical-align:baseline}
-  .logo em{display:block;font-family:'Courier Prime',monospace;font-style:normal;font-size:10px;letter-spacing:2px;color:var(--mt);margin-top:4px;text-transform:uppercase}
-  h1{font-family:'Big Shoulders Display',sans-serif;font-size:24px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 4px}
-  .sub{font-size:13px;color:var(--mt);margin-bottom:18px}
-  .sec{background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:16px;margin-bottom:14px;position:relative}
-  .sec::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent);opacity:.0}
-  .sec h2{font-family:'Big Shoulders Display',sans-serif;font-size:17px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:3px}
-  .sec .snote{font-size:12px;color:var(--mt);margin-bottom:12px}
-  .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
-  .fld{display:flex;flex-direction:column}
-  .fld.wide{grid-column:1/-1}
-  label{font-size:12px;color:var(--mt);margin-bottom:5px}
-  label .req{color:var(--accent)}
-  input,select,textarea{background:var(--input);border:1px solid var(--border);border-radius:2px;color:var(--tx);font-family:'Inter',sans-serif;font-size:15px;padding:11px 12px;outline:none;width:100%;transition:border-color .15s}
-  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
-  textarea{resize:vertical;min-height:64px}
-  .chips{display:flex;flex-wrap:wrap;gap:8px}
-  .chip{border:1px solid var(--border);border-radius:2px;padding:7px 12px;font-size:13px;cursor:pointer;color:var(--mt);user-select:none}
-  .chip.on{border-color:var(--accent);color:var(--accent);background:rgba(196,255,0,.08)}
-  .submit{width:100%;padding:16px;background:var(--accent);color:#0A0A0A;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:17px;letter-spacing:2px;text-transform:uppercase;border:none;border-radius:2px;cursor:pointer;margin-top:6px}
-  .submit:disabled{opacity:.5;cursor:default}
-  .err{color:var(--red);font-size:13px;text-align:center;margin-top:10px;min-height:18px}
-  .foot{font-size:11px;color:var(--mt);text-align:center;margin-top:22px;letter-spacing:.5px}
-  .done{text-align:center;padding:60px 20px}
-  .done .big{font-family:'Big Shoulders Display',sans-serif;font-size:40px;font-weight:800;color:var(--accent);text-transform:uppercase}
-  .hide{display:none}
+:root{--bg:#0A0A0A;--sf:#111113;--sf2:#17181A;--bd:rgba(244,244,240,.10);--tx:#F4F4F0;--mt:#888884;--ac:#C4FF00;--red:#E05555;--inp:#0E0F11;--radius:4px}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--tx);font-family:'Inter',system-ui,sans-serif;font-size:16px;line-height:1.55;padding-bottom:80px;min-height:100dvh}
+
+/* Progress */
+#progress-bar-wrap{position:fixed;top:0;left:0;right:0;z-index:100;height:3px;background:var(--bd)}
+#progress-bar{height:100%;background:var(--ac);width:0;transition:width .35s ease}
+
+/* Header */
+header{padding:24px 18px 10px;max-width:640px;margin:0 auto}
+.logo{font-family:'Big Shoulders Display',sans-serif;font-size:28px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+.logo::after{content:'';display:inline-block;width:6px;height:6px;background:var(--ac);transform:rotate(45deg);margin-left:5px;vertical-align:middle;margin-bottom:2px}
+.logo-sub{font-size:11px;color:var(--mt);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+
+/* Hero */
+.hero{max-width:640px;margin:0 auto;padding:10px 18px 20px}
+.hero h1{font-family:'Big Shoulders Display',sans-serif;font-size:26px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;line-height:1.1;margin-bottom:8px}
+.hero p{font-size:14px;color:var(--mt);line-height:1.6}
+.hero .badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.badge{font-size:11px;color:var(--mt);border:1px solid var(--bd);border-radius:20px;padding:3px 10px}
+
+/* Main */
+main{max-width:640px;margin:0 auto;padding:0 14px}
+
+/* Section card */
+.sec{background:var(--sf);border:1px solid var(--bd);border-radius:var(--radius);padding:18px 16px;margin-bottom:12px;position:relative;overflow:hidden}
+.sec::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--ac);opacity:.3}
+.sec.active::before{opacity:1}
+.sec-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
+.sec-num{font-family:'Big Shoulders Display',sans-serif;font-size:22px;font-weight:800;color:var(--ac);line-height:1;min-width:28px}
+.sec-title{font-family:'Big Shoulders Display',sans-serif;font-size:18px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;line-height:1.1}
+.sec-note{font-size:12px;color:var(--mt);margin-top:3px;font-family:'Inter',sans-serif;font-weight:400;text-transform:none;letter-spacing:0}
+.grid{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld.wide{grid-column:1/-1}
+.fld.half{grid-column:span 1}
+
+/* Labels */
+label.ql{font-size:13px;color:var(--tx);font-weight:500;line-height:1.35}
+label.note{font-size:11px;color:var(--mt);margin-top:2px}
+
+/* Inputs */
+input,select,textarea{background:var(--inp);border:1px solid var(--bd);border-radius:var(--radius);color:var(--tx);font-family:'Inter',sans-serif;font-size:15px;padding:11px 12px;outline:none;width:100%;transition:border-color .15s;-webkit-appearance:none;appearance:none}
+input:focus,select:focus,textarea:focus{border-color:var(--ac)}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px}
+textarea{resize:vertical;min-height:72px}
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-inner-spin-button{display:none}
+
+/* Chips */
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{border:1px solid var(--bd);border-radius:3px;padding:8px 13px;font-size:13px;cursor:pointer;color:var(--mt);user-select:none;transition:all .15s;background:var(--inp);line-height:1.2}
+.chip.on{border-color:var(--ac);color:var(--ac);background:rgba(196,255,0,.08)}
+.chip.single.on{border-color:var(--ac);color:var(--ac)}
+
+/* Range */
+.range-wrap{display:flex;align-items:center;gap:10px}
+input[type=range]{flex:1;accent-color:var(--ac);height:4px;background:var(--bd);border:none;padding:0}
+.range-val{font-family:'Big Shoulders Display',sans-serif;font-size:20px;font-weight:800;color:var(--ac);min-width:28px;text-align:center}
+
+/* Photos section */
+.foto-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px}
+.foto-card{background:var(--inp);border:1px dashed var(--bd);border-radius:var(--radius);padding:14px 10px;text-align:center;font-size:12px;color:var(--mt)}
+.foto-card .ico{font-size:24px;margin-bottom:4px}
+.foto-instructions{background:var(--sf2);border:1px solid var(--bd);border-radius:var(--radius);padding:12px 14px;margin-top:12px}
+.foto-instructions p{font-size:12px;color:var(--mt);line-height:1.7}
+.foto-instructions strong{color:var(--tx)}
+
+/* Submit area */
+#submitArea{max-width:640px;margin:0 auto;padding:6px 14px 0}
+.btn-submit{width:100%;padding:17px;background:var(--ac);color:#0A0A0A;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:18px;letter-spacing:2px;text-transform:uppercase;border:none;border-radius:var(--radius);cursor:pointer;margin-top:4px;transition:opacity .15s}
+.btn-submit:disabled{opacity:.45;cursor:default}
+.err{color:var(--red);font-size:13px;text-align:center;margin-top:12px;min-height:18px;line-height:1.4}
+.foot{font-size:11px;color:var(--mt);text-align:center;margin-top:22px;letter-spacing:.5px}
+
+/* Done */
+#doneView{display:none;text-align:center;padding:60px 20px;max-width:640px;margin:0 auto}
+.done-big{font-family:'Big Shoulders Display',sans-serif;font-size:52px;font-weight:800;color:var(--ac);text-transform:uppercase;line-height:1}
+.done-sub{font-size:15px;color:var(--tx);margin-top:14px}
+.done-note{font-size:13px;color:var(--mt);margin-top:8px;line-height:1.6}
+.done-next{background:var(--sf);border:1px solid var(--bd);border-radius:var(--radius);padding:16px;margin-top:24px;text-align:left}
+.done-next h3{font-family:'Big Shoulders Display',sans-serif;font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--ac);margin-bottom:10px}
+.done-next ol{padding-left:18px;font-size:13px;color:var(--mt);line-height:1.8}
+.done-next ol li strong{color:var(--tx)}
+.wa-btn{display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#fff;font-family:'Big Shoulders Display',sans-serif;font-weight:800;font-size:15px;letter-spacing:1px;text-transform:uppercase;padding:12px 20px;border-radius:var(--radius);border:none;cursor:pointer;margin-top:14px;text-decoration:none}
+
+@media(max-width:420px){
+  .grid{grid-template-columns:1fr}
+  .fld.half{grid-column:1/-1}
+  .foto-grid{grid-template-columns:1fr 1fr}
+  .hero h1{font-size:22px}
+}
 </style>
 </head>
 <body>
+
+<div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+
 <header>
-  <div class="logo">VDSEN<em>Asesoría Científica</em></div>
+  <div class="logo">VDSEN</div>
+  <div class="logo-sub">Asesoría Científica</div>
 </header>
-<div class="wrap">
-  <div id="formView">
-    <h1>Ficha de evaluación</h1>
-    <p class="sub">Completa todos los datos que puedas. Con esto tu coach diseña tu programa 100% personalizado. Toma ~5 minutos.</p>
-    <form id="fichaForm" autocomplete="on"></form>
-    <button id="submitBtn" class="submit" type="button">Enviar ficha a mi coach</button>
-    <div id="err" class="err"></div>
-    <div class="foot">VDSEN · Ciencias aplicadas al deporte</div>
+
+<div class="hero">
+  <h1>Tu ficha de evaluación</h1>
+  <p>Completa este formulario para que tu coach diseñe tu programa 100% personalizado. Es rápido — la mayoría de las preguntas son de opción múltiple.</p>
+  <div class="badges">
+    <span class="badge">~10 min</span>
+    <span class="badge">Toda la info es confidencial</span>
   </div>
-  <div id="doneView" class="done hide">
-    <div class="big">¡Listo!</div>
-    <p style="margin-top:14px;color:var(--tx)">Tu ficha se envió a tu coach.</p>
-    <p style="margin-top:6px;color:var(--mt);font-size:14px">Pronto se pondrá en contacto contigo para darte acceso a tu app y tu plan.</p>
+</div>
+
+<main id="formView">
+  <form id="fichaForm" autocomplete="on" novalidate></form>
+</main>
+
+<div id="submitArea">
+  <button id="submitBtn" class="btn-submit" type="button">Enviar ficha a mi coach →</button>
+  <div id="err" class="err"></div>
+  <p class="foot">VDSEN · Ciencias aplicadas al deporte</p>
+</div>
+
+<div id="doneView">
+  <div class="done-big">¡Enviado!</div>
+  <p class="done-sub">Tu ficha llegó a tu coach.</p>
+  <p class="done-note">En breve se pondrá en contacto contigo para darte acceso a tu app y tu plan personalizado.</p>
+  <div class="done-next">
+    <h3>Siguiente paso: tus fotos</h3>
+    <ol>
+      <li><strong>Fotos que necesitas:</strong> frontal, posterior, lateral derecha, lateral izquierda.</li>
+      <li><strong>Requisitos:</strong> cuerpo completo · cámara a la altura del pecho · buena iluminación · sin filtros · postura natural.</li>
+      <li>Envíalas por WhatsApp a tu coach directamente.</li>
+    </ol>
+    <a class="wa-btn" id="waPhotoBtn" href="#" target="_blank" rel="noopener">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+      Enviar fotos por WhatsApp
+    </a>
   </div>
 </div>
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { initializeFirestore, persistentLocalCache, collection, addDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
 const firebaseConfig = {
   apiKey: "AIzaSyBlOmyQEDjjpCxkm7UBqnMJDyqV3NLnCNI",
   authDomain: "vdsen-ecosistema.firebaseapp.com",
@@ -77,158 +165,446 @@ const db = initializeFirestore(app, { localCache: persistentLocalCache() });
 
 const coachId = new URLSearchParams(location.search).get('c') || '';
 
-// ── Esquema (v1.1) + contacto (nombre/teléfono/email) ──
-const SCHEMA = {
-  schemaVersion: "1.1",
-  sections: [
-    { id:"contacto", titulo:"Tus datos", nota:"Para que tu coach te contacte.", fields:[
-      {id:"nombre",label:"Nombre completo",type:"text",required:true},
-      {id:"telefono",label:"Teléfono (WhatsApp)",type:"tel",required:true,placeholder:"10 dígitos"},
-      {id:"email",label:"Correo electrónico",type:"email",required:false},
-      {id:"sexo",label:"Sexo",type:"select",options:["H","M"],required:true},
-      {id:"edad",label:"Edad",type:"number",unit:"años",required:true},
-      {id:"peso_kg",label:"Peso actual",type:"number",unit:"kg",step:0.1,required:true},
-      {id:"talla_cm",label:"Talla",type:"number",unit:"cm",required:true},
-      {id:"porcentaje_grasa",label:"% de grasa (si lo conoces)",type:"number",unit:"%",step:0.1,required:false},
-      {id:"perfil",label:"Perfil",type:"select",options:["natural","PED"],required:true,default:"natural",nota:"Deja 'natural' si no usas fármacos."}
-    ]},
-    { id:"entrenamiento", titulo:"Entrenamiento", fields:[
-      {id:"nivel",label:"Nivel",type:"select",options:["principiante","intermedio","avanzado"],required:true},
-      {id:"dias_semana",label:"Días disponibles por semana",type:"number",unit:"días",min:1,max:7,required:true},
-      {id:"duracion_sesion_min",label:"Duración por sesión",type:"number",unit:"min",required:true},
-      {id:"gimnasio",label:"Gimnasio de referencia",type:"select",options:["San Diego","Bugambilias","otro"],required:true},
-      {id:"gimnasio_otro_maquinas",label:"¿Qué máquinas tiene tu gimnasio?",type:"textarea",required:false,showIf:{field:"gimnasio",equals:"otro"}},
-      {id:"objetivo_mesociclo",label:"Objetivo principal",type:"select",options:["hipertrofia","definición","recomposición","deload"],required:true},
-      {id:"lesiones",label:"Lesiones o restricciones articulares",type:"textarea",required:false,placeholder:"Ej: molestia lumbar, hombro derecho, rodilla…"},
-      {id:"semana_actual_mesociclo",label:"Semana actual del mesociclo (si continúas uno)",type:"number",min:1,max:8,required:false}
-    ]},
-    { id:"prioridades", titulo:"Tus prioridades", nota:"Ayuda a tu coach a enfocar tu plan.", fields:[
-      {id:"grupos_prioritarios",label:"¿Qué zonas quieres priorizar?",type:"textarea",required:false,placeholder:"Ej: glúteo, espalda, hombros…"},
-      {id:"objetivo_corto",label:"Tu objetivo para las próximas semanas",type:"textarea",required:false},
-      {id:"evento_objetivo",label:"¿Tienes una fecha o evento objetivo?",type:"text",required:false,placeholder:"Ej: boda, vacaciones, competencia…"}
-    ]},
-    { id:"preferencias", titulo:"Tus preferencias", nota:"Lo que disfrutas y lo que prefieres evitar.", fields:[
-      {id:"ejercicios_favoritos",label:"Ejercicios o máquinas que te gustan",type:"textarea",required:false},
-      {id:"ejercicios_evitar",label:"Ejercicios que no toleras o no te gustan",type:"textarea",required:false},
-      {id:"estilo_entreno",label:"Estilo de entrenamiento que prefieres",type:"multiselect",options:["series rectas","biseries / superseries","técnicas de intensidad","alto volumen","bajo volumen / alta intensidad"],required:false},
-      {id:"alimentos_favoritos",label:"Alimentos que te gustan",type:"textarea",required:false},
-      {id:"alimentos_evitar",label:"Alimentos que evitas o no te gustan",type:"textarea",required:false},
-      {id:"disponibilidad",label:"Días y horas que realmente puedes entrenar",type:"textarea",required:false}
-    ]},
-    { id:"nutricion", titulo:"Nutrición", fields:[
-      {id:"actividad_pasos_dia",label:"Pasos/día promedio (aprox)",type:"number",unit:"pasos",required:true,default:8000},
-      {id:"objetivo_calorico",label:"Objetivo",type:"select",options:["superávit","mantenimiento","déficit"],required:true},
-      {id:"num_comidas",label:"Nº de comidas preferido",type:"number",min:2,max:8,required:true},
-      {id:"horarios_comidas",label:"Horarios aproximados",type:"text",required:false,placeholder:"Ej: 07:30 / 12:00 / 16:00 / 20:00"},
-      {id:"restricciones_alimentarias",label:"Preferencias / restricciones",type:"multiselect",options:["ninguna","vegano","vegetariano","celíaco","intolerancia lactosa","otra"],required:false},
-      {id:"restriccion_otra",label:"Especifica la restricción",type:"text",required:false,showIf:{field:"restricciones_alimentarias",contains:"otra"}},
-      {id:"alimentos_disponibles",label:"Alimentos disponibles / preferidos",type:"textarea",required:false},
-      {id:"fase_ciclo_menstrual",label:"Fase del ciclo menstrual (si aplica)",type:"select",options:["menstrual","folicular","ovulatoria","lútea","amenorrea","no aplica"],required:false,showIf:{field:"sexo",equals:"M"}}
-    ]},
-    { id:"suplementacion", titulo:"Suplementación", fields:[
-      {id:"restricciones_suplementos",label:"Restricciones",type:"select",options:["ninguna","sin cafeína","sin estimulantes"],required:false,default:"ninguna"},
-      {id:"objetivo_primario_supp",label:"Objetivo primario",type:"select",options:["rendimiento","recomposición","salud"],required:false}
-    ]},
-    { id:"farmacologia", titulo:"Farmacología", showIf:{field:"perfil",equals:"PED"}, nota:"Solo si tu perfil es PED.", fields:[
-      {id:"experiencia_peds",label:"Experiencia previa con PEDs",type:"select",options:["primer_ciclo","2_a_5_ciclos","mas_de_5_ciclos"],required:false},
-      {id:"objetivo_farmaco",label:"Objetivo y fase",type:"select",options:["off_season","pre_comp_inicial","pre_comp_final","peaking","pct","cruise"],required:false},
-      {id:"timeline_semanas",label:"Timeline disponible",type:"number",unit:"semanas",required:false}
-    ]}
-  ]
-};
+// ── Schema v2 — lenguaje de cliente ───────────────────────────────────────
+const SECTIONS = [
+  {
+    id: 'contacto', n: 1, titulo: 'Tus datos personales',
+    nota: 'Necesitamos esto para contactarte.',
+    fields: [
+      {id:'nombre',      q:'¿Cómo te llamas?',              type:'text',   req:true,  ph:'Nombre completo'},
+      {id:'telefono',    q:'WhatsApp',                       type:'tel',    req:true,  ph:'Número con código de país', wide:true},
+      {id:'email',       q:'Correo electrónico',             type:'email',  req:false, ph:'opcional'},
+      {id:'fecha_nac',   q:'Fecha de nacimiento',            type:'date',   req:false},
+      {id:'edad',        q:'Edad',                           type:'number', req:true,  ph:'años', half:true},
+      {id:'sexo',        q:'Sexo biológico',                 type:'chips1', req:true,  opts:['Hombre','Mujer']},
+      {id:'peso_kg',     q:'Peso actual',                    type:'number', req:true,  ph:'kg', step:0.1, half:true},
+      {id:'talla_cm',    q:'Estatura',                       type:'number', req:true,  ph:'cm', half:true},
+      {id:'ocupacion',   q:'¿A qué te dedicas?',             type:'text',   req:false, ph:'Estudiante, oficina, trabajo físico…'},
+      {id:'ciudad',      q:'Ciudad / País',                  type:'text',   req:false, ph:'Ej: Guadalajara, México'},
+    ]
+  },
+  {
+    id: 'objetivo', n: 2, titulo: '¿Qué quieres lograr?',
+    nota: 'Puedes elegir más de uno.',
+    fields: [
+      {id:'objetivo_principal', q:'¿Cuál es tu objetivo principal?', type:'chips', req:true, wide:true, opts:['Ganar músculo','Bajar grasa','Marcarme / definir','Recomposición corporal','Ganar fuerza','Mejorar rendimiento deportivo','Mantenerme','Prepararme para una competencia']},
+      {id:'objetivo_palabras',  q:'Cuéntanos con tus palabras qué quieres cambiar o mejorar.', type:'textarea', req:false, wide:true, ph:'Lo que quieras que tu coach sepa…'},
+      {id:'tiempo_cambios',     q:'¿En cuánto tiempo quieres ver cambios importantes?', type:'chips1', req:false, opts:['1 mes','3 meses','6 meses','1 año o más']},
+      {id:'fecha_objetivo',     q:'¿Tienes alguna fecha o evento importante?',           type:'text',   req:false, ph:'Ej: boda en junio, vacaciones en agosto…'},
+      {id:'evento_descripcion', q:'Si es una competencia o evento deportivo, ¿cuál es y cuándo?', type:'text', req:false, ph:'Nombre y fecha'},
+    ]
+  },
+  {
+    id: 'experiencia', n: 3, titulo: 'Tu experiencia entrenando',
+    nota: 'Sé honesto — aquí no hay respuestas malas.',
+    fields: [
+      {id:'tiempo_entrenando', q:'¿Cuánto tiempo llevas entrenando?', type:'chips1', req:true, wide:true, opts:['Nunca he entrenado','Menos de 6 meses','6–12 meses','1–3 años','3–5 años','Más de 5 años']},
+      {id:'dias_actuales',     q:'¿Cuántos días entrenas actualmente?', type:'number', req:false, ph:'días/sem', half:true},
+      {id:'dejaste_entrenar',  q:'¿Has dejado de entrenar recientemente?', type:'chips1', req:false, opts:['Sí','No']},
+      {id:'deporte_practicado',q:'¿Has practicado algún deporte?',          type:'text',   req:false, ph:'Ej: fútbol, natación, atletismo…'},
+      {id:'competido',         q:'¿Has competido anteriormente?',            type:'chips1', req:false, opts:['Sí','No']},
+      {id:'registro_pesos',    q:'¿Llevas registro de los pesos que usas en el gym?', type:'chips1', req:false, opts:['Sí','No']},
+      {id:'sabe_rir',          q:'¿Sabes qué es el RIR (repeticiones en reserva)?', type:'chips1', req:false, opts:['Sí','Más o menos','No, nunca lo he escuchado']},
+    ]
+  },
+  {
+    id: 'disponibilidad', n: 4, titulo: 'Disponibilidad para entrenar',
+    nota: 'Esto es clave para diseñar tu rutina.',
+    fields: [
+      {id:'dias_semana',        q:'¿Cuántos días por semana puedes entrenar?', type:'chips1', req:true, opts:['2','3','4','5','6','7']},
+      {id:'dias_disponibles',   q:'¿Qué días puedes entrenar?', type:'chips', req:false, wide:true, opts:['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']},
+      {id:'duracion_sesion_min',q:'¿Cuánto tiempo tienes por entrenamiento?', type:'chips1', req:true, opts:['45 min','60 min','75 min','90 min','120 min']},
+      {id:'hora_entrenamiento', q:'¿A qué hora entrenas normalmente?',          type:'text',   req:false, ph:'Ej: 7 am, 6 pm…'},
+      {id:'dias_imposibles',    q:'¿Hay días en los que definitivamente no puedes entrenar?', type:'text', req:false, ph:'Ej: domingos, martes…'},
+      {id:'horario_variable',   q:'¿Tu horario cambia constantemente?',          type:'chips1', req:false, opts:['Sí','No']},
+    ]
+  },
+  {
+    id: 'gimnasio', n: 5, titulo: 'Tu gimnasio',
+    nota: 'Necesitamos saber con qué equipo cuentas.',
+    fields: [
+      {id:'nombre_gimnasio',    q:'¿Dónde entrenas?', type:'chips1', req:true, wide:true, opts:['San Diego','Bugambilias','Otro']},
+      {id:'gimnasio_nombre_otro', q:'¿Cómo se llama tu gimnasio?', type:'text', req:false, ph:'Nombre del gym', showIf:{field:'nombre_gimnasio',eq:'Otro'}},
+      {id:'entrena_casa',       q:'¿También entrenas en casa?', type:'chips1', req:false, opts:['Sí','No']},
+      {id:'equipo_faltante',    q:'¿Hay alguna máquina o equipo que tu gym NO tenga?', type:'textarea', req:false, ph:'Ej: polea, prensa, jaula…', wide:true},
+      {id:'maquinas_favoritas_gym', q:'¿Hay máquinas específicas que te gusten?', type:'textarea', req:false, ph:'Escríbelas si las conoces', wide:true},
+    ]
+  },
+  {
+    id: 'lesiones', n: 6, titulo: 'Lesiones y molestias',
+    nota: 'Es muy importante que seas específico aquí.',
+    fields: [
+      {id:'tiene_lesion',       q:'¿Tienes actualmente alguna lesión?',          type:'chips1', req:true, opts:['Sí','No']},
+      {id:'descripcion_lesion', q:'Si respondiste sí, ¿dónde y qué ocurrió?',   type:'textarea',req:false, wide:true, ph:'Zona, qué pasó, hace cuánto tiempo…', showIf:{field:'tiene_lesion',eq:'Sí'}},
+      {id:'tiene_molestia',     q:'¿Tienes alguna molestia al entrenar?',        type:'chips1', req:false, opts:['Sí','No']},
+      {id:'zona_molestia',      q:'¿Dónde sientes la molestia?',                 type:'text',   req:false, ph:'Ej: hombro derecho, rodilla izquierda…', showIf:{field:'tiene_molestia',eq:'Sí'}},
+      {id:'ejercicios_molestan',q:'¿Qué ejercicios o movimientos te molestan?',  type:'textarea',req:false, wide:true, ph:'Sé específico', showIf:{field:'tiene_molestia',eq:'Sí'}},
+      {id:'intensidad_molestia',q:'Del 0 al 10, ¿qué tan fuerte es la molestia?',type:'range',  req:false, min:0, max:10, showIf:{field:'tiene_molestia',eq:'Sí'}},
+      {id:'tuvo_cirugia',       q:'¿Has tenido alguna cirugía?',                 type:'chips1', req:false, opts:['Sí','No']},
+      {id:'ejercicios_veto',    q:'¿Un médico o fisio te ha indicado evitar algún ejercicio?', type:'textarea', req:false, wide:true, ph:'Escríbelos — serán marcados como VETO en tu plan'},
+      {id:'movimientos_limitados', q:'¿Hay algún movimiento que no puedas realizar cómodamente?', type:'textarea', req:false, wide:true, ph:'Ej: sentadilla profunda, press por encima de la cabeza…'},
+    ]
+  },
+  {
+    id: 'ejercicios', n: 7, titulo: 'Ejercicios y máquinas',
+    nota: 'Esto ayuda a tu coach a elegir los mejores ejercicios para ti.',
+    fields: [
+      {id:'ejercicios_favoritos',  q:'¿Cuáles son tus ejercicios favoritos?',    type:'textarea', req:false, wide:true, ph:'Escribe los que más te gustan'},
+      {id:'ejercicios_funcionan',  q:'¿Qué ejercicios sientes que te funcionan muy bien?', type:'textarea', req:false, wide:true, ph:'En qué ejercicios ves más resultados'},
+      {id:'ejercicios_no_gustan',  q:'¿Qué ejercicios no te gustan o prefieres evitar?',   type:'textarea', req:false, wide:true, ph:'Tu coach lo tomará en cuenta'},
+      {id:'ejercicios_incomodos',  q:'¿Hay algún ejercicio que siempre te resulte incómodo aunque no cause dolor?', type:'textarea', req:false, wide:true, ph:'Ej: press con barra me resulta raro'},
+    ]
+  },
+  {
+    id: 'areas', n: 8, titulo: 'Áreas que quieres mejorar',
+    nota: 'Selecciona todas las que apliquen.',
+    fields: [
+      {id:'areas_mejorar', q:'¿Qué partes de tu cuerpo quieres mejorar?', type:'chips', req:false, wide:true,
+        opts:['Glúteos','Cuádriceps / pierna frontal','Femoral / pierna posterior','Pantorrillas','Espalda','Hombros','Pecho','Bíceps','Tríceps','Brazos en general','Abdomen','Cintura / talle','Cuerpo completo']},
+      {id:'prioridad_1',   q:'Tu prioridad #1 (la más importante)',        type:'text', req:false, ph:'Ej: Glúteos'},
+      {id:'prioridad_2',   q:'Tu prioridad #2',                            type:'text', req:false, ph:'Ej: Hombros'},
+      {id:'prioridad_3',   q:'Tu prioridad #3',                            type:'text', req:false, ph:'Ej: Espalda'},
+      {id:'area_desarrollada', q:'¿Hay alguna parte que ya está bastante desarrollada y no necesitas priorizar?', type:'textarea', req:false, wide:true, ph:'Ej: mis piernas ya están bien, prefiero enfocarme en tren superior'},
+    ]
+  },
+  {
+    id: 'entreno_actual', n: 9, titulo: 'Tu entrenamiento actual',
+    nota: 'Si llevas alguna rutina, cuéntanos cómo es.',
+    fields: [
+      {id:'rutina_actual',    q:'¿Qué rutina haces actualmente?',               type:'textarea', req:false, wide:true, ph:'Ej: Pierna lunes, Push martes, Pull miércoles… o "no sigo ninguna"'},
+      {id:'duracion_actual',  q:'¿Cuánto dura cada entrenamiento actualmente?',  type:'number',   req:false, ph:'minutos', half:true},
+      {id:'num_ejercicios',   q:'¿Cuántos ejercicios haces por sesión?',         type:'number',   req:false, ph:'aprox', half:true},
+      {id:'entrena_fallo',    q:'¿Con qué frecuencia entrenas hasta el límite (ya no puedes hacer otra rep)?', type:'chips1', req:false, wide:true, opts:['Casi nunca','Algunas veces','Frecuentemente','Casi siempre']},
+      {id:'progresando',      q:'¿Sientes que estás progresando actualmente?',   type:'chips1', req:false, opts:['Sí','Poco','No','No estoy seguro']},
+      {id:'musculo_no_mejora',q:'¿Hay algún músculo que sientas que no mejora a pesar de entrenarlo?', type:'textarea', req:false, wide:true, ph:'Ej: mis hombros no crecen sin importar lo que haga'},
+    ]
+  },
+  {
+    id: 'actividad', n: 10, titulo: 'Actividad diaria',
+    nota: 'Ayuda a calcular tu gasto calórico real.',
+    fields: [
+      {id:'tipo_trabajo',     q:'¿Tu trabajo o actividad principal es?', type:'chips1', req:false, wide:true, opts:['Mayormente sentado (oficina, estudio)','Algo activo (de pie, caminando)','Muy activo físicamente (trabajo manual, campo)']},
+      {id:'pasos_dia',        q:'¿Cuántos pasos haces aproximadamente al día?', type:'chips1', req:false, wide:true, opts:['Menos de 4,000','4,000–7,000','7,000–10,000','Más de 10,000','No lo sé']},
+      {id:'hace_cardio',      q:'¿Realizas cardio actualmente?',                type:'chips1', req:false, opts:['Sí','No']},
+      {id:'cardio_dias',      q:'¿Cuántos días?',   type:'number', req:false, ph:'días/sem', half:true, showIf:{field:'hace_cardio',eq:'Sí'}},
+      {id:'cardio_tiempo',    q:'¿Cuánto tiempo?',  type:'number', req:false, ph:'minutos',  half:true, showIf:{field:'hace_cardio',eq:'Sí'}},
+      {id:'practica_deporte', q:'¿Practicas otro deporte además del gym?', type:'chips1', req:false, opts:['Sí','No']},
+      {id:'deporte_otro',     q:'¿Cuál y cuántas veces por semana?', type:'text', req:false, ph:'Ej: fútbol 2x/sem', showIf:{field:'practica_deporte',eq:'Sí'}},
+    ]
+  },
+  {
+    id: 'sueno', n: 11, titulo: 'Sueño y recuperación',
+    nota: 'El descanso es tan importante como el entrenamiento.',
+    fields: [
+      {id:'horas_sueno',      q:'¿Cuántas horas duermes normalmente?',         type:'number',   req:false, ph:'horas', half:true},
+      {id:'calidad_sueno',    q:'¿Cómo es tu calidad de sueño?',               type:'chips1',   req:false, wide:true, opts:['Muy mala','Mala','Regular','Buena','Muy buena']},
+      {id:'despierta_descansado', q:'¿Te despiertas descansado?',              type:'chips1',   req:false, opts:['Sí','A veces','No']},
+      {id:'nivel_estres',     q:'¿Cómo describirías tu nivel de estrés actual?', type:'chips1', req:false, wide:true, opts:['Muy bajo','Bajo','Medio','Alto','Muy alto']},
+      {id:'recuperado_entreno', q:'¿Sueles sentirte recuperado para volver a entrenar?', type:'chips1', req:false, wide:true, opts:['Sí, siempre','Casi siempre','Algunas veces','Generalmente no']},
+      {id:'usa_wearable',     q:'¿Usas algún reloj o dispositivo de salud?',   type:'chips1',   req:false, opts:['Sí','No']},
+      {id:'cual_wearable',    q:'¿Cuál?', type:'text', req:false, ph:'Ej: Apple Watch, Garmin, WHOOP, Oura…', showIf:{field:'usa_wearable',eq:'Sí'}},
+    ]
+  },
+  {
+    id: 'alimentacion', n: 12, titulo: 'Tu alimentación',
+    nota: 'Sin juzgar — solo necesitamos entender tu contexto actual.',
+    fields: [
+      {id:'objetivo_alimentacion', q:'¿Cuál es tu objetivo con la alimentación?', type:'chips1', req:false, wide:true, opts:['Bajar grasa','Ganar peso y músculo','Mantenerme','Mejorar la calidad de lo que como']},
+      {id:'sigue_dieta',       q:'¿Actualmente sigues alguna dieta?',             type:'chips1', req:false, opts:['Sí','No']},
+      {id:'sabe_calorias',     q:'¿Sabes cuántas calorías consumes aproximadamente?', type:'chips1', req:false, opts:['Sí','No']},
+      {id:'sabe_macros',       q:'¿Conoces tus macros (proteína, carbs, grasas)?',   type:'chips1', req:false, opts:['Sí','No']},
+      {id:'num_comidas',       q:'¿Cuántas comidas prefieres hacer al día?',       type:'chips1', req:false, opts:['2','3','4','5','6 o más']},
+      {id:'come_antes_entreno',q:'¿Prefieres comer antes de entrenar?',            type:'chips1', req:false, opts:['Sí','No','Me da igual']},
+      {id:'entrena_ayunas',    q:'¿Entrenas en ayunas?',                            type:'chips1', req:false, opts:['Sí','No','A veces']},
+    ]
+  },
+  {
+    id: 'alimentos', n: 13, titulo: 'Preferencias de alimentos',
+    nota: 'Tu coach diseñará una nutrición que disfrutes.',
+    fields: [
+      {id:'alimentos_favoritos', q:'¿Cuáles son tus alimentos favoritos?',              type:'textarea', req:false, wide:true, ph:'Escribe libremente'},
+      {id:'alimentos_no_gustan', q:'¿Qué alimentos no te gustan?',                      type:'textarea', req:false, wide:true, ph:'Los que definitivamente no quieres comer'},
+      {id:'alimentos_evitar',    q:'¿Qué alimentos no quieres incluir en tu plan?',     type:'textarea', req:false, wide:true, ph:'Por preferencia, ética o cualquier razón'},
+      {id:'alergias',            q:'¿Tienes alguna alergia alimentaria?',                type:'text',     req:false, ph:'Ej: maní, mariscos…'},
+      {id:'intolerancias',       q:'¿Tienes alguna intolerancia?',                       type:'text',     req:false, ph:'Ej: lactosa, gluten…'},
+      {id:'tipo_alimentacion',   q:'¿Sigues algún tipo de alimentación?',               type:'chips1',   req:false, opts:['Ninguna en especial','Vegetariana','Vegana','Otra']},
+      {id:'tipo_alimentacion_otro', q:'¿Cuál?', type:'text', req:false, ph:'Especifica', showIf:{field:'tipo_alimentacion',eq:'Otra'}},
+      {id:'tiempo_cocinar',      q:'¿Tienes tiempo para cocinar?',                       type:'chips1',   req:false, opts:['Sí, me gusta cocinar','Poco tiempo','Casi no cocino']},
+      {id:'meal_prep',           q:'¿Preparas comida con anticipación?',                type:'chips1',   req:false, opts:['Sí','No']},
+      {id:'come_fuera',          q:'¿Comes frecuentemente fuera de casa?',              type:'chips1',   req:false, opts:['Casi siempre','Varias veces/sem','Pocas veces','Casi nunca']},
+      {id:'presupuesto_especial',q:'¿Tienes algún presupuesto especial para la alimentación?', type:'text', req:false, ph:'Solo si es un factor limitante'},
+    ]
+  },
+  {
+    id: 'suplementos', n: 14, titulo: 'Suplementos',
+    nota: '',
+    fields: [
+      {id:'usa_suplementos',       q:'¿Actualmente utilizas suplementos?',             type:'chips1', req:false, opts:['Sí','No']},
+      {id:'suplementos_actuales',  q:'¿Cuáles usas?', type:'textarea', req:false, wide:true, ph:'Ej: proteína, creatina, cafeína…', showIf:{field:'usa_suplementos',eq:'Sí'}},
+      {id:'suplementos_no_quiere', q:'¿Hay algún suplemento que no quieras usar?',     type:'textarea', req:false, wide:true, ph:'Por la razón que sea'},
+      {id:'sensible_cafeina',      q:'¿Eres sensible a la cafeína o estimulantes?',    type:'chips1',   req:false, opts:['Sí','No','No lo sé']},
+    ]
+  },
+  {
+    id: 'progreso', n: 15, titulo: 'Tu progreso actual',
+    nota: 'Ayuda a entender tu historial.',
+    fields: [
+      {id:'peso_min_12m',     q:'¿Cuál fue tu peso más bajo en los últimos 12 meses?',  type:'number', req:false, ph:'kg', step:0.1, half:true},
+      {id:'peso_max_12m',     q:'¿Cuál fue tu peso más alto en los últimos 12 meses?',  type:'number', req:false, ph:'kg', step:0.1, half:true},
+      {id:'tendencia_peso',   q:'¿Tu peso actualmente está?',                            type:'chips1', req:false, opts:['Subiendo','Bajando','Más o menos igual','No lo sé']},
+      {id:'frecuencia_peso',  q:'¿Con qué frecuencia te pesas?',                        type:'chips1', req:false, opts:['Todos los días','Varias veces por semana','Una vez a la semana','Casi nunca']},
+    ]
+  },
+  {
+    id: 'medidas', n: 16, titulo: 'Medidas corporales',
+    nota: 'Opcionales — si no las tienes, tu coach te indicará cómo tomarlas.',
+    fields: [
+      {id:'cintura_cm',   q:'Cintura',       type:'number', req:false, ph:'cm', step:0.5, half:true},
+      {id:'cadera_cm',    q:'Cadera',        type:'number', req:false, ph:'cm', step:0.5, half:true},
+      {id:'pecho_cm',     q:'Pecho',         type:'number', req:false, ph:'cm', step:0.5, half:true},
+      {id:'brazo_cm',     q:'Brazo (flexionado)', type:'number', req:false, ph:'cm', step:0.5, half:true},
+      {id:'muslo_cm',     q:'Muslo',         type:'number', req:false, ph:'cm', step:0.5, half:true},
+      {id:'pantorrilla_cm',q:'Pantorrilla',  type:'number', req:false, ph:'cm', step:0.5, half:true},
+    ]
+  },
+  {
+    id: 'fotos', n: 17, titulo: 'Tus fotos para evaluación',
+    nota: 'Tu coach las usa para analizar tu estructura y proporciones. Se mantienen 100% confidenciales.',
+    special: 'fotos'
+  }
+];
 
-const FIELDS = {};
-SCHEMA.sections.forEach(s=>s.fields.forEach(f=>FIELDS[f.id]=f));
+// ── Field map ─────────────────────────────────────────────────────────────
+const FMAP = {};
+SECTIONS.forEach(s => { if(s.fields) s.fields.forEach(f => FMAP[f.id] = f); });
+
+// ── Helpers ───────────────────────────────────────────────────────────────
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-function fieldHtml(f){
-  const id='f_'+f.id, req=f.required?' <span class="req">*</span>':'';
-  const unit=f.unit?` · ${esc(f.unit)}`:'';
-  const showif=f.showIf?` data-showif='${JSON.stringify(f.showIf)}'`:'';
-  const wide=(f.type==='textarea'||f.type==='multiselect')?' wide':'';
-  const v=f.default!=null?f.default:'';
-  let ctl='';
-  if(f.type==='select') ctl=`<select id="${id}"><option value="">— Seleccionar —</option>${f.options.map(o=>`<option${String(v)===o?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
-  else if(f.type==='textarea') ctl=`<textarea id="${id}" placeholder="${esc(f.placeholder||'')}"></textarea>`;
-  else if(f.type==='number'){const mn=f.min!=null?` min="${f.min}"`:'',mx=f.max!=null?` max="${f.max}"`:'',st=f.step!=null?` step="${f.step}"`:'';ctl=`<input type="number" id="${id}"${mn}${mx}${st} inputmode="decimal" placeholder="${esc(f.placeholder||'')}" value="${esc(v)}">`;}
-  else if(f.type==='multiselect') ctl=`<div class="chips" id="${id}">${f.options.map(o=>`<span class="chip" data-v="${esc(o)}">${esc(o)}</span>`).join('')}</div>`;
-  else if(f.type==='tel') ctl=`<input type="tel" id="${id}" inputmode="tel" placeholder="${esc(f.placeholder||'')}" value="${esc(v)}">`;
-  else if(f.type==='email') ctl=`<input type="email" id="${id}" inputmode="email" placeholder="${esc(f.placeholder||'')}" value="${esc(v)}">`;
-  else ctl=`<input type="text" id="${id}" placeholder="${esc(f.placeholder||'')}" value="${esc(v)}">`;
-  return `<div class="fld${wide}" data-fid="${f.id}"${showif}>
-    <label>${esc(f.label)}${req}${unit}</label>${ctl}
-    ${f.nota?`<label style="margin-top:5px">${esc(f.nota)}</label>`:''}
+function fieldHtml(f) {
+  const wide = (f.wide || f.type==='textarea' || f.type==='chips' || (f.type==='chips1' && (f.opts||[]).length > 4)) ? ' wide' : (f.half ? ' half' : '');
+  const si = f.showIf ? ` data-showif='${JSON.stringify(f.showIf)}'` : '';
+  let ctl = '';
+  if (f.type === 'chips' || f.type === 'chips1') {
+    const single = f.type === 'chips1' ? ' single' : '';
+    ctl = `<div class="chips${single}" id="c_${f.id}">${(f.opts||[]).map(o=>`<span class="chip" data-v="${esc(o)}">${esc(o)}</span>`).join('')}</div>`;
+  } else if (f.type === 'textarea') {
+    ctl = `<textarea id="c_${f.id}" placeholder="${esc(f.ph||'')}"></textarea>`;
+  } else if (f.type === 'number') {
+    const mn=f.min!=null?` min="${f.min}"`:'', mx=f.max!=null?` max="${f.max}"`:'', st=f.step!=null?` step="${f.step}"`:' step="1"';
+    ctl = `<input type="number" id="c_${f.id}" inputmode="decimal"${mn}${mx}${st} placeholder="${esc(f.ph||'')}">`;
+  } else if (f.type === 'range') {
+    const mn=f.min!=null?f.min:0, mx=f.max!=null?f.max:10;
+    ctl = `<div class="range-wrap"><input type="range" id="c_${f.id}" min="${mn}" max="${mx}" value="${mn}" oninput="document.getElementById('rv_${f.id}').textContent=this.value"><span class="range-val" id="rv_${f.id}">${mn}</span></div>`;
+  } else if (f.type === 'date') {
+    ctl = `<input type="date" id="c_${f.id}">`;
+  } else if (f.type === 'tel') {
+    ctl = `<input type="tel" id="c_${f.id}" inputmode="tel" placeholder="${esc(f.ph||'')}">`;
+  } else if (f.type === 'email') {
+    ctl = `<input type="email" id="c_${f.id}" inputmode="email" placeholder="${esc(f.ph||'')}">`;
+  } else {
+    ctl = `<input type="text" id="c_${f.id}" placeholder="${esc(f.ph||'')}">`;
+  }
+  const req = f.req ? ' <span style="color:var(--ac)">*</span>' : '';
+  return `<div class="fld${wide}" data-fid="${f.id}"${si}>
+    <label class="ql">${esc(f.q||'')}${req}</label>
+    ${ctl}
   </div>`;
 }
 
-function render(){
-  const form=document.getElementById('fichaForm');
-  form.innerHTML = SCHEMA.sections.map(sec=>{
-    const secShow=sec.showIf?` data-showif='${JSON.stringify(sec.showIf)}'`:'';
-    return `<div class="sec" data-secid="${sec.id}"${secShow}>
-      <h2>${esc(sec.titulo)}</h2>${sec.nota?`<div class="snote">${esc(sec.nota)}</div>`:''}
-      <div class="grid">${sec.fields.map(fieldHtml).join('')}</div>
+function fotosHtml() {
+  return `<div class="foto-grid">
+    <div class="foto-card"><div class="ico">🧍</div>Frontal</div>
+    <div class="foto-card"><div class="ico">🧍</div>Posterior</div>
+    <div class="foto-card"><div class="ico">🧍</div>Lateral derecha</div>
+    <div class="foto-card"><div class="ico">🧍</div>Lateral izquierda</div>
+  </div>
+  <div class="foto-instructions">
+    <p>
+      <strong>Cómo tomarlas:</strong><br>
+      · Cuerpo completo, de la cabeza a los pies<br>
+      · Cámara aproximadamente a la altura del pecho/abdomen<br>
+      · Buena iluminación (natural o artificial uniforme)<br>
+      · Sin filtros · Postura natural<br>
+      · Suficiente distancia para que aparezca todo el cuerpo<br>
+      · El mismo lugar si es posible (para comparaciones futuras)
+    </p>
+  </div>
+  <p style="font-size:12px;color:var(--mt);margin-top:10px;line-height:1.6">📲 Envía las fotos directamente a tu coach por WhatsApp después de enviar esta ficha.</p>`;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function render() {
+  const form = document.getElementById('fichaForm');
+  form.innerHTML = SECTIONS.map(sec => {
+    let body = '';
+    if (sec.special === 'fotos') {
+      body = fotosHtml();
+    } else {
+      body = `<div class="grid">${(sec.fields||[]).map(fieldHtml).join('')}</div>`;
+    }
+    return `<div class="sec" id="sec_${sec.id}">
+      <div class="sec-header">
+        <div class="sec-num">${sec.n}</div>
+        <div><div class="sec-title">${esc(sec.titulo)}</div>${sec.nota?`<div class="sec-note">${esc(sec.nota)}</div>`:''}</div>
+      </div>
+      ${body}
     </div>`;
   }).join('');
-  form.addEventListener('click', e=>{
-    const chip=e.target.closest('.chip'); if(chip){ chip.classList.toggle('on'); applyVis(); }
+
+  // Chip clicks
+  form.addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const wrap = chip.closest('.chips');
+    if (wrap.classList.contains('single')) {
+      wrap.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+    }
+    chip.classList.toggle('on');
+    applyVis();
+    updateProgress();
   });
-  form.addEventListener('input', applyVis);
-  form.addEventListener('change', applyVis);
+
+  form.addEventListener('input', () => { applyVis(); updateProgress(); });
+  form.addEventListener('change', () => { applyVis(); updateProgress(); });
   applyVis();
+  updateProgress();
 }
-function val(fid){
-  const f=FIELDS[fid]; const el=document.getElementById('f_'+fid); if(!el) return null;
-  if(f.type==='multiselect') return Array.from(el.querySelectorAll('.chip.on')).map(c=>c.dataset.v);
-  if(f.type==='number') return el.value===''?null:parseFloat(el.value);
-  return el.value.trim();
-}
-function evalShow(cond){
-  if(!cond) return true; const cur=val(cond.field);
-  if('equals' in cond) return cur===cond.equals;
-  if('notEquals' in cond) return cur!==cond.notEquals;
-  if('contains' in cond) return Array.isArray(cur)&&cur.includes(cond.contains);
+
+function evalShow(si) {
+  if (!si) return true;
+  const f = FMAP[si.field]; if (!f) return true;
+  const v = getVal(si.field);
+  if ('eq' in si) return v === si.eq;
+  if ('neq' in si) return v !== si.neq;
+  if ('contains' in si) return Array.isArray(v) && v.includes(si.contains);
   return true;
 }
-function applyVis(){
-  document.querySelectorAll('#fichaForm .sec').forEach(s=>{ const c=s.dataset.showif?JSON.parse(s.dataset.showif):null; s.style.display=evalShow(c)?'':'none'; });
-  document.querySelectorAll('#fichaForm .fld[data-showif]').forEach(w=>{ const c=JSON.parse(w.dataset.showif); w.style.display=evalShow(c)?'':'none'; });
+
+function applyVis() {
+  document.querySelectorAll('#fichaForm .fld[data-showif]').forEach(w => {
+    const si = JSON.parse(w.dataset.showif);
+    w.style.display = evalShow(si) ? '' : 'none';
+  });
 }
-function collect(){
-  const out={};
-  Object.keys(FIELDS).forEach(fid=>{
-    const w=document.querySelector(`#fichaForm .fld[data-fid="${fid}"]`); if(!w||w.style.display==='none') return;
-    const v=val(fid); if(v===null||v===''||(Array.isArray(v)&&v.length===0)) return; out[fid]=v;
+
+function getVal(fid) {
+  const f = FMAP[fid]; if (!f) return null;
+  if (f.type === 'chips' || f.type === 'chips1') {
+    const el = document.getElementById('c_'+fid); if (!el) return f.type==='chips'?[]:null;
+    const sel = Array.from(el.querySelectorAll('.chip.on')).map(c => c.dataset.v);
+    return f.type === 'chips1' ? (sel[0]||null) : sel;
+  }
+  if (f.type === 'range') { const el = document.getElementById('c_'+fid); return el ? parseInt(el.value) : null; }
+  if (f.type === 'number') { const el = document.getElementById('c_'+fid); return el && el.value!=='' ? parseFloat(el.value) : null; }
+  const el = document.getElementById('c_'+fid); return el ? el.value.trim() : null;
+}
+
+function collect() {
+  const out = {};
+  Object.keys(FMAP).forEach(fid => {
+    const w = document.querySelector(`#fichaForm .fld[data-fid="${fid}"]`);
+    if (w && w.style.display === 'none') return;
+    const v = getVal(fid);
+    if (v === null || v === '' || (Array.isArray(v) && v.length === 0)) return;
+    out[fid] = v;
   });
   return out;
 }
-function validate(){
-  const miss=[];
-  document.querySelectorAll('#fichaForm .fld[data-fid]').forEach(w=>{
-    if(w.style.display==='none') return; const sec=w.closest('.sec'); if(sec&&sec.style.display==='none') return;
-    const f=FIELDS[w.dataset.fid]; if(!f||!f.required) return;
-    const v=val(f.id); if(v===null||v===''||(Array.isArray(v)&&v.length===0)) miss.push(f.label);
+
+function validate() {
+  const miss = [];
+  SECTIONS.forEach(sec => {
+    if (!sec.fields) return;
+    sec.fields.forEach(f => {
+      if (!f.req) return;
+      const w = document.querySelector(`#fichaForm .fld[data-fid="${f.id}"]`);
+      if (w && w.style.display === 'none') return;
+      const v = getVal(f.id);
+      if (v === null || v === '' || (Array.isArray(v) && v.length === 0)) miss.push(f.q||f.id);
+    });
   });
   return miss;
 }
 
+// ── Progress ──────────────────────────────────────────────────────────────
+function updateProgress() {
+  const total = Object.keys(FMAP).length;
+  let filled = 0;
+  Object.keys(FMAP).forEach(fid => {
+    const v = getVal(fid);
+    if (v !== null && v !== '' && !(Array.isArray(v) && v.length === 0)) filled++;
+  });
+  document.getElementById('progress-bar').style.width = Math.round(filled/total*100) + '%';
+}
+
+// ── Intersection observer — active section highlight ──────────────────────
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('active'); else e.target.classList.remove('active'); });
+}, { threshold: 0.3 });
+
+// ── Init ──────────────────────────────────────────────────────────────────
 render();
-document.getElementById('submitBtn').addEventListener('click', async ()=>{
-  const errEl=document.getElementById('err'); errEl.textContent='';
-  if(!coachId){ errEl.textContent='Link inválido. Pide a tu coach el enlace correcto.'; return; }
-  const miss=validate();
-  if(miss.length){ errEl.textContent='Faltan datos obligatorios: '+miss.slice(0,5).join(', ')+(miss.length>5?'…':''); window.scrollTo({top:0,behavior:'smooth'}); return; }
-  const data=collect();
-  const btn=document.getElementById('submitBtn'); btn.disabled=true; btn.textContent='Enviando…';
-  try{
-    await addDoc(collection(db,'fichas_publicas'), {
-      coachId, nombre:data.nombre||'', telefono:data.telefono||'', email:data.email||'',
-      schemaVersion: SCHEMA.schemaVersion, data, status:'nueva', createdAt: Date.now()
+document.querySelectorAll('.sec').forEach(s => io.observe(s));
+
+// ── Submit ────────────────────────────────────────────────────────────────
+document.getElementById('submitBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('err'); errEl.textContent = '';
+  if (!coachId) { errEl.textContent = 'Link inválido. Pide a tu coach el enlace correcto.'; return; }
+  const miss = validate();
+  if (miss.length) {
+    errEl.textContent = 'Faltan datos obligatorios: ' + miss.slice(0,4).join(', ') + (miss.length>4?'…':'');
+    document.getElementById('fichaForm').scrollIntoView({behavior:'smooth'});
+    return;
+  }
+  const data = collect();
+  // Mapeo semántico interno → compatible con Motor VDSEN
+  if (data.nombre_gimnasio) data.gimnasio = data.nombre_gimnasio;
+  if (data.dias_semana) data.dias_semana = parseInt(data.dias_semana) || data.dias_semana;
+  if (data.duracion_sesion_min) {
+    const m = String(data.duracion_sesion_min).match(/\d+/);
+    if (m) data.duracion_sesion_min = parseInt(m[0]);
+  }
+  // Nivel estimado
+  const nivelMap = {'Nunca he entrenado':'principiante','Menos de 6 meses':'principiante','6–12 meses':'principiante','1–3 años':'intermedio','3–5 años':'avanzado','Más de 5 años':'avanzado'};
+  if (data.tiempo_entrenando && nivelMap[data.tiempo_entrenando]) data.nivel_estimado = nivelMap[data.tiempo_entrenando];
+  // Objetivo calórico estimado
+  const objCalMap = {'Bajar grasa':'déficit','Marcarme / definir':'déficit','Recomposición corporal':'déficit','Ganar músculo':'superávit','Ganar fuerza':'superávit','Mantenerme':'mantenimiento'};
+  const objPrincipal = Array.isArray(data.objetivo_principal) ? data.objetivo_principal[0] : data.objetivo_principal;
+  if (objPrincipal && objCalMap[objPrincipal]) data.objetivo_calorico_estimado = objCalMap[objPrincipal];
+  // Lesiones consolidadas
+  const lesPartes = [data.descripcion_lesion, data.zona_molestia, data.ejercicios_molestan, data.movimientos_limitados].filter(Boolean);
+  if (lesPartes.length) data.lesiones = lesPartes.join(' · ');
+  if (data.ejercicios_veto) data.ejercicios_evitar = data.ejercicios_veto;
+  // Grupos prioritarios
+  const prios = [data.prioridad_1, data.prioridad_2, data.prioridad_3].filter(Boolean);
+  if (prios.length) data.grupos_prioritarios = prios.join(', ');
+  if (data.objetivo_palabras) data.objetivo_corto = data.objetivo_palabras;
+  if (data.fecha_objetivo) data.evento_objetivo = [data.fecha_objetivo, data.evento_descripcion].filter(Boolean).join(' — ');
+
+  const btn = document.getElementById('submitBtn'); btn.disabled = true; btn.textContent = 'Enviando…';
+  try {
+    await addDoc(collection(db, 'fichas_publicas'), {
+      coachId,
+      schema: 'vdsen-ficha-publica-v2',
+      nombre: data.nombre || '',
+      telefono: data.telefono || '',
+      email: data.email || '',
+      data,
+      status: 'nueva',
+      createdAt: Date.now()
     });
-    document.getElementById('formView').classList.add('hide');
-    document.getElementById('doneView').classList.remove('hide');
-    window.scrollTo({top:0});
-  }catch(e){ errEl.textContent='No se pudo enviar: '+(e.message||e); btn.disabled=false; btn.textContent='Enviar ficha a mi coach'; }
+    document.getElementById('formView').style.display = 'none';
+    document.getElementById('submitArea').style.display = 'none';
+    document.getElementById('doneView').style.display = 'block';
+    window.scrollTo({top:0, behavior:'smooth'});
+    // WhatsApp button for photos
+    const waMsg = `Hola, acabo de enviar mi ficha VDSEN. ¡Aquí van mis fotos para evaluación! 📸`;
+    document.getElementById('waPhotoBtn').href = 'https://wa.me/?text=' + encodeURIComponent(waMsg);
+  } catch(e) {
+    document.getElementById('err').textContent = 'No se pudo enviar: ' + (e.message||e);
+    btn.disabled = false; btn.textContent = 'Enviar ficha a mi coach →';
+  }
 });
 </script>
 </body>
