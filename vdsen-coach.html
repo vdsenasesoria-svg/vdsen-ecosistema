@@ -252,8 +252,8 @@
         <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent)">🔬 Análisis VDSEN</h3>
         <span id="intakeAnalysisStatus" class="text-xs" style="color:var(--text-muted)"></span>
       </div>
-      <p class="text-xs mb-2" style="color:var(--text-muted)">Pega aquí el JSON del Evaluador VDSEN — fotogrametría (BLOQUE 1), ficha de intake (BLOQUE 3), o ambos. La app detecta automáticamente y aplica todo de una vez.</p>
-      <textarea id="intakeAnalysisInput" class="input-field mb-2" rows="5" placeholder='Pega aquí la salida del Evaluador VDSEN. Puede incluir fotogrametría (composicion_corporal…) y/o intake (BLOQUE 3 / INTAKE-COMPLEMENT).' style="font-family:'Courier Prime',monospace;font-size:12px"></textarea>
+      <p class="text-xs mb-2" style="color:var(--text-muted)">Pega aquí el JSON del Evaluador VDSEN — <b>ficha unificada vdsen-ficha-v2</b>, fotogrametría (BLOQUE 1), ficha de intake (BLOQUE 3), o cualquier combinación. La app detecta automáticamente y aplica todo de una vez.</p>
+      <textarea id="intakeAnalysisInput" class="input-field mb-2" rows="5" placeholder='Pega aquí el JSON vdsen-ficha-v2 completo, o la salida del Evaluador VDSEN (fotogrametría / INTAKE-COMPLEMENT).' style="font-family:'Courier Prime',monospace;font-size:12px"></textarea>
       <div class="flex gap-2 flex-wrap">
         <button type="button" id="intakeAnalysisBtn" onclick="applyAnalisisVDSEN()" class="btn-secondary text-sm">📋 Aplicar análisis</button>
         <button type="button" id="intakeFotoClear" class="btn-secondary text-sm">🗑 Quitar fotogrametría</button>
@@ -5248,8 +5248,8 @@ El esfuerzo no es negociable.
 
       <div style="background:rgba(107,107,102,.05);border:1px solid rgba(107,107,102,.22);border-radius:10px;padding:13px;margin-bottom:12px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#666;font-weight:700;margin-bottom:6px">🔬 Cargar análisis (JSON del Evaluador)</div>
-        <div style="font-size:11px;color:#555;margin-bottom:8px;line-height:1.5">Pega la salida del Evaluador VDSEN — fotogrametría (BLOQUE 1), ficha de intake (BLOQUE 3), o ambos.</div>
-        <textarea id="_modalAnalysisInput_${clientId}" rows="3" placeholder="Pega el JSON del Evaluador VDSEN aquí…" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.12);background:#0d1117;color:#F4F4F0;font-family:'Courier Prime',monospace;font-size:11px;resize:vertical;box-sizing:border-box"></textarea>
+        <div style="font-size:11px;color:#555;margin-bottom:8px;line-height:1.5">Pega el JSON <b>vdsen-ficha-v2</b> completo, o la salida del Evaluador VDSEN (fotogrametría / BLOQUE 3).</div>
+        <textarea id="_modalAnalysisInput_${clientId}" rows="3" placeholder="Pega el JSON vdsen-ficha-v2 o salida del Evaluador VDSEN aquí…" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.12);background:#0d1117;color:#F4F4F0;font-family:'Courier Prime',monospace;font-size:11px;resize:vertical;box-sizing:border-box"></textarea>
         <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
           <button id="_modalAnalysisBtn_${clientId}" onclick="_modalApplyAnalisis('${clientId}')" style="padding:6px 14px;border-radius:6px;border:none;background:rgba(107,107,102,.3);color:#F4F4F0;font-size:11px;font-weight:700;cursor:pointer">📋 Aplicar análisis</button>
           <span id="_modalAnalysisStatus_${clientId}" style="font-size:11px;color:#555"></span>
@@ -5658,19 +5658,33 @@ El esfuerzo no es negociable.
     if (!raw) { showToast('Pega el análisis del Evaluador VDSEN primero', true); return; }
     const origTxt = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Aplicando…'; statusEl.textContent = '';
     try {
-      let fotObj = null, intakeObj = null;
-      const markerM = raw.match(/---VDSEN-INTAKE-COMPLEMENT---\s*([\s\S]*?)\s*---FIN-INTAKE-COMPLEMENT---/);
-      if (markerM) { try { intakeObj = JSON.parse(markerM[1].trim()); } catch(e){} }
+      let fotObj = null, intakeObj = null, fichaV2 = null;
+      // 1. Detectar vdsen-ficha-v2
+      const _tryFichaV2m = (p) => (p && typeof p==='object' && !Array.isArray(p) && p.schema==='vdsen-ficha-v2') ? p : null;
       const blocks = _extractJsonBlocks(raw);
-      for (const b of blocks) {
-        if (fotObj && intakeObj) break;
-        if (!b || typeof b !== 'object' || Array.isArray(b)) continue;
-        if (!fotObj && (b.composicion_corporal || b.biomecanica)) { fotObj = b; continue; }
-        if (!intakeObj) {
-          const inc = (b.data && typeof b.data === 'object' && !Array.isArray(b.data)) ? b.data : b;
-          if (Object.keys(inc).filter(k => INTAKE_FIELDS[k]).length >= 3) intakeObj = inc;
+      for (const b of blocks) { if (!fichaV2) fichaV2 = _tryFichaV2m(b); if (fichaV2) break; }
+      if (!fichaV2) { try { fichaV2 = _tryFichaV2m(JSON.parse(raw)); } catch(e) {} }
+      if (fichaV2) {
+        intakeObj = _fichaV2ToIntake(fichaV2);
+        if (fichaV2.fotometria && typeof fichaV2.fotometria === 'object') fotObj = fichaV2.fotometria;
+      }
+      // 2. Legacy: marcadores VDSEN
+      if (!intakeObj) {
+        const markerM = raw.match(/---VDSEN-INTAKE-COMPLEMENT---\s*([\s\S]*?)\s*---FIN-INTAKE-COMPLEMENT---/);
+        if (markerM) { try { intakeObj = JSON.parse(markerM[1].trim()); } catch(e){} }
+      }
+      // 3. Bloques JSON legacy
+      if (!fotObj || !intakeObj) {
+        for (const b of blocks) {
+          if (!b || typeof b !== 'object' || Array.isArray(b)) continue;
+          if (!fotObj && (b.composicion_corporal || b.biomecanica)) { fotObj = b; continue; }
+          if (!intakeObj) {
+            const inc = (b.data && typeof b.data === 'object' && !Array.isArray(b.data)) ? b.data : b;
+            if (Object.keys(inc).filter(k => INTAKE_FIELDS[k]).length >= 3) intakeObj = inc;
+          }
         }
       }
+      // 4. Fallback JSON directo
       if (!fotObj && !intakeObj) {
         try {
           const p = JSON.parse(raw);
@@ -5685,23 +5699,37 @@ El esfuerzo no es negociable.
       }
       const applied = [];
       const ts = Date.now();
+      if (fichaV2) {
+        const extra = {};
+        if (fichaV2.farmacologia) extra.farmacologia = fichaV2.farmacologia;
+        if (fichaV2.calibracion_volumetrica) extra.calibracion_volumetrica = fichaV2.calibracion_volumetrica;
+        if (fichaV2.historial_inbody) extra.historial_inbody = fichaV2.historial_inbody;
+        if (fichaV2.suplementacion && fichaV2.suplementacion.stack_actual) extra.stack_suplementos = fichaV2.suplementacion.stack_actual;
+        if (fichaV2.mesociclo_actual != null) extra.mesociclo_actual = fichaV2.mesociclo_actual;
+        if (fichaV2.assumptions) extra.assumptions = fichaV2.assumptions;
+        if (Object.keys(extra).length) await setDoc(doc(db, 'fichas_onboarding', clientId), { ...extra, fichaV2updatedAt: ts }, { merge: true });
+        applied.push('Ficha v2 completa cargada');
+      }
       if (fotObj) {
         await setDoc(doc(db, 'fichas_onboarding', clientId), { fotometria: fotObj, fotometriaUpdatedAt: ts }, { merge: true });
         applied.push('Fotogrametría guardada');
       }
       if (intakeObj) {
+        const clean = {}; Object.entries(intakeObj).forEach(([k,v]) => { if (v != null) clean[k] = v; });
         const existData = _detailFichaData?.data || {};
-        await setDoc(doc(db, 'fichas_onboarding', clientId), { data: Object.assign({}, existData, intakeObj), updatedAt: ts, updatedBy: 'coach' }, { merge: true });
-        applied.push(Object.keys(intakeObj).filter(k => INTAKE_FIELDS[k]).length + ' campos de ficha cargados');
+        await setDoc(doc(db, 'fichas_onboarding', clientId), { data: Object.assign({}, existData, clean), updatedAt: ts, updatedBy: 'coach' }, { merge: true });
+        applied.push(Object.keys(clean).filter(k => INTAKE_FIELDS[k]).length + ' campos de ficha cargados');
       }
       if (!applied.length) { showToast('No se detectó fotogrametría ni intake en el texto pegado', true); return; }
       showToast('✅ ' + applied.join(' · '));
       statusEl.textContent = '✅ ' + applied.join(' · ') + ' — ' + new Date(ts).toLocaleTimeString('es-MX');
       // Update in-memory ficha data and re-render tab
       const _existing = _detailFichaData || {};
+      const cleanIntake = intakeObj ? (() => { const c={}; Object.entries(intakeObj).forEach(([k,v])=>{ if(v!=null) c[k]=v; }); return c; })() : null;
       _detailFichaData = Object.assign({}, _existing,
+        fichaV2   ? { fichaV2updatedAt: ts } : {},
         fotObj    ? { fotometria: fotObj, fotometriaUpdatedAt: ts } : {},
-        intakeObj ? { data: Object.assign({}, _existing.data || {}, intakeObj), updatedAt: ts, updatedBy: 'coach' } : {}
+        cleanIntake ? { data: Object.assign({}, _existing.data || {}, cleanIntake), updatedAt: ts, updatedBy: 'coach' } : {}
       );
       const cont2 = document.getElementById('clientDetailTabContent');
       if (cont2) _renderClientTabFicha(cont2);
@@ -9159,6 +9187,64 @@ El esfuerzo no es negociable.
   }
   window.loadIntakeFromJson = loadIntakeFromJson;
 
+  // Convierte un objeto vdsen-ficha-v2 al objeto plano de campos INTAKE_FIELDS
+  function _fichaV2ToIntake(f) {
+    const b = f.base || {}, e = f.entrenamiento || {}, bm = f.biomecanica || {},
+          pr = f.prioridades || {}, pf = f.preferencias || {},
+          nu = f.nutricion || {}, su = f.suplementacion || {};
+    return {
+      // base
+      nombre:                   b.nombre,
+      sexo:                     b.sexo,
+      edad:                     b.edad,
+      peso_kg:                  b.peso_kg,
+      talla_cm:                 b.talla_cm,
+      porcentaje_grasa:         b.porcentaje_grasa,
+      perfil:                   b.perfil,
+      // entrenamiento
+      nivel:                    e.nivel,
+      dias_semana:              e.dias_semana,
+      duracion_sesion_min:      e.duracion_sesion_min,
+      gimnasio:                 e.gimnasio,
+      objetivo_mesociclo:       e.objetivo_mesociclo,
+      lesiones:                 e.lesiones,
+      semana_actual_mesociclo:  e.semana_actual_mesociclo,
+      // biomecanica
+      biotipo:                  bm.biotipo,
+      movilidad:                bm.movilidad,
+      patrones_fuertes:         Array.isArray(bm.patrones_fuertes) ? bm.patrones_fuertes : undefined,
+      patrones_debiles:         Array.isArray(bm.patrones_debiles) ? bm.patrones_debiles : undefined,
+      asimetrias:               bm.asimetrias,
+      postura:                  bm.postura,
+      dolor_actual:             bm.dolor_actual,
+      // prioridades
+      grupos_prioritarios:      pr.grupos_prioritarios,
+      enfoque_actual:           pr.enfoque_actual,
+      objetivo_corto:           pr.objetivo_corto,
+      evento_objetivo:          pr.evento_objetivo,
+      // preferencias
+      ejercicios_favoritos:     pf.ejercicios_favoritos,
+      ejercicios_evitar:        pf.ejercicios_evitar,
+      estilo_entreno:           Array.isArray(pf.estilo_entreno) ? pf.estilo_entreno : undefined,
+      alimentos_favoritos:      pf.alimentos_favoritos,
+      alimentos_evitar:         pf.alimentos_evitar,
+      disponibilidad:           pf.disponibilidad,
+      // nutricion
+      actividad_pasos_dia:      nu.actividad_pasos_dia,
+      objetivo_calorico:        nu.objetivo_calorico,
+      magnitud_ajuste_pct:      nu.magnitud_ajuste_pct,
+      num_comidas:              nu.num_comidas,
+      horarios_comidas:         nu.horarios_comidas,
+      restricciones_alimentarias: Array.isArray(nu.restricciones_alimentarias) ? nu.restricciones_alimentarias : undefined,
+      restriccion_otra:         nu.restriccion_otra,
+      alimentos_disponibles:    nu.alimentos_disponibles,
+      fase_ciclo_menstrual:     nu.fase_ciclo_menstrual,
+      // suplementacion
+      restricciones_suplementos: su.restricciones_suplementos,
+      objetivo_primario_supp:   su.objetivo_primario_supp,
+    };
+  }
+
   async function applyAnalisisVDSEN(){
     if(!_intakeCurrentClient){ showToast('Selecciona un cliente primero', true); return; }
     const raw = document.getElementById('intakeAnalysisInput').value.trim();
@@ -9166,21 +9252,39 @@ El esfuerzo no es negociable.
     const btn = document.getElementById('intakeAnalysisBtn');
     const orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Aplicando…';
     try {
-      let fotObj=null, intakeObj=null;
-      // Detectar intake por marcadores VDSEN v3.4
-      const markerM = raw.match(/---VDSEN-INTAKE-COMPLEMENT---\s*([\s\S]*?)\s*---FIN-INTAKE-COMPLEMENT---/);
-      if(markerM){ try{ intakeObj=JSON.parse(markerM[1].trim()); }catch(e){} }
-      // Detectar bloques JSON (fenced o raw)
+      let fotObj=null, intakeObj=null, fichaV2=null;
+      // 1. Detectar vdsen-ficha-v2 (JSON directo o fenced)
+      const _tryFichaV2 = (p) => {
+        if(p && typeof p==='object' && !Array.isArray(p) && p.schema==='vdsen-ficha-v2') return p;
+        return null;
+      };
       const blocks = _extractJsonBlocks(raw);
       for(const b of blocks){
-        if(!b||typeof b!=='object'||Array.isArray(b)) continue;
-        if(!fotObj && (b.composicion_corporal||b.biomecanica)){ fotObj=b; continue; }
-        if(!intakeObj){
-          const inc=(b.data&&typeof b.data==='object'&&!Array.isArray(b.data))?b.data:b;
-          if(Object.keys(inc).filter(k=>INTAKE_FIELDS[k]).length>=3) intakeObj=inc;
+        if(!fichaV2) fichaV2=_tryFichaV2(b);
+        if(fichaV2) break;
+      }
+      if(!fichaV2){ try{ fichaV2=_tryFichaV2(JSON.parse(raw)); }catch(e){} }
+      if(fichaV2){
+        intakeObj = _fichaV2ToIntake(fichaV2);
+        if(fichaV2.fotometria && typeof fichaV2.fotometria==='object') fotObj=fichaV2.fotometria;
+      }
+      // 2. Detección legacy: marcadores VDSEN v3.4
+      if(!intakeObj){
+        const markerM = raw.match(/---VDSEN-INTAKE-COMPLEMENT---\s*([\s\S]*?)\s*---FIN-INTAKE-COMPLEMENT---/);
+        if(markerM){ try{ intakeObj=JSON.parse(markerM[1].trim()); }catch(e){} }
+      }
+      // 3. Detectar bloques JSON (fenced o raw) para fotogrametría + intake legacy
+      if(!fotObj || !intakeObj){
+        for(const b of blocks){
+          if(!b||typeof b!=='object'||Array.isArray(b)) continue;
+          if(!fotObj && (b.composicion_corporal||b.biomecanica)){ fotObj=b; continue; }
+          if(!intakeObj){
+            const inc=(b.data&&typeof b.data==='object'&&!Array.isArray(b.data))?b.data:b;
+            if(Object.keys(inc).filter(k=>INTAKE_FIELDS[k]).length>=3) intakeObj=inc;
+          }
         }
       }
-      // Fallback: JSON directo sin fence
+      // 4. Fallback: JSON directo sin fence
       if(!fotObj && !intakeObj){
         try {
           const p=JSON.parse(raw);
@@ -9194,8 +9298,21 @@ El esfuerzo no es negociable.
         }catch(e){}
       }
       const applied=[];
+      const ts=Date.now();
+      if(fichaV2){
+        // Guardar ficha-v2 completa (farmacología, calibración, historial, etc.)
+        const extra={};
+        if(fichaV2.farmacologia) extra.farmacologia=fichaV2.farmacologia;
+        if(fichaV2.calibracion_volumetrica) extra.calibracion_volumetrica=fichaV2.calibracion_volumetrica;
+        if(fichaV2.historial_inbody) extra.historial_inbody=fichaV2.historial_inbody;
+        if(fichaV2.suplementacion && fichaV2.suplementacion.stack_actual) extra.stack_suplementos=fichaV2.suplementacion.stack_actual;
+        if(fichaV2.mesociclo_actual!=null) extra.mesociclo_actual=fichaV2.mesociclo_actual;
+        if(fichaV2.assumptions) extra.assumptions=fichaV2.assumptions;
+        if(fichaV2.score_umbral_sobrealcance!=null) extra.score_umbral_sobrealcance=fichaV2.score_umbral_sobrealcance;
+        if(Object.keys(extra).length) await setDoc(doc(db,'fichas_onboarding',_intakeCurrentClient),{...extra,fichaV2updatedAt:ts},{merge:true});
+        applied.push('Ficha v2 completa cargada');
+      }
       if(fotObj){
-        const ts=Date.now();
         await setDoc(doc(db,'fichas_onboarding',_intakeCurrentClient),{fotometria:fotObj,fotometriaUpdatedAt:ts},{merge:true});
         _intakeFotometria=fotObj;
         document.getElementById('intakeAnalysisStatus').textContent='Guardado: '+new Date(ts).toLocaleString('es-MX');
@@ -9204,8 +9321,10 @@ El esfuerzo no es negociable.
         applied.push('Fotogrametría guardada');
       }
       if(intakeObj){
-        const n=Object.keys(intakeObj).filter(k=>INTAKE_FIELDS[k]).length;
-        renderIntakeForm(Object.assign({},collectIntake(),intakeObj));
+        // filtrar nulls/undefined para no sobreescribir campos existentes con vacío
+        const clean={}; Object.entries(intakeObj).forEach(([k,v])=>{ if(v!=null) clean[k]=v; });
+        const n=Object.keys(clean).filter(k=>INTAKE_FIELDS[k]).length;
+        renderIntakeForm(Object.assign({},collectIntake(),clean));
         applied.push(n+' campos de ficha cargados');
       }
       if(!applied.length) showToast('No se detectó fotogrametría ni ficha de intake en el texto pegado', true);
