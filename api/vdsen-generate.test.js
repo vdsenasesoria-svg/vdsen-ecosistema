@@ -114,8 +114,9 @@ function withKey(key, fn) {
   };
 }
 
-// Set a key for all tests that need the provider to be called
+// Set a key and model for all tests that need the provider to be called
 process.env.OPENAI_API_KEY = 'test-key-fake';
+process.env.OPENAI_MODEL   = 'gpt-test';
 
 // ════════════════════════════════════════════════════════════════════════════════
 // T-C01 — T-C26
@@ -232,9 +233,10 @@ test('T-C13: requestId mismatch → 502', async function() {
 test('T-C14: model field normalizado server-side', async function() {
   var bodyWithWrongModel = Object.assign({}, VALID_RESPONSE_BODY, { model: 'gpt-invented-by-model' });
   var factory = mockFactory(async function() { return wrapOAI(bodyWithWrongModel); });
+  var savedModel = process.env.OPENAI_MODEL;
   process.env.OPENAI_MODEL = 'gpt-4o-configured';
   var r = await call(factory, VALID_REQUEST);
-  delete process.env.OPENAI_MODEL;
+  process.env.OPENAI_MODEL = savedModel;
   return r.status === 200 && r.body.model === 'gpt-4o-configured';
 });
 

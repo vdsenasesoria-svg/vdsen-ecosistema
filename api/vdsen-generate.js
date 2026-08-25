@@ -257,7 +257,7 @@ function createHandlerWithClient(openaiClientFactory) {
   return async function handler(req, res) {
     var startMs    = Date.now();
     var requestId  = null;
-    var model      = process.env.OPENAI_MODEL || 'gpt-4o';
+    var model      = process.env.OPENAI_MODEL;
 
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method Not Allowed' });
@@ -280,9 +280,9 @@ function createHandlerWithClient(openaiClientFactory) {
       });
     }
 
-    // ── 2. Check API key ────────────────────────────────────────────────────
+    // ── 2. Check API key and model ──────────────────────────────────────────
     var apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    if (!apiKey || !model) {
       return res.status(500).json(buildErrorResponse(ERR.OPENAI_NOT_CONFIGURED, requestId));
     }
 
