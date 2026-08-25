@@ -298,7 +298,8 @@ function validateGenerationResponse(resp) {
     } else {
       var modules = ['training', 'nutritionTargets', 'nutritionMenu', 'supplementation'];
       modules.forEach(function(m) {
-        if (resp.moduleStatus[m] !== undefined && VALID_MOD_STATUSES.indexOf(resp.moduleStatus[m]) === -1) {
+        var val = resp.moduleStatus[m];
+        if (val !== undefined && val !== null && VALID_MOD_STATUSES.indexOf(val) === -1) {
           errors.push('moduleStatus.' + m + ' must be one of: ' + VALID_MOD_STATUSES.join(', '));
         }
       });

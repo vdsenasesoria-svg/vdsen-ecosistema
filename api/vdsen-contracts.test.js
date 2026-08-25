@@ -299,6 +299,19 @@ test('T-A34: BELT_SQUAT_PENDING documentado con status=PENDING_CANONICAL_CATALOG
       && BELT_SQUAT_PENDING.primaryMuscles[0] === 'cuadriceps';
 });
 
+// T-A35: moduleStatus con null en módulos no solicitados → valid
+test('T-A35: moduleStatus null en módulos no solicitados → válido', function() {
+  var r = validateGenerationResponse({
+    schema:        'vdsen-generation-response-v1',
+    requestId:     'req-a35',
+    status:        'NEEDS_INPUT',
+    generatedAt:   '2026-08-25T00:00:00Z',
+    missingInputs: [{ field: 'clientProfile.base.edad', module: 'training', impact: 'HIGH' }],
+    moduleStatus:  { training: 'NEEDS_INPUT', nutritionTargets: null, nutritionMenu: null, supplementation: null }
+  });
+  return r.valid === true;
+});
+
 // ─── Print results ─────────────────────────────────────────────────────────────
 var passed = 0;
 tests.forEach(function(t) {
