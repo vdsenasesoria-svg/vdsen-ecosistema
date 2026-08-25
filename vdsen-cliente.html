@@ -3596,7 +3596,7 @@ function _buildExNav(ejercicios, di) {
     var numLabel = isActive
       ? '<div style="position:absolute;top:5px;right:5px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:#000;font-size:8px;font-weight:900;display:flex;align-items:center;justify-content:center">'+(ei+1)+'</div>'
       : '';
-    return '<button onclick="setEjActivo('+ei+')" title="'+nombre.replace(/"/g,'&quot;')+'" style="position:relative;'+
+    return '<button onclick="setEjActivo('+ei+')" data-ei="'+ei+'" title="'+nombre.replace(/"/g,'&quot;')+'" style="position:relative;'+
       'flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;'+
       'padding:'+(isSS?'14px 10px 8px':'11px 10px 9px')+';border:'+borderWidth+' solid '+borderCol+';border-radius:14px;'+
       'background:'+bgCol+';cursor:pointer;min-width:72px;max-width:92px;min-height:44px;margin-top:'+(isSS?'10px':'0')+';'+
@@ -5204,7 +5204,8 @@ function _refreshExPanelOnly() {
   if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
   setTimeout(function() {
     var navEl = document.getElementById('exNav');
-    if (navEl && navEl.children[EJ_ACTIVO]) navEl.children[EJ_ACTIVO].scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+    var _actChip = navEl && navEl.querySelector('[data-ei="'+EJ_ACTIVO+'"]');
+    if (_actChip) _actChip.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
     // Scroll al set activo — buscar el botón GUARDAR (primer set sin completar)
     var guardarBtn = document.querySelector('#exPanel button[onclick*="completeSet"]');
     var activeRow = guardarBtn && guardarBtn.closest('[id^="setrow_"]');
@@ -6171,6 +6172,7 @@ function renderEntrenamiento() {
     var _exs = s.exercises || [];
     var _tSets = 0, _dSets = 0;
     _exs.forEach(function(ej, ei) {
+      if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
       var ns = ej.numSeries || (ej.sets ? ej.sets.length : 3);
       for (var ss = 0; ss < ns; ss++) {
         _tSets++;
@@ -6333,7 +6335,7 @@ function renderEntrenamiento() {
         '<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:'+(CURRENT_WEEK!==REAL_WEEK?'#FF8844':'var(--accent)')+';text-transform:uppercase;margin-bottom:4px">'+(CURRENT_WEEK!==REAL_WEEK?'👁 ':'🗓 ')+'SEM '+CURRENT_WEEK+' · '+getSemProgresion(CURRENT_WEEK)+(CURRENT_WEEK!==REAL_WEEK?' (VISTA)':'')+'</div>'+
         '<div style="font-size:20px;font-weight:800;color:var(--tx);line-height:1.15;letter-spacing:-.3px">'+(ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim()+'</div>'+
         '<div style="font-size:11px;color:var(--mt);margin-top:3px;display:flex;align-items:center;gap:8px">'+
-          (function(){var _dn=ejercicios.filter(function(_,_ei){return _isExerciseFullyDone(DIA_ACTIVO,_ei,ejercicios[_ei]);}).length;return _dn===ejercicios.length&&ejercicios.length>0?'<span style="color:var(--grn);font-weight:700">'+ejercicios.length+'/'+ejercicios.length+' ejercicios ✓</span>':'<span>'+_dn+'/'+ejercicios.length+' ejercicios</span>';})()+'</div>'+
+          (function(){var _ejAct=ejercicios.filter(function(ej){return isTechniqueActive(ej,CURRENT_WEEK);});var _tot=_ejAct.length;var _dn=ejercicios.filter(function(ej,_ei){return isTechniqueActive(ej,CURRENT_WEEK)&&_isExerciseFullyDone(DIA_ACTIVO,_ei,ej);}).length;return _dn===_tot&&_tot>0?'<span style="color:var(--grn);font-weight:700">'+_tot+'/'+_tot+' ejercicios ✓</span>':'<span>'+_dn+'/'+_tot+' ejercicios</span>';})()+'</div>'+
       '</div>'+
       (isDone
         ? '<div style="background:rgba(110,154,110,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
@@ -7179,9 +7181,8 @@ function completeSet(key, di, ei, si, unit) {
           EJ_ACTIVO = _nxEj;
           setTimeout(function() {
             var navEl = document.getElementById('exNav');
-            if (navEl && navEl.children[EJ_ACTIVO]) {
-              navEl.children[EJ_ACTIVO].scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
-            }
+            var _actChip = navEl && navEl.querySelector('[data-ei="'+EJ_ACTIVO+'"]');
+            if (_actChip) _actChip.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
           }, 300);
           break;
         }
