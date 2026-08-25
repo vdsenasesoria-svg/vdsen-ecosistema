@@ -4521,6 +4521,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     ].join('\n');
     var body = {
       model: 'claude-sonnet-5', max_tokens: 4000,
+      thinking: { type: 'disabled' },
       system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
       messages: [
         { role: 'user', content: repairMsg },
@@ -5064,6 +5065,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const body = {
         model: 'claude-sonnet-5',
         max_tokens: 8000,
+        thinking: { type: 'disabled' },
         system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userMsg }]
       };
@@ -7014,6 +7016,7 @@ El esfuerzo no es negociable.
       const reqBody = {
         model: 'claude-sonnet-5',
         max_tokens: 8000,
+        thinking: { type: 'disabled' },
         system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: userMsg }]
       };
