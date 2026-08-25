@@ -6944,14 +6944,15 @@ El esfuerzo no es negociable.
       const applied = [];
       const ts = Date.now();
       if (fichaV2) {
-        const extra = {};
+        const extra = { fichaV2raw: fichaV2, fichaV2updatedAt: ts };
         if (fichaV2.farmacologia) extra.farmacologia = fichaV2.farmacologia;
         if (fichaV2.calibracion_volumetrica) extra.calibracion_volumetrica = fichaV2.calibracion_volumetrica;
         if (fichaV2.historial_inbody) extra.historial_inbody = fichaV2.historial_inbody;
         if (fichaV2.suplementacion && fichaV2.suplementacion.stack_actual) extra.stack_suplementos = fichaV2.suplementacion.stack_actual;
         if (fichaV2.mesociclo_actual != null) extra.mesociclo_actual = fichaV2.mesociclo_actual;
         if (fichaV2.assumptions) extra.assumptions = fichaV2.assumptions;
-        if (Object.keys(extra).length) await setDoc(doc(db, 'fichas_onboarding', clientId), { ...extra, fichaV2updatedAt: ts }, { merge: true });
+        if (fichaV2.score_umbral_sobrealcance != null) extra.score_umbral_sobrealcance = fichaV2.score_umbral_sobrealcance;
+        await setDoc(doc(db, 'fichas_onboarding', clientId), extra, { merge: true });
         applied.push('Ficha v2 completa cargada');
       }
       if (fotObj) {
@@ -10481,7 +10482,7 @@ El esfuerzo no es negociable.
           pr = f.prioridades || {}, pf = f.preferencias || {},
           nu = f.nutricion || {}, su = f.suplementacion || {};
     return {
-      // base
+      // base — campos INTAKE_SCHEMA
       nombre:                   b.nombre,
       sexo:                     b.sexo,
       edad:                     b.edad,
@@ -10489,7 +10490,13 @@ El esfuerzo no es negociable.
       talla_cm:                 b.talla_cm,
       porcentaje_grasa:         b.porcentaje_grasa,
       perfil:                   b.perfil,
-      // entrenamiento
+      // base — campos extra ficha-v2
+      ffm_kg:                   b.ffm_kg,
+      smm_kg:                   b.smm_kg,
+      gc_kg:                    b.gc_kg,
+      inbody_fecha:             b.inbody_fecha,
+      inbody_puntuacion:        b.inbody_puntuacion,
+      // entrenamiento — campos INTAKE_SCHEMA
       nivel:                    e.nivel,
       dias_semana:              e.dias_semana,
       duracion_sesion_min:      e.duracion_sesion_min,
@@ -10497,6 +10504,9 @@ El esfuerzo no es negociable.
       objetivo_mesociclo:       e.objetivo_mesociclo,
       lesiones:                 e.lesiones,
       semana_actual_mesociclo:  e.semana_actual_mesociclo,
+      // entrenamiento — campos extra ficha-v2
+      gimnasio_secundario:      e.gimnasio_secundario,
+      split_actual:             e.split_actual,
       // biomecanica
       biotipo:                  bm.biotipo,
       movilidad:                bm.movilidad,
@@ -10505,11 +10515,13 @@ El esfuerzo no es negociable.
       asimetrias:               bm.asimetrias,
       postura:                  bm.postura,
       dolor_actual:             bm.dolor_actual,
-      // prioridades
+      // prioridades — campos INTAKE_SCHEMA
       grupos_prioritarios:      pr.grupos_prioritarios,
       enfoque_actual:           pr.enfoque_actual,
       objetivo_corto:           pr.objetivo_corto,
       evento_objetivo:          pr.evento_objetivo,
+      // prioridades — campos extra ficha-v2
+      grupos_mantenimiento:     pr.grupos_mantenimiento,
       // preferencias
       ejercicios_favoritos:     pf.ejercicios_favoritos,
       ejercicios_evitar:        pf.ejercicios_evitar,
@@ -10517,7 +10529,7 @@ El esfuerzo no es negociable.
       alimentos_favoritos:      pf.alimentos_favoritos,
       alimentos_evitar:         pf.alimentos_evitar,
       disponibilidad:           pf.disponibilidad,
-      // nutricion
+      // nutricion — campos INTAKE_SCHEMA
       actividad_pasos_dia:      nu.actividad_pasos_dia,
       objetivo_calorico:        nu.objetivo_calorico,
       magnitud_ajuste_pct:      nu.magnitud_ajuste_pct,
@@ -10527,9 +10539,16 @@ El esfuerzo no es negociable.
       restriccion_otra:         nu.restriccion_otra,
       alimentos_disponibles:    nu.alimentos_disponibles,
       fase_ciclo_menstrual:     nu.fase_ciclo_menstrual,
+      // nutricion — campos extra ficha-v2
+      proteina_g:               nu.proteina_g,
+      carb_cycling:             nu.carb_cycling,
+      carb_cycling_semanas:     nu.carb_cycling_semanas,
+      nota_nutricion:           nu.nota_nutricion,
       // suplementacion
       restricciones_suplementos: su.restricciones_suplementos,
       objetivo_primario_supp:   su.objetivo_primario_supp,
+      // top-level
+      ficha_fecha:              f.fecha,
     };
   }
 
@@ -10588,8 +10607,8 @@ El esfuerzo no es negociable.
       const applied=[];
       const ts=Date.now();
       if(fichaV2){
-        // Guardar ficha-v2 completa (farmacología, calibración, historial, etc.)
-        const extra={};
+        // Guardar ficha-v2 completa en Firestore
+        const extra={ fichaV2raw: fichaV2, fichaV2updatedAt: ts };
         if(fichaV2.farmacologia) extra.farmacologia=fichaV2.farmacologia;
         if(fichaV2.calibracion_volumetrica) extra.calibracion_volumetrica=fichaV2.calibracion_volumetrica;
         if(fichaV2.historial_inbody) extra.historial_inbody=fichaV2.historial_inbody;
@@ -10597,7 +10616,7 @@ El esfuerzo no es negociable.
         if(fichaV2.mesociclo_actual!=null) extra.mesociclo_actual=fichaV2.mesociclo_actual;
         if(fichaV2.assumptions) extra.assumptions=fichaV2.assumptions;
         if(fichaV2.score_umbral_sobrealcance!=null) extra.score_umbral_sobrealcance=fichaV2.score_umbral_sobrealcance;
-        if(Object.keys(extra).length) await setDoc(doc(db,'fichas_onboarding',_intakeCurrentClient),{...extra,fichaV2updatedAt:ts},{merge:true});
+        await setDoc(doc(db,'fichas_onboarding',_intakeCurrentClient),extra,{merge:true});
         applied.push('Ficha v2 completa cargada');
       }
       if(fotObj){
