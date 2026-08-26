@@ -5,10 +5,11 @@ var createHandlerWithClient = G._createHandlerWithClient;
 var internal = G._internal;
 var ERR      = internal.ERR;
 
-var prepareModelRequest  = internal.prepareModelRequest;
-var extractModelResponse = internal.extractModelResponse;
-var removeNullFields     = internal.removeNullFields;
-var buildErrorResponse   = internal.buildErrorResponse;
+var prepareModelRequest    = internal.prepareModelRequest;
+var extractModelResponse   = internal.extractModelResponse;
+var removeNullFields       = internal.removeNullFields;
+var buildErrorResponse     = internal.buildErrorResponse;
+var sanitizeMissingInputs  = internal.sanitizeMissingInputs;
 
 // ─── Test harness (async) ─────────────────────────────────────────────────────
 
@@ -443,6 +444,77 @@ test('removeNullFields: preserves non-null values including 0/false/empty string
   var obj = { a: 0, b: false, c: '', d: null };
   var out = removeNullFields(obj);
   return out.a === 0 && out.b === false && out.c === '' && !('d' in out);
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// T-C31..T-C36: sanitizeMissingInputs
+// ════════════════════════════════════════════════════════════════════════════════
+
+// T-C31: requestId in missingInputs is stripped
+test('T-C31: sanitizeMissingInputs strips requestId from missingInputs', function() {
+  var input = {
+    status: 'NEEDS_INPUT',
+    missingInputs: [
+      { field: 'requestId', module: 'training', impact: 'blocking' },
+      { field: 'edad', module: 'supplementation', impact: 'low' }
+    ]
+  };
+  var out = sanitizeMissingInputs(input);
+  return out.missingInputs.length === 1 && out.missingInputs[0].field === 'edad';
+});
+
+// T-C32: clientId, coachId, schema, requestedAt, attachments all stripped
+test('T-C32: sanitizeMissingInputs strips all infra fields', function() {
+  var input = {
+    missingInputs: [
+      { field: 'clientId',    module: 'training', impact: 'high' },
+      { field: 'coachId',     module: 'training', impact: 'high' },
+      { field: 'schema',      module: 'training', impact: 'high' },
+      { field: 'requestedAt', module: 'training', impact: 'high' },
+      { field: 'attachments', module: 'training', impact: 'high' },
+      { field: 'peso_kg',     module: 'nutritionTargets', impact: 'high' }
+    ]
+  };
+  var out = sanitizeMissingInputs(input);
+  return out.missingInputs.length === 1 && out.missingInputs[0].field === 'peso_kg';
+});
+
+// T-C33: altura_cm normalized to talla_cm
+test('T-C33: sanitizeMissingInputs normalizes altura_cm to talla_cm', function() {
+  var input = {
+    missingInputs: [
+      { field: 'altura_cm', module: 'nutritionTargets', impact: 'high' }
+    ]
+  };
+  var out = sanitizeMissingInputs(input);
+  return out.missingInputs.length === 1 && out.missingInputs[0].field === 'talla_cm';
+});
+
+// T-C34: non-infra fields are preserved unchanged
+test('T-C34: sanitizeMissingInputs preserves non-infra fields', function() {
+  var input = {
+    missingInputs: [
+      { field: 'peso_kg', module: 'nutritionTargets', impact: 'high' },
+      { field: 'perfil',  module: 'supplementation',  impact: 'high' }
+    ]
+  };
+  var out = sanitizeMissingInputs(input);
+  return out.missingInputs.length === 2
+      && out.missingInputs[0].field === 'peso_kg'
+      && out.missingInputs[1].field === 'perfil';
+});
+
+// T-C35: null/missing missingInputs passed through unchanged
+test('T-C35: sanitizeMissingInputs handles null/empty missingInputs', function() {
+  var noArray = sanitizeMissingInputs({ status: 'READY' });
+  var emptyArr = sanitizeMissingInputs({ missingInputs: [] });
+  return !noArray.missingInputs
+      && Array.isArray(emptyArr.missingInputs) && emptyArr.missingInputs.length === 0;
+});
+
+// T-C36: null parsed input returns null
+test('T-C36: sanitizeMissingInputs returns null for null input', function() {
+  return sanitizeMissingInputs(null) === null;
 });
 
 // ─── Print results ─────────────────────────────────────────────────────────────

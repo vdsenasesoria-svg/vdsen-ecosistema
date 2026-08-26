@@ -103,6 +103,10 @@ function buildSystemPrompt() {
     '13. Verifica internamente que el output es coherente antes de responder.',
     '14. outputMode indica el formato solicitado (json/txt/pdf/all). En esta versión devuelve siempre el JSON estructurado.',
     '15. nivel_medio usa el enum exacto del sistema VDSEN. variacion_vertical es un objeto con campos definidos.',
+    '16. CAMPOS DE INFRAESTRUCTURA (requestId, clientId, coachId, requestedAt, attachments, schema) NO son campos de datos del cliente. NUNCA los incluyas en missingInputs — el servidor los gestiona y no son entradas del cliente.',
+    '17. El nombre canónico del campo de talla es "talla_cm". Si ves "altura_cm" en los datos, trátalo como "talla_cm". NUNCA reportes "altura_cm" en missingInputs.',
+    '18. CRITICIDAD de campos por módulo: un módulo pasa a NEEDS_INPUT SOLO si le falta un campo marcado como REQUIRED para ese módulo. Los campos RECOMMENDED u OPTIONAL generan aviso pero NO bloquean el módulo. Ejemplo: para suplementación, "edad" es OPTIONAL — su ausencia NO pone el módulo en NEEDS_INPUT.',
+    '19. moduleStatus READY significa que tienes suficiente información para generar ese módulo (todos los REQUIRED presentes). Si un módulo puede generarse razonablemente, debe ser READY aunque falten campos RECOMMENDED u OPTIONAL.',
     '',
     'El campo requestId de tu respuesta debe coincidir exactamente con el requestId de la entrada.',
     'Los campos schema, generatedAt y model serán controlados por el servidor y pueden ser sobreescritos.'
@@ -161,6 +165,29 @@ function removeNullFields(obj) {
     if (obj[k] !== null) out[k] = obj[k];
   });
   return out;
+}
+
+// ─── sanitizeMissingInputs ────────────────────────────────────────────────────
+// Server-side post-processing on model output's missingInputs arrays.
+// Removes infra fields the model should never report, and normalizes aliases.
+
+var _ALIAS_MAP = { 'altura_cm': 'talla_cm' };
+
+function sanitizeMissingInputs(parsed) {
+  if (!parsed || !Array.isArray(parsed.missingInputs) || parsed.missingInputs.length === 0) {
+    return parsed;
+  }
+  var filtered = parsed.missingInputs
+    .map(function(entry) {
+      if (!entry || !entry.field) return entry;
+      var canonical = _ALIAS_MAP[entry.field];
+      if (canonical) return Object.assign({}, entry, { field: canonical });
+      return entry;
+    })
+    .filter(function(entry) {
+      return entry && entry.field && _INFRA_STRIP.indexOf(entry.field) === -1;
+    });
+  return Object.assign({}, parsed, { missingInputs: filtered });
 }
 
 // ─── extractModelResponse ─────────────────────────────────────────────────────
@@ -341,7 +368,7 @@ function createHandlerWithClient(openaiClientFactory) {
       return res.status(502).json(buildErrorResponse(ERR.MODEL_SCHEMA_MISMATCH, requestId));
     }
 
-    var parsed = extraction.parsed;
+    var parsed = sanitizeMissingInputs(extraction.parsed);
 
     // ── 7. Detect requestId mismatch ────────────────────────────────────────
     if (parsed.requestId && parsed.requestId !== requestId) {
@@ -412,7 +439,8 @@ module.exports._internal = {
   prepareModelRequest:   prepareModelRequest,
   removeNullFields:      removeNullFields,
   extractModelResponse:  extractModelResponse,
-  buildErrorResponse:    buildErrorResponse
+  buildErrorResponse:    buildErrorResponse,
+  sanitizeMissingInputs: sanitizeMissingInputs
 };
 
 module.exports._createHandlerWithClient = createHandlerWithClient;
