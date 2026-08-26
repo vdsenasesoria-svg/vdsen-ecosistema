@@ -6061,8 +6061,39 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   // ── D.1.5 Review Gate — local-only, no Firestore ──────────────────────────
+  // ── D.1.6 Plan path normalization + consistency guard ─────────────────────
 
   var _vdsenReviewState = {}; // { requestId: { itemIdx: 'accept'|'adjust'|'reject' } }
+
+  // Normalize plan field names: canonical Spanish, fallback English.
+  // gpt-5.6 may return English keys; renderer always reads from normalized form.
+  function _normalizePlan(p) {
+    if (!p || typeof p !== 'object') return {};
+    return {
+      entrenamiento:  p.entrenamiento  !== undefined ? p.entrenamiento  : p.training,
+      nutricion:      p.nutricion      !== undefined ? p.nutricion      : p.nutrition,
+      suplementacion: p.suplementacion !== undefined ? p.suplementacion : p.supplementation,
+      schema: p.schema
+    };
+  }
+
+  // Detect mismatch between what the audit implies and what the plan contains.
+  // Returns array of issue strings (empty = consistent).
+  function _checkResponseConsistency(audit, rawPlan) {
+    if (!audit || !Object.keys(audit).length) return [];
+    var plan = _normalizePlan(rawPlan);
+    var issues = [];
+    if (audit.macroCheck && plan.nutricion == null) {
+      issues.push('audit contiene datos de nutrición pero plan.nutricion está ausente');
+    }
+    if ((audit.loadCheck || audit.fractionalVolumeCheck) && plan.entrenamiento == null) {
+      issues.push('audit contiene datos de entrenamiento pero plan.entrenamiento está ausente');
+    }
+    if (audit.supplementSubstitutionCheck && plan.suplementacion == null) {
+      issues.push('audit contiene datos de suplementación pero plan.suplementacion está ausente');
+    }
+    return issues;
+  }
 
   function _buildReviewItems(resp) {
     var modStatus = resp.moduleStatus || {};
@@ -6180,18 +6211,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function _vdsenUpdateReviewPanel(requestId, items) {
+  function _vdsenUpdateReviewPanel(requestId, items, consistencyIssues) {
     var state    = _vdsenReviewState[requestId] || {};
     var reviewed = 0;
     var total    = 0;
-    var hasAdjust = false;
+    var hasAdjust  = false;
+    var hasReject  = false;
     items.forEach(function(item, idx){
       if (item.type === 'info') return; // info items don't count
       total++;
       if (state[idx]) reviewed++;
       if (state[idx] === 'adjust') hasAdjust = true;
+      if (state[idx] === 'reject') hasReject = true;
     });
 
+    var consistent = !consistencyIssues || consistencyIssues.length === 0;
     var counterEl = document.getElementById('vdsenPreview_reviewCounter');
     if (counterEl) counterEl.textContent = reviewed + '/' + total + ' revisados';
 
@@ -6199,11 +6233,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     var itemsEl = document.getElementById('vdsenPreview_reviewItems');
     if (itemsEl) itemsEl.innerHTML = _renderReviewItems(requestId, items);
 
-    // reviewGate
+    // reviewGate — reject and inconsistency both block approval
     var gateEl = document.getElementById('vdsenPreview_reviewGate');
     if (gateEl) {
-      var readyForApproval = reviewed >= total && total > 0 && !hasAdjust;
-      if (readyForApproval) {
+      var readyForApproval = reviewed >= total && total > 0 && !hasAdjust && !hasReject && consistent;
+      if (!consistent) {
+        gateEl.style.background = 'rgba(239,68,68,.12)';
+        gateEl.style.color = '#ef4444';
+        gateEl.textContent = '⚠️ Respuesta inconsistente — no se puede aprobar hasta resolver la inconsistencia';
+      } else if (readyForApproval) {
         gateEl.style.background = 'rgba(34,197,94,.12)';
         gateEl.style.color = '#22c55e';
         gateEl.textContent = '✅ Todas las revisiones completadas — listo para aprobación del Coach (D.2)';
@@ -6211,6 +6249,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         gateEl.style.background = 'rgba(245,158,11,.12)';
         gateEl.style.color = '#f59e0b';
         gateEl.textContent = '✎ Existen ítems marcados "Requiere ajuste" — se necesita corrección antes de aprobar';
+      } else if (hasReject) {
+        gateEl.style.background = 'rgba(239,68,68,.12)';
+        gateEl.style.color = '#ef4444';
+        gateEl.textContent = '✕ Existen ítems rechazados — el plan no puede aprobarse en este estado';
       } else {
         gateEl.style.background = 'rgba(139,92,246,.08)';
         gateEl.style.color = '#8b5cf6';
@@ -6226,8 +6268,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     } else {
       _vdsenReviewState[requestId][idx] = action;
     }
-    var items = _vdsenReviewState[requestId].__items || [];
-    _vdsenUpdateReviewPanel(requestId, items);
+    var items       = _vdsenReviewState[requestId].__items       || [];
+    var consistency = _vdsenReviewState[requestId].__consistency || [];
+    _vdsenUpdateReviewPanel(requestId, items, consistency);
   };
 
   // ── _vdsenAIShowPreview ────────────────────────────────────────────────────
@@ -6236,10 +6279,37 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const modal = document.getElementById('vdsenPreviewModal');
     if (!modal) return;
 
-    const plan = resp.plan || {};
-    const audit = resp.audit || {};
-    const decisionTrace = resp.decisionTrace || [];
-    const flags = resp.flags || [];
+    const rawPlan = resp.plan || {};
+    const plan    = _normalizePlan(rawPlan);  // Spanish canonical, English fallback
+    const audit   = resp.audit || {};
+    const flags   = resp.flags || [];
+
+    // Safe structural diagnostic — no plan content printed
+    console.info('[VDSEN D.1.6 diag]',
+      'plan present:', !!resp.plan,
+      '| schema:', rawPlan.schema,
+      '| keys:', Object.keys(rawPlan),
+      '| entrenamiento:', rawPlan.entrenamiento !== undefined,
+      '| training:', rawPlan.training !== undefined,
+      '| nutricion:', rawPlan.nutricion !== undefined,
+      '| nutrition:', rawPlan.nutrition !== undefined,
+      '| suplementacion:', rawPlan.suplementacion !== undefined,
+      '| supplementation:', rawPlan.supplementation !== undefined,
+      '| decisionTrace type:', typeof resp.decisionTrace,
+      '| decisionTrace isArr:', Array.isArray(resp.decisionTrace)
+    );
+
+    // decisionTrace: handle both array and object (model may return either)
+    let decisionTrace = [];
+    const rawTrace = resp.decisionTrace;
+    if (Array.isArray(rawTrace)) {
+      decisionTrace = rawTrace;
+    } else if (rawTrace && typeof rawTrace === 'object') {
+      decisionTrace = Object.values(rawTrace);
+    }
+
+    // Response consistency check
+    const consistencyIssues = _checkResponseConsistency(audit, rawPlan);
 
     // Training
     const training = plan.entrenamiento;
@@ -6308,6 +6378,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (Object.keys(audit).length) {
       auditHtml = `<pre style="font-size:10px;overflow:auto;max-height:120px;background:rgba(0,0,0,.2);padding:8px;border-radius:6px">${JSON.stringify(audit, null, 2)}</pre>`;
     }
+    if (consistencyIssues.length) {
+      auditHtml = `<div style="background:rgba(239,68,68,.15);color:#ef4444;padding:8px;border-radius:6px;font-size:12px;margin-bottom:6px">` +
+        `⚠️ Respuesta inconsistente: audit contiene datos de módulo no presente.<br>` +
+        consistencyIssues.map(i => '• ' + i).join('<br>') +
+        `</div>` + auditHtml;
+    }
 
     document.getElementById('vdsenPreview_training').innerHTML = trainingHtml;
     document.getElementById('vdsenPreview_nutrition').innerHTML = nutrHtml;
@@ -6340,9 +6416,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const reviewItems = _buildReviewItems(resp);
         const rid = resp.requestId || 'preview';
         if (!_vdsenReviewState[rid]) _vdsenReviewState[rid] = {};
-        _vdsenReviewState[rid].__items = reviewItems; // store for action callback
+        _vdsenReviewState[rid].__items       = reviewItems;
+        _vdsenReviewState[rid].__consistency = consistencyIssues; // for action callback
         document.getElementById('vdsenPreview_reviewItems').innerHTML = _renderReviewItems(rid, reviewItems);
-        _vdsenUpdateReviewPanel(rid, reviewItems);
+        _vdsenUpdateReviewPanel(rid, reviewItems, consistencyIssues);
         reviewPanel.style.display = 'block';
       } else {
         reviewPanel.style.display = 'none';
