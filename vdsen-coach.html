@@ -345,6 +345,19 @@
       <button onclick="scanAndRecoverClients()" style="padding:8px 14px;border-radius:8px;border:1px solid #818cf8;background:rgba(129,140,248,.15);color:#818cf8;font-size:12px;font-weight:600;cursor:pointer">🔍 Escanear clientes no vinculados</button>
       <div id="recoverClientsResult" class="mt-3"></div>
     </div>
+    <div class="card p-4 mb-4">
+      <label class="block text-sm font-medium mb-2">✏️ Completar ficha de cliente</label>
+      <p class="text-xs text-[#888] mb-3">Rellena campos <code>null</code> en la ficha de un cliente. Solo escribe sobre campos que actualmente sean <code>null</code> — nunca pisa valores existentes.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="patchFichaClientSelect" style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;min-width:180px">
+          <option value="">— Selecciona cliente —</option>
+        </select>
+        <button onclick="loadPatchFichaClients()" style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;cursor:pointer">↻ Cargar</button>
+        <button onclick="previewFichaPatch()" style="padding:7px 14px;border-radius:8px;border:1px solid #22c55e;background:rgba(34,197,94,.12);color:#22c55e;font-size:12px;font-weight:700;cursor:pointer">Preview cambios</button>
+        <button onclick="applyFichaPatch()" style="padding:7px 14px;border-radius:8px;border:1px solid #ef4444;background:rgba(239,68,68,.12);color:#ef4444;font-size:12px;font-weight:700;cursor:pointer">Aplicar patch</button>
+      </div>
+      <div id="patchFichaResult" class="mt-3 text-xs"></div>
+    </div>
   </div>
 </div>
 <div id="newClientModal" class="modal-overlay" style="display:none;">
@@ -1784,6 +1797,103 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     }
   }
   window.recoverClient = recoverClient;
+
+  // ── Ficha patch tool ─────────────────────────────────────────────────────────
+  async function loadPatchFichaClients() {
+    const sel = document.getElementById('patchFichaClientSelect');
+    const res = document.getElementById('patchFichaResult');
+    if (!currentCoach) { showToast('No autenticado', true); return; }
+    try {
+      const snap = await getDocs(query(collection(db, 'clients'), where('coachId', '==', currentCoach.uid)));
+      sel.innerHTML = '<option value="">— Selecciona cliente —</option>';
+      snap.forEach(d => {
+        const data = d.data();
+        const label = data.displayName || data.email || d.id;
+        sel.innerHTML += `<option value="${d.id}">${label}</option>`;
+      });
+      if (res) res.innerHTML = `<span style="color:#888">${snap.size} cliente(s) cargados.</span>`;
+    } catch (e) {
+      if (res) res.innerHTML = `<span style="color:#ef4444">Error: ${e.message}</span>`;
+    }
+  }
+  window.loadPatchFichaClients = loadPatchFichaClients;
+
+  function _buildPatchPayload(fd) {
+    // Returns { dotPath: value } ONLY for fields currently null/undefined
+    const candidates = {
+      'data.base.edad':                         { value: 30,      current: fd?.base?.edad },
+      'data.base.talla_cm':                     { value: 176,     current: fd?.base?.talla_cm },
+      'data.nutricion.actividad_pasos_dia':     { value: 10000,   current: fd?.nutricion?.actividad_pasos_dia },
+      'data.recuperacion.sueno_horas_promedio': { value: 6,       current: fd?.recuperacion?.sueno_horas_promedio },
+      'data.recuperacion.estres':               { value: 'alto',  current: fd?.recuperacion?.estres },
+    };
+    const patch = {};
+    for (const [path, meta] of Object.entries(candidates)) {
+      if (meta.current === null || meta.current === undefined) patch[path] = meta.value;
+    }
+    return { candidates, patch };
+  }
+
+  async function previewFichaPatch() {
+    const clientId = document.getElementById('patchFichaClientSelect').value;
+    const res = document.getElementById('patchFichaResult');
+    if (!clientId) { showToast('Selecciona un cliente', true); return; }
+    if (!res) return;
+    res.innerHTML = '<span style="color:#888">Leyendo ficha…</span>';
+    try {
+      const fichaSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
+      const fd = fichaSnap.exists() ? (fichaSnap.data().data || {}) : {};
+      const { candidates, patch } = _buildPatchPayload(fd);
+      if (Object.keys(patch).length === 0) {
+        res.innerHTML = '<span style="color:#22c55e">✓ Todos los campos ya tienen valor — no hay nada que parchear.</span>';
+        return;
+      }
+      const rows = Object.entries(candidates).map(([path, meta]) => {
+        const willPatch = patch[path] !== undefined;
+        const statusIcon = willPatch ? '🟡' : '✓';
+        const statusStyle = willPatch ? 'color:#f59e0b' : 'color:#22c55e';
+        const action = willPatch ? `→ <strong>${JSON.stringify(meta.value)}</strong>` : `(ya tiene: ${JSON.stringify(meta.current)}, no se toca)`;
+        return `<div style="${statusStyle};margin-bottom:2px">${statusIcon} <code>${path}</code>: ${action}</div>`;
+      }).join('');
+      res.innerHTML = `<div style="margin-bottom:6px;font-weight:600">Preview — ${Object.keys(patch).length} campo(s) a escribir:</div>${rows}<div style="margin-top:8px;color:#888">Los campos ✓ ya tienen valor y no se modificarán. Haz click en <strong>Aplicar patch</strong> para confirmar.</div>`;
+    } catch (e) {
+      res.innerHTML = `<span style="color:#ef4444">Error: ${e.message}</span>`;
+    }
+  }
+  window.previewFichaPatch = previewFichaPatch;
+
+  async function applyFichaPatch() {
+    const clientId = document.getElementById('patchFichaClientSelect').value;
+    const res = document.getElementById('patchFichaResult');
+    if (!clientId) { showToast('Selecciona un cliente', true); return; }
+    if (!currentCoach) { showToast('No autenticado', true); return; }
+    if (!res) return;
+    // Only patch null fields — re-read ficha fresh before writing
+    res.innerHTML = '<span style="color:#888">Verificando ficha antes de escribir…</span>';
+    try {
+      const fichaSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
+      const fd = fichaSnap.exists() ? (fichaSnap.data().data || {}) : {};
+      const { patch } = _buildPatchPayload(fd);
+      if (Object.keys(patch).length === 0) {
+        res.innerHTML = '<span style="color:#22c55e">✓ No hay campos nulos que parchear.</span>';
+        return;
+      }
+      const fieldList = Object.entries(patch).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join('\n');
+      const confirmed = window.confirm(`Se escribirán ${Object.keys(patch).length} campo(s) en fichas_onboarding/${clientId}:\n\n${fieldList}\n\n¿Confirmar?`);
+      if (!confirmed) { res.innerHTML = '<span style="color:#888">Cancelado.</span>'; return; }
+      await updateDoc(doc(db, 'fichas_onboarding', clientId), {
+        ...patch,
+        updatedAt: Date.now(),
+        updatedBy: 'coach-patch',
+      });
+      res.innerHTML = `<span style="color:#22c55e">✓ Patch aplicado (${Object.keys(patch).length} campo(s) escritos). La ficha de este cliente está actualizada.</span>`;
+      showToast('Ficha actualizada');
+    } catch (e) {
+      res.innerHTML = `<span style="color:#ef4444">Error al escribir: ${e.message}</span>`;
+    }
+  }
+  window.applyFichaPatch = applyFichaPatch;
+  // ─────────────────────────────────────────────────────────────────────────────
 
   async function showMergeModal(keepId) {
     const [keepSnap, allSnap] = await Promise.all([
