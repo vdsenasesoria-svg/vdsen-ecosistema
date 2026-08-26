@@ -5863,7 +5863,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const UI_STATES = {
       idle:                () => { if (btn) { btn.disabled = false; btn.textContent = '🔬 Generar con VDSEN AI — Preview'; } setStatus(''); },
       building_request:    () => { if (btn) { btn.disabled = true; btn.textContent = '⏳ Construyendo solicitud…'; } setStatus('<span style="color:var(--text-muted)">Leyendo datos del cliente…</span>'); },
-      generating:          () => { if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando…'; } setStatus('<span style="color:var(--text-muted)">Motor VDSEN en proceso (puede tardar 30-60s)…</span>'); },
+      generating:          () => { if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando…'; } setStatus('<span style="color:var(--text-muted)">Motor VDSEN en proceso (puede tardar 2-3 minutos)…</span>'); },
       needs_input:         (msg) => setStatus(`<span style="color:#f59e0b">⚠️ Faltan datos: ${msg}</span>`),
       needs_coach_review:  (msg) => setStatus(`<span style="color:#8b5cf6">🔍 Requiere revisión: ${msg}</span>`),
       invalid:             (msg) => setStatus(`<span style="color:#ef4444">❌ Solicitud inválida: ${msg}</span>`),
@@ -5962,16 +5962,25 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       console.info('[VDSEN D.1] Sending to /api/vdsen-generate — schema:', request.schema, 'mode:', request.mode);
 
       // 4. POST to /api/vdsen-generate — body is request only, NOT the wrapper
+      const _abortCtrl = new AbortController();
+      const _abortTimer = setTimeout(() => _abortCtrl.abort(), 180000); // 3 min
       let httpResp;
       try {
         httpResp = await fetch('/api/vdsen-generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(request),
+          signal: _abortCtrl.signal,
         });
       } catch (netErr) {
-        UI_STATES.error('Error de red: ' + netErr.message);
+        if (netErr.name === 'AbortError') {
+          UI_STATES.error('⏱️ Timeout — el modelo tardó más de 3 minutos');
+        } else {
+          UI_STATES.error('Error de red: ' + netErr.message);
+        }
         return;
+      } finally {
+        clearTimeout(_abortTimer);
       }
 
       // 5. Handle HTTP errors
