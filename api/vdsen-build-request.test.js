@@ -200,11 +200,17 @@ test('T-B07: coachEvaluation no es parte de clientProfile', function() {
   return !rq.clientProfile.coachEvaluation && 'coachEvaluation' in rq;
 });
 
-// T-B08: missing coachEvaluation is not invented — key is absent (not null) when no data
+// T-B08: coachEvaluation absent when neither fotometria nor grupos_prioritarios exist
 test('T-B08: coachEvaluation ausente cuando no hay datos de coach', function() {
-  // FIXTURE_AYRTON_FICHA_DOC.fotometria is null and no coach priorities exist
-  var r = buildGenerationRequest({ clientId: 'uid', fichaDoc: FIXTURE_AYRTON_FICHA_DOC, mode: 'new_plan' });
-  // coachEvaluation key must be absent (not null) so the contract emits a warning, not an error
+  // Fixture with no fotometria AND no grupos_prioritarios → coachEvaluation must be absent
+  var fichaEmpty = {
+    schemaVersion: '1.1',
+    data: { perfil: 'natural', nivel: 'intermedio', dias_semana: 4,
+            objetivo_mesociclo: 'hipertrofia', enfoque_actual: 'hipertrofia' },
+    fotometria: null,
+  };
+  var r = buildGenerationRequest({ clientId: 'uid', fichaDoc: fichaEmpty, mode: 'new_plan' });
+  // coachEvaluation key must be absent (not null) so contract emits a warning, not an error
   return !('coachEvaluation' in r.rawRequest);
 });
 

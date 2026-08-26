@@ -145,8 +145,9 @@ function _mapClientProfile(fichaData, clientDoc) {
 // fotometria is stored at fichas_onboarding/{clientId}.fotometria (set by coach).
 // Biomechanics in .data is CLIENT-STATED, not a coach technical assessment.
 
-function _mapCoachEvaluation(fichaDoc) {
+function _mapCoachEvaluation(fichaDoc, fd) {
   // fichaDoc = fichas_onboarding/{clientId} full document (not .data)
+  // fd       = fichaDoc.data (client ficha fields)
   var gaps = [];
   var ev   = {};
 
@@ -157,19 +158,33 @@ function _mapCoachEvaluation(fichaDoc) {
     gaps.push('photoAnalysis: no fotometria in fichas_onboarding');
   }
 
-  // biomechanics — NO direct equivalent in Firestore from coach perspective.
-  // fd.data.biomecanica is client-stated, not coach technical assessment.
   gaps.push('biomechanics: no coach-sourced biomechanical assessment found in Firestore');
   gaps.push('muscles: no coach muscle assessment found in Firestore');
   gaps.push('exercisePreferencesCoach: no coach exercise preferences stored in Firestore');
-  gaps.push('finalPriorities: no coach final priorities stored in Firestore');
   gaps.push('assumptions: no coach assumptions stored in Firestore');
 
-  // finalPriorities is REQUIRED by contract; since we cannot source it, we
-  // return null for coachEvaluation to let the validator surface the gap.
-  // Do NOT fill with client-stated priorities.
-
-  if (Object.keys(ev).length === 0) ev = null;
+  // finalPriorities: REQUIRED by contract. No dedicated coach Firestore path exists yet.
+  // Bridge from grupos_prioritarios (coach-reviewed client data) as a placeholder.
+  // If grupos_prioritarios is absent, null out coachEvaluation entirely so the
+  // validator emits a warning (absent) rather than an error (present but invalid).
+  // Mirrors the flat + nested normalization from _mapClientProfile.
+  var _gpRaw = (fd && fd.grupos_prioritarios)
+             || (fd && fd.prioridades && fd.prioridades.grupos_prioritarios);
+  var grupPri = null;
+  if (_gpRaw) {
+    if (Array.isArray(_gpRaw)) {
+      grupPri = _gpRaw.filter(Boolean).map(function(x){ return String(x).trim(); }).filter(Boolean);
+    } else if (typeof _gpRaw === 'string') {
+      grupPri = _gpRaw.split(/[,\n]/).map(function(x){ return x.trim(); }).filter(Boolean);
+    }
+  }
+  if (grupPri && grupPri.length > 0) {
+    ev.finalPriorities = grupPri;
+    gaps.push('finalPriorities: bridged from grupos_prioritarios (no dedicated coach path yet)');
+  } else {
+    gaps.push('finalPriorities: no source available — coachEvaluation nulled to avoid hard error');
+    return { coachEvaluation: null, gaps: gaps };
+  }
 
   return { coachEvaluation: ev, gaps: gaps };
 }
@@ -522,7 +537,7 @@ function buildGenerationRequest(params) {
   var clientProfile = _mapClientProfile(fd, clientDoc);
 
   // ── coachEvaluation ────────────────────────────────────────────────────────
-  var ceResult = _mapCoachEvaluation(fichaDoc);
+  var ceResult = _mapCoachEvaluation(fichaDoc, fd);
   diagnostics.coachEvaluationGaps = ceResult.gaps;
   // coachEvaluation is null when no coach data exists — let validator surface it.
   var coachEvaluation = ceResult.coachEvaluation;
