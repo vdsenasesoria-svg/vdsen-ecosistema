@@ -1510,34 +1510,25 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     const container = document.getElementById("clientList");
     container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando clientes...</div>`;
     try {
+      // Siempre verificar huérfanos primero (coachId distinto o ausente) — no solo cuando la lista está vacía
+      const allSnap = await getDocs(collection(db, "clients"));
+      let orphans = [];
+      allSnap.forEach(d => {
+        const data = d.data();
+        if (data.coachId !== currentCoach.uid) orphans.push({ id: d.id, ...data });
+      });
+      if (orphans.length > 0) {
+        container.innerHTML = `<p class="text-yellow-400 text-sm mb-2">⚠️ Vinculando ${orphans.length} cliente(s) sin asignar…</p>`;
+        for (const c of orphans) {
+          await setDoc(doc(db, "clients", c.id), { coachId: currentCoach.uid }, { merge: true });
+        }
+        showToast(`${orphans.length} cliente(s) vinculado(s) a tu cuenta`);
+      }
+
       const q = query(collection(db, "clients"), where("coachId", "==", currentCoach.uid));
       const snap = await getDocs(q);
       container.innerHTML = "";
       if (snap.empty) {
-        // Diagnóstico: buscar cualquier cliente sin filtro de coachId
-        const allSnap = await getDocs(collection(db, "clients"));
-        if (!allSnap.empty) {
-          let orphans = [];
-          allSnap.forEach(d => {
-            const data = d.data();
-            if (data.coachId !== currentCoach.uid) orphans.push({ id: d.id, ...data });
-          });
-          if (orphans.length > 0) {
-            // Hay clientes pero con coachId distinto o sin coachId — vincularlos automáticamente
-            container.innerHTML = `<p class="text-yellow-400 text-sm mb-2">⚠️ Se encontraron ${orphans.length} cliente(s) sin asignar a tu cuenta. Vinculando...</p>`;
-            for (const c of orphans) {
-              await setDoc(doc(db, "clients", c.id), { coachId: currentCoach.uid }, { merge: true });
-            }
-            showToast(`${orphans.length} cliente(s) vinculado(s) a tu cuenta`);
-            // Recargar lista
-            const snap2 = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
-            container.innerHTML = "";
-            snap2.forEach(d => {
-              container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${d.data().displayName || d.data().email || d.id}</strong> ${d.data().email ? "("+d.data().email+")" : ""} ${d.data().activePlanId ? "✅" : "⚠️"}</span><button class="text-[#F4F4F0] text-sm font-medium" onclick="showClientDetail('${d.id}')">Ver →</button></div>`;
-            });
-            return;
-          }
-        }
         container.innerHTML = `<p class="text-[#888] text-sm">No hay clientes aún. Crea uno con el botón de arriba.</p>`;
       } else {
         _clientIdList = [];
