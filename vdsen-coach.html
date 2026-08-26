@@ -634,8 +634,17 @@
     gaps.push('biomechanics: no coach-sourced biomechanical assessment found in Firestore');
     gaps.push('muscles: no coach muscle assessment found in Firestore');
     gaps.push('exercisePreferencesCoach: no coach exercise preferences stored in Firestore');
-    gaps.push('finalPriorities: no coach final priorities stored in Firestore');
-    gaps.push('assumptions: no coach assumptions stored in Firestore');
+    // finalPriorities: read from fichaV2raw.prioridades.grupos_prioritarios (nested) or top-level grupos_prioritarios
+    var _fp = null;
+    if (fichaDoc) {
+      var _fv2 = fichaDoc.fichaV2raw || {};
+      _fp = _normGroups((_fv2.prioridades && _fv2.prioridades.grupos_prioritarios) || fichaDoc.grupos_prioritarios);
+    }
+    if (_fp && _fp.length) ev.finalPriorities = _fp;
+    else gaps.push('finalPriorities: no coach final priorities stored in Firestore');
+    // assumptions: read from ficha top-level assumptions field
+    if (fichaDoc && Array.isArray(fichaDoc.assumptions) && fichaDoc.assumptions.length) ev.assumptions = fichaDoc.assumptions;
+    else gaps.push('assumptions: no coach assumptions stored in Firestore');
     if (Object.keys(ev).length === 0) ev = null;
     return { coachEvaluation: ev, gaps: gaps };
   }
