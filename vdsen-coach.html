@@ -5789,16 +5789,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         outputMode: 'json',
         clientId: clientId,
         coachId: auth.currentUser.uid,
-        clientProfile: fichaDoc || null,
-        clientFirestore: clientData,
-        activePlan: activePlanDoc || null,
-        logs: logsDoc || null,
-        coachProfile: coachData,
+        fichaDoc:  fichaDoc  || null,
+        clientDoc: clientData || null,
+        planDoc:   activePlanDoc || null,
+        logsDoc:   logsDoc   || null,
       };
 
-      let generationRequest;
+      let buildResult, generationRequest;
       try {
-        generationRequest = window.VDSEN_BUILD.buildGenerationRequest(params);
+        buildResult = window.VDSEN_BUILD.buildGenerationRequest(params);
+        generationRequest = buildResult.request || buildResult.rawRequest;
       } catch (buildErr) {
         UI_STATES.error('buildGenerationRequest falló: ' + buildErr.message);
         return;
@@ -5808,7 +5808,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const validation = window.VDSEN_BUILD.validateGenerationRequest(generationRequest);
       if (!validation.valid) {
         UI_STATES.invalid(validation.errors ? validation.errors.join(', ') : 'request inválido');
-        console.warn('[VDSEN D.1] Validation failed:', validation);
+        console.warn('[VDSEN D.1] Validation failed:', validation, buildResult);
         return;
       }
 
