@@ -6008,8 +6008,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         return;
       }
       if (status === 'NEEDS_COACH_REVIEW') {
-        const flags = (respJson.flags || []).map(f => f.message || f.code || JSON.stringify(f)).join('; ');
-        UI_STATES.needs_coach_review(flags || 'ver consola');
+        const modStatus = respJson.moduleStatus || {};
+        const modSummary = Object.entries(modStatus)
+          .filter(([, v]) => v !== 'READY')
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(', ');
+        const firstWarn = (respJson.warnings || [])[0] || '';
+        const detail = [modSummary, firstWarn ? firstWarn.substring(0, 120) : ''].filter(Boolean).join(' — ');
+        UI_STATES.needs_coach_review(detail || 'módulos requieren revisión del coach');
+        if (respJson.plan) _vdsenAIShowPreview(respJson, request);
         return;
       }
       if (status === 'INVALID') {
@@ -6111,10 +6118,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       ? decisionTrace.map(t => `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">${JSON.stringify(t)}</div>`).join('')
       : '<em style="color:var(--text-muted);font-size:12px">Sin trace</em>';
 
-    // Flags
-    let flagsHtml = flags.length
-      ? flags.map(f => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(245,158,11,.15);margin-bottom:4px">${f.code || ''}: ${f.message || ''}</div>`).join('')
-      : '<em style="color:var(--text-muted);font-size:12px">Sin flags</em>';
+    // Flags + Warnings + moduleStatus
+    const warnings = resp.warnings || [];
+    const modStatus = resp.moduleStatus || {};
+    const modNonReady = Object.entries(modStatus).filter(([, v]) => v !== 'READY');
+    let flagsHtml = '';
+    if (flags.length || warnings.length || modNonReady.length) {
+      flagsHtml += modNonReady.map(([k, v]) => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(139,92,246,.15);margin-bottom:4px;font-weight:600">🔍 ${k}: ${v}</div>`).join('');
+      flagsHtml += flags.map(f => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(245,158,11,.15);margin-bottom:4px">${f.code || ''}: ${f.message || ''}</div>`).join('');
+      flagsHtml += warnings.map(w => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(239,68,68,.1);margin-bottom:4px">⚠️ ${w}</div>`).join('');
+    } else {
+      flagsHtml = '<em style="color:var(--text-muted);font-size:12px">Sin flags</em>';
+    }
 
     // Audit
     let auditHtml = '<em style="color:var(--text-muted);font-size:12px">Sin audit</em>';
