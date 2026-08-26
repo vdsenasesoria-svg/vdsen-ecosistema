@@ -389,10 +389,10 @@ test('T-B29: generate-plan.js sigue exportando handler (importación manual inta
   return src.indexOf('export default async function handler') !== -1;
 });
 
-// T-B30: current generation logic in vdsen-coach.html is untouched (no reference added)
-test('T-B30: vdsen-build-request no inyectado en vdsen-coach.html', function() {
+// T-B30: VDSEN_BUILD browser adapter is present in vdsen-coach.html (FASE D.1)
+test('T-B30: vdsen-build-request inyectado en vdsen-coach.html como VDSEN_BUILD', function() {
   var src = require('fs').readFileSync(require('path').join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
-  return src.indexOf('vdsen-build-request') === -1;
+  return src.indexOf('window.VDSEN_BUILD') !== -1;
 });
 
 // ─── Ayrton fixture preview ───────────────────────────────────────────────────

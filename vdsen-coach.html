@@ -293,6 +293,16 @@
       </div>
       <div id="autoGenStatus" class="text-sm mt-3"></div>
     </div>
+
+    <!-- VDSEN AI Preview (FASE D.1 — experimental, read-only) -->
+    <div style="border:1px dashed var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;background:rgba(99,102,241,.04)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button id="vdsenPreviewBtn" onclick="vdsenAIPreview()" style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:1px solid rgba(99,102,241,.5);background:rgba(99,102,241,.12);color:var(--text);font-size:13px;font-weight:600;cursor:pointer">🔬 Generar con VDSEN AI — Preview</button>
+        <span class="text-xs" style="color:var(--text-muted);max-width:360px;line-height:1.4">Experimental. Lee la ficha del cliente y muestra un preview del plan generado por el Motor VDSEN (OpenAI). <b>No guarda nada.</b></span>
+      </div>
+      <div id="vdsenPreviewStatus" class="text-sm mt-3"></div>
+    </div>
+
     <div style="position:relative;display:inline-block;margin-bottom:16px" id="importPlanMenuWrap">
       <button onclick="toggleImportPlanMenu()" style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;font-weight:600;cursor:pointer">📥 Importar / crear plan <span>▾</span></button>
       <div id="importPlanMenu" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:6px;min-width:230px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.4)">
@@ -440,6 +450,314 @@
   <div data-section="catalogo"   class="nav-item-mobile"><span class="nav-icon">🏋️</span>Catálogo</div>
   <div data-section="config"     class="nav-item-mobile"><span class="nav-icon">⚙️</span>Config</div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     VDSEN_BUILD — Browser adapter for vdsen-generation-request-v1 (FASE D.1)
+     Mirrors api/vdsen-build-request.js + api/vdsen-contracts.js validators.
+     READ-ONLY logic: no Firebase writes, no Firestore imports.
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+  // ── Enums ──────────────────────────────────────────────────────────────────
+  var VALID_MODES    = ['new_plan','update_plan','audit_plan'];
+  var VALID_OUTPUT   = ['json','txt','pdf','all'];
+  var VALID_PROFILES = ['natural','PED'];
+  var VALID_STATUSES = ['VALID','NEEDS_INPUT','NEEDS_COACH_REVIEW','INVALID','ERROR'];
+  var VALID_MOD_STATUSES = ['READY','NEEDS_INPUT','NEEDS_COACH_REVIEW','INVALID'];
+  var FORBIDDEN_PLAN_FIELDS = ['audit','decisionTrace','targets','moduleStatus','warnings','errors','model','requestId','generatedAt','documents'];
+
+  // ── validateCoachEvaluation ────────────────────────────────────────────────
+  function validateCoachEvaluation(ev) {
+    var errors = [];
+    if (!ev || typeof ev !== 'object') return { valid: false, errors: ['coachEvaluation must be a non-null object'] };
+    if (ev.schema && ev.schema !== 'vdsen-coach-evaluation-v1') errors.push('schema must be "vdsen-coach-evaluation-v1" when present');
+    if (!ev.finalPriorities) errors.push('coachEvaluation.finalPriorities is required');
+    if (ev.photoAnalysis !== undefined && typeof ev.photoAnalysis !== 'object') errors.push('coachEvaluation.photoAnalysis must be an object when present');
+    if (ev.muscles !== undefined && !Array.isArray(ev.muscles)) errors.push('coachEvaluation.muscles must be an array when present');
+    if (ev.assumptions !== undefined && !Array.isArray(ev.assumptions)) errors.push('coachEvaluation.assumptions must be an array when present');
+    return { valid: errors.length === 0, errors: errors };
+  }
+
+  // ── validateGenerationRequest ──────────────────────────────────────────────
+  function validateGenerationRequest(req) {
+    var errors = [], warnings = [];
+    if (!req || typeof req !== 'object') return { valid: false, errors: ['request must be a non-null object'], warnings: [] };
+    if (req.schema !== 'vdsen-generation-request-v1') errors.push('schema must be "vdsen-generation-request-v1"');
+    if (!req.requestId) warnings.push('requestId is recommended for traceability');
+    if (!req.mode)                                    errors.push('mode is required');
+    else if (VALID_MODES.indexOf(req.mode) === -1)    errors.push('mode must be one of: ' + VALID_MODES.join(', '));
+    if (req.outputMode !== undefined && VALID_OUTPUT.indexOf(req.outputMode) === -1) errors.push('outputMode must be one of: ' + VALID_OUTPUT.join(', '));
+    if (!req.clientProfile || typeof req.clientProfile !== 'object') {
+      errors.push('clientProfile is required and must be an object');
+    } else {
+      var cp = req.clientProfile, base = cp.base || {}, ent = cp.entrenamiento || {}, prio = cp.prioridades || {};
+      if (!base.perfil)                                          errors.push('clientProfile.base.perfil is required');
+      else if (VALID_PROFILES.indexOf(base.perfil) === -1)      errors.push('clientProfile.base.perfil must be "natural" or "PED"');
+      if (base.perfil === 'PED' && (!cp.farmacologia || typeof cp.farmacologia !== 'object')) warnings.push('clientProfile.farmacologia is recommended when perfil=PED');
+      if (!ent.nivel)              errors.push('clientProfile.entrenamiento.nivel is required');
+      if (!ent.objetivo_mesociclo) errors.push('clientProfile.entrenamiento.objetivo_mesociclo is required');
+      if (!ent.dias_semana)        errors.push('clientProfile.entrenamiento.dias_semana is required');
+      else if (typeof ent.dias_semana !== 'number' || ent.dias_semana < 1 || ent.dias_semana > 7) errors.push('clientProfile.entrenamiento.dias_semana must be a number 1-7');
+      if (!prio.grupos_prioritarios || !Array.isArray(prio.grupos_prioritarios) || prio.grupos_prioritarios.length === 0) errors.push('clientProfile.prioridades.grupos_prioritarios is required (non-empty array)');
+      if (!prio.enfoque_actual) errors.push('clientProfile.prioridades.enfoque_actual is required');
+      if (!base.sexo)    warnings.push('clientProfile.base.sexo is recommended');
+      if (!base.edad)    warnings.push('clientProfile.base.edad is recommended');
+      if (!base.peso_kg) warnings.push('clientProfile.base.peso_kg is recommended');
+      if (!base.talla_cm) warnings.push('clientProfile.base.talla_cm is recommended for nutritionTargets');
+    }
+    if (req.coachEvaluation !== undefined) validateCoachEvaluation(req.coachEvaluation).errors.forEach(function(e) { errors.push(e); });
+    else warnings.push('coachEvaluation is recommended; finalPriorities used by training module');
+    if (req.restrictions     !== undefined && typeof req.restrictions    !== 'object') errors.push('restrictions must be an object when present');
+    if (req.musclePriorities !== undefined && !Array.isArray(req.musclePriorities))   errors.push('musclePriorities must be an array when present');
+    if (req.equipment        !== undefined && !Array.isArray(req.equipment))           errors.push('equipment must be an array when present');
+    if (req.options          !== undefined && typeof req.options         !== 'object') errors.push('options must be an object when present');
+    return { valid: errors.length === 0, errors: errors, warnings: warnings };
+  }
+
+  // ── validateGenerationResponse ─────────────────────────────────────────────
+  function validateGenerationResponse(resp) {
+    var errors = [], warnings = [];
+    if (!resp || typeof resp !== 'object') return { valid: false, errors: ['response must be a non-null object'], warnings: [] };
+    if (resp.schema !== 'vdsen-generation-response-v1') errors.push('schema must be "vdsen-generation-response-v1"');
+    if (!resp.status)                                       errors.push('status is required');
+    else if (VALID_STATUSES.indexOf(resp.status) === -1)   errors.push('status must be one of: ' + VALID_STATUSES.join(', '));
+    if (!resp.requestId)   warnings.push('requestId should echo the original request id');
+    if (!resp.generatedAt) warnings.push('generatedAt timestamp is recommended');
+    if (resp.status === 'VALID') {
+      if (!resp.plan || typeof resp.plan !== 'object') { errors.push('plan is required when status=VALID'); }
+      else {
+        if (resp.plan.schema !== 'vdsen-plan-v2') errors.push('plan.schema must be "vdsen-plan-v2"');
+        FORBIDDEN_PLAN_FIELDS.forEach(function(f) { if (Object.prototype.hasOwnProperty.call(resp.plan, f)) errors.push('plan must not contain field "' + f + '"'); });
+      }
+    }
+    if (resp.status === 'NEEDS_INPUT' && (!Array.isArray(resp.missingInputs) || resp.missingInputs.length === 0)) errors.push('missingInputs (non-empty array) is required when status=NEEDS_INPUT');
+    if (resp.moduleStatus !== undefined) {
+      if (typeof resp.moduleStatus !== 'object') { errors.push('moduleStatus must be an object when present'); }
+      else {
+        ['training','nutritionTargets','nutritionMenu','supplementation'].forEach(function(m) {
+          var val = resp.moduleStatus[m];
+          if (val !== undefined && val !== null && VALID_MOD_STATUSES.indexOf(val) === -1) errors.push('moduleStatus.' + m + ' must be one of: ' + VALID_MOD_STATUSES.join(', '));
+        });
+      }
+    }
+    return { valid: errors.length === 0, errors: errors, warnings: warnings };
+  }
+
+  // ── Helpers (mirrors vdsen-build-request.js) ───────────────────────────────
+  function _uuid() { return 'req-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
+  function _present(v) {
+    if (v === null || v === undefined || v === '') return false;
+    if (Array.isArray(v) && v.length === 0) return false;
+    return true;
+  }
+  function _pick(obj, keys) {
+    var out = {};
+    keys.forEach(function(k) { if (_present(obj[k])) out[k] = obj[k]; });
+    return out;
+  }
+  function _normGroups(v) {
+    if (!_present(v)) return null;
+    if (Array.isArray(v)) return v.filter(Boolean).map(function(x){ return String(x).trim(); });
+    if (typeof v === 'string') return v.split(/[,\n]/).map(function(x){ return x.trim(); }).filter(Boolean);
+    return null;
+  }
+
+  function _mapClientProfile(fd) {
+    fd = fd || {};
+    var base = _pick(fd, ['nombre','sexo','edad','peso_kg','talla_cm','porcentaje_grasa','perfil']);
+    if (!base.perfil && fd.base && _present(fd.base.perfil)) base.perfil = fd.base.perfil;
+    var ent  = _pick(fd, ['nivel','dias_semana','duracion_sesion_min','gimnasio','objetivo_mesociclo','lesiones','semana_actual_mesociclo','gimnasio_otro_maquinas']);
+    var bio  = _pick(fd, ['biotipo','movilidad','patrones_fuertes','patrones_debiles','asimetrias','postura','dolor_actual']);
+    var prio = {};
+    var _gp = _normGroups(fd.grupos_prioritarios);
+    if (_gp && _gp.length) prio.grupos_prioritarios = _gp;
+    if (_present(fd.enfoque_actual))  prio.enfoque_actual  = fd.enfoque_actual;
+    if (_present(fd.objetivo_corto))  prio.objetivo_corto  = fd.objetivo_corto;
+    if (_present(fd.evento_objetivo)) prio.evento_objetivo = fd.evento_objetivo;
+    if (fd.prioridades && typeof fd.prioridades === 'object') {
+      if (!_present(prio.grupos_prioritarios)) { var _gp2 = _normGroups(fd.prioridades.grupos_prioritarios); if (_gp2 && _gp2.length) prio.grupos_prioritarios = _gp2; }
+      if (!_present(prio.enfoque_actual)  && _present(fd.prioridades.enfoque_actual))  prio.enfoque_actual  = fd.prioridades.enfoque_actual;
+      if (!_present(prio.objetivo_corto)  && _present(fd.prioridades.objetivo_corto))  prio.objetivo_corto  = fd.prioridades.objetivo_corto;
+      if (!_present(prio.evento_objetivo) && _present(fd.prioridades.evento_objetivo)) prio.evento_objetivo = fd.prioridades.evento_objetivo;
+    }
+    var pref = _pick(fd, ['ejercicios_favoritos','ejercicios_evitar','estilo_entreno','alimentos_favoritos','alimentos_evitar','disponibilidad']);
+    var nut  = _pick(fd, ['actividad_pasos_dia','objetivo_calorico','magnitud_ajuste_pct','num_comidas','horarios_comidas','restricciones_alimentarias','restriccion_otra','alimentos_disponibles','fase_ciclo_menstrual']);
+    var supp = _pick(fd, ['restricciones_suplementos','objetivo_primario_supp']);
+    var farmaco = null;
+    if (base.perfil === 'PED') {
+      var ff = ['experiencia_peds','objetivo_farmaco','timeline_semanas','compuestos_actuales','dosis_semana_mg','bio_hct','bio_alt','bio_ast','bio_col_total','bio_hdl','bio_ldl','bio_trigliceridos','bio_e2','bio_lh','bio_fsh','bio_psa','bio_pa_sistolica','bio_pa_diastolica','bio_fc_reposo','bio_tsh','bio_glucosa','bio_creat','bio_cistatina_c','bio_te_ratio','bio_prolactina','bio_nt_probnp','ecocardiograma_disponible','ecg_disponible','score_agatston','limitaciones','estado_hormonal_femenino'];
+      var fd2 = _pick(fd, ff);
+      if (Object.keys(fd2).length > 0) farmaco = fd2;
+    }
+    var profile = {};
+    if (Object.keys(base).length)  profile.base          = base;
+    if (Object.keys(ent).length)   profile.entrenamiento  = ent;
+    if (Object.keys(bio).length)   profile.biomecanica    = bio;
+    if (Object.keys(prio).length)  profile.prioridades    = prio;
+    if (Object.keys(pref).length)  profile.preferencias   = pref;
+    if (Object.keys(nut).length)   profile.nutricion      = nut;
+    if (Object.keys(supp).length)  profile.suplementacion = supp;
+    if (farmaco)                   profile.farmacologia   = farmaco;
+    return profile;
+  }
+
+  function _mapCoachEvaluation(fichaDoc) {
+    var gaps = [], ev = {};
+    if (fichaDoc && _present(fichaDoc.fotometria)) ev.photoAnalysis = fichaDoc.fotometria;
+    else gaps.push('photoAnalysis: no fotometria in fichas_onboarding');
+    gaps.push('biomechanics: no coach-sourced biomechanical assessment found in Firestore');
+    gaps.push('muscles: no coach muscle assessment found in Firestore');
+    gaps.push('exercisePreferencesCoach: no coach exercise preferences stored in Firestore');
+    gaps.push('finalPriorities: no coach final priorities stored in Firestore');
+    gaps.push('assumptions: no coach assumptions stored in Firestore');
+    if (Object.keys(ev).length === 0) ev = null;
+    return { coachEvaluation: ev, gaps: gaps };
+  }
+
+  function _mapRestrictions(fd) {
+    fd = fd || {};
+    var exercisesAvoid = [];
+    var rawEvitar = (fd.preferencias && (fd.preferencias.ejercicios_evitar || fd.preferencias.ejerciciosEvitar)) ||
+                    (fd.biomecanica  && (fd.biomecanica.ejercicios_evitar  || fd.biomecanica.ejerciciosEvitar))  || fd.ejercicios_evitar;
+    if (Array.isArray(rawEvitar)) exercisesAvoid = rawEvitar.filter(Boolean).map(function(e){ return String(e).trim(); });
+    else if (typeof rawEvitar === 'string' && rawEvitar.trim()) exercisesAvoid = [rawEvitar.trim()];
+    var injuries = [];
+    if (_present(fd.lesiones)) injuries.push(String(fd.lesiones).trim());
+    if (fd.entrenamiento && _present(fd.entrenamiento.lesiones)) injuries.push(String(fd.entrenamiento.lesiones).trim());
+    var pain = [];
+    if (fd.biomecanica && _present(fd.biomecanica.dolor_actual)) pain.push(String(fd.biomecanica.dolor_actual).trim());
+    var movementsAvoid = [];
+    if (fd.biomecanica && _present(fd.biomecanica.patrones_dolor)) {
+      var pp = fd.biomecanica.patrones_dolor;
+      if (Array.isArray(pp)) movementsAvoid = pp.map(String); else if (typeof pp === 'string') movementsAvoid = [pp];
+    }
+    return { injuries: injuries, pain: pain, exercisesAvoid: exercisesAvoid, movementsAvoid: movementsAvoid, medicalRestrictions: [] };
+  }
+
+  function _mapMusclePriorities(fd) {
+    fd = fd || {};
+    var sources = [], clientPrio = null;
+    var rawPrio = (fd.prioridades && fd.prioridades.grupos_prioritarios) || fd.grupos_prioritarios;
+    if (_present(rawPrio)) {
+      if (Array.isArray(rawPrio)) clientPrio = rawPrio.filter(Boolean).map(function(x){ return String(x).trim(); });
+      else if (typeof rawPrio === 'string') clientPrio = rawPrio.split(/[,\n]/).map(function(x){ return x.trim(); }).filter(Boolean);
+      if (clientPrio && clientPrio.length) sources.push({ source: 'client_stated', muscles: clientPrio });
+    }
+    return { musclePriorities: sources, _gaps: clientPrio ? [] : ['musclePriorities: no client-stated priorities found'] };
+  }
+
+  function _mapEquipment(fd) {
+    fd = fd || {};
+    var gymName = fd.gimnasio || null;
+    var customMachines = (gymName === 'otro' && _present(fd.gimnasio_otro_maquinas)) ? fd.gimnasio_otro_maquinas : null;
+    var equipmentArray = null;
+    if (customMachines) equipmentArray = customMachines.split(/[,\n]/).map(function(x){ return x.trim(); }).filter(Boolean);
+    return { equipment: equipmentArray, gymInfo: gymName ? { gymName: gymName } : null, _equipmentDataCompleteness: gymName ? (customMachines ? 'custom_text' : 'gym_name_only') : 'unknown' };
+  }
+
+  function _mapLogs(logsDoc) {
+    var result = { trainingLogs: null, checkins: null, engineState: null, _diagnostics: {} };
+    if (!logsDoc || !logsDoc.entries) { result._diagnostics.logsAvailable = false; return result; }
+    var entries = logsDoc.entries, currentWeek = logsDoc.currentWeek || null;
+    var setLogs = {}, sessionDone = {}, postSessions = {}, progrecs = {}, ciSemanas = {}, engineState = null;
+    Object.keys(entries).forEach(function(k) {
+      var v = entries[k];
+      if (k === 'engine_state')              engineState = v;
+      else if (/^log_\d+_\d+_\d+_s\d+$/.test(k)) setLogs[k] = v;
+      else if (/^done_\d+_\d+$/.test(k))    sessionDone[k] = v;
+      else if (/^postsession_\d+_\d+$/.test(k)) postSessions[k] = v;
+      else if (/^progrec_\d+_\d+$/.test(k)) progrecs[k] = v;
+      else if (/^ci_sem_\d+$/.test(k))      ciSemanas[k] = v;
+    });
+    var setCount = Object.keys(setLogs).length, ciCount = Object.keys(ciSemanas).length, postCount = Object.keys(postSessions).length;
+    if (setCount > 0 || postCount > 0) result.trainingLogs = { currentWeek: currentWeek, setLogs: setLogs, sessionDone: sessionDone, postSessions: postSessions, progrecs: progrecs };
+    if (ciCount > 0) result.checkins = { weeksTracked: ciCount, ciByWeek: ciSemanas };
+    result.engineState = engineState || null;
+    result._diagnostics = { logsAvailable: true, setCount: setCount, ciCount: ciCount, postCount: postCount, currentWeek: currentWeek, sizeWarning: setCount > 500 ? 'LARGE_LOG_SET_count_' + setCount : null };
+    return result;
+  }
+
+  function _mapNutritionContext(fd) {
+    fd = fd || {};
+    var ctx = _pick(fd, ['objetivo_calorico','magnitud_ajuste_pct','num_comidas','horarios_comidas','restricciones_alimentarias','restriccion_otra','alimentos_disponibles','alimentos_favoritos','alimentos_evitar','actividad_pasos_dia','fase_ciclo_menstrual']);
+    return Object.keys(ctx).length ? ctx : null;
+  }
+
+  function _mapSupplementContext(fd) {
+    fd = fd || {};
+    var ctx = _pick(fd, ['restricciones_suplementos','objetivo_primario_supp']);
+    return Object.keys(ctx).length ? ctx : null;
+  }
+
+  // ── buildGenerationRequest ─────────────────────────────────────────────────
+  function buildGenerationRequest(params) {
+    params = params || {};
+    var clientId   = params.clientId   || null;
+    var coachId    = params.coachId    || null;
+    var fichaDoc   = params.fichaDoc   || null;
+    var clientDoc  = params.clientDoc  || null;
+    var planDoc    = params.planDoc    || null;
+    var logsDoc    = params.logsDoc    || null;
+    var mode       = params.mode       || 'new_plan';
+    var outputMode = params.outputMode || 'json';
+    var options    = params.options    || {};
+    var fd = (fichaDoc && fichaDoc.data) ? fichaDoc.data : {};
+    var diagnostics = {
+      fichaPresent:        !!(fichaDoc && fichaDoc.data && Object.keys(fichaDoc.data).length > 0),
+      clientDocPresent:    !!clientDoc,
+      planDocPresent:      !!planDoc,
+      logsDocPresent:      !!(logsDoc && logsDoc.entries),
+      coachEvaluationGaps: [],
+      equipmentCompleteness: null
+    };
+    var clientProfile = _mapClientProfile(fd);
+    var ceResult      = _mapCoachEvaluation(fichaDoc);
+    diagnostics.coachEvaluationGaps = ceResult.gaps;
+    var coachEvaluation = ceResult.coachEvaluation;
+    var restrictions    = _mapRestrictions(fd);
+    var mpResult        = _mapMusclePriorities(fd);
+    var musclePriorities = mpResult.musclePriorities;
+    if (mpResult._gaps.length) diagnostics.musclePriorityGaps = mpResult._gaps;
+    var eqResult = _mapEquipment(fd);
+    diagnostics.equipmentCompleteness = eqResult._equipmentDataCompleteness;
+    var logsResult = _mapLogs(logsDoc);
+    diagnostics.logsDiagnostics = logsResult._diagnostics;
+    var nutritionContext  = _mapNutritionContext(fd);
+    var supplementContext = _mapSupplementContext(fd);
+    var request = {
+      schema:      'vdsen-generation-request-v1',
+      requestId:   _uuid(),
+      clientId:    clientId,
+      coachId:     coachId,
+      requestedAt: new Date().toISOString(),
+      mode:        mode,
+      outputMode:  outputMode,
+      clientProfile:     clientProfile,
+      restrictions:      restrictions,
+      musclePriorities:  musclePriorities,
+      nutritionContext:  nutritionContext,
+      supplementContext: supplementContext,
+      previousPlan:      planDoc || null,
+      trainingLogs:      logsResult.trainingLogs,
+      checkins:          logsResult.checkins,
+      engineState:       logsResult.engineState,
+      attachments:       [],
+      options:           Object.assign({}, options, eqResult.gymInfo ? { gymInfo: eqResult.gymInfo } : {})
+    };
+    if (coachEvaluation !== null) request.coachEvaluation = coachEvaluation;
+    if (eqResult.equipment !== null) request.equipment = eqResult.equipment;
+    var validation = validateGenerationRequest(request);
+    return { request: validation.valid ? request : null, rawRequest: request, validation: validation, diagnostics: diagnostics };
+  }
+
+  window.VDSEN_BUILD = {
+    buildGenerationRequest:     buildGenerationRequest,
+    validateGenerationRequest:  validateGenerationRequest,
+    validateGenerationResponse: validateGenerationResponse
+  };
+})();
+</script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -5151,6 +5469,268 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   }
   window.autoGeneratePlan = autoGeneratePlan;
+
+  // ========== VDSEN AI PREVIEW (FASE D.1 — experimental, read-only) ==========
+  async function vdsenAIPreview() {
+    const clientId = document.getElementById('planClientSelect')?.value;
+    if (!clientId) { showToast('Selecciona un cliente primero', true); return; }
+    if (typeof window.VDSEN_BUILD === 'undefined') {
+      showToast('VDSEN_BUILD no disponible — recarga la página', true); return;
+    }
+
+    const btn = document.getElementById('vdsenPreviewBtn');
+    const statusBox = document.getElementById('vdsenPreviewStatus');
+    const setStatus = html => { if (statusBox) statusBox.innerHTML = html; };
+
+    const UI_STATES = {
+      idle:                () => { if (btn) { btn.disabled = false; btn.textContent = '🔬 Generar con VDSEN AI — Preview'; } setStatus(''); },
+      building_request:    () => { if (btn) { btn.disabled = true; btn.textContent = '⏳ Construyendo solicitud…'; } setStatus('<span style="color:var(--text-muted)">Leyendo datos del cliente…</span>'); },
+      generating:          () => { if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando…'; } setStatus('<span style="color:var(--text-muted)">Motor VDSEN en proceso (puede tardar 30-60s)…</span>'); },
+      needs_input:         (msg) => setStatus(`<span style="color:#f59e0b">⚠️ Faltan datos: ${msg}</span>`),
+      needs_coach_review:  (msg) => setStatus(`<span style="color:#8b5cf6">🔍 Requiere revisión: ${msg}</span>`),
+      invalid:             (msg) => setStatus(`<span style="color:#ef4444">❌ Solicitud inválida: ${msg}</span>`),
+      error:               (msg) => setStatus(`<span style="color:#ef4444">❌ Error: ${msg}</span>`),
+    };
+
+    try {
+      UI_STATES.building_request();
+
+      // 1. Read client data from Firestore (READ ONLY)
+      const { doc, getDoc, collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const clientRef = doc(db, 'clients', clientId);
+      const clientSnap = await getDoc(clientRef);
+      if (!clientSnap.exists()) {
+        UI_STATES.error('Cliente no encontrado en Firestore');
+        return;
+      }
+      const clientData = clientSnap.data();
+
+      // Try to read ficha_onboarding (optional)
+      let fichaDoc = null;
+      try {
+        const fichaRef = doc(db, 'fichas_onboarding', clientId);
+        const fichaSnap = await getDoc(fichaRef);
+        if (fichaSnap.exists()) fichaDoc = fichaSnap.data();
+      } catch (_) {}
+
+      // Try to read active plan (optional)
+      let activePlanDoc = null;
+      if (clientData.activePlanId) {
+        try {
+          const planRef = doc(db, 'plans', clientData.activePlanId);
+          const planSnap = await getDoc(planRef);
+          if (planSnap.exists()) activePlanDoc = planSnap.data();
+        } catch (_) {}
+      }
+
+      // Read logs (optional)
+      let logsDoc = null;
+      try {
+        const logsRef = doc(db, 'logs', clientId);
+        const logsSnap = await getDoc(logsRef);
+        if (logsSnap.exists()) logsDoc = logsSnap.data();
+      } catch (_) {}
+
+      // 2. Build generation request via browser adapter
+      const coachDoc = await getDoc(doc(db, 'coaches', auth.currentUser.uid));
+      const coachData = coachDoc.exists() ? coachDoc.data() : {};
+
+      const params = {
+        mode: 'new_plan',
+        outputMode: 'json',
+        clientId: clientId,
+        coachId: auth.currentUser.uid,
+        clientProfile: fichaDoc || null,
+        clientFirestore: clientData,
+        activePlan: activePlanDoc || null,
+        logs: logsDoc || null,
+        coachProfile: coachData,
+      };
+
+      let generationRequest;
+      try {
+        generationRequest = window.VDSEN_BUILD.buildGenerationRequest(params);
+      } catch (buildErr) {
+        UI_STATES.error('buildGenerationRequest falló: ' + buildErr.message);
+        return;
+      }
+
+      // 3. Validate before sending
+      const validation = window.VDSEN_BUILD.validateGenerationRequest(generationRequest);
+      if (!validation.valid) {
+        UI_STATES.invalid(validation.errors ? validation.errors.join(', ') : 'request inválido');
+        console.warn('[VDSEN D.1] Validation failed:', validation);
+        return;
+      }
+
+      UI_STATES.generating();
+      console.info('[VDSEN D.1] Request built, sending to /api/vdsen-generate', generationRequest);
+
+      // 4. POST to /api/vdsen-generate (no API key header)
+      let httpResp;
+      try {
+        httpResp = await fetch('/api/vdsen-generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(generationRequest),
+        });
+      } catch (netErr) {
+        UI_STATES.error('Error de red: ' + netErr.message);
+        return;
+      }
+
+      // 5. Handle HTTP errors
+      if (!httpResp.ok) {
+        const errText = await httpResp.text().catch(() => '');
+        _vdsenAIHttpError(httpResp.status, errText, UI_STATES);
+        return;
+      }
+
+      let respJson;
+      try {
+        respJson = await httpResp.json();
+      } catch (parseErr) {
+        UI_STATES.error('Respuesta no es JSON válido');
+        return;
+      }
+
+      console.info('[VDSEN D.1] Response received:', respJson);
+
+      // 6. Handle by status
+      const status = respJson.status;
+      if (status === 'NEEDS_INPUT') {
+        const missing = (respJson.missingInputs || []).map(m => m.field || JSON.stringify(m)).join(', ');
+        UI_STATES.needs_input(missing || 'campos sin especificar');
+        return;
+      }
+      if (status === 'NEEDS_COACH_REVIEW') {
+        const flags = (respJson.flags || []).map(f => f.message || f.code || JSON.stringify(f)).join('; ');
+        UI_STATES.needs_coach_review(flags || 'ver consola');
+        return;
+      }
+      if (status === 'INVALID') {
+        UI_STATES.invalid(respJson.error || respJson.detail || 'ver consola');
+        return;
+      }
+      if (status === 'ERROR') {
+        UI_STATES.error(respJson.error || respJson.detail || 'error del servidor');
+        return;
+      }
+      if (status === 'VALID') {
+        // Validate response contract
+        const respValidation = window.VDSEN_BUILD.validateGenerationResponse(respJson);
+        if (!respValidation.valid) {
+          console.warn('[VDSEN D.1] Response contract violation:', respValidation);
+        }
+        setStatus('<span style="color:#22c55e">✅ Plan generado — mostrando preview</span>');
+        _vdsenAIShowPreview(respJson, generationRequest);
+        return;
+      }
+      // Unknown status
+      UI_STATES.error('Estado desconocido: ' + status);
+
+    } catch (err) {
+      console.error('[VDSEN D.1] Unexpected error:', err);
+      UI_STATES.error(err.message || 'Error inesperado');
+    } finally {
+      const btn2 = document.getElementById('vdsenPreviewBtn');
+      if (btn2) { btn2.disabled = false; btn2.textContent = '🔬 Generar con VDSEN AI — Preview'; }
+    }
+  }
+  window.vdsenAIPreview = vdsenAIPreview;
+
+  function _vdsenAIHttpError(status, body, UI_STATES) {
+    const preview = body ? body.substring(0, 200) : '';
+    if (status === 400) { UI_STATES.invalid('400 Bad Request — ' + preview); return; }
+    if (status === 422) { UI_STATES.invalid('422 Unprocessable — ' + preview); return; }
+    if (status === 500) { UI_STATES.error('500 Internal Server Error'); return; }
+    if (status === 502) { UI_STATES.error('502 Bad Gateway — modelo no disponible'); return; }
+    if (status === 504) { UI_STATES.error('504 Gateway Timeout — el modelo tardó demasiado'); return; }
+    UI_STATES.error('HTTP ' + status + ' — ' + preview);
+  }
+
+  function _vdsenAIShowPreview(resp, req) {
+    const modal = document.getElementById('vdsenPreviewModal');
+    if (!modal) return;
+
+    const plan = resp.plan || {};
+    const audit = resp.audit || {};
+    const decisionTrace = resp.decisionTrace || [];
+    const flags = resp.flags || [];
+
+    // Training
+    const training = plan.entrenamiento;
+    let trainingHtml = '';
+    if (training && Array.isArray(training.days)) {
+      training.days.forEach(day => {
+        trainingHtml += `<div style="margin-bottom:12px"><b>Día ${day.dayIndex}: ${day.label || ''}</b><ul style="margin:4px 0 0 16px;font-size:12px">`;
+        (day.exercises || []).forEach(ex => {
+          trainingHtml += `<li>${ex.exerciseName} — ${ex.sets ? ex.sets.length : 0} series`;
+          if (ex.technique) trainingHtml += ` (${ex.technique})`;
+          trainingHtml += '</li>';
+        });
+        trainingHtml += '</ul></div>';
+      });
+    } else {
+      trainingHtml = '<em style="color:var(--text-muted)">Sin entrenamiento en respuesta</em>';
+    }
+
+    // Nutrition
+    const nutr = plan.nutricion;
+    let nutrHtml = '';
+    if (nutr) {
+      nutrHtml = `<div style="font-size:13px"><b>${nutr.calorias || '?'} kcal</b> · P: ${nutr.proteina || '?'}g · C: ${nutr.carbos || '?'}g · G: ${nutr.grasas || '?'}g</div>`;
+      if (nutr.texto) nutrHtml += `<div style="font-size:12px;margin-top:6px;white-space:pre-wrap;max-height:150px;overflow-y:auto">${nutr.texto}</div>`;
+    } else {
+      nutrHtml = '<em style="color:var(--text-muted)">Sin nutrición en respuesta</em>';
+    }
+
+    // Supplements
+    const suppl = plan.suplementacion;
+    let supplHtml = '';
+    if (suppl && Array.isArray(suppl.tiers)) {
+      suppl.tiers.forEach(tier => {
+        supplHtml += `<div style="font-size:13px;margin-bottom:6px"><b>${tier.nombre || 'Tier'}</b>`;
+        if (Array.isArray(tier.items)) {
+          supplHtml += `<ul style="margin:4px 0 0 16px;font-size:12px">`;
+          tier.items.forEach(item => { supplHtml += `<li>${item.nombre} — ${item.dosis || ''} ${item.timing || ''}</li>`; });
+          supplHtml += '</ul>';
+        }
+        supplHtml += '</div>';
+      });
+    } else {
+      supplHtml = '<em style="color:var(--text-muted)">Sin suplementación en respuesta</em>';
+    }
+
+    // Decision trace
+    let traceHtml = decisionTrace.length
+      ? decisionTrace.map(t => `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">${JSON.stringify(t)}</div>`).join('')
+      : '<em style="color:var(--text-muted);font-size:12px">Sin trace</em>';
+
+    // Flags
+    let flagsHtml = flags.length
+      ? flags.map(f => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(245,158,11,.15);margin-bottom:4px">${f.code || ''}: ${f.message || ''}</div>`).join('')
+      : '<em style="color:var(--text-muted);font-size:12px">Sin flags</em>';
+
+    // Audit
+    let auditHtml = '<em style="color:var(--text-muted);font-size:12px">Sin audit</em>';
+    if (Object.keys(audit).length) {
+      auditHtml = `<pre style="font-size:10px;overflow:auto;max-height:120px;background:rgba(0,0,0,.2);padding:8px;border-radius:6px">${JSON.stringify(audit, null, 2)}</pre>`;
+    }
+
+    document.getElementById('vdsenPreview_training').innerHTML = trainingHtml;
+    document.getElementById('vdsenPreview_nutrition').innerHTML = nutrHtml;
+    document.getElementById('vdsenPreview_suppl').innerHTML = supplHtml;
+    document.getElementById('vdsenPreview_trace').innerHTML = traceHtml;
+    document.getElementById('vdsenPreview_flags').innerHTML = flagsHtml;
+    document.getElementById('vdsenPreview_audit').innerHTML = auditHtml;
+    document.getElementById('vdsenPreview_requestId').textContent = req.requestId || '';
+    document.getElementById('vdsenPreview_status').textContent = resp.status || '';
+    document.getElementById('vdsenPreview_model').textContent = resp.model || audit.model || '';
+
+    modal.style.display = 'flex';
+  }
+  window._vdsenAIShowPreview = _vdsenAIShowPreview;
 
   // ========== CARGAR PLAN DESDE ANÁLISIS PEGADO (proyecto Motor VDSEN) ==========
   async function loadPlanFromPastedAnalysis() {
@@ -10780,5 +11360,59 @@ El esfuerzo no es negociable.
     el.addEventListener("click", () => showSection(el.dataset.section));
   });
 </script>
+
+<!-- VDSEN AI PREVIEW MODAL (FASE D.1 — read-only) -->
+<div id="vdsenPreviewModal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.7);align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:100%;max-width:860px;padding:24px;position:relative">
+    <button onclick="document.getElementById('vdsenPreviewModal').style.display='none'" style="position:absolute;top:14px;right:16px;background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">✕</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <span style="font-size:22px">🔬</span>
+      <div>
+        <div style="font-size:16px;font-weight:700;color:var(--text)">VDSEN AI — Preview de Plan</div>
+        <div style="font-size:11px;color:var(--text-muted)">RequestID: <span id="vdsenPreview_requestId"></span> · Status: <span id="vdsenPreview_status"></span> · Modelo: <span id="vdsenPreview_model"></span></div>
+      </div>
+      <div style="margin-left:auto;padding:4px 10px;border-radius:20px;background:rgba(239,68,68,.15);color:#ef4444;font-size:11px;font-weight:700">⚠ PREVIEW — NO GUARDADO</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Training -->
+      <div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">🏋 Entrenamiento</div>
+        <div id="vdsenPreview_training"></div>
+      </div>
+      <!-- Nutrition -->
+      <div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">🥗 Nutrición</div>
+        <div id="vdsenPreview_nutrition"></div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Supplements -->
+      <div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">💊 Suplementación</div>
+        <div id="vdsenPreview_suppl"></div>
+      </div>
+      <!-- Flags -->
+      <div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">🚩 Flags</div>
+        <div id="vdsenPreview_flags"></div>
+      </div>
+    </div>
+
+    <!-- Decision trace -->
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">🧠 Decision Trace</div>
+      <div id="vdsenPreview_trace" style="max-height:160px;overflow-y:auto"></div>
+    </div>
+
+    <!-- Audit -->
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">📋 Audit</div>
+      <div id="vdsenPreview_audit"></div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
