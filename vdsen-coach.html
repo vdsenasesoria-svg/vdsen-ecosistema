@@ -1912,10 +1912,15 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       );
       if (!ok) { log('Cancelado.', '#888'); return; }
 
+      const base = fichaData.fichaV2raw?.base || fichaData.data?.base || {};
+      const resolvedName  = fichaData.nombre || fichaData.displayName || base.nombre || base.name || '';
+      const resolvedEmail = fichaData.email  || base.email || '';
+      log('📋 Nombre detectado: ' + (resolvedName || '(vacío)') + ' / Email: ' + (resolvedEmail || '(vacío)'));
+
       const clientPayload = {
         coachId:         _AYRTON_COACH_UID,
-        displayName:     fichaData.nombre || fichaData.displayName || '',
-        email:           fichaData.email  || '',
+        displayName:     resolvedName,
+        email:           resolvedEmail,
         activePlanId:    null,
         nutritionPlan:   null,
         nutritionRaw:    null,
