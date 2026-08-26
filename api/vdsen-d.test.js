@@ -523,6 +523,155 @@ test('T-D43: buildResult.request NO contiene rawRequest, validation, diagnostics
     'request.diagnostics debe ser undefined (no mandar wrapper)');
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
+// D.1.5 — COACH REVIEW GATE  T-D44..T-D57
+// ════════════════════════════════════════════════════════════════════════════════
+
+var generateMod = require('./vdsen-generate');
+var _internal   = generateMod._internal;
+var sanitizeWarnings      = _internal.sanitizeWarnings;
+var sanitizeMissingInputs = _internal.sanitizeMissingInputs;
+var prepareModelRequest   = _internal.prepareModelRequest;
+var buildSystemPrompt     = _internal.buildSystemPrompt;
+
+// ─── T-D44: sanitizeWarnings strips requestId warnings ───────────────────────
+test('T-D44: sanitizeWarnings elimina warnings que mencionan requestId', function() {
+  var parsed = {
+    status: 'NEEDS_COACH_REVIEW',
+    warnings: [
+      'Se detectó dolor en pezón izquierdo.',
+      'El requestId no estaba presente en la entrada; se generó uno vacío.',
+      'Hematocrito previo de 56.7%.'
+    ]
+  };
+  var result = sanitizeWarnings(parsed);
+  assert(result.warnings.length === 2, 'debe quedar 2 warnings, quedan: ' + result.warnings.length);
+  assert(!result.warnings.some(function(w){ return /requestId/.test(w); }),
+    'requestId warning debe haber sido eliminado');
+});
+
+// ─── T-D45: sanitizeWarnings también filtra clientId/coachId ─────────────────
+test('T-D45: sanitizeWarnings filtra clientId y coachId', function() {
+  var parsed = {
+    warnings: [
+      'clientId no estaba en la entrada.',
+      'coachId faltante en el payload.',
+      'Warning legítimo sobre el cliente.'
+    ]
+  };
+  var result = sanitizeWarnings(parsed);
+  assert(result.warnings.length === 1, 'debe quedar solo 1 warning legítimo');
+  assert(result.warnings[0] === 'Warning legítimo sobre el cliente.', 'warning legítimo preservado');
+});
+
+// ─── T-D46: sanitizeWarnings no toca parsed sin warnings ─────────────────────
+test('T-D46: sanitizeWarnings devuelve parsed intacto si no hay warnings', function() {
+  var parsed = { status: 'VALID' };
+  var result = sanitizeWarnings(parsed);
+  assert(result === parsed, 'debe retornar el mismo objeto si no hay warnings');
+});
+
+// ─── T-D47: sanitizeWarnings preserva warnings legítimos ─────────────────────
+test('T-D47: sanitizeWarnings preserva warnings de contenido clínico', function() {
+  var medWarning = 'Se reporta hematocrito de 56.7% — monitoreo requerido.';
+  var parsed = { warnings: [medWarning] };
+  var result = sanitizeWarnings(parsed);
+  assert(result.warnings.length === 1 && result.warnings[0] === medWarning,
+    'warning clínico no debe ser filtrado');
+});
+
+// ─── T-D48: sistema prompt NO instruye al modelo sobre requestId ──────────────
+test('T-D48: sistema prompt no dice "coincidir exactamente con el requestId de la entrada"', function() {
+  var prompt = buildSystemPrompt();
+  assert(!/coincidir exactamente con el requestId de la entrada/.test(prompt),
+    'la instrucción errónea fue eliminada del prompt');
+});
+
+// ─── T-D49: sistema prompt instruye al modelo a NO reportar infra fields ──────
+test('T-D49: sistema prompt indica que requestId es administrado por el servidor', function() {
+  var prompt = buildSystemPrompt();
+  assert(/administrados por el servidor/.test(prompt),
+    'prompt debe aclarar que requestId es admin del servidor');
+});
+
+// ─── T-D50: prepareModelRequest strip requestId del payload al modelo ─────────
+test('T-D50: prepareModelRequest elimina requestId del payload enviado al modelo', function() {
+  var req = { schema: 'vdsen-generation-request-v1', requestId: 'req-test', mode: 'new_plan',
+    clientProfile: { base: { perfil: 'natural' } } };
+  var result = prepareModelRequest(req);
+  assert(result.modelPayload.requestId === undefined, 'requestId no debe estar en modelPayload');
+});
+
+// ─── T-D51: perfil natural en adapter → clientProfile.base.perfil = 'natural' ─
+test('T-D51: buildGenerationRequest mapea perfil natural correctamente', function() {
+  var params = makeMinimalParams(); // fichaDoc.data.perfil = 'natural'
+  var result = buildGenerationRequest(params);
+  assert(result.request !== null, 'request no debe ser null: ' + JSON.stringify(result.validation));
+  var base = result.request.clientProfile.base;
+  assert(base.perfil === 'natural', 'perfil debe ser "natural", recibido: ' + base.perfil);
+});
+
+// ─── T-D52: perfil PED → farmacologia STRIP en modelPayload ──────────────────
+test('T-D52: prepareModelRequest elimina farmacologia del payload aunque perfil=PED', function() {
+  var req = { schema: 'vdsen-generation-request-v1', requestId: 'r', mode: 'new_plan',
+    clientProfile: { base: { perfil: 'PED' }, farmacologia: { experiencia_peds: '3 años' } } };
+  var result = prepareModelRequest(req);
+  assert(!result.modelPayload.clientProfile.farmacologia,
+    'farmacologia debe eliminarse del modelPayload');
+  assert(result.pharmacologyOmitted === true, 'pharmacologyOmitted debe ser true');
+});
+
+// ─── T-D53: perfil natural → farmacologia nunca se incluye ───────────────────
+test('T-D53: buildGenerationRequest natural no incluye farmacologia', function() {
+  var params = makeMinimalParams();
+  var result = buildGenerationRequest(params);
+  assert(!result.request.clientProfile.farmacologia,
+    'farmacologia no debe estar en request para perfil natural');
+});
+
+// ─── T-D54: activePlanId no se modifica en buildGenerationRequest ─────────────
+test('T-D54: buildGenerationRequest no escribe ni modifica activePlanId', function() {
+  var params = makeMinimalParams();
+  var result = buildGenerationRequest(params);
+  // activePlanId is not a field of the generation request at all
+  assert(result.request.activePlanId === undefined, 'activePlanId no debe existir en la solicitud');
+  assert(result.rawRequest.activePlanId === undefined, 'activePlanId no debe existir en rawRequest');
+});
+
+// ─── T-D55: reviewGate readyForApproval = false si existen pendientes ─────────
+test('T-D55: reviewGate readyForApproval=false si no todos los ítems revisados', function() {
+  // Simulate reviewGate logic (pure function behavior)
+  var items = [
+    { type: 'general' },
+    { type: 'medical' }
+  ];
+  var state = { 0: 'accept' }; // only 1 of 2 reviewed
+  var reviewed = 0; var total = 0; var hasAdjust = false;
+  items.forEach(function(item, idx){ if(item.type==='info')return; total++; if(state[idx])reviewed++; if(state[idx]==='adjust')hasAdjust=true; });
+  var readyForApproval = reviewed >= total && total > 0 && !hasAdjust;
+  assert(readyForApproval === false, 'readyForApproval debe ser false con ítems pendientes');
+});
+
+// ─── T-D56: reviewGate readyForApproval = false si hay adjust ────────────────
+test('T-D56: reviewGate readyForApproval=false si algún ítem marcado "adjust"', function() {
+  var items = [{ type: 'general' }, { type: 'general' }];
+  var state = { 0: 'accept', 1: 'adjust' };
+  var reviewed = 0; var total = 0; var hasAdjust = false;
+  items.forEach(function(item, idx){ if(item.type==='info')return; total++; if(state[idx])reviewed++; if(state[idx]==='adjust')hasAdjust=true; });
+  var readyForApproval = reviewed >= total && total > 0 && !hasAdjust;
+  assert(readyForApproval === false, 'readyForApproval debe ser false con adjust pendiente');
+});
+
+// ─── T-D57: reviewGate readyForApproval = true cuando todos revisados ─────────
+test('T-D57: reviewGate readyForApproval=true cuando todos aceptados o rechazados', function() {
+  var items = [{ type: 'general' }, { type: 'medical' }, { type: 'info' }];
+  var state = { 0: 'accept', 1: 'reject' }; // info (idx 2) no cuenta
+  var reviewed = 0; var total = 0; var hasAdjust = false;
+  items.forEach(function(item, idx){ if(item.type==='info')return; total++; if(state[idx])reviewed++; if(state[idx]==='adjust')hasAdjust=true; });
+  var readyForApproval = reviewed >= total && total > 0 && !hasAdjust;
+  assert(readyForApproval === true, 'readyForApproval debe ser true: reviewed=' + reviewed + ' total=' + total);
+});
+
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
 var passed = 0;

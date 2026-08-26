@@ -6060,6 +6060,178 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     UI_STATES.error('HTTP ' + status + ' — ' + preview);
   }
 
+  // ── D.1.5 Review Gate — local-only, no Firestore ──────────────────────────
+
+  var _vdsenReviewState = {}; // { requestId: { itemIdx: 'accept'|'adjust'|'reject' } }
+
+  function _buildReviewItems(resp) {
+    var modStatus = resp.moduleStatus || {};
+    var warnings  = resp.warnings  || [];
+    var items     = [];
+
+    // TRAINING
+    if (modStatus.training === 'NEEDS_COACH_REVIEW') {
+      var mobWarn = warnings.find(function(w){ return /movilidad|postura|patr[oó]n|fallo/i.test(w); }) || null;
+      if (mobWarn) {
+        items.push({ module: 'TRAINING', type: 'mobility', text: mobWarn,
+          note: 'Evaluación formal no disponible. Revisá si las restricciones actuales son suficientes para este plan.' });
+      }
+      warnings.filter(function(w){ return /entren|ejercic|patr[oó]n|volum|ses[ió]n/i.test(w) && w !== mobWarn; })
+        .forEach(function(w){ items.push({ module: 'TRAINING', type: 'general', text: w }); });
+    }
+
+    // SUPPLEMENTATION — medical flags first
+    if (modStatus.supplementation === 'NEEDS_COACH_REVIEW') {
+      var medPattern = /pez[oó]n|tejido|hematocrito|hemato|biomar|cl[ií]nic|m[eé]dic|diagn[oó]s/i;
+      var medWarns   = warnings.filter(function(w){ return medPattern.test(w); });
+      var suppOther  = warnings.filter(function(w){ return /supl|suplement/i.test(w) && !medWarns.includes(w); });
+      medWarns.forEach(function(w){ items.push({ module: 'SUPPLEMENTATION', type: 'medical', text: w }); });
+      suppOther.forEach(function(w){ items.push({ module: 'SUPPLEMENTATION', type: 'general', text: w }); });
+    }
+
+    // NUTRITION (si aplica)
+    if (modStatus.nutritionTargets === 'NEEDS_COACH_REVIEW' || modStatus.nutritionMenu === 'NEEDS_COACH_REVIEW') {
+      warnings.filter(function(w){ return /nutr|macr|calor|comida/i.test(w); })
+        .forEach(function(w){ items.push({ module: 'NUTRITION', type: 'general', text: w }); });
+    }
+
+    // OTROS — clasificados como info (farmacología omitida, etc.)
+    var classified = items.map(function(i){ return i.text; });
+    var infraRe    = /\b(requestId|clientId|coachId|requestedAt|attachments)\b/;
+    warnings.filter(function(w){ return !classified.includes(w) && !infraRe.test(w); })
+      .forEach(function(w){
+        var isFarma = /farmacolog|dosis|ciclo|protocol/i.test(w);
+        items.push({ module: 'OTROS', type: isFarma ? 'info' : 'general', text: w });
+      });
+
+    return items;
+  }
+
+  function _renderReviewItems(requestId, items) {
+    var state   = _vdsenReviewState[requestId] || {};
+    var byMod   = {};
+    items.forEach(function(item, idx){
+      if (!byMod[item.module]) byMod[item.module] = [];
+      byMod[item.module].push({ item: item, idx: idx });
+    });
+    var modOrder = ['TRAINING', 'SUPPLEMENTATION', 'NUTRITION', 'OTROS'];
+    var html = '';
+
+    modOrder.forEach(function(mod){
+      if (!byMod[mod]) return;
+      var modLabel = { TRAINING: '🏋 Entrenamiento', SUPPLEMENTATION: '💊 Suplementación', NUTRITION: '🥗 Nutrición', OTROS: 'ℹ️ Otros' }[mod] || mod;
+      html += '<div style="margin-bottom:14px">';
+      html += '<div style="font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px">' + modLabel + '</div>';
+
+      byMod[mod].forEach(function(entry){
+        var item  = entry.item;
+        var idx   = entry.idx;
+        var cur   = state[idx] || null;
+        var isMed = item.type === 'medical';
+        var isInfo = item.type === 'info';
+
+        html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:' +
+          (isMed ? 'rgba(239,68,68,.05)' : 'transparent') + '">';
+
+        // Texto del item
+        html += '<div style="font-size:12px;color:var(--text);margin-bottom:6px">' + _escH(item.text) + '</div>';
+
+        // Nota especial para movilidad
+        if (item.note) {
+          html += '<div style="font-size:11px;color:#8b5cf6;margin-bottom:6px;font-style:italic">' + _escH(item.note) + '</div>';
+        }
+
+        // Flag médica — disclaimer
+        if (isMed) {
+          html += '<div style="font-size:11px;color:#ef4444;margin-bottom:8px">⚠ Contexto de seguridad — requiere valoración profesional cuando aplique. La revisión del Coach solo reconoce que este flag fue visto.</div>';
+        }
+
+        // Info-only: sin botones de revisión
+        if (isInfo) {
+          html += '<div style="font-size:11px;color:var(--text-muted);font-style:italic">Informativo — sin acción requerida</div>';
+        } else {
+          // Botones de revisión
+          var actions = [
+            { key: 'accept', label: '✓ Revisado / acepto', color: '#22c55e', bg: 'rgba(34,197,94,.15)' },
+            { key: 'adjust', label: '✎ Requiere ajuste',  color: '#f59e0b', bg: 'rgba(245,158,11,.15)' },
+            { key: 'reject', label: '✕ Rechazo',          color: '#ef4444', bg: 'rgba(239,68,68,.15)'  }
+          ];
+          html += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+          actions.forEach(function(a){
+            var active = cur === a.key;
+            html += '<button onclick="window._vdsenReviewAction(\'' + _escH(requestId) + '\',' + idx + ',\'' + a.key + '\')" ' +
+              'style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid ' + a.color + ';cursor:pointer;' +
+              'background:' + (active ? a.bg : 'transparent') + ';color:' + a.color + ';font-weight:' + (active ? '700' : '400') + '">' +
+              a.label + '</button>';
+          });
+          html += '</div>';
+        }
+
+        html += '</div>';
+      });
+
+      html += '</div>';
+    });
+
+    return html;
+  }
+
+  function _escH(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _vdsenUpdateReviewPanel(requestId, items) {
+    var state    = _vdsenReviewState[requestId] || {};
+    var reviewed = 0;
+    var total    = 0;
+    var hasAdjust = false;
+    items.forEach(function(item, idx){
+      if (item.type === 'info') return; // info items don't count
+      total++;
+      if (state[idx]) reviewed++;
+      if (state[idx] === 'adjust') hasAdjust = true;
+    });
+
+    var counterEl = document.getElementById('vdsenPreview_reviewCounter');
+    if (counterEl) counterEl.textContent = reviewed + '/' + total + ' revisados';
+
+    // Re-render buttons to update active states
+    var itemsEl = document.getElementById('vdsenPreview_reviewItems');
+    if (itemsEl) itemsEl.innerHTML = _renderReviewItems(requestId, items);
+
+    // reviewGate
+    var gateEl = document.getElementById('vdsenPreview_reviewGate');
+    if (gateEl) {
+      var readyForApproval = reviewed >= total && total > 0 && !hasAdjust;
+      if (readyForApproval) {
+        gateEl.style.background = 'rgba(34,197,94,.12)';
+        gateEl.style.color = '#22c55e';
+        gateEl.textContent = '✅ Todas las revisiones completadas — listo para aprobación del Coach (D.2)';
+      } else if (hasAdjust) {
+        gateEl.style.background = 'rgba(245,158,11,.12)';
+        gateEl.style.color = '#f59e0b';
+        gateEl.textContent = '✎ Existen ítems marcados "Requiere ajuste" — se necesita corrección antes de aprobar';
+      } else {
+        gateEl.style.background = 'rgba(139,92,246,.08)';
+        gateEl.style.color = '#8b5cf6';
+        gateEl.textContent = '🔍 Pendiente: ' + (total - reviewed) + ' ítem(s) sin revisar';
+      }
+    }
+  }
+
+  window._vdsenReviewAction = function(requestId, idx, action) {
+    if (!_vdsenReviewState[requestId]) _vdsenReviewState[requestId] = {};
+    if (_vdsenReviewState[requestId][idx] === action) {
+      delete _vdsenReviewState[requestId][idx]; // toggle off
+    } else {
+      _vdsenReviewState[requestId][idx] = action;
+    }
+    var items = _vdsenReviewState[requestId].__items || [];
+    _vdsenUpdateReviewPanel(requestId, items);
+  };
+
+  // ── _vdsenAIShowPreview ────────────────────────────────────────────────────
+
   function _vdsenAIShowPreview(resp, req) {
     const modal = document.getElementById('vdsenPreviewModal');
     if (!modal) return;
@@ -6143,9 +6315,39 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     document.getElementById('vdsenPreview_trace').innerHTML = traceHtml;
     document.getElementById('vdsenPreview_flags').innerHTML = flagsHtml;
     document.getElementById('vdsenPreview_audit').innerHTML = auditHtml;
-    document.getElementById('vdsenPreview_requestId').textContent = req.requestId || '';
+    document.getElementById('vdsenPreview_requestId').textContent = resp.requestId || (req && req.requestId) || '';
     document.getElementById('vdsenPreview_status').textContent = resp.status || '';
     document.getElementById('vdsenPreview_model').textContent = resp.model || audit.model || '';
+
+    // Badge
+    const badge = document.getElementById('vdsenPreview_badge');
+    if (badge) {
+      if (resp.status === 'NEEDS_COACH_REVIEW') {
+        badge.textContent = '⚠ BORRADOR — NO APLICADO';
+        badge.style.background = 'rgba(139,92,246,.15)';
+        badge.style.color = '#8b5cf6';
+      } else {
+        badge.textContent = '⚠ BORRADOR — NO APLICADO';
+        badge.style.background = 'rgba(239,68,68,.15)';
+        badge.style.color = '#ef4444';
+      }
+    }
+
+    // Review panel
+    const reviewPanel = document.getElementById('vdsenPreview_reviewPanel');
+    if (reviewPanel) {
+      if (resp.status === 'NEEDS_COACH_REVIEW') {
+        const reviewItems = _buildReviewItems(resp);
+        const rid = resp.requestId || 'preview';
+        if (!_vdsenReviewState[rid]) _vdsenReviewState[rid] = {};
+        _vdsenReviewState[rid].__items = reviewItems; // store for action callback
+        document.getElementById('vdsenPreview_reviewItems').innerHTML = _renderReviewItems(rid, reviewItems);
+        _vdsenUpdateReviewPanel(rid, reviewItems);
+        reviewPanel.style.display = 'block';
+      } else {
+        reviewPanel.style.display = 'none';
+      }
+    }
 
     modal.style.display = 'flex';
   }
@@ -11809,7 +12011,7 @@ El esfuerzo no es negociable.
         <div style="font-size:16px;font-weight:700;color:var(--text)">VDSEN AI — Preview de Plan</div>
         <div style="font-size:11px;color:var(--text-muted)">RequestID: <span id="vdsenPreview_requestId"></span> · Status: <span id="vdsenPreview_status"></span> · Modelo: <span id="vdsenPreview_model"></span></div>
       </div>
-      <div style="margin-left:auto;padding:4px 10px;border-radius:20px;background:rgba(239,68,68,.15);color:#ef4444;font-size:11px;font-weight:700">⚠ PREVIEW — NO GUARDADO</div>
+      <div id="vdsenPreview_badge" style="margin-left:auto;padding:4px 10px;border-radius:20px;background:rgba(239,68,68,.15);color:#ef4444;font-size:11px;font-weight:700">⚠ BORRADOR — NO APLICADO</div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
@@ -11848,6 +12050,17 @@ El esfuerzo no es negociable.
     <div style="border:1px solid var(--border);border-radius:10px;padding:14px">
       <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">📋 Audit</div>
       <div id="vdsenPreview_audit"></div>
+    </div>
+
+    <!-- Review Panel — visible solo en NEEDS_COACH_REVIEW -->
+    <div id="vdsenPreview_reviewPanel" style="display:none;border:2px solid rgba(139,92,246,.4);border-radius:10px;padding:16px;margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:700;color:#8b5cf6">🔍 Revisión requerida por el Coach</div>
+        <div id="vdsenPreview_reviewCounter" style="font-size:12px;font-weight:700;color:var(--text-muted)">0/0 revisados</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Cada ítem requiere tu revisión antes de que el plan pueda aprobarse. Estas acciones son locales — no guardan en Firestore.</div>
+      <div id="vdsenPreview_reviewItems"></div>
+      <div id="vdsenPreview_reviewGate" style="margin-top:12px;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:600"></div>
     </div>
   </div>
 </div>

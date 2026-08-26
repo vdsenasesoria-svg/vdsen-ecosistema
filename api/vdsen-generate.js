@@ -108,8 +108,9 @@ function buildSystemPrompt() {
     '18. CRITICIDAD de campos por módulo: un módulo pasa a NEEDS_INPUT SOLO si le falta un campo marcado como REQUIRED para ese módulo. Los campos RECOMMENDED u OPTIONAL generan aviso pero NO bloquean el módulo. Ejemplo: para suplementación, "edad" es OPTIONAL — su ausencia NO pone el módulo en NEEDS_INPUT.',
     '19. moduleStatus READY significa que tienes suficiente información para generar ese módulo (todos los REQUIRED presentes). Si un módulo puede generarse razonablemente, debe ser READY aunque falten campos RECOMMENDED u OPTIONAL.',
     '',
-    'El campo requestId de tu respuesta debe coincidir exactamente con el requestId de la entrada.',
-    'Los campos schema, generatedAt y model serán controlados por el servidor y pueden ser sobreescritos.'
+    'Los campos requestId, schema, generatedAt y model son administrados por el servidor.',
+    'NO los reportes como faltantes ni generes warnings sobre su ausencia en la entrada.',
+    'NO los incluyas en missingInputs. El servidor los inyecta después de recibir tu respuesta.'
   ].join('\n');
 }
 
@@ -188,6 +189,20 @@ function sanitizeMissingInputs(parsed) {
       return entry && entry.field && _INFRA_STRIP.indexOf(entry.field) === -1;
     });
   return Object.assign({}, parsed, { missingInputs: filtered });
+}
+
+// ─── sanitizeWarnings ─────────────────────────────────────────────────────────
+// Defensive: filter infra-field warnings the model should never generate.
+// Complements the system prompt instruction — belt-and-suspenders.
+
+function sanitizeWarnings(parsed) {
+  if (!parsed || !Array.isArray(parsed.warnings) || parsed.warnings.length === 0) return parsed;
+  var infraPattern = /\b(requestId|clientId|coachId|requestedAt|attachments)\b/;
+  var filtered = parsed.warnings.filter(function(w) {
+    return typeof w === 'string' && !infraPattern.test(w);
+  });
+  if (filtered.length === parsed.warnings.length) return parsed;
+  return Object.assign({}, parsed, { warnings: filtered });
 }
 
 // ─── extractModelResponse ─────────────────────────────────────────────────────
@@ -368,7 +383,7 @@ function createHandlerWithClient(openaiClientFactory) {
       return res.status(502).json(buildErrorResponse(ERR.MODEL_SCHEMA_MISMATCH, requestId));
     }
 
-    var parsed = sanitizeMissingInputs(extraction.parsed);
+    var parsed = sanitizeWarnings(sanitizeMissingInputs(extraction.parsed));
 
     // ── 7. Detect requestId mismatch ────────────────────────────────────────
     if (parsed.requestId && parsed.requestId !== requestId) {
@@ -440,7 +455,8 @@ module.exports._internal = {
   removeNullFields:      removeNullFields,
   extractModelResponse:  extractModelResponse,
   buildErrorResponse:    buildErrorResponse,
-  sanitizeMissingInputs: sanitizeMissingInputs
+  sanitizeMissingInputs: sanitizeMissingInputs,
+  sanitizeWarnings:      sanitizeWarnings
 };
 
 module.exports._createHandlerWithClient = createHandlerWithClient;
