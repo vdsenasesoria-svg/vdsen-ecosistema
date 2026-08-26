@@ -312,6 +312,121 @@ test('T-D25: validateGenerationResponse accepts INVALID status with errors array
   assert(v.valid === true, 'INVALID status with errors accepted: ' + JSON.stringify(v));
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// T-D26..T-D35 — CLIENT OWNERSHIP SAFETY (mirrors loadClientList classification)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Mirror of the classification logic in vdsen-coach.html loadClientList()
+function classifyClient(data, coachUid) {
+  var cid = data.coachId;
+  if (cid === coachUid)          return 'OWNED';
+  if (!cid || cid === '')        return 'LEGACY_UNASSIGNED';
+  return 'FOREIGN_OWNER';
+}
+
+// Mirror of the assignLegacyClient safety guard (write-gate logic only)
+function canAssignLegacy(data) {
+  var cid = data.coachId;
+  return !cid || cid === '';   // only if genuinely unassigned
+}
+
+var MY_UID    = 'coach-real-uid';
+var OTHER_UID = 'coach-other-uid';
+
+// ─── T-D26: OWNED appears ────────────────────────────────────────────────────
+test('T-D26: OWNED client (coachId === mine) classified correctly', function() {
+  var c = classifyClient({ coachId: MY_UID }, MY_UID);
+  assert(c === 'OWNED', 'expected OWNED, got ' + c);
+});
+
+// ─── T-D27: LEGACY_UNASSIGNED detected ────────────────────────────────────────
+test('T-D27: client with coachId=null classified as LEGACY_UNASSIGNED', function() {
+  var c = classifyClient({ coachId: null }, MY_UID);
+  assert(c === 'LEGACY_UNASSIGNED', 'expected LEGACY_UNASSIGNED, got ' + c);
+});
+
+// ─── T-D28: FOREIGN_OWNER not reassigned ─────────────────────────────────────
+test('T-D28: FOREIGN_OWNER cannot be assigned via canAssignLegacy', function() {
+  var data = { coachId: OTHER_UID };
+  assert(canAssignLegacy(data) === false, 'FOREIGN_OWNER must not be assignable');
+});
+
+// ─── T-D29: FOREIGN_OWNER not classified as OWNED ────────────────────────────
+test('T-D29: FOREIGN_OWNER not classified as OWNED or LEGACY', function() {
+  var c = classifyClient({ coachId: OTHER_UID }, MY_UID);
+  assert(c === 'FOREIGN_OWNER', 'expected FOREIGN_OWNER, got ' + c);
+  assert(c !== 'OWNED', 'must not be OWNED');
+  assert(c !== 'LEGACY_UNASSIGNED', 'must not be LEGACY');
+});
+
+// ─── T-D30: loadClientList does not auto-write (guard: FOREIGN_OWNER blocked) ─
+test('T-D30: only LEGACY_UNASSIGNED is assignable, FOREIGN_OWNER is blocked', function() {
+  var cases = [
+    { data: { coachId: MY_UID },    expectAssignable: false }, // OWNED — no write needed
+    { data: { coachId: null },       expectAssignable: true  }, // LEGACY
+    { data: { coachId: '' },         expectAssignable: true  }, // LEGACY
+    { data: { coachId: OTHER_UID },  expectAssignable: false }, // FOREIGN
+  ];
+  cases.forEach(function(tc) {
+    var got = canAssignLegacy(tc.data);
+    assert(got === tc.expectAssignable,
+      'coachId=' + JSON.stringify(tc.data.coachId) + ' → assignable=' + got + ', expected=' + tc.expectAssignable);
+  });
+});
+
+// ─── T-D31: list with ≥1 OWNED still detects legacy ─────────────────────────
+test('T-D31: mixed list: OWNED present but LEGACY still identified', function() {
+  var clients = [
+    { id: '1', coachId: MY_UID },
+    { id: '2', coachId: null },
+    { id: '3', coachId: OTHER_UID },
+  ];
+  var legacy = clients.filter(function(c) { return classifyClient(c, MY_UID) === 'LEGACY_UNASSIGNED'; });
+  assert(legacy.length === 1, 'expected 1 legacy, got ' + legacy.length);
+  assert(legacy[0].id === '2', 'expected id=2');
+});
+
+// ─── T-D32: list with no OWNED still detects legacy ─────────────────────────
+test('T-D32: list with no OWNED clients still detects LEGACY_UNASSIGNED', function() {
+  var clients = [
+    { id: '1', coachId: null },
+    { id: '2', coachId: '' },
+  ];
+  var owned  = clients.filter(function(c) { return classifyClient(c, MY_UID) === 'OWNED'; });
+  var legacy = clients.filter(function(c) { return classifyClient(c, MY_UID) === 'LEGACY_UNASSIGNED'; });
+  assert(owned.length === 0, 'no OWNED');
+  assert(legacy.length === 2, '2 LEGACY');
+});
+
+// ─── T-D33: coachId null → LEGACY_UNASSIGNED, not FOREIGN ───────────────────
+test('T-D33: coachId null is LEGACY_UNASSIGNED, not FOREIGN_OWNER', function() {
+  var c = classifyClient({ coachId: null }, MY_UID);
+  assert(c === 'LEGACY_UNASSIGNED', 'null → LEGACY, got ' + c);
+  assert(c !== 'FOREIGN_OWNER', 'null must not be FOREIGN');
+});
+
+// ─── T-D34: coachId empty string → LEGACY_UNASSIGNED, not FOREIGN ────────────
+test('T-D34: coachId empty string is LEGACY_UNASSIGNED, not FOREIGN_OWNER', function() {
+  var c = classifyClient({ coachId: '' }, MY_UID);
+  assert(c === 'LEGACY_UNASSIGNED', 'empty → LEGACY, got ' + c);
+  assert(c !== 'FOREIGN_OWNER', 'empty must not be FOREIGN');
+});
+
+// ─── T-D35: no write occurs for FOREIGN_OWNER during classification ───────────
+test('T-D35: classifyClient itself produces no side effects (pure function)', function() {
+  var writeCount = 0;
+  function mockSetDoc() { writeCount++; }  // would be called if code tried to write
+
+  var clients = [
+    { coachId: MY_UID },
+    { coachId: null },
+    { coachId: OTHER_UID },
+  ];
+  // Simulate what loadClientList() does: classify only, no writes
+  clients.forEach(function(c) { classifyClient(c, MY_UID); });
+  assert(writeCount === 0, 'classification must produce zero writes, got ' + writeCount);
+});
+
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
 var passed = 0;

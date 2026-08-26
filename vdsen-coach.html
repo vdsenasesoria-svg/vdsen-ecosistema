@@ -1510,27 +1510,46 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     const container = document.getElementById("clientList");
     container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando clientes...</div>`;
     try {
-      // Siempre verificar huérfanos primero (coachId distinto o ausente) — no solo cuando la lista está vacía
+      // READ-ONLY listing — no ownership mutations here.
+      // Classify every client doc into one of three buckets:
+      //   OWNED            coachId === currentCoach.uid   → show normally
+      //   LEGACY_UNASSIGNED coachId absent/null/""         → show in legacy section, manual action required
+      //   FOREIGN_OWNER    coachId present but != mine     → skip silently, never reassign
+
       const allSnap = await getDocs(collection(db, "clients"));
-      let orphans = [];
+      const legacyClients = [];
       allSnap.forEach(d => {
         const data = d.data();
-        if (data.coachId !== currentCoach.uid) orphans.push({ id: d.id, ...data });
+        const cid = data.coachId;
+        const classification = cid === currentCoach.uid ? 'OWNED'
+          : (!cid || cid === '')                        ? 'LEGACY_UNASSIGNED'
+          :                                               'FOREIGN_OWNER';
+        if (classification === 'LEGACY_UNASSIGNED') legacyClients.push({ id: d.id, ...data });
+        // FOREIGN_OWNER: silently skipped — never auto-reassign
       });
-      if (orphans.length > 0) {
-        container.innerHTML = `<p class="text-yellow-400 text-sm mb-2">⚠️ Vinculando ${orphans.length} cliente(s) sin asignar…</p>`;
-        for (const c of orphans) {
-          await setDoc(doc(db, "clients", c.id), { coachId: currentCoach.uid }, { merge: true });
-        }
-        showToast(`${orphans.length} cliente(s) vinculado(s) a tu cuenta`);
-      }
 
       const q = query(collection(db, "clients"), where("coachId", "==", currentCoach.uid));
       const snap = await getDocs(q);
       container.innerHTML = "";
-      if (snap.empty) {
+
+      // Legacy section (LEGACY_UNASSIGNED only — no foreign clients)
+      if (legacyClients.length > 0) {
+        const legacyRows = legacyClients.map(c => {
+          const name = c.displayName || c.email || c.id;
+          return `<div class="card p-3 mb-2 flex justify-between items-center" style="border-color:rgba(245,158,11,.35)">
+            <span><strong>${name}</strong> <span class="text-xs text-[#888]">${c.email ? '('+c.email+')' : ''}</span> <span class="text-xs ml-2" style="color:#f59e0b">SIN ASIGNAR</span></span>
+            <button onclick="assignLegacyClient('${c.id}')" style="padding:5px 12px;border-radius:7px;border:1px solid #f59e0b;background:rgba(245,158,11,.12);color:#f59e0b;font-size:12px;font-weight:700;cursor:pointer">Asignar a mi cuenta</button>
+          </div>`;
+        }).join('');
+        container.innerHTML += `<div style="margin-bottom:14px">
+          <div class="text-xs font-bold mb-2" style="color:#f59e0b;text-transform:uppercase;letter-spacing:.05em">⚠️ Clientes legacy sin asignar (${legacyClients.length})</div>
+          ${legacyRows}
+        </div>`;
+      }
+
+      if (snap.empty && legacyClients.length === 0) {
         container.innerHTML = `<p class="text-[#888] text-sm">No hay clientes aún. Crea uno con el botón de arriba.</p>`;
-      } else {
+      } else if (!snap.empty) {
         _clientIdList = [];
         _clientNameMap = {};
         const _clientDocs = [];
@@ -1616,7 +1635,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             ${bulkWABtn}
           </div>`;
         }
-        container.innerHTML = `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
+        container.innerHTML += `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
           ${banner}
           <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'flex':'none';});})(this.value)">
           ${rows}`;
@@ -1644,6 +1663,31 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     }
     document.getElementById("newClientBtn").onclick = () => createClientModal();
   }
+
+  // Assign a LEGACY_UNASSIGNED client to the current coach (requires explicit confirmation)
+  async function assignLegacyClient(clientId) {
+    if (!currentCoach || !clientId) return;
+    const snap = await getDoc(doc(db, 'clients', clientId));
+    if (!snap.exists()) { showToast('Cliente no encontrado', true); return; }
+    const data = snap.data();
+    const cid = data.coachId;
+    // Safety: only assign if genuinely unassigned (null/empty). Never reassign from another coach.
+    if (cid && cid !== '') {
+      showToast('Este cliente ya pertenece a otro coach. Operación cancelada.', true);
+      return;
+    }
+    const name = data.displayName || data.email || clientId;
+    const ok = window.confirm(`¿Asignar a "${name}" a tu cuenta?\n\nEsto vinculará permanentemente este cliente contigo.`);
+    if (!ok) return;
+    try {
+      await setDoc(doc(db, 'clients', clientId), { coachId: currentCoach.uid }, { merge: true });
+      showToast(`${name} asignado a tu cuenta`);
+      loadClientList();
+    } catch (e) {
+      showToast('Error al asignar cliente: ' + e.message, true);
+    }
+  }
+  window.assignLegacyClient = assignLegacyClient;
 
   // Repair/populate phone_index for ALL clients that have a phone + real email
   // (clients created before phone login existed, or edited with 10-digit phone that wasn't normalized)
