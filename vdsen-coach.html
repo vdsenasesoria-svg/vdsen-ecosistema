@@ -5781,9 +5781,6 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       } catch (_) {}
 
       // 2. Build generation request via browser adapter
-      const coachDoc = await getDoc(doc(db, 'coaches', auth.currentUser.uid));
-      const coachData = coachDoc.exists() ? coachDoc.data() : {};
-
       const params = {
         mode: 'new_plan',
         outputMode: 'json',
@@ -5795,33 +5792,53 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         logsDoc:   logsDoc   || null,
       };
 
-      let buildResult, generationRequest;
+      let buildResult, request;
       try {
         buildResult = window.VDSEN_BUILD.buildGenerationRequest(params);
-        generationRequest = buildResult.request || buildResult.rawRequest;
+        request = buildResult.request; // NOT rawRequest, NOT the wrapper
       } catch (buildErr) {
         UI_STATES.error('buildGenerationRequest falló: ' + buildErr.message);
         return;
       }
 
-      // 3. Validate before sending
-      const validation = window.VDSEN_BUILD.validateGenerationRequest(generationRequest);
-      if (!validation.valid) {
-        UI_STATES.invalid(validation.errors ? validation.errors.join(', ') : 'request inválido');
-        console.warn('[VDSEN D.1] Validation failed:', validation, buildResult);
+      // 3a. Use buildResult.validation (adapter already ran it)
+      if (!buildResult.validation || !buildResult.validation.valid) {
+        const errs = buildResult.validation && buildResult.validation.errors
+          ? buildResult.validation.errors.join(', ')
+          : 'request inválido';
+        UI_STATES.invalid(errs);
+        console.warn('[VDSEN D.1] Validation failed:', buildResult.validation, buildResult);
+        return;
+      }
+
+      // 3b. Pre-fetch runtime assertions — stop before network if contract fields missing
+      if (!request
+          || request.schema !== 'vdsen-generation-request-v1'
+          || !request.mode
+          || !request.clientProfile
+          || typeof request.clientProfile !== 'object') {
+        const diag = !request                                          ? 'request es null'
+          : request.schema !== 'vdsen-generation-request-v1'          ? 'schema incorrecto: ' + request.schema
+          : !request.mode                                              ? 'mode faltante'
+          :                                                              'clientProfile faltante o no es objeto';
+        UI_STATES.invalid('Pre-validación fallida: ' + diag);
+        console.warn('[VDSEN D.1] Pre-fetch check failed:', {
+          schema: request && request.schema, mode: request && request.mode,
+          hasClientProfile: !!(request && request.clientProfile),
+        });
         return;
       }
 
       UI_STATES.generating();
-      console.info('[VDSEN D.1] Request built, sending to /api/vdsen-generate', generationRequest);
+      console.info('[VDSEN D.1] Sending to /api/vdsen-generate — schema:', request.schema, 'mode:', request.mode);
 
-      // 4. POST to /api/vdsen-generate (no API key header)
+      // 4. POST to /api/vdsen-generate — body is request only, NOT the wrapper
       let httpResp;
       try {
         httpResp = await fetch('/api/vdsen-generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(generationRequest),
+          body: JSON.stringify(request),
         });
       } catch (netErr) {
         UI_STATES.error('Error de red: ' + netErr.message);

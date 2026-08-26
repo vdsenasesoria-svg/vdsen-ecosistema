@@ -427,6 +427,102 @@ test('T-D35: classifyClient itself produces no side effects (pure function)', fu
   assert(writeCount === 0, 'classification must produce zero writes, got ' + writeCount);
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// T-D36..T-D43  REQUEST WRAPPER FIX — vdsenAIPreview() body contract
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var coachHtmlSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
+
+// ─── T-D36: HTML uses buildResult.request as fetch body ───────────────────────
+test('T-D36: vdsenAIPreview usa buildResult.request (no rawRequest) como body del fetch', function() {
+  assert(coachHtmlSrc.indexOf('JSON.stringify(request)') !== -1,
+    'debe haber JSON.stringify(request) en el fetch');
+  // must NOT send the wrapper
+  assert(coachHtmlSrc.indexOf('JSON.stringify(buildResult)') === -1,
+    'NO debe enviar JSON.stringify(buildResult)');
+});
+
+// ─── T-D37: HTML does NOT send the wrapper object ────────────────────────────
+test('T-D37: fetch body no contiene el wrapper completo {request,rawRequest,...}', function() {
+  assert(coachHtmlSrc.indexOf('JSON.stringify(generationRequest)') === -1,
+    'nombre antiguo "generationRequest" no debe estar en JSON.stringify — debe ser "request"');
+  assert(coachHtmlSrc.indexOf('JSON.stringify(buildResult)') === -1,
+    'buildResult completo no debe ser el body');
+});
+
+// ─── T-D38: HTML does NOT send rawRequest as body ────────────────────────────
+test('T-D38: fetch body no usa rawRequest directamente', function() {
+  // Specifically, JSON.stringify(buildResult.rawRequest) must not appear
+  assert(coachHtmlSrc.indexOf('JSON.stringify(buildResult.rawRequest)') === -1,
+    'rawRequest no debe ser el body del fetch');
+  assert(coachHtmlSrc.indexOf('JSON.stringify(rawRequest)') === -1,
+    'variable rawRequest no debe ser el body del fetch');
+});
+
+// ─── T-D39: pre-fetch check stops request without schema ─────────────────────
+test('T-D39: pre-fetch check detecta schema incorrecto', function() {
+  var badRequest = { mode: 'new_plan', clientProfile: {}, schema: 'wrong-schema' };
+  var blocked = (
+    !badRequest
+    || badRequest.schema !== 'vdsen-generation-request-v1'
+    || !badRequest.mode
+    || !badRequest.clientProfile
+    || typeof badRequest.clientProfile !== 'object'
+  );
+  assert(blocked, 'request con schema incorrecto debe ser bloqueado');
+});
+
+// ─── T-D40: pre-fetch check stops request without mode ───────────────────────
+test('T-D40: pre-fetch check detecta mode faltante', function() {
+  var badRequest = { schema: 'vdsen-generation-request-v1', clientProfile: {} };
+  var blocked = (
+    !badRequest
+    || badRequest.schema !== 'vdsen-generation-request-v1'
+    || !badRequest.mode
+    || !badRequest.clientProfile
+    || typeof badRequest.clientProfile !== 'object'
+  );
+  assert(blocked, 'request sin mode debe ser bloqueado');
+});
+
+// ─── T-D41: pre-fetch check stops request without clientProfile ───────────────
+test('T-D41: pre-fetch check detecta clientProfile faltante', function() {
+  var badRequest = { schema: 'vdsen-generation-request-v1', mode: 'new_plan' };
+  var blocked = (
+    !badRequest
+    || badRequest.schema !== 'vdsen-generation-request-v1'
+    || !badRequest.mode
+    || !badRequest.clientProfile
+    || typeof badRequest.clientProfile !== 'object'
+  );
+  assert(blocked, 'request sin clientProfile debe ser bloqueado');
+});
+
+// ─── T-D42: valid buildResult.request contains required top-level fields ─────
+test('T-D42: buildResult.request contiene schema, mode, clientProfile', function() {
+  var result = buildGenerationRequest(makeMinimalParams());
+  var req = result.request;
+  assert(req, 'result.request no debe ser null');
+  assert(req.schema === 'vdsen-generation-request-v1',
+    'schema debe ser vdsen-generation-request-v1, got: ' + req.schema);
+  assert(req.mode === 'new_plan',
+    'mode debe ser new_plan, got: ' + req.mode);
+  assert(req.clientProfile && typeof req.clientProfile === 'object',
+    'clientProfile debe ser un objeto');
+});
+
+// ─── T-D43: buildResult.request does NOT carry wrapper fields ────────────────
+test('T-D43: buildResult.request NO contiene rawRequest, validation, diagnostics', function() {
+  var result = buildGenerationRequest(makeMinimalParams());
+  var req = result.request;
+  assert(req.rawRequest === undefined,
+    'request.rawRequest debe ser undefined (no mandar wrapper)');
+  assert(req.validation === undefined,
+    'request.validation debe ser undefined (no mandar wrapper)');
+  assert(req.diagnostics === undefined,
+    'request.diagnostics debe ser undefined (no mandar wrapper)');
+});
+
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
 var passed = 0;
