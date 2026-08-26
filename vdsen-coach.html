@@ -339,6 +339,12 @@
       <p class="text-xs text-[#888] mb-3">Úsalas solo si hay problemas de acceso con celular.</p>
       <button id="repairPhoneBtn" onclick="repairPhoneIndexAll()" style="padding:8px 14px;border-radius:8px;border:1px solid #c8a54a;background:rgba(200,165,74,.15);color:#c8a54a;font-size:12px;font-weight:600;cursor:pointer">🔧 Reparar acceso celular</button>
     </div>
+    <div class="card p-4 mb-4">
+      <label class="block text-sm font-medium mb-2">🔍 Recuperar clientes no vinculados</label>
+      <p class="text-xs text-[#888] mb-3">Busca clientes cuyo <code>coachId</code> no coincide con tu cuenta (UID antiguo, cuenta de prueba, etc.) y te permite reclamarlos uno a uno con confirmación.</p>
+      <button onclick="scanAndRecoverClients()" style="padding:8px 14px;border-radius:8px;border:1px solid #818cf8;background:rgba(129,140,248,.15);color:#818cf8;font-size:12px;font-weight:600;cursor:pointer">🔍 Escanear clientes no vinculados</button>
+      <div id="recoverClientsResult" class="mt-3"></div>
+    </div>
   </div>
 </div>
 <div id="newClientModal" class="modal-overlay" style="display:none;">
@@ -1725,6 +1731,59 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     }
   }
   window.repairPhoneIndexAll = repairPhoneIndexAll;
+
+  // Scan ALL clients, show those not owned by current coach, allow explicit reclaim per client
+  async function scanAndRecoverClients() {
+    if (!currentCoach) return;
+    const resultBox = document.getElementById('recoverClientsResult');
+    if (resultBox) resultBox.innerHTML = '<span class="text-xs text-[#888]">Escaneando…</span>';
+    try {
+      const allSnap = await getDocs(collection(db, 'clients'));
+      const foreign = [];
+      allSnap.forEach(d => {
+        const data = d.data();
+        if (data.coachId !== currentCoach.uid) {
+          foreign.push({ id: d.id, displayName: data.displayName || '', email: data.email || '', coachId: data.coachId || null });
+        }
+      });
+      if (!resultBox) return;
+      if (foreign.length === 0) {
+        resultBox.innerHTML = '<span class="text-xs" style="color:#22c55e">✅ Todos los clientes ya están vinculados a tu cuenta.</span>';
+        return;
+      }
+      const rows = foreign.map(c => {
+        const name = c.displayName || c.email || c.id;
+        const cidLabel = c.coachId ? `coachId: <code style="font-size:10px;opacity:.7">${c.coachId.substring(0,8)}…</code>` : '<em>sin coachId</em>';
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px">
+          <span><strong>${name}</strong> <span class="text-[#888] ml-1">${c.email}</span> <span class="ml-2" style="color:#f59e0b">${cidLabel}</span></span>
+          <button onclick="recoverClient('${c.id}','${(c.displayName||c.email||c.id).replace(/'/g,"\\'")}','${c.coachId||''}')" style="padding:4px 12px;border-radius:6px;border:1px solid #818cf8;background:rgba(129,140,248,.18);color:#818cf8;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;margin-left:10px">Reclamar</button>
+        </div>`;
+      }).join('');
+      resultBox.innerHTML = `<div class="text-xs mb-2" style="color:#f59e0b">⚠️ ${foreign.length} cliente(s) con coachId diferente al tuyo:</div>${rows}`;
+    } catch (e) {
+      if (resultBox) resultBox.innerHTML = `<span class="text-xs text-red-400">Error: ${e.message}</span>`;
+    }
+  }
+  window.scanAndRecoverClients = scanAndRecoverClients;
+
+  async function recoverClient(clientId, name, currentCoachId) {
+    if (!currentCoach || !clientId) return;
+    const warning = currentCoachId
+      ? `Este cliente tiene coachId "${currentCoachId.substring(0,8)}…" (un UID diferente al tuyo).\n\n¿Confirmas que este cliente es tuyo y quieres reasignarlo a tu cuenta?`
+      : `Este cliente no tiene coach asignado.\n\n¿Confirmas que quieres asignarlo a tu cuenta?`;
+    const ok = window.confirm(`Reclamar a "${name}"\n\n${warning}`);
+    if (!ok) return;
+    try {
+      await setDoc(doc(db, 'clients', clientId), { coachId: currentCoach.uid }, { merge: true });
+      showToast(`${name} reasignado a tu cuenta`);
+      // Refresh the scan result and the client list
+      scanAndRecoverClients();
+      loadClientList();
+    } catch (e) {
+      showToast('Error al reasignar: ' + e.message, true);
+    }
+  }
+  window.recoverClient = recoverClient;
 
   async function showMergeModal(keepId) {
     const [keepSnap, allSnap] = await Promise.all([
