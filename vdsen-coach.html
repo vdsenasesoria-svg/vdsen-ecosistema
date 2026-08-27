@@ -6529,16 +6529,51 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (!resp.plan || typeof resp.plan !== 'object') throw new Error('Sin plan en la respuesta');
     if (resp.status === 'INVALID' || resp.status === 'ERROR') throw new Error('Plan en estado inválido: ' + resp.status);
 
+    // ── Defense in depth: review gate (not just UI — revalidated here before any write) ──
+    const requiresReview = _vdsenCurrentPreview.requiresReview;
+    if (requiresReview) {
+      const rs           = _vdsenReviewState[requestId] || {};
+      const consistency  = rs.__consistency || [];
+      if (consistency.length > 0)
+        throw new Error('CONSISTENCY_FAIL: La respuesta contiene ' + consistency.length +
+          ' inconsistencia(s) — resolver antes de guardar (gate revalidado internamente)');
+      const items = rs.__items || [];
+      var unresolvedGate = 0, rejectedGate = 0, adjustGate = 0;
+      items.forEach(function(item, idx) {
+        if (item.type === 'info') return;
+        var decision = rs[idx];
+        if (decision === 'reject') rejectedGate++;
+        else if (decision === 'adjust') adjustGate++;
+        else if (!decision) unresolvedGate++;
+      });
+      if (rejectedGate > 0)
+        throw new Error('REVIEW_REJECTED: ' + rejectedGate +
+          ' ítem(s) rechazado(s) — el plan no puede guardarse');
+      if (adjustGate > 0)
+        throw new Error('REVIEW_ADJUSTMENT: ' + adjustGate +
+          ' ítem(s) marcado(s) "Requiere ajuste" — resolver antes de guardar');
+      if (unresolvedGate > 0)
+        throw new Error('REVIEW_INCOMPLETE: ' + unresolvedGate +
+          ' ítem(s) sin revisar — completar la revisión antes de guardar');
+    }
+
     // Ownership check
     const clientSnap = await getDoc(doc(db, 'clients', clientId));
     if (!clientSnap.exists()) throw new Error('Cliente no encontrado en Firestore');
     const clientData = clientSnap.data();
     if (clientData.coachId !== coachId) throw new Error('FOREIGN_OWNER: este cliente no está asignado a tu cuenta');
 
-    // Idempotency: use requestId as document ID
+    // Idempotency: use requestId as document ID; detect conflicts if doc exists with different identity
     const planRef = doc(db, 'plans', requestId);
     const existing = await getDoc(planRef);
-    if (existing.exists()) return { idempotent: true, planId: requestId };
+    if (existing.exists()) {
+      const existingData = existing.data();
+      if (existingData.clientId !== clientId || existingData.coachId !== coachId) {
+        throw new Error('IDEMPOTENCY_CONFLICT: El requestId "' + requestId +
+          '" ya está guardado con diferente cliente/coach — operación bloqueada');
+      }
+      return { idempotent: true, planId: requestId };
+    }
 
     // Normalize plan content
     const rawPlan  = resp.plan;
@@ -6629,26 +6664,25 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const clientData = clientSnap.data();
       if (clientData.coachId !== coachId) throw new Error('FOREIGN_OWNER en cliente: no tenés permiso sobre este cliente.');
 
-      // Supersede previous active plan (atomic)
-      const prevPlanId = clientData.activePlanId;
-      if (prevPlanId && prevPlanId !== planId) {
-        t.update(doc(db, 'plans', prevPlanId), { status: 'superseded', supersededAt: serverTimestamp() });
-      }
+      // Idempotent: plan ya activo para este cliente → sin writes
+      if (clientData.activePlanId === planId) return;
 
-      // Activate plan
-      t.update(planRef, {
-        status:             'active',
-        activatedAt:        serverTimestamp(),
-        activatedByCoachId: coachId,
-      });
-
-      // Update client atomically: activePlanId + nutrition + supplement (backward compat)
+      // Activation: escribe SOLO en clients/{clientId}.
+      // plans/{planId} NO se modifica — permanece draft_approved (fuente de verdad inmutable).
+      // plans/{prevPlanId} NO se modifica — el historial se preserva por existencia de ambos docs,
+      //   no por mutación de estado del anterior. client.activePlanId es el indicador canónico.
+      //
+      // Mirrors de compatibilidad: clients/{uid}.nutritionPlan/nutritionRaw/supplementPlan/supplementsRaw
+      // son derivados de plans/{planId} para que vdsen-cliente.html los lea sin cambio de contrato.
+      // La fuente de verdad permanece en plans/{activePlanId}. Los mirrors NO son fuente autoritativa.
       t.update(clientRef, {
         activePlanId:   planId,
+        // Compatibility mirrors — vdsen-cliente.html lee de clients/{uid}, no del plan doc
         nutritionPlan:  planData.nutritionDisplay || {},
         nutritionRaw:   planData.nutritionRaw     || {},
         supplementPlan: planData.supplementDisplay || {},
         supplementsRaw: planData.supplementsRaw   || {},
+        // NO: farmacologia, pharmacoPlan, ni ningún campo PED
       });
     });
   }
@@ -6724,7 +6758,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       '¿Activar plan para este cliente?\n\n' +
       'Plan ID: ' + planId + '\n' +
       'Cliente: ' + clientId + '\n\n' +
-      'El plan activo actual (si existe) quedará archivado.\n' +
+      'El plan aprobado se convierte en el plan activo.\n' +
+      'El plan anterior (si existe) queda inactivo pero se conserva en el historial.\n' +
       'Esta acción escribe en Firestore y activa el plan para el cliente inmediatamente.'
     );
     if (!confirmed) return;

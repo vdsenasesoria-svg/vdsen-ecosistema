@@ -1011,7 +1011,9 @@ function buildDraftDocFromResp(resp, clientId, coachId, reviewStateForReq) {
 }
 
 // Precondition gate (mirrors _vdsenSaveDraftToFirestore prechecks, pure)
-function checkD2APreconditions(resp, clientId, coachId, clientData) {
+// reviewState: _vdsenReviewState[requestId] (with __items and __consistency)
+// requiresReview: true for NEEDS_COACH_REVIEW, false for VALID
+function checkD2APreconditions(resp, clientId, coachId, clientData, reviewState, requiresReview) {
   var errors = [];
   if (!coachId) errors.push('NO_COACH_SESSION');
   if (!clientId) errors.push('NO_CLIENT_ID');
@@ -1019,7 +1021,34 @@ function checkD2APreconditions(resp, clientId, coachId, clientData) {
   if (!resp.plan || typeof resp.plan !== 'object') errors.push('NO_PLAN');
   if (resp.status === 'INVALID' || resp.status === 'ERROR') errors.push('INVALID_STATUS:' + resp.status);
   if (clientData && clientData.coachId !== coachId) errors.push('FOREIGN_OWNER');
+
+  // Defense in depth: review gate (enforced in function, not just UI)
+  if (requiresReview) {
+    var rs = reviewState || {};
+    var consistency = rs.__consistency || [];
+    if (consistency.length > 0) errors.push('CONSISTENCY_FAIL');
+    var items = rs.__items || [];
+    var unresolved = 0, rejected = 0, adjustment = 0;
+    items.forEach(function(item, idx) {
+      if (item.type === 'info') return;
+      var decision = rs[idx];
+      if (decision === 'reject') rejected++;
+      else if (decision === 'adjust') adjustment++;
+      else if (!decision) unresolved++;
+    });
+    if (rejected > 0) errors.push('REVIEW_REJECTED');
+    if (adjustment > 0) errors.push('REVIEW_ADJUSTMENT');
+    if (unresolved > 0) errors.push('REVIEW_INCOMPLETE');
+  }
+
   return errors;
+}
+
+// Idempotency conflict check (mirrors pre-write check in _vdsenSaveDraftToFirestore)
+function checkIdempotencyConflict(existingDoc, clientId, coachId) {
+  if (!existingDoc) return null; // doc doesn't exist — no conflict
+  if (existingDoc.clientId !== clientId || existingDoc.coachId !== coachId) return 'IDEMPOTENCY_CONFLICT';
+  return null; // same identity — idempotent success
 }
 
 // ─── T-D77: buildDraftDoc shape — status draft_approved ──────────────────────
@@ -1247,19 +1276,21 @@ function checkD2BPreconditions(planData, clientData, coachId, planId, clientId) 
 }
 
 function simulateActivation(planData, clientData, coachId, planId, clientId) {
-  // Returns the updates that would be applied if successful
-  var updates = { plan: null, client: null, prevPlan: null };
-  updates.plan = {
-    status:             'active',
-    activatedByCoachId: coachId,
-    // activatedAt: serverTimestamp() — omitted in pure logic test
-  };
-  var prevPlanId = clientData.activePlanId;
-  if (prevPlanId && prevPlanId !== planId) {
-    updates.prevPlan = { status: 'superseded' };
+  // Returns the updates that would be applied if successful.
+  // plans/{planId} NOT written (immutable post-approval — draft_approved stays).
+  // plans/{prevPlanId} NOT written (history preserved by existence, not by status mutation).
+  var updates = { plan: null, client: null, prevPlan: null, idempotent: false };
+
+  // Idempotent: plan already active for this client — no writes
+  if (clientData.activePlanId === planId) {
+    updates.idempotent = true;
+    return updates;
   }
+
+  // Only write: clients/{clientId}
   updates.client = {
     activePlanId:   planId,
+    // Compatibility mirrors — vdsen-cliente.html reads from clients/{uid}, not plan doc
     nutritionPlan:  planData.nutritionDisplay  || {},
     nutritionRaw:   planData.nutritionRaw      || {},
     supplementPlan: planData.supplementDisplay || {},
@@ -1301,13 +1332,12 @@ test('T-D102: D.2-B: nutritionPlan y nutritionRaw copiados al client doc', funct
   assert(updates.client.nutritionRaw  === nutrRaw,  'nutritionRaw debe ser nutritionRaw del plan');
 });
 
-// ─── T-D103: D.2-B plan anterior queda superseded ────────────────────────────
-test('T-D103: D.2-B: plan activo anterior se marca superseded', function() {
+// ─── T-D103: D.2-B plan anterior NO se muta (historia preservada por existencia) ─
+test('T-D103: D.2-B: plan activo anterior NO se muta — historial preservado por existencia', function() {
   var planData   = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved', nutritionDisplay: {}, nutritionRaw: {}, supplementDisplay: {}, supplementsRaw: {} };
   var clientData = { coachId: 'c1', activePlanId: 'plan-old' };
   var updates = simulateActivation(planData, clientData, 'c1', 'plan-new', 'cl1');
-  assert(updates.prevPlan !== null, 'debe haber update al plan anterior');
-  assert(updates.prevPlan.status === 'superseded', 'plan anterior debe marcarse superseded');
+  assert(updates.prevPlan === null, 'plan anterior NO debe modificarse — historia preservada por existencia de ambos docs');
 });
 
 // ─── T-D104: D.2-B no supersede si no hay plan activo previo ─────────────────
@@ -1334,8 +1364,8 @@ test('T-D106: D.2-B: clientId del plan ≠ clientId solicitado → CLIENT_MISMAT
   assert(errs.includes('CLIENT_MISMATCH'), 'CLIENT_MISMATCH debe detectarse');
 });
 
-// ─── T-D107: D.2-B no muta contenido del plan (days/nutritionRaw) ────────────
-test('T-D107: D.2-B: activación no muta days, weeks, nutritionRaw del plan', function() {
+// ─── T-D107: D.2-B plan NO se escribe en absoluto (content + lifecycle) ───────
+test('T-D107: D.2-B: activación no muta days, weeks, nutritionRaw del plan — plans/{planId}=null', function() {
   var originalDays = [{ dayIndex: 1, label: 'Push', exercises: [] }];
   var originalNutr = { calorias: 2700, proteina: 210, comidas: [] };
   var planData = {
@@ -1345,26 +1375,27 @@ test('T-D107: D.2-B: activación no muta days, weeks, nutritionRaw del plan', fu
     supplementDisplay: { texto: '' }, supplementsRaw: {},
   };
   var updates = simulateActivation(planData, { coachId: 'c1', activePlanId: null }, 'c1', 'plan-1', 'cl1');
-  // Plan update only changes status/activatedAt/activatedByCoachId — not content
-  assert(!('days'        in updates.plan), 'days no debe estar en el update del plan');
-  assert(!('weeks'       in updates.plan), 'weeks no debe estar en el update del plan');
-  assert(!('nutritionRaw' in updates.plan), 'nutritionRaw no debe estar en el update del plan');
+  // plans/{planId} not written at all (immutable post-approval)
+  assert(updates.plan === null, 'plans/{planId} NO debe escribirse — ni content ni lifecycle fields');
 });
 
-// ─── T-D108: D.2-B activatedByCoachId = coachId ──────────────────────────────
-test('T-D108: D.2-B: activatedByCoachId = uid del coach que activa', function() {
+// ─── T-D108: D.2-B plan doc NO se escribe en activación (plan inmutable) ──────
+test('T-D108: D.2-B: plans/{planId} NO se escribe en activación — plan permanece draft_approved', function() {
   var planData   = { coachId: 'coach-X', clientId: 'cl1', status: 'draft_approved', nutritionDisplay: {}, nutritionRaw: {}, supplementDisplay: {}, supplementsRaw: {} };
   var clientData = { coachId: 'coach-X', activePlanId: null };
   var updates    = simulateActivation(planData, clientData, 'coach-X', 'plan-1', 'cl1');
-  assert(updates.plan.activatedByCoachId === 'coach-X', 'activatedByCoachId debe ser el uid del coach');
+  assert(updates.plan === null, 'plans/{planId} NO debe escribirse — el doc permanece draft_approved inmutable');
 });
 
-// ─── T-D109: D.2-B mismo planId activo = sin doble supersede ─────────────────
-test('T-D109: D.2-B: si activePlanId ya es el mismo planId, no se supersede a sí mismo', function() {
+// ─── T-D109: D.2-B mismo planId activo = activación idempotente, 0 writes ────
+test('T-D109: D.2-B: si activePlanId ya es el mismo planId → idempotent, sin writes', function() {
   var planData   = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved', nutritionDisplay: {}, nutritionRaw: {}, supplementDisplay: {}, supplementsRaw: {} };
   var clientData = { coachId: 'c1', activePlanId: 'plan-same' };
   var updates    = simulateActivation(planData, clientData, 'c1', 'plan-same', 'cl1');
-  assert(updates.prevPlan === null, 'no debe superseder el mismo plan');
+  assert(updates.idempotent === true, 'debe retornar idempotent=true cuando plan ya está activo');
+  assert(updates.plan   === null, 'sin write a plan doc');
+  assert(updates.client === null, 'sin write a client doc si ya es idempotente');
+  assert(updates.prevPlan === null, 'sin write a plan anterior');
 });
 
 // ─── T-D110: D.2 Firestore zero-writes (structural) ──────────────────────────
@@ -1376,6 +1407,358 @@ test('T-D110: D.2 helpers son pure functions (sin Firebase en scope de pruebas)'
   assert(typeof doc === 'object', 'buildDraftDocFromResp debe devolver un objeto');
   var errs = checkD2APreconditions(resp, 'c1', 'c2', { coachId: 'c2' });
   assert(Array.isArray(errs), 'checkD2APreconditions debe devolver array');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FASE D.2 SAFETY PATCH — Tests T-D111..T-D150
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── SECTION: D.2-A Defense in Depth (review gate enforced in function) ────────
+
+// ─── T-D111: consistency fail bloquea save (NEEDS_COACH_REVIEW) ───────────────
+test('T-D111: D.2-A: consistency fail bloquea save en NEEDS_COACH_REVIEW', function() {
+  var resp = makeValidResponse({ requestId: 'req-d111', status: 'NEEDS_COACH_REVIEW' });
+  var reviewState = {
+    __items: [{ type: 'general' }],
+    __consistency: [{ field: 'weeks', issue: 'mismatch' }],
+    0: 'accept',
+  };
+  var errs = checkD2APreconditions(resp, 'c1', 'coach-1', { coachId: 'coach-1' }, reviewState, true);
+  assert(errs.includes('CONSISTENCY_FAIL'), 'CONSISTENCY_FAIL debe bloquear cuando hay inconsistencias');
+});
+
+// ─── T-D112: ítem rechazado bloquea save ──────────────────────────────────────
+test('T-D112: D.2-A: ítem rechazado → REVIEW_REJECTED bloquea save', function() {
+  var resp = makeValidResponse({ requestId: 'req-d112', status: 'NEEDS_COACH_REVIEW' });
+  var reviewState = {
+    __items: [{ type: 'general' }, { type: 'medical' }],
+    __consistency: [],
+    0: 'accept',
+    1: 'reject',
+  };
+  var errs = checkD2APreconditions(resp, 'c1', 'coach-1', { coachId: 'coach-1' }, reviewState, true);
+  assert(errs.includes('REVIEW_REJECTED'), 'REVIEW_REJECTED debe bloquear cuando hay ítems rechazados');
+});
+
+// ─── T-D113: ítem requires_adjustment bloquea save ────────────────────────────
+test('T-D113: D.2-A: ítem "adjust" → REVIEW_ADJUSTMENT bloquea save', function() {
+  var resp = makeValidResponse({ requestId: 'req-d113', status: 'NEEDS_COACH_REVIEW' });
+  var reviewState = {
+    __items: [{ type: 'general' }, { type: 'medical' }],
+    __consistency: [],
+    0: 'accept',
+    1: 'adjust',
+  };
+  var errs = checkD2APreconditions(resp, 'c1', 'coach-1', { coachId: 'coach-1' }, reviewState, true);
+  assert(errs.includes('REVIEW_ADJUSTMENT'), 'REVIEW_ADJUSTMENT debe bloquear cuando hay ítems a ajustar');
+});
+
+// ─── T-D114: ítem sin revisar bloquea save ────────────────────────────────────
+test('T-D114: D.2-A: ítem sin decisión → REVIEW_INCOMPLETE bloquea save', function() {
+  var resp = makeValidResponse({ requestId: 'req-d114', status: 'NEEDS_COACH_REVIEW' });
+  var reviewState = {
+    __items: [{ type: 'general' }, { type: 'medical' }],
+    __consistency: [],
+    0: 'accept',
+    // 1 sin decisión
+  };
+  var errs = checkD2APreconditions(resp, 'c1', 'coach-1', { coachId: 'coach-1' }, reviewState, true);
+  assert(errs.includes('REVIEW_INCOMPLETE'), 'REVIEW_INCOMPLETE debe bloquear cuando hay ítems sin revisar');
+});
+
+// ─── T-D115: VALID plan — no requiere review gate ─────────────────────────────
+test('T-D115: D.2-A: VALID plan (requiresReview=false) → sin check de review gate', function() {
+  var resp = makeValidResponse({ requestId: 'req-d115' }); // status: VALID
+  // Even with empty reviewState, should not produce review errors
+  var errs = checkD2APreconditions(resp, 'c1', 'coach-1', { coachId: 'coach-1' }, {}, false);
+  assert(!errs.includes('REVIEW_INCOMPLETE'), 'VALID no debe requerir gate de revisión');
+  assert(!errs.includes('REVIEW_REJECTED'), 'VALID no tiene ítems rechazados');
+  assert(errs.length === 0, 'VALID sin revisión debe pasar: ' + JSON.stringify(errs));
+});
+
+// ─── T-D116: NEEDS_COACH_REVIEW todos aceptados → sin errores de review ───────
+test('T-D116: D.2-A: NEEDS_COACH_REVIEW todos aceptados + consistente → sin errores', function() {
+  var resp = makeValidResponse({ requestId: 'req-d116', status: 'NEEDS_COACH_REVIEW' });
+  var reviewState = {
+    __items: [{ type: 'general' }, { type: 'medical' }, { type: 'info' }],
+    __consistency: [],
+    0: 'accept',
+    1: 'accept',
+    // idx 2 es 'info' → no cuenta
+  };
+  var errs = checkD2APreconditions(resp, 'c1', 'coach-1', { coachId: 'coach-1' }, reviewState, true);
+  assert(errs.length === 0, 'todos aceptados + consistente debe pasar: ' + JSON.stringify(errs));
+});
+
+// ─── T-D117: idempotency conflict — mismo requestId, diferente clientId ────────
+test('T-D117: D.2-A: idempotency conflict — mismo requestId, diferente clientId → BLOCK', function() {
+  var existingDoc = { clientId: 'client-A', coachId: 'coach-1' };
+  var conflict = checkIdempotencyConflict(existingDoc, 'client-B', 'coach-1');
+  assert(conflict === 'IDEMPOTENCY_CONFLICT', 'clientId diferente debe dar IDEMPOTENCY_CONFLICT');
+});
+
+// ─── T-D118: idempotency conflict — mismo requestId, diferente coachId ─────────
+test('T-D118: D.2-A: idempotency conflict — mismo requestId, diferente coachId → BLOCK', function() {
+  var existingDoc = { clientId: 'client-A', coachId: 'coach-1' };
+  var conflict = checkIdempotencyConflict(existingDoc, 'client-A', 'coach-2');
+  assert(conflict === 'IDEMPOTENCY_CONFLICT', 'coachId diferente debe dar IDEMPOTENCY_CONFLICT');
+});
+
+// ─── T-D119: idempotency success — mismo requestId, misma identidad ────────────
+test('T-D119: D.2-A: idempotency success — mismo requestId, mismo clientId y coachId → OK', function() {
+  var existingDoc = { clientId: 'client-A', coachId: 'coach-1' };
+  var conflict = checkIdempotencyConflict(existingDoc, 'client-A', 'coach-1');
+  assert(conflict === null, 'misma identidad debe retornar null (success idempotente)');
+});
+
+// ─── T-D120: sin doc existente → no conflict ──────────────────────────────────
+test('T-D120: D.2-A: sin doc existente → no conflict (create normal)', function() {
+  var conflict = checkIdempotencyConflict(null, 'client-A', 'coach-1');
+  assert(conflict === null, 'doc no existente debe retornar null (create path)');
+});
+
+// ─── T-D121: ítems info no cuentan en review gate ─────────────────────────────
+test('T-D121: D.2-A: ítems type=info no cuentan hacia total de revisión', function() {
+  var resp = makeValidResponse({ requestId: 'req-d121', status: 'NEEDS_COACH_REVIEW' });
+  var reviewState = {
+    __items: [{ type: 'info' }, { type: 'info' }], // solo info
+    __consistency: [],
+    // ninguna decisión — pero info no cuenta
+  };
+  var errs = checkD2APreconditions(resp, 'c1', 'coach-1', { coachId: 'coach-1' }, reviewState, true);
+  assert(!errs.includes('REVIEW_INCOMPLETE'), 'info items no deben contar como incompletos');
+});
+
+// ─── SECTION: D.2-B Activation Writes ─────────────────────────────────────────
+
+// ─── T-D122: activación NO escribe en plan anterior (prevPlan) ────────────────
+test('T-D122: D.2-B: activación NO escribe en plans/{prevPlanId}', function() {
+  var planData   = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved',
+    nutritionDisplay: {}, nutritionRaw: {}, supplementDisplay: {}, supplementsRaw: {} };
+  var clientData = { coachId: 'c1', activePlanId: 'plan-old-123' };
+  var updates = simulateActivation(planData, clientData, 'c1', 'plan-new-456', 'cl1');
+  assert(updates.prevPlan === null, 'plans/{prevPlanId} NO debe escribirse en activación');
+});
+
+// ─── T-D123: plan doc NO se escribe (permanece draft_approved) ────────────────
+test('T-D123: D.2-B: plans/{planId} NO se escribe — permanece draft_approved inmutable', function() {
+  var planData   = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved',
+    nutritionDisplay: {}, nutritionRaw: {}, supplementDisplay: {}, supplementsRaw: {} };
+  var clientData = { coachId: 'c1', activePlanId: null };
+  var updates = simulateActivation(planData, clientData, 'c1', 'plan-1', 'cl1');
+  assert(updates.plan === null, 'plans/{planId} NO debe modificarse en activación');
+});
+
+// ─── T-D124: content fields del plan no aparecen en ningún write de activación ─
+test('T-D124: D.2-B: days/weeks/nutritionRaw ausentes en todos los writes de activación', function() {
+  var planData   = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved',
+    days: [{ dayIndex: 1 }], weeks: 6, daysPerWeek: 4,
+    nutritionDisplay: { calorias: 2700 }, nutritionRaw: { comidas: [] },
+    supplementDisplay: { texto: '' }, supplementsRaw: {} };
+  var clientData = { coachId: 'c1', activePlanId: null };
+  var updates = simulateActivation(planData, clientData, 'c1', 'plan-1', 'cl1');
+  assert(updates.plan === null, 'sin write a plan doc');
+  if (updates.client) {
+    assert(!('days'  in updates.client),  'days no debe estar en client write');
+    assert(!('weeks' in updates.client),  'weeks no debe estar en client write');
+  }
+});
+
+// ─── T-D125: mirrors de compatibilidad contienen nutrición correcta ────────────
+test('T-D125: D.2-B: mirrors actualizan nutritionPlan y supplementPlan en client doc', function() {
+  var nutrDisp = { calorias: 2700, proteina: 210, carbos: 300, grasas: 75, texto: 'test' };
+  var supplDisp = { texto: 'Tier 1: Creatina — 5g' };
+  var planData = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved',
+    nutritionDisplay: nutrDisp, nutritionRaw: { calorias: 2700 },
+    supplementDisplay: supplDisp, supplementsRaw: { tiers: [] } };
+  var updates = simulateActivation(planData, { coachId: 'c1', activePlanId: null }, 'c1', 'plan-1', 'cl1');
+  assert(updates.client !== null, 'client debe ser escrito');
+  assert(updates.client.nutritionPlan === nutrDisp, 'nutritionPlan debe ser nutritionDisplay del plan');
+  assert(updates.client.supplementPlan === supplDisp, 'supplementPlan debe ser supplementDisplay del plan');
+});
+
+// ─── T-D126: mirrors NO contienen farmacología ────────────────────────────────
+test('T-D126: D.2-B: mirrors de client doc NO contienen farmacología', function() {
+  var planData = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved',
+    nutritionDisplay: {}, nutritionRaw: {}, supplementDisplay: {}, supplementsRaw: {},
+    farmacologia: { protocolo: 'ciclo' } }; // presente en planData pero NO debe mirrar
+  var updates = simulateActivation(planData, { coachId: 'c1', activePlanId: null }, 'c1', 'plan-1', 'cl1');
+  if (updates.client) {
+    assert(!('farmacologia' in updates.client), 'farmacología NO debe estar en client write');
+    assert(!('pharmacoPlan' in updates.client), 'pharmacoPlan NO debe estar en client write');
+  }
+});
+
+// ─── T-D127: activación idempotente — plan ya activo = 0 writes ───────────────
+test('T-D127: D.2-B: plan ya activo para cliente → idempotent, 0 writes', function() {
+  var planData   = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved',
+    nutritionDisplay: {}, nutritionRaw: {}, supplementDisplay: {}, supplementsRaw: {} };
+  var clientData = { coachId: 'c1', activePlanId: 'plan-already-active' };
+  var updates = simulateActivation(planData, clientData, 'c1', 'plan-already-active', 'cl1');
+  assert(updates.idempotent === true, 'debe ser idempotente');
+  assert(updates.plan   === null, '0 writes a plan doc');
+  assert(updates.client === null, '0 writes a client doc');
+  assert(updates.prevPlan === null, '0 writes a prevPlan');
+});
+
+// ─── T-D128: activación registra activePlanId en client doc ───────────────────
+test('T-D128: D.2-B: activePlanId correcto registrado en client update', function() {
+  var planData   = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved',
+    nutritionDisplay: {}, nutritionRaw: {}, supplementDisplay: {}, supplementsRaw: {} };
+  var clientData = { coachId: 'c1', activePlanId: null };
+  var updates = simulateActivation(planData, clientData, 'c1', 'plan-xyz', 'cl1');
+  assert(updates.client !== null, 'client write debe existir');
+  assert(updates.client.activePlanId === 'plan-xyz', 'activePlanId debe ser plan-xyz');
+});
+
+// ─── SECTION: Firestore Rules (simulated) ──────────────────────────────────────
+
+// Simulate plan update rule: draft_approved and active plans are immutable
+function simulatePlanUpdateRule(planStatus, coachId, authUid) {
+  // Mirrors: allow update if coachId matches AND status not draft_approved/active
+  if (coachId !== authUid) return 'DENY_OWNERSHIP';
+  if (planStatus === 'draft_approved') return 'DENY_IMMUTABLE';
+  if (planStatus === 'active') return 'DENY_IMMUTABLE';
+  return 'ALLOW';
+}
+
+// Simulate plan delete rule
+function simulatePlanDeleteRule(planStatus, coachId, authUid) {
+  if (coachId !== authUid) return 'DENY_OWNERSHIP';
+  if (planStatus === 'draft_approved') return 'DENY_IMMUTABLE';
+  if (planStatus === 'active') return 'DENY_IMMUTABLE';
+  return 'ALLOW';
+}
+
+// Simulate client update rule for coaches (coachId immutability)
+function simulateClientUpdateRule(existingCoachId, newCoachId, authUid) {
+  // Coach: resource.data.coachId == auth.uid AND request.resource.data.coachId == resource.data.coachId
+  if (existingCoachId !== authUid) return 'DENY_OWNERSHIP';
+  if (newCoachId !== existingCoachId) return 'DENY_COACHID_IMMUTABLE';
+  return 'ALLOW';
+}
+
+// ─── T-D129: rule: plan draft_approved → update DENY ──────────────────────────
+test('T-D129: rules: plan draft_approved — coach no puede hacer update de contenido', function() {
+  var result = simulatePlanUpdateRule('draft_approved', 'coach-1', 'coach-1');
+  assert(result === 'DENY_IMMUTABLE', 'plan draft_approved debe ser inmutable: ' + result);
+});
+
+// ─── T-D130: rule: plan active → update DENY ──────────────────────────────────
+test('T-D130: rules: plan active — coach no puede hacer update de contenido', function() {
+  var result = simulatePlanUpdateRule('active', 'coach-1', 'coach-1');
+  assert(result === 'DENY_IMMUTABLE', 'plan active debe ser inmutable: ' + result);
+});
+
+// ─── T-D131: rule: plan sin status → update ALLOW (legacy) ───────────────────
+test('T-D131: rules: plan sin status (legacy/manual) → update ALLOW para dueño', function() {
+  var result = simulatePlanUpdateRule(null, 'coach-1', 'coach-1');
+  assert(result === 'ALLOW', 'plan legacy sin status debe poder actualizarse: ' + result);
+});
+
+// ─── T-D132: rule: plan draft_approved → delete DENY ─────────────────────────
+test('T-D132: rules: plan draft_approved — coach no puede eliminar', function() {
+  var result = simulatePlanDeleteRule('draft_approved', 'coach-1', 'coach-1');
+  assert(result === 'DENY_IMMUTABLE', 'plan draft_approved no puede eliminarse: ' + result);
+});
+
+// ─── T-D133: rule: plan active → delete DENY ──────────────────────────────────
+test('T-D133: rules: plan active — coach no puede eliminar', function() {
+  var result = simulatePlanDeleteRule('active', 'coach-1', 'coach-1');
+  assert(result === 'DENY_IMMUTABLE', 'plan active no puede eliminarse: ' + result);
+});
+
+// ─── T-D134: rule: plan sin status → delete ALLOW (legacy, dueño) ────────────
+test('T-D134: rules: plan legacy sin status → delete ALLOW para dueño', function() {
+  var result = simulatePlanDeleteRule(null, 'coach-1', 'coach-1');
+  assert(result === 'ALLOW', 'plan legacy puede eliminarse por su dueño: ' + result);
+});
+
+// ─── T-D135: rule: cliente — coachId inmutable en update ─────────────────────
+test('T-D135: rules: client update — coach NO puede cambiar coachId', function() {
+  var result = simulateClientUpdateRule('coach-1', 'coach-otro', 'coach-1');
+  assert(result === 'DENY_COACHID_IMMUTABLE', 'cambio de coachId debe denegarse: ' + result);
+});
+
+// ─── T-D136: rule: cliente — coach puede actualizar su propio cliente ─────────
+test('T-D136: rules: client update — coach actualiza cliente propio sin cambiar coachId → ALLOW', function() {
+  var result = simulateClientUpdateRule('coach-1', 'coach-1', 'coach-1');
+  assert(result === 'ALLOW', 'update de cliente propio sin cambiar coachId debe permitirse: ' + result);
+});
+
+// ─── T-D137: rule: cliente de otro coach → DENY ───────────────────────────────
+test('T-D137: rules: client update — coach A no puede editar cliente de coach B', function() {
+  var result = simulateClientUpdateRule('coach-B', 'coach-B', 'coach-A');
+  assert(result === 'DENY_OWNERSHIP', 'cliente de otro coach debe denegarse: ' + result);
+});
+
+// ─── T-D138: rule: LEGACY_UNASSIGNED no puede ser reclamado via update ─────────
+test('T-D138: rules: LEGACY_UNASSIGNED (coachId=null) no puede ser reclamado via update', function() {
+  // Existing doc has no coachId (null) — coach tries to claim by setting their own coachId
+  var result = simulateClientUpdateRule(null, 'coach-1', 'coach-1');
+  assert(result === 'DENY_OWNERSHIP', 'LEGACY_UNASSIGNED no puede ser reclamado: ' + result);
+});
+
+// ─── T-D139: plan de otro coach → delete DENY (ownership) ────────────────────
+test('T-D139: rules: plan de otro coach — delete DENY por ownership', function() {
+  var result = simulatePlanDeleteRule(null, 'coach-B', 'coach-A');
+  assert(result === 'DENY_OWNERSHIP', 'plan de otro coach no puede eliminarse: ' + result);
+});
+
+// ─── T-D140: plan de otro coach → update DENY (ownership) ────────────────────
+test('T-D140: rules: plan de otro coach — update DENY por ownership', function() {
+  var result = simulatePlanUpdateRule(null, 'coach-B', 'coach-A');
+  assert(result === 'DENY_OWNERSHIP', 'plan de otro coach no puede actualizarse: ' + result);
+});
+
+// ─── SECTION: Review semantics ─────────────────────────────────────────────────
+
+// ─── T-D141: todos accepted → gate pasa ───────────────────────────────────────
+test('T-D141: review gate: todos accepted → pasa', function() {
+  var rs = { __items: [{ type: 'general' }, { type: 'medical' }], __consistency: [], 0: 'accept', 1: 'accept' };
+  var errs = checkD2APreconditions(makeValidResponse({ requestId: 'r141', status: 'NEEDS_COACH_REVIEW' }), 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.length === 0, 'todos aceptados debe pasar: ' + JSON.stringify(errs));
+});
+
+// ─── T-D142: un reject bloquea aunque resto accepted ─────────────────────────
+test('T-D142: review gate: 1 rejected + resto accepted → bloquea', function() {
+  var rs = { __items: [{ type: 'general' }, { type: 'medical' }], __consistency: [], 0: 'accept', 1: 'reject' };
+  var errs = checkD2APreconditions(makeValidResponse({ requestId: 'r142', status: 'NEEDS_COACH_REVIEW' }), 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.includes('REVIEW_REJECTED'), 'rejected debe bloquear independientemente del resto');
+});
+
+// ─── T-D143: consistency + reject → ambos errores presentes ──────────────────
+test('T-D143: review gate: consistency fail + rejected → ambos errores simultáneos', function() {
+  var rs = {
+    __items: [{ type: 'general' }],
+    __consistency: [{ field: 'x' }],
+    0: 'reject',
+  };
+  var errs = checkD2APreconditions(makeValidResponse({ requestId: 'r143', status: 'NEEDS_COACH_REVIEW' }), 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.includes('CONSISTENCY_FAIL'), 'CONSISTENCY_FAIL debe estar');
+  assert(errs.includes('REVIEW_REJECTED'), 'REVIEW_REJECTED debe estar');
+});
+
+// ─── T-D144: buildDraftDoc no incluye info sobre decisiones individuales ───────
+test('T-D144: buildDraftDoc: reviewSummary NO incluye decisiones individuales (solo counts)', function() {
+  var rs = { __items: [{ type: 'general' }], 0: 'accept' };
+  var doc = buildDraftDocFromResp(makeValidResponse({ requestId: 'r144' }), 'c1', 'c2', rs);
+  assert(typeof doc.reviewSummary === 'object', 'reviewSummary debe ser objeto');
+  assert(!('decisions' in doc.reviewSummary), 'reviewSummary NO debe exponer decisiones individuales');
+  assert(!('itemDecisions' in doc.reviewSummary), 'reviewSummary NO debe exponer decisiones individuales');
+  assert('totalItems' in doc.reviewSummary, 'totalItems debe estar');
+  assert('acceptedItems' in doc.reviewSummary, 'acceptedItems debe estar');
+});
+
+// ─── T-D145: activación no falla si nutritionDisplay vacío ───────────────────
+test('T-D145: D.2-B: nutritionDisplay vacío → mirrors con valores vacíos (no null)', function() {
+  var planData = { coachId: 'c1', clientId: 'cl1', status: 'draft_approved',
+    nutritionDisplay: undefined, nutritionRaw: undefined,
+    supplementDisplay: undefined, supplementsRaw: undefined };
+  var updates = simulateActivation(planData, { coachId: 'c1', activePlanId: null }, 'c1', 'plan-1', 'cl1');
+  assert(updates.client !== null, 'client write debe existir');
+  assert(typeof updates.client.nutritionPlan === 'object', 'nutritionPlan debe ser objeto (vacío)');
+  assert(typeof updates.client.supplementPlan === 'object', 'supplementPlan debe ser objeto (vacío)');
 });
 
 // ─── Runner ───────────────────────────────────────────────────────────────────
