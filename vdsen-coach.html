@@ -2120,16 +2120,16 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           let digits = phone.replace(/[^\d]/g, '');
           if (digits.length === 10) digits = '52' + digits;
           if (digits.length >= 11) {
-            try { await deleteDoc(doc(db, 'phone_index', digits)); } catch(_){}
+            try { await deleteDoc(doc(db, 'phone_index', digits)); } catch(e){ console.warn('deleteClient: phone_index delete failed:', e.message); }
           }
         }
         // Delete active plan
         if (planId) {
-          try { await deleteDoc(doc(db, 'plans', planId)); } catch(_){}
+          try { await deleteDoc(doc(db, 'plans', planId)); } catch(e){ console.warn('deleteClient: plan delete failed:', e.message); }
         }
       }
       // Delete logs
-      try { await deleteDoc(doc(db, 'logs', uid)); } catch(_){}
+      try { await deleteDoc(doc(db, 'logs', uid)); } catch(e){ console.warn('deleteClient: logs delete failed:', e.message); }
       // Delete client doc
       await deleteDoc(doc(db, 'clients', uid));
       showToast(`Cliente "${name}" eliminado`);
@@ -2774,6 +2774,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         } catch(e) { showToast("Error: " + e.message, true); }
         finally { closeMesoBtn.disabled = false; closeMesoBtn.textContent = "🔄 Cerrar Mesociclo"; }
       };
+      }, (err) => {
+        console.warn('[Monitor] logs onSnapshot error:', err && err.message);
+        container.innerHTML = '<p class="text-red-400 text-sm">Error al cargar datos en tiempo real: ' + _escH(err && err.message || 'sin detalles') + '</p>';
       }); // fin onSnapshot
     };
   }

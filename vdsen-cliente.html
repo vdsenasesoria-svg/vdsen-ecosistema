@@ -1386,6 +1386,14 @@ async function loadPlan(user) {
 
     const planData = planSnap.data();
 
+    // Guard: plan in 'draft' status is not yet approved — client must wait
+    if (planData.status === 'draft') {
+      PLAN = null;
+      renderEspera();
+      showScreen('scrOnboarding');
+      return;
+    }
+
     // Convertir formato nuevo {days:[{label, exercises:[{exerciseName,sets,[],coachNote}]}]}
     // al formato que el renderer espera: sesiones con contenido texto + exercises estructurado
     const sesiones = (planData.days || []).map(function(d, i) {
@@ -6714,11 +6722,11 @@ function buildBoostcampExercise(ej, di, ei) {
             // Referencias visualmente diferenciadas: progresión > sem anterior > historial
             refBlockHtml+
             '<div style="display:flex;gap:5px">'+
-              '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal" enterkeyhint="next"'+
+              '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" min="0" inputmode="decimal" enterkeyhint="next"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:16px;font-weight:600;padding:8px 6px;outline:none;text-align:center;box-sizing:border-box"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'reps_'+key+'\');if(r)r.focus();}">'+
-              '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="reps" inputmode="numeric" enterkeyhint="next"'+
+              '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="reps" inputmode="numeric" min="1" enterkeyhint="next"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:16px;font-weight:600;padding:8px 6px;outline:none;text-align:center;box-sizing:border-box"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'ics_'+key+'\');if(r)r.focus();}">'+
@@ -7164,6 +7172,10 @@ function completeSet(key, di, ei, si, unit) {
     }
     if (ics !== null && (ics < 1 || ics > 10)) {
       showToast('ICS debe ser entre 1 y 10', true); return;
+    }
+    var rirNum = parseFloat(rirReal);
+    if (rirReal !== '' && !isNaN(rirNum) && (rirNum < 0 || rirNum > 5)) {
+      showToast('RIR debe ser entre 0 y 5', true); return;
     }
     // Para autocarga sin lastre, normalizamos carga a "0" para que se guarde como número
     if (_isBW && (!carga || isNaN(cargaNum))) carga = '0';
