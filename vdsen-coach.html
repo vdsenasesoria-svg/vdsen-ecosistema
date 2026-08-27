@@ -6066,32 +6066,75 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   var _vdsenReviewState = {}; // { requestId: { itemIdx: 'accept'|'adjust'|'reject' } }
 
   // Normalize plan field names: canonical Spanish, fallback English.
-  // gpt-5.6 may return English keys; renderer always reads from normalized form.
+  // gpt-5.6 returns English keys; prompt rule 20 fixes future calls; this handles current output.
+  function _normalizeTraining(t) {
+    if (!t || typeof t !== 'object') return t;
+    // days may be an array or an object keyed by index
+    var days = t.days || t.sessions || t.trainingDays || t.schedule || t.training_days || [];
+    if (!Array.isArray(days)) days = Object.values(days);
+    return Object.assign({}, t, { days: days });
+  }
+
+  function _normalizeNutrition(n) {
+    if (!n || typeof n !== 'object') return n;
+    return Object.assign({}, n, {
+      calorias: n.calorias !== undefined ? n.calorias : (n.calories !== undefined ? n.calories : n.totalCalories),
+      proteina: n.proteina !== undefined ? n.proteina : (n.protein  !== undefined ? n.protein  : n.protein_g),
+      carbos:   n.carbos   !== undefined ? n.carbos   : (n.carbs    !== undefined ? n.carbs    : (n.carbohydrates || n.carbs_g)),
+      grasas:   n.grasas   !== undefined ? n.grasas   : (n.fats     !== undefined ? n.fats     : (n.fat || n.fat_g)),
+      texto:    n.texto  || n.text  || '',
+      comidas:  n.comidas || n.meals || n.foods || [],
+    });
+  }
+
+  function _normalizeSupplementation(s) {
+    if (!s || typeof s !== 'object') return s;
+    var tiers = s.tiers || s.protocol || s.supplements || s.tiers_of_supplements || s.supplementTiers || [];
+    if (!Array.isArray(tiers)) tiers = Object.values(tiers);
+    // Normalize tier field names (nombre/name, items consistency)
+    tiers = tiers.map(function(tier) {
+      return Object.assign({}, tier, {
+        nombre: tier.nombre || tier.name || tier.tierName || '',
+        items: (tier.items || tier.products || tier.supplements || []).map(function(item) {
+          return Object.assign({}, item, {
+            nombre: item.nombre || item.name || item.supplement || '',
+            dosis:  item.dosis  || item.dose  || item.dosage   || '',
+            timing: item.timing || item.when  || item.time     || '',
+            nota:   item.nota   || item.note  || item.notes    || '',
+          });
+        }),
+      });
+    });
+    return Object.assign({}, s, { tiers: tiers });
+  }
+
   function _normalizePlan(p) {
     if (!p || typeof p !== 'object') return {};
+    var rawTraining = p.entrenamiento !== undefined ? p.entrenamiento : p.training;
+    var rawNutr     = p.nutricion     !== undefined ? p.nutricion     : p.nutrition;
+    var rawSuppl    = p.suplementacion !== undefined ? p.suplementacion : p.supplementation;
     return {
-      entrenamiento:  p.entrenamiento  !== undefined ? p.entrenamiento  : p.training,
-      nutricion:      p.nutricion      !== undefined ? p.nutricion      : p.nutrition,
-      suplementacion: p.suplementacion !== undefined ? p.suplementacion : p.supplementation,
+      entrenamiento:  _normalizeTraining(rawTraining),
+      nutricion:      _normalizeNutrition(rawNutr),
+      suplementacion: _normalizeSupplementation(rawSuppl),
       schema: p.schema
     };
   }
 
   // Detect mismatch between what the audit implies and what the plan contains.
   // Returns array of issue strings (empty = consistent).
+  // Supports both flat audit (macroCheck) and nested audit (audit.validation.macroEnergyCheck).
   function _checkResponseConsistency(audit, rawPlan) {
     if (!audit || !Object.keys(audit).length) return [];
     var plan = _normalizePlan(rawPlan);
+    var val  = audit.validation || audit; // nested or flat audit structure
     var issues = [];
-    if (audit.macroCheck && plan.nutricion == null) {
-      issues.push('audit contiene datos de nutrición pero plan.nutricion está ausente');
-    }
-    if ((audit.loadCheck || audit.fractionalVolumeCheck) && plan.entrenamiento == null) {
-      issues.push('audit contiene datos de entrenamiento pero plan.entrenamiento está ausente');
-    }
-    if (audit.supplementSubstitutionCheck && plan.suplementacion == null) {
-      issues.push('audit contiene datos de suplementación pero plan.suplementacion está ausente');
-    }
+    var hasNutritionAudit   = !!(val.macroCheck || val.macroEnergyCheck);
+    var hasTrainingAudit    = !!(val.loadCheck   || val.allTrainingLoadsZero || val.fractionalMuscleVolumeApplied || val.fractionalVolumeCheck);
+    var hasSupplAudit       = !!(val.supplementSubstitutionCheck || val.supplementSubstitutionsMinimumPassed);
+    if (hasNutritionAudit   && plan.nutricion      == null) issues.push('audit contiene datos de nutrición pero plan.nutricion está ausente');
+    if (hasTrainingAudit    && plan.entrenamiento   == null) issues.push('audit contiene datos de entrenamiento pero plan.entrenamiento está ausente');
+    if (hasSupplAudit       && plan.suplementacion  == null) issues.push('audit contiene datos de suplementación pero plan.suplementacion está ausente');
     return issues;
   }
 
@@ -6284,17 +6327,20 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const audit   = resp.audit || {};
     const flags   = resp.flags || [];
 
-    // Safe structural diagnostic — no plan content printed
+    // Safe structural diagnostic — no plan content printed, only field names
+    var _rawTrain = rawPlan.training || rawPlan.entrenamiento;
+    var _rawNutr  = rawPlan.nutrition || rawPlan.nutricion;
+    var _rawSuppl = rawPlan.supplementation || rawPlan.suplementacion;
     console.info('[VDSEN D.1.6 diag]',
       'plan present:', !!resp.plan,
       '| schema:', rawPlan.schema,
-      '| keys:', Object.keys(rawPlan),
-      '| entrenamiento:', rawPlan.entrenamiento !== undefined,
-      '| training:', rawPlan.training !== undefined,
-      '| nutricion:', rawPlan.nutricion !== undefined,
-      '| nutrition:', rawPlan.nutrition !== undefined,
-      '| suplementacion:', rawPlan.suplementacion !== undefined,
-      '| supplementation:', rawPlan.supplementation !== undefined,
+      '| plan.keys:', Object.keys(rawPlan),
+      '| training.keys:', _rawTrain  ? Object.keys(_rawTrain)  : 'ABSENT',
+      '| nutrition.keys:', _rawNutr  ? Object.keys(_rawNutr)   : 'ABSENT',
+      '| suppl.keys:',     _rawSuppl ? Object.keys(_rawSuppl)  : 'ABSENT',
+      '| training.days isArr:', _rawTrain  ? Array.isArray(_rawTrain.days)   : false,
+      '| training.days type:',  _rawTrain  ? typeof _rawTrain.days           : 'N/A',
+      '| suppl.tiers isArr:',   _rawSuppl  ? Array.isArray(_rawSuppl.tiers)  : false,
       '| decisionTrace type:', typeof resp.decisionTrace,
       '| decisionTrace isArr:', Array.isArray(resp.decisionTrace)
     );

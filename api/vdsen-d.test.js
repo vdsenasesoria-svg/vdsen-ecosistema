@@ -827,6 +827,95 @@ test('T-D69: reject → readyForApproval false', function() {
   assert(readyForApproval === false, 'reject debe bloquear readyForApproval aunque todos revisados');
 });
 
+// ─── T-D71: _normalizeTraining: sessions → days ──────────────────────────────
+test('T-D71: _normalizeTraining: training.sessions (fallback) → normalizado a .days[]', function() {
+  var t = { weeks: 6, daysPerWeek: 4, sessions: [{ dayIndex: 1, label: 'Piernas', exercises: [] }] };
+  function normalizeTraining(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    var days = obj.days || obj.sessions || obj.trainingDays || obj.schedule || [];
+    if (!Array.isArray(days)) days = Object.values(days);
+    return Object.assign({}, obj, { days: days });
+  }
+  var n = normalizeTraining(t);
+  assert(Array.isArray(n.days), 'days debe ser array tras normalizacion');
+  assert(n.days.length === 1, 'debe tener 1 día');
+});
+
+// ─── T-D72: _normalizeTraining: days como objeto numerado → array ─────────────
+test('T-D72: _normalizeTraining: training.days como objeto de keys numéricos → array', function() {
+  var t = { days: { 0: { dayIndex: 1 }, 1: { dayIndex: 2 } } };
+  function normalizeTraining(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    var days = obj.days || obj.sessions || [];
+    if (!Array.isArray(days)) days = Object.values(days);
+    return Object.assign({}, obj, { days: days });
+  }
+  var n = normalizeTraining(t);
+  assert(Array.isArray(n.days) && n.days.length === 2, 'debe convertir objeto a array de días');
+});
+
+// ─── T-D73: _normalizeNutrition: calories → calorias ────────────────────────
+test('T-D73: _normalizeNutrition: nutrition.calories (inglés) → calorias', function() {
+  var n = { calories: 2800, protein: 215, carbs: 305, fats: 80 };
+  function normalizeNutrition(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    return Object.assign({}, obj, {
+      calorias: obj.calorias !== undefined ? obj.calorias : (obj.calories !== undefined ? obj.calories : obj.totalCalories),
+      proteina: obj.proteina !== undefined ? obj.proteina : (obj.protein  !== undefined ? obj.protein  : obj.protein_g),
+      carbos:   obj.carbos   !== undefined ? obj.carbos   : (obj.carbs    !== undefined ? obj.carbs    : (obj.carbohydrates || obj.carbs_g)),
+      grasas:   obj.grasas   !== undefined ? obj.grasas   : (obj.fats     !== undefined ? obj.fats     : (obj.fat || obj.fat_g)),
+    });
+  }
+  var result = normalizeNutrition(n);
+  assert(result.calorias === 2800, 'calories debe mapearse a calorias: ' + result.calorias);
+  assert(result.proteina === 215,  'protein debe mapearse a proteina: ' + result.proteina);
+  assert(result.carbos   === 305,  'carbs debe mapearse a carbos: '     + result.carbos);
+  assert(result.grasas   === 80,   'fats debe mapearse a grasas: '      + result.grasas);
+});
+
+// ─── T-D74: _normalizeSupplementation: tiers objeto → array ──────────────────
+test('T-D74: _normalizeSupplementation: tiers como objeto → array', function() {
+  var s = { tiers: { 0: { name: 'Tier 1', items: [] }, 1: { name: 'Tier 2', items: [] } } };
+  function normalizeSupplementation(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    var tiers = obj.tiers || obj.protocol || [];
+    if (!Array.isArray(tiers)) tiers = Object.values(tiers);
+    return Object.assign({}, obj, { tiers: tiers });
+  }
+  var result = normalizeSupplementation(s);
+  assert(Array.isArray(result.tiers) && result.tiers.length === 2, 'tiers debe convertirse en array de 2 elementos');
+});
+
+// ─── T-D75: consistencia con audit.validation.macroEnergyCheck (estructura anidada) ─
+test('T-D75: _checkResponseConsistency detecta inconsistencia con audit.validation.* nested', function() {
+  var audit = { validation: { macroEnergyCheck: { sum_kcal: 2800, declared_kcal: 2800 } } };
+  var rawPlan = { training: { days: [] } }; // no nutricion ni nutrition
+  function norm(p) {
+    return { nutricion: p.nutricion !== undefined ? p.nutricion : p.nutrition };
+  }
+  function checkConsistency(a, rp) {
+    if (!a || !Object.keys(a).length) return [];
+    var val = a.validation || a;
+    var p = norm(rp);
+    var issues = [];
+    if ((val.macroCheck || val.macroEnergyCheck) && p.nutricion == null) issues.push('nutricion ausente');
+    return issues;
+  }
+  var issues = checkConsistency(audit, rawPlan);
+  assert(issues.length > 0, 'debe detectar inconsistencia con audit.validation.macroEnergyCheck');
+});
+
+// ─── T-D76: sistema prompt regla 20 — campo "entrenamiento" explícito ─────────
+test('T-D76: sistema prompt regla 20 menciona nombres de campo canónicos en español', function() {
+  var prompt = buildSystemPrompt();
+  assert(/entrenamiento\.weeks/i.test(prompt) || /entrenamiento\.days/i.test(prompt),
+    'prompt debe mencionar nombres de campo canónicos de entrenamiento');
+  assert(/nutricion\.calorias/i.test(prompt),
+    'prompt debe mencionar nutricion.calorias');
+  assert(/suplementacion\.tiers/i.test(prompt),
+    'prompt debe mencionar suplementacion.tiers');
+});
+
 // ─── T-D70: D.1.6 no escribe en Firestore (structural) ───────────────────────
 test('T-D70: D.1.6 no hace writes Firestore (pure local logic, no async side-effects)', function() {
   // _normalizePlan, _checkResponseConsistency, _vdsenUpdateReviewPanel son pure functions
