@@ -1447,7 +1447,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       passInput.addEventListener('change', async () => {
         const v = passInput.value.trim();
         if (v && v !== savedPass) {
-          try { await updateDoc(doc(db, 'clients', clientId), { tempPassword: v }); } catch(_) {}
+          try { await updateDoc(doc(db, 'clients', clientId), { tempPassword: v }); } catch(e){ console.warn('tempPassword save failed:', e.message); }
         }
       });
 
@@ -8883,10 +8883,10 @@ El esfuerzo no es negociable.
         const classified = _classifyBlocks(blocks);
         planObj = classified.training;
         if (classified.nutrition) {
-          try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: _nutritionJsonToPlan(classified.nutrition), nutritionRaw: classified.nutrition }); } catch(_){}
+          try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: _nutritionJsonToPlan(classified.nutrition), nutritionRaw: classified.nutrition }); } catch(e){ console.warn('nutrition save failed:', e.message); }
         }
         if (classified.supplements) {
-          try { const sp = _supplementsJsonToPlan(classified.supplements); if (sp) await updateDoc(doc(db, 'clients', clientId), { supplementPlan: sp, supplementsRaw: classified.supplements }); } catch(_){}
+          try { const sp = _supplementsJsonToPlan(classified.supplements); if (sp) await updateDoc(doc(db, 'clients', clientId), { supplementPlan: sp, supplementsRaw: classified.supplements }); } catch(e){ console.warn('supplement save failed:', e.message); }
         }
       } else {
         planObj = parsePlanText(ta.value);
