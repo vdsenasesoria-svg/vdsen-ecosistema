@@ -796,7 +796,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -6016,7 +6016,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const firstWarn = (respJson.warnings || [])[0] || '';
         const detail = [modSummary, firstWarn ? firstWarn.substring(0, 120) : ''].filter(Boolean).join(' — ');
         UI_STATES.needs_coach_review(detail || 'módulos requieren revisión del coach');
-        if (respJson.plan) _vdsenAIShowPreview(respJson, request);
+        if (respJson.plan) _vdsenAIShowPreview(respJson, request, clientId);
         return;
       }
       if (status === 'INVALID') {
@@ -6034,7 +6034,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           console.warn('[VDSEN D.1] Response contract violation:', respValidation);
         }
         setStatus('<span style="color:#22c55e">✅ Plan generado — mostrando preview</span>');
-        _vdsenAIShowPreview(respJson, generationRequest);
+        _vdsenAIShowPreview(respJson, request, clientId);
         return;
       }
       // Unknown status
@@ -6063,7 +6063,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // ── D.1.5 Review Gate — local-only, no Firestore ──────────────────────────
   // ── D.1.6 Plan path normalization + consistency guard ─────────────────────
 
-  var _vdsenReviewState = {}; // { requestId: { itemIdx: 'accept'|'adjust'|'reject' } }
+  var _vdsenReviewState   = {}; // { requestId: { itemIdx: 'accept'|'adjust'|'reject' } }
+  var _vdsenCurrentPreview = null; // D.2: { resp, req, clientId, requiresReview }
+  var _vdsenDraftPlanId    = null; // D.2: set after D.2-A save, cleared on new preview
 
   // Normalize plan field names: canonical Spanish, fallback English.
   // gpt-5.6 returns English keys; prompt rule 20 fixes future calls; this handles current output.
@@ -6302,6 +6304,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         gateEl.textContent = '🔍 Pendiente: ' + (total - reviewed) + ' ítem(s) sin revisar';
       }
     }
+
+    // D.2: mostrar panel de guardado cuando readyForApproval y no hay draft guardado aún
+    var d2Panel     = document.getElementById('vdsenPreview_d2Panel');
+    var saveDraftBtn = document.getElementById('vdsenPreview_saveDraftBtn');
+    if (d2Panel && saveDraftBtn) {
+      if (readyForApproval && !_vdsenDraftPlanId) {
+        d2Panel.style.display = 'block';
+        saveDraftBtn.style.display = 'inline-block';
+        saveDraftBtn.disabled = false;
+      } else if (!_vdsenDraftPlanId) {
+        // Not ready yet — hide panel (only for NEEDS_COACH_REVIEW flow)
+        if (_vdsenCurrentPreview && _vdsenCurrentPreview.requiresReview) {
+          d2Panel.style.display = 'none';
+        }
+      }
+      // If _vdsenDraftPlanId is set, keep panel visible (managed by save handler)
+    }
   }
 
   window._vdsenReviewAction = function(requestId, idx, action) {
@@ -6318,9 +6337,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   // ── _vdsenAIShowPreview ────────────────────────────────────────────────────
 
-  function _vdsenAIShowPreview(resp, req) {
+  function _vdsenAIShowPreview(resp, req, clientId) {
     const modal = document.getElementById('vdsenPreviewModal');
     if (!modal) return;
+
+    // D.2: store preview state for save/activate buttons
+    _vdsenCurrentPreview = { resp: resp, req: req, clientId: clientId || '', requiresReview: resp.status === 'NEEDS_COACH_REVIEW' };
+    _vdsenDraftPlanId    = null; // reset on new preview
 
     const rawPlan = resp.plan || {};
     const plan    = _normalizePlan(rawPlan);  // Spanish canonical, English fallback
@@ -6472,9 +6495,297 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }
     }
 
+    // D.2 panel: reset state and show for VALID plans (no review required)
+    const d2Panel      = document.getElementById('vdsenPreview_d2Panel');
+    const saveDraftBtn = document.getElementById('vdsenPreview_saveDraftBtn');
+    const activateBtn  = document.getElementById('vdsenPreview_activateBtn');
+    const d2Status     = document.getElementById('vdsenPreview_d2Status');
+    const d2PrevPlan   = document.getElementById('vdsenPreview_d2PrevPlan');
+    if (d2Panel) {
+      // Reset all D.2 UI
+      if (d2Status)   d2Status.innerHTML = '';
+      if (d2PrevPlan) { d2PrevPlan.style.display = 'none'; d2PrevPlan.innerHTML = ''; }
+      if (saveDraftBtn) { saveDraftBtn.style.display = 'inline-block'; saveDraftBtn.disabled = false; saveDraftBtn.textContent = '💾 Guardar borrador aprobado'; }
+      if (activateBtn)  { activateBtn.style.display = 'none'; activateBtn.disabled = false; activateBtn.textContent = '⚡ Activar plan'; }
+      // Show panel immediately for VALID plans (no review required); NEEDS_COACH_REVIEW shows via _vdsenUpdateReviewPanel
+      d2Panel.style.display = (resp.status === 'VALID' && resp.plan) ? 'block' : 'none';
+    }
+
     modal.style.display = 'flex';
   }
   window._vdsenAIShowPreview = _vdsenAIShowPreview;
+
+  // ── D.2-A: Save Approved Draft ─────────────────────────────────────────────
+
+  async function _vdsenSaveDraftToFirestore() {
+    if (!_vdsenCurrentPreview) throw new Error('Sin preview activo');
+    const { resp, clientId } = _vdsenCurrentPreview;
+    const coachId = auth.currentUser && auth.currentUser.uid;
+    if (!coachId) throw new Error('Sin sesión activa de coach');
+    if (!clientId) throw new Error('Sin clientId — seleccioná un cliente primero');
+
+    const requestId = resp.requestId;
+    if (!requestId) throw new Error('Sin requestId en la respuesta del motor');
+    if (!resp.plan || typeof resp.plan !== 'object') throw new Error('Sin plan en la respuesta');
+    if (resp.status === 'INVALID' || resp.status === 'ERROR') throw new Error('Plan en estado inválido: ' + resp.status);
+
+    // ── Defense in depth: review gate (not just UI — revalidated here before any write) ──
+    const requiresReview = _vdsenCurrentPreview.requiresReview;
+    if (requiresReview) {
+      const rs           = _vdsenReviewState[requestId] || {};
+      const consistency  = rs.__consistency || [];
+      if (consistency.length > 0)
+        throw new Error('CONSISTENCY_FAIL: La respuesta contiene ' + consistency.length +
+          ' inconsistencia(s) — resolver antes de guardar (gate revalidado internamente)');
+      const items = rs.__items || [];
+      var unresolvedGate = 0, rejectedGate = 0, adjustGate = 0;
+      items.forEach(function(item, idx) {
+        if (item.type === 'info') return;
+        var decision = rs[idx];
+        if (decision === 'reject') rejectedGate++;
+        else if (decision === 'adjust') adjustGate++;
+        else if (!decision) unresolvedGate++;
+      });
+      if (rejectedGate > 0)
+        throw new Error('REVIEW_REJECTED: ' + rejectedGate +
+          ' ítem(s) rechazado(s) — el plan no puede guardarse');
+      if (adjustGate > 0)
+        throw new Error('REVIEW_ADJUSTMENT: ' + adjustGate +
+          ' ítem(s) marcado(s) "Requiere ajuste" — resolver antes de guardar');
+      if (unresolvedGate > 0)
+        throw new Error('REVIEW_INCOMPLETE: ' + unresolvedGate +
+          ' ítem(s) sin revisar — completar la revisión antes de guardar');
+    }
+
+    // Ownership check
+    const clientSnap = await getDoc(doc(db, 'clients', clientId));
+    if (!clientSnap.exists()) throw new Error('Cliente no encontrado en Firestore');
+    const clientData = clientSnap.data();
+    if (clientData.coachId !== coachId) throw new Error('FOREIGN_OWNER: este cliente no está asignado a tu cuenta');
+
+    // Idempotency: use requestId as document ID; detect conflicts if doc exists with different identity
+    const planRef = doc(db, 'plans', requestId);
+    const existing = await getDoc(planRef);
+    if (existing.exists()) {
+      const existingData = existing.data();
+      if (existingData.clientId !== clientId || existingData.coachId !== coachId) {
+        throw new Error('IDEMPOTENCY_CONFLICT: El requestId "' + requestId +
+          '" ya está guardado con diferente cliente/coach — operación bloqueada');
+      }
+      return { idempotent: true, planId: requestId };
+    }
+
+    // Normalize plan content
+    const rawPlan  = resp.plan;
+    const plan     = _normalizePlan(rawPlan);
+    const training = plan.entrenamiento || {};
+    const nutr     = plan.nutricion     || {};
+    const suppl    = plan.suplementacion || {};
+
+    // Review summary (0 items if VALID — no review required)
+    const reviewState = _vdsenReviewState[requestId] || {};
+    const revItems    = reviewState.__items || [];
+    var totalItems = 0, acceptedItems = 0;
+    revItems.forEach(function(item, idx) {
+      if (item.type === 'info') return;
+      totalItems++;
+      if (reviewState[idx] === 'accept') acceptedItems++;
+    });
+
+    // Supplement display text from normalized tiers
+    var supplText = '';
+    if (suppl.tiers && Array.isArray(suppl.tiers)) {
+      supplText = suppl.tiers.map(function(tier) {
+        var tierItems = (tier.items || []).map(function(item) {
+          return item.nombre + (item.dosis ? ' — ' + item.dosis : '');
+        });
+        return (tier.nombre || 'Tier') + ': ' + tierItems.join(', ');
+      }).join('\n');
+    }
+
+    const draftDoc = {
+      // Identity
+      coachId:             coachId,
+      clientId:            clientId,
+      generationRequestId: requestId,
+      source:              'vdsen-ai',
+      generatedBy:         'vdsen-ai',
+      model:               resp.model || '',
+      status:              'draft_approved',
+      // Lifecycle
+      createdAt:           serverTimestamp(),
+      approvedAt:          serverTimestamp(),
+      approvedByCoachId:   coachId,
+      // Training (flat — backward compat with client app)
+      weeks:               (training.weeks      !== undefined ? training.weeks      : 0),
+      daysPerWeek:         (training.daysPerWeek !== undefined ? training.daysPerWeek : 0),
+      days:                (Array.isArray(training.days) ? training.days : []),
+      // Nutrition
+      nutritionDisplay: {
+        calorias: nutr.calorias || 0,
+        proteina: nutr.proteina || 0,
+        carbos:   nutr.carbos   || 0,
+        grasas:   nutr.grasas   || 0,
+        texto:    nutr.texto    || '',
+      },
+      nutritionRaw:    nutr,
+      // Supplements
+      supplementDisplay: { texto: supplText },
+      supplementsRaw:    suppl,
+      // Review summary (no individual clicks, no raw response, no secrets)
+      reviewSummary: { totalItems: totalItems, acceptedItems: acceptedItems },
+      // EXCLUDED: farmacologia, pharmacoPlan, raw model response, prompt, API keys
+    };
+
+    await setDoc(planRef, draftDoc);
+    return { idempotent: false, planId: requestId };
+  }
+
+  // ── D.2-B: Activate Plan (Firestore transaction) ───────────────────────────
+
+  async function _vdsenActivatePlanInFirestore(planId, clientId) {
+    const coachId = auth.currentUser && auth.currentUser.uid;
+    if (!coachId) throw new Error('Sin sesión activa de coach');
+
+    await runTransaction(db, async function(t) {
+      const planRef   = doc(db, 'plans',   planId);
+      const clientRef = doc(db, 'clients', clientId);
+
+      const planSnap   = await t.get(planRef);
+      const clientSnap = await t.get(clientRef);
+
+      if (!planSnap.exists()) throw new Error('Plan no encontrado. Puede haber sido eliminado.');
+      const planData = planSnap.data();
+      if (planData.coachId !== coachId) throw new Error('FOREIGN_OWNER: no tenés permiso sobre este plan.');
+      if (planData.clientId !== clientId) throw new Error('CLIENT_MISMATCH: el plan no pertenece a este cliente.');
+      if (planData.status !== 'draft_approved') throw new Error('Plan en estado inválido para activación: "' + planData.status + '". Solo planes con status draft_approved pueden activarse.');
+
+      if (!clientSnap.exists()) throw new Error('Cliente no encontrado en Firestore.');
+      const clientData = clientSnap.data();
+      if (clientData.coachId !== coachId) throw new Error('FOREIGN_OWNER en cliente: no tenés permiso sobre este cliente.');
+
+      // Idempotent: plan ya activo para este cliente → sin writes
+      if (clientData.activePlanId === planId) return;
+
+      // Activation: escribe SOLO en clients/{clientId}.
+      // plans/{planId} NO se modifica — permanece draft_approved (fuente de verdad inmutable).
+      // plans/{prevPlanId} NO se modifica — el historial se preserva por existencia de ambos docs,
+      //   no por mutación de estado del anterior. client.activePlanId es el indicador canónico.
+      //
+      // Mirrors de compatibilidad: clients/{uid}.nutritionPlan/nutritionRaw/supplementPlan/supplementsRaw
+      // son derivados de plans/{planId} para que vdsen-cliente.html los lea sin cambio de contrato.
+      // La fuente de verdad permanece en plans/{activePlanId}. Los mirrors NO son fuente autoritativa.
+      t.update(clientRef, {
+        activePlanId:   planId,
+        // Compatibility mirrors — vdsen-cliente.html lee de clients/{uid}, no del plan doc
+        nutritionPlan:  planData.nutritionDisplay || {},
+        nutritionRaw:   planData.nutritionRaw     || {},
+        supplementPlan: planData.supplementDisplay || {},
+        supplementsRaw: planData.supplementsRaw   || {},
+        // NO: farmacologia, pharmacoPlan, ni ningún campo PED
+      });
+    });
+  }
+
+  // ── D.2 UI helpers ──────────────────────────────────────────────────────────
+
+  async function _vdsenShowPrevPlanInfo(clientId) {
+    try {
+      const clientSnap = await getDoc(doc(db, 'clients', clientId));
+      if (!clientSnap.exists()) return;
+      const prevPlanId = clientSnap.data().activePlanId;
+      const prevPlanEl = document.getElementById('vdsenPreview_d2PrevPlan');
+      if (!prevPlanEl) return;
+      if (prevPlanId) {
+        prevPlanEl.style.display = 'block';
+        prevPlanEl.innerHTML = '⚠️ Plan activo actual: <b>' + _escH(prevPlanId) + '</b><br>' +
+          'Al activar el nuevo plan, el anterior quedará archivado automáticamente.';
+      }
+    } catch (_) {}
+  }
+
+  // ── D.2 button click handlers (called from HTML onclick) ───────────────────
+
+  window._vdsenSaveDraftClick = async function() {
+    const btn        = document.getElementById('vdsenPreview_saveDraftBtn');
+    const d2Status   = document.getElementById('vdsenPreview_d2Status');
+    const activateBtn = document.getElementById('vdsenPreview_activateBtn');
+    const badge      = document.getElementById('vdsenPreview_badge');
+
+    if (!_vdsenCurrentPreview) {
+      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ Error: sin preview activo</span>';
+      return;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
+    if (d2Status) d2Status.innerHTML = '';
+
+    try {
+      const result = await _vdsenSaveDraftToFirestore();
+      _vdsenDraftPlanId = result.planId;
+
+      if (btn) btn.style.display = 'none';
+      if (activateBtn) activateBtn.style.display = 'inline-block';
+
+      const msg = result.idempotent
+        ? '💾 Borrador ya guardado anteriormente'
+        : '✅ Borrador guardado correctamente';
+      if (d2Status) d2Status.innerHTML = '<span style="color:#22c55e">' + _escH(msg) + ' — ID: <code>' + _escH(result.planId) + '</code></span>';
+
+      if (badge) {
+        badge.textContent = '💾 BORRADOR GUARDADO';
+        badge.style.background = 'rgba(59,130,246,.15)';
+        badge.style.color = '#3b82f6';
+      }
+
+      _vdsenShowPrevPlanInfo(_vdsenCurrentPreview.clientId);
+
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar borrador aprobado'; }
+      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ ' + _escH(err.message || 'Error desconocido') + '</span>';
+      console.error('[VDSEN D.2-A] Save draft error:', err);
+    }
+  };
+
+  window._vdsenActivatePlanClick = async function() {
+    if (!_vdsenCurrentPreview || !_vdsenDraftPlanId) return;
+    const { clientId } = _vdsenCurrentPreview;
+    const planId       = _vdsenDraftPlanId;
+    const btn          = document.getElementById('vdsenPreview_activateBtn');
+    const d2Status     = document.getElementById('vdsenPreview_d2Status');
+    const badge        = document.getElementById('vdsenPreview_badge');
+
+    const confirmed = window.confirm(
+      '¿Activar plan para este cliente?\n\n' +
+      'Plan ID: ' + planId + '\n' +
+      'Cliente: ' + clientId + '\n\n' +
+      'El plan aprobado se convierte en el plan activo.\n' +
+      'El plan anterior (si existe) queda inactivo pero se conserva en el historial.\n' +
+      'Esta acción escribe en Firestore y activa el plan para el cliente inmediatamente.'
+    );
+    if (!confirmed) return;
+
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Activando…'; }
+    if (d2Status) d2Status.innerHTML = '';
+
+    try {
+      await _vdsenActivatePlanInFirestore(planId, clientId);
+
+      if (btn) { btn.disabled = true; btn.textContent = '✅ Plan activado'; }
+      if (badge) {
+        badge.textContent = '✅ PLAN ACTIVO';
+        badge.style.background = 'rgba(34,197,94,.2)';
+        badge.style.color = '#22c55e';
+      }
+      if (d2Status) d2Status.innerHTML = '<span style="color:#22c55e">✅ Plan activado. El cliente tiene acceso al nuevo plan inmediatamente.</span>';
+      const prevPlanEl = document.getElementById('vdsenPreview_d2PrevPlan');
+      if (prevPlanEl) prevPlanEl.style.display = 'none';
+
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = '⚡ Activar plan'; }
+      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ ' + _escH(err.message || 'Error desconocido') + '</span>';
+      console.error('[VDSEN D.2-B] Activate plan error:', err);
+    }
+  };
 
   // ========== CARGAR PLAN DESDE ANÁLISIS PEGADO (proyecto Motor VDSEN) ==========
   async function loadPlanFromPastedAnalysis() {
@@ -12184,6 +12495,27 @@ El esfuerzo no es negociable.
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Cada ítem requiere tu revisión antes de que el plan pueda aprobarse. Estas acciones son locales — no guardan en Firestore.</div>
       <div id="vdsenPreview_reviewItems"></div>
       <div id="vdsenPreview_reviewGate" style="margin-top:12px;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:600"></div>
+    </div>
+
+    <!-- D.2 Action Panel — FASE D.2 (Guardar borrador / Activar plan) -->
+    <div id="vdsenPreview_d2Panel" style="display:none;margin-top:16px;border:2px solid rgba(34,197,94,.35);border-radius:10px;padding:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:15px">✅</span>
+        <div style="font-size:13px;font-weight:700;color:#22c55e">Aprobación del Coach</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-left:auto">Dos pasos separados · No se activa automáticamente</div>
+      </div>
+      <div id="vdsenPreview_d2PrevPlan" style="display:none;font-size:12px;color:var(--text-muted);background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:8px 10px;margin-bottom:12px;line-height:1.5"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button id="vdsenPreview_saveDraftBtn" onclick="window._vdsenSaveDraftClick()"
+          style="padding:8px 18px;border-radius:8px;border:1.5px solid #22c55e;background:rgba(34,197,94,.12);color:#22c55e;font-size:13px;font-weight:700;cursor:pointer;transition:opacity .15s">
+          💾 Guardar borrador aprobado
+        </button>
+        <button id="vdsenPreview_activateBtn" onclick="window._vdsenActivatePlanClick()"
+          style="display:none;padding:8px 18px;border-radius:8px;border:1.5px solid #3b82f6;background:rgba(59,130,246,.12);color:#3b82f6;font-size:13px;font-weight:700;cursor:pointer;transition:opacity .15s">
+          ⚡ Activar plan
+        </button>
+      </div>
+      <div id="vdsenPreview_d2Status" style="margin-top:10px;font-size:12px;line-height:1.5"></div>
     </div>
   </div>
 </div>

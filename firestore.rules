@@ -6,11 +6,21 @@ service cloud.firestore {
     }
     match /clients/{clientId} {
       allow read: if request.auth != null && (request.auth.uid == clientId || exists(/databases/$(database)/documents/coaches/$(request.auth.uid)));
-      // Coach: escritura completa sobre docs de sus clientes.
-      allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
-      // Cliente: puede actualizar SOLO campos seguros en su propio doc
-      // (confirmar/corregir su celular). No puede tocar activePlanId,
-      // coachId, role, ni nada crítico.
+      // Coach: crear cliente con su propio coachId (no puede crear bajo otro coach)
+      allow create: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && request.resource.data.coachId == request.auth.uid;
+      // Coach: actualizar solo clientes propios; coachId es inmutable (no se puede reasignar)
+      allow update: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && resource.data.coachId == request.auth.uid
+        && request.resource.data.coachId == resource.data.coachId;
+      // Coach: eliminar solo clientes propios
+      allow delete: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && resource.data.coachId == request.auth.uid;
+      // Cliente: puede actualizar SOLO campos seguros en su propio doc.
+      // No puede tocar activePlanId, coachId, role, ni nada crítico.
       allow update: if request.auth != null && request.auth.uid == clientId
         && request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['phone', 'phoneConfirmedAt', 'phoneSkippedAt']);
@@ -20,8 +30,32 @@ service cloud.firestore {
       allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
     }
     match /plans/{planId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+      // Coach lee solo sus propios planes; cliente lee planes donde es el clientId.
+      allow read: if request.auth != null && (
+        (exists(/databases/$(database)/documents/coaches/$(request.auth.uid)) && resource.data.coachId == request.auth.uid)
+        || resource.data.clientId == request.auth.uid
+      );
+      // Crear plan: coach autenticado, coachId del nuevo doc debe ser el uid del coach,
+      // y no puede incluir farmacologia ni pharmacoPlan.
+      allow create: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && request.resource.data.coachId == request.auth.uid
+        && !('farmacologia'  in request.resource.data)
+        && !('pharmacoPlan'  in request.resource.data);
+      // Actualizar plan: solo el coach dueño Y solo para planes no-aprobados (manual/legacy).
+      // Los planes draft_approved y active son inmutables — no se permiten updates de contenido.
+      // Si resource.data.status está ausente (plan legacy sin campo status), se permite.
+      allow update: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && resource.data.coachId == request.auth.uid
+        && resource.data.status != 'draft_approved'
+        && resource.data.status != 'active';
+      // Eliminar plan: solo el coach dueño y solo si no está aprobado/activo.
+      // El historial de planes aprobados se preserva; no se permite delete desde el flujo normal.
+      allow delete: if request.auth != null
+        && resource.data.coachId == request.auth.uid
+        && resource.data.status != 'draft_approved'
+        && resource.data.status != 'active';
     }
     match /templates/{templateId} {
       allow read: if request.auth != null;
