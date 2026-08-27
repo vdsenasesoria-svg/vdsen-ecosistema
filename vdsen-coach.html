@@ -2100,8 +2100,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     }
 
     // Eliminar duplicado (logs + ficha + doc)
-    try { await deleteDoc(doc(db, 'logs', deleteId)); } catch(_) {}
-    try { await deleteDoc(doc(db, 'fichas_onboarding', deleteId)); } catch(_) {}
+    try { await deleteDoc(doc(db, 'logs', deleteId)); } catch(e){ console.warn('mergeClients: logs delete failed:', e.message); }
+    try { await deleteDoc(doc(db, 'fichas_onboarding', deleteId)); } catch(e){ console.warn('mergeClients: ficha delete failed:', e.message); }
     await deleteDoc(doc(db, 'clients', deleteId));
   }
   window.mergeClients = mergeClients;
@@ -9836,12 +9836,6 @@ El esfuerzo no es negociable.
     } catch(e) { showToast("Error: " + e.message, true); }
   }
 
-  // stubs para compatibilidad con onclick inline previos
-  function addPlanEditorRow() {}
-  function removePlanEditorRow() {}
-  function updatePlanEditorKey() {}
-  function updatePlanEditorVal() {}
-  function savePlanEditor() {}
 
   let _clientIdList = []; // lista ordenada de IDs para navegación rápida
   let _clientNameMap = {}; // { id: nombre }
@@ -11432,11 +11426,6 @@ El esfuerzo no es negociable.
   window.saveNutritionPlan = saveNutritionPlan;
   window.saveSupplementPlan = saveSupplementPlan;
   window.togglePlanEditor = togglePlanEditor;
-  window.addPlanEditorRow = addPlanEditorRow;
-  window.removePlanEditorRow = removePlanEditorRow;
-  window.updatePlanEditorKey = updatePlanEditorKey;
-  window.updatePlanEditorVal = updatePlanEditorVal;
-  window.savePlanEditor = savePlanEditor;
   window.initManualPlan = initManualPlan;
   window.setMPDay = setMPDay;
   window.addExercise = addExercise;
