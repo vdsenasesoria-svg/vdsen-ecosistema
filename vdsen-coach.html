@@ -1401,7 +1401,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       const clientSnap = await getDoc(doc(db, 'clients', clientId));
       if (!clientSnap.exists()) { showToast('Cliente no encontrado', true); return; }
       const client = clientSnap.data();
-      const savedPass = client.tempPassword || '';
+      const savedPass = '';
       const phone = String(client.phone || '').replace(/[^\d]/g, '');
 
       const ov = document.createElement('div');
@@ -1444,12 +1444,6 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       });
       refresh();
       passInput.addEventListener('input', refresh);
-      passInput.addEventListener('change', async () => {
-        const v = passInput.value.trim();
-        if (v && v !== savedPass) {
-          try { await updateDoc(doc(db, 'clients', clientId), { tempPassword: v }); } catch(e){ console.warn('tempPassword save failed:', e.message); }
-        }
-      });
 
       ov.querySelector('#_amCopy').onclick = () => {
         msgArea.select(); document.execCommand('copy');
@@ -2222,7 +2216,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         }
         await setDoc(doc(db, "clients", uid), {
           coachId: currentCoach.uid, email, displayName: name, phone: phoneNormalized,
-          role: "client", activePlanId: null, nutritionPlan: {}, supplementPlan: {}, tempPassword: pass
+          role: "client", activePlanId: null, nutritionPlan: {}, supplementPlan: {}
         }, { merge: true });
         // Índice público celular → email de Auth para permitir login por
         // teléfono aunque el email de Auth sea real (no sintético).

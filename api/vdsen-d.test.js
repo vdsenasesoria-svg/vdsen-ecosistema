@@ -1920,6 +1920,42 @@ test('T-D162: gate: VALID status (requiresReview=false) → gate no se aplica', 
   assert(errs.length === 0, 'VALID: 0 errores: ' + JSON.stringify(errs));
 });
 
+// ─── T-D163..T-D164: Security regression — no tempPassword in Firestore writes ──
+
+var fs = require('fs');
+var path = require('path');
+
+var _coachSrc = fs.readFileSync(path.join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
+
+// T-D163: setDoc call at client creation must not include tempPassword field
+test('T-D163: security: setDoc(clients/{uid}) no contiene tempPassword', function() {
+  // Find the setDoc block that writes client data at creation.
+  // The write includes role:"client" and activePlanId — verify tempPassword absent.
+  var setDocMatch = _coachSrc.match(/setDoc\(doc\(db,\s*["']clients["'][^)]*\),\s*\{[^}]*role:\s*["']client["'][^}]*\}/);
+  if (!setDocMatch) {
+    // If refactored across lines, scan broader window around "role: \"client\""
+    var idx = _coachSrc.indexOf('"role": "client"');
+    if (idx === -1) idx = _coachSrc.indexOf('role: "client"');
+    assert(idx !== -1, 'setDoc clients block with role:client must exist');
+    var window500 = _coachSrc.slice(Math.max(0, idx - 200), idx + 300);
+    assert(!window500.includes('tempPassword'), 'setDoc clients block must not contain tempPassword near role:client');
+  } else {
+    assert(!setDocMatch[0].includes('tempPassword'), 'setDoc clients:{role:client} must not include tempPassword: ' + setDocMatch[0].slice(0, 120));
+  }
+});
+
+// T-D164: updateDoc calls on clients collection must not write tempPassword
+test('T-D164: security: updateDoc(clients) no persiste tempPassword', function() {
+  // Find all updateDoc calls targeting the clients collection and check none include tempPassword
+  var re = /updateDoc\(doc\(db,\s*["']clients["'][^;]{0,300}/g;
+  var m;
+  var found = [];
+  while ((m = re.exec(_coachSrc)) !== null) {
+    if (m[0].includes('tempPassword')) found.push(m[0].slice(0, 100));
+  }
+  assert(found.length === 0, 'updateDoc(clients) no debe incluir tempPassword. Encontrado: ' + JSON.stringify(found));
+});
+
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
 var passed = 0;
