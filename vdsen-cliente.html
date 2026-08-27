@@ -1029,8 +1029,14 @@ let FB = null;
 // FIREBASE INIT
 // ══════════════════════════════════════════════════
 function waitFB(cb) {
-  if (window._fbReady) { FB = window._fb; cb(); }
-  else window.addEventListener('fbReady', () => { FB = window._fb; cb(); });
+  function _consume() {
+    FB = window._fb;
+    delete window._fb;
+    delete window._fbReady;
+    cb();
+  }
+  if (window._fbReady) { _consume(); }
+  else window.addEventListener('fbReady', _consume, { once: true });
 }
 
 // Aplicar modo claro/oscuro guardado antes de renderizar
@@ -1177,6 +1183,7 @@ async function doLogin() {
 }
 
 async function doLogout() {
+  _clearLiveListeners();
   await FB.signOut(FB.auth);
   PLAN = null; USER = null; LOGS = {};
 }
@@ -1306,7 +1313,14 @@ window.showPhoneConfirmModal = showPhoneConfirmModal;
 // ══════════════════════════════════════════════════
 // LOAD PLAN
 // ══════════════════════════════════════════════════
+var _liveUnsubClient = null, _liveUnsubPlan = null, _liveUnsubLogs = null;
+function _clearLiveListeners() {
+  if (_liveUnsubClient) { try { _liveUnsubClient(); } catch(e){} _liveUnsubClient = null; }
+  if (_liveUnsubPlan)   { try { _liveUnsubPlan();   } catch(e){} _liveUnsubPlan   = null; }
+  if (_liveUnsubLogs)   { try { _liveUnsubLogs();   } catch(e){} _liveUnsubLogs   = null; }
+}
 async function loadPlan(user) {
+  _clearLiveListeners();
   USER = user;
   if (!user || !user.email) {
     showScreen('scrLogin');
@@ -1608,7 +1622,7 @@ async function loadPlan(user) {
     // Escuchar cambios en tiempo real: cliente (nutrición, nuevo plan) + plan (ediciones del coach)
     try {
       // ── 1. Listener sobre el doc del CLIENTE ──
-      FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(snap) {
+      _liveUnsubClient = FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(snap) {
         if (!snap.exists()) return;
         var newData = snap.data();
         var newPlanId = newData.activePlanId;
@@ -1628,7 +1642,7 @@ async function loadPlan(user) {
 
       // ── 2. Listener sobre el doc del PLAN (detecta ediciones del coach al plan activo) ──
       var _planReloadPending = false;
-      FB.onSnapshot(FB.doc(FB.db, 'plans', activePlanId), function(planSnap) {
+      _liveUnsubPlan = FB.onSnapshot(FB.doc(FB.db, 'plans', activePlanId), function(planSnap) {
         if (!planSnap.exists()) return;
         var pd = planSnap.data();
         // Solo reaccionar si el campo updatedAt existe y cambió respecto a la carga inicial
@@ -1649,7 +1663,7 @@ async function loadPlan(user) {
       // modifica la bitácora. Solo reacciona si el cambio NO lo originó este
       // tab (comparando updatedAt local vs remoto).
       var _logsLastSeen = 0;
-      FB.onSnapshot(FB.doc(FB.db, 'logs', user.uid), function(snap) {
+      _liveUnsubLogs = FB.onSnapshot(FB.doc(FB.db, 'logs', user.uid), function(snap) {
         if (!snap.exists()) return;
         var d = snap.data();
         var ts = d.updatedAt || 0;
@@ -3299,7 +3313,6 @@ async function _refreshLogsFromFirestore(reason) {
     if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
     if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
     if (weekChanged || entriesChanged) {
-      console.log('[refreshLogs]', reason, '→ week', fsWeek, 'entries', Object.keys(fsEntries).length);
       try { renderEntrenamiento(); } catch(e){}
       try { renderResumen();      } catch(e){}
     }
@@ -3480,7 +3493,6 @@ function getEffectiveSets(ej, week, totalWeeks) {
   if (!isY3TExercise(ej)) return sets;
   if (!week || week < 1) week = 1; // mismo guard que getY3TPhase
   var phase = getY3TPhase(week, totalWeeks);
-  console.log('[Y3T debug]', (ej.exerciseName||ej.nombre||'?'), '| week:', week, '| fase:', phase, '| sets totales:', sets.length);
   if (phase === 's3') return sets; // Semana metabólica: todos los sets incluyendo SST
 
   var hasNotes = sets.some(function(s){ return s.setNote && (s.setNote.indexOf('S1') !== -1 || s.setNote.indexOf('S2') !== -1); });
@@ -11764,6 +11776,7 @@ function closePostSessionModal() {
   var m = document.getElementById('postSessionModal');
   if (m) m.style.display = 'none';
   _postSessionDi = null;
+  _postSessionSubmitting = false;
 }
 
 function selectEimd(val) {
@@ -11819,9 +11832,12 @@ function updateRpeLabel(val) {
   el.style.color = colors[v] || 'var(--accent)';
 }
 
+var _postSessionSubmitting = false;
 async function submitPostSession() {
+  if (_postSessionSubmitting) return;
   var di = _postSessionDi;
   if (di == null) return;
+  _postSessionSubmitting = true;
 
   var eimd = parseInt(document.getElementById('psEimd').value);
   if (!eimd) { showToast('Selecciona cómo está el músculo', true); return; }

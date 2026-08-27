@@ -905,7 +905,14 @@
     const duration = isError ? 6000 : 3000;
     if (isError) {
       toast.style.cssText = "display:flex;align-items:center;gap:10px;min-width:220px";
-      toast.innerHTML = `<span style="flex:1">${msg}</span><button onclick="this.closest('.toast').remove()" style="padding:2px 8px;border-radius:4px;border:1px solid rgba(244,244,240,.4);background:rgba(244,244,240,.1);color:#F4F4F0;font-size:12px;cursor:pointer">×</button>`;
+      const _tSpan = document.createElement('span');
+      _tSpan.style.flex = '1';
+      _tSpan.textContent = msg;
+      const _tBtn = document.createElement('button');
+      _tBtn.textContent = '×';
+      _tBtn.style.cssText = 'padding:2px 8px;border-radius:4px;border:1px solid rgba(244,244,240,.4);background:rgba(244,244,240,.1);color:#F4F4F0;font-size:12px;cursor:pointer';
+      _tBtn.addEventListener('click', () => toast.remove());
+      toast.append(_tSpan, _tBtn);
     } else {
       toast.textContent = msg;
     }
@@ -928,7 +935,13 @@
     const toast = document.createElement("div");
     toast.className = "toast success";
     toast.style.cssText = "display:flex;align-items:center;gap:12px;min-width:260px";
-    toast.innerHTML = `<span style="flex:1">${msg}</span><button style="padding:4px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.5);background:rgba(244,244,240,.15);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">↩️ Deshacer</button>`;
+    const _utSpan = document.createElement('span');
+    _utSpan.style.flex = '1';
+    _utSpan.textContent = msg;
+    const _utBtn = document.createElement('button');
+    _utBtn.textContent = '↩️ Deshacer';
+    _utBtn.style.cssText = 'padding:4px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.5);background:rgba(244,244,240,.15);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer';
+    toast.append(_utSpan, _utBtn);
     container.appendChild(toast);
     let done = false;
     const fadeOut = () => {
@@ -1684,10 +1697,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             alertChip = `<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:${alert.color}22;border:1px solid ${alert.color};color:${alert.color};font-weight:700">${alert.label}</span>`;
             waBtn = `<button onclick="(function(){var d=window._clientCache['${c.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" title="Enviar recordatorio por WhatsApp" class="ml-2" style="padding:4px 10px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;font-size:11px;font-weight:700;cursor:pointer">📲 WhatsApp</button>`;
           }
-          const search = (c.displayName + ' ' + c.email).toLowerCase();
-          const safeName = (c.displayName || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          const search = _escH((c.displayName + ' ' + c.email).toLowerCase());
           return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
-            <span><strong>${c.displayName}</strong>${weekBadge} <span class="text-[#888] text-xs">(${c.email})</span> ${statusIcon}${extraBadges}${ciStatusBadge}${sessBadge}${liveBadge}${alertChip}</span>
+            <span><strong>${_escH(c.displayName)}</strong>${weekBadge} <span class="text-[#888] text-xs">(${_escH(c.email)})</span> ${statusIcon}${extraBadges}${ciStatusBadge}${sessBadge}${liveBadge}${alertChip}</span>
             <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="showMergeModal('${c.id}')" title="Fusionar con cliente duplicado" style="padding:3px 8px;border-radius:6px;border:1px solid #7788cc;background:rgba(119,136,204,.1);color:#7788cc;font-size:13px;cursor:pointer">⇌</button></span>
           </div>`;
         }).join('');
@@ -1731,7 +1743,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         }, 60000);
       }
     } catch (e) {
-      container.innerHTML = `<p class="text-red-400 text-sm">Error al cargar clientes: ${e.message}</p>`;
+      container.innerHTML = '<p class="text-red-400 text-sm">Error al cargar clientes: ' + _escH(e.message) + '</p>';
       console.error("loadClientList error:", e);
     }
     document.getElementById("newClientBtn").onclick = () => createClientModal();
@@ -1819,16 +1831,16 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         return;
       }
       const rows = foreign.map(c => {
-        const name = c.displayName || c.email || c.id;
-        const cidLabel = c.coachId ? `coachId: <code style="font-size:10px;opacity:.7">${c.coachId.substring(0,8)}…</code>` : '<em>sin coachId</em>';
+        const name = _escH(c.displayName || c.email || c.id);
+        const cidLabel = c.coachId ? `coachId: <code style="font-size:10px;opacity:.7">${_escH(c.coachId.substring(0,8))}…</code>` : '<em>sin coachId</em>';
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px">
-          <span><strong>${name}</strong> <span class="text-[#888] ml-1">${c.email}</span> <span class="ml-2" style="color:#f59e0b">${cidLabel}</span></span>
+          <span><strong>${name}</strong> <span class="text-[#888] ml-1">${_escH(c.email)}</span> <span class="ml-2" style="color:#f59e0b">${cidLabel}</span></span>
           <button onclick="recoverClient('${c.id}','${(c.displayName||c.email||c.id).replace(/'/g,"\\'")}','${c.coachId||''}')" style="padding:4px 12px;border-radius:6px;border:1px solid #818cf8;background:rgba(129,140,248,.18);color:#818cf8;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;margin-left:10px">Reclamar</button>
         </div>`;
       }).join('');
       resultBox.innerHTML = `<div class="text-xs mb-2" style="color:#f59e0b">⚠️ ${foreign.length} cliente(s) con coachId diferente al tuyo:</div>${rows}`;
     } catch (e) {
-      if (resultBox) resultBox.innerHTML = `<span class="text-xs text-red-400">Error: ${e.message}</span>`;
+      if (resultBox) resultBox.innerHTML = '<span class="text-xs text-red-400">Error: ' + _escH(e.message) + '</span>';
     }
   }
   window.scanAndRecoverClients = scanAndRecoverClients;
@@ -5878,7 +5890,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         return;
       }
 
-      console.info('[VDSEN D.1] Response received:', respJson);
+      console.info('[VDSEN D.1] Response received — status:', respJson && respJson.status);
 
       // 6. Handle by status
       const status = respJson.status;
