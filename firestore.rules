@@ -6,11 +6,19 @@ service cloud.firestore {
     }
     match /clients/{clientId} {
       allow read: if request.auth != null && (request.auth.uid == clientId || exists(/databases/$(database)/documents/coaches/$(request.auth.uid)));
-      // Coach: escritura completa sobre docs de sus clientes.
-      allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
-      // Cliente: puede actualizar SOLO campos seguros en su propio doc
-      // (confirmar/corregir su celular). No puede tocar activePlanId,
-      // coachId, role, ni nada crítico.
+      // Coach: escritura solo sobre clientes propios (coachId == auth.uid) o clientes nuevos sin dueño.
+      // La regla más específica gana: si el doc ya existe, coachId debe coincidir.
+      allow write: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && (
+          // Crear cliente nuevo (doc no existe aún)
+          !exists(/databases/$(database)/documents/clients/$(clientId))
+          ||
+          // Modificar cliente propio (coachId del doc actual coincide)
+          resource.data.coachId == request.auth.uid
+        );
+      // Cliente: puede actualizar SOLO campos seguros en su propio doc.
+      // No puede tocar activePlanId, coachId, role, ni nada crítico.
       allow update: if request.auth != null && request.auth.uid == clientId
         && request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['phone', 'phoneConfirmedAt', 'phoneSkippedAt']);
@@ -20,8 +28,25 @@ service cloud.firestore {
       allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
     }
     match /plans/{planId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+      // Coach lee solo sus propios planes; cliente lee planes donde es el clientId.
+      allow read: if request.auth != null && (
+        (exists(/databases/$(database)/documents/coaches/$(request.auth.uid)) && resource.data.coachId == request.auth.uid)
+        || resource.data.clientId == request.auth.uid
+      );
+      // Crear plan: coach autenticado, coachId del nuevo doc debe ser el uid del coach,
+      // y no puede incluir farmacologia ni pharmacoPlan.
+      allow create: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && request.resource.data.coachId == request.auth.uid
+        && !('farmacologia'  in request.resource.data)
+        && !('pharmacoPlan'  in request.resource.data);
+      // Actualizar plan: solo el coach dueño (el que creó el plan).
+      allow update: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && resource.data.coachId == request.auth.uid;
+      // Eliminar plan: solo el coach dueño.
+      allow delete: if request.auth != null
+        && resource.data.coachId == request.auth.uid;
     }
     match /templates/{templateId} {
       allow read: if request.auth != null;
