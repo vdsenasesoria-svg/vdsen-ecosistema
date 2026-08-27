@@ -1013,6 +1013,16 @@ function buildDraftDocFromResp(resp, clientId, coachId, reviewStateForReq) {
 // Precondition gate (mirrors _vdsenSaveDraftToFirestore prechecks, pure)
 // reviewState: _vdsenReviewState[requestId] (with __items and __consistency)
 // requiresReview: true for NEEDS_COACH_REVIEW, false for VALID
+// D.2.1: medical blocker regex (mirrors _MEDICAL_BLOCKER_RE in coach app)
+var MEDICAL_BLOCKER_RE = /pez[oó]n|tejido|palpaci[oó]n|hematocrito|hemato|biomar|cl[ií]nic|m[eé]dic|diagn[oó]s|neurol[oó]g/i;
+
+// Helper: build blockingStatus for a review item (mirrors _buildReviewItems logic)
+function itemBlockingStatus(item) {
+  if (item.blockingStatus) return item.blockingStatus; // explicit
+  if (item.type === 'medical') return 'blocks_activation';
+  return 'non_blocking';
+}
+
 function checkD2APreconditions(resp, clientId, coachId, clientData, reviewState, requiresReview) {
   var errors = [];
   if (!coachId) errors.push('NO_COACH_SESSION');
@@ -1028,14 +1038,17 @@ function checkD2APreconditions(resp, clientId, coachId, clientData, reviewState,
     var consistency = rs.__consistency || [];
     if (consistency.length > 0) errors.push('CONSISTENCY_FAIL');
     var items = rs.__items || [];
-    var unresolved = 0, rejected = 0, adjustment = 0;
+    var unresolved = 0, rejected = 0, adjustment = 0, medicalBlockers = 0;
     items.forEach(function(item, idx) {
       if (item.type === 'info') return;
       var decision = rs[idx];
+      // D.2.1: blocks_activation items always block regardless of acknowledgment
+      if (itemBlockingStatus(item) === 'blocks_activation') medicalBlockers++;
       if (decision === 'reject') rejected++;
-      else if (decision === 'adjust') adjustment++;
+      else if (decision === 'adjust' || decision === 'requires_adjustment') adjustment++;
       else if (!decision) unresolved++;
     });
+    if (medicalBlockers > 0) errors.push('MEDICAL_BLOCKER');
     if (rejected > 0) errors.push('REVIEW_REJECTED');
     if (adjustment > 0) errors.push('REVIEW_ADJUSTMENT');
     if (unresolved > 0) errors.push('REVIEW_INCOMPLETE');
@@ -1477,17 +1490,18 @@ test('T-D115: D.2-A: VALID plan (requiresReview=false) → sin check de review g
 });
 
 // ─── T-D116: NEEDS_COACH_REVIEW todos aceptados → sin errores de review ───────
-test('T-D116: D.2-A: NEEDS_COACH_REVIEW todos aceptados + consistente → sin errores', function() {
+test('T-D116: D.2-A: NEEDS_COACH_REVIEW todos non-medical aceptados + consistente → sin errores', function() {
   var resp = makeValidResponse({ requestId: 'req-d116', status: 'NEEDS_COACH_REVIEW' });
   var reviewState = {
-    __items: [{ type: 'general' }, { type: 'medical' }, { type: 'info' }],
+    // D.2.1: no medical blockers; general + mobility items accepted → gate passes
+    __items: [{ type: 'general', blockingStatus: 'non_blocking' }, { type: 'mobility', blockingStatus: 'non_blocking' }, { type: 'info' }],
     __consistency: [],
     0: 'accept',
     1: 'accept',
     // idx 2 es 'info' → no cuenta
   };
   var errs = checkD2APreconditions(resp, 'c1', 'coach-1', { coachId: 'coach-1' }, reviewState, true);
-  assert(errs.length === 0, 'todos aceptados + consistente debe pasar: ' + JSON.stringify(errs));
+  assert(errs.length === 0, 'non-medical aceptados + consistente debe pasar: ' + JSON.stringify(errs));
 });
 
 // ─── T-D117: idempotency conflict — mismo requestId, diferente clientId ────────
@@ -1714,10 +1728,11 @@ test('T-D140: rules: plan de otro coach — update DENY por ownership', function
 // ─── SECTION: Review semantics ─────────────────────────────────────────────────
 
 // ─── T-D141: todos accepted → gate pasa ───────────────────────────────────────
-test('T-D141: review gate: todos accepted → pasa', function() {
-  var rs = { __items: [{ type: 'general' }, { type: 'medical' }], __consistency: [], 0: 'accept', 1: 'accept' };
+test('T-D141: review gate: todos non-medical accepted → pasa', function() {
+  // D.2.1: medical items now always block; this test uses only non-blocking items
+  var rs = { __items: [{ type: 'general', blockingStatus: 'non_blocking' }, { type: 'mobility', blockingStatus: 'non_blocking' }], __consistency: [], 0: 'accept', 1: 'accept' };
   var errs = checkD2APreconditions(makeValidResponse({ requestId: 'r141', status: 'NEEDS_COACH_REVIEW' }), 'c1', 'co1', { coachId: 'co1' }, rs, true);
-  assert(errs.length === 0, 'todos aceptados debe pasar: ' + JSON.stringify(errs));
+  assert(errs.length === 0, 'todos non-medical aceptados debe pasar: ' + JSON.stringify(errs));
 });
 
 // ─── T-D142: un reject bloquea aunque resto accepted ─────────────────────────
@@ -1759,6 +1774,150 @@ test('T-D145: D.2-B: nutritionDisplay vacío → mirrors con valores vacíos (no
   assert(updates.client !== null, 'client write debe existir');
   assert(typeof updates.client.nutritionPlan === 'object', 'nutritionPlan debe ser objeto (vacío)');
   assert(typeof updates.client.supplementPlan === 'object', 'supplementPlan debe ser objeto (vacío)');
+});
+
+// ─── D.2.1: Safety Gate — Medical Blocker Tests (T-D146 … T-D162) ────────────
+
+// Helper: build items for D.2.1 tests
+function makeReviewItems(specs) {
+  // specs: array of { type, blockingStatus? }
+  return specs.map(function(s, idx) {
+    return { type: s.type, blockingStatus: s.blockingStatus || (s.type === 'medical' ? 'blocks_activation' : 'non_blocking'), text: 'item-' + idx };
+  });
+}
+
+// T-D146: _MEDICAL_BLOCKER_RE matches hematocrito
+test('T-D146: MEDICAL_BLOCKER_RE: "hematocrito 56.7%" → match', function() {
+  assert(MEDICAL_BLOCKER_RE.test('hematocrito 56.7%'), 'hematocrito debe hacer match');
+});
+
+// T-D147: _MEDICAL_BLOCKER_RE matches tejido palpable
+test('T-D147: MEDICAL_BLOCKER_RE: "tejido palpable zona mamaria" → match', function() {
+  assert(MEDICAL_BLOCKER_RE.test('tejido palpable zona mamaria'), 'tejido debe hacer match');
+});
+
+// T-D148: _MEDICAL_BLOCKER_RE matches neurológico
+test('T-D148: MEDICAL_BLOCKER_RE: "síntomas neurológicos" → match', function() {
+  assert(MEDICAL_BLOCKER_RE.test('síntomas neurológicos'), 'neurológicos debe hacer match');
+});
+
+// T-D149: _MEDICAL_BLOCKER_RE does NOT match plain training warning
+test('T-D149: MEDICAL_BLOCKER_RE: "volumen de entrenamiento elevado" → no match', function() {
+  assert(!MEDICAL_BLOCKER_RE.test('volumen de entrenamiento elevado'), 'training warning no debe hacer match');
+});
+
+// T-D150: _MEDICAL_BLOCKER_RE does NOT match mobility warning
+test('T-D150: MEDICAL_BLOCKER_RE: "restricción lumbar leve" → no match', function() {
+  assert(!MEDICAL_BLOCKER_RE.test('restricción lumbar leve'), 'restricción lumbar no debe hacer match como médico');
+});
+
+// T-D151: item type=medical → blockingStatus = blocks_activation
+test('T-D151: itemBlockingStatus: type=medical → blocks_activation', function() {
+  var item = { type: 'medical', text: 'hematocrito elevado' };
+  assert(itemBlockingStatus(item) === 'blocks_activation', 'medical → blocks_activation');
+});
+
+// T-D152: item type=general → blockingStatus = non_blocking
+test('T-D152: itemBlockingStatus: type=general → non_blocking', function() {
+  var item = { type: 'general', text: 'entrenamiento intenso' };
+  assert(itemBlockingStatus(item) === 'non_blocking', 'general → non_blocking');
+});
+
+// T-D153: medical blocker acknowledged → still blocks (medicalBlockers > 0)
+test('T-D153: gate: medical blocker acknowledged → MEDICAL_BLOCKER error (acknowledged ≠ resolved)', function() {
+  var items = makeReviewItems([{ type: 'medical' }]);
+  var rs = { __items: items, __consistency: [], 0: 'acknowledged' };
+  var resp = makeValidResponse({ requestId: 'r153', status: 'NEEDS_COACH_REVIEW' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.includes('MEDICAL_BLOCKER'), 'acknowledged medical blocker debe seguir bloqueando');
+  assert(!errs.includes('REVIEW_INCOMPLETE'), 'acknowledged no es unresolved');
+});
+
+// T-D154: medical blocker requires_adjustment → blocks via both MEDICAL_BLOCKER and REVIEW_ADJUSTMENT
+test('T-D154: gate: medical blocker requires_adjustment → MEDICAL_BLOCKER + REVIEW_ADJUSTMENT', function() {
+  var items = makeReviewItems([{ type: 'medical' }]);
+  var rs = { __items: items, __consistency: [], 0: 'requires_adjustment' };
+  var resp = makeValidResponse({ requestId: 'r154', status: 'NEEDS_COACH_REVIEW' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.includes('MEDICAL_BLOCKER'),    'debe incluir MEDICAL_BLOCKER');
+  assert(errs.includes('REVIEW_ADJUSTMENT'),  'requires_adjustment debe contar como REVIEW_ADJUSTMENT');
+});
+
+// T-D155: non-medical accepted → no block
+test('T-D155: gate: non-medical accepted → sin error', function() {
+  var items = makeReviewItems([{ type: 'general' }]);
+  var rs = { __items: items, __consistency: [], 0: 'accept' };
+  var resp = makeValidResponse({ requestId: 'r155', status: 'NEEDS_COACH_REVIEW' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.length === 0, 'non-medical accepted sin errores: ' + JSON.stringify(errs));
+});
+
+// T-D156: mix medical + non-medical; non-medical accepted but medical present → MEDICAL_BLOCKER only
+test('T-D156: gate: non-medical accepted + 1 medical → solo MEDICAL_BLOCKER', function() {
+  var items = makeReviewItems([{ type: 'general' }, { type: 'medical' }]);
+  var rs = { __items: items, __consistency: [], 0: 'accept', 1: 'acknowledged' };
+  var resp = makeValidResponse({ requestId: 'r156', status: 'NEEDS_COACH_REVIEW' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.includes('MEDICAL_BLOCKER'), 'debe incluir MEDICAL_BLOCKER');
+  assert(!errs.includes('REVIEW_INCOMPLETE'), 'todos revisados');
+  assert(!errs.includes('REVIEW_ADJUSTMENT'), 'sin ajuste pendiente');
+});
+
+// T-D157: zero medical blockers + all accepted → readyForApproval = true (no errors)
+test('T-D157: gate: 0 medical blockers + todos accepted → sin errores (readyForApproval)', function() {
+  var items = makeReviewItems([{ type: 'general' }, { type: 'mobility', blockingStatus: 'non_blocking' }]);
+  var rs = { __items: items, __consistency: [], 0: 'accept', 1: 'accept' };
+  var resp = makeValidResponse({ requestId: 'r157', status: 'NEEDS_COACH_REVIEW' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.length === 0, 'sin medical blocker → readyForApproval: ' + JSON.stringify(errs));
+});
+
+// T-D158: info type items do not count as medical blockers
+test('T-D158: gate: info items ignorados en conteo de medical blockers', function() {
+  var items = [{ type: 'info', blockingStatus: 'non_blocking', text: 'farmacología omitida' }];
+  var rs = { __items: items, __consistency: [] };
+  var resp = makeValidResponse({ requestId: 'r158', status: 'NEEDS_COACH_REVIEW' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(!errs.includes('MEDICAL_BLOCKER'),    'info no es medical blocker');
+  assert(!errs.includes('REVIEW_INCOMPLETE'),  'info no cuenta para reviewed');
+});
+
+// T-D159: requires_adjustment on non-blocking item → REVIEW_ADJUSTMENT (not MEDICAL_BLOCKER)
+test('T-D159: gate: requires_adjustment en item non-blocking → solo REVIEW_ADJUSTMENT', function() {
+  var items = makeReviewItems([{ type: 'general', blockingStatus: 'non_blocking' }]);
+  var rs = { __items: items, __consistency: [], 0: 'requires_adjustment' };
+  var resp = makeValidResponse({ requestId: 'r159', status: 'NEEDS_COACH_REVIEW' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.includes('REVIEW_ADJUSTMENT'), 'requires_adjustment → REVIEW_ADJUSTMENT');
+  assert(!errs.includes('MEDICAL_BLOCKER'),  'non-blocking → no MEDICAL_BLOCKER');
+});
+
+// T-D160: explicit blockingStatus: 'blocks_activation' on non-medical type → still blocks
+test('T-D160: gate: blockingStatus=blocks_activation explícito → bloquea aunque type=general', function() {
+  var items = [{ type: 'general', blockingStatus: 'blocks_activation', text: 'alerta especial' }];
+  var rs = { __items: items, __consistency: [], 0: 'accept' };
+  var resp = makeValidResponse({ requestId: 'r160', status: 'NEEDS_COACH_REVIEW' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.includes('MEDICAL_BLOCKER'), 'explicit blocks_activation → MEDICAL_BLOCKER');
+});
+
+// T-D161: 2 medical blockers → MEDICAL_BLOCKER count reflected
+test('T-D161: gate: 2 medical blockers → MEDICAL_BLOCKER (count=2)', function() {
+  var items = makeReviewItems([{ type: 'medical' }, { type: 'medical' }]);
+  var rs = { __items: items, __consistency: [], 0: 'acknowledged', 1: 'acknowledged' };
+  var resp = makeValidResponse({ requestId: 'r161', status: 'NEEDS_COACH_REVIEW' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, true);
+  assert(errs.includes('MEDICAL_BLOCKER'), '2 blockers → MEDICAL_BLOCKER presente');
+});
+
+// T-D162: VALID (requiresReview=false) with medical items → gate not enforced (no errors)
+test('T-D162: gate: VALID status (requiresReview=false) → gate no se aplica', function() {
+  var items = makeReviewItems([{ type: 'medical' }]);
+  var rs = { __items: items, __consistency: [] };
+  var resp = makeValidResponse({ requestId: 'r162', status: 'VALID' });
+  var errs = checkD2APreconditions(resp, 'c1', 'co1', { coachId: 'co1' }, rs, false);
+  assert(!errs.includes('MEDICAL_BLOCKER'), 'VALID: gate no aplica → no MEDICAL_BLOCKER');
+  assert(errs.length === 0, 'VALID: 0 errores: ' + JSON.stringify(errs));
 });
 
 // ─── Runner ───────────────────────────────────────────────────────────────────

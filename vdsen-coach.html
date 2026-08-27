@@ -6140,6 +6140,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return issues;
   }
 
+  // D.2.1: keywords that require clinical data to resolve — cannot be cleared by coach click alone
+  var _MEDICAL_BLOCKER_RE = /pez[oó]n|tejido|palpaci[oó]n|hematocrito|hemato|biomar|cl[ií]nic|m[eé]dic|diagn[oó]s|neurol[oó]g/i;
+
   function _buildReviewItems(resp) {
     var modStatus = resp.moduleStatus || {};
     var warnings  = resp.warnings  || [];
@@ -6147,28 +6150,40 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     // TRAINING
     if (modStatus.training === 'NEEDS_COACH_REVIEW') {
-      var mobWarn = warnings.find(function(w){ return /movilidad|postura|patr[oó]n|fallo/i.test(w); }) || null;
+      var trainMeds = warnings.filter(function(w){ return _MEDICAL_BLOCKER_RE.test(w); });
+      trainMeds.forEach(function(w){
+        items.push({ module: 'TRAINING', type: 'medical', blockingStatus: 'blocks_activation', text: w });
+      });
+      var mobWarn = warnings.find(function(w){
+        return /movilidad|postura|patr[oó]n|fallo/i.test(w) && !trainMeds.includes(w);
+      }) || null;
       if (mobWarn) {
-        items.push({ module: 'TRAINING', type: 'mobility', text: mobWarn,
+        items.push({ module: 'TRAINING', type: 'mobility', blockingStatus: 'non_blocking', text: mobWarn,
           note: 'Evaluación formal no disponible. Revisá si las restricciones actuales son suficientes para este plan.' });
       }
-      warnings.filter(function(w){ return /entren|ejercic|patr[oó]n|volum|ses[ió]n/i.test(w) && w !== mobWarn; })
-        .forEach(function(w){ items.push({ module: 'TRAINING', type: 'general', text: w }); });
+      warnings.filter(function(w){
+        return /entren|ejercic|patr[oó]n|volum|ses[ió]n/i.test(w) && w !== mobWarn && !trainMeds.includes(w);
+      }).forEach(function(w){ items.push({ module: 'TRAINING', type: 'general', blockingStatus: 'non_blocking', text: w }); });
     }
 
     // SUPPLEMENTATION — medical flags first
     if (modStatus.supplementation === 'NEEDS_COACH_REVIEW') {
-      var medPattern = /pez[oó]n|tejido|hematocrito|hemato|biomar|cl[ií]nic|m[eé]dic|diagn[oó]s/i;
-      var medWarns   = warnings.filter(function(w){ return medPattern.test(w); });
-      var suppOther  = warnings.filter(function(w){ return /supl|suplement/i.test(w) && !medWarns.includes(w); });
-      medWarns.forEach(function(w){ items.push({ module: 'SUPPLEMENTATION', type: 'medical', text: w }); });
-      suppOther.forEach(function(w){ items.push({ module: 'SUPPLEMENTATION', type: 'general', text: w }); });
+      var medWarns  = warnings.filter(function(w){ return _MEDICAL_BLOCKER_RE.test(w); });
+      var suppOther = warnings.filter(function(w){ return /supl|suplement/i.test(w) && !medWarns.includes(w); });
+      medWarns.forEach(function(w){
+        items.push({ module: 'SUPPLEMENTATION', type: 'medical', blockingStatus: 'blocks_activation', text: w });
+      });
+      suppOther.forEach(function(w){
+        items.push({ module: 'SUPPLEMENTATION', type: 'general', blockingStatus: 'non_blocking', text: w });
+      });
     }
 
     // NUTRITION (si aplica)
     if (modStatus.nutritionTargets === 'NEEDS_COACH_REVIEW' || modStatus.nutritionMenu === 'NEEDS_COACH_REVIEW') {
       warnings.filter(function(w){ return /nutr|macr|calor|comida/i.test(w); })
-        .forEach(function(w){ items.push({ module: 'NUTRITION', type: 'general', text: w }); });
+        .forEach(function(w){
+          items.push({ module: 'NUTRITION', type: 'general', blockingStatus: 'non_blocking', text: w });
+        });
     }
 
     // OTROS — clasificados como info (farmacología omitida, etc.)
@@ -6177,7 +6192,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     warnings.filter(function(w){ return !classified.includes(w) && !infraRe.test(w); })
       .forEach(function(w){
         var isFarma = /farmacolog|dosis|ciclo|protocol/i.test(w);
-        items.push({ module: 'OTROS', type: isFarma ? 'info' : 'general', text: w });
+        var isMed   = !isFarma && _MEDICAL_BLOCKER_RE.test(w);
+        items.push({ module: 'OTROS', type: isFarma ? 'info' : (isMed ? 'medical' : 'general'),
+          blockingStatus: isMed ? 'blocks_activation' : 'non_blocking', text: w });
       });
 
     return items;
@@ -6217,16 +6234,37 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           html += '<div style="font-size:11px;color:#8b5cf6;margin-bottom:6px;font-style:italic">' + _escH(item.note) + '</div>';
         }
 
-        // Flag médica — disclaimer
+        // Flag médica — disclaimer + badge
+        var isBlocking = item.blockingStatus === 'blocks_activation';
         if (isMed) {
-          html += '<div style="font-size:11px;color:#ef4444;margin-bottom:8px">⚠ Contexto de seguridad — requiere valoración profesional cuando aplique. La revisión del Coach solo reconoce que este flag fue visto.</div>';
+          html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+          html += '<div style="font-size:11px;color:#ef4444;flex:1">⚠ Contexto de seguridad — requiere valoración profesional cuando aplique. Reconocer este flag NO lo resuelve.</div>';
+          if (isBlocking) {
+            html += '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:rgba(239,68,68,.18);color:#ef4444;white-space:nowrap;border:1px solid rgba(239,68,68,.4)">🔴 Bloquea activación</span>';
+          }
+          html += '</div>';
         }
 
         // Info-only: sin botones de revisión
         if (isInfo) {
           html += '<div style="font-size:11px;color:var(--text-muted);font-style:italic">Informativo — sin acción requerida</div>';
+        } else if (isBlocking) {
+          // D.2.1: medical blockers use acknowledgment-only actions (acknowledged ≠ resolved)
+          var blockActions = [
+            { key: 'acknowledged',       label: 'He revisado esta alerta', color: '#f59e0b', bg: 'rgba(245,158,11,.15)' },
+            { key: 'requires_adjustment', label: 'Requiere actualización de datos', color: '#ef4444', bg: 'rgba(239,68,68,.15)' }
+          ];
+          html += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+          blockActions.forEach(function(a){
+            var active = cur === a.key;
+            html += '<button onclick="window._vdsenReviewAction(\'' + _escH(requestId) + '\',' + idx + ',\'' + a.key + '\')" ' +
+              'style="font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid ' + a.color + ';cursor:pointer;' +
+              'background:' + (active ? a.bg : 'transparent') + ';color:' + a.color + ';font-weight:' + (active ? '700' : '400') + '">' +
+              a.label + '</button>';
+          });
+          html += '</div>';
         } else {
-          // Botones de revisión
+          // Standard non-blocking items
           var actions = [
             { key: 'accept', label: '✓ Revisado / acepto', color: '#22c55e', bg: 'rgba(34,197,94,.15)' },
             { key: 'adjust', label: '✎ Requiere ajuste',  color: '#f59e0b', bg: 'rgba(245,158,11,.15)' },
@@ -6262,12 +6300,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     var total    = 0;
     var hasAdjust  = false;
     var hasReject  = false;
+    var medicalBlockerCount = 0;
     items.forEach(function(item, idx){
       if (item.type === 'info') return; // info items don't count
       total++;
-      if (state[idx]) reviewed++;
-      if (state[idx] === 'adjust') hasAdjust = true;
-      if (state[idx] === 'reject') hasReject = true;
+      var decision = state[idx];
+      if (decision) reviewed++;
+      // D.2.1: blocks_activation items always block approval regardless of acknowledgment
+      if (item.blockingStatus === 'blocks_activation') medicalBlockerCount++;
+      if (decision === 'adjust' || decision === 'requires_adjustment') hasAdjust = true;
+      if (decision === 'reject') hasReject = true;
     });
 
     var consistent = !consistencyIssues || consistencyIssues.length === 0;
@@ -6278,14 +6320,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     var itemsEl = document.getElementById('vdsenPreview_reviewItems');
     if (itemsEl) itemsEl.innerHTML = _renderReviewItems(requestId, items);
 
-    // reviewGate — reject and inconsistency both block approval
+    // reviewGate — D.2.1: medical blockers, reject, and inconsistency all block approval
     var gateEl = document.getElementById('vdsenPreview_reviewGate');
+    var readyForApproval = false;
     if (gateEl) {
-      var readyForApproval = reviewed >= total && total > 0 && !hasAdjust && !hasReject && consistent;
+      readyForApproval = reviewed >= total && total > 0 && !hasAdjust && !hasReject && consistent && medicalBlockerCount === 0;
       if (!consistent) {
         gateEl.style.background = 'rgba(239,68,68,.12)';
         gateEl.style.color = '#ef4444';
         gateEl.textContent = '⚠️ Respuesta inconsistente — no se puede aprobar hasta resolver la inconsistencia';
+      } else if (medicalBlockerCount > 0) {
+        gateEl.style.background = 'rgba(239,68,68,.12)';
+        gateEl.style.color = '#ef4444';
+        gateEl.textContent = '🔴 ' + medicalBlockerCount + ' alerta(s) médica(s) bloquean la activación — requieren datos clínicos actualizados para resolverse';
       } else if (readyForApproval) {
         gateEl.style.background = 'rgba(34,197,94,.12)';
         gateEl.style.color = '#22c55e';
@@ -6538,14 +6585,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         throw new Error('CONSISTENCY_FAIL: La respuesta contiene ' + consistency.length +
           ' inconsistencia(s) — resolver antes de guardar (gate revalidado internamente)');
       const items = rs.__items || [];
-      var unresolvedGate = 0, rejectedGate = 0, adjustGate = 0;
+      var unresolvedGate = 0, rejectedGate = 0, adjustGate = 0, medicalBlockerGate = 0;
       items.forEach(function(item, idx) {
         if (item.type === 'info') return;
         var decision = rs[idx];
+        if (item.blockingStatus === 'blocks_activation') medicalBlockerGate++;
         if (decision === 'reject') rejectedGate++;
-        else if (decision === 'adjust') adjustGate++;
+        else if (decision === 'adjust' || decision === 'requires_adjustment') adjustGate++;
         else if (!decision) unresolvedGate++;
       });
+      // D.2.1: medical blockers block save regardless of acknowledgment
+      if (medicalBlockerGate > 0)
+        throw new Error('MEDICAL_BLOCKER: ' + medicalBlockerGate +
+          ' alerta(s) médica(s) bloquean la activación — requieren datos clínicos actualizados para resolverse');
       if (rejectedGate > 0)
         throw new Error('REVIEW_REJECTED: ' + rejectedGate +
           ' ítem(s) rechazado(s) — el plan no puede guardarse');
