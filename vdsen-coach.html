@@ -1762,8 +1762,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       await setDoc(doc(db, 'clients', clientId), { coachId: currentCoach.uid }, { merge: true });
       showToast(`${name} asignado a tu cuenta`);
       loadClientList();
+      loadClientsSelect();
     } catch (e) {
-      showToast('Error al asignar cliente: ' + e.message, true);
+      showToast('Error al asignar cliente: ' + (e.message || e.code || 'permiso denegado'), true);
     }
   }
   window.assignLegacyClient = assignLegacyClient;

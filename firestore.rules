@@ -15,6 +15,11 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
         && resource.data.coachId == request.auth.uid
         && request.resource.data.coachId == resource.data.coachId;
+      // Coach: reclamar cliente LEGACY (coachId ausente o vacío) — solo puede asignarse a sí mismo
+      allow update: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && (resource.data.coachId == null || resource.data.get('coachId', '') == '')
+        && request.resource.data.coachId == request.auth.uid;
       // Coach: eliminar solo clientes propios
       allow delete: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
