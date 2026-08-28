@@ -317,6 +317,23 @@
   <div id="templates" class="section"><div class="flex items-center gap-3 mb-4"><button onclick="showSection('crearPlan')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">← Plan</button><h2 class="text-2xl font-bold" style="margin:0">Templates</h2></div><div class="flex gap-2 mb-4"><button id="newTemplateBtn" class="btn-primary">+ Crear Template</button></div><div id="templateList"></div></div>
   <div id="catalogo" class="section"><h2 class="text-2xl font-bold mb-4">Catálogo Ejercicios</h2><div class="flex gap-2 mb-2"><button id="addExerciseBtn" class="btn-primary">+ Ejercicio</button><button id="loadBaseBtn" class="btn-secondary text-sm">📥 Cargar catálogo base</button></div><div id="exerciseCatalog"></div></div>
   <div id="config" class="section"><h2 class="text-2xl font-bold mb-4">Configuración</h2>
+    <!-- Información de cuenta -->
+    <div class="card p-4 mb-4">
+      <label class="block text-sm font-medium mb-3">👤 Información de cuenta</label>
+      <div id="accountInfoBox" style="font-size:12px;line-height:1.8;color:var(--text-muted)">Cargando…</div>
+    </div>
+    <!-- Cambiar contraseña -->
+    <div class="card p-4 mb-4" id="changePassCard">
+      <label class="block text-sm font-medium mb-1">🔒 Cambiar contraseña</label>
+      <p class="text-xs text-[#888] mb-3" id="changePassNote"></p>
+      <div id="changePassForm">
+        <input type="password" id="cpCurrent" class="input-field mb-2" placeholder="Contraseña actual" autocomplete="current-password">
+        <input type="password" id="cpNew" class="input-field mb-2" placeholder="Nueva contraseña (mín. 6 caracteres)" autocomplete="new-password">
+        <input type="password" id="cpConfirm" class="input-field mb-3" placeholder="Confirmar nueva contraseña" autocomplete="new-password">
+        <button id="cpBtn" onclick="window._vdsenChangePass&&window._vdsenChangePass()" class="btn-primary" style="width:100%">Cambiar contraseña</button>
+        <div id="cpMsg" class="text-sm mt-2" style="min-height:18px"></div>
+      </div>
+    </div>
     <div class="card p-4 mb-4">
       <label class="block text-sm font-medium mb-1">🔑 API Key de Anthropic (Claude)</label>
       <input type="password" id="apiKeyInput" class="input-field" placeholder="sk-ant-..." autocomplete="off">
@@ -795,7 +812,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getAuth, signOut, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
@@ -1484,6 +1501,74 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   
   async function initCoachUI() {
     window._vdsenSignOut = () => signOut(auth);
+
+    // Información de cuenta
+    const providerIds = (currentCoach.providerData || []).map(p => p.providerId);
+    const isEmailPass = providerIds.includes('password');
+    const isPhone     = providerIds.includes('phone');
+    const providerLabel = isEmailPass ? 'Email y contraseña'
+                        : isPhone     ? 'Teléfono (SMS)'
+                        : (providerIds[0] || 'Desconocido');
+    const infoBox = document.getElementById('accountInfoBox');
+    if (infoBox) {
+      infoBox.innerHTML = `
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:center">
+          <span style="color:var(--text-muted)">Email</span>
+          <span style="color:var(--text-primary);font-weight:600;word-break:break-all">${currentCoach.email || '—'}</span>
+          <span style="color:var(--text-muted)">Método de login</span>
+          <span style="color:var(--text-primary)">${providerLabel}</span>
+          <span style="color:var(--text-muted)">UID</span>
+          <span style="color:#888;font-family:monospace;font-size:10px;word-break:break-all">${currentCoach.uid}</span>
+        </div>`;
+    }
+
+    // Cambiar contraseña — solo cuentas email/password
+    const cpNote = document.getElementById('changePassNote');
+    const cpForm = document.getElementById('changePassForm');
+    if (!isEmailPass) {
+      if (cpNote) cpNote.textContent = 'Tu cuenta usa autenticación por teléfono — el cambio de contraseña no está disponible para este método de login.';
+      if (cpForm) cpForm.style.display = 'none';
+    } else {
+      if (cpNote) cpNote.textContent = 'Escribe tu contraseña actual para confirmar tu identidad y luego la nueva.';
+    }
+
+    window._vdsenChangePass = async () => {
+      const msgEl  = document.getElementById('cpMsg');
+      const curVal = document.getElementById('cpCurrent')?.value || '';
+      const newVal = document.getElementById('cpNew')?.value || '';
+      const conVal = document.getElementById('cpConfirm')?.value || '';
+      const setMsg = (txt, ok) => {
+        msgEl.textContent = txt;
+        msgEl.style.color = ok ? '#3a9460' : '#c94a3a';
+      };
+      if (!curVal)           return setMsg('Escribe tu contraseña actual.', false);
+      if (newVal.length < 6) return setMsg('La nueva contraseña debe tener al menos 6 caracteres.', false);
+      if (newVal !== conVal) return setMsg('Las contraseñas nuevas no coinciden.', false);
+      const btn = document.getElementById('cpBtn');
+      btn.disabled = true; btn.textContent = 'Procesando…';
+      try {
+        const user = auth.currentUser;
+        const cred = EmailAuthProvider.credential(user.email, curVal);
+        await reauthenticateWithCredential(user, cred);
+        await updatePassword(user, newVal);
+        setMsg('✓ Contraseña actualizada correctamente.', true);
+        document.getElementById('cpCurrent').value = '';
+        document.getElementById('cpNew').value = '';
+        document.getElementById('cpConfirm').value = '';
+      } catch(e) {
+        const map = {
+          'auth/wrong-password':       'Contraseña actual incorrecta.',
+          'auth/invalid-credential':   'Contraseña actual incorrecta.',
+          'auth/too-many-requests':    'Demasiados intentos. Espera un momento.',
+          'auth/weak-password':        'La nueva contraseña es demasiado débil.',
+          'auth/requires-recent-login':'Sesión expirada. Cerrá sesión, volvé a entrar e intentá de nuevo.',
+        };
+        setMsg(map[e.code] || e.message, false);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Cambiar contraseña';
+      }
+    };
+
     const _rpb = document.getElementById("repairPhoneBtn"); if (_rpb) _rpb.onclick = () => repairPhoneIndexAll();
     loadClientList();
     loadExerciseCatalog();
