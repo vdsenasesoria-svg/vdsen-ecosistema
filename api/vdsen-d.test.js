@@ -2199,6 +2199,141 @@ test('T-D185: topology: fixture 3 — learned state (high/THREE_ON_ONE_OFF) prev
     'TOPOLOGY_LEARNED_RESPONSE must be in reasonCodes when learned state wins');
 });
 
+// ─── Plan Normalizer Tests (T-N01..T-N09) ────────────────────────────────────
+
+var normalizer         = require('./vdsen-plan-normalizer');
+var normalizeVdsenPlan = normalizer.normalizeVdsenPlan;
+var validateVdsenPlan  = normalizer.validateVdsenPlan;
+var N_ERR              = normalizer.ERROR_CODES;
+
+function makeMinDay(n) {
+  return {
+    dayIndex: n,
+    label: 'Día ' + (n + 1),
+    exercises: [{
+      exerciseName: 'Squat',
+      sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 90 }]
+    }]
+  };
+}
+
+// T-N01: Canonical vdsen-plan-v2 → days resolved from entrenamiento.days
+test('T-N01: normalizer: canonical vdsen-plan-v2 → ok, days/weeks/nutricion resolved', function() {
+  var input = {
+    schema: 'vdsen-plan-v2',
+    entrenamiento: { weeks: 6, daysPerWeek: 3, days: [makeMinDay(0), makeMinDay(1), makeMinDay(2)] },
+    nutricion:    { calorias: 2400, proteina: 180, carbos: 250, grasas: 70 },
+    suplementacion: { tiers: [] }
+  };
+  var r = normalizeVdsenPlan(input);
+  assert(r.ok === true, 'canonical plan ok=true');
+  assert(Array.isArray(r.plan.days) && r.plan.days.length === 3, '3 días');
+  assert(r.plan.weeks === 6, 'weeks=6');
+  assert(r.plan.daysPerWeek === 3, 'daysPerWeek=3');
+  assert(r.plan.nutricion && r.plan.nutricion.calorias === 2400, 'nutricion resuelto');
+  assert(r.plan.suplementacion && Array.isArray(r.plan.suplementacion.tiers), 'suplementacion resuelto');
+});
+
+// T-N02: Legacy root-days (days at root, nutrition/supplementation aliases)
+test('T-N02: normalizer: legacy root-days + alias nutrition/supplementation → ok', function() {
+  var input = {
+    schema: 'vdsen-plan-v2',
+    weeks: 4, daysPerWeek: 4,
+    days: [makeMinDay(0), makeMinDay(1), makeMinDay(2), makeMinDay(3)],
+    nutrition:     { calorias: 2200 },
+    supplementation: { tiers: [{ nombre: 'TIER 1', items: [] }] }
+  };
+  var r = normalizeVdsenPlan(input);
+  assert(r.ok === true, 'legacy root-days ok=true: ' + (r.message || ''));
+  assert(r.plan.days.length === 4, '4 días');
+  assert(r.plan.weeks === 4, 'weeks=4');
+  assert(r.plan.nutricion && r.plan.nutricion.calorias === 2200, 'nutrition alias resuelto a nutricion');
+  assert(r.plan.suplementacion && Array.isArray(r.plan.suplementacion.tiers), 'supplementation alias resuelto');
+});
+
+// T-N03: days vacío → EMPTY_DAYS
+test('T-N03: normalizer: days vacío → EMPTY_DAYS', function() {
+  var input = { schema: 'vdsen-plan-v2', entrenamiento: { weeks: 6, daysPerWeek: 0, days: [] } };
+  var r = normalizeVdsenPlan(input);
+  assert(r.ok === false, 'days vacío ok=false');
+  assert(r.error === N_ERR.EMPTY_DAYS, 'error=EMPTY_DAYS, got: ' + r.error);
+});
+
+// T-N04: día sin ejercicios → DAY_WITHOUT_EXERCISES
+test('T-N04: validateVdsenPlan: día sin ejercicios → DAY_WITHOUT_EXERCISES', function() {
+  var plan = { weeks: 6, daysPerWeek: 1, days: [{ dayIndex: 0, label: 'Día 1', exercises: [] }] };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'día sin ejercicios ok=false');
+  assert(r.error === N_ERR.DAY_WITHOUT_EXERCISES, 'error=DAY_WITHOUT_EXERCISES, got: ' + r.error);
+});
+
+// T-N05: ejercicio sin series → EXERCISE_WITHOUT_SETS
+test('T-N05: validateVdsenPlan: ejercicio sin series → EXERCISE_WITHOUT_SETS', function() {
+  var plan = {
+    weeks: 6, daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Día 1', exercises: [{ exerciseName: 'Squat', sets: [] }] }]
+  };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'ejercicio sin series ok=false');
+  assert(r.error === N_ERR.EXERCISE_WITHOUT_SETS, 'error=EXERCISE_WITHOUT_SETS, got: ' + r.error);
+});
+
+// T-N06: nivel_medio inválido → INVALID_NIVEL_MEDIO
+test('T-N06: validateVdsenPlan: nivel_medio="intermedio" → INVALID_NIVEL_MEDIO', function() {
+  var plan = {
+    weeks: 6, daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Día 1', exercises: [{
+      exerciseName: 'Squat', nivel_medio: 'intermedio',
+      sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0 }]
+    }] }]
+  };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'nivel_medio inválido ok=false');
+  assert(r.error === N_ERR.INVALID_NIVEL_MEDIO, 'error=INVALID_NIVEL_MEDIO, got: ' + r.error);
+});
+
+// T-N07: variacion_vertical como string → INVALID_VARIACION_VERTICAL
+test('T-N07: validateVdsenPlan: variacion_vertical como string → INVALID_VARIACION_VERTICAL', function() {
+  var plan = {
+    weeks: 6, daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Día 1', exercises: [{
+      exerciseName: 'Press Banca', variacion_vertical: 'semana_3',
+      sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0 }]
+    }] }]
+  };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'variacion_vertical string ok=false');
+  assert(r.error === N_ERR.INVALID_VARIACION_VERTICAL, 'error=INVALID_VARIACION_VERTICAL, got: ' + r.error);
+});
+
+// T-N08: load como string no-numérico → INVALID_LOAD
+test('T-N08: validateVdsenPlan: load="pesado" → INVALID_LOAD', function() {
+  var plan = {
+    weeks: 6, daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Día 1', exercises: [{
+      exerciseName: 'Sentadilla',
+      sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 'pesado' }]
+    }] }]
+  };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'load string ok=false');
+  assert(r.error === N_ERR.INVALID_LOAD, 'error=INVALID_LOAD, got: ' + r.error);
+});
+
+// T-N09: plan envuelto en {plan: ...} → se desenvuelve correctamente
+test('T-N09: normalizer: plan en wrapper {plan:{...}} → desenvuelto y normalizado', function() {
+  var input = {
+    plan: {
+      schema: 'vdsen-plan-v2',
+      entrenamiento: { weeks: 8, daysPerWeek: 4, days: [makeMinDay(0), makeMinDay(1), makeMinDay(2), makeMinDay(3)] }
+    }
+  };
+  var r = normalizeVdsenPlan(input);
+  assert(r.ok === true, 'wrapper plan ok=true: ' + (r.message || ''));
+  assert(r.plan.weeks === 8, 'weeks=8');
+  assert(r.plan.days.length === 4, '4 días');
+});
+
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
 var passed = 0;

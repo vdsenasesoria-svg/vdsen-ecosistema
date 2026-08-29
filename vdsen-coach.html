@@ -3931,12 +3931,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       statusEl.innerHTML = `<span class="text-red-400">❌ JSON inválido: ${e.message}</span>`;
       return;
     }
-    if (!obj || !Array.isArray(obj.days) || obj.days.length === 0) {
-      statusEl.innerHTML = `<span class="text-red-400">❌ El JSON debe tener "days" como arreglo no vacío</span>`;
+    // Resolve canonical vdsen-plan-v2 (entrenamiento.days) or legacy root-days
+    const trainingBlock = (obj && obj.entrenamiento && Array.isArray(obj.entrenamiento.days)) ? obj.entrenamiento : obj;
+    if (!trainingBlock || !Array.isArray(trainingBlock.days) || trainingBlock.days.length === 0) {
+      statusEl.innerHTML = `<span class="text-red-400">❌ El JSON debe tener "days" como arreglo no vacío (en entrenamiento.days o en la raíz)</span>`;
       return;
     }
     // Normalizar: asegurar setIndex/dayIndex, defaults, campos mínimos
-    const days = obj.days.map((d, di) => ({
+    const days = trainingBlock.days.map((d, di) => ({
       dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
       label: String(d.label || `Día ${di + 1}`),
       exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => {
@@ -3973,8 +3975,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
 
     const planObj = {
-      weeks: parseInt(obj.weeks) || 6,
-      daysPerWeek: parseInt(obj.daysPerWeek) || days.length,
+      weeks: parseInt(trainingBlock.weeks ?? obj.weeks) || 6,
+      daysPerWeek: parseInt(trainingBlock.daysPerWeek ?? obj.daysPerWeek) || days.length,
       days
     };
     // Preservar campos especiales del root (carb_cycling_y3t, rirByWeek, reverse_diet, etc.)
@@ -5473,9 +5475,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         && (b.entrenamiento || b.suplementacion || b.farmacologia);
       if (isV2BySchema || isV2ByShape) {
         return {
-          training:    b.entrenamiento  || null,
-          nutrition:   b.nutricion      || null,
-          supplements: b.suplementacion || null,
+          training:    b.entrenamiento  || (Array.isArray(b.days) ? b : null),
+          nutrition:   b.nutricion      || b.nutrition      || null,
+          supplements: b.suplementacion || b.supplementation || null,
           pharma:      b.farmacologia   || null
         };
       }
@@ -8875,7 +8877,7 @@ El esfuerzo no es negociable.
         const blocks = _extractJsonBlocks(ta.value);
         if (!blocks.length) { const raw = JSON.parse(ta.value); blocks.push(raw); }
         const classified = _classifyBlocks(blocks);
-        planObj = classified.training;
+        planObj = classified.training ? _normalizeTrainingPlan(classified.training) : null;
         if (classified.nutrition) {
           try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: _nutritionJsonToPlan(classified.nutrition), nutritionRaw: classified.nutrition }); } catch(e){ console.warn('nutrition save failed:', e.message); }
         }
@@ -8886,7 +8888,7 @@ El esfuerzo no es negociable.
         planObj = parsePlanText(ta.value);
       }
       if (!planObj || !planObj.days || !planObj.days.length) {
-        if (status) status.textContent = '⚠ No se pudo leer un plan válido';
+        if (status) status.textContent = '⚠ No se encontraron días de entrenamiento. Verifica que el JSON tenga "days" (en entrenamiento.days o en la raíz).';
         return;
       }
       window._importedPlan = planObj;
