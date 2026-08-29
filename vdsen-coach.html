@@ -4024,12 +4024,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       statusEl.innerHTML = `<span class="text-red-400">❌ JSON inválido: ${e.message}</span>`;
       return;
     }
-    if (!obj || !Array.isArray(obj.days) || obj.days.length === 0) {
-      statusEl.innerHTML = `<span class="text-red-400">❌ El JSON debe tener "days" como arreglo no vacío</span>`;
+    // Resolve canonical vdsen-plan-v2 (entrenamiento.days) or legacy root-days
+    const trainingBlock = (obj && obj.entrenamiento && Array.isArray(obj.entrenamiento.days)) ? obj.entrenamiento : obj;
+    if (!trainingBlock || !Array.isArray(trainingBlock.days) || trainingBlock.days.length === 0) {
+      statusEl.innerHTML = `<span class="text-red-400">❌ El JSON debe tener "days" como arreglo no vacío (en entrenamiento.days o en la raíz)</span>`;
       return;
     }
     // Normalizar: asegurar setIndex/dayIndex, defaults, campos mínimos
-    const days = obj.days.map((d, di) => ({
+    const days = trainingBlock.days.map((d, di) => ({
       dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
       label: String(d.label || `Día ${di + 1}`),
       exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => {
@@ -4066,8 +4068,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
 
     const planObj = {
-      weeks: parseInt(obj.weeks) || 6,
-      daysPerWeek: parseInt(obj.daysPerWeek) || days.length,
+      weeks: parseInt(trainingBlock.weeks ?? obj.weeks) || 6,
+      daysPerWeek: parseInt(trainingBlock.daysPerWeek ?? obj.daysPerWeek) || days.length,
       days
     };
     // Preservar campos especiales del root (carb_cycling_y3t, rirByWeek, reverse_diet, etc.)
@@ -5566,9 +5568,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         && (b.entrenamiento || b.suplementacion || b.farmacologia);
       if (isV2BySchema || isV2ByShape) {
         return {
-          training:    b.entrenamiento  || null,
-          nutrition:   b.nutricion      || null,
-          supplements: b.suplementacion || null,
+          training:    b.entrenamiento  || (Array.isArray(b.days) ? b : null),
+          nutrition:   b.nutricion      || b.nutrition      || null,
+          supplements: b.suplementacion || b.supplementation || null,
           pharma:      b.farmacologia   || null
         };
       }
@@ -5772,10 +5774,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (_vetoErrs.length) throw new Error('Plan vetado por restricciones del cliente: ' + _vetoErrs.join('; '));
 
       if (!validation.valid) {
+        console.warn('[VDSEN IMPORT DEBUG] validatePlan ERRORES:', validation.errors);
         // P4 + P9.1: Deterministic repair for structural nulls only
         const repairResult = repairPlan({ training, nutrition, supplements, pharma }, validation.errors);
         if (repairResult.remaining.length) {
-          throw new Error('Plan con errores estructurales irrecuperables: ' + repairResult.remaining.join('; '));
+          throw new Error('Plan con errores irrecuperables:\n• ' + repairResult.remaining.join('\n• '));
         }
         if (repairResult.changed) {
           ({ training, nutrition, supplements, pharma } = repairResult.repaired);
@@ -5786,7 +5789,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           setStatus('<span style="color:var(--text-muted)">Reparación controlada (campos prescripción ausentes)…</span>');
           training = await _controlledRepairViaClaude(training, repairResult.incompleteItems, apiKey, motor);
           const _reVal = validatePlan({ training, nutrition, supplements }, _restrictions, null);
-          if (!_reVal.valid) throw new Error('Plan irrecuperable tras reparación controlada: ' + _reVal.errors.join('; '));
+          if (!_reVal.valid) throw new Error('Plan irrecuperable tras reparación controlada:\n• ' + _reVal.errors.join('\n• '));
         }
       }
       if (validation.warnings.length) console.info('[VDSEN] validatePlan warnings:', validation.warnings);
@@ -8743,10 +8746,11 @@ El esfuerzo no es negociable.
       if (_vetoErrs2.length) throw new Error('Plan vetado por restricciones del cliente: ' + _vetoErrs2.join('; '));
 
       if (!validation.valid) {
+        console.warn('[VDSEN IMPORT DEBUG] validatePlan ERRORES (flujo 2):', validation.errors);
         // P4 + P9.1: Deterministic repair for structural nulls only
         const repairResult = repairPlan({ training, nutrition, supplements, pharma }, validation.errors);
         if (repairResult.remaining.length) {
-          throw new Error('Plan con errores estructurales irrecuperables: ' + repairResult.remaining.join('; '));
+          throw new Error('Plan con errores irrecuperables:\n• ' + repairResult.remaining.join('\n• '));
         }
         if (repairResult.changed) {
           ({ training, nutrition, supplements, pharma } = repairResult.repaired);
@@ -8757,7 +8761,7 @@ El esfuerzo no es negociable.
           setStatus('<span style="color:#888">Reparación controlada (campos prescripción ausentes)…</span>');
           training = await _controlledRepairViaClaude(training, repairResult.incompleteItems, apiKey, motor);
           const _reVal2 = validatePlan({ training, nutrition, supplements }, _restrictions2, null);
-          if (!_reVal2.valid) throw new Error('Plan irrecuperable tras reparación controlada: ' + _reVal2.errors.join('; '));
+          if (!_reVal2.valid) throw new Error('Plan irrecuperable tras reparación controlada:\n• ' + _reVal2.errors.join('\n• '));
         }
       }
       if (validation.warnings.length) console.info('[VDSEN] validatePlan warnings:', validation.warnings);
@@ -8965,10 +8969,22 @@ El esfuerzo no es negociable.
     try {
       let planObj = null;
       if (mode === 'json') {
-        const blocks = _extractJsonBlocks(ta.value);
-        if (!blocks.length) { const raw = JSON.parse(ta.value); blocks.push(raw); }
+        const rawText = ta.value;
+        console.group('[VDSEN IMPORT DEBUG]');
+        console.log('1. RAW INPUT (primeros 500 chars):', rawText.slice(0, 500));
+
+        const blocks = _extractJsonBlocks(rawText);
+        if (!blocks.length) { try { const raw = JSON.parse(rawText); blocks.push(raw); } catch(pe) { console.error('JSON.parse fallback falló:', pe.message); } }
+        console.log('2. BLOQUES EXTRAÍDOS:', blocks.length, blocks.map(b => ({ schema: b && b.schema, hasEntrenamiento: !!(b && b.entrenamiento), hasDays: !!(b && Array.isArray(b.days)), hasNutricion: !!(b && (b.nutricion || b.nutrition)), hasSuplementacion: !!(b && (b.suplementacion || b.supplementation)) })));
+
         const classified = _classifyBlocks(blocks);
-        planObj = classified.training;
+        console.log('3. CLASSIFIED:', { training: classified.training ? 'PRESENT (days=' + (classified.training.days && classified.training.days.length) + ')' : 'NULL', nutrition: classified.nutrition ? 'PRESENT' : 'NULL', supplements: classified.supplements ? 'PRESENT' : 'NULL' });
+
+        planObj = classified.training ? _normalizeTrainingPlan(classified.training) : null;
+        console.log('4. NORMALIZED PLAN:', planObj ? ('OK — ' + planObj.days.length + ' días, weeks=' + planObj.weeks) : 'NULL (training block was null)');
+        if (planObj) console.log('   days[0] ejercicios:', planObj.days[0] && planObj.days[0].exercises && planObj.days[0].exercises.length);
+        console.groupEnd();
+
         if (classified.nutrition) {
           try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: _nutritionJsonToPlan(classified.nutrition), nutritionRaw: classified.nutrition }); } catch(e){ console.warn('nutrition save failed:', e.message); }
         }
@@ -8979,13 +8995,14 @@ El esfuerzo no es negociable.
         planObj = parsePlanText(ta.value);
       }
       if (!planObj || !planObj.days || !planObj.days.length) {
-        if (status) status.textContent = '⚠ No se pudo leer un plan válido';
+        if (status) status.textContent = '⚠ No se encontraron días de entrenamiento. Verifica que el JSON tenga "days" (en entrenamiento.days o en la raíz).';
         return;
       }
       window._importedPlan = planObj;
       await saveImportedPlan(clientId);
       document.getElementById('_importPlanArea').innerHTML = '';
     } catch(e) {
+      console.error('[VDSEN IMPORT DEBUG] EXCEPCIÓN:', e);
       if (status) status.textContent = 'Error: ' + e.message;
     }
   };

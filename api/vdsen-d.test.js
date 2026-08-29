@@ -7,6 +7,7 @@
 
 var contracts = require('./vdsen-contracts');
 var buildMod  = require('./vdsen-build-request');
+var topology  = require('./vdsen-topology');
 
 var validateGenerationRequest  = contracts.validateGenerationRequest;
 var validateGenerationResponse = contracts.validateGenerationResponse;
@@ -1954,6 +1955,383 @@ test('T-D164: security: updateDoc(clients) no persiste tempPassword', function()
     if (m[0].includes('tempPassword')) found.push(m[0].slice(0, 100));
   }
   assert(found.length === 0, 'updateDoc(clients) no debe incluir tempPassword. Encontrado: ' + JSON.stringify(found));
+});
+
+// ─── T-D165..T-D187: Training/Recovery Topology Engine ───────────────────────
+
+// ── Arithmetic: sessionsPerWeekEquivalent (RULE) ──────────────────────────────
+
+test('T-D165: topology: ONE_ON_ONE_OFF sessionsPerWeekEquivalent = 3.5', function() {
+  var m = topology.computeTopologyMetrics('ONE_ON_ONE_OFF');
+  assert(m !== null, 'metrics must not be null');
+  assert(Math.abs(m.sessionsPerWeekEquivalent - 3.5) < 1e-9,
+    'ONE_ON_ONE_OFF sessionsPerWeekEquivalent should be 3.5, got ' + m.sessionsPerWeekEquivalent);
+});
+
+test('T-D166: topology: TWO_ON_ONE_OFF sessionsPerWeekEquivalent ≈ 4.6667', function() {
+  var m = topology.computeTopologyMetrics('TWO_ON_ONE_OFF');
+  var expected = 2 / 3 * 7;
+  assert(Math.abs(m.sessionsPerWeekEquivalent - expected) < 1e-6,
+    'TWO_ON_ONE_OFF sessionsPerWeekEquivalent should be ~4.6667, got ' + m.sessionsPerWeekEquivalent);
+});
+
+test('T-D167: topology: THREE_ON_ONE_OFF sessionsPerWeekEquivalent = 5.25', function() {
+  var m = topology.computeTopologyMetrics('THREE_ON_ONE_OFF');
+  assert(Math.abs(m.sessionsPerWeekEquivalent - 5.25) < 1e-9,
+    'THREE_ON_ONE_OFF sessionsPerWeekEquivalent should be 5.25, got ' + m.sessionsPerWeekEquivalent);
+});
+
+test('T-D168: topology: FOUR_ON_ONE_OFF sessionsPerWeekEquivalent = 5.6', function() {
+  var m = topology.computeTopologyMetrics('FOUR_ON_ONE_OFF');
+  assert(Math.abs(m.sessionsPerWeekEquivalent - 5.6) < 1e-9,
+    'FOUR_ON_ONE_OFF sessionsPerWeekEquivalent should be 5.6, got ' + m.sessionsPerWeekEquivalent);
+});
+
+test('T-D169: topology: FIVE_ON_TWO_OFF sessionsPerWeekEquivalent = 5.0', function() {
+  var m = topology.computeTopologyMetrics('FIVE_ON_TWO_OFF');
+  assert(Math.abs(m.sessionsPerWeekEquivalent - 5.0) < 1e-9,
+    'FIVE_ON_TWO_OFF sessionsPerWeekEquivalent should be 5.0, got ' + m.sessionsPerWeekEquivalent);
+});
+
+test('T-D170: topology: SIX_ON_ONE_OFF sessionsPerWeekEquivalent = 6.0', function() {
+  var m = topology.computeTopologyMetrics('SIX_ON_ONE_OFF');
+  assert(Math.abs(m.sessionsPerWeekEquivalent - 6.0) < 1e-9,
+    'SIX_ON_ONE_OFF sessionsPerWeekEquivalent should be 6.0, got ' + m.sessionsPerWeekEquivalent);
+});
+
+// ── restDayDensity (RULE) ──────────────────────────────────────────────────────
+
+test('T-D186: topology: ONE_ON_ONE_OFF restDayDensity = 0.5', function() {
+  var m = topology.computeTopologyMetrics('ONE_ON_ONE_OFF');
+  assert(Math.abs(m.restDayDensity - 0.5) < 1e-9,
+    'ONE_ON_ONE_OFF restDayDensity should be 0.5, got ' + m.restDayDensity);
+});
+
+// ── Calendar Generator (RULE) ─────────────────────────────────────────────────
+
+test('T-D171: topology: TWO_ON_ONE_OFF 9-day calendar correct', function() {
+  var cal = topology.generateTopologyCalendar('TWO_ON_ONE_OFF', 9);
+  var expected = ['TRAIN','TRAIN','REST','TRAIN','TRAIN','REST','TRAIN','TRAIN','REST'];
+  assert(cal.length === 9, 'calendar length should be 9, got ' + cal.length);
+  for (var i = 0; i < 9; i++) {
+    assert(cal[i] === expected[i], 'day ' + i + ' should be ' + expected[i] + ', got ' + cal[i]);
+  }
+});
+
+// ── maxConsecutiveTrainingDays (RULE) ─────────────────────────────────────────
+
+test('T-D172: topology: ONE_ON_ONE_OFF maxConsecutiveTrainingDays = 1', function() {
+  var m = topology.computeTopologyMetrics('ONE_ON_ONE_OFF');
+  assert(m.maxConsecutiveTrainingDays === 1,
+    'ONE_ON_ONE_OFF maxConsec should be 1, got ' + m.maxConsecutiveTrainingDays);
+});
+
+test('T-D173: topology: TWO_ON_ONE_OFF maxConsecutiveTrainingDays = 2', function() {
+  var m = topology.computeTopologyMetrics('TWO_ON_ONE_OFF');
+  assert(m.maxConsecutiveTrainingDays === 2,
+    'TWO_ON_ONE_OFF maxConsec should be 2, got ' + m.maxConsecutiveTrainingDays);
+});
+
+test('T-D174: topology: THREE_ON_ONE_OFF maxConsecutiveTrainingDays = 3', function() {
+  var m = topology.computeTopologyMetrics('THREE_ON_ONE_OFF');
+  assert(m.maxConsecutiveTrainingDays === 3,
+    'THREE_ON_ONE_OFF maxConsec should be 3, got ' + m.maxConsecutiveTrainingDays);
+});
+
+test('T-D175: topology: FOUR_ON_ONE_OFF maxConsecutiveTrainingDays = 4', function() {
+  var m = topology.computeTopologyMetrics('FOUR_ON_ONE_OFF');
+  assert(m.maxConsecutiveTrainingDays === 4,
+    'FOUR_ON_ONE_OFF maxConsec should be 4, got ' + m.maxConsecutiveTrainingDays);
+});
+
+test('T-D176: topology: FIVE_ON_TWO_OFF maxConsecutiveTrainingDays = 5', function() {
+  var m = topology.computeTopologyMetrics('FIVE_ON_TWO_OFF');
+  assert(m.maxConsecutiveTrainingDays === 5,
+    'FIVE_ON_TWO_OFF maxConsec should be 5, got ' + m.maxConsecutiveTrainingDays);
+});
+
+test('T-D177: topology: SIX_ON_ONE_OFF maxConsecutiveTrainingDays = 6', function() {
+  var m = topology.computeTopologyMetrics('SIX_ON_ONE_OFF');
+  assert(m.maxConsecutiveTrainingDays === 6,
+    'SIX_ON_ONE_OFF maxConsec should be 6, got ' + m.maxConsecutiveTrainingDays);
+});
+
+// ── AB Split Metrics (RULE arithmetic + HEURISTIC application label) ──────────
+
+test('T-D178: topology: TWO_ON_ONE_OFF AB exposure frequency ≈ 2.3333', function() {
+  var ab = topology.computeABMetrics('TWO_ON_ONE_OFF');
+  var expected = 7 / 3;
+  assert(ab !== null, 'computeABMetrics must not be null');
+  assert(Math.abs(ab.effectiveExposureFrequencyAB - expected) < 1e-6,
+    'TWO_ON_ONE_OFF AB freq should be ~2.3333, got ' + ab.effectiveExposureFrequencyAB);
+});
+
+test('T-D187: topology: computeABMetrics note contains HEURISTIC label', function() {
+  var ab = topology.computeABMetrics('ONE_ON_ONE_OFF');
+  assert(typeof ab.note === 'string', 'note must be a string');
+  assert(ab.note.indexOf('RULE') !== -1 || ab.note.indexOf('HEURISTIC') !== -1,
+    'AB metrics note must contain RULE or HEURISTIC evidence label, got: ' + ab.note);
+});
+
+// ── Feasibility GUARDRAIL ─────────────────────────────────────────────────────
+
+test('T-D179: topology: SIX_ON_ONE_OFF infeasible when availableDays=3', function() {
+  var m = topology.computeTopologyMetrics('SIX_ON_ONE_OFF');
+  assert(m !== null, 'metrics must not be null');
+  assert(!topology._isFeasible(m, 3),
+    'SIX_ON_ONE_OFF (trainDays=6) must be infeasible for availableDays=3');
+  assert(topology._isFeasible(m, 7),
+    'SIX_ON_ONE_OFF (trainDays=6) must be feasible for availableDays=7');
+});
+
+// ── Backward Compatibility ────────────────────────────────────────────────────
+
+test('T-D180: topology: vdsen-plan-v2 without topology fields still validates', function() {
+  var resp = {
+    schema:      'vdsen-generation-response-v1',
+    status:      'VALID',
+    requestId:   'test-180',
+    generatedAt: new Date().toISOString(),
+    moduleStatus: { training: 'READY', nutritionTargets: 'READY', nutritionMenu: 'READY', supplementation: 'READY' },
+    plan: {
+      schema:       'vdsen-plan-v2',
+      weeks:        4,
+      daysPerWeek:  4,
+      days: [
+        { dayIndex: 0, label: 'A', exercises: [{ exerciseName: 'Squat', sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 100, restSeconds: 180 }] }] }
+      ]
+    }
+  };
+  var result = validateGenerationResponse(resp);
+  assert(result.valid, 'plan without topology fields must be valid. errors: ' + JSON.stringify(result.errors));
+});
+
+test('T-D181: topology: response with trainingTopology in audit/decisionTrace does not break validation', function() {
+  var resp = {
+    schema:      'vdsen-generation-response-v1',
+    status:      'VALID',
+    requestId:   'test-181',
+    generatedAt: new Date().toISOString(),
+    moduleStatus: { training: 'READY', nutritionTargets: 'READY', nutritionMenu: 'READY', supplementation: 'READY' },
+    plan: {
+      schema:       'vdsen-plan-v2',
+      weeks:        4,
+      daysPerWeek:  3,
+      days: [
+        { dayIndex: 0, label: 'A', exercises: [] }
+      ]
+    },
+    audit: {
+      trainingTopology: {
+        selected: 'TWO_ON_ONE_OFF',
+        source: 'heuristic',
+        confidence: 'medium',
+      }
+    },
+    decisionTrace: {
+      trainingTopologyDecision: {
+        topology: 'TWO_ON_ONE_OFF',
+        cycleDays: 3,
+        trainingDaysPerCycle: 2,
+        restDaysPerCycle: 1,
+      }
+    }
+  };
+  var result = validateGenerationResponse(resp);
+  assert(result.valid, 'response with topology audit/trace must be valid. errors: ' + JSON.stringify(result.errors));
+});
+
+// ── No Hard Rule: Hypertrophy ≠ TWO_ON_ONE_OFF ───────────────────────────────
+
+test('T-D182: topology: hypertrophy target does not always select TWO_ON_ONE_OFF', function() {
+  var result = topology.compareTrainingTopologies({
+    muscleTargets: [
+      { muscle: 'cuadriceps', frequencyTarget: 2.5, volumeTarget: 20, priority: 'high' },
+      { muscle: 'pecho',      frequencyTarget: 2.5, volumeTarget: 18, priority: 'high' }
+    ],
+    readiness:     'neutral',
+    availableDays: 5
+  });
+  assert(result.selected.topology !== 'TWO_ON_ONE_OFF',
+    'hypertrophy with freq=2.5 + availableDays=5 must NOT select TWO_ON_ONE_OFF; got ' + result.selected.topology);
+});
+
+// ── Comparative Fixtures ──────────────────────────────────────────────────────
+
+test('T-D183: topology: fixture 1 — ONE_ON_ONE_OFF wins (fatigued readiness + freq=2)', function() {
+  var result = topology.compareTrainingTopologies({
+    muscleTargets: [{ muscle: 'cuadriceps', frequencyTarget: 2, priority: 'normal' }],
+    readiness:     'fatigued',
+    availableDays: 7
+  });
+  assert(result.selected.topology === 'ONE_ON_ONE_OFF',
+    'fatigued + freq=2 should select ONE_ON_ONE_OFF, got ' + result.selected.topology);
+});
+
+test('T-D184: topology: fixture 2 — FIVE_ON_TWO_OFF wins (availableDays=5 + freq=2.5)', function() {
+  var result = topology.compareTrainingTopologies({
+    muscleTargets: [{ muscle: 'cuadriceps', frequencyTarget: 2.5, priority: 'normal' }],
+    readiness:     'neutral',
+    availableDays: 5
+  });
+  assert(result.selected.topology === 'FIVE_ON_TWO_OFF',
+    'availableDays=5 + freq=2.5 should select FIVE_ON_TWO_OFF, got ' + result.selected.topology);
+});
+
+test('T-D185: topology: fixture 3 — learned state (high/THREE_ON_ONE_OFF) prevents TWO from winning', function() {
+  var learnedState = {
+    currentTopology:                'THREE_ON_ONE_OFF',
+    confidence:                     'high',
+    sessionPerformanceTrend:        'stable',
+    lateSequencePerformanceTrend:   'stable',
+    recoveryTrend:                  'adequate'
+  };
+  var result = topology.compareTrainingTopologies({
+    muscleTargets: [{ muscle: 'cuadriceps', frequencyTarget: 2, priority: 'normal' }],
+    readiness:     'neutral',
+    learnedState:  learnedState,
+    availableDays: 7
+  });
+  assert(result.selected.topology === 'THREE_ON_ONE_OFF',
+    'high-confidence learned state on THREE_ON_ONE_OFF must win; got ' + result.selected.topology);
+  var codes = result.selected.reasonCodes || [];
+  assert(codes.indexOf('TOPOLOGY_LEARNED_RESPONSE') !== -1,
+    'TOPOLOGY_LEARNED_RESPONSE must be in reasonCodes when learned state wins');
+});
+
+// ─── Plan Normalizer Tests (T-N01..T-N09) ────────────────────────────────────
+
+var normalizer         = require('./vdsen-plan-normalizer');
+var normalizeVdsenPlan = normalizer.normalizeVdsenPlan;
+var validateVdsenPlan  = normalizer.validateVdsenPlan;
+var N_ERR              = normalizer.ERROR_CODES;
+
+function makeMinDay(n) {
+  return {
+    dayIndex: n,
+    label: 'Día ' + (n + 1),
+    exercises: [{
+      exerciseName: 'Squat',
+      sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 90 }]
+    }]
+  };
+}
+
+// T-N01: Canonical vdsen-plan-v2 → days resolved from entrenamiento.days
+test('T-N01: normalizer: canonical vdsen-plan-v2 → ok, days/weeks/nutricion resolved', function() {
+  var input = {
+    schema: 'vdsen-plan-v2',
+    entrenamiento: { weeks: 6, daysPerWeek: 3, days: [makeMinDay(0), makeMinDay(1), makeMinDay(2)] },
+    nutricion:    { calorias: 2400, proteina: 180, carbos: 250, grasas: 70 },
+    suplementacion: { tiers: [] }
+  };
+  var r = normalizeVdsenPlan(input);
+  assert(r.ok === true, 'canonical plan ok=true');
+  assert(Array.isArray(r.plan.days) && r.plan.days.length === 3, '3 días');
+  assert(r.plan.weeks === 6, 'weeks=6');
+  assert(r.plan.daysPerWeek === 3, 'daysPerWeek=3');
+  assert(r.plan.nutricion && r.plan.nutricion.calorias === 2400, 'nutricion resuelto');
+  assert(r.plan.suplementacion && Array.isArray(r.plan.suplementacion.tiers), 'suplementacion resuelto');
+});
+
+// T-N02: Legacy root-days (days at root, nutrition/supplementation aliases)
+test('T-N02: normalizer: legacy root-days + alias nutrition/supplementation → ok', function() {
+  var input = {
+    schema: 'vdsen-plan-v2',
+    weeks: 4, daysPerWeek: 4,
+    days: [makeMinDay(0), makeMinDay(1), makeMinDay(2), makeMinDay(3)],
+    nutrition:     { calorias: 2200 },
+    supplementation: { tiers: [{ nombre: 'TIER 1', items: [] }] }
+  };
+  var r = normalizeVdsenPlan(input);
+  assert(r.ok === true, 'legacy root-days ok=true: ' + (r.message || ''));
+  assert(r.plan.days.length === 4, '4 días');
+  assert(r.plan.weeks === 4, 'weeks=4');
+  assert(r.plan.nutricion && r.plan.nutricion.calorias === 2200, 'nutrition alias resuelto a nutricion');
+  assert(r.plan.suplementacion && Array.isArray(r.plan.suplementacion.tiers), 'supplementation alias resuelto');
+});
+
+// T-N03: days vacío → EMPTY_DAYS
+test('T-N03: normalizer: days vacío → EMPTY_DAYS', function() {
+  var input = { schema: 'vdsen-plan-v2', entrenamiento: { weeks: 6, daysPerWeek: 0, days: [] } };
+  var r = normalizeVdsenPlan(input);
+  assert(r.ok === false, 'days vacío ok=false');
+  assert(r.error === N_ERR.EMPTY_DAYS, 'error=EMPTY_DAYS, got: ' + r.error);
+});
+
+// T-N04: día sin ejercicios → DAY_WITHOUT_EXERCISES
+test('T-N04: validateVdsenPlan: día sin ejercicios → DAY_WITHOUT_EXERCISES', function() {
+  var plan = { weeks: 6, daysPerWeek: 1, days: [{ dayIndex: 0, label: 'Día 1', exercises: [] }] };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'día sin ejercicios ok=false');
+  assert(r.error === N_ERR.DAY_WITHOUT_EXERCISES, 'error=DAY_WITHOUT_EXERCISES, got: ' + r.error);
+});
+
+// T-N05: ejercicio sin series → EXERCISE_WITHOUT_SETS
+test('T-N05: validateVdsenPlan: ejercicio sin series → EXERCISE_WITHOUT_SETS', function() {
+  var plan = {
+    weeks: 6, daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Día 1', exercises: [{ exerciseName: 'Squat', sets: [] }] }]
+  };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'ejercicio sin series ok=false');
+  assert(r.error === N_ERR.EXERCISE_WITHOUT_SETS, 'error=EXERCISE_WITHOUT_SETS, got: ' + r.error);
+});
+
+// T-N06: nivel_medio inválido → INVALID_NIVEL_MEDIO
+test('T-N06: validateVdsenPlan: nivel_medio="intermedio" → INVALID_NIVEL_MEDIO', function() {
+  var plan = {
+    weeks: 6, daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Día 1', exercises: [{
+      exerciseName: 'Squat', nivel_medio: 'intermedio',
+      sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0 }]
+    }] }]
+  };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'nivel_medio inválido ok=false');
+  assert(r.error === N_ERR.INVALID_NIVEL_MEDIO, 'error=INVALID_NIVEL_MEDIO, got: ' + r.error);
+});
+
+// T-N07: variacion_vertical como string → INVALID_VARIACION_VERTICAL
+test('T-N07: validateVdsenPlan: variacion_vertical como string → INVALID_VARIACION_VERTICAL', function() {
+  var plan = {
+    weeks: 6, daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Día 1', exercises: [{
+      exerciseName: 'Press Banca', variacion_vertical: 'semana_3',
+      sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0 }]
+    }] }]
+  };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'variacion_vertical string ok=false');
+  assert(r.error === N_ERR.INVALID_VARIACION_VERTICAL, 'error=INVALID_VARIACION_VERTICAL, got: ' + r.error);
+});
+
+// T-N08: load como string no-numérico → INVALID_LOAD
+test('T-N08: validateVdsenPlan: load="pesado" → INVALID_LOAD', function() {
+  var plan = {
+    weeks: 6, daysPerWeek: 1,
+    days: [{ dayIndex: 0, label: 'Día 1', exercises: [{
+      exerciseName: 'Sentadilla',
+      sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 'pesado' }]
+    }] }]
+  };
+  var r = validateVdsenPlan(plan);
+  assert(r.ok === false, 'load string ok=false');
+  assert(r.error === N_ERR.INVALID_LOAD, 'error=INVALID_LOAD, got: ' + r.error);
+});
+
+// T-N09: plan envuelto en {plan: ...} → se desenvuelve correctamente
+test('T-N09: normalizer: plan en wrapper {plan:{...}} → desenvuelto y normalizado', function() {
+  var input = {
+    plan: {
+      schema: 'vdsen-plan-v2',
+      entrenamiento: { weeks: 8, daysPerWeek: 4, days: [makeMinDay(0), makeMinDay(1), makeMinDay(2), makeMinDay(3)] }
+    }
+  };
+  var r = normalizeVdsenPlan(input);
+  assert(r.ok === true, 'wrapper plan ok=true: ' + (r.message || ''));
+  assert(r.plan.weeks === 8, 'weeks=8');
+  assert(r.plan.days.length === 4, '4 días');
 });
 
 // ─── Runner ───────────────────────────────────────────────────────────────────

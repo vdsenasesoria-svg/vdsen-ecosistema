@@ -215,7 +215,30 @@ function validateGenerationRequest(req) {
   if (req.restrictions    !== undefined && typeof req.restrictions    !== 'object') errors.push('restrictions must be an object when present');
   if (req.musclePriorities!== undefined && !Array.isArray(req.musclePriorities))   errors.push('musclePriorities must be an array when present');
   if (req.equipment       !== undefined && !Array.isArray(req.equipment))           errors.push('equipment must be an array when present');
-  if (req.options         !== undefined && typeof req.options         !== 'object') errors.push('options must be an object when present');
+  if (req.options         !== undefined && typeof req.options         !== 'object') {
+    errors.push('options must be an object when present');
+  } else if (req.options !== undefined && req.options !== null) {
+    // Optional: warn on malformed trainingTopologyPreference (never an error — backward-compatible)
+    var ttp = req.options.trainingTopologyPreference;
+    if (ttp !== undefined) {
+      var _VALID_TTP_MODES  = ['fixed', 'preferred', 'none'];
+      var _VALID_TOPOLOGIES = ['ONE_ON_ONE_OFF','TWO_ON_ONE_OFF','THREE_ON_ONE_OFF',
+                               'FOUR_ON_ONE_OFF','FIVE_ON_TWO_OFF','SIX_ON_ONE_OFF','CUSTOM'];
+      if (typeof ttp !== 'object' || ttp === null) {
+        warnings.push('options.trainingTopologyPreference should be an object with mode, preferredTopology, customPattern');
+      } else {
+        if (ttp.mode !== undefined && _VALID_TTP_MODES.indexOf(ttp.mode) === -1) {
+          warnings.push('options.trainingTopologyPreference.mode should be one of: ' + _VALID_TTP_MODES.join(', '));
+        }
+        if (ttp.preferredTopology !== undefined && _VALID_TOPOLOGIES.indexOf(ttp.preferredTopology) === -1) {
+          warnings.push('options.trainingTopologyPreference.preferredTopology should be a recognized topology id');
+        }
+        if (ttp.customPattern !== undefined && !Array.isArray(ttp.customPattern)) {
+          warnings.push('options.trainingTopologyPreference.customPattern should be a string array when present');
+        }
+      }
+    }
+  }
 
   return { valid: errors.length === 0, errors: errors, warnings: warnings };
 }
