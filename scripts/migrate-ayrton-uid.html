@@ -187,7 +187,11 @@ window.runVerify = async function() {
       return;
     }
 
-    plan = { newSnap, oldSnap, oldLogSnap, hasOldLog, plansNeedClientIdUpdate, plansAlreadyNew, targetPlanId, needsNewClientDoc, needsActivePlanId, needsClientIdUpdate, needsLogMigration, needsOldDelete };
+    // Leer el plan doc para obtener coachId (necesario si hay que crear el clients doc desde cero)
+    const targetPlanSnap = await getDoc(doc(db, 'plans', targetPlanId));
+    const planCoachId = targetPlanSnap.exists() ? targetPlanSnap.data().coachId : coachUid;
+
+    plan = { newSnap, oldSnap, oldLogSnap, hasOldLog, plansNeedClientIdUpdate, plansAlreadyNew, targetPlanId, planCoachId, needsNewClientDoc, needsActivePlanId, needsClientIdUpdate, needsLogMigration, needsOldDelete };
 
     const lines = ['Acciones pendientes:'];
     if (needsNewClientDoc) lines.push(`• Crear  clients/${NEW_UID}  ← datos de ${OLD_UID}`);
@@ -218,17 +222,22 @@ window.runMigration = async function() {
 
   try {
     const { newSnap, oldSnap, oldLogSnap, hasOldLog,
-            plansNeedClientIdUpdate, targetPlanId,
+            plansNeedClientIdUpdate, targetPlanId, planCoachId,
             needsNewClientDoc, needsActivePlanId, needsClientIdUpdate, needsLogMigration, needsOldDelete } = plan;
 
     const batch = writeBatch(db);
 
     // Crear o actualizar clients/NEW_UID
-    if (needsNewClientDoc && oldSnap.exists()) {
-      batch.set(doc(db, 'clients', NEW_UID), { ...oldSnap.data(), activePlanId: targetPlanId });
-      log(`  ✓ clients/${NEW_UID} preparado (desde doc viejo + activePlanId)`, 'ok');
+    if (needsNewClientDoc) {
+      // Doc destino no existe — crearlo desde cero
+      const baseData = oldSnap.exists()
+        ? { ...oldSnap.data(), activePlanId: targetPlanId }
+        : { email: 'ayrtonvd@gmail.com', coachId: planCoachId, activePlanId: targetPlanId };
+      batch.set(doc(db, 'clients', NEW_UID), baseData);
+      log(`  ✓ clients/${NEW_UID} creado (activePlanId=${targetPlanId})`, 'ok');
     } else if (needsActivePlanId) {
-      batch.update(doc(db, 'clients', NEW_UID), { activePlanId: targetPlanId });
+      // Doc existe pero sin activePlanId — solo agregar ese campo
+      batch.set(doc(db, 'clients', NEW_UID), { activePlanId: targetPlanId }, { merge: true });
       log(`  ✓ clients/${NEW_UID} activePlanId=${targetPlanId}`, 'ok');
     }
 
