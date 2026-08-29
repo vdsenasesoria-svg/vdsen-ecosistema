@@ -11910,12 +11910,21 @@ El esfuerzo no es negociable.
     if(!box || !currentCoach) return;
     box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Cargando…</div>';
     try {
-      console.log('[FICHAS] Buscando fichas para coachId:', currentCoach.uid);
-      const snap = await getDocs(query(collection(db,'fichas_publicas'), where('coachId','==',currentCoach.uid)));
-      console.log('[FICHAS] Resultados encontrados:', snap.size);
-      const items = []; snap.forEach(d=>{ console.log('[FICHAS] doc:', d.id, d.data().nombre, d.data().coachId); items.push(Object.assign({id:d.id}, d.data())); });
+      let snap = await getDocs(query(collection(db,'fichas_publicas'), where('coachId','==',currentCoach.uid)));
+      // Fallback: si no hay resultados con el coachId actual, buscar todas (solo coaches pueden leer)
+      if(snap.empty){
+        const allSnap = await getDocs(collection(db,'fichas_publicas'));
+        if(!allSnap.empty){
+          // Reasignar coachId en fichas huérfanas para que aparezcan siempre
+          const fixes = [];
+          allSnap.forEach(d=>{ if(d.data().coachId !== currentCoach.uid) fixes.push(updateDoc(doc(db,'fichas_publicas',d.id),{coachId:currentCoach.uid})); });
+          if(fixes.length) await Promise.all(fixes);
+          snap = await getDocs(query(collection(db,'fichas_publicas'), where('coachId','==',currentCoach.uid)));
+        }
+      }
+      const items = []; snap.forEach(d=>items.push(Object.assign({id:d.id}, d.data())));
       items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-      if(!items.length){ box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Aún no hay fichas recibidas. Comparte el link de arriba.<br><span style="color:#888;font-size:10px">UID del coach: '+_intEsc(currentCoach.uid)+'</span></div>'; return; }
+      if(!items.length){ box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Aún no hay fichas recibidas. Comparte el link de arriba.</div>'; return; }
       const rendered = items.map(f=>{
         try {
           const fecha = f.createdAt ? new Date(f.createdAt).toLocaleString('es-MX') : '';
