@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Migración UID — Ayrton</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #0f0f0f; color: #e0e0e0; padding: 24px; }
+  h1 { color: #fff; font-size: 18px; margin-bottom: 4px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 24px; }
+  .card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .uid { color: #58a6ff; font-size: 13px; word-break: break-all; }
+  #log { background: #111; border: 1px solid #2a2a2a; border-radius: 6px; padding: 16px; min-height: 200px; max-height: 400px; overflow-y: auto; font-size: 12px; line-height: 1.7; }
+  .ok   { color: #3fb950; }
+  .warn { color: #d29922; }
+  .err  { color: #f85149; }
+  .info { color: #58a6ff; }
+  .dim  { color: #666; }
+  button { margin-top: 20px; padding: 12px 28px; background: #238636; border: 1px solid #2ea043; color: #fff; border-radius: 6px; font-size: 14px; cursor: pointer; font-family: monospace; }
+  button:disabled { background: #21262d; border-color: #30363d; color: #555; cursor: not-allowed; }
+  #confirm-block { display: none; }
+  .confirm-msg { margin-top: 16px; color: #d29922; font-size: 13px; line-height: 1.5; }
+  .btn-danger { background: #b91c1c; border-color: #ef4444; margin-left: 10px; }
+  .btn-cancel { background: #21262d; border-color: #30363d; }
+</style>
+</head>
+<body>
+
+<h1>VDSEN — Migración de UID (Ayrton)</h1>
+<p class="sub">Herramienta de uso único. Ejecutar autenticado como coach.</p>
+
+<div class="card">
+  <div class="label">UID antiguo (doc en Firestore)</div>
+  <div class="uid" id="show-old">bXtyOkXlpjfUWBF5dd6xYf6OEny2</div>
+  <div class="label" style="margin-top:12px">UID nuevo (Firebase Auth real)</div>
+  <div class="uid" id="show-new">z82EDPvsCaabfMN3eGAP3rpxeMt1</div>
+</div>
+
+<div class="card">
+  <div class="label">Log de ejecución</div>
+  <div id="log"><span class="dim">Listo. Presiona "Verificar" para empezar.</span></div>
+</div>
+
+<button id="btn-verify" onclick="runVerify()">Verificar estado actual</button>
+
+<div id="confirm-block">
+  <p class="confirm-msg">Se realizarán los siguientes cambios:<br>
+    <span id="plan-summary"></span>
+  </p>
+  <br>
+  <button id="btn-run" class="btn-danger" onclick="runMigration()">Ejecutar migración</button>
+  <button class="btn-cancel" onclick="cancelMigration()">Cancelar</button>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs, writeBatch
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBlOmyQEDjjpCxkm7UBqnMJDyqV3NLnCNI",
+  authDomain: "vdsen-ecosistema.firebaseapp.com",
+  projectId: "vdsen-ecosistema",
+  storageBucket: "vdsen-ecosistema.firebasestorage.app",
+  messagingSenderId: "1066774387899",
+  appId: "1:1066774387899:web:77e7f3570636b71bf61d9e"
+};
+
+const OLD_UID = 'bXtyOkXlpjfUWBF5dd6xYf6OEny2';
+const NEW_UID = 'z82EDPvsCaabfMN3eGAP3rpxeMt1';
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const logEl = document.getElementById('log');
+let coachUid = null;
+let verifyResult = null;
+
+function log(msg, cls='') {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+onAuthStateChanged(auth, user => {
+  if (user) {
+    coachUid = user.uid;
+    log(`✓ Autenticado como: ${user.email} (${user.uid})`, 'ok');
+  } else {
+    log('✗ No hay sesión activa. Abre el coach app primero, luego esta página.', 'err');
+    document.getElementById('btn-verify').disabled = true;
+  }
+});
+
+window.runVerify = async function() {
+  logEl.innerHTML = '';
+  document.getElementById('confirm-block').style.display = 'none';
+  document.getElementById('btn-verify').disabled = true;
+
+  try {
+    log('▸ Verificando coach...', 'info');
+    const coachSnap = await getDoc(doc(db, 'coaches', coachUid));
+    if (!coachSnap.exists()) { log('✗ No eres coach en Firestore.', 'err'); return; }
+    log(`  ✓ Coach OK: ${coachSnap.data().displayName || coachSnap.data().email}`, 'ok');
+
+    log('▸ Leyendo clients/' + OLD_UID + '...', 'info');
+    const oldSnap = await getDoc(doc(db, 'clients', OLD_UID));
+    if (!oldSnap.exists()) { log('  ✗ No existe. Nada que migrar.', 'err'); return; }
+    const oldData = oldSnap.data();
+    log(`  ✓ email=${oldData.email}  activePlanId=${oldData.activePlanId || 'null'}`, 'ok');
+
+    log('▸ Revisando clients/' + NEW_UID + '...', 'info');
+    const newSnap = await getDoc(doc(db, 'clients', NEW_UID));
+    if (newSnap.exists()) {
+      const nd = newSnap.data();
+      if (nd.activePlanId) { log('  ✗ Destino ya tiene activePlanId. Aborta.', 'err'); return; }
+      log('  ⚠  Existe pero sin plan. Se sobreescribirá.', 'warn');
+    } else {
+      log('  ✓ No existe. Se creará.', 'ok');
+    }
+
+    log('▸ Buscando planes con clientId=' + OLD_UID + '...', 'info');
+    const plansQ = await getDocs(query(collection(db, 'plans'), where('clientId', '==', OLD_UID)));
+    log(`  → ${plansQ.size} plan(es) encontrado(s)`, plansQ.size > 0 ? 'ok' : 'warn');
+    plansQ.docs.forEach(d => log(`    - plans/${d.id}  status=${d.data().status}`, 'dim'));
+
+    log('▸ Revisando logs/' + OLD_UID + '...', 'info');
+    const oldLogSnap = await getDoc(doc(db, 'logs', OLD_UID));
+    const hasLog = oldLogSnap.exists();
+    log(`  → ${hasLog ? 'Encontrado (' + Object.keys(oldLogSnap.data().entries || {}).length + ' entries)' : 'No existe'}`, hasLog ? 'ok' : 'dim');
+
+    verifyResult = { oldData, plansQ, hasLog, oldLogSnap };
+
+    const summary = [
+      `• Crear  clients/${NEW_UID}  ←  datos de ${OLD_UID}`,
+      plansQ.size > 0 ? `• Actualizar clientId en ${plansQ.size} plan(es)` : null,
+      hasLog ? `• Migrar  logs/${OLD_UID}  →  logs/${NEW_UID}` : null,
+      hasLog ? `• Borrar  logs/${OLD_UID}` : null,
+      `• Borrar  clients/${OLD_UID}`,
+    ].filter(Boolean).join('\n');
+
+    document.getElementById('plan-summary').textContent = summary;
+    document.getElementById('confirm-block').style.display = 'block';
+    log('', '');
+    log('══ Verificación completa. Revisa el plan de migración y confirma. ══', 'warn');
+
+  } catch(e) {
+    log('✗ Error: ' + e.message, 'err');
+    console.error(e);
+  } finally {
+    document.getElementById('btn-verify').disabled = false;
+  }
+};
+
+window.runMigration = async function() {
+  document.getElementById('btn-run').disabled = true;
+  document.getElementById('btn-verify').disabled = true;
+  log('', '');
+  log('▸ Ejecutando migración...', 'info');
+
+  try {
+    const { oldData, plansQ, hasLog, oldLogSnap } = verifyResult;
+    const batch = writeBatch(db);
+
+    // 1. Crear nuevo doc clients/
+    batch.set(doc(db, 'clients', NEW_UID), oldData);
+    log('  ✓ clients/' + NEW_UID + ' preparado', 'ok');
+
+    // 2. Actualizar clientId en planes
+    plansQ.docs.forEach(d => {
+      batch.update(doc(db, 'plans', d.id), { clientId: NEW_UID });
+      log('  ✓ plans/' + d.id + '  clientId → ' + NEW_UID, 'ok');
+    });
+
+    // 3. Migrar logs
+    if (hasLog) {
+      batch.set(doc(db, 'logs', NEW_UID), oldLogSnap.data());
+      log('  ✓ logs/' + NEW_UID + ' preparado', 'ok');
+      batch.delete(doc(db, 'logs', OLD_UID));
+      log('  ✓ logs/' + OLD_UID + ' marcado para borrar', 'ok');
+    }
+
+    // 4. Borrar doc viejo de clients/
+    batch.delete(doc(db, 'clients', OLD_UID));
+    log('  ✓ clients/' + OLD_UID + ' marcado para borrar', 'ok');
+
+    log('▸ Haciendo commit del batch...', 'info');
+    await batch.commit();
+    log('  ✓ Batch commit OK.', 'ok');
+
+    // Verificar
+    log('▸ Verificando resultado...', 'info');
+    const vNew = await getDoc(doc(db, 'clients', NEW_UID));
+    const vOld = await getDoc(doc(db, 'clients', OLD_UID));
+
+    if (!vNew.exists()) { log('  ✗ El doc nuevo NO existe. Algo falló.', 'err'); return; }
+    const vd = vNew.data();
+    log(`  ✓ clients/${NEW_UID}  email=${vd.email}  activePlanId=${vd.activePlanId}`, 'ok');
+    log(vOld.exists() ? '  ⚠  clients/' + OLD_UID + ' todavía existe — bórralo desde Firestore Console.' : '  ✓ clients/' + OLD_UID + ' eliminado.', vOld.exists() ? 'warn' : 'ok');
+
+    if (hasLog) {
+      const vLogNew = await getDoc(doc(db, 'logs', NEW_UID));
+      const vLogOld = await getDoc(doc(db, 'logs', OLD_UID));
+      if (vLogNew.exists()) log('  ✓ logs/' + NEW_UID + ' existe.', 'ok');
+      if (!vLogOld.exists()) log('  ✓ logs/' + OLD_UID + ' eliminado.', 'ok');
+    }
+
+    log('', '');
+    log('══════════════════════════════════════════════════', 'ok');
+    log(' ✅ Migración completada.', 'ok');
+    log('    Ayrton puede abrir la app cliente ahora.', 'ok');
+    log('══════════════════════════════════════════════════', 'ok');
+    document.getElementById('confirm-block').style.display = 'none';
+
+  } catch(e) {
+    log('✗ Error durante la migración: ' + e.message, 'err');
+    log('  Revisa la consola del navegador para detalles.', 'err');
+    console.error(e);
+    document.getElementById('btn-run').disabled = false;
+  }
+};
+
+window.cancelMigration = function() {
+  document.getElementById('confirm-block').style.display = 'none';
+  log('Cancelado. No se modificó nada.', 'warn');
+};
+</script>
+</body>
+</html>

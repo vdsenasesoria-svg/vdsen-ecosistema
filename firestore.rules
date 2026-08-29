@@ -55,6 +55,11 @@ service cloud.firestore {
         && resource.data.coachId == request.auth.uid
         && resource.data.status != 'draft_approved'
         && resource.data.status != 'active';
+      // Coach: reasignar clientId (migración de UID) — solo este campo, sin restricción de status
+      allow update: if request.auth != null
+        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
+        && resource.data.coachId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientId']);
       // Eliminar plan: solo el coach dueño y solo si no está aprobado/activo.
       // El historial de planes aprobados se preserva; no se permite delete desde el flujo normal.
       allow delete: if request.auth != null
