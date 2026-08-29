@@ -11910,28 +11910,33 @@ El esfuerzo no es negociable.
     if(!box || !currentCoach) return;
     box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Cargando…</div>';
     try {
+      console.log('[FICHAS] Buscando fichas para coachId:', currentCoach.uid);
       const snap = await getDocs(query(collection(db,'fichas_publicas'), where('coachId','==',currentCoach.uid)));
-      const items = []; snap.forEach(d=>items.push(Object.assign({id:d.id}, d.data())));
+      console.log('[FICHAS] Resultados encontrados:', snap.size);
+      const items = []; snap.forEach(d=>{ console.log('[FICHAS] doc:', d.id, d.data().nombre, d.data().coachId); items.push(Object.assign({id:d.id}, d.data())); });
       items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-      if(!items.length){ box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Aún no hay fichas recibidas. Comparte el link de arriba.</div>'; return; }
-      box.innerHTML = items.map(f=>{
-        const fecha = f.createdAt ? new Date(f.createdAt).toLocaleString('es-MX') : '';
-        const conv = f.status==='convertida';
-        const dataTxt = _fichaDataToText(f.data||{});
-        return '<div class="card p-3 mb-2" style="'+(conv?'opacity:.6':'')+'">'
-          + '<div class="flex justify-between items-center gap-2 flex-wrap">'
-          + '<div><strong style="color:var(--text-primary)">'+_intEsc(f.nombre||'—')+'</strong>'
-          + '<span class="text-xs" style="color:var(--text-muted)"> · 📱 '+_intEsc(f.telefono||'—')+(f.email?' · '+_intEsc(f.email):'')+'</span>'
-          + '<div class="text-xs" style="color:var(--text-muted)">'+fecha+(conv?' · ✅ convertida':'')+'</div></div>'
-          + '<div class="flex gap-2 flex-wrap">'
-          + (conv?'':'<button onclick="convertFicha(\''+f.id+'\')" class="text-xs px-3 py-1 rounded" style="border:1px solid #C4FF00;background:rgba(196,255,0,.15);color:#C4FF00;cursor:pointer;font-weight:600">➕ Convertir a cliente</button>')
-          + '<button onclick="_toggleFicha(\''+f.id+'\')" class="btn-secondary text-xs">👁 Ver datos</button>'
-          + '<button onclick="discardFicha(\''+f.id+'\')" class="text-xs px-2 py-1 rounded" style="border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;cursor:pointer">🗑</button>'
-          + '</div></div>'
-          + '<pre id="fd_'+f.id+'" style="display:none;white-space:pre-wrap;font-family:\'Courier Prime\',monospace;font-size:11px;color:var(--text-primary);margin-top:8px;background:#0D0D0D;padding:8px;border-radius:2px;overflow-x:auto">'+_intEsc(dataTxt)+'</pre>'
-          + '</div>';
-      }).join('');
-    } catch(e){ box.innerHTML = '<div class="text-xs" style="color:var(--danger)">Error al cargar: '+_intEsc(e.message||e)+'</div>'; }
+      if(!items.length){ box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Aún no hay fichas recibidas. Comparte el link de arriba.<br><span style="color:#888;font-size:10px">UID del coach: '+_intEsc(currentCoach.uid)+'</span></div>'; return; }
+      const rendered = items.map(f=>{
+        try {
+          const fecha = f.createdAt ? new Date(f.createdAt).toLocaleString('es-MX') : '';
+          const conv = f.status==='convertida';
+          const dataTxt = _fichaDataToText(f.data||{});
+          return '<div class="card p-3 mb-2" style="'+(conv?'opacity:.6':'')+'">'
+            + '<div class="flex justify-between items-center gap-2 flex-wrap">'
+            + '<div><strong style="color:var(--text-primary)">'+_intEsc(f.nombre||'—')+'</strong>'
+            + '<span class="text-xs" style="color:var(--text-muted)"> · 📱 '+_intEsc(f.telefono||'—')+(f.email?' · '+_intEsc(f.email):'')+'</span>'
+            + '<div class="text-xs" style="color:var(--text-muted)">'+fecha+(conv?' · ✅ convertida':'')+'</div></div>'
+            + '<div class="flex gap-2 flex-wrap">'
+            + (conv?'':'<button onclick="convertFicha(\''+f.id+'\')" class="text-xs px-3 py-1 rounded" style="border:1px solid #C4FF00;background:rgba(196,255,0,.15);color:#C4FF00;cursor:pointer;font-weight:600">➕ Convertir a cliente</button>')
+            + '<button onclick="_toggleFicha(\''+f.id+'\')" class="btn-secondary text-xs">👁 Ver datos</button>'
+            + '<button onclick="discardFicha(\''+f.id+'\')" class="text-xs px-2 py-1 rounded" style="border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;cursor:pointer">🗑</button>'
+            + '</div></div>'
+            + '<pre id="fd_'+f.id+'" style="display:none;white-space:pre-wrap;font-family:\'Courier Prime\',monospace;font-size:11px;color:var(--text-primary);margin-top:8px;background:#0D0D0D;padding:8px;border-radius:2px;overflow-x:auto">'+_intEsc(dataTxt)+'</pre>'
+            + '</div>';
+        } catch(re){ console.error('[FICHAS] Error renderizando ficha', f.id, re); return ''; }
+      });
+      box.innerHTML = rendered.join('') || '<div class="text-xs" style="color:var(--text-muted)">No se pudieron renderizar las fichas. Revisa la consola.</div>';
+    } catch(e){ console.error('[FICHAS] Error en query:', e); box.innerHTML = '<div class="text-xs" style="color:var(--danger)">Error al cargar: '+_intEsc(e.message||e)+'<br><span style="font-size:10px;color:#888">UID: '+_intEsc(currentCoach.uid)+'</span></div>'; }
   }
   window.loadFichasRecibidas = loadFichasRecibidas;
   window._toggleFicha = function(id){ const el=document.getElementById('fd_'+id); if(el) el.style.display = (el.style.display==='none'?'block':'none'); };
