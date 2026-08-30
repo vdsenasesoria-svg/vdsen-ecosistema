@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-30 · Rama activa: `claude/client-app-improvements-qayy4n`
+> Actualizado: 2026-08-30 · main HEAD: `2b6e927`
 
 ---
 
@@ -7,11 +7,12 @@
 
 | Item | Valor |
 |------|-------|
-| Último commit en rama | ver `git log --oneline -5` |
-| Baseline FASE 5 | `4a87e42` (en main) |
-| FASE 6 baseline | `0d8863c` |
+| main HEAD | `2b6e927` — FASE 6 mergeada |
+| FASE 5 commit | `4a87e42` |
+| FASE 6 commit | `2b6e927` (merge --no-ff) |
 | Suite tests | **255/255 PASS** (P01–P109) |
-| Estado merge | **NO MERGEADO** — requiere autorización explícita |
+| Vercel | auto-deploy en curso (push a main `2b6e927`) |
+| Siguiente fase | **FASE 7 — Coach Attention Monitor** |
 
 ---
 
@@ -25,7 +26,7 @@
   Deload es reactivo y requiere ≥2 deloadTriggers.
   La semana final sola nunca dispara deload.
 
-### FASE 6 (en rama, self-review completado)
+### FASE 6 (mergeada a main — `2b6e927`)
 **Performance History UX + Next Exposure**
 
 Archivos modificados:
