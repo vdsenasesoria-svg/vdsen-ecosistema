@@ -1215,7 +1215,22 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             const snap2 = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
             container.innerHTML = "";
             snap2.forEach(d => {
-              container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><strong>${d.data().displayName || d.data().email || d.id}</strong> ${d.data().email ? "("+d.data().email+")" : ""} ${d.data().activePlanId ? "✅" : "⚠️"}</span><button class="text-[#F4F4F0] text-sm font-medium" onclick="showClientDetail('${d.id}')">Ver →</button></div>`;
+              const _c2 = d.data();
+              const _row2 = document.createElement('div');
+              _row2.className = 'card p-3 mb-2 flex justify-between items-center';
+              const _nameEl2 = document.createElement('strong');
+              _nameEl2.textContent = _c2.displayName || _c2.email || d.id;
+              const _emailEl2 = document.createElement('span');
+              _emailEl2.textContent = _c2.email ? '('+_c2.email+')' : '';
+              const _planBadge2 = document.createTextNode(' ' + (_c2.activePlanId ? '✅' : '⚠️'));
+              const _span2 = document.createElement('span');
+              _span2.appendChild(_nameEl2); _span2.append(' '); _span2.appendChild(_emailEl2); _span2.appendChild(_planBadge2);
+              const _btn2 = document.createElement('button');
+              _btn2.className = 'text-[#F4F4F0] text-sm font-medium';
+              _btn2.textContent = 'Ver →';
+              _btn2.onclick = () => showClientDetail(d.id);
+              _row2.appendChild(_span2); _row2.appendChild(_btn2);
+              container.appendChild(_row2);
             });
             return;
           }
@@ -1742,7 +1757,26 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         const mtColor = ex.muscleType === "typeI" ? "#60a5fa" : "#f97316";
         const fcDots = "●".repeat(ex.fatigueCost || 3) + "○".repeat(5 - (ex.fatigueCost || 3));
         const curveLabel = ex.resistanceCurve === "elongated" ? "Elon." : ex.resistanceCurve === "shortened" ? "Cort." : "Med.";
-        container.innerHTML += `<div class="card p-3 mb-2 flex justify-between items-center"><span><b>${ex.name}</b> <span class="text-[#888] text-sm">· ${ex.motorPattern || "Sin patrón"}</span><br><span class="text-xs" style="color:${mtColor}">${mtLabel}</span> <span class="text-xs text-[#888]">· Fatiga: ${fcDots} · ${curveLabel}</span></span><button class="text-red-400 hover:text-red-300 px-2" onclick="deleteExercise('${ex.id}', '${(ex.name||'').replace(/'/g,"\\'")}')">🗑️</button></div>`;
+        const _exRow = document.createElement('div');
+        _exRow.className = 'card p-3 mb-2 flex justify-between items-center';
+        const _exInfo = document.createElement('span');
+        const _exNameEl = document.createElement('b');
+        _exNameEl.textContent = ex.name || '';
+        const _exPatEl = document.createElement('span');
+        _exPatEl.className = 'text-[#888] text-sm';
+        _exPatEl.textContent = '· ' + (ex.motorPattern || 'Sin patrón');
+        const _exMeta = document.createElement('span');
+        _exMeta.className = 'text-xs';
+        _exMeta.style.color = mtColor;
+        _exMeta.textContent = mtLabel + ' · Fatiga: ' + fcDots + ' · ' + curveLabel;
+        _exInfo.appendChild(_exNameEl); _exInfo.append(' '); _exInfo.appendChild(_exPatEl);
+        _exInfo.appendChild(document.createElement('br')); _exInfo.appendChild(_exMeta);
+        const _delBtn = document.createElement('button');
+        _delBtn.className = 'text-red-400 hover:text-red-300 px-2';
+        _delBtn.textContent = '🗑️';
+        _delBtn.onclick = () => deleteExercise(ex.id, ex.name || '');
+        _exRow.appendChild(_exInfo); _exRow.appendChild(_delBtn);
+        container.appendChild(_exRow);
       });
     }
     document.getElementById("addExerciseBtn").onclick = () => {
@@ -3196,7 +3230,7 @@ Reporte:
     const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
     const select = document.getElementById("planClientSelect");
     select.innerHTML = '<option value="">-- Selecciona cliente --</option>';
-    snap.forEach(d => { select.innerHTML += `<option value="${d.id}">${d.data().displayName}</option>`; });
+    snap.forEach(d => { const _o = document.createElement('option'); _o.value = d.id; _o.textContent = d.data().displayName || d.id; select.appendChild(_o); });
   }
   
   function toggleImportPlanMenu() {

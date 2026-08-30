@@ -6037,8 +6037,10 @@ function renderEntrenamiento() {
   if (_viewingPast) _weeksExpanded = true;
 
   // ── Header prominente con número de semana activa ────────────────
-  var _isDeload   = CURRENT_WEEK === _tw;
-  var _faseLabel  = _isDeload ? 'DELOAD' : getSemProgresion(CURRENT_WEEK);
+  // _isMesocycleCheckpoint: solo indica que es la última semana del plan (checkpoint de periodización).
+  // NO implica deload automático — el engine requiere ≥2 señales reales (calculateProgression.isDeload).
+  var _isMesocycleCheckpoint = CURRENT_WEEK === _tw;
+  var _faseLabel  = _isMesocycleCheckpoint ? 'SEMANA FINAL' : getSemProgresion(CURRENT_WEEK);
   var weekHeaderHtml = '<div style="padding:10px 16px 8px;background:var(--surface);display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(107,107,102,.15)">'
     + '<span style="font-family:\'Big Shoulders Display\',var(--ff);font-size:28px;font-weight:900;color:var(--tx);line-height:1;letter-spacing:.5px">SEM '+CURRENT_WEEK+'</span>'
     + '<span style="font-size:11px;color:var(--mt);font-weight:700;letter-spacing:1px">/ '+_tw+'</span>'
@@ -6126,18 +6128,18 @@ function renderEntrenamiento() {
 
   if (DIA_ACTIVO >= sesiones.length) DIA_ACTIVO = 0;
 
-  // ── Deload banner (última semana = deload) ─────────────────────
+  // ── Banner semana final (checkpoint de periodización — NO implica deload automático) ─────
   var deloadBanner = '';
-  if (_isDeload) {
+  if (_isMesocycleCheckpoint) {
     deloadBanner = '<div style="background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.4);padding:12px 14px;margin:0 0 8px">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
       + '<span style="font-size:18px">🔵</span>'
-      + '<span style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:#8C8C86;font-weight:700">SEMANA DELOAD</span>'
+      + '<span style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:#8C8C86;font-weight:700">SEMANA FINAL</span>'
       + '</div>'
       + '<div style="font-size:12px;color:var(--mt);line-height:1.5">'
-      + 'Esta semana es de descarga activa. El volumen se reduce a la mitad y la intensidad baja un 10%. '
-      + 'Enfócate en técnica perfecta (ICS alto) y recuperación. '
-      + 'El objetivo es <strong style="color:var(--tx)">RIR 3</strong> en todos los ejercicios.'
+      + 'Es la última semana de este mesociclo. Tu coach evaluará si aplicar deload según tus señales de recuperación. '
+      + 'Entrena con técnica sólida (ICS alto) y registra tus sensaciones post-sesión con honestidad. '
+      + 'El objetivo de RIR es <strong style="color:var(--tx)">3</strong> en todos los ejercicios.'
       + '</div></div>';
   }
 
