@@ -2697,6 +2697,117 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         });
       }
 
+      // ── Rendimiento por ejercicio (FASE 6) ──────────────────────────────
+      if (_activePlanCache && _activePlanCache.days) {
+        const _trendIcon = { PROGRESANDO:'↑', ESTABLE:'→', REVISAR:'↓', NEW:'✦' };
+        const _trendColor = { PROGRESANDO:'#44BB88', ESTABLE:'#e8c96a', REVISAR:'#FF4444', NEW:'#888' };
+
+        function _exMaxLoad(logs, w, di, ei, maxS) {
+          var best = 0;
+          for (var s = 0; s < maxS; s++) {
+            var e = logs['log_'+w+'_'+di+'_'+ei+'_s'+s];
+            if (e && e.done && !e.autoFilled) { var v = parseFloat(e.carga)||0; if (v>best) best=v; }
+          }
+          return best;
+        }
+
+        function _exTrendCoach(logs, di, ei, prescId, maxW, maxS) {
+          // Collect last 3 weeks' top loads (prescriptionExerciseId-aware or positional)
+          var loads = [];
+          for (var w = maxW; w >= 1 && loads.length < 3; w--) {
+            var best = 0;
+            if (prescId) {
+              var prefix = 'log_'+w+'_';
+              Object.keys(logs).forEach(function(k) {
+                if (k.indexOf(prefix)!==0) return;
+                var ent = logs[k];
+                if (!ent||!ent.done||ent.autoFilled||ent.prescriptionExerciseId!==prescId) return;
+                var v = parseFloat(ent.carga)||0; if (v>best) best=v;
+              });
+            }
+            if (!best) best = _exMaxLoad(logs, w, di, ei, maxS);
+            if (best > 0) loads.push(best);
+          }
+          if (loads.length < 2) return 'NEW';
+          if (loads.length >= 3 && loads[1] < loads[2] && loads[0] < loads[1]) return 'REVISAR';
+          if (loads[0] > loads[1]) return 'PROGRESANDO';
+          if (loads[0] < loads[1]) return 'ESTABLE';
+          return 'ESTABLE';
+        }
+
+        var exRows = [];
+        _activePlanCache.days.forEach(function(day, di) {
+          (day.exercises||[]).forEach(function(ex, ei) {
+            var exName = ex.exerciseName || ex.nombre || '';
+            if (!exName) return;
+            var prescId = ex.prescriptionExerciseId || null;
+            var lastLoad = 0;
+            for (var w = currentWeek; w >= 1; w--) {
+              var ld = prescId
+                ? (function(){ var b=0; Object.keys(logs).forEach(function(k){ if(k.indexOf('log_'+w+'_')!==0)return; var e=logs[k]; if(!e||!e.done||e.autoFilled||e.prescriptionExerciseId!==prescId)return; var v=parseFloat(e.carga)||0; if(v>b)b=v; }); return b; })()
+                : _exMaxLoad(logs, w, di, ei, 8);
+              if (ld) { lastLoad = ld; break; }
+            }
+            if (!lastLoad) return; // no data → skip from table
+            var trend = _exTrendCoach(logs, di, ei, prescId, currentWeek, 8);
+            var lastAction = '—';
+            if (lastRec && lastRec.recommendations) {
+              var exLower = exName.toLowerCase().trim();
+              var match = null;
+              if (lastRec.recommendations[ei] && lastRecDay === di) {
+                match = lastRec.recommendations[ei];
+              } else {
+                lastRec.recommendations.forEach(function(r){
+                  if (r.exerciseName && r.exerciseName.toLowerCase().trim()===exLower) match=r;
+                });
+              }
+              if (match) lastAction = (actionLabels[match.action]||{label:'—'}).label;
+            }
+            exRows.push({ name: exName, lastLoad: lastLoad, trend: trend, lastAction: lastAction });
+          });
+        });
+
+        if (exRows.length) {
+          html += `
+          <details class="card p-3 mb-3" style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.15)">
+            <summary class="cursor-pointer text-sm font-semibold text-[#F4F4F0]" style="list-style:none">
+              📊 Rendimiento por ejercicio
+              <span class="ml-2 text-xs font-normal" style="color:#888">(${exRows.length} ejercicios con datos)</span>
+            </summary>
+            <div class="mt-3">
+              <div class="flex gap-3 flex-wrap mb-3">
+                ${['PROGRESANDO','ESTABLE','REVISAR','NEW'].map(t => {
+                  const n = exRows.filter(r=>r.trend===t).length;
+                  return n ? `<span class="px-2 py-1 rounded text-xs font-bold" style="color:${_trendColor[t]};background:${_trendColor[t]}18;border:1px solid ${_trendColor[t]}40">${_trendIcon[t]} ${t}: ${n}</span>` : '';
+                }).join('')}
+              </div>
+              <div class="overflow-x-auto">
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                  <thead>
+                    <tr style="border-bottom:1px solid rgba(244,244,240,.15)">
+                      <th style="text-align:left;padding:5px 8px;color:#888;font-weight:600;font-size:10px;letter-spacing:.05em;text-transform:uppercase">Ejercicio</th>
+                      <th style="text-align:right;padding:5px 8px;color:#888;font-weight:600;font-size:10px;letter-spacing:.05em;text-transform:uppercase">Última</th>
+                      <th style="text-align:center;padding:5px 8px;color:#888;font-weight:600;font-size:10px;letter-spacing:.05em;text-transform:uppercase">Tend.</th>
+                      <th style="text-align:left;padding:5px 8px;color:#888;font-weight:600;font-size:10px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${exRows.map(r => `
+                      <tr style="border-bottom:1px solid rgba(244,244,240,.07)">
+                        <td style="padding:7px 8px;color:#F4F4F0;font-weight:500">${r.name}</td>
+                        <td style="padding:7px 8px;text-align:right;font-weight:700;color:#F4F4F0;font-variant-numeric:tabular-nums">${r.lastLoad} kg</td>
+                        <td style="padding:7px 8px;text-align:center;font-weight:900;font-size:16px;color:${_trendColor[r.trend]}">${_trendIcon[r.trend]}</td>
+                        <td style="padding:7px 8px;color:${_trendColor[r.trend] || '#888'};font-size:11px">${r.lastAction}</td>
+                      </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>`;
+        }
+      }
+      // ── END rendimiento por ejercicio ────────────────────────────────────
+
       container.innerHTML = html;
 
       // Botón PDF (resumen breve)

@@ -4129,6 +4129,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '</div>';
           })()
         : '')+
+      _buildNextExposureHtml(progrec)+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
@@ -4140,6 +4141,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="position:relative;margin-left:auto">'+
           '<button id="exOpts_'+di+'_'+ei+'" onclick="toggleExOpts('+di+','+ei+')" style="font-size:13px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 11px;border-radius:6px;cursor:pointer;line-height:1">⋮</button>'+
           '<div id="exOptsMenu_'+di+'_'+ei+'" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;min-width:160px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.4);overflow:hidden">'+
+            '<button onclick="showExHistory('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">📈 Historial</button>'+
             '<button onclick="showExSubModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">🔄 Cambiar ejercicio</button>'+
             '<button onclick="showExModModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">⚙ Ajustar series/reps</button>'+
             '<button onclick="toggleUserNote('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:none;border:none;cursor:pointer">📝 '+(	_exNoteInline?'Editar nota':'Añadir nota')+'</button>'+
@@ -5279,6 +5281,7 @@ window.expressSetPump = expressSetPump;
 
 function markExpressDone(di, ei) {
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
+  if (CURRENT_WEEK < REAL_WEEK) { showToast('Semana pasada — modo lectura', true); return; }
   var expK = String(di)+'_'+String(ei);
   var cargaEl = document.getElementById('xcarga_'+expK);
   var repsEl  = document.getElementById('xreps_'+expK);
@@ -7162,6 +7165,7 @@ function addExtraSetNow(di, ei) {
 
 function completeSet(key, di, ei, si, unit) {
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
+  if (CURRENT_WEEK < REAL_WEEK) { showToast('Semana pasada — modo lectura', true); return; }
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
   var reps  = document.getElementById('reps_'+key)?.value  || '';
@@ -12051,6 +12055,211 @@ function _getProgRecForExercise(di, ei, exName) {
   }
   return null;
 }
+
+// ── FASE 6 — EXERCISE HISTORY HELPERS ──────────────────────────────────
+
+// Returns last N comparable exposures (most-recent first), respecting stable identity.
+// Each exposure: { week, confidence, sets:[{carga,reps,rir_real,ics}] }
+function _getExposures(prescriptionExerciseId, di, ei, nombre, maxExposures) {
+  maxExposures = maxExposures || 5;
+  var exposures = [];
+  var startWeek = REAL_WEEK; // always scan real history, not viewed week
+
+  for (var w = startWeek; w >= 1; w--) {
+    var sets = [];
+    var confidence = 'LOW';
+
+    if (prescriptionExerciseId) {
+      var prefix = 'log_'+w+'_';
+      var positions = {};
+      var candidateSets = [];
+      Object.keys(LOGS).forEach(function(k) {
+        if (k.indexOf(prefix) !== 0) return;
+        var entry = LOGS[k];
+        if (!entry || !entry.done || entry.autoFilled) return;
+        if (entry.prescriptionExerciseId !== prescriptionExerciseId) return;
+        var parts = k.split('_');
+        if (parts.length >= 5) positions[parts[2]+'_'+parts[3]] = true;
+        candidateSets.push(entry);
+      });
+      if (candidateSets.length && Object.keys(positions).length === 1) {
+        sets = candidateSets; confidence = 'HIGH';
+      }
+      // ambiguity → skip, fall through to positional
+    }
+
+    if (!sets.length) {
+      var legacySets = [];
+      for (var s = 0; s < 12; s++) {
+        var k = 'log_'+w+'_'+di+'_'+ei+'_s'+s;
+        if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) legacySets.push(LOGS[k]);
+      }
+      if (legacySets.length && nombre) {
+        var logsWithSnap = legacySets.filter(function(ls) { return ls.exerciseNameSnapshot; });
+        if (logsWithSnap.length > 0) {
+          if (_normName(nombre) !== _normName(logsWithSnap[0].exerciseNameSnapshot)) continue;
+        }
+      }
+      sets = legacySets;
+    }
+
+    if (!sets.length) continue;
+
+    exposures.push({
+      week: w,
+      confidence: confidence,
+      sets: sets.map(function(s) {
+        return {
+          carga: parseFloat(s.carga) || 0,
+          reps: parseInt(s.reps) || 0,
+          rir_real: (s.rir_real !== '' && s.rir_real !== undefined && s.rir_real !== null) ? parseFloat(s.rir_real) : null,
+          ics: s.ics ? parseInt(s.ics) : null
+        };
+      })
+    });
+
+    if (exposures.length >= maxExposures) break;
+  }
+  return exposures; // most-recent first
+}
+
+// Deterministic trend: PROGRESANDO | ESTABLE | REVISAR | NEW
+function _calcTrend(exposures) {
+  if (!exposures || exposures.length < 2) return 'NEW';
+  var latest = exposures[0];
+  var prev   = exposures[1];
+  var latestLoad = Math.max.apply(null, latest.sets.map(function(s) { return s.carga; }));
+  var prevLoad   = Math.max.apply(null, prev.sets.map(function(s) { return s.carga; }));
+  var latestReps = latest.sets.reduce(function(a, s) { return a + s.reps; }, 0) / latest.sets.length;
+  var prevReps   = prev.sets.reduce(function(a, s) { return a + s.reps; }, 0) / prev.sets.length;
+
+  // Repeated decline requires at least 3 exposures
+  if (exposures.length >= 3) {
+    var prevPrev = exposures[2];
+    var ppLoad   = Math.max.apply(null, prevPrev.sets.map(function(s) { return s.carga; }));
+    if (prevLoad < ppLoad && latestLoad < prevLoad) return 'REVISAR';
+  }
+
+  if (latestLoad > prevLoad) return 'PROGRESANDO';
+  if (latestLoad === prevLoad && latestReps > prevReps + 0.5) return 'PROGRESANDO';
+  if (latestLoad < prevLoad) return 'ESTABLE'; // single bad session → ESTABLE, not REVISAR
+  return 'ESTABLE';
+}
+
+// Best load across all exposures
+function _calcPR(exposures) {
+  var best = 0;
+  exposures.forEach(function(exp) {
+    exp.sets.forEach(function(s) { if (s.carga > best) best = s.carga; });
+  });
+  return { bestLoad: best };
+}
+
+// "HOY" inline block — consumes existing progrec, never recalculates
+function _buildNextExposureHtml(progrec) {
+  var actionMap = {
+    increase_load: { label: 'Sube al siguiente incremento disponible', color: 'var(--grn)', icon: '↑' },
+    freeze_load:   { label: 'Mantén la carga', color: 'var(--gold)', icon: '→' },
+    maintain:      { label: 'Mantén carga y busca mejorar repeticiones', color: 'var(--gold)', icon: '→' },
+    progress_reps: { label: 'Mantén carga y busca mejorar repeticiones', color: 'var(--gold)', icon: '→' },
+    reduce_load:   { label: 'Reduce ligeramente la carga', color: 'var(--red)', icon: '↓' },
+    add_sets:      { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' },
+    reduce_sets:   { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' },
+    deload:        { label: 'Revisar con Coach', color: 'var(--blue)', icon: '⚑' }
+  };
+  if (!progrec || !progrec.action) {
+    return '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid rgba(107,107,102,.3)">'
+      + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">HOY</div>'
+      + '<div style="font-size:12px;font-weight:700;color:var(--mt)">✦ Establece una nueva referencia</div>'
+      + '</div>';
+  }
+  var act = actionMap[progrec.action] || { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' };
+  return '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid '+act.color+'">'
+    + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">HOY</div>'
+    + '<div style="font-size:12px;font-weight:700;color:'+act.color+'">'+act.icon+' '+act.label+'</div>'
+    + (progrec.newLoad ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">Sugerido: '+progrec.newLoad+' kg</div>' : '')
+    + '</div>';
+}
+
+// History modal — last 5 comparable exposures
+function showExHistory(di, ei) {
+  var ej = (_EJERCICIOS_DIA || [])[ei] || {};
+  var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
+  var prescId = ej.prescriptionExerciseId || null;
+  var unit = getExUnit(di, ei);
+  var exposures = _getExposures(prescId, di, ei, nombre, 5);
+  var trend = _calcTrend(exposures);
+  var pr = exposures.length ? _calcPR(exposures) : null;
+
+  var tc = { PROGRESANDO:{icon:'↑',color:'var(--grn)',label:'PROGRESANDO'},
+             ESTABLE:    {icon:'→',color:'var(--gold)',label:'ESTABLE'},
+             REVISAR:    {icon:'↓',color:'var(--red)',label:'REVISAR'},
+             NEW:        {icon:'✦',color:'var(--mt)',label:'SIN HISTORIAL'} }[trend]
+         || {icon:'✦',color:'var(--mt)',label:'SIN HISTORIAL'};
+
+  var histHtml = '';
+  if (!exposures.length) {
+    histHtml = '<div style="text-align:center;padding:28px 0;color:var(--mt);font-size:13px">Sin historial comparable disponible</div>';
+  } else {
+    exposures.forEach(function(exp) {
+      var icsSum = 0, icsN = 0;
+      exp.sets.forEach(function(s) { if (s.ics) { icsSum += s.ics; icsN++; } });
+      var avgICS = icsN ? (icsSum / icsN).toFixed(1) : null;
+      var topLoad = Math.max.apply(null, exp.sets.map(function(s) { return s.carga; }));
+      histHtml += '<div style="margin-bottom:10px;padding:12px;background:rgba(255,255,255,.025);border-radius:10px;border:1px solid rgba(255,255,255,.07)">'
+        + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:5px">SEMANA '+exp.week
+        +   (exp.confidence!=='HIGH'?' <span style="font-weight:400;color:rgba(170,170,160,.5)">· pos.</span>':'')+'</div>'
+        + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:5px">'
+        +   '<span style="font-size:20px;font-weight:900;color:var(--tx)">'+topLoad+'</span>'
+        +   '<span style="font-size:11px;color:var(--mt)">'+unit+'</span>'
+        +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">ICS '+avgICS+'</span>' : '')
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--mt);line-height:1.8">'
+        + exp.sets.map(function(s,idx) {
+            return 'S'+(idx+1)+': '+s.carga+' '+unit+' × '+s.reps+(s.rir_real!==null?' · RIR '+s.rir_real:'');
+          }).join(' &nbsp;·&nbsp; ')
+        + '</div>'
+        + '</div>';
+    });
+  }
+
+  var prHtml = (pr && pr.bestLoad > 0)
+    ? '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:rgba(107,107,102,.08);border-radius:10px;border:1px solid rgba(107,107,102,.2)">'
+      + '<span style="font-size:18px">🏆</span>'
+      + '<div><div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2)">MEJOR CARGA</div>'
+      + '<div style="font-size:22px;font-weight:900;color:var(--tx);line-height:1.1">'+pr.bestLoad+' <span style="font-size:13px;font-weight:500;color:var(--mt)">'+unit+'</span></div></div>'
+      + '</div>'
+    : '';
+
+  var el = document.getElementById('exHistModal');
+  if (el) el.remove();
+  el = document.createElement('div');
+  el.id = 'exHistModal';
+  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);display:flex;align-items:flex-end;justify-content:center';
+  el.innerHTML =
+    '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'
+    + '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">'
+    +   '<div>'
+    +     '<div style="font-size:10px;font-weight:800;letter-spacing:2px;color:var(--mt2);margin-bottom:2px">HISTORIAL · ÚLTIMAS '+Math.max(exposures.length,1)+'</div>'
+    +     '<div style="font-size:19px;font-weight:900;color:var(--tx);text-transform:uppercase;line-height:1.2;max-width:220px">'+nombre+'</div>'
+    +   '</div>'
+    +   '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;min-width:60px">'
+    +     '<span style="font-size:24px;font-weight:900;color:'+tc.color+'">'+tc.icon+'</span>'
+    +     '<span style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:'+tc.color+'">'+tc.label+'</span>'
+    +   '</div>'
+    + '</div>'
+    + prHtml
+    + histHtml
+    + '<button onclick="document.getElementById(\'exHistModal\').remove()" '
+    +   'style="width:100%;margin-top:16px;padding:14px;border:none;border-radius:12px;cursor:pointer;'
+    +   'background:rgba(107,107,102,.18);color:var(--tx);font-size:15px;font-weight:800">Cerrar</button>'
+    + '</div>';
+  el.onclick = function(e) { if (e.target === el) el.remove(); };
+  document.body.appendChild(el);
+}
+window.showExHistory = showExHistory;
+
+// ── END FASE 6 HISTORY HELPERS ──────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════
 // BANNER "OBJETIVO DE HOY" — guía clara de progresión por sesión

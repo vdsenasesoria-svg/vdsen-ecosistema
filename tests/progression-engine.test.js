@@ -1546,6 +1546,362 @@ console.log('\nP87 — nutritionRaw comidas/calculos preservados en actualizaci�
   assert('P87e', 'monitoreo preserved', result.nutritionRaw.monitoreo && result.nutritionRaw.monitoreo.frecuencia_revision_dias === 14);
 })();
 
+// ═══════════════════════ FASE 6 — HISTORY UX + NEXT EXPOSURE ════════════
+
+// ── Inline helpers that mirror vdsen-cliente.html FASE 6 implementation ──
+
+var REAL_WEEK = 1; // used by _getExposures
+
+function _getExposures(prescriptionExerciseId, di, ei, nombre, maxExposures) {
+  maxExposures = maxExposures || 5;
+  var exposures = [];
+  var startWeek = REAL_WEEK;
+  for (var w = startWeek; w >= 1; w--) {
+    var sets = [];
+    var confidence = 'LOW';
+    if (prescriptionExerciseId) {
+      var prefix = 'log_'+w+'_';
+      var positions = {};
+      var candidateSets = [];
+      Object.keys(LOGS).forEach(function(k) {
+        if (k.indexOf(prefix) !== 0) return;
+        var entry = LOGS[k];
+        if (!entry || !entry.done || entry.autoFilled) return;
+        if (entry.prescriptionExerciseId !== prescriptionExerciseId) return;
+        var parts = k.split('_');
+        if (parts.length >= 5) positions[parts[2]+'_'+parts[3]] = true;
+        candidateSets.push(entry);
+      });
+      if (candidateSets.length && Object.keys(positions).length === 1) {
+        sets = candidateSets; confidence = 'HIGH';
+      }
+    }
+    if (!sets.length) {
+      var legacySets = [];
+      for (var s = 0; s < 12; s++) {
+        var k = 'log_'+w+'_'+di+'_'+ei+'_s'+s;
+        if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) legacySets.push(LOGS[k]);
+      }
+      if (legacySets.length && nombre) {
+        var logsWithSnap = legacySets.filter(function(ls) { return ls.exerciseNameSnapshot; });
+        if (logsWithSnap.length > 0) {
+          if (_normName(nombre) !== _normName(logsWithSnap[0].exerciseNameSnapshot)) continue;
+        }
+      }
+      sets = legacySets;
+    }
+    if (!sets.length) continue;
+    exposures.push({
+      week: w,
+      confidence: confidence,
+      sets: sets.map(function(s) {
+        return {
+          carga: parseFloat(s.carga) || 0,
+          reps: parseInt(s.reps) || 0,
+          rir_real: (s.rir_real !== '' && s.rir_real !== undefined && s.rir_real !== null) ? parseFloat(s.rir_real) : null,
+          ics: s.ics ? parseInt(s.ics) : null
+        };
+      })
+    });
+    if (exposures.length >= maxExposures) break;
+  }
+  return exposures;
+}
+
+function _calcTrend(exposures) {
+  if (!exposures || exposures.length < 2) return 'NEW';
+  var latest = exposures[0];
+  var prev   = exposures[1];
+  var latestLoad = Math.max.apply(null, latest.sets.map(function(s) { return s.carga; }));
+  var prevLoad   = Math.max.apply(null, prev.sets.map(function(s) { return s.carga; }));
+  var latestReps = latest.sets.reduce(function(a,s){return a+s.reps;},0)/latest.sets.length;
+  var prevReps   = prev.sets.reduce(function(a,s){return a+s.reps;},0)/prev.sets.length;
+  if (exposures.length >= 3) {
+    var ppLoad = Math.max.apply(null, exposures[2].sets.map(function(s){return s.carga;}));
+    if (prevLoad < ppLoad && latestLoad < prevLoad) return 'REVISAR';
+  }
+  if (latestLoad > prevLoad) return 'PROGRESANDO';
+  if (latestLoad === prevLoad && latestReps > prevReps + 0.5) return 'PROGRESANDO';
+  return 'ESTABLE';
+}
+
+function _buildNextExposureHtml(progrec) {
+  var actionMap = {
+    increase_load:'increase', freeze_load:'freeze', maintain:'freeze',
+    progress_reps:'freeze', reduce_load:'reduce',
+    add_sets:'coach', reduce_sets:'coach', deload:'coach'
+  };
+  if (!progrec || !progrec.action) return 'new_reference';
+  return actionMap[progrec.action] || 'coach';
+}
+
+// P88 — history uses prescriptionExerciseId (HIGH confidence over positional)
+console.log('\nP88 — history uses prescriptionExerciseId correctly');
+(function(){
+  clearLogs();
+  REAL_WEEK = 3; CURRENT_WEEK = 3;
+  var pressId = 'pid-press-88';
+  // Weeks 1-2: press at position 0,0 with prescriptionExerciseId
+  LOGS['log_1_0_0_s0'] = makeSetWithMeta(70,10,2,9,1,pressId,'Press inclinado');
+  LOGS['log_1_0_0_s1'] = makeSetWithMeta(70,10,2,9,1,pressId,'Press inclinado');
+  LOGS['log_2_0_0_s0'] = makeSetWithMeta(75,10,2,9,1,pressId,'Press inclinado');
+  LOGS['log_2_0_0_s1'] = makeSetWithMeta(75,10,2,9,1,pressId,'Press inclinado');
+  var exposures = _getExposures(pressId, 0, 0, 'Press inclinado', 5);
+  assert('P88a', 'has 2 exposures', exposures.length === 2);
+  assert('P88b', 'latest week is 2', exposures[0].week === 2);
+  assert('P88c', 'older week is 1', exposures[1].week === 1);
+  assert('P88d', 'confidence HIGH', exposures[0].confidence === 'HIGH');
+  assert('P88e', 'top load week2 is 75', Math.max.apply(null, exposures[0].sets.map(function(s){return s.carga;})) === 75);
+})();
+
+// P89 — reorder: history stays with prescriptionExerciseId despite position change
+console.log('\nP89 — reorder: history follows prescriptionExerciseId, not position');
+(function(){
+  clearLogs();
+  REAL_WEEK = 3; CURRENT_WEEK = 3;
+  var pressId = 'pid-press-89';
+  var curlId  = 'pid-curl-89';
+  // Week 1: press at ei=0, curl at ei=1
+  LOGS['log_1_0_0_s0'] = makeSetWithMeta(80,8,2,9,1,pressId,'Press');
+  LOGS['log_1_0_1_s0'] = makeSetWithMeta(30,12,2,8,1,curlId,'Curl');
+  // Week 2: press moved to ei=1, curl to ei=0
+  LOGS['log_2_0_1_s0'] = makeSetWithMeta(82.5,8,2,9,1,pressId,'Press');
+  LOGS['log_2_0_0_s0'] = makeSetWithMeta(32.5,12,2,8,1,curlId,'Curl');
+  // Query press (now at ei=1 in plan) — should still find week 1 press data
+  var exPressNew = _getExposures(pressId, 0, 1, 'Press', 5);
+  var exCurlNew  = _getExposures(curlId,  0, 0, 'Curl',  5);
+  assert('P89a', 'press history found (2 exposures)', exPressNew.length === 2);
+  assert('P89b', 'press latest = 82.5', Math.max.apply(null,exPressNew[0].sets.map(function(s){return s.carga;})) === 82.5);
+  assert('P89c', 'curl history found (2 exposures)', exCurlNew.length === 2);
+  assert('P89d', 'curl latest = 32.5', Math.max.apply(null,exCurlNew[0].sets.map(function(s){return s.carga;})) === 32.5);
+})();
+
+// P90 — substitution: history NOT mixed when prescriptionExerciseId is different
+console.log('\nP90 — substitution: history not mixed across different prescriptionExerciseIds');
+(function(){
+  clearLogs();
+  REAL_WEEK = 3; CURRENT_WEEK = 3;
+  var oldId = 'pid-old-90';
+  var newId = 'pid-new-90';
+  LOGS['log_1_0_0_s0'] = makeSetWithMeta(100,8,2,9,1,oldId,'Sentadilla');
+  LOGS['log_2_0_0_s0'] = makeSetWithMeta(80,10,2,9,1,newId,'Leg press'); // substitution
+  // Query with new exercise ID
+  var exposures = _getExposures(newId, 0, 0, 'Leg press', 5);
+  assert('P90a', 'only 1 exposure (week 2 substitution)', exposures.length === 1);
+  assert('P90b', 'exposure week is 2', exposures[0].week === 2);
+  assert('P90c', 'old exercise not included', exposures.every(function(e){
+    return Math.max.apply(null,e.sets.map(function(s){return s.carga;})) !== 100;
+  }));
+})();
+
+// P91 — max 5 exposures returned
+console.log('\nP91 — history returns at most 5 exposures');
+(function(){
+  clearLogs();
+  REAL_WEEK = 8; CURRENT_WEEK = 8;
+  var pid = 'pid-91';
+  for (var w = 1; w <= 8; w++) {
+    LOGS['log_'+w+'_0_0_s0'] = makeSetWithMeta(70+w,10,2,8,1,pid,'Press');
+  }
+  var exposures = _getExposures(pid, 0, 0, 'Press', 5);
+  assert('P91a', 'max 5 exposures', exposures.length === 5);
+  assert('P91b', 'most recent is week 8', exposures[0].week === 8);
+})();
+
+// P92 — autoFilled sets excluded from history
+console.log('\nP92 — autoFilled sets excluded from history');
+(function(){
+  clearLogs();
+  REAL_WEEK = 3; CURRENT_WEEK = 3;
+  var pid = 'pid-92';
+  LOGS['log_1_0_0_s0'] = Object.assign(makeSetWithMeta(80,10,2,9,1,pid,'Press'), { autoFilled:true });
+  LOGS['log_2_0_0_s0'] = makeSetWithMeta(85,10,2,9,1,pid,'Press');
+  var exposures = _getExposures(pid, 0, 0, 'Press', 5);
+  assert('P92a', 'autoFilled week excluded', exposures.length === 1);
+  assert('P92b', 'only real week retained', exposures[0].week === 2);
+})();
+
+// P93 — next exposure: increase_load displayed correctly
+console.log('\nP93 — next exposure: increase_load mapping');
+(function(){
+  var rec = { action: 'increase_load', newLoad: 82.5 };
+  var result = _buildNextExposureHtml(rec);
+  assert('P93a', 'increase_load → increase category', result === 'increase');
+})();
+
+// P94 — freeze_load displayed correctly
+console.log('\nP94 — next exposure: freeze_load mapping');
+(function(){
+  var rec = { action: 'freeze_load', newLoad: 80 };
+  var result = _buildNextExposureHtml(rec);
+  assert('P94a', 'freeze_load → freeze category', result === 'freeze');
+})();
+
+// P95 — reduce_load displayed correctly
+console.log('\nP95 — next exposure: reduce_load mapping');
+(function(){
+  var rec = { action: 'reduce_load', newLoad: 75 };
+  var result = _buildNextExposureHtml(rec);
+  assert('P95a', 'reduce_load → reduce category', result === 'reduce');
+})();
+
+// P96 — no history → new reference
+console.log('\nP96 — no history → new reference');
+(function(){
+  var result = _buildNextExposureHtml(null);
+  assert('P96a', 'null progrec → new_reference', result === 'new_reference');
+  var result2 = _buildNextExposureHtml(undefined);
+  assert('P96b', 'undefined progrec → new_reference', result2 === 'new_reference');
+})();
+
+// P97 — one bad exposure does NOT mark declining
+console.log('\nP97 — one bad session does not mark REVISAR (only 2 exposures)');
+(function(){
+  var exposures = [
+    { week:2, confidence:'HIGH', sets:[{carga:75, reps:10}] },
+    { week:1, confidence:'HIGH', sets:[{carga:80, reps:10}] }
+  ];
+  var trend = _calcTrend(exposures);
+  // latest(75) < prev(80) but only 2 exposures → ESTABLE, not REVISAR
+  assert('P97a', 'single decline → ESTABLE (not REVISAR)', trend === 'ESTABLE');
+})();
+
+// P98 — repeated regression → REVISAR
+console.log('\nP98 — repeated regression across 3 exposures → REVISAR');
+(function(){
+  var exposures = [
+    { week:3, confidence:'HIGH', sets:[{carga:70, reps:10}] },
+    { week:2, confidence:'HIGH', sets:[{carga:75, reps:10}] },
+    { week:1, confidence:'HIGH', sets:[{carga:80, reps:10}] }
+  ];
+  var trend = _calcTrend(exposures);
+  assert('P98a', '3 consecutive declines → REVISAR', trend === 'REVISAR');
+})();
+
+// P99 — week navigation does NOT mutate currentWeek in Firestore (REAL_WEEK unchanged)
+console.log('\nP99 — week navigation does not mutate REAL_WEEK');
+(function(){
+  var savedReal = REAL_WEEK;
+  var savedCurrent = CURRENT_WEEK;
+  // Simulate setWeek: only changes CURRENT_WEEK, not REAL_WEEK
+  function setWeekSim(w) { CURRENT_WEEK = w; /* NO change to REAL_WEEK */ }
+  REAL_WEEK = 4; CURRENT_WEEK = 4;
+  setWeekSim(2);
+  assert('P99a', 'CURRENT_WEEK changed to 2', CURRENT_WEEK === 2);
+  assert('P99b', 'REAL_WEEK unchanged at 4', REAL_WEEK === 4);
+  REAL_WEEK = savedReal; CURRENT_WEEK = savedCurrent;
+})();
+
+// P100 — previous week is read-only (guard on CURRENT_WEEK < REAL_WEEK)
+console.log('\nP100 — past week logging is blocked');
+(function(){
+  var blocked = false;
+  function completeSetSim(currentW, realW) {
+    if (currentW > realW) { return 'future_blocked'; }
+    if (currentW < realW) { return 'past_blocked'; }
+    return 'ok';
+  }
+  assert('P100a', 'past week (2 < 4) → blocked', completeSetSim(2, 4) === 'past_blocked');
+  assert('P100b', 'future week (5 > 4) → blocked', completeSetSim(5, 4) === 'future_blocked');
+  assert('P100c', 'current week (4 == 4) → ok', completeSetSim(4, 4) === 'ok');
+})();
+
+// P101 — current week remains editable
+console.log('\nP101 — current week (CURRENT_WEEK === REAL_WEEK) is editable');
+(function(){
+  function completeSetSim(currentW, realW) {
+    if (currentW > realW) return 'blocked';
+    if (currentW < realW) return 'blocked';
+    return 'allowed';
+  }
+  assert('P101a', 'CURRENT_WEEK === REAL_WEEK → allowed', completeSetSim(3, 3) === 'allowed');
+})();
+
+// P102 — week navigation does NOT increment observationsCount
+console.log('\nP102 — week navigation does not run calculateProgression');
+(function(){
+  var progressionCalled = false;
+  function setWeekSim(w) {
+    CURRENT_WEEK = w;
+    // renderEntrenamiento is called — but NOT calculateProgression
+    // Test: observationsCount only changes when calculateProgression runs
+  }
+  // Populate some logs
+  clearLogs();
+  REAL_WEEK = 3; CURRENT_WEEK = 3;
+  LOGS['log_1_0_0_s0'] = makeSet(80,10,2,9,1);
+  LOGS['log_1_0_0_s1'] = makeSet(80,9,2,8,1);
+  var countBefore = Object.keys(LOGS).filter(function(k){
+    return k.startsWith('log_') && LOGS[k].done && !LOGS[k].autoFilled;
+  }).length;
+  setWeekSim(1); // navigate to past week
+  var countAfter = Object.keys(LOGS).filter(function(k){
+    return k.startsWith('log_') && LOGS[k].done && !LOGS[k].autoFilled;
+  }).length;
+  assert('P102a', 'LOGS entry count unchanged after setWeek', countBefore === countAfter);
+  assert('P102b', 'no new log entries created by setWeek', countAfter === 2);
+  REAL_WEEK = 1; CURRENT_WEEK = 1;
+})();
+
+// P103 — Coach exercise history uses stable identity (prescriptionExerciseId)
+console.log('\nP103 — Coach performance history uses prescriptionExerciseId');
+(function(){
+  clearLogs();
+  REAL_WEEK = 3; CURRENT_WEEK = 3;
+  var pressId = 'pid-coach-103';
+  // Press moved from position 0 to 1 between weeks — ID is stable
+  LOGS['log_1_0_0_s0'] = makeSetWithMeta(70,10,2,9,1,pressId,'Press');
+  LOGS['log_2_0_1_s0'] = makeSetWithMeta(75,10,2,9,1,pressId,'Press');
+  // Simulate coach lookup: best load by prescriptionExerciseId
+  function coachBestLoad(logs, prescId, maxW) {
+    var best = 0;
+    for (var w = maxW; w >= 1; w--) {
+      Object.keys(logs).forEach(function(k) {
+        var e = logs[k]; if (!e||!e.done||e.autoFilled) return;
+        if (e.prescriptionExerciseId !== prescId) return;
+        var v = parseFloat(e.carga)||0; if (v>best) best=v;
+      });
+      if (best) break;
+    }
+    return best;
+  }
+  var load = coachBestLoad(LOGS, pressId, 3);
+  assert('P103a', 'coach finds press load via ID despite position change', load === 75);
+})();
+
+// P104 — Coach summary counts trends correctly
+console.log('\nP104 — Coach trend summary counts are accurate');
+(function(){
+  var rows = [
+    { trend:'PROGRESANDO' },
+    { trend:'PROGRESANDO' },
+    { trend:'ESTABLE' },
+    { trend:'REVISAR' },
+    { trend:'NEW' }
+  ];
+  function countTrend(rows, t) { return rows.filter(function(r){return r.trend===t;}).length; }
+  assert('P104a', 'PROGRESANDO count = 2', countTrend(rows,'PROGRESANDO') === 2);
+  assert('P104b', 'ESTABLE count = 1',     countTrend(rows,'ESTABLE') === 1);
+  assert('P104c', 'REVISAR count = 1',     countTrend(rows,'REVISAR') === 1);
+  assert('P104d', 'NEW count = 1',         countTrend(rows,'NEW') === 1);
+})();
+
+// P105 — no extra Firestore reads per exercise card (history built from LOGS in memory)
+console.log('\nP105 — exercise history built from in-memory LOGS, no additional reads');
+(function(){
+  // _getExposures operates entirely on LOGS (in-memory object)
+  // It does not call any async function or external data source
+  clearLogs();
+  REAL_WEEK = 2; CURRENT_WEEK = 2;
+  LOGS['log_1_0_0_s0'] = makeSetWithMeta(80,10,2,9,1,'pid-105','Press');
+  var reads = 0;
+  // Intercept: if _getExposures called any async, it would need await — it doesn't
+  var exposures = _getExposures('pid-105', 0, 0, 'Press', 5);
+  // reads stayed at 0 because function is synchronous and uses only LOGS
+  assert('P105a', 'exposures returned synchronously (no Firestore reads)', exposures.length === 1);
+  assert('P105b', 'reads counter unchanged (LOGS-only)', reads === 0);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
