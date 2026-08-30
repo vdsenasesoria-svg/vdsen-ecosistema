@@ -3207,6 +3207,246 @@ console.log('\nP185 — double apply guard prevents duplicate operation');
   applying = false;
 })();
 
+// ══════════════════════════════════════════════════════════════════
+// FASE 12 — mirror functions
+// ══════════════════════════════════════════════════════════════════
+
+function _getWeeklyCheckins(entries, max) {
+  max = max || 6;
+  if (!entries || typeof entries !== 'object') return [];
+  var result = [];
+  Object.keys(entries).forEach(function(k) {
+    var m = k.match(/^ci_sem_(\d+)$/);
+    if (!m) return;
+    var w = parseInt(m[1], 10);
+    var ci = entries[k];
+    if (!ci || typeof ci !== 'object') return;
+    result.push({ week: w, data: ci });
+  });
+  result.sort(function(a, b) { return b.week - a.week; });
+  return result.slice(0, max);
+}
+
+function _calcWeightTrend(checkins) {
+  var points = [];
+  (checkins || []).forEach(function(ci) {
+    var w = parseFloat(ci.data && ci.data.peso);
+    if (!isNaN(w) && w > 0) points.push({ week: ci.week, peso: w });
+  });
+  if (points.length < 2) return { status: 'SIN_DATOS', rate: null };
+  points.sort(function(a, b) { return a.week - b.week; });
+  var first = points[0], last = points[points.length - 1];
+  var weekDiff = last.week - first.week;
+  if (weekDiff === 0) return { status: 'SIN_DATOS', rate: null };
+  var rate = (last.peso - first.peso) / weekDiff;
+  return {
+    status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+    rate: +rate.toFixed(2),
+    firstPeso: first.peso,
+    lastPeso: last.peso
+  };
+}
+
+// Simulates _buildWeekPerfSummary stats extraction (pure, no DOM)
+function _calcWeekPerfStats(logs, week) {
+  var totalSets = 0, rirs = [], icss = [];
+  var prefix = 'log_' + week + '_';
+  Object.keys(logs).forEach(function(k) {
+    if (k.indexOf(prefix) !== 0) return;
+    if (!/^log_\d+_\d+_\d+_s\d+$/.test(k)) return;
+    var e = logs[k];
+    if (!e || !e.done || e.autoFilled) return;
+    totalSets++;
+    var rir = parseFloat(e.rir_real);
+    if (!isNaN(rir) && rir >= 0 && rir <= 5) rirs.push(rir);
+    var ics = parseFloat(e.ics);
+    if (!isNaN(ics) && ics >= 1 && ics <= 10) icss.push(ics);
+  });
+  var avgRIR = rirs.length ? +(rirs.reduce(function(a,b){return a+b;},0)/rirs.length).toFixed(1) : null;
+  var avgICS = icss.length ? +(icss.reduce(function(a,b){return a+b;},0)/icss.length).toFixed(1) : null;
+  return { totalSets: totalSets, avgRIR: avgRIR, avgICS: avgICS };
+}
+
+// P186 — _getWeeklyCheckins: returns newest-first, up to max
+console.log('\nP186 — _getWeeklyCheckins newest-first and max limit');
+(function() {
+  var entries = {
+    'ci_sem_1': { peso: 80 },
+    'ci_sem_3': { peso: 81 },
+    'ci_sem_5': { peso: 79 },
+    'log_1_0_0_s0': { done: true } // non-ci key must be ignored
+  };
+  var result = _getWeeklyCheckins(entries, 6);
+  assert('P186a', 'returns 3 entries (only ci_sem_ keys)', result.length === 3);
+  assert('P186b', 'newest first: week 5 at index 0', result[0].week === 5);
+  assert('P186c', 'week 3 at index 1', result[1].week === 3);
+  assert('P186d', 'oldest last: week 1 at index 2', result[2].week === 1);
+
+  var limited = _getWeeklyCheckins(entries, 2);
+  assert('P186e', 'max=2 returns only 2 entries', limited.length === 2);
+  assert('P186f', 'max=2 keeps 2 newest', limited[0].week === 5 && limited[1].week === 3);
+})();
+
+// P187 — _getWeeklyCheckins: empty/null entries
+console.log('\nP187 — _getWeeklyCheckins edge cases');
+(function() {
+  assert('P187a', 'null entries returns []', _getWeeklyCheckins(null, 6).length === 0);
+  assert('P187b', 'empty object returns []', _getWeeklyCheckins({}, 6).length === 0);
+  assert('P187c', 'entries with no ci_sem_ keys returns []',
+    _getWeeklyCheckins({ 'done_1_0': true, 'progrec_1_0': {} }, 6).length === 0);
+  var singleEntry = { 'ci_sem_4': { peso: 75, hrv: 60 } };
+  var r = _getWeeklyCheckins(singleEntry, 6);
+  assert('P187d', 'single ci_sem_ entry returns 1 result', r.length === 1);
+  assert('P187e', 'data preserved', r[0].data.peso === 75 && r[0].data.hrv === 60);
+})();
+
+// P188 — _calcWeightTrend: SUBIENDO when rate > 0.5 kg/week
+console.log('\nP188 — _calcWeightTrend SUBIENDO');
+(function() {
+  // 80 → 82 over weeks 1 and 3 (weekDiff=2) = +1.0 kg/week → SUBIENDO
+  var checkins = [
+    { week: 3, data: { peso: 82 } },
+    { week: 1, data: { peso: 80 } }
+  ];
+  var t = _calcWeightTrend(checkins);
+  assert('P188a', 'status is SUBIENDO', t.status === 'SUBIENDO');
+  assert('P188b', 'rate is +1.0 ((82-80)/(3-1))', t.rate === 1.0);
+  assert('P188c', 'firstPeso is 80', t.firstPeso === 80);
+  assert('P188d', 'lastPeso is 82', t.lastPeso === 82);
+})();
+
+// P189 — _calcWeightTrend: BAJANDO when rate < -0.5 kg/week
+console.log('\nP189 — _calcWeightTrend BAJANDO');
+(function() {
+  // 82 → 79 over 2 weeks = -1.5 kg/week → BAJANDO
+  var checkins = [
+    { week: 2, data: { peso: 79 } },
+    { week: 1, data: { peso: 82 } }  // note: order doesn't matter, function sorts by week
+  ];
+  var t = _calcWeightTrend(checkins);
+  assert('P189a', 'status is BAJANDO', t.status === 'BAJANDO');
+  assert('P189b', 'rate is -3.0', t.rate === -3.0);
+})();
+
+// P190 — _calcWeightTrend: ESTABLE when |rate| ≤ 0.5 kg/week
+console.log('\nP190 — _calcWeightTrend ESTABLE');
+(function() {
+  // 80 → 80.4 over 2 weeks = +0.2 kg/week → ESTABLE
+  var checkins = [
+    { week: 3, data: { peso: 80.4 } },
+    { week: 1, data: { peso: 80 } }
+  ];
+  var t = _calcWeightTrend(checkins);
+  assert('P190a', 'status is ESTABLE for +0.2/week', t.status === 'ESTABLE');
+
+  // 81 → 80 over 2 weeks = -0.5 kg/week → boundary: ESTABLE (not BAJANDO)
+  var t2 = _calcWeightTrend([
+    { week: 3, data: { peso: 80 } },
+    { week: 1, data: { peso: 81 } }
+  ]);
+  assert('P190b', 'rate exactly -0.5 is ESTABLE (not BAJANDO)', t2.status === 'ESTABLE');
+})();
+
+// P191 — _calcWeightTrend: SIN_DATOS when fewer than 2 valid peso entries
+console.log('\nP191 — _calcWeightTrend SIN_DATOS');
+(function() {
+  assert('P191a', 'empty array → SIN_DATOS', _calcWeightTrend([]).status === 'SIN_DATOS');
+  assert('P191b', 'empty array → rate null', _calcWeightTrend([]).rate === null);
+
+  var onlyOne = [{ week: 1, data: { peso: 80 } }];
+  assert('P191c', 'single entry → SIN_DATOS', _calcWeightTrend(onlyOne).status === 'SIN_DATOS');
+
+  // Missing peso fields
+  var noPeso = [
+    { week: 1, data: {} },
+    { week: 2, data: { hrv: 60 } }
+  ];
+  assert('P191d', 'entries with no peso → SIN_DATOS', _calcWeightTrend(noPeso).status === 'SIN_DATOS');
+})();
+
+// P192 — _calcWeightTrend: uses actual week gap (not assumed consecutive)
+console.log('\nP192 — _calcWeightTrend uses actual week gap');
+(function() {
+  // Same weight delta but different week gaps → different rates
+  // 80 → 82 over 4 weeks = +0.5 kg/week → ESTABLE (boundary)
+  var t1 = _calcWeightTrend([
+    { week: 5, data: { peso: 82 } },
+    { week: 1, data: { peso: 80 } }
+  ]);
+  assert('P192a', '4-week gap: +2kg total = +0.5/week → ESTABLE', t1.status === 'ESTABLE');
+  assert('P192b', 'rate is exactly 0.5', t1.rate === 0.5);
+
+  // Same 80 → 82 but over 1 week = +2 kg/week → SUBIENDO
+  var t2 = _calcWeightTrend([
+    { week: 2, data: { peso: 82 } },
+    { week: 1, data: { peso: 80 } }
+  ]);
+  assert('P192c', '1-week gap: +2kg = +2.0/week → SUBIENDO', t2.status === 'SUBIENDO');
+})();
+
+// P193 — _calcWeekPerfStats: aggregates all days, excludes autoFilled
+console.log('\nP193 — _calcWeekPerfStats aggregates all days, excludes autoFilled');
+(function() {
+  var logs = {
+    // Day 0, Ex 0
+    'log_2_0_0_s0': { done: true, rir_real: '2', ics: '8', carga: 100 },
+    'log_2_0_0_s1': { done: true, rir_real: '1', ics: '9', carga: 100 },
+    // Day 1, Ex 0 — different day
+    'log_2_1_0_s0': { done: true, rir_real: '3', ics: '7', carga: 80 },
+    // autoFilled — must be excluded
+    'log_2_1_0_s1': { done: true, rir_real: '2', ics: '8', carga: 80, autoFilled: true },
+    // Week 1 — must NOT be counted (different week)
+    'log_1_0_0_s0': { done: true, rir_real: '0', ics: '10', carga: 90 },
+    // Not done — must be excluded
+    'log_2_0_1_s0': { done: false, rir_real: '2', ics: '8', carga: 70 }
+  };
+  var s = _calcWeekPerfStats(logs, 2);
+  assert('P193a', 'totalSets = 3 (excludes autoFilled, not-done, wrong-week)', s.totalSets === 3);
+  assert('P193b', 'avgRIR = 2.0 ((2+1+3)/3)', s.avgRIR === 2.0);
+  assert('P193c', 'avgICS = 8.0 ((8+9+7)/3)', s.avgICS === 8.0);
+})();
+
+// P194 — _calcWeekPerfStats: returns null for avgRIR/avgICS when no valid data
+console.log('\nP194 — _calcWeekPerfStats returns null metrics when no valid data');
+(function() {
+  // sets done but no rir_real or ics values
+  var logs = {
+    'log_1_0_0_s0': { done: true, carga: 100 },
+    'log_1_0_0_s1': { done: true, carga: 100 }
+  };
+  var s = _calcWeekPerfStats(logs, 1);
+  assert('P194a', 'totalSets = 2', s.totalSets === 2);
+  assert('P194b', 'avgRIR is null when no rir_real data', s.avgRIR === null);
+  assert('P194c', 'avgICS is null when no ics data', s.avgICS === null);
+
+  // empty week
+  var s2 = _calcWeekPerfStats({}, 3);
+  assert('P194d', 'totalSets = 0 for empty logs', s2.totalSets === 0);
+})();
+
+// P195 — _calcWeightTrend: handles non-numeric peso gracefully
+console.log('\nP195 — _calcWeightTrend gracefully handles bad peso values');
+(function() {
+  // Mix of valid, invalid, and zero peso
+  var checkins = [
+    { week: 1, data: { peso: 80 } },
+    { week: 2, data: { peso: 'abc' } },    // invalid string
+    { week: 3, data: { peso: 0 } },         // zero → excluded
+    { week: 4, data: { peso: null } },      // null → excluded
+    { week: 5, data: { peso: 82 } }
+  ];
+  var t = _calcWeightTrend(checkins);
+  assert('P195a', 'only valid positive weights used: 80 and 82', t.firstPeso === 80 && t.lastPeso === 82);
+  assert('P195b', 'rate = (82-80)/(5-1) = 0.5 → ESTABLE', t.status === 'ESTABLE' && t.rate === 0.5);
+
+  // All invalid peso → SIN_DATOS
+  var t2 = _calcWeightTrend([
+    { week: 1, data: { peso: 0 } },
+    { week: 2, data: { peso: NaN } }
+  ]);
+  assert('P195c', 'all invalid peso → SIN_DATOS', t2.status === 'SIN_DATOS');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

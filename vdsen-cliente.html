@@ -6068,6 +6068,129 @@ function _statCell(value, label, color) {
     '<div style="font-size:8px;letter-spacing:.8px;color:var(--mt);text-transform:uppercase;margin-top:2px">' + label + '</div>' +
     '</div>';
 }
+// FASE 12 — Returns up to `max` {week, data} entries from entries, newest-first
+function _getWeeklyCheckins(entries, max) {
+  max = max || 6;
+  if (!entries || typeof entries !== 'object') return [];
+  var result = [];
+  Object.keys(entries).forEach(function(k) {
+    var m = k.match(/^ci_sem_(\d+)$/);
+    if (!m) return;
+    var w = parseInt(m[1], 10);
+    var ci = entries[k];
+    if (!ci || typeof ci !== 'object') return;
+    result.push({ week: w, data: ci });
+  });
+  result.sort(function(a, b) { return b.week - a.week; });
+  return result.slice(0, max);
+}
+
+// FASE 12 — Weight trend from checkins array (newest-first from _getWeeklyCheckins).
+// Uses actual week gap, not assumed consecutive. Returns { status, rate }.
+function _calcWeightTrend(checkins) {
+  var points = [];
+  (checkins || []).forEach(function(ci) {
+    var w = parseFloat(ci.data && ci.data.peso);
+    if (!isNaN(w) && w > 0) points.push({ week: ci.week, peso: w });
+  });
+  if (points.length < 2) return { status: 'SIN_DATOS', rate: null };
+  points.sort(function(a, b) { return a.week - b.week; });
+  var first = points[0], last = points[points.length - 1];
+  var weekDiff = last.week - first.week;
+  if (weekDiff === 0) return { status: 'SIN_DATOS', rate: null };
+  var rate = (last.peso - first.peso) / weekDiff;
+  return {
+    status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+    rate: +rate.toFixed(2),
+    firstPeso: first.peso,
+    lastPeso: last.peso
+  };
+}
+
+// FASE 12 — Aggregated week stats strip for ALL days in CURRENT_WEEK (excludes autoFilled)
+function _buildWeekPerfSummary() {
+  var totalSets = 0, rirs = [], icss = [];
+  var prefix = 'log_' + CURRENT_WEEK + '_';
+  Object.keys(LOGS).forEach(function(k) {
+    if (k.indexOf(prefix) !== 0) return;
+    if (!/^log_\d+_\d+_\d+_s\d+$/.test(k)) return;
+    var e = LOGS[k];
+    if (!e || !e.done || e.autoFilled) return;
+    totalSets++;
+    var rir = parseFloat(e.rir_real);
+    if (!isNaN(rir) && rir >= 0 && rir <= 5) rirs.push(rir);
+    var ics = parseFloat(e.ics);
+    if (!isNaN(ics) && ics >= 1 && ics <= 10) icss.push(ics);
+  });
+  if (totalSets === 0) return '';
+  var avgRIR = rirs.length ? +(rirs.reduce(function(a,b){return a+b;},0)/rirs.length).toFixed(1) : null;
+  var avgICS = icss.length ? +(icss.reduce(function(a,b){return a+b;},0)/icss.length).toFixed(1) : null;
+  var icsColor = avgICS !== null ? (avgICS >= 8 ? 'var(--grn)' : avgICS >= 7 ? 'var(--gold)' : 'var(--red)') : 'var(--mt)';
+  return '<div style="margin:0 16px 8px;padding:6px 12px;background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.14);border-radius:8px">'
+    + '<div style="font-size:9px;font-weight:700;letter-spacing:1px;color:var(--mt);margin-bottom:5px;text-transform:uppercase">Resumen sem ' + CURRENT_WEEK + '</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">'
+    + _statCell(totalSets, 'series totales', 'var(--tx)')
+    + _statCell(avgRIR !== null ? avgRIR : '—', 'rir medio', 'var(--tx)')
+    + _statCell(avgICS !== null ? avgICS : '—', 'ics medio', icsColor)
+    + '</div></div>';
+}
+
+// FASE 12 — Check-in history block (last 6 weeks) with weight trend chip
+function _buildCheckinHistory() {
+  var checkins = _getWeeklyCheckins(LOGS, 6);
+  var trend = _calcWeightTrend(checkins);
+  var trendMeta = {
+    SUBIENDO: { icon: '↑', color: 'var(--gold)', label: 'SUBIENDO' },
+    BAJANDO:  { icon: '↓', color: 'var(--grn)',  label: 'BAJANDO'  },
+    ESTABLE:  { icon: '→', color: 'var(--tx)',   label: 'ESTABLE'  },
+    SIN_DATOS:{ icon: '·', color: 'var(--mt)',   label: 'SIN DATOS'}
+  };
+  var tm = trendMeta[trend.status] || trendMeta.SIN_DATOS;
+  var trendDetail = trend.rate !== null
+    ? ' ' + (trend.rate >= 0 ? '+' : '') + trend.rate + ' kg/sem'
+    : '';
+  var trendChip = '<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1px solid '
+    + tm.color + ';border-radius:20px;margin-bottom:10px">'
+    + '<span style="font-size:13px;color:' + tm.color + '">' + tm.icon + '</span>'
+    + '<span style="font-size:10px;font-weight:800;letter-spacing:.5px;color:' + tm.color + '">'
+    + tm.label + trendDetail + '</span></div>';
+
+  var headerHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
+    + '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">HISTORIAL DE CHECK-INS</div>';
+
+  if (checkins.length === 0) {
+    return headerHtml + trendChip
+      + '<div style="font-size:12px;color:var(--mt)">Aún no hay check-ins previos.</div>'
+      + '</div>';
+  }
+
+  var rows = checkins.map(function(ci) {
+    var d = ci.data || {};
+    var peso  = d.peso  != null ? d.peso  + ' kg' : '—';
+    var hrv   = d.hrv   != null ? d.hrv         : '—';
+    var sleep = d.sleep != null ? d.sleep + ' h' : '—';
+    var who5  = d.who5  != null ? d.who5 + '/100': '—';
+    var isActive = ci.week === REAL_WEEK;
+    return '<tr style="' + (isActive ? 'background:rgba(196,255,0,.04)' : '') + '">'
+      + '<td style="padding:6px 8px;font-family:var(--ff);font-weight:700;color:' + (isActive ? 'var(--accent)' : 'var(--mt)') + ';border-bottom:1px solid rgba(107,107,102,.1)">SEM ' + ci.week + '</td>'
+      + '<td style="padding:6px 8px;border-bottom:1px solid rgba(107,107,102,.1);color:var(--tx)">' + peso + '</td>'
+      + '<td style="padding:6px 8px;border-bottom:1px solid rgba(107,107,102,.1);color:var(--mt)">' + hrv + '</td>'
+      + '<td style="padding:6px 8px;border-bottom:1px solid rgba(107,107,102,.1);color:var(--mt)">' + sleep + '</td>'
+      + '<td style="padding:6px 8px;border-bottom:1px solid rgba(107,107,102,.1);color:var(--mt)">' + who5 + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var th = function(t) {
+    return '<th style="text-align:left;padding:4px 8px;font-size:9px;letter-spacing:1px;font-weight:700;color:var(--mt);border-bottom:1px solid rgba(107,107,102,.2)">' + t + '</th>';
+  };
+
+  return headerHtml + trendChip
+    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr>' + th('SEM') + th('PESO') + th('HRV') + th('SUEÑO') + th('WHO-5') + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div></div>';
+}
+
 // Returns { completedSets, avgRIR, avgICS, sessionStart }
 // done && !autoFilled only; RIR 0-5; ICS 1-10
 function _calcSessionStats(logs, di, week) {
@@ -6476,6 +6599,8 @@ function renderEntrenamiento() {
     '</div>'+
     // Session dashboard stats (FASE 8)
     sessionStatsHtml+
+    // Week performance summary (FASE 12): all days in CURRENT_WEEK
+    _buildWeekPerfSummary()+
     // Glosario RIR + ICS (colapsable)
     '<details style="margin:0 16px 8px;background:rgba(107,107,102,.04);border:1px solid rgba(107,107,102,.18);border-radius:10px;padding:8px 12px">'+
       '<summary style="cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.5px;display:flex;align-items:center;gap:6px">'+
@@ -10444,7 +10569,9 @@ function renderCheckin() {
     + '<div id="ciFloatSave" style="position:fixed;bottom:80px;right:14px;z-index:300">'
     +   '<button onclick="guardarCI()" style="padding:12px 18px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:1.5px;cursor:pointer;border-radius:50px;box-shadow:0 4px 20px rgba(196,255,0,.35);white-space:nowrap">💾 GUARDAR</button>'
     + '</div>'
-    + '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:2px">CHECK-IN SEM ' + sem + '</div>'
+    + '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">CHECK-IN SEM ' + sem + '</div>'
+    + '<div style="display:inline-block;margin-bottom:8px;padding:2px 10px;background:rgba(107,107,102,.10);border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1px;color:'
+    + (CURRENT_WEEK < REAL_WEEK ? 'rgba(107,107,102,.5)' : 'var(--mt)') + '">SEMANA ' + CURRENT_WEEK + ' DE ' + getTotalWeeks() + '</div>'
     + '<div style="font-size:12px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">Rellena al inicio de cada semana — tu coach lo usa para ajustar el plan</div>'
 
     // ── MEDIDAS ──────────────────────────────────────
@@ -10561,6 +10688,9 @@ function renderCheckin() {
     +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:15px;padding:12px;outline:none;min-height:90px;resize:vertical;line-height:1.6">'
     +   (d.notas||'') + '</textarea>'
     + '</div>'
+
+    // ── HISTORIAL + TENDENCIA PESO (FASE 12) ─────────────────────────
+    + _buildCheckinHistory()
 
     // ── GUARDAR ───────────────────────────────────────
     + '<button onclick="guardarCI()" style="width:100%;padding:15px;background:var(--accent);border:none;color:#0A0A0A;font-family:\'Big Shoulders Display\',var(--ff);font-size:18px;font-weight:900;letter-spacing:3px;cursor:pointer;margin-bottom:80px;border-radius:4px">'

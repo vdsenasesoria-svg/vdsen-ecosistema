@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-30 · main HEAD: `2b6e927` · rama activa: `claude/client-app-improvements-qayy4n`
+> Actualizado: 2026-08-30 · main HEAD: `2b6e927` · rama activa: `claude/client-app-improvements-qayy4n` · FASE 12 añadida
 
 ---
 
@@ -11,13 +11,41 @@
 | Rama activa | `claude/client-app-improvements-qayy4n` (pendiente merge) |
 | FASE 5 commit | `4a87e42` |
 | FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **436/436 PASS** (P01–P185) |
-| Vercel | producción en `2b6e927`; FASEs 7–11 pendientes merge a main |
-| Siguiente fase | **FASE 12** (por definir) |
+| Suite tests | **472/472 PASS** (P01–P195) |
+| Vercel | producción en `2b6e927`; FASEs 7–12 pendientes merge a main |
+| Siguiente fase | **FASE 13** (por definir) |
 
 ---
 
 ## FASES completadas
+
+### FASE 12 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Client UX: Check-in History, Weight Trend, Week Performance Summary**
+
+Archivos modificados:
+- `vdsen-cliente.html` — 5 parches quirúrgicos
+- `tests/progression-engine.test.js` — P186-P195 (36 assertions nuevas)
+
+Funciones añadidas (antes de `_calcSessionStats`):
+- `_getWeeklyCheckins(entries, max)` — extrae hasta `max` entradas `ci_sem_{W}` de LOGS, ordenadas newest-first
+- `_calcWeightTrend(checkins)` — tasa de cambio de peso usando semanas reales (no asume consecutividad). Umbrales: >+0.5 → SUBIENDO; <-0.5 → BAJANDO; else → ESTABLE; <2 pesos → SIN_DATOS
+- `_buildWeekPerfSummary()` — strip de stats semanales (series totales, RIR medio, ICS medio) para CURRENT_WEEK, todas las sesiones, excluye autoFilled. 0 lecturas Firestore. Devuelve `''` si no hay sets.
+- `_buildCheckinHistory()` — tabla HTML de los últimos 6 check-ins con chip de tendencia de peso
+
+Comportamiento añadido en Tab Check-in (`renderCheckin`):
+- Chip "SEMANA N DE M" bajo el header, atenuado si `CURRENT_WEEK < REAL_WEEK`
+- Sección "HISTORIAL DE CHECK-INS" antes del botón GUARDAR: chip tendencia (↑/→/↓) + tabla peso/HRV/sueño/WHO-5 de las 6 últimas semanas. Estado vacío: "Aún no hay check-ins previos."
+
+Comportamiento añadido en Tab Entrenamiento (`renderEntrenamiento`):
+- Strip "Resumen sem N" debajo del session dashboard: series totales, RIR medio e ICS medio de la semana completa (todas las sesiones en CURRENT_WEEK)
+- Solo visible si hay al menos 1 serie completada en la semana
+
+Invariantes preservados:
+- CURRENT_WEEK vs REAL_WEEK: sin mutación
+- 0 lecturas/listeners Firestore nuevos
+- Sin cambios a schema, colecciones ni auth
+
+---
 
 ### FASE 5 (mergeada a main — `4a87e42`)
 - Máquina de estados de workout en `vdsen-cliente.html`
