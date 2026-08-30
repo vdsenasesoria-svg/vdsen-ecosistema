@@ -4129,7 +4129,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '</div>';
           })()
         : '')+
-      _buildNextExposureHtml(progrec)+
+      _buildNextExposureHtml(progrec, unit, nombre)+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
@@ -12080,10 +12080,12 @@ function _getExposures(prescriptionExerciseId, di, ei, nombre, maxExposures) {
         if (entry.prescriptionExerciseId !== prescriptionExerciseId) return;
         var parts = k.split('_');
         if (parts.length >= 5) positions[parts[2]+'_'+parts[3]] = true;
-        candidateSets.push(entry);
+        var setIdx = parts.length >= 5 ? (parseInt(parts[4].replace('s','')) || 0) : 0;
+        candidateSets.push({ entry: entry, setIdx: setIdx });
       });
       if (candidateSets.length && Object.keys(positions).length === 1) {
-        sets = candidateSets; confidence = 'HIGH';
+        candidateSets.sort(function(a,b){ return a.setIdx - b.setIdx; });
+        sets = candidateSets.map(function(c){ return c.entry; }); confidence = 'HIGH';
       }
       // ambiguity → skip, fall through to positional
     }
@@ -12155,8 +12157,17 @@ function _calcPR(exposures) {
   return { bestLoad: best };
 }
 
-// "HOY" inline block — consumes existing progrec, never recalculates
-function _buildNextExposureHtml(progrec) {
+// "HOY" inline block — consumes existing progrec, never recalculates.
+// unit: 'KG'|'LB'. nombre: current exercise name for stale-progrec guard.
+function _buildNextExposureHtml(progrec, unit, nombre) {
+  var _unit = (unit || 'KG').toLowerCase();
+  var newRef = '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid rgba(107,107,102,.3)">'
+    + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">HOY</div>'
+    + '<div style="font-size:12px;font-weight:700;color:var(--mt)">✦ Establece una nueva referencia</div>'
+    + '</div>';
+  if (!progrec || !progrec.action) return newRef;
+  // Stale-progrec guard: if recommendation was stored for a different exercise, ignore it.
+  if (nombre && progrec.exerciseName && _normName(progrec.exerciseName) !== _normName(nombre)) return newRef;
   var actionMap = {
     increase_load: { label: 'Sube al siguiente incremento disponible', color: 'var(--grn)', icon: '↑' },
     freeze_load:   { label: 'Mantén la carga', color: 'var(--gold)', icon: '→' },
@@ -12167,18 +12178,17 @@ function _buildNextExposureHtml(progrec) {
     reduce_sets:   { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' },
     deload:        { label: 'Revisar con Coach', color: 'var(--blue)', icon: '⚑' }
   };
-  if (!progrec || !progrec.action) {
-    return '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid rgba(107,107,102,.3)">'
-      + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">HOY</div>'
-      + '<div style="font-size:12px;font-weight:700;color:var(--mt)">✦ Establece una nueva referencia</div>'
-      + '</div>';
-  }
   var act = actionMap[progrec.action] || { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' };
   return '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid '+act.color+'">'
     + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">HOY</div>'
     + '<div style="font-size:12px;font-weight:700;color:'+act.color+'">'+act.icon+' '+act.label+'</div>'
-    + (progrec.newLoad ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">Sugerido: '+progrec.newLoad+' kg</div>' : '')
+    + (progrec.newLoad ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">Sugerido: '+progrec.newLoad+' '+_unit+'</div>' : '')
     + '</div>';
+}
+
+// Minimal HTML escaper for history modal (no _escH in cliente)
+function _escHTml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // History modal — last 5 comparable exposures
@@ -12241,7 +12251,7 @@ function showExHistory(di, ei) {
     + '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">'
     +   '<div>'
     +     '<div style="font-size:10px;font-weight:800;letter-spacing:2px;color:var(--mt2);margin-bottom:2px">HISTORIAL · ÚLTIMAS '+Math.max(exposures.length,1)+'</div>'
-    +     '<div style="font-size:19px;font-weight:900;color:var(--tx);text-transform:uppercase;line-height:1.2;max-width:220px">'+nombre+'</div>'
+    +     '<div style="font-size:19px;font-weight:900;color:var(--tx);text-transform:uppercase;line-height:1.2;max-width:220px">'+_escHTml(nombre)+'</div>'
     +   '</div>'
     +   '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;min-width:60px">'
     +     '<span style="font-size:24px;font-weight:900;color:'+tc.color+'">'+tc.icon+'</span>'

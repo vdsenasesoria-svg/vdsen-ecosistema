@@ -1570,10 +1570,12 @@ function _getExposures(prescriptionExerciseId, di, ei, nombre, maxExposures) {
         if (entry.prescriptionExerciseId !== prescriptionExerciseId) return;
         var parts = k.split('_');
         if (parts.length >= 5) positions[parts[2]+'_'+parts[3]] = true;
-        candidateSets.push(entry);
+        var setIdx = parts.length >= 5 ? (parseInt(parts[4].replace('s','')) || 0) : 0;
+        candidateSets.push({ entry: entry, setIdx: setIdx });
       });
       if (candidateSets.length && Object.keys(positions).length === 1) {
-        sets = candidateSets; confidence = 'HIGH';
+        candidateSets.sort(function(a,b){ return a.setIdx - b.setIdx; });
+        sets = candidateSets.map(function(c){ return c.entry; }); confidence = 'HIGH';
       }
     }
     if (!sets.length) {
@@ -1625,14 +1627,19 @@ function _calcTrend(exposures) {
   return 'ESTABLE';
 }
 
-function _buildNextExposureHtml(progrec) {
+function _buildNextExposureHtml(progrec, unit, nombre) {
   var actionMap = {
     increase_load:'increase', freeze_load:'freeze', maintain:'freeze',
     progress_reps:'freeze', reduce_load:'reduce',
     add_sets:'coach', reduce_sets:'coach', deload:'coach'
   };
   if (!progrec || !progrec.action) return 'new_reference';
-  return actionMap[progrec.action] || 'coach';
+  // Stale-progrec guard
+  if (nombre && progrec.exerciseName && _normName(progrec.exerciseName) !== _normName(nombre)) return 'new_reference';
+  var cat = actionMap[progrec.action] || 'coach';
+  // unit suffix is captured for assertability
+  var loadStr = progrec.newLoad ? String(progrec.newLoad)+' '+(unit||'kg').toLowerCase() : null;
+  return { cat: cat, loadStr: loadStr };
 }
 
 // P88 — history uses prescriptionExerciseId (HIGH confidence over positional)
@@ -1725,32 +1732,34 @@ console.log('\nP92 — autoFilled sets excluded from history');
 console.log('\nP93 — next exposure: increase_load mapping');
 (function(){
   var rec = { action: 'increase_load', newLoad: 82.5 };
-  var result = _buildNextExposureHtml(rec);
-  assert('P93a', 'increase_load → increase category', result === 'increase');
+  var result = _buildNextExposureHtml(rec, 'KG');
+  assert('P93a', 'increase_load → increase category', result.cat === 'increase');
+  assert('P93b', 'load string shows KG unit', result.loadStr === '82.5 kg');
 })();
 
 // P94 — freeze_load displayed correctly
 console.log('\nP94 — next exposure: freeze_load mapping');
 (function(){
   var rec = { action: 'freeze_load', newLoad: 80 };
-  var result = _buildNextExposureHtml(rec);
-  assert('P94a', 'freeze_load → freeze category', result === 'freeze');
+  var result = _buildNextExposureHtml(rec, 'KG');
+  assert('P94a', 'freeze_load → freeze category', result.cat === 'freeze');
 })();
 
 // P95 — reduce_load displayed correctly
 console.log('\nP95 — next exposure: reduce_load mapping');
 (function(){
   var rec = { action: 'reduce_load', newLoad: 75 };
-  var result = _buildNextExposureHtml(rec);
-  assert('P95a', 'reduce_load → reduce category', result === 'reduce');
+  var result = _buildNextExposureHtml(rec, 'LB');
+  assert('P95a', 'reduce_load → reduce category', result.cat === 'reduce');
+  assert('P95b', 'load string shows LB unit', result.loadStr === '75 lb');
 })();
 
 // P96 — no history → new reference
 console.log('\nP96 — no history → new reference');
 (function(){
-  var result = _buildNextExposureHtml(null);
+  var result = _buildNextExposureHtml(null, 'KG');
   assert('P96a', 'null progrec → new_reference', result === 'new_reference');
-  var result2 = _buildNextExposureHtml(undefined);
+  var result2 = _buildNextExposureHtml(undefined, 'KG');
   assert('P96b', 'undefined progrec → new_reference', result2 === 'new_reference');
 })();
 
@@ -1900,6 +1909,67 @@ console.log('\nP105 — exercise history built from in-memory LOGS, no additiona
   // reads stayed at 0 because function is synchronous and uses only LOGS
   assert('P105a', 'exposures returned synchronously (no Firestore reads)', exposures.length === 1);
   assert('P105b', 'reads counter unchanged (LOGS-only)', reads === 0);
+})();
+
+// ── Bug fixes FASE 6 self-review ────────────────────────────────────────
+
+// P106 — Bug 4 fix: HIGH confidence sets ordered by set-index (S0→S1→S2)
+console.log('\nP106 — HIGH confidence sets ordered S0→S1→S2 after fix');
+(function(){
+  clearLogs();
+  REAL_WEEK = 2; CURRENT_WEEK = 2;
+  var pid = 'pid-order-106';
+  // Insert in reverse iteration order to stress the sort
+  LOGS['log_1_0_0_s2'] = makeSetWithMeta(100,8,2,9,1,pid,'Press');
+  LOGS['log_1_0_0_s0'] = makeSetWithMeta(80,10,2,9,1,pid,'Press');
+  LOGS['log_1_0_0_s1'] = makeSetWithMeta(90,9,2,9,1,pid,'Press');
+  var exposures = _getExposures(pid, 0, 0, 'Press', 5);
+  assert('P106a', '1 exposure found', exposures.length === 1);
+  assert('P106b', '3 sets in exposure', exposures[0].sets.length === 3);
+  assert('P106c', 'first set carga = S0 (80)', exposures[0].sets[0].carga === 80);
+  assert('P106d', 'second set carga = S1 (90)', exposures[0].sets[1].carga === 90);
+  assert('P106e', 'third set carga = S2 (100)', exposures[0].sets[2].carga === 100);
+})();
+
+// P107 — Bug 2 fix: unit shown correctly in HOY block (LB vs KG)
+console.log('\nP107 — unit parameter respected in HOY block');
+(function(){
+  var recKG = { action: 'increase_load', newLoad: 82.5 };
+  var recLB = { action: 'increase_load', newLoad: 185 };
+  var rKG = _buildNextExposureHtml(recKG, 'KG', 'Press');
+  var rLB = _buildNextExposureHtml(recLB, 'LB', 'Press');
+  assert('P107a', 'KG unit in load string', rKG.loadStr === '82.5 kg');
+  assert('P107b', 'LB unit in load string', rLB.loadStr === '185 lb');
+})();
+
+// P108 — Bug 3 fix: stale progrec (different exerciseName) → new_reference fallback
+console.log('\nP108 — stale progrec (exerciseName mismatch) → new_reference');
+(function(){
+  // progrec was stored for "Press Banca", current exercise is "Leg Press"
+  var stale = { action: 'increase_load', newLoad: 100, exerciseName: 'Press Banca' };
+  var result = _buildNextExposureHtml(stale, 'KG', 'Leg Press');
+  assert('P108a', 'mismatched exerciseName → new_reference', result === 'new_reference');
+  // Same exercise (normalized match: accents stripped) → NOT stale
+  var same = { action: 'increase_load', newLoad: 100, exerciseName: 'Press Banca' };
+  var result2 = _buildNextExposureHtml(same, 'KG', 'Press Banca');
+  assert('P108b', 'matching exerciseName → correct category', result2.cat === 'increase');
+  // No exerciseName in progrec → not stale (legacy progrec)
+  var legacy = { action: 'freeze_load', newLoad: 80 };
+  var result3 = _buildNextExposureHtml(legacy, 'KG', 'Press Banca');
+  assert('P108c', 'legacy progrec (no exerciseName) → not stale', result3.cat === 'freeze');
+})();
+
+// P109 — Bug 1 (XSS): _escHTml escapes dangerous characters
+console.log('\nP109 — HTML escaping for exercise name in history modal');
+(function(){
+  function _escHTml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  assert('P109a', 'angle brackets escaped', _escHTml('<script>alert(1)</script>') === '&lt;script&gt;alert(1)&lt;/script&gt;');
+  assert('P109b', 'ampersand escaped', _escHTml('A & B') === 'A &amp; B');
+  assert('P109c', 'double quotes escaped', _escHTml('"quoted"') === '&quot;quoted&quot;');
+  assert('P109d', 'safe name unchanged', _escHTml('Press inclinado') === 'Press inclinado');
+  assert('P109e', 'XSS payload neutralized', !_escHTml('<img src=x onerror=alert(1)>').includes('<img'));
 })();
 
 // ═════════════════════════ RESUMEN ═════════════════════════
