@@ -5302,12 +5302,16 @@ function markExpressDone(di, ei) {
 
   // Crear entradas sintéticas log_W_D_E_sN para compatibilidad con calculateProgression
   var now = Date.now();
+  var _ejExprMeta = (_EJERCICIOS_DIA || [])[ei] || {};
   for (var s = 0; s < sets; s++) {
     LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s] = {
       carga: carga, reps: String(reps), unit: unit, done: true,
       rir: rirLast, rir_real: rirLast,
       ics: ics || 8, pump: pump || 1,
-      ts: now, express: true
+      ts: now, express: true,
+      prescriptionExerciseId: _ejExprMeta.prescriptionExerciseId || undefined,
+      exerciseId: _ejExprMeta.exerciseId || undefined,
+      exerciseNameSnapshot: _ejExprMeta.exerciseName || _ejExprMeta.nombre || undefined
     };
   }
   // Limpiar entradas sintéticas excedentes de sesiones anteriores
@@ -7202,7 +7206,12 @@ function completeSet(key, di, ei, si, unit) {
     if (_isBW && (!carga || isNaN(cargaNum))) carga = '0';
   }
 
-  LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now() };
+  var _ejMeta = (_EJERCICIOS_DIA || [])[ei] || {};
+  LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now(),
+    prescriptionExerciseId: _ejMeta.prescriptionExerciseId || undefined,
+    exerciseId: _ejMeta.exerciseId || undefined,
+    exerciseNameSnapshot: _ejMeta.exerciseName || _ejMeta.nombre || undefined
+  };
 
   // Leer nombre del ejercicio antes de re-render
   var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -12720,14 +12729,60 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
   return blocks.join('');
 }
 
-function _getPrevWeekData(week, di, ei, maxSets) {
+// Normalize name for semantic comparison (cosmetic differences only)
+function _normName(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exerciseName) {
   if (week <= 1) return null;
   var prevWeek = week - 1;
   var sets = [];
-  for (var s = 0; s < maxSets; s++) {
-    var k = 'log_'+prevWeek+'_'+di+'_'+ei+'_s'+s;
-    if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) sets.push(LOGS[k]);
+  var confidence = 'LOW';
+
+  // HIGH confidence: search by prescriptionExerciseId
+  if (prescriptionExerciseId) {
+    var prefix = 'log_'+prevWeek+'_';
+    var positions = {};
+    var candidateSets = [];
+    Object.keys(LOGS).forEach(function(k) {
+      if (k.indexOf(prefix) === 0 && LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled
+          && LOGS[k].prescriptionExerciseId === prescriptionExerciseId) {
+        // Parse (di, ei) from key: log_{W}_{D}_{E}_s{S}
+        var parts = k.split('_');
+        if (parts.length >= 5) { positions[parts[2]+'_'+parts[3]] = true; }
+        candidateSets.push(LOGS[k]);
+      }
+    });
+    // Ambiguity: same prescriptionExerciseId on multiple (di,ei) → DUPLICATE_PRESCRIPTION_ID
+    if (candidateSets.length && Object.keys(positions).length > 1) {
+      return null; // corrupt identity — do not match silently
+    }
+    if (candidateSets.length) { sets = candidateSets; confidence = 'HIGH'; }
   }
+
+  // LOW confidence: legacy positional fallback with name guard
+  if (!sets.length) {
+    var legacySets = [];
+    for (var s = 0; s < maxSets; s++) {
+      var k = 'log_'+prevWeek+'_'+di+'_'+ei+'_s'+s;
+      if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) legacySets.push(LOGS[k]);
+    }
+    if (legacySets.length && exerciseName) {
+      // Name guard: if log has exerciseNameSnapshot, require exact normalized match
+      var logsWithSnap = legacySets.filter(function(s) { return s.exerciseNameSnapshot; });
+      if (logsWithSnap.length > 0) {
+        var normCur = _normName(exerciseName);
+        var normSnap = _normName(logsWithSnap[0].exerciseNameSnapshot);
+        if (normCur !== normSnap) {
+          return null; // name mismatch → NEW_EXERCISE_REFERENCE (no incorrect history)
+        }
+      }
+      // No snapshot in legacy logs: accept positional (legacy limitation)
+    }
+    sets = legacySets;
+  }
+
   if (!sets.length) return null;
   return {
     avgLoad: _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; })),
@@ -12735,7 +12790,8 @@ function _getPrevWeekData(week, di, ei, maxSets) {
     avgICS: (function(){ var v=sets.map(function(s){return parseFloat(s.ics);}).filter(function(x){return x>0&&!isNaN(x);}); return v.length?_avgArr(v):8; })(),
     avgRIR: (function(){ var v=sets.filter(function(s){return !s.autoFilled;}).map(function(s){return parseFloat(s.rir_real);}).filter(function(x){return !isNaN(x)&&x>=0&&x<=5;}); return v.length?_avgArr(v):null; })(),
     numSets: sets.length,
-    topLoad: Math.max.apply(null, sets.map(function(s){ return parseFloat(s.carga) || 0; }))
+    topLoad: Math.max.apply(null, sets.map(function(s){ return parseFloat(s.carga) || 0; })),
+    confidence: confidence
   };
 }
 
@@ -12833,7 +12889,7 @@ function calculateProgression(di, postData) {
     // add_sets, la condición numSets < maxSets era 4 < 4 = false → bloqueaba
     // cualquier progresión futura de volumen aunque el cliente estuviera en óptimas.
     var maxSets = _getMaxSets(catData, numSets);
-    var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
+    var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId, ej.exerciseName || ej.nombre || '');
 
     // Calcular reps target del plan — repsLow=límite inferior, repsTarget=límite superior del rango
     var repsLow = 8, repsTarget = 8;
@@ -13026,7 +13082,7 @@ function calculateProgression(di, postData) {
 
       // ── Detección de plateau: carga estancada 2+ semanas con ICS ≥ 8 ──
       if (prevWeek && CURRENT_WEEK >= 3) {
-        var prevPrev = _getPrevWeekData(CURRENT_WEEK - 1, di, ei, 8);
+        var prevPrev = _getPrevWeekData(CURRENT_WEEK - 1, di, ei, 8, ej.prescriptionExerciseId, ej.exerciseName || ej.nombre || '');
         if (prevPrev && prevPrev.avgLoad > 0) {
           var diffVsPrev = Math.abs(load - prevWeek.avgLoad);
           var diffVsPrev2 = Math.abs(prevWeek.avgLoad - prevPrev.avgLoad);
