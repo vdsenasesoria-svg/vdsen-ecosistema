@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-30 · main HEAD: `2b6e927`
+> Actualizado: 2026-08-30 · main HEAD: `2b6e927` · rama FASE 7: `claude/client-app-improvements-qayy4n`
 
 ---
 
@@ -8,11 +8,12 @@
 | Item | Valor |
 |------|-------|
 | main HEAD | `2b6e927` — FASE 6 mergeada |
+| FASE 7 rama | `claude/client-app-improvements-qayy4n` (pendiente merge) |
 | FASE 5 commit | `4a87e42` |
 | FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **255/255 PASS** (P01–P109) |
-| Vercel | auto-deploy en curso (push a main `2b6e927`) |
-| Siguiente fase | **FASE 7 — Coach Attention Monitor** |
+| Suite tests | **296/296 PASS** (P01–P128) |
+| Vercel | producción en `2b6e927`; FASE 7 pendiente merge a main |
+| Siguiente fase | **FASE 7 — Coach Attention Monitor** (implementada, pendiente merge) |
 
 ---
 
@@ -25,6 +26,34 @@
 - Semana final = MESOCYCLE_CHECKPOINT únicamente.
   Deload es reactivo y requiere ≥2 deloadTriggers.
   La semana final sola nunca dispara deload.
+
+### FASE 7 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Coach Attention Monitor**
+
+Archivos modificados:
+- `vdsen-coach.html` — helpers de atención + redesign lista clientes + parche panel rendimiento
+- `tests/progression-engine.test.js` — P110-P128 (19 tests nuevos)
+
+Funcionalidades añadidas:
+- `_ATTN_PRIORITY` / `_ATTN_BADGE` — constantes de estado visual (REVIEW/PROGRESSING/STABLE/NO_DATA)
+- `_computeClientAttentionState(entries, planData, currentWeek)` — estado determinístico, 0 Firestore reads
+  - Escanea semana actual y anterior (scanWeeks = [cw, cw-1])
+  - REVIEW signals: deloadTriggers ≥ 2, action='deload', reason='TOO_HARD_REPEATED', reason='PERFORMANCE_REGRESSION', postsession.articular=true, postsession.eimd ≥ 3
+  - `reduce_load` solo NO es REVIEW — requiere reason=TOO_HARD_REPEATED
+  - PROGRESSING signals: action='increase_load', reason='REPS_PROGRESSING'
+  - Dedup por (code + ex); máx 3 reasons devueltos
+  - Prioridad: REVIEW > PROGRESSING > STABLE > NO_DATA
+- Lista de clientes rediseñada (dos pasadas: build rowData → sort → render)
+  - Header resumen: `🔴 N revisar 🟢 N progresando ⚪ N estables ◌ N sin datos`
+  - Ordenada por _ATTN_PRIORITY → alpha
+  - Badge de atención + reasons inline por cliente
+  - XSS: r.ex y r.label escapados con `_escH` en render
+- Panel "Rendimiento por ejercicio": auto-abre `<details>` si hay REVISAR; filas REVISAR destacadas con fondo rojo tenue + nombre en rojo bold; contador "↓ N a revisar" en summary
+
+Bugs corregidos en self-review:
+1. **XSS** — `r.label` puede contener `ps.patron` (data Firestore); escapado con `_escH` en render de reasons
+
+---
 
 ### FASE 6 (mergeada a main — `2b6e927`)
 **Performance History UX + Next Exposure**
@@ -162,6 +191,7 @@ Rangos:
 - P61–P87: Stable Exercise Identity + legacy/history hardening + consistency tests
 - P88–P105: FASE 6 Performance History UX
 - P106–P109: FASE 6 self-review fixes
+- P110–P128: FASE 7 Coach Attention Monitor
 
 ---
 
@@ -173,6 +203,7 @@ git log --oneline -5
 
 # Correr tests
 node tests/progression-engine.test.js
+# → 296/296 PASS
 
 # Diff vs main
 git diff main...HEAD --stat

@@ -1972,6 +1972,324 @@ console.log('\nP109 — HTML escaping for exercise name in history modal');
   assert('P109e', 'XSS payload neutralized', !_escHTml('<img src=x onerror=alert(1)>').includes('<img'));
 })();
 
+// ═════════════════════════ FASE 7 — P110-P128 — _computeClientAttentionState ═════════════════════
+// Mirror of _computeClientAttentionState (from vdsen-coach.html Parche 1)
+function _computeClientAttentionState(entries, planData, currentWeek) {
+  if (!entries || typeof entries !== 'object') return { state: 'NO_DATA', reasons: [] };
+  var cw = currentWeek || 1;
+  var scanMax = Math.max((planData && planData.days ? planData.days.length : (planData && planData.daysPerWeek ? planData.daysPerWeek : 0)), 7);
+  var hasLog = Object.keys(entries).some(function(k) {
+    return k.indexOf('log_') === 0 && entries[k] && entries[k].done && !entries[k].autoFilled;
+  });
+  if (!hasLog) return { state: 'NO_DATA', reasons: [] };
+  var reviewR = [], progressR = [];
+  var foundProgrec = false;
+  var scanWeeks = cw > 1 ? [cw, cw - 1] : [cw];
+  scanWeeks.forEach(function(w) {
+    for (var d = 0; d < scanMax; d++) {
+      var pr = entries['progrec_' + w + '_' + d];
+      if (pr) {
+        foundProgrec = true;
+        if ((pr.deloadTriggers || []).length >= 2)
+          reviewR.push({ code: 'DELOAD_CANDIDATE', label: 'Señales de fatiga acumulada' });
+        (pr.recommendations || []).forEach(function(rec) {
+          if (!rec) return;
+          var ex = rec.exerciseName ? rec.exerciseName.split(' ').slice(0, 2).join(' ') : '';
+          if (rec.action === 'deload')
+            reviewR.push({ code: 'DELOAD_CANDIDATE', label: 'Señales de fatiga acumulada', ex: ex });
+          if (rec.reason === 'TOO_HARD_REPEATED')
+            reviewR.push({ code: 'TOO_HARD_REPEATED', label: 'Esfuerzo demasiado alto repetido', ex: ex });
+          if (rec.reason === 'PERFORMANCE_REGRESSION')
+            reviewR.push({ code: 'PERFORMANCE_REGRESSION', label: 'Rendimiento en descenso', ex: ex });
+          if (rec.action === 'increase_load')
+            progressR.push({ code: 'INCREASE_LOAD', label: 'Listo para progresar carga', ex: ex });
+          if (rec.reason === 'REPS_PROGRESSING')
+            progressR.push({ code: 'REPS_PROGRESSING', label: 'Progresando repeticiones', ex: ex });
+        });
+      }
+      var ps = entries['postsession_' + w + '_' + d];
+      if (ps) {
+        if (ps.articular)
+          reviewR.push({ code: 'PAIN', label: 'Dolor articular reportado' + (ps.patron ? ' · ' + ps.patron : '') });
+        if (parseInt(ps.eimd) >= 3)
+          reviewR.push({ code: 'EIMD_HIGH', label: 'Daño muscular elevado reportado' });
+      }
+    }
+  });
+  var seen = {};
+  function dedup(arr) {
+    return arr.filter(function(r) {
+      var k = r.code + '|' + (r.ex || '');
+      if (seen[k]) return false;
+      seen[k] = true; return true;
+    });
+  }
+  var rvR = dedup(reviewR);
+  var pgR = dedup(progressR);
+  if (rvR.length) return { state: 'REVIEW', reasons: rvR.slice(0, 3) };
+  if (pgR.length) return { state: 'PROGRESSING', reasons: pgR.slice(0, 3) };
+  if (foundProgrec || hasLog) return { state: 'STABLE', reasons: [] };
+  return { state: 'NO_DATA', reasons: [] };
+}
+
+// Helper: make a minimal entries object with one real log
+function _mkEntries(extra) {
+  var base = { 'log_1_0_0_s0': { done: true, carga: '80', reps: '8', autoFilled: false } };
+  return Object.assign(base, extra || {});
+}
+var _ATTN_PRIORITY_TEST = { REVIEW: 0, PROGRESSING: 1, STABLE: 2, NO_DATA: 3 };
+
+// P110 — NO_DATA cases
+console.log('\nP110 — NO_DATA: null / no real logs / all autoFilled');
+(function() {
+  var r1 = _computeClientAttentionState(null, null, 1);
+  assert('P110a', 'null entries → NO_DATA', r1.state === 'NO_DATA');
+  var r2 = _computeClientAttentionState({}, null, 1);
+  assert('P110b', 'empty entries → NO_DATA', r2.state === 'NO_DATA');
+  var autoE = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: true } };
+  var r3 = _computeClientAttentionState(autoE, null, 1);
+  assert('P110c', 'only autoFilled log → NO_DATA', r3.state === 'NO_DATA');
+  var notDone = { 'log_1_0_0_s0': { done: false, carga: '80', autoFilled: false } };
+  var r4 = _computeClientAttentionState(notDone, null, 1);
+  assert('P110d', 'log done=false → NO_DATA', r4.state === 'NO_DATA');
+})();
+
+// P111 — STABLE: has real log, no progrec signals
+console.log('\nP111 — STABLE when real log exists but no REVIEW or PROGRESSING signals');
+(function() {
+  var entries = _mkEntries();
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P111a', 'real log, no signals → STABLE', r.state === 'STABLE');
+  assert('P111b', 'STABLE reasons empty', r.reasons.length === 0);
+})();
+
+// P112 — REVIEW via deloadTriggers.length >= 2
+console.log('\nP112 — REVIEW via deloadTriggers >= 2');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: ['x','y'], recommendations: [] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P112a', 'deloadTriggers >= 2 → REVIEW', r.state === 'REVIEW');
+  assert('P112b', 'reason code DELOAD_CANDIDATE', r.reasons[0].code === 'DELOAD_CANDIDATE');
+  // exactly 1 trigger → NOT REVIEW
+  var entries2 = _mkEntries({
+    'progrec_1_0': { deloadTriggers: ['x'], recommendations: [] }
+  });
+  var r2 = _computeClientAttentionState(entries2, null, 1);
+  assert('P112c', 'deloadTriggers = 1 → not REVIEW (no other signals → STABLE)', r2.state === 'STABLE');
+})();
+
+// P113 — REVIEW via rec.action='deload'
+console.log('\nP113 — REVIEW via rec.action=deload');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [{ action: 'deload', exerciseName: 'Sentadilla' }] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P113a', 'action=deload → REVIEW', r.state === 'REVIEW');
+  assert('P113b', 'reason code DELOAD_CANDIDATE', r.reasons[0].code === 'DELOAD_CANDIDATE');
+  assert('P113c', 'ex truncated to 2 words', r.reasons[0].ex === 'Sentadilla');
+})();
+
+// P114 — REVIEW via reason='TOO_HARD_REPEATED'
+console.log('\nP114 — REVIEW via TOO_HARD_REPEATED reason');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'reduce_load', reason: 'TOO_HARD_REPEATED', exerciseName: 'Press banca' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P114a', 'TOO_HARD_REPEATED → REVIEW', r.state === 'REVIEW');
+  assert('P114b', 'code TOO_HARD_REPEATED', r.reasons[0].code === 'TOO_HARD_REPEATED');
+})();
+
+// P115 — NOT REVIEW via reduce_load alone (no special reason)
+console.log('\nP115 — reduce_load alone (no reason code) → NOT REVIEW');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'reduce_load', reason: 'OTHER', exerciseName: 'Press' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P115a', 'reduce_load with generic reason → STABLE (not REVIEW)', r.state === 'STABLE');
+})();
+
+// P116 — REVIEW via reason='PERFORMANCE_REGRESSION'
+console.log('\nP116 — REVIEW via PERFORMANCE_REGRESSION reason');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'freeze_load', reason: 'PERFORMANCE_REGRESSION', exerciseName: 'Remo' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P116a', 'PERFORMANCE_REGRESSION → REVIEW', r.state === 'REVIEW');
+  assert('P116b', 'code PERFORMANCE_REGRESSION', r.reasons[0].code === 'PERFORMANCE_REGRESSION');
+})();
+
+// P117 — REVIEW via postsession.articular
+console.log('\nP117 — REVIEW via postsession articular pain');
+(function() {
+  var entries = _mkEntries({ 'postsession_1_0': { articular: true, patron: 'hombro', eimd: 1 } });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P117a', 'articular=true → REVIEW', r.state === 'REVIEW');
+  assert('P117b', 'code PAIN', r.reasons[0].code === 'PAIN');
+  assert('P117c', 'patron included in label', r.reasons[0].label.includes('hombro'));
+})();
+
+// P118 — REVIEW via postsession.eimd >= 3
+console.log('\nP118 — REVIEW via high EIMD');
+(function() {
+  var entries = _mkEntries({ 'postsession_1_0': { articular: false, eimd: 3 } });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P118a', 'eimd=3 → REVIEW', r.state === 'REVIEW');
+  assert('P118b', 'code EIMD_HIGH', r.reasons[0].code === 'EIMD_HIGH');
+  var e2 = _mkEntries({ 'postsession_1_0': { articular: false, eimd: 2 } });
+  var r2 = _computeClientAttentionState(e2, null, 1);
+  assert('P118c', 'eimd=2 → not REVIEW', r2.state !== 'REVIEW');
+})();
+
+// P119 — PROGRESSING via increase_load
+console.log('\nP119 — PROGRESSING via increase_load action');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'increase_load', reason: 'RIR_TOO_EASY', exerciseName: 'Curl' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P119a', 'increase_load → PROGRESSING', r.state === 'PROGRESSING');
+  assert('P119b', 'code INCREASE_LOAD', r.reasons[0].code === 'INCREASE_LOAD');
+})();
+
+// P120 — PROGRESSING via REPS_PROGRESSING reason
+console.log('\nP120 — PROGRESSING via REPS_PROGRESSING reason');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'freeze_load', reason: 'REPS_PROGRESSING', exerciseName: 'Jalón' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P120a', 'REPS_PROGRESSING → PROGRESSING', r.state === 'PROGRESSING');
+  assert('P120b', 'code REPS_PROGRESSING', r.reasons[0].code === 'REPS_PROGRESSING');
+})();
+
+// P121 — Priority: REVIEW > PROGRESSING when both present
+console.log('\nP121 — Priority: REVIEW overrides PROGRESSING');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'increase_load', reason: 'RIR_TOO_EASY', exerciseName: 'Curl' },
+      { action: 'reduce_load', reason: 'TOO_HARD_REPEATED', exerciseName: 'Press' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P121a', 'REVIEW > PROGRESSING priority', r.state === 'REVIEW');
+})();
+
+// P122 — Dedup: same code+ex not doubled
+console.log('\nP122 — Dedup: same signal in two days counted once');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [{ action: 'deload', exerciseName: 'Press' }] },
+    'progrec_1_1': { deloadTriggers: [], recommendations: [{ action: 'deload', exerciseName: 'Press' }] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  var deloadCount = r.reasons.filter(function(x){ return x.code === 'DELOAD_CANDIDATE' && x.ex === 'Press'; }).length;
+  assert('P122a', 'same DELOAD_CANDIDATE+ex deduped to 1', deloadCount === 1);
+})();
+
+// P123 — Reasons capped at 3
+console.log('\nP123 — reasons capped at 3 items');
+(function() {
+  var entries = _mkEntries({
+    'postsession_1_0': { articular: true, eimd: 3 },
+    'postsession_1_1': { articular: true, patron: 'rodilla', eimd: 3 },
+    'progrec_1_0': { deloadTriggers: ['x','y'], recommendations: [{ action: 'deload', exerciseName: 'A' }] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P123a', 'REVIEW state', r.state === 'REVIEW');
+  assert('P123b', 'reasons.length <= 3', r.reasons.length <= 3);
+})();
+
+// P124 — Previous week scanned when cw > 1
+console.log('\nP124 — Scan includes previous week when cw > 1');
+(function() {
+  // progrec only in week 2, current week = 3
+  var entries = {
+    'log_3_0_0_s0': { done: true, carga: '80', autoFilled: false },
+    'progrec_2_0': { deloadTriggers: [], recommendations: [
+      { action: 'reduce_load', reason: 'TOO_HARD_REPEATED', exerciseName: 'Press' }
+    ]}
+  };
+  var r = _computeClientAttentionState(entries, null, 3);
+  assert('P124a', 'signal in prev week (cw-1) detected → REVIEW', r.state === 'REVIEW');
+  // but week 1 signal not scanned when cw=3 (only cw and cw-1)
+  var entries2 = {
+    'log_3_0_0_s0': { done: true, carga: '80', autoFilled: false },
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'reduce_load', reason: 'TOO_HARD_REPEATED', exerciseName: 'Press' }
+    ]}
+  };
+  var r2 = _computeClientAttentionState(entries2, null, 3);
+  assert('P124b', 'week cw-2 not scanned → STABLE', r2.state === 'STABLE');
+})();
+
+// P125 — cw=1 scans only week 1 (no week 0)
+console.log('\nP125 — cw=1 does not scan week 0');
+(function() {
+  var entries = {
+    'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false },
+    'progrec_0_0': { deloadTriggers: ['x','y'], recommendations: [] }
+  };
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P125a', 'cw=1: week 0 not scanned → STABLE (no REVIEW)', r.state === 'STABLE');
+})();
+
+// P126 — foundProgrec with no signals → STABLE (not NO_DATA)
+console.log('\nP126 — progrec with no review/progress signals → STABLE');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [{ action: 'freeze_load', reason: 'PRESCRIPTION_MATCH', exerciseName: 'Remo' }] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P126a', 'progrec exists + no signals → STABLE', r.state === 'STABLE');
+})();
+
+// P127 — Client list priority sort: REVIEW < PROGRESSING < STABLE < NO_DATA
+console.log('\nP127 — _ATTN_PRIORITY sort order');
+(function() {
+  var states = ['NO_DATA', 'STABLE', 'REVIEW', 'PROGRESSING'];
+  var sorted = states.slice().sort(function(a,b){ return _ATTN_PRIORITY_TEST[a] - _ATTN_PRIORITY_TEST[b]; });
+  assert('P127a', 'REVIEW sorts first', sorted[0] === 'REVIEW');
+  assert('P127b', 'PROGRESSING sorts second', sorted[1] === 'PROGRESSING');
+  assert('P127c', 'STABLE sorts third', sorted[2] === 'STABLE');
+  assert('P127d', 'NO_DATA sorts last', sorted[3] === 'NO_DATA');
+})();
+
+// P128 — ex field truncated to first 2 words of exerciseName
+console.log('\nP128 — exerciseName truncated to first 2 words in reason.ex');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'increase_load', reason: 'RIR_TOO_EASY', exerciseName: 'Press de banca plano' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P128a', 'exerciseName truncated to 2 words', r.reasons[0].ex === 'Press de');
+  var entries2 = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'increase_load', exerciseName: 'Curl' }
+    ]}
+  });
+  var r2 = _computeClientAttentionState(entries2, null, 1);
+  assert('P128b', 'single-word name kept intact', r2.reasons[0].ex === 'Curl');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
