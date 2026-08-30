@@ -2842,6 +2842,160 @@ console.log('\nP165 — timer not persisted in Firestore (uses localStorage only
   assert('P165b', 'progression not recalculated by timer (timer is UI-only)', true);
 })();
 
+// ══════════════════════════════════════════════════════════════════
+// FASE 10 — Plan Editor UX: Autocomplete, Reorder, restSeconds (P166-P175)
+// ══════════════════════════════════════════════════════════════════
+
+// Mirror helpers (replicate logic from vdsen-coach.html for test isolation)
+function _filterExerciseCatalog(query, catalog, limit) {
+  limit = limit || 6;
+  if (!query || !query.trim()) return [];
+  if (!catalog || !catalog.length) return [];
+  var q = query.trim().toLowerCase();
+  var results = [];
+  for (var i = 0; i < catalog.length; i++) {
+    if (results.length >= limit) break;
+    if ((catalog[i].name || '').toLowerCase().indexOf(q) !== -1) results.push(catalog[i]);
+  }
+  return results;
+}
+
+function _moveArrayItem(items, from, to) {
+  if (!Array.isArray(items)) return [];
+  var arr = items.slice();
+  if (from < 0 || from >= arr.length || to < 0 || to >= arr.length || from === to) return arr;
+  var item = arr.splice(from, 1)[0];
+  arr.splice(to, 0, item);
+  return arr;
+}
+
+function _parseRestSeconds(value) {
+  var n = parseInt(value, 10);
+  if (isNaN(n) || n < 0) return 0;
+  return n;
+}
+
+// P166 — autocomplete: case-insensitive substring match
+console.log('\nP166 — autocomplete case-insensitive substring');
+(function() {
+  var catalog = [
+    { name: 'Press Banca Plano' },
+    { name: 'Curl Bíceps Mancuerna' },
+    { name: 'Sentadilla Libre' },
+    { name: 'Remo con Barra' }
+  ];
+  var r1 = _filterExerciseCatalog('banca', catalog);
+  assert('P166a', 'lowercase query matches uppercase name', r1.length === 1 && r1[0].name === 'Press Banca Plano');
+  var r2 = _filterExerciseCatalog('BÍCEPS', catalog);
+  assert('P166b', 'uppercase query matches mixed-case name', r2.length === 1 && r2[0].name === 'Curl Bíceps Mancuerna');
+  var r3 = _filterExerciseCatalog('a', catalog);
+  assert('P166c', 'single char query matches multiple items', r3.length >= 2);
+})();
+
+// P167 — autocomplete: max 6 results enforced
+console.log('\nP167 — autocomplete max 6 results');
+(function() {
+  var catalog = Array.from({length: 20}, function(_, i) { return { name: 'Ejercicio ' + i }; });
+  var results = _filterExerciseCatalog('Ejercicio', catalog);
+  assert('P167a', 'returns at most 6 results from 20 matches', results.length === 6);
+  var results3 = _filterExerciseCatalog('Ejercicio', catalog, 3);
+  assert('P167b', 'respects custom limit=3', results3.length === 3);
+})();
+
+// P168 — autocomplete: no matches → empty array
+console.log('\nP168 — autocomplete no matches → []');
+(function() {
+  var catalog = [{ name: 'Press Banca' }, { name: 'Sentadilla' }];
+  var r = _filterExerciseCatalog('zzzxxx', catalog);
+  assert('P168a', 'no match returns []', Array.isArray(r) && r.length === 0);
+  var rEmpty = _filterExerciseCatalog('', catalog);
+  assert('P168b', 'empty query returns []', rEmpty.length === 0);
+  var rSpaces = _filterExerciseCatalog('   ', catalog);
+  assert('P168c', 'whitespace-only query returns []', rSpaces.length === 0);
+})();
+
+// P169 — autocomplete: empty/null catalog is safe
+console.log('\nP169 — autocomplete empty catalog safe');
+(function() {
+  assert('P169a', 'null catalog returns []', _filterExerciseCatalog('press', null).length === 0);
+  assert('P169b', 'empty array catalog returns []', _filterExerciseCatalog('press', []).length === 0);
+  assert('P169c', 'undefined catalog returns []', _filterExerciseCatalog('press', undefined).length === 0);
+})();
+
+// P170 — _moveArrayItem: move item up correctly
+console.log('\nP170 — move item up correctly');
+(function() {
+  var items = ['A', 'B', 'C', 'D'];
+  var r = _moveArrayItem(items, 2, 1);
+  assert('P170a', 'C moved from index 2 to 1', r[1] === 'C' && r[2] === 'B');
+  assert('P170b', 'length preserved', r.length === 4);
+  assert('P170c', 'original not mutated', items[2] === 'C');
+})();
+
+// P171 — _moveArrayItem: move item down correctly
+console.log('\nP171 — move item down correctly');
+(function() {
+  var items = ['A', 'B', 'C', 'D'];
+  var r = _moveArrayItem(items, 1, 2);
+  assert('P171a', 'B moved from index 1 to 2', r[2] === 'B' && r[1] === 'C');
+  assert('P171b', 'A still at index 0', r[0] === 'A');
+  assert('P171c', 'D still at index 3', r[3] === 'D');
+})();
+
+// P172 — _moveArrayItem: invalid indices handled safely
+console.log('\nP172 — invalid move does nothing safely');
+(function() {
+  var items = ['A', 'B', 'C'];
+  var rSame = _moveArrayItem(items, 1, 1);
+  assert('P172a', 'from===to returns copy unchanged', rSame[0]==='A'&&rSame[1]==='B'&&rSame[2]==='C');
+  var rNeg = _moveArrayItem(items, -1, 1);
+  assert('P172b', 'negative from returns copy unchanged', rNeg.length === 3 && rNeg[0] === 'A');
+  var rOOB = _moveArrayItem(items, 0, 99);
+  assert('P172c', 'out-of-bounds to returns copy unchanged', rOOB[0] === 'A');
+  var rNonArr = _moveArrayItem('not-array', 0, 1);
+  assert('P172d', 'non-array input returns []', Array.isArray(rNonArr) && rNonArr.length === 0);
+})();
+
+// P173 — reorder preserves prescriptionExerciseId
+console.log('\nP173 — reorder preserves prescriptionExerciseId');
+(function() {
+  var exercises = [
+    { exerciseName: 'Press Banca', prescriptionExerciseId: 'pid-001' },
+    { exerciseName: 'Sentadilla',  prescriptionExerciseId: 'pid-002' },
+    { exerciseName: 'Remo',        prescriptionExerciseId: 'pid-003' }
+  ];
+  // Move index 0 to index 1 (move Press Banca down one position)
+  var reordered = _moveArrayItem(exercises, 0, 1);
+  assert('P173a', 'Sentadilla now at index 0 with original pid-002', reordered[0].prescriptionExerciseId === 'pid-002');
+  assert('P173b', 'Press Banca now at index 1 with original pid-001', reordered[1].prescriptionExerciseId === 'pid-001');
+  assert('P173c', 'Remo still at index 2 with original pid-003', reordered[2].prescriptionExerciseId === 'pid-003');
+  assert('P173d', 'prescriptionExerciseId not regenerated', reordered[1].prescriptionExerciseId === 'pid-001');
+})();
+
+// P174 — restSeconds: existing value preserved through parse and save
+console.log('\nP174 — restSeconds existing value preserved/save parsed');
+(function() {
+  assert('P174a', 'valid restSeconds string parses correctly', _parseRestSeconds('120') === 120);
+  assert('P174b', 'restSeconds=0 parses to 0', _parseRestSeconds('0') === 0);
+  assert('P174c', 'step-5 value (90) parses correctly', _parseRestSeconds('90') === 90);
+  // Simulate round-trip: plan sets[0].restSeconds loaded into editor and saved back
+  var planSet = { setIndex: 0, repsTarget: 10, rirTarget: 2, load: 80, restSeconds: 150 };
+  var loadedValue = (planSet.restSeconds || 0).toString();
+  var savedValue = _parseRestSeconds(loadedValue);
+  assert('P174d', 'round-trip: plan restSeconds=150 survives load→save', savedValue === 150);
+})();
+
+// P175 — restSeconds: missing/invalid/negative values → 0
+console.log('\nP175 — restSeconds missing/invalid/negative safe → 0');
+(function() {
+  assert('P175a', 'undefined → 0', _parseRestSeconds(undefined) === 0);
+  assert('P175b', 'null → 0', _parseRestSeconds(null) === 0);
+  assert('P175c', 'empty string → 0', _parseRestSeconds('') === 0);
+  assert('P175d', 'NaN string → 0', _parseRestSeconds('abc') === 0);
+  assert('P175e', 'negative → 0', _parseRestSeconds('-30') === 0);
+  assert('P175f', 'negative float → 0', _parseRestSeconds('-1') === 0);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

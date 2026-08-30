@@ -11,9 +11,9 @@
 | Rama activa | `claude/client-app-improvements-qayy4n` (pendiente merge) |
 | FASE 5 commit | `4a87e42` |
 | FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **370/370 PASS** (P01–P165) |
-| Vercel | producción en `2b6e927`; FASEs 7–9 pendientes merge a main |
-| Siguiente fase | **FASE 10** (por definir) |
+| Suite tests | **405/405 PASS** (P01–P175) |
+| Vercel | producción en `2b6e927`; FASEs 7–10 pendientes merge a main |
+| Siguiente fase | **FASE 11** (por definir) |
 
 ---
 
@@ -26,6 +26,31 @@
 - Semana final = MESOCYCLE_CHECKPOINT únicamente.
   Deload es reactivo y requiere ≥2 deloadTriggers.
   La semana final sola nunca dispara deload.
+
+### FASE 10 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Plan Editor UX: Autocomplete, Reorder, restSeconds**
+
+Archivos modificados:
+- `vdsen-coach.html` — 6 parches quirúrgicos en `_exRowHtml`, `_moveExRow`, `addExRow`, `renderTrainingEditor`, `toggleTrainingEditor`, `saveTrainingPlan`
+- `tests/progression-engine.test.js` — P166-P175 (35 assertions nuevas)
+
+Funciones añadidas:
+- `_filterExerciseCatalog(query, catalog, limit)` — substring CI, max 6, sin Firestore reads
+- `_moveArrayItem(items, from, to)` — reordenar array puro, no muta original
+- `_parseRestSeconds(value)` — convierte string/undefined/negativo a número ≥ 0
+- `_acShow(input)` / `_acHide(input)` — dropdown XSS-safe vía createElement/textContent
+- `_updateReorderBtns(list)` — visibilidad ↑↓ por posición (primero oculta ↑, último oculta ↓)
+
+Comportamiento añadido:
+- **Autocomplete**: input de nombre usa custom dropdown (XSS-safe, no datalist). Fuente: `_allExercises` en memoria. Muestra nombre + motorPattern/equipment opcionales.
+- **Reorder ↑↓**: botones ahora tienen `data-reorder="up/dn"`. Visibilidad actualizada al abrir editor, añadir ejercicio y después de cada movimiento. `prescriptionExerciseId` se preserva (viaja en `data-prescription-id` del DOM row).
+- **restSeconds inline**: 4ª columna en grid de series. Carga de `sets[0].restSeconds`, guarda con `_parseRestSeconds`. Ya no hardcodeado a 90.
+
+Limitaciones documentadas:
+- Editor usa un único restSeconds por ejercicio (aplicado igual a todos sus sets), consistente con el modelo actual de reps/RIR uniformes por ejercicio.
+- Datalist `coach_exlist` eliminado; el autocomplete nativo queda reemplazado por el custom dropdown.
+
+---
 
 ### FASE 9 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
 **Contextual Rest Timer + Active Workout Flow**
