@@ -1307,7 +1307,7 @@ El esfuerzo no es negociable — y la consistencia se construye ciclo a ciclo.
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
       ov.innerHTML = `
         <div style="background:#141616;border:1px solid rgba(37,211,102,.35);border-radius:12px;padding:22px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto">
-          <h3 style="color:#25D366;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📲 Enviar recordatorio · ${client.displayName||'cliente'}</h3>
+          <h3 style="color:#25D366;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📲 Enviar recordatorio · ${_escH(client.displayName||'cliente')}</h3>
           <p style="color:#888;font-size:11px;margin-bottom:14px">${client.phone ? 'Se abrirá WhatsApp con el mensaje pre-cargado.' : '⚠️ Este cliente no tiene WhatsApp guardado — se mostrará el mensaje para que lo copies.'}</p>
           <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
             ${detected ? `<button data-type="${detected.type}" class="_waChoice" style="text-align:left;padding:12px;border-radius:8px;border:1px solid ${detected.color};background:${detected.color}1A;color:${detected.color};font-size:13px;font-weight:700;cursor:pointer">
@@ -1431,7 +1431,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
       ov.innerHTML = `
         <div style="background:#141616;border:1px solid rgba(244,244,240,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
-          <h3 id="_amTitle" style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px">📩 Mensaje · ${client.displayName || 'cliente'}</h3>
+          <h3 id="_amTitle" style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px">📩 Mensaje · ${_escH(client.displayName || 'cliente')}</h3>
           <div style="display:flex;gap:6px;margin-bottom:12px">
             <button id="_amModeAccess" class="_amModeBtn" data-mode="access" style="flex:1;padding:8px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📩 Solo acceso</button>
             <button id="_amModeOnb" class="_amModeBtn" data-mode="onboarding" style="flex:1;padding:8px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📋 Acceso + Ficha inicial</button>
@@ -4324,6 +4324,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
       const planRef = await addDoc(collection(db, "plans"), {
         ...planObj,
+        days: _stampPrescriptionIds(planObj.days),
         rirByWeek: rirSchemeForWeeks(planObj.weeks || 6),
         coachId: currentCoach.uid,
         clientId,
@@ -6301,6 +6302,36 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  // ── STABLE EXERCISE IDENTITY (FASE 5) ───────────────────────────────────
+  function _genPrescriptionId() {
+    try { return crypto.randomUUID(); } catch(e) {}
+    return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
+  }
+
+  // Stamps IDs only on exercises that are missing one (preserves existing)
+  function _stampPrescriptionIds(days) {
+    return (days || []).map(function(day) {
+      return Object.assign({}, day, {
+        exercises: (day.exercises || []).map(function(ex) {
+          if (ex.prescriptionExerciseId) return ex;
+          return Object.assign({}, ex, { prescriptionExerciseId: _genPrescriptionId() });
+        })
+      });
+    });
+  }
+
+  // Always assigns new IDs (for duplicates — new prescription, no history)
+  function _restampPrescriptionIds(days) {
+    return (days || []).map(function(day) {
+      return Object.assign({}, day, {
+        exercises: (day.exercises || []).map(function(ex) {
+          return Object.assign({}, ex, { prescriptionExerciseId: _genPrescriptionId() });
+        })
+      });
+    });
+  }
+  // ── END STABLE EXERCISE IDENTITY ─────────────────────────────────────────
+
   function _vdsenUpdateReviewPanel(requestId, items, consistencyIssues) {
     var state    = _vdsenReviewState[requestId] || {};
     var reviewed = 0;
@@ -7431,6 +7462,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
       const planRef = await addDoc(collection(db, "plans"), {
         ...manualPlan,
+        days: _stampPrescriptionIds(manualPlan.days),
         coachId: currentCoach.uid,
         clientId,
         status: "active",
@@ -9945,7 +9977,13 @@ El esfuerzo no es negociable.
       texto:    document.getElementById("nut-texto")?.value.trim() || ""
     };
     try {
-      await updateDoc(doc(db, "clients", _detailClientId), { nutritionPlan: data });
+      await updateDoc(doc(db, "clients", _detailClientId), {
+        nutritionPlan: data,
+        'nutritionRaw.calorias': data.calorias,
+        'nutritionRaw.proteina': data.proteina,
+        'nutritionRaw.carbos':   data.carbos,
+        'nutritionRaw.grasas':   data.grasas
+      });
       document.getElementById("nutrition-view").innerHTML = renderNutritionView(data);
       togglePlanEditor("nutrition");
       showToast("Nutrición guardada ✅");
@@ -10140,7 +10178,7 @@ El esfuerzo no es negociable.
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson, prescriptionId) {
     const techVal = (technique || 'straight').toLowerCase();
     const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
       .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
@@ -10152,10 +10190,12 @@ El esfuerzo no es negociable.
     const nmColors = { fundamental:'#FF6644', suplementario:'#FF9900', asistencia_mayor:'#CCAA00', asistencia_secundario:'#888' };
     const nmOpts = [['','—'],['fundamental','Fundamental'],['suplementario','Suplementario'],['asistencia_mayor','Asist. Mayor'],['asistencia_secundario','Asist. Sec.']]
       .map(([v,l]) => `<option value="${v}"${v===nmVal?' selected':''}>${l}</option>`).join('');
+    const pidAttr = _escH(prescriptionId || '');
     return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}"
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
       data-alternatives="${altsAttr}" data-variacion-vertical="${vvAttr}"
+      data-prescription-id="${pidAttr}"
       style="background:rgba(255,255,255,.03);${ssBorder};transition:opacity .15s">
       <div class="flex gap-2 items-center mb-2">
         <span class="text-[#555] select-none text-base cursor-grab px-0.5" title="Arrastrar para reordenar">⠿</span>
@@ -10252,7 +10292,7 @@ El esfuerzo no es negociable.
         var ssGrp = e.supersetGroup || '';
         var nivelMedio = e.nivel_medio || '';
         var vvJson = e.variacion_vertical ? JSON.stringify(e.variacion_vertical) : 'null';
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson);
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson, e.prescriptionExerciseId || '');
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -10280,7 +10320,7 @@ El esfuerzo no es negociable.
     const div = document.createElement('div');
     div.outerHTML; // placeholder
     const tmp = document.createElement('template');
-    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '', '', 'null');
+    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '', '', 'null', '');
     list.appendChild(tmp.content.firstElementChild);
   }
 
@@ -10358,8 +10398,10 @@ El esfuerzo no es negociable.
         try { alternatives = JSON.parse(row.dataset.alternatives || '[]'); } catch(e) {}
         let variacionVertical = null;
         try { variacionVertical = JSON.parse(row.dataset.variacionVertical || 'null'); } catch(e) {}
+        const prescriptionExerciseId = row.dataset.prescriptionId || _genPrescriptionId();
         if (name) exercises.push({
           exerciseName: name,
+          prescriptionExerciseId,
           alternatives,
           coachNote,
           technique,
@@ -10489,13 +10531,14 @@ El esfuerzo no es negociable.
       // Agregar ejercicio al día
       const newEx = {
         exerciseName: name,
+        prescriptionExerciseId: _genPrescriptionId(),
         alternatives: [],
         sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90 }))
       };
       days[dayIdx].exercises = days[dayIdx].exercises || [];
       days[dayIdx].exercises.push(newEx);
 
-      await updateDoc(doc(db, "plans", planId), { days, coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
+      await updateDoc(doc(db, "plans", planId), { days: _stampPrescriptionIds(days), coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
       showToast(`"${name}" agregado a ${days[dayIdx].label} ✅`);
       document.getElementById('quickAddPanel')?.remove();
       showClientDetail(_detailClientId); // recargar
@@ -10849,7 +10892,7 @@ El esfuerzo no es negociable.
       }
       try {
         const _planUpd = {
-          days,
+          days: _stampPrescriptionIds(days),
           daysPerWeek: days.length,
           weeks: obj.weeks || cur.weeks || 6,
           rirByWeek: obj.rirByWeek || cur.rirByWeek || null,
@@ -11013,8 +11056,8 @@ El esfuerzo no es negociable.
       if (!sel) return;
       const targetId = sel.id;
 
-      // Crear copia del plan
-      const newPlan = { ...planData, clientId: targetId, createdAt: Date.now(), status: 'active' };
+      // Crear copia del plan (nueva prescripción = nuevos IDs)
+      const newPlan = { ...planData, days: _restampPrescriptionIds(planData.days), clientId: targetId, createdAt: Date.now(), status: 'active' };
       delete newPlan.id; // limpiar ID anterior si existía
       const newRef = await addDoc(collection(db, "plans"), newPlan);
       await updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id });
@@ -11264,7 +11307,7 @@ El esfuerzo no es negociable.
 
     try {
       const planRef = await addDoc(collection(db, "plans"), {
-        days, weeks: template.weeks || 6, daysPerWeek: days.length,
+        days: _stampPrescriptionIds(days), weeks: template.weeks || 6, daysPerWeek: days.length,
         coachId: currentCoach.uid, clientId, status: 'active',
         generatedBy: 'template:'+template.name, createdAt: Date.now()
       });
@@ -11523,6 +11566,7 @@ El esfuerzo no es negociable.
           await backupPlanIfExists(targetId);
           const newRef = await addDoc(collection(db, "plans"), {
             ...planData,
+            days: _restampPrescriptionIds(planData.days),
             clientId: targetId,
             coachId: currentCoach.uid,
             status: 'active',
