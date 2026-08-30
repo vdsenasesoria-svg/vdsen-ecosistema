@@ -2702,7 +2702,7 @@ function renderResumen() {
     <div class="week-grid">${weekHtml}</div>
 
     <div class="card" style="margin-top:10px">
-      <div class="card-title">HOY — SEM ${semActiva}${semActiva===6?' · DELOAD':''}</div>
+      <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
       ${getTodaySummary()}
     </div>
 
@@ -4050,11 +4050,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] &&
         LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
   }
-  if (progrec && progrec.newSets) {
-    if (['add_sets','reduce_sets','deload'].indexOf(progrec.action) !== -1) {
-      numSeries = Math.max(progrec.newSets, _doneCount);
-    }
-    // Para maintain/increase_load/freeze_load: solo proteger sets ya hechos esta sesión
+  // Solo reduce_sets puede ajustar series en el renderer (conservador).
+  // add_sets y deload son candidatos para el coach — no mutan el plan visual.
+  if (progrec && progrec.newSets && progrec.action === 'reduce_sets') {
+    numSeries = Math.max(progrec.newSets, _doneCount);
   }
 
   // PASO 3 — nunca ocultar sets que el cliente ya registró esta sesión
@@ -5645,7 +5644,7 @@ function markExpressSSDone(di, ssMembers) {
     var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
     // Progrec puede haber ajustado el nº de series
     var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '');
-    if (_pcRec && _pcRec.newSets && ['add_sets','reduce_sets','deload'].indexOf(_pcRec.action) !== -1) numSets = _pcRec.newSets;
+    if (_pcRec && _pcRec.newSets && _pcRec.action === 'reduce_sets') numSets = _pcRec.newSets;
     LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:carga, reps:String(reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:unit, done:true, ts:now };
     for (var s = 0; s < numSets; s++) {
       LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s] = { carga:carga, reps:String(reps), unit:unit, done:true, rir:rirLast, rir_real:rirLast, ics:ics||8, pump:pump||1, ts:now, express:true };
@@ -5789,7 +5788,7 @@ function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
     var _ejIdx = (_EJERCICIOS_DIA || [])[idx] || null;
     var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
     var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '');
-    if (_pcRec && _pcRec.newSets && ['add_sets','reduce_sets','deload'].indexOf(_pcRec.action) !== -1) numSets = _pcRec.newSets;
+    if (_pcRec && _pcRec.newSets && _pcRec.action === 'reduce_sets') numSets = _pcRec.newSets;
     LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:lastSD.carga||'0', reps:String(lastSD.reps||reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:lastSD.unit||unit_i, done:true, ts:now };
     for (var s = 0; s < numSets; s++) {
       var sdS = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+s+'_m'+i] || lastSD;
@@ -6463,8 +6462,8 @@ function buildBoostcampExercise(ej, di, ei) {
     if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_scBC] &&
         LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_scBC].done) _dcBC = _scBC + 1;
   }
-  if (progRecForWu && progRecForWu.newSets &&
-      ['add_sets','reduce_sets','deload'].indexOf(progRecForWu.action) !== -1) {
+  // Solo reduce_sets puede ajustar series en el renderer (conservador).
+  if (progRecForWu && progRecForWu.newSets && progRecForWu.action === 'reduce_sets') {
     numSeries = Math.max(progRecForWu.newSets, _dcBC);
   }
   // Paso 3: nunca ocultar sets ya registrados
@@ -12904,12 +12903,22 @@ function calculateProgression(di, postData) {
         reasons.push('⚠ Sin pump — revisá amplitud de movimiento y velocidad excéntrica');
       }
 
-      // ── DECISIÓN DE CARGA — NO simultáneo con +serie ──
-      // Si ya subimos volumen, NO subir carga en la misma recomendación.
-      // allRepsHit: promedio al techo del rango Y ningún set claramente bajo el piso
+      // ── SET-LEVEL SAFEGUARDS ────────────────────────────────────────────────
       var minReps = sets.length ? Math.min.apply(null, sets.map(function(s){ return parseFloat(s.reps)||0; })) : 0;
-      var allRepsHit = (avgReps >= repsTarget) && (minReps >= repsLow - 1);
+      var allRepsHit = (avgReps >= repsTarget) && (minReps >= repsLow - 1); // HEURISTIC
       var canIncreaseLoad = (action !== 'add_sets');
+
+      var _rirRealArr = sets.map(function(s){ return parseFloat(s.rir_real); }).filter(function(v){ return !isNaN(v) && v >= 0 && v <= 5; });
+      var minRIR = _rirRealArr.length ? Math.min.apply(null, _rirRealArr) : null;
+      var maxRIR = _rirRealArr.length ? Math.max.apply(null, _rirRealArr) : null;
+      var setsWithinRirBand = _rirRealArr.filter(function(v){ return Math.abs(v - rirObj) <= 1; }).length;
+      var setsAtTopRange    = sets.filter(function(s){ return (parseFloat(s.reps)||0) >= repsTarget; }).length;
+      var validSetCount     = _rirRealArr.length;
+      var setCompletionRate = sets.length ? (sets.length / numSets) : 0;
+
+      // Gate: si un set llegó a RIR=0 (fallo) y NO todos los sets están dentro de la banda ±1,
+      // el promedio está normalizando un set problemático → no progresar carga [HEURÍSTICA].
+      var _rirZeroFalsePositive = (minRIR === 0 && validSetCount > 0 && setsWithinRirBand < validSetCount);
 
       // ── RIR SIGN: rir_error = avgRIR - rirObj ──────────────────────────────
       // avgRIR > rirObj → quedaron reps en el tanque → RIR_TOO_EASY_TREND → candidato a progresión
@@ -12918,7 +12927,12 @@ function calculateProgression(di, postData) {
       var _rirError = (avgRIR !== null) ? (avgRIR - rirObj) : 0;
       var _prescriptionMatch = Math.abs(_rirError) <= 1;
 
-      if (!_prescriptionMatch && _rirError > 0 && canIncreaseLoad) {
+      if (_rirZeroFalsePositive && canIncreaseLoad) {
+        // Un set llegó a RIR=0 fuera de la banda prescripta — el promedio normaliza el fallo.
+        // Congelar carga hasta regularizar el esfuerzo entre series. [HEURÍSTICA]
+        if (action === 'maintain') action = 'freeze_load';
+        reasons.push('Un set llegó a fallo (RIR 0) fuera del rango prescripto — regularizar esfuerzo antes de progresar');
+      } else if (!_prescriptionMatch && _rirError > 0 && canIncreaseLoad) {
         // RIR_TOO_EASY_TREND: el atleta dejó reps en el tanque → subir carga
         if (allRepsHit) {
           newLoad = _applyAlpha(load, alpha, unit);
@@ -12940,9 +12954,18 @@ function calculateProgression(di, postData) {
           newReps = repsTarget;
         }
       } else if (!_prescriptionMatch && _rirError < 0) {
-        // RIR_TOO_HARD_TREND: esfuerzo excesivo respecto al objetivo → congelar carga [HEURÍSTICA]
-        if (action === 'maintain') action = 'freeze_load';
-        reasons.push('Esfuerzo por encima del objetivo (RIR real '+avgRIR.toFixed(1)+' < objetivo '+rirObj+') — mantener carga y regularizar el esfuerzo');
+        // RIR_TOO_HARD_TREND: esfuerzo excesivo respecto al objetivo → congelar [HEURÍSTICA]
+        // Si la semana anterior también fue TOO_HARD → candidato a bajar carga
+        var _prevAlsoTooHard = prevWeek && prevWeek.avgRIR !== null && (prevWeek.avgRIR - rirObj) < -1;
+        if (_prevAlsoTooHard) {
+          // TOO_HARD repetido: patrón de 2 semanas — candidato a reducir carga
+          newLoad = _roundUnit(load * 0.95, unit);
+          if (action === 'maintain') action = 'reduce_load';
+          reasons.push('Esfuerzo excesivo repetido (RIR '+avgRIR.toFixed(1)+' esta sem, '+prevWeek.avgRIR.toFixed(1)+' sem anterior) — candidato a bajar carga ~5%');
+        } else {
+          if (action === 'maintain') action = 'freeze_load';
+          reasons.push('Esfuerzo por encima del objetivo (RIR real '+avgRIR.toFixed(1)+' < objetivo '+rirObj+') — mantener carga y regularizar el esfuerzo');
+        }
       } else if (_prescriptionMatch && allRepsHit && canIncreaseLoad) {
         // PRESCRIPTION_MATCH + techo del rango alcanzado → subir carga (double progression completo)
         newLoad = _applyAlpha(load, alpha, unit);
@@ -12999,7 +13022,15 @@ function calculateProgression(di, postData) {
       rirTarget: rirTarget,
       reason: reasons.join(' | '),
       substituteExercise: sub,
-      trend: prevWeek ? { prevLoad: prevWeek.avgLoad, prevSets: prevWeek.numSets, prevICS: prevWeek.avgICS } : null
+      trend: prevWeek ? { prevLoad: prevWeek.avgLoad, prevSets: prevWeek.numSets, prevICS: prevWeek.avgICS } : null,
+      setMetrics: {
+        validSetCount: validSetCount !== undefined ? validSetCount : 0,
+        minRIR: minRIR !== undefined ? minRIR : null,
+        maxRIR: maxRIR !== undefined ? maxRIR : null,
+        setsWithinRirBand: setsWithinRirBand !== undefined ? setsWithinRirBand : 0,
+        setsAtTopRange: setsAtTopRange !== undefined ? setsAtTopRange : 0,
+        setCompletionRate: setCompletionRate !== undefined ? setCompletionRate : 0
+      }
     };
   }).filter(Boolean);
 

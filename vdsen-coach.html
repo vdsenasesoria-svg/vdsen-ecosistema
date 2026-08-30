@@ -1793,7 +1793,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     select.innerHTML = '<option value="">Selecciona un cliente</option>';
     const clientsMap = {};
     snap.forEach(d => {
-      select.innerHTML += `<option value="${d.id}">${d.data().displayName}</option>`;
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = d.data().displayName || d.id;
+      select.appendChild(opt);
       clientsMap[d.id] = d.data();
     });
 
@@ -1957,7 +1960,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
               ${r.trend ? `<div class="flex gap-3 text-xs mb-1"><span class="text-[#555]">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets}s · ICS ${r.trend.prevICS.toFixed(1)}</span></div>` : ''}
               <div class="text-xs text-[#888]">${r.reason}</div>
               ${r.substituteExercise ? `<div class="text-xs mt-1" style="color:#FF8844">🔄 ${r.substituteExercise}</div>` : ''}
-              ${_clientNote ? `<div class="mt-2 text-xs p-2 rounded" style="background:rgba(107,107,102,.08);border-left:2px solid rgba(107,107,102,.5);color:#d4b96a;line-height:1.45">📝 ${_clientNote.text}<span style="color:#888;margin-left:8px">· Sem ${_clientNote.w} Día ${_clientNote.d+1}</span></div>` : ''}
+              ${_clientNote ? `<div class="mt-2 text-xs p-2 rounded" style="background:rgba(107,107,102,.08);border-left:2px solid rgba(107,107,102,.5);color:#d4b96a;line-height:1.45">📝 ${_escH(_clientNote.text)}<span style="color:#888;margin-left:8px">· Sem ${_clientNote.w} Día ${_clientNote.d+1}</span></div>` : ''}
             </div>`;
         });
         html += `</div>`;
