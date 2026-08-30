@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-30 · main HEAD: `2b6e927` · rama FASE 7: `claude/client-app-improvements-qayy4n`
+> Actualizado: 2026-08-30 · main HEAD: `2b6e927` · rama activa: `claude/client-app-improvements-qayy4n`
 
 ---
 
@@ -8,12 +8,12 @@
 | Item | Valor |
 |------|-------|
 | main HEAD | `2b6e927` — FASE 6 mergeada |
-| FASE 7 rama | `claude/client-app-improvements-qayy4n` (pendiente merge) |
+| Rama activa | `claude/client-app-improvements-qayy4n` (pendiente merge) |
 | FASE 5 commit | `4a87e42` |
 | FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **331/331 PASS** (P01–P146) |
-| Vercel | producción en `2b6e927`; FASE 7 pendiente merge a main |
-| Siguiente fase | **FASE 8 — Live Training + Session Dashboard** (implementada, pendiente merge) |
+| Suite tests | **370/370 PASS** (P01–P165) |
+| Vercel | producción en `2b6e927`; FASEs 7–9 pendientes merge a main |
+| Siguiente fase | **FASE 10** (por definir) |
 
 ---
 
@@ -26,6 +26,35 @@
 - Semana final = MESOCYCLE_CHECKPOINT únicamente.
   Deload es reactivo y requiere ≥2 deloadTriggers.
   La semana final sola nunca dispara deload.
+
+### FASE 9 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Contextual Rest Timer + Active Workout Flow**
+
+Archivos modificados:
+- `vdsen-cliente.html` — 8 parches quirúrgicos
+- `tests/progression-engine.test.js` — P147-P165 (19 tests nuevos)
+
+Funciones añadidas:
+- `_scrollToNextPendingSet()` — query `[data-pending="1"]` en `#exPanel`, scrollIntoView smooth (200ms delay)
+- `_nextSerie()` — botón SIGUIENTE ▶: `stopRestTimer()` + `_scrollToNextPendingSet()`
+- `_refreshSessionDashboard()` — actualiza `#_sesDashboard` innerHTML in-place, 0 Firestore reads
+
+Comportamiento añadido:
+- **Rest timer contextual**: auto-arranca al completar una serie usando `ej.sets[si].restSeconds` como única fuente de verdad
+- **Sin heurísticas de fallback**: si `restSeconds` falta o es inválido, no se inicia timer automáticamente
+- **Semántica de técnica preservada**: Y3T s1 ≥210s, Y3T s2 ≥150s; FST7 40s entre series / 180s tras la final
+- **Guard autoFilled**: si `prev.autoFilled === true` (estado pre-guardado), no iniciar timer
+- **Dashboard inmediato**: `_refreshExPanelOnly()` llama `_refreshSessionDashboard()` en cada save de serie
+- **Set pendiente resaltado**: `data-pending="1"` + borde accent `rgba(196,255,0,.4)` en la fila activa
+- **Scroll automático**: al finalizar timer y al pulsar SIGUIENTE ▶, desplaza al siguiente set pendiente
+- **Wrapper `id="_sesDashboard"`**: permite update in-place sin re-render completo
+
+Limitaciones documentadas:
+- Timer no persiste en Firestore — usa solo localStorage (`vdsen_restEnd`, `vdsen_restTotal`)
+- Si recarga durante descanso: timer se resetea (documentado, no es bug)
+- `data-pending="1"` se asigna al `activeSi` del ejercicio activo; si hay múltiples ejercicios con sets pendientes, solo el primero está marcado
+
+---
 
 ### FASE 8 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
 **Live Training + Client Session Dashboard**

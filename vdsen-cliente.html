@@ -3274,6 +3274,8 @@ function _onTimerFinished() {
   if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 400]);
   showToast('⏱ ¡Descanso terminado!');
   _notifyRestDone();
+  // FASE 9: desplazar al siguiente set pendiente
+  _scrollToNextPendingSet();
   // Si estaba minimizado, expandir automáticamente
   var pill = document.getElementById('timerPill');
   if (pill && pill.style.display !== 'none') maximizeTimer();
@@ -4554,7 +4556,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           if (_snBadge) _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#e8a040;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+_snBadge+'</span>';
         }
       }
-      setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" style="border:2px solid rgba(107,107,102,.5);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
+      setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" data-pending="1" style="border:2px solid rgba(196,255,0,.4);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+_getZonaBadge(_psReps || repsTarget)+'</div>'+
         '</div>'+
@@ -5223,6 +5225,7 @@ function _refreshExPanelOnly() {
   var panel = document.getElementById('exPanel');
   if (nav) nav.innerHTML = _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO);
   if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
+  _refreshSessionDashboard(); // FASE 9: update session stats in place (0 Firestore reads)
   setTimeout(function() {
     var navEl = document.getElementById('exNav');
     var _actChip = navEl && navEl.querySelector('[data-ei="'+EJ_ACTIVO+'"]');
@@ -6090,6 +6093,41 @@ function _calcSessionStats(logs, di, week) {
   };
 }
 
+// FASE 9 — Actualiza el strip de estadísticas de sesión sin re-render completo.
+// 0 Firestore reads. Solo semana activa (CURRENT_WEEK === REAL_WEEK).
+function _refreshSessionDashboard() {
+  if (CURRENT_WEEK !== REAL_WEEK) return;
+  var el = document.getElementById('_sesDashboard');
+  if (!el) return;
+  var _sesStats = _calcSessionStats(LOGS, DIA_ACTIVO, CURRENT_WEEK);
+  var ejercicios = (getSesiones()[DIA_ACTIVO] || {}).exercises || [];
+  var _sesTotSets = 0;
+  ejercicios.forEach(function(ej, _ei) {
+    if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
+    var _exMod = LOGS['exmod_' + CURRENT_WEEK + '_' + DIA_ACTIVO + '_' + _ei] || {};
+    _sesTotSets += _exMod.numSeries ? (parseInt(_exMod.numSeries) || 0) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+  });
+  var _sesRIR = _sesStats.avgRIR !== null ? _sesStats.avgRIR : null;
+  var _sesICS = _sesStats.avgICS !== null ? _sesStats.avgICS : null;
+  var _icsColor = _sesICS !== null ? (_sesICS >= 8 ? 'var(--grn)' : _sesICS >= 7 ? 'var(--gold)' : 'var(--red)') : 'var(--mt)';
+  if (_sesStats.sessionStart && !window._sesTimerStart) window._sesTimerStart = _sesStats.sessionStart;
+  el.innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:6px 12px 8px;background:rgba(0,0,0,.10)">' +
+    _statCell(_sesStats.completedSets + '/' + _sesTotSets, 'series', 'var(--tx)') +
+    _statCell('<span id="_sesTime">' + _fmtElapsed(window._sesTimerStart) + '</span>', 'tiempo', 'var(--tx)') +
+    _statCell(_sesRIR !== null ? _sesRIR : '—', 'rir medio', 'var(--tx)') +
+    _statCell(_sesICS !== null ? _sesICS : '—', 'ics medio', _icsColor) +
+    '</div>';
+  if (window._sesTimerStart && !window._sesTimerInterval) {
+    window._sesTimerInterval = setInterval(function() {
+      var _te = document.getElementById('_sesTime');
+      if (!_te) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; return; }
+      _te.textContent = _fmtElapsed(window._sesTimerStart);
+    }, 1000);
+  }
+}
+window._refreshSessionDashboard = _refreshSessionDashboard;
+
 function renderEntrenamiento() {
   if (!PLAN || !PLAN.entrenamiento) return;
   // Clear session timer before re-render
@@ -6397,12 +6435,12 @@ function renderEntrenamiento() {
     var _icsColor = _sesICS !== null ? (_sesICS >= 8 ? 'var(--grn)' : _sesICS >= 7 ? 'var(--gold)' : 'var(--red)') : 'var(--mt)';
     window._sesTimerStart = _sesStats.sessionStart;
     sessionStatsHtml =
-      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:6px 12px 8px;background:rgba(0,0,0,.10)">' +
+      '<div id="_sesDashboard"><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:6px 12px 8px;background:rgba(0,0,0,.10)">' +
       _statCell(_sesStats.completedSets + '/' + _sesTotSets, 'series', 'var(--tx)') +
       _statCell('<span id="_sesTime">' + _fmtElapsed(_sesStats.sessionStart) + '</span>', 'tiempo', 'var(--tx)') +
       _statCell(_sesRIR !== null ? _sesRIR : '—', 'rir medio', 'var(--tx)') +
       _statCell(_sesICS !== null ? _sesICS : '—', 'ics medio', _icsColor) +
-      '</div>';
+      '</div></div>';
   }
 
   cont.innerHTML =
@@ -7349,38 +7387,35 @@ function completeSet(key, di, ei, si, unit) {
       return;
     }
 
+    // FASE 9: autoFilled sets no inician rest timer (el cliente no hizo el esfuerzo manual)
+    if (prev.autoFilled) { showToast(_grp ? 'Par SS cerrado ✓' : 'Serie ✓'); return; }
+
     _maybeSuggestExtraSet(di, ei, si);
 
-    // Calcular restTime: preferir restSeconds del plan (set actual) si > 0.
+    // Calcular restTime: restSeconds del plan es fuente de verdad (FASE 9).
+    // No usar heurística de nombre/catálogo — no inventar duración.
+    // Excepciones explícitas: Y3T (semántica de fase) y FST7 (semántica de técnica).
     var _effSetsRest = isY3TExercise(_ejCur) ? getEffectiveSets(_ejCur, CURRENT_WEEK, getTotalWeeks()) : (_ejCur && _ejCur.sets || []);
     var _setSpec = _effSetsRest[si] || (_ejCur && _ejCur.sets && _ejCur.sets[si]) || null;
     var _planRest = _setSpec && parseInt(_setSpec.restSeconds) > 0 ? parseInt(_setSpec.restSeconds) : 0;
-    var restTime;
-    if (_planRest > 0) {
-      restTime = _planRest;
-    } else {
-      var catEx = _getCatalogData(exName);
-      if (catEx) {
-        var fc = catEx.fatigueCost || 3;
-        restTime = fc >= 5 ? 180 : fc >= 4 ? 150 : fc >= 3 ? 120 : fc >= 2 ? 90 : 60;
-      } else {
-        var esCompuesto = /press|squat|sentadilla|peso muerto|rdl|hip thrust|jalon|remo|dominadas|fondos|hack|prensa|bulgar|curl femoral/.test(exName);
-        restTime = esCompuesto ? 120 : 90;
-      }
-      // Y3T phase override: S1 needs 210 s, S2 needs 150 s minimum
-      if (isY3TExercise(_ejCur)) {
-        var _rPhase = getY3TPhase(CURRENT_WEEK, getTotalWeeks());
-        if (_rPhase === 's1') restTime = Math.max(restTime, 210);
-        else if (_rPhase === 's2') restTime = Math.max(restTime, 150);
-      }
-      // FST7: 40s entre series 1-6, 180s tras la serie 7
-      if ((_ejCur && ((_ejCur.technique||'').toLowerCase() === 'fst7'))) {
-        var _fstTotal = (_ejCur.sets || []).length;
-        restTime = (si >= _fstTotal - 1) ? 180 : 40;
-      }
+    var restTime = _planRest;
+    // Y3T phase minimum (semántica de técnica, no heurística)
+    if (isY3TExercise(_ejCur)) {
+      var _rPhase = getY3TPhase(CURRENT_WEEK, getTotalWeeks());
+      if (_rPhase === 's1') restTime = Math.max(restTime, 210);
+      else if (_rPhase === 's2') restTime = Math.max(restTime, 150);
     }
-    startRestTimer(restTime, key);
-    showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
+    // FST7: 40s entre series 1-6, 180s tras la serie final (semántica de técnica)
+    if (_ejCur && (_ejCur.technique||'').toLowerCase() === 'fst7') {
+      var _fstTotal = (_ejCur.sets || []).length;
+      restTime = (si >= _fstTotal - 1) ? 180 : 40;
+    }
+    if (restTime > 0) {
+      startRestTimer(restTime, key);
+      showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
+    } else {
+      showToast(_grp ? 'Par SS cerrado ✓' : 'Serie ✓');
+    }
   } else {
     showToast('Serie desmarcada');
   }
@@ -7631,13 +7666,31 @@ function _ensureRestTimerOverlay() {
         '<div style="display:flex;gap:5px">'+
           '<button onclick="event.stopPropagation();adjustRestTimer(-15)" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;padding:10px 0;cursor:pointer;min-height:44px">−15s</button>'+
           '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;padding:10px 0;cursor:pointer;min-height:44px">+15s</button>'+
-          '<button onclick="stopRestTimer()" style="flex:2;background:#C4FF00;border:none;border-radius:8px;color:#0a0a0a;font-size:11px;font-weight:800;padding:10px 0;cursor:pointer;letter-spacing:.5px;min-height:44px">SIGUIENTE ▶</button>'+
+          '<button onclick="_nextSerie()" style="flex:2;background:#C4FF00;border:none;border-radius:8px;color:#0a0a0a;font-size:11px;font-weight:800;padding:10px 0;cursor:pointer;letter-spacing:.5px;min-height:44px">SIGUIENTE ▶</button>'+
         '</div>'+
       '</div>'+
     '</div>';
   document.body.appendChild(el);
 }
 window._ensureRestTimerOverlay = _ensureRestTimerOverlay;
+
+// FASE 9 — Desplaza suavemente al siguiente set pendiente (data-pending="1") tras el descanso.
+function _scrollToNextPendingSet() {
+  setTimeout(function() {
+    var panel = document.getElementById('exPanel');
+    if (!panel) return;
+    var pendingRow = panel.querySelector('[data-pending="1"]');
+    if (pendingRow) pendingRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, 200);
+}
+window._scrollToNextPendingSet = _scrollToNextPendingSet;
+
+// FASE 9 — Handler del botón SIGUIENTE ▶: detiene timer y desplaza al próximo set.
+function _nextSerie() {
+  stopRestTimer();
+  _scrollToNextPendingSet();
+}
+window._nextSerie = _nextSerie;
 
 function startRestTimer(seconds, lastSetKey) {
   // Si el cliente desactivó el temporizador, no mostrar overlay ni arrancar cuenta.
