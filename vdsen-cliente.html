@@ -6583,6 +6583,19 @@ function buildBoostcampExercise(ej, di, ei) {
     }
   }
 
+  // ── Banners de recomendación (add_sets / deload) ─────────────────────────────
+  // Ninguno auto-aplica cambios: son señales para el coach, no modificaciones del plan.
+  var addSetsBannerHtml = '';
+  if (headerRec && headerRec.action === 'add_sets') {
+    addSetsBannerHtml = '<div style="margin:0 14px 8px;padding:8px 12px;background:rgba(76,175,80,.07);'+
+      'border-left:3px solid rgba(76,175,80,.5);border-radius:0 8px 8px 0;font-size:11px;color:var(--grn);line-height:1.5">'+
+      '💪 El algoritmo recomienda <strong>+1 serie</strong> la próxima semana. Tu coach actualizará el plan.</div>';
+  } else if (headerRec && headerRec.action === 'deload') {
+    addSetsBannerHtml = '<div style="margin:0 14px 8px;padding:8px 12px;background:rgba(232,160,64,.07);'+
+      'border-left:3px solid rgba(232,160,64,.5);border-radius:0 8px 8px 0;font-size:11px;color:var(--gold);line-height:1.5">'+
+      '⚠ El algoritmo detectó señales de fatiga — <strong>semana de descarga recomendada</strong>. Tu coach ajustará el plan.</div>';
+  }
+
   // ── Sustitución por ICS bajo persistente ─────────────────────────
   // Si 2+ semanas consecutivas con ICS promedio < 7 → sugerir alternativa
   var substHtml = '';
@@ -6800,6 +6813,9 @@ function buildBoostcampExercise(ej, di, ei) {
 
     // Technique instructions (same as _buildExCard)
     '<div style="padding:0 14px 2px">'+_buildTechniqueAndInstructionsHtml(ej, catData, di, ei)+'</div>'+
+
+    // Banner add_sets (recomendación de serie extra, NO auto-aplicado)
+    addSetsBannerHtml+
 
     // Substitution warning (ICS bajo persistente)
     substHtml+
@@ -7046,7 +7062,10 @@ function _maybeSuggestExtraSet(di, ei, si) {
       if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
     }
     var progrec = _getProgRecForExercise(di, ei, exName);
-    if (progrec && progrec.newSets && ['add_sets','reduce_sets','deload'].indexOf(progrec.action) !== -1) {
+    // Ninguna recomendación de progresión modifica el plan activo automáticamente.
+    // Solo reduce_sets puede ajustar series en el renderer (seguridad conservadora).
+    // add_sets y deload son candidatos: el coach decide el cambio real de programa.
+    if (progrec && progrec.newSets && progrec.action === 'reduce_sets') {
       numSeries = Math.max(progrec.newSets, _doneCount);
     }
 
@@ -7143,6 +7162,7 @@ function completeSet(key, di, ei, si, unit) {
   var reps  = document.getElementById('reps_'+key)?.value  || '';
   var rirEl = document.getElementById('rir_'+key);
   var rirReal = rirEl ? rirEl.value : '';
+  if (rirReal !== '') { var _rv = parseFloat(rirReal); if (isNaN(_rv) || _rv < 0 || _rv > 5) rirReal = ''; }
   var icsEl = document.getElementById('ics_'+key);
   var ics = icsEl ? (parseInt(icsEl.value) || null) : null;
   var prev  = LOGS[key] || {};
@@ -12705,14 +12725,14 @@ function _getPrevWeekData(week, di, ei, maxSets) {
   var sets = [];
   for (var s = 0; s < maxSets; s++) {
     var k = 'log_'+prevWeek+'_'+di+'_'+ei+'_s'+s;
-    if (LOGS[k] && LOGS[k].done) sets.push(LOGS[k]);
+    if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) sets.push(LOGS[k]);
   }
   if (!sets.length) return null;
   return {
     avgLoad: _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; })),
     avgReps: _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; })),
     avgICS: (function(){ var v=sets.map(function(s){return parseFloat(s.ics);}).filter(function(x){return x>0&&!isNaN(x);}); return v.length?_avgArr(v):8; })(),
-    avgRIR: _avgArr(sets.map(function(s){ return parseFloat(s.rir_real) || 2; })),
+    avgRIR: (function(){ var v=sets.filter(function(s){return !s.autoFilled;}).map(function(s){return parseFloat(s.rir_real);}).filter(function(x){return !isNaN(x)&&x>=0&&x<=5;}); return v.length?_avgArr(v):null; })(),
     numSets: sets.length,
     topLoad: Math.max.apply(null, sets.map(function(s){ return parseFloat(s.carga) || 0; }))
   };
@@ -12785,7 +12805,7 @@ function calculateProgression(di, postData) {
     var sets = [];
     for (var s = 0; s < Math.max(planSets, 8); s++) {
       var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
-      if (LOGS[k] && LOGS[k].done) sets.push(LOGS[k]);
+      if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) sets.push(LOGS[k]);
     }
     if (!sets.length) return null;
 
@@ -12801,7 +12821,7 @@ function calculateProgression(di, postData) {
     var _icsRaw  = sets.map(function(s){ return parseFloat(s.ics); }).filter(function(v){ return v > 0 && !isNaN(v); });
     var avgICS   = _icsRaw.length  ? _avgArr(_icsRaw)  : 8;   // fallback: técnica ok
     var avgPump  = _avgArr(sets.map(function(s){ return parseFloat(s.pump) || 2; }));
-    var _rirRaw  = sets.map(function(s){ return parseFloat(s.rir_real); }).filter(function(v){ return !isNaN(v) && v >= 0; });
+    var _rirRaw  = sets.map(function(s){ return parseFloat(s.rir_real); }).filter(function(v){ return !isNaN(v) && v >= 0 && v <= 5; });
     var avgRIR   = _rirRaw.length  ? _avgArr(_rirRaw)  : rirObj; // fallback: asume en objetivo
     var avgReps = _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; }));
     var load    = _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; }));
@@ -12814,14 +12834,17 @@ function calculateProgression(di, postData) {
     var maxSets = _getMaxSets(catData, numSets);
     var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
 
-    // Calcular reps target del plan (leer del plan real, no solo repsRange)
-    var repsTarget = 8;
+    // Calcular reps target del plan — repsLow=límite inferior, repsTarget=límite superior del rango
+    var repsLow = 8, repsTarget = 8;
     if (ej.repsRange) {
       var rp = String(ej.repsRange).split(/[-–]/);
-      repsTarget = rp.length > 1 ? parseInt(rp[1]) : parseInt(rp[0]) || 8;
+      repsLow   = parseInt(rp[0]) || 8;
+      repsTarget = rp.length > 1 ? parseInt(rp[1]) : repsLow;
     } else if (ej.sets && ej.sets[0]) {
       var _effS = isY3TExercise(ej) ? (getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks())[0] || ej.sets[0]) : ej.sets[0];
-      if (_effS && _effS.repsTarget && _effS.repsTarget !== 'SST-PROTOCOL' && _effS.repsTarget !== 'SST-RIV-PROTOCOL' && _effS.repsTarget !== 999) repsTarget = _effS.repsTarget;
+      if (_effS && _effS.repsTarget && _effS.repsTarget !== 'SST-PROTOCOL' && _effS.repsTarget !== 'SST-RIV-PROTOCOL' && _effS.repsTarget !== 999) {
+        repsLow = repsTarget = _effS.repsTarget;
+      }
     }
 
     var action = 'maintain', newLoad = load, newSets = numSets, rirTarget = rirObjNext;
@@ -12909,44 +12932,60 @@ function calculateProgression(di, postData) {
         reasons.push('⚠ Sin pump — revisá amplitud de movimiento y velocidad excéntrica');
       }
 
-      // ── DECISIÓN DE CARGA — NO simultáneo con +serie (Fix 2) ──
-      // Si ya subimos volumen en esta sesión, NO subir carga también.
-      var allRepsHit = avgReps >= repsTarget;
+      // ── DECISIÓN DE CARGA — NO simultáneo con +serie ──
+      // Si ya subimos volumen, NO subir carga en la misma recomendación.
+      // allRepsHit: promedio al techo del rango Y ningún set claramente bajo el piso
+      var minReps = sets.length ? Math.min.apply(null, sets.map(function(s){ return parseFloat(s.reps)||0; })) : 0;
+      var allRepsHit = (avgReps >= repsTarget) && (minReps >= repsLow - 1);
       var canIncreaseLoad = (action !== 'add_sets');
 
-      if (avgRIR < rirObj && allRepsHit && canIncreaseLoad) {
-        newLoad = _applyAlpha(load, alpha, unit);
-        if (action === 'maintain') action = 'increase_load';
-        var incKg = (newLoad - load).toFixed(2);
-        reasons.push('Reps cumplidas con margen de esfuerzo — subimos +'+incKg+' '+unit);
+      // ── RIR SIGN: rir_error = avgRIR - rirObj ──────────────────────────────
+      // avgRIR > rirObj → quedaron reps en el tanque → RIR_TOO_EASY_TREND → candidato a progresión
+      // avgRIR < rirObj → esfuerzo mayor al prescrito → RIR_TOO_HARD_TREND → no progresar
+      // |avgRIR - rirObj| ≤ 1 → PRESCRIPTION_MATCH → progresión de reps (double progression)
+      var _rirError = (avgRIR !== null) ? (avgRIR - rirObj) : 0;
+      var _prescriptionMatch = Math.abs(_rirError) <= 1;
 
-        // Anti-spike
-        if (prevWeek && prevWeek.avgLoad > 0) {
-          var _lastJump   = load - prevWeek.avgLoad;
-          var _normalJump = prevWeek.avgLoad * alpha.pct;
-          if (_lastJump > _normalJump * 2 && _lastJump > 0) {
-            var modAlpha = { pct: alpha.pct * 0.5, capKg: alpha.capKg * 0.5 };
-            newLoad = _applyAlpha(load, modAlpha, unit);
-            reasons.push('Subida grande la semana pasada — incremento más conservador esta vez');
-          }
-        }
-      } else if (avgRIR < rirObj && !allRepsHit) {
-        reasons.push('No llegaste a todas las reps — misma carga, apuntá a '+repsTarget+' reps');
-        newReps = repsTarget;
-      } else if (avgRIR > rirObj + 1.5 && canIncreaseLoad) {
-        if (action === 'maintain') action = 'freeze_load';
-        reasons.push('La carga se sintió muy liviana — mantenerla y apuntar a mayor esfuerzo');
-      } else if (avgRIR >= rirObj && avgRIR <= rirObj + 1.5 && allRepsHit && canIncreaseLoad) {
-        if (avgReps < repsTarget + 2) {
-          reasons.push('Todo en objetivo — intentá hacer 1-2 reps más en la próxima sesión');
-          newReps = Math.min(repsTarget + 2, Math.round(avgReps) + 1);
-        } else {
+      if (!_prescriptionMatch && _rirError > 0 && canIncreaseLoad) {
+        // RIR_TOO_EASY_TREND: el atleta dejó reps en el tanque → subir carga
+        if (allRepsHit) {
           newLoad = _applyAlpha(load, alpha, unit);
-          newReps = repsTarget;
           if (action === 'maintain') action = 'increase_load';
-          reasons.push('Superaste el rango de reps — subimos carga +'+(newLoad - load).toFixed(2)+' '+unit+' y volvemos al rango base');
+          var incKg = (newLoad - load).toFixed(2);
+          reasons.push('Reps cumplidas y quedaron reps en el tanque (RIR '+avgRIR.toFixed(1)+' vs objetivo '+rirObj+') — subimos +'+incKg+' '+unit);
+          // Anti-spike
+          if (prevWeek && prevWeek.avgLoad > 0) {
+            var _lastJump   = load - prevWeek.avgLoad;
+            var _normalJump = prevWeek.avgLoad * alpha.pct;
+            if (_lastJump > _normalJump * 2 && _lastJump > 0) {
+              var modAlpha = { pct: alpha.pct * 0.5, capKg: alpha.capKg * 0.5 };
+              newLoad = _applyAlpha(load, modAlpha, unit);
+              reasons.push('Subida grande la semana pasada — incremento más conservador esta vez');
+            }
+          }
+        } else {
+          reasons.push('Quedaron reps en el tanque pero no llegaste al rango — apuntá a '+repsTarget+' reps primero');
+          newReps = repsTarget;
         }
-      } else if (!canIncreaseLoad && avgRIR < rirObj && allRepsHit) {
+      } else if (!_prescriptionMatch && _rirError < 0) {
+        // RIR_TOO_HARD_TREND: esfuerzo excesivo respecto al objetivo → congelar carga [HEURÍSTICA]
+        if (action === 'maintain') action = 'freeze_load';
+        reasons.push('Esfuerzo por encima del objetivo (RIR real '+avgRIR.toFixed(1)+' < objetivo '+rirObj+') — mantener carga y regularizar el esfuerzo');
+      } else if (_prescriptionMatch && allRepsHit && canIncreaseLoad) {
+        // PRESCRIPTION_MATCH + techo del rango alcanzado → subir carga (double progression completo)
+        newLoad = _applyAlpha(load, alpha, unit);
+        newReps = repsTarget;
+        if (action === 'maintain') action = 'increase_load';
+        reasons.push('Techo de reps del rango alcanzado con RIR en objetivo — subimos carga +'+(newLoad - load).toFixed(2)+' '+unit);
+      } else if (_prescriptionMatch) {
+        // PRESCRIPTION_MATCH pero sin llegar al techo del rango → construir reps primero
+        if (allRepsHit === false && avgReps > 0) {
+          reasons.push('RIR en objetivo — apuntá a '+repsTarget+' reps (techo del rango) antes de subir carga');
+          newReps = Math.min(repsTarget, Math.round(avgReps) + 1);
+        } else {
+          reasons.push('RIR en objetivo — consolidar reps antes de progresar');
+        }
+      } else if (!canIncreaseLoad && _rirError > 0 && allRepsHit) {
         reasons.push('Ya sumamos 1 serie esta semana — carga igual');
       }
 
@@ -13002,8 +13041,10 @@ function calculateProgression(di, postData) {
     : (_actionCounts['increase_load'] > 0 ? 'load_up'
     : (_actionCounts['reduce_load'] > 0 || _actionCounts['reduce_sets'] > 0 ? 'reduce'
     : 'maintain')));
-  // P9.7: observationsCount and confidence distinguish initial vs. learned state
-  var _loggedSetsCount = Object.keys(LOGS).filter(function(k){ return k.startsWith('log_'); }).length;
+  // P9.7: observationsCount — solo sets reales registrados por el cliente (excluye autoFilled)
+  var _loggedSetsCount = Object.keys(LOGS).filter(function(k){
+    return k.startsWith('log_') && LOGS[k].done && !LOGS[k].autoFilled;
+  }).length;
   var _confidence = _loggedSetsCount === 0 ? 'none'
     : _loggedSetsCount < 20  ? 'low'
     : _loggedSetsCount < 60  ? 'medium'
