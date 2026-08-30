@@ -6308,27 +6308,59 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
   }
 
-  // Stamps IDs only on exercises that are missing one (preserves existing)
+  // Stamps IDs only on exercises missing one; repairs cross-plan duplicate IDs
+  // (first occurrence keeps, subsequent duplicate gets new ID — explicit save only)
   function _stampPrescriptionIds(days) {
+    var seen = {};
     return (days || []).map(function(day) {
       return Object.assign({}, day, {
         exercises: (day.exercises || []).map(function(ex) {
-          if (ex.prescriptionExerciseId) return ex;
-          return Object.assign({}, ex, { prescriptionExerciseId: _genPrescriptionId() });
+          var id = ex.prescriptionExerciseId;
+          if (id && !seen[id]) { seen[id] = true; return ex; }
+          // missing or cross-plan duplicate → generate new unique ID
+          var newId = _genPrescriptionId();
+          while (seen[newId]) { newId = _genPrescriptionId(); }
+          seen[newId] = true;
+          return Object.assign({}, ex, { prescriptionExerciseId: newId });
         })
       });
     });
   }
 
-  // Always assigns new IDs (for duplicates — new prescription, no history)
+  // Always assigns new IDs (for duplicates — new prescription, no history inheritance)
+  // Guarantees intra-plan uniqueness and that no new ID matches the source plan
   function _restampPrescriptionIds(days) {
+    var seen = {};
     return (days || []).map(function(day) {
       return Object.assign({}, day, {
         exercises: (day.exercises || []).map(function(ex) {
-          return Object.assign({}, ex, { prescriptionExerciseId: _genPrescriptionId() });
+          var newId = _genPrescriptionId();
+          while (seen[newId]) { newId = _genPrescriptionId(); }
+          seen[newId] = true;
+          return Object.assign({}, ex, { prescriptionExerciseId: newId });
         })
       });
     });
+  }
+
+  // Read-only audit: detects missing or duplicate IDs across all days
+  // Returns [] if clean; never mutates the plan
+  function _validatePrescriptionIds(days) {
+    var seen = {};
+    var issues = [];
+    (days || []).forEach(function(day, di) {
+      (day.exercises || []).forEach(function(ex, ei) {
+        var id = ex.prescriptionExerciseId;
+        if (!id) {
+          issues.push({ type: 'MISSING_ID', di: di, ei: ei, name: ex.exerciseName || '' });
+        } else if (seen[id]) {
+          issues.push({ type: 'DUPLICATE_ID', di: di, ei: ei, name: ex.exerciseName || '', id: id, firstAt: seen[id] });
+        } else {
+          seen[id] = { di: di, ei: ei };
+        }
+      });
+    });
+    return issues;
   }
   // ── END STABLE EXERCISE IDENTITY ─────────────────────────────────────────
 

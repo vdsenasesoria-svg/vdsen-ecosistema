@@ -12729,30 +12729,58 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
   return blocks.join('');
 }
 
-function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId) {
+// Normalize name for semantic comparison (cosmetic differences only)
+function _normName(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exerciseName) {
   if (week <= 1) return null;
   var prevWeek = week - 1;
   var sets = [];
   var confidence = 'LOW';
 
-  // HIGH confidence: search by prescriptionExerciseId across all log keys
+  // HIGH confidence: search by prescriptionExerciseId
   if (prescriptionExerciseId) {
     var prefix = 'log_'+prevWeek+'_';
+    var positions = {};
+    var candidateSets = [];
     Object.keys(LOGS).forEach(function(k) {
       if (k.indexOf(prefix) === 0 && LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled
           && LOGS[k].prescriptionExerciseId === prescriptionExerciseId) {
-        sets.push(LOGS[k]);
+        // Parse (di, ei) from key: log_{W}_{D}_{E}_s{S}
+        var parts = k.split('_');
+        if (parts.length >= 5) { positions[parts[2]+'_'+parts[3]] = true; }
+        candidateSets.push(LOGS[k]);
       }
     });
-    if (sets.length) { confidence = 'HIGH'; }
+    // Ambiguity: same prescriptionExerciseId on multiple (di,ei) → DUPLICATE_PRESCRIPTION_ID
+    if (candidateSets.length && Object.keys(positions).length > 1) {
+      return null; // corrupt identity — do not match silently
+    }
+    if (candidateSets.length) { sets = candidateSets; confidence = 'HIGH'; }
   }
 
-  // LOW confidence: legacy positional fallback
+  // LOW confidence: legacy positional fallback with name guard
   if (!sets.length) {
+    var legacySets = [];
     for (var s = 0; s < maxSets; s++) {
       var k = 'log_'+prevWeek+'_'+di+'_'+ei+'_s'+s;
-      if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) sets.push(LOGS[k]);
+      if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) legacySets.push(LOGS[k]);
     }
+    if (legacySets.length && exerciseName) {
+      // Name guard: if log has exerciseNameSnapshot, require exact normalized match
+      var logsWithSnap = legacySets.filter(function(s) { return s.exerciseNameSnapshot; });
+      if (logsWithSnap.length > 0) {
+        var normCur = _normName(exerciseName);
+        var normSnap = _normName(logsWithSnap[0].exerciseNameSnapshot);
+        if (normCur !== normSnap) {
+          return null; // name mismatch → NEW_EXERCISE_REFERENCE (no incorrect history)
+        }
+      }
+      // No snapshot in legacy logs: accept positional (legacy limitation)
+    }
+    sets = legacySets;
   }
 
   if (!sets.length) return null;
@@ -12861,7 +12889,7 @@ function calculateProgression(di, postData) {
     // add_sets, la condición numSets < maxSets era 4 < 4 = false → bloqueaba
     // cualquier progresión futura de volumen aunque el cliente estuviera en óptimas.
     var maxSets = _getMaxSets(catData, numSets);
-    var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId);
+    var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId, ej.exerciseName || ej.nombre || '');
 
     // Calcular reps target del plan — repsLow=límite inferior, repsTarget=límite superior del rango
     var repsLow = 8, repsTarget = 8;
@@ -13054,7 +13082,7 @@ function calculateProgression(di, postData) {
 
       // ── Detección de plateau: carga estancada 2+ semanas con ICS ≥ 8 ──
       if (prevWeek && CURRENT_WEEK >= 3) {
-        var prevPrev = _getPrevWeekData(CURRENT_WEEK - 1, di, ei, 8, ej.prescriptionExerciseId);
+        var prevPrev = _getPrevWeekData(CURRENT_WEEK - 1, di, ei, 8, ej.prescriptionExerciseId, ej.exerciseName || ej.nombre || '');
         if (prevPrev && prevPrev.avgLoad > 0) {
           var diffVsPrev = Math.abs(load - prevWeek.avgLoad);
           var diffVsPrev2 = Math.abs(prevWeek.avgLoad - prevPrev.avgLoad);
