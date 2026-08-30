@@ -1252,7 +1252,51 @@
     return { state: 'NO_DATA', reasons: [] };
   }
   window._computeClientAttentionState = _computeClientAttentionState;
-  // ── END FASE 7 helpers ─────────────────────────────────────────────────
+
+  // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
+  function _getLiveInfo(entries, planData) {
+    if (!entries) return null;
+    const LIVE_MS = 5 * 60 * 1000;
+    const now = Date.now();
+    let latestTs = 0, latestKey = null;
+    for (const k of Object.keys(entries)) {
+      if (!k.startsWith('log_')) continue;
+      const e = entries[k];
+      if (!e || !e.done || e.autoFilled) continue;
+      const ts = e.ts;
+      if (!ts) continue;
+      const t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+      if (!isNaN(t) && now - t < LIVE_MS && t > latestTs) { latestTs = t; latestKey = k; }
+    }
+    if (!latestKey) return null;
+    const m = latestKey.match(/^log_(\d+)_(\d+)_(\d+)_s\d+$/);
+    if (!m) return null;
+    const [,lw,ld,le] = m.map(Number);
+    let dayLabel = 'Día ' + (ld + 1);
+    let exerciseName = null;
+    if (planData && planData.days && planData.days[ld]) {
+      const day = planData.days[ld];
+      if (day.label) dayLabel = day.label;
+      const ex = day.exercises && day.exercises[le];
+      if (ex) exerciseName = ex.exerciseName || ex.nombre || null;
+    }
+    const prefix = 'log_' + lw + '_' + ld + '_';
+    let completedSets = 0;
+    for (const k2 of Object.keys(entries)) {
+      if (!k2.startsWith(prefix)) continue;
+      const e2 = entries[k2];
+      if (e2 && e2.done && !e2.autoFilled) completedSets++;
+    }
+    let totalSets = 0;
+    if (planData && planData.days && planData.days[ld]) {
+      (planData.days[ld].exercises || []).forEach(ex => {
+        totalSets += (ex.sets ? ex.sets.length : 0) || ex.numSeries || 3;
+      });
+    }
+    return { dayLabel, exerciseName, completedSets, totalSets };
+  }
+  window._getLiveInfo = _getLiveInfo;
+  // ── END FASE 8 helpers ─────────────────────────────────────────────────
 
   // Genera el mensaje WhatsApp según el tipo de alerta
   function buildWhatsAppMessage(client, alert, coach) {
@@ -1833,13 +1877,15 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const attn = _computeClientAttentionState(entries, planData, week);
           const alert = getClientAlert(c, logData, planData);
           if (alert) alerts.push({ id: c.id, name: c.displayName, alert });
-          return { c, logData, planData, entries, week, attn, alert };
+          const liveInfo = _getLiveInfo(entries, planData);
+          const live = !!liveInfo;
+          return { c, logData, planData, entries, week, attn, alert, live, liveInfo };
         });
 
-        // Sort: REVIEW > PROGRESSING > STABLE > NO_DATA; within group: alpha
+        // Sort: REVIEW > PROGRESSING > STABLE > NO_DATA; live bumps within tier; alpha tiebreak
         rowData.sort((a, b) => {
-          const pa = _ATTN_PRIORITY[a.attn.state] ?? 3;
-          const pb = _ATTN_PRIORITY[b.attn.state] ?? 3;
+          const pa = (_ATTN_PRIORITY[a.attn.state] ?? 3) * 2 - (a.live ? 1 : 0);
+          const pb = (_ATTN_PRIORITY[b.attn.state] ?? 3) * 2 - (b.live ? 1 : 0);
           if (pa !== pb) return pa - pb;
           return (a.c.displayName || a.c.email || '').localeCompare(b.c.displayName || b.c.email || '', 'es', { sensitivity: 'base' });
         });
@@ -1857,7 +1903,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         </div>`;
 
         // Build row HTML
-        const rows = rowData.map(({ c, logData, planData, entries, week, attn, alert }) => {
+        const rows = rowData.map(({ c, logData, planData, entries, week, attn, alert, live, liveInfo }) => {
           const totalWeeks = planData?.weeks || 6;
           const ci = entries['ci_sem_'+week] || {};
           let extraBadges = '';
@@ -1870,8 +1916,15 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const statusIcon = c.activePlanId
             ? (planData ? "✅" : '<span title="activePlanId referencia un plan eliminado" style="cursor:help">🔴</span>')
             : "⚠️";
-          const live = isClientLiveTraining(logData);
-          const liveBadge = `<span id="lv_${c.id}" class="text-[10px] ml-2 px-2 py-0.5 rounded" style="${live?'background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite':''}">${live?'● EN VIVO':''}</span>`;
+          // live / liveInfo already computed in rowData; build rich badge
+          let liveBadge = '';
+          if (live && liveInfo) {
+            const _ld = liveInfo.exerciseName ? ` · <span style="opacity:.8">${_escH(liveInfo.exerciseName)}</span>` : '';
+            const _ls = liveInfo.totalSets > 0 ? ` <span style="font-size:9px;color:#888">${liveInfo.completedSets}/${liveInfo.totalSets}s</span>` : '';
+            liveBadge = `<span id="lv_${c.id}" style="display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:800;background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite;padding:2px 7px;border-radius:4px;margin-left:6px">● EN VIVO${_ld}${_ls}</span>`;
+          } else {
+            liveBadge = `<span id="lv_${c.id}" style="display:inline"></span>`;
+          }
           const isDeload = week === totalWeeks;
           const weekColor = isDeload ? '#7ec0ff' : '#C4FF00';
           const weekBorder = isDeload ? 'rgba(126,192,255,.35)' : 'rgba(196,255,0,.35)';
@@ -1933,12 +1986,15 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             const el = document.getElementById('lv_' + id);
             if (!el) { clearInterval(window._liveTimer); return; }
             const d = window._clientCache[id];
-            const live = d && isClientLiveTraining(d.logs);
-            if (live) {
-              el.textContent = '● EN VIVO';
-              el.style.cssText = 'background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite;padding:2px 8px;border-radius:4px';
+            if (!d) return;
+            const li = _getLiveInfo(d.logs?.entries, d.plan);
+            if (li) {
+              const _ld = li.exerciseName ? ` · <span style="opacity:.8">${_escH(li.exerciseName)}</span>` : '';
+              const _ls = li.totalSets > 0 ? ` <span style="font-size:9px;color:#888">${li.completedSets}/${li.totalSets}s</span>` : '';
+              el.innerHTML = `● EN VIVO${_ld}${_ls}`;
+              el.style.cssText = 'display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:800;background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite;padding:2px 7px;border-radius:4px;margin-left:6px';
             } else {
-              el.textContent = ''; el.style.cssText = '';
+              el.innerHTML = ''; el.style.cssText = 'display:inline';
             }
           });
         }, 60000);

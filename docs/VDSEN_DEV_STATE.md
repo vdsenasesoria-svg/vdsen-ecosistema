@@ -11,9 +11,9 @@
 | FASE 7 rama | `claude/client-app-improvements-qayy4n` (pendiente merge) |
 | FASE 5 commit | `4a87e42` |
 | FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **296/296 PASS** (P01–P128) |
+| Suite tests | **331/331 PASS** (P01–P146) |
 | Vercel | producción en `2b6e927`; FASE 7 pendiente merge a main |
-| Siguiente fase | **FASE 7 — Coach Attention Monitor** (implementada, pendiente merge) |
+| Siguiente fase | **FASE 8 — Live Training + Session Dashboard** (implementada, pendiente merge) |
 
 ---
 
@@ -26,6 +26,33 @@
 - Semana final = MESOCYCLE_CHECKPOINT únicamente.
   Deload es reactivo y requiere ≥2 deloadTriggers.
   La semana final sola nunca dispara deload.
+
+### FASE 8 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Live Training + Client Session Dashboard**
+
+Archivos modificados:
+- `vdsen-coach.html` — `_getLiveInfo()` helper + enhanced live badge + live-aware sort
+- `vdsen-cliente.html` — `_calcSessionStats()` + `_fmtElapsed()` + `_statCell()` + session dashboard strip + session timer
+- `tests/progression-engine.test.js` — P129-P146 (18 tests nuevos)
+
+Funcionalidades añadidas:
+- `_getLiveInfo(entries, planData)` — 0 Firestore reads; mismo umbral 5 min que `isClientLiveTraining`; identifica día activo, ejercicio actual (via plan), sets completados/totales del día
+- Coach live badge: ahora muestra "● EN VIVO · [ejercicio] N/Ms" en lugar de solo "● EN VIVO"
+- Auto-refresh live timer actualizado para usar `_getLiveInfo` con `innerHTML` (no textContent)
+- Sort coach: live bump = `_ATTN_PRIORITY[state] * 2 - (live ? 1 : 0)`; REVIEW siempre domina
+- `_calcSessionStats(logs, di, week)` — completedSets, avgRIR (0-5), avgICS (1-10), sessionStart (min ts)
+- Session dashboard strip en Tab Entrenamiento (solo semana activa `CURRENT_WEEK === REAL_WEEK`)
+  - 4 celdas: Series N/Total · Tiempo mm:ss · RIR medio · ICS medio
+  - Tiempo: `setInterval` cada 1s, limpiado en re-render; derivado del primer ts real del día
+  - ICS coloreado: verde ≥8, dorado ≥7, rojo <7
+- XSS: `exerciseName` escapado con `_escH` en render del live badge (data layer retorna raw)
+
+Limitaciones documentadas:
+- Session start derivado del mínimo ts de logs reales del día; si recargas sin logs previos, timer empieza desde la primera serie guardada post-reload
+- Tiempo sesión no persiste en Firestore — no se añade campo nuevo (spec: no cambiar schema)
+- Live detection threshold 5 min: cliente sin actividad reciente aparece como no-live aunque esté en sesión
+
+---
 
 ### FASE 7 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
 **Coach Attention Monitor**
@@ -192,6 +219,7 @@ Rangos:
 - P88–P105: FASE 6 Performance History UX
 - P106–P109: FASE 6 self-review fixes
 - P110–P128: FASE 7 Coach Attention Monitor
+- P129–P146: FASE 8 Live Training + Session Dashboard
 
 ---
 

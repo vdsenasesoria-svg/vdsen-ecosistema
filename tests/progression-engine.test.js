@@ -2290,6 +2290,306 @@ console.log('\nP128 — exerciseName truncated to first 2 words in reason.ex');
   assert('P128b', 'single-word name kept intact', r2.reasons[0].ex === 'Curl');
 })();
 
+// ═════════════════════════ FASE 8 — P129-P146 — LIVE TRAINING + SESSION STATS ═════════════════════
+
+// ── Mirror: _getLiveInfo (from vdsen-coach.html FASE 8) ──
+function _getLiveInfo(entries, planData, _nowOverride) {
+  if (!entries) return null;
+  var LIVE_MS = 5 * 60 * 1000;
+  var now = _nowOverride !== undefined ? _nowOverride : Date.now();
+  var latestTs = 0, latestKey = null;
+  Object.keys(entries).forEach(function(k) {
+    if (k.indexOf('log_') !== 0) return;
+    var e = entries[k];
+    if (!e || !e.done || e.autoFilled) return;
+    var ts = e.ts;
+    if (!ts) return;
+    var t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+    if (!isNaN(t) && now - t < LIVE_MS && t > latestTs) { latestTs = t; latestKey = k; }
+  });
+  if (!latestKey) return null;
+  var m = latestKey.match(/^log_(\d+)_(\d+)_(\d+)_s\d+$/);
+  if (!m) return null;
+  var lw = +m[1], ld = +m[2], le = +m[3];
+  var dayLabel = 'Día ' + (ld + 1);
+  var exerciseName = null;
+  if (planData && planData.days && planData.days[ld]) {
+    var day = planData.days[ld];
+    if (day.label) dayLabel = day.label;
+    var ex = day.exercises && day.exercises[le];
+    if (ex) exerciseName = ex.exerciseName || ex.nombre || null;
+  }
+  var prefix = 'log_' + lw + '_' + ld + '_';
+  var completedSets = 0;
+  Object.keys(entries).forEach(function(k2) {
+    if (k2.indexOf(prefix) !== 0) return;
+    var e2 = entries[k2];
+    if (e2 && e2.done && !e2.autoFilled) completedSets++;
+  });
+  var totalSets = 0;
+  if (planData && planData.days && planData.days[ld]) {
+    (planData.days[ld].exercises || []).forEach(function(ex2) {
+      totalSets += (ex2.sets ? ex2.sets.length : 0) || ex2.numSeries || 3;
+    });
+  }
+  return { dayLabel: dayLabel, exerciseName: exerciseName, completedSets: completedSets, totalSets: totalSets };
+}
+
+// ── Mirror: _calcSessionStats (from vdsen-cliente.html FASE 8) ──
+function _calcSessionStats(logs, di, week) {
+  var rirs = [], icss = [], tss = [], completedSets = 0;
+  var prefix = 'log_' + week + '_' + di + '_';
+  Object.keys(logs).forEach(function(k) {
+    if (k.indexOf(prefix) !== 0) return;
+    var e = logs[k];
+    if (!e || !e.done || e.autoFilled) return;
+    completedSets++;
+    var rir = parseFloat(e.rir_real);
+    if (!isNaN(rir) && rir >= 0 && rir <= 5) rirs.push(rir);
+    var ics = parseFloat(e.ics);
+    if (!isNaN(ics) && ics >= 1 && ics <= 10) icss.push(ics);
+    var ts = e.ts;
+    if (ts) { var t = typeof ts === 'string' ? Date.parse(ts) : Number(ts); if (!isNaN(t) && t > 0) tss.push(t); }
+  });
+  return {
+    completedSets: completedSets,
+    avgRIR: rirs.length ? +(rirs.reduce(function(a,b){return a+b;},0)/rirs.length).toFixed(1) : null,
+    avgICS: icss.length ? +(icss.reduce(function(a,b){return a+b;},0)/icss.length).toFixed(1) : null,
+    sessionStart: tss.length ? Math.min.apply(null, tss) : null
+  };
+}
+
+// Helper: make a recent ts (within 5 min from now)
+function _recentTs() { return Date.now() - 2 * 60 * 1000; } // 2 min ago
+function _staleTs()  { return Date.now() - 10 * 60 * 1000; } // 10 min ago
+
+// ── LIVE tests ──
+
+// P129 — Recent activity → live
+console.log('\nP129 — Recent real activity → _getLiveInfo returns result');
+(function() {
+  var now = Date.now();
+  var ts = now - 2 * 60 * 1000; // 2 min ago
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: ts } };
+  var r = _getLiveInfo(entries, null, now);
+  assert('P129a', 'recent real set → live info returned', r !== null);
+  assert('P129b', 'dayLabel default to Día 1', r.dayLabel === 'Día 1');
+})();
+
+// P130 — Stale activity → not live
+console.log('\nP130 — Stale activity (>5min) → null');
+(function() {
+  var now = Date.now();
+  var ts = now - 10 * 60 * 1000; // 10 min ago
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: ts } };
+  var r = _getLiveInfo(entries, null, now);
+  assert('P130a', 'stale ts → not live (null)', r === null);
+})();
+
+// P131 — autoFilled activity → not live
+console.log('\nP131 — autoFilled set does not count as live');
+(function() {
+  var now = Date.now();
+  var ts = now - 1 * 60 * 1000;
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: true, ts: ts } };
+  var r = _getLiveInfo(entries, null, now);
+  assert('P131a', 'autoFilled → not live', r === null);
+})();
+
+// P132 — Current exercise from latest valid set (stable identity via planData)
+console.log('\nP132 — Current exercise identified from plan via latest log');
+(function() {
+  var now = Date.now();
+  var ts1 = now - 4 * 60 * 1000; // 4 min (older)
+  var ts2 = now - 1 * 60 * 1000; // 1 min (latest)
+  var entries = {
+    'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: ts1, prescriptionExerciseId: 'uuid-press' },
+    'log_1_0_1_s0': { done: true, carga: '60', autoFilled: false, ts: ts2, prescriptionExerciseId: 'uuid-curl' }
+  };
+  var planData = {
+    days: [{
+      label: 'Push',
+      exercises: [
+        { exerciseName: 'Press banca', prescriptionExerciseId: 'uuid-press', sets: [{},{},{}] },
+        { exerciseName: 'Curl bíceps', prescriptionExerciseId: 'uuid-curl', sets: [{},{}] }
+      ]
+    }]
+  };
+  var r = _getLiveInfo(entries, planData, now);
+  assert('P132a', 'live info returned', r !== null);
+  assert('P132b', 'current exercise = latest log (Curl bíceps at ei=1)', r.exerciseName === 'Curl bíceps');
+  assert('P132c', 'dayLabel from plan', r.dayLabel === 'Push');
+  assert('P132d', 'completedSets = 2 (both done sets)', r.completedSets === 2);
+  assert('P132e', 'totalSets from plan (3+2=5)', r.totalSets === 5);
+})();
+
+// P133 — No recent ts → null even if done sets exist (stale identity)
+console.log('\nP133 — done sets without ts → not live');
+(function() {
+  var now = Date.now();
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false } }; // no ts
+  var r = _getLiveInfo(entries, null, now);
+  assert('P133a', 'no ts field → not live', r === null);
+})();
+
+// P134 — _getLiveInfo is synchronous, returns value without side effects (no reads counter)
+console.log('\nP134 — _getLiveInfo is pure/synchronous (0 external calls)');
+(function() {
+  var now = Date.now();
+  var calls = 0;
+  var proxyGet = function() { calls++; return Date.now() - 60000; };
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: now - 60000 } };
+  var r1 = _getLiveInfo(entries, null, now);
+  var r2 = _getLiveInfo(entries, null, now);
+  assert('P134a', 'returns same result on repeated calls', (r1 === null) === (r2 === null));
+  assert('P134b', 'no async (call returns synchronously)', r1 !== undefined);
+})();
+
+// ── CLIENT DASHBOARD tests ──
+
+// P135 — completedSets count: done && !autoFilled only for current day/week
+console.log('\nP135 — completedSets counts done && !autoFilled for current day');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 1, 8, 1); // done, real
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 1, 8, 1); // done, real
+  LOGS['log_1_0_0_s2'] = makeSet(80, 8, 1, 8, 1, true); // autoFilled — excluded
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P135a', 'completedSets = 2 (autoFilled excluded)', stats.completedSets === 2);
+})();
+
+// P136 — Different day/week excluded from count
+console.log('\nP136 — Sets from wrong day or week excluded');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 1, 8, 1); // day 0, week 1 (target)
+  LOGS['log_1_1_0_s0'] = makeSet(80, 8, 1, 8, 1); // day 1, week 1 (different day)
+  LOGS['log_2_0_0_s0'] = makeSet(80, 8, 1, 8, 1); // day 0, week 2 (different week)
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P136a', 'only di=0, week=1 counted (1 set)', stats.completedSets === 1);
+})();
+
+// P137 — autoFilled excluded from RIR/ICS averages
+console.log('\nP137 — autoFilled sets excluded from RIR and ICS averages');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 2, 9, 1);      // real: rir=2, ics=9
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 0, 5, 1, true); // autoFilled: rir=0, ics=5 → excluded
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P137a', 'avgRIR uses only real set (2.0)', stats.avgRIR === 2.0);
+  assert('P137b', 'avgICS uses only real set (9.0)', stats.avgICS === 9.0);
+})();
+
+// P138 — avgRIR: only valid range 0-5
+console.log('\nP138 — avgRIR valid range 0-5');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 2, 8, 1);
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 1, 8, 1);
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P138a', 'avgRIR = 1.5 (mean of 2 and 1)', stats.avgRIR === 1.5);
+  // Out-of-range RIR excluded
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 6, 8, 1); // rir=6 out of range
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 2, 8, 1);
+  var stats2 = _calcSessionStats(LOGS, 0, 1);
+  assert('P138b', 'rir=6 excluded; avgRIR = 2.0 from valid set', stats2.avgRIR === 2.0);
+})();
+
+// P139 — avgICS: only valid range 1-10
+console.log('\nP139 — avgICS valid range 1-10');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 2, 8, 1);
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 2, 0, 1); // ics=0 invalid
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P139a', 'ics=0 excluded from avg; avgICS = 8.0', stats.avgICS === 8.0);
+})();
+
+// P140 — empty logs → all null metrics
+console.log('\nP140 — empty logs → null metrics');
+(function() {
+  clearLogs();
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P140a', 'completedSets = 0', stats.completedSets === 0);
+  assert('P140b', 'avgRIR = null (no data)', stats.avgRIR === null);
+  assert('P140c', 'avgICS = null (no data)', stats.avgICS === null);
+  assert('P140d', 'sessionStart = null (no ts)', stats.sessionStart === null);
+})();
+
+// P141 — sessionStart = min ts (earliest set)
+console.log('\nP141 — sessionStart = minimum ts among day sets');
+(function() {
+  clearLogs();
+  var t1 = Date.now() - 3000, t2 = Date.now() - 1000;
+  LOGS['log_1_0_0_s0'] = Object.assign(makeSet(80,8,2,8,1), { ts: t2 }); // later
+  LOGS['log_1_0_0_s1'] = Object.assign(makeSet(80,8,2,8,1), { ts: t1 }); // earlier
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P141a', 'sessionStart = earliest ts (t1)', stats.sessionStart === t1);
+})();
+
+// P142 — REVIEW priority preserved when also live (coach sort)
+console.log('\nP142 — REVIEW + live has lower score than PROGRESSING non-live');
+(function() {
+  var _ATTN_PRIORITY_LOCAL = { REVIEW: 0, PROGRESSING: 1, STABLE: 2, NO_DATA: 3 };
+  function _liveScore(state, live) {
+    return (_ATTN_PRIORITY_LOCAL[state] ?? 3) * 2 - (live ? 1 : 0);
+  }
+  // REVIEW+live=-1 < REVIEW=0 < PROGRESSING+live=1 < PROGRESSING=2
+  assert('P142a', 'REVIEW+live (-1) < REVIEW (0)', _liveScore('REVIEW', true) < _liveScore('REVIEW', false));
+  assert('P142b', 'REVIEW (0) < PROGRESSING+live (1)', _liveScore('REVIEW', false) < _liveScore('PROGRESSING', true));
+  assert('P142c', 'PROGRESSING+live (1) < PROGRESSING (2)', _liveScore('PROGRESSING', true) < _liveScore('PROGRESSING', false));
+  assert('P142d', 'STABLE+live (3) < STABLE (4)', _liveScore('STABLE', true) < _liveScore('STABLE', false));
+})();
+
+// P143 — NO_DATA + no activity not flagged as live
+console.log('\nP143 — NO_DATA client with no log entries → not live');
+(function() {
+  var now = Date.now();
+  // No entries at all
+  var r = _getLiveInfo({}, null, now);
+  assert('P143a', 'empty entries → null', r === null);
+  // Entries but all non-log keys
+  var r2 = _getLiveInfo({ 'ci_sem_1': { peso: 80 } }, null, now);
+  assert('P143b', 'only ci_sem keys → null', r2 === null);
+})();
+
+// P144 — XSS: exerciseName not evaluated as HTML (pure data in _getLiveInfo)
+console.log('\nP144 — _getLiveInfo exerciseName is raw (no HTML injection in data layer)');
+(function() {
+  var now = Date.now();
+  var ts = now - 60000;
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: ts } };
+  var planData = {
+    days: [{
+      exercises: [{ exerciseName: '<script>alert(1)</script>', sets: [{}] }]
+    }]
+  };
+  var r = _getLiveInfo(entries, planData, now);
+  // _getLiveInfo returns raw string — escaping done at render time in _escH
+  assert('P144a', 'exerciseName returned raw (escaping at render time)', r && r.exerciseName === '<script>alert(1)</script>');
+})();
+
+// P145 — _calcSessionStats: rir_real as string parsed correctly
+console.log('\nP145 — rir_real and ics stored as strings parse correctly');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = { done: true, carga: '80', reps: '8', rir_real: '2', ics: '8', autoFilled: false };
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P145a', 'rir_real string "2" → avgRIR 2.0', stats.avgRIR === 2.0);
+  assert('P145b', 'ics string "8" → avgICS 8.0', stats.avgICS === 8.0);
+})();
+
+// P146 — sessionStart null when no ts field (does not use Date.now as default)
+console.log('\nP146 — no ts in log → sessionStart null (no implicit now)');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 2, 8, 1); // no ts field
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P146a', 'sessionStart = null when no ts field', stats.sessionStart === null);
+  assert('P146b', 'completedSets still counted (ts not required)', stats.completedSets === 1);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

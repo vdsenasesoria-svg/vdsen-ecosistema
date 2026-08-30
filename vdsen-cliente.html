@@ -6051,8 +6051,49 @@ function applyExSub(di, ei, newNombre, originalNombre) {
   showToast('🔄 Ejercicio cambiado'+(nota?' · nota guardada':''));
 }
 
+// FASE 8 — Session dashboard helpers
+function _fmtElapsed(startMs) {
+  if (!startMs) return '--:--';
+  var elapsed = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+  var h = Math.floor(elapsed / 3600), m = Math.floor((elapsed % 3600) / 60), s = elapsed % 60;
+  if (h > 0) return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+function _statCell(value, label, color) {
+  return '<div style="text-align:center;padding:5px 2px;background:rgba(107,107,102,.06);border-radius:6px">' +
+    '<div style="font-size:17px;font-weight:900;color:' + color + ';font-variant-numeric:tabular-nums;line-height:1.1">' + value + '</div>' +
+    '<div style="font-size:8px;letter-spacing:.8px;color:var(--mt);text-transform:uppercase;margin-top:2px">' + label + '</div>' +
+    '</div>';
+}
+// Returns { completedSets, avgRIR, avgICS, sessionStart }
+// done && !autoFilled only; RIR 0-5; ICS 1-10
+function _calcSessionStats(logs, di, week) {
+  var rirs = [], icss = [], tss = [], completedSets = 0;
+  var prefix = 'log_' + week + '_' + di + '_';
+  Object.keys(logs).forEach(function(k) {
+    if (k.indexOf(prefix) !== 0) return;
+    var e = logs[k];
+    if (!e || !e.done || e.autoFilled) return;
+    completedSets++;
+    var rir = parseFloat(e.rir_real);
+    if (!isNaN(rir) && rir >= 0 && rir <= 5) rirs.push(rir);
+    var ics = parseFloat(e.ics);
+    if (!isNaN(ics) && ics >= 1 && ics <= 10) icss.push(ics);
+    var ts = e.ts;
+    if (ts) { var t = typeof ts === 'string' ? Date.parse(ts) : Number(ts); if (!isNaN(t) && t > 0) tss.push(t); }
+  });
+  return {
+    completedSets: completedSets,
+    avgRIR: rirs.length ? +(rirs.reduce(function(a,b){return a+b;},0)/rirs.length).toFixed(1) : null,
+    avgICS: icss.length ? +(icss.reduce(function(a,b){return a+b;},0)/icss.length).toFixed(1) : null,
+    sessionStart: tss.length ? Math.min.apply(null, tss) : null
+  };
+}
+
 function renderEntrenamiento() {
   if (!PLAN || !PLAN.entrenamiento) return;
+  // Clear session timer before re-render
+  if (window._sesTimerInterval) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; }
   var cont = document.getElementById('tabEntr');
   var sesiones = getSesiones();
 
@@ -6341,6 +6382,29 @@ function renderEntrenamiento() {
 
   // Volumen por sesión: no se alerta al cliente (el plan ya está calculado por el coach)
 
+  // Session dashboard stats (FASE 8) — only in active week, not past/future view
+  var sessionStatsHtml = '';
+  if (CURRENT_WEEK === REAL_WEEK) {
+    var _sesStats = _calcSessionStats(LOGS, DIA_ACTIVO, CURRENT_WEEK);
+    var _sesTotSets = 0;
+    ejercicios.forEach(function(ej, _ei) {
+      if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
+      var _exMod = LOGS['exmod_' + CURRENT_WEEK + '_' + DIA_ACTIVO + '_' + _ei] || {};
+      _sesTotSets += _exMod.numSeries ? (parseInt(_exMod.numSeries) || 0) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+    });
+    var _sesRIR = _sesStats.avgRIR !== null ? _sesStats.avgRIR : null;
+    var _sesICS = _sesStats.avgICS !== null ? _sesStats.avgICS : null;
+    var _icsColor = _sesICS !== null ? (_sesICS >= 8 ? 'var(--grn)' : _sesICS >= 7 ? 'var(--gold)' : 'var(--red)') : 'var(--mt)';
+    window._sesTimerStart = _sesStats.sessionStart;
+    sessionStatsHtml =
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:6px 12px 8px;background:rgba(0,0,0,.10)">' +
+      _statCell(_sesStats.completedSets + '/' + _sesTotSets, 'series', 'var(--tx)') +
+      _statCell('<span id="_sesTime">' + _fmtElapsed(_sesStats.sessionStart) + '</span>', 'tiempo', 'var(--tx)') +
+      _statCell(_sesRIR !== null ? _sesRIR : '—', 'rir medio', 'var(--tx)') +
+      _statCell(_sesICS !== null ? _sesICS : '—', 'ics medio', _icsColor) +
+      '</div>';
+  }
+
   cont.innerHTML =
     // Semana activa — header prominente
     weekHeaderHtml+
@@ -6372,6 +6436,8 @@ function renderEntrenamiento() {
           (CURRENT_WEEK > 1 ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Copia los datos de la semana anterior en todos los sets y marca la sesión como completada" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ Copiar sem. anterior</button>' : '') +
           '</div>')+
     '</div>'+
+    // Session dashboard stats (FASE 8)
+    sessionStatsHtml+
     // Glosario RIR + ICS (colapsable)
     '<details style="margin:0 16px 8px;background:rgba(107,107,102,.04);border:1px solid rgba(107,107,102,.18);border-radius:10px;padding:8px 12px">'+
       '<summary style="cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.5px;display:flex;align-items:center;gap:6px">'+
@@ -6456,6 +6522,15 @@ function renderEntrenamiento() {
       '<span id="timerPillNum" style="font-size:22px;font-weight:800;color:var(--accent);font-family:monospace;letter-spacing:1px">—</span>'+
       '<span style="font-size:11px;color:var(--mt);font-weight:600">Toca para ver</span>'+
     '</div>';
+  // Session timer live update
+  if (window._sesTimerStart) {
+    function _updateSesTimer() {
+      var el = document.getElementById('_sesTime');
+      if (!el) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; return; }
+      el.textContent = _fmtElapsed(window._sesTimerStart);
+    }
+    window._sesTimerInterval = setInterval(_updateSesTimer, 1000);
+  }
   if (_restEndMs && _restEndMs > Date.now()) {
     setTimeout(function(){_updateRestRing();},50);
   }
