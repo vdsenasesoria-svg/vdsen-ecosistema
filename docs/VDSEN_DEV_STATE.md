@@ -21,7 +21,9 @@
 - Máquina de estados de workout en `vdsen-cliente.html`
 - Algoritmo progresión v3.1 completo
 - Check-in post-sesión + semanal
-- Deload automático semana 6
+- Semana final = MESOCYCLE_CHECKPOINT únicamente.
+  Deload es reactivo y requiere ≥2 deloadTriggers.
+  La semana final sola nunca dispara deload.
 
 ### FASE 6 (en rama, self-review completado)
 **Performance History UX + Next Exposure**
@@ -83,8 +85,21 @@ rir_error = avgRIR - rirObj
 ### Exclusiones del motor (CONGELADO)
 - `autoFilled: true` → excluido de historial y observationsCount
 - Una exposición mala ≠ regresión (requiere 3 consecutivas)
-- NO `add_sets` automático (solo el coach lo ordena)
 - NO recalcular progrec en path de historial (consume el ya existente)
+
+### Program Mutation (CONGELADO)
+- `add_sets` = recommendation only — nunca muta el plan activo
+- `deload` = recommendation only — nunca muta el plan activo
+- `reduce_sets` = renderer/session-local only (no persiste)
+- Progression Engine nunca persiste cambios automáticos de volumen/frecuencia al plan activo
+
+### Load Sources
+```
+A  plan.sets[].load     → placeholder / prescripción técnica
+B  LOGS.carga           → carga real ejecutada
+C  progrec.newLoad      → sugerencia de próxima exposición
+```
+Nunca mezclar A, B, C. Cada fuente tiene semántica independiente.
 
 ### Colecciones Firestore (NO cambiar)
 - Sin nuevas colecciones
@@ -92,19 +107,35 @@ rir_error = avgRIR - rirObj
 - `activePlanId` intocable
 - `logs/{uid}` — doc único por cliente
 
+### Arquitectura
+- **SINGLE-COACH permanente.**
+  No diseñar multicoach / workspaces / transfers salvo instrucción explícita.
+
 ---
 
 ## Backlog ordenado (NO implementar sin autorización)
 
 ```
-A. Deload semana 5 opcional (coach-configurable threshold)
-B. Check-in semanal mejorado (HRV integración manual)
-C. Sustitución de ejercicio en sesión activa (sin perder historial)
-D. Exportar logs como CSV desde panel coach
-E. Notificaciones push (Firestore → FCM) para nuevo plan disponible
-F. Editor de plan drag-and-drop (reordenar días/ejercicios)
-G. Foto-progreso del cliente (Storage bucket separado)
+A. Coach Attention Monitor
+B. Live Training indicator
+C. Client Session Dashboard
+D. Contextual Rest Timer
+E. Check-in / body-history UX
+F. Active-session exercise substitution (sin perder historial)
+G. CSV logs export
+H. Push notifications
+I. Plan editor drag-and-drop
+J. Photo progress
 ```
+
+---
+
+## Deuda técnica
+
+**P1 FUTURE — logs/{uid} crecimiento de documento único**
+`logs/{uid}.entries` crece en un documento Firestore único sin límite.
+No migrar ahora — sin impacto operativo en volúmenes actuales.
+Futuro: session/checkin subcollections con migración versionada y flag de versión.
 
 ---
 
@@ -126,10 +157,10 @@ node tests/progression-engine.test.js
 ```
 
 Rangos:
-- P01–P60: motor de progresión (algoritmo core, RIR, ICS, pump, deload)
-- P61–P87: casos edge (Y3T, FST7, autoFilled, prevWeekData, volumen)
-- P88–P105: FASE 6 baseline (historia, identidad, navegación semana, coach)
-- P106–P109: self-review bug fixes (orden sets, unidad, stale progrec, XSS)
+- P01–P60: Progression core / RIR / deload / safeguards
+- P61–P87: Stable Exercise Identity + legacy/history hardening + consistency tests
+- P88–P105: FASE 6 Performance History UX
+- P106–P109: FASE 6 self-review fixes
 
 ---
 
