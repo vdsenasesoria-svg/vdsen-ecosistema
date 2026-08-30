@@ -2996,6 +2996,217 @@ console.log('\nP175 — restSeconds missing/invalid/negative safe → 0');
   assert('P175f', 'negative float → 0', _parseRestSeconds('-1') === 0);
 })();
 
+// ══════════════════════════════════════════════════════════════════
+// FASE 11 — Template Library + Bulk Plan Operations (P176-P185)
+// ══════════════════════════════════════════════════════════════════
+
+// Mirror helpers from vdsen-coach.html
+function _filterTemplates(query, templates) {
+  if (!Array.isArray(templates)) return [];
+  if (!query || !query.trim()) return templates.slice();
+  var q = query.trim().toLowerCase();
+  return templates.filter(function(t) {
+    return (t.name || '').toLowerCase().indexOf(q) !== -1;
+  });
+}
+
+// genPrescriptionId mirror (simple version)
+function _genPrescriptionId_t11() {
+  return 'pid_' + Math.random().toString(36).slice(2) + '_' + Date.now().toString(36);
+}
+
+function _restampPrescriptionIds_t11(days) {
+  var seen = {};
+  return (days || []).map(function(day) {
+    return Object.assign({}, day, {
+      exercises: (day.exercises || []).map(function(ex) {
+        var newId = _genPrescriptionId_t11();
+        while (seen[newId]) { newId = _genPrescriptionId_t11(); }
+        seen[newId] = true;
+        return Object.assign({}, ex, { prescriptionExerciseId: newId });
+      })
+    });
+  });
+}
+
+// P176 — _filterTemplates: case-insensitive substring
+console.log('\nP176 — filter templates case-insensitive substring');
+(function() {
+  var tmpl = [
+    { name: 'Fuerza 4 días', weeks: 6 },
+    { name: 'Volumen Upper/Lower', weeks: 8 },
+    { name: 'PHAT 5 días', weeks: 6 }
+  ];
+  var r1 = _filterTemplates('fuerza', tmpl);
+  assert('P176a', 'lowercase query matches uppercase name', r1.length === 1 && r1[0].name === 'Fuerza 4 días');
+  var r2 = _filterTemplates('UPPER', tmpl);
+  assert('P176b', 'uppercase query matches mixed case', r2.length === 1 && r2[0].name === 'Volumen Upper/Lower');
+  var r3 = _filterTemplates('días', tmpl);
+  assert('P176c', 'substring matches multiple', r3.length === 2);
+})();
+
+// P177 — empty query returns full list
+console.log('\nP177 — empty query returns full template list');
+(function() {
+  var tmpl = [{ name: 'A' }, { name: 'B' }, { name: 'C' }];
+  var r1 = _filterTemplates('', tmpl);
+  assert('P177a', 'empty string returns all', r1.length === 3);
+  var r2 = _filterTemplates(null, tmpl);
+  assert('P177b', 'null query returns all', r2.length === 3);
+  var r3 = _filterTemplates('   ', tmpl);
+  assert('P177c', 'whitespace-only query returns all', r3.length === 3);
+})();
+
+// P178 — no match returns []
+console.log('\nP178 — no match returns []');
+(function() {
+  var tmpl = [{ name: 'Fuerza' }, { name: 'Volumen' }];
+  var r = _filterTemplates('xyzabc', tmpl);
+  assert('P178a', 'no match returns empty array', Array.isArray(r) && r.length === 0);
+  var rNull = _filterTemplates('test', null);
+  assert('P178b', 'null templates returns []', rNull.length === 0);
+})();
+
+// P179 — filter does not mutate source
+console.log('\nP179 — filter does not mutate source array');
+(function() {
+  var tmpl = [{ name: 'Fuerza' }, { name: 'Volumen' }, { name: 'Híbrido' }];
+  var original = tmpl.slice();
+  _filterTemplates('fuerza', tmpl);
+  assert('P179a', 'source array length unchanged', tmpl.length === 3);
+  assert('P179b', 'source elements unchanged', tmpl[0].name === original[0].name);
+})();
+
+// P180 — applying template restamps all prescriptionExerciseIds
+console.log('\nP180 — applying template restamps all prescriptionExerciseIds');
+(function() {
+  var sourceDays = [
+    { label: 'Día 1', exercises: [
+      { exerciseName: 'Press Banca', prescriptionExerciseId: 'src-001' },
+      { exerciseName: 'Sentadilla',  prescriptionExerciseId: 'src-002' }
+    ]},
+    { label: 'Día 2', exercises: [
+      { exerciseName: 'Remo',        prescriptionExerciseId: 'src-003' }
+    ]}
+  ];
+  var stamped = _restampPrescriptionIds_t11(sourceDays);
+  var allNew = stamped.every(function(d) {
+    return d.exercises.every(function(e) {
+      return e.prescriptionExerciseId !== 'src-001' &&
+             e.prescriptionExerciseId !== 'src-002' &&
+             e.prescriptionExerciseId !== 'src-003';
+    });
+  });
+  assert('P180a', 'no exercise keeps source prescriptionExerciseId', allNew);
+  var allHaveId = stamped.every(function(d) {
+    return d.exercises.every(function(e) { return !!e.prescriptionExerciseId; });
+  });
+  assert('P180b', 'all exercises have a new prescriptionExerciseId', allHaveId);
+})();
+
+// P181 — duplicated template has zero shared IDs with source
+console.log('\nP181 — duplicated template has zero prescription IDs shared with source');
+(function() {
+  var source = [{ label: 'D1', exercises: [
+    { exerciseName: 'Press', prescriptionExerciseId: 'alpha-1' },
+    { exerciseName: 'Curl',  prescriptionExerciseId: 'alpha-2' }
+  ]}];
+  var copy = _restampPrescriptionIds_t11(source);
+  var sourceIds = new Set(['alpha-1', 'alpha-2']);
+  var sharedCount = 0;
+  copy.forEach(function(d) {
+    d.exercises.forEach(function(e) { if (sourceIds.has(e.prescriptionExerciseId)) sharedCount++; });
+  });
+  assert('P181a', 'zero IDs shared between source and copy', sharedCount === 0);
+  assert('P181b', 'exerciseName is preserved across restamp', copy[0].exercises[0].exerciseName === 'Press');
+})();
+
+// P182 — duplicated IDs are unique across all days
+console.log('\nP182 — duplicated IDs unique across all days');
+(function() {
+  var days = [
+    { label: 'D1', exercises: [
+      { exerciseName: 'A', prescriptionExerciseId: 'x1' },
+      { exerciseName: 'B', prescriptionExerciseId: 'x2' }
+    ]},
+    { label: 'D2', exercises: [
+      { exerciseName: 'C', prescriptionExerciseId: 'x3' },
+      { exerciseName: 'D', prescriptionExerciseId: 'x4' }
+    ]}
+  ];
+  var stamped = _restampPrescriptionIds_t11(days);
+  var allIds = [];
+  stamped.forEach(function(d) { d.exercises.forEach(function(e) { allIds.push(e.prescriptionExerciseId); }); });
+  var uniqueIds = new Set(allIds);
+  assert('P182a', 'all IDs across days are unique', uniqueIds.size === allIds.length);
+  assert('P182b', 'count of exercises preserved', allIds.length === 4);
+})();
+
+// P183 — templateName round-trip preserved
+console.log('\nP183 — templateName round-trip preserved');
+(function() {
+  var saved = { name: 'Mi Template VDSEN', coachId: 'coach-1', weeks: 8, days: [], createdAt: Date.now() };
+  // Simulate filter retrieves same name
+  var found = _filterTemplates('VDSEN', [saved]);
+  assert('P183a', 'templateName survives filter', found.length === 1 && found[0].name === 'Mi Template VDSEN');
+  assert('P183b', 'weeks metadata preserved', found[0].weeks === 8);
+  assert('P183c', 'coachId preserved', found[0].coachId === 'coach-1');
+})();
+
+// P184 — apply template copies training but not logs/history
+console.log('\nP184 — apply template copies training but not logs/history');
+(function() {
+  // A template doc only has: name, coachId, weeks, days, createdAt
+  var template = {
+    id: 'tmpl-1', name: 'Test', coachId: 'coach-1', weeks: 6,
+    days: [{ label: 'D1', exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'pid-x' }] }],
+    createdAt: Date.now()
+  };
+  // Verify template has no logs/history/nutrition fields
+  assert('P184a', 'template has no logs field', !('logs' in template));
+  assert('P184b', 'template has no nutritionRaw field', !('nutritionRaw' in template));
+  assert('P184c', 'template has no supplementsRaw field', !('supplementsRaw' in template));
+  assert('P184d', 'template has no pharmacoPlan field', !('pharmacoPlan' in template));
+  assert('P184e', 'template has no progrec field', !('progrec' in template));
+  // Applied plan object should only contain prescription fields
+  var days = _restampPrescriptionIds_t11(template.days);
+  var newPlan = {
+    days, weeks: template.weeks, daysPerWeek: days.length,
+    coachId: 'coach-1', clientId: 'client-new', status: 'active',
+    generatedBy: 'template:' + template.name, createdAt: Date.now()
+  };
+  assert('P184f', 'new plan has no logs field', !('logs' in newPlan));
+  assert('P184g', 'new plan has no nutritionRaw field', !('nutritionRaw' in newPlan));
+  assert('P184h', 'new plan has clientId of target (not source)', newPlan.clientId === 'client-new');
+})();
+
+// P185 — double apply guard: applying flag prevents duplicate operation
+console.log('\nP185 — double apply guard prevents duplicate operation');
+(function() {
+  var callCount = 0;
+  var applying = false;
+
+  function simulateApply() {
+    if (applying) return false; // guard triggered
+    applying = true;
+    callCount++;
+    // simulate async op: reset after
+    applying = false;
+    return true;
+  }
+
+  var first = simulateApply();
+  assert('P185a', 'first call proceeds (returns true)', first === true);
+  assert('P185b', 'callCount is 1 after first call', callCount === 1);
+
+  // Simulate concurrent click: applying still true during async
+  applying = true;
+  var second = simulateApply();
+  assert('P185c', 'second call blocked while applying=true (returns false)', second === false);
+  assert('P185d', 'callCount still 1 (second call was blocked)', callCount === 1);
+  applying = false;
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

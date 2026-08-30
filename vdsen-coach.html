@@ -9262,6 +9262,7 @@ El esfuerzo no es negociable.
         <button onclick="duplicatePlan('${clientId}','${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">📋 Duplicar</button>
         <button onclick="duplicatePlanToClient('${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">👥 Copiar a otro</button>
         <button onclick="_saveCurrentPlanAsTemplate('${c.activePlanId}')" class="text-xs underline mr-3" style="color:#C4FF00">⭐ Template</button>
+        <button onclick="openPlanTemplateLibrary('${clientId}')" class="text-xs underline mr-3" style="color:#88ccff">📚 Biblioteca</button>
         <button onclick="exportActivePlanJSON('${clientId}','${c.activePlanId}')" class="text-[#F4F4F0] text-xs underline mr-3">📥 JSON</button>
         <button onclick="exportActivePlanTXT('${clientId}','${c.activePlanId}')" class="text-[#F4F4F0] text-xs underline mr-3">📝 TXT</button>
         <button onclick="viewClientReportHTML('${clientId}')" class="text-[#F4F4F0] text-xs underline mr-3">📖 Reporte</button>
@@ -9924,6 +9925,166 @@ El esfuerzo no es negociable.
     } catch(e) { showToast('Error: '+e.message, true); }
   }
   window._saveCurrentPlanAsTemplate = _saveCurrentPlanAsTemplate;
+
+  // FASE 11 — Helper puro: filtrado local de templates (testable)
+  function _filterTemplates(query, templates) {
+    if (!Array.isArray(templates)) return [];
+    if (!query || !query.trim()) return templates.slice();
+    var q = query.trim().toLowerCase();
+    return templates.filter(function(t) {
+      return (t.name || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+  window._filterTemplates = _filterTemplates;
+
+  // FASE 11 — Aplica template al cliente activo: restamp IDs, crea plan, actualiza activePlanId
+  async function _applyTemplateToClient(template, clientId, closeModal) {
+    var days = (template.days || []).map(function(d, di) {
+      return {
+        dayIndex: di,
+        label: d.label || ('Día ' + (di + 1)),
+        exercises: (d.exercises || []).map(function(e) {
+          return typeof e === 'string' ? _parseTemplateExercise(e) : e;
+        })
+      };
+    });
+    // Restamp: todos los IDs son nuevos, sin herencia del template
+    days = _restampPrescriptionIds(days);
+    // Crear plan primero; solo asignar activePlanId si el create tiene éxito
+    const planRef = await addDoc(collection(db, 'plans'), {
+      days,
+      weeks: template.weeks || 6,
+      daysPerWeek: days.length,
+      coachId: currentCoach.uid,
+      clientId,
+      status: 'active',
+      generatedBy: 'template:' + (template.name || ''),
+      createdAt: Date.now()
+    });
+    await updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id });
+    if (closeModal) closeModal();
+    showToast('Plan aplicado desde template ✅');
+    _autoAddExercisesToCatalog(days);
+    showClientDetail(clientId);
+    loadClientList();
+  }
+
+  // FASE 11 — Modal de biblioteca: abre desde detalle cliente, aplica al cliente activo
+  async function openPlanTemplateLibrary(clientId) {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#1a1a1a;border:1px solid #333;border-radius:14px;padding:22px;max-width:460px;width:100%;margin:auto;font-family:inherit';
+
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:14px';
+    const titleEl = document.createElement('span');
+    titleEl.style.cssText = 'color:#f0ece4;font-size:15px;font-weight:700';
+    titleEl.textContent = '📚 Biblioteca de planes';
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:2px 6px';
+    hdr.appendChild(titleEl);
+    hdr.appendChild(closeBtn);
+
+    const search = document.createElement('input');
+    search.type = 'text';
+    search.placeholder = 'Buscar template...';
+    search.autocomplete = 'off';
+    search.style.cssText = 'width:100%;padding:8px 12px;border-radius:8px;border:1px solid #444;background:#111;color:#f0ece4;font-size:13px;box-sizing:border-box;margin-bottom:14px;outline:none';
+
+    const listEl = document.createElement('div');
+    listEl.style.cssText = 'max-height:360px;overflow-y:auto';
+
+    box.appendChild(hdr);
+    box.appendChild(search);
+    box.appendChild(listEl);
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+
+    const close = () => ov.remove();
+    closeBtn.onclick = close;
+    ov.onclick = e => { if (e.target === ov) close(); };
+
+    let applying = false;
+    let allTemplates = [];
+
+    function renderList(list) {
+      while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+      if (!list.length) {
+        var empty = document.createElement('p');
+        empty.style.cssText = 'color:#888;font-size:13px;text-align:center;padding:20px 0';
+        empty.textContent = 'No tienes templates guardados todavía.';
+        listEl.appendChild(empty);
+        return;
+      }
+      list.forEach(function(t) {
+        var card = document.createElement('div');
+        card.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:10px;border:1px solid #333;background:rgba(255,255,255,.03);margin-bottom:8px';
+
+        var info = document.createElement('div');
+        var nm = document.createElement('div');
+        nm.style.cssText = 'color:#f0ece4;font-size:13px;font-weight:600';
+        nm.textContent = t.name || '(sin nombre)';
+        var meta = document.createElement('div');
+        meta.style.cssText = 'color:#888;font-size:11px;margin-top:2px';
+        var dCount = (t.days || []).length;
+        var wk = t.weeks || 6;
+        var dt = t.createdAt ? new Date(t.createdAt).toLocaleDateString('es-ES', {day:'2-digit',month:'short',year:'numeric'}) : '';
+        meta.textContent = dCount + ' días · ' + wk + ' sem' + (dt ? ' · ' + dt : '');
+        info.appendChild(nm);
+        info.appendChild(meta);
+
+        var useBtn = document.createElement('button');
+        useBtn.textContent = 'Usar →';
+        useBtn.style.cssText = 'background:#c4ff00;color:#000;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;margin-left:10px';
+        useBtn.onclick = async function() {
+          if (applying) return;
+          applying = true;
+          useBtn.disabled = true;
+          useBtn.textContent = '…';
+          try {
+            await _applyTemplateToClient(t, clientId, close);
+          } catch(err) {
+            showToast('Error al aplicar template: ' + err.message, true);
+            useBtn.disabled = false;
+            useBtn.textContent = 'Usar →';
+            applying = false;
+          }
+        };
+
+        card.appendChild(info);
+        card.appendChild(useBtn);
+        listEl.appendChild(card);
+      });
+    }
+
+    // Loading
+    var loadingEl = document.createElement('p');
+    loadingEl.style.cssText = 'color:#888;font-size:13px;text-align:center;padding:20px 0';
+    loadingEl.textContent = 'Cargando…';
+    listEl.appendChild(loadingEl);
+
+    // 1 Firestore read al abrir
+    try {
+      const snap = await getDocs(query(collection(db, 'templates'), where('coachId', '==', currentCoach.uid)));
+      allTemplates = [];
+      snap.forEach(function(d) { allTemplates.push(Object.assign({ id: d.id }, d.data())); });
+      renderList(allTemplates);
+    } catch(err) {
+      while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+      var errEl = document.createElement('p');
+      errEl.style.cssText = 'color:#e05555;font-size:13px;text-align:center;padding:20px 0';
+      errEl.textContent = 'Error al cargar templates. Intenta de nuevo.';
+      listEl.appendChild(errEl);
+      return;
+    }
+
+    search.oninput = function() { renderList(_filterTemplates(search.value, allTemplates)); };
+    search.focus();
+  }
+  window.openPlanTemplateLibrary = openPlanTemplateLibrary;
 
   function renderNutritionView(n) {
     if (!n || (!n.calorias && !n.texto)) return `<p class="text-[#888] text-sm">Sin datos.</p>`;

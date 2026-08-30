@@ -11,9 +11,9 @@
 | Rama activa | `claude/client-app-improvements-qayy4n` (pendiente merge) |
 | FASE 5 commit | `4a87e42` |
 | FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **405/405 PASS** (P01–P175) |
-| Vercel | producción en `2b6e927`; FASEs 7–10 pendientes merge a main |
-| Siguiente fase | **FASE 11** (por definir) |
+| Suite tests | **436/436 PASS** (P01–P185) |
+| Vercel | producción en `2b6e927`; FASEs 7–11 pendientes merge a main |
+| Siguiente fase | **FASE 12** (por definir) |
 
 ---
 
@@ -26,6 +26,36 @@
 - Semana final = MESOCYCLE_CHECKPOINT únicamente.
   Deload es reactivo y requiere ≥2 deloadTriggers.
   La semana final sola nunca dispara deload.
+
+### FASE 11 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Template Library + Apply to Current Client**
+
+Storage audit: colección `templates` ya existía con reglas Firestore correctas. Schema: `{ name, coachId, weeks, days:[{label, exercises}], createdAt }`. Solo entrenamiento (sin nutrición/suplementación/farmacología). No se creó colección nueva. No se modificaron reglas.
+
+Archivos modificados:
+- `vdsen-coach.html` — botón `📚 Biblioteca` + 3 funciones nuevas
+- `tests/progression-engine.test.js` — P176-P185 (31 assertions nuevas)
+
+Funciones añadidas:
+- `_filterTemplates(query, templates)` — substring CI, preserva orden, no muta input
+- `_applyTemplateToClient(template, clientId, closeModal)` — restamp IDs → addDoc plans → updateDoc activePlanId (create-first, assign-after)
+- `openPlanTemplateLibrary(clientId)` — modal DOM API (XSS-safe via textContent), 1 Firestore read al abrir, filtrado local, guard `applying` doble-click
+
+Comportamiento añadido:
+- Botón `📚 Biblioteca` en acciones del plan del cliente activo
+- Modal responsive: loading → empty ("No tienes templates…") / error / lista
+- Cada template: nombre + días · semanas · fecha (DOM API, sin innerHTML inseguro)
+- "Usar →" aplica al cliente activo directamente, sin selector de cliente
+- Plan creado antes de asignar activePlanId (transacción segura)
+- Auto-agrega ejercicios del template al catálogo del coach
+- `_saveCurrentPlanAsTemplate` ya pedía nombre (sin cambio necesario)
+
+Limitaciones documentadas:
+- 1 lectura Firestore al abrir biblioteca; no realtime listener
+- No hay botón de eliminar template desde la biblioteca (existe en pestaña Plantillas existente)
+- No hay paginación si el coach tiene >50 templates
+
+---
 
 ### FASE 10 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
 **Plan Editor UX: Autocomplete, Reorder, restSeconds**
