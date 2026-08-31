@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `0d4be7c` · FASEs 12–20 mergeadas · FASE 21 pendiente merge
+> Actualizado: 2026-08-31 · main HEAD: `b4e4a91` · FASEs 12–21 mergeadas · siguiente = FASE 22
 
 ---
 
@@ -26,16 +26,16 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 18 | MERGED — commit `e8c91c2` |
 | FASE 19 | MERGED — commit `4575a7c` |
 | FASE 20 | MERGED — commit `0d4be7c` |
-| FASE 21 | `claude/fase-21-plan-change-preview` — pendiente merge |
+| FASE 21 | MERGED — commit `b4e4a91` |
 | Suite tests | **825/825 PASS** (P01–P300) |
-| Vercel | auto-deploy en curso (`0d4be7c`) |
-| Siguiente fase | **FASE 22** (FASE 21 pendiente merge) |
+| Vercel | auto-deploy en curso (`b4e4a91`) |
+| Siguiente fase | **FASE 22** — ver backlog |
 
 ---
 
 ## FASES completadas
 
-### FASE 21 (rama `claude/fase-21-plan-change-preview` — PENDIENTE MERGE)
+### FASE 21 (merge commit `b4e4a91` — MERGED a main)
 **Coach Monitor: Plan Change Preview — vista de cambios antes de confirmar aplicación de cargas**
 
 Archivos modificados:
