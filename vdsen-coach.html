@@ -2648,6 +2648,61 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     };
   }
   
+  // FASE 14 — Bitácora completa: organiza logs de una semana por día→ejercicio→set (0 Firestore reads)
+  function _coachBuildBitacora(logs, week, planData) {
+    var dayMap = {};
+    Object.keys(logs).forEach(function(k) {
+      var m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
+      if (!m) return;
+      var w = parseInt(m[1], 10), d = parseInt(m[2], 10), e = parseInt(m[3], 10), s = parseInt(m[4], 10);
+      if (w !== week) return;
+      if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+      if (!dayMap[d].exMap[e]) dayMap[d].exMap[e] = [];
+      var entry = logs[k];
+      dayMap[d].exMap[e].push({ setIndex: s, carga: entry.carga, reps: entry.reps, rirReal: entry.rir_real, ics: entry.ics, pump: entry.pump, unit: entry.unit || 'KG', done: !!entry.done, autoFilled: !!entry.autoFilled });
+    });
+    Object.keys(logs).forEach(function(k) {
+      var md = k.match(/^done_(\d+)_(\d+)$/);
+      if (md && parseInt(md[1], 10) === week) {
+        var d = parseInt(md[2], 10);
+        if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+        dayMap[d].done = logs[k] === true;
+      }
+      var mp = k.match(/^postsession_(\d+)_(\d+)$/);
+      if (mp && parseInt(mp[1], 10) === week) {
+        var d = parseInt(mp[2], 10);
+        if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+        dayMap[d].postsession = logs[k];
+      }
+    });
+    return Object.keys(dayMap)
+      .sort(function(a, b) { return parseInt(a) - parseInt(b); })
+      .map(function(dKey) {
+        var d = parseInt(dKey, 10);
+        var dayEntry = dayMap[dKey];
+        var planDay = null;
+        if (planData && planData.days) {
+          planDay = planData.days.find(function(pd) { return pd.dayIndex === d; });
+          if (!planDay && planData.days[d]) planDay = planData.days[d];
+        }
+        var exercises = Object.keys(dayEntry.exMap)
+          .sort(function(a, b) { return parseInt(a) - parseInt(b); })
+          .map(function(eKey) {
+            var e = parseInt(eKey, 10);
+            var planEx = planDay && planDay.exercises ? planDay.exercises[e] : null;
+            var planSet0 = planEx && planEx.sets && planEx.sets[0] ? planEx.sets[0] : null;
+            return {
+              exIndex: e,
+              name: planEx ? (planEx.exerciseName || planEx.nombre || ('Ejercicio ' + (e + 1))) : ('Ejercicio ' + (e + 1)),
+              repsTarget: planSet0 ? planSet0.repsTarget : null,
+              rirTarget: planSet0 != null ? planSet0.rirTarget : null,
+              sets: dayEntry.exMap[eKey].sort(function(a, b) { return a.setIndex - b.setIndex; })
+            };
+          });
+        return { dayIndex: d, label: planDay ? (planDay.label || ('Día ' + (d + 1))) : ('Día ' + (d + 1)), done: dayEntry.done || false, postsession: dayEntry.postsession || null, exercises: exercises };
+      });
+  }
+
   // FASE 13 — Coach helpers (mirrors of client-side FASE 12 helpers)
   function _coachGetWeeklyCheckins(entries, max) {
     max = max || 6;
@@ -3066,6 +3121,58 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         }
       }
       // ── END rendimiento por ejercicio ────────────────────────────────────
+
+      // ── FASE 14 — Bitácora completa ─────────────────────────────────────
+      html += (function() {
+        var bitacora = _coachBuildBitacora(logs, currentWeek, _activePlanCache);
+        if (!bitacora.length) return '';
+        var eimdLabels = ['—', 'Leve', 'Moderado', 'Alto'];
+        var eimdColors = ['#888', '#44BB88', '#FF8844', '#FF4444'];
+        var daysHtml = bitacora.map(function(day) {
+          var post = day.postsession;
+          var postInfo = '';
+          if (post) {
+            var eimd = parseInt(post.eimd) || 0;
+            postInfo = ' · RPE ' + (post.rpe || '—') + ' · EIMD <span style="color:' + eimdColors[eimd] + '">' + eimdLabels[eimd] + '</span>';
+            if (post.sleep) postInfo += ' · 😴 ' + post.sleep + 'h';
+          }
+          var dayHeader = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+            + '<span style="font-size:11px;font-weight:800;letter-spacing:1px;color:' + (day.done ? '#44BB88' : '#888') + '">' + (day.done ? '✓' : '○') + ' ' + _escH(day.label) + '</span>'
+            + (postInfo ? '<span style="font-size:11px;color:#888">' + postInfo + '</span>' : '') + '</div>';
+          if (!day.exercises.length) {
+            return '<div style="margin-bottom:12px">' + dayHeader + '<div style="font-size:11px;color:#555">Sin series registradas</div></div>';
+          }
+          var exHtml = day.exercises.map(function(ex) {
+            var exTitle = '<div style="font-size:11px;font-weight:700;color:#c4d0e0;margin-bottom:4px">' + _escH(ex.name)
+              + (ex.repsTarget != null ? '<span style="color:#888;font-weight:400"> · ' + ex.repsTarget + ' reps · RIR ' + (ex.rirTarget != null ? ex.rirTarget : '?') + '</span>' : '') + '</div>';
+            var setRows = ex.sets.map(function(s) {
+              var ics = parseFloat(s.ics);
+              var icsColor = !isNaN(ics) && ics >= 1 ? (ics >= 8 ? '#44BB88' : ics >= 7 ? '#e8c96a' : '#FF4444') : '#888';
+              var pump = parseInt(s.pump);
+              var pumpLabel = [null, '💪', 'ok', '↓'][pump] || '—';
+              return '<tr>'
+                + '<td style="padding:3px 6px;color:#555;font-variant-numeric:tabular-nums">S' + (s.setIndex + 1) + (s.autoFilled ? '<span style="color:#444;font-size:9px"> auto</span>' : '') + '</td>'
+                + '<td style="padding:3px 6px;font-weight:700;font-variant-numeric:tabular-nums;color:#F4F4F0">' + (s.carga || '—') + ' ' + s.unit + '</td>'
+                + '<td style="padding:3px 6px;color:#ddd;font-variant-numeric:tabular-nums">' + (s.reps || '—') + '</td>'
+                + '<td style="padding:3px 6px;color:#ddd;font-variant-numeric:tabular-nums">' + (s.rirReal !== undefined && s.rirReal !== '' && s.rirReal !== null ? s.rirReal : '—') + '</td>'
+                + '<td style="padding:3px 6px;font-weight:700;font-variant-numeric:tabular-nums;color:' + icsColor + '">' + (!isNaN(ics) && ics >= 1 ? ics : '—') + '</td>'
+                + '<td style="padding:3px 6px;color:#888">' + (pumpLabel || '—') + '</td>'
+                + '</tr>';
+            }).join('');
+            return exTitle
+              + '<div style="overflow-x:auto;margin-bottom:10px"><table style="width:100%;border-collapse:collapse;font-size:11px">'
+              + '<thead><tr>'
+              + ['SET','CARGA','REPS','RIR','ICS','PUMP'].map(function(h){ return '<th style="text-align:left;padding:2px 6px;color:#444;font-size:9px;font-weight:700;letter-spacing:.5px">' + h + '</th>'; }).join('')
+              + '</tr></thead><tbody>' + setRows + '</tbody></table></div>';
+          }).join('');
+          return '<div style="margin-bottom:16px">' + dayHeader + exHtml + '</div>';
+        }).join('<hr style="border:none;border-top:1px solid rgba(107,107,102,.15);margin:12px 0">');
+        return '<details class="card p-3 mb-3" style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.15)">'
+          + '<summary class="cursor-pointer text-sm font-semibold text-[#F4F4F0]" style="list-style:none">📋 Bitácora completa — Sem ' + currentWeek
+          + ' <span class="ml-2 text-xs font-normal" style="color:#888">(' + bitacora.length + ' día' + (bitacora.length !== 1 ? 's' : '') + ' con datos)</span></summary>'
+          + '<div class="mt-3">' + daysHtml + '</div></details>';
+      })();
+      // ── END bitácora completa ─────────────────────────────────────────────
 
       container.innerHTML = html;
 

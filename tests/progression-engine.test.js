@@ -3681,6 +3681,204 @@ console.log('\nP205 — Parity: coach and client trend thresholds are identical'
   assert('P205f', 'client uses SIN_DATOS string', clientNoData.status === 'SIN_DATOS');
 })();
 
+// ═══════════ FASE 14 — Bitácora completa (P206-P215) ═══════════
+
+// Mirror of _coachBuildBitacora (pure — no Firestore)
+function _coachBuildBitacora(logs, week, planData) {
+  var dayMap = {};
+  Object.keys(logs).forEach(function(k) {
+    var m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
+    if (!m) return;
+    var w = parseInt(m[1], 10), d = parseInt(m[2], 10), e = parseInt(m[3], 10), s = parseInt(m[4], 10);
+    if (w !== week) return;
+    if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+    if (!dayMap[d].exMap[e]) dayMap[d].exMap[e] = [];
+    var entry = logs[k];
+    dayMap[d].exMap[e].push({ setIndex: s, carga: entry.carga, reps: entry.reps, rirReal: entry.rir_real, ics: entry.ics, pump: entry.pump, unit: entry.unit || 'KG', done: !!entry.done, autoFilled: !!entry.autoFilled });
+  });
+  Object.keys(logs).forEach(function(k) {
+    var md = k.match(/^done_(\d+)_(\d+)$/);
+    if (md && parseInt(md[1], 10) === week) {
+      var d = parseInt(md[2], 10);
+      if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+      dayMap[d].done = logs[k] === true;
+    }
+    var mp = k.match(/^postsession_(\d+)_(\d+)$/);
+    if (mp && parseInt(mp[1], 10) === week) {
+      var d = parseInt(mp[2], 10);
+      if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+      dayMap[d].postsession = logs[k];
+    }
+  });
+  return Object.keys(dayMap)
+    .sort(function(a, b) { return parseInt(a) - parseInt(b); })
+    .map(function(dKey) {
+      var d = parseInt(dKey, 10);
+      var dayEntry = dayMap[dKey];
+      var planDay = null;
+      if (planData && planData.days) {
+        planDay = planData.days.find(function(pd) { return pd.dayIndex === d; });
+        if (!planDay && planData.days[d]) planDay = planData.days[d];
+      }
+      var exercises = Object.keys(dayEntry.exMap)
+        .sort(function(a, b) { return parseInt(a) - parseInt(b); })
+        .map(function(eKey) {
+          var e = parseInt(eKey, 10);
+          var planEx = planDay && planDay.exercises ? planDay.exercises[e] : null;
+          var planSet0 = planEx && planEx.sets && planEx.sets[0] ? planEx.sets[0] : null;
+          return {
+            exIndex: e,
+            name: planEx ? (planEx.exerciseName || planEx.nombre || ('Ejercicio ' + (e + 1))) : ('Ejercicio ' + (e + 1)),
+            repsTarget: planSet0 ? planSet0.repsTarget : null,
+            rirTarget: planSet0 != null ? planSet0.rirTarget : null,
+            sets: dayEntry.exMap[eKey].sort(function(a, b) { return a.setIndex - b.setIndex; })
+          };
+        });
+      return { dayIndex: d, label: planDay ? (planDay.label || ('Día ' + (d + 1))) : ('Día ' + (d + 1)), done: dayEntry.done || false, postsession: dayEntry.postsession || null, exercises: exercises };
+    });
+}
+
+// P206 — _coachBuildBitacora: basic structure and day ordering
+console.log('\nP206 — _coachBuildBitacora basic structure');
+(function() {
+  var logs = {
+    'log_2_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_2_0_0_s1': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_2_1_0_s0': { carga: '60', reps: '10', rir_real: '1', ics: '9', pump: '1', done: true, unit: 'KG' },
+  };
+  var r = _coachBuildBitacora(logs, 2, null);
+  assert('P206a', 'returns 2 days', r.length === 2);
+  assert('P206b', 'day 0 first (sorted)', r[0].dayIndex === 0);
+  assert('P206c', 'day 1 second', r[1].dayIndex === 1);
+  assert('P206d', 'day 0 has 1 exercise with 2 sets', r[0].exercises.length === 1 && r[0].exercises[0].sets.length === 2);
+  assert('P206e', 'set carga preserved', r[0].exercises[0].sets[0].carga === '80');
+})();
+
+// P207 — _coachBuildBitacora: excludes wrong week
+console.log('\nP207 — _coachBuildBitacora excludes wrong week');
+(function() {
+  var logs = {
+    'log_2_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_0_s0': { carga: '70', reps: '10', rir_real: '2', ics: '9', pump: '1', done: true, unit: 'KG' }, // wrong week
+    'log_3_0_0_s0': { carga: '90', reps: '6', rir_real: '1', ics: '9', pump: '1', done: true, unit: 'KG' }, // wrong week
+  };
+  var r = _coachBuildBitacora(logs, 2, null);
+  assert('P207a', 'only week 2 entries returned (1 day)', r.length === 1);
+  assert('P207b', 'carga is from week 2 (80)', r[0].exercises[0].sets[0].carga === '80');
+})();
+
+// P208 — _coachBuildBitacora: done flag and postsession included
+console.log('\nP208 — _coachBuildBitacora done and postsession');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'done_1_0': true,
+    'postsession_1_0': { eimd: '1', sleep: '7', rpe: '7' }
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  assert('P208a', 'done flag is true', r[0].done === true);
+  assert('P208b', 'postsession preserved', r[0].postsession !== null && r[0].postsession.eimd === '1');
+  assert('P208c', 'postsession sleep = 7', r[0].postsession.sleep === '7');
+})();
+
+// P209 — _coachBuildBitacora: done_false and no postsession
+console.log('\nP209 — _coachBuildBitacora done=false when done key missing');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  assert('P209a', 'done defaults to false when key absent', r[0].done === false);
+  assert('P209b', 'postsession is null when absent', r[0].postsession === null);
+})();
+
+// P210 — _coachBuildBitacora: exercise name from plan
+console.log('\nP210 — _coachBuildBitacora exercise names from plan');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_1_s0': { carga: '50', reps: '12', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+  };
+  var planData = { days: [{
+    dayIndex: 0,
+    label: 'Push',
+    exercises: [
+      { exerciseName: 'Press Banca', sets: [{ repsTarget: 8, rirTarget: 2 }] },
+      { exerciseName: 'Aperturas',   sets: [{ repsTarget: 12, rirTarget: 2 }] }
+    ]
+  }]};
+  var r = _coachBuildBitacora(logs, 1, planData);
+  assert('P210a', 'day label from plan', r[0].label === 'Push');
+  assert('P210b', 'first exercise name from plan', r[0].exercises[0].name === 'Press Banca');
+  assert('P210c', 'second exercise name from plan', r[0].exercises[1].name === 'Aperturas');
+  assert('P210d', 'repsTarget from plan', r[0].exercises[0].repsTarget === 8);
+  assert('P210e', 'rirTarget from plan', r[0].exercises[0].rirTarget === 2);
+})();
+
+// P211 — _coachBuildBitacora: falls back to generic name without plan
+console.log('\nP211 — _coachBuildBitacora fallback names');
+(function() {
+  var logs = { 'log_1_0_2_s0': { carga: '40', reps: '15', rir_real: '2', ics: '7', pump: '2', done: true, unit: 'KG' } };
+  var r = _coachBuildBitacora(logs, 1, null);
+  assert('P211a', 'no plan → generic exercise name', r[0].exercises[0].name === 'Ejercicio 3');
+  assert('P211b', 'no plan → generic day label', r[0].label === 'Día 1');
+  assert('P211c', 'repsTarget is null without plan', r[0].exercises[0].repsTarget === null);
+})();
+
+// P212 — _coachBuildBitacora: empty logs returns []
+console.log('\nP212 — _coachBuildBitacora empty logs');
+(function() {
+  assert('P212a', 'empty logs → []', _coachBuildBitacora({}, 1, null).length === 0);
+  assert('P212b', 'null logs → []', _coachBuildBitacora({}, 3, null).length === 0);
+  // Non-log keys are ignored
+  var logs = { 'done_1_0': true, 'ci_sem_1': { peso: 80 }, 'progrec_1_0': {} };
+  assert('P212c', 'non-log keys produce no exercises', _coachBuildBitacora(logs, 1, null).every(function(d){ return d.exercises.length === 0; }));
+})();
+
+// P213 — _coachBuildBitacora: autoFilled sets included (marked, not excluded)
+console.log('\nP213 — _coachBuildBitacora includes autoFilled sets (marked)');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG', autoFilled: false },
+    'log_1_0_0_s1': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG', autoFilled: true },
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  assert('P213a', 'both sets included (2 total)', r[0].exercises[0].sets.length === 2);
+  assert('P213b', 'real set: autoFilled = false', r[0].exercises[0].sets[0].autoFilled === false);
+  assert('P213c', 'autoFilled set: autoFilled = true', r[0].exercises[0].sets[1].autoFilled === true);
+})();
+
+// P214 — _coachBuildBitacora: sets sorted by setIndex regardless of insertion order
+console.log('\nP214 — _coachBuildBitacora sets sorted by setIndex');
+(function() {
+  var logs = {
+    'log_1_0_0_s2': { carga: '90', reps: '6', rir_real: '1', ics: '9', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_0_s1': { carga: '85', reps: '7', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  var sets = r[0].exercises[0].sets;
+  assert('P214a', 'setIndex 0 first', sets[0].setIndex === 0 && sets[0].carga === '80');
+  assert('P214b', 'setIndex 1 second', sets[1].setIndex === 1 && sets[1].carga === '85');
+  assert('P214c', 'setIndex 2 last', sets[2].setIndex === 2 && sets[2].carga === '90');
+})();
+
+// P215 — _coachBuildBitacora: multiple exercises per day sorted by exIndex
+console.log('\nP215 — _coachBuildBitacora exercises sorted by exIndex');
+(function() {
+  var logs = {
+    'log_1_0_2_s0': { carga: '40', reps: '15', rir_real: '2', ics: '7', pump: '2', done: true, unit: 'KG' },
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '9', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_1_s0': { carga: '60', reps: '12', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  var exs = r[0].exercises;
+  assert('P215a', '3 exercises', exs.length === 3);
+  assert('P215b', 'exIndex 0 first (carga 80)', exs[0].exIndex === 0 && exs[0].sets[0].carga === '80');
+  assert('P215c', 'exIndex 1 second (carga 60)', exs[1].exIndex === 1 && exs[1].sets[0].carga === '60');
+  assert('P215d', 'exIndex 2 last (carga 40)', exs[2].exIndex === 2 && exs[2].sets[0].carga === '40');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `2b6e927` · rama activa: `claude/client-app-improvements-qayy4n` · FASE 13 añadida
+> Actualizado: 2026-08-31 · main HEAD: `2b6e927` · rama activa: `claude/client-app-improvements-qayy4n` · FASE 14 añadida
 
 ---
 
@@ -11,13 +11,36 @@
 | Rama activa | `claude/client-app-improvements-qayy4n` (pendiente merge) |
 | FASE 5 commit | `4a87e42` |
 | FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **509/509 PASS** (P01–P205) |
-| Vercel | producción en `2b6e927`; FASEs 7–13 pendientes merge a main |
-| Siguiente fase | **FASE 14** (Coach → Client review workflow) |
+| Suite tests | **542/542 PASS** (P01–P215) |
+| Vercel | producción en `2b6e927`; FASEs 7–14 pendientes merge a main |
+| Siguiente fase | **FASE 15** (por definir) |
 
 ---
 
 ## FASES completadas
+
+### FASE 14 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Coach Monitor: Bitácora completa de entrenamiento por sesión**
+
+Archivos modificados:
+- `vdsen-coach.html` — 2 parches quirúrgicos
+- `tests/progression-engine.test.js` — P206-P215 (33 assertions nuevas)
+
+Helper añadido (antes de `_coachGetWeeklyCheckins`):
+- `_coachBuildBitacora(logs, week, planData)` — organiza todos los sets registrados en una semana por día → ejercicio → set. Incluye sets autoFilled (marcados). Incluye flags `done` y objeto `postsession` por día. Nombres de ejercicio y targets desde el plan si disponible, fallback genérico. 0 lecturas Firestore.
+
+Comportamiento añadido en Monitor:
+- `<details>` "📋 Bitácora completa — Sem N" al final del Monitor (colapsado por defecto)
+- Muestra todos los días con datos, con header (✓/○ + label + RPE/EIMD/sueño del postsession)
+- Por ejercicio: nombre, reps target, RIR target, tabla de sets con carga/reps/RIR real/ICS/pump
+- ICS coloreado (verde/amarillo/rojo). Sets autoFilled marcados con "auto" en gris.
+
+Invariantes preservados:
+- 0 lecturas Firestore nuevas
+- `_coachBuildBitacora` pura (determinista, sin side effects)
+- Sin cambios a schema, colecciones, auth ni algoritmo de progresión
+
+---
 
 ### FASE 13 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
 **Coach Monitor: contexto semanal, tendencia de peso, check-in pendiente, adherencia**
