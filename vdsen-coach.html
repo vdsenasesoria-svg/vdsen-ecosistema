@@ -1107,8 +1107,8 @@
 
   // Marca el editor como dirty + previene salir sin guardar
   let _dirtyEditor = false;
-  function markEditorDirty() { _dirtyEditor = true; }
-  function markEditorClean() { _dirtyEditor = false; }
+  function markEditorDirty() { _dirtyEditor = true; if (window._updateDirtyTabUI) window._updateDirtyTabUI(true); }
+  function markEditorClean() { _dirtyEditor = false; if (window._updateDirtyTabUI) window._updateDirtyTabUI(false); }
   window.addEventListener('beforeunload', (e) => {
     if (_dirtyEditor) { e.preventDefault(); e.returnValue = ''; return ''; }
   });
@@ -8125,6 +8125,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   async function showClientDetail(clientId) {
     _detailClientId   = clientId;
     _detailActiveTab  = 'plan';
+    markEditorClean();
     const modal = document.getElementById("clientModal");
     const body  = document.getElementById("modalClientBody");
     const title = document.getElementById("modalClientName");
@@ -8180,7 +8181,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       </div>
       <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(244,244,240,.1);overflow-x:auto">
         <button id="ctab_ficha"   onclick="_switchClientTab('ficha')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📋 Ficha</button>
-        <button id="ctab_plan"    onclick="_switchClientTab('plan')"    style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🏋️ Plan</button>
+        <button id="ctab_plan"    onclick="_switchClientTab('plan')"    style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🏋️ Plan<span id="dirtyPlanDot" hidden style="color:#FF8844;margin-left:3px;font-size:10px">●</span></button>
         <button id="ctab_monitor" onclick="_switchClientTab('monitor')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📊 Monitor</button>
         <button id="ctab_notas"   onclick="_switchClientTab('notas')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📝 Notas</button>
         <button id="ctab_inbody"  onclick="_switchClientTab('inbody')"  style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📏 InBody</button>
@@ -8189,6 +8190,20 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       <div id="clientDetailTabContent"></div>`;
     _switchClientTab('ficha');
   }
+
+  // FASE 24 — helper puro: label del tab Plan según estado dirty.
+  function _planTabLabel(isDirty, baseLabel) {
+    var base = baseLabel || '🏋️ Plan';
+    return isDirty === true ? base + ' ●' : base;
+  }
+  window._planTabLabel = _planTabLabel;
+
+  // FASE 24 — actualiza indicador visual del tab Plan (● naranja cuando dirty).
+  function _updateDirtyTabUI(isDirty) {
+    var dot = document.getElementById('dirtyPlanDot');
+    if (dot) dot.hidden = !isDirty;
+  }
+  window._updateDirtyTabUI = _updateDirtyTabUI;
 
   // FASE 23 — helper puro: ¿debe mostrarse aviso de cambios sin guardar al cambiar de tab?
   function _shouldWarnDirtyLeave(fromTab, toTab, isDirty) {

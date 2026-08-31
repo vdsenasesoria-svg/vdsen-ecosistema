@@ -5632,6 +5632,93 @@ console.log('\nP320 — shouldWarnDirtyLeave: isDirty=undefined → false');
   assert('P320a', 'undefined dirty = false', _shouldWarnDirtyLeave23('plan','monitor',undefined) === false);
 })();
 
+// ─── FASE 24 mirror: _planTabLabel ───────────────────────────────────────
+function _planTabLabel24(isDirty, baseLabel) {
+  var base = baseLabel || '🏋️ Plan';
+  return isDirty === true ? base + ' ●' : base;
+}
+
+// ─── FASE 24 — _planTabLabel ──────────────────────────────────────────────
+// P321 — dirty=true → label con indicador
+console.log('\nP321 — planTabLabel: dirty=true → ●');
+(function() {
+  var label = _planTabLabel24(true);
+  assert('P321a', 'contiene ●', label.indexOf('●') !== -1);
+  assert('P321b', 'termina con ●', label.slice(-1) === '●');
+})();
+
+// P322 — dirty=false → label sin indicador
+console.log('\nP322 — planTabLabel: dirty=false → sin ●');
+(function() {
+  var label = _planTabLabel24(false);
+  assert('P322a', 'sin ●', label.indexOf('●') === -1);
+  assert('P322b', 'label base', label === '🏋️ Plan');
+})();
+
+// P323 — baseLabel personalizado + dirty → baseLabel + ●
+console.log('\nP323 — planTabLabel: custom baseLabel + dirty');
+(function() {
+  var label = _planTabLabel24(true, 'Plan');
+  assert('P323a', 'Plan ●', label === 'Plan ●');
+})();
+
+// P324 — baseLabel personalizado + clean → baseLabel
+console.log('\nP324 — planTabLabel: custom baseLabel + clean');
+(function() {
+  var label = _planTabLabel24(false, 'Plan');
+  assert('P324a', 'Plan (sin ●)', label === 'Plan');
+})();
+
+// P325 — dirty=true, baseLabel vacío → fallback '🏋️ Plan' + ●
+console.log('\nP325 — planTabLabel: baseLabel vacío → fallback');
+(function() {
+  var label = _planTabLabel24(true, '');
+  assert('P325a', 'fallback base', label.indexOf('🏋️ Plan') !== -1);
+  assert('P325b', 'contiene ●', label.indexOf('●') !== -1);
+})();
+
+// P326 — dirty=undefined → sin indicador
+console.log('\nP326 — planTabLabel: dirty=undefined → sin ●');
+(function() {
+  var label = _planTabLabel24(undefined);
+  assert('P326a', 'undefined dirty → sin ●', label.indexOf('●') === -1);
+})();
+
+// P327 — dirty=null → sin indicador
+console.log('\nP327 — planTabLabel: dirty=null → sin ●');
+(function() {
+  var label = _planTabLabel24(null);
+  assert('P327a', 'null dirty → sin ●', label.indexOf('●') === -1);
+})();
+
+// P328 — dirty=true → resultado es string no vacío
+console.log('\nP328 — planTabLabel: dirty=true → string no vacío');
+(function() {
+  var label = _planTabLabel24(true);
+  assert('P328a', 'es string', typeof label === 'string');
+  assert('P328b', 'no vacío', label.length > 0);
+})();
+
+// P329 — función es pura (múltiples llamadas consistentes)
+console.log('\nP329 — planTabLabel: pura (mismos args → mismo resultado)');
+(function() {
+  var r1 = _planTabLabel24(true, 'Test');
+  var r2 = _planTabLabel24(true, 'Test');
+  assert('P329a', 'idempotente dirty', r1 === r2);
+  var r3 = _planTabLabel24(false, 'Test');
+  var r4 = _planTabLabel24(false, 'Test');
+  assert('P329b', 'idempotente clean', r3 === r4);
+})();
+
+// P330 — dirty true vs false producen resultados distintos
+console.log('\nP330 — planTabLabel: dirty≠clean producen labels distintos');
+(function() {
+  var dirty = _planTabLabel24(true);
+  var clean = _planTabLabel24(false);
+  assert('P330a', 'dirty ≠ clean', dirty !== clean);
+  assert('P330b', 'dirty más largo', dirty.length > clean.length);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
