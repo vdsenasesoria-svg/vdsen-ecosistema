@@ -6678,6 +6678,7 @@ function renderEntrenamiento() {
           '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+15s</button>'+
           '<button onclick="event.stopPropagation();adjustRestTimer(30)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+30s</button>'+
         '</div>'+
+        '<div id="nextActionHint" style="display:none;font-size:11px;color:var(--mt);letter-spacing:.5px;text-align:center;margin-bottom:12px"></div>'+
         '<button onclick="stopRestTimer()" style="width:100%;background:var(--gold-gradient);border:none;border-radius:14px;color:#0a0a0a;font-size:14px;font-weight:800;padding:15px;cursor:pointer;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.3)">SIGUIENTE SERIE ▶</button>'+
       '</div>'+
     '</div>'+
@@ -7539,6 +7540,7 @@ function completeSet(key, di, ei, si, unit) {
     }
     if (restTime > 0) {
       startRestTimer(restTime, key);
+      _renderNextWorkoutAction(_resolveNextWorkoutAction(di, _EJERCICIOS_DIA, ei, si, LOGS, CURRENT_WEEK, getTotalWeeks()));
       showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
     } else {
       showToast(_grp ? 'Par SS cerrado ✓' : 'Serie ✓');
@@ -7789,7 +7791,8 @@ function _ensureRestTimerOverlay() {
       '</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:9px;color:rgba(255,255,255,.4);letter-spacing:2px;font-weight:700;text-transform:uppercase">Descanso activo</div>'+
-        '<div id="restLastSet" style="font-size:11px;color:#6E9A6E;font-weight:700;margin:2px 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'+
+        '<div id="restLastSet" style="font-size:11px;color:#6E9A6E;font-weight:700;margin:2px 0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'+
+        '<div id="nextActionHintCompact" style="display:none;font-size:9px;color:rgba(255,255,255,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px"></div>'+
         '<div style="display:flex;gap:5px">'+
           '<button onclick="event.stopPropagation();adjustRestTimer(-15)" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;padding:10px 0;cursor:pointer;min-height:44px">−15s</button>'+
           '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;padding:10px 0;cursor:pointer;min-height:44px">+15s</button>'+
@@ -7818,6 +7821,97 @@ function _nextSerie() {
   _scrollToNextPendingSet();
 }
 window._nextSerie = _nextSerie;
+
+// FASE 25 — Resolver determinista de siguiente acción.
+// Función pura: no modifica estado, no hace I/O.
+// Devuelve { type, label } donde type es uno de:
+//   'NEXT_SET' | 'NEXT_EXERCISE' | 'SUPERSET_PARTNER' | 'SESSION_DONE' | 'NONE'
+function _resolveNextWorkoutAction(di, exercises, lastEi, lastSi, logs, currentWeek, totalWeeks) {
+  if (!exercises || !exercises.length) return { type: 'NONE', label: '' };
+  var ej = exercises[lastEi] || null;
+  if (!ej) return { type: 'NONE', label: '' };
+  var grp = ej.supersetGroup ? String(ej.supersetGroup).trim() : '';
+  // 1. SUPERSET_PARTNER — partner del SS tiene el mismo set pendiente
+  if (grp) {
+    for (var pk = 0; pk < exercises.length; pk++) {
+      if (pk === lastEi) continue;
+      var pej = exercises[pk];
+      if (!pej || String(pej.supersetGroup || '').trim() !== grp) continue;
+      var pKey = 'log_' + currentWeek + '_' + di + '_' + pk + '_s' + lastSi;
+      if (!logs[pKey] || !logs[pKey].done) {
+        return { type: 'SUPERSET_PARTNER', label: pej.exerciseName || pej.nombre || 'Partner SS' };
+      }
+    }
+  }
+  // 2. NEXT_SET — siguiente serie del mismo ejercicio
+  var effSets = getEffectiveSets(ej, currentWeek, totalWeeks);
+  var numSets = effSets.length || (ej.sets ? ej.sets.length : 0);
+  var nextSi = lastSi + 1;
+  if (nextSi < numSets) {
+    var nextKey = 'log_' + currentWeek + '_' + di + '_' + lastEi + '_s' + nextSi;
+    if (!logs[nextKey] || !logs[nextKey].done) {
+      return { type: 'NEXT_SET', label: (ej.exerciseName || ej.nombre || '') + ' – S' + (nextSi + 1) };
+    }
+  }
+  // 3. NEXT_EXERCISE — ejercicio posterior con sets pendientes
+  for (var nei = lastEi + 1; nei < exercises.length; nei++) {
+    var nex = exercises[nei];
+    if (!nex || !isTechniqueActive(nex, currentWeek)) continue;
+    var nEff = getEffectiveSets(nex, currentWeek, totalWeeks);
+    var nNum = nEff.length || (nex.sets ? nex.sets.length : 0);
+    for (var ns = 0; ns < nNum; ns++) {
+      var nk = 'log_' + currentWeek + '_' + di + '_' + nei + '_s' + ns;
+      if (!logs[nk] || !logs[nk].done) {
+        return { type: 'NEXT_EXERCISE', label: nex.exerciseName || nex.nombre || '' };
+      }
+    }
+  }
+  // 4. SESSION_DONE — todos los ejercicios activos completos
+  for (var aei = 0; aei < exercises.length; aei++) {
+    var aej = exercises[aei];
+    if (!aej || !isTechniqueActive(aej, currentWeek)) continue;
+    var aEff = getEffectiveSets(aej, currentWeek, totalWeeks);
+    var aNum = aEff.length || (aej.sets ? aej.sets.length : 0);
+    for (var as = 0; as < aNum; as++) {
+      var ak = 'log_' + currentWeek + '_' + di + '_' + aei + '_s' + as;
+      if (!logs[ak] || !logs[ak].done) return { type: 'NONE', label: '' };
+    }
+  }
+  return { type: 'SESSION_DONE', label: '¡Sesión lista!' };
+}
+window._resolveNextWorkoutAction = _resolveNextWorkoutAction;
+
+// FASE 25 — Renderiza el hint de siguiente acción en ambas versiones del overlay.
+// Usa textContent — XSS-safe, sin innerHTML con datos de usuario.
+function _renderNextWorkoutAction(action) {
+  var prefixMap = {
+    'NEXT_SET':          '→ Siguiente serie:',
+    'NEXT_EXERCISE':     '→ Siguiente ejercicio:',
+    'SUPERSET_PARTNER':  '→ Partner SS:',
+    'SESSION_DONE':      '',
+    'NONE':              ''
+  };
+  var prefix = action ? (prefixMap[action.type] || '') : '';
+  var detail = action ? (action.label || '') : '';
+  ['nextActionHint', 'nextActionHintCompact'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = '';
+    if (!prefix && !detail) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    if (prefix) {
+      var s1 = document.createElement('span');
+      s1.textContent = prefix + ' ';
+      s1.style.opacity = '0.55';
+      el.appendChild(s1);
+    }
+    var s2 = document.createElement('span');
+    s2.textContent = detail;
+    s2.style.fontWeight = '700';
+    el.appendChild(s2);
+  });
+}
+window._renderNextWorkoutAction = _renderNextWorkoutAction;
 
 function startRestTimer(seconds, lastSetKey) {
   // Si el cliente desactivó el temporizador, no mostrar overlay ni arrancar cuenta.
@@ -7959,6 +8053,11 @@ function stopRestTimer() {
   if (overlay) overlay.style.display = 'none';
   var pill = document.getElementById('timerPill');
   if (pill) pill.style.display = 'none';
+  // FASE 25 — limpiar hint al cerrar timer
+  ['nextActionHint', 'nextActionHintCompact'].forEach(function(id) {
+    var e = document.getElementById(id);
+    if (e) { e.textContent = ''; e.style.display = 'none'; }
+  });
 }
 
 function selDia(i) {

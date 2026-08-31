@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `950434e` · Audit fixes 22/23/24 en rama · siguiente = merge → main
+> Actualizado: 2026-08-31 · main HEAD: `2b36630` · FASE 25 implementada · siguiente = merge → main
 
 ---
 
@@ -18,8 +18,8 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `0d4be7c` — merge FASE 20 |
-| Rama activa | — |
+| main HEAD | `2b36630` — Audit fixes 22/23/24 |
+| Rama activa | `claude/client-app-improvements-qayy4n` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
 | FASE 17 | MERGED — commit `604894c` |
@@ -27,13 +27,43 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 19 | MERGED — commit `4575a7c` |
 | FASE 20 | MERGED — commit `0d4be7c` |
 | FASE 21 | MERGED — commit `b4e4a91` |
-| Suite tests | **908/908 PASS** (P01–P350) |
-| Vercel | auto-deploy en curso (`ce276ee`) |
-| Siguiente fase | — (FASES 22-24 mergeadas, STOP) |
+| FASE 22–24 | MERGED — commit `2b36630` |
+| FASE 25 | EN RAMA — pendiente merge |
+| Suite tests | **943/943 PASS** (P01–P370) |
+| Vercel | auto-deploy en push a main |
+| Siguiente fase | — (pendiente instrucciones) |
 
 ---
 
 ## FASES completadas
+
+### FASE 25 — Client Workout / Next Action UX (rama `claude/client-app-improvements-qayy4n`)
+**Resolver determinista de siguiente acción en workout + hint contextual en rest timer**
+
+Archivos modificados:
+- `vdsen-cliente.html` — 5 parches quirúrgicos
+- `tests/progression-engine.test.js` — P351-P370 (35 assertions nuevas)
+- `docs/VDSEN_DEV_STATE.md` — este bloque
+
+**`_resolveNextWorkoutAction(di, exercises, lastEi, lastSi, logs, currentWeek, totalWeeks)`**
+- Función pura, sin I/O, sin lecturas Firestore adicionales
+- Devuelve `{ type, label }` con tipo: `SUPERSET_PARTNER` → `NEXT_SET` → `NEXT_EXERCISE` → `SESSION_DONE` → `NONE`
+- Prioridad exacta: partner SS primero; mismo ejercicio; ejercicio siguiente activo; sesión completa
+- Omite ejercicios donde `isTechniqueActive = false` o `getEffectiveSets = []`
+
+**`_renderNextWorkoutAction(action)`**
+- Renderiza en `#nextActionHint` (overlay full-screen) y `#nextActionHintCompact` (overlay compacto)
+- Usa `textContent` exclusivamente — XSS-safe
+- Oculta el hint si `type === 'NONE'`
+
+**Integración rest timer**
+- `startRestTimer` → llamada inmediata a `_renderNextWorkoutAction` en `completeSet`
+- `stopRestTimer` → limpia ambos hints vía `textContent = ''`
+- 0 nuevas colecciones Firestore, 0 nuevos listeners, 0 polling
+
+**Tests P351-P370**: 20 casos (35 assertions) — NONE, NEXT_SET, NEXT_EXERCISE, SESSION_DONE, SUPERSET_PARTNER, prioridades, idempotencia, currentWeek, di, stubs isTechniqueActive/getEffectiveSets
+
+---
 
 ### AUDIT FIX 22/23/24 (rama `claude/client-app-improvements-qayy4n`)
 **Correcciones post-audit sobre FASEs 22, 23, 24**

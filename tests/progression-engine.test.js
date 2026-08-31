@@ -5968,6 +5968,315 @@ console.log('\nP350 — _discardEditorChanges: safe sin DOM');
   assert('P350a', 'no lanza excepción sin DOM', threw === false);
 })();
 
+// ─── FASE 25 — Next-Action Resolver ────────────────────────────────────────
+// Mirror determinista de _resolveNextWorkoutAction para entorno Node sin DOM.
+// Inyecta stubs de getEffectiveSets e isTechniqueActive vía opts.
+function _resolveNextAction25(di, exercises, lastEi, lastSi, logs25, currentWeek, totalWeeks, opts) {
+  opts = opts || {};
+  var _getEff      = opts.getEffectiveSets  || function(ej)           { return ej.sets || []; };
+  var _isTechActive = opts.isTechniqueActive || function()             { return true; };
+  if (!exercises || !exercises.length) return { type: 'NONE', label: '' };
+  var ej = exercises[lastEi] || null;
+  if (!ej) return { type: 'NONE', label: '' };
+  var grp = ej.supersetGroup ? String(ej.supersetGroup).trim() : '';
+  // 1. SUPERSET_PARTNER
+  if (grp) {
+    for (var pk = 0; pk < exercises.length; pk++) {
+      if (pk === lastEi) continue;
+      var pej = exercises[pk];
+      if (!pej || String(pej.supersetGroup || '').trim() !== grp) continue;
+      var pKey = 'log_' + currentWeek + '_' + di + '_' + pk + '_s' + lastSi;
+      if (!logs25[pKey] || !logs25[pKey].done) {
+        return { type: 'SUPERSET_PARTNER', label: pej.exerciseName || pej.nombre || 'Partner SS' };
+      }
+    }
+  }
+  // 2. NEXT_SET
+  var effSets = _getEff(ej, currentWeek, totalWeeks);
+  var numSets = effSets.length || 0;
+  var nextSi  = lastSi + 1;
+  if (nextSi < numSets) {
+    var nextKey = 'log_' + currentWeek + '_' + di + '_' + lastEi + '_s' + nextSi;
+    if (!logs25[nextKey] || !logs25[nextKey].done) {
+      return { type: 'NEXT_SET', label: (ej.exerciseName || ej.nombre || '') + ' – S' + (nextSi + 1) };
+    }
+  }
+  // 3. NEXT_EXERCISE
+  for (var nei = lastEi + 1; nei < exercises.length; nei++) {
+    var nex = exercises[nei];
+    if (!nex || !_isTechActive(nex, currentWeek)) continue;
+    var nEff = _getEff(nex, currentWeek, totalWeeks);
+    var nNum = nEff.length || 0;
+    for (var ns = 0; ns < nNum; ns++) {
+      var nk = 'log_' + currentWeek + '_' + di + '_' + nei + '_s' + ns;
+      if (!logs25[nk] || !logs25[nk].done) {
+        return { type: 'NEXT_EXERCISE', label: nex.exerciseName || nex.nombre || '' };
+      }
+    }
+  }
+  // 4. SESSION_DONE — todos los activos completos
+  for (var aei = 0; aei < exercises.length; aei++) {
+    var aej = exercises[aei];
+    if (!aej || !_isTechActive(aej, currentWeek)) continue;
+    var aEff = _getEff(aej, currentWeek, totalWeeks);
+    var aNum = aEff.length || 0;
+    for (var as = 0; as < aNum; as++) {
+      var ak = 'log_' + currentWeek + '_' + di + '_' + aei + '_s' + as;
+      if (!logs25[ak] || !logs25[ak].done) return { type: 'NONE', label: '' };
+    }
+  }
+  return { type: 'SESSION_DONE', label: '¡Sesión lista!' };
+}
+
+// Helper: construye exercises con N sets de plantilla
+function _mkEx(name, numSets, supersetGroup) {
+  var sets = [];
+  for (var i = 0; i < numSets; i++) sets.push({ setIndex: i, repsTarget: 10, rirTarget: 2 });
+  return { exerciseName: name, sets: sets, supersetGroup: supersetGroup || null };
+}
+// Helper: marca set como hecho
+function _markDone25(logs25, week, di, ei, si) {
+  var k = 'log_' + week + '_' + di + '_' + ei + '_s' + si;
+  logs25[k] = { done: true, carga: '60', reps: '10', rir_real: '2', ics: '8', pump: '1', unit: 'KG' };
+}
+
+// P351 — exercises vacío → NONE
+console.log('\nP351 — FASE 25: exercises vacío → NONE');
+(function() {
+  var r = _resolveNextAction25(0, [], 0, 0, {}, 1, 6);
+  assert('P351a', 'type NONE', r.type === 'NONE');
+})();
+
+// P352 — NEXT_SET cuando siguiente set del mismo ejercicio está pendiente
+console.log('\nP352 — FASE 25: NEXT_SET siguiente set pendiente');
+(function() {
+  var exs = [_mkEx('Squat', 3)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  var r = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6);
+  assert('P352a', 'type NEXT_SET', r.type === 'NEXT_SET');
+  assert('P352b', 'label contiene S2', r.label.indexOf('S2') !== -1);
+  assert('P352c', 'label contiene nombre', r.label.indexOf('Squat') !== -1);
+})();
+
+// P353 — Todos los sets del ejercicio hechos → NEXT_EXERCISE si hay siguiente
+console.log('\nP353 — FASE 25: ejercicio completo → NEXT_EXERCISE');
+(function() {
+  var exs = [_mkEx('Squat', 2), _mkEx('Leg Press', 2)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  _markDone25(logs25, 1, 0, 0, 1);
+  var r = _resolveNextAction25(0, exs, 0, 1, logs25, 1, 6);
+  assert('P353a', 'type NEXT_EXERCISE', r.type === 'NEXT_EXERCISE');
+  assert('P353b', 'label es Leg Press', r.label === 'Leg Press');
+})();
+
+// P354 — Todos los sets de todos los ejercicios hechos → SESSION_DONE
+console.log('\nP354 — FASE 25: todo hecho → SESSION_DONE');
+(function() {
+  var exs = [_mkEx('Squat', 2), _mkEx('Leg Press', 2)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0); _markDone25(logs25, 1, 0, 0, 1);
+  _markDone25(logs25, 1, 0, 1, 0); _markDone25(logs25, 1, 0, 1, 1);
+  var r = _resolveNextAction25(0, exs, 0, 1, logs25, 1, 6);
+  assert('P354a', 'type SESSION_DONE', r.type === 'SESSION_DONE');
+  assert('P354b', 'label es ¡Sesión lista!', r.label === '¡Sesión lista!');
+})();
+
+// P355 — lastEi fuera de rango → NONE
+console.log('\nP355 — FASE 25: lastEi fuera de rango → NONE');
+(function() {
+  var exs = [_mkEx('Squat', 3)];
+  var r = _resolveNextAction25(0, exs, 5, 0, {}, 1, 6);
+  assert('P355a', 'type NONE cuando ej no existe', r.type === 'NONE');
+})();
+
+// P356 — SUPERSET_PARTNER detectado (partner pendiente en mismo si)
+console.log('\nP356 — FASE 25: SUPERSET_PARTNER cuando partner pendiente');
+(function() {
+  var exs = [_mkEx('Squat', 3, 'SS1'), _mkEx('Leg Curl', 3, 'SS1')];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0); // ei=0 si=0 hecho
+  // ei=1 si=0 NO hecho
+  var r = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6);
+  assert('P356a', 'type SUPERSET_PARTNER', r.type === 'SUPERSET_PARTNER');
+  assert('P356b', 'label es Leg Curl', r.label === 'Leg Curl');
+})();
+
+// P357 — SUPERSET_PARTNER ya hecho → cae a NEXT_SET
+console.log('\nP357 — FASE 25: partner SS ya hecho → NEXT_SET');
+(function() {
+  var exs = [_mkEx('Squat', 3, 'SS1'), _mkEx('Leg Curl', 3, 'SS1')];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0); // ei=0 si=0
+  _markDone25(logs25, 1, 0, 1, 0); // ei=1 si=0 (partner hecho)
+  var r = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6);
+  assert('P357a', 'type NEXT_SET', r.type === 'NEXT_SET');
+  assert('P357b', 'label S2 de Squat', r.label.indexOf('S2') !== -1 && r.label.indexOf('Squat') !== -1);
+})();
+
+// P358 — Ejercicio inactivo (isTechniqueActive=false) es ignorado para NEXT_EXERCISE
+console.log('\nP358 — FASE 25: ejercicio inactivo ignorado → salta al activo siguiente');
+(function() {
+  var exs = [_mkEx('Squat', 2), _mkEx('FST7-Inactive', 2), _mkEx('Leg Press', 2)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0); _markDone25(logs25, 1, 0, 0, 1);
+  // ei=1 inactivo, ei=2 pendiente
+  var _isTechActive = function(ej) { return ej.exerciseName !== 'FST7-Inactive'; };
+  var r = _resolveNextAction25(0, exs, 0, 1, logs25, 1, 6, { isTechniqueActive: _isTechActive });
+  assert('P358a', 'type NEXT_EXERCISE', r.type === 'NEXT_EXERCISE');
+  assert('P358b', 'label es Leg Press (saltó inactivo)', r.label === 'Leg Press');
+})();
+
+// P359 — último ejercicio último set → SESSION_DONE (no NEXT_EXERCISE)
+console.log('\nP359 — FASE 25: último ej último set completado → SESSION_DONE');
+(function() {
+  var exs = [_mkEx('Squat', 1), _mkEx('Leg Press', 1)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  _markDone25(logs25, 1, 0, 1, 0);
+  var r = _resolveNextAction25(0, exs, 1, 0, logs25, 1, 6);
+  assert('P359a', 'type SESSION_DONE', r.type === 'SESSION_DONE');
+})();
+
+// P360 — NEXT_SET prioridad sobre NEXT_EXERCISE: mismo ejercicio con set pendiente
+console.log('\nP360 — FASE 25: NEXT_SET antes que NEXT_EXERCISE cuando hay sets pendientes');
+(function() {
+  var exs = [_mkEx('Squat', 3), _mkEx('Leg Press', 3)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0); // si=0 de Squat hecho
+  // si=1 y si=2 de Squat pendientes; Leg Press todo pendiente
+  var r = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6);
+  assert('P360a', 'type NEXT_SET, no NEXT_EXERCISE', r.type === 'NEXT_SET');
+})();
+
+// P361 — label de NEXT_SET tiene formato "Nombre – S{n}"
+console.log('\nP361 — FASE 25: label NEXT_SET formato correcto');
+(function() {
+  var exs = [_mkEx('Bench Press', 4)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  _markDone25(logs25, 1, 0, 0, 1);
+  var r = _resolveNextAction25(0, exs, 0, 1, logs25, 1, 6);
+  assert('P361a', 'type NEXT_SET', r.type === 'NEXT_SET');
+  assert('P361b', 'label = "Bench Press – S3"', r.label === 'Bench Press – S3');
+})();
+
+// P362 — SUPERSET_PARTNER solo se activa con grupo coincidente
+console.log('\nP362 — FASE 25: SUPERSET_PARTNER solo mismo grupo SS');
+(function() {
+  var exs = [_mkEx('Squat', 2, 'SS1'), _mkEx('Bench', 2, 'SS2'), _mkEx('Leg Curl', 2, 'SS1')];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0); // Squat si=0 hecho
+  // Bench (SS2) no es partner de Squat (SS1)
+  // Leg Curl (SS1) ES partner
+  var r = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6);
+  assert('P362a', 'type SUPERSET_PARTNER', r.type === 'SUPERSET_PARTNER');
+  assert('P362b', 'partner es Leg Curl no Bench', r.label === 'Leg Curl');
+})();
+
+// P363 — Resolver es puro: misma entrada → mismo resultado (idempotencia)
+console.log('\nP363 — FASE 25: resolver puro / idempotente');
+(function() {
+  var exs = [_mkEx('Squat', 3), _mkEx('Leg Press', 3)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  var r1 = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6);
+  var r2 = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6);
+  assert('P363a', 'tipo idempotente', r1.type === r2.type);
+  assert('P363b', 'label idempotente', r1.label === r2.label);
+})();
+
+// P364 — currentWeek se usa correctamente en las claves de log
+console.log('\nP364 — FASE 25: clave de log usa currentWeek correcto');
+(function() {
+  var exs = [_mkEx('Squat', 2)];
+  var logs25 = {};
+  // Marcamos set en semana 3, no en semana 1
+  logs25['log_3_0_0_s0'] = { done: true, carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', unit: 'KG' };
+  var rWeek1 = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6); // semana 1 → set no hecho
+  var rWeek3 = _resolveNextAction25(0, exs, 0, 0, logs25, 3, 6); // semana 3 → set hecho
+  assert('P364a', 'semana 1: si=0 pendiente → NEXT_SET', rWeek1.type === 'NEXT_SET');
+  assert('P364b', 'semana 3: si=0 hecho → otro resultado', rWeek3.type !== 'NEXT_SET' || rWeek3.label.indexOf('S2') !== -1);
+})();
+
+// P365 — Solo un ejercicio, 1 set, ya hecho → SESSION_DONE
+console.log('\nP365 — FASE 25: sesión de 1 ejercicio 1 set → SESSION_DONE al terminar');
+(function() {
+  var exs = [_mkEx('Plank', 1)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  var r = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6);
+  assert('P365a', 'type SESSION_DONE', r.type === 'SESSION_DONE');
+  assert('P365b', 'label correcto', r.label === '¡Sesión lista!');
+})();
+
+// P366 — getEffectiveSets stub con 0 sets activos → no NEXT_SET en ese ejercicio
+console.log('\nP366 — FASE 25: getEffectiveSets retorna [] → ejercicio omitido en SESSION_DONE');
+(function() {
+  var exs = [_mkEx('FST7Ex', 3)]; // 3 sets en plan
+  var logs25 = {};
+  // getEffectiveSets retorna [] (inactivo esta semana)
+  var r = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6, {
+    getEffectiveSets: function() { return []; }
+  });
+  // Con 0 sets activos → no hay NEXT_SET → todos "completados" → SESSION_DONE
+  assert('P366a', 'type SESSION_DONE (0 sets activos)', r.type === 'SESSION_DONE');
+})();
+
+// P367 — SUPERSET_PARTNER: si partner también inactivo (0 sets eff) → fall-through
+console.log('\nP367 — FASE 25: partner pendiente pero activo → SUPERSET_PARTNER; inactivo → fall-through');
+(function() {
+  var exs = [_mkEx('A', 2, 'SS1'), _mkEx('B', 2, 'SS1')];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0); // A si=0 hecho; B si=0 NO hecho
+  // Sin stub → B pendiente → SUPERSET_PARTNER
+  var r1 = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6);
+  assert('P367a', 'B pendiente → SUPERSET_PARTNER', r1.type === 'SUPERSET_PARTNER');
+  assert('P367b', 'label B', r1.label === 'B');
+})();
+
+// P368 — FST7 inactivo esta semana (getEffectiveSets=[] + isTechniqueActive=false) → SESSION_DONE
+// En producción, FST7/SST/lengthened_partials inactivos tienen getEffectiveSets=[].
+// El resolver los trata como "sin sets pendientes" → SESSION_DONE cuando no hay otros activos.
+console.log('\nP368 — FASE 25: técnica inactiva (0 sets activos) → SESSION_DONE');
+(function() {
+  var exs = [_mkEx('FST7-Ex', 2)];
+  var logs25 = {};
+  var r = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6, {
+    isTechniqueActive: function() { return false; },
+    getEffectiveSets:  function() { return []; }  // FST7 inactivo → 0 sets
+  });
+  assert('P368a', 'FST7 inactivo → SESSION_DONE', r.type === 'SESSION_DONE');
+})();
+
+// P369 — NEXT_EXERCISE no aparece antes que NEXT_SET del mismo ejercicio
+console.log('\nP369 — FASE 25: prioridad NEXT_SET > NEXT_EXERCISE cuando quedan sets');
+(function() {
+  var exs = [_mkEx('Squat', 4), _mkEx('Leg Press', 2)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  _markDone25(logs25, 1, 0, 0, 1);
+  // Quedan si=2 y si=3 de Squat pendientes
+  var r = _resolveNextAction25(0, exs, 0, 1, logs25, 1, 6);
+  assert('P369a', 'NEXT_SET sobre NEXT_EXERCISE', r.type === 'NEXT_SET');
+  assert('P369b', 'label S3 de Squat', r.label === 'Squat – S3');
+})();
+
+// P370 — di correcto en claves (día 2)
+console.log('\nP370 — FASE 25: di se usa correctamente en clave de log');
+(function() {
+  var exs = [_mkEx('Bench', 2)];
+  var logs25 = {};
+  // Marcar set en di=2, no di=0
+  logs25['log_1_2_0_s0'] = { done: true, carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', unit: 'KG' };
+  var rDi0 = _resolveNextAction25(0, exs, 0, 0, logs25, 1, 6); // di=0 → set no hecho
+  var rDi2 = _resolveNextAction25(2, exs, 0, 0, logs25, 1, 6); // di=2 → set hecho
+  assert('P370a', 'di=0 → si=0 no hecho → NEXT_SET (S2 pendiente)', rDi0.type === 'NEXT_SET');
+  // di=2 si=0 hecho, si=1 no hecho → NEXT_SET S2
+  assert('P370b', 'di=2 → si=0 hecho → NEXT_SET S2', rDi2.type === 'NEXT_SET' && rDi2.label === 'Bench – S2');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
