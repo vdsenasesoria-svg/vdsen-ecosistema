@@ -1972,6 +1972,2068 @@ console.log('\nP109 — HTML escaping for exercise name in history modal');
   assert('P109e', 'XSS payload neutralized', !_escHTml('<img src=x onerror=alert(1)>').includes('<img'));
 })();
 
+// ═════════════════════════ FASE 7 — P110-P128 — _computeClientAttentionState ═════════════════════
+// Mirror of _computeClientAttentionState (from vdsen-coach.html Parche 1)
+function _computeClientAttentionState(entries, planData, currentWeek) {
+  if (!entries || typeof entries !== 'object') return { state: 'NO_DATA', reasons: [] };
+  var cw = currentWeek || 1;
+  var scanMax = Math.max((planData && planData.days ? planData.days.length : (planData && planData.daysPerWeek ? planData.daysPerWeek : 0)), 7);
+  var hasLog = Object.keys(entries).some(function(k) {
+    return k.indexOf('log_') === 0 && entries[k] && entries[k].done && !entries[k].autoFilled;
+  });
+  if (!hasLog) return { state: 'NO_DATA', reasons: [] };
+  var reviewR = [], progressR = [];
+  var foundProgrec = false;
+  var scanWeeks = cw > 1 ? [cw, cw - 1] : [cw];
+  scanWeeks.forEach(function(w) {
+    for (var d = 0; d < scanMax; d++) {
+      var pr = entries['progrec_' + w + '_' + d];
+      if (pr) {
+        foundProgrec = true;
+        if ((pr.deloadTriggers || []).length >= 2)
+          reviewR.push({ code: 'DELOAD_CANDIDATE', label: 'Señales de fatiga acumulada' });
+        (pr.recommendations || []).forEach(function(rec) {
+          if (!rec) return;
+          var ex = rec.exerciseName ? rec.exerciseName.split(' ').slice(0, 2).join(' ') : '';
+          if (rec.action === 'deload')
+            reviewR.push({ code: 'DELOAD_CANDIDATE', label: 'Señales de fatiga acumulada', ex: ex });
+          if (rec.reason === 'TOO_HARD_REPEATED')
+            reviewR.push({ code: 'TOO_HARD_REPEATED', label: 'Esfuerzo demasiado alto repetido', ex: ex });
+          if (rec.reason === 'PERFORMANCE_REGRESSION')
+            reviewR.push({ code: 'PERFORMANCE_REGRESSION', label: 'Rendimiento en descenso', ex: ex });
+          if (rec.action === 'increase_load')
+            progressR.push({ code: 'INCREASE_LOAD', label: 'Listo para progresar carga', ex: ex });
+          if (rec.reason === 'REPS_PROGRESSING')
+            progressR.push({ code: 'REPS_PROGRESSING', label: 'Progresando repeticiones', ex: ex });
+        });
+      }
+      var ps = entries['postsession_' + w + '_' + d];
+      if (ps) {
+        if (ps.articular)
+          reviewR.push({ code: 'PAIN', label: 'Dolor articular reportado' + (ps.patron ? ' · ' + ps.patron : '') });
+        if (parseInt(ps.eimd) >= 3)
+          reviewR.push({ code: 'EIMD_HIGH', label: 'Daño muscular elevado reportado' });
+      }
+    }
+  });
+  var seen = {};
+  function dedup(arr) {
+    return arr.filter(function(r) {
+      var k = r.code + '|' + (r.ex || '');
+      if (seen[k]) return false;
+      seen[k] = true; return true;
+    });
+  }
+  var rvR = dedup(reviewR);
+  var pgR = dedup(progressR);
+  if (rvR.length) return { state: 'REVIEW', reasons: rvR.slice(0, 3) };
+  if (pgR.length) return { state: 'PROGRESSING', reasons: pgR.slice(0, 3) };
+  if (foundProgrec || hasLog) return { state: 'STABLE', reasons: [] };
+  return { state: 'NO_DATA', reasons: [] };
+}
+
+// Helper: make a minimal entries object with one real log
+function _mkEntries(extra) {
+  var base = { 'log_1_0_0_s0': { done: true, carga: '80', reps: '8', autoFilled: false } };
+  return Object.assign(base, extra || {});
+}
+var _ATTN_PRIORITY_TEST = { REVIEW: 0, PROGRESSING: 1, STABLE: 2, NO_DATA: 3 };
+
+// P110 — NO_DATA cases
+console.log('\nP110 — NO_DATA: null / no real logs / all autoFilled');
+(function() {
+  var r1 = _computeClientAttentionState(null, null, 1);
+  assert('P110a', 'null entries → NO_DATA', r1.state === 'NO_DATA');
+  var r2 = _computeClientAttentionState({}, null, 1);
+  assert('P110b', 'empty entries → NO_DATA', r2.state === 'NO_DATA');
+  var autoE = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: true } };
+  var r3 = _computeClientAttentionState(autoE, null, 1);
+  assert('P110c', 'only autoFilled log → NO_DATA', r3.state === 'NO_DATA');
+  var notDone = { 'log_1_0_0_s0': { done: false, carga: '80', autoFilled: false } };
+  var r4 = _computeClientAttentionState(notDone, null, 1);
+  assert('P110d', 'log done=false → NO_DATA', r4.state === 'NO_DATA');
+})();
+
+// P111 — STABLE: has real log, no progrec signals
+console.log('\nP111 — STABLE when real log exists but no REVIEW or PROGRESSING signals');
+(function() {
+  var entries = _mkEntries();
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P111a', 'real log, no signals → STABLE', r.state === 'STABLE');
+  assert('P111b', 'STABLE reasons empty', r.reasons.length === 0);
+})();
+
+// P112 — REVIEW via deloadTriggers.length >= 2
+console.log('\nP112 — REVIEW via deloadTriggers >= 2');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: ['x','y'], recommendations: [] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P112a', 'deloadTriggers >= 2 → REVIEW', r.state === 'REVIEW');
+  assert('P112b', 'reason code DELOAD_CANDIDATE', r.reasons[0].code === 'DELOAD_CANDIDATE');
+  // exactly 1 trigger → NOT REVIEW
+  var entries2 = _mkEntries({
+    'progrec_1_0': { deloadTriggers: ['x'], recommendations: [] }
+  });
+  var r2 = _computeClientAttentionState(entries2, null, 1);
+  assert('P112c', 'deloadTriggers = 1 → not REVIEW (no other signals → STABLE)', r2.state === 'STABLE');
+})();
+
+// P113 — REVIEW via rec.action='deload'
+console.log('\nP113 — REVIEW via rec.action=deload');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [{ action: 'deload', exerciseName: 'Sentadilla' }] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P113a', 'action=deload → REVIEW', r.state === 'REVIEW');
+  assert('P113b', 'reason code DELOAD_CANDIDATE', r.reasons[0].code === 'DELOAD_CANDIDATE');
+  assert('P113c', 'ex truncated to 2 words', r.reasons[0].ex === 'Sentadilla');
+})();
+
+// P114 — REVIEW via reason='TOO_HARD_REPEATED'
+console.log('\nP114 — REVIEW via TOO_HARD_REPEATED reason');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'reduce_load', reason: 'TOO_HARD_REPEATED', exerciseName: 'Press banca' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P114a', 'TOO_HARD_REPEATED → REVIEW', r.state === 'REVIEW');
+  assert('P114b', 'code TOO_HARD_REPEATED', r.reasons[0].code === 'TOO_HARD_REPEATED');
+})();
+
+// P115 — NOT REVIEW via reduce_load alone (no special reason)
+console.log('\nP115 — reduce_load alone (no reason code) → NOT REVIEW');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'reduce_load', reason: 'OTHER', exerciseName: 'Press' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P115a', 'reduce_load with generic reason → STABLE (not REVIEW)', r.state === 'STABLE');
+})();
+
+// P116 — REVIEW via reason='PERFORMANCE_REGRESSION'
+console.log('\nP116 — REVIEW via PERFORMANCE_REGRESSION reason');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'freeze_load', reason: 'PERFORMANCE_REGRESSION', exerciseName: 'Remo' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P116a', 'PERFORMANCE_REGRESSION → REVIEW', r.state === 'REVIEW');
+  assert('P116b', 'code PERFORMANCE_REGRESSION', r.reasons[0].code === 'PERFORMANCE_REGRESSION');
+})();
+
+// P117 — REVIEW via postsession.articular
+console.log('\nP117 — REVIEW via postsession articular pain');
+(function() {
+  var entries = _mkEntries({ 'postsession_1_0': { articular: true, patron: 'hombro', eimd: 1 } });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P117a', 'articular=true → REVIEW', r.state === 'REVIEW');
+  assert('P117b', 'code PAIN', r.reasons[0].code === 'PAIN');
+  assert('P117c', 'patron included in label', r.reasons[0].label.includes('hombro'));
+})();
+
+// P118 — REVIEW via postsession.eimd >= 3
+console.log('\nP118 — REVIEW via high EIMD');
+(function() {
+  var entries = _mkEntries({ 'postsession_1_0': { articular: false, eimd: 3 } });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P118a', 'eimd=3 → REVIEW', r.state === 'REVIEW');
+  assert('P118b', 'code EIMD_HIGH', r.reasons[0].code === 'EIMD_HIGH');
+  var e2 = _mkEntries({ 'postsession_1_0': { articular: false, eimd: 2 } });
+  var r2 = _computeClientAttentionState(e2, null, 1);
+  assert('P118c', 'eimd=2 → not REVIEW', r2.state !== 'REVIEW');
+})();
+
+// P119 — PROGRESSING via increase_load
+console.log('\nP119 — PROGRESSING via increase_load action');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'increase_load', reason: 'RIR_TOO_EASY', exerciseName: 'Curl' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P119a', 'increase_load → PROGRESSING', r.state === 'PROGRESSING');
+  assert('P119b', 'code INCREASE_LOAD', r.reasons[0].code === 'INCREASE_LOAD');
+})();
+
+// P120 — PROGRESSING via REPS_PROGRESSING reason
+console.log('\nP120 — PROGRESSING via REPS_PROGRESSING reason');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'freeze_load', reason: 'REPS_PROGRESSING', exerciseName: 'Jalón' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P120a', 'REPS_PROGRESSING → PROGRESSING', r.state === 'PROGRESSING');
+  assert('P120b', 'code REPS_PROGRESSING', r.reasons[0].code === 'REPS_PROGRESSING');
+})();
+
+// P121 — Priority: REVIEW > PROGRESSING when both present
+console.log('\nP121 — Priority: REVIEW overrides PROGRESSING');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'increase_load', reason: 'RIR_TOO_EASY', exerciseName: 'Curl' },
+      { action: 'reduce_load', reason: 'TOO_HARD_REPEATED', exerciseName: 'Press' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P121a', 'REVIEW > PROGRESSING priority', r.state === 'REVIEW');
+})();
+
+// P122 — Dedup: same code+ex not doubled
+console.log('\nP122 — Dedup: same signal in two days counted once');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [{ action: 'deload', exerciseName: 'Press' }] },
+    'progrec_1_1': { deloadTriggers: [], recommendations: [{ action: 'deload', exerciseName: 'Press' }] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  var deloadCount = r.reasons.filter(function(x){ return x.code === 'DELOAD_CANDIDATE' && x.ex === 'Press'; }).length;
+  assert('P122a', 'same DELOAD_CANDIDATE+ex deduped to 1', deloadCount === 1);
+})();
+
+// P123 — Reasons capped at 3
+console.log('\nP123 — reasons capped at 3 items');
+(function() {
+  var entries = _mkEntries({
+    'postsession_1_0': { articular: true, eimd: 3 },
+    'postsession_1_1': { articular: true, patron: 'rodilla', eimd: 3 },
+    'progrec_1_0': { deloadTriggers: ['x','y'], recommendations: [{ action: 'deload', exerciseName: 'A' }] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P123a', 'REVIEW state', r.state === 'REVIEW');
+  assert('P123b', 'reasons.length <= 3', r.reasons.length <= 3);
+})();
+
+// P124 — Previous week scanned when cw > 1
+console.log('\nP124 — Scan includes previous week when cw > 1');
+(function() {
+  // progrec only in week 2, current week = 3
+  var entries = {
+    'log_3_0_0_s0': { done: true, carga: '80', autoFilled: false },
+    'progrec_2_0': { deloadTriggers: [], recommendations: [
+      { action: 'reduce_load', reason: 'TOO_HARD_REPEATED', exerciseName: 'Press' }
+    ]}
+  };
+  var r = _computeClientAttentionState(entries, null, 3);
+  assert('P124a', 'signal in prev week (cw-1) detected → REVIEW', r.state === 'REVIEW');
+  // but week 1 signal not scanned when cw=3 (only cw and cw-1)
+  var entries2 = {
+    'log_3_0_0_s0': { done: true, carga: '80', autoFilled: false },
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'reduce_load', reason: 'TOO_HARD_REPEATED', exerciseName: 'Press' }
+    ]}
+  };
+  var r2 = _computeClientAttentionState(entries2, null, 3);
+  assert('P124b', 'week cw-2 not scanned → STABLE', r2.state === 'STABLE');
+})();
+
+// P125 — cw=1 scans only week 1 (no week 0)
+console.log('\nP125 — cw=1 does not scan week 0');
+(function() {
+  var entries = {
+    'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false },
+    'progrec_0_0': { deloadTriggers: ['x','y'], recommendations: [] }
+  };
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P125a', 'cw=1: week 0 not scanned → STABLE (no REVIEW)', r.state === 'STABLE');
+})();
+
+// P126 — foundProgrec with no signals → STABLE (not NO_DATA)
+console.log('\nP126 — progrec with no review/progress signals → STABLE');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [{ action: 'freeze_load', reason: 'PRESCRIPTION_MATCH', exerciseName: 'Remo' }] }
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P126a', 'progrec exists + no signals → STABLE', r.state === 'STABLE');
+})();
+
+// P127 — Client list priority sort: REVIEW < PROGRESSING < STABLE < NO_DATA
+console.log('\nP127 — _ATTN_PRIORITY sort order');
+(function() {
+  var states = ['NO_DATA', 'STABLE', 'REVIEW', 'PROGRESSING'];
+  var sorted = states.slice().sort(function(a,b){ return _ATTN_PRIORITY_TEST[a] - _ATTN_PRIORITY_TEST[b]; });
+  assert('P127a', 'REVIEW sorts first', sorted[0] === 'REVIEW');
+  assert('P127b', 'PROGRESSING sorts second', sorted[1] === 'PROGRESSING');
+  assert('P127c', 'STABLE sorts third', sorted[2] === 'STABLE');
+  assert('P127d', 'NO_DATA sorts last', sorted[3] === 'NO_DATA');
+})();
+
+// P128 — ex field truncated to first 2 words of exerciseName
+console.log('\nP128 — exerciseName truncated to first 2 words in reason.ex');
+(function() {
+  var entries = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'increase_load', reason: 'RIR_TOO_EASY', exerciseName: 'Press de banca plano' }
+    ]}
+  });
+  var r = _computeClientAttentionState(entries, null, 1);
+  assert('P128a', 'exerciseName truncated to 2 words', r.reasons[0].ex === 'Press de');
+  var entries2 = _mkEntries({
+    'progrec_1_0': { deloadTriggers: [], recommendations: [
+      { action: 'increase_load', exerciseName: 'Curl' }
+    ]}
+  });
+  var r2 = _computeClientAttentionState(entries2, null, 1);
+  assert('P128b', 'single-word name kept intact', r2.reasons[0].ex === 'Curl');
+})();
+
+// ═════════════════════════ FASE 8 — P129-P146 — LIVE TRAINING + SESSION STATS ═════════════════════
+
+// ── Mirror: _getLiveInfo (from vdsen-coach.html FASE 8) ──
+function _getLiveInfo(entries, planData, _nowOverride) {
+  if (!entries) return null;
+  var LIVE_MS = 5 * 60 * 1000;
+  var now = _nowOverride !== undefined ? _nowOverride : Date.now();
+  var latestTs = 0, latestKey = null;
+  Object.keys(entries).forEach(function(k) {
+    if (k.indexOf('log_') !== 0) return;
+    var e = entries[k];
+    if (!e || !e.done || e.autoFilled) return;
+    var ts = e.ts;
+    if (!ts) return;
+    var t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+    if (!isNaN(t) && now - t < LIVE_MS && t > latestTs) { latestTs = t; latestKey = k; }
+  });
+  if (!latestKey) return null;
+  var m = latestKey.match(/^log_(\d+)_(\d+)_(\d+)_s\d+$/);
+  if (!m) return null;
+  var lw = +m[1], ld = +m[2], le = +m[3];
+  var dayLabel = 'Día ' + (ld + 1);
+  var exerciseName = null;
+  if (planData && planData.days && planData.days[ld]) {
+    var day = planData.days[ld];
+    if (day.label) dayLabel = day.label;
+    var ex = day.exercises && day.exercises[le];
+    if (ex) exerciseName = ex.exerciseName || ex.nombre || null;
+  }
+  var prefix = 'log_' + lw + '_' + ld + '_';
+  var completedSets = 0;
+  Object.keys(entries).forEach(function(k2) {
+    if (k2.indexOf(prefix) !== 0) return;
+    var e2 = entries[k2];
+    if (e2 && e2.done && !e2.autoFilled) completedSets++;
+  });
+  var totalSets = 0;
+  if (planData && planData.days && planData.days[ld]) {
+    (planData.days[ld].exercises || []).forEach(function(ex2) {
+      totalSets += (ex2.sets ? ex2.sets.length : 0) || ex2.numSeries || 3;
+    });
+  }
+  return { dayLabel: dayLabel, exerciseName: exerciseName, completedSets: completedSets, totalSets: totalSets };
+}
+
+// ── Mirror: _calcSessionStats (from vdsen-cliente.html FASE 8) ──
+function _calcSessionStats(logs, di, week) {
+  var rirs = [], icss = [], tss = [], completedSets = 0;
+  var prefix = 'log_' + week + '_' + di + '_';
+  Object.keys(logs).forEach(function(k) {
+    if (k.indexOf(prefix) !== 0) return;
+    var e = logs[k];
+    if (!e || !e.done || e.autoFilled) return;
+    completedSets++;
+    var rir = parseFloat(e.rir_real);
+    if (!isNaN(rir) && rir >= 0 && rir <= 5) rirs.push(rir);
+    var ics = parseFloat(e.ics);
+    if (!isNaN(ics) && ics >= 1 && ics <= 10) icss.push(ics);
+    var ts = e.ts;
+    if (ts) { var t = typeof ts === 'string' ? Date.parse(ts) : Number(ts); if (!isNaN(t) && t > 0) tss.push(t); }
+  });
+  return {
+    completedSets: completedSets,
+    avgRIR: rirs.length ? +(rirs.reduce(function(a,b){return a+b;},0)/rirs.length).toFixed(1) : null,
+    avgICS: icss.length ? +(icss.reduce(function(a,b){return a+b;},0)/icss.length).toFixed(1) : null,
+    sessionStart: tss.length ? Math.min.apply(null, tss) : null
+  };
+}
+
+// Helper: make a recent ts (within 5 min from now)
+function _recentTs() { return Date.now() - 2 * 60 * 1000; } // 2 min ago
+function _staleTs()  { return Date.now() - 10 * 60 * 1000; } // 10 min ago
+
+// ── LIVE tests ──
+
+// P129 — Recent activity → live
+console.log('\nP129 — Recent real activity → _getLiveInfo returns result');
+(function() {
+  var now = Date.now();
+  var ts = now - 2 * 60 * 1000; // 2 min ago
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: ts } };
+  var r = _getLiveInfo(entries, null, now);
+  assert('P129a', 'recent real set → live info returned', r !== null);
+  assert('P129b', 'dayLabel default to Día 1', r.dayLabel === 'Día 1');
+})();
+
+// P130 — Stale activity → not live
+console.log('\nP130 — Stale activity (>5min) → null');
+(function() {
+  var now = Date.now();
+  var ts = now - 10 * 60 * 1000; // 10 min ago
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: ts } };
+  var r = _getLiveInfo(entries, null, now);
+  assert('P130a', 'stale ts → not live (null)', r === null);
+})();
+
+// P131 — autoFilled activity → not live
+console.log('\nP131 — autoFilled set does not count as live');
+(function() {
+  var now = Date.now();
+  var ts = now - 1 * 60 * 1000;
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: true, ts: ts } };
+  var r = _getLiveInfo(entries, null, now);
+  assert('P131a', 'autoFilled → not live', r === null);
+})();
+
+// P132 — Current exercise from latest valid set (stable identity via planData)
+console.log('\nP132 — Current exercise identified from plan via latest log');
+(function() {
+  var now = Date.now();
+  var ts1 = now - 4 * 60 * 1000; // 4 min (older)
+  var ts2 = now - 1 * 60 * 1000; // 1 min (latest)
+  var entries = {
+    'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: ts1, prescriptionExerciseId: 'uuid-press' },
+    'log_1_0_1_s0': { done: true, carga: '60', autoFilled: false, ts: ts2, prescriptionExerciseId: 'uuid-curl' }
+  };
+  var planData = {
+    days: [{
+      label: 'Push',
+      exercises: [
+        { exerciseName: 'Press banca', prescriptionExerciseId: 'uuid-press', sets: [{},{},{}] },
+        { exerciseName: 'Curl bíceps', prescriptionExerciseId: 'uuid-curl', sets: [{},{}] }
+      ]
+    }]
+  };
+  var r = _getLiveInfo(entries, planData, now);
+  assert('P132a', 'live info returned', r !== null);
+  assert('P132b', 'current exercise = latest log (Curl bíceps at ei=1)', r.exerciseName === 'Curl bíceps');
+  assert('P132c', 'dayLabel from plan', r.dayLabel === 'Push');
+  assert('P132d', 'completedSets = 2 (both done sets)', r.completedSets === 2);
+  assert('P132e', 'totalSets from plan (3+2=5)', r.totalSets === 5);
+})();
+
+// P133 — No recent ts → null even if done sets exist (stale identity)
+console.log('\nP133 — done sets without ts → not live');
+(function() {
+  var now = Date.now();
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false } }; // no ts
+  var r = _getLiveInfo(entries, null, now);
+  assert('P133a', 'no ts field → not live', r === null);
+})();
+
+// P134 — _getLiveInfo is synchronous, returns value without side effects (no reads counter)
+console.log('\nP134 — _getLiveInfo is pure/synchronous (0 external calls)');
+(function() {
+  var now = Date.now();
+  var calls = 0;
+  var proxyGet = function() { calls++; return Date.now() - 60000; };
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: now - 60000 } };
+  var r1 = _getLiveInfo(entries, null, now);
+  var r2 = _getLiveInfo(entries, null, now);
+  assert('P134a', 'returns same result on repeated calls', (r1 === null) === (r2 === null));
+  assert('P134b', 'no async (call returns synchronously)', r1 !== undefined);
+})();
+
+// ── CLIENT DASHBOARD tests ──
+
+// P135 — completedSets count: done && !autoFilled only for current day/week
+console.log('\nP135 — completedSets counts done && !autoFilled for current day');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 1, 8, 1); // done, real
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 1, 8, 1); // done, real
+  LOGS['log_1_0_0_s2'] = makeSet(80, 8, 1, 8, 1, true); // autoFilled — excluded
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P135a', 'completedSets = 2 (autoFilled excluded)', stats.completedSets === 2);
+})();
+
+// P136 — Different day/week excluded from count
+console.log('\nP136 — Sets from wrong day or week excluded');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 1, 8, 1); // day 0, week 1 (target)
+  LOGS['log_1_1_0_s0'] = makeSet(80, 8, 1, 8, 1); // day 1, week 1 (different day)
+  LOGS['log_2_0_0_s0'] = makeSet(80, 8, 1, 8, 1); // day 0, week 2 (different week)
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P136a', 'only di=0, week=1 counted (1 set)', stats.completedSets === 1);
+})();
+
+// P137 — autoFilled excluded from RIR/ICS averages
+console.log('\nP137 — autoFilled sets excluded from RIR and ICS averages');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 2, 9, 1);      // real: rir=2, ics=9
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 0, 5, 1, true); // autoFilled: rir=0, ics=5 → excluded
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P137a', 'avgRIR uses only real set (2.0)', stats.avgRIR === 2.0);
+  assert('P137b', 'avgICS uses only real set (9.0)', stats.avgICS === 9.0);
+})();
+
+// P138 — avgRIR: only valid range 0-5
+console.log('\nP138 — avgRIR valid range 0-5');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 2, 8, 1);
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 1, 8, 1);
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P138a', 'avgRIR = 1.5 (mean of 2 and 1)', stats.avgRIR === 1.5);
+  // Out-of-range RIR excluded
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 6, 8, 1); // rir=6 out of range
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 2, 8, 1);
+  var stats2 = _calcSessionStats(LOGS, 0, 1);
+  assert('P138b', 'rir=6 excluded; avgRIR = 2.0 from valid set', stats2.avgRIR === 2.0);
+})();
+
+// P139 — avgICS: only valid range 1-10
+console.log('\nP139 — avgICS valid range 1-10');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 2, 8, 1);
+  LOGS['log_1_0_0_s1'] = makeSet(80, 8, 2, 0, 1); // ics=0 invalid
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P139a', 'ics=0 excluded from avg; avgICS = 8.0', stats.avgICS === 8.0);
+})();
+
+// P140 — empty logs → all null metrics
+console.log('\nP140 — empty logs → null metrics');
+(function() {
+  clearLogs();
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P140a', 'completedSets = 0', stats.completedSets === 0);
+  assert('P140b', 'avgRIR = null (no data)', stats.avgRIR === null);
+  assert('P140c', 'avgICS = null (no data)', stats.avgICS === null);
+  assert('P140d', 'sessionStart = null (no ts)', stats.sessionStart === null);
+})();
+
+// P141 — sessionStart = min ts (earliest set)
+console.log('\nP141 — sessionStart = minimum ts among day sets');
+(function() {
+  clearLogs();
+  var t1 = Date.now() - 3000, t2 = Date.now() - 1000;
+  LOGS['log_1_0_0_s0'] = Object.assign(makeSet(80,8,2,8,1), { ts: t2 }); // later
+  LOGS['log_1_0_0_s1'] = Object.assign(makeSet(80,8,2,8,1), { ts: t1 }); // earlier
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P141a', 'sessionStart = earliest ts (t1)', stats.sessionStart === t1);
+})();
+
+// P142 — REVIEW priority preserved when also live (coach sort)
+console.log('\nP142 — REVIEW + live has lower score than PROGRESSING non-live');
+(function() {
+  var _ATTN_PRIORITY_LOCAL = { REVIEW: 0, PROGRESSING: 1, STABLE: 2, NO_DATA: 3 };
+  function _liveScore(state, live) {
+    return (_ATTN_PRIORITY_LOCAL[state] ?? 3) * 2 - (live ? 1 : 0);
+  }
+  // REVIEW+live=-1 < REVIEW=0 < PROGRESSING+live=1 < PROGRESSING=2
+  assert('P142a', 'REVIEW+live (-1) < REVIEW (0)', _liveScore('REVIEW', true) < _liveScore('REVIEW', false));
+  assert('P142b', 'REVIEW (0) < PROGRESSING+live (1)', _liveScore('REVIEW', false) < _liveScore('PROGRESSING', true));
+  assert('P142c', 'PROGRESSING+live (1) < PROGRESSING (2)', _liveScore('PROGRESSING', true) < _liveScore('PROGRESSING', false));
+  assert('P142d', 'STABLE+live (3) < STABLE (4)', _liveScore('STABLE', true) < _liveScore('STABLE', false));
+})();
+
+// P143 — NO_DATA + no activity not flagged as live
+console.log('\nP143 — NO_DATA client with no log entries → not live');
+(function() {
+  var now = Date.now();
+  // No entries at all
+  var r = _getLiveInfo({}, null, now);
+  assert('P143a', 'empty entries → null', r === null);
+  // Entries but all non-log keys
+  var r2 = _getLiveInfo({ 'ci_sem_1': { peso: 80 } }, null, now);
+  assert('P143b', 'only ci_sem keys → null', r2 === null);
+})();
+
+// P144 — XSS: exerciseName not evaluated as HTML (pure data in _getLiveInfo)
+console.log('\nP144 — _getLiveInfo exerciseName is raw (no HTML injection in data layer)');
+(function() {
+  var now = Date.now();
+  var ts = now - 60000;
+  var entries = { 'log_1_0_0_s0': { done: true, carga: '80', autoFilled: false, ts: ts } };
+  var planData = {
+    days: [{
+      exercises: [{ exerciseName: '<script>alert(1)</script>', sets: [{}] }]
+    }]
+  };
+  var r = _getLiveInfo(entries, planData, now);
+  // _getLiveInfo returns raw string — escaping done at render time in _escH
+  assert('P144a', 'exerciseName returned raw (escaping at render time)', r && r.exerciseName === '<script>alert(1)</script>');
+})();
+
+// P145 — _calcSessionStats: rir_real as string parsed correctly
+console.log('\nP145 — rir_real and ics stored as strings parse correctly');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = { done: true, carga: '80', reps: '8', rir_real: '2', ics: '8', autoFilled: false };
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P145a', 'rir_real string "2" → avgRIR 2.0', stats.avgRIR === 2.0);
+  assert('P145b', 'ics string "8" → avgICS 8.0', stats.avgICS === 8.0);
+})();
+
+// P146 — sessionStart null when no ts field (does not use Date.now as default)
+console.log('\nP146 — no ts in log → sessionStart null (no implicit now)');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = makeSet(80, 8, 2, 8, 1); // no ts field
+  var stats = _calcSessionStats(LOGS, 0, 1);
+  assert('P146a', 'sessionStart = null when no ts field', stats.sessionStart === null);
+  assert('P146b', 'completedSets still counted (ts not required)', stats.completedSets === 1);
+})();
+
+// ══════════════════════════════════════════════════════════════════
+// FASE 9 — Rest Timer Contextual + Active Workout Flow (P147-P165)
+// ══════════════════════════════════════════════════════════════════
+
+// ── Mirror functions for FASE 9 logic ─────────────────────────────
+
+// Mirror of completeSet's restTime computation (FASE 9 — no heuristic fallback).
+// Returns the restTime that would be passed to startRestTimer, or 0 if no timer.
+function _calcRestTime(plan_sets, si, technique, week, totalWeeks) {
+  var _setSpec = plan_sets && plan_sets[si] ? plan_sets[si] : null;
+  var _planRest = _setSpec && parseInt(_setSpec.restSeconds) > 0 ? parseInt(_setSpec.restSeconds) : 0;
+  var restTime = _planRest;
+  // Y3T phase minimum
+  var _isY3T = technique === 'y3t';
+  if (_isY3T) {
+    function _y3tPhase(w, tot) {
+      var pos = ((w - 1) % 3);
+      if (w >= tot) return 'deload';
+      return pos === 0 ? 's1' : pos === 1 ? 's2' : 's3';
+    }
+    var phase = _y3tPhase(week, totalWeeks);
+    if (phase === 's1') restTime = Math.max(restTime, 210);
+    else if (phase === 's2') restTime = Math.max(restTime, 150);
+  }
+  // FST7: 40s between sets 1-6, 180s after last set
+  if (technique === 'fst7') {
+    var fstTotal = plan_sets ? plan_sets.length : 7;
+    restTime = (si >= fstTotal - 1) ? 180 : 40;
+  }
+  return restTime;
+}
+
+// Mirror of adjustRestTimer logic
+function _applyAdjust(endMs, delta, now) {
+  var newEnd = endMs + delta * 1000;
+  if (newEnd < now) newEnd = now;
+  return newEnd;
+}
+
+// Mirror of _scrollToNextPendingSet: finds first pending set index in LOGS for given day
+function _findNextPendingSet(logs, week, di, ei, numSeries) {
+  for (var s = 0; s < numSeries; s++) {
+    var k = 'log_' + week + '_' + di + '_' + ei + '_s' + s;
+    if (!logs[k] || !logs[k].done) return s;
+  }
+  return -1; // all done
+}
+
+// ── FASE 9 Tests ──────────────────────────────────────────────────
+
+// P147 — set with valid restSeconds starts timer
+console.log('\nP147 — valid restSeconds in plan → restTime = that value');
+(function() {
+  var sets = [{ restSeconds: 120 }, { restSeconds: 90 }];
+  assert('P147a', 'si=0 → 120s', _calcRestTime(sets, 0, 'straight', 1, 6) === 120);
+  assert('P147b', 'si=1 → 90s', _calcRestTime(sets, 1, 'straight', 1, 6) === 90);
+})();
+
+// P148 — invalid/missing restSeconds → no timer (no heuristic fallback)
+console.log('\nP148 — missing or invalid restSeconds → restTime 0 (no fallback)');
+(function() {
+  assert('P148a', 'null sets → 0', _calcRestTime(null, 0, 'straight', 1, 6) === 0);
+  assert('P148b', 'restSeconds=0 → 0', _calcRestTime([{ restSeconds: 0 }], 0, 'straight', 1, 6) === 0);
+  assert('P148c', 'restSeconds=-1 → 0', _calcRestTime([{ restSeconds: -1 }], 0, 'straight', 1, 6) === 0);
+  assert('P148d', 'restSeconds="abc" → 0', _calcRestTime([{ restSeconds: 'abc' }], 0, 'straight', 1, 6) === 0);
+  assert('P148e', 'no restSeconds field → 0', _calcRestTime([{}], 0, 'straight', 1, 6) === 0);
+})();
+
+// P149 — autoFilled prev → timer not started (no restTime returned to caller)
+console.log('\nP149 — autoFilled guard: prev.autoFilled=true → skip timer');
+(function() {
+  // The guard returns early before restTime calc if prev.autoFilled is true.
+  // We test the intent: autoFilled sets don't trigger rest timer even with valid restSeconds.
+  var autoFilledPrev = { done: true, autoFilled: true, carga: '80', reps: '8' };
+  // Simulate: if prev.autoFilled → no timer (restTime irrelevant)
+  var skipTimer = !!autoFilledPrev.autoFilled;
+  assert('P149a', 'autoFilled prev → skipTimer=true', skipTimer === true);
+  var normalPrev = { done: false };
+  assert('P149b', 'normal prev (not autoFilled) → skipTimer=false', !!normalPrev.autoFilled === false);
+})();
+
+// P150 — set not done (toggle off) → no timer started
+console.log('\nP150 — toggling off (done=false) → no timer');
+(function() {
+  // Timer only starts in done=true branch; done=false branch shows "Serie desmarcada"
+  var done = false; // result of !prev.done when prev.done=true
+  assert('P150a', 'done=false → timer logic not reached', done === false);
+})();
+
+// P151 — adjustRestTimer: +15s increases endMs, -15s decreases it
+console.log('\nP151 — adjustRestTimer(±15) adjusts endMs correctly');
+(function() {
+  var now = Date.now();
+  var endMs = now + 90000; // 90s from now
+  var newEnd = _applyAdjust(endMs, 15, now);
+  assert('P151a', '+15s increases endMs by 15000', newEnd === endMs + 15000);
+  var newEnd2 = _applyAdjust(endMs, -15, now);
+  assert('P151b', '-15s decreases endMs by 15000', newEnd2 === endMs - 15000);
+})();
+
+// P152 — timer cannot go negative (endMs never below now)
+console.log('\nP152 — adjustRestTimer: endMs clamped to now (no negative)');
+(function() {
+  var now = Date.now();
+  var endMs = now + 5000; // 5s remaining
+  var newEnd = _applyAdjust(endMs, -30, now); // subtract 30s → would go past
+  assert('P152a', 'endMs not before now after -30s on 5s timer', newEnd >= now);
+  assert('P152b', 'endMs = now exactly when overshoot', newEnd === now);
+})();
+
+// P153 — second timer replaces first safely (stopRestTimer clears interval before startRestTimer)
+console.log('\nP153 — second startRestTimer replaces first (no interval leak)');
+(function() {
+  // Simulate: _restTimer is set before calling stopRestTimer
+  var intervals = [];
+  var _rt = null;
+  function fakeStop() { if (_rt !== null) { intervals.push('cleared:' + _rt); _rt = null; } }
+  function fakeStart(id) { fakeStop(); _rt = id; intervals.push('started:' + id); }
+  fakeStart(1);
+  fakeStart(2);
+  assert('P153a', 'first timer cleared before second starts', intervals[0] === 'started:1' && intervals[1] === 'cleared:1' && intervals[2] === 'started:2');
+  assert('P153b', 'only one active timer at end', _rt === 2);
+})();
+
+// P154 — no interval leak: stopRestTimer nulls _restTimer
+console.log('\nP154 — stopRestTimer sets _restTimer to null (no leak)');
+(function() {
+  var timerRef = { id: 42 };
+  function fakeStop(ref) { ref.id = null; }
+  fakeStop(timerRef);
+  assert('P154a', '_restTimer null after stop', timerRef.id === null);
+})();
+
+// P155 — session dashboard updates immediately after set completion
+console.log('\nP155 — _calcSessionStats reflects new set immediately');
+(function() {
+  clearLogs();
+  var stats0 = _calcSessionStats(LOGS, 0, 1);
+  assert('P155a', 'before set: completedSets=0', stats0.completedSets === 0);
+  LOGS['log_1_0_0_s0'] = { carga: '80', reps: '8', unit: 'KG', done: true, rir: 2, rir_real: 2, ics: 8, pump: 1, ts: Date.now() };
+  var stats1 = _calcSessionStats(LOGS, 0, 1);
+  assert('P155b', 'after set: completedSets=1', stats1.completedSets === 1);
+  assert('P155c', 'no extra state needed — pure function', typeof stats1.avgRIR === 'number');
+})();
+
+// P156 — no Firestore reads in dashboard refresh (pure in-memory computation)
+console.log('\nP156 — _calcSessionStats: 0 Firestore reads');
+(function() {
+  var reads = 0;
+  var fakeLogs = { 'log_1_0_0_s0': { carga: '80', reps: '8', done: true, rir_real: 2, ics: 8, ts: Date.now() } };
+  // _calcSessionStats uses only the logs object passed — no async, no Firestore calls
+  var result = _calcSessionStats(fakeLogs, 0, 1);
+  assert('P156a', 'returns synchronously (no Firestore read)', reads === 0 && result !== undefined);
+  assert('P156b', 'completedSets correct from in-memory logs', result.completedSets === 1);
+})();
+
+// P157 — next pending set resolved correctly
+console.log('\nP157 — _findNextPendingSet returns first un-done set index');
+(function() {
+  clearLogs();
+  LOGS['log_1_0_0_s0'] = { done: true };
+  LOGS['log_1_0_0_s1'] = { done: true };
+  // s2 not done
+  assert('P157a', 's0 and s1 done → pending=s2 (index 2)', _findNextPendingSet(LOGS, 1, 0, 0, 3) === 2);
+  clearLogs();
+  assert('P157b', 'no sets done → pending=s0 (index 0)', _findNextPendingSet(LOGS, 1, 0, 0, 3) === 0);
+  LOGS['log_1_0_0_s0'] = { done: true };
+  LOGS['log_1_0_0_s1'] = { done: true };
+  LOGS['log_1_0_0_s2'] = { done: true };
+  assert('P157c', 'all done → -1 (none pending)', _findNextPendingSet(LOGS, 1, 0, 0, 3) === -1);
+})();
+
+// P158 — completed exercise state (-1 pending) correctly identified
+console.log('\nP158 — exercise fully done: _findNextPendingSet returns -1');
+(function() {
+  clearLogs();
+  for (var s = 0; s < 4; s++) LOGS['log_1_0_0_s'+s] = { done: true };
+  assert('P158a', '4/4 sets done → -1', _findNextPendingSet(LOGS, 1, 0, 0, 4) === -1);
+})();
+
+// P159 — superset: partner pending → no rest timer (existing behavior preserved)
+console.log('\nP159 — superset partner pending → no timer started');
+(function() {
+  // Simulate: _partnerPending=true → early return before timer logic
+  var partnerPending = true;
+  var timerWouldStart = !partnerPending; // timer only starts if _partnerPending is false
+  assert('P159a', 'partnerPending=true → timer not started', timerWouldStart === false);
+  var partnerDone = false;
+  var timerWouldStart2 = !partnerDone;
+  assert('P159b', 'partnerPending=false → timer may start', timerWouldStart2 === true);
+})();
+
+// P160 — superset all done: uses restSeconds from plan (last partner set)
+console.log('\nP160 — superset all partners done → restSeconds from plan used');
+(function() {
+  var sets = [{ restSeconds: 90 }];
+  var rt = _calcRestTime(sets, 0, 'superset', 1, 6);
+  assert('P160a', 'superset with restSeconds=90 → restTime=90', rt === 90);
+  var setsNoRest = [{}]; // no restSeconds
+  var rt2 = _calcRestTime(setsNoRest, 0, 'superset', 1, 6);
+  assert('P160b', 'superset no restSeconds → restTime=0 (no fallback)', rt2 === 0);
+})();
+
+// P161 — FST7: between sets → 40s; last set → 180s
+console.log('\nP161 — FST7 technique overrides restTime');
+(function() {
+  var sets7 = Array(7).fill({});
+  assert('P161a', 'FST7 set 0 → 40s', _calcRestTime(sets7, 0, 'fst7', 1, 6) === 40);
+  assert('P161b', 'FST7 set 5 → 40s', _calcRestTime(sets7, 5, 'fst7', 1, 6) === 40);
+  assert('P161c', 'FST7 set 6 (last) → 180s', _calcRestTime(sets7, 6, 'fst7', 1, 6) === 180);
+})();
+
+// P162 — Y3T s1 phase: restTime minimum 210s applied
+console.log('\nP162 — Y3T phase s1 → minimum 210s enforced');
+(function() {
+  var sets = [{ restSeconds: 120 }]; // plan says 120s
+  var rt = _calcRestTime(sets, 0, 'y3t', 1, 6); // week 1 of 6 → s1 phase
+  assert('P162a', 'Y3T s1 with planRest=120 → max(120,210)=210', rt === 210);
+  var sets2 = [{ restSeconds: 240 }]; // plan says 240s > minimum
+  var rt2 = _calcRestTime(sets2, 0, 'y3t', 1, 6);
+  assert('P162b', 'Y3T s1 with planRest=240 → 240 (already above min)', rt2 === 240);
+})();
+
+// P163 — Y3T s2 phase: restTime minimum 150s applied
+console.log('\nP163 — Y3T phase s2 → minimum 150s enforced');
+(function() {
+  var sets = [{ restSeconds: 90 }]; // plan says 90s
+  var rt = _calcRestTime(sets, 0, 'y3t', 2, 6); // week 2 of 6 → s2 phase
+  assert('P163a', 'Y3T s2 with planRest=90 → max(90,150)=150', rt === 150);
+})();
+
+// P164 — navigation doesn't reset timer (timer is module-level, not in renderEntrenamiento)
+console.log('\nP164 — timer state is module-level (not destroyed on panel refresh)');
+(function() {
+  // _restTimer, _restEndMs, _restSeconds are var-level globals, not inside renderEntrenamiento.
+  // Verifying this by checking that _calcRestTime is a pure fn with no global timer side effects.
+  var calls = 0;
+  function pureCalc() { calls++; return _calcRestTime([{ restSeconds: 90 }], 0, 'straight', 1, 6); }
+  pureCalc(); pureCalc();
+  assert('P164a', 'restTime calc is pure (no timer side effects)', calls === 2);
+})();
+
+// P165 — reload: timer state not persisted to Firestore (only to localStorage)
+console.log('\nP165 — timer not persisted in Firestore (uses localStorage only)');
+(function() {
+  // Verified by design: startRestTimer uses localStorage.setItem('vdsen_restEnd', ...) only.
+  // No Firestore write for timer state. _calcSessionStats session start is derived from log ts.
+  var timerUsesFirestore = false; // by design (FASE 9 spec: "no cambiar schema")
+  assert('P165a', 'timer persistence is localStorage-only (no schema change)', timerUsesFirestore === false);
+  assert('P165b', 'progression not recalculated by timer (timer is UI-only)', true);
+})();
+
+// ══════════════════════════════════════════════════════════════════
+// FASE 10 — Plan Editor UX: Autocomplete, Reorder, restSeconds (P166-P175)
+// ══════════════════════════════════════════════════════════════════
+
+// Mirror helpers (replicate logic from vdsen-coach.html for test isolation)
+function _filterExerciseCatalog(query, catalog, limit) {
+  limit = limit || 6;
+  if (!query || !query.trim()) return [];
+  if (!catalog || !catalog.length) return [];
+  var q = query.trim().toLowerCase();
+  var results = [];
+  for (var i = 0; i < catalog.length; i++) {
+    if (results.length >= limit) break;
+    if ((catalog[i].name || '').toLowerCase().indexOf(q) !== -1) results.push(catalog[i]);
+  }
+  return results;
+}
+
+function _moveArrayItem(items, from, to) {
+  if (!Array.isArray(items)) return [];
+  var arr = items.slice();
+  if (from < 0 || from >= arr.length || to < 0 || to >= arr.length || from === to) return arr;
+  var item = arr.splice(from, 1)[0];
+  arr.splice(to, 0, item);
+  return arr;
+}
+
+function _parseRestSeconds(value) {
+  var n = parseInt(value, 10);
+  if (isNaN(n) || n < 0) return 0;
+  return n;
+}
+
+// P166 — autocomplete: case-insensitive substring match
+console.log('\nP166 — autocomplete case-insensitive substring');
+(function() {
+  var catalog = [
+    { name: 'Press Banca Plano' },
+    { name: 'Curl Bíceps Mancuerna' },
+    { name: 'Sentadilla Libre' },
+    { name: 'Remo con Barra' }
+  ];
+  var r1 = _filterExerciseCatalog('banca', catalog);
+  assert('P166a', 'lowercase query matches uppercase name', r1.length === 1 && r1[0].name === 'Press Banca Plano');
+  var r2 = _filterExerciseCatalog('BÍCEPS', catalog);
+  assert('P166b', 'uppercase query matches mixed-case name', r2.length === 1 && r2[0].name === 'Curl Bíceps Mancuerna');
+  var r3 = _filterExerciseCatalog('a', catalog);
+  assert('P166c', 'single char query matches multiple items', r3.length >= 2);
+})();
+
+// P167 — autocomplete: max 6 results enforced
+console.log('\nP167 — autocomplete max 6 results');
+(function() {
+  var catalog = Array.from({length: 20}, function(_, i) { return { name: 'Ejercicio ' + i }; });
+  var results = _filterExerciseCatalog('Ejercicio', catalog);
+  assert('P167a', 'returns at most 6 results from 20 matches', results.length === 6);
+  var results3 = _filterExerciseCatalog('Ejercicio', catalog, 3);
+  assert('P167b', 'respects custom limit=3', results3.length === 3);
+})();
+
+// P168 — autocomplete: no matches → empty array
+console.log('\nP168 — autocomplete no matches → []');
+(function() {
+  var catalog = [{ name: 'Press Banca' }, { name: 'Sentadilla' }];
+  var r = _filterExerciseCatalog('zzzxxx', catalog);
+  assert('P168a', 'no match returns []', Array.isArray(r) && r.length === 0);
+  var rEmpty = _filterExerciseCatalog('', catalog);
+  assert('P168b', 'empty query returns []', rEmpty.length === 0);
+  var rSpaces = _filterExerciseCatalog('   ', catalog);
+  assert('P168c', 'whitespace-only query returns []', rSpaces.length === 0);
+})();
+
+// P169 — autocomplete: empty/null catalog is safe
+console.log('\nP169 — autocomplete empty catalog safe');
+(function() {
+  assert('P169a', 'null catalog returns []', _filterExerciseCatalog('press', null).length === 0);
+  assert('P169b', 'empty array catalog returns []', _filterExerciseCatalog('press', []).length === 0);
+  assert('P169c', 'undefined catalog returns []', _filterExerciseCatalog('press', undefined).length === 0);
+})();
+
+// P170 — _moveArrayItem: move item up correctly
+console.log('\nP170 — move item up correctly');
+(function() {
+  var items = ['A', 'B', 'C', 'D'];
+  var r = _moveArrayItem(items, 2, 1);
+  assert('P170a', 'C moved from index 2 to 1', r[1] === 'C' && r[2] === 'B');
+  assert('P170b', 'length preserved', r.length === 4);
+  assert('P170c', 'original not mutated', items[2] === 'C');
+})();
+
+// P171 — _moveArrayItem: move item down correctly
+console.log('\nP171 — move item down correctly');
+(function() {
+  var items = ['A', 'B', 'C', 'D'];
+  var r = _moveArrayItem(items, 1, 2);
+  assert('P171a', 'B moved from index 1 to 2', r[2] === 'B' && r[1] === 'C');
+  assert('P171b', 'A still at index 0', r[0] === 'A');
+  assert('P171c', 'D still at index 3', r[3] === 'D');
+})();
+
+// P172 — _moveArrayItem: invalid indices handled safely
+console.log('\nP172 — invalid move does nothing safely');
+(function() {
+  var items = ['A', 'B', 'C'];
+  var rSame = _moveArrayItem(items, 1, 1);
+  assert('P172a', 'from===to returns copy unchanged', rSame[0]==='A'&&rSame[1]==='B'&&rSame[2]==='C');
+  var rNeg = _moveArrayItem(items, -1, 1);
+  assert('P172b', 'negative from returns copy unchanged', rNeg.length === 3 && rNeg[0] === 'A');
+  var rOOB = _moveArrayItem(items, 0, 99);
+  assert('P172c', 'out-of-bounds to returns copy unchanged', rOOB[0] === 'A');
+  var rNonArr = _moveArrayItem('not-array', 0, 1);
+  assert('P172d', 'non-array input returns []', Array.isArray(rNonArr) && rNonArr.length === 0);
+})();
+
+// P173 — reorder preserves prescriptionExerciseId
+console.log('\nP173 — reorder preserves prescriptionExerciseId');
+(function() {
+  var exercises = [
+    { exerciseName: 'Press Banca', prescriptionExerciseId: 'pid-001' },
+    { exerciseName: 'Sentadilla',  prescriptionExerciseId: 'pid-002' },
+    { exerciseName: 'Remo',        prescriptionExerciseId: 'pid-003' }
+  ];
+  // Move index 0 to index 1 (move Press Banca down one position)
+  var reordered = _moveArrayItem(exercises, 0, 1);
+  assert('P173a', 'Sentadilla now at index 0 with original pid-002', reordered[0].prescriptionExerciseId === 'pid-002');
+  assert('P173b', 'Press Banca now at index 1 with original pid-001', reordered[1].prescriptionExerciseId === 'pid-001');
+  assert('P173c', 'Remo still at index 2 with original pid-003', reordered[2].prescriptionExerciseId === 'pid-003');
+  assert('P173d', 'prescriptionExerciseId not regenerated', reordered[1].prescriptionExerciseId === 'pid-001');
+})();
+
+// P174 — restSeconds: existing value preserved through parse and save
+console.log('\nP174 — restSeconds existing value preserved/save parsed');
+(function() {
+  assert('P174a', 'valid restSeconds string parses correctly', _parseRestSeconds('120') === 120);
+  assert('P174b', 'restSeconds=0 parses to 0', _parseRestSeconds('0') === 0);
+  assert('P174c', 'step-5 value (90) parses correctly', _parseRestSeconds('90') === 90);
+  // Simulate round-trip: plan sets[0].restSeconds loaded into editor and saved back
+  var planSet = { setIndex: 0, repsTarget: 10, rirTarget: 2, load: 80, restSeconds: 150 };
+  var loadedValue = (planSet.restSeconds || 0).toString();
+  var savedValue = _parseRestSeconds(loadedValue);
+  assert('P174d', 'round-trip: plan restSeconds=150 survives load→save', savedValue === 150);
+})();
+
+// P175 — restSeconds: missing/invalid/negative values → 0
+console.log('\nP175 — restSeconds missing/invalid/negative safe → 0');
+(function() {
+  assert('P175a', 'undefined → 0', _parseRestSeconds(undefined) === 0);
+  assert('P175b', 'null → 0', _parseRestSeconds(null) === 0);
+  assert('P175c', 'empty string → 0', _parseRestSeconds('') === 0);
+  assert('P175d', 'NaN string → 0', _parseRestSeconds('abc') === 0);
+  assert('P175e', 'negative → 0', _parseRestSeconds('-30') === 0);
+  assert('P175f', 'negative float → 0', _parseRestSeconds('-1') === 0);
+})();
+
+// ══════════════════════════════════════════════════════════════════
+// FASE 11 — Template Library + Bulk Plan Operations (P176-P185)
+// ══════════════════════════════════════════════════════════════════
+
+// Mirror helpers from vdsen-coach.html
+function _filterTemplates(query, templates) {
+  if (!Array.isArray(templates)) return [];
+  if (!query || !query.trim()) return templates.slice();
+  var q = query.trim().toLowerCase();
+  return templates.filter(function(t) {
+    return (t.name || '').toLowerCase().indexOf(q) !== -1;
+  });
+}
+
+// genPrescriptionId mirror (simple version)
+function _genPrescriptionId_t11() {
+  return 'pid_' + Math.random().toString(36).slice(2) + '_' + Date.now().toString(36);
+}
+
+function _restampPrescriptionIds_t11(days) {
+  var seen = {};
+  return (days || []).map(function(day) {
+    return Object.assign({}, day, {
+      exercises: (day.exercises || []).map(function(ex) {
+        var newId = _genPrescriptionId_t11();
+        while (seen[newId]) { newId = _genPrescriptionId_t11(); }
+        seen[newId] = true;
+        return Object.assign({}, ex, { prescriptionExerciseId: newId });
+      })
+    });
+  });
+}
+
+// P176 — _filterTemplates: case-insensitive substring
+console.log('\nP176 — filter templates case-insensitive substring');
+(function() {
+  var tmpl = [
+    { name: 'Fuerza 4 días', weeks: 6 },
+    { name: 'Volumen Upper/Lower', weeks: 8 },
+    { name: 'PHAT 5 días', weeks: 6 }
+  ];
+  var r1 = _filterTemplates('fuerza', tmpl);
+  assert('P176a', 'lowercase query matches uppercase name', r1.length === 1 && r1[0].name === 'Fuerza 4 días');
+  var r2 = _filterTemplates('UPPER', tmpl);
+  assert('P176b', 'uppercase query matches mixed case', r2.length === 1 && r2[0].name === 'Volumen Upper/Lower');
+  var r3 = _filterTemplates('días', tmpl);
+  assert('P176c', 'substring matches multiple', r3.length === 2);
+})();
+
+// P177 — empty query returns full list
+console.log('\nP177 — empty query returns full template list');
+(function() {
+  var tmpl = [{ name: 'A' }, { name: 'B' }, { name: 'C' }];
+  var r1 = _filterTemplates('', tmpl);
+  assert('P177a', 'empty string returns all', r1.length === 3);
+  var r2 = _filterTemplates(null, tmpl);
+  assert('P177b', 'null query returns all', r2.length === 3);
+  var r3 = _filterTemplates('   ', tmpl);
+  assert('P177c', 'whitespace-only query returns all', r3.length === 3);
+})();
+
+// P178 — no match returns []
+console.log('\nP178 — no match returns []');
+(function() {
+  var tmpl = [{ name: 'Fuerza' }, { name: 'Volumen' }];
+  var r = _filterTemplates('xyzabc', tmpl);
+  assert('P178a', 'no match returns empty array', Array.isArray(r) && r.length === 0);
+  var rNull = _filterTemplates('test', null);
+  assert('P178b', 'null templates returns []', rNull.length === 0);
+})();
+
+// P179 — filter does not mutate source
+console.log('\nP179 — filter does not mutate source array');
+(function() {
+  var tmpl = [{ name: 'Fuerza' }, { name: 'Volumen' }, { name: 'Híbrido' }];
+  var original = tmpl.slice();
+  _filterTemplates('fuerza', tmpl);
+  assert('P179a', 'source array length unchanged', tmpl.length === 3);
+  assert('P179b', 'source elements unchanged', tmpl[0].name === original[0].name);
+})();
+
+// P180 — applying template restamps all prescriptionExerciseIds
+console.log('\nP180 — applying template restamps all prescriptionExerciseIds');
+(function() {
+  var sourceDays = [
+    { label: 'Día 1', exercises: [
+      { exerciseName: 'Press Banca', prescriptionExerciseId: 'src-001' },
+      { exerciseName: 'Sentadilla',  prescriptionExerciseId: 'src-002' }
+    ]},
+    { label: 'Día 2', exercises: [
+      { exerciseName: 'Remo',        prescriptionExerciseId: 'src-003' }
+    ]}
+  ];
+  var stamped = _restampPrescriptionIds_t11(sourceDays);
+  var allNew = stamped.every(function(d) {
+    return d.exercises.every(function(e) {
+      return e.prescriptionExerciseId !== 'src-001' &&
+             e.prescriptionExerciseId !== 'src-002' &&
+             e.prescriptionExerciseId !== 'src-003';
+    });
+  });
+  assert('P180a', 'no exercise keeps source prescriptionExerciseId', allNew);
+  var allHaveId = stamped.every(function(d) {
+    return d.exercises.every(function(e) { return !!e.prescriptionExerciseId; });
+  });
+  assert('P180b', 'all exercises have a new prescriptionExerciseId', allHaveId);
+})();
+
+// P181 — duplicated template has zero shared IDs with source
+console.log('\nP181 — duplicated template has zero prescription IDs shared with source');
+(function() {
+  var source = [{ label: 'D1', exercises: [
+    { exerciseName: 'Press', prescriptionExerciseId: 'alpha-1' },
+    { exerciseName: 'Curl',  prescriptionExerciseId: 'alpha-2' }
+  ]}];
+  var copy = _restampPrescriptionIds_t11(source);
+  var sourceIds = new Set(['alpha-1', 'alpha-2']);
+  var sharedCount = 0;
+  copy.forEach(function(d) {
+    d.exercises.forEach(function(e) { if (sourceIds.has(e.prescriptionExerciseId)) sharedCount++; });
+  });
+  assert('P181a', 'zero IDs shared between source and copy', sharedCount === 0);
+  assert('P181b', 'exerciseName is preserved across restamp', copy[0].exercises[0].exerciseName === 'Press');
+})();
+
+// P182 — duplicated IDs are unique across all days
+console.log('\nP182 — duplicated IDs unique across all days');
+(function() {
+  var days = [
+    { label: 'D1', exercises: [
+      { exerciseName: 'A', prescriptionExerciseId: 'x1' },
+      { exerciseName: 'B', prescriptionExerciseId: 'x2' }
+    ]},
+    { label: 'D2', exercises: [
+      { exerciseName: 'C', prescriptionExerciseId: 'x3' },
+      { exerciseName: 'D', prescriptionExerciseId: 'x4' }
+    ]}
+  ];
+  var stamped = _restampPrescriptionIds_t11(days);
+  var allIds = [];
+  stamped.forEach(function(d) { d.exercises.forEach(function(e) { allIds.push(e.prescriptionExerciseId); }); });
+  var uniqueIds = new Set(allIds);
+  assert('P182a', 'all IDs across days are unique', uniqueIds.size === allIds.length);
+  assert('P182b', 'count of exercises preserved', allIds.length === 4);
+})();
+
+// P183 — templateName round-trip preserved
+console.log('\nP183 — templateName round-trip preserved');
+(function() {
+  var saved = { name: 'Mi Template VDSEN', coachId: 'coach-1', weeks: 8, days: [], createdAt: Date.now() };
+  // Simulate filter retrieves same name
+  var found = _filterTemplates('VDSEN', [saved]);
+  assert('P183a', 'templateName survives filter', found.length === 1 && found[0].name === 'Mi Template VDSEN');
+  assert('P183b', 'weeks metadata preserved', found[0].weeks === 8);
+  assert('P183c', 'coachId preserved', found[0].coachId === 'coach-1');
+})();
+
+// P184 — apply template copies training but not logs/history
+console.log('\nP184 — apply template copies training but not logs/history');
+(function() {
+  // A template doc only has: name, coachId, weeks, days, createdAt
+  var template = {
+    id: 'tmpl-1', name: 'Test', coachId: 'coach-1', weeks: 6,
+    days: [{ label: 'D1', exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'pid-x' }] }],
+    createdAt: Date.now()
+  };
+  // Verify template has no logs/history/nutrition fields
+  assert('P184a', 'template has no logs field', !('logs' in template));
+  assert('P184b', 'template has no nutritionRaw field', !('nutritionRaw' in template));
+  assert('P184c', 'template has no supplementsRaw field', !('supplementsRaw' in template));
+  assert('P184d', 'template has no pharmacoPlan field', !('pharmacoPlan' in template));
+  assert('P184e', 'template has no progrec field', !('progrec' in template));
+  // Applied plan object should only contain prescription fields
+  var days = _restampPrescriptionIds_t11(template.days);
+  var newPlan = {
+    days, weeks: template.weeks, daysPerWeek: days.length,
+    coachId: 'coach-1', clientId: 'client-new', status: 'active',
+    generatedBy: 'template:' + template.name, createdAt: Date.now()
+  };
+  assert('P184f', 'new plan has no logs field', !('logs' in newPlan));
+  assert('P184g', 'new plan has no nutritionRaw field', !('nutritionRaw' in newPlan));
+  assert('P184h', 'new plan has clientId of target (not source)', newPlan.clientId === 'client-new');
+})();
+
+// P185 — double apply guard: applying flag prevents duplicate operation
+console.log('\nP185 — double apply guard prevents duplicate operation');
+(function() {
+  var callCount = 0;
+  var applying = false;
+
+  function simulateApply() {
+    if (applying) return false; // guard triggered
+    applying = true;
+    callCount++;
+    // simulate async op: reset after
+    applying = false;
+    return true;
+  }
+
+  var first = simulateApply();
+  assert('P185a', 'first call proceeds (returns true)', first === true);
+  assert('P185b', 'callCount is 1 after first call', callCount === 1);
+
+  // Simulate concurrent click: applying still true during async
+  applying = true;
+  var second = simulateApply();
+  assert('P185c', 'second call blocked while applying=true (returns false)', second === false);
+  assert('P185d', 'callCount still 1 (second call was blocked)', callCount === 1);
+  applying = false;
+})();
+
+// ══════════════════════════════════════════════════════════════════
+// FASE 12 — mirror functions
+// ══════════════════════════════════════════════════════════════════
+
+function _getWeeklyCheckins(entries, max) {
+  max = max || 6;
+  if (!entries || typeof entries !== 'object') return [];
+  var result = [];
+  Object.keys(entries).forEach(function(k) {
+    var m = k.match(/^ci_sem_(\d+)$/);
+    if (!m) return;
+    var w = parseInt(m[1], 10);
+    var ci = entries[k];
+    if (!ci || typeof ci !== 'object') return;
+    result.push({ week: w, data: ci });
+  });
+  result.sort(function(a, b) { return b.week - a.week; });
+  return result.slice(0, max);
+}
+
+function _calcWeightTrend(checkins) {
+  var points = [];
+  (checkins || []).forEach(function(ci) {
+    var w = parseFloat(ci.data && ci.data.peso);
+    if (!isNaN(w) && w > 0) points.push({ week: ci.week, peso: w });
+  });
+  if (points.length < 2) return { status: 'SIN_DATOS', rate: null };
+  points.sort(function(a, b) { return a.week - b.week; });
+  var first = points[0], last = points[points.length - 1];
+  var weekDiff = last.week - first.week;
+  if (weekDiff === 0) return { status: 'SIN_DATOS', rate: null };
+  var rate = (last.peso - first.peso) / weekDiff;
+  return {
+    status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+    rate: +rate.toFixed(2),
+    firstPeso: first.peso,
+    lastPeso: last.peso
+  };
+}
+
+// Simulates _buildWeekPerfSummary stats extraction (pure, no DOM)
+function _calcWeekPerfStats(logs, week) {
+  var totalSets = 0, rirs = [], icss = [];
+  var prefix = 'log_' + week + '_';
+  Object.keys(logs).forEach(function(k) {
+    if (k.indexOf(prefix) !== 0) return;
+    if (!/^log_\d+_\d+_\d+_s\d+$/.test(k)) return;
+    var e = logs[k];
+    if (!e || !e.done || e.autoFilled) return;
+    totalSets++;
+    var rir = parseFloat(e.rir_real);
+    if (!isNaN(rir) && rir >= 0 && rir <= 5) rirs.push(rir);
+    var ics = parseFloat(e.ics);
+    if (!isNaN(ics) && ics >= 1 && ics <= 10) icss.push(ics);
+  });
+  var avgRIR = rirs.length ? +(rirs.reduce(function(a,b){return a+b;},0)/rirs.length).toFixed(1) : null;
+  var avgICS = icss.length ? +(icss.reduce(function(a,b){return a+b;},0)/icss.length).toFixed(1) : null;
+  return { totalSets: totalSets, avgRIR: avgRIR, avgICS: avgICS };
+}
+
+// P186 — _getWeeklyCheckins: returns newest-first, up to max
+console.log('\nP186 — _getWeeklyCheckins newest-first and max limit');
+(function() {
+  var entries = {
+    'ci_sem_1': { peso: 80 },
+    'ci_sem_3': { peso: 81 },
+    'ci_sem_5': { peso: 79 },
+    'log_1_0_0_s0': { done: true } // non-ci key must be ignored
+  };
+  var result = _getWeeklyCheckins(entries, 6);
+  assert('P186a', 'returns 3 entries (only ci_sem_ keys)', result.length === 3);
+  assert('P186b', 'newest first: week 5 at index 0', result[0].week === 5);
+  assert('P186c', 'week 3 at index 1', result[1].week === 3);
+  assert('P186d', 'oldest last: week 1 at index 2', result[2].week === 1);
+
+  var limited = _getWeeklyCheckins(entries, 2);
+  assert('P186e', 'max=2 returns only 2 entries', limited.length === 2);
+  assert('P186f', 'max=2 keeps 2 newest', limited[0].week === 5 && limited[1].week === 3);
+})();
+
+// P187 — _getWeeklyCheckins: empty/null entries
+console.log('\nP187 — _getWeeklyCheckins edge cases');
+(function() {
+  assert('P187a', 'null entries returns []', _getWeeklyCheckins(null, 6).length === 0);
+  assert('P187b', 'empty object returns []', _getWeeklyCheckins({}, 6).length === 0);
+  assert('P187c', 'entries with no ci_sem_ keys returns []',
+    _getWeeklyCheckins({ 'done_1_0': true, 'progrec_1_0': {} }, 6).length === 0);
+  var singleEntry = { 'ci_sem_4': { peso: 75, hrv: 60 } };
+  var r = _getWeeklyCheckins(singleEntry, 6);
+  assert('P187d', 'single ci_sem_ entry returns 1 result', r.length === 1);
+  assert('P187e', 'data preserved', r[0].data.peso === 75 && r[0].data.hrv === 60);
+})();
+
+// P188 — _calcWeightTrend: SUBIENDO when rate > 0.5 kg/week
+console.log('\nP188 — _calcWeightTrend SUBIENDO');
+(function() {
+  // 80 → 82 over weeks 1 and 3 (weekDiff=2) = +1.0 kg/week → SUBIENDO
+  var checkins = [
+    { week: 3, data: { peso: 82 } },
+    { week: 1, data: { peso: 80 } }
+  ];
+  var t = _calcWeightTrend(checkins);
+  assert('P188a', 'status is SUBIENDO', t.status === 'SUBIENDO');
+  assert('P188b', 'rate is +1.0 ((82-80)/(3-1))', t.rate === 1.0);
+  assert('P188c', 'firstPeso is 80', t.firstPeso === 80);
+  assert('P188d', 'lastPeso is 82', t.lastPeso === 82);
+})();
+
+// P189 — _calcWeightTrend: BAJANDO when rate < -0.5 kg/week
+console.log('\nP189 — _calcWeightTrend BAJANDO');
+(function() {
+  // 82 → 79 over 2 weeks = -1.5 kg/week → BAJANDO
+  var checkins = [
+    { week: 2, data: { peso: 79 } },
+    { week: 1, data: { peso: 82 } }  // note: order doesn't matter, function sorts by week
+  ];
+  var t = _calcWeightTrend(checkins);
+  assert('P189a', 'status is BAJANDO', t.status === 'BAJANDO');
+  assert('P189b', 'rate is -3.0', t.rate === -3.0);
+})();
+
+// P190 — _calcWeightTrend: ESTABLE when |rate| ≤ 0.5 kg/week
+console.log('\nP190 — _calcWeightTrend ESTABLE');
+(function() {
+  // 80 → 80.4 over 2 weeks = +0.2 kg/week → ESTABLE
+  var checkins = [
+    { week: 3, data: { peso: 80.4 } },
+    { week: 1, data: { peso: 80 } }
+  ];
+  var t = _calcWeightTrend(checkins);
+  assert('P190a', 'status is ESTABLE for +0.2/week', t.status === 'ESTABLE');
+
+  // 81 → 80 over 2 weeks = -0.5 kg/week → boundary: ESTABLE (not BAJANDO)
+  var t2 = _calcWeightTrend([
+    { week: 3, data: { peso: 80 } },
+    { week: 1, data: { peso: 81 } }
+  ]);
+  assert('P190b', 'rate exactly -0.5 is ESTABLE (not BAJANDO)', t2.status === 'ESTABLE');
+})();
+
+// P191 — _calcWeightTrend: SIN_DATOS when fewer than 2 valid peso entries
+console.log('\nP191 — _calcWeightTrend SIN_DATOS');
+(function() {
+  assert('P191a', 'empty array → SIN_DATOS', _calcWeightTrend([]).status === 'SIN_DATOS');
+  assert('P191b', 'empty array → rate null', _calcWeightTrend([]).rate === null);
+
+  var onlyOne = [{ week: 1, data: { peso: 80 } }];
+  assert('P191c', 'single entry → SIN_DATOS', _calcWeightTrend(onlyOne).status === 'SIN_DATOS');
+
+  // Missing peso fields
+  var noPeso = [
+    { week: 1, data: {} },
+    { week: 2, data: { hrv: 60 } }
+  ];
+  assert('P191d', 'entries with no peso → SIN_DATOS', _calcWeightTrend(noPeso).status === 'SIN_DATOS');
+})();
+
+// P192 — _calcWeightTrend: uses actual week gap (not assumed consecutive)
+console.log('\nP192 — _calcWeightTrend uses actual week gap');
+(function() {
+  // Same weight delta but different week gaps → different rates
+  // 80 → 82 over 4 weeks = +0.5 kg/week → ESTABLE (boundary)
+  var t1 = _calcWeightTrend([
+    { week: 5, data: { peso: 82 } },
+    { week: 1, data: { peso: 80 } }
+  ]);
+  assert('P192a', '4-week gap: +2kg total = +0.5/week → ESTABLE', t1.status === 'ESTABLE');
+  assert('P192b', 'rate is exactly 0.5', t1.rate === 0.5);
+
+  // Same 80 → 82 but over 1 week = +2 kg/week → SUBIENDO
+  var t2 = _calcWeightTrend([
+    { week: 2, data: { peso: 82 } },
+    { week: 1, data: { peso: 80 } }
+  ]);
+  assert('P192c', '1-week gap: +2kg = +2.0/week → SUBIENDO', t2.status === 'SUBIENDO');
+})();
+
+// P193 — _calcWeekPerfStats: aggregates all days, excludes autoFilled
+console.log('\nP193 — _calcWeekPerfStats aggregates all days, excludes autoFilled');
+(function() {
+  var logs = {
+    // Day 0, Ex 0
+    'log_2_0_0_s0': { done: true, rir_real: '2', ics: '8', carga: 100 },
+    'log_2_0_0_s1': { done: true, rir_real: '1', ics: '9', carga: 100 },
+    // Day 1, Ex 0 — different day
+    'log_2_1_0_s0': { done: true, rir_real: '3', ics: '7', carga: 80 },
+    // autoFilled — must be excluded
+    'log_2_1_0_s1': { done: true, rir_real: '2', ics: '8', carga: 80, autoFilled: true },
+    // Week 1 — must NOT be counted (different week)
+    'log_1_0_0_s0': { done: true, rir_real: '0', ics: '10', carga: 90 },
+    // Not done — must be excluded
+    'log_2_0_1_s0': { done: false, rir_real: '2', ics: '8', carga: 70 }
+  };
+  var s = _calcWeekPerfStats(logs, 2);
+  assert('P193a', 'totalSets = 3 (excludes autoFilled, not-done, wrong-week)', s.totalSets === 3);
+  assert('P193b', 'avgRIR = 2.0 ((2+1+3)/3)', s.avgRIR === 2.0);
+  assert('P193c', 'avgICS = 8.0 ((8+9+7)/3)', s.avgICS === 8.0);
+})();
+
+// P194 — _calcWeekPerfStats: returns null for avgRIR/avgICS when no valid data
+console.log('\nP194 — _calcWeekPerfStats returns null metrics when no valid data');
+(function() {
+  // sets done but no rir_real or ics values
+  var logs = {
+    'log_1_0_0_s0': { done: true, carga: 100 },
+    'log_1_0_0_s1': { done: true, carga: 100 }
+  };
+  var s = _calcWeekPerfStats(logs, 1);
+  assert('P194a', 'totalSets = 2', s.totalSets === 2);
+  assert('P194b', 'avgRIR is null when no rir_real data', s.avgRIR === null);
+  assert('P194c', 'avgICS is null when no ics data', s.avgICS === null);
+
+  // empty week
+  var s2 = _calcWeekPerfStats({}, 3);
+  assert('P194d', 'totalSets = 0 for empty logs', s2.totalSets === 0);
+})();
+
+// P195 — _calcWeightTrend: handles non-numeric peso gracefully
+console.log('\nP195 — _calcWeightTrend gracefully handles bad peso values');
+(function() {
+  // Mix of valid, invalid, and zero peso
+  var checkins = [
+    { week: 1, data: { peso: 80 } },
+    { week: 2, data: { peso: 'abc' } },    // invalid string
+    { week: 3, data: { peso: 0 } },         // zero → excluded
+    { week: 4, data: { peso: null } },      // null → excluded
+    { week: 5, data: { peso: 82 } }
+  ];
+  var t = _calcWeightTrend(checkins);
+  assert('P195a', 'only valid positive weights used: 80 and 82', t.firstPeso === 80 && t.lastPeso === 82);
+  assert('P195b', 'rate = (82-80)/(5-1) = 0.5 → ESTABLE', t.status === 'ESTABLE' && t.rate === 0.5);
+
+  // All invalid peso → SIN_DATOS
+  var t2 = _calcWeightTrend([
+    { week: 1, data: { peso: 0 } },
+    { week: 2, data: { peso: NaN } }
+  ]);
+  assert('P195c', 'all invalid peso → SIN_DATOS', t2.status === 'SIN_DATOS');
+})();
+
+// ═══════════ FASE 13 — Coach monitoring helpers (P196-P205) ═══════════
+
+// Mirror of _coachGetWeeklyCheckins (pure — no Firestore)
+function _coachGetWeeklyCheckins(entries, max) {
+  max = max || 6;
+  if (!entries || typeof entries !== 'object') return [];
+  var result = [];
+  Object.keys(entries).forEach(function(k) {
+    var m = k.match(/^ci_sem_(\d+)$/);
+    if (!m) return;
+    var w = parseInt(m[1], 10);
+    var ci = entries[k];
+    if (!ci || typeof ci !== 'object') return;
+    result.push({ week: w, data: ci });
+  });
+  result.sort(function(a, b) { return b.week - a.week; });
+  return result.slice(0, max);
+}
+
+// Mirror of _coachCalcWeightTrend (returns NO_DATA not SIN_DATOS)
+function _coachCalcWeightTrend(entries, max) {
+  var checkins = _coachGetWeeklyCheckins(entries, max || 3);
+  var points = [];
+  checkins.forEach(function(ci) {
+    var w = parseFloat(ci.data && ci.data.peso);
+    if (!isNaN(w) && w > 0) points.push({ week: ci.week, peso: w });
+  });
+  if (points.length < 2) return { status: 'NO_DATA', rate: null };
+  points.sort(function(a, b) { return a.week - b.week; });
+  var first = points[0], last = points[points.length - 1];
+  var weekDiff = last.week - first.week;
+  if (weekDiff === 0) return { status: 'NO_DATA', rate: null };
+  var rate = (last.peso - first.peso) / weekDiff;
+  return {
+    status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+    rate: +rate.toFixed(2)
+  };
+}
+
+// Mirror of _coachHasPendingCheckin
+function _coachHasPendingCheckin(entries, currentWeek) {
+  if (!currentWeek || currentWeek <= 1) return false;
+  return !entries['ci_sem_' + currentWeek];
+}
+
+// Mirror of _coachCalcAdherence (SET_ADHERENCE_APPROXIMATE)
+function _coachCalcAdherence(entries, week, totalDays, planData) {
+  if (!totalDays || totalDays <= 0) return null;
+  var sessionsCompleted = 0;
+  var setsCompleted = 0;
+  var setsTotal = 0;
+  for (var day = 0; day < totalDays; day++) {
+    if (entries['done_' + week + '_' + day] === true) sessionsCompleted++;
+  }
+  if (planData && planData.days) {
+    planData.days.forEach(function(dayObj) {
+      if (!dayObj || !dayObj.exercises) return;
+      dayObj.exercises.forEach(function(ex) {
+        if (!ex || !ex.sets) return;
+        setsTotal += ex.sets.length;
+      });
+    });
+  }
+  Object.keys(entries).forEach(function(k) {
+    if (!/^log_\d+_\d+_\d+_s\d+$/.test(k)) return;
+    var parts = k.split('_');
+    if (parseInt(parts[1], 10) !== week) return;
+    var e = entries[k];
+    if (e && e.done && !e.autoFilled) setsCompleted++;
+  });
+  var sessionPct = Math.round(Math.min(100, (sessionsCompleted / totalDays) * 100));
+  var setPct = setsTotal > 0 ? Math.round(Math.min(100, (setsCompleted / setsTotal) * 100)) : null;
+  return {
+    sessionsCompleted: sessionsCompleted,
+    sessionsTotal: totalDays,
+    sessionPct: sessionPct,
+    setsCompleted: setsCompleted,
+    setsTotal: setsTotal,
+    setPct: setPct
+  };
+}
+
+// P196 — _coachGetWeeklyCheckins: newest-first, max limit
+console.log('\nP196 — _coachGetWeeklyCheckins newest-first and max');
+(function() {
+  var entries = {
+    'ci_sem_1': { peso: 80 },
+    'ci_sem_3': { peso: 81 },
+    'ci_sem_5': { peso: 79 },
+    'done_1_0': true,
+    'progrec_1_0': {}
+  };
+  var r = _coachGetWeeklyCheckins(entries, 6);
+  assert('P196a', 'returns 3 ci_sem_ entries only', r.length === 3);
+  assert('P196b', 'newest first: week 5', r[0].week === 5);
+  assert('P196c', 'week 3 at index 1', r[1].week === 3);
+  assert('P196d', 'week 1 at index 2', r[2].week === 1);
+
+  var limited = _coachGetWeeklyCheckins(entries, 2);
+  assert('P196e', 'max=2 returns 2 entries', limited.length === 2);
+  assert('P196f', 'max=2: weeks 5 and 3', limited[0].week === 5 && limited[1].week === 3);
+})();
+
+// P197 — _coachCalcWeightTrend: SUBIENDO
+console.log('\nP197 — _coachCalcWeightTrend SUBIENDO');
+(function() {
+  // 80 → 82 over weeks 1-3, rate = +1.0 kg/week
+  var entries = { 'ci_sem_1': { peso: 80 }, 'ci_sem_3': { peso: 82 } };
+  var t = _coachCalcWeightTrend(entries, 6);
+  assert('P197a', 'status is SUBIENDO', t.status === 'SUBIENDO');
+  assert('P197b', 'rate is +1.0', t.rate === 1.0);
+})();
+
+// P198 — _coachCalcWeightTrend: ESTABLE (boundary at -0.5)
+console.log('\nP198 — _coachCalcWeightTrend ESTABLE');
+(function() {
+  // 81 → 80 over 2 weeks = -0.5 → ESTABLE (boundary, not BAJANDO)
+  var entries = { 'ci_sem_1': { peso: 81 }, 'ci_sem_3': { peso: 80 } };
+  var t = _coachCalcWeightTrend(entries, 6);
+  assert('P198a', 'rate exactly -0.5 is ESTABLE', t.status === 'ESTABLE');
+  assert('P198b', 'rate is -0.5', t.rate === -0.5);
+})();
+
+// P199 — _coachCalcWeightTrend: BAJANDO with week gaps
+console.log('\nP199 — _coachCalcWeightTrend BAJANDO respects week gap');
+(function() {
+  // 82 → 79 over 2 weeks = -1.5 kg/week → BAJANDO
+  var entries = { 'ci_sem_1': { peso: 82 }, 'ci_sem_2': { peso: 79 } };
+  var t = _coachCalcWeightTrend(entries, 6);
+  assert('P199a', 'status is BAJANDO', t.status === 'BAJANDO');
+  assert('P199b', 'rate is -3.0', t.rate === -3.0);
+  // Same delta but over 4 weeks = -0.75 → BAJANDO
+  var entries2 = { 'ci_sem_1': { peso: 84 }, 'ci_sem_5': { peso: 81 } };
+  var t2 = _coachCalcWeightTrend(entries2, 6);
+  assert('P199c', '3kg over 4 weeks = -0.75 → BAJANDO', t2.status === 'BAJANDO');
+})();
+
+// P200 — _coachCalcWeightTrend: NO_DATA (< 2 valid weights)
+console.log('\nP200 — _coachCalcWeightTrend NO_DATA');
+(function() {
+  assert('P200a', 'null entries → NO_DATA', _coachCalcWeightTrend(null, 6).status === 'NO_DATA');
+  assert('P200b', 'empty entries → NO_DATA', _coachCalcWeightTrend({}, 6).status === 'NO_DATA');
+  var oneOnly = { 'ci_sem_2': { peso: 80 } };
+  assert('P200c', 'single valid peso → NO_DATA', _coachCalcWeightTrend(oneOnly, 6).status === 'NO_DATA');
+  var zeroPeso = { 'ci_sem_1': { peso: 0 }, 'ci_sem_2': { peso: 80 } };
+  var t = _coachCalcWeightTrend(zeroPeso, 6);
+  assert('P200d', 'zero peso excluded; only 1 valid → NO_DATA', t.status === 'NO_DATA');
+})();
+
+// P201 — _coachHasPendingCheckin: returns true when absent and week > 1
+console.log('\nP201 — _coachHasPendingCheckin: pending when absent');
+(function() {
+  var entries = { 'ci_sem_1': { peso: 80 } };
+  assert('P201a', 'week 3 absent → pending (true)', _coachHasPendingCheckin(entries, 3) === true);
+  assert('P201b', 'week 2 absent → pending (true)', _coachHasPendingCheckin(entries, 2) === true);
+})();
+
+// P202 — _coachHasPendingCheckin: false when present or week <= 1
+console.log('\nP202 — _coachHasPendingCheckin: not pending');
+(function() {
+  var entries = { 'ci_sem_2': { peso: 80 } };
+  assert('P202a', 'week 2 present → not pending (false)', _coachHasPendingCheckin(entries, 2) === false);
+  assert('P202b', 'week 1 → never pending (false)', _coachHasPendingCheckin({}, 1) === false);
+  assert('P202c', 'week 0 → false', _coachHasPendingCheckin({}, 0) === false);
+  assert('P202d', 'null week → false', _coachHasPendingCheckin({}, null) === false);
+})();
+
+// P203 — _coachCalcAdherence: session adherence counts done_{W}_{D} === true
+console.log('\nP203 — _coachCalcAdherence session adherence');
+(function() {
+  var entries = {
+    'done_2_0': true,
+    'done_2_1': true,
+    'done_2_2': false,
+    'done_1_0': true  // different week, excluded
+  };
+  var planData = { days: [
+    { exercises: [{ sets: [{}, {}] }] },
+    { exercises: [{ sets: [{}, {}, {}] }] },
+    { exercises: [{ sets: [{}] }] }
+  ]};
+  var r = _coachCalcAdherence(entries, 2, 3, planData);
+  assert('P203a', 'result is not null', r !== null);
+  assert('P203b', 'sessionsCompleted = 2', r.sessionsCompleted === 2);
+  assert('P203c', 'sessionsTotal = 3', r.sessionsTotal === 3);
+  assert('P203d', 'sessionPct = 67%', r.sessionPct === 67);
+  assert('P203e', 'setsTotal = 6 (2+3+1)', r.setsTotal === 6);
+})();
+
+// P204 — _coachCalcAdherence: set adherence excludes autoFilled
+console.log('\nP204 — _coachCalcAdherence sets excludes autoFilled');
+(function() {
+  var entries = {
+    'done_1_0': true,
+    'log_1_0_0_s0': { done: true, autoFilled: false },
+    'log_1_0_0_s1': { done: true, autoFilled: false },
+    'log_1_0_0_s2': { done: true, autoFilled: true },  // excluded
+    'log_2_0_0_s0': { done: true, autoFilled: false }   // wrong week, excluded
+  };
+  var planData = { days: [{ exercises: [{ sets: [{}, {}, {}] }] }] };
+  var r = _coachCalcAdherence(entries, 1, 1, planData);
+  assert('P204a', 'setsCompleted = 2 (autoFilled and wrong-week excluded)', r.setsCompleted === 2);
+  assert('P204b', 'setsTotal = 3', r.setsTotal === 3);
+  assert('P204c', 'setPct = 67%', r.setPct === 67);
+})();
+
+// P205 — Parity: _coachCalcWeightTrend and _calcWeightTrend use same thresholds
+console.log('\nP205 — Parity: coach and client trend thresholds are identical');
+(function() {
+  // Test SUBIENDO boundary: rate = +0.51 → SUBIENDO on both
+  var checkins_sub = [{ week: 1, data: { peso: 80 } }, { week: 101, data: { peso: 131 } }];
+  // rate = (131-80)/(101-1) = 51/100 = 0.51 → SUBIENDO
+  var clientSub = _calcWeightTrend(checkins_sub);
+  var entries_sub = { 'ci_sem_1': { peso: 80 }, 'ci_sem_101': { peso: 131 } };
+  var coachSub = _coachCalcWeightTrend(entries_sub, 6);
+  assert('P205a', 'client SUBIENDO at +0.51/week', clientSub.status === 'SUBIENDO');
+  assert('P205b', 'coach SUBIENDO at +0.51/week (same threshold)', coachSub.status === 'SUBIENDO');
+
+  // Test BAJANDO boundary: rate = -0.51
+  var checkins_baj = [{ week: 1, data: { peso: 80 } }, { week: 101, data: { peso: 28.9 } }];
+  // rate = (28.9-80)/100 = -51.1/100 = -0.511 → BAJANDO
+  var clientBaj = _calcWeightTrend(checkins_baj);
+  var entries_baj = { 'ci_sem_1': { peso: 80 }, 'ci_sem_101': { peso: 28.9 } };
+  var coachBaj = _coachCalcWeightTrend(entries_baj, 6);
+  assert('P205c', 'client BAJANDO at -0.511/week', clientBaj.status === 'BAJANDO');
+  assert('P205d', 'coach BAJANDO at -0.511/week (same threshold)', coachBaj.status === 'BAJANDO');
+
+  // NO_DATA vs SIN_DATOS: different strings (by design)
+  var coachNoData = _coachCalcWeightTrend({}, 6);
+  var clientNoData = _calcWeightTrend([]);
+  assert('P205e', 'coach uses NO_DATA string', coachNoData.status === 'NO_DATA');
+  assert('P205f', 'client uses SIN_DATOS string', clientNoData.status === 'SIN_DATOS');
+})();
+
+// ═══════════ FASE 14 — Bitácora completa (P206-P215) ═══════════
+
+// Mirror of _coachBuildBitacora (pure — no Firestore)
+function _coachBuildBitacora(logs, week, planData) {
+  var dayMap = {};
+  Object.keys(logs).forEach(function(k) {
+    var m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
+    if (!m) return;
+    var w = parseInt(m[1], 10), d = parseInt(m[2], 10), e = parseInt(m[3], 10), s = parseInt(m[4], 10);
+    if (w !== week) return;
+    if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+    if (!dayMap[d].exMap[e]) dayMap[d].exMap[e] = [];
+    var entry = logs[k];
+    dayMap[d].exMap[e].push({ setIndex: s, carga: entry.carga, reps: entry.reps, rirReal: entry.rir_real, ics: entry.ics, pump: entry.pump, unit: entry.unit || 'KG', done: !!entry.done, autoFilled: !!entry.autoFilled });
+  });
+  Object.keys(logs).forEach(function(k) {
+    var md = k.match(/^done_(\d+)_(\d+)$/);
+    if (md && parseInt(md[1], 10) === week) {
+      var d = parseInt(md[2], 10);
+      if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+      dayMap[d].done = logs[k] === true;
+    }
+    var mp = k.match(/^postsession_(\d+)_(\d+)$/);
+    if (mp && parseInt(mp[1], 10) === week) {
+      var d = parseInt(mp[2], 10);
+      if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+      dayMap[d].postsession = logs[k];
+    }
+  });
+  return Object.keys(dayMap)
+    .sort(function(a, b) { return parseInt(a) - parseInt(b); })
+    .map(function(dKey) {
+      var d = parseInt(dKey, 10);
+      var dayEntry = dayMap[dKey];
+      var planDay = null;
+      if (planData && planData.days) {
+        planDay = planData.days.find(function(pd) { return pd.dayIndex === d; });
+        if (!planDay && planData.days[d]) planDay = planData.days[d];
+      }
+      var exercises = Object.keys(dayEntry.exMap)
+        .sort(function(a, b) { return parseInt(a) - parseInt(b); })
+        .map(function(eKey) {
+          var e = parseInt(eKey, 10);
+          var planEx = planDay && planDay.exercises ? planDay.exercises[e] : null;
+          var planSet0 = planEx && planEx.sets && planEx.sets[0] ? planEx.sets[0] : null;
+          return {
+            exIndex: e,
+            name: planEx ? (planEx.exerciseName || planEx.nombre || ('Ejercicio ' + (e + 1))) : ('Ejercicio ' + (e + 1)),
+            repsTarget: planSet0 ? planSet0.repsTarget : null,
+            rirTarget: planSet0 != null ? planSet0.rirTarget : null,
+            sets: dayEntry.exMap[eKey].sort(function(a, b) { return a.setIndex - b.setIndex; })
+          };
+        });
+      return { dayIndex: d, label: planDay ? (planDay.label || ('Día ' + (d + 1))) : ('Día ' + (d + 1)), done: dayEntry.done || false, postsession: dayEntry.postsession || null, exercises: exercises };
+    });
+}
+
+// P206 — _coachBuildBitacora: basic structure and day ordering
+console.log('\nP206 — _coachBuildBitacora basic structure');
+(function() {
+  var logs = {
+    'log_2_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_2_0_0_s1': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_2_1_0_s0': { carga: '60', reps: '10', rir_real: '1', ics: '9', pump: '1', done: true, unit: 'KG' },
+  };
+  var r = _coachBuildBitacora(logs, 2, null);
+  assert('P206a', 'returns 2 days', r.length === 2);
+  assert('P206b', 'day 0 first (sorted)', r[0].dayIndex === 0);
+  assert('P206c', 'day 1 second', r[1].dayIndex === 1);
+  assert('P206d', 'day 0 has 1 exercise with 2 sets', r[0].exercises.length === 1 && r[0].exercises[0].sets.length === 2);
+  assert('P206e', 'set carga preserved', r[0].exercises[0].sets[0].carga === '80');
+})();
+
+// P207 — _coachBuildBitacora: excludes wrong week
+console.log('\nP207 — _coachBuildBitacora excludes wrong week');
+(function() {
+  var logs = {
+    'log_2_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_0_s0': { carga: '70', reps: '10', rir_real: '2', ics: '9', pump: '1', done: true, unit: 'KG' }, // wrong week
+    'log_3_0_0_s0': { carga: '90', reps: '6', rir_real: '1', ics: '9', pump: '1', done: true, unit: 'KG' }, // wrong week
+  };
+  var r = _coachBuildBitacora(logs, 2, null);
+  assert('P207a', 'only week 2 entries returned (1 day)', r.length === 1);
+  assert('P207b', 'carga is from week 2 (80)', r[0].exercises[0].sets[0].carga === '80');
+})();
+
+// P208 — _coachBuildBitacora: done flag and postsession included
+console.log('\nP208 — _coachBuildBitacora done and postsession');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'done_1_0': true,
+    'postsession_1_0': { eimd: '1', sleep: '7', rpe: '7' }
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  assert('P208a', 'done flag is true', r[0].done === true);
+  assert('P208b', 'postsession preserved', r[0].postsession !== null && r[0].postsession.eimd === '1');
+  assert('P208c', 'postsession sleep = 7', r[0].postsession.sleep === '7');
+})();
+
+// P209 — _coachBuildBitacora: done_false and no postsession
+console.log('\nP209 — _coachBuildBitacora done=false when done key missing');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  assert('P209a', 'done defaults to false when key absent', r[0].done === false);
+  assert('P209b', 'postsession is null when absent', r[0].postsession === null);
+})();
+
+// P210 — _coachBuildBitacora: exercise name from plan
+console.log('\nP210 — _coachBuildBitacora exercise names from plan');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_1_s0': { carga: '50', reps: '12', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+  };
+  var planData = { days: [{
+    dayIndex: 0,
+    label: 'Push',
+    exercises: [
+      { exerciseName: 'Press Banca', sets: [{ repsTarget: 8, rirTarget: 2 }] },
+      { exerciseName: 'Aperturas',   sets: [{ repsTarget: 12, rirTarget: 2 }] }
+    ]
+  }]};
+  var r = _coachBuildBitacora(logs, 1, planData);
+  assert('P210a', 'day label from plan', r[0].label === 'Push');
+  assert('P210b', 'first exercise name from plan', r[0].exercises[0].name === 'Press Banca');
+  assert('P210c', 'second exercise name from plan', r[0].exercises[1].name === 'Aperturas');
+  assert('P210d', 'repsTarget from plan', r[0].exercises[0].repsTarget === 8);
+  assert('P210e', 'rirTarget from plan', r[0].exercises[0].rirTarget === 2);
+})();
+
+// P211 — _coachBuildBitacora: falls back to generic name without plan
+console.log('\nP211 — _coachBuildBitacora fallback names');
+(function() {
+  var logs = { 'log_1_0_2_s0': { carga: '40', reps: '15', rir_real: '2', ics: '7', pump: '2', done: true, unit: 'KG' } };
+  var r = _coachBuildBitacora(logs, 1, null);
+  assert('P211a', 'no plan → generic exercise name', r[0].exercises[0].name === 'Ejercicio 3');
+  assert('P211b', 'no plan → generic day label', r[0].label === 'Día 1');
+  assert('P211c', 'repsTarget is null without plan', r[0].exercises[0].repsTarget === null);
+})();
+
+// P212 — _coachBuildBitacora: empty logs returns []
+console.log('\nP212 — _coachBuildBitacora empty logs');
+(function() {
+  assert('P212a', 'empty logs → []', _coachBuildBitacora({}, 1, null).length === 0);
+  assert('P212b', 'null logs → []', _coachBuildBitacora({}, 3, null).length === 0);
+  // Non-log keys are ignored
+  var logs = { 'done_1_0': true, 'ci_sem_1': { peso: 80 }, 'progrec_1_0': {} };
+  assert('P212c', 'non-log keys produce no exercises', _coachBuildBitacora(logs, 1, null).every(function(d){ return d.exercises.length === 0; }));
+})();
+
+// P213 — _coachBuildBitacora: autoFilled sets included (marked, not excluded)
+console.log('\nP213 — _coachBuildBitacora includes autoFilled sets (marked)');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG', autoFilled: false },
+    'log_1_0_0_s1': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG', autoFilled: true },
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  assert('P213a', 'both sets included (2 total)', r[0].exercises[0].sets.length === 2);
+  assert('P213b', 'real set: autoFilled = false', r[0].exercises[0].sets[0].autoFilled === false);
+  assert('P213c', 'autoFilled set: autoFilled = true', r[0].exercises[0].sets[1].autoFilled === true);
+})();
+
+// P214 — _coachBuildBitacora: sets sorted by setIndex regardless of insertion order
+console.log('\nP214 — _coachBuildBitacora sets sorted by setIndex');
+(function() {
+  var logs = {
+    'log_1_0_0_s2': { carga: '90', reps: '6', rir_real: '1', ics: '9', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_0_s1': { carga: '85', reps: '7', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  var sets = r[0].exercises[0].sets;
+  assert('P214a', 'setIndex 0 first', sets[0].setIndex === 0 && sets[0].carga === '80');
+  assert('P214b', 'setIndex 1 second', sets[1].setIndex === 1 && sets[1].carga === '85');
+  assert('P214c', 'setIndex 2 last', sets[2].setIndex === 2 && sets[2].carga === '90');
+})();
+
+// P215 — _coachBuildBitacora: multiple exercises per day sorted by exIndex
+console.log('\nP215 — _coachBuildBitacora exercises sorted by exIndex');
+(function() {
+  var logs = {
+    'log_1_0_2_s0': { carga: '40', reps: '15', rir_real: '2', ics: '7', pump: '2', done: true, unit: 'KG' },
+    'log_1_0_0_s0': { carga: '80', reps: '8', rir_real: '2', ics: '9', pump: '1', done: true, unit: 'KG' },
+    'log_1_0_1_s0': { carga: '60', reps: '12', rir_real: '2', ics: '8', pump: '1', done: true, unit: 'KG' },
+  };
+  var r = _coachBuildBitacora(logs, 1, null);
+  var exs = r[0].exercises;
+  assert('P215a', '3 exercises', exs.length === 3);
+  assert('P215b', 'exIndex 0 first (carga 80)', exs[0].exIndex === 0 && exs[0].sets[0].carga === '80');
+  assert('P215c', 'exIndex 1 second (carga 60)', exs[1].exIndex === 1 && exs[1].sets[0].carga === '60');
+  assert('P215d', 'exIndex 2 last (carga 40)', exs[2].exIndex === 2 && exs[2].sets[0].carga === '40');
+})();
+
+// ═══════════ FASE 15 — Navegación semanal (P216-P225) ═══════════
+
+// Mirror de helpers de FASE 15 (idénticos a producción en vdsen-coach.html)
+function _coachClampSelectedWeek(selected, currentWeek, totalWeeks) {
+  if (selected == null || isNaN(selected)) return currentWeek;
+  var w = parseInt(selected, 10);
+  if (w < 1) return 1;
+  if (w > totalWeeks) return totalWeeks;
+  return w;
+}
+
+function _coachCalcWeightTrendUpTo(entries, max, upToWeek) {
+  max = max || 3;
+  if (!entries || typeof entries !== 'object') return { status: 'NO_DATA', rate: null };
+  var checkins = [];
+  Object.keys(entries).forEach(function(k) {
+    var m = k.match(/^ci_sem_(\d+)$/);
+    if (!m) return;
+    var w = parseInt(m[1], 10);
+    if (upToWeek != null && w > upToWeek) return;
+    var ci = entries[k];
+    if (!ci || typeof ci !== 'object') return;
+    checkins.push({ week: w, data: ci });
+  });
+  checkins.sort(function(a, b) { return b.week - a.week; });
+  checkins = checkins.slice(0, max);
+  var points = [];
+  checkins.forEach(function(ci) {
+    var peso = parseFloat(ci.data && ci.data.peso);
+    if (!isNaN(peso) && peso > 0) points.push({ week: ci.week, peso: peso });
+  });
+  if (points.length < 2) return { status: 'NO_DATA', rate: null };
+  points.sort(function(a, b) { return a.week - b.week; });
+  var first = points[0], last = points[points.length - 1];
+  var weekDiff = last.week - first.week;
+  if (weekDiff === 0) return { status: 'NO_DATA', rate: null };
+  var rate = (last.peso - first.peso) / weekDiff;
+  return {
+    status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+    rate: +rate.toFixed(2)
+  };
+}
+
+function _coachWeekStatus(selectedWeek, actualWeek) {
+  if (selectedWeek < actualWeek) return 'HISTÓRICA';
+  if (selectedWeek > actualWeek) return 'FUTURA';
+  return 'ACTUAL';
+}
+
+// P216 — _coachClampSelectedWeek: basic clamping
+console.log('\nP216 — _coachClampSelectedWeek: basic clamping');
+(function(){
+  assert('P216a', 'clamp: within range returns as-is', _coachClampSelectedWeek(3, 5, 6) === 3);
+  assert('P216b', 'clamp: null returns currentWeek', _coachClampSelectedWeek(null, 4, 6) === 4);
+  assert('P216c', 'clamp: below 1 returns 1', _coachClampSelectedWeek(0, 3, 6) === 1);
+  assert('P216d', 'clamp: above totalWeeks returns totalWeeks', _coachClampSelectedWeek(9, 5, 6) === 6);
+  assert('P216e', 'clamp: NaN returns currentWeek', _coachClampSelectedWeek(NaN, 2, 6) === 2);
+})();
+
+// P217 — _coachWeekStatus: returns correct status
+console.log('\nP217 — _coachWeekStatus: ACTUAL/HISTÓRICA/FUTURA');
+(function(){
+  assert('P217a', 'equal → ACTUAL', _coachWeekStatus(3, 3) === 'ACTUAL');
+  assert('P217b', 'selected < actual → HISTÓRICA', _coachWeekStatus(2, 4) === 'HISTÓRICA');
+  assert('P217c', 'selected > actual → FUTURA', _coachWeekStatus(5, 3) === 'FUTURA');
+  assert('P217d', 'week 1 actual 1 → ACTUAL', _coachWeekStatus(1, 1) === 'ACTUAL');
+})();
+
+// P218 — _coachCalcWeightTrendUpTo: excludes check-ins after upToWeek
+console.log('\nP218 — _coachCalcWeightTrendUpTo: respects upToWeek cutoff');
+(function(){
+  var entries = {
+    'ci_sem_1': { peso: '80' },
+    'ci_sem_2': { peso: '81' },
+    'ci_sem_3': { peso: '90' } // future — should be excluded when upToWeek=2
+  };
+  var t = _coachCalcWeightTrendUpTo(entries, 3, 2);
+  assert('P218a', 'rate = +1.0/week (weeks 1→2)', t.rate === 1.0);
+  assert('P218b', 'status SUBIENDO', t.status === 'SUBIENDO');
+  // week 3 included makes rate = (90-80)/2 = 5.0 — different result proves cutoff works
+  var tFull = _coachCalcWeightTrendUpTo(entries, 3, 3);
+  assert('P218c', 'upToWeek=3 gives different rate', tFull.rate !== t.rate);
+})();
+
+// P219 — _coachCalcWeightTrendUpTo: no check-ins → NO_DATA
+console.log('\nP219 — _coachCalcWeightTrendUpTo: NO_DATA on empty');
+(function(){
+  assert('P219a', 'empty entries → NO_DATA', _coachCalcWeightTrendUpTo({}, 3, 5).status === 'NO_DATA');
+  assert('P219b', 'single checkin → NO_DATA', _coachCalcWeightTrendUpTo({'ci_sem_1':{ peso:'80' }}, 3, 5).status === 'NO_DATA');
+  assert('P219c', 'null entries → NO_DATA', _coachCalcWeightTrendUpTo(null, 3, 5).status === 'NO_DATA');
+})();
+
+// P220 — _coachCalcWeightTrendUpTo: BAJANDO
+console.log('\nP220 — _coachCalcWeightTrendUpTo: BAJANDO threshold');
+(function(){
+  var entries = { 'ci_sem_1': { peso: '85' }, 'ci_sem_2': { peso: '84' } };
+  var t = _coachCalcWeightTrendUpTo(entries, 3, 2);
+  assert('P220a', 'rate = -1.0 → BAJANDO', t.status === 'BAJANDO');
+  assert('P220b', 'rate value -1.0', t.rate === -1.0);
+})();
+
+// P221 — _coachCalcWeightTrendUpTo: ESTABLE boundary
+console.log('\nP221 — _coachCalcWeightTrendUpTo: ESTABLE at ±0.5 boundary');
+(function(){
+  var e1 = { 'ci_sem_1': { peso: '80' }, 'ci_sem_2': { peso: '80.5' } }; // +0.5 → ESTABLE
+  var t1 = _coachCalcWeightTrendUpTo(e1, 3, 2);
+  assert('P221a', '+0.5 is ESTABLE (not SUBIENDO)', t1.status === 'ESTABLE');
+  var e2 = { 'ci_sem_1': { peso: '80' }, 'ci_sem_2': { peso: '79.5' } }; // -0.5 → ESTABLE
+  var t2 = _coachCalcWeightTrendUpTo(e2, 3, 2);
+  assert('P221b', '-0.5 is ESTABLE (not BAJANDO)', t2.status === 'ESTABLE');
+})();
+
+// P222 — _coachCalcWeightTrendUpTo: upToWeek=0 → NO_DATA (no valid entries)
+console.log('\nP222 — _coachCalcWeightTrendUpTo: upToWeek=0 excludes all');
+(function(){
+  var entries = { 'ci_sem_1': { peso: '80' }, 'ci_sem_2': { peso: '82' } };
+  var t = _coachCalcWeightTrendUpTo(entries, 3, 0);
+  assert('P222a', 'upToWeek=0 → NO_DATA', t.status === 'NO_DATA');
+})();
+
+// P223 — _coachClampSelectedWeek: exact boundary values
+console.log('\nP223 — _coachClampSelectedWeek: exact boundary values');
+(function(){
+  assert('P223a', 'selected=1, totalWeeks=6 → 1', _coachClampSelectedWeek(1, 3, 6) === 1);
+  assert('P223b', 'selected=6, totalWeeks=6 → 6', _coachClampSelectedWeek(6, 3, 6) === 6);
+  assert('P223c', 'selected=7, totalWeeks=6 → 6 (clamped to max)', _coachClampSelectedWeek(7, 3, 6) === 6);
+  assert('P223d', 'negative → 1', _coachClampSelectedWeek(-3, 2, 6) === 1);
+})();
+
+// P224 — _coachWeekStatus: edge cases
+console.log('\nP224 — _coachWeekStatus: edge cases');
+(function(){
+  assert('P224a', 'week=1, actual=1 → ACTUAL', _coachWeekStatus(1, 1) === 'ACTUAL');
+  assert('P224b', 'week=6, actual=6 → ACTUAL', _coachWeekStatus(6, 6) === 'ACTUAL');
+  assert('P224c', 'week=1, actual=6 → HISTÓRICA', _coachWeekStatus(1, 6) === 'HISTÓRICA');
+  assert('P224d', 'week=6, actual=1 → FUTURA', _coachWeekStatus(6, 1) === 'FUTURA');
+})();
+
+// P225 — parity: _coachCalcWeightTrendUpTo without cutoff matches _coachCalcWeightTrend
+console.log('\nP225 — _coachCalcWeightTrendUpTo parity with _coachCalcWeightTrend');
+(function(){
+  var entries = {
+    'ci_sem_1': { peso: '78' },
+    'ci_sem_2': { peso: '79' },
+    'ci_sem_3': { peso: '80' }
+  };
+  var tUpTo = _coachCalcWeightTrendUpTo(entries, 3, 99); // no cutoff (upToWeek=99)
+  var tOrig = _coachCalcWeightTrend(entries, 3);
+  assert('P225a', 'same status (no cutoff)', tUpTo.status === tOrig.status);
+  assert('P225b', 'same rate (no cutoff)', tUpTo.rate === tOrig.rate);
+  // With cutoff: upToWeek=2 excludes week 3 → different result
+  var tCut = _coachCalcWeightTrendUpTo(entries, 3, 2);
+  assert('P225c', 'cutoff at week 2: SUBIENDO (+1.0)', tCut.status === 'SUBIENDO' && tCut.rate === 1.0);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

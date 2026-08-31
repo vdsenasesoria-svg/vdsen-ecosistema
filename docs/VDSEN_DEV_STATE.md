@@ -1,5 +1,16 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-30 · main HEAD: `2b6e927`
+> Actualizado: 2026-08-31 · main HEAD: `2b6e927` · rama activa: `claude/client-app-improvements-qayy4n` · FASE 14 añadida
+
+---
+
+## Documentos de referencia
+
+| Documento | Cuándo leer |
+|-----------|-------------|
+| `docs/VDSEN_DEV_STATE.md` | Siempre (estado técnico del ecosistema) |
+| `docs/CONTEXTO_GENERADOR.md` | Solo para tareas de generación, validación, adaptación longitudinal o contratos del Motor |
+
+Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tareas de generación, validación, adaptación longitudinal o contratos del Motor.
 
 ---
 
@@ -8,15 +19,98 @@
 | Item | Valor |
 |------|-------|
 | main HEAD | `2b6e927` — FASE 6 mergeada |
+| Rama activa | `claude/client-app-improvements-qayy4n` (pendiente merge) |
 | FASE 5 commit | `4a87e42` |
 | FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **255/255 PASS** (P01–P109) |
-| Vercel | auto-deploy en curso (push a main `2b6e927`) |
-| Siguiente fase | **FASE 7 — Coach Attention Monitor** |
+| Suite tests | **542/542 PASS** (P01–P215) |
+| Vercel | producción en `2b6e927`; FASEs 7–14 pendientes merge a main |
+| Siguiente fase | **FASE 15** (por definir) |
 
 ---
 
 ## FASES completadas
+
+### FASE 14 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Coach Monitor: Bitácora completa de entrenamiento por sesión**
+
+Archivos modificados:
+- `vdsen-coach.html` — 2 parches quirúrgicos
+- `tests/progression-engine.test.js` — P206-P215 (33 assertions nuevas)
+
+Helper añadido (antes de `_coachGetWeeklyCheckins`):
+- `_coachBuildBitacora(logs, week, planData)` — organiza todos los sets registrados en una semana por día → ejercicio → set. Incluye sets autoFilled (marcados). Incluye flags `done` y objeto `postsession` por día. Nombres de ejercicio y targets desde el plan si disponible, fallback genérico. 0 lecturas Firestore.
+
+Comportamiento añadido en Monitor:
+- `<details>` "📋 Bitácora completa — Sem N" al final del Monitor (colapsado por defecto)
+- Muestra todos los días con datos, con header (✓/○ + label + RPE/EIMD/sueño del postsession)
+- Por ejercicio: nombre, reps target, RIR target, tabla de sets con carga/reps/RIR real/ICS/pump
+- ICS coloreado (verde/amarillo/rojo). Sets autoFilled marcados con "auto" en gris.
+
+Invariantes preservados:
+- 0 lecturas Firestore nuevas
+- `_coachBuildBitacora` pura (determinista, sin side effects)
+- Sin cambios a schema, colecciones, auth ni algoritmo de progresión
+
+---
+
+### FASE 13 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Coach Monitor: contexto semanal, tendencia de peso, check-in pendiente, adherencia**
+
+Archivos modificados:
+- `vdsen-coach.html` — 4 parches quirúrgicos
+- `tests/progression-engine.test.js` — P196-P205 (37 assertions nuevas)
+
+Helpers añadidos (antes de `loadMonitorClients`):
+- `_coachGetWeeklyCheckins(entries, max)` — espejo de `_getWeeklyCheckins` del cliente
+- `_coachCalcWeightTrend(entries, max)` — espejo de `_calcWeightTrend`; retorna `NO_DATA` (no `SIN_DATOS`)
+- `_coachHasPendingCheckin(entries, currentWeek)` — true si `currentWeek > 1` y `ci_sem_{W}` ausente
+- `_coachCalcAdherence(entries, week, totalDays, planData)` → `{sessionsCompleted, sessionsTotal, sessionPct, setsCompleted, setsTotal, setPct}`. SET_ADHERENCE_APPROXIMATE.
+
+Bugs corregidos en el callback onSnapshot:
+- `totalWeeks` estaba undefined → ahora `const totalWeeks = (_activePlanCache?.weeks) ?? 6`
+- `planData?.days?.length` era undefined → ahora usa `_activePlanCache?.days?.length`
+
+Comportamiento añadido en Monitor:
+- Header de semana: "SEM N / M SEM" (M = totalWeeks del plan, no hardcoded 6)
+- Chip tendencia de peso: ⚖ SUBIENDO/BAJANDO/ESTABLE + rate kg/sem (solo si NO_DATA no aplica)
+- Chip check-in pendiente: "⚠ Check-in sem N pendiente" cuando aplica
+- Badge adherencia: "ADHERENCIA SEM N / Sesiones N/M · X% / Series N/M · X%"
+
+Invariantes preservados:
+- 0 lecturas Firestore nuevas en los helpers
+- CURRENT_WEEK vs REAL_WEEK: el Monitor usa solo `logs.currentWeek`
+- Sin cambios a schema, colecciones, auth ni farmacología
+- Clasificación REVIEW/PROGRESSING/STABLE/NO_DATA del attention monitor sin cambios
+
+---
+
+### FASE 12 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Client UX: Check-in History, Weight Trend, Week Performance Summary**
+
+Archivos modificados:
+- `vdsen-cliente.html` — 5 parches quirúrgicos
+- `tests/progression-engine.test.js` — P186-P195 (36 assertions nuevas)
+
+Funciones añadidas (antes de `_calcSessionStats`):
+- `_getWeeklyCheckins(entries, max)` — extrae hasta `max` entradas `ci_sem_{W}` de LOGS, ordenadas newest-first
+- `_calcWeightTrend(checkins)` — tasa de cambio de peso usando semanas reales (no asume consecutividad). Umbrales: >+0.5 → SUBIENDO; <-0.5 → BAJANDO; else → ESTABLE; <2 pesos → SIN_DATOS
+- `_buildWeekPerfSummary()` — strip de stats semanales (series totales, RIR medio, ICS medio) para CURRENT_WEEK, todas las sesiones, excluye autoFilled. 0 lecturas Firestore. Devuelve `''` si no hay sets.
+- `_buildCheckinHistory()` — tabla HTML de los últimos 6 check-ins con chip de tendencia de peso
+
+Comportamiento añadido en Tab Check-in (`renderCheckin`):
+- Chip "SEMANA N DE M" bajo el header, atenuado si `CURRENT_WEEK < REAL_WEEK`
+- Sección "HISTORIAL DE CHECK-INS" antes del botón GUARDAR: chip tendencia (↑/→/↓) + tabla peso/HRV/sueño/WHO-5 de las 6 últimas semanas. Estado vacío: "Aún no hay check-ins previos."
+
+Comportamiento añadido en Tab Entrenamiento (`renderEntrenamiento`):
+- Strip "Resumen sem N" debajo del session dashboard: series totales, RIR medio e ICS medio de la semana completa (todas las sesiones en CURRENT_WEEK)
+- Solo visible si hay al menos 1 serie completada en la semana
+
+Invariantes preservados:
+- CURRENT_WEEK vs REAL_WEEK: sin mutación
+- 0 lecturas/listeners Firestore nuevos
+- Sin cambios a schema, colecciones ni auth
+
+---
 
 ### FASE 5 (mergeada a main — `4a87e42`)
 - Máquina de estados de workout en `vdsen-cliente.html`
@@ -25,6 +119,145 @@
 - Semana final = MESOCYCLE_CHECKPOINT únicamente.
   Deload es reactivo y requiere ≥2 deloadTriggers.
   La semana final sola nunca dispara deload.
+
+### FASE 11 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Template Library + Apply to Current Client**
+
+Storage audit: colección `templates` ya existía con reglas Firestore correctas. Schema: `{ name, coachId, weeks, days:[{label, exercises}], createdAt }`. Solo entrenamiento (sin nutrición/suplementación/farmacología). No se creó colección nueva. No se modificaron reglas.
+
+Archivos modificados:
+- `vdsen-coach.html` — botón `📚 Biblioteca` + 3 funciones nuevas
+- `tests/progression-engine.test.js` — P176-P185 (31 assertions nuevas)
+
+Funciones añadidas:
+- `_filterTemplates(query, templates)` — substring CI, preserva orden, no muta input
+- `_applyTemplateToClient(template, clientId, closeModal)` — restamp IDs → addDoc plans → updateDoc activePlanId (create-first, assign-after)
+- `openPlanTemplateLibrary(clientId)` — modal DOM API (XSS-safe via textContent), 1 Firestore read al abrir, filtrado local, guard `applying` doble-click
+
+Comportamiento añadido:
+- Botón `📚 Biblioteca` en acciones del plan del cliente activo
+- Modal responsive: loading → empty ("No tienes templates…") / error / lista
+- Cada template: nombre + días · semanas · fecha (DOM API, sin innerHTML inseguro)
+- "Usar →" aplica al cliente activo directamente, sin selector de cliente
+- Plan creado antes de asignar activePlanId (transacción segura)
+- Auto-agrega ejercicios del template al catálogo del coach
+- `_saveCurrentPlanAsTemplate` ya pedía nombre (sin cambio necesario)
+
+Limitaciones documentadas:
+- 1 lectura Firestore al abrir biblioteca; no realtime listener
+- No hay botón de eliminar template desde la biblioteca (existe en pestaña Plantillas existente)
+- No hay paginación si el coach tiene >50 templates
+
+---
+
+### FASE 10 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Plan Editor UX: Autocomplete, Reorder, restSeconds**
+
+Archivos modificados:
+- `vdsen-coach.html` — 6 parches quirúrgicos en `_exRowHtml`, `_moveExRow`, `addExRow`, `renderTrainingEditor`, `toggleTrainingEditor`, `saveTrainingPlan`
+- `tests/progression-engine.test.js` — P166-P175 (35 assertions nuevas)
+
+Funciones añadidas:
+- `_filterExerciseCatalog(query, catalog, limit)` — substring CI, max 6, sin Firestore reads
+- `_moveArrayItem(items, from, to)` — reordenar array puro, no muta original
+- `_parseRestSeconds(value)` — convierte string/undefined/negativo a número ≥ 0
+- `_acShow(input)` / `_acHide(input)` — dropdown XSS-safe vía createElement/textContent
+- `_updateReorderBtns(list)` — visibilidad ↑↓ por posición (primero oculta ↑, último oculta ↓)
+
+Comportamiento añadido:
+- **Autocomplete**: input de nombre usa custom dropdown (XSS-safe, no datalist). Fuente: `_allExercises` en memoria. Muestra nombre + motorPattern/equipment opcionales.
+- **Reorder ↑↓**: botones ahora tienen `data-reorder="up/dn"`. Visibilidad actualizada al abrir editor, añadir ejercicio y después de cada movimiento. `prescriptionExerciseId` se preserva (viaja en `data-prescription-id` del DOM row).
+- **restSeconds inline**: 4ª columna en grid de series. Carga de `sets[0].restSeconds`, guarda con `_parseRestSeconds`. Ya no hardcodeado a 90.
+
+Limitaciones documentadas:
+- Editor usa un único restSeconds por ejercicio (aplicado igual a todos sus sets), consistente con el modelo actual de reps/RIR uniformes por ejercicio.
+- Datalist `coach_exlist` eliminado; el autocomplete nativo queda reemplazado por el custom dropdown.
+
+---
+
+### FASE 9 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Contextual Rest Timer + Active Workout Flow**
+
+Archivos modificados:
+- `vdsen-cliente.html` — 8 parches quirúrgicos
+- `tests/progression-engine.test.js` — P147-P165 (19 tests nuevos)
+
+Funciones añadidas:
+- `_scrollToNextPendingSet()` — query `[data-pending="1"]` en `#exPanel`, scrollIntoView smooth (200ms delay)
+- `_nextSerie()` — botón SIGUIENTE ▶: `stopRestTimer()` + `_scrollToNextPendingSet()`
+- `_refreshSessionDashboard()` — actualiza `#_sesDashboard` innerHTML in-place, 0 Firestore reads
+
+Comportamiento añadido:
+- **Rest timer contextual**: auto-arranca al completar una serie usando `ej.sets[si].restSeconds` como única fuente de verdad
+- **Sin heurísticas de fallback**: si `restSeconds` falta o es inválido, no se inicia timer automáticamente
+- **Semántica de técnica preservada**: Y3T s1 ≥210s, Y3T s2 ≥150s; FST7 40s entre series / 180s tras la final
+- **Guard autoFilled**: si `prev.autoFilled === true` (estado pre-guardado), no iniciar timer
+- **Dashboard inmediato**: `_refreshExPanelOnly()` llama `_refreshSessionDashboard()` en cada save de serie
+- **Set pendiente resaltado**: `data-pending="1"` + borde accent `rgba(196,255,0,.4)` en la fila activa
+- **Scroll automático**: al finalizar timer y al pulsar SIGUIENTE ▶, desplaza al siguiente set pendiente
+- **Wrapper `id="_sesDashboard"`**: permite update in-place sin re-render completo
+
+Limitaciones documentadas:
+- Timer no persiste en Firestore — usa solo localStorage (`vdsen_restEnd`, `vdsen_restTotal`)
+- Si recarga durante descanso: timer se resetea (documentado, no es bug)
+- `data-pending="1"` se asigna al `activeSi` del ejercicio activo; si hay múltiples ejercicios con sets pendientes, solo el primero está marcado
+
+---
+
+### FASE 8 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Live Training + Client Session Dashboard**
+
+Archivos modificados:
+- `vdsen-coach.html` — `_getLiveInfo()` helper + enhanced live badge + live-aware sort
+- `vdsen-cliente.html` — `_calcSessionStats()` + `_fmtElapsed()` + `_statCell()` + session dashboard strip + session timer
+- `tests/progression-engine.test.js` — P129-P146 (18 tests nuevos)
+
+Funcionalidades añadidas:
+- `_getLiveInfo(entries, planData)` — 0 Firestore reads; mismo umbral 5 min que `isClientLiveTraining`; identifica día activo, ejercicio actual (via plan), sets completados/totales del día
+- Coach live badge: ahora muestra "● EN VIVO · [ejercicio] N/Ms" en lugar de solo "● EN VIVO"
+- Auto-refresh live timer actualizado para usar `_getLiveInfo` con `innerHTML` (no textContent)
+- Sort coach: live bump = `_ATTN_PRIORITY[state] * 2 - (live ? 1 : 0)`; REVIEW siempre domina
+- `_calcSessionStats(logs, di, week)` — completedSets, avgRIR (0-5), avgICS (1-10), sessionStart (min ts)
+- Session dashboard strip en Tab Entrenamiento (solo semana activa `CURRENT_WEEK === REAL_WEEK`)
+  - 4 celdas: Series N/Total · Tiempo mm:ss · RIR medio · ICS medio
+  - Tiempo: `setInterval` cada 1s, limpiado en re-render; derivado del primer ts real del día
+  - ICS coloreado: verde ≥8, dorado ≥7, rojo <7
+- XSS: `exerciseName` escapado con `_escH` en render del live badge (data layer retorna raw)
+
+Limitaciones documentadas:
+- Session start derivado del mínimo ts de logs reales del día; si recargas sin logs previos, timer empieza desde la primera serie guardada post-reload
+- Tiempo sesión no persiste en Firestore — no se añade campo nuevo (spec: no cambiar schema)
+- Live detection threshold 5 min: cliente sin actividad reciente aparece como no-live aunque esté en sesión
+
+---
+
+### FASE 7 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Coach Attention Monitor**
+
+Archivos modificados:
+- `vdsen-coach.html` — helpers de atención + redesign lista clientes + parche panel rendimiento
+- `tests/progression-engine.test.js` — P110-P128 (19 tests nuevos)
+
+Funcionalidades añadidas:
+- `_ATTN_PRIORITY` / `_ATTN_BADGE` — constantes de estado visual (REVIEW/PROGRESSING/STABLE/NO_DATA)
+- `_computeClientAttentionState(entries, planData, currentWeek)` — estado determinístico, 0 Firestore reads
+  - Escanea semana actual y anterior (scanWeeks = [cw, cw-1])
+  - REVIEW signals: deloadTriggers ≥ 2, action='deload', reason='TOO_HARD_REPEATED', reason='PERFORMANCE_REGRESSION', postsession.articular=true, postsession.eimd ≥ 3
+  - `reduce_load` solo NO es REVIEW — requiere reason=TOO_HARD_REPEATED
+  - PROGRESSING signals: action='increase_load', reason='REPS_PROGRESSING'
+  - Dedup por (code + ex); máx 3 reasons devueltos
+  - Prioridad: REVIEW > PROGRESSING > STABLE > NO_DATA
+- Lista de clientes rediseñada (dos pasadas: build rowData → sort → render)
+  - Header resumen: `🔴 N revisar 🟢 N progresando ⚪ N estables ◌ N sin datos`
+  - Ordenada por _ATTN_PRIORITY → alpha
+  - Badge de atención + reasons inline por cliente
+  - XSS: r.ex y r.label escapados con `_escH` en render
+- Panel "Rendimiento por ejercicio": auto-abre `<details>` si hay REVISAR; filas REVISAR destacadas con fondo rojo tenue + nombre en rojo bold; contador "↓ N a revisar" en summary
+
+Bugs corregidos en self-review:
+1. **XSS** — `r.label` puede contener `ps.patron` (data Firestore); escapado con `_escH` en render de reasons
+
+---
 
 ### FASE 6 (mergeada a main — `2b6e927`)
 **Performance History UX + Next Exposure**
@@ -162,6 +395,8 @@ Rangos:
 - P61–P87: Stable Exercise Identity + legacy/history hardening + consistency tests
 - P88–P105: FASE 6 Performance History UX
 - P106–P109: FASE 6 self-review fixes
+- P110–P128: FASE 7 Coach Attention Monitor
+- P129–P146: FASE 8 Live Training + Session Dashboard
 
 ---
 
@@ -173,6 +408,7 @@ git log --oneline -5
 
 # Correr tests
 node tests/progression-engine.test.js
+# → 296/296 PASS
 
 # Diff vs main
 git diff main...HEAD --stat

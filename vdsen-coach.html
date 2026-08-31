@@ -1172,6 +1172,132 @@
   }
   window.getClientAlert = getClientAlert;
 
+  // ── FASE 7 — CLIENT ATTENTION STATE ──────────────────────────────────────
+  const _ATTN_PRIORITY = { REVIEW: 0, PROGRESSING: 1, STABLE: 2, NO_DATA: 3 };
+  const _ATTN_BADGE = {
+    REVIEW:      { icon: '🔴', label: 'REVISAR',     color: '#FF4444' },
+    PROGRESSING: { icon: '🟢', label: 'PROGRESANDO', color: '#44BB88' },
+    STABLE:      { icon: '⚪', label: 'ESTABLE',      color: '#888' },
+    NO_DATA:     { icon: '◌',  label: 'SIN DATOS',   color: '#555' }
+  };
+
+  // Deterministic attention state from in-memory entries + plan. 0 Firestore reads.
+  // Returns { state: 'REVIEW'|'PROGRESSING'|'STABLE'|'NO_DATA', reasons: [{code,label,ex}] }
+  function _computeClientAttentionState(entries, planData, currentWeek) {
+    if (!entries || typeof entries !== 'object') return { state: 'NO_DATA', reasons: [] };
+    const cw = currentWeek || 1;
+    const scanMax = Math.max((planData?.days?.length || planData?.daysPerWeek || 0), 7);
+
+    // Any real (non-autoFilled) log entry?
+    const hasLog = Object.keys(entries).some(k =>
+      k.startsWith('log_') && entries[k]?.done && !entries[k]?.autoFilled
+    );
+    if (!hasLog) return { state: 'NO_DATA', reasons: [] };
+
+    const reviewR = [], progressR = [];
+    let foundProgrec = false;
+    // Scan current week + previous week for recency
+    const scanWeeks = cw > 1 ? [cw, cw - 1] : [cw];
+
+    scanWeeks.forEach(w => {
+      for (let d = 0; d < scanMax; d++) {
+        // progrec entries
+        const pr = entries[`progrec_${w}_${d}`];
+        if (pr) {
+          foundProgrec = true;
+          if ((pr.deloadTriggers || []).length >= 2)
+            reviewR.push({ code: 'DELOAD_CANDIDATE', label: 'Señales de fatiga acumulada' });
+          (pr.recommendations || []).forEach(rec => {
+            if (!rec) return;
+            const ex = rec.exerciseName ? rec.exerciseName.split(' ').slice(0, 2).join(' ') : '';
+            if (rec.action === 'deload')
+              reviewR.push({ code: 'DELOAD_CANDIDATE', label: 'Señales de fatiga acumulada', ex });
+            // TOO_HARD must be repeated (reason code) — single reduce_load is not REVIEW
+            if (rec.reason === 'TOO_HARD_REPEATED')
+              reviewR.push({ code: 'TOO_HARD_REPEATED', label: 'Esfuerzo demasiado alto repetido', ex });
+            if (rec.reason === 'PERFORMANCE_REGRESSION')
+              reviewR.push({ code: 'PERFORMANCE_REGRESSION', label: 'Rendimiento en descenso', ex });
+            if (rec.action === 'increase_load')
+              progressR.push({ code: 'INCREASE_LOAD', label: 'Listo para progresar carga', ex });
+            if (rec.reason === 'REPS_PROGRESSING')
+              progressR.push({ code: 'REPS_PROGRESSING', label: 'Progresando repeticiones', ex });
+          });
+        }
+        // postsession entries
+        const ps = entries[`postsession_${w}_${d}`];
+        if (ps) {
+          if (ps.articular)
+            reviewR.push({ code: 'PAIN', label: 'Dolor articular reportado' + (ps.patron ? ' · ' + ps.patron : '') });
+          if (parseInt(ps.eimd) >= 3)
+            reviewR.push({ code: 'EIMD_HIGH', label: 'Daño muscular elevado reportado' });
+        }
+      }
+    });
+
+    // Deduplicate by (code + ex)
+    const seen = {};
+    function dedup(arr) {
+      return arr.filter(r => {
+        const k = r.code + '|' + (r.ex || '');
+        if (seen[k]) return false;
+        seen[k] = true; return true;
+      });
+    }
+    const rvR = dedup(reviewR);
+    const pgR = dedup(progressR);
+
+    if (rvR.length) return { state: 'REVIEW', reasons: rvR.slice(0, 3) };
+    if (pgR.length) return { state: 'PROGRESSING', reasons: pgR.slice(0, 3) };
+    if (foundProgrec || hasLog) return { state: 'STABLE', reasons: [] };
+    return { state: 'NO_DATA', reasons: [] };
+  }
+  window._computeClientAttentionState = _computeClientAttentionState;
+
+  // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
+  function _getLiveInfo(entries, planData) {
+    if (!entries) return null;
+    const LIVE_MS = 5 * 60 * 1000;
+    const now = Date.now();
+    let latestTs = 0, latestKey = null;
+    for (const k of Object.keys(entries)) {
+      if (!k.startsWith('log_')) continue;
+      const e = entries[k];
+      if (!e || !e.done || e.autoFilled) continue;
+      const ts = e.ts;
+      if (!ts) continue;
+      const t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+      if (!isNaN(t) && now - t < LIVE_MS && t > latestTs) { latestTs = t; latestKey = k; }
+    }
+    if (!latestKey) return null;
+    const m = latestKey.match(/^log_(\d+)_(\d+)_(\d+)_s\d+$/);
+    if (!m) return null;
+    const [,lw,ld,le] = m.map(Number);
+    let dayLabel = 'Día ' + (ld + 1);
+    let exerciseName = null;
+    if (planData && planData.days && planData.days[ld]) {
+      const day = planData.days[ld];
+      if (day.label) dayLabel = day.label;
+      const ex = day.exercises && day.exercises[le];
+      if (ex) exerciseName = ex.exerciseName || ex.nombre || null;
+    }
+    const prefix = 'log_' + lw + '_' + ld + '_';
+    let completedSets = 0;
+    for (const k2 of Object.keys(entries)) {
+      if (!k2.startsWith(prefix)) continue;
+      const e2 = entries[k2];
+      if (e2 && e2.done && !e2.autoFilled) completedSets++;
+    }
+    let totalSets = 0;
+    if (planData && planData.days && planData.days[ld]) {
+      (planData.days[ld].exercises || []).forEach(ex => {
+        totalSets += (ex.sets ? ex.sets.length : 0) || ex.numSeries || 3;
+      });
+    }
+    return { dayLabel, exerciseName, completedSets, totalSets };
+  }
+  window._getLiveInfo = _getLiveInfo;
+  // ── END FASE 8 helpers ─────────────────────────────────────────────────
+
   // Genera el mensaje WhatsApp según el tipo de alerta
   function buildWhatsAppMessage(client, alert, coach) {
     const name = (client.displayName || client.email || 'atleta').split(' ')[0];
@@ -1739,32 +1865,66 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
         // Guardar cliente+alerta para botones globales (WhatsApp)
         window._clientCache = window._clientCache || {};
-        const alerts = []; // resumen para banner top
+        const alerts = []; // resumen para banner top (legacy: inactivos, mesoEnd)
 
-        const rows = _clientDocs.map((c, i) => {
+        // ── FASE 7: build per-client data objects, then sort by attention state ──
+        const rowData = _clientDocs.map((c, i) => {
           const logData = (_logSnaps[i] && _logSnaps[i].exists()) ? _logSnaps[i].data() : {};
           const planData = (_planSnaps[i] && _planSnaps[i].exists()) ? _planSnaps[i].data() : null;
           window._clientCache[c.id] = { client: c, logs: logData, plan: planData };
-
           const entries = logData.entries || {};
           const week = logData.currentWeek || 1;
+          const attn = _computeClientAttentionState(entries, planData, week);
+          const alert = getClientAlert(c, logData, planData);
+          if (alert) alerts.push({ id: c.id, name: c.displayName, alert });
+          const liveInfo = _getLiveInfo(entries, planData);
+          const live = !!liveInfo;
+          return { c, logData, planData, entries, week, attn, alert, live, liveInfo };
+        });
+
+        // Sort: REVIEW > PROGRESSING > STABLE > NO_DATA; live bumps within tier; alpha tiebreak
+        rowData.sort((a, b) => {
+          const pa = (_ATTN_PRIORITY[a.attn.state] ?? 3) * 2 - (a.live ? 1 : 0);
+          const pb = (_ATTN_PRIORITY[b.attn.state] ?? 3) * 2 - (b.live ? 1 : 0);
+          if (pa !== pb) return pa - pb;
+          return (a.c.displayName || a.c.email || '').localeCompare(b.c.displayName || b.c.email || '', 'es', { sensitivity: 'base' });
+        });
+
+        // Summary header counts
+        const attnC = { REVIEW: 0, PROGRESSING: 0, STABLE: 0, NO_DATA: 0 };
+        rowData.forEach(r => { attnC[r.attn.state] = (attnC[r.attn.state] || 0) + 1; });
+        const summaryHtml = `<div class="card p-3 mb-3" style="border:1px solid rgba(255,255,255,.07)">
+          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+            ${attnC.REVIEW      ? `<span style="color:#FF4444;font-weight:800;font-size:13px">🔴 ${attnC.REVIEW} revisar</span>` : ''}
+            ${attnC.PROGRESSING ? `<span style="color:#44BB88;font-weight:800;font-size:13px">🟢 ${attnC.PROGRESSING} progresando</span>` : ''}
+            ${attnC.STABLE      ? `<span style="color:#888;font-weight:700;font-size:13px">⚪ ${attnC.STABLE} estable${attnC.STABLE>1?'s':''}</span>` : ''}
+            ${attnC.NO_DATA     ? `<span style="color:#555;font-weight:700;font-size:13px">◌ ${attnC.NO_DATA} sin datos</span>` : ''}
+          </div>
+        </div>`;
+
+        // Build row HTML
+        const rows = rowData.map(({ c, logData, planData, entries, week, attn, alert, live, liveInfo }) => {
           const totalWeeks = planData?.weeks || 6;
           const ci = entries['ci_sem_'+week] || {};
           let extraBadges = '';
           if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
-
           const ciDone = !!(ci.peso || ci.hrv || ci.who5 || ci.energia || ci.sueno);
           let doneCount = 0;
           Object.keys(entries).forEach(k => { if (k.startsWith('done_'+week+'_') && entries[k]) doneCount++; });
           const ciStatusBadge = `<span class="text-[10px] ml-2" style="color:${ciDone?'#44BB88':'#555'}">${ciDone?'CI ✓':'CI ✕'}</span>`;
           const sessBadge = doneCount > 0 ? `<span class="text-[10px] ml-1" style="color:#888">${doneCount}ses</span>` : '';
-
           const statusIcon = c.activePlanId
             ? (planData ? "✅" : '<span title="activePlanId referencia un plan eliminado" style="cursor:help">🔴</span>')
             : "⚠️";
-          const live = isClientLiveTraining(logData);
-          const liveBadge = `<span id="lv_${c.id}" class="text-[10px] ml-2 px-2 py-0.5 rounded" style="${live?'background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite':''}">${live?'● EN VIVO':''}</span>`;
-
+          // live / liveInfo already computed in rowData; build rich badge
+          let liveBadge = '';
+          if (live && liveInfo) {
+            const _ld = liveInfo.exerciseName ? ` · <span style="opacity:.8">${_escH(liveInfo.exerciseName)}</span>` : '';
+            const _ls = liveInfo.totalSets > 0 ? ` <span style="font-size:9px;color:#888">${liveInfo.completedSets}/${liveInfo.totalSets}s</span>` : '';
+            liveBadge = `<span id="lv_${c.id}" style="display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:800;background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite;padding:2px 7px;border-radius:4px;margin-left:6px">● EN VIVO${_ld}${_ls}</span>`;
+          } else {
+            liveBadge = `<span id="lv_${c.id}" style="display:inline"></span>`;
+          }
           const isDeload = week === totalWeeks;
           const weekColor = isDeload ? '#7ec0ff' : '#C4FF00';
           const weekBorder = isDeload ? 'rgba(126,192,255,.35)' : 'rgba(196,255,0,.35)';
@@ -1773,27 +1933,34 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const weekBadge = c.activePlanId
             ? `<span style="font-size:11px;font-weight:800;color:${weekColor};background:${weekBg};border:1px solid ${weekBorder};padding:2px 8px;border-radius:6px;letter-spacing:.5px;margin-left:8px">${weekLabel}</span>`
             : '';
-
-          // Evaluar alerta principal
-          const alert = getClientAlert(c, logData, planData);
+          // Attention badge
+          const ab = _ATTN_BADGE[attn.state] || _ATTN_BADGE.NO_DATA;
+          const attnBadge = `<span style="font-size:10px;font-weight:800;color:${ab.color};background:${ab.color}18;border:1px solid ${ab.color}55;padding:2px 7px;border-radius:5px;margin-left:6px;letter-spacing:.5px">${ab.icon} ${ab.label}</span>`;
+          // Reasons (max 3, compact inline)
+          const reasonsHtml = attn.reasons.length
+            ? `<div style="font-size:10px;color:#aaa;margin-top:3px;line-height:1.6">${attn.reasons.map(r => (r.ex ? `<span style="color:#ccc;font-weight:600">${_escH(r.ex)}</span>: ` : '') + _escH(r.label)).join(' · ')}</div>`
+            : '';
           let alertChip = '';
           let waBtn = '';
           if (alert) {
-            alerts.push({ id: c.id, name: c.displayName, alert });
             alertChip = `<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:${alert.color}22;border:1px solid ${alert.color};color:${alert.color};font-weight:700">${alert.label}</span>`;
             waBtn = `<button onclick="(function(){var d=window._clientCache['${c.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" title="Enviar recordatorio por WhatsApp" class="ml-2" style="padding:4px 10px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;font-size:11px;font-weight:700;cursor:pointer">📲 WhatsApp</button>`;
           }
           const search = _escH((c.displayName + ' ' + c.email).toLowerCase());
-          return `<div class="card p-3 mb-2 flex justify-between items-center flex-wrap gap-2 _client-row" data-search="${search}">
-            <span><strong>${_escH(c.displayName)}</strong>${weekBadge} <span class="text-[#888] text-xs">(${_escH(c.email)})</span> ${statusIcon}${extraBadges}${ciStatusBadge}${sessBadge}${liveBadge}${alertChip}</span>
-            <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="showMergeModal('${c.id}')" title="Fusionar con cliente duplicado" style="padding:3px 8px;border-radius:6px;border:1px solid #7788cc;background:rgba(119,136,204,.1);color:#7788cc;font-size:13px;cursor:pointer">⇌</button></span>
+          return `<div class="card p-3 mb-2 _client-row" data-search="${search}" style="border-left:3px solid ${ab.color}55">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
+              <div>
+                <span><strong>${_escH(c.displayName)}</strong>${weekBadge} <span class="text-[#888] text-xs">(${_escH(c.email)})</span> ${statusIcon}${extraBadges}${ciStatusBadge}${sessBadge}${liveBadge}${attnBadge}${alertChip}</span>
+                ${reasonsHtml}
+              </div>
+              <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="showMergeModal('${c.id}')" title="Fusionar con cliente duplicado" style="padding:3px 8px;border-radius:6px;border:1px solid #7788cc;background:rgba(119,136,204,.1);color:#7788cc;font-size:13px;cursor:pointer">⇌</button></span>
+            </div>
           </div>`;
         }).join('');
 
-        // Banner superior con resumen de alertas
+        // Legacy banner (inactivos / mesoEnd → WhatsApp masivo)
         let banner = '';
         if (alerts.length) {
-          // Verificar inactivos para WhatsApp masivo
           const inactiveAlerts = alerts.filter(a => a.alert.type === 'inactive');
           const bulkWABtn = inactiveAlerts.length > 1
             ? `<button onclick="_sendBulkWhatsApp(${JSON.stringify(inactiveAlerts.map(a=>a.id))})" style="margin-top:8px;padding:6px 14px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.18);color:#25D366;font-size:11px;font-weight:700;cursor:pointer;display:block">📲 WhatsApp a todos los inactivos (${inactiveAlerts.length})</button>`
@@ -1807,8 +1974,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           </div>`;
         }
         container.innerHTML += `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
+          ${summaryHtml}
           ${banner}
-          <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'flex':'none';});})(this.value)">
+          <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'':'none';});})(this.value)">
           ${rows}`;
         // Auto-refresh badge EN VIVO cada 60s sin re-renderizar la lista
         if (window._liveTimer) clearInterval(window._liveTimer);
@@ -1818,12 +1986,15 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             const el = document.getElementById('lv_' + id);
             if (!el) { clearInterval(window._liveTimer); return; }
             const d = window._clientCache[id];
-            const live = d && isClientLiveTraining(d.logs);
-            if (live) {
-              el.textContent = '● EN VIVO';
-              el.style.cssText = 'background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite;padding:2px 8px;border-radius:4px';
+            if (!d) return;
+            const li = _getLiveInfo(d.logs?.entries, d.plan);
+            if (li) {
+              const _ld = li.exerciseName ? ` · <span style="opacity:.8">${_escH(li.exerciseName)}</span>` : '';
+              const _ls = li.totalSets > 0 ? ` <span style="font-size:9px;color:#888">${li.completedSets}/${li.totalSets}s</span>` : '';
+              el.innerHTML = `● EN VIVO${_ld}${_ls}`;
+              el.style.cssText = 'display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:800;background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite;padding:2px 7px;border-radius:4px;margin-left:6px';
             } else {
-              el.textContent = ''; el.style.cssText = '';
+              el.innerHTML = ''; el.style.cssText = 'display:inline';
             }
           });
         }, 60000);
@@ -2477,6 +2648,189 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     };
   }
   
+  // FASE 15 — Helpers de navegación semanal (0 Firestore reads)
+  function _coachClampSelectedWeek(selected, currentWeek, totalWeeks) {
+    if (selected == null || isNaN(selected)) return currentWeek;
+    var w = parseInt(selected, 10);
+    if (w < 1) return 1;
+    if (w > totalWeeks) return totalWeeks;
+    return w;
+  }
+
+  function _coachCalcWeightTrendUpTo(entries, max, upToWeek) {
+    max = max || 3;
+    if (!entries || typeof entries !== 'object') return { status: 'NO_DATA', rate: null };
+    var checkins = [];
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^ci_sem_(\d+)$/);
+      if (!m) return;
+      var w = parseInt(m[1], 10);
+      if (upToWeek != null && w > upToWeek) return;
+      var ci = entries[k];
+      if (!ci || typeof ci !== 'object') return;
+      checkins.push({ week: w, data: ci });
+    });
+    checkins.sort(function(a, b) { return b.week - a.week; });
+    checkins = checkins.slice(0, max);
+    var points = [];
+    checkins.forEach(function(ci) {
+      var peso = parseFloat(ci.data && ci.data.peso);
+      if (!isNaN(peso) && peso > 0) points.push({ week: ci.week, peso: peso });
+    });
+    if (points.length < 2) return { status: 'NO_DATA', rate: null };
+    points.sort(function(a, b) { return a.week - b.week; });
+    var first = points[0], last = points[points.length - 1];
+    var weekDiff = last.week - first.week;
+    if (weekDiff === 0) return { status: 'NO_DATA', rate: null };
+    var rate = (last.peso - first.peso) / weekDiff;
+    return {
+      status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+      rate: +rate.toFixed(2)
+    };
+  }
+
+  function _coachWeekStatus(selectedWeek, actualWeek) {
+    if (selectedWeek < actualWeek) return 'HISTÓRICA';
+    if (selectedWeek > actualWeek) return 'FUTURA';
+    return 'ACTUAL';
+  }
+
+  // FASE 14 — Bitácora completa: organiza logs de una semana por día→ejercicio→set (0 Firestore reads)
+  function _coachBuildBitacora(logs, week, planData) {
+    var dayMap = {};
+    Object.keys(logs).forEach(function(k) {
+      var m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
+      if (!m) return;
+      var w = parseInt(m[1], 10), d = parseInt(m[2], 10), e = parseInt(m[3], 10), s = parseInt(m[4], 10);
+      if (w !== week) return;
+      if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+      if (!dayMap[d].exMap[e]) dayMap[d].exMap[e] = [];
+      var entry = logs[k];
+      dayMap[d].exMap[e].push({ setIndex: s, carga: entry.carga, reps: entry.reps, rirReal: entry.rir_real, ics: entry.ics, pump: entry.pump, unit: entry.unit || 'KG', done: !!entry.done, autoFilled: !!entry.autoFilled });
+    });
+    Object.keys(logs).forEach(function(k) {
+      var md = k.match(/^done_(\d+)_(\d+)$/);
+      if (md && parseInt(md[1], 10) === week) {
+        var d = parseInt(md[2], 10);
+        if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+        dayMap[d].done = logs[k] === true;
+      }
+      var mp = k.match(/^postsession_(\d+)_(\d+)$/);
+      if (mp && parseInt(mp[1], 10) === week) {
+        var d = parseInt(mp[2], 10);
+        if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
+        dayMap[d].postsession = logs[k];
+      }
+    });
+    return Object.keys(dayMap)
+      .sort(function(a, b) { return parseInt(a) - parseInt(b); })
+      .map(function(dKey) {
+        var d = parseInt(dKey, 10);
+        var dayEntry = dayMap[dKey];
+        var planDay = null;
+        if (planData && planData.days) {
+          planDay = planData.days.find(function(pd) { return pd.dayIndex === d; });
+          if (!planDay && planData.days[d]) planDay = planData.days[d];
+        }
+        var exercises = Object.keys(dayEntry.exMap)
+          .sort(function(a, b) { return parseInt(a) - parseInt(b); })
+          .map(function(eKey) {
+            var e = parseInt(eKey, 10);
+            var planEx = planDay && planDay.exercises ? planDay.exercises[e] : null;
+            var planSet0 = planEx && planEx.sets && planEx.sets[0] ? planEx.sets[0] : null;
+            return {
+              exIndex: e,
+              name: planEx ? (planEx.exerciseName || planEx.nombre || ('Ejercicio ' + (e + 1))) : ('Ejercicio ' + (e + 1)),
+              repsTarget: planSet0 ? planSet0.repsTarget : null,
+              rirTarget: planSet0 != null ? planSet0.rirTarget : null,
+              sets: dayEntry.exMap[eKey].sort(function(a, b) { return a.setIndex - b.setIndex; })
+            };
+          });
+        return { dayIndex: d, label: planDay ? (planDay.label || ('Día ' + (d + 1))) : ('Día ' + (d + 1)), done: dayEntry.done || false, postsession: dayEntry.postsession || null, exercises: exercises };
+      });
+  }
+
+  // FASE 13 — Coach helpers (mirrors of client-side FASE 12 helpers)
+  function _coachGetWeeklyCheckins(entries, max) {
+    max = max || 6;
+    if (!entries || typeof entries !== 'object') return [];
+    var result = [];
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^ci_sem_(\d+)$/);
+      if (!m) return;
+      var w = parseInt(m[1], 10);
+      var ci = entries[k];
+      if (!ci || typeof ci !== 'object') return;
+      result.push({ week: w, data: ci });
+    });
+    result.sort(function(a, b) { return b.week - a.week; });
+    return result.slice(0, max);
+  }
+
+  // FASE 13 — Weight trend. Returns { status: 'SUBIENDO'|'BAJANDO'|'ESTABLE'|'NO_DATA', rate }
+  function _coachCalcWeightTrend(entries, max) {
+    var checkins = _coachGetWeeklyCheckins(entries, max || 3);
+    var points = [];
+    checkins.forEach(function(ci) {
+      var w = parseFloat(ci.data && ci.data.peso);
+      if (!isNaN(w) && w > 0) points.push({ week: ci.week, peso: w });
+    });
+    if (points.length < 2) return { status: 'NO_DATA', rate: null };
+    points.sort(function(a, b) { return a.week - b.week; });
+    var first = points[0], last = points[points.length - 1];
+    var weekDiff = last.week - first.week;
+    if (weekDiff === 0) return { status: 'NO_DATA', rate: null };
+    var rate = (last.peso - first.peso) / weekDiff;
+    return {
+      status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+      rate: +rate.toFixed(2)
+    };
+  }
+
+  // FASE 13 — Returns true if ci_sem_{currentWeek} is absent (and currentWeek > 1)
+  function _coachHasPendingCheckin(entries, currentWeek) {
+    if (!currentWeek || currentWeek <= 1) return false;
+    return !entries['ci_sem_' + currentWeek];
+  }
+
+  // FASE 13 — Session + set adherence for current week.
+  // SET_ADHERENCE_APPROXIMATE: set denominator is sum of sets in plan days.
+  function _coachCalcAdherence(entries, week, totalDays, planData) {
+    if (!totalDays || totalDays <= 0) return null;
+    var sessionsCompleted = 0;
+    var setsCompleted = 0;
+    var setsTotal = 0;
+    for (var day = 0; day < totalDays; day++) {
+      if (entries['done_' + week + '_' + day] === true) sessionsCompleted++;
+    }
+    if (planData && planData.days) {
+      planData.days.forEach(function(dayObj) {
+        if (!dayObj || !dayObj.exercises) return;
+        dayObj.exercises.forEach(function(ex) {
+          if (!ex || !ex.sets) return;
+          setsTotal += ex.sets.length;
+        });
+      });
+    }
+    Object.keys(entries).forEach(function(k) {
+      if (!/^log_\d+_\d+_\d+_s\d+$/.test(k)) return;
+      var parts = k.split('_');
+      if (parseInt(parts[1], 10) !== week) return;
+      var e = entries[k];
+      if (e && e.done && !e.autoFilled) setsCompleted++;
+    });
+    var sessionPct = Math.round(Math.min(100, (sessionsCompleted / totalDays) * 100));
+    var setPct = setsTotal > 0 ? Math.round(Math.min(100, (setsCompleted / setsTotal) * 100)) : null;
+    return {
+      sessionsCompleted: sessionsCompleted,
+      sessionsTotal: totalDays,
+      sessionPct: sessionPct,
+      setsCompleted: setsCompleted,
+      setsTotal: setsTotal,
+      setPct: setPct
+    };
+  }
+
   async function loadMonitorClients() {
     if (!currentCoach) return;
     if (window._monitorUnsub) { window._monitorUnsub(); window._monitorUnsub = null; }
@@ -2511,31 +2865,50 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         } catch(e) {}
       }
 
-      // Escuchar logs del cliente en TIEMPO REAL
-      window._monitorUnsub = onSnapshot(doc(db, 'logs', select.value), (logsSnap) => {
-      if (!logsSnap.exists()) {
-        container.innerHTML = `<p class="text-[#888] text-sm">Sin datos de entrenamiento registrados aún.</p>`;
-        return;
-      }
-      const logs = logsSnap.data().entries || {};
-      const currentWeek = logsSnap.data().currentWeek || 1;
-      const updatedAt = logsSnap.data().updatedAt;
-      const lastUpdate = updatedAt ? new Date(updatedAt).toLocaleString('es-MX') : '—';
+      // Estado de navegación semanal — reset al cambiar de cliente
+      let _monitorSelectedWeek = null;
+      let _monitorLastLogs = {};
+      let _monitorActualWeek = 1;
+      let _monitorLastUpdate = '—';
+
+      function _renderMonitorForWeek() {
+      const logs = _monitorLastLogs;
+      const actualWeek = _monitorActualWeek;
+      const lastUpdate = _monitorLastUpdate;
+      const totalWeeks = (_activePlanCache && _activePlanCache.weeks) ? _activePlanCache.weeks : 6;
+      if (_monitorSelectedWeek === null) _monitorSelectedWeek = actualWeek;
+      _monitorSelectedWeek = _coachClampSelectedWeek(_monitorSelectedWeek, actualWeek, totalWeeks);
+      const selectedMonitorWeek = _monitorSelectedWeek;
+      const currentWeek = selectedMonitorWeek;
+      const weekStatus = _coachWeekStatus(selectedMonitorWeek, actualWeek);
+      const _trendResult = _coachCalcWeightTrendUpTo(logs, 3, selectedMonitorWeek);
+      // Check-in chip adaptado por estado de semana
+      const _hasCheckinForWeek = !!(logs['ci_sem_'+selectedMonitorWeek]);
+      const _pendingChip = weekStatus === 'ACTUAL'
+        ? (_coachHasPendingCheckin(logs, selectedMonitorWeek)
+            ? `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,165,0,.08);border:1px solid rgba(255,165,0,.5);color:#FFA500">⚠ Check-in sem ${selectedMonitorWeek} pendiente</div>`
+            : '')
+        : weekStatus === 'HISTÓRICA'
+          ? (_hasCheckinForWeek
+              ? `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);color:#44BB88">✓ Check-in sem ${selectedMonitorWeek}</div>`
+              : `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:#666">SIN check-in sem ${selectedMonitorWeek}</div>`)
+          : '';
 
       // Semana del mesociclo y RIR objetivo (usa esquema dinámico del plan)
       const weekRirObj = rirSchemeForWeeks(totalWeeks);
       const rirObj = weekRirObj[currentWeek] ?? 2;
       const isDeload = currentWeek === totalWeeks;
 
-      // Buscar la recomendación de progresión más reciente
+      // Buscar la recomendación de progresión de la semana seleccionada
       let lastRec = null;
-      let lastRecWeek = 0, lastRecDay = 0;
+      let lastRecWeek = selectedMonitorWeek, lastRecDay = 0;
+      let _hasRec = false;
       Object.keys(logs).forEach(k => {
         const m = k.match(/^progrec_(\d+)_(\d+)$/);
         if (m) {
           const w = parseInt(m[1]), d = parseInt(m[2]);
-          if (w > lastRecWeek || (w === lastRecWeek && d > lastRecDay)) {
-            lastRecWeek = w; lastRecDay = d; lastRec = logs[k];
+          if (w === selectedMonitorWeek && (!_hasRec || d > lastRecDay)) {
+            lastRecDay = d; lastRec = logs[k]; _hasRec = true;
           }
         }
       });
@@ -2557,9 +2930,16 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       let html = `
         <div class="card p-4 mb-3">
           <div class="flex items-center gap-3 flex-wrap">
-            <div class="text-center px-4 py-2 rounded-lg" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.3)">
-              <div class="text-2xl font-bold text-[#F4F4F0]">SEM ${currentWeek}</div>
-              <div class="text-xs text-[#888] mt-1">DEL MESOCICLO</div>
+            <div class="text-center px-3 py-2 rounded-lg" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.3)">
+              <div style="display:flex;align-items:center;gap:4px">
+                <button id="monWeekPrev" aria-label="Semana anterior" style="width:22px;height:22px;border-radius:4px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;${selectedMonitorWeek<=1?'opacity:.3;pointer-events:none':''}">‹</button>
+                <div>
+                  <div class="text-2xl font-bold text-[#F4F4F0]">SEM ${selectedMonitorWeek}</div>
+                  <div class="text-xs text-[#888] mt-1">/ ${totalWeeks} SEM</div>
+                </div>
+                <button id="monWeekNext" aria-label="Semana siguiente" style="width:22px;height:22px;border-radius:4px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;${selectedMonitorWeek>=totalWeeks?'opacity:.3;pointer-events:none':''}">›</button>
+              </div>
+              <div class="px-2 py-0.5 rounded text-xs font-bold mt-1" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:${weekStatus==='ACTUAL'?'#44BB88':weekStatus==='HISTÓRICA'?'#888':'#4488cc'}">${weekStatus}</div>
             </div>
             <div class="text-center px-4 py-2 rounded-lg" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.3)">
               <div class="text-2xl font-bold text-[#F4F4F0]">RIR ${rirObj}</div>
@@ -2568,15 +2948,22 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             ${isDeload ? `<div class="px-3 py-2 rounded-lg text-sm font-bold" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc">🔵 SEMANA DELOAD</div>` : ''}
             ${triggers.map(t => `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444">⚠️ ${t}</div>`).join('')}
             <div class="px-3 py-2 rounded-lg text-xs" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);color:#888">🔄 ${lastUpdate}</div>
+            ${_trendResult.status !== 'NO_DATA' ? `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,255,255,.04);border:1px solid ${_trendResult.status==='SUBIENDO'?'rgba(244,164,0,.6)':_trendResult.status==='BAJANDO'?'rgba(68,187,136,.6)':'rgba(244,244,240,.2)'};color:${_trendResult.status==='SUBIENDO'?'#F4A400':_trendResult.status==='BAJANDO'?'#44BB88':'#F4F4F0'}">⚖ ${_trendResult.status} ${_trendResult.rate >= 0 ? '+' : ''}${_trendResult.rate} kg/sem</div>` : ''}
+            ${_pendingChip}
           </div>
           ${(function() {
-            // Session adherence for current week
-            const planDays = planData?.days?.length || 0;
-            const doneDays = Object.keys(logs).filter(k => k.match(/^done_(\d+)_(\d+)$/) && parseInt(k.split('_')[1]) === currentWeek).length;
-            const adherBadge = planDays > 0 ? `<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs" style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3)"><span style="color:#888">Sesiones S${currentWeek}:</span> <span style="color:#44BB88;font-weight:700">${doneDays}/${planDays}</span></div>` : '';
-            // Latest weekly check-in
-            const ci = logs['ci_sem_'+currentWeek] || {};
-            const ciPrev = logs['ci_sem_'+(currentWeek-1)] || {};
+            // Session + set adherence for selected week (SET_ADHERENCE_APPROXIMATE)
+            const planDays = (_activePlanCache && _activePlanCache.days) ? _activePlanCache.days.length : 0;
+            let adherBadge = '';
+            if (weekStatus === 'FUTURA') {
+              adherBadge = planDays > 0 ? `<div class="flex flex-col px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888;font-size:9px;font-weight:700;letter-spacing:.5px">ADHERENCIA SEM ${selectedMonitorWeek}</span><span style="color:#666;font-weight:600;margin-top:1px">Sin ejecutar</span></div>` : '';
+            } else {
+              const adherence = _coachCalcAdherence(logs, selectedMonitorWeek, planDays, _activePlanCache);
+              adherBadge = adherence ? `<div class="flex flex-col px-3 py-1.5 rounded-lg text-xs" style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3)"><span style="color:#888;font-size:9px;font-weight:700;letter-spacing:.5px">ADHERENCIA SEM ${selectedMonitorWeek}</span><span style="color:#44BB88;font-weight:700;margin-top:1px">Sesiones ${adherence.sessionsCompleted}/${adherence.sessionsTotal} · ${adherence.sessionPct}%</span>${adherence.setPct !== null ? `<span style="color:#88ccaa;font-size:10px">Series ${adherence.setsCompleted}/${adherence.setsTotal} · ${adherence.setPct}%</span>` : ''}</div>` : '';
+            }
+            // Latest weekly check-in for selected week
+            const ci = logs['ci_sem_'+selectedMonitorWeek] || {};
+            const ciPrev = logs['ci_sem_'+(selectedMonitorWeek-1)] || {};
             const who5 = ci.who5 != null ? parseInt(ci.who5) : null;
             const who5Color = who5 == null ? '#888' : (who5 >= 68 ? '#44BB88' : who5 >= 52 ? '#C4FF00' : '#FF4444');
             const pesoBadge = ci.peso ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">Peso:</span> <span style="color:#F4F4F0;font-weight:700">${ci.peso} kg</span>${ciPrev.peso?`<span style="color:#555"> (prev:${ciPrev.peso})</span>`:''}</div>` : '';
@@ -2768,11 +3155,13 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         });
 
         if (exRows.length) {
+          const _hasRevisar = exRows.some(r => r.trend === 'REVISAR');
           html += `
-          <details class="card p-3 mb-3" style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.15)">
+          <details ${_hasRevisar ? 'open' : ''} class="card p-3 mb-3" style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.15)${_hasRevisar ? ';border-color:rgba(255,68,68,.35)' : ''}">
             <summary class="cursor-pointer text-sm font-semibold text-[#F4F4F0]" style="list-style:none">
               📊 Rendimiento por ejercicio
               <span class="ml-2 text-xs font-normal" style="color:#888">(${exRows.length} ejercicios con datos)</span>
+              ${_hasRevisar ? `<span class="ml-2 text-xs font-bold" style="color:#FF4444">↓ ${exRows.filter(r=>r.trend==='REVISAR').length} a revisar</span>` : ''}
             </summary>
             <div class="mt-3">
               <div class="flex gap-3 flex-wrap mb-3">
@@ -2793,8 +3182,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
                   </thead>
                   <tbody>
                     ${exRows.map(r => `
-                      <tr style="border-bottom:1px solid rgba(244,244,240,.07)">
-                        <td style="padding:7px 8px;color:#F4F4F0;font-weight:500">${r.name}</td>
+                      <tr style="border-bottom:1px solid rgba(244,244,240,.07)${r.trend==='REVISAR' ? ';background:rgba(255,68,68,.07)' : ''}">
+                        <td style="padding:7px 8px;color:${r.trend==='REVISAR' ? '#FF7777' : '#F4F4F0'};font-weight:${r.trend==='REVISAR' ? '700' : '500'}">${r.name}</td>
                         <td style="padding:7px 8px;text-align:right;font-weight:700;color:#F4F4F0;font-variant-numeric:tabular-nums">${r.lastLoad} kg</td>
                         <td style="padding:7px 8px;text-align:center;font-weight:900;font-size:16px;color:${_trendColor[r.trend]}">${_trendIcon[r.trend]}</td>
                         <td style="padding:7px 8px;color:${_trendColor[r.trend] || '#888'};font-size:11px">${r.lastAction}</td>
@@ -2808,12 +3197,70 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       }
       // ── END rendimiento por ejercicio ────────────────────────────────────
 
+      // ── FASE 14 — Bitácora completa ─────────────────────────────────────
+      html += (function() {
+        var bitacora = _coachBuildBitacora(logs, currentWeek, _activePlanCache);
+        if (!bitacora.length) return '';
+        var eimdLabels = ['—', 'Leve', 'Moderado', 'Alto'];
+        var eimdColors = ['#888', '#44BB88', '#FF8844', '#FF4444'];
+        var daysHtml = bitacora.map(function(day) {
+          var post = day.postsession;
+          var postInfo = '';
+          if (post) {
+            var eimd = parseInt(post.eimd) || 0;
+            postInfo = ' · RPE ' + (post.rpe || '—') + ' · EIMD <span style="color:' + eimdColors[eimd] + '">' + eimdLabels[eimd] + '</span>';
+            if (post.sleep) postInfo += ' · 😴 ' + post.sleep + 'h';
+          }
+          var dayHeader = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+            + '<span style="font-size:11px;font-weight:800;letter-spacing:1px;color:' + (day.done ? '#44BB88' : '#888') + '">' + (day.done ? '✓' : '○') + ' ' + _escH(day.label) + '</span>'
+            + (postInfo ? '<span style="font-size:11px;color:#888">' + postInfo + '</span>' : '') + '</div>';
+          if (!day.exercises.length) {
+            return '<div style="margin-bottom:12px">' + dayHeader + '<div style="font-size:11px;color:#555">Sin series registradas</div></div>';
+          }
+          var exHtml = day.exercises.map(function(ex) {
+            var exTitle = '<div style="font-size:11px;font-weight:700;color:#c4d0e0;margin-bottom:4px">' + _escH(ex.name)
+              + (ex.repsTarget != null ? '<span style="color:#888;font-weight:400"> · ' + ex.repsTarget + ' reps · RIR ' + (ex.rirTarget != null ? ex.rirTarget : '?') + '</span>' : '') + '</div>';
+            var setRows = ex.sets.map(function(s) {
+              var ics = parseFloat(s.ics);
+              var icsColor = !isNaN(ics) && ics >= 1 ? (ics >= 8 ? '#44BB88' : ics >= 7 ? '#e8c96a' : '#FF4444') : '#888';
+              var pump = parseInt(s.pump);
+              var pumpLabel = [null, '💪', 'ok', '↓'][pump] || '—';
+              return '<tr>'
+                + '<td style="padding:3px 6px;color:#555;font-variant-numeric:tabular-nums">S' + (s.setIndex + 1) + (s.autoFilled ? '<span style="color:#444;font-size:9px"> auto</span>' : '') + '</td>'
+                + '<td style="padding:3px 6px;font-weight:700;font-variant-numeric:tabular-nums;color:#F4F4F0">' + (s.carga || '—') + ' ' + s.unit + '</td>'
+                + '<td style="padding:3px 6px;color:#ddd;font-variant-numeric:tabular-nums">' + (s.reps || '—') + '</td>'
+                + '<td style="padding:3px 6px;color:#ddd;font-variant-numeric:tabular-nums">' + (s.rirReal !== undefined && s.rirReal !== '' && s.rirReal !== null ? s.rirReal : '—') + '</td>'
+                + '<td style="padding:3px 6px;font-weight:700;font-variant-numeric:tabular-nums;color:' + icsColor + '">' + (!isNaN(ics) && ics >= 1 ? ics : '—') + '</td>'
+                + '<td style="padding:3px 6px;color:#888">' + (pumpLabel || '—') + '</td>'
+                + '</tr>';
+            }).join('');
+            return exTitle
+              + '<div style="overflow-x:auto;margin-bottom:10px"><table style="width:100%;border-collapse:collapse;font-size:11px">'
+              + '<thead><tr>'
+              + ['SET','CARGA','REPS','RIR','ICS','PUMP'].map(function(h){ return '<th style="text-align:left;padding:2px 6px;color:#444;font-size:9px;font-weight:700;letter-spacing:.5px">' + h + '</th>'; }).join('')
+              + '</tr></thead><tbody>' + setRows + '</tbody></table></div>';
+          }).join('');
+          return '<div style="margin-bottom:16px">' + dayHeader + exHtml + '</div>';
+        }).join('<hr style="border:none;border-top:1px solid rgba(107,107,102,.15);margin:12px 0">');
+        return '<details class="card p-3 mb-3" style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.15)">'
+          + '<summary class="cursor-pointer text-sm font-semibold text-[#F4F4F0]" style="list-style:none">📋 Bitácora completa — Sem ' + currentWeek
+          + ' <span class="ml-2 text-xs font-normal" style="color:#888">(' + bitacora.length + ' día' + (bitacora.length !== 1 ? 's' : '') + ' con datos)</span></summary>'
+          + '<div class="mt-3">' + daysHtml + '</div></details>';
+      })();
+      // ── END bitácora completa ─────────────────────────────────────────────
+
       container.innerHTML = html;
+
+      // Navegación semanal (FASE 15)
+      const _prevBtn = document.getElementById('monWeekPrev');
+      const _nextBtn = document.getElementById('monWeekNext');
+      if (_prevBtn) _prevBtn.onclick = () => { if (_monitorSelectedWeek > 1) { _monitorSelectedWeek--; _renderMonitorForWeek(); } };
+      if (_nextBtn) _nextBtn.onclick = () => { if (_monitorSelectedWeek < totalWeeks) { _monitorSelectedWeek++; _renderMonitorForWeek(); } };
 
       // Botón PDF (resumen breve)
       const pdfBtn = document.getElementById("pdfReportBtn");
       pdfBtn.style.display = "inline-flex";
-      pdfBtn.onclick = () => generateMesocyclePDF(clientData, logs, currentWeek, lastRec);
+      pdfBtn.onclick = () => generateMesocyclePDF(clientData, logs, selectedMonitorWeek, lastRec);
 
       // Botón Reporte Completo (cargas, intensidades, MEV/MRV, recomendaciones)
       let fullBtn = document.getElementById("fullReportBtn");
@@ -2864,7 +3311,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         closeMesoBtn.textContent = "🔄 Cerrar Mesociclo";
         pdfBtn.parentNode.insertBefore(closeMesoBtn, pdfBtn.nextSibling);
       }
-      closeMesoBtn.style.display = currentWeek >= 5 ? "inline-flex" : "none";
+      closeMesoBtn.style.display = actualWeek >= 5 ? "inline-flex" : "none";
 
       // Control manual de semana + extensión de duración del plan
       const planTotalWeeks = _activePlanCache?.weeks || 6;
@@ -2891,12 +3338,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         if (lbl) lbl.textContent = `${planTotalWeeks} sem`;
       }
       const weekInput = weekCtrl.querySelector('#weekInput');
-      weekInput.value = currentWeek;
+      weekInput.value = actualWeek;
       weekCtrl.querySelector('#weekDec').onclick = () => { weekInput.value = Math.max(1, (parseInt(weekInput.value)||1) - 1); };
       weekCtrl.querySelector('#weekInc').onclick = () => { weekInput.value = Math.min(16, (parseInt(weekInput.value)||1) + 1); };
       weekCtrl.querySelector('#weekApply').onclick = async () => {
         const nw = Math.max(1, Math.min(16, parseInt(weekInput.value) || 1));
-        if (nw === currentWeek) { showToast("La semana ya está en " + nw); return; }
+        if (nw === actualWeek) { showToast("La semana ya está en " + nw); return; }
         const planW = _activePlanCache?.weeks || planTotalWeeks;
         if (nw > planW) {
           if (!await _askConfirm(`La semana ${nw} está más allá de la duración actual del plan (${planW} sem).<br><span style="color:#888;font-size:12px">¿Extender el plan a ${nw} semanas automáticamente y mover el puntero?</span>`)) return;
@@ -2910,7 +3357,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             } catch(e) { showToast('No se pudo extender el plan: ' + e.message, true); return; }
           }
         }
-        const goBack = nw < currentWeek;
+        const goBack = nw < actualWeek;
         const dynRir = rirSchemeForWeeks(_activePlanCache?.weeks || 6)[nw] ?? 2;
         const msg = goBack
           ? `¿Retroceder a la semana ${nw}?<br><span style="color:#888;font-size:12px">Los registros de semanas superiores quedan intactos.</span>`
@@ -2954,7 +3401,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         const planW = _activePlanCache?.weeks || planTotalWeeks;
         if (planW <= 1) { showToast('Mínimo 1 semana', true); return; }
         const newW = planW - 1;
-        if (currentWeek > newW) { showToast(`No se puede reducir: semana activa (${currentWeek}) > nueva duración (${newW})`, true); return; }
+        if (actualWeek > newW) { showToast(`No se puede reducir: semana activa (${actualWeek}) > nueva duración (${newW})`, true); return; }
         if (!await _askConfirm(`¿Reducir el plan a <strong>${newW} semanas</strong>?<br><span style="color:#888;font-size:12px">Solo afecta la duración del mesociclo; los registros existentes no se borran.</span>`)) return;
         const btn = weekCtrl.querySelector('#planWeekDel');
         btn.disabled = true; btn.textContent = '…';
@@ -2970,7 +3417,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       };
 
       closeMesoBtn.onclick = async () => {
-        if (!await _askConfirm(`¿Cerrar mesociclo semana ${currentWeek} de ${clientData.displayName}?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
+        if (!await _askConfirm(`¿Cerrar mesociclo semana ${actualWeek} de ${clientData.displayName}?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
         closeMesoBtn.disabled = true; closeMesoBtn.textContent = "Archivando...";
         try {
           const logsRef = doc(db, 'logs', select.value);
@@ -2994,6 +3441,19 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         } catch(e) { showToast("Error: " + e.message, true); }
         finally { closeMesoBtn.disabled = false; closeMesoBtn.textContent = "🔄 Cerrar Mesociclo"; }
       };
+      } // fin _renderMonitorForWeek
+
+      // Escuchar logs del cliente en TIEMPO REAL
+      window._monitorUnsub = onSnapshot(doc(db, 'logs', select.value), (logsSnap) => {
+        if (!logsSnap.exists()) {
+          container.innerHTML = `<p class="text-[#888] text-sm">Sin datos de entrenamiento registrados aún.</p>`;
+          return;
+        }
+        _monitorLastLogs = logsSnap.data().entries || {};
+        _monitorActualWeek = logsSnap.data().currentWeek || 1;
+        const updatedAt = logsSnap.data().updatedAt;
+        _monitorLastUpdate = updatedAt ? new Date(updatedAt).toLocaleString('es-MX') : '—';
+        _renderMonitorForWeek();
       }, (err) => {
         console.warn('[Monitor] logs onSnapshot error:', err && err.message);
         container.innerHTML = '<p class="text-red-400 text-sm">Error al cargar datos en tiempo real: ' + _escH(err && err.message || 'sin detalles') + '</p>';
@@ -9089,6 +9549,7 @@ El esfuerzo no es negociable.
         <button onclick="duplicatePlan('${clientId}','${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">📋 Duplicar</button>
         <button onclick="duplicatePlanToClient('${c.activePlanId}')" class="text-[#4488cc] text-xs underline mr-3">👥 Copiar a otro</button>
         <button onclick="_saveCurrentPlanAsTemplate('${c.activePlanId}')" class="text-xs underline mr-3" style="color:#C4FF00">⭐ Template</button>
+        <button onclick="openPlanTemplateLibrary('${clientId}')" class="text-xs underline mr-3" style="color:#88ccff">📚 Biblioteca</button>
         <button onclick="exportActivePlanJSON('${clientId}','${c.activePlanId}')" class="text-[#F4F4F0] text-xs underline mr-3">📥 JSON</button>
         <button onclick="exportActivePlanTXT('${clientId}','${c.activePlanId}')" class="text-[#F4F4F0] text-xs underline mr-3">📝 TXT</button>
         <button onclick="viewClientReportHTML('${clientId}')" class="text-[#F4F4F0] text-xs underline mr-3">📖 Reporte</button>
@@ -9752,6 +10213,166 @@ El esfuerzo no es negociable.
   }
   window._saveCurrentPlanAsTemplate = _saveCurrentPlanAsTemplate;
 
+  // FASE 11 — Helper puro: filtrado local de templates (testable)
+  function _filterTemplates(query, templates) {
+    if (!Array.isArray(templates)) return [];
+    if (!query || !query.trim()) return templates.slice();
+    var q = query.trim().toLowerCase();
+    return templates.filter(function(t) {
+      return (t.name || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+  window._filterTemplates = _filterTemplates;
+
+  // FASE 11 — Aplica template al cliente activo: restamp IDs, crea plan, actualiza activePlanId
+  async function _applyTemplateToClient(template, clientId, closeModal) {
+    var days = (template.days || []).map(function(d, di) {
+      return {
+        dayIndex: di,
+        label: d.label || ('Día ' + (di + 1)),
+        exercises: (d.exercises || []).map(function(e) {
+          return typeof e === 'string' ? _parseTemplateExercise(e) : e;
+        })
+      };
+    });
+    // Restamp: todos los IDs son nuevos, sin herencia del template
+    days = _restampPrescriptionIds(days);
+    // Crear plan primero; solo asignar activePlanId si el create tiene éxito
+    const planRef = await addDoc(collection(db, 'plans'), {
+      days,
+      weeks: template.weeks || 6,
+      daysPerWeek: days.length,
+      coachId: currentCoach.uid,
+      clientId,
+      status: 'active',
+      generatedBy: 'template:' + (template.name || ''),
+      createdAt: Date.now()
+    });
+    await updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id });
+    if (closeModal) closeModal();
+    showToast('Plan aplicado desde template ✅');
+    _autoAddExercisesToCatalog(days);
+    showClientDetail(clientId);
+    loadClientList();
+  }
+
+  // FASE 11 — Modal de biblioteca: abre desde detalle cliente, aplica al cliente activo
+  async function openPlanTemplateLibrary(clientId) {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#1a1a1a;border:1px solid #333;border-radius:14px;padding:22px;max-width:460px;width:100%;margin:auto;font-family:inherit';
+
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:14px';
+    const titleEl = document.createElement('span');
+    titleEl.style.cssText = 'color:#f0ece4;font-size:15px;font-weight:700';
+    titleEl.textContent = '📚 Biblioteca de planes';
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:2px 6px';
+    hdr.appendChild(titleEl);
+    hdr.appendChild(closeBtn);
+
+    const search = document.createElement('input');
+    search.type = 'text';
+    search.placeholder = 'Buscar template...';
+    search.autocomplete = 'off';
+    search.style.cssText = 'width:100%;padding:8px 12px;border-radius:8px;border:1px solid #444;background:#111;color:#f0ece4;font-size:13px;box-sizing:border-box;margin-bottom:14px;outline:none';
+
+    const listEl = document.createElement('div');
+    listEl.style.cssText = 'max-height:360px;overflow-y:auto';
+
+    box.appendChild(hdr);
+    box.appendChild(search);
+    box.appendChild(listEl);
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+
+    const close = () => ov.remove();
+    closeBtn.onclick = close;
+    ov.onclick = e => { if (e.target === ov) close(); };
+
+    let applying = false;
+    let allTemplates = [];
+
+    function renderList(list) {
+      while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+      if (!list.length) {
+        var empty = document.createElement('p');
+        empty.style.cssText = 'color:#888;font-size:13px;text-align:center;padding:20px 0';
+        empty.textContent = 'No tienes templates guardados todavía.';
+        listEl.appendChild(empty);
+        return;
+      }
+      list.forEach(function(t) {
+        var card = document.createElement('div');
+        card.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:10px;border:1px solid #333;background:rgba(255,255,255,.03);margin-bottom:8px';
+
+        var info = document.createElement('div');
+        var nm = document.createElement('div');
+        nm.style.cssText = 'color:#f0ece4;font-size:13px;font-weight:600';
+        nm.textContent = t.name || '(sin nombre)';
+        var meta = document.createElement('div');
+        meta.style.cssText = 'color:#888;font-size:11px;margin-top:2px';
+        var dCount = (t.days || []).length;
+        var wk = t.weeks || 6;
+        var dt = t.createdAt ? new Date(t.createdAt).toLocaleDateString('es-ES', {day:'2-digit',month:'short',year:'numeric'}) : '';
+        meta.textContent = dCount + ' días · ' + wk + ' sem' + (dt ? ' · ' + dt : '');
+        info.appendChild(nm);
+        info.appendChild(meta);
+
+        var useBtn = document.createElement('button');
+        useBtn.textContent = 'Usar →';
+        useBtn.style.cssText = 'background:#c4ff00;color:#000;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;margin-left:10px';
+        useBtn.onclick = async function() {
+          if (applying) return;
+          applying = true;
+          useBtn.disabled = true;
+          useBtn.textContent = '…';
+          try {
+            await _applyTemplateToClient(t, clientId, close);
+          } catch(err) {
+            showToast('Error al aplicar template: ' + err.message, true);
+            useBtn.disabled = false;
+            useBtn.textContent = 'Usar →';
+            applying = false;
+          }
+        };
+
+        card.appendChild(info);
+        card.appendChild(useBtn);
+        listEl.appendChild(card);
+      });
+    }
+
+    // Loading
+    var loadingEl = document.createElement('p');
+    loadingEl.style.cssText = 'color:#888;font-size:13px;text-align:center;padding:20px 0';
+    loadingEl.textContent = 'Cargando…';
+    listEl.appendChild(loadingEl);
+
+    // 1 Firestore read al abrir
+    try {
+      const snap = await getDocs(query(collection(db, 'templates'), where('coachId', '==', currentCoach.uid)));
+      allTemplates = [];
+      snap.forEach(function(d) { allTemplates.push(Object.assign({ id: d.id }, d.data())); });
+      renderList(allTemplates);
+    } catch(err) {
+      while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+      var errEl = document.createElement('p');
+      errEl.style.cssText = 'color:#e05555;font-size:13px;text-align:center;padding:20px 0';
+      errEl.textContent = 'Error al cargar templates. Intenta de nuevo.';
+      listEl.appendChild(errEl);
+      return;
+    }
+
+    search.oninput = function() { renderList(_filterTemplates(search.value, allTemplates)); };
+    search.focus();
+  }
+  window.openPlanTemplateLibrary = openPlanTemplateLibrary;
+
   function renderNutritionView(n) {
     if (!n || (!n.calorias && !n.texto)) return `<p class="text-[#888] text-sm">Sin datos.</p>`;
     let html = '';
@@ -10321,7 +10942,7 @@ El esfuerzo no es negociable.
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson, prescriptionId) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson, prescriptionId, restSeconds) {
     const techVal = (technique || 'straight').toLowerCase();
     const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
       .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
@@ -10334,6 +10955,7 @@ El esfuerzo no es negociable.
     const nmOpts = [['','—'],['fundamental','Fundamental'],['suplementario','Suplementario'],['asistencia_mayor','Asist. Mayor'],['asistencia_secundario','Asist. Sec.']]
       .map(([v,l]) => `<option value="${v}"${v===nmVal?' selected':''}>${l}</option>`).join('');
     const pidAttr = _escH(prescriptionId || '');
+    const rsVal = _parseRestSeconds(restSeconds);
     return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}"
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
@@ -10342,12 +10964,15 @@ El esfuerzo no es negociable.
       style="background:rgba(255,255,255,.03);${ssBorder};transition:opacity .15s">
       <div class="flex gap-2 items-center mb-2">
         <span class="text-[#555] select-none text-base cursor-grab px-0.5" title="Arrastrar para reordenar">⠿</span>
-        <input class="input-field flex-1 text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${name}" id="exname_${di}_${ei}" list="coach_exlist" data-field="name" oninput="markEditorDirty&&markEditorDirty()">
-        <button onclick="_moveExRow(this, -1)" title="Subir" class="text-[#888] hover:text-white text-base px-1 leading-none">↑</button>
-        <button onclick="_moveExRow(this, 1)" title="Bajar" class="text-[#888] hover:text-white text-base px-1 leading-none">↓</button>
+        <div style="position:relative;flex:1">
+          <input class="input-field w-full text-sm py-1 font-medium" placeholder="Nombre del ejercicio" value="${_escH(name)}" id="exname_${di}_${ei}" data-field="name" autocomplete="off" oninput="_acShow(this);markEditorDirty&&markEditorDirty()" onblur="_acHide(this)">
+          <div class="ex-ac-dd" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:#1c1c1c;border:1px solid rgba(255,255,255,.15);border-radius:6px;max-height:180px;overflow-y:auto"></div>
+        </div>
+        <button data-reorder="up" onclick="_moveExRow(this,-1)" title="Subir" class="text-[#888] hover:text-white text-base px-1 leading-none">↑</button>
+        <button data-reorder="dn" onclick="_moveExRow(this,1)" title="Bajar" class="text-[#888] hover:text-white text-base px-1 leading-none">↓</button>
         <button onclick="removeExRow(${di},${ei})" class="text-red-400 hover:text-red-300 text-xl leading-none flex-shrink-0 px-0.5" title="Eliminar">×</button>
       </div>
-      <div class="grid grid-cols-3 gap-2 mb-2">
+      <div class="grid grid-cols-4 gap-2 mb-2">
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Series</div>
           <input class="input-field w-full text-sm py-1 text-center font-bold text-[#F4F4F0]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric" data-field="sets" oninput="markEditorDirty&&markEditorDirty()">
@@ -10359,6 +10984,10 @@ El esfuerzo no es negociable.
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">RIR</div>
           <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir" oninput="markEditorDirty&&markEditorDirty()">
+        </div>
+        <div>
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Desc (s)</div>
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#88ccff]" value="${rsVal}" type="number" min="0" step="5" placeholder="0" inputmode="numeric" data-field="restSeconds" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
       <div class="grid gap-2 mb-2" style="grid-template-columns:60px 1fr 1fr 2fr">
@@ -10383,6 +11012,88 @@ El esfuerzo no es negociable.
         style="resize:vertical;min-height:28px;color:#aaa;border-color:rgba(255,255,255,.05)">${coachNote || ''}</textarea>
     </div>`;
   }
+
+  // ── FASE 10 — Helpers puros testables ──
+  function _filterExerciseCatalog(query, catalog, limit) {
+    limit = limit || 6;
+    if (!query || !query.trim()) return [];
+    if (!catalog || !catalog.length) return [];
+    var q = query.trim().toLowerCase();
+    var results = [];
+    for (var i = 0; i < catalog.length; i++) {
+      if (results.length >= limit) break;
+      if ((catalog[i].name || '').toLowerCase().indexOf(q) !== -1) results.push(catalog[i]);
+    }
+    return results;
+  }
+  function _moveArrayItem(items, from, to) {
+    if (!Array.isArray(items)) return [];
+    var arr = items.slice();
+    if (from < 0 || from >= arr.length || to < 0 || to >= arr.length || from === to) return arr;
+    var item = arr.splice(from, 1)[0];
+    arr.splice(to, 0, item);
+    return arr;
+  }
+  function _parseRestSeconds(value) {
+    var n = parseInt(value, 10);
+    if (isNaN(n) || n < 0) return 0;
+    return n;
+  }
+  window._filterExerciseCatalog = _filterExerciseCatalog;
+  window._moveArrayItem = _moveArrayItem;
+  window._parseRestSeconds = _parseRestSeconds;
+
+  // ── FASE 10 — Autocomplete dropdown (XSS-safe via DOM API) ──
+  function _acShow(input) {
+    var dd = input.parentNode && input.parentNode.querySelector('.ex-ac-dd');
+    if (!dd) return;
+    var results = _filterExerciseCatalog(input.value, _allExercises, 6);
+    while (dd.firstChild) dd.removeChild(dd.firstChild);
+    if (!results.length) { dd.style.display = 'none'; return; }
+    results.forEach(function(item) {
+      var row = document.createElement('div');
+      row.style.cssText = 'padding:6px 10px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06);line-height:1.3';
+      var nm = document.createElement('span');
+      nm.style.fontSize = '13px';
+      nm.textContent = item.name || '';
+      row.appendChild(nm);
+      if (item.motorPattern || item.equipment) {
+        var sub = document.createElement('span');
+        sub.style.cssText = 'font-size:10px;color:#888;margin-left:6px';
+        sub.textContent = [item.motorPattern, item.equipment].filter(Boolean).join(' · ');
+        row.appendChild(sub);
+      }
+      row.onmousedown = function(e) {
+        e.preventDefault();
+        input.value = item.name || '';
+        dd.style.display = 'none';
+        if (typeof markEditorDirty === 'function') markEditorDirty();
+      };
+      row.onmouseenter = function() { this.style.background = 'rgba(255,255,255,.08)'; };
+      row.onmouseleave = function() { this.style.background = ''; };
+      dd.appendChild(row);
+    });
+    dd.style.display = 'block';
+  }
+  function _acHide(input) {
+    var dd = input.parentNode && input.parentNode.querySelector('.ex-ac-dd');
+    if (dd) dd.style.display = 'none';
+  }
+  window._acShow = _acShow;
+  window._acHide = _acHide;
+
+  // ── FASE 10 — Actualiza visibilidad ↑↓ en un exlist ──
+  function _updateReorderBtns(list) {
+    if (!list) return;
+    var rows = list.querySelectorAll('.exrow-item');
+    rows.forEach(function(row, i) {
+      var up = row.querySelector('[data-reorder="up"]');
+      var dn = row.querySelector('[data-reorder="dn"]');
+      if (up) up.style.visibility = (i === 0) ? 'hidden' : 'visible';
+      if (dn) dn.style.visibility = (i === rows.length - 1) ? 'hidden' : 'visible';
+    });
+  }
+  window._updateReorderBtns = _updateReorderBtns;
 
   // ── Drag & drop para reordenar ejercicios ──
   var _exDragSrc = null;
@@ -10417,17 +11128,18 @@ El esfuerzo no es negociable.
     } else if (dir === 1 && row.nextElementSibling) {
       list.insertBefore(row.nextElementSibling, row);
     }
+    _updateReorderBtns(list);
+    if (typeof markEditorDirty === 'function') markEditorDirty();
   }
 
   function renderTrainingEditor(days, planId) {
     _editingPlanId = planId;
-    // Construir datalist con ejercicios del catálogo para autocompletar
-    const exDatalist = `<datalist id="coach_exlist">${_allExercises.map(e => `<option value="${e.name}">`).join('')}</datalist>`;
     const daysHtml = days.map((d, di) => {
       const exRows = (d.exercises || []).map((e, ei) => {
         const numSets = (e.sets || []).length || 3;
         const reps    = (e.sets && e.sets[0]) ? (e.sets[0].repsTarget || 8) : 8;
         const rir     = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
+        const rs0     = (e.sets && e.sets[0]) ? (e.sets[0].restSeconds || 0) : 0;
         var coachNote = e.coachNote || '';
         var tech = e.technique || 'straight';
         var techNote = e.techniqueNote || '';
@@ -10435,7 +11147,7 @@ El esfuerzo no es negociable.
         var ssGrp = e.supersetGroup || '';
         var nivelMedio = e.nivel_medio || '';
         var vvJson = e.variacion_vertical ? JSON.stringify(e.variacion_vertical) : 'null';
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson, e.prescriptionExerciseId || '');
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson, e.prescriptionExerciseId || '', rs0);
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -10443,7 +11155,7 @@ El esfuerzo no es negociable.
         <button onclick="addExRow(${di})" class="text-[#F4F4F0] text-xs underline mt-1">+ Ejercicio</button>
       </div>`;
     }).join('');
-    return `${exDatalist}<div id="trainingEditorDays">${daysHtml}</div>
+    return `<div id="trainingEditorDays">${daysHtml}</div>
       <button onclick="addDayBlock()" class="text-[#F4F4F0] text-xs underline mt-1 mb-3 block">➕ Agregar día de entrenamiento</button>
       <button onclick="saveTrainingPlan()" class="btn-primary w-full mt-2">💾 Guardar cambios</button>`;
   }
@@ -10455,16 +11167,18 @@ El esfuerzo no es negociable.
     const open = editor.style.display !== 'none';
     editor.style.display = open ? 'none' : 'block';
     view.style.display   = open ? 'block' : 'none';
+    if (!open) {
+      document.querySelectorAll('[id^="exlist_"]').forEach(function(list) { _updateReorderBtns(list); });
+    }
   }
 
   function addExRow(di) {
     const list = document.getElementById('exlist_'+di);
     const ei = list.children.length;
-    const div = document.createElement('div');
-    div.outerHTML; // placeholder
     const tmp = document.createElement('template');
-    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '', '', 'null', '');
+    tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '', '', 'null', '', 0);
     list.appendChild(tmp.content.firstElementChild);
+    _updateReorderBtns(list);
   }
 
   function removeExRow(di, ei) {
@@ -10532,6 +11246,7 @@ El esfuerzo no es negociable.
         const sets = parseInt(row.querySelector('[data-field="sets"]')?.value) || 3;
         const reps = parseInt(row.querySelector('[data-field="reps"]')?.value) || 8;
         const rir  = parseInt(row.querySelector('[data-field="rir"]')?.value)  || 2;
+        const restSec = _parseRestSeconds(row.querySelector('[data-field="restSeconds"]')?.value);
         const coachNote = row.querySelector('[data-field="coachNote"]')?.value.trim() || '';
         const technique = (row.querySelector('[data-field="technique"]')?.value || 'straight').toLowerCase();
         const techniqueNote = row.querySelector('[data-field="techniqueNote"]')?.value.trim() || '';
@@ -10552,7 +11267,7 @@ El esfuerzo no es negociable.
           supersetGroup,
           ...(nivelMedio ? { nivel_medio: nivelMedio } : {}),
           ...(variacionVertical ? { variacion_vertical: variacionVertical } : {}),
-          sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: 90, setNote: '', drop: false, tempo: '' }))
+          sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: restSec, setNote: '', drop: false, tempo: '' }))
         });
       });
       days.push({ dayIndex: di, label, exercises });
