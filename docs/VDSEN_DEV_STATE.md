@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `d1c1e39` · FASEs 12–18 mergeadas · FASE 19 en rama · siguiente = FASE 20
+> Actualizado: 2026-08-31 · main HEAD: `4575a7c` · FASEs 12–19 mergeadas · siguiente = FASE 20
 
 ---
 
@@ -18,22 +18,22 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `d1c1e39` — docs post-merge FASE 18 |
-| Rama activa | `claude/fase-19-progrec-postsession` |
+| main HEAD | `4575a7c` — merge FASE 19 |
+| Rama activa | — |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
 | FASE 17 | MERGED — commit `604894c` |
 | FASE 18 | MERGED — commit `e8c91c2` |
-| FASE 19 | EN RAMA — `claude/fase-19-progrec-postsession` · pendiente merge |
+| FASE 19 | MERGED — commit `4575a7c` |
 | Suite tests | **743/743 PASS** (P01–P268) |
-| Vercel | producción en `d1c1e39` (FASE 19 no en prod) |
+| Vercel | auto-deploy en curso (`4575a7c`) |
 | Siguiente fase | **FASE 20** — ver backlog |
 
 ---
 
 ## FASES completadas
 
-### FASE 19 (rama `claude/fase-19-progrec-postsession` — pendiente merge)
+### FASE 19 (merge commit `4575a7c` — MERGED a main)
 **Client Post-Session: Resumen de recomendaciones de progresión en el overlay de sesión completa**
 
 Archivos modificados:
