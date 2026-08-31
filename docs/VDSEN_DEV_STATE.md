@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `e49dfe3` · FASEs 12–23 en rama · siguiente = merge FASE 23 → FASE 24
+> Actualizado: 2026-08-31 · main HEAD: `ce276ee` · FASEs 12–24 en rama · siguiente = merge FASE 24 → STOP
 
 ---
 
@@ -27,13 +27,45 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 19 | MERGED — commit `4575a7c` |
 | FASE 20 | MERGED — commit `0d4be7c` |
 | FASE 21 | MERGED — commit `b4e4a91` |
-| Suite tests | **856/856 PASS** (P01–P320) |
-| Vercel | auto-deploy en curso (`e49dfe3`) |
-| Siguiente fase | **FASE 24** — ver backlog |
+| Suite tests | **872/872 PASS** (P01–P330) |
+| Vercel | auto-deploy en curso (`ce276ee`) |
+| Siguiente fase | — (FASES 22-24 mergeadas, STOP) |
 
 ---
 
 ## FASES completadas
+
+### FASE 24 (rama `claude/fase-24-dirty-plan-indicator` — pendiente merge)
+**Dirty Plan Indicator — indicador visual ● en tab Plan cuando hay cambios sin guardar**
+
+Archivos modificados:
+- `vdsen-coach.html` — 4 parches quirúrgicos
+- `tests/progression-engine.test.js` — P321-P330 (16 assertions nuevas)
+- `docs/VDSEN_DEV_STATE.md` — este bloque
+
+Helpers añadidos:
+
+**`_planTabLabel(isDirty, baseLabel?)`** — puro, exportado en `window`  
+- Retorna `baseLabel + ' ●'` si `isDirty === true`, de lo contrario `baseLabel`  
+- Fallback: `'🏋️ Plan'` si `baseLabel` es vacío/null
+
+**`_updateDirtyTabUI(isDirty)`** — DOM function, exportada en `window`  
+- Busca `#dirtyPlanDot` y alterna su atributo `hidden`  
+- 0 reads Firestore · seguro si el elemento no existe
+
+Cambios UI:
+- `ctab_plan` button ahora contiene `<span id="dirtyPlanDot" hidden>●</span>` (naranja)
+- `markEditorDirty()` y `markEditorClean()` llaman `_updateDirtyTabUI` automáticamente
+- `showClientDetail()` llama `markEditorClean()` al abrir nuevo cliente (reset de estado)
+
+Invariantes preservados:
+- `_dirtyEditor` y `markEditorClean/Dirty` ya existían — sin nueva infraestructura
+- 0 reads Firestore nuevos
+- Sin cambios en algoritmos de progresión
+
+Suite: **872/872 PASS** (P01–P330)
+
+---
 
 ### FASE 23 (rama `claude/fase-23-unsaved-changes-guard` — pendiente merge)
 **Unsaved Changes Guard — aviso al cambiar de tab con plan sin guardar**
