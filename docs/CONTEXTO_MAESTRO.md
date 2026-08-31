@@ -59,6 +59,17 @@ Resultado esperado:
 
 ---
 
+## DOCUMENTOS DE REFERENCIA
+
+| Documento | Cuándo leer |
+|-----------|-------------|
+| `docs/VDSEN_DEV_STATE.md` | Siempre (estado técnico) |
+| `docs/CONTEXTO_GENERADOR.md` | Solo para tareas Motor/generación/plan/adaptación longitudinal |
+
+Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tareas de generación, validación, adaptación longitudinal o contratos del Motor. No leer para tareas UI/bug/frontend.
+
+---
+
 ## INVARIANTES DUROS
 
 NUNCA:

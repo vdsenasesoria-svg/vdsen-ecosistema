@@ -3,6 +3,17 @@
 
 ---
 
+## Documentos de referencia
+
+| Documento | Cuándo leer |
+|-----------|-------------|
+| `docs/VDSEN_DEV_STATE.md` | Siempre (estado técnico del ecosistema) |
+| `docs/CONTEXTO_GENERADOR.md` | Solo para tareas de generación, validación, adaptación longitudinal o contratos del Motor |
+
+Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tareas de generación, validación, adaptación longitudinal o contratos del Motor.
+
+---
+
 ## Estado actual
 
 | Item | Valor |
