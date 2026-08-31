@@ -8123,6 +8123,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   let _detailClientId = null;
   let _detailClientData = null;
   let _detailPlanData   = null;
+  let _detailPrevPlanData   = null;   // FASE 26 — plan anterior (lazy, desde plans_backup)
   let _detailFichaData      = null;
   let _detailRenovacionData = null;
   let _detailActiveTab  = 'plan';
@@ -8150,6 +8151,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _renderClientNavBar(clientId);
 
     _detailPlanData = null;
+    _detailPrevPlanData = null;   // FASE 26 — reset lazy cache al abrir nuevo cliente
     if (c.activePlanId) {
       const planSnap = await getDoc(doc(db, "plans", c.activePlanId));
       if (planSnap.exists()) _detailPlanData = planSnap.data();
@@ -9635,6 +9637,7 @@ El esfuerzo no es negociable.
         </div>
         <div id="training-view">${planViewHtml}</div>
         <div id="training-editor" style="display:none">${planEditorHtml}</div>
+        ${c.activePlanId ? `<div id="planCompareSection" style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(244,244,240,.07)"><button id="planCompareBtn" onclick="_togglePlanCompare('${clientId}')" style="font-size:11px;color:#7788cc;text-decoration:underline;background:none;border:none;cursor:pointer;padding:0">🔍 Comparar con plan anterior</button><div id="planCompareDiff" style="display:none;margin-top:10px"></div></div>` : ''}
       </div>
       <div class="mb-5">
         <div class="flex justify-between items-center mb-2">
@@ -9662,6 +9665,221 @@ El esfuerzo no es negociable.
         <div id="_importPlanArea"></div>
       </div>`;
   }
+
+  // ========== FASE 26 — COMPARACIÓN DE PLANES ==========
+
+  function _normNameF26(s) {
+    if (!s) return '';
+    return String(s).toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+  }
+  window._normNameF26 = _normNameF26;
+
+  function _buildExMap26(days) {
+    const byPid  = {};
+    const byName = {};
+    if (!days || !Array.isArray(days)) return { byPid, byName };
+    days.forEach(function(day) {
+      if (!day || !Array.isArray(day.exercises)) return;
+      const di = day.dayIndex != null ? day.dayIndex : 0;
+      day.exercises.forEach(function(ex, ei) {
+        const pid = ex.prescriptionExerciseId || null;
+        const nm  = _normNameF26(ex.exerciseName || ex.nombre || '');
+        const entry = { ex, di, ei };
+        if (pid) byPid[pid] = entry;
+        if (nm) {
+          if (!byName[nm]) byName[nm] = [];
+          byName[nm].push(entry);
+        }
+      });
+    });
+    return { byPid, byName };
+  }
+  window._buildExMap26 = _buildExMap26;
+
+  function _resolveMatchF26(prevEx, curMap, prevMap) {
+    const pid = prevEx.prescriptionExerciseId || null;
+    if (pid && curMap.byPid[pid]) return curMap.byPid[pid];
+    const nm = _normNameF26(prevEx.exerciseName || prevEx.nombre || '');
+    if (!nm) return null;
+    const curMatches  = curMap.byName[nm]  || [];
+    const prevMatches = prevMap.byName[nm] || [];
+    if (curMatches.length === 1 && prevMatches.length === 1) return curMatches[0];
+    return null;
+  }
+  window._resolveMatchF26 = _resolveMatchF26;
+
+  function _compareExSets26(curEx, prevEx, exName, pid, di) {
+    const diffs    = [];
+    const curSets  = curEx.sets  || [];
+    const prevSets = prevEx.sets || [];
+    if (curSets.length !== prevSets.length) {
+      diffs.push({ type: 'SETS_CHANGED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di,
+        before: prevSets.length, after: curSets.length });
+    }
+    const n = Math.min(curSets.length, prevSets.length);
+    for (let s = 0; s < n; s++) {
+      const cs = curSets[s]  || {};
+      const ps = prevSets[s] || {};
+      if (cs.load !== ps.load && (cs.load != null || ps.load != null)) {
+        diffs.push({ type: 'LOAD_CHANGED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di,
+          setChanges: [{ setIndex: s, before: ps.load, after: cs.load }] });
+      }
+      if (cs.rirTarget !== ps.rirTarget && (cs.rirTarget != null || ps.rirTarget != null)) {
+        diffs.push({ type: 'RIR_CHANGED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di,
+          setChanges: [{ setIndex: s, before: ps.rirTarget, after: cs.rirTarget }] });
+      }
+      if (cs.restSeconds !== ps.restSeconds && (cs.restSeconds != null || ps.restSeconds != null)) {
+        diffs.push({ type: 'REST_CHANGED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di,
+          setChanges: [{ setIndex: s, before: ps.restSeconds, after: cs.restSeconds }] });
+      }
+    }
+    return diffs;
+  }
+  window._compareExSets26 = _compareExSets26;
+
+  function _comparePlans(curPlan, prevPlan) {
+    if (!curPlan || !prevPlan) return [];
+    const curMap  = _buildExMap26(curPlan.days  || []);
+    const prevMap = _buildExMap26(prevPlan.days || []);
+    const diffs   = [];
+    const matchedCurPids  = new Set();
+    const matchedCurNames = new Set();
+
+    (prevPlan.days || []).forEach(function(day) {
+      if (!day || !Array.isArray(day.exercises)) return;
+      const di = day.dayIndex != null ? day.dayIndex : 0;
+      day.exercises.forEach(function(prevEx) {
+        const exName = prevEx.exerciseName || prevEx.nombre || '(sin nombre)';
+        const pid    = prevEx.prescriptionExerciseId || null;
+        const match  = _resolveMatchF26(prevEx, curMap, prevMap);
+        if (match) {
+          if (pid) matchedCurPids.add(pid);
+          else matchedCurNames.add(_normNameF26(exName));
+          _compareExSets26(match.ex, prevEx, exName, pid, di).forEach(function(d) { diffs.push(d); });
+        } else {
+          diffs.push({ type: 'REMOVED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di });
+        }
+      });
+    });
+
+    (curPlan.days || []).forEach(function(day) {
+      if (!day || !Array.isArray(day.exercises)) return;
+      const di = day.dayIndex != null ? day.dayIndex : 0;
+      day.exercises.forEach(function(curEx) {
+        const exName = curEx.exerciseName || curEx.nombre || '(sin nombre)';
+        const pid    = curEx.prescriptionExerciseId || null;
+        const nm     = _normNameF26(exName);
+        if (pid && matchedCurPids.has(pid)) return;
+        if (!pid) {
+          const prevNmMatches = prevMap.byName[nm] || [];
+          if (prevNmMatches.length === 1 && matchedCurNames.has(nm)) return;
+        }
+        diffs.push({ type: 'ADDED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di });
+      });
+    });
+
+    return diffs;
+  }
+  window._comparePlans = _comparePlans;
+
+  function _renderPlanComparison(diffs, container) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    if (!diffs || !diffs.length) {
+      const p = document.createElement('p');
+      p.textContent = '✓ Sin cambios respecto al plan anterior.';
+      p.style.cssText = 'font-size:12px;color:#7aaa80';
+      container.appendChild(p);
+      return;
+    }
+    const typeLabel = {
+      ADDED: '➕ Ejercicio agregado',
+      REMOVED: '❌ Ejercicio eliminado',
+      LOAD_CHANGED: '⚖️ Carga modificada',
+      SETS_CHANGED: '🔢 Series modificadas',
+      RIR_CHANGED: '🎯 RIR modificado',
+      REST_CHANGED: '⏱ Descanso modificado',
+      EXERCISE_REPLACED: '🔄 Ejercicio reemplazado'
+    };
+    diffs.forEach(function(d) {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin-bottom:8px;padding:7px 10px;border-radius:6px;background:rgba(244,244,240,.05);border-left:3px solid rgba(119,136,204,.5)';
+
+      const badge = document.createElement('span');
+      badge.textContent = typeLabel[d.type] || d.type;
+      badge.style.cssText = 'font-size:10px;font-weight:700;color:#7788cc;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:3px';
+      row.appendChild(badge);
+
+      const nameEl = document.createElement('span');
+      nameEl.textContent = (d.dayIndex != null ? 'Día ' + (d.dayIndex + 1) + ' · ' : '') + d.exerciseName;
+      nameEl.style.cssText = 'font-size:12px;color:#F4F4F0;font-weight:600';
+      row.appendChild(nameEl);
+
+      if (d.type === 'SETS_CHANGED') {
+        const detail = document.createElement('span');
+        detail.textContent = '  ' + d.before + ' → ' + d.after + ' series';
+        detail.style.cssText = 'font-size:11px;color:#aaa;margin-left:6px';
+        row.appendChild(detail);
+      }
+      if (d.setChanges && d.setChanges.length) {
+        d.setChanges.forEach(function(sc) {
+          const scEl = document.createElement('div');
+          const unit = { LOAD_CHANGED: 'kg', RIR_CHANGED: 'RIR', REST_CHANGED: 's' }[d.type] || '';
+          scEl.textContent = '  S' + (sc.setIndex + 1) + ': ' + sc.before + unit + ' → ' + sc.after + unit;
+          scEl.style.cssText = 'font-size:11px;color:#aaa;margin-top:2px';
+          row.appendChild(scEl);
+        });
+      }
+      container.appendChild(row);
+    });
+  }
+  window._renderPlanComparison = _renderPlanComparison;
+
+  window._togglePlanCompare = async function(clientId) {
+    const diffDiv = document.getElementById('planCompareDiff');
+    const btn     = document.getElementById('planCompareBtn');
+    if (!diffDiv || !btn) return;
+    if (diffDiv.style.display !== 'none') {
+      diffDiv.style.display = 'none';
+      btn.textContent = '🔍 Comparar con plan anterior';
+      return;
+    }
+    if (!_detailPrevPlanData) {
+      btn.textContent = '⏳ Cargando plan anterior…';
+      try {
+        const q = query(collection(db, 'plans_backup'), where('clientId', '==', clientId));
+        const snap = await getDocs(q);
+        if (snap.empty) {
+          diffDiv.style.display = 'block';
+          const msg = document.createElement('p');
+          msg.textContent = 'No se encontró plan anterior para este cliente.';
+          msg.style.cssText = 'font-size:12px;color:#888';
+          while (diffDiv.firstChild) diffDiv.removeChild(diffDiv.firstChild);
+          diffDiv.appendChild(msg);
+          btn.textContent = '🔍 Comparar con plan anterior';
+          return;
+        }
+        const docs = [];
+        snap.forEach(function(d) { docs.push(d.data()); });
+        docs.sort(function(a, b) {
+          const ta = a.backedUpAt || '';
+          const tb = b.backedUpAt || '';
+          return ta < tb ? 1 : ta > tb ? -1 : 0;
+        });
+        _detailPrevPlanData = docs[0];
+      } catch (e) {
+        btn.textContent = '🔍 Comparar con plan anterior';
+        showToast('Error cargando plan anterior: ' + e.message);
+        return;
+      }
+    }
+    const diffs = _comparePlans(_detailPlanData, _detailPrevPlanData);
+    _renderPlanComparison(diffs, diffDiv);
+    diffDiv.style.display = 'block';
+    btn.textContent = '🔼 Ocultar comparación';
+  };
 
   window._modalImportPlan = function(mode, clientId) {
     const area = document.getElementById('_importPlanArea');

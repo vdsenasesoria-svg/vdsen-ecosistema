@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `2b36630` · FASE 25 implementada · siguiente = merge → main
+> Actualizado: 2026-08-31 · rama `claude/client-app-improvements-qayy4n` · FASE 26 implementada · siguiente = audit + merge → main
 
 ---
 
@@ -28,16 +28,40 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 20 | MERGED — commit `0d4be7c` |
 | FASE 21 | MERGED — commit `b4e4a91` |
 | FASE 22–24 | MERGED — commit `2b36630` |
-| FASE 25 | EN RAMA — pendiente merge |
-| Suite tests | **961/961 PASS** (P01–P377) |
+| FASE 25 | MERGED — commit `cbb5691` |
+| FASE 26 | EN RAMA — pendiente audit |
+| Suite tests | **997/997 PASS** (P01–P399) |
 | Vercel | auto-deploy en push a main |
-| Siguiente fase | — (pendiente instrucciones) |
+| Siguiente fase | FASE 27 (post-audit FASE 26) |
 
 ---
 
 ## FASES completadas
 
-### FASE 25 — Client Workout / Next Action UX (rama `claude/client-app-improvements-qayy4n`)
+### FASE 26 — Coach Plan Comparison / Current vs Previous Prescription (rama `claude/client-app-improvements-qayy4n`)
+**Herramienta READ-ONLY para el coach: comparar plan actual vs prescripción anterior**
+
+Archivos modificados:
+- `vdsen-coach.html` — 4 edits: state var `_detailPrevPlanData`, reset en `showClientDetail`, sección HTML `#planCompareSection`, bloque de funciones FASE 26
+- `tests/progression-engine.test.js` — P378-P399 (22 test cases, 36 assertions nuevas)
+- `docs/VDSEN_DEV_STATE.md` — este bloque
+
+**Funciones puras (XSS-safe, 0 lecturas Firestore extra al abrir modal):**
+- `_normNameF26(s)` — normalización de nombre: lower, sin tildes, sin especiales, trim
+- `_buildExMap26(days)` — indexa ejercicios por `prescriptionExerciseId` (PID) y por nombre normalizado
+- `_resolveMatchF26(prevEx, curMap, prevMap)` — PID primario; nombre único en ambos planes como fallback; null si ambiguo (duplicado en alguno)
+- `_compareExSets26(curEx, prevEx, exName, pid, di)` — diffs por set: LOAD_CHANGED, RIR_CHANGED, REST_CHANGED, SETS_CHANGED
+- `_comparePlans(curPlan, prevPlan)` — función principal pura; emite ADDED, REMOVED + diffs de sets
+- `_renderPlanComparison(diffs, container)` — renderer DOM (textContent, XSS-safe)
+- `_togglePlanCompare(clientId)` — async toggle; lazy load de `plans_backup` en primer click; JS sort por `backedUpAt`
+
+**Diff types soportados:** ADDED, REMOVED, LOAD_CHANGED, SETS_CHANGED, RIR_CHANGED, REST_CHANGED (EXERCISE_REPLACED reservado, nunca auto-inferido)
+
+**Invariantes:** POSITION ≠ IDENTITY · nombre duplicado en cualquier plan → ambigüedad → REMOVED+ADDED · `plan.sets[].load` únicamente, nunca `logs.carga` · sin new Firestore reads al abrir modal
+
+---
+
+### FASE 25 — Client Workout / Next Action UX (MERGED `cbb5691`)
 **Resolver determinista de siguiente acción en workout + hint contextual en rest timer**
 
 Archivos modificados:

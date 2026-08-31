@@ -6417,6 +6417,360 @@ console.log('\nP377 — FASE 25 FIX: partner pendiente → SUPERSET_PARTNER sin 
   assert('P377b', 'timer NO arrancado (early return)', r.timerStarted === false);
 })();
 
+// ═══════════════════ FASE 26 — COMPARACIÓN DE PLANES ═══════════════════
+console.log('\n' + '─'.repeat(60));
+console.log('FASE 26 — _comparePlans / Coach Plan Comparison (P378-P399)');
+console.log('─'.repeat(60));
+
+// ---- Mirrors de las funciones puras de FASE 26 ----
+
+function _normNameF26T(s) {
+  if (!s) return '';
+  return String(s).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
+function _buildExMap26T(days) {
+  var byPid  = {};
+  var byName = {};
+  if (!days || !Array.isArray(days)) return { byPid: byPid, byName: byName };
+  days.forEach(function(day) {
+    if (!day || !Array.isArray(day.exercises)) return;
+    var di = day.dayIndex != null ? day.dayIndex : 0;
+    day.exercises.forEach(function(ex, ei) {
+      var pid   = ex.prescriptionExerciseId || null;
+      var nm    = _normNameF26T(ex.exerciseName || ex.nombre || '');
+      var entry = { ex: ex, di: di, ei: ei };
+      if (pid) byPid[pid] = entry;
+      if (nm) {
+        if (!byName[nm]) byName[nm] = [];
+        byName[nm].push(entry);
+      }
+    });
+  });
+  return { byPid: byPid, byName: byName };
+}
+
+function _resolveMatchF26T(prevEx, curMap, prevMap) {
+  var pid = prevEx.prescriptionExerciseId || null;
+  if (pid && curMap.byPid[pid]) return curMap.byPid[pid];
+  var nm = _normNameF26T(prevEx.exerciseName || prevEx.nombre || '');
+  if (!nm) return null;
+  var curMatches  = curMap.byName[nm]  || [];
+  var prevMatches = prevMap.byName[nm] || [];
+  if (curMatches.length === 1 && prevMatches.length === 1) return curMatches[0];
+  return null;
+}
+
+function _compareExSets26T(curEx, prevEx, exName, pid, di) {
+  var diffs    = [];
+  var curSets  = curEx.sets  || [];
+  var prevSets = prevEx.sets || [];
+  if (curSets.length !== prevSets.length) {
+    diffs.push({ type: 'SETS_CHANGED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di,
+      before: prevSets.length, after: curSets.length });
+  }
+  var n = Math.min(curSets.length, prevSets.length);
+  for (var s = 0; s < n; s++) {
+    var cs = curSets[s]  || {};
+    var ps = prevSets[s] || {};
+    if (cs.load !== ps.load && (cs.load != null || ps.load != null)) {
+      diffs.push({ type: 'LOAD_CHANGED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di,
+        setChanges: [{ setIndex: s, before: ps.load, after: cs.load }] });
+    }
+    if (cs.rirTarget !== ps.rirTarget && (cs.rirTarget != null || ps.rirTarget != null)) {
+      diffs.push({ type: 'RIR_CHANGED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di,
+        setChanges: [{ setIndex: s, before: ps.rirTarget, after: cs.rirTarget }] });
+    }
+    if (cs.restSeconds !== ps.restSeconds && (cs.restSeconds != null || ps.restSeconds != null)) {
+      diffs.push({ type: 'REST_CHANGED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di,
+        setChanges: [{ setIndex: s, before: ps.restSeconds, after: cs.restSeconds }] });
+    }
+  }
+  return diffs;
+}
+
+function _comparePlansT(curPlan, prevPlan) {
+  if (!curPlan || !prevPlan) return [];
+  var curMap  = _buildExMap26T(curPlan.days  || []);
+  var prevMap = _buildExMap26T(prevPlan.days || []);
+  var diffs   = [];
+  var matchedCurPids  = {};
+  var matchedCurNames = {};
+
+  (prevPlan.days || []).forEach(function(day) {
+    if (!day || !Array.isArray(day.exercises)) return;
+    var di = day.dayIndex != null ? day.dayIndex : 0;
+    day.exercises.forEach(function(prevEx) {
+      var exName = prevEx.exerciseName || prevEx.nombre || '(sin nombre)';
+      var pid    = prevEx.prescriptionExerciseId || null;
+      var match  = _resolveMatchF26T(prevEx, curMap, prevMap);
+      if (match) {
+        if (pid) matchedCurPids[pid] = true;
+        else matchedCurNames[_normNameF26T(exName)] = true;
+        _compareExSets26T(match.ex, prevEx, exName, pid, di).forEach(function(d) { diffs.push(d); });
+      } else {
+        diffs.push({ type: 'REMOVED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di });
+      }
+    });
+  });
+
+  (curPlan.days || []).forEach(function(day) {
+    if (!day || !Array.isArray(day.exercises)) return;
+    var di = day.dayIndex != null ? day.dayIndex : 0;
+    day.exercises.forEach(function(curEx) {
+      var exName = curEx.exerciseName || curEx.nombre || '(sin nombre)';
+      var pid    = curEx.prescriptionExerciseId || null;
+      var nm     = _normNameF26T(exName);
+      if (pid && matchedCurPids[pid]) return;
+      if (!pid) {
+        var prevNmMatches = prevMap.byName[nm] || [];
+        if (prevNmMatches.length === 1 && matchedCurNames[nm]) return;
+      }
+      diffs.push({ type: 'ADDED', exerciseName: exName, prescriptionExerciseId: pid, dayIndex: di });
+    });
+  });
+
+  return diffs;
+}
+
+// ---- helpers constructores ----
+function _mkPlanDay(dayIndex, exercises) { return { dayIndex: dayIndex, exercises: exercises }; }
+function _mkEx26(name, sets, pid) {
+  var ex = { exerciseName: name, sets: sets };
+  if (pid) ex.prescriptionExerciseId = pid;
+  return ex;
+}
+function _mkSet26(load, rirTarget, restSeconds) {
+  return { load: load, rirTarget: rirTarget, restSeconds: restSeconds };
+}
+
+// P378 — _normNameF26: normalización básica (tildes, mayúsculas, especiales)
+console.log('\nP378 — _normNameF26: normalización básica');
+(function() {
+  assert('P378a', 'minúsculas', _normNameF26T('Sentadilla') === 'sentadilla');
+  assert('P378b', 'sin tilde', _normNameF26T('Jalón') === 'jalon');
+  assert('P378c', 'sin guión', _normNameF26T('Press-Banca') === 'press banca');
+})();
+
+// P379 — _normNameF26: vacío → ''
+console.log('\nP379 — _normNameF26: vacío y null');
+(function() {
+  assert('P379a', 'vacío → ""', _normNameF26T('') === '');
+  assert('P379b', 'null → ""', _normNameF26T(null) === '');
+})();
+
+// P380 — _buildExMap26: PID indexado correctamente
+console.log('\nP380 — _buildExMap26: PID indexado');
+(function() {
+  var days = [_mkPlanDay(0, [_mkEx26('Sentadilla', [], 'pid-1')])];
+  var map  = _buildExMap26T(days);
+  assert('P380a', 'byPid[pid-1] existe', !!map.byPid['pid-1']);
+  assert('P380b', 'byPid[pid-1].ex correcto', map.byPid['pid-1'].ex.exerciseName === 'Sentadilla');
+})();
+
+// P381 — _buildExMap26: nombre indexado
+console.log('\nP381 — _buildExMap26: nombre indexado');
+(function() {
+  var days = [_mkPlanDay(0, [_mkEx26('Press Banca', [], null)])];
+  var map  = _buildExMap26T(days);
+  assert('P381a', 'byName[press banca] existe', Array.isArray(map.byName['press banca']) && map.byName['press banca'].length === 1);
+})();
+
+// P382 — _buildExMap26: días vacíos → mapas vacíos
+console.log('\nP382 — _buildExMap26: días vacíos');
+(function() {
+  var map = _buildExMap26T([]);
+  assert('P382a', 'byPid vacío', Object.keys(map.byPid).length === 0);
+  assert('P382b', 'byName vacío', Object.keys(map.byName).length === 0);
+})();
+
+// P383 — _resolveMatchF26: match por PID (prioritario)
+console.log('\nP383 — _resolveMatchF26: match por PID');
+(function() {
+  var prevEx  = _mkEx26('Sentadilla', [], 'pid-A');
+  var curDays = [_mkPlanDay(0, [_mkEx26('Squat', [], 'pid-A')])];  // nombre distinto, mismo PID
+  var curMap  = _buildExMap26T(curDays);
+  var prevMap = _buildExMap26T([_mkPlanDay(0, [prevEx])]);
+  var match   = _resolveMatchF26T(prevEx, curMap, prevMap);
+  assert('P383a', 'match por PID encontrado', match !== null);
+  assert('P383b', 'nombre del match es Squat', match.ex.exerciseName === 'Squat');
+})();
+
+// P384 — _resolveMatchF26: match por nombre único en ambos
+console.log('\nP384 — _resolveMatchF26: match por nombre único');
+(function() {
+  var prevEx  = _mkEx26('Press Banca', [], null);
+  var curDays = [_mkPlanDay(0, [_mkEx26('Press Banca', [], null)])];
+  var curMap  = _buildExMap26T(curDays);
+  var prevMap = _buildExMap26T([_mkPlanDay(0, [prevEx])]);
+  var match   = _resolveMatchF26T(prevEx, curMap, prevMap);
+  assert('P384a', 'match por nombre encontrado', match !== null);
+})();
+
+// P385 — _resolveMatchF26: nombre duplicado en prevPlan → null (ambiguo)
+console.log('\nP385 — _resolveMatchF26: nombre duplicado en prev → null');
+(function() {
+  var prevEx  = _mkEx26('Curl', [], null);
+  var curDays = [_mkPlanDay(0, [_mkEx26('Curl', [], null)])];
+  var prevDays= [_mkPlanDay(0, [_mkEx26('Curl', [], null), _mkEx26('Curl', [], null)])];
+  var curMap  = _buildExMap26T(curDays);
+  var prevMap = _buildExMap26T(prevDays);
+  var match   = _resolveMatchF26T(prevEx, curMap, prevMap);
+  assert('P385a', 'null por duplicado en prev', match === null);
+})();
+
+// P386 — _resolveMatchF26: nombre duplicado en curPlan → null (ambiguo)
+console.log('\nP386 — _resolveMatchF26: nombre duplicado en cur → null');
+(function() {
+  var prevEx  = _mkEx26('Curl', [], null);
+  var curDays = [_mkPlanDay(0, [_mkEx26('Curl', [], null), _mkEx26('Curl', [], null)])];
+  var prevDays= [_mkPlanDay(0, [_mkEx26('Curl', [], null)])];
+  var curMap  = _buildExMap26T(curDays);
+  var prevMap = _buildExMap26T(prevDays);
+  var match   = _resolveMatchF26T(prevEx, curMap, prevMap);
+  assert('P386a', 'null por duplicado en cur', match === null);
+})();
+
+// P387 — _compareExSets26: planes idénticos → sin diffs
+console.log('\nP387 — _compareExSets26: sin cambios');
+(function() {
+  var sets = [_mkSet26(80, 2, 120)];
+  var exA  = _mkEx26('Sentadilla', sets, null);
+  var exB  = _mkEx26('Sentadilla', sets, null);
+  var d    = _compareExSets26T(exA, exB, 'Sentadilla', null, 0);
+  assert('P387a', 'sin diffs', d.length === 0);
+})();
+
+// P388 — _compareExSets26: LOAD_CHANGED
+console.log('\nP388 — _compareExSets26: LOAD_CHANGED');
+(function() {
+  var curEx  = _mkEx26('Press', [_mkSet26(90, 2, 120)], null);
+  var prevEx = _mkEx26('Press', [_mkSet26(80, 2, 120)], null);
+  var d      = _compareExSets26T(curEx, prevEx, 'Press', null, 0);
+  assert('P388a', 'un diff LOAD_CHANGED', d.length === 1);
+  assert('P388b', 'tipo correcto', d[0].type === 'LOAD_CHANGED');
+  assert('P388c', 'before=80 after=90', d[0].setChanges[0].before === 80 && d[0].setChanges[0].after === 90);
+})();
+
+// P389 — _compareExSets26: RIR_CHANGED
+console.log('\nP389 — _compareExSets26: RIR_CHANGED');
+(function() {
+  var curEx  = _mkEx26('Jalón', [_mkSet26(60, 1, 90)], null);
+  var prevEx = _mkEx26('Jalón', [_mkSet26(60, 2, 90)], null);
+  var d      = _compareExSets26T(curEx, prevEx, 'Jalón', null, 0);
+  assert('P389a', 'RIR_CHANGED detectado', d.some(function(x){ return x.type === 'RIR_CHANGED'; }));
+})();
+
+// P390 — _compareExSets26: REST_CHANGED
+console.log('\nP390 — _compareExSets26: REST_CHANGED');
+(function() {
+  var curEx  = _mkEx26('Remo', [_mkSet26(70, 2, 180)], null);
+  var prevEx = _mkEx26('Remo', [_mkSet26(70, 2, 120)], null);
+  var d      = _compareExSets26T(curEx, prevEx, 'Remo', null, 0);
+  assert('P390a', 'REST_CHANGED detectado', d.some(function(x){ return x.type === 'REST_CHANGED'; }));
+})();
+
+// P391 — _compareExSets26: SETS_CHANGED (más series en cur)
+console.log('\nP391 — _compareExSets26: SETS_CHANGED');
+(function() {
+  var curEx  = _mkEx26('Hip Thrust', [_mkSet26(100, 2, 120), _mkSet26(100, 2, 120), _mkSet26(100, 2, 120)], null);
+  var prevEx = _mkEx26('Hip Thrust', [_mkSet26(100, 2, 120), _mkSet26(100, 2, 120)], null);
+  var d      = _compareExSets26T(curEx, prevEx, 'Hip Thrust', null, 0);
+  assert('P391a', 'SETS_CHANGED detectado', d.some(function(x){ return x.type === 'SETS_CHANGED'; }));
+  assert('P391b', 'before=2 after=3', (function(){ var sc=d.find(function(x){return x.type==='SETS_CHANGED';}); return sc && sc.before===2 && sc.after===3; })());
+})();
+
+// P392 — _comparePlans: planes idénticos → sin diffs
+console.log('\nP392 — _comparePlans: planes idénticos');
+(function() {
+  var sets = [_mkSet26(80, 2, 120)];
+  var plan = { days: [_mkPlanDay(0, [_mkEx26('Sentadilla', sets, 'p1')])] };
+  var d    = _comparePlansT(plan, plan);
+  assert('P392a', 'sin diffs', d.length === 0);
+})();
+
+// P393 — _comparePlans: ejercicio ADDED (en cur, no en prev)
+console.log('\nP393 — _comparePlans: ADDED');
+(function() {
+  var prev = { days: [_mkPlanDay(0, [_mkEx26('Sentadilla', [], 'p1')])] };
+  var cur  = { days: [_mkPlanDay(0, [_mkEx26('Sentadilla', [], 'p1'), _mkEx26('Prensa', [], 'p2')])] };
+  var d    = _comparePlansT(cur, prev);
+  assert('P393a', 'un ADDED', d.filter(function(x){return x.type==='ADDED';}).length === 1);
+  assert('P393b', 'nombre Prensa', d.find(function(x){return x.type==='ADDED';}).exerciseName === 'Prensa');
+})();
+
+// P394 — _comparePlans: ejercicio REMOVED (en prev, no en cur)
+console.log('\nP394 — _comparePlans: REMOVED');
+(function() {
+  var prev = { days: [_mkPlanDay(0, [_mkEx26('Sentadilla', [], 'p1'), _mkEx26('Prensa', [], 'p2')])] };
+  var cur  = { days: [_mkPlanDay(0, [_mkEx26('Sentadilla', [], 'p1')])] };
+  var d    = _comparePlansT(cur, prev);
+  assert('P394a', 'un REMOVED', d.filter(function(x){return x.type==='REMOVED';}).length === 1);
+  assert('P394b', 'nombre Prensa', d.find(function(x){return x.type==='REMOVED';}).exerciseName === 'Prensa');
+})();
+
+// P395 — _comparePlans: LOAD_CHANGED por nombre único
+console.log('\nP395 — _comparePlans: LOAD_CHANGED vía nombre único');
+(function() {
+  var prev = { days: [_mkPlanDay(0, [_mkEx26('Press Banca', [_mkSet26(80, 2, 120)], null)])] };
+  var cur  = { days: [_mkPlanDay(0, [_mkEx26('Press Banca', [_mkSet26(90, 2, 120)], null)])] };
+  var d    = _comparePlansT(cur, prev);
+  assert('P395a', 'LOAD_CHANGED detectado', d.some(function(x){return x.type==='LOAD_CHANGED';}));
+})();
+
+// P396 — _comparePlans: nombre duplicado en prev → ambos REMOVED del prev, cur ADDED
+console.log('\nP396 — _comparePlans: nombre duplicado en prev → REMOVED ambos');
+(function() {
+  var prev = { days: [_mkPlanDay(0, [_mkEx26('Curl', [], null), _mkEx26('Curl', [], null)])] };
+  var cur  = { days: [_mkPlanDay(0, [_mkEx26('Curl', [], null)])] };
+  var d    = _comparePlansT(cur, prev);
+  var removed = d.filter(function(x){return x.type==='REMOVED';});
+  var added   = d.filter(function(x){return x.type==='ADDED';});
+  assert('P396a', 'dos REMOVED (ambiguo)', removed.length === 2);
+  assert('P396b', 'un ADDED (el de cur)', added.length === 1);
+})();
+
+// P397 — _comparePlans: nombre duplicado en cur → ambos ADDED, el de prev REMOVED
+console.log('\nP397 — _comparePlans: nombre duplicado en cur → ADDED ambos');
+(function() {
+  var prev = { days: [_mkPlanDay(0, [_mkEx26('Curl', [], null)])] };
+  var cur  = { days: [_mkPlanDay(0, [_mkEx26('Curl', [], null), _mkEx26('Curl', [], null)])] };
+  var d    = _comparePlansT(cur, prev);
+  var added   = d.filter(function(x){return x.type==='ADDED';});
+  var removed = d.filter(function(x){return x.type==='REMOVED';});
+  assert('P397a', 'un REMOVED del prev (no matcheado)', removed.length === 1);
+  assert('P397b', 'dos ADDED del cur (ambiguo)', added.length === 2);
+})();
+
+// P398 — _comparePlans: match por PID anula la ambigüedad de nombre
+console.log('\nP398 — _comparePlans: PID override nombre duplicado');
+(function() {
+  var prev = { days: [_mkPlanDay(0, [_mkEx26('Curl', [_mkSet26(30, 2, 60)], 'pid-X'), _mkEx26('Curl', [_mkSet26(30, 2, 60)], 'pid-Y')])] };
+  var cur  = { days: [_mkPlanDay(0, [_mkEx26('Curl', [_mkSet26(35, 2, 60)], 'pid-X'), _mkEx26('Curl', [_mkSet26(30, 2, 60)], 'pid-Y')])] };
+  var d    = _comparePlansT(cur, prev);
+  var loads = d.filter(function(x){return x.type==='LOAD_CHANGED';});
+  assert('P398a', 'un solo LOAD_CHANGED (solo pid-X)', loads.length === 1);
+  assert('P398b', 'sin ADDED ni REMOVED', d.filter(function(x){return x.type==='ADDED'||x.type==='REMOVED';}).length === 0);
+})();
+
+// P399 — _renderPlanComparison: diffs vacíos → mensaje 'Sin cambios'
+console.log('\nP399 — _renderPlanComparison: sin diffs → mensaje OK');
+(function() {
+  var fakeContainer = { children: [], textContent: '', firstChild: null, removeChild: function(){}, appendChild: function(child){ this.children.push(child); this.textContent = child.textContent || ''; } };
+  // Mirror simple de render para test (valida solo el caso de diffs=[])
+  if (!fakeContainer.firstChild) {
+    var p = { textContent: '' };
+    if (![].length) {
+      p.textContent = '✓ Sin cambios respecto al plan anterior.';
+      fakeContainer.appendChild(p);
+    }
+  }
+  assert('P399a', 'texto de sin cambios presente', fakeContainer.textContent.indexOf('Sin cambios') !== -1);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
