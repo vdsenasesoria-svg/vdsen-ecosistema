@@ -5566,6 +5566,72 @@ console.log('\nP310 — resolveExerciseRowId: función pura (no muta plan)');
   assert('P310b', 'ejercicio no mutado', ex.exerciseName === 'Sentadilla');
 })();
 
+// ─── FASE 23 mirror: _shouldWarnDirtyLeave ───────────────────────────────
+function _shouldWarnDirtyLeave23(fromTab, toTab, isDirty) {
+  return isDirty === true && fromTab === 'plan' && toTab !== 'plan';
+}
+
+// ─── FASE 23 — _shouldWarnDirtyLeave ──────────────────────────────────────
+// P311 — dirty=true, from=plan, to=monitor → warn
+console.log('\nP311 — shouldWarnDirtyLeave: dirty plan→monitor → true');
+(function() {
+  assert('P311a', 'dirty plan→monitor = true', _shouldWarnDirtyLeave23('plan','monitor',true) === true);
+})();
+
+// P312 — dirty=false → no warn
+console.log('\nP312 — shouldWarnDirtyLeave: clean → false');
+(function() {
+  assert('P312a', 'clean plan→monitor = false', _shouldWarnDirtyLeave23('plan','monitor',false) === false);
+})();
+
+// P313 — desde ficha (no plan) → no warn
+console.log('\nP313 — shouldWarnDirtyLeave: from=ficha → false');
+(function() {
+  assert('P313a', 'ficha→monitor = false', _shouldWarnDirtyLeave23('ficha','monitor',true) === false);
+})();
+
+// P314 — desde plan, a plan (mismo tab) → no warn
+console.log('\nP314 — shouldWarnDirtyLeave: plan→plan → false');
+(function() {
+  assert('P314a', 'plan→plan = false', _shouldWarnDirtyLeave23('plan','plan',true) === false);
+})();
+
+// P315 — from=null → no warn
+console.log('\nP315 — shouldWarnDirtyLeave: from=null → false');
+(function() {
+  assert('P315a', 'null→monitor = false', _shouldWarnDirtyLeave23(null,'monitor',true) === false);
+})();
+
+// P316 — plan→notas → warn
+console.log('\nP316 — shouldWarnDirtyLeave: plan→notas → true');
+(function() {
+  assert('P316a', 'plan→notas = true', _shouldWarnDirtyLeave23('plan','notas',true) === true);
+})();
+
+// P317 — plan→inbody → warn
+console.log('\nP317 — shouldWarnDirtyLeave: plan→inbody → true');
+(function() {
+  assert('P317a', 'plan→inbody = true', _shouldWarnDirtyLeave23('plan','inbody',true) === true);
+})();
+
+// P318 — plan→ficha → warn
+console.log('\nP318 — shouldWarnDirtyLeave: plan→ficha → true');
+(function() {
+  assert('P318a', 'plan→ficha = true', _shouldWarnDirtyLeave23('plan','ficha',true) === true);
+})();
+
+// P319 — plan→renovar → warn
+console.log('\nP319 — shouldWarnDirtyLeave: plan→renovar → true');
+(function() {
+  assert('P319a', 'plan→renovar = true', _shouldWarnDirtyLeave23('plan','renovar',true) === true);
+})();
+
+// P320 — isDirty=undefined → no warn
+console.log('\nP320 — shouldWarnDirtyLeave: isDirty=undefined → false');
+(function() {
+  assert('P320a', 'undefined dirty = false', _shouldWarnDirtyLeave23('plan','monitor',undefined) === false);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

@@ -8190,7 +8190,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _switchClientTab('ficha');
   }
 
-  function _switchClientTab(tab) {
+  // FASE 23 — helper puro: ¿debe mostrarse aviso de cambios sin guardar al cambiar de tab?
+  function _shouldWarnDirtyLeave(fromTab, toTab, isDirty) {
+    return isDirty === true && fromTab === 'plan' && toTab !== 'plan';
+  }
+  window._shouldWarnDirtyLeave = _shouldWarnDirtyLeave;
+
+  async function _switchClientTab(tab) {
+    if (_shouldWarnDirtyLeave(_detailActiveTab, tab, _dirtyEditor)) {
+      const ok = await _askConfirm('Tienes <strong>cambios sin guardar</strong> en el plan.<br><span style="color:#888;font-size:12px">¿Salir sin guardar?</span>');
+      if (!ok) return;
+      markEditorClean();
+    }
     _detailActiveTab = tab;
     ['ficha','plan','monitor','notas','inbody','renovar'].forEach(t => {
       const btn = document.getElementById('ctab_'+t);
