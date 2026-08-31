@@ -29,7 +29,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 21 | MERGED — commit `b4e4a91` |
 | FASE 22–24 | MERGED — commit `2b36630` |
 | FASE 25 | EN RAMA — pendiente merge |
-| Suite tests | **943/943 PASS** (P01–P370) |
+| Suite tests | **961/961 PASS** (P01–P377) |
 | Vercel | auto-deploy en push a main |
 | Siguiente fase | — (pendiente instrucciones) |
 
@@ -61,7 +61,9 @@ Archivos modificados:
 - `stopRestTimer` → limpia ambos hints vía `textContent = ''`
 - 0 nuevas colecciones Firestore, 0 nuevos listeners, 0 polling
 
-**Tests P351-P370**: 20 casos (35 assertions) — NONE, NEXT_SET, NEXT_EXERCISE, SESSION_DONE, SUPERSET_PARTNER, prioridades, idempotencia, currentWeek, di, stubs isTechniqueActive/getEffectiveSets
+**Tests P351-P370**: 20 casos (35 assertions) — resolver puro: NONE, NEXT_SET, NEXT_EXERCISE, SESSION_DONE, SUPERSET_PARTNER, prioridades, idempotencia, currentWeek, di, stubs isTechniqueActive/getEffectiveSets
+
+**Tests P371-P377 (Audit Fix)**: 7 casos (18 assertions) — integración `completeSet`: SUPERSET_PARTNER se renderiza antes del early return, autoFilled no dispara render, restTime=0 renderiza NEXT_SET/NEXT_EXERCISE/SESSION_DONE, restTime>0 mantiene timer + hint, partner + timer lógico → no timer real
 
 ---
 

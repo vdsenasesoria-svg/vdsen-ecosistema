@@ -7510,7 +7510,10 @@ function completeSet(key, di, ei, si, unit) {
         if (!_plog || !_plog.done) { _partnerPending = true; break; }
       }
     }
+    // FASE 25 FIX — calcular antes de cualquier early return (excepto autoFilled)
+    var _nextAction25 = _resolveNextWorkoutAction(di, _EJERCICIOS_DIA, ei, si, LOGS, CURRENT_WEEK, getTotalWeeks());
     if (_partnerPending) {
+      _renderNextWorkoutAction(_nextAction25);
       showToast('✓ → Ahora hacé el partner del SS');
       return;
     }
@@ -7538,9 +7541,10 @@ function completeSet(key, di, ei, si, unit) {
       var _fstTotal = (_ejCur.sets || []).length;
       restTime = (si >= _fstTotal - 1) ? 180 : 40;
     }
+    // FASE 25 FIX — renderizar siempre, independiente del timer
+    _renderNextWorkoutAction(_nextAction25);
     if (restTime > 0) {
       startRestTimer(restTime, key);
-      _renderNextWorkoutAction(_resolveNextWorkoutAction(di, _EJERCICIOS_DIA, ei, si, LOGS, CURRENT_WEEK, getTotalWeeks()));
       showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
     } else {
       showToast(_grp ? 'Par SS cerrado ✓' : 'Serie ✓');

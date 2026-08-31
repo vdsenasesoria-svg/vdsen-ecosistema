@@ -6277,6 +6277,146 @@ console.log('\nP370 — FASE 25: di se usa correctamente en clave de log');
   assert('P370b', 'di=2 → si=0 hecho → NEXT_SET S2', rDi2.type === 'NEXT_SET' && rDi2.label === 'Bench – S2');
 })();
 
+// ─── FASE 25 AUDIT FIX — Integración completeSet ──────────────────────────
+// Mirror del flujo de completeSet post-fix para verificar que _renderNextWorkoutAction
+// se invoca en todos los caminos correctos (SUPERSET_PARTNER, restTime=0, autoFilled).
+function _mockCompleteSetFlow(opts) {
+  // opts: { ei, si, di, exercises, logs, currentWeek, totalWeeks,
+  //         partnerPending, autoFilled, restTime, getEffectiveSets }
+  var renders = [];
+  var timerStarted = false;
+
+  var _renderNA = function(action) { renders.push({ type: action.type, label: action.label }); };
+  var _eff = opts.getEffectiveSets || function(ej) { return ej.sets || []; };
+  var _iTech = opts.isTechniqueActive || function() { return true; };
+
+  // Resolver (antes de cualquier early return excepto autoFilled)
+  var nextAction = _resolveNextAction25(
+    opts.di || 0, opts.exercises, opts.ei, opts.si,
+    opts.logs || {}, opts.currentWeek || 1, opts.totalWeeks || 6,
+    { getEffectiveSets: _eff, isTechniqueActive: _iTech }
+  );
+
+  // — SUPERSET_PARTNER guard (FASE 25 FIX: render aquí)
+  if (opts.partnerPending) {
+    _renderNA(nextAction);
+    return { renders: renders, timerStarted: timerStarted, nextAction: nextAction };
+  }
+
+  // — autoFilled guard (NO render — comportamiento legacy preservado)
+  if (opts.autoFilled) {
+    return { renders: renders, timerStarted: timerStarted, nextAction: nextAction };
+  }
+
+  // — render siempre, antes del timer (FASE 25 FIX)
+  _renderNA(nextAction);
+  if ((opts.restTime || 0) > 0) { timerStarted = true; }
+
+  return { renders: renders, timerStarted: timerStarted, nextAction: nextAction };
+}
+
+// P371 — partner pendiente → renderer invocado con SUPERSET_PARTNER
+console.log('\nP371 — FASE 25 FIX: partner pendiente → render SUPERSET_PARTNER');
+(function() {
+  var exs = [_mkEx('A', 2, 'SS1'), _mkEx('B', 2, 'SS1')];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0); // A si=0 hecho; B si=0 pendiente
+  var r = _mockCompleteSetFlow({
+    ei: 0, si: 0, exercises: exs, logs: logs25,
+    partnerPending: true
+  });
+  assert('P371a', 'render invocado', r.renders.length === 1);
+  assert('P371b', 'tipo SUPERSET_PARTNER', r.renders[0].type === 'SUPERSET_PARTNER');
+  assert('P371c', 'no timer cuando partner pendiente', r.timerStarted === false);
+  assert('P371d', 'label es B', r.renders[0].label === 'B');
+})();
+
+// P372 — autoFilled → render NO invocado (comportamiento legacy)
+console.log('\nP372 — FASE 25 FIX: autoFilled → NO render');
+(function() {
+  var exs = [_mkEx('Squat', 3)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  var r = _mockCompleteSetFlow({
+    ei: 0, si: 0, exercises: exs, logs: logs25,
+    autoFilled: true, restTime: 90
+  });
+  assert('P372a', 'render NO invocado para autoFilled', r.renders.length === 0);
+})();
+
+// P373 — restTime=0, si=0 de 2 hecho → NEXT_SET renderizado
+console.log('\nP373 — FASE 25 FIX: restTime=0 → NEXT_SET se renderiza');
+(function() {
+  var exs = [_mkEx('Squat', 2)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  var r = _mockCompleteSetFlow({
+    ei: 0, si: 0, exercises: exs, logs: logs25,
+    restTime: 0
+  });
+  assert('P373a', 'render invocado', r.renders.length === 1);
+  assert('P373b', 'tipo NEXT_SET', r.renders[0].type === 'NEXT_SET');
+  assert('P373c', 'no timer con restTime=0', r.timerStarted === false);
+})();
+
+// P374 — restTime=0, ejercicio completo, siguiente pendiente → NEXT_EXERCISE
+console.log('\nP374 — FASE 25 FIX: restTime=0 + ejercicio completo → NEXT_EXERCISE');
+(function() {
+  var exs = [_mkEx('Squat', 1), _mkEx('Leg Press', 2)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  var r = _mockCompleteSetFlow({
+    ei: 0, si: 0, exercises: exs, logs: logs25,
+    restTime: 0
+  });
+  assert('P374a', 'render invocado', r.renders.length === 1);
+  assert('P374b', 'tipo NEXT_EXERCISE', r.renders[0].type === 'NEXT_EXERCISE');
+  assert('P374c', 'label Leg Press', r.renders[0].label === 'Leg Press');
+})();
+
+// P375 — restTime=0, todo completado → SESSION_DONE
+console.log('\nP375 — FASE 25 FIX: restTime=0 + all done → SESSION_DONE');
+(function() {
+  var exs = [_mkEx('Squat', 1)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  var r = _mockCompleteSetFlow({
+    ei: 0, si: 0, exercises: exs, logs: logs25,
+    restTime: 0
+  });
+  assert('P375a', 'render invocado', r.renders.length === 1);
+  assert('P375b', 'tipo SESSION_DONE', r.renders[0].type === 'SESSION_DONE');
+})();
+
+// P376 — restTime>0 → timer arranca + hint renderizado
+console.log('\nP376 — FASE 25 FIX: restTime>0 → timer + NEXT_SET renderizado');
+(function() {
+  var exs = [_mkEx('Bench', 3)];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0);
+  var r = _mockCompleteSetFlow({
+    ei: 0, si: 0, exercises: exs, logs: logs25,
+    restTime: 120
+  });
+  assert('P376a', 'render invocado', r.renders.length === 1);
+  assert('P376b', 'tipo NEXT_SET', r.renders[0].type === 'NEXT_SET');
+  assert('P376c', 'timer arrancado', r.timerStarted === true);
+})();
+
+// P377 — partner pendiente + restTime lógico → SUPERSET_PARTNER, NO timer
+console.log('\nP377 — FASE 25 FIX: partner pendiente → SUPERSET_PARTNER sin timer');
+(function() {
+  var exs = [_mkEx('A', 3, 'SS1'), _mkEx('B', 3, 'SS1')];
+  var logs25 = {};
+  _markDone25(logs25, 1, 0, 0, 0); // A si=0 hecho; B si=0 pendiente
+  var r = _mockCompleteSetFlow({
+    ei: 0, si: 0, exercises: exs, logs: logs25,
+    partnerPending: true, restTime: 120
+  });
+  assert('P377a', 'render invocado con SUPERSET_PARTNER', r.renders[0].type === 'SUPERSET_PARTNER');
+  assert('P377b', 'timer NO arrancado (early return)', r.timerStarted === false);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
