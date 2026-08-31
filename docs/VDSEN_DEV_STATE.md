@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `2b6e927` · rama activa: `claude/client-app-improvements-qayy4n` · FASE 14 añadida
+> Actualizado: 2026-08-31 · main HEAD: `142d3ba` · FASEs 12–15 mergeadas a main
 
 ---
 
@@ -18,13 +18,15 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `2b6e927` — FASE 6 mergeada |
-| Rama activa | `claude/client-app-improvements-qayy4n` (pendiente merge) |
-| FASE 5 commit | `4a87e42` |
-| FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **542/542 PASS** (P01–P215) |
-| Vercel | producción en `2b6e927`; FASEs 7–14 pendientes merge a main |
-| Siguiente fase | **FASE 15** (por definir) |
+| main HEAD | `142d3ba` — FASEs 12–15 mergeadas |
+| Rama activa | `claude/client-app-improvements-qayy4n` (mergeada) |
+| FASE 12 | MERGED — `claude/client-app-improvements-qayy4n` |
+| FASE 13 | MERGED — `claude/client-app-improvements-qayy4n` |
+| FASE 14 | MERGED — `claude/client-app-improvements-qayy4n` |
+| FASE 15 | MERGED — commit `33cf30e` |
+| Suite tests | **573/573 PASS** (P01–P225) |
+| Vercel | auto-deploy en curso (`142d3ba`) |
+| Siguiente fase | **FASE 16** (por definir) |
 
 ---
 
