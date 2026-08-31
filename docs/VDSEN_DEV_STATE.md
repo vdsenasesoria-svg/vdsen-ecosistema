@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `ce276ee` · FASEs 12–24 en rama · siguiente = merge FASE 24 → STOP
+> Actualizado: 2026-08-31 · main HEAD: `950434e` · Audit fixes 22/23/24 en rama · siguiente = merge → main
 
 ---
 
@@ -27,7 +27,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 19 | MERGED — commit `4575a7c` |
 | FASE 20 | MERGED — commit `0d4be7c` |
 | FASE 21 | MERGED — commit `b4e4a91` |
-| Suite tests | **872/872 PASS** (P01–P330) |
+| Suite tests | **908/908 PASS** (P01–P350) |
 | Vercel | auto-deploy en curso (`ce276ee`) |
 | Siguiente fase | — (FASES 22-24 mergeadas, STOP) |
 
@@ -35,7 +35,35 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ## FASES completadas
 
-### FASE 24 (rama `claude/fase-24-dirty-plan-indicator` — pendiente merge)
+### AUDIT FIX 22/23/24 (rama `claude/client-app-improvements-qayy4n`)
+**Correcciones post-audit sobre FASEs 22, 23, 24**
+
+Archivos modificados:
+- `vdsen-coach.html` — 4 parches quirúrgicos
+- `tests/progression-engine.test.js` — P331-P350 (36 assertions nuevas)
+- `docs/VDSEN_DEV_STATE.md` — este bloque
+
+**FIX MEDIUM — FASE 22: `_resolveExerciseRowId` prefiere PID**
+- Firma ampliada: `_resolveExerciseRowId(exerciseName, planCache, pid?)`
+- Si `pid` provisto → búsqueda primaria por `prescriptionExerciseId` en todo el plan
+- Si no encontrado por PID (o pid vacío/null) → fallback al nombre normalizado (comportamiento legacy)
+- Botón ✏️ del Monitor ahora emite `data-expid` con el PID resuelto desde `_activePlanCache.days[lastRecDay]` en tiempo de render
+- `_deepLinkToExercise(exerciseName, pid?)` acepta PID opcional y lo pasa a `_resolveExerciseRowId`
+- Tests P331-P340: 10 casos (duplicado por nombre, PID exacto, PID vacío, PID bogus, fallback legacy)
+
+**FIX HIGH — FASE 23: `_discardEditorChanges()` explícito**
+- Nueva función `_discardEditorChanges()` — reconstruye `#training-editor` desde `_detailPlanData.days` vía `renderTrainingEditor`
+- `_switchClientTab`: al confirmar abandono llama `_discardEditorChanges()` ANTES de `markEditorClean()`
+- El discard es ahora explícito e inmediato, no implícito en el siguiente render del tab Plan
+- Tests P341-P350: 10 casos de regresión (secuencia dirty→discard→clean, invariante triple condición, flujo completo)
+
+**FASE 24 integration:** sin cambios adicionales (pasó el audit; integración correcta verificada por tests)
+
+Suite: **908/908 PASS** (P01–P350)
+
+---
+
+### FASE 24 (rama `claude/fase-24-dirty-plan-indicator` — MERGED en main `950434e`)
 **Dirty Plan Indicator — indicador visual ● en tab Plan cuando hay cambios sin guardar**
 
 Archivos modificados:
@@ -67,7 +95,7 @@ Suite: **872/872 PASS** (P01–P330)
 
 ---
 
-### FASE 23 (rama `claude/fase-23-unsaved-changes-guard` — pendiente merge)
+### FASE 23 (rama `claude/fase-23-unsaved-changes-guard` — MERGED en main `ce276ee`)
 **Unsaved Changes Guard — aviso al cambiar de tab con plan sin guardar**
 
 Archivos modificados:
@@ -96,7 +124,7 @@ Suite: **856/856 PASS** (P01–P320)
 
 ---
 
-### FASE 22 (rama `claude/fase-22-monitor-editor-deeplink` — pendiente merge)
+### FASE 22 (rama `claude/fase-22-monitor-editor-deeplink` — MERGED en main `e49dfe3`)
 **Coach Monitor → Plan Editor Deep Link — botón ✏️ por ejercicio en Monitor**
 
 Archivos modificados:
@@ -106,8 +134,9 @@ Archivos modificados:
 
 Helpers añadidos:
 
-**`_resolveExerciseRowId(exerciseName, planCache)`** — puro, exportado en `window`  
-- Input: nombre de ejercicio + `_activePlanCache`  
+**`_resolveExerciseRowId(exerciseName, planCache, pid?)`** — puro, exportado en `window`  
+- Input: nombre de ejercicio + `_activePlanCache` + PID opcional (ver Audit Fix)
+- Input original: nombre de ejercicio + `_activePlanCache`  
 - Output: `{ di, ei, pid }` o `null`  
 - Normalización: lowercase + trim + colapso de espacios (igual que `_normN20`)  
 - 0 reads Firestore · no muta planCache

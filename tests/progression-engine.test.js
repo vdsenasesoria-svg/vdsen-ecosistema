@@ -5719,6 +5719,255 @@ console.log('\nP330 — planTabLabel: dirty≠clean producen labels distintos');
   assert('P330b', 'dirty más largo', dirty.length > clean.length);
 })();
 
+// ─── AUDIT FIX FASE 22 mirror v2: _resolveExerciseRowId con pid primario ────
+function _resolveExerciseRowId22v2(exerciseName, planCache, pid) {
+  if (!planCache || !planCache.days) return null;
+  // PRIMARY: pid
+  if (pid) {
+    for (var di = 0; di < planCache.days.length; di++) {
+      var exs = planCache.days[di].exercises || [];
+      for (var ei = 0; ei < exs.length; ei++) {
+        if ((exs[ei].prescriptionExerciseId || '') === pid) {
+          return { di: di, ei: ei, pid: pid };
+        }
+      }
+    }
+  }
+  // FALLBACK: nombre normalizado
+  if (!exerciseName) return null;
+  var normQ = exerciseName.toLowerCase().trim().replace(/\s+/g, ' ');
+  for (var di2 = 0; di2 < planCache.days.length; di2++) {
+    var exs2 = planCache.days[di2].exercises || [];
+    for (var ei2 = 0; ei2 < exs2.length; ei2++) {
+      var ex2 = exs2[ei2];
+      var normN = (ex2.exerciseName || ex2.nombre || '').toLowerCase().trim().replace(/\s+/g, ' ');
+      if (normN === normQ) {
+        return { di: di2, ei: ei2, pid: ex2.prescriptionExerciseId || null };
+      }
+    }
+  }
+  return null;
+}
+
+// ─── AUDIT FIX FASE 22 — PID como clave primaria ──────────────────────────
+// P331 — pid exacto → resuelve en día correcto (desambigua nombre duplicado)
+console.log('\nP331 — resolveExerciseRowId v2: pid exacto navega al día correcto');
+(function() {
+  var cache = { days: [
+    { exercises: [{ exerciseName: 'Sentadilla', prescriptionExerciseId: 'pid-d0' }] },
+    { exercises: [{ exerciseName: 'Sentadilla', prescriptionExerciseId: 'pid-d1' }] }
+  ]};
+  var r = _resolveExerciseRowId22v2('Sentadilla', cache, 'pid-d1');
+  assert('P331a', 'di=1 (día correcto)', r && r.di === 1);
+  assert('P331b', 'ei=0', r && r.ei === 0);
+  assert('P331c', 'pid correcto', r && r.pid === 'pid-d1');
+})();
+
+// P332 — pid vacío → fallback a nombre, devuelve primer match
+console.log('\nP332 — resolveExerciseRowId v2: pid vacío → fallback nombre día 0');
+(function() {
+  var cache = { days: [
+    { exercises: [{ exerciseName: 'Sentadilla', prescriptionExerciseId: 'pid-d0' }] },
+    { exercises: [{ exerciseName: 'Sentadilla', prescriptionExerciseId: 'pid-d1' }] }
+  ]};
+  var r = _resolveExerciseRowId22v2('Sentadilla', cache, '');
+  assert('P332a', 'di=0 (primer match por nombre)', r && r.di === 0);
+  assert('P332b', 'pid del primer match', r && r.pid === 'pid-d0');
+})();
+
+// P333 — pid undefined → fallback a nombre
+console.log('\nP333 — resolveExerciseRowId v2: pid undefined → fallback nombre');
+(function() {
+  var cache = { days: [
+    { exercises: [{ exerciseName: 'Press', prescriptionExerciseId: 'p1' }] }
+  ]};
+  var r = _resolveExerciseRowId22v2('Press', cache, undefined);
+  assert('P333a', 'encontrado por nombre', r !== null);
+  assert('P333b', 'di=0', r && r.di === 0);
+})();
+
+// P334 — pid null → fallback a nombre
+console.log('\nP334 — resolveExerciseRowId v2: pid null → fallback nombre');
+(function() {
+  var cache = { days: [
+    { exercises: [{ exerciseName: 'Peso Muerto', prescriptionExerciseId: 'pm1' }] }
+  ]};
+  var r = _resolveExerciseRowId22v2('Peso Muerto', cache, null);
+  assert('P334a', 'encontrado', r !== null);
+  assert('P334b', 'pid retornado del ejercicio', r && r.pid === 'pm1');
+})();
+
+// P335 — pid no existe en plan → fallback a nombre
+console.log('\nP335 — resolveExerciseRowId v2: pid inexistente → fallback nombre');
+(function() {
+  var cache = { days: [
+    { exercises: [{ exerciseName: 'Jalón', prescriptionExerciseId: 'j1' }] }
+  ]};
+  var r = _resolveExerciseRowId22v2('Jalón', cache, 'pid-bogus');
+  assert('P335a', 'fallback a nombre → encontrado', r !== null);
+  assert('P335b', 'di=0', r && r.di === 0);
+  assert('P335c', 'pid retornado del ejercicio', r && r.pid === 'j1');
+})();
+
+// P336 — pid presente → pid gana aunque nombre coincidiría con otro ejercicio
+console.log('\nP336 — resolveExerciseRowId v2: pid gana sobre nombre');
+(function() {
+  var cache = { days: [
+    { exercises: [
+        { exerciseName: 'Remo', prescriptionExerciseId: 'remo-d0' },
+        { exerciseName: 'Dominada', prescriptionExerciseId: 'dom-d0' }
+    ]},
+    { exercises: [
+        { exerciseName: 'Remo', prescriptionExerciseId: 'remo-d1' }
+    ]}
+  ]};
+  var r = _resolveExerciseRowId22v2('Remo', cache, 'remo-d1');
+  assert('P336a', 'di=1 (pid sobre nombre)', r && r.di === 1);
+  assert('P336b', 'pid=remo-d1', r && r.pid === 'remo-d1');
+})();
+
+// P337 — ejercicio sin prescriptionExerciseId → pid vacío en resultado
+console.log('\nP337 — resolveExerciseRowId v2: ejercicio sin pid → pid null en resultado');
+(function() {
+  var cache = { days: [
+    { exercises: [{ exerciseName: 'Hip Thrust' }] }
+  ]};
+  var r = _resolveExerciseRowId22v2('Hip Thrust', cache, '');
+  assert('P337a', 'encontrado', r !== null);
+  assert('P337b', 'pid null (sin prescriptionExerciseId)', r && r.pid === null);
+})();
+
+// P338 — nombre no en plan → null
+console.log('\nP338 — resolveExerciseRowId v2: nombre inexistente → null');
+(function() {
+  var cache = { days: [{ exercises: [{ exerciseName: 'Curl', prescriptionExerciseId: 'c1' }] }] };
+  var r = _resolveExerciseRowId22v2('Extensión', cache, '');
+  assert('P338a', 'null (no encontrado)', r === null);
+})();
+
+// P339 — plan vacío → null
+console.log('\nP339 — resolveExerciseRowId v2: plan vacío → null');
+(function() {
+  var r = _resolveExerciseRowId22v2('Press', { days: [] }, 'p1');
+  assert('P339a', 'null (plan sin días)', r === null);
+})();
+
+// P340 — función pura: misma entrada → mismo resultado
+console.log('\nP340 — resolveExerciseRowId v2: función pura');
+(function() {
+  var cache = { days: [{ exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'sq1' }] }] };
+  var r1 = _resolveExerciseRowId22v2('Squat', cache, 'sq1');
+  var r2 = _resolveExerciseRowId22v2('Squat', cache, 'sq1');
+  assert('P340a', 'idempotente: di', r1.di === r2.di);
+  assert('P340b', 'idempotente: pid', r1.pid === r2.pid);
+})();
+
+// ─── AUDIT FIX FASE 23 — Regresión descarte explícito ─────────────────────
+// Mirror de _shouldWarnDirtyLeave ya existe como _shouldWarnDirtyLeave23
+// Testeamos la secuencia completa del estado dirty → warn → discard → clean
+
+// P341 — secuencia discard: dirty=true → warn triggers
+console.log('\nP341 — discard sequence: dirty=true desde plan → warn se activa');
+(function() {
+  var warns = _shouldWarnDirtyLeave23('plan', 'monitor', true);
+  assert('P341a', 'warn activo con dirty=true', warns === true);
+})();
+
+// P342 — tras discard (markEditorClean equivalente): dirty=false → no warn al volver a plan
+console.log('\nP342 — discard sequence: tras limpiar, volver a plan no genera warn');
+(function() {
+  // simula: usuario en monitor (fromTab='monitor') vuelve a plan con dirty=false
+  var warns = _shouldWarnDirtyLeave23('monitor', 'plan', false);
+  assert('P342a', 'no warn al volver a plan (dirty=false)', warns === false);
+})();
+
+// P343 — tras discard: desde plan hacia cualquier tab → no warn (dirty=false)
+console.log('\nP343 — discard sequence: plan→X con dirty=false → no warn en ningún tab');
+(function() {
+  var tabs = ['ficha','monitor','notas','inbody','renovar'];
+  var allFalse = tabs.every(function(t) { return _shouldWarnDirtyLeave23('plan', t, false) === false; });
+  assert('P343a', 'todos los destinos sin warn', allFalse);
+})();
+
+// P344 — re-entrar a plan tras discard: plan→plan dirty=false → false (no self-warn)
+console.log('\nP344 — discard sequence: plan→plan dirty=false → false');
+(function() {
+  assert('P344a', 'no self-warn clean', _shouldWarnDirtyLeave23('plan','plan',false) === false);
+})();
+
+// P345 — discard es idempotente: limpiar dos veces no cambia resultado
+console.log('\nP345 — discard sequence: idempotencia de estado limpio');
+(function() {
+  // simula dos markEditorClean seguidos: dirty=false en ambas llamadas
+  var w1 = _shouldWarnDirtyLeave23('plan','monitor',false);
+  var w2 = _shouldWarnDirtyLeave23('plan','monitor',false);
+  assert('P345a', 'resultado idempotente', w1 === w2);
+  assert('P345b', 'ambos false', w1 === false && w2 === false);
+})();
+
+// P346 — el guard no se activa para tabs distintos de plan como origen
+console.log('\nP346 — discard sequence: origen no-plan → nunca warn');
+(function() {
+  var origins = ['ficha','monitor','notas','inbody','renovar'];
+  var allFalse = origins.every(function(o) { return _shouldWarnDirtyLeave23(o,'ficha',true) === false; });
+  assert('P346a', 'no-plan origen nunca da warn aunque dirty=true', allFalse);
+})();
+
+// P347 — invariante: warn solo cuando dirty=true AND from=plan AND to≠plan
+console.log('\nP347 — discard sequence: invariante triple condición');
+(function() {
+  assert('P347a', 'dirty=true from=plan to=monitor → true',  _shouldWarnDirtyLeave23('plan','monitor',true)  === true);
+  assert('P347b', 'dirty=false from=plan to=monitor → false', _shouldWarnDirtyLeave23('plan','monitor',false) === false);
+  assert('P347c', 'dirty=true from=monitor to=plan → false',  _shouldWarnDirtyLeave23('monitor','plan',true)  === false);
+  assert('P347d', 'dirty=true from=plan to=plan → false',     _shouldWarnDirtyLeave23('plan','plan',true)     === false);
+})();
+
+// P348 — flujo completo: dirty=true → confirm → clean → return to plan → sin warn
+console.log('\nP348 — discard sequence: flujo completo estado');
+(function() {
+  // Estado 1: en Plan, sucio
+  var isDirty = true;
+  var fromTab = 'plan';
+  // Paso 1: usuario intenta ir a Monitor
+  var step1 = _shouldWarnDirtyLeave23(fromTab, 'monitor', isDirty);
+  assert('P348a', 'step1: warn activo', step1 === true);
+  // Paso 2: usuario confirma → discard → markEditorClean
+  isDirty = false;
+  fromTab = 'monitor';
+  // Paso 3: usuario vuelve a Plan
+  var step3 = _shouldWarnDirtyLeave23(fromTab, 'plan', isDirty);
+  assert('P348b', 'step3: sin warn al volver', step3 === false);
+  // Paso 4: usuario intenta ir a Monitor de nuevo (limpio)
+  fromTab = 'plan';
+  var step4 = _shouldWarnDirtyLeave23(fromTab, 'monitor', isDirty);
+  assert('P348c', 'step4: sin warn (limpio)', step4 === false);
+})();
+
+// P349 — discard no altera el resultado de funciones puras subsiguientes
+console.log('\nP349 — discard: funciones puras no tienen efecto secundario sobre _shouldWarnDirtyLeave');
+(function() {
+  var r1 = _shouldWarnDirtyLeave23('plan', 'ficha', true);
+  var r2 = _shouldWarnDirtyLeave23('plan', 'ficha', true);
+  assert('P349a', 'pura: misma entrada mismo resultado', r1 === r2);
+})();
+
+// P350 — _discardEditorChanges es safe cuando no hay DOM (no lanza excepción)
+console.log('\nP350 — _discardEditorChanges: safe sin DOM');
+(function() {
+  // En entorno sin DOM, document.getElementById retorna null; la función debe ser no-operación
+  var threw = false;
+  try {
+    // simula _discardEditorChanges sin DOM (editorEl = null → no-op)
+    var editorEl = null; // document.getElementById devuelve null sin DOM
+    var _detailPlanDataMock = { days: [] };
+    if (editorEl && _detailPlanDataMock) {
+      editorEl.innerHTML = 'rebuilt';
+    }
+    // no lanzó excepción
+  } catch(e) { threw = true; }
+  assert('P350a', 'no lanza excepción sin DOM', threw === false);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

@@ -3026,13 +3026,18 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const al = actionLabels[r.action] || actionLabels.maintain;
           const _rKey = (r.exerciseName || '').toLowerCase().trim();
           const _clientNote = _exNoteByName[_rKey];
+          // FASE 22 FIX — resolver pid desde plan cache para navegación sin ambigüedad
+          const _rNorm = _rKey.replace(/\s+/g,' ');
+          const _monDay = _activePlanCache && _activePlanCache.days && _activePlanCache.days[lastRecDay];
+          const _monEx  = _monDay && (_monDay.exercises||[]).find(x => (x.exerciseName||x.nombre||'').toLowerCase().trim().replace(/\s+/g,' ') === _rNorm);
+          const _rPid   = (_monEx && _monEx.prescriptionExerciseId) || '';
           html += `
             <div class="card p-3">
               <div class="flex justify-between items-start mb-1">
                 <span class="font-semibold text-sm">${r.exerciseName}</span>
                 <div class="flex items-center gap-2">
                   <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${al.color}">${al.label}</span>
-                  <button onclick="_deepLinkToExercise(this.dataset.exname)" data-exname="${_escH(r.exerciseName)}" style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(244,244,240,.18);background:transparent;color:#888;cursor:pointer;flex-shrink:0" title="Editar en plan">✏️</button>
+                  <button onclick="_deepLinkToExercise(this.dataset.exname,this.dataset.expid)" data-exname="${_escH(r.exerciseName)}" data-expid="${_escH(_rPid)}" style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(244,244,240,.18);background:transparent;color:#888;cursor:pointer;flex-shrink:0" title="Editar en plan">✏️</button>
                 </div>
               </div>
               <div class="flex gap-4 text-sm mb-1">
@@ -8211,10 +8216,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
   window._shouldWarnDirtyLeave = _shouldWarnDirtyLeave;
 
+  // FASE 23 FIX — descarta cambios del editor explícitamente: reconstruye desde datos guardados.
+  function _discardEditorChanges() {
+    var editorEl = document.getElementById('training-editor');
+    if (editorEl && _detailPlanData) {
+      editorEl.innerHTML = renderTrainingEditor(
+        _detailPlanData.days || [],
+        (_detailClientData && _detailClientData.activePlanId) || null
+      );
+    }
+  }
+  window._discardEditorChanges = _discardEditorChanges;
+
   async function _switchClientTab(tab) {
     if (_shouldWarnDirtyLeave(_detailActiveTab, tab, _dirtyEditor)) {
       const ok = await _askConfirm('Tienes <strong>cambios sin guardar</strong> en el plan.<br><span style="color:#888;font-size:12px">¿Salir sin guardar?</span>');
       if (!ok) return;
+      _discardEditorChanges(); // FASE 23 FIX — restaura editor al estado guardado
       markEditorClean();
     }
     _detailActiveTab = tab;
@@ -10244,16 +10262,30 @@ El esfuerzo no es negociable.
 
   // FASE 22 — helper puro: resuelve posición de un ejercicio en el plan por nombre normalizado.
   // Retorna { di, ei, pid } o null si no encontrado.
-  function _resolveExerciseRowId(exerciseName, planCache) {
-    if (!planCache || !planCache.days || !exerciseName) return null;
-    var normQ = (exerciseName || '').toLowerCase().trim().replace(/\s+/g, ' ');
-    for (var di = 0; di < planCache.days.length; di++) {
-      var exs = planCache.days[di].exercises || [];
-      for (var ei = 0; ei < exs.length; ei++) {
-        var ex = exs[ei];
-        var normN = (ex.exerciseName || ex.nombre || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  // FASE 22 FIX — pid es clave primaria; exerciseName es fallback legacy.
+  function _resolveExerciseRowId(exerciseName, planCache, pid) {
+    if (!planCache || !planCache.days) return null;
+    // PRIMARY: buscar por prescriptionExerciseId (evita ambigüedad en nombres duplicados)
+    if (pid) {
+      for (var di = 0; di < planCache.days.length; di++) {
+        var exs = planCache.days[di].exercises || [];
+        for (var ei = 0; ei < exs.length; ei++) {
+          if ((exs[ei].prescriptionExerciseId || '') === pid) {
+            return { di: di, ei: ei, pid: pid };
+          }
+        }
+      }
+    }
+    // FALLBACK: buscar por nombre normalizado
+    if (!exerciseName) return null;
+    var normQ = exerciseName.toLowerCase().trim().replace(/\s+/g, ' ');
+    for (var di2 = 0; di2 < planCache.days.length; di2++) {
+      var exs2 = planCache.days[di2].exercises || [];
+      for (var ei2 = 0; ei2 < exs2.length; ei2++) {
+        var ex2 = exs2[ei2];
+        var normN = (ex2.exerciseName || ex2.nombre || '').toLowerCase().trim().replace(/\s+/g, ' ');
         if (normN === normQ) {
-          return { di: di, ei: ei, pid: ex.prescriptionExerciseId || null };
+          return { di: di2, ei: ei2, pid: ex2.prescriptionExerciseId || null };
         }
       }
     }
@@ -10262,7 +10294,8 @@ El esfuerzo no es negociable.
   window._resolveExerciseRowId = _resolveExerciseRowId;
 
   // FASE 22 — deep link: desde Monitor, navega a Plan → editor → fila del ejercicio.
-  function _deepLinkToExercise(exerciseName) {
+  // pid (opcional): prescriptionExerciseId para resolver sin ambigüedad nombres duplicados.
+  function _deepLinkToExercise(exerciseName, pid) {
     _switchClientTab('plan');
     var editor = document.getElementById('training-editor');
     var view   = document.getElementById('training-view');
@@ -10273,7 +10306,7 @@ El esfuerzo no es negociable.
         if (typeof _updateReorderBtns === 'function') _updateReorderBtns(list);
       });
     }
-    var match = _resolveExerciseRowId(exerciseName, _activePlanCache);
+    var match = _resolveExerciseRowId(exerciseName, _activePlanCache, pid || '');
     if (!match) return;
     var row = match.pid
       ? document.querySelector('[data-prescription-id="' + match.pid.replace(/</g,'&lt;').replace(/"/g,'&quot;') + '"]')
