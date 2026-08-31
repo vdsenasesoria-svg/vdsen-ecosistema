@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `604894c` · FASEs 12–17 mergeadas · FASE 18 en rama · siguiente = FASE 19
+> Actualizado: 2026-08-31 · main HEAD: `e8c91c2` · FASEs 12–18 mergeadas · siguiente = FASE 19
 
 ---
 
@@ -18,21 +18,21 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `604894c` — merge FASE 17 |
-| Rama activa | `claude/fase-18-coach-notes` |
+| main HEAD | `e8c91c2` — merge FASE 18 |
+| Rama activa | — |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
 | FASE 17 | MERGED — commit `604894c` |
-| FASE 18 | EN RAMA — `claude/fase-18-coach-notes` · pendiente merge |
+| FASE 18 | MERGED — commit `e8c91c2` |
 | Suite tests | **715/715 PASS** (P01–P260) |
-| Vercel | producción en `604894c` (FASE 18 no en prod) |
+| Vercel | auto-deploy en curso (`e8c91c2`) |
 | Siguiente fase | **FASE 19** — ver backlog |
 
 ---
 
 ## FASES completadas
 
-### FASE 18 (rama `claude/fase-18-coach-notes` — pendiente merge)
+### FASE 18 (merge commit `e8c91c2` — MERGED a main)
 **Client Workout: Notas del coach visibles durante el entrenamiento**
 
 Archivos modificados:
