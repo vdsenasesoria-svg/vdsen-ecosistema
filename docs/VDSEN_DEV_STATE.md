@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `142d3ba` · FASEs 12–15 mergeadas a main
+> Actualizado: 2026-08-31 · main HEAD: `142d3ba` · FASEs 12–15 mergeadas · FASE 16 en rama `claude/fase-16-exercise-substitution`
 
 ---
 
@@ -19,18 +19,50 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | Item | Valor |
 |------|-------|
 | main HEAD | `142d3ba` — FASEs 12–15 mergeadas |
-| Rama activa | `claude/client-app-improvements-qayy4n` (mergeada) |
-| FASE 12 | MERGED — `claude/client-app-improvements-qayy4n` |
-| FASE 13 | MERGED — `claude/client-app-improvements-qayy4n` |
-| FASE 14 | MERGED — `claude/client-app-improvements-qayy4n` |
-| FASE 15 | MERGED — commit `33cf30e` |
-| Suite tests | **573/573 PASS** (P01–P225) |
-| Vercel | auto-deploy en curso (`142d3ba`) |
-| Siguiente fase | **FASE 16** (por definir) |
+| Rama activa | `claude/fase-16-exercise-substitution` (pendiente merge) |
+| FASE 12 | MERGED |
+| FASE 13 | MERGED |
+| FASE 14 | MERGED |
+| FASE 15 | MERGED |
+| FASE 16 | EN RAMA — `claude/fase-16-exercise-substitution` |
+| Suite tests | **608/608 PASS** (P01–P237) |
+| Vercel | producción en `142d3ba`; FASE 16 pendiente merge |
+| Siguiente fase | **FASE 17** (sugerida: Coach Data Export / CSV) |
 
 ---
 
 ## FASES completadas
+
+### FASE 16 (rama `claude/fase-16-exercise-substitution` — pendiente merge)
+**Coach Plan Editor: Safe Exercise Substitution Workflow**
+
+Archivos modificados:
+- `vdsen-coach.html` — 2 parches quirúrgicos
+- `tests/progression-engine.test.js` — P226-P237 (35 assertions nuevas)
+
+Helper puro añadido (exportado como `window._replacePrescriptionExercise`):
+- `_replacePrescriptionExercise(exercise, replacement, generateId)` — devuelve nuevo objeto sin mutar el original. Preserva sets, restSeconds, supersetGroup, coachNote y toda metadata estructural. Genera nueva `prescriptionExerciseId` solo si la identidad cambia. Si misma identidad (mismo `exerciseId` canónico o mismo nombre normalizado) → no regenera ID.
+
+UI añadida:
+- Botón `⇄` en cada ejercicio del Plan Editor (entre ↓ y ×)
+- Modal de sustitución: ejercicio actual, buscador (substring case-insensitive), resultados del catálogo (`_filterExerciseCatalog` FASE 10), confirmación con nota "historial independiente", cancelar
+- `openSubstModal(di, ei)` / `closeSubstModal()` — sin side effects en cancelar
+- `_substApply()` — actualiza solo `data-prescription-id` y nombre en el DOM; llama `markEditorDirty()`; persistencia ocurre en "Guardar" normal
+
+Semántica de identidad:
+- OLD_ID → NEW_ID en la instancia sustituida únicamente
+- Hermanos (siblings) no se tocan
+- Reorder-safe: identidad no depende de posición
+- Mismo ejercicio seleccionado → "Ya es el ejercicio seleccionado", sin nuevo ID
+- 0 Firestore reads por keystroke / 0 listeners nuevos
+
+Invariantes preservados:
+- `_classifyBlocks`, `_normalizeTrainingPlan`, `parsePlanFromJSON` sin cambios
+- Progression Engine sin cambios
+- Schema vdsen-plan-v2 sin cambios
+- Colecciones Firestore sin cambios
+
+---
 
 ### FASE 14 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
 **Coach Monitor: Bitácora completa de entrenamiento por sesión**

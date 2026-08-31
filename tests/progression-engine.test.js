@@ -4034,6 +4034,186 @@ console.log('\nP225 — _coachCalcWeightTrendUpTo parity with _coachCalcWeightTr
   assert('P225c', 'cutoff at week 2: SUBIENDO (+1.0)', tCut.status === 'SUBIENDO' && tCut.rate === 1.0);
 })();
 
+// ═════════════════════════ FASE 16 — _replacePrescriptionExercise ═════════════════════════
+
+// Mirror del helper puro (idéntico a producción)
+function _replacePrescriptionExercise(exercise, replacement, generateId) {
+  if (!exercise) return exercise;
+  var repName = ((replacement && replacement.name) || '').trim();
+  if (!repName) return Object.assign({}, exercise);
+  var repCatId = (replacement && (replacement.id || replacement.exerciseId)) || null;
+  var oldCatId = exercise.exerciseId || null;
+  var isSame = (repCatId && oldCatId)
+    ? repCatId === oldCatId
+    : repName.toLowerCase() === (exercise.exerciseName || '').trim().toLowerCase();
+  if (isSame) return Object.assign({}, exercise);
+  var result = Object.assign({}, exercise, { exerciseName: repName });
+  if (repCatId) result.exerciseId = repCatId;
+  result.prescriptionExerciseId = generateId();
+  return result;
+}
+
+// P226 — replacement changes exerciseName
+console.log('\nP226 — replacement changes exerciseName');
+(function(){
+  var r = _replacePrescriptionExercise(
+    { exerciseName: 'Press Banca', prescriptionExerciseId: 'old123', sets: [] },
+    { name: 'Press Inclinado' },
+    function(){ return 'newId'; }
+  );
+  assert('P226a', 'exerciseName updated to replacement', r.exerciseName === 'Press Inclinado');
+  assert('P226b', 'original name not in result', r.exerciseName !== 'Press Banca');
+})();
+
+// P227 — replacement updates canonical exerciseId
+console.log('\nP227 — replacement updates canonical exerciseId');
+(function(){
+  var r = _replacePrescriptionExercise(
+    { exerciseName: 'Press Banca', prescriptionExerciseId: 'old123', exerciseId: 'catA' },
+    { name: 'Press Inclinado', id: 'catB' },
+    function(){ return 'newId'; }
+  );
+  assert('P227a', 'exerciseId updated to replacement catalogId', r.exerciseId === 'catB');
+  assert('P227b', 'exerciseName also updated', r.exerciseName === 'Press Inclinado');
+})();
+
+// P228 — replacement generates new prescriptionExerciseId
+console.log('\nP228 — replacement generates new prescriptionExerciseId');
+(function(){
+  var r = _replacePrescriptionExercise(
+    { exerciseName: 'Press Banca', prescriptionExerciseId: 'old123' },
+    { name: 'Curl Bíceps' },
+    function(){ return 'generated_new'; }
+  );
+  assert('P228a', 'prescriptionExerciseId is generated value', r.prescriptionExerciseId === 'generated_new');
+})();
+
+// P229 — new prescriptionExerciseId differs from old
+console.log('\nP229 — new prescriptionExerciseId differs from old');
+(function(){
+  var r = _replacePrescriptionExercise(
+    { exerciseName: 'Press Banca', prescriptionExerciseId: 'OLD_STABLE' },
+    { name: 'Curl Bíceps' },
+    function(){ return 'BRAND_NEW'; }
+  );
+  assert('P229a', 'new ID differs from old ID', r.prescriptionExerciseId !== 'OLD_STABLE');
+  assert('P229b', 'new ID is the generated value', r.prescriptionExerciseId === 'BRAND_NEW');
+})();
+
+// P230 — sets preserved
+console.log('\nP230 — sets preserved');
+(function(){
+  var sets = [{ setIndex: 0, repsTarget: 10, rirTarget: 2, load: 0, restSeconds: 120 }];
+  var r = _replacePrescriptionExercise(
+    { exerciseName: 'A', prescriptionExerciseId: 'x', sets: sets },
+    { name: 'B' },
+    function(){ return 'y'; }
+  );
+  assert('P230a', 'sets reference preserved', r.sets === sets);
+  assert('P230b', 'sets count unchanged', r.sets.length === 1);
+  assert('P230c', 'repsTarget preserved in set', r.sets[0].repsTarget === 10);
+})();
+
+// P231 — restSeconds preserved
+console.log('\nP231 — restSeconds preserved in sets');
+(function(){
+  var r = _replacePrescriptionExercise(
+    { exerciseName: 'A', prescriptionExerciseId: 'x', sets: [{ restSeconds: 180, repsTarget: 8, rirTarget: 2 }] },
+    { name: 'B' },
+    function(){ return 'y'; }
+  );
+  assert('P231a', 'restSeconds preserved', r.sets[0].restSeconds === 180);
+  assert('P231b', 'rirTarget preserved', r.sets[0].rirTarget === 2);
+})();
+
+// P232 — source exercise object not mutated
+console.log('\nP232 — source exercise object not mutated');
+(function(){
+  var original = { exerciseName: 'A', prescriptionExerciseId: 'orig', exerciseId: 'catA', sets: [{ repsTarget: 8 }], coachNote: 'nota' };
+  var r = _replacePrescriptionExercise(original, { name: 'B' }, function(){ return 'new'; });
+  assert('P232a', 'source exerciseName not mutated', original.exerciseName === 'A');
+  assert('P232b', 'source prescriptionExerciseId not mutated', original.prescriptionExerciseId === 'orig');
+  assert('P232c', 'result is a different object', r !== original);
+})();
+
+// P233 — same exercise does not regenerate identity
+console.log('\nP233 — same exercise does not regenerate identity');
+(function(){
+  var called = 0;
+  var r = _replacePrescriptionExercise(
+    { exerciseName: 'Press Banca', prescriptionExerciseId: 'stable', exerciseId: 'catA' },
+    { name: 'Press Banca', id: 'catA' },
+    function(){ called++; return 'shouldNotCall'; }
+  );
+  assert('P233a', 'same exerciseId → prescriptionExerciseId preserved', r.prescriptionExerciseId === 'stable');
+  assert('P233b', 'generateId not called for same exercise', called === 0);
+  // Fallback: same name (no catalogId)
+  var called2 = 0;
+  var r2 = _replacePrescriptionExercise(
+    { exerciseName: 'Press Banca', prescriptionExerciseId: 'stable2' },
+    { name: 'Press Banca' },
+    function(){ called2++; return 'shouldNotCall2'; }
+  );
+  assert('P233c', 'same name (no catalogId) → prescriptionExerciseId preserved', r2.prescriptionExerciseId === 'stable2');
+  assert('P233d', 'generateId not called for same name', called2 === 0);
+})();
+
+// P234 — replacement does not alter sibling exercise IDs
+console.log('\nP234 — replacement does not alter sibling exercise IDs');
+(function(){
+  var ex1 = { exerciseName: 'A', prescriptionExerciseId: 'id_a', sets: [] };
+  var ex2 = { exerciseName: 'B', prescriptionExerciseId: 'id_b', sets: [] };
+  var r1 = _replacePrescriptionExercise(ex1, { name: 'C' }, function(){ return 'id_c'; });
+  assert('P234a', 'sibling ex2.prescriptionExerciseId unaffected', ex2.prescriptionExerciseId === 'id_b');
+  assert('P234b', 'target exercise has new ID', r1.prescriptionExerciseId === 'id_c');
+  assert('P234c', 'ex1 source not mutated', ex1.prescriptionExerciseId === 'id_a');
+})();
+
+// P235 — replacement + reorder preserves new stable identity
+console.log('\nP235 — replacement + reorder preserves new stable identity');
+(function(){
+  var exA = _replacePrescriptionExercise(
+    { exerciseName: 'A', prescriptionExerciseId: 'old_a', sets: [] },
+    { name: 'C' },
+    function(){ return 'id_c'; }
+  );
+  var exB = { exerciseName: 'B', prescriptionExerciseId: 'id_b', sets: [] };
+  // Simulate reorder: swap exA and exB in array (identity must not change)
+  var arr = [exB, exA]; // reordered
+  assert('P235a', 'new ID is stable after reorder', arr[1].prescriptionExerciseId === 'id_c');
+  assert('P235b', 'sibling B ID stable after reorder', arr[0].prescriptionExerciseId === 'id_b');
+})();
+
+// P236 — cancel/no-op leaves complete exercise unchanged
+console.log('\nP236 — cancel/no-op leaves complete exercise unchanged');
+(function(){
+  var ex = { exerciseName: 'Press Banca', prescriptionExerciseId: 'stable', exerciseId: 'catA', sets: [{ repsTarget: 8 }], coachNote: 'nota', supersetGroup: 'A' };
+  var noop = _replacePrescriptionExercise(ex, { name: 'Press Banca', id: 'catA' }, function(){ return 'should_not'; });
+  assert('P236a', 'exerciseName unchanged', noop.exerciseName === 'Press Banca');
+  assert('P236b', 'prescriptionExerciseId unchanged', noop.prescriptionExerciseId === 'stable');
+  assert('P236c', 'sets preserved', noop.sets[0].repsTarget === 8);
+  assert('P236d', 'coachNote preserved', noop.coachNote === 'nota');
+  assert('P236e', 'supersetGroup preserved', noop.supersetGroup === 'A');
+})();
+
+// P237 — catalog filtering: pure local logic (0 Firestore reads)
+console.log('\nP237 — catalog filtering is pure local logic');
+(function(){
+  var catalog = [
+    { name: 'Press Banca', motorPattern: 'empuje horizontal', equipment: 'barra' },
+    { name: 'Press Inclinado', motorPattern: 'empuje inclinado', equipment: 'barra' },
+    { name: 'Curl Bíceps', motorPattern: 'flexión codo', equipment: 'mancuerna' }
+  ];
+  var r = _filterExerciseCatalog('press', catalog, 10);
+  assert('P237a', '"press" matches 2 results', r.length === 2);
+  assert('P237b', 'first result is Press Banca', r[0].name === 'Press Banca');
+  assert('P237c', 'second result is Press Inclinado', r[1].name === 'Press Inclinado');
+  var r2 = _filterExerciseCatalog('curl', catalog, 10);
+  assert('P237d', '"curl" matches 1 result', r2.length === 1);
+  assert('P237e', 'empty catalog returns []', _filterExerciseCatalog('press', [], 10).length === 0);
+  assert('P237f', 'empty query returns []', _filterExerciseCatalog('', catalog, 10).length === 0);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
