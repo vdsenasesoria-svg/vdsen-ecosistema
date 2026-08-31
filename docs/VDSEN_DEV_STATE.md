@@ -29,8 +29,8 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 21 | MERGED — commit `b4e4a91` |
 | FASE 22–24 | MERGED — commit `2b36630` |
 | FASE 25 | MERGED — commit `cbb5691` |
-| FASE 26 | EN RAMA — pendiente audit |
-| Suite tests | **997/997 PASS** (P01–P399) |
+| FASE 26 | EN RAMA — pendiente re-audit (NEEDS_DECISION: composite index) |
+| Suite tests | **1008/1008 PASS** (P01–P404) |
 | Vercel | auto-deploy en push a main |
 | Siguiente fase | FASE 27 (post-audit FASE 26) |
 

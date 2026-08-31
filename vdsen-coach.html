@@ -813,7 +813,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -9849,7 +9849,14 @@ El esfuerzo no es negociable.
     if (!_detailPrevPlanData) {
       btn.textContent = '⏳ Cargando plan anterior…';
       try {
-        const q = query(collection(db, 'plans_backup'), where('clientId', '==', clientId));
+        // FASE 26 FIX — acotado server-side: 1 lectura, sin sort JS
+        // NOTA: requiere composite index en plans_backup: clientId ASC + backedUpAt DESC
+        const q = query(
+          collection(db, 'plans_backup'),
+          where('clientId', '==', clientId),
+          orderBy('backedUpAt', 'desc'),
+          limit(1)
+        );
         const snap = await getDocs(q);
         if (snap.empty) {
           diffDiv.style.display = 'block';
@@ -9861,14 +9868,7 @@ El esfuerzo no es negociable.
           btn.textContent = '🔍 Comparar con plan anterior';
           return;
         }
-        const docs = [];
-        snap.forEach(function(d) { docs.push(d.data()); });
-        docs.sort(function(a, b) {
-          const ta = a.backedUpAt || '';
-          const tb = b.backedUpAt || '';
-          return ta < tb ? 1 : ta > tb ? -1 : 0;
-        });
-        _detailPrevPlanData = docs[0];
+        _detailPrevPlanData = snap.docs[0].data();
       } catch (e) {
         btn.textContent = '🔍 Comparar con plan anterior';
         showToast('Error cargando plan anterior: ' + e.message);

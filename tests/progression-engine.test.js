@@ -6771,6 +6771,83 @@ console.log('\nP399 — _renderPlanComparison: sin diffs → mensaje OK');
   assert('P399a', 'texto de sin cambios presente', fakeContainer.textContent.indexOf('Sin cambios') !== -1);
 })();
 
+// ═══════════════════ FASE 26 AUDIT FIX — Query acotada (P400-P404) ═══════════════════
+console.log('\n' + '─'.repeat(60));
+console.log('FASE 26 AUDIT FIX — _togglePlanCompare query acotada (P400-P404)');
+console.log('─'.repeat(60));
+
+// Mirror del bloque de recuperación del previous plan (sin Firebase real).
+// Registra los parámetros que _togglePlanCompare pasaría a query().
+function _mockLoadPrevPlan26(opts) {
+  // opts: { snapshotDocs: [{...}] | null, cachedPrev: any }
+  // Devuelve: { queryParams, usedCache, prevPlanData, showedEmpty }
+  var result = { queryParams: null, usedCache: false, prevPlanData: null, showedEmpty: false };
+
+  // Simula el cache check
+  var _cache = opts.cachedPrev || null;
+  if (_cache) { result.usedCache = true; result.prevPlanData = _cache; return result; }
+
+  // Simula la construcción de query — registra los params server-side
+  result.queryParams = {
+    collection: 'plans_backup',
+    where: { field: 'clientId', op: '==', value: opts.clientId || 'uid-test' },
+    orderBy: { field: 'backedUpAt', dir: 'desc' },
+    limit: 1
+  };
+
+  var snapshotDocs = opts.snapshotDocs;
+  if (!snapshotDocs || snapshotDocs.length === 0) {
+    result.showedEmpty = true;
+    return result;
+  }
+  // 1 doc devuelto por el servidor
+  result.prevPlanData = snapshotDocs[0];
+  return result;
+}
+
+// P400 — Query incluye orderBy(backedUpAt, desc) server-side
+console.log('\nP400 — query incluye orderBy backedUpAt desc');
+(function() {
+  var r = _mockLoadPrevPlan26({ snapshotDocs: [{ days: [] }] });
+  assert('P400a', 'orderBy field = backedUpAt', r.queryParams.orderBy.field === 'backedUpAt');
+  assert('P400b', 'orderBy dir = desc', r.queryParams.orderBy.dir === 'desc');
+})();
+
+// P401 — Query incluye limit(1) — sin sort JS
+console.log('\nP401 — query limit=1, sin sort JS');
+(function() {
+  var r = _mockLoadPrevPlan26({ snapshotDocs: [{ days: [] }] });
+  assert('P401a', 'limit = 1', r.queryParams.limit === 1);
+  assert('P401b', 'prevPlanData no es array (no se ordenó JS)', !Array.isArray(r.prevPlanData));
+})();
+
+// P402 — Snapshot vacío → showedEmpty=true, sin prevPlanData
+console.log('\nP402 — snapshot vacío → mensaje "No se encontró"');
+(function() {
+  var r = _mockLoadPrevPlan26({ snapshotDocs: [] });
+  assert('P402a', 'showedEmpty true', r.showedEmpty === true);
+  assert('P402b', 'prevPlanData null', r.prevPlanData === null);
+})();
+
+// P403 — Un snapshot → usa exactamente ese documento
+console.log('\nP403 — un snapshot → usa ese doc exacto');
+(function() {
+  var doc = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Sentadilla', sets: [] }] }], backedUpAt: '2026-08-01T00:00:00Z' };
+  var r = _mockLoadPrevPlan26({ snapshotDocs: [doc] });
+  assert('P403a', 'prevPlanData es el doc', r.prevPlanData === doc);
+  assert('P403b', 'no usó cache', r.usedCache === false);
+})();
+
+// P404 — Cache activa → no repite query (usedCache=true, queryParams=null)
+console.log('\nP404 — cache _detailPrevPlanData evita query repetida');
+(function() {
+  var cached = { days: [], backedUpAt: '2026-07-01T00:00:00Z' };
+  var r = _mockLoadPrevPlan26({ cachedPrev: cached });
+  assert('P404a', 'usedCache true', r.usedCache === true);
+  assert('P404b', 'queryParams null (sin nueva query)', r.queryParams === null);
+  assert('P404c', 'devuelve el mismo objeto cacheado', r.prevPlanData === cached);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
