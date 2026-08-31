@@ -4214,6 +4214,385 @@ console.log('\nP237 — catalog filtering is pure local logic');
   assert('P237f', 'empty query returns []', _filterExerciseCatalog('', catalog, 10).length === 0);
 })();
 
+// ═════════════════════════ FASE 17 — CSV Export ═════════════════════════
+
+// Mirrors de helpers puros (idénticos a producción)
+function _escapeCsvCell(value) {
+  if (value === null || value === undefined) return '""';
+  var s = String(value);
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  if (/[,"\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function _safeExportFilename(name, date) {
+  var safeName = (name || 'cliente').replace(/[^a-zA-ZÀ-ÿ0-9\-_]/g, '_').replace(/_+/g, '_').slice(0, 30);
+  var safeDate = (date instanceof Date ? date : new Date()).toISOString().slice(0, 10);
+  return 'vdsen_' + safeName + '_' + safeDate + '.csv';
+}
+
+function _normalizeTimestamp(ts) {
+  if (!ts) return '';
+  try {
+    if (ts && typeof ts.toDate === 'function') return ts.toDate().toISOString();
+    if (typeof ts === 'number') return new Date(ts).toISOString();
+    if (ts instanceof Date) return ts.toISOString();
+    var d = new Date(ts);
+    return isNaN(d.getTime()) ? '' : d.toISOString();
+  } catch(e) { return ''; }
+}
+
+function _buildPlanLookup(planData) {
+  var byPrescId = {}, byPos = {};
+  if (!planData || !planData.days) return { byPrescId: byPrescId, byPos: byPos };
+  planData.days.forEach(function(day) {
+    var di = day.dayIndex != null ? day.dayIndex : 0;
+    (day.exercises || []).forEach(function(ex, ei) {
+      if (ex.prescriptionExerciseId) byPrescId[ex.prescriptionExerciseId] = ex.exerciseName || '';
+      if (!byPos[di]) byPos[di] = {};
+      byPos[di][ei] = ex.exerciseName || '';
+    });
+  });
+  return { byPrescId: byPrescId, byPos: byPos };
+}
+
+function _resolveExerciseName(entry, di, ei, lookup) {
+  if (entry.exerciseNameSnapshot) return entry.exerciseNameSnapshot;
+  if (entry.prescriptionExerciseId && lookup.byPrescId[entry.prescriptionExerciseId])
+    return lookup.byPrescId[entry.prescriptionExerciseId];
+  if (lookup.byPos[di] && lookup.byPos[di][ei] != null) return lookup.byPos[di][ei];
+  return '';
+}
+
+function _buildOperationalExportRows(entries, planData) {
+  if (!entries || typeof entries !== 'object') return [];
+  var rows = [];
+  var lookup = _buildPlanLookup(planData);
+  var SET_KEY = /^log_(\d+)_(\d+)_(\d+)_s(\d+)$/;
+  var CI_KEY  = /^ci_sem_(\d+)$/;
+  var PS_KEY  = /^postsession_(\d+)_(\d+)$/;
+  var PR_KEY  = /^progrec_(\d+)_(\d+)$/;
+
+  Object.keys(entries).forEach(function(k) {
+    var v = entries[k];
+    var m;
+    m = k.match(SET_KEY);
+    if (m) {
+      var w = +m[1], d = +m[2], ei = +m[3], si = +m[4];
+      var exName = _resolveExerciseName(v, d, ei, lookup);
+      rows.push({
+        recordType: 'SET', week: w, day: d, exerciseName: exName,
+        prescriptionExerciseId: v.prescriptionExerciseId || '',
+        setIndex: si, load: v.carga != null ? v.carga : '', unit: v.unit || '',
+        reps: v.reps != null ? v.reps : '', rir_real: v.rir_real != null ? v.rir_real : '',
+        ics: v.ics != null ? v.ics : '', pump: v.pump != null ? v.pump : '',
+        autoFilled: v.autoFilled ? true : false, done: v.done ? true : false,
+        weight: '', hrv: '', who5: '', sleep: '', eimd: '', articular: '', patron: '',
+        rpe: '', progressionAction: '', progressionReason: '',
+        timestamp: _normalizeTimestamp(v.ts)
+      });
+      return;
+    }
+    m = k.match(CI_KEY);
+    if (m) {
+      var w = +m[1];
+      rows.push({
+        recordType: 'CHECKIN', week: w, day: '', exerciseName: '', prescriptionExerciseId: '',
+        setIndex: '', load: '', unit: '', reps: '', rir_real: '', ics: '', pump: '',
+        autoFilled: '', done: '',
+        weight: v.peso != null ? v.peso : '', hrv: v.hrv != null ? v.hrv : '',
+        who5: v.who5 != null ? v.who5 : '', sleep: v.sleep != null ? v.sleep : '',
+        eimd: '', articular: '', patron: '', rpe: '',
+        progressionAction: '', progressionReason: '', timestamp: _normalizeTimestamp(v.ts)
+      });
+      return;
+    }
+    m = k.match(PS_KEY);
+    if (m) {
+      var w = +m[1], d = +m[2];
+      rows.push({
+        recordType: 'POSTSESSION', week: w, day: d, exerciseName: '', prescriptionExerciseId: '',
+        setIndex: '', load: '', unit: '', reps: '', rir_real: '', ics: '', pump: '',
+        autoFilled: '', done: '', weight: '', hrv: '', who5: '',
+        sleep: v.sleep != null ? v.sleep : '', eimd: v.eimd != null ? v.eimd : '',
+        articular: v.articular != null ? v.articular : '', patron: v.patron != null ? v.patron : '',
+        rpe: v.rpe != null ? v.rpe : '',
+        progressionAction: '', progressionReason: '', timestamp: _normalizeTimestamp(v.ts)
+      });
+      return;
+    }
+    m = k.match(PR_KEY);
+    if (m) {
+      var w = +m[1], d = +m[2];
+      var recs = (v.recommendations || []);
+      if (!recs.length) {
+        rows.push({ recordType: 'PROGRESSION', week: w, day: d, exerciseName: '', prescriptionExerciseId: '',
+          setIndex: '', load: '', unit: '', reps: '', rir_real: '', ics: '', pump: '',
+          autoFilled: '', done: '', weight: '', hrv: '', who5: '', sleep: '',
+          eimd: '', articular: '', patron: '', rpe: '',
+          progressionAction: 'deload_candidate', progressionReason: '', timestamp: _normalizeTimestamp(v.ts) });
+      } else {
+        recs.forEach(function(rec) {
+          if (!rec) return;
+          rows.push({ recordType: 'PROGRESSION', week: w, day: d,
+            exerciseName: rec.exerciseName || '', prescriptionExerciseId: rec.prescriptionExerciseId || '',
+            setIndex: '', load: '', unit: '', reps: '', rir_real: '', ics: '', pump: '',
+            autoFilled: '', done: '', weight: '', hrv: '', who5: '', sleep: '',
+            eimd: '', articular: '', patron: '', rpe: '',
+            progressionAction: rec.action || '', progressionReason: rec.reason || '',
+            timestamp: _normalizeTimestamp(v.ts) });
+        });
+      }
+    }
+  });
+
+  var typeOrder = { SET: 0, POSTSESSION: 1, CHECKIN: 2, PROGRESSION: 3 };
+  rows.sort(function(a, b) {
+    if (a.week !== b.week) return (a.week || 0) - (b.week || 0);
+    if (a.day !== b.day) return ((a.day || 0) - (b.day || 0));
+    var ta = typeOrder[a.recordType] != null ? typeOrder[a.recordType] : 9;
+    var tb = typeOrder[b.recordType] != null ? typeOrder[b.recordType] : 9;
+    if (ta !== tb) return ta - tb;
+    return ((a.setIndex || 0) - (b.setIndex || 0));
+  });
+  return rows;
+}
+
+var _CSV_COLUMNS = [
+  'recordType','week','day','exerciseName','prescriptionExerciseId',
+  'setIndex','load','unit','reps','rir_real','ics','pump','autoFilled','done',
+  'weight','hrv','who5','sleep','eimd','articular','patron','rpe',
+  'progressionAction','progressionReason','timestamp'
+];
+
+function _toCsvString(rows, columns) {
+  columns = columns || _CSV_COLUMNS;
+  var lines = [columns.join(',')];
+  var textCols = { exerciseName:1, prescriptionExerciseId:1, unit:1, patron:1, progressionAction:1, progressionReason:1 };
+  rows.forEach(function(row) {
+    var cells = columns.map(function(col) {
+      var v = row[col];
+      if (v === null || v === undefined || v === '') return '';
+      if (typeof v === 'boolean') return v ? 'true' : 'false';
+      if (textCols[col]) return _escapeCsvCell(v);
+      var s = String(v);
+      if (/[,"\r\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+      return s;
+    });
+    lines.push(cells.join(','));
+  });
+  return '﻿' + lines.join('\r\n');
+}
+
+// P238 — set log → una fila SET
+console.log('\nP238 — set log → una fila SET');
+(function(){
+  var entries = { 'log_1_0_0_s0': { carga: 80, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 8, pump: 1, ts: null } };
+  var rows = _buildOperationalExportRows(entries, null);
+  assert('P238a', 'una fila generada', rows.length === 1);
+  assert('P238b', 'recordType es SET', rows[0].recordType === 'SET');
+  assert('P238c', 'week correcto', rows[0].week === 1);
+  assert('P238d', 'day correcto', rows[0].day === 0);
+  assert('P238e', 'load correcto', rows[0].load === 80);
+  assert('P238f', 'reps correcto', rows[0].reps === 8);
+  assert('P238g', 'ics correcto', rows[0].ics === 8);
+})();
+
+// P239 — múltiples sets → múltiples filas
+console.log('\nP239 — múltiples sets → múltiples filas');
+(function(){
+  var entries = {
+    'log_1_0_0_s0': { carga: 80, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 8, pump: 1, ts: null },
+    'log_1_0_0_s1': { carga: 82, reps: 7, unit: 'KG', done: true, rir_real: 0, ics: 9, pump: 1, ts: null },
+    'log_1_0_0_s2': { carga: 82, reps: 6, unit: 'KG', done: true, rir_real: 0, ics: 7, pump: 2, ts: null }
+  };
+  var rows = _buildOperationalExportRows(entries, null);
+  assert('P239a', 'tres filas generadas', rows.length === 3);
+  assert('P239b', 'todas son SET', rows.every(function(r){ return r.recordType === 'SET'; }));
+  assert('P239c', 'setIndex 0 presente', rows.some(function(r){ return r.setIndex === 0; }));
+  assert('P239d', 'setIndex 2 presente', rows.some(function(r){ return r.setIndex === 2; }));
+})();
+
+// P240 — autoFilled se conserva como flag, no se elimina
+console.log('\nP240 — autoFilled se conserva como flag, no se elimina');
+(function(){
+  var entries = {
+    'log_1_0_0_s0': { carga: 80, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 8, pump: 1, autoFilled: true },
+    'log_1_0_0_s1': { carga: 80, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 8, pump: 1, autoFilled: false },
+    'log_1_0_0_s2': { carga: 80, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 8, pump: 1 }
+  };
+  var rows = _buildOperationalExportRows(entries, null);
+  assert('P240a', 'tres filas (autoFilled no excluye fila)', rows.length === 3);
+  var af = rows.filter(function(r){ return r.autoFilled === true; });
+  var noAf = rows.filter(function(r){ return r.autoFilled === false; });
+  assert('P240b', 'autoFilled:true conservado', af.length === 1);
+  assert('P240c', 'autoFilled:false conservado', noAf.length === 2);
+})();
+
+// P241 — check-in → fila CHECKIN
+console.log('\nP241 — check-in → fila CHECKIN');
+(function(){
+  var entries = { 'ci_sem_2': { peso: 80.5, hrv: 55, who5: 70, sleep: 7.5 } };
+  var rows = _buildOperationalExportRows(entries, null);
+  assert('P241a', 'una fila generada', rows.length === 1);
+  assert('P241b', 'recordType es CHECKIN', rows[0].recordType === 'CHECKIN');
+  assert('P241c', 'week correcto', rows[0].week === 2);
+  assert('P241d', 'weight correcto', rows[0].weight === 80.5);
+  assert('P241e', 'hrv correcto', rows[0].hrv === 55);
+  assert('P241f', 'who5 correcto', rows[0].who5 === 70);
+  assert('P241g', 'day está vacío', rows[0].day === '');
+})();
+
+// P242 — postsession → fila POSTSESSION
+console.log('\nP242 — postsession → fila POSTSESSION');
+(function(){
+  var entries = { 'postsession_1_2': { eimd: 2, articular: 'si', patron: 'rodilla', sleep: 7, rpe: 8 } };
+  var rows = _buildOperationalExportRows(entries, null);
+  assert('P242a', 'una fila generada', rows.length === 1);
+  assert('P242b', 'recordType es POSTSESSION', rows[0].recordType === 'POSTSESSION');
+  assert('P242c', 'week correcto', rows[0].week === 1);
+  assert('P242d', 'day correcto', rows[0].day === 2);
+  assert('P242e', 'eimd correcto', rows[0].eimd === 2);
+  assert('P242f', 'articular correcto', rows[0].articular === 'si');
+  assert('P242g', 'patron correcto', rows[0].patron === 'rodilla');
+  assert('P242h', 'rpe correcto', rows[0].rpe === 8);
+})();
+
+// P243 — progrec → fila PROGRESSION
+console.log('\nP243 — progrec → fila PROGRESSION');
+(function(){
+  var entries = { 'progrec_1_0': { recommendations: [{ exerciseName: 'Press Banca', action: 'increase_load', reason: 'RIR alto' }] } };
+  var rows = _buildOperationalExportRows(entries, null);
+  assert('P243a', 'una fila generada', rows.length === 1);
+  assert('P243b', 'recordType es PROGRESSION', rows[0].recordType === 'PROGRESSION');
+  assert('P243c', 'exerciseName correcto', rows[0].exerciseName === 'Press Banca');
+  assert('P243d', 'progressionAction correcto', rows[0].progressionAction === 'increase_load');
+  assert('P243e', 'progressionReason correcto', rows[0].progressionReason === 'RIR alto');
+  // progrec sin recomendaciones → deload_candidate
+  var entries2 = { 'progrec_2_1': { recommendations: [] } };
+  var rows2 = _buildOperationalExportRows(entries2, null);
+  assert('P243f', 'progrec vacío genera fila deload_candidate', rows2.length === 1);
+  assert('P243g', 'action es deload_candidate', rows2[0].progressionAction === 'deload_candidate');
+})();
+
+// P244 — empty logs → []
+console.log('\nP244 — empty logs → []');
+(function(){
+  assert('P244a', 'null → []', _buildOperationalExportRows(null, null).length === 0);
+  assert('P244b', 'objeto vacío → []', _buildOperationalExportRows({}, null).length === 0);
+  assert('P244c', 'undefined → []', _buildOperationalExportRows(undefined, null).length === 0);
+  // Claves done_{W}_{D} no generan filas (no son recordType exportable)
+  var entries = { 'done_1_0': true };
+  assert('P244d', 'done_{W}_{D} no genera fila', _buildOperationalExportRows(entries, null).length === 0);
+})();
+
+// P245 — CSV escapa comas
+console.log('\nP245 — CSV escapa comas');
+(function(){
+  assert('P245a', 'valor con coma queda entre comillas', _escapeCsvCell('a,b') === '"a,b"');
+  assert('P245b', 'valor sin coma no lleva comillas', _escapeCsvCell('abc') === 'abc');
+  assert('P245c', 'valor numérico sin coma no lleva comillas', _escapeCsvCell(80) === '80');
+})();
+
+// P246 — CSV escapa comillas
+console.log('\nP246 — CSV escapa comillas');
+(function(){
+  assert('P246a', 'comilla interna se duplica y se envuelve', _escapeCsvCell('say "hi"') === '"say ""hi"""');
+  assert('P246b', 'sin comillas: sin modificar', _escapeCsvCell('hello') === 'hello');
+})();
+
+// P247 — CSV escapa newlines
+console.log('\nP247 — CSV escapa newlines');
+(function(){
+  assert('P247a', 'newline LF queda entre comillas', _escapeCsvCell('a\nb') === '"a\nb"');
+  assert('P247b', 'newline CR queda entre comillas', _escapeCsvCell('a\rb') === '"a\rb"');
+  assert('P247c', 'CRLF queda entre comillas', _escapeCsvCell('a\r\nb') === '"a\r\nb"');
+})();
+
+// P248 — 0 y false no se convierten en vacío
+console.log('\nP248 — 0 y false no se convierten en vacío');
+(function(){
+  var entries = { 'log_1_0_0_s0': { carga: 0, reps: 0, unit: 'KG', done: false, rir_real: 0, ics: 0, pump: 0 } };
+  var rows = _buildOperationalExportRows(entries, null);
+  assert('P248a', 'carga 0 no es vacío', rows[0].load === 0);
+  assert('P248b', 'reps 0 no es vacío', rows[0].reps === 0);
+  assert('P248c', 'rir_real 0 no es vacío', rows[0].rir_real === 0);
+  assert('P248d', 'ics 0 no es vacío', rows[0].ics === 0);
+  assert('P248e', 'done false se conserva como false', rows[0].done === false);
+  assert('P248f', 'autoFilled false conservado', rows[0].autoFilled === false);
+})();
+
+// P249 — formula injection textual neutralizada
+console.log('\nP249 — formula injection textual neutralizada');
+(function(){
+  assert('P249a', '= neutralizado con prefijo', _escapeCsvCell('=CMD') === "'=CMD");
+  assert('P249b', '+ neutralizado con prefijo', _escapeCsvCell('+foo') === "'+foo");
+  assert('P249c', '- neutralizado con prefijo', _escapeCsvCell('-foo') === "'-foo");
+  assert('P249d', '@ neutralizado con prefijo', _escapeCsvCell('@foo') === "'@foo");
+  assert('P249e', 'texto normal no modificado', _escapeCsvCell('Press Banca') === 'Press Banca');
+  // Número negativo: -80 en columna numérica no pasa por _escapeCsvCell (es numérico)
+  // Solo las textCols pasan por _escapeCsvCell
+  assert('P249f', 'valor null → comillas vacías', _escapeCsvCell(null) === '""');
+  assert('P249g', 'valor undefined → comillas vacías', _escapeCsvCell(undefined) === '""');
+})();
+
+// P250 — timestamp normalizado de forma segura
+console.log('\nP250 — timestamp normalizado de forma segura');
+(function(){
+  var ISO = '2025-01-15T10:30:00.000Z';
+  assert('P250a', 'Date object → ISO string', _normalizeTimestamp(new Date(ISO)) === ISO);
+  assert('P250b', 'ms timestamp → ISO string', _normalizeTimestamp(new Date(ISO).getTime()) === ISO);
+  assert('P250c', 'ISO string → ISO string', _normalizeTimestamp(ISO) === ISO);
+  assert('P250d', 'null → vacío', _normalizeTimestamp(null) === '');
+  assert('P250e', 'undefined → vacío', _normalizeTimestamp(undefined) === '');
+  assert('P250f', 'cadena inválida → vacío', _normalizeTimestamp('not-a-date') === '');
+  // Firestore Timestamp stub
+  var firestoreTs = { toDate: function(){ return new Date(ISO); } };
+  assert('P250g', 'objeto toDate() → ISO string', _normalizeTimestamp(firestoreTs) === ISO);
+})();
+
+// P251 — orden de export determinista
+console.log('\nP251 — orden de export determinista');
+(function(){
+  var entries = {
+    'progrec_1_0': { recommendations: [{ exerciseName: 'Press', action: 'increase_load', reason: 'ok' }] },
+    'postsession_1_0': { eimd: 1, articular: 'no', patron: '', sleep: 8, rpe: 7 },
+    'ci_sem_1': { peso: 78, hrv: 60, who5: 65, sleep: 8 },
+    'log_1_0_1_s0': { carga: 60, reps: 10, unit: 'KG', done: true, rir_real: 2, ics: 8, pump: 1 },
+    'log_1_0_0_s1': { carga: 80, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 9, pump: 1 },
+    'log_1_0_0_s0': { carga: 80, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 8, pump: 1 },
+    'log_2_0_0_s0': { carga: 82, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 8, pump: 1 }
+  };
+  var rows = _buildOperationalExportRows(entries, null);
+  // Orden esperado: semana 1 primero, luego semana 2
+  // Dentro de semana 1 día 0: SET(s0), SET(s1), SET(ex1 s0), POSTSESSION, CHECKIN, PROGRESSION
+  assert('P251a', 'filas ordenadas por semana', rows[0].week === 1);
+  assert('P251b', 'última fila es semana 2', rows[rows.length - 1].week === 2);
+  var week1 = rows.filter(function(r){ return r.week === 1; });
+  var setRows = week1.filter(function(r){ return r.recordType === 'SET'; });
+  var psRow   = week1.filter(function(r){ return r.recordType === 'POSTSESSION'; });
+  var ciRow   = week1.filter(function(r){ return r.recordType === 'CHECKIN'; });
+  var prRow   = week1.filter(function(r){ return r.recordType === 'PROGRESSION'; });
+  assert('P251c', 'semana 1: 3 filas SET', setRows.length === 3);
+  assert('P251d', 'semana 1: 1 fila POSTSESSION', psRow.length === 1);
+  assert('P251e', 'semana 1: 1 fila CHECKIN', ciRow.length === 1);
+  assert('P251f', 'semana 1: 1 fila PROGRESSION', prRow.length === 1);
+  // SET antes que POSTSESSION dentro del mismo día
+  var firstSet = rows.findIndex(function(r){ return r.recordType === 'SET' && r.week === 1; });
+  var firstPs  = rows.findIndex(function(r){ return r.recordType === 'POSTSESSION' && r.week === 1; });
+  assert('P251g', 'SET aparece antes que POSTSESSION', firstSet < firstPs);
+  // POSTSESSION antes que CHECKIN
+  var firstCi  = rows.findIndex(function(r){ return r.recordType === 'CHECKIN' && r.week === 1; });
+  assert('P251h', 'POSTSESSION aparece antes que CHECKIN', firstPs < firstCi);
+  // POSTSESSION antes que PROGRESSION (mismo día, typeOrder garantiza el orden)
+  var firstPr  = rows.findIndex(function(r){ return r.recordType === 'PROGRESSION' && r.week === 1; });
+  assert('P251i', 'POSTSESSION aparece antes que PROGRESSION', firstPs < firstPr);
+  // setIndex creciente dentro de la misma clave log_{W}_{D}_{E}
+  var s0idx = rows.findIndex(function(r){ return r.recordType === 'SET' && r.setIndex === 0 && r.day === 0; });
+  var s1idx = rows.findIndex(function(r){ return r.recordType === 'SET' && r.setIndex === 1 && r.day === 0; });
+  assert('P251j', 'set s0 aparece antes que s1', s0idx < s1idx);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

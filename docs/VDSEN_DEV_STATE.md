@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `3e277d1` · FASEs 12–16 mergeadas · FASE 17 en desarrollo
+> Actualizado: 2026-08-31 · main HEAD: `3e277d1` · FASEs 12–16 mergeadas · FASE 17 implementada (pendiente merge)
 
 ---
 
@@ -19,16 +19,51 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | Item | Valor |
 |------|-------|
 | main HEAD | `3e277d1` — FASEs 12–16 mergeadas |
-| Rama activa | `claude/fase-17-csv-export` (en desarrollo) |
+| Rama activa | `claude/fase-17-csv-export` (pendiente merge) |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
-| Suite tests | **608/608 PASS** (P01–P237) |
+| FASE 17 | Implementada — pendiente merge |
+| Suite tests | **686/686 PASS** (P01–P251) |
 | Vercel | auto-deploy en curso (`3e277d1`) |
-| Siguiente fase | **FASE 17** — Coach Data Export / CSV |
+| Siguiente fase | **FASE 18** — ver backlog |
 
 ---
 
 ## FASES completadas
+
+### FASE 17 (rama `claude/fase-17-csv-export` — pendiente merge)
+**Coach Monitor: Exportación CSV operativa por cliente**
+
+Archivos modificados:
+- `vdsen-coach.html` — 2 parches quirúrgicos
+- `tests/progression-engine.test.js` — P238-P251 (78 assertions nuevas)
+
+Helpers puros añadidos (exportados en `window`):
+- `_escapeCsvCell(value)` — RFC4180 + neutralización de formula injection (`=`, `+`, `-`, `@`)
+- `_safeExportFilename(name, date)` — sanitiza nombre del cliente, formato `vdsen_<name>_<YYYY-MM-DD>.csv`
+- `_normalizeTimestamp(ts)` — acepta Date, ms, ISO string, Firestore Timestamp stub; devuelve ISO string o ''
+- `_buildPlanLookup(planData)` — construye `{byPrescId, byPos}` para resolución de nombres
+- `_resolveExerciseName(entry, di, ei, lookup)` — tres niveles: `exerciseNameSnapshot` → `byPrescId` → `byPos`
+- `_buildOperationalExportRows(entries, planData)` — construye array de filas con `recordType` (SET/POSTSESSION/CHECKIN/PROGRESSION), ordena por week → day → typeOrder → setIndex
+- `_toCsvString(rows, columns)` — genera CSV RFC4180 con BOM (`﻿`) para Excel
+- `exportClientCsv(clientData, logs, planData)` — orquesta descarga; muestra toast si sin datos o error
+
+UI añadida:
+- Botón `⬇ Exportar CSV` en Monitor (a la derecha de "Ver plan"), aparece con el cliente activo
+- 0 Firestore reads; usa `_activePlanCache` existente
+- `autoFilled` exportado como flag `true/false` (no excluido — trazabilidad de auditoría)
+
+Columnas CSV (25):
+`recordType, week, day, exerciseName, prescriptionExerciseId, setIndex, load, unit, reps, rir_real, ics, pump, autoFilled, done, weight, hrv, who5, sleep, eimd, articular, patron, rpe, progressionAction, progressionReason, timestamp`
+
+Invariantes preservados:
+- 0 lecturas Firestore nuevas
+- Todos los helpers son puros
+- `_classifyBlocks`, `_normalizeTrainingPlan`, `parsePlanFromJSON` sin cambios
+- Schema vdsen-plan-v2 sin cambios
+- Colecciones Firestore sin cambios
+
+---
 
 ### FASE 16 (rama `claude/fase-16-exercise-substitution` — pendiente merge)
 **Coach Plan Editor: Safe Exercise Substitution Workflow**
