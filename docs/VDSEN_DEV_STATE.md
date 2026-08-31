@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `142d3ba` · FASEs 12–15 mergeadas · FASE 16 en rama `claude/fase-16-exercise-substitution`
+> Actualizado: 2026-08-31 · main HEAD: `3e277d1` · FASEs 12–16 mergeadas · FASE 17 en desarrollo
 
 ---
 
@@ -18,16 +18,13 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `142d3ba` — FASEs 12–15 mergeadas |
-| Rama activa | `claude/fase-16-exercise-substitution` (pendiente merge) |
-| FASE 12 | MERGED |
-| FASE 13 | MERGED |
-| FASE 14 | MERGED |
-| FASE 15 | MERGED |
-| FASE 16 | EN RAMA — `claude/fase-16-exercise-substitution` |
+| main HEAD | `3e277d1` — FASEs 12–16 mergeadas |
+| Rama activa | `claude/fase-17-csv-export` (en desarrollo) |
+| FASE 12–15 | MERGED |
+| FASE 16 | MERGED — commit `3e277d1` |
 | Suite tests | **608/608 PASS** (P01–P237) |
-| Vercel | producción en `142d3ba`; FASE 16 pendiente merge |
-| Siguiente fase | **FASE 17** (sugerida: Coach Data Export / CSV) |
+| Vercel | auto-deploy en curso (`3e277d1`) |
+| Siguiente fase | **FASE 17** — Coach Data Export / CSV |
 
 ---
 
