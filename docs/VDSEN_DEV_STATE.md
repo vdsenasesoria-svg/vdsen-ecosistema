@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `4575a7c` · FASEs 12–19 mergeadas · FASE 20 pendiente merge
+> Actualizado: 2026-08-31 · main HEAD: `0d4be7c` · FASEs 12–20 mergeadas · siguiente = FASE 21
 
 ---
 
@@ -18,22 +18,23 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `4575a7c` — merge FASE 19 |
+| main HEAD | `0d4be7c` — merge FASE 20 |
 | Rama activa | — |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
 | FASE 17 | MERGED — commit `604894c` |
 | FASE 18 | MERGED — commit `e8c91c2` |
 | FASE 19 | MERGED — commit `4575a7c` |
+| FASE 20 | MERGED — commit `0d4be7c` |
 | Suite tests | **800/800 PASS** (P01–P289) |
-| Vercel | auto-deploy en curso (`4575a7c`) |
-| Siguiente fase | **FASE 21** (FASE 20 pendiente merge) |
+| Vercel | auto-deploy en curso (`0d4be7c`) |
+| Siguiente fase | **FASE 21** — ver backlog |
 
 ---
 
 ## FASES completadas
 
-### FASE 20 (rama `claude/fase-20-apply-rec-loads` — PENDIENTE MERGE)
+### FASE 20 (merge commit `0d4be7c` — MERGED a main)
 **Coach Monitor: Aplicar cargas recomendadas al plan activo (hardened)**
 
 Archivos modificados:
