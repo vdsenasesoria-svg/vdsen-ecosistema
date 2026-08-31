@@ -3030,7 +3030,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             <div class="card p-3">
               <div class="flex justify-between items-start mb-1">
                 <span class="font-semibold text-sm">${r.exerciseName}</span>
-                <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${al.color}">${al.label}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${al.color}">${al.label}</span>
+                  <button onclick="_deepLinkToExercise(this.dataset.exname)" data-exname="${_escH(r.exerciseName)}" style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(244,244,240,.18);background:transparent;color:#888;cursor:pointer;flex-shrink:0" title="Editar en plan">✏️</button>
+                </div>
               </div>
               <div class="flex gap-4 text-sm mb-1">
                 <span class="text-[#888]">Carga: <strong class="text-white">${r.newLoad} kg</strong></span>
@@ -10212,6 +10215,52 @@ El esfuerzo no es negociable.
     return { exerciseCount: items.length, setCount: setCount, changes: items };
   }
   window._buildPlanChangeSummary = _buildPlanChangeSummary;
+
+  // FASE 22 — helper puro: resuelve posición de un ejercicio en el plan por nombre normalizado.
+  // Retorna { di, ei, pid } o null si no encontrado.
+  function _resolveExerciseRowId(exerciseName, planCache) {
+    if (!planCache || !planCache.days || !exerciseName) return null;
+    var normQ = (exerciseName || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    for (var di = 0; di < planCache.days.length; di++) {
+      var exs = planCache.days[di].exercises || [];
+      for (var ei = 0; ei < exs.length; ei++) {
+        var ex = exs[ei];
+        var normN = (ex.exerciseName || ex.nombre || '').toLowerCase().trim().replace(/\s+/g, ' ');
+        if (normN === normQ) {
+          return { di: di, ei: ei, pid: ex.prescriptionExerciseId || null };
+        }
+      }
+    }
+    return null;
+  }
+  window._resolveExerciseRowId = _resolveExerciseRowId;
+
+  // FASE 22 — deep link: desde Monitor, navega a Plan → editor → fila del ejercicio.
+  function _deepLinkToExercise(exerciseName) {
+    _switchClientTab('plan');
+    var editor = document.getElementById('training-editor');
+    var view   = document.getElementById('training-view');
+    if (editor && editor.style.display === 'none') {
+      if (view) view.style.display = 'none';
+      editor.style.display = 'block';
+      document.querySelectorAll('[id^="exlist_"]').forEach(function(list) {
+        if (typeof _updateReorderBtns === 'function') _updateReorderBtns(list);
+      });
+    }
+    var match = _resolveExerciseRowId(exerciseName, _activePlanCache);
+    if (!match) return;
+    var row = match.pid
+      ? document.querySelector('[data-prescription-id="' + match.pid.replace(/</g,'&lt;').replace(/"/g,'&quot;') + '"]')
+      : null;
+    if (!row) row = document.getElementById('exrow_' + match.di + '_' + match.ei);
+    if (!row) return;
+    setTimeout(function() {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.style.outline = '2px solid #44BB88';
+      setTimeout(function() { row.style.outline = ''; }, 2000);
+    }, 80);
+  }
+  window._deepLinkToExercise = _deepLinkToExercise;
 
   function _confirmApplyRecModal(preview) {
     return new Promise(function(resolve) {

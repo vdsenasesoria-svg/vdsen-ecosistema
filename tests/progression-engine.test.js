@@ -5436,6 +5436,136 @@ console.log('\nP300 — todos estale IDs → 0 cambios aplicables');
   assert('P300c', '0 ejercicios aplicables (todos estale)', applied === 0);
 })();
 
+// ─── FASE 22 mirror: _resolveExerciseRowId ───────────────────────────────
+function _resolveExerciseRowId22(exerciseName, planCache) {
+  if (!planCache || !planCache.days || !exerciseName) return null;
+  var normQ = (exerciseName || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  for (var di = 0; di < planCache.days.length; di++) {
+    var exs = planCache.days[di].exercises || [];
+    for (var ei = 0; ei < exs.length; ei++) {
+      var ex = exs[ei];
+      var normN = (ex.exerciseName || ex.nombre || '').toLowerCase().trim().replace(/\s+/g, ' ');
+      if (normN === normQ) {
+        return { di: di, ei: ei, pid: ex.prescriptionExerciseId || null };
+      }
+    }
+  }
+  return null;
+}
+
+// ─── FASE 22 — _resolveExerciseRowId ──────────────────────────────────────
+// P301 — ejercicio encontrado por nombre exacto
+console.log('\nP301 — resolveExerciseRowId: nombre exacto');
+(function() {
+  var plan = { days: [{ dayIndex:0, exercises: [
+    { exerciseName:'Press banca', prescriptionExerciseId:'pid-1', sets:[{load:80}] }
+  ]}]};
+  var r = _resolveExerciseRowId22('Press banca', plan);
+  assert('P301a', 'no null', r !== null);
+  assert('P301b', 'di=0', r !== null && r.di === 0);
+  assert('P301c', 'ei=0', r !== null && r.ei === 0);
+  assert('P301d', 'pid correcto', r !== null && r.pid === 'pid-1');
+})();
+
+// P302 — nombre con casing diferente
+console.log('\nP302 — resolveExerciseRowId: casing insensible');
+(function() {
+  var plan = { days: [{ dayIndex:0, exercises: [
+    { exerciseName:'Sentadilla Trasera', prescriptionExerciseId:'pid-2', sets:[] }
+  ]}]};
+  var r = _resolveExerciseRowId22('sentadilla trasera', plan);
+  assert('P302a', 'encontrado con lowercase', r !== null);
+  assert('P302b', 'di=0', r !== null && r.di === 0);
+})();
+
+// P303 — ejercicio no presente → null
+console.log('\nP303 — resolveExerciseRowId: ejercicio ausente → null');
+(function() {
+  var plan = { days: [{ dayIndex:0, exercises: [
+    { exerciseName:'Peso muerto', prescriptionExerciseId:'pid-3', sets:[] }
+  ]}]};
+  var r = _resolveExerciseRowId22('Sentadilla', plan);
+  assert('P303a', 'no encontrado → null', r === null);
+})();
+
+// P304 — plan vacío → null
+console.log('\nP304 — resolveExerciseRowId: plan vacío → null');
+(function() {
+  var r = _resolveExerciseRowId22('Press banca', null);
+  assert('P304a', 'null plan → null', r === null);
+  var r2 = _resolveExerciseRowId22('Press banca', { days: [] });
+  assert('P304b', 'días vacíos → null', r2 === null);
+})();
+
+// P305 — ejerciseName vacío → null
+console.log('\nP305 — resolveExerciseRowId: name vacío → null');
+(function() {
+  var plan = { days: [{ dayIndex:0, exercises: [
+    { exerciseName:'Press banca', prescriptionExerciseId:'pid-5', sets:[] }
+  ]}]};
+  var r = _resolveExerciseRowId22('', plan);
+  assert('P305a', 'name vacío → null', r === null);
+  var r2 = _resolveExerciseRowId22(null, plan);
+  assert('P305b', 'name null → null', r2 === null);
+})();
+
+// P306 — sin prescriptionExerciseId → pid=null
+console.log('\nP306 — resolveExerciseRowId: sin prescriptionExerciseId → pid null');
+(function() {
+  var plan = { days: [{ dayIndex:0, exercises: [
+    { exerciseName:'Remo con barra', sets:[] }
+  ]}]};
+  var r = _resolveExerciseRowId22('Remo con barra', plan);
+  assert('P306a', 'encontrado', r !== null);
+  assert('P306b', 'pid=null', r !== null && r.pid === null);
+})();
+
+// P307 — múltiples días, ejercicio en segundo día
+console.log('\nP307 — resolveExerciseRowId: múltiples días, match en día 1');
+(function() {
+  var plan = { days: [
+    { dayIndex:0, exercises: [{ exerciseName:'Press banca', prescriptionExerciseId:'pid-7a', sets:[] }] },
+    { dayIndex:1, exercises: [{ exerciseName:'Jalón al pecho', prescriptionExerciseId:'pid-7b', sets:[] }] }
+  ]};
+  var r = _resolveExerciseRowId22('Jalón al pecho', plan);
+  assert('P307a', 'di=1 (segundo día)', r !== null && r.di === 1);
+  assert('P307b', 'ei=0', r !== null && r.ei === 0);
+  assert('P307c', 'pid-7b', r !== null && r.pid === 'pid-7b');
+})();
+
+// P308 — múltiples ejercicios mismo día, match en segundo ejercicio
+console.log('\nP308 — resolveExerciseRowId: múltiples ejercicios, match en ei=1');
+(function() {
+  var plan = { days: [{ dayIndex:0, exercises: [
+    { exerciseName:'Press banca', prescriptionExerciseId:'pid-8a', sets:[] },
+    { exerciseName:'Aperturas', prescriptionExerciseId:'pid-8b', sets:[] }
+  ]}]};
+  var r = _resolveExerciseRowId22('Aperturas', plan);
+  assert('P308a', 'ei=1', r !== null && r.ei === 1);
+  assert('P308b', 'pid-8b', r !== null && r.pid === 'pid-8b');
+})();
+
+// P309 — espacios extra en el nombre → normalización
+console.log('\nP309 — resolveExerciseRowId: espacios extra normalizados');
+(function() {
+  var plan = { days: [{ dayIndex:0, exercises: [
+    { exerciseName:'Press  banca', prescriptionExerciseId:'pid-9', sets:[] }
+  ]}]};
+  var r = _resolveExerciseRowId22('Press banca', plan);
+  assert('P309a', 'espacios extra normalizados → encontrado', r !== null);
+})();
+
+// P310 — función es pura (no muta planCache)
+console.log('\nP310 — resolveExerciseRowId: función pura (no muta plan)');
+(function() {
+  var ex = { exerciseName:'Sentadilla', prescriptionExerciseId:'pid-10', sets:[] };
+  var plan = { days: [{ dayIndex:0, exercises: [ex] }]};
+  var before = JSON.stringify(plan);
+  _resolveExerciseRowId22('Sentadilla', plan);
+  assert('P310a', 'plan no mutado', JSON.stringify(plan) === before);
+  assert('P310b', 'ejercicio no mutado', ex.exerciseName === 'Sentadilla');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
