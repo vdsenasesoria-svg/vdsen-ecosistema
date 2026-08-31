@@ -2648,6 +2648,87 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     };
   }
   
+  // FASE 13 — Coach helpers (mirrors of client-side FASE 12 helpers)
+  function _coachGetWeeklyCheckins(entries, max) {
+    max = max || 6;
+    if (!entries || typeof entries !== 'object') return [];
+    var result = [];
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^ci_sem_(\d+)$/);
+      if (!m) return;
+      var w = parseInt(m[1], 10);
+      var ci = entries[k];
+      if (!ci || typeof ci !== 'object') return;
+      result.push({ week: w, data: ci });
+    });
+    result.sort(function(a, b) { return b.week - a.week; });
+    return result.slice(0, max);
+  }
+
+  // FASE 13 — Weight trend. Returns { status: 'SUBIENDO'|'BAJANDO'|'ESTABLE'|'NO_DATA', rate }
+  function _coachCalcWeightTrend(entries, max) {
+    var checkins = _coachGetWeeklyCheckins(entries, max || 3);
+    var points = [];
+    checkins.forEach(function(ci) {
+      var w = parseFloat(ci.data && ci.data.peso);
+      if (!isNaN(w) && w > 0) points.push({ week: ci.week, peso: w });
+    });
+    if (points.length < 2) return { status: 'NO_DATA', rate: null };
+    points.sort(function(a, b) { return a.week - b.week; });
+    var first = points[0], last = points[points.length - 1];
+    var weekDiff = last.week - first.week;
+    if (weekDiff === 0) return { status: 'NO_DATA', rate: null };
+    var rate = (last.peso - first.peso) / weekDiff;
+    return {
+      status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+      rate: +rate.toFixed(2)
+    };
+  }
+
+  // FASE 13 — Returns true if ci_sem_{currentWeek} is absent (and currentWeek > 1)
+  function _coachHasPendingCheckin(entries, currentWeek) {
+    if (!currentWeek || currentWeek <= 1) return false;
+    return !entries['ci_sem_' + currentWeek];
+  }
+
+  // FASE 13 — Session + set adherence for current week.
+  // SET_ADHERENCE_APPROXIMATE: set denominator is sum of sets in plan days.
+  function _coachCalcAdherence(entries, week, totalDays, planData) {
+    if (!totalDays || totalDays <= 0) return null;
+    var sessionsCompleted = 0;
+    var setsCompleted = 0;
+    var setsTotal = 0;
+    for (var day = 0; day < totalDays; day++) {
+      if (entries['done_' + week + '_' + day] === true) sessionsCompleted++;
+    }
+    if (planData && planData.days) {
+      planData.days.forEach(function(dayObj) {
+        if (!dayObj || !dayObj.exercises) return;
+        dayObj.exercises.forEach(function(ex) {
+          if (!ex || !ex.sets) return;
+          setsTotal += ex.sets.length;
+        });
+      });
+    }
+    Object.keys(entries).forEach(function(k) {
+      if (!/^log_\d+_\d+_\d+_s\d+$/.test(k)) return;
+      var parts = k.split('_');
+      if (parseInt(parts[1], 10) !== week) return;
+      var e = entries[k];
+      if (e && e.done && !e.autoFilled) setsCompleted++;
+    });
+    var sessionPct = Math.round(Math.min(100, (sessionsCompleted / totalDays) * 100));
+    var setPct = setsTotal > 0 ? Math.round(Math.min(100, (setsCompleted / setsTotal) * 100)) : null;
+    return {
+      sessionsCompleted: sessionsCompleted,
+      sessionsTotal: totalDays,
+      sessionPct: sessionPct,
+      setsCompleted: setsCompleted,
+      setsTotal: setsTotal,
+      setPct: setPct
+    };
+  }
+
   async function loadMonitorClients() {
     if (!currentCoach) return;
     if (window._monitorUnsub) { window._monitorUnsub(); window._monitorUnsub = null; }
@@ -2692,6 +2773,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       const currentWeek = logsSnap.data().currentWeek || 1;
       const updatedAt = logsSnap.data().updatedAt;
       const lastUpdate = updatedAt ? new Date(updatedAt).toLocaleString('es-MX') : '—';
+      const totalWeeks = (_activePlanCache && _activePlanCache.weeks) ? _activePlanCache.weeks : 6;
+      const _trendResult = _coachCalcWeightTrend(logs);
+      const _pendingCheckin = _coachHasPendingCheckin(logs, currentWeek);
 
       // Semana del mesociclo y RIR objetivo (usa esquema dinámico del plan)
       const weekRirObj = rirSchemeForWeeks(totalWeeks);
@@ -2730,7 +2814,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           <div class="flex items-center gap-3 flex-wrap">
             <div class="text-center px-4 py-2 rounded-lg" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.3)">
               <div class="text-2xl font-bold text-[#F4F4F0]">SEM ${currentWeek}</div>
-              <div class="text-xs text-[#888] mt-1">DEL MESOCICLO</div>
+              <div class="text-xs text-[#888] mt-1">/ ${totalWeeks} SEM</div>
             </div>
             <div class="text-center px-4 py-2 rounded-lg" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.3)">
               <div class="text-2xl font-bold text-[#F4F4F0]">RIR ${rirObj}</div>
@@ -2739,12 +2823,14 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             ${isDeload ? `<div class="px-3 py-2 rounded-lg text-sm font-bold" style="background:rgba(68,136,204,.15);border:1px solid #4488cc;color:#4488cc">🔵 SEMANA DELOAD</div>` : ''}
             ${triggers.map(t => `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444">⚠️ ${t}</div>`).join('')}
             <div class="px-3 py-2 rounded-lg text-xs" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);color:#888">🔄 ${lastUpdate}</div>
+            ${_trendResult.status !== 'NO_DATA' ? `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,255,255,.04);border:1px solid ${_trendResult.status==='SUBIENDO'?'rgba(244,164,0,.6)':_trendResult.status==='BAJANDO'?'rgba(68,187,136,.6)':'rgba(244,244,240,.2)'};color:${_trendResult.status==='SUBIENDO'?'#F4A400':_trendResult.status==='BAJANDO'?'#44BB88':'#F4F4F0'}">⚖ ${_trendResult.status} ${_trendResult.rate >= 0 ? '+' : ''}${_trendResult.rate} kg/sem</div>` : ''}
+            ${_pendingCheckin ? `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,165,0,.08);border:1px solid rgba(255,165,0,.5);color:#FFA500">⚠ Check-in sem ${currentWeek} pendiente</div>` : ''}
           </div>
           ${(function() {
-            // Session adherence for current week
-            const planDays = planData?.days?.length || 0;
-            const doneDays = Object.keys(logs).filter(k => k.match(/^done_(\d+)_(\d+)$/) && parseInt(k.split('_')[1]) === currentWeek).length;
-            const adherBadge = planDays > 0 ? `<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs" style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3)"><span style="color:#888">Sesiones S${currentWeek}:</span> <span style="color:#44BB88;font-weight:700">${doneDays}/${planDays}</span></div>` : '';
+            // Session + set adherence for current week (SET_ADHERENCE_APPROXIMATE)
+            const planDays = (_activePlanCache && _activePlanCache.days) ? _activePlanCache.days.length : 0;
+            const adherence = _coachCalcAdherence(logs, currentWeek, planDays, _activePlanCache);
+            const adherBadge = adherence ? `<div class="flex flex-col px-3 py-1.5 rounded-lg text-xs" style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3)"><span style="color:#888;font-size:9px;font-weight:700;letter-spacing:.5px">ADHERENCIA SEM ${currentWeek}</span><span style="color:#44BB88;font-weight:700;margin-top:1px">Sesiones ${adherence.sessionsCompleted}/${adherence.sessionsTotal} · ${adherence.sessionPct}%</span>${adherence.setPct !== null ? `<span style="color:#88ccaa;font-size:10px">Series ${adherence.setsCompleted}/${adherence.setsTotal} · ${adherence.setPct}%</span>` : ''}</div>` : '';
             // Latest weekly check-in
             const ci = logs['ci_sem_'+currentWeek] || {};
             const ciPrev = logs['ci_sem_'+(currentWeek-1)] || {};

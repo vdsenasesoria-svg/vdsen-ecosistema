@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-30 · main HEAD: `2b6e927` · rama activa: `claude/client-app-improvements-qayy4n` · FASE 12 añadida
+> Actualizado: 2026-08-31 · main HEAD: `2b6e927` · rama activa: `claude/client-app-improvements-qayy4n` · FASE 13 añadida
 
 ---
 
@@ -11,13 +11,44 @@
 | Rama activa | `claude/client-app-improvements-qayy4n` (pendiente merge) |
 | FASE 5 commit | `4a87e42` |
 | FASE 6 commit | `2b6e927` (merge --no-ff) |
-| Suite tests | **472/472 PASS** (P01–P195) |
-| Vercel | producción en `2b6e927`; FASEs 7–12 pendientes merge a main |
-| Siguiente fase | **FASE 13** (por definir) |
+| Suite tests | **509/509 PASS** (P01–P205) |
+| Vercel | producción en `2b6e927`; FASEs 7–13 pendientes merge a main |
+| Siguiente fase | **FASE 14** (Coach → Client review workflow) |
 
 ---
 
 ## FASES completadas
+
+### FASE 13 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
+**Coach Monitor: contexto semanal, tendencia de peso, check-in pendiente, adherencia**
+
+Archivos modificados:
+- `vdsen-coach.html` — 4 parches quirúrgicos
+- `tests/progression-engine.test.js` — P196-P205 (37 assertions nuevas)
+
+Helpers añadidos (antes de `loadMonitorClients`):
+- `_coachGetWeeklyCheckins(entries, max)` — espejo de `_getWeeklyCheckins` del cliente
+- `_coachCalcWeightTrend(entries, max)` — espejo de `_calcWeightTrend`; retorna `NO_DATA` (no `SIN_DATOS`)
+- `_coachHasPendingCheckin(entries, currentWeek)` — true si `currentWeek > 1` y `ci_sem_{W}` ausente
+- `_coachCalcAdherence(entries, week, totalDays, planData)` → `{sessionsCompleted, sessionsTotal, sessionPct, setsCompleted, setsTotal, setPct}`. SET_ADHERENCE_APPROXIMATE.
+
+Bugs corregidos en el callback onSnapshot:
+- `totalWeeks` estaba undefined → ahora `const totalWeeks = (_activePlanCache?.weeks) ?? 6`
+- `planData?.days?.length` era undefined → ahora usa `_activePlanCache?.days?.length`
+
+Comportamiento añadido en Monitor:
+- Header de semana: "SEM N / M SEM" (M = totalWeeks del plan, no hardcoded 6)
+- Chip tendencia de peso: ⚖ SUBIENDO/BAJANDO/ESTABLE + rate kg/sem (solo si NO_DATA no aplica)
+- Chip check-in pendiente: "⚠ Check-in sem N pendiente" cuando aplica
+- Badge adherencia: "ADHERENCIA SEM N / Sesiones N/M · X% / Series N/M · X%"
+
+Invariantes preservados:
+- 0 lecturas Firestore nuevas en los helpers
+- CURRENT_WEEK vs REAL_WEEK: el Monitor usa solo `logs.currentWeek`
+- Sin cambios a schema, colecciones, auth ni farmacología
+- Clasificación REVIEW/PROGRESSING/STABLE/NO_DATA del attention monitor sin cambios
+
+---
 
 ### FASE 12 (rama `claude/client-app-improvements-qayy4n` — pendiente merge)
 **Client UX: Check-in History, Weight Trend, Week Performance Summary**

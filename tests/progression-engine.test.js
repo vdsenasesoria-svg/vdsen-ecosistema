@@ -3447,6 +3447,240 @@ console.log('\nP195 — _calcWeightTrend gracefully handles bad peso values');
   assert('P195c', 'all invalid peso → SIN_DATOS', t2.status === 'SIN_DATOS');
 })();
 
+// ═══════════ FASE 13 — Coach monitoring helpers (P196-P205) ═══════════
+
+// Mirror of _coachGetWeeklyCheckins (pure — no Firestore)
+function _coachGetWeeklyCheckins(entries, max) {
+  max = max || 6;
+  if (!entries || typeof entries !== 'object') return [];
+  var result = [];
+  Object.keys(entries).forEach(function(k) {
+    var m = k.match(/^ci_sem_(\d+)$/);
+    if (!m) return;
+    var w = parseInt(m[1], 10);
+    var ci = entries[k];
+    if (!ci || typeof ci !== 'object') return;
+    result.push({ week: w, data: ci });
+  });
+  result.sort(function(a, b) { return b.week - a.week; });
+  return result.slice(0, max);
+}
+
+// Mirror of _coachCalcWeightTrend (returns NO_DATA not SIN_DATOS)
+function _coachCalcWeightTrend(entries, max) {
+  var checkins = _coachGetWeeklyCheckins(entries, max || 3);
+  var points = [];
+  checkins.forEach(function(ci) {
+    var w = parseFloat(ci.data && ci.data.peso);
+    if (!isNaN(w) && w > 0) points.push({ week: ci.week, peso: w });
+  });
+  if (points.length < 2) return { status: 'NO_DATA', rate: null };
+  points.sort(function(a, b) { return a.week - b.week; });
+  var first = points[0], last = points[points.length - 1];
+  var weekDiff = last.week - first.week;
+  if (weekDiff === 0) return { status: 'NO_DATA', rate: null };
+  var rate = (last.peso - first.peso) / weekDiff;
+  return {
+    status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+    rate: +rate.toFixed(2)
+  };
+}
+
+// Mirror of _coachHasPendingCheckin
+function _coachHasPendingCheckin(entries, currentWeek) {
+  if (!currentWeek || currentWeek <= 1) return false;
+  return !entries['ci_sem_' + currentWeek];
+}
+
+// Mirror of _coachCalcAdherence (SET_ADHERENCE_APPROXIMATE)
+function _coachCalcAdherence(entries, week, totalDays, planData) {
+  if (!totalDays || totalDays <= 0) return null;
+  var sessionsCompleted = 0;
+  var setsCompleted = 0;
+  var setsTotal = 0;
+  for (var day = 0; day < totalDays; day++) {
+    if (entries['done_' + week + '_' + day] === true) sessionsCompleted++;
+  }
+  if (planData && planData.days) {
+    planData.days.forEach(function(dayObj) {
+      if (!dayObj || !dayObj.exercises) return;
+      dayObj.exercises.forEach(function(ex) {
+        if (!ex || !ex.sets) return;
+        setsTotal += ex.sets.length;
+      });
+    });
+  }
+  Object.keys(entries).forEach(function(k) {
+    if (!/^log_\d+_\d+_\d+_s\d+$/.test(k)) return;
+    var parts = k.split('_');
+    if (parseInt(parts[1], 10) !== week) return;
+    var e = entries[k];
+    if (e && e.done && !e.autoFilled) setsCompleted++;
+  });
+  var sessionPct = Math.round(Math.min(100, (sessionsCompleted / totalDays) * 100));
+  var setPct = setsTotal > 0 ? Math.round(Math.min(100, (setsCompleted / setsTotal) * 100)) : null;
+  return {
+    sessionsCompleted: sessionsCompleted,
+    sessionsTotal: totalDays,
+    sessionPct: sessionPct,
+    setsCompleted: setsCompleted,
+    setsTotal: setsTotal,
+    setPct: setPct
+  };
+}
+
+// P196 — _coachGetWeeklyCheckins: newest-first, max limit
+console.log('\nP196 — _coachGetWeeklyCheckins newest-first and max');
+(function() {
+  var entries = {
+    'ci_sem_1': { peso: 80 },
+    'ci_sem_3': { peso: 81 },
+    'ci_sem_5': { peso: 79 },
+    'done_1_0': true,
+    'progrec_1_0': {}
+  };
+  var r = _coachGetWeeklyCheckins(entries, 6);
+  assert('P196a', 'returns 3 ci_sem_ entries only', r.length === 3);
+  assert('P196b', 'newest first: week 5', r[0].week === 5);
+  assert('P196c', 'week 3 at index 1', r[1].week === 3);
+  assert('P196d', 'week 1 at index 2', r[2].week === 1);
+
+  var limited = _coachGetWeeklyCheckins(entries, 2);
+  assert('P196e', 'max=2 returns 2 entries', limited.length === 2);
+  assert('P196f', 'max=2: weeks 5 and 3', limited[0].week === 5 && limited[1].week === 3);
+})();
+
+// P197 — _coachCalcWeightTrend: SUBIENDO
+console.log('\nP197 — _coachCalcWeightTrend SUBIENDO');
+(function() {
+  // 80 → 82 over weeks 1-3, rate = +1.0 kg/week
+  var entries = { 'ci_sem_1': { peso: 80 }, 'ci_sem_3': { peso: 82 } };
+  var t = _coachCalcWeightTrend(entries, 6);
+  assert('P197a', 'status is SUBIENDO', t.status === 'SUBIENDO');
+  assert('P197b', 'rate is +1.0', t.rate === 1.0);
+})();
+
+// P198 — _coachCalcWeightTrend: ESTABLE (boundary at -0.5)
+console.log('\nP198 — _coachCalcWeightTrend ESTABLE');
+(function() {
+  // 81 → 80 over 2 weeks = -0.5 → ESTABLE (boundary, not BAJANDO)
+  var entries = { 'ci_sem_1': { peso: 81 }, 'ci_sem_3': { peso: 80 } };
+  var t = _coachCalcWeightTrend(entries, 6);
+  assert('P198a', 'rate exactly -0.5 is ESTABLE', t.status === 'ESTABLE');
+  assert('P198b', 'rate is -0.5', t.rate === -0.5);
+})();
+
+// P199 — _coachCalcWeightTrend: BAJANDO with week gaps
+console.log('\nP199 — _coachCalcWeightTrend BAJANDO respects week gap');
+(function() {
+  // 82 → 79 over 2 weeks = -1.5 kg/week → BAJANDO
+  var entries = { 'ci_sem_1': { peso: 82 }, 'ci_sem_2': { peso: 79 } };
+  var t = _coachCalcWeightTrend(entries, 6);
+  assert('P199a', 'status is BAJANDO', t.status === 'BAJANDO');
+  assert('P199b', 'rate is -3.0', t.rate === -3.0);
+  // Same delta but over 4 weeks = -0.75 → BAJANDO
+  var entries2 = { 'ci_sem_1': { peso: 84 }, 'ci_sem_5': { peso: 81 } };
+  var t2 = _coachCalcWeightTrend(entries2, 6);
+  assert('P199c', '3kg over 4 weeks = -0.75 → BAJANDO', t2.status === 'BAJANDO');
+})();
+
+// P200 — _coachCalcWeightTrend: NO_DATA (< 2 valid weights)
+console.log('\nP200 — _coachCalcWeightTrend NO_DATA');
+(function() {
+  assert('P200a', 'null entries → NO_DATA', _coachCalcWeightTrend(null, 6).status === 'NO_DATA');
+  assert('P200b', 'empty entries → NO_DATA', _coachCalcWeightTrend({}, 6).status === 'NO_DATA');
+  var oneOnly = { 'ci_sem_2': { peso: 80 } };
+  assert('P200c', 'single valid peso → NO_DATA', _coachCalcWeightTrend(oneOnly, 6).status === 'NO_DATA');
+  var zeroPeso = { 'ci_sem_1': { peso: 0 }, 'ci_sem_2': { peso: 80 } };
+  var t = _coachCalcWeightTrend(zeroPeso, 6);
+  assert('P200d', 'zero peso excluded; only 1 valid → NO_DATA', t.status === 'NO_DATA');
+})();
+
+// P201 — _coachHasPendingCheckin: returns true when absent and week > 1
+console.log('\nP201 — _coachHasPendingCheckin: pending when absent');
+(function() {
+  var entries = { 'ci_sem_1': { peso: 80 } };
+  assert('P201a', 'week 3 absent → pending (true)', _coachHasPendingCheckin(entries, 3) === true);
+  assert('P201b', 'week 2 absent → pending (true)', _coachHasPendingCheckin(entries, 2) === true);
+})();
+
+// P202 — _coachHasPendingCheckin: false when present or week <= 1
+console.log('\nP202 — _coachHasPendingCheckin: not pending');
+(function() {
+  var entries = { 'ci_sem_2': { peso: 80 } };
+  assert('P202a', 'week 2 present → not pending (false)', _coachHasPendingCheckin(entries, 2) === false);
+  assert('P202b', 'week 1 → never pending (false)', _coachHasPendingCheckin({}, 1) === false);
+  assert('P202c', 'week 0 → false', _coachHasPendingCheckin({}, 0) === false);
+  assert('P202d', 'null week → false', _coachHasPendingCheckin({}, null) === false);
+})();
+
+// P203 — _coachCalcAdherence: session adherence counts done_{W}_{D} === true
+console.log('\nP203 — _coachCalcAdherence session adherence');
+(function() {
+  var entries = {
+    'done_2_0': true,
+    'done_2_1': true,
+    'done_2_2': false,
+    'done_1_0': true  // different week, excluded
+  };
+  var planData = { days: [
+    { exercises: [{ sets: [{}, {}] }] },
+    { exercises: [{ sets: [{}, {}, {}] }] },
+    { exercises: [{ sets: [{}] }] }
+  ]};
+  var r = _coachCalcAdherence(entries, 2, 3, planData);
+  assert('P203a', 'result is not null', r !== null);
+  assert('P203b', 'sessionsCompleted = 2', r.sessionsCompleted === 2);
+  assert('P203c', 'sessionsTotal = 3', r.sessionsTotal === 3);
+  assert('P203d', 'sessionPct = 67%', r.sessionPct === 67);
+  assert('P203e', 'setsTotal = 6 (2+3+1)', r.setsTotal === 6);
+})();
+
+// P204 — _coachCalcAdherence: set adherence excludes autoFilled
+console.log('\nP204 — _coachCalcAdherence sets excludes autoFilled');
+(function() {
+  var entries = {
+    'done_1_0': true,
+    'log_1_0_0_s0': { done: true, autoFilled: false },
+    'log_1_0_0_s1': { done: true, autoFilled: false },
+    'log_1_0_0_s2': { done: true, autoFilled: true },  // excluded
+    'log_2_0_0_s0': { done: true, autoFilled: false }   // wrong week, excluded
+  };
+  var planData = { days: [{ exercises: [{ sets: [{}, {}, {}] }] }] };
+  var r = _coachCalcAdherence(entries, 1, 1, planData);
+  assert('P204a', 'setsCompleted = 2 (autoFilled and wrong-week excluded)', r.setsCompleted === 2);
+  assert('P204b', 'setsTotal = 3', r.setsTotal === 3);
+  assert('P204c', 'setPct = 67%', r.setPct === 67);
+})();
+
+// P205 — Parity: _coachCalcWeightTrend and _calcWeightTrend use same thresholds
+console.log('\nP205 — Parity: coach and client trend thresholds are identical');
+(function() {
+  // Test SUBIENDO boundary: rate = +0.51 → SUBIENDO on both
+  var checkins_sub = [{ week: 1, data: { peso: 80 } }, { week: 101, data: { peso: 131 } }];
+  // rate = (131-80)/(101-1) = 51/100 = 0.51 → SUBIENDO
+  var clientSub = _calcWeightTrend(checkins_sub);
+  var entries_sub = { 'ci_sem_1': { peso: 80 }, 'ci_sem_101': { peso: 131 } };
+  var coachSub = _coachCalcWeightTrend(entries_sub, 6);
+  assert('P205a', 'client SUBIENDO at +0.51/week', clientSub.status === 'SUBIENDO');
+  assert('P205b', 'coach SUBIENDO at +0.51/week (same threshold)', coachSub.status === 'SUBIENDO');
+
+  // Test BAJANDO boundary: rate = -0.51
+  var checkins_baj = [{ week: 1, data: { peso: 80 } }, { week: 101, data: { peso: 28.9 } }];
+  // rate = (28.9-80)/100 = -51.1/100 = -0.511 → BAJANDO
+  var clientBaj = _calcWeightTrend(checkins_baj);
+  var entries_baj = { 'ci_sem_1': { peso: 80 }, 'ci_sem_101': { peso: 28.9 } };
+  var coachBaj = _coachCalcWeightTrend(entries_baj, 6);
+  assert('P205c', 'client BAJANDO at -0.511/week', clientBaj.status === 'BAJANDO');
+  assert('P205d', 'coach BAJANDO at -0.511/week (same threshold)', coachBaj.status === 'BAJANDO');
+
+  // NO_DATA vs SIN_DATOS: different strings (by design)
+  var coachNoData = _coachCalcWeightTrend({}, 6);
+  var clientNoData = _calcWeightTrend([]);
+  assert('P205e', 'coach uses NO_DATA string', coachNoData.status === 'NO_DATA');
+  assert('P205f', 'client uses SIN_DATOS string', clientNoData.status === 'SIN_DATOS');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
