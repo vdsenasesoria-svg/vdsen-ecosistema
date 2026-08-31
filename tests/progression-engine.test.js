@@ -4912,6 +4912,166 @@ console.log('\nP268 — múltiples recomendaciones → todas en output');
   assert('P268f', 'MANTENER en output', html.indexOf('MANTENER') !== -1);
 })();
 
+// ═══════════════ FASE 20 — _buildRecApplyPreview ═════════════════════════
+
+// Mirror de _buildRecApplyPreview (pure helper — sin DOM ni Firestore)
+function _buildRecApplyPreview20(lastRec, lastRecDay, activePlanCache) {
+  if (!lastRec || !activePlanCache || !activePlanCache.days) return [];
+  var _normN = function(s){ return (s||'').toLowerCase().trim().replace(/\s+/g,' '); };
+  var dayObj = null;
+  for (var i = 0; i < activePlanCache.days.length; i++) {
+    if (activePlanCache.days[i].dayIndex === lastRecDay) { dayObj = activePlanCache.days[i]; break; }
+  }
+  if (!dayObj) dayObj = activePlanCache.days[lastRecDay] || null;
+  if (!dayObj || !dayObj.exercises || !dayObj.exercises.length) return [];
+  var result = [];
+  var recs = Array.isArray(lastRec.recommendations) ? lastRec.recommendations : [];
+  recs.forEach(function(r) {
+    if (r.action !== 'increase_load' && r.action !== 'reduce_load') return;
+    var rKey = _normN(r.exerciseName);
+    var ei = -1;
+    for (var j = 0; j < dayObj.exercises.length; j++) {
+      if (_normN(dayObj.exercises[j].exerciseName || dayObj.exercises[j].nombre || '') === rKey) { ei = j; break; }
+    }
+    if (ei < 0) return;
+    var ex = dayObj.exercises[ei];
+    var currentLoad = parseFloat((ex.sets && ex.sets[0] && ex.sets[0].load) || 0) || 0;
+    var recommendedLoad = parseFloat(r.newLoad) || 0;
+    if (recommendedLoad > 0) {
+      result.push({
+        exerciseName: ex.exerciseName || ex.nombre || r.exerciseName,
+        exerciseIndex: ei,
+        currentLoad: currentLoad,
+        recommendedLoad: recommendedLoad,
+        action: r.action
+      });
+    }
+  });
+  return result;
+}
+
+// P269 — null lastRec → []
+console.log('\nP269 — null lastRec → retorna []');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Press', sets: [{ load: 60 }] }] }] };
+  var result = _buildRecApplyPreview20(null, 0, plan);
+  assert('P269a', 'null lastRec → []', Array.isArray(result) && result.length === 0);
+  assert('P269b', 'undefined lastRec → []', _buildRecApplyPreview20(undefined, 0, plan).length === 0);
+})();
+
+// P270 — null activePlanCache → []
+console.log('\nP270 — null activePlanCache → retorna []');
+(function(){
+  var lastRec = { recommendations: [{ exerciseName: 'Press', action: 'increase_load', newLoad: 70 }] };
+  assert('P270a', 'null cache → []', _buildRecApplyPreview20(lastRec, 0, null).length === 0);
+  assert('P270b', 'cache sin days → []', _buildRecApplyPreview20(lastRec, 0, {}).length === 0);
+  assert('P270c', 'cache days vacío → []', _buildRecApplyPreview20(lastRec, 0, { days: [] }).length === 0);
+})();
+
+// P271 — ejercicio no encontrado en el plan → []
+console.log('\nP271 — ejercicio rec no está en el día del plan → []');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Sentadilla', sets: [{ load: 100 }] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Press Banca', action: 'increase_load', newLoad: 80, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P271a', 'sin coincidencia → []', result.length === 0);
+})();
+
+// P272 — increase_load coincide → retorna entry correcta
+console.log('\nP272 — increase_load con coincidencia por nombre → entry correcta');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Press Banca', sets: [{ load: 70 }] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Press Banca', action: 'increase_load', newLoad: 72.5, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P272a', 'retorna 1 entry', result.length === 1);
+  assert('P272b', 'exerciseName correcto', result[0].exerciseName === 'Press Banca');
+  assert('P272c', 'exerciseIndex = 0', result[0].exerciseIndex === 0);
+  assert('P272d', 'currentLoad = 70', result[0].currentLoad === 70);
+  assert('P272e', 'recommendedLoad = 72.5', result[0].recommendedLoad === 72.5);
+  assert('P272f', 'action = increase_load', result[0].action === 'increase_load');
+})();
+
+// P273 — reduce_load coincide → action correcta
+console.log('\nP273 — reduce_load con coincidencia → action reduce_load');
+(function(){
+  var plan = { days: [{ dayIndex: 1, exercises: [{ exerciseName: 'Jalón', sets: [{ load: 55 }] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Jalón', action: 'reduce_load', newLoad: 50, newSets: 3, rirTarget: 3 }] };
+  var result = _buildRecApplyPreview20(lastRec, 1, plan);
+  assert('P273a', '1 entry', result.length === 1);
+  assert('P273b', 'action = reduce_load', result[0].action === 'reduce_load');
+  assert('P273c', 'currentLoad = 55', result[0].currentLoad === 55);
+  assert('P273d', 'recommendedLoad = 50', result[0].recommendedLoad === 50);
+})();
+
+// P274 — maintain / add_sets / deload / freeze_load son excluidos
+console.log('\nP274 — acciones no aplicables son filtradas');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'A', sets: [{ load: 60 }] },
+    { exerciseName: 'B', sets: [{ load: 70 }] },
+    { exerciseName: 'C', sets: [{ load: 80 }] },
+    { exerciseName: 'D', sets: [{ load: 90 }] }
+  ]}]};
+  var lastRec = { recommendations: [
+    { exerciseName: 'A', action: 'maintain',     newLoad: 60, newSets: 3, rirTarget: 2 },
+    { exerciseName: 'B', action: 'add_sets',     newLoad: 70, newSets: 4, rirTarget: 2 },
+    { exerciseName: 'C', action: 'deload',       newLoad: 50, newSets: 3, rirTarget: 3 },
+    { exerciseName: 'D', action: 'freeze_load',  newLoad: 90, newSets: 3, rirTarget: 2 }
+  ]};
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P274a', 'ninguna entry (todas excluidas)', result.length === 0);
+})();
+
+// P275 — day match por dayIndex (no posicional)
+console.log('\nP275 — day lookup por dayIndex no posicional');
+(function(){
+  // dayIndex=2 está en posición 0 del array → debe encontrarse igual
+  var plan = { days: [
+    { dayIndex: 2, exercises: [{ exerciseName: 'Remo', sets: [{ load: 65 }] }] },
+    { dayIndex: 3, exercises: [{ exerciseName: 'Curl',  sets: [{ load: 30 }] }] }
+  ]};
+  var lastRec = { recommendations: [{ exerciseName: 'Remo', action: 'increase_load', newLoad: 67.5, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 2, plan);
+  assert('P275a', 'encuentra por dayIndex=2', result.length === 1);
+  assert('P275b', 'ejercicio correcto', result[0].exerciseName === 'Remo');
+  // dayIndex=3 no coincide con la rec → vacío
+  var result2 = _buildRecApplyPreview20(lastRec, 3, plan);
+  assert('P275c', 'day 3 sin match de Remo → []', result2.length === 0);
+})();
+
+// P276 — newLoad = 0 → excluida (recommendedLoad > 0)
+console.log('\nP276 — newLoad = 0 → entrada excluida');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Press', sets: [{ load: 60 }] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Press', action: 'increase_load', newLoad: 0, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P276a', 'newLoad 0 → excluida', result.length === 0);
+})();
+
+// P277 — múltiples recs: una coincide, otra no → solo la que coincide
+console.log('\nP277 — recs mixtas: solo las que coinciden');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Sentadilla', sets: [{ load: 100 }] }] }] };
+  var lastRec = { recommendations: [
+    { exerciseName: 'Sentadilla', action: 'increase_load', newLoad: 102.5, newSets: 4, rirTarget: 1 },
+    { exerciseName: 'Press Inclinado', action: 'reduce_load', newLoad: 55, newSets: 3, rirTarget: 2 }
+  ]};
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P277a', 'solo 1 entry (Sentadilla)', result.length === 1);
+  assert('P277b', 'es Sentadilla', result[0].exerciseName === 'Sentadilla');
+})();
+
+// P278 — currentLoad cuando sets vacío → 0
+console.log('\nP278 — ejercicio sin sets → currentLoad = 0');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Face Pull', sets: [] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Face Pull', action: 'increase_load', newLoad: 20, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P278a', '1 entry', result.length === 1);
+  assert('P278b', 'currentLoad = 0 cuando no hay sets', result[0].currentLoad === 0);
+  assert('P278c', 'recommendedLoad = 20', result[0].recommendedLoad === 20);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
