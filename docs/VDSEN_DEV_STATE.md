@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `4575a7c` · FASEs 12–19 mergeadas · siguiente = FASE 20
+> Actualizado: 2026-08-31 · main HEAD: `4575a7c` · FASEs 12–19 mergeadas · FASE 20 pendiente merge
 
 ---
 
@@ -25,13 +25,68 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 17 | MERGED — commit `604894c` |
 | FASE 18 | MERGED — commit `e8c91c2` |
 | FASE 19 | MERGED — commit `4575a7c` |
-| Suite tests | **743/743 PASS** (P01–P268) |
+| Suite tests | **800/800 PASS** (P01–P289) |
 | Vercel | auto-deploy en curso (`4575a7c`) |
-| Siguiente fase | **FASE 20** — ver backlog |
+| Siguiente fase | **FASE 21** (FASE 20 pendiente merge) |
 
 ---
 
 ## FASES completadas
+
+### FASE 20 (rama `claude/fase-20-apply-rec-loads` — PENDIENTE MERGE)
+**Coach Monitor: Aplicar cargas recomendadas al plan activo (hardened)**
+
+Archivos modificados:
+- `vdsen-coach.html` — 4 parches quirúrgicos (hardening)
+- `tests/progression-engine.test.js` — P269-P289 (57 assertions nuevas)
+- `docs/CONTEXTO_GENERADOR.md` — sección 5 Load Semantics (contrato formal)
+- `docs/VDSEN_DEV_STATE.md` — este bloque
+
+#### Contrato de identidad (identity contract)
+
+| Nivel | Condición | Resultado |
+|-------|-----------|-----------|
+| LEGACY | nombre normalizado, coincidencia ÚNICA en el día | incluida; extrae `prescriptionExerciseId` del plan |
+| AMBIGUOUS | 2+ ejercicios con mismo nombre en el día | excluida, sin aplicar |
+| NONE | 0 coincidencias de nombre | excluida |
+| HIGH (futuro) | `prescriptionExerciseId` directo en recomendación | no implementado aún — `calculateProgression` SIN CAMBIOS |
+
+Nota: `calculateProgression` no emite `prescriptionExerciseId` en sus recomendaciones (congelado). El matching actual es siempre LEGACY: nombre → plan exercise → extrae ID del plan exercise como ancla.
+
+#### Contrato de load semantics
+
+Formalizado en `docs/CONTEXTO_GENERADOR.md` sección 5:
+- `plan.sets[].load` = carga prescrita vigente, modificable SOLO por acción explícita del Coach
+- `logs.carga` = carga real ejecutada — nunca toca el plan
+- `progrec.newLoad` = sugerencia del Engine — no vinculante, nunca auto-aplicada
+
+#### Guard de race condition (fresh-read)
+
+Antes de `updateDoc`, se re-lee el plan desde Firestore. Para cada selección confirmada:
+- Si `sel.prescriptionExerciseId` existe → re-busca por ID en plan fresco; si no está → SKIP
+- Si no hay ID → fallback posicional; si índice fuera de rango → SKIP
+Implementado en `_resolveExerciseInFreshPlan(sel, freshDayExercises)`.
+
+#### Filter de acciones
+
+Solo `increase_load` y `reduce_load` pueden mutar `plan.sets[].load`.  
+`maintain`, `freeze_load`, `add_sets`, `reduce_sets`, `deload`, `progress_reps` → excluidas del preview.
+
+#### Preservación de sets
+
+`Object.assign({}, s, { load: match.recommendedLoad })` — solo `load` cambia.  
+`repsTarget`, `rirTarget`, `restSeconds`, `setIndex` preservados intactos.
+
+Invariantes preservados:
+- `calculateProgression()` SIN CAMBIOS
+- 0 nuevas colecciones Firestore
+- Schema `vdsen-plan-v2` sin cambios
+- Claves de logs sin cambios
+- `_classifyBlocks`, `parsePlanFromJSON`, `_normalizeTrainingPlan` sin tocar
+- Auth sin cambios
+- Single-coach permanente
+
+---
 
 ### FASE 19 (merge commit `4575a7c` — MERGED a main)
 **Client Post-Session: Resumen de recomendaciones de progresión en el overlay de sesión completa**

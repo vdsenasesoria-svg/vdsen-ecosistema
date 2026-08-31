@@ -105,13 +105,22 @@ Una sustitución real debe ser tratada como nueva referencia.
 
 ---
 
-## 5. LOAD / CARGA / PROGREC — SEPARACIÓN CONCEPTUAL
+## 5. LOAD / CARGA / PROGREC — SEPARACIÓN CONCEPTUAL (CONTRATO FORMAL)
 
-| Campo | Semántica |
-|-------|-----------|
-| `plan.sets[].load` | Placeholder prescriptivo. En planes nuevos automáticos: `0` |
-| `logs.carga` | Carga REAL ejecutada por el cliente |
-| `progrec.newLoad` | Sugerencia del Progression Engine para próxima exposición |
+**Fuentes de carga — nunca mezclar:**
+
+| Campo | Semántica | Quién escribe | Quién lee |
+|-------|-----------|---------------|-----------|
+| `plan.sets[].load` | **Carga prescrita vigente** para la próxima exposición, cuando el Coach la acepta explícitamente. En planes nuevos automáticos: `0` | Motor (0) · Coach App (aprobación explícita) | Client App (objetivo de sesión) |
+| `logs/{uid}.entries.log_{W}_{D}_{E}_s{S}.carga` | **Carga REAL ejecutada** por el cliente en ese set | Client App (registro set-by-set) | Progression Engine · Coach Monitor |
+| `logs/{uid}.entries.progrec_{W}_{D}.recommendations[].newLoad` | **Sugerencia** del Progression Engine para la próxima exposición | Progression Engine (congelado v3.1) | Coach Monitor (visualización) |
+
+**Invariantes del contrato:**
+
+- `plan.sets[].load` únicamente se modifica por **acción explícita del Coach** (importar plan, editar plan, o aprobar sugerencia del Monitor via FASE 20).
+- El Progression Engine **nunca auto-aplica** `progrec.newLoad` al plan. Es solo lectura para el Coach.
+- `logs.carga` y `progrec.newLoad` **nunca se mezclan** con `plan.sets[].load` sin intermediación del Coach.
+- FASE 20 implementa la aprobación explícita: el Coach selecciona qué recomendaciones aplicar → preview → confirmar → `updateDoc` sobre `plans/{id}`.
 
 El Generador **no debe inventar cargas absolutas** en planes nuevos automáticos.
 La Client App autoregula por `repsTarget + rirTarget + historial real`.

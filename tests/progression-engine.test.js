@@ -4912,6 +4912,353 @@ console.log('\nP268 — múltiples recomendaciones → todas en output');
   assert('P268f', 'MANTENER en output', html.indexOf('MANTENER') !== -1);
 })();
 
+// ═══════════════ FASE 20 — _buildRecApplyPreview (hardened) ══════════════
+
+// Mirror hardened de _buildRecApplyPreview + _resolveExerciseInFreshPlan
+var _normN20 = function(s){ return (s||'').toLowerCase().trim().replace(/\s+/g,' '); };
+
+function _findDayByIndex20(days, dayIndex) {
+  if (!days) return null;
+  for (var i = 0; i < days.length; i++) {
+    if (days[i].dayIndex === dayIndex) return days[i];
+  }
+  return null;
+}
+
+function _buildRecApplyPreview20(lastRec, lastRecDay, activePlanCache) {
+  if (!lastRec || !activePlanCache || !activePlanCache.days) return [];
+  var dayObj = _findDayByIndex20(activePlanCache.days, lastRecDay);
+  if (!dayObj || !dayObj.exercises || !dayObj.exercises.length) return [];
+  var result = [];
+  var recs = Array.isArray(lastRec.recommendations) ? lastRec.recommendations : [];
+  recs.forEach(function(r) {
+    if (r.action !== 'increase_load' && r.action !== 'reduce_load') return;
+    var rKey = _normN20(r.exerciseName);
+    var matches = [];
+    for (var j = 0; j < dayObj.exercises.length; j++) {
+      if (_normN20(dayObj.exercises[j].exerciseName || dayObj.exercises[j].nombre || '') === rKey) matches.push(j);
+    }
+    if (matches.length !== 1) return; // NONE (0) o AMBIGUOUS (2+)
+    var ei = matches[0];
+    var ex = dayObj.exercises[ei];
+    var currentLoad = parseFloat((ex.sets && ex.sets[0] && ex.sets[0].load) || 0) || 0;
+    var recommendedLoad = parseFloat(r.newLoad) || 0;
+    if (recommendedLoad <= 0) return;
+    result.push({
+      exerciseName: ex.exerciseName || ex.nombre || r.exerciseName,
+      exerciseIndex: ei,
+      prescriptionExerciseId: ex.prescriptionExerciseId || null,
+      currentLoad: currentLoad,
+      recommendedLoad: recommendedLoad,
+      action: r.action,
+      matchConfidence: 'LEGACY'
+    });
+  });
+  return result;
+}
+
+function _resolveExerciseInFreshPlan20(sel, freshDayExercises) {
+  if (!freshDayExercises || !freshDayExercises.length) return -1;
+  if (sel.prescriptionExerciseId) {
+    for (var i = 0; i < freshDayExercises.length; i++) {
+      if (freshDayExercises[i].prescriptionExerciseId === sel.prescriptionExerciseId) return i;
+    }
+    return -1;
+  }
+  var ei = sel.exerciseIndex;
+  return (ei >= 0 && ei < freshDayExercises.length) ? ei : -1;
+}
+
+// P269 — null lastRec → []
+console.log('\nP269 — null lastRec → retorna []');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Press', sets: [{ load: 60 }] }] }] };
+  var result = _buildRecApplyPreview20(null, 0, plan);
+  assert('P269a', 'null lastRec → []', Array.isArray(result) && result.length === 0);
+  assert('P269b', 'undefined lastRec → []', _buildRecApplyPreview20(undefined, 0, plan).length === 0);
+})();
+
+// P270 — null activePlanCache → []
+console.log('\nP270 — null activePlanCache → retorna []');
+(function(){
+  var lastRec = { recommendations: [{ exerciseName: 'Press', action: 'increase_load', newLoad: 70 }] };
+  assert('P270a', 'null cache → []', _buildRecApplyPreview20(lastRec, 0, null).length === 0);
+  assert('P270b', 'cache sin days → []', _buildRecApplyPreview20(lastRec, 0, {}).length === 0);
+  assert('P270c', 'cache days vacío → []', _buildRecApplyPreview20(lastRec, 0, { days: [] }).length === 0);
+})();
+
+// P271 — ejercicio no encontrado en el plan → []
+console.log('\nP271 — ejercicio rec no está en el día del plan → []');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Sentadilla', sets: [{ load: 100 }] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Press Banca', action: 'increase_load', newLoad: 80, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P271a', 'sin coincidencia → []', result.length === 0);
+})();
+
+// P272 — increase_load coincide → retorna entry correcta
+console.log('\nP272 — increase_load con coincidencia por nombre → entry correcta');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Press Banca', sets: [{ load: 70 }] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Press Banca', action: 'increase_load', newLoad: 72.5, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P272a', 'retorna 1 entry', result.length === 1);
+  assert('P272b', 'exerciseName correcto', result[0].exerciseName === 'Press Banca');
+  assert('P272c', 'exerciseIndex = 0', result[0].exerciseIndex === 0);
+  assert('P272d', 'currentLoad = 70', result[0].currentLoad === 70);
+  assert('P272e', 'recommendedLoad = 72.5', result[0].recommendedLoad === 72.5);
+  assert('P272f', 'action = increase_load', result[0].action === 'increase_load');
+})();
+
+// P273 — reduce_load coincide → action correcta
+console.log('\nP273 — reduce_load con coincidencia → action reduce_load');
+(function(){
+  var plan = { days: [{ dayIndex: 1, exercises: [{ exerciseName: 'Jalón', sets: [{ load: 55 }] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Jalón', action: 'reduce_load', newLoad: 50, newSets: 3, rirTarget: 3 }] };
+  var result = _buildRecApplyPreview20(lastRec, 1, plan);
+  assert('P273a', '1 entry', result.length === 1);
+  assert('P273b', 'action = reduce_load', result[0].action === 'reduce_load');
+  assert('P273c', 'currentLoad = 55', result[0].currentLoad === 55);
+  assert('P273d', 'recommendedLoad = 50', result[0].recommendedLoad === 50);
+})();
+
+// P274 — maintain / add_sets / deload / freeze_load son excluidos
+console.log('\nP274 — acciones no aplicables son filtradas');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'A', sets: [{ load: 60 }] },
+    { exerciseName: 'B', sets: [{ load: 70 }] },
+    { exerciseName: 'C', sets: [{ load: 80 }] },
+    { exerciseName: 'D', sets: [{ load: 90 }] }
+  ]}]};
+  var lastRec = { recommendations: [
+    { exerciseName: 'A', action: 'maintain',     newLoad: 60, newSets: 3, rirTarget: 2 },
+    { exerciseName: 'B', action: 'add_sets',     newLoad: 70, newSets: 4, rirTarget: 2 },
+    { exerciseName: 'C', action: 'deload',       newLoad: 50, newSets: 3, rirTarget: 3 },
+    { exerciseName: 'D', action: 'freeze_load',  newLoad: 90, newSets: 3, rirTarget: 2 }
+  ]};
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P274a', 'ninguna entry (todas excluidas)', result.length === 0);
+})();
+
+// P275 — day match por dayIndex (no posicional)
+console.log('\nP275 — day lookup por dayIndex no posicional');
+(function(){
+  // dayIndex=2 está en posición 0 del array → debe encontrarse igual
+  var plan = { days: [
+    { dayIndex: 2, exercises: [{ exerciseName: 'Remo', sets: [{ load: 65 }] }] },
+    { dayIndex: 3, exercises: [{ exerciseName: 'Curl',  sets: [{ load: 30 }] }] }
+  ]};
+  var lastRec = { recommendations: [{ exerciseName: 'Remo', action: 'increase_load', newLoad: 67.5, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 2, plan);
+  assert('P275a', 'encuentra por dayIndex=2', result.length === 1);
+  assert('P275b', 'ejercicio correcto', result[0].exerciseName === 'Remo');
+  // dayIndex=3 no coincide con la rec → vacío
+  var result2 = _buildRecApplyPreview20(lastRec, 3, plan);
+  assert('P275c', 'day 3 sin match de Remo → []', result2.length === 0);
+})();
+
+// P276 — newLoad = 0 → excluida (recommendedLoad > 0)
+console.log('\nP276 — newLoad = 0 → entrada excluida');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Press', sets: [{ load: 60 }] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Press', action: 'increase_load', newLoad: 0, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P276a', 'newLoad 0 → excluida', result.length === 0);
+})();
+
+// P277 — múltiples recs: una coincide, otra no → solo la que coincide
+console.log('\nP277 — recs mixtas: solo las que coinciden');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Sentadilla', sets: [{ load: 100 }] }] }] };
+  var lastRec = { recommendations: [
+    { exerciseName: 'Sentadilla', action: 'increase_load', newLoad: 102.5, newSets: 4, rirTarget: 1 },
+    { exerciseName: 'Press Inclinado', action: 'reduce_load', newLoad: 55, newSets: 3, rirTarget: 2 }
+  ]};
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P277a', 'solo 1 entry (Sentadilla)', result.length === 1);
+  assert('P277b', 'es Sentadilla', result[0].exerciseName === 'Sentadilla');
+})();
+
+// P278 — currentLoad cuando sets vacío → 0
+console.log('\nP278 — ejercicio sin sets → currentLoad = 0');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Face Pull', sets: [] }] }] };
+  var lastRec = { recommendations: [{ exerciseName: 'Face Pull', action: 'increase_load', newLoad: 20, newSets: 3, rirTarget: 2 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P278a', '1 entry', result.length === 1);
+  assert('P278b', 'currentLoad = 0 cuando no hay sets', result[0].currentLoad === 0);
+  assert('P278c', 'recommendedLoad = 20', result[0].recommendedLoad === 20);
+})();
+
+// ─── FASE 20 HARDENING: identity contract & load semantics ────────────────
+
+// P279 — plan exercise con prescriptionExerciseId → entry lo hereda
+console.log('\nP279 — prescriptionExerciseId del plan se propaga a preview entry');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{
+    exerciseName: 'Press',
+    prescriptionExerciseId: 'pid-abc',
+    sets: [{ load: 80, repsTarget: 8, rirTarget: 2, restSeconds: 120 }]
+  }]}]};
+  var lastRec = { recommendations: [{ exerciseName: 'Press', action: 'increase_load', newLoad: 82.5 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P279a', '1 entry', result.length === 1);
+  assert('P279b', 'prescriptionExerciseId heredado del plan', result[0].prescriptionExerciseId === 'pid-abc');
+  assert('P279c', 'matchConfidence LEGACY', result[0].matchConfidence === 'LEGACY');
+  assert('P279d', 'recommendedLoad correcto', result[0].recommendedLoad === 82.5);
+})();
+
+// P280 — _resolveExerciseInFreshPlan20: prescriptionExerciseId identifica ejercicio correcto con nombre duplicado
+console.log('\nP280 — ID resuelve ejercicio correcto aunque haya nombre duplicado');
+(function(){
+  var freshExercises = [
+    { exerciseName: 'Press', prescriptionExerciseId: 'pid-111', sets: [{ load: 60 }] },
+    { exerciseName: 'Press', prescriptionExerciseId: 'pid-222', sets: [{ load: 80 }] }
+  ];
+  var sel = { exerciseIndex: 0, recommendedLoad: 82.5, prescriptionExerciseId: 'pid-222' };
+  var idx = _resolveExerciseInFreshPlan20(sel, freshExercises);
+  assert('P280a', 'resuelve por ID → índice 1 (no índice 0)', idx === 1);
+  var sel2 = { exerciseIndex: 1, recommendedLoad: 62.5, prescriptionExerciseId: 'pid-111' };
+  var idx2 = _resolveExerciseInFreshPlan20(sel2, freshExercises);
+  assert('P280b', 'resuelve pid-111 → índice 0', idx2 === 0);
+})();
+
+// P281 — dos ejercicios mismo nombre en mismo día → AMBIGUOUS → excluida
+console.log('\nP281 — nombre duplicado en mismo día → AMBIGUOUS → excluida del preview');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'Press', prescriptionExerciseId: 'pid-111', sets: [{ load: 60 }] },
+    { exerciseName: 'Press', prescriptionExerciseId: 'pid-222', sets: [{ load: 80 }] }
+  ]}]};
+  var lastRec = { recommendations: [{ exerciseName: 'Press', action: 'increase_load', newLoad: 82.5 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P281a', 'AMBIGUOUS: dos Press mismo día → [] (0 entries)', result.length === 0);
+})();
+
+// P282 — nombre único en día → LEGACY fallback permitido
+console.log('\nP282 — nombre único → LEGACY fallback incluido');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'Dominadas', sets: [{ load: 0 }] }
+  ]}]};
+  var lastRec = { recommendations: [{ exerciseName: 'Dominadas', action: 'increase_load', newLoad: 5 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P282a', 'LEGACY nombre único → 1 entry', result.length === 1);
+  assert('P282b', 'exerciseName correcto', result[0].exerciseName === 'Dominadas');
+  assert('P282c', 'prescriptionExerciseId null cuando plan no tiene el campo', result[0].prescriptionExerciseId === null);
+  assert('P282d', 'matchConfidence LEGACY', result[0].matchConfidence === 'LEGACY');
+})();
+
+// P283 — rec sin exerciseName o nombre vacío → sin match
+console.log('\nP283 — rec sin nombre → excluida');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'Sentadilla', sets: [{ load: 100 }] }
+  ]}]};
+  var lastRec = { recommendations: [
+    { action: 'increase_load', newLoad: 102.5 },
+    { exerciseName: '', action: 'increase_load', newLoad: 70 }
+  ]};
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P283a', 'recs sin nombre → 0 entries', result.length === 0);
+})();
+
+// P284 — ID estale en fresh plan → _resolveExerciseInFreshPlan20 retorna -1
+console.log('\nP284 — ID estale en plan fresco → -1 (SKIP)');
+(function(){
+  var freshExercises = [
+    { exerciseName: 'Press', prescriptionExerciseId: 'pid-actual', sets: [{ load: 80 }] }
+  ];
+  var sel = { exerciseIndex: 0, recommendedLoad: 82.5, prescriptionExerciseId: 'pid-viejo' };
+  var idx = _resolveExerciseInFreshPlan20(sel, freshExercises);
+  assert('P284a', 'ID estale → -1', idx === -1);
+})();
+
+// P285 — reorden entre preview/write: ID estable encuentra ejercicio en nueva posición
+console.log('\nP285 — reorden de ejercicios: ID encuentra posición correcta');
+(function(){
+  // Preview construida con Press en pos 0, Remo en pos 1
+  // Plan fresco reordenado: Remo en pos 0, Press en pos 1
+  var freshExercises = [
+    { exerciseName: 'Remo',  prescriptionExerciseId: 'pid-remo',  sets: [{ load: 60 }] },
+    { exerciseName: 'Press', prescriptionExerciseId: 'pid-press', sets: [{ load: 80 }] }
+  ];
+  var sel = { exerciseIndex: 0, recommendedLoad: 82.5, prescriptionExerciseId: 'pid-press' };
+  var idx = _resolveExerciseInFreshPlan20(sel, freshExercises);
+  assert('P285a', 'reorden: pid-press → índice 1 (no 0)', idx === 1);
+  var sel2 = { exerciseIndex: 1, recommendedLoad: 62.5, prescriptionExerciseId: 'pid-remo' };
+  var idx2 = _resolveExerciseInFreshPlan20(sel2, freshExercises);
+  assert('P285b', 'reorden: pid-remo → índice 0 (no 1)', idx2 === 0);
+})();
+
+// P286 — sustitución entre preview/write: ID ya no existe → -1
+console.log('\nP286 — sustitución de ejercicio: ID original ausente → -1');
+(function(){
+  var freshExercises = [
+    { exerciseName: 'Press Inclinado', prescriptionExerciseId: 'pid-nuevo', sets: [{ load: 70 }] }
+  ];
+  var sel = { exerciseIndex: 0, recommendedLoad: 82.5, prescriptionExerciseId: 'pid-press-original' };
+  var idx = _resolveExerciseInFreshPlan20(sel, freshExercises);
+  assert('P286a', 'sustitución: ID original ausente → -1', idx === -1);
+})();
+
+// P287 — solo increase_load y reduce_load incluidas; maintain/deload/add_sets/freeze_load excluidas
+console.log('\nP287 — action filter: solo increase_load y reduce_load incluidas');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'A', sets: [{ load: 60 }] },
+    { exerciseName: 'B', sets: [{ load: 70 }] },
+    { exerciseName: 'C', sets: [{ load: 80 }] },
+    { exerciseName: 'D', sets: [{ load: 90 }] },
+    { exerciseName: 'E', sets: [{ load: 50 }] },
+    { exerciseName: 'F', sets: [{ load: 40 }] }
+  ]}]};
+  var lastRec = { recommendations: [
+    { exerciseName: 'A', action: 'increase_load', newLoad: 62.5 },
+    { exerciseName: 'B', action: 'reduce_load',   newLoad: 67.5 },
+    { exerciseName: 'C', action: 'maintain',      newLoad: 80 },
+    { exerciseName: 'D', action: 'deload',         newLoad: 70 },
+    { exerciseName: 'E', action: 'add_sets',       newLoad: 50 },
+    { exerciseName: 'F', action: 'freeze_load',    newLoad: 40 }
+  ]};
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P287a', 'solo 2 entries (increase + reduce)', result.length === 2);
+  assert('P287b', 'entry 0 action increase_load', result[0].action === 'increase_load');
+  assert('P287c', 'entry 1 action reduce_load',   result[1].action === 'reduce_load');
+  assert('P287d', 'maintain excluida', !result.find(function(r){ return r.action === 'maintain'; }));
+  assert('P287e', 'deload excluida',   !result.find(function(r){ return r.action === 'deload'; }));
+})();
+
+// P288 — Object.assign preserva repsTarget/rirTarget/restSeconds/setIndex al actualizar load
+console.log('\nP288 — update de load preserva resto de campos del set');
+(function(){
+  var originalSet = { setIndex: 1, repsTarget: 8, rirTarget: 2, restSeconds: 120, load: 80 };
+  var updatedSet  = Object.assign({}, originalSet, { load: 82.5 });
+  assert('P288a', 'load actualizado a 82.5',        updatedSet.load       === 82.5);
+  assert('P288b', 'repsTarget preservado (8)',       updatedSet.repsTarget === 8);
+  assert('P288c', 'rirTarget preservado (2)',        updatedSet.rirTarget  === 2);
+  assert('P288d', 'restSeconds preservado (120)',    updatedSet.restSeconds === 120);
+  assert('P288e', 'setIndex preservado (1)',         updatedSet.setIndex   === 1);
+  assert('P288f', 'original no mutado (load=80)',    originalSet.load      === 80);
+})();
+
+// P289 — _buildRecApplyPreview20 es función pura: no muta el plan; sin confirmed → 0 cambios
+console.log('\nP289 — preview pura: plan inalterado; sin confirmación → sin mutación');
+(function(){
+  var plan = { days: [{ dayIndex: 0, exercises: [{
+    exerciseName: 'Press',
+    sets: [{ load: 80, repsTarget: 8, rirTarget: 2, restSeconds: 120 }]
+  }]}]};
+  var planSnapshot = JSON.stringify(plan);
+  var lastRec = { recommendations: [{ exerciseName: 'Press', action: 'increase_load', newLoad: 82.5 }] };
+  var result = _buildRecApplyPreview20(lastRec, 0, plan);
+  assert('P289a', 'preview generada (1 entry)',       result.length === 1);
+  assert('P289b', 'plan original no mutado (pureza)', JSON.stringify(plan) === planSnapshot);
+  assert('P289c', 'load original intacto (80)',       plan.days[0].exercises[0].sets[0].load === 80);
+  assert('P289d', 'recommended en preview es 82.5',   result[0].recommendedLoad === 82.5);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
