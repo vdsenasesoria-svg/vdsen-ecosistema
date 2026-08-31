@@ -4103,6 +4103,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       (_exNoteInline
         ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_exNoteInline+'</div>'
         : '')+
+      // FASE 18 — Coach note visible al cliente durante workout (inmutable, solo lectura)
+      _coachNoteHtml(ej.coachNote)+
       (function(){
         if (!_isY3T || !_y3tPhase) return '';
         var pm = Y3T_PHASE_META[_y3tPhase];
@@ -12448,6 +12450,18 @@ function _buildNextExposureHtml(progrec, unit, nombre) {
 function _escHTml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// FASE 18 — helper puro: genera HTML del banner de nota del coach
+// Retorna '' si note es null/undefined/blank; escapa XSS; preserva saltos de línea.
+function _coachNoteHtml(note) {
+  if (!note || !String(note).trim()) return '';
+  var escaped = _escHTml(String(note).trim());
+  return '<div style="margin-top:8px;padding:8px 12px;background:rgba(68,136,204,.07);border-left:3px solid rgba(68,136,204,.45);border-radius:0 8px 8px 0">'+
+    '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:#6699bb;margin-bottom:3px">NOTA DEL COACH</div>'+
+    '<div style="font-size:12px;color:#a8c8ee;line-height:1.55;white-space:pre-line">'+escaped+'</div>'+
+  '</div>';
+}
+window._coachNoteHtml = _coachNoteHtml;
 
 // History modal — last 5 comparable exposures
 function showExHistory(di, ei) {

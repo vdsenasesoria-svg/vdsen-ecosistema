@@ -4653,6 +4653,102 @@ console.log('\nP252 — sort determinista con day heterogéneo');
   assert('P252g', 'semana 3 último', rows5[2].week === 3);
 })();
 
+// ═════════════════════════ FASE 18 — Coach Note Display ═════════════════════════
+
+// Mirror del helper puro (idéntico a producción)
+function _escHTml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function _coachNoteHtml(note) {
+  if (!note || !String(note).trim()) return '';
+  var escaped = _escHTml(String(note).trim());
+  return '<div style="margin-top:8px;padding:8px 12px;background:rgba(68,136,204,.07);border-left:3px solid rgba(68,136,204,.45);border-radius:0 8px 8px 0">'+
+    '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:#6699bb;margin-bottom:3px">NOTA DEL COACH</div>'+
+    '<div style="font-size:12px;color:#a8c8ee;line-height:1.55;white-space:pre-line">'+escaped+'</div>'+
+  '</div>';
+}
+
+// P253 — nota presente → HTML no vacío
+console.log('\nP253 — nota presente → HTML no vacío');
+(function(){
+  var html = _coachNoteHtml('ROM completo, pausa de 2s abajo');
+  assert('P253a', 'devuelve string no vacío', html.length > 0);
+  assert('P253b', 'contiene label NOTA DEL COACH', html.indexOf('NOTA DEL COACH') !== -1);
+  assert('P253c', 'contiene el texto de la nota', html.indexOf('ROM completo') !== -1);
+})();
+
+// P254 — nota vacía o nula → ''
+console.log('\nP254 — nota vacía o nula → cadena vacía');
+(function(){
+  assert('P254a', 'null → ""', _coachNoteHtml(null) === '');
+  assert('P254b', 'undefined → ""', _coachNoteHtml(undefined) === '');
+  assert('P254c', '"" → ""', _coachNoteHtml('') === '');
+  assert('P254d', '"   " (solo espacios) → ""', _coachNoteHtml('   ') === '');
+})();
+
+// P255 — XSS: contenido escapado correctamente
+console.log('\nP255 — XSS: contenido escapado');
+(function(){
+  var html = _coachNoteHtml('<script>alert(1)</script>');
+  assert('P255a', '<script> no aparece sin escapar', html.indexOf('<script>') === -1);
+  assert('P255b', 'aparece como &lt;script&gt;', html.indexOf('&lt;script&gt;') !== -1);
+  var html2 = _coachNoteHtml('a & b');
+  assert('P255c', '& escapado a &amp;', html2.indexOf('&amp;') !== -1);
+  var html3 = _coachNoteHtml('"cita"');
+  assert('P255d', 'comillas escapadas a &quot;', html3.indexOf('&quot;') !== -1);
+})();
+
+// P256 — saltos de línea preservados (white-space:pre-line)
+console.log('\nP256 — saltos de línea preservados via white-space:pre-line');
+(function(){
+  var html = _coachNoteHtml('Línea 1\nLínea 2');
+  assert('P256a', 'contiene white-space:pre-line', html.indexOf('white-space:pre-line') !== -1);
+  assert('P256b', 'contiene el texto con salto', html.indexOf('Línea 1\nLínea 2') !== -1);
+})();
+
+// P257 — nota larga no se trunca
+console.log('\nP257 — nota larga no se trunca');
+(function(){
+  var longNote = 'A'.repeat(500);
+  var html = _coachNoteHtml(longNote);
+  assert('P257a', 'nota larga devuelve HTML no vacío', html.length > 500);
+  assert('P257b', 'todo el contenido presente', html.indexOf(longNote) !== -1);
+})();
+
+// P258 — espacios extremos se recortan
+console.log('\nP258 — trim aplicado a nota');
+(function(){
+  var html = _coachNoteHtml('  Foco en excéntrico  ');
+  assert('P258a', 'texto sin espacios extremos', html.indexOf('Foco en excéntrico') !== -1);
+  assert('P258b', 'devuelve HTML (nota no vacía después de trim)', html.length > 0);
+})();
+
+// P259 — coachNote fluye del plan al objeto ejercicio (integración de datos)
+console.log('\nP259 — coachNote en ejercicio del plan');
+(function(){
+  // Simula la normalización que hace loadPlan en vdsen-cliente.html (líneas 1429, 1439)
+  var planEx = { exerciseName: 'Press Banca', coachNote: 'Pausa 1s en el pecho', sets: [{ repsTarget: 8, rirTarget: 2 }] };
+  var normalized = {
+    nombre: planEx.exerciseName || planEx.nombre || 'Ejercicio',
+    exerciseName: planEx.exerciseName || planEx.nombre || 'Ejercicio',
+    coachNote: planEx.coachNote || '',
+    nota: planEx.coachNote || ''
+  };
+  assert('P259a', 'coachNote conservado en normalización', normalized.coachNote === 'Pausa 1s en el pecho');
+  assert('P259b', 'nota alias igual que coachNote', normalized.nota === normalized.coachNote);
+  var html = _coachNoteHtml(normalized.coachNote);
+  assert('P259c', 'HTML generado desde nota normalizada', html.indexOf('Pausa 1s en el pecho') !== -1);
+})();
+
+// P260 — sin coachNote en plan → sin banner
+console.log('\nP260 — sin coachNote en plan → sin banner');
+(function(){
+  var planEx = { exerciseName: 'Curl Bíceps', sets: [{ repsTarget: 10, rirTarget: 1 }] };
+  var normalized = { coachNote: planEx.coachNote || '' };
+  assert('P260a', 'coachNote vacío cuando plan no lo tiene', normalized.coachNote === '');
+  assert('P260b', '_coachNoteHtml devuelve "" cuando coachNote está vacío', _coachNoteHtml(normalized.coachNote) === '');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
