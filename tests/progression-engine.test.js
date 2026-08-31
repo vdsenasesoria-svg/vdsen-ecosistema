@@ -3879,6 +3879,161 @@ console.log('\nP215 — _coachBuildBitacora exercises sorted by exIndex');
   assert('P215d', 'exIndex 2 last (carga 40)', exs[2].exIndex === 2 && exs[2].sets[0].carga === '40');
 })();
 
+// ═══════════ FASE 15 — Navegación semanal (P216-P225) ═══════════
+
+// Mirror de helpers de FASE 15 (idénticos a producción en vdsen-coach.html)
+function _coachClampSelectedWeek(selected, currentWeek, totalWeeks) {
+  if (selected == null || isNaN(selected)) return currentWeek;
+  var w = parseInt(selected, 10);
+  if (w < 1) return 1;
+  if (w > totalWeeks) return totalWeeks;
+  return w;
+}
+
+function _coachCalcWeightTrendUpTo(entries, max, upToWeek) {
+  max = max || 3;
+  if (!entries || typeof entries !== 'object') return { status: 'NO_DATA', rate: null };
+  var checkins = [];
+  Object.keys(entries).forEach(function(k) {
+    var m = k.match(/^ci_sem_(\d+)$/);
+    if (!m) return;
+    var w = parseInt(m[1], 10);
+    if (upToWeek != null && w > upToWeek) return;
+    var ci = entries[k];
+    if (!ci || typeof ci !== 'object') return;
+    checkins.push({ week: w, data: ci });
+  });
+  checkins.sort(function(a, b) { return b.week - a.week; });
+  checkins = checkins.slice(0, max);
+  var points = [];
+  checkins.forEach(function(ci) {
+    var peso = parseFloat(ci.data && ci.data.peso);
+    if (!isNaN(peso) && peso > 0) points.push({ week: ci.week, peso: peso });
+  });
+  if (points.length < 2) return { status: 'NO_DATA', rate: null };
+  points.sort(function(a, b) { return a.week - b.week; });
+  var first = points[0], last = points[points.length - 1];
+  var weekDiff = last.week - first.week;
+  if (weekDiff === 0) return { status: 'NO_DATA', rate: null };
+  var rate = (last.peso - first.peso) / weekDiff;
+  return {
+    status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+    rate: +rate.toFixed(2)
+  };
+}
+
+function _coachWeekStatus(selectedWeek, actualWeek) {
+  if (selectedWeek < actualWeek) return 'HISTÓRICA';
+  if (selectedWeek > actualWeek) return 'FUTURA';
+  return 'ACTUAL';
+}
+
+// P216 — _coachClampSelectedWeek: basic clamping
+console.log('\nP216 — _coachClampSelectedWeek: basic clamping');
+(function(){
+  assert('P216a', 'clamp: within range returns as-is', _coachClampSelectedWeek(3, 5, 6) === 3);
+  assert('P216b', 'clamp: null returns currentWeek', _coachClampSelectedWeek(null, 4, 6) === 4);
+  assert('P216c', 'clamp: below 1 returns 1', _coachClampSelectedWeek(0, 3, 6) === 1);
+  assert('P216d', 'clamp: above totalWeeks returns totalWeeks', _coachClampSelectedWeek(9, 5, 6) === 6);
+  assert('P216e', 'clamp: NaN returns currentWeek', _coachClampSelectedWeek(NaN, 2, 6) === 2);
+})();
+
+// P217 — _coachWeekStatus: returns correct status
+console.log('\nP217 — _coachWeekStatus: ACTUAL/HISTÓRICA/FUTURA');
+(function(){
+  assert('P217a', 'equal → ACTUAL', _coachWeekStatus(3, 3) === 'ACTUAL');
+  assert('P217b', 'selected < actual → HISTÓRICA', _coachWeekStatus(2, 4) === 'HISTÓRICA');
+  assert('P217c', 'selected > actual → FUTURA', _coachWeekStatus(5, 3) === 'FUTURA');
+  assert('P217d', 'week 1 actual 1 → ACTUAL', _coachWeekStatus(1, 1) === 'ACTUAL');
+})();
+
+// P218 — _coachCalcWeightTrendUpTo: excludes check-ins after upToWeek
+console.log('\nP218 — _coachCalcWeightTrendUpTo: respects upToWeek cutoff');
+(function(){
+  var entries = {
+    'ci_sem_1': { peso: '80' },
+    'ci_sem_2': { peso: '81' },
+    'ci_sem_3': { peso: '90' } // future — should be excluded when upToWeek=2
+  };
+  var t = _coachCalcWeightTrendUpTo(entries, 3, 2);
+  assert('P218a', 'rate = +1.0/week (weeks 1→2)', t.rate === 1.0);
+  assert('P218b', 'status SUBIENDO', t.status === 'SUBIENDO');
+  // week 3 included makes rate = (90-80)/2 = 5.0 — different result proves cutoff works
+  var tFull = _coachCalcWeightTrendUpTo(entries, 3, 3);
+  assert('P218c', 'upToWeek=3 gives different rate', tFull.rate !== t.rate);
+})();
+
+// P219 — _coachCalcWeightTrendUpTo: no check-ins → NO_DATA
+console.log('\nP219 — _coachCalcWeightTrendUpTo: NO_DATA on empty');
+(function(){
+  assert('P219a', 'empty entries → NO_DATA', _coachCalcWeightTrendUpTo({}, 3, 5).status === 'NO_DATA');
+  assert('P219b', 'single checkin → NO_DATA', _coachCalcWeightTrendUpTo({'ci_sem_1':{ peso:'80' }}, 3, 5).status === 'NO_DATA');
+  assert('P219c', 'null entries → NO_DATA', _coachCalcWeightTrendUpTo(null, 3, 5).status === 'NO_DATA');
+})();
+
+// P220 — _coachCalcWeightTrendUpTo: BAJANDO
+console.log('\nP220 — _coachCalcWeightTrendUpTo: BAJANDO threshold');
+(function(){
+  var entries = { 'ci_sem_1': { peso: '85' }, 'ci_sem_2': { peso: '84' } };
+  var t = _coachCalcWeightTrendUpTo(entries, 3, 2);
+  assert('P220a', 'rate = -1.0 → BAJANDO', t.status === 'BAJANDO');
+  assert('P220b', 'rate value -1.0', t.rate === -1.0);
+})();
+
+// P221 — _coachCalcWeightTrendUpTo: ESTABLE boundary
+console.log('\nP221 — _coachCalcWeightTrendUpTo: ESTABLE at ±0.5 boundary');
+(function(){
+  var e1 = { 'ci_sem_1': { peso: '80' }, 'ci_sem_2': { peso: '80.5' } }; // +0.5 → ESTABLE
+  var t1 = _coachCalcWeightTrendUpTo(e1, 3, 2);
+  assert('P221a', '+0.5 is ESTABLE (not SUBIENDO)', t1.status === 'ESTABLE');
+  var e2 = { 'ci_sem_1': { peso: '80' }, 'ci_sem_2': { peso: '79.5' } }; // -0.5 → ESTABLE
+  var t2 = _coachCalcWeightTrendUpTo(e2, 3, 2);
+  assert('P221b', '-0.5 is ESTABLE (not BAJANDO)', t2.status === 'ESTABLE');
+})();
+
+// P222 — _coachCalcWeightTrendUpTo: upToWeek=0 → NO_DATA (no valid entries)
+console.log('\nP222 — _coachCalcWeightTrendUpTo: upToWeek=0 excludes all');
+(function(){
+  var entries = { 'ci_sem_1': { peso: '80' }, 'ci_sem_2': { peso: '82' } };
+  var t = _coachCalcWeightTrendUpTo(entries, 3, 0);
+  assert('P222a', 'upToWeek=0 → NO_DATA', t.status === 'NO_DATA');
+})();
+
+// P223 — _coachClampSelectedWeek: exact boundary values
+console.log('\nP223 — _coachClampSelectedWeek: exact boundary values');
+(function(){
+  assert('P223a', 'selected=1, totalWeeks=6 → 1', _coachClampSelectedWeek(1, 3, 6) === 1);
+  assert('P223b', 'selected=6, totalWeeks=6 → 6', _coachClampSelectedWeek(6, 3, 6) === 6);
+  assert('P223c', 'selected=7, totalWeeks=6 → 6 (clamped to max)', _coachClampSelectedWeek(7, 3, 6) === 6);
+  assert('P223d', 'negative → 1', _coachClampSelectedWeek(-3, 2, 6) === 1);
+})();
+
+// P224 — _coachWeekStatus: edge cases
+console.log('\nP224 — _coachWeekStatus: edge cases');
+(function(){
+  assert('P224a', 'week=1, actual=1 → ACTUAL', _coachWeekStatus(1, 1) === 'ACTUAL');
+  assert('P224b', 'week=6, actual=6 → ACTUAL', _coachWeekStatus(6, 6) === 'ACTUAL');
+  assert('P224c', 'week=1, actual=6 → HISTÓRICA', _coachWeekStatus(1, 6) === 'HISTÓRICA');
+  assert('P224d', 'week=6, actual=1 → FUTURA', _coachWeekStatus(6, 1) === 'FUTURA');
+})();
+
+// P225 — parity: _coachCalcWeightTrendUpTo without cutoff matches _coachCalcWeightTrend
+console.log('\nP225 — _coachCalcWeightTrendUpTo parity with _coachCalcWeightTrend');
+(function(){
+  var entries = {
+    'ci_sem_1': { peso: '78' },
+    'ci_sem_2': { peso: '79' },
+    'ci_sem_3': { peso: '80' }
+  };
+  var tUpTo = _coachCalcWeightTrendUpTo(entries, 3, 99); // no cutoff (upToWeek=99)
+  var tOrig = _coachCalcWeightTrend(entries, 3);
+  assert('P225a', 'same status (no cutoff)', tUpTo.status === tOrig.status);
+  assert('P225b', 'same rate (no cutoff)', tUpTo.rate === tOrig.rate);
+  // With cutoff: upToWeek=2 excludes week 3 → different result
+  var tCut = _coachCalcWeightTrendUpTo(entries, 3, 2);
+  assert('P225c', 'cutoff at week 2: SUBIENDO (+1.0)', tCut.status === 'SUBIENDO' && tCut.rate === 1.0);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

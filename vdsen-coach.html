@@ -2648,6 +2648,53 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     };
   }
   
+  // FASE 15 — Helpers de navegación semanal (0 Firestore reads)
+  function _coachClampSelectedWeek(selected, currentWeek, totalWeeks) {
+    if (selected == null || isNaN(selected)) return currentWeek;
+    var w = parseInt(selected, 10);
+    if (w < 1) return 1;
+    if (w > totalWeeks) return totalWeeks;
+    return w;
+  }
+
+  function _coachCalcWeightTrendUpTo(entries, max, upToWeek) {
+    max = max || 3;
+    if (!entries || typeof entries !== 'object') return { status: 'NO_DATA', rate: null };
+    var checkins = [];
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^ci_sem_(\d+)$/);
+      if (!m) return;
+      var w = parseInt(m[1], 10);
+      if (upToWeek != null && w > upToWeek) return;
+      var ci = entries[k];
+      if (!ci || typeof ci !== 'object') return;
+      checkins.push({ week: w, data: ci });
+    });
+    checkins.sort(function(a, b) { return b.week - a.week; });
+    checkins = checkins.slice(0, max);
+    var points = [];
+    checkins.forEach(function(ci) {
+      var peso = parseFloat(ci.data && ci.data.peso);
+      if (!isNaN(peso) && peso > 0) points.push({ week: ci.week, peso: peso });
+    });
+    if (points.length < 2) return { status: 'NO_DATA', rate: null };
+    points.sort(function(a, b) { return a.week - b.week; });
+    var first = points[0], last = points[points.length - 1];
+    var weekDiff = last.week - first.week;
+    if (weekDiff === 0) return { status: 'NO_DATA', rate: null };
+    var rate = (last.peso - first.peso) / weekDiff;
+    return {
+      status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
+      rate: +rate.toFixed(2)
+    };
+  }
+
+  function _coachWeekStatus(selectedWeek, actualWeek) {
+    if (selectedWeek < actualWeek) return 'HISTÓRICA';
+    if (selectedWeek > actualWeek) return 'FUTURA';
+    return 'ACTUAL';
+  }
+
   // FASE 14 — Bitácora completa: organiza logs de una semana por día→ejercicio→set (0 Firestore reads)
   function _coachBuildBitacora(logs, week, planData) {
     var dayMap = {};
@@ -2818,34 +2865,50 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         } catch(e) {}
       }
 
-      // Escuchar logs del cliente en TIEMPO REAL
-      window._monitorUnsub = onSnapshot(doc(db, 'logs', select.value), (logsSnap) => {
-      if (!logsSnap.exists()) {
-        container.innerHTML = `<p class="text-[#888] text-sm">Sin datos de entrenamiento registrados aún.</p>`;
-        return;
-      }
-      const logs = logsSnap.data().entries || {};
-      const currentWeek = logsSnap.data().currentWeek || 1;
-      const updatedAt = logsSnap.data().updatedAt;
-      const lastUpdate = updatedAt ? new Date(updatedAt).toLocaleString('es-MX') : '—';
+      // Estado de navegación semanal — reset al cambiar de cliente
+      let _monitorSelectedWeek = null;
+      let _monitorLastLogs = {};
+      let _monitorActualWeek = 1;
+      let _monitorLastUpdate = '—';
+
+      function _renderMonitorForWeek() {
+      const logs = _monitorLastLogs;
+      const actualWeek = _monitorActualWeek;
+      const lastUpdate = _monitorLastUpdate;
       const totalWeeks = (_activePlanCache && _activePlanCache.weeks) ? _activePlanCache.weeks : 6;
-      const _trendResult = _coachCalcWeightTrend(logs);
-      const _pendingCheckin = _coachHasPendingCheckin(logs, currentWeek);
+      if (_monitorSelectedWeek === null) _monitorSelectedWeek = actualWeek;
+      _monitorSelectedWeek = _coachClampSelectedWeek(_monitorSelectedWeek, actualWeek, totalWeeks);
+      const selectedMonitorWeek = _monitorSelectedWeek;
+      const currentWeek = selectedMonitorWeek;
+      const weekStatus = _coachWeekStatus(selectedMonitorWeek, actualWeek);
+      const _trendResult = _coachCalcWeightTrendUpTo(logs, 3, selectedMonitorWeek);
+      // Check-in chip adaptado por estado de semana
+      const _hasCheckinForWeek = !!(logs['ci_sem_'+selectedMonitorWeek]);
+      const _pendingChip = weekStatus === 'ACTUAL'
+        ? (_coachHasPendingCheckin(logs, selectedMonitorWeek)
+            ? `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,165,0,.08);border:1px solid rgba(255,165,0,.5);color:#FFA500">⚠ Check-in sem ${selectedMonitorWeek} pendiente</div>`
+            : '')
+        : weekStatus === 'HISTÓRICA'
+          ? (_hasCheckinForWeek
+              ? `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);color:#44BB88">✓ Check-in sem ${selectedMonitorWeek}</div>`
+              : `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:#666">SIN check-in sem ${selectedMonitorWeek}</div>`)
+          : '';
 
       // Semana del mesociclo y RIR objetivo (usa esquema dinámico del plan)
       const weekRirObj = rirSchemeForWeeks(totalWeeks);
       const rirObj = weekRirObj[currentWeek] ?? 2;
       const isDeload = currentWeek === totalWeeks;
 
-      // Buscar la recomendación de progresión más reciente
+      // Buscar la recomendación de progresión de la semana seleccionada
       let lastRec = null;
-      let lastRecWeek = 0, lastRecDay = 0;
+      let lastRecWeek = selectedMonitorWeek, lastRecDay = 0;
+      let _hasRec = false;
       Object.keys(logs).forEach(k => {
         const m = k.match(/^progrec_(\d+)_(\d+)$/);
         if (m) {
           const w = parseInt(m[1]), d = parseInt(m[2]);
-          if (w > lastRecWeek || (w === lastRecWeek && d > lastRecDay)) {
-            lastRecWeek = w; lastRecDay = d; lastRec = logs[k];
+          if (w === selectedMonitorWeek && (!_hasRec || d > lastRecDay)) {
+            lastRecDay = d; lastRec = logs[k]; _hasRec = true;
           }
         }
       });
@@ -2867,9 +2930,16 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       let html = `
         <div class="card p-4 mb-3">
           <div class="flex items-center gap-3 flex-wrap">
-            <div class="text-center px-4 py-2 rounded-lg" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.3)">
-              <div class="text-2xl font-bold text-[#F4F4F0]">SEM ${currentWeek}</div>
-              <div class="text-xs text-[#888] mt-1">/ ${totalWeeks} SEM</div>
+            <div class="text-center px-3 py-2 rounded-lg" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.3)">
+              <div style="display:flex;align-items:center;gap:4px">
+                <button id="monWeekPrev" aria-label="Semana anterior" style="width:22px;height:22px;border-radius:4px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;${selectedMonitorWeek<=1?'opacity:.3;pointer-events:none':''}">‹</button>
+                <div>
+                  <div class="text-2xl font-bold text-[#F4F4F0]">SEM ${selectedMonitorWeek}</div>
+                  <div class="text-xs text-[#888] mt-1">/ ${totalWeeks} SEM</div>
+                </div>
+                <button id="monWeekNext" aria-label="Semana siguiente" style="width:22px;height:22px;border-radius:4px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;${selectedMonitorWeek>=totalWeeks?'opacity:.3;pointer-events:none':''}">›</button>
+              </div>
+              <div class="px-2 py-0.5 rounded text-xs font-bold mt-1" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:${weekStatus==='ACTUAL'?'#44BB88':weekStatus==='HISTÓRICA'?'#888':'#4488cc'}">${weekStatus}</div>
             </div>
             <div class="text-center px-4 py-2 rounded-lg" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.3)">
               <div class="text-2xl font-bold text-[#F4F4F0]">RIR ${rirObj}</div>
@@ -2879,16 +2949,21 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             ${triggers.map(t => `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,68,68,.1);border:1px solid #FF4444;color:#FF4444">⚠️ ${t}</div>`).join('')}
             <div class="px-3 py-2 rounded-lg text-xs" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);color:#888">🔄 ${lastUpdate}</div>
             ${_trendResult.status !== 'NO_DATA' ? `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,255,255,.04);border:1px solid ${_trendResult.status==='SUBIENDO'?'rgba(244,164,0,.6)':_trendResult.status==='BAJANDO'?'rgba(68,187,136,.6)':'rgba(244,244,240,.2)'};color:${_trendResult.status==='SUBIENDO'?'#F4A400':_trendResult.status==='BAJANDO'?'#44BB88':'#F4F4F0'}">⚖ ${_trendResult.status} ${_trendResult.rate >= 0 ? '+' : ''}${_trendResult.rate} kg/sem</div>` : ''}
-            ${_pendingCheckin ? `<div class="px-3 py-2 rounded-lg text-xs font-bold" style="background:rgba(255,165,0,.08);border:1px solid rgba(255,165,0,.5);color:#FFA500">⚠ Check-in sem ${currentWeek} pendiente</div>` : ''}
+            ${_pendingChip}
           </div>
           ${(function() {
-            // Session + set adherence for current week (SET_ADHERENCE_APPROXIMATE)
+            // Session + set adherence for selected week (SET_ADHERENCE_APPROXIMATE)
             const planDays = (_activePlanCache && _activePlanCache.days) ? _activePlanCache.days.length : 0;
-            const adherence = _coachCalcAdherence(logs, currentWeek, planDays, _activePlanCache);
-            const adherBadge = adherence ? `<div class="flex flex-col px-3 py-1.5 rounded-lg text-xs" style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3)"><span style="color:#888;font-size:9px;font-weight:700;letter-spacing:.5px">ADHERENCIA SEM ${currentWeek}</span><span style="color:#44BB88;font-weight:700;margin-top:1px">Sesiones ${adherence.sessionsCompleted}/${adherence.sessionsTotal} · ${adherence.sessionPct}%</span>${adherence.setPct !== null ? `<span style="color:#88ccaa;font-size:10px">Series ${adherence.setsCompleted}/${adherence.setsTotal} · ${adherence.setPct}%</span>` : ''}</div>` : '';
-            // Latest weekly check-in
-            const ci = logs['ci_sem_'+currentWeek] || {};
-            const ciPrev = logs['ci_sem_'+(currentWeek-1)] || {};
+            let adherBadge = '';
+            if (weekStatus === 'FUTURA') {
+              adherBadge = planDays > 0 ? `<div class="flex flex-col px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888;font-size:9px;font-weight:700;letter-spacing:.5px">ADHERENCIA SEM ${selectedMonitorWeek}</span><span style="color:#666;font-weight:600;margin-top:1px">Sin ejecutar</span></div>` : '';
+            } else {
+              const adherence = _coachCalcAdherence(logs, selectedMonitorWeek, planDays, _activePlanCache);
+              adherBadge = adherence ? `<div class="flex flex-col px-3 py-1.5 rounded-lg text-xs" style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3)"><span style="color:#888;font-size:9px;font-weight:700;letter-spacing:.5px">ADHERENCIA SEM ${selectedMonitorWeek}</span><span style="color:#44BB88;font-weight:700;margin-top:1px">Sesiones ${adherence.sessionsCompleted}/${adherence.sessionsTotal} · ${adherence.sessionPct}%</span>${adherence.setPct !== null ? `<span style="color:#88ccaa;font-size:10px">Series ${adherence.setsCompleted}/${adherence.setsTotal} · ${adherence.setPct}%</span>` : ''}</div>` : '';
+            }
+            // Latest weekly check-in for selected week
+            const ci = logs['ci_sem_'+selectedMonitorWeek] || {};
+            const ciPrev = logs['ci_sem_'+(selectedMonitorWeek-1)] || {};
             const who5 = ci.who5 != null ? parseInt(ci.who5) : null;
             const who5Color = who5 == null ? '#888' : (who5 >= 68 ? '#44BB88' : who5 >= 52 ? '#C4FF00' : '#FF4444');
             const pesoBadge = ci.peso ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">Peso:</span> <span style="color:#F4F4F0;font-weight:700">${ci.peso} kg</span>${ciPrev.peso?`<span style="color:#555"> (prev:${ciPrev.peso})</span>`:''}</div>` : '';
@@ -3176,10 +3251,16 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
       container.innerHTML = html;
 
+      // Navegación semanal (FASE 15)
+      const _prevBtn = document.getElementById('monWeekPrev');
+      const _nextBtn = document.getElementById('monWeekNext');
+      if (_prevBtn) _prevBtn.onclick = () => { if (_monitorSelectedWeek > 1) { _monitorSelectedWeek--; _renderMonitorForWeek(); } };
+      if (_nextBtn) _nextBtn.onclick = () => { if (_monitorSelectedWeek < totalWeeks) { _monitorSelectedWeek++; _renderMonitorForWeek(); } };
+
       // Botón PDF (resumen breve)
       const pdfBtn = document.getElementById("pdfReportBtn");
       pdfBtn.style.display = "inline-flex";
-      pdfBtn.onclick = () => generateMesocyclePDF(clientData, logs, currentWeek, lastRec);
+      pdfBtn.onclick = () => generateMesocyclePDF(clientData, logs, selectedMonitorWeek, lastRec);
 
       // Botón Reporte Completo (cargas, intensidades, MEV/MRV, recomendaciones)
       let fullBtn = document.getElementById("fullReportBtn");
@@ -3230,7 +3311,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         closeMesoBtn.textContent = "🔄 Cerrar Mesociclo";
         pdfBtn.parentNode.insertBefore(closeMesoBtn, pdfBtn.nextSibling);
       }
-      closeMesoBtn.style.display = currentWeek >= 5 ? "inline-flex" : "none";
+      closeMesoBtn.style.display = actualWeek >= 5 ? "inline-flex" : "none";
 
       // Control manual de semana + extensión de duración del plan
       const planTotalWeeks = _activePlanCache?.weeks || 6;
@@ -3257,12 +3338,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         if (lbl) lbl.textContent = `${planTotalWeeks} sem`;
       }
       const weekInput = weekCtrl.querySelector('#weekInput');
-      weekInput.value = currentWeek;
+      weekInput.value = actualWeek;
       weekCtrl.querySelector('#weekDec').onclick = () => { weekInput.value = Math.max(1, (parseInt(weekInput.value)||1) - 1); };
       weekCtrl.querySelector('#weekInc').onclick = () => { weekInput.value = Math.min(16, (parseInt(weekInput.value)||1) + 1); };
       weekCtrl.querySelector('#weekApply').onclick = async () => {
         const nw = Math.max(1, Math.min(16, parseInt(weekInput.value) || 1));
-        if (nw === currentWeek) { showToast("La semana ya está en " + nw); return; }
+        if (nw === actualWeek) { showToast("La semana ya está en " + nw); return; }
         const planW = _activePlanCache?.weeks || planTotalWeeks;
         if (nw > planW) {
           if (!await _askConfirm(`La semana ${nw} está más allá de la duración actual del plan (${planW} sem).<br><span style="color:#888;font-size:12px">¿Extender el plan a ${nw} semanas automáticamente y mover el puntero?</span>`)) return;
@@ -3276,7 +3357,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             } catch(e) { showToast('No se pudo extender el plan: ' + e.message, true); return; }
           }
         }
-        const goBack = nw < currentWeek;
+        const goBack = nw < actualWeek;
         const dynRir = rirSchemeForWeeks(_activePlanCache?.weeks || 6)[nw] ?? 2;
         const msg = goBack
           ? `¿Retroceder a la semana ${nw}?<br><span style="color:#888;font-size:12px">Los registros de semanas superiores quedan intactos.</span>`
@@ -3320,7 +3401,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         const planW = _activePlanCache?.weeks || planTotalWeeks;
         if (planW <= 1) { showToast('Mínimo 1 semana', true); return; }
         const newW = planW - 1;
-        if (currentWeek > newW) { showToast(`No se puede reducir: semana activa (${currentWeek}) > nueva duración (${newW})`, true); return; }
+        if (actualWeek > newW) { showToast(`No se puede reducir: semana activa (${actualWeek}) > nueva duración (${newW})`, true); return; }
         if (!await _askConfirm(`¿Reducir el plan a <strong>${newW} semanas</strong>?<br><span style="color:#888;font-size:12px">Solo afecta la duración del mesociclo; los registros existentes no se borran.</span>`)) return;
         const btn = weekCtrl.querySelector('#planWeekDel');
         btn.disabled = true; btn.textContent = '…';
@@ -3336,7 +3417,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       };
 
       closeMesoBtn.onclick = async () => {
-        if (!await _askConfirm(`¿Cerrar mesociclo semana ${currentWeek} de ${clientData.displayName}?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
+        if (!await _askConfirm(`¿Cerrar mesociclo semana ${actualWeek} de ${clientData.displayName}?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
         closeMesoBtn.disabled = true; closeMesoBtn.textContent = "Archivando...";
         try {
           const logsRef = doc(db, 'logs', select.value);
@@ -3360,6 +3441,19 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         } catch(e) { showToast("Error: " + e.message, true); }
         finally { closeMesoBtn.disabled = false; closeMesoBtn.textContent = "🔄 Cerrar Mesociclo"; }
       };
+      } // fin _renderMonitorForWeek
+
+      // Escuchar logs del cliente en TIEMPO REAL
+      window._monitorUnsub = onSnapshot(doc(db, 'logs', select.value), (logsSnap) => {
+        if (!logsSnap.exists()) {
+          container.innerHTML = `<p class="text-[#888] text-sm">Sin datos de entrenamiento registrados aún.</p>`;
+          return;
+        }
+        _monitorLastLogs = logsSnap.data().entries || {};
+        _monitorActualWeek = logsSnap.data().currentWeek || 1;
+        const updatedAt = logsSnap.data().updatedAt;
+        _monitorLastUpdate = updatedAt ? new Date(updatedAt).toLocaleString('es-MX') : '—';
+        _renderMonitorForWeek();
       }, (err) => {
         console.warn('[Monitor] logs onSnapshot error:', err && err.message);
         container.innerHTML = '<p class="text-red-400 text-sm">Error al cargar datos en tiempo real: ' + _escH(err && err.message || 'sin detalles') + '</p>';
