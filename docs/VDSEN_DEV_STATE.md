@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `e8c91c2` · FASEs 12–18 mergeadas · siguiente = FASE 19
+> Actualizado: 2026-08-31 · main HEAD: `d1c1e39` · FASEs 12–18 mergeadas · FASE 19 en rama · siguiente = FASE 20
 
 ---
 
@@ -18,19 +18,59 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `e8c91c2` — merge FASE 18 |
-| Rama activa | — |
+| main HEAD | `d1c1e39` — docs post-merge FASE 18 |
+| Rama activa | `claude/fase-19-progrec-postsession` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
 | FASE 17 | MERGED — commit `604894c` |
 | FASE 18 | MERGED — commit `e8c91c2` |
-| Suite tests | **715/715 PASS** (P01–P260) |
-| Vercel | auto-deploy en curso (`e8c91c2`) |
-| Siguiente fase | **FASE 19** — ver backlog |
+| FASE 19 | EN RAMA — `claude/fase-19-progrec-postsession` · pendiente merge |
+| Suite tests | **743/743 PASS** (P01–P268) |
+| Vercel | producción en `d1c1e39` (FASE 19 no en prod) |
+| Siguiente fase | **FASE 20** — ver backlog |
 
 ---
 
 ## FASES completadas
+
+### FASE 19 (rama `claude/fase-19-progrec-postsession` — pendiente merge)
+**Client Post-Session: Resumen de recomendaciones de progresión en el overlay de sesión completa**
+
+Archivos modificados:
+- `vdsen-cliente.html` — 2 parches quirúrgicos
+- `tests/progression-engine.test.js` — P261-P268 (28 assertions nuevas)
+
+Helper puro añadido (exportado como `window._buildProgreSummaryHtml`):
+- `_buildProgreSummaryHtml(progrec)` — genera HTML del resumen de recomendaciones post-sesión. Retorna `''` si progrec es null/undefined o si no tiene recommendations ni deloadTriggers. XSS-safe via `_escHTml`. Formatea newLoad: entero sin decimales, decimal con 1 decimal. Muestra deloadTriggers si presentes. No muta el input.
+
+Punto de inserción en `vdsen-cliente.html`:
+- `_buildProgreSummaryHtml` insertado después de `_coachNoteHtml` (línea ~12464)
+- En `showSessionSummary(di)`: lee `LOGS['progrec_'+CURRENT_WEEK+'_'+di]` (ya calculado por `submitPostSession` antes de llamar a esta función), genera HTML de recomendaciones, lo añade al overlay. Si hay recomendaciones: elimina el auto-dismiss de 8s (el cliente puede leerlas sin presión de tiempo; cierra con ×).
+
+Flujo de datos (ya existía — solo faltaba el display post-sesión):
+```
+submitPostSession()
+  → calculateProgression(di, postData) → LOGS['progrec_W_D']
+  → _confirmSessionDone(di)
+  → showSessionSummary(di) → _buildProgreSummaryHtml(LOGS['progrec_W_D']) → overlay
+```
+
+Invariantes preservados:
+- 0 nuevas lecturas Firestore
+- `_buildProgreSummaryHtml` pura (determinista, sin side effects)
+- XSS: usa `_escHTml`
+- No modifica el progrec existente ni el schema
+- No duplica la lógica del "block HOY" (`_buildSessionTargetBanner`) — esa muestra el objetivo por ejercicio ANTES de la sesión; esta muestra el resumen de acciones DESPUÉS de completarla
+- Schema vdsen-plan-v2 sin cambios
+- Colecciones Firestore sin cambios
+- Progression Engine sin cambios
+- Auth sin cambios
+
+Limitaciones:
+- Auto-dismiss eliminado solo cuando hay recomendaciones; si no hay progrec (primera sesión sin historial previo) el overlay mantiene el dismiss de 8s
+- Nombre del ejercicio puede truncarse con text-overflow en nombres muy largos (legibilidad en móvil)
+
+---
 
 ### FASE 18 (merge commit `e8c91c2` — MERGED a main)
 **Client Workout: Notas del coach visibles durante el entrenamiento**
