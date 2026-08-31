@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `604894c` · FASEs 12–17 mergeadas · siguiente = FASE 18
+> Actualizado: 2026-08-31 · main HEAD: `604894c` · FASEs 12–17 mergeadas · FASE 18 en rama · siguiente = FASE 19
 
 ---
 
@@ -19,17 +19,55 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | Item | Valor |
 |------|-------|
 | main HEAD | `604894c` — merge FASE 17 |
-| Rama activa | — |
+| Rama activa | `claude/fase-18-coach-notes` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
 | FASE 17 | MERGED — commit `604894c` |
-| Suite tests | **693/693 PASS** (P01–P252) |
-| Vercel | auto-deploy en curso (`604894c`) |
-| Siguiente fase | **FASE 18** — ver backlog |
+| FASE 18 | EN RAMA — `claude/fase-18-coach-notes` · pendiente merge |
+| Suite tests | **715/715 PASS** (P01–P260) |
+| Vercel | producción en `604894c` (FASE 18 no en prod) |
+| Siguiente fase | **FASE 19** — ver backlog |
 
 ---
 
 ## FASES completadas
+
+### FASE 18 (rama `claude/fase-18-coach-notes` — pendiente merge)
+**Client Workout: Notas del coach visibles durante el entrenamiento**
+
+Archivos modificados:
+- `vdsen-cliente.html` — 2 parches quirúrgicos
+- `tests/progression-engine.test.js` — P253-P260 (22 assertions nuevas)
+
+Helper puro añadido (exportado como `window._coachNoteHtml`):
+- `_coachNoteHtml(note)` — genera HTML del banner de nota del coach. Retorna `''` si `note` es null/undefined/blank. Escapa XSS con `_escHTml`. Preserva saltos de línea via `white-space:pre-line`. Visual: borde izquierdo azul, label "NOTA DEL COACH" en caps, texto multilinea.
+
+Punto de inserción en `vdsen-cliente.html`:
+- Llamada a `_coachNoteHtml(ej.coachNote)` en `_exRowHtml`, después del bloque `_exNoteInline` y antes del badge Y3T
+
+Flujo de datos (ya existía — solo faltaba el display):
+```
+plan.exercises[].coachNote
+  → loadPlan (líneas 1429, 1439: coachNote: e.coachNote || '')
+  → ej.coachNote en el render
+  → _coachNoteHtml(ej.coachNote) → HTML inline durante workout
+```
+
+Invariantes preservados:
+- 0 nuevas lecturas Firestore
+- `_coachNoteHtml` pura (determinista, sin side effects)
+- XSS: usa `_escHTml` (escaper correcto en cliente)
+- `coachNote` es readonly para el cliente (inmutable durante sesión)
+- Schema vdsen-plan-v2 sin cambios — `coachNote` ya era campo del editor del coach (FASE 10)
+- Colecciones Firestore sin cambios
+- Progression Engine sin cambios
+- Auth sin cambios
+
+Limitaciones:
+- Banner solo visible si el coach guardó nota en el editor de ejercicios
+- Sin truncado de notas largas (se muestra íntegra con scroll de página)
+
+---
 
 ### FASE 17 (merge commit `604894c` — MERGED a main)
 **Coach Monitor: Exportación CSV operativa por cliente**
