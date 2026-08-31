@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `0d4be7c` · FASEs 12–20 mergeadas · siguiente = FASE 21
+> Actualizado: 2026-08-31 · main HEAD: `0d4be7c` · FASEs 12–20 mergeadas · FASE 21 pendiente merge
 
 ---
 
@@ -26,13 +26,65 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 18 | MERGED — commit `e8c91c2` |
 | FASE 19 | MERGED — commit `4575a7c` |
 | FASE 20 | MERGED — commit `0d4be7c` |
-| Suite tests | **800/800 PASS** (P01–P289) |
+| FASE 21 | `claude/fase-21-plan-change-preview` — pendiente merge |
+| Suite tests | **825/825 PASS** (P01–P300) |
 | Vercel | auto-deploy en curso (`0d4be7c`) |
-| Siguiente fase | **FASE 21** — ver backlog |
+| Siguiente fase | **FASE 22** (FASE 21 pendiente merge) |
 
 ---
 
 ## FASES completadas
+
+### FASE 21 (rama `claude/fase-21-plan-change-preview` — PENDIENTE MERGE)
+**Coach Monitor: Plan Change Preview — vista de cambios antes de confirmar aplicación de cargas**
+
+Archivos modificados:
+- `vdsen-coach.html` — 3 parches quirúrgicos
+- `tests/progression-engine.test.js` — P290-P300 (30 assertions nuevas)
+- `docs/VDSEN_DEV_STATE.md` — este bloque
+
+Helpers añadidos:
+
+**`_buildPlanChangeSummary(preview, selectedPids?)`** — puro, exportado en `window`  
+- Input: array de preview entries + opcional array de IDs seleccionadas (pid || String(ei))  
+- Output: `{ exerciseCount, setCount, changes }` — sin mutar el preview  
+- Usado por el modal para header dinámico y por los tests
+
+Cambios en **`_buildRecApplyPreview`** (extensión quirúrgica):
+- `setCount`: número real de sets del ejercicio en el plan  
+- `mixedCurrentLoads`: `true` si distintos sets tienen cargas diferentes  
+- `unit`: primera unidad encontrada en sets del plan (`null` si no existe)  
+- Filtro no-op: si `!mixedCurrentLoads && currentLoad === recommendedLoad` → excluida  
+
+Cambios en **`_confirmApplyRecModal`** (reemplazo quirúrgico):
+- Header "REVISAR CAMBIOS" + resumen dinámico (`N ejercicios cambiarán · M sets afectados`)  
+- Resumen se actualiza en tiempo real al desmarcar checkboxes (`change` event)  
+- Cada fila muestra: nombre ejercicio / carga actual → carga propuesta / N sets  
+- Cargas mixtas: muestra "Variable → 85" (no oculta complejidad)  
+- Unidades: muestra `kg`/`lb` si existe en el plan; si no, solo número  
+- Botones: "Confirmar cambios" / "Cancelar"  
+- Todo el contenido dinámico escapado con `_escH()`  
+
+Performance:
+- Preview: 0 lecturas Firestore  
+- Confirmación: mantiene 1 fresh read existente de FASE 20  
+- 0 listeners extras, 0 polling  
+
+Invariantes preservados:
+- `calculateProgression()` SIN CAMBIOS  
+- FASE 20 identity contract (LEGACY/AMBIGUOUS/NONE) intacto  
+- FASE 20 race guard (fresh read antes del write) intacto  
+- Filtro de acciones (solo increase_load/reduce_load) intacto  
+- Set preservation (Object.assign) intacto  
+- 0 nuevas colecciones Firestore  
+- Schema vdsen-plan-v2 sin cambios  
+- Auth sin cambios  
+
+Limitaciones:
+- `unit` toma el valor del primer set con unidad en el plan; sets con unidades mixtas no son comunes pero no se validan
+- Nombres de ejercicio muy largos se truncan con `text-overflow:ellipsis` en el modal
+
+---
 
 ### FASE 20 (merge commit `0d4be7c` — MERGED a main)
 **Coach Monitor: Aplicar cargas recomendadas al plan activo (hardened)**
