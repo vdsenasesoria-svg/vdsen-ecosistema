@@ -12251,8 +12251,14 @@ function showSessionSummary(di) {
     '</div>'+
     '<div style="font-size:11px;color:var(--mt);text-align:center">'+exDoneCount+' ejercicio'+(exDoneCount!==1?'s':'')+' completado'+(exDoneCount!==1?'s':'')+'</div>';
 
+  // FASE 19 — Append progression recommendations if available
+  var _progrec = LOGS['progrec_'+CURRENT_WEEK+'_'+di];
+  var _recHtml = _buildProgreSummaryHtml(_progrec);
+  if (_recHtml) ov.innerHTML += _recHtml;
+
   document.body.appendChild(ov);
-  setTimeout(function(){ var el = document.getElementById('sessionSummaryOv'); if(el) el.remove(); }, 8000);
+  // Auto-dismiss solo cuando no hay recomendaciones que leer
+  if (!_recHtml) setTimeout(function(){ var el = document.getElementById('sessionSummaryOv'); if(el) el.remove(); }, 8000);
 }
 
 function _avgArr(arr) {
@@ -12462,6 +12468,58 @@ function _coachNoteHtml(note) {
   '</div>';
 }
 window._coachNoteHtml = _coachNoteHtml;
+
+// FASE 19 — helper puro: genera HTML del resumen de recomendaciones de progresión
+// post-sesión. Recibe el objeto progrec_{W}_{D}. Retorna '' si no hay recomendaciones.
+// XSS: exerciseName escapado con _escHTml. No muta el input.
+function _buildProgreSummaryHtml(progrec) {
+  if (!progrec) return '';
+  var recs = progrec.recommendations;
+  var triggers = progrec.deloadTriggers;
+  var hasRecs = Array.isArray(recs) && recs.length > 0;
+  var hasTriggers = Array.isArray(triggers) && triggers.length > 0;
+  if (!hasRecs && !hasTriggers) return '';
+
+  var ACT = {
+    increase_load: { icon: '↑', label: 'AUMENTAR CARGA',  color: '#3a9460' },
+    add_sets:      { icon: '↑', label: '+ SERIES',        color: '#3a9460' },
+    maintain:      { icon: '=', label: 'MANTENER',         color: '#C4FF00' },
+    freeze_load:   { icon: '⏸', label: 'CONGELAR CARGA',  color: '#C4FF00' },
+    reduce_load:   { icon: '↓', label: 'REDUCIR CARGA',   color: '#e06040' },
+    reduce_sets:   { icon: '↓', label: 'REDUCIR SERIES',  color: '#FF8844' },
+    deload:        { icon: '🔄', label: 'DESCARGA ACTIVA', color: '#6488CC' }
+  };
+
+  function _fmtLoad(v) {
+    var n = parseFloat(v);
+    if (isNaN(n) || n <= 0) return null;
+    return n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1);
+  }
+
+  var rows = '';
+  if (hasRecs) {
+    recs.forEach(function(r) {
+      var cfg = ACT[r.action] || { icon: '=', label: 'MANTENER', color: '#C4FF00' };
+      var loadStr = _fmtLoad(r.newLoad);
+      rows +=
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">'+
+          '<span style="font-size:12px;color:var(--tx);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escHTml(r.exerciseName||'—')+'</span>'+
+          '<span style="flex-shrink:0;font-size:10px;font-weight:800;color:'+cfg.color+';margin-left:8px;letter-spacing:.5px">'+cfg.icon+' '+cfg.label+(loadStr?' · '+loadStr+' kg':'')+'</span>'+
+        '</div>';
+    });
+  }
+
+  var triggersHtml = hasTriggers
+    ? '<div style="margin-top:8px;padding:6px 10px;background:rgba(220,80,50,.1);border:1px solid rgba(220,80,50,.4);border-radius:8px;font-size:10px;color:#e06040;font-weight:700">⚠ '+_escHTml(triggers.join(' · '))+'</div>'
+    : '';
+
+  return '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px">'+
+    '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:var(--mt);margin-bottom:6px">PRÓXIMA SESIÓN</div>'+
+    rows+
+    triggersHtml+
+  '</div>';
+}
+window._buildProgreSummaryHtml = _buildProgreSummaryHtml;
 
 // History modal — last 5 comparable exposures
 function showExHistory(di, ei) {

@@ -4749,6 +4749,169 @@ console.log('\nP260 — sin coachNote en plan → sin banner');
   assert('P260b', '_coachNoteHtml devuelve "" cuando coachNote está vacío', _coachNoteHtml(normalized.coachNote) === '');
 })();
 
+// ════════════════════════════════════════════════════════════
+// FASE 19 — _buildProgreSummaryHtml (helper puro post-sesión)
+// ════════════════════════════════════════════════════════════
+
+// Mirror de _escHTml (misma implementación que en vdsen-cliente.html)
+function _escHTml19(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Mirror de _buildProgreSummaryHtml (debe ser idéntico a vdsen-cliente.html)
+function _buildProgreSummaryHtml(progrec) {
+  if (!progrec) return '';
+  var recs = progrec.recommendations;
+  var triggers = progrec.deloadTriggers;
+  var hasRecs = Array.isArray(recs) && recs.length > 0;
+  var hasTriggers = Array.isArray(triggers) && triggers.length > 0;
+  if (!hasRecs && !hasTriggers) return '';
+
+  var ACT = {
+    increase_load: { icon: '↑', label: 'AUMENTAR CARGA',  color: '#3a9460' },
+    add_sets:      { icon: '↑', label: '+ SERIES',        color: '#3a9460' },
+    maintain:      { icon: '=', label: 'MANTENER',         color: '#C4FF00' },
+    freeze_load:   { icon: '⏸', label: 'CONGELAR CARGA',  color: '#C4FF00' },
+    reduce_load:   { icon: '↓', label: 'REDUCIR CARGA',   color: '#e06040' },
+    reduce_sets:   { icon: '↓', label: 'REDUCIR SERIES',  color: '#FF8844' },
+    deload:        { icon: '🔄', label: 'DESCARGA ACTIVA', color: '#6488CC' }
+  };
+
+  function _fmtLoad(v) {
+    var n = parseFloat(v);
+    if (isNaN(n) || n <= 0) return null;
+    return n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1);
+  }
+
+  var rows = '';
+  if (hasRecs) {
+    recs.forEach(function(r) {
+      var cfg = ACT[r.action] || { icon: '=', label: 'MANTENER', color: '#C4FF00' };
+      var loadStr = _fmtLoad(r.newLoad);
+      rows +=
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">'+
+          '<span style="font-size:12px;color:var(--tx);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escHTml19(r.exerciseName||'—')+'</span>'+
+          '<span style="flex-shrink:0;font-size:10px;font-weight:800;color:'+cfg.color+';margin-left:8px;letter-spacing:.5px">'+cfg.icon+' '+cfg.label+(loadStr?' · '+loadStr+' kg':'')+'</span>'+
+        '</div>';
+    });
+  }
+
+  var triggersHtml = hasTriggers
+    ? '<div style="margin-top:8px;padding:6px 10px;background:rgba(220,80,50,.1);border:1px solid rgba(220,80,50,.4);border-radius:8px;font-size:10px;color:#e06040;font-weight:700">⚠ '+_escHTml19(triggers.join(' · '))+'</div>'
+    : '';
+
+  return '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px">'+
+    '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:var(--mt);margin-bottom:6px">PRÓXIMA SESIÓN</div>'+
+    rows+
+    triggersHtml+
+  '</div>';
+}
+
+// P261 — increase_load recommendation
+console.log('\nP261 — increase_load recommendation');
+(function(){
+  var progrec = {
+    recommendations: [{ exerciseName: 'Press Banca', action: 'increase_load', newLoad: 82.5, newSets: 4, rirTarget: 2, reason: 'RIR alto' }],
+    deloadTriggers: []
+  };
+  var html = _buildProgreSummaryHtml(progrec);
+  assert('P261a', 'HTML no vacío', html !== '');
+  assert('P261b', 'contiene exerciseName', html.indexOf('Press Banca') !== -1);
+  assert('P261c', 'contiene label AUMENTAR CARGA', html.indexOf('AUMENTAR CARGA') !== -1);
+  assert('P261d', 'contiene newLoad formateado', html.indexOf('82.5 kg') !== -1);
+  assert('P261e', 'contiene sección PRÓXIMA SESIÓN', html.indexOf('PRÓXIMA SESIÓN') !== -1);
+})();
+
+// P262 — maintain recommendation
+console.log('\nP262 — maintain recommendation');
+(function(){
+  var progrec = {
+    recommendations: [{ exerciseName: 'Sentadilla', action: 'maintain', newLoad: 100, newSets: 4, rirTarget: 2 }],
+    deloadTriggers: []
+  };
+  var html = _buildProgreSummaryHtml(progrec);
+  assert('P262a', 'HTML no vacío', html !== '');
+  assert('P262b', 'label MANTENER', html.indexOf('MANTENER') !== -1);
+  assert('P262c', 'contiene 100 kg', html.indexOf('100 kg') !== -1);
+})();
+
+// P263 — deload recommendation
+console.log('\nP263 — deload recommendation');
+(function(){
+  var progrec = {
+    recommendations: [{ exerciseName: 'Peso Muerto', action: 'deload', newLoad: 80, newSets: 3, rirTarget: 4 }],
+    deloadTriggers: ['ICS_REPEATED_LOW']
+  };
+  var html = _buildProgreSummaryHtml(progrec);
+  assert('P263a', 'label DESCARGA ACTIVA', html.indexOf('DESCARGA ACTIVA') !== -1);
+  assert('P263b', 'trigger en HTML', html.indexOf('ICS_REPEATED_LOW') !== -1);
+})();
+
+// P264 — null/empty progrec → ''
+console.log('\nP264 — null/empty progrec → retorna cadena vacía');
+(function(){
+  assert('P264a', 'null → ""', _buildProgreSummaryHtml(null) === '');
+  assert('P264b', 'undefined → ""', _buildProgreSummaryHtml(undefined) === '');
+  assert('P264c', 'recs vacío + triggers vacío → ""', _buildProgreSummaryHtml({ recommendations: [], deloadTriggers: [] }) === '');
+  assert('P264d', 'sin recs ni triggers → ""', _buildProgreSummaryHtml({}) === '');
+})();
+
+// P265 — deloadTriggers sin recommendations
+console.log('\nP265 — solo deloadTriggers sin recommendations → HTML con triggers');
+(function(){
+  var progrec = { recommendations: [], deloadTriggers: ['TOO_HARD_REPEATED', 'PERFORMANCE_REGRESSION'] };
+  var html = _buildProgreSummaryHtml(progrec);
+  assert('P265a', 'HTML no vacío', html !== '');
+  assert('P265b', 'primer trigger presente', html.indexOf('TOO_HARD_REPEATED') !== -1);
+  assert('P265c', 'segundo trigger presente', html.indexOf('PERFORMANCE_REGRESSION') !== -1);
+})();
+
+// P266 — XSS en exerciseName
+console.log('\nP266 — XSS en exerciseName');
+(function(){
+  var progrec = {
+    recommendations: [{ exerciseName: '<script>alert(1)</script>', action: 'maintain', newLoad: 60, newSets: 3, rirTarget: 2 }],
+    deloadTriggers: []
+  };
+  var html = _buildProgreSummaryHtml(progrec);
+  assert('P266a', '<script> no aparece sin escapar', html.indexOf('<script>') === -1);
+  assert('P266b', 'aparece como &lt;script&gt;', html.indexOf('&lt;script&gt;') !== -1);
+})();
+
+// P267 — formato de carga: entero sin decimales, decimal con 1 decimal
+console.log('\nP267 — formato newLoad: entero vs decimal');
+(function(){
+  var rec1 = { exerciseName: 'A', action: 'maintain', newLoad: 80, newSets: 3, rirTarget: 2 };
+  var rec2 = { exerciseName: 'B', action: 'maintain', newLoad: 82.5, newSets: 3, rirTarget: 2 };
+  var rec3 = { exerciseName: 'C', action: 'maintain', newLoad: 0, newSets: 3, rirTarget: 2 };
+  var h1 = _buildProgreSummaryHtml({ recommendations: [rec1], deloadTriggers: [] });
+  var h2 = _buildProgreSummaryHtml({ recommendations: [rec2], deloadTriggers: [] });
+  var h3 = _buildProgreSummaryHtml({ recommendations: [rec3], deloadTriggers: [] });
+  assert('P267a', '80 → "80 kg" (sin decimales)', h1.indexOf('80 kg') !== -1 && h1.indexOf('80.0 kg') === -1);
+  assert('P267b', '82.5 → "82.5 kg"', h2.indexOf('82.5 kg') !== -1);
+  assert('P267c', '0 → sin carga en label (load 0 inválido)', h3.indexOf('0 kg') === -1);
+})();
+
+// P268 — múltiples recomendaciones → todas presentes
+console.log('\nP268 — múltiples recomendaciones → todas en output');
+(function(){
+  var progrec = {
+    recommendations: [
+      { exerciseName: 'Ejercicio Uno', action: 'increase_load', newLoad: 90, newSets: 4, rirTarget: 2 },
+      { exerciseName: 'Ejercicio Dos', action: 'reduce_load',   newLoad: 50, newSets: 3, rirTarget: 1 },
+      { exerciseName: 'Ejercicio Tres', action: 'maintain',     newLoad: 70, newSets: 4, rirTarget: 2 }
+    ],
+    deloadTriggers: []
+  };
+  var html = _buildProgreSummaryHtml(progrec);
+  assert('P268a', 'Ejercicio Uno presente', html.indexOf('Ejercicio Uno') !== -1);
+  assert('P268b', 'Ejercicio Dos presente', html.indexOf('Ejercicio Dos') !== -1);
+  assert('P268c', 'Ejercicio Tres presente', html.indexOf('Ejercicio Tres') !== -1);
+  assert('P268d', 'AUMENTAR CARGA en output', html.indexOf('AUMENTAR CARGA') !== -1);
+  assert('P268e', 'REDUCIR CARGA en output', html.indexOf('REDUCIR CARGA') !== -1);
+  assert('P268f', 'MANTENER en output', html.indexOf('MANTENER') !== -1);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
