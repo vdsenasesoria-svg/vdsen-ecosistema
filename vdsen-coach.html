@@ -10171,9 +10171,15 @@ El esfuerzo no es negociable.
       if (matches.length !== 1) return; // NONE (0) o AMBIGUOUS (2+) → excluir
       var ei = matches[0];
       var ex = dayObj.exercises[ei];
-      var currentLoad = parseFloat((ex.sets && ex.sets[0] && ex.sets[0].load) || 0) || 0;
+      var sets = ex.sets || [];
+      var loads = sets.map(function(s){ return parseFloat(s.load) || 0; });
+      var currentLoad = loads.length ? loads[0] : 0;
+      var mixedCurrentLoads = loads.length > 1 && loads.some(function(l){ return l !== loads[0]; });
+      var unit = null;
+      for (var si = 0; si < sets.length; si++) { if (sets[si].unit) { unit = sets[si].unit; break; } }
       var recommendedLoad = parseFloat(r.newLoad) || 0;
       if (recommendedLoad <= 0) return;
+      if (!mixedCurrentLoads && currentLoad === recommendedLoad) return; // no-op: sin cambio real
       result.push({
         exerciseName: ex.exerciseName || ex.nombre || r.exerciseName,
         exerciseIndex: ei,
@@ -10181,45 +10187,91 @@ El esfuerzo no es negociable.
         currentLoad: currentLoad,
         recommendedLoad: recommendedLoad,
         action: r.action,
-        matchConfidence: 'LEGACY'
+        matchConfidence: 'LEGACY',
+        setCount: sets.length,
+        mixedCurrentLoads: mixedCurrentLoads,
+        unit: unit
       });
     });
     return result;
   }
   window._buildRecApplyPreview = _buildRecApplyPreview;
 
+  // FASE 21 — helper puro: resumen de cambios para el preview modal.
+  // selectedPids: array opcional de strings (prescriptionExerciseId || String(exerciseIndex)).
+  // Si se omite, incluye todos. Retorna { exerciseCount, setCount, changes }.
+  function _buildPlanChangeSummary(preview, selectedPids) {
+    var items = Array.isArray(preview) ? preview : [];
+    if (selectedPids !== undefined && selectedPids !== null) {
+      items = items.filter(function(p) {
+        var id = p.prescriptionExerciseId || String(p.exerciseIndex);
+        return selectedPids.indexOf(id) !== -1;
+      });
+    }
+    var setCount = items.reduce(function(acc, p) { return acc + (p.setCount || 1); }, 0);
+    return { exerciseCount: items.length, setCount: setCount, changes: items };
+  }
+  window._buildPlanChangeSummary = _buildPlanChangeSummary;
+
   function _confirmApplyRecModal(preview) {
     return new Promise(function(resolve) {
       var existing = document.getElementById('applyRecModal');
       if (existing) existing.remove();
+
+      function _fmtLoad(val, unit) { return unit ? (val + ' ' + unit) : String(val); }
+
+      function _getSelectedIds(modal) {
+        var ids = [];
+        modal.querySelectorAll('#applyRecRows input[type=checkbox]').forEach(function(cb) {
+          if (cb.checked) ids.push(cb.dataset.pid || String(cb.dataset.ei));
+        });
+        return ids;
+      }
+
+      function _updateSummary(modal) {
+        var summ = _buildPlanChangeSummary(preview, _getSelectedIds(modal));
+        var el = modal.querySelector('#applyRecSummary');
+        if (el) el.textContent = summ.exerciseCount + (summ.exerciseCount === 1 ? ' ejercicio cambiará' : ' ejercicios cambiarán') + ' · ' + summ.setCount + ' sets afectados';
+      }
+
+      var initSumm = _buildPlanChangeSummary(preview);
       var rows = preview.map(function(p) {
         var arrow = p.action === 'increase_load' ? '↑' : '↓';
         var arrowColor = p.action === 'increase_load' ? '#44BB88' : '#FF4444';
-        return '<label style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer">'
-          + '<input type="checkbox" checked data-ei="'+p.exerciseIndex+'" data-load="'+p.recommendedLoad+'" data-pid="'+(p.prescriptionExerciseId||'')+'" style="accent-color:#44BB88;width:16px;height:16px;flex-shrink:0">'
-          + '<span style="flex:1;font-size:13px;color:#F4F4F0;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(p.exerciseName)+'</span>'
-          + '<span style="flex-shrink:0;font-size:12px;color:#888">'+p.currentLoad+' kg</span>'
-          + '<span style="flex-shrink:0;font-size:16px;font-weight:900;color:'+arrowColor+';margin:0 4px">'+arrow+'</span>'
-          + '<span style="flex-shrink:0;font-size:13px;font-weight:700;color:#F4F4F0">'+p.recommendedLoad+' kg</span>'
-          + '</label>';
+        var currentStr = p.mixedCurrentLoads ? 'Variable' : _fmtLoad(p.currentLoad, p.unit);
+        var recStr = _fmtLoad(p.recommendedLoad, p.unit);
+        var setsStr = (p.setCount || 1) + ((p.setCount === 1) ? ' set' : ' sets');
+        return '<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer">'
+          + '<input type="checkbox" checked data-ei="'+p.exerciseIndex+'" data-load="'+p.recommendedLoad+'" data-pid="'+(p.prescriptionExerciseId||'')+'" style="accent-color:#44BB88;width:16px;height:16px;flex-shrink:0;margin-top:2px">'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:13px;color:#F4F4F0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(p.exerciseName)+'</div>'
+          + '<div style="display:flex;align-items:center;gap:6px;margin-top:3px">'
+          + '<span style="font-size:12px;color:#888">'+_escH(currentStr)+'</span>'
+          + '<span style="font-size:14px;font-weight:900;color:'+arrowColor+'">'+arrow+'</span>'
+          + '<span style="font-size:12px;font-weight:700;color:#F4F4F0">'+_escH(recStr)+'</span>'
+          + '<span style="font-size:11px;color:#666;margin-left:4px">'+_escH(setsStr)+'</span>'
+          + '</div></div></label>';
       }).join('');
+
       var modal = document.createElement('div');
       modal.id = 'applyRecModal';
       modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
       modal.innerHTML = '<div style="background:#1a1a1a;border:1px solid rgba(244,244,240,.18);border-radius:14px;padding:20px;max-width:440px;width:100%;max-height:80vh;overflow-y:auto">'
-        + '<div style="font-size:15px;font-weight:800;color:#F4F4F0;margin-bottom:4px">Aplicar cargas al plan</div>'
-        + '<div style="font-size:11px;color:#888;margin-bottom:14px">Seleccioná qué ejercicios actualizar. Los cambios se guardan en el plan activo.</div>'
+        + '<div style="font-size:11px;font-weight:700;color:#888;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">Revisar cambios</div>'
+        + '<div id="applyRecSummary" style="font-size:15px;font-weight:800;color:#F4F4F0;margin-bottom:14px">'
+        + initSumm.exerciseCount + (initSumm.exerciseCount === 1 ? ' ejercicio cambiará' : ' ejercicios cambiarán') + ' · ' + initSumm.setCount + ' sets afectados'
+        + '</div>'
         + '<div id="applyRecRows">'+rows+'</div>'
         + '<div style="display:flex;gap:8px;margin-top:16px">'
-        + '<button id="applyRecConfirm" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.15);color:#44BB88;font-weight:700;cursor:pointer;font-size:13px">Confirmar</button>'
+        + '<button id="applyRecConfirm" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.15);color:#44BB88;font-weight:700;cursor:pointer;font-size:13px">Confirmar cambios</button>'
         + '<button id="applyRecCancel" style="padding:10px 18px;border-radius:8px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,244,.05);color:#888;cursor:pointer;font-size:13px">Cancelar</button>'
         + '</div></div>';
       document.body.appendChild(modal);
+      modal.querySelector('#applyRecRows').addEventListener('change', function() { _updateSummary(modal); });
       document.getElementById('applyRecCancel').onclick = function() { modal.remove(); resolve(null); };
       document.getElementById('applyRecConfirm').onclick = function() {
-        var checkboxes = modal.querySelectorAll('#applyRecRows input[type=checkbox]');
         var selected = [];
-        checkboxes.forEach(function(cb) {
+        modal.querySelectorAll('#applyRecRows input[type=checkbox]').forEach(function(cb) {
           if (cb.checked) selected.push({ exerciseIndex: parseInt(cb.dataset.ei), recommendedLoad: parseFloat(cb.dataset.load), prescriptionExerciseId: cb.dataset.pid || null });
         });
         modal.remove();
