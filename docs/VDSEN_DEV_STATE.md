@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `b4e4a91` · FASEs 12–22 en rama · siguiente = merge FASE 22 → FASE 23
+> Actualizado: 2026-08-31 · main HEAD: `e49dfe3` · FASEs 12–23 en rama · siguiente = merge FASE 23 → FASE 24
 
 ---
 
@@ -27,13 +27,42 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 19 | MERGED — commit `4575a7c` |
 | FASE 20 | MERGED — commit `0d4be7c` |
 | FASE 21 | MERGED — commit `b4e4a91` |
-| Suite tests | **846/846 PASS** (P01–P310) |
-| Vercel | auto-deploy en curso (`b4e4a91`) |
-| Siguiente fase | **FASE 23** — ver backlog |
+| Suite tests | **856/856 PASS** (P01–P320) |
+| Vercel | auto-deploy en curso (`e49dfe3`) |
+| Siguiente fase | **FASE 24** — ver backlog |
 
 ---
 
 ## FASES completadas
+
+### FASE 23 (rama `claude/fase-23-unsaved-changes-guard` — pendiente merge)
+**Unsaved Changes Guard — aviso al cambiar de tab con plan sin guardar**
+
+Archivos modificados:
+- `vdsen-coach.html` — 1 parche quirúrgico
+- `tests/progression-engine.test.js` — P311-P320 (10 assertions nuevas)
+- `docs/VDSEN_DEV_STATE.md` — este bloque
+
+Helpers añadidos:
+
+**`_shouldWarnDirtyLeave(fromTab, toTab, isDirty)`** — puro, exportado en `window`  
+- Retorna `true` solo si `isDirty === true && fromTab === 'plan' && toTab !== 'plan'`  
+- 0 reads Firestore · no tiene side effects
+
+Cambio UI:
+- `_switchClientTab` ahora es `async` y usa `_shouldWarnDirtyLeave` antes de cambiar
+- Si el usuario está en tab Plan con cambios pendientes y cambia a otro tab → modal `_askConfirm` "¿Salir sin guardar?"
+- Si cancela: permanece en Plan. Si confirma: `markEditorClean()` + switch
+- `beforeunload` guard (ya existente desde antes) se mantiene intacto para recarga/cierre
+
+Invariantes preservados:
+- `calculateProgression` sin cambios
+- `_dirtyEditor` y `markEditorClean` ya existían — solo se usa, no se crea infraestructura nueva
+- 0 reads Firestore nuevos
+
+Suite: **856/856 PASS** (P01–P320)
+
+---
 
 ### FASE 22 (rama `claude/fase-22-monitor-editor-deeplink` — pendiente merge)
 **Coach Monitor → Plan Editor Deep Link — botón ✏️ por ejercicio en Monitor**
