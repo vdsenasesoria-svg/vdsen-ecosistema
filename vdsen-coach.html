@@ -3301,6 +3301,19 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       viewBtn.style.display = "inline-flex";
       viewBtn.onclick = () => viewClientReportHTML(select.value);
 
+      // Botón Exportar CSV (FASE 17)
+      let csvBtn = document.getElementById("csvExportBtn");
+      if (!csvBtn) {
+        csvBtn = document.createElement("button");
+        csvBtn.id = "csvExportBtn";
+        csvBtn.className = "btn-secondary text-sm";
+        csvBtn.style.cssText = "background:rgba(68,187,136,.1);border-color:rgba(68,187,136,.4);color:#44BB88;margin-left:6px";
+        csvBtn.textContent = "⬇ Exportar CSV";
+        viewBtn.parentNode.insertBefore(csvBtn, viewBtn.nextSibling);
+      }
+      csvBtn.style.display = "inline-flex";
+      csvBtn.onclick = () => exportClientCsv(clientData, logs, _activePlanCache);
+
       // Botón Cerrar Mesociclo (solo si semana >= 5)
       let closeMesoBtn = document.getElementById("closeMesoBtn");
       if (!closeMesoBtn) {
@@ -11235,6 +11248,261 @@ El esfuerzo no es negociable.
 
   window.openSubstModal = openSubstModal;
   window.closeSubstModal = closeSubstModal;
+
+  // ── FASE 17 — Client Operational CSV Export ──
+
+  // RFC4180-compatible CSV cell escaping + formula injection defense for text fields.
+  // Numeric values (load, reps, etc.) must NOT be passed here — call directly.
+  function _escapeCsvCell(value) {
+    if (value === null || value === undefined) return '""';
+    var s = String(value);
+    // Formula injection defense: prefix with apostrophe if starts with =, +, -, @
+    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    if (/[,"\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  // Sanitize to safe filename (no spaces, no special chars, no PII).
+  function _safeExportFilename(name, date) {
+    var safeName = (name || 'cliente').replace(/[^a-zA-ZÀ-ÿ0-9\-_]/g, '_').replace(/_+/g, '_').slice(0, 30);
+    var safeDate = (date instanceof Date ? date : new Date()).toISOString().slice(0, 10);
+    return 'vdsen_' + safeName + '_' + safeDate + '.csv';
+  }
+
+  // Normalize any timestamp to ISO 8601 string. Returns '' on failure.
+  function _normalizeTimestamp(ts) {
+    if (!ts) return '';
+    try {
+      // Firestore Timestamp: has .toDate()
+      if (ts && typeof ts.toDate === 'function') return ts.toDate().toISOString();
+      // Number (epoch ms)
+      if (typeof ts === 'number') return new Date(ts).toISOString();
+      // Date object
+      if (ts instanceof Date) return ts.toISOString();
+      // String
+      var d = new Date(ts);
+      return isNaN(d.getTime()) ? '' : d.toISOString();
+    } catch(e) { return ''; }
+  }
+
+  // Build plan exerciseName lookup: prescriptionExerciseId → exerciseName.
+  // Falls back to positional [dayIndex][exerciseIndex].
+  function _buildPlanLookup(planData) {
+    var byPrescId = {}, byPos = {};
+    if (!planData || !planData.days) return { byPrescId: byPrescId, byPos: byPos };
+    planData.days.forEach(function(day) {
+      var di = day.dayIndex != null ? day.dayIndex : 0;
+      (day.exercises || []).forEach(function(ex, ei) {
+        if (ex.prescriptionExerciseId) byPrescId[ex.prescriptionExerciseId] = ex.exerciseName || '';
+        if (!byPos[di]) byPos[di] = {};
+        byPos[di][ei] = ex.exerciseName || '';
+      });
+    });
+    return { byPrescId: byPrescId, byPos: byPos };
+  }
+
+  // Resolve exerciseName for a set entry. Priority: snapshot → prescId → positional → ''.
+  function _resolveExerciseName(entry, di, ei, lookup) {
+    if (entry.exerciseNameSnapshot) return entry.exerciseNameSnapshot;
+    if (entry.prescriptionExerciseId && lookup.byPrescId[entry.prescriptionExerciseId])
+      return lookup.byPrescId[entry.prescriptionExerciseId];
+    if (lookup.byPos[di] && lookup.byPos[di][ei] != null) return lookup.byPos[di][ei];
+    return '';
+  }
+
+  // PURE — builds all export rows from entries + optional planData.
+  // Returns array of row objects sorted deterministically.
+  function _buildOperationalExportRows(entries, planData) {
+    if (!entries || typeof entries !== 'object') return [];
+    var rows = [];
+    var lookup = _buildPlanLookup(planData);
+    var SET_KEY = /^log_(\d+)_(\d+)_(\d+)_s(\d+)$/;
+    var CI_KEY  = /^ci_sem_(\d+)$/;
+    var PS_KEY  = /^postsession_(\d+)_(\d+)$/;
+    var PR_KEY  = /^progrec_(\d+)_(\d+)$/;
+
+    Object.keys(entries).forEach(function(k) {
+      var v = entries[k];
+      var m;
+
+      m = k.match(SET_KEY);
+      if (m) {
+        var w = +m[1], d = +m[2], ei = +m[3], si = +m[4];
+        var exName = _resolveExerciseName(v, d, ei, lookup);
+        rows.push({
+          recordType: 'SET',
+          week: w, day: d, exerciseName: exName,
+          prescriptionExerciseId: v.prescriptionExerciseId || '',
+          setIndex: si,
+          load: v.carga != null ? v.carga : '',
+          unit: v.unit || '',
+          reps: v.reps != null ? v.reps : '',
+          rir_real: v.rir_real != null ? v.rir_real : '',
+          ics: v.ics != null ? v.ics : '',
+          pump: v.pump != null ? v.pump : '',
+          autoFilled: v.autoFilled ? true : false,
+          done: v.done ? true : false,
+          weight: '', hrv: '', who5: '', sleep: '', eimd: '', articular: '', patron: '',
+          rpe: '', progressionAction: '', progressionReason: '',
+          timestamp: _normalizeTimestamp(v.ts)
+        });
+        return;
+      }
+
+      m = k.match(CI_KEY);
+      if (m) {
+        var w = +m[1];
+        rows.push({
+          recordType: 'CHECKIN',
+          week: w, day: '', exerciseName: '', prescriptionExerciseId: '',
+          setIndex: '', load: '', unit: '', reps: '', rir_real: '', ics: '', pump: '',
+          autoFilled: '', done: '',
+          weight: v.peso != null ? v.peso : '',
+          hrv: v.hrv != null ? v.hrv : '',
+          who5: v.who5 != null ? v.who5 : '',
+          sleep: v.sleep != null ? v.sleep : '',
+          eimd: '', articular: '', patron: '', rpe: '',
+          progressionAction: '', progressionReason: '',
+          timestamp: _normalizeTimestamp(v.ts)
+        });
+        return;
+      }
+
+      m = k.match(PS_KEY);
+      if (m) {
+        var w = +m[1], d = +m[2];
+        rows.push({
+          recordType: 'POSTSESSION',
+          week: w, day: d, exerciseName: '', prescriptionExerciseId: '',
+          setIndex: '', load: '', unit: '', reps: '', rir_real: '', ics: '', pump: '',
+          autoFilled: '', done: '',
+          weight: '', hrv: '', who5: '',
+          sleep: v.sleep != null ? v.sleep : '',
+          eimd: v.eimd != null ? v.eimd : '',
+          articular: v.articular != null ? v.articular : '',
+          patron: v.patron != null ? v.patron : '',
+          rpe: v.rpe != null ? v.rpe : '',
+          progressionAction: '', progressionReason: '',
+          timestamp: _normalizeTimestamp(v.ts)
+        });
+        return;
+      }
+
+      m = k.match(PR_KEY);
+      if (m) {
+        var w = +m[1], d = +m[2];
+        var recs = (v.recommendations || []);
+        if (!recs.length) {
+          // No recommendations but entry exists (deloadTriggers only)
+          rows.push({
+            recordType: 'PROGRESSION',
+            week: w, day: d, exerciseName: '', prescriptionExerciseId: '',
+            setIndex: '', load: '', unit: '', reps: '', rir_real: '', ics: '', pump: '',
+            autoFilled: '', done: '', weight: '', hrv: '', who5: '', sleep: '',
+            eimd: '', articular: '', patron: '', rpe: '',
+            progressionAction: 'deload_candidate', progressionReason: '',
+            timestamp: _normalizeTimestamp(v.ts)
+          });
+        } else {
+          recs.forEach(function(rec) {
+            if (!rec) return;
+            rows.push({
+              recordType: 'PROGRESSION',
+              week: w, day: d,
+              exerciseName: rec.exerciseName || '',
+              prescriptionExerciseId: rec.prescriptionExerciseId || '',
+              setIndex: '', load: '', unit: '', reps: '', rir_real: '', ics: '', pump: '',
+              autoFilled: '', done: '', weight: '', hrv: '', who5: '', sleep: '',
+              eimd: '', articular: '', patron: '', rpe: '',
+              progressionAction: rec.action || '',
+              progressionReason: rec.reason || '',
+              timestamp: _normalizeTimestamp(v.ts)
+            });
+          });
+        }
+      }
+    });
+
+    // Deterministic sort: week → day → recordType → setIndex
+    // Normalise before comparing to avoid '' vs 0 short-circuit returning 0 prematurely.
+    var typeOrder = { SET: 0, POSTSESSION: 1, CHECKIN: 2, PROGRESSION: 3 };
+    function _sortNum(v) { var n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
+    rows.sort(function(a, b) {
+      var wDiff = _sortNum(a.week) - _sortNum(b.week);
+      if (wDiff !== 0) return wDiff;
+      var dDiff = _sortNum(a.day) - _sortNum(b.day);
+      if (dDiff !== 0) return dDiff;
+      var ta = typeOrder[a.recordType] != null ? typeOrder[a.recordType] : 9;
+      var tb = typeOrder[b.recordType] != null ? typeOrder[b.recordType] : 9;
+      if (ta !== tb) return ta - tb;
+      var sDiff = _sortNum(a.setIndex) - _sortNum(b.setIndex);
+      if (sDiff !== 0) return sDiff;
+      return String(a.exerciseName || '').localeCompare(String(b.exerciseName || ''));
+    });
+
+    return rows;
+  }
+
+  var _CSV_COLUMNS = [
+    'recordType','week','day','exerciseName','prescriptionExerciseId',
+    'setIndex','load','unit','reps','rir_real','ics','pump','autoFilled','done',
+    'weight','hrv','who5','sleep','eimd','articular','patron','rpe',
+    'progressionAction','progressionReason','timestamp'
+  ];
+
+  // Converts rows to CSV string (BOM included for Excel compatibility).
+  function _toCsvString(rows, columns) {
+    columns = columns || _CSV_COLUMNS;
+    var lines = [columns.join(',')];
+    var textCols = { exerciseName:1, prescriptionExerciseId:1, unit:1, patron:1, progressionAction:1, progressionReason:1 };
+    rows.forEach(function(row) {
+      var cells = columns.map(function(col) {
+        var v = row[col];
+        if (v === null || v === undefined || v === '') return '';
+        if (typeof v === 'boolean') return v ? 'true' : 'false';
+        if (textCols[col]) return _escapeCsvCell(v);
+        // Numeric/auto cells — no formula injection needed
+        var s = String(v);
+        if (/[,"\r\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+        return s;
+      });
+      lines.push(cells.join(','));
+    });
+    return '﻿' + lines.join('\r\n');
+  }
+
+  // Orchestrates the CSV export for the selected client.
+  // Uses data already in memory — 0 extra Firestore reads.
+  function exportClientCsv(clientData, logs, planData) {
+    var entries = logs && typeof logs === 'object' ? logs : {};
+    var rows = _buildOperationalExportRows(entries, planData);
+    if (!rows.length) { showToast('No hay datos registrados para exportar.'); return; }
+    try {
+      var csv = _toCsvString(rows, _CSV_COLUMNS);
+      var clientName = (clientData && (clientData.displayName || clientData.email || 'cliente'));
+      var filename = _safeExportFilename(clientName, new Date());
+      var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('CSV exportado ✅');
+    } catch(e) {
+      console.warn('[CSV Export] error:', e);
+      showToast('No se pudo generar el CSV.', true);
+    }
+  }
+
+  window._escapeCsvCell = _escapeCsvCell;
+  window._safeExportFilename = _safeExportFilename;
+  window._normalizeTimestamp = _normalizeTimestamp;
+  window._buildOperationalExportRows = _buildOperationalExportRows;
+  window._toCsvString = _toCsvString;
+  window.exportClientCsv = exportClientCsv;
 
   // ── FASE 10 — Autocomplete dropdown (XSS-safe via DOM API) ──
   function _acShow(input) {
