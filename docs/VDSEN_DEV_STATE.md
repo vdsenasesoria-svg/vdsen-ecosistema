@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `b4e4a91` · FASEs 12–21 mergeadas · siguiente = FASE 22
+> Actualizado: 2026-08-31 · main HEAD: `b4e4a91` · FASEs 12–22 en rama · siguiente = merge FASE 22 → FASE 23
 
 ---
 
@@ -27,13 +27,48 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 19 | MERGED — commit `4575a7c` |
 | FASE 20 | MERGED — commit `0d4be7c` |
 | FASE 21 | MERGED — commit `b4e4a91` |
-| Suite tests | **825/825 PASS** (P01–P300) |
+| Suite tests | **846/846 PASS** (P01–P310) |
 | Vercel | auto-deploy en curso (`b4e4a91`) |
-| Siguiente fase | **FASE 22** — ver backlog |
+| Siguiente fase | **FASE 23** — ver backlog |
 
 ---
 
 ## FASES completadas
+
+### FASE 22 (rama `claude/fase-22-monitor-editor-deeplink` — pendiente merge)
+**Coach Monitor → Plan Editor Deep Link — botón ✏️ por ejercicio en Monitor**
+
+Archivos modificados:
+- `vdsen-coach.html` — 2 parches quirúrgicos
+- `tests/progression-engine.test.js` — P301-P310 (21 assertions nuevas)
+- `docs/VDSEN_DEV_STATE.md` — este bloque
+
+Helpers añadidos:
+
+**`_resolveExerciseRowId(exerciseName, planCache)`** — puro, exportado en `window`  
+- Input: nombre de ejercicio + `_activePlanCache`  
+- Output: `{ di, ei, pid }` o `null`  
+- Normalización: lowercase + trim + colapso de espacios (igual que `_normN20`)  
+- 0 reads Firestore · no muta planCache
+
+**`_deepLinkToExercise(exerciseName)`** — DOM function, exportada en `window`  
+- Llama `_switchClientTab('plan')` → abre training-editor si cerrado → scroll+highlight de la fila  
+- Highlight: `outline: 2px solid #44BB88` por 2 s  
+- Fallback: si no resuelve `prescriptionExerciseId`, usa `exrow_${di}_${ei}`
+
+Cambio UI:
+- Cada tarjeta de recomendación en Monitor ahora tiene botón ✏️ en la cabecera (junto al badge de acción)
+- Atributo `data-exname` en el botón para evitar inyección JS (XSS-safe)
+
+Invariantes preservados:
+- 0 reads Firestore nuevos
+- `calculateProgression` sin cambios
+- Load semantics intacto
+- Sin cambios en claves de logs
+
+Suite: **846/846 PASS** (P01–P310)
+
+---
 
 ### FASE 21 (merge commit `b4e4a91` — MERGED a main)
 **Coach Monitor: Plan Change Preview — vista de cambios antes de confirmar aplicación de cargas**
