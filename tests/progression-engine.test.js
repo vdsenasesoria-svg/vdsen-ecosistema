@@ -4347,13 +4347,18 @@ function _buildOperationalExportRows(entries, planData) {
   });
 
   var typeOrder = { SET: 0, POSTSESSION: 1, CHECKIN: 2, PROGRESSION: 3 };
+  function _sortNum(v) { var n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
   rows.sort(function(a, b) {
-    if (a.week !== b.week) return (a.week || 0) - (b.week || 0);
-    if (a.day !== b.day) return ((a.day || 0) - (b.day || 0));
+    var wDiff = _sortNum(a.week) - _sortNum(b.week);
+    if (wDiff !== 0) return wDiff;
+    var dDiff = _sortNum(a.day) - _sortNum(b.day);
+    if (dDiff !== 0) return dDiff;
     var ta = typeOrder[a.recordType] != null ? typeOrder[a.recordType] : 9;
     var tb = typeOrder[b.recordType] != null ? typeOrder[b.recordType] : 9;
     if (ta !== tb) return ta - tb;
-    return ((a.setIndex || 0) - (b.setIndex || 0));
+    var sDiff = _sortNum(a.setIndex) - _sortNum(b.setIndex);
+    if (sDiff !== 0) return sDiff;
+    return String(a.exerciseName || '').localeCompare(String(b.exerciseName || ''));
   });
   return rows;
 }
@@ -4584,13 +4589,68 @@ console.log('\nP251 — orden de export determinista');
   // POSTSESSION antes que CHECKIN
   var firstCi  = rows.findIndex(function(r){ return r.recordType === 'CHECKIN' && r.week === 1; });
   assert('P251h', 'POSTSESSION aparece antes que CHECKIN', firstPs < firstCi);
-  // POSTSESSION antes que PROGRESSION (mismo día, typeOrder garantiza el orden)
+  // CHECKIN (day='') y PROGRESSION (day=0) → normalized a 0 igual → typeOrder decide (CHECKIN=2 < PROGRESSION=3)
   var firstPr  = rows.findIndex(function(r){ return r.recordType === 'PROGRESSION' && r.week === 1; });
-  assert('P251i', 'POSTSESSION aparece antes que PROGRESSION', firstPs < firstPr);
+  assert('P251i', 'CHECKIN aparece antes que PROGRESSION (typeOrder cuando day normalizado igual)', firstCi < firstPr);
   // setIndex creciente dentro de la misma clave log_{W}_{D}_{E}
   var s0idx = rows.findIndex(function(r){ return r.recordType === 'SET' && r.setIndex === 0 && r.day === 0; });
   var s1idx = rows.findIndex(function(r){ return r.recordType === 'SET' && r.setIndex === 1 && r.day === 0; });
   assert('P251j', 'set s0 aparece antes que s1', s0idx < s1idx);
+})();
+
+// P252 — sort determinista: day='' vs day=0, null, undefined
+console.log('\nP252 — sort determinista con day heterogéneo');
+(function(){
+  // P252a: CHECKIN (day='') y PROGRESSION (day=0) → typeOrder decide (CHECKIN=2 < PROGRESSION=3)
+  var entries = {
+    'progrec_1_0': { recommendations: [{ exerciseName: 'Press', action: 'maintain', reason: 'ok' }] },
+    'ci_sem_1': { peso: 78, hrv: 60, who5: 65, sleep: 8 }
+  };
+  var rows = _buildOperationalExportRows(entries, null);
+  var ciIdx = rows.findIndex(function(r){ return r.recordType === 'CHECKIN'; });
+  var prIdx = rows.findIndex(function(r){ return r.recordType === 'PROGRESSION'; });
+  assert('P252a', 'CHECKIN (day="") antes que PROGRESSION (day=0) por typeOrder', ciIdx < prIdx);
+
+  // P252b: mismo input en diferente insertion order → mismo sort result
+  var entriesRev = {
+    'ci_sem_1': { peso: 78, hrv: 60, who5: 65, sleep: 8 },
+    'progrec_1_0': { recommendations: [{ exerciseName: 'Press', action: 'maintain', reason: 'ok' }] }
+  };
+  var rowsRev = _buildOperationalExportRows(entriesRev, null);
+  var ciIdxRev = rowsRev.findIndex(function(r){ return r.recordType === 'CHECKIN'; });
+  var prIdxRev = rowsRev.findIndex(function(r){ return r.recordType === 'PROGRESSION'; });
+  assert('P252b', 'insertion order invertido produce mismo sort (CHECKIN antes que PROGRESSION)', ciIdxRev < prIdxRev);
+
+  // P252c: day=null normaliza igual que day=0 → typeOrder decide
+  var entries3 = {
+    'progrec_1_0': { recommendations: [{ exerciseName: 'A', action: 'x', reason: 'y' }] },
+    'postsession_1_0': { eimd: 1, articular: 'no', patron: '', sleep: 7, rpe: 6 }
+  };
+  var rows3 = _buildOperationalExportRows(entries3, null);
+  var psIdx3 = rows3.findIndex(function(r){ return r.recordType === 'POSTSESSION'; });
+  var prIdx3 = rows3.findIndex(function(r){ return r.recordType === 'PROGRESSION'; });
+  assert('P252c', 'POSTSESSION (day=0) antes que PROGRESSION (day=0) por typeOrder', psIdx3 < prIdx3);
+
+  // P252d: SET (day=0, typeOrder=0) antes que CHECKIN (day='', typeOrder=2)
+  var entries4 = {
+    'ci_sem_2': { peso: 79, hrv: 58, who5: 60, sleep: 7 },
+    'log_2_0_0_s0': { carga: 80, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 8, pump: 1 }
+  };
+  var rows4 = _buildOperationalExportRows(entries4, null);
+  var setIdx4 = rows4.findIndex(function(r){ return r.recordType === 'SET'; });
+  var ciIdx4  = rows4.findIndex(function(r){ return r.recordType === 'CHECKIN'; });
+  assert('P252d', 'SET (day=0) antes que CHECKIN (day="") por typeOrder', setIdx4 < ciIdx4);
+
+  // P252e: ordenación multi-semana es siempre semana menor primero
+  var entries5 = {
+    'log_3_0_0_s0': { carga: 85, reps: 6, unit: 'KG', done: true, rir_real: 0, ics: 9, pump: 1 },
+    'log_1_0_0_s0': { carga: 75, reps: 8, unit: 'KG', done: true, rir_real: 2, ics: 7, pump: 2 },
+    'log_2_0_0_s0': { carga: 80, reps: 8, unit: 'KG', done: true, rir_real: 1, ics: 8, pump: 1 }
+  };
+  var rows5 = _buildOperationalExportRows(entries5, null);
+  assert('P252e', 'semana 1 primero', rows5[0].week === 1);
+  assert('P252f', 'semana 2 segundo', rows5[1].week === 2);
+  assert('P252g', 'semana 3 último', rows5[2].week === 3);
 })();
 
 // ═════════════════════════ RESUMEN ═════════════════════════

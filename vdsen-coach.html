@@ -11424,14 +11424,20 @@ El esfuerzo no es negociable.
     });
 
     // Deterministic sort: week → day → recordType → setIndex
+    // Normalise before comparing to avoid '' vs 0 short-circuit returning 0 prematurely.
     var typeOrder = { SET: 0, POSTSESSION: 1, CHECKIN: 2, PROGRESSION: 3 };
+    function _sortNum(v) { var n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
     rows.sort(function(a, b) {
-      if (a.week !== b.week) return (a.week || 0) - (b.week || 0);
-      if (a.day !== b.day) return ((a.day || 0) - (b.day || 0));
+      var wDiff = _sortNum(a.week) - _sortNum(b.week);
+      if (wDiff !== 0) return wDiff;
+      var dDiff = _sortNum(a.day) - _sortNum(b.day);
+      if (dDiff !== 0) return dDiff;
       var ta = typeOrder[a.recordType] != null ? typeOrder[a.recordType] : 9;
       var tb = typeOrder[b.recordType] != null ? typeOrder[b.recordType] : 9;
       if (ta !== tb) return ta - tb;
-      return ((a.setIndex || 0) - (b.setIndex || 0));
+      var sDiff = _sortNum(a.setIndex) - _sortNum(b.setIndex);
+      if (sDiff !== 0) return sDiff;
+      return String(a.exerciseName || '').localeCompare(String(b.exerciseName || ''));
     });
 
     return rows;
