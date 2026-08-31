@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `3e277d1` · FASEs 12–16 mergeadas · FASE 17 implementada (pendiente merge)
+> Actualizado: 2026-08-31 · main HEAD: `604894c` · FASEs 12–17 mergeadas · siguiente = FASE 18
 
 ---
 
@@ -18,20 +18,20 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `3e277d1` — FASEs 12–16 mergeadas |
-| Rama activa | `claude/fase-17-csv-export` (pendiente merge) |
+| main HEAD | `604894c` — merge FASE 17 |
+| Rama activa | — |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
-| FASE 17 | Implementada — pendiente merge |
-| Suite tests | **686/686 PASS** (P01–P251) |
-| Vercel | auto-deploy en curso (`3e277d1`) |
+| FASE 17 | MERGED — commit `604894c` |
+| Suite tests | **693/693 PASS** (P01–P252) |
+| Vercel | auto-deploy en curso (`604894c`) |
 | Siguiente fase | **FASE 18** — ver backlog |
 
 ---
 
 ## FASES completadas
 
-### FASE 17 (rama `claude/fase-17-csv-export` — pendiente merge)
+### FASE 17 (merge commit `604894c` — MERGED a main)
 **Coach Monitor: Exportación CSV operativa por cliente**
 
 Archivos modificados:
@@ -65,7 +65,7 @@ Invariantes preservados:
 
 ---
 
-### FASE 16 (rama `claude/fase-16-exercise-substitution` — pendiente merge)
+### FASE 16 (merge commit `3e277d1` — MERGED a main)
 **Coach Plan Editor: Safe Exercise Substitution Workflow**
 
 Archivos modificados:
