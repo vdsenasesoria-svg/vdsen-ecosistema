@@ -7074,6 +7074,82 @@ console.log('\nP423 — 3 sets sin RIR → mensaje dice "3 series sin RIR real"'
   assert('P423b', 'mensaje dice "3 series"', found && found.message === '3 series sin RIR real');
 })();
 
+// ════════════════════════════════════════════════════════════
+// FASE 29 — Legacy Identity Display (monitor "última acción")
+// Mirror del path de resolución post-fix: solo name-match,
+// sin lookup posicional primario.
+// ════════════════════════════════════════════════════════════
+
+// Mirror de la lógica post-fix: name-match único.
+function _resolveLastActionF29(exName, lastRec, actionLabels) {
+  if (!lastRec || !lastRec.recommendations) return '—';
+  var exLower = exName.toLowerCase().trim();
+  var match = null;
+  lastRec.recommendations.forEach(function(r) {
+    if (r.exerciseName && r.exerciseName.toLowerCase().trim() === exLower) match = r;
+  });
+  if (!match) return '—';
+  return (actionLabels[match.action] || { label: '—' }).label;
+}
+
+var _actionLabelsF29 = {
+  increase_load: { label: '↑ subir carga' },
+  reduce_load:   { label: '↓ bajar carga' },
+  maintain:      { label: '= mantener' }
+};
+
+console.log('\nP424 — Reorder: progrec array en orden anterior, display reordenado → name-match ignora posición');
+(function() {
+  // Plan original: [Press Banca (ei=0), Sentadilla (ei=1)]
+  // Progrec generado en ese orden:
+  var lastRec = {
+    recommendations: [
+      { exerciseName: 'Press Banca', action: 'increase_load' }, // posición 0
+      { exerciseName: 'Sentadilla',  action: 'reduce_load'   }  // posición 1
+    ]
+  };
+  // Display reordenado: Sentadilla ahora aparece en ei=0 visualmente.
+  // Con el código viejo (posicional), ei=0 matchearía 'Press Banca' → incorrecto.
+  // Con el fix (name-match), 'Sentadilla'.toLowerCase() encuentra 'reduce_load' → correcto.
+  var actionSentadilla = _resolveLastActionF29('Sentadilla', lastRec, _actionLabelsF29);
+  var actionPressBanca = _resolveLastActionF29('Press Banca', lastRec, _actionLabelsF29);
+  assert('P424a', 'Sentadilla resuelve su propia acción (no la de posición 0)', actionSentadilla === '↓ bajar carga');
+  assert('P424b', 'Press Banca resuelve su propia acción (no la de posición 1)', actionPressBanca === '↑ subir carga');
+})();
+
+console.log('\nP425 — Nombre presente en progrec → acción correcta');
+(function() {
+  var lastRec = {
+    recommendations: [
+      { exerciseName: '  Curl Bíceps  ', action: 'maintain' }
+    ]
+  };
+  // Nombre con espacios extra en progrec; nombre limpio en plan
+  var action = _resolveLastActionF29('Curl Bíceps', lastRec, _actionLabelsF29);
+  assert('P425a', 'acción correcta devuelta', action === '= mantener');
+  // Nombre con mayúsculas distintas → sigue matcheando
+  var actionUpper = _resolveLastActionF29('CURL BÍCEPS', lastRec, _actionLabelsF29);
+  assert('P425b', 'case-insensitive match', actionUpper === '= mantener');
+})();
+
+console.log('\nP426 — Sin match por nombre → no se inventa acción (devuelve "—")');
+(function() {
+  var lastRec = {
+    recommendations: [
+      { exerciseName: 'Press Banca', action: 'increase_load' }
+    ]
+  };
+  // Ejercicio que no está en progrec
+  var action = _resolveLastActionF29('Extensión Triceps', lastRec, _actionLabelsF29);
+  assert('P426a', 'sin match → "—"', action === '—');
+  // lastRec sin recommendations
+  var actionEmpty = _resolveLastActionF29('Press Banca', {}, _actionLabelsF29);
+  assert('P426b', 'lastRec vacío → "—"', actionEmpty === '—');
+  // lastRec null
+  var actionNull = _resolveLastActionF29('Press Banca', null, _actionLabelsF29);
+  assert('P426c', 'lastRec null → "—"', actionNull === '—');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
