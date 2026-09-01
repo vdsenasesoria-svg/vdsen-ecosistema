@@ -7520,6 +7520,177 @@ console.log('\nF36-N — coach reset: simular reseteo del meso path');
   _clearStores();
 })();
 
+// ════════════════════════════════════════════════════════════
+// FASE 37 — LOGS_BY_WEEK index (O(n)→O(k) en hot functions)
+// ════════════════════════════════════════════════════════════
+
+// Simular LOGS_BY_WEEK y funciones del índice para tests F37
+var _LOGS_BY_WEEK_sim = { log: {}, progrec: {} };
+
+function _rebuildLogsByWeek_sim(logsObj) {
+  var log = {}, progrec = {};
+  Object.keys(logsObj).forEach(function(k) {
+    var w;
+    if (k.indexOf('log_') === 0) {
+      w = parseInt(k.split('_')[1]);
+      if (!isNaN(w)) { if (!log[w]) log[w] = []; log[w].push(k); }
+    } else if (k.indexOf('progrec_') === 0) {
+      w = parseInt(k.split('_')[1]);
+      if (!isNaN(w)) { if (!progrec[w]) progrec[w] = []; progrec[w].push(k); }
+    }
+  });
+  return { log: log, progrec: progrec };
+}
+
+function _lbwTrack_sim(idx, k) {
+  var w;
+  if (k.indexOf('log_') === 0) {
+    w = parseInt(k.split('_')[1]);
+    if (!isNaN(w)) { if (!idx.log[w]) idx.log[w] = []; idx.log[w].push(k); }
+  } else if (k.indexOf('progrec_') === 0) {
+    w = parseInt(k.split('_')[1]);
+    if (!isNaN(w)) { if (!idx.progrec[w]) idx.progrec[w] = []; idx.progrec[w].push(k); }
+  }
+}
+
+// F37-A: rebuild desde LOGS con entradas de múltiples semanas
+(function() {
+  console.log('\nF37-A — rebuild: separa log_ por semana correctamente');
+  var logs = {
+    'log_1_0_0_s0': { done: true }, 'log_1_0_0_s1': { done: true },
+    'log_2_0_0_s0': { done: true }, 'log_3_1_0_s0': { done: true },
+    'progrec_1_0': { recommendations: [] }, 'progrec_2_0': { recommendations: [] },
+    'done_1_0': true
+  };
+  var idx = _rebuildLogsByWeek_sim(logs);
+  assert('F37-Aa', 'semana 1 tiene 2 log_ keys', (idx.log[1] || []).length === 2);
+  assert('F37-Ab', 'semana 2 tiene 1 log_ key',  (idx.log[2] || []).length === 1);
+  assert('F37-Ac', 'semana 3 tiene 1 log_ key',  (idx.log[3] || []).length === 1);
+  assert('F37-Ad', 'done_ no entra en log index', !(idx.log[1] || []).some(function(k){ return k.indexOf('done_') === 0; }));
+})();
+
+// F37-B: rebuild captura progrec_ por semana
+(function() {
+  console.log('\nF37-B — rebuild: separa progrec_ por semana');
+  var logs = {
+    'progrec_1_0': { recommendations: [] },
+    'progrec_1_1': { recommendations: [] },
+    'progrec_2_0': { recommendations: [] },
+    'log_1_0_0_s0': { done: true }
+  };
+  var idx = _rebuildLogsByWeek_sim(logs);
+  assert('F37-Ba', 'semana 1 tiene 2 progrec', (idx.progrec[1] || []).length === 2);
+  assert('F37-Bb', 'semana 2 tiene 1 progrec', (idx.progrec[2] || []).length === 1);
+  assert('F37-Bc', 'log_ no entra en progrec index', !(idx.progrec[1] || []).some(function(k){ return k.indexOf('log_') === 0; }));
+})();
+
+// F37-C: lbwTrack actualiza incrementalmente — append correcto
+(function() {
+  console.log('\nF37-C — lbwTrack: actualización incremental append-only');
+  var idx = { log: {}, progrec: {} };
+  _lbwTrack_sim(idx, 'log_3_0_1_s0');
+  _lbwTrack_sim(idx, 'log_3_0_1_s1');
+  _lbwTrack_sim(idx, 'progrec_3_0');
+  assert('F37-Ca', 'dos log_ en semana 3', (idx.log[3] || []).length === 2);
+  assert('F37-Cb', 'un progrec en semana 3', (idx.progrec[3] || []).length === 1);
+  assert('F37-Cc', 'semanas no relacionadas vacías', !(idx.log[1]));
+})();
+
+// F37-D: rebuild vacía y reconstruye — no mezcla con estado anterior
+(function() {
+  console.log('\nF37-D — rebuild: reemplaza índice anterior completamente');
+  var idx = _rebuildLogsByWeek_sim({ 'log_1_0_0_s0': { done: true } });
+  assert('F37-Da', 'semana 1 existe antes', (idx.log[1] || []).length === 1);
+  // Simula un nuevo LOGS (plan cambiado) — entries vacío
+  var idx2 = _rebuildLogsByWeek_sim({});
+  assert('F37-Db', 'después de rebuild con {}: semana 1 vacía', !(idx2.log[1]));
+  assert('F37-Dc', 'después de rebuild con {}: progrec vacío', Object.keys(idx2.progrec).length === 0);
+})();
+
+// F37-E: lbwTrack con key no-log, no-progrec — no contamina el índice
+(function() {
+  console.log('\nF37-E — lbwTrack: keys no relevantes no entran al índice');
+  var idx = { log: {}, progrec: {} };
+  _lbwTrack_sim(idx, 'done_1_0');
+  _lbwTrack_sim(idx, 'postsession_1_0');
+  _lbwTrack_sim(idx, 'ci_sem_1');
+  _lbwTrack_sim(idx, 'exexpress_1_0_0');
+  assert('F37-Ea', 'done_ no entra en log', Object.keys(idx.log).length === 0);
+  assert('F37-Eb', 'postsession_ no entra en log', Object.keys(idx.log).length === 0);
+  assert('F37-Ec', 'progrec idx vacío', Object.keys(idx.progrec).length === 0);
+})();
+
+// F37-F: semana inexistente → array vacío (no error)
+(function() {
+  console.log('\nF37-F — índice: semana inexistente retorna vacío sin error');
+  var idx = _rebuildLogsByWeek_sim({ 'log_1_0_0_s0': { done: true } });
+  assert('F37-Fa', 'idx.log[99] es undefined', idx.log[99] === undefined);
+  assert('F37-Fb', '(idx.log[99] || []) es []', (idx.log[99] || []).length === 0);
+  assert('F37-Fc', 'idx.progrec[5] undefined no lanza', (idx.progrec[5] || []).length === 0);
+})();
+
+// F37-G: stale keys (entry null) — consumidor las ignora, no crash
+(function() {
+  console.log('\nF37-G — stale keys en índice: consumidor las filtra sin crash');
+  var idx = { log: {}, progrec: {} };
+  _lbwTrack_sim(idx, 'log_2_0_0_s0');
+  // Simular que la entrada fue eliminada (express cleanup)
+  var logsObj = { 'log_2_0_0_s0': null };
+  var found = [];
+  (idx.log[2] || []).forEach(function(k) {
+    var entry = logsObj[k];
+    if (!entry || !entry.done) return; // stale/null — skip
+    found.push(k);
+  });
+  assert('F37-Ga', 'stale null entry filtrada por consumidor', found.length === 0);
+})();
+
+// F37-H: consistencia rebuild vs lbwTrack — misma cobertura para semana activa
+(function() {
+  console.log('\nF37-H — rebuild y lbwTrack producen cobertura equivalente');
+  var logs = {};
+  for (var s = 0; s < 4; s++) logs['log_3_0_2_s'+s] = { done: true, carga: '80', reps:'8' };
+  logs['progrec_3_0'] = { recommendations: [] };
+
+  // Rebuild
+  var idxR = _rebuildLogsByWeek_sim(logs);
+
+  // Incremental (simula writes)
+  var idxI = { log: {}, progrec: {} };
+  for (var s2 = 0; s2 < 4; s2++) _lbwTrack_sim(idxI, 'log_3_0_2_s'+s2);
+  _lbwTrack_sim(idxI, 'progrec_3_0');
+
+  assert('F37-Ha', 'log keys semana 3 iguales', (idxR.log[3]||[]).length === (idxI.log[3]||[]).length);
+  assert('F37-Hb', 'progrec semana 3 iguales', (idxR.progrec[3]||[]).length === (idxI.progrec[3]||[]).length);
+})();
+
+// F37-I: _getPrevWeekData identity — lógica equivalente con índice vs sin índice
+(function() {
+  console.log('\nF37-I — equivalencia semántica: búsqueda por PID con índice');
+  // Simula _getPrevWeekData con índice para semana 2
+  var pid = 'abc-123';
+  var logsObj = {
+    'log_2_0_1_s0': { done: true, carga: '80', reps: '8', prescriptionExerciseId: pid, autoFilled: false },
+    'log_2_0_1_s1': { done: true, carga: '80', reps: '8', prescriptionExerciseId: pid, autoFilled: false },
+    'log_2_0_2_s0': { done: true, carga: '60', reps: '10', prescriptionExerciseId: 'other', autoFilled: false }
+  };
+  var idx = _rebuildLogsByWeek_sim(logsObj);
+
+  // Búsqueda con índice
+  var positions = {}, candidateSets = [];
+  (idx.log[2] || []).forEach(function(k) {
+    var entry = logsObj[k];
+    if (!entry || !entry.done || entry.autoFilled) return;
+    if (entry.prescriptionExerciseId !== pid) return;
+    var parts = k.split('_');
+    if (parts.length >= 5) positions[parts[2]+'_'+parts[3]] = true;
+    candidateSets.push(entry);
+  });
+  assert('F37-Ia', '2 sets encontrados para PID correcto', candidateSets.length === 2);
+  assert('F37-Ib', 'una sola posición (di,ei)', Object.keys(positions).length === 1);
+  assert('F37-Ic', 'PID incorrecto excluido', candidateSets.every(function(s){ return s.prescriptionExerciseId === pid; }));
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

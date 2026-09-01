@@ -365,6 +365,7 @@ button:active{opacity:.85}
 let USER = null;
 let PLAN = null;
 let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
+var LOGS_BY_WEEK = { log: {}, progrec: {} }; // derived index: { w: [key1,...] } — rebuilt on bulk load, appended on writes
 let CURRENT_WEEK = 1;
 var REAL_WEEK = 1;     // semana real de entrenamiento (no cambia al navegar)
 var _weeksExpanded = false; // selector: mostrar semanas pasadas
@@ -1592,6 +1593,7 @@ async function loadPlan(user) {
           EXERCISE_UNITS = {}; // limpiar — los índices di/ei del plan viejo no corresponden al nuevo
           CURRENT_WEEK   = 1;
           REAL_WEEK      = 1;
+          _rebuildLogsByWeek();
           await _doSaveLogs(); // Guardar el estado limpio de la semana 1
           showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
           _showBitacoraInfo = true;
@@ -1600,11 +1602,12 @@ async function loadPlan(user) {
           LOGS         = logData.entries || {};
           CURRENT_WEEK = logData.currentWeek || 1;
           REAL_WEEK    = CURRENT_WEEK;
+          _rebuildLogsByWeek();
         }
       }
     } catch(logErr) {
       console.warn('logs no disponibles:', logErr.message);
-      if (!loadBackupLogs()) { LOGS = {}; CURRENT_WEEK = 1; REAL_WEEK = 1; }
+      if (!loadBackupLogs()) { LOGS = {}; CURRENT_WEEK = 1; REAL_WEEK = 1; _rebuildLogsByWeek(); }
       const errEl = document.getElementById('saveErrBadge');
       if (errEl) { errEl.style.display='block'; errEl.textContent='⚠ Usando datos locales.'; }
     }
@@ -1707,6 +1710,7 @@ async function loadPlan(user) {
         if (newWeek !== REAL_WEEK || Math.abs(entriesCount - localCount) > 0) {
           if (newWeek > REAL_WEEK) { REAL_WEEK = newWeek; CURRENT_WEEK = newWeek; }
           LOGS = d.entries || {};
+          _rebuildLogsByWeek();
           if (d.exerciseUnits)   EXERCISE_UNITS   = d.exerciseUnits;
           if (d.exerciseHistory) EXERCISE_HISTORY = d.exerciseHistory;
           try { renderEntrenamiento(); } catch(e){}
@@ -3343,7 +3347,7 @@ async function _refreshLogsFromFirestore(reason) {
     if (fsWeek > REAL_WEEK) { REAL_WEEK = fsWeek; CURRENT_WEEK = fsWeek; }
     // Si la cantidad de entries cambió significativamente, recargar LOGS en memoria
     var entriesChanged = Object.keys(fsEntries).length !== Object.keys(LOGS || {}).length;
-    if (entriesChanged) LOGS = fsEntries;
+    if (entriesChanged) { LOGS = fsEntries; _rebuildLogsByWeek(); }
     if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
     if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
     if (weekChanged || entriesChanged) {
@@ -5337,7 +5341,8 @@ function markExpressDone(di, ei) {
   var now = Date.now();
   var _ejExprMeta = (_EJERCICIOS_DIA || [])[ei] || {};
   for (var s = 0; s < sets; s++) {
-    LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s] = {
+    var _eKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
+    LOGS[_eKey] = {
       carga: carga, reps: String(reps), unit: unit, done: true,
       rir: rirLast, rir_real: rirLast,
       ics: ics || 8, pump: pump || 1,
@@ -5346,6 +5351,7 @@ function markExpressDone(di, ei) {
       exerciseId: _ejExprMeta.exerciseId || undefined,
       exerciseNameSnapshot: _ejExprMeta.exerciseName || _ejExprMeta.nombre || undefined
     };
+    _lbwTrack(_eKey);
   }
   // Limpiar entradas sintéticas excedentes de sesiones anteriores
   for (var s2 = sets; s2 < 12; s2++) {
@@ -5704,7 +5710,9 @@ function markExpressSSDone(di, ssMembers) {
     if (_pcRec && _pcRec.newSets && _pcRec.action === 'reduce_sets') numSets = _pcRec.newSets;
     LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:carga, reps:String(reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:unit, done:true, ts:now };
     for (var s = 0; s < numSets; s++) {
-      LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s] = { carga:carga, reps:String(reps), unit:unit, done:true, rir:rirLast, rir_real:rirLast, ics:ics||8, pump:pump||1, ts:now, express:true };
+      var _ssKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s;
+      LOGS[_ssKey] = { carga:carga, reps:String(reps), unit:unit, done:true, rir:rirLast, rir_real:rirLast, ics:ics||8, pump:pump||1, ts:now, express:true };
+      _lbwTrack(_ssKey);
     }
     for (var s2 = numSets; s2 < 12; s2++) {
       var stale = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s2;
@@ -5849,7 +5857,9 @@ function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
     LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:lastSD.carga||'0', reps:String(lastSD.reps||reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:lastSD.unit||unit_i, done:true, ts:now };
     for (var s = 0; s < numSets; s++) {
       var sdS = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+s+'_m'+i] || lastSD;
-      LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s] = { carga:sdS.carga||'0', reps:String(sdS.reps||reps), unit:sdS.unit||unit_i, done:true, rir:rirLast, rir_real:rirLast, ics:ics||8, pump:pump||1, ts:now, express:true };
+      var _ss2Key = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s;
+      LOGS[_ss2Key] = { carga:sdS.carga||'0', reps:String(sdS.reps||reps), unit:sdS.unit||unit_i, done:true, rir:rirLast, rir_real:rirLast, ics:ics||8, pump:pump||1, ts:now, express:true };
+      _lbwTrack(_ss2Key);
     }
     for (var s2 = numSets; s2 < 12; s2++) {
       var stale = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s2;
@@ -7483,6 +7493,7 @@ function completeSet(key, di, ei, si, unit) {
     exerciseId: _ejMeta.exerciseId || undefined,
     exerciseNameSnapshot: _ejMeta.exerciseName || _ejMeta.nombre || undefined
   };
+  _lbwTrack(key);
 
   // Leer nombre del ejercicio antes de re-render
   var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -8347,11 +8358,12 @@ async function markSessionDoneFromHistory(di) {
         done:  true,
         rir:   defaultRIR,
         rir_real: refRir,
-        ics:   8,   // calidad de set asumida (no medida)
-        pump:  2,   // ok
+        ics:   8,
+        pump:  2,
         ts:    Date.now(),
         autoFilled: true
       };
+      _lbwTrack(k);
       totalSetsRellenados++;
     }
 
@@ -8428,6 +8440,7 @@ async function markWeekDoneWithPartialData() {
           var _san = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
           var recSafe = JSON.parse(JSON.stringify(rec, _san));
           LOGS['progrec_'+REAL_WEEK+'_'+di] = recSafe;
+          _lbwTrack('progrec_'+REAL_WEEK+'_'+di);
           if (rec.engineState) LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _san));
         }
       } catch(e) { console.warn('progression on close-week failed:', e && e.message); }
@@ -8517,6 +8530,7 @@ async function markWeekCompleteFromHistory() {
           done: true, rir: defaultRIR, rir_real: refRir, ics: 8, pump: 2,
           ts: Date.now(), autoFilled: true
         };
+        _lbwTrack(_k);
         totalFilled++;
       }
       EXERCISE_HISTORY[exName] = { load: String(refLoad), reps: String(refReps), rir: refRir, unit: currentUnit, updatedAt: Date.now() };
@@ -8531,6 +8545,7 @@ async function markWeekCompleteFromHistory() {
         var _san2 = function(_k2, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
         var recSafe = JSON.parse(JSON.stringify(rec, _san2));
         LOGS['progrec_'+REAL_WEEK+'_'+di] = recSafe;
+        _lbwTrack('progrec_'+REAL_WEEK+'_'+di);
         if (rec.engineState) LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _san2));
       }
     } catch(e) { console.warn('progrec failed in markWeekCompleteFromHistory:', e && e.message); }
@@ -8631,9 +8646,11 @@ function loadBackupLogs() {
           if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
           if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
           LOGS = {}; REAL_WEEK = 1; CURRENT_WEEK = 1;
+          _rebuildLogsByWeek();
           return true;
         }
         LOGS = data.entries;
+        _rebuildLogsByWeek();
         REAL_WEEK    = data.currentWeek || 1;
         CURRENT_WEEK = REAL_WEEK;
         if (data.exerciseUnits) EXERCISE_UNITS = data.exerciseUnits;
@@ -12438,16 +12455,49 @@ function _linRegSlope(points) {
   return (n * sumXY - sumX * sumY) / denom;
 }
 
+// ── FASE 37 — LOGS_BY_WEEK index ──────────────────────────────────────────
+// Derived from LOGS; rebuilt on bulk load, appended incrementally on writes.
+// Eliminates O(n_total) scans in hot functions — each week lookup is O(k_week).
+
+function _rebuildLogsByWeek() {
+  var log = {}, progrec = {};
+  var _k;
+  var _ks = Object.keys(LOGS);
+  for (var _i = 0; _i < _ks.length; _i++) {
+    _k = _ks[_i];
+    var _w;
+    if (_k.charCodeAt(0) === 108 && _k.charCodeAt(1) === 111 && _k.indexOf('log_') === 0) {
+      _w = parseInt(_k.split('_')[1]);
+      if (!isNaN(_w)) { if (!log[_w]) log[_w] = []; log[_w].push(_k); }
+    } else if (_k.indexOf('progrec_') === 0) {
+      _w = parseInt(_k.split('_')[1]);
+      if (!isNaN(_w)) { if (!progrec[_w]) progrec[_w] = []; progrec[_w].push(_k); }
+    }
+  }
+  LOGS_BY_WEEK.log = log;
+  LOGS_BY_WEEK.progrec = progrec;
+}
+
+function _lbwTrack(k) {
+  var _w;
+  if (k.indexOf('log_') === 0) {
+    _w = parseInt(k.split('_')[1]);
+    if (!isNaN(_w)) { if (!LOGS_BY_WEEK.log[_w]) LOGS_BY_WEEK.log[_w] = []; LOGS_BY_WEEK.log[_w].push(k); }
+  } else if (k.indexOf('progrec_') === 0) {
+    _w = parseInt(k.split('_')[1]);
+    if (!isNaN(_w)) { if (!LOGS_BY_WEEK.progrec[_w]) LOGS_BY_WEEK.progrec[_w] = []; LOGS_BY_WEEK.progrec[_w].push(k); }
+  }
+}
+
 // Buscar la recomendación de progresión más reciente para un ejercicio
 function _getProgRecForExercise(di, ei, exName) {
   // Buscar progrec_ en orden descendente (semana más reciente primero)
   var bestRec = null;
   for (var w = CURRENT_WEEK; w >= 1; w--) {
-    // Buscar en todos los días de esa semana
-    var keys = Object.keys(LOGS).filter(function(k) { return k === 'progrec_'+w+'_'+di; });
+    var _progWeek = LOGS_BY_WEEK.progrec[w] || [];
+    var keys = _progWeek.filter(function(k) { return k === 'progrec_'+w+'_'+di; });
     if (!keys.length) {
-      // También buscar en otros días por si el ejercicio cambió de día
-      keys = Object.keys(LOGS).filter(function(k) { return k.startsWith('progrec_'+w+'_'); });
+      keys = _progWeek; // todos los progrec de esta semana (ejercicio cambió de día)
     }
     for (var ki = 0; ki < keys.length; ki++) {
       var prog = LOGS[keys[ki]];
@@ -12485,11 +12535,9 @@ function _getExposures(prescriptionExerciseId, di, ei, nombre, maxExposures) {
     var confidence = 'LOW';
 
     if (prescriptionExerciseId) {
-      var prefix = 'log_'+w+'_';
       var positions = {};
       var candidateSets = [];
-      Object.keys(LOGS).forEach(function(k) {
-        if (k.indexOf(prefix) !== 0) return;
+      (LOGS_BY_WEEK.log[w] || []).forEach(function(k) {
         var entry = LOGS[k];
         if (!entry || !entry.done || entry.autoFilled) return;
         if (entry.prescriptionExerciseId !== prescriptionExerciseId) return;
@@ -13440,17 +13488,15 @@ function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exercis
 
   // HIGH confidence: search by prescriptionExerciseId
   if (prescriptionExerciseId) {
-    var prefix = 'log_'+prevWeek+'_';
     var positions = {};
     var candidateSets = [];
-    Object.keys(LOGS).forEach(function(k) {
-      if (k.indexOf(prefix) === 0 && LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled
-          && LOGS[k].prescriptionExerciseId === prescriptionExerciseId) {
-        // Parse (di, ei) from key: log_{W}_{D}_{E}_s{S}
-        var parts = k.split('_');
-        if (parts.length >= 5) { positions[parts[2]+'_'+parts[3]] = true; }
-        candidateSets.push(LOGS[k]);
-      }
+    (LOGS_BY_WEEK.log[prevWeek] || []).forEach(function(k) {
+      var entry = LOGS[k];
+      if (!entry || !entry.done || entry.autoFilled) return;
+      if (entry.prescriptionExerciseId !== prescriptionExerciseId) return;
+      var parts = k.split('_');
+      if (parts.length >= 5) { positions[parts[2]+'_'+parts[3]] = true; }
+      candidateSets.push(entry);
     });
     // Ambiguity: same prescriptionExerciseId on multiple (di,ei) → DUPLICATE_PRESCRIPTION_ID
     if (candidateSets.length && Object.keys(positions).length > 1) {
