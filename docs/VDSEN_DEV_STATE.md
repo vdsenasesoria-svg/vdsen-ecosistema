@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · main HEAD: `8c618ee` · FASE 34+35 MERGED · Baseline FASE 36
+> Actualizado: 2026-09-01 · branch `claude/fase-36-log-rotation` · FASE 36A GATE PASS · Implementación en progreso
 
 ---
 
@@ -40,7 +40,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | Suite tests | **1060/1060 PASS** (P01–P426 + F34-A–J) |
 | Vercel | auto-deploy en push a main |
 | FASE 35 | MERGED — Historical Data Scalability Discovery: reporte completo 28 puntos |
-| Siguiente fase | FASE 36 — Log Rotation Architecture (baseline: `8c618ee`) |
+| FASE 36 | EN CURSO — Log Rotation Architecture + planId Stability Gate |
 
 ---
 
@@ -54,6 +54,115 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 - No introducir ninguna lógica `currentWeek === 6 → deload` en ningún nuevo código
 
 ---
+
+---
+
+## FASE 36 — Log Rotation Architecture (EN CURSO · 2026-09-01)
+
+**Objetivo:** Eliminar crecimiento indefinido de `logs/{uid}.entries` mediante rotación por mesociclo (`logs/{uid}/mesos/{planId}`), con transición backward-compatible.
+
+**Baseline:** main `dd6e526` · Suite 1060/1060 PASS · Branch `claude/fase-36-log-rotation`
+
+---
+
+### FASE 36A — planId Stability Gate
+
+**Tipo:** READ-ONLY. Auditoría de todas las rutas de escritura y lectura de `logs/`.
+
+#### Matrix de estabilidad de planId
+
+| Ruta | Archivo | R/W | planId disponible | Fuente de planId | Estable | Puede ser null | Legacy | Safe for Rotation |
+|------|---------|-----|-------------------|-----------------|---------|---------------|--------|-------------------|
+| `_doSaveLogs` | cliente ~L8566 | W | ✓ | `ACTIVE_PLAN_ID` (global, asignado en `loadPlan` desde Firestore `clients/{uid}.activePlanId`) | ✓ | ✓ (sin plan asignado) | — | ✓ PASS |
+| Plan changed flush (`if(planChanged)`) | cliente ~L1582 | W | ✓ | `ACTIVE_PLAN_ID` recién asignado antes del flush | ✓ | NO (sería bug) | — | ✓ PASS |
+| Week-reset write (`_doSaveLogs` post plan-change) | cliente ~L1589 | W | ✓ | `ACTIVE_PLAN_ID` ya actualizado | ✓ | NO | — | ✓ PASS |
+| `visibilitychange` flush (Safari) | cliente ~L3363 | W | ✓ | `ACTIVE_PLAN_ID` global, persiste durante sesión | ✓ | ✓ | — | ✓ PASS |
+| `loadPlan` carga inicial de logs | cliente ~L1554 | R | ✓ | `activePlanId` obtenido de `clients/{uid}` antes de leer logs | ✓ | ✓ (sin plan) | — | ✓ PASS |
+| `_refreshLogsFromFirestore` (background sync) | cliente ~L3326 | R | ⚠ PARCIAL | Lee `logs/{uid}` legacy — NO tiene `activePlanId` en scope | Depende de ACTIVE_PLAN_ID global | ✓ | — | ⚠ REQUIERE ATENCIÓN |
+| `onSnapshot logs/{uid}` (cliente) | cliente ~L1690 | R (listener) | ⚠ PARCIAL | Escucha path `logs/{uid}` hardcodeado — no sabe de sub-path | Escucha el doc legacy | ✓ | — | ⚠ REQUIERE REDESIGN |
+| `loadClientList` N×getDoc | coach ~L1833 | R | ✓ (no necesario) | Lee `logs/{uid}` por UID, no necesita planId | N/A | N/A | — | ✓ PASS (sin cambio needed) |
+| Monitor `onSnapshot logs/{clientId}` | coach ~L3503 | R (listener) | ✓ (no necesario) | Escucha `logs/{uid}` del cliente seleccionado | N/A | N/A | — | ✓ PASS (sin cambio needed) |
+| Coach: cambiar semana (`updateDoc`) | coach ~L3425 | W coach | ✓ (no necesario) | Escribe a `logs/{uid}` del cliente — no usa planId del coach | N/A | N/A | — | ✓ (scope fuera de rotation) |
+| Coach: cerrar mesociclo (`updateDoc`) | coach ~L3490 | W coach | ✓ | `clientData.activePlanId` disponible en scope | ✓ | ✓ | — | ✓ PASS |
+| `resetClientWeek` | coach ~L12952 | W coach | ✓ | Lee `clients/{clientId}.activePlanId` justo antes del write | ✓ | ✓ | — | ✓ PASS |
+| `resetClientWeekKeepSessions` | coach ~L12985 | W coach | ✓ | Lee `clients/{clientId}.activePlanId` justo antes del write | ✓ | ✓ | — | ✓ PASS |
+| `setClientWeekManual` | coach ~L12933 | W coach | — | Escribe solo `currentWeek` — sin planId | N/A | N/A | — | ✓ PASS (sin planId needed) |
+| `mergeClients` | coach ~L2315 | W admin | — | Copia `logs/{uid}` completo — acción admin excepcional | N/A | N/A | — | ⚠ NOTA (ver abajo) |
+| `repairClientUID` | coach ~L12782 | W admin | — | Copia `logs/{uid}` completo — acción admin excepcional | N/A | N/A | — | ⚠ NOTA (ver abajo) |
+| `exportClientPDF` / `generateFullClientReport` | coach ~L3793 | R | — | Lee `logs/{uid}` por clientId | N/A | N/A | — | ✓ PASS (read-only, fallback ok) |
+| `showClientDetail` / `loadClientDetail` | coach ~L1423 | R | — | Lee `logs/{uid}` por clientId | N/A | N/A | — | ✓ PASS |
+| `loadBackupLogs` (localStorage) | cliente ~L8607 | R | ✓ | Backup ya incluye `planId` en payload | ✓ | ✓ | — | ✓ PASS |
+| Dashboard coach `logsPromises` | coach ~L13088 | R | — | Lee `logs/{uid}` por clientId — no usa planId | N/A | N/A | — | ✓ PASS |
+
+#### Análisis de rutas con bandera ⚠
+
+**`onSnapshot(logs/{uid})`  (cliente ~L1690) — BLOQUEANTE:**
+- El listener escucha `logs/{uid}` hardcodeado. En una arquitectura de sub-colección (`logs/{uid}/mesos/{planId}`), este listener no recibiría eventos de cambio del nuevo path.
+- No puede reconfigurarse dinámicamente con el planId sin cancelar y re-suscribir el listener.
+- El listener también actúa como sync multi-dispositivo: si el segundo dispositivo escribe al nuevo path, este listener no lo verá.
+- **Para rotation correcta, el listener debe cambiarse a escuchar `logs/{uid}/mesos/{planId}`**, lo que requiere que `planId` sea conocido en el momento de configurar el listener (justo después de `loadPlan`).
+- **Evaluación:** `ACTIVE_PLAN_ID` **está disponible** cuando se configura el listener (~L1690, dentro de `loadPlan`, después de L1551 donde se asigna `ACTIVE_PLAN_ID`). El planId ES estable en ese momento. ✓
+
+**`_refreshLogsFromFirestore` (~L3326) — ATENCIÓN:**
+- Lee `logs/{uid}` explícitamente — necesitaría leer del nuevo path.
+- `ACTIVE_PLAN_ID` global está disponible como global en el momento en que se llama. ✓
+- Requiere cambio de path pero la fuente de planId es estable.
+
+**`mergeClients` y `repairClientUID` — NOTA:**
+- Son acciones admin excepcionales que copian el documento `logs/{uid}` completo.
+- Con rotation, estos también deberían copiar sub-colecciones — lo cual Firestore no permite con un `setDoc` simple de documento raíz.
+- **Esta es una complejidad adicional real** para acciones admin. Se puede defer a FASE 36 si las acciones admin se actualizan o se documenta como limitación conocida.
+
+#### Fuente de planId — trazabilidad completa
+
+```
+clients/{uid}.activePlanId  [Firestore — fuente de verdad]
+    ↓ (loadPlan, ~L1379)
+activePlanId [variable local en loadPlan]
+    ↓ (asignación ~L1551)
+ACTIVE_PLAN_ID [var global, persiste toda la sesión]
+    ↓
+_doSaveLogs → entries escritas en logs/{uid}
+              (campo planId: ACTIVE_PLAN_ID guardado para detección de cambio)
+```
+
+**Invariantes verificados:**
+- `ACTIVE_PLAN_ID` se asigna en `loadPlan` exactamente una vez, desde Firestore (`clients/{uid}.activePlanId`), antes de cualquier write de logs en la sesión.
+- No depende de posición (di/ei), nombre, fecha ni inferencia.
+- Persiste correctamente durante toda la sesión sin mutación.
+- Al cambio de plan (`planChanged`), `ACTIVE_PLAN_ID` se actualiza ANTES del flush de logs limpios.
+- El backup de localStorage incluye `planId: ACTIVE_PLAN_ID` — la restauración puede distinguir si el plan cambió entre sesiones.
+
+#### Resultado del Gate
+
+| Criterio | Estado |
+|----------|--------|
+| Toda ruta WRITE activa tiene planId estable | ✓ PASS |
+| planId proviene de fuente persistente/confiable (Firestore `clients/{uid}`) | ✓ PASS |
+| No depende de dayIndex/exerciseIndex | ✓ PASS |
+| No depende de UI temporal | ✓ PASS |
+| No se infiere por nombre | ✓ PASS |
+| reload/relogin mantiene resolución correcta | ✓ PASS (planId re-obtenido desde Firestore en cada `loadPlan`) |
+| Plan activo tiene identificación inequívoca | ✓ PASS (`activePlanId` = doc ID de Firestore) |
+| Sesiones históricas pueden asociarse al plan | ✓ PASS (campo `planId` ya guardado en `logs/{uid}` desde FASE 33) |
+| `onSnapshot` puede reconfigurarse con planId | ✓ PASS (`ACTIVE_PLAN_ID` disponible en scope al configurar el listener) |
+| Complejidad admin (`mergeClients`, `repairUID`) | ⚠ LIMITACIÓN CONOCIDA — acción admin copia doc raíz, no sub-cols |
+
+**VEREDICTO: GATE PASS ✓**
+
+Todos los paths de escritura activos (cliente) tienen `ACTIVE_PLAN_ID` estable. El planId es un identificador real de Firestore, obtenido de `clients/{uid}.activePlanId`, sin inferencia ni posición. La rotation es arquitectónicamente segura.
+
+La limitación de acciones admin (`mergeClients`, `repairClientUID`) se documenta como deuda conocida, no como bloqueante del Gate — son acciones excepcionales fuera del flujo de workout.
+
+---
+
+### FASE 36B — Implementación (pendiente)
+
+Gate PASS confirmado. Implementación en progreso según spec.
+
+**Path objetivo:** `logs/{uid}/mesos/{planId}`  
+**Estrategia:** dual-write T1 → new-write-only T2 → retirada T3  
+**Retirement strategy:** ver sección al final de esta fase
 
 ---
 
