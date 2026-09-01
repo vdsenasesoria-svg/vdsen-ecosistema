@@ -2111,7 +2111,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       snap.forEach(d => {
         const data = d.data();
         const label = data.displayName || data.email || d.id;
-        sel.innerHTML += `<option value="${d.id}">${label}</option>`;
+        sel.innerHTML += `<option value="${_escH(d.id)}">${_escH(label)}</option>`;
       });
       if (res) res.innerHTML = `<span style="color:#888">${snap.size} cliente(s) cargados.</span>`;
     } catch (e) {
@@ -2254,9 +2254,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
               <th style="text-align:left;color:#e05555;padding-bottom:6px">✗ ELIMINAR</th>
             </tr></thead>
             <tbody>
-              ${row('Nombre',    v(keepData.displayName||'—', !!keepData.displayName), v(dd.displayName||'—', !!dd.displayName))}
-              ${row('Email',     v(keepData.email||'—', !!keepData.email),              v(dd.email||'—', !!dd.email))}
-              ${row('Celular',   v(keepData.phone||'—', !!keepData.phone),              v(dd.phone||'—', !!dd.phone))}
+              ${row('Nombre',    v(_escH(keepData.displayName||'—'), !!keepData.displayName), v(_escH(dd.displayName||'—'), !!dd.displayName))}
+              ${row('Email',     v(_escH(keepData.email||'—'), !!keepData.email),              v(_escH(dd.email||'—'), !!dd.email))}
+              ${row('Celular',   v(_escH(keepData.phone||'—'), !!keepData.phone),              v(_escH(dd.phone||'—'), !!dd.phone))}
               ${row('Plan',      v(keepData.activePlanId?'✓ tiene':'✗ sin', !!keepData.activePlanId), v(dd.activePlanId?'✓ tiene':'✗ sin', !!dd.activePlanId))}
               ${row('Logs',      v(keepLogsSnap.exists()?'✓ tiene':'✗ sin', keepLogsSnap.exists()), v(delLogsSnap.exists()?'✓ tiene':'✗ sin', delLogsSnap.exists()))}
               ${row('Ficha',     v(keepFichaSnap2.exists()?'✓ tiene':'✗ sin', keepFichaSnap2.exists()), v(delFichaSnap2.exists()?'✓ tiene':'✗ sin', delFichaSnap2.exists()))}
@@ -11039,12 +11039,12 @@ El esfuerzo no es negociable.
     let html = '';
     if (n.calorias || n.proteina || n.carbos || n.grasas)
       html += `<div class="flex gap-3 mb-2 flex-wrap">
-        ${n.calorias ? `<span class="text-sm"><span class="text-[#888]">Kcal:</span> <strong>${n.calorias}</strong></span>` : ''}
-        ${n.proteina ? `<span class="text-sm"><span class="text-[#888]">P:</span> <strong>${n.proteina}g</strong></span>` : ''}
-        ${n.carbos   ? `<span class="text-sm"><span class="text-[#888]">C:</span> <strong>${n.carbos}g</strong></span>` : ''}
-        ${n.grasas   ? `<span class="text-sm"><span class="text-[#888]">G:</span> <strong>${n.grasas}g</strong></span>` : ''}
+        ${n.calorias ? `<span class="text-sm"><span class="text-[#888]">Kcal:</span> <strong>${_escH(n.calorias)}</strong></span>` : ''}
+        ${n.proteina ? `<span class="text-sm"><span class="text-[#888]">P:</span> <strong>${_escH(n.proteina)}g</strong></span>` : ''}
+        ${n.carbos   ? `<span class="text-sm"><span class="text-[#888]">C:</span> <strong>${_escH(n.carbos)}g</strong></span>` : ''}
+        ${n.grasas   ? `<span class="text-sm"><span class="text-[#888]">G:</span> <strong>${_escH(n.grasas)}g</strong></span>` : ''}
       </div>`;
-    if (n.texto) html += `<pre class="text-xs text-[#888] whitespace-pre-wrap leading-relaxed">${n.texto}</pre>`;
+    if (n.texto) html += `<pre class="text-xs text-[#888] whitespace-pre-wrap leading-relaxed">${_escH(n.texto)}</pre>`;
     return html;
   }
 
@@ -11269,7 +11269,7 @@ El esfuerzo no es negociable.
 
   function renderSupplementView(s) {
     if (!s || !s.texto) return `<p class="text-[#888] text-sm">Sin datos.</p>`;
-    return `<pre class="text-xs text-[#888] whitespace-pre-wrap leading-relaxed">${s.texto}</pre>`;
+    return `<pre class="text-xs text-[#888] whitespace-pre-wrap leading-relaxed">${_escH(s.texto)}</pre>`;
   }
 
   function renderSupplementEditor(s) {
@@ -12740,9 +12740,9 @@ El esfuerzo no es negociable.
       if (isSynthEmail) {
         let d = String(c.phone||'').replace(/[^\d]/g,'');
         if(d.length===10) d='52'+d;
-        lines.push(`<b>Entrar con:</b> celular <code>${c.phone||'(no registrado)'}</code>`);
+        lines.push(`<b>Entrar con:</b> celular <code>${_escH(c.phone||'(no registrado)')}</code>`);
       } else {
-        lines.push(`<b>Entrar con:</b> correo <code>${c.email}</code>${c.phone?' o celular <code>'+c.phone+'</code>':''}`);
+        lines.push(`<b>Entrar con:</b> correo <code>${_escH(c.email)}</code>${c.phone?' o celular <code>'+_escH(c.phone)+'</code>':''}`);
       }
 
       diagEl.innerHTML = lines.join('<br>');
@@ -13611,7 +13611,7 @@ El esfuerzo no es negociable.
     out.innerHTML = '';
     log('▶ Iniciando diagnóstico…', '#F4F4F0');
     // 1. Usuario autenticado
-    log(`• Auth: ${currentCoach ? '✅ ' + currentCoach.email : '❌ sin sesión'}`, currentCoach ? '#44BB88' : '#FF4444');
+    log(`• Auth: ${currentCoach ? '✅ ' + _escH(currentCoach.email) : '❌ sin sesión'}`, currentCoach ? '#44BB88' : '#FF4444');
     log(`• UID: ${currentCoach?.uid || '—'}`);
     log(`• Proyecto: ${firebaseConfig.projectId}`);
     // 2. Read coaches/{uid}

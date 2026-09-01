@@ -2679,7 +2679,7 @@ function buildHistorialWidget() {
         var col = actionColors[r.action] || 'var(--mt)';
         var lbl = actionLabels[r.action] || r.action;
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'
-          + '<div style="font-size:13px;color:var(--tx)">' + r.exerciseName + '</div>'
+          + '<div style="font-size:13px;color:var(--tx)">' + _escHTml(r.exerciseName||'') + '</div>'
           + '<div style="display:flex;gap:8px;align-items:center">'
           + '<span style="font-size:11px;color:var(--mt)">'+ r.newLoad + ' kg · ' + r.newSets + 's</span>'
           + '<span style="font-size:10px;font-family:var(--ff);letter-spacing:1px;padding:3px 8px;border:1px solid '+col+';color:'+col+';background:rgba(0,0,0,.3)">' + lbl + '</span>'
@@ -3105,7 +3105,7 @@ function getTodaySummary() {
   }
   const hoy = sesiones[idx];
   const ejercicios = (hoy.contenido||'').split('\n').filter(l=>/\d\s*[×x]\s*\d|RIR/i.test(l)).length;
-  return `<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:4px">${hoy.dia}</div>
+  return `<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:4px">${_escHTml(hoy.dia||'')}</div>
     <div style="font-size:10px;color:var(--mt)">${ejercicios} ejercicios</div>
     <button onclick="selDia(${idx});goTab(1)" style="margin-top:10px;width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">ENTRENAR AHORA ▶</button>`;
 }
@@ -3140,12 +3140,12 @@ function getSupToday() {
       }
     });
     if (encontrados.length > 0)
-      return encontrados.map(s=>`<div class="sup-row"><div><div class="sup-name">${s.nombre}</div><div class="sup-time">${s.momento}</div></div><div class="sup-dose">${s.dosis}</div></div>`).join('');
+      return encontrados.map(s=>`<div class="sup-row"><div><div class="sup-name">${_escHTml(s.nombre||'')}</div><div class="sup-time">${_escHTml(s.momento||'')}</div></div><div class="sup-dose">${_escHTml(s.dosis||'')}</div></div>`).join('');
   }
   return supItems.slice(0,5).map(s => `
     <div class="sup-row">
-      <div><div class="sup-name">${s.nombre}</div><div class="sup-time">${s.momento||''}</div></div>
-      <div class="sup-dose">${s.dosis}</div>
+      <div><div class="sup-name">${_escHTml(s.nombre||'')}</div><div class="sup-time">${_escHTml(s.momento||'')}</div></div>
+      <div class="sup-dose">${_escHTml(s.dosis||'')}</div>
     </div>`).join('');
 }
 
@@ -3637,7 +3637,7 @@ function _buildExNav(ejercicios, di) {
     var numLabel = isActive
       ? '<div style="position:absolute;top:5px;right:5px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:#000;font-size:8px;font-weight:900;display:flex;align-items:center;justify-content:center">'+(ei+1)+'</div>'
       : '';
-    return '<button onclick="setEjActivo('+ei+')" data-ei="'+ei+'" title="'+nombre.replace(/"/g,'&quot;')+'" style="position:relative;'+
+    return '<button onclick="setEjActivo('+ei+')" data-ei="'+ei+'" title="'+_escHTml(nombre)+'" style="position:relative;'+
       'flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;'+
       'padding:'+(isSS?'14px 10px 8px':'11px 10px 9px')+';border:'+borderWidth+' solid '+borderCol+';border-radius:14px;'+
       'background:'+bgCol+';cursor:pointer;min-width:72px;max-width:92px;min-height:44px;margin-top:'+(isSS?'10px':'0')+';'+
@@ -3646,7 +3646,7 @@ function _buildExNav(ejercicios, di) {
       (isActive ? numLabel : '')+
       iconHtml+
       '<div style="font-size:9px;font-weight:700;color:'+nameColor+
-        ';text-align:center;line-height:1.3;word-break:break-word;margin-top:2px">'+shortName+
+        ';text-align:center;line-height:1.3;word-break:break-word;margin-top:2px">'+_escHTml(shortName)+
         (_chipNote ? '<span style="color:#d4b96a;font-size:8px;display:block;margin-top:1px">✎ nota</span>' : '')+
       '</div>'+
       badgeHtml+
@@ -4118,9 +4118,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _exNoteInline = _getExNote(di, ei);
   var headerHtml =
     '<div style="margin-bottom:14px">'+
-      '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+nombre+'</div>'+
+      '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+_escHTml(nombre)+'</div>'+
       (_exNoteInline
-        ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_exNoteInline+'</div>'
+        ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_escHTml(_exNoteInline)+'</div>'
         : '')+
       // FASE 18 — Coach note visible al cliente durante workout (inmutable, solo lectura)
       _coachNoteHtml(ej.coachNote)+
@@ -4198,7 +4198,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         ' onblur="saveUserNote('+di+','+ei+',this.value)"'+
         ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid rgba(107,107,102,.3);'+
         'border-radius:8px;color:var(--tx);font-size:13px;padding:10px;outline:none;resize:vertical;min-height:60px;line-height:1.5">'+
-        _noteVal+
+        _escHTml(_noteVal||'')+
       '</textarea>'+
     '</div>';
 
@@ -4392,7 +4392,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="done" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+unit+'\','+baseRIR+')">'+
         '</div>'+
       '</div>'+
-      '<div id="xhint_'+_expK+'" data-exname="'+nombre+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-bottom:2px"></div>'+
+      '<div id="xhint_'+_expK+'" data-exname="'+_escHTml(nombre)+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-bottom:2px"></div>'+
       '<div id="xplates_'+_expK+'" style="font-size:10px;color:var(--blue);min-height:0;margin-bottom:6px"></div>'+
       '<div style="margin-bottom:12px">'+
         '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:6px;font-weight:600">RIR \u00daLTIMA SERIE</div>'+
@@ -4577,7 +4577,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           if (_snBadge) _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#e8a040;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+_snBadge+'</span>';
         }
       }
-      setsHtml += '<div id="setrow_'+key+'" data-exname="'+nombre+'" data-pending="1" style="border:2px solid rgba(196,255,0,.4);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
+      setsHtml += '<div id="setrow_'+key+'" data-exname="'+_escHTml(nombre)+'" data-pending="1" style="border:2px solid rgba(196,255,0,.4);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+_getZonaBadge(_psReps || repsTarget)+'</div>'+
         '</div>'+
@@ -4795,9 +4795,9 @@ function _perfHeader(ej, di, ei, chip, statsHtml) {
     : '';
   return '<div style="margin-bottom:14px">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">'+chipHtml+'</div>'+
-      '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.25;text-transform:uppercase">'+nombre+
+      '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.25;text-transform:uppercase">'+_escHTml(nombre)+
         (_exNoteInline
-          ? '<span onclick="toggleUserNote('+di+','+ei+')" title="Toca para editar nota" style="font-family:var(--ff);font-size:13px;font-weight:500;font-style:italic;color:#d4b96a;letter-spacing:0;text-transform:none;cursor:pointer;margin-left:5px"> (nota: '+_exNoteInline+')</span>'
+          ? '<span onclick="toggleUserNote('+di+','+ei+')" title="Toca para editar nota" style="font-family:var(--ff);font-size:13px;font-weight:500;font-style:italic;color:#d4b96a;letter-spacing:0;text-transform:none;cursor:pointer;margin-left:5px"> (nota: '+_escHTml(_exNoteInline)+')</span>'
           : '')+
       '</div>'+
       (statsHtml || '')+
@@ -6986,7 +6986,7 @@ function buildBoostcampExercise(ej, di, ei) {
         '</div>';
 
     setsHtml +=
-      '<div id="setrow_'+key+'" data-exname="'+(ej.nombre||ej.exerciseName||'')+'" style="'+
+      '<div id="setrow_'+key+'" data-exname="'+_escHTml(ej.nombre||ej.exerciseName||'')+'" style="'+
         'border:1px solid '+borderCol+';border-radius:10px;padding:10px 12px;margin-bottom:8px;'+
         'background:'+bgCol+';transition:background .2s,border-color .2s">'+
 
@@ -7094,7 +7094,7 @@ function buildBoostcampExercise(ej, di, ei) {
       '<textarea id="usernote_input_'+di+'_'+ei+'" placeholder="Mi nota para este ejercicio..." '+
         'onblur="saveUserNote('+di+','+ei+',this.value)" '+
         'style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;'+
-        'color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:44px;resize:vertical;line-height:1.5">'+_getExNote(di,ei)+'</textarea>'+
+        'color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:44px;resize:vertical;line-height:1.5">'+_escHTml(_getExNote(di,ei)||'')+'</textarea>'+
     '</div>'+
 
     // Column headers
@@ -9369,7 +9369,7 @@ function renderNutricion() {
         var st = PLAN.suplementacion && PLAN.suplementacion.texto;
         var si = PLAN.suplementacion && PLAN.suplementacion.items;
         if (!st && (!si || !si.length)) return '';
-        var sh = st ? formatTextoSup(st) : (si||[]).map(function(s){ return '<div class="sup-row"><div><div class="sup-name">'+s.nombre+'</div><div class="sup-time">'+(s.momento||'')+'</div></div><div class="sup-dose">'+s.dosis+'</div></div>'; }).join('');
+        var sh = st ? formatTextoSup(st) : (si||[]).map(function(s){ return '<div class="sup-row"><div><div class="sup-name">'+_escHTml(s.nombre||'')+'</div><div class="sup-time">'+_escHTml(s.momento||'')+'</div></div><div class="sup-dose">'+_escHTml(s.dosis||'')+'</div></div>'; }).join('');
         return '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">'
           +'<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);font-weight:900;margin-bottom:12px">💊 SUPLEMENTACIÓN</div>'
           +sh+'</div>';
@@ -10847,8 +10847,8 @@ function renderPerfil() {
   const supsHtml = supTexto ? formatTextoSup(supTexto) : 
     supItems.map(s=>`
     <div class="sup-row">
-      <div><div class="sup-name">${s.nombre}</div><div class="sup-time">${s.momento||''}</div></div>
-      <div class="sup-dose">${s.dosis}</div>
+      <div><div class="sup-name">${_escHTml(s.nombre||'')}</div><div class="sup-time">${_escHTml(s.momento||'')}</div></div>
+      <div class="sup-dose">${_escHTml(s.dosis||'')}</div>
     </div>`).join('') || '<div style="color:var(--mt);font-size:11px">Sin suplementos</div>';
 
   // Chip de perfil de cliente (hipertrofia / rendimiento / hibrido) — define la dosificación que recibe
@@ -11027,7 +11027,7 @@ async function _loadCoachContact() {
       btn.innerHTML = '<p style="color:var(--mt);font-size:12px;text-align:center;padding:10px">Tu coach no tiene teléfono registrado. Escríbele directamente.</p>';
     }
   } catch(e) {
-    btn.innerHTML = '<p style="color:var(--red);font-size:12px;text-align:center;padding:10px">Error al cargar contacto: ' + e.message + '</p>';
+    btn.innerHTML = '<p style="color:var(--red);font-size:12px;text-align:center;padding:10px">Error al cargar contacto: ' + _escHTml(e.message||'') + '</p>';
   }
 }
 
