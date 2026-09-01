@@ -186,7 +186,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .unit-toggle{display:flex;gap:3px}
 .unit-btn{background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--mt);font-size:11px;font-weight:700;letter-spacing:1px;padding:5px 12px;cursor:pointer;transition:all .15s}
 .unit-btn.active{background:var(--ink-light);border-color:var(--ink-border);color:var(--accent)}
-.ws-btn{padding:7px 14px;border:1px solid var(--border);border-radius:8px;background:none;color:var(--mt);font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;flex-shrink:0}
+.ws-btn{padding:7px 14px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:8px;background:none;color:var(--mt);font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;flex-shrink:0}
 .ws-btn.on{border-color:var(--accent);color:var(--accent);background:rgba(196,255,0,.07)}
 .ws-btn.done{border-color:var(--grn);color:var(--grn)}
 .ws-btn.deload{border-color:var(--ink);color:var(--platinum)}
@@ -220,7 +220,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px}
 .ring{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes setDone{from{background:rgba(110,154,110,.28)}to{background:transparent}}
+@keyframes setDone{0%{background:rgba(110,154,110,.36);transform:scale(1.01)}60%{background:rgba(110,154,110,.18)}100%{background:transparent;transform:scale(1)}}
 .loading-txt{font-size:13px;font-weight:600;letter-spacing:2px;color:var(--mt)}
 /* ── EMPTY ── */
 .empty{text-align:center;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -6958,7 +6958,7 @@ function buildBoostcampExercise(ej, di, ei) {
                 return opts.map(function(p){
                   var a=(saved.pump==p.v);
                   return '<button onclick="setPump(\''+key+'\','+p.v+')" id="pump_'+key+'_'+p.v+'"'+
-                    ' style="flex:1;padding:6px 2px;border-radius:7px;font-size:16px;'+
+                    ' style="flex:1;padding:6px 2px;min-height:40px;border-radius:7px;font-size:16px;'+
                     'border:2px solid '+(a?p.c:'var(--border)')+';'+
                     'background:'+(a?'rgba(107,107,102,.12)':'var(--input-bg)')+';cursor:pointer">'+p.icon+'</button>';
                 }).join('');
@@ -7494,6 +7494,14 @@ function completeSet(key, di, ei, si, unit) {
   // Re-render solo el panel de ejercicio activo (no scroll reset)
   _refreshExPanelOnly();
 
+  // Flash visual en el row del set completado (feedback táctil + visual)
+  if (done) {
+    setTimeout(function() {
+      var _doneRow = document.getElementById('setrow_' + key);
+      if (_doneRow) { _doneRow.style.animation = 'none'; _doneRow.offsetHeight; _doneRow.style.animation = 'setDone .7s ease-out'; }
+    }, 30);
+  }
+
   if (done) {
     // ── Lógica de descanso SS-aware ────────────────────────────────────
     // 1. Si el ejercicio está en una superserie y aún hay un partner con set s
@@ -7962,7 +7970,7 @@ function _updateRestRing() {
   var remaining = Math.max(0, (_restEndMs - Date.now()) / 1000);
   var pct = Math.max(0, Math.min(1, remaining / _restTotalSeconds));
   ring.style.strokeDashoffset = 163.4 * (1 - pct);
-  ring.style.stroke = _restSeconds <= 0 ? 'var(--red)' : _restSeconds <= 10 ? '#e8a040' : 'url(#rg1)';
+  ring.style.stroke = _restSeconds <= 0 ? 'var(--red)' : _restSeconds <= 10 ? '#e8a040' : '#C4FF00';
 }
 function updateTimerDisplay() {
   if (!_restEl) _restEl = document.getElementById('restTimerNum');
