@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · main HEAD: `8bb9283` · FASE 27 DONE · siguiente = FASE 29 (identity diagnostics, discovery completa)
+> Actualizado: 2026-09-01 · main HEAD: `042a4b6` · FASE 29 DONE · siguiente = FASE 30 (por definir)
 
 ---
 
@@ -18,7 +18,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `8bb9283` |
+| main HEAD | `042a4b6` |
 | Rama activa | `main` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
@@ -31,9 +31,10 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 25 | MERGED — commit `cbb5691` |
 | FASE 26 | MERGED — commits `666615b`+`8dbccda`+`955620d`+`ff83efd`+`8b45a75`+`43f99a1` · índice compuesto + reglas Firestore validados en producción |
 | FASE 27 | MERGED — commit `769666c` · Missing Data Workflow · 2026-09-01 |
-| Suite tests | **1036/1036 PASS** (P01–P423) |
+| FASE 29 | MERGED — commit `088eb3f` · Legacy Identity Display · 2026-09-01 |
+| Suite tests | **1043/1043 PASS** (P01–P426) |
 | Vercel | auto-deploy en push a main |
-| Siguiente fase | FASE 29 — Identity Diagnostics (discovery completa, ver sección abajo) |
+| Siguiente fase | FASE 30 (por definir) |
 
 ---
 
@@ -87,22 +88,35 @@ Commit: `769666c` · 2026-09-01
 
 ---
 
-### FASE 29 — Identity Diagnostics (DISCOVERY COMPLETA — pendiente implementación)
+### FASE 29 — Legacy Identity Display (rama `claude/fase-29-legacy-identity-display` — MERGED `088eb3f`)
 
-**Discovery realizada:** 2026-09-01. No se modificó código de producción.
+**Discovery:** 2026-09-01. **Implementación:** 2026-09-01.
 
-**Hallazgo principal:** el sistema de identidad está en muy buen estado. Un único gap de display (no de escritura) encontrado.
+**Gap corregido:**
+- `_renderMonitorForWeek` (coach) — columna "última acción" del panel de rendimiento por ejercicio.
+- Antes: `lastRec.recommendations[ei]` (posicional) como lookup primario; `name-match` como fallback.
+- Después: solo `name-match` (`r.exerciseName.toLowerCase().trim() === exLower`).
+- Impacto: solo display. 0 writes, 0 Firestore reads.
 
-**Gap identificado (MEDIUM — display only):**
-- `_renderMonitorForWeek` línea 3159 (`vdsen-coach.html`): columna "última acción" en tabla de rendimiento por ejercicio usa `lastRec.recommendations[ei]` como lookup primario (posicional en el array de progrec). Si ejercicios fueron reordenados después de calcular progrec, muestra acción incorrecta. La línea 3162 ya tiene el name-match correcto como fallback — el fix es eliminar el primario posicional y usar solo el name-match.
-- **Impacto:** solo display. Cero writes, cero Firestore. No corrompe datos.
+Archivos modificados:
+- `vdsen-coach.html` — eliminadas 4 líneas del bloque `if/else` posicional (líneas ~3159-3165)
+- `tests/progression-engine.test.js` — P424–P426 (7 assertions nuevas)
 
-**Fix propuesto (FASE 29 implementación):**
-- Eliminar el bloque posicional primario (líneas 3159-3161) en la búsqueda de `lastAction`
-- Dejar solo el name-match `r.exerciseName.toLowerCase().trim() === exLower` (ya presente)
-- +2 tests: reorder post-progrec muestra acción correcta; nombre duplicado en día → no asigna acción incorrecta
+Tests:
+| Test | Escenario | Resultado |
+|------|-----------|-----------|
+| P424 | Ejercicios reordenados post-progrec | name-match ignora posición; cada nombre resuelve su propia acción |
+| P425 | Nombre presente (incl. case-insensitive, espacios) | acción correcta devuelta |
+| P426 | Sin match / lastRec null / lastRec sin recommendations | "—" (sin acción inventada) |
 
-**Todos los demás puntos de identidad:** SAFE_STABLE_ID o SAFE_UNIQUE_NAME_FALLBACK. Ver el DISCOVERY REPORT completo en el handoff ChatGPT de la sesión 2026-09-01.
+Invariantes preservados:
+- 0 Firestore reads/listeners/polling
+- 0 cambios de contrato
+- 0 migración
+- Deload: reactivo/contextual (sin cambios)
+- POSITION ≠ IDENTITY (gap eliminado)
+
+Suite: **1043/1043 PASS** (P01–P426). Commit: `088eb3f` · 2026-09-01
 
 ---
 
