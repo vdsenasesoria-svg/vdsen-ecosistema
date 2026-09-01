@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · main HEAD: `769666c` · FASE 27 DONE · siguiente = FASE 28 (post-audit)
+> Actualizado: 2026-09-01 · main HEAD: `8bb9283` · FASE 27 DONE · siguiente = FASE 29 (identity diagnostics, discovery completa)
 
 ---
 
@@ -18,8 +18,8 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `769666c` |
-| Rama activa | `claude/fase-27-missing-data` (merged) |
+| main HEAD | `8bb9283` |
+| Rama activa | `main` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
 | FASE 17 | MERGED — commit `604894c` |
@@ -33,7 +33,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 27 | MERGED — commit `769666c` · Missing Data Workflow · 2026-09-01 |
 | Suite tests | **1036/1036 PASS** (P01–P423) |
 | Vercel | auto-deploy en push a main |
-| Siguiente fase | FASE 28 (post-audit FASE 27) |
+| Siguiente fase | FASE 29 — Identity Diagnostics (discovery completa, ver sección abajo) |
 
 ---
 
@@ -70,13 +70,39 @@ Tipos implementados:
 | MISSING_CHECKIN | info | ✓ |
 | INSUFFICIENT_EXPOSURE | — | ✗ NEEDS_FUTURE_RULE |
 
-Reglas críticas:
-- `autoFilled: true` excluido de MISSING_RIR, MISSING_ICS, PARTIAL_SESSION
+Semánticas críticas (no interpretar como evaluación de adherencia):
+- **PARTIAL_SESSION** = estado de datos incompletos (series sin cierre de sesión). NO es señal automática de mala adherencia del cliente. El coach evalúa contexto.
+- **MISSING_CHECKIN** usa `totalRealSets > 0` como criterio operacional para considerar la semana iniciada. `totalRealSets` excluye `autoFilled`. No es evaluación de adherencia — es la condición mínima de actividad para que un check-in sea relevante.
+
+Reglas de implementación:
+- `autoFilled: true` excluido de MISSING_RIR, MISSING_ICS, PARTIAL_SESSION y `totalRealSets`
+- `rir_real` = RIR real canónico (0–5); `rir` = target prescrito (no leído por el motor)
+- ICS válido: 1–10 (fuera de rango → MISSING_ICS)
 - 0 nuevas Firestore reads / 0 listeners / 0 polling
 - POSITION ≠ IDENTITY (sin cambios en identidad de ejercicios)
+- INSUFFICIENT_EXPOSURE: tipo soportado, NO auto-emitido (NEEDS_FUTURE_RULE)
 - Deload: reactivo/contextual únicamente (sin cambios)
 
 Commit: `769666c` · 2026-09-01
+
+---
+
+### FASE 29 — Identity Diagnostics (DISCOVERY COMPLETA — pendiente implementación)
+
+**Discovery realizada:** 2026-09-01. No se modificó código de producción.
+
+**Hallazgo principal:** el sistema de identidad está en muy buen estado. Un único gap de display (no de escritura) encontrado.
+
+**Gap identificado (MEDIUM — display only):**
+- `_renderMonitorForWeek` línea 3159 (`vdsen-coach.html`): columna "última acción" en tabla de rendimiento por ejercicio usa `lastRec.recommendations[ei]` como lookup primario (posicional en el array de progrec). Si ejercicios fueron reordenados después de calcular progrec, muestra acción incorrecta. La línea 3162 ya tiene el name-match correcto como fallback — el fix es eliminar el primario posicional y usar solo el name-match.
+- **Impacto:** solo display. Cero writes, cero Firestore. No corrompe datos.
+
+**Fix propuesto (FASE 29 implementación):**
+- Eliminar el bloque posicional primario (líneas 3159-3161) en la búsqueda de `lastAction`
+- Dejar solo el name-match `r.exerciseName.toLowerCase().trim() === exLower` (ya presente)
+- +2 tests: reorder post-progrec muestra acción correcta; nombre duplicado en día → no asigna acción incorrecta
+
+**Todos los demás puntos de identidad:** SAFE_STABLE_ID o SAFE_UNIQUE_NAME_FALLBACK. Ver el DISCOVERY REPORT completo en el handoff ChatGPT de la sesión 2026-09-01.
 
 ---
 
