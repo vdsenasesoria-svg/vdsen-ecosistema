@@ -1804,48 +1804,14 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   
   async function loadClientList() {
     if (!currentCoach) return;
-    loadDashboard(); // Carga resumen/stats en paralelo al inicio de la sección unificada
     const container = document.getElementById("clientList");
     container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando clientes...</div>`;
     try {
-      // READ-ONLY listing — no ownership mutations here.
-      // Classify every client doc into one of three buckets:
-      //   OWNED            coachId === currentCoach.uid   → show normally
-      //   LEGACY_UNASSIGNED coachId absent/null/""         → show in legacy section, manual action required
-      //   FOREIGN_OWNER    coachId present but != mine     → skip silently, never reassign
-
-      const allSnap = await getDocs(collection(db, "clients"));
-      const legacyClients = [];
-      allSnap.forEach(d => {
-        const data = d.data();
-        const cid = data.coachId;
-        const classification = cid === currentCoach.uid ? 'OWNED'
-          : (!cid || cid === '')                        ? 'LEGACY_UNASSIGNED'
-          :                                               'FOREIGN_OWNER';
-        if (classification === 'LEGACY_UNASSIGNED') legacyClients.push({ id: d.id, ...data });
-        // FOREIGN_OWNER: silently skipped — never auto-reassign
-      });
-
       const q = query(collection(db, "clients"), where("coachId", "==", currentCoach.uid));
       const snap = await getDocs(q);
       container.innerHTML = "";
 
-      // Legacy section (LEGACY_UNASSIGNED only — no foreign clients)
-      if (legacyClients.length > 0) {
-        const legacyRows = legacyClients.map(c => {
-          const name = c.displayName || c.email || c.id;
-          return `<div class="card p-3 mb-2 flex justify-between items-center" style="border-color:rgba(245,158,11,.35)">
-            <span><strong>${name}</strong> <span class="text-xs text-[#888]">${c.email ? '('+c.email+')' : ''}</span> <span class="text-xs ml-2" style="color:#f59e0b">SIN ASIGNAR</span></span>
-            <button onclick="assignLegacyClient('${c.id}')" style="padding:5px 12px;border-radius:7px;border:1px solid #f59e0b;background:rgba(245,158,11,.12);color:#f59e0b;font-size:12px;font-weight:700;cursor:pointer">Asignar a mi cuenta</button>
-          </div>`;
-        }).join('');
-        container.innerHTML += `<div style="margin-bottom:14px">
-          <div class="text-xs font-bold mb-2" style="color:#f59e0b;text-transform:uppercase;letter-spacing:.05em">⚠️ Clientes legacy sin asignar (${legacyClients.length})</div>
-          ${legacyRows}
-        </div>`;
-      }
-
-      if (snap.empty && legacyClients.length === 0) {
+      if (snap.empty) {
         container.innerHTML = `<p class="text-[#888] text-sm">No hay clientes aún. Crea uno con el botón de arriba.</p>`;
       } else if (!snap.empty) {
         _clientIdList = [];
@@ -1978,6 +1944,13 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           ${banner}
           <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'':'none';});})(this.value)">
           ${rows}`;
+        // Render dashboard with already-loaded data — avoids a second Firestore read cycle
+        const _dashLogsMap = {}, _dashPlanMap = {};
+        _clientDocs.forEach(c => {
+          const cached = window._clientCache[c.id];
+          if (cached) { _dashLogsMap[c.id] = cached.logs; _dashPlanMap[c.id] = cached.plan; }
+        });
+        loadDashboard({ clients: _clientDocs, logsMap: _dashLogsMap, planMap: _dashPlanMap });
         // Auto-refresh badge EN VIVO cada 60s sin re-renderizar la lista
         if (window._liveTimer) clearInterval(window._liveTimer);
         window._liveTimer = setInterval(() => {
@@ -2850,19 +2823,31 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
     select.onchange = async () => {
       if (window._monitorUnsub) { window._monitorUnsub(); window._monitorUnsub = null; }
+      if (window._monitorPlanUnsub) { window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
       if (!select.value) return;
       const container = document.getElementById("monitorTable");
       container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos del cliente...</div>`;
       const clientData = clientsMap[select.value];
       if (!clientData) return;
 
-      // Cargar plan activo una sola vez para panel MEV/MRV
+      // Cargar plan activo — con onSnapshot para detectar ediciones mid-session
       let _activePlanCache = null;
       if (clientData.activePlanId) {
         try {
           const _ps = await getDoc(doc(db, 'plans', clientData.activePlanId));
           if (_ps.exists()) _activePlanCache = _ps.data();
         } catch(e) {}
+      }
+
+      // onSnapshot para plan: mantiene _activePlanCache fresco si el plan es editado
+      if (window._monitorPlanUnsub) { window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
+      if (clientData.activePlanId) {
+        window._monitorPlanUnsub = onSnapshot(doc(db, 'plans', clientData.activePlanId), (planSnap) => {
+          if (planSnap.exists()) {
+            _activePlanCache = planSnap.data();
+            _renderMonitorForWeek();
+          }
+        }, () => {});
       }
 
       // Estado de navegación semanal — reset al cambiar de cliente
@@ -12993,29 +12978,36 @@ El esfuerzo no es negociable.
   // ══════════════════════════════════════════════════════════════════
   // DASHBOARD — Resumen de todos los clientes
   // ══════════════════════════════════════════════════════════════════
-  async function loadDashboard() {
+  async function loadDashboard(preloaded = null) {
     if (!currentCoach) return;
     const cont = document.getElementById('dashSummary');
     if (!cont) return;
     cont.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando resumen...</div>`;
 
     try {
-      const clientSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
-      if (clientSnap.empty) {
+      let clients, logsMap = {}, planMap = {};
+      if (preloaded) {
+        clients = preloaded.clients;
+        logsMap = preloaded.logsMap;
+        planMap = preloaded.planMap;
+      } else {
+        const clientSnap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+        if (clientSnap.empty) {
+          cont.innerHTML = `<p class="text-[#888]">Sin clientes aún.</p>`;
+          return;
+        }
+        clients = [];
+        clientSnap.forEach(d => clients.push({ id: d.id, ...d.data() }));
+        const logsPromises = clients.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));
+        const planPromises = clients.map(c => c.activePlanId ? getDoc(doc(db, 'plans', c.activePlanId)).catch(() => null) : Promise.resolve(null));
+        const [logsSnaps, planSnaps] = await Promise.all([Promise.all(logsPromises), Promise.all(planPromises)]);
+        logsSnaps.forEach((snap, i) => { if (snap && snap.exists()) logsMap[clients[i].id] = snap.data(); });
+        planSnaps.forEach((snap, i) => { if (snap && snap.exists()) planMap[clients[i].id] = snap.data(); });
+      }
+      if (!clients || clients.length === 0) {
         cont.innerHTML = `<p class="text-[#888]">Sin clientes aún.</p>`;
         return;
       }
-
-      let clients = [];
-      clientSnap.forEach(d => clients.push({ id: d.id, ...d.data() }));
-
-      // Cargar logs y planes de todos los clientes en paralelo
-      const logsPromises = clients.map(c => getDoc(doc(db, 'logs', c.id)).catch(() => null));
-      const planPromises = clients.map(c => c.activePlanId ? getDoc(doc(db, 'plans', c.activePlanId)).catch(() => null) : Promise.resolve(null));
-      const [logsSnaps, planSnaps] = await Promise.all([Promise.all(logsPromises), Promise.all(planPromises)]);
-      const logsMap = {}, planMap = {};
-      logsSnaps.forEach((snap, i) => { if (snap && snap.exists()) logsMap[clients[i].id] = snap.data(); });
-      planSnaps.forEach((snap, i) => { if (snap && snap.exists()) planMap[clients[i].id] = snap.data(); });
 
       // Clasificar clientes
       const now = Date.now();
