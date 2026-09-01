@@ -7303,6 +7303,223 @@ console.log('\nF34-J — autoFilled logs excluidos de exposures');
   clearLogs();
 })();
 
+// ═══════════════════════════════════════════════════════════
+// FASE 36 — LOG ROTATION T1 DUAL-WRITE + NEW-FIRST READ
+// ═══════════════════════════════════════════════════════════
+
+// Mirror helpers para testear la lógica de rotación sin Firestore real.
+// Simulamos el comportamiento de _doSaveLogs (dual-write) y el read con fallback.
+
+var _mesoStore = {}; // simula logs/{uid}/mesos/{planId}
+var _legacyStore = {}; // simula logs/{uid}
+
+function _sim_doSaveLogs(uid, planId, payload) {
+  // T1 dual-write: new meso path primero (no-fatal), legacy segundo (fuente de verdad coach)
+  var mesoFailed = false;
+  if (planId) {
+    try { _mesoStore[uid + '/' + planId] = JSON.parse(JSON.stringify(payload)); }
+    catch(e) { mesoFailed = true; }
+  }
+  _legacyStore[uid] = JSON.parse(JSON.stringify(payload));
+  return { mesoFailed: mesoFailed, planId: planId };
+}
+
+function _sim_loadLogs(uid, planId) {
+  // T1 new-first read: meso path si existe, fallback legacy
+  if (planId && _mesoStore[uid + '/' + planId] && Object.keys(_mesoStore[uid + '/' + planId].entries || {}).length >= 0) {
+    var d = _mesoStore[uid + '/' + planId];
+    if (d !== undefined) return { source: 'meso', data: d };
+  }
+  if (_legacyStore[uid]) return { source: 'legacy', data: _legacyStore[uid] };
+  return null;
+}
+
+function _clearStores() { _mesoStore = {}; _legacyStore = {}; }
+
+// F36-B: dual-write escribe en el nuevo path cuando planId disponible
+console.log('\nF36-B — dual-write escribe en meso path cuando planId disponible');
+(function() {
+  _clearStores();
+  var payload = { entries: { 'log_1_0_0_s0': { done: true, carga: '80', reps: '8' } }, currentWeek: 1, planId: 'planX' };
+  var r = _sim_doSaveLogs('uid1', 'planX', payload);
+  assert('F36-Ba', 'meso path escrito', _mesoStore['uid1/planX'] !== undefined);
+  assert('F36-Bb', 'legacy path escrito', _legacyStore['uid1'] !== undefined);
+  assert('F36-Bc', 'ambos tienen los mismos entries', JSON.stringify(_mesoStore['uid1/planX'].entries) === JSON.stringify(_legacyStore['uid1'].entries));
+  _clearStores();
+})();
+
+// F36-C: sin planId → solo se escribe legacy (meso path omitido)
+console.log('\nF36-C — sin planId → solo legacy escrito');
+(function() {
+  _clearStores();
+  var payload = { entries: {}, currentWeek: 1, planId: null };
+  _sim_doSaveLogs('uid2', null, payload);
+  assert('F36-Ca', 'ningún meso path escrito', Object.keys(_mesoStore).length === 0);
+  assert('F36-Cb', 'legacy path escrito', _legacyStore['uid2'] !== undefined);
+  _clearStores();
+})();
+
+// F36-D: new-first read → cuando meso path existe, se usa el meso (no legacy)
+console.log('\nF36-D — new-first read → usa meso path cuando existe');
+(function() {
+  _clearStores();
+  var mesoPayload = { entries: { 'log_2_0_0_s0': { done: true, carga: '90' } }, currentWeek: 2, planId: 'planY' };
+  var legacyPayload = { entries: { 'log_1_0_0_s0': { done: true, carga: '80' } }, currentWeek: 1, planId: 'planY' };
+  _mesoStore['uid3/planY'] = mesoPayload;
+  _legacyStore['uid3'] = legacyPayload;
+  var r = _sim_loadLogs('uid3', 'planY');
+  assert('F36-Da', 'fuente = meso', r.source === 'meso');
+  assert('F36-Db', 'semana desde meso (2 no 1)', r.data.currentWeek === 2);
+  _clearStores();
+})();
+
+// F36-E: fallback legacy cuando meso path no existe
+console.log('\nF36-E — fallback a legacy cuando meso path ausente');
+(function() {
+  _clearStores();
+  var legacyPayload = { entries: { 'log_1_0_0_s0': { done: true, carga: '75' } }, currentWeek: 1, planId: 'planZ' };
+  _legacyStore['uid4'] = legacyPayload;
+  var r = _sim_loadLogs('uid4', 'planZ');
+  assert('F36-Ea', 'fuente = legacy', r.source === 'legacy');
+  assert('F36-Eb', 'datos legacy correctos', r.data.currentWeek === 1 && r.data.entries['log_1_0_0_s0'].carga === '75');
+  _clearStores();
+})();
+
+// F36-F: sin planId y sin legacy → null
+console.log('\nF36-F — sin datos en ningún path → null');
+(function() {
+  _clearStores();
+  var r = _sim_loadLogs('uid5', null);
+  assert('F36-Fa', 'sin datos → null', r === null);
+  _clearStores();
+})();
+
+// F36-G: cambio de plan A→B — meso path de A conservado, B empieza vacío
+console.log('\nF36-G — plan change A→B: meso A conservado, B empieza vacío');
+(function() {
+  _clearStores();
+  // Plan A en uso — dual-write
+  var payloadA = { entries: { 'log_1_0_0_s0': { done: true, carga: '80' } }, currentWeek: 1, planId: 'planA' };
+  _sim_doSaveLogs('uid6', 'planA', payloadA);
+  // Plan cambia a B — nuevo meso, entries limpio
+  var payloadB = { entries: {}, currentWeek: 1, planId: 'planB' };
+  _sim_doSaveLogs('uid6', 'planB', payloadB);
+  // Meso A debe conservar sus datos
+  assert('F36-Ga', 'meso planA conservado', _mesoStore['uid6/planA'] !== undefined && Object.keys(_mesoStore['uid6/planA'].entries).length === 1);
+  // Meso B empieza vacío
+  assert('F36-Gb', 'meso planB empieza vacío', _mesoStore['uid6/planB'] !== undefined && Object.keys(_mesoStore['uid6/planB'].entries).length === 0);
+  // Legacy apunta al plan más reciente (B)
+  assert('F36-Gc', 'legacy apunta a planB', _legacyStore['uid6'].planId === 'planB');
+  _clearStores();
+})();
+
+// F36-H: reload/refresh — lecturas subsecuentes siguen obteniendo datos correctos
+console.log('\nF36-H — reload: lecturas repetidas dan resultados consistentes');
+(function() {
+  _clearStores();
+  var payload = { entries: { 'log_1_0_0_s0': { done: true, carga: '85', reps: '10' } }, currentWeek: 1, planId: 'planH' };
+  _sim_doSaveLogs('uid7', 'planH', payload);
+  var r1 = _sim_loadLogs('uid7', 'planH');
+  var r2 = _sim_loadLogs('uid7', 'planH');
+  assert('F36-Ha', 'primera lectura correcta', r1.source === 'meso' && r1.data.entries['log_1_0_0_s0'].carga === '85');
+  assert('F36-Hb', 'segunda lectura idéntica', r2.source === 'meso' && r2.data.entries['log_1_0_0_s0'].carga === '85');
+  _clearStores();
+})();
+
+// F36-I: autoFilled preservado en payload del meso
+console.log('\nF36-I — autoFilled preservado en meso path');
+(function() {
+  _clearStores();
+  var payload = {
+    entries: {
+      'log_1_0_0_s0': { done: true, carga: '80', autoFilled: true, prescriptionExerciseId: 'pid-I' },
+      'log_1_0_0_s1': { done: true, carga: '80', autoFilled: false, prescriptionExerciseId: 'pid-I' }
+    },
+    currentWeek: 1, planId: 'planI'
+  };
+  _sim_doSaveLogs('uid8', 'planI', payload);
+  var mesoData = _mesoStore['uid8/planI'];
+  assert('F36-Ia', 'autoFilled=true preservado en meso', mesoData.entries['log_1_0_0_s0'].autoFilled === true);
+  assert('F36-Ib', 'autoFilled=false preservado en meso', mesoData.entries['log_1_0_0_s1'].autoFilled === false);
+  _clearStores();
+})();
+
+// F36-J: PID preservado en meso entries
+console.log('\nF36-J — prescriptionExerciseId preservado en meso path');
+(function() {
+  _clearStores();
+  var pid = 'pid-stable-J';
+  var payload = { entries: { 'log_1_0_0_s0': { done: true, carga: '80', prescriptionExerciseId: pid } }, currentWeek: 1, planId: 'planJ' };
+  _sim_doSaveLogs('uid9', 'planJ', payload);
+  var stored = _mesoStore['uid9/planJ'].entries['log_1_0_0_s0'].prescriptionExerciseId;
+  assert('F36-Ja', 'PID preservado en meso', stored === pid);
+  _clearStores();
+})();
+
+// F36-K: ausencia del nuevo path no rompe legacy — fallback funciona correctamente
+console.log('\nF36-K — ausencia meso path no rompe legacy users');
+(function() {
+  _clearStores();
+  // Simula usuario legacy que nunca tuvo dual-write
+  _legacyStore['uid10'] = { entries: { 'log_1_0_0_s0': { done: true, carga: '70' } }, currentWeek: 1, planId: 'planK' };
+  var r = _sim_loadLogs('uid10', 'planK'); // meso path ausente
+  assert('F36-Ka', 'fallback a legacy funciona', r.source === 'legacy');
+  assert('F36-Kb', 'datos legacy correctos', r.data.entries['log_1_0_0_s0'].carga === '70');
+  _clearStores();
+})();
+
+// F36-L: meso path no mezcla entries de planes distintos
+console.log('\nF36-L — no mezcla entries entre planes distintos en meso store');
+(function() {
+  _clearStores();
+  var pA = { entries: { 'log_1_0_0_s0': { carga: '80' } }, planId: 'planA', currentWeek: 1 };
+  var pB = { entries: { 'log_1_0_1_s0': { carga: '90' } }, planId: 'planB', currentWeek: 1 };
+  _sim_doSaveLogs('uid11', 'planA', pA);
+  _sim_doSaveLogs('uid11', 'planB', pB);
+  var dA = _mesoStore['uid11/planA'];
+  var dB = _mesoStore['uid11/planB'];
+  assert('F36-La', 'planA no tiene entries de planB', !dA.entries['log_1_0_1_s0']);
+  assert('F36-Lb', 'planB no tiene entries de planA', !dB.entries['log_1_0_0_s0']);
+  _clearStores();
+})();
+
+// F36-M: identity invariant — PID lookup en LOGS_BY_WEEK derivado del mismo flat map
+console.log('\nF36-M — identity: LOGS permanece flat map; LOGS_BY_WEEK es cache derivada');
+(function() {
+  // Verificar que el flat map no cambia de forma — LOGS_BY_WEEK no reemplaza LOGS
+  clearLogs();
+  var pid = 'pid-M';
+  LOGS['log_2_0_0_s0'] = { done: true, carga: '85', reps: '8', prescriptionExerciseId: pid };
+  LOGS['log_2_0_0_s1'] = { done: true, carga: '85', reps: '8', prescriptionExerciseId: pid };
+  LOGS['log_1_0_0_s0'] = { done: true, carga: '80', reps: '8', prescriptionExerciseId: pid };
+  // LOGS sigue siendo flat map accesible directamente
+  assert('F36-Ma', 'LOGS es flat map accesible por key directa', LOGS['log_2_0_0_s0'].carga === '85');
+  // _getExposures (que usa LOGS) sigue funcionando correctamente
+  CURRENT_WEEK = 2; REAL_WEEK = 2;
+  var exps = _getExposures(pid, 0, 0, 'Press', 5);
+  assert('F36-Mb', 'exposures desde LOGS: 2 semanas encontradas', exps.length === 2);
+  clearLogs();
+})();
+
+// F36-N: coach reset con planId — meso path también se resetea
+console.log('\nF36-N — coach reset: simular reseteo del meso path');
+(function() {
+  _clearStores();
+  // Estado inicial — usuario con datos en meso y legacy
+  var uid = 'uid12', planId = 'planN';
+  _mesoStore[uid + '/' + planId] = { entries: { 'log_3_0_0_s0': { carga: '100' } }, currentWeek: 3, planId: planId };
+  _legacyStore[uid] = { entries: { 'log_3_0_0_s0': { carga: '100' } }, currentWeek: 3, planId: planId };
+  // Coach resetea — escribe payload limpio a ambos paths
+  var resetPayload = { entries: {}, currentWeek: 1, planId: planId };
+  _mesoStore[uid + '/' + planId] = JSON.parse(JSON.stringify(resetPayload));
+  _legacyStore[uid] = JSON.parse(JSON.stringify(resetPayload));
+  var r = _sim_loadLogs(uid, planId);
+  assert('F36-Na', 'después de reset: semana = 1', r.data.currentWeek === 1);
+  assert('F36-Nb', 'después de reset: entries vacío', Object.keys(r.data.entries).length === 0);
+  assert('F36-Nc', 'fuente = meso (no legacy)', r.source === 'meso');
+  _clearStores();
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

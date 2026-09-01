@@ -1551,8 +1551,14 @@ async function loadPlan(user) {
     ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual
     var _showBitacoraInfo = false;
     try {
+      // T1 new-first read: intentar path de mesociclo; fallback a legacy si no existe.
+      var _mesoSnap = null;
+      if (activePlanId) {
+        try { _mesoSnap = await FB.getDoc(FB.doc(FB.db, 'logs', user.uid, 'mesos', activePlanId)); }
+        catch(_me2) { _mesoSnap = null; }
+      }
       const logRef = FB.doc(FB.db, 'logs', user.uid);
-      const logSnap = await FB.getDoc(logRef);
+      const logSnap = (_mesoSnap && _mesoSnap.exists()) ? _mesoSnap : await FB.getDoc(logRef);
       if (logSnap.exists()) {
         var logData = logSnap.data();
         // Preservar siempre el historial de pesos (sobrevive a cambio de plan)
@@ -8562,8 +8568,15 @@ async function _doSaveLogs() {
     const _safeEntries = JSON.parse(JSON.stringify(LOGS || {}));
     const _safeUnits   = JSON.parse(JSON.stringify(EXERCISE_UNITS || {}));
     const _safeHist    = JSON.parse(JSON.stringify(EXERCISE_HISTORY || {}));
+    const _payload = { entries: _safeEntries, currentWeek: REAL_WEEK, planId: ACTIVE_PLAN_ID, exerciseUnits: _safeUnits, exerciseHistory: _safeHist, updatedAt: Date.now() };
+    // T1 dual-write: nuevo path por mesociclo primero (future source), legacy segundo (compatibilidad coach).
+    // El fallo del path nuevo es no-fatal: datos seguros en legacy y localStorage.
+    if (ACTIVE_PLAN_ID) {
+      try { await FB.setDoc(FB.doc(FB.db, 'logs', USER.uid, 'mesos', ACTIVE_PLAN_ID), _payload); }
+      catch(_me) { console.warn('[logs/mesos] write:', _me && _me.code, _me && _me.message); }
+    }
     const ref = FB.doc(FB.db, 'logs', USER.uid);
-    await FB.setDoc(ref, { entries: _safeEntries, currentWeek: REAL_WEEK, planId: ACTIVE_PLAN_ID, exerciseUnits: _safeUnits, exerciseHistory: _safeHist, updatedAt: Date.now() });
+    await FB.setDoc(ref, _payload);
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
