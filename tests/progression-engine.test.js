@@ -4979,6 +4979,7 @@ function _buildPlanChangeSummary21(preview, selectedPids) {
   return { exerciseCount: items.length, setCount: setCount, changes: items };
 }
 
+// FASE 34: positional fallback eliminado — PID exacto → nombre único → NO MUTATION
 function _resolveExerciseInFreshPlan20(sel, freshDayExercises) {
   if (!freshDayExercises || !freshDayExercises.length) return -1;
   if (sel.prescriptionExerciseId) {
@@ -4987,8 +4988,41 @@ function _resolveExerciseInFreshPlan20(sel, freshDayExercises) {
     }
     return -1;
   }
-  var ei = sel.exerciseIndex;
-  return (ei >= 0 && ei < freshDayExercises.length) ? ei : -1;
+  if (sel.exerciseName) {
+    var normQ = sel.exerciseName.toLowerCase().trim().replace(/\s+/g, ' ');
+    var found = -1, count = 0;
+    for (var j = 0; j < freshDayExercises.length; j++) {
+      var normN = (freshDayExercises[j].exerciseName || '').toLowerCase().trim().replace(/\s+/g, ' ');
+      if (normN === normQ) { found = j; count++; }
+    }
+    return count === 1 ? found : -1;
+  }
+  return -1; // sin PID ni nombre → NO MUTATION
+}
+
+// Mirror FASE 34: _resolveExerciseRowId con duplicate-name guard
+function _resolveExerciseRowId34(exerciseName, planCache, pid) {
+  if (!planCache || !planCache.days) return null;
+  if (pid) {
+    for (var di = 0; di < planCache.days.length; di++) {
+      var exs = planCache.days[di].exercises || [];
+      for (var ei = 0; ei < exs.length; ei++) {
+        if ((exs[ei].prescriptionExerciseId || '') === pid) return { di: di, ei: ei, pid: pid };
+      }
+    }
+  }
+  if (!exerciseName) return null;
+  var normQ = exerciseName.toLowerCase().trim().replace(/\s+/g, ' ');
+  var found2 = null, count2 = 0;
+  for (var di2 = 0; di2 < planCache.days.length; di2++) {
+    var exs2 = planCache.days[di2].exercises || [];
+    for (var ei2 = 0; ei2 < exs2.length; ei2++) {
+      var ex2 = exs2[ei2];
+      var normN = (ex2.exerciseName || ex2.nombre || '').toLowerCase().trim().replace(/\s+/g, ' ');
+      if (normN === normQ) { found2 = { di: di2, ei: ei2, pid: ex2.prescriptionExerciseId || null }; count2++; }
+    }
+  }
+  return count2 === 1 ? found2 : null;
 }
 
 // P269 — null lastRec → []
@@ -7148,6 +7182,125 @@ console.log('\nP426 — Sin match por nombre → no se inventa acción (devuelve
   // lastRec null
   var actionNull = _resolveLastActionF29('Press Banca', null, _actionLabelsF29);
   assert('P426c', 'lastRec null → "—"', actionNull === '—');
+})();
+
+// ══════════════════════════════════════════════════════════════
+// FASE 34 — LEGACY IDENTITY HARDENING
+// ══════════════════════════════════════════════════════════════
+
+// Caso A — PID exacto → éxito
+console.log('\nF34-A — PID exacto resuelve ejercicio correcto');
+(function() {
+  var freshEx = [
+    { prescriptionExerciseId: 'pid-A', exerciseName: 'Press Banca' },
+    { prescriptionExerciseId: 'pid-B', exerciseName: 'Sentadilla' }
+  ];
+  var selA = { prescriptionExerciseId: 'pid-A', exerciseName: 'Press Banca', exerciseIndex: 0 };
+  assert('F34-Aa', 'PID-A → índice 0', _resolveExerciseInFreshPlan20(selA, freshEx) === 0);
+  var selB = { prescriptionExerciseId: 'pid-B', exerciseName: 'Sentadilla', exerciseIndex: 0 };
+  assert('F34-Ab', 'PID-B → índice 1 aunque exerciseIndex=0', _resolveExerciseInFreshPlan20(selB, freshEx) === 1);
+})();
+
+// Caso B — PID presente pero no encontrado → -1
+console.log('\nF34-B — PID no existe en plan fresco → -1 (SKIP)');
+(function() {
+  var freshEx = [{ prescriptionExerciseId: 'pid-A', exerciseName: 'Press Banca' }];
+  var sel = { prescriptionExerciseId: 'pid-STALE', exerciseName: 'Press Banca', exerciseIndex: 0 };
+  assert('F34-Ba', 'PID stale → -1', _resolveExerciseInFreshPlan20(sel, freshEx) === -1);
+})();
+
+// Caso C — Legacy sin PID, nombre único → resuelve por nombre
+console.log('\nF34-C — Sin PID, nombre único → match por nombre');
+(function() {
+  var freshEx = [
+    { exerciseName: 'Press Banca' },
+    { exerciseName: 'Sentadilla' }
+  ];
+  var sel = { prescriptionExerciseId: null, exerciseName: 'Sentadilla', exerciseIndex: 0 };
+  assert('F34-Ca', 'nombre único → índice 1', _resolveExerciseInFreshPlan20(sel, freshEx) === 1);
+})();
+
+// Caso D — Legacy sin PID, nombre AMBIGUOUS → -1 (NO MUTATION)
+console.log('\nF34-D — Sin PID, nombre duplicado → AMBIGUOUS → -1');
+(function() {
+  var freshEx = [
+    { exerciseName: 'Press Banca' },
+    { exerciseName: 'Press Banca' }
+  ];
+  var sel = { prescriptionExerciseId: null, exerciseName: 'Press Banca', exerciseIndex: 0 };
+  assert('F34-Da', 'nombre duplicado → -1', _resolveExerciseInFreshPlan20(sel, freshEx) === -1);
+})();
+
+// Caso E — Sin PID y sin nombre → -1 (NO MUTATION)
+console.log('\nF34-E — Sin PID y sin nombre → -1');
+(function() {
+  var freshEx = [{ exerciseName: 'Press Banca' }];
+  var sel = { prescriptionExerciseId: null, exerciseName: null, exerciseIndex: 0 };
+  assert('F34-Ea', 'sin PID ni nombre → -1', _resolveExerciseInFreshPlan20(sel, freshEx) === -1);
+  var sel2 = { prescriptionExerciseId: null, exerciseIndex: 1 };
+  assert('F34-Eb', 'sel sin exerciseName key → -1', _resolveExerciseInFreshPlan20(sel2, freshEx) === -1);
+})();
+
+// Caso F — Posicional nunca resuelve (POSITION ≠ IDENTITY)
+console.log('\nF34-F — Posicional nunca resuelve (POSITION ≠ IDENTITY)');
+(function() {
+  var freshEx = [{ exerciseName: 'Sentadilla' }, { exerciseName: 'Press' }];
+  var sel = { prescriptionExerciseId: null, exerciseIndex: 0 };
+  assert('F34-Fa', 'exerciseIndex solo → -1 (no posicional)', _resolveExerciseInFreshPlan20(sel, freshEx) === -1);
+  var sel2 = { prescriptionExerciseId: null, exerciseIndex: 1 };
+  assert('F34-Fb', 'exerciseIndex=1 solo → -1', _resolveExerciseInFreshPlan20(sel2, freshEx) === -1);
+})();
+
+// Caso G — _resolveExerciseRowId34: PID primario, nombre fallback único
+console.log('\nF34-G — _resolveExerciseRowId34: PID primario, nombre fallback');
+(function() {
+  var plan = { days: [
+    { exercises: [
+      { prescriptionExerciseId: 'pid-1', exerciseName: 'Press Banca' },
+      { prescriptionExerciseId: 'pid-2', exerciseName: 'Curl' }
+    ] }
+  ]};
+  assert('F34-Ga', 'PID hit → {di:0, ei:0}', (function(){ var r=_resolveExerciseRowId34('Press Banca', plan, 'pid-1'); return r && r.di===0 && r.ei===0; })());
+  assert('F34-Gb', 'nombre único → {di:0, ei:1}', (function(){ var r=_resolveExerciseRowId34('Curl', plan, null); return r && r.di===0 && r.ei===1; })());
+})();
+
+// Caso H — _resolveExerciseRowId34: nombre duplicado → AMBIGUOUS → null
+console.log('\nF34-H — _resolveExerciseRowId34: nombre duplicado → null');
+(function() {
+  var plan = { days: [
+    { exercises: [
+      { prescriptionExerciseId: 'pid-1', exerciseName: 'Press' },
+      { prescriptionExerciseId: 'pid-2', exerciseName: 'Press' }
+    ] }
+  ]};
+  assert('F34-Ha', 'nombre duplicado sin PID → null', _resolveExerciseRowId34('Press', plan, null) === null);
+  assert('F34-Hb', 'PID correcto con nombre dup → éxito', (function(){ var r=_resolveExerciseRowId34('Press', plan, 'pid-2'); return r && r.ei===1; })());
+})();
+
+// Caso I — _resolveExerciseRowId34 (READ-ONLY): PID stale degrada a nombre; ambiguo → null
+console.log('\nF34-I — PID stale: _resolveExerciseRowId34 degrada a nombre único (read-only safe)');
+(function() {
+  var plan = { days: [{ exercises: [{ prescriptionExerciseId: 'pid-X', exerciseName: 'Curl' }] }] };
+  var r = _resolveExerciseRowId34('Curl', plan, 'pid-STALE');
+  assert('F34-Ia', 'PID stale + nombre único → resuelve {di:0,ei:0}', r !== null && r.di === 0 && r.ei === 0);
+  var plan2 = { days: [{ exercises: [
+    { prescriptionExerciseId: 'pid-X', exerciseName: 'Curl' },
+    { prescriptionExerciseId: 'pid-Y', exerciseName: 'Curl' }
+  ]}]};
+  assert('F34-Ib', 'PID stale + nombre ambiguo → null', _resolveExerciseRowId34('Curl', plan2, 'pid-STALE') === null);
+  assert('F34-Ic', 'sin PID ni nombre → null', _resolveExerciseRowId34('', plan, null) === null);
+})();
+
+// Caso J — autoFilled excluido de _getExposures
+console.log('\nF34-J — autoFilled logs excluidos de exposures');
+(function() {
+  LOGS = {};
+  var pid = 'pid-J';
+  LOGS['log_1_0_0_s0'] = { done:true, carga:'80', reps:'8', rir_real:'2', ics:'8', pump:'1', unit:'KG', prescriptionExerciseId: pid };
+  LOGS['log_1_0_0_s1'] = { done:true, carga:'80', reps:'8', rir_real:'2', ics:'8', pump:'1', unit:'KG', prescriptionExerciseId: pid, autoFilled: true };
+  var exposures = _getExposures(pid, 0, 0, 'Press', 5);
+  assert('F34-Ja', 'autoFilled excluido → solo 1 set en exposición', exposures.length > 0 && exposures[0].sets.length === 1);
+  clearLogs();
 })();
 
 // ═════════════════════════ RESUMEN ═════════════════════════

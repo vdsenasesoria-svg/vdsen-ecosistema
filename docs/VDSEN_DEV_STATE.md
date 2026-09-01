@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · main HEAD: `f10c75f` · FASE 33 DONE · End-to-End Integration Audit
+> Actualizado: 2026-09-01 · main HEAD: `b055047` · FASE 34 DONE · Legacy Identity Hardening
 
 ---
 
@@ -36,7 +36,8 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 31 | MERGED — commit `17e1b00` · UX Coach: tarjetas monitor, apply individual, dirty save button |
 | FASE 32 | MERGED — commit `1975fd8` · UX Cliente: touch targets, setDone flash, ring fix |
 | FASE 33 | DONE — commits `7a29aa6`+`f10c75f` · End-to-End Integration Audit: 25 bugs corregidos |
-| Suite tests | **1043/1043 PASS** (P01–P426) |
+| FASE 34 | DONE — Legacy Identity Hardening: BUG H-3 + BUG G4 corregidos, 17 tests nuevos |
+| Suite tests | **1060/1060 PASS** (P01–P426 + F34-A–J) |
 | Vercel | auto-deploy en push a main |
 | Siguiente fase | A definir |
 
@@ -52,6 +53,63 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 - No introducir ninguna lógica `currentWeek === 6 → deload` en ningún nuevo código
 
 ---
+
+---
+
+## FASE 34 — Legacy Identity Hardening (DONE)
+
+**Objetivo:** Endurecer todas las rutas de identidad de ejercicios sin migraciones, backfill ni cambio de schema. Planes/logs históricos sin `prescriptionExerciseId` tratados de forma segura, explicable y no destructiva.
+
+### Inventario de rutas de identidad
+
+| Ruta | Archivo | Tipo | PID-first | Nombre-fallback | Unique-check | Position-fallback | Segura |
+|------|---------|------|-----------|-----------------|--------------|-------------------|--------|
+| `_getExposures` | cliente | READ | ✓ + dup guard | posicional c/ name guard | N/A | legacy aceptado | PARCIALMENTE SAFE |
+| `EXERCISE_HISTORY` | cliente | READ/WRITE | N/A | name-keyed | N/A | NO | SAFE |
+| `_getPrevWeekData` | cliente | READ | ✓ + dup guard | posicional c/ name guard | ✓ | legacy aceptado | PARCIALMENTE SAFE |
+| `_resolveExerciseRowId` | coach | READ | ✓ | **único** (FASE 34) | ✓ (FASE 34) | NO | SAFE (post-fix) |
+| `_resolveExerciseInFreshPlan` | coach | **WRITE** | ✓ | **único** (FASE 34) | ✓ (FASE 34) | **ELIMINADO** | SAFE (post-fix) |
+| `_buildRecApplyPreview` | coach | READ | ✓ | único (pre-existente) | ✓ (matches≠1) | NO | SAFE |
+| `_resolveMatchF26` / `_comparePlans` | coach | READ | ✓ | único | ✓ | NO | SAFE |
+| `_stampPrescriptionIds` | coach | WRITE | ✓ preserva | N/A | ✓ (dedup) | NO | SAFE |
+| `_restampPrescriptionIds` | coach | WRITE | N/A (fresh) | N/A | ✓ | NO | SAFE |
+
+### Bugs corregidos
+
+| Bug | Descripción | Tipo | Fix |
+|-----|-------------|------|-----|
+| **H-3** | `_resolveExerciseInFreshPlan`: positional fallback en path de ESCRITURA (apply loads) | CRÍTICO | Eliminado positional; agregado nombre-único; sin PID ni nombre → -1 |
+| **G4** | `_resolveExerciseRowId`: nombre fallback retornaba PRIMER match sin verificar unicidad | READ | Colecta todos los matches; si >1 → null (AMBIGUOUS) |
+
+### Cambios adicionales (soporte H-3)
+- `_confirmApplyRecModal`: checkbox agrega `data-exname` (XSS-safe via `_escH`)
+- `selected.push(...)`: incluye `exerciseName` junto con `exerciseIndex`, `recommendedLoad`, `prescriptionExerciseId`
+
+### Tests agregados
+17 nuevos tests (F34-A–J), suite total: **1060/1060 PASS**
+
+| Caso | Cobertura |
+|------|-----------|
+| F34-A | PID exacto → índice correcto incluso si exerciseIndex difiere |
+| F34-B | PID presente no encontrado → -1 (SKIP) |
+| F34-C | Sin PID, nombre único → match por nombre |
+| F34-D | Sin PID, nombre duplicado → AMBIGUOUS → -1 |
+| F34-E | Sin PID y sin nombre → -1 |
+| F34-F | exerciseIndex solo (sin PID ni nombre) → -1 (POSITION ≠ IDENTITY) |
+| F34-G | `_resolveExerciseRowId34`: PID primario, nombre fallback único |
+| F34-H | `_resolveExerciseRowId34`: nombre duplicado → null; PID correcto aun con dup → éxito |
+| F34-I | `_resolveExerciseRowId34`: PID stale → degrada a nombre único (safe READ); PID stale + ambiguo → null |
+| F34-J | autoFilled excluido de exposures |
+
+### Invariantes preservados
+- **POSITION ≠ IDENTITY**: Eliminado el único positional fallback en write path (H-3)
+- **Deload = reactivo/contextual**: Sin tocar
+- **autoFilled ≠ ejecución real**: Excluido en todas las rutas de historial
+- **progrec.newLoad = sugerencia**: Sin mutación automática al plan
+
+### Deferred (sin cambio en FASE 34)
+- `_getExposures` / `_getPrevWeekData`: positional legacy con name guard — limitación aceptada para logs sin snapshot
+- H-4, L-1, L-2, M-2: fuera de scope identity
 
 ---
 
