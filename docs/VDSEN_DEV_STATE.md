@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · main HEAD: `43f99a1` · FASE 26 DONE · siguiente = FASE 27
+> Actualizado: 2026-09-01 · main HEAD: `769666c` · FASE 27 DONE · siguiente = FASE 28 (post-audit)
 
 ---
 
@@ -18,8 +18,8 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `43f99a1` |
-| Rama activa | `claude/client-app-improvements-qayy4n` |
+| main HEAD | `769666c` |
+| Rama activa | `claude/fase-27-missing-data` (merged) |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
 | FASE 17 | MERGED — commit `604894c` |
@@ -29,10 +29,11 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 21 | MERGED — commit `b4e4a91` |
 | FASE 22–24 | MERGED — commit `2b36630` |
 | FASE 25 | MERGED — commit `cbb5691` |
-| FASE 26 | DONE — commits `666615b`+`8dbccda`+`955620d`+`ff83efd`+`8b45a75`+`43f99a1` · índice compuesto + reglas Firestore validados en producción · 2026-09-01 |
-| Suite tests | **1008/1008 PASS** (P01–P404) |
+| FASE 26 | MERGED — commits `666615b`+`8dbccda`+`955620d`+`ff83efd`+`8b45a75`+`43f99a1` · índice compuesto + reglas Firestore validados en producción |
+| FASE 27 | MERGED — commit `769666c` · Missing Data Workflow · 2026-09-01 |
+| Suite tests | **1036/1036 PASS** (P01–P423) |
 | Vercel | auto-deploy en push a main |
-| Siguiente fase | FASE 27 — Missing Data Workflow |
+| Siguiente fase | FASE 28 (post-audit FASE 27) |
 
 ---
 
@@ -50,6 +51,34 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 ---
 
 ## FASES completadas
+
+### FASE 27 — Missing Data Workflow (rama `claude/fase-27-missing-data`)
+**Detección determinista y no-punitiva de datos faltantes en logs del cliente**
+
+Archivos modificados:
+- `vdsen-cliente.html` — `_detectMissingData` (pura), `_renderClientMissingHints`, banner en `renderResumen`
+- `vdsen-coach.html` — `_detectMissingData` (pura), `_renderCoachMissingData`, sección en `_renderMonitorForWeek`
+- `tests/progression-engine.test.js` — P405-P423 (19 tests, 27 assertions)
+
+Tipos implementados:
+| Tipo | Severidad | Auto-emitido |
+|------|-----------|--------------|
+| MISSING_RIR | attention | ✓ |
+| MISSING_ICS | attention | ✓ |
+| PARTIAL_SESSION | info | ✓ |
+| MISSING_POSTSESSION | info | ✓ |
+| MISSING_CHECKIN | info | ✓ |
+| INSUFFICIENT_EXPOSURE | — | ✗ NEEDS_FUTURE_RULE |
+
+Reglas críticas:
+- `autoFilled: true` excluido de MISSING_RIR, MISSING_ICS, PARTIAL_SESSION
+- 0 nuevas Firestore reads / 0 listeners / 0 polling
+- POSITION ≠ IDENTITY (sin cambios en identidad de ejercicios)
+- Deload: reactivo/contextual únicamente (sin cambios)
+
+Commit: `769666c` · 2026-09-01
+
+---
 
 ### FASE 26 — Coach Plan Comparison / Current vs Previous Prescription (rama `claude/client-app-improvements-qayy4n`)
 **Herramienta READ-ONLY para el coach: comparar plan actual vs prescripción anterior**
