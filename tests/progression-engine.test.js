@@ -6848,6 +6848,232 @@ console.log('\nP404 — cache _detailPrevPlanData evita query repetida');
   assert('P404c', 'devuelve el mismo objeto cacheado', r.prevPlanData === cached);
 })();
 
+// ═══════════════════ FASE 27 — Missing Data Workflow (P405-P423) ═══════════════════
+
+// Inline testable version of _detectMissingData (matches vdsen-cliente.html impl)
+function _detectMissingDataT(logs, plan, currentWeek) {
+  var W = currentWeek;
+  var items = [];
+  var daysWithRealSets = {};
+  var setsWithoutRIR = 0, setsWithoutICS = 0, totalRealSets = 0;
+
+  Object.keys(logs).forEach(function(k) {
+    var m = k.match(/^log_(\d+)_(\d+)_\d+_s\d+$/);
+    if (!m || +m[1] !== W) return;
+    var e = logs[k];
+    if (!e || !e.done || e.autoFilled) return;
+    totalRealSets++;
+    var d = +m[2];
+    daysWithRealSets[d] = (daysWithRealSets[d] || 0) + 1;
+    var rr = parseFloat(e.rir_real);
+    if (isNaN(rr) || rr < 0 || rr > 5) setsWithoutRIR++;
+    var ics = parseFloat(e.ics);
+    if (isNaN(ics) || ics < 1 || ics > 10) setsWithoutICS++;
+  });
+
+  if (setsWithoutRIR > 0) items.push({ type: 'MISSING_RIR', severity: 'attention',
+    message: setsWithoutRIR + (setsWithoutRIR === 1 ? ' serie sin' : ' series sin') + ' RIR real',
+    detail: 'El motor de progresión necesita el RIR real para evaluar el esfuerzo.' });
+  if (setsWithoutICS > 0) items.push({ type: 'MISSING_ICS', severity: 'attention',
+    message: setsWithoutICS + (setsWithoutICS === 1 ? ' serie sin' : ' series sin') + ' ICS',
+    detail: 'Sin ICS el coach no puede evaluar la calidad técnica de la ejecución.' });
+
+  var doneDays = {};
+  Object.keys(logs).forEach(function(k) {
+    var m = k.match(/^done_(\d+)_(\d+)$/);
+    if (!m || +m[1] !== W) return;
+    if (logs[k]) doneDays[+m[2]] = true;
+  });
+
+  Object.keys(daysWithRealSets).forEach(function(d) {
+    if (!doneDays[+d]) items.push({ type: 'PARTIAL_SESSION', severity: 'info',
+      message: 'Sesión día ' + (+d + 1) + ' incompleta',
+      detail: 'Hay series registradas pero la sesión no fue cerrada.' });
+  });
+  Object.keys(doneDays).forEach(function(d) {
+    if (!logs['postsession_' + W + '_' + d]) items.push({ type: 'MISSING_POSTSESSION', severity: 'info',
+      message: 'Check-in post-sesión pendiente (día ' + (+d + 1) + ')',
+      detail: 'EIMD, RPE y dolor articular ayudan al coach a ajustar la carga.' });
+  });
+  if (totalRealSets > 0 && !logs['ci_sem_' + W]) items.push({ type: 'MISSING_CHECKIN', severity: 'info',
+    message: 'Check-in semanal sem ' + W + ' pendiente',
+    detail: 'Peso, HRV y bienestar ayudan al coach a monitorear tu progreso.' });
+
+  // INSUFFICIENT_EXPOSURE — NEEDS_FUTURE_RULE (not auto-emitted)
+  return items;
+}
+
+console.log('\nP405 — sin logs → array vacío');
+(function() {
+  var r = _detectMissingDataT({}, null, 1);
+  assert('P405', 'sin datos → []', r.length === 0);
+})();
+
+console.log('\nP406 — set real con RIR válido → no MISSING_RIR');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false } };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P406', 'sin MISSING_RIR', !r.find(function(i){ return i.type === 'MISSING_RIR'; }));
+})();
+
+console.log('\nP407 — set real sin rir_real → MISSING_RIR, severity=attention');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, ics: 7, autoFilled: false } };
+  var r = _detectMissingDataT(logs, null, 1);
+  var found = r.find(function(i){ return i.type === 'MISSING_RIR'; });
+  assert('P407a', 'MISSING_RIR presente', !!found);
+  assert('P407b', 'severity=attention', found && found.severity === 'attention');
+  assert('P407c', 'mensaje menciona "RIR real"', found && found.message.indexOf('RIR real') !== -1);
+})();
+
+console.log('\nP408 — rir_real=6 (fuera de rango 0-5) → MISSING_RIR');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, rir_real: 6, ics: 7, autoFilled: false } };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P408', 'rir_real=6 detectado como inválido', !!r.find(function(i){ return i.type === 'MISSING_RIR'; }));
+})();
+
+console.log('\nP409 — autoFilled set sin rir_real → NO MISSING_RIR (excluido)');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, autoFilled: true } };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P409', 'autoFilled excluido de MISSING_RIR', !r.find(function(i){ return i.type === 'MISSING_RIR'; }));
+})();
+
+console.log('\nP410 — set real con ICS válido (7) → no MISSING_ICS');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false } };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P410', 'sin MISSING_ICS', !r.find(function(i){ return i.type === 'MISSING_ICS'; }));
+})();
+
+console.log('\nP411 — set real sin ics → MISSING_ICS, severity=attention');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, rir_real: 2, autoFilled: false } };
+  var r = _detectMissingDataT(logs, null, 1);
+  var found = r.find(function(i){ return i.type === 'MISSING_ICS'; });
+  assert('P411a', 'MISSING_ICS presente', !!found);
+  assert('P411b', 'severity=attention', found && found.severity === 'attention');
+})();
+
+console.log('\nP412 — autoFilled set sin ics → NO MISSING_ICS');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, rir_real: 2, autoFilled: true } };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P412', 'autoFilled excluido de MISSING_ICS', !r.find(function(i){ return i.type === 'MISSING_ICS'; }));
+})();
+
+console.log('\nP413 — sets reales en día 0, done_1_0 ausente → PARTIAL_SESSION');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false } };
+  var r = _detectMissingDataT(logs, null, 1);
+  var found = r.find(function(i){ return i.type === 'PARTIAL_SESSION'; });
+  assert('P413a', 'PARTIAL_SESSION presente', !!found);
+  assert('P413b', 'severity=info', found && found.severity === 'info');
+})();
+
+console.log('\nP414 — sets reales en día 0, done_1_0 presente → no PARTIAL_SESSION');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false },
+    'done_1_0': { ts: 1234567890 },
+    'postsession_1_0': { eimd: 1 }
+  };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P414', 'sin PARTIAL_SESSION', !r.find(function(i){ return i.type === 'PARTIAL_SESSION'; }));
+})();
+
+console.log('\nP415 — done_1_0 presente, sin postsession_1_0 → MISSING_POSTSESSION');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false },
+    'done_1_0': { ts: 1234567890 }
+  };
+  var r = _detectMissingDataT(logs, null, 1);
+  var found = r.find(function(i){ return i.type === 'MISSING_POSTSESSION'; });
+  assert('P415a', 'MISSING_POSTSESSION presente', !!found);
+  assert('P415b', 'severity=info', found && found.severity === 'info');
+})();
+
+console.log('\nP416 — done_1_0 presente y postsession_1_0 presente → no MISSING_POSTSESSION');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false },
+    'done_1_0': { ts: 1234567890 },
+    'postsession_1_0': { eimd: 1, rpe: 7 }
+  };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P416', 'sin MISSING_POSTSESSION', !r.find(function(i){ return i.type === 'MISSING_POSTSESSION'; }));
+})();
+
+console.log('\nP417 — sets reales pero sin ci_sem_1 → MISSING_CHECKIN');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false } };
+  var r = _detectMissingDataT(logs, null, 1);
+  var found = r.find(function(i){ return i.type === 'MISSING_CHECKIN'; });
+  assert('P417a', 'MISSING_CHECKIN presente', !!found);
+  assert('P417b', 'severity=info', found && found.severity === 'info');
+  assert('P417c', 'menciona sem 1', found && found.message.indexOf('1') !== -1);
+})();
+
+console.log('\nP418 — sets reales y ci_sem_1 presente → no MISSING_CHECKIN');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false },
+    'ci_sem_1': { peso: 80, hrv: 55 }
+  };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P418', 'sin MISSING_CHECKIN', !r.find(function(i){ return i.type === 'MISSING_CHECKIN'; }));
+})();
+
+console.log('\nP419 — sin sets reales, sin ci_sem_1 → no MISSING_CHECKIN (semana no iniciada)');
+(function() {
+  var logs = {};
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P419', 'sin MISSING_CHECKIN (semana sin datos)', !r.find(function(i){ return i.type === 'MISSING_CHECKIN'; }));
+})();
+
+console.log('\nP420 — sets de otra semana (W+1) no afectan semana actual');
+(function() {
+  var logs = { 'log_2_0_0_s0': { done: true, autoFilled: false } };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P420', 'sets de sem 2 no se detectan en sem 1', r.length === 0);
+})();
+
+console.log('\nP421 — dos días: solo día 1 incompleto → PARTIAL_SESSION solo para día 1');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false },
+    'done_1_0': { ts: 1 },
+    'postsession_1_0': { eimd: 1 },
+    'log_1_1_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false }
+  };
+  var r = _detectMissingDataT(logs, null, 1);
+  var partial = r.filter(function(i){ return i.type === 'PARTIAL_SESSION'; });
+  assert('P421a', 'exactamente 1 PARTIAL_SESSION', partial.length === 1);
+  assert('P421b', 'es el día 2 (dayIndex 1)', partial[0] && partial[0].message.indexOf('2') !== -1);
+})();
+
+console.log('\nP422 — INSUFFICIENT_EXPOSURE no está en el output (NEEDS_FUTURE_RULE)');
+(function() {
+  var logs = { 'log_1_0_0_s0': { done: true, rir_real: 2, ics: 7, autoFilled: false } };
+  var r = _detectMissingDataT(logs, null, 1);
+  assert('P422', 'INSUFFICIENT_EXPOSURE ausente', !r.find(function(i){ return i.type === 'INSUFFICIENT_EXPOSURE'; }));
+})();
+
+console.log('\nP423 — 3 sets sin RIR → mensaje dice "3 series sin RIR real"');
+(function() {
+  var logs = {
+    'log_1_0_0_s0': { done: true, ics: 7, autoFilled: false },
+    'log_1_0_0_s1': { done: true, ics: 7, autoFilled: false },
+    'log_1_0_0_s2': { done: true, ics: 7, autoFilled: false }
+  };
+  var r = _detectMissingDataT(logs, null, 1);
+  var found = r.find(function(i){ return i.type === 'MISSING_RIR'; });
+  assert('P423a', 'MISSING_RIR encontrado', !!found);
+  assert('P423b', 'mensaje dice "3 series"', found && found.message === '3 series sin RIR real');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

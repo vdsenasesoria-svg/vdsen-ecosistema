@@ -2712,6 +2712,7 @@ function renderResumen() {
   // Check-in de esta semana
   const ci = LOGS['ci_sem_'+semActiva] || {};
   const ciDone = !!(ci.peso || ci.hrv);
+  const _missingHintsHtml = _renderClientMissingHints(_detectMissingData(LOGS, PLAN, semActiva));
   document.getElementById('tabResumen').innerHTML = `
     <div class="stat-row">
       <div class="stat"><div class="stat-val">${semActiva}</div><div class="stat-lbl">SEMANA</div></div>
@@ -2722,6 +2723,7 @@ function renderResumen() {
 
     <div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px">PROGRESIÓN — ${_totalWeeksGrid} SEMANAS</div>
     <div class="week-grid">${weekHtml}</div>
+    ${_missingHintsHtml}
 
     <div class="card" style="margin-top:10px">
       <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
@@ -13818,6 +13820,96 @@ function calculateProgression(di, postData) {
     calculatedAt: new Date().toISOString(),
     engineState: engineState
   };
+}
+
+// ── FASE 27 — Missing Data Workflow ──────────────────────────────
+// Pure function: no Firestore, no DOM, no mutations.
+// Excludes autoFilled sets from all detection.
+function _detectMissingData(logs, plan, currentWeek) {
+  var W = currentWeek;
+  var items = [];
+  var daysWithRealSets = {};
+  var setsWithoutRIR = 0;
+  var setsWithoutICS = 0;
+  var totalRealSets = 0;
+
+  Object.keys(logs).forEach(function(k) {
+    var m = k.match(/^log_(\d+)_(\d+)_\d+_s\d+$/);
+    if (!m || +m[1] !== W) return;
+    var entry = logs[k];
+    if (!entry || !entry.done || entry.autoFilled) return;
+    totalRealSets++;
+    var d = +m[2];
+    daysWithRealSets[d] = (daysWithRealSets[d] || 0) + 1;
+    var rr = parseFloat(entry.rir_real);
+    if (isNaN(rr) || rr < 0 || rr > 5) setsWithoutRIR++;
+    var ics = parseFloat(entry.ics);
+    if (isNaN(ics) || ics < 1 || ics > 10) setsWithoutICS++;
+  });
+
+  if (setsWithoutRIR > 0) items.push({
+    type: 'MISSING_RIR', severity: 'attention',
+    message: setsWithoutRIR + (setsWithoutRIR === 1 ? ' serie sin' : ' series sin') + ' RIR real',
+    detail: 'El motor de progresión necesita el RIR real para evaluar el esfuerzo.'
+  });
+  if (setsWithoutICS > 0) items.push({
+    type: 'MISSING_ICS', severity: 'attention',
+    message: setsWithoutICS + (setsWithoutICS === 1 ? ' serie sin' : ' series sin') + ' ICS',
+    detail: 'Sin ICS el coach no puede evaluar la calidad técnica de la ejecución.'
+  });
+
+  var doneDays = {};
+  Object.keys(logs).forEach(function(k) {
+    var m = k.match(/^done_(\d+)_(\d+)$/);
+    if (!m || +m[1] !== W) return;
+    if (logs[k]) doneDays[+m[2]] = true;
+  });
+
+  Object.keys(daysWithRealSets).forEach(function(d) {
+    if (!doneDays[+d]) items.push({
+      type: 'PARTIAL_SESSION', severity: 'info',
+      message: 'Sesión día ' + (+d + 1) + ' incompleta',
+      detail: 'Hay series registradas pero la sesión no fue cerrada.'
+    });
+  });
+
+  Object.keys(doneDays).forEach(function(d) {
+    if (!logs['postsession_' + W + '_' + d]) items.push({
+      type: 'MISSING_POSTSESSION', severity: 'info',
+      message: 'Check-in post-sesión pendiente (día ' + (+d + 1) + ')',
+      detail: 'EIMD, RPE y dolor articular ayudan al coach a ajustar la carga.'
+    });
+  });
+
+  if (totalRealSets > 0 && !logs['ci_sem_' + W]) items.push({
+    type: 'MISSING_CHECKIN', severity: 'info',
+    message: 'Check-in semanal sem ' + W + ' pendiente',
+    detail: 'Peso, HRV y bienestar ayudan al coach a monitorear tu progreso.'
+  });
+
+  // INSUFFICIENT_EXPOSURE — NEEDS_FUTURE_RULE (not auto-emitted)
+  return items;
+}
+
+function _renderClientMissingHints(items) {
+  if (!items || !items.length) return '';
+  var attn = items.filter(function(i) { return i.severity === 'attention'; });
+  var info = items.filter(function(i) { return i.severity === 'info'; });
+  var lines = '';
+  attn.forEach(function(i) {
+    lines += '<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:4px">' +
+      '<span style="color:#FF8844;flex-shrink:0;font-size:12px">⚠</span>' +
+      '<span style="font-size:12px;color:var(--tx)">' + i.message + '</span></div>';
+  });
+  info.forEach(function(i) {
+    lines += '<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:4px">' +
+      '<span style="color:var(--mt);flex-shrink:0;font-size:12px">·</span>' +
+      '<span style="font-size:12px;color:var(--mt)">' + i.message + '</span></div>';
+  });
+  return '<div style="background:rgba(255,136,68,.06);border:1px solid rgba(255,136,68,.22);' +
+    'border-radius:8px;padding:10px 12px;margin:8px 0">' +
+    '<div style="font-size:10px;letter-spacing:1.5px;color:#FF8844;font-weight:700;margin-bottom:7px">DATOS PENDIENTES</div>' +
+    lines + '</div>';
 }
 
 // ── Swipe horizontal entre tabs ─────────────────────────────────
