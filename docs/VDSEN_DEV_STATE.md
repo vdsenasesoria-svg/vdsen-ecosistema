@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · main HEAD: `4106ade` · FASE 32 DONE · Night Shift (FASE 30+31+32) COMPLETO
+> Actualizado: 2026-09-01 · main HEAD: `f10c75f` · FASE 33 DONE · End-to-End Integration Audit
 
 ---
 
@@ -18,7 +18,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `4106ade` |
+| main HEAD | `f10c75f` |
 | Rama activa | `main` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
@@ -35,6 +35,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 30 | MERGED — commit `06c3ef9` · Performance: reads filtrados, preloaded data, onSnapshot plan monitor |
 | FASE 31 | MERGED — commit `17e1b00` · UX Coach: tarjetas monitor, apply individual, dirty save button |
 | FASE 32 | MERGED — commit `1975fd8` · UX Cliente: touch targets, setDone flash, ring fix |
+| FASE 33 | DONE — commits `7a29aa6`+`f10c75f` · End-to-End Integration Audit: 25 bugs corregidos |
 | Suite tests | **1043/1043 PASS** (P01–P426) |
 | Vercel | auto-deploy en push a main |
 | Siguiente fase | A definir |
@@ -51,6 +52,68 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 - No introducir ninguna lógica `currentWeek === 6 → deload` en ningún nuevo código
 
 ---
+
+---
+
+## FASE 33 — End-to-End Integration Audit (DONE · commits `7a29aa6`+`f10c75f`)
+
+**Auditoría end-to-end del circuito completo:** COACH→PLAN→SAVE→PID→CLIENT→WORKOUT→LOGS→POSTSESSION→CHECK-IN→PROGRESIÓN→MONITOR→APPLY LOADS→PLAN UPDATE→SIGUIENTE PRESCRIPCIÓN.
+
+### Bugs corregidos (25 total, 2 batches)
+
+#### Batch 1 — `7a29aa6`
+| ID | Severidad | Descripción |
+|----|-----------|-------------|
+| PID gap | CRITICAL | `loadPlan` no mapeaba `prescriptionExerciseId` ni `exerciseId` desde Firestore → identidad de ejercicios perdida |
+| Monitor re-render | MEDIUM | `_renderMonitorForWeek()` no se llamaba tras apply loads → UI stale |
+| Double-click apply | MEDIUM | Botones "Aplicar" no tenían flag `disabled` → doble-write en Firestore |
+
+#### Batch 2 — `7a29aa6` (mismo commit)
+| ID | Severidad | Descripción |
+|----|-----------|-------------|
+| C-1 `_postSessionSubmitting` | MEDIUM | Flag stuck `true` tras fallo de validación EIMD → bloqueo permanente del modal |
+| C-2 `markSessionDone` | MEDIUM | Sin re-entrancy guard → doble-tap abría 2 modales simultáneos |
+| `_sesTimerInterval` stacking | MEDIUM | `setInterval` sin clear previo → múltiples ticks superpuestos en rest timer |
+| E-1 `refreshLogs` | LOW | `renderResumen()` condicionado a `entriesChanged` (key-count) → ediciones in-place (mismo key) no re-renderizaban resumen |
+| I-Co3 `loadClients` | MEDIUM | `ReferenceError: loadClients is not defined` → corregido a `loadClientList()` |
+| BUG-4 `closeClientModal` | HIGH | Sin dirty guard → cerrar modal descartaba cambios sin aviso |
+| BUG-5 `navClient` | HIGH | Sin dirty guard → navegar entre clientes descartaba cambios sin aviso |
+| Monitor race condition | CRITICAL | `select.onchange` async sin generation counter → respuestas fuera de orden podían mezclar datos de dos clientes |
+| M-3 AI draft PIDs | MEDIUM | `_vdsenSaveDraftToFirestore` no llamaba `_stampPrescriptionIds` → planes AI sin PIDs |
+| BUG-7 `saveTrainingPlan` | LOW | Sin double-submit guard `_savingTrainingPlan` → escrituras duplicadas |
+| L-3 `createdAt` type | LOW | 5 ocurrencias de `Date.now()` (number) → `new Date().toISOString()` (string) |
+| I-Co2 Firestore leaks | MEDIUM | `_monitorUnsub`/`_monitorPlanUnsub`/`_fichasUnsub` no limpiados en logout → listeners huérfanos |
+| I-C4 Rest timer reload | MEDIUM | Hard page reload interrumpía rest timer sin restaurar estado desde `localStorage` |
+
+#### Batch 3 — `f10c75f`
+| ID | Severidad | Descripción |
+|----|-----------|-------------|
+| J-5 scroll jarring | MEDIUM | `scrollIntoView({ behavior:'instant', block:'start' })` → `{ behavior:'smooth', block:'nearest' }` |
+| J-4 z-index iOS | MEDIUM | `restTimerOverlay` z-index 200 → 9000; `timerPill` 201 → 9001; `padding-bottom: env(safe-area-inset-bottom)` |
+| BUG-2 editor dirty | MEDIUM | `addExRow`/`removeExRow`/`addDayBlock`/daylabel input no llamaban `markEditorDirty()` |
+| BUG-3 manual dirty | HIGH | Manual plan builder (8 mutaciones) nunca llamaba `markEditorDirty()` |
+| BUG-1 showSection guard | MEDIUM | `showSection()` sin dirty guard para manual plan → salir de crearPlan sin advertencia |
+| M-1 rirByWeek manual | MEDIUM | `saveManualPlan()` guardaba plan sin `rirByWeek` → cliente usaba fallback `rirSchemeForWeeks` genérico en cada render |
+| M-4 rirByWeek AI draft | MEDIUM | `_vdsenSaveDraftToFirestore()` no incluía `rirByWeek` |
+| M-5 rirByWeek template | MEDIUM | `_applyTemplateToClient()` no incluía `rirByWeek` |
+
+### Bugs NO corregidos (deferred — bajo impacto o complejidad alta)
+
+| ID | Severidad | Motivo de diferimiento |
+|----|-----------|------------------------|
+| BUG G4 | MEDIUM | Fallback posicional solo afecta planes legacy sin PIDs; todos los nuevos paths ya estampan PIDs |
+| BUG H-3 | LOW | `_resolveExerciseInFreshPlan` positional fallback — solo legacy |
+| BUG H-4 | LOW | Orphaned Promise si confirm modal abierto dos veces rápido |
+| BUG L-1 | DEFERRED | `parsePlanText` hardcodea `weeks: 4` |
+| BUG L-2 | DEFERRED | JSON en text import silenciosamente descartado |
+| BUG M-2 | DEFERRED | `saveManualPlan` borra plan previo sin backup |
+
+### Invariantes preservados
+- 0 cambios de contrato de logs o planes
+- Deload: reactivo/contextual (sin cambios)
+- POSITION ≠ IDENTITY en todo momento
+- `autoFilled` excluido de progresión, ICS real, RIR real
+- Suite: **1043/1043 PASS** (P01–P426)
 
 ---
 
