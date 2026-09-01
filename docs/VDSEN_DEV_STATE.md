@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · branch `claude/client-app-improvements-qayy4n` HEAD: `9abb8e3` · FASE 34 DONE · FASE 35 DISCOVERY COMPLETE
+> Actualizado: 2026-09-01 · main HEAD: `8c618ee` · FASE 34+35 MERGED · Baseline FASE 36
 
 ---
 
@@ -18,7 +18,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `f10c75f` |
+| main HEAD | `8c618ee` |
 | Rama activa | `main` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
@@ -39,8 +39,8 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 34 | DONE — Legacy Identity Hardening: BUG H-3 + BUG G4 corregidos, 17 tests nuevos |
 | Suite tests | **1060/1060 PASS** (P01–P426 + F34-A–J) |
 | Vercel | auto-deploy en push a main |
-| FASE 35 | DONE — Historical Data Scalability Discovery: reporte completo 28 puntos |
-| Siguiente fase | FASE 36 — ver propuesta al final del reporte FASE 35 |
+| FASE 35 | MERGED — Historical Data Scalability Discovery: reporte completo 28 puntos |
+| Siguiente fase | FASE 36 — Log Rotation Architecture (baseline: `8c618ee`) |
 
 ---
 
