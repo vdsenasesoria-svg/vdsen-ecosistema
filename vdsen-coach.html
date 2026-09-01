@@ -3007,7 +3007,18 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       });
 
       if (lastRec && lastRec.recommendations?.length) {
-        html += `<div class="text-xs text-[#888] mb-2 uppercase tracking-wide">Recomendaciones — Sem ${lastRecWeek} · Día ${lastRecDay + 1}</div>`;
+        const _recUp   = lastRec.recommendations.filter(r => r.action === 'increase_load' || r.action === 'add_sets').length;
+        const _recDown = lastRec.recommendations.filter(r => r.action === 'reduce_load' || r.action === 'reduce_sets').length;
+        const _recOk   = lastRec.recommendations.length - _recUp - _recDown;
+        const _recSummary = [
+          _recUp   ? `<span style="color:#44BB88;font-weight:700">${_recUp}↑</span>` : '',
+          _recDown ? `<span style="color:#FF4444;font-weight:700">${_recDown}↓</span>` : '',
+          _recOk   ? `<span style="color:#888;font-weight:600">${_recOk}=</span>` : ''
+        ].filter(Boolean).join(' · ');
+        html += `<div class="flex items-center gap-3 mb-2">
+          <div class="text-xs text-[#888] uppercase tracking-wide">Recomendaciones · Sem ${lastRecWeek} · Día ${lastRecDay + 1}</div>
+          <div class="text-xs">${_recSummary}</div>
+        </div>`;
         html += `<div class="space-y-2">`;
         lastRec.recommendations.forEach(r => {
           const al = actionLabels[r.action] || actionLabels.maintain;
@@ -3018,24 +3029,27 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const _monDay = _activePlanCache && _activePlanCache.days && _activePlanCache.days[lastRecDay];
           const _monEx  = _monDay && (_monDay.exercises||[]).find(x => (x.exerciseName||x.nombre||'').toLowerCase().trim().replace(/\s+/g,' ') === _rNorm);
           const _rPid   = (_monEx && _monEx.prescriptionExerciseId) || '';
+          const _isLoadAction = r.action === 'increase_load' || r.action === 'reduce_load';
+          const _recIdx = lastRec.recommendations.indexOf(r);
           html += `
-            <div class="card p-3">
-              <div class="flex justify-between items-start mb-1">
-                <span class="font-semibold text-sm">${r.exerciseName}</span>
-                <div class="flex items-center gap-2">
-                  <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${al.color}">${al.label}</span>
+            <div class="card p-3" style="border-left:3px solid ${al.color};border-radius:0 8px 8px 0">
+              <div class="flex justify-between items-start mb-1.5">
+                <span class="font-semibold text-sm" style="color:#F4F4F0">${_escH(r.exerciseName)}</span>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  <span class="text-xs font-bold px-2 py-1 rounded" style="background:${al.color}1A;border:1px solid ${al.color}55;color:${al.color};letter-spacing:.5px">${al.label}</span>
+                  ${_isLoadAction ? `<button class="_mon-apply-single" data-recidx="${_recIdx}" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid ${al.color}55;background:${al.color}11;color:${al.color};cursor:pointer;flex-shrink:0;font-weight:700" title="Aplicar esta carga al plan">↑ Aplicar</button>` : ''}
                   <button onclick="_deepLinkToExercise(this.dataset.exname,this.dataset.expid)" data-exname="${_escH(r.exerciseName)}" data-expid="${_escH(_rPid)}" style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(244,244,240,.18);background:transparent;color:#888;cursor:pointer;flex-shrink:0" title="Editar en plan">✏️</button>
                 </div>
               </div>
-              <div class="flex gap-4 text-sm mb-1">
-                <span class="text-[#888]">Carga: <strong class="text-white">${r.newLoad} kg</strong></span>
-                <span class="text-[#888]">Series: <strong class="text-white">${r.newSets}</strong></span>
-                ${r.newReps ? `<span class="text-[#888]">Reps: <strong class="text-white">${r.newReps}</strong></span>` : ''}
-                <span class="text-[#888]">RIR obj: <strong class="text-[#F4F4F0]">${r.rirTarget}</strong></span>
+              <div class="flex gap-4 text-xs mb-1 flex-wrap">
+                <span class="text-[#888]">Carga: <strong style="color:#F4F4F0">${r.newLoad} kg</strong></span>
+                <span class="text-[#888]">Series: <strong style="color:#F4F4F0">${r.newSets}</strong></span>
+                ${r.newReps ? `<span class="text-[#888]">Reps: <strong style="color:#F4F4F0">${r.newReps}</strong></span>` : ''}
+                <span class="text-[#888]">RIR obj: <strong style="color:#F4F4F0">${r.rirTarget}</strong></span>
               </div>
-              ${r.trend ? `<div class="flex gap-3 text-xs mb-1"><span class="text-[#555]">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets}s · ICS ${r.trend.prevICS.toFixed(1)}</span></div>` : ''}
-              <div class="text-xs text-[#888]">${r.reason}</div>
-              ${r.substituteExercise ? `<div class="text-xs mt-1" style="color:#FF8844">🔄 ${r.substituteExercise}</div>` : ''}
+              ${r.trend ? `<div class="text-xs mb-1" style="color:#555">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets} series · ICS ${r.trend.prevICS.toFixed(1)}</div>` : ''}
+              <div class="text-xs" style="color:#999;line-height:1.5">${_escH(r.reason)}</div>
+              ${r.substituteExercise ? `<div class="text-xs mt-1" style="color:#FF8844">🔄 ${_escH(r.substituteExercise)}</div>` : ''}
               ${_clientNote ? `<div class="mt-2 text-xs p-2 rounded" style="background:rgba(107,107,102,.08);border-left:2px solid rgba(107,107,102,.5);color:#d4b96a;line-height:1.45">📝 ${_escH(_clientNote.text)}<span style="color:#888;margin-left:8px">· Sem ${_clientNote.w} Día ${_clientNote.d+1}</span></div>` : ''}
             </div>`;
         });
@@ -3247,9 +3261,21 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
       container.innerHTML = html;
 
-      // FASE 20 — aplicar cargas recomendadas al plan
+      // FASE 20 — aplicar cargas recomendadas al plan (bulk)
       const _applyRecBtn = document.getElementById('applyRecLoadsBtn');
       if (_applyRecBtn) _applyRecBtn.onclick = () => _applyRecLoadsToMonitor(clientData, lastRec, lastRecDay);
+
+      // FASE 31 — aplicar carga individual por recomendación
+      document.querySelectorAll('._mon-apply-single').forEach(btn => {
+        btn.onclick = async () => {
+          if (!lastRec || !lastRec.recommendations) return;
+          const idx = parseInt(btn.dataset.recidx);
+          const rec = lastRec.recommendations[idx];
+          if (!rec) return;
+          const fakeRec = { recommendations: [rec], deloadTriggers: [] };
+          await _applyRecLoadsToMonitor(clientData, fakeRec, lastRecDay);
+        };
+      });
 
       // Navegación semanal (FASE 15)
       const _prevBtn = document.getElementById('monWeekPrev');
@@ -8163,6 +8189,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }
       showToast("✅ Plan guardado y activado correctamente");
       _autoAddExercisesToCatalog(manualPlan.days || []); // auto-agregar ejercicios al catálogo
+      markEditorClean();
       manualPlan = null;
       activeMPDay = 0;
       document.getElementById("planBuilder").innerHTML = "";
@@ -8264,6 +8291,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function _updateDirtyTabUI(isDirty) {
     var dot = document.getElementById('dirtyPlanDot');
     if (dot) dot.hidden = !isDirty;
+    var btn = document.getElementById('saveManualPlanBtn');
+    if (btn) {
+      btn.style.background = isDirty ? '#FF8844' : '';
+      btn.style.color = isDirty ? '#0A0A0A' : '';
+      btn.textContent = isDirty ? '⚠️ Cambios sin guardar — Guardar ahora' : '💾 Guardar y activar plan';
+    }
   }
   window._updateDirtyTabUI = _updateDirtyTabUI;
 
