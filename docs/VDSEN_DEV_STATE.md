@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-08-31 · main HEAD: `955620d` · FASE 26 BLOCKED: deploy de índice pendiente desde máquina local
+> Actualizado: 2026-09-01 · main HEAD: `43f99a1` · FASE 26 DONE · siguiente = FASE 27
 
 ---
 
@@ -18,7 +18,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `955620d` |
+| main HEAD | `43f99a1` |
 | Rama activa | `claude/client-app-improvements-qayy4n` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
@@ -29,10 +29,10 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 21 | MERGED — commit `b4e4a91` |
 | FASE 22–24 | MERGED — commit `2b36630` |
 | FASE 25 | MERGED — commit `cbb5691` |
-| FASE 26 | BLOCKED — código en main (commits 666615b+8dbccda+955620d); falta `firebase deploy --only firestore:indexes` desde máquina local + validación manual en producción |
+| FASE 26 | DONE — commits `666615b`+`8dbccda`+`955620d`+`ff83efd`+`8b45a75`+`43f99a1` · índice compuesto + reglas Firestore validados en producción · 2026-09-01 |
 | Suite tests | **1008/1008 PASS** (P01–P404) |
 | Vercel | auto-deploy en push a main |
-| Siguiente fase | FASE 27 (solo tras validación manual FASE 26) |
+| Siguiente fase | FASE 27 — Missing Data Workflow |
 
 ---
 
@@ -46,20 +46,6 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 - No introducir ninguna lógica `currentWeek === 6 → deload` en ningún nuevo código
 
 ---
-
-## Pendiente — Cierre FASE 26
-
-Para cerrar FASE 26 como DONE, ejecutar desde máquina local:
-
-```bash
-firebase deploy --only firestore:indexes
-```
-
-Luego validar manualmente en producción:
-- Coach App → modal cliente con plan activo → tab Plan → "🔍 Comparar con plan anterior"
-- Confirmar: sin `FAILED_PRECONDITION`, recupera solo el backup más reciente, 0 writes Firestore, no rompe editor de plan
-
-Una vez validado, actualizar este doc: FASE 26 → DONE y arrancar FASE 27.
 
 ---
 
