@@ -12949,14 +12949,13 @@ El esfuerzo no es negociable.
       const prevUnits = logsSnap.exists() ? (logsSnap.data().exerciseUnits || {}) : {};
       const clientSnap = await getDoc(doc(db, 'clients', clientId));
       const newPlanId = clientSnap.exists() ? (clientSnap.data().activePlanId || null) : null;
-      await setDoc(logsRef, {
-        entries: {},
-        currentWeek: 1,
-        planId: newPlanId,
-        exerciseHistory: prevHist,
-        exerciseUnits: {},
-        updatedAt: Date.now()
-      });
+      const _resetPayload = { entries: {}, currentWeek: 1, planId: newPlanId, exerciseHistory: prevHist, exerciseUnits: {}, updatedAt: Date.now() };
+      // T1: también resetear el doc de mesociclo si existe planId
+      if (newPlanId) {
+        try { await setDoc(doc(db, 'logs', clientId, 'mesos', newPlanId), _resetPayload); }
+        catch(_me) { console.warn('[logs/mesos] coach reset:', _me && _me.message); }
+      }
+      await setDoc(logsRef, _resetPayload);
       showToast('✅ Semana reiniciada a 1');
       showClientDetail(clientId);
     } catch(e) {
@@ -12982,14 +12981,13 @@ El esfuerzo no es negociable.
       }
       const clientSnap = await getDoc(doc(db, 'clients', clientId));
       const newPlanId = clientSnap.exists() ? (clientSnap.data().activePlanId || null) : null;
-      await setDoc(logsRef, {
-        entries: keptEntries,
-        currentWeek: 1,
-        planId: newPlanId,
-        exerciseHistory: data.exerciseHistory || {},
-        exerciseUnits: data.exerciseUnits || {},
-        updatedAt: Date.now()
-      });
+      const _keepPayload = { entries: keptEntries, currentWeek: 1, planId: newPlanId, exerciseHistory: data.exerciseHistory || {}, exerciseUnits: data.exerciseUnits || {}, updatedAt: Date.now() };
+      // T1: también resetear el doc de mesociclo si existe planId
+      if (newPlanId) {
+        try { await setDoc(doc(db, 'logs', clientId, 'mesos', newPlanId), _keepPayload); }
+        catch(_me) { console.warn('[logs/mesos] coach reset-keep:', _me && _me.message); }
+      }
+      await setDoc(logsRef, _keepPayload);
       showToast('✅ Reiniciada a semana 1 — registros de la semana 1 conservados');
       showClientDetail(clientId);
     } catch(e) {
