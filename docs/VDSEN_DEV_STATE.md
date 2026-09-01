@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · main HEAD: `042a4b6` · FASE 29 DONE · siguiente = FASE 30 (por definir)
+> Actualizado: 2026-09-01 · main HEAD: `4106ade` · FASE 32 DONE · Night Shift (FASE 30+31+32) COMPLETO
 
 ---
 
@@ -18,7 +18,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `042a4b6` |
+| main HEAD | `4106ade` |
 | Rama activa | `main` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
@@ -32,9 +32,12 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 26 | MERGED — commits `666615b`+`8dbccda`+`955620d`+`ff83efd`+`8b45a75`+`43f99a1` · índice compuesto + reglas Firestore validados en producción |
 | FASE 27 | MERGED — commit `769666c` · Missing Data Workflow · 2026-09-01 |
 | FASE 29 | MERGED — commit `088eb3f` · Legacy Identity Display · 2026-09-01 |
+| FASE 30 | MERGED — commit `06c3ef9` · Performance: reads filtrados, preloaded data, onSnapshot plan monitor |
+| FASE 31 | MERGED — commit `17e1b00` · UX Coach: tarjetas monitor, apply individual, dirty save button |
+| FASE 32 | MERGED — commit `1975fd8` · UX Cliente: touch targets, setDone flash, ring fix |
 | Suite tests | **1043/1043 PASS** (P01–P426) |
 | Vercel | auto-deploy en push a main |
-| Siguiente fase | FASE 30 (por definir) |
+| Siguiente fase | A definir |
 
 ---
 
@@ -117,6 +120,69 @@ Invariantes preservados:
 - POSITION ≠ IDENTITY (gap eliminado)
 
 Suite: **1043/1043 PASS** (P01–P426). Commit: `088eb3f` · 2026-09-01
+
+---
+
+### FASE 30 — Performance: reads filtrados + preloaded data + onSnapshot Monitor (rama `claude/fase-30-performance` — MERGED `06c3ef9`)
+
+**Tres fixes independientes de performance/consistencia en la app coach:**
+
+**A. `loadClientList()` — eliminar read no filtrado**
+- Antes: `getDocs(collection(db,"clients"))` leía TODOS los clientes sin filtro (N lecturas globales)
+- Después: solo `where("coachId","==",currentCoach.uid)` — read acotado al coach activo
+- Eliminada detección de "legacy unassigned clients" (requería read global; movida a acción admin explícita)
+
+**B. `loadDashboard(preloaded=null)` — compartir datos entre loadClientList y dashboard**
+- Antes: `loadClientList()` + `loadDashboard()` ejecutaban N×2 reads independientes en startup
+- Después: `loadClientList()` pasa sus datos ya cargados a `loadDashboard({ clients, logsMap, planMap })` — 0 reads extra en startup
+- `loadDashboard()` sigue funcionando standalone (sin preloaded) cuando el usuario navega al tab directamente
+
+**C. Monitor — `onSnapshot(plans/{activePlanId})`**
+- Antes: `_activePlanCache` era un getDoc one-shot → stale si el coach editaba el plan en otra pestaña
+- Después: `onSnapshot` reactivo en el plan activo del cliente seleccionado; re-renders `_renderMonitorForWeek` en cada cambio
+- Unsub gestionado en `select.onchange` y en cleanup de cliente seleccionado
+
+Archivos: `vdsen-coach.html`. Suite: 1043/1043. Commit: `06c3ef9` · 2026-09-01
+
+---
+
+### FASE 31 — UX Coach App (rama `claude/fase-31-ux-coach` — MERGED `17e1b00`)
+
+**Mejoras visuales en Monitor y editor de plan:**
+
+**Monitor — recommendation cards**
+- Borde izquierdo coloreado por tipo de acción (dominant visual signal)
+- Chip semi-transparente con borde del color del tipo
+- Botón "↑ Aplicar" individual por recomendación (solo para load actions)
+- Header con contador ↑/↓/= compacto
+
+**Monitor — wiring del apply individual**
+- `._mon-apply-single` con `data-recidx` → `fakeRec = { recommendations: [rec] }` → `_applyRecLoadsToMonitor`
+
+**Editor de plan — `_updateDirtyTabUI` extendido**
+- `saveManualPlanBtn`: orange + texto urgente cuando dirty; default cuando clean
+- `markEditorClean()` llamado tras `saveManualPlan()` exitoso
+
+Archivos: `vdsen-coach.html`. Suite: 1043/1043. Commit: `17e1b00` · 2026-09-01
+
+---
+
+### FASE 32 — UX Cliente (rama `claude/fase-32-ux-cliente` — MERGED `1975fd8`)
+
+**Mejoras de interacción en la app cliente:**
+
+**Touch targets**
+- `.ws-btn`: `min-height:44px` + `display:inline-flex;align-items:center;justify-content:center`
+- Pump buttons (renderer nuevo): `min-height:40px`
+
+**Feedback visual set completado**
+- `@keyframes setDone`: extendida a `0.7s`, añadido scale pulse `1.01 → 1.0`
+- `completeSet()`: `setTimeout` aplica animación al `setrow_${key}` tras `_refreshExPanelOnly()`
+
+**Rest timer ring — fix gradient**
+- `_updateRestRing()`: `url(#rg1)` → `#C4FF00` directo (el gradiente era monochromático; la referencia rompía en el overlay fallback)
+
+Archivos: `vdsen-cliente.html`. Suite: 1043/1043. Commit: `1975fd8` · 2026-09-01
 
 ---
 
