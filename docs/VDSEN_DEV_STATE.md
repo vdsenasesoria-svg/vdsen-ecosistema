@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · branch `claude/fase-36-log-rotation` · FASE 36A GATE PASS · Implementación en progreso
+> Actualizado: 2026-09-01 · branch `claude/fase-36-log-rotation` · FASE 36 DONE (T1) · Merge a main pendiente
 
 ---
 
@@ -37,10 +37,10 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 32 | MERGED — commit `1975fd8` · UX Cliente: touch targets, setDone flash, ring fix |
 | FASE 33 | DONE — commits `7a29aa6`+`f10c75f` · End-to-End Integration Audit: 25 bugs corregidos |
 | FASE 34 | DONE — Legacy Identity Hardening: BUG H-3 + BUG G4 corregidos, 17 tests nuevos |
-| Suite tests | **1060/1060 PASS** (P01–P426 + F34-A–J) |
+| Suite tests | **1087/1087 PASS** (P01–P426 + F34-A–J + F36-B–N) |
 | Vercel | auto-deploy en push a main |
 | FASE 35 | MERGED — Historical Data Scalability Discovery: reporte completo 28 puntos |
-| FASE 36 | EN CURSO — Log Rotation Architecture + planId Stability Gate |
+| FASE 36 | DONE (T1) — Log Rotation Architecture · commits `1e2a3ed`+`9833dc0` · Suite 1087/1087 PASS |
 
 ---
 
@@ -57,11 +57,12 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ---
 
-## FASE 36 — Log Rotation Architecture (EN CURSO · 2026-09-01)
+## FASE 36 — Log Rotation Architecture (DONE T1 · 2026-09-01)
 
 **Objetivo:** Eliminar crecimiento indefinido de `logs/{uid}.entries` mediante rotación por mesociclo (`logs/{uid}/mesos/{planId}`), con transición backward-compatible.
 
-**Baseline:** main `dd6e526` · Suite 1060/1060 PASS · Branch `claude/fase-36-log-rotation`
+**Baseline:** main `dd6e526` · Suite 1060/1060 PASS · Branch `claude/fase-36-log-rotation`  
+**Resultado:** commits `1e2a3ed` (36A Gate) + `9833dc0` (36B T1) · Suite 1087/1087 PASS
 
 ---
 
@@ -156,13 +157,25 @@ La limitación de acciones admin (`mergeClients`, `repairClientUID`) se document
 
 ---
 
-### FASE 36B — Implementación (pendiente)
+### FASE 36B — Implementación (DONE · commit `9833dc0`)
 
-Gate PASS confirmado. Implementación en progreso según spec.
+Gate PASS confirmado. T1 implementado y mergeado.
 
 **Path objetivo:** `logs/{uid}/mesos/{planId}`  
-**Estrategia:** dual-write T1 → new-write-only T2 → retirada T3  
-**Retirement strategy:** ver sección al final de esta fase
+**Estrategia:** dual-write T1 → new-write-only T2 → retirada T3
+
+**Cambios aplicados:**
+- `vdsen-cliente.html` `_doSaveLogs`: dual-write — escribe `logs/{uid}/mesos/{planId}` primero (no-fatal), legacy siempre.
+- `vdsen-cliente.html` `loadPlan`: new-first read — intenta meso path, fallback a legacy.
+- `firestore.rules`: sub-colección `mesos/{planId}` con mismas reglas de aislamiento.
+- `vdsen-coach.html` `resetClientWeek` + `resetClientWeekKeepSessions`: dual-write reset.
+- Tests F36-B a F36-N (27 tests nuevos). Suite: 1087/1087 PASS.
+
+**Limitación conocida (no bloqueante):**
+`mergeClients` y `repairClientUID` no copian sub-colecciones. Deuda admin diferida a T2.
+
+**Retirement T2:** avanzar cuando ≥90% clientes con meso path, sin errores de fallback en logs.  
+**Retirement T3:** new-write/read solo, legacy como histórico.
 
 ---
 
