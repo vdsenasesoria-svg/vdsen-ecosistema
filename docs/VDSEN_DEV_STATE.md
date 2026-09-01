@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-01 · main HEAD: `b055047` · FASE 34 DONE · Legacy Identity Hardening
+> Actualizado: 2026-09-01 · branch `claude/client-app-improvements-qayy4n` HEAD: `9abb8e3` · FASE 34 DONE · FASE 35 DISCOVERY COMPLETE
 
 ---
 
@@ -39,7 +39,8 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 34 | DONE — Legacy Identity Hardening: BUG H-3 + BUG G4 corregidos, 17 tests nuevos |
 | Suite tests | **1060/1060 PASS** (P01–P426 + F34-A–J) |
 | Vercel | auto-deploy en push a main |
-| Siguiente fase | A definir |
+| FASE 35 | DONE — Historical Data Scalability Discovery: reporte completo 28 puntos |
+| Siguiente fase | FASE 36 — ver propuesta al final del reporte FASE 35 |
 
 ---
 
@@ -53,6 +54,342 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 - No introducir ninguna lógica `currentWeek === 6 → deload` en ningún nuevo código
 
 ---
+
+---
+
+## FASE 35 — Historical Data Scalability Discovery (DONE · 2026-09-01)
+
+**Tipo:** DISCOVERY puro — 0 cambios funcionales. Solo este documento modificado.  
+**Objetivo:** Auditar la escalabilidad longitudinal del ecosistema, con foco en `logs/{uid}.entries`. Producir reporte de 28 puntos, opciones arquitectónicas y clasificación de urgencia para FASE 36.
+
+---
+
+### PUNTO 1 — Modelo actual de `logs/{uid}`
+
+Un único documento Firestore por cliente, colección `logs`, ID = UID del cliente.
+
+**Top-level campos:**
+```
+{
+  entries:         { /* flat map COMPLETO de todos los registros */ },
+  currentWeek:     number,          // REAL_WEEK (no la semana en vista)
+  planId:          string | null,   // activePlanId al momento del último save
+  exerciseUnits:   { [nombre]: unit },       // 'kg' | 'lb' por nombre de ejercicio
+  exerciseHistory: { [nombre_lower]: { load, reps, rir, unit, updatedAt } },
+  updatedAt:       number           // Date.now()
+}
+```
+
+**Namespace de keys en `entries` (exhaustivo):**
+
+| Patrón | Descripción | Cardinalidad por mesociclo |
+|--------|-------------|--------------------------|
+| `log_{W}_{D}_{E}_s{S}` | Dato de un set real o autoFilled | W×D×E×S (típico 6×4×6×4 = 576) |
+| `done_{W}_{D}` | Sesión completada (boolean) | W×D (≤24) |
+| `postsession_{W}_{D}` | Check-in post-sesión (EIMD, articular, sueño, RPE) | W×D (≤24) |
+| `progrec_{W}_{D}` | Recomendaciones de progresión (objeto con recommendations[]) | W×D (≤24) |
+| `ci_sem_{W}` | Check-in semanal (peso, HRV, WHO-5, etc.) | W (≤6) |
+| `exmod_{W}_{D}_{E}` | Modificación de ejercicio en sesión | variable |
+| `exseries_{W}_{D}_{E}_s{S}` | Tracking de series adicionales | variable |
+| `ss_step_{W}_{D}_{grp}_r{R}_m{M}` | Estado de superserie | variable |
+| `exexpress_{W}_{D}_{idx}` | Express data (workout rápido) | variable |
+| `wearable_{W}_{D}` | Datos de wearable integrado | opcional |
+| `engine_state` | Snapshot del motor de progresión | 1 por doc |
+| `exnote_{W}_{D}_{E}` / `exnote_{D}_{E}` | Notas del cliente por ejercicio | variable |
+
+**Total keys estimado por mesociclo (6 semanas, 4 días, 6 ejercicios, 4 series):**
+- Contribución dominante: `log_*` = 576 keys
+- Subtotal restante: ~100–150 keys
+- **Total por mesociclo: ~700–800 keys**
+- Todos los mesociclos se acumulan en el mismo flat map sin partición temporal
+
+---
+
+### PUNTO 2 — Operación de escritura (`_doSaveLogs`)
+
+**Archivo:** `vdsen-cliente.html` ~L8556  
+**Tipo:** `FB.setDoc(ref, { entries: _safeEntries, ... })` — **reemplaza el documento COMPLETO** en cada invocación.
+
+```javascript
+async function _doSaveLogs() {
+  const _safeEntries = JSON.parse(JSON.stringify(LOGS || {}));     // deep-copy para sanear undefined
+  const ref = FB.doc(FB.db, 'logs', USER.uid);
+  await FB.setDoc(ref, {
+    entries: _safeEntries, currentWeek: REAL_WEEK, planId: ACTIVE_PLAN_ID,
+    exerciseUnits: _safeUnits, exerciseHistory: _safeHist, updatedAt: Date.now()
+  });
+}
+```
+
+**Triggers de escritura:** registrar set → copia de serie → toggle unidad → completar sesión → post-sesión → check-in → progresión → avance de semana.  
+**Debounce:** 400 ms. Múltiples interacciones rápidas → 1 write.  
+**Frecuencia real:** ~2–5 writes/minuto durante workout activo.  
+**localStorage backup:** síncrono e inmediato antes del debounce (sin latencia de red).
+
+---
+
+### PUNTO 3 — Operaciones de lectura y su amplificación
+
+| Ruta | Archivo | Función | Tipo | Doc completo | Frecuencia |
+|------|---------|---------|------|-------------|------------|
+| Carga inicial | cliente | `loadPlan` / startup | `getDoc` | ✓ | 1 vez por sesión |
+| Sync multi-dispositivo | cliente | `onSnapshot logs/{uid}` | listener | ✓ por evento | Continuo (cada cambio) |
+| Re-sync background | cliente | `_refreshLogsFromFirestore` | `getDoc` | ✓ | Al volver de background >30s |
+| Lista de clientes | coach | `loadClientList` | `Promise.all(getDoc×N)` | ✓ por cliente | Cada refresh del coach |
+| Monitor cliente | coach | `onSnapshot logs/{uid}` | listener | ✓ por evento | Continuo por cliente activo |
+| Detalle cliente | coach | `showClientDetail` | `getDoc` | ✓ | Por click |
+| Reporte PDF | coach | `generateFullClientReport` | `getDoc` | ✓ | Por demanda |
+| Export PDF sesión | coach | `exportClientPDF` | `getDoc` | ✓ | Por demanda |
+
+**Red amplification crítica — `loadClientList`:**  
+Para N clientes: `N × getDoc(logs/{uid})` en paralelo. Con 10 clientes = 10 lecturas de documento completo. Con 50 clientes = 50 lecturas. Cada lectura = todo el historial de ese cliente (potencialmente 2 MB por cliente con años de datos).
+
+---
+
+### PUNTO 4 — Procesamiento full-scan de `entries`
+
+Estas funciones iteran **todas** las keys del flat map en cada invocación:
+
+| Función | Archivo | Operación | Complejidad | Contexto |
+|---------|---------|-----------|------------|---------|
+| `_mapLogs` (~L710) | coach | Clasifica cada key por regex, construye resumen | O(n) | `loadClientList`, `_renderMonitorForWeek` |
+| `getClientAlert` (~L1122) | coach | Escanea todas las keys `log_*` buscando max timestamp | O(n) | `loadClientList` (×N clientes) |
+| `isClientLiveTraining` (~L1615) | coach | Escanea todas las keys `log_*` buscando ts < 5min | O(n) | Tick periódico |
+| `_computeClientAttentionState` | coach | Procesa entries completas | O(n) | `loadClientList` (×N clientes) |
+| `aggregateClientLogs` | coach | Agrega estadísticas de todo el historial | O(n) | `generateFullClientReport` |
+| `_getPrevWeekData` (~L13422) | cliente | `Object.keys(LOGS).forEach` para PID lookup | O(n) | `renderEntrenamiento` (por ejercicio) |
+| `_getExposures` (~L12465) | cliente | `Object.keys(LOGS).forEach` para PID lookup | O(n) | Progression engine (por ejercicio) |
+| `_getProgRecForExercise` | cliente | `Object.keys(LOGS).filter` por semana descendente | O(n) | `renderEntrenamiento` |
+
+**Nota crítica:** `_mapLogs` ya tiene `sizeWarning: setCount > 500`. El equipo era consciente del límite antes de esta auditoría.
+
+---
+
+### PUNTO 5 — Límites de Firestore relevantes
+
+| Límite | Valor | Relevancia |
+|--------|-------|------------|
+| Tamaño máximo de documento | **1 MB** | `logs/{uid}` puede excederlo con años de datos |
+| Escritura máxima por documento | 1 write/s sostenido (burst mayor) | `_doSaveLogs` debounced 400ms = hasta 2.5/s en burst — posible throttle |
+| Costos de lectura | 1 lectura por documento (no por key) | 50 clientes = 50 lecturas completas en `loadClientList` |
+| `onSnapshot` — facturación | Cada cambio = 1 lectura de documento | Con 10 clientes monitoreados = 10 lecturas por cada set guardado por cualquiera |
+| `update` vs `setDoc` | `update` puede afectar solo campos específicos | No se usa actualmente; se usa `setDoc` siempre |
+
+---
+
+### PUNTO 6 — Estimaciones de crecimiento
+
+**Perfil LIGHT (3 días/semana, 5 ejercicios, 3 series, 4 semanas/mesociclo):**
+- `log_*` keys por meso: 3×5×3×4 = 180
+- Demás keys: ~60
+- **Total por meso: ~240 keys** | bytes estimados: ~30 KB por mesociclo
+- Acumulado 12 mesos (1 año): ~2.880 keys | ~360 KB — **por debajo del límite 1 MB**
+
+**Perfil NORMAL (4 días/semana, 6 ejercicios, 4 series, 6 semanas/meso):**
+- `log_*` keys por meso: 4×6×4×6 = 576
+- Demás keys: ~150
+- **Total por meso: ~726 keys** | bytes estimados: ~90 KB por mesociclo
+- Acumulado 6 mesos (6 mesos): ~4.356 keys | ~540 KB — por debajo del límite
+- Acumulado 12 mesos (12 mesos): ~8.712 keys | ~1.08 MB — **supera el límite de 1 MB**
+
+**Perfil HIGH (5 días/semana, 8 ejercicios, 5 series, 6 semanas/meso, datos extra):**
+- `log_*` keys por meso: 5×8×5×6 = 1.200
+- Demás keys: ~200
+- **Total por meso: ~1.400 keys** | bytes estimados: ~175 KB por mesociclo
+- Acumulado 6 mesos: ~8.400 keys | ~1.05 MB — **supera el límite**
+- Acumulado 12 mesos: ~16.800 keys | ~2.1 MB — muy por encima del límite
+
+**Horizonte de riesgo:** cliente NORMAL a partir de ~10–11 meses; cliente HIGH a partir de ~5–6 mesos.
+
+---
+
+### PUNTO 7 — Hot / Warm / Cold data
+
+| Categoría | Datos | Acceso actual | Frecuencia |
+|-----------|-------|---------------|-----------|
+| **HOT** | Semana actual (`log_{W}_*`, `done_{W}_*`, `postsession_{W}_*`, `progrec_{W}_*`, `ci_sem_{W}`) | Cada render de workout | Múltiple por sesión |
+| **WARM** | Semana anterior (`log_{W-1}_*`) | `_getPrevWeekData`, progression engine | Por ejercicio en render |
+| **WARM** | Últimas 5 semanas (`_getExposures` maxExposures=5) | Historial de exposiciones | Por ejercicio en render |
+| **COLD** | Todo lo anterior a 5 semanas atrás | `aggregateClientLogs`, PDF report | Por demanda (raro) |
+| **COLD** | `exerciseHistory` (nombre→última carga) | Lookup de última carga conocida | Occasional |
+
+**Observación:** Solo HOT+WARM data (últimas 6 semanas) se necesita para el flujo de workout y progresión activos. COLD data (mesos anteriores) solo se usa en reportes y agregados PDF — acceso raro.
+
+---
+
+### PUNTO 8 — Listeners / cache audit
+
+| Listener | Archivo | Colección | Cuándo se crea | Cuándo se destruye |
+|----------|---------|-----------|---------------|-------------------|
+| `onSnapshot(logs/{uid})` | cliente | `logs` | Login/loadPlan | Logout / `_monitorUnsub()` |
+| `onSnapshot(logs/{clientId})` | coach-Monitor | `logs` | Al seleccionar cliente en Monitor | Cambio de cliente / cleanup FASE 33 |
+| `onSnapshot(plans/{planId})` | coach-Monitor | `plans` | Al seleccionar cliente en Monitor | Cambio de plan / cleanup FASE 33 |
+| `onSnapshot(clients)` | coach | `clients` | Login | Logout |
+
+**`_activePlanCache`:** caché local del plan en el closure del Monitor coach. No se invalida explícitamente si el plan cambia entre sesiones — posible stale (aceptado, mitigado por `onSnapshot` de plans).
+
+---
+
+### PUNTO 9 — Opciones arquitectónicas (A–E)
+
+#### Opción A — Status Quo (sin cambios)
+- No se hace nada hasta que un cliente real alcance el límite
+- **Pros:** cero deuda técnica nueva, cero riesgo de migración
+- **Contras:** en ~10–11 meses para cliente NORMAL el documento deja de poder escribirse (`RESOURCE_EXHAUSTED`); error silencioso para el cliente salvo por el badge de error
+- **Urgencia:** baja a corto plazo, bloqueante a mediano
+
+#### Opción B — Rotation: un documento por mesociclo (`logs_{uid}_{planId}`)
+- Cada mesociclo guarda en `logs_{uid}_{planId}` en lugar de `logs/{uid}`
+- HOT: solo el meso activo. COLD: documentos anteriores bajo demanda
+- **Pros:** tamaño acotado por design, reads de lista mucho más baratos
+- **Contras:** migración de todos los documentos `logs/{uid}` existentes; cambios en loadPlan, progression engine, Monitor, reportes; complejidad de "plan cambiado mid-meso"
+- **Urgencia:** candidata fuerte para FASE 36
+
+#### Opción C — Sub-colección por semana (`logs/{uid}/weeks/{W}`)
+- entries de cada semana en sub-docs independientes
+- **Pros:** reads de semana actuales muy pequeños; histórico accesible individualmente
+- **Contras:** migración; cambia el modelo de datos radicalmente; Coach necesitaría N reads para el reporte; `onSnapshot` individual por semana
+- **Urgencia:** mayor complejidad que B, menor beneficio relativo
+
+#### Opción D — Archivado periódico (prune cold data)
+- Script/función que mueve entradas de mesos anteriores a `logs_archive/{uid}/{planId}` 
+- `logs/{uid}` siempre contiene solo el meso activo + últimas 5 semanas warm
+- **Pros:** no cambia el modelo de escritura; reads calientes se vuelven pequeños
+- **Contras:** requiere función de archivado (Cloud Function o acción coach); mayor superficie de bugs en archivado; datos históricos fragmentados
+- **Urgencia:** viable como solución temporal o complementaria a B
+
+#### Opción E — Firestore `update` + campo diff en lugar de `setDoc` completo
+- Cambiar `_doSaveLogs` a `FB.updateDoc(ref, { 'entries.log_W_D_E_s0': value, updatedAt: ... })`
+- **Pros:** cada write solo envía el delta — reduce amplificación de escritura
+- **Contras:** NO resuelve el límite de tamaño del documento; complejidad del diff tracking; Firestore no admite eliminación de campos individuales en nested objects con update simple
+- **Urgencia:** mejora de performance de escritura, no soluciona el problema raíz
+
+---
+
+### PUNTO 10 — Estrategia de migración (discovery)
+
+Para cualquier opción que implique cambio de schema:
+
+**Sin migración = Opción A o D (parcial).** Para B o C se requiere:
+
+1. **Escritura dual** durante transición: escribir tanto al schema nuevo como al viejo durante N semanas
+2. **Lectura con fallback**: `loadPlan` intenta nuevo schema, cae a legacy
+3. **Sin migraciones masivas**: no existe Cloud Functions en el proyecto actualmente; una migración masiva requeriría run manual o función ad-hoc; riesgo de timeout para clientes con muchos datos
+4. **Invariantes a preservar durante migración**: deload reactivo, autoFilled excluido, POSITION ≠ IDENTITY, progrec.newLoad = sugerencia
+
+**Recomendación:** cualquier cambio debe ser aditivo y backward-compatible durante al menos 2 mesociclos completos antes de deprecar el path legacy.
+
+---
+
+### PUNTO 11 — Compatibilidad hacia atrás
+
+Todos los campos en `logs/{uid}` son leídos con `|| {}` o `|| []` o verificaciones de existencia. No hay lecturas que fallen si un campo no existe.
+
+El schema de entries nunca se valida contra un schema formal — es tolerante a campos desconocidos. Un documento nuevo con schema distinto no rompe el código actual siempre que las keys conocidas estén presentes con su tipo esperado.
+
+**Riesgo de ruptura backward compatibility = BAJO** para schema aditivo, MEDIO para schema sustractivo.
+
+---
+
+### PUNTO 12 — Impacto en reglas de seguridad Firestore (`firestore.rules`)
+
+Las reglas actuales validan acceso por UID (`request.auth.uid === uid` para `logs/{uid}`). Un cambio a `logs_{uid}_{planId}` requeriría actualizar las reglas para el nuevo path. Sub-colecciones requieren reglas de sub-colección explícitas.
+
+**Impacto:** MODERADO. Reglas actuales son simples; actualización es directa pero debe revisarse para que no queden paths sin protección.
+
+---
+
+### PUNTO 13 — Matriz de decisión
+
+| Criterio | A (Status Quo) | B (Rotation) | C (Sub-col) | D (Archivado) | E (Update diff) |
+|----------|---------------|-------------|------------|--------------|----------------|
+| Riesgo doc overflow | ALTO (futuro) | BAJO | BAJO | BAJO | ALTO (futuro) |
+| Complejidad impl | NINGUNA | MEDIA | ALTA | MEDIA | BAJA |
+| Riesgo migración | NINGUNO | MEDIO | ALTO | BAJO | NINGUNO |
+| Performance escritura | SIN CAMBIO | MEJOR | MEJOR | SIN CAMBIO | MEJOR |
+| Performance lectura | SIN CAMBIO | MEJOR | MEJOR | MEJOR | SIN CAMBIO |
+| Costo Firestore | SIN CAMBIO | MEJOR | SIMILAR | MEJOR | MEJOR |
+| Backward compat | TOTAL | REQUIERE DUAL | REQUIERE DUAL | PARCIAL | TOTAL |
+| **Recomendación** | Fallback temporal | **CANDIDATA FASE 36** | Deferred | Complementaria | Mejora puntual |
+
+---
+
+### PUNTO 14 — Clasificación de urgencia
+
+| Escenario | Horizonte de riesgo | Acción recomendada |
+|-----------|--------------------|--------------------|
+| Cliente LIGHT (≤3 días, 5 ej, 3 series) | >24 meses | Monitorear; sin acción urgente |
+| Cliente NORMAL (4 días, 6 ej, 4 series) | ~10–11 meses | Planificar Opción B en FASE 36 |
+| Cliente HIGH (5 días, 8 ej, 5 series) | ~5–6 meses | Prioridad ALTA para FASE 36 |
+| Coach con >20 clientes | Inmediato (performance) | `loadClientList` ya es costoso sin ser bloqueante |
+| Error Firestore silencioso al overflow | Al alcanzar 1 MB | Badge de error ya existe; sin pérdida de datos (localStorage backup) |
+
+**Urgencia global: MEDIA** — no es una emergencia para clientes actuales, pero es un bloqueante architectural confirmado para clientes con más de ~10 meses de uso continuo.
+
+---
+
+### PUNTO 15 — Hallazgos de performance CPU/DOM
+
+- `_getPrevWeekData` y `_getExposures` iteran el flat map completo con `Object.keys(LOGS).forEach` — O(n) por ejercicio. Con 6 ejercicios/día y 1.000+ keys: ~6.000 iteraciones por render.
+- `_mapLogs` en coach itera el mapa completo por cada cliente en `loadClientList` — con 20 clientes y 1.000 keys cada uno: 20.000 iteraciones en startup del coach.
+- `getClientAlert` y `isClientLiveTraining` tienen el mismo patrón O(n) y se llaman en tick periódico.
+- No se observa DOM thrashing significativo — render es event-driven, no polling DOM.
+- **Recomendación:** construir índices en memoria al cargar los logs (e.g. `LOGS_BY_WEEK[W]`) para reducir O(n) a O(1) en las rutas calientes.
+
+---
+
+### PUNTO 16 — Resumen de hallazgos críticos (28 puntos resumidos en tabla)
+
+| # | Hallazgo | Severidad | Tipo |
+|---|---------|-----------|------|
+| 1 | `logs/{uid}` = único doc, campo `entries` flat map acumulativo sin partición temporal | INFORMATIVO | Arquitectura |
+| 2 | `_doSaveLogs` = `setDoc` completo (no diff) — carga útil crece con la historia | MEDIO | Performance escritura |
+| 3 | Debounce 400ms mitiga frecuencia pero no tamaño del payload | MITIGACIÓN PARCIAL | Write path |
+| 4 | localStorage backup síncrono — sin pérdida de datos en error de red | POSITIVO | Resiliencia |
+| 5 | `onSnapshot logs/{uid}` cliente: full doc por evento de sync | INFORMATIVO | Read path |
+| 6 | `loadClientList` coach: N `getDoc` paralelos al cargar la lista | MEDIO | Read amplification |
+| 7 | Monitor coach: `onSnapshot logs/{clientId}` — full doc en tiempo real | INFORMATIVO | Listener |
+| 8 | `_mapLogs` O(n) × N clientes en startup del coach | MEDIO | CPU coach |
+| 9 | `getClientAlert` O(n) escanea todas las keys `log_*` por cliente | MEDIO | CPU coach |
+| 10 | `isClientLiveTraining` O(n) en tick periódico | BAJO | CPU coach |
+| 11 | `_getPrevWeekData` O(n) por ejercicio en render | BAJO | CPU cliente |
+| 12 | `_getExposures` O(n) por ejercicio en render | BAJO | CPU cliente |
+| 13 | `_mapLogs` ya tiene `sizeWarning: setCount > 500` — equipo consciente del riesgo | POSITIVO | Awareness |
+| 14 | Cliente NORMAL supera 1 MB Firestore en ~10–11 meses de uso continuo | ALTO | Límite hard |
+| 15 | Cliente HIGH supera 1 MB Firestore en ~5–6 meses | ALTO | Límite hard |
+| 16 | Error al superar 1 MB = `RESOURCE_EXHAUSTED` — sin pérdida de datos (localStorage) | INFORMATIVO | Failure mode |
+| 17 | Todos los mesos históricos acumulados sin TTL ni partición | ALTO | Arquitectura |
+| 18 | Solo HOT (semana actual) + WARM (5 semanas anteriores) needed para workout activo | INFORMATIVO | Data access pattern |
+| 19 | COLD data (mesos anteriores a 5 semanas) solo necesaria para reportes y PDF | INFORMATIVO | Data access pattern |
+| 20 | Opción B (rotation por mesociclo) = mejor relación complejidad/beneficio | RECOMENDACIÓN | Arquitectura |
+| 21 | Migración requiere escritura dual y fallback — sin Cloud Functions en proyecto | MEDIO | Migración |
+| 22 | `firestore.rules` necesita actualización para nuevo path en Opción B | BAJO | Seguridad |
+| 23 | `exerciseHistory` (nombre-keyed) crecimiento acotado — no es fuente de overflow | POSITIVO | Arquitectura |
+| 24 | `exerciseUnits` (nombre→unit) crecimiento acotado — no es fuente de overflow | POSITIVO | Arquitectura |
+| 25 | `engine_state` clave única — 1 entry por documento — no escala con tiempo | POSITIVO | Arquitectura |
+| 26 | Índices en memoria (LOGS_BY_WEEK) eliminarían O(n) en rutas calientes | MEJORA | Performance |
+| 27 | `_computeClientAttentionState` y sorting por estado atencion — O(n×N) en startup coach | MEDIO | CPU coach |
+| 28 | Urgencia global = MEDIA; acción recomendada = Opción B en FASE 36 | RESUMEN | Decisión |
+
+---
+
+### Propuesta FASE 36 — Mesocycle Rotation
+
+**Objetivo:** Implementar Opción B (rotation) sin migración masiva ni cambios de schema en el flow de lectura activo.
+
+**Estrategia:**
+1. **Nuevo path de escritura:** al crear/cambiar plan activo, `_doSaveLogs` escribe a `logs/{uid}/mesos/{planId}` en lugar de (o además de) `logs/{uid}`
+2. **Escritura dual** durante período de transición (configurable): escribe a ambos paths
+3. **Lectura con fallback:** `loadPlan` intenta `logs/{uid}/mesos/{activePlanId}`, cae a `logs/{uid}` legacy
+4. **Índices en memoria:** construir `LOGS_BY_WEEK` en el `onSnapshot` handler para eliminar O(n) en rutas calientes
+5. **Datos fríos bajo demanda:** `generateFullClientReport` lee mesos anteriores con un fetch separado y explícito
+6. **Reglas Firestore:** actualizar para `logs/{uid}/mesos/{planId}`
+7. **Backward compat:** `logs/{uid}` sigue siendo legible durante transición; sin migración de documentos existentes
+8. **0 cambios en contrato de progresión**, deload, POSITION≠IDENTITY, autoFilled
+
+**Alcance estimado:** 3–4 archivos (`vdsen-cliente.html`, `vdsen-coach.html`, `firestore.rules`, tests); ~2–3 días de desarrollo.
+
+**Prioridad:** ALTA para clientes que ya llevan >6 meses de uso; MEDIA para clientes nuevos.
 
 ---
 
