@@ -1626,7 +1626,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   window.isClientLiveTraining = isClientLiveTraining;
   
   async function initCoachUI() {
-    window._vdsenSignOut = () => signOut(auth);
+    window._vdsenSignOut = () => {
+      if (window._monitorUnsub)    { window._monitorUnsub();    window._monitorUnsub = null; }
+      if (window._monitorPlanUnsub){ window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
+      if (window._fichasUnsub)     { window._fichasUnsub();     window._fichasUnsub = null; }
+      signOut(auth);
+    };
 
     // Información de cuenta
     const providerIds = (currentCoach.providerData || []).map(p => p.providerId);
@@ -7436,6 +7441,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       weeks:               (training.weeks      !== undefined ? training.weeks      : 0),
       daysPerWeek:         (training.daysPerWeek !== undefined ? training.daysPerWeek : 0),
       days:                _stampPrescriptionIds(Array.isArray(training.days) ? training.days : []),
+      rirByWeek:           rirSchemeForWeeks(training.weeks || 6),
       // Nutrition
       nutritionDisplay: {
         calorias: nutr.calorias || 0,
@@ -8088,7 +8094,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const tabs = manualPlan.days.map((d, i) => {
       if (i === activeMPDay) {
         return `<div style="display:inline-flex;align-items:center;background:#F4F4F0;border-radius:4px;padding:2px 4px 2px 8px;gap:4px">
-          <input type="text" value="${d.label.replace(/"/g,'&quot;')}" oninput="manualPlan.days[${i}].label=this.value" class="text-sm text-black font-semibold" style="background:transparent;border:none;outline:none;width:${Math.max(60,d.label.length*8)}px">
+          <input type="text" value="${d.label.replace(/"/g,'&quot;')}" oninput="manualPlan.days[${i}].label=this.value;markEditorDirty&&markEditorDirty()" class="text-sm text-black font-semibold" style="background:transparent;border:none;outline:none;width:${Math.max(60,d.label.length*8)}px">
         </div>`;
       }
       return `<button onclick="setMPDay(${i})" class="px-3 py-1 rounded text-sm bg-[#1A1A1A] border border-[#2A2A2A]">${d.label}</button>`;
@@ -8140,11 +8146,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       alternatives: [],
       sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 90 }]
     });
+    if (typeof markEditorDirty === 'function') markEditorDirty();
     renderMPEditor();
   }
 
   function removeExercise(di, ei) {
     manualPlan.days[di].exercises.splice(ei, 1);
+    if (typeof markEditorDirty === 'function') markEditorDirty();
     renderMPEditor();
   }
 
@@ -8152,19 +8160,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const sets = manualPlan.days[di].exercises[ei].sets;
     const last = sets[sets.length - 1] || { repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 90 };
     sets.push({ setIndex: sets.length, repsTarget: last.repsTarget, rirTarget: last.rirTarget, load: last.load, restSeconds: last.restSeconds });
+    if (typeof markEditorDirty === 'function') markEditorDirty();
     renderMPEditor();
   }
 
   function removeSet(di, ei, si) {
     manualPlan.days[di].exercises[ei].sets.splice(si, 1);
     manualPlan.days[di].exercises[ei].sets.forEach((s, i) => s.setIndex = i);
+    if (typeof markEditorDirty === 'function') markEditorDirty();
     renderMPEditor();
   }
 
-  function updateExName(di, ei, val) { manualPlan.days[di].exercises[ei].exerciseName = val; }
-  function updateSet(di, ei, si, field, val) { manualPlan.days[di].exercises[ei].sets[si][field] = val; }
+  function updateExName(di, ei, val) { manualPlan.days[di].exercises[ei].exerciseName = val; if (typeof markEditorDirty === 'function') markEditorDirty(); }
+  function updateSet(di, ei, si, field, val) { manualPlan.days[di].exercises[ei].sets[si][field] = val; if (typeof markEditorDirty === 'function') markEditorDirty(); }
   function updateAlts(di, ei, val) {
     manualPlan.days[di].exercises[ei].alternatives = val.split(",").map(s => s.trim()).filter(Boolean);
+    if (typeof markEditorDirty === 'function') markEditorDirty();
   }
 
   let _savingManualPlan = false;
@@ -8189,6 +8200,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const planRef = await addDoc(collection(db, "plans"), {
         ...manualPlan,
         days: _stampPrescriptionIds(manualPlan.days),
+        rirByWeek: rirSchemeForWeeks(manualPlan.weeks || 6),
         coachId: currentCoach.uid,
         clientId,
         status: "active",
@@ -10890,6 +10902,7 @@ El esfuerzo no es negociable.
       days,
       weeks: template.weeks || 6,
       daysPerWeek: days.length,
+      rirByWeek: rirSchemeForWeeks(template.weeks || 6),
       coachId: currentCoach.uid,
       clientId,
       status: 'active',
@@ -12287,11 +12300,13 @@ El esfuerzo no es negociable.
     tmp.innerHTML = _exRowHtml(di, ei, '', 3, 8, 2, '', 'straight', '', '[]', '', '', 'null', '', 0);
     list.appendChild(tmp.content.firstElementChild);
     _updateReorderBtns(list);
+    if (typeof markEditorDirty === 'function') markEditorDirty();
   }
 
   function removeExRow(di, ei) {
     const el = document.getElementById('exrow_'+di+'_'+ei);
     if (el) el.remove();
+    if (typeof markEditorDirty === 'function') markEditorDirty();
   }
 
   // ── Auto-agregar ejercicios del plan al catálogo (sin duplicados) ──
@@ -12413,10 +12428,11 @@ El esfuerzo no es negociable.
     div.className = 'card p-3 mb-3';
     div.id = 'dayblock_'+di;
     div.innerHTML = `
-      <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="Día ${di+1}" id="daylabel_${di}" placeholder="Nombre del día">
+      <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="Día ${di+1}" id="daylabel_${di}" placeholder="Nombre del día" oninput="markEditorDirty&&markEditorDirty()">
       <div id="exlist_${di}"></div>
       <button onclick="addExRow(${di})" class="text-[#F4F4F0] text-xs underline mt-1">+ Ejercicio</button>`;
     container.appendChild(div);
+    if (typeof markEditorDirty === 'function') markEditorDirty();
     addExRow(di); // agregar primer ejercicio vacío
   }
 
@@ -14503,8 +14519,15 @@ El esfuerzo no es negociable.
   // Navegación entre secciones
   const sections = ["clientes","evaluacion","crearPlan","templates","catalogo","config"];
   const sectionLabels = { clientes:'Clientes', evaluacion:'Evaluación', crearPlan:'Crear Plan', templates:'Templates', catalogo:'Catálogo', config:'Config' };
-  function showSection(sectionId) {
+  async function showSection(sectionId) {
     if (!sections.includes(sectionId)) return;
+    // Guard: al salir de crearPlan con plan manual no guardado
+    if (sectionId !== 'crearPlan' && manualPlan) {
+      const ok = await _askConfirm('Tienes un <strong>plan manual sin guardar</strong>.<br><span style="color:#888;font-size:12px">¿Salir sin guardar?</span>');
+      if (!ok) return;
+      manualPlan = null;
+      markEditorClean && markEditorClean();
+    }
     sections.forEach(s => {
       const el = document.getElementById(s);
       if (el) el.classList.toggle("active", s === sectionId);

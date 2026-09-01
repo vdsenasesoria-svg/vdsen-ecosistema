@@ -1621,6 +1621,19 @@ async function loadPlan(user) {
     DIA_ACTIVO = _rDia;
     CURRENT_WEEK = REAL_WEEK;
     goTab(_rTab);
+    // Restaurar rest timer si un page reload interrumpió el descanso
+    setTimeout(function() {
+      var _savedEnd = parseInt(localStorage.getItem('vdsen_restEnd') || '0');
+      if (!_savedEnd) return;
+      var _remaining = Math.ceil((_savedEnd - Date.now()) / 1000);
+      if (_remaining <= -30) { localStorage.removeItem('vdsen_restEnd'); localStorage.removeItem('vdsen_restTotal'); return; }
+      _restEndMs = _savedEnd;
+      _restTotalSeconds = parseInt(localStorage.getItem('vdsen_restTotal') || '0') || 90;
+      _restEl = document.getElementById('restTimerNum');
+      var _ov = document.getElementById('restTimerOverlay');
+      if (_remaining <= 0) { _restSeconds = _remaining; if (_ov) _ov.style.display = 'flex'; updateTimerDisplay(); _onTimerFinished(); }
+      else { _restSeconds = _remaining; if (_ov) _ov.style.display = 'flex'; updateTimerDisplay(); if (!_restTimer) _restTimer = setInterval(_restTimerTick, 1000); }
+    }, 300);
     showWhatsNew();
     if (_showBitacoraInfo) { setTimeout(function(){ showBitacoraInfoModal(); }, 500); }
 
@@ -5242,7 +5255,7 @@ function _refreshExPanelOnly() {
     var guardarBtn = document.querySelector('#exPanel button[onclick*="completeSet"]');
     var activeRow = guardarBtn && guardarBtn.closest('[id^="setrow_"]');
     if (activeRow) {
-      activeRow.scrollIntoView({ behavior: 'instant', block: 'start' });
+      activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       // Compensar header fijo (~70px)
       window.scrollBy(0, -70);
     }
@@ -6649,7 +6662,7 @@ function renderEntrenamiento() {
       _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
     // Rest timer overlay (hidden) — premium design
-    '<div id="restTimerOverlay" onclick="stopRestTimer()" style="display:none;position:fixed;inset:0;background:rgba(6,14,26,.88);z-index:200;align-items:center;justify-content:center;flex-direction:column;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)">'+
+    '<div id="restTimerOverlay" onclick="stopRestTimer()" style="display:none;position:fixed;inset:0;background:rgba(6,14,26,.88);z-index:9000;align-items:center;justify-content:center;flex-direction:column;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);padding-bottom:env(safe-area-inset-bottom)">'+
       '<div onclick="event.stopPropagation()" style="'+
         'background:linear-gradient(160deg,rgba(10,18,32,1) 0%,rgba(6,14,26,1) 100%);'+
         'border:1px solid rgba(196,255,0,.28);border-radius:28px;padding:36px 40px 32px;'+
@@ -6689,7 +6702,7 @@ function renderEntrenamiento() {
       '</div>'+
     '</div>'+
     // Pastilla flotante (timer minimizado)
-    '<div id="timerPill" onclick="maximizeTimer()" style="display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:201;background:rgba(10,18,32,.95);border:1.5px solid rgba(196,255,0,.5);border-radius:28px;padding:10px 22px;align-items:center;gap:10px;cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.6),0 0 20px rgba(196,255,0,.12);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">'+
+    '<div id="timerPill" onclick="maximizeTimer()" style="display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9001;background:rgba(10,18,32,.95);border:1.5px solid rgba(196,255,0,.5);border-radius:28px;padding:10px 22px;align-items:center;gap:10px;cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.6),0 0 20px rgba(196,255,0,.12);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">'+
       '<span style="font-size:18px">⏱</span>'+
       '<span id="timerPillNum" style="font-size:22px;font-weight:800;color:var(--accent);font-family:monospace;letter-spacing:1px">—</span>'+
       '<span style="font-size:11px;color:var(--mt);font-weight:600">Toca para ver</span>'+
