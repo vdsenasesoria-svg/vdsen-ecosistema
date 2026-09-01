@@ -3092,7 +3092,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const exName = _exNameFromPlan(d, e);
           const semLabel = w ? `· Sem ${w} · Día ${d+1}` : `· Día ${d+1}`;
           const label = exName
-            ? `<span class="font-semibold" style="color:#fff">${exName}</span> <span style="color:#888;font-size:10px">${semLabel}</span>`
+            ? `<span class="font-semibold" style="color:#fff">${_escH(exName)}</span> <span style="color:#888;font-size:10px">${semLabel}</span>`
             : `<span style="color:#888">Día ${d+1} · Ej ${e+1}</span>`;
           html += `
             <div class="card p-3 mb-2" style="border-left:3px solid rgba(107,107,102,.5);border-radius:0 8px 8px 0">
@@ -3100,7 +3100,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
                 <span style="font-size:16px;flex-shrink:0">📝</span>
                 <div>
                   <div class="text-xs mb-1">${label}</div>
-                  <div class="text-sm" style="color:#cfcfcf;line-height:1.5">${logs[k]}</div>
+                  <div class="text-sm" style="color:#cfcfcf;line-height:1.5">${_escH(logs[k])}</div>
                 </div>
               </div>
             </div>`;
@@ -4945,11 +4945,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <ul class="text-sm space-y-1">
           ${d.exercises.length
             ? d.exercises.map(e => {
-                const tech = (e.technique && e.technique !== 'straight') ? ` <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:rgba(244,244,240,.15);color:#F4F4F0;text-transform:uppercase;font-weight:600">${e.technique}</span>` : '';
+                const tech = (e.technique && e.technique !== 'straight') ? ` <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:rgba(244,244,240,.15);color:#F4F4F0;text-transform:uppercase;font-weight:600">${_escH(e.technique)}</span>` : '';
                 const fromW = e.techniqueFromWeek ? ` <span style="font-size:9px;color:#9966cc;font-weight:700">desde sem ${e.techniqueFromWeek}</span>` : '';
-                const tnote = e.techniqueNote ? `<div class="text-[11px] text-[#888] ml-3 italic">↳ ${e.techniqueNote}</div>` : '';
+                const tnote = e.techniqueNote ? `<div class="text-[11px] text-[#888] ml-3 italic">↳ ${_escH(e.techniqueNote)}</div>` : '';
                 const repsDisp = _setsRepsLabel(e.sets);
-                return `<li>· ${e.exerciseName}${tech}${fromW} — ${e.sets.length} serie(s) × ${repsDisp} reps${tnote}</li>`;
+                return `<li>· ${_escH(e.exerciseName)}${tech}${fromW} — ${e.sets.length} serie(s) × ${repsDisp} reps${tnote}</li>`;
               }).join('')
             : '<li class="text-[#888]">Sin ejercicios detectados</li>'}
         </ul>
@@ -7201,10 +7201,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     let trainingHtml = '';
     if (training && Array.isArray(training.days)) {
       training.days.forEach(day => {
-        trainingHtml += `<div style="margin-bottom:12px"><b>Día ${day.dayIndex}: ${day.label || ''}</b><ul style="margin:4px 0 0 16px;font-size:12px">`;
+        trainingHtml += `<div style="margin-bottom:12px"><b>Día ${day.dayIndex}: ${_escH(day.label || '')}</b><ul style="margin:4px 0 0 16px;font-size:12px">`;
         (day.exercises || []).forEach(ex => {
-          trainingHtml += `<li>${ex.exerciseName} — ${ex.sets ? ex.sets.length : 0} series`;
-          if (ex.technique) trainingHtml += ` (${ex.technique})`;
+          trainingHtml += `<li>${_escH(ex.exerciseName)} — ${ex.sets ? ex.sets.length : 0} series`;
+          if (ex.technique) trainingHtml += ` (${_escH(ex.technique)})`;
           trainingHtml += '</li>';
         });
         trainingHtml += '</ul></div>';
@@ -7217,8 +7217,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const nutr = plan.nutricion;
     let nutrHtml = '';
     if (nutr) {
-      nutrHtml = `<div style="font-size:13px"><b>${nutr.calorias || '?'} kcal</b> · P: ${nutr.proteina || '?'}g · C: ${nutr.carbos || '?'}g · G: ${nutr.grasas || '?'}g</div>`;
-      if (nutr.texto) nutrHtml += `<div style="font-size:12px;margin-top:6px;white-space:pre-wrap;max-height:150px;overflow-y:auto">${nutr.texto}</div>`;
+      nutrHtml = `<div style="font-size:13px"><b>${_escH(String(nutr.calorias || '?'))} kcal</b> · P: ${_escH(String(nutr.proteina || '?'))}g · C: ${_escH(String(nutr.carbos || '?'))}g · G: ${_escH(String(nutr.grasas || '?'))}g</div>`;
+      if (nutr.texto) nutrHtml += `<div style="font-size:12px;margin-top:6px;white-space:pre-wrap;max-height:150px;overflow-y:auto">${_escH(nutr.texto)}</div>`;
     } else {
       nutrHtml = '<em style="color:var(--text-muted)">Sin nutrición en respuesta</em>';
     }
@@ -7228,10 +7228,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     let supplHtml = '';
     if (suppl && Array.isArray(suppl.tiers)) {
       suppl.tiers.forEach(tier => {
-        supplHtml += `<div style="font-size:13px;margin-bottom:6px"><b>${tier.nombre || 'Tier'}</b>`;
+        supplHtml += `<div style="font-size:13px;margin-bottom:6px"><b>${_escH(tier.nombre || 'Tier')}</b>`;
         if (Array.isArray(tier.items)) {
           supplHtml += `<ul style="margin:4px 0 0 16px;font-size:12px">`;
-          tier.items.forEach(item => { supplHtml += `<li>${item.nombre} — ${item.dosis || ''} ${item.timing || ''}</li>`; });
+          tier.items.forEach(item => { supplHtml += `<li>${_escH(item.nombre)} — ${_escH(item.dosis || '')} ${_escH(item.timing || '')}</li>`; });
           supplHtml += '</ul>';
         }
         supplHtml += '</div>';
