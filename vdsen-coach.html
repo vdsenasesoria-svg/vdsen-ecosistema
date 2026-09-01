@@ -2821,7 +2821,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       clientsMap[d.id] = d.data();
     });
 
+    let _monitorGeneration = 0;
     select.onchange = async () => {
+      const _myMonGen = ++_monitorGeneration;
       if (window._monitorUnsub) { window._monitorUnsub(); window._monitorUnsub = null; }
       if (window._monitorPlanUnsub) { window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
       if (!select.value) return;
@@ -2838,6 +2840,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           if (_ps.exists()) _activePlanCache = _ps.data();
         } catch(e) {}
       }
+      // Abort if user switched client while awaiting
+      if (_myMonGen !== _monitorGeneration) return;
 
       // onSnapshot para plan: mantiene _activePlanCache fresco si el plan es editado
       if (window._monitorPlanUnsub) { window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
@@ -3263,17 +3267,25 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
       // FASE 20 — aplicar cargas recomendadas al plan (bulk)
       const _applyRecBtn = document.getElementById('applyRecLoadsBtn');
-      if (_applyRecBtn) _applyRecBtn.onclick = () => _applyRecLoadsToMonitor(clientData, lastRec, lastRecDay);
+      if (_applyRecBtn) _applyRecBtn.onclick = async () => {
+        if (_applyRecBtn.disabled) return;
+        _applyRecBtn.disabled = true;
+        try { await _applyRecLoadsToMonitor(clientData, lastRec, lastRecDay); }
+        finally { _applyRecBtn.disabled = false; }
+      };
 
       // FASE 31 — aplicar carga individual por recomendación
       document.querySelectorAll('._mon-apply-single').forEach(btn => {
         btn.onclick = async () => {
-          if (!lastRec || !lastRec.recommendations) return;
-          const idx = parseInt(btn.dataset.recidx);
-          const rec = lastRec.recommendations[idx];
-          if (!rec) return;
-          const fakeRec = { recommendations: [rec], deloadTriggers: [] };
-          await _applyRecLoadsToMonitor(clientData, fakeRec, lastRecDay);
+          if (btn.disabled || !lastRec || !lastRec.recommendations) return;
+          btn.disabled = true;
+          try {
+            const idx = parseInt(btn.dataset.recidx);
+            const rec = lastRec.recommendations[idx];
+            if (!rec) return;
+            const fakeRec = { recommendations: [rec], deloadTriggers: [] };
+            await _applyRecLoadsToMonitor(clientData, fakeRec, lastRecDay);
+          } finally { btn.disabled = false; }
         };
       });
 
@@ -7423,7 +7435,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       // Training (flat — backward compat with client app)
       weeks:               (training.weeks      !== undefined ? training.weeks      : 0),
       daysPerWeek:         (training.daysPerWeek !== undefined ? training.daysPerWeek : 0),
-      days:                (Array.isArray(training.days) ? training.days : []),
+      days:                _stampPrescriptionIds(Array.isArray(training.days) ? training.days : []),
       // Nutrition
       nutritionDisplay: {
         calorias: nutr.calorias || 0,
@@ -10743,6 +10755,8 @@ El esfuerzo no es negociable.
       await updateDoc(doc(db, 'plans', planId), { days: updatedDays, updatedAt: new Date().toISOString() });
       if (_activePlanCache) _activePlanCache.days = updatedDays;
       showToast(`✅ ${applied} ejercicio(s) actualizados en el plan.`);
+      // Re-renderizar Monitor para reflejar las nuevas cargas (cache ya actualizado arriba)
+      try { _renderMonitorForWeek(); } catch(_) {}
     } catch(e) { showToast('Error al aplicar: ' + e.message, true); console.error(e); }
   }
   window._applyRecLoadsToMonitor = _applyRecLoadsToMonitor;
@@ -10840,7 +10854,7 @@ El esfuerzo no es negociable.
       await addDoc(collection(db,'templates'), {
         name: name.trim(), coachId: currentCoach.uid, weeks: p.weeks || 6,
         days: (p.days || []).map(d => ({ label: d.label, exercises: d.exercises || [] })),
-        createdAt: Date.now()
+        createdAt: new Date().toISOString()
       });
       showToast('Template "'+name.trim()+'" guardado ⭐');
     } catch(e) { showToast('Error: '+e.message, true); }
@@ -10880,7 +10894,7 @@ El esfuerzo no es negociable.
       clientId,
       status: 'active',
       generatedBy: 'template:' + (template.name || ''),
-      createdAt: Date.now()
+      createdAt: new Date().toISOString()
     });
     await updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id });
     if (closeModal) closeModal();
@@ -11402,13 +11416,25 @@ El esfuerzo no es negociable.
   let _clientIdList = []; // lista ordenada de IDs para navegación rápida
   let _clientNameMap = {}; // { id: nombre }
 
-  function closeClientModal() {
+  async function closeClientModal() {
+    if (_dirtyEditor && _detailActiveTab === 'plan') {
+      const ok = await _askConfirm('Tienes <strong>cambios sin guardar</strong> en el plan.<br><span style="color:#888;font-size:12px">¿Cerrar sin guardar?</span>');
+      if (!ok) return;
+      _discardEditorChanges();
+      markEditorClean();
+    }
     document.getElementById("clientModal").style.display = "none";
     _detailClientId = null;
   }
 
-  function navClient(dir) {
+  async function navClient(dir) {
     if (!_clientIdList.length || !_detailClientId) return;
+    if (_dirtyEditor && _detailActiveTab === 'plan') {
+      const ok = await _askConfirm('Tienes <strong>cambios sin guardar</strong> en el plan.<br><span style="color:#888;font-size:12px">¿Navegar a otro cliente sin guardar?</span>');
+      if (!ok) return;
+      _discardEditorChanges();
+      markEditorClean();
+    }
     var idx = _clientIdList.indexOf(_detailClientId);
     if (idx === -1) return;
     var next = idx + dir;
@@ -12314,8 +12340,11 @@ El esfuerzo no es negociable.
     } catch(e) { console.warn('_autoAddExercisesToCatalog error:', e.message); }
   }
 
+  let _savingTrainingPlan = false;
   async function saveTrainingPlan() {
+    if (_savingTrainingPlan) return;
     if (!_editingPlanId) return;
+    _savingTrainingPlan = true;
     const dayBlocks = document.querySelectorAll('[id^="dayblock_"]');
     const days = [];
     dayBlocks.forEach((block, di) => {
@@ -12372,6 +12401,7 @@ El esfuerzo no es negociable.
       showClientDetail(_detailClientId);
       _autoAddExercisesToCatalog(days);
     } catch(e) { showToast('Error al guardar: ' + e.message + (e.code ? ' ['+e.code+']' : ''), true); }
+    finally { _savingTrainingPlan = false; }
   }
 
   // ── Agregar día al editor ──
@@ -12742,7 +12772,7 @@ El esfuerzo no es negociable.
         st.style.color = '#44BB88';
         st.innerHTML = '✓ UID reparado — el cliente ya puede entrar normalmente.<br><small style="color:#888">Nuevo UID: '+newUid+'</small>';
         showToast('✓ UID de '+( c.displayName||c.email)+' reparado');
-        loadClients();
+        loadClientList();
       } catch(e) {
         st.style.color = '#c94a3a';
         st.textContent = 'Error: ' + (e.code || e.message);
@@ -12997,7 +13027,7 @@ El esfuerzo no es negociable.
       const targetId = sel.id;
 
       // Crear copia del plan (nueva prescripción = nuevos IDs)
-      const newPlan = { ...planData, days: _restampPrescriptionIds(planData.days), clientId: targetId, createdAt: Date.now(), status: 'active' };
+      const newPlan = { ...planData, days: _restampPrescriptionIds(planData.days), clientId: targetId, createdAt: new Date().toISOString(), status: 'active' };
       delete newPlan.id; // limpiar ID anterior si existía
       const newRef = await addDoc(collection(db, "plans"), newPlan);
       await updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id });
@@ -13256,7 +13286,7 @@ El esfuerzo no es negociable.
       const planRef = await addDoc(collection(db, "plans"), {
         days: _stampPrescriptionIds(days), weeks: template.weeks || 6, daysPerWeek: days.length,
         coachId: currentCoach.uid, clientId, status: 'active',
-        generatedBy: 'template:'+template.name, createdAt: Date.now()
+        generatedBy: 'template:'+template.name, createdAt: new Date().toISOString()
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
       showToast('Plan asignado a '+opts[ci].name+' ✅');
@@ -13283,7 +13313,7 @@ El esfuerzo no es negociable.
       await addDoc(collection(db, 'templates'), {
         name, coachId: currentCoach.uid, weeks: basePlan.weeks || 6,
         days: (basePlan.days || []).map(d => ({ label: d.label, exercises: d.exercises || [] })),
-        createdAt: Date.now()
+        createdAt: new Date().toISOString()
       });
       showToast('Template "'+name+'" creado ✅');
       loadTemplates();

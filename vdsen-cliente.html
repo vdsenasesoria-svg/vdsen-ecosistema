@@ -1437,7 +1437,10 @@ async function loadPlan(user) {
           alternatives: Array.isArray(e.alternatives) ? e.alternatives : [],
           rezagado: false,
           nota: e.coachNote || '',
-          setsReps: numSets + '×' + _repsRangeStr
+          setsReps: numSets + '×' + _repsRangeStr,
+          // Identidad estable de la instancia prescrita — requerida por el Progression Engine
+          prescriptionExerciseId: e.prescriptionExerciseId || undefined,
+          exerciseId: e.exerciseId || undefined
         };
         // Auto-detectar Y3T en loadPlan para que todos los render paths hereden technique:'y3t'
         if (ex.technique !== 'y3t' && isY3TExercise(ex)) ex.technique = 'y3t';
@@ -3326,8 +3329,9 @@ async function _refreshLogsFromFirestore(reason) {
     if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
     if (weekChanged || entriesChanged) {
       try { renderEntrenamiento(); } catch(e){}
-      try { renderResumen();      } catch(e){}
     }
+    // Resumen siempre re-renderizado: ediciones in-place (mismo key, distinto valor) no cambian count
+    try { renderResumen(); } catch(e){}
   } catch(e) {
     console.warn('refreshLogs error:', e.message);
     showToast('⚠️ Error al sincronizar datos. Recarga si ves info desactualizada.', true);
@@ -6692,6 +6696,7 @@ function renderEntrenamiento() {
     '</div>';
   // Session timer live update
   if (window._sesTimerStart) {
+    if (window._sesTimerInterval) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; }
     function _updateSesTimer() {
       var el = document.getElementById('_sesTime');
       if (!el) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; return; }
@@ -8159,8 +8164,11 @@ function submitReadiness(di) {
   renderEntrenamiento();
 }
 
+var _markSessionBusy = {};
 async function markSessionDone(di) {
-  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
+  if (_markSessionBusy[di]) return;
+  _markSessionBusy[di] = true;
+  if (CURRENT_WEEK > REAL_WEEK) { _markSessionBusy[di] = false; showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var key = 'done_'+CURRENT_WEEK+'_'+di;
   if (LOGS[key]) {
     // Toggle off
@@ -8181,6 +8189,7 @@ async function markSessionDone(di) {
       }
     }
     await saveLogs();
+    _markSessionBusy[di] = false;
     showToast('Marcado como pendiente');
     renderEntrenamiento();
     renderResumen();
@@ -8188,6 +8197,7 @@ async function markSessionDone(di) {
   }
 
   // Mostrar check-in post-sesión (sin bloquear por sets no registrados)
+  _markSessionBusy[di] = false;
   showPostSessionModal(di);
 }
 
@@ -12259,7 +12269,7 @@ async function submitPostSession() {
   _postSessionSubmitting = true;
 
   var eimd = parseInt(document.getElementById('psEimd').value);
-  if (!eimd) { showToast('Selecciona cómo está el músculo', true); return; }
+  if (!eimd) { _postSessionSubmitting = false; showToast('Selecciona cómo está el músculo', true); return; }
 
   // Leer TODOS los valores del DOM antes de cerrar el modal
   var articularVal     = document.getElementById('psArticular').value;
