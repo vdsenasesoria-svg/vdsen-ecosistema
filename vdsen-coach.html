@@ -3156,13 +3156,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             if (lastRec && lastRec.recommendations) {
               var exLower = exName.toLowerCase().trim();
               var match = null;
-              if (lastRec.recommendations[ei] && lastRecDay === di) {
-                match = lastRec.recommendations[ei];
-              } else {
-                lastRec.recommendations.forEach(function(r){
-                  if (r.exerciseName && r.exerciseName.toLowerCase().trim()===exLower) match=r;
-                });
-              }
+              lastRec.recommendations.forEach(function(r){
+                if (r.exerciseName && r.exerciseName.toLowerCase().trim()===exLower) match=r;
+              });
               if (match) lastAction = (actionLabels[match.action]||{label:'—'}).label;
             }
             exRows.push({ name: exName, lastLoad: lastLoad, trend: trend, lastAction: lastAction });
