@@ -10606,20 +10606,19 @@ El esfuerzo no es negociable.
         }
       }
     }
-    // FALLBACK: buscar por nombre normalizado
+    // FALLBACK: nombre normalizado — retorna solo si ÚNICO en el plan (AMBIGUOUS → null)
     if (!exerciseName) return null;
     var normQ = exerciseName.toLowerCase().trim().replace(/\s+/g, ' ');
+    var found2 = null, count2 = 0;
     for (var di2 = 0; di2 < planCache.days.length; di2++) {
       var exs2 = planCache.days[di2].exercises || [];
       for (var ei2 = 0; ei2 < exs2.length; ei2++) {
         var ex2 = exs2[ei2];
         var normN = (ex2.exerciseName || ex2.nombre || '').toLowerCase().trim().replace(/\s+/g, ' ');
-        if (normN === normQ) {
-          return { di: di2, ei: ei2, pid: ex2.prescriptionExerciseId || null };
-        }
+        if (normN === normQ) { found2 = { di: di2, ei: ei2, pid: ex2.prescriptionExerciseId || null }; count2++; }
       }
     }
-    return null;
+    return count2 === 1 ? found2 : null; // AMBIGUOUS (count2>1) o NO MATCH (count2=0) → null
   }
   window._resolveExerciseRowId = _resolveExerciseRowId;
 
@@ -10680,7 +10679,7 @@ El esfuerzo no es negociable.
         var recStr = _fmtLoad(p.recommendedLoad, p.unit);
         var setsStr = (p.setCount || 1) + ((p.setCount === 1) ? ' set' : ' sets');
         return '<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer">'
-          + '<input type="checkbox" checked data-ei="'+p.exerciseIndex+'" data-load="'+p.recommendedLoad+'" data-pid="'+(p.prescriptionExerciseId||'')+'" style="accent-color:#44BB88;width:16px;height:16px;flex-shrink:0;margin-top:2px">'
+          + '<input type="checkbox" checked data-ei="'+p.exerciseIndex+'" data-load="'+p.recommendedLoad+'" data-pid="'+(p.prescriptionExerciseId||'')+'" data-exname="'+_escH(p.exerciseName||'')+'" style="accent-color:#44BB88;width:16px;height:16px;flex-shrink:0;margin-top:2px">'
           + '<div style="flex:1;min-width:0">'
           + '<div style="font-size:13px;color:#F4F4F0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(p.exerciseName)+'</div>'
           + '<div style="display:flex;align-items:center;gap:6px;margin-top:3px">'
@@ -10710,7 +10709,7 @@ El esfuerzo no es negociable.
       document.getElementById('applyRecConfirm').onclick = function() {
         var selected = [];
         modal.querySelectorAll('#applyRecRows input[type=checkbox]').forEach(function(cb) {
-          if (cb.checked) selected.push({ exerciseIndex: parseInt(cb.dataset.ei), recommendedLoad: parseFloat(cb.dataset.load), prescriptionExerciseId: cb.dataset.pid || null });
+          if (cb.checked) selected.push({ exerciseIndex: parseInt(cb.dataset.ei), recommendedLoad: parseFloat(cb.dataset.load), prescriptionExerciseId: cb.dataset.pid || null, exerciseName: cb.dataset.exname || null });
         });
         modal.remove();
         resolve(selected.length ? selected : null);
@@ -10719,7 +10718,7 @@ El esfuerzo no es negociable.
   }
 
   // Re-resuelve un ejercicio seleccionado contra el plan fresco (race guard).
-  // Prioridad: prescriptionExerciseId si disponible; fallback a índice posicional.
+  // Resolución: PID exacto → nombre único → NO MUTATION. Nunca posicional.
   // Retorna el índice del ejercicio en el array del día, o -1 si no encontrado.
   function _resolveExerciseInFreshPlan(sel, freshDayExercises) {
     if (!freshDayExercises || !freshDayExercises.length) return -1;
@@ -10729,8 +10728,17 @@ El esfuerzo no es negociable.
       }
       return -1; // ID ya no existe en el plan fresco → SKIP
     }
-    var ei = sel.exerciseIndex;
-    return (ei >= 0 && ei < freshDayExercises.length) ? ei : -1;
+    // Legacy (sin PID): nombre único — AMBIGUOUS → NO MUTATION
+    if (sel.exerciseName) {
+      var normQ = sel.exerciseName.toLowerCase().trim().replace(/\s+/g, ' ');
+      var found = -1, count = 0;
+      for (var j = 0; j < freshDayExercises.length; j++) {
+        var normN = (freshDayExercises[j].exerciseName || '').toLowerCase().trim().replace(/\s+/g, ' ');
+        if (normN === normQ) { found = j; count++; }
+      }
+      return count === 1 ? found : -1; // AMBIGUOUS (count>1) o NO MATCH (count=0) → -1
+    }
+    return -1; // sin PID y sin nombre → NO MUTATION
   }
 
   async function _applyRecLoadsToMonitor(clientData, lastRec, lastRecDay) {
