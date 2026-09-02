@@ -336,21 +336,21 @@ button:active{opacity:.85}
     <!-- Perfil y PDF -->
   </div>
   <!-- BOTTOM NAV -->
-  <nav class="bnav">
-    <button class="nb on" id="nb0" onclick="goTab(0)">
-      <span class="nb-ico">🏠</span><span class="nb-lbl">Inicio</span>
+  <nav class="bnav" role="tablist" aria-label="Navegación principal">
+    <button class="nb on" id="nb0" onclick="goTab(0)" role="tab" aria-selected="true" aria-label="Inicio">
+      <span class="nb-ico" aria-hidden="true">🏠</span><span class="nb-lbl">Inicio</span>
     </button>
-    <button class="nb" id="nb1" onclick="goTab(1)">
-      <span class="nb-ico">💪</span><span class="nb-lbl">Entreno</span>
+    <button class="nb" id="nb1" onclick="goTab(1)" role="tab" aria-selected="false" aria-label="Entrenamiento">
+      <span class="nb-ico" aria-hidden="true">💪</span><span class="nb-lbl">Entreno</span>
     </button>
-    <button class="nb" id="nb2" onclick="goTab(2)">
-      <span class="nb-ico">🥗</span><span class="nb-lbl">Nutrición</span>
+    <button class="nb" id="nb2" onclick="goTab(2)" role="tab" aria-selected="false" aria-label="Nutrición">
+      <span class="nb-ico" aria-hidden="true">🥗</span><span class="nb-lbl">Nutrición</span>
     </button>
-    <button class="nb" id="nb3" onclick="goTab(3)">
-      <span class="nb-ico">📊</span><span class="nb-lbl">Check-in</span>
+    <button class="nb" id="nb3" onclick="goTab(3)" role="tab" aria-selected="false" aria-label="Check-in semanal">
+      <span class="nb-ico" aria-hidden="true">📊</span><span class="nb-lbl">Check-in</span>
     </button>
-    <button class="nb" id="nb4" onclick="goTab(4)">
-      <span class="nb-ico">👤</span><span class="nb-lbl">Perfil</span>
+    <button class="nb" id="nb4" onclick="goTab(4)" role="tab" aria-selected="false" aria-label="Perfil">
+      <span class="nb-ico" aria-hidden="true">👤</span><span class="nb-lbl">Perfil</span>
     </button>
   </nav>
 </div>
@@ -1785,6 +1785,7 @@ function goTab(i) {
   });
   document.querySelectorAll('.nb').forEach((b,j) => {
     b.classList.toggle('on', j===i);
+    b.setAttribute('aria-selected', j===i ? 'true' : 'false');
   });
   try { localStorage.setItem('vdsen_last_tab', i); } catch(e) {}
   if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();
@@ -1856,7 +1857,8 @@ function renderEspera() {
     + '<button onclick="doLogout()" style="margin-top:40px;background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
     + '<div style="margin-top:28px;padding:12px 16px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);border-radius:8px;max-width:320px;width:100%;text-align:left">'
     + '<div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:6px">CÓDIGO DE ACCESO (manda esto a tu coach)</div>'
-    + '<div style="font-size:12px;font-family:monospace;color:var(--tx);word-break:break-all;margin-bottom:4px">' + uid + '</div>'
+    + '<div style="font-size:12px;font-family:monospace;color:var(--tx);word-break:break-all;margin-bottom:8px">' + uid + '</div>'
+    + '<button onclick="navigator.clipboard.writeText(\'' + uid.replace(/'/g,"\\'") + '\').then(function(){showToast(\'✓ Código copiado\');}).catch(function(){showToast(\'Copia el texto manualmente\',true);})" style="width:100%;padding:9px;background:none;border:1px solid var(--gold);color:var(--gold);font-family:var(--ff);font-size:11px;letter-spacing:1.5px;cursor:pointer;border-radius:6px;margin-bottom:8px">📋 COPIAR CÓDIGO</button>'
     + '<div style="font-size:11px;color:var(--mt)">' + email + '</div>'
     + '</div>'
     + '</div>';
@@ -6994,6 +6996,7 @@ function buildBoostcampExercise(ej, di, ei) {
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
             'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+
             'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box" oninput="updateICSColor(\''+key+'\')">'+
+            '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">&lt;7 = baja carga · 8-10 = ok</div>'+
           '</div>'+
           '<div style="flex:2">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">PUMP</div>'+
@@ -7009,6 +7012,7 @@ function buildBoostcampExercise(ej, di, ei) {
                 }).join('');
               })()+
             '</div>'+
+            '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">💪 Mucho · 👍 Normal · 😐 Poco</div>'+
           '</div>'+
         '</div>';
 
@@ -7061,9 +7065,9 @@ function buildBoostcampExercise(ej, di, ei) {
                 'width:44px;height:28px;border-radius:7px;border:1px solid rgba(107,107,102,.4);'+
                 'background:rgba(107,107,102,.08);color:var(--accent);font-size:13px;cursor:pointer">✏</button>'
             : (s > 0 ?
-              '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" title="Copiar serie anterior" style="'+
-                'width:44px;height:28px;border-radius:7px;border:1px solid var(--border);'+
-                'background:var(--input-bg);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer">=</button>'
+              '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" aria-label="Copiar valores de serie anterior" style="'+
+                'height:28px;border-radius:7px;border:1px solid var(--border);padding:0 8px;'+
+                'background:var(--input-bg);color:var(--mt);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">= Copiar</button>'
             : '<div style="width:44px;height:28px"></div>'))+ // cierra (completed ? ... : (s>0 ? ... : ...))
           '</div>'+
         '</div>'+
@@ -9554,8 +9558,9 @@ function buildNutriLogWidget(kcalTarget, protTarget, carbTarget, grasTarget) {
   }
 
   function field(id, label, val, target, color) {
-    return '<div><div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+label+'</div>'
-      + '<input id="'+id+'" type="number" inputmode="numeric" value="'+(val||'')+'" placeholder="'+(target||'—')+'" oninput="nutriLogSet(\''+id.replace('nl_','')+'\',this.value)"'
+    return '<div><div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:1px;font-weight:600">'+label+'</div>'
+      + (target ? '<div style="font-size:9px;color:var(--mt2);margin-bottom:4px">Obj: '+target+'</div>' : '<div style="height:4px"></div>')
+      + '<input id="'+id+'" type="number" inputmode="numeric" value="'+(val||'')+'" placeholder="0" oninput="nutriLogSet(\''+id.replace('nl_','')+'\',this.value)"'
       + ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(val?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:17px;font-weight:700;padding:9px 6px;text-align:center;outline:none;border-radius:8px">'
       + pctBar(val, target, color)
       + '</div>';
@@ -10412,7 +10417,14 @@ async function guardarCI() {
     showToast('ERROR AL GUARDAR: ' + e.message, true);
     console.error('guardarCI error:', e);
   } finally {
-    if (_ciBtn) { _ciBtn.disabled = false; _ciBtn.textContent = '✓ GUARDAR CHECK-IN SEM ' + CURRENT_WEEK; }
+    var _fb = document.getElementById('ciSaveBtn');
+    if (_fb) {
+      _fb.textContent = '✓ Guardado';
+      setTimeout(function(){ var b = document.getElementById('ciSaveBtn'); if(b){ b.textContent = '💾 GUARDAR'; b.disabled = false; } }, 2000);
+    } else if (_ciBtn) {
+      _ciBtn.disabled = false;
+      _ciBtn.textContent = '✓ GUARDAR CHECK-IN SEM ' + CURRENT_WEEK;
+    }
   }
 }
 
@@ -10735,7 +10747,7 @@ function renderCheckin() {
   cont.innerHTML =
     // Botón flotante de guardar
     + '<div id="ciFloatSave" style="position:fixed;bottom:80px;right:14px;z-index:300">'
-    +   '<button onclick="guardarCI()" style="padding:12px 18px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:1.5px;cursor:pointer;border-radius:50px;box-shadow:0 4px 20px rgba(196,255,0,.35);white-space:nowrap">💾 GUARDAR</button>'
+    +   '<button id="ciSaveBtn" onclick="guardarCI()" style="padding:12px 18px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:1.5px;cursor:pointer;border-radius:50px;box-shadow:0 4px 20px rgba(196,255,0,.35);white-space:nowrap">💾 GUARDAR</button>'
     + '</div>'
     + '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">CHECK-IN SEM ' + sem + '</div>'
     + '<div style="display:inline-block;margin-bottom:8px;padding:2px 10px;background:rgba(107,107,102,.10);border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1px;color:'
@@ -10902,7 +10914,8 @@ function renderPerfil() {
     </div>
     <div class="card">
       <div class="card-title">MI PERFIL</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      <div style="font-size:11px;color:var(--mt);margin-bottom:8px;line-height:1.4">Datos actualizados por tu coach. Para actualizar tu peso, usa el Check-in semanal.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:0">
         ${[
           ['NOMBRE',PLAN.nombre],['OBJETIVO',PLAN.obj||PLAN.objetivo],
           ['PESO',`${PLAN.peso||'—'} kg`],['LBM',`${PLAN.lbm||'—'} kg`],
@@ -12233,6 +12246,10 @@ function showPostSessionModal(di) {
   document.getElementById('psArticularPattern').style.display = 'none';
   document.getElementById('psArticularPatternSel').value = '';
   document.getElementById('psSueno').value = '';
+  document.querySelectorAll('#psSuenoGrid button').forEach(function(b){
+    b.style.borderColor='var(--bd)'; b.style.background='var(--dk)';
+    b.style.color=(+b.dataset.val<=5)?'var(--red)':'var(--mt)';
+  });
   document.getElementById('psRpe').value = '7';
   document.getElementById('psRpeVal').textContent = '7';
   // Reset botones articular
