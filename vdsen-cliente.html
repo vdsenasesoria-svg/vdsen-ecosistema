@@ -4264,10 +4264,23 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             _label+' / '+_trendBanner.weeksCount+' sem'+
           '</span>';
         })();
-        return '<div style="margin-top:8px;padding:6px 10px;background:rgba(255,140,50,.05);border:1px solid rgba(255,140,50,.18);border-radius:8px;display:flex;align-items:center;gap:8px">'+
-          '<span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#FF8844;white-space:nowrap">SEM '+(CURRENT_WEEK-1)+'</span>'+
-          '<span style="font-size:11px;color:var(--mt2)">'+_pvSets+_pvLoad+' '+unit+((_pvReps)?' × '+_pvReps:'')+_pvRir+_pvTop+'</span>'+
-          _trendLine+
+        // Confidence badge: ICS quality + data source confidence
+        var _confBadge = (function(){
+          var _avgIcs = _prevWeekBanner.avgICS;
+          var _conf   = _prevWeekBanner.confidence;
+          // LOW confidence = positional lookup, datos no verificados
+          if (_conf === 'LOW') return '<span style="font-size:9px;color:var(--mt);opacity:.7">~estimado</span>';
+          // ICS bajo la semana pasada → sugerir atención técnica
+          if (_avgIcs && _avgIcs < 7) return '<span style="font-size:9px;font-weight:800;color:var(--red)">⚠ ICS '+Math.round(_avgIcs*10)/10+'</span>';
+          return '';
+        })();
+        return '<div style="margin-top:8px;padding:6px 10px;background:rgba(255,140,50,.05);border:1px solid rgba(255,140,50,.18);border-radius:8px">'+
+          '<div style="display:flex;align-items:center;gap:8px">'+
+            '<span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#FF8844;white-space:nowrap">SEM '+(CURRENT_WEEK-1)+'</span>'+
+            '<span style="font-size:11px;color:var(--mt2)">'+_pvSets+_pvLoad+' '+unit+((_pvReps)?' × '+_pvReps:'')+_pvRir+_pvTop+'</span>'+
+            _trendLine+
+            (_confBadge ? '<span style="margin-left:auto">'+_confBadge+'</span>' : '')+
+          '</div>'+
         '</div>';
       })()+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
