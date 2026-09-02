@@ -2673,7 +2673,11 @@ function buildHistorialWidget() {
 
   // ── 4) Progression recommendations history ──
   var progHtml = '';
-  var progKeys = Object.keys(LOGS).filter(function(k){ return k.startsWith('progrec_'); }).sort().reverse();
+  var progKeys = [];
+  Object.keys(LOGS_BY_WEEK.progrec).forEach(function(w) {
+    (LOGS_BY_WEEK.progrec[w] || []).forEach(function(k) { progKeys.push(k); });
+  });
+  progKeys.sort().reverse();
   if (progKeys.length > 0) {
     var latestProg = LOGS[progKeys[0]];
     if (latestProg && latestProg.recommendations) {
@@ -6147,9 +6151,7 @@ function _calcWeightTrend(checkins) {
 // FASE 12 — Aggregated week stats strip for ALL days in CURRENT_WEEK (excludes autoFilled)
 function _buildWeekPerfSummary() {
   var totalSets = 0, rirs = [], icss = [];
-  var prefix = 'log_' + CURRENT_WEEK + '_';
-  Object.keys(LOGS).forEach(function(k) {
-    if (k.indexOf(prefix) !== 0) return;
+  (LOGS_BY_WEEK.log[CURRENT_WEEK] || []).forEach(function(k) {
     if (!/^log_\d+_\d+_\d+_s\d+$/.test(k)) return;
     var e = LOGS[k];
     if (!e || !e.done || e.autoFilled) return;
@@ -13870,9 +13872,12 @@ function calculateProgression(di, postData) {
     : (_actionCounts['reduce_load'] > 0 || _actionCounts['reduce_sets'] > 0 ? 'reduce'
     : 'maintain')));
   // P9.7: observationsCount — solo sets reales registrados por el cliente (excluye autoFilled)
-  var _loggedSetsCount = Object.keys(LOGS).filter(function(k){
-    return k.startsWith('log_') && LOGS[k].done && !LOGS[k].autoFilled;
-  }).length;
+  var _loggedSetsCount = 0;
+  Object.keys(LOGS_BY_WEEK.log).forEach(function(w) {
+    (LOGS_BY_WEEK.log[w] || []).forEach(function(k) {
+      var _e = LOGS[k]; if (_e && _e.done && !_e.autoFilled) _loggedSetsCount++;
+    });
+  });
   var _confidence = _loggedSetsCount === 0 ? 'none'
     : _loggedSetsCount < 20  ? 'low'
     : _loggedSetsCount < 60  ? 'medium'
