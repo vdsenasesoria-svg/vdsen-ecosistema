@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-02 · main `ae5f79a` · FASE 39 DONE · FASE 40 DONE · Suite 1119/1119
+> Actualizado: 2026-09-02 · main `69ae048` · FASE 39–44 DONE · Suite 1119/1119
 
 ---
 
@@ -18,7 +18,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `ae5f79a` |
+| main HEAD | `69ae048` |
 | Rama activa | `main` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
@@ -42,6 +42,11 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 38 | DONE — XSS guards _escH en 8 interpolaciones coach · commit `470a261` |
 | FASE 39 | DONE — Fix _buildCheckInData adherencia + rir_real_prom · commit `eb1a825` |
 | FASE 40 | DONE — Optimizar O(n) scans restantes con LOGS_BY_WEEK · commits `4c2d6ab`+`a3c5fb8`+`ae5f79a` |
+| FASE 41 | DONE — Fix ciICSSet shadowing (ics_promedio nunca calculaba) + null guard NaN carga · commit `96eb190` |
+| FASE 42 | DONE — XSS coach: 11+ sitios e.message, displayName, coachId via data-attributes · commit `96eb190` |
+| FASE 43 | DONE — Orphan listeners (_waitUnsubClientDoc/Plan), duplicate click-out handlers, dead code renderEmpty() · commit `0e53dd3` |
+| FASE 44 | DONE — Consistencia REAL_WEEK en submitPostSession postsession_ key · commit `81faae5` |
+| FASE 42b | DONE — XSS _escH en e.code|e.message del diagnóstico Firebase (3 sitios) · commit `69ae048` |
 | Vercel | auto-deploy en push a main |
 | FASE 35 | MERGED — Historical Data Scalability Discovery: reporte completo 28 puntos |
 | FASE 36 | DONE (T1) — Log Rotation Architecture · commits `1e2a3ed`+`9833dc0` · Suite 1087/1087 PASS |
