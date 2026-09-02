@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-02 · main `69ae048` · FASE 39–44 DONE · Suite 1119/1119
+> Actualizado: 2026-09-02 · branch `a839cee` · FASE 45-46 DONE · Suite 1119/1119
 
 ---
 
@@ -47,6 +47,8 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 43 | DONE — Orphan listeners (_waitUnsubClientDoc/Plan), duplicate click-out handlers, dead code renderEmpty() · commit `0e53dd3` |
 | FASE 44 | DONE — Consistencia REAL_WEEK en submitPostSession postsession_ key · commit `81faae5` |
 | FASE 42b | DONE — XSS _escH en e.code|e.message del diagnóstico Firebase (3 sitios) · commit `69ae048` |
+| FASE 45 | DONE — Error-State & Recovery: 9 sitios; onAuthStateChanged blank-screen, showClientDetail spinner infinito, JSON.parse visibility loops, guardarNutriLog sin catch, AI import sin toast · commit `a839cee` |
+| FASE 46 | DONE — Accessibility: Escape key handler clientModal coach · commit `a839cee` |
 | Vercel | auto-deploy en push a main |
 | FASE 35 | MERGED — Historical Data Scalability Discovery: reporte completo 28 puntos |
 | FASE 36 | DONE (T1) — Log Rotation Architecture · commits `1e2a3ed`+`9833dc0` · Suite 1087/1087 PASS |
