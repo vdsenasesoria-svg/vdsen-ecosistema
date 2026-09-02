@@ -422,17 +422,18 @@ function toggleExUnit(di, ei) {
   // Bug fix: antes solo convertía la semana actual (CURRENT_WEEK). Si el cliente
   // tenía 3 semanas en KG y cambiaba a LB en semana 4, las semanas 1-3 quedaban en KG
   // y _getPrevWeekData comparaba cargas KG vs LB, dando recomendaciones incorrectas.
-  Object.keys(LOGS).forEach(function(k) {
-    // Formato: log_{W}_{D}_{E}_s{S}  →  split('_') = ['log', W, D, E, 'sS']
-    if (k.indexOf('log_') !== 0) return;
-    var parts = k.split('_');
-    if (parts.length < 5) return;
-    if (parseInt(parts[2]) !== di || parseInt(parts[3]) !== ei) return;
-    if (LOGS[k] && LOGS[k].unit === oldUnit) {
-      var converted = parseFloat(LOGS[k].carga) * factor;
-      LOGS[k].carga = String(_roundUnit(converted, newUnit));
-      LOGS[k].unit  = newUnit;
-    }
+  Object.keys(LOGS_BY_WEEK.log).forEach(function(w) {
+    (LOGS_BY_WEEK.log[w] || []).forEach(function(k) {
+      // Formato: log_{W}_{D}_{E}_s{S}  →  split('_') = ['log', W, D, E, 'sS']
+      var parts = k.split('_');
+      if (parts.length < 5) return;
+      if (parseInt(parts[2]) !== di || parseInt(parts[3]) !== ei) return;
+      if (LOGS[k] && LOGS[k].unit === oldUnit) {
+        var converted = parseFloat(LOGS[k].carga) * factor;
+        LOGS[k].carga = String(_roundUnit(converted, newUnit));
+        LOGS[k].unit  = newUnit;
+      }
+    });
   });
 
   EXERCISE_UNITS[di+'_'+ei] = newUnit;
@@ -449,8 +450,8 @@ function toggleExUnit(di, ei) {
   }
 
   // ── 4. Convertir progrec.newLoad / trend.prevLoad para este día+ejercicio ──
-  Object.keys(LOGS).forEach(function(k) {
-    if (k.indexOf('progrec_') !== 0) return;
+  Object.keys(LOGS_BY_WEEK.progrec).forEach(function(w) {
+    (LOGS_BY_WEEK.progrec[w] || []).forEach(function(k) {
     var parts = k.split('_'); // ['progrec', W, D]
     if (parts.length < 3 || parseInt(parts[2]) !== di) return;
     var prog = LOGS[k];
@@ -460,6 +461,7 @@ function toggleExUnit(di, ei) {
       rec.newLoad = _roundUnit(parseFloat(rec.newLoad) * factor, newUnit);
     if (rec.trend && rec.trend.prevLoad && isFinite(rec.trend.prevLoad))
       rec.trend.prevLoad = _roundUnit(parseFloat(rec.trend.prevLoad) * factor, newUnit);
+    });
   });
 
   saveLogs();
