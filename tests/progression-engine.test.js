@@ -7691,6 +7691,111 @@ function _lbwTrack_sim(idx, k) {
   assert('F37-Ic', 'PID incorrecto excluido', candidateSets.every(function(s){ return s.prescriptionExerciseId === pid; }));
 })();
 
+// ── F39: FASE 39 — _buildCheckInData adherencia + rir_real_prom bug fixes ──
+console.log('\nF39-A — adherencia_pct: done_{W}_{D} vs sem{W}_d{i}_ (bug)');
+(function(){
+  clearLogs();
+  var WEEK = 3;
+  LOGS['done_' + WEEK + '_0'] = true; // sesion 0 completada
+  // sesion 1 y 2 no completadas
+  var sesiones = [0, 1, 2];
+
+  // FIXED logic
+  var completadasFixed = 0;
+  sesiones.forEach(function(ses, i) {
+    if (LOGS['done_' + WEEK + '_' + i]) completadasFixed++;
+  });
+  var adherenciaFixed = Math.round(completadasFixed / sesiones.length * 100);
+  assert('F39-Aa', 'FIXED: adherencia = 33% (1/3)', adherenciaFixed === 33);
+
+  // OLD buggy logic
+  var completadasOld = 0;
+  sesiones.forEach(function(ses, i) {
+    var tieneLogs = Object.keys(LOGS).some(function(lk) {
+      return lk.startsWith('sem' + WEEK + '_d' + i + '_');
+    });
+    if (tieneLogs) completadasOld++;
+  });
+  var adherenciaOld = Math.round(completadasOld / sesiones.length * 100);
+  assert('F39-Ab', 'OLD BUG: adherencia = 0% (sem{W}_ prefix no existe)', adherenciaOld === 0);
+})();
+
+console.log('\nF39-B — rir_real_prom: LOGS_BY_WEEK + rir_real vs sem{W}_ + rir (bug)');
+(function(){
+  clearLogs();
+  var WEEK = 3;
+  LOGS['log_' + WEEK + '_0_0_s0'] = { done: true, rir_real: 2, rir: 2, autoFilled: false };
+  LOGS['log_' + WEEK + '_0_0_s1'] = { done: true, rir_real: 3, rir: 3, autoFilled: false };
+  LOGS['log_' + WEEK + '_1_0_s0'] = { done: true, rir_real: 1, rir: 1, autoFilled: false };
+  LOGS['log_' + WEEK + '_1_1_s0'] = { done: true, rir_real: 0, rir: 0, autoFilled: true }; // excluir
+  var idx = _rebuildLogsByWeek_sim(LOGS);
+
+  // FIXED logic
+  var rirsFixed = [];
+  (idx.log[WEEK] || []).forEach(function(lk) {
+    var entry = LOGS[lk];
+    if (entry && !entry.autoFilled && entry.rir_real !== undefined && entry.rir_real !== '' && !isNaN(parseFloat(entry.rir_real))) {
+      rirsFixed.push(parseFloat(entry.rir_real));
+    }
+  });
+  var rirPromFixed = rirsFixed.length > 0 ? Math.round(rirsFixed.reduce(function(a,b){return a+b;},0) / rirsFixed.length * 10) / 10 : null;
+  assert('F39-Ba', 'FIXED: rir_real_prom = 2.0 (avg 2,3,1 sin autoFilled)', rirPromFixed === 2.0);
+
+  // OLD buggy logic
+  var rirsOld = [];
+  Object.keys(LOGS).forEach(function(lk) {
+    if (lk.indexOf('ci_sem') === -1 && lk.indexOf('sem' + WEEK + '_') === 0) {
+      var entry = LOGS[lk];
+      if (entry && entry.rir !== undefined && entry.rir !== '' && !isNaN(parseFloat(entry.rir))) {
+        rirsOld.push(parseFloat(entry.rir));
+      }
+    }
+  });
+  var rirPromOld = rirsOld.length > 0 ? Math.round(rirsOld.reduce(function(a,b){return a+b;},0) / rirsOld.length * 10) / 10 : null;
+  assert('F39-Bb', 'OLD BUG: rir_real_prom = null (sem{W}_ prefix no existe)', rirPromOld === null);
+})();
+
+console.log('\nF39-C — adherencia 100% cuando todas las sesiones done');
+(function(){
+  clearLogs();
+  var WEEK = 2;
+  LOGS['done_' + WEEK + '_0'] = true;
+  LOGS['done_' + WEEK + '_1'] = true;
+  LOGS['done_' + WEEK + '_2'] = true;
+  var sesiones = [0, 1, 2];
+  var completadas = 0;
+  sesiones.forEach(function(ses, i) { if (LOGS['done_' + WEEK + '_' + i]) completadas++; });
+  assert('F39-Ca', 'adherencia = 100% cuando 3/3 done', Math.round(completadas / sesiones.length * 100) === 100);
+})();
+
+console.log('\nF39-D — rir_real_prom null si solo hay autoFilled o sin sets');
+(function(){
+  clearLogs();
+  var WEEK = 1;
+  LOGS['log_' + WEEK + '_0_0_s0'] = { done: true, autoFilled: true, rir_real: 2 };
+  var idx = _rebuildLogsByWeek_sim(LOGS);
+  var rirs = [];
+  (idx.log[WEEK] || []).forEach(function(lk) {
+    var entry = LOGS[lk];
+    if (entry && !entry.autoFilled && entry.rir_real !== undefined && entry.rir_real !== '' && !isNaN(parseFloat(entry.rir_real))) {
+      rirs.push(parseFloat(entry.rir_real));
+    }
+  });
+  assert('F39-Da', 'rir_real_prom = null cuando solo autoFilled', rirs.length === 0);
+})();
+
+console.log('\nF39-E — adherencia 0% cuando no hay sesion done (vs semana vacía)');
+(function(){
+  clearLogs();
+  var WEEK = 5;
+  // No done_{W}_{D} keys
+  var sesiones = [0, 1, 2, 3];
+  var completadas = 0;
+  sesiones.forEach(function(ses, i) { if (LOGS['done_' + WEEK + '_' + i]) completadas++; });
+  var adherencia = sesiones.length > 0 ? Math.round(completadas / sesiones.length * 100) : null;
+  assert('F39-Ea', 'adherencia = 0% cuando ninguna done', adherencia === 0);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

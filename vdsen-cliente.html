@@ -10327,10 +10327,7 @@ async function guardarCI() {
     var totalSes = sesiones.length;
     var completadas = 0;
     sesiones.forEach(function(ses, i) {
-      var tieneLogs = Object.keys(LOGS).some(function(lk) {
-        return lk.startsWith('sem' + CURRENT_WEEK + '_d' + i + '_');
-      });
-      if (tieneLogs) completadas++;
+      if (LOGS['done_' + CURRENT_WEEK + '_' + i]) completadas++;
     });
     d.adherencia_pct = totalSes > 0 ? Math.round(completadas / totalSes * 100) : null;
   } catch(e) { d.adherencia_pct = null; }
@@ -10338,12 +10335,10 @@ async function guardarCI() {
   // ── Calcular RIR real promedio de la semana ──────────────────────
   try {
     var rirsThisWeek = [];
-    Object.keys(LOGS).forEach(function(lk) {
-      if (lk.indexOf('ci_sem') === -1 && lk.indexOf('sem' + CURRENT_WEEK + '_') === 0) {
-        var entry = LOGS[lk];
-        if (entry && entry.rir !== undefined && entry.rir !== '' && !isNaN(parseFloat(entry.rir))) {
-          rirsThisWeek.push(parseFloat(entry.rir));
-        }
+    (LOGS_BY_WEEK.log[CURRENT_WEEK] || []).forEach(function(lk) {
+      var entry = LOGS[lk];
+      if (entry && !entry.autoFilled && entry.rir_real !== undefined && entry.rir_real !== '' && !isNaN(parseFloat(entry.rir_real))) {
+        rirsThisWeek.push(parseFloat(entry.rir_real));
       }
     });
     d.rir_real_prom = rirsThisWeek.length > 0
