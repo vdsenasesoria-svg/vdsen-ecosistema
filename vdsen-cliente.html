@@ -7691,6 +7691,7 @@ function completeSet(key, di, ei, si, unit) {
     if (_isBW && (!carga || isNaN(cargaNum))) carga = '0';
   }
 
+  if (done && navigator.vibrate) navigator.vibrate(40);
   var _ejMeta = (_EJERCICIOS_DIA || [])[ei] || {};
   LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now(),
     prescriptionExerciseId: _ejMeta.prescriptionExerciseId || undefined,
@@ -8452,6 +8453,7 @@ async function _confirmSessionDone(di) {
     renderResumen();
     return;
   }
+  if (navigator.vibrate) navigator.vibrate([60, 50, 150, 50, 250]);
   showToast('SESIÓN COMPLETADA ✓');
   _autoAdvanceDia(); // avanzar al siguiente día pendiente antes de re-renderizar
   renderEntrenamiento();
