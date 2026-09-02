@@ -1577,7 +1577,7 @@ async function loadPlan(user) {
     } catch(catErr) { console.warn('catálogo no disponible:', catErr.message); }
 
     // Cargar logs (no-fatal)
-    if (ACTIVE_PLAN_ID !== activePlanId) { _whatChanged_data = null; } // reset cache on plan change
+    if (ACTIVE_PLAN_ID !== activePlanId) { _whatChanged_data = null; _whatChanged_loaded = false; } // reset cache on plan change
     ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual
     var _showBitacoraInfo = false;
     try {
@@ -2854,7 +2854,7 @@ window.toggleWhatChanged = async function() {
   }
   if (btn) btn.textContent = '…';
   try {
-    if (!_whatChanged_data) {
+    if (!_whatChanged_loaded) {
       var bkQ = FB.query(
         FB.collection(FB.db, 'plans_backup'),
         FB.where('clientId', '==', USER.uid),
@@ -2863,6 +2863,7 @@ window.toggleWhatChanged = async function() {
       );
       var bkSnap = await FB.getDocs(bkQ);
       if (bkSnap.empty) {
+        _whatChanged_loaded = true;
         body.innerHTML = '<div style="font-size:13px;color:var(--mt);padding:12px 0;text-align:center">Sin plan anterior registrado</div>';
         body.style.display = 'block';
         if (btn) btn.textContent = 'OCULTAR';
@@ -2876,7 +2877,8 @@ window.toggleWhatChanged = async function() {
         if (btn) btn.textContent = 'OCULTAR';
         return;
       }
-      _whatChanged_data = _nc_comparePlans(curSnap.data(), prevPlan);
+      _whatChanged_data   = _nc_comparePlans(curSnap.data(), prevPlan);
+      _whatChanged_loaded = true;
     }
     body.innerHTML = _nc_renderDiffsHtml(_whatChanged_data);
     body.style.display = 'block';
