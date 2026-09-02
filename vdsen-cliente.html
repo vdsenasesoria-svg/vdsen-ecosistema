@@ -14278,6 +14278,37 @@ function _renderClientMissingHints(items) {
     _st = 0;
   }, { passive: true });
 })();
+
+// FASE 56: Enter = guardar set activo (desktop keyboard shortcut)
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  if (e.isComposing) return;
+  var tgt = document.activeElement;
+  var tag = (tgt && tgt.tagName || '').toUpperCase();
+  if (tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+  if (tgt && tgt.isContentEditable) return;
+  var _kOverlays = ['restTimerOverlay','postSessionModal','exSubOverlay','ciModal','histModal'];
+  for (var _oi = 0; _oi < _kOverlays.length; _oi++) {
+    var _om = document.getElementById(_kOverlays[_oi]);
+    if (_om && _om.style.display && _om.style.display !== 'none') return;
+  }
+  var tabEntr = document.getElementById('tabEntr');
+  if (!tabEntr || window.getComputedStyle(tabEntr).display === 'none') return;
+  if (CURRENT_WEEK !== REAL_WEEK || !PLAN || !PLAN.entrenamiento) return;
+  var _di = DIA_ACTIVO, _ei = EJ_ACTIVO;
+  var _exs = (getSesiones()[_di] || {}).exercises || [];
+  if (!_exs[_ei]) return;
+  var _exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+_di+'_'+_ei] || {};
+  var _ns = _exMod.numSeries ? (parseInt(_exMod.numSeries)||3) : (_exs[_ei].numSeries || (_exs[_ei].sets ? _exs[_ei].sets.length : 3));
+  for (var _si = 0; _si < _ns; _si++) {
+    var _k = 'log_'+CURRENT_WEEK+'_'+_di+'_'+_ei+'_s'+_si;
+    if (!LOGS[_k] || !LOGS[_k].done) {
+      e.preventDefault();
+      completeSet(_k, _di, _ei, _si, getExUnit(_di, _ei));
+      return;
+    }
+  }
+}, false);
 </script>
 
 <!-- ════ MODAL CHECK-IN POST-SESIÓN ════ -->
