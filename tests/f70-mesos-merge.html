@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>F70 — Mesos Merge Tests</title>
+<style>
+  body{font-family:monospace;background:#111;color:#ccc;padding:20px;margin:0}
+  h1{color:#c4ff00;font-size:16px;letter-spacing:2px;margin-bottom:24px}
+  .suite{margin-bottom:8px;font-size:13px}
+  .pass{color:#4caf50} .fail{color:#f44336} .skip{color:#888}
+  #summary{margin-top:24px;font-size:14px;font-weight:bold;border-top:1px solid #333;padding-top:16px}
+</style>
+</head>
+<body>
+<h1>FASE 70 — MESOS SUBCOLLECTION MERGE TESTS</h1>
+<div id="out"></div>
+<div id="summary"></div>
+<script>
+'use strict';
+
+// ─── PURE LOGIC UNDER TEST ───────────────────────────────────────────────────
+// Extracted verbatim from vdsen-coach.html (do not diverge).
+
+function _mesoStructurallyEqual(a, b) {
+  if ((a.currentWeek || 0) !== (b.currentWeek || 0)) return false;
+  if ((a.planId || null) !== (b.planId || null)) return false;
+  const ae = a.entries || {}, be = b.entries || {};
+  const ak = Object.keys(ae).sort(), bk = Object.keys(be).sort();
+  if (ak.length !== bk.length) return false;
+  for (let i = 0; i < ak.length; i++) {
+    if (ak[i] !== bk[i]) return false;
+    if (JSON.stringify(ae[ak[i]]) !== JSON.stringify(be[bk[i]])) return false;
+  }
+  return true;
+}
+
+// Async version of _copyMesosSubcollection that accepts injected Firestore ops.
+async function _copyMesosSubcollection(sourceUid, targetUid, { getDocs, getDoc, setDoc, colRef, docRef }) {
+  const srcSnap = await getDocs(colRef('logs', sourceUid, 'mesos'));
+  if (srcSnap.empty) return { copied: 0, noop: 0, conflicts: [] };
+
+  const toCopy = [], noopIds = [], conflicts = [];
+  for (const srcDoc of srcSnap.docs) {
+    const planId = srcDoc.id;
+    const srcData = srcDoc.data();
+    const tgtSnap = await getDoc(docRef('logs', targetUid, 'mesos', planId));
+    if (!tgtSnap.exists()) {
+      toCopy.push({ planId, data: srcData });
+    } else if (_mesoStructurallyEqual(srcData, tgtSnap.data())) {
+      noopIds.push(planId);
+    } else {
+      conflicts.push(planId);
+    }
+  }
+
+  if (conflicts.length > 0) return { copied: 0, noop: noopIds.length, conflicts };
+
+  for (const { planId, data } of toCopy) {
+    await setDoc(docRef('logs', targetUid, 'mesos', planId), data);
+  }
+  return { copied: toCopy.length, noop: noopIds.length, conflicts: [] };
+}
+
+// ─── MOCK FIRESTORE ───────────────────────────────────────────────────────────
+
+function makeMockFirestore(initialState) {
+  // state: { 'logs/uid/mesos/planId': docData | null }
+  const state = Object.assign({}, initialState);
+  const writes = [];
+
+  function colRef(...parts) { return { _path: parts.join('/') }; }
+  function docRef(...parts) { return { _path: parts.join('/') }; }
+
+  async function getDocs(col) {
+    const prefix = col._path + '/';
+    const docs = [];
+    for (const key of Object.keys(state)) {
+      if (key.startsWith(prefix) && state[key] !== null) {
+        const planId = key.slice(prefix.length);
+        if (!planId.includes('/')) { // direct child only
+          docs.push({ id: planId, data: () => state[key], exists: () => true });
+        }
+      }
+    }
+    return { empty: docs.length === 0, docs };
+  }
+
+  async function getDoc(ref) {
+    const d = state[ref._path];
+    const exists = d !== undefined && d !== null;
+    return { exists: () => exists, data: () => (exists ? d : undefined) };
+  }
+
+  async function setDoc(ref, data) {
+    state[ref._path] = data;
+    writes.push({ path: ref._path, data });
+  }
+
+  return { getDocs, getDoc, setDoc, colRef, docRef, state, writes };
+}
+
+// ─── TEST HARNESS ─────────────────────────────────────────────────────────────
+
+const results = [];
+
+async function test(label, fn) {
+  try {
+    await fn();
+    results.push({ label, ok: true });
+  } catch(e) {
+    results.push({ label, ok: false, err: e.message });
+  }
+}
+
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg || 'assertion failed');
+}
+
+function assertEqual(a, b, msg) {
+  if (JSON.stringify(a) !== JSON.stringify(b))
+    throw new Error((msg || 'expected equal') + ': ' + JSON.stringify(a) + ' !== ' + JSON.stringify(b));
+}
+
+// ─── SCENARIOS ────────────────────────────────────────────────────────────────
+
+// A: source has no mesos → existing flow unaffected
+await test('A: source sin mesos → no-op, copied=0, conflicts=0', async () => {
+  const fs = makeMockFirestore({});
+  const r = await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  assertEqual(r, { copied: 0, noop: 0, conflicts: [] });
+  assertEqual(fs.writes.length, 0);
+});
+
+// B: source has 1 meso, target has none → copy
+await test('B: source con 1 meso → copia correcta', async () => {
+  const data = { currentWeek: 2, planId: 'plan1', entries: { log_1_0_0_s0: { carga: 80, reps: 10 } } };
+  const fs = makeMockFirestore({ 'logs/srcUid/mesos/plan1': data });
+  const r = await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  assertEqual(r.copied, 1);
+  assertEqual(r.conflicts, []);
+  assertEqual(fs.state['logs/tgtUid/mesos/plan1'], data);
+});
+
+// C: source has multiple mesos → all copied
+await test('C: source con múltiples mesos → todos copiados', async () => {
+  const d1 = { currentWeek: 1, planId: 'pA', entries: {} };
+  const d2 = { currentWeek: 3, planId: 'pB', entries: { log_1_0_0_s0: { carga: 60 } } };
+  const fs = makeMockFirestore({
+    'logs/srcUid/mesos/pA': d1,
+    'logs/srcUid/mesos/pB': d2,
+  });
+  const r = await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  assertEqual(r.copied, 2);
+  assertEqual(r.conflicts, []);
+  assert(fs.state['logs/tgtUid/mesos/pA'] !== undefined);
+  assert(fs.state['logs/tgtUid/mesos/pB'] !== undefined);
+});
+
+// D: target already has identical meso → no-op (no extra write)
+await test('D: target ya contiene meso idéntico → no-op', async () => {
+  const data = { currentWeek: 2, planId: 'p1', entries: { log_1_0_0_s0: { carga: 90 } } };
+  const fs = makeMockFirestore({
+    'logs/srcUid/mesos/p1': data,
+    'logs/tgtUid/mesos/p1': data,
+  });
+  const writesBefore = fs.writes.length;
+  const r = await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  assertEqual(r.noop, 1);
+  assertEqual(r.copied, 0);
+  assertEqual(r.conflicts, []);
+  assertEqual(fs.writes.length, writesBefore); // no writes
+});
+
+// E: same planId exists in both with different data → NO overwrite, conflict returned
+await test('E: mismo planId con datos distintos → NO overwrite, conflict detectado', async () => {
+  const srcData = { currentWeek: 2, planId: 'p1', entries: { log_1_0_0_s0: { carga: 80 } } };
+  const tgtData = { currentWeek: 1, planId: 'p1', entries: { log_1_0_0_s0: { carga: 70 } } };
+  const fs = makeMockFirestore({
+    'logs/srcUid/mesos/p1': srcData,
+    'logs/tgtUid/mesos/p1': tgtData,
+  });
+  const r = await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  assert(r.conflicts.includes('p1'), 'p1 debe estar en conflicts');
+  assertEqual(r.copied, 0);
+  assertEqual(fs.writes.length, 0, 'no debe haber escrituras');
+  // target unchanged
+  assertEqual(fs.state['logs/tgtUid/mesos/p1'], tgtData);
+});
+
+// F: prescriptionExerciseId preserved exactly
+await test('F: preservación de prescriptionExerciseId en entries', async () => {
+  const srcData = {
+    currentWeek: 1, planId: 'px',
+    entries: { log_1_0_0_s0: { prescriptionExerciseId: 'PID-42', carga: 100, autoFilled: false } }
+  };
+  const fs = makeMockFirestore({ 'logs/srcUid/mesos/px': srcData });
+  await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  const copied = fs.state['logs/tgtUid/mesos/px'];
+  assertEqual(copied.entries['log_1_0_0_s0'].prescriptionExerciseId, 'PID-42');
+});
+
+// G: autoFilled preserved exactly
+await test('G: preservación de autoFilled en entries', async () => {
+  const srcData = {
+    currentWeek: 1, planId: 'py',
+    entries: { log_1_0_0_s0: { autoFilled: true, carga: 0, reps: 0 } }
+  };
+  const fs = makeMockFirestore({ 'logs/srcUid/mesos/py': srcData });
+  await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  const copied = fs.state['logs/tgtUid/mesos/py'];
+  assertEqual(copied.entries['log_1_0_0_s0'].autoFilled, true);
+});
+
+// H: root legacy logs behaviour unchanged (mergeClients copies root if target has none)
+// Tested via _mesoStructurallyEqual independence from root doc
+await test('H: root logs preservado — _copyMesos no toca root doc', async () => {
+  const rootData = { entries: { log_1_0_0_s0: { carga: 50 } }, currentWeek: 1 };
+  const fs = makeMockFirestore({ 'logs/srcUid': rootData }); // root doc in state
+  const r = await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  assertEqual(r, { copied: 0, noop: 0, conflicts: [] }); // no mesos → empty
+  // root doc untouched
+  assertEqual(fs.state['logs/srcUid'], rootData);
+});
+
+// I: copy error propagates → no false positive confirmation
+await test('I: error en setDoc → propagado, no confirmación falsa', async () => {
+  const data = { currentWeek: 1, planId: 'pErr', entries: {} };
+  const fs = makeMockFirestore({ 'logs/srcUid/mesos/pErr': data });
+  const errFs = Object.assign({}, fs, {
+    setDoc: async () => { throw new Error('Firestore write failed'); }
+  });
+  let threw = false;
+  try {
+    await _copyMesosSubcollection('srcUid', 'tgtUid', errFs);
+  } catch(e) {
+    threw = true;
+    assert(e.message.includes('write failed'));
+  }
+  assert(threw, 'debe propagar el error de escritura');
+});
+
+// J: repeated operation → idempotent (copy once, second call is noop)
+await test('J: operación repetida → noop idempotente', async () => {
+  const data = { currentWeek: 2, planId: 'pR', entries: { log_2_0_0_s0: { carga: 75 } } };
+  const fs = makeMockFirestore({ 'logs/srcUid/mesos/pR': data });
+  const r1 = await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  assertEqual(r1.copied, 1);
+  const r2 = await _copyMesosSubcollection('srcUid', 'tgtUid', fs);
+  assertEqual(r2.copied, 0);
+  assertEqual(r2.noop, 1);
+  assertEqual(r2.conflicts, []);
+  assertEqual(fs.writes.length, 1); // only 1 write total
+});
+
+// ─── _mesoStructurallyEqual unit tests ──────────────────────────────────────
+
+await test('EQ: idénticos → true', () => {
+  const a = { currentWeek: 3, planId: 'p1', entries: { k1: { v: 1 }, k2: { v: 2 } } };
+  const b = { currentWeek: 3, planId: 'p1', entries: { k2: { v: 2 }, k1: { v: 1 } } }; // different key order
+  assert(_mesoStructurallyEqual(a, b), 'debe ser igual (key order ignorada)');
+});
+
+await test('EQ: currentWeek distinto → false', () => {
+  const a = { currentWeek: 1, planId: 'p1', entries: {} };
+  const b = { currentWeek: 2, planId: 'p1', entries: {} };
+  assert(!_mesoStructurallyEqual(a, b));
+});
+
+await test('EQ: entries distintas → false', () => {
+  const a = { currentWeek: 1, planId: 'p1', entries: { k: { v: 1 } } };
+  const b = { currentWeek: 1, planId: 'p1', entries: { k: { v: 9 } } };
+  assert(!_mesoStructurallyEqual(a, b));
+});
+
+await test('EQ: entries keys distintas → false', () => {
+  const a = { currentWeek: 1, planId: 'p1', entries: { k1: { v: 1 } } };
+  const b = { currentWeek: 1, planId: 'p1', entries: { k2: { v: 1 } } };
+  assert(!_mesoStructurallyEqual(a, b));
+});
+
+// ─── RENDER RESULTS ──────────────────────────────────────────────────────────
+
+const out = document.getElementById('out');
+const pass = results.filter(r => r.ok).length;
+const fail = results.filter(r => !r.ok).length;
+
+out.innerHTML = results.map(r =>
+  '<div class="suite ' + (r.ok ? 'pass' : 'fail') + '">' +
+  (r.ok ? '✓' : '✗') + ' ' + r.label +
+  (r.err ? '<br>&nbsp;&nbsp;&nbsp;↳ ' + r.err : '') +
+  '</div>'
+).join('');
+
+document.getElementById('summary').innerHTML =
+  '<span class="' + (fail === 0 ? 'pass' : 'fail') + '">' +
+  pass + '/' + results.length + ' PASS' +
+  (fail > 0 ? ' · ' + fail + ' FAIL' : '') +
+  '</span>';
+</script>
+</body>
+</html>

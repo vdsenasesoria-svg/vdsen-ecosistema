@@ -2299,6 +2299,50 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   }
   window.showMergeModal = showMergeModal;
 
+  // Compare two meso docs by week + entries (keys sorted to avoid ordering false-negatives).
+  function _mesoStructurallyEqual(a, b) {
+    if ((a.currentWeek || 0) !== (b.currentWeek || 0)) return false;
+    if ((a.planId || null) !== (b.planId || null)) return false;
+    const ae = a.entries || {}, be = b.entries || {};
+    const ak = Object.keys(ae).sort(), bk = Object.keys(be).sort();
+    if (ak.length !== bk.length) return false;
+    for (let i = 0; i < ak.length; i++) {
+      if (ak[i] !== bk[i]) return false;
+      if (JSON.stringify(ae[ak[i]]) !== JSON.stringify(be[bk[i]])) return false;
+    }
+    return true;
+  }
+
+  // Copy all mesos from sourceUid to targetUid.
+  // Phase 1 (read-only): detect conflicts. Phase 2 (writes): copy safe docs only.
+  // Returns { copied, noop, conflicts: [planId] }. No mutations if conflicts.length > 0.
+  async function _copyMesosSubcollection(sourceUid, targetUid) {
+    const srcSnap = await getDocs(collection(db, 'logs', sourceUid, 'mesos'));
+    if (srcSnap.empty) return { copied: 0, noop: 0, conflicts: [] };
+
+    const toCopy = [], noopIds = [], conflicts = [];
+    for (const srcDoc of srcSnap.docs) {
+      const planId = srcDoc.id;
+      const srcData = srcDoc.data();
+      const tgtSnap = await getDoc(doc(db, 'logs', targetUid, 'mesos', planId));
+      if (!tgtSnap.exists()) {
+        toCopy.push({ planId, data: srcData });
+      } else if (_mesoStructurallyEqual(srcData, tgtSnap.data())) {
+        noopIds.push(planId);
+      } else {
+        conflicts.push(planId);
+        console.warn('[mergeClients] meso conflict planId=' + planId + ' — not overwriting target');
+      }
+    }
+
+    if (conflicts.length > 0) return { copied: 0, noop: noopIds.length, conflicts };
+
+    for (const { planId, data } of toCopy) {
+      await setDoc(doc(db, 'logs', targetUid, 'mesos', planId), data);
+    }
+    return { copied: toCopy.length, noop: noopIds.length, conflicts: [] };
+  }
+
   async function mergeClients(keepId, deleteId) {
     await ensureCoachDoc();
     const [keepSnap, delSnap, keepLogsSnap, delLogsSnap, keepFichaSnap, delFichaSnap] = await Promise.all([
@@ -2312,6 +2356,16 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     if (!keepSnap.exists() || !delSnap.exists()) throw new Error('Cliente no encontrado');
     const keepData = keepSnap.data();
     const delData  = delSnap.data();
+
+    // Copy mesos subcollection before any mutations (check-first, no-write-on-conflict).
+    const _mesoResult = await _copyMesosSubcollection(deleteId, keepId);
+    if (_mesoResult.conflicts.length > 0) {
+      throw new Error(
+        'Conflicto de mesociclos (planIds: ' + _mesoResult.conflicts.join(', ') + '). ' +
+        'El historial existe en ambos clientes con datos distintos. ' +
+        'Fusión cancelada para proteger los datos.'
+      );
+    }
 
     // Copiar al keeper los campos que le falten
     const updates = {};
