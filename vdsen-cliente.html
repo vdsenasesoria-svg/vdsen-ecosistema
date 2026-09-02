@@ -429,9 +429,11 @@ function toggleExUnit(di, ei) {
       if (parts.length < 5) return;
       if (parseInt(parts[2]) !== di || parseInt(parts[3]) !== ei) return;
       if (LOGS[k] && LOGS[k].unit === oldUnit) {
-        var converted = parseFloat(LOGS[k].carga) * factor;
-        LOGS[k].carga = String(_roundUnit(converted, newUnit));
-        LOGS[k].unit  = newUnit;
+        var _rawC = parseFloat(LOGS[k].carga);
+        if (!isNaN(_rawC)) {
+          LOGS[k].carga = String(_roundUnit(_rawC * factor, newUnit));
+          LOGS[k].unit  = newUnit;
+        }
       }
     });
   });
@@ -10235,35 +10237,26 @@ function ciICSSet(key, val) {
   if (!LOGS[k]) LOGS[k] = {};
   if (!LOGS[k].ics) LOGS[k].ics = {};
   if (val !== '' && val !== null && val !== undefined) {
-    LOGS[k].ics[key] = val;
-    var icsVals = Object.keys(LOGS[k].ics)
-      .filter(function(k2) { return /^(ej|libre)_/.test(k2); })
-      .map(function(k2) { return parseFloat(LOGS[k].ics[k2]); })
-      .filter(function(v) { return v > 0 && !isNaN(v); });
-    if (icsVals.length) {
-      LOGS[k].ics_promedio = Math.round(icsVals.reduce(function(a,b){return a+b;},0) / icsVals.length * 10) / 10;
-    }
+    LOGS[k].ics[key] = parseFloat(val) || val;
+  } else {
+    delete LOGS[k].ics[key];
   }
+  var icsVals = Object.keys(LOGS[k].ics)
+    .filter(function(k2) { return /^(ej|libre)_/.test(k2); })
+    .map(function(k2) { return parseFloat(LOGS[k].ics[k2]); })
+    .filter(function(v) { return v > 0 && !isNaN(v); });
+  LOGS[k].ics_promedio = icsVals.length
+    ? Math.round(icsVals.reduce(function(a,b){return a+b;},0) / icsVals.length * 10) / 10
+    : null;
   if (_ciAutoSaveTimer) clearTimeout(_ciAutoSaveTimer);
   _ciAutoSaveTimer = setTimeout(function() { _ciAutoSaveTimer = null; guardarCI().catch(function(){}); }, 2000);
 }
+window.ciICSSet = ciICSSet;
 
 function ciEnergia(val) {
   ciSet('energia', val);
   renderCheckin();
 }
-
-function ciICSSet(key, val) {
-  var k = ciKey();
-  if (!LOGS[k]) LOGS[k] = {};
-  if (!LOGS[k].ics) LOGS[k].ics = {};
-  if (val !== '' && val !== null && val !== undefined) {
-    LOGS[k].ics[key] = parseFloat(val) || val;
-  } else {
-    delete LOGS[k].ics[key];
-  }
-}
-window.ciICSSet = ciICSSet;
 
 // ── Módulo E — Cuestionario Subjetivo Ehrenstein ────────────────
 function _cuestionarioScale(fieldId, n, labels) {

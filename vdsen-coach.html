@@ -2071,7 +2071,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         const cidLabel = c.coachId ? `coachId: <code style="font-size:10px;opacity:.7">${_escH(c.coachId.substring(0,8))}…</code>` : '<em>sin coachId</em>';
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px">
           <span><strong>${name}</strong> <span class="text-[#888] ml-1">${_escH(c.email)}</span> <span class="ml-2" style="color:#f59e0b">${cidLabel}</span></span>
-          <button onclick="recoverClient('${c.id}','${(c.displayName||c.email||c.id).replace(/'/g,"\\'")}','${c.coachId||''}')" style="padding:4px 12px;border-radius:6px;border:1px solid #818cf8;background:rgba(129,140,248,.18);color:#818cf8;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;margin-left:10px">Reclamar</button>
+          <button data-cid="${_escH(c.id)}" data-cname="${_escH(c.displayName||c.email||c.id)}" data-coid="${_escH(c.coachId||'')}" onclick="recoverClient(this.dataset.cid,this.dataset.cname,this.dataset.coid)" style="padding:4px 12px;border-radius:6px;border:1px solid #818cf8;background:rgba(129,140,248,.18);color:#818cf8;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;margin-left:10px">Reclamar</button>
         </div>`;
       }).join('');
       resultBox.innerHTML = `<div class="text-xs mb-2" style="color:#f59e0b">⚠️ ${foreign.length} cliente(s) con coachId diferente al tuyo:</div>${rows}`;
@@ -2115,7 +2115,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       });
       if (res) res.innerHTML = `<span style="color:#888">${snap.size} cliente(s) cargados.</span>`;
     } catch (e) {
-      if (res) res.innerHTML = `<span style="color:#ef4444">Error: ${e.message}</span>`;
+      if (res) res.innerHTML = `<span style="color:#ef4444">Error: ${_escH(e.message||'')}</span>`;
     }
   }
   window.loadPatchFichaClients = loadPatchFichaClients;
@@ -2159,7 +2159,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       }).join('');
       res.innerHTML = `<div style="margin-bottom:6px;font-weight:600">Preview — ${Object.keys(patch).length} campo(s) a escribir:</div>${rows}<div style="margin-top:8px;color:#888">Los campos ✓ ya tienen valor y no se modificarán. Haz click en <strong>Aplicar patch</strong> para confirmar.</div>`;
     } catch (e) {
-      res.innerHTML = `<span style="color:#ef4444">Error: ${e.message}</span>`;
+      res.innerHTML = `<span style="color:#ef4444">Error: ${_escH(e.message||'')}</span>`;
     }
   }
   window.previewFichaPatch = previewFichaPatch;
@@ -2191,7 +2191,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       res.innerHTML = `<span style="color:#22c55e">✓ Patch aplicado (${Object.keys(patch).length} campo(s) escritos). La ficha de este cliente está actualizada.</span>`;
       showToast('Ficha actualizada');
     } catch (e) {
-      res.innerHTML = `<span style="color:#ef4444">Error al escribir: ${e.message}</span>`;
+      res.innerHTML = `<span style="color:#ef4444">Error al escribir: ${_escH(e.message||'')}</span>`;
     }
   }
   window.applyFichaPatch = applyFichaPatch;
@@ -4742,7 +4742,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     let obj;
     try { obj = JSON.parse(raw); }
     catch (e) {
-      statusEl.innerHTML = `<span class="text-red-400">❌ JSON inválido: ${e.message}</span>`;
+      statusEl.innerHTML = `<span class="text-red-400">❌ JSON inválido: ${_escH(e.message||'')}</span>`;
       return;
     }
     // Resolve canonical vdsen-plan-v2 (entrenamiento.days) or legacy root-days
@@ -8004,7 +8004,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const ov=document.createElement('div');
     ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
     ov.innerHTML='<div style="background:#141616;border:1px solid rgba(244,244,240,.35);border-radius:2px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">'
-      + '<h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">'+title+'</h3>'
+      + '<h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">'+_escH(title)+'</h3>'
       + '<p style="font-size:11px;color:#888;margin-bottom:10px">Puedes editar el mensaje antes de enviarlo.</p>'
       + '<textarea id="_pmMsg" style="width:100%;height:250px;background:#0a0a0a;border:1px solid rgba(244,244,240,.2);border-radius:2px;color:#eee;padding:12px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box"></textarea>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">'
@@ -10002,7 +10002,7 @@ El esfuerzo no es negociable.
       if (sel) sel.value = clientId;
       area.innerHTML = `<div class="text-xs text-[#888] mt-2">🤖 Iniciando generación automática — el resultado se guardará en este cliente.</div>`;
       autoGeneratePlan().catch(e => {
-        area.innerHTML = `<div class="text-xs text-red-400 mt-1">Error: ${e.message}</div>`;
+        area.innerHTML = `<div class="text-xs text-red-400 mt-1">Error: ${_escH(e.message||'')}</div>`;
       });
       return;
     }
@@ -12719,7 +12719,7 @@ El esfuerzo no es negociable.
         try {
           const pSnap = await getDoc(doc(db, 'plans', pid));
           lines.push(`<b>Doc del plan:</b> ${pSnap.exists() ? '<span style="color:#44BB88">✓ existe</span>' : '<span style="color:#FF6B6B">✗ no encontrado → error al cargar</span>'}`);
-        } catch(_pe) { lines.push(`<b>Doc del plan:</b> <span style="color:#FF6B6B">error leyendo: ${_pe.message}</span>`); }
+        } catch(_pe) { lines.push(`<b>Doc del plan:</b> <span style="color:#FF6B6B">error leyendo: ${_escH(_pe.message||'')}</span>`); }
       }
       // 3. phone_index
       if (c.phone) {
@@ -12736,7 +12736,7 @@ El esfuerzo no es negociable.
               const isSynth = (c.email||'').endsWith('@phone.vdsen.app');
               lines.push(`<b>phone_index:</b> ${isSynth ? '<span style="color:#aaa">no necesario (email sintético)</span>' : '<span style="color:#FF8844">⚠ falta — si su Auth usa email real, no puede entrar con celular</span>'}`);
             }
-          } catch(_ie) { lines.push(`<b>phone_index:</b> <span style="color:#FF6B6B">error: ${_ie.message}</span>`); }
+          } catch(_ie) { lines.push(`<b>phone_index:</b> <span style="color:#FF6B6B">error: ${_escH(_ie.message||'')}</span>`); }
         }
       } else {
         lines.push(`<b>phone_index:</b> <span style="color:#aaa">sin celular registrado</span>`);
@@ -13193,7 +13193,7 @@ El esfuerzo no es negociable.
 
       cont.innerHTML = html;
     } catch(e) {
-      cont.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
+      cont.innerHTML = `<p class="text-red-400 text-sm">Error: ${_escH(e.message||'')}</p>`;
     }
   }
 
