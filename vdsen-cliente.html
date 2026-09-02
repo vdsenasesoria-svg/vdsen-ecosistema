@@ -379,19 +379,32 @@ var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el t
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
 
+var _exOptsClickOutHandler = null;
+function _clearExOptsClickOut() {
+  if (_exOptsClickOutHandler) { document.removeEventListener('click', _exOptsClickOutHandler); _exOptsClickOutHandler = null; }
+}
 function toggleExOpts(di, ei) {
   var menu = document.getElementById('exOptsMenu_'+di+'_'+ei);
   if (!menu) return;
   var open = menu.style.display !== 'none';
+  _clearExOptsClickOut();
   document.querySelectorAll('[id^="exOptsMenu_"]').forEach(function(m){ m.style.display='none'; });
   menu.style.display = open ? 'none' : 'block';
   if (!open) {
-    setTimeout(function(){ document.addEventListener('click', function _cl(e){ if (!e.target.closest('#exOptsMenu_'+di+'_'+ei) && !e.target.closest('#exOpts_'+di+'_'+ei)){ menu.style.display='none'; document.removeEventListener('click',_cl); } }); }, 0);
+    setTimeout(function(){
+      _exOptsClickOutHandler = function(e){
+        if (!e.target.closest('#exOptsMenu_'+di+'_'+ei) && !e.target.closest('#exOpts_'+di+'_'+ei)){
+          menu.style.display='none'; _clearExOptsClickOut();
+        }
+      };
+      document.addEventListener('click', _exOptsClickOutHandler);
+    }, 0);
   }
 }
 function closeExOpts(di, ei) {
   var menu = document.getElementById('exOptsMenu_'+di+'_'+ei);
   if (menu) menu.style.display = 'none';
+  _clearExOptsClickOut();
 }
 window.toggleExOpts = toggleExOpts;
 window.closeExOpts = closeExOpts;
@@ -1319,10 +1332,13 @@ window.showPhoneConfirmModal = showPhoneConfirmModal;
 // LOAD PLAN
 // ══════════════════════════════════════════════════
 var _liveUnsubClient = null, _liveUnsubPlan = null, _liveUnsubLogs = null;
+var _waitUnsubClientDoc = null, _waitUnsubActivePlan = null;
 function _clearLiveListeners() {
-  if (_liveUnsubClient) { try { _liveUnsubClient(); } catch(e){} _liveUnsubClient = null; }
-  if (_liveUnsubPlan)   { try { _liveUnsubPlan();   } catch(e){} _liveUnsubPlan   = null; }
-  if (_liveUnsubLogs)   { try { _liveUnsubLogs();   } catch(e){} _liveUnsubLogs   = null; }
+  if (_liveUnsubClient)    { try { _liveUnsubClient();    } catch(e){} _liveUnsubClient    = null; }
+  if (_liveUnsubPlan)      { try { _liveUnsubPlan();      } catch(e){} _liveUnsubPlan      = null; }
+  if (_liveUnsubLogs)      { try { _liveUnsubLogs();      } catch(e){} _liveUnsubLogs      = null; }
+  if (_waitUnsubClientDoc) { try { _waitUnsubClientDoc(); } catch(e){} _waitUnsubClientDoc = null; }
+  if (_waitUnsubActivePlan){ try { _waitUnsubActivePlan();} catch(e){} _waitUnsubActivePlan= null; }
 }
 async function loadPlan(user) {
   _clearLiveListeners();
@@ -1344,7 +1360,7 @@ async function loadPlan(user) {
       showScreen('scrOnboarding');
       // Listener: cuando el coach cree el doc del cliente, recargar
       try {
-        var _waitUnsubDoc = FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(s){ if (s.exists()) { _waitUnsubDoc && _waitUnsubDoc(); location.reload(); } });
+        _waitUnsubClientDoc = FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(s){ if (s.exists()) { _waitUnsubClientDoc && _waitUnsubClientDoc(); _waitUnsubClientDoc = null; location.reload(); } });
       } catch(_){}
       return;
     }
@@ -1369,9 +1385,9 @@ async function loadPlan(user) {
       showScreen('scrOnboarding');
       // Listener en tiempo real: cuando el coach asigne un plan, navegar automáticamente
       try {
-        var _waitUnsubPlan = FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(s){
+        _waitUnsubActivePlan = FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(s){
           if (s.exists() && s.data().activePlanId) {
-            _waitUnsubPlan && _waitUnsubPlan();
+            _waitUnsubActivePlan && _waitUnsubActivePlan(); _waitUnsubActivePlan = null;
             showToast('🎉 ¡Tu coach ya cargó tu plan! Cargando...');
             setTimeout(function(){ location.reload(); }, 1200);
           }
@@ -2380,17 +2396,6 @@ async function saveIntakeClient(){
 }
 window.openIntake = openIntake; window.closeIntake = closeIntake; window.saveIntakeClient = saveIntakeClient;
 
-function renderEmpty() {
-  const tabs = ['tabResumen','tabEntr','tabNutr','tabCheckin','tabPerfil'];
-  tabs.forEach(id => {
-    document.getElementById(id).innerHTML = `
-      <div class="empty">
-        <div class="empty-icon">📋</div>
-        <div class="empty-title">SIN PLAN ASIGNADO</div>
-        <div class="empty-sub">Tu coach aún no ha generado tu plan.<br>Contáctalo para que lo active.</div>
-      </div>`;
-  });
-}
 
 // ══════════════════════════════════════════════════
 // RESUMEN

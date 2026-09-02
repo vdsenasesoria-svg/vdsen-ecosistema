@@ -4595,20 +4595,23 @@ Reporte:
     snap.forEach(d => { const _o = document.createElement('option'); _o.value = d.id; _o.textContent = d.data().displayName || d.id; select.appendChild(_o); });
   }
   
+  var _importMenuClickOutHandler = null;
   function toggleImportPlanMenu() {
     var menu = document.getElementById('importPlanMenu');
     if (!menu) return;
     var open = menu.style.display !== 'none';
+    if (_importMenuClickOutHandler) { document.removeEventListener('click', _importMenuClickOutHandler); _importMenuClickOutHandler = null; }
     menu.style.display = open ? 'none' : 'block';
     if (!open) setTimeout(function() {
-      document.addEventListener('click', function _cl(e) {
-        if (!e.target.closest('#importPlanMenuWrap')) { menu.style.display='none'; document.removeEventListener('click',_cl); }
-      });
+      _importMenuClickOutHandler = function(e) {
+        if (!e.target.closest('#importPlanMenuWrap')) { menu.style.display='none'; document.removeEventListener('click', _importMenuClickOutHandler); _importMenuClickOutHandler = null; }
+      };
+      document.addEventListener('click', _importMenuClickOutHandler);
     }, 0);
   }
   window.toggleImportPlanMenu = toggleImportPlanMenu;
 
-  function _closeImportPlanMenu() { var m=document.getElementById('importPlanMenu'); if(m) m.style.display='none'; }
+  function _closeImportPlanMenu() { var m=document.getElementById('importPlanMenu'); if(m) m.style.display='none'; if (_importMenuClickOutHandler) { document.removeEventListener('click', _importMenuClickOutHandler); _importMenuClickOutHandler = null; } }
 
   // ========== MODO TEXTO ==========
   document.getElementById("textModeBtn")?.addEventListener("click", () => {
