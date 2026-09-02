@@ -6469,6 +6469,10 @@ function renderEntrenamiento() {
   if (!PLAN || !PLAN.entrenamiento) return;
   // Clear session timer before re-render
   if (window._sesTimerInterval) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; }
+  // Capture rest-timer overlay state before re-render (DOM will be wiped)
+  var _preRenderOverlay = document.getElementById('restTimerOverlay');
+  var _restOverlayWasOpen = _preRenderOverlay && _preRenderOverlay.style.display !== 'none';
+  _restEl = null; // force re-acquire after re-render
   var cont = document.getElementById('tabEntr');
   var sesiones = getSesiones();
 
@@ -6911,7 +6915,9 @@ function renderEntrenamiento() {
     window._sesTimerInterval = setInterval(_updateSesTimer, 1000);
   }
   if (_restEndMs && _restEndMs > Date.now()) {
-    setTimeout(function(){_updateRestRing();},50);
+    // Restore timer UI state after DOM re-render (no new interval created)
+    if (_restOverlayWasOpen) { maximizeTimer(); } else { minimizeTimer(); }
+    setTimeout(function(){_updateRestRing(); updateTimerDisplay();},50);
   }
   // Resume Workout: auto-scroll to active exercise chip + first pending set row
   // Delayed slightly so the DOM settles; non-agressive (nearest, no forced top-of-page).
