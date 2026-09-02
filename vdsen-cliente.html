@@ -4201,6 +4201,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _exNameBanner = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   var _histExBanner = EXERCISE_HISTORY[_exNameBanner] || {};
   var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
+  var _trendBanner = (CURRENT_WEEK >= 3) ? _getLoadTrend(di, ei, ej.prescriptionExerciseId, nombre) : null;
   var _exNoteInline = _getExNote(di, ei);
   var headerHtml =
     '<div style="margin-bottom:14px">'+
@@ -4251,9 +4252,22 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         var _pvSets = _prevWeekBanner.numSets > 0 ? _prevWeekBanner.numSets+'×' : '';
         var _pvTop  = (_prevWeekBanner.topLoad && _prevWeekBanner.topLoad > _prevWeekBanner.avgLoad)
           ? ' <span style="color:var(--gold);font-weight:800">↑'+_convertCarga(_prevWeekBanner.topLoad,_pvSrcUnit,unit)+' '+unit+'</span>' : '';
+        var _trendLine = (function(){
+          if (!_trendBanner) return '';
+          var _dir = _trendBanner.direction;
+          var _tc = _dir === 'up' ? 'var(--grn)' : (_dir === 'down' ? 'var(--red)' : 'var(--mt)');
+          var _tIcon = _dir === 'up' ? '↑' : (_dir === 'down' ? '↓' : '→');
+          var _label = _dir === 'stable'
+            ? (_tIcon + ' ESTABLE')
+            : (_tIcon + ' ' + (_trendBanner.delta > 0 ? '+' : '') + _convertCarga(String(Math.abs(_trendBanner.delta)), 'KG', unit) + ' ' + unit);
+          return ' <span style="font-size:9px;font-weight:800;color:'+_tc+';background:rgba(0,0,0,.18);padding:1px 6px;border-radius:4px">'+
+            _label+' / '+_trendBanner.weeksCount+' sem'+
+          '</span>';
+        })();
         return '<div style="margin-top:8px;padding:6px 10px;background:rgba(255,140,50,.05);border:1px solid rgba(255,140,50,.18);border-radius:8px;display:flex;align-items:center;gap:8px">'+
           '<span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#FF8844;white-space:nowrap">SEM '+(CURRENT_WEEK-1)+'</span>'+
           '<span style="font-size:11px;color:var(--mt2)">'+_pvSets+_pvLoad+' '+unit+((_pvReps)?' × '+_pvReps:'')+_pvRir+_pvTop+'</span>'+
+          _trendLine+
         '</div>';
       })()+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
@@ -13602,6 +13616,37 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
 // Normalize name for semantic comparison (cosmetic differences only)
 function _normName(s) {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+// ── Tendencia de carga multi-semana (PID-first) ──────────────────────────────
+// Recopila avgLoad de las últimas N semanas y devuelve dirección/delta.
+// Excluye semanas sin datos y sets autoFilled.
+// Retorna null si < 2 semanas con datos.
+function _getLoadTrend(di, ei, prescriptionExerciseId, exerciseName, lookback) {
+  lookback = lookback || 4;
+  var weeks = [];
+  for (var _w = Math.max(1, CURRENT_WEEK - lookback); _w < CURRENT_WEEK; _w++) {
+    var _d = _getPrevWeekData(_w + 1, di, ei, 8, prescriptionExerciseId, exerciseName);
+    if (!_d || !(_d.avgLoad > 0)) continue;
+    var _srcUnit = 'KG';
+    for (var _s = 0; _s < 8; _s++) {
+      var _k = 'log_'+_w+'_'+di+'_'+ei+'_s'+_s;
+      if (LOGS[_k] && LOGS[_k].done && !LOGS[_k].autoFilled) { _srcUnit = LOGS[_k].unit || 'KG'; break; }
+    }
+    weeks.push({ week: _w, avgLoad: parseFloat(_convertCarga(String(_d.avgLoad), _srcUnit, 'KG')), avgReps: _d.avgReps, avgRIR: _d.avgRIR });
+  }
+  if (weeks.length < 2) return null;
+  var first = weeks[0].avgLoad, last = weeks[weeks.length - 1].avgLoad;
+  var delta = last - first;
+  var perWeek = +(delta / (weeks.length - 1)).toFixed(2);
+  return {
+    delta: +delta.toFixed(2),
+    perWeek: perWeek,
+    weeksCount: weeks.length,
+    direction: Math.abs(delta) < 1 ? 'stable' : (delta > 0 ? 'up' : 'down'),
+    firstLoad: first,
+    lastLoad: last
+  };
 }
 
 function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exerciseName) {
