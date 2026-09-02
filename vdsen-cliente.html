@@ -3979,7 +3979,7 @@ function _buildSupersetPartnerHtml(ejercicios, di, ei) {
     var nm = (LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+p.idx] && LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+p.idx].nombre)
       ? LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+p.idx].nombre
       : (p.ex.nombre || p.ex.exerciseName || ('Ej '+(p.idx+1)));
-    return nm;
+    return _escHTml(nm);
   }).join(' · ');
   return '<div style="margin:0 0 14px;padding:14px 16px;background:linear-gradient(135deg,rgba(107,107,102,.22),rgba(107,107,102,.10));border:2px solid #6B6B66;border-radius:14px;box-shadow:0 4px 18px rgba(107,107,102,.22)">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">'+
@@ -7306,7 +7306,7 @@ function buildBoostcampExercise(ej, di, ei) {
       '</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:15px;font-weight:700;color:var(--tx);line-height:1.3;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-          ej.nombre+
+          _escHTml(ej.nombre||'')+
           (ej.rezagado?'<span style="font-size:9px;background:rgba(107,107,102,.15);border:1px solid rgba(107,107,102,.4);color:var(--accent);padding:2px 7px;border-radius:10px;letter-spacing:1px;font-weight:700">★ REZAGADO</span>':'')+
           _getNivelMedioBadge(ej.nivel_medio)+
         '</div>'+
@@ -11170,8 +11170,8 @@ function renderPerfil() {
           ['% GRASA',`${PLAN.pct||PLAN.pctGrasa||'—'}%`],['EXPERIENCIA',PLAN.exp||PLAN.experiencia||'—'],
           ['DÍAS/SEM',PLAN.dias||PLAN.diasEntr||'—'],['COMIDAS/DÍA',PLAN.comidas||'—']
         ].map(([l,v])=>`<div style="background:var(--dk);border:1px solid var(--bd);padding:8px;border-radius:4px">
-          <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt)">${l}</div>
-          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:16px;font-weight:700;color:var(--tx);margin-top:2px">${v||'—'}</div>
+          <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt)">${_escHTml(l||'')}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:16px;font-weight:700;color:var(--tx);margin-top:2px">${_escHTml(String(v||'—'))}</div>
         </div>`).join('')}
       </div>
     </div>
@@ -11519,16 +11519,16 @@ function formatTextoSup(texto) {
         <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)">
           <div style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${style.bg};border:1px solid ${style.border};border-radius:10px;font-size:20px">${icon}</div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:14px;color:var(--tx);font-weight:700;line-height:1.2">${item.nombre}</div>
-            ${item.momento ? `<div style="font-size:10px;color:var(--mt);margin-top:3px;letter-spacing:.5px;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:5px;font-weight:600">${timingIcon} ${item.momento}</div>` : ''}
+            <div style="font-size:14px;color:var(--tx);font-weight:700;line-height:1.2">${_escHTml(item.nombre||'')}</div>
+            ${item.momento ? `<div style="font-size:10px;color:var(--mt);margin-top:3px;letter-spacing:.5px;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:5px;font-weight:600">${timingIcon} ${_escHTml(item.momento)}</div>` : ''}
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div style="font-family:var(--ff);font-size:15px;color:${style.color};letter-spacing:1px;font-weight:800;line-height:1">${item.dosis}</div>
+            <div style="font-family:var(--ff);font-size:15px;color:${style.color};letter-spacing:1px;font-weight:800;line-height:1">${_escHTml(String(item.dosis||''))}</div>
             <div style="font-size:9px;color:var(--mt);margin-top:2px;letter-spacing:.5px">DOSIS</div>
           </div>
         </div>`;
       }
-      return `<div style="font-size:11px;color:var(--mt);padding:6px 0;font-style:italic;line-height:1.5;border-left:2px solid ${style.border};padding-left:10px;margin:4px 0">${item.texto}</div>`;
+      return `<div style="font-size:11px;color:var(--mt);padding:6px 0;font-style:italic;line-height:1.5;border-left:2px solid ${style.border};padding-left:10px;margin:4px 0">${_escHTml(item.texto||'')}</div>`;
     }).join('');
     if (!itemsHtml) return '';
     return `
