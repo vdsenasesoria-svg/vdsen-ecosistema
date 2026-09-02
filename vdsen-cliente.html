@@ -2709,10 +2709,14 @@ function buildHistorialWidget() {
       var recCards = latestProg.recommendations.map(function(r) {
         var col = actionColors[r.action] || 'var(--mt)';
         var lbl = actionLabels[r.action] || r.action;
+        var _exN = (r.exerciseName || '').toLowerCase().trim();
+        var _unit = EXERCISE_UNITS[_exN] || 'kg';
+        var _loadStr = (r.newLoad != null && isFinite(r.newLoad)) ? (r.newLoad + ' ' + _unit) : '—';
+        var _setsStr = (r.newSets != null) ? (r.newSets + 's') : '—';
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'
           + '<div style="font-size:13px;color:var(--tx)">' + _escHTml(r.exerciseName||'') + '</div>'
           + '<div style="display:flex;gap:8px;align-items:center">'
-          + '<span style="font-size:11px;color:var(--mt)">'+ r.newLoad + ' kg · ' + r.newSets + 's</span>'
+          + '<span style="font-size:11px;color:var(--mt)">' + _loadStr + ' · ' + _setsStr + '</span>'
           + '<span style="font-size:10px;font-family:var(--ff);letter-spacing:1px;padding:3px 8px;border:1px solid '+col+';color:'+col+';background:rgba(0,0,0,.3)">' + lbl + '</span>'
           + '</div></div>';
       }).join('');
