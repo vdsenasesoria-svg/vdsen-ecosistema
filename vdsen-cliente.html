@@ -1367,7 +1367,7 @@ async function loadPlan(user) {
       // Listener: cuando el coach cree el doc del cliente, recargar
       try {
         _waitUnsubClientDoc = FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(s){ if (s.exists()) { _waitUnsubClientDoc && _waitUnsubClientDoc(); _waitUnsubClientDoc = null; location.reload(); } });
-      } catch(_){}
+      } catch(_){ console.warn('[watch-client-doc]', _ && _.message); }
       return;
     }
 
@@ -1398,7 +1398,7 @@ async function loadPlan(user) {
             setTimeout(function(){ location.reload(); }, 1200);
           }
         });
-      } catch(_){}
+      } catch(_){ console.warn('[watch-active-plan]', _ && _.message); }
       return;
     }
 
@@ -1694,9 +1694,9 @@ async function loadPlan(user) {
           return;
         }
         // Actualizar nutrición/suplementación/perfil en vivo sin recargar
-        if (newData.nutritionPlan && (newData.nutritionPlan.calorias || newData.nutritionPlan.texto)) { PLAN.nutricion = newData.nutritionPlan; try { renderNutricion(); } catch(e){} }
+        if (newData.nutritionPlan && (newData.nutritionPlan.calorias || newData.nutritionPlan.texto)) { PLAN.nutricion = newData.nutritionPlan; try { renderNutricion(); } catch(e){ console.warn('[live-nutrition]', e.message); } }
         if (newData.supplementPlan) { PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] }; }
-        if (newData.profileType && newData.profileType !== PLAN.profileType) { PLAN.profileType = newData.profileType; try { renderPerfil(); } catch(e){} }
+        if (newData.profileType && newData.profileType !== PLAN.profileType) { PLAN.profileType = newData.profileType; try { renderPerfil(); } catch(e){ console.warn('[live-perfil]', e.message); } }
       });
 
       // ── 2. Listener sobre el doc del PLAN (detecta ediciones del coach al plan activo) ──
@@ -1739,8 +1739,8 @@ async function loadPlan(user) {
           _rebuildLogsByWeek();
           if (d.exerciseUnits)   EXERCISE_UNITS   = d.exerciseUnits;
           if (d.exerciseHistory) EXERCISE_HISTORY = d.exerciseHistory;
-          try { renderEntrenamiento(); } catch(e){}
-          try { renderResumen();      } catch(e){}
+          try { renderEntrenamiento(); } catch(e){ console.warn('[live-plan-entr]', e.message); }
+          try { renderResumen();      } catch(e){ console.warn('[live-plan-res]',  e.message); }
         }
       });
 
@@ -3483,10 +3483,10 @@ async function _refreshLogsFromFirestore(reason) {
     if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
     if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
     if (weekChanged || entriesChanged) {
-      try { renderEntrenamiento(); } catch(e){}
+      try { renderEntrenamiento(); } catch(e){ console.warn('[refresh-entr]', e.message); }
     }
     // Resumen: lazy si no está visible (ediciones in-place no cambian count de sets)
-    try { _deferResumen(); } catch(e){}
+    try { _deferResumen(); } catch(e){ console.warn('[refresh-res]', e.message); }
   } catch(e) {
     console.warn('refreshLogs error:', e.message);
     showToast('⚠️ Error al sincronizar datos. Recarga si ves info desactualizada.', true);
@@ -8906,7 +8906,7 @@ function loadBackupLogs() {
         return true;
       }
     }
-  } catch(e) {}
+  } catch(e) { console.warn('[loadBackupLogs]', e.message); }
   return false;
 }
 
