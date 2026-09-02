@@ -4850,8 +4850,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '</div>'+
           '</div>'+
         '</div>'+
-        // Actions
-        '<div style="display:flex;gap:8px">'+
+        // Actions — sticky so the save button stays in thumb reach without scrolling
+        '<div style="position:sticky;bottom:0;display:flex;gap:8px;padding:10px 0 4px;'+
+             'background:linear-gradient(to bottom,transparent 0%,var(--bg) 38%);z-index:5">'+
           (s > 0
             ? '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" style="'+
                 'flex:0 0 auto;padding:12px 16px;border:1px solid var(--border);border-radius:10px;'+
