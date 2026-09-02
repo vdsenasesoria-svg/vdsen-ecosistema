@@ -13629,13 +13629,13 @@ El esfuerzo no es negociable.
       const s = await getDoc(doc(db, 'coaches', currentCoach.uid));
       const dt = (performance.now() - t0).toFixed(0);
       log(`• Read coaches/{uid}: ${s.exists() ? '✅' : '⚠️ no existe'} (${dt} ms)`, s.exists() ? '#44BB88' : '#FFBB00');
-    } catch(e) { log(`• Read coaches: ❌ ${e.code || e.message}`, '#FF4444'); }
+    } catch(e) { log(`• Read coaches: ❌ ${_escH(e.code || e.message || '')}`, '#FF4444'); }
     // 3. Listar clientes
     t0 = performance.now();
     try {
       const s = await getDocs(query(collection(db, 'clients'), where('coachId', '==', currentCoach.uid)));
       log(`• Query clients (coachId): ✅ ${s.size} resultados (${(performance.now()-t0).toFixed(0)} ms)`, '#44BB88');
-    } catch(e) { log(`• Query clients: ❌ ${e.code || e.message}`, '#FF4444'); }
+    } catch(e) { log(`• Query clients: ❌ ${_escH(e.code || e.message || '')}`, '#FF4444'); }
     // 4. Write/Delete prueba
     t0 = performance.now();
     try {
@@ -13645,7 +13645,7 @@ El esfuerzo no es negociable.
       await deleteDoc(ref);
       const dt2 = (performance.now() - t0).toFixed(0);
       log(`• Write+Delete diag_pings: ✅ (${dt1}+${dt2} ms)`, '#44BB88');
-    } catch(e) { log(`• Write diag_pings: ❌ ${e.code || e.message} (revisa reglas Firestore)`, '#FF4444'); }
+    } catch(e) { log(`• Write diag_pings: ❌ ${_escH(e.code || e.message || '')} (revisa reglas Firestore)`, '#FF4444'); }
     // 5. Online check
     log(`• navigator.onLine: ${navigator.onLine ? '✅' : '❌'}`, navigator.onLine ? '#44BB88' : '#FF4444');
     log(`• User-Agent: ${navigator.userAgent.slice(0, 80)}…`, '#666');
