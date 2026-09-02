@@ -57,7 +57,11 @@ function _updateOfflineBanner() {
   var b = document.getElementById('offlineBanner');
   if (b) b.style.display = navigator.onLine ? 'none' : 'block';
 }
-window.addEventListener('online',  _updateOfflineBanner);
+window.addEventListener('online',  function() {
+  _updateOfflineBanner();
+  // Auto-retry any pending failed save when connection is restored
+  if (window._lastSaveFailed) { window._lastSaveFailed = false; if (typeof _doSaveLogs === 'function') _doSaveLogs(); }
+});
 window.addEventListener('offline', _updateOfflineBanner);
 window.addEventListener('load',    _updateOfflineBanner);
 </script>
@@ -8803,14 +8807,19 @@ async function _doSaveLogs() {
     const ref = FB.doc(FB.db, 'logs', USER.uid);
     await FB.setDoc(ref, _payload);
     // Limpiar indicador de error si estaba
+    window._lastSaveFailed = false;
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
     // Indicador breve de guardado exitoso
     _showSaveOk();
     return true;
   } catch(e) {
+    window._lastSaveFailed = true;
     console.error('saveLogs error:', e.code, e.message, e);
-    var _errMsg = '⚠ Error al guardar: ' + (e.code ? '['+e.code+'] ' : '') + (e.message || 'sin conexión');
+    var _isOffline = !navigator.onLine;
+    var _errMsg = _isOffline
+      ? '⚠ Sin conexión — datos en localStorage, se sincroniza al reconectar'
+      : ('⚠ Error al guardar: ' + (e.code ? '['+e.code+'] ' : '') + (e.message || 'error desconocido'));
     // Toast visible + badge persistente
     showToast(_errMsg, true);
     let errEl = document.getElementById('saveErrBadge');
