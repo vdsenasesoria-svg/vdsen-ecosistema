@@ -7725,10 +7725,12 @@ function completeSet(key, di, ei, si, unit) {
   if (done) {
     var _ejForAdv = (_EJERCICIOS_DIA || [])[ei] || null;
     if (_ejForAdv && _isExerciseFullyDone(di, ei, _ejForAdv)) {
+      var _foundNext = false;
       for (var _nxEj = ei + 1; _nxEj < (_EJERCICIOS_DIA || []).length; _nxEj++) {
         var _nxEjObj = (_EJERCICIOS_DIA || [])[_nxEj] || null;
         if (_nxEjObj && isTechniqueActive(_nxEjObj, CURRENT_WEEK) && !_isExerciseFullyDone(di, _nxEj, _nxEjObj)) {
           EJ_ACTIVO = _nxEj;
+          _foundNext = true;
           setTimeout(function() {
             var navEl = document.getElementById('exNav');
             var _actChip = navEl && navEl.querySelector('[data-ei="'+EJ_ACTIVO+'"]');
@@ -7736,6 +7738,19 @@ function completeSet(key, di, ei, si, unit) {
           }, 300);
           break;
         }
+      }
+      // Todos los ejercicios completados — guiar al usuario a cerrar la sesión
+      if (!_foundNext && !LOGS['done_'+CURRENT_WEEK+'_'+di]) {
+        setTimeout(function() {
+          showToast('🎉 ¡Todos los ejercicios listos! Marca la sesión como completada ✓');
+          var _te = document.getElementById('tabEntr');
+          if (_te) _te.scrollTo({ top: 0, behavior: 'smooth' });
+          // Pulso visual en el botón COMPLETAR para que el usuario lo encuentre
+          setTimeout(function() {
+            var _cmpl = document.querySelector('[onclick*="markSessionDone"]');
+            if (_cmpl) { _cmpl.style.transition='box-shadow .3s'; _cmpl.style.boxShadow='0 0 0 4px rgba(196,255,0,.45)'; setTimeout(function(){ _cmpl.style.boxShadow=''; }, 1800); }
+          }, 600);
+        }, 900);
       }
     }
   }
