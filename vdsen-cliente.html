@@ -6824,7 +6824,7 @@ function renderEntrenamiento() {
       'background:linear-gradient(180deg,rgba(196,255,0,.04) 0%,transparent 100%);border-bottom:1px solid rgba(196,255,0,.06)">'+
       '<div>'+
         '<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:'+(CURRENT_WEEK!==REAL_WEEK?'#FF8844':'var(--accent)')+';text-transform:uppercase;margin-bottom:4px">'+(CURRENT_WEEK!==REAL_WEEK?'👁 ':'🗓 ')+'SEM '+CURRENT_WEEK+' · '+getSemProgresion(CURRENT_WEEK)+(CURRENT_WEEK!==REAL_WEEK?' (VISTA)':'')+'</div>'+
-        '<div style="font-size:20px;font-weight:800;color:var(--tx);line-height:1.15;letter-spacing:-.3px">'+(ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim()+'</div>'+
+        '<div style="font-size:20px;font-weight:800;color:var(--tx);line-height:1.15;letter-spacing:-.3px">'+_escHTml((ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim())+'</div>'+
         '<div style="font-size:11px;color:var(--mt);margin-top:3px;display:flex;align-items:center;gap:8px">'+
           (function(){var _ejAct=ejercicios.filter(function(ej){return isTechniqueActive(ej,CURRENT_WEEK);});var _tot=_ejAct.length;var _dn=ejercicios.filter(function(ej,_ei){return isTechniqueActive(ej,CURRENT_WEEK)&&_isExerciseFullyDone(DIA_ACTIVO,_ei,ej);}).length;return _dn===_tot&&_tot>0?'<span style="color:var(--grn);font-weight:700">'+_tot+'/'+_tot+' ejercicios ✓</span>':'<span>'+_dn+'/'+_tot+' ejercicios</span>';})()+'</div>'+
       '</div>'+
@@ -8378,7 +8378,7 @@ function buildReadinessBanner(di, isDone) {
     var chips = visibles.map(function(k){
       return '<span style="padding:3px 8px;border-radius:12px;border:1px solid rgba(244,244,240,.12);font-size:10px;color:var(--mt);background:var(--surface)">'+(allLabels[k][r[k]]||'—')+'</span>';
     }).join('');
-    var advisoryHtml = r.advisory ? '<div style="margin-top:6px;font-size:10px;color:#FF8844;line-height:1.4">⚠ '+r.advisory+'</div>' : '';
+    var advisoryHtml = r.advisory ? '<div style="margin-top:6px;font-size:10px;color:#FF8844;line-height:1.4">⚠ '+_escHTml(String(r.advisory))+'</div>' : '';
     return '<div style="margin:0 16px 8px;padding:8px 12px;background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.06);border-radius:10px">'
       +'<div style="font-size:9px;letter-spacing:1px;color:var(--mt);font-weight:700;margin-bottom:5px">🎯 CÓMO LLEGASTE HOY</div>'
       +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+chips+'</div>'
@@ -12662,7 +12662,7 @@ function showSessionSummary(di) {
       '<div style="font-size:28px;line-height:1">🏆</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:16px;font-weight:800;color:var(--accent);letter-spacing:2px;text-transform:uppercase">SESIÓN COMPLETA</div>'+
-        '<div style="font-size:11px;color:var(--mt);margin-top:2px;letter-spacing:1px">'+sesName+' · SEM '+CURRENT_WEEK+'</div>'+
+        '<div style="font-size:11px;color:var(--mt);margin-top:2px;letter-spacing:1px">'+_escHTml(sesName)+' · SEM '+CURRENT_WEEK+'</div>'+
       '</div>'+
       '<button onclick="document.getElementById(\'sessionSummaryOv\').remove()" style="padding:4px 10px;background:none;border:1px solid var(--border);border-radius:8px;color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">✕</button>'+
     '</div>'+
@@ -13142,8 +13142,8 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
     var parts = reason.split(' | ');
     var main  = parts.filter(function(p){ return p && !p.startsWith('⚠'); }).slice(0, 2).join(' · ');
     var warns = parts.filter(function(p){ return p && p.startsWith('⚠'); }).slice(0, 1);
-    if (main)  reasonHtml += '<div style="font-size:11px;color:var(--mt);line-height:1.6;margin-top:6px">'+main+'</div>';
-    if (warns.length) reasonHtml += '<div style="font-size:11px;color:#FF8844;line-height:1.5;margin-top:4px">'+warns[0]+'</div>';
+    if (main)  reasonHtml += '<div style="font-size:11px;color:var(--mt);line-height:1.6;margin-top:6px">'+_escHTml(main)+'</div>';
+    if (warns.length) reasonHtml += '<div style="font-size:11px;color:#FF8844;line-height:1.5;margin-top:4px">'+_escHTml(warns[0])+'</div>';
   }
 
   // Línea de semana anterior
