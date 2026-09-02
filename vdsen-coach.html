@@ -11432,7 +11432,8 @@ El esfuerzo no es negociable.
         'nutritionRaw.calorias': data.calorias,
         'nutritionRaw.proteina': data.proteina,
         'nutritionRaw.carbos':   data.carbos,
-        'nutritionRaw.grasas':   data.grasas
+        'nutritionRaw.grasas':   data.grasas,
+        'nutritionRaw.texto':    data.texto
       });
       document.getElementById("nutrition-view").innerHTML = renderNutritionView(data);
       togglePlanEditor("nutrition");
@@ -11443,7 +11444,7 @@ El esfuerzo no es negociable.
   async function saveSupplementPlan() {
     const data = { texto: document.getElementById("sup-texto")?.value.trim() || "" };
     try {
-      await updateDoc(doc(db, "clients", _detailClientId), { supplementPlan: data });
+      await updateDoc(doc(db, "clients", _detailClientId), { supplementPlan: data, supplementsRaw: null });
       document.getElementById("supplement-view").innerHTML = renderSupplementView(data);
       togglePlanEditor("supplement");
       showToast("Suplementación guardada ✅");
@@ -13324,6 +13325,7 @@ El esfuerzo no es negociable.
     try {
       const planRef = await addDoc(collection(db, "plans"), {
         days: _stampPrescriptionIds(days), weeks: template.weeks || 6, daysPerWeek: days.length,
+        rirByWeek: rirSchemeForWeeks(template.weeks || 6),
         coachId: currentCoach.uid, clientId, status: 'active',
         generatedBy: 'template:'+template.name, createdAt: new Date().toISOString()
       });

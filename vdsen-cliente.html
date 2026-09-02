@@ -1688,7 +1688,7 @@ async function loadPlan(user) {
           return;
         }
         // Actualizar nutrición/suplementación/perfil en vivo sin recargar
-        if (newData.nutritionPlan) { PLAN.nutricion = newData.nutritionPlan; try { renderNutricion(); } catch(e){} }
+        if (newData.nutritionPlan && (newData.nutritionPlan.calorias || newData.nutritionPlan.texto)) { PLAN.nutricion = newData.nutritionPlan; try { renderNutricion(); } catch(e){} }
         if (newData.supplementPlan) { PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] }; }
         if (newData.profileType && newData.profileType !== PLAN.profileType) { PLAN.profileType = newData.profileType; try { renderPerfil(); } catch(e){} }
       });
