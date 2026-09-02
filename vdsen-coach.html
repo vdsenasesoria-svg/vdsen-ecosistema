@@ -1112,6 +1112,11 @@
   window.addEventListener('beforeunload', (e) => {
     if (_dirtyEditor) { e.preventDefault(); e.returnValue = ''; return ''; }
   });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const m = document.getElementById('clientModal');
+    if (m && m.style.display !== 'none') { e.preventDefault(); closeClientModal(); }
+  });
   window.markEditorDirty = markEditorDirty;
   window.markEditorClean = markEditorClean;
 
@@ -1718,20 +1723,25 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
   onAuthStateChanged(auth, async (user) => {
     if (user) {
-      const coachDoc = await getDoc(doc(db, "coaches", user.uid));
-      if (coachDoc.exists()) {
-        currentCoach = user;
-        initCoachUI();
-      } else {
-        await setDoc(doc(db, "coaches", user.uid), {
-          displayName: user.displayName || user.email.split("@")[0],
-          email: user.email,
-          role: "coach",
-          createdAt: new Date().toISOString()
-        });
-        currentCoach = user;
-        showToast("Perfil de coach creado. Bienvenido.");
-        initCoachUI();
+      try {
+        const coachDoc = await getDoc(doc(db, "coaches", user.uid));
+        if (coachDoc.exists()) {
+          currentCoach = user;
+          initCoachUI();
+        } else {
+          await setDoc(doc(db, "coaches", user.uid), {
+            displayName: user.displayName || user.email.split("@")[0],
+            email: user.email,
+            role: "coach",
+            createdAt: new Date().toISOString()
+          });
+          currentCoach = user;
+          showToast("Perfil de coach creado. Bienvenido.");
+          initCoachUI();
+        }
+      } catch(e) {
+        console.error('[auth] Firestore init failed:', e);
+        document.body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0A0A0A;color:#F4F4F0;flex-direction:column;gap:12px;font-family:Inter,sans-serif"><div style="color:#c94a3a;font-size:28px">⚠</div><div style="font-size:15px">Error al conectar con Firestore</div><div style="font-size:12px;color:#888">${_escH(e.message||'sin conexión')}</div><button onclick="location.reload()" style="margin-top:16px;padding:10px 24px;background:#C4FF00;color:#0A0A0A;border:none;font-weight:700;cursor:pointer;border-radius:4px">Reintentar</button></div>`;
       }
     } else {
       // Sin auto-login — mostrar pantalla propia de login VDSEN
@@ -2472,7 +2482,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           } catch(_ie) { console.warn("No se pudo escribir phone_index:", _ie && _ie.message); }
         }
         if (prefill.fichaData) {
-          try { await setDoc(doc(db, "fichas_onboarding", uid), { schemaVersion: prefill.schemaVersion || "1.1", data: prefill.fichaData, updatedAt: Date.now(), updatedBy: "client" }, { merge: true }); } catch(_fe){}
+          try { await setDoc(doc(db, "fichas_onboarding", uid), { schemaVersion: prefill.schemaVersion || "1.1", data: prefill.fichaData, updatedAt: Date.now(), updatedBy: "client" }, { merge: true }); } catch(_fe){ console.warn('[createClient] fichas_onboarding write failed:', _fe && _fe.message); }
           if (prefill.fichaId) { try { await updateDoc(doc(db, "fichas_publicas", prefill.fichaId), { status: "convertida", clientUid: uid }); } catch(_fu){} }
         }
         modal.style.display = "none";
@@ -10050,10 +10060,10 @@ El esfuerzo no es negociable.
         console.groupEnd();
 
         if (classified.nutrition) {
-          try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: _nutritionJsonToPlan(classified.nutrition), nutritionRaw: classified.nutrition }); } catch(e){ console.warn('nutrition save failed:', e.message); }
+          try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: _nutritionJsonToPlan(classified.nutrition), nutritionRaw: classified.nutrition }); } catch(e){ showToast('⚠ Nutrición: error al guardar — ' + (e.message||'sin conexión'), true); console.warn('nutrition save failed:', e.message); }
         }
         if (classified.supplements) {
-          try { const sp = _supplementsJsonToPlan(classified.supplements); if (sp) await updateDoc(doc(db, 'clients', clientId), { supplementPlan: sp, supplementsRaw: classified.supplements }); } catch(e){ console.warn('supplement save failed:', e.message); }
+          try { const sp = _supplementsJsonToPlan(classified.supplements); if (sp) await updateDoc(doc(db, 'clients', clientId), { supplementPlan: sp, supplementsRaw: classified.supplements }); } catch(e){ showToast('⚠ Suplementación: error al guardar — ' + (e.message||'sin conexión'), true); console.warn('supplement save failed:', e.message); }
         }
       } else {
         planObj = parsePlanText(ta.value);
@@ -13857,11 +13867,11 @@ El esfuerzo no es negociable.
 
   function applyIntakeVisibility(){
     document.querySelectorAll('.intake-section').forEach(sec=>{
-      const cond = sec.dataset.showif ? JSON.parse(sec.dataset.showif) : null;
+      let cond = null; try { if(sec.dataset.showif) cond = JSON.parse(sec.dataset.showif); } catch(_){}
       sec.style.display = _intEvalShowIf(cond) ? '' : 'none';
     });
     document.querySelectorAll('#intakeForm [data-fieldwrap]').forEach(w=>{
-      const cond = w.dataset.showif ? JSON.parse(w.dataset.showif) : null;
+      let cond = null; try { if(w.dataset.showif) cond = JSON.parse(w.dataset.showif); } catch(_){}
       w.style.display = _intEvalShowIf(cond) ? '' : 'none';
     });
   }

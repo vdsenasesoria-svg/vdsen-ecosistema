@@ -2207,11 +2207,11 @@ function ciEvalShowIf(cond){
 }
 function ciApplyVisibility(){
   document.querySelectorAll('#scrIntake [data-secid]').forEach(function(sec){
-    var cond = sec.dataset.showif ? JSON.parse(sec.dataset.showif) : null;
+    var cond = null; try { if(sec.dataset.showif) cond = JSON.parse(sec.dataset.showif); } catch(_){}
     sec.style.display = ciEvalShowIf(cond) ? '' : 'none';
   });
   document.querySelectorAll('#scrIntake [data-fieldwrap]').forEach(function(w){
-    var cond = w.dataset.showif ? JSON.parse(w.dataset.showif) : null;
+    var cond = null; try { if(w.dataset.showif) cond = JSON.parse(w.dataset.showif); } catch(_){}
     w.style.display = ciEvalShowIf(cond) ? '' : 'none';
   });
 }
@@ -9531,6 +9531,9 @@ async function guardarNutriLog() {
     await saveLogs();
     showToast('✓ Registro nutricional guardado');
     renderNutricion();
+  } catch(e) {
+    showToast('Error al guardar — ' + (e && e.message || 'sin conexión'), true);
+    console.warn('[guardarNutriLog]', e);
   } finally {
     if (_nlBtn) { _nlBtn.disabled = false; _nlBtn.textContent = '✓ GUARDAR REGISTRO'; }
   }
