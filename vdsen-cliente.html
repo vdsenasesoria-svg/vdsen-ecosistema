@@ -373,6 +373,7 @@ let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
 var LOGS_BY_WEEK = { log: {}, progrec: {} }; // derived index: { w: [key1,...] } — rebuilt on bulk load, appended on writes
 let CURRENT_WEEK = 1;
 var REAL_WEEK = 1;     // semana real de entrenamiento (no cambia al navegar)
+var _resumenDirty = false; // lazy render: true when Resumen tab needs refresh but isn't visible
 var _weeksExpanded = false; // selector: mostrar semanas pasadas
 var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
@@ -2735,7 +2736,16 @@ function buildHistorialWidget() {
     + '</div>';
 }
 
+// Lazy-render Resumen: only rebuilds DOM when tab is visible; marks dirty otherwise.
+// Eliminates off-screen rebuilds during active workout (called from Entr tab handlers).
+function _deferResumen() {
+  var el = document.getElementById('tabResumen');
+  if (el && el.style.display !== 'none') { renderResumen(); }
+  else { _resumenDirty = true; }
+}
+
 function renderResumen() {
+  _resumenDirty = false;
   if (!PLAN) {
     var _el = document.getElementById('tabResumen');
     if (_el) _el.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Sin plan activo</div><div class="empty-sub">Tu coach aún no te ha asignado un plan de entrenamiento.</div></div>';
@@ -3475,8 +3485,8 @@ async function _refreshLogsFromFirestore(reason) {
     if (weekChanged || entriesChanged) {
       try { renderEntrenamiento(); } catch(e){}
     }
-    // Resumen siempre re-renderizado: ediciones in-place (mismo key, distinto valor) no cambian count
-    try { renderResumen(); } catch(e){}
+    // Resumen: lazy si no está visible (ediciones in-place no cambian count de sets)
+    try { _deferResumen(); } catch(e){}
   } catch(e) {
     console.warn('refreshLogs error:', e.message);
     showToast('⚠️ Error al sincronizar datos. Recarga si ves info desactualizada.', true);
@@ -3570,7 +3580,7 @@ function getAdjustedRIR(baseRIR, week) {
 function setWeek(w) {
   CURRENT_WEEK = w;
   renderEntrenamiento();
-  renderResumen();
+  _deferResumen();
   // NO llamar saveLogs() aquí: solo cambia la semana vista, no la semana real de entrenamiento
 }
 
@@ -8461,7 +8471,7 @@ async function markSessionDone(di) {
     _markSessionBusy[di] = false;
     showToast('Marcado como pendiente');
     renderEntrenamiento();
-    renderResumen();
+    _deferResumen();
     return;
   }
 
@@ -8482,14 +8492,14 @@ async function _confirmSessionDone(di) {
     delete LOGS[key];
     showToast('⚠ NO SE GUARDÓ — revisa conexión / errores. Reintenta.', true);
     renderEntrenamiento();
-    renderResumen();
+    _deferResumen();
     return;
   }
   if (navigator.vibrate) navigator.vibrate([60, 50, 150, 50, 250]);
   showToast('SESIÓN COMPLETADA ✓');
   _autoAdvanceDia(); // avanzar al siguiente día pendiente antes de re-renderizar
   renderEntrenamiento();
-  renderResumen();
+  _deferResumen();
   // Auto-avance de semana: NO depende de la semana que se esté viendo.
   // Avanza mientras la semana REAL siga completa, hasta 6 (deload).
   // Esto cubre el caso de marcar varias semanas atrasadas de un tirón.
@@ -8518,7 +8528,7 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
     showToast('🏆 SEMANA COMPLETA — Avanzaste a SEM '+REAL_WEEK);
     _autoAdvanceDia(); // primer día pendiente de la nueva semana
     renderEntrenamiento();
-    renderResumen();
+    _deferResumen();
   }
 }
 
@@ -8698,7 +8708,7 @@ async function markWeekDoneWithPartialData() {
   showToast('✓ Semana '+REAL_WEEK+' cerrada — '+conData+' con data, '+sinData+' saltada(s)');
   await _autoAdvanceWeekIfDone(false);
   renderEntrenamiento();
-  renderResumen();
+  _deferResumen();
 }
 window.markWeekDoneWithPartialData = markWeekDoneWithPartialData;
 
@@ -8801,7 +8811,7 @@ async function markWeekCompleteFromHistory() {
   showToast('✓ '+totalFilled+' sets rellenados · SEM '+REAL_WEEK+' cerrada desde historial');
   await _autoAdvanceWeekIfDone(false);
   renderEntrenamiento();
-  renderResumen();
+  _deferResumen();
 }
 window.markWeekCompleteFromHistory = markWeekCompleteFromHistory;
 
@@ -8912,7 +8922,7 @@ function setWeek(w) {
   CURRENT_WEEK = w;
   _autoAdvanceDia();
   renderEntrenamiento();
-  renderResumen();
+  _deferResumen();
 }
 
 function goToWeek(w) {
@@ -10642,7 +10652,7 @@ async function guardarCI() {
     }
 
     showToast('CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · Tu coach lo revisará en el panel de monitoreo');
-    renderResumen();
+    _deferResumen();
   } catch(e) {
     showToast('ERROR AL GUARDAR: ' + e.message, true);
     console.error('guardarCI error:', e);
