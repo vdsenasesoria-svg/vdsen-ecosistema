@@ -4178,6 +4178,23 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           })()
         : '')+
       _buildNextExposureHtml(progrec, unit, nombre)+
+      (function(){
+        if (!_prevWeekBanner || !_prevWeekBanner.avgLoad) return '';
+        // Detect unit of previous week's logs to avoid double-conversion (KG→LB or LB→KG)
+        var _pvSrcUnit = (function(){
+          for(var _s=0;_s<8;_s++){var _k='log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_s;if(LOGS[_k]&&LOGS[_k].done&&!LOGS[_k].autoFilled)return LOGS[_k].unit||'KG';}return 'KG';
+        })();
+        var _pvLoad = _convertCarga(_prevWeekBanner.avgLoad, _pvSrcUnit, unit);
+        var _pvReps = _prevWeekBanner.avgReps ? Math.round(_prevWeekBanner.avgReps)+' rep' : '';
+        var _pvRir  = _prevWeekBanner.avgRIR != null ? ' · RIR '+Math.round(_prevWeekBanner.avgRIR*10)/10 : '';
+        var _pvSets = _prevWeekBanner.numSets > 0 ? _prevWeekBanner.numSets+'×' : '';
+        var _pvTop  = (_prevWeekBanner.topLoad && _prevWeekBanner.topLoad > _prevWeekBanner.avgLoad)
+          ? ' <span style="color:var(--gold);font-weight:800">↑'+_convertCarga(_prevWeekBanner.topLoad,_pvSrcUnit,unit)+' '+unit+'</span>' : '';
+        return '<div style="margin-top:8px;padding:6px 10px;background:rgba(255,140,50,.05);border:1px solid rgba(255,140,50,.18);border-radius:8px;display:flex;align-items:center;gap:8px">'+
+          '<span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#FF8844;white-space:nowrap">SEM '+(CURRENT_WEEK-1)+'</span>'+
+          '<span style="font-size:11px;color:var(--mt2)">'+_pvSets+_pvLoad+' '+unit+((_pvReps)?' × '+_pvReps:'')+_pvRir+_pvTop+'</span>'+
+        '</div>';
+      })()+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
@@ -6749,6 +6766,23 @@ function renderEntrenamiento() {
   if (_restEndMs && _restEndMs > Date.now()) {
     setTimeout(function(){_updateRestRing();},50);
   }
+  // Resume Workout: auto-scroll to active exercise chip + first pending set row
+  // Delayed slightly so the DOM settles; non-agressive (nearest, no forced top-of-page).
+  setTimeout(function() {
+    try {
+      var navEl = document.getElementById('exNav');
+      var _actChip = navEl && navEl.querySelector('[data-ei="'+EJ_ACTIVO+'"]');
+      if (_actChip) _actChip.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+      var panelEl = document.getElementById('exPanel');
+      var firstPending = panelEl && panelEl.querySelector('[data-pending="1"]');
+      if (firstPending && !isDone) {
+        setTimeout(function() {
+          firstPending.scrollIntoView({ behavior:'smooth', block:'start' });
+          window.scrollBy(0, -72);
+        }, 120);
+      }
+    } catch(e) {}
+  }, 100);
 }
 
 function buildBoostcampExercise(ej, di, ei) {
