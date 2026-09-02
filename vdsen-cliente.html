@@ -3121,18 +3121,79 @@ function buildMesocicloReportWidget() {
 
 function getTodaySummary() {
   if (!PLAN || !PLAN.entrenamiento) return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
-  const sesiones = getSesiones();
-  if (sesiones.length === 0) return `<button onclick="goTab(1)" style="width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">VER ENTRENAMIENTO ▶</button>`;
+  var sesiones = getSesiones();
+  if (sesiones.length === 0) return '<button onclick="goTab(1)" style="width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">VER ENTRENAMIENTO ▶</button>';
   // Find first incomplete session in current week; fall back to last session
   var idx = sesiones.length - 1;
+  var allDone = true;
   for (var _si = 0; _si < sesiones.length; _si++) {
-    if (!LOGS['done_' + CURRENT_WEEK + '_' + _si]) { idx = _si; break; }
+    if (!LOGS['done_' + CURRENT_WEEK + '_' + _si]) { idx = _si; allDone = false; break; }
   }
-  const hoy = sesiones[idx];
-  const ejercicios = (hoy.contenido||'').split('\n').filter(l=>/\d\s*[×x]\s*\d|RIR/i.test(l)).length;
-  return `<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:4px">${_escHTml(hoy.dia||'')}</div>
-    <div style="font-size:10px;color:var(--mt)">${ejercicios} ejercicios</div>
-    <button onclick="selDia(${idx});goTab(1)" style="margin-top:10px;width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">ENTRENAR AHORA ▶</button>`;
+  var hoy = sesiones[idx];
+  var isDoneToday = !!LOGS['done_' + CURRENT_WEEK + '_' + idx];
+
+  // Build exercise list from structured data
+  var exList = hoy.exercises || [];
+  var exCount = exList.length;
+  if (!exCount) {
+    // Fallback: count from text
+    exCount = (hoy.contenido||'').split('\n').filter(function(l){ return /\d\s*[×xX]\s*\d|RIR/i.test(l); }).length;
+  }
+
+  // Estimate session duration (minutes)
+  var estMin = 0;
+  if (exList.length) {
+    exList.forEach(function(ej) {
+      var sets = ej.sets || [];
+      var numSets = sets.length || (ej.numSeries || 3);
+      var avgRest = sets.reduce(function(a,s){ return a + (s.restSeconds||90); }, 0) / (sets.length||1);
+      estMin += Math.round(numSets * 0.75 + (numSets - 1) * (avgRest / 60));
+    });
+    estMin = Math.max(estMin, 20);
+  }
+
+  // Progrec status
+  var _progRec = LOGS['progrec_' + CURRENT_WEEK + '_' + idx];
+  var _hasProgrec = _progRec && (_progRec.recommendations||[]).length > 0;
+  var _hasDeload  = _progRec && (_progRec.deloadTriggers||[]).length > 0;
+
+  // Top 5 exercises list
+  var exHtml = '';
+  if (exList.length) {
+    var _exToShow = exList.slice(0, 5);
+    exHtml = '<div style="margin:10px 0;display:flex;flex-direction:column;gap:4px">' +
+      _exToShow.map(function(ej, _ei) {
+        var _name = _escHTml(ej.exerciseName || ej.nombre || '');
+        var _sets = ej.sets && ej.sets.length ? ej.sets.length : (ej.numSeries || 3);
+        var _reps = ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : (ej.repsTarget || '—');
+        var _repsStr = _reps === 999 ? 'AMRAP' : (_reps === 'SST-PROTOCOL' ? 'SST' : String(_reps));
+        var _isExDone = (function(){
+          for(var _s=0;_s<_sets;_s++){if(!LOGS['log_'+CURRENT_WEEK+'_'+idx+'_'+_ei+'_s'+_s]||!LOGS['log_'+CURRENT_WEEK+'_'+idx+'_'+_ei+'_s'+_s].done)return false;}
+          return _sets>0;
+        })();
+        return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
+          '<span style="font-size:14px;width:16px;text-align:center">'+(_isExDone?'✓':'○')+'</span>'+
+          '<span style="font-size:12px;font-weight:700;color:'+(_isExDone?'var(--mt)':'var(--tx)')+';flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_name+'</span>'+
+          '<span style="font-size:10px;color:var(--mt2);white-space:nowrap">'+_sets+'×'+_repsStr+'</span>'+
+        '</div>';
+      }).join('') +
+      (exList.length > 5 ? '<div style="font-size:10px;color:var(--mt);padding-top:4px">+ '+(exList.length-5)+' más</div>' : '') +
+    '</div>';
+  }
+
+  // Meta row: duration + progrec badges
+  var metaHtml = '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+
+    (exCount ? '<span style="font-size:10px;color:var(--mt)">'+exCount+' ej.</span>' : '')+
+    (estMin > 0 ? '<span style="font-size:10px;color:var(--mt)">·</span><span style="font-size:10px;color:var(--mt)">~'+estMin+' min</span>' : '')+
+    (_hasDeload ? '<span style="font-size:9px;font-weight:900;letter-spacing:.5px;color:var(--blue);background:rgba(126,192,255,.1);padding:2px 7px;border-radius:4px;margin-left:auto">⚠ DELOAD SIGNAL</span>' :
+     (_hasProgrec ? '<span style="font-size:9px;font-weight:900;letter-spacing:.5px;color:var(--grn);background:rgba(68,204,136,.1);padding:2px 7px;border-radius:4px;margin-left:auto">✓ PROGRESIÓN LISTA</span>' : ''))+
+  '</div>';
+
+  var btnLabel = isDoneToday ? 'VER SESIÓN ▶' : (allDone ? 'REVISAR ▶' : 'ENTRENAR AHORA ▶');
+  var btn = '<button onclick="selDia('+idx+');goTab(1)" style="width:100%;padding:13px;background:'+(isDoneToday?'rgba(107,107,102,.2)':'var(--accent)')+';border:'+(isDoneToday?'1px solid rgba(107,107,102,.4)':'none')+';color:'+(isDoneToday?'var(--mt)':'#0A0A0A')+';font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">'+btnLabel+'</button>';
+
+  return '<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:2px">'+_escHTml(hoy.dia || hoy.nombre || hoy.label || '')+'</div>'+
+    metaHtml + exHtml + btn;
 }
 
 function getSupToday() {
