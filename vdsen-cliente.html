@@ -370,7 +370,7 @@ button:active{opacity:.85}
 let USER = null;
 let PLAN = null;
 let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
-var LOGS_BY_WEEK = { log: {}, progrec: {} }; // derived index: { w: [key1,...] } — rebuilt on bulk load, appended on writes
+var LOGS_BY_WEEK = { log: {}, progrec: {}, done: {} }; // derived index: { w: [key1,...] } — rebuilt on bulk load, appended on writes
 let CURRENT_WEEK = 1;
 var REAL_WEEK = 1;     // semana real de entrenamiento (no cambia al navegar)
 var _resumenDirty = false; // lazy render: true when Resumen tab needs refresh but isn't visible
@@ -3305,12 +3305,9 @@ function countSessions() {
 }
 function countDone() {
   var _tw = getTotalWeeks();
-  return Object.keys(LOGS).filter(function(k) {
-    if (!k.startsWith('done_')) return false;
-    var parts = k.split('_');
-    var week = parseInt(parts[1]);
-    return week >= 1 && week <= _tw;
-  }).length;
+  var n = 0;
+  for (var w = 1; w <= _tw; w++) n += (LOGS_BY_WEEK.done[w] || []).length;
+  return n;
 }
 
 // ══════════════════════════════════════════════════
@@ -8444,6 +8441,8 @@ async function markSessionDone(di) {
   if (LOGS[key]) {
     // Toggle off
     LOGS[key] = null;
+    var _dW = CURRENT_WEEK;
+    if (LOGS_BY_WEEK.done[_dW]) LOGS_BY_WEEK.done[_dW] = LOGS_BY_WEEK.done[_dW].filter(function(x){return x!==key;});
     // Recalcular REAL_WEEK: buscar hacia atrás la primera semana incompleta
     var _ses = getSesiones();
     if (_ses.length) {
@@ -8475,6 +8474,7 @@ async function markSessionDone(di) {
 async function _confirmSessionDone(di) {
   var key = 'done_'+CURRENT_WEEK+'_'+di;
   LOGS[key] = { ts: Date.now() };
+  _lbwTrack(key);
   // Guardar inmediatamente (bypass debounce) — crítico en Safari iOS donde los timers
   // se pueden cancelar al cambiar de tab o al apagar pantalla
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
@@ -8689,6 +8689,7 @@ async function markWeekDoneWithPartialData() {
       } catch(e) { console.warn('progression on close-week failed:', e && e.message); }
     }
     LOGS['done_'+REAL_WEEK+'_'+di] = { ts: Date.now(), autoClosed: true, skipped: !hasData };
+    _lbwTrack('done_'+REAL_WEEK+'_'+di);
   });
 
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
@@ -8794,6 +8795,7 @@ async function markWeekCompleteFromHistory() {
     } catch(e) { console.warn('progrec failed in markWeekCompleteFromHistory:', e && e.message); }
 
     LOGS['done_'+REAL_WEEK+'_'+di] = { ts: Date.now(), autoClosed: true, fromHistory: true };
+    _lbwTrack('done_'+REAL_WEEK+'_'+di);
   }
 
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
@@ -12719,7 +12721,7 @@ function _linRegSlope(points) {
 // Eliminates O(n_total) scans in hot functions — each week lookup is O(k_week).
 
 function _rebuildLogsByWeek() {
-  var log = {}, progrec = {};
+  var log = {}, progrec = {}, done = {};
   var _k;
   var _ks = Object.keys(LOGS);
   for (var _i = 0; _i < _ks.length; _i++) {
@@ -12731,10 +12733,14 @@ function _rebuildLogsByWeek() {
     } else if (_k.indexOf('progrec_') === 0) {
       _w = parseInt(_k.split('_')[1]);
       if (!isNaN(_w)) { if (!progrec[_w]) progrec[_w] = []; progrec[_w].push(_k); }
+    } else if (_k.indexOf('done_') === 0 && LOGS[_k]) {
+      _w = parseInt(_k.split('_')[1]);
+      if (!isNaN(_w)) { if (!done[_w]) done[_w] = []; done[_w].push(_k); }
     }
   }
   LOGS_BY_WEEK.log = log;
   LOGS_BY_WEEK.progrec = progrec;
+  LOGS_BY_WEEK.done = done;
 }
 
 function _lbwTrack(k) {
@@ -12745,6 +12751,9 @@ function _lbwTrack(k) {
   } else if (k.indexOf('progrec_') === 0) {
     _w = parseInt(k.split('_')[1]);
     if (!isNaN(_w)) { if (!LOGS_BY_WEEK.progrec[_w]) LOGS_BY_WEEK.progrec[_w] = []; LOGS_BY_WEEK.progrec[_w].push(k); }
+  } else if (k.indexOf('done_') === 0) {
+    _w = parseInt(k.split('_')[1]);
+    if (!isNaN(_w)) { if (!LOGS_BY_WEEK.done[_w]) LOGS_BY_WEEK.done[_w] = []; if (LOGS_BY_WEEK.done[_w].indexOf(k) < 0) LOGS_BY_WEEK.done[_w].push(k); }
   }
 }
 
