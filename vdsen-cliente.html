@@ -2363,7 +2363,7 @@ async function openIntake(){
         }
       }
     }
-  } catch(e){}
+  } catch(e){ console.warn('[openIntake] load failed:', e && e.message); showToast('No se pudo cargar tu ficha guardada. Puedes llenarla de nuevo.', true); }
   if(!data.nombre && USER && USER.displayName) data.nombre = USER.displayName;
   ciRenderForm(data);
   var st = document.getElementById('ciIntakeStatus');

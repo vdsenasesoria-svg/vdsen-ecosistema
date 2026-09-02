@@ -2843,7 +2843,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         try {
           const _ps = await getDoc(doc(db, 'plans', clientData.activePlanId));
           if (_ps.exists()) _activePlanCache = _ps.data();
-        } catch(e) {}
+        } catch(e) { console.warn('[monitor] plan load failed:', e && e.message); }
       }
       // Abort if user switched client while awaiting
       if (_myMonGen !== _monitorGeneration) return;
@@ -8247,7 +8247,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     body.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos...</div>`;
     modal.style.display = "flex";
 
-    const clientSnap = await getDoc(doc(db, "clients", clientId));
+    let clientSnap;
+    try { clientSnap = await getDoc(doc(db, "clients", clientId)); }
+    catch(e) { body.innerHTML = `<p class="text-red-400">Error al cargar cliente: ${_escH(e.message||'sin conexión')}</p>`; console.error('[showClientDetail] client load:', e); return; }
     if (!clientSnap.exists()) { body.innerHTML = `<p class="text-red-400">Cliente no encontrado.</p>`; return; }
     _detailClientData = clientSnap.data();
     const c = _detailClientData;
@@ -8262,8 +8264,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailPlanData = null;
     _detailPrevPlanData = null;   // FASE 26 — reset lazy cache al abrir nuevo cliente
     if (c.activePlanId) {
-      const planSnap = await getDoc(doc(db, "plans", c.activePlanId));
-      if (planSnap.exists()) _detailPlanData = planSnap.data();
+      try {
+        const planSnap = await getDoc(doc(db, "plans", c.activePlanId));
+        if (planSnap.exists()) _detailPlanData = planSnap.data();
+      } catch(e) { console.warn('[showClientDetail] plan load failed:', e && e.message); }
     }
 
     _detailFichaData = null;
@@ -8285,7 +8289,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     body.innerHTML = `
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <p class="text-sm text-[#888]">${c.email}${c.phone ? ' · 📱 '+c.phone : ''}</p>
+        <p class="text-sm text-[#888]">${_escH(c.email||'')}${c.phone ? ' · 📱 '+_escH(c.phone) : ''}</p>
         <div class="flex gap-2 flex-wrap">
           <button onclick="sendCustomWhatsApp('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;cursor:pointer;font-weight:600">📲 WhatsApp</button>
           <button onclick="generateAccessMessage('${clientId}')" class="text-xs px-3 py-1 rounded" style="border:1px solid #F4F4F0;background:rgba(244,244,240,.15);color:#F4F4F0;cursor:pointer;font-weight:600">📩 Acceso</button>
@@ -13254,7 +13258,7 @@ El esfuerzo no es negociable.
     try {
       const snap = await getDocs(query(collection(db, 'templates'), where('coachId', '==', currentCoach.uid)));
       snap.forEach(d => customTemplates.push({ id: d.id, ...d.data() }));
-    } catch(e) {}
+    } catch(e) { console.warn('[loadTemplates] custom templates load failed:', e && e.message); }
 
     let html = '<div class="text-xs text-[#888] uppercase tracking-wide mb-2">Plantillas base</div>';
     BUILTIN_TEMPLATES.forEach((t, i) => {
