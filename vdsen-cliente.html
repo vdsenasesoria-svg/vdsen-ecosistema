@@ -2736,7 +2736,11 @@ function buildHistorialWidget() {
 }
 
 function renderResumen() {
-  if (!PLAN) return;
+  if (!PLAN) {
+    var _el = document.getElementById('tabResumen');
+    if (_el) _el.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Sin plan activo</div><div class="empty-sub">Tu coach aún no te ha asignado un plan de entrenamiento.</div></div>';
+    return;
+  }
   const sesionesTotal = countSessions();
   const sesionesHechas = countDone();
   const pct = Math.round(sesionesHechas / Math.max(sesionesTotal,1) * 100);
@@ -6475,7 +6479,11 @@ function _refreshSessionDashboard() {
 window._refreshSessionDashboard = _refreshSessionDashboard;
 
 function renderEntrenamiento() {
-  if (!PLAN || !PLAN.entrenamiento) return;
+  if (!PLAN || !PLAN.entrenamiento) {
+    var _etCont = document.getElementById('tabEntr');
+    if (_etCont) _etCont.innerHTML = '<div class="empty"><div class="empty-icon">🏋️</div><div class="empty-title">Sin plan de entrenamiento</div><div class="empty-sub">Tu coach aún no ha configurado tu rutina. Escríbele para solicitarla.</div></div>';
+    return;
+  }
   // Clear session timer before re-render
   if (window._sesTimerInterval) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; }
   // Capture rest-timer overlay state before re-render (DOM will be wiped)
@@ -10896,7 +10904,11 @@ function _buildWeightSparkline() {
 
 function renderCheckin() {
   var cont = document.getElementById('tabCheckin');
-  if (!cont || !PLAN) return;
+  if (!cont) return;
+  if (!PLAN) {
+    cont.innerHTML = '<div class="empty"><div class="empty-icon">📊</div><div class="empty-title">Sin plan activo</div><div class="empty-sub">El check-in semanal estará disponible cuando tu coach te asigne un plan.</div></div>';
+    return;
+  }
   var sem  = CURRENT_WEEK;
   var d    = LOGS[ciKey()] || {};
   var w5s  = d.w5s || [null,null,null,null,null];
@@ -11102,8 +11114,12 @@ function renderCheckin() {
 
 
 function renderPerfil() {
-  if (!PLAN) return;
   var cont = document.getElementById('tabPerfil');
+  if (!cont) return;
+  if (!PLAN) {
+    cont.innerHTML = '<div class="empty"><div class="empty-icon">👤</div><div class="empty-title">Sin plan activo</div><div class="empty-sub">Tu perfil y suplementación estarán disponibles cuando tu coach te asigne un plan.</div></div>';
+    return;
+  }
 
   // Suplementacion: mostrar texto completo formateado
   const supTexto = PLAN.suplementacion?.texto || '';
