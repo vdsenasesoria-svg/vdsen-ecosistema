@@ -8434,9 +8434,10 @@ async function markWeekDoneWithPartialData() {
 
   var defaultPost = {
     eimd: 2,
-    articularPain: { present: false, pattern: '' },
-    sleepHours: 7,
-    rpeAverage: 7,
+    articular: 'no',
+    patron: '',
+    sleep: 7,
+    rpe: 7,
     ts: Date.now(),
     autoClosed: true
   };
@@ -8493,7 +8494,7 @@ async function markWeekCompleteFromHistory() {
   if (!confirm(msg)) return;
 
   var defaultRIR = getAdjustedRIR(2, CURRENT_WEEK);
-  var defaultPost = { eimd: 2, articularPain: { present: false, pattern: '' }, sleepHours: 7, rpeAverage: 7, ts: Date.now(), autoClosed: true };
+  var defaultPost = { eimd: 2, articular: 'no', patron: '', sleep: 7, rpe: 7, ts: Date.now(), autoClosed: true };
   var totalFilled = 0;
 
   for (var _pdi = 0; _pdi < pendientes.length; _pdi++) {
@@ -10310,6 +10311,7 @@ async function guardarCI() {
     var campo = id.replace('ci_','');
     if (el.value) d[campo] = el.value;
   });
+  if (d.sueno_cal != null) d.sueno = d.sueno_cal;
   // GAP 1+5: nuevos campos de rendimiento
   ['ci_ics','ci_rir_real','ci_adher'].forEach(function(id) {
     var el = document.getElementById(id);
@@ -12323,9 +12325,10 @@ async function submitPostSession() {
 
   var postData = {
     eimd: eimd,
-    articularPain: { present: articularVal==='si', pattern: articularVal==='si' ? articularPattern : '' },
-    sleepHours: sueno,
-    rpeAverage: rpe,
+    articular: articularVal === 'si' ? 'si' : 'no',
+    patron: articularVal === 'si' ? articularPattern : '',
+    sleep: sueno,
+    rpe: rpe,
     ts: Date.now()
   };
 
@@ -13562,9 +13565,9 @@ function calculateProgression(di, postData) {
                   : weekRirObj[String(nextWeekNum)] !== undefined ? weekRirObj[String(nextWeekNum)]
                   : defaultRir[nextWeekNum]         !== undefined ? defaultRir[nextWeekNum] : 2;
   var eimd = postData.eimd || 2;
-  var rpe  = postData.rpeAverage || 7;
-  var sleep = postData.sleepHours || 7;
-  var articular = postData.articularPain || {present:false};
+  var rpe  = postData.rpe || 7;
+  var sleep = postData.sleep || 7;
+  var articular = { present: postData.articular === 'si', pattern: postData.patron || '' };
 
   // ── Gatillos de deload (ampliados) ──
   var deloadTriggers = [];
