@@ -379,6 +379,8 @@ var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
+var _whatChanged_loaded = false;
+var _whatChanged_data   = null;
 var CALIB_VOLUMETRICA = null; // Módulo A Ehrenstein — calibración volumétrica {VME_individual, VMR_individual}
 var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el tab de entreno
 
@@ -1575,6 +1577,7 @@ async function loadPlan(user) {
     } catch(catErr) { console.warn('catálogo no disponible:', catErr.message); }
 
     // Cargar logs (no-fatal)
+    if (ACTIVE_PLAN_ID !== activePlanId) { _whatChanged_data = null; } // reset cache on plan change
     ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual
     var _showBitacoraInfo = false;
     try {
@@ -2740,6 +2743,153 @@ function buildHistorialWidget() {
     + '</div>';
 }
 
+// ── FASE 71 — What Changed (comparador plan actual vs backup) ─────────────────
+function _nc_normName(s) {
+  if (!s) return '';
+  return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim();
+}
+function _nc_buildMap(days) {
+  var byPid = {}, byName = {};
+  (days||[]).forEach(function(day, di) {
+    (day.exercises||[]).forEach(function(ex) {
+      var pid = ex.prescriptionExerciseId || null;
+      var nm  = _nc_normName(ex.exerciseName);
+      var entry = { ex: ex };
+      if (pid) byPid[pid] = entry;
+      if (nm) { if (!byName[nm]) byName[nm] = []; byName[nm].push(entry); }
+    });
+  });
+  return { byPid: byPid, byName: byName };
+}
+function _nc_resolveMatch(prevEx, curMap) {
+  var pid = prevEx.prescriptionExerciseId || null;
+  if (pid && curMap.byPid[pid]) return curMap.byPid[pid];
+  var nm = _nc_normName(prevEx.exerciseName);
+  var hits = curMap.byName[nm];
+  if (hits && hits.length === 1) return hits[0];
+  return null;
+}
+function _nc_compareSets(curEx, prevEx) {
+  var diffs = [];
+  var cs = curEx.sets || [], ps = prevEx.sets || [];
+  var maxLen = Math.max(cs.length, ps.length);
+  for (var i = 0; i < maxLen; i++) {
+    var c = cs[i], p = ps[i];
+    if (!c && p) { diffs.push('S'+(i+1)+' eliminada'); continue; }
+    if (c && !p) { diffs.push('S'+(i+1)+' añadida'); continue; }
+    var d = [];
+    if ((c.repsTarget||0) !== (p.repsTarget||0)) d.push('reps '+(p.repsTarget||'?')+'→'+(c.repsTarget||'?'));
+    if ((c.rirTarget||0)  !== (p.rirTarget||0))  d.push('RIR '+(p.rirTarget||'?')+'→'+(c.rirTarget||'?'));
+    if ((c.load||0)       !== (p.load||0))        d.push('carga '+(p.load||'?')+'→'+(c.load||'?'));
+    if ((c.restSeconds||0)!== (p.restSeconds||0)) d.push('descanso '+(p.restSeconds||'?')+'→'+(c.restSeconds||'?')+'s');
+    if (d.length) diffs.push('S'+(i+1)+': '+d.join(', '));
+  }
+  return diffs;
+}
+function _nc_comparePlans(curPlan, prevPlan) {
+  var results = [];
+  var curMap  = _nc_buildMap(curPlan.days  || []);
+  var prevMap = _nc_buildMap(prevPlan.days || []);
+  (curPlan.days||[]).forEach(function(day) {
+    (day.exercises||[]).forEach(function(ex) {
+      var pid = ex.prescriptionExerciseId || null;
+      var nm  = _nc_normName(ex.exerciseName);
+      var inPrev = (pid && prevMap.byPid[pid]) || (nm && prevMap.byName[nm] && prevMap.byName[nm].length);
+      if (!inPrev) results.push({ type: 'ADDED', name: ex.exerciseName || '?' });
+    });
+  });
+  (prevPlan.days||[]).forEach(function(day) {
+    (day.exercises||[]).forEach(function(ex) {
+      var match = _nc_resolveMatch(ex, curMap);
+      if (!match) {
+        results.push({ type: 'REMOVED', name: ex.exerciseName || '?' });
+      } else {
+        var sd = _nc_compareSets(match.ex, ex);
+        if (sd.length) results.push({ type: 'CHANGED', name: ex.exerciseName || '?', diffs: sd });
+      }
+    });
+  });
+  return results;
+}
+function _nc_renderDiffsHtml(diffs) {
+  if (!diffs || !diffs.length)
+    return '<div style="font-size:13px;color:var(--mt);text-align:center;padding:12px 0">Sin cambios detectados respecto al plan anterior</div>';
+  return diffs.map(function(d) {
+    var icon  = d.type==='ADDED'?'➕':(d.type==='REMOVED'?'➖':'✏');
+    var color = d.type==='ADDED'?'var(--grn)':(d.type==='REMOVED'?'var(--red)':'var(--gold)');
+    var label = d.type==='ADDED'?'AÑADIDO':(d.type==='REMOVED'?'ELIMINADO':'MODIFICADO');
+    var safeName = _escHTml(d.name||'?');
+    var diffsHtml = '';
+    if (d.diffs && d.diffs.length)
+      diffsHtml = '<div style="margin-top:4px;font-size:11px;color:var(--mt)">'+
+        d.diffs.map(function(s){ return _escHTml(s); }).join(' · ')+'</div>';
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--bd)">'+
+      '<span style="font-size:14px">'+icon+'</span>'+
+      '<div style="flex:1">'+
+        '<div style="font-size:11px;font-family:var(--ff);color:'+color+';letter-spacing:1px">'+label+'</div>'+
+        '<div style="font-size:14px;color:var(--fg);margin-top:2px">'+safeName+'</div>'+
+        diffsHtml+
+      '</div></div>';
+  }).join('');
+}
+function buildWhatChangedCard() {
+  if (!ACTIVE_PLAN_ID) return '';
+  return '<div class="card" id="whatChangedCard" style="margin-top:8px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center">'+
+      '<div class="card-title" style="margin-bottom:0">¿QUÉ CAMBIÓ?</div>'+
+      '<button id="whatChangedBtn" onclick="toggleWhatChanged()" style="background:none;border:1px solid var(--bd);color:var(--gold);font-family:var(--ff);font-size:11px;font-weight:700;letter-spacing:1px;padding:5px 10px;cursor:pointer;border-radius:4px">VER</button>'+
+    '</div>'+
+    '<div id="whatChangedBody" style="display:none;margin-top:10px"></div>'+
+  '</div>';
+}
+window.toggleWhatChanged = async function() {
+  var body = document.getElementById('whatChangedBody');
+  var btn  = document.getElementById('whatChangedBtn');
+  if (!body) return;
+  if (body.style.display !== 'none') {
+    body.style.display = 'none';
+    if (btn) btn.textContent = 'VER';
+    return;
+  }
+  if (btn) btn.textContent = '…';
+  try {
+    if (!_whatChanged_data) {
+      var bkQ = FB.query(
+        FB.collection(FB.db, 'plans_backup'),
+        FB.where('clientId', '==', USER.uid),
+        FB.orderBy('backedUpAt', 'desc'),
+        FB.limit(1)
+      );
+      var bkSnap = await FB.getDocs(bkQ);
+      if (bkSnap.empty) {
+        body.innerHTML = '<div style="font-size:13px;color:var(--mt);padding:12px 0;text-align:center">Sin plan anterior registrado</div>';
+        body.style.display = 'block';
+        if (btn) btn.textContent = 'OCULTAR';
+        return;
+      }
+      var prevPlan = bkSnap.docs[0].data();
+      var curSnap = await FB.getDoc(FB.doc(FB.db, 'plans', ACTIVE_PLAN_ID));
+      if (!curSnap.exists()) {
+        body.innerHTML = '<div style="font-size:13px;color:var(--mt);padding:12px 0;text-align:center">Plan actual no disponible</div>';
+        body.style.display = 'block';
+        if (btn) btn.textContent = 'OCULTAR';
+        return;
+      }
+      _whatChanged_data = _nc_comparePlans(curSnap.data(), prevPlan);
+    }
+    body.innerHTML = _nc_renderDiffsHtml(_whatChanged_data);
+    body.style.display = 'block';
+    if (btn) btn.textContent = 'OCULTAR';
+  } catch(e) {
+    console.warn('[whatChanged] error:', e);
+    body.innerHTML = '<div style="font-size:13px;color:var(--red);padding:12px 0">Error al cargar datos</div>';
+    body.style.display = 'block';
+    if (btn) btn.textContent = 'VER';
+  }
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Lazy-render Resumen: only rebuilds DOM when tab is visible; marks dirty otherwise.
 // Eliminates off-screen rebuilds during active workout (called from Entr tab handlers).
 function _deferResumen() {
@@ -2817,6 +2967,7 @@ function renderResumen() {
         ${ciDone?'✏ ACTUALIZAR →':'📊 COMPLETAR CHECK-IN →'}
       </button>
     </div>
+    ${buildWhatChangedCard()}
     ${buildMusclePriorityCard()}
     ${buildMesocicloReportWidget()}
     ${buildStreakWidget()}
