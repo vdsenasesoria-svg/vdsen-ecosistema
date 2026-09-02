@@ -3577,14 +3577,6 @@ function getAdjustedRIR(baseRIR, week) {
   return base;
 }
 
-function setWeek(w) {
-  CURRENT_WEEK = w;
-  renderEntrenamiento();
-  _deferResumen();
-  // NO llamar saveLogs() aquí: solo cambia la semana vista, no la semana real de entrenamiento
-}
-
-function goToWeek(w) { setWeek(w); goTab(1); }
 
 // ── Activación condicional por semana de mesociclo (Y3T / SST) ──────────
 // Devuelve true si el ejercicio debe mostrarse en la semana actual.
