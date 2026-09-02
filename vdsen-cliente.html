@@ -2342,7 +2342,7 @@ async function openIntake(){
   var scr = document.getElementById('scrIntake');
   scr.innerHTML =
     '<div style="background:rgba(6,14,26,.97);border-bottom:1px solid var(--bd);padding:14px 18px;display:flex;align-items:center;gap:12px;position:-webkit-sticky;position:sticky;top:0;z-index:10">'
-    + '<button onclick="closeIntake()" style="background:none;border:1px solid var(--bd);color:var(--tx);font-size:16px;padding:6px 12px;cursor:pointer;border-radius:6px">←</button>'
+    + '<button onclick="closeIntake()" aria-label="Volver" style="background:none;border:1px solid var(--bd);color:var(--tx);font-size:16px;padding:6px 12px;cursor:pointer;border-radius:6px">←</button>'
     + '<div style="font-family:var(--ff);font-size:18px;letter-spacing:2px;color:var(--tx)">FICHA DE EVALUACIÓN<span style="display:block;font-family:var(--fb);font-size:9px;letter-spacing:1.5px;color:var(--mt)">INTAKE VDSEN</span></div>'
     + '</div>'
     + '<div style="padding:16px 16px 120px">'
@@ -4335,12 +4335,12 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
-        '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
+        '<button onclick="toggleExUnit('+di+','+ei+')" aria-label="Cambiar unidad (actualmente '+unit+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
         (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
         (_exNoteInline?'<span style="font-size:10px;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">📝 Nota</span>':'')+
         '<div style="position:relative;margin-left:auto">'+
-          '<button id="exOpts_'+di+'_'+ei+'" onclick="toggleExOpts('+di+','+ei+')" style="font-size:13px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 11px;border-radius:6px;cursor:pointer;line-height:1">⋮</button>'+
+          '<button id="exOpts_'+di+'_'+ei+'" onclick="toggleExOpts('+di+','+ei+')" aria-label="Opciones del ejercicio" aria-haspopup="true" style="font-size:13px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 11px;border-radius:6px;cursor:pointer;line-height:1">⋮</button>'+
           '<div id="exOptsMenu_'+di+'_'+ei+'" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;min-width:160px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.4);overflow:hidden">'+
             '<button onclick="showExHistory('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">📈 Historial</button>'+
             '<button onclick="showExSubModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">🔄 Cambiar ejercicio</button>'+
