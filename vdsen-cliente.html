@@ -5433,23 +5433,27 @@ function setEjActivo(ei) {
 window.setEjActivo = setEjActivo;
 
 function _refreshExPanelOnly() {
+  // Preserve scroll position before re-render to eliminate layout shift
+  var _scroller = document.getElementById('tabEntr');
+  var _savedScroll = _scroller ? _scroller.scrollTop : 0;
+
   var nav = document.getElementById('exNav');
   var panel = document.getElementById('exPanel');
   if (nav) nav.innerHTML = _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO);
   if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
+
+  // Restore synchronously (before next paint) to prevent visual jump
+  if (_scroller) _scroller.scrollTop = _savedScroll;
+
   _refreshSessionDashboard(); // FASE 9: update session stats in place (0 Firestore reads)
   setTimeout(function() {
     var navEl = document.getElementById('exNav');
     var _actChip = navEl && navEl.querySelector('[data-ei="'+EJ_ACTIVO+'"]');
     if (_actChip) _actChip.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
-    // Scroll al set activo — buscar el botón GUARDAR (primer set sin completar)
+    // Scroll al set activo — solo si no está visible (block:'nearest' no fuerza scroll innecesario)
     var guardarBtn = document.querySelector('#exPanel button[onclick*="completeSet"]');
     var activeRow = guardarBtn && guardarBtn.closest('[id^="setrow_"]');
-    if (activeRow) {
-      activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      // Compensar header fijo (~70px)
-      window.scrollBy(0, -70);
-    }
+    if (activeRow) activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     // Sin focus() automático: en móvil dispara teclado y anula el scroll
   }, 80);
 }
