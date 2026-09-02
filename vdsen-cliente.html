@@ -10443,14 +10443,12 @@ function buildICSSection(d, sem) {
   var icsFromLogs = {};
   try {
     var wk = sem || CURRENT_WEEK;
-    var prefix = 'log_' + wk + '_' + diaIdx + '_';
     var icsSums = {}, icsCounts = {};
-    Object.keys(LOGS).forEach(function(lk) {
-      if (lk.indexOf(prefix) !== 0) return;
+    (LOGS_BY_WEEK.log[wk] || []).forEach(function(lk) {
+      var parts = lk.split('_'); // log_{W}_{D}_{E}_s{N}
+      if (parts[2] !== String(diaIdx)) return;
       var entry = LOGS[lk];
       if (!entry || !entry.ics || isNaN(+entry.ics)) return;
-      // key format: log_{W}_{D}_{E}_s{N}
-      var parts = lk.split('_');
       var ei = parts[3]; // exercise index
       if (!icsSums[ei]) { icsSums[ei] = 0; icsCounts[ei] = 0; }
       icsSums[ei] += +entry.ics;
