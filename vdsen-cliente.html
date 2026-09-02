@@ -2794,6 +2794,7 @@ function renderResumen() {
         ${ciDone?'✏ ACTUALIZAR →':'📊 COMPLETAR CHECK-IN →'}
       </button>
     </div>
+    ${buildMusclePriorityCard()}
     ${buildMesocicloReportWidget()}
     ${buildStreakWidget()}
     ${buildHistorialWidget()}
@@ -2892,6 +2893,42 @@ function buildVolumenWidget() {
     '<div class="card-title">VOLUMEN SEMANAL POR GRUPO</div>'+
     '<div style="font-size:10px;color:var(--mt);margin-bottom:10px;letter-spacing:1px">Series prescritas/semana · línea gris = MEV · barra completa = MRV</div>'+
     rows +
+  '</div>';
+}
+
+// Tarjeta compacta de prioridades musculares — solo muestra grupos fuera de rango.
+// Usa _muscleVolStatus() para no duplicar lógica de clasificación.
+// Language cliente: sin jargon MEV/MRV, orientado a acción.
+function buildMusclePriorityCard() {
+  if (!PLAN || typeof MEV_MRV_BY_MUSCLE === 'undefined') return '';
+  var order = ['pectoral','dorsal_ancho','trapecio_medio','delt_anterior','delt_lateral','delt_posterior','biceps','braquial','triceps','cuadriceps','isquios','gluteo_mayor','gluteo_medio','gastrocnemio','soleo','erectores','recto_abdominal','oblicuos'];
+  var bajo = [], exceso = [];
+  for (var i = 0; i < order.length; i++) {
+    var m = order[i], st = _muscleVolStatus(m);
+    if (!st || st.vol === 0) continue;
+    if (st.vol < st.mm.mev) bajo.push({ label: st.mm.label, vol: st.vol, target: st.mm.mev });
+    else if (st.vol > st.mm.mrv) exceso.push({ label: st.mm.label, vol: st.vol, max: st.mm.mrv });
+  }
+  if (!bajo.length && !exceso.length) return '';
+  var rows = '';
+  bajo.forEach(function(g) {
+    rows += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
+      '<span style="font-size:11px;flex:1;color:var(--tx)">'+_escHTml(g.label)+'</span>'+
+      '<span style="font-size:10px;color:#4A9FDC;font-weight:700;white-space:nowrap">'+g.vol+' series — falta trabajo</span>'+
+    '</div>';
+  });
+  exceso.forEach(function(g) {
+    rows += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
+      '<span style="font-size:11px;flex:1;color:var(--tx)">'+_escHTml(g.label)+'</span>'+
+      '<span style="font-size:10px;color:#FF7744;font-weight:700;white-space:nowrap">'+g.vol+' series — mucho volumen</span>'+
+    '</div>';
+  });
+  return '<div class="card" style="margin-top:8px">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
+      '<div class="card-title" style="margin-bottom:0">GRUPOS A ATENDER — SEM '+CURRENT_WEEK+'</div>'+
+    '</div>'+
+    '<div style="font-size:10px;color:var(--mt);margin-bottom:8px">Basado en series prescritas esta semana</div>'+
+    rows+
   '</div>';
 }
 
