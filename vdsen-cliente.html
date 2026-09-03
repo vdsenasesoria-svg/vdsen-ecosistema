@@ -3036,9 +3036,9 @@ function _muscleVolStatus(muscle) {
   var vol = _getWeeklyVolumeByMuscle(muscle);
   var status, col;
   if (vol === 0) { status = '—'; col = 'var(--mt)'; }
-  else if (vol < mm.mev) { status = 'Bajo MEV ('+mm.mev+')'; col = '#4A9FDC'; }
-  else if (vol > mm.mrv) { status = 'Sobre MRV ('+mm.mrv+')'; col = '#FF7744'; }
-  else if (vol >= mm.mrv * 0.85) { status = 'Alto ('+vol+'/'+mm.mrv+')'; col = 'var(--gold)'; }
+  else if (vol < mm.mev) { status = 'Bajo mínimo'; col = '#4A9FDC'; }
+  else if (vol > mm.mrv) { status = 'Exceso de volumen'; col = '#FF7744'; }
+  else if (vol >= mm.mrv * 0.85) { status = 'Cerca del tope'; col = 'var(--gold)'; }
   else { status = 'Óptimo'; col = 'var(--grn)'; }
   return { vol: vol, mm: mm, status: status, col: col };
 }
@@ -3067,7 +3067,7 @@ function buildVolumenWidget() {
   if (!hayDatos) return '';
   return '<div class="card" style="margin-top:8px">'+
     '<div class="card-title">VOLUMEN SEMANAL POR GRUPO</div>'+
-    '<div style="font-size:10px;color:var(--mt);margin-bottom:10px;letter-spacing:1px">Series prescritas/semana · línea gris = MEV · barra completa = MRV</div>'+
+    '<div style="font-size:10px;color:var(--mt);margin-bottom:10px;letter-spacing:1px">Series por semana · línea gris = mínimo semanal · barra llena = límite semanal</div>'+
     rows +
   '</div>';
 }
@@ -3167,7 +3167,7 @@ function buildBodyMapWidget() {
 
   return '<div class="card" style="margin-top:8px">'+
     '<div class="card-title">MAPA DE ESTÍMULO SEMANAL</div>'+
-    '<div style="font-size:10px;color:var(--mt);margin-bottom:6px;letter-spacing:1px">Tocá un músculo para el detalle · azul=bajo MEV · verde=óptimo · dorado=cerca MRV · naranja=sobre MRV</div>'+
+    '<div style="font-size:10px;color:var(--mt);margin-bottom:6px;letter-spacing:1px">Tocá un músculo para el detalle · azul=bajo mínimo · verde=óptimo · dorado=cerca del tope · naranja=exceso</div>'+
     svg +
     '<div style="font-size:9px;color:var(--mt);text-align:center;margin-top:6px">Diagrama esquemático · grupos secundarios en la tabla de abajo</div>'+
   '</div>';
@@ -3178,7 +3178,8 @@ function _showMuscleInfo(muscle) {
   if (!mm) return;
   var st = _muscleVolStatus(muscle);
   if (!st || st.vol === 0) { showToast(mm.label+': sin series registradas esta semana'); return; }
-  showToast(mm.label+': '+st.vol+' series/sem (MEV '+mm.mev+' · MRV '+mm.mrv+') — '+st.status);
+  var _hint = st.status === 'Bajo mínimo' ? ' · suma series al próximo entreno' : st.status === 'Exceso de volumen' ? ' · considera reducir esta semana' : '';
+  showToast(mm.label+': '+st.vol+' series esta semana — '+st.status+_hint);
 }
 
 // Tendencia de volumen (series/semana) por músculo a lo largo de TODO el mesociclo,
@@ -3219,7 +3220,7 @@ function buildVolumenMesocicloWidget() {
     rows += '<div style="margin-bottom:12px">'+
       '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'+
         '<div style="font-size:11px;color:var(--tx)">'+mm.label+'</div>'+
-        '<div style="font-size:9px;color:var(--mt)">MEV '+mm.mev+' · MRV '+mm.mrv+'</div>'+
+        '<div style="font-size:9px;color:var(--mt)">Base '+mm.mev+' · Tope '+mm.mrv+'</div>'+
       '</div>'+
       '<div style="display:flex;gap:2px;align-items:flex-end">'+barsHtml+'</div>'+
     '</div>';
@@ -3227,7 +3228,7 @@ function buildVolumenMesocicloWidget() {
   if (!hayDatos) return '';
   return '<div class="card" style="margin-top:8px">'+
     '<div class="card-title">PROGRESIÓN DE VOLUMEN — MESOCICLO</div>'+
-    '<div style="font-size:10px;color:var(--mt);margin-bottom:12px;letter-spacing:1px">Series/semana por músculo · azul=bajo MEV · verde=óptimo · dorado=cerca MRV · naranja=sobre MRV</div>'+
+    '<div style="font-size:10px;color:var(--mt);margin-bottom:12px;letter-spacing:1px">Series/semana por músculo · azul=bajo mínimo · verde=óptimo · dorado=cerca del tope · naranja=exceso</div>'+
     rows +
   '</div>';
 }
