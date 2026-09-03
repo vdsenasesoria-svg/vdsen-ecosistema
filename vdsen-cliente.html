@@ -5002,11 +5002,12 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               var _icsNum = parseInt(_icsVal);
               var _icsBorder = (_icsNum&&_icsNum<7)?'var(--red)':'var(--border)';
               var _icsColor  = (_icsNum&&_icsNum<7)?'var(--red)':'var(--accent)';
-              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done"'+
                 ' aria-label="Calidad de serie ICS del 1 al 10"'+
                 ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+_icsBorder+';'+
                 'border-radius:8px;color:'+_icsColor+';font-size:15px;font-weight:700;'+
-                'padding:10px 8px;outline:none;text-align:center" oninput="updateICSColor(\''+key+'\''+')">';
+                'padding:10px 8px;outline:none;text-align:center"'+
+                ' oninput="updateICSColor(\''+key+'\''+') " onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">';
             })()+
           '</div>'+
           '<div style="flex:2">'+
