@@ -2477,7 +2477,7 @@ function _buildExerciseWeekMap() {
         var setsData = [];
         for (var s = 0; s < 10; s++) {
           var k = 'log_'+w+'_'+di+'_'+ei+'_s'+s;
-          if (LOGS[k] && LOGS[k].done) setsData.push(LOGS[k]);
+          if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) setsData.push(LOGS[k]);
         }
         if (setsData.length > 0) {
           if (!exerciseMap[nombre]) exerciseMap[nombre] = { weeks: {} };
@@ -12797,7 +12797,7 @@ function showSessionSummary(di) {
     var exHasDone = false;
     for (var s = 0; s < ns; s++) {
       var lg = LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s];
-      if (lg && lg.done) {
+      if (lg && lg.done && !lg.autoFilled) {
         totalSets++;
         exHasDone = true;
         var load = parseFloat(lg.carga) || 0;
