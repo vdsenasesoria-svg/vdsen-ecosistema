@@ -3171,6 +3171,23 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         });
       }
 
+      // Notas de sesión (sessnote_{W}_{D})
+      const sessnoteKeys = Object.keys(logs).filter(k => k.startsWith('sessnote_')).sort().reverse().slice(0, 8);
+      if (sessnoteKeys.length > 0) {
+        html += `<div class="text-xs text-[#888] mb-2 mt-4 uppercase tracking-wide font-semibold">💬 Notas de sesión</div>`;
+        sessnoteKeys.forEach(k => {
+          const parts = k.split('_'); // sessnote_{W}_{D}
+          const w = parts[1], d = parseInt(parts[2]);
+          const sesDay = _activePlanCache && _activePlanCache.days && (_activePlanCache.days.find(dd => dd.dayIndex === d) || _activePlanCache.days[d]);
+          const sesLabel = sesDay ? _escH(sesDay.label || ('Día '+(d+1))) : ('Día '+(d+1));
+          html += `
+            <div class="card p-3 mb-2" style="border-left:3px solid rgba(107,107,102,.4);border-radius:0 8px 8px 0">
+              <div class="text-xs text-[#888] mb-1">Sem ${w} · ${sesLabel}</div>
+              <div class="text-sm" style="color:#cfcfcf;line-height:1.5">${_escH(String(logs[k]))}</div>
+            </div>`;
+        });
+      }
+
       // ── Rendimiento por ejercicio (FASE 6) ──────────────────────────────
       if (_activePlanCache && _activePlanCache.days) {
         const _trendIcon = { PROGRESANDO:'↑', ESTABLE:'→', REVISAR:'↓', NEW:'✦' };

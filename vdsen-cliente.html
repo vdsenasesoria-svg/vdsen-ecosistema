@@ -4409,7 +4409,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     '<div style="margin-bottom:14px">'+
       '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+_escHTml(nombre)+'</div>'+
       (_exNoteInline
-        ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_escHTml(_exNoteInline)+'</div>'
+        ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;cursor:pointer" title="Toca para editar · Nota posicional: si el coach reordenó ejercicios, puede no corresponder al ejercicio original.">'+
+            '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:rgba(212,185,106,.7);margin-bottom:3px">NOTA PERSONAL ✎</div>'+
+            '<div style="font-size:12px;color:#d4b96a;line-height:1.45">'+_escHTml(_exNoteInline)+'</div>'+
+          '</div>'
         : '')+
       // FASE 18 — Coach note visible al cliente durante workout (inmutable, solo lectura)
       _coachNoteHtml(ej.coachNote)+
@@ -12652,6 +12655,8 @@ function showPostSessionModal(di) {
   });
   document.getElementById('psRpe').value = '7';
   document.getElementById('psRpeVal').textContent = '7';
+  var _sn = document.getElementById('psSessnote'); if (_sn) _sn.value = '';
+  var _snc = document.getElementById('psSessnoteCount'); if (_snc) _snc.textContent = '0';
   // Reset botones articular
   var artSi=document.getElementById('artSiBtn'), artNo=document.getElementById('artNoBtn');
   if(artSi){artSi.style.borderColor='var(--border)';artSi.style.background='var(--surface)';}
@@ -12734,8 +12739,9 @@ async function submitPostSession() {
   // Leer TODOS los valores del DOM antes de cerrar el modal
   var articularVal     = document.getElementById('psArticular').value;
   var articularPattern = document.getElementById('psArticularPatternSel').value;
-  var sueno = parseFloat(document.getElementById('psSueno').value) || 7;
-  var rpe   = parseFloat(document.getElementById('psRpe').value)   || 7;
+  var sueno    = parseFloat(document.getElementById('psSueno').value) || 7;
+  var rpe      = parseFloat(document.getElementById('psRpe').value)   || 7;
+  var sessnote = ((document.getElementById('psSessnote') || {}).value || '').trim().slice(0, 400);
 
   // Cerrar el modal PRIMERO — cualquier error posterior no deja al usuario bloqueado
   closePostSessionModal();
@@ -12751,6 +12757,8 @@ async function submitPostSession() {
 
   var postKey = 'postsession_'+REAL_WEEK+'_'+di;
   LOGS[postKey] = postData;
+  var sessnoteKey = 'sessnote_'+REAL_WEEK+'_'+di;
+  if (sessnote) { LOGS[sessnoteKey] = sessnote; } else { delete LOGS[sessnoteKey]; }
 
   // Calcular y guardar recomendaciones de progresión
   // Todo envuelto en try/catch: si el algoritmo falla, el guardado de la sesión sigue adelante.
@@ -12839,6 +12847,16 @@ function showSessionSummary(di) {
   var _progrec = LOGS['progrec_'+CURRENT_WEEK+'_'+di];
   var _recHtml = _buildProgreSummaryHtml(_progrec);
   if (_recHtml) ov.innerHTML += _recHtml;
+
+  // FASE 72B — Session note
+  var _sessnote = LOGS['sessnote_'+CURRENT_WEEK+'_'+di] || '';
+  if (_sessnote) {
+    ov.innerHTML +=
+      '<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.4)">'+
+        '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">NOTA DE SESIÓN</div>'+
+        '<div style="font-size:12px;color:#d4b96a;line-height:1.55">'+_escHTml(_sessnote)+'</div>'+
+      '</div>';
+  }
 
   document.body.appendChild(ov);
   // Auto-dismiss solo cuando no hay recomendaciones que leer
@@ -14640,6 +14658,17 @@ document.addEventListener('keydown', function(e) {
           <div style="font-weight:800">10</div><div style="color:var(--mt);margin-top:1px">Al fallo</div>
         </div>
       </div>
+    </div>
+
+    <!-- 5. Nota de sesión -->
+    <div style="margin-bottom:28px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">5 · NOTA DE SESIÓN <span style="color:var(--mt);font-size:10px;font-weight:500">(opcional)</span></div>
+      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">¿Algo que destacar de esta sesión? Tu coach también lo verá.</div>
+      <textarea id="psSessnote" maxlength="400" rows="3"
+        oninput="var c=document.getElementById('psSessnoteCount');if(c)c.textContent=this.value.length"
+        placeholder="Ej: la técnica en press mejoró mucho, el hombro molestó al final..."
+        style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-size:13px;padding:12px;outline:none;resize:none;line-height:1.5;font-family:inherit"></textarea>
+      <div style="font-size:10px;color:var(--mt);margin-top:4px;text-align:right"><span id="psSessnoteCount">0</span>/400</div>
     </div>
 
     <button onclick="submitPostSession()" style="width:100%;padding:16px;background:var(--accent);color:#000;font-size:16px;font-weight:800;border:none;border-radius:12px;cursor:pointer;letter-spacing:.5px">
