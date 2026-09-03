@@ -5854,7 +5854,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
         '<span style="font-size:20px">🔁</span>'+
         '<div>'+
-          '<div style="font-size:13px;font-weight:900;letter-spacing:1.5px;color:#fff;line-height:1">BISERIE · GRUPO '+grp.toUpperCase()+'</div>'+
+          '<div style="font-size:13px;font-weight:900;letter-spacing:1.5px;color:#fff;line-height:1">BISERIE · GRUPO '+_escHTml(grp.toUpperCase())+'</div>'+
           '<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:2px">'+numRondas+' rondas · SIN descanso entre ejercicios</div>'+
         '</div>'+
       '</div>'+
@@ -5873,7 +5873,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       var cDisp = cRaw > 0 ? cRaw.toFixed(1)+' '+uShow+' × ' : '';
       html +=
         '<div style="margin-bottom:10px'+(i>0?';padding-top:10px;border-top:1px solid rgba(107,107,102,.15)':'')+'">' +
-          '<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#A5A59E;margin-bottom:3px">'+ssLabel(i)+' '+memberNames[i].toUpperCase()+'</div>'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#A5A59E;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+ssLabel(i)+' '+_escHTml(memberNames[i].toUpperCase())+'</div>'+
           '<div style="font-size:20px;font-weight:900;color:var(--tx)">'+cDisp+entry.reps+' reps</div>'+
         '</div>';
     });
@@ -5971,7 +5971,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
 
     html +=
       '<div style="background:rgba(107,107,102,.07);border:2px solid rgba(107,107,102,.45);border-radius:12px;padding:14px;margin-bottom:12px">'+
-        '<div style="font-size:11px;font-weight:900;letter-spacing:1px;color:#A5A59E;margin-bottom:10px">'+ssLabel(curMIdx)+' '+memberNames[curMIdx].toUpperCase()+'</div>'+
+        '<div style="font-size:11px;font-weight:900;letter-spacing:1px;color:#A5A59E;margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+ssLabel(curMIdx)+' '+_escHTml(memberNames[curMIdx].toUpperCase())+'</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
           '<div>'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cLbl+'</div>'+
@@ -5993,7 +5993,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       html += '<button onclick="ssMoveNextMember('+di+',['+ssMembers.join(',')+'],\''+grp+'\','+state.round+','+curMIdx+')" '+
         'style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
         'background:#6B6B66;color:#fff;font-size:14px;font-weight:800">'+
-        'SIN DESCANSO → '+nextLabel+' '+nextName.toUpperCase()+'</button>';
+        'SIN DESCANSO → '+nextLabel+' '+_escHTml(nextName.toUpperCase())+'</button>';
     } else if (!isLastRound) {
       html += '<button onclick="ssCompleteRound('+di+',['+ssMembers.join(',')+'],\''+grp+'\','+state.round+','+curMIdx+')" '+
         'style="width:100%;padding:14px;border:none;border-radius:10px;cursor:pointer;'+
@@ -13114,9 +13114,9 @@ function _buildNextExposureHtml(progrec, unit, nombre) {
   if (nombre && progrec.exerciseName && _normName(progrec.exerciseName) !== _normName(nombre)) return newRef;
   var actionMap = {
     increase_load: { label: 'Sube al siguiente incremento disponible', color: 'var(--grn)', icon: '↑' },
-    freeze_load:   { label: 'Mantén la carga', color: 'var(--gold)', icon: '→' },
-    maintain:      { label: 'Mantén carga y busca mejorar repeticiones', color: 'var(--gold)', icon: '→' },
-    progress_reps: { label: 'Mantén carga y busca mejorar repeticiones', color: 'var(--gold)', icon: '→' },
+    freeze_load:   { label: 'Mantén la carga exacta', color: 'var(--gold)', icon: '→' },
+    maintain:      { label: 'Mantén carga, empuja en reps', color: 'var(--gold)', icon: '↗' },
+    progress_reps: { label: 'Mantén carga · apunta a más reps', color: 'var(--gold)', icon: '↗' },
     reduce_load:   { label: 'Reduce ligeramente la carga', color: 'var(--red)', icon: '↓' },
     add_sets:      { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' },
     reduce_sets:   { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' },
@@ -13126,7 +13126,7 @@ function _buildNextExposureHtml(progrec, unit, nombre) {
   return '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid '+act.color+'">'
     + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">HOY</div>'
     + '<div style="font-size:12px;font-weight:700;color:'+act.color+'">'+act.icon+' '+act.label+'</div>'
-    + (progrec.newLoad ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">Sugerido: '+progrec.newLoad+' '+_unit+'</div>' : '')
+    + (progrec.newLoad ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">Sugerido: '+_escHTml(String(progrec.newLoad))+' '+_unit+'</div>' : '')
     + '</div>';
 }
 
@@ -13326,7 +13326,7 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
   // Formatear número: sin decimales innecesarios
   function _fmtLoad(v) {
     var n = parseFloat(v);
-    if (isNaN(n)) return String(v);
+    if (isNaN(n)) return _escHTml(String(v));
     return n % 1 === 0 ? String(n) : n.toFixed(1);
   }
 
@@ -13377,7 +13377,7 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
     '</div>'+
     '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'+
       '<span style="font-size:24px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+' '+unit+'</span>'+
-      '<span style="font-size:14px;font-weight:700;color:'+c.color+'">'+targetSets+'s × '+targetReps+' reps · RIR '+targetRIR+'</span>'+
+      '<span style="font-size:14px;font-weight:700;color:'+c.color+'">'+_escHTml(String(targetSets))+'s × '+_escHTml(String(targetReps))+' reps · RIR '+_escHTml(String(targetRIR))+'</span>'+
     '</div>'+
     (prevRef && prevRef.load > 0 ? prevLine : '')+
     (reasonHtml ? '<div style="padding-top:6px;border-top:1px solid rgba(255,255,255,.06)">'+reasonHtml+'</div>' : '')+
@@ -13914,7 +13914,7 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
     blocks.push(
       '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
         '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
-        '<span style="font-size:20px;font-weight:900;color:var(--tx);line-height:1">'+progRec.newLoad+' '+unit+'</span>'+
+        '<span style="font-size:20px;font-weight:900;color:var(--tx);line-height:1">'+_escHTml(String(progRec.newLoad))+' '+unit+'</span>'+
       '</div>'
     );
   }
