@@ -5986,11 +5986,11 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
           '<div>'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cLbl+'</div>'+
-            '<input id="xss_carga_'+di+'_'+curIdx+'" type="number" value="'+(_pfCM||'')+'" placeholder="'+unit2+'" step="0.5" inputmode="decimal" style="'+_iptS2+'" onfocus="this.select()">'+
+            '<input id="xss_carga_'+di+'_'+curIdx+'" type="number" value="'+(_pfCM||'')+'" placeholder="'+unit2+'" step="0.5" inputmode="decimal" enterkeyhint="next" style="'+_iptS2+'" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var _r=document.getElementById(\'xss_reps_'+di+'_'+curIdx+'\');if(_r){_r.focus();_r.select();}}">'+
           '</div>'+
           '<div>'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_rLbl+'</div>'+
-            '<input id="xss_reps_'+di+'_'+curIdx+'" type="number" value="'+(_pfRM||'')+'" placeholder="reps" inputmode="numeric" style="'+_iptS2+'" onfocus="this.select()">'+
+            '<input id="xss_reps_'+di+'_'+curIdx+'" type="number" value="'+(_pfRM||'')+'" placeholder="reps" inputmode="numeric" enterkeyhint="done" style="'+_iptS2+'" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
           '</div>'+
         '</div>'+
       '</div>';
