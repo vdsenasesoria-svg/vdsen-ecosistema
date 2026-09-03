@@ -6322,7 +6322,7 @@ function showExSubModal(di, ei) {
   if (patternSelectorHtml) {
     altsHtml = ''; // se muestra el selector en su lugar
   } else if (!alts.length) {
-    altsHtml = '<div style="padding:16px 0;text-align:center;color:var(--mt);font-size:13px">Sin alternativas para <strong style="color:var(--tx)">'+motorPattern+'</strong> en el catálogo.</div>';
+    altsHtml = '<div style="padding:16px 0;text-align:center;color:var(--mt);font-size:13px">Sin alternativas de patrón <strong style="color:var(--tx)">'+_escHTml(motorPattern)+'</strong> en el catálogo.<br><span style="font-size:11px;color:var(--mt2)">Comenta con tu coach para que añada opciones.</span></div>';
   } else {
     altsHtml =
       (patternInferred ? '<div style="font-size:10px;color:var(--gold);margin-bottom:8px">⚡ Patrón inferido: <strong>'+motorPattern+'</strong> — verifica que sea correcto</div>' : '')+
@@ -6337,14 +6337,14 @@ function showExSubModal(di, ei) {
           ? '<span style="font-size:9px;background:rgba(110,154,110,.2);border:1px solid rgba(110,154,110,.5);color:var(--grn);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">★ PERFIL IDÉNTICO</span>'
           : (sameCurve ? '<span style="font-size:9px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);color:var(--accent);padding:1px 6px;border-radius:4px;font-weight:700;margin-left:6px">↻ MISMA CURVA</span>' : '');
         var sourceTag = ac.source === 'coach' ? '<span style="font-size:9px;color:rgba(108,150,255,.8)">coach</span> · ' : '';
-        var curveStr = curveLabel[ac.resistanceCurve] || ac.resistanceCurve || '—';
+        var curveStr = _escHTml(curveLabel[ac.resistanceCurve] || ac.resistanceCurve || '—');
         var muscleStr = ac.muscleType === 'typeIIx' ? 'Fuerza/Hipert.' : 'Resistencia';
         return '<button onclick="applyExSub('+di+','+ei+',\''+safeA+'\',\''+safeO+'\')" '+
           'style="display:block;width:100%;text-align:left;padding:11px 14px;background:var(--surface2);'+
           'border:1px solid '+(sameProfile?'rgba(110,154,110,.35)':sameCurve?'rgba(107,107,102,.25)':'var(--border)')+';'+
           'border-radius:10px;margin-bottom:8px;cursor:pointer">'+
           '<div style="display:flex;align-items:center;flex-wrap:wrap">'+
-            '<span style="font-size:13px;font-weight:600;color:var(--tx)">'+a+'</span>'+matchBadge+
+            '<span style="font-size:13px;font-weight:600;color:var(--tx)">'+_escHTml(a)+'</span>'+matchBadge+
           '</div>'+
           '<div style="font-size:10px;color:var(--mt);margin-top:3px">'+sourceTag+'Fatiga: '+ac.fatigueCost+' · '+curveStr+' · '+muscleStr+'</div>'+
         '</button>';
@@ -6354,7 +6354,7 @@ function showExSubModal(di, ei) {
   var restoreHtml = (_exSubData && _exSubData.original && _exSubData.original !== currentNombre)
     ? (function() {
         var safeO = originalNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return '<button onclick="applyExSub('+di+','+ei+',\''+safeO+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:center;padding:10px;background:none;border:1px solid rgba(220,60,60,.4);border-radius:8px;color:#e05555;font-size:12px;cursor:pointer;margin-top:8px">↺ Restaurar original: '+originalNombre+'</button>';
+        return '<button onclick="applyExSub('+di+','+ei+',\''+safeO+'\',\''+safeO+'\')" style="display:block;width:100%;text-align:center;padding:10px;background:none;border:1px solid rgba(220,60,60,.4);border-radius:8px;color:#e05555;font-size:12px;cursor:pointer;margin-top:8px">↺ Restaurar original: '+_escHTml(originalNombre)+'</button>';
       })()
     : '';
 
@@ -6362,10 +6362,10 @@ function showExSubModal(di, ei) {
   if (!content) return;
   content.innerHTML =
     '<div style="font-size:10px;font-weight:700;color:var(--gold);letter-spacing:2px;margin-bottom:4px">CAMBIAR EJERCICIO</div>'+
-    '<div style="font-size:15px;font-weight:700;color:var(--tx);margin-bottom:8px">'+currentNombre+'</div>'+
+    '<div style="font-size:15px;font-weight:700;color:var(--tx);margin-bottom:8px">'+_escHTml(currentNombre)+'</div>'+
     (motorPattern && !patternSelectorHtml
       ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'+
-          '<span style="font-size:10px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);color:var(--accent);padding:2px 8px;border-radius:5px">'+motorPattern+'</span>'+
+          '<span style="font-size:10px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);color:var(--accent);padding:2px 8px;border-radius:5px">'+_escHTml(motorPattern)+'</span>'+
           (curCurve?'<span style="font-size:10px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--mt);padding:2px 8px;border-radius:5px">'+curveLabel[curCurve]+'</span>':'')+
           (curMuscle?'<span style="font-size:10px;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--mt);padding:2px 8px;border-radius:5px">'+muscleLabel[curMuscle]+'</span>':'')+
         '</div>'
