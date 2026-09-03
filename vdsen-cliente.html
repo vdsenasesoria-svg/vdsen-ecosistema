@@ -4747,7 +4747,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
         '<div style="flex:1">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
-          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_expK+'\')">'+
+          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_expK+'\')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
           '<div id="xicshint_'+_expK+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
         '</div>'+
         '<div style="flex:2">'+
@@ -6035,7 +6035,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
           '<div style="flex:1">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
-            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_ssk+'\')">'+
+            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_ssk+'\')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
             '<div id="xicshint_'+_ssk+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
           '</div>'+
           '<div style="flex:2">'+
