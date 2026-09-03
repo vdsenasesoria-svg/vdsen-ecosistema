@@ -4192,7 +4192,7 @@ function _buildExPanel(ejercicios, di) {
 
   // Flujo para el header: A1 Nombre → A2 Nombre → ⏸ Descanso
   var flowHtml = memberNames.map(function(n, i) {
-    return '<span style="font-weight:900;color:#fff">'+ssLabel(i)+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+n+'</span>';
+    return '<span style="font-weight:900;color:#fff">'+ssLabel(i)+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+_escHTml(n)+'</span>';
   }).join('<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>')+
     '<span style="color:rgba(255,255,255,.45);margin:0 5px">→</span>'+
     '<span style="color:#ffe0a0;font-weight:800">⏸&nbsp;Descanso</span>';
@@ -4208,7 +4208,7 @@ function _buildExPanel(ejercicios, di) {
         '<span style="font-size:20px">🔁</span>'+
         '<div>'+
           '<div style="font-size:13px;font-weight:900;letter-spacing:1.5px;color:#fff;line-height:1">'+
-            'BISERIE&thinsp;·&thinsp;GRUPO&thinsp;'+grp.toUpperCase()+
+            'BISERIE&thinsp;·&thinsp;GRUPO&thinsp;'+_escHTml(grp.toUpperCase())+
           '</div>'+
           '<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:2px">'+numRondas+' rondas en total</div>'+
         '</div>'+
@@ -4495,7 +4495,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '</div>';
       })()+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
-        (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
+        (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+_escHTml(catData.motorPattern)+'</span>' : '')+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button onclick="toggleExUnit('+di+','+ei+')" aria-label="Cambiar unidad (actualmente '+unit+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
@@ -5843,7 +5843,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
   });
 
   var namesFlow = memberNames.map(function(n,i) {
-    return '<span style="font-weight:900;color:#fff">'+ssLabel(i)+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+n+'</span>';
+    return '<span style="font-weight:900;color:#fff">'+ssLabel(i)+'</span>&thinsp;<span style="color:#ffd6ee;font-weight:700">'+_escHTml(n)+'</span>';
   }).join('<span style="color:rgba(255,255,255,.45);margin:0 6px">→</span>');
 
   var html =
@@ -6812,12 +6812,13 @@ function renderEntrenamiento() {
     var _partial = !done && _dSets > 0;
     var _pPct = _tSets > 0 ? Math.round(_dSets / _tSets * 100) : 0;
     var _barColor = done ? 'var(--grn)' : 'var(--accent)';
-    return '<button onclick="selDia('+i+')" style="'+
+    var _tabStatus = done ? 'Completada' : (_partial ? _dSets+' de '+_tSets+' series' : 'Pendiente');
+    return '<button onclick="selDia('+i+')" aria-label="'+_escHTml(rawLabel)+' — '+_tabStatus+'"'+' aria-pressed="'+active+'" style="'+
       'flex:1;min-width:0;padding:8px 6px 6px;border:none;cursor:pointer;'+
       'background:'+bg+';border-bottom:'+borderB+';'+
       'border-right:1px solid var(--border);transition:background .15s;-webkit-tap-highlight-color:transparent">'+
       '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:2px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(done?'✓':(_partial?_dSets+'/'+_tSets:'·'))+'</div>'+
-      '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'+rawLabel+'</div>'+
+      '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'+_escHTml(rawLabel)+'</div>'+
       '<div style="height:2px;border-radius:1px;background:var(--border);overflow:hidden">'+
         '<div style="height:100%;width:'+(done?100:_pPct)+'%;background:'+_barColor+';border-radius:1px;transition:width .3s"></div>'+
       '</div>'+
@@ -6932,13 +6933,21 @@ function renderEntrenamiento() {
 
   // ── Banner rezagados ──────────────────────────────────────────────
   var rez = PLAN.rezagados || PLAN.protocoloEspecializacion;
+  var _rezGruposList = (rez && rez.activo && rez.grupos)
+    ? (Array.isArray(rez.grupos) ? rez.grupos : rez.grupos.split(','))
+    : [];
   var rezBanner = (rez && rez.activo && rez.grupos)
     ? '<div style="margin:0 16px 12px;padding:10px 14px;background:rgba(201,74,58,.08);border:1px solid rgba(201,74,58,.3);border-radius:8px;display:flex;align-items:center;gap:10px">'+
       '<span style="font-size:18px">🎯</span>'+
-      '<div><div style="font-weight:700;font-size:13px;color:#e87a6a;margin-bottom:2px">ESPECIALIZACIÓN ACTIVA</div>'+
-      '<div style="font-size:11px;color:var(--mt)">'+
-      (Array.isArray(rez.grupos)?rez.grupos:rez.grupos.split(',')).map(function(g){return g.trim().toUpperCase();}).join(' · ')+
-      '</div></div></div>'
+      '<div style="flex:1">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
+          '<div style="font-weight:700;font-size:13px;color:#e87a6a">ESPECIALIZACIÓN ACTIVA</div>'+
+          '<span style="font-size:10px;font-weight:900;color:#e87a6a;background:rgba(201,74,58,.2);border:1px solid rgba(201,74,58,.4);padding:1px 7px;border-radius:10px">'+_rezGruposList.length+'</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--mt)">'+
+          _rezGruposList.map(function(g){return _escHTml(g.trim().toUpperCase());}).join(' · ')+
+        '</div>'+
+      '</div></div>'
     : '';
 
   // Volumen por sesión: no se alerta al cliente (el plan ya está calculado por el coach)
