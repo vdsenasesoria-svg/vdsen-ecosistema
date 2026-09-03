@@ -3925,7 +3925,7 @@ function _buildExNav(ejercicios, di) {
       glowStyle = isActive ? 'box-shadow:0 0 16px rgba(107,107,102,.3);' : '';
     }
     var ssTagTop = isSS
-      ? '<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#6B6B66;color:#fff;font-size:8px;font-weight:900;letter-spacing:1px;padding:2px 7px;border-radius:8px;box-shadow:0 2px 6px rgba(107,107,102,.45);white-space:nowrap">🔁 '+ssLabelTag+'</div>'
+      ? '<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#6B6B66;color:#fff;font-size:8px;font-weight:900;letter-spacing:1px;padding:2px 7px;border-radius:8px;box-shadow:0 2px 6px rgba(107,107,102,.45);white-space:nowrap">🔁 '+_escHTml(ssLabelTag)+'</div>'
       : '';
     var nameColor = isSS && !isActive ? '#A5A59E' : (isActive?'var(--accent)':allDone?'var(--grn)':'var(--mt)');
     var numLabel = isActive
@@ -7136,6 +7136,7 @@ function buildBoostcampExercise(ej, di, ei) {
   var catData = _getCatalogData(ej.nombre || ej.exerciseName);
   var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
   var unit = getExUnit(di, ei);
+  var _safeUnit = (unit === 'LB' || unit === 'KG') ? unit : 'KG'; // whitelist para contexto JS onclick
 
   // ── Warm-up: solo el primer ejercicio del día ────────────────────────
   // Core y Cardio no requieren pirámide de calentamiento.
@@ -7232,7 +7233,7 @@ function buildBoostcampExercise(ej, di, ei) {
     var recCol = actionColors[headerRec.action] || 'var(--gold)';
     var _recSetsBC = (_isY3TBC && numSeries > 0) ? numSeries : headerRec.newSets;
     headerRecHtml = '<div style="font-size:10px;color:'+recCol+';margin-top:3px;font-weight:600">'+
-      '⚡ '+headerRec.newLoad+' '+recUnit+' · '+_recSetsBC+'s · RIR '+headerRec.rirTarget+
+      '⚡ '+_escHTml(String(headerRec.newLoad))+' '+_escHTml(String(recUnit))+' · '+_escHTml(String(_recSetsBC))+'s · RIR '+_escHTml(String(headerRec.rirTarget))+
     '</div>';
   }
   // Advertencia MEV/MRV por grupo muscular (prioritario) con fallback a patrón motor
@@ -7254,9 +7255,9 @@ function buildBoostcampExercise(ej, di, ei) {
     if (_mrvCap) {
       var _wkVolP = _getWeeklyVolumeByPattern(_p);
       if (_wkVolP > _mrvCap) {
-        mrvWarnHtml = '<div style="font-size:9px;color:#FF7744;font-weight:700;margin-top:2px">⚠ MRV '+_p+': '+_wkVolP+'/'+_mrvCap+' series sem</div>';
+        mrvWarnHtml = '<div style="font-size:9px;color:#FF7744;font-weight:700;margin-top:2px">⚠ MRV '+_escHTml(_p)+': '+_wkVolP+'/'+_mrvCap+' series sem</div>';
       } else if (_wkVolP >= _mrvCap * 0.85) {
-        mrvWarnHtml = '<div style="font-size:9px;color:var(--gold);font-weight:700;margin-top:2px">◎ '+_p+': '+_wkVolP+'/'+_mrvCap+' series sem (cerca del MRV)</div>';
+        mrvWarnHtml = '<div style="font-size:9px;color:var(--gold);font-weight:700;margin-top:2px">◎ '+_escHTml(_p)+': '+_wkVolP+'/'+_mrvCap+' series sem (cerca del MRV)</div>';
       }
     }
   }
@@ -7300,7 +7301,7 @@ function buildBoostcampExercise(ej, di, ei) {
         }
       }
       var substMsg = altEx
-        ? '⚠ ICS bajo 2 sem. Considera sustituir por: <strong>'+altEx+'</strong>'
+        ? '⚠ ICS bajo 2 sem. Considera sustituir por: <strong>'+_escHTml(altEx)+'</strong>'
         : '⚠ ICS bajo 2 semanas consecutivas — revisa técnica con tu coach';
       substHtml = '<div style="margin:0 14px 8px;padding:8px 12px;background:rgba(220,60,60,.07);'+
         'border-left:3px solid rgba(220,60,60,.5);border-radius:0 8px 8px 0;font-size:11px;color:#e05555;line-height:1.5">'+
@@ -7417,7 +7418,7 @@ function buildBoostcampExercise(ej, di, ei) {
             // Referencias visualmente diferenciadas: progresión > sem anterior > historial
             refBlockHtml+
             '<div style="display:flex;gap:5px">'+
-              '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+unit+'" step="0.5" min="0" inputmode="decimal" enterkeyhint="next"'+
+              '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+_escHTml(String(unit))+'" step="0.5" min="0" inputmode="decimal" enterkeyhint="next"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:16px;font-weight:600;padding:8px 6px;outline:none;text-align:center;box-sizing:border-box"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'reps_'+key+'\');if(r)r.focus();}">'+
@@ -7435,7 +7436,7 @@ function buildBoostcampExercise(ej, di, ei) {
           '</div>'+
           // Botones derecha
           '<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">'+
-            '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
+            '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+_safeUnit+'\')" style="'+
               'width:44px;height:44px;border-radius:8px;border:2px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'background:'+(completed?'var(--grn)':'var(--input-bg)')+';'+
               'color:'+(completed?'#fff':'var(--mt)')+';font-size:18px;cursor:pointer">'+
@@ -7468,7 +7469,7 @@ function buildBoostcampExercise(ej, di, ei) {
     '<div style="display:flex;align-items:center;gap:12px;padding:14px 14px 10px">'+
       // Exercise initials badge
       '<div style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.2);border-radius:10px;font-size:14px;font-weight:900;color:var(--gold)">'+
-        (ej.nombre||'E').substring(0,2).toUpperCase()+
+        _escHTml((ej.nombre||'E').substring(0,2).toUpperCase())+
       '</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:15px;font-weight:700;color:var(--tx);line-height:1.3;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
@@ -7478,9 +7479,10 @@ function buildBoostcampExercise(ej, di, ei) {
         '</div>'+
         '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">'+
           '<span style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.25);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+numSeries+' SERIES</span>'+
-          '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+(ej.repsRange||repsTarget)+' REPS</span>'+
+          '<span style="font-size:11px;font-weight:700;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:2px 8px;border-radius:6px;letter-spacing:.5px">'+_escHTml(String(ej.repsRange||repsTarget))+' REPS</span>'+
           '<span style="font-size:11px;font-weight:700;color:#e8a040;background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:2px 8px;border-radius:6px;letter-spacing:.5px">RIR '+baseRIR+'</span>'+
-          (catData&&catData.motorPattern?'<span style="font-size:10px;color:var(--mt)">'+catData.motorPattern+'</span>':'')+
+          (catData&&catData.motorPattern?'<span style="font-size:10px;color:var(--mt)">'+_escHTml(catData.motorPattern)+'</span>':'')+
+          (catData&&catData.resistanceCurve?'<span style="font-size:10px;color:var(--mt2);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:1px 6px;border-radius:5px">'+_escHTml(catData.resistanceCurve)+'</span>':'')+
         '</div>'+
         headerRecHtml+
         mrvWarnHtml+
@@ -13376,7 +13378,7 @@ function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSerie
       '<span style="margin-left:auto;font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--mt2)">'+c.label+'</span>'+
     '</div>'+
     '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'+
-      '<span style="font-size:24px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+' '+unit+'</span>'+
+      '<span style="font-size:24px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+' '+_escHTml(String(unit))+'</span>'+
       '<span style="font-size:14px;font-weight:700;color:'+c.color+'">'+_escHTml(String(targetSets))+'s × '+_escHTml(String(targetReps))+' reps · RIR '+_escHTml(String(targetRIR))+'</span>'+
     '</div>'+
     (prevRef && prevRef.load > 0 ? prevLine : '')+
@@ -13914,7 +13916,7 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
     blocks.push(
       '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
         '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
-        '<span style="font-size:20px;font-weight:900;color:var(--tx);line-height:1">'+_escHTml(String(progRec.newLoad))+' '+unit+'</span>'+
+        '<span style="font-size:20px;font-weight:900;color:var(--tx);line-height:1">'+_escHTml(String(progRec.newLoad))+' '+_escHTml(String(unit))+'</span>'+
       '</div>'
     );
   }
@@ -13922,22 +13924,24 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
   // ── 2) SEM ANTERIOR ──
   if (prev && prev.carga) {
     var prevCargaShown = _convertCarga(prev.carga, prev.unit, unit);
-    var prevConvMark = (prev.unit && prev.unit !== unit) ? ' <span style="opacity:.55">(de '+prev.unit+')</span>' : '';
+    var _pu = _escHTml(String(unit));
+    var prevConvMark = (prev.unit && prev.unit !== unit) ? ' <span style="opacity:.55">(de '+_escHTml(String(prev.unit))+')</span>' : '';
     blocks.push(
       '<div style="margin-bottom:6px;font-size:10px;color:#FF8844;background:rgba(255,140,50,.06);border:1px solid rgba(255,140,50,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
         '<span style="font-weight:800;letter-spacing:.8px">↩ SEM '+(curWeek-1)+'</span>'+
-        '<span style="color:var(--mt2)">'+prevCargaShown+' '+unit+prevConvMark+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+'</span>'+
+        '<span style="color:var(--mt2)">'+_escHTml(String(prevCargaShown))+' '+_pu+prevConvMark+' × '+_escHTml(String(prev.reps||'—'))+' reps'+(prev.rir_real?' · RIR '+_escHTml(String(prev.rir_real)):'')+'</span>'+
       '</div>'
     );
   }
   // ── 3) HISTORIAL (solo si no hay sem anterior y es el primer set) ──
   else if (setIdx === 0 && histEx && histEx.load) {
     var histCargaShown = _convertCarga(histEx.load, histEx.unit, unit);
-    var histConvMark = (histEx.unit && histEx.unit !== unit) ? ' <span style="opacity:.55">(de '+histEx.unit+')</span>' : '';
+    var _pu2 = _escHTml(String(unit));
+    var histConvMark = (histEx.unit && histEx.unit !== unit) ? ' <span style="opacity:.55">(de '+_escHTml(String(histEx.unit))+')</span>' : '';
     blocks.push(
       '<div style="margin-bottom:6px;font-size:10px;color:rgba(108,150,255,.9);background:rgba(140,140,134,.06);border:1px solid rgba(140,140,134,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
         '<span style="font-weight:800;letter-spacing:.8px">📋 HISTORIAL</span>'+
-        '<span style="color:var(--mt2)">'+histCargaShown+' '+unit+histConvMark+(histEx.reps?' × '+histEx.reps+' reps':'')+(histEx.rir?' · RIR '+histEx.rir:'')+'</span>'+
+        '<span style="color:var(--mt2)">'+_escHTml(String(histCargaShown))+' '+_pu2+histConvMark+(histEx.reps?' × '+_escHTml(String(histEx.reps))+' reps':'')+(histEx.rir?' · RIR '+_escHTml(String(histEx.rir)):'')+'</span>'+
       '</div>'
     );
   }
@@ -13947,9 +13951,10 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
     var pc = parseFloat(_convertCarga(prev.carga, prev.unit, unit))||0;
     var prir = parseInt(prev.rir_real || prev.rir);
     var step = unit === 'LB' ? 5 : 2.5;
+    var _unitE = _escHTml(String(unit));
     var simpleSug = (!isNaN(prir) && prir <= baseRIR)
-      ? '→ '+(pc+step).toFixed(1)+' '+unit+' (subir '+step+')'
-      : '→ '+pc+' '+unit+' (mantener)';
+      ? '→ '+(pc+step).toFixed(1)+' '+_unitE+' (subir '+step+')'
+      : '→ '+pc+' '+_unitE+' (mantener)';
     blocks.push('<div style="font-size:10px;color:var(--accent);font-weight:600;margin-bottom:6px">'+simpleSug+'</div>');
   }
 
