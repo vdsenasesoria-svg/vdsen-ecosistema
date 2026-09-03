@@ -2559,7 +2559,7 @@ function buildHistorialWidget() {
       + '<div style="display:flex;gap:12px;font-size:11px;color:var(--mt)">'
       + '<span>Sets: '+last.totalSets+'</span>'
       + '<span>Reps: '+last.avgReps.toFixed(0)+'</span>'
-      + '<span>ICS: '+last.avgICS.toFixed(1)+'</span>'
+      + '<span>Cal: '+last.avgICS.toFixed(1)+'</span>'
       + '<span style="color:var(--gold)">Vol: '+Math.round(last.volume)+'</span>'
       + '</div>'
       + '</div>';
@@ -4477,7 +4477,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           // LOW confidence = positional lookup, datos no verificados
           if (_conf === 'LOW') return '<span style="font-size:9px;color:var(--mt);opacity:.7">~estimado</span>';
           // ICS bajo la semana pasada → sugerir atención técnica
-          if (_avgIcs && _avgIcs < 7) return '<span style="font-size:9px;font-weight:800;color:var(--red)">⚠ ICS '+Math.round(_avgIcs*10)/10+'</span>';
+          if (_avgIcs && _avgIcs < 7) return '<span style="font-size:9px;font-weight:800;color:var(--red)">⚠ Cal '+Math.round(_avgIcs*10)/10+'</span>';
           return '';
         })();
         return '<div style="margin-top:8px;padding:6px 10px;background:rgba(255,140,50,.05);border:1px solid rgba(255,140,50,.18);border-radius:8px">'+
@@ -4632,7 +4632,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<button onclick="clearExpressDone('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:4px 12px;border-radius:7px;cursor:pointer">\u270f Editar</button>'+
         '</div>'+
         '<div style="font-size:22px;font-weight:900;color:var(--tx);margin-bottom:4px">'+_epCargaDisplay+'</div>'+
-        '<div style="font-size:12px;color:var(--mt)">'+_expressEntry.sets+' series \u00b7 RIR real '+_expressEntry.rir_last+' \u00b7 ICS '+(_expressEntry.ics||'\u2014')+' '+_epEmoji+'</div>'+
+        '<div style="font-size:12px;color:var(--mt)">'+_expressEntry.sets+' series \u00b7 RIR real '+_expressEntry.rir_last+' \u00b7 Cal '+(_expressEntry.ics||'\u2014')+' '+_epEmoji+'</div>'+
       '</div>';
   } else if (_isExpressMode) {
     // Express: series intermedias con timer + ultima con formulario
@@ -12836,7 +12836,7 @@ function showSessionSummary(di) {
       '</div>'+
       '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center">'+
         '<div style="font-family:\'Courier Prime\',monospace;font-size:22px;font-weight:700;color:'+icsColor+';line-height:1">'+avgICS+'</div>'+
-        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:4px;font-weight:700">ICS PROM</div>'+
+        '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;margin-top:4px;font-weight:700">CALIDAD</div>'+
       '</div>'+
       '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center">'+
         '<div style="font-family:\'Courier Prime\',monospace;font-size:18px;font-weight:700;color:var(--tx);line-height:1.2">'+volStr+'</div>'+
@@ -13194,7 +13194,7 @@ function showExHistory(di, ei) {
         + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:5px">'
         +   '<span style="font-size:20px;font-weight:900;color:var(--tx)">'+topLoad+'</span>'
         +   '<span style="font-size:11px;color:var(--mt)">'+unit+'</span>'
-        +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">ICS '+avgICS+'</span>' : '')
+        +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">Cal '+avgICS+'</span>' : '')
         + '</div>'
         + '<div style="font-size:11px;color:var(--mt);line-height:1.8">'
         + exp.sets.map(function(s,idx) {
@@ -14049,17 +14049,17 @@ function calculateProgression(di, postData) {
   var ciKey = 'ci_sem_'+CURRENT_WEEK;
   var ci = LOGS[ciKey] || {};
   var who5 = ci.who5 ? parseInt(ci.who5) : 0;
-  if (who5 > 0 && who5 < 52) deloadTriggers.push('Bienestar WHO-5 bajo ('+who5+'/100)');
-  if (rpe > 9) deloadTriggers.push('RPE promedio > 9');
-  if (sleep < 6) deloadTriggers.push('Sueño < 6h');
+  if (who5 > 0 && who5 < 52) deloadTriggers.push('Bienestar general bajo esta semana');
+  if (rpe > 9) deloadTriggers.push('Esfuerzo muy alto en sesiones');
+  if (sleep < 6) deloadTriggers.push('Sueño insuficiente');
   // HRV: tendencia descendente (comparar con semana anterior)
   var prevCI = LOGS['ci_sem_'+(CURRENT_WEEK-1)] || {};
   if (ci.hrv && prevCI.hrv && (parseFloat(ci.hrv) < parseFloat(prevCI.hrv) * 0.85)) {
-    deloadTriggers.push('HRV descendente (-'+ Math.round((1 - parseFloat(ci.hrv)/parseFloat(prevCI.hrv))*100) +'%)');
+    deloadTriggers.push('HRV en descenso (-'+ Math.round((1 - parseFloat(ci.hrv)/parseFloat(prevCI.hrv))*100) +'%)');
   }
   // Energía subjetiva baja
   if (ci.energia && parseInt(ci.energia) <= 3) {
-    deloadTriggers.push('Energía subjetiva muy baja ('+ci.energia+'/10)');
+    deloadTriggers.push('Energía reportada muy baja');
   }
 
   // P6: Deload reactivo — el deload se activa por señales reales, no por
