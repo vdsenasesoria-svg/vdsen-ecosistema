@@ -5686,7 +5686,11 @@ function markExpressDone(di, ei) {
   var pumpEl  = document.getElementById('xpump_val_'+expK);
   if (!repsEl) return;
   var reps = parseInt(repsEl.value);
-  if (!reps || reps < 1) { showToast('Indica las reps realizadas en la última serie', true); return; }
+  if (!reps || reps < 1) {
+    showToast('Indica las reps realizadas en la última serie', true);
+    if (repsEl) { repsEl.style.borderColor='var(--red)'; repsEl.focus(); repsEl.select(); setTimeout(function(){ repsEl.style.borderColor=''; }, 2000); }
+    return;
+  }
   var carga   = cargaEl ? (cargaEl.value.trim() || '0') : '0';
   var sets    = setsEl  ? (parseInt(setsEl.value)  || 3) : 3;
   var rirLast = rirEl   ? (parseInt(rirEl.value)         || 2) : 2;
@@ -7881,10 +7885,16 @@ function completeSet(key, di, ei, si, unit) {
     var cargaNum = parseFloat(carga);
     var repsNum = parseInt(reps);
     if (!_isBW && (!carga || isNaN(cargaNum) || cargaNum <= 0)) {
-      showToast('Ingresa la carga (> 0)', true); return;
+      showToast('Ingresa la carga (> 0)', true);
+      var _cEl = document.getElementById('carga_'+key);
+      if (_cEl) { _cEl.style.borderColor='var(--red)'; _cEl.focus(); _cEl.select(); setTimeout(function(){ _cEl.style.borderColor=''; }, 2000); }
+      return;
     }
     if (!reps || isNaN(repsNum) || repsNum <= 0) {
-      showToast(_isIso ? 'Ingresa los segundos (> 0)' : 'Ingresa las repeticiones (> 0)', true); return;
+      showToast(_isIso ? 'Ingresa los segundos (> 0)' : 'Ingresa las repeticiones (> 0)', true);
+      var _rEl = document.getElementById('reps_'+key);
+      if (_rEl) { _rEl.style.borderColor='var(--red)'; _rEl.focus(); _rEl.select(); setTimeout(function(){ _rEl.style.borderColor=''; }, 2000); }
+      return;
     }
     if (ics !== null && (ics < 1 || ics > 10)) {
       showToast('ICS debe ser entre 1 y 10', true); return;
