@@ -13125,13 +13125,17 @@ function _calcTrend(exposures) {
   return 'ESTABLE';
 }
 
-// Best load across all exposures
+// Best load across all exposures, plus the reps achieved at that load
 function _calcPR(exposures) {
-  var best = 0;
+  var best = 0, bestReps = 0;
   exposures.forEach(function(exp) {
-    exp.sets.forEach(function(s) { if (s.carga > best) best = s.carga; });
+    exp.sets.forEach(function(s) {
+      if (s.carga > best || (s.carga === best && s.reps > bestReps)) {
+        best = s.carga; bestReps = s.reps;
+      }
+    });
   });
-  return { bestLoad: best };
+  return { bestLoad: best, bestReps: bestReps };
 }
 
 // "HOY" inline block — consumes existing progrec, never recalculates.
@@ -13248,29 +13252,56 @@ function showExHistory(di, ei) {
              NEW:        {icon:'✦',color:'var(--mt)',label:'SIN HISTORIAL'} }[trend]
          || {icon:'✦',color:'var(--mt)',label:'SIN HISTORIAL'};
 
+  // Trend delta: quantify load change vs previous exposure
+  var trendDelta = '';
+  if (exposures.length >= 2) {
+    var _lMax = Math.max.apply(null, exposures[0].sets.map(function(s){return s.carga;}));
+    var _pMax = Math.max.apply(null, exposures[1].sets.map(function(s){return s.carga;}));
+    var _diff = Math.round((_lMax - _pMax) * 10) / 10;
+    if (!isNaN(_diff) && Math.abs(_diff) >= 0.5) {
+      trendDelta = (_diff > 0 ? '+' : '') + (_diff % 1 === 0 ? String(Math.round(_diff)) : _diff.toFixed(1)) + ' ' + unit;
+    }
+  }
+
   var histHtml = '';
   if (!exposures.length) {
     histHtml = '<div style="text-align:center;padding:28px 0;color:var(--mt);font-size:13px">Sin historial comparable disponible</div>';
   } else {
-    exposures.forEach(function(exp) {
+    exposures.forEach(function(exp, expIdx) {
       var icsSum = 0, icsN = 0;
       exp.sets.forEach(function(s) { if (s.ics) { icsSum += s.ics; icsN++; } });
       var avgICS = icsN ? (icsSum / icsN).toFixed(1) : null;
       var topLoad = Math.max.apply(null, exp.sets.map(function(s) { return s.carga; }));
-      histHtml += '<div style="margin-bottom:10px;padding:12px;background:rgba(255,255,255,.025);border-radius:10px;border:1px solid rgba(255,255,255,.07)">'
-        + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:5px">SEMANA '+_escHTml(String(exp.week||'?'))
-        +   (exp.confidence!=='HIGH'?' <span style="font-weight:400;color:rgba(170,170,160,.5)">· pos.</span>':'')+'</div>'
+      var isLatest = expIdx === 0;
+      var weekLabel = isLatest
+        ? 'ÚLTIMA SESIÓN · SEM '+_escHTml(String(exp.week||'?'))
+        : 'SEMANA '+_escHTml(String(exp.week||'?'));
+      var setsLine = exp.sets.map(function(s, idx) {
+        return 'S'+(idx+1)+': '+_escHTml(String(s.carga||'—'))+' '+_escHTml(String(unit))+' × '+_escHTml(String(s.reps||'—'))+(s.rir_real!=null?' · RIR '+_escHTml(String(s.rir_real)):'');
+      }).join(' &nbsp;·&nbsp; ');
+      var confidenceMark = exp.confidence!=='HIGH' ? ' <span style="font-weight:400;color:rgba(170,170,160,.5)">· pos.</span>' : '';
+      var cardBody =
+          '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:'+(isLatest?'var(--accent)':'var(--mt2)')+';margin-bottom:5px">'+weekLabel+confidenceMark+'</div>'
         + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:5px">'
         +   '<span style="font-size:20px;font-weight:900;color:var(--tx)">'+_escHTml(String(isNaN(topLoad)?'—':topLoad))+'</span>'
         +   '<span style="font-size:11px;color:var(--mt)">'+_escHTml(String(unit))+'</span>'
         +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">Cal '+_escHTml(String(avgICS))+'</span>' : '')
         + '</div>'
-        + '<div style="font-size:11px;color:var(--mt);line-height:1.8">'
-        + exp.sets.map(function(s,idx) {
-            return 'S'+(idx+1)+': '+_escHTml(String(s.carga||'—'))+' '+_escHTml(String(unit))+' × '+_escHTml(String(s.reps||'—'))+(s.rir_real!=null?' · RIR '+_escHTml(String(s.rir_real)):'');
-          }).join(' &nbsp;·&nbsp; ')
-        + '</div>'
-        + '</div>';
+        + '<div style="font-size:11px;color:var(--mt);line-height:1.8">'+setsLine+'</div>';
+      if (expIdx >= 2) {
+        // Progressive disclosure — older exposures collapsed by default
+        histHtml +=
+          '<details style="margin-bottom:8px"><summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.06)">'
+        +   '<span style="font-size:10px;font-weight:800;letter-spacing:1px;color:var(--mt)">SEM '+_escHTml(String(exp.week||'?'))+'</span>'
+        +   '<span style="font-size:12px;font-weight:700;color:var(--mt2)">'+_escHTml(String(isNaN(topLoad)?'—':topLoad))+' '+_escHTml(String(unit))+'</span>'
+        + '</summary>'
+        + '<div style="padding:10px 12px 12px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);border-top:none;border-radius:0 0 8px 8px">'+cardBody+'</div>'
+        + '</details>';
+      } else {
+        histHtml +=
+          '<div style="margin-bottom:10px;padding:12px;background:rgba(255,255,255,.025);border-radius:10px;border:1px solid rgba(255,255,255,.07)'+(isLatest?';border-left:3px solid var(--accent)':'')+'">'
+        + cardBody+'</div>';
+      }
     });
   }
 
@@ -13278,7 +13309,7 @@ function showExHistory(di, ei) {
     ? '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:rgba(107,107,102,.08);border-radius:10px;border:1px solid rgba(107,107,102,.2)">'
       + '<span style="font-size:18px">🏆</span>'
       + '<div><div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2)">MEJOR CARGA</div>'
-      + '<div style="font-size:22px;font-weight:900;color:var(--tx);line-height:1.1">'+_escHTml(String(pr.bestLoad))+' <span style="font-size:13px;font-weight:500;color:var(--mt)">'+_escHTml(String(unit))+'</span></div></div>'
+      + '<div style="font-size:22px;font-weight:900;color:var(--tx);line-height:1.1">'+_escHTml(String(pr.bestLoad))+' <span style="font-size:13px;font-weight:500;color:var(--mt)">'+_escHTml(String(unit))+'</span>'+(pr.bestReps?' <span style="font-size:12px;font-weight:500;color:var(--mt)">× '+_escHTml(String(pr.bestReps))+' reps</span>':'')+'</div></div>'
       + '</div>'
     : '';
 
@@ -13297,6 +13328,7 @@ function showExHistory(di, ei) {
     +   '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;min-width:60px">'
     +     '<span style="font-size:24px;font-weight:900;color:'+tc.color+'">'+tc.icon+'</span>'
     +     '<span style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:'+tc.color+'">'+tc.label+'</span>'
+    +     (trendDelta ? '<span style="font-size:10px;font-weight:700;color:'+tc.color+';margin-top:1px">'+_escHTml(trendDelta)+'</span>' : '')
     +   '</div>'
     + '</div>'
     + prHtml
