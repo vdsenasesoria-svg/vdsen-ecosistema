@@ -1949,7 +1949,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           banner = `<div class="card p-3 mb-3" style="background:linear-gradient(90deg,rgba(255,136,68,.08),rgba(244,244,240,.04));border:1px solid rgba(255,136,68,.3)">
             <div class="text-xs text-[#FF8844] mb-2 uppercase tracking-wide font-bold">⚠️ Acción requerida · ${alerts.length} cliente${alerts.length>1?'s':''}</div>
             <div class="flex flex-wrap gap-2">
-              ${alerts.map(a => `<button onclick="showClientDetail('${a.id}')" style="padding:5px 10px;border-radius:6px;border:1px solid ${a.alert.color};background:${a.alert.color}1A;color:${a.alert.color};font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px">${a.name} <span style="opacity:.7">· ${a.alert.label.replace(/^.*? /,'')}</span></button>`).join('')}
+              ${alerts.map(a => `<button onclick="showClientDetail('${a.id}')" style="padding:5px 10px;border-radius:6px;border:1px solid ${a.alert.color};background:${a.alert.color}1A;color:${a.alert.color};font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px">${_escH(a.name)} <span style="opacity:.7">· ${a.alert.label.replace(/^.*? /,'')}</span></button>`).join('')}
             </div>
             ${bulkWABtn}
           </div>`;
@@ -2227,10 +2227,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           <h3 class="text-lg font-bold">🔀 Fusionar clientes</h3>
           <button class="text-[#888] hover:text-white text-xl" onclick="this.closest('.modal-overlay').remove()">✕</button>
         </div>
-        <p class="text-sm mb-3" style="color:#aaa">Se conservará <strong style="color:#c8a54a">${keepData.displayName||keepId}</strong> y se eliminará el duplicado que elijas. Los datos faltantes (plan, logs, celular) se copian automáticamente antes de borrar.</p>
+        <p class="text-sm mb-3" style="color:#aaa">Se conservará <strong style="color:#c8a54a">${_escH(keepData.displayName||keepId)}</strong> y se eliminará el duplicado que elijas. Los datos faltantes (plan, logs, celular) se copian automáticamente antes de borrar.</p>
         <label class="block text-xs text-[#888] mb-1">Perfil duplicado a ELIMINAR:</label>
         <select id="merge-del-sel" class="input-field mb-3">
-          ${others.map(o=>`<option value="${o.id}">${o.displayName||o.id} (${o.email||'sin email'})</option>`).join('')}
+          ${others.map(o=>`<option value="${_escH(o.id)}">${_escH(o.displayName||o.id)} (${_escH(o.email||'sin email')})</option>`).join('')}
         </select>
         <div id="merge-compare" class="mb-3 text-xs" style="color:#aaa">⏳ Cargando datos...</div>
         <div class="flex gap-2">
@@ -10494,7 +10494,7 @@ El esfuerzo no es negociable.
               </tr></thead>
               <tbody>
               ${_mdResults.map(r=>`<tr style="border-top:1px solid rgba(244,244,240,.05)">
-                <td style="padding:5px 6px;font-weight:600">${r.name}${r.puedeAgregarSerie?' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(68,187,136,.15);color:#44BB88;border:1px solid rgba(68,187,136,.3)">+SER</span>':''}</td>
+                <td style="padding:5px 6px;font-weight:600">${_escH(r.name)}${r.puedeAgregarSerie?' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(68,187,136,.15);color:#44BB88;border:1px solid rgba(68,187,136,.3)">+SER</span>':''}</td>
                 <td style="padding:5px 6px;text-align:center;color:#555">${r.rirObjetivo}</td>
                 <td style="padding:5px 6px;text-align:center;font-weight:700;color:${r.color}">${r.rirFinal}</td>
                 <td style="padding:5px 6px;text-align:center;color:#888">${r.lastRepsReal!==null?r.lastRepsReal+'/'+r.repsTarget:'—'}</td>
@@ -13354,10 +13354,10 @@ El esfuerzo no es negociable.
       html += '<div class="text-xs text-[#888] uppercase tracking-wide mb-2 mt-4">Mis templates</div>';
       customTemplates.forEach(t => {
         html += `<div class="card p-3 mb-2 flex justify-between items-center">
-          <div><strong>${t.name}</strong><br><span class="text-xs text-[#888]">${(t.days||[]).length} días · ${t.weeks||6} sem</span></div>
+          <div><strong>${_escH(t.name)}</strong><br><span class="text-xs text-[#888]">${(t.days||[]).length} días · ${t.weeks||6} sem</span></div>
           <div>
-            <button onclick="applyTemplate('${t.id}','custom')" class="text-[#F4F4F0] text-sm mr-2">Usar →</button>
-            <button onclick="deleteTemplate('${t.id}')" class="text-red-400 text-sm">🗑</button>
+            <button onclick="applyTemplate('${_escH(t.id)}','custom')" class="text-[#F4F4F0] text-sm mr-2">Usar →</button>
+            <button onclick="deleteTemplate('${_escH(t.id)}')" class="text-red-400 text-sm">🗑</button>
           </div>
         </div>`;
       });
@@ -13638,7 +13638,7 @@ El esfuerzo no es negociable.
           <h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px">Copiar plan a otro cliente</h3>
           <p style="color:#888;font-size:12px;margin-bottom:10px">Selecciona el cliente destino. Si tiene un plan activo, se hará backup antes de sobrescribir.</p>
           <input id="_dupSearch" placeholder="Buscar cliente…" class="input-field mb-2" oninput="(function(){var q=(this.value||'').toLowerCase();document.querySelectorAll('#_dupTarget option').forEach(o=>{o.style.display=o.text.toLowerCase().includes(q)?'':'none'});}).call(this)" style="font-size:12px">
-          <select id="_dupTarget" class="input-field mb-3" size="5" style="height:auto">${clients.map(c => `<option value="${c.id}">${c.displayName || c.email}${c.activePlanId ? ' · ⚠️ ya tiene plan' : ''}</option>`).join('')}</select>
+          <select id="_dupTarget" class="input-field mb-3" size="5" style="height:auto">${clients.map(c => `<option value="${_escH(c.id)}">${_escH(c.displayName || c.email)}${c.activePlanId ? ' · ⚠️ ya tiene plan' : ''}</option>`).join('')}</select>
           <div style="display:flex;gap:8px;justify-content:flex-end">
             <button id="_dupCancel" style="padding:8px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#888;font-size:12px;cursor:pointer">Cancelar</button>
             <button id="_dupOk" style="padding:8px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">Copiar plan</button>
