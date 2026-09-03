@@ -1404,6 +1404,7 @@ El esfuerzo no es negociable — y la consistencia se construye ciclo a ciclo.
       // Sin teléfono — mostrar mensaje para copiar manualmente
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Mensaje para WhatsApp');
       ov.innerHTML = `
         <div style="background:#141616;border:1px solid rgba(244,244,240,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
           <h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">📲 Mensaje para WhatsApp</h3>
@@ -1472,6 +1473,7 @@ El esfuerzo no es negociable — y la consistencia se construye ciclo a ciclo.
 
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Enviar recordatorio');
       ov.innerHTML = `
         <div style="background:#141616;border:1px solid rgba(37,211,102,.35);border-radius:12px;padding:22px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto">
           <h3 style="color:#25D366;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📲 Enviar recordatorio · ${_escH(client.displayName||'cliente')}</h3>
@@ -1596,6 +1598,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', '_amTitle');
       ov.innerHTML = `
         <div style="background:#141616;border:1px solid rgba(244,244,240,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
           <h3 id="_amTitle" style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px">📩 Mensaje · ${_escH(client.displayName || 'cliente')}</h3>
@@ -4356,6 +4359,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       // Mostrar también un mini-modal con prompt sugerido para IA
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Reporte exportado para IA');
       const tokens = Math.round(text.length / 4);
       ov.innerHTML = `
         <div style="background:#141616;border:1px solid rgba(244,244,240,.35);border-radius:12px;padding:22px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto">
@@ -8137,6 +8141,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   function _msgModal(title, message, phone){
     const ov=document.createElement('div');
     ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.setAttribute('role','dialog'); ov.setAttribute('aria-modal','true'); ov.setAttribute('aria-label',title||'Mensaje');
     ov.innerHTML='<div style="background:#141616;border:1px solid rgba(244,244,240,.35);border-radius:2px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">'
       + '<h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">'+_escH(title)+'</h3>'
       + '<p style="font-size:11px;color:#888;margin-bottom:10px">Puedes editar el mensaje antes de enviarlo.</p>'
@@ -10836,6 +10841,9 @@ El esfuerzo no es negociable.
       var modal = document.createElement('div');
       modal.id = 'applyRecModal';
       modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-label', 'Revisar cambios de progresión');
       modal.innerHTML = '<div style="background:#1a1a1a;border:1px solid rgba(244,244,240,.18);border-radius:14px;padding:20px;max-width:440px;width:100%;max-height:80vh;overflow-y:auto">'
         + '<div style="font-size:11px;font-weight:700;color:#888;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">Revisar cambios</div>'
         + '<div id="applyRecSummary" style="font-size:15px;font-weight:800;color:#F4F4F0;margin-bottom:14px">'
@@ -10848,14 +10856,17 @@ El esfuerzo no es negociable.
         + '</div></div>';
       document.body.appendChild(modal);
       modal.querySelector('#applyRecRows').addEventListener('change', function() { _updateSummary(modal); });
-      document.getElementById('applyRecCancel').onclick = function() { modal.remove(); resolve(null); };
+      var _arcCleanup = function(val) { modal.remove(); resolve(val); };
+      modal.addEventListener('click', function(e) { if (e.target === modal) _arcCleanup(null); });
+      document.getElementById('applyRecCancel').onclick = function() { _arcCleanup(null); };
+      // Focus Cancel button on open for safe keyboard defaults
+      setTimeout(function() { var cb = document.getElementById('applyRecCancel'); if (cb) cb.focus(); }, 0);
       document.getElementById('applyRecConfirm').onclick = function() {
         var selected = [];
         modal.querySelectorAll('#applyRecRows input[type=checkbox]').forEach(function(cb) {
           if (cb.checked) selected.push({ exerciseIndex: parseInt(cb.dataset.ei), recommendedLoad: parseFloat(cb.dataset.load), prescriptionExerciseId: cb.dataset.pid || null, exerciseName: cb.dataset.exname || null });
         });
-        modal.remove();
-        resolve(selected.length ? selected : null);
+        _arcCleanup(selected.length ? selected : null);
       };
     });
   }
@@ -11083,7 +11094,8 @@ El esfuerzo no es negociable.
     titleEl.textContent = '📚 Biblioteca de planes';
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '✕';
-    closeBtn.style.cssText = 'background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:2px 6px';
+    closeBtn.setAttribute('aria-label', 'Cerrar');
+    closeBtn.style.cssText = 'background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:2px 6px;min-width:44px;min-height:36px';
     hdr.appendChild(titleEl);
     hdr.appendChild(closeBtn);
 
@@ -11914,8 +11926,9 @@ El esfuerzo no es negociable.
     htitle.style.cssText = 'font-size:13px;font-weight:700;color:#F4F4F0';
     htitle.textContent = 'Sustituir ejercicio';
     var hclose = document.createElement('button');
-    hclose.style.cssText = 'color:#888;font-size:20px;background:none;border:none;cursor:pointer;padding:0 4px;line-height:1';
+    hclose.style.cssText = 'color:#888;font-size:20px;background:none;border:none;cursor:pointer;padding:0 4px;line-height:1;min-width:44px;min-height:36px';
     hclose.textContent = '×';
+    hclose.setAttribute('aria-label', 'Cerrar');
     hclose.onclick = closeSubstModal;
     hdr.appendChild(htitle); hdr.appendChild(hclose);
 
@@ -12798,7 +12811,7 @@ El esfuerzo no es negociable.
         overlay.querySelector('#eci-phone').value = phoneE164;
       } catch(e) {
         st.style.color = '#c94a3a';
-        st.textContent = 'Error: ' + (e.code || e.message);
+        st.textContent = _fmtErr(e);
       } finally {
         btnM.disabled = false; btnM.textContent = '✓ Habilitar login por celular';
       }
@@ -12853,7 +12866,10 @@ El esfuerzo no es negociable.
       }
     };
 
-    overlay.querySelector('#eci-diag-btn').onclick = async () => {
+    overlay.querySelector('#eci-diag-btn').onclick = async (ev) => {
+      const diagBtn = ev.currentTarget;
+      if (diagBtn.disabled) return;
+      diagBtn.disabled = true;
       const diagEl = overlay.querySelector('#eci-diag-result');
       diagEl.textContent = '⏳ Verificando...';
       const lines = [];
@@ -12906,6 +12922,7 @@ El esfuerzo no es negociable.
       }
 
       diagEl.innerHTML = lines.join('<br>');
+      diagBtn.disabled = false;
     };
 
     // ── Reparar UID mismatch ─────────────────────────────────────────────────
@@ -12951,7 +12968,7 @@ El esfuerzo no es negociable.
         loadClientList();
       } catch(e) {
         st.style.color = '#c94a3a';
-        st.textContent = 'Error: ' + (e.code || e.message);
+        st.textContent = _fmtErr(e);
       } finally {
         btn.disabled = false; btn.textContent = '⚡ Reparar UID';
       }
@@ -13699,6 +13716,9 @@ El esfuerzo no es negociable.
       if (!clients.length) { showToast('No hay otros clientes a quien copiar', true); return; }
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.setAttribute('role', 'dialog');
+      ov.setAttribute('aria-modal', 'true');
+      ov.setAttribute('aria-label', 'Copiar plan a otro cliente');
       ov.innerHTML = `
         <div style="background:#141616;border:1px solid rgba(244,244,240,.3);border-radius:12px;padding:24px;max-width:420px;width:100%">
           <h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px">Copiar plan a otro cliente</h3>
@@ -13712,6 +13732,7 @@ El esfuerzo no es negociable.
         </div>`;
       document.body.appendChild(ov);
       ov.querySelector('#_dupCancel').onclick = () => ov.remove();
+      ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
       ov.querySelector('#_dupOk').onclick = async () => {
         const targetId = ov.querySelector('#_dupTarget').value;
         ov.remove();
