@@ -3399,7 +3399,7 @@ function getTodaySummary() {
   var metaHtml = '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+
     (exCount ? '<span style="font-size:10px;color:var(--mt)">'+exCount+' ej.</span>' : '')+
     (estMin > 0 ? '<span style="font-size:10px;color:var(--mt)">·</span><span style="font-size:10px;color:var(--mt)">~'+estMin+' min</span>' : '')+
-    (_hasDeload ? '<span style="font-size:9px;font-weight:900;letter-spacing:.5px;color:var(--blue);background:rgba(126,192,255,.1);padding:2px 7px;border-radius:4px;margin-left:auto">⚠ DELOAD SIGNAL</span>' :
+    (_hasDeload ? '<span onclick="goTab(3)" role="button" style="font-size:9px;font-weight:900;letter-spacing:.5px;color:var(--blue);background:rgba(126,192,255,.1);padding:2px 7px;border-radius:4px;margin-left:auto;cursor:pointer">⚠ DESCARGA SUGERIDA</span>' :
      (_hasProgrec ? '<span style="font-size:9px;font-weight:900;letter-spacing:.5px;color:var(--grn);background:rgba(68,204,136,.1);padding:2px 7px;border-radius:4px;margin-left:auto">✓ PROGRESIÓN LISTA</span>' : ''))+
   '</div>';
 
