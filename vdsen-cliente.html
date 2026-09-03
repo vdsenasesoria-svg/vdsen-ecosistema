@@ -10729,6 +10729,7 @@ function ciSet(campo, valor) {
 }
 
 function ciW5(qi, val) {
+  if (navigator.vibrate) navigator.vibrate(8);
   var k = ciKey();
   if (!LOGS[k]) LOGS[k] = {};
   if (!LOGS[k].w5s) LOGS[k].w5s = [null,null,null,null,null];
@@ -10763,6 +10764,7 @@ function ciICSSet(key, val) {
 window.ciICSSet = ciICSSet;
 
 function ciEnergia(val) {
+  if (navigator.vibrate) navigator.vibrate(8);
   ciSet('energia', val);
   renderCheckin();
 }
