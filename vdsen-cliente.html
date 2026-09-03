@@ -9571,14 +9571,14 @@ function renderNutricion() {
       return '<tr style="background:' + (isCurrent ? 'rgba(107,107,102,.1)' : 'transparent') + ';border-bottom:1px solid var(--bd)">'
         + '<td style="padding:8px 10px;font-family:var(--ff);font-size:14px;color:' + (isCurrent?'var(--gold)':'var(--mt)') + '">'
         + (isCurrent ? '▶ ' : '') + 'SEM ' + (i+1) + (isCurrent?'  ← HOY':'') + '</td>'
-        + '<td style="padding:8px 10px;text-align:center;font-family:var(--ff);font-size:14px;color:var(--tx)">' + (row.calorias||'—') + '</td>'
-        + '<td style="padding:8px 10px;text-align:center;font-size:12px;color:var(--mt)">' + (row.proteina||'—') + 'g P · ' + (row.carbos||'—') + 'g C · ' + (row.grasas||'—') + 'g G</td>'
+        + '<td style="padding:8px 10px;text-align:center;font-family:var(--ff);font-size:14px;color:var(--tx)">' + _escHTml(String(row.calorias||'—')) + '</td>'
+        + '<td style="padding:8px 10px;text-align:center;font-size:12px;color:var(--mt)">' + _escHTml(String(row.proteina||'—')) + 'g P · ' + _escHTml(String(row.carbos||'—')) + 'g C · ' + _escHTml(String(row.grasas||'—')) + 'g G</td>'
         + '</tr>';
     }).join('');
     cont.innerHTML = '<div style="background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.5);padding:16px;margin-bottom:14px">'
       + '<div style="font-family:var(--ff);font-size:18px;letter-spacing:2px;color:var(--gold);margin-bottom:6px">🔄 REVERSE DIET ACTIVA</div>'
       + '<div style="font-size:13px;color:var(--mt);margin-bottom:4px">Protocolo post-competencia · Semana ' + semActual + ' de ' + (rd.tabla||[]).length + '</div>'
-      + '<div style="font-size:12px;color:var(--tx);margin-bottom:14px">' + (rd.descripcion || 'Incremento progresivo de calorías para restaurar metabolismo.') + '</div>'
+      + '<div style="font-size:12px;color:var(--tx);margin-bottom:14px">' + _escHTml(rd.descripcion || 'Incremento progresivo de calorías para restaurar metabolismo.') + '</div>'
       + (rd.tabla && rd.tabla.length > 0
         ? '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="border-bottom:1px solid var(--gold)">'
         + '<th style="padding:8px 10px;text-align:left;font-family:var(--ff);font-size:12px;color:var(--gold);letter-spacing:1px">SEM</th>'
@@ -9730,18 +9730,26 @@ function renderNutricion() {
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
         <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid rgba(140,140,134,.3)">
-          <div style="font-family:'Courier Prime',monospace;font-size:20px;color:var(--accent);line-height:1">${rd.semanaActual||'?'}</div>
+          <div style="font-family:'Courier Prime',monospace;font-size:20px;color:var(--accent);line-height:1">${_escHTml(String(rd.semanaActual||'?'))}</div>
           <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">SEMANA RD</div>
         </div>
         <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid rgba(140,140,134,.3)">
-          <div style="font-family:'Courier Prime',monospace;font-size:20px;color:var(--accent);line-height:1">${rd.kcalActual||'—'}</div>
+          <div style="font-family:'Courier Prime',monospace;font-size:20px;color:var(--accent);line-height:1">${_escHTml(String(rd.kcalActual||'—'))}</div>
           <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">KCAL ESTA SEM</div>
         </div>
         <div style="text-align:center;padding:10px 4px;background:var(--dk);border:1px solid rgba(140,140,134,.3)">
-          <div style="font-family:'Courier Prime',monospace;font-size:20px;color:var(--accent);line-height:1">${rd.kcalObjetivo||'—'}</div>
+          <div style="font-family:'Courier Prime',monospace;font-size:20px;color:var(--accent);line-height:1">${_escHTml(String(rd.kcalObjetivo||'—'))}</div>
           <div style="font-size:8px;letter-spacing:1.5px;color:var(--mt);margin-top:3px">META KCAL</div>
         </div>
       </div>
+      ${(function(){
+        var cur = parseFloat(rd.kcalActual), obj = parseFloat(rd.kcalObjetivo);
+        if (!isNaN(cur) && !isNaN(obj) && obj > 0) {
+          var pct = Math.min(100, Math.round(cur * 100 / obj));
+          return '<div style="margin:10px 0 6px"><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--mt);margin-bottom:3px"><span>Restauración metabólica</span><span>' + pct + '%</span></div><div style="height:5px;background:rgba(140,140,134,.15);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,var(--accent),#8CFF00);border-radius:3px;transition:width .4s ease"></div></div></div>';
+        }
+        return '';
+      })()}
       <div style="background:var(--dk);border:1px solid rgba(140,140,134,.25);padding:10px;font-size:11px;color:var(--mt);line-height:1.6">
         ⚠ Durante Reverse Diet: no comparar estos macros con tu fase anterior · Tu coach monitorea el progreso semanalmente
       </div>
@@ -9772,15 +9780,15 @@ function renderNutricion() {
         '</div>' +
         '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">' +
           '<div style="text-align:center;padding:8px 4px;background:var(--dk);border:1px solid rgba(106,172,238,.3);border-radius:8px">' +
-            '<div style="font-family:var(--ff);font-size:18px;color:#6aacee;font-weight:900">' + _ccProtStr + '</div>' +
+            '<div style="font-family:var(--ff);font-size:18px;color:#6aacee;font-weight:900">' + _escHTml(String(_ccProtStr)) + '</div>' +
             '<div style="font-size:8px;letter-spacing:1.5px;color:#6aacee;margin-top:2px">PROTEÍNA</div>' +
           '</div>' +
           '<div style="text-align:center;padding:8px 4px;background:var(--dk);border:1px solid rgba(106,204,126,.3);border-radius:8px">' +
-            '<div style="font-family:var(--ff);font-size:18px;color:#6acc7e;font-weight:900">' + _ccC + '<span style="font-size:10px;color:var(--mt)"> g</span></div>' +
+            '<div style="font-family:var(--ff);font-size:18px;color:#6acc7e;font-weight:900">' + _escHTml(String(_ccC)) + '<span style="font-size:10px;color:var(--mt)"> g</span></div>' +
             '<div style="font-size:8px;letter-spacing:1.5px;color:#6acc7e;margin-top:2px">CARBOS</div>' +
           '</div>' +
           '<div style="text-align:center;padding:8px 4px;background:var(--dk);border:1px solid rgba(232,160,96,.3);border-radius:8px">' +
-            '<div style="font-family:var(--ff);font-size:18px;color:#e8a060;font-weight:900">' + _ccG + '<span style="font-size:10px;color:var(--mt)"> g</span></div>' +
+            '<div style="font-family:var(--ff);font-size:18px;color:#e8a060;font-weight:900">' + _escHTml(String(_ccG)) + '<span style="font-size:10px;color:var(--mt)"> g</span></div>' +
             '<div style="font-size:8px;letter-spacing:1.5px;color:#e8a060;margin-top:2px">GRASAS</div>' +
           '</div>' +
         '</div>' +
