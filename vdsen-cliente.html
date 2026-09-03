@@ -2550,9 +2550,13 @@ function buildHistorialWidget() {
       }
     }
 
+    var isPR = weekNums.length > 1 && maxLoad > 0 && last.maxLoad === maxLoad;
     return '<div style="background:var(--card);border:1px solid var(--bd);padding:12px;margin-bottom:8px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-      + '<div style="font-size:13px;color:var(--tx);font-weight:600">'+name+'</div>'
+      + '<div style="display:flex;align-items:center;gap:6px">'
+      + '<div style="font-size:13px;color:var(--tx);font-weight:600">'+_escHTml(name)+'</div>'
+      + (isPR ? '<span style="font-size:8px;font-family:var(--ff);font-weight:900;letter-spacing:1px;background:var(--accent);color:#0A0A0A;padding:1px 5px;border-radius:3px">PR</span>' : '')
+      + '</div>'
       + '<div style="font-family:var(--ff);font-size:13px;color:'+trendCol+'">'+trendIcon+' '+(loadDelta>0?'+':'')+loadDelta+' kg'+(loadPct?(' ('+( loadPct>0?'+':'')+loadPct+'%)'):'' )+'</div>'
       + '</div>'
       + '<div style="display:flex;gap:2px;align-items:flex-end;margin-bottom:6px">' + barsHtml + '</div>'
