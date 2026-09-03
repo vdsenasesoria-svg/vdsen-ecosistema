@@ -11136,9 +11136,19 @@ function renderCheckin() {
   function _ciField(id, label, step, imode, ph, fz, note) {
     var v = d[id] || '';
     var prevVal = prevCI[id];
-    var prevHint = prevVal ? '<div style="font-size:10px;color:var(--mt);margin-top:3px">Sem. ant.: <strong style="color:var(--platinum)">' + prevVal + '</strong></div>' : '';
+    var prevHint = '';
+    if (prevVal !== undefined && prevVal !== null && prevVal !== '') {
+      var numV = parseFloat(v), numP = parseFloat(prevVal);
+      var trendIcon = '';
+      if (!isNaN(numV) && !isNaN(numP) && v !== '') {
+        if (numV > numP) trendIcon = '<span style="color:var(--grn);margin-left:3px">↑</span>';
+        else if (numV < numP) trendIcon = '<span style="color:rgba(220,80,80,.9);margin-left:3px">↓</span>';
+        else trendIcon = '<span style="color:var(--mt);margin-left:3px">=</span>';
+      }
+      prevHint = '<div style="font-size:10px;color:var(--mt);margin-top:3px">Sem. ant.: <strong style="color:var(--platinum)">'+_escHTml(String(prevVal))+'</strong>'+trendIcon+'</div>';
+    }
     return '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">'+label+'</div>'
-      + '<input id="ci_'+id+'" type="number" step="'+step+'" inputmode="'+imode+'" value="'+v+'" placeholder="'+ph+'" aria-label="'+label+'" oninput="ciSet(\''+id+'\',this.value)"'
+      + '<input id="ci_'+id+'" type="number" step="'+step+'" inputmode="'+imode+'" value="'+_escHTml(v)+'" placeholder="'+_escHTml(ph)+'" aria-label="'+label+'" oninput="ciSet(\''+id+'\',this.value)"'
       + ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(v?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:'+fz+'px;padding:10px;text-align:center;outline:none">'
       + prevHint
       + (note ? '<div style="font-size:10px;color:var(--mt2);margin-top:4px">'+note+'</div>' : '')
