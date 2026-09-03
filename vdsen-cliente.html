@@ -7266,7 +7266,7 @@ function buildBoostcampExercise(ej, di, ei) {
       var wkICS = [];
       for (var ss = 0; ss < 8; ss++) {
         var wkKey = 'log_'+ww+'_'+di+'_'+ei+'_s'+ss;
-        if (LOGS[wkKey] && LOGS[wkKey].done && LOGS[wkKey].ics) wkICS.push(parseFloat(LOGS[wkKey].ics));
+        if (LOGS[wkKey] && LOGS[wkKey].done && !LOGS[wkKey].autoFilled && LOGS[wkKey].ics) wkICS.push(parseFloat(LOGS[wkKey].ics));
       }
       if (wkICS.length && _avgArr(wkICS) < 7) icsWeeks++;
     }
