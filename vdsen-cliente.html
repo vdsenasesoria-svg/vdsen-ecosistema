@@ -2718,7 +2718,7 @@ function buildHistorialWidget() {
         var lbl = actionLabels[r.action] || r.action;
         var _exN = (r.exerciseName || '').toLowerCase().trim();
         var _unit = EXERCISE_UNITS[_exN] || 'kg';
-        var _loadStr = (r.newLoad != null && isFinite(r.newLoad)) ? (r.newLoad + ' ' + _unit) : '—';
+        var _loadStr = (r.newLoad != null && isFinite(r.newLoad) && r.newLoad > 0) ? (r.newLoad + ' ' + _unit) : '—';
         var _setsStr = (r.newSets != null) ? (r.newSets + 's') : '—';
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'
           + '<div style="font-size:13px;color:var(--tx)">' + _escHTml(r.exerciseName||'') + '</div>'
@@ -13128,9 +13128,15 @@ function _getProgRecForExercise(di, ei, exName) {
     for (var ki = 0; ki < keys.length; ki++) {
       var prog = LOGS[keys[ki]];
       if (!prog || !prog.recommendations) continue;
-      // Buscar por índice de ejercicio primero (más preciso)
+      // Buscar por índice de ejercicio (con name-guard: POSITION ≠ IDENTITY)
       if (prog.recommendations[ei] && keys[ki] === 'progrec_'+w+'_'+di) {
-        return prog.recommendations[ei];
+        var _idxRec = prog.recommendations[ei];
+        // Si ambos nombres están presentes y no coinciden, caer al lookup por nombre
+        if (exName && _idxRec.exerciseName && _normName(_idxRec.exerciseName) !== _normName(exName)) {
+          // no return — continúa al bloque de búsqueda por nombre debajo
+        } else {
+          return _idxRec;
+        }
       }
       // Buscar por nombre de ejercicio (fallback)
       if (exName) {
@@ -14436,7 +14442,7 @@ function calculateProgression(di, postData) {
       var setsWithinRirBand = _rirRealArr.filter(function(v){ return Math.abs(v - rirObj) <= 1; }).length;
       var setsAtTopRange    = sets.filter(function(s){ return (parseFloat(s.reps)||0) >= repsTarget; }).length;
       var validSetCount     = _rirRealArr.length;
-      var setCompletionRate = sets.length ? (sets.length / numSets) : 0;
+      var setCompletionRate = planSets > 0 ? (sets.length / planSets) : 0;
 
       // Gate: si un set llegó a RIR=0 (fallo) y NO todos los sets están dentro de la banda ±1,
       // el promedio está normalizando un set problemático → no progresar carga [HEURÍSTICA].
