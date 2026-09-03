@@ -2954,15 +2954,16 @@ function renderResumen() {
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
         <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center;border-radius:6px">
           <div style="font-size:11px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:3px">HRV</div>
-          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:26px;font-weight:800;color:${ci.hrv?'var(--gold)':'var(--mt)'}">${ci.hrv||'—'}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:26px;font-weight:800;color:${ci.hrv?'var(--gold)':'var(--mt)'}">${_escHTml(String(ci.hrv||'—'))}</div>
         </div>
         <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center;border-radius:6px">
           <div style="font-size:11px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:3px">WHO-5</div>
-          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:26px;font-weight:800;color:${ci.who5?((+ci.who5<52?'var(--red)':(+ci.who5<68?'var(--gold)':'var(--grn)'))):'var(--mt)'}">${ci.who5||'—'}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:26px;font-weight:800;color:${ci.who5?((+ci.who5<52?'var(--red)':(+ci.who5<68?'var(--gold)':'var(--grn)'))):'var(--mt)'}">${_escHTml(String(ci.who5||'—'))}</div>
+          ${ci.who5 ? '<div style="font-size:9px;color:' + (+ci.who5<52?'var(--red)':+ci.who5<68?'var(--gold)':'var(--grn)') + ';margin-top:3px;letter-spacing:.5px">' + (+ci.who5<52?'↓ bienestar bajo':+ci.who5<68?'→ bienestar ok':'↑ bienestar bueno') + '</div>' : ''}
         </div>
         <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center;border-radius:6px">
           <div style="font-size:11px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:3px">PESO</div>
-          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:24px;font-weight:800;color:${ci.peso?'var(--gold)':'var(--mt)'}">${ci.peso?ci.peso+' kg':'—'}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:24px;font-weight:800;color:${ci.peso?'var(--gold)':'var(--mt)'}">${ci.peso?_escHTml(String(ci.peso))+' kg':'—'}</div>
         </div>
       </div>
       <button onclick="goTab(3)" style="width:100%;padding:11px;background:${ciDone?'var(--gdim)':'rgba(196,255,0,.12)'};border:1px solid ${ciDone?'rgba(107,107,102,.3)':'rgba(196,255,0,.4)'};color:${ciDone?'var(--gold)':'var(--accent)'};font-family:var(--ff);font-size:13px;font-weight:700;letter-spacing:2px;cursor:pointer;border-radius:6px">
