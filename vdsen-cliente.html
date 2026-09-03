@@ -2443,14 +2443,14 @@ function buildRezagadosWidget() {
 
   var badgesHtml = rezGrupos.slice(0,6).map(function(g) {
     return '<span style="background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.4);color:var(--gold);'
-      + 'font-family:var(--ff);font-size:12px;letter-spacing:1px;padding:5px 10px">' + g + '</span>';
+      + 'font-family:var(--ff);font-size:12px;letter-spacing:1px;padding:5px 10px">' + _escHTml(g) + '</span>';
   }).join('');
 
   return '<div style="background:var(--card);border:1px solid rgba(107,107,102,.3);padding:14px;margin-top:8px">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-    +   '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold)">★ GRUPOS EN PROTOCOLO ESPECIALIZACIÓN</div>'
+    +   '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold)">★ GRUPOS EN FOCO ESTE CICLO</div>'
     + '</div>'
-    + '<div style="font-size:11px;color:var(--mt);margin-bottom:10px">Tu coach identificó estos grupos para enfoque especial este mesociclo</div>'
+    + '<div style="font-size:11px;color:var(--mt);margin-bottom:10px">Tu coach priorizó estos grupos — dedícales atención especial en técnica y conexión muscular</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:6px">' + badgesHtml + '</div>'
     + '</div>';
 }
