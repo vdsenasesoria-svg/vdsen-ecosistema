@@ -11249,7 +11249,7 @@ function renderCheckin() {
       prevHint = '<div style="font-size:10px;color:var(--mt);margin-top:3px">Sem. ant.: <strong style="color:var(--platinum)">'+_escHTml(String(prevVal))+'</strong>'+trendIcon+'</div>';
     }
     return '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">'+label+'</div>'
-      + '<input id="ci_'+id+'" type="number" step="'+step+'" inputmode="'+imode+'" value="'+_escHTml(v)+'" placeholder="'+_escHTml(ph)+'" aria-label="'+label+'" oninput="ciSet(\''+id+'\',this.value)"'
+      + '<input id="ci_'+id+'" type="number" step="'+step+'" inputmode="'+imode+'" value="'+_escHTml(v)+'" placeholder="'+_escHTml(ph)+'" aria-label="'+label+'" enterkeyhint="done" oninput="ciSet(\''+id+'\',this.value)" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"'
       + ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(v?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:'+fz+'px;padding:10px;text-align:center;outline:none">'
       + prevHint
       + (note ? '<div style="font-size:10px;color:var(--mt2);margin-top:4px">'+note+'</div>' : '')
