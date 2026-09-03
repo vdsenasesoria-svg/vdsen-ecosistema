@@ -7089,13 +7089,13 @@ function renderEntrenamiento() {
         '<div style="font-size:11px;color:var(--mt);margin-bottom:20px;letter-spacing:.5px">Toca en cualquier lugar para cerrar</div>'+
         '<div style="display:flex;gap:6px;justify-content:center;margin-bottom:10px">'+
           [['30s',30],['1m',60],['1:30',90],['2m',120],['3m',180]].map(function(p){
-            return'<button onclick="event.stopPropagation();resetRestTimer('+p[1]+')" style="flex:1;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18);border-radius:10px;color:var(--platinum);font-size:11px;font-weight:700;padding:8px 2px;cursor:pointer">'+p[0]+'</button>';
+            return'<button onclick="event.stopPropagation();resetRestTimer('+p[1]+')" aria-label="Descanso '+p[0]+'" style="flex:1;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18);border-radius:10px;color:var(--platinum);font-size:11px;font-weight:700;padding:8px 2px;cursor:pointer">'+p[0]+'</button>';
           }).join('')+
         '</div>'+
         '<div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px">'+
-          '<button onclick="event.stopPropagation();adjustRestTimer(-15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">−15s</button>'+
-          '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+15s</button>'+
-          '<button onclick="event.stopPropagation();adjustRestTimer(30)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+30s</button>'+
+          '<button onclick="event.stopPropagation();adjustRestTimer(-15)" aria-label="Restar 15 segundos" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">−15s</button>'+
+          '<button onclick="event.stopPropagation();adjustRestTimer(15)" aria-label="Añadir 15 segundos" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+15s</button>'+
+          '<button onclick="event.stopPropagation();adjustRestTimer(30)" aria-label="Añadir 30 segundos" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+30s</button>'+
         '</div>'+
         '<div id="nextActionHint" style="display:none;font-size:11px;color:var(--mt);letter-spacing:.5px;text-align:center;margin-bottom:12px"></div>'+
         '<button onclick="stopRestTimer()" style="width:100%;background:var(--gold-gradient);border:none;border-radius:14px;color:#0a0a0a;font-size:14px;font-weight:800;padding:15px;cursor:pointer;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.3)">SIGUIENTE SERIE ▶</button>'+
@@ -7146,6 +7146,27 @@ function renderEntrenamiento() {
   document.querySelectorAll('[id^="xicshint_"]').forEach(function(hint) {
     updateXICSColor(hint.id.replace('xicshint_', ''));
   });
+  // Swipe horizontal en #exPanel para navegar entre días
+  (function() {
+    var panel = document.getElementById('exPanel');
+    if (!panel) return;
+    var _tx = 0, _ty = 0;
+    panel.addEventListener('touchstart', function(e) {
+      var t = e.changedTouches[0];
+      _tx = t.clientX; _ty = t.clientY;
+    }, { passive: true });
+    panel.addEventListener('touchend', function(e) {
+      var t = e.changedTouches[0];
+      var dx = t.clientX - _tx, dy = t.clientY - _ty;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      var overlay = document.getElementById('restTimerOverlay');
+      if (overlay && overlay.style.display === 'flex') return;
+      if (e.target && e.target.closest('input,button,select,textarea')) return;
+      var total = getSesiones().length;
+      var next = DIA_ACTIVO + (dx < 0 ? 1 : -1);
+      if (next >= 0 && next < total) selDia(next);
+    }, { passive: true });
+  })();
 }
 
 function buildBoostcampExercise(ej, di, ei) {
@@ -8551,6 +8572,7 @@ function resetRestTimer(seconds) {
 window.resetRestTimer = resetRestTimer;
 
 function stopRestTimer() {
+  if (navigator.vibrate) navigator.vibrate([20, 30, 60]);
   if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
   _restEndMs = 0;
   localStorage.removeItem('vdsen_restEnd');
@@ -8566,6 +8588,7 @@ function stopRestTimer() {
 }
 
 function selDia(i) {
+  if (navigator.vibrate) navigator.vibrate(8);
   DIA_ACTIVO = i;
   try { localStorage.setItem('vdsen_last_dia', i); } catch(e) {}
   renderEntrenamiento();
