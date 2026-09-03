@@ -4747,7 +4747,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
         '<div style="flex:1">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
-          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
+          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_expK+'\')">'+
+          '<div id="xicshint_'+_expK+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
         '</div>'+
         '<div style="flex:2">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
@@ -5025,6 +5026,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '</div>'+
           '</div>'+
         '</div>'+
+        '<div id="icshint_'+key+'" style="min-height:14px;margin-bottom:4px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
         // Actions — sticky so the save button stays in thumb reach without scrolling
         '<div style="position:sticky;bottom:0;display:flex;gap:8px;padding:10px 0 4px;'+
              'background:linear-gradient(to bottom,transparent 0%,var(--bg) 38%);z-index:5">'+
@@ -6026,8 +6028,8 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
           '<div style="flex:1">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
-            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()">'+
-            '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">1-5 mala · 6-7 ok · 8-10 buena</div>'+
+            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_ssk+'\')">'+
+            '<div id="xicshint_'+_ssk+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
           '</div>'+
           '<div style="flex:2">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
@@ -7131,6 +7133,13 @@ function renderEntrenamiento() {
       }
     } catch(e) {}
   }, 100);
+  // Initialize ICS quality hints for any pre-filled set values (classic + express mode)
+  document.querySelectorAll('[id^="icshint_"]').forEach(function(hint) {
+    updateICSColor(hint.id.replace('icshint_', ''));
+  });
+  document.querySelectorAll('[id^="xicshint_"]').forEach(function(hint) {
+    updateXICSColor(hint.id.replace('xicshint_', ''));
+  });
 }
 
 function buildBoostcampExercise(ej, di, ei) {
@@ -7380,7 +7389,7 @@ function buildBoostcampExercise(ej, di, ei) {
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
             'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+
             'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box" oninput="updateICSColor(\''+key+'\')">'+
-            '<div style="font-size:9px;color:var(--mt2);margin-top:3px;line-height:1.4">&lt;7 = baja carga · 8-10 = ok</div>'+
+            '<div id="icshint_'+key+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
           '</div>'+
           '<div style="flex:2">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">PUMP</div>'+
@@ -8127,12 +8136,27 @@ function setPump(key, val) {
   });
 }
 
+function _applyICSHint(inputEl, hintEl) {
+  if (!inputEl) return;
+  var val = parseInt(inputEl.value);
+  var bad = !isNaN(val) && val < 7;
+  inputEl.style.borderColor = bad ? 'var(--red)' : 'var(--border)';
+  inputEl.style.color       = bad ? 'var(--red)' : 'var(--accent)';
+  if (!hintEl) return;
+  if (isNaN(val) || !inputEl.value) { hintEl.textContent = ''; return; }
+  var msg, color;
+  if (val >= 9)      { msg = '💯 Técnica impecable · progresión aplicable';    color = 'var(--grn)'; }
+  else if (val >= 7) { msg = '✓ Técnica buena · progresión aplicable';         color = 'var(--grn)'; }
+  else if (val >= 5) { msg = '⚠ Técnica regular · sin progresión esta semana'; color = '#e8a040'; }
+  else               { msg = '✗ Técnica insuficiente · baja carga primero';    color = 'var(--red)'; }
+  hintEl.textContent = msg;
+  hintEl.style.color = color;
+}
 function updateICSColor(key) {
-  var el = document.getElementById('ics_'+key);
-  if (!el) return;
-  var val = parseInt(el.value);
-  el.style.borderColor = (!isNaN(val) && val < 7) ? 'var(--red)' : 'var(--border)';
-  el.style.color       = (!isNaN(val) && val < 7) ? 'var(--red)' : 'var(--accent)';
+  _applyICSHint(document.getElementById('ics_'+key), document.getElementById('icshint_'+key));
+}
+function updateXICSColor(key) {
+  _applyICSHint(document.getElementById('xics_'+key), document.getElementById('xicshint_'+key));
 }
 
 function toggleNota(id) {
