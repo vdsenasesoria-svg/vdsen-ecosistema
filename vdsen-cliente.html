@@ -1234,7 +1234,7 @@ function showPhoneConfirmModal(clientRef, clientData) {
       '<div style="font-size:14px;color:var(--tx,#F4F4F0);font-weight:700;line-height:1.3;margin-bottom:6px">Ayúdanos a tener tus datos al día</div>'+
       '<div style="font-size:12px;color:var(--mt,#888);line-height:1.5;margin-bottom:14px">'+
         (currentPhone
-          ? 'Tenemos registrado: <strong style="color:var(--tx,#F4F4F0)">'+currentPhone+'</strong>. Confírmalo o corrígelo si cambió — tu coach lo usa para mandarte recordatorios por WhatsApp.'
+          ? 'Tenemos registrado: <strong style="color:var(--tx,#F4F4F0)">'+_escHTml(String(currentPhone||''))+'</strong>. Confírmalo o corrígelo si cambió — tu coach lo usa para mandarte recordatorios por WhatsApp.'
           : 'Aún no tenemos tu celular. Escríbelo abajo — tu coach lo usa para mandarte recordatorios por WhatsApp.')+
       '</div>'+
       '<label style="display:block;font-size:10px;letter-spacing:1px;color:var(--mt,#888);font-weight:700;margin-bottom:4px">CELULAR</label>'+
@@ -6750,7 +6750,7 @@ function renderEntrenamiento() {
     var textoRaw = (PLAN.entrenamiento && PLAN.entrenamiento.texto) || '';
     var rawHtml = textoRaw
       ? '<div style="padding:12px;font-family:monospace;font-size:11px;color:var(--mt);white-space:pre-wrap;line-height:1.6;background:var(--surface);border:1px solid var(--border);border-radius:8px">' +
-        textoRaw.replace(/</g,'&lt;').substring(0,3000) + '</div>'
+        _escHTml(textoRaw.substring(0,3000)) + '</div>'
       : '<div style="padding:48px 24px;text-align:center;color:var(--mt)"><div style="font-size:32px;margin-bottom:12px">💪</div><div style="font-weight:700;margin-bottom:8px">Sin plan de entrenamiento</div><div style="font-size:12px">El coach aún no ha cargado tu plan.</div></div>';
     cont.innerHTML =
       weekHeaderHtml+
@@ -7602,8 +7602,8 @@ function showPRCelebration(exDisplayName, load, unit, reps) {
     '<div style="position:absolute;inset:0;overflow:hidden;pointer-events:none">'+confetti+'</div>'+
     '<div style="font-size:72px;animation:prPop .4s cubic-bezier(.34,1.56,.64,1) forwards">🏆</div>'+
     '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:13px;letter-spacing:4px;color:var(--mt);font-weight:700">NUEVO RÉCORD PERSONAL</div>'+
-    '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:28px;font-weight:900;color:var(--accent);letter-spacing:1px;text-align:center;max-width:280px">'+exDisplayName+'</div>'+
-    '<div style="font-size:22px;font-weight:800;color:var(--tx)">'+load+' '+unit+' × '+reps+' reps</div>'+
+    '<div style="font-family:\'Big Shoulders Display\',var(--ff);font-size:28px;font-weight:900;color:var(--accent);letter-spacing:1px;text-align:center;max-width:280px">'+_escHTml(String(exDisplayName||''))+'</div>'+
+    '<div style="font-size:22px;font-weight:800;color:var(--tx)">'+_escHTml(String(load||''))+' '+_escHTml(String(unit||'KG'))+' × '+_escHTml(String(reps||''))+' reps</div>'+
     '<div style="font-size:11px;color:var(--mt);margin-top:4px">Toca para continuar</div>';
   document.body.appendChild(el);
   el.addEventListener('click', function(){ el.style.opacity='0'; setTimeout(function(){ el.remove(); }, 250); });
@@ -11375,7 +11375,7 @@ function renderPerfil() {
     <div style="margin-bottom:12px;padding:14px 16px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.2);border-radius:10px">
       <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);font-weight:700;margin-bottom:6px">TU RANGO DE VOLUMEN PERSONALIZADO</div>
       <div style="font-family:'Big Shoulders Display',var(--ff);font-size:22px;font-weight:900;color:var(--accent);line-height:1.2">
-        ${CALIB_VOLUMETRICA.VME_individual} – ${CALIB_VOLUMETRICA.VMR_individual} <span style="font-size:13px;font-weight:700;color:var(--mt)">series/semana</span>
+        ${_escHTml(String(CALIB_VOLUMETRICA.VME_individual||'—'))} – ${_escHTml(String(CALIB_VOLUMETRICA.VMR_individual||'—'))} <span style="font-size:13px;font-weight:700;color:var(--mt)">series/semana</span>
       </div>
       <div style="font-size:10px;color:var(--mt);margin-top:4px;letter-spacing:.5px">Calculado con calibración Ehrenstein</div>
     </div>` : ''}
@@ -13229,16 +13229,16 @@ function showExHistory(di, ei) {
       var avgICS = icsN ? (icsSum / icsN).toFixed(1) : null;
       var topLoad = Math.max.apply(null, exp.sets.map(function(s) { return s.carga; }));
       histHtml += '<div style="margin-bottom:10px;padding:12px;background:rgba(255,255,255,.025);border-radius:10px;border:1px solid rgba(255,255,255,.07)">'
-        + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:5px">SEMANA '+exp.week
+        + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:5px">SEMANA '+_escHTml(String(exp.week||'?'))
         +   (exp.confidence!=='HIGH'?' <span style="font-weight:400;color:rgba(170,170,160,.5)">· pos.</span>':'')+'</div>'
         + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:5px">'
-        +   '<span style="font-size:20px;font-weight:900;color:var(--tx)">'+topLoad+'</span>'
-        +   '<span style="font-size:11px;color:var(--mt)">'+unit+'</span>'
-        +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">Cal '+avgICS+'</span>' : '')
+        +   '<span style="font-size:20px;font-weight:900;color:var(--tx)">'+_escHTml(String(isNaN(topLoad)?'—':topLoad))+'</span>'
+        +   '<span style="font-size:11px;color:var(--mt)">'+_escHTml(String(unit))+'</span>'
+        +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">Cal '+_escHTml(String(avgICS))+'</span>' : '')
         + '</div>'
         + '<div style="font-size:11px;color:var(--mt);line-height:1.8">'
         + exp.sets.map(function(s,idx) {
-            return 'S'+(idx+1)+': '+s.carga+' '+unit+' × '+s.reps+(s.rir_real!==null?' · RIR '+s.rir_real:'');
+            return 'S'+(idx+1)+': '+_escHTml(String(s.carga||'—'))+' '+_escHTml(String(unit))+' × '+_escHTml(String(s.reps||'—'))+(s.rir_real!=null?' · RIR '+_escHTml(String(s.rir_real)):'');
           }).join(' &nbsp;·&nbsp; ')
         + '</div>'
         + '</div>';
@@ -13249,7 +13249,7 @@ function showExHistory(di, ei) {
     ? '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:rgba(107,107,102,.08);border-radius:10px;border:1px solid rgba(107,107,102,.2)">'
       + '<span style="font-size:18px">🏆</span>'
       + '<div><div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2)">MEJOR CARGA</div>'
-      + '<div style="font-size:22px;font-weight:900;color:var(--tx);line-height:1.1">'+pr.bestLoad+' <span style="font-size:13px;font-weight:500;color:var(--mt)">'+unit+'</span></div></div>'
+      + '<div style="font-size:22px;font-weight:900;color:var(--tx);line-height:1.1">'+_escHTml(String(pr.bestLoad))+' <span style="font-size:13px;font-weight:500;color:var(--mt)">'+_escHTml(String(unit))+'</span></div></div>'
       + '</div>'
     : '';
 
