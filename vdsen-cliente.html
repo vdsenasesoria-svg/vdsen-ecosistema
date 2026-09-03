@@ -310,7 +310,7 @@ button:active{opacity:.85}
 <div class="screen" id="scrApp">
 
   <!-- OFFLINE BANNER -->
-  <div id="offlineBanner" style="display:none;background:#141414;border-bottom:1px solid var(--border);padding:6px 16px;font-size:11px;color:var(--platinum);letter-spacing:.06em;text-align:center;">
+  <div id="offlineBanner" role="status" aria-live="assertive" style="display:none;background:#141414;border-bottom:1px solid var(--border);padding:6px 16px;font-size:11px;color:var(--platinum);letter-spacing:.06em;text-align:center;">
     SIN CONEXIÓN · Los registros se sincronizarán al reconectar
   </div>
 
@@ -361,7 +361,7 @@ button:active{opacity:.85}
 </div>
 
 <!-- TOAST -->
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 // ══════════════════════════════════════════════════
@@ -1227,6 +1227,9 @@ function showPhoneConfirmModal(clientRef, clientData) {
 
   var ov = document.createElement('div');
   ov.id = 'phoneConfirmOverlay';
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-modal', 'true');
+  ov.setAttribute('aria-label', 'Confirmar celular');
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML =
     '<div style="background:var(--surface,#141616);border:1px solid rgba(200,165,74,.35);border-radius:12px;padding:22px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)">'+
@@ -1261,6 +1264,7 @@ function showPhoneConfirmModal(clientRef, clientData) {
   var btnKeep = ov.querySelector('#pcfKeep');
   var btnSkip = ov.querySelector('#pcfSkip');
   if (btnSkip) btnSkip.onclick = async function(){
+    if (this.disabled) return; this.disabled = true;
     try { await FB.updateDoc(clientRef, { phoneSkippedAt: Date.now() }); } catch(_){}
     ov.remove();
   };
@@ -1311,7 +1315,7 @@ function showPhoneConfirmModal(clientRef, clientData) {
     _persist(newPhone);
   };
   if (btnKeep) btnKeep.onclick = function() { _persist(null); };
-  input.addEventListener('keydown', function(e){ if (e.key === 'Enter') btnSave.click(); });
+  input.addEventListener('keydown', function(e){ if (e.isComposing) return; if (e.key === 'Enter') btnSave.click(); });
 
   // Preview en vivo + auto-limpieza de caracteres no numéricos al pegar/escribir.
   var previewEl = ov.querySelector('#pcfPreview');
@@ -4729,11 +4733,11 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isBodyweight?'var(--mt2)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cargaLbl+'</div>'+
-          '<input id="xcarga_'+_expK+'" type="number" value="'+(_exPfCarga||'')+'" placeholder="'+_escHTml(String(unit))+'" step="0.5" inputmode="decimal" enterkeyhint="next" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+_safeUnit+'\','+baseRIR+')" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'xreps_'+_expK+'\');if(r)r.focus();}">'+
+          '<input id="xcarga_'+_expK+'" type="number" value="'+(_exPfCarga||'')+'" placeholder="'+_escHTml(String(unit))+'" step="0.5" inputmode="decimal" enterkeyhint="next" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+_safeUnit+'\','+baseRIR+')" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'xreps_'+_expK+'\');if(r)r.focus();}">'+
         '</div>'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isIsometric?'var(--accent)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_repsLbl+'</div>'+
-          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="done" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+_safeUnit+'\','+baseRIR+')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
+          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="done" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+_safeUnit+'\','+baseRIR+')" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
         '</div>'+
       '</div>'+
       '<div id="xhint_'+_expK+'" data-exname="'+_escHTml(nombre)+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-bottom:2px"></div>'+
@@ -4746,7 +4750,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
         '<div style="flex:1">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
-          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_expK+'\')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
+          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_expK+'\')" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
           '<div id="xicshint_'+_expK+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
         '</div>'+
         '<div style="flex:2">'+
@@ -4961,7 +4965,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
               'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()"'+
-              ' onkeydown="if(event.key===\'Enter\'){var _r=document.getElementById(\'reps_'+key+'\');if(_r){event.preventDefault();_r.focus();_r.select();}}">'+
+              ' onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){var _r=document.getElementById(\'reps_'+key+'\');if(_r){event.preventDefault();_r.focus();_r.select();}}">'+
               _stepHtml+
             '</div>'+
             '<div style="flex:1">'+
@@ -4970,7 +4974,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(isIsometric?'rgba(107,107,102,.3)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
               ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()"'+
-              ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
+              ' onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
             '</div>'+
           '</div>';
         })()+
@@ -5006,7 +5010,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
                 ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+_icsBorder+';'+
                 'border-radius:8px;color:'+_icsColor+';font-size:15px;font-weight:700;'+
                 'padding:10px 8px;outline:none;text-align:center"'+
-                ' oninput="updateICSColor(\''+key+'\''+') " onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">';
+                ' oninput="updateICSColor(\''+key+'\''+') " onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">';
             })()+
           '</div>'+
           '<div style="flex:2">'+
@@ -5985,11 +5989,11 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
           '<div>'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cLbl+'</div>'+
-            '<input id="xss_carga_'+di+'_'+curIdx+'" type="number" value="'+(_pfCM||'')+'" placeholder="'+unit2+'" step="0.5" inputmode="decimal" enterkeyhint="next" style="'+_iptS2+'" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var _r=document.getElementById(\'xss_reps_'+di+'_'+curIdx+'\');if(_r){_r.focus();_r.select();}}">'+
+            '<input id="xss_carga_'+di+'_'+curIdx+'" type="number" value="'+(_pfCM||'')+'" placeholder="'+unit2+'" step="0.5" inputmode="decimal" enterkeyhint="next" style="'+_iptS2+'" onfocus="this.select()" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var _r=document.getElementById(\'xss_reps_'+di+'_'+curIdx+'\');if(_r){_r.focus();_r.select();}}">'+
           '</div>'+
           '<div>'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_rLbl+'</div>'+
-            '<input id="xss_reps_'+di+'_'+curIdx+'" type="number" value="'+(_pfRM||'')+'" placeholder="reps" inputmode="numeric" enterkeyhint="done" style="'+_iptS2+'" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
+            '<input id="xss_reps_'+di+'_'+curIdx+'" type="number" value="'+(_pfRM||'')+'" placeholder="reps" inputmode="numeric" enterkeyhint="done" style="'+_iptS2+'" onfocus="this.select()" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
           '</div>'+
         '</div>'+
       '</div>';
@@ -6034,7 +6038,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">'+
           '<div style="flex:1">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
-            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_ssk+'\')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
+            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_ssk+'\')" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
             '<div id="xicshint_'+_ssk+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
           '</div>'+
           '<div style="flex:2">'+
@@ -7416,7 +7420,7 @@ function buildBoostcampExercise(ej, di, ei) {
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
             'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+
             'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box"'+
-            ' oninput="updateICSColor(\''+key+'\')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
+            ' oninput="updateICSColor(\''+key+'\')" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
             '<div id="icshint_'+key+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
           '</div>'+
           '<div style="flex:2">'+
@@ -7460,15 +7464,15 @@ function buildBoostcampExercise(ej, di, ei) {
               '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+_escHTml(String(unit))+'" step="0.5" min="0" inputmode="decimal" enterkeyhint="next"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:16px;font-weight:600;padding:8px 6px;outline:none;text-align:center;box-sizing:border-box"'+
-              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'reps_'+key+'\');if(r)r.focus();}">'+
+              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'reps_'+key+'\');if(r)r.focus();}">'+
               '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="reps" inputmode="numeric" min="1" enterkeyhint="next"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:16px;font-weight:600;padding:8px 6px;outline:none;text-align:center;box-sizing:border-box"'+
-              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'ics_'+key+'\');if(r)r.focus();}">'+
+              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'ics_'+key+'\');if(r)r.focus();}">'+
               '<input id="rir_'+key+'" type="number" value="'+(rirReal||'')+'" placeholder="RIR" inputmode="numeric" min="0" max="5" enterkeyhint="done"'+
               ' style="width:46px;flex-shrink:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:#e8a040;font-size:14px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box"'+
-              ' onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
+              ' onfocus="this.select()" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
             '</div>'+
             '<div id="hint_'+key+'" data-base-rir="'+baseRIR+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px"></div>'+
             '<div id="plates_'+key+'" style="font-size:10px;color:var(--blue);min-height:0;margin-top:1px"></div>'+
@@ -7626,6 +7630,9 @@ function showPRCelebration(exDisplayName, load, unit, reps) {
   if (navigator.vibrate) navigator.vibrate([40, 60, 80]);
   var el = document.createElement('div');
   el.id = 'prCeleb';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', 'Nuevo récord personal');
   el.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(6,14,26,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;opacity:0;transition:opacity .25s;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)';
   var confetti = Array.from({length:18},function(_,i){
     var colors=['#C4FF00','#e8a040','#4A9FDC','#6E9A6E','#F4F4F0'];
@@ -7670,7 +7677,13 @@ function _showPresessionCheck(di) {
   if (document.getElementById('presessionCheckOv')) return;
   var ov = document.createElement('div');
   ov.id = 'presessionCheckOv';
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-modal', 'true');
+  ov.setAttribute('aria-label', 'Check-in pre-sesión');
   ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:3000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 20px;overflow-y:auto';
+  ov.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { e.preventDefault(); _skipPresession(di); }
+  });
   var mkBtns = function(prefix, field, ids) {
     return [1,2,3,4,5].map(function(v){
       return '<button onclick="_preSelect(\''+field+'\','+v+')" id="'+ids+v+'" style="flex:1;padding:11px 4px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--mt);font-size:15px;font-weight:700;cursor:pointer;transition:all .15s">'+v+'</button>';
@@ -8210,6 +8223,9 @@ function showExModModal(di, ei) {
   if (!overlay) {
     overlay = document.createElement('div');
     overlay.id = 'exModOverlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Ajustar ejercicio');
     overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;align-items:flex-end;justify-content:center';
     overlay.onclick = function(e){ if(e.target===overlay) overlay.style.display='none'; };
     document.body.appendChild(overlay);
@@ -9108,6 +9124,8 @@ async function _doSaveLogs() {
     if (!errEl) {
       errEl = document.createElement('div');
       errEl.id = 'saveErrBadge';
+      errEl.setAttribute('role', 'alert');
+      errEl.setAttribute('aria-live', 'assertive');
       errEl.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:#3a0a0a;border:1px solid #c94a3a;color:#e07070;font-family:monospace;font-size:11px;padding:8px 16px;z-index:9999;border-radius:8px;text-align:center;max-width:340px;line-height:1.5;cursor:pointer';
       errEl.title = 'Tap para reintentar';
       errEl.addEventListener('click', function(){ errEl.style.display='none'; _doSaveLogs(); });
@@ -9124,6 +9142,8 @@ function _showSaveOk() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'saveOkBadge';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
     el.style.cssText = 'position:fixed;bottom:90px;right:16px;background:rgba(110,154,110,.15);border:1px solid var(--grn);color:var(--grn);font-family:var(--ff);font-size:11px;font-weight:700;padding:6px 12px;border-radius:8px;z-index:9999;letter-spacing:1px;opacity:0;transition:opacity .3s';
     document.body.appendChild(el);
   }
@@ -11264,7 +11284,7 @@ function renderCheckin() {
       prevHint = '<div style="font-size:10px;color:var(--mt);margin-top:3px">Sem. ant.: <strong style="color:var(--platinum)">'+_escHTml(String(prevVal))+'</strong>'+trendIcon+'</div>';
     }
     return '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">'+label+'</div>'
-      + '<input id="ci_'+id+'" type="number" step="'+step+'" inputmode="'+imode+'" value="'+_escHTml(v)+'" placeholder="'+_escHTml(ph)+'" aria-label="'+label+'" enterkeyhint="done" oninput="ciSet(\''+id+'\',this.value)" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"'
+      + '<input id="ci_'+id+'" type="number" step="'+step+'" inputmode="'+imode+'" value="'+_escHTml(v)+'" placeholder="'+_escHTml(ph)+'" aria-label="'+label+'" enterkeyhint="done" oninput="ciSet(\''+id+'\',this.value)" onfocus="this.select()" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}"'
       + ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(v?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:'+fz+'px;padding:10px;text-align:center;outline:none">'
       + prevHint
       + (note ? '<div style="font-size:10px;color:var(--mt2);margin-top:4px">'+note+'</div>' : '')
@@ -11719,11 +11739,11 @@ function showFAQModal() {
     }
   ];
   var html =
-    '<div id="faqModal" style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 12px">'+
+    '<div id="faqModal" role="dialog" aria-modal="true" aria-labelledby="faqModalLabel" onclick="if(event.target===this)this.style.display=\'none\'" style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 12px">'+
       '<div style="background:var(--bg);max-width:560px;width:100%;border:1px solid var(--gold);border-radius:14px;padding:18px 16px;margin:20px auto;box-shadow:0 0 40px rgba(0,0,0,.6)">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;border-bottom:1px solid var(--bd);padding-bottom:12px">'+
           '<div>'+
-            '<div style="font-family:var(--ff);font-size:16px;letter-spacing:2px;color:var(--gold);font-weight:800">❓ AYUDA · INSTRUCCIONES</div>'+
+            '<div id="faqModalLabel" style="font-family:var(--ff);font-size:16px;letter-spacing:2px;color:var(--gold);font-weight:800">❓ AYUDA · INSTRUCCIONES</div>'+
             '<div style="font-size:11px;color:var(--mt);margin-top:2px">Cómo usar tu app VDSEN</div>'+
           '</div>'+
           '<button onclick="document.getElementById(\'faqModal\').style.display=\'none\'" style="background:transparent;border:1px solid var(--bd);color:var(--mt);width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer">✕</button>'+
@@ -12706,7 +12726,11 @@ function showWhatsNew() {
   }).join('');
   var el = document.createElement('div');
   el.id = 'wnModal';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', 'Novedades');
   el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center';
+  el.addEventListener('click', function(e) { if (e.target === el) el.remove(); });
   el.innerHTML =
     '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'+
@@ -12730,7 +12754,11 @@ function showBitacoraInfoModal() {
   if (document.getElementById('biModal')) return;
   var el = document.createElement('div');
   el.id = 'biModal';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', 'Cómo usar tu bitácora');
   el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center';
+  el.addEventListener('click', function(e) { if (e.target === el) el.remove(); });
   el.innerHTML =
     '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'+
       '<div style="font-size:18px;font-weight:900;color:var(--tx);margin-bottom:4px">📋 Llena tu bitácora cada sesión</div>'+
@@ -12768,11 +12796,20 @@ function _askConfirm(msg) {
       + '<button id="_ac_no" style="padding:9px 18px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mt);font-size:13px;cursor:pointer">Cancelar</button>'
       + '<button id="_ac_si" style="padding:9px 18px;border-radius:8px;border:none;background:#c94a3a;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Confirmar</button>'
       + '</div></div>';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    ov.setAttribute('aria-label', 'Confirmar acción');
     document.body.appendChild(ov);
     function done(v) { ov.remove(); resolve(v); }
     ov.querySelector('#_ac_si').onclick = function() { done(true); };
     ov.querySelector('#_ac_no').onclick = function() { done(false); };
     ov.onclick = function(e) { if (e.target === ov) done(false); };
+    ov.addEventListener('keydown', function(e) {
+      if (e.isComposing) return;
+      if (e.key === 'Escape') { e.stopPropagation(); done(false); }
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
+    });
+    setTimeout(function() { var b = ov.querySelector('#_ac_no'); if (b) b.focus(); }, 0);
   });
 }
 
@@ -12786,7 +12823,23 @@ function showToast(msg, isError=false) {
 
 // ── ENTER on login ──
 document.addEventListener('keydown', e => {
+  if (e.isComposing) return;
   if (e.key === 'Enter' && document.getElementById('scrLogin').classList.contains('on')) doLogin();
+});
+
+// ── Global Escape handler ──
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  var ps = document.getElementById('postSessionModal');
+  if (ps && ps.style.display !== 'none') { e.preventDefault(); closePostSessionModal(); return; }
+  var dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter(function(el) {
+    return el.style.display !== 'none' && !el.hidden;
+  });
+  if (dialogs.length) {
+    var top = dialogs[dialogs.length - 1];
+    top.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    e.preventDefault();
+  }
 });
 
 // ── Clear login error on input ──
@@ -12831,6 +12884,7 @@ function showPostSessionModal(di) {
   updateRpeLabel(7);
   m.style.display = 'flex';
   m.scrollTop = 0;
+  setTimeout(function() { var f = m.querySelector('[role="button"][tabindex="0"]'); if (f) f.focus(); }, 50);
 }
 
 function closePostSessionModal() {
@@ -13463,6 +13517,9 @@ function showExHistory(di, ei) {
   if (el) el.remove();
   el = document.createElement('div');
   el.id = 'exHistModal';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', 'Historial del ejercicio');
   el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);display:flex;align-items:flex-end;justify-content:center';
   el.innerHTML =
     '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'
@@ -14796,17 +14853,17 @@ document.addEventListener('keydown', function(e) {
 </script>
 
 <!-- ════ MODAL CHECK-IN POST-SESIÓN ════ -->
-<div id="postSessionModal" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:2000;overflow-y:auto;padding:20px 16px 44px;flex-direction:column;align-items:center">
+<div id="postSessionModal" role="dialog" aria-modal="true" aria-labelledby="psModalLabel" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:2000;overflow-y:auto;padding:20px 16px 44px;flex-direction:column;align-items:center">
   <div style="width:100%;max-width:480px;margin:0 auto">
 
     <!-- Header -->
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px">
       <div>
         <div style="font-size:10px;letter-spacing:2.5px;color:var(--accent);font-weight:700;margin-bottom:3px">CHECK-IN POST-SESIÓN</div>
-        <div style="font-size:22px;font-weight:800;color:#fff">¿Cómo te fue?</div>
+        <div id="psModalLabel" style="font-size:22px;font-weight:800;color:#fff">¿Cómo te fue?</div>
         <div style="font-size:11px;color:var(--mt);margin-top:3px">Tus respuestas ajustan el algoritmo de progresión</div>
       </div>
-      <button onclick="closePostSessionModal()" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--mt);font-size:18px;padding:6px 10px;cursor:pointer;flex-shrink:0">✕</button>
+      <button onclick="closePostSessionModal()" aria-label="Cerrar" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--mt);font-size:18px;padding:6px 10px;cursor:pointer;flex-shrink:0">✕</button>
     </div>
 
     <input type="hidden" id="psEimd">
