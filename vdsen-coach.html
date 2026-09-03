@@ -4882,7 +4882,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (obj.rirByWeek) planObj.rirByWeek = obj.rirByWeek;
     if (obj.reverse_diet) planObj.reverse_diet = obj.reverse_diet;
     if (obj.distribucion_zonas_carga) planObj.distribucion_zonas_carga = obj.distribucion_zonas_carga;
-    statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${planObj.weeks} semanas, ${days.length} día(s)</span>`;
+    statusEl.innerHTML = `<span class="text-green-400">✅ JSON válido: ${_escH(planObj.weeks)} semanas, ${days.length} día(s)</span>`;
     showParsedPreview(planObj);
     window._importedPlan = planObj;
   }
@@ -5020,12 +5020,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const errorsHtml = validationErrors.length > 0
       ? `<div style="background:rgba(255,80,80,.08);border:1px solid rgba(255,80,80,.3);border-radius:10px;padding:10px 12px;margin-bottom:10px">
           <div style="font-size:11px;font-weight:700;color:#ff6060;letter-spacing:.5px;margin-bottom:6px">⚠ ${validationErrors.length} advertencia(s) Y3T</div>
-          ${validationErrors.map(e => `<div style="font-size:11px;color:#ff9090;margin-bottom:3px">· <strong>${e.type}</strong> — ${e.exercise||''}: ${e.msg}</div>`).join('')}
+          ${validationErrors.map(e => `<div style="font-size:11px;color:#ff9090;margin-bottom:3px">· <strong>${_escH(e.type)}</strong> — ${_escH(e.exercise||'')}: ${_escH(e.msg)}</div>`).join('')}
         </div>`
       : '';
     const dayList = planObj.days.map(d => `
       <div class="card p-3 mb-2">
-        <p class="font-semibold text-[#F4F4F0] mb-1">${d.label}</p>
+        <p class="font-semibold text-[#F4F4F0] mb-1">${_escH(d.label)}</p>
         <ul class="text-sm space-y-1">
           ${d.exercises.length
             ? d.exercises.map(e => {
@@ -5040,7 +5040,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       </div>`).join('');
     const volPanel = renderVolumePanel(planObj);
     preview.innerHTML = `
-      <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s) · ${planObj.weeks || 6} semanas. Revisa y guarda:</div>
+      <div class="mb-3 text-sm text-[#888]">${planObj.days.length} día(s) detectado(s) · ${_escH(planObj.weeks || 6)} semanas. Revisa y guarda:</div>
       ${errorsHtml}
       ${volPanel}
       ${dayList}
