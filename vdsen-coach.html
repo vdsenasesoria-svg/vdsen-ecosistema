@@ -2407,7 +2407,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   window.mergeClients = mergeClients;
 
   async function deleteClient(uid, name) {
-    if (!await _askConfirm(`¿Eliminar a "${name}" de tu lista de clientes?\n\nEsto borra sus datos en Firestore (plan, logs, perfil). La cuenta de acceso en Firebase Auth no se elimina automáticamente.\n\nEsta acción no se puede deshacer.`)) return;
+    if (!await _askConfirm(`¿Eliminar a &ldquo;${_escH(name)}&rdquo; de tu lista de clientes?<br><br>Esto borra sus datos en Firestore (plan, logs, perfil). La cuenta de acceso en Firebase Auth no se elimina automáticamente.<br><br>Esta acción no se puede deshacer.`)) return;
     try {
       // Get client doc first to clean up phone_index
       const cSnap = await getDoc(doc(db, 'clients', uid));
@@ -2548,7 +2548,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password") {
           // Mostrar opción de recuperar contraseña
           const ncEmail = document.getElementById('nc-email')?.value?.trim() || email;
-          const useReset = await _askConfirm(`El email ya existe con otra contraseña.<br><span style="color:#888;font-size:12px">¿Enviar un enlace de reseteo de contraseña al correo ${ncEmail}?</span>`);
+          const useReset = await _askConfirm(`El email ya existe con otra contraseña.<br><span style="color:#888;font-size:12px">¿Enviar un enlace de reseteo de contraseña al correo ${_escH(ncEmail)}?</span>`);
           if (useReset) {
             try { await sendPasswordResetEmail(auth, ncEmail); showToast('Enlace de reseteo enviado a ' + ncEmail); }
             catch(re) { showToast('Error al enviar: ' + re.message, true); }
@@ -3554,7 +3554,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       };
 
       closeMesoBtn.onclick = async () => {
-        if (!await _askConfirm(`¿Cerrar mesociclo semana ${actualWeek} de ${clientData.displayName}?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
+        if (!await _askConfirm(`¿Cerrar mesociclo semana ${actualWeek} de ${_escH(clientData.displayName)}?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
         closeMesoBtn.disabled = true; closeMesoBtn.textContent = "Archivando...";
         try {
           const logsRef = doc(db, 'logs', select.value);
@@ -8570,7 +8570,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const fechaDisp = r.fecha
         ? new Date(r.fecha+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})
         : new Date(r.ts).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
-      const chips = _INBODY_FIELDS.map(f => { if(r[f.id]==null||r[f.id]==='') return ''; const disp=f.id==='tipo_cuerpo'?r[f.id]:(r[f.id]+(f.unit?' '+f.unit:'')); return `<span style="font-size:11px;color:#888">${f.label}: <strong style="color:#F4F4F0">${disp}</strong></span>`; }).filter(Boolean).join(' · ');
+      const chips = _INBODY_FIELDS.map(f => { if(r[f.id]==null||r[f.id]==='') return ''; const disp=_escH(f.id==='tipo_cuerpo'?r[f.id]:(r[f.id]+(f.unit?' '+f.unit:''))); return `<span style="font-size:11px;color:#888">${f.label}: <strong style="color:#F4F4F0">${disp}</strong></span>`; }).filter(Boolean).join(' · ');
       const realIdx = ri + 1; // index in sorted results array (0 = latest)
       return `<div style="background:rgba(244,244,240,.03);border:1px solid rgba(244,244,240,.07);border-radius:10px;padding:10px 14px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
