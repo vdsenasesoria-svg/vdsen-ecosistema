@@ -59,6 +59,8 @@
       transition: border-color .2s, box-shadow .2s;
     }
     .input-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(244,244,240,.1); }
+    .input-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .btn-primary {
       background: var(--accent);
       color: #0A0A0A;
@@ -383,11 +385,11 @@
     </div>
   </div>
 </div>
-<div id="newClientModal" class="modal-overlay" style="display:none;">
+<div id="newClientModal" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="newClientModalTitle">
   <div class="modal-box" style="max-width:420px;">
     <div class="flex justify-between items-center mb-4">
-      <h3 class="text-lg font-bold">Nuevo Cliente</h3>
-      <button onclick="document.getElementById('newClientModal').style.display='none'" class="text-[#888] hover:text-white text-xl">✕</button>
+      <h3 id="newClientModalTitle" class="text-lg font-bold">Nuevo Cliente</h3>
+      <button onclick="document.getElementById('newClientModal').style.display='none'" class="text-[#888] hover:text-white text-xl" aria-label="Cerrar">✕</button>
     </div>
     <label class="block text-xs text-[#888] mb-1">Nombre completo</label>
     <input id="nc-name" class="input-field mb-3" placeholder="Juan Pérez">
@@ -410,11 +412,11 @@
   </div>
 </div>
 
-<div id="newExerciseModal" class="modal-overlay" style="display:none;">
+<div id="newExerciseModal" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="newExerciseModalTitle">
   <div class="modal-box" style="max-width:420px;">
     <div class="flex justify-between items-center mb-4">
-      <h3 class="text-lg font-bold">Nuevo Ejercicio</h3>
-      <button onclick="document.getElementById('newExerciseModal').style.display='none'" class="text-[#888] hover:text-white text-xl">✕</button>
+      <h3 id="newExerciseModalTitle" class="text-lg font-bold">Nuevo Ejercicio</h3>
+      <button onclick="document.getElementById('newExerciseModal').style.display='none'" class="text-[#888] hover:text-white text-xl" aria-label="Cerrar">✕</button>
     </div>
     <label class="block text-xs text-[#888] mb-1">Nombre</label>
     <input id="ex-name" class="input-field mb-3" placeholder="Sentadilla">
@@ -468,17 +470,17 @@
   </div>
 </div>
 
-<div id="clientModal" class="modal-overlay" style="display:none;">
+<div id="clientModal" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="modalClientName">
   <div class="modal-box">
     <div class="flex justify-between items-center mb-2">
       <div class="flex items-center gap-2">
-        <button onclick="navClient(-1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" title="Cliente anterior">◀</button>
+        <button onclick="navClient(-1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" aria-label="Cliente anterior">◀</button>
         <h3 class="text-xl font-bold" id="modalClientName">—</h3>
-        <button onclick="navClient(1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" title="Siguiente cliente">▶</button>
+        <button onclick="navClient(1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" aria-label="Siguiente cliente">▶</button>
       </div>
       <div class="flex items-center gap-2">
         <button id="modalDeleteClientBtn" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:12px;cursor:pointer" title="Eliminar cliente">🗑 Eliminar</button>
-        <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
+        <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none" aria-label="Cerrar">✕</button>
       </div>
     </div>
     <div id="clientNavBar" class="flex gap-1 mb-3 overflow-x-auto pb-1"></div>
@@ -844,19 +846,30 @@
     return new Promise(resolve => {
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.setAttribute('role', 'dialog');
+      ov.setAttribute('aria-modal', 'true');
+      ov.setAttribute('aria-label', 'Confirmar acción');
       ov.innerHTML = `
         <div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:24px;max-width:340px;width:100%;font-family:inherit">
           <p style="color:#f0ece4;font-size:14px;line-height:1.5;margin:0 0 20px">${msg}</p>
           <div style="display:flex;gap:10px;justify-content:flex-end">
-            <button id="_ack_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer">Cancelar</button>
-            <button id="_ack_ok" style="padding:8px 18px;border-radius:8px;border:none;background:#c94a3a;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Confirmar</button>
+            <button id="_ack_cancel" style="padding:10px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer;min-height:44px">Cancelar</button>
+            <button id="_ack_ok" style="padding:10px 18px;border-radius:8px;border:none;background:#c94a3a;color:#fff;font-size:13px;font-weight:700;cursor:pointer;min-height:44px">Confirmar</button>
           </div>
         </div>`;
       document.body.appendChild(ov);
       const cleanup = (val) => { ov.remove(); resolve(val); };
-      ov.querySelector('#_ack_ok').addEventListener('click', () => cleanup(true));
-      ov.querySelector('#_ack_cancel').addEventListener('click', () => cleanup(false));
+      const cancelBtn = ov.querySelector('#_ack_cancel');
+      const okBtn = ov.querySelector('#_ack_ok');
+      okBtn.addEventListener('click', () => cleanup(true));
+      cancelBtn.addEventListener('click', () => cleanup(false));
       ov.addEventListener('click', e => { if (e.target === ov) cleanup(false); });
+      ov.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.stopPropagation(); cleanup(false); }
+        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); cleanup(true); }
+      });
+      // Focus Cancel by default — safer for destructive confirmations
+      setTimeout(() => cancelBtn.focus(), 0);
     });
   }
 
@@ -878,7 +891,11 @@
       ov.querySelector('#_pm_ok').onclick = () => done(inp.value.trim() || null);
       ov.querySelector('#_pm_cancel').onclick = () => done(null);
       ov.onclick = e => { if (e.target === ov) done(null); };
-      inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value.trim() || null); if (e.key === 'Escape') done(null); };
+      inp.onkeydown = e => {
+        if (e.isComposing) return;
+        if (e.key === 'Enter') { e.preventDefault(); done(inp.value.trim() || null); }
+        if (e.key === 'Escape') done(null);
+      };
     });
   }
 
@@ -886,18 +903,24 @@
     return new Promise(resolve => {
       const ov = document.createElement('div');
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
-      const listHtml = options.map((o,i) => `<button data-idx="${i}" style="display:block;width:100%;text-align:left;padding:10px 12px;border-radius:8px;border:1px solid #333;background:#111;color:#f0ece4;font-size:13px;cursor:pointer;margin-bottom:6px;transition:background .15s" onmouseover="this.style.background='#1e1e1e'" onmouseout="this.style.background='#111'">${_escH(o.name)}</button>`).join('');
+      ov.setAttribute('role', 'dialog');
+      ov.setAttribute('aria-modal', 'true');
+      ov.setAttribute('aria-label', title);
+      const listHtml = options.map((o,i) => `<button data-idx="${i}" style="display:block;width:100%;text-align:left;padding:10px 12px;border-radius:8px;border:1px solid #333;background:#111;color:#f0ece4;font-size:13px;cursor:pointer;margin-bottom:6px;transition:background .15s;min-height:44px" onmouseover="this.style.background='#1e1e1e'" onmouseout="this.style.background='#111'">${_escH(o.name)}</button>`).join('');
       ov.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:24px;max-width:380px;width:100%;font-family:inherit">
         <p style="color:#f0ece4;font-size:14px;line-height:1.5;margin:0 0 14px">${title}</p>
         <div style="max-height:280px;overflow-y:auto;margin-bottom:16px">${listHtml}</div>
         <div style="display:flex;justify-content:flex-end">
-          <button id="_sm_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer">Cancelar</button>
+          <button id="_sm_cancel" style="padding:10px 18px;border-radius:8px;border:1px solid #444;background:#222;color:#888;font-size:13px;cursor:pointer;min-height:44px">Cancelar</button>
         </div></div>`;
       document.body.appendChild(ov);
       const done = v => { ov.remove(); resolve(v); };
       ov.querySelectorAll('[data-idx]').forEach(btn => btn.onclick = () => done(options[+btn.dataset.idx]));
       ov.querySelector('#_sm_cancel').onclick = () => done(null);
       ov.onclick = e => { if (e.target === ov) done(null); };
+      ov.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); done(null); } });
+      // Focus first option for keyboard accessibility
+      setTimeout(() => { const f = ov.querySelector('[data-idx]'); if (f) f.focus(); }, 0);
     });
   }
 
@@ -921,6 +944,9 @@
     if (!container) {
       container = document.createElement("div");
       container.id = "toast-container";
+      container.setAttribute('role', 'status');
+      container.setAttribute('aria-live', 'polite');
+      container.setAttribute('aria-atomic', 'true');
       document.body.appendChild(container);
     }
     const toast = document.createElement("div");
@@ -1114,8 +1140,18 @@
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    // Static client modal
     const m = document.getElementById('clientModal');
-    if (m && m.style.display !== 'none') { e.preventDefault(); closeClientModal(); }
+    if (m && m.style.display !== 'none') { e.preventDefault(); closeClientModal(); return; }
+    // Dynamic overlays: dismiss topmost (highest z-index) fixed overlay that handles backdrop-click
+    const overlays = Array.from(document.querySelectorAll('[role="dialog"]'));
+    if (overlays.length) {
+      // Last appended = topmost
+      const top = overlays[overlays.length - 1];
+      // Synthesize a backdrop click to reuse each overlay's own cleanup logic
+      top.dispatchEvent(new MouseEvent('click', { target: top, bubbles: true, cancelable: true }));
+      e.preventDefault();
+    }
   });
   window.markEditorDirty = markEditorDirty;
   window.markEditorClean = markEditorClean;
@@ -2990,12 +3026,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           <div class="flex items-center gap-3 flex-wrap">
             <div class="text-center px-3 py-2 rounded-lg" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.3)">
               <div style="display:flex;align-items:center;gap:4px">
-                <button id="monWeekPrev" aria-label="Semana anterior" style="width:22px;height:22px;border-radius:4px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;${selectedMonitorWeek<=1?'opacity:.3;pointer-events:none':''}">‹</button>
+                <button id="monWeekPrev" aria-label="Semana anterior" style="width:36px;height:36px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:16px;cursor:pointer;line-height:1;flex-shrink:0;display:flex;align-items:center;justify-content:center;${selectedMonitorWeek<=1?'opacity:.3;pointer-events:none':''}">‹</button>
                 <div>
                   <div class="text-2xl font-bold text-[#F4F4F0]">SEM ${selectedMonitorWeek}</div>
                   <div class="text-xs text-[#888] mt-1">/ ${totalWeeks} SEM</div>
                 </div>
-                <button id="monWeekNext" aria-label="Semana siguiente" style="width:22px;height:22px;border-radius:4px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;${selectedMonitorWeek>=totalWeeks?'opacity:.3;pointer-events:none':''}">›</button>
+                <button id="monWeekNext" aria-label="Semana siguiente" style="width:36px;height:36px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:16px;cursor:pointer;line-height:1;flex-shrink:0;display:flex;align-items:center;justify-content:center;${selectedMonitorWeek>=totalWeeks?'opacity:.3;pointer-events:none':''}">›</button>
               </div>
               <div class="px-2 py-0.5 rounded text-xs font-bold mt-1" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:${weekStatus==='ACTUAL'?'#44BB88':weekStatus==='HISTÓRICA'?'#888':'#4488cc'}">${weekStatus}</div>
             </div>
@@ -3459,9 +3495,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         weekCtrl.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:rgba(244,244,240,.08);border:1px solid rgba(244,244,240,.35);border-radius:8px;padding:4px 8px;margin-left:8px;flex-wrap:wrap";
         weekCtrl.innerHTML = `
           <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Semana</span>
-          <button id="weekDec" title="Retroceder una semana" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#F4F4F0;font-weight:700;cursor:pointer">−</button>
+          <button id="weekDec" aria-label="Retroceder una semana" style="width:36px;height:36px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#F4F4F0;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center">−</button>
           <input id="weekInput" type="number" min="1" max="16" step="1" style="width:48px;text-align:center;background:#0d0d0d;border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#F4F4F0;font-weight:700;padding:3px 4px">
-          <button id="weekInc" title="Avanzar una semana" style="width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#F4F4F0;font-weight:700;cursor:pointer">+</button>
+          <button id="weekInc" aria-label="Avanzar una semana" style="width:36px;height:36px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:#1a1a1a;color:#F4F4F0;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center">+</button>
           <button id="weekApply" title="Aplicar cambio de semana activa" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(244,244,240,.5);background:rgba(244,244,240,.18);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">Aplicar</button>
           <span style="width:1px;height:18px;background:rgba(244,244,240,.25);margin:0 4px"></span>
           <span class="text-xs text-[#888]" style="text-transform:uppercase;letter-spacing:.05em">Plan</span>
@@ -8394,13 +8430,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <button onclick="editClientInfo('${clientId}')" class="text-[#F4F4F0] text-xs underline">✏️ Editar</button>
         </div>
       </div>
-      <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(244,244,240,.1);overflow-x:auto">
-        <button id="ctab_ficha"   onclick="_switchClientTab('ficha')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📋 Ficha</button>
-        <button id="ctab_plan"    onclick="_switchClientTab('plan')"    style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🏋️ Plan<span id="dirtyPlanDot" hidden style="color:#FF8844;margin-left:3px;font-size:10px">●</span></button>
-        <button id="ctab_monitor" onclick="_switchClientTab('monitor')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📊 Monitor</button>
-        <button id="ctab_notas"   onclick="_switchClientTab('notas')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📝 Notas</button>
-        <button id="ctab_inbody"  onclick="_switchClientTab('inbody')"  style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📏 InBody</button>
-        <button id="ctab_renovar" onclick="_switchClientTab('renovar')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🔄 Renovar</button>
+      <div role="tablist" aria-label="Secciones del cliente" style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(244,244,240,.1);overflow-x:auto">
+        <button id="ctab_ficha"   role="tab" aria-selected="false" onclick="_switchClientTab('ficha')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📋 Ficha</button>
+        <button id="ctab_plan"    role="tab" aria-selected="false" onclick="_switchClientTab('plan')"    style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🏋️ Plan<span id="dirtyPlanDot" hidden style="color:#FF8844;margin-left:3px;font-size:10px">●</span></button>
+        <button id="ctab_monitor" role="tab" aria-selected="false" onclick="_switchClientTab('monitor')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📊 Monitor</button>
+        <button id="ctab_notas"   role="tab" aria-selected="false" onclick="_switchClientTab('notas')"   style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📝 Notas</button>
+        <button id="ctab_inbody"  role="tab" aria-selected="false" onclick="_switchClientTab('inbody')"  style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">📏 InBody</button>
+        <button id="ctab_renovar" role="tab" aria-selected="false" onclick="_switchClientTab('renovar')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🔄 Renovar</button>
       </div>
       <div id="clientDetailTabContent"></div>`;
     _switchClientTab('ficha');
@@ -8454,7 +8490,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailActiveTab = tab;
     ['ficha','plan','monitor','notas','inbody','renovar'].forEach(t => {
       const btn = document.getElementById('ctab_'+t);
-      if (btn) { btn.style.color = t===tab?'#F4F4F0':'#888'; btn.style.borderBottomColor = t===tab?'#C4FF00':'transparent'; }
+      if (btn) {
+        btn.style.color = t===tab?'#F4F4F0':'#888';
+        btn.style.borderBottomColor = t===tab?'#C4FF00':'transparent';
+        btn.setAttribute('aria-selected', t===tab ? 'true' : 'false');
+        btn.setAttribute('role', 'tab');
+      }
     });
     const cont = document.getElementById('clientDetailTabContent');
     if (!cont) return;
@@ -12705,17 +12746,21 @@ El esfuerzo no es negociable.
       </div>`;
     document.body.appendChild(overlay);
     _wirePhonePreview(overlay.querySelector('#eci-phone'), overlay.querySelector('#eci-phone-preview'));
-    overlay.querySelector('#eci-reset-btn').onclick = async () => {
+    overlay.querySelector('#eci-reset-btn').onclick = async (ev) => {
+      const btn = ev.currentTarget;
       const st = overlay.querySelector('#eci-reset-status');
       const targetEmail = overlay.querySelector('#eci-email').value.trim();
       if (!targetEmail) { st.style.color='#c94a3a'; st.textContent='Sin email'; return; }
+      btn.disabled = true; btn.textContent = 'Enviando…';
       try {
         await sendPasswordResetEmail(auth, targetEmail);
         st.style.color = '#44BB88';
         st.textContent = '✓ Enlace enviado a ' + targetEmail;
       } catch(e) {
         st.style.color = '#c94a3a';
-        st.textContent = 'Error: ' + (e.code || e.message);
+        st.textContent = _fmtErr(e);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Enviar reseteo';
       }
     };
 
@@ -12758,11 +12803,13 @@ El esfuerzo no es negociable.
         btnM.disabled = false; btnM.textContent = '✓ Habilitar login por celular';
       }
     };
-    overlay.querySelector('#eci-save').onclick = async () => {
+    overlay.querySelector('#eci-save').onclick = async (ev) => {
+      const btn = ev.currentTarget;
       const newName  = overlay.querySelector('#eci-name').value.trim();
       const newEmail = overlay.querySelector('#eci-email').value.trim();
       const st = overlay.querySelector('#eci-status');
       if (!newName) { st.style.color='#c94a3a'; st.textContent='Nombre vacío'; return; }
+      btn.disabled = true; btn.textContent = 'Guardando…';
       try {
         await ensureCoachDoc();
         const updates = { displayName: newName };
@@ -12800,7 +12847,9 @@ El esfuerzo no es negociable.
         setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 600);
       } catch(e) {
         st.style.color = '#c94a3a';
-        st.textContent = 'Error: ' + (e.code || e.message);
+        st.textContent = _fmtErr(e);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Guardar cambios';
       }
     };
 
@@ -12941,10 +12990,12 @@ El esfuerzo no es negociable.
         <div id="upd-plan-status" class="text-xs mt-2"></div>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.querySelector('#upd-plan-apply').onclick = async () => {
+    overlay.querySelector('#upd-plan-apply').onclick = async (ev) => {
+      const applyBtn = ev.currentTarget;
       const raw = overlay.querySelector('#upd-plan-json').value.trim();
       const st  = overlay.querySelector('#upd-plan-status');
       if (!raw) { st.style.color='#c94a3a'; st.textContent='Pega el JSON'; return; }
+      applyBtn.disabled = true; applyBtn.textContent = 'Aplicando…';
       let obj; try { obj = JSON.parse(raw); } catch(e) { st.style.color='#c94a3a'; st.textContent='JSON inválido: '+e.message; return; }
       if (!obj || !Array.isArray(obj.days) || !obj.days.length) {
         st.style.color='#c94a3a'; st.textContent='El JSON debe tener "days" como array no vacío'; return;
@@ -13005,7 +13056,8 @@ El esfuerzo no es negociable.
         setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 900);
       } catch(e) {
         st.style.color = '#c94a3a';
-        st.textContent = 'Error al guardar: ' + (e.code || e.message);
+        st.textContent = 'Error al guardar: ' + _fmtErr(e);
+        applyBtn.disabled = false; applyBtn.textContent = 'Aplicar actualización';
       }
     };
   }
@@ -14664,13 +14716,13 @@ El esfuerzo no es negociable.
 </script>
 
 <!-- VDSEN AI PREVIEW MODAL (FASE D.1 — read-only) -->
-<div id="vdsenPreviewModal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.7);align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto">
+<div id="vdsenPreviewModal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.7);align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto" role="dialog" aria-modal="true" aria-labelledby="vdsenPreviewTitle">
   <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:100%;max-width:860px;padding:24px;position:relative">
-    <button onclick="document.getElementById('vdsenPreviewModal').style.display='none'" style="position:absolute;top:14px;right:16px;background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">✕</button>
+    <button onclick="document.getElementById('vdsenPreviewModal').style.display='none'" style="position:absolute;top:14px;right:16px;background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center" aria-label="Cerrar">✕</button>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
       <span style="font-size:22px">🔬</span>
       <div>
-        <div style="font-size:16px;font-weight:700;color:var(--text)">VDSEN AI — Preview de Plan</div>
+        <div id="vdsenPreviewTitle" style="font-size:16px;font-weight:700;color:var(--text)">VDSEN AI — Preview de Plan</div>
         <div style="font-size:11px;color:var(--text-muted)">RequestID: <span id="vdsenPreview_requestId"></span> · Status: <span id="vdsenPreview_status"></span> · Modelo: <span id="vdsenPreview_model"></span></div>
       </div>
       <div id="vdsenPreview_badge" style="margin-left:auto;padding:4px 10px;border-radius:20px;background:rgba(239,68,68,.15);color:#ef4444;font-size:11px;font-weight:700">⚠ BORRADOR — NO APLICADO</div>
