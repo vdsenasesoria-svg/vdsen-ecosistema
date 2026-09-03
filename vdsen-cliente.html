@@ -1104,7 +1104,7 @@ async function resetPassword() {
   } catch(e) {
     errEl.style.color = '';
     if (e.code === 'auth/user-not-found') errEl.textContent = 'No existe una cuenta con ese correo';
-    else errEl.textContent = 'Error: ' + e.message;
+    else errEl.textContent = _fb_errMsg(e);
   }
 }
 
@@ -1750,11 +1750,10 @@ async function loadPlan(user) {
     } catch(snapErr) { console.warn('onSnapshot no disponible:', snapErr.message); }
   } catch(e) {
     console.error('loadPlan ERROR:', e);
-    const errMsg = (e && e.message) ? e.message : String(e);
-    const errCode = (e && e.code) ? ' ['+e.code+']' : '';
-    showToast('Error: ' + errMsg + errCode, true);
+    var _friendlyMsg = _fb_errMsg(e);
+    showToast('No se pudo cargar tu plan. ' + _friendlyMsg, true);
     const liErr = document.getElementById('liErr');
-    if (liErr) liErr.textContent = 'Error al cargar plan: ' + errMsg + errCode;
+    if (liErr) liErr.textContent = _friendlyMsg + ' — Si el problema persiste, contacta a tu coach.';
     showScreen('scrLogin');
   }
 }
@@ -10866,6 +10865,7 @@ async function guardarCI() {
   d.subj_score  = _subj_score;
   d.subj_vulner = parseInt(d['ci_vulner']) || 0;
 
+  var _ciSaveOk = false;
   try {
     await saveLogs();
 
@@ -10909,18 +10909,33 @@ async function guardarCI() {
     }
 
     showToast('CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · Tu coach lo revisará en el panel de monitoreo');
+    _ciSaveOk = true;
     _deferResumen();
   } catch(e) {
-    showToast('ERROR AL GUARDAR: ' + e.message, true);
     console.error('guardarCI error:', e);
+    // saveLogs() ya guardó el check-in en localStorage; este error es del addDoc secundario a expedientes
+    var _ciErrMsg = navigator.onLine
+      ? 'Check-in guardado localmente — no se pudo sincronizar con el servidor. Reintenta en un momento.'
+      : 'Sin conexión — el check-in se guardó en tu dispositivo y se sincronizará cuando vuelvas a conectarte.';
+    showToast(_ciErrMsg, true);
   } finally {
     var _fb = document.getElementById('ciSaveBtn');
-    if (_fb) {
-      _fb.textContent = '✓ Guardado';
-      setTimeout(function(){ var b = document.getElementById('ciSaveBtn'); if(b){ b.textContent = '💾 GUARDAR'; b.disabled = false; } }, 2000);
-    } else if (_ciBtn) {
-      _ciBtn.disabled = false;
-      _ciBtn.textContent = '✓ GUARDAR CHECK-IN SEM ' + CURRENT_WEEK;
+    if (_ciSaveOk) {
+      if (_fb) {
+        _fb.textContent = '✓ Guardado';
+        setTimeout(function(){ var b = document.getElementById('ciSaveBtn'); if(b){ b.textContent = '💾 GUARDAR'; b.disabled = false; } }, 2000);
+      } else if (_ciBtn) {
+        _ciBtn.disabled = false;
+        _ciBtn.textContent = '✓ GUARDAR CHECK-IN SEM ' + CURRENT_WEEK;
+      }
+    } else {
+      if (_fb) {
+        _fb.textContent = '⚠ Reintentar';
+        _fb.disabled = false;
+      } else if (_ciBtn) {
+        _ciBtn.disabled = false;
+        _ciBtn.textContent = '⚠ Reintentar check-in';
+      }
     }
   }
 }
@@ -13288,6 +13303,19 @@ function _buildNextExposureHtml(progrec, unit, nombre) {
 // Minimal HTML escaper for history modal (no _escH in cliente)
 function _escHTml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Convierte error Firebase a mensaje amigable en español
+function _fb_errMsg(e) {
+  if (!navigator.onLine) return 'Sin conexión — reintenta cuando vuelvas a conectarte';
+  if (!e) return 'Error desconocido';
+  var code = e.code || '';
+  if (code === 'permission-denied') return 'Sin permisos — contacta a tu coach';
+  if (code === 'unavailable' || code === 'deadline-exceeded') return 'Servidor no disponible — reintenta en un momento';
+  if (code === 'auth/too-many-requests') return 'Demasiados intentos — espera unos minutos';
+  if (code === 'auth/network-request-failed' || code === 'auth/internal-error') return 'Sin conexión — revisa tu red';
+  if (code === 'auth/user-not-found' || code === 'auth/invalid-email') return 'Correo no reconocido';
+  return 'Error al conectar — reintenta';
 }
 
 // FASE 18 — helper puro: genera HTML del banner de nota del coach
