@@ -6562,10 +6562,10 @@ function _buildCheckinHistory() {
 
   var rows = checkins.map(function(ci) {
     var d = ci.data || {};
-    var peso  = d.peso  != null ? d.peso  + ' kg' : '—';
-    var hrv   = d.hrv   != null ? d.hrv         : '—';
-    var sleep = d.sleep != null ? d.sleep + ' h' : '—';
-    var who5  = d.who5  != null ? d.who5 + '/100': '—';
+    var peso  = d.peso  != null ? _escHTml(String(d.peso))  + ' kg'  : '—';
+    var hrv   = d.hrv   != null ? _escHTml(String(d.hrv))           : '—';
+    var sleep = d.sleep != null ? _escHTml(String(d.sleep)) + ' h'  : '—';
+    var who5  = d.who5  != null ? _escHTml(String(d.who5)) + '/100' : '—';
     var isActive = ci.week === REAL_WEEK;
     return '<tr style="' + (isActive ? 'background:rgba(196,255,0,.04)' : '') + '">'
       + '<td style="padding:6px 8px;font-family:var(--ff);font-weight:700;color:' + (isActive ? 'var(--accent)' : 'var(--mt)') + ';border-bottom:1px solid rgba(107,107,102,.1)">SEM ' + ci.week + '</td>'
@@ -11193,6 +11193,27 @@ function renderCheckin() {
       + '</div>';
   }
 
+  // ── Completion banner: muestra qué secciones clave están completas ──
+  var _ciBannerItems = [
+    { label: 'PESO',  done: !!(d.peso),  icon: '⚖️' },
+    { label: 'HRV',   done: !!(d.hrv),   icon: '💓' },
+    { label: 'WHO-5', done: w5t !== null, icon: '🧠' },
+    { label: 'NOTAS', done: !!(d.notas), icon: '📝' }
+  ];
+  var _ciBannerDoneCount = _ciBannerItems.filter(function(x){ return x.done; }).length;
+  var _ciBannerTotal = _ciBannerItems.length;
+  var _ciBannerAll = _ciBannerDoneCount === _ciBannerTotal;
+  var _ciBannerChips = _ciBannerItems.map(function(x) {
+    return '<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:20px;font-size:9px;font-weight:700;letter-spacing:.5px;'
+      + (x.done
+        ? 'background:rgba(58,148,96,.12);border:1px solid rgba(58,148,96,.35);color:var(--grn)'
+        : 'background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.2);color:var(--mt)')
+      + '">'
+      + x.icon + ' ' + x.label
+      + (x.done ? ' ✓' : '')
+      + '</span>';
+  }).join('');
+
   cont.innerHTML =
     // Botón flotante de guardar
     + '<div id="ciFloatSave" style="position:fixed;bottom:80px;right:14px;z-index:300">'
@@ -11201,7 +11222,20 @@ function renderCheckin() {
     + '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">CHECK-IN SEM ' + sem + '</div>'
     + '<div style="display:inline-block;margin-bottom:8px;padding:2px 10px;background:rgba(107,107,102,.10);border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1px;color:'
     + (CURRENT_WEEK < REAL_WEEK ? 'rgba(107,107,102,.5)' : 'var(--mt)') + '">SEMANA ' + CURRENT_WEEK + ' DE ' + getTotalWeeks() + '</div>'
-    + '<div style="font-size:12px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">Rellena al inicio de cada semana — tu coach lo usa para ajustar el plan</div>'
+    + '<div style="font-size:12px;color:var(--mt);letter-spacing:1px;margin-bottom:12px">Rellena al inicio de cada semana — tu coach lo usa para ajustar el plan</div>'
+    // Completion banner
+    + '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-bottom:14px;padding:10px 12px;background:'
+    +   (_ciBannerAll ? 'rgba(58,148,96,.08)' : 'rgba(107,107,102,.05)')
+    + ';border:1px solid '
+    +   (_ciBannerAll ? 'rgba(58,148,96,.3)' : 'rgba(107,107,102,.15)')
+    + ';border-radius:10px">'
+    +   '<span style="font-size:9px;font-weight:800;letter-spacing:1px;color:'
+    +     (_ciBannerAll ? 'var(--grn)' : 'var(--mt)')
+    +   ';margin-right:4px">'
+    +   (_ciBannerAll ? '✓ COMPLETO' : _ciBannerDoneCount + '/' + _ciBannerTotal + ' CAMPOS')
+    +   '</span>'
+    +   _ciBannerChips
+    + '</div>'
 
     // ── MEDIDAS ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
@@ -11315,7 +11349,7 @@ function renderCheckin() {
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">NOTAS PARA TU COACH</div>'
     +   '<textarea id="ci_notas" placeholder="Dolor, fatiga inusual, estrés, cambios de horario, sueño alterado..." oninput="ciSet(\'notas\',this.value)"'
     +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:15px;padding:12px;outline:none;min-height:90px;resize:vertical;line-height:1.6">'
-    +   (d.notas||'') + '</textarea>'
+    +   _escHTml(d.notas||'') + '</textarea>'
     + '</div>'
 
     // ── HISTORIAL + TENDENCIA PESO (FASE 12) ─────────────────────────
