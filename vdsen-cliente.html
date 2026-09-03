@@ -4734,7 +4734,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '</div>'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isIsometric?'var(--accent)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_repsLbl+'</div>'+
-          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="done" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+_safeUnit+'\','+baseRIR+')">'+
+          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="done" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+_safeUnit+'\','+baseRIR+')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
         '</div>'+
       '</div>'+
       '<div id="xhint_'+_expK+'" data-exname="'+_escHTml(nombre)+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-bottom:2px"></div>'+
@@ -4958,18 +4958,20 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           return '<div style="display:flex;gap:8px;margin-bottom:8px">'+
             '<div style="flex:1">'+
               '<div style="font-size:9px;color:'+(isBodyweight?'var(--mt2)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+cargaLabel+'</div>'+
-              '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+cargaPh+'" step="0.5" inputmode="decimal"'+
+              '<input id="carga_'+key+'" type="number" value="'+(carga||'')+'" placeholder="'+cargaPh+'" step="0.5" inputmode="decimal" enterkeyhint="next"'+
               ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);'+
               'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
-              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
+              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()"'+
+              ' onkeydown="if(event.key===\'Enter\'){var _r=document.getElementById(\'reps_'+key+'\');if(_r){event.preventDefault();_r.focus();_r.select();}}">'+
               _stepHtml+
             '</div>'+
             '<div style="flex:1">'+
               '<div style="font-size:9px;color:'+(isIsometric?'var(--accent)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+repsLabel+'</div>'+
-              '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="'+repsPh+'" inputmode="numeric"'+
+              '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="'+repsPh+'" inputmode="numeric" enterkeyhint="done"'+
               ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid '+(isIsometric?'rgba(107,107,102,.3)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 8px;outline:none;text-align:center"'+
-              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()">'+
+              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()"'+
+              ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
             '</div>'+
           '</div>';
         })()+
@@ -7388,11 +7390,12 @@ function buildBoostcampExercise(ej, di, ei) {
       : '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
           '<div style="flex:1">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">Calidad (1-10)</div>'+
-            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done"'+
             ' aria-label="Calidad de serie ICS del 1 al 10"'+
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
             'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+
-            'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box" oninput="updateICSColor(\''+key+'\')">'+
+            'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box"'+
+            ' oninput="updateICSColor(\''+key+'\')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
             '<div id="icshint_'+key+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
           '</div>'+
           '<div style="flex:2">'+
@@ -7444,7 +7447,7 @@ function buildBoostcampExercise(ej, di, ei) {
               '<input id="rir_'+key+'" type="number" value="'+(rirReal||'')+'" placeholder="RIR" inputmode="numeric" min="0" max="5" enterkeyhint="done"'+
               ' style="width:46px;flex-shrink:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:#e8a040;font-size:14px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box"'+
-              ' onfocus="this.select()">'+
+              ' onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
             '</div>'+
             '<div id="hint_'+key+'" data-base-rir="'+baseRIR+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px"></div>'+
             '<div id="plates_'+key+'" style="font-size:10px;color:var(--blue);min-height:0;margin-top:1px"></div>'+
