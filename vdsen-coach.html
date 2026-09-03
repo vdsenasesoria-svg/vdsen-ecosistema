@@ -8950,7 +8950,7 @@ El esfuerzo no es negociable.
     const _row = (label, id, unit) => {
       const v = _v(id);
       if (!v) return '';
-      const disp = (unit ? v + ' ' + unit : v).replace(/</g,'&lt;');
+      const disp = unit ? _escH(v) + ' ' + unit : _escH(v);
       return `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid rgba(244,244,240,.04);align-items:baseline">
         <span style="color:#666;font-size:11px;min-width:138px;flex-shrink:0;line-height:1.5">${label}</span>
         <span style="color:#e4e4e0;font-size:12px;font-weight:600;line-height:1.5;word-break:break-word">${disp}</span>
@@ -8971,13 +8971,13 @@ El esfuerzo no es negociable.
     const _chip = (label, id, unit, color) => {
       const v = _v(id); if (!v) return '';
       return `<div style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.1);border-radius:8px;padding:9px 13px;text-align:center;flex:1;min-width:60px">
-        <div style="font-size:19px;font-weight:800;color:${color};letter-spacing:-.5px;line-height:1">${v}<span style="font-size:9px;font-weight:400;color:#555;margin-left:2px">${unit||''}</span></div>
+        <div style="font-size:19px;font-weight:800;color:${color};letter-spacing:-.5px;line-height:1">${_escH(v)}<span style="font-size:9px;font-weight:400;color:#555;margin-left:2px">${unit||''}</span></div>
         <div style="font-size:9px;color:#555;margin-top:3px;letter-spacing:.05em;text-transform:uppercase">${label}</div>
       </div>`;
     };
 
     const _badge = (text, color, bg, border) =>
-      `<span style="font-size:11px;padding:3px 10px;border-radius:10px;background:${bg};border:1px solid ${border};color:${color};font-weight:600">${text}</span>`;
+      `<span style="font-size:11px;padding:3px 10px;border-radius:10px;background:${bg};border:1px solid ${border};color:${color};font-weight:600">${_escH(text)}</span>`;
 
     // ── build sections ────────────────────────────────────────────────────────
     const secEntrenamiento = _sec('#C4FF00','🏋️','Entrenamiento',
@@ -9078,7 +9078,7 @@ El esfuerzo no es negociable.
     cont.innerHTML = `
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap">
         <div>
-          <div style="font-size:13px;font-weight:700;color:#F4F4F0">${(d.nombre || (_detailClientData && _detailClientData.displayName) || 'Ficha').replace(/</g,'&lt;')}</div>
+          <div style="font-size:13px;font-weight:700;color:#F4F4F0">${_escH(d.nombre || (_detailClientData && _detailClientData.displayName) || 'Ficha')}</div>
           ${updatedAt ? `<div style="font-size:10px;color:#555;margin-top:2px">Actualizado ${updatedAt}</div>` : '<div style="font-size:10px;color:#555;margin-top:2px">Sin ficha</div>'}
         </div>
         <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.07);color:#C4FF00;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">📝 Editar ficha</button>
