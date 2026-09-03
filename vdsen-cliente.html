@@ -13002,7 +13002,7 @@ async function submitPostSession() {
     if (rec) {
       var _sanitize = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
       var recSafe = JSON.parse(JSON.stringify(rec, _sanitize));
-      LOGS['progrec_'+CURRENT_WEEK+'_'+di] = recSafe;
+      LOGS['progrec_'+REAL_WEEK+'_'+di] = recSafe;
       // P5: Longitudinal Engine — engine_state persiste en logs para la próxima generación
       if (rec.engineState) {
         LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _sanitize));

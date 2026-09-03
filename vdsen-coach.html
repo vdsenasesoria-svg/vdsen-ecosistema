@@ -2882,7 +2882,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     var setsCompleted = 0;
     var setsTotal = 0;
     for (var day = 0; day < totalDays; day++) {
-      if (entries['done_' + week + '_' + day] === true) sessionsCompleted++;
+      if (entries['done_' + week + '_' + day]) sessionsCompleted++;
     }
     if (planData && planData.days) {
       planData.days.forEach(function(dayObj) {
@@ -5706,8 +5706,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         var postKeys = Object.keys(entries).filter(function(k){ return k.startsWith('postsession_'); });
         postKeys.forEach(function(k) {
           var ps = entries[k];
-          if (ps && ps.articularPain && ps.articularPain.present && ps.articularPain.pattern) {
-            var pat = ps.articularPain.pattern;
+          // Fallback: soporta formato legado flat (articular/'patron') y formato nested (articularPain.present/.pattern)
+          var _artPresent = (ps && ps.articularPain && ps.articularPain.present != null)
+            ? ps.articularPain.present
+            : (ps && ps.articular === 'si');
+          var _artPattern = (ps && ps.articularPain && ps.articularPain.pattern)
+            ? ps.articularPain.pattern
+            : (ps && ps.patron) || '';
+          if (ps && _artPresent && _artPattern) {
+            var pat = _artPattern;
             if (!ctx.clientFlags.articularIssues.includes(pat)) {
               ctx.clientFlags.articularIssues.push(pat);
               var avoidPats = _PAIN_PATTERN_AVOIDANCE[pat.toLowerCase()] || [];
@@ -10277,7 +10284,7 @@ El esfuerzo no es negociable.
         ${ci.hrv    ? `<div><div class="text-xs text-[#888]">HRV</div><div class="text-xl font-bold">${_escH(String(ci.hrv))}</div></div>` : ''}
         ${ci.who5   ? `<div><div class="text-xs text-[#888]">WHO-5</div><div class="text-xl font-bold" style="color:${parseInt(ci.who5)<52?'#FF4444':'#44BB88'}">${_escH(String(ci.who5))}</div></div>` : ''}
         ${ci.energia? `<div><div class="text-xs text-[#888]">ENERGÍA</div><div class="text-xl font-bold">${_escH(String(ci.energia))}/10</div></div>` : ''}
-        ${ci.sueno  ? `<div><div class="text-xs text-[#888]">SUEÑO</div><div class="text-xl font-bold">${_escH(String(ci.sueno))}h</div></div>` : ''}
+        ${ci.sleep  ? `<div><div class="text-xs text-[#888]">SUEÑO</div><div class="text-xl font-bold">${_escH(String(ci.sleep))}h</div></div>` : ''}
       </div>
     </div>`;
 
