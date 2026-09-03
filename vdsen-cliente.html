@@ -8661,12 +8661,11 @@ async function _confirmSessionDone(di) {
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
   var _ok = await _doSaveLogs();
   if (_ok === false) {
-    // No persistió en Firestore — revertir el done_ y avisar al usuario.
+    // No persistió en Firestore — revertir el done_ (caller revierte postsession/progrec)
     delete LOGS[key];
-    showToast('⚠ NO SE GUARDÓ — revisa conexión / errores. Reintenta.', true);
     renderEntrenamiento();
     _deferResumen();
-    return;
+    return false;
   }
   if (navigator.vibrate) navigator.vibrate([60, 50, 150, 50, 250]);
   showToast('SESIÓN COMPLETADA ✓');
@@ -8677,6 +8676,7 @@ async function _confirmSessionDone(di) {
   // Avanza mientras la semana REAL siga completa, hasta 6 (deload).
   // Esto cubre el caso de marcar varias semanas atrasadas de un tirón.
   await _autoAdvanceWeekIfDone(CURRENT_WEEK !== REAL_WEEK /*fromOtherWeekView*/);
+  return true;
 }
 
 // Avanza REAL_WEEK mientras todas las sesiones de la semana real estén completas.
@@ -12711,6 +12711,10 @@ function showPostSessionModal(di) {
 function closePostSessionModal() {
   var m = document.getElementById('postSessionModal');
   if (m) m.style.display = 'none';
+  var _btn = document.getElementById('psSubmitBtn');
+  if (_btn) { _btn.disabled = false; _btn.textContent = 'GUARDAR Y CALCULAR PROGRESIÓN →'; }
+  var _errEl = document.getElementById('psErrorMsg');
+  if (_errEl) _errEl.style.display = 'none';
   _postSessionDi = null;
   _postSessionSubmitting = false;
 }
@@ -12775,18 +12779,23 @@ async function submitPostSession() {
   if (di == null) return;
   _postSessionSubmitting = true;
 
+  // Limpiar error anterior
+  var _errEl = document.getElementById('psErrorMsg');
+  if (_errEl) _errEl.style.display = 'none';
+
   var eimd = parseInt(document.getElementById('psEimd').value);
   if (!eimd) { _postSessionSubmitting = false; showToast('Selecciona cómo está el músculo', true); return; }
 
-  // Leer TODOS los valores del DOM antes de cerrar el modal
+  // Leer TODOS los valores del DOM antes de cualquier operación asíncrona
   var articularVal     = document.getElementById('psArticular').value;
   var articularPattern = document.getElementById('psArticularPatternSel').value;
   var sueno    = parseFloat(document.getElementById('psSueno').value) || 7;
   var rpe      = parseFloat(document.getElementById('psRpe').value)   || 7;
   var sessnote = ((document.getElementById('psSessnote') || {}).value || '').trim().slice(0, 400);
 
-  // Cerrar el modal PRIMERO — cualquier error posterior no deja al usuario bloqueado
-  closePostSessionModal();
+  // Loading state — botón deshabilitado durante el save asíncrono
+  var _btn = document.getElementById('psSubmitBtn');
+  if (_btn) { _btn.disabled = true; _btn.textContent = 'Guardando...'; }
 
   var postData = {
     eimd: eimd,
@@ -12797,9 +12806,11 @@ async function submitPostSession() {
     ts: Date.now()
   };
 
-  var postKey = 'postsession_'+REAL_WEEK+'_'+di;
+  // CORRECCIÓN: usar CURRENT_WEEK (no REAL_WEEK) para que la clave postsession_
+  // sea consistente con la clave done_ que escribe _confirmSessionDone.
+  var postKey = 'postsession_'+CURRENT_WEEK+'_'+di;
   LOGS[postKey] = postData;
-  var sessnoteKey = 'sessnote_'+REAL_WEEK+'_'+di;
+  var sessnoteKey = 'sessnote_'+CURRENT_WEEK+'_'+di;
   if (sessnote) { LOGS[sessnoteKey] = sessnote; } else { delete LOGS[sessnoteKey]; }
 
   // Calcular y guardar recomendaciones de progresión
@@ -12821,7 +12832,25 @@ async function submitPostSession() {
     // Sin progrec esta vez — no bloquear el guardado de la sesión
   }
 
-  await _confirmSessionDone(di);
+  var _saved = await _confirmSessionDone(di);
+
+  if (!_saved) {
+    // Revertir todos los datos escritos en memoria — Firestore no los recibió
+    delete LOGS[postKey];
+    delete LOGS[sessnoteKey];
+    delete LOGS['progrec_'+CURRENT_WEEK+'_'+di];
+    // Restaurar botón y permitir reintento sin perder los datos del formulario
+    if (_btn) { _btn.disabled = false; _btn.textContent = 'GUARDAR Y CALCULAR PROGRESIÓN →'; }
+    _postSessionSubmitting = false;
+    if (_errEl) {
+      _errEl.textContent = '⚠ No se pudo guardar — revisa tu conexión y vuelve a intentarlo. Tus respuestas siguen aquí.';
+      _errEl.style.display = 'block';
+    }
+    return;
+  }
+
+  // Éxito — cerrar modal y mostrar resumen
+  closePostSessionModal();
   showSessionSummary(di);
 }
 
@@ -14716,7 +14745,8 @@ document.addEventListener('keydown', function(e) {
       <div style="font-size:10px;color:var(--mt);margin-top:4px;text-align:right"><span id="psSessnoteCount">0</span>/400</div>
     </div>
 
-    <button onclick="submitPostSession()" style="width:100%;padding:16px;background:var(--accent);color:#000;font-size:16px;font-weight:800;border:none;border-radius:12px;cursor:pointer;letter-spacing:.5px">
+    <div id="psErrorMsg" style="display:none;margin-bottom:12px;padding:12px 14px;border-radius:10px;background:rgba(200,60,40,.12);border:1px solid rgba(200,60,40,.4);font-size:12px;font-weight:700;color:var(--red);line-height:1.5;text-align:center"></div>
+    <button id="psSubmitBtn" onclick="submitPostSession()" style="width:100%;padding:16px;background:var(--accent);color:#000;font-size:16px;font-weight:800;border:none;border-radius:12px;cursor:pointer;letter-spacing:.5px">
       GUARDAR Y CALCULAR PROGRESIÓN →
     </button>
     <div style="text-align:center;font-size:11px;color:var(--mt);margin-top:12px;line-height:1.5">
