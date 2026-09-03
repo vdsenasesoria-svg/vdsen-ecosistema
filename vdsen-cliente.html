@@ -4339,6 +4339,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK);
   var _seriesLabel = ((ej.technique||'').toLowerCase() === 'cluster') ? 'CLUSTERS' : 'SERIES';
   var unit = getExUnit(di, ei);
+  var _safeUnit = (unit === 'LB' || unit === 'KG') ? unit : 'KG'; // whitelist para contexto JS onclick
+  var _escUnit = _escHTml(String(unit)); // para contextos HTML (texto y atributos)
   var _planRestSecs = (_firstEffSet && parseInt(_firstEffSet.restSeconds) > 0) ? parseInt(_firstEffSet.restSeconds) : (ej.restSeconds || 90);
   var _planRestFmt = _planRestSecs >= 60 ? Math.floor(_planRestSecs/60)+'min'+(_planRestSecs%60>0?' '+(_planRestSecs%60)+'s':'') : _planRestSecs+'s';
   // Sesión cerrada: no se permiten ediciones una vez marcada como completada
@@ -4462,7 +4464,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         var _pvRir  = _prevWeekBanner.avgRIR != null ? ' · RIR '+Math.round(_prevWeekBanner.avgRIR*10)/10 : '';
         var _pvSets = _prevWeekBanner.numSets > 0 ? _prevWeekBanner.numSets+'×' : '';
         var _pvTop  = (_prevWeekBanner.topLoad && _prevWeekBanner.topLoad > _prevWeekBanner.avgLoad)
-          ? ' <span style="color:var(--gold);font-weight:800">↑'+_convertCarga(_prevWeekBanner.topLoad,_pvSrcUnit,unit)+' '+unit+'</span>' : '';
+          ? ' <span style="color:var(--gold);font-weight:800">↑'+_escHTml(String(_convertCarga(_prevWeekBanner.topLoad,_pvSrcUnit,unit)))+' '+_escUnit+'</span>' : '';
         var _trendLine = (function(){
           if (!_trendBanner) return '';
           var _dir = _trendBanner.direction;
@@ -4498,7 +4500,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+_escHTml(catData.motorPattern)+'</span>' : '')+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
-        '<button onclick="toggleExUnit('+di+','+ei+')" aria-label="Cambiar unidad (actualmente '+unit+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
+        '<button onclick="toggleExUnit('+di+','+ei+')" aria-label="Cambiar unidad (actualmente '+_escHTml(String(unit))+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+_escHTml(String(unit))+' ⇄</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
         (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
         (_exNoteInline?'<span style="font-size:10px;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">📝 Nota</span>':'')+
@@ -4571,7 +4573,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         var wLoad = _roundUnit(wuRefLoad * ws.pct, unit);
         return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
           '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
-          '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' '+unit+' × '+ws.reps+' reps</span>'+
+          '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' '+_escUnit+' × '+ws.reps+' reps</span>'+
           '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
         '</div>';
       }).join('');
@@ -4626,10 +4628,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _epCargaRaw = parseFloat(_expressEntry.carga||0);
     var _epCargaFmt = _epCargaRaw > 0 ? _epCargaRaw.toFixed(1) : '0';
     var _epCargaDisplay = isIsometric
-      ? ((_epCargaRaw>0 ? _epCargaFmt+' '+unit+' \u00b7 ': '')+_expressEntry.reps+' seg')
+      ? ((_epCargaRaw>0 ? _epCargaFmt+' '+_escUnit+' \u00b7 ': '')+_escHTml(String(_expressEntry.reps||''))+' seg')
       : (isBodyweight
-          ? ((_epCargaRaw>0 ? 'BW + '+_epCargaFmt+' '+unit : 'Peso corporal')+' \u00d7 '+_expressEntry.reps+' reps')
-          : (_epCargaFmt+' '+unit+' \u00d7 '+_expressEntry.reps+' reps'));
+          ? ((_epCargaRaw>0 ? 'BW + '+_epCargaFmt+' '+_escUnit : 'Peso corporal')+' \u00d7 '+_escHTml(String(_expressEntry.reps||''))+' reps')
+          : (_epCargaFmt+' '+_escUnit+' \u00d7 '+_escHTml(String(_expressEntry.reps||''))+' reps'));
     setsHtml =
       '<div style="background:rgba(110,154,110,.07);border:1px solid rgba(110,154,110,.22);border-radius:14px;padding:14px 16px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
@@ -4642,7 +4644,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   } else if (_isExpressMode) {
     // Express: series intermedias con timer + ultima con formulario
     var _expK = String(di)+'_'+String(ei);
-    var _cargaLbl = isIsometric ? 'LASTRE (opc, '+unit+')' : (isBodyweight ? 'LASTRE +'+unit+' (opc)' : 'CARGA ('+unit+')');
+    var _cargaLbl = isIsometric ? 'LASTRE (opc, '+_escUnit+')' : (isBodyweight ? 'LASTRE +'+_escUnit+' (opc)' : 'CARGA ('+_escUnit+')');
     var _repsLbl = isIsometric ? 'SEGUNDOS' : 'REPS';
     var _iptS = 'width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 8px;outline:none;text-align:center';
     var _rirDescs2 = ['Fallo','1 rep','2 reps','3 reps','C\u00f3modo'];
@@ -4720,19 +4722,19 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         var _exLoad = (progrec && progrec.newLoad !== undefined && progrec.newLoad !== null) ? progrec.newLoad : null;
         return '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px;padding:5px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
           '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
-          (_exLoad !== null ? '<span style="font-size:16px;font-weight:900;color:var(--tx);line-height:1">'+_exLoad+' '+unit+'</span><span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7</span>' : '')+
-          '<span style="font-size:15px;font-weight:900;color:var(--tx);line-height:1">'+repsTarget+' reps</span>'+
+          (_exLoad !== null ? '<span style="font-size:16px;font-weight:900;color:var(--tx);line-height:1">'+_escHTml(String(_exLoad))+' '+_escUnit+'</span><span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7</span>' : '')+
+          '<span style="font-size:15px;font-weight:900;color:var(--tx);line-height:1">'+_escHTml(String(repsTarget))+' reps</span>'+
           '<span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7 RIR '+baseRIR+'</span>'+
         '</div>';
       })()+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isBodyweight?'var(--mt2)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_cargaLbl+'</div>'+
-          '<input id="xcarga_'+_expK+'" type="number" value="'+(_exPfCarga||'')+'" placeholder="'+unit+'" step="0.5" inputmode="decimal" enterkeyhint="next" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+unit+'\','+baseRIR+')" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'xreps_'+_expK+'\');if(r)r.focus();}">'+
+          '<input id="xcarga_'+_expK+'" type="number" value="'+(_exPfCarga||'')+'" placeholder="'+_escHTml(String(unit))+'" step="0.5" inputmode="decimal" enterkeyhint="next" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+_safeUnit+'\','+baseRIR+')" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'xreps_'+_expK+'\');if(r)r.focus();}">'+
         '</div>'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isIsometric?'var(--accent)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_repsLbl+'</div>'+
-          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="done" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+unit+'\','+baseRIR+')">'+
+          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="done" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+_safeUnit+'\','+baseRIR+')">'+
         '</div>'+
       '</div>'+
       '<div id="xhint_'+_expK+'" data-exname="'+_escHTml(nombre)+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-bottom:2px"></div>'+
@@ -4862,10 +4864,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       // pre-cargados para corrección directa.
       var pumpEmoji = saved.pump===1?'💪':saved.pump===2?'👍':saved.pump===3?'😐':'';
       var _cargaDisplay = isIsometric
-        ? ((parseFloat(saved.carga)>0 ? saved.carga+' '+unit+' · ' : '')+saved.reps+' seg')
+        ? ((parseFloat(saved.carga)>0 ? _escHTml(String(saved.carga))+' '+_escUnit+' · ' : '')+_escHTml(String(saved.reps||''))+' seg')
         : (isBodyweight
-            ? ((parseFloat(saved.carga)>0 ? 'BW + '+saved.carga+' '+unit : 'Peso corporal')+' × '+saved.reps+' reps')
-            : (saved.carga+' '+unit+' × '+saved.reps+' reps'));
+            ? ((parseFloat(saved.carga)>0 ? 'BW + '+_escHTml(String(saved.carga))+' '+_escUnit : 'Peso corporal')+' × '+_escHTml(String(saved.reps||''))+' reps')
+            : (_escHTml(String(saved.carga||''))+' '+_escUnit+' × '+_escHTml(String(saved.reps||''))+' reps'));
       setsHtml += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;'+
         'background:rgba(110,154,110,.07);border:1px solid rgba(110,154,110,.18);border-radius:12px;margin-bottom:8px">'+
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
@@ -4873,7 +4875,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">'+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+(function(){ var _tl=(ej.technique||'').toLowerCase(); if (_isY3T&&_effectiveSets&&_effectiveSets[s]) { var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:8px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; } if (_tl==='fst7') { var _ft=(ej.sets||[]).length||7; return ' <span style="font-size:8px;font-weight:900;color:#cc44aa;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">FST-7 · '+(s+1)+'/'+_ft+'</span>'; } if (_tl==='lengthened_partials') { return ' <span style="font-size:8px;font-weight:900;color:#22aadd;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">PARCIALES</span>'; } return ''; })()+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
-          '<div style="font-size:11px;color:var(--mt)">RIR '+(saved.rir_real||'—')+' · ICS '+(saved.ics||'—')+' · '+pumpEmoji+
+          '<div style="font-size:11px;color:var(--mt)">RIR '+_escHTml(String(saved.rir_real||'—'))+' · ICS '+_escHTml(String(saved.ics||'—'))+' · '+pumpEmoji+
           (function(){
             if (saved.autoFilled) return '';
             var _rrv = parseFloat(saved.rir_real);
@@ -4942,8 +4944,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         //   bodyweight → LASTRE opcional (+kg/lb sobre peso corporal) + REPS
         //   normal → CARGA + REPS
         (function(){
-          var cargaLabel = isIsometric ? 'LASTRE (opc, '+unit+')' : (isBodyweight ? 'LASTRE +'+unit+' (opc)' : 'CARGA ('+unit+')');
-          var cargaPh    = isBodyweight ? '0' : unit;
+          var cargaLabel = isIsometric ? 'LASTRE (opc, '+_escUnit+')' : (isBodyweight ? 'LASTRE +'+_escUnit+' (opc)' : 'CARGA ('+_escUnit+')');
+          var cargaPh    = isBodyweight ? '0' : _escUnit;
           var repsLabel  = isIsometric ? 'SEGUNDOS' : 'REPS';
           var repsPh     = isIsometric ? 'seg' : 'reps';
           var _stepHtml  = (!isBodyweight && !isIsometric)
@@ -5031,7 +5033,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
                 'flex:0 0 auto;padding:12px 16px;border:1px solid var(--border);border-radius:10px;'+
                 'background:var(--input-bg);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer">= Copiar</button>'
             : '')+
-          '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
+          '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+_safeUnit+'\')" style="'+
             'flex:1;padding:13px;border:none;border-radius:10px;cursor:pointer;'+
             'background:var(--accent);color:#0a0a0a;font-size:14px;font-weight:800;letter-spacing:.5px">'+
             '✓ GUARDAR '+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+
