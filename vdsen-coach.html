@@ -4406,9 +4406,9 @@ Reporte:
           <td>${wd.rirN ? (wd.rirSum/wd.rirN).toFixed(1) : '—'}</td>
           <td>${eN?(eS/eN).toFixed(1):'—'}</td>
           <td>${pN?(pS/pN).toFixed(1):'—'}</td>
-          <td>${ci.peso ?? '—'}</td>
-          <td>${ci.hrv ?? '—'}</td>
-          <td>${ci.who5 ?? '—'}</td>
+          <td>${esc(ci.peso ?? '—')}</td>
+          <td>${esc(ci.hrv ?? '—')}</td>
+          <td>${esc(ci.who5 ?? '—')}</td>
         </tr>`;
       }).join('') || '<tr><td colspan="11" style="text-align:center;color:#888">Sin registros aún</td></tr>';
 
@@ -4452,7 +4452,7 @@ Reporte:
       const psRows = Object.keys(agg.postSession).sort().map(k => {
         const [w,d] = k.split('_');
         const ps = agg.postSession[k];
-        return `<tr><td>S${w} D${+d+1}</td><td>${ps.eimd ?? '—'}</td><td>${ps.articular ?? '—'}${ps.patron ? ' ('+esc(ps.patron)+')' : ''}</td><td>${ps.sleep ?? '—'} h</td><td>${ps.rpe ?? '—'}</td></tr>`;
+        return `<tr><td>S${w} D${+d+1}</td><td>${esc(ps.eimd ?? '—')}</td><td>${esc(ps.articular ?? '—')}${ps.patron ? ' ('+esc(ps.patron)+')' : ''}</td><td>${esc(ps.sleep ?? '—')} h</td><td>${esc(ps.rpe ?? '—')}</td></tr>`;
       }).join('') || '<tr><td colspan="5" style="text-align:center;color:#888">Sin check-ins post-sesión</td></tr>';
 
       const recHTML = lastRec?.recommendations?.length
@@ -4460,11 +4460,11 @@ Reporte:
             <div class="rec-card">
               <div class="rec-head">
                 <strong>${esc(r.exerciseName)}</strong>
-                <span class="rec-action">${actionLab[r.action] || r.action}</span>
+                <span class="rec-action">${esc(actionLab[r.action] || r.action)}</span>
               </div>
-              <div class="rec-line">Carga <strong>${r.newLoad} kg</strong> · Series <strong>${r.newSets}</strong>${r.newReps ? ' · Reps <strong>'+r.newReps+'</strong>':''} · RIR <strong>${r.rirTarget}</strong></div>
+              <div class="rec-line">Carga <strong>${esc(r.newLoad)} kg</strong> · Series <strong>${esc(r.newSets)}</strong>${r.newReps ? ' · Reps <strong>'+esc(r.newReps)+'</strong>':''} · RIR <strong>${esc(r.rirTarget)}</strong></div>
               ${r.reason ? `<div class="muted small">${esc(r.reason)}</div>` : ''}
-            </div>`).join('') + (lastRec.deloadTriggers?.length ? `<p class="alert">⚠️ Gatillos de deload: ${lastRec.deloadTriggers.join(', ')}</p>` : '')
+            </div>`).join('') + (lastRec.deloadTriggers?.length ? `<p class="alert">⚠️ Gatillos de deload: ${lastRec.deloadTriggers.map(t=>esc(t)).join(', ')}</p>` : '')
         : '<p class="muted">Sin recomendaciones aún.</p>';
 
       const notesHTML = agg.exnotes.length
