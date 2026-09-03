@@ -7752,7 +7752,7 @@ function _maybeSuggestExtraSet(di, ei, si) {
     var sets = [];
     for (var s = 0; s < numSeries; s++) {
       var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
-      if (LOGS[k] && LOGS[k].done) sets.push(LOGS[k]);
+      if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) sets.push(LOGS[k]);
     }
     if (sets.length < numSeries) return; // faltan series por completar todavía
 
@@ -8810,7 +8810,7 @@ async function markWeekDoneWithPartialData() {
   var _sesionTieneData = function(di) {
     var pfx = 'log_'+REAL_WEEK+'_'+di+'_';
     for (var k in LOGS) {
-      if (k.indexOf(pfx) === 0 && LOGS[k] && LOGS[k].done) return true;
+      if (k.indexOf(pfx) === 0 && LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) return true;
     }
     return false;
   };
@@ -13828,7 +13828,7 @@ function _getWeeklyVolumeByMuscle(muscle, week) {
       var doneSets = 0;
       for (var s = 0; s < 12; s++) {
         var k = 'log_'+week+'_'+d+'_'+e+'_s'+s;
-        if (LOGS[k] && LOGS[k].done) doneSets++;
+        if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) doneSets++;
       }
       // Si hay sets registrados → usar eso; si no y es la semana actual → plan como proxy (sesión futura)
       // Para Y3T, el proxy usa los sets activos de la fase actual (no el total del array)
@@ -13854,7 +13854,7 @@ function _getWeeklyVolumeByPattern(pattern) {
       var doneSets = 0;
       for (var s = 0; s < 12; s++) {
         var k = 'log_'+CURRENT_WEEK+'_'+d+'_'+e+'_s'+s;
-        if (LOGS[k] && LOGS[k].done) doneSets++;
+        if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) doneSets++;
       }
       total += doneSets > 0 ? doneSets : (ex.sets ? ex.sets.length : (ex.numSeries || 3));
     }
