@@ -11427,8 +11427,10 @@ function renderPerfil() {
         var k = e[0], v = e[1];
         var name = k.replace(/-/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
         var date = v.updatedAt ? new Date(v.updatedAt).toLocaleDateString('es-MX',{day:'numeric',month:'short'}) : '';
+        var isNew = v.updatedAt && (Date.now() - v.updatedAt < 7*24*60*60*1000);
         return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(244,244,240,.05)">'
-          + '<div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+name+'</div>'
+          + '<div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+_escHTml(name)+'</div>'
+          + (isNew?'<span style="font-size:9px;background:rgba(196,255,0,.15);color:var(--accent);border:1px solid rgba(196,255,0,.3);padding:1px 5px;border-radius:4px;letter-spacing:.5px">↑ NUEVO</span>':'')
           + (date?'<div style="font-size:10px;color:var(--mt)">'+date+'</div>':'')+'</div>'
           + '<div style="text-align:right;flex-shrink:0"><div style="font-family:var(--ff);font-size:15px;color:var(--gold);font-weight:900">'+v.load+' '+(v.unit||'KG')+'</div>'
           + '<div style="font-size:10px;color:var(--mt)">'+(v.reps?v.reps+' reps':'')+(v.rir!=null?' · RIR '+v.rir:'')+'</div></div>'
@@ -11440,7 +11442,7 @@ function renderPerfil() {
     })()}
     ${PLAN.clientMessage ? `<div style="margin-top:14px;padding:14px 16px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.2);border-radius:10px">
       <div style="font-family:var(--ff);font-size:10px;letter-spacing:2px;color:var(--gold);margin-bottom:8px">💬 MENSAJE DE TU COACH</div>
-      <div style="font-size:13px;color:var(--tx);line-height:1.65;white-space:pre-wrap">${PLAN.clientMessage.replace(/</g,'&lt;')}</div>
+      <div style="font-size:13px;color:var(--tx);line-height:1.65;white-space:pre-wrap">${_escHTml(PLAN.clientMessage)}</div>
     </div>` : ''}
     <button onclick="openIntake()" style="width:100%;background:rgba(196,255,0,.08);border:1px solid rgba(196,255,0,.30);color:var(--accent);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">📋 FICHA DE EVALUACIÓN COMPLETA</button>
     <button onclick="showFAQModal()" style="width:100%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
