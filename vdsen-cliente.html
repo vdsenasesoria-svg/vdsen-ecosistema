@@ -12799,6 +12799,9 @@ function showPostSessionModal(di) {
     b.style.borderColor='var(--bd)'; b.style.background='var(--dk)';
     b.style.color=(+b.dataset.val<=5)?'var(--red)':'var(--mt)';
   });
+  // Pre-seleccionar 7h (default comportamental que ya usa el submit)
+  var _suenoDefaultBtn = document.querySelector('#psSuenoGrid [data-val="7"]');
+  if (_suenoDefaultBtn) psSuenoSel(_suenoDefaultBtn, '7');
   document.getElementById('psRpe').value = '7';
   document.getElementById('psRpeVal').textContent = '7';
   var _sn = document.getElementById('psSessnote'); if (_sn) _sn.value = '';
@@ -12824,6 +12827,7 @@ function closePostSessionModal() {
 }
 
 function selectEimd(val) {
+  if (navigator.vibrate) navigator.vibrate(12);
   document.getElementById('psEimd').value = val;
   var colors = {1:'var(--grn)',2:'var(--accent)',3:'var(--red)'};
   [1,2,3].forEach(function(v){
@@ -12841,6 +12845,7 @@ function toggleArticularPain() {
 }
 
 function psSuenoSel(btn, val) {
+  if (navigator.vibrate) navigator.vibrate(8);
   document.querySelectorAll('#psSuenoGrid button').forEach(function(b) {
     b.style.borderColor = 'var(--bd)';
     b.style.background = 'var(--dk)';
@@ -14777,15 +14782,15 @@ document.addEventListener('keydown', function(e) {
         <span style="color:rgba(107,107,102,.6)"> · Afecta si se sube volumen o carga la próxima semana.</span>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <div id="eimd1" onclick="selectEimd(1)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
+        <div id="eimd1" role="button" tabindex="0" onclick="selectEimd(1)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectEimd(1);}" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
           <div style="font-size:15px;font-weight:700;margin-bottom:3px">✅ Sin dolor muscular</div>
           <div style="font-size:11px;color:var(--mt);line-height:1.5">Recuperación completa — el músculo está fresco. <span style="color:var(--grn)">Señal verde para subir carga o volumen.</span></div>
         </div>
-        <div id="eimd2" onclick="selectEimd(2)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
+        <div id="eimd2" role="button" tabindex="0" onclick="selectEimd(2)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectEimd(2);}" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
           <div style="font-size:15px;font-weight:700;margin-bottom:3px">⚡ Agujetas leves / tolerables</div>
           <div style="font-size:11px;color:var(--mt);line-height:1.5">Hubo molestia pero no limita el movimiento. <span style="color:var(--accent)">Normal en hipertrofia — se mantiene la progresión planificada.</span></div>
         </div>
-        <div id="eimd3" onclick="selectEimd(3)" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
+        <div id="eimd3" role="button" tabindex="0" onclick="selectEimd(3)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectEimd(3);}" style="background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:all .2s">
           <div style="font-size:15px;font-weight:700;margin-bottom:3px">🔴 Dolor fuerte / aún duele</div>
           <div style="font-size:11px;color:var(--mt);line-height:1.5">Agujetas significativas que limitan movimiento. <span style="color:var(--red)">El algoritmo sube el RIR objetivo y puede reducir volumen.</span></div>
         </div>
