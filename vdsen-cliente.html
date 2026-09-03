@@ -8685,7 +8685,7 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
   var sesiones = getSesiones();
   if (!sesiones.length) return;
   var advanced = false;
-  // Loop: puede avanzar varias semanas si el usuario marcó varias atrasadas
+  var _prevRW = REAL_WEEK; // capturar ANTES del while — puede avanzar más de 1 semana
   while (REAL_WEEK < getTotalWeeks()) {
     var todasDone = sesiones.every(function(_,i){ return !!LOGS['done_'+REAL_WEEK+'_'+i]; });
     if (!todasDone) break;
@@ -8697,7 +8697,17 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
     // semana real (no si está revisando una semana pasada explícitamente).
     if (!fromOtherWeekView) CURRENT_WEEK = REAL_WEEK;
     if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
-    await _doSaveLogs();
+    var _weekSaved = await _doSaveLogs();
+    if (!_weekSaved) {
+      // Revertir avance — Firestore no recibió el nuevo currentWeek.
+      // El usuario puede reintentar completando la última sesión de nuevo.
+      REAL_WEEK = _prevRW;
+      CURRENT_WEEK = _prevRW;
+      renderEntrenamiento();
+      _deferResumen();
+      showToast('⚠ No se pudo guardar el avance de semana — revisa tu conexión', true);
+      return;
+    }
     showToast('🏆 SEMANA COMPLETA — Avanzaste a SEM '+REAL_WEEK);
     _autoAdvanceDia(); // primer día pendiente de la nueva semana
     renderEntrenamiento();
