@@ -8181,14 +8181,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           <input type="text" value="${d.label.replace(/"/g,'&quot;')}" oninput="manualPlan.days[${i}].label=this.value;markEditorDirty&&markEditorDirty()" class="text-sm text-black font-semibold" style="background:transparent;border:none;outline:none;width:${Math.max(60,d.label.length*8)}px">
         </div>`;
       }
-      return `<button onclick="setMPDay(${i})" class="px-3 py-1 rounded text-sm bg-[#1A1A1A] border border-[#2A2A2A]">${d.label}</button>`;
+      return `<button onclick="setMPDay(${i})" class="px-3 py-1 rounded text-sm bg-[#1A1A1A] border border-[#2A2A2A]">${_escH(d.label)}</button>`;
     }).join("");
     const day = manualPlan.days[activeMPDay];
     const exercises = day.exercises.map((ex, ei) => `
       <div class="card p-3 mb-3">
         <div class="flex gap-2 items-center mb-2">
-          <input type="text" value="${ex.exerciseName}" oninput="updateExName(${activeMPDay},${ei},this.value)" class="input-field flex-1" placeholder="Nombre del ejercicio">
-          <button onclick="removeExercise(${activeMPDay},${ei})" class="text-red-400 text-lg px-2">🗑️</button>
+          <input type="text" value="${_escH(ex.exerciseName)}" oninput="updateExName(${activeMPDay},${ei},this.value)" class="input-field flex-1" placeholder="Nombre del ejercicio">
+          <button onclick="removeExercise(${activeMPDay},${ei})" title="Eliminar ${_escH(ex.exerciseName)}" class="text-red-400 text-lg px-2">🗑️</button>
         </div>
         <table class="w-full text-sm mb-2">
           <thead><tr class="text-[#888]"><th class="text-left py-1 pr-2">Set</th><th class="pr-2">Reps</th><th class="pr-2">RIR</th><th class="pr-2">Carga (kg)</th><th class="pr-2">Descanso (s)</th><th></th></tr></thead>
@@ -8208,7 +8208,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <button onclick="addSet(${activeMPDay},${ei})" class="btn-secondary text-xs py-1 px-2">+ Set</button>
         <div class="mt-2">
           <label class="block text-xs text-[#888] mb-1">Alternativas (separadas por coma)</label>
-          <input type="text" value="${ex.alternatives.join(', ')}" oninput="updateAlts(${activeMPDay},${ei},this.value)" class="input-field text-sm" placeholder="Prensa, Hack squat...">
+          <input type="text" value="${_escH(ex.alternatives.join(', '))}" oninput="updateAlts(${activeMPDay},${ei},this.value)" class="input-field text-sm" placeholder="Prensa, Hack squat...">
         </div>
       </div>
     `).join("");
