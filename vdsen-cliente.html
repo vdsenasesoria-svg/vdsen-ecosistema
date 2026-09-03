@@ -1740,7 +1740,10 @@ async function loadPlan(user) {
         var newWeek = parseInt(d.currentWeek || 1);
         var entriesCount = Object.keys(d.entries || {}).length;
         var localCount   = Object.keys(LOGS || {}).length;
-        if (newWeek !== REAL_WEEK || Math.abs(entriesCount - localCount) > 0) {
+        // Solo reemplazar LOGS si el servidor tiene MÁS entradas (otra sesión/dispositivo guardó)
+        // o si la semana avanzó. Evita sobreescribir cambios locales que aún no se han enviado
+        // a Firestore (dentro del debounce de 2s de saveLogs).
+        if (newWeek !== REAL_WEEK || entriesCount > localCount) {
           if (newWeek > REAL_WEEK) { REAL_WEEK = newWeek; CURRENT_WEEK = newWeek; }
           LOGS = d.entries || {};
           _rebuildLogsByWeek();
@@ -13003,6 +13006,7 @@ async function submitPostSession() {
       var _sanitize = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
       var recSafe = JSON.parse(JSON.stringify(rec, _sanitize));
       LOGS['progrec_'+REAL_WEEK+'_'+di] = recSafe;
+      _lbwTrack('progrec_'+REAL_WEEK+'_'+di);
       // P5: Longitudinal Engine — engine_state persiste en logs para la próxima generación
       if (rec.engineState) {
         LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _sanitize));
@@ -13019,7 +13023,7 @@ async function submitPostSession() {
     // Revertir todos los datos escritos en memoria — Firestore no los recibió
     delete LOGS[postKey];
     delete LOGS[sessnoteKey];
-    delete LOGS['progrec_'+CURRENT_WEEK+'_'+di];
+    delete LOGS['progrec_'+REAL_WEEK+'_'+di];
     // Restaurar botón y permitir reintento sin perder los datos del formulario
     if (_btn) { _btn.disabled = false; _btn.textContent = 'GUARDAR Y CALCULAR PROGRESIÓN →'; }
     _postSessionSubmitting = false;

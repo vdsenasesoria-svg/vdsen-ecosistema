@@ -8383,6 +8383,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   async function showClientDetail(clientId) {
     _detailClientId   = clientId;
     _detailActiveTab  = 'plan';
+    // Limpiar estado de módulo D del cliente anterior para evitar que se apliquen
+    // recomendaciones de un cliente al plan de otro cliente.
+    window._moduloDPending  = null;
+    window._moduloDDayIndex = null;
     markEditorClean();
     const modal = document.getElementById("clientModal");
     const body  = document.getElementById("modalClientBody");
@@ -11608,7 +11612,14 @@ El esfuerzo no es negociable.
       markEditorClean();
     }
     document.getElementById("clientModal").style.display = "none";
-    _detailClientId = null;
+    _detailClientId       = null;
+    _detailClientData     = null;
+    _detailPlanData       = null;
+    _detailPrevPlanData   = null;
+    _detailFichaData      = null;
+    _detailRenovacionData = null;
+    window._moduloDPending  = null;
+    window._moduloDDayIndex = null;
   }
 
   async function navClient(dir) {
