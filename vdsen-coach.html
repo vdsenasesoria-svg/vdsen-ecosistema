@@ -10350,7 +10350,7 @@ El esfuerzo no es negociable.
           ${ps.rpe    ? `<span><span class="text-[#888]">RPE</span> <strong>${ps.rpe}/10</strong></span>` : ''}
           ${ps.eimd   ? `<span><span class="text-[#888]">EIMD</span> <strong>${['','Leve','Moderado','Alto'][ps.eimd]||ps.eimd}</strong></span>` : ''}
           ${ps.sleep  ? `<span><span class="text-[#888]">Sueño</span> <strong>${ps.sleep}h</strong></span>` : ''}
-          ${ps.articular==='si' ? `<span style="color:#FF8844">⚠️ Dolor articular${ps.patron?' · '+ps.patron:''}</span>` : ''}
+          ${ps.articular==='si' ? `<span style="color:#FF8844">⚠️ Dolor articular${ps.patron?' · '+_escH(ps.patron):''}</span>` : ''}
         </div>
       </div>`;
 
@@ -10368,7 +10368,7 @@ El esfuerzo no es negociable.
           const icsCol = avgICS ? (parseFloat(avgICS)>=8?'#44BB88':parseFloat(avgICS)>=7?'#C4FF00':'#FF4444') : '#888';
           html += `<div class="card p-3 mb-2">
             <div class="flex justify-between items-center mb-2">
-              <span class="font-semibold text-sm">${exName}</span>
+              <span class="font-semibold text-sm">${_escH(exName)}</span>
               ${avgICS?`<span class="text-xs font-bold" style="color:${icsCol}">ICS ${avgICS}</span>`:''}
             </div>
             <div style="overflow-x:auto">
@@ -10392,10 +10392,10 @@ El esfuerzo no es negociable.
                   <td style="padding:4px 6px;color:#888">${si+1}${s.express?'<span title="Express" style="margin-left:3px;font-size:9px">⚡</span>':''}</td>
                   <td style="padding:4px 6px;text-align:center;color:#555">${tReps}</td>
                   <td style="padding:4px 6px;text-align:center;color:#555">${tRIR}</td>
-                  <td style="padding:4px 6px;text-align:center;font-weight:600">${s.carga||'—'}${s.carga?' '+(s.unit||'kg'):''}</td>
-                  <td style="padding:4px 6px;text-align:center;color:${repsColor};font-weight:600">${s.reps||'—'}</td>
-                  <td style="padding:4px 6px;text-align:center">${s.rir_real??'—'}</td>
-                  <td style="padding:4px 6px;text-align:center;font-weight:700;color:${icC}">${s.ics||'—'}</td>
+                  <td style="padding:4px 6px;text-align:center;font-weight:600">${_escH(String(s.carga||'—'))}${s.carga?' '+_escH(String(s.unit||'kg')):''}</td>
+                  <td style="padding:4px 6px;text-align:center;color:${repsColor};font-weight:600">${_escH(String(s.reps||'—'))}</td>
+                  <td style="padding:4px 6px;text-align:center">${_escH(String(s.rir_real??'—'))}</td>
+                  <td style="padding:4px 6px;text-align:center;font-weight:700;color:${icC}">${_escH(String(s.ics||'—'))}</td>
                   <td style="padding:4px 6px;text-align:center;color:#888">${pump}</td>
                 </tr>`;
               }).join('')}</tbody>
