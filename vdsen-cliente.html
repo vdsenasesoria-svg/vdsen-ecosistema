@@ -3040,7 +3040,7 @@ function buildStreakWidget() {
 }
 
 // Estado MEV/MRV de un músculo para la semana actual — usado por buildVolumenWidget()
-// y por buildBodyMapWidget() para no duplicar la clasificación de color/estado.
+// y buildMusclePriorityCard() para no duplicar la clasificación de color/estado.
 function _muscleVolStatus(muscle) {
   var mm = typeof MEV_MRV_BY_MUSCLE !== 'undefined' ? MEV_MRV_BY_MUSCLE[muscle] : null;
   if (!mm) return null;

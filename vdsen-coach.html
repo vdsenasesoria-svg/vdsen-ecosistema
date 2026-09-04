@@ -1656,9 +1656,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
 
   async function initCoachUI() {
     window._vdsenSignOut = () => {
-      if (window._monitorUnsub)    { window._monitorUnsub();    window._monitorUnsub = null; }
-      if (window._monitorPlanUnsub){ window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
-      if (window._fichasUnsub)     { window._fichasUnsub();     window._fichasUnsub = null; }
+      if (window._fichasUnsub) { window._fichasUnsub(); window._fichasUnsub = null; }
       signOut(auth);
     };
 
