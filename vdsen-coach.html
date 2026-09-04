@@ -10255,7 +10255,7 @@ El esfuerzo no es negociable.
       let _aqMissed = 0;
       for (let _wq = 1; _wq < currentWeek; _wq++) {
         for (let _dq = 0; _dq < _dpwQ; _dq++) {
-          if (!entries['done_'+_wq+'_'+_dq] && !Object.keys(entries).some(k=>k.startsWith('log_'+_wq+'_'+_dq+'_'))) _aqMissed++;
+          if (!entries['done_'+_wq+'_'+_dq] && !Object.keys(entries).some(k=>k.startsWith('log_'+_wq+'_'+_dq+'_') && !entries[k].autoFilled)) _aqMissed++;
         }
       }
       if (_aqMissed > 0) {
@@ -10394,7 +10394,7 @@ El esfuerzo no es negociable.
       html += `<div style="display:flex;align-items:center;font-size:9px;font-weight:700;color:${isCur?'#C4FF00':'#888'};padding-right:4px">S${w}${w===totalWeeks?'🔵':''}</div>`;
       for (let d = 0; d < dpw; d++) {
         const done = !!entries['done_'+w+'_'+d];
-        const hasAny = Object.keys(entries).some(k => k.startsWith('log_'+w+'_'+d+'_'));
+        const hasAny = Object.keys(entries).some(k => k.startsWith('log_'+w+'_'+d+'_') && !entries[k].autoFilled);
         const bg = done ? '#44BB88' : hasAny ? 'rgba(196,255,0,.5)' : isFuture ? 'rgba(244,244,240,.04)' : w < currentWeek ? 'rgba(255,68,68,.22)' : 'rgba(244,244,240,.06)';
         const textColor = done ? '#000' : hasAny ? '#000' : '#555';
         const icon = done ? '✓' : hasAny ? '◑' : isFuture ? '' : w < currentWeek ? '✗' : '·';
