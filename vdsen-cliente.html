@@ -2939,6 +2939,13 @@ function renderResumen() {
   const ci = LOGS['ci_sem_'+semActiva] || {};
   const ciDone = !!(ci.peso || ci.hrv);
   const _missingHintsHtml = _renderClientMissingHints(_detectMissingData(LOGS, PLAN, semActiva));
+  const _primeraSesionHtml = sesionesHechas === 0
+    ? `<div style="background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.2);border-radius:12px;padding:16px;margin-bottom:12px;text-align:center">
+        <div style="font-family:var(--ff);font-size:11px;font-weight:800;letter-spacing:3px;color:var(--accent);margin-bottom:6px">PRIMER ENTRENO</div>
+        <div style="font-size:13px;color:var(--tx);margin-bottom:12px">Tu plan está listo. Empieza tu primera sesión cuando quieras.</div>
+        <button onclick="goTab(1)" style="padding:11px 24px;background:var(--accent);color:#0a0a0a;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:2px;border:none;border-radius:8px;cursor:pointer">IR A ENTRENAMIENTO →</button>
+      </div>`
+    : '';
   document.getElementById('tabResumen').innerHTML = `
     <div class="stat-row">
       <div class="stat"><div class="stat-val">${semActiva}</div><div class="stat-lbl">SEMANA</div></div>
@@ -2946,6 +2953,7 @@ function renderResumen() {
       <div class="stat"><div class="stat-val">${pct}%</div><div class="stat-lbl">PROGRESO</div></div>
     </div>
     <div class="progress-bar" style="margin-bottom:12px"><div class="pb-fill" style="width:${pct}%"></div></div>
+    ${_primeraSesionHtml}
 
     <div class="card" style="margin-top:10px">
       <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
@@ -5740,6 +5748,7 @@ function markExpressDone(di, ei) {
   var ics     = icsEl   ? (parseInt(icsEl.value)         || null) : null;
   var pump    = pumpEl  ? (parseInt(pumpEl.value)        || null) : null;
   var unit    = getExUnit(di, ei) || 'KG';
+  if (navigator.vibrate) navigator.vibrate([10,20,10]);
 
   // Guardar entrada express
   var exKey = 'exexpress_'+CURRENT_WEEK+'_'+di+'_'+ei;
@@ -5818,6 +5827,7 @@ function markExpressSerie(di, ei, si) {
   var _pumpSave  = parseInt((document.getElementById('xpump_val_'+expK)||{}).value);
 
   LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+si] = true;
+  if (navigator.vibrate) navigator.vibrate([10,20,10]);
   saveLogs();
   _refreshExPanelOnly();
 
@@ -13056,6 +13066,7 @@ function _exExpandCard(ei, di) {
   if (!window._exExpandedSet) window._exExpandedSet = new Set();
   window._exExpandedSet.add(ei+'_'+di+'_'+CURRENT_WEEK);
   setEjActivo(ei);
+  _scrollToNextPendingSet();
 }
 window._exExpandCard = _exExpandCard;
 
