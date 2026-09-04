@@ -10172,22 +10172,29 @@ El esfuerzo no es negociable.
     const currentWeek = logsData.currentWeek || 1;
     const ci = entries['ci_sem_' + currentWeek] || {};
 
-    // Última sesión completada
+    // Última sesión completada (cualquier tipo, incluida autoClosed)
     let lastDoneW = 0, lastDoneD = 0;
+    // Última sesión REAL: excluye cierres automáticos de semana (autoClosed)
+    let lastRealDoneW = 0, lastRealDoneD = 0;
     Object.keys(entries).forEach(k => {
       const m = k.match(/^done_(\d+)_(\d+)$/);
       if (m && entries[k]) {
         const w = +m[1], d = +m[2];
         if (w > lastDoneW || (w === lastDoneW && d > lastDoneD)) { lastDoneW = w; lastDoneD = d; }
+        if (!entries[k].autoClosed) {
+          if (w > lastRealDoneW || (w === lastRealDoneW && d > lastRealDoneD)) { lastRealDoneW = w; lastRealDoneD = d; }
+        }
       }
     });
+    // Si no hay sesión real, caer al último done (puede ser autoClosed)
+    if (!lastRealDoneW) { lastRealDoneW = lastDoneW; lastRealDoneD = lastDoneD; }
 
-    // Sets reales de la última sesión: ei → [sets]
+    // Sets reales de la última sesión real: ei → [sets]
     const lastSets = {};
-    if (lastDoneW > 0) {
+    if (lastRealDoneW > 0) {
       Object.keys(entries).forEach(k => {
         const m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
-        if (m && +m[1] === lastDoneW && +m[2] === lastDoneD) {
+        if (m && +m[1] === lastRealDoneW && +m[2] === lastRealDoneD) {
           if (entries[k].autoFilled) return; // no es ejecución real
           const ei = +m[3], si = +m[4];
           if (!lastSets[ei]) lastSets[ei] = [];
@@ -10218,15 +10225,18 @@ El esfuerzo no es negociable.
     // ── Attention Queue: cola de acción priorizada para el coach ──────────
     {
       const _aqItems = [];
-      const _psL = lastDoneW > 0 ? (entries['postsession_'+lastDoneW+'_'+lastDoneD] || {}) : {};
+      // Usar la última sesión REAL para detectar alertas de post-sesión:
+      // el cierre automático de semana escribe datos ficticios (eimd=2, rpe=7)
+      // que enmascararían alertas reales de sesiones previas.
+      const _psL = lastRealDoneW > 0 ? (entries['postsession_'+lastRealDoneW+'_'+lastRealDoneD] || {}) : {};
       const _aqUmbral = (_detailClientData && _detailClientData.score_umbral_sobrealcance) != null
         ? _detailClientData.score_umbral_sobrealcance : 12;
       const _aqScore = ci.subj_score != null ? ci.subj_score : null;
       const _aqVuln  = ci.subj_vulner >= 4;
 
-      // Dolor articular activo (última sesión)
+      // Dolor articular activo (última sesión real)
       if (_psL.articular === 'si') {
-        _aqItems.push({ sev:'red', icon:'🦴', prob:'Dolor articular activo', ev:(_psL.patron?'Patrón: '+_psL.patron:'')+ ' · Sem '+lastDoneW, act:'Evaluar sustitución o pausa del patrón afectado' });
+        _aqItems.push({ sev:'red', icon:'🦴', prob:'Dolor articular activo', ev:(_psL.patron?'Patrón: '+_psL.patron:'')+ ' · Sem '+lastRealDoneW, act:'Evaluar sustitución o pausa del patrón afectado' });
       }
       // WHO-5 bajo umbral clínico
       if (ci.who5 && parseInt(ci.who5) < 50) {
@@ -10236,13 +10246,13 @@ El esfuerzo no es negociable.
       if (_aqScore !== null && _aqScore < _aqUmbral) {
         _aqItems.push({ sev:_aqVuln?'red':'orange', icon:'⚠️', prob:'Score Ehrenstein bajo', ev:_aqScore+'/25 (umbral '+_aqUmbral+')'+(ci.subj_vulner!=null?' · vulner. '+ci.subj_vulner+'/7':''), act:_aqVuln?'Deload inmediato — reducir volumen ≥20%':'Considerar reducción de carga' });
       }
-      // EIMD alto en última sesión
+      // EIMD alto en última sesión real
       if (_psL.eimd === 3) {
-        _aqItems.push({ sev:'orange', icon:'💢', prob:'EIMD alto en última sesión', ev:'Sem '+lastDoneW+' · Día '+(lastDoneD+1), act:'No aumentar volumen esta semana — incrementar recuperación' });
+        _aqItems.push({ sev:'orange', icon:'💢', prob:'EIMD alto en última sesión', ev:'Sem '+lastRealDoneW+' · Día '+(lastRealDoneD+1), act:'No aumentar volumen esta semana — incrementar recuperación' });
       }
-      // RPE ≥ 9 en última sesión
+      // RPE ≥ 9 en última sesión real
       if (_psL.rpe && parseFloat(_psL.rpe) >= 9) {
-        _aqItems.push({ sev:'orange', icon:'📈', prob:'RPE muy alto (≥9)', ev:'Sem '+lastDoneW+' · RPE '+_psL.rpe+'/10', act:'Verificar recuperación — evaluar reducción de carga' });
+        _aqItems.push({ sev:'orange', icon:'📈', prob:'RPE muy alto (≥9)', ev:'Sem '+lastRealDoneW+' · RPE '+_psL.rpe+'/10', act:'Verificar recuperación — evaluar reducción de carga' });
       }
       // Deload recomendado por algoritmo
       if (lastRec && lastRec.recommendations) {
