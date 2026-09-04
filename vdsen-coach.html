@@ -2092,7 +2092,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     const warning = currentCoachId
       ? `Este cliente tiene coachId "${currentCoachId.substring(0,8)}…" (un UID diferente al tuyo).\n\n¿Confirmas que este cliente es tuyo y quieres reasignarlo a tu cuenta?`
       : `Este cliente no tiene coach asignado.\n\n¿Confirmas que quieres asignarlo a tu cuenta?`;
-    const ok = window.confirm(`Reclamar a "${name}"\n\n${warning}`);
+    const ok = await _askConfirm(`Reclamar a "${name}"\n\n${warning}`);
     if (!ok) return;
     try {
       await setDoc(doc(db, 'clients', clientId), { coachId: currentCoach.uid }, { merge: true });
@@ -2187,7 +2187,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         return;
       }
       const fieldList = Object.entries(patch).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join('\n');
-      const confirmed = window.confirm(`Se escribirán ${Object.keys(patch).length} campo(s) en fichas_onboarding/${clientId}:\n\n${fieldList}\n\n¿Confirmar?`);
+      const confirmed = await _askConfirm(`Se escribirán ${Object.keys(patch).length} campo(s) en fichas_onboarding/${clientId}:\n\n${fieldList}\n\n¿Confirmar?`);
       if (!confirmed) { res.innerHTML = '<span style="color:#888">Cancelado.</span>'; return; }
       await updateDoc(doc(db, 'fichas_onboarding', clientId), {
         ...patch,
@@ -6698,7 +6698,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const d2Status     = document.getElementById('vdsenPreview_d2Status');
     const badge        = document.getElementById('vdsenPreview_badge');
 
-    const confirmed = window.confirm(
+    const confirmed = await _askConfirm(
       '¿Activar plan para este cliente?\n\n' +
       'Plan ID: ' + planId + '\n' +
       'Cliente: ' + clientId + '\n\n' +
@@ -9703,25 +9703,16 @@ El esfuerzo no es negociable.
     cont.innerHTML = html;
   }
 
-  function _coachToast(msg, isErr) {
-    var t = document.createElement('div');
-    t.textContent = msg;
-    t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none;transition:opacity .4s;white-space:nowrap;' +
-      (isErr ? 'background:#3a1010;color:#FF6666;border:1px solid rgba(255,80,80,.3)' : 'background:#1a2a10;color:#C4FF00;border:1px solid rgba(196,255,0,.3)');
-    document.body.appendChild(t);
-    setTimeout(function(){ t.style.opacity='0'; setTimeout(function(){ t.remove(); },400); }, 2800);
-  }
-
   async function _applyAllModuloD() {
     const results = window._moduloDPending;
     if (!results || !results.length) return;
     const planId = _detailClientData && _detailClientData.activePlanId;
-    if (!planId) { _coachToast('No hay plan activo.',true); return; }
+    if (!planId) { showToast('No hay plan activo.',true); return; }
     const toApply = results.filter(r => r.tipo !== 'mantiene' && r.nuevaCarga !== null);
-    if (!toApply.length) { _coachToast('No hay ajustes que aplicar.',true); return; }
+    if (!toApply.length) { showToast('No hay ajustes que aplicar.',true); return; }
     try {
       const planSnap = await getDoc(doc(db,'plans',planId));
-      if (!planSnap.exists()) { _coachToast('Plan no encontrado.',true); return; }
+      if (!planSnap.exists()) { showToast('Plan no encontrado.',true); return; }
       const plan = planSnap.data();
       const dayIdx = window._moduloDDayIndex;
       const updatedDays = (plan.days||[]).map(day => {
@@ -9741,8 +9732,8 @@ El esfuerzo no es negociable.
       });
       await updateDoc(doc(db,'plans',planId),{days:updatedDays});
       if (_detailPlanData) _detailPlanData.days = updatedDays;
-      _coachToast('✓ '+toApply.length+' ejercicio(s) actualizados en el plan.');
-    } catch(e) { _coachToast('Error al aplicar: '+e.message, true); }
+      showToast('✓ '+toApply.length+' ejercicio(s) actualizados en el plan.');
+    } catch(e) { showToast('Error al aplicar: '+e.message, true); }
   }
   window._applyAllModuloD = _applyAllModuloD;
 
@@ -12030,7 +12021,7 @@ El esfuerzo no es negociable.
       const newUid = (overlay.querySelector('#eci-newuid').value || '').trim();
       if (!newUid) { st.style.color='#c94a3a'; st.textContent='Pega el UID del cliente primero'; return; }
       if (newUid === clientId) { st.style.color='#c8a54a'; st.textContent='El UID es el mismo — no hay nada que reparar'; return; }
-      if (!confirm(`Se copiará el perfil de ${c.displayName||c.email} al UID:\n${newUid}\n\nEl doc anterior (${clientId}) se eliminará después.\n\n¿Continuar?`)) return;
+      if (!await _askConfirm(`Se copiará el perfil de ${c.displayName||c.email} al UID:\n${newUid}\n\nEl doc anterior (${clientId}) se eliminará después.\n\n¿Continuar?`)) return;
       const btn = overlay.querySelector('#eci-repairuid-btn');
       btn.disabled = true; btn.textContent = 'Reparando...';
       try {
