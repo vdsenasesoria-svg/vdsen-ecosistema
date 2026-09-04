@@ -1353,7 +1353,7 @@ async function loadPlan(user) {
 
     if (!clientSnap.exists()) {
       PLAN = null;
-      renderEspera();
+      renderEspera('setup');
       showScreen('scrOnboarding');
       // Listener: cuando el coach cree el doc del cliente, recargar
       try {
@@ -1836,24 +1836,29 @@ function renderAll() {
 // Se guarda en Firestore colección 'fichas_onboarding'
 // ══════════════════════════════════════════════════════════════════════════
 
-function renderEspera() {
+function renderEspera(mode) {
   var cont = document.getElementById('scrOnboarding');
   if (!cont) return;
   var uid = (FB.auth && FB.auth.currentUser && FB.auth.currentUser.uid) || '—';
   var email = (FB.auth && FB.auth.currentUser && FB.auth.currentUser.email) || '—';
+  var isSetup = mode === 'setup';
+  var title = isSetup ? 'CONFIGURANDO ACCESO' : 'FICHA ENVIADA';
+  var emoji = isSetup ? '🔧' : '⏳';
+  var body = isSetup
+    ? 'Tu coach está configurando tu acceso. En cuanto esté listo podrás iniciar sesión y ver tu plan.'
+    : 'Tu coach recibió tu información y está preparando tu plan personalizado.<br><br>Te avisará cuando esté listo.';
   cont.innerHTML =
     '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center">'
     + '<div style="font-family:var(--ff);font-size:52px;color:var(--gold);letter-spacing:4px;margin-bottom:8px">VDSEN</div>'
     + '<div style="font-family:var(--fb);font-size:11px;color:var(--mt);letter-spacing:3px;margin-bottom:40px">MI PLAN · v3.2</div>'
-    + '<div style="font-size:48px;margin-bottom:20px">⏳</div>'
-    + '<div style="font-family:var(--ff);font-size:22px;color:var(--tx);letter-spacing:2px;margin-bottom:12px">FICHA ENVIADA</div>'
+    + '<div style="font-size:48px;margin-bottom:20px">'+emoji+'</div>'
+    + '<div style="font-family:var(--ff);font-size:22px;color:var(--tx);letter-spacing:2px;margin-bottom:12px">'+title+'</div>'
     + '<div style="font-size:15px;color:var(--mt);line-height:1.7;max-width:320px;margin-bottom:32px">'
-    + 'Tu coach recibió tu información y está preparando tu plan personalizado.<br><br>'
-    + 'Te avisará cuando esté listo.'
+    + body
     + '</div>'
-    + '<div style="background:var(--card);border:1px solid rgba(107,107,102,.3);padding:16px 20px;font-size:13px;color:var(--mt);line-height:1.7;max-width:320px">'
+    + (isSetup ? '' : '<div style="background:var(--card);border:1px solid rgba(107,107,102,.3);padding:16px 20px;font-size:13px;color:var(--mt);line-height:1.7;max-width:320px">'
     + '📸 Recuerda enviar tus fotos de evaluación por WhatsApp para que tu coach pueda completar el análisis.'
-    + '</div>'
+    + '</div>')
     + '<button onclick="doLogout()" style="margin-top:40px;background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
     + '<div style="margin-top:28px;padding:12px 16px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);border-radius:8px;max-width:320px;width:100%;text-align:left">'
     + '<div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:6px">CÓDIGO DE ACCESO (manda esto a tu coach)</div>'
@@ -6828,7 +6833,7 @@ function renderEntrenamiento() {
     var rawHtml = textoRaw
       ? '<div style="padding:12px;font-family:monospace;font-size:11px;color:var(--mt);white-space:pre-wrap;line-height:1.6;background:var(--surface);border:1px solid var(--border);border-radius:8px">' +
         _escHTml(textoRaw.substring(0,3000)) + '</div>'
-      : '<div style="padding:48px 24px;text-align:center;color:var(--mt)"><div style="font-size:32px;margin-bottom:12px">💪</div><div style="font-weight:700;margin-bottom:8px">Sin plan de entrenamiento</div><div style="font-size:12px">El coach aún no ha cargado tu plan.</div></div>';
+      : '<div style="padding:48px 24px;text-align:center;color:var(--mt)"><div style="font-size:32px;margin-bottom:12px">🔄</div><div style="font-weight:700;margin-bottom:8px">Plan en actualización</div><div style="font-size:12px;line-height:1.6">Tu coach está actualizando tu rutina.<br>Regresa en unos minutos o cierra sesión y vuelve a entrar.</div></div>';
     cont.innerHTML =
       weekHeaderHtml+
       '<div style="display:flex;background:var(--surface);border-bottom:1px solid var(--border)">'+weeksHtml+'</div>'+
@@ -8989,11 +8994,7 @@ async function markSessionDoneFromHistory(di) {
       totalSetsRellenados++;
     }
 
-    // Actualizar histórico
-    EXERCISE_HISTORY[exName] = {
-      load: String(refLoad), reps: String(refReps), rir: refRir,
-      unit: refUnit, updatedAt: Date.now()
-    };
+    // autoFilled: no actualizar EXERCISE_HISTORY — solo escrituras reales cuentan como PR
   });
 
   if (sinReferencia.length === ejercicios.length) {
@@ -9913,19 +9914,19 @@ function renderNutricion() {
           <div style="font-size:18px;margin-bottom:2px">💪</div>
           <div style="font-family:var(--ff);font-size:24px;color:#6aacee;line-height:1;font-weight:900">${_escHTml(String(prot||'—'))}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
           <div style="font-size:9px;letter-spacing:1.5px;color:#6aacee;margin-top:4px;font-weight:700">PROTEÍNA</div>
-          <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctP}% · ${(+prot||0)*4} kcal</div>
+          <div style="font-size:9px;color:var(--mt);margin-top:2px">${totalGr ? pctP+'% · '+((+prot||0)*4)+' kcal' : '—'}</div>
         </div>
         <div style="text-align:center;padding:14px 6px;background:rgba(74,170,94,.08);border:1px solid rgba(74,170,94,.3);border-radius:10px">
           <div style="font-size:18px;margin-bottom:2px">🌾</div>
           <div style="font-family:var(--ff);font-size:24px;color:#6acc7e;line-height:1;font-weight:900">${_escHTml(String(carb||'—'))}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
           <div style="font-size:9px;letter-spacing:1.5px;color:#6acc7e;margin-top:4px;font-weight:700">CARBOS</div>
-          <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctC}% · ${(+carb||0)*4} kcal</div>
+          <div style="font-size:9px;color:var(--mt);margin-top:2px">${totalGr ? pctC+'% · '+((+carb||0)*4)+' kcal' : '—'}</div>
         </div>
         <div style="text-align:center;padding:14px 6px;background:rgba(204,136,68,.08);border:1px solid rgba(204,136,68,.3);border-radius:10px">
           <div style="font-size:18px;margin-bottom:2px">🥑</div>
           <div style="font-family:var(--ff);font-size:24px;color:#e8a060;line-height:1;font-weight:900">${_escHTml(String(gras||'—'))}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
           <div style="font-size:9px;letter-spacing:1.5px;color:#e8a060;margin-top:4px;font-weight:700">GRASAS</div>
-          <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctG}% · ${(+gras||0)*9} kcal</div>
+          <div style="font-size:9px;color:var(--mt);margin-top:2px">${totalGr ? pctG+'% · '+((+gras||0)*9)+' kcal' : '—'}</div>
         </div>
       </div>
       ${totalGr > 0 ? `
@@ -13005,7 +13006,7 @@ function showExHistory(di, ei) {
   var _lastAvgReps = _lastExp && _lastExp.sets.length
     ? Math.round(_lastExp.sets.reduce(function(a,s){return a+s.reps;},0)/_lastExp.sets.length) : null;
 
-  var summaryHtml = '<div style="display:flex;gap:8px;margin-bottom:14px">';
+  var summaryHtml = exposures.length ? '<div style="display:flex;gap:8px;margin-bottom:14px">' : '';
   if (_lastExp && _lastTopLoad) {
     summaryHtml +=
       '<div style="flex:1;padding:10px 12px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.18);border-radius:10px">'
@@ -13015,8 +13016,6 @@ function showExHistory(di, ei) {
       + '<span style="font-size:12px;font-weight:500;color:var(--mt)"> '+_escHTml(String(unit))+'</span></div>'
       + (_lastAvgReps ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">× '+_escHTml(String(_lastAvgReps))+' reps</div>' : '')
       + '</div>';
-  } else {
-    summaryHtml += '<div style="flex:1;padding:10px 12px;background:rgba(107,107,102,.05);border:1px solid rgba(107,107,102,.15);border-radius:10px;font-size:12px;color:var(--mt);display:flex;align-items:center">Sin sesiones registradas</div>';
   }
   if (pr && pr.bestLoad > 0) {
     summaryHtml +=
@@ -13027,7 +13026,7 @@ function showExHistory(di, ei) {
       + (pr.bestReps ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">× '+_escHTml(String(pr.bestReps))+' reps</div>' : '')
       + '</div>';
   }
-  summaryHtml += '</div>';
+  if (exposures.length) summaryHtml += '</div>';
 
   // ── Full history under <details> ────────────────────────────────────────
   var detailRows = '';
@@ -13058,7 +13057,7 @@ function showExHistory(di, ei) {
       + '<span style="font-size:11px;font-weight:700;color:var(--mt)">Ver historial completo ('+exposures.length+' sesión'+(exposures.length!==1?'es':'')+')</span>'
       + '<span style="font-size:10px;color:var(--mt)">▾</span>'
       + '</summary><div style="padding:8px 0">'+detailRows+'</div></details>'
-    : '<div style="text-align:center;padding:20px 0;color:var(--mt);font-size:12px">Sin historial comparable disponible</div>';
+    : '<div style="text-align:center;padding:28px 0;color:var(--mt);font-size:13px">Sin registros reales aún<br><span style="font-size:11px;color:var(--mt2);margin-top:4px;display:block">Completa tu primera sesión para ver el historial</span></div>';
 
   var el = document.getElementById('exHistModal');
   if (el) el.remove();
@@ -13072,7 +13071,7 @@ function showExHistory(di, ei) {
     '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'
     + '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">'
     +   '<div>'
-    +     '<div style="font-size:10px;font-weight:800;letter-spacing:2px;color:var(--mt2);margin-bottom:2px">HISTORIAL · '+Math.max(exposures.length,1)+' SES.</div>'
+    +     '<div style="font-size:10px;font-weight:800;letter-spacing:2px;color:var(--mt2);margin-bottom:2px">HISTORIAL'+(exposures.length?' · '+exposures.length+' SES.':'')+'</div>'
     +     '<div style="font-size:19px;font-weight:900;color:var(--tx);text-transform:uppercase;line-height:1.2;max-width:220px">'+_escHTml(nombre)+'</div>'
     +   '</div>'
     +   '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;min-width:60px">'
