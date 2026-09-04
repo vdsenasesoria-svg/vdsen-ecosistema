@@ -3944,7 +3944,7 @@ function _buildExNav(ejercicios, di) {
       : '';
     return '<button onclick="setEjActivo('+ei+')" data-ei="'+ei+'" title="'+_escHTml(nombre)+'" style="position:relative;'+
       'flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;'+
-      'padding:'+(isSS?'14px 10px 8px':'11px 10px 9px')+';border:'+borderWidth+' solid '+borderCol+';border-radius:14px;'+
+      'padding:'+(isSS?'10px 10px 5px':'7px 10px 6px')+';border:'+borderWidth+' solid '+borderCol+';border-radius:14px;'+
       'background:'+bgCol+';cursor:pointer;min-width:72px;max-width:92px;min-height:44px;margin-top:'+(isSS?'10px':'0')+';'+
       glowStyle+'transition:all .15s;-webkit-tap-highlight-color:transparent">'+
       ssTagTop+
@@ -4326,6 +4326,32 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (_ejType === 'cardio')     return _buildCardioCard(ejercicios, di, ei, isPartner);
   if (_ejType === 'estacion')   return _buildEstacionCard(ejercicios, di, ei, isPartner);
   if (_ejType === 'circuito')   return _buildCircuitoCard(ejercicios, di, ei, isPartner);
+
+  // ── Modo compacto: ejercicio ya completado, sesión abierta, no expandido manualmente ──
+  var _isDone = _isExerciseFullyDone(di, ei, ej);
+  var _sessionClosed = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
+  if (_isDone && !_sessionClosed && !(window._exExpandedSet && window._exExpandedSet.has(ei+'_'+di+'_'+CURRENT_WEEK))) {
+    var _cNombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
+    var _effSetsC = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
+    var _nsC = _effSetsC.length || ej.numSeries || (ej.sets ? ej.sets.length : 3);
+    var _setSum = [];
+    for (var _sc = 0; _sc < _nsC; _sc++) {
+      var _lk = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc;
+      var _lg = LOGS[_lk];
+      if (_lg && !_lg.autoFilled) _setSum.push((_lg.carga||'?')+' '+(_lg.unit||'kg')+'×'+(_lg.reps||'?'));
+    }
+    var _sumStr = _setSum.length ? _setSum.join(' · ') : '';
+    return '<div style="background:var(--card);border:1px solid rgba(110,154,110,.3);border-radius:14px;margin-bottom:8px;overflow:hidden">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px">'+
+        '<div>'+
+          '<div style="font-size:13px;font-weight:700;color:var(--grn)">✓ '+_escHTml(_cNombre)+'</div>'+
+          (_sumStr?'<div style="font-size:11px;color:var(--mt);margin-top:3px">'+_escHTml(_sumStr)+'</div>':'')+
+        '</div>'+
+        '<button onclick="_exExpandCard('+ei+','+di+')" style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:5px 10px;cursor:pointer">Editar</button>'+
+      '</div>'+
+    '</div>';
+  }
+
   var _exSubKey = 'exsub_'+CURRENT_WEEK+'_'+di+'_'+ei;
   var _exSubData = LOGS[_exSubKey] || null;
   var _originalNombre = ej.nombre || ej.exerciseName || '';
@@ -8731,7 +8757,17 @@ async function markSessionDone(di) {
     return;
   }
 
-  // Mostrar check-in post-sesión (sin bloquear por sets no registrados)
+  // Advertencia si hay ejercicios sin completar
+  var _ejAct = (PLAN && PLAN.days && PLAN.days[di] && PLAN.days[di].exercises || []).filter(function(ej) { return isTechniqueActive(ej, CURRENT_WEEK); });
+  var _pending = _ejAct.filter(function(ej, ei) { return !_isExerciseFullyDone(di, ei, ej); });
+  if (_pending.length > 0) {
+    var _names = _pending.slice(0,3).map(function(ej){return ej.exerciseName||ej.name||'?';}).join(', ');
+    var _more = _pending.length > 3 ? ' y '+ (_pending.length-3) + ' más' : '';
+    _markSessionBusy[di] = false;
+    if (!confirm('Quedan ' + _pending.length + ' ejercicio(s) sin completar:\n' + _names + _more + '\n\n¿Finalizar la sesión de todas formas?')) return;
+    _markSessionBusy[di] = true;
+  }
+  // Mostrar check-in post-sesión
   _markSessionBusy[di] = false;
   showPostSessionModal(di);
 }
@@ -11322,8 +11358,8 @@ function renderCheckin() {
 
   cont.innerHTML =
     // Botón flotante de guardar
-    + '<div id="ciFloatSave" style="position:fixed;bottom:80px;right:14px;z-index:300">'
-    +   '<button id="ciSaveBtn" onclick="guardarCI()" aria-label="Guardar check-in semanal" style="padding:12px 18px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:1.5px;cursor:pointer;border-radius:50px;box-shadow:0 4px 20px rgba(196,255,0,.35);white-space:nowrap">💾 GUARDAR</button>'
+    + '<div id="ciFloatSave" style="position:sticky;bottom:72px;z-index:300;display:flex;justify-content:center;pointer-events:none;margin-bottom:8px">'
+    +   '<button id="ciSaveBtn" onclick="guardarCI()" aria-label="Guardar check-in semanal" style="pointer-events:auto;padding:12px 28px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:1.5px;cursor:pointer;border-radius:50px;box-shadow:0 4px 20px rgba(196,255,0,.35);white-space:nowrap">💾 GUARDAR</button>'
     + '</div>'
     + '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">CHECK-IN SEM ' + sem + '</div>'
     + '<div style="display:inline-block;margin-bottom:8px;padding:2px 10px;background:rgba(107,107,102,.10);border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1px;color:'
@@ -12878,6 +12914,7 @@ function showPostSessionModal(di) {
   document.getElementById('psArticular').value = 'no';
   document.getElementById('psArticularPattern').style.display = 'none';
   document.getElementById('psArticularPatternSel').value = '';
+  document.querySelectorAll('#psArticularPattern [data-pat]').forEach(function(b){b.style.borderColor='var(--border)';b.style.color='var(--mt)';b.style.background='var(--dk)';});
   document.getElementById('psSueno').value = '';
   document.querySelectorAll('#psSuenoGrid button').forEach(function(b){
     b.style.borderColor='var(--bd)'; b.style.background='var(--dk)';
@@ -12961,6 +12998,26 @@ function psRpeSel(val) {
   updateRpeLabel(val);
 }
 window.psRpeSel = psRpeSel;
+
+function psPatSel(val) {
+  if (navigator.vibrate) navigator.vibrate(8);
+  var inp = document.getElementById('psArticularPatternSel');
+  if (inp) inp.value = val;
+  document.querySelectorAll('#psArticularPattern [data-pat]').forEach(function(b) {
+    var sel = b.dataset.pat === val;
+    b.style.borderColor = sel ? 'var(--accent)' : 'var(--border)';
+    b.style.color = sel ? 'var(--accent)' : 'var(--mt)';
+    b.style.background = sel ? 'rgba(196,255,0,.06)' : 'var(--dk)';
+  });
+}
+window.psPatSel = psPatSel;
+
+function _exExpandCard(ei, di) {
+  if (!window._exExpandedSet) window._exExpandedSet = new Set();
+  window._exExpandedSet.add(ei+'_'+di+'_'+CURRENT_WEEK);
+  setEjActivo(ei);
+}
+window._exExpandCard = _exExpandCard;
 
 function updateRpeLabel(val) {
   var el = document.getElementById('psRpeLabel');
@@ -14983,15 +15040,15 @@ document.addEventListener('keydown', function(e) {
       </div>
       <input type="hidden" id="psArticular" value="no">
       <div id="psArticularPattern" style="display:none;margin-top:8px">
-        <div style="font-size:11px;color:var(--mt);margin-bottom:6px">¿En qué patrón de movimiento sientes la molestia?</div>
-        <select id="psArticularPatternSel" style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:15px;padding:10px 12px;outline:none">
-          <option value="">Seleccionar...</option>
-          <option value="Empuje">Empuje — hombro anterior / codo</option>
-          <option value="Jalón">Jalón / tracción — hombro posterior / muñeca</option>
-          <option value="Pierna">Pierna — rodilla / cadera</option>
-          <option value="Bisagra">Bisagra — lumbar / sacro / cadera</option>
-        </select>
-        <div style="font-size:10px;color:var(--mt);margin-top:6px;padding:8px 10px;background:rgba(200,100,0,.06);border-left:2px solid #FF8844;border-radius:0 4px 4px 0">
+        <div style="font-size:11px;color:var(--mt);margin-bottom:8px">¿En qué patrón de movimiento sientes la molestia?</div>
+        <input type="hidden" id="psArticularPatternSel" value="">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+          <button type="button" data-pat="Empuje" onclick="psPatSel('Empuje')" style="padding:10px 8px;border:1px solid var(--border);border-radius:8px;background:var(--dk);color:var(--mt);font-size:12px;font-weight:700;cursor:pointer;text-align:left;line-height:1.3">⬆️ Empuje<br><span style="font-size:10px;font-weight:400">hombro anterior / codo</span></button>
+          <button type="button" data-pat="Jalón" onclick="psPatSel('Jalón')" style="padding:10px 8px;border:1px solid var(--border);border-radius:8px;background:var(--dk);color:var(--mt);font-size:12px;font-weight:700;cursor:pointer;text-align:left;line-height:1.3">⬇️ Jalón<br><span style="font-size:10px;font-weight:400">hombro posterior / muñeca</span></button>
+          <button type="button" data-pat="Pierna" onclick="psPatSel('Pierna')" style="padding:10px 8px;border:1px solid var(--border);border-radius:8px;background:var(--dk);color:var(--mt);font-size:12px;font-weight:700;cursor:pointer;text-align:left;line-height:1.3">🦵 Pierna<br><span style="font-size:10px;font-weight:400">rodilla / cadera</span></button>
+          <button type="button" data-pat="Bisagra" onclick="psPatSel('Bisagra')" style="padding:10px 8px;border:1px solid var(--border);border-radius:8px;background:var(--dk);color:var(--mt);font-size:12px;font-weight:700;cursor:pointer;text-align:left;line-height:1.3">↙️ Bisagra<br><span style="font-size:10px;font-weight:400">lumbar / sacro / cadera</span></button>
+        </div>
+        <div style="font-size:10px;color:var(--mt);padding:8px 10px;background:rgba(200,100,0,.06);border-left:2px solid #FF8844;border-radius:0 4px 4px 0">
           ⚠ Si hay dolor agudo o limitación de movimiento, consulta con tu coach antes de continuar entrenando.
         </div>
       </div>
