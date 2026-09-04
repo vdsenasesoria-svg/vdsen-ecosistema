@@ -231,7 +231,7 @@
 </script>
 
 <div class="main-content">
-  <div id="clientes" class="section active"><h2 class="text-2xl font-bold mb-4">Clientes</h2><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button onclick="showSection('evaluacion')" class="btn-secondary text-sm">📥 Fichas recibidas</button></div><div id="clientList"></div></div>
+  <div id="clientes" class="section active"><div id="dashSummary" class="mb-4"></div><div class="flex gap-2 flex-wrap mb-4"><button id="newClientBtn" class="btn-primary">+ Nuevo Cliente</button><button onclick="showSection('evaluacion')" class="btn-secondary text-sm">📥 Fichas recibidas</button></div><div id="clientList"></div></div>
   <div id="evaluacion" class="section"><div class="flex items-center gap-3 mb-4"><button onclick="showSection('clientes')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">← Clientes</button><h2 class="text-2xl font-bold" style="margin:0">Fichas / Intake</h2></div>
     <div class="card p-4 mb-4">
       <h3 style="font-family:'Big Shoulders Display','Inter',sans-serif;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:16px;color:var(--accent);margin-bottom:4px">Ficha en blanco para nuevos clientes</h3>
@@ -9101,8 +9101,7 @@ El esfuerzo no es negociable.
     cont.innerHTML = `
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap">
         <div>
-          <div style="font-size:13px;font-weight:700;color:#F4F4F0">${_escH(d.nombre || (_detailClientData && _detailClientData.displayName) || 'Ficha')}</div>
-          ${updatedAt ? `<div style="font-size:10px;color:#555;margin-top:2px">Actualizado ${updatedAt}</div>` : '<div style="font-size:10px;color:#555;margin-top:2px">Sin ficha</div>'}
+          ${updatedAt ? `<div style="font-size:10px;color:#555">Actualizado ${updatedAt}</div>` : '<div style="font-size:10px;color:#555">Sin ficha</div>'}
         </div>
         <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.07);color:#C4FF00;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">📝 Editar ficha</button>
       </div>
@@ -9128,10 +9127,6 @@ El esfuerzo no es negociable.
         <div style="font-size:11px;color:#666;line-height:1.6;margin-bottom:10px">Genera plan de entrenamiento, nutricional y suplementación según la ficha. Requiere API key y ficha completa.</div>
         <button id="_fichaGenBtn_${clientId}" onclick="_autoGenerateForModal('${clientId}')" style="width:100%;padding:10px;border-radius:7px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.03em">🤖 GENERAR PLAN COMPLETO</button>
         <div id="_fichaGenStatus_${clientId}" style="font-size:11px;line-height:1.7;margin-top:8px"></div>
-        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-          <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('json','${clientId}'),100)" style="padding:5px 11px;border-radius:6px;border:1px solid rgba(196,255,0,.3);background:rgba(196,255,0,.06);color:#C4FF00;font-size:11px;font-weight:600;cursor:pointer">📋 Pegar JSON plan</button>
-          <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('texto','${clientId}'),100)" style="padding:5px 11px;border-radius:6px;border:1px solid rgba(244,244,240,.14);background:rgba(244,244,240,.03);color:#888;font-size:11px;font-weight:600;cursor:pointer">📝 Pegar texto plan</button>
-        </div>
       </div>`;
   }
   window._renderClientTabFicha = _renderClientTabFicha;
@@ -9882,7 +9877,6 @@ El esfuerzo no es negociable.
         <div class="flex gap-2 flex-wrap mb-3">
           <button onclick="_modalImportPlan('json','${clientId}')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:12px;font-weight:600;cursor:pointer">📋 Pegar JSON</button>
           <button onclick="_modalImportPlan('texto','${clientId}')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.06);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📝 Pegar texto</button>
-          <button onclick="_switchClientTab('ficha')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:12px;font-weight:600;cursor:pointer">🤖 Generar con IA → Ficha</button>
         </div>
         <div id="_importPlanArea"></div>
       </div>`;
@@ -10355,7 +10349,7 @@ El esfuerzo no es negociable.
 
         html += `<div class="card p-3 mb-3" style="border-left:3px solid ${semColor};border-radius:0 8px 8px 0">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
-            <div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">Monitoreo Subjetivo Ehrenstein — Sem ${currentWeek}</div>
+            <div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">Monitoreo Subjetivo Ehrenstein</div>
             <div style="font-size:13px;font-weight:800;color:${semColor}">${semIcon} ${semLabel}</div>
           </div>
           <div class="flex gap-4 flex-wrap mb-2">
@@ -10437,9 +10431,9 @@ El esfuerzo no es negociable.
     if (rpePts.length >= 2) {
       html += _buildMiniTrendChart(rpePts, 'RPE por sesión', '#FF8844');
     } else if (rpePts.length === 1) {
-      html += `<div class="card p-3 mb-3 text-xs text-[#888]">📊 RPE registrado en 1 sesión — el gráfico de tendencia aparece a partir de 2 sesiones completadas.</div>`;
+      html += `<div class="text-xs text-[#888] mb-3">📊 1 sesión — el gráfico aparece desde la 2ª.</div>`;
     } else {
-      html += `<div class="card p-3 mb-3 text-xs text-[#888]">📊 El gráfico de RPE aparecerá cuando el cliente complete su primera sesión.</div>`;
+      html += `<div class="text-xs text-[#888] mb-3">📊 Sin sesiones completadas aún.</div>`;
     }
 
     // ── Datos reales de la última sesión
@@ -11035,13 +11029,11 @@ El esfuerzo no es negociable.
     cont.innerHTML = `
       <div class="mb-4">
         <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Notas privadas del coach</div>
-        <div class="text-xs text-[#555] mb-2">Visibles solo para ti. Lesiones, contexto personal, comportamiento, recordatorios.</div>
         ${noteDate ? `<div class="text-xs text-[#444] mb-2">Última actualización: ${noteDate}</div>` : ''}
         <textarea id="coachNoteTA" class="input-field w-full text-sm" rows="8" placeholder="Notas sobre el cliente…">${note.replace(/</g,'&lt;')}</textarea>
       </div>
       <div style="border-top:1px solid rgba(244,244,240,.08);padding-top:16px;margin-bottom:16px">
         <div class="text-xs text-[#888] mb-1 uppercase tracking-wide font-semibold">Mensaje para el cliente</div>
-        <div class="text-xs text-[#555] mb-2">Visible en el Perfil del cliente. Úsalo para motivación, indicaciones o recordatorios.</div>
         <textarea id="clientMsgTA" class="input-field w-full text-sm" rows="4" placeholder="Ej: Esta semana enfócate en la técnica del peso muerto — bajamos carga al 80%...">${clientMsg.replace(/</g,'&lt;')}</textarea>
       </div>
       <button onclick="saveAllNotes()" class="btn-primary w-full">💾 Guardar notas</button>`;

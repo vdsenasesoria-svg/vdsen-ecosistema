@@ -2987,7 +2987,6 @@ function renderResumen() {
       ${buildMesocicloReportWidget()}
       ${buildStreakWidget()}
       ${buildHistorialWidget()}
-      ${buildBodyMapWidget()}
       ${buildVolumenWidget()}
       ${buildVolumenMesocicloWidget()}
       ${buildRezagadosWidget()}
@@ -4941,16 +4940,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">'+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+(function(){ var _tl=(ej.technique||'').toLowerCase(); if (_isY3T&&_effectiveSets&&_effectiveSets[s]) { var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:8px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; } if (_tl==='fst7') { var _ft=(ej.sets||[]).length||7; return ' <span style="font-size:8px;font-weight:900;color:#cc44aa;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">FST-7 · '+(s+1)+'/'+_ft+'</span>'; } if (_tl==='lengthened_partials') { return ' <span style="font-size:8px;font-weight:900;color:#22aadd;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">PARCIALES</span>'; } return ''; })()+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
           '<div style="font-size:11px;color:var(--mt)">RIR '+_escHTml(String(saved.rir_real||'—'))+' · ICS '+_escHTml(String(saved.ics||'—'))+' · '+pumpEmoji+
-          (function(){
-            if (saved.autoFilled) return '';
-            var _rrv = parseFloat(saved.rir_real);
-            if (isNaN(_rrv) || saved.rir_real === '' || saved.rir_real == null) return '';
-            var _rrTarget = (_psRir !== null && _psRir !== undefined) ? _psRir : baseRIR;
-            var _rrErr = _rrv - _rrTarget;
-            if (Math.abs(_rrErr) <= 0.5) return ' <span style="font-size:9px;font-weight:900;letter-spacing:.5px;color:#44CC88;background:rgba(68,204,136,.12);padding:2px 6px;border-radius:4px">🎯 MATCH</span>';
-            if (_rrErr > 0.5)            return ' <span style="font-size:9px;font-weight:900;letter-spacing:.5px;color:#FF8844;background:rgba(255,136,68,.1);padding:2px 6px;border-radius:4px">↑ FÁCIL</span>';
-            return                              ' <span style="font-size:9px;font-weight:900;letter-spacing:.5px;color:#7ec0ff;background:rgba(126,192,255,.1);padding:2px 6px;border-radius:4px">↓ DURO</span>';
-          })()+
           '</div>'+
         '</div>'+
         '<button onclick="editSet(\''+key+'\')" title="Corregir esta serie" style="'+
@@ -7096,7 +7085,8 @@ function renderEntrenamiento() {
     '</div>'+
     // Week performance summary (FASE 12): all days in CURRENT_WEEK — colapsable
     (function(){var _w=_buildWeekPerfSummary();return _w?'<details style="margin:0 0 4px"><summary style="cursor:pointer;list-style:none;font-size:10px;font-weight:700;color:var(--mt);letter-spacing:1.5px;padding:4px 16px">RESUMEN SEMANA ▾</summary>'+_w+'</details>':'';})()+ 
-    // Glosario RIR + ICS (colapsable)
+    // Glosario RIR + ICS — solo para usuarios con < 2 sesiones completadas
+    (Object.keys(LOGS||{}).filter(function(k){return k.indexOf('done_')===0;}).length >= 2 ? '' :
     '<details style="margin:0 16px 8px;background:rgba(107,107,102,.04);border:1px solid rgba(107,107,102,.18);border-radius:10px;padding:8px 12px">'+
       '<summary style="cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.5px;display:flex;align-items:center;gap:6px">'+
         '<span style="font-size:13px">📖</span><span>QUÉ ES RIR Y QUÉ ES ICS</span>'+
@@ -7124,7 +7114,7 @@ function renderEntrenamiento() {
           '<div style="margin-top:5px;color:var(--mt);font-size:11px">Sé honesto: el algoritmo usa el ICS para decidir si subir, mantener o bajar peso la próxima semana. Mentir = peor progreso.</div>'+
         '</div>'+
       '</div>'+
-    '</details>'+
+    '</details>')+
     // Rezagados banner
     rezBanner+
     // Exercise navigator (horizontal scroll)
