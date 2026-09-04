@@ -7357,7 +7357,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   let _detailRenovacionData = null;
   let _detailActiveTab  = 'plan';
 
-  async function showClientDetail(clientId) {
+  async function showClientDetail(clientId, openTab) {
     _detailClientId   = clientId;
     _detailActiveTab  = 'plan';
     // Limpiar estado de módulo D del cliente anterior para evitar que se apliquen
@@ -7432,7 +7432,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <button id="ctab_renovar" role="tab" aria-selected="false" onclick="_switchClientTab('renovar')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🔄 Renovar</button>
       </div>
       <div id="clientDetailTabContent"></div>`;
-    _switchClientTab('ficha');
+    _switchClientTab(openTab || 'ficha');
   }
 
   // FASE 24 — helper puro: label del tab Plan según estado dirty.
@@ -11675,7 +11675,7 @@ El esfuerzo no es negociable.
       markEditorClean();
       showToast('Plan actualizado ✅');
       toggleTrainingEditor();
-      showClientDetail(_detailClientId);
+      showClientDetail(_detailClientId, 'plan');
       _autoAddExercisesToCatalog(days);
     } catch(e) { showToast('Error al guardar: ' + e.message + (e.code ? ' ['+e.code+']' : ''), true); }
     finally { _savingTrainingPlan = false; }
@@ -11789,7 +11789,7 @@ El esfuerzo no es negociable.
       await updateDoc(doc(db, "plans", planId), { days: _stampPrescriptionIds(days), coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
       showToast(`"${name}" agregado a ${days[dayIdx].label} ✅`);
       document.getElementById('quickAddPanel')?.remove();
-      showClientDetail(_detailClientId); // recargar
+      showClientDetail(_detailClientId, 'plan');
       _autoAddExercisesToCatalog(days); // auto-agregar al catálogo en background
     } catch(e) {
       showToast('Error: ' + e.message, true);
