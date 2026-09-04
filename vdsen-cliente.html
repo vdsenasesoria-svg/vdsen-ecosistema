@@ -8233,42 +8233,129 @@ function selDia(i) {
 }
 
 // ══════════════════════════════════════════════════════
-// READINESS PRE-SESIÓN
-// A diferencia del check-in post-sesión (que evalúa cómo fue el entreno),
-// esto pregunta ANTES de arrancar: sueño / dolor / motivación. Es puramente
-// informativo para el cliente — no modifica el plan ni las series; solo
-// muestra un aviso propio cuando conviene ser cauteloso hoy.
+// READINESS + SESSION INTENT (pre-sesión)
+// Derivado de datos existentes en LOGS — 0 reads nuevos, 0 formularios.
+// Readiness: LISTO / NORMAL / VIGILAR basado en postsession + check-in previos.
+// Intent: PROGRESAR CARGA / REPS / MANTENER / TÉCNICA derivado de progrec previo.
+// No modifica plan, carga, volumen, RIR ni deload. Contexto informativo solo.
 // ══════════════════════════════════════════════════════
-var _readinessTemp = {};
+var _readinessTemp = {}; // mantenido para compatibilidad con submitReadiness (formulario legado)
 
-function buildReadinessBanner(di, isDone) {
-  return '';
-  var rKey = 'readiness_'+CURRENT_WEEK+'_'+di;
-  var r = LOGS[rKey];
-  if (r && r.completed) {
-    // Ya respondido: mostrar resumen compacto siempre (incluso si sesión completada)
-    var labels = {dolor:{1:'⚠️ Dolor notable',2:'🟡 Molestia leve',3:'✅ Sin dolor'},motivacion:{1:'🔋 Motivación baja',2:'🔋 Motivación media',3:'🔥 Motivación alta'}};
-    var visibles = r.sueno ? ['sueno','dolor','motivacion'] : ['dolor','motivacion'];
-    var allLabels = Object.assign({sueno:{1:'😴 Mal',2:'😴 Regular',3:'😴 Bien'}}, labels);
-    var chips = visibles.map(function(k){
-      return '<span style="padding:3px 8px;border-radius:12px;border:1px solid rgba(244,244,240,.12);font-size:10px;color:var(--mt);background:var(--surface)">'+(allLabels[k][r[k]]||'—')+'</span>';
-    }).join('');
-    var advisoryHtml = r.advisory ? '<div style="margin-top:6px;font-size:10px;color:#FF8844;line-height:1.4">⚠ '+_escHTml(String(r.advisory))+'</div>' : '';
-    return '<div style="margin:0 16px 8px;padding:8px 12px;background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.06);border-radius:10px">'
-      +'<div style="font-size:9px;letter-spacing:1px;color:var(--mt);font-weight:700;margin-bottom:5px">🎯 CÓMO LLEGASTE HOY</div>'
-      +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+chips+'</div>'
-      +advisoryHtml
-      +'</div>';
+// Retorna el postsession más reciente antes de di — primero en la semana actual,
+// luego en la semana anterior. 0 nuevas lecturas Firestore.
+function _getMostRecentPostsession(di) {
+  for (var _d = di - 1; _d >= 0; _d--) {
+    var _k = 'postsession_'+CURRENT_WEEK+'_'+_d;
+    if (LOGS[_k]) return LOGS[_k];
   }
-  if (isDone) return ''; // no mostrar formulario si ya completó sin responder
-  _readinessTemp = {};
-  return '<div id="readinessCard" style="margin:0 16px 10px;padding:14px;background:var(--card);border:1px solid var(--bd);border-radius:12px">'
-    + '<div style="font-family:var(--ff);font-size:12px;letter-spacing:1.5px;color:var(--gold);font-weight:800;margin-bottom:10px">🎯 ANTES DE EMPEZAR — ¿CÓMO LLEGÁS HOY?</div>'
-    + '<div style="display:grid;gap:10px">'
-    +   _readinessRow('dolor', '¿Dolor o molestia?', [{v:1,l:'Sí, notable'},{v:2,l:'Leve'},{v:3,l:'Ninguno'}])
-    +   _readinessRow('motivacion', '¿Motivación?', [{v:1,l:'Baja'},{v:2,l:'Media'},{v:3,l:'Alta'}])
-    + '</div>'
-    + '<button onclick="submitReadiness('+di+')" style="width:100%;margin-top:12px;padding:13px;background:var(--accent);border:none;color:#000;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;cursor:pointer;border-radius:8px;font-weight:800">→ EMPEZAR SESIÓN</button>'
+  if (CURRENT_WEEK > 1) {
+    var _ses = getSesiones();
+    for (var _d2 = _ses.length - 1; _d2 >= 0; _d2--) {
+      var _k2 = 'postsession_'+(CURRENT_WEEK-1)+'_'+_d2;
+      if (LOGS[_k2]) return LOGS[_k2];
+    }
+  }
+  return null;
+}
+
+// HEURISTIC multimodal readiness. Thresholds heredados del codebase existente.
+// eimd: 1=poco, 3=mucho | sleep: <=5 rojo | who5: <52 bajo, <68 ok
+// Returns { level, levelColor, reasons[] }
+function _computeReadiness(di) {
+  var ps = _getMostRecentPostsession(di);
+  var ci = LOGS['ci_sem_'+CURRENT_WEEK] || null;
+  if (!ps && !ci) return { level:'DATOS INSUFICIENTES', levelColor:'var(--mt)', reasons:[] };
+
+  var vigilar = [], moderate = [];
+
+  if (ps) {
+    var _eimd = parseInt(ps.eimd) || 0;
+    if (_eimd === 3)       vigilar.push('fatiga muscular elevada');
+    else if (_eimd === 2)  moderate.push('fatiga muscular moderada');
+    if (ps.articular === 'si') vigilar.push('dolor articular');
+    var _sleep = parseFloat(ps.sleep) || 0;
+    if (_sleep > 0 && _sleep <= 5)     vigilar.push('sueño bajo');
+    else if (_sleep > 5 && _sleep < 7) moderate.push('sueño limitado');
+  }
+
+  if (ci) {
+    var _w5 = parseInt(ci.who5) || 0;
+    if (_w5 > 0 && _w5 < 52)      vigilar.push('bienestar bajo');
+    else if (_w5 >= 52 && _w5 < 68) moderate.push('bienestar ok');
+  }
+
+  if (vigilar.length)  return { level:'VIGILAR', levelColor:'var(--red)',  reasons: vigilar.slice(0,2) };
+  if (moderate.length) return { level:'NORMAL',  levelColor:'var(--gold)', reasons: moderate.slice(0,1) };
+  return { level:'LISTO', levelColor:'var(--grn)', reasons:[] };
+}
+
+// Deriva intención de sesión del progrec del mismo día-índice la semana anterior.
+// No inventa lógica nueva — sólo interpreta acciones ya calculadas por el Progression Engine.
+// Returns { intent, reason, color }
+function _computeSessionIntent(di) {
+  var ps = _getMostRecentPostsession(di);
+
+  // Dolor articular reciente → técnica siempre primero
+  if (ps && ps.articular === 'si') {
+    return { intent:'PRIORIZAR TÉCNICA',
+      reason:'Dolor articular reportado — ejecuta con foco en técnica y rango de movimiento. Consultá al coach si persiste.',
+      color:'#e06040' };
+  }
+
+  var prevProgrec = CURRENT_WEEK > 1 ? (LOGS['progrec_'+(CURRENT_WEEK-1)+'_'+di] || null) : null;
+  var recs = prevProgrec && Array.isArray(prevProgrec.recommendations) ? prevProgrec.recommendations : [];
+  if (!recs.length) {
+    return { intent:'CUMPLE LOS OBJETIVOS PRESCRITOS', reason:'Sigue las cargas y rangos del plan de hoy.', color:'var(--mt)' };
+  }
+
+  var counts = {};
+  recs.forEach(function(r){ if (r.action) counts[r.action] = (counts[r.action]||0)+1; });
+  var top = Object.keys(counts).sort(function(a,b){ return counts[b]-counts[a]; })[0];
+
+  var _iMap = {
+    increase_load: { intent:'PROGRESAR CARGA',         reason:'Completaste reps con RIR dentro del objetivo — sube al siguiente incremento disponible.', color:'var(--grn)' },
+    add_sets:      { intent:'PROGRESAR VOLUMEN',        reason:'Podés agregar una serie en los ejercicios principales si la energía acompaña.', color:'var(--grn)' },
+    progress_reps: { intent:'PROGRESAR REPETICIONES',  reason:'Mantén la carga y apunta a completar el rango objetivo con el RIR prescrito.', color:'var(--grn)' },
+    maintain:      { intent:'PROGRESAR REPETICIONES',  reason:'Mantén la carga y busca empujar en reps dentro del rango objetivo.', color:'var(--grn)' },
+    freeze_load:   { intent:'MANTENER Y CONSOLIDAR',   reason:'Consolida técnica y RIR antes de progresar carga.', color:'var(--gold)' },
+    reduce_sets:   { intent:'MANTENER Y CONSOLIDAR',   reason:'Sesión más liviana — priorizá calidad de ejecución.', color:'var(--gold)' },
+    reduce_load:   { intent:'AJUSTAR CARGA',            reason:'Ajusta a una carga que permita técnica limpia y RIR objetivo.', color:'var(--gold)' },
+    deload:        { intent:'SESIÓN DE RECUPERACIÓN',  reason:'Protocolo de descarga activa — priorizá movilidad y calidad de movimiento.', color:'var(--blue)' }
+  };
+
+  return _iMap[top] || { intent:'CUMPLE LOS OBJETIVOS PRESCRITOS', reason:'Sigue las cargas y rangos del plan de hoy.', color:'var(--mt)' };
+}
+
+// Card compacta pre-entrenamiento: Intención + Readiness en una sola superficie.
+// Readiness NO sobreescribe Intent — ambas se informan por separado.
+// La decisión de modificar carga/sets sigue perteneciendo al plan/coach/Progression Engine.
+function buildReadinessBanner(di, isDone) {
+  if (isDone) return '';
+
+  var readiness = _computeReadiness(di);
+  var intent    = _computeSessionIntent(di);
+
+  var hasIntent   = intent.intent !== 'CUMPLE LOS OBJETIVOS PRESCRITOS';
+  var hasReadiness = readiness.level !== 'DATOS INSUFICIENTES';
+  if (!hasIntent && !hasReadiness) return '';
+
+  var intentHtml = '<div>'
+    + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">INTENCIÓN DE HOY</div>'
+    + '<div style="font-size:13px;font-weight:800;letter-spacing:.3px;color:'+intent.color+'">'+_escHTml(intent.intent)+'</div>'
+    + '<div style="font-size:11px;color:var(--mt);margin-top:3px;line-height:1.45">'+_escHTml(intent.reason)+'</div>'
+    + '</div>';
+
+  var readinessHtml = '';
+  if (hasReadiness) {
+    var _rStr = readiness.reasons.length ? ' · '+readiness.reasons.join(' + ') : '';
+    readinessHtml = '<div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(107,107,102,.12)">'
+      + '<span style="font-size:10px;font-weight:800;letter-spacing:.8px;color:'+readiness.levelColor+'">'+readiness.level+'</span>'
+      + (_rStr ? '<span style="font-size:10px;color:var(--mt)">'+_escHTml(_rStr)+'</span>' : '')
+      + '</div>';
+  }
+
+  return '<div style="margin:0 16px 10px;padding:12px 14px;background:var(--card);border:1px solid var(--bd);border-radius:10px">'
+    + intentHtml + readinessHtml
     + '</div>';
 }
 
@@ -12338,10 +12425,14 @@ function _buildNextExposureHtml(progrec, unit, nombre) {
     deload:        { label: 'Revisar con Coach', color: 'var(--blue)', icon: '⚑' }
   };
   var act = actionMap[progrec.action] || { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' };
+  // Progression Explainability: primary reason = first pipe-segment (skip ⚠ warnings)
+  var _r0 = progrec.reason ? String(progrec.reason).split('|')[0].trim() : '';
+  var _primaryReason = (_r0 && _r0.charAt(0) !== '⚠') ? _r0 : '';
   return '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid '+act.color+'">'
     + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">HOY</div>'
     + '<div style="font-size:12px;font-weight:700;color:'+act.color+'">'+act.icon+' '+act.label+'</div>'
     + (progrec.newLoad ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">Sugerido: '+_escHTml(String(progrec.newLoad))+' '+_unit+'</div>' : '')
+    + (_primaryReason ? '<div style="font-size:10px;color:var(--mt2);margin-top:4px;line-height:1.4">'+_escHTml(_primaryReason)+'</div>' : '')
     + '</div>';
 }
 
