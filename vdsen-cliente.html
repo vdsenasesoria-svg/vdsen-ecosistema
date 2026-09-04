@@ -2917,8 +2917,8 @@ function renderResumen() {
   const _totalWeeksGrid = getTotalWeeks();
   for (let w=1; w<=_totalWeeksGrid; w++) {
     const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => !!LOGS['done_'+w+'_'+i]).every(Boolean);
-    const cls = w===semActiva?'active':(_wDone?'done':(w===_totalWeeksGrid?'deload':''));
-    const lbl = w===_totalWeeksGrid?'DELOAD':w===semActiva?'ACTIVA':'';
+    const cls = w===semActiva?'active':(_wDone?'done':'');
+    const lbl = w===semActiva?'ACTIVA':(_wDone?'✓':'');
     weekHtml += `<div class="wk ${cls}" onclick="goToWeek(${w})">
       <div class="wk-num">${w}</div>
       <div class="wk-lbl">${lbl||'SEM'}</div>
@@ -2946,7 +2946,7 @@ function renderResumen() {
     ${_primeraSesionHtml}
 
     <div class="card" style="margin-top:10px">
-      <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
+      <div class="card-title">HOY — SEM ${semActiva}</div>
       ${getTodaySummary()}
     </div>
 
@@ -14228,18 +14228,33 @@ function _detectMissingData(logs, plan, currentWeek) {
 
 function _renderClientMissingHints(items) {
   if (!items || !items.length) return '';
+  var _hintCTA = {
+    'MISSING_CHECKIN':     { tab: 3, label: 'Ir al Check-in →' },
+    'PARTIAL_SESSION':     { tab: 1, label: 'Ver Entrenamiento →' },
+    'MISSING_POSTSESSION': { tab: 1, label: 'Ver Entrenamiento →' },
+    'MISSING_RIR':         { tab: 1, label: 'Ver Entrenamiento →' },
+    'MISSING_ICS':         { tab: 1, label: 'Ver Entrenamiento →' }
+  };
   var attn = items.filter(function(i) { return i.severity === 'attention'; });
   var info = items.filter(function(i) { return i.severity === 'info'; });
   var lines = '';
   attn.forEach(function(i) {
-    lines += '<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:4px">' +
-      '<span style="color:#FF8844;flex-shrink:0;font-size:12px">⚠</span>' +
-      '<span style="font-size:12px;color:var(--tx)">' + i.message + '</span></div>';
+    var cta = _hintCTA[i.type];
+    lines += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;justify-content:space-between">' +
+      '<div style="display:flex;align-items:flex-start;gap:6px;flex:1;min-width:0">' +
+      '<span style="color:#FF8844;flex-shrink:0;font-size:12px;margin-top:1px">⚠</span>' +
+      '<span style="font-size:12px;color:var(--tx)">' + i.message + '</span></div>' +
+      (cta ? '<button onclick="goTab('+cta.tab+')" style="flex-shrink:0;background:none;border:1px solid rgba(255,136,68,.4);color:#FF8844;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;cursor:pointer;letter-spacing:.3px">'+cta.label+'</button>' : '') +
+      '</div>';
   });
   info.forEach(function(i) {
-    lines += '<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:4px">' +
-      '<span style="color:var(--mt);flex-shrink:0;font-size:12px">·</span>' +
-      '<span style="font-size:12px;color:var(--mt)">' + i.message + '</span></div>';
+    var cta = _hintCTA[i.type];
+    lines += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;justify-content:space-between">' +
+      '<div style="display:flex;align-items:flex-start;gap:6px;flex:1;min-width:0">' +
+      '<span style="color:var(--mt);flex-shrink:0;font-size:12px;margin-top:1px">·</span>' +
+      '<span style="font-size:12px;color:var(--mt)">' + i.message + '</span></div>' +
+      (cta ? '<button onclick="goTab('+cta.tab+')" style="flex-shrink:0;background:none;border:1px solid rgba(107,107,102,.3);color:var(--mt);font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;cursor:pointer;letter-spacing:.3px">'+cta.label+'</button>' : '') +
+      '</div>';
   });
   return '<div style="background:rgba(255,136,68,.06);border:1px solid rgba(255,136,68,.22);' +
     'border-radius:8px;padding:10px 12px;margin:8px 0">' +
