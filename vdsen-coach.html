@@ -8475,6 +8475,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       btn.style.color = isDirty ? '#0A0A0A' : '';
       btn.textContent = isDirty ? '⚠️ Cambios sin guardar — Guardar ahora' : '💾 Guardar y activar plan';
     }
+    var btnTop = document.getElementById('saveTrainingBtnTop');
+    if (btnTop) {
+      btnTop.style.background = isDirty ? '#FF8844' : '';
+      btnTop.style.color = isDirty ? '#0A0A0A' : '';
+      btnTop.textContent = isDirty ? '⚠️ Sin guardar — Guardar ahora' : '💾 Guardar cambios';
+    }
   }
   window._updateDirtyTabUI = _updateDirtyTabUI;
 
@@ -11943,26 +11949,30 @@ El esfuerzo no es negociable.
           <input class="input-field w-full text-sm py-1 text-center font-bold text-[#88ccff]" value="${rsVal}" type="number" min="0" step="5" placeholder="0" inputmode="numeric" data-field="restSeconds" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
-      <div class="grid gap-2 mb-2" style="grid-template-columns:60px 1fr 1fr 2fr">
-        <div>
-          <div class="text-[10px] uppercase tracking-wide mb-1" style="color:#cc66aa">Biserie</div>
-          <input class="input-field w-full text-xs py-1 text-center font-bold" placeholder="A / B…" maxlength="4" data-field="supersetGroup" value="${ssVal}" oninput="markEditorDirty&&markEditorDirty();this.closest('.exrow-item').style.border=this.value.trim()?'1px solid rgba(204,102,170,.4)':'1px solid rgba(255,255,255,.08)'">
+      <details${(ssVal || techVal!=='straight' || nmVal || techniqueNote || coachNote) ? ' open' : ''} class="ex-advanced-details">
+        <summary style="list-style:none;cursor:pointer;font-size:10px;color:#555;letter-spacing:.6px;padding:2px 0 4px;user-select:none">▸ AVANZADO${(ssVal||nivelMedio||techniqueNote||coachNote||techVal!=='straight')?(' · <span style="color:#888">'+[ssVal?'Biserie':'',techVal!=='straight'?'Técnica':'',nmVal?'Nivel':'',techniqueNote?'Nota téc.':'',coachNote?'Nota':''].filter(Boolean).join(', ')+'</span>'):''}
+        </summary>
+        <div class="grid gap-2 mb-2 mt-2" style="grid-template-columns:60px 1fr 1fr 2fr">
+          <div>
+            <div class="text-[10px] uppercase tracking-wide mb-1" style="color:#cc66aa">Biserie</div>
+            <input class="input-field w-full text-xs py-1 text-center font-bold" placeholder="A / B…" maxlength="4" data-field="supersetGroup" value="${ssVal}" oninput="markEditorDirty&&markEditorDirty();this.closest('.exrow-item').style.border=this.value.trim()?'1px solid rgba(204,102,170,.4)':'1px solid rgba(255,255,255,.08)'">
+          </div>
+          <div>
+            <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Técnica</div>
+            <select class="input-field w-full text-xs py-1" data-field="technique" onchange="markEditorDirty&&markEditorDirty()">${techOpts}</select>
+          </div>
+          <div>
+            <div class="text-[10px] uppercase tracking-wide mb-1" style="color:${nmColors[nmVal]||'#f09030'}">Nivel medio</div>
+            <select class="input-field w-full text-xs py-1" data-field="nivel_medio" onchange="markEditorDirty&&markEditorDirty();this.previousElementSibling.style.color=(this.value?{'fundamental':'#FF6644','suplementario':'#FF9900','asistencia_mayor':'#CCAA00','asistencia_secundario':'#888'}[this.value]||'#f09030':'#f09030')">${nmOpts}</select>
+          </div>
+          <div>
+            <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Nota técnica (drop %, mini-clusters, tempo…)</div>
+            <input class="input-field w-full text-xs py-1" placeholder="Ej: Tras RIR0 bajar 30% y continuar al fallo" data-field="techniqueNote" value="${(techniqueNote||'').replace(/"/g,'&quot;')}" oninput="markEditorDirty&&markEditorDirty()">
+          </div>
         </div>
-        <div>
-          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Técnica</div>
-          <select class="input-field w-full text-xs py-1" data-field="technique" onchange="markEditorDirty&&markEditorDirty()">${techOpts}</select>
-        </div>
-        <div>
-          <div class="text-[10px] uppercase tracking-wide mb-1" style="color:${nmColors[nmVal]||'#f09030'}">Nivel medio</div>
-          <select class="input-field w-full text-xs py-1" data-field="nivel_medio" onchange="markEditorDirty&&markEditorDirty();this.previousElementSibling.style.color=(this.value?{'fundamental':'#FF6644','suplementario':'#FF9900','asistencia_mayor':'#CCAA00','asistencia_secundario':'#888'}[this.value]||'#f09030':'#f09030')">${nmOpts}</select>
-        </div>
-        <div>
-          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Nota técnica (drop %, mini-clusters, tempo…)</div>
-          <input class="input-field w-full text-xs py-1" placeholder="Ej: Tras RIR0 bajar 30% y continuar al fallo" data-field="techniqueNote" value="${(techniqueNote||'').replace(/"/g,'&quot;')}" oninput="markEditorDirty&&markEditorDirty()">
-        </div>
-      </div>
-      <textarea class="input-field w-full text-xs py-1" placeholder="Nota de ejecución (tempo, ROM, cues...)" rows="1" data-field="coachNote" oninput="markEditorDirty&&markEditorDirty()"
-        style="resize:vertical;min-height:28px;color:#aaa;border-color:rgba(255,255,255,.05)">${coachNote || ''}</textarea>
+        <textarea class="input-field w-full text-xs py-1" placeholder="Nota de ejecución (tempo, ROM, cues...)" rows="1" data-field="coachNote" oninput="markEditorDirty&&markEditorDirty()"
+          style="resize:vertical;min-height:28px;color:#aaa;border-color:rgba(255,255,255,.05)">${coachNote || ''}</textarea>
+      </details>
     </div>`;
   }
 
@@ -12556,7 +12566,11 @@ El esfuerzo no es negociable.
         <button onclick="addExRow(${di})" class="text-[#F4F4F0] text-xs underline mt-1">+ Ejercicio</button>
       </div>`;
     }).join('');
-    return `<div id="trainingEditorDays">${daysHtml}</div>
+    return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:8px 10px;background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.12);border-radius:8px">
+        <button onclick="saveTrainingPlan()" id="saveTrainingBtnTop" class="btn-primary" style="flex:1;padding:8px;font-size:13px">💾 Guardar cambios</button>
+        <button onclick="toggleTrainingEditor()" style="font-size:12px;color:#888;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px 14px;cursor:pointer">✕ Cancelar</button>
+      </div>
+      <div id="trainingEditorDays">${daysHtml}</div>
       <button onclick="addDayBlock()" class="text-[#F4F4F0] text-xs underline mt-1 mb-3 block">➕ Agregar día de entrenamiento</button>
       <button onclick="saveTrainingPlan()" class="btn-primary w-full mt-2">💾 Guardar cambios</button>`;
   }
