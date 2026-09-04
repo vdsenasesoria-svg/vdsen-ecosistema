@@ -4488,6 +4488,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var headerHtml =
     '<div style="margin-bottom:14px">'+
       '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+_escHTml(nombre)+'</div>'+
+      (catData && catData.motorPattern ? '<div style="font-size:10px;color:var(--mt2);margin-top:2px;letter-spacing:.4px">'+_escHTml(catData.motorPattern)+'</div>' : '')+
       (_exNoteInline
         ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;cursor:pointer" title="Toca para editar · Nota posicional: si el coach reordenó ejercicios, puede no corresponder al ejercicio original.">'+
             '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:rgba(212,185,106,.7);margin-bottom:3px">NOTA PERSONAL ✎</div>'+
@@ -4570,14 +4571,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '</div>'+
         '</div>';
       })() : '')+
-      '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
-        (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+_escHTml(catData.motorPattern)+'</span>' : '')+
-      '</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button onclick="toggleExUnit('+di+','+ei+')" aria-label="Cambiar unidad (actualmente '+_escHTml(String(unit))+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+_escHTml(String(unit))+' ⇄</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
         (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
-        (_exNoteInline?'<span style="font-size:10px;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">📝 Nota</span>':'')+
         '<div style="position:relative;margin-left:auto">'+
           '<button id="exOpts_'+di+'_'+ei+'" onclick="toggleExOpts('+di+','+ei+')" aria-label="Opciones del ejercicio" aria-haspopup="true" style="font-size:13px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 11px;border-radius:6px;cursor:pointer;line-height:1">⋮</button>'+
           '<div id="exOptsMenu_'+di+'_'+ei+'" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;min-width:160px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.4);overflow:hidden">'+
@@ -13655,55 +13652,66 @@ function showExHistory(di, ei) {
     }
   }
 
-  var histHtml = '';
-  if (!exposures.length) {
-    histHtml = '<div style="text-align:center;padding:28px 0;color:var(--mt);font-size:13px">Sin historial comparable disponible</div>';
-  } else {
-    exposures.forEach(function(exp, expIdx) {
-      var icsSum = 0, icsN = 0;
-      exp.sets.forEach(function(s) { if (s.ics) { icsSum += s.ics; icsN++; } });
-      var avgICS = icsN ? (icsSum / icsN).toFixed(1) : null;
-      var topLoad = Math.max.apply(null, exp.sets.map(function(s) { return s.carga; }));
-      var isLatest = expIdx === 0;
-      var weekLabel = isLatest
-        ? 'ÚLTIMA SESIÓN · SEM '+_escHTml(String(exp.week||'?'))
-        : 'SEMANA '+_escHTml(String(exp.week||'?'));
-      var setsLine = exp.sets.map(function(s, idx) {
-        return 'S'+(idx+1)+': '+_escHTml(String(s.carga||'—'))+' '+_escHTml(String(unit))+' × '+_escHTml(String(s.reps||'—'))+(s.rir_real!=null?' · RIR '+_escHTml(String(s.rir_real)):'');
-      }).join(' &nbsp;·&nbsp; ');
-      var confidenceMark = exp.confidence!=='HIGH' ? ' <span style="font-weight:400;color:rgba(170,170,160,.5)">· pos.</span>' : '';
-      var cardBody =
-          '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:'+(isLatest?'var(--accent)':'var(--mt2)')+';margin-bottom:5px">'+weekLabel+confidenceMark+'</div>'
-        + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:5px">'
-        +   '<span style="font-size:20px;font-weight:900;color:var(--tx)">'+_escHTml(String(isNaN(topLoad)?'—':topLoad))+'</span>'
-        +   '<span style="font-size:11px;color:var(--mt)">'+_escHTml(String(unit))+'</span>'
-        +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">Cal '+_escHTml(String(avgICS))+'</span>' : '')
-        + '</div>'
-        + '<div style="font-size:11px;color:var(--mt);line-height:1.8">'+setsLine+'</div>';
-      if (expIdx >= 2) {
-        // Progressive disclosure — older exposures collapsed by default
-        histHtml +=
-          '<details style="margin-bottom:8px"><summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.06)">'
-        +   '<span style="font-size:10px;font-weight:800;letter-spacing:1px;color:var(--mt)">SEM '+_escHTml(String(exp.week||'?'))+'</span>'
-        +   '<span style="font-size:12px;font-weight:700;color:var(--mt2)">'+_escHTml(String(isNaN(topLoad)?'—':topLoad))+' '+_escHTml(String(unit))+'</span>'
-        + '</summary>'
-        + '<div style="padding:10px 12px 12px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.07);border-top:none;border-radius:0 0 8px 8px">'+cardBody+'</div>'
-        + '</details>';
-      } else {
-        histHtml +=
-          '<div style="margin-bottom:10px;padding:12px;background:rgba(255,255,255,.025);border-radius:10px;border:1px solid rgba(255,255,255,.07)'+(isLatest?';border-left:3px solid var(--accent)':'')+'">'
-        + cardBody+'</div>';
-      }
-    });
-  }
+  // ── Compact summary: última + mejor (always visible) ──────────────────
+  var _lastExp = exposures.length ? exposures[0] : null;
+  var _lastTopLoad = _lastExp ? Math.max.apply(null, _lastExp.sets.map(function(s){return s.carga;})) : null;
+  var _lastAvgReps = _lastExp && _lastExp.sets.length
+    ? Math.round(_lastExp.sets.reduce(function(a,s){return a+s.reps;},0)/_lastExp.sets.length) : null;
 
-  var prHtml = (pr && pr.bestLoad > 0)
-    ? '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:rgba(107,107,102,.08);border-radius:10px;border:1px solid rgba(107,107,102,.2)">'
-      + '<span style="font-size:18px">🏆</span>'
-      + '<div><div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2)">MEJOR CARGA</div>'
-      + '<div style="font-size:22px;font-weight:900;color:var(--tx);line-height:1.1">'+_escHTml(String(pr.bestLoad))+' <span style="font-size:13px;font-weight:500;color:var(--mt)">'+_escHTml(String(unit))+'</span>'+(pr.bestReps?' <span style="font-size:12px;font-weight:500;color:var(--mt)">× '+_escHTml(String(pr.bestReps))+' reps</span>':'')+'</div></div>'
+  var summaryHtml = '<div style="display:flex;gap:8px;margin-bottom:14px">';
+  if (_lastExp && _lastTopLoad) {
+    summaryHtml +=
+      '<div style="flex:1;padding:10px 12px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.18);border-radius:10px">'
+      + '<div style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--accent);margin-bottom:4px">ÚLTIMA · SEM '+_escHTml(String(_lastExp.week||'?'))
+      + (_lastExp.confidence!=='HIGH'?' <span style="opacity:.5">pos.</span>':'')+'</div>'
+      + '<div style="font-size:22px;font-weight:900;color:var(--tx);line-height:1">'+_escHTml(String(_lastTopLoad))
+      + '<span style="font-size:12px;font-weight:500;color:var(--mt)"> '+_escHTml(String(unit))+'</span></div>'
+      + (_lastAvgReps ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">× '+_escHTml(String(_lastAvgReps))+' reps</div>' : '')
+      + '</div>';
+  } else {
+    summaryHtml += '<div style="flex:1;padding:10px 12px;background:rgba(107,107,102,.05);border:1px solid rgba(107,107,102,.15);border-radius:10px;font-size:12px;color:var(--mt);display:flex;align-items:center">Sin sesiones registradas</div>';
+  }
+  if (pr && pr.bestLoad > 0) {
+    summaryHtml +=
+      '<div style="flex:1;padding:10px 12px;background:rgba(212,185,106,.05);border:1px solid rgba(212,185,106,.18);border-radius:10px">'
+      + '<div style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--gold);margin-bottom:4px">🏆 MEJOR</div>'
+      + '<div style="font-size:22px;font-weight:900;color:var(--tx);line-height:1">'+_escHTml(String(pr.bestLoad))
+      + '<span style="font-size:12px;font-weight:500;color:var(--mt)"> '+_escHTml(String(unit))+'</span></div>'
+      + (pr.bestReps ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">× '+_escHTml(String(pr.bestReps))+' reps</div>' : '')
+      + '</div>';
+  }
+  summaryHtml += '</div>';
+
+  // ── Full history under <details> ────────────────────────────────────────
+  var detailRows = '';
+  exposures.forEach(function(exp, expIdx) {
+    var icsSum = 0, icsN = 0;
+    exp.sets.forEach(function(s) { if (s.ics) { icsSum += s.ics; icsN++; } });
+    var avgICS = icsN ? (icsSum / icsN).toFixed(1) : null;
+    var topLoad = Math.max.apply(null, exp.sets.map(function(s) { return s.carga; }));
+    var isLatest = expIdx === 0;
+    var weekLabel = isLatest ? 'ÚLTIMA · SEM '+_escHTml(String(exp.week||'?')) : 'SEM '+_escHTml(String(exp.week||'?'));
+    var setsLine = exp.sets.map(function(s, idx) {
+      return 'S'+(idx+1)+': '+_escHTml(String(s.carga||'—'))+' '+_escHTml(String(unit))+' × '+_escHTml(String(s.reps||'—'))+(s.rir_real!=null?' · RIR '+_escHTml(String(s.rir_real)):'');
+    }).join(' &nbsp;·&nbsp; ');
+    var confMark = exp.confidence!=='HIGH' ? ' <span style="opacity:.45">pos.</span>' : '';
+    detailRows +=
+      '<div style="margin-bottom:8px;padding:10px 12px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.06)'+(isLatest?';border-left:2px solid var(--accent)':'')+'">'
+      + '<div style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:'+(isLatest?'var(--accent)':'var(--mt2)')+';margin-bottom:4px">'+weekLabel+confMark+'</div>'
+      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">'
+      +   '<span style="font-size:18px;font-weight:900;color:var(--tx)">'+_escHTml(String(isNaN(topLoad)?'—':topLoad))+'</span>'
+      +   '<span style="font-size:11px;color:var(--mt)">'+_escHTml(String(unit))+'</span>'
+      +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">Cal '+_escHTml(String(avgICS))+'</span>' : '')
       + '</div>'
-    : '';
+      + '<div style="font-size:11px;color:var(--mt);line-height:1.7">'+setsLine+'</div>'
+      + '</div>';
+  });
+  var detailHtml = exposures.length
+    ? '<details style="margin-bottom:12px"><summary style="list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px">'
+      + '<span style="font-size:11px;font-weight:700;color:var(--mt)">Ver historial completo ('+exposures.length+' sesión'+(exposures.length!==1?'es':'')+')</span>'
+      + '<span style="font-size:10px;color:var(--mt)">▾</span>'
+      + '</summary><div style="padding:8px 0">'+detailRows+'</div></details>'
+    : '<div style="text-align:center;padding:20px 0;color:var(--mt);font-size:12px">Sin historial comparable disponible</div>';
 
   var el = document.getElementById('exHistModal');
   if (el) el.remove();
@@ -13717,7 +13725,7 @@ function showExHistory(di, ei) {
     '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'
     + '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px">'
     +   '<div>'
-    +     '<div style="font-size:10px;font-weight:800;letter-spacing:2px;color:var(--mt2);margin-bottom:2px">HISTORIAL · ÚLTIMAS '+Math.max(exposures.length,1)+'</div>'
+    +     '<div style="font-size:10px;font-weight:800;letter-spacing:2px;color:var(--mt2);margin-bottom:2px">HISTORIAL · '+Math.max(exposures.length,1)+' SES.</div>'
     +     '<div style="font-size:19px;font-weight:900;color:var(--tx);text-transform:uppercase;line-height:1.2;max-width:220px">'+_escHTml(nombre)+'</div>'
     +   '</div>'
     +   '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;min-width:60px">'
@@ -13726,10 +13734,10 @@ function showExHistory(di, ei) {
     +     (trendDelta ? '<span style="font-size:10px;font-weight:700;color:'+tc.color+';margin-top:1px">'+_escHTml(trendDelta)+'</span>' : '')
     +   '</div>'
     + '</div>'
-    + prHtml
-    + histHtml
+    + summaryHtml
+    + detailHtml
     + '<button onclick="document.getElementById(\'exHistModal\').remove()" '
-    +   'style="width:100%;margin-top:16px;padding:14px;border:none;border-radius:12px;cursor:pointer;'
+    +   'style="width:100%;margin-top:4px;padding:14px;border:none;border-radius:12px;cursor:pointer;'
     +   'background:rgba(107,107,102,.18);color:var(--tx);font-size:15px;font-weight:800">Cerrar</button>'
     + '</div>';
   el.onclick = function(e) { if (e.target === el) el.remove(); };
