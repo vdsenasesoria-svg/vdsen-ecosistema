@@ -4496,7 +4496,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<span style="font-size:10px;color:var(--mt)">'+pm.range+' · '+pm.rest+'</span>'+
         '</div>';
       })()+
-      (!_isY3T && numSeries > 0
+      // Quick Set Mode: cuando hay sets en progreso, ocultar stats grid y banner SEM N-1
+      // (la referencia por set ya muestra prev + target en una sola fila)
+      (_doneCount === 0 && !_isY3T && numSeries > 0
         ? (function(){
             var _cells = [
               { lbl:_seriesLabel, val: String(numSeries), unit: '' },
@@ -4514,8 +4516,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '</div>';
           })()
         : '')+
-      _buildNextExposureHtml(progrec, unit, nombre)+
-      (function(){
+      (_doneCount === 0 ? _buildNextExposureHtml(progrec, unit, nombre) : '')+
+      (_doneCount === 0 ? (function(){
         if (!_prevWeekBanner || !_prevWeekBanner.avgLoad) return '';
         // Detect unit of previous week's logs to avoid double-conversion (KG→LB or LB→KG)
         var _pvSrcUnit = (function(){
@@ -4557,7 +4559,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             (_confBadge ? '<span style="margin-left:auto">'+_confBadge+'</span>' : '')+
           '</div>'+
         '</div>';
-      })()+
+      })() : '')+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+_escHTml(catData.motorPattern)+'</span>' : '')+
       '</div>'+
