@@ -10187,6 +10187,7 @@ El esfuerzo no es negociable.
       Object.keys(entries).forEach(k => {
         const m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
         if (m && +m[1] === lastDoneW && +m[2] === lastDoneD) {
+          if (entries[k].autoFilled) return; // no es ejecución real
           const ei = +m[3], si = +m[4];
           if (!lastSets[ei]) lastSets[ei] = [];
           lastSets[ei].push({ si, ...entries[k] });
