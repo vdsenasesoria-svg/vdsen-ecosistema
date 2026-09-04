@@ -996,7 +996,7 @@
     const fadeOut = () => {
       if (done) return; done = true;
       toast.classList.add("fade-out");
-      toast.addEventListener("transitionend", () => toast.remove());
+      toast.addEventListener("transitionend", () => toast.remove(), { once: true });
     };
     toast.querySelector('button').addEventListener('click', async () => {
       if (done) return; done = true;
