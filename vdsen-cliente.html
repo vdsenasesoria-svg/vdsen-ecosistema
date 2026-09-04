@@ -12778,6 +12778,14 @@ function showExHistory(di, ei) {
       return 'S'+(idx+1)+': '+_escHTml(String(s.carga||'—'))+' '+_escHTml(String(unit))+' × '+_escHTml(String(s.reps||'—'))+(s.rir_real!=null?' · RIR '+_escHTml(String(s.rir_real)):'');
     }).join(' &nbsp;·&nbsp; ');
     var confMark = exp.confidence!=='HIGH' ? ' <span style="opacity:.45">pos.</span>' : '';
+    var _vol = exp.sets.reduce(function(a,s){ return a + s.carga * s.reps; }, 0);
+    var _volDelta = '';
+    if (expIdx < exposures.length - 1) {
+      var _prevVol = exposures[expIdx+1].sets.reduce(function(a,s){ return a + s.carga * s.reps; }, 0);
+      if (_prevVol > 0) { var _vd = Math.round((_vol - _prevVol) / _prevVol * 100); _volDelta = (_vd > 0 ? '+' : '') + _vd + '%'; }
+    }
+    var _volStr = _vol > 0 ? Math.round(_vol) + ' ' + unit : '';
+    var _vdcol = _volDelta.charAt(0) === '+' ? 'var(--grn)' : _volDelta.charAt(0) === '-' ? 'var(--red)' : 'var(--mt)';
     detailRows +=
       '<div style="margin-bottom:8px;padding:10px 12px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.06)'+(isLatest?';border-left:2px solid var(--accent)':'')+'">'
       + '<div style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:'+(isLatest?'var(--accent)':'var(--mt2)')+';margin-bottom:4px">'+weekLabel+confMark+'</div>'
@@ -12787,6 +12795,11 @@ function showExHistory(di, ei) {
       +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">Cal '+_escHTml(String(avgICS))+'</span>' : '')
       + '</div>'
       + '<div style="font-size:11px;color:var(--mt);line-height:1.7">'+setsLine+'</div>'
+      + (_volStr ? '<div style="display:flex;align-items:center;gap:5px;margin-top:5px">'
+        + '<span style="font-size:9px;font-weight:800;letter-spacing:.8px;color:var(--mt2)">VOL</span>'
+        + '<span style="font-size:11px;font-weight:700;color:var(--mt)">'+_escHTml(_volStr)+'</span>'
+        + (_volDelta ? '<span style="font-size:10px;font-weight:700;color:'+_vdcol+'">'+_escHTml(_volDelta)+'</span>' : '')
+        + '</div>' : '')
       + '</div>';
   });
   var detailHtml = exposures.length
