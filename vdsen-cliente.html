@@ -5768,7 +5768,7 @@ function markExpressDone(di, ei) {
   }
   var carga   = cargaEl ? (cargaEl.value.trim() || '0') : '0';
   var sets    = setsEl  ? (parseInt(setsEl.value)  || 3) : 3;
-  var rirLast = rirEl   ? (parseInt(rirEl.value)         || 2) : 2;
+  var rirLast = rirEl   ? (rirEl.value !== '' && !isNaN(parseInt(rirEl.value)) ? parseInt(rirEl.value) : 2) : 2;
   var ics     = icsEl   ? (parseInt(icsEl.value)         || null) : null;
   var pump    = pumpEl  ? (parseInt(pumpEl.value)        || null) : null;
   var unit    = getExUnit(di, ei) || 'KG';
@@ -5990,10 +5990,11 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       for (var _si=1;_si<=_ssTW;_si++){_ssD[_si]=_si===_ssTW?3:_si===_ssTW-1?0:_si>=_ssTW-2?1:_si===1?3:2;}
       var wro=(PLAN&&PLAN.rirByWeek)?PLAN.rirByWeek:_ssD;
       var r=wro[CURRENT_WEEK]!==undefined?wro[CURRENT_WEEK]:wro[String(CURRENT_WEEK)]!==undefined?wro[String(CURRENT_WEEK)]:_ssD[CURRENT_WEEK]||2;
-      return Math.max(0,Math.min(4,parseInt(r)||2));
+      var _rParsed = parseInt(r); return Math.max(0,Math.min(4,!isNaN(_rParsed)?_rParsed:2));
     })();
     var _ssRIRprev = (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ssMembers[0]+'_s0']||{}).rir_real;
-    var _ssRIRinit = _ssRIRprev !== undefined ? Math.max(0,Math.min(4,parseInt(_ssRIRprev)||2)) : _ssBaseRIR;
+    var _ssRIRparsed = parseInt(_ssRIRprev);
+    var _ssRIRinit = _ssRIRprev !== undefined ? Math.max(0,Math.min(4,!isNaN(_ssRIRparsed)?_ssRIRparsed:2)) : _ssBaseRIR;
 
     // Chips de rondas completadas
     if (state.round > 0) {
@@ -6134,7 +6135,7 @@ function markExpressSSDone(di, ssMembers) {
   var rirEl  = document.getElementById('xrir_val_'+_ssk);
   var icsEl  = document.getElementById('xics_'+_ssk);
   var pumpEl = document.getElementById('xpump_val_'+_ssk);
-  var rirLast = rirEl  ? (parseInt(rirEl.value)  || 2) : 2;
+  var rirLast = rirEl  ? (rirEl.value !== '' && !isNaN(parseInt(rirEl.value)) ? parseInt(rirEl.value) : 2) : 2;
   var ics     = icsEl  ? (parseInt(icsEl.value)  || null) : null;
   var pump    = pumpEl ? (parseInt(pumpEl.value) || null) : null;
   var now = Date.now();
@@ -6277,7 +6278,7 @@ function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
   var rirEl  = document.getElementById('xrir_val_'+_ssk);
   var icsEl  = document.getElementById('xics_'+_ssk);
   var pumpEl = document.getElementById('xpump_val_'+_ssk);
-  var rirLast = rirEl  ? (parseInt(rirEl.value)  || 2) : 2;
+  var rirLast = rirEl  ? (rirEl.value !== '' && !isNaN(parseInt(rirEl.value)) ? parseInt(rirEl.value) : 2) : 2;
   var ics     = icsEl  ? (parseInt(icsEl.value)  || null) : null;
   var pump    = pumpEl ? (parseInt(pumpEl.value) || null) : null;
   var curIdx = ssMembers[lastMIdx];
