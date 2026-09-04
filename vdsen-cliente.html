@@ -3576,6 +3576,16 @@ function setRestTimerDisabled(off) {
   try { renderPerfil(); } catch(_){}
 }
 
+// ── Preferencia: haptic feedback activado/desactivado ──
+function isHapticDisabled() {
+  try { return localStorage.getItem('vdsen_haptic_off') === '1'; } catch(e) { return false; }
+}
+function setHapticDisabled(off) {
+  try { localStorage.setItem('vdsen_haptic_off', off ? '1' : '0'); } catch(e) {}
+  try { renderPerfil(); } catch(_){}
+}
+function _vib(p) { try { if (navigator.vibrate && !isHapticDisabled()) navigator.vibrate(p); } catch(e){} }
+
 // ── Preferencia: modo express activado/desactivado ──
 function isExpressDisabled() {
   try { return localStorage.getItem('vdsen_express_off') === '1'; } catch(e) { return false; }
@@ -3611,7 +3621,7 @@ function _onTimerFinished() {
   _restAlertFired = true;
   localStorage.removeItem('vdsen_restEnd');
   playTimerBeep();
-  if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 400]);
+  _vib([250, 100, 250, 100, 400]);
   showToast('⏱ ¡Descanso terminado!');
   _notifyRestDone();
   // FASE 9: desplazar al siguiente set pendiente
@@ -5245,7 +5255,7 @@ function _perfHeader(ej, di, ei, chip, statsHtml) {
 function _saveExLog(key, payload) {
   LOGS[key] = Object.assign({}, payload, { ts: Date.now() });
   saveLogs();
-  if (payload.done && navigator.vibrate) navigator.vibrate(40);
+  if (payload.done) _vib(40);
   _refreshExPanelOnly();
   if (payload.done) {
     setTimeout(function() {
@@ -5774,7 +5784,7 @@ function markExpressDone(di, ei) {
   var ics     = icsEl   ? (parseInt(icsEl.value)         || null) : null;
   var pump    = pumpEl  ? (parseInt(pumpEl.value)        || null) : null;
   var unit    = getExUnit(di, ei) || 'KG';
-  if (navigator.vibrate) navigator.vibrate([10,20,10]);
+  _vib([10,20,10]);
 
   // Guardar entrada express
   var exKey = 'exexpress_'+CURRENT_WEEK+'_'+di+'_'+ei;
@@ -5853,7 +5863,7 @@ function markExpressSerie(di, ei, si) {
   var _pumpSave  = parseInt((document.getElementById('xpump_val_'+expK)||{}).value);
 
   LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+si] = true;
-  if (navigator.vibrate) navigator.vibrate([10,20,10]);
+  _vib([10,20,10]);
   saveLogs();
   _refreshExPanelOnly();
 
@@ -7703,7 +7713,7 @@ window._recordExerciseHistoryAndPR = _recordExerciseHistoryAndPR;
 function showPRCelebration(exDisplayName, load, unit, reps) {
   var old = document.getElementById('prCeleb');
   if (old) old.remove();
-  if (navigator.vibrate) navigator.vibrate([40, 60, 80]);
+  _vib([40, 60, 80]);
   var el = document.createElement('div');
   el.id = 'prCeleb';
   el.setAttribute('role', 'dialog');
@@ -8020,7 +8030,7 @@ function completeSet(key, di, ei, si, unit) {
     if (_isBW && (!carga || isNaN(cargaNum))) carga = '0';
   }
 
-  if (done && navigator.vibrate) navigator.vibrate(40);
+  if (done) _vib(40);
   var _ejMeta = (_EJERCICIOS_DIA || [])[ei] || {};
   LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now(),
     prescriptionExerciseId: _ejMeta.prescriptionExerciseId || undefined,
@@ -8246,7 +8256,7 @@ function xBcHint(k, unit, baseRIR) {
 }
 
 function setPump(key, val) {
-  if (navigator.vibrate) navigator.vibrate(12);
+  _vib(12);
   if (!LOGS[key]) LOGS[key] = {};
   LOGS[key].pump = val;
   var colors = {1:'var(--grn)', 2:'var(--accent)', 3:'var(--mt)'};
@@ -8661,7 +8671,7 @@ function adjCarga(key, delta) {
 window.adjCarga = adjCarga;
 
 function setRirReal(key, val) {
-  if (navigator.vibrate) navigator.vibrate(12);
+  _vib(12);
   var hidden = document.getElementById('rir_'+key);
   if (hidden) hidden.value = val;
   for (var rv = 0; rv <= 4; rv++) {
@@ -8678,7 +8688,7 @@ window.setRirReal = setRirReal;
 
 
 function adjustRestTimer(delta) {
-  if (navigator.vibrate) navigator.vibrate(12);
+  _vib(12);
   _restEndMs += delta * 1000;
   if (_restEndMs < Date.now()) _restEndMs = Date.now();
   localStorage.setItem('vdsen_restEnd', _restEndMs);
@@ -8687,7 +8697,7 @@ function adjustRestTimer(delta) {
 }
 
 function resetRestTimer(seconds) {
-  if (navigator.vibrate) navigator.vibrate(12);
+  _vib(12);
   _restEndMs = Date.now() + seconds * 1000;
   _restTotalSeconds = seconds;
   _restSeconds = seconds;
@@ -8699,7 +8709,7 @@ window.resetRestTimer = resetRestTimer;
 
 function stopRestTimer() {
   if (_restAutoDismiss) { clearTimeout(_restAutoDismiss); _restAutoDismiss = null; }
-  if (navigator.vibrate) navigator.vibrate([20, 30, 60]);
+  _vib([20, 30, 60]);
   if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
   _restEndMs = 0;
   localStorage.removeItem('vdsen_restEnd');
@@ -8715,7 +8725,7 @@ function stopRestTimer() {
 }
 
 function selDia(i) {
-  if (navigator.vibrate) navigator.vibrate(8);
+  _vib(8);
   DIA_ACTIVO = i;
   try { localStorage.setItem('vdsen_last_dia', i); } catch(e) {}
   renderEntrenamiento();
@@ -8864,7 +8874,7 @@ async function _confirmSessionDone(di) {
     _deferResumen();
     return false;
   }
-  if (navigator.vibrate) navigator.vibrate([60, 50, 150, 50, 250]);
+  _vib([60, 50, 150, 50, 250]);
   showToast('SESIÓN COMPLETADA ✓');
   _autoAdvanceDia(); // avanzar al siguiente día pendiente antes de re-renderizar
   renderEntrenamiento();
@@ -10869,7 +10879,7 @@ function ciSet(campo, valor) {
 }
 
 function ciW5(qi, val) {
-  if (navigator.vibrate) navigator.vibrate(8);
+  _vib(8);
   var k = ciKey();
   if (!LOGS[k]) LOGS[k] = {};
   if (!LOGS[k].w5s) LOGS[k].w5s = [null,null,null,null,null];
@@ -10904,7 +10914,7 @@ function ciICSSet(key, val) {
 window.ciICSSet = ciICSSet;
 
 function ciEnergia(val) {
-  if (navigator.vibrate) navigator.vibrate(8);
+  _vib(8);
   ciSet('energia', val);
   renderCheckin();
 }
@@ -10926,7 +10936,7 @@ function _cuestionarioScale(fieldId, n, labels) {
 window._cuestionarioScale = _cuestionarioScale;
 
 function setCISubj(fieldId, val) {
-  if (navigator.vibrate) navigator.vibrate(8);
+  _vib(8);
   var n = fieldId === 'ci_vulner' ? 7 : 5;
   for (var i=1; i<=n; i++) {
     var btn = document.getElementById('csubj_'+fieldId+'_'+i);
@@ -11700,6 +11710,16 @@ function renderPerfil() {
         </div>
         <button onclick="setRestTimerDisabled(${isRestTimerDisabled()?'false':'true'})" role="switch" aria-checked="${isRestTimerDisabled()?'false':'true'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isRestTimerDisabled()?'var(--bd)':'rgba(200,165,74,.5)'};background:${isRestTimerDisabled()?'var(--dk)':'var(--gold-gradient)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
           <span style="position:absolute;top:2px;left:${isRestTimerDisabled()?'2px':'24px'};width:24px;height:24px;border-radius:50%;background:${isRestTimerDisabled()?'var(--mt)':'#0a0a0a'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
+        </button>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+        <div style="font-size:22px;flex-shrink:0">📳</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--tx);font-weight:700">Vibración (haptic)</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:2px">${isHapticDisabled()?'Desactivada — sin vibraciones.':'Activada — feedback táctil en botones y sets.'}</div>
+        </div>
+        <button onclick="setHapticDisabled(${isHapticDisabled()?'false':'true'})" role="switch" aria-checked="${isHapticDisabled()?'false':'true'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isHapticDisabled()?'var(--bd)':'rgba(200,165,74,.5)'};background:${isHapticDisabled()?'var(--dk)':'var(--gold-gradient)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
+          <span style="position:absolute;top:2px;left:${isHapticDisabled()?'2px':'24px'};width:24px;height:24px;border-radius:50%;background:${isHapticDisabled()?'var(--mt)':'#0a0a0a'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
         </button>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
@@ -13026,7 +13046,7 @@ function closePostSessionModal() {
 }
 
 function selectEimd(val) {
-  if (navigator.vibrate) navigator.vibrate(12);
+  _vib(12);
   document.getElementById('psEimd').value = val;
   var colors = {1:'var(--grn)',2:'var(--accent)',3:'var(--red)'};
   [1,2,3].forEach(function(v){
@@ -13044,7 +13064,7 @@ function toggleArticularPain() {
 }
 
 function psSuenoSel(btn, val) {
-  if (navigator.vibrate) navigator.vibrate(8);
+  _vib(8);
   document.querySelectorAll('#psSuenoGrid button').forEach(function(b) {
     b.style.borderColor = 'var(--bd)';
     b.style.background = 'var(--dk)';
@@ -13060,7 +13080,7 @@ function psSuenoSel(btn, val) {
 window.psSuenoSel = psSuenoSel;
 
 function psRpeSel(val) {
-  if (navigator.vibrate) navigator.vibrate(8);
+  _vib(8);
   var inp = document.getElementById('psRpe');
   if (inp) inp.value = String(val);
   var colors = {1:'var(--grn)',2:'var(--grn)',3:'var(--grn)',4:'var(--mt)',5:'var(--mt)',6:'var(--mt)',7:'var(--grn)',8:'var(--accent)',9:'#e8a040',10:'var(--red)'};
@@ -13078,7 +13098,7 @@ function psRpeSel(val) {
 window.psRpeSel = psRpeSel;
 
 function psPatSel(val) {
-  if (navigator.vibrate) navigator.vibrate(8);
+  _vib(8);
   var inp = document.getElementById('psArticularPatternSel');
   if (inp) inp.value = val;
   document.querySelectorAll('#psArticularPattern [data-pat]').forEach(function(b) {
