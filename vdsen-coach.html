@@ -1654,21 +1654,6 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   }
   window.generateAccessMessage = generateAccessMessage;
 
-  // ¿Está entrenando ahora? (último log_ en últimos 5 min)
-  function isClientLiveTraining(logsData) {
-    if (!logsData || !logsData.entries) return false;
-    const now = Date.now();
-    for (const k of Object.keys(logsData.entries)) {
-      if (!k.startsWith('log_')) continue;
-      const ts = logsData.entries[k]?.ts;
-      if (!ts) continue;
-      const t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
-      if (!isNaN(t) && (now - t) < 5 * 60 * 1000) return true;
-    }
-    return false;
-  }
-  window.isClientLiveTraining = isClientLiveTraining;
-  
   async function initCoachUI() {
     window._vdsenSignOut = () => {
       if (window._monitorUnsub)    { window._monitorUnsub();    window._monitorUnsub = null; }
@@ -2032,32 +2017,6 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     }
     document.getElementById("newClientBtn").onclick = () => createClientModal();
   }
-
-  // Assign a LEGACY_UNASSIGNED client to the current coach (requires explicit confirmation)
-  async function assignLegacyClient(clientId) {
-    if (!currentCoach || !clientId) return;
-    const snap = await getDoc(doc(db, 'clients', clientId));
-    if (!snap.exists()) { showToast('Cliente no encontrado', true); return; }
-    const data = snap.data();
-    const cid = data.coachId;
-    // Safety: only assign if genuinely unassigned (null/empty). Never reassign from another coach.
-    if (cid && cid !== '') {
-      showToast('Este cliente ya pertenece a otro coach. Operación cancelada.', true);
-      return;
-    }
-    const name = data.displayName || data.email || clientId;
-    const ok = window.confirm(`¿Asignar a "${name}" a tu cuenta?\n\nEsto vinculará permanentemente este cliente contigo.`);
-    if (!ok) return;
-    try {
-      await setDoc(doc(db, 'clients', clientId), { coachId: currentCoach.uid }, { merge: true });
-      showToast(`${name} asignado a tu cuenta`);
-      loadClientList();
-      loadClientsSelect();
-    } catch (e) {
-      showToast('Error al asignar cliente: ' + (e.message || e.code || 'permiso denegado'), true);
-    }
-  }
-  window.assignLegacyClient = assignLegacyClient;
 
   // Repair/populate phone_index for ALL clients that have a phone + real email
   // (clients created before phone login existed, or edited with 10-digit phone that wasn't normalized)
@@ -2509,11 +2468,13 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     const modal = document.getElementById("newClientModal");
     document.getElementById("nc-name").value = prefill.name || "";
     document.getElementById("nc-email").value = prefill.email || "";
-    document.getElementById("nc-phone").value = prefill.phone || "";
+    const _ncPhone = document.getElementById("nc-phone");
+    const _ncPhonePrev = document.getElementById("nc-phone-preview");
+    _ncPhone.value = prefill.phone || "";
     document.getElementById("nc-pass").value = "";
-    document.getElementById("nc-phone-preview").textContent = "";
+    _ncPhonePrev.textContent = "";
     modal.style.display = "flex";
-    _wirePhonePreview(document.getElementById("nc-phone"), document.getElementById("nc-phone-preview"));
+    _wirePhonePreview(_ncPhone, _ncPhonePrev);
 
     document.getElementById("nc-submit").onclick = async () => {
       const name = document.getElementById("nc-name").value.trim();
@@ -2846,26 +2807,6 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     });
     result.sort(function(a, b) { return b.week - a.week; });
     return result.slice(0, max);
-  }
-
-  // FASE 13 — Weight trend. Returns { status: 'SUBIENDO'|'BAJANDO'|'ESTABLE'|'NO_DATA', rate }
-  function _coachCalcWeightTrend(entries, max) {
-    var checkins = _coachGetWeeklyCheckins(entries, max || 3);
-    var points = [];
-    checkins.forEach(function(ci) {
-      var w = parseFloat(ci.data && ci.data.peso);
-      if (!isNaN(w) && w > 0) points.push({ week: ci.week, peso: w });
-    });
-    if (points.length < 2) return { status: 'NO_DATA', rate: null };
-    points.sort(function(a, b) { return a.week - b.week; });
-    var first = points[0], last = points[points.length - 1];
-    var weekDiff = last.week - first.week;
-    if (weekDiff === 0) return { status: 'NO_DATA', rate: null };
-    var rate = (last.peso - first.peso) / weekDiff;
-    return {
-      status: rate > 0.5 ? 'SUBIENDO' : rate < -0.5 ? 'BAJANDO' : 'ESTABLE',
-      rate: +rate.toFixed(2)
-    };
   }
 
   // FASE 13 — Returns true if ci_sem_{currentWeek} is absent (and currentWeek > 1)
@@ -6627,7 +6568,6 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (_vetoErrs.length) throw new Error('Plan vetado por restricciones del cliente: ' + _vetoErrs.join('; '));
 
       if (!validation.valid) {
-        console.warn('[VDSEN IMPORT DEBUG] validatePlan ERRORES:', validation.errors);
         // P4 + P9.1: Deterministic repair for structural nulls only
         const repairResult = repairPlan({ training, nutrition, supplements, pharma }, validation.errors);
         if (repairResult.remaining.length) {
@@ -6882,8 +6822,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       console.error('[VDSEN D.1] Unexpected error:', err);
       UI_STATES.error(err.message || 'Error inesperado');
     } finally {
-      const btn2 = document.getElementById('vdsenPreviewBtn');
-      if (btn2) { btn2.disabled = false; btn2.textContent = '🔬 Generar con VDSEN AI — Preview'; }
+      if (btn) { btn.disabled = false; btn.textContent = '🔬 Generar con VDSEN AI — Preview'; }
     }
   }
   window.vdsenAIPreview = vdsenAIPreview;
@@ -9751,7 +9690,6 @@ El esfuerzo no es negociable.
       if (_vetoErrs2.length) throw new Error('Plan vetado por restricciones del cliente: ' + _vetoErrs2.join('; '));
 
       if (!validation.valid) {
-        console.warn('[VDSEN IMPORT DEBUG] validatePlan ERRORES (flujo 2):', validation.errors);
         // P4 + P9.1: Deterministic repair for structural nulls only
         const repairResult = repairPlan({ training, nutrition, supplements, pharma }, validation.errors);
         if (repairResult.remaining.length) {
@@ -10192,20 +10130,10 @@ El esfuerzo no es negociable.
       let planObj = null;
       if (mode === 'json') {
         const rawText = ta.value;
-        console.group('[VDSEN IMPORT DEBUG]');
-        console.log('1. RAW INPUT (primeros 500 chars):', rawText.slice(0, 500));
-
         const blocks = _extractJsonBlocks(rawText);
-        if (!blocks.length) { try { const raw = JSON.parse(rawText); blocks.push(raw); } catch(pe) { console.error('JSON.parse fallback falló:', pe.message); } }
-        console.log('2. BLOQUES EXTRAÍDOS:', blocks.length, blocks.map(b => ({ schema: b && b.schema, hasEntrenamiento: !!(b && b.entrenamiento), hasDays: !!(b && Array.isArray(b.days)), hasNutricion: !!(b && (b.nutricion || b.nutrition)), hasSuplementacion: !!(b && (b.suplementacion || b.supplementation)) })));
-
+        if (!blocks.length) { try { const raw = JSON.parse(rawText); blocks.push(raw); } catch(pe) { /* JSON.parse fallback falló */ } }
         const classified = _classifyBlocks(blocks);
-        console.log('3. CLASSIFIED:', { training: classified.training ? 'PRESENT (days=' + (classified.training.days && classified.training.days.length) + ')' : 'NULL', nutrition: classified.nutrition ? 'PRESENT' : 'NULL', supplements: classified.supplements ? 'PRESENT' : 'NULL' });
-
         planObj = classified.training ? _normalizeTrainingPlan(classified.training) : null;
-        console.log('4. NORMALIZED PLAN:', planObj ? ('OK — ' + planObj.days.length + ' días, weeks=' + planObj.weeks) : 'NULL (training block was null)');
-        if (planObj) console.log('   days[0] ejercicios:', planObj.days[0] && planObj.days[0].exercises && planObj.days[0].exercises.length);
-        console.groupEnd();
 
         if (classified.nutrition) {
           try { await updateDoc(doc(db, 'clients', clientId), { nutritionPlan: _nutritionJsonToPlan(classified.nutrition), nutritionRaw: classified.nutrition }); } catch(e){ showToast('⚠ Nutrición: error al guardar — ' + (e.message||'sin conexión'), true); console.warn('nutrition save failed:', e.message); }
@@ -10224,7 +10152,6 @@ El esfuerzo no es negociable.
       await saveImportedPlan(clientId);
       document.getElementById('_importPlanArea').innerHTML = '';
     } catch(e) {
-      console.error('[VDSEN IMPORT DEBUG] EXCEPCIÓN:', e);
       if (status) status.textContent = 'Error: ' + e.message;
     }
   };
