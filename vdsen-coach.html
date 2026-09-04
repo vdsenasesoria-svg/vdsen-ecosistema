@@ -5365,6 +5365,449 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window._classifyBlocks = _classifyBlocks;
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // ─── VDSEN Topology Engine v2 ─────────────────────────────────────────────
+  // Selects optimal training topology (WHEN to train) before days[] construction.
+  // TOPOLOGY ≠ DISTRIBUTION: this engine answers WHEN; distribution answers WHAT.
+  // Principle 1: topology = scheduling pattern; never dictates muscle assignment.
+  // Principle 2: TWO_ON_ONE_OFF is a heuristic prior, not a scientific mandate.
+  // Principle 8: all scoring weights labeled HEURISTIC — not empirical thresholds.
+  // Principle 10: confidence = NONE/LOW/MODERATE/HIGH — no percentage values.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  var _TOPOLOGY_ENGINE_VERSION = 'v2.0.0';
+
+  // Scoring config versioned separately from engine (Principle 8)
+  var _TOPOLOGY_SCORING_CONFIG = {
+    version: '2.0.0',
+    scoreType: 'HEURISTIC',
+    weights: {
+      // HEURISTIC — not population-derived empirical minima/maxima
+      recoverySpacing:   0.30,
+      timePressure:      0.25,
+      priorityAlignment: 0.20,
+      consistency:       0.15,
+      learnedStateBonus: 0.10
+    }
+  };
+
+  // Candidate topologies: pattern defines training(T)/rest(R) day sequences
+  var _TOPOLOGY_CANDIDATES = {
+    ONE_ON_ONE_OFF:   { key: 'ONE_ON_ONE_OFF',   pattern: ['T','R'],                          minDpw: 1, maxDpw: 3 },
+    TWO_ON_ONE_OFF:   { key: 'TWO_ON_ONE_OFF',   pattern: ['T','T','R'],                      minDpw: 2, maxDpw: 5 },
+    THREE_ON_ONE_OFF: { key: 'THREE_ON_ONE_OFF', pattern: ['T','T','T','R'],                  minDpw: 3, maxDpw: 5 },
+    FOUR_ON_ONE_OFF:  { key: 'FOUR_ON_ONE_OFF',  pattern: ['T','T','T','T','R'],              minDpw: 4, maxDpw: 6 },
+    FIVE_ON_TWO_OFF:  { key: 'FIVE_ON_TWO_OFF',  pattern: ['T','T','T','T','T','R','R'],      minDpw: 5, maxDpw: 5 },
+    SIX_ON_ONE_OFF:   { key: 'SIX_ON_ONE_OFF',   pattern: ['T','T','T','T','T','T','R'],      minDpw: 6, maxDpw: 6 },
+    CUSTOM:           { key: 'CUSTOM',            pattern: null,                               minDpw: 1, maxDpw: 7 }
+  };
+
+  function _topoMaxConsecutive(pattern) {
+    if (!pattern) return 0;
+    var max = 0, cur = 0;
+    pattern.forEach(function(p) { if (p === 'T') { cur++; max = Math.max(max, cur); } else cur = 0; });
+    return max;
+  }
+
+  // distributionPressure: 4 categorical components, each LOW/MODERATE/HIGH (Principle 6)
+  function _computeDistributionPressure(daysPerWeek, muscles) {
+    var dpw = Math.max(1, daysPerWeek);
+    var muscleKeys = Object.keys(muscles);
+
+    var totalVol = muscleKeys.reduce(function(s, m) { return s + (muscles[m].volumeTarget || 0); }, 0);
+    var setsPerSession = totalVol / dpw;
+    var volumeConcentration = setsPerSession > 25 ? 'HIGH' : setsPerSession > 15 ? 'MODERATE' : 'LOW';
+
+    var maxFreq = muscleKeys.reduce(function(mx, m) { return Math.max(mx, muscles[m].frequencyTarget || 0); }, 0);
+    var freqRatio = maxFreq / dpw;
+    var timePressure = freqRatio > 0.8 ? 'HIGH' : freqRatio > 0.5 ? 'MODERATE' : 'LOW';
+
+    var priorityCount = muscleKeys.filter(function(m) { return muscles[m].priority === 'high'; }).length;
+    var priorityPressure = priorityCount > dpw ? 'HIGH' : priorityCount >= Math.ceil(dpw / 2) ? 'MODERATE' : 'LOW';
+
+    var avgFreq = muscleKeys.length > 0
+      ? muscleKeys.reduce(function(s, m) { return s + (muscles[m].frequencyTarget || 1); }, 0) / muscleKeys.length : 1;
+    var avgSpacing = 7 / Math.max(1, avgFreq);
+    var recoverySpacingPressure = avgSpacing < 2.5 ? 'HIGH' : avgSpacing < 4 ? 'MODERATE' : 'LOW';
+
+    return { volumeConcentration: volumeConcentration, timePressure: timePressure,
+             priorityPressure: priorityPressure, recoverySpacingPressure: recoverySpacingPressure };
+  }
+
+  // recoveryState: multimodal — NOT decided by any single signal (Principle 7)
+  function _assessRecoveryState(prescCtx) {
+    if (!prescCtx) return 'UNCERTAIN';
+    var pt  = prescCtx.prescriptionTargets || {};
+    var cs  = prescCtx.checkinSummary || null;
+    var ef  = prescCtx.engineState || null;
+    var cf  = prescCtx.clientFlags || {};
+    var signals = [];
+
+    if (pt.globalReadiness === 'fatigued')    signals.push(-2);
+    else if (pt.globalReadiness === 'progressing') signals.push(1);
+    else signals.push(0);
+
+    if (pt.deloadCandidate) signals.push(-2);
+
+    if (cf.articularIssues && cf.articularIssues.length) signals.push(-1);
+
+    if (cs) {
+      // HRV requires baseline to interpret; treat as neutral without it
+      if (cs.avgWHO5 != null) signals.push(cs.avgWHO5 < 40 ? -1 : cs.avgWHO5 > 65 ? 1 : 0);
+      if (cs.avgSleep != null) signals.push(cs.avgSleep < 6 ? -1 : cs.avgSleep >= 7.5 ? 1 : 0);
+    }
+
+    var hasData = cs && (cs.avgHRV != null || cs.avgWHO5 != null || cs.avgSleep != null);
+    if (!hasData && !ef && pt.globalReadiness === 'neutral') return 'UNCERTAIN';
+
+    var total = signals.reduce(function(a, b) { return a + b; }, 0);
+    if (total <= -3) return 'LIMITED';
+    if (total <= -1) return 'NORMAL';
+    if (total >= 2)  return 'GOOD';
+    return 'NORMAL';
+  }
+
+  // Hard filters: invalid candidate CANNOT compensate with good score (Principle 4)
+  function _applyTopologyHardFilters(candidate, daysPerWeek, recoveryState) {
+    if (daysPerWeek < candidate.minDpw || daysPerWeek > candidate.maxDpw) {
+      return { pass: false, reasonCode: 'DAYS_OUT_OF_RANGE',
+        detail: candidate.key + ' needs ' + candidate.minDpw + '–' + candidate.maxDpw + ' days/week, got ' + daysPerWeek };
+    }
+    var consecutive = _topoMaxConsecutive(candidate.pattern);
+    if (recoveryState === 'LIMITED' && consecutive >= 3) {
+      return { pass: false, reasonCode: 'RECOVERY_INSUFFICIENT_FOR_CONSECUTIVE',
+        detail: 'Recovery LIMITED — ' + consecutive + ' consecutive training days unsupported' };
+    }
+    if (candidate.key === 'SIX_ON_ONE_OFF' && (recoveryState === 'LIMITED' || recoveryState === 'UNCERTAIN')) {
+      return { pass: false, reasonCode: 'SIX_ON_ONE_OFF_RECOVERY_VETO',
+        detail: 'SIX_ON_ONE_OFF requires GOOD or NORMAL recovery state' };
+    }
+    return { pass: true };
+  }
+
+  // Heuristic scoring — weights labeled, config versioned (Principle 8)
+  function _scoreTopologyCandidate(key, daysPerWeek, muscles, recoveryState, prescCtx) {
+    var w = _TOPOLOGY_SCORING_CONFIG.weights;
+    var c = _TOPOLOGY_CANDIDATES[key];
+    var score = 0;
+
+    // 1. Recovery spacing (HEURISTIC 0.30)
+    var consec = _topoMaxConsecutive(c.pattern || []);
+    var spacingMod = recoveryState === 'GOOD' ? 0.15 : recoveryState === 'NORMAL' ? 0.25
+      : recoveryState === 'LIMITED' ? 0.40 : 0.20;
+    score += Math.max(0, Math.min(1, 1.0 - (consec - 1) * spacingMod)) * w.recoverySpacing;
+
+    // 2. Time pressure match (HEURISTIC 0.25)
+    var tpRange  = c.maxDpw - c.minDpw;
+    var tpCenter = (c.minDpw + c.maxDpw) / 2;
+    var tpScore  = tpRange > 0 ? 1 - Math.abs(daysPerWeek - tpCenter) / (tpRange / 2 + 1) : 1;
+    score += Math.max(0, Math.min(1, tpScore)) * w.timePressure;
+
+    // 3. Priority alignment (HEURISTIC 0.20)
+    var trainDays    = (c.pattern || []).filter(function(p){return p==='T';}).length;
+    var priorityCnt  = Object.keys(muscles).filter(function(m){return muscles[m].priority==='high';}).length;
+    var paScore      = priorityCnt === 0 ? 1.0 : Math.min(1, trainDays / (priorityCnt * 1.5));
+    score += paScore * w.priorityAlignment;
+
+    // 4. Consistency (HEURISTIC 0.15)
+    var patLen = (c.pattern || []).length;
+    score += (patLen <= 2 ? 1.0 : patLen <= 4 ? 0.75 : 0.5) * w.consistency;
+
+    // 5. Learned state bonus as adjustment, not override (Principle 9, HEURISTIC 0.10)
+    var prevPlan = prescCtx && prescCtx.previousPlan;
+    if (prevPlan && prevPlan.daysPerWeek >= c.minDpw && prevPlan.daysPerWeek <= c.maxDpw) {
+      score += 0.8 * w.learnedStateBonus;
+    }
+
+    return score;
+  }
+
+  // Detect frequency mismatches — emits recommendedFrequencyAdjustments (Principle 3)
+  function _detectFrequencyMismatches(daysPerWeek, muscles, distributionPressure, recoveryState) {
+    var adjustments = [];
+    if (distributionPressure.volumeConcentration === 'HIGH' && daysPerWeek <= 3) {
+      adjustments.push({ reasonCode: 'VOLUME_CONCENTRATION_HIGH_WITH_LOW_FREQUENCY',
+        direction: 'INCREASE', suggestedDaysPerWeek: Math.min(5, daysPerWeek + 1),
+        rationale: 'High per-session volume with few days — distributing across more days reduces concentration' });
+    }
+    if (distributionPressure.priorityPressure === 'HIGH' && recoveryState === 'LIMITED') {
+      adjustments.push({ reasonCode: 'PRIORITY_PRESSURE_WITH_LIMITED_RECOVERY',
+        direction: 'REDUCE_PRIORITY_COUNT', suggestedDaysPerWeek: null,
+        rationale: 'High priority muscle count with limited recovery — consider reducing priority designations' });
+    }
+    return adjustments;
+  }
+
+  function _computeTopologyConfidence(scored, prescCtx, recoveryState) {
+    if (!scored.length) return 'NONE';
+    if (recoveryState === 'UNCERTAIN') return 'LOW';
+    if (!prescCtx || !prescCtx.hasPreviousPlan) return 'LOW';
+    if (scored.length >= 2 && (scored[0].score - scored[1].score) < 0.05) return 'LOW';
+    if (scored[0].score > 0.75) return 'HIGH';
+    if (scored[0].score > 0.55) return 'MODERATE';
+    return 'LOW';
+  }
+
+  // Main Topology Engine entry point (Principle 11 — full output contract)
+  function runTopologyEngine(daysPerWeek, prescCtx) {
+    var muscles = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
+    var globalReadiness = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.globalReadiness) || 'neutral';
+    var reasonCodes = [];
+
+    var distributionPressure = _computeDistributionPressure(daysPerWeek, muscles);
+    var recoveryState = _assessRecoveryState(prescCtx);
+
+    var rejected = [];
+    var feasible = [];
+    Object.keys(_TOPOLOGY_CANDIDATES).forEach(function(key) {
+      if (key === 'CUSTOM') return; // CUSTOM is fallback-only
+      var hf = _applyTopologyHardFilters(_TOPOLOGY_CANDIDATES[key], daysPerWeek, recoveryState);
+      if (!hf.pass) rejected.push({ topology: key, reasonCode: hf.reasonCode, detail: hf.detail });
+      else feasible.push(key);
+    });
+
+    var scored = feasible.map(function(key) {
+      return { topology: key, score: _scoreTopologyCandidate(key, daysPerWeek, muscles, recoveryState, prescCtx) };
+    }).sort(function(a, b) { return b.score - a.score; });
+
+    var selected = scored.length > 0 ? scored[0].topology : 'CUSTOM';
+    var selectedScore = scored.length > 0 ? scored[0].score : 0;
+    if (scored.length === 0) reasonCodes.push('NO_FEASIBLE_CANDIDATE_FALLBACK_CUSTOM');
+
+    var freqAdj = _detectFrequencyMismatches(daysPerWeek, muscles, distributionPressure, recoveryState);
+    if (freqAdj.length) reasonCodes.push('FREQUENCY_DISTRIBUTION_MISMATCH');
+
+    var confidence = _computeTopologyConfidence(scored, prescCtx, recoveryState);
+
+    return {
+      selectedTopology: selected,
+      score: parseFloat(selectedScore.toFixed(2)),
+      scoreType: 'HEURISTIC',
+      version: _TOPOLOGY_ENGINE_VERSION,
+      scoringConfigVersion: _TOPOLOGY_SCORING_CONFIG.version,
+      recoveryState: recoveryState,
+      distributionPressure: distributionPressure,
+      reasonCodes: reasonCodes,
+      alternatives: scored.slice(1).map(function(s){ return { topology: s.topology, score: parseFloat(s.score.toFixed(2)) }; }),
+      rejectedCandidates: rejected,
+      confidence: confidence,
+      recommendedFrequencyAdjustments: freqAdj
+    };
+  }
+
+  // Topology Feasibility Audit — runs after muscle distribution (Principle 12)
+  // Returns: { pass, issues[], warnings[], volumeAudit, estimatedSessionMinutes }
+  function topologyFeasibilityAudit(training, topologyDecision, prescCtx, restrictions) {
+    var issues = [];
+    var warnings = [];
+    if (!training || !Array.isArray(training.days)) {
+      return { pass: false, issues: ['AUDIT_NO_TRAINING_DATA'], warnings: warnings, volumeAudit: null, estimatedSessionMinutes: 0 };
+    }
+    var days = training.days;
+    var realDpw = days.length;
+    var selected = topologyDecision && topologyDecision.selectedTopology;
+
+    // 1. Real frequency vs selected topology
+    if (selected && selected !== 'CUSTOM' && _TOPOLOGY_CANDIDATES[selected]) {
+      var tc = _TOPOLOGY_CANDIDATES[selected];
+      if (realDpw < tc.minDpw || realDpw > tc.maxDpw) {
+        issues.push('TOPOLOGY_DAYS_MISMATCH: generated ' + realDpw + ' days; topology ' + selected + ' expects ' + tc.minDpw + '–' + tc.maxDpw);
+      }
+    }
+
+    // 2. Fractional volume/exposure
+    var volAudit = auditFractionalVolume(training, []);
+    var muscleTargets = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
+    var volWarnings = _auditVolumeVsTargets(volAudit, muscleTargets);
+    volWarnings.forEach(function(w){ warnings.push(w); });
+
+    // 3. Restriction/pain audit
+    var avoid = (restrictions && restrictions.ejerciciosEvitar) || [];
+    if (avoid.length) {
+      days.forEach(function(day) {
+        (day.exercises || []).forEach(function(ex) {
+          var nm = (ex.exerciseName || '').toLowerCase();
+          avoid.forEach(function(a) {
+            if (nm.indexOf(a.toLowerCase()) >= 0) {
+              issues.push('RESTRICTION_VIOLATION: "' + _escH(ex.exerciseName) + '" en lista de ejercicios a evitar');
+            }
+          });
+        });
+      });
+    }
+
+    // 4. Session duration estimate (HEURISTIC: 4 min/set + 2 min/exercise overhead)
+    var totalEx   = days.reduce(function(s, d){ return s + (d.exercises||[]).length; }, 0);
+    var totalSets = days.reduce(function(s, d){
+      return s + (d.exercises||[]).reduce(function(ss, ex){ return ss + (ex.sets||[]).length; }, 0);
+    }, 0);
+    var estimatedMin = realDpw > 0 ? Math.round((totalSets / realDpw) * 4 + (totalEx / realDpw) * 2) : 0;
+    if (estimatedMin > 90) warnings.push('DURATION_ESTIMATE_HIGH: ~' + estimatedMin + ' min/session (HEURISTIC; actual may vary)');
+
+    // 5. Priority muscle exposure
+    Object.keys(muscleTargets).forEach(function(m) {
+      var mt = muscleTargets[m];
+      var actual = volAudit.muscleVolume && volAudit.muscleVolume[m];
+      if (mt.priority === 'high' && (!actual || actual.fractionalTotal === 0)) {
+        warnings.push('PRIORITY_MUSCLE_ABSENT: ' + m + ' (prioridad alta) no aparece en el plan generado');
+      }
+      if (mt.goal === 'maintenance' && (!actual || actual.fractionalTotal < 4)) {
+        warnings.push('MAINTENANCE_UNDERTRAINED: ' + m + ' con ' + (actual ? actual.fractionalTotal : 0) + ' series fraccionales');
+      }
+    });
+
+    return { pass: issues.length === 0, issues: issues, warnings: warnings, volumeAudit: volAudit, estimatedSessionMinutes: estimatedMin };
+  }
+
+  // Text representation for injection into Claude prompt
+  function _topologyDecisionToText(td) {
+    if (!td) return '';
+    var dp = td.distributionPressure || {};
+    var lines = ['\n--- TOPOLOGÍA SELECCIONADA (Topology Engine ' + _TOPOLOGY_ENGINE_VERSION + ') ---'];
+    lines.push('Patrón: ' + td.selectedTopology + ' · score HEURÍSTICO: ' + td.score + ' · confianza: ' + td.confidence);
+    lines.push('Estado recuperación: ' + td.recoveryState);
+    lines.push('Presión distribución: volumen=' + dp.volumeConcentration + ' · tiempo=' + dp.timePressure + ' · prioridad=' + dp.priorityPressure + ' · espaciado=' + dp.recoverySpacingPressure);
+    if (td.reasonCodes && td.reasonCodes.length) lines.push('Señales: ' + td.reasonCodes.join(', '));
+    if (td.alternatives && td.alternatives.length) {
+      lines.push('Alternativas evaluadas: ' + td.alternatives.map(function(a){ return a.topology + '(' + a.score + ')'; }).join(', '));
+    }
+    if (td.recommendedFrequencyAdjustments && td.recommendedFrequencyAdjustments.length) {
+      td.recommendedFrequencyAdjustments.forEach(function(a) {
+        lines.push('⚠ AJUSTE FRECUENCIA (' + a.reasonCode + '): ' + a.rationale);
+        if (a.suggestedDaysPerWeek) lines.push('  → Sugerido: ' + a.suggestedDaysPerWeek + ' días/sem');
+      });
+    }
+    lines.push('INSTRUCCIÓN: construye days[] respetando el patrón de alternancia ' + td.selectedTopology + '.');
+    lines.push('---');
+    return lines.join('\n');
+  }
+
+  // ─── Topology Engine tests (_runTopologyTests) ────────────────────────────
+  function _runTopologyTests() {
+    var results = [];
+    function test(name, fn) {
+      try { var r = fn(); results.push({ name: name, passed: r === true, message: r === true ? 'OK' : String(r) }); }
+      catch(e) { results.push({ name: name, passed: false, message: 'Threw: ' + e.message }); }
+    }
+
+    // TT1: runTopologyEngine returns full output contract (Principle 11)
+    test('TT1 runTopologyEngine: output contract completo', function() {
+      var r = runTopologyEngine(4, null);
+      return typeof r.selectedTopology === 'string'
+        && typeof r.score === 'number'
+        && r.scoreType === 'HEURISTIC'
+        && typeof r.recoveryState === 'string'
+        && r.distributionPressure !== null
+        && Array.isArray(r.reasonCodes)
+        && Array.isArray(r.alternatives)
+        && Array.isArray(r.rejectedCandidates)
+        && typeof r.confidence === 'string'
+        && Array.isArray(r.recommendedFrequencyAdjustments);
+    });
+
+    // TT2: prescCtx=null → recoveryState=UNCERTAIN (no data baseline)
+    test('TT2 _assessRecoveryState: sin datos → UNCERTAIN', function() {
+      return _assessRecoveryState(null) === 'UNCERTAIN';
+    });
+
+    // TT3: hard filter rejects out-of-range daysPerWeek (Principle 4)
+    test('TT3 hard filter: ONE_ON_ONE_OFF rechaza 5 días/sem', function() {
+      var r = _applyTopologyHardFilters(_TOPOLOGY_CANDIDATES.ONE_ON_ONE_OFF, 5, 'NORMAL');
+      return r.pass === false && r.reasonCode === 'DAYS_OUT_OF_RANGE';
+    });
+
+    // TT4: SIX_ON_ONE_OFF vetado con recovery LIMITED (Principle 4)
+    test('TT4 hard filter: SIX_ON_ONE_OFF vetado con recovery LIMITED', function() {
+      var r = _applyTopologyHardFilters(_TOPOLOGY_CANDIDATES.SIX_ON_ONE_OFF, 6, 'LIMITED');
+      return r.pass === false && r.reasonCode === 'SIX_ON_ONE_OFF_RECOVERY_VETO';
+    });
+
+    // TT5: 3 días/sem → no se selecciona SIX_ON_ONE_OFF (incompatible)
+    test('TT5 runTopologyEngine: 3 días → SIX_ON_ONE_OFF en rejectedCandidates', function() {
+      var r = runTopologyEngine(3, null);
+      return r.rejectedCandidates.some(function(rc){ return rc.topology === 'SIX_ON_ONE_OFF'; });
+    });
+
+    // TT6: score es HEURISTIC, no porcentaje (Principle 10 — no false percentages)
+    test('TT6 score: score ∈ [0, 1] y scoreType=HEURISTIC', function() {
+      var r = runTopologyEngine(4, null);
+      return r.score >= 0 && r.score <= 1 && r.scoreType === 'HEURISTIC';
+    });
+
+    // TT7: confidence NONE cuando sin candidatos feasibles
+    test('TT7 confidence: NONE cuando array scored vacío', function() {
+      return _computeTopologyConfidence([], null, 'NORMAL') === 'NONE';
+    });
+
+    // TT8: distributionPressure tiene los 4 componentes categóricos (Principle 6)
+    test('TT8 distributionPressure: 4 componentes LOW/MODERATE/HIGH', function() {
+      var dp = _computeDistributionPressure(4, {});
+      var valid = ['LOW','MODERATE','HIGH'];
+      return valid.indexOf(dp.volumeConcentration) >= 0
+        && valid.indexOf(dp.timePressure) >= 0
+        && valid.indexOf(dp.priorityPressure) >= 0
+        && valid.indexOf(dp.recoverySpacingPressure) >= 0;
+    });
+
+    // TT9: fatigued prescCtx → recoveryState LIMITED (multi-signal)
+    test('TT9 recoveryState: globalReadiness=fatigued + deload → LIMITED', function() {
+      var ctx = { prescriptionTargets: { globalReadiness: 'fatigued', deloadCandidate: true }, clientFlags: { articularIssues: [] }, checkinSummary: null, engineState: null };
+      return _assessRecoveryState(ctx) === 'LIMITED';
+    });
+
+    // TT10: topologyFeasibilityAudit: training sin days → pass=false
+    test('TT10 topologyFeasibilityAudit: training inválido → pass=false', function() {
+      var r = topologyFeasibilityAudit(null, null, null, null);
+      return r.pass === false && r.issues.includes('AUDIT_NO_TRAINING_DATA');
+    });
+
+    // TT11: topologyFeasibilityAudit: days mismatch detectado
+    test('TT11 topologyFeasibilityAudit: days mismatch TWO_ON_ONE_OFF con 6 days → issue', function() {
+      var training = { days: [{label:'A'},{label:'B'},{label:'C'},{label:'D'},{label:'E'},{label:'F'}] };
+      var td = { selectedTopology: 'TWO_ON_ONE_OFF' };
+      var r = topologyFeasibilityAudit(training, td, null, null);
+      return r.issues.some(function(i){ return i.indexOf('TOPOLOGY_DAYS_MISMATCH') >= 0; });
+    });
+
+    // TT12: _topologyDecisionToText: incluye patrón y versión
+    test('TT12 _topologyDecisionToText: incluye patrón y versión', function() {
+      var td = runTopologyEngine(4, null);
+      var txt = _topologyDecisionToText(td);
+      return typeof txt === 'string' && txt.indexOf('Topology Engine') >= 0 && txt.indexOf(td.selectedTopology) >= 0;
+    });
+
+    // TT13: CUSTOM seleccionado solo como fallback (Principle 5)
+    test('TT13 CUSTOM: no aparece en scored normales (es fallback)', function() {
+      var r = runTopologyEngine(4, null);
+      return r.alternatives.every(function(a){ return a.topology !== 'CUSTOM'; })
+        && r.rejectedCandidates.every(function(rc){ return rc.topology !== 'CUSTOM'; });
+    });
+
+    // TT14: learned state bonus usa prescCtx.previousPlan (Principle 9)
+    test('TT14 learnedState: previousPlan compatible → bonus en score', function() {
+      var ctxNoHistory = null;
+      var ctxHistory = { hasPreviousPlan: true, previousPlan: { daysPerWeek: 4 }, prescriptionTargets: { globalReadiness: 'neutral', muscles: {} }, clientFlags: { articularIssues: [] }, checkinSummary: null, engineState: null };
+      var rNo   = runTopologyEngine(4, ctxNoHistory);
+      var rWith = runTopologyEngine(4, ctxHistory);
+      // With history, the matching topology should score higher
+      return rWith.score >= rNo.score;
+    });
+
+    var passed = results.filter(function(r){return r.passed;}).length;
+    var total  = results.length;
+    console.group('%c[VDSEN Topology Tests] ' + passed + '/' + total + ' passed', passed === total ? 'color:green;font-weight:bold' : 'color:orange;font-weight:bold');
+    results.forEach(function(r) {
+      console.log('%c' + (r.passed?'✅':'❌') + ' ' + r.name, r.passed?'color:green':'color:red');
+      if (!r.passed) console.warn('   → ' + r.message);
+    });
+    console.groupEnd();
+    window._topologyTestResults = results;
+    return { passed: passed, total: total, results: results };
+  }
+  window._runTopologyTests  = _runTopologyTests;
+  window.runTopologyEngine  = runTopologyEngine;
+  window.topologyFeasibilityAudit = topologyFeasibilityAudit;
+
+  // ═══════════════════════════════════════════════════════════════════════════
 
   function _extractJsonBlocks(text) {
     const blocks = [];
@@ -5557,6 +6000,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const prescCtx = await buildPrescriptionContext(clientId);
       const prescCtxTxt = _prescriptionContextToText(prescCtx);
 
+      // Topology Engine v2: select training topology before days[] construction (Principles 1-12)
+      const _fichaDpw = (ficha.data.entrenamiento && ficha.data.entrenamiento.dias_semana)
+        ? Number(ficha.data.entrenamiento.dias_semana) : 4;
+      const topologyDecision = runTopologyEngine(_fichaDpw, prescCtx);
+      const topologyTxt = _topologyDecisionToText(topologyDecision);
+      console.info('[VDSEN TopologyEngine v2]', topologyDecision);
+
       setStatus('<span style="color:var(--text-muted)">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();
 
@@ -5572,6 +6022,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
         prescCtxTxt,
+        topologyTxt,
         'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
       const body = {
@@ -5631,6 +6082,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const _muscleTargets = prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles;
       const _volTargetWarnings = _auditVolumeVsTargets(_volAudit, _muscleTargets || {});
       if (_volTargetWarnings.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings);
+
+      // Topology Feasibility Audit — post-distribution validation (Principle 12)
+      const _topoAudit = training ? topologyFeasibilityAudit(training, topologyDecision, prescCtx, _restrictions) : null;
+      if (_topoAudit) {
+        if (_topoAudit.issues.length)   console.warn('[VDSEN TopologyAudit] Issues:', _topoAudit.issues);
+        if (_topoAudit.warnings.length) console.info('[VDSEN TopologyAudit] Warnings:', _topoAudit.warnings);
+      }
+      // Decision trace stored outside pure plan per VDSEN contracts
+      window._lastTopologyTrace = { decision: topologyDecision, audit: _topoAudit, clientId: clientId, ts: Date.now() };
 
       setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
       const saved = [];
