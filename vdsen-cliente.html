@@ -7126,8 +7126,7 @@ function renderEntrenamiento() {
       var firstPending = panelEl && panelEl.querySelector('[data-pending="1"]');
       if (firstPending && !isDone) {
         setTimeout(function() {
-          firstPending.scrollIntoView({ behavior:'smooth', block:'start' });
-          window.scrollBy(0, -72);
+          firstPending.scrollIntoView({ behavior:'smooth', block:'center' });
         }, 120);
       }
     } catch(e) {}
