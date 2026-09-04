@@ -2578,8 +2578,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       // Obtener valores únicos para los filtros
       const patterns  = [...new Set(_allExercises.map(e=>e.motorPattern).filter(Boolean))].sort();
       const equips    = [...new Set(_allExercises.map(e=>e.equipment).filter(Boolean))].sort();
-      const patOpts   = patterns.map(p=>`<option value="${p}">${p}</option>`).join('');
-      const equipOpts = equips.map(e=>`<option value="${e}">${e}</option>`).join('');
+      const patOpts   = patterns.map(p=>`<option value="${_escH(p)}">${_escH(p)}</option>`).join('');
+      const equipOpts = equips.map(e=>`<option value="${_escH(e)}">${_escH(e)}</option>`).join('');
       const filterHtml = `
         <input id="exSearchInput" class="input-field mb-2" placeholder="🔍 Buscar ejercicio..." oninput="_filterExercisesAdv()" style="width:100%">
         <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
