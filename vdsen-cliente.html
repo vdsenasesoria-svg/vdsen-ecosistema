@@ -12527,6 +12527,38 @@ function _calcPR(exposures) {
   return { bestLoad: best, bestReps: bestReps };
 }
 
+// Reps at comparable load: exposures[0] vs exposures[1], ±5% tolerance on top load
+function _calcRepsAtSameLoad(exposures) {
+  if (!exposures || exposures.length < 2) return null;
+  var e0 = exposures[0], e1 = exposures[1];
+  var l0 = Math.max.apply(null, e0.sets.map(function(s){return s.carga;}));
+  var l1 = Math.max.apply(null, e1.sets.map(function(s){return s.carga;}));
+  if (!l0 || !l1) return null;
+  var tol = Math.max(l0, l1) * 0.05;
+  if (Math.abs(l0 - l1) > tol) return { comparable: false };
+  var r0 = e0.sets.reduce(function(a,s){return a+s.reps;},0) / e0.sets.length;
+  var r1 = e1.sets.reduce(function(a,s){return a+s.reps;},0) / e1.sets.length;
+  var delta = Math.round((r0 - r1) * 10) / 10;
+  return { comparable: true, delta: delta };
+}
+
+// Real RIR trend from exposures (sets are already non-autoFilled via _getExposures)
+function _calcRealRIR(exposures) {
+  if (!exposures || !exposures.length) return null;
+  var avgs = exposures.map(function(exp) {
+    var vals = exp.sets.filter(function(s){ return s.rir_real !== null; });
+    if (!vals.length) return null;
+    return vals.reduce(function(a,s){ return a + s.rir_real; }, 0) / vals.length;
+  });
+  var last = avgs[0];
+  if (last === null) return null;
+  var prev = null;
+  for (var i = 1; i < avgs.length; i++) { if (avgs[i] !== null) { prev = avgs[i]; break; } }
+  var trend = null;
+  if (prev !== null) { var diff = last - prev; trend = diff > 0.3 ? 'UP' : diff < -0.3 ? 'DOWN' : 'FLAT'; }
+  return { last: Math.round(last * 10) / 10, trend: trend };
+}
+
 // "HOY" inline block — consumes existing progrec, never recalculates.
 // unit: 'KG'|'LB'. nombre: current exercise name for stale-progrec guard.
 function _buildNextExposureHtml(progrec, unit, nombre) {
@@ -12651,6 +12683,9 @@ function showExHistory(di, ei) {
   var exposures = _getExposures(prescId, di, ei, nombre, 5);
   var trend = _calcTrend(exposures);
   var pr = exposures.length ? _calcPR(exposures) : null;
+  var repsComp = _calcRepsAtSameLoad(exposures);
+  var rirData  = _calcRealRIR(exposures);
+  var realFreq = exposures.length;
 
   var tc = { PROGRESANDO:{icon:'↑',color:'var(--grn)',label:'PROGRESANDO'},
              ESTABLE:    {icon:'→',color:'var(--gold)',label:'ESTABLE'},
@@ -12696,6 +12731,39 @@ function showExHistory(di, ei) {
       + '</div>';
   }
   if (exposures.length) summaryHtml += '</div>';
+
+  // ── Longitudinal metrics: reps at same load · RIR real · frequency ──────
+  var longHtml = '';
+  if (exposures.length) {
+    var _chips = [];
+    if (repsComp && repsComp.comparable) {
+      var _rdelta = repsComp.delta;
+      var _rsign = _rdelta > 0 ? '+' : '';
+      var _rcol = _rdelta > 0 ? 'var(--grn)' : _rdelta < -0.1 ? 'var(--red)' : 'var(--mt)';
+      _chips.push('<div style="flex:1;text-align:center;padding:8px 6px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.07)">'
+        + '<div style="font-size:8px;font-weight:800;letter-spacing:.8px;color:var(--mt2);margin-bottom:3px">REPS MISMO PESO</div>'
+        + '<div style="font-size:15px;font-weight:900;color:'+_rcol+'">'+_rsign+_escHTml(String(_rdelta%1===0?Math.round(_rdelta):_rdelta.toFixed(1)))+' reps</div>'
+        + '</div>');
+    } else if (repsComp && !repsComp.comparable) {
+      _chips.push('<div style="flex:1;text-align:center;padding:8px 6px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.07)">'
+        + '<div style="font-size:8px;font-weight:800;letter-spacing:.8px;color:var(--mt2);margin-bottom:3px">REPS</div>'
+        + '<div style="font-size:11px;font-weight:700;color:var(--mt)">— cargas distintas</div>'
+        + '</div>');
+    }
+    if (rirData && rirData.last !== null) {
+      var _ricon = { UP:'↑', DOWN:'↓', FLAT:'→' }[rirData.trend] || '';
+      var _rcol2 = rirData.trend === 'DOWN' ? 'var(--grn)' : rirData.trend === 'UP' ? 'var(--gold)' : 'var(--mt)';
+      _chips.push('<div style="flex:1;text-align:center;padding:8px 6px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.07)">'
+        + '<div style="font-size:8px;font-weight:800;letter-spacing:.8px;color:var(--mt2);margin-bottom:3px">RIR REAL</div>'
+        + '<div style="font-size:15px;font-weight:900;color:var(--tx)">'+_escHTml(String(rirData.last))+'<span style="font-size:12px;color:'+_rcol2+'"> '+_ricon+'</span></div>'
+        + '</div>');
+    }
+    _chips.push('<div style="flex:1;text-align:center;padding:8px 6px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.07)">'
+      + '<div style="font-size:8px;font-weight:800;letter-spacing:.8px;color:var(--mt2);margin-bottom:3px">FRECUENCIA</div>'
+      + '<div style="font-size:15px;font-weight:900;color:var(--tx)">'+_escHTml(String(realFreq))+'<span style="font-size:10px;font-weight:500;color:var(--mt)"> ses.</span></div>'
+      + '</div>');
+    longHtml = '<div style="display:flex;gap:6px;margin-bottom:12px">'+_chips.join('')+'</div>';
+  }
 
   // ── Full history under <details> ────────────────────────────────────────
   var detailRows = '';
@@ -12750,6 +12818,7 @@ function showExHistory(di, ei) {
     +   '</div>'
     + '</div>'
     + summaryHtml
+    + longHtml
     + detailHtml
     + '<button onclick="document.getElementById(\'exHistModal\').remove()" '
     +   'style="width:100%;margin-top:4px;padding:14px;border:none;border-radius:12px;cursor:pointer;'
@@ -12759,6 +12828,59 @@ function showExHistory(di, ei) {
   document.body.appendChild(el);
 }
 window.showExHistory = showExHistory;
+
+function _runLongitudinalTests() {
+  var _pass = 0, _fail = 0, _results = [];
+  function _assert(name, cond) {
+    if (cond) { _pass++; _results.push('✓ '+name); }
+    else       { _fail++; _results.push('✗ FAIL: '+name); }
+  }
+  function _mkExp(sets) {
+    return { week: 1, confidence: 'HIGH', sets: sets.map(function(s){ return { carga: s.carga||0, reps: s.reps||0, rir_real: s.rir_real !== undefined ? s.rir_real : null, ics: null }; }) };
+  }
+  // T1: same load → comparable, positive delta
+  var t1 = _calcRepsAtSameLoad([
+    _mkExp([{carga:80,reps:10},{carga:80,reps:9}]),
+    _mkExp([{carga:80,reps:8},{carga:80,reps:7}])
+  ]);
+  _assert('T1: same load → comparable', t1 && t1.comparable === true);
+  _assert('T1: delta > 0', t1 && t1.delta > 0);
+  // T2: different loads (>5%) → not comparable
+  var t2 = _calcRepsAtSameLoad([
+    _mkExp([{carga:90,reps:8}]),
+    _mkExp([{carga:70,reps:12}])
+  ]);
+  _assert('T2: different loads → not comparable', t2 && t2.comparable === false);
+  // T3: RIR trend DOWN = pushing harder (improving)
+  var t3 = _calcRealRIR([
+    _mkExp([{carga:80,reps:10,rir_real:1.5}]),
+    _mkExp([{carga:80,reps:10,rir_real:2.5}])
+  ]);
+  _assert('T3: RIR trend DOWN', t3 && t3.trend === 'DOWN');
+  _assert('T3: last = 1.5', t3 && t3.last === 1.5);
+  // T4: all null RIR → no result
+  var t4 = _calcRealRIR([_mkExp([{carga:80,reps:10,rir_real:null}])]);
+  _assert('T4: all null RIR → null', t4 === null);
+  // T5: frequency = exposures.length
+  var t5 = [_mkExp([{carga:80,reps:10}]),_mkExp([{carga:80,reps:9}]),_mkExp([{carga:75,reps:11}])];
+  _assert('T5: frequency = 3', t5.length === 3);
+  // T6a: 84 vs 80, tol = 84*0.05=4.2, diff=4 → comparable
+  var t6a = _calcRepsAtSameLoad([_mkExp([{carga:84,reps:10}]),_mkExp([{carga:80,reps:8}])]);
+  _assert('T6a: borderline within 5% → comparable', t6a && t6a.comparable === true);
+  // T6b: 90 vs 80, tol=4.5, diff=10 → not comparable
+  var t6b = _calcRepsAtSameLoad([_mkExp([{carga:90,reps:10}]),_mkExp([{carga:80,reps:12}])]);
+  _assert('T6b: 90 vs 80 (>5%) → not comparable', t6b && t6b.comparable === false);
+  // T7: single exposure → NEW trend (insufficient for comparison)
+  _assert('T7: single exp → NEW', _calcTrend([_mkExp([{carga:80,reps:10}])]) === 'NEW');
+  // T8: 1 exposure → repsAtLoad returns null; 0 exposures → realRIR returns null
+  _assert('T8: <2 exposures → repsAtLoad null', _calcRepsAtSameLoad([_mkExp([{carga:80,reps:10}])]) === null);
+  _assert('T8: 0 exposures → realRIR null', _calcRealRIR([]) === null);
+
+  console.log('[LONGITUDINAL TESTS] '+_pass+'/'+(_pass+_fail)+' passed');
+  _results.forEach(function(r){ console.log(r); });
+  return { pass: _pass, fail: _fail, results: _results };
+}
+window._runLongitudinalTests = _runLongitudinalTests;
 
 // ── END FASE 6 HISTORY HELPERS ──────────────────────────────────────────
 
