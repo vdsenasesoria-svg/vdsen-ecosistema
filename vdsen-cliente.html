@@ -3270,24 +3270,69 @@ function buildMesocicloReportWidget() {
   '</div>';
 }
 
+// ── Next Best Action helpers ──────────────────────────────────────────────
+// Always based on REAL_WEEK — never CURRENT_WEEK. 0 new reads.
+
+// True if the session has at least one real (non-autoFilled) completed set.
+function _sessionHasRealSets(week, di, ses) {
+  var exList = ses ? (ses.exercises || []) : [];
+  for (var _ei = 0; _ei < exList.length; _ei++) {
+    var ns = exList[_ei].sets ? exList[_ei].sets.length : (exList[_ei].numSeries || 3);
+    for (var _s = 0; _s < Math.max(ns, 8); _s++) {
+      var _k = 'log_'+week+'_'+di+'_'+_ei+'_s'+_s;
+      if (LOGS[_k] && LOGS[_k].done && !LOGS[_k].autoFilled) return true;
+    }
+  }
+  return false;
+}
+
+// Returns: { type:'START'|'CONTINUE'|'POSTSESSION'|'CHECKIN'|'DONE'|'NO_PLAN', di?, week? }
+function _computeNextAction(sesiones) {
+  if (!sesiones || !sesiones.length) return { type: 'NO_PLAN' };
+  for (var _si = 0; _si < sesiones.length; _si++) {
+    if (!LOGS['done_'+REAL_WEEK+'_'+_si]) {
+      if (_sessionHasRealSets(REAL_WEEK, _si, sesiones[_si])) return { type:'CONTINUE', di:_si, week:REAL_WEEK };
+      return { type:'START', di:_si, week:REAL_WEEK };
+    }
+    if (!LOGS['postsession_'+REAL_WEEK+'_'+_si]) return { type:'POSTSESSION', di:_si, week:REAL_WEEK };
+  }
+  var _ci = LOGS['ci_sem_'+REAL_WEEK] || null;
+  if (!_ci || (!_ci.peso && !_ci.who5)) return { type:'CHECKIN', week:REAL_WEEK };
+  return { type:'DONE', week:REAL_WEEK };
+}
+
+// Renders the "AHORA" NBA block. onclick: JS expression string (numbers only, safe to inline).
+function _nbaBlock(title, subtitle, bg, textColor, onclick) {
+  var _labelColor = (bg === 'var(--accent)') ? 'rgba(0,0,0,.55)' : 'var(--mt2)';
+  var _subColor   = (bg === 'var(--accent)') ? 'rgba(0,0,0,.55)' : 'var(--mt)';
+  var _inner = '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:'+_labelColor+';margin-bottom:3px">AHORA</div>'
+    + '<div style="font-size:13px;font-weight:900;letter-spacing:.8px;color:'+textColor+'">'+_escHTml(title)+'</div>'
+    + (subtitle ? '<div style="font-size:10px;color:'+_subColor+';margin-top:2px">'+subtitle+'</div>' : '');
+  if (onclick) {
+    return '<button onclick="'+onclick+'" style="width:100%;padding:12px 14px;background:'+bg+';border:none;color:'+textColor+';font-family:var(--ff);cursor:pointer;border-radius:8px;text-align:left;margin-top:4px">'+_inner+'</button>';
+  }
+  return '<div style="padding:12px 14px;background:'+bg+';border-radius:8px;margin-top:4px">'+_inner+'</div>';
+}
+
 function getTodaySummary() {
   if (!PLAN || !PLAN.entrenamiento) return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
   var sesiones = getSesiones();
   if (sesiones.length === 0) return '<button onclick="goTab(1)" style="width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">VER ENTRENAMIENTO ▶</button>';
-  // Find first incomplete session in current week; fall back to last session
+
+  // Next Best Action — always computed from REAL_WEEK state
+  var nba = _computeNextAction(sesiones);
+
+  // Display context — find session to show (first incomplete in CURRENT_WEEK, for browsing)
   var idx = sesiones.length - 1;
-  var allDone = true;
   for (var _si = 0; _si < sesiones.length; _si++) {
-    if (!LOGS['done_' + CURRENT_WEEK + '_' + _si]) { idx = _si; allDone = false; break; }
+    if (!LOGS['done_' + CURRENT_WEEK + '_' + _si]) { idx = _si; break; }
   }
   var hoy = sesiones[idx];
-  var isDoneToday = !!LOGS['done_' + CURRENT_WEEK + '_' + idx];
 
   // Build exercise list from structured data
   var exList = hoy.exercises || [];
   var exCount = exList.length;
   if (!exCount) {
-    // Fallback: count from text
     exCount = (hoy.contenido||'').split('\n').filter(function(l){ return /\d\s*[×xX]\s*\d|RIR/i.test(l); }).length;
   }
 
@@ -3303,12 +3348,12 @@ function getTodaySummary() {
     estMin = Math.max(estMin, 20);
   }
 
-  // Progrec status
+  // Progrec status (current week browsing context)
   var _progRec = LOGS['progrec_' + CURRENT_WEEK + '_' + idx];
   var _hasProgrec = _progRec && (_progRec.recommendations||[]).length > 0;
   var _hasDeload  = _progRec && (_progRec.deloadTriggers||[]).length > 0;
 
-  // Top 5 exercises list
+  // Top 5 exercises list with done markers (CURRENT_WEEK context)
   var exHtml = '';
   if (exList.length) {
     var _exToShow = exList.slice(0, 5);
@@ -3340,12 +3385,91 @@ function getTodaySummary() {
      (_hasProgrec ? '<span style="font-size:9px;font-weight:900;letter-spacing:.5px;color:var(--grn);background:rgba(68,204,136,.1);padding:2px 7px;border-radius:4px;margin-left:auto">✓ PROGRESIÓN LISTA</span>' : ''))+
   '</div>';
 
-  var btnLabel = isDoneToday ? 'VER SESIÓN ▶' : (allDone ? 'REVISAR ▶' : 'ENTRENAR AHORA ▶');
-  var btn = '<button onclick="selDia('+idx+');goTab(1)" style="width:100%;padding:13px;background:'+(isDoneToday?'rgba(107,107,102,.2)':'var(--accent)')+';border:'+(isDoneToday?'1px solid rgba(107,107,102,.4)':'none')+';color:'+(isDoneToday?'var(--mt)':'#0A0A0A')+';font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">'+btnLabel+'</button>';
+  // Build NBA CTA (one primary action, reuses existing handlers)
+  var ctaHtml;
+  if (nba.type === 'CONTINUE') {
+    var _cSes = sesiones[nba.di] || {};
+    var _cEx  = _cSes.exercises || [];
+    var _pend = _cEx.filter(function(ej, ei) {
+      var ns = ej.sets ? ej.sets.length : (ej.numSeries || 3);
+      for (var s = 0; s < ns; s++) { if (!LOGS['log_'+nba.week+'_'+nba.di+'_'+ei+'_s'+s] || !LOGS['log_'+nba.week+'_'+nba.di+'_'+ei+'_s'+s].done) return true; }
+      return false;
+    }).length;
+    var _cLabel = _escHTml(_cSes.label || _cSes.dia || _cSes.nombre || '');
+    ctaHtml = _nbaBlock('CONTINUAR ENTRENAMIENTO', _cLabel + (_pend ? ' · '+_pend+' pendiente(s)' : ''), 'var(--accent)', '#0A0A0A', 'selDia('+nba.di+');goTab(1)');
+  } else if (nba.type === 'START') {
+    var _sSes = sesiones[nba.di] || {};
+    var _sLabel = _escHTml(_sSes.label || _sSes.dia || _sSes.nombre || '');
+    var _sEx   = (_sSes.exercises || []).length;
+    ctaHtml = _nbaBlock('INICIAR ENTRENAMIENTO', _sLabel + (_sEx ? ' · '+_sEx+' ejercicios' : ''), 'var(--accent)', '#0A0A0A', 'selDia('+nba.di+');goTab(1)');
+  } else if (nba.type === 'POSTSESSION') {
+    ctaHtml = _nbaBlock('COMPLETAR POST-SESIÓN', 'Registra RPE, sueño y recuperación', 'rgba(196,255,0,.12)', '#0A0A0A', 'showPostSessionModal('+nba.di+')');
+  } else if (nba.type === 'CHECKIN') {
+    ctaHtml = _nbaBlock('COMPLETAR CHECK-IN', 'Registra peso, HRV y bienestar semanal', 'rgba(107,107,102,.18)', 'var(--tx)', 'goTab(3)');
+  } else if (nba.type === 'DONE') {
+    ctaHtml = _nbaBlock('TODO AL DÍA', 'Descansá y recuperate bien', 'rgba(107,107,102,.12)', 'var(--mt)', '');
+  } else {
+    ctaHtml = '<button onclick="selDia('+idx+');goTab(1)" style="width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px;margin-top:4px">VER ENTRENAMIENTO ▶</button>';
+  }
 
   return '<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:2px">'+_escHTml(hoy.dia || hoy.nombre || hoy.label || '')+'</div>'+
-    metaHtml + exHtml + btn;
+    metaHtml + exHtml + ctaHtml;
 }
+
+// NBA unit tests — run in browser console: _runNbaTests()
+function _runNbaTests() {
+  var _origLogs = LOGS, _origCW = CURRENT_WEEK, _origRW = REAL_WEEK;
+  var passed = 0, total = 0;
+  function t(name, fn) {
+    total++;
+    try { if (fn()) { passed++; } else { console.warn('[NBA FAIL]', name); } }
+    catch(e) { console.error('[NBA ERROR]', name, e.message); }
+  }
+  var _ms = [
+    { label:'Día A', exercises:[{exerciseName:'Squat', numSeries:3}] },
+    { label:'Día B', exercises:[{exerciseName:'Press',  numSeries:3}] }
+  ];
+
+  // T1: session not initiated → START
+  LOGS = {}; CURRENT_WEEK = 1; REAL_WEEK = 1;
+  t('T1 START when no sets', function() { var r = _computeNextAction(_ms); return r.type === 'START' && r.di === 0 && r.week === 1; });
+
+  // T2: has real sets but not done → CONTINUE
+  LOGS = { 'log_1_0_0_s0': { done:true, carga:'80', reps:'8', autoFilled:false } };
+  CURRENT_WEEK = 1; REAL_WEEK = 1;
+  t('T2 CONTINUE with real sets', function() { var r = _computeNextAction(_ms); return r.type === 'CONTINUE' && r.di === 0; });
+
+  // T3: session done but no postsession → POSTSESSION
+  LOGS = { 'done_1_0': true }; CURRENT_WEEK = 1; REAL_WEEK = 1;
+  t('T3 POSTSESSION after done', function() { var r = _computeNextAction(_ms); return r.type === 'POSTSESSION' && r.di === 0; });
+
+  // T4: all sessions done + postsession, no check-in → CHECKIN
+  LOGS = { 'done_1_0':true, 'postsession_1_0':{eimd:1}, 'done_1_1':true, 'postsession_1_1':{eimd:1} };
+  CURRENT_WEEK = 1; REAL_WEEK = 1;
+  t('T4 CHECKIN after all postsessions', function() { var r = _computeNextAction(_ms); return r.type === 'CHECKIN'; });
+
+  // T5: all done including check-in → DONE
+  LOGS = { 'done_1_0':true, 'postsession_1_0':{eimd:1}, 'done_1_1':true, 'postsession_1_1':{eimd:1}, 'ci_sem_1':{peso:'80', who5:'70'} };
+  CURRENT_WEEK = 1; REAL_WEEK = 1;
+  t('T5 DONE when all complete', function() { var r = _computeNextAction(_ms); return r.type === 'DONE'; });
+
+  // T6: autoFilled sets do NOT count as in-progress → START
+  LOGS = { 'log_1_0_0_s0': { done:true, carga:'80', reps:'8', autoFilled:true } };
+  CURRENT_WEEK = 1; REAL_WEEK = 1;
+  t('T6 autoFilled does not trigger CONTINUE', function() { var r = _computeNextAction(_ms); return r.type === 'START'; });
+
+  // T7: CURRENT_WEEK != REAL_WEEK — NBA must reference REAL_WEEK
+  LOGS = { 'done_2_0': true }; CURRENT_WEEK = 2; REAL_WEEK = 1;
+  t('T7 NBA uses REAL_WEEK not CURRENT_WEEK', function() { var r = _computeNextAction(_ms); return r.type === 'START' && r.week === 1; });
+
+  // T8: no plan → NO_PLAN
+  t('T8 NO_PLAN on empty sesiones', function() { var r = _computeNextAction([]); return r.type === 'NO_PLAN'; });
+
+  LOGS = _origLogs; CURRENT_WEEK = _origCW; REAL_WEEK = _origRW;
+  console.log('[NBA] '+passed+'/'+total+' tests passed');
+  return { passed: passed, total: total };
+}
+window._runNbaTests = _runNbaTests;
 
 function getSupToday() {
   const supTexto = PLAN?.suplementacion?.texto || '';
