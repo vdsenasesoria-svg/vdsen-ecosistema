@@ -2858,7 +2858,13 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     if (!currentCoach) return;
     if (window._monitorUnsub) { window._monitorUnsub(); window._monitorUnsub = null; }
     document.getElementById("monitorTable").innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando...</div>`;
-    const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+    let snap;
+    try {
+      snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));
+    } catch(e) {
+      document.getElementById("monitorTable").innerHTML = `<p class="text-red-400 text-sm">Error al cargar clientes: ${_escH(e.message||'sin conexión')}. Recarga la página.</p>`;
+      return;
+    }
     document.getElementById("monitorTable").innerHTML = "";
     const select = document.getElementById("monitorClientSelect");
     select.innerHTML = '<option value="">Selecciona un cliente</option>';
