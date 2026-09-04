@@ -13005,8 +13005,13 @@ async function submitPostSession() {
     if (rec) {
       var _sanitize = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
       var recSafe = JSON.parse(JSON.stringify(rec, _sanitize));
-      LOGS['progrec_'+REAL_WEEK+'_'+di] = recSafe;
-      _lbwTrack('progrec_'+REAL_WEEK+'_'+di);
+      // CURRENT_WEEK: la recomendación es para la sesión que el usuario
+      // acaba de completar en la semana que está viendo, consistente con
+      // done_CURRENT_WEEK_D y postsession_CURRENT_WEEK_D. Los paths de
+      // autoclose y markSessionDoneFromHistory usan REAL_WEEK porque
+      // operan sobre la semana real, no sobre la vista navegada.
+      LOGS['progrec_'+CURRENT_WEEK+'_'+di] = recSafe;
+      _lbwTrack('progrec_'+CURRENT_WEEK+'_'+di);
       // P5: Longitudinal Engine — engine_state persiste en logs para la próxima generación
       if (rec.engineState) {
         LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _sanitize));
@@ -13023,7 +13028,7 @@ async function submitPostSession() {
     // Revertir todos los datos escritos en memoria — Firestore no los recibió
     delete LOGS[postKey];
     delete LOGS[sessnoteKey];
-    delete LOGS['progrec_'+REAL_WEEK+'_'+di];
+    delete LOGS['progrec_'+CURRENT_WEEK+'_'+di];
     // Restaurar botón y permitir reintento sin perder los datos del formulario
     if (_btn) { _btn.disabled = false; _btn.textContent = 'GUARDAR Y CALCULAR PROGRESIÓN →'; }
     _postSessionSubmitting = false;
