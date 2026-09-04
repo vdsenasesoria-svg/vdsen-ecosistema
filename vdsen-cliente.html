@@ -2947,14 +2947,14 @@ function renderResumen() {
     </div>
     <div class="progress-bar" style="margin-bottom:12px"><div class="pb-fill" style="width:${pct}%"></div></div>
 
-    <div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px">PROGRESIÓN — ${_totalWeeksGrid} SEMANAS</div>
-    <div class="week-grid">${weekHtml}</div>
-    ${_missingHintsHtml}
-
     <div class="card" style="margin-top:10px">
       <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
       ${getTodaySummary()}
     </div>
+
+    <div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px;margin-top:14px">PROGRESIÓN — ${_totalWeeksGrid} SEMANAS</div>
+    <div class="week-grid">${weekHtml}</div>
+    ${_missingHintsHtml}
 
     <div class="card" style="margin-top:8px;border-color:${ciDone?'rgba(107,107,102,.4)':'rgba(201,74,58,.25)'}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -2980,15 +2980,20 @@ function renderResumen() {
         ${ciDone?'✏ ACTUALIZAR →':'📊 COMPLETAR CHECK-IN →'}
       </button>
     </div>
-    ${buildWhatChangedCard()}
-    ${buildMusclePriorityCard()}
-    ${buildMesocicloReportWidget()}
-    ${buildStreakWidget()}
-    ${buildHistorialWidget()}
-    ${buildBodyMapWidget()}
-    ${buildVolumenWidget()}
-    ${buildVolumenMesocicloWidget()}
-    ${buildRezagadosWidget()}`;
+    <details style="margin-top:8px">
+      <summary style="cursor:pointer;list-style:none;padding:10px 16px;font-family:var(--ff);font-size:11px;font-weight:700;letter-spacing:2px;color:var(--mt);display:flex;align-items:center;gap:8px;background:rgba(107,107,102,.05);border:1px solid rgba(107,107,102,.15);border-radius:8px">
+        📊 ANÁLISIS AVANZADO ▾
+      </summary>
+      ${buildWhatChangedCard()}
+      ${buildMusclePriorityCard()}
+      ${buildMesocicloReportWidget()}
+      ${buildStreakWidget()}
+      ${buildHistorialWidget()}
+      ${buildBodyMapWidget()}
+      ${buildVolumenWidget()}
+      ${buildVolumenMesocicloWidget()}
+      ${buildRezagadosWidget()}
+    </details>`;
 }
 
 function buildStreakWidget() {
@@ -4092,7 +4097,7 @@ function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
           '<span style="font-size:10px;font-weight:900;letter-spacing:1.5px;color:'+meta.color+'">CÓMO HACER · '+meta.label+'</span>' +
           '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>' +
         '</button>' +
-        '<div id="'+_techId+'" style="display:block;padding:0 12px 10px">' +
+        '<div id="'+_techId+'" style="display:none;padding:0 12px 10px">' +
           '<div style="font-size:11px;color:var(--mt2);line-height:1.55">'+_shortTxt+'</div>' +
           (_detailHtml ? '<div style="margin-top:8px;font-size:11px;color:var(--mt2);line-height:1.6;opacity:.85">'+_detailHtml+'</div>' : '') +
         '</div>' +
@@ -4992,7 +4997,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
               var _rl=rv===0?'0 Fallo':rv===4?'4+ Fácil':''+rv;
               return'<button onclick="setRirReal(\''+key+'\','+rv+')" id="rir_btn_'+key+'_'+rv+'"'+
                 ' aria-label="'+_rirAL[rv]+'" aria-pressed="'+(_rs?'true':'false')+'"'+
-                ' style="flex:1;padding:10px 2px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;'+
+                ' style="flex:1;padding:14px 2px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;'+
                 'border:2px solid '+(_rs?'#e8a040':'var(--border)')+';'+
                 'background:'+(_rs?'rgba(232,160,64,.15)':'var(--input-bg)')+';'+
                 'color:'+(_rs?'#e8a040':'var(--mt)')+'">'+_rl+'</button>';
@@ -7025,10 +7030,8 @@ function renderEntrenamiento() {
           (CURRENT_WEEK > 1 ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Copia los datos de la semana anterior en todos los sets y marca la sesión como completada" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ Copiar sem. anterior</button>' : '') +
           '</div>')+
     '</div>'+
-    // Session dashboard stats (FASE 8)
-    sessionStatsHtml+
-    // Week performance summary (FASE 12): all days in CURRENT_WEEK
-    _buildWeekPerfSummary()+
+    // Week performance summary (FASE 12): all days in CURRENT_WEEK — colapsable
+    (function(){var _w=_buildWeekPerfSummary();return _w?'<details style="margin:0 0 4px"><summary style="cursor:pointer;list-style:none;font-size:10px;font-weight:700;color:var(--mt);letter-spacing:1.5px;padding:4px 16px">RESUMEN SEMANA ▾</summary>'+_w+'</details>':'';})()+ 
     // Glosario RIR + ICS (colapsable)
     '<details style="margin:0 16px 8px;background:rgba(107,107,102,.04);border:1px solid rgba(107,107,102,.18);border-radius:10px;padding:8px 12px">'+
       '<summary style="cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.5px;display:flex;align-items:center;gap:6px">'+
@@ -7061,13 +7064,15 @@ function renderEntrenamiento() {
     // Rezagados banner
     rezBanner+
     // Exercise navigator (horizontal scroll)
-    '<div id="exNav" style="display:flex;gap:6px;padding:10px 16px 4px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch">'+
+    '<div id="exNav" style="display:flex;gap:6px;padding:10px 16px 4px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;position:sticky;top:0;z-index:50;background:var(--bg)">'+
       _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
     // Exercise detail panel
     '<div id="exPanel" style="padding:0 12px 100px">'+
       _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
+    // Session dashboard stats (FASE 8) — visible al terminar la sesión
+    sessionStatsHtml+
     // Rest timer overlay (hidden) — premium design
     '<div id="restTimerOverlay" onclick="stopRestTimer()" style="display:none;position:fixed;inset:0;background:rgba(6,14,26,.88);z-index:9000;align-items:center;justify-content:center;flex-direction:column;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);padding-bottom:env(safe-area-inset-bottom)">'+
       '<div onclick="event.stopPropagation()" style="'+
@@ -11338,6 +11343,15 @@ function renderCheckin() {
     +   _ciBannerChips
     + '</div>'
 
+    // ── ENERGÍA (primero — engancha al atleta) ──────────────────────
+    + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
+    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:6px">ENERGÍA SUBJETIVA</div>'
+    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:12px">¿Cómo te has sentido en general esta semana? No solo hoy.</div>'
+    +   '<div style="display:flex;gap:3px" id="ci_eng_row">' + engHtml + '</div>'
+    +   '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--mt);margin-top:5px">'
+    +   '<span>Muy baja (1)</span><span>Óptima (10)</span></div>'
+    + '</div>'
+
     // ── MEDIDAS ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:14px">MEDIDAS DEL DÍA</div>'
@@ -11390,17 +11404,13 @@ function renderCheckin() {
 
     + _buildWeightSparkline()
 
-    // ── ENERGÍA ──────────────────────────────────────
-    + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
-    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:6px">ENERGÍA SUBJETIVA</div>'
-    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:12px">¿Cómo te has sentido en general esta semana? No solo hoy.</div>'
-    +   '<div style="display:flex;gap:3px" id="ci_eng_row">' + engHtml + '</div>'
-    +   '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--mt);margin-top:5px">'
-    +   '<span>Muy baja (1)</span><span>Óptima (10)</span></div>'
-    + '</div>'
-
-    // ── WHO-5 ─────────────────────────────────────────
-    + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
+    // ── WHO-5 — colapsable ─────────────────────────────────────────
+    + '<details style="margin-bottom:10px">'
+    + '<summary style="background:var(--card);border:1px solid var(--bd);padding:12px 16px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;user-select:none">'
+    + '<span style="font-family:var(--ff);font-size:13px;letter-spacing:1.5px;color:var(--gold)">ÍNDICE WHO-5</span>'
+    + '<span style="font-size:11px;color:' + w5col + '">'+ (w5t!==null ? w5t+'/100 ▾' : 'pendiente ▾') +'</span>'
+    + '</summary>'
+    + '<div style="background:var(--card);border:1px solid var(--bd);border-top:none;padding:16px">'
     +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">ÍNDICE WHO-5 — BIENESTAR OMS</div>'
     +   '<div style="font-size:12px;color:var(--mt);margin-bottom:4px">¿Con qué frecuencia en los últimos 14 días?</div>'
     +   '<div style="font-size:11px;color:var(--mt);background:var(--dk);border:1px solid var(--bd);padding:10px;margin-bottom:14px;line-height:1.6">'
@@ -11413,9 +11423,9 @@ function renderCheckin() {
     +   (w5t!==null ? w5t+'/100' : '') + '</div>'
     +   '<div style="font-size:13px;color:' + w5col + ';font-family:var(--ff);letter-spacing:1px">' + w5msg + '</div>'
     +   '</div>'
-    + '</div>'
+    + '</div></details>'
 
-        // ── ICS POR SESIÓN (GAP 1) ──────────────────────
+    // ── ICS POR SESIÓN (GAP 1) ──────────────────────
     + buildICSSection(d, sem)
 
     // ── CUESTIONARIO SUBJETIVO EHRENSTEIN (Módulo E) ──
@@ -12876,8 +12886,7 @@ function showPostSessionModal(di) {
   // Pre-seleccionar 7h (default comportamental que ya usa el submit)
   var _suenoDefaultBtn = document.querySelector('#psSuenoGrid [data-val="7"]');
   if (_suenoDefaultBtn) psSuenoSel(_suenoDefaultBtn, '7');
-  document.getElementById('psRpe').value = '7';
-  document.getElementById('psRpeVal').textContent = '7';
+  psRpeSel(7);
   var _sn = document.getElementById('psSessnote'); if (_sn) _sn.value = '';
   var _snc = document.getElementById('psSessnoteCount'); if (_snc) _snc.textContent = '0';
   // Reset botones articular
@@ -12934,6 +12943,24 @@ function psSuenoSel(btn, val) {
   if (inp) inp.value = val;
 }
 window.psSuenoSel = psSuenoSel;
+
+function psRpeSel(val) {
+  if (navigator.vibrate) navigator.vibrate(8);
+  var inp = document.getElementById('psRpe');
+  if (inp) inp.value = String(val);
+  var colors = {1:'var(--grn)',2:'var(--grn)',3:'var(--grn)',4:'var(--mt)',5:'var(--mt)',6:'var(--mt)',7:'var(--grn)',8:'var(--accent)',9:'#e8a040',10:'var(--red)'};
+  document.querySelectorAll('#psRpeGrid [data-rpe]').forEach(function(b) {
+    var bv = parseInt(b.dataset.rpe);
+    var isSelected = bv === val;
+    var baseCol = colors[bv] || 'var(--mt)';
+    b.style.borderColor = isSelected ? baseCol : 'var(--bd)';
+    b.style.background = isSelected ? 'rgba(255,255,255,.08)' : (bv <= 3 ? 'rgba(110,154,110,.08)' : bv >= 9 ? (bv===10?'rgba(200,60,40,.08)':'rgba(220,120,30,.08)') : 'var(--dk)');
+    b.style.color = isSelected ? baseCol : (bv <= 3 ? 'var(--grn)' : bv >= 9 ? (bv===10?'var(--red)':'#e8a040') : 'var(--mt)');
+    b.style.transform = isSelected ? 'scale(1.08)' : '';
+  });
+  updateRpeLabel(val);
+}
+window.psRpeSel = psRpeSel;
 
 function updateRpeLabel(val) {
   var el = document.getElementById('psRpeLabel');
@@ -14877,9 +14904,48 @@ document.addEventListener('keydown', function(e) {
 
     <input type="hidden" id="psEimd">
 
-    <!-- 1. EIMD -->
+    <!-- 1. RPE -->
     <div style="margin-bottom:22px">
-      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">1 · DOLOR MUSCULAR (EIMD)</div>
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">1 · RPE DE LA SESIÓN</div>
+      <div style="font-size:12px;color:var(--mt);margin-bottom:12px;line-height:1.5">
+        Esfuerzo percibido <strong style="color:var(--tx)">promedio</strong> de toda la sesión.
+        <span style="color:rgba(107,107,102,.6)"> · RPE crónico ≥9 activa alerta de sobreentrenamiento.</span>
+      </div>
+      <div id="psRpeGrid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:10px">
+        <button onclick="psRpeSel(1)" data-rpe="1" style="padding:14px 2px;border:1px solid var(--bd);background:rgba(110,154,110,.08);color:var(--grn);font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">1</button>
+        <button onclick="psRpeSel(2)" data-rpe="2" style="padding:14px 2px;border:1px solid var(--bd);background:rgba(110,154,110,.08);color:var(--grn);font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">2</button>
+        <button onclick="psRpeSel(3)" data-rpe="3" style="padding:14px 2px;border:1px solid var(--bd);background:rgba(110,154,110,.06);color:var(--grn);font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">3</button>
+        <button onclick="psRpeSel(4)" data-rpe="4" style="padding:14px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">4</button>
+        <button onclick="psRpeSel(5)" data-rpe="5" style="padding:14px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">5</button>
+        <button onclick="psRpeSel(6)" data-rpe="6" style="padding:14px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">6</button>
+        <button onclick="psRpeSel(7)" data-rpe="7" style="padding:14px 2px;border:1px solid var(--grn);background:rgba(58,148,96,.15);color:var(--grn);font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">7</button>
+        <button onclick="psRpeSel(8)" data-rpe="8" style="padding:14px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">8</button>
+        <button onclick="psRpeSel(9)" data-rpe="9" style="padding:14px 2px;border:1px solid var(--bd);background:rgba(220,120,30,.08);color:#e8a040;font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">9</button>
+        <button onclick="psRpeSel(10)" data-rpe="10" style="padding:14px 2px;border:1px solid var(--bd);background:rgba(200,60,40,.08);color:var(--red);font-family:var(--ff);font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">10</button>
+      </div>
+      <input type="hidden" id="psRpe" value="7">
+      <div id="psRpeLabel" style="text-align:center;font-size:13px;font-weight:700;color:var(--grn);min-height:18px">Difícil — 2-3 reps más eran posibles</div>
+    </div>
+
+    <!-- 2. Sueño -->
+    <div style="margin-bottom:22px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">2 · SUEÑO (última noche)</div>
+      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">¿Cuántas horas dormiste la noche <strong style="color:var(--tx)">anterior</strong> a este entrenamiento?</div>
+      <input id="psSueno" type="hidden" value="7">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px" id="psSuenoGrid">
+        <button onclick="psSuenoSel(this,'4')" data-val="4" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--red);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">4h</button>
+        <button onclick="psSuenoSel(this,'5')" data-val="5" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--red);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">5h</button>
+        <button onclick="psSuenoSel(this,'6')" data-val="6" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">6h</button>
+        <button onclick="psSuenoSel(this,'7')" data-val="7" style="padding:12px 2px;border:1px solid var(--grn);background:rgba(58,148,96,.15);color:var(--grn);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">7h</button>
+        <button onclick="psSuenoSel(this,'8')" data-val="8" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">8h</button>
+        <button onclick="psSuenoSel(this,'9')" data-val="9" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">9h</button>
+        <button onclick="psSuenoSel(this,'10')" data-val="10" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">9h+</button>
+      </div>
+    </div>
+
+    <!-- 3. EIMD -->
+    <div style="margin-bottom:22px">
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">3 · DOLOR MUSCULAR (EIMD)</div>
       <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
         ¿Cómo están los músculos trabajados <strong style="color:var(--tx)">hoy</strong> en comparación a cuando entrenaste?
         <span style="color:rgba(107,107,102,.6)"> · Afecta si se sube volumen o carga la próxima semana.</span>
@@ -14900,9 +14966,9 @@ document.addEventListener('keydown', function(e) {
       </div>
     </div>
 
-    <!-- 2. Fatiga articular -->
+    <!-- 4. Fatiga articular -->
     <div style="margin-bottom:22px">
-      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">2 · FATIGA ARTICULAR</div>
+      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">4 · FATIGA ARTICULAR</div>
       <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">
         ¿Sientes molestia en <strong style="color:var(--tx)">articulaciones</strong> (hombro, rodilla, codo, lumbar)?
         <span style="color:rgba(107,107,102,.6)"> · Diferente a las agujetas musculares — es tensión/dolor en la articulación misma.</span>
@@ -14927,53 +14993,6 @@ document.addEventListener('keydown', function(e) {
         </select>
         <div style="font-size:10px;color:var(--mt);margin-top:6px;padding:8px 10px;background:rgba(200,100,0,.06);border-left:2px solid #FF8844;border-radius:0 4px 4px 0">
           ⚠ Si hay dolor agudo o limitación de movimiento, consulta con tu coach antes de continuar entrenando.
-        </div>
-      </div>
-    </div>
-
-    <!-- 3. Sueño -->
-    <div style="margin-bottom:22px">
-      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">3 · SUEÑO (última noche)</div>
-      <div style="font-size:12px;color:var(--mt);margin-bottom:10px;line-height:1.5">¿Cuántas horas dormiste la noche <strong style="color:var(--tx)">anterior</strong> a este entrenamiento?</div>
-      <input id="psSueno" type="hidden" value="7">
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px" id="psSuenoGrid">
-        <button onclick="psSuenoSel(this,'4')" data-val="4" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--red);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">4h</button>
-        <button onclick="psSuenoSel(this,'5')" data-val="5" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--red);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">5h</button>
-        <button onclick="psSuenoSel(this,'6')" data-val="6" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">6h</button>
-        <button onclick="psSuenoSel(this,'7')" data-val="7" style="padding:12px 2px;border:1px solid var(--grn);background:rgba(58,148,96,.15);color:var(--grn);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">7h</button>
-        <button onclick="psSuenoSel(this,'8')" data-val="8" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">8h</button>
-        <button onclick="psSuenoSel(this,'9')" data-val="9" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">9h</button>
-        <button onclick="psSuenoSel(this,'10')" data-val="10" style="padding:12px 2px;border:1px solid var(--bd);background:var(--dk);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer;border-radius:6px;transition:all .15s">9h+</button>
-      </div>
-    </div>
-
-    <!-- 4. RPE -->
-    <div style="margin-bottom:28px">
-      <div style="font-size:11px;letter-spacing:1.5px;color:var(--accent);font-weight:700;margin-bottom:3px">4 · RPE DE LA SESIÓN — <span id="psRpeVal" style="color:#fff;font-size:18px">7</span><span style="font-size:11px;color:var(--mt)">/10</span></div>
-      <div style="font-size:12px;color:var(--mt);margin-bottom:12px;line-height:1.5">
-        Esfuerzo percibido <strong style="color:var(--tx)">promedio</strong> de toda la sesión.
-        <span style="color:rgba(107,107,102,.6)"> · RPE crónico ≥9 activa alerta de sobreentrenamiento.</span>
-      </div>
-      <input id="psRpe" type="range" min="1" max="10" step="1" value="7"
-        oninput="document.getElementById('psRpeVal').textContent=this.value;updateRpeLabel(this.value)"
-        style="width:100%;accent-color:var(--accent);height:6px;margin-bottom:10px">
-      <div id="psRpeLabel" style="text-align:center;font-size:13px;font-weight:700;color:var(--accent);min-height:18px;margin-bottom:8px">Difícil — 2-3 reps más eran posibles</div>
-      <!-- Escala RPE visual -->
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;font-size:9px">
-        <div style="text-align:center;padding:5px 2px;background:rgba(110,154,110,.12);border-radius:4px;color:var(--grn)">
-          <div style="font-weight:800">5-6</div><div style="color:var(--mt);margin-top:1px">Fácil</div>
-        </div>
-        <div style="text-align:center;padding:5px 2px;background:rgba(107,107,102,.1);border-radius:4px;color:var(--accent)">
-          <div style="font-weight:800">7</div><div style="color:var(--mt);margin-top:1px">Moderado</div>
-        </div>
-        <div style="text-align:center;padding:5px 2px;background:rgba(107,107,102,.15);border-radius:4px;color:var(--accent)">
-          <div style="font-weight:800">8</div><div style="color:var(--mt);margin-top:1px">Difícil</div>
-        </div>
-        <div style="text-align:center;padding:5px 2px;background:rgba(220,120,30,.15);border-radius:4px;color:#e8a040">
-          <div style="font-weight:800">9</div><div style="color:var(--mt);margin-top:1px">Muy difícil</div>
-        </div>
-        <div style="text-align:center;padding:5px 2px;background:rgba(200,60,40,.15);border-radius:4px;color:var(--red)">
-          <div style="font-weight:800">10</div><div style="color:var(--mt);margin-top:1px">Al fallo</div>
         </div>
       </div>
     </div>
