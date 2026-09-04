@@ -11826,7 +11826,7 @@ El esfuerzo no es negociable.
 
   // ========== ELIMINAR EJERCICIO ==========
   async function deleteExercise(id, name) {
-    if (!await _askConfirm(`¿Eliminar <strong>${name}</strong> del catálogo?`)) return;
+    if (!await _askConfirm(`¿Eliminar <strong>${_escH(name)}</strong> del catálogo?`)) return;
     try {
       await deleteDoc(doc(db, "exercises", id));
       showToast(`"${name}" eliminado`);
@@ -13750,7 +13750,7 @@ El esfuerzo no es negociable.
       ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
       ov.innerHTML = `
         <div style="background:#141616;border:1px solid rgba(244,244,240,.35);border-radius:12px;padding:22px;max-width:680px;width:100%;max-height:90vh;display:flex;flex-direction:column">
-          <h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📝 Plan en TXT — ${clientName}</h3>
+          <h3 style="color:#F4F4F0;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📝 Plan en TXT — ${_escH(clientName)}</h3>
           <p style="color:#888;font-size:11px;margin-bottom:10px">Archivo descargado y copiado al portapapeles. Si tu navegador bloqueó el copy, selecciona el texto y pega:</p>
           <textarea readonly id="_txtPlanBox" style="flex:1;min-height:320px;width:100%;background:#0a0a0a;border:1px solid rgba(244,244,240,.2);border-radius:6px;color:#cfcfcf;padding:12px;font-family:monospace;font-size:12px;line-height:1.5;resize:vertical;white-space:pre">${text.replace(/</g,'&lt;')}</textarea>
           <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
