@@ -5251,7 +5251,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // More nuanced than raw set count: considers weeks, RIR consistency, check-ins, density.
   function _computeConfidenceScore(entries, checkinSummary) {
     var score = 0;
-    var logKeys = Object.keys(entries).filter(function(k){ return k.startsWith('log_'); });
+    var logKeys = Object.keys(entries).filter(function(k){ return k.startsWith('log_') && !entries[k]?.autoFilled; });
     var loggedSets = logKeys.length;
     // Factor 1: set count (capped at 3 pts)
     if      (loggedSets >= 60) score += 3;
@@ -13348,7 +13348,7 @@ El esfuerzo no es negociable.
         // ICS promedio última sesión
         let lastICS = 0, icsCount = 0;
         Object.keys(entries).forEach(k => {
-          if (k.startsWith('log_'+week+'_') && entries[k].ics) {
+          if (k.startsWith('log_'+week+'_') && entries[k].ics && !entries[k].autoFilled) {
             lastICS += parseFloat(entries[k].ics); icsCount++;
           }
         });
