@@ -1167,10 +1167,11 @@
     const planWeeks = planData?.weeks || 6;
     const dpw = planData?.daysPerWeek || (planData?.days || []).length || 0;
 
-    // Último ts de registro (log_*)
+    // Último ts de registro REAL (log_*, excluyendo autoFilled)
     let lastTs = 0;
     Object.keys(entries).forEach(k => {
       if (!k.startsWith('log_')) return;
+      if (entries[k]?.autoFilled) return; // no es ejecución real
       const ts = entries[k]?.ts;
       const t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
       if (!isNaN(t) && t > lastTs) lastTs = t;
@@ -1510,7 +1511,7 @@ El esfuerzo no es negociable — y la consistencia se construye ciclo a ciclo.
           const cw = logsData.currentWeek || 1;
           const planWeeks = planData?.weeks || 6;
           let lastTs = 0;
-          Object.values(logsData.entries || {}).forEach(v => { const t = v?.ts ? (typeof v.ts==='string'?Date.parse(v.ts):+v.ts) : 0; if (t>lastTs) lastTs=t; });
+          Object.values(logsData.entries || {}).forEach(v => { if (v?.autoFilled) return; const t = v?.ts ? (typeof v.ts==='string'?Date.parse(v.ts):+v.ts) : 0; if (t>lastTs) lastTs=t; });
           const daysSince = lastTs ? Math.floor((Date.now() - lastTs) / 86400000) : 5;
           const fakeAlert = { type, context: { cw, planWeeks, daysSince } };
           ov.remove();
