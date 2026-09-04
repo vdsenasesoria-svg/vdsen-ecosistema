@@ -10369,11 +10369,11 @@ El esfuerzo no es negociable.
             </div>` : ''}
             ${calibRes ? `<div>
               <div class="text-xs text-[#888]">VME / VMR PERSONAL</div>
-              <div style="font-size:14px;font-weight:800"><span style="color:#f09030">${calibRes.VME_individual}</span><span style="color:#555;font-size:11px"> – </span><span style="color:#44BB88">${calibRes.VMR_individual}</span><span style="font-size:9px;color:#555"> s/sem</span></div>
+              <div style="font-size:14px;font-weight:800"><span style="color:#f09030">${_escH(String(calibRes.VME_individual??''))}</span><span style="color:#555;font-size:11px"> – </span><span style="color:#44BB88">${_escH(String(calibRes.VMR_individual??''))}</span><span style="font-size:9px;color:#555"> s/sem</span></div>
             </div>` : ''}
           </div>
           ${items.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;margin-bottom:6px">
-            ${items.map(([lbl,v])=>`<span style="padding:2px 7px;border-radius:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:${v>=3?'#888':'#FF8844'}">${lbl}: <strong>${v}</strong>/5</span>`).join('')}
+            ${items.map(([lbl,v])=>`<span style="padding:2px 7px;border-radius:4px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:${v>=3?'#888':'#FF8844'}">${_escH(lbl)}: <strong>${_escH(String(v))}</strong>/5</span>`).join('')}
           </div>` : ''}
           ${(!scoreOk || vuln) ? `<div style="padding:6px 10px;border-radius:6px;background:rgba(255,136,68,.08);border:1px solid rgba(255,136,68,.25);font-size:11px;color:#FF8844">⚠️ ${!scoreOk ? 'Score bajo umbral ('+umbral+')' : ''}${!scoreOk && vuln ? ' · ' : ''}${vuln ? 'Vulnerabilidad a lesiones elevada' : ''} — Considerar deload o −20% volumen.</div>` : ''}
         </div>`;
@@ -10394,7 +10394,7 @@ El esfuerzo no es negociable.
     for (let d = 0; d < dpw; d++) {
       const dayObj = p && p.days ? (p.days.find(x => x.dayIndex === d) || p.days[d]) : null;
       const label = dayObj ? (dayObj.label||('D'+(d+1))).substring(0,6) : 'D'+(d+1);
-      html += `<div style="text-align:center;font-size:9px;color:#888;font-weight:600;padding:2px">${label}</div>`;
+      html += `<div style="text-align:center;font-size:9px;color:#888;font-weight:600;padding:2px">${_escH(label)}</div>`;
     }
     html += `</div>`;
     // Week rows
