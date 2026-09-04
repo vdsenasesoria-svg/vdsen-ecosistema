@@ -10591,13 +10591,20 @@ El esfuerzo no es negociable.
       });
       const sparklines = allExNames.map(({ name }) => {
         const pts = [];
+        const _normN = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
         for (let w = 1; w <= currentWeek; w++) {
           let maxLoad = 0;
           Object.keys(entries).forEach(k => {
             if (!k.startsWith('log_'+w+'_')) return;
             const e = entries[k];
+            if (!e.done || e.autoFilled) return;
             const c = parseFloat(e.carga);
-            if (e.done && !isNaN(c) && c > maxLoad) maxLoad = c;
+            if (isNaN(c) || c <= 0) return;
+            if (e.exerciseNameSnapshot) {
+              const sn = e.exerciseNameSnapshot.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+              if (sn !== _normN) return;
+            }
+            if (c > maxLoad) maxLoad = c;
           });
           if (maxLoad > 0) pts.push({ w, v: maxLoad });
         }
@@ -10639,16 +10646,25 @@ El esfuerzo no es negociable.
     cont.innerHTML = html;
   }
 
+  function _coachToast(msg, isErr) {
+    var t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none;transition:opacity .4s;white-space:nowrap;' +
+      (isErr ? 'background:#3a1010;color:#FF6666;border:1px solid rgba(255,80,80,.3)' : 'background:#1a2a10;color:#C4FF00;border:1px solid rgba(196,255,0,.3)');
+    document.body.appendChild(t);
+    setTimeout(function(){ t.style.opacity='0'; setTimeout(function(){ t.remove(); },400); }, 2800);
+  }
+
   async function _applyAllModuloD() {
     const results = window._moduloDPending;
     if (!results || !results.length) return;
     const planId = _detailClientData && _detailClientData.activePlanId;
-    if (!planId) { alert('No hay plan activo.'); return; }
+    if (!planId) { _coachToast('No hay plan activo.',true); return; }
     const toApply = results.filter(r => r.tipo !== 'mantiene' && r.nuevaCarga !== null);
-    if (!toApply.length) { alert('No hay ajustes que aplicar.'); return; }
+    if (!toApply.length) { _coachToast('No hay ajustes que aplicar.',true); return; }
     try {
       const planSnap = await getDoc(doc(db,'plans',planId));
-      if (!planSnap.exists()) { alert('Plan no encontrado.'); return; }
+      if (!planSnap.exists()) { _coachToast('Plan no encontrado.',true); return; }
       const plan = planSnap.data();
       const dayIdx = window._moduloDDayIndex;
       const updatedDays = (plan.days||[]).map(day => {
@@ -10668,8 +10684,8 @@ El esfuerzo no es negociable.
       });
       await updateDoc(doc(db,'plans',planId),{days:updatedDays});
       if (_detailPlanData) _detailPlanData.days = updatedDays;
-      alert(`✓ ${toApply.length} ejercicio(s) actualizados en el plan.`);
-    } catch(e) { alert('Error al aplicar: '+e.message); }
+      _coachToast('✓ '+toApply.length+' ejercicio(s) actualizados en el plan.');
+    } catch(e) { _coachToast('Error al aplicar: '+e.message, true); }
   }
   window._applyAllModuloD = _applyAllModuloD;
 
