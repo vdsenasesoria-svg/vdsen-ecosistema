@@ -10280,6 +10280,83 @@ El esfuerzo no es negociable.
 
     let html = '';
 
+    // ── Attention Queue: cola de acción priorizada para el coach ──────────
+    {
+      const _aqItems = [];
+      const _psL = lastDoneW > 0 ? (entries['postsession_'+lastDoneW+'_'+lastDoneD] || {}) : {};
+      const _aqUmbral = (_detailClientData && _detailClientData.score_umbral_sobrealcance) != null
+        ? _detailClientData.score_umbral_sobrealcance : 12;
+      const _aqScore = ci.subj_score != null ? ci.subj_score : null;
+      const _aqVuln  = ci.subj_vulner >= 4;
+
+      // Dolor articular activo (última sesión)
+      if (_psL.articular === 'si') {
+        _aqItems.push({ sev:'red', icon:'🦴', prob:'Dolor articular activo', ev:(_psL.patron?'Patrón: '+_psL.patron:'')+ ' · Sem '+lastDoneW, act:'Evaluar sustitución o pausa del patrón afectado' });
+      }
+      // WHO-5 bajo umbral clínico
+      if (ci.who5 && parseInt(ci.who5) < 50) {
+        _aqItems.push({ sev:'red', icon:'🧠', prob:'WHO-5 bajo umbral clínico', ev:'Score '+ci.who5+'/100', act:'Revisar bienestar — considerar derivación profesional' });
+      }
+      // Ehrenstein bajo umbral
+      if (_aqScore !== null && _aqScore < _aqUmbral) {
+        _aqItems.push({ sev:_aqVuln?'red':'orange', icon:'⚠️', prob:'Score Ehrenstein bajo', ev:_aqScore+'/25 (umbral '+_aqUmbral+')'+(ci.subj_vulner!=null?' · vulner. '+ci.subj_vulner+'/7':''), act:_aqVuln?'Deload inmediato — reducir volumen ≥20%':'Considerar reducción de carga' });
+      }
+      // EIMD alto en última sesión
+      if (_psL.eimd === 3) {
+        _aqItems.push({ sev:'orange', icon:'💢', prob:'EIMD alto en última sesión', ev:'Sem '+lastDoneW+' · Día '+(lastDoneD+1), act:'No aumentar volumen esta semana — incrementar recuperación' });
+      }
+      // RPE ≥ 9 en última sesión
+      if (_psL.rpe && parseFloat(_psL.rpe) >= 9) {
+        _aqItems.push({ sev:'orange', icon:'📈', prob:'RPE muy alto (≥9)', ev:'Sem '+lastDoneW+' · RPE '+_psL.rpe+'/10', act:'Verificar recuperación — evaluar reducción de carga' });
+      }
+      // Deload recomendado por algoritmo
+      if (lastRec && lastRec.recommendations) {
+        const _aqDl = lastRec.recommendations.filter(r => r.action === 'deload');
+        if (_aqDl.length) {
+          _aqItems.push({ sev:'blue', icon:'🔵', prob:'Deload recomendado por algoritmo', ev:_aqDl.map(r=>r.exerciseName||'?').join(', '), act:'Ajustar plan — sesión de descarga o −40% volumen' });
+        }
+      }
+      // Sesiones perdidas
+      const _dpwQ = (p && p.daysPerWeek) || (p && p.days ? p.days.length : 0) || 0;
+      let _aqMissed = 0;
+      for (let _wq = 1; _wq < currentWeek; _wq++) {
+        for (let _dq = 0; _dq < _dpwQ; _dq++) {
+          if (!entries['done_'+_wq+'_'+_dq] && !Object.keys(entries).some(k=>k.startsWith('log_'+_wq+'_'+_dq+'_'))) _aqMissed++;
+        }
+      }
+      if (_aqMissed > 0) {
+        _aqItems.push({ sev:'neutral', icon:'📅', prob:_aqMissed+' sesión'+(+_aqMissed!==1?'es':'')+' sin registrar', ev:'Semanas previas al ciclo actual', act:'Verificar adherencia — contactar al cliente' });
+      }
+
+      const _aqOrd = { red:0, orange:1, blue:2, neutral:3 };
+      _aqItems.sort((a,b)=>(_aqOrd[a.sev]||3)-(_aqOrd[b.sev]||3));
+      const _aqCols = { red:'#FF4444', orange:'#FF8844', blue:'#4488cc', neutral:'#888' };
+      const _topCol = _aqItems.length ? (_aqCols[_aqItems[0].sev]||'#888') : '#44BB88';
+
+      html += `<div class="card p-3 mb-3" style="border-left:3px solid ${_topCol};border-radius:0 8px 8px 0">`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${_aqItems.length?'10px':'0'}">`;
+      html += `<div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">⚑ Cola de acción</div>`;
+      html += _aqItems.length
+        ? `<div style="font-size:11px;font-weight:800;color:${_topCol}">${_aqItems.length} alerta${_aqItems.length!==1?'s':''}</div>`
+        : `<div style="font-size:11px;font-weight:700;color:#44BB88">✓ Sin alertas</div>`;
+      html += `</div>`;
+      if (_aqItems.length) {
+        _aqItems.forEach(item => {
+          const _ic = _aqCols[item.sev] || '#888';
+          html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid rgba(244,244,240,.06)">`;
+          html += `<div style="font-size:16px;line-height:1;flex-shrink:0;margin-top:2px">${item.icon}</div>`;
+          html += `<div style="flex:1;min-width:0">`;
+          html += `<div style="font-size:12px;font-weight:700;color:${_ic}">${_escH(item.prob)}</div>`;
+          html += `<div style="font-size:10px;color:#888;margin-top:1px">${_escH(item.ev)}</div>`;
+          html += `<div style="font-size:11px;color:${_ic};opacity:.85;margin-top:2px">→ ${_escH(item.act)}</div>`;
+          html += `</div></div>`;
+        });
+      } else {
+        html += `<div style="font-size:11px;color:#888">Continuar plan sin modificaciones.</div>`;
+      }
+      html += `</div>`;
+    }
+
     // ── Check-in semanal actual
     html += `<div class="card p-3 mb-3" style="border-left:3px solid #C4FF00;border-radius:0 8px 8px 0">
       <div class="text-xs text-[#888] mb-2 uppercase font-semibold tracking-wide">Check-in semanal — Sem ${currentWeek}</div>
