@@ -4704,6 +4704,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     }
     var _xPct = numSeries > 0 ? Math.round(_xDoneC / numSeries * 100) : 0;
     var _pillsHtml = '';
+    var _firstPendingXs = -1;
+    for (var _fp = 0; _fp < numSeries - 1; _fp++) { if (!LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_fp]) { _firstPendingXs = _fp; break; } }
     for (var _xs = 0; _xs < numSeries - 1; _xs++) {
       var _xKey = 'exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_xs;
       var _xDone = !!LOGS[_xKey];
@@ -4725,9 +4727,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           (_xPhaseTag ? '<span style="font-size:9px;font-weight:900;color:'+_xTagColor+';background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px">'+_xPhaseTag+'</span>' : '')+
         '</div>';
       } else {
-        _pillsHtml += '<button onclick="markExpressSerie('+di+','+ei+','+_xs+')" style="display:inline-flex;align-items:center;gap:5px;padding:0 16px;height:44px;background:var(--input-bg);border:1.5px solid var(--border);border-radius:24px;cursor:pointer;-webkit-tap-highlight-color:transparent">'+
-          '<span style="font-size:15px;color:var(--mt)">\u25cb</span>'+
-          '<span style="font-size:13px;font-weight:700;color:var(--mt)">S'+(_xs+1)+'</span>'+
+        var _isNextPill = (_xs === _firstPendingXs);
+        _pillsHtml += '<button onclick="markExpressSerie('+di+','+ei+','+_xs+')" style="display:inline-flex;align-items:center;gap:5px;padding:0 16px;height:44px;'+(_isNextPill?'background:rgba(196,255,0,.06);border:1.5px solid rgba(196,255,0,.45);':'background:var(--input-bg);border:1.5px solid var(--border);')+'border-radius:24px;cursor:pointer;-webkit-tap-highlight-color:transparent">'+
+          '<span style="font-size:15px;color:'+(_isNextPill?'rgba(196,255,0,.8)':'var(--mt)')+'">'+(_isNextPill?'\u25cf':'\u25cb')+'</span>'+
+          '<span style="font-size:13px;font-weight:700;color:'+(_isNextPill?'var(--tx)':'var(--mt)')+'">S'+(_xs+1)+'</span>'+
           (_xPhaseTag ? '<span style="font-size:9px;font-weight:900;color:'+_xTagColor+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_xPhaseTag+'</span>' : '')+
         '</button>';
       }
