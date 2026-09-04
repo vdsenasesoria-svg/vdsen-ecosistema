@@ -3564,6 +3564,7 @@ var _restTotalSeconds = 0;
 var _restEl = null;
 var _restEndMs = 0;
 var _restAlertFired = false;
+var _restAutoDismiss = null;
 
 // ── Preferencia: temporizador de descanso activado/desactivado ──
 function isRestTimerDisabled() {
@@ -3618,6 +3619,22 @@ function _onTimerFinished() {
   // Si estaba minimizado, expandir automáticamente
   var pill = document.getElementById('timerPill');
   if (pill && pill.style.display !== 'none') maximizeTimer();
+  // Auto-dismiss silencioso 6s después: elimina el contador negativo
+  if (_restAutoDismiss) clearTimeout(_restAutoDismiss);
+  _restAutoDismiss = setTimeout(function() {
+    _restAutoDismiss = null;
+    if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
+    _restEndMs = 0;
+    localStorage.removeItem('vdsen_restEnd');
+    var _ov = document.getElementById('restTimerOverlay');
+    if (_ov) _ov.style.display = 'none';
+    var _pl = document.getElementById('timerPill');
+    if (_pl) _pl.style.display = 'none';
+    ['nextActionHint','nextActionHintCompact'].forEach(function(id) {
+      var e = document.getElementById(id);
+      if (e) { e.textContent = ''; e.style.display = 'none'; }
+    });
+  }, 6000);
 }
 
 // Notificación real del navegador (no solo el toast interno). En Android,
@@ -8679,6 +8696,7 @@ function resetRestTimer(seconds) {
 window.resetRestTimer = resetRestTimer;
 
 function stopRestTimer() {
+  if (_restAutoDismiss) { clearTimeout(_restAutoDismiss); _restAutoDismiss = null; }
   if (navigator.vibrate) navigator.vibrate([20, 30, 60]);
   if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
   _restEndMs = 0;
