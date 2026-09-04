@@ -5652,8 +5652,15 @@ function setEjActivo(ei) {
   if (nav) nav.innerHTML = _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO);
   if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
   if (panel) {
-    var top = panel.getBoundingClientRect().top + window.scrollY - 60;
-    window.scrollTo({top: top, behavior: 'smooth'});
+    var _scr = document.getElementById('tabEntr');
+    if (_scr && _scr.scrollHeight > _scr.clientHeight) {
+      // El tab tiene su propio scroll (modo app) — scrollear dentro del contenedor
+      var _relTop = panel.offsetTop - 60;
+      _scr.scrollTo({ top: Math.max(0, _relTop), behavior: 'smooth' });
+    } else {
+      var top = panel.getBoundingClientRect().top + window.scrollY - 60;
+      window.scrollTo({ top: top, behavior: 'smooth' });
+    }
   }
 }
 window.setEjActivo = setEjActivo;
