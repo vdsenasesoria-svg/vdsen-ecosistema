@@ -5241,6 +5241,7 @@ function _perfHeader(ej, di, ei, chip, statsHtml) {
 // ── Helper genérico para guardar log y refrescar ──────────────────────────
 function _saveExLog(key, payload) {
   LOGS[key] = Object.assign({}, payload, { ts: Date.now() });
+  _lbwTrack(key);
   saveLogs();
   if (payload.done) _vib(40);
   _refreshExPanelOnly();
