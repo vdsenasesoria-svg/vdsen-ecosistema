@@ -9794,12 +9794,12 @@ El esfuerzo no es negociable.
             : '';
           return `<div class="flex items-center gap-2 ml-4 py-1">
             ${nmBadge}${vvBadge}
-            <span class="text-sm text-white">${e.exerciseName}</span>
+            <span class="text-sm text-white">${_escH(e.exerciseName||'')}</span>
             <span class="text-xs px-2 py-0.5 rounded" style="background:rgba(244,244,240,.1);border:1px solid rgba(244,244,240,.25);color:#F4F4F0">${numSets}×${reps}</span>
             <span class="text-xs text-[#888]">RIR ${rir}</span>
           </div>`;
         }).join("") || '<span class="text-xs text-[#555] ml-4">Sin ejercicios</span>';
-        return `<div class="mb-3"><div class="font-medium text-[#F4F4F0] text-sm mb-1">${d.label}</div>${exList}</div>`;
+        return `<div class="mb-3"><div class="font-medium text-[#F4F4F0] text-sm mb-1">${_escH(d.label||'')}</div>${exList}</div>`;
       }).join("");
       const planWeeksNow = p.weeks || 1;
       const _dzc = p.distribucion_zonas_carga;
@@ -9810,7 +9810,7 @@ El esfuerzo no es negociable.
           <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Zonas de Carga — Ehrenstein</div>
           <div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px;width:100%">
             <tr><th style="color:#555;padding:2px 8px 2px 0;text-align:left;font-weight:600;white-space:nowrap">Grupo</th>${_zonaLabels.map(z=>`<th style="color:${_zonaColors[z]};padding:2px 6px;text-align:center;font-weight:700">${z}</th>`).join('')}</tr>
-            ${Object.entries(_dzc.por_grupo).map(([grp,vals])=>`<tr><td style="color:#888;padding:2px 8px 2px 0;white-space:nowrap">${grp}</td>${_zonaLabels.map(z=>{const v=vals[z]||0;return `<td style="text-align:center;padding:2px 6px;color:${v?_zonaColors[z]:'#333'};font-weight:${v?700:400}">${v?v+'%':'—'}</td>`;}).join('')}</tr>`).join('')}
+            ${Object.entries(_dzc.por_grupo).map(([grp,vals])=>`<tr><td style="color:#888;padding:2px 8px 2px 0;white-space:nowrap">${_escH(grp)}</td>${_zonaLabels.map(z=>{const v=vals[z]||0;return `<td style="text-align:center;padding:2px 6px;color:${v?_zonaColors[z]:'#333'};font-weight:${v?700:400}">${v?v+'%':'—'}</td>`;}).join('')}</tr>`).join('')}
           </table></div>
         </div>` : '';
       planViewHtml = `
@@ -12681,7 +12681,7 @@ El esfuerzo no es negociable.
     const planData = planSnap.data();
     const days = planData.days || [];
 
-    const dayOpts = days.map((d,i) => `<option value="${i}">${d.label || 'Día '+(i+1)}</option>`).join('');
+    const dayOpts = days.map((d,i) => `<option value="${i}">${_escH(d.label || 'Día '+(i+1))}</option>`).join('');
 
     // Lista de ejercicios del catálogo para autocomplete
     const exNames = _allExercises.map(e => e.name).sort();
