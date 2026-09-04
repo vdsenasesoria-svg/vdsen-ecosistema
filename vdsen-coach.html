@@ -8818,7 +8818,7 @@ El esfuerzo no es negociable.
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
     ov.innerHTML = `<div style="background:#141616;border:1px solid rgba(37,211,102,.35);border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
       <h3 style="color:#25D366;font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">📲 Resultado InBody para WhatsApp</h3>
-      <p style="color:#888;font-size:12px;margin-bottom:12px">${c.displayName||c.email||'Cliente'} no tiene WhatsApp guardado. Copia el mensaje y envíalo manualmente.</p>
+      <p style="color:#888;font-size:12px;margin-bottom:12px">${_escH(c.displayName||c.email||'Cliente')} no tiene WhatsApp guardado. Copia el mensaje y envíalo manualmente.</p>
       <textarea readonly style="width:100%;height:320px;background:#0a0a0a;border:1px solid rgba(244,244,240,.2);border-radius:6px;color:#cfcfcf;padding:12px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;box-sizing:border-box" id="_inbWaMsg">${msg.replace(/</g,'&lt;')}</textarea>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
         <button id="_inbWaCopy" style="padding:8px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.5);background:rgba(244,244,240,.18);color:#F4F4F0;font-size:12px;font-weight:700;cursor:pointer">📋 Copiar</button>
@@ -12779,7 +12779,7 @@ El esfuerzo no es negociable.
     overlay.innerHTML = `
       <div class="modal-box" style="max-width:460px">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-bold">Editar datos · ${c.displayName||'(sin nombre)'}</h3>
+          <h3 class="text-lg font-bold">Editar datos · ${_escH(c.displayName||'(sin nombre)')}</h3>
           <button class="text-[#888] hover:text-white text-xl" onclick="this.closest('.modal-overlay').remove()">✕</button>
         </div>
         <label class="block text-xs text-[#888] mb-1">Nombre / Usuario</label>
@@ -12943,9 +12943,9 @@ El esfuerzo no es negociable.
       const lines = [];
       // 1. Client doc
       lines.push(`<b>UID:</b> ${clientId}`);
-      lines.push(`<b>Email (Firestore):</b> ${c.email || '<span style="color:#FF6B6B">sin email</span>'}`);
-      lines.push(`<b>Celular (Firestore):</b> ${c.phone || '<span style="color:#aaa">sin celular</span>'}`);
-      lines.push(`<b>coachId:</b> ${c.coachId === currentCoach.uid ? '<span style="color:#44BB88">✓ correcto</span>' : '<span style="color:#FF6B6B">✗ no coincide ('+c.coachId+')</span>'}`);
+      lines.push(`<b>Email (Firestore):</b> ${c.email ? _escH(c.email) : '<span style="color:#FF6B6B">sin email</span>'}`);
+      lines.push(`<b>Celular (Firestore):</b> ${c.phone ? _escH(String(c.phone)) : '<span style="color:#aaa">sin celular</span>'}`);
+      lines.push(`<b>coachId:</b> ${c.coachId === currentCoach.uid ? '<span style="color:#44BB88">✓ correcto</span>' : '<span style="color:#FF6B6B">✗ no coincide ('+_escH(c.coachId)+')</span>'}`);
       // 2. activePlanId
       const pid = c.activePlanId;
       if (!pid) {
