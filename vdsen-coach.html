@@ -10343,13 +10343,17 @@ El esfuerzo no es negociable.
       if (_aqItems.length) {
         _aqItems.forEach(item => {
           const _ic = _aqCols[item.sev] || '#888';
-          html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid rgba(244,244,240,.06)">`;
-          html += `<div style="font-size:16px;line-height:1;flex-shrink:0;margin-top:2px">${item.icon}</div>`;
+          html += `<div style="padding:8px 0;border-top:1px solid rgba(244,244,240,.06)">`;
+          html += `<div style="display:flex;align-items:flex-start;gap:9px">`;
+          html += `<div style="font-size:15px;line-height:1;flex-shrink:0;margin-top:1px">${item.icon}</div>`;
           html += `<div style="flex:1;min-width:0">`;
-          html += `<div style="font-size:12px;font-weight:700;color:${_ic}">${_escH(item.prob)}</div>`;
-          html += `<div style="font-size:10px;color:#888;margin-top:1px">${_escH(item.ev)}</div>`;
-          html += `<div style="font-size:11px;color:${_ic};opacity:.85;margin-top:2px">→ ${_escH(item.act)}</div>`;
-          html += `</div></div>`;
+          html += `<div style="font-size:9px;font-weight:800;letter-spacing:.9px;color:#555;margin-bottom:1px">PROBLEMA</div>`;
+          html += `<div style="font-size:12px;font-weight:700;color:${_ic};margin-bottom:5px">${_escH(item.prob)}</div>`;
+          html += `<div style="font-size:9px;font-weight:800;letter-spacing:.9px;color:#555;margin-bottom:1px">EVIDENCIA</div>`;
+          html += `<div style="font-size:11px;color:#999;margin-bottom:5px">${_escH(item.ev)}</div>`;
+          html += `<div style="font-size:9px;font-weight:800;letter-spacing:.9px;color:#555;margin-bottom:1px">ACCIÓN</div>`;
+          html += `<div style="display:inline-block;font-size:11px;font-weight:700;color:${_ic};background:${_ic}18;border:1px solid ${_ic}33;border-radius:5px;padding:2px 8px">→ ${_escH(item.act)}</div>`;
+          html += `</div></div></div>`;
         });
       } else {
         html += `<div style="font-size:11px;color:#888">Continuar plan sin modificaciones.</div>`;
