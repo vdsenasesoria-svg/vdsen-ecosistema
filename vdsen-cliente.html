@@ -10924,6 +10924,7 @@ function _cuestionarioScale(fieldId, n, labels) {
 window._cuestionarioScale = _cuestionarioScale;
 
 function setCISubj(fieldId, val) {
+  if (navigator.vibrate) navigator.vibrate(8);
   var n = fieldId === 'ci_vulner' ? 7 : 5;
   for (var i=1; i<=n; i++) {
     var btn = document.getElementById('csubj_'+fieldId+'_'+i);
@@ -14344,53 +14345,70 @@ function _getWeeklyVolumeByPattern(pattern) {
 //   3) HISTORIAL (último mesociclo registrado) — badge azul pequeño
 // Se muestran apiladas; PROGRESIÓN siempre arriba y prominente cuando existe.
 function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount) {
+  var _pu = _escHTml(String(unit));
+
+  // ── Caso normal (sem 2+): ambos disponibles → una sola fila compacta ──
+  if (prev && prev.carga && progRec && progRec.newLoad) {
+    var _pvLoad = _convertCarga(prev.carga, prev.unit, unit);
+    var _pvConv = (prev.unit && prev.unit !== unit)
+      ? '<span style="opacity:.5"> ('+_escHTml(String(prev.unit))+')</span>' : '';
+    return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;'+
+      'padding:5px 10px;background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.14);border-radius:8px;font-size:10px">'+
+      '<span style="color:#FF8844;font-weight:800;white-space:nowrap">↩ SEM '+(curWeek-1)+'</span>'+
+      '<span style="color:var(--mt2)">'+
+        _escHTml(String(_pvLoad))+' '+_pu+_pvConv+
+        (prev.reps ? ' × '+_escHTml(String(prev.reps))+' reps' : '')+
+        (prev.rir_real ? ' · RIR '+_escHTml(String(prev.rir_real)) : '')+
+      '</span>'+
+      '<span style="margin-left:auto;color:var(--accent);font-weight:900;font-size:13px;white-space:nowrap">→ '+_escHTml(String(progRec.newLoad))+' '+_pu+'</span>'+
+    '</div>';
+  }
+
   var blocks = [];
 
-  // ── 1) OBJETIVO: carga recomendada por el algoritmo ──
+  // Solo OBJETIVO (sem 1, progrec sin historial previo)
   if (progRec && progRec.newLoad) {
     blocks.push(
-      '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
+      '<div style="display:inline-flex;align-items:center;gap:6px;margin-bottom:8px;padding:4px 10px;'+
+      'border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
         '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
-        '<span style="font-size:20px;font-weight:900;color:var(--tx);line-height:1">'+_escHTml(String(progRec.newLoad))+' '+_escHTml(String(unit))+'</span>'+
+        '<span style="font-size:18px;font-weight:900;color:var(--tx);line-height:1">'+_escHTml(String(progRec.newLoad))+' '+_pu+'</span>'+
       '</div>'
     );
   }
 
-  // ── 2) SEM ANTERIOR ──
-  if (prev && prev.carga) {
-    var prevCargaShown = _convertCarga(prev.carga, prev.unit, unit);
-    var _pu = _escHTml(String(unit));
-    var prevConvMark = (prev.unit && prev.unit !== unit) ? ' <span style="opacity:.55">(de '+_escHTml(String(prev.unit))+')</span>' : '';
-    blocks.push(
-      '<div style="margin-bottom:6px;font-size:10px;color:#FF8844;background:rgba(255,140,50,.06);border:1px solid rgba(255,140,50,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
-        '<span style="font-weight:800;letter-spacing:.8px">↩ SEM '+(curWeek-1)+'</span>'+
-        '<span style="color:var(--mt2)">'+_escHTml(String(prevCargaShown))+' '+_pu+prevConvMark+' × '+_escHTml(String(prev.reps||'—'))+' reps'+(prev.rir_real?' · RIR '+_escHTml(String(prev.rir_real)):'')+'</span>'+
-      '</div>'
-    );
-  }
-  // ── 3) HISTORIAL (solo si no hay sem anterior y es el primer set) ──
-  else if (setIdx === 0 && histEx && histEx.load) {
-    var histCargaShown = _convertCarga(histEx.load, histEx.unit, unit);
-    var _pu2 = _escHTml(String(unit));
-    var histConvMark = (histEx.unit && histEx.unit !== unit) ? ' <span style="opacity:.55">(de '+_escHTml(String(histEx.unit))+')</span>' : '';
-    blocks.push(
-      '<div style="margin-bottom:6px;font-size:10px;color:rgba(108,150,255,.9);background:rgba(140,140,134,.06);border:1px solid rgba(140,140,134,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
-        '<span style="font-weight:800;letter-spacing:.8px">📋 HISTORIAL</span>'+
-        '<span style="color:var(--mt2)">'+_escHTml(String(histCargaShown))+' '+_pu2+histConvMark+(histEx.reps?' × '+_escHTml(String(histEx.reps))+' reps':'')+(histEx.rir?' · RIR '+_escHTml(String(histEx.rir)):'')+'</span>'+
-      '</div>'
-    );
-  }
-
-  // Sin progrec ni historial pero hay semana anterior: sugerir paso simple
-  if (blocks.length === 0 && prev && prev.carga) {
-    var pc = parseFloat(_convertCarga(prev.carga, prev.unit, unit))||0;
-    var prir = parseInt(prev.rir_real || prev.rir);
-    var step = unit === 'LB' ? 5 : 2.5;
-    var _unitE = _escHTml(String(unit));
-    var simpleSug = (!isNaN(prir) && prir <= baseRIR)
-      ? '→ '+(pc+step).toFixed(1)+' '+_unitE+' (subir '+step+')'
-      : '→ '+pc+' '+_unitE+' (mantener)';
-    blocks.push('<div style="font-size:10px;color:var(--accent);font-weight:600;margin-bottom:6px">'+simpleSug+'</div>');
+  // Solo SEM ANTERIOR sin progrec: badge + sugerencia simple inline
+  if (!progRec || !progRec.newLoad) {
+    if (prev && prev.carga) {
+      var _pc = parseFloat(_convertCarga(prev.carga, prev.unit, unit)) || 0;
+      var _pvLoad2 = _convertCarga(prev.carga, prev.unit, unit);
+      var _pvConv2 = (prev.unit && prev.unit !== unit)
+        ? ' <span style="opacity:.55">(de '+_escHTml(String(prev.unit))+')</span>' : '';
+      var _prir = parseInt(prev.rir_real || prev.rir);
+      var _step = unit === 'LB' ? 5 : 2.5;
+      var _sug = (!isNaN(_prir) && _prir <= baseRIR)
+        ? ' <span style="color:var(--accent);font-weight:600">→ '+(_pc+_step).toFixed(1)+' '+_pu+'</span>'
+        : ' <span style="color:var(--mt)">→ mantener</span>';
+      blocks.push(
+        '<div style="margin-bottom:6px;font-size:10px;color:#FF8844;background:rgba(255,140,50,.06);'+
+        'border:1px solid rgba(255,140,50,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
+          '<span style="font-weight:800;letter-spacing:.8px">↩ SEM '+(curWeek-1)+'</span>'+
+          '<span style="color:var(--mt2)">'+_escHTml(String(_pvLoad2))+' '+_pu+_pvConv2+' × '+_escHTml(String(prev.reps||'—'))+' reps'+(prev.rir_real?' · RIR '+_escHTml(String(prev.rir_real)):'')+'</span>'+
+          _sug+
+        '</div>'
+      );
+    } else if (setIdx === 0 && histEx && histEx.load) {
+      var _histLoad = _convertCarga(histEx.load, histEx.unit, unit);
+      var _histConv = (histEx.unit && histEx.unit !== unit)
+        ? ' <span style="opacity:.55">(de '+_escHTml(String(histEx.unit))+')</span>' : '';
+      blocks.push(
+        '<div style="margin-bottom:6px;font-size:10px;color:rgba(108,150,255,.9);background:rgba(140,140,134,.06);'+
+        'border:1px solid rgba(140,140,134,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
+          '<span style="font-weight:800;letter-spacing:.8px">📋 HISTORIAL</span>'+
+          '<span style="color:var(--mt2)">'+_escHTml(String(_histLoad))+' '+_pu+_histConv+(histEx.reps?' × '+_escHTml(String(histEx.reps))+' reps':'')+(histEx.rir?' · RIR '+_escHTml(String(histEx.rir)):'')+'</span>'+
+        '</div>'
+      );
+    }
   }
 
   return blocks.join('');
