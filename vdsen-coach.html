@@ -11894,7 +11894,7 @@ El esfuerzo no es negociable.
         <div class="grid gap-2 mb-2 mt-2" style="grid-template-columns:60px 1fr 1fr 2fr">
           <div>
             <div class="text-[10px] uppercase tracking-wide mb-1" style="color:#cc66aa">Biserie</div>
-            <input class="input-field w-full text-xs py-1 text-center font-bold" placeholder="A / B…" maxlength="4" data-field="supersetGroup" value="${ssVal}" oninput="markEditorDirty&&markEditorDirty();this.closest('.exrow-item').style.border=this.value.trim()?'1px solid rgba(204,102,170,.4)':'1px solid rgba(255,255,255,.08)'">
+            <input class="input-field w-full text-xs py-1 text-center font-bold" placeholder="A / B…" maxlength="4" data-field="supersetGroup" value="${_escH(ssVal)}" oninput="markEditorDirty&&markEditorDirty();this.closest('.exrow-item').style.border=this.value.trim()?'1px solid rgba(204,102,170,.4)':'1px solid rgba(255,255,255,.08)'">
           </div>
           <div>
             <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Técnica</div>
@@ -11910,7 +11910,7 @@ El esfuerzo no es negociable.
           </div>
         </div>
         <textarea class="input-field w-full text-xs py-1" placeholder="Nota de ejecución (tempo, ROM, cues...)" rows="1" data-field="coachNote" oninput="markEditorDirty&&markEditorDirty()"
-          style="resize:vertical;min-height:28px;color:#aaa;border-color:rgba(255,255,255,.05)">${coachNote || ''}</textarea>
+          style="resize:vertical;min-height:28px;color:#aaa;border-color:rgba(255,255,255,.05)">${_escH(coachNote || '')}</textarea>
       </details>
     </div>`;
   }
@@ -12500,7 +12500,7 @@ El esfuerzo no es negociable.
         return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson, e.prescriptionExerciseId || '', rs0);
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
-        <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
+        <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="${_escH(d.label || 'Día '+(di+1))}" id="daylabel_${di}" placeholder="Nombre del día">
         <div id="exlist_${di}">${exRows}</div>
         <button onclick="addExRow(${di})" class="text-[#F4F4F0] text-xs underline mt-1">+ Ejercicio</button>
       </div>`;
