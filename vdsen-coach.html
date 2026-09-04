@@ -10440,13 +10440,13 @@ El esfuerzo no es negociable.
     if (lastDoneW > 0) {
       const dayObj = p && p.days ? (p.days.find(d => d.dayIndex === lastDoneD) || p.days[lastDoneD]) : null;
       const sesLabel = dayObj ? dayObj.label : `Día ${lastDoneD+1}`;
-      html += `<div class="text-xs text-[#888] mb-2 uppercase tracking-wide font-semibold">Última sesión — ${sesLabel} · Sem ${lastDoneW}</div>`;
+      html += `<div class="text-xs text-[#888] mb-2 uppercase tracking-wide font-semibold">Última sesión — ${_escH(sesLabel)} · Sem ${lastDoneW}</div>`;
       const ps = entries['postsession_'+lastDoneW+'_'+lastDoneD];
       if (ps) html += `<div class="card p-3 mb-3" style="border-left:2px solid rgba(244,244,240,.15);border-radius:0 8px 8px 0">
         <div class="flex gap-4 flex-wrap text-sm">
-          ${ps.rpe    ? `<span><span class="text-[#888]">RPE</span> <strong>${ps.rpe}/10</strong></span>` : ''}
-          ${ps.eimd   ? `<span><span class="text-[#888]">EIMD</span> <strong>${['','Leve','Moderado','Alto'][ps.eimd]||ps.eimd}</strong></span>` : ''}
-          ${ps.sleep  ? `<span><span class="text-[#888]">Sueño</span> <strong>${ps.sleep}h</strong></span>` : ''}
+          ${ps.rpe    ? `<span><span class="text-[#888]">RPE</span> <strong>${_escH(String(ps.rpe))}/10</strong></span>` : ''}
+          ${ps.eimd   ? `<span><span class="text-[#888]">EIMD</span> <strong>${_escH(String(['','Leve','Moderado','Alto'][ps.eimd]||ps.eimd))}</strong></span>` : ''}
+          ${ps.sleep  ? `<span><span class="text-[#888]">Sueño</span> <strong>${_escH(String(ps.sleep))}h</strong></span>` : ''}
           ${ps.articular==='si' ? `<span style="color:#FF8844">⚠️ Dolor articular${ps.patron?' · '+_escH(ps.patron):''}</span>` : ''}
         </div>
       </div>`;
@@ -10652,17 +10652,17 @@ El esfuerzo no es negociable.
         const al = aL[r.action] || aL.maintain;
         html += `<div class="card p-3">
           <div class="flex justify-between items-center mb-1">
-            <span class="font-semibold text-sm">${r.exerciseName}</span>
+            <span class="font-semibold text-sm">${_escH(r.exerciseName||'')}</span>
             <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${al.color}">${al.label}</span>
           </div>
           <div class="flex gap-3 text-xs flex-wrap">
-            <span class="text-[#888]">Carga: <strong class="text-white">${r.newLoad} kg</strong></span>
-            <span class="text-[#888]">Series: <strong class="text-white">${r.newSets}</strong></span>
-            ${r.newReps?`<span class="text-[#888]">Reps: <strong class="text-white">${r.newReps}</strong></span>`:''}
-            <span class="text-[#888]">RIR obj: <strong>${r.rirTarget}</strong></span>
+            <span class="text-[#888]">Carga: <strong class="text-white">${_escH(String(r.newLoad??'—'))} kg</strong></span>
+            <span class="text-[#888]">Series: <strong class="text-white">${_escH(String(r.newSets??'—'))}</strong></span>
+            ${r.newReps?`<span class="text-[#888]">Reps: <strong class="text-white">${_escH(String(r.newReps))}</strong></span>`:''}
+            <span class="text-[#888]">RIR obj: <strong>${_escH(String(r.rirTarget??'—'))}</strong></span>
           </div>
-          ${r.trend?`<div class="text-xs text-[#555] mt-1">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets}s · ICS ${r.trend.prevICS.toFixed(1)}</div>`:''}
-          <div class="text-xs text-[#888] mt-1">${r.reason}</div>
+          ${r.trend?`<div class="text-xs text-[#555] mt-1">Sem anterior: ${_escH(r.trend.prevLoad.toFixed(1))} kg · ${_escH(String(r.trend.prevSets))}s · ICS ${_escH(r.trend.prevICS.toFixed(1))}</div>`:''}
+          <div class="text-xs text-[#888] mt-1">${_escH(r.reason||'')}</div>
         </div>`;
       });
       html += `</div>`;
