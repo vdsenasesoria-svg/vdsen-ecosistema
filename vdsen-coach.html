@@ -5808,6 +5808,596 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window.topologyFeasibilityAudit = topologyFeasibilityAudit;
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // ─── VDSEN Generator Engine Suite ────────────────────────────────────────
+  // Engines completing the pipeline after Topology Engine v2.
+  // Pipeline: Target → Topology → [Distribution → Session Composition →
+  //           Exercise Interaction → Structural Fatigue → Maintenance → Stability]
+  //           → Constraint Model (cross-cutting) → Prescription
+  // All weights/thresholds labeled HEURISTIC. Vetos always above scores.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ─── ENGINE 0: Constraint Model ──────────────────────────────────────────
+  // Formalizes MUST/SHOULD/PREFER/AVOID/NEVER from prescCtx.
+  // Vetos (NEVER) always win over any score — no compensation.
+  function buildConstraintModel(prescCtx) {
+    var cm = { MUST: [], SHOULD: [], PREFER: [], AVOID: [], NEVER: [] };
+    if (!prescCtx) return cm;
+    var muscles = (prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
+    var rest = prescCtx.restrictions || {};
+
+    // NEVER: vetoed exercises (hard exclusion, same as existing VETO logic)
+    (rest.ejerciciosEvitar || []).forEach(function(e) {
+      cm.NEVER.push({ type: 'exercise', value: e });
+    });
+    // AVOID: motor patterns from pain/injury
+    (rest.motorPatternsAvoid || []).forEach(function(p) {
+      cm.AVOID.push({ type: 'motorPattern', value: p });
+    });
+    // MUST: high-priority muscles must reach their frequency target
+    Object.keys(muscles).forEach(function(m) {
+      var t = muscles[m];
+      if (t.priority === 'high') {
+        cm.MUST.push({ type: 'muscleMinFrequency', muscle: m, min: t.frequencyTarget });
+        cm.MUST.push({ type: 'muscleMinVolume', muscle: m, min: t.volumeRange.min });
+      }
+    });
+    // SHOULD: progress-goal muscles should meet frequency targets
+    Object.keys(muscles).forEach(function(m) {
+      var t = muscles[m];
+      if (t.goal === 'progress' && t.priority !== 'high') {
+        cm.SHOULD.push({ type: 'muscleFrequency', muscle: m, target: t.frequencyTarget });
+      }
+    });
+    // PREFER: maintenance muscles at minimum effective volume
+    Object.keys(muscles).forEach(function(m) {
+      var t = muscles[m];
+      if (t.goal === 'maintenance') {
+        cm.PREFER.push({ type: 'muscleMinVolume', muscle: m, min: t.volumeRange.min });
+      }
+    });
+    return cm;
+  }
+
+  function _constraintModelToText(cm) {
+    if (!cm) return '';
+    var lines = ['\n--- CONSTRAINT MODEL (MUST/SHOULD/PREFER/AVOID/NEVER) ---'];
+    function fmt(arr, tag) {
+      if (!arr.length) return;
+      lines.push(tag + ':');
+      arr.forEach(function(c) {
+        if (c.type === 'exercise')          lines.push('  · ejercicio: ' + c.value);
+        else if (c.type === 'motorPattern') lines.push('  · patrón motor: ' + c.value);
+        else if (c.type === 'muscleMinFrequency') lines.push('  · ' + c.muscle + ' ≥ ' + c.min + 'x/sem');
+        else if (c.type === 'muscleMinVolume') lines.push('  · ' + c.muscle + ' ≥ ' + c.min + ' series/sem');
+        else if (c.type === 'muscleFrequency') lines.push('  · ' + c.muscle + ' → ' + c.target + 'x/sem');
+      });
+    }
+    fmt(cm.MUST,   'MUST');
+    fmt(cm.SHOULD, 'SHOULD');
+    fmt(cm.PREFER, 'PREFER');
+    fmt(cm.AVOID,  'AVOID');
+    fmt(cm.NEVER,  'NEVER (VETO ABSOLUTO)');
+    lines.push('---');
+    return lines.join('\n');
+  }
+
+  // ─── ENGINE 1: Distribution Engine ───────────────────────────────────────
+  // Decides WHICH muscles go in WHICH session slot.
+  // Input: topologyDecision, muscleTargets, daysPerWeek, constraintModel
+  // Output: muscleDistributionBySlot[], splitPattern, frequencyAudit, spacingAudit, reasonCodes[]
+
+  var _LOWER_MUSCLES  = ['cuadriceps','gluteos','isquiotibiales','pantorrillas','erectores'];
+  var _PUSH_MUSCLES   = ['pectoral','deltoides_frontal','deltoides_lateral','triceps'];
+  var _PULL_MUSCLES   = ['dorsales','biceps','trapecio','deltoides_posterior'];
+  var _UPPER_MUSCLES  = _PUSH_MUSCLES.concat(_PULL_MUSCLES);
+
+  var _DIST_SPLIT_DEFS = {
+    FULL_BODY: {
+      label: 'Full Body',
+      slots: [{ type: 'FULL', label: 'Full Body', muscleGroups: ['LOWER','PUSH','PULL'] }]
+    },
+    UPPER_LOWER: {
+      label: 'Upper / Lower',
+      slots: [
+        { type: 'UPPER', label: 'Upper', muscleGroups: ['PUSH','PULL'] },
+        { type: 'LOWER', label: 'Lower', muscleGroups: ['LOWER'] }
+      ]
+    },
+    PUSH_PULL_LEGS: {
+      label: 'Push / Pull / Legs',
+      slots: [
+        { type: 'PUSH',  label: 'Push (pecho · hombro · tríceps)',  muscleGroups: ['PUSH'] },
+        { type: 'PULL',  label: 'Pull (espalda · bíceps · trapecios)', muscleGroups: ['PULL'] },
+        { type: 'LOWER', label: 'Legs',                              muscleGroups: ['LOWER'] }
+      ]
+    },
+    UPPER_LOWER_FULL: {
+      label: 'Upper / Lower / Full Body',
+      slots: [
+        { type: 'UPPER', label: 'Upper',     muscleGroups: ['PUSH','PULL'] },
+        { type: 'LOWER', label: 'Lower',     muscleGroups: ['LOWER'] },
+        { type: 'FULL',  label: 'Full Body', muscleGroups: ['LOWER','PUSH','PULL'] }
+      ]
+    }
+  };
+
+  function _selectSplitPattern(daysPerWeek, muscleTargets, constraints) {
+    var priorityMuscles = Object.keys(muscleTargets).filter(function(m) {
+      return muscleTargets[m].priority === 'high';
+    });
+    var hasLowerPriority = priorityMuscles.some(function(m) {
+      return _LOWER_MUSCLES.indexOf(m) >= 0;
+    });
+    var hasUpperPriority = priorityMuscles.some(function(m) {
+      return _UPPER_MUSCLES.indexOf(m) >= 0;
+    });
+
+    if (daysPerWeek <= 2) return 'FULL_BODY';
+    if (daysPerWeek === 3) {
+      // PPL if lower has priority AND there are pull priorities; ULF otherwise
+      if (hasLowerPriority && hasUpperPriority) return 'PUSH_PULL_LEGS';
+      return 'UPPER_LOWER_FULL';
+    }
+    if (daysPerWeek >= 4) return 'UPPER_LOWER'; // repeats each pattern
+    return 'FULL_BODY';
+  }
+
+  function _muscleGroupToMuscles(group) {
+    if (group === 'LOWER') return _LOWER_MUSCLES;
+    if (group === 'PUSH')  return _PUSH_MUSCLES;
+    if (group === 'PULL')  return _PULL_MUSCLES;
+    return _LOWER_MUSCLES.concat(_UPPER_MUSCLES);
+  }
+
+  function runDistributionEngine(topologyDecision, muscleTargets, daysPerWeek, constraintModel) {
+    var reasonCodes = [];
+    var splitKey = _selectSplitPattern(daysPerWeek, muscleTargets, constraintModel);
+    var splitDef = _DIST_SPLIT_DEFS[splitKey];
+
+    // Build slot sequence: repeat split pattern across daysPerWeek
+    var baseSlots = splitDef.slots;
+    var slots = [];
+    for (var i = 0; i < daysPerWeek; i++) {
+      var baseDef = baseSlots[i % baseSlots.length];
+      var muscles = [];
+      baseDef.muscleGroups.forEach(function(g) {
+        _muscleGroupToMuscles(g).forEach(function(m) {
+          if (muscles.indexOf(m) < 0 && muscleTargets[m]) muscles.push(m);
+        });
+      });
+      slots.push({ slotIndex: i, type: baseDef.type, label: baseDef.label + (daysPerWeek > baseSlots.length ? ' ' + String.fromCharCode(65 + Math.floor(i / baseSlots.length)) : ''), muscles: muscles });
+    }
+
+    // Frequency audit: count exposures per muscle across slots
+    var freqAudit = {};
+    Object.keys(muscleTargets).forEach(function(m) {
+      var exposures = slots.filter(function(s) { return s.muscles.indexOf(m) >= 0; }).length;
+      var target = muscleTargets[m].frequencyTarget;
+      freqAudit[m] = { target: target, actual: exposures, gap: exposures - target };
+      if (exposures < target && muscleTargets[m].priority === 'high') {
+        reasonCodes.push('PRIORITY_FREQ_SHORTFALL:' + m + ' (' + exposures + '/' + target + ')');
+      }
+    });
+
+    // Spacing audit: minimum slots between same-muscle exposures
+    var spacingAudit = {};
+    Object.keys(muscleTargets).forEach(function(m) {
+      var exposureSlots = slots.filter(function(s){ return s.muscles.indexOf(m) >= 0; }).map(function(s){ return s.slotIndex; });
+      if (exposureSlots.length >= 2) {
+        var minSpacing = Infinity;
+        for (var j = 1; j < exposureSlots.length; j++) {
+          minSpacing = Math.min(minSpacing, exposureSlots[j] - exposureSlots[j-1]);
+        }
+        spacingAudit[m] = { minSpacingSlots: minSpacing, optimalSpacingSlots: Math.floor(daysPerWeek / Math.max(1, exposureSlots.length)) };
+        if (minSpacing < 2) reasonCodes.push('INSUFFICIENT_SPACING:' + m + ' (' + minSpacing + ' slot(s) entre exposiciones)');
+      }
+    });
+
+    return { splitPattern: splitKey, splitLabel: splitDef.label, muscleDistributionBySlot: slots, frequencyAudit: freqAudit, spacingAudit: spacingAudit, reasonCodes: reasonCodes };
+  }
+
+  function _distributionToText(dist) {
+    if (!dist) return '';
+    var lines = ['\n--- DISTRIBUTION ENGINE: asignación muscular por sesión ---'];
+    lines.push('Patrón: ' + dist.splitLabel);
+    dist.muscleDistributionBySlot.forEach(function(s) {
+      lines.push('Sesión ' + (s.slotIndex + 1) + ' (' + s.label + '): ' + s.muscles.join(', '));
+    });
+    if (dist.reasonCodes.length) lines.push('⚠ ' + dist.reasonCodes.join(' · '));
+    lines.push('---');
+    return lines.join('\n');
+  }
+
+  // ─── ENGINE 2: Session Composition Engine ─────────────────────────────────
+  // Orders muscle groups within a session into tiers.
+  // Priority: PRIORITY_WORK → HIGH_OUTPUT → COMPLEMENTARY → STABLE_HYPERTROPHY → ACCESSORIES
+  // HEURISTIC: compound > isolation; high-priority > normal; lower fatigue cost = earlier.
+
+  var _COMPOSITION_TIER_ORDER = ['PRIORITY_WORK','HIGH_OUTPUT','COMPLEMENTARY','STABLE_HYPERTROPHY','ACCESSORIES'];
+
+  var _MUSCLE_TIER_MAP = {
+    cuadriceps:          'HIGH_OUTPUT',
+    gluteos:             'HIGH_OUTPUT',
+    isquiotibiales:      'COMPLEMENTARY',
+    pectoral:            'HIGH_OUTPUT',
+    dorsales:            'HIGH_OUTPUT',
+    erectores:           'COMPLEMENTARY',
+    deltoides_frontal:   'COMPLEMENTARY',
+    deltoides_lateral:   'STABLE_HYPERTROPHY',
+    deltoides_posterior: 'ACCESSORIES',
+    triceps:             'COMPLEMENTARY',
+    biceps:              'STABLE_HYPERTROPHY',
+    trapecio:            'COMPLEMENTARY',
+    pantorrillas:        'ACCESSORIES'
+  };
+
+  function runSessionCompositionEngine(slotMuscles, muscleTargets, constraints) {
+    var reasonCodes = [];
+    var tiers = { PRIORITY_WORK:[], HIGH_OUTPUT:[], COMPLEMENTARY:[], STABLE_HYPERTROPHY:[], ACCESSORIES:[] };
+
+    slotMuscles.forEach(function(m) {
+      var isHighPriority = muscleTargets[m] && muscleTargets[m].priority === 'high';
+      // High-priority muscles always start in PRIORITY_WORK tier (HEURISTIC: priority first = more CNS capacity)
+      var tier = isHighPriority ? 'PRIORITY_WORK' : (_MUSCLE_TIER_MAP[m] || 'ACCESSORIES');
+      tiers[tier].push(m);
+    });
+
+    var orderedMuscles = [];
+    _COMPOSITION_TIER_ORDER.forEach(function(t) {
+      tiers[t].forEach(function(m) { orderedMuscles.push({ muscle: m, tier: t }); });
+    });
+
+    // Fatigue notes (HEURISTIC)
+    var hasHighAxial = slotMuscles.some(function(m){ return ['cuadriceps','erectores','isquiotibiales'].indexOf(m) >= 0; });
+    var hasHighNeural = slotMuscles.some(function(m){ return ['gluteos','pectoral','dorsales'].indexOf(m) >= 0; });
+    var fatigueNote = hasHighAxial && hasHighNeural ? 'COMBINED_AXIAL_NEURAL_DEMAND' : null;
+    if (fatigueNote) reasonCodes.push(fatigueNote);
+
+    return { orderedMuscles: orderedMuscles, tiers: tiers, reasonCodes: reasonCodes };
+  }
+
+  function _compositionToText(comp) {
+    if (!comp) return '';
+    var lines = ['\n--- SESSION COMPOSITION: orden de trabajo por sesión ---'];
+    _COMPOSITION_TIER_ORDER.forEach(function(t) {
+      if ((comp.tiers[t] || []).length) lines.push(t + ': ' + comp.tiers[t].join(', '));
+    });
+    lines.push('INSTRUCCIÓN: dentro de cada sesión, ordenar ejercicios en este orden de prioridad.');
+    if (comp.reasonCodes.length) lines.push('⚠ ' + comp.reasonCodes.join(' · '));
+    lines.push('---');
+    return lines.join('\n');
+  }
+
+  // ─── ENGINE 3: Exercise Interaction Audit ─────────────────────────────────
+  // Evaluates pairs of exercises for compatibility within a session.
+  // Relationships: complementary / redundant / fatigueOverlap / patternOverlap / jointStressOverlap
+
+  var _EXERCISE_RELATIONSHIPS = {
+    // pattern pairs that share significant overlap
+    patternOverlap: [
+      ['squat','lunge'],['squat','rdl'],['press_horizontal','press_vertical'],
+      ['pull_vertical','pull_horizontal'],['rdl','hip_hinge'],['glute_isolation','rdl']
+    ],
+    fatigueOverlap: [
+      ['squat','hip_hinge'],['squat','rdl'],['press_horizontal','press_vertical'],
+      ['pull_vertical','pull_horizontal'],['hip_hinge','rdl']
+    ],
+    jointStressOverlap: [
+      // Both exercises stress same joint under significant load
+      ['squat','lunge'],['squat','rdl'],  // knee + hip chain
+      ['press_horizontal','press_vertical'], // shoulder joint
+      ['pull_vertical','pull_horizontal']    // elbow flexors
+    ]
+  };
+
+  function _getExercisePattern(exerciseName) {
+    var n = (exerciseName || '').toLowerCase();
+    if (/sentadilla|squat/.test(n))                       return 'squat';
+    if (/\brdl\b|rumano/.test(n))                         return 'rdl';
+    if (/peso muerto/.test(n))                            return 'hip_hinge';
+    if (/press.*banca|bench/.test(n))                     return 'press_horizontal';
+    if (/press.*militar|overhead|\bohp\b/.test(n))        return 'press_vertical';
+    if (/jal[oó]n|pull.?down|dominada/.test(n))          return 'pull_vertical';
+    if (/remo|row/.test(n))                               return 'pull_horizontal';
+    if (/\bcurl\b/.test(n))                               return 'curl';
+    if (/triceps|skull|extensi.*tric/.test(n))            return 'extension';
+    if (/apertura|fly/.test(n))                           return 'fly';
+    if (/elev.*lateral|lateral raise/.test(n))            return 'lateral_raise';
+    if (/hip thrust|glute bridge/.test(n))                return 'glute_isolation';
+    if (/pantorrilla|calf/.test(n))                       return 'calf';
+    if (/zancada|lunge/.test(n))                          return 'lunge';
+    return null;
+  }
+
+  function auditExerciseInteractions(exercises) {
+    var pairs = [];
+    var names = exercises.map(function(e){ return e.exerciseName || e.nombre || ''; });
+    for (var i = 0; i < names.length - 1; i++) {
+      for (var j = i + 1; j < names.length; j++) {
+        var pi = _getExercisePattern(names[i]);
+        var pj = _getExercisePattern(names[j]);
+        if (!pi || !pj || pi === pj) {
+          // Exact same name or same pattern → redundant
+          if (_normName(names[i]) === _normName(names[j])) {
+            pairs.push({ ex1: names[i], ex2: names[j], relationship: 'redundant', detail: 'Mismo nombre de ejercicio' });
+          } else if (pi && pi === pj) {
+            pairs.push({ ex1: names[i], ex2: names[j], relationship: 'redundant', detail: 'Mismo patrón motor (' + pi + ')' });
+          }
+          continue;
+        }
+        var relationships = [];
+        var key = [pi, pj].sort().join('|');
+        var altKey = [pj, pi].sort().join('|');
+        var checkPairs = function(list) {
+          return list.some(function(pr) { var k = pr.sort().join('|'); return k === key || k === altKey; });
+        };
+        if (checkPairs(_EXERCISE_RELATIONSHIPS.patternOverlap.map(function(p){ return p.slice(); })))
+          relationships.push('patternOverlap');
+        if (checkPairs(_EXERCISE_RELATIONSHIPS.fatigueOverlap.map(function(p){ return p.slice(); })))
+          relationships.push('fatigueOverlap');
+        if (checkPairs(_EXERCISE_RELATIONSHIPS.jointStressOverlap.map(function(p){ return p.slice(); })))
+          relationships.push('jointStressOverlap');
+        if (relationships.length === 0 && pi !== pj) {
+          // Different patterns, no overlap → complementary
+          relationships.push('complementary');
+        }
+        if (relationships.length) {
+          pairs.push({ ex1: names[i], ex2: names[j], relationship: relationships[0], detail: relationships.join('+') });
+        }
+      }
+    }
+    return { pairs: pairs, hasRedundancy: pairs.some(function(p){ return p.relationship === 'redundant'; }) };
+  }
+
+  // ─── ENGINE 4: Structural Fatigue Audit ───────────────────────────────────
+  // Classifies session structural fatigue as LOW / MODERATE / HIGH.
+  // HEURISTIC — not a physiological score; based on session composition structure.
+  // Factors: axial loading, free-weight instability, hip hinge demand, compound count, duration.
+
+  var _HIGH_AXIAL_LOAD_PATTERNS    = ['squat','hip_hinge','rdl','lunge'];
+  var _HIGH_HINGE_DEMAND_PATTERNS  = ['rdl','hip_hinge','glute_isolation'];
+  var _HIGH_COMPOUND_PATTERNS      = ['squat','hip_hinge','rdl','press_horizontal','press_vertical','pull_vertical','pull_horizontal','lunge'];
+
+  function auditStructuralFatigue(exercises) {
+    var patterns = exercises.map(function(e){ return _getExercisePattern(e.exerciseName || e.nombre || ''); }).filter(Boolean);
+    var totalSets = exercises.reduce(function(s, e){ return s + ((e.sets||[]).length || (e.numSeries || 3)); }, 0);
+
+    var axialLoad    = patterns.filter(function(p){ return _HIGH_AXIAL_LOAD_PATTERNS.indexOf(p) >= 0; }).length;
+    var hingeDemand  = patterns.filter(function(p){ return _HIGH_HINGE_DEMAND_PATTERNS.indexOf(p) >= 0; }).length;
+    var compoundCnt  = patterns.filter(function(p){ return _HIGH_COMPOUND_PATTERNS.indexOf(p) >= 0; }).length;
+
+    // HEURISTIC thresholds — not population-derived
+    var score = 0;
+    if (axialLoad >= 2)   score += 2;
+    else if (axialLoad === 1) score += 1;
+    if (hingeDemand >= 2) score += 2;
+    else if (hingeDemand === 1) score += 1;
+    if (compoundCnt >= 4) score += 1;
+    if (totalSets > 22)   score += 1;
+
+    var level = score >= 4 ? 'HIGH' : score >= 2 ? 'MODERATE' : 'LOW';
+    return {
+      level: level,
+      components: { axialLoad: axialLoad, hingeDemand: hingeDemand, compoundCount: compoundCnt, totalSets: totalSets },
+      reasonCodes: level === 'HIGH' ? ['HIGH_STRUCTURAL_FATIGUE_SESSION'] : []
+    };
+  }
+
+  function _structuralFatigueToText(bySlot) {
+    if (!bySlot || !bySlot.length) return '';
+    var lines = ['\n--- STRUCTURAL FATIGUE AUDIT (HEURÍSTICO: LOW/MODERATE/HIGH por sesión) ---'];
+    bySlot.forEach(function(s, i) {
+      if (s) lines.push('Sesión ' + (i+1) + ': ' + s.level + (s.reasonCodes.length ? ' (' + s.reasonCodes.join(', ') + ')' : ''));
+    });
+    lines.push('INSTRUCCIÓN: sesiones HIGH deben redistribuir ejercicios axiales o de bisagra a otras sesiones si es posible.');
+    lines.push('---');
+    return lines.join('\n');
+  }
+
+  // ─── ENGINE 5: Maintenance Volume Engine ──────────────────────────────────
+  // Distinguishes priority progress / normal progress / maintenance.
+  // Preserves volume budget for priority muscles; minimizes waste on non-priority.
+
+  function computeMaintenanceVolume(muscleTargets) {
+    var result = { priority: {}, normal: {}, maintenance: {}, totalBudget: 0 };
+    Object.keys(muscleTargets).forEach(function(m) {
+      var t = muscleTargets[m];
+      result.totalBudget += t.volumeTarget || 0;
+      if (t.priority === 'high') {
+        result.priority[m] = { volumeTarget: t.volumeTarget, range: t.volumeRange, note: 'progress_priority' };
+      } else if (t.goal === 'maintenance') {
+        // Maintenance: use MEV, not MAV — preserve budget for priority muscles
+        result.maintenance[m] = { volumeTarget: t.volumeRange.min, range: t.volumeRange, note: 'maintenance_mev' };
+      } else {
+        result.normal[m] = { volumeTarget: t.volumeTarget, range: t.volumeRange, note: 'progress_normal' };
+      }
+    });
+    return result;
+  }
+
+  function _maintenanceVolumeToText(mv) {
+    if (!mv) return '';
+    var lines = ['\n--- MAINTENANCE VOLUME ENGINE: presupuesto de volumen ---'];
+    var pKeys = Object.keys(mv.priority);
+    var mKeys = Object.keys(mv.maintenance);
+    if (pKeys.length) lines.push('PRIORITY PROGRESS: ' + pKeys.map(function(m){ return m + ' (' + mv.priority[m].volumeTarget + ' ser)'; }).join(', '));
+    if (Object.keys(mv.normal).length) lines.push('NORMAL PROGRESS: ' + Object.keys(mv.normal).map(function(m){ return m + ' (' + mv.normal[m].volumeTarget + ' ser)'; }).join(', '));
+    if (mKeys.length) lines.push('MAINTENANCE (MEV): ' + mKeys.map(function(m){ return m + ' (' + mv.maintenance[m].volumeTarget + ' ser mín)'; }).join(', '));
+    lines.push('INSTRUCCIÓN: prioriza presupuesto de series en músculos PRIORITY. Maintenance solo necesita volumen mínimo.');
+    lines.push('---');
+    return lines.join('\n');
+  }
+
+  // ─── ENGINE 6: Plan Stability Engine ──────────────────────────────────────
+  // Evaluates whether previous exercises should be kept, modified, replaced, etc.
+  // KEEP by default — only change with reasonCode (Stability principle).
+
+  var _STABILITY_CHANGE_REASONS = ['plateau','pain','equipment','poorStimulus','poorAdherence','redundancy','priorityChange'];
+
+  function runPlanStabilityEngine(previousPlan, prescCtx) {
+    if (!previousPlan || !previousPlan.exercises || !previousPlan.exercises.length) {
+      return { changes: [], budget: { keep: 0, modify: 0, replace: 0, add: 0, remove: 0 }, reasonCodes: ['NO_PREVIOUS_PLAN'] };
+    }
+    var stalledExercises = (prescCtx && prescCtx.clientFlags && prescCtx.clientFlags.stalled) || [];
+    var articularIssues  = (prescCtx && prescCtx.clientFlags && prescCtx.clientFlags.articularIssues) || [];
+    var avoidPatterns    = (prescCtx && prescCtx.restrictions && prescCtx.restrictions.motorPatternsAvoid) || [];
+    var neverExercises   = (prescCtx && prescCtx.restrictions && prescCtx.restrictions.ejerciciosEvitar) || [];
+    var reasonCodes = [];
+
+    var changes = previousPlan.exercises.map(function(exName) {
+      var nameLc = String(exName).toLowerCase();
+      // NEVER → REMOVE immediately
+      if (neverExercises.some(function(ne){ return nameLc.indexOf(ne.toLowerCase()) >= 0; })) {
+        return { exercise: exName, verdict: 'REMOVE', reasonCode: 'pain' };
+      }
+      // Stalled → MODIFY (not replace — try carga/reps adjustment first)
+      if (stalledExercises.indexOf(exName) >= 0 || stalledExercises.some(function(s){ return _normName(s) === _normName(exName); })) {
+        return { exercise: exName, verdict: 'MODIFY', reasonCode: 'plateau' };
+      }
+      // Articular pattern match → MODIFY with substitution note
+      var pattern = _getExercisePattern(exName);
+      if (pattern && avoidPatterns.indexOf(pattern) >= 0) {
+        return { exercise: exName, verdict: 'REPLACE', reasonCode: 'pain' };
+      }
+      // Default: KEEP (stability principle)
+      return { exercise: exName, verdict: 'KEEP', reasonCode: null };
+    });
+
+    var budget = changes.reduce(function(b, c) { b[c.verdict.toLowerCase()]++; return b; }, { keep: 0, modify: 0, replace: 0, add: 0, remove: 0 });
+    if (budget.replace + budget.remove > Math.ceil(changes.length * 0.4)) {
+      reasonCodes.push('HIGH_CHANGE_BUDGET_WARNING'); // >40% changes = high disruption (HEURISTIC)
+    }
+    return { changes: changes, budget: budget, reasonCodes: reasonCodes };
+  }
+
+  function _stabilityToText(stability) {
+    if (!stability || stability.reasonCodes.includes('NO_PREVIOUS_PLAN')) return '';
+    var lines = ['\n--- PLAN STABILITY ENGINE: continuidad del mesociclo anterior ---'];
+    var keeps    = stability.changes.filter(function(c){ return c.verdict === 'KEEP'; });
+    var modifies = stability.changes.filter(function(c){ return c.verdict === 'MODIFY'; });
+    var replaces = stability.changes.filter(function(c){ return c.verdict === 'REPLACE'; });
+    var removes  = stability.changes.filter(function(c){ return c.verdict === 'REMOVE'; });
+    if (keeps.length)    lines.push('MANTENER: ' + keeps.map(function(c){ return c.exercise; }).join(', '));
+    if (modifies.length) lines.push('MODIFICAR (ajuste carga/series, mismo ejercicio): ' + modifies.map(function(c){ return c.exercise + ' [' + c.reasonCode + ']'; }).join(', '));
+    if (replaces.length) lines.push('REEMPLAZAR: ' + replaces.map(function(c){ return c.exercise + ' [' + c.reasonCode + ']'; }).join(', '));
+    if (removes.length)  lines.push('ELIMINAR: ' + removes.map(function(c){ return c.exercise + ' [' + c.reasonCode + ']'; }).join(', '));
+    if (stability.reasonCodes.length) lines.push('⚠ ' + stability.reasonCodes.join(', '));
+    lines.push('INSTRUCCIÓN: conservar ejercicios MANTENER exactamente. MODIFICAR = ajustar parámetros, no cambiar. REEMPLAZAR = buscar variante compatible.');
+    lines.push('---');
+    return lines.join('\n');
+  }
+
+  // ─── Generator Suite Tests ────────────────────────────────────────────────
+  function _runGeneratorSuiteTests() {
+    var results = [];
+    function test(name, fn) {
+      try { var r = fn(); results.push({ name: name, passed: r === true, message: r === true ? 'OK' : String(r) }); }
+      catch(e) { results.push({ name: name, passed: false, message: 'Threw: ' + e.message }); }
+    }
+    var _sampleMuscles = { cuadriceps: { priority:'high', goal:'progress', volumeTarget:16, volumeRange:{min:10,max:20}, frequencyTarget:2 }, dorsales: { priority:'normal', goal:'progress', volumeTarget:12, volumeRange:{min:8,max:18}, frequencyTarget:2 }, biceps: { priority:'normal', goal:'maintenance', volumeTarget:6, volumeRange:{min:4,max:10}, frequencyTarget:1 } };
+
+    // GS1: buildConstraintModel: high priority → MUST contains muscleMinFrequency
+    test('GS1 constraintModel: high priority → MUST', function() {
+      var cm = buildConstraintModel({ prescriptionTargets:{ muscles: _sampleMuscles }, restrictions:{ ejerciciosEvitar:[], motorPatternsAvoid:[] } });
+      return cm.MUST.some(function(c){ return c.type === 'muscleMinFrequency' && c.muscle === 'cuadriceps'; });
+    });
+
+    // GS2: NEVER from ejerciciosEvitar
+    test('GS2 constraintModel: ejercicio evitar → NEVER', function() {
+      var cm = buildConstraintModel({ prescriptionTargets:{ muscles:{} }, restrictions:{ ejerciciosEvitar:['press banca'], motorPatternsAvoid:[] } });
+      return cm.NEVER.some(function(c){ return c.value === 'press banca'; });
+    });
+
+    // GS3: runDistributionEngine returns full contract
+    test('GS3 distributionEngine: output contract completo', function() {
+      var r = runDistributionEngine({ selectedTopology:'UPPER_LOWER' }, _sampleMuscles, 4, {});
+      return Array.isArray(r.muscleDistributionBySlot) && r.muscleDistributionBySlot.length === 4
+        && typeof r.splitPattern === 'string' && typeof r.frequencyAudit === 'object';
+    });
+
+    // GS4: distributionEngine: 2 days → FULL_BODY
+    test('GS4 distributionEngine: 2 días → FULL_BODY', function() {
+      var r = runDistributionEngine({}, {}, 2, {});
+      return r.splitPattern === 'FULL_BODY';
+    });
+
+    // GS5: distributionEngine: 4 days → UPPER_LOWER
+    test('GS5 distributionEngine: 4 días → UPPER_LOWER', function() {
+      var r = runDistributionEngine({}, _sampleMuscles, 4, {});
+      return r.splitPattern === 'UPPER_LOWER';
+    });
+
+    // GS6: sessionComposition: high priority muscle → PRIORITY_WORK tier
+    test('GS6 sessionComposition: high priority → PRIORITY_WORK', function() {
+      var r = runSessionCompositionEngine(['cuadriceps','biceps'], _sampleMuscles, {});
+      return (r.tiers.PRIORITY_WORK || []).indexOf('cuadriceps') >= 0;
+    });
+
+    // GS7: auditExerciseInteractions: same pattern → redundant
+    test('GS7 exerciseInteractions: mismo patrón → redundant', function() {
+      var r = auditExerciseInteractions([{ exerciseName:'Sentadilla' }, { exerciseName:'Sentadilla alta' }]);
+      return r.pairs.some(function(p){ return p.relationship === 'redundant'; });
+    });
+
+    // GS8: auditStructuralFatigue: 2 squat+rdl → HIGH
+    test('GS8 structuralFatigue: squat+rdl = HIGH', function() {
+      var r = auditStructuralFatigue([
+        { exerciseName:'Sentadilla', sets:[{},{},{}] },
+        { exerciseName:'RDL', sets:[{},{},{}] },
+        { exerciseName:'Peso Muerto', sets:[{},{},{}] }
+      ]);
+      return r.level === 'HIGH';
+    });
+
+    // GS9: computeMaintenanceVolume: maintenance muscle → MEV target
+    test('GS9 maintenanceVolume: mantenimiento → MEV target', function() {
+      var r = computeMaintenanceVolume(_sampleMuscles);
+      return r.maintenance.biceps && r.maintenance.biceps.volumeTarget === _sampleMuscles.biceps.volumeRange.min;
+    });
+
+    // GS10: planStability: no previous plan → NO_PREVIOUS_PLAN
+    test('GS10 planStability: sin plan anterior → NO_PREVIOUS_PLAN', function() {
+      var r = runPlanStabilityEngine(null, null);
+      return r.reasonCodes.includes('NO_PREVIOUS_PLAN');
+    });
+
+    // GS11: planStability: stalled exercise → MODIFY (not replace)
+    test('GS11 planStability: stalled → MODIFY verdict', function() {
+      var prev = { exercises: ['Press Banca'] };
+      var ctx = { clientFlags: { stalled: ['Press Banca'], articularIssues:[] }, restrictions:{ ejerciciosEvitar:[], motorPatternsAvoid:[] } };
+      var r = runPlanStabilityEngine(prev, ctx);
+      return r.changes.some(function(c){ return c.exercise === 'Press Banca' && c.verdict === 'MODIFY'; });
+    });
+
+    // GS12: planStability: vetoed exercise → REMOVE
+    test('GS12 planStability: vetado → REMOVE', function() {
+      var prev = { exercises: ['Sentadilla trasera'] };
+      var ctx = { clientFlags: { stalled:[], articularIssues:[] }, restrictions:{ ejerciciosEvitar:['Sentadilla trasera'], motorPatternsAvoid:[] } };
+      var r = runPlanStabilityEngine(prev, ctx);
+      return r.changes.some(function(c){ return c.verdict === 'REMOVE'; });
+    });
+
+    var passed = results.filter(function(r){return r.passed;}).length;
+    var total  = results.length;
+    console.group('%c[VDSEN Generator Suite Tests] ' + passed + '/' + total + ' passed', passed === total ? 'color:green;font-weight:bold' : 'color:orange;font-weight:bold');
+    results.forEach(function(r) {
+      console.log('%c' + (r.passed?'✅':'❌') + ' ' + r.name, r.passed?'color:green':'color:red');
+      if (!r.passed) console.warn('   → ' + r.message);
+    });
+    console.groupEnd();
+    window._genSuiteTestResults = results;
+    return { passed: passed, total: total, results: results };
+  }
+  window._runGeneratorSuiteTests  = _runGeneratorSuiteTests;
+  window.buildConstraintModel      = buildConstraintModel;
+  window.runDistributionEngine     = runDistributionEngine;
+  window.runSessionCompositionEngine = runSessionCompositionEngine;
+  window.auditExerciseInteractions = auditExerciseInteractions;
+  window.auditStructuralFatigue    = auditStructuralFatigue;
+  window.computeMaintenanceVolume  = computeMaintenanceVolume;
+  window.runPlanStabilityEngine    = runPlanStabilityEngine;
+
+  // ═══════════════════════════════════════════════════════════════════════════
 
   function _extractJsonBlocks(text) {
     const blocks = [];
@@ -6007,6 +6597,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const topologyTxt = _topologyDecisionToText(topologyDecision);
       console.info('[VDSEN TopologyEngine v2]', topologyDecision);
 
+      // Generator Engine Suite — runs pre-generation to inject structured context into Claude prompt
+      const _gsMuscles = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
+      const constraintModel     = buildConstraintModel(prescCtx);
+      const distributionDecision = runDistributionEngine(topologyDecision, _gsMuscles, _fichaDpw, constraintModel);
+      const maintenanceVol      = computeMaintenanceVolume(_gsMuscles);
+      const stabilityDecision   = runPlanStabilityEngine((prescCtx && prescCtx.previousPlan) || null, prescCtx);
+      const constraintTxt       = _constraintModelToText(constraintModel);
+      const distributionTxt     = _distributionToText(distributionDecision);
+      const maintenanceTxt      = _maintenanceVolumeToText(maintenanceVol);
+      const stabilityTxt        = _stabilityToText(stabilityDecision);
+      console.info('[VDSEN ConstraintModel]', constraintModel);
+      console.info('[VDSEN DistributionEngine]', distributionDecision);
+      console.info('[VDSEN MaintenanceVolume]', maintenanceVol);
+      console.info('[VDSEN PlanStability]', stabilityDecision);
+
       setStatus('<span style="color:var(--text-muted)">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();
 
@@ -6023,6 +6628,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         'Cumple el CHECKLIST final del motor antes de responder.',
         prescCtxTxt,
         topologyTxt,
+        constraintTxt,
+        distributionTxt,
+        maintenanceTxt,
+        stabilityTxt,
         'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
       const body = {
@@ -6089,8 +6698,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         if (_topoAudit.issues.length)   console.warn('[VDSEN TopologyAudit] Issues:', _topoAudit.issues);
         if (_topoAudit.warnings.length) console.info('[VDSEN TopologyAudit] Warnings:', _topoAudit.warnings);
       }
+      // Structural Fatigue Audit — post-generation, per day (HEURISTIC: LOW/MODERATE/HIGH)
+      const _structFatigueByDay = training ? (training.days || []).map(function(d) {
+        return auditStructuralFatigue(d.exercises || []);
+      }) : null;
+      if (_structFatigueByDay) {
+        const _highFatigue = _structFatigueByDay.filter(function(f){ return f.level === 'HIGH'; });
+        if (_highFatigue.length) console.warn('[VDSEN StructFatigue] HIGH days:', _highFatigue);
+        else console.info('[VDSEN StructFatigue]', _structFatigueByDay.map(function(f){ return f.level; }));
+      }
       // Decision trace stored outside pure plan per VDSEN contracts
-      window._lastTopologyTrace = { decision: topologyDecision, audit: _topoAudit, clientId: clientId, ts: Date.now() };
+      window._lastTopologyTrace = {
+        decision: topologyDecision, audit: _topoAudit,
+        distribution: distributionDecision, stability: stabilityDecision,
+        structFatigue: _structFatigueByDay,
+        clientId: clientId, ts: Date.now()
+      };
 
       setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
       const saved = [];
