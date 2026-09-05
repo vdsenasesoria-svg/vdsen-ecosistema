@@ -11577,6 +11577,260 @@ El esfuerzo no es negociable.
   }
   window._computeChangeCost = _computeChangeCost;
 
+  // ── FASE 3: Generation Fingerprint + Reproducibility Audit ──────────────
+  var _FINGERPRINT_ENGINE_VERSION = 'v1.0.0';
+
+  // Recursively sorts object keys and array elements so serialization is stable
+  // regardless of insertion order or LLM output order.
+  // Arrays with string/number elements → sorted lexically.
+  // Arrays with object elements → sorted by JSON.stringify of each item (stable identity).
+  // Objects → keys sorted alphabetically.
+  // Excludes ephemeral keys: generatedAt, createdAt, updatedAt, ts, _id.
+  var _EPHEMERAL_KEYS = { generatedAt:1, createdAt:1, updatedAt:1, ts:1, _id:1 };
+  function _canonicalSort(val) {
+    if (val === null || val === undefined) return val;
+    if (Array.isArray(val)) {
+      var sorted = val.map(_canonicalSort);
+      // Sort strings/numbers directly; objects by their canonical JSON
+      sorted.sort(function(a, b) {
+        var sa = (typeof a === 'object' && a !== null) ? JSON.stringify(a) : String(a);
+        var sb = (typeof b === 'object' && b !== null) ? JSON.stringify(b) : String(b);
+        return sa < sb ? -1 : sa > sb ? 1 : 0;
+      });
+      return sorted;
+    }
+    if (typeof val === 'object') {
+      var out = {};
+      Object.keys(val).sort().forEach(function(k) {
+        if (_EPHEMERAL_KEYS[k]) return;
+        out[k] = _canonicalSort(val[k]);
+      });
+      return out;
+    }
+    return val;
+  }
+  window._canonicalSort = _canonicalSort;
+
+  // Deterministic fingerprint of generation inputs.
+  // Excludes anything that varies between runs without affecting structural decisions.
+  // Returns a string (canonical JSON — no crypto dep, same-origin).
+  function _buildGenerationFingerprint(opts) {
+    if (!opts) return '';
+    var snap = opts.profileSnapshot;
+    var targets = opts.resolvedTargets;
+    var topo = opts.topologyDecision;
+    var constraints = opts.constraints;
+    var prev = opts.previousPlanContext;
+    var evs = opts.engineVersions;
+
+    // Strip ephemeral / UI-state fields from profileSnapshot
+    var snapClean = null;
+    if (snap && typeof snap === 'object') {
+      snapClean = {};
+      Object.keys(snap).sort().forEach(function(k) {
+        if (_EPHEMERAL_KEYS[k] || k === 'capturedAt') return;
+        snapClean[k] = snap[k];
+      });
+    }
+
+    // Resolved targets: muscles (priority/goal/freq/vol), reasonCodes, globalReadiness
+    var targetsClean = null;
+    if (targets && typeof targets === 'object') {
+      var muscles = targets.muscles || {};
+      var musclesClean = {};
+      Object.keys(muscles).sort().forEach(function(m) {
+        var mt = muscles[m];
+        if (!mt) return;
+        musclesClean[m] = {
+          priority:        mt.priority || null,
+          goal:            mt.goal || null,
+          frequencyTarget: mt.frequencyTarget || null,
+          volumeTarget:    mt.volumeTarget || null,
+        };
+      });
+      targetsClean = {
+        muscles:         musclesClean,
+        reasonCodes:     _canonicalSort((targets.reasonCodes || []).slice()),
+        globalReadiness: targets.globalReadiness || null,
+        deloadCandidate: !!targets.deloadCandidate,
+      };
+    }
+
+    // topologyDecision: only selectedTopology + version
+    var topoClean = null;
+    if (topo && typeof topo === 'object') {
+      topoClean = {
+        selectedTopology: topo.selectedTopology || null,
+        version:          topo.version || null,
+        scoringConfigVersion: topo.scoringConfigVersion || null,
+      };
+    }
+
+    // Constraints: only functional vetoes / restrictions
+    var constraintsClean = null;
+    if (constraints && typeof constraints === 'object') {
+      constraintsClean = {
+        ejerciciosEvitar:   _canonicalSort((constraints.ejerciciosEvitar || []).slice()),
+        motorPatternsAvoid: _canonicalSort((constraints.motorPatternsAvoid || []).slice()),
+      };
+    }
+
+    // Previous plan context: only structural identity (daysPerWeek, weeks, muscle set)
+    var prevClean = null;
+    if (prev && typeof prev === 'object') {
+      prevClean = {
+        hasPreviousPlan: !!prev.hasPreviousPlan,
+        daysPerWeek:     (prev.previousPlan && prev.previousPlan.daysPerWeek) || null,
+        weeks:           (prev.previousPlan && prev.previousPlan.weeks) || null,
+      };
+    }
+
+    var engineVersionsClean = null;
+    if (evs && typeof evs === 'object') {
+      engineVersionsClean = {};
+      Object.keys(evs).sort().forEach(function(k){ engineVersionsClean[k] = evs[k]; });
+    }
+
+    var payload = {
+      _fingerprintEngine: _FINGERPRINT_ENGINE_VERSION,
+      profileSnapshot:    _canonicalSort(snapClean),
+      resolvedTargets:    targetsClean,
+      topologyDecision:   topoClean,
+      constraints:        constraintsClean,
+      previousPlanContext: prevClean,
+      engineVersions:     engineVersionsClean,
+    };
+    return JSON.stringify(payload);
+  }
+  window._buildGenerationFingerprint = _buildGenerationFingerprint;
+
+  // Structural decision fingerprint: what the motor actually decided about the plan shape.
+  // Used to detect non-determinism when the same input produces a different structure.
+  function _buildDecisionFingerprint(training, prescCtx, topologyDecision) {
+    if (!training) return '';
+
+    var days = Array.isArray(training.days) ? training.days : [];
+
+    // Topology
+    var topoKey = (topologyDecision && topologyDecision.selectedTopology) || null;
+    if (!topoKey) {
+      // Infer from daysPerWeek (lean fallback — still deterministic)
+      var dpw2 = training.daysPerWeek || days.length;
+      topoKey = dpw2 <= 2 ? 'FULL_BODY' : dpw2 === 3 ? 'PPL_OR_FB3' :
+                dpw2 === 4 ? 'UPPER_LOWER' : dpw2 === 5 ? 'BROSPLIT_5' : 'HIGH_FREQ';
+    }
+
+    // Distribution: per-day exercise counts + label set
+    var distribution = _canonicalSort(days.map(function(d) {
+      return { dayIndex: d.dayIndex, exerciseCount: (d.exercises || []).length };
+    }));
+
+    // Muscle targets from prescCtx
+    var muscles = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
+    var muscleTargets = {};
+    Object.keys(muscles).sort().forEach(function(m) {
+      var mt = muscles[m];
+      if (mt) muscleTargets[m] = { priority: mt.priority || null, frequencyTarget: mt.frequencyTarget || null };
+    });
+
+    // prescriptionSlots: collect all slots across all days (identity: targetMuscle + movementPattern + role)
+    var slots = [];
+    days.forEach(function(d) {
+      (d.exercises || []).forEach(function(ex) {
+        var ps = ex.prescriptionSlot;
+        if (ps && ps.targetMuscle) {
+          slots.push({ targetMuscle: ps.targetMuscle, movementPattern: ps.movementPattern || null, role: ps.role || null, dayIndex: d.dayIndex });
+        }
+      });
+    });
+    var slotsCanon = _canonicalSort(slots);
+
+    // Maintenance roles: exercises with role='maintenance'
+    var maintenanceSlots = slots.filter(function(s){ return s.role === 'maintenance'; });
+
+    // Stability: daysPerWeek + weeks (structural frame)
+    var frame = { daysPerWeek: training.daysPerWeek || days.length, weeks: training.weeks || null };
+
+    var payload = {
+      _fingerprintEngine: _FINGERPRINT_ENGINE_VERSION,
+      topology:           topoKey,
+      frame:              frame,
+      distribution:       distribution,
+      muscleTargets:      muscleTargets,
+      prescriptionSlots:  slotsCanon,
+      maintenanceSlots:   _canonicalSort(maintenanceSlots),
+    };
+    return JSON.stringify(payload);
+  }
+  window._buildDecisionFingerprint = _buildDecisionFingerprint;
+
+  // Verdict codes for reproducibility audit
+  var _REPRO_VERDICT = {
+    SAME_INPUT_SAME_STRUCTURE:     'SAME_INPUT_SAME_STRUCTURE',
+    SAME_INPUT_DIFFERENT_STRUCTURE:'SAME_INPUT_DIFFERENT_STRUCTURE',
+    EXPECTED_CHANGE:               'EXPECTED_CHANGE',
+    UNRESOLVED:                    'UNRESOLVED',
+  };
+
+  // Compares two generation attempts (A = previous, B = new).
+  // Returns { verdict, structural, cosmetic, warning? }
+  // Structural diff: topology, frame, distribution, slots, muscleTargets
+  // Cosmetic diff (ignored): wording, reasonCode order, generatedAt, metadata
+  function _runReproducibilityAudit(inputFpA, decisionFpA, inputFpB, decisionFpB, engineVersionsA, engineVersionsB) {
+    var sameInput    = (inputFpA && inputFpB && inputFpA === inputFpB);
+    var sameDecision = (decisionFpA && decisionFpB && decisionFpA === decisionFpB);
+
+    // Engine version change → EXPECTED_CHANGE (version diff can legitimately change structure)
+    var engineChanged = false;
+    if (engineVersionsA && engineVersionsB) {
+      engineChanged = JSON.stringify(_canonicalSort(engineVersionsA)) !== JSON.stringify(_canonicalSort(engineVersionsB));
+    }
+
+    var verdict;
+    var warning = null;
+
+    if (!inputFpA || !inputFpB || !decisionFpA || !decisionFpB) {
+      verdict = _REPRO_VERDICT.UNRESOLVED;
+    } else if (!sameInput) {
+      // Different input → any structural difference is expected
+      verdict = _REPRO_VERDICT.EXPECTED_CHANGE;
+    } else if (sameDecision) {
+      verdict = _REPRO_VERDICT.SAME_INPUT_SAME_STRUCTURE;
+    } else if (engineChanged) {
+      verdict = _REPRO_VERDICT.EXPECTED_CHANGE;
+    } else {
+      verdict = _REPRO_VERDICT.SAME_INPUT_DIFFERENT_STRUCTURE;
+      warning = 'NON_DETERMINISTIC_STRUCTURAL_OUTPUT';
+    }
+
+    // Structural diff: which fields changed between the two decision fingerprints
+    var structuralDiff = [];
+    if (decisionFpA && decisionFpB && decisionFpA !== decisionFpB) {
+      try {
+        var dA = JSON.parse(decisionFpA);
+        var dB = JSON.parse(decisionFpB);
+        var _structKeys = ['topology','frame','distribution','muscleTargets','prescriptionSlots','maintenanceSlots'];
+        _structKeys.forEach(function(k) {
+          var sa = JSON.stringify(dA[k]);
+          var sb = JSON.stringify(dB[k]);
+          if (sa !== sb) structuralDiff.push(k);
+        });
+      } catch(e) { structuralDiff.push('PARSE_ERROR'); }
+    }
+
+    return {
+      verdict:       verdict,
+      sameInput:     sameInput,
+      sameDecision:  sameDecision,
+      engineChanged: engineChanged,
+      structuralDiff: structuralDiff,
+      warning:       warning,
+    };
+  }
+  window._runReproducibilityAudit = _runReproducibilityAudit;
+  window._REPRO_VERDICT = _REPRO_VERDICT;
+  window._FINGERPRINT_ENGINE_VERSION = _FINGERPRINT_ENGINE_VERSION;
+
   // ── Auto-Repair Candidate Pass ────────────────────────────────────────────
   // Generates candidate fixes from quality audit results.
   // type:'remove_exercise' → actionable (checkbox); type:'flag_only' → advisory.
@@ -11793,7 +12047,7 @@ El esfuerzo no es negociable.
   }
   window._applyRepairCandidates = _applyRepairCandidates;
 
-  function _buildPlanPreview(training, prescCtx, volAudit, validationWarnings, profileTraceChanges, qualityAudit) {
+  function _buildPlanPreview(training, prescCtx, volAudit, validationWarnings, profileTraceChanges, qualityAudit, reproducibilityResult) {
     var days       = (training && Array.isArray(training.days)) ? training.days : [];
     var prevPlan   = prescCtx && prescCtx.previousPlan;
     var targets    = (prescCtx && prescCtx.prescriptionTargets) || {};
@@ -12006,6 +12260,7 @@ El esfuerzo no es negociable.
         summary:        qualityAudit.summary || null,
         byDay:          qualityAudit.byDay || [],
       } : null,
+      reproducibilityResult: reproducibilityResult || null,
     };
   }
   window._buildPlanPreview = _buildPlanPreview;
@@ -12159,6 +12414,15 @@ El esfuerzo no es negociable.
           '<span style="font-size:12px;font-weight:800;color:#C4FF00;letter-spacing:.04em">PLAN PROPUESTO</span>' +
           '<span style="font-size:10px;color:#555">' + _escH(String(pv.daysPerWeek)) + 'd/sem · ' + _escH(String(pv.weeks)) + ' sem</span>' +
         '</div>' +
+
+        // Reproducibility warning (same input → different structure)
+        (pv.reproducibilityResult && pv.reproducibilityResult.warning === 'NON_DETERMINISTIC_STRUCTURAL_OUTPUT'
+          ? '<div style="background:rgba(255,140,0,.10);border:1px solid rgba(255,140,0,.35);border-radius:7px;padding:7px 10px;margin-bottom:10px;font-size:10px;color:#FF8C00">⚠ <strong>Resultado estructural distinto con la misma ficha.</strong>' +
+            (pv.reproducibilityResult.structuralDiff && pv.reproducibilityResult.structuralDiff.length
+              ? ' Cambios detectados en: ' + _escH(pv.reproducibilityResult.structuralDiff.join(', ')) + '.'
+              : '') +
+            ' Requiere revisión del coach.</div>'
+          : '') +
 
         // Quality Gate badge
         qualityBadgeHtml +
@@ -12926,6 +13190,136 @@ El esfuerzo no es negociable.
   }
   window._runRepairCandidateTests = _runRepairCandidateTests;
 
+  // ── FASE 3: Fingerprint + Reproducibility Tests ─────────────────────────
+  function _runFingerprintTests() {
+    var pass = 0, fail = 0;
+    function assert(label, cond) {
+      if (cond) { pass++; } else { fail++; console.error('[FP FAIL] ' + label); }
+    }
+
+    var _mkSnap = function(overrides) {
+      return Object.assign({ nivel:'intermedio', dias_semana:4, objetivo:'hipertrofia', gym:'San Diego', perfil:'natural' }, overrides || {});
+    };
+    var _mkCtx = function(overrides) {
+      return Object.assign({ prescriptionTargets:{ muscles:{}, reasonCodes:[], globalReadiness:'neutral', deloadCandidate:false }, restrictions:{ ejerciciosEvitar:[], motorPatternsAvoid:[] }, hasPreviousPlan:false, previousPlan:null }, overrides || {});
+    };
+    var _mkTopo = function(topo) { return { selectedTopology: topo || 'UPPER_LOWER', version:'v2.0.0', scoringConfigVersion:'v1' }; };
+    var _mkEv   = function() { return { topology: _TOPOLOGY_ENGINE_VERSION, vdsen: VDSEN_ENGINE_VERSION, fingerprint: _FINGERPRINT_ENGINE_VERSION }; };
+
+    var _mkTraining4 = function(dpw, dayExercises) {
+      var days = dayExercises.map(function(exs, i) {
+        return { dayIndex: i, label: 'Día '+(i+1), exercises: exs.map(function(n) {
+          return { exerciseName: n, prescriptionSlot: { targetMuscle: 'pectoral', movementPattern: 'press_horizontal', role: 'fundamental' }, sets: [{setIndex:0,repsTarget:8,rirTarget:2,load:0,restSeconds:90}] };
+        })};
+      });
+      return { daysPerWeek: dpw, weeks: 6, days: days };
+    };
+
+    // FP1: same input → same fingerprint
+    var fp1a = _buildGenerationFingerprint({ profileSnapshot: _mkSnap(), resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    var fp1b = _buildGenerationFingerprint({ profileSnapshot: _mkSnap(), resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    assert('FP1 same input → same fingerprint', fp1a === fp1b && fp1a.length > 0);
+
+    // FP2: generatedAt / createdAt stripped → same fingerprint
+    var snapWithTs = Object.assign(_mkSnap(), { generatedAt: '2026-01-01T00:00:00Z', createdAt: 1234567890 });
+    var fp2a = _buildGenerationFingerprint({ profileSnapshot: _mkSnap(), resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    var fp2b = _buildGenerationFingerprint({ profileSnapshot: snapWithTs, resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    assert('FP2 generatedAt stripped → same fingerprint', fp2a === fp2b);
+
+    // FP3: object key order irrelevant → same fingerprint (canonical sort)
+    var snapA = { nivel:'intermedio', dias_semana:4, objetivo:'hipertrofia', gym:'San Diego', perfil:'natural' };
+    var snapB = { objetivo:'hipertrofia', perfil:'natural', gym:'San Diego', dias_semana:4, nivel:'intermedio' };
+    var fp3a = _buildGenerationFingerprint({ profileSnapshot: snapA, resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    var fp3b = _buildGenerationFingerprint({ profileSnapshot: snapB, resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    assert('FP3 key order irrelevant → same fingerprint', fp3a === fp3b);
+
+    // FP4: changed objective → different fingerprint
+    var fp4a = _buildGenerationFingerprint({ profileSnapshot: _mkSnap({ objetivo:'hipertrofia' }), resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    var fp4b = _buildGenerationFingerprint({ profileSnapshot: _mkSnap({ objetivo:'definición' }), resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    assert('FP4 different objective → different fingerprint', fp4a !== fp4b);
+
+    // FP5: reasonCodes reordered → same fingerprint (canonical sort)
+    var ctxA = _mkCtx(); ctxA.prescriptionTargets.reasonCodes = ['STALLED_EXERCISES', 'LOW_WELLNESS_WHO5'];
+    var ctxB = _mkCtx(); ctxB.prescriptionTargets.reasonCodes = ['LOW_WELLNESS_WHO5', 'STALLED_EXERCISES'];
+    var fp5a = _buildGenerationFingerprint({ profileSnapshot: _mkSnap(), resolvedTargets: ctxA.prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    var fp5b = _buildGenerationFingerprint({ profileSnapshot: _mkSnap(), resolvedTargets: ctxB.prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    assert('FP5 reasonCodes reordered → same fingerprint', fp5a === fp5b);
+
+    // FP6: returns non-empty string
+    var fp6 = _buildGenerationFingerprint({ profileSnapshot: _mkSnap(), resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    assert('FP6 returns non-empty string', typeof fp6 === 'string' && fp6.length > 10);
+
+    // FP7: fingerprint is valid JSON
+    var fp7 = _buildGenerationFingerprint({ profileSnapshot: _mkSnap(), resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    var fp7ok = false; try { JSON.parse(fp7); fp7ok = true; } catch(e) {}
+    assert('FP7 fingerprint is valid JSON', fp7ok);
+
+    // FP8: XSS input → fingerprint is still valid JSON (data, not HTML)
+    var xssSnap = _mkSnap({ gym: '<script>alert(1)<\/script>' });
+    var fp8 = _buildGenerationFingerprint({ profileSnapshot: xssSnap, resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    var fp8ok = false; try { JSON.parse(fp8); fp8ok = true; } catch(e) {}
+    assert('FP8 XSS snap → fingerprint is valid JSON (data, not HTML)', fp8ok && typeof fp8 === 'string');
+
+    // ── Decision Fingerprint tests ──────────────────────────────────────────
+    var t4a = _mkTraining4(4, [['press banca','press inclinado'],['sentadilla'],['remo con barra'],['curl']]);
+    var t4b = _mkTraining4(4, [['press banca','press inclinado'],['sentadilla'],['remo con barra'],['curl']]);
+
+    // DC1: same structure → same decision fingerprint
+    var dc1a = _buildDecisionFingerprint(t4a, _mkCtx(), _mkTopo());
+    var dc1b = _buildDecisionFingerprint(t4b, _mkCtx(), _mkTopo());
+    assert('DC1 same structure → same decision fingerprint', dc1a === dc1b && dc1a.length > 0);
+
+    // DC2: different topology → different decision fingerprint
+    var dc2a = _buildDecisionFingerprint(t4a, _mkCtx(), _mkTopo('UPPER_LOWER'));
+    var dc2b = _buildDecisionFingerprint(t4a, _mkCtx(), _mkTopo('FULL_BODY'));
+    assert('DC2 different topology → different decision fingerprint', dc2a !== dc2b);
+
+    // DC3: different exercise count in day → different decision fingerprint
+    var t4c = _mkTraining4(4, [['press banca'],['sentadilla'],['remo con barra'],['curl']]);
+    var dc3a = _buildDecisionFingerprint(t4a, _mkCtx(), _mkTopo());
+    var dc3b = _buildDecisionFingerprint(t4c, _mkCtx(), _mkTopo());
+    assert('DC3 different exercise count → different decision fingerprint', dc3a !== dc3b);
+
+    // ── Reproducibility Audit tests ─────────────────────────────────────────
+    var rfpA = _buildGenerationFingerprint({ profileSnapshot: _mkSnap(), resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    var rdcA = _buildDecisionFingerprint(t4a, _mkCtx(), _mkTopo());
+
+    // RA1: same input + same structure → SAME_INPUT_SAME_STRUCTURE
+    var ra1 = _runReproducibilityAudit(rfpA, rdcA, rfpA, rdcA, _mkEv(), _mkEv());
+    assert('RA1 same input+structure → SAME_INPUT_SAME_STRUCTURE', ra1.verdict === _REPRO_VERDICT.SAME_INPUT_SAME_STRUCTURE);
+    assert('RA1 no warning', !ra1.warning);
+
+    // RA2: same input + different structure → NON_DETERMINISTIC warning
+    var rdcB = _buildDecisionFingerprint(t4a, _mkCtx(), _mkTopo('FULL_BODY')); // topology changed
+    var ra2 = _runReproducibilityAudit(rfpA, rdcA, rfpA, rdcB, _mkEv(), _mkEv());
+    assert('RA2 same input + diff structure → SAME_INPUT_DIFFERENT_STRUCTURE', ra2.verdict === _REPRO_VERDICT.SAME_INPUT_DIFFERENT_STRUCTURE);
+    assert('RA2 warning = NON_DETERMINISTIC_STRUCTURAL_OUTPUT', ra2.warning === 'NON_DETERMINISTIC_STRUCTURAL_OUTPUT');
+
+    // RA3: different input → EXPECTED_CHANGE (no warning)
+    var rfpB = _buildGenerationFingerprint({ profileSnapshot: _mkSnap({ objetivo:'definición' }), resolvedTargets: _mkCtx().prescriptionTargets, topologyDecision: _mkTopo(), constraints: _mkCtx().restrictions, previousPlanContext: _mkCtx(), engineVersions: _mkEv() });
+    var ra3 = _runReproducibilityAudit(rfpA, rdcA, rfpB, rdcB, _mkEv(), _mkEv());
+    assert('RA3 different input → EXPECTED_CHANGE', ra3.verdict === _REPRO_VERDICT.EXPECTED_CHANGE);
+    assert('RA3 no warning on expected change', !ra3.warning);
+
+    // RA4: engine version change + same input + diff structure → EXPECTED_CHANGE
+    var evOld = { topology:'v1.0.0', vdsen:'2.0.0', fingerprint:'v1.0.0' };
+    var ra4 = _runReproducibilityAudit(rfpA, rdcA, rfpA, rdcB, evOld, _mkEv());
+    assert('RA4 engine version change → EXPECTED_CHANGE', ra4.verdict === _REPRO_VERDICT.EXPECTED_CHANGE);
+
+    // RA5: structuralDiff lists changed fields
+    var ra5 = _runReproducibilityAudit(rfpA, rdcA, rfpA, rdcB, _mkEv(), _mkEv());
+    assert('RA5 structuralDiff is an array', Array.isArray(ra5.structuralDiff));
+    assert('RA5 topology diff detected', ra5.structuralDiff.indexOf('topology') >= 0);
+
+    // RA6: missing fingerprints → UNRESOLVED
+    var ra6 = _runReproducibilityAudit(null, null, rfpA, rdcA, _mkEv(), _mkEv());
+    assert('RA6 missing prev fingerprints → UNRESOLVED', ra6.verdict === _REPRO_VERDICT.UNRESOLVED);
+
+    console.log('[FINGERPRINT TESTS] ' + pass + ' passed, ' + fail + ' failed');
+    return { pass: pass, fail: fail };
+  }
+  window._runFingerprintTests = _runFingerprintTests;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -13049,7 +13443,33 @@ El esfuerzo no es negociable.
         stabilityResult: _gateStability2, slotAudit: _gateSlotAudit2,
       });
       if (_qAudit2.warnings.length) console.info('[VDSEN] Quality audit:', _qAudit2.warnings);
-      const _previewData = _buildPlanPreview(training, prescCtx, _volAudit2, validation.warnings, _traceChanges2, _qAudit2);
+
+      // ── FASE 3: Reproducibility Audit ────────────────────────────────────
+      const _engineVersions2 = { topology: _TOPOLOGY_ENGINE_VERSION, vdsen: VDSEN_ENGINE_VERSION, fingerprint: _FINGERPRINT_ENGINE_VERSION };
+      const _inputFp2 = _buildGenerationFingerprint({
+        profileSnapshot:    _currSnap2,
+        resolvedTargets:    prescCtx && prescCtx.prescriptionTargets,
+        topologyDecision:   _gateTopoAudit2,
+        constraints:        prescCtx && prescCtx.restrictions,
+        previousPlanContext: prescCtx,
+        engineVersions:     _engineVersions2,
+      });
+      const _decisionFp2 = _buildDecisionFingerprint(training, prescCtx, _gateTopoAudit2);
+      const _storedFp2   = _detailClientData && _detailClientData._lastGenerationFingerprint;
+      const _storedDecFp2 = _detailClientData && _detailClientData._lastDecisionFingerprint;
+      const _reproResult2 = (_storedFp2 && _storedDecFp2)
+        ? _runReproducibilityAudit(_storedFp2, _storedDecFp2, _inputFp2, _decisionFp2, _engineVersions2, _engineVersions2)
+        : null;
+      if (_reproResult2 && _reproResult2.warning) {
+        console.warn('[VDSEN] Reproducibility:', _reproResult2.warning, 'diff:', _reproResult2.structuralDiff);
+      }
+      // Update stored fingerprints (in-memory only — not a Firestore write)
+      if (_detailClientData) {
+        _detailClientData._lastGenerationFingerprint = _inputFp2;
+        _detailClientData._lastDecisionFingerprint   = _decisionFp2;
+      }
+
+      const _previewData = _buildPlanPreview(training, prescCtx, _volAudit2, validation.warnings, _traceChanges2, _qAudit2, _reproResult2);
       const _confirmed = await _showPlanPreviewModal(clientId, _previewData);
       if (!_confirmed) {
         showToast('Generación cancelada — plan no guardado');
