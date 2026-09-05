@@ -6739,13 +6739,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         + ' <button onclick="notifyPlanReady(\'' + clientId + '\')" class="btn-secondary" style="margin-top:10px;border-color:#25D366;color:#25D366">📣 Avisar al cliente</button>' + trunc);
       showToast('✅ Plan generado y activado');
     } catch (e) {
-      setStatus('<div style="color:var(--danger);font-weight:700">❌ ' + (e.message || e) + '</div>');
+      setStatus('<div style="color:var(--danger);font-weight:700">❌ ' + _escH(e.message || String(e)) + '</div>');
       showToast('Error: ' + (e.message || e), true);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = btn._t || '🤖 Generar plan automático (motor VDSEN)'; }
     }
   }
   window.autoGeneratePlan = autoGeneratePlan;
+
 
   // ========== VDSEN AI PREVIEW (FASE D.1 — experimental, read-only) ==========
   async function vdsenAIPreview() {
@@ -7846,7 +7847,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         + ' <button onclick="notifyPlanReady(\'' + clientId + '\')" class="btn-secondary" style="margin-top:8px;border-color:#25D366;color:#25D366">📣 Avisar al cliente</button>');
       showToast('✅ Plan cargado desde el análisis');
     } catch (e) {
-      setStatus('<div style="color:var(--danger);font-weight:700">❌ ' + (e.message || e) + '</div>');
+      setStatus('<div style="color:var(--danger);font-weight:700">❌ ' + _escH(e.message || String(e)) + '</div>');
       showToast('Error: ' + (e.message || e), true);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = btn._t || '📥 Cargar plan desde análisis'; }
