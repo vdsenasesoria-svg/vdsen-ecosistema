@@ -4599,6 +4599,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           clientNivel = (fd.entrenamiento && fd.entrenamiento.nivel) ||
                         (fd.base && fd.base.nivel) ||
                         'intermedio';
+          var _rawDuracion = (fd.entrenamiento && fd.entrenamiento.duracion_sesion_min) ||
+                             fd.duracion_sesion_min;
+          ctx.sessionDuration = (_rawDuracion && parseInt(_rawDuracion) > 0) ? parseInt(_rawDuracion) : null;
         }
       } catch (_fe) { /* ficha read optional — no blocker */ }
 
@@ -11357,10 +11360,14 @@ El esfuerzo no es negociable.
     priorityIssues.forEach(function(i) {
       criticalIssues.push({ code: i.code, msg: 'Prioridad: ' + i.msg, source: 'priority' });
     });
-    // Session duration clearly exceeds availability (HEURISTIC threshold)
-    if (topologyAudit && topologyAudit.estimatedSessionMinutes > 120) {
-      criticalIssues.push({ code: 'SESSION_DURATION_CRITICAL',
-        msg: 'Duración estimada ~' + topologyAudit.estimatedSessionMinutes + ' min/sesión excede disponibilidad razonable',
+    // SESSION_DURATION_EXCEEDS_AVAILABILITY: compare against prescCtx.sessionDuration (from Ficha 360).
+    // No universal threshold — if client availability is unknown, do nothing.
+    var _availMin = (prescCtx && typeof prescCtx.sessionDuration === 'number' && prescCtx.sessionDuration > 0)
+      ? prescCtx.sessionDuration : null;
+    if (topologyAudit && topologyAudit.estimatedSessionMinutes && _availMin &&
+        topologyAudit.estimatedSessionMinutes > _availMin) {
+      criticalIssues.push({ code: 'SESSION_DURATION_EXCEEDS_AVAILABILITY',
+        msg: 'Duración estimada ~' + topologyAudit.estimatedSessionMinutes + ' min/sesión > disponibilidad del cliente (' + _availMin + ' min)',
         source: 'topology' });
     }
 
@@ -11383,10 +11390,16 @@ El esfuerzo no es negociable.
     // Session composition signals (from interaction engine via sessionAudit)
     if (sessionAudit && sessionAudit.byDay) {
       sessionAudit.byDay.forEach(function(d) {
-        if (d.reasonCodes.indexOf('REDUNDANT') >= 0)
-          warnings.push({ code:'SESSION_REDUNDANT', dayLabel:d.dayLabel, msg:d.dayLabel+': ejercicios REDUNDANTES (mismo target+patrón+rol)' });
-        if (d.reasonCodes.indexOf('FATIGUE_OVERLAP') >= 0)
-          warnings.push({ code:'SESSION_FATIGUE_OVERLAP', dayLabel:d.dayLabel, msg:d.dayLabel+': FATIGA_SOLAPADA — múltiples patrones de alta demanda' });
+        var rc = d.reasonCodes || [];
+        if (rc.indexOf('REDUNDANT') >= 0)
+          warnings.push({ code:'SESSION_REDUNDANT', dayLabel:d.dayLabel, msg:(d.dayLabel||'Sesión')+': ejercicios REDUNDANTES (mismo target+patrón+rol)' });
+        if (rc.indexOf('FATIGUE_OVERLAP') >= 0)
+          warnings.push({ code:'SESSION_FATIGUE_OVERLAP', dayLabel:d.dayLabel, msg:(d.dayLabel||'Sesión')+': FATIGA_SOLAPADA — múltiples patrones de alta demanda' });
+        if (rc.indexOf('PATTERN_OVERLAP') >= 0)
+          warnings.push({ code:'SESSION_PATTERN_OVERLAP', dayLabel:d.dayLabel, msg:(d.dayLabel||'Sesión')+': PATRÓN_SOLAPADO — mismo patrón de movimiento en músculos distintos' });
+        var hasJoint = (d.interactions || []).some(function(p){ return p.classification === 'JOINT_STRESS_OVERLAP'; });
+        if (hasJoint)
+          warnings.push({ code:'SESSION_JOINT_STRESS', dayLabel:d.dayLabel, msg:(d.dayLabel||'Sesión')+': ESTRÉS_ARTICULAR — múltiples ejercicios con carga axial/articular compartida' });
       });
     }
 
@@ -11505,7 +11518,9 @@ El esfuerzo no es negociable.
   // Generates candidate fixes from quality audit results.
   // type:'remove_exercise' → actionable (checkbox); type:'flag_only' → advisory.
   // NEVER modifies training in place. _applyRepairCandidates deep-copies.
-  function _generateRepairCandidates(qualityAudit, training) {
+  // prescCtx optional — when provided, runs simulation pass and returns only accepted candidates.
+  // When omitted (backwards compat), returns all raw candidates without simulation.
+  function _generateRepairCandidates(qualityAudit, training, prescCtx, volAudit) {
     var candidates = [];
     var days = (training && Array.isArray(training.days)) ? training.days : [];
     var cid = 0;
@@ -11528,6 +11543,7 @@ El esfuerzo no es negociable.
             if (candidates.some(function(c){ return c.type === 'remove_exercise' && c.dayIndex === dayRed.dayIndex && (c.exerciseName||'').toLowerCase() === (ex.exerciseName||'').toLowerCase(); })) return;
             candidates.push({ id: 'repair_' + (++cid), issueCode: 'REDUNDANCY_' + dayRed.level, severity: dayRed.level,
               type: 'remove_exercise', dayIndex: dayRed.dayIndex, exerciseName: ex.exerciseName,
+              proposedAction: 'remove_exercise', target: ex.exerciseName, reasonCode: 'REDUNDANCY_' + dayRed.level, structuralChange: false,
               description: 'Eliminar "' + (ex.exerciseName||'') + '" — patrón "' + pat + '" ya cubierto en ' + (dayRed.dayLabel || 'esta sesión') });
           });
         });
@@ -11550,6 +11566,7 @@ El esfuerzo no es negociable.
         if (candidates.some(function(c){ return c.type === 'remove_exercise' && c.dayIndex === dayBal.dayIndex && (c.exerciseName||'').toLowerCase() === (toRemove.exerciseName||'').toLowerCase(); })) return;
         candidates.push({ id: 'repair_' + (++cid), issueCode: 'SESSION_OVERLOADED', severity: 'HIGH',
           type: 'remove_exercise', dayIndex: dayBal.dayIndex, exerciseName: toRemove.exerciseName,
+          proposedAction: 'remove_exercise', target: toRemove.exerciseName, reasonCode: 'SESSION_OVERLOADED', structuralChange: false,
           description: 'Eliminar "' + (toRemove.exerciseName||'') + '" — sesión sobrecargada (' + dayBal.exCount + ' ejercicios)' });
       });
     }
@@ -11572,7 +11589,30 @@ El esfuerzo no es negociable.
           if (candidates.some(function(c){ return c.type === 'remove_exercise' && c.dayIndex === tDay.dayIndex && (c.exerciseName||'').toLowerCase() === (ex.exerciseName||'').toLowerCase(); })) return;
           candidates.push({ id: 'repair_' + (++cid), issueCode: 'MAINTENANCE_SESSION_OVERALLOCATION', severity: 'MODERATE',
             type: 'remove_exercise', dayIndex: tDay.dayIndex, exerciseName: ex.exerciseName,
+            proposedAction: 'remove_exercise', target: ex.exerciseName, reasonCode: 'MAINTENANCE_SESSION_OVERALLOCATION', structuralChange: false,
             description: 'Eliminar "' + (ex.exerciseName||'') + '" — 2ª exposición de ' + muscle + ' (mant.) en misma sesión' });
+        });
+      });
+    }
+
+    // ORDERING_WARNING: reorder isolation-before-fundamental within the same session
+    if (qualityAudit && qualityAudit.byDay) {
+      qualityAudit.byDay.forEach(function(dayBal) {
+        var ow = dayBal.orderingWarnings || [];
+        ow.forEach(function(w) {
+          if (w.code !== 'ORDERING_ISOLATION_BEFORE_FUNDAMENTAL') return;
+          var day = days.find(function(d){ return d.dayIndex === dayBal.dayIndex; });
+          if (!day) return;
+          var exNames = (day.exercises || []).map(function(e){ return (e.exerciseName||'').toLowerCase(); });
+          var fromIdx = exNames.indexOf((w.exA||'').toLowerCase());
+          var toIdx   = exNames.indexOf((w.exB||'').toLowerCase());
+          if (fromIdx < 0 || toIdx < 0 || fromIdx >= toIdx) return;
+          candidates.push({ id: 'repair_' + (++cid), issueCode: 'ORDERING_ISOLATION_BEFORE_FUNDAMENTAL',
+            severity: 'LOW', type: 'reorder', dayIndex: dayBal.dayIndex,
+            fromIndex: fromIdx, toIndex: toIdx, exerciseName: w.exA,
+            proposedAction: 'reorder', target: w.exA, reasonCode: 'ORDERING_ISOLATION_BEFORE_FUNDAMENTAL',
+            structuralChange: false,
+            description: 'Reordenar "' + (w.exA||'') + '" → después de "' + (w.exB||'') + '" en ' + (dayBal.dayLabel||('Día '+(dayBal.dayIndex+1))) });
         });
       });
     }
@@ -11592,11 +11632,67 @@ El esfuerzo no es negociable.
         if (!msg || flagged[w.code]) return;
         flagged[w.code] = true;
         candidates.push({ id: 'flag_' + (++cid), issueCode: w.code, severity: 'FLAG',
-          type: 'flag_only', description: msg });
+          type: 'flag_only', proposedAction: 'flag_only', target: null, reasonCode: w.code, structuralChange: false,
+          description: msg });
       });
     }
 
-    return candidates;
+    // Backwards compat: no simulation when prescCtx not provided
+    if (!prescCtx) return candidates;
+
+    // Simulation pass — compute baseline quality once (no opts, lightweight, apples-to-apples)
+    var qBase = runOutputQualityAudit(training, prescCtx, volAudit);
+    var baseCritCodes = (qBase.criticalIssues || []).map(function(ci){ return ci.code; });
+    var STATUS_RANK = { 'REVIEW_REQUIRED': 2, 'WARN': 1, 'PASS': 0 };
+    var qBefore = { status: qBase.status, criticalCount: (qBase.criticalIssues||[]).length, warnCount: (qBase.warnings||[]).length };
+
+    var accepted = [];
+    candidates.forEach(function(c) {
+      // Flag-only: always surfaced, no simulation needed
+      if (c.type === 'flag_only') {
+        c.qualityBefore = qBefore;
+        c.qualityAfter = qBefore;
+        c.simulatedResult = null;
+        c.accepted = true;
+        accepted.push(c);
+        return;
+      }
+
+      // Apply candidate to a deep copy of training
+      var simTraining = JSON.parse(JSON.stringify(training));
+      if (c.type === 'remove_exercise') {
+        var simDay = (simTraining.days || []).find(function(d){ return d.dayIndex === c.dayIndex; });
+        if (simDay) simDay.exercises = (simDay.exercises || []).filter(function(ex){ return (ex.exerciseName||'').toLowerCase() !== (c.exerciseName||'').toLowerCase(); });
+      } else if (c.type === 'reorder') {
+        var simDay2 = (simTraining.days || []).find(function(d){ return d.dayIndex === c.dayIndex; });
+        if (simDay2 && c.fromIndex != null && c.toIndex != null) {
+          var exs = simDay2.exercises || [];
+          var moved = exs.splice(c.fromIndex, 1)[0];
+          if (moved) exs.splice(c.toIndex, 0, moved);
+        }
+      }
+
+      var qAfterFull = runOutputQualityAudit(simTraining, prescCtx, volAudit);
+      var qAfter = { status: qAfterFull.status, criticalCount: (qAfterFull.criticalIssues||[]).length, warnCount: (qAfterFull.warnings||[]).length };
+
+      // Reject if any new critical issue code introduced
+      var newCritCodes = (qAfterFull.criticalIssues || []).map(function(ci){ return ci.code; });
+      var hasNewCrit = newCritCodes.some(function(code){ return baseCritCodes.indexOf(code) < 0; });
+
+      var rankBefore = STATUS_RANK[qBefore.status] != null ? STATUS_RANK[qBefore.status] : 99;
+      var rankAfter  = STATUS_RANK[qAfter.status]  != null ? STATUS_RANK[qAfter.status]  : 99;
+      var improves = (rankAfter < rankBefore) || (qAfter.criticalCount < qBefore.criticalCount) ||
+                     (rankAfter === rankBefore && qAfter.warnCount < qBefore.warnCount);
+
+      c.qualityBefore = qBefore;
+      c.qualityAfter = qAfter;
+      c.simulatedResult = qBefore.status + ' → ' + qAfter.status;
+      c.accepted = improves && !hasNewCrit;
+
+      if (c.accepted) accepted.push(c);
+    });
+
+    return accepted;
   }
   window._generateRepairCandidates = _generateRepairCandidates;
 
@@ -11607,10 +11703,17 @@ El esfuerzo no es negociable.
     var copy = JSON.parse(JSON.stringify(training));
     var sel = candidates.filter(function(c){ return selectedIds.indexOf(c.id) >= 0; });
     sel.forEach(function(c) {
-      if (c.type !== 'remove_exercise') return;
-      var day = (copy.days || []).find(function(d){ return d.dayIndex === c.dayIndex; });
-      if (!day) return;
-      day.exercises = (day.exercises || []).filter(function(ex){ return (ex.exerciseName||'').toLowerCase() !== (c.exerciseName||'').toLowerCase(); });
+      if (c.type === 'remove_exercise') {
+        var day = (copy.days || []).find(function(d){ return d.dayIndex === c.dayIndex; });
+        if (!day) return;
+        day.exercises = (day.exercises || []).filter(function(ex){ return (ex.exerciseName||'').toLowerCase() !== (c.exerciseName||'').toLowerCase(); });
+      } else if (c.type === 'reorder') {
+        var rDay = (copy.days || []).find(function(d){ return d.dayIndex === c.dayIndex; });
+        if (!rDay || c.fromIndex == null || c.toIndex == null) return;
+        var exs = rDay.exercises || [];
+        var moved = exs.splice(c.fromIndex, 1)[0];
+        if (moved) exs.splice(c.toIndex, 0, moved);
+      }
     });
     return copy;
   }
@@ -11817,7 +11920,7 @@ El esfuerzo no es negociable.
       allReasons:      allReasons,
       warnings:        warnings,
       hasPreviousPlan: !!(prescCtx && prescCtx.hasPreviousPlan),
-      repairCandidates: qualityAudit ? _generateRepairCandidates(qualityAudit, training) : [],
+      repairCandidates: qualityAudit ? _generateRepairCandidates(qualityAudit, training, prescCtx, volAudit) : [],
       byDay:            (qualityAudit && Array.isArray(qualityAudit.byDay)) ? qualityAudit.byDay : [],
       slotStability:    slotStability,
       sessionComposition: sessionComposition,
@@ -11906,7 +12009,7 @@ El esfuerzo no es negociable.
 
       // Repair candidates section
       var repairs = Array.isArray(pv.repairCandidates) ? pv.repairCandidates : [];
-      var actionable = repairs.filter(function(c){ return c.type === 'remove_exercise'; });
+      var actionable = repairs.filter(function(c){ return c.type === 'remove_exercise' || c.type === 'reorder'; });
       var advisory   = repairs.filter(function(c){ return c.type === 'flag_only'; });
       var repairsHtml = '';
       if (actionable.length || advisory.length) {
@@ -11914,10 +12017,13 @@ El esfuerzo no es negociable.
         repairsHtml = '<details open style="margin-bottom:12px">' +
           '<summary style="font-size:9px;font-weight:700;color:#e05555;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;list-style:none;margin-bottom:6px">REPARACIONES PROPUESTAS</summary>' +
           (actionable.length ? actionable.map(function(c) {
+            var simBadge = c.simulatedResult
+              ? ' <span style="font-size:9px;color:#44BB88;font-weight:700">[' + _escH(c.simulatedResult) + ']</span>'
+              : '';
             return '<label style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid rgba(244,244,240,.04);cursor:pointer">' +
               '<input type="checkbox" data-repair-id="' + _escH(c.id) + '" checked style="margin-top:2px;accent-color:#C4FF00">' +
               '<div style="font-size:11px;color:#ccc;line-height:1.4">' + _escH(c.description) +
-              ' <span style="font-size:9px;color:' + (SEV_COL[c.severity]||'#888') + '">[' + _escH(c.severity) + ']</span></div>' +
+              ' <span style="font-size:9px;color:' + (SEV_COL[c.severity]||'#888') + '">[' + _escH(c.severity) + ']</span>' + simBadge + '</div>' +
               '</label>';
           }).join('') : '') +
           (advisory.length ? '<div style="margin-top:4px">' + advisory.map(function(c) {
@@ -12443,11 +12549,29 @@ El esfuerzo no es negociable.
       assert('T10l unknown reasonCode does not crash', false);
     }
 
-    // T10m: session duration > 120 min → SESSION_DURATION_CRITICAL in criticalIssues
-    var _topoLong = { issues:[], warnings:[], pass:true, estimatedSessionMinutes:135 };
-    var qaM = runOutputQualityAudit(_mkTraining([['A','B','C','D','E','F','G','H']]), _mkPrescCtx([], {}, [], false), null, { topologyAudit: _topoLong });
-    assert('T10m duration >120 → SESSION_DURATION_CRITICAL in criticalIssues', qaM.criticalIssues.some(function(ci){ return ci.code === 'SESSION_DURATION_CRITICAL'; }));
-    assert('T10m duration >120 → REVIEW_REQUIRED', qaM.status === 'REVIEW_REQUIRED');
+    // T10m: estimated > available → SESSION_DURATION_EXCEEDS_AVAILABILITY in criticalIssues
+    var _topoLong = { issues:[], warnings:[], pass:true, estimatedSessionMinutes:100 };
+    var _prescCtxM = _mkPrescCtx([], {}, [], false); _prescCtxM.sessionDuration = 90;
+    var qaM = runOutputQualityAudit(_mkTraining([['sentadilla','press banca']]), _prescCtxM, null, { topologyAudit: _topoLong });
+    assert('T10m estimated>available → SESSION_DURATION_EXCEEDS_AVAILABILITY', qaM.criticalIssues.some(function(ci){ return ci.code === 'SESSION_DURATION_EXCEEDS_AVAILABILITY'; }));
+    assert('T10m → REVIEW_REQUIRED', qaM.status === 'REVIEW_REQUIRED');
+
+    // T10m2: no sessionDuration → no threshold invented (no duration critical regardless of estimated)
+    var _topoLong2 = { issues:[], warnings:[], pass:true, estimatedSessionMinutes:150 };
+    var qaM2 = runOutputQualityAudit(_mkTraining([['sentadilla','press banca']]), _mkPrescCtx([], {}, [], false), null, { topologyAudit: _topoLong2 });
+    assert('T10m2 no sessionDuration → no duration critical', !qaM2.criticalIssues.some(function(ci){ return ci.code === 'SESSION_DURATION_EXCEEDS_AVAILABILITY'; }));
+
+    // T10m3: available=120, estimated=100 → no critical (within budget)
+    var _topoOk = { issues:[], warnings:[], pass:true, estimatedSessionMinutes:100 };
+    var _prescCtxM3 = _mkPrescCtx([], {}, [], false); _prescCtxM3.sessionDuration = 120;
+    var qaM3 = runOutputQualityAudit(_mkTraining([['sentadilla','press banca']]), _prescCtxM3, null, { topologyAudit: _topoOk });
+    assert('T10m3 available=120 estimated=100 → no duration critical', !qaM3.criticalIssues.some(function(ci){ return ci.code === 'SESSION_DURATION_EXCEEDS_AVAILABILITY'; }));
+
+    // T10m4: available=90, estimated=90 → boundary, no critical (not strictly greater)
+    var _topoEq = { issues:[], warnings:[], pass:true, estimatedSessionMinutes:90 };
+    var _prescCtxM4 = _mkPrescCtx([], {}, [], false); _prescCtxM4.sessionDuration = 90;
+    var qaM4 = runOutputQualityAudit(_mkTraining([['sentadilla','press banca']]), _prescCtxM4, null, { topologyAudit: _topoEq });
+    assert('T10m4 estimated===available → no duration critical', !qaM4.criticalIssues.some(function(ci){ return ci.code === 'SESSION_DURATION_EXCEEDS_AVAILABILITY'; }));
 
     // T10n: slotAudit.issues → REVIEW_REQUIRED and stored in criticalIssues
     var _fakeSlotAudit = { issues:[{ code:'PRIORITY_SLOT_MISSING', exerciseName:'cuadriceps', msg:'cuadriceps sin cobertura' }], warnings:[] };
@@ -12546,10 +12670,67 @@ El esfuerzo no es negociable.
 
     // T9: XSS — candidate description from exercise with < > characters
     var xssTraining = _mkTraining([['<script>xss</script>','press banca']]);
-    var xssQa = { status:'WARN', warnings:[], byDay:[{ dayIndex:0, dayLabel:'Día 1', exCount:2, totalSets:8, estDurationMin:29, issues:[], redundancyLevel:'NONE', fatigueLevel:'LOW' }], byMuscle:[], stability:[], redundancy:{ global:'NONE', byDay:[{ dayIndex:0, dayLabel:'Día 1', level:'NONE', issues:[] }] }, structuralFatigue:{ byDay:[], highCount:0 } };
+    var xssQa = { status:'WARN', warnings:[], byDay:[{ dayIndex:0, dayLabel:'Día 1', exCount:2, totalSets:8, estDurationMin:29, issues:[], redundancyLevel:'NONE', fatigueLevel:'LOW', orderingWarnings:[] }], byMuscle:[], stability:[], redundancy:{ global:'NONE', byDay:[{ dayIndex:0, dayLabel:'Día 1', level:'NONE', issues:[] }] }, structuralFatigue:{ byDay:[], highCount:0 } };
     var xssCands = _generateRepairCandidates(xssQa, xssTraining);
     // description stores raw name (escaped at render time by _escH in _showPlanPreviewModal)
     assert('T9 XSS name stored in candidate', xssCands.length >= 0); // no throw
+
+    // ── Simulation pass tests ──────────────────────────────────────────────────
+    function _mkPrescCtxSim(sessionDuration) {
+      var ctx = { hasPreviousPlan:false, previousPlan:null,
+        prescriptionTargets:{ muscles:{}, reasonCodes:[] },
+        restrictions:{ ejerciciosEvitar:[], motorPatternsAvoid:[] } };
+      if (sessionDuration != null) ctx.sessionDuration = sessionDuration;
+      return ctx;
+    }
+
+    // T10: REDUNDANCY candidate with prescCtx → simulation runs; redundant removal improves WARN
+    var simTraining10 = _mkTraining([['press banca','press inclinado','press declinado','curl bíceps']]);
+    var simQa10 = runOutputQualityAudit(simTraining10, _mkPrescCtxSim(), null);
+    var simCands10 = _generateRepairCandidates(simQa10, simTraining10, _mkPrescCtxSim(), null);
+    assert('T10 sim: accepted candidates array', Array.isArray(simCands10));
+    var simRem10 = simCands10.filter(function(c){ return c.type === 'remove_exercise'; });
+    assert('T10 sim: remove_exercise candidates have qualityBefore', simRem10.length === 0 || simRem10[0].qualityBefore != null);
+    assert('T10 sim: remove_exercise candidates have qualityAfter', simRem10.length === 0 || simRem10[0].qualityAfter != null);
+    assert('T10 sim: accepted=true on accepted candidates', simCands10.every(function(c){ return c.accepted === true; }));
+
+    // T11: flag_only always accepted (no simulation)
+    var simTraining11 = _mkTraining([['sentadilla']]);
+    var simQa11 = { status:'WARN', warnings:[{ code:'PRIORITY_FREQUENCY_MISS', msg:'...' }], byDay:[], byMuscle:[], stability:[], redundancy:{ global:'NONE', byDay:[] }, structuralFatigue:{ byDay:[], highCount:0 } };
+    var simCands11 = _generateRepairCandidates(simQa11, simTraining11, _mkPrescCtxSim(), null);
+    var flagCands11 = simCands11.filter(function(c){ return c.type === 'flag_only'; });
+    assert('T11 flag_only always included with prescCtx', flagCands11.length >= 1);
+    assert('T11 flag_only accepted=true', flagCands11.every(function(c){ return c.accepted === true; }));
+    assert('T11 flag_only simulatedResult=null', flagCands11.every(function(c){ return c.simulatedResult === null; }));
+
+    // T12: original training not mutated during simulation pass
+    var simTraining12 = _mkTraining([['press banca','press inclinado','press declinado']]);
+    var origCount12 = simTraining12.days[0].exercises.length;
+    var simQa12 = runOutputQualityAudit(simTraining12, _mkPrescCtxSim(), null);
+    _generateRepairCandidates(simQa12, simTraining12, _mkPrescCtxSim(), null);
+    assert('T12 original not mutated by simulation', simTraining12.days[0].exercises.length === origCount12);
+
+    // T13: reorder candidate — structuralChange=false, type=reorder
+    var _fakeQaWithOrdering = { status:'WARN', warnings:[], byDay:[{
+      dayIndex:0, dayLabel:'Día 1', exCount:2, issues:[], redundancyLevel:'NONE', fatigueLevel:'LOW',
+      orderingWarnings:[{ code:'ORDERING_ISOLATION_BEFORE_FUNDAMENTAL', exA:'curl bíceps', exB:'press banca' }]
+    }], byMuscle:[], redundancy:{ global:'NONE', byDay:[] }, structuralFatigue:{ byDay:[], highCount:0 } };
+    var simTraining13 = _mkTraining([['curl bíceps','press banca']]);
+    var simCands13 = _generateRepairCandidates(_fakeQaWithOrdering, simTraining13);
+    var reorderCand13 = simCands13.find(function(c){ return c.type === 'reorder'; });
+    assert('T13 reorder candidate generated', !!reorderCand13);
+    assert('T13 reorder structuralChange=false', reorderCand13 && reorderCand13.structuralChange === false);
+    assert('T13 reorder fromIndex < toIndex', reorderCand13 && reorderCand13.fromIndex < reorderCand13.toIndex);
+    assert('T13 reorder proposedAction=reorder', reorderCand13 && reorderCand13.proposedAction === 'reorder');
+
+    // T14: no reorder candidate when isolation already after fundamental (fromIdx >= toIdx)
+    var _fakeQaOrderOk = { status:'WARN', warnings:[], byDay:[{
+      dayIndex:0, dayLabel:'Día 1', exCount:2, issues:[], redundancyLevel:'NONE', fatigueLevel:'LOW',
+      orderingWarnings:[{ code:'ORDERING_ISOLATION_BEFORE_FUNDAMENTAL', exA:'curl bíceps', exB:'press banca' }]
+    }], byMuscle:[], redundancy:{ global:'NONE', byDay:[] }, structuralFatigue:{ byDay:[], highCount:0 } };
+    var simTraining14 = _mkTraining([['press banca','curl bíceps']]); // fundamental before isolation — correct order
+    var simCands14 = _generateRepairCandidates(_fakeQaOrderOk, simTraining14);
+    assert('T14 no reorder when already correct order', !simCands14.some(function(c){ return c.type === 'reorder'; }));
 
     console.log('[REPAIR CANDIDATE TESTS] ' + pass + ' passed, ' + fail + ' failed');
     return { pass: pass, fail: fail };
