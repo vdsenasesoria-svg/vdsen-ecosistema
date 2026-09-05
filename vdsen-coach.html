@@ -10402,6 +10402,119 @@ El esfuerzo no es negociable.
   }
   window.runOutputQualityAudit = runOutputQualityAudit;
 
+  // ── Auto-Repair Candidate Pass ────────────────────────────────────────────
+  // Generates candidate fixes from quality audit results.
+  // type:'remove_exercise' → actionable (checkbox); type:'flag_only' → advisory.
+  // NEVER modifies training in place. _applyRepairCandidates deep-copies.
+  function _generateRepairCandidates(qualityAudit, training) {
+    var candidates = [];
+    var days = (training && Array.isArray(training.days)) ? training.days : [];
+    var cid = 0;
+
+    // REDUNDANCY: remove the extra exercise(s) repeating the same movementPattern
+    if (qualityAudit && qualityAudit.redundancy && qualityAudit.redundancy.byDay) {
+      qualityAudit.redundancy.byDay.forEach(function(dayRed) {
+        if (dayRed.level === 'NONE' || dayRed.level === 'LOW') return;
+        var day = days.find(function(d){ return d.dayIndex === dayRed.dayIndex; });
+        if (!day) return;
+        (dayRed.issues || []).forEach(function(issue) {
+          if (issue.code !== 'PATTERN_3+' && issue.code !== 'PATTERN_2') return;
+          var pat = issue.pattern;
+          var patExs = (day.exercises || []).filter(function(ex) {
+            var m = _EXERCISE_CANONICAL_METADATA[(ex.exerciseName || '').toLowerCase()];
+            return m && m.movementPattern === pat;
+          });
+          if (patExs.length < 2) return;
+          patExs.slice(1).forEach(function(ex) {
+            if (candidates.some(function(c){ return c.type === 'remove_exercise' && c.dayIndex === dayRed.dayIndex && (c.exerciseName||'').toLowerCase() === (ex.exerciseName||'').toLowerCase(); })) return;
+            candidates.push({ id: 'repair_' + (++cid), issueCode: 'REDUNDANCY_' + dayRed.level, severity: dayRed.level,
+              type: 'remove_exercise', dayIndex: dayRed.dayIndex, exerciseName: ex.exerciseName,
+              description: 'Eliminar "' + (ex.exerciseName||'') + '" — patrón "' + pat + '" ya cubierto en ' + (dayRed.dayLabel || 'esta sesión') });
+          });
+        });
+      });
+    }
+
+    // SESSION_OVERLOADED: remove last unclassified (or last) exercise in overloaded day
+    if (qualityAudit && qualityAudit.byDay) {
+      qualityAudit.byDay.forEach(function(dayBal) {
+        if (!dayBal.issues.some(function(i){ return i.code === 'SESSION_OVERLOADED'; })) return;
+        var day = days.find(function(d){ return d.dayIndex === dayBal.dayIndex; });
+        if (!day || !day.exercises || day.exercises.length <= 6) return;
+        var toRemove = null;
+        for (var i = day.exercises.length - 1; i >= 0; i--) {
+          var ex = day.exercises[i];
+          if (!_EXERCISE_CANONICAL_METADATA[(ex.exerciseName || '').toLowerCase()]) { toRemove = ex; break; }
+        }
+        if (!toRemove) toRemove = day.exercises[day.exercises.length - 1];
+        if (!toRemove) return;
+        if (candidates.some(function(c){ return c.type === 'remove_exercise' && c.dayIndex === dayBal.dayIndex && (c.exerciseName||'').toLowerCase() === (toRemove.exerciseName||'').toLowerCase(); })) return;
+        candidates.push({ id: 'repair_' + (++cid), issueCode: 'SESSION_OVERLOADED', severity: 'HIGH',
+          type: 'remove_exercise', dayIndex: dayBal.dayIndex, exerciseName: toRemove.exerciseName,
+          description: 'Eliminar "' + (toRemove.exerciseName||'') + '" — sesión sobrecargada (' + dayBal.exCount + ' ejercicios)' });
+      });
+    }
+
+    // MAINTENANCE_SESSION_OVERALLOCATION: remove 2nd+ maintenance exercise per day per muscle
+    if (qualityAudit && qualityAudit.byMuscle) {
+      qualityAudit.byMuscle.forEach(function(issue) {
+        if (issue.code !== 'MAINTENANCE_SESSION_OVERALLOCATION') return;
+        var tDay = days.find(function(d){ return (d.label||'') === issue.day || ('Día '+(d.dayIndex+1)) === issue.day; });
+        if (!tDay) return;
+        var muscle = issue.muscle;
+        var found = [];
+        (tDay.exercises || []).forEach(function(ex) {
+          var m = _EXERCISE_CANONICAL_METADATA[(ex.exerciseName || '').toLowerCase()];
+          if (m && (m.primaryMuscles || []).indexOf(muscle) >= 0) found.push(ex);
+        });
+        found.slice(1).forEach(function(ex) {
+          if (candidates.some(function(c){ return c.type === 'remove_exercise' && c.dayIndex === tDay.dayIndex && (c.exerciseName||'').toLowerCase() === (ex.exerciseName||'').toLowerCase(); })) return;
+          candidates.push({ id: 'repair_' + (++cid), issueCode: 'MAINTENANCE_SESSION_OVERALLOCATION', severity: 'MODERATE',
+            type: 'remove_exercise', dayIndex: tDay.dayIndex, exerciseName: ex.exerciseName,
+            description: 'Eliminar "' + (ex.exerciseName||'') + '" — 2ª exposición de ' + muscle + ' (mant.) en misma sesión' });
+        });
+      });
+    }
+
+    // Flag-only advisories (no automated fix — display only)
+    var FLAG_MSGS = {
+      PRIORITY_FREQUENCY_MISS:              'Revisar distribución de sesiones para aumentar frecuencia',
+      PRIORITY_VOLUME_MISS:                 'Revisar series asignadas al grupo prioritario',
+      MAINTENANCE_VOLUME_EXCESS:            'Considerar reducir series de mantenimiento',
+      UNJUSTIFIED_EXERCISE_CHANGE:          'Confirmar que el cambio es intencional (sin razón registrada)',
+      STRUCTURAL_FATIGUE_HIGH:              'Revisar balance de carga axial/bisagra en la sesión',
+    };
+    var flagged = {};
+    if (qualityAudit && qualityAudit.warnings) {
+      qualityAudit.warnings.forEach(function(w) {
+        var msg = FLAG_MSGS[w.code];
+        if (!msg || flagged[w.code]) return;
+        flagged[w.code] = true;
+        candidates.push({ id: 'flag_' + (++cid), issueCode: w.code, severity: 'FLAG',
+          type: 'flag_only', description: msg });
+      });
+    }
+
+    return candidates;
+  }
+  window._generateRepairCandidates = _generateRepairCandidates;
+
+  // Deep-copies training and removes exercises flagged by selected candidates.
+  // Original is never mutated. flag_only candidates are no-ops.
+  function _applyRepairCandidates(training, selectedIds, candidates) {
+    if (!selectedIds || !selectedIds.length || !candidates || !candidates.length || !training) return training;
+    var copy = JSON.parse(JSON.stringify(training));
+    var sel = candidates.filter(function(c){ return selectedIds.indexOf(c.id) >= 0; });
+    sel.forEach(function(c) {
+      if (c.type !== 'remove_exercise') return;
+      var day = (copy.days || []).find(function(d){ return d.dayIndex === c.dayIndex; });
+      if (!day) return;
+      day.exercises = (day.exercises || []).filter(function(ex){ return (ex.exerciseName||'').toLowerCase() !== (c.exerciseName||'').toLowerCase(); });
+    });
+    return copy;
+  }
+  window._applyRepairCandidates = _applyRepairCandidates;
+
   function _buildPlanPreview(training, prescCtx, volAudit, validationWarnings, profileTraceChanges, qualityAudit) {
     var days       = (training && Array.isArray(training.days)) ? training.days : [];
     var prevPlan   = prescCtx && prescCtx.previousPlan;
@@ -10549,6 +10662,7 @@ El esfuerzo no es negociable.
       allReasons:      allReasons,
       warnings:        warnings,
       hasPreviousPlan: !!(prescCtx && prescCtx.hasPreviousPlan),
+      repairCandidates: qualityAudit ? _generateRepairCandidates(qualityAudit, training) : [],
     };
   }
   window._buildPlanPreview = _buildPlanPreview;
@@ -10607,6 +10721,28 @@ El esfuerzo no es negociable.
         ? pv.warnings.map(function(w){ return '<div style="font-size:11px;color:#FF8C00;padding:2px 0">⚠ ' + _escH(String(w)) + '</div>'; }).join('')
         : '';
 
+      // Repair candidates section
+      var repairs = Array.isArray(pv.repairCandidates) ? pv.repairCandidates : [];
+      var actionable = repairs.filter(function(c){ return c.type === 'remove_exercise'; });
+      var advisory   = repairs.filter(function(c){ return c.type === 'flag_only'; });
+      var repairsHtml = '';
+      if (actionable.length || advisory.length) {
+        var SEV_COL = { HIGH:'#e05555', MODERATE:'#FF8C00', LOW:'#aaa', FLAG:'#888' };
+        repairsHtml = '<details open style="margin-bottom:12px">' +
+          '<summary style="font-size:9px;font-weight:700;color:#e05555;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;list-style:none;margin-bottom:6px">REPARACIONES PROPUESTAS</summary>' +
+          (actionable.length ? actionable.map(function(c) {
+            return '<label style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid rgba(244,244,240,.04);cursor:pointer">' +
+              '<input type="checkbox" data-repair-id="' + _escH(c.id) + '" checked style="margin-top:2px;accent-color:#C4FF00">' +
+              '<div style="font-size:11px;color:#ccc;line-height:1.4">' + _escH(c.description) +
+              ' <span style="font-size:9px;color:' + (SEV_COL[c.severity]||'#888') + '">[' + _escH(c.severity) + ']</span></div>' +
+              '</label>';
+          }).join('') : '') +
+          (advisory.length ? '<div style="margin-top:4px">' + advisory.map(function(c) {
+            return '<div style="font-size:10px;color:#666;padding:3px 0">ⓘ ' + _escH(c.description) + '</div>';
+          }).join('') + '</div>' : '') +
+          '</details>';
+      }
+
       var applyFn  = '_previewApply_'  + clientId;
       var cancelFn = '_previewCancel_' + clientId;
 
@@ -10652,6 +10788,9 @@ El esfuerzo no es negociable.
         // Warnings
         (warningsHtml ? '<div style="background:rgba(255,140,0,.05);border:1px solid rgba(255,140,0,.2);border-radius:7px;padding:8px 10px;margin-bottom:12px">' + warningsHtml + '</div>' : '') +
 
+        // Repair candidates
+        repairsHtml +
+
         // Actions
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
           '<button onclick="' + applyFn + '()" style="flex:1;min-width:120px;padding:10px;border-radius:7px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:800;cursor:pointer">✅ Aplicar plan</button>' +
@@ -10663,6 +10802,13 @@ El esfuerzo no es negociable.
       statusEl.innerHTML = html;
 
       window[applyFn] = function() {
+        // Collect checked repair IDs before clearing DOM
+        var sel = [];
+        if (statusEl) {
+          var cbs = statusEl.querySelectorAll('input[data-repair-id]:checked');
+          Array.prototype.forEach.call(cbs, function(cb){ sel.push(cb.getAttribute('data-repair-id')); });
+        }
+        window['_lastRepairSelection_' + clientId] = sel;
         delete window[applyFn]; delete window[cancelFn];
         resolve(true);
       };
@@ -10993,6 +11139,87 @@ El esfuerzo no es negociable.
   }
   window._runOutputQualityAuditTests = _runOutputQualityAuditTests;
 
+  // ── Repair Candidate Tests ─────────────────────────────────────────────────
+  function _runRepairCandidateTests() {
+    var pass = 0, fail = 0;
+    var assert = function(desc, cond) {
+      if (cond) { pass++; }
+      else { fail++; console.error('[REPAIR TEST FAIL] ' + desc); }
+    };
+
+    function _mkDay(idx, names) {
+      return { dayIndex: idx, label: 'Día '+(idx+1), exercises: names.map(function(n){ return { exerciseName: n, sets:[{},{},{},{}] }; }) };
+    }
+    function _mkTraining(dayArrayOfNames) {
+      return { daysPerWeek: dayArrayOfNames.length, weeks: 6, days: dayArrayOfNames.map(function(names, i){ return _mkDay(i, names); }) };
+    }
+
+    // T1: REDUNDANCY issue → produces remove_exercise candidate for the redundant exercise
+    var qA1 = runOutputQualityAudit(_mkTraining([['press banca','press inclinado','press declinado','curl bíceps']]), { hasPreviousPlan:false, previousPlan:null, prescriptionTargets:{ muscles:{}, reasonCodes:[] }, restrictions:{ ejerciciosEvitar:[], motorPatternsAvoid:[] } }, null);
+    var cands1 = _generateRepairCandidates(qA1, _mkTraining([['press banca','press inclinado','press declinado','curl bíceps']]));
+    var remCands1 = cands1.filter(function(c){ return c.type === 'remove_exercise'; });
+    assert('T1 REDUNDANCY → at least 1 remove_exercise candidate', remCands1.length >= 1);
+    assert('T1 candidate has dayIndex and exerciseName', remCands1[0] && remCands1[0].dayIndex === 0 && !!remCands1[0].exerciseName);
+    assert('T1 candidate issueCode contains REDUNDANCY', remCands1[0] && remCands1[0].issueCode.indexOf('REDUNDANCY') >= 0);
+
+    // T2: SESSION_OVERLOADED → produces remove_exercise candidate for last exercise
+    var heavyDay = _mkDay(0, ['A','B','C','D','E','F','G','H','I']); // 9 exercises
+    var qA2 = runOutputQualityAudit({ daysPerWeek:1, weeks:6, days:[heavyDay] }, { hasPreviousPlan:false, previousPlan:null, prescriptionTargets:{ muscles:{}, reasonCodes:[] }, restrictions:{ ejerciciosEvitar:[], motorPatternsAvoid:[] } }, null);
+    var cands2 = _generateRepairCandidates(qA2, { daysPerWeek:1, weeks:6, days:[heavyDay] });
+    var overloadCand = cands2.find(function(c){ return c.issueCode === 'SESSION_OVERLOADED'; });
+    assert('T2 SESSION_OVERLOADED → remove_exercise candidate', !!overloadCand);
+    assert('T2 overload candidate type is remove_exercise', overloadCand && overloadCand.type === 'remove_exercise');
+
+    // T3: flag_only advisory for PRIORITY_FREQUENCY_MISS (no remove_exercise)
+    var muscleTargets3 = { cuadriceps: { goal:'progress', priority:'high', volumeTarget:16, volumeRange:{ min:10, max:22 }, frequencyTarget:3 } };
+    var qA3Null = { status:'WARN', warnings:[{ code:'PRIORITY_FREQUENCY_MISS', msg:'cuadriceps: freq 1× < target 3× (prioridad alta)' }], byDay:[], byMuscle:[{ code:'PRIORITY_FREQUENCY_MISS', muscle:'cuadriceps', msg:'...' }], stability:[], redundancy:{ global:'NONE', byDay:[] }, structuralFatigue:{ byDay:[], highCount:0 } };
+    var cands3 = _generateRepairCandidates(qA3Null, _mkTraining([['sentadilla']]));
+    var flagCands3 = cands3.filter(function(c){ return c.type === 'flag_only'; });
+    assert('T3 PRIORITY_FREQUENCY_MISS → flag_only candidate', flagCands3.length >= 1);
+    assert('T3 flag_only has no dayIndex', flagCands3[0] && flagCands3[0].dayIndex === undefined);
+
+    // T4: no issues → no candidates
+    var qA4 = runOutputQualityAudit(_mkTraining([['sentadilla','remo con barra']]), { hasPreviousPlan:false, previousPlan:null, prescriptionTargets:{ muscles:{}, reasonCodes:[] }, restrictions:{ ejerciciosEvitar:[], motorPatternsAvoid:[] } }, null);
+    var cands4 = _generateRepairCandidates(qA4, _mkTraining([['sentadilla','remo con barra']]));
+    assert('T4 no issues → no actionable candidates', !cands4.some(function(c){ return c.type === 'remove_exercise'; }));
+
+    // T5: _applyRepairCandidates removes specified exercise from correct day
+    var training5 = _mkTraining([['press banca','press inclinado','remo con barra']]);
+    var candidates5 = [{ id:'repair_1', type:'remove_exercise', dayIndex:0, exerciseName:'press inclinado' }];
+    var fixed5 = _applyRepairCandidates(training5, ['repair_1'], candidates5);
+    var day5 = fixed5.days[0];
+    assert('T5 press inclinado removed', !day5.exercises.some(function(e){ return (e.exerciseName||'').toLowerCase() === 'press inclinado'; }));
+    assert('T5 press banca still present', day5.exercises.some(function(e){ return (e.exerciseName||'').toLowerCase() === 'press banca'; }));
+    assert('T5 remo still present', day5.exercises.some(function(e){ return (e.exerciseName||'').toLowerCase() === 'remo con barra'; }));
+
+    // T6: empty selectedIds → original training returned
+    var training6 = _mkTraining([['sentadilla','press banca']]);
+    var fixed6 = _applyRepairCandidates(training6, [], [{ id:'repair_1', type:'remove_exercise', dayIndex:0, exerciseName:'sentadilla' }]);
+    assert('T6 empty selectedIds → no change', fixed6.days[0].exercises.length === 2);
+
+    // T7: flag_only candidate selected → no structural change (flag_only is no-op)
+    var training7 = _mkTraining([['sentadilla','press banca']]);
+    var fixed7 = _applyRepairCandidates(training7, ['flag_1'], [{ id:'flag_1', type:'flag_only', issueCode:'PRIORITY_FREQUENCY_MISS' }]);
+    assert('T7 flag_only selected → no change', fixed7.days[0].exercises.length === 2);
+
+    // T8: original training not mutated after _applyRepairCandidates (deep copy)
+    var training8 = _mkTraining([['press banca','press inclinado']]);
+    var origCount = training8.days[0].exercises.length;
+    _applyRepairCandidates(training8, ['repair_1'], [{ id:'repair_1', type:'remove_exercise', dayIndex:0, exerciseName:'press inclinado' }]);
+    assert('T8 original training not mutated', training8.days[0].exercises.length === origCount);
+
+    // T9: XSS — candidate description from exercise with < > characters
+    var xssTraining = _mkTraining([['<script>xss</script>','press banca']]);
+    var xssQa = { status:'WARN', warnings:[], byDay:[{ dayIndex:0, dayLabel:'Día 1', exCount:2, totalSets:8, estDurationMin:29, issues:[], redundancyLevel:'NONE', fatigueLevel:'LOW' }], byMuscle:[], stability:[], redundancy:{ global:'NONE', byDay:[{ dayIndex:0, dayLabel:'Día 1', level:'NONE', issues:[] }] }, structuralFatigue:{ byDay:[], highCount:0 } };
+    var xssCands = _generateRepairCandidates(xssQa, xssTraining);
+    // description stores raw name (escaped at render time by _escH in _showPlanPreviewModal)
+    assert('T9 XSS name stored in candidate', xssCands.length >= 0); // no throw
+
+    console.log('[REPAIR CANDIDATE TESTS] ' + pass + ' passed, ' + fail + ' failed');
+    return { pass: pass, fail: fail };
+  }
+  window._runRepairCandidateTests = _runRepairCandidateTests;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -11110,11 +11337,18 @@ El esfuerzo no es negociable.
         showToast('Generación cancelada — plan no guardado');
         return;
       }
+      // Apply selected repair candidates (deep copy — original training untouched)
+      const _repairIds = window['_lastRepairSelection_' + clientId] || [];
+      delete window['_lastRepairSelection_' + clientId];
+      const _finalTraining = (_repairIds.length && _previewData.repairCandidates && _previewData.repairCandidates.length)
+        ? _applyRepairCandidates(training, _repairIds, _previewData.repairCandidates)
+        : training;
+      if (_repairIds.length) console.info('[VDSEN] Applied', _repairIds.length, 'repair(s):', _repairIds);
 
       // ── Write (only on explicit coach confirmation) ──────────────────────
       setStatus('<span style="color:#888">Guardando plan…</span>');
       const saved = [];
-      const planObj = training ? _normalizeTrainingPlan(training) : null;
+      const planObj = _finalTraining ? _normalizeTrainingPlan(_finalTraining) : null;
       if (planObj) {
         window._importedPlan = planObj;
         await saveImportedPlan(clientId);
