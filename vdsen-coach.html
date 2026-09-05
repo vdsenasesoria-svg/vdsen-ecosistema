@@ -10627,7 +10627,9 @@ El esfuerzo no es negociable.
     var warnings = (validationWarnings || []).slice();
     if (volAudit && Array.isArray(volAudit.warnings)) {
       volAudit.warnings.forEach(function(w) {
-        var wStr = (typeof w === 'string') ? w : (w.code + ': ' + w.muscle + ' ' + w.fractionalTotal + ' series');
+        var wStr = (typeof w === 'string') ? w :
+          w.code === 'EXERCISES_UNCLASSIFIED' ? ('Sin clasificar: ' + (w.count || 0) + ' ejercicio(s) fuera del catálogo') :
+          (w.code + ': ' + (w.muscle || '') + ' ' + (w.fractionalTotal != null ? w.fractionalTotal : '') + ' series').trim();
         if (warnings.indexOf(wStr) < 0) warnings.push(wStr);
       });
     }
@@ -11404,7 +11406,7 @@ El esfuerzo no es negociable.
       </div>`);
       showToast('✅ Plan aplicado y activado');
     } catch (e) {
-      setStatus(`<div style="background:rgba(220,60,60,.08);border:1px solid rgba(220,60,60,.3);border-radius:8px;padding:12px"><div style="color:#e05555;font-weight:700">❌ ${(e.message || e).replace(/</g,'&lt;')}</div></div>`);
+      setStatus('<div style="background:rgba(220,60,60,.08);border:1px solid rgba(220,60,60,.3);border-radius:8px;padding:12px"><div style="color:#e05555;font-weight:700">❌ ' + _escH(e.message || String(e)) + '</div></div>');
       showToast('Error: ' + (e.message || e), true);
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = btn._t || '🤖 GENERAR PLAN COMPLETO (Motor VDSEN)'; }
