@@ -11937,12 +11937,17 @@ El esfuerzo no es negociable.
           _aqItems.push({ sev:'blue', icon:'🔵', prob:'Deload recomendado por algoritmo', ev:_aqDl.map(r=>r.exerciseName||'?').join(', '), act:'Ajustar plan — sesión de descarga o −40% volumen' });
         }
       }
-      // Sesiones perdidas
+      // Sesiones perdidas — pre-build real-log set to avoid O(n×m×entries)
       const _dpwQ = (p && p.daysPerWeek) || (p && p.days ? p.days.length : 0) || 0;
+      const _realLogWD = new Set();
+      Object.keys(entries).forEach(k => {
+        const _lm = k.match(/^log_(\d+)_(\d+)_/);
+        if (_lm && !entries[k].autoFilled) _realLogWD.add(_lm[1]+'_'+_lm[2]);
+      });
       let _aqMissed = 0;
       for (let _wq = 1; _wq < currentWeek; _wq++) {
         for (let _dq = 0; _dq < _dpwQ; _dq++) {
-          if (!entries['done_'+_wq+'_'+_dq] && !Object.keys(entries).some(k=>k.startsWith('log_'+_wq+'_'+_dq+'_') && !entries[k].autoFilled)) _aqMissed++;
+          if (!entries['done_'+_wq+'_'+_dq] && !_realLogWD.has(_wq+'_'+_dq)) _aqMissed++;
         }
       }
       if (_aqMissed > 0) {
