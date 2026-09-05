@@ -9065,6 +9065,200 @@ El esfuerzo no es negociable.
   }
   window._inbodyExportPNG = _inbodyExportPNG;
 
+  // ── Profile Snapshot Engine ─────────────────────────────────────────────────
+  // Pure function — uses already-loaded _detailFichaData / _detailClientData.
+  // 0 Firestore reads. Safe to call multiple times.
+  function _buildProfileSnapshot() {
+    var d  = (_detailFichaData && _detailFichaData.data) ? _detailFichaData.data : (_detailFichaData || {});
+    var ft = (_detailFichaData && _detailFichaData.fotometria) ? _detailFichaData.fotometria : {};
+    var cd = _detailClientData || {};
+    var ibArr = Array.isArray(cd.inbodyResults) ? cd.inbodyResults : [];
+    var ib    = ibArr.length ? ibArr[ibArr.length - 1] : null;
+
+    // _sv: scalar value + source; null if empty/missing. Never coerce null → 0.
+    var _sv = function(val, src) {
+      if (val === null || val === undefined || val === '') return null;
+      return { value: val, source: src };
+    };
+    var _df = function(id, src, obj) {
+      var v = (obj || d)[id];
+      if (v === null || v === undefined || v === '') return null;
+      if (Array.isArray(v)) return v.length ? { value: v.join(', '), source: src } : null;
+      return { value: String(v), source: src };
+    };
+
+    var ftJM     = ft.jerarquia_muscular || {};
+    var ftCC     = ft.composicion_corporal || {};
+    var ftNut    = ft.nutricion || {};
+    var ftMacros = ftNut.macros_diarios || {};
+    var ftMeta   = ft.metadata || {};
+    var ftVol    = ft.volumen_semanal || {};
+    var rezRaw   = ftJM.rezagados_declarados;
+    var rezVal   = rezRaw ? (Array.isArray(rezRaw) ? rezRaw.join(', ') : String(rezRaw)) : null;
+    var roiVal   = Array.isArray(ft.prioridades_ROI_estetico_tarima) ? ft.prioridades_ROI_estetico_tarima.map(function(p){ return p.grupo; }).join(', ') : null;
+    var gymVal   = d.gimnasio_otro_maquinas || d.gimnasio || null;
+
+    var CRITICAL = ['sexo','peso_kg','talla_cm','objetivo_mesociclo','nivel','dias_semana','duracion_sesion_min','lesiones','grupos_prioritarios','gimnasio'];
+    var missingCritical = CRITICAL.filter(function(f) {
+      var v = d[f]; return v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length);
+    });
+
+    return {
+      profileVersion: 1,
+      generatedAt: new Date().toISOString(),
+      base: {
+        sexo:     _df('sexo',     'CLIENT'),
+        edad:     _df('edad',     'CLIENT'),
+        peso_kg:  _df('peso_kg',  'CLIENT'),
+        talla_cm: _df('talla_cm', 'CLIENT'),
+        perfil:   _df('perfil',   'COACH'),
+      },
+      goals: {
+        objetivo_mesociclo: _df('objetivo_mesociclo', 'CLIENT'),
+        objetivo_corto:     _df('objetivo_corto',     'CLIENT'),
+        enfoque_actual:     _df('enfoque_actual',     'COACH'),
+        evento_objetivo:    _df('evento_objetivo',    'CLIENT'),
+      },
+      availability: {
+        dias_semana:         _df('dias_semana',            'CLIENT'),
+        duracion_sesion_min: _df('duracion_sesion_min',    'CLIENT'),
+        gimnasio:            _sv(gymVal,                   'CLIENT'),
+        disponibilidad:      _df('disponibilidad',         'CLIENT'),
+      },
+      priorities: {
+        client: { grupos_prioritarios:       _df('grupos_prioritarios',       'CLIENT') },
+        coach:  {
+          grupos_prioritarios_coach: _df('grupos_prioritarios_coach', 'COACH'),
+          grupos_mantenimiento:      _df('grupos_mantenimiento',      'COACH'),
+        },
+        photo:  {
+          rezagados: rezVal ? _sv(rezVal, 'PHOTO') : null,
+          roi:       roiVal ? _sv(roiVal, 'PHOTO') : null,
+        },
+      },
+      constraints: {
+        lesiones:                   _df('lesiones',                    'CLIENT'),
+        dolor_actual:               _df('dolor_actual',                'COACH'),
+        ejercicios_evitar:          _df('ejercicios_evitar',           'CLIENT'),
+        restricciones_alimentarias: _df('restricciones_alimentarias',  'CLIENT'),
+        patrones_debiles:           _df('patrones_debiles',            'COACH'),
+      },
+      recoveryContext: {
+        nivel:                   _df('nivel',                   'CLIENT'),
+        semana_actual_mesociclo: _df('semana_actual_mesociclo', 'CLIENT'),
+        actividad_pasos_dia:     _df('actividad_pasos_dia',     'CLIENT'),
+      },
+      bodyComposition: {
+        porcentaje_grasa: _df('porcentaje_grasa', 'COACH'),
+        peso_kg_inbody:   ib ? _sv(ib.peso !== undefined ? ib.peso : ib.weight, 'INBODY') : null,
+        smm_kg:           ib ? _sv(ib.smm_kg !== undefined ? ib.smm_kg : ib.muscle_kg, 'INBODY') : _df('smm_kg', 'COACH'),
+        ffm_kg:           ib ? _sv(ib.lbm_kg !== undefined ? ib.lbm_kg : ib.ffm_kg, 'INBODY') : _df('ffm_kg', 'COACH'),
+        inbody_fecha:     ib && (ib.fecha || ib.date) ? _sv(ib.fecha || ib.date, 'INBODY') : _df('inbody_fecha', 'COACH'),
+        lbm_kg_foto:      ftCC.LBM_kg ? _sv(ftCC.LBM_kg, 'PHOTO') : null,
+        grasa_rango_foto: ftCC.porcentaje_grasa_rango ? _sv(ftCC.porcentaje_grasa_rango, 'PHOTO') : null,
+      },
+      coachAssessment: {
+        biotipo:          _df('biotipo',          'COACH'),
+        movilidad:        _df('movilidad',        'COACH'),
+        patrones_fuertes: _df('patrones_fuertes', 'COACH'),
+        asimetrias:       _df('asimetrias',       'COACH'),
+        split_actual:     _df('split_actual',     'COACH'),
+        fase_foto:        ftMeta.fase_actual ? _sv(ftMeta.fase_actual, 'PHOTO') : null,
+        categoria_foto:   ftMeta.categoria_objetivo ? _sv(ftMeta.categoria_objetivo, 'PHOTO') : null,
+      },
+      nutritionContext: {
+        objetivo_calorico:     _df('objetivo_calorico',          'CLIENT'),
+        num_comidas:           _df('num_comidas',                'CLIENT'),
+        restricciones:         _df('restricciones_alimentarias', 'CLIENT'),
+        meta_calorica_foto:    ftNut.meta_calorica_kcal ? _sv(ftNut.meta_calorica_kcal, 'PHOTO') : null,
+        macros_foto_proteina:  ftMacros.proteina && ftMacros.proteina.gramos ? _sv(ftMacros.proteina.gramos, 'PHOTO') : null,
+        macros_foto_carbos:    ftMacros.carbohidratos && ftMacros.carbohidratos.gramos ? _sv(ftMacros.carbohidratos.gramos, 'PHOTO') : null,
+        macros_foto_grasas:    ftMacros.grasas && ftMacros.grasas.gramos ? _sv(ftMacros.grasas.gramos, 'PHOTO') : null,
+      },
+      missingCriticalFields: missingCritical,
+      activePlanId: cd.activePlanId || null,
+    };
+  }
+  window._buildProfileSnapshot = _buildProfileSnapshot;
+
+  // ── Snapshot diff ─────────────────────────────────────────────────────────
+  var _SNAPSHOT_TRACKED = [
+    { path: 'availability.dias_semana',              label: 'Disponibilidad (días)',  severity: 'CRITICAL', unit: 'días' },
+    { path: 'constraints.lesiones',                  label: 'Lesiones/restricciones', severity: 'CRITICAL' },
+    { path: 'constraints.dolor_actual',              label: 'Dolor actual',           severity: 'CRITICAL' },
+    { path: 'constraints.ejercicios_evitar',         label: 'Ejercicios vetados',      severity: 'CRITICAL' },
+    { path: 'base.peso_kg',                          label: 'Peso',                   severity: 'RELEVANT', unit: 'kg' },
+    { path: 'base.perfil',                           label: 'Perfil (NAT/PED)',        severity: 'RELEVANT' },
+    { path: 'goals.objetivo_mesociclo',              label: 'Objetivo mesociclo',      severity: 'RELEVANT' },
+    { path: 'goals.enfoque_actual',                  label: 'Enfoque',                severity: 'RELEVANT' },
+    { path: 'recoveryContext.nivel',                 label: 'Nivel',                  severity: 'RELEVANT' },
+    { path: 'availability.duracion_sesion_min',      label: 'Duración sesión',        severity: 'RELEVANT', unit: 'min' },
+    { path: 'bodyComposition.porcentaje_grasa',      label: '% Grasa (coach)',         severity: 'RELEVANT', unit: '%' },
+    { path: 'bodyComposition.peso_kg_inbody',        label: 'Peso (InBody)',           severity: 'RELEVANT', unit: 'kg' },
+    { path: 'priorities.client.grupos_prioritarios', label: 'Prioridad cliente',       severity: 'RELEVANT' },
+    { path: 'goals.objetivo_corto',                  label: 'Objetivo corto plazo',   severity: 'INFO' },
+    { path: 'base.edad',                             label: 'Edad',                   severity: 'INFO', unit: 'años' },
+    { path: 'goals.evento_objetivo',                 label: 'Evento objetivo',        severity: 'INFO' },
+    { path: 'availability.gimnasio',                 label: 'Equipamiento',           severity: 'INFO' },
+  ];
+
+  function _getSnapshotPath(snap, path) {
+    var parts = path.split('.');
+    var cur = snap;
+    for (var i = 0; i < parts.length; i++) {
+      if (cur === null || cur === undefined) return null;
+      cur = cur[parts[i]];
+    }
+    // Unwrap {value, source} node
+    if (cur && typeof cur === 'object' && 'value' in cur) return cur.value;
+    return cur !== undefined ? cur : null;
+  }
+
+  function _diffProfileSnapshots(prevSnap, currSnap) {
+    if (!prevSnap || !currSnap) return [];
+    var changes = [];
+    for (var i = 0; i < _SNAPSHOT_TRACKED.length; i++) {
+      var field = _SNAPSHOT_TRACKED[i];
+      var prev  = _getSnapshotPath(prevSnap, field.path);
+      var curr  = _getSnapshotPath(currSnap, field.path);
+      if (prev === null && curr === null) continue;
+      if (String(prev !== null && prev !== undefined ? prev : '') ===
+          String(curr !== null && curr !== undefined ? curr : '')) continue;
+      changes.push({ label: field.label, severity: field.severity, unit: field.unit || null, prev: prev, curr: curr });
+    }
+    return changes;
+  }
+  window._diffProfileSnapshots = _diffProfileSnapshots;
+
+  function _renderChangeTrace(changes) {
+    if (!changes || !changes.length) {
+      return '<div style="color:#555;font-size:12px;padding:4px 0">Sin cambios relevantes desde la prescripción actual.</div>';
+    }
+    var SEV_DOT = { CRITICAL: '🔴', RELEVANT: '🟡', INFO: '⚪' };
+    var groups  = { CRITICAL: [], RELEVANT: [], INFO: [] };
+    for (var i = 0; i < changes.length; i++) groups[changes[i].severity].push(changes[i]);
+    var html = '';
+    ['CRITICAL','RELEVANT','INFO'].forEach(function(sev) {
+      groups[sev].forEach(function(c) {
+        var prevStr = c.prev !== null && c.prev !== undefined
+          ? _escH(String(c.prev)) + (c.unit ? ' <span style="color:#555;font-weight:400">' + _escH(c.unit) + '</span>' : '')
+          : '<span style="color:#555">—</span>';
+        var currStr = c.curr !== null && c.curr !== undefined
+          ? '<span style="font-weight:700">' + _escH(String(c.curr)) + '</span>' + (c.unit ? ' <span style="color:#555;font-weight:400">' + _escH(c.unit) + '</span>' : '')
+          : '<span style="color:#555">—</span>';
+        html += '<div style="display:flex;align-items:baseline;gap:7px;padding:4px 0;border-bottom:1px solid rgba(244,244,240,.04);flex-wrap:wrap">' +
+          '<span style="font-size:9px;flex-shrink:0">' + SEV_DOT[sev] + '</span>' +
+          '<span style="color:#888;font-size:11px;min-width:110px;flex-shrink:0">' + _escH(c.label) + '</span>' +
+          '<span style="font-size:11px;color:#666">' + prevStr + '</span>' +
+          '<span style="color:#555;font-size:10px;flex-shrink:0">→</span>' +
+          '<span style="font-size:11px;color:#e4e4e0">' + currStr + '</span>' +
+          '</div>';
+      });
+    });
+    return html;
+  }
+  window._renderChangeTrace = _renderChangeTrace;
+
   // ── Ficha tab ──
   function _renderClientTabFicha(cont) {
     const clientId  = _detailClientId;
@@ -9348,6 +9542,27 @@ El esfuerzo no es negociable.
       ? `<div style="background:rgba(255,140,0,.06);border:1px solid rgba(255,140,0,.25);border-radius:7px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:#FF8C00;line-height:1.6">⚠️ Faltan datos críticos: ${_escH(missing_critical.map(f => FIELD_LABELS[f]||f).join(', '))}. El plan generado puede ser subóptimo.</div>`
       : '';
 
+    // ── Change trace vs last prescription snapshot ───────────────────────────
+    const currentSnap  = _buildProfileSnapshot();
+    const prevSnap     = cd.lastPrescriptionSnapshot || null;
+    const traceChanges = _diffProfileSnapshots(prevSnap, currentSnap);
+    const hasPrevSnap  = !!prevSnap;
+    const changeCount  = traceChanges.filter(c => c.severity === 'CRITICAL' || c.severity === 'RELEVANT').length;
+    const traceBadge   = changeCount
+      ? `<span style="font-size:9px;padding:1px 7px;border-radius:6px;background:rgba(255,140,0,.1);color:#FF8C00;font-weight:700">${changeCount} cambio${changeCount>1?'s':''}</span>`
+      : (hasPrevSnap ? '<span style="font-size:9px;padding:1px 7px;border-radius:6px;background:rgba(68,187,136,.1);color:#44BB88;font-weight:700">Sin cambios</span>' : '');
+    const traceContent = hasPrevSnap
+      ? _renderChangeTrace(traceChanges)
+      : '<div style="color:#555;font-size:12px;padding:4px 0">No hay prescripción previa. Genera el primer plan para activar el seguimiento de cambios.</div>';
+    const secChangeTrace = `<details style="margin-bottom:10px;border:1px solid rgba(244,244,240,.07);border-radius:9px;overflow:hidden">
+      <summary style="display:flex;align-items:center;gap:6px;padding:10px 13px;cursor:pointer;list-style:none;user-select:none;background:rgba(244,244,240,.02)">
+        <span>📈</span>
+        <span style="font-size:11px;font-weight:700;color:#aaa;letter-spacing:.06em;text-transform:uppercase;flex:1">Cambios desde plan actual</span>
+        ${traceBadge}
+      </summary>
+      <div style="padding:10px 13px 12px">${traceContent}</div>
+    </details>`;
+
     var _calibSection = _buildCalibSection(clientId);
 
     cont.innerHTML = `
@@ -9362,6 +9577,8 @@ El esfuerzo no es negociable.
              <div style="color:#666;font-size:12px;line-height:1.6">Pídele que complete el onboarding o llénala desde ✏️ Editar ficha.</div>
            </div>`
       }
+
+      ${secChangeTrace}
 
       <div style="margin:14px 0;border-top:1px solid rgba(244,244,240,.06)"></div>
 
@@ -9386,6 +9603,104 @@ El esfuerzo no es negociable.
       </div>`;
   }
   window._renderClientTabFicha = _renderClientTabFicha;
+
+  // ── Profile Snapshot + Change Trace tests ────────────────────────────────
+  function _runProfileSnapshotTests() {
+    var pass = 0, fail = 0;
+    var assert = function(desc, cond) {
+      if (cond) { pass++; }
+      else { fail++; console.error('[SNAP TEST FAIL] ' + desc); }
+    };
+
+    // Helper: build snapshot from synthetic data
+    function _mkSnap(overD, overFt, overCd) {
+      var savedFicha  = _detailFichaData;
+      var savedClient = _detailClientData;
+      _detailFichaData  = Object.assign({ data: {}, fotometria: {} }, overFt || {});
+      if (overD) _detailFichaData.data = Object.assign({}, _detailFichaData.data, overD);
+      _detailClientData = Object.assign({ inbodyResults: [] }, overCd || {});
+      var snap = _buildProfileSnapshot();
+      _detailFichaData  = savedFicha;
+      _detailClientData = savedClient;
+      return snap;
+    }
+
+    // T1: null is NOT converted to 0
+    var s1 = _mkSnap({ peso_kg: null });
+    assert('T1 null peso_kg stays null', s1.base.peso_kg === null);
+
+    // T2: missing critical field appears in missingCriticalFields
+    var s2 = _mkSnap({});
+    assert('T2 missing sexo in missingCritical', s2.missingCriticalFields.indexOf('sexo') >= 0);
+
+    // T3: present critical field NOT in missingCriticalFields
+    var s3 = _mkSnap({ sexo: 'H', peso_kg: 80, talla_cm: 175, objetivo_mesociclo: 'hipertrofia',
+                       nivel: 'intermedio', dias_semana: 4, duracion_sesion_min: 60,
+                       lesiones: 'ninguna', grupos_prioritarios: 'pecho', gimnasio: 'completo' });
+    assert('T3 all critical present → missingCritical empty', s3.missingCriticalFields.length === 0);
+
+    // T4: InBody latest entry takes precedence
+    var s4 = _mkSnap({}, null, { inbodyResults: [
+      { peso: 80, fecha: '2024-01-01' },
+      { peso: 78.5, fecha: '2024-06-01' }
+    ]});
+    assert('T4 InBody latest peso = 78.5', s4.bodyComposition.peso_kg_inbody && s4.bodyComposition.peso_kg_inbody.value === 78.5);
+    assert('T4 InBody source = INBODY', s4.bodyComposition.peso_kg_inbody && s4.bodyComposition.peso_kg_inbody.source === 'INBODY');
+
+    // T5: snapshot is stable (field order doesn't matter)
+    var s5a = _mkSnap({ sexo: 'M', nivel: 'avanzado' });
+    var s5b = _mkSnap({ nivel: 'avanzado', sexo: 'M' });
+    assert('T5 snapshot stable independent of field order',
+      _getSnapshotPath(s5a, 'base.sexo') === _getSnapshotPath(s5b, 'base.sexo') &&
+      _getSnapshotPath(s5a, 'recoveryContext.nivel') === _getSnapshotPath(s5b, 'recoveryContext.nivel'));
+
+    // T6: diff detects availability change
+    var snapA = _mkSnap({ dias_semana: 5 });
+    var snapB = _mkSnap({ dias_semana: 4 });
+    var diff6 = _diffProfileSnapshots(snapA, snapB);
+    var d6 = diff6.find(function(c){ return c.label === 'Disponibilidad (días)'; });
+    assert('T6 diff detects dias_semana change', !!d6 && d6.prev === '5' && d6.curr === '4');
+    assert('T6 availability change is CRITICAL', d6 && d6.severity === 'CRITICAL');
+
+    // T7: diff detects new lesion
+    var snapC = _mkSnap({ lesiones: 'ninguna' });
+    var snapD = _mkSnap({ lesiones: 'dolor hombro izq' });
+    var diff7 = _diffProfileSnapshots(snapC, snapD);
+    var d7 = diff7.find(function(c){ return c.label === 'Lesiones/restricciones'; });
+    assert('T7 diff detects new lesion', !!d7 && d7.curr === 'dolor hombro izq');
+
+    // T8: unchanged field does NOT appear in diff
+    var snapE = _mkSnap({ objetivo_mesociclo: 'hipertrofia', nivel: 'intermedio' });
+    var snapF = _mkSnap({ objetivo_mesociclo: 'hipertrofia', nivel: 'avanzado' });
+    var diff8 = _diffProfileSnapshots(snapE, snapF);
+    var unchanged = diff8.find(function(c){ return c.label === 'Objetivo mesociclo'; });
+    assert('T8 unchanged objetivo_mesociclo not in diff', !unchanged);
+
+    // T9: null prev vs real curr → change detected
+    var snapG = _mkSnap({});
+    var snapH = _mkSnap({ peso_kg: 85 });
+    var diff9 = _diffProfileSnapshots(snapG, snapH);
+    var d9 = diff9.find(function(c){ return c.label === 'Peso'; });
+    assert('T9 null→value detected as change', !!d9 && d9.prev === null && d9.curr === '85');
+
+    // T10: diff with null prev snapshot returns empty
+    var diff10 = _diffProfileSnapshots(null, snapH);
+    assert('T10 null prevSnap returns []', diff10.length === 0);
+
+    // T11: _renderChangeTrace with empty array shows "sin cambios" message
+    var html11 = _renderChangeTrace([]);
+    assert('T11 empty changes renders sin cambios text', html11.indexOf('Sin cambios') >= 0);
+
+    // T12: _renderChangeTrace escapes HTML in values
+    var diff12 = [{ label: '<Label>', severity: 'INFO', unit: null, prev: '<prev>', curr: '<curr>' }];
+    var html12 = _renderChangeTrace(diff12);
+    assert('T12 XSS: label escaped in renderChangeTrace', html12.indexOf('<Label>') < 0 && html12.indexOf('&lt;Label&gt;') >= 0);
+    assert('T12 XSS: curr value escaped', html12.indexOf('<curr>') < 0 && html12.indexOf('&lt;curr&gt;') >= 0);
+
+    console.log('[SNAPSHOT TESTS] ' + pass + ' passed, ' + fail + ' failed');
+    return { pass: pass, fail: fail };
+  }
+  window._runProfileSnapshotTests = _runProfileSnapshotTests;
 
   // ── Ehrenstein — Calibración Volumétrica (Módulo A) ──────────────────────
   function _calcVMEVMR(f) {
@@ -9992,6 +10307,8 @@ El esfuerzo no es negociable.
       const supPlan = supplements ? _supplementsJsonToPlan(supplements) : null;
       if (supPlan) { clientUpdates.supplementPlan = supPlan; clientUpdates.supplementsRaw = supplements; saved.push('suplementación'); }
       if (pharma) { clientUpdates.pharmacoPlan = pharma; saved.push('farmacología'); }
+      // Save snapshot of profile used at generation time — enables change trace on next visit
+      clientUpdates.lastPrescriptionSnapshot = _buildProfileSnapshot();
       if (Object.keys(clientUpdates).length) {
         await updateDoc(doc(db, 'clients', clientId), clientUpdates);
         Object.assign(_detailClientData, clientUpdates);
