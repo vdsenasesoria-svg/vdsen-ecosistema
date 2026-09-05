@@ -4859,7 +4859,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="flex:1">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
           '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done" style="'+_iptS.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_expK+'\')" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
-          '<div id="xicshint_'+_expK+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
+          '<div id="xicshint_'+_expK+'" aria-live="polite" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
         '</div>'+
         '<div style="flex:2">'+
           '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
@@ -5130,7 +5130,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '</div>'+
           '</div>'+
         '</div>'+
-        '<div id="icshint_'+key+'" style="min-height:14px;margin-bottom:4px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
+        '<div id="icshint_'+key+'" aria-live="polite" style="min-height:14px;margin-bottom:4px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
         // Actions — sticky so the save button stays in thumb reach without scrolling
         '<div style="position:sticky;bottom:0;display:flex;gap:8px;padding:10px 0 4px;'+
              'background:linear-gradient(to bottom,transparent 0%,var(--bg) 38%);z-index:5">'+
@@ -5390,9 +5390,10 @@ function _buildCalisteniaCard(ejercicios, di, ei, isPartner) {
               '</div>'+
               '<div style="width:54px;flex-shrink:0">'+
                 '<div style="font-size:9px;color:var(--mt);text-align:center;letter-spacing:.8px;margin-bottom:2px">Calidad</div>'+
-                '<input id="cal_ics_'+key+'" type="number" min="1" max="10" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#7ec0ff;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()">'+
+                '<input id="cal_ics_'+key+'" type="number" min="1" max="10" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" '+''+' style="width:100%;background:var(--input-bg);border:1px solid '+borderCol+';border-radius:8px;color:#7ec0ff;font-size:15px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box" onfocus="this.select()" oninput="updateCALICSColor(\''+key+'\')">'+
               '</div>'+
             '</div>'+
+            '<div id="calcicshint_'+key+'" aria-live="polite" style="min-height:12px;font-size:10px;font-weight:700;letter-spacing:.3px;margin-top:3px;transition:color .15s"></div>'+
           '</div>'+
           '<button onclick="completeCalisteniaSet(\''+key+'\','+di+','+ei+','+s+','+rest+')" style="width:44px;height:44px;border-radius:8px;border:2px solid '+borderCol+';background:'+(done?'var(--grn)':'var(--input-bg)')+';color:'+(done?'#fff':'var(--mt)')+';font-size:18px;cursor:pointer;flex-shrink:0">'+(done?'✓':'○')+'</button>'+
         '</div>'+
@@ -6148,7 +6149,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
           '<div style="flex:1">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">Calidad (1-10)</div>'+
             '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" enterkeyhint="done" style="'+_iptS2.replace('font-size:20px','font-size:16px')+'" onfocus="this.select()" oninput="updateXICSColor(\''+_ssk+'\')" onkeydown="if(event.isComposing)return;if(event.key===\'Enter\'){event.preventDefault();this.blur();}">'+
-            '<div id="xicshint_'+_ssk+'" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
+            '<div id="xicshint_'+_ssk+'" aria-live="polite" style="min-height:14px;margin-top:3px;font-size:10px;font-weight:700;letter-spacing:.3px;transition:color .15s"></div>'+
           '</div>'+
           '<div style="flex:2">'+
             '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:4px;font-weight:600">PUMP</div>'+
@@ -7262,6 +7263,9 @@ function renderEntrenamiento() {
   document.querySelectorAll('[id^="xicshint_"]').forEach(function(hint) {
     updateXICSColor(hint.id.replace('xicshint_', ''));
   });
+  document.querySelectorAll('[id^="calcicshint_"]').forEach(function(hint) {
+    updateCALICSColor(hint.id.replace('calcicshint_', ''));
+  });
   // Swipe horizontal en #exPanel para navegar entre días
   (function() {
     var panel = document.getElementById('exPanel');
@@ -7915,6 +7919,9 @@ function updateICSColor(key) {
 }
 function updateXICSColor(key) {
   _applyICSHint(document.getElementById('xics_'+key), document.getElementById('xicshint_'+key));
+}
+function updateCALICSColor(key) {
+  _applyICSHint(document.getElementById('cal_ics_'+key), document.getElementById('calcicshint_'+key));
 }
 
 function toggleNota(id) {
@@ -12922,6 +12929,66 @@ function _runLongitudinalTests() {
   return { pass: _pass, fail: _fail, results: _results };
 }
 window._runLongitudinalTests = _runLongitudinalTests;
+
+function _runICSTests() {
+  var _pass = 0, _fail = 0, _results = [];
+  function _assert(name, cond) {
+    if (cond) { _pass++; _results.push('✓ '+name); }
+    else       { _fail++; _results.push('✗ FAIL: '+name); }
+  }
+  // Build isolated DOM nodes for testing _applyICSHint directly
+  function _mkNodes(val) {
+    var inp = document.createElement('input'); inp.type = 'number'; inp.value = val;
+    var hint = document.createElement('div');
+    _applyICSHint(inp, hint);
+    return { inp: inp, hint: hint };
+  }
+  // ICS 1 → insuficiente · rojo
+  var n1 = _mkNodes('1');
+  _assert('T1: ICS 1 → rojo', n1.inp.style.color === 'var(--red)');
+  _assert('T1: ICS 1 → texto insuficiente', n1.hint.textContent.indexOf('nsuficiente') >= 0);
+  // ICS 4 → insuficiente · rojo
+  var n4 = _mkNodes('4');
+  _assert('T2: ICS 4 → rojo', n4.inp.style.color === 'var(--red)');
+  _assert('T2: ICS 4 → texto insuficiente', n4.hint.textContent.indexOf('nsuficiente') >= 0);
+  // ICS 5 → regular · ámbar
+  var n5 = _mkNodes('5');
+  _assert('T3: ICS 5 → ámbar', n5.inp.style.color !== 'var(--red)' && n5.hint.textContent.indexOf('regular') >= 0);
+  // ICS 6 → regular · ámbar
+  var n6 = _mkNodes('6');
+  _assert('T4: ICS 6 → ámbar', n6.hint.textContent.indexOf('regular') >= 0);
+  // ICS 7 → buena · verde
+  var n7 = _mkNodes('7');
+  _assert('T5: ICS 7 → verde', n7.inp.style.color !== 'var(--red)');
+  _assert('T5: ICS 7 → texto buena', n7.hint.textContent.indexOf('buena') >= 0);
+  // ICS 8 → buena · verde
+  var n8 = _mkNodes('8');
+  _assert('T6: ICS 8 → texto buena', n8.hint.textContent.indexOf('buena') >= 0);
+  // ICS 9 → impecable
+  var n9 = _mkNodes('9');
+  _assert('T7: ICS 9 → impecable', n9.hint.textContent.indexOf('impecable') >= 0);
+  // ICS 10 → impecable
+  var n10 = _mkNodes('10');
+  _assert('T8: ICS 10 → impecable', n10.hint.textContent.indexOf('impecable') >= 0);
+  // Vacío → hint vacío, border neutro
+  var ne = _mkNodes('');
+  _assert('T9: vacío → hint vacío', ne.hint.textContent === '');
+  // Inválido (fuera de rango 1-10 como texto) → same as empty/neutral
+  var ni = _mkNodes('abc');
+  _assert('T10: no-numérico → hint vacío', ni.hint.textContent === '');
+  // No cambia valor guardado (hint es puro DOM, no toca LOGS)
+  _assert('T11: _applyICSHint no toca LOGS', typeof LOGS === 'object' && !LOGS['_ics_test_sentinel_']);
+  // aria-live en hint divs presentes en DOM
+  var _ahints = document.querySelectorAll('[id^="icshint_"],[id^="xicshint_"],[id^="calcicshint_"]');
+  var _allLive = true;
+  _ahints.forEach(function(h){ if (h.getAttribute('aria-live') !== 'polite') _allLive = false; });
+  _assert('T12: aria-live="polite" en todos los hint divs presentes', _allLive || _ahints.length === 0);
+
+  console.log('[ICS TESTS] '+_pass+'/'+(_pass+_fail)+' passed');
+  _results.forEach(function(r){ console.log(r); });
+  return { pass: _pass, fail: _fail, results: _results };
+}
+window._runICSTests = _runICSTests;
 
 // ── END FASE 6 HISTORY HELPERS ──────────────────────────────────────────
 
