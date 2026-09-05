@@ -10185,6 +10185,462 @@ El esfuerzo no es negociable.
     }, 300);
   };
 
+  // ── Plan Generation Preview ──────────────────────────────────────────────
+  // Builds structured preview data from already-in-memory objects. 0 new reads.
+  function _buildPlanPreview(training, prescCtx, volAudit, validationWarnings, profileTraceChanges) {
+    var days       = (training && Array.isArray(training.days)) ? training.days : [];
+    var prevPlan   = prescCtx && prescCtx.previousPlan;
+    var targets    = (prescCtx && prescCtx.prescriptionTargets) || {};
+    var muscles    = targets.muscles || {};
+    var reasonCodes = (targets.reasonCodes || []).slice();
+
+    // Topology label heuristic from generated days
+    var dpw = training ? (training.daysPerWeek || days.length) : 0;
+    var topoLabel = dpw <= 2 ? 'FULL_BODY (' + dpw + 'd)' :
+                    dpw === 3 ? 'PUSH_PULL_LEGS / FULL_BODY_3d' :
+                    dpw === 4 ? 'UPPER_LOWER / TWO_ON_ONE_OFF' :
+                    dpw === 5 ? 'BROSPLIT_5 / PPL+2' :
+                    dpw >= 6  ? 'HIGH_FREQ (' + dpw + 'd)' : '—';
+    var dayLabels  = days.map(function(d){ return d.label || ('Día ' + (d.dayIndex+1)); });
+
+    // Per-muscle frequency from generated plan (direct exposures)
+    var muscleFreq = {};
+    days.forEach(function(day) {
+      var seen = {};
+      (day.exercises || []).forEach(function(ex) {
+        var lc = (ex.exerciseName || '').toLowerCase();
+        var canon = (typeof _EXERCISE_CANONICAL_METADATA !== 'undefined' && _EXERCISE_CANONICAL_METADATA[lc]) || null;
+        var prim  = canon ? (canon.primaryMuscles || []) : [];
+        prim.forEach(function(m) {
+          if (!seen[m]) { seen[m] = true; muscleFreq[m] = (muscleFreq[m] || 0) + 1; }
+        });
+      });
+    });
+
+    // Priority rows (high + maintenance only, sorted high first)
+    var priorityRows = Object.keys(muscles)
+      .filter(function(m) { return muscles[m].priority === 'high' || muscles[m].goal === 'maintenance'; })
+      .sort(function(a, b) {
+        var pa = muscles[a].priority === 'high' ? 0 : 1;
+        var pb = muscles[b].priority === 'high' ? 0 : 1;
+        return pa - pb;
+      })
+      .map(function(m) {
+        var mt = muscles[m];
+        return {
+          muscle:    m,
+          priority:  mt.priority === 'high' ? 'HIGH' : 'MAINTENANCE',
+          freqTarget: mt.frequencyTarget || '?',
+          freqActual: muscleFreq[m] || 0,
+          volTarget:  mt.volumeTarget || null,
+          volActual:  volAudit && volAudit.muscleVolume && volAudit.muscleVolume[m]
+                       ? volAudit.muscleVolume[m].fractionalTotal : null,
+        };
+      });
+
+    // Exercise comparison: KEEP / ADD / REMOVE (exact-name; PID not available here)
+    var prevNames = prevPlan && Array.isArray(prevPlan.exercises) ? prevPlan.exercises : [];
+    var newNames  = days.flatMap ? days.flatMap(function(d){ return (d.exercises||[]).map(function(e){ return e.exerciseName||''; }); })
+                                 : [].concat.apply([], days.map(function(d){ return (d.exercises||[]).map(function(e){ return e.exerciseName||''; }); }));
+    newNames = newNames.filter(Boolean);
+    var prevSet = {};
+    var newSet  = {};
+    prevNames.forEach(function(n){ prevSet[n.toLowerCase()] = n; });
+    newNames.forEach(function(n){ newSet[n.toLowerCase()] = n; });
+    // Detect ambiguous (duplicate exercise names)
+    var prevCounts = {}, newCounts = {};
+    prevNames.forEach(function(n){ var k=n.toLowerCase(); prevCounts[k]=(prevCounts[k]||0)+1; });
+    newNames.forEach(function(n){ var k=n.toLowerCase(); newCounts[k]=(newCounts[k]||0)+1; });
+
+    var exerciseChanges = [];
+    var allKeys = {};
+    Object.keys(prevSet).forEach(function(k){ allKeys[k]=true; });
+    Object.keys(newSet).forEach(function(k){ allKeys[k]=true; });
+    Object.keys(allKeys).forEach(function(k) {
+      var inPrev = !!prevSet[k];
+      var inNew  = !!newSet[k];
+      var ambiguous = (prevCounts[k] > 1 || newCounts[k] > 1);
+      var status = ambiguous ? 'AMBIGUOUS' : (inPrev && inNew ? 'KEEP' : (inNew ? 'ADD' : 'REMOVE'));
+      exerciseChanges.push({
+        name:      newSet[k] || prevSet[k],
+        status:    status,
+        ambiguous: ambiguous,
+      });
+    });
+    // Sort: ADD first, then REMOVE, AMBIGUOUS, KEEP last
+    var SEV_ORDER = { ADD: 0, REMOVE: 1, AMBIGUOUS: 2, KEEP: 3 };
+    exerciseChanges.sort(function(a,b){ return (SEV_ORDER[a.status]||9) - (SEV_ORDER[b.status]||9); });
+
+    // Profile-driven reasons (CRITICAL + RELEVANT changes only, readable labels)
+    var profileReasons = (profileTraceChanges || [])
+      .filter(function(c){ return c.severity === 'CRITICAL' || c.severity === 'RELEVANT'; })
+      .map(function(c){
+        var prevStr = c.prev !== null && c.prev !== undefined ? String(c.prev) : '—';
+        var currStr = c.curr !== null && c.curr !== undefined ? String(c.curr) : '—';
+        return c.label + ': ' + prevStr + ' → ' + currStr;
+      });
+
+    // Engine reason codes → human strings (only known codes, no invented explanations)
+    var RC_LABELS = {
+      STALLED_EXERCISES:       'Ejercicios estancados en ciclo anterior',
+      MAJORITY_STALLED:        'Mayoría de ejercicios sin progresión',
+      DELOAD_TRIGGERED_PREV_CYCLE: 'Deload ejecutado en el ciclo previo',
+      LOW_WELLNESS_WHO5:       'Bienestar bajo (WHO-5) en check-ins recientes',
+      ARTICULAR_ISSUES:        'Problemas articulares registrados',
+    };
+    var engineReasons = reasonCodes
+      .filter(function(rc) { return RC_LABELS[rc]; })
+      .map(function(rc) { return RC_LABELS[rc]; });
+    var allReasons = profileReasons.concat(engineReasons);
+
+    // Warnings: from validation + volume audit
+    var warnings = (validationWarnings || []).slice();
+    if (volAudit && Array.isArray(volAudit.warnings)) {
+      volAudit.warnings.forEach(function(w) {
+        var wStr = (typeof w === 'string') ? w : (w.code + ': ' + w.muscle + ' ' + w.fractionalTotal + ' series');
+        if (warnings.indexOf(wStr) < 0) warnings.push(wStr);
+      });
+    }
+    // High-volume day concentration (structural — not physiological threshold)
+    if (days.length > 1) {
+      var daySets = days.map(function(d){ return (d.exercises||[]).reduce(function(s,e){ return s+(e.sets||[]).length; }, 0); });
+      var avgSets = daySets.reduce(function(s,v){ return s+v; }, 0) / daySets.length;
+      daySets.forEach(function(sets, i) {
+        if (sets > avgSets * 1.4 && sets > 12) {
+          warnings.push('FATIGA_CONCENTRADA: ' + (dayLabels[i]||('Día '+(i+1))) + ' concentra ' + sets + ' series (promedio ' + Math.round(avgSets) + ')');
+        }
+      });
+    }
+
+    return {
+      topology:        topoLabel,
+      daysPerWeek:     dpw,
+      weeks:           training ? (training.weeks || '?') : '?',
+      dayLabels:       dayLabels,
+      priorityRows:    priorityRows,
+      exerciseChanges: exerciseChanges,
+      allReasons:      allReasons,
+      warnings:        warnings,
+      hasPreviousPlan: !!(prescCtx && prescCtx.hasPreviousPlan),
+    };
+  }
+  window._buildPlanPreview = _buildPlanPreview;
+
+  // Returns Promise<boolean> — true = apply, false = cancel.
+  // Renders preview inside _fichaGenStatus_{clientId}.
+  function _showPlanPreviewModal(clientId, pv) {
+    return new Promise(function(resolve) {
+      var statusEl = document.getElementById('_fichaGenStatus_' + clientId);
+      if (!statusEl) { resolve(true); return; }
+
+      var STATUS_COLOR  = { KEEP: '#555', ADD: '#44BB88', REMOVE: '#e05555', AMBIGUOUS: '#888' };
+      var STATUS_LABEL  = { KEEP: 'IGUAL', ADD: 'NUEVO', REMOVE: 'QUITAR', AMBIGUOUS: '?' };
+
+      var changesHtml = '';
+      if (pv.hasPreviousPlan) {
+        var shown = pv.exerciseChanges.filter(function(e){ return e.status !== 'KEEP'; }).slice(0, 20);
+        if (shown.length) {
+          changesHtml = shown.map(function(e) {
+            var col = STATUS_COLOR[e.status] || '#888';
+            var lbl = STATUS_LABEL[e.status] || e.status;
+            var note = e.ambiguous ? ' <span style="color:#555;font-size:9px">(ambiguo)</span>' : '';
+            return '<div style="display:flex;align-items:baseline;gap:6px;padding:3px 0;border-bottom:1px solid rgba(244,244,240,.03)">' +
+              '<span style="font-size:9px;font-weight:700;color:' + col + ';min-width:38px;flex-shrink:0">' + lbl + '</span>' +
+              '<span style="font-size:11px;color:#ccc">' + _escH(e.name) + note + '</span>' +
+              '</div>';
+          }).join('');
+        } else {
+          changesHtml = '<div style="color:#555;font-size:11px">Sin cambios de ejercicios vs plan anterior.</div>';
+        }
+      } else {
+        changesHtml = '<div style="color:#555;font-size:11px">Primera prescripción — sin plan anterior para comparar.</div>';
+      }
+
+      var priHtml = pv.priorityRows.length ? pv.priorityRows.map(function(r) {
+        var col   = r.priority === 'HIGH' ? '#c89cff' : '#7ec0ff';
+        var badge = r.priority === 'HIGH' ? '⬆' : '↓';
+        var freqOk = r.freqActual >= r.freqTarget;
+        var freqCol = freqOk ? '#44BB88' : '#FF8C00';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(244,244,240,.03)">' +
+          '<span style="font-size:10px;min-width:14px">' + badge + '</span>' +
+          '<span style="font-size:11px;color:' + col + ';min-width:80px;flex-shrink:0">' + _escH(r.muscle) + '</span>' +
+          '<span style="font-size:10px;color:#777;flex:1">' + r.priority + '</span>' +
+          '<span style="font-size:10px;color:' + freqCol + '">' + r.freqActual + '×' +
+            (r.freqTarget ? '<span style="color:#555"> / ' + r.freqTarget + '× objetivo</span>' : '') +
+          '</span>' +
+          (r.volActual !== null ? '<span style="font-size:10px;color:#555"> · ' + r.volActual + ' ser</span>' : '') +
+          '</div>';
+      }).join('') : '<div style="color:#555;font-size:11px">Sin músculos prioritarios definidos.</div>';
+
+      var reasonsHtml = pv.allReasons.length
+        ? pv.allReasons.map(function(r){ return '<div style="font-size:11px;color:#aaa;padding:2px 0">• ' + _escH(String(r)) + '</div>'; }).join('')
+        : '<div style="font-size:11px;color:#555">Sin motivos explícitos registrados.</div>';
+
+      var warningsHtml = pv.warnings.length
+        ? pv.warnings.map(function(w){ return '<div style="font-size:11px;color:#FF8C00;padding:2px 0">⚠ ' + _escH(String(w)) + '</div>'; }).join('')
+        : '';
+
+      var applyFn  = '_previewApply_'  + clientId;
+      var cancelFn = '_previewCancel_' + clientId;
+
+      var html = '<div style="background:rgba(16,22,32,.98);border:1px solid rgba(196,255,0,.25);border-radius:11px;padding:16px;margin-top:4px">' +
+
+        // Header
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
+          '<span style="font-size:12px;font-weight:800;color:#C4FF00;letter-spacing:.04em">PLAN PROPUESTO</span>' +
+          '<span style="font-size:10px;color:#555">' + _escH(String(pv.daysPerWeek)) + 'd/sem · ' + _escH(String(pv.weeks)) + ' sem</span>' +
+        '</div>' +
+
+        // Topology + days
+        '<div style="margin-bottom:12px">' +
+          '<div style="font-size:9px;font-weight:700;color:#555;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">TOPOLOGÍA</div>' +
+          '<div style="font-size:12px;color:#e4e4e0;font-weight:600">' + _escH(pv.topology) + '</div>' +
+          '<div style="font-size:11px;color:#666;margin-top:3px">' + pv.dayLabels.map(function(l){ return _escH(l); }).join(' · ') + '</div>' +
+        '</div>' +
+
+        // Priorities + frequencies
+        '<div style="margin-bottom:12px">' +
+          '<div style="font-size:9px;font-weight:700;color:#555;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">PRIORIDADES Y FRECUENCIAS</div>' +
+          priHtml +
+        '</div>' +
+
+        // Changes vs prev plan
+        (pv.hasPreviousPlan
+          ? '<details open style="margin-bottom:12px">' +
+              '<summary style="font-size:9px;font-weight:700;color:#555;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;list-style:none;margin-bottom:4px">CAMBIOS VS PLAN ACTUAL</summary>' +
+              '<div>' + changesHtml + '</div>' +
+            '</details>'
+          : '<div style="margin-bottom:12px">' +
+              '<div style="font-size:9px;font-weight:700;color:#555;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">CAMBIOS VS PLAN ACTUAL</div>' +
+              changesHtml +
+            '</div>'
+        ) +
+
+        // Reasons
+        '<details style="margin-bottom:12px">' +
+          '<summary style="font-size:9px;font-weight:700;color:#555;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;list-style:none;margin-bottom:4px">MOTIVOS</summary>' +
+          reasonsHtml +
+        '</details>' +
+
+        // Warnings
+        (warningsHtml ? '<div style="background:rgba(255,140,0,.05);border:1px solid rgba(255,140,0,.2);border-radius:7px;padding:8px 10px;margin-bottom:12px">' + warningsHtml + '</div>' : '') +
+
+        // Actions
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button onclick="' + applyFn + '()" style="flex:1;min-width:120px;padding:10px;border-radius:7px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:800;cursor:pointer">✅ Aplicar plan</button>' +
+          '<button onclick="' + cancelFn + '()" style="padding:10px 14px;border-radius:7px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.04);color:#888;font-size:12px;font-weight:600;cursor:pointer">✕ Cancelar</button>' +
+        '</div>' +
+
+      '</div>';
+
+      statusEl.innerHTML = html;
+
+      window[applyFn] = function() {
+        delete window[applyFn]; delete window[cancelFn];
+        resolve(true);
+      };
+      window[cancelFn] = function() {
+        delete window[applyFn]; delete window[cancelFn];
+        if (statusEl) statusEl.innerHTML = '';
+        resolve(false);
+      };
+    });
+  }
+  window._showPlanPreviewModal = _showPlanPreviewModal;
+
+  // ── Plan Preview Tests ────────────────────────────────────────────────────
+  function _runPlanPreviewTests() {
+    var pass = 0, fail = 0;
+    var assert = function(desc, cond) {
+      if (cond) { pass++; }
+      else { fail++; console.error('[PREVIEW TEST FAIL] ' + desc); }
+    };
+
+    // Helpers
+    function _mkTraining(dpw, dayExercises, weeks) {
+      return {
+        daysPerWeek: dpw,
+        weeks: weeks || 6,
+        days: dayExercises.map(function(exs, i) {
+          return { dayIndex: i, label: 'Día ' + (i+1), exercises: exs.map(function(name) {
+            return { exerciseName: name, sets: [{setIndex:0},{setIndex:1},{setIndex:2},{setIndex:3}] };
+          }) };
+        }),
+      };
+    }
+    function _mkPrescCtx(prevExercises, muscleMap, reasonCodes, hasPrev) {
+      return {
+        hasPreviousPlan: !!hasPrev,
+        previousPlan: hasPrev ? { exercises: prevExercises || [] } : null,
+        prescriptionTargets: {
+          muscles: muscleMap || {},
+          reasonCodes: reasonCodes || [],
+        },
+      };
+    }
+
+    // T1: Sin cambios de ejercicios → exerciseChanges all KEEP
+    var t1 = _buildPlanPreview(
+      _mkTraining(3, [['Sentadilla','Press Banca'],['Remo','Jalón'],['Press Hombro','Curl']]),
+      _mkPrescCtx(['Sentadilla','Press Banca','Remo','Jalón','Press Hombro','Curl'], {}, [], true),
+      null, [], []
+    );
+    assert('T1 sin cambios → no ADD or REMOVE', !t1.exerciseChanges.some(function(e){ return e.status==='ADD'||e.status==='REMOVE'; }));
+    assert('T1 all KEEP', t1.exerciseChanges.every(function(e){ return e.status==='KEEP'; }));
+
+    // T2: Cambio de topología — dpw changes from 3 to 4
+    var t2a = _buildPlanPreview(_mkTraining(3, [[],[],[]]), _mkPrescCtx([], {}, [], false), null, [], []);
+    var t2b = _buildPlanPreview(_mkTraining(4, [[],[],[],[]]), _mkPrescCtx([], {}, [], false), null, [], []);
+    assert('T2 topology 3d label', t2a.topology.indexOf('3') >= 0);
+    assert('T2 topology 4d label', t2b.topology.indexOf('4') >= 0);
+    assert('T2 daysPerWeek tracked', t2a.daysPerWeek === 3 && t2b.daysPerWeek === 4);
+
+    // T3: Cambio de frecuencia — freqActual vs freqTarget in priorityRows
+    var muscleMap3 = { pecho: { priority: 'high', frequencyTarget: 2, volumeTarget: 14 } };
+    // 1 day with bench press → pecho freq = 1 (below target 2)
+    var t3 = _buildPlanPreview(
+      _mkTraining(3, [['Press Banca'],['Remo'],['Sentadilla']]),
+      _mkPrescCtx([], muscleMap3, [], true),
+      null, [], []
+    );
+    var pechoRow = t3.priorityRows.find(function(r){ return r.muscle === 'pecho'; });
+    assert('T3 pecho priorityRow present', !!pechoRow);
+    assert('T3 freqTarget from prescCtx', pechoRow && pechoRow.freqTarget === 2);
+
+    // T4: KEEP / ADD / REMOVE classification
+    var t4 = _buildPlanPreview(
+      _mkTraining(2, [['Sentadilla','Press Banca'],['Remo']]),
+      _mkPrescCtx(['Sentadilla','Curl Bíceps'], {}, [], true),
+      null, [], []
+    );
+    var t4keep = t4.exerciseChanges.find(function(e){ return e.name.toLowerCase()==='sentadilla' && e.status==='KEEP'; });
+    var t4add  = t4.exerciseChanges.find(function(e){ return e.name.toLowerCase()==='press banca' && e.status==='ADD'; });
+    var t4add2 = t4.exerciseChanges.find(function(e){ return e.name.toLowerCase()==='remo' && e.status==='ADD'; });
+    var t4rem  = t4.exerciseChanges.find(function(e){ return e.name.toLowerCase()==='curl bíceps' && e.status==='REMOVE'; });
+    assert('T4 KEEP sentadilla', !!t4keep);
+    assert('T4 ADD press banca', !!t4add);
+    assert('T4 ADD remo', !!t4add2);
+    assert('T4 REMOVE curl bíceps', !!t4rem);
+
+    // T5: Ambiguidad → AMBIGUOUS, no falsa comparación KEEP/ADD/REMOVE
+    var t5 = _buildPlanPreview(
+      _mkTraining(2, [['Press Banca','Press Banca'],['Remo']]),  // Press Banca duplicated in new
+      _mkPrescCtx(['Press Banca'], {}, [], true),
+      null, [], []
+    );
+    var t5amb = t5.exerciseChanges.find(function(e){ return e.name.toLowerCase()==='press banca'; });
+    assert('T5 duplicate new → AMBIGUOUS', t5amb && t5amb.status === 'AMBIGUOUS');
+
+    var t5b = _buildPlanPreview(
+      _mkTraining(2, [['Press Banca'],['Remo']]),
+      _mkPrescCtx(['Press Banca','Press Banca'], {}, [], true),  // duplicate in prev
+      null, [], []
+    );
+    var t5bamb = t5b.exerciseChanges.find(function(e){ return e.name.toLowerCase()==='press banca'; });
+    assert('T5b duplicate prev → AMBIGUOUS', t5bamb && t5bamb.status === 'AMBIGUOUS');
+
+    // T6: Warning fatiga concentrada — 1 day with >40% above avg AND >12 sets
+    // 3 days: day0=20 sets, day1=4 sets, day2=4 sets → avg=9.3, day0 > 9.3*1.4=13 AND >12
+    function _mkHeavyDay() {
+      return ['A','B','C','D','E'].map(function(n){ return { exerciseName: n,
+        sets: [{},{},{},{}] }; });  // 5 exercises × 4 sets = 20 sets
+    }
+    function _mkLightDay(n) {
+      return [{exerciseName:'X', sets:[{},{},{},{}]},{exerciseName:'Y', sets:[{}]}].slice(0,n||1);
+    }
+    var t6training = {
+      daysPerWeek: 3, weeks: 6,
+      days: [
+        { dayIndex:0, label:'Día 1', exercises: _mkHeavyDay() },     // 20 sets
+        { dayIndex:1, label:'Día 2', exercises: [{exerciseName:'X',sets:[{},{},{}]},{exerciseName:'Y',sets:[{},{},{}]}] },  // 6 sets
+        { dayIndex:2, label:'Día 3', exercises: [{exerciseName:'Z',sets:[{},{},{}]},{exerciseName:'W',sets:[{},{},{}]}] },  // 6 sets
+      ],
+    };
+    var t6 = _buildPlanPreview(t6training, _mkPrescCtx([], {}, [], false), null, [], []);
+    assert('T6 FATIGA_CONCENTRADA warning present',
+      t6.warnings.some(function(w){ return typeof w === 'string' && w.indexOf('FATIGA_CONCENTRADA') >= 0; }));
+
+    // T7: Missing/unknown reasonCodes → not in allReasons
+    var t7 = _buildPlanPreview(
+      _mkTraining(3, [[],[], []]),
+      _mkPrescCtx([], {}, ['UNKNOWN_CODE', 'FAKE_REASON'], false),
+      null, [], []
+    );
+    assert('T7 unknown reason codes not in allReasons', t7.allReasons.length === 0);
+
+    // T7b: Known reasonCode → in allReasons
+    var t7b = _buildPlanPreview(
+      _mkTraining(3, [[],[],[]]),
+      _mkPrescCtx([], {}, ['STALLED_EXERCISES'], false),
+      null, [], []
+    );
+    assert('T7b known STALLED_EXERCISES in allReasons', t7b.allReasons.some(function(r){ return r.indexOf('estancados') >= 0; }));
+
+    // T8: XSS — exercise names and reasons escaped in _showPlanPreviewModal
+    var xssTraining = { daysPerWeek: 1, weeks: 4, days: [{ dayIndex:0, label:'<Day>', exercises: [{ exerciseName: '<script>alert(1)</script>', sets:[{}] }] }] };
+    var xssPrescCtx = _mkPrescCtx(['<img src=x onerror=alert(1)>'], {}, [], true);
+    var xssWarnings = ['<script>xss</script>'];
+    var xssTrace = [{ severity:'CRITICAL', label:'<XSS>', prev:'<a>', curr:'<b>' }];
+    var xssPv = _buildPlanPreview(xssTraining, xssPrescCtx, null, xssWarnings, xssTrace);
+    // _showPlanPreviewModal needs a DOM node
+    var container = document.createElement('div');
+    container.id = '_fichaGenStatus_xss_test';
+    document.body.appendChild(container);
+    var xssP = _showPlanPreviewModal('xss_test', xssPv);
+    var xssHtml = container.innerHTML;
+    // Cancel immediately to resolve the promise
+    if (window['_previewCancel_xss_test']) window['_previewCancel_xss_test']();
+    document.body.removeChild(container);
+    assert('T8 XSS script tag not in HTML', xssHtml.indexOf('<script>') < 0);
+    assert('T8 XSS onerror not in HTML', xssHtml.indexOf('onerror') < 0);
+    assert('T8 XSS day label escaped', xssHtml.indexOf('<Day>') < 0);
+
+    // T9: Cancelar → resolve(false)
+    var cont9 = document.createElement('div');
+    cont9.id = '_fichaGenStatus_cancel_test';
+    document.body.appendChild(cont9);
+    var pv9 = _buildPlanPreview(_mkTraining(2,[['A'],['B']]), _mkPrescCtx([], {}, [], false), null, [], []);
+    var resolved9 = null;
+    _showPlanPreviewModal('cancel_test', pv9).then(function(v){ resolved9 = v; });
+    if (window['_previewCancel_cancel_test']) window['_previewCancel_cancel_test']();
+    document.body.removeChild(cont9);
+    // Promise resolves asynchronously; test via microtask
+    Promise.resolve().then(function() {
+      assert('T9 cancel resolves false', resolved9 === false);
+    });
+
+    // T10: Aplicar → resolve(true) y solo una vez (second call no-ops — fns deleted)
+    var cont10 = document.createElement('div');
+    cont10.id = '_fichaGenStatus_apply_test';
+    document.body.appendChild(cont10);
+    var pv10 = _buildPlanPreview(_mkTraining(2,[['A'],['B']]), _mkPrescCtx([], {}, [], false), null, [], []);
+    var resolvedCount = 0; var resolvedVal = null;
+    _showPlanPreviewModal('apply_test', pv10).then(function(v){ resolvedCount++; resolvedVal = v; });
+    var applyFn = window['_previewApply_apply_test'];
+    if (applyFn) { applyFn(); }
+    // Global deleted — second call should be no-op (fn is undefined)
+    assert('T10 apply fn deleted after call', !window['_previewApply_apply_test']);
+    assert('T10 cancel fn deleted after apply', !window['_previewCancel_apply_test']);
+    document.body.removeChild(cont10);
+    Promise.resolve().then(function() {
+      assert('T10 apply resolves true', resolvedVal === true);
+      assert('T10 apply resolves exactly once', resolvedCount === 1);
+    });
+
+    // T11: hasPreviousPlan=false → exerciseChanges has only ADD entries
+    var t11 = _buildPlanPreview(
+      _mkTraining(2, [['Sentadilla'],['Remo']]),
+      _mkPrescCtx([], {}, [], false),  // no previous plan
+      null, [], []
+    );
+    assert('T11 no prev plan → hasPreviousPlan false', !t11.hasPreviousPlan);
+    assert('T11 no prev plan → all ADD', t11.exerciseChanges.every(function(e){ return e.status === 'ADD'; }));
+
+    console.log('[PREVIEW TESTS] ' + pass + ' passed, ' + fail + ' failed');
+    return { pass: pass, fail: fail };
+  }
+  window._runPlanPreviewTests = _runPlanPreviewTests;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10289,6 +10745,20 @@ El esfuerzo no es negociable.
       const _volTargetWarnings2 = _auditVolumeVsTargets(_volAudit2, _muscleTargets2 || {});
       if (_volTargetWarnings2.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings2);
 
+      // ── Generation Preview Gate ──────────────────────────────────────────
+      setStatus('<span style="color:#888">Preparando preview…</span>');
+      const _prevSnap2 = (_detailClientData && _detailClientData.lastPrescriptionSnapshot) || null;
+      const _currSnap2 = _buildProfileSnapshot();
+      const _traceChanges2 = _diffProfileSnapshots(_prevSnap2, _currSnap2);
+      const _previewData = _buildPlanPreview(training, prescCtx, _volAudit2, validation.warnings, _traceChanges2);
+      const _confirmed = await _showPlanPreviewModal(clientId, _previewData);
+      if (!_confirmed) {
+        showToast('Generación cancelada — plan no guardado');
+        return;
+      }
+
+      // ── Write (only on explicit coach confirmation) ──────────────────────
+      setStatus('<span style="color:#888">Guardando plan…</span>');
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
       if (planObj) {
@@ -10308,7 +10778,7 @@ El esfuerzo no es negociable.
       if (supPlan) { clientUpdates.supplementPlan = supPlan; clientUpdates.supplementsRaw = supplements; saved.push('suplementación'); }
       if (pharma) { clientUpdates.pharmacoPlan = pharma; saved.push('farmacología'); }
       // Save snapshot of profile used at generation time — enables change trace on next visit
-      clientUpdates.lastPrescriptionSnapshot = _buildProfileSnapshot();
+      clientUpdates.lastPrescriptionSnapshot = _currSnap2;
       if (Object.keys(clientUpdates).length) {
         await updateDoc(doc(db, 'clients', clientId), clientUpdates);
         Object.assign(_detailClientData, clientUpdates);
@@ -10318,7 +10788,7 @@ El esfuerzo no es negociable.
       const trunc = respData.stop_reason === 'max_tokens' ? '<div style="color:#e05555;font-size:11px;margin-top:4px">⚠ Respuesta truncada — revisa que el plan esté completo.</div>' : '';
       const cacheNote = u.cache_read_input_tokens ? ' · caché ✓' : (u.cache_creation_input_tokens ? ' · caché creado' : '');
       setStatus(`<div style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);border-radius:8px;padding:12px;margin-top:4px">
-        <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Generado: ${saved.join(' · ')}</div>
+        <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Aplicado: ${saved.join(' · ')}</div>
         <div style="color:#888;font-size:11px">Tokens: ${u.input_tokens||'?'} in / ${u.output_tokens||'?'} out${cacheNote}</div>
         ${trunc}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -10327,7 +10797,7 @@ El esfuerzo no es negociable.
           <button onclick="notifyPlanReady('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.1);color:#25D366;font-size:12px;font-weight:600;cursor:pointer">📣 Avisar cliente</button>
         </div>
       </div>`);
-      showToast('✅ Plan completo generado y activado');
+      showToast('✅ Plan aplicado y activado');
     } catch (e) {
       setStatus(`<div style="background:rgba(220,60,60,.08);border:1px solid rgba(220,60,60,.3);border-radius:8px;padding:12px"><div style="color:#e05555;font-weight:700">❌ ${(e.message || e).replace(/</g,'&lt;')}</div></div>`);
       showToast('Error: ' + (e.message || e), true);
