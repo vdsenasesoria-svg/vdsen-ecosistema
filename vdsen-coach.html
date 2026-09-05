@@ -10374,7 +10374,7 @@ El esfuerzo no es negociable.
         });
       });
       Object.keys(mc).forEach(function(m){
-        if (mc[m] > 1) maintIssues.push({ code:'MAINTENANCE_SESSION_OVERALLOCATION', muscle:m, count:mc[m], day:day.label||('Día '+(day.dayIndex+1)), msg: m+': '+mc[m]+' ejercicios en '+(day.label||'Día '+(day.dayIndex+1))+' (mant.)' });
+        if (mc[m] > 1) maintIssues.push({ code:'MAINTENANCE_SESSION_OVERALLOCATION', muscle:m, count:mc[m], dayIndex:day.dayIndex, day:day.label||('Día '+(day.dayIndex+1)), msg: m+': '+mc[m]+' ejercicios en '+(day.label||'Día '+(day.dayIndex+1))+' (mant.)' });
       });
     });
     var priorityIssues    = _auditPriorityUnderallocation(volAudit, muscleFreq, muscleTargets);
@@ -10459,7 +10459,9 @@ El esfuerzo no es negociable.
     if (qualityAudit && qualityAudit.byMuscle) {
       qualityAudit.byMuscle.forEach(function(issue) {
         if (issue.code !== 'MAINTENANCE_SESSION_OVERALLOCATION') return;
-        var tDay = days.find(function(d){ return (d.label||'') === issue.day || ('Día '+(d.dayIndex+1)) === issue.day; });
+        var tDay = issue.dayIndex != null
+          ? days.find(function(d){ return d.dayIndex === issue.dayIndex; })
+          : days.find(function(d){ return (d.label||'') === issue.day || ('Día '+(d.dayIndex+1)) === issue.day; });
         if (!tDay) return;
         var muscle = issue.muscle;
         var found = [];
@@ -11207,6 +11209,21 @@ El esfuerzo no es negociable.
     var origCount = training8.days[0].exercises.length;
     _applyRepairCandidates(training8, ['repair_1'], [{ id:'repair_1', type:'remove_exercise', dayIndex:0, exerciseName:'press inclinado' }]);
     assert('T8 original training not mutated', training8.days[0].exercises.length === origCount);
+
+    // T9b: MAINTENANCE_SESSION_OVERALLOCATION matched by dayIndex (not label string)
+    // Simulates duplicate-label scenario where label matching would pick wrong day
+    var msoTraining = { daysPerWeek:2, weeks:6, days:[
+      { dayIndex:0, label:'Push', exercises:[{ exerciseName:'press banca', sets:[{},{},{}] },{ exerciseName:'press inclinado', sets:[{},{},{}] }] },
+      { dayIndex:1, label:'Push', exercises:[{ exerciseName:'sentadilla', sets:[{},{},{}] }] }
+    ]};
+    var msoQa = { status:'WARN', warnings:[{ code:'MAINTENANCE_SESSION_OVERALLOCATION', msg:'pectoral: 2 ejercicios en Push (mant.)' }],
+      byDay:[], byMuscle:[{ code:'MAINTENANCE_SESSION_OVERALLOCATION', muscle:'pectoral', count:2, dayIndex:0, day:'Push' }],
+      stability:[], redundancy:{ global:'NONE', byDay:[{dayIndex:0,level:'NONE',issues:[]},{dayIndex:1,level:'NONE',issues:[]}] },
+      structuralFatigue:{ byDay:[], highCount:0 } };
+    var msoCands = _generateRepairCandidates(msoQa, msoTraining);
+    // must target dayIndex:0, not dayIndex:1 (which also has label 'Push')
+    assert('T9b MAINTENANCE_SESSION_OVERALLOCATION picks correct dayIndex', msoCands.some(function(c){ return c.type==='remove_exercise' && c.dayIndex===0 && (c.exerciseName||'').toLowerCase()==='press inclinado'; }));
+    assert('T9b does not target day 1', !msoCands.some(function(c){ return c.dayIndex===1; }));
 
     // T9: XSS — candidate description from exercise with < > characters
     var xssTraining = _mkTraining([['<script>xss</script>','press banca']]);
