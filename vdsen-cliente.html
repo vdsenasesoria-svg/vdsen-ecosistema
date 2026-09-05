@@ -12559,6 +12559,32 @@ function _calcRealRIR(exposures) {
   return { last: Math.round(last * 10) / 10, trend: trend };
 }
 
+// Per-exposure reps comparison vs immediate predecessor (±5% load tolerance)
+function _repsVsPrev(exp, prevExp) {
+  if (!prevExp) return null;
+  var l0 = Math.max.apply(null, exp.sets.map(function(s){return s.carga;}));
+  var l1 = Math.max.apply(null, prevExp.sets.map(function(s){return s.carga;}));
+  if (!l0 || !l1) return null;
+  if (Math.abs(l0 - l1) > Math.max(l0, l1) * 0.05) return { comparable: false };
+  var r0 = Math.round(exp.sets.reduce(function(a,s){return a+s.reps;},0) / exp.sets.length);
+  var r1 = Math.round(prevExp.sets.reduce(function(a,s){return a+s.reps;},0) / prevExp.sets.length);
+  return { comparable: true, delta: r0 - r1, cur: r0, prev: r1 };
+}
+
+// Average real RIR for one exposure; null if none reported (null ≠ 0)
+function _avgRir(exp) {
+  var vals = exp.sets.filter(function(s){ return s.rir_real !== null; });
+  if (!vals.length) return null;
+  return Math.round(vals.reduce(function(a,s){ return a + s.rir_real; }, 0) / vals.length * 10) / 10;
+}
+
+// Total volume for one exposure; null if all sets lack quantifiable load (bodyweight/missing)
+function _expVolume(exp) {
+  var total = 0, hasLoad = false;
+  exp.sets.forEach(function(s){ if (s.carga > 0) { total += s.carga * s.reps; hasLoad = true; } });
+  return hasLoad ? Math.round(total) : null;
+}
+
 // "HOY" inline block — consumes existing progrec, never recalculates.
 // unit: 'KG'|'LB'. nombre: current exercise name for stale-progrec guard.
 function _buildNextExposureHtml(progrec, unit, nombre) {
@@ -12683,10 +12709,6 @@ function showExHistory(di, ei) {
   var exposures = _getExposures(prescId, di, ei, nombre, 5);
   var trend = _calcTrend(exposures);
   var pr = exposures.length ? _calcPR(exposures) : null;
-  var repsComp = _calcRepsAtSameLoad(exposures);
-  var rirData  = _calcRealRIR(exposures);
-  var realFreq = exposures.length;
-
   var tc = { PROGRESANDO:{icon:'↑',color:'var(--grn)',label:'PROGRESANDO'},
              ESTABLE:    {icon:'→',color:'var(--gold)',label:'ESTABLE'},
              REVISAR:    {icon:'↓',color:'var(--red)',label:'REVISAR'},
@@ -12732,38 +12754,7 @@ function showExHistory(di, ei) {
   }
   if (exposures.length) summaryHtml += '</div>';
 
-  // ── Longitudinal metrics: reps at same load · RIR real · frequency ──────
   var longHtml = '';
-  if (exposures.length) {
-    var _chips = [];
-    if (repsComp && repsComp.comparable) {
-      var _rdelta = repsComp.delta;
-      var _rsign = _rdelta > 0 ? '+' : '';
-      var _rcol = _rdelta > 0 ? 'var(--grn)' : _rdelta < -0.1 ? 'var(--red)' : 'var(--mt)';
-      _chips.push('<div style="flex:1;text-align:center;padding:8px 6px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.07)">'
-        + '<div style="font-size:8px;font-weight:800;letter-spacing:.8px;color:var(--mt2);margin-bottom:3px">REPS MISMO PESO</div>'
-        + '<div style="font-size:15px;font-weight:900;color:'+_rcol+'">'+_rsign+_escHTml(String(_rdelta%1===0?Math.round(_rdelta):_rdelta.toFixed(1)))+' reps</div>'
-        + '</div>');
-    } else if (repsComp && !repsComp.comparable) {
-      _chips.push('<div style="flex:1;text-align:center;padding:8px 6px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.07)">'
-        + '<div style="font-size:8px;font-weight:800;letter-spacing:.8px;color:var(--mt2);margin-bottom:3px">REPS</div>'
-        + '<div style="font-size:11px;font-weight:700;color:var(--mt)">— cargas distintas</div>'
-        + '</div>');
-    }
-    if (rirData && rirData.last !== null) {
-      var _ricon = { UP:'↑', DOWN:'↓', FLAT:'→' }[rirData.trend] || '';
-      var _rcol2 = rirData.trend === 'DOWN' ? 'var(--grn)' : rirData.trend === 'UP' ? 'var(--gold)' : 'var(--mt)';
-      _chips.push('<div style="flex:1;text-align:center;padding:8px 6px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.07)">'
-        + '<div style="font-size:8px;font-weight:800;letter-spacing:.8px;color:var(--mt2);margin-bottom:3px">RIR REAL</div>'
-        + '<div style="font-size:15px;font-weight:900;color:var(--tx)">'+_escHTml(String(rirData.last))+'<span style="font-size:12px;color:'+_rcol2+'"> '+_ricon+'</span></div>'
-        + '</div>');
-    }
-    _chips.push('<div style="flex:1;text-align:center;padding:8px 6px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.07)">'
-      + '<div style="font-size:8px;font-weight:800;letter-spacing:.8px;color:var(--mt2);margin-bottom:3px">FRECUENCIA</div>'
-      + '<div style="font-size:15px;font-weight:900;color:var(--tx)">'+_escHTml(String(realFreq))+'<span style="font-size:10px;font-weight:500;color:var(--mt)"> ses.</span></div>'
-      + '</div>');
-    longHtml = '<div style="display:flex;gap:6px;margin-bottom:12px">'+_chips.join('')+'</div>';
-  }
 
   // ── Full history under <details> ────────────────────────────────────────
   var detailRows = '';
@@ -12778,14 +12769,16 @@ function showExHistory(di, ei) {
       return 'S'+(idx+1)+': '+_escHTml(String(s.carga||'—'))+' '+_escHTml(String(unit))+' × '+_escHTml(String(s.reps||'—'))+(s.rir_real!=null?' · RIR '+_escHTml(String(s.rir_real)):'');
     }).join(' &nbsp;·&nbsp; ');
     var confMark = exp.confidence!=='HIGH' ? ' <span style="opacity:.45">pos.</span>' : '';
-    var _vol = exp.sets.reduce(function(a,s){ return a + s.carga * s.reps; }, 0);
-    var _volDelta = '';
-    if (expIdx < exposures.length - 1) {
-      var _prevVol = exposures[expIdx+1].sets.reduce(function(a,s){ return a + s.carga * s.reps; }, 0);
-      if (_prevVol > 0) { var _vd = Math.round((_vol - _prevVol) / _prevVol * 100); _volDelta = (_vd > 0 ? '+' : '') + _vd + '%'; }
-    }
-    var _volStr = _vol > 0 ? Math.round(_vol) + ' ' + unit : '';
-    var _vdcol = _volDelta.charAt(0) === '+' ? 'var(--grn)' : _volDelta.charAt(0) === '-' ? 'var(--red)' : 'var(--mt)';
+    var _prevExp  = expIdx < exposures.length - 1 ? exposures[expIdx+1] : null;
+    var _expVol   = _expVolume(exp);
+    var _pVol     = _prevExp ? _expVolume(_prevExp) : null;
+    var _vdPct    = (_expVol !== null && _pVol !== null && _pVol > 0)
+      ? Math.round((_expVol - _pVol) / _pVol * 100) : null;
+    var _vdStr    = _vdPct !== null ? (_vdPct > 0 ? '+' : '') + _vdPct + '%' : '';
+    var _vdcol    = _vdStr.charAt(0) === '+' ? 'var(--grn)' : _vdStr.charAt(0) === '-' ? 'var(--red)' : 'var(--mt)';
+    var _rComp    = _repsVsPrev(exp, _prevExp);
+    var _rir0     = _avgRir(exp);
+    var _rir1     = _prevExp ? _avgRir(_prevExp) : null;
     detailRows +=
       '<div style="margin-bottom:8px;padding:10px 12px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.06)'+(isLatest?';border-left:2px solid var(--accent)':'')+'">'
       + '<div style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:'+(isLatest?'var(--accent)':'var(--mt2)')+';margin-bottom:4px">'+weekLabel+confMark+'</div>'
@@ -12795,11 +12788,27 @@ function showExHistory(di, ei) {
       +   (avgICS ? '<span style="font-size:10px;color:var(--mt);margin-left:4px">Cal '+_escHTml(String(avgICS))+'</span>' : '')
       + '</div>'
       + '<div style="font-size:11px;color:var(--mt);line-height:1.7">'+setsLine+'</div>'
-      + (_volStr ? '<div style="display:flex;align-items:center;gap:5px;margin-top:5px">'
-        + '<span style="font-size:9px;font-weight:800;letter-spacing:.8px;color:var(--mt2)">VOL</span>'
-        + '<span style="font-size:11px;font-weight:700;color:var(--mt)">'+_escHTml(_volStr)+'</span>'
-        + (_volDelta ? '<span style="font-size:10px;font-weight:700;color:'+_vdcol+'">'+_escHTml(_volDelta)+'</span>' : '')
-        + '</div>' : '')
+      + '<div style="margin-top:6px;font-size:11px;line-height:1.9;color:var(--mt)">'
+      +   '<span style="font-size:9px;font-weight:800;letter-spacing:.8px;color:var(--mt2)">VOL </span>'
+      +   (_expVol !== null
+            ? _escHTml(String(Math.round(_expVol)))+' '+_escHTml(unit)
+              +(_vdStr ? ' <span style="color:'+_vdcol+'">'+_escHTml(_vdStr)+'</span>' : '')
+            : '—')
+      +   '<br><span style="font-size:9px;font-weight:800;letter-spacing:.8px;color:var(--mt2)">REPS </span>'
+      +   (_rComp
+            ? (_rComp.comparable
+                ? _escHTml(String(_rComp.prev))+' → '+_escHTml(String(_rComp.cur))
+                  +(_rComp.delta !== 0
+                    ? ' <span style="color:'+(_rComp.delta>0?'var(--grn)':'var(--red)')+'">'+(_rComp.delta>0?'↑':'↓')+_escHTml(String(Math.abs(_rComp.delta)))+'</span>'
+                    : '')
+                : '<span style="color:var(--mt2)">sin comparación equivalente</span>')
+            : '<span style="color:var(--mt2)">—</span>')
+      +   (_rir0 !== null
+            ? '<br><span style="font-size:9px;font-weight:800;letter-spacing:.8px;color:var(--mt2)">RIR REAL </span>'
+              +(_rir1 !== null ? _escHTml(String(_rir1))+' → ' : '')
+              +_escHTml(String(_rir0))
+            : '')
+      + '</div>'
       + '</div>';
   });
   var detailHtml = exposures.length
@@ -12849,45 +12858,64 @@ function _runLongitudinalTests() {
     else       { _fail++; _results.push('✗ FAIL: '+name); }
   }
   function _mkExp(sets) {
-    return { week: 1, confidence: 'HIGH', sets: sets.map(function(s){ return { carga: s.carga||0, reps: s.reps||0, rir_real: s.rir_real !== undefined ? s.rir_real : null, ics: null }; }) };
+    return { week: 1, confidence: 'HIGH', sets: sets.map(function(s){
+      return { carga: s.carga !== undefined ? s.carga : 0, reps: s.reps||0,
+               rir_real: s.rir_real !== undefined ? s.rir_real : null, ics: null };
+    }) };
   }
-  // T1: same load → comparable, positive delta
-  var t1 = _calcRepsAtSameLoad([
-    _mkExp([{carga:80,reps:10},{carga:80,reps:9}]),
-    _mkExp([{carga:80,reps:8},{carga:80,reps:7}])
-  ]);
-  _assert('T1: same load → comparable', t1 && t1.comparable === true);
-  _assert('T1: delta > 0', t1 && t1.delta > 0);
-  // T2: different loads (>5%) → not comparable
-  var t2 = _calcRepsAtSameLoad([
-    _mkExp([{carga:90,reps:8}]),
-    _mkExp([{carga:70,reps:12}])
-  ]);
-  _assert('T2: different loads → not comparable', t2 && t2.comparable === false);
-  // T3: RIR trend DOWN = pushing harder (improving)
-  var t3 = _calcRealRIR([
-    _mkExp([{carga:80,reps:10,rir_real:1.5}]),
-    _mkExp([{carga:80,reps:10,rir_real:2.5}])
-  ]);
-  _assert('T3: RIR trend DOWN', t3 && t3.trend === 'DOWN');
-  _assert('T3: last = 1.5', t3 && t3.last === 1.5);
-  // T4: all null RIR → no result
-  var t4 = _calcRealRIR([_mkExp([{carga:80,reps:10,rir_real:null}])]);
-  _assert('T4: all null RIR → null', t4 === null);
-  // T5: frequency = exposures.length
-  var t5 = [_mkExp([{carga:80,reps:10}]),_mkExp([{carga:80,reps:9}]),_mkExp([{carga:75,reps:11}])];
-  _assert('T5: frequency = 3', t5.length === 3);
-  // T6a: 84 vs 80, tol = 84*0.05=4.2, diff=4 → comparable
-  var t6a = _calcRepsAtSameLoad([_mkExp([{carga:84,reps:10}]),_mkExp([{carga:80,reps:8}])]);
-  _assert('T6a: borderline within 5% → comparable', t6a && t6a.comparable === true);
-  // T6b: 90 vs 80, tol=4.5, diff=10 → not comparable
-  var t6b = _calcRepsAtSameLoad([_mkExp([{carga:90,reps:10}]),_mkExp([{carga:80,reps:12}])]);
-  _assert('T6b: 90 vs 80 (>5%) → not comparable', t6b && t6b.comparable === false);
-  // T7: single exposure → NEW trend (insufficient for comparison)
-  _assert('T7: single exp → NEW', _calcTrend([_mkExp([{carga:80,reps:10}])]) === 'NEW');
-  // T8: 1 exposure → repsAtLoad returns null; 0 exposures → realRIR returns null
-  _assert('T8: <2 exposures → repsAtLoad null', _calcRepsAtSameLoad([_mkExp([{carga:80,reps:10}])]) === null);
-  _assert('T8: 0 exposures → realRIR null', _calcRealRIR([]) === null);
+
+  // ── _repsVsPrev ──────────────────────────────────────────────────────────
+  var e0 = _mkExp([{carga:80,reps:10},{carga:80,reps:9}]);
+  var e1 = _mkExp([{carga:80,reps:8},{carga:80,reps:7}]);
+  var r1 = _repsVsPrev(e0, e1);
+  _assert('T1a: same load → comparable', r1 && r1.comparable === true);
+  _assert('T1b: cur=10 prev=8 (avg)', r1 && r1.cur === 10 && r1.prev === 8); // (10+9)/2=9.5→10, (8+7)/2=7.5→8
+  _assert('T1c: delta > 0', r1 && r1.delta > 0);
+
+  var r2 = _repsVsPrev(_mkExp([{carga:90,reps:8}]), _mkExp([{carga:70,reps:12}]));
+  _assert('T2: loads differ >5% → not comparable', r2 && r2.comparable === false);
+
+  // borderline: 84 vs 80, tol=84*0.05=4.2, diff=4 → comparable
+  var r3a = _repsVsPrev(_mkExp([{carga:84,reps:10}]), _mkExp([{carga:80,reps:8}]));
+  _assert('T3a: 84 vs 80 (within 5%) → comparable', r3a && r3a.comparable === true);
+  // 90 vs 80, tol=4.5, diff=10 → not comparable
+  var r3b = _repsVsPrev(_mkExp([{carga:90,reps:10}]), _mkExp([{carga:80,reps:12}]));
+  _assert('T3b: 90 vs 80 (>5%) → not comparable', r3b && r3b.comparable === false);
+
+  // no prev → null (insufficient data)
+  _assert('T4: no prevExp → null', _repsVsPrev(_mkExp([{carga:80,reps:10}]), null) === null);
+
+  // carga 0 (bodyweight) → l0=0 → null guard
+  var r5 = _repsVsPrev(_mkExp([{carga:0,reps:15}]), _mkExp([{carga:0,reps:12}]));
+  _assert('T5: bodyweight → null (no quantifiable load)', r5 === null);
+
+  // ── _avgRir ──────────────────────────────────────────────────────────────
+  var rir1 = _avgRir(_mkExp([{carga:80,reps:10,rir_real:2},{carga:80,reps:9,rir_real:1}]));
+  _assert('T6: avgRir = 1.5', rir1 === 1.5);
+
+  var rir2 = _avgRir(_mkExp([{carga:80,reps:10,rir_real:null}]));
+  _assert('T7: all null rir_real → null (not 0)', rir2 === null);
+
+  var rir3 = _avgRir(_mkExp([{carga:80,reps:10,rir_real:null},{carga:80,reps:9,rir_real:2}]));
+  _assert('T8: partial null → avg of non-null only', rir3 === 2);
+
+  // ── _expVolume ───────────────────────────────────────────────────────────
+  var vol1 = _expVolume(_mkExp([{carga:80,reps:10},{carga:80,reps:9},{carga:80,reps:8}]));
+  _assert('T9: volume = 2160', vol1 === 2160);
+
+  var vol2 = _expVolume(_mkExp([{carga:0,reps:15},{carga:0,reps:12}]));
+  _assert('T10: bodyweight (carga=0) → null, not 0', vol2 === null);
+
+  var vol3 = _expVolume(_mkExp([{carga:0,reps:10},{carga:60,reps:8}]));
+  _assert('T11: mixed (some 0, some load) → counts only loaded sets', vol3 === 480);
+
+  // ── _calcTrend / insufficient data ───────────────────────────────────────
+  _assert('T12: single exposure → NEW', _calcTrend([_mkExp([{carga:80,reps:10}])]) === 'NEW');
+  _assert('T13: 0 exposures → NEW', _calcTrend([]) === 'NEW');
+
+  // ── unit guard (same unit across same exercise) ───────────────────────────
+  // _getExposures returns sets without unit field; unit is per-exercise constant.
+  // Volume delta only computed when both vols are non-null — verified by T10/T11.
 
   console.log('[LONGITUDINAL TESTS] '+_pass+'/'+(_pass+_fail)+' passed');
   _results.forEach(function(r){ console.log(r); });
