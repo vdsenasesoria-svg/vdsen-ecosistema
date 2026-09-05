@@ -11287,10 +11287,21 @@ El esfuerzo no es negociable.
   }
   window._auditSessionBalance = _auditSessionBalance;
 
-  // Aggregator — returns audit trace wrapper (NOT inside vdsen-plan-v2 schema).
-  function runOutputQualityAudit(training, prescCtx, volAudit) {
+  // ── Plan Output Quality Gate v2 ───────────────────────────────────────────
+  // Aggregates all engine results. DOES NOT REIMPLEMENT any engine.
+  // opts = { topologyAudit, sessionAudit, stabilityResult, slotAudit } — all optional.
+  // Returns: { status, criticalIssues, warnings, byDay, byMuscle, stability, reasonCodes, summary, redundancy, structuralFatigue }
+  // status: 'PASS' | 'WARN' | 'REVIEW_REQUIRED'
+  function runOutputQualityAudit(training, prescCtx, volAudit, opts) {
+    opts = opts || {};
+    var topologyAudit   = opts.topologyAudit   || null;
+    var sessionAudit    = opts.sessionAudit    || null;
+    var stabilityResult = opts.stabilityResult || null;
+    var slotAudit       = opts.slotAudit       || null;
+
     var days = (training && Array.isArray(training.days)) ? training.days : [];
     var muscleTargets = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
+
     // Per-muscle frequency (direct primary exposure per day, deduped within day)
     var muscleFreq = {};
     days.forEach(function(day) {
@@ -11301,8 +11312,10 @@ El esfuerzo no es negociable.
         (meta.primaryMuscles || []).forEach(function(m){ if (!seen[m]){ seen[m]=true; muscleFreq[m]=(muscleFreq[m]||0)+1; } });
       });
     });
-    var redAudit   = _auditExerciseRedundancy(days);
-    var fatByDay   = days.map(function(day){ return _auditStructuralFatigue(day); });
+
+    // ── Sub-audits (existing engines, no reimplementation) ───────────────────
+    var redAudit    = _auditExerciseRedundancy(days);
+    var fatByDay    = days.map(function(day){ return _auditStructuralFatigue(day); });
     var maintIssues = _auditMaintenanceExcess(volAudit, muscleTargets, muscleFreq);
     // MAINTENANCE_SESSION_OVERALLOCATION: maint muscle with >1 exercise per day
     days.forEach(function(day) {
@@ -11318,26 +11331,171 @@ El esfuerzo no es negociable.
         if (mc[m] > 1) maintIssues.push({ code:'MAINTENANCE_SESSION_OVERALLOCATION', muscle:m, count:mc[m], dayIndex:day.dayIndex, day:day.label||('Día '+(day.dayIndex+1)), msg: m+': '+mc[m]+' ejercicios en '+(day.label||'Día '+(day.dayIndex+1))+' (mant.)' });
       });
     });
-    var priorityIssues    = _auditPriorityUnderallocation(volAudit, muscleFreq, muscleTargets);
-    var stabilityChanges  = _auditPlanStability(prescCtx, training);
-    var balanceByDay      = _auditSessionBalance(days, redAudit.byDay, fatByDay);
+    var priorityIssues   = _auditPriorityUnderallocation(volAudit, muscleFreq, muscleTargets);
+    var stabilityChanges = _auditPlanStability(prescCtx, training);
+    var balanceByDay     = _auditSessionBalance(days, redAudit.byDay, fatByDay);
+
+    // ── CRITICAL ISSUES → REVIEW_REQUIRED ────────────────────────────────────
+    var criticalIssues = [];
+
+    // Topology restriction/topology violations
+    if (topologyAudit && topologyAudit.issues && topologyAudit.issues.length) {
+      topologyAudit.issues.forEach(function(issue) {
+        var code = typeof issue === 'string' ? (issue.split(':')[0] || 'TOPOLOGY_ISSUE') : (issue.code || 'TOPOLOGY_ISSUE');
+        var msg  = typeof issue === 'string' ? issue : (issue.msg || String(issue));
+        criticalIssues.push({ code: code, msg: msg, source: 'topology' });
+      });
+    }
+    // Slot constraint violations (contract breach)
+    if (slotAudit && slotAudit.issues && slotAudit.issues.length) {
+      slotAudit.issues.forEach(function(issue) {
+        criticalIssues.push({ code: issue.code || 'SLOT_VIOLATION',
+          msg: (issue.code || 'SLOT_VIOLATION') + (issue.exerciseName ? ' — ' + issue.exerciseName : ''), source: 'slot' });
+      });
+    }
+    // Priority underallocation (high-priority target missed)
+    priorityIssues.forEach(function(i) {
+      criticalIssues.push({ code: i.code, msg: 'Prioridad: ' + i.msg, source: 'priority' });
+    });
+    // Session duration clearly exceeds availability (HEURISTIC threshold)
+    if (topologyAudit && topologyAudit.estimatedSessionMinutes > 120) {
+      criticalIssues.push({ code: 'SESSION_DURATION_CRITICAL',
+        msg: 'Duración estimada ~' + topologyAudit.estimatedSessionMinutes + ' min/sesión excede disponibilidad razonable',
+        source: 'topology' });
+    }
+
+    // ── WARNINGS ─────────────────────────────────────────────────────────────
     var warnings = [];
+    var highFatDays = fatByDay.filter(function(f){ return f.level === 'HIGH'; });
+
     if      (redAudit.global === 'HIGH')     warnings.push({ code:'REDUNDANCY_HIGH',     msg:'Redundancia de ejercicios ALTA — múltiples ejercicios con el mismo patrón en una sesión.' });
     else if (redAudit.global === 'MODERATE') warnings.push({ code:'REDUNDANCY_MODERATE', msg:'Redundancia de ejercicios MODERADA — revisar variedad de patrones por sesión.' });
-    var highFatDays = fatByDay.filter(function(f){ return f.level === 'HIGH'; });
     if (highFatDays.length) warnings.push({ code:'STRUCTURAL_FATIGUE_HIGH', msg:'Fatiga estructural ALTA en ' + highFatDays.length + ' sesión(es) — carga axial/bisagra elevada.' });
     maintIssues.forEach(function(i){ warnings.push({ code:i.code, msg:'Mantenimiento: '+i.msg }); });
-    priorityIssues.forEach(function(i){ warnings.push({ code:i.code, msg:'Prioridad: '+i.msg }); });
+
     var unjust = stabilityChanges.filter(function(c){ return c.status==='UNJUSTIFIED_EXERCISE_CHANGE'; });
     if (unjust.length) warnings.push({ code:'UNJUSTIFIED_EXERCISE_CHANGE', msg:'Cambios sin justificación clara: '+unjust.map(function(c){ return c.name; }).join(', ') });
-    balanceByDay.forEach(function(day){ day.issues.forEach(function(i){ if (i.code==='SESSION_OVERLOADED'||i.code==='SESSION_UNDERUTILIZED') warnings.push({ code:i.code, msg:(day.dayLabel||'Día')+': '+i.reason }); }); });
+    balanceByDay.forEach(function(day){ day.issues.forEach(function(i){
+      if (i.code==='SESSION_OVERLOADED'||i.code==='SESSION_UNDERUTILIZED')
+        warnings.push({ code:i.code, msg:(day.dayLabel||'Día')+': '+i.reason });
+    }); });
+
+    // Session composition signals (from interaction engine via sessionAudit)
+    if (sessionAudit && sessionAudit.byDay) {
+      sessionAudit.byDay.forEach(function(d) {
+        if (d.reasonCodes.indexOf('REDUNDANT') >= 0)
+          warnings.push({ code:'SESSION_REDUNDANT', dayLabel:d.dayLabel, msg:d.dayLabel+': ejercicios REDUNDANTES (mismo target+patrón+rol)' });
+        if (d.reasonCodes.indexOf('FATIGUE_OVERLAP') >= 0)
+          warnings.push({ code:'SESSION_FATIGUE_OVERLAP', dayLabel:d.dayLabel, msg:d.dayLabel+': FATIGA_SOLAPADA — múltiples patrones de alta demanda' });
+      });
+    }
+
+    // Stability: unresolved legacy pairs
+    if (stabilityResult && stabilityResult.unresolved && stabilityResult.unresolved.length) {
+      warnings.push({ code:'STABILITY_UNRESOLVED', count:stabilityResult.unresolved.length,
+        msg:stabilityResult.unresolved.length+' par(es) sin identidad confirmada (UNRESOLVED_LEGACY)' });
+    }
+
+    // ── STATUS ───────────────────────────────────────────────────────────────
+    var status = criticalIssues.length ? 'REVIEW_REQUIRED' : warnings.length ? 'WARN' : 'PASS';
+
+    // ── BY MUSCLE (enriched with targets) ─────────────────────────────────────
+    var byMuscle = [];
+    var allMuscles = {};
+    Object.keys(muscleTargets).forEach(function(m){ allMuscles[m]=true; });
+    Object.keys(muscleFreq).forEach(function(m){ allMuscles[m]=true; });
+    Object.keys(allMuscles).forEach(function(m) {
+      var t = muscleTargets[m] || {};
+      var volData    = (volAudit && volAudit.muscleVolume && volAudit.muscleVolume[m]) || null;
+      var volActual  = volData ? volData.fractionalTotal : 0;
+      var freqActual = muscleFreq[m] || 0;
+      var coverageStatus;
+      if (t.priority === 'high') {
+        if (freqActual === 0) coverageStatus = 'ABSENT';
+        else if (t.volumeRange && t.volumeRange.min != null && volActual < t.volumeRange.min) coverageStatus = 'UNDER';
+        else coverageStatus = 'OK';
+      } else if (t.goal === 'maintenance') {
+        coverageStatus = (t.volumeRange && t.volumeRange.max != null && volActual > t.volumeRange.max) ? 'OVER' : 'OK';
+      } else {
+        coverageStatus = freqActual > 0 ? 'OK' : 'ABSENT';
+      }
+      var mReasonCodes = [];
+      priorityIssues.forEach(function(i){ if (i.muscle === m) mReasonCodes.push(i.code); });
+      maintIssues.forEach(function(i){ if (i.muscle === m) mReasonCodes.push(i.code); });
+      byMuscle.push({ muscle:m, priority:t.priority||'normal', goal:t.goal||'progress',
+        volumeTarget:t.volumeRange||null, volumeActual:volActual,
+        frequencyTarget:t.frequencyTarget||null, frequencyActual:freqActual,
+        coverageStatus:coverageStatus, reasonCodes:mReasonCodes });
+    });
+
+    // ── BY DAY (enriched with composition + interaction data) ─────────────────
+    var enrichedByDay = balanceByDay.map(function(dayBal, i) {
+      var cd = sessionAudit && sessionAudit.byDay ? (sessionAudit.byDay[i] || null) : null;
+      var interactionWarnings = [];
+      if (cd && cd.interactions) {
+        cd.interactions.forEach(function(pair) {
+          if (pair.classification === 'REDUNDANT' || pair.classification === 'JOINT_STRESS_OVERLAP' || pair.classification === 'FATIGUE_OVERLAP')
+            interactionWarnings.push({ classification:pair.classification, exerciseA:pair.exerciseA, exerciseB:pair.exerciseB, reasonCodes:pair.reasonCodes });
+        });
+      }
+      return Object.assign({}, dayBal, {
+        compositionQuality:  cd ? cd.quality : null,
+        interactionWarnings: interactionWarnings,
+        orderingWarnings:    cd ? (cd.orderingWarnings || []) : [],
+      });
+    });
+
+    // ── STABILITY SECTION ─────────────────────────────────────────────────────
+    var stabilitySection = {
+      moves:            stabilityResult ? stabilityResult.moves           : [],
+      unresolved:       stabilityResult ? stabilityResult.unresolved      : [],
+      structuralChanges:stabilityResult ? stabilityResult.structuralChanges: [],
+      hasUnresolved:    !!(stabilityResult && stabilityResult.unresolved && stabilityResult.unresolved.length),
+      exerciseChanges:  stabilityChanges,
+    };
+
+    // ── REASON CODES ──────────────────────────────────────────────────────────
+    var reasonCodes = [];
+    var _addCode = function(c){ if (c && reasonCodes.indexOf(c) < 0) reasonCodes.push(c); };
+    criticalIssues.forEach(function(i){ _addCode(i.code); });
+    warnings.forEach(function(w){ _addCode(w.code); });
+
+    // ── SUMMARY ───────────────────────────────────────────────────────────────
+    var targetsCovered = byMuscle.filter(function(m){ return m.coverageStatus === 'OK'; }).length;
+    var keptExs   = stabilityChanges.filter(function(c){ return c.status==='KEEP';   }).length;
+    var addedExs  = stabilityChanges.filter(function(c){ return c.status==='ADD';    }).length;
+    var removedExs= stabilityChanges.filter(function(c){ return c.status==='REMOVE'; }).length;
+    var topQuality = 'OPTIMAL';
+    if (sessionAudit && sessionAudit.byDay) {
+      var hasRN = sessionAudit.byDay.some(function(d){ return d.quality==='REVIEW_NEEDED'; });
+      var hasSO = sessionAudit.byDay.some(function(d){ return d.quality==='SUBOPTIMAL'; });
+      if (hasRN) topQuality = 'REVIEW_NEEDED';
+      else if (hasSO) topQuality = 'SUBOPTIMAL';
+    }
+    var summary = {
+      status:               status,
+      criticalCount:        criticalIssues.length,
+      warnCount:            warnings.length,
+      targetsCovered:       targetsCovered,
+      targetsTotal:         byMuscle.length,
+      exercisesKept:        keptExs,
+      exercisesAdded:       addedExs,
+      exercisesRemoved:     removedExs,
+      hasUnresolved:        stabilitySection.hasUnresolved,
+      topCompositionQuality:topQuality,
+    };
+
     return {
-      status:          warnings.length ? 'WARN' : 'PASS',
+      status:          status,
+      criticalIssues:  criticalIssues,
       warnings:        warnings,
-      byDay:           balanceByDay,
-      byMuscle:        [].concat(maintIssues, priorityIssues),
-      stability:       stabilityChanges,
-      redundancy:      redAudit,
+      byDay:           enrichedByDay,
+      byMuscle:        byMuscle,
+      stability:       stabilitySection,
+      reasonCodes:     reasonCodes,
+      summary:         summary,
+      // Legacy fields preserved for _generateRepairCandidates and _buildPlanPreview
+      redundancy:        redAudit,
       structuralFatigue: { byDay: fatByDay, highCount: highFatDays.length },
     };
   }
@@ -11663,6 +11821,14 @@ El esfuerzo no es negociable.
       byDay:            (qualityAudit && Array.isArray(qualityAudit.byDay)) ? qualityAudit.byDay : [],
       slotStability:    slotStability,
       sessionComposition: sessionComposition,
+      qualityGate: qualityAudit ? {
+        status:         qualityAudit.status || 'PASS',
+        criticalCount:  (qualityAudit.criticalIssues || []).length,
+        warnCount:      (qualityAudit.warnings || []).length,
+        criticalIssues: qualityAudit.criticalIssues || [],
+        summary:        qualityAudit.summary || null,
+        byDay:          qualityAudit.byDay || [],
+      } : null,
     };
   }
   window._buildPlanPreview = _buildPlanPreview;
@@ -11763,6 +11929,32 @@ El esfuerzo no es negociable.
       var applyFn  = '_previewApply_'  + clientId;
       var cancelFn = '_previewCancel_' + clientId;
 
+      var qualityBadgeHtml = '';
+      if (pv.qualityGate) {
+        var qg = pv.qualityGate;
+        var _QG_STATUS = { 'PASS':{ col:'#44BB88', label:'APROBADO' }, 'WARN':{ col:'#FF8C00', label:'REVISAR' }, 'REVIEW_REQUIRED':{ col:'#e05555', label:'REVISIÓN REQUERIDA' } };
+        var qgSc = _QG_STATUS[qg.status] || { col:'#888', label:qg.status };
+        var qgSum = qg.summary || {};
+        var qgTargets = (qgSum.targetsCovered != null && qgSum.targetsTotal != null)
+          ? _escH(String(qgSum.targetsCovered)) + '/' + _escH(String(qgSum.targetsTotal)) : null;
+        var qgHighFat = (qg.byDay || []).filter(function(d){ return d.fatigueLevel === 'HIGH'; }).length;
+        var qgCritHtml = '';
+        if (qg.criticalIssues && qg.criticalIssues.length) {
+          qgCritHtml = '<div style="width:100%;margin-top:4px">' +
+            qg.criticalIssues.slice(0, 3).map(function(ci){
+              return '<div style="font-size:10px;color:#e05555;padding:1px 0">⛔ ' + _escH(ci.msg || ci.code || String(ci)) + '</div>';
+            }).join('') + '</div>';
+        }
+        qualityBadgeHtml =
+          '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:7px 10px;margin-bottom:12px">' +
+            '<span style="font-size:10px;font-weight:800;color:' + qgSc.col + ';letter-spacing:.05em">' + _escH(qgSc.label) + '</span>' +
+            (qgTargets ? '<span style="font-size:10px;color:#888">· Targets: ' + qgTargets + '</span>' : '') +
+            (qgHighFat > 0 ? '<span style="font-size:10px;color:#FF8C00">· Alta fatiga: ' + _escH(String(qgHighFat)) + ' ses</span>' : '') +
+            (qg.warnCount > 0 ? '<span style="font-size:10px;color:#888">· Alertas: ' + _escH(String(qg.warnCount)) + '</span>' : '') +
+            qgCritHtml +
+          '</div>';
+      }
+
       var html = '<div style="background:rgba(16,22,32,.98);border:1px solid rgba(196,255,0,.25);border-radius:11px;padding:16px;margin-top:4px">' +
 
         // Header
@@ -11770,6 +11962,9 @@ El esfuerzo no es negociable.
           '<span style="font-size:12px;font-weight:800;color:#C4FF00;letter-spacing:.04em">PLAN PROPUESTO</span>' +
           '<span style="font-size:10px;color:#555">' + _escH(String(pv.daysPerWeek)) + 'd/sem · ' + _escH(String(pv.weeks)) + ' sem</span>' +
         '</div>' +
+
+        // Quality Gate badge
+        qualityBadgeHtml +
 
         // Topology + days + session balance
         '<div style="margin-bottom:12px">' +
@@ -12175,6 +12370,91 @@ El esfuerzo no es negociable.
     assert('T10c runOutputQualityAudit has warnings array', Array.isArray(qaPass.warnings));
     assert('T10c runOutputQualityAudit has byDay array', Array.isArray(qaPass.byDay));
 
+    // T10d: REVIEW_REQUIRED when topologyAudit.issues is non-empty
+    var _topoWithIssues = { issues:[{ code:'TOPOLOGY_VIOLATION', msg:'test violation' }], warnings:[], pass:false, estimatedSessionMinutes:60 };
+    var qaD = runOutputQualityAudit(_mkTraining([['sentadilla','press banca']]), _mkPrescCtx([], {}, [], false), null, { topologyAudit: _topoWithIssues });
+    assert('T10d REVIEW_REQUIRED when topologyAudit.issues non-empty', qaD.status === 'REVIEW_REQUIRED');
+    assert('T10d criticalIssues is array', Array.isArray(qaD.criticalIssues));
+    assert('T10d criticalIssues length > 0', qaD.criticalIssues.length > 0);
+
+    // T10e: WARN-only when redundancy — no criticalIssues
+    var qaE = runOutputQualityAudit(_mkTraining([['press banca','press inclinado','press declinado']]), _mkPrescCtx([], {}, [], false), null, {});
+    assert('T10e redundancy WARN has no criticalIssues', qaE.criticalIssues.length === 0);
+    assert('T10e redundancy WARN status', qaE.status === 'WARN');
+
+    // T10f: byMuscle has coverageStatus field
+    var qaF = runOutputQualityAudit(
+      _mkTraining([['sentadilla','press banca']]),
+      _mkPrescCtx([], { cuadriceps:{ goal:'progress', priority:'high', volumeTarget:12, volumeRange:{min:8,max:18}, frequencyTarget:2 } }, [], false),
+      _mkVolAudit({ cuadriceps: 4 }),
+      {}
+    );
+    assert('T10f byMuscle array present', Array.isArray(qaF.byMuscle));
+    if (qaF.byMuscle.length > 0) {
+      assert('T10f byMuscle[0].coverageStatus field present', qaF.byMuscle[0].coverageStatus != null);
+    } else {
+      assert('T10f byMuscle populated when targets defined', qaF.byMuscle.length > 0);
+    }
+
+    // T10g: byDay enriched with compositionQuality when sessionAudit provided
+    var _fakeSessionAuditG = { byDay:[{ dayIndex:0, dayLabel:'Día 1', quality:'GOOD', slotCoverage:[], redundantPairs:[], orderingWarnings:[], fatigueWarnings:[], reasonCodes:[], interactions:[] }] };
+    var qaG = runOutputQualityAudit(_mkTraining([['sentadilla','press banca']]), _mkPrescCtx([], {}, [], false), null, { sessionAudit: _fakeSessionAuditG });
+    assert('T10g byDay has entries', Array.isArray(qaG.byDay) && qaG.byDay.length > 0);
+    assert('T10g byDay[0] has compositionQuality', qaG.byDay.length > 0 && qaG.byDay[0].compositionQuality === 'GOOD');
+
+    // T10h: stability.hasUnresolved=true when stabilityResult has unresolved pairs
+    var _fakeStabH = {
+      changes:[], structuralChanges:[], replacements:[], moves:[],
+      unresolved:[{ type:'UNRESOLVED_LEGACY', dayIndex:0, exerciseIndex:0, dayLabel:'Día 1', oldName:'press banca', newName:'press inclinado', slotStatus:null, sameLocation:true }],
+      stable:true
+    };
+    var qaH = runOutputQualityAudit(_mkTraining([['press inclinado','sentadilla']]), _mkPrescCtx([], {}, [], false), null, { stabilityResult: _fakeStabH });
+    assert('T10h stability.hasUnresolved=true', qaH.stability && qaH.stability.hasUnresolved === true);
+    assert('T10h STABILITY_UNRESOLVED warning present', qaH.warnings.some(function(w){ return w.code === 'STABILITY_UNRESOLVED'; }));
+
+    // T10i: summary object present with correct fields
+    var qaI = runOutputQualityAudit(_mkTraining([['sentadilla','press banca']]), _mkPrescCtx([], {}, [], false), null);
+    assert('T10i summary present', qaI.summary != null);
+    assert('T10i summary.status matches top-level status', qaI.summary.status === qaI.status);
+    assert('T10i summary.criticalCount is number', typeof qaI.summary.criticalCount === 'number');
+    assert('T10i summary.warnCount is number', typeof qaI.summary.warnCount === 'number');
+    assert('T10i summary.targetsCovered is number', typeof qaI.summary.targetsCovered === 'number');
+    assert('T10i summary.targetsTotal is number', typeof qaI.summary.targetsTotal === 'number');
+
+    // T10j: No REVIEW_REQUIRED for clean plan with no topology issues
+    var _topoClean = { issues:[], warnings:[], pass:true, estimatedSessionMinutes:50 };
+    var qaJ = runOutputQualityAudit(_mkTraining([['sentadilla','press banca','remo con barra']]), _mkPrescCtx([], {}, [], false), null, { topologyAudit: _topoClean });
+    assert('T10j no REVIEW_REQUIRED for clean plan', qaJ.status !== 'REVIEW_REQUIRED');
+    assert('T10j no criticalIssues for clean plan', qaJ.criticalIssues.length === 0);
+
+    // T10k: XSS in topologyAudit.issues.msg stored raw (escaped at render time)
+    var _topoXss = { issues:[{ code:'TOPOLOGY_VIOLATION', msg:'<script>alert(1)</script>' }], warnings:[], pass:false, estimatedSessionMinutes:60 };
+    var qaK = runOutputQualityAudit(_mkTraining([['sentadilla']]), _mkPrescCtx([], {}, [], false), null, { topologyAudit: _topoXss });
+    assert('T10k XSS msg raw (not escaped) in criticalIssues', qaK.criticalIssues.some(function(ci){ return ci.msg && ci.msg.indexOf('<') >= 0; }));
+
+    // T10l: unknown reasonCode in sessionAudit.byDay.reasonCodes → no crash
+    var _fakeSessionAuditL = { byDay:[{ dayIndex:0, dayLabel:'Día 1', quality:'GOOD', slotCoverage:[], redundantPairs:[], orderingWarnings:[], fatigueWarnings:[], reasonCodes:['UNKNOWN_FUTURE_CODE_XYZ'], interactions:[] }] };
+    var qaL;
+    try {
+      qaL = runOutputQualityAudit(_mkTraining([['sentadilla']]), _mkPrescCtx([], {}, [], false), null, { sessionAudit: _fakeSessionAuditL });
+      assert('T10l unknown reasonCode does not crash', true);
+      assert('T10l result has status', qaL.status === 'PASS' || qaL.status === 'WARN' || qaL.status === 'REVIEW_REQUIRED');
+    } catch(e) {
+      assert('T10l unknown reasonCode does not crash', false);
+    }
+
+    // T10m: session duration > 120 min → SESSION_DURATION_CRITICAL in criticalIssues
+    var _topoLong = { issues:[], warnings:[], pass:true, estimatedSessionMinutes:135 };
+    var qaM = runOutputQualityAudit(_mkTraining([['A','B','C','D','E','F','G','H']]), _mkPrescCtx([], {}, [], false), null, { topologyAudit: _topoLong });
+    assert('T10m duration >120 → SESSION_DURATION_CRITICAL in criticalIssues', qaM.criticalIssues.some(function(ci){ return ci.code === 'SESSION_DURATION_CRITICAL'; }));
+    assert('T10m duration >120 → REVIEW_REQUIRED', qaM.status === 'REVIEW_REQUIRED');
+
+    // T10n: slotAudit.issues → REVIEW_REQUIRED and stored in criticalIssues
+    var _fakeSlotAudit = { issues:[{ code:'PRIORITY_SLOT_MISSING', exerciseName:'cuadriceps', msg:'cuadriceps sin cobertura' }], warnings:[] };
+    var qaN = runOutputQualityAudit(_mkTraining([['sentadilla']]), _mkPrescCtx([], {}, [], false), null, { slotAudit: _fakeSlotAudit });
+    assert('T10n slotAudit.issues → REVIEW_REQUIRED', qaN.status === 'REVIEW_REQUIRED');
+    assert('T10n slotAudit criticalIssue in criticalIssues', qaN.criticalIssues.some(function(ci){ return ci.code === 'PRIORITY_SLOT_MISSING'; }));
+
     console.log('[QUALITY AUDIT TESTS] ' + pass + ' passed, ' + fail + ' failed');
     return { pass: pass, fail: fail };
   }
@@ -12385,7 +12665,19 @@ El esfuerzo no es negociable.
       const _prevSnap2 = (_detailClientData && _detailClientData.lastPrescriptionSnapshot) || null;
       const _currSnap2 = _buildProfileSnapshot();
       const _traceChanges2 = _diffProfileSnapshots(_prevSnap2, _currSnap2);
-      const _qAudit2 = runOutputQualityAudit(training, prescCtx, _volAudit2);
+      const _priorityMuscles2 = prescCtx && prescCtx.prescriptionTargets
+        ? Object.keys(prescCtx.prescriptionTargets.muscles || {}).filter(function(m) {
+            return (prescCtx.prescriptionTargets.muscles[m] || {}).priority === 'high';
+          }) : [];
+      const _gateSlotAudit2    = training ? _auditSlotConstraints(training, _priorityMuscles2) : null;
+      const _gateSessionAudit2 = training ? _auditSessionComposition(training, prescCtx) : null;
+      const _gateTopoAudit2    = training ? topologyFeasibilityAudit(training, null, prescCtx, _restrictions2) : null;
+      const _gateStability2    = (training && prescCtx && prescCtx.previousPlan)
+        ? _comparePlanStability(prescCtx.previousPlan, training) : null;
+      const _qAudit2 = runOutputQualityAudit(training, prescCtx, _volAudit2, {
+        topologyAudit: _gateTopoAudit2, sessionAudit: _gateSessionAudit2,
+        stabilityResult: _gateStability2, slotAudit: _gateSlotAudit2,
+      });
       if (_qAudit2.warnings.length) console.info('[VDSEN] Quality audit:', _qAudit2.warnings);
       const _previewData = _buildPlanPreview(training, prescCtx, _volAudit2, validation.warnings, _traceChanges2, _qAudit2);
       const _confirmed = await _showPlanPreviewModal(clientId, _previewData);
