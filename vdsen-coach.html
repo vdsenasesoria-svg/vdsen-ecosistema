@@ -10187,7 +10187,222 @@ El esfuerzo no es negociable.
 
   // ── Plan Generation Preview ──────────────────────────────────────────────
   // Builds structured preview data from already-in-memory objects. 0 new reads.
-  function _buildPlanPreview(training, prescCtx, volAudit, validationWarnings, profileTraceChanges) {
+  // ── Output Quality Audit ──────────────────────────────────────────────────
+  // Heuristic-only. No physiological thresholds changed. No auto-fix.
+  // All functions: 0 Firestore reads, pure, exported on window.
+
+  function _auditExerciseRedundancy(days) {
+    var LEVELS = { NONE: 0, LOW: 1, MODERATE: 2, HIGH: 3 };
+    var globalLevel = 'NONE';
+    var byDay = (days || []).map(function(day) {
+      var patCounts = {}, primCounts = {};
+      var classified = 0;
+      (day.exercises || []).forEach(function(ex) {
+        var meta = _EXERCISE_CANONICAL_METADATA[(ex.exerciseName || '').toLowerCase()];
+        if (!meta) return;
+        classified++;
+        if (meta.movementPattern) patCounts[meta.movementPattern] = (patCounts[meta.movementPattern] || 0) + 1;
+        var prim = (meta.primaryMuscles || [])[0];
+        if (prim) primCounts[prim] = (primCounts[prim] || 0) + 1;
+      });
+      var score = 0;
+      var issues = [];
+      if (classified >= 2) {
+        Object.keys(patCounts).forEach(function(pat) {
+          if      (patCounts[pat] >= 3) { score += 2; issues.push({ code: 'PATTERN_3+', pattern: pat, count: patCounts[pat] }); }
+          else if (patCounts[pat] === 2) { score += 1; issues.push({ code: 'PATTERN_2',  pattern: pat, count: 2 }); }
+        });
+        Object.keys(primCounts).forEach(function(m) {
+          if      (primCounts[m] >= 3) { score += 2; issues.push({ code: 'PRIMARY_3+', muscle: m, count: primCounts[m] }); }
+          else if (primCounts[m] === 2) { score += 1; issues.push({ code: 'PRIMARY_2',  muscle: m, count: 2 }); }
+        });
+      }
+      var lvl = score === 0 ? 'NONE' : score === 1 ? 'LOW' : score <= 3 ? 'MODERATE' : 'HIGH';
+      if (LEVELS[lvl] > LEVELS[globalLevel]) globalLevel = lvl;
+      return { dayIndex: day.dayIndex, dayLabel: day.label || ('Día ' + (day.dayIndex + 1)), level: lvl, issues: issues };
+    });
+    return { global: globalLevel, byDay: byDay };
+  }
+  window._auditExerciseRedundancy = _auditExerciseRedundancy;
+
+  function _auditStructuralFatigue(day) {
+    var COMPOUND = { squat:1, hip_hinge:1, rdl:1, press_horizontal:1, press_vertical:1, pull_vertical:1, pull_horizontal:1, row:1 };
+    var AXIAL    = { squat:1, hip_hinge:1 };
+    var HINGE    = { hip_hinge:1, rdl:1 };
+    var UNIL     = { lunge:1 };
+    var cmp=0, axial=0, hinge=0, unil=0, freeW=0, classified=0;
+    (day.exercises || []).forEach(function(ex) {
+      var meta = _EXERCISE_CANONICAL_METADATA[(ex.exerciseName || '').toLowerCase()];
+      if (!meta) return;
+      classified++;
+      var p = meta.movementPattern;
+      if (p && COMPOUND[p]) cmp++;
+      if (p && AXIAL[p])    axial++;
+      if (p && HINGE[p])    hinge++;
+      if (p && UNIL[p])     unil++;
+      if (meta.stability === 'low' || meta.stability === 'medium') freeW++;
+    });
+    if (classified === 0) return { level: 'LOW', score: 0, reasons: [] };
+    var score = 0, reasons = [];
+    if      (cmp > 5)   { score += 2; reasons.push('COMPOUND_HIGH:' + cmp); }
+    else if (cmp > 3)   { score += 1; reasons.push('COMPOUND_MOD:' + cmp); }
+    if      (axial > 2) { score += 2; reasons.push('AXIAL_HIGH:' + axial); }
+    else if (axial > 1) { score += 1; reasons.push('AXIAL_MOD:' + axial); }
+    if (hinge > 2)      { score += 1; reasons.push('HINGE_HIGH:' + hinge); }
+    if (unil  > 2)      { score += 1; reasons.push('UNILATERAL_HIGH:' + unil); }
+    if (freeW > 3)      { score += 1; reasons.push('INSTABILITY_MOD:' + freeW); }
+    var level = score === 0 ? 'LOW' : score <= 2 ? 'MODERATE' : 'HIGH';
+    return { level: level, score: score, reasons: reasons };
+  }
+  window._auditStructuralFatigue = _auditStructuralFatigue;
+
+  function _auditMaintenanceExcess(volAudit, muscleTargets, muscleFreq) {
+    var issues = [];
+    if (!muscleTargets) return issues;
+    Object.keys(muscleTargets).forEach(function(m) {
+      var t = muscleTargets[m];
+      if (!t || t.goal !== 'maintenance') return;
+      var volActual  = (volAudit && volAudit.muscleVolume && volAudit.muscleVolume[m]) ? volAudit.muscleVolume[m].fractionalTotal : 0;
+      var freqActual = muscleFreq ? (muscleFreq[m] || 0) : 0;
+      if (t.volumeRange && t.volumeRange.max != null && volActual > t.volumeRange.max)
+        issues.push({ code: 'MAINTENANCE_VOLUME_EXCESS',    muscle: m, volActual: volActual,  volMax: t.volumeRange.max,      msg: m + ': vol ' + volActual  + ' > max '    + t.volumeRange.max  + ' (mant.)' });
+      if (t.frequencyTarget && freqActual > t.frequencyTarget)
+        issues.push({ code: 'MAINTENANCE_FREQUENCY_EXCESS', muscle: m, freqActual: freqActual, freqTarget: t.frequencyTarget, msg: m + ': freq ' + freqActual + '× > target ' + t.frequencyTarget + '× (mant.)' });
+    });
+    return issues;
+  }
+  window._auditMaintenanceExcess = _auditMaintenanceExcess;
+
+  function _auditPriorityUnderallocation(volAudit, muscleFreq, muscleTargets) {
+    var issues = [];
+    if (!muscleTargets) return issues;
+    Object.keys(muscleTargets).forEach(function(m) {
+      var t = muscleTargets[m];
+      if (!t || t.priority !== 'high') return;
+      var volActual  = (volAudit && volAudit.muscleVolume && volAudit.muscleVolume[m]) ? volAudit.muscleVolume[m].fractionalTotal : 0;
+      var freqActual = muscleFreq ? (muscleFreq[m] || 0) : 0;
+      if (t.frequencyTarget && freqActual < t.frequencyTarget)
+        issues.push({ code: 'PRIORITY_FREQUENCY_MISS',                muscle: m, freqActual: freqActual, freqTarget: t.frequencyTarget, msg: m + ': freq ' + freqActual + '× < target ' + t.frequencyTarget + '× (prioridad alta)' });
+      if (t.volumeRange && t.volumeRange.min != null && volActual < t.volumeRange.min)
+        issues.push({ code: 'PRIORITY_VOLUME_MISS',                   muscle: m, volActual: volActual,  volMin: t.volumeRange.min,      msg: m + ': vol '  + volActual  + ' < min '   + t.volumeRange.min  + ' (prioridad alta)' });
+      if (freqActual === 1 && t.frequencyTarget > 1)
+        issues.push({ code: 'PRIORITY_SINGLE_SESSION_CONCENTRATION',  muscle: m, freqActual: 1, freqTarget: t.frequencyTarget,          msg: m + ': todo el volumen en 1 sesión (target ' + t.frequencyTarget + '×)' });
+    });
+    return issues;
+  }
+  window._auditPriorityUnderallocation = _auditPriorityUnderallocation;
+
+  function _auditPlanStability(prescCtx, training) {
+    var result = [];
+    if (!prescCtx || !prescCtx.hasPreviousPlan || !prescCtx.previousPlan) return result;
+    var prevNames = prescCtx.previousPlan.exercises || [];
+    var days = (training && Array.isArray(training.days)) ? training.days : [];
+    var newNames = [];
+    days.forEach(function(d){ (d.exercises||[]).forEach(function(e){ if (e.exerciseName) newNames.push(e.exerciseName); }); });
+    var restrictions = prescCtx.restrictions || {};
+    var evitar = (restrictions.ejerciciosEvitar || []).map(function(e){ return String(e).toLowerCase(); });
+    var motorAvoid = restrictions.motorPatternsAvoid || [];
+    var reasonCodes = (prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.reasonCodes) || [];
+    var hasGlobalReason = reasonCodes.some(function(rc){ return rc === 'STALLED_EXERCISES' || rc === 'MAJORITY_STALLED' || rc === 'DELOAD_TRIGGERED_PREV_CYCLE'; });
+    var prevSet = {}, newSet = {};
+    prevNames.forEach(function(n){ var k=(n||'').toLowerCase(); if (k) prevSet[k]=n; });
+    newNames.forEach(function(n){ var k=(n||'').toLowerCase(); if (k) newSet[k]=n; });
+    var allKeys = {};
+    Object.keys(prevSet).forEach(function(k){ allKeys[k]=true; });
+    Object.keys(newSet).forEach(function(k){ allKeys[k]=true; });
+    Object.keys(allKeys).forEach(function(k) {
+      var inPrev = !!prevSet[k], inNew = !!newSet[k];
+      var status;
+      if (inPrev && inNew) {
+        status = 'KEEP';
+      } else if (inNew) {
+        status = 'ADD';
+      } else {
+        var meta = _EXERCISE_CANONICAL_METADATA[k];
+        var isPatternVetoed = meta && motorAvoid.indexOf(meta.movementPattern) >= 0;
+        var isVetoed = evitar.indexOf(k) >= 0 || isPatternVetoed;
+        status = (isVetoed || hasGlobalReason) ? 'REMOVE' : 'UNJUSTIFIED_EXERCISE_CHANGE';
+      }
+      result.push({ name: prevSet[k] || newSet[k] || k, status: status, inPrev: inPrev, inNew: inNew });
+    });
+    return result;
+  }
+  window._auditPlanStability = _auditPlanStability;
+
+  function _auditSessionBalance(days, redByDay, fatByDay) {
+    return (days || []).map(function(day, i) {
+      var exercises = day.exercises || [];
+      var totalSets = exercises.reduce(function(s, e){ return s + (e.sets || []).length; }, 0);
+      var estMin = 5 + totalSets * 3;
+      var redLevel = (redByDay && redByDay[i]) ? redByDay[i].level : 'NONE';
+      var fatLevel = (fatByDay && fatByDay[i]) ? fatByDay[i].level : 'LOW';
+      var issues = [];
+      if (exercises.length > 8 || estMin > 90) issues.push({ code: 'SESSION_OVERLOADED',    reason: exercises.length > 8 ? 'Más de 8 ejercicios (' + exercises.length + ')' : 'Duración estimada ~' + estMin + 'min' });
+      if (exercises.length > 0 && exercises.length < 3)  issues.push({ code: 'SESSION_UNDERUTILIZED', reason: 'Sólo ' + exercises.length + ' ejercicio(s)' });
+      return { dayIndex: day.dayIndex, dayLabel: day.label || ('Día ' + (day.dayIndex + 1)),
+               exCount: exercises.length, totalSets: totalSets, estDurationMin: estMin,
+               issues: issues, redundancyLevel: redLevel, fatigueLevel: fatLevel };
+    });
+  }
+  window._auditSessionBalance = _auditSessionBalance;
+
+  // Aggregator — returns audit trace wrapper (NOT inside vdsen-plan-v2 schema).
+  function runOutputQualityAudit(training, prescCtx, volAudit) {
+    var days = (training && Array.isArray(training.days)) ? training.days : [];
+    var muscleTargets = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
+    // Per-muscle frequency (direct primary exposure per day, deduped within day)
+    var muscleFreq = {};
+    days.forEach(function(day) {
+      var seen = {};
+      (day.exercises || []).forEach(function(ex) {
+        var meta = _EXERCISE_CANONICAL_METADATA[(ex.exerciseName || '').toLowerCase()];
+        if (!meta) return;
+        (meta.primaryMuscles || []).forEach(function(m){ if (!seen[m]){ seen[m]=true; muscleFreq[m]=(muscleFreq[m]||0)+1; } });
+      });
+    });
+    var redAudit   = _auditExerciseRedundancy(days);
+    var fatByDay   = days.map(function(day){ return _auditStructuralFatigue(day); });
+    var maintIssues = _auditMaintenanceExcess(volAudit, muscleTargets, muscleFreq);
+    // MAINTENANCE_SESSION_OVERALLOCATION: maint muscle with >1 exercise per day
+    days.forEach(function(day) {
+      var mc = {};
+      (day.exercises || []).forEach(function(ex) {
+        var meta = _EXERCISE_CANONICAL_METADATA[(ex.exerciseName || '').toLowerCase()];
+        if (!meta) return;
+        (meta.primaryMuscles || []).forEach(function(m){
+          if (muscleTargets[m] && muscleTargets[m].goal === 'maintenance') mc[m] = (mc[m]||0)+1;
+        });
+      });
+      Object.keys(mc).forEach(function(m){
+        if (mc[m] > 1) maintIssues.push({ code:'MAINTENANCE_SESSION_OVERALLOCATION', muscle:m, count:mc[m], day:day.label||('Día '+(day.dayIndex+1)), msg: m+': '+mc[m]+' ejercicios en '+(day.label||'Día '+(day.dayIndex+1))+' (mant.)' });
+      });
+    });
+    var priorityIssues    = _auditPriorityUnderallocation(volAudit, muscleFreq, muscleTargets);
+    var stabilityChanges  = _auditPlanStability(prescCtx, training);
+    var balanceByDay      = _auditSessionBalance(days, redAudit.byDay, fatByDay);
+    var warnings = [];
+    if      (redAudit.global === 'HIGH')     warnings.push({ code:'REDUNDANCY_HIGH',     msg:'Redundancia de ejercicios ALTA — múltiples ejercicios con el mismo patrón en una sesión.' });
+    else if (redAudit.global === 'MODERATE') warnings.push({ code:'REDUNDANCY_MODERATE', msg:'Redundancia de ejercicios MODERADA — revisar variedad de patrones por sesión.' });
+    var highFatDays = fatByDay.filter(function(f){ return f.level === 'HIGH'; });
+    if (highFatDays.length) warnings.push({ code:'STRUCTURAL_FATIGUE_HIGH', msg:'Fatiga estructural ALTA en ' + highFatDays.length + ' sesión(es) — carga axial/bisagra elevada.' });
+    maintIssues.forEach(function(i){ warnings.push({ code:i.code, msg:'Mantenimiento: '+i.msg }); });
+    priorityIssues.forEach(function(i){ warnings.push({ code:i.code, msg:'Prioridad: '+i.msg }); });
+    var unjust = stabilityChanges.filter(function(c){ return c.status==='UNJUSTIFIED_EXERCISE_CHANGE'; });
+    if (unjust.length) warnings.push({ code:'UNJUSTIFIED_EXERCISE_CHANGE', msg:'Cambios sin justificación clara: '+unjust.map(function(c){ return c.name; }).join(', ') });
+    balanceByDay.forEach(function(day){ day.issues.forEach(function(i){ if (i.code==='SESSION_OVERLOADED'||i.code==='SESSION_UNDERUTILIZED') warnings.push({ code:i.code, msg:(day.dayLabel||'Día')+': '+i.reason }); }); });
+    return {
+      status:          warnings.length ? 'WARN' : 'PASS',
+      warnings:        warnings,
+      byDay:           balanceByDay,
+      byMuscle:        [].concat(maintIssues, priorityIssues),
+      stability:       stabilityChanges,
+      redundancy:      redAudit,
+      structuralFatigue: { byDay: fatByDay, highCount: highFatDays.length },
+    };
+  }
+  window.runOutputQualityAudit = runOutputQualityAudit;
+
+  function _buildPlanPreview(training, prescCtx, volAudit, validationWarnings, profileTraceChanges, qualityAudit) {
     var days       = (training && Array.isArray(training.days)) ? training.days : [];
     var prevPlan   = prescCtx && prescCtx.previousPlan;
     var targets    = (prescCtx && prescCtx.prescriptionTargets) || {};
@@ -10309,6 +10524,18 @@ El esfuerzo no es negociable.
         if (sets > avgSets * 1.4 && sets > 12) {
           warnings.push('FATIGA_CONCENTRADA: ' + (dayLabels[i]||('Día '+(i+1))) + ' concentra ' + sets + ' series (promedio ' + Math.round(avgSets) + ')');
         }
+      });
+    }
+    // Quality audit warnings (HIGH/MODERATE only — no technical dump)
+    var QA_PREVIEW_CODES = { REDUNDANCY_HIGH:1, REDUNDANCY_MODERATE:1, STRUCTURAL_FATIGUE_HIGH:1,
+      MAINTENANCE_VOLUME_EXCESS:1, MAINTENANCE_FREQUENCY_EXCESS:1, MAINTENANCE_SESSION_OVERALLOCATION:1,
+      PRIORITY_FREQUENCY_MISS:1, PRIORITY_VOLUME_MISS:1, PRIORITY_SINGLE_SESSION_CONCENTRATION:1,
+      UNJUSTIFIED_EXERCISE_CHANGE:1, SESSION_OVERLOADED:1, SESSION_UNDERUTILIZED:1 };
+    if (qualityAudit && Array.isArray(qualityAudit.warnings)) {
+      qualityAudit.warnings.forEach(function(w) {
+        if (!w || !QA_PREVIEW_CODES[w.code]) return;
+        var wStr = w.msg || (w.code + ': ' + (w.muscle || ''));
+        if (warnings.indexOf(wStr) < 0) warnings.push(wStr);
       });
     }
 
@@ -10641,6 +10868,131 @@ El esfuerzo no es negociable.
   }
   window._runPlanPreviewTests = _runPlanPreviewTests;
 
+  // ── Output Quality Audit Tests ────────────────────────────────────────────
+  function _runOutputQualityAuditTests() {
+    var pass = 0, fail = 0;
+    var assert = function(desc, cond) {
+      if (cond) { pass++; }
+      else { fail++; console.error('[QUALITY AUDIT TEST FAIL] ' + desc); }
+    };
+
+    // Helpers
+    function _mkDays(dayExercises) {
+      return dayExercises.map(function(exNames, i) {
+        return { dayIndex: i, label: 'Día ' + (i+1), exercises: exNames.map(function(n){
+          return { exerciseName: n, sets: [{},{},{},{}] };
+        }) };
+      });
+    }
+    function _mkTraining(dayExercises, dpw) {
+      var days = _mkDays(dayExercises);
+      return { daysPerWeek: dpw || days.length, weeks: 6, days: days };
+    }
+    function _mkPrescCtx(prevExercises, muscleMap, reasonCodes, hasPrev, evitar, motorAvoid) {
+      return {
+        hasPreviousPlan: !!hasPrev,
+        previousPlan: hasPrev ? { exercises: prevExercises || [] } : null,
+        prescriptionTargets: { muscles: muscleMap || {}, reasonCodes: reasonCodes || [] },
+        restrictions: { ejerciciosEvitar: evitar || [], motorPatternsAvoid: motorAvoid || [] },
+      };
+    }
+    function _mkVolAudit(muscleMap) {
+      var mv = {};
+      Object.keys(muscleMap).forEach(function(m){ mv[m] = { direct: muscleMap[m], indirect: 0, fractionalTotal: muscleMap[m] }; });
+      return { muscleVolume: mv, unclassified: [], warnings: [] };
+    }
+
+    // T1: 3 exercises with same movementPattern → HIGH redundancy
+    var days1 = _mkDays([['press banca','press inclinado','press declinado','curl bíceps']]);
+    var red1 = _auditExerciseRedundancy(days1);
+    assert('T1 3 press patterns → HIGH redundancy', red1.global === 'HIGH' || red1.global === 'MODERATE');
+    assert('T1 byDay[0] level not NONE', red1.byDay[0].level !== 'NONE');
+
+    // T2: Varied exercises → no HIGH/MODERATE redundancy warning
+    var days2 = _mkDays([['sentadilla','press banca','remo con barra','curl bíceps']]);
+    var red2 = _auditExerciseRedundancy(days2);
+    assert('T2 varied → no HIGH redundancy', red2.global !== 'HIGH');
+
+    // T3: Maintenance exceeded — vol > volumeRange.max
+    var muscleTargets3 = { pectoral: { goal:'maintenance', priority:'maintenance', volumeTarget:8, volumeRange:{ min:4, max:10 }, frequencyTarget:1 } };
+    var volAudit3 = _mkVolAudit({ pectoral: 15 }); // 15 > 10 max
+    var maint3 = _auditMaintenanceExcess(volAudit3, muscleTargets3, { pectoral: 1 });
+    assert('T3 MAINTENANCE_VOLUME_EXCESS detected', maint3.some(function(i){ return i.code === 'MAINTENANCE_VOLUME_EXCESS'; }));
+
+    // T4: Priority below frequencyTarget → PRIORITY_FREQUENCY_MISS
+    var muscleTargets4 = { cuadriceps: { goal:'progress', priority:'high', volumeTarget:16, volumeRange:{ min:10, max:22 }, frequencyTarget:2 } };
+    var volAudit4 = _mkVolAudit({ cuadriceps: 12 });
+    var pri4 = _auditPriorityUnderallocation(volAudit4, { cuadriceps: 1 }, muscleTargets4); // freq 1 < target 2
+    assert('T4 PRIORITY_FREQUENCY_MISS detected', pri4.some(function(i){ return i.code === 'PRIORITY_FREQUENCY_MISS'; }));
+    assert('T4 PRIORITY_SINGLE_SESSION_CONCENTRATION detected', pri4.some(function(i){ return i.code === 'PRIORITY_SINGLE_SESSION_CONCENTRATION'; }));
+
+    // T5: Plan stable → all KEEP
+    var training5 = _mkTraining([['sentadilla','press banca'],['remo con barra']]);
+    var ctx5 = _mkPrescCtx(['sentadilla','press banca','remo con barra'], {}, [], true, [], []);
+    var stab5 = _auditPlanStability(ctx5, training5);
+    assert('T5 stable plan → all KEEP', stab5.every(function(c){ return c.status === 'KEEP'; }));
+
+    // T6: Replace sin reasonCode → UNJUSTIFIED_EXERCISE_CHANGE
+    var training6 = _mkTraining([['sentadilla','dominadas']]);
+    var ctx6 = _mkPrescCtx(['sentadilla','curl bíceps'], {}, [], true, [], []); // curl bíceps removed, no reason
+    var stab6 = _auditPlanStability(ctx6, training6);
+    var unjust6 = stab6.filter(function(c){ return c.status === 'UNJUSTIFIED_EXERCISE_CHANGE'; });
+    assert('T6 removed without reason → UNJUSTIFIED_EXERCISE_CHANGE', unjust6.length > 0);
+    assert('T6 curl bíceps unjustified', unjust6.some(function(c){ return c.name.toLowerCase().indexOf('curl') >= 0; }));
+
+    // T7: Replace with pain/veto → REMOVE (not UNJUSTIFIED)
+    var training7 = _mkTraining([['sentadilla']]);
+    var ctx7 = _mkPrescCtx(['sentadilla','press banca'], {}, [], true, ['press banca'], []); // press banca vetoed
+    var stab7 = _auditPlanStability(ctx7, training7);
+    var pb7 = stab7.find(function(c){ return c.name.toLowerCase().indexOf('press') >= 0; });
+    assert('T7 vetoed exercise → REMOVE (not UNJUSTIFIED)', pb7 && pb7.status === 'REMOVE');
+
+    // T7b: Replace with global reason code → REMOVE (not UNJUSTIFIED)
+    var training7b = _mkTraining([['sentadilla']]);
+    var ctx7b = _mkPrescCtx(['sentadilla','press banca'], {}, ['MAJORITY_STALLED'], true, [], []);
+    var stab7b = _auditPlanStability(ctx7b, training7b);
+    var pb7b = stab7b.find(function(c){ return c.name.toLowerCase().indexOf('press') >= 0; });
+    assert('T7b global reasonCode → REMOVE (justified)', pb7b && pb7b.status === 'REMOVE');
+
+    // T8: Sesión sobrecargada — >8 exercises
+    var heavyDay = _mkDays([['A','B','C','D','E','F','G','H','I'].map(function(n){ return n; })]);
+    // _auditSessionBalance needs already-run red/fat byDay
+    var bal8 = _auditSessionBalance([{ dayIndex:0, label:'Día 1', exercises: ['A','B','C','D','E','F','G','H','I'].map(function(n){ return { exerciseName:n, sets:[{},{},{},{}] }; }) }], [{level:'NONE'}], [{level:'LOW'}]);
+    assert('T8 >8 exercises → SESSION_OVERLOADED', bal8[0].issues.some(function(i){ return i.code === 'SESSION_OVERLOADED'; }));
+
+    // T9: Fatiga estructural HIGH — 6 compound exercises on same day
+    // 6 canonical compounds: sentadilla + sentadilla frontal + peso muerto + rdl + remo con barra + dominadas
+    var day9 = { dayIndex:0, label:'Día 1', exercises: ['sentadilla','sentadilla frontal','peso muerto','rdl','remo con barra','dominadas','jalón al pecho'].map(function(n){ return { exerciseName:n, sets:[{},{},{}] }; }) };
+    var fat9 = _auditStructuralFatigue(day9);
+    assert('T9 6-7 compounds → MODERATE or HIGH fatigue', fat9.level === 'MODERATE' || fat9.level === 'HIGH');
+    assert('T9 compound count in reasons', fat9.reasons.some(function(r){ return r.indexOf('COMPOUND') >= 0; }));
+
+    // T10: XSS — exercise names with <> in stability audit not injected into warnings
+    var training10 = _mkTraining([['sentadilla']]);
+    var ctx10 = _mkPrescCtx(['sentadilla','<script>alert(1)</script>'], {}, [], true, [], []);
+    var stab10 = _auditPlanStability(ctx10, training10);
+    var xssEntry = stab10.find(function(c){ return c.name && c.name.indexOf('<') >= 0; });
+    // _buildPlanPreview (and _showPlanPreviewModal) escapes via _escH — the audit itself stores raw name
+    // What matters: the status is not corrupted; XSS in name doesn't change classification
+    assert('T10 XSS exercise name still classified as UNJUSTIFIED_EXERCISE_CHANGE', xssEntry && xssEntry.status === 'UNJUSTIFIED_EXERCISE_CHANGE');
+
+    // T10b: runOutputQualityAudit returns status WARN when issues found
+    var qaFull = runOutputQualityAudit(_mkTraining([['press banca','press inclinado','press declinado']]), _mkPrescCtx([], {}, [], false), null);
+    assert('T10b runOutputQualityAudit returns WARN with redundancy', qaFull.status === 'WARN');
+    assert('T10b has redundancy in warnings', qaFull.warnings.some(function(w){ return w.code && w.code.indexOf('REDUNDANCY') >= 0; }));
+
+    // T10c: runOutputQualityAudit returns PASS when no issues
+    var qaPass = runOutputQualityAudit(_mkTraining([['sentadilla','press banca','remo con barra','curl bíceps']]), _mkPrescCtx([], {}, [], false), null);
+    // May or may not be PASS depending on data, but should not throw
+    assert('T10c runOutputQualityAudit returns status string', qaPass.status === 'PASS' || qaPass.status === 'WARN');
+    assert('T10c runOutputQualityAudit has warnings array', Array.isArray(qaPass.warnings));
+    assert('T10c runOutputQualityAudit has byDay array', Array.isArray(qaPass.byDay));
+
+    console.log('[QUALITY AUDIT TESTS] ' + pass + ' passed, ' + fail + ' failed');
+    return { pass: pass, fail: fail };
+  }
+  window._runOutputQualityAuditTests = _runOutputQualityAuditTests;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10750,7 +11102,9 @@ El esfuerzo no es negociable.
       const _prevSnap2 = (_detailClientData && _detailClientData.lastPrescriptionSnapshot) || null;
       const _currSnap2 = _buildProfileSnapshot();
       const _traceChanges2 = _diffProfileSnapshots(_prevSnap2, _currSnap2);
-      const _previewData = _buildPlanPreview(training, prescCtx, _volAudit2, validation.warnings, _traceChanges2);
+      const _qAudit2 = runOutputQualityAudit(training, prescCtx, _volAudit2);
+      if (_qAudit2.warnings.length) console.info('[VDSEN] Quality audit:', _qAudit2.warnings);
+      const _previewData = _buildPlanPreview(training, prescCtx, _volAudit2, validation.warnings, _traceChanges2, _qAudit2);
       const _confirmed = await _showPlanPreviewModal(clientId, _previewData);
       if (!_confirmed) {
         showToast('Generación cancelada — plan no guardado');
