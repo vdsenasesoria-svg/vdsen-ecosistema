@@ -5585,6 +5585,91 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     var c3 = _buildSubstitutionCandidates({ targetMuscle:'deltoides', movementPattern:'press_vertical', role:'fundamental', constraints:{} }, catalog, 'press militar');
     t('C3 coach catalog exercise in TierB', c3.tierB.indexOf('press máquina custom') >= 0);
 
+    // ── _slotCompatibility tests ──────────────────────────────────────────
+    var slotA = { targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'fundamental' };
+    var slotB = { targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'fundamental' };
+    var slotC = { targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'accessory'  };
+    var slotD = { targetMuscle:'pectoral', movementPattern:'press_inclinado',  role:'fundamental' };
+    var slotE = { targetMuscle:'deltoides', movementPattern:'press_horizontal', role:'fundamental' };
+
+    t('SC1 EXACT when all fields match',    _slotCompatibility(slotA, slotB) === 'EXACT');
+    t('SC2 SAME_SLOT when role differs',    _slotCompatibility(slotA, slotC) === 'SAME_SLOT');
+    t('SC3 DEGRADED when pattern differs',  _slotCompatibility(slotA, slotD) === 'DEGRADED');
+    t('SC4 INCOMPATIBLE when target differs', _slotCompatibility(slotA, slotE) === 'INCOMPATIBLE');
+    t('SC5 null slotA → INCOMPATIBLE',     _slotCompatibility(null, slotA) === 'INCOMPATIBLE');
+
+    // ── _classifyExerciseChange tests ─────────────────────────────────────
+    var exA = { exerciseName:'Press Banca',   prescriptionSlot: slotA };
+    var exB = { exerciseName:'Press Banca',   prescriptionSlot: slotA };
+    var exC = { exerciseName:'Press Inclinado', prescriptionSlot: slotC };  // same target+pattern, role differs
+    var exD = { exerciseName:'Curl Biceps',    prescriptionSlot: slotE };   // different target
+
+    t('CC1 same name → NO_CHANGE', _classifyExerciseChange(exA, exB).type === 'NO_CHANGE');
+    t('CC2 REPLACEMENT_SAME_SLOT when slot compatible', _classifyExerciseChange(exA, exC).type === 'REPLACEMENT_SAME_SLOT');
+    t('CC3 STRUCTURAL_SLOT_CHANGE when target changes', _classifyExerciseChange(exA, exD).type === 'STRUCTURAL_SLOT_CHANGE');
+    t('CC4 STRUCTURAL_SLOT_CHANGE requires reasonCode', _classifyExerciseChange(exA, exD).reasonRequired === true);
+    t('CC5 REPLACEMENT_SAME_SLOT no reasonCode required', _classifyExerciseChange(exA, exC).reasonRequired === false);
+    t('CC6 null newEx → REMOVED_EXERCISE', _classifyExerciseChange(exA, null).type === 'REMOVED_EXERCISE');
+    t('CC7 null oldEx → NEW_EXERCISE',     _classifyExerciseChange(null, exA).type === 'NEW_EXERCISE');
+    t('CC8 no slots → NAME_CHANGE unknown', _classifyExerciseChange({exerciseName:'A'},{exerciseName:'B'}).type === 'NAME_CHANGE');
+
+    // ── _comparePlanStability tests ───────────────────────────────────────
+    var planA = { days: [{ label:'D1', exercises:[exA, exD] }] };
+    var planB_sameSlot = { days: [{ label:'D1', exercises:[exC, exD] }] };  // exA→exC: REPLACEMENT_SAME_SLOT
+    var planB_structural = { days: [{ label:'D1', exercises:[exD, exA] }] }; // exA→exD: STRUCTURAL_SLOT_CHANGE
+
+    var ps1 = _comparePlanStability(planA, planB_sameSlot);
+    t('PS1 stable when same slot replaced', ps1.stable === true);
+    t('PS1b replacement counted', ps1.replacements.length === 1);
+    t('PS1c no structural changes', ps1.structuralChanges.length === 0);
+
+    var ps2 = _comparePlanStability(planA, planB_structural);
+    t('PS2 not stable when target changes', ps2.stable === false);
+    t('PS2b structural change counted', ps2.structuralChanges.length >= 1);
+
+    t('PS3 null plans → stable empty', _comparePlanStability(null, null).stable === true);
+
+    // ── _auditSlotConstraints tests ───────────────────────────────────────
+    // SA1: valid slot, no canonical → no issues (unknown exercises are skipped)
+    var saTrainOk = { days: [{ label:'D1', exercises:[{ exerciseName:'Ejercicio Desconocido', prescriptionSlot:{ targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'fundamental' } }] }] };
+    var sa1 = _auditSlotConstraints(saTrainOk, []);
+    t('SA1 unknown exercise no issue', sa1.issues.length === 0);
+
+    // SA2: press banca with wrong targetMuscle → SLOT_TARGET_MISMATCH issue
+    var saTrainMismatch = { days: [{ label:'D1', exercises:[{ exerciseName:'press banca', prescriptionSlot:{ targetMuscle:'deltoides', movementPattern:'press_horizontal', role:'fundamental' } }] }] };
+    var sa2 = _auditSlotConstraints(saTrainMismatch, []);
+    t('SA2 target mismatch → SLOT_TARGET_MISMATCH', sa2.issues.some(function(i){ return i.code === 'SLOT_TARGET_MISMATCH'; }));
+
+    // SA3: duplicate slot in same day → DUPLICATE_SLOT_REDUNDANCY warning
+    var saTrainDup = { days: [{ label:'D1', exercises:[
+      { exerciseName:'press banca',    prescriptionSlot:{ targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'fundamental' } },
+      { exerciseName:'press inclinado', prescriptionSlot:{ targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'fundamental' } },
+    ]}]};
+    var sa3 = _auditSlotConstraints(saTrainDup, []);
+    t('SA3 duplicate slot → DUPLICATE_SLOT_REDUNDANCY', sa3.warnings.some(function(w){ return w.code === 'DUPLICATE_SLOT_REDUNDANCY'; }));
+
+    // SA4: priority muscle not covered → PRIORITY_SLOT_MISSING
+    var saTrainNoPrio = { days: [{ label:'D1', exercises:[{ exerciseName:'press banca', prescriptionSlot:{ targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'fundamental' } }] }] };
+    var sa4 = _auditSlotConstraints(saTrainNoPrio, ['isquiotibiales']);
+    t('SA4 priority not covered → PRIORITY_SLOT_MISSING', sa4.warnings.some(function(w){ return w.code === 'PRIORITY_SLOT_MISSING'; }));
+
+    // SA5: legacy plan without slots → no issues, no warnings from slot audit
+    var saTrainLegacy = { days: [{ label:'D1', exercises:[{ exerciseName:'press banca' }] }] };
+    var sa5 = _auditSlotConstraints(saTrainLegacy, []);
+    t('SA5 legacy plan no slot → no issues', sa5.issues.length === 0 && sa5.warnings.length === 0);
+
+    // PID PRESERVATION: exerciseName is identity; prescriptionSlot is function metadata
+    t('PID: name stays separate from slot', (function(){
+      var ex = { exerciseName: 'Press Banca', prescriptionSlot:{ targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'fundamental' } };
+      return ex.exerciseName === 'Press Banca' && ex.prescriptionSlot.targetMuscle === 'pectoral';
+    })());
+
+    // REORDER: same exercises reordered → NAME_CHANGE (no slot data on positional mismatch)
+    var planReorderA = { days: [{ label:'D1', exercises:[{exerciseName:'A', prescriptionSlot:slotA},{exerciseName:'B', prescriptionSlot:slotE}] }] };
+    var planReorderB = { days: [{ label:'D1', exercises:[{exerciseName:'B', prescriptionSlot:slotE},{exerciseName:'A', prescriptionSlot:slotA}] }] };
+    var psR = _comparePlanStability(planReorderA, planReorderB);
+    t('REORDER detected as structural (slot mismatch by position)', psR.structuralChanges.length > 0 || psR.replacements.length > 0);
+
     console.log('[prescriptionSlot tests] ' + pass + ' PASS · ' + fail + ' FAIL');
     return { pass: pass, fail: fail };
   }
@@ -5595,6 +5680,148 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window._prescriptionSlotToText = _prescriptionSlotToText;
   window._PS_SUBSTITUTION_REASONS = _PS_SUBSTITUTION_REASONS;
   window._PS_TIERS = _PS_TIERS;
+
+  // ── Slot Compatibility Check ──────────────────────────────────────────────
+  // Returns 'EXACT'|'SAME_SLOT'|'DEGRADED'|'INCOMPATIBLE'
+  // EXACT: targetMuscle + movementPattern + role all match
+  // SAME_SLOT: targetMuscle + movementPattern match (role may differ — minor variation)
+  // DEGRADED: targetMuscle matches but movementPattern differs (same muscle, different function)
+  // INCOMPATIBLE: different targetMuscle — structural slot change
+  function _slotCompatibility(slotA, slotB) {
+    if (!slotA || !slotB) return 'INCOMPATIBLE';
+    var sameTarget  = slotA.targetMuscle   === slotB.targetMuscle;
+    var samePattern = slotA.movementPattern === slotB.movementPattern;
+    var sameRole    = slotA.role            === slotB.role;
+    if (sameTarget && samePattern && sameRole) return 'EXACT';
+    if (sameTarget && samePattern)             return 'SAME_SLOT';
+    if (sameTarget)                            return 'DEGRADED';
+    return 'INCOMPATIBLE';
+  }
+
+  // ── Exercise Change Classifier ─────────────────────────────────────────────
+  // Compares two exercise objects from days[].exercises[] and classifies the change.
+  // PID (prescriptionExerciseId) is identity — exerciseName+slot is function.
+  // Returns: { type, slotStatus, reasonRequired }
+  function _classifyExerciseChange(oldEx, newEx) {
+    if (!oldEx && !newEx) return { type: 'NO_CHANGE',        slotStatus: null,       reasonRequired: false };
+    if (!oldEx)           return { type: 'NEW_EXERCISE',     slotStatus: null,       reasonRequired: false };
+    if (!newEx)           return { type: 'REMOVED_EXERCISE', slotStatus: null,       reasonRequired: false };
+    var oldName = (oldEx.exerciseName || '').toLowerCase().trim();
+    var newName = (newEx.exerciseName || '').toLowerCase().trim();
+    if (oldName === newName) return { type: 'NO_CHANGE',     slotStatus: 'SAME_SLOT', reasonRequired: false };
+    var oldSlot = oldEx.prescriptionSlot || null;
+    var newSlot = newEx.prescriptionSlot || null;
+    if (!oldSlot || !newSlot)
+      return { type: 'NAME_CHANGE', slotStatus: 'UNKNOWN', reasonRequired: false };
+    var compat = _slotCompatibility(oldSlot, newSlot);
+    if (compat === 'EXACT' || compat === 'SAME_SLOT')
+      return { type: 'REPLACEMENT_SAME_SLOT',  slotStatus: compat, reasonRequired: false };
+    return   { type: 'STRUCTURAL_SLOT_CHANGE', slotStatus: compat, reasonRequired: true  };
+  }
+
+  // ── Plan Stability Comparator ──────────────────────────────────────────────
+  // Matches exercises by position (dayIndex × exerciseIndex within that day).
+  // Returns: { changes[], structuralChanges[], replacements[], stable: bool }
+  function _comparePlanStability(oldPlan, newPlan) {
+    var empty = { changes: [], structuralChanges: [], replacements: [], stable: true };
+    if (!oldPlan || !newPlan) return empty;
+    var oldDays = Array.isArray(oldPlan.days) ? oldPlan.days : [];
+    var newDays = Array.isArray(newPlan.days) ? newPlan.days : [];
+    var changes = [], structuralChanges = [], replacements = [];
+    var maxDays = Math.max(oldDays.length, newDays.length);
+    for (var di = 0; di < maxDays; di++) {
+      var oldDay = oldDays[di] || null;
+      var newDay = newDays[di] || null;
+      var oldExs = (oldDay && oldDay.exercises) || [];
+      var newExs = (newDay && newDay.exercises) || [];
+      var maxEx  = Math.max(oldExs.length, newExs.length);
+      for (var ei = 0; ei < maxEx; ei++) {
+        var cl = _classifyExerciseChange(oldExs[ei] || null, newExs[ei] || null);
+        if (cl.type === 'NO_CHANGE') continue;
+        var change = {
+          dayIndex:      di,
+          exerciseIndex: ei,
+          dayLabel:      (newDay && newDay.label) || (oldDay && oldDay.label) || ('Día ' + (di + 1)),
+          oldName:       oldExs[ei] ? (oldExs[ei].exerciseName || '') : null,
+          newName:       newExs[ei] ? (newExs[ei].exerciseName || '') : null,
+          type:          cl.type,
+          slotStatus:    cl.slotStatus,
+          reasonRequired: cl.reasonRequired,
+        };
+        changes.push(change);
+        if (cl.type === 'STRUCTURAL_SLOT_CHANGE') structuralChanges.push(change);
+        if (cl.type === 'REPLACEMENT_SAME_SLOT')  replacements.push(change);
+      }
+    }
+    return { changes: changes, structuralChanges: structuralChanges, replacements: replacements, stable: structuralChanges.length === 0 };
+  }
+
+  // ── Slot Constraints Auditor ──────────────────────────────────────────────
+  // Post-generation check of prescriptionSlot contracts.
+  // Issue codes: SLOT_TARGET_MISMATCH, SLOT_PATTERN_MISMATCH, SLOT_ROLE_MISMATCH,
+  //              DUPLICATE_SLOT_REDUNDANCY, PRIORITY_SLOT_MISSING
+  // No new thresholds — canonical metadata comparison only.
+  function _auditSlotConstraints(training, priorityMuscles) {
+    var issues = [], warnings = [];
+    if (!training || !Array.isArray(training.days)) return { issues: issues, warnings: warnings };
+    var priorities = Array.isArray(priorityMuscles) ? priorityMuscles : [];
+    var coveredPriorities = {};
+    training.days.forEach(function(day) {
+      var dayLabel = day.label || ('Día ' + ((day.dayIndex || 0) + 1));
+      var slotSigs = {};
+      (day.exercises || []).forEach(function(ex) {
+        var exName = ex.exerciseName || '';
+        var slot = ex.prescriptionSlot;
+        if (!slot) return;
+        var v = _validatePrescriptionSlot(slot);
+        if (!v.valid) return;
+        var canonical = _EXERCISE_CANONICAL_METADATA[(exName).toLowerCase().trim()];
+        if (canonical) {
+          var prim = canonical.primaryMuscles || [];
+          if (prim.length && !prim.some(function(m) {
+            return m === slot.targetMuscle || m.indexOf(slot.targetMuscle) >= 0 || slot.targetMuscle.indexOf(m) >= 0;
+          })) {
+            issues.push({ code: 'SLOT_TARGET_MISMATCH', dayLabel: dayLabel, exerciseName: exName,
+              detail: 'slot.targetMuscle "' + slot.targetMuscle + '" no coincide con primarios de ' + exName });
+          }
+          if (canonical.movementPattern && canonical.movementPattern !== slot.movementPattern) {
+            warnings.push({ code: 'SLOT_PATTERN_MISMATCH', dayLabel: dayLabel, exerciseName: exName,
+              detail: 'slot.movementPattern "' + slot.movementPattern + '" difiere del canónico "' + canonical.movementPattern + '"' });
+          }
+          // Isolation heuristic: single primary, no secondaries, no stabilizers → warn if role=fundamental
+          if (slot.role === 'fundamental' &&
+              prim.length === 1 &&
+              !(canonical.secondaryMuscles && canonical.secondaryMuscles.length) &&
+              !(canonical.stabilizers && canonical.stabilizers.length)) {
+            warnings.push({ code: 'SLOT_ROLE_MISMATCH', dayLabel: dayLabel, exerciseName: exName,
+              detail: exName + ' parece aislamiento pero slot.role = "fundamental"' });
+          }
+        }
+        var sig = slot.targetMuscle + '|' + slot.movementPattern + '|' + slot.role;
+        if (slotSigs[sig]) {
+          warnings.push({ code: 'DUPLICATE_SLOT_REDUNDANCY', dayLabel: dayLabel, exerciseName: exName,
+            detail: 'Slot duplicado en ' + dayLabel + ': "' + slotSigs[sig] + '" y "' + exName + '"' });
+        } else {
+          slotSigs[sig] = exName;
+        }
+        priorities.forEach(function(pm) {
+          if (slot.targetMuscle === pm || slot.targetMuscle.indexOf(pm) >= 0 || pm.indexOf(slot.targetMuscle) >= 0)
+            coveredPriorities[pm] = true;
+        });
+      });
+    });
+    priorities.forEach(function(pm) {
+      if (!coveredPriorities[pm])
+        warnings.push({ code: 'PRIORITY_SLOT_MISSING', exerciseName: null,
+          detail: 'Músculo prioritario "' + pm + '" sin slot en el plan' });
+    });
+    return { issues: issues, warnings: warnings };
+  }
+
+  window._slotCompatibility = _slotCompatibility;
+  window._classifyExerciseChange = _classifyExerciseChange;
+  window._comparePlanStability = _comparePlanStability;
+  window._auditSlotConstraints = _auditSlotConstraints;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ─── VDSEN Topology Engine v2 ─────────────────────────────────────────────
@@ -6941,6 +7168,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const _muscleTargets = prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles;
       const _volTargetWarnings = _auditVolumeVsTargets(_volAudit, _muscleTargets || {});
       if (_volTargetWarnings.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings);
+
+      // Slot Constraints Audit — verifies prescriptionSlot contracts post-generation (0 reads)
+      const _priorityMuscleList = prescCtx && prescCtx.prescriptionTargets
+        ? Object.keys(prescCtx.prescriptionTargets.muscles || {}).filter(function(m) {
+            return (prescCtx.prescriptionTargets.muscles[m] || {}).priority === 'high';
+          })
+        : [];
+      const _slotAudit = training ? _auditSlotConstraints(training, _priorityMuscleList) : null;
+      if (_slotAudit) {
+        if (_slotAudit.issues.length)   console.warn('[VDSEN SlotAudit] Issues:', _slotAudit.issues);
+        if (_slotAudit.warnings.length) console.info('[VDSEN SlotAudit] Warnings:', _slotAudit.warnings);
+      }
 
       // Topology Feasibility Audit — post-distribution validation (Principle 12)
       const _topoAudit = training ? topologyFeasibilityAudit(training, topologyDecision, prescCtx, _restrictions) : null;
@@ -10833,6 +11072,18 @@ El esfuerzo no es negociable.
     prevNames.forEach(function(n){ var k=n.toLowerCase(); prevCounts[k]=(prevCounts[k]||0)+1; });
     newNames.forEach(function(n){ var k=n.toLowerCase(); newCounts[k]=(newCounts[k]||0)+1; });
 
+    // Slot-aware stability comparison (position-based, uses _rawDays when available)
+    var slotStability = null;
+    var slotChangeByName = {};
+    var prevRawDays = prevPlan && Array.isArray(prevPlan._rawDays) ? prevPlan._rawDays : null;
+    if (prevRawDays && training) {
+      slotStability = _comparePlanStability({ days: prevRawDays }, training);
+      // Build lookup: newName.lc → slotStatus for annotation
+      slotStability.changes.forEach(function(ch) {
+        if (ch.newName) slotChangeByName[ch.newName.toLowerCase().trim()] = ch;
+      });
+    }
+
     var exerciseChanges = [];
     var allKeys = {};
     Object.keys(prevSet).forEach(function(k){ allKeys[k]=true; });
@@ -10842,15 +11093,23 @@ El esfuerzo no es negociable.
       var inNew  = !!newSet[k];
       var ambiguous = (prevCounts[k] > 1 || newCounts[k] > 1);
       var status = ambiguous ? 'AMBIGUOUS' : (inPrev && inNew ? 'KEEP' : (inNew ? 'ADD' : 'REMOVE'));
+      var slotCh = slotChangeByName[k] || null;
       exerciseChanges.push({
-        name:      newSet[k] || prevSet[k],
-        status:    status,
-        ambiguous: ambiguous,
+        name:         newSet[k] || prevSet[k],
+        status:       status,
+        ambiguous:    ambiguous,
+        slotStatus:   slotCh ? slotCh.slotStatus  : null,
+        changeType:   slotCh ? slotCh.type         : null,
       });
     });
-    // Sort: ADD first, then REMOVE, AMBIGUOUS, KEEP last
+    // Sort: structural slot changes first, then ADD, REMOVE, AMBIGUOUS, KEEP
     var SEV_ORDER = { ADD: 0, REMOVE: 1, AMBIGUOUS: 2, KEEP: 3 };
-    exerciseChanges.sort(function(a,b){ return (SEV_ORDER[a.status]||9) - (SEV_ORDER[b.status]||9); });
+    exerciseChanges.sort(function(a, b) {
+      var aStruct = a.changeType === 'STRUCTURAL_SLOT_CHANGE' ? -1 : 0;
+      var bStruct = b.changeType === 'STRUCTURAL_SLOT_CHANGE' ? -1 : 0;
+      if (aStruct !== bStruct) return aStruct - bStruct;
+      return (SEV_ORDER[a.status] || 9) - (SEV_ORDER[b.status] || 9);
+    });
 
     // Profile-driven reasons (CRITICAL + RELEVANT changes only, readable labels)
     var profileReasons = (profileTraceChanges || [])
@@ -10898,12 +11157,22 @@ El esfuerzo no es negociable.
     var QA_PREVIEW_CODES = { REDUNDANCY_HIGH:1, REDUNDANCY_MODERATE:1, STRUCTURAL_FATIGUE_HIGH:1,
       MAINTENANCE_VOLUME_EXCESS:1, MAINTENANCE_FREQUENCY_EXCESS:1, MAINTENANCE_SESSION_OVERALLOCATION:1,
       PRIORITY_FREQUENCY_MISS:1, PRIORITY_VOLUME_MISS:1, PRIORITY_SINGLE_SESSION_CONCENTRATION:1,
-      UNJUSTIFIED_EXERCISE_CHANGE:1, SESSION_OVERLOADED:1, SESSION_UNDERUTILIZED:1 };
+      UNJUSTIFIED_EXERCISE_CHANGE:1, SESSION_OVERLOADED:1, SESSION_UNDERUTILIZED:1,
+      SLOT_TARGET_MISMATCH:1, SLOT_PATTERN_MISMATCH:1, SLOT_ROLE_MISMATCH:1,
+      DUPLICATE_SLOT_REDUNDANCY:1, PRIORITY_SLOT_MISSING:1 };
     if (qualityAudit && Array.isArray(qualityAudit.warnings)) {
       qualityAudit.warnings.forEach(function(w) {
         if (!w || !QA_PREVIEW_CODES[w.code]) return;
         var wStr = w.msg || (w.code + ': ' + (w.muscle || ''));
         if (warnings.indexOf(wStr) < 0) warnings.push(wStr);
+      });
+    }
+
+    // Slot stability warnings → human-readable, add to warnings list
+    if (slotStability && slotStability.structuralChanges.length) {
+      slotStability.structuralChanges.forEach(function(ch) {
+        var w = 'CAMBIO_SLOT: ' + (ch.oldName || '—') + ' → ' + (ch.newName || '—') + ' (' + ch.dayLabel + ')';
+        if (warnings.indexOf(w) < 0) warnings.push(w);
       });
     }
 
@@ -10919,6 +11188,7 @@ El esfuerzo no es negociable.
       hasPreviousPlan: !!(prescCtx && prescCtx.hasPreviousPlan),
       repairCandidates: qualityAudit ? _generateRepairCandidates(qualityAudit, training) : [],
       byDay:            (qualityAudit && Array.isArray(qualityAudit.byDay)) ? qualityAudit.byDay : [],
+      slotStability:    slotStability,
     };
   }
   window._buildPlanPreview = _buildPlanPreview;
@@ -10932,6 +11202,15 @@ El esfuerzo no es negociable.
 
       var STATUS_COLOR  = { KEEP: '#555', ADD: '#44BB88', REMOVE: '#e05555', AMBIGUOUS: '#888' };
       var STATUS_LABEL  = { KEEP: 'IGUAL', ADD: 'NUEVO', REMOVE: 'QUITAR', AMBIGUOUS: '?' };
+      var SLOT_BADGE    = {
+        EXACT:                  { lbl: 'función idéntica', col: '#44BB88' },
+        SAME_SLOT:              { lbl: 'función preservada', col: '#44BB88' },
+        DEGRADED:               { lbl: 'músculo igual · patrón distinto', col: '#FF8C00' },
+        INCOMPATIBLE:           { lbl: 'función cambia', col: '#e05555' },
+        REPLACEMENT_SAME_SLOT:  { lbl: 'sustitución funcional', col: '#44BB88' },
+        STRUCTURAL_SLOT_CHANGE: { lbl: 'cambio estructural', col: '#e05555' },
+        UNKNOWN:                { lbl: '', col: '' },
+      };
 
       var changesHtml = '';
       if (pv.hasPreviousPlan) {
@@ -10941,9 +11220,17 @@ El esfuerzo no es negociable.
             var col = STATUS_COLOR[e.status] || '#888';
             var lbl = STATUS_LABEL[e.status] || e.status;
             var note = e.ambiguous ? ' <span style="color:#555;font-size:9px">(ambiguo)</span>' : '';
+            var slotInfo = '';
+            if (e.slotStatus && e.slotStatus !== 'UNKNOWN' && SLOT_BADGE[e.slotStatus]) {
+              var sb = SLOT_BADGE[e.slotStatus];
+              slotInfo = sb.lbl ? ' <span style="font-size:9px;color:' + sb.col + ';opacity:.8">· ' + sb.lbl + '</span>' : '';
+            } else if (e.changeType && SLOT_BADGE[e.changeType] && SLOT_BADGE[e.changeType].lbl) {
+              var sb2 = SLOT_BADGE[e.changeType];
+              slotInfo = ' <span style="font-size:9px;color:' + sb2.col + ';opacity:.8">· ' + sb2.lbl + '</span>';
+            }
             return '<div style="display:flex;align-items:baseline;gap:6px;padding:3px 0;border-bottom:1px solid rgba(244,244,240,.03)">' +
               '<span style="font-size:9px;font-weight:700;color:' + col + ';min-width:38px;flex-shrink:0">' + lbl + '</span>' +
-              '<span style="font-size:11px;color:#ccc">' + _escH(e.name) + note + '</span>' +
+              '<span style="font-size:11px;color:#ccc">' + _escH(e.name) + note + slotInfo + '</span>' +
               '</div>';
           }).join('');
         } else {

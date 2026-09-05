@@ -1456,7 +1456,9 @@ async function loadPlan(user) {
           setsReps: numSets + '×' + _repsRangeStr,
           // Identidad estable de la instancia prescrita — requerida por el Progression Engine
           prescriptionExerciseId: e.prescriptionExerciseId || undefined,
-          exerciseId: e.exerciseId || undefined
+          exerciseId: e.exerciseId || undefined,
+          // Slot de prescripción: intención funcional (NO es identidad — ver PID arriba)
+          prescriptionSlot: (e.prescriptionSlot && typeof e.prescriptionSlot === 'object') ? e.prescriptionSlot : null
         };
         // Auto-detectar Y3T en loadPlan para que todos los render paths hereden technique:'y3t'
         if (ex.technique !== 'y3t' && isY3TExercise(ex)) ex.technique = 'y3t';
@@ -4534,6 +4536,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         : '')+
       // FASE 18 — Coach note visible al cliente durante workout (inmutable, solo lectura)
       _coachNoteHtml(ej.coachNote)+
+      _slotSubstitutionNoticeHtml(ej)+
       (function(){
         if (!_isY3T || !_y3tPhase) return '';
         var pm = Y3T_PHASE_META[_y3tPhase];
@@ -12686,6 +12689,26 @@ function _coachNoteHtml(note) {
   '</div>';
 }
 window._coachNoteHtml = _coachNoteHtml;
+
+// Substitution notice: shows a compact inline label when prescriptionSlot signals a functional
+// substitution was made. Only visible when relevant — no new reads, all in-memory.
+// Returns '' when there is nothing to communicate to the client.
+function _slotSubstitutionNoticeHtml(ej) {
+  var slot = ej && ej.prescriptionSlot;
+  if (!slot) return '';
+  // Show only when the slot carries a substitution signal from the motor
+  // (future: slot.substitutedFrom; current: coachNote mentions sustitución)
+  var hasSubNote = ej.coachNote && /sustitui/i.test(String(ej.coachNote));
+  if (!hasSubNote) return '';
+  var label = slot.targetMuscle && slot.movementPattern
+    ? _escHTml(slot.targetMuscle) + ' · ' + _escHTml(slot.movementPattern.replace(/_/g, ' '))
+    : '';
+  return '<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:6px;background:rgba(255,140,0,.08);border:1px solid rgba(255,140,0,.25)">' +
+    '<span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#FF8C00">SUSTITUCIÓN</span>' +
+    (label ? '<span style="font-size:10px;color:rgba(255,140,0,.7)">· misma función: ' + label + '</span>' : '') +
+  '</div>';
+}
+window._slotSubstitutionNoticeHtml = _slotSubstitutionNoticeHtml;
 
 // FASE 19 — helper puro: genera HTML del resumen de recomendaciones de progresión
 // post-sesión. Recibe el objeto progrec_{W}_{D}. Retorna '' si no hay recomendaciones.
