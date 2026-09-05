@@ -9072,157 +9072,298 @@ El esfuerzo no es negociable.
     const fichaData = ficha && ficha.data ? ficha.data : (ficha || null);
     const hasFicha  = fichaData && Object.keys(fichaData).length > 0;
     const d         = fichaData || {};
+    const ft        = (ficha && ficha.fotometria) ? ficha.fotometria : {};
+    const cd        = _detailClientData || {};
+
+    const ibArr     = Array.isArray(cd.inbodyResults) ? cd.inbodyResults : [];
+    const ib        = ibArr.length ? ibArr[ibArr.length - 1] : null;
 
     const updatedAt = ficha && ficha.updatedAt
       ? new Date(ficha.updatedAt).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' })
       : null;
 
     // ── helpers ──────────────────────────────────────────────────────────────
-    const _v = (id) => {
-      const v = d[id];
+    const _rv = (obj, id) => {
+      const v = obj ? obj[id] : undefined;
       if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) return null;
       return Array.isArray(v) ? v.join(', ') : String(v);
     };
 
-    const _row = (label, id, unit) => {
-      const v = _v(id);
-      if (!v) return '';
-      const disp = unit ? _escH(v) + ' ' + unit : _escH(v);
-      return `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid rgba(244,244,240,.04);align-items:baseline">
-        <span style="color:#666;font-size:11px;min-width:138px;flex-shrink:0;line-height:1.5">${label}</span>
-        <span style="color:#e4e4e0;font-size:12px;font-weight:600;line-height:1.5;word-break:break-word">${disp}</span>
+    const _srcBadge = (src) => {
+      const MAP = {
+        CLIENTE: ['#7ec0ff','rgba(126,192,255,.12)'],
+        COACH:   ['#c89cff','rgba(200,156,255,.12)'],
+        SISTEMA: ['#999','rgba(150,150,150,.1)'],
+        MEDICIÓN:['#FF8844','rgba(255,136,68,.12)'],
+        INBODY:  ['#44BB88','rgba(68,187,136,.12)'],
+        FOTO:    ['#c8a54a','rgba(200,165,74,.12)'],
+      };
+      const pair = MAP[src] || ['#666','rgba(100,100,100,.1)'];
+      return `<span style="font-size:8.5px;padding:1px 5px;border-radius:3px;background:${pair[1]};color:${pair[0]};font-weight:700;letter-spacing:.05em;flex-shrink:0;white-space:nowrap">${src}</span>`;
+    };
+
+    const _rowV = (label, val, unit, src) => {
+      if (val === null || val === undefined || val === '') return '';
+      const disp = unit
+        ? _escH(String(val)) + ' <span style="color:#555;font-weight:400">' + _escH(unit) + '</span>'
+        : _escH(String(val));
+      return `<div style="display:flex;align-items:baseline;gap:8px;padding:5px 0;border-bottom:1px solid rgba(244,244,240,.04)">
+        <span style="color:#666;font-size:11px;min-width:120px;flex-shrink:0;line-height:1.5">${label}</span>
+        <span style="color:#e4e4e0;font-size:12px;font-weight:600;line-height:1.5;flex:1;word-break:break-word">${disp}</span>
+        ${src ? _srcBadge(src) : ''}
       </div>`;
     };
 
-    const _sec = (color, icon, title, rows) => {
-      if (!rows.trim()) return '';
-      return `<div style="margin-bottom:16px">
-        <div style="display:flex;align-items:center;gap:5px;margin-bottom:7px">
-          <span style="font-size:12px">${icon}</span>
-          <span style="font-size:10px;font-weight:700;color:${color};letter-spacing:.09em;text-transform:uppercase">${title}</span>
+    const _rowF = (label, id, unit, src, obj) => _rowV(label, _rv(obj !== undefined ? obj : d, id), unit, src);
+
+    const _misPill = (label) =>
+      `<span style="display:inline-flex;align-items:center;font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,140,0,.08);border:1px solid rgba(255,140,0,.3);color:#FF8C00;margin:2px">${_escH(label)}</span>`;
+
+    const _det = (icon, title, accentColor, badge, content, open) => {
+      if (!content.trim()) return '';
+      return `<details ${open ? 'open' : ''} style="margin-bottom:10px;border:1px solid rgba(244,244,240,.07);border-radius:9px;overflow:hidden">
+        <summary style="display:flex;align-items:center;gap:6px;padding:10px 13px;cursor:pointer;list-style:none;user-select:none;background:rgba(244,244,240,.02)">
+          <span>${icon}</span>
+          <span style="font-size:11px;font-weight:700;color:${accentColor};letter-spacing:.06em;text-transform:uppercase;flex:1">${_escH(title)}</span>
+          ${badge || ''}
+        </summary>
+        <div style="padding:10px 13px 12px">${content}</div>
+      </details>`;
+    };
+
+    // ── Completeness engine ──────────────────────────────────────────────────
+    const CRITICAL  = ['sexo','peso_kg','talla_cm','objetivo_mesociclo','nivel','dias_semana','duracion_sesion_min','lesiones','grupos_prioritarios','gimnasio'];
+    const IMPORTANT = ['edad','porcentaje_grasa','objetivo_corto','ejercicios_evitar','perfil'];
+    const FIELD_LABELS = {
+      sexo:'Sexo', peso_kg:'Peso', talla_cm:'Talla', objetivo_mesociclo:'Objetivo mesociclo',
+      nivel:'Nivel', dias_semana:'Días/semana', duracion_sesion_min:'Duración sesión',
+      lesiones:'Lesiones', grupos_prioritarios:'Grupos prioritarios', gimnasio:'Gimnasio',
+      edad:'Edad', porcentaje_grasa:'% Grasa corporal', objetivo_corto:'Objetivo corto plazo',
+      ejercicios_evitar:'Ejercicios a evitar', perfil:'Perfil (NAT/PED)',
+    };
+    const missing_critical = CRITICAL.filter(f => !_rv(d, f));
+    const missing_imp      = IMPORTANT.filter(f => !_rv(d, f));
+    const critDone = CRITICAL.length - missing_critical.length;
+    const pct      = Math.round((critDone / CRITICAL.length) * 100);
+    const isComplete = missing_critical.length === 0;
+
+    // ── Completeness header ──────────────────────────────────────────────────
+    const completenessHtml = `
+      <div style="background:rgba(244,244,240,.02);border:1px solid rgba(244,244,240,.08);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:11px;font-weight:700;color:#e4e4e0">Completitud de ficha</span>
+          <span style="font-size:10px;padding:2px 9px;border-radius:8px;font-weight:700;background:${isComplete?'rgba(68,187,136,.12)':'rgba(255,140,0,.08)'};border:1px solid ${isComplete?'rgba(68,187,136,.4)':'rgba(255,140,0,.3)'};color:${isComplete?'#44BB88':'#FF8C00'}">${isComplete ? '✓ FICHA COMPLETA' : critDone + '/' + CRITICAL.length + ' críticos'}</span>
         </div>
-        <div style="padding-left:2px">${rows}</div>
+        <div style="background:rgba(244,244,240,.06);border-radius:4px;height:5px;overflow:hidden;margin-bottom:${missing_critical.length?'8px':'0'}">
+          <div style="height:100%;width:${pct}%;background:${isComplete?'#44BB88':'#FF8C00'};border-radius:4px"></div>
+        </div>
+        ${missing_critical.length ? '<div style="display:flex;flex-wrap:wrap">' + missing_critical.map(f => _misPill(FIELD_LABELS[f]||f)).join('') + '</div>' : ''}
       </div>`;
-    };
 
-    const _chip = (label, id, unit, color) => {
-      const v = _v(id); if (!v) return '';
-      return `<div style="background:rgba(244,244,240,.04);border:1px solid rgba(244,244,240,.1);border-radius:8px;padding:9px 13px;text-align:center;flex:1;min-width:60px">
-        <div style="font-size:19px;font-weight:800;color:${color};letter-spacing:-.5px;line-height:1">${_escH(v)}<span style="font-size:9px;font-weight:400;color:#555;margin-left:2px">${unit||''}</span></div>
-        <div style="font-size:9px;color:#555;margin-top:3px;letter-spacing:.05em;text-transform:uppercase">${label}</div>
+    // ── Actions row ──────────────────────────────────────────────────────────
+    const actionsHtml = `
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+        <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(196,255,0,.35);background:rgba(196,255,0,.06);color:#C4FF00;font-size:11px;font-weight:700;cursor:pointer">✏️ Editar ficha</button>
+        ${missing_critical.length ? `<button onclick="typeof generateAccessMessage==='function'&&generateAccessMessage('${clientId}','onboarding')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,140,0,.35);background:rgba(255,140,0,.06);color:#FF8C00;font-size:11px;font-weight:700;cursor:pointer">📩 Solicitar datos</button>` : ''}
+        <button onclick="typeof _switchClientTab==='function'&&_switchClientTab('plan')" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(244,244,240,.15);background:rgba(244,244,240,.04);color:#aaa;font-size:11px;font-weight:600;cursor:pointer">🏋️ Ver plan</button>
+        ${updatedAt ? `<span style="font-size:10px;color:#555;margin-left:auto">Act. ${_escH(updatedAt)}</span>` : ''}
       </div>`;
-    };
 
-    const _badge = (text, color, bg, border) =>
-      `<span style="font-size:11px;padding:3px 10px;border-radius:10px;background:${bg};border:1px solid ${border};color:${color};font-weight:600">${_escH(text)}</span>`;
-
-    // ── build sections ────────────────────────────────────────────────────────
-    const secEntrenamiento = _sec('#C4FF00','🏋️','Entrenamiento',
-      _row('Nivel',            'nivel') +
-      _row('Días / semana',    'dias_semana',           'días') +
-      _row('Duración sesión',  'duracion_sesion_min',   'min') +
-      _row('Gimnasio',         'gimnasio') +
-      _row('Semana mesociclo', 'semana_actual_mesociclo')
-    );
-
-    const secObjetivos = _sec('#44BB88','🎯','Objetivos',
-      _row('Objetivo mesociclo',   'objetivo_mesociclo') +
-      _row('Enfoque',              'enfoque_actual') +
-      _row('Objetivo corto plazo', 'objetivo_corto') +
-      _row('Evento / fecha',       'evento_objetivo')
-    );
-
-    const secPrioridades = _sec('#c89cff','💪','Prioridades musculares',
-      _row('Grupos prioritarios', 'grupos_prioritarios') +
-      _row('Lesiones / restricciones', 'lesiones') +
-      _row('Patrones fuertes',    'patrones_fuertes') +
-      _row('Patrones a reforzar', 'patrones_debiles') +
-      _row('Asimetrías',          'asimetrias') +
-      _row('Ejercicios a evitar', 'ejercicios_evitar') +
-      _row('Ejercicios favoritos','ejercicios_favoritos') +
-      _row('Estilo entreno',      'estilo_entreno')
-    );
-
-    const secNutricion = _sec('#FF8844','🥗','Nutrición',
-      _row('Objetivo calórico',    'objetivo_calorico') +
-      _row('Ajuste',               'magnitud_ajuste_pct', '%') +
-      _row('Comidas / día',        'num_comidas') +
-      _row('Horarios',             'horarios_comidas') +
-      _row('Restricciones',        'restricciones_alimentarias') +
-      _row('Detalle restricción',  'restriccion_otra') +
-      _row('Alimentos disponibles','alimentos_disponibles')
-    );
-
-    const secSupp = _sec('#7ec0ff','💊','Suplementación',
-      _row('Restricciones',    'restricciones_suplementos') +
-      _row('Objetivo primario','objetivo_primario_supp')
-    );
-
-    const secFarma = d.perfil === 'PED' ? _sec('#FF4488','💉','Farmacología',
-      _row('Experiencia',        'experiencia_peds') +
-      _row('Objetivo',           'objetivo_farmaco') +
-      _row('Timeline',           'timeline_semanas',   'sem') +
-      _row('Compuestos actuales','compuestos_actuales') +
-      _row('Dosis androGénos',   'dosis_semana_mg',    'mg/sem') +
-      _row('Hematocrito',        'bio_hct', '%') +
-      _row('ALT / AST',          'bio_alt') +
-      _row('Col. total',         'bio_col_total', 'mg/dL') +
-      _row('HDL',                'bio_hdl',  'mg/dL') +
-      _row('LDL',                'bio_ldl',  'mg/dL') +
-      _row('Estradiol (E2)',      'bio_e2',   'pg/mL') +
-      _row('PA sistólica',       'bio_pa_sistolica', 'mmHg') +
-      _row('PA diastólica',      'bio_pa_diastolica','mmHg') +
-      _row('FC reposo',          'bio_fc_reposo',    'lpm')
+    // ── Section: Datos Faltantes ─────────────────────────────────────────────
+    const secFaltantes = (missing_critical.length || missing_imp.length) ? _det(
+      '⚠️', 'Datos faltantes', '#FF8C00', '',
+      (missing_critical.length ? '<div style="margin-bottom:8px"><span style="font-size:9px;font-weight:700;color:#FF4444;letter-spacing:.06em;text-transform:uppercase">CRÍTICOS</span><div style="margin-top:4px;display:flex;flex-wrap:wrap">' + missing_critical.map(f => _misPill(FIELD_LABELS[f]||f)).join('') + '</div></div>' : '') +
+      (missing_imp.length ? '<div><span style="font-size:9px;font-weight:700;color:#FF8C00;letter-spacing:.06em;text-transform:uppercase">IMPORTANTES</span><div style="margin-top:4px;display:flex;flex-wrap:wrap">' + missing_imp.map(f => `<span style="display:inline-flex;align-items:center;font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.3);color:#c8a54a;margin:2px">${_escH(FIELD_LABELS[f]||f)}</span>`).join('') + '</div></div>' : ''),
+      missing_critical.length > 0
     ) : '';
 
-    const allSecs = secEntrenamiento + secObjetivos + secPrioridades + secNutricion + secSupp + secFarma;
+    // ── Section: Datos Base ──────────────────────────────────────────────────
+    const sexoLabel = d.sexo === 'H' ? 'Hombre' : d.sexo === 'M' ? 'Mujer' : (d.sexo || null);
+    const secBase = _det('🧑', 'Datos base', '#e4e4e0', '',
+      _rowV('Nombre',  _rv(cd, 'displayName') || _rv(d, 'nombre'), null, 'SISTEMA') +
+      _rowV('Sexo',    sexoLabel, null, 'CLIENTE') +
+      _rowF('Edad',    'edad',    'años', 'CLIENTE') +
+      _rowF('Peso',    'peso_kg', 'kg',   'CLIENTE') +
+      _rowF('Talla',   'talla_cm','cm',   'CLIENTE') +
+      _rowV('Perfil',  d.perfil || null, null, 'COACH'),
+      true
+    );
 
-    // ── badges row ───────────────────────────────────────────────────────────
-    const badges = [
-      d.sexo   ? _badge(d.sexo==='H'?'Hombre':d.sexo==='M'?'Mujer':d.sexo, '#aaa', 'rgba(244,244,240,.06)', 'rgba(244,244,240,.18)') : '',
-      d.nivel  ? _badge(d.nivel, '#c8a54a', 'rgba(200,165,74,.08)', 'rgba(200,165,74,.4)') : '',
-      d.perfil ? _badge(d.perfil, d.perfil==='PED'?'#FF4488':'#44BB88',
-                        d.perfil==='PED'?'rgba(255,68,136,.08)':'rgba(68,187,136,.08)',
-                        d.perfil==='PED'?'rgba(255,68,136,.45)':'rgba(68,187,136,.45)') : '',
-    ].filter(Boolean).join('');
+    // ── Section: Objetivo ────────────────────────────────────────────────────
+    const secObjetivo = _det('🎯', 'Objetivo', '#44BB88', '',
+      _rowF('Objetivo mesociclo',   'objetivo_mesociclo',      null, 'CLIENTE') +
+      _rowF('Enfoque actual',       'enfoque_actual',          null, 'COACH') +
+      _rowF('Objetivo corto plazo', 'objetivo_corto',          null, 'CLIENTE') +
+      _rowF('Evento / fecha',       'evento_objetivo',         null, 'CLIENTE') +
+      _rowF('Semana mesociclo',     'semana_actual_mesociclo', null, 'CLIENTE'),
+      false
+    );
 
-    // ── main content ─────────────────────────────────────────────────────────
-    let mainContent = '';
-    if (hasFicha) {
-      const chips = ['edad','peso_kg','talla_cm','porcentaje_grasa'];
-      const chipLabels = ['EDAD','PESO','TALLA','% GRASA'];
-      const chipUnits  = ['años','kg','cm','%'];
-      const chipColors = ['#c8a54a','#F4F4F0','#F4F4F0','#44BB88'];
-      const chipsHtml  = chips.map((id,i) => _chip(chipLabels[i], id, chipUnits[i], chipColors[i])).filter(Boolean).join('');
+    // ── Section: Entrenamiento ───────────────────────────────────────────────
+    const gymVal = _rv(d, 'gimnasio_otro_maquinas') || _rv(d, 'gimnasio');
+    const secEntreno = _det('🏋️', 'Entrenamiento', '#C4FF00', '',
+      _rowF('Nivel',           'nivel',               null,  'CLIENTE') +
+      _rowF('Días / semana',   'dias_semana',         'días','CLIENTE') +
+      _rowF('Duración sesión', 'duracion_sesion_min', 'min', 'CLIENTE') +
+      _rowV('Equipamiento',    gymVal,                null,  'CLIENTE') +
+      _rowF('Split actual',    'split_actual',        null,  'COACH') +
+      _rowF('Estilo entreno',  'estilo_entreno',      null,  'CLIENTE') +
+      _rowF('Pasos / día',     'actividad_pasos_dia', null,  'CLIENTE'),
+      false
+    );
 
-      mainContent = `
-        ${chipsHtml ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${chipsHtml}</div>` : ''}
-        ${badges ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${badges}</div>` : ''}
-        <div style="background:rgba(244,244,240,.02);border:1px solid rgba(244,244,240,.07);border-radius:10px;padding:14px 16px">
-          ${allSecs || '<div style="color:#555;font-size:12px;text-align:center;padding:8px">Sin campos completados todavía.</div>'}
-        </div>`;
-    } else {
-      mainContent = `
-        <div style="background:rgba(255,200,0,.05);border:1px solid rgba(255,200,0,.22);border-radius:10px;padding:20px;margin-bottom:4px;text-align:center">
-          <div style="font-size:28px;margin-bottom:8px">📋</div>
-          <div style="color:#e0a020;font-weight:700;font-size:13px;margin-bottom:6px">Sin ficha de evaluación</div>
-          <div style="color:#666;font-size:12px;line-height:1.6">Pídele que complete el onboarding o llénala desde la sección Evaluación.</div>
-        </div>`;
-    }
+    // ── Section: Lesiones / Restricciones ───────────────────────────────────
+    const secLesiones = _det('🩺', 'Lesiones / Restricciones', '#FF8844', '',
+      _rowF('Lesiones / restricciones', 'lesiones',         null, 'CLIENTE') +
+      _rowF('Dolor actual',             'dolor_actual',     null, 'COACH') +
+      _rowF('Patrones fuertes',         'patrones_fuertes', null, 'COACH') +
+      _rowF('Patrones a reforzar',      'patrones_debiles', null, 'COACH') +
+      _rowF('Asimetrías',               'asimetrias',       null, 'COACH') +
+      _rowF('Movilidad',                'movilidad',        null, 'COACH') +
+      _rowF('Postura',                  'postura',          null, 'COACH') +
+      _rowF('Biotipo',                  'biotipo',          null, 'COACH'),
+      false
+    );
+
+    // ── Section: Prioridades Musculares (dual-layer) ─────────────────────────
+    const rezagados = ft.jerarquia_muscular ? _rv(ft.jerarquia_muscular, 'rezagados_declarados') : null;
+    const roiArr    = Array.isArray(ft.prioridades_ROI_estetico_tarima) ? ft.prioridades_ROI_estetico_tarima.map(p => p.grupo).join(', ') : null;
+    const secPrioridades = _det('💪', 'Prioridades musculares', '#c89cff', '',
+      '<div style="font-size:9px;font-weight:700;color:#7ec0ff;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;padding-top:2px">CLIENTE SOLICITA</div>' +
+      _rowF('Grupos prioritarios',  'grupos_prioritarios',  null, 'CLIENTE') +
+      _rowF('Grupos mantenimiento', 'grupos_mantenimiento', null, 'COACH') +
+      '<div style="font-size:9px;font-weight:700;color:#c89cff;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;margin-top:10px">COACH EVALÚA (Evaluador VDSEN)</div>' +
+      _rowV('Rezagados declarados',    rezagados, null, 'FOTO') +
+      _rowV('ROI estético tarima',     roiArr,    null, 'FOTO') +
+      _rowF('Grupos prioritarios coach','grupos_prioritarios_coach', null, 'COACH'),
+      false
+    );
+
+    // ── Section: Preferencias / Vetos ───────────────────────────────────────
+    const secPreferencias = _det('⭐', 'Preferencias / Vetos', '#7ec0ff', '',
+      _rowF('Ejercicios favoritos',  'ejercicios_favoritos',        null, 'CLIENTE') +
+      _rowF('Ejercicios a evitar',   'ejercicios_evitar',           null, 'CLIENTE') +
+      _rowF('Alimentos favoritos',   'alimentos_favoritos',         null, 'CLIENTE') +
+      _rowF('Alimentos a evitar',    'alimentos_evitar',            null, 'CLIENTE') +
+      _rowF('Restricciones alim.',   'restricciones_alimentarias',  null, 'CLIENTE') +
+      _rowF('Detalle restricción',   'restriccion_otra',            null, 'CLIENTE') +
+      _rowF('Alimentos disponibles', 'alimentos_disponibles',       null, 'CLIENTE') +
+      _rowF('Disponibilidad',        'disponibilidad',              null, 'CLIENTE'),
+      false
+    );
+
+    // ── Section: Composición Corporal ────────────────────────────────────────
+    const ibDateStr = ib && (ib.fecha || ib.date) ? new Date(ib.fecha || ib.date).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'}) : null;
+    const inbodyRows = ib ? (
+      _rowV('Peso',              ib.peso ?? ib.weight,    'kg',  'INBODY') +
+      _rowV('% Grasa',           ib.gc_pct ?? ib.fat_pct, '%',   'INBODY') +
+      _rowV('Músculo (SMM)',     ib.smm_kg ?? ib.muscle_kg,'kg', 'INBODY') +
+      _rowV('Masa libre grasa',  ib.lbm_kg ?? ib.ffm_kg,  'kg', 'INBODY') +
+      _rowV('Grasa corporal',    ib.gc_kg ?? ib.fat_kg,   'kg',  'INBODY') +
+      _rowV('Puntuación InBody', ib.puntuacion ?? ib.score, null,'INBODY') +
+      (ibDateStr ? `<div style="font-size:10px;color:#555;margin-top:4px">Medición: ${_escH(ibDateStr)}</div>` : '')
+    ) : '';
+    const coachBodyRows =
+      _rowF('% Grasa (estimado)',    'porcentaje_grasa',    '%',  'COACH') +
+      _rowF('FFM (masa libre grasa)','ffm_kg',              'kg', 'COACH') +
+      _rowF('SMM (músculo seco)',     'smm_kg',             'kg', 'COACH') +
+      _rowF('GC (grasa total)',       'gc_kg',              'kg', 'COACH') +
+      _rowF('Fecha InBody (coach)',   'inbody_fecha',        null, 'COACH') +
+      _rowF('Puntuación InBody',      'inbody_puntuacion',  null, 'COACH') +
+      _rowF('Proteína objetivo',      'proteina_g',         'g',  'COACH');
+    const ccBadge = ib ? '<span style="font-size:9px;padding:1px 7px;border-radius:6px;background:rgba(68,187,136,.12);color:#44BB88;font-weight:700">InBody disponible</span>' : '';
+    const ccContent = inbodyRows
+      ? '<div style="font-size:9px;font-weight:700;color:#44BB88;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px">INBODY (más reciente)</div>' + inbodyRows +
+        (coachBodyRows.trim() ? '<div style="font-size:9px;font-weight:700;color:#c89cff;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;margin-top:10px">REGISTROS COACH</div>' + coachBodyRows : '')
+      : coachBodyRows;
+    const secCC = _det('📊', 'Composición corporal', '#44BB88', ccBadge, ccContent, false);
+
+    // ── Section: Fotometría Coach (Evaluador VDSEN) ──────────────────────────
+    const hasFoto  = ft && Object.keys(ft).length > 0;
+    const ftFecha  = ft.fecha_diagnostico ? new Date(ft.fecha_diagnostico).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'}) : null;
+    const fotoBadge = ftFecha ? `<span style="font-size:9px;padding:1px 7px;border-radius:6px;background:rgba(200,165,74,.1);color:#c8a54a;font-weight:700">${_escH(ftFecha)}</span>` : '';
+    const ftCC = ft.composicion_corporal || {};
+    const ftBio = ft.biomecanica || {};
+    const ftNut = ft.nutricion || {};
+    const ftMeta = ft.metadata || {};
+    const ftVol = ft.volumen_semanal || {};
+    const ftMacros = ftNut.macros_diarios || {};
+    const fotoRows = hasFoto ? (
+      _rowV('Categoría objetivo',  ftMeta.categoria_objetivo, null, 'FOTO') +
+      _rowV('Fase actual',         ftMeta.fase_actual,        null, 'FOTO') +
+      _rowV('% Grasa (rango)',     ftCC.porcentaje_grasa_rango, null, 'FOTO') +
+      _rowV('LBM',                 ftCC.LBM_kg,               'kg', 'FOTO') +
+      _rowV('SWR (hombro/cadera)', ftBio.SWR,                 null, 'FOTO') +
+      _rowV('WHR',                 ftBio.WHR,                 null, 'FOTO') +
+      _rowV('Series / semana',     ftVol.total_series_semana,  null, 'FOTO') +
+      _rowV('Bloque actual',       ftVol.bloque_actual,        null, 'FOTO') +
+      _rowV('Meta calórica',       ftNut.meta_calorica_kcal,  'kcal','FOTO') +
+      _rowV('Proteína (macros)',   ftMacros.proteina && ftMacros.proteina.gramos,      'g', 'FOTO') +
+      _rowV('Carbohidratos',       ftMacros.carbohidratos && ftMacros.carbohidratos.gramos, 'g', 'FOTO') +
+      _rowV('Grasas',              ftMacros.grasas && ftMacros.grasas.gramos,          'g', 'FOTO') +
+      _rowV('Código diagnóstico',  ft.codigo_diagnostico,     null, 'FOTO')
+    ) : '<div style="color:#555;font-size:12px">Sin datos del Evaluador VDSEN. Usa el bloque de análisis abajo para cargarlos.</div>';
+    const secFoto = _det('📸', 'Fotometría Coach (Evaluador VDSEN)', '#c8a54a', fotoBadge, fotoRows, false);
+
+    // ── Section: Nutrición ───────────────────────────────────────────────────
+    const secNutricion = _det('🥗', 'Nutrición', '#FF8844', '',
+      _rowF('Objetivo calórico',     'objetivo_calorico',          null, 'CLIENTE') +
+      _rowF('Ajuste',                'magnitud_ajuste_pct',        '%',  'COACH') +
+      _rowF('Comidas / día',         'num_comidas',                null, 'CLIENTE') +
+      _rowF('Horarios comidas',      'horarios_comidas',           null, 'CLIENTE') +
+      _rowF('Nota nutrición (coach)','nota_nutricion',             null, 'COACH') +
+      _rowF('Alimentos disponibles', 'alimentos_disponibles',      null, 'CLIENTE'),
+      false
+    );
+
+    // ── Section: Farmacología (PED only) ────────────────────────────────────
+    const secFarma = d.perfil === 'PED' ? _det('💉', 'Farmacología', '#FF4488',
+      '<span style="font-size:9px;padding:1px 7px;border-radius:6px;background:rgba(255,68,136,.12);color:#FF4488;font-weight:700">PED</span>',
+      _rowF('Experiencia PEDs',    'experiencia_peds',    null,     'COACH') +
+      _rowF('Objetivo farmaco',    'objetivo_farmaco',    null,     'COACH') +
+      _rowF('Timeline',            'timeline_semanas',    'sem',    'COACH') +
+      _rowF('Compuestos actuales', 'compuestos_actuales', null,     'COACH') +
+      _rowF('Dosis androgénos',    'dosis_semana_mg',     'mg/sem', 'COACH') +
+      _rowF('Hematocrito',         'bio_hct',             '%',      'CLIENTE') +
+      _rowF('ALT / AST',           'bio_alt',             null,     'CLIENTE') +
+      _rowF('Colesterol total',    'bio_col_total',       'mg/dL',  'CLIENTE') +
+      _rowF('HDL',                 'bio_hdl',             'mg/dL',  'CLIENTE') +
+      _rowF('LDL',                 'bio_ldl',             'mg/dL',  'CLIENTE') +
+      _rowF('Estradiol (E2)',       'bio_e2',              'pg/mL',  'CLIENTE') +
+      _rowF('PA sistólica',        'bio_pa_sistolica',    'mmHg',   'CLIENTE') +
+      _rowF('PA diastólica',       'bio_pa_diastolica',   'mmHg',   'CLIENTE') +
+      _rowF('FC reposo',           'bio_fc_reposo',       'lpm',    'CLIENTE'),
+      false
+    ) : '';
+
+    // ── Section: Suplementación ──────────────────────────────────────────────
+    const secSupp = _det('💊', 'Suplementación', '#7ec0ff', '',
+      _rowF('Restricciones',     'restricciones_suplementos', null, 'CLIENTE') +
+      _rowF('Objetivo primario', 'objetivo_primario_supp',    null, 'CLIENTE'),
+      false
+    );
+
+    // ── Generator warning ────────────────────────────────────────────────────
+    const genWarning = missing_critical.length
+      ? `<div style="background:rgba(255,140,0,.06);border:1px solid rgba(255,140,0,.25);border-radius:7px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:#FF8C00;line-height:1.6">⚠️ Faltan datos críticos: ${_escH(missing_critical.map(f => FIELD_LABELS[f]||f).join(', '))}. El plan generado puede ser subóptimo.</div>`
+      : '';
 
     var _calibSection = _buildCalibSection(clientId);
 
     cont.innerHTML = `
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap">
-        <div>
-          ${updatedAt ? `<div style="font-size:10px;color:#555">Actualizado ${updatedAt}</div>` : '<div style="font-size:10px;color:#555">Sin ficha</div>'}
-        </div>
-        <button onclick="_openEvaluacionForClient('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.07);color:#C4FF00;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">📝 Editar ficha</button>
-      </div>
+      ${completenessHtml}
+      ${actionsHtml}
 
-      ${mainContent}
+      ${hasFicha
+        ? (secFaltantes + secBase + secObjetivo + secEntreno + secLesiones + secPrioridades + secPreferencias + secCC + secFoto + secNutricion + secFarma + secSupp)
+        : `<div style="background:rgba(255,200,0,.05);border:1px solid rgba(255,200,0,.22);border-radius:10px;padding:20px;margin-bottom:12px;text-align:center">
+             <div style="font-size:28px;margin-bottom:8px">📋</div>
+             <div style="color:#e0a020;font-weight:700;font-size:13px;margin-bottom:6px">Sin ficha de evaluación</div>
+             <div style="color:#666;font-size:12px;line-height:1.6">Pídele que complete el onboarding o llénala desde ✏️ Editar ficha.</div>
+           </div>`
+      }
 
-      <div style="margin:16px 0;border-top:1px solid rgba(244,244,240,.06)"></div>
+      <div style="margin:14px 0;border-top:1px solid rgba(244,244,240,.06)"></div>
 
       ${_calibSection}
 
@@ -9238,7 +9379,8 @@ El esfuerzo no es negociable.
 
       <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.16);border-radius:10px;padding:13px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#8aaa44;font-weight:700;margin-bottom:6px">🤖 Motor VDSEN</div>
-        <div style="font-size:11px;color:#666;line-height:1.6;margin-bottom:10px">Genera plan de entrenamiento, nutricional y suplementación según la ficha. Requiere API key y ficha completa.</div>
+        ${genWarning}
+        <div style="font-size:11px;color:#666;line-height:1.6;margin-bottom:10px">Genera plan de entrenamiento, nutricional y suplementación según la ficha.</div>
         <button id="_fichaGenBtn_${clientId}" onclick="_autoGenerateForModal('${clientId}')" style="width:100%;padding:10px;border-radius:7px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.03em">🤖 GENERAR PLAN COMPLETO</button>
         <div id="_fichaGenStatus_${clientId}" style="font-size:11px;line-height:1.7;margin-top:8px"></div>
       </div>`;
