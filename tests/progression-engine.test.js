@@ -8052,6 +8052,145 @@ console.log('\nRA — Reproducibility Audit');
   assert('RA6a', 'missing prev fp → UNRESOLVED', ra6.verdict === _REPRO_VERDICT_T.UNRESOLVED);
 })();
 
+// ════════════════ FASE 4 — Decision Trace Completeness ═══════════════════
+// Inline T-suffix copies (node-runnable, no browser globals)
+var VDSEN_ENGINE_VERSION_DT = '3.0.0';
+var _DECISION_TRACE_STAGE_T = { TARGETS:'TARGETS', TOPOLOGY:'TOPOLOGY', CONSTRAINTS:'CONSTRAINTS', DISTRIBUTION:'DISTRIBUTION', MAINTENANCE:'MAINTENANCE', SLOT:'SLOT', STABILITY:'STABILITY', COMPOSITION:'COMPOSITION', QUALITY:'QUALITY', REPAIR:'REPAIR' };
+var _DECISION_TRACE_TYPE_T  = { PRESCRIPTION:'PRESCRIPTION', STRUCTURAL:'STRUCTURAL', CONSTRAINT:'CONSTRAINT', AUDIT:'AUDIT', REPAIR_ACTION:'REPAIR_ACTION' };
+var _DECISION_TRACE_AUDIT_MODE_T = { OFF:'OFF', WARN:'WARN', STRICT:'STRICT' };
+var _TRACE_STRUCTURAL_STAGES_T   = ['TOPOLOGY','DISTRIBUTION','SLOT'];
+
+function _createTraceNode_T(opts) {
+  if (!opts || !opts.stage || !opts.decisionType || !opts.subject || !opts.decision) throw new Error('_createTraceNode_T: required fields missing');
+  return {
+    id:            opts.id || (opts.stage + '_' + Date.now()),
+    stage:         opts.stage,
+    decisionType:  opts.decisionType,
+    subject:       opts.subject,
+    decision:      opts.decision,
+    reasonCodes:   Array.isArray(opts.reasonCodes) ? opts.reasonCodes : [],
+    sources:       Array.isArray(opts.sources) ? opts.sources : [],
+    engine:        opts.engine || 'VDSEN',
+    engineVersion: opts.engineVersion || VDSEN_ENGINE_VERSION_DT,
+    structural:    !!opts.structural,
+  };
+}
+function _auditDecisionTrace_T(trace, mode) {
+  mode = mode || _DECISION_TRACE_AUDIT_MODE_T.WARN;
+  var result = { missingStructural:[], status:'PASS', auditVerdicts:[], mode:mode };
+  if (mode === _DECISION_TRACE_AUDIT_MODE_T.OFF) return result;
+  if (!Array.isArray(trace)) {
+    result.status = mode === _DECISION_TRACE_AUDIT_MODE_T.STRICT ? 'REVIEW_REQUIRED' : 'WARN';
+    result.auditVerdicts.push({ code:'NO_TRACE', msg:'trace missing' });
+    return result;
+  }
+  var stagesSeen = {};
+  trace.forEach(function(n){ if (n && n.stage) stagesSeen[n.stage] = true; });
+  _TRACE_STRUCTURAL_STAGES_T.forEach(function(s){ if (!stagesSeen[s]) result.missingStructural.push(s); });
+  if (result.missingStructural.length) {
+    result.status = mode === _DECISION_TRACE_AUDIT_MODE_T.STRICT ? 'REVIEW_REQUIRED' : 'WARN';
+    result.missingStructural.forEach(function(s){ result.auditVerdicts.push({ code:'MISSING_STRUCTURAL_STAGE', stage:s, msg:'Missing: '+s }); });
+  }
+  return result;
+}
+function _buildGenerationResponse_T(training, prescCtx, decisionTrace, inputFp, decisionFp, auditMode) {
+  var traceAudit = _auditDecisionTrace_T(decisionTrace, auditMode);
+  return { schema:'vdsen-generation-response-v1', inputFingerprint:inputFp||null, decisionFingerprint:decisionFp||null, decisionTrace:Array.isArray(decisionTrace)?decisionTrace:[], traceAudit:traceAudit, generatedAt:Date.now() };
+}
+
+var _mkNode_T = function(stage, structural) {
+  return _createTraceNode_T({ stage:stage, decisionType:'STRUCTURAL', subject:'s', decision:'d', structural:!!structural });
+};
+
+console.log('\nDT — Decision Trace Completeness');
+(function() {
+  // DT1: _createTraceNode — core contract
+  var n1 = _createTraceNode_T({ id:'T1', stage:'TARGETS', decisionType:'PRESCRIPTION', subject:'s', decision:'d', reasonCodes:['RC1'], sources:['src1'], structural:true });
+  assert('DT1a', 'id preserved',        n1.id === 'T1');
+  assert('DT1b', 'stage',               n1.stage === 'TARGETS');
+  assert('DT1c', 'decisionType',        n1.decisionType === 'PRESCRIPTION');
+  assert('DT1d', 'structural true',     n1.structural === true);
+  assert('DT1e', 'reasonCodes array',   Array.isArray(n1.reasonCodes) && n1.reasonCodes[0] === 'RC1');
+  assert('DT1f', 'sources array',       Array.isArray(n1.sources) && n1.sources[0] === 'src1');
+
+  // DT2: missing required throws
+  var threw2 = false;
+  try { _createTraceNode_T({ stage:'TARGETS' }); } catch(e) { threw2 = true; }
+  assert('DT2a', 'missing required → throws', threw2);
+
+  // DT3: auto-id includes stage
+  var n3 = _createTraceNode_T({ stage:'TOPOLOGY', decisionType:'STRUCTURAL', subject:'s', decision:'d' });
+  assert('DT3a', 'auto-id includes stage', n3.id.indexOf('TOPOLOGY') >= 0);
+
+  // DT4: defaults
+  var n4 = _createTraceNode_T({ stage:'QUALITY', decisionType:'AUDIT', subject:'s', decision:'d' });
+  assert('DT4a', 'structural defaults false',  n4.structural === false);
+  assert('DT4b', 'reasonCodes defaults []',    n4.reasonCodes.length === 0);
+  assert('DT4c', 'engine defaults VDSEN',      n4.engine === 'VDSEN');
+
+  // DT5: complete trace → PASS
+  var fullTrace = [
+    _mkNode_T('TOPOLOGY', true), _mkNode_T('DISTRIBUTION', true), _mkNode_T('SLOT', true),
+    _mkNode_T('QUALITY', false),
+  ];
+  var dt5 = _auditDecisionTrace_T(fullTrace, _DECISION_TRACE_AUDIT_MODE_T.WARN);
+  assert('DT5a', 'full trace → PASS',           dt5.status === 'PASS');
+  assert('DT5b', 'no missing structural',       dt5.missingStructural.length === 0);
+
+  // DT6: missing TOPOLOGY → WARN
+  var partialTrace = [ _mkNode_T('DISTRIBUTION', true), _mkNode_T('SLOT', true) ];
+  var dt6 = _auditDecisionTrace_T(partialTrace, _DECISION_TRACE_AUDIT_MODE_T.WARN);
+  assert('DT6a', 'missing TOPOLOGY → WARN',          dt6.status === 'WARN');
+  assert('DT6b', 'missingStructural includes TOPOLOGY', dt6.missingStructural.indexOf('TOPOLOGY') >= 0);
+
+  // DT7: STRICT mode → REVIEW_REQUIRED
+  var dt7 = _auditDecisionTrace_T(partialTrace, _DECISION_TRACE_AUDIT_MODE_T.STRICT);
+  assert('DT7a', 'STRICT → REVIEW_REQUIRED',    dt7.status === 'REVIEW_REQUIRED');
+
+  // DT8: OFF mode → PASS regardless
+  var dt8 = _auditDecisionTrace_T(null, _DECISION_TRACE_AUDIT_MODE_T.OFF);
+  assert('DT8a', 'OFF → PASS',                  dt8.status === 'PASS');
+
+  // DT9: null/empty trace → WARN
+  var dt9 = _auditDecisionTrace_T(null, _DECISION_TRACE_AUDIT_MODE_T.WARN);
+  assert('DT9a', 'null trace → WARN',            dt9.status === 'WARN');
+  var dt9b = _auditDecisionTrace_T([], _DECISION_TRACE_AUDIT_MODE_T.WARN);
+  assert('DT9b', 'empty trace → missing structural', dt9b.missingStructural.length > 0);
+
+  // DT10: _buildGenerationResponse schema and fields
+  var gr = _buildGenerationResponse_T(null, null, fullTrace, 'fp_in', 'fp_dec', _DECISION_TRACE_AUDIT_MODE_T.WARN);
+  assert('DT10a', 'schema correct',              gr.schema === 'vdsen-generation-response-v1');
+  assert('DT10b', 'decisionTrace preserved',     Array.isArray(gr.decisionTrace) && gr.decisionTrace.length === 4);
+  assert('DT10c', 'inputFingerprint',            gr.inputFingerprint === 'fp_in');
+  assert('DT10d', 'decisionFingerprint',         gr.decisionFingerprint === 'fp_dec');
+  assert('DT10e', 'traceAudit present',          gr.traceAudit && typeof gr.traceAudit.status === 'string');
+  assert('DT10f', 'generatedAt set',             typeof gr.generatedAt === 'number' && gr.generatedAt > 0);
+
+  // DT11: trace immutability
+  var origLen = fullTrace.length;
+  _buildGenerationResponse_T(null, null, fullTrace, null, null, _DECISION_TRACE_AUDIT_MODE_T.WARN);
+  assert('DT11a', 'original trace not mutated',  fullTrace.length === origLen);
+
+  // DT12: XSS safety — stored as raw data
+  var xssNode = _createTraceNode_T({ stage:'TARGETS', decisionType:'PRESCRIPTION', subject:'<script>alert(1)<\/script>', decision:'<img src=x>', structural:false });
+  assert('DT12a', 'XSS subject stored raw',      xssNode.subject === '<script>alert(1)<\/script>');
+  assert('DT12b', 'XSS decision stored raw',     xssNode.decision === '<img src=x>');
+
+  // DT13: constants complete
+  var stages = ['TARGETS','TOPOLOGY','CONSTRAINTS','DISTRIBUTION','MAINTENANCE','SLOT','STABILITY','COMPOSITION','QUALITY','REPAIR'];
+  stages.forEach(function(s) { assert('DT13_'+s, 'stage constant', _DECISION_TRACE_STAGE_T[s] === s); });
+
+  // DT14: audit mode constants
+  assert('DT14a', 'OFF',    _DECISION_TRACE_AUDIT_MODE_T.OFF    === 'OFF');
+  assert('DT14b', 'WARN',   _DECISION_TRACE_AUDIT_MODE_T.WARN   === 'WARN');
+  assert('DT14c', 'STRICT', _DECISION_TRACE_AUDIT_MODE_T.STRICT === 'STRICT');
+
+  // DT15: auditVerdicts populated on failure
+  var dt15 = _auditDecisionTrace_T(partialTrace, _DECISION_TRACE_AUDIT_MODE_T.WARN);
+  assert('DT15a', 'auditVerdicts array',         Array.isArray(dt15.auditVerdicts));
+  assert('DT15b', 'verdict code present',        dt15.auditVerdicts.length > 0 && dt15.auditVerdicts[0].code === 'MISSING_STRUCTURAL_STAGE');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
