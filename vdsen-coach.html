@@ -652,11 +652,17 @@
     gaps.push('biomechanics: no coach-sourced biomechanical assessment found in Firestore');
     gaps.push('muscles: no coach muscle assessment found in Firestore');
     gaps.push('exercisePreferencesCoach: no coach exercise preferences stored in Firestore');
-    // finalPriorities: read from fichaV2raw.prioridades.grupos_prioritarios (nested) or top-level grupos_prioritarios
+    // finalPriorities: check all known paths where grupos_prioritarios can live
     var _fp = null;
     if (fichaDoc) {
       var _fv2 = fichaDoc.fichaV2raw || {};
-      _fp = _normGroups((_fv2.prioridades && _fv2.prioridades.grupos_prioritarios) || fichaDoc.grupos_prioritarios);
+      var _fd  = fichaDoc.data || {};
+      _fp = _normGroups(
+        (_fv2.prioridades && _fv2.prioridades.grupos_prioritarios) ||
+        fichaDoc.grupos_prioritarios ||
+        (_fd.prioridades && _fd.prioridades.grupos_prioritarios) ||
+        _fd.grupos_prioritarios
+      );
     }
     if (_fp && _fp.length) ev.finalPriorities = _fp;
     else gaps.push('finalPriorities: no coach final priorities stored in Firestore');
