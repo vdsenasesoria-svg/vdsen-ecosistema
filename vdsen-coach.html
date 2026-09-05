@@ -5365,6 +5365,237 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window._classifyBlocks = _classifyBlocks;
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // ─── VDSEN prescriptionSlot Engine v1 ────────────────────────────────────
+  // Implements the slot-above-exercise architecture:
+  //   MÚSCULO → FUNCIÓN → PATRÓN → REQUISITOS BIOMECÁNICOS
+  //   → FAMILIA → FILTRO → HISTORIAL → EJERCICIO SELECCIONADO → IDENTIDAD
+  //
+  // The plan still stores exerciseName. prescriptionSlot is OPTIONAL metadata
+  // that tells VDSEN WHY an exercise is there — enabling controlled substitution
+  // without destroying longitudinal tracking or identity.
+  //
+  // Substitution is NEVER automatic. It requires an explicit reasonCode.
+  // Exercise identity (exerciseName / prescriptionExerciseId) is always preserved.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  var _PS_VERSION = 'v1.0.0';
+
+  // Valid roles for a prescription slot
+  var _PS_ROLES = ['fundamental', 'accessory', 'isolation', 'maintenance'];
+
+  // Reason codes that justify a substitution evaluation
+  var _PS_SUBSTITUTION_REASONS = {
+    PAIN:            { tier: 'A', autoEval: true,  label: 'Dolor/contraindicación' },
+    EQUIPMENT:       { tier: 'A', autoEval: true,  label: 'Equipo no disponible' },
+    TOLERANCE_FAIL:  { tier: 'B', autoEval: true,  label: 'Mala tolerancia repetida' },
+    STAGNATION:      { tier: 'B', autoEval: false, label: 'Estancamiento confirmado' },
+    ADHERENCE:       { tier: 'C', autoEval: false, label: 'Baja adherencia/preferencia' },
+    BETTER_RESPONSE: { tier: 'C', autoEval: false, label: 'Alternativa con mejor respuesta individual' },
+    COACH_OVERRIDE:  { tier: 'A', autoEval: false, label: 'Decisión de coach' },
+  };
+
+  // Tier definitions for substitution equivalence
+  // Tier A: nearly identical stimulus (same slot constraints)
+  // Tier B: same muscle/function, different characteristics
+  // Tier C: same primary muscle, different slot — always requires COACH_REVIEW
+  var _PS_TIERS = { A: 'CLOSE_SUBSTITUTE', B: 'FUNCTIONAL_SUBSTITUTE', C: 'COACH_REVIEW' };
+
+  // ── Validator ─────────────────────────────────────────────────────────────
+  function _validatePrescriptionSlot(slot) {
+    if (!slot || typeof slot !== 'object') return { valid: false, errors: ['slot is null or non-object'] };
+    var errors = [];
+    if (!slot.targetMuscle)    errors.push('targetMuscle required');
+    if (!slot.movementPattern) errors.push('movementPattern required');
+    if (!slot.role || _PS_ROLES.indexOf(slot.role) < 0)
+      errors.push('role must be one of: ' + _PS_ROLES.join(', '));
+    var c = slot.constraints || {};
+    if (c.stability && !Array.isArray(c.stability))
+      errors.push('constraints.stability must be array');
+    if (c.resistanceProfile && !Array.isArray(c.resistanceProfile))
+      errors.push('constraints.resistanceProfile must be array');
+    return { valid: errors.length === 0, errors: errors };
+  }
+
+  // ── Substitution Need Evaluator ───────────────────────────────────────────
+  // Decision tree: PAIN → EQUIPMENT → TOLERANCE_FAIL → STAGNATION → ADHERENCE → KEEP
+  // Inputs are all in-memory (0 Firestore reads).
+  // recentSets: array of set objects from the last 2 sessions for this exercise
+  // postsession: postsession entry for the last session
+  // Returns: { action: 'KEEP'|'SUBSTITUTE'|'EVALUATE', reasonCode: string|null, autoResolved: bool }
+  function _evaluateSubstitutionNeed(exerciseName, slot, recentSets, postsession) {
+    var ps = postsession || {};
+    var sets = Array.isArray(recentSets) ? recentSets : [];
+
+    // PAIN — highest priority, auto-resolves to SUBSTITUTE
+    if (ps.articular === 'si' && slot && ps.patron) {
+      // Only flag if the slot's movementPattern matches the affected pattern
+      var affectedPatron = (ps.patron || '').toLowerCase();
+      var slotPattern    = (slot && slot.movementPattern || '').toLowerCase().replace(/_/g, ' ');
+      if (affectedPatron && (slotPattern.indexOf(affectedPatron) >= 0 ||
+          affectedPatron.indexOf(slotPattern.split('_')[0] || '') >= 0)) {
+        return { action: 'SUBSTITUTE', reasonCode: 'PAIN', autoResolved: true };
+      }
+    }
+
+    // TOLERANCE_FAIL — ICS < 7 on majority of recent real sets (≥2 data points)
+    var realSets = sets.filter(function(s){ return s && !s.autoFilled && s.ics != null; });
+    if (realSets.length >= 2) {
+      var lowICS = realSets.filter(function(s){ return parseFloat(s.ics) < 7; });
+      if (lowICS.length / realSets.length >= 0.6) {
+        return { action: 'SUBSTITUTE', reasonCode: 'TOLERANCE_FAIL', autoResolved: true };
+      }
+    }
+
+    // No auto-resolved reason → KEEP (stagnation and adherence require coach judgment)
+    return { action: 'KEEP', reasonCode: null, autoResolved: false };
+  }
+
+  // ── Substitution Candidates Builder ──────────────────────────────────────
+  // Builds Tier A/B/C candidate lists from canonical metadata + coach catalog.
+  // exerciseCatalog: array of coach exercise objects {name, motorPattern, equipment, muscleType}
+  // Returns: { tierA: string[], tierB: string[], tierC: string[], noSafeEquivalent: bool }
+  function _buildSubstitutionCandidates(slot, exerciseCatalog, currentExerciseName) {
+    if (!slot || !slot.targetMuscle || !slot.movementPattern) {
+      return { tierA: [], tierB: [], tierC: [], noSafeEquivalent: true };
+    }
+    var current = (currentExerciseName || '').toLowerCase().trim();
+    var c = slot.constraints || {};
+    var tierA = [], tierB = [], tierC = [];
+
+    // Search canonical metadata first
+    Object.keys(_EXERCISE_CANONICAL_METADATA).forEach(function(name) {
+      if (name === current) return; // skip current
+      var meta = _EXERCISE_CANONICAL_METADATA[name];
+
+      // Same movement pattern → Tier A/B candidate
+      if (meta.movementPattern === slot.movementPattern) {
+        var stOk  = !c.stability || !c.stability.length || c.stability.indexOf(meta.stability) >= 0;
+        var rpOk  = !c.resistanceProfile || !c.resistanceProfile.length || c.resistanceProfile.indexOf(meta.resistanceProfile) >= 0;
+        var llbOk = c.longLengthBias == null || meta.longLengthBias === c.longLengthBias;
+        if (stOk && rpOk && llbOk) {
+          tierA.push(name);
+        } else {
+          tierB.push(name); // same pattern, different constraint fit
+        }
+        return;
+      }
+
+      // Same primary muscle but different pattern → Tier C
+      var matchesPrimary = (meta.primaryMuscles || []).some(function(m){
+        return m === slot.targetMuscle || m.indexOf(slot.targetMuscle) >= 0 || slot.targetMuscle.indexOf(m) >= 0;
+      });
+      if (matchesPrimary) {
+        tierC.push(name);
+      }
+    });
+
+    // Also search coach catalog (exercises/{coachId}) for custom exercises
+    if (Array.isArray(exerciseCatalog)) {
+      exerciseCatalog.forEach(function(ex) {
+        var name = (ex.name || ex.exerciseName || '').toLowerCase().trim();
+        if (!name || name === current) return;
+        // Avoid duplicating canonical entries
+        if (_EXERCISE_CANONICAL_METADATA[name]) return;
+        var pattern = ex.motorPattern || ex.movementPattern || '';
+        if (pattern === slot.movementPattern) {
+          tierB.push(name); // custom exercises: Tier B (unknown constraint fit)
+        }
+      });
+    }
+
+    return {
+      tierA: tierA.slice(0, 6),
+      tierB: tierB.slice(0, 4),
+      tierC: tierC.slice(0, 3),
+      noSafeEquivalent: tierA.length === 0 && tierB.length === 0,
+    };
+  }
+
+  // ── Slot Text Renderer (for LLM prompt injection) ─────────────────────────
+  // Converts a slot into a compact text block for injection into the motor prompt.
+  function _prescriptionSlotToText(slot, exerciseName) {
+    if (!slot) return '';
+    var c = slot.constraints || {};
+    var lines = ['SLOT ' + (exerciseName ? '«' + exerciseName + '»' : '(sin ejercicio)') + ':'];
+    lines.push('  músculo: ' + slot.targetMuscle + ' · patrón: ' + slot.movementPattern + ' · rol: ' + slot.role);
+    if (slot.function) lines.push('  función: ' + slot.function);
+    var cParts = [];
+    if (c.stability && c.stability.length)          cParts.push('estabilidad=' + c.stability.join('|'));
+    if (c.resistanceProfile && c.resistanceProfile.length) cParts.push('curva=' + c.resistanceProfile.join('|'));
+    if (c.longLengthBias != null)                   cParts.push('longitud=' + (c.longLengthBias ? 'larga' : 'neutra'));
+    if (c.equipment && c.equipment.length)           cParts.push('equipo=' + c.equipment.join('|'));
+    if (cParts.length) lines.push('  restricciones: ' + cParts.join(' · '));
+    return lines.join('\n');
+  }
+
+  // ── Self-tests ────────────────────────────────────────────────────────────
+  function _runPrescriptionSlotTests() {
+    var pass = 0, fail = 0;
+    function t(label, cond) { if (cond) pass++; else { fail++; console.error('[PS FAIL] ' + label); } }
+
+    // V1: valid slot passes
+    t('V1 valid slot', _validatePrescriptionSlot({
+      targetMuscle:'deltoides_anterior', movementPattern:'press_vertical', role:'fundamental',
+      constraints: { stability:['medium','high'], resistanceProfile:['DP'], equipment:['barra'] }
+    }).valid);
+
+    // V2: missing targetMuscle fails
+    t('V2 missing targetMuscle', !_validatePrescriptionSlot({ movementPattern:'press_vertical', role:'fundamental' }).valid);
+
+    // V3: invalid role fails
+    t('V3 invalid role', !_validatePrescriptionSlot({ targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'unknown' }).valid);
+
+    // S1: PAIN auto-resolves to SUBSTITUTE when pattern matches
+    var psSlot = { targetMuscle:'deltoides_anterior', movementPattern:'press vertical', role:'fundamental', constraints:{} };
+    var s1 = _evaluateSubstitutionNeed('press militar', psSlot, [], { articular:'si', patron:'press vertical' });
+    t('S1 PAIN → SUBSTITUTE', s1.action === 'SUBSTITUTE' && s1.reasonCode === 'PAIN');
+
+    // S2: no pain → KEEP
+    var s2 = _evaluateSubstitutionNeed('press militar', psSlot, [], { articular:'no', patron:'' });
+    t('S2 no pain → KEEP', s2.action === 'KEEP');
+
+    // S3: low ICS (≥60% < 7) → SUBSTITUTE TOLERANCE_FAIL
+    var badSets = [{ics:'5',autoFilled:false},{ics:'6',autoFilled:false},{ics:'8',autoFilled:false}];
+    var s3 = _evaluateSubstitutionNeed('press militar', psSlot, badSets, {});
+    t('S3 low ICS → TOLERANCE_FAIL', s3.action === 'SUBSTITUTE' && s3.reasonCode === 'TOLERANCE_FAIL');
+
+    // S4: autoFilled sets excluded from ICS check
+    var autoSets = [{ics:'4',autoFilled:true},{ics:'4',autoFilled:true}];
+    var s4 = _evaluateSubstitutionNeed('press militar', psSlot, autoSets, {});
+    t('S4 autoFilled excluded → KEEP', s4.action === 'KEEP');
+
+    // S5: only 1 real set → not enough data → KEEP
+    var s5 = _evaluateSubstitutionNeed('press militar', psSlot, [{ics:'4',autoFilled:false}], {});
+    t('S5 single set not enough → KEEP', s5.action === 'KEEP');
+
+    // C1: press banca → Tier A candidates include press inclinado (same press_horizontal)
+    var pressBancaSlot = { targetMuscle:'pectoral', movementPattern:'press_horizontal', role:'fundamental',
+      constraints:{ stability:['high'], resistanceProfile:['DP'] } };
+    var c1 = _buildSubstitutionCandidates(pressBancaSlot, [], 'press banca');
+    t('C1 TierA has press inclinado or declinado', c1.tierA.length > 0);
+    t('C1 current not in any tier', c1.tierA.indexOf('press banca') < 0 && c1.tierB.indexOf('press banca') < 0);
+
+    // C2: null slot → noSafeEquivalent
+    var c2 = _buildSubstitutionCandidates(null, [], 'press banca');
+    t('C2 null slot → noSafeEquivalent', c2.noSafeEquivalent);
+
+    // C3: coach catalog custom exercise in TierB if pattern matches
+    var catalog = [{ name: 'Press Máquina Custom', motorPattern: 'press_vertical' }];
+    var c3 = _buildSubstitutionCandidates({ targetMuscle:'deltoides', movementPattern:'press_vertical', role:'fundamental', constraints:{} }, catalog, 'press militar');
+    t('C3 coach catalog exercise in TierB', c3.tierB.indexOf('press máquina custom') >= 0);
+
+    console.log('[prescriptionSlot tests] ' + pass + ' PASS · ' + fail + ' FAIL');
+    return { pass: pass, fail: fail };
+  }
+  window._runPrescriptionSlotTests = _runPrescriptionSlotTests;
+  window._validatePrescriptionSlot = _validatePrescriptionSlot;
+  window._evaluateSubstitutionNeed = _evaluateSubstitutionNeed;
+  window._buildSubstitutionCandidates = _buildSubstitutionCandidates;
+  window._prescriptionSlotToText = _prescriptionSlotToText;
+  window._PS_SUBSTITUTION_REASONS = _PS_SUBSTITUTION_REASONS;
+  window._PS_TIERS = _PS_TIERS;
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // ─── VDSEN Topology Engine v2 ─────────────────────────────────────────────
   // Selects optimal training topology (WHEN to train) before days[] construction.
   // TOPOLOGY ≠ DISTRIBUTION: this engine answers WHEN; distribution answers WHAT.
@@ -6465,6 +6696,24 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         coachNote: String(ex.coachNote || '').trim(),
         supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
         nivel_medio: ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'].includes(ex.nivel_medio) ? ex.nivel_medio : null,
+        prescriptionSlot: (function() {
+          if (!ex.prescriptionSlot || typeof ex.prescriptionSlot !== 'object') return null;
+          var v = _validatePrescriptionSlot(ex.prescriptionSlot);
+          if (!v.valid) return null; // drop malformed slots silently
+          var s = ex.prescriptionSlot, c = s.constraints || {};
+          return {
+            targetMuscle:    String(s.targetMuscle || '').trim(),
+            movementPattern: String(s.movementPattern || '').trim(),
+            function:        s.function ? String(s.function).trim() : null,
+            role:            s.role,
+            constraints: {
+              stability:        Array.isArray(c.stability)         ? c.stability         : null,
+              longLengthBias:   c.longLengthBias != null            ? !!c.longLengthBias  : null,
+              resistanceProfile:Array.isArray(c.resistanceProfile) ? c.resistanceProfile : null,
+              equipment:        Array.isArray(c.equipment)         ? c.equipment         : null,
+            }
+          };
+        })(),
         variacion_vertical: ex.variacion_vertical && typeof ex.variacion_vertical === 'object' ? {
           semana_inicio: parseInt(ex.variacion_vertical.semana_inicio) || 1,
           semana_variacion: ex.variacion_vertical.semana_variacion != null ? parseInt(ex.variacion_vertical.semana_variacion) : null,
@@ -12327,13 +12576,59 @@ El esfuerzo no es negociable.
     // ── Recomendaciones de progresión
     if (lastRec && lastRec.recommendations && lastRec.recommendations.length) {
       const aL = { deload:{label:'DELOAD',color:'#4488cc'}, reduce_load:{label:'↓ CARGA',color:'#FF4444'}, reduce_sets:{label:'↓ SERIES',color:'#FF8844'}, add_sets:{label:'+ SERIES',color:'#44BB88'}, increase_load:{label:'↑ CARGA',color:'#44BB88'}, freeze_load:{label:'CONGELAR',color:'#F4F4F0'}, maintain:{label:'MANTENER',color:'#888'} };
+
+      // Build a name→prescriptionSlot lookup from the active plan (0 reads)
+      const _slotByName = {};
+      if (p && Array.isArray(p.days)) {
+        p.days.forEach(day => {
+          (day.exercises||[]).forEach(ex => {
+            const n = (ex.exerciseName||'').toLowerCase().trim();
+            if (n && ex.prescriptionSlot) _slotByName[n] = ex.prescriptionSlot;
+          });
+        });
+      }
+
       html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Progresión recomendada — Sem ${lastRecW} · Día ${lastRecD+1}</div>
         <div class="space-y-2">`;
       lastRec.recommendations.forEach(r => {
         const al = aL[r.action] || aL.maintain;
+        const exName = r.exerciseName || '';
+        const slot = _slotByName[(exName).toLowerCase().trim()] || null;
+
+        // Evaluate substitution need using last session's sets + postsession
+        const _exIdx = Object.keys(lastSets).find(ei => {
+          const day = p && p.days && p.days[lastRealDoneD];
+          return day && day.exercises && day.exercises[ei] && (day.exercises[ei].exerciseName||'').toLowerCase() === exName.toLowerCase();
+        });
+        const exSets = _exIdx != null ? (lastSets[_exIdx] || []) : [];
+        const _psL2 = lastRealDoneW > 0 ? (entries['postsession_'+lastRealDoneW+'_'+lastRealDoneD] || {}) : {};
+        const subEval = slot ? _evaluateSubstitutionNeed(exName, slot, exSets, _psL2) : null;
+        const subCands = (subEval && subEval.action === 'SUBSTITUTE')
+          ? _buildSubstitutionCandidates(slot, [], exName) : null;
+
+        // Slot badge (shown only if slot exists)
+        let slotBadge = '';
+        if (slot) {
+          slotBadge = `<span style="font-size:9px;color:#666;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:4px;padding:1px 5px;margin-left:4px" title="${_escH(slot.movementPattern+' · '+slot.targetMuscle)}">${_escH(slot.movementPattern.replace(/_/g,' '))}</span>`;
+        }
+
+        // Substitution notice
+        let subHtml = '';
+        if (subEval && subEval.action === 'SUBSTITUTE' && subCands) {
+          const rsnLabel = (_PS_SUBSTITUTION_REASONS[subEval.reasonCode] || {}).label || subEval.reasonCode;
+          const tierAStr = subCands.tierA.length ? subCands.tierA.slice(0,3).map(n=>_escH(n)).join(', ') : '';
+          const tierBStr = subCands.tierB.length ? subCands.tierB.slice(0,2).map(n=>_escH(n)).join(', ') : '';
+          subHtml = `<div style="margin-top:6px;padding:6px 8px;background:rgba(255,140,0,.08);border:1px solid rgba(255,140,0,.2);border-radius:6px">
+            <div style="font-size:9px;font-weight:800;color:#FF8844;letter-spacing:.5px;margin-bottom:3px">⚠ SUSTITUCIÓN EVALUADA — ${_escH(rsnLabel)}</div>
+            ${tierAStr ? `<div style="font-size:10px;color:#aaa"><span style="color:#888">Tier A:</span> ${tierAStr}</div>` : ''}
+            ${tierBStr ? `<div style="font-size:10px;color:#aaa"><span style="color:#888">Tier B:</span> ${tierBStr}</div>` : ''}
+            ${subCands.noSafeEquivalent ? `<div style="font-size:10px;color:#FF4444;font-weight:700">Sin sustituto seguro — requiere revisión del coach</div>` : ''}
+          </div>`;
+        }
+
         html += `<div class="card p-3">
           <div class="flex justify-between items-center mb-1">
-            <span class="font-semibold text-sm">${_escH(r.exerciseName||'')}</span>
+            <span class="font-semibold text-sm">${_escH(exName)}${slotBadge}</span>
             <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${al.color}">${al.label}</span>
           </div>
           <div class="flex gap-3 text-xs flex-wrap">
@@ -12344,6 +12639,7 @@ El esfuerzo no es negociable.
           </div>
           ${r.trend?`<div class="text-xs text-[#555] mt-1">Sem anterior: ${_escH(r.trend.prevLoad.toFixed(1))} kg · ${_escH(String(r.trend.prevSets))}s · ICS ${_escH(r.trend.prevICS.toFixed(1))}</div>`:''}
           <div class="text-xs text-[#888] mt-1">${_escH(r.reason||'')}</div>
+          ${subHtml}
         </div>`;
       });
       html += `</div>`;
