@@ -4987,8 +4987,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">'+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+(function(){ var _tl=(ej.technique||'').toLowerCase(); if (_isY3T&&_effectiveSets&&_effectiveSets[s]) { var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:8px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; } if (_tl==='fst7') { var _ft=(ej.sets||[]).length||7; return ' <span style="font-size:8px;font-weight:900;color:#cc44aa;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">FST-7 · '+(s+1)+'/'+_ft+'</span>'; } if (_tl==='lengthened_partials') { return ' <span style="font-size:8px;font-weight:900;color:#22aadd;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">PARCIALES</span>'; } return ''; })()+'</div>'+
           '<div style="font-size:17px;font-weight:800;color:var(--tx)">'+_cargaDisplay+'</div>'+
-          '<div style="font-size:11px;color:var(--mt)">RIR '+_escHTml(String(saved.rir_real||'—'))+' · ICS '+_escHTml(String(saved.ics||'—'))+' · '+pumpEmoji+
-          '</div>'+
+          '<div style="font-size:11px;color:var(--mt)">RIR '+_escHTml(String(saved.rir_real||'—'))+' · ICS '+_escHTml(String(saved.ics||'—'))+' · '+pumpEmoji+'</div>'+
+          (function(){ var _pm=_calcPrescMatchLabel(saved.rir_real, _psRir!==null?_psRir:baseRIR); return _pm?'<div style="font-size:10px;font-weight:700;color:'+_pm.color+';margin-top:2px">'+_escHTml(_pm.label)+'</div>':''; }())+
         '</div>'+
         '<button onclick="editSet(\''+key+'\')" title="Corregir esta serie" style="'+
             'margin-left:auto;padding:6px 12px;border:1px solid rgba(107,107,102,.4);border-radius:8px;'+
@@ -7184,7 +7184,8 @@ function renderEntrenamiento() {
         'text-align:center;min-width:280px;max-width:320px;width:calc(100vw - 48px);'+
         'box-shadow:0 0 0 1px rgba(196,255,0,.08),0 32px 64px rgba(0,0,0,.7),0 0 80px rgba(196,255,0,.06)">'+
         '<div style="font-size:10px;color:var(--platinum);letter-spacing:3px;margin-bottom:8px;font-weight:700;text-transform:uppercase;opacity:.7">DESCANSO ACTIVO</div>'+
-        '<div id="restLastSet" style="font-size:12px;color:var(--grn);font-weight:700;min-height:18px;margin-bottom:14px;letter-spacing:.5px"></div>'+
+        '<div id="restLastSet" style="font-size:12px;color:var(--grn);font-weight:700;min-height:18px;margin-bottom:4px;letter-spacing:.5px"></div>'+
+        '<div id="restPrescMatch" style="font-size:10px;font-weight:700;min-height:14px;margin-bottom:10px;letter-spacing:.4px;transition:color .15s"></div>'+
         '<div style="position:relative;width:160px;height:160px;margin:0 auto 20px">'+
           '<svg viewBox="0 0 160 160" style="position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)">'+
             '<circle cx="80" cy="80" r="70" fill="none" stroke="rgba(196,255,0,.1)" stroke-width="6"/>'+
@@ -7780,7 +7781,9 @@ function completeSet(key, di, ei, si, unit) {
       startRestTimer(restTime, key);
       showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
     } else {
-      showToast(_grp ? 'Par SS cerrado ✓' : 'Serie ✓');
+      var _nxtTst = (_nextAction25 && _nextAction25.type === 'NEXT_EXERCISE' && _nextAction25.label)
+        ? (' · → ' + (_nextAction25.label.length > 18 ? _nextAction25.label.substring(0,18)+'…' : _nextAction25.label)) : '';
+      showToast(_grp ? 'Par SS cerrado ✓' : ('Serie ✓' + _nxtTst));
     }
   } else {
     showToast('Serie desmarcada');
@@ -7924,6 +7927,15 @@ function updateCALICSColor(key) {
   _applyICSHint(document.getElementById('cal_ics_'+key), document.getElementById('calcicshint_'+key));
 }
 
+function _calcPrescMatchLabel(rir_real, rirTarget) {
+  var r = parseFloat(rir_real);
+  var t = parseFloat(rirTarget);
+  if (isNaN(r) || isNaN(t)) return null;
+  if (r > t) return { label: '↑ Más fácil de lo prescrito', color: '#e8a040' };
+  if (r < t) return { label: '↓ Más difícil de lo prescrito', color: '#e8a040' };
+  return        { label: '✓ En objetivo', color: 'var(--grn)' };
+}
+
 function toggleNota(id) {
   var el = document.getElementById(id);
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
@@ -8050,7 +8062,8 @@ function _ensureRestTimerOverlay() {
       '</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:9px;color:rgba(255,255,255,.4);letter-spacing:2px;font-weight:700;text-transform:uppercase">Descanso activo</div>'+
-        '<div id="restLastSet" style="font-size:11px;color:#6E9A6E;font-weight:700;margin:2px 0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'+
+        '<div id="restLastSet" style="font-size:11px;color:#6E9A6E;font-weight:700;margin:2px 0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'+
+        '<div id="restPrescMatchC" style="font-size:10px;font-weight:700;min-height:12px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .15s"></div>'+
         '<div id="nextActionHintCompact" style="display:none;font-size:9px;color:rgba(255,255,255,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px"></div>'+
         '<div style="display:flex;gap:5px">'+
           '<button onclick="event.stopPropagation();adjustRestTimer(-15)" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;padding:10px 0;cursor:pointer;min-height:44px">−15s</button>'+
@@ -8195,16 +8208,35 @@ function startRestTimer(seconds, lastSetKey) {
   overlay.style.display = 'flex';
   // Mostrar datos del último set completado
   var lsEl = document.getElementById('restLastSet');
+  var ls = lastSetKey ? (LOGS[lastSetKey] || {}) : {};
   if (lsEl) {
-    var ls = lastSetKey ? (LOGS[lastSetKey] || {}) : {};
     if (ls.carga && ls.reps) {
       var lsTxt = '✓ ' + ls.carga + ' ' + (ls.unit||'KG') + ' × ' + ls.reps + ' reps';
       if (ls.rir_real !== '' && ls.rir_real !== null && ls.rir_real !== undefined) lsTxt += ' · RIR ' + ls.rir_real;
+      if (ls.ics) lsTxt += ' · ICS ' + ls.ics;
       lsEl.textContent = lsTxt;
     } else {
       lsEl.textContent = '';
     }
   }
+  // Prescription match — parsea ei/si desde la clave, busca rirTarget en el plan
+  (function() {
+    var _kp = lastSetKey ? lastSetKey.split('_') : [];
+    var _kEi = _kp.length >= 5 ? parseInt(_kp[3]) : NaN;
+    var _kSi = _kp.length >= 5 ? parseInt(_kp[4].slice(1)) : NaN;
+    var _kEj = !isNaN(_kEi) && typeof _EJERCICIOS_DIA !== 'undefined' ? (_EJERCICIOS_DIA||[])[_kEi] : null;
+    var _kSpec = _kEj && _kEj.sets ? _kEj.sets[_kSi] : null;
+    var _kRir = (_kSpec && _kSpec.rirTarget !== undefined) ? _kSpec.rirTarget
+      : (_kEj && typeof getAdjustedRIR === 'function' ? getAdjustedRIR(parseInt(_kEj.rir)||2, CURRENT_WEEK) : null);
+    var _pm = (ls.rir_real !== '' && ls.rir_real !== null && ls.rir_real !== undefined && _kRir !== null)
+      ? _calcPrescMatchLabel(ls.rir_real, _kRir) : null;
+    ['restPrescMatch', 'restPrescMatchC'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = _pm ? _pm.label : '';
+      el.style.color  = _pm ? _pm.color  : '';
+    });
+  })();
   // Calcular y mostrar "siguiente acción" en pill y overlay
   (function() {
     var _ejList = typeof _EJERCICIOS_DIA !== 'undefined' ? (_EJERCICIOS_DIA || []) : [];
@@ -12989,6 +13021,37 @@ function _runICSTests() {
   return { pass: _pass, fail: _fail, results: _results };
 }
 window._runICSTests = _runICSTests;
+
+function _runSetFeedbackTests() {
+  var _pass = 0, _fail = 0, _results = [];
+  function _assert(name, cond) {
+    _results.push((cond ? '  ✓ ' : '  ✗ ') + name);
+    if (cond) _pass++; else _fail++;
+  }
+  var m1 = _calcPrescMatchLabel(2, 2);
+  _assert('T1: rir=target → En objetivo', m1 && m1.label.indexOf('objetivo') >= 0);
+  _assert('T2: rir=target → color verde', m1 && m1.color === 'var(--grn)');
+  var m2 = _calcPrescMatchLabel(4, 2);
+  _assert('T3: rir>target → Más fácil', m2 && m2.label.indexOf('fácil') >= 0);
+  _assert('T4: rir>target → color amber', m2 && m2.color === '#e8a040');
+  var m3 = _calcPrescMatchLabel(1, 3);
+  _assert('T5: rir<target → Más difícil', m3 && m3.label.indexOf('difícil') >= 0);
+  _assert('T6: rir_real vacío → null', _calcPrescMatchLabel('', 2) === null);
+  _assert('T7: rirTarget vacío → null', _calcPrescMatchLabel(2, '') === null);
+  _assert('T8: rir_real null (autoFilled) → null', _calcPrescMatchLabel(null, 2) === null);
+  _assert('T9: ambos NaN → null', _calcPrescMatchLabel('abc', 'xyz') === null);
+  var _beforeLogs = JSON.stringify(LOGS);
+  _calcPrescMatchLabel(2, 2);
+  _assert('T10: _calcPrescMatchLabel no modifica LOGS', JSON.stringify(LOGS) === _beforeLogs);
+  var m4 = _calcPrescMatchLabel(0, 0);
+  _assert('T11: rir=0 target=0 → En objetivo', m4 && m4.label.indexOf('objetivo') >= 0);
+  var m5 = _calcPrescMatchLabel(2.5, 2);
+  _assert('T12: rir=2.5 target=2 → Más fácil', m5 && m5.label.indexOf('fácil') >= 0);
+  console.log('[SET FEEDBACK TESTS] '+_pass+'/'+(_pass+_fail)+' passed');
+  _results.forEach(function(r){ console.log(r); });
+  return { pass: _pass, fail: _fail, results: _results };
+}
+window._runSetFeedbackTests = _runSetFeedbackTests;
 
 // ── END FASE 6 HISTORY HELPERS ──────────────────────────────────────────
 
