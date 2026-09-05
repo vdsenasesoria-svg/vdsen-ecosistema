@@ -10667,6 +10667,7 @@ El esfuerzo no es negociable.
       warnings:        warnings,
       hasPreviousPlan: !!(prescCtx && prescCtx.hasPreviousPlan),
       repairCandidates: qualityAudit ? _generateRepairCandidates(qualityAudit, training) : [],
+      byDay:            (qualityAudit && Array.isArray(qualityAudit.byDay)) ? qualityAudit.byDay : [],
     };
   }
   window._buildPlanPreview = _buildPlanPreview;
@@ -10758,11 +10759,27 @@ El esfuerzo no es negociable.
           '<span style="font-size:10px;color:#555">' + _escH(String(pv.daysPerWeek)) + 'd/sem · ' + _escH(String(pv.weeks)) + ' sem</span>' +
         '</div>' +
 
-        // Topology + days
+        // Topology + days + session balance
         '<div style="margin-bottom:12px">' +
           '<div style="font-size:9px;font-weight:700;color:#555;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">TOPOLOGÍA</div>' +
           '<div style="font-size:12px;color:#e4e4e0;font-weight:600">' + _escH(pv.topology) + '</div>' +
           '<div style="font-size:11px;color:#666;margin-top:3px">' + pv.dayLabels.map(function(l){ return _escH(l); }).join(' · ') + '</div>' +
+          (pv.byDay && pv.byDay.length
+            ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">' +
+              pv.byDay.map(function(d) {
+                var hasIssue = d.issues && d.issues.length > 0;
+                var overloaded = d.issues && d.issues.some(function(i){ return i.code === 'SESSION_OVERLOADED'; });
+                var underused  = d.issues && d.issues.some(function(i){ return i.code === 'SESSION_UNDERUTILIZED'; });
+                var bg    = overloaded ? 'rgba(220,80,60,.12)' : underused ? 'rgba(255,180,0,.10)' : 'rgba(255,255,255,.04)';
+                var color = overloaded ? '#e07060' : underused ? '#c9960a' : '#888';
+                return '<span style="font-size:10px;background:' + bg + ';border-radius:4px;padding:2px 6px;color:' + color + '">' +
+                  _escH(d.dayLabel || ('D' + (d.dayIndex + 1))) + ': ' +
+                  _escH(String(d.exCount)) + ' ej · ~' + _escH(String(d.estDurationMin)) + 'min' +
+                  (hasIssue ? ' ⚠' : '') +
+                  '</span>';
+              }).join('') +
+              '</div>'
+            : '') +
         '</div>' +
 
         // Priorities + frequencies
@@ -10871,6 +10888,14 @@ El esfuerzo no es negociable.
     assert('T2 topology 3d label', t2a.topology.indexOf('3') >= 0);
     assert('T2 topology 4d label', t2b.topology.indexOf('4') >= 0);
     assert('T2 daysPerWeek tracked', t2a.daysPerWeek === 3 && t2b.daysPerWeek === 4);
+
+    // T2b: byDay absent when qualityAudit not provided
+    assert('T2b byDay empty when no qualityAudit', Array.isArray(t2a.byDay) && t2a.byDay.length === 0);
+    // T2c: byDay propagated from qualityAudit.byDay
+    var fakeQa = { status:'PASS', warnings:[], byDay:[{ dayIndex:0, dayLabel:'Push', exCount:5, estDurationMin:55, issues:[], redundancyLevel:'NONE', fatigueLevel:'LOW' }], byMuscle:[], stability:[], redundancy:{ global:'NONE', byDay:[] }, structuralFatigue:{ byDay:[], highCount:0 } };
+    var t2c = _buildPlanPreview(_mkTraining(1, [['Press Banca','Press Inclinado','Press Hombro','Triceps','Lateral']]), _mkPrescCtx([], {}, [], false), null, [], [], fakeQa);
+    assert('T2c byDay length matches qualityAudit.byDay', t2c.byDay.length === 1);
+    assert('T2c byDay exCount propagated', t2c.byDay[0].exCount === 5);
 
     // T3: Cambio de frecuencia — freqActual vs freqTarget in priorityRows
     var muscleMap3 = { pecho: { priority: 'high', frequencyTarget: 2, volumeTarget: 14 } };
