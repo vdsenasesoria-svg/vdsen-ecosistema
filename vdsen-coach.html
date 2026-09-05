@@ -11514,6 +11514,69 @@ El esfuerzo no es negociable.
   }
   window.runOutputQualityAudit = runOutputQualityAudit;
 
+  // ── Auto-Repair Quality Helpers ──────────────────────────────────────────
+
+  // Extract lean, comparable metrics from a full runOutputQualityAudit result.
+  function _qualitySnapshot(qaFull) {
+    var critCodes = (qaFull.criticalIssues || []).map(function(ci){ return ci.code; });
+    var _CONSTRAINT_CODES = ['EXERCISE_VETO','PATTERN_VETO','SLOT_MISMATCH','PRIORITY_SLOT_MISSING','SESSION_DURATION_EXCEEDS_AVAILABILITY'];
+    return {
+      status:               qaFull.status,
+      criticalCount:        (qaFull.criticalIssues||[]).length,
+      criticalCodes:        critCodes,
+      targetsCovered:       (qaFull.byMuscle||[]).filter(function(m){ return m.coverageStatus==='OK'; }).length,
+      targetsTotal:         (qaFull.byMuscle||[]).length,
+      constraintViolations: (qaFull.criticalIssues||[]).filter(function(ci){ return _CONSTRAINT_CODES.indexOf(ci.code)>=0 || ci.source==='veto'; }).length,
+      slotIssues:           (qaFull.criticalIssues||[]).filter(function(ci){ return ci.code.indexOf('SLOT')>=0; }).length,
+      sessionOverloads:     (qaFull.byDay||[]).filter(function(d){ return (d.issues||[]).some(function(i){ return i.code==='SESSION_OVERLOADED'; }); }).length,
+      highFatigue:          (qaFull.structuralFatigue && typeof qaFull.structuralFatigue.highCount==='number') ? qaFull.structuralFatigue.highCount : 0,
+      redundancyCount:      (qaFull.warnings||[]).filter(function(w){ return w.code && w.code.indexOf('REDUNDANCY')>=0; }).length,
+      interactionCount:     (qaFull.warnings||[]).filter(function(w){ return w.code && (w.code==='SESSION_FATIGUE_OVERLAP'||w.code==='SESSION_PATTERN_OVERLAP'||w.code==='SESSION_JOINT_STRESS'); }).length,
+      unresolvedStability:  (qaFull.stability && qaFull.stability.hasUnresolved) ? 1 : 0,
+      warnCount:            (qaFull.warnings||[]).length,
+    };
+  }
+  window._qualitySnapshot = _qualitySnapshot;
+
+  // Lexicographic quality comparator. Never permits: 0 critical → 1 critical.
+  // Returns {improves, hasNewCritical, score, improvementReasons[], regressions[]}
+  function _compareQualityAudit(snapBefore, snapAfter) {
+    var reasons = [], regressions = [];
+    // Rule 0: new critical code → always reject
+    var newCrit = (snapAfter.criticalCodes||[]).filter(function(c){ return (snapBefore.criticalCodes||[]).indexOf(c)<0; });
+    if (newCrit.length > 0) {
+      return { improves:false, hasNewCritical:true, score:-9999, improvementReasons:[], regressions:['Nueva critical: '+newCrit.join(', ')] };
+    }
+    var score = 0;
+    function _delta(label, before, after, weight, lowerIsBetter) {
+      var diff = lowerIsBetter ? (before - after) : (after - before);
+      if (diff > 0)      { score += weight * diff; reasons.push(label + ': ' + (lowerIsBetter ? '-' : '+') + diff); }
+      else if (diff < 0) { score += weight * diff; regressions.push(label + ': ' + (lowerIsBetter ? '+' : '-') + (-diff)); }
+    }
+    _delta('Criticals',              snapBefore.criticalCount,     snapAfter.criticalCount,     1000, true);
+    _delta('Targets cubiertos',      snapBefore.targetsCovered,    snapAfter.targetsCovered,    100,  false);
+    _delta('Constraint violations',  snapBefore.constraintViolations, snapAfter.constraintViolations, 50, true);
+    _delta('Slot issues',            snapBefore.slotIssues,        snapAfter.slotIssues,        20,   true);
+    _delta('Sesiones sobrecargadas', snapBefore.sessionOverloads,  snapAfter.sessionOverloads,  10,   true);
+    _delta('Alta fatiga (sesiones)', snapBefore.highFatigue,       snapAfter.highFatigue,       5,    true);
+    _delta('Redundancias',           snapBefore.redundancyCount + snapBefore.interactionCount, snapAfter.redundancyCount + snapAfter.interactionCount, 2, true);
+    _delta('Estabilidad',            snapBefore.unresolvedStability, snapAfter.unresolvedStability, 1, true);
+    return { improves: score>0, hasNewCritical:false, score:score, improvementReasons:reasons, regressions:regressions };
+  }
+  window._compareQualityAudit = _compareQualityAudit;
+
+  // Heuristic structural change cost per candidate type.
+  var _CHANGE_COST_TABLE = {
+    flag_only:       { cost:'NONE',     label:'Aviso' },
+    reorder:         { cost:'LOW',      label:'Reorden' },
+    remove_exercise: { cost:'MODERATE', label:'Eliminación' },
+  };
+  var _CHANGE_COST_RANK = { NONE:0, LOW:1, MODERATE:2, HIGH:3 };
+  function _computeChangeCost(candidate) {
+    return _CHANGE_COST_TABLE[candidate.type] || { cost:'HIGH', label:'Cambio estructural' };
+  }
+  window._computeChangeCost = _computeChangeCost;
+
   // ── Auto-Repair Candidate Pass ────────────────────────────────────────────
   // Generates candidate fixes from quality audit results.
   // type:'remove_exercise' → actionable (checkbox); type:'flag_only' → advisory.
@@ -11642,23 +11705,29 @@ El esfuerzo no es negociable.
 
     // Simulation pass — compute baseline quality once (no opts, lightweight, apples-to-apples)
     var qBase = runOutputQualityAudit(training, prescCtx, volAudit);
-    var baseCritCodes = (qBase.criticalIssues || []).map(function(ci){ return ci.code; });
-    var STATUS_RANK = { 'REVIEW_REQUIRED': 2, 'WARN': 1, 'PASS': 0 };
-    var qBefore = { status: qBase.status, criticalCount: (qBase.criticalIssues||[]).length, warnCount: (qBase.warnings||[]).length };
+    var snapBefore = _qualitySnapshot(qBase);
 
-    var accepted = [];
+    var actionableAccepted = [], flagOnly = [];
     candidates.forEach(function(c) {
-      // Flag-only: always surfaced, no simulation needed
+      var costObj = _computeChangeCost(c);
+      c.changeCost      = costObj.cost;
+      c.changeCostLabel = costObj.label;
+
+      // Flag-only: always surfaced, no simulation
       if (c.type === 'flag_only') {
-        c.qualityBefore = qBefore;
-        c.qualityAfter = qBefore;
-        c.simulatedResult = null;
-        c.accepted = true;
-        accepted.push(c);
+        c.qualityBefore = snapBefore;
+        c.qualityAfter  = snapBefore;
+        c.simulatedResult   = null;
+        c.improvementReasons = [];
+        c.regressions        = [];
+        c.accepted  = true;
+        c._simScore = 0;
+        c.rank      = 0;
+        flagOnly.push(c);
         return;
       }
 
-      // Apply candidate to a deep copy of training
+      // Apply candidate to an independent deep copy
       var simTraining = JSON.parse(JSON.stringify(training));
       if (c.type === 'remove_exercise') {
         var simDay = (simTraining.days || []).find(function(d){ return d.dayIndex === c.dayIndex; });
@@ -11673,26 +11742,31 @@ El esfuerzo no es negociable.
       }
 
       var qAfterFull = runOutputQualityAudit(simTraining, prescCtx, volAudit);
-      var qAfter = { status: qAfterFull.status, criticalCount: (qAfterFull.criticalIssues||[]).length, warnCount: (qAfterFull.warnings||[]).length };
+      var snapAfter  = _qualitySnapshot(qAfterFull);
+      var cmp = _compareQualityAudit(snapBefore, snapAfter);
 
-      // Reject if any new critical issue code introduced
-      var newCritCodes = (qAfterFull.criticalIssues || []).map(function(ci){ return ci.code; });
-      var hasNewCrit = newCritCodes.some(function(code){ return baseCritCodes.indexOf(code) < 0; });
+      c.qualityBefore      = snapBefore;
+      c.qualityAfter       = snapAfter;
+      c.simulatedResult    = snapBefore.status + ' → ' + snapAfter.status;
+      c.improvementReasons = cmp.improvementReasons;
+      c.regressions        = cmp.regressions;
+      c._simScore          = cmp.score;
+      c.accepted           = cmp.improves && !cmp.hasNewCritical;
 
-      var rankBefore = STATUS_RANK[qBefore.status] != null ? STATUS_RANK[qBefore.status] : 99;
-      var rankAfter  = STATUS_RANK[qAfter.status]  != null ? STATUS_RANK[qAfter.status]  : 99;
-      var improves = (rankAfter < rankBefore) || (qAfter.criticalCount < qBefore.criticalCount) ||
-                     (rankAfter === rankBefore && qAfter.warnCount < qBefore.warnCount);
-
-      c.qualityBefore = qBefore;
-      c.qualityAfter = qAfter;
-      c.simulatedResult = qBefore.status + ' → ' + qAfter.status;
-      c.accepted = improves && !hasNewCrit;
-
-      if (c.accepted) accepted.push(c);
+      if (c.accepted) actionableAccepted.push(c);
     });
 
-    return accepted;
+    // Rank accepted actionable by score desc, then changeCost asc (prefer minimal change)
+    actionableAccepted.sort(function(a, b) {
+      var sd = (b._simScore||0) - (a._simScore||0);
+      if (sd !== 0) return sd;
+      var ca = _CHANGE_COST_RANK[a.changeCost] != null ? _CHANGE_COST_RANK[a.changeCost] : 99;
+      var cb = _CHANGE_COST_RANK[b.changeCost] != null ? _CHANGE_COST_RANK[b.changeCost] : 99;
+      return ca - cb;
+    });
+    actionableAccepted.forEach(function(c, i){ c.rank = i + 1; });
+
+    return actionableAccepted.concat(flagOnly);
   }
   window._generateRepairCandidates = _generateRepairCandidates;
 
@@ -12013,18 +12087,35 @@ El esfuerzo no es negociable.
       var advisory   = repairs.filter(function(c){ return c.type === 'flag_only'; });
       var repairsHtml = '';
       if (actionable.length || advisory.length) {
-        var SEV_COL = { HIGH:'#e05555', MODERATE:'#FF8C00', LOW:'#aaa', FLAG:'#888' };
+        var _COST_COL = { NONE:'#555', LOW:'#C4FF00', MODERATE:'#FF8C00', HIGH:'#e05555' };
+        var _COST_ES  = { NONE:'ninguno', LOW:'bajo', MODERATE:'moderado', HIGH:'alto' };
+        var topActionable = actionable.slice(0, 3);
         repairsHtml = '<details open style="margin-bottom:12px">' +
-          '<summary style="font-size:9px;font-weight:700;color:#e05555;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;list-style:none;margin-bottom:6px">REPARACIONES PROPUESTAS</summary>' +
-          (actionable.length ? actionable.map(function(c) {
-            var simBadge = c.simulatedResult
-              ? ' <span style="font-size:9px;color:#44BB88;font-weight:700">[' + _escH(c.simulatedResult) + ']</span>'
+          '<summary style="font-size:9px;font-weight:700;color:#C4FF00;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;list-style:none;margin-bottom:8px">MEJORAS PROPUESTAS</summary>' +
+          (topActionable.length ? topActionable.map(function(c) {
+            var issueLabel = c.issueCode ? c.issueCode.replace(/_/g,' ').toLowerCase() : c.severity;
+            var impactHtml = c.simulatedResult
+              ? '<span style="color:#44BB88;font-weight:700">' + _escH(c.simulatedResult) + '</span>'
+              : '<span style="color:#888">sin datos</span>';
+            var costColor = _COST_COL[c.changeCost] || '#888';
+            var costLabel = _COST_ES[c.changeCost] || (c.changeCostLabel || c.changeCost || '?');
+            var reasonHtml = (c.improvementReasons && c.improvementReasons.length)
+              ? '<div style="font-size:9px;color:#44BB88;margin-top:2px">' + _escH(c.improvementReasons.slice(0,2).join(' · ')) + '</div>'
               : '';
-            return '<label style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid rgba(244,244,240,.04);cursor:pointer">' +
-              '<input type="checkbox" data-repair-id="' + _escH(c.id) + '" checked style="margin-top:2px;accent-color:#C4FF00">' +
-              '<div style="font-size:11px;color:#ccc;line-height:1.4">' + _escH(c.description) +
-              ' <span style="font-size:9px;color:' + (SEV_COL[c.severity]||'#888') + '">[' + _escH(c.severity) + ']</span>' + simBadge + '</div>' +
-              '</label>';
+            return '<div style="border:1px solid rgba(196,255,0,.12);border-radius:6px;padding:8px 10px;margin-bottom:6px">' +
+              '<div style="display:flex;align-items:flex-start;gap:8px">' +
+                '<input type="checkbox" data-repair-id="' + _escH(c.id) + '" checked style="margin-top:3px;accent-color:#C4FF00;flex-shrink:0">' +
+                '<div style="flex:1;min-width:0">' +
+                  '<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Problema: <span style="color:#FF8C00">' + _escH(issueLabel) + '</span></div>' +
+                  '<div style="font-size:11px;color:#e4e4e0;line-height:1.4;margin-bottom:4px">' + _escH(c.description) + '</div>' +
+                  '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+                    '<span style="font-size:9px;color:#666">Impacto: ' + impactHtml + '</span>' +
+                    '<span style="font-size:9px;color:' + costColor + '">Cambio: ' + _escH(costLabel) + '</span>' +
+                  '</div>' +
+                  reasonHtml +
+                '</div>' +
+              '</div>' +
+            '</div>';
           }).join('') : '') +
           (advisory.length ? '<div style="margin-top:4px">' + advisory.map(function(c) {
             return '<div style="font-size:10px;color:#666;padding:3px 0">ⓘ ' + _escH(c.description) + '</div>';
@@ -12731,6 +12822,104 @@ El esfuerzo no es negociable.
     var simTraining14 = _mkTraining([['press banca','curl bíceps']]); // fundamental before isolation — correct order
     var simCands14 = _generateRepairCandidates(_fakeQaOrderOk, simTraining14);
     assert('T14 no reorder when already correct order', !simCands14.some(function(c){ return c.type === 'reorder'; }));
+
+    // ── Quality Comparator tests (_compareQualityAudit) ──────────────────────
+    function _mkSnap(overrides) {
+      return Object.assign({ status:'PASS', criticalCount:0, criticalCodes:[], targetsCovered:2, targetsTotal:2,
+        constraintViolations:0, slotIssues:0, sessionOverloads:0, highFatigue:0, redundancyCount:0,
+        interactionCount:0, unresolvedStability:0, warnCount:0 }, overrides || {});
+    }
+
+    // C1: fewer criticals → always improves regardless of warning delta
+    var cmpC1 = _compareQualityAudit(
+      _mkSnap({ criticalCount:1, criticalCodes:['REDUNDANCY'], warnCount:1 }),
+      _mkSnap({ criticalCount:0, criticalCodes:[],              warnCount:10 }) // 10× more warnings
+    );
+    assert('C1 fewer critical beats more warnings', cmpC1.improves === true);
+    assert('C1 no new critical', cmpC1.hasNewCritical === false);
+    assert('C1 score positive', cmpC1.score > 0);
+
+    // C2: new critical code → always rejected even with 5 fewer warnings
+    var cmpC2 = _compareQualityAudit(
+      _mkSnap({ criticalCount:0, criticalCodes:[],          warnCount:5 }),
+      _mkSnap({ criticalCount:1, criticalCodes:['NEW_CODE'], warnCount:0 })
+    );
+    assert('C2 new critical → not improves', cmpC2.improves === false);
+    assert('C2 new critical → hasNewCritical', cmpC2.hasNewCritical === true);
+    assert('C2 new critical → regressions list', cmpC2.regressions.length > 0);
+
+    // C3: same criticals, better target coverage → improves
+    var cmpC3 = _compareQualityAudit(
+      _mkSnap({ targetsCovered:1, targetsTotal:3 }),
+      _mkSnap({ targetsCovered:2, targetsTotal:3 })
+    );
+    assert('C3 better target coverage → improves', cmpC3.improves === true);
+
+    // C4: same quality (no change) → does not improve
+    var cmpC4 = _compareQualityAudit(_mkSnap(), _mkSnap());
+    assert('C4 identical snapshots → not improves', cmpC4.improves === false);
+    assert('C4 score zero', cmpC4.score === 0);
+
+    // C5: existing critical retained (not new) → not rejected as new
+    var cmpC5 = _compareQualityAudit(
+      _mkSnap({ criticalCount:1, criticalCodes:['OLD_CODE'], warnCount:3 }),
+      _mkSnap({ criticalCount:1, criticalCodes:['OLD_CODE'], warnCount:1 })
+    );
+    assert('C5 same critical retained → not hasNewCritical', cmpC5.hasNewCritical === false);
+
+    // ── Change cost tests (_computeChangeCost) ────────────────────────────────
+    assert('CC1 flag_only cost NONE',     _computeChangeCost({ type:'flag_only' }).cost       === 'NONE');
+    assert('CC2 reorder cost LOW',        _computeChangeCost({ type:'reorder' }).cost         === 'LOW');
+    assert('CC3 remove_exercise MODERATE',_computeChangeCost({ type:'remove_exercise' }).cost === 'MODERATE');
+    assert('CC4 unknown type cost HIGH',  _computeChangeCost({ type:'unknown_future' }).cost  === 'HIGH');
+
+    // ── Ranking tests (simulation pass with prescCtx) ─────────────────────────
+    function _mkPrescCtxCmp() {
+      return { hasPreviousPlan:false, previousPlan:null,
+        prescriptionTargets:{ muscles:{}, reasonCodes:[] },
+        restrictions:{ ejerciciosEvitar:[], motorPatternsAvoid:[] } };
+    }
+
+    // R1: two candidates — better score ranked first
+    var rTraining = _mkTraining([['press banca','press inclinado','press declinado','sentadilla']]);
+    var rQa = runOutputQualityAudit(rTraining, _mkPrescCtxCmp(), null);
+    var rCands = _generateRepairCandidates(rQa, rTraining, _mkPrescCtxCmp(), null);
+    var rActionable = rCands.filter(function(c){ return c.type !== 'flag_only'; });
+    assert('R1 actionable candidates are ranked', rActionable.every(function(c){ return typeof c.rank === 'number' && c.rank >= 1; }));
+    assert('R1 ranks sequential', rActionable.every(function(c, i){ return i === 0 || c.rank >= rActionable[i-1].rank; }));
+
+    // R2: all accepted candidates have improvementReasons
+    rCands.filter(function(c){ return c.type !== 'flag_only'; }).forEach(function(c){
+      assert('R2 accepted has improvementReasons', Array.isArray(c.improvementReasons));
+      assert('R2 accepted has regressions', Array.isArray(c.regressions));
+      assert('R2 accepted has changeCost', typeof c.changeCost === 'string');
+      assert('R2 accepted has changeCostLabel', typeof c.changeCostLabel === 'string');
+    });
+
+    // R3: deep copy isolation — candidate A simulation must not affect candidate B
+    var isoTraining = _mkTraining([['press banca','press inclinado','press declinado']]);
+    var isoQa = runOutputQualityAudit(isoTraining, _mkPrescCtxCmp(), null);
+    var isoCands = _generateRepairCandidates(isoQa, isoTraining, _mkPrescCtxCmp(), null);
+    // Original plan must be intact after simulation pass
+    assert('R3 original plan day count intact', isoTraining.days.length === 1);
+    assert('R3 original exercise count intact', isoTraining.days[0].exercises.length === 3);
+
+    // R4: reorder preferred over remove_exercise if both improve equally (lower cost wins)
+    // We test cost ranking directly via _CHANGE_COST_RANK
+    assert('R4 reorder cost rank < remove_exercise rank', _CHANGE_COST_RANK['LOW'] < _CHANGE_COST_RANK['MODERATE']);
+    assert('R4 remove_exercise rank < structural rank', _CHANGE_COST_RANK['MODERATE'] < _CHANGE_COST_RANK['HIGH']);
+
+    // ── _qualitySnapshot tests ────────────────────────────────────────────────
+    var qsFull = runOutputQualityAudit(_mkTraining([['sentadilla','press banca']]), _mkPrescCtxCmp(), null);
+    var qs = _qualitySnapshot(qsFull);
+    assert('QS1 snapshot has status', typeof qs.status === 'string');
+    assert('QS1 snapshot has criticalCount', typeof qs.criticalCount === 'number');
+    assert('QS1 snapshot has criticalCodes array', Array.isArray(qs.criticalCodes));
+    assert('QS1 snapshot has targetsCovered', typeof qs.targetsCovered === 'number');
+    assert('QS1 snapshot has sessionOverloads', typeof qs.sessionOverloads === 'number');
+    assert('QS1 snapshot has highFatigue', typeof qs.highFatigue === 'number');
+    assert('QS1 snapshot has redundancyCount', typeof qs.redundancyCount === 'number');
+    assert('QS1 snapshot has warnCount', typeof qs.warnCount === 'number');
 
     console.log('[REPAIR CANDIDATE TESTS] ' + pass + ' passed, ' + fail + ' failed');
     return { pass: pass, fail: fail };
