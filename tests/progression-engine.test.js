@@ -8556,4 +8556,449 @@ function _applyLearnedDistributionFeedback(distributionDecision, activeLearnedSt
   assert('BUG-LS-DIV-D', 'null prescCtx fallback is safe', safeResult === null);
 })();
 
+// ════════════════ FASE 47: LONGITUDINAL VALIDATION FRAMEWORK ════════════════
+//
+// _buildLongitudinalValidationReport(clientContext, previousPlan, logs, generatedPlan)
+//
+// Post-hoc audit del pipeline Profile → Targets → Topology → Distribution →
+// Stability → Learned State → Quality Gate → Generated Plan.
+//
+// Detecta divergencias entre lo que los engines de Learned State recomendaron
+// y lo que el plan generado contiene realmente. Puro, síncrono, sin I/O.
+//
+// unexpectedChanges.severity:
+//   SUSPECT — contradicción directa con señal de LS (bug probable)
+//   WARNING — cambio estructural sin justificación conocida (revisar)
+
+function _buildLongitudinalValidationReport(clientContext, previousPlan, logs, generatedPlan) {
+  var report = {
+    inputSummary:        {},
+    targetChanges:       {},
+    topologyDecision:    {},
+    distributionDecision:{},
+    exerciseContinuity:  { keptCount:0, movedCount:0, replacedCount:0, lostCount:0, newCount:0 },
+    learnedInfluences:   [],
+    qualityStatus:       { valid: true, errors: [], warnings: [] },
+    unexpectedChanges:   [],
+    verdict:             'OK'
+  };
+
+  var clientData   = (clientContext && clientContext._clientData) || clientContext || {};
+  var activeLS     = _getActivePersistedLearnedState(clientData);
+  var restrictions = (clientContext && clientContext.restrictions) || {};
+  var evitar       = Array.isArray(restrictions.ejerciciosEvitar) ? restrictions.ejerciciosEvitar : [];
+
+  // ── 1. Input Summary ─────────────────────────────────────────────────────
+  var prevDays = previousPlan
+    ? (previousPlan.daysPerWeek || (Array.isArray(previousPlan.days) ? previousPlan.days.length : 0))
+    : null;
+  var newDays = generatedPlan
+    ? (generatedPlan.daysPerWeek || (Array.isArray(generatedPlan.days) ? generatedPlan.days.length : 0))
+    : null;
+  report.inputSummary = {
+    learnedStateStatus: (clientData.learnedState && clientData.learnedState.status) || 'ABSENT',
+    lsActive:           activeLS !== null,
+    prevPlanDays:       prevDays,
+    prevPlanWeeks:      previousPlan ? (previousPlan.weeks || null) : null,
+    newPlanDays:        newDays,
+    newPlanWeeks:       generatedPlan ? (generatedPlan.weeks || null) : null,
+    exercisesEvitar:    evitar.length
+  };
+
+  // ── 2. Frequency change detection ────────────────────────────────────────
+  if (prevDays !== null && newDays !== null && prevDays !== newDays) {
+    report.unexpectedChanges.push({
+      type:        'FREQUENCY_CHANGED',
+      description: 'daysPerWeek cambió de ' + prevDays + ' a ' + newDays + ' sin modificador LS de frecuencia',
+      severity:    'WARNING'
+    });
+  }
+
+  // ── 3. Topology engine ───────────────────────────────────────────────────
+  var prevDayLabels = (previousPlan && Array.isArray(previousPlan.days))
+    ? previousPlan.days.map(function(d){ return d.label || ('Día'+d.dayIndex); })
+    : [];
+  var newDayLabels = (generatedPlan && Array.isArray(generatedPlan.days))
+    ? generatedPlan.days.map(function(d){ return d.label || ('Día'+d.dayIndex); })
+    : [];
+  var prevPattern = prevDayLabels.join('|');
+  var newPattern  = newDayLabels.join('|');
+  var topoCandidates = previousPlan ? [{ id: prevPattern, dayLabels: prevDayLabels, score: 0.5 }] : [];
+  var topoResult = _applyLearnedTopologyAdjustment(topoCandidates, activeLS);
+  var patternChanged = prevPattern !== newPattern && prevPattern !== '' && newPattern !== '';
+  report.topologyDecision = {
+    prevPattern: prevPattern,
+    newPattern:  newPattern,
+    patternChanged: patternChanged,
+    lsTrace:     topoResult.trace
+  };
+  if (topoResult.trace.length) {
+    report.learnedInfluences.push({ engine: 'topology', trace: topoResult.trace });
+  }
+  if (patternChanged && activeLS && !topoResult.trace.length) {
+    report.unexpectedChanges.push({
+      type:        'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE',
+      description: 'Patrón de días cambió [' + prevPattern + '] → [' + newPattern + '] con LS ACTIVE pero sin trace topology',
+      severity:    'WARNING'
+    });
+  }
+  // If LS preferred a topology but generated plan chose a completely different pattern → WARNING
+  if (patternChanged && topoResult.trace.length) {
+    // Check if generated pattern matches any preferred pattern from LS
+    var topoState = activeLS && activeLS.topologyState;
+    var preferred = (topoState && Array.isArray(topoState.preferredPatterns)) ? topoState.preferredPatterns : [];
+    var newPatternPreferred = preferred.some(function(p){ return p === newPattern || newPattern.indexOf(p) >= 0 || p.indexOf(newPattern) >= 0; });
+    var oldPatternPreferred = preferred.some(function(p){ return p === prevPattern; });
+    if (oldPatternPreferred && !newPatternPreferred) {
+      report.unexpectedChanges.push({
+        type:        'TOPOLOGY_LS_PREFERENCE_IGNORED',
+        description: 'LS prefería [' + prevPattern + '] pero plan generado usó [' + newPattern + '] sin que sea un patrón preferido',
+        severity:    'WARNING'
+      });
+    }
+  }
+
+  // ── 4. Distribution engine ───────────────────────────────────────────────
+  var distDecision = { frequencyTarget: prevDays, spacing: 'even', alternatives: [] };
+  var distResult = _applyLearnedDistributionFeedback(distDecision, activeLS);
+  report.distributionDecision = {
+    spacing:       distResult.decision.spacing,
+    learnedApplied: !!distResult.decision._learnedSpacingApplied,
+    lsTrace:       distResult.trace
+  };
+  if (distResult.trace.length) {
+    report.learnedInfluences.push({ engine: 'distribution', trace: distResult.trace });
+  }
+
+  // ── 5. Exercise continuity ────────────────────────────────────────────────
+  var prevExercises = [];
+  if (previousPlan && Array.isArray(previousPlan.days)) {
+    previousPlan.days.forEach(function(d) {
+      if (Array.isArray(d.exercises)) {
+        d.exercises.forEach(function(e) {
+          if (e.exerciseName) prevExercises.push({ name: e.exerciseName, dayLabel: d.label || '' });
+        });
+      }
+    });
+  }
+  var newExercises = [];
+  if (generatedPlan && Array.isArray(generatedPlan.days)) {
+    generatedPlan.days.forEach(function(d) {
+      if (Array.isArray(d.exercises)) {
+        d.exercises.forEach(function(e) {
+          if (e.exerciseName) newExercises.push({ name: e.exerciseName, dayLabel: d.label || '' });
+        });
+      }
+    });
+  }
+  var newExNames = newExercises.map(function(e){ return e.name.toLowerCase(); });
+
+  // Run exercise LS engine on prev plan exercises as candidates
+  var exCandidates = prevExercises.map(function(e){
+    return { id: e.name.toLowerCase(), name: e.name, score: 0.5 };
+  });
+  var exResult = _applyLearnedExerciseAdjustment(exCandidates, activeLS, {});
+  if (exResult.trace.length) {
+    report.learnedInfluences.push({ engine: 'stability', trace: exResult.trace });
+  }
+
+  // Map exercise lookup → LS adjustment info
+  var lsAdjByName = {};
+  exResult.candidates.forEach(function(c){
+    lsAdjByName[String(c.id || '').toLowerCase()] = {
+      adjustment:  c.learnedAdjustment,
+      reasonCodes: c.reasonCodes,
+      influenced:  c.learnedInfluence
+    };
+  });
+
+  prevExercises.forEach(function(pe) {
+    var peLow  = pe.name.toLowerCase();
+    var inNew  = newExNames.indexOf(peLow) >= 0;
+    var lsAdj  = lsAdjByName[peLow] || { adjustment: 0, reasonCodes: [], influenced: false };
+    var isVetoed = evitar.some(function(v){
+      return peLow.includes(v.toLowerCase()) || v.toLowerCase().includes(peLow);
+    });
+
+    if (inNew) {
+      // Exercise present in new plan
+      if (lsAdj.adjustment < 0) {
+        // Pain signal but exercise kept → SUSPECT
+        report.unexpectedChanges.push({
+          type:        'PAIN_HISTORY_EXERCISE_KEPT',
+          description: '"' + pe.name + '" tiene señal de dolor (adj=' + lsAdj.adjustment + ') pero permanece en el plan generado',
+          severity:    'SUSPECT'
+        });
+      }
+      var newEntry = null;
+      for (var ni = 0; ni < newExercises.length; ni++) {
+        if (newExercises[ni].name.toLowerCase() === peLow) { newEntry = newExercises[ni]; break; }
+      }
+      if (newEntry && newEntry.dayLabel !== pe.dayLabel) {
+        report.exerciseContinuity.movedCount++;
+      } else {
+        report.exerciseContinuity.keptCount++;
+      }
+    } else {
+      // Exercise absent from new plan
+      if (isVetoed || lsAdj.adjustment < 0) {
+        // Veto-justified or pain-justified removal
+        report.exerciseContinuity.replacedCount++;
+      } else if (lsAdj.adjustment > 0) {
+        // LS said positive but exercise dropped → SUSPECT
+        report.unexpectedChanges.push({
+          type:        'POSITIVE_HISTORY_EXERCISE_DROPPED',
+          description: '"' + pe.name + '" tiene historial positivo (adj=+' + lsAdj.adjustment + ') pero fue eliminado del plan',
+          severity:    'SUSPECT'
+        });
+        report.exerciseContinuity.lostCount++;
+      } else if (activeLS) {
+        // ACTIVE LS present but no signal for this exercise — neutral drop, still noteworthy
+        report.unexpectedChanges.push({
+          type:        'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION',
+          description: '"' + pe.name + '" eliminado del plan sin señal de dolor, sin veto, y sin registro en LS ACTIVE',
+          severity:    'WARNING'
+        });
+        report.exerciseContinuity.lostCount++;
+      } else {
+        // No LS — neutral drop, no info to flag
+        report.exerciseContinuity.lostCount++;
+      }
+    }
+  });
+
+  newExercises.forEach(function(ne) {
+    var neLow = ne.name.toLowerCase();
+    var inPrev = prevExercises.some(function(e){ return e.name.toLowerCase() === neLow; });
+    if (!inPrev) report.exerciseContinuity.newCount++;
+  });
+
+  // ── 6. Quality Status & Verdict ──────────────────────────────────────────
+  var suspectCount = report.unexpectedChanges.filter(function(c){ return c.severity === 'SUSPECT'; }).length;
+  var warnCount    = report.unexpectedChanges.filter(function(c){ return c.severity === 'WARNING'; }).length;
+  report.qualityStatus.valid = suspectCount === 0;
+  if (suspectCount > 0) report.qualityStatus.errors.push(suspectCount + ' divergencia(s) SUSPECT detectada(s)');
+  if (warnCount > 0)    report.qualityStatus.warnings.push(warnCount + ' advertencia(s)');
+  report.verdict = suspectCount > 0 ? 'SUSPECT' : (warnCount > 0 ? 'WARNING' : 'OK');
+
+  return report;
+}
+
+// ── Helpers de fixtures ──────────────────────────────────────────────────────
+function _makePlan(daysPerWeek, days) {
+  return { weeks: 6, daysPerWeek: daysPerWeek, days: days };
+}
+function _makeDay(dayIndex, label, exerciseNames) {
+  return { dayIndex: dayIndex, label: label, exercises: exerciseNames.map(function(n){ return { exerciseName: n, sets: [] }; }) };
+}
+function _makeActiveLS(opts) {
+  opts = opts || {};
+  return {
+    status: 'ACTIVE',
+    topologyState: opts.topo || { preferredPatterns: [], rejectedPatterns: [] },
+    slotState:     opts.slot || { preferredSpacing: [] },
+    exerciseState: opts.ex   || { overallConfidence: 'MODERATE', stateVersion: 1, exercises: {} }
+  };
+}
+
+// ════════════════════ FIXTURE TESTS F47 ════════════════════════════════════
+
+// FIX-A: Continuidad perfecta — mismo plan, LS ACTIVE, sin cambios
+(function() {
+  console.log('\nF47-FIX-A — continuidad perfecta: mismo plan, LS ACTIVE positivo');
+  var prevPlan = _makePlan(4, [
+    _makeDay(0, 'Empuje',  ['Press Banca', 'Press Inclinado']),
+    _makeDay(1, 'Jalón',   ['Remo Barra', 'Jalón Polea']),
+    _makeDay(2, 'Piernas', ['Sentadilla Barra', 'Prensa']),
+    _makeDay(3, 'Upper',   ['Press Hombro', 'Curl Barra'])
+  ]);
+  var genPlan = _makePlan(4, [
+    _makeDay(0, 'Empuje',  ['Press Banca', 'Press Inclinado']),
+    _makeDay(1, 'Jalón',   ['Remo Barra', 'Jalón Polea']),
+    _makeDay(2, 'Piernas', ['Sentadilla Barra', 'Prensa']),
+    _makeDay(3, 'Upper',   ['Press Hombro', 'Curl Barra'])
+  ]);
+  var clientCtx = { learnedState: _makeActiveLS({
+    topo: { preferredPatterns: ['Empuje|Jalón|Piernas|Upper'], rejectedPatterns: [] },
+    ex: { overallConfidence: 'HIGH', exercises: {
+      'press banca':    { continuityType: 'KEPT', continuityStatus: 'RESOLVED', confidence: 'HIGH', observations: ['good progressive load'], painSignals: [] },
+      'sentadilla barra': { continuityType: 'KEPT', continuityStatus: 'RESOLVED', confidence: 'HIGH', observations: ['positive adaptation'], painSignals: [] }
+    }}
+  })};
+  var rpt = _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  assert('F47-A1', 'FIX-A: verdict OK', rpt.verdict === 'OK');
+  assert('F47-A2', 'FIX-A: sin unexpectedChanges', rpt.unexpectedChanges.length === 0);
+  assert('F47-A3', 'FIX-A: keptCount = 8', rpt.exerciseContinuity.keptCount === 8);
+  assert('F47-A4', 'FIX-A: LS active detectado', rpt.inputSummary.lsActive === true);
+  assert('F47-A5', 'FIX-A: alguna learnedInfluence (topology o stability con datos)', rpt.learnedInfluences.length >= 1);
+})();
+
+// FIX-B: Dolor justificado — pain signal + ejercicio removido del plan → OK
+(function() {
+  console.log('\nF47-FIX-B — dolor justificado: pain signal, ejercicio no está en plan nuevo');
+  var prevPlan = _makePlan(4, [
+    _makeDay(0, 'Empuje', ['Press Banca', 'Press Inclinado']),
+    _makeDay(1, 'Jalón',  ['Remo Barra', 'Jalón Polea'])
+  ]);
+  // Press Banca reemplazado por Press Mancuernas en plan nuevo
+  var genPlan = _makePlan(4, [
+    _makeDay(0, 'Empuje', ['Press Mancuernas', 'Press Inclinado']),
+    _makeDay(1, 'Jalón',  ['Remo Barra', 'Jalón Polea'])
+  ]);
+  var clientCtx = { learnedState: _makeActiveLS({ ex: { overallConfidence: 'HIGH', exercises: {
+    'press banca': { continuityType: 'KEPT', continuityStatus: 'RESOLVED', confidence: 'HIGH',
+      observations: [], painSignals: ['shoulder impingement week 4'] }
+  }}})};
+  var rpt = _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  assert('F47-B1', 'FIX-B: verdict OK (remoción justificada por dolor)', rpt.verdict === 'OK');
+  assert('F47-B2', 'FIX-B: sin SUSPECT', !rpt.unexpectedChanges.some(function(c){ return c.severity === 'SUSPECT'; }));
+  assert('F47-B3', 'FIX-B: replacedCount = 1', rpt.exerciseContinuity.replacedCount === 1);
+  assert('F47-B4', 'FIX-B: newCount = 1 (Press Mancuernas)', rpt.exerciseContinuity.newCount === 1);
+})();
+
+// FIX-C: Dolor ignorado — pain signal pero ejercicio sigue en plan → SUSPECT
+(function() {
+  console.log('\nF47-FIX-C — dolor ignorado: pain signal pero ejercicio permanece en plan');
+  var prevPlan = _makePlan(4, [
+    _makeDay(0, 'Empuje', ['Press Banca', 'Press Inclinado'])
+  ]);
+  // Plan generado mantiene Press Banca pese a pain signal → BUG a detectar
+  var genPlan = _makePlan(4, [
+    _makeDay(0, 'Empuje', ['Press Banca', 'Press Inclinado'])
+  ]);
+  var clientCtx = { learnedState: _makeActiveLS({ ex: { overallConfidence: 'HIGH', exercises: {
+    'press banca': { continuityType: 'KEPT', continuityStatus: 'RESOLVED', confidence: 'HIGH',
+      observations: [], painSignals: ['shoulder pain week 5'] }
+  }}})};
+  var rpt = _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  assert('F47-C1', 'FIX-C: verdict SUSPECT', rpt.verdict === 'SUSPECT');
+  assert('F47-C2', 'FIX-C: PAIN_HISTORY_EXERCISE_KEPT presente', rpt.unexpectedChanges.some(function(c){ return c.type === 'PAIN_HISTORY_EXERCISE_KEPT'; }));
+  assert('F47-C3', 'FIX-C: qualityStatus.valid = false', rpt.qualityStatus.valid === false);
+  assert('F47-C4', 'FIX-C: learnedInfluences tiene stability', rpt.learnedInfluences.some(function(i){ return i.engine === 'stability'; }));
+})();
+
+// FIX-D: Historial positivo ignorado — LS +0.1 pero ejercicio eliminado → SUSPECT
+(function() {
+  console.log('\nF47-FIX-D — historial positivo ignorado: ejercicio con adj +0.1 eliminado');
+  var prevPlan = _makePlan(4, [
+    _makeDay(0, 'Piernas', ['Sentadilla Barra', 'Prensa', 'Femoral Tumbado'])
+  ]);
+  // Plan generado drop Sentadilla Barra sin justificación
+  var genPlan = _makePlan(4, [
+    _makeDay(0, 'Piernas', ['Prensa', 'Femoral Tumbado', 'Extensión Cuádriceps'])
+  ]);
+  var clientCtx = { learnedState: _makeActiveLS({ ex: { overallConfidence: 'HIGH', exercises: {
+    'sentadilla barra': { continuityType: 'KEPT', continuityStatus: 'RESOLVED', confidence: 'HIGH',
+      observations: ['progressive and well tolerated'], painSignals: [] }
+  }}})};
+  var rpt = _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  assert('F47-D1', 'FIX-D: verdict SUSPECT', rpt.verdict === 'SUSPECT');
+  assert('F47-D2', 'FIX-D: POSITIVE_HISTORY_EXERCISE_DROPPED presente', rpt.unexpectedChanges.some(function(c){ return c.type === 'POSITIVE_HISTORY_EXERCISE_DROPPED'; }));
+  assert('F47-D3', 'FIX-D: lostCount = 1', rpt.exerciseContinuity.lostCount === 1);
+  assert('F47-D4', 'FIX-D: newCount = 1 (Extensión Cuádriceps)', rpt.exerciseContinuity.newCount === 1);
+})();
+
+// FIX-E: LS STALE + cambio de frecuencia → WARNING (no SUSPECT)
+(function() {
+  console.log('\nF47-FIX-E — LS STALE + cambio de frecuencia: warning, sin LS activo');
+  var prevPlan = _makePlan(4, [
+    _makeDay(0,'A',['Ej1']), _makeDay(1,'B',['Ej2']),
+    _makeDay(2,'C',['Ej3']), _makeDay(3,'D',['Ej4'])
+  ]);
+  var genPlan = _makePlan(5, [
+    _makeDay(0,'A',['Ej1']), _makeDay(1,'B',['Ej2']),
+    _makeDay(2,'C',['Ej3']), _makeDay(3,'D',['Ej4']), _makeDay(4,'E',['Ej5'])
+  ]);
+  var clientCtx = { learnedState: { status: 'STALE', topologyState:{}, slotState:{}, exerciseState:{} } };
+  var rpt = _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  assert('F47-E1', 'FIX-E: verdict WARNING (no SUSPECT)', rpt.verdict === 'WARNING');
+  assert('F47-E2', 'FIX-E: FREQUENCY_CHANGED presente', rpt.unexpectedChanges.some(function(c){ return c.type === 'FREQUENCY_CHANGED'; }));
+  assert('F47-E3', 'FIX-E: LS no activo (STALE ignorado)', rpt.inputSummary.lsActive === false);
+  assert('F47-E4', 'FIX-E: learnedInfluences vacío (STALE)', rpt.learnedInfluences.length === 0);
+})();
+
+// FIX-F: Veto gana sobre historial positivo — ejercicio en evitar eliminado → OK
+(function() {
+  console.log('\nF47-FIX-F — veto supera historial positivo: restricción elimina ejercicio, no es SUSPECT');
+  var prevPlan = _makePlan(4, [
+    _makeDay(0, 'Piernas', ['Sentadilla Barra', 'Prensa'])
+  ]);
+  // Plan generado no incluye Sentadilla Barra (por veto)
+  var genPlan = _makePlan(4, [
+    _makeDay(0, 'Piernas', ['Prensa', 'Hip Thrust'])
+  ]);
+  var clientCtx = {
+    restrictions: { ejerciciosEvitar: ['Sentadilla Barra'] },
+    learnedState: _makeActiveLS({ ex: { overallConfidence: 'HIGH', exercises: {
+      'sentadilla barra': { continuityType: 'KEPT', continuityStatus: 'RESOLVED', confidence: 'HIGH',
+        observations: ['good results'], painSignals: [] }
+    }}})
+  };
+  var rpt = _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  assert('F47-F1', 'FIX-F: verdict OK (veto justifica remoción)', rpt.verdict === 'OK');
+  assert('F47-F2', 'FIX-F: sin POSITIVE_HISTORY_EXERCISE_DROPPED (veto gana)', !rpt.unexpectedChanges.some(function(c){ return c.type === 'POSITIVE_HISTORY_EXERCISE_DROPPED'; }));
+  assert('F47-F3', 'FIX-F: replacedCount = 1 (veto-justified)', rpt.exerciseContinuity.replacedCount === 1);
+  assert('F47-F4', 'FIX-F: qualityStatus.valid = true', rpt.qualityStatus.valid === true);
+})();
+
+// FIX-G: Sin LS + ejercicio caído — lostCount++ sin SUSPECT (sin info)
+(function() {
+  console.log('\nF47-FIX-G — sin LS: ejercicio caído no produce SUSPECT (sin contexto)');
+  var prevPlan = _makePlan(4, [
+    _makeDay(0, 'Empuje', ['Press Banca', 'Aperturas'])
+  ]);
+  var genPlan = _makePlan(4, [
+    _makeDay(0, 'Empuje', ['Press Banca', 'Fondos en Paralelas'])
+  ]);
+  // No learnedState at all
+  var clientCtx = {};
+  var rpt = _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  assert('F47-G1', 'FIX-G: verdict OK (sin LS, sin señal)', rpt.verdict === 'OK');
+  assert('F47-G2', 'FIX-G: sin SUSPECT (sin contexto histórico)', !rpt.unexpectedChanges.some(function(c){ return c.severity === 'SUSPECT'; }));
+  assert('F47-G3', 'FIX-G: lostCount = 1 (Aperturas caído)', rpt.exerciseContinuity.lostCount === 1);
+  assert('F47-G4', 'FIX-G: newCount = 1 (Fondos en Paralelas)', rpt.exerciseContinuity.newCount === 1);
+  assert('F47-G5', 'FIX-G: learnedStateStatus = ABSENT', rpt.inputSummary.learnedStateStatus === 'ABSENT');
+})();
+
+// FIX-H: Topología cambia sin trace con LS ACTIVE → WARNING
+(function() {
+  console.log('\nF47-FIX-H — topología cambia sin LS trace con ACTIVE: expected WARNING');
+  var prevPlan = _makePlan(4, [
+    _makeDay(0,'Empuje',['P1']), _makeDay(1,'Jalón',['P2']),
+    _makeDay(2,'Piernas',['P3']), _makeDay(3,'Upper',['P4'])
+  ]);
+  // LS NO tiene el patrón nuevo como preferido
+  var genPlan = _makePlan(4, [
+    _makeDay(0,'Push',['P1']), _makeDay(1,'Pull',['P2']),
+    _makeDay(2,'Lower',['P3']), _makeDay(3,'Full',['P4'])
+  ]);
+  // LS prefiere el viejo patrón, no el nuevo
+  var clientCtx = { learnedState: _makeActiveLS({
+    topo: { preferredPatterns: ['Empuje|Jalón|Piernas|Upper'], rejectedPatterns: [] }
+  })};
+  var rpt = _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  // The LS preferred the old pattern. New pattern is different but LS doesn't cover it → no trace from engine
+  // But the old pattern was the candidate, not the new one → engine just adjusts old candidate's score
+  // The topology engine sees [oldPattern] as candidate and adjusts it — but gen plan has newPattern
+  // So patternChanged=true, activeLS=true, trace=[] (engine adjusted old candidate, didn't match new) → WARNING
+  assert('F47-H1', 'FIX-H: patternChanged = true', rpt.topologyDecision.patternChanged === true);
+  assert('F47-H2', 'FIX-H: TOPOLOGY_LS_PREFERENCE_IGNORED presente', rpt.unexpectedChanges.some(function(c){ return c.type === 'TOPOLOGY_LS_PREFERENCE_IGNORED'; }));
+  assert('F47-H3', 'FIX-H: verdict WARNING', rpt.verdict === 'WARNING');
+  assert('F47-H4', 'FIX-H: lsTrace emitido (LS sí procesó el candidato)', rpt.topologyDecision.lsTrace.length > 0);
+})();
+
+// FIX-I: Función es pura — sin efectos secundarios en inputs
+(function() {
+  console.log('\nF47-FIX-I — pureza: inputs no mutados por el validador');
+  var prevPlan = _makePlan(4, [_makeDay(0,'A',['Ej1'])]);
+  var genPlan  = _makePlan(4, [_makeDay(0,'A',['Ej1'])]);
+  var clientCtx = { learnedState: _makeActiveLS() };
+  var originalDays = prevPlan.days.length;
+  var originalLabel = prevPlan.days[0].label;
+  _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  assert('F47-I1', 'FIX-I: prevPlan.days.length no mutado', prevPlan.days.length === originalDays);
+  assert('F47-I2', 'FIX-I: prevPlan.days[0].label no mutado', prevPlan.days[0].label === originalLabel);
+  assert('F47-I3', 'FIX-I: clientCtx.learnedState.status no mutado', clientCtx.learnedState.status === 'ACTIVE');
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
