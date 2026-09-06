@@ -56,9 +56,9 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ---
 
-## FASE 3–6 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
+## FASE 3–8 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1377 ✓ 0 ✗** · HEAD `bdc3de9`
+> Suite: **1413 ✓ 0 ✗** · HEAD post-FASE8
 
 ### Arquitectura conceptual
 
@@ -184,6 +184,72 @@ Population Prior                        ← baseline heurístico
 4. Safety siempre gana. Ningún learned state valida lo rechazado por safety/veto/restricción
 
 **Motor Prompt actualizado:** sección "PRIOR RESOLUTION CONTRACT" añadida a `_MOTOR_PROMPT_EMBEDDED` con jerarquía explícita, reglas operativas y checklist de 5 ítems en OUTPUT FINAL.
+
+---
+
+### FASE 7 — Topology Calibrated Learned State (single-source principle)
+
+**Problema resuelto:** el paso 5 de `_scoreTopologyCandidate` aplicaba el learned-state bonus con factor hardcodeado `0.8` directamente sobre el score base, creando riesgo de doble conteo si `_buildCalibrationResult` también lo aplicaba.
+
+**Solución:** paso 5 eliminado del scoring. La calibración es la única fuente.
+
+**Pipeline de scoring por candidato:**
+```
+baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score final
+```
+
+**`_computeTopologyCalibration(key, daysPerWeek, prescCtx)`**
+- Construye population prior (¿DPW del candidato cubre el DPW pedido?)
+- Construye individual prior si existe `previousPlan` (`hasPreviousPlan` → EMERGING / INSUFFICIENT)
+- Llama `_buildCalibrationResult()` → `{ appliedWeight, activePrior, strategy, conflicts[] }`
+- Ajuste efectivo solo si `appliedWeight > 0 && activePrior === true`
+
+**`runTopologyEngine` output extendido:**
+- `learnedStateCalibration` — calibración de la topología ganadora
+- `historicalResponseApplied` — boolean, true si learned state ajustó el score
+
+**`_topologyDecisionToText`:** emite línea `[HISTORICAL_RESPONSE_APPLIED]` cuando applied.
+
+**Tests:** TT1 actualizado (2 campos nuevos), TT14 reescrito, TT15-TT21 añadidos.
+
+---
+
+### FASE 8 — Learned State Persistence Contract
+
+**Principio:** DERIVE FIRST — PERSIST ONLY IF NECESSARY.
+
+**Audit de fuentes (persistence matrix):**
+
+| STATE | SOURCE DATA | DERIVABLE? | COST | IDENTITY RELIABILITY | RECOMENDACIÓN |
+|---|---|---|---|---|---|
+| TOPOLOGY HISTORY | `done_{W}_{D}` + plan activo | ✓ SÍ | BAJO | ALTA (plan define topología) | DERIVE_ONLY |
+| SLOT HISTORY | log entries + plan (motorPattern:role) | ✓ SÍ | BAJO | MODERADA (slot ≠ ejercicio) | DERIVE_ONLY |
+| EXERCISE HISTORY | log entries + plan (dayIndex×exIdx→name) | ✓ SÍ | MODERADO | MODERADA (requiere PID) | DERIVE_ONLY |
+| RECOVERY PATTERNS | `postsession_{W}_{D}` + `ci_sem_{W}` | ✓ SÍ | BAJO | ALTA | DERIVE_ONLY |
+| ADHERENCE PATTERNS | `done_{W}_{D}` | ✓ SÍ | BAJO | ALTA | DERIVE_ONLY |
+| STABILITY RESPONSE | `progrec_{W}_{D}` + loads delta | ✓ SÍ | MODERADO | MODERADA | DERIVE_ONLY |
+
+**Conclusión:** todos los estados actuales son DERIVE_ONLY. No se crea nueva colección Firestore.
+
+**Funciones implementadas (0 nuevas lecturas Firestore):**
+
+- `_passesDataQualityGate(entry)` — gate único: excluye `autoFilled`, `autoClosed`, `identityAmbiguous`, `unresolvedLegacy`, unit mismatch
+- `_computeSourceFingerprint(logs, plans)` — fingerprint determinista (excluye `ts`, UI state, ordering accidental)
+- `_buildDerivedLearnedState({ logs, plans })` → `{ version, topologyHistory, slotHistory, exerciseHistory, recoveryPatterns, adherencePatterns, dataQuality, sourceFingerprint }`
+- `_evaluateLearnedStatePersistenceNeed(state)` → `{ recommendation: 'DERIVE_ONLY', reasons[] }` — función pura
+- `_shouldLearnedStateAlterFingerprint(state)` — true solo si evidenceState ≠ INSUFFICIENT en alguna dimensión
+
+**Thresholds evidenceState:**
+- TOPOLOGY HISTORY: INSUFFICIENT < 2 semanas, EMERGING 2-3, RELIABLE ≥ 4
+- ADHERENCE PATTERNS: INSUFFICIENT < 3 sesiones, EMERGING 3-7, RELIABLE ≥ 8
+- RECOVERY PATTERNS: INSUFFICIENT < 2 postsessions, EMERGING 2-3, RELIABLE ≥ 4
+- EXERCISE HISTORY: INSUFFICIENT < 3 sets reales, EMERGING 3-7, RELIABLE ≥ 8
+
+**Motor Prompt:** sección "LEARNED STATE PERSISTENCE RULE" añadida a `_MOTOR_PROMPT_EMBEDDED` con regla de 5 ítems: DERIVE_ONLY por defecto, persistencia solo si no reconstruible, nunca dos fuentes de verdad.
+
+**Tests:** TTLS1-TTLS24 (TTCAL1-TTCAL12 en suite FASE 7; TTLS en FASE 8)
+
+**Suite: 1413 ✓ 0 ✗**
 
 ---
 
