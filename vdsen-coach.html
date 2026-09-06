@@ -11837,105 +11837,303 @@ El esfuerzo no es negociable.
   window._REPRO_VERDICT = _REPRO_VERDICT;
   window._FINGERPRINT_ENGINE_VERSION = _FINGERPRINT_ENGINE_VERSION;
 
-  // ── Auto-Repair Candidate Pass ────────────────────────────────────────────
-  // ── FASE 4: DECISION TRACE COMPLETENESS ─────────────────────────────────────
+  // ── FASE 4: DECISION TRACE COMPLETENESS (full spec) ─────────────────────────
 
   var _DECISION_TRACE_STAGE = {
-    TARGETS:      'TARGETS',
-    TOPOLOGY:     'TOPOLOGY',
-    CONSTRAINTS:  'CONSTRAINTS',
-    DISTRIBUTION: 'DISTRIBUTION',
-    MAINTENANCE:  'MAINTENANCE',
-    SLOT:         'SLOT',
-    STABILITY:    'STABILITY',
-    COMPOSITION:  'COMPOSITION',
-    QUALITY:      'QUALITY',
-    REPAIR:       'REPAIR',
+    TARGETS: 'TARGETS', TOPOLOGY: 'TOPOLOGY', CONSTRAINTS: 'CONSTRAINTS',
+    DISTRIBUTION: 'DISTRIBUTION', MAINTENANCE: 'MAINTENANCE', SLOT: 'SLOT',
+    STABILITY: 'STABILITY', COMPOSITION: 'COMPOSITION', QUALITY: 'QUALITY', REPAIR: 'REPAIR',
   };
 
+  // Normalized decision types (spec §5)
   var _DECISION_TRACE_TYPE = {
-    PRESCRIPTION:  'PRESCRIPTION',
-    STRUCTURAL:    'STRUCTURAL',
-    CONSTRAINT:    'CONSTRAINT',
-    AUDIT:         'AUDIT',
-    REPAIR_ACTION: 'REPAIR_ACTION',
+    PROFILE_VALUE_RESOLVED: 'PROFILE_VALUE_RESOLVED',
+    PRIORITY_RESOLVED: 'PRIORITY_RESOLVED',
+    VOLUME_TARGET_RESOLVED: 'VOLUME_TARGET_RESOLVED',
+    FREQUENCY_TARGET_RESOLVED: 'FREQUENCY_TARGET_RESOLVED',
+    TOPOLOGY_SELECTED: 'TOPOLOGY_SELECTED',
+    TOPOLOGY_REJECTED: 'TOPOLOGY_REJECTED',
+    DISTRIBUTION_ASSIGNED: 'DISTRIBUTION_ASSIGNED',
+    MAINTENANCE_ROLE_ASSIGNED: 'MAINTENANCE_ROLE_ASSIGNED',
+    EXERCISE_SLOT_ASSIGNED: 'EXERCISE_SLOT_ASSIGNED',
+    EXERCISE_SELECTED: 'EXERCISE_SELECTED',
+    EXERCISE_REPLACED: 'EXERCISE_REPLACED',
+    EXERCISE_RETAINED: 'EXERCISE_RETAINED',
+    SESSION_ORDER_DECISION: 'SESSION_ORDER_DECISION',
+    STABILITY_DECISION: 'STABILITY_DECISION',
+    STRUCTURAL_FATIGUE_FLAG: 'STRUCTURAL_FATIGUE_FLAG',
+    QUALITY_GATE_RESULT: 'QUALITY_GATE_RESULT',
+    REPAIR_CANDIDATE_CREATED: 'REPAIR_CANDIDATE_CREATED',
+    REPAIR_CANDIDATE_REJECTED: 'REPAIR_CANDIDATE_REJECTED',
+    REPAIR_CANDIDATE_SELECTED: 'REPAIR_CANDIDATE_SELECTED',
+    PLAN_CONFIRMATION_REQUIRED: 'PLAN_CONFIRMATION_REQUIRED',
   };
 
-  var _DECISION_TRACE_AUDIT_MODE = {
-    OFF:    'OFF',
-    WARN:   'WARN',
-    STRICT: 'STRICT',
+  // Normalized source enum (spec §3)
+  var _DECISION_TRACE_SOURCE = {
+    CLIENT: 'CLIENT', COACH: 'COACH', PHOTO: 'PHOTO', INBODY: 'INBODY',
+    SYSTEM: 'SYSTEM', HISTORY: 'HISTORY', PLAN: 'PLAN', LOGS: 'LOGS',
+    CHECKIN: 'CHECKIN', GENERATOR: 'GENERATOR', ENGINE: 'ENGINE',
   };
 
+  // Normalized engine enum (spec §4)
+  var _DECISION_TRACE_ENGINE = {
+    PROFILE: 'PROFILE', TARGET: 'TARGET', TOPOLOGY: 'TOPOLOGY',
+    CONSTRAINT: 'CONSTRAINT', DISTRIBUTION: 'DISTRIBUTION', MAINTENANCE: 'MAINTENANCE',
+    STABILITY: 'STABILITY', GENERATION: 'GENERATION', SLOT: 'SLOT',
+    SESSION_COMPOSITION: 'SESSION_COMPOSITION', INTERACTION: 'INTERACTION',
+    STRUCTURAL_FATIGUE: 'STRUCTURAL_FATIGUE', QUALITY_GATE: 'QUALITY_GATE',
+    REPAIR: 'REPAIR', PREVIEW: 'PREVIEW',
+  };
+
+  // Confidence enum (spec §14)
+  var _DECISION_TRACE_CONFIDENCE = { NONE: 'NONE', LOW: 'LOW', MODERATE: 'MODERATE', HIGH: 'HIGH' };
+
+  // Audit mode (spec §18)
+  var _DECISION_TRACE_AUDIT_MODE = { OFF: 'OFF', WARN: 'WARN', STRICT: 'STRICT' };
   var _DECISION_TRACE_AUDIT_MODE_DEFAULT = _DECISION_TRACE_AUDIT_MODE.WARN;
 
-  var _TRACE_STRUCTURAL_STAGES = [
-    _DECISION_TRACE_STAGE.TOPOLOGY,
-    _DECISION_TRACE_STAGE.DISTRIBUTION,
-    _DECISION_TRACE_STAGE.SLOT,
-  ];
+  // Stages that require a structural trace node (spec §19)
+  var _TRACE_STRUCTURAL_STAGES = ['TOPOLOGY', 'DISTRIBUTION', 'SLOT'];
 
+  // Required decision types per stage for completeness audit
+  var _TRACE_REQUIRED_BY_STAGE = {
+    TARGETS:      ['PRIORITY_RESOLVED'],
+    TOPOLOGY:     ['TOPOLOGY_SELECTED'],
+    DISTRIBUTION: ['DISTRIBUTION_ASSIGNED'],
+    SLOT:         ['EXERCISE_SLOT_ASSIGNED'],
+    QUALITY:      ['QUALITY_GATE_RESULT'],
+  };
+
+  // Deterministic ID: "${decisionType}:${subject}" (spec §11)
+  function _traceNodeId(decisionType, subject) {
+    return decisionType + ':' + (subject || 'global');
+  }
+
+  // Factory — required: stage, decisionType, subject, decision (spec §2)
   function _createTraceNode(opts) {
     if (!opts || !opts.stage || !opts.decisionType || !opts.subject || !opts.decision) {
       throw new Error('_createTraceNode: stage, decisionType, subject, decision required');
     }
-    return {
-      id:            opts.id || (opts.stage + '_' + Date.now()),
+    var node = {
+      id:            opts.id || _traceNodeId(opts.decisionType, opts.subject),
       stage:         opts.stage,
       decisionType:  opts.decisionType,
-      subject:       opts.subject,
-      decision:      opts.decision,
-      reasonCodes:   Array.isArray(opts.reasonCodes) ? opts.reasonCodes : [],
-      sources:       Array.isArray(opts.sources) ? opts.sources : [],
-      engine:        opts.engine || 'VDSEN',
+      subject:       String(opts.subject),
+      decision:      String(opts.decision),
+      reasonCodes:   Array.isArray(opts.reasonCodes) ? opts.reasonCodes.slice() : [],
+      sources:       Array.isArray(opts.sources) ? opts.sources.slice() : [],
+      engine:        opts.engine || _DECISION_TRACE_ENGINE.GENERATION,
       engineVersion: opts.engineVersion || VDSEN_ENGINE_VERSION,
       structural:    !!opts.structural,
     };
+    // Optional fields — only include when provided (spec §2)
+    if (opts.previousValue !== undefined) node.previousValue = opts.previousValue;
+    if (opts.confidence) node.confidence = opts.confidence;
+    if (Array.isArray(opts.evidence) && opts.evidence.length) node.evidence = opts.evidence.slice();
+    if (Array.isArray(opts.constraintsApplied) && opts.constraintsApplied.length) node.constraintsApplied = opts.constraintsApplied.slice();
+    if (Array.isArray(opts.alternativesConsidered) && opts.alternativesConsidered.length) node.alternativesConsidered = opts.alternativesConsidered.slice();
+    if (opts.selectedAlternative !== undefined) node.selectedAlternative = opts.selectedAlternative;
+    if (opts.severity) node.severity = opts.severity;
+    return node;
   }
   window._createTraceNode = _createTraceNode;
 
-  // Validates a decisionTrace array. Returns { missingStructural[], status, auditVerdicts[] }.
-  // mode: OFF skips, WARN logs, STRICT elevates to REVIEW_REQUIRED.
-  function _auditDecisionTrace(trace, mode) {
+  // Trace builder (spec §10)
+  function _createDecisionTrace(ctx) {
+    return {
+      traceVersion: 'decision-trace-v1',
+      nodes: [],
+      _ctx: ctx || null,
+    };
+  }
+
+  function _addDecisionNode(trace, node) {
+    if (!trace || !Array.isArray(trace.nodes)) return;
+    trace.nodes.push(node);
+  }
+
+  function _finalizeDecisionTrace(trace) {
+    if (!trace) return [];
+    var nodes = trace.nodes || [];
+    // Dedup by id — last one wins (later engines can override earlier)
+    var seen = {}, result = [];
+    for (var i = 0; i < nodes.length; i++) {
+      seen[nodes[i].id] = i;
+    }
+    Object.keys(seen).sort(function(a, b) { return seen[a] - seen[b]; }).forEach(function(id) {
+      result.push(nodes[seen[id]]);
+    });
+    return result;
+  }
+
+  function _validateDecisionTrace(trace) {
+    var nodes = Array.isArray(trace) ? trace : (trace && trace.nodes) || [];
+    var errors = [], ids = {};
+    nodes.forEach(function(n, i) {
+      var prefix = 'node[' + i + ']';
+      if (!n || typeof n !== 'object') { errors.push(prefix + ': not an object'); return; }
+      ['stage','decisionType','subject','decision','id'].forEach(function(f) {
+        if (!n[f]) errors.push(prefix + '.' + f + ' missing');
+      });
+      if (n.id) {
+        if (ids[n.id]) errors.push('duplicate id: ' + n.id);
+        ids[n.id] = true;
+      }
+    });
+    return { valid: errors.length === 0, errors: errors };
+  }
+  window._createDecisionTrace = _createDecisionTrace;
+  window._addDecisionNode = _addDecisionNode;
+  window._finalizeDecisionTrace = _finalizeDecisionTrace;
+  window._validateDecisionTrace = _validateDecisionTrace;
+
+  // Trace completeness audit (spec §19)
+  function _auditDecisionTraceCompleteness(traceOrNodes, mode) {
     mode = mode || _DECISION_TRACE_AUDIT_MODE_DEFAULT;
-    var result = { missingStructural: [], status: 'PASS', auditVerdicts: [], mode: mode };
+    var nodes = Array.isArray(traceOrNodes) ? traceOrNodes : ((traceOrNodes && traceOrNodes.nodes) || []);
+    var result = {
+      status: 'PASS', missingNodes: [], incompleteNodes: [], duplicateIds: [], auditVerdicts: [],
+      summary: { required: 0, present: 0, complete: 0 }, mode: mode,
+    };
     if (mode === _DECISION_TRACE_AUDIT_MODE.OFF) return result;
-    if (!Array.isArray(trace)) {
+    if (!nodes.length) {
       result.status = mode === _DECISION_TRACE_AUDIT_MODE.STRICT ? 'REVIEW_REQUIRED' : 'WARN';
-      result.auditVerdicts.push({ code: 'NO_TRACE', msg: 'Decision trace is missing or empty' });
+      result.auditVerdicts.push({ code: 'NO_TRACE', msg: 'Decision trace is empty' });
       return result;
     }
-    var stagesSeen = {};
-    trace.forEach(function(n) { if (n && n.stage) stagesSeen[n.stage] = true; });
-    _TRACE_STRUCTURAL_STAGES.forEach(function(stage) {
-      if (!stagesSeen[stage]) result.missingStructural.push(stage);
+    // Required decisions per stage
+    var stageDecisions = {};
+    nodes.forEach(function(n) {
+      if (!n || !n.stage || !n.decisionType) return;
+      if (!stageDecisions[n.stage]) stageDecisions[n.stage] = {};
+      stageDecisions[n.stage][n.decisionType] = true;
     });
-    if (result.missingStructural.length) {
-      result.status = mode === _DECISION_TRACE_AUDIT_MODE.STRICT ? 'REVIEW_REQUIRED' : 'WARN';
-      result.missingStructural.forEach(function(s) {
-        result.auditVerdicts.push({ code: 'MISSING_STRUCTURAL_STAGE', stage: s, msg: 'Missing structural decision stage: ' + s });
+    var totalRequired = 0, totalPresent = 0;
+    Object.keys(_TRACE_REQUIRED_BY_STAGE).forEach(function(stage) {
+      var required = _TRACE_REQUIRED_BY_STAGE[stage];
+      totalRequired += required.length;
+      required.forEach(function(dt) {
+        if (stageDecisions[stage] && stageDecisions[stage][dt]) {
+          totalPresent++;
+        } else {
+          result.missingNodes.push({ stage: stage, decisionType: dt });
+          result.auditVerdicts.push({ code: 'MISSING_DECISION', stage: stage, decisionType: dt, msg: 'Missing: ' + stage + '/' + dt });
+        }
       });
+    });
+    result.summary.required = totalRequired;
+    result.summary.present  = totalPresent;
+    result.summary.complete = totalPresent; // same count — all or nothing per node
+
+    // Structural stages check
+    _TRACE_STRUCTURAL_STAGES.forEach(function(stage) {
+      if (!stageDecisions[stage]) {
+        result.auditVerdicts.push({ code: 'MISSING_STRUCTURAL_STAGE', stage: stage, msg: 'Missing structural stage: ' + stage });
+      }
+    });
+
+    // Duplicate IDs
+    var seen = {};
+    nodes.forEach(function(n) {
+      if (!n || !n.id) return;
+      seen[n.id] = (seen[n.id] || 0) + 1;
+    });
+    Object.keys(seen).forEach(function(id) {
+      if (seen[id] > 1) {
+        result.duplicateIds.push(id);
+        result.auditVerdicts.push({ code: 'DUPLICATE_ID', id: id, count: seen[id] });
+      }
+    });
+
+    // Incomplete nodes (missing required fields)
+    nodes.forEach(function(n, i) {
+      if (!n) return;
+      var missing = ['stage','decisionType','subject','decision'].filter(function(f){ return !n[f]; });
+      if (missing.length) result.incompleteNodes.push({ index: i, id: n.id || '?', missing: missing });
+    });
+
+    var hasCritical = result.missingNodes.length > 0 || result.duplicateIds.length > 0 || result.incompleteNodes.length > 0;
+    if (hasCritical) {
+      result.status = mode === _DECISION_TRACE_AUDIT_MODE.STRICT ? 'REVIEW_REQUIRED' : 'WARN';
     }
     return result;
   }
+  window._auditDecisionTraceCompleteness = _auditDecisionTraceCompleteness;
+
+  // Legacy thin wrapper — delegates to completeness audit (backwards compat)
+  function _auditDecisionTrace(trace, mode) {
+    return _auditDecisionTraceCompleteness(trace, mode);
+  }
   window._auditDecisionTrace = _auditDecisionTrace;
+
+  // Trace diff by node.id (spec §13)
+  function _diffDecisionTrace(prevTrace, currTrace) {
+    var prevNodes = Array.isArray(prevTrace) ? prevTrace : ((prevTrace && prevTrace.nodes) || []);
+    var currNodes = Array.isArray(currTrace) ? currTrace : ((currTrace && currTrace.nodes) || []);
+    var SEMANTIC_FIELDS = ['decision','reasonCodes','sources','engineVersion','structural','selectedAlternative'];
+    var prevById = {}, currById = {};
+    prevNodes.forEach(function(n){ if (n && n.id) prevById[n.id] = n; });
+    currNodes.forEach(function(n){ if (n && n.id) currById[n.id] = n; });
+    var added = [], removed = [], changed = [];
+    Object.keys(currById).forEach(function(id) {
+      if (!prevById[id]) { added.push(currById[id]); return; }
+      var diffs = [];
+      SEMANTIC_FIELDS.forEach(function(f) {
+        var a = JSON.stringify(prevById[id][f]), b = JSON.stringify(currById[id][f]);
+        if (a !== b) diffs.push({ field: f, prev: prevById[id][f], curr: currById[id][f] });
+      });
+      if (diffs.length) changed.push({ id: id, diffs: diffs });
+    });
+    Object.keys(prevById).forEach(function(id) {
+      if (!currById[id]) removed.push(prevById[id]);
+    });
+    return { added: added, removed: removed, changed: changed };
+  }
+  window._diffDecisionTrace = _diffDecisionTrace;
+
+  // Compact export for AI / debugging (spec §23)
+  function _exportDecisionTraceForAI(trace) {
+    var nodes = Array.isArray(trace) ? trace : ((trace && trace.nodes) || []);
+    var lines = ['# Decision Trace — VDSEN'];
+    var byStage = {};
+    nodes.forEach(function(n) {
+      if (!n) return;
+      if (!byStage[n.stage]) byStage[n.stage] = [];
+      byStage[n.stage].push(n);
+    });
+    Object.keys(byStage).forEach(function(stage) {
+      lines.push('\n## ' + stage);
+      byStage[stage].forEach(function(n) {
+        lines.push('- [' + n.decisionType + '] ' + n.subject + ': ' + n.decision);
+        if (n.reasonCodes && n.reasonCodes.length) lines.push('  reasons: ' + n.reasonCodes.join(', '));
+        if (n.confidence) lines.push('  confidence: ' + n.confidence);
+      });
+    });
+    return lines.join('\n');
+  }
+  window._exportDecisionTraceForAI = _exportDecisionTraceForAI;
 
   // Wrap plan generation result into vdsen-generation-response-v1 (runtime only — not persisted to Firestore)
   function _buildGenerationResponse(training, prescCtx, decisionTrace, inputFingerprint, decisionFingerprint, auditMode) {
-    var traceAudit = _auditDecisionTrace(decisionTrace, auditMode);
+    var nodes = Array.isArray(decisionTrace) ? decisionTrace : ((decisionTrace && decisionTrace.nodes) ? _finalizeDecisionTrace(decisionTrace) : []);
+    var traceAudit = _auditDecisionTraceCompleteness(nodes, auditMode);
     return {
-      schema:             'vdsen-generation-response-v1',
-      inputFingerprint:   inputFingerprint  || null,
+      schema: 'vdsen-generation-response-v1',
+      inputFingerprint:    inputFingerprint    || null,
       decisionFingerprint: decisionFingerprint || null,
-      decisionTrace:      Array.isArray(decisionTrace) ? decisionTrace : [],
-      traceAudit:         traceAudit,
-      generatedAt:        Date.now(),
+      decisionTrace:       nodes,
+      traceAudit:          traceAudit,
+      generatedAt:         Date.now(),
     };
   }
   window._buildGenerationResponse = _buildGenerationResponse;
 
-  window._DECISION_TRACE_STAGE = _DECISION_TRACE_STAGE;
-  window._DECISION_TRACE_TYPE  = _DECISION_TRACE_TYPE;
+  window._DECISION_TRACE_STAGE      = _DECISION_TRACE_STAGE;
+  window._DECISION_TRACE_TYPE       = _DECISION_TRACE_TYPE;
+  window._DECISION_TRACE_SOURCE     = _DECISION_TRACE_SOURCE;
+  window._DECISION_TRACE_ENGINE     = _DECISION_TRACE_ENGINE;
+  window._DECISION_TRACE_CONFIDENCE = _DECISION_TRACE_CONFIDENCE;
   window._DECISION_TRACE_AUDIT_MODE = _DECISION_TRACE_AUDIT_MODE;
 
   // Generates candidate fixes from quality audit results.
@@ -13502,92 +13700,204 @@ El esfuerzo no es negociable.
       if (cond) { pass++; } else { fail++; console.error('[DT FAIL] ' + label); }
     }
 
-    // DT1: _createTraceNode — core contract
-    var n1 = _createTraceNode({ id:'T1', stage:'TARGETS', decisionType:'PRESCRIPTION', subject:'s', decision:'d', reasonCodes:['RC1'], sources:['src1'], structural:true });
+    // ── DT1: _createTraceNode — core contract ────────────────────────────────
+    var n1 = _createTraceNode({ id:'T1', stage:'TARGETS', decisionType:_DECISION_TRACE_TYPE.PRIORITY_RESOLVED, subject:'s', decision:'d', reasonCodes:['RC1'], sources:[_DECISION_TRACE_SOURCE.CLIENT], structural:true });
     assert('DT1 id preserved',        n1.id === 'T1');
     assert('DT1 stage',               n1.stage === 'TARGETS');
-    assert('DT1 decisionType',        n1.decisionType === 'PRESCRIPTION');
+    assert('DT1 decisionType',        n1.decisionType === 'PRIORITY_RESOLVED');
     assert('DT1 structural true',     n1.structural === true);
     assert('DT1 reasonCodes array',   Array.isArray(n1.reasonCodes) && n1.reasonCodes[0] === 'RC1');
-    assert('DT1 sources array',       Array.isArray(n1.sources) && n1.sources[0] === 'src1');
+    assert('DT1 sources array',       Array.isArray(n1.sources) && n1.sources[0] === 'CLIENT');
 
-    // DT2: _createTraceNode — missing required throws
-    var threw = false;
-    try { _createTraceNode({ stage:'TARGETS' }); } catch(e) { threw = true; }
-    assert('DT2 missing required fields throws', threw);
+    // ── DT2: _createTraceNode — missing required throws ──────────────────────
+    var threw2 = false;
+    try { _createTraceNode({ stage:'TARGETS' }); } catch(e) { threw2 = true; }
+    assert('DT2 missing required fields throws', threw2);
 
-    // DT3: _createTraceNode — auto-id when not supplied
-    var n3 = _createTraceNode({ stage:'TOPOLOGY', decisionType:'STRUCTURAL', subject:'s', decision:'d' });
-    assert('DT3 auto id includes stage', n3.id.indexOf('TOPOLOGY') >= 0);
+    // ── DT3: _createTraceNode — deterministic auto-id (decisionType:subject) ─
+    var n3 = _createTraceNode({ stage:'TOPOLOGY', decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED, subject:'global', decision:'d' });
+    assert('DT3 auto-id is TOPOLOGY_SELECTED:global', n3.id === 'TOPOLOGY_SELECTED:global');
 
-    // DT4: _createTraceNode — defaults
-    var n4 = _createTraceNode({ stage:'QUALITY', decisionType:'AUDIT', subject:'s', decision:'d' });
+    // ── DT4: _createTraceNode — defaults ─────────────────────────────────────
+    var n4 = _createTraceNode({ stage:'QUALITY', decisionType:_DECISION_TRACE_TYPE.QUALITY_GATE_RESULT, subject:'gate', decision:'PASS' });
     assert('DT4 structural defaults false', n4.structural === false);
     assert('DT4 reasonCodes defaults []',   n4.reasonCodes.length === 0);
-    assert('DT4 engine defaults VDSEN',     n4.engine === 'VDSEN');
+    assert('DT4 engine defaults GENERATION', n4.engine === _DECISION_TRACE_ENGINE.GENERATION);
+    assert('DT4 no evidence field',         n4.evidence === undefined);
 
-    // DT5: _auditDecisionTrace — complete trace passes
+    // ── DT5: SOURCE enum — all 11 values present ─────────────────────────────
+    var srcKeys = ['CLIENT','COACH','PHOTO','INBODY','SYSTEM','HISTORY','PLAN','LOGS','CHECKIN','GENERATOR','ENGINE'];
+    srcKeys.forEach(function(k) { assert('DT5 SOURCE.' + k, _DECISION_TRACE_SOURCE[k] === k); });
+
+    // ── DT6: ENGINE enum — all 15 values present ─────────────────────────────
+    var engKeys = ['PROFILE','TARGET','TOPOLOGY','CONSTRAINT','DISTRIBUTION','MAINTENANCE','STABILITY','GENERATION','SLOT','SESSION_COMPOSITION','INTERACTION','STRUCTURAL_FATIGUE','QUALITY_GATE','REPAIR','PREVIEW'];
+    engKeys.forEach(function(k) { assert('DT6 ENGINE.' + k, _DECISION_TRACE_ENGINE[k] === k); });
+
+    // ── DT7: CONFIDENCE enum — all 4 values ──────────────────────────────────
+    assert('DT7 CONFIDENCE.NONE',     _DECISION_TRACE_CONFIDENCE.NONE     === 'NONE');
+    assert('DT7 CONFIDENCE.LOW',      _DECISION_TRACE_CONFIDENCE.LOW      === 'LOW');
+    assert('DT7 CONFIDENCE.MODERATE', _DECISION_TRACE_CONFIDENCE.MODERATE === 'MODERATE');
+    assert('DT7 CONFIDENCE.HIGH',     _DECISION_TRACE_CONFIDENCE.HIGH     === 'HIGH');
+
+    // ── DT8: DECISION_TYPE enum — all 20 types ───────────────────────────────
+    var dtKeys = ['PROFILE_VALUE_RESOLVED','PRIORITY_RESOLVED','VOLUME_TARGET_RESOLVED','FREQUENCY_TARGET_RESOLVED','TOPOLOGY_SELECTED','TOPOLOGY_REJECTED','DISTRIBUTION_ASSIGNED','MAINTENANCE_ROLE_ASSIGNED','EXERCISE_SLOT_ASSIGNED','EXERCISE_SELECTED','EXERCISE_REPLACED','EXERCISE_RETAINED','SESSION_ORDER_DECISION','STABILITY_DECISION','STRUCTURAL_FATIGUE_FLAG','QUALITY_GATE_RESULT','REPAIR_CANDIDATE_CREATED','REPAIR_CANDIDATE_REJECTED','REPAIR_CANDIDATE_SELECTED','PLAN_CONFIRMATION_REQUIRED'];
+    assert('DT8 TYPE has 20 entries', Object.keys(_DECISION_TRACE_TYPE).length === 20);
+    dtKeys.forEach(function(k) { assert('DT8 TYPE.' + k, _DECISION_TRACE_TYPE[k] === k); });
+
+    // ── DT9: builder — _createDecisionTrace / _addDecisionNode / _finalizeDecisionTrace ──
+    var dt9trace = _createDecisionTrace({ clientId: 'test' });
+    assert('DT9 trace has traceVersion', dt9trace.traceVersion === 'decision-trace-v1');
+    assert('DT9 trace has empty nodes',  Array.isArray(dt9trace.nodes) && dt9trace.nodes.length === 0);
+    _addDecisionNode(dt9trace, _createTraceNode({ stage:'TARGETS', decisionType:_DECISION_TRACE_TYPE.PRIORITY_RESOLVED, subject:'quad', decision:'HIGH' }));
+    _addDecisionNode(dt9trace, _createTraceNode({ stage:'TOPOLOGY', decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED, subject:'global', decision:'PPL' }));
+    assert('DT9 two nodes added', dt9trace.nodes.length === 2);
+    var dt9fin = _finalizeDecisionTrace(dt9trace);
+    assert('DT9 finalized is array', Array.isArray(dt9fin) && dt9fin.length === 2);
+
+    // ── DT10: _finalizeDecisionTrace — dedup by id, last wins ────────────────
+    var dt10trace = _createDecisionTrace(null);
+    _addDecisionNode(dt10trace, _createTraceNode({ id:'same-id', stage:'TOPOLOGY', decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED, subject:'global', decision:'PPL v1' }));
+    _addDecisionNode(dt10trace, _createTraceNode({ id:'same-id', stage:'TOPOLOGY', decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED, subject:'global', decision:'PPL v2' }));
+    var dt10fin = _finalizeDecisionTrace(dt10trace);
+    assert('DT10 dedup: 2→1 node',       dt10fin.length === 1);
+    assert('DT10 last value wins',        dt10fin[0].decision === 'PPL v2');
+
+    // ── DT11: _validateDecisionTrace — valid trace ───────────────────────────
+    var dt11nodes = [
+      _createTraceNode({ stage:'TARGETS', decisionType:_DECISION_TRACE_TYPE.PRIORITY_RESOLVED, subject:'global', decision:'d' }),
+      _createTraceNode({ stage:'TOPOLOGY', decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED, subject:'global', decision:'PPL' }),
+    ];
+    var dt11v = _validateDecisionTrace(dt11nodes);
+    assert('DT11 valid trace → valid=true',    dt11v.valid);
+    assert('DT11 valid trace → no errors',     dt11v.errors.length === 0);
+
+    // ── DT12: _validateDecisionTrace — duplicate ids ─────────────────────────
+    var dt12dupNode = _createTraceNode({ stage:'TOPOLOGY', decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED, subject:'global', decision:'X' });
+    var dt12v = _validateDecisionTrace([dt12dupNode, dt12dupNode]);
+    assert('DT12 duplicate id → invalid',     !dt12v.valid);
+    assert('DT12 duplicate id error present', dt12v.errors.some(function(e){ return e.indexOf('duplicate') >= 0; }));
+
+    // ── DT13: _auditDecisionTraceCompleteness — full required types → PASS ───
     var fullTrace = [
-      _createTraceNode({ id:'t1', stage:'TOPOLOGY',     decisionType:'STRUCTURAL',   subject:'s', decision:'d', structural:true }),
-      _createTraceNode({ id:'t2', stage:'DISTRIBUTION', decisionType:'STRUCTURAL',   subject:'s', decision:'d', structural:true }),
-      _createTraceNode({ id:'t3', stage:'SLOT',         decisionType:'AUDIT',        subject:'s', decision:'d', structural:true }),
-      _createTraceNode({ id:'t4', stage:'QUALITY',      decisionType:'AUDIT',        subject:'s', decision:'d', structural:false }),
+      _createTraceNode({ stage:'TARGETS',      decisionType:_DECISION_TRACE_TYPE.PRIORITY_RESOLVED,    subject:'global', decision:'d' }),
+      _createTraceNode({ stage:'TOPOLOGY',     decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED,    subject:'global', decision:'PPL', structural:true }),
+      _createTraceNode({ stage:'DISTRIBUTION', decisionType:_DECISION_TRACE_TYPE.DISTRIBUTION_ASSIGNED,subject:'global', decision:'d', structural:true }),
+      _createTraceNode({ stage:'SLOT',         decisionType:_DECISION_TRACE_TYPE.EXERCISE_SLOT_ASSIGNED,subject:'global', decision:'d', structural:true }),
+      _createTraceNode({ stage:'QUALITY',      decisionType:_DECISION_TRACE_TYPE.QUALITY_GATE_RESULT,  subject:'gate',   decision:'PASS' }),
     ];
-    var dt5 = _auditDecisionTrace(fullTrace, _DECISION_TRACE_AUDIT_MODE.WARN);
-    assert('DT5 full trace → PASS',               dt5.status === 'PASS');
-    assert('DT5 no missing structural',           dt5.missingStructural.length === 0);
+    var dt13 = _auditDecisionTraceCompleteness(fullTrace, _DECISION_TRACE_AUDIT_MODE.WARN);
+    assert('DT13 full required types → PASS',  dt13.status === 'PASS');
+    assert('DT13 no missing nodes',            dt13.missingNodes.length === 0);
+    assert('DT13 summary.required = 5',        dt13.summary.required === 5);
+    assert('DT13 summary.present = 5',         dt13.summary.present === 5);
 
-    // DT6: _auditDecisionTrace — missing TOPOLOGY → WARN
+    // ── DT14: _auditDecisionTraceCompleteness — missing PRIORITY_RESOLVED → WARN ─
     var partialTrace = [
-      _createTraceNode({ id:'p1', stage:'DISTRIBUTION', decisionType:'STRUCTURAL', subject:'s', decision:'d', structural:true }),
-      _createTraceNode({ id:'p2', stage:'SLOT',         decisionType:'AUDIT',      subject:'s', decision:'d', structural:true }),
+      _createTraceNode({ stage:'TOPOLOGY',     decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED,    subject:'global', decision:'d', structural:true }),
+      _createTraceNode({ stage:'DISTRIBUTION', decisionType:_DECISION_TRACE_TYPE.DISTRIBUTION_ASSIGNED,subject:'global', decision:'d', structural:true }),
+      _createTraceNode({ stage:'SLOT',         decisionType:_DECISION_TRACE_TYPE.EXERCISE_SLOT_ASSIGNED,subject:'global', decision:'d', structural:true }),
+      _createTraceNode({ stage:'QUALITY',      decisionType:_DECISION_TRACE_TYPE.QUALITY_GATE_RESULT,  subject:'gate',   decision:'PASS' }),
     ];
-    var dt6 = _auditDecisionTrace(partialTrace, _DECISION_TRACE_AUDIT_MODE.WARN);
-    assert('DT6 missing TOPOLOGY → WARN',         dt6.status === 'WARN');
-    assert('DT6 missingStructural includes TOPOLOGY', dt6.missingStructural.indexOf('TOPOLOGY') >= 0);
+    var dt14 = _auditDecisionTraceCompleteness(partialTrace, _DECISION_TRACE_AUDIT_MODE.WARN);
+    assert('DT14 missing PRIORITY_RESOLVED → WARN',    dt14.status === 'WARN');
+    assert('DT14 missingNodes has TARGETS entry',      dt14.missingNodes.some(function(n){ return n.stage === 'TARGETS' && n.decisionType === 'PRIORITY_RESOLVED'; }));
 
-    // DT7: _auditDecisionTrace — missing structural → STRICT → REVIEW_REQUIRED
-    var dt7 = _auditDecisionTrace(partialTrace, _DECISION_TRACE_AUDIT_MODE.STRICT);
-    assert('DT7 STRICT → REVIEW_REQUIRED',        dt7.status === 'REVIEW_REQUIRED');
+    // ── DT15: _auditDecisionTraceCompleteness — STRICT mode → REVIEW_REQUIRED ─
+    var dt15 = _auditDecisionTraceCompleteness(partialTrace, _DECISION_TRACE_AUDIT_MODE.STRICT);
+    assert('DT15 STRICT missing → REVIEW_REQUIRED', dt15.status === 'REVIEW_REQUIRED');
 
-    // DT8: _auditDecisionTrace — OFF mode → always PASS (no check)
-    var dt8 = _auditDecisionTrace(null, _DECISION_TRACE_AUDIT_MODE.OFF);
-    assert('DT8 OFF mode → PASS',                 dt8.status === 'PASS');
+    // ── DT16: _auditDecisionTraceCompleteness — OFF → always PASS ────────────
+    var dt16 = _auditDecisionTraceCompleteness(null, _DECISION_TRACE_AUDIT_MODE.OFF);
+    assert('DT16 OFF mode → PASS', dt16.status === 'PASS');
 
-    // DT9: _auditDecisionTrace — null/empty trace → WARN
-    var dt9 = _auditDecisionTrace(null, _DECISION_TRACE_AUDIT_MODE.WARN);
-    assert('DT9 null trace → WARN',               dt9.status === 'WARN');
-    var dt9b = _auditDecisionTrace([], _DECISION_TRACE_AUDIT_MODE.WARN);
-    assert('DT9b empty trace → WARN (no structural nodes)', dt9b.missingStructural.length > 0);
+    // ── DT17: _auditDecisionTraceCompleteness — empty trace → WARN ───────────
+    var dt17 = _auditDecisionTraceCompleteness([], _DECISION_TRACE_AUDIT_MODE.WARN);
+    assert('DT17 empty trace → WARN',         dt17.status === 'WARN');
+    assert('DT17 NO_TRACE verdict present',   dt17.auditVerdicts.some(function(v){ return v.code === 'NO_TRACE'; }));
 
-    // DT10: _buildGenerationResponse — schema and trace
-    var gr = _buildGenerationResponse(null, null, fullTrace, 'fp_in', 'fp_dec', _DECISION_TRACE_AUDIT_MODE.WARN);
-    assert('DT10 schema',                         gr.schema === 'vdsen-generation-response-v1');
-    assert('DT10 decisionTrace is array',         Array.isArray(gr.decisionTrace) && gr.decisionTrace.length === 4);
-    assert('DT10 inputFingerprint',               gr.inputFingerprint === 'fp_in');
-    assert('DT10 decisionFingerprint',            gr.decisionFingerprint === 'fp_dec');
-    assert('DT10 traceAudit present',             gr.traceAudit && typeof gr.traceAudit.status === 'string');
-    assert('DT10 generatedAt set',                typeof gr.generatedAt === 'number' && gr.generatedAt > 0);
+    // ── DT18: _auditDecisionTraceCompleteness — summary counts ───────────────
+    var dt18 = _auditDecisionTraceCompleteness(fullTrace, _DECISION_TRACE_AUDIT_MODE.WARN);
+    assert('DT18 summary.required 5',  dt18.summary.required === 5);
+    assert('DT18 summary.present 5',   dt18.summary.present === 5);
+    assert('DT18 summary.complete 5',  dt18.summary.complete === 5);
 
-    // DT11: trace immutability — _buildGenerationResponse doesn't mutate original trace
-    var traceOrig = fullTrace.slice();
+    // ── DT19: _auditDecisionTraceCompleteness — duplicate id detection ────────
+    var dupTrace = fullTrace.concat([
+      _createTraceNode({ id:'TOPOLOGY_SELECTED:global', stage:'TOPOLOGY', decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED, subject:'global', decision:'dup' }),
+    ]);
+    var dt19 = _auditDecisionTraceCompleteness(dupTrace, _DECISION_TRACE_AUDIT_MODE.WARN);
+    assert('DT19 duplicate id detected',       dt19.duplicateIds.indexOf('TOPOLOGY_SELECTED:global') >= 0);
+
+    // ── DT20: _diffDecisionTrace — added/removed/changed ─────────────────────
+    var prevTrace = [
+      _createTraceNode({ stage:'TARGETS', decisionType:_DECISION_TRACE_TYPE.PRIORITY_RESOLVED, subject:'quad', decision:'HIGH' }),
+      _createTraceNode({ stage:'TOPOLOGY', decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED, subject:'global', decision:'PPL' }),
+    ];
+    var currTrace = [
+      _createTraceNode({ stage:'TARGETS', decisionType:_DECISION_TRACE_TYPE.PRIORITY_RESOLVED, subject:'quad', decision:'MODERATE' }),
+      _createTraceNode({ stage:'DISTRIBUTION', decisionType:_DECISION_TRACE_TYPE.DISTRIBUTION_ASSIGNED, subject:'global', decision:'3d' }),
+    ];
+    var diff20 = _diffDecisionTrace(prevTrace, currTrace);
+    assert('DT20 diff.added has DISTRIBUTION_ASSIGNED', diff20.added.some(function(n){ return n.decisionType === 'DISTRIBUTION_ASSIGNED'; }));
+    assert('DT20 diff.removed has TOPOLOGY_SELECTED',   diff20.removed.some(function(n){ return n.decisionType === 'TOPOLOGY_SELECTED'; }));
+    assert('DT20 diff.changed has PRIORITY_RESOLVED',   diff20.changed.some(function(c){ return c.id === 'PRIORITY_RESOLVED:quad'; }));
+
+    // ── DT21: _exportDecisionTraceForAI — produces markdown ──────────────────
+    var export21 = _exportDecisionTraceForAI(fullTrace);
+    assert('DT21 starts with # Decision Trace', export21.indexOf('# Decision Trace') >= 0);
+    assert('DT21 includes TARGETS section',     export21.indexOf('## TARGETS') >= 0);
+    assert('DT21 includes PRIORITY_RESOLVED',   export21.indexOf('PRIORITY_RESOLVED') >= 0);
+
+    // ── DT22: _buildGenerationResponse — schema and trace ────────────────────
+    var gr22 = _buildGenerationResponse(null, null, fullTrace, 'fp_in', 'fp_dec', _DECISION_TRACE_AUDIT_MODE.WARN);
+    assert('DT22 schema',               gr22.schema === 'vdsen-generation-response-v1');
+    assert('DT22 decisionTrace array',  Array.isArray(gr22.decisionTrace) && gr22.decisionTrace.length === 5);
+    assert('DT22 inputFingerprint',     gr22.inputFingerprint === 'fp_in');
+    assert('DT22 decisionFingerprint',  gr22.decisionFingerprint === 'fp_dec');
+    assert('DT22 traceAudit present',   gr22.traceAudit && typeof gr22.traceAudit.status === 'string');
+    assert('DT22 generatedAt set',      typeof gr22.generatedAt === 'number' && gr22.generatedAt > 0);
+
+    // ── DT23: trace immutability — _buildGenerationResponse doesn't mutate ───
+    var origLen = fullTrace.length;
     _buildGenerationResponse(null, null, fullTrace, null, null, _DECISION_TRACE_AUDIT_MODE.WARN);
-    assert('DT11 original trace not mutated',     fullTrace.length === traceOrig.length);
+    assert('DT23 original trace not mutated', fullTrace.length === origLen);
 
-    // DT12: XSS safety — trace node subject/decision stored as raw data, not rendered
-    var xssNode = _createTraceNode({ stage:'TARGETS', decisionType:'PRESCRIPTION', subject:'<script>alert(1)<\/script>', decision:'<img src=x onerror=alert(1)>', structural:false });
-    assert('DT12 XSS subject stored as-is (data)',   xssNode.subject === '<script>alert(1)<\/script>');
-    assert('DT12 XSS decision stored as-is (data)',  xssNode.decision === '<img src=x onerror=alert(1)>');
-    // (rendering via _escH is the responsibility of _showPlanPreviewModal)
+    // ── DT24: XSS safety — subject/decision stored as raw data ───────────────
+    var xssNode = _createTraceNode({ stage:'TARGETS', decisionType:_DECISION_TRACE_TYPE.PRIORITY_RESOLVED, subject:'<script>alert(1)<\/script>', decision:'<img src=x onerror=alert(1)>', structural:false });
+    assert('DT24 XSS subject stored as-is', xssNode.subject === '<script>alert(1)<\/script>');
+    assert('DT24 XSS decision stored as-is', xssNode.decision === '<img src=x onerror=alert(1)>');
 
-    // DT13: _DECISION_TRACE_STAGE constants present
-    var stages = ['TARGETS','TOPOLOGY','CONSTRAINTS','DISTRIBUTION','MAINTENANCE','SLOT','STABILITY','COMPOSITION','QUALITY','REPAIR'];
-    stages.forEach(function(s) { assert('DT13 stage ' + s, _DECISION_TRACE_STAGE[s] === s); });
+    // ── DT25: STABILITY_DECISION — structural=false (MOVE type) ──────────────
+    var stabMove = _createTraceNode({ stage:'STABILITY', decisionType:_DECISION_TRACE_TYPE.STABILITY_DECISION, subject:'biceps', decision:'MOVE: D2→D3', structural:false });
+    assert('DT25 STABILITY_DECISION structural=false', stabMove.structural === false);
+    assert('DT25 STABILITY_DECISION deterministic id', stabMove.id === 'STABILITY_DECISION:biceps');
 
-    // DT14: _DECISION_TRACE_AUDIT_MODE constants
-    assert('DT14 OFF',    _DECISION_TRACE_AUDIT_MODE.OFF    === 'OFF');
-    assert('DT14 WARN',   _DECISION_TRACE_AUDIT_MODE.WARN   === 'WARN');
-    assert('DT14 STRICT', _DECISION_TRACE_AUDIT_MODE.STRICT === 'STRICT');
+    // ── DT26: STABILITY_DECISION — structural=true (slot change) ─────────────
+    var stabSlot = _createTraceNode({ stage:'STABILITY', decisionType:_DECISION_TRACE_TYPE.STABILITY_DECISION, subject:'quadriceps', decision:'STRUCTURAL_SLOT_CHANGE: pos 2→5', structural:true });
+    assert('DT26 STABILITY_DECISION structural=true',  stabSlot.structural === true);
+
+    // ── DT27: QUALITY_GATE_RESULT node ───────────────────────────────────────
+    var qgNode = _createTraceNode({ stage:'QUALITY', decisionType:_DECISION_TRACE_TYPE.QUALITY_GATE_RESULT, subject:'outputQualityGate', decision:'PASS', confidence:_DECISION_TRACE_CONFIDENCE.HIGH });
+    assert('DT27 QUALITY_GATE_RESULT stage',      qgNode.stage === 'QUALITY');
+    assert('DT27 QUALITY_GATE_RESULT decisionType', qgNode.decisionType === 'QUALITY_GATE_RESULT');
+    assert('DT27 confidence HIGH',                 qgNode.confidence === 'HIGH');
+
+    // ── DT28: REPAIR nodes ────────────────────────────────────────────────────
+    var repCreated  = _createTraceNode({ stage:'REPAIR', decisionType:_DECISION_TRACE_TYPE.REPAIR_CANDIDATE_CREATED,  subject:'slot_1', decision:'CREATED' });
+    var repRejected = _createTraceNode({ stage:'REPAIR', decisionType:_DECISION_TRACE_TYPE.REPAIR_CANDIDATE_REJECTED, subject:'slot_1', decision:'REJECTED:cost_too_high' });
+    var repSelected = _createTraceNode({ stage:'REPAIR', decisionType:_DECISION_TRACE_TYPE.REPAIR_CANDIDATE_SELECTED, subject:'slot_1', decision:'SELECTED' });
+    assert('DT28 REPAIR_CANDIDATE_CREATED id',   repCreated.id  === 'REPAIR_CANDIDATE_CREATED:slot_1');
+    assert('DT28 REPAIR_CANDIDATE_REJECTED id',  repRejected.id === 'REPAIR_CANDIDATE_REJECTED:slot_1');
+    assert('DT28 REPAIR_CANDIDATE_SELECTED id',  repSelected.id === 'REPAIR_CANDIDATE_SELECTED:slot_1');
+
+    // ── DT29: _DECISION_TRACE_STAGE — all 10 stages ──────────────────────────
+    var allStages = ['TARGETS','TOPOLOGY','CONSTRAINTS','DISTRIBUTION','MAINTENANCE','SLOT','STABILITY','COMPOSITION','QUALITY','REPAIR'];
+    allStages.forEach(function(s) { assert('DT29 stage ' + s, _DECISION_TRACE_STAGE[s] === s); });
+
+    // ── DT30: _DECISION_TRACE_AUDIT_MODE constants ───────────────────────────
+    assert('DT30 OFF',    _DECISION_TRACE_AUDIT_MODE.OFF    === 'OFF');
+    assert('DT30 WARN',   _DECISION_TRACE_AUDIT_MODE.WARN   === 'WARN');
+    assert('DT30 STRICT', _DECISION_TRACE_AUDIT_MODE.STRICT === 'STRICT');
 
     console.log('[DECISION TRACE TESTS] ' + pass + ' passed, ' + fail + ' failed');
     return { pass: pass, fail: fail };
@@ -13627,55 +13937,65 @@ El esfuerzo no es negociable.
       const _decisionTrace4 = [];
       const _traceNode = function(opts) { try { _decisionTrace4.push(_createTraceNode(opts)); } catch(e) { console.warn('[VDSEN Trace] failed:', e.message); } };
 
-      // Trace TARGETS
+      // Trace TARGETS — PRIORITY_RESOLVED (required for TARGETS stage)
       (function() {
         var mt = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
-        var highMuscles   = Object.keys(mt).filter(function(m){ return mt[m].priority === 'high'; });
-        var maintMuscles  = Object.keys(mt).filter(function(m){ return mt[m].goal === 'maintenance'; });
+        var highMuscles  = Object.keys(mt).filter(function(m){ return mt[m].priority === 'high'; });
+        var maintMuscles = Object.keys(mt).filter(function(m){ return mt[m].goal === 'maintenance'; });
         var rcodes = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.reasonCodes) || [];
+        var hasHistory = !!(prescCtx && prescCtx.longitudinalHistory && prescCtx.longitudinalHistory.weeksOfData > 0);
         _traceNode({
-          id: 'TARGETS_01', stage: _DECISION_TRACE_STAGE.TARGETS, decisionType: _DECISION_TRACE_TYPE.PRESCRIPTION,
+          stage: _DECISION_TRACE_STAGE.TARGETS, decisionType: _DECISION_TRACE_TYPE.PRIORITY_RESOLVED,
           subject: 'prescriptionTargets',
           decision: (highMuscles.length ? 'Prioridad alta: ' + highMuscles.join(', ') : 'Sin músculos prioritarios') +
                     (maintMuscles.length ? ' · Mantenimiento: ' + maintMuscles.join(', ') : ''),
           reasonCodes: rcodes,
-          sources: ['buildPrescriptionContext', 'longitudinalHistory'],
-          engineVersion: VDSEN_ENGINE_VERSION,
+          sources: [_DECISION_TRACE_SOURCE.CLIENT, _DECISION_TRACE_SOURCE.LOGS],
+          engine: _DECISION_TRACE_ENGINE.TARGET,
+          confidence: highMuscles.length && hasHistory ? _DECISION_TRACE_CONFIDENCE.HIGH
+                    : highMuscles.length ? _DECISION_TRACE_CONFIDENCE.MODERATE
+                    : _DECISION_TRACE_CONFIDENCE.LOW,
           structural: false,
         });
       })();
 
-      // Trace CONSTRAINTS
+      // Trace CONSTRAINTS — PROFILE_VALUE_RESOLVED (restrictions derived from client profile)
       (function() {
         var restr = (prescCtx && prescCtx.restrictions) || {};
         var ev = (restr.ejerciciosEvitar || []).slice();
         var mp = (restr.motorPatternsAvoid || []).slice();
+        var hasConstraints = ev.length > 0 || mp.length > 0;
         _traceNode({
-          id: 'CONSTRAINTS_01', stage: _DECISION_TRACE_STAGE.CONSTRAINTS, decisionType: _DECISION_TRACE_TYPE.CONSTRAINT,
+          stage: _DECISION_TRACE_STAGE.CONSTRAINTS, decisionType: _DECISION_TRACE_TYPE.PROFILE_VALUE_RESOLVED,
           subject: 'restrictions',
-          decision: (ev.length || mp.length)
+          decision: hasConstraints
             ? 'Evitar ejercicios: [' + ev.join(', ') + ']' + (mp.length ? ' · Patrones: [' + mp.join(', ') + ']' : '')
             : 'Sin restricciones de ejercicios o patrones',
-          reasonCodes: [], sources: ['buildPrescriptionContext', 'clientFicha'],
-          engineVersion: VDSEN_ENGINE_VERSION, structural: true,
+          reasonCodes: hasConstraints ? ['ARTICULATION_RESTRICTION'] : [],
+          sources: [_DECISION_TRACE_SOURCE.CLIENT, _DECISION_TRACE_SOURCE.COACH],
+          engine: _DECISION_TRACE_ENGINE.CONSTRAINT,
+          confidence: hasConstraints ? _DECISION_TRACE_CONFIDENCE.HIGH : _DECISION_TRACE_CONFIDENCE.NONE,
+          structural: true,
         });
       })();
 
-      // Trace STABILITY
+      // Trace STABILITY — STABILITY_DECISION
       (function() {
         var hasPrev = !!(prescCtx && prescCtx.hasPreviousPlan);
         var deload  = !!(prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.deloadCandidate);
         var rcodes  = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.reasonCodes) || [];
         var stalled = rcodes.indexOf('STALLED_EXERCISES') >= 0 || rcodes.indexOf('MAJORITY_STALLED') >= 0;
         _traceNode({
-          id: 'STABILITY_01', stage: _DECISION_TRACE_STAGE.STABILITY, decisionType: _DECISION_TRACE_TYPE.STRUCTURAL,
+          stage: _DECISION_TRACE_STAGE.STABILITY, decisionType: _DECISION_TRACE_TYPE.STABILITY_DECISION,
           subject: 'planStability',
           decision: hasPrev
             ? (deload ? 'Plan anterior detectado · Candidato a deload' : stalled ? 'Plan anterior detectado · Ejercicios estancados' : 'Plan anterior detectado · Continuidad')
             : 'Primera prescripción — sin plan anterior',
           reasonCodes: rcodes.filter(function(r){ return r.indexOf('STALL') >= 0 || r.indexOf('DELOAD') >= 0 || r.indexOf('WELLNESS') >= 0; }),
-          sources: ['buildPrescriptionContext', 'logs'],
-          engineVersion: VDSEN_ENGINE_VERSION, structural: false,
+          sources: [_DECISION_TRACE_SOURCE.LOGS, _DECISION_TRACE_SOURCE.PLAN],
+          engine: _DECISION_TRACE_ENGINE.STABILITY,
+          confidence: hasPrev ? _DECISION_TRACE_CONFIDENCE.HIGH : _DECISION_TRACE_CONFIDENCE.MODERATE,
+          structural: false,
         });
       })();
 
@@ -13776,95 +14096,112 @@ El esfuerzo no es negociable.
 
       // ── FASE 4: Post-generation trace nodes ──────────────────────────────
       (function() {
-        // TOPOLOGY
+        // TOPOLOGY — TOPOLOGY_SELECTED (required for TOPOLOGY stage)
         var dpw = training ? (training.daysPerWeek || (training.days || []).length) : 0;
         var topoKey = dpw <= 2 ? 'FULL_BODY' : dpw === 3 ? 'PUSH_PULL_LEGS' : dpw === 4 ? 'UPPER_LOWER' : dpw === 5 ? 'BROSPLIT_5' : 'HIGH_FREQ';
         var topoIssues = (_gateTopoAudit2 && _gateTopoAudit2.issues) ? _gateTopoAudit2.issues.length : 0;
         _traceNode({
-          id: 'TOPOLOGY_01', stage: _DECISION_TRACE_STAGE.TOPOLOGY, decisionType: _DECISION_TRACE_TYPE.STRUCTURAL,
-          subject: 'topologyFeasibility',
+          stage: _DECISION_TRACE_STAGE.TOPOLOGY, decisionType: _DECISION_TRACE_TYPE.TOPOLOGY_SELECTED,
+          subject: 'global',
           decision: topoKey + ' · ' + dpw + ' días/sem · ' + (training ? (training.weeks || '?') : '?') + ' semanas' + (topoIssues ? ' · ' + topoIssues + ' issue(s)' : ' · sin issues'),
           reasonCodes: (_gateTopoAudit2 && _gateTopoAudit2.issues || []).map(function(i){ return typeof i === 'string' ? i.split(':')[0] : (i.code || 'TOPOLOGY_ISSUE'); }),
-          sources: ['topologyFeasibilityAudit'],
-          engineVersion: _TOPOLOGY_ENGINE_VERSION, structural: true,
+          sources: [_DECISION_TRACE_SOURCE.ENGINE],
+          engine: _DECISION_TRACE_ENGINE.TOPOLOGY,
+          engineVersion: _TOPOLOGY_ENGINE_VERSION,
+          confidence: topoIssues === 0 ? _DECISION_TRACE_CONFIDENCE.HIGH : _DECISION_TRACE_CONFIDENCE.MODERATE,
+          structural: true,
         });
       })();
       (function() {
-        // DISTRIBUTION — derived from training days
+        // DISTRIBUTION — DISTRIBUTION_ASSIGNED (required for DISTRIBUTION stage)
         var days = (training && Array.isArray(training.days)) ? training.days : [];
         var dist = days.map(function(d){ return (d.label || 'D'+(d.dayIndex+1)) + ':' + (d.exercises||[]).length + 'ej'; }).join(' · ');
         _traceNode({
-          id: 'DISTRIBUTION_01', stage: _DECISION_TRACE_STAGE.DISTRIBUTION, decisionType: _DECISION_TRACE_TYPE.STRUCTURAL,
-          subject: 'exerciseDistribution',
+          stage: _DECISION_TRACE_STAGE.DISTRIBUTION, decisionType: _DECISION_TRACE_TYPE.DISTRIBUTION_ASSIGNED,
+          subject: 'global',
           decision: dist || 'Sin días en el plan',
-          reasonCodes: [], sources: ['classifyBlocks', 'validatePlan'],
-          engineVersion: VDSEN_ENGINE_VERSION, structural: true,
+          reasonCodes: [],
+          sources: [_DECISION_TRACE_SOURCE.GENERATOR, _DECISION_TRACE_SOURCE.ENGINE],
+          engine: _DECISION_TRACE_ENGINE.DISTRIBUTION,
+          confidence: days.length > 0 ? _DECISION_TRACE_CONFIDENCE.HIGH : _DECISION_TRACE_CONFIDENCE.NONE,
+          structural: true,
         });
       })();
       (function() {
-        // MAINTENANCE — from prescriptionTargets
+        // MAINTENANCE — MAINTENANCE_ROLE_ASSIGNED
         var mt = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
         var maintMuscles = Object.keys(mt).filter(function(m){ return mt[m].goal === 'maintenance'; });
         _traceNode({
-          id: 'MAINTENANCE_01', stage: _DECISION_TRACE_STAGE.MAINTENANCE, decisionType: _DECISION_TRACE_TYPE.PRESCRIPTION,
+          stage: _DECISION_TRACE_STAGE.MAINTENANCE, decisionType: _DECISION_TRACE_TYPE.MAINTENANCE_ROLE_ASSIGNED,
           subject: 'maintenanceMuscles',
           decision: maintMuscles.length ? 'Músculos en mantenimiento: ' + maintMuscles.join(', ') : 'Sin músculos en modo mantenimiento',
-          reasonCodes: [], sources: ['buildPrescriptionContext'],
-          engineVersion: VDSEN_ENGINE_VERSION, structural: false,
+          reasonCodes: [],
+          sources: [_DECISION_TRACE_SOURCE.CLIENT, _DECISION_TRACE_SOURCE.ENGINE],
+          engine: _DECISION_TRACE_ENGINE.MAINTENANCE,
+          confidence: _DECISION_TRACE_CONFIDENCE.HIGH,
+          structural: false,
         });
       })();
       (function() {
-        // SLOT
-        var slotIssues  = (_gateSlotAudit2 && _gateSlotAudit2.issues)  ? _gateSlotAudit2.issues.length  : 0;
-        var slotWarns   = (_gateSlotAudit2 && _gateSlotAudit2.warnings) ? _gateSlotAudit2.warnings.length : 0;
+        // SLOT — EXERCISE_SLOT_ASSIGNED (required for SLOT stage)
+        var slotIssues = (_gateSlotAudit2 && _gateSlotAudit2.issues)  ? _gateSlotAudit2.issues.length  : 0;
+        var slotWarns  = (_gateSlotAudit2 && _gateSlotAudit2.warnings) ? _gateSlotAudit2.warnings.length : 0;
         var priorityMusc = _priorityMuscles2.length ? _priorityMuscles2.join(', ') : 'ninguno';
         _traceNode({
-          id: 'SLOT_01', stage: _DECISION_TRACE_STAGE.SLOT, decisionType: _DECISION_TRACE_TYPE.AUDIT,
-          subject: 'slotConstraints',
+          stage: _DECISION_TRACE_STAGE.SLOT, decisionType: _DECISION_TRACE_TYPE.EXERCISE_SLOT_ASSIGNED,
+          subject: 'global',
           decision: 'Músculos prioritarios: ' + priorityMusc + ' · Issues: ' + slotIssues + ' · Warnings: ' + slotWarns,
           reasonCodes: (_gateSlotAudit2 && _gateSlotAudit2.issues || []).map(function(i){ return i.code || 'SLOT_VIOLATION'; }),
-          sources: ['_auditSlotConstraints'],
-          engineVersion: VDSEN_ENGINE_VERSION, structural: true,
+          sources: [_DECISION_TRACE_SOURCE.ENGINE],
+          engine: _DECISION_TRACE_ENGINE.SLOT,
+          confidence: slotIssues === 0 ? _DECISION_TRACE_CONFIDENCE.HIGH : _DECISION_TRACE_CONFIDENCE.MODERATE,
+          structural: true,
         });
       })();
       (function() {
-        // COMPOSITION
+        // COMPOSITION — SESSION_ORDER_DECISION
         var compByDay = (_gateSessionAudit2 && _gateSessionAudit2.byDay) || [];
         var subOptimal = compByDay.filter(function(d){ return d.quality !== 'OPTIMAL'; }).length;
         _traceNode({
-          id: 'COMPOSITION_01', stage: _DECISION_TRACE_STAGE.COMPOSITION, decisionType: _DECISION_TRACE_TYPE.AUDIT,
-          subject: 'sessionComposition',
+          stage: _DECISION_TRACE_STAGE.COMPOSITION, decisionType: _DECISION_TRACE_TYPE.SESSION_ORDER_DECISION,
+          subject: 'global',
           decision: compByDay.length + ' sesiones auditadas · ' + subOptimal + ' sub-óptimas',
           reasonCodes: compByDay.reduce(function(acc, d){ return acc.concat(d.reasonCodes || []); }, []).filter(function(r,i,a){ return a.indexOf(r) === i; }),
-          sources: ['_auditSessionComposition'],
-          engineVersion: VDSEN_ENGINE_VERSION, structural: false,
+          sources: [_DECISION_TRACE_SOURCE.ENGINE],
+          engine: _DECISION_TRACE_ENGINE.SESSION_COMPOSITION,
+          confidence: subOptimal === 0 ? _DECISION_TRACE_CONFIDENCE.HIGH : _DECISION_TRACE_CONFIDENCE.MODERATE,
+          structural: false,
         });
       })();
       (function() {
-        // QUALITY GATE
-        var status   = _qAudit2.status || 'PASS';
-        var crits    = (_qAudit2.criticalIssues || []).length;
-        var warns    = (_qAudit2.warnings || []).length;
-        var rcodes   = (_qAudit2.reasonCodes || []).slice();
+        // QUALITY GATE — QUALITY_GATE_RESULT (required for QUALITY stage)
+        var status = _qAudit2.status || 'PASS';
+        var crits  = (_qAudit2.criticalIssues || []).length;
+        var warns  = (_qAudit2.warnings || []).length;
+        var rcodes = (_qAudit2.reasonCodes || []).slice();
         _traceNode({
-          id: 'QUALITY_01', stage: _DECISION_TRACE_STAGE.QUALITY, decisionType: _DECISION_TRACE_TYPE.AUDIT,
+          stage: _DECISION_TRACE_STAGE.QUALITY, decisionType: _DECISION_TRACE_TYPE.QUALITY_GATE_RESULT,
           subject: 'outputQualityGate',
           decision: 'Estado: ' + status + ' · Críticos: ' + crits + ' · Warnings: ' + warns,
           reasonCodes: rcodes,
-          sources: ['runOutputQualityAudit'],
-          engineVersion: VDSEN_ENGINE_VERSION, structural: false,
+          sources: [_DECISION_TRACE_SOURCE.ENGINE],
+          engine: _DECISION_TRACE_ENGINE.QUALITY_GATE,
+          confidence: status === 'PASS' ? _DECISION_TRACE_CONFIDENCE.HIGH : crits > 0 ? _DECISION_TRACE_CONFIDENCE.LOW : _DECISION_TRACE_CONFIDENCE.MODERATE,
+          structural: false,
         });
       })();
       (function() {
-        // REPAIR — pre-compute candidate count for trace (does not re-run full simulation)
+        // REPAIR — REPAIR_CANDIDATE_CREATED (or CREATED with count=0 if none)
         var repairCount = (_qAudit2.criticalIssues || []).length + (_qAudit2.warnings || []).filter(function(w){ return w && w.code; }).length;
         _traceNode({
-          id: 'REPAIR_01', stage: _DECISION_TRACE_STAGE.REPAIR, decisionType: _DECISION_TRACE_TYPE.REPAIR_ACTION,
+          stage: _DECISION_TRACE_STAGE.REPAIR, decisionType: _DECISION_TRACE_TYPE.REPAIR_CANDIDATE_CREATED,
           subject: 'repairCandidates',
-          decision: repairCount > 0 ? 'Candidatos de reparación disponibles (issues: ' + repairCount + ')' : 'Sin reparaciones necesarias',
+          decision: repairCount > 0 ? 'Candidatos de reparación: ' + repairCount + ' issues' : 'Sin reparaciones necesarias',
           reasonCodes: (_qAudit2.reasonCodes || []).slice(),
-          sources: ['_generateRepairCandidates'],
-          engineVersion: VDSEN_ENGINE_VERSION, structural: false,
+          sources: [_DECISION_TRACE_SOURCE.ENGINE],
+          engine: _DECISION_TRACE_ENGINE.REPAIR,
+          confidence: _DECISION_TRACE_CONFIDENCE.HIGH,
+          structural: false,
         });
       })();
 
