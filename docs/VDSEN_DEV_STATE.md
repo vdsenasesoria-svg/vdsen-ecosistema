@@ -56,9 +56,9 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ---
 
-## FASE 3–9B — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
+## FASE 3–10 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1441 ✓ 0 ✗** · HEAD post-FASE9B
+> Suite: **1481 ✓ 0 ✗** · HEAD post-FASE10
 
 ### Arquitectura conceptual
 
@@ -286,6 +286,46 @@ baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score fi
 **Tests:** TLDLA1-TLDLA20 (28 aserciones: 20 principales + sub-aserciones 8a/b/c, 14a/b/c/d/e, 15a/b/c)
 
 **Suite: 1441 ✓ 0 ✗**
+
+---
+
+### FASE 10 — Cross-Plan Continuity Audit
+
+**Archivos modificados:** `vdsen-coach.html` (funciones FASE 10 + window exports + motor prompt delta), `tests/progression-engine.test.js` (sección TCP1-TCP20)
+
+**Funciones añadidas a `vdsen-coach.html`:**
+- `_CONTINUITY_TYPE` / `_CONTINUITY_SCORE` / `_IDENTITY_BASIS` — enums de continuidad
+- `_extractPlanExercises(plan)` — flatten plan.days[].exercises[] a descriptores (dayIndex solo para MOVED, nunca para identidad)
+- `_checkSlotCompatibility(prevEx, currEx)` — compatibilidad de prescriptionSlot entre planes
+- `_normalizeCrossPlanLoad(entry)` — KG as-is, LB×0.453592, BW/no-cuantificable→null
+- `_matchExercisesAcrossPlans(prevPlan, currPlan)` — matcher 5 pasos: PID→exerciseId→nombre único→slot→UNRESOLVED; inner `_resolveType` detecta MOVED/STRUCTURAL_SLOT_CHANGE
+- `_auditCrossPlanContinuity(prevPlan, currPlan)` — resumen audit: exactMatches/functionalContinuities/structuralChanges/ambiguous/unresolved/removed
+- `_formatContinuityPreview(auditResult)` — preview compacto multi-línea para panel coach
+- `_buildContinuityTraceNode(continuityType, exerciseName, identityBasis, planId)` — trace node source:'PLAN' engine:'STABILITY'
+- `_canExerciseHistoryCrossPlans(match)` — gate: solo EXACT||STRONG → true
+- `_canSlotHistoryCrossPlans(match)` — gate: cualquier no-UNRESOLVED → true
+- `_runCrossPlanContinuityTests()` — inline browser: TCP1-TCP20 (40 aserciones)
+
+**CONTINUITY_TYPE contract:**
+| Tipo | Identidad | Condición |
+|------|-----------|-----------|
+| `SAME_PRESCRIPTION` | resuelta/PID | mismo PID, mismo slot/day |
+| `SAME_EXERCISE_NEW_PRESCRIPTION` | resuelta/exerciseId | mismo exerciseId, nuevo PID |
+| `SAME_SLOT_REPLACEMENT` | NONE | misma slot, diferente ejercicio |
+| `STRUCTURAL_SLOT_CHANGE` | resuelta | misma identidad, slot cambió |
+| `MOVED` | resuelta | misma identidad, dayIndex cambió |
+| `REMOVED` | N/A | ejercicio previo sin contraparte |
+| `ADDED` | N/A | ejercicio nuevo sin antecedente |
+| `UNRESOLVED_CROSS_PLAN` | NONE | no hay match posible |
+| `AMBIGUOUS` | NONE | nombre duplicado o slot multiple candidates |
+
+**Posición nunca como identidad:** `dayIndex/exerciseIndex` almacenados solo para detección de MOVED post-resolución. TCP8 verifica: mismo dayIndex, distinto ejercicio → UNRESOLVED.
+
+**Motor Prompt Delta:** sección "### CONTINUIDAD CROSS-PLAN (FASE 10)" añadida en `_MOTOR_PROMPT_EMBEDDED` tras FASE 9B.
+
+**Tests:** TCP1-TCP20 (40 aserciones) — sección FASE 10 en `tests/progression-engine.test.js`
+
+**Suite: 1481 ✓ 0 ✗**
 
 ---
 

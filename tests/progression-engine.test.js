@@ -9527,6 +9527,383 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 9B derived learned state application ✓');
 })();
 
+// ════════════════ FASE 10 — Cross-Plan Continuity ════════════════
+// Node-runnable T-suffix copies of FASE 10 functions.
+// Covers: PID match, exerciseId match, unique-name legacy, MOVED detection,
+// SAME_SLOT_REPLACEMENT, STRUCTURAL_SLOT_CHANGE, duplicate-name AMBIGUOUS,
+// position-not-identity, KG/LB normalization, BW→null, exercise history gate,
+// slot history gate, REMOVED tracking, trace node types, planId provenance,
+// audit summary counts, preview format, slot-multiple-candidates AMBIGUOUS.
+
+(function() {
+  console.log('\n── FASE 10: Cross-Plan Continuity ───────────────────────────');
+
+  // ── Shared constants ─────────────────────────────────────────────────────
+  var _CT = {
+    SAME_PRESCRIPTION:              'SAME_PRESCRIPTION',
+    SAME_EXERCISE_NEW_PRESCRIPTION: 'SAME_EXERCISE_NEW_PRESCRIPTION',
+    SAME_SLOT_REPLACEMENT:          'SAME_SLOT_REPLACEMENT',
+    STRUCTURAL_SLOT_CHANGE:         'STRUCTURAL_SLOT_CHANGE',
+    MOVED:                          'MOVED',
+    REMOVED:                        'REMOVED',
+    ADDED:                          'ADDED',
+    UNRESOLVED_CROSS_PLAN:          'UNRESOLVED_CROSS_PLAN',
+    AMBIGUOUS:                      'AMBIGUOUS'
+  };
+  var _CS = { EXACT: 'EXACT', STRONG: 'STRONG', FUNCTIONAL: 'FUNCTIONAL', UNRESOLVED: 'UNRESOLVED' };
+  var _IB = { PRESCRIPTION_ID: 'PRESCRIPTION_ID', EXERCISE_ID: 'EXERCISE_ID', UNIQUE_NAME_LEGACY: 'UNIQUE_NAME_LEGACY', NONE: 'NONE' };
+  var _DTC_T = { HIGH: 'HIGH', MODERATE: 'MODERATE', LOW: 'LOW' };
+
+  // ── T-suffix function copies ──────────────────────────────────────────────
+  function _extractPlanExercises_T(plan) {
+    var result = [];
+    if (!plan || !Array.isArray(plan.days)) return result;
+    plan.days.forEach(function(day) {
+      (day.exercises || []).forEach(function(ex) {
+        result.push({
+          exerciseName:           ex.exerciseName           || '',
+          prescriptionExerciseId: ex.prescriptionExerciseId || null,
+          exerciseId:             ex.exerciseId             || null,
+          prescriptionSlot:       ex.prescriptionSlot       || null,
+          dayIndex:               typeof day.dayIndex === 'number' ? day.dayIndex : -1
+        });
+      });
+    });
+    return result;
+  }
+
+  function _checkSlotCompatibility_T(prevEx, currEx) {
+    if (!prevEx || !currEx || !prevEx.prescriptionSlot || !currEx.prescriptionSlot) {
+      return { compatible: false, slot: null };
+    }
+    return { compatible: prevEx.prescriptionSlot === currEx.prescriptionSlot, slot: currEx.prescriptionSlot };
+  }
+
+  function _normalizeCrossPlanLoad_T(entry) {
+    if (!entry) return null;
+    if (!entry.unit || entry.unit === 'BW') return null;
+    var carga = parseFloat(entry.carga);
+    if (isNaN(carga) || carga <= 0) return null;
+    return entry.unit === 'LB' ? carga * 0.453592 : carga;
+  }
+
+  function _matchExercisesAcrossPlans_T(previousPlan, currentPlan) {
+    var prevExs = _extractPlanExercises_T(previousPlan);
+    var currExs = _extractPlanExercises_T(currentPlan);
+    var matches = [];
+    var usedPrev = {};
+
+    var prevNameCount = {};
+    prevExs.forEach(function(ex) { prevNameCount[ex.exerciseName] = (prevNameCount[ex.exerciseName] || 0) + 1; });
+
+    function _resolveType(pEx, cEx, identityBasis) {
+      var sc = _checkSlotCompatibility_T(pEx, cEx);
+      if (identityBasis !== _IB.NONE && !sc.compatible && pEx.prescriptionSlot && cEx.prescriptionSlot) {
+        return { type: _CT.STRUCTURAL_SLOT_CHANGE, slotCompat: sc };
+      }
+      var moved = pEx.dayIndex !== cEx.dayIndex && pEx.dayIndex >= 0 && cEx.dayIndex >= 0;
+      if (identityBasis === _IB.PRESCRIPTION_ID) {
+        return { type: moved ? _CT.MOVED : _CT.SAME_PRESCRIPTION, slotCompat: sc };
+      }
+      return { type: moved ? _CT.MOVED : _CT.SAME_EXERCISE_NEW_PRESCRIPTION, slotCompat: sc };
+    }
+
+    currExs.forEach(function(curr) {
+      var match = null;
+      var cs;
+
+      // Step 1: prescriptionExerciseId exact
+      if (!match && curr.prescriptionExerciseId) {
+        cs = [];
+        prevExs.forEach(function(p, i) { if (!usedPrev[i] && p.prescriptionExerciseId === curr.prescriptionExerciseId) cs.push({ p: p, i: i }); });
+        if (cs.length === 1) {
+          var r = _resolveType(cs[0].p, curr, _IB.PRESCRIPTION_ID);
+          match = { previous: cs[0].p, current: curr, continuityType: r.type,
+            identityBasis: _IB.PRESCRIPTION_ID, slotCompatibility: r.slotCompat,
+            confidence: _CS.EXACT, reasonCodes: ['PID_MATCH'] };
+          usedPrev[cs[0].i] = true;
+        } else if (cs.length > 1) {
+          match = { previous: null, current: curr, continuityType: _CT.AMBIGUOUS,
+            identityBasis: _IB.NONE, slotCompatibility: null,
+            confidence: _CS.UNRESOLVED, reasonCodes: ['PID_DUPLICATE'] };
+        }
+      }
+
+      // Step 2: exerciseId canonical exact
+      if (!match && curr.exerciseId) {
+        cs = [];
+        prevExs.forEach(function(p, i) { if (!usedPrev[i] && p.exerciseId === curr.exerciseId) cs.push({ p: p, i: i }); });
+        if (cs.length >= 1) {
+          var best = cs.find(function(c) { return c.p.prescriptionSlot && curr.prescriptionSlot && c.p.prescriptionSlot === curr.prescriptionSlot; }) || cs[0];
+          var r = _resolveType(best.p, curr, _IB.EXERCISE_ID);
+          match = { previous: best.p, current: curr, continuityType: r.type,
+            identityBasis: _IB.EXERCISE_ID, slotCompatibility: r.slotCompat,
+            confidence: _CS.EXACT, reasonCodes: ['EXERCISE_ID_MATCH'] };
+          usedPrev[best.i] = true;
+        }
+      }
+
+      // Step 3: unique name legacy
+      if (!match) {
+        cs = [];
+        prevExs.forEach(function(p, i) { if (!usedPrev[i] && p.exerciseName === curr.exerciseName) cs.push({ p: p, i: i }); });
+        if (cs.length === 1 && prevNameCount[curr.exerciseName] === 1) {
+          var r = _resolveType(cs[0].p, curr, _IB.UNIQUE_NAME_LEGACY);
+          match = { previous: cs[0].p, current: curr, continuityType: r.type,
+            identityBasis: _IB.UNIQUE_NAME_LEGACY, slotCompatibility: r.slotCompat,
+            confidence: _CS.STRONG, reasonCodes: ['UNIQUE_NAME_MATCH'] };
+          usedPrev[cs[0].i] = true;
+        } else if (cs.length > 0 && (cs.length > 1 || prevNameCount[curr.exerciseName] > 1)) {
+          match = { previous: null, current: curr, continuityType: _CT.AMBIGUOUS,
+            identityBasis: _IB.NONE, slotCompatibility: null,
+            confidence: _CS.UNRESOLVED, reasonCodes: ['DUPLICATE_NAME'] };
+        }
+      }
+
+      // Step 4: prescriptionSlot functional continuity
+      if (!match && curr.prescriptionSlot) {
+        cs = [];
+        prevExs.forEach(function(p, i) { if (!usedPrev[i] && p.prescriptionSlot === curr.prescriptionSlot) cs.push({ p: p, i: i }); });
+        if (cs.length === 1) {
+          var isDiffEx = cs[0].p.exerciseName !== curr.exerciseName;
+          match = { previous: cs[0].p, current: curr,
+            continuityType: isDiffEx ? _CT.SAME_SLOT_REPLACEMENT : _CT.UNRESOLVED_CROSS_PLAN,
+            identityBasis: _IB.NONE,
+            slotCompatibility: { compatible: true, slot: curr.prescriptionSlot },
+            confidence: _CS.FUNCTIONAL, reasonCodes: ['SLOT_MATCH_ONLY'] };
+          usedPrev[cs[0].i] = true;
+        } else if (cs.length > 1) {
+          match = { previous: null, current: curr, continuityType: _CT.AMBIGUOUS,
+            identityBasis: _IB.NONE, slotCompatibility: null,
+            confidence: _CS.UNRESOLVED, reasonCodes: ['SLOT_MULTIPLE_CANDIDATES'] };
+        }
+      }
+
+      // Step 5: UNRESOLVED
+      if (!match) {
+        match = { previous: null, current: curr, continuityType: _CT.UNRESOLVED_CROSS_PLAN,
+          identityBasis: _IB.NONE, slotCompatibility: null,
+          confidence: _CS.UNRESOLVED, reasonCodes: ['NO_MATCH'] };
+      }
+
+      matches.push(match);
+    });
+
+    // REMOVED
+    prevExs.forEach(function(prev, i) {
+      if (!usedPrev[i]) {
+        matches.push({ previous: prev, current: null, continuityType: _CT.REMOVED,
+          identityBasis: _IB.NONE, slotCompatibility: null,
+          confidence: _CS.EXACT, reasonCodes: ['NOT_IN_CURRENT'] });
+      }
+    });
+
+    return matches;
+  }
+
+  function _auditCrossPlanContinuity_T(prevPlan, currPlan) {
+    var ms = _matchExercisesAcrossPlans_T(prevPlan, currPlan);
+    var exact = [], functional = [], structural = [], ambiguous = [], unresolved = [], removed = [];
+    ms.forEach(function(m) {
+      var t = m.continuityType;
+      if (t === _CT.REMOVED) { removed.push(m); return; }
+      if (t === _CT.SAME_PRESCRIPTION || t === _CT.SAME_EXERCISE_NEW_PRESCRIPTION || t === _CT.MOVED) exact.push(m);
+      else if (t === _CT.SAME_SLOT_REPLACEMENT) functional.push(m);
+      else if (t === _CT.STRUCTURAL_SLOT_CHANGE) structural.push(m);
+      else if (t === _CT.AMBIGUOUS) ambiguous.push(m);
+      else unresolved.push(m);
+    });
+    return {
+      status:                 (ambiguous.length || unresolved.length) ? 'WARN' : 'PASS',
+      exactMatches:           exact,
+      functionalContinuities: functional,
+      structuralChanges:      structural,
+      ambiguous:              ambiguous,
+      unresolved:             unresolved,
+      removed:                removed,
+      summary: {
+        totalPrevious:   _extractPlanExercises_T(prevPlan).length,
+        totalCurrent:    _extractPlanExercises_T(currPlan).length,
+        exactCount:      exact.length,
+        functionalCount: functional.length,
+        structuralCount: structural.length,
+        ambiguousCount:  ambiguous.length,
+        unresolvedCount: unresolved.length
+      }
+    };
+  }
+
+  function _formatContinuityPreview_T(auditResult) {
+    if (!auditResult) return '';
+    var e = auditResult.exactMatches          || [];
+    var f = auditResult.functionalContinuities || [];
+    var s = auditResult.structuralChanges     || [];
+    var u = (auditResult.unresolved || []).length + (auditResult.ambiguous || []).length;
+    var lines = ['CONTINUIDAD VS PLAN ANTERIOR'];
+    if (e.length) lines.push('✓ ' + e.length + ' ejercicio(s) preservado(s)');
+    if (f.length) lines.push('↔ ' + f.length + ' sustitución(es) con misma función');
+    if (s.length) lines.push('⚠ ' + s.length + ' cambio(s) estructural(es)');
+    if (u)        lines.push('? ' + u + ' identidad(es) no resuelta(s)');
+    return lines.join('\n');
+  }
+
+  function _buildContinuityTraceNode_T(continuityType, exerciseName, identityBasis, planId) {
+    var resolved = continuityType !== _CT.UNRESOLVED_CROSS_PLAN && continuityType !== _CT.AMBIGUOUS;
+    var decisionType = resolved ? 'PLAN_CONTINUITY_RESOLVED' : 'PLAN_CONTINUITY_UNRESOLVED';
+    if (continuityType === _CT.SAME_SLOT_REPLACEMENT)  decisionType = 'SAME_SLOT_REPLACEMENT';
+    if (continuityType === _CT.STRUCTURAL_SLOT_CHANGE) decisionType = 'STRUCTURAL_SLOT_CHANGE';
+    return {
+      decisionType: decisionType,
+      subject:      exerciseName || 'unknown',
+      confidence:   identityBasis === _IB.PRESCRIPTION_ID || identityBasis === _IB.EXERCISE_ID
+                    ? _DTC_T.HIGH
+                    : identityBasis === _IB.UNIQUE_NAME_LEGACY
+                    ? _DTC_T.MODERATE : _DTC_T.LOW,
+      evidence: { continuityType: continuityType, identityBasis: identityBasis, planId: planId || null },
+      source: 'PLAN', engine: 'STABILITY'
+    };
+  }
+
+  function _canExerciseHistoryCrossPlans_T(match) {
+    if (!match) return false;
+    return match.confidence === _CS.EXACT || match.confidence === _CS.STRONG;
+  }
+
+  function _canSlotHistoryCrossPlans_T(match) {
+    if (!match) return false;
+    return match.confidence !== _CS.UNRESOLVED;
+  }
+
+  // ── TCP1: same PID → SAME_PRESCRIPTION, EXACT ────────────────────────────
+  var pA1 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'pid-01' }] }] };
+  var pB1 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'pid-01' }] }] };
+  var m1 = _matchExercisesAcrossPlans_T(pA1, pB1)[0];
+  assert('TCP1a', 'same PID → SAME_PRESCRIPTION',   m1.continuityType === 'SAME_PRESCRIPTION');
+  assert('TCP1b', 'same PID → EXACT confidence',    m1.confidence     === 'EXACT');
+  assert('TCP1c', 'same PID → PRESCRIPTION_ID basis', m1.identityBasis === 'PRESCRIPTION_ID');
+
+  // ── TCP2: same exerciseId, new PID → SAME_EXERCISE_NEW_PRESCRIPTION ──────
+  var pA2 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat', exerciseId: 'ex-sq', prescriptionExerciseId: 'pid-01' }] }] };
+  var pB2 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat', exerciseId: 'ex-sq', prescriptionExerciseId: 'pid-02' }] }] };
+  var m2 = _matchExercisesAcrossPlans_T(pA2, pB2)[0];
+  assert('TCP2a', 'same exerciseId → SAME_EXERCISE_NEW_PRESCRIPTION', m2.continuityType === 'SAME_EXERCISE_NEW_PRESCRIPTION');
+  assert('TCP2b', 'same exerciseId → EXERCISE_ID basis',              m2.identityBasis  === 'EXERCISE_ID');
+  assert('TCP2c', 'same exerciseId → EXACT confidence',               m2.confidence     === 'EXACT');
+
+  // ── TCP3: unique name, no PID/exerciseId → STRONG, UNIQUE_NAME_LEGACY ────
+  var pA3 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Deadlift' }] }] };
+  var pB3 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Deadlift' }] }] };
+  var m3 = _matchExercisesAcrossPlans_T(pA3, pB3)[0];
+  assert('TCP3a', 'unique name → UNIQUE_NAME_LEGACY', m3.identityBasis === 'UNIQUE_NAME_LEGACY');
+  assert('TCP3b', 'unique name → STRONG confidence',  m3.confidence    === 'STRONG');
+
+  // ── TCP4: same PID, dayIndex changed → MOVED ─────────────────────────────
+  var pA4 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'pid-01' }] }] };
+  var pB4 = { days: [{ dayIndex: 2, exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'pid-01' }] }] };
+  assert('TCP4', 'same PID + different day → MOVED', _matchExercisesAcrossPlans_T(pA4, pB4)[0].continuityType === 'MOVED');
+
+  // ── TCP5: same slot, different exercise → SAME_SLOT_REPLACEMENT ──────────
+  var pA5 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Hack Squat', prescriptionSlot: 'QUAD:PRI' }] }] };
+  var pB5 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Belt Squat', prescriptionSlot: 'QUAD:PRI' }] }] };
+  var m5 = _matchExercisesAcrossPlans_T(pA5, pB5)[0];
+  assert('TCP5a', 'slot sub, diff ex → SAME_SLOT_REPLACEMENT', m5.continuityType === 'SAME_SLOT_REPLACEMENT');
+  assert('TCP5b', 'slot sub → FUNCTIONAL confidence',          m5.confidence     === 'FUNCTIONAL');
+  assert('TCP5c', 'slot sub → identity basis NONE',            m5.identityBasis  === 'NONE');
+
+  // ── TCP6: same PID, slot changed → STRUCTURAL_SLOT_CHANGE ────────────────
+  var pA6 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'pid-01', prescriptionSlot: 'QUAD:PRI' }] }] };
+  var pB6 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'pid-01', prescriptionSlot: 'QUAD:ACC' }] }] };
+  assert('TCP6', 'same PID + slot changed → STRUCTURAL_SLOT_CHANGE', _matchExercisesAcrossPlans_T(pA6, pB6)[0].continuityType === 'STRUCTURAL_SLOT_CHANGE');
+
+  // ── TCP7: duplicate name in previous → AMBIGUOUS ──────────────────────────
+  var pA7 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat' }] }, { dayIndex: 1, exercises: [{ exerciseName: 'Squat' }] }] };
+  var pB7 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat' }] }] };
+  assert('TCP7', 'duplicate name in prev → AMBIGUOUS', _matchExercisesAcrossPlans_T(pA7, pB7)[0].continuityType === 'AMBIGUOUS');
+
+  // ── TCP8: same position, different exercise → UNRESOLVED (position ≠ identity)
+  var pA8 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat' }] }] };
+  var pB8 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Leg Press' }] }] };
+  assert('TCP8', 'same dayIndex, different name → UNRESOLVED (no position matching)', _matchExercisesAcrossPlans_T(pA8, pB8)[0].continuityType === 'UNRESOLVED_CROSS_PLAN');
+
+  // ── TCP9: KG/LB normalization ─────────────────────────────────────────────
+  assert('TCP9a', 'KG load returned as-is',           _normalizeCrossPlanLoad_T({ carga: 100, unit: 'KG' }) === 100);
+  assert('TCP9b', 'LB load converted to KG (±0.1)',   Math.abs(_normalizeCrossPlanLoad_T({ carga: 220.46, unit: 'LB' }) - 99.97) < 0.1);
+
+  // ── TCP10: bodyweight → null, not 0 ──────────────────────────────────────
+  assert('TCP10', 'BW unit → null (never 0)', _normalizeCrossPlanLoad_T({ carga: 0, unit: 'BW' }) === null);
+
+  // ── TCP11: exercise history transfer gate ─────────────────────────────────
+  assert('TCP11a', 'EXACT confidence → exercise history can cross',     _canExerciseHistoryCrossPlans_T({ confidence: 'EXACT' })      === true);
+  assert('TCP11b', 'STRONG confidence → exercise history can cross',    _canExerciseHistoryCrossPlans_T({ confidence: 'STRONG' })     === true);
+  assert('TCP11c', 'FUNCTIONAL confidence → exercise history blocked',  _canExerciseHistoryCrossPlans_T({ confidence: 'FUNCTIONAL' }) === false);
+  assert('TCP11d', 'UNRESOLVED confidence → exercise history blocked',  _canExerciseHistoryCrossPlans_T({ confidence: 'UNRESOLVED' }) === false);
+  assert('TCP11e', 'null match → exercise history blocked',             _canExerciseHistoryCrossPlans_T(null)                         === false);
+
+  // ── TCP12: slot history transfer gate ────────────────────────────────────
+  assert('TCP12a', 'FUNCTIONAL confidence → slot history can cross',  _canSlotHistoryCrossPlans_T({ confidence: 'FUNCTIONAL' }) === true);
+  assert('TCP12b', 'EXACT confidence → slot history can cross',       _canSlotHistoryCrossPlans_T({ confidence: 'EXACT' })      === true);
+  assert('TCP12c', 'UNRESOLVED confidence → slot history blocked',    _canSlotHistoryCrossPlans_T({ confidence: 'UNRESOLVED' }) === false);
+
+  // ── TCP13: REMOVED exercise detected ─────────────────────────────────────
+  var pA13 = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'Squat', prescriptionExerciseId: 'pid-01' },
+    { exerciseName: 'RDL' }
+  ]}]};
+  var pB13 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat', prescriptionExerciseId: 'pid-01' }] }] };
+  var ms13  = _matchExercisesAcrossPlans_T(pA13, pB13);
+  var rem13 = ms13.filter(function(m) { return m.continuityType === 'REMOVED'; });
+  assert('TCP13', 'exercise absent from current → REMOVED', rem13.length === 1 && rem13[0].previous.exerciseName === 'RDL');
+
+  // ── TCP14: trace node decisionType for SAME_SLOT_REPLACEMENT ─────────────
+  var tr14 = _buildContinuityTraceNode_T('SAME_SLOT_REPLACEMENT', 'Belt Squat', 'NONE', 'plan-b');
+  assert('TCP14', 'SAME_SLOT_REPLACEMENT → decisionType=SAME_SLOT_REPLACEMENT', tr14.decisionType === 'SAME_SLOT_REPLACEMENT');
+
+  // ── TCP15: trace node decisionType for UNRESOLVED ────────────────────────
+  var tr15 = _buildContinuityTraceNode_T('UNRESOLVED_CROSS_PLAN', 'X', 'NONE', 'plan-b');
+  assert('TCP15', 'UNRESOLVED → decisionType=PLAN_CONTINUITY_UNRESOLVED', tr15.decisionType === 'PLAN_CONTINUITY_UNRESOLVED');
+
+  // ── TCP16: planId preserved in trace evidence ─────────────────────────────
+  assert('TCP16', 'planId propagated to trace evidence', tr14.evidence.planId === 'plan-b');
+
+  // ── TCP17: PID-based trace → HIGH confidence ──────────────────────────────
+  var tr17 = _buildContinuityTraceNode_T('SAME_PRESCRIPTION', 'Squat', 'PRESCRIPTION_ID', 'plan-b');
+  assert('TCP17', 'PRESCRIPTION_ID → trace confidence=HIGH', tr17.confidence === 'HIGH');
+
+  // ── TCP18: audit summary counts ───────────────────────────────────────────
+  var pAud = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'Squat',      prescriptionExerciseId: 'pid-01', prescriptionSlot: 'QUAD:PRI' },
+    { exerciseName: 'RDL',        prescriptionExerciseId: 'pid-02' },
+    { exerciseName: 'Hack Squat', prescriptionSlot: 'QUAD:ACC' }
+  ]}]};
+  var pBud = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'Squat',      prescriptionExerciseId: 'pid-01', prescriptionSlot: 'QUAD:PRI' },
+    { exerciseName: 'Belt Squat', prescriptionSlot: 'QUAD:ACC' },
+    { exerciseName: 'NewEx',      prescriptionExerciseId: 'pid-99' }
+  ]}]};
+  var aud18 = _auditCrossPlanContinuity_T(pAud, pBud);
+  assert('TCP18a', 'audit exactMatches=1',           aud18.exactMatches.length           === 1);
+  assert('TCP18b', 'audit functionalContinuities=1', aud18.functionalContinuities.length === 1);
+  assert('TCP18c', 'audit unresolved=1',             aud18.unresolved.length             === 1);
+  assert('TCP18d', 'audit removed=1 (RDL dropped)',  aud18.removed.length                === 1);
+
+  // ── TCP19: formatContinuityPreview output ────────────────────────────────
+  var prev19 = _formatContinuityPreview_T(aud18);
+  assert('TCP19a', 'preview starts with CONTINUIDAD header', prev19.indexOf('CONTINUIDAD VS PLAN ANTERIOR') >= 0);
+  assert('TCP19b', 'preview contains ✓ for exact match',     prev19.indexOf('✓') >= 0);
+  assert('TCP19c', 'preview contains ↔ for slot sub',        prev19.indexOf('↔') >= 0);
+  assert('TCP19d', 'preview contains ? for unresolved',      prev19.indexOf('?') >= 0);
+
+  // ── TCP20: slot with multiple candidates → AMBIGUOUS ─────────────────────
+  var pA20 = { days: [{ dayIndex: 0, exercises: [
+    { exerciseName: 'Hack Squat', prescriptionSlot: 'QUAD:PRI' },
+    { exerciseName: 'Leg Press',  prescriptionSlot: 'QUAD:PRI' }
+  ]}]};
+  var pB20 = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Belt Squat', prescriptionSlot: 'QUAD:PRI' }] }] };
+  assert('TCP20', 'slot with multiple candidates → AMBIGUOUS', _matchExercisesAcrossPlans_T(pA20, pB20)[0].continuityType === 'AMBIGUOUS');
+
+  console.log('── FASE 10 cross-plan continuity ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
