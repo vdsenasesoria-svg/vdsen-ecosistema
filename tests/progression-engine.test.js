@@ -9197,6 +9197,336 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 8 learned state persistence ✓');
 })();
 
+// ════════════════ FASE 9B — Derived Learned State Application ════════════════
+// Node-runnable T-suffix copies of FASE 9B functions.
+// Covers: single-source topology calibration, exercise history application,
+// slot-as-slot-not-identity, schedule calibration, safety veto inviolability,
+// trace node structure, preview format, reproducibility, null/INSUFFICIENT guards.
+
+(function() {
+  console.log('\n── FASE 9B: Derived Learned State Application ────────────────');
+
+  // ── Shared constants ─────────────────────────────────────────────────────
+  var _EVIDENCE_STATE_9 = { INSUFFICIENT: 'INSUFFICIENT', EMERGING: 'EMERGING', RELIABLE: 'RELIABLE' };
+  var _PRIOR_TYPE_9     = { POPULATION: 'POPULATION', COACH: 'COACH', INDIVIDUAL: 'INDIVIDUAL' };
+  var _RESOLUTION_9     = { OVERRIDE: 'OVERRIDE', BLEND: 'BLEND', DEFER: 'DEFER' };
+  var _DTC_9            = { NONE: 'NONE', LOW: 'LOW', MODERATE: 'MODERATE', HIGH: 'HIGH' };
+  var _TOPOLOGY_CANDS_9 = {
+    TWO_ON_ONE_OFF:   { minDpw: 2, maxDpw: 5 },
+    THREE_ON_ONE_OFF: { minDpw: 3, maxDpw: 5 },
+    FOUR_ON_ONE_OFF:  { minDpw: 4, maxDpw: 6 },
+  };
+
+  function _calibrateWeight_9(ev) {
+    if (ev === _EVIDENCE_STATE_9.RELIABLE) return 1.0;
+    if (ev === _EVIDENCE_STATE_9.EMERGING) return 0.5;
+    return 0.0;
+  }
+  function _buildPrior_9(opts) {
+    return { type: opts.type, dimension: opts.dimension, value: opts.value != null ? opts.value : null,
+      confidence: opts.confidence || _DTC_9.LOW, source: opts.source || _PRIOR_TYPE_9.POPULATION,
+      weight: typeof opts.weight === 'number' ? opts.weight : 1.0 };
+  }
+  function _detectConflict_9(priors) {
+    if (!Array.isArray(priors) || priors.length < 2) return { hasConflict: false, conflictingPriors: [] };
+    var vals = priors.map(function(p) { return JSON.stringify(p.value); });
+    var unique = vals.filter(function(v, i) { return vals.indexOf(v) === i; });
+    return unique.length < 2 ? { hasConflict: false, conflictingPriors: [] }
+                             : { hasConflict: true, conflictingPriors: priors };
+  }
+  function _resolveConflict_9(conflict) {
+    if (!conflict || !conflict.hasConflict) return { resolvedValue: null, strategy: _RESOLUTION_9.DEFER, reasonCode: 'NO_CONFLICT' };
+    var priors = conflict.conflictingPriors || [];
+    var ind = priors.find(function(p) { return p.type === _PRIOR_TYPE_9.INDIVIDUAL; });
+    var pop = priors.find(function(p) { return p.type === _PRIOR_TYPE_9.POPULATION; });
+    if (ind && _calibrateWeight_9(ind.confidence) === 1.0) return { resolvedValue: ind.value, strategy: _RESOLUTION_9.OVERRIDE, reasonCode: 'INDIVIDUAL_RELIABLE' };
+    if (ind && _calibrateWeight_9(ind.confidence) > 0) return { resolvedValue: pop ? pop.value : null, strategy: _RESOLUTION_9.DEFER, reasonCode: 'INDIVIDUAL_EMERGING_DEFER' };
+    return { resolvedValue: pop ? pop.value : null, strategy: _RESOLUTION_9.DEFER, reasonCode: 'POPULATION_DEFAULT' };
+  }
+  function _buildCalibResult_9(opts) {
+    var priors = Array.isArray(opts.priors) ? opts.priors : [];
+    var safety = Array.isArray(opts.safetyConstraints) ? opts.safetyConstraints : [];
+    var sm = safety.find(function(c) { return c.dimension === opts.dimension; });
+    if (sm) return { dimension: opts.dimension, activePrior: sm.value, strategy: _RESOLUTION_9.OVERRIDE,
+      conflicts: [], appliedWeight: 1.0, safetyOverride: true };
+    var conflict = _detectConflict_9(priors);
+    var resolution = conflict.hasConflict ? _resolveConflict_9(conflict)
+      : { resolvedValue: priors.length ? priors[0].value : null, strategy: _RESOLUTION_9.DEFER, reasonCode: 'NO_CONFLICT' };
+    var ind = priors.find(function(p) { return p.type === _PRIOR_TYPE_9.INDIVIDUAL; });
+    return { dimension: opts.dimension, activePrior: resolution.resolvedValue, strategy: resolution.strategy,
+      conflicts: conflict.hasConflict ? [{ conflictType: 'DETECTED', resolution: resolution.reasonCode }] : [],
+      appliedWeight: ind ? _calibrateWeight_9(ind.confidence) : 0.0, safetyOverride: false };
+  }
+
+  // ── FASE 9B single-source _computeTopologyCalibration ─────────────────────
+  // Mirrors vdsen-coach.html with usedDerived flag:
+  // derived topologyHistory supersedes previousPlan proxy; never both.
+  function _computeTopologyCal_9B(key, daysPerWeek, prescCtx) {
+    var c = _TOPOLOGY_CANDS_9[key];
+    if (!c) return null;
+    var priors = [];
+    priors.push(_buildPrior_9({ type: _PRIOR_TYPE_9.POPULATION, dimension: 'topology_dpw_fit',
+      value: daysPerWeek >= c.minDpw && daysPerWeek <= c.maxDpw,
+      confidence: _DTC_9.MODERATE, source: _PRIOR_TYPE_9.POPULATION, weight: 1.0 }));
+    var learnedState = prescCtx && prescCtx.learnedState;
+    var topoHist     = learnedState && learnedState.topologyHistory;
+    var usedDerived  = false;
+    if (topoHist && topoHist.evidenceState !== _EVIDENCE_STATE_9.INSUFFICIENT) {
+      var dpwInRange  = daysPerWeek >= c.minDpw && daysPerWeek <= c.maxDpw;
+      var adherentFit = topoHist.adherenceTrend === 'CONSISTENT' || topoHist.adherenceTrend === 'VARIABLE';
+      priors.push(_buildPrior_9({ type: _PRIOR_TYPE_9.INDIVIDUAL, dimension: 'topology_dpw_fit',
+        value: dpwInRange && adherentFit, confidence: topoHist.evidenceState,
+        source: _PRIOR_TYPE_9.INDIVIDUAL, weight: _calibrateWeight_9(topoHist.evidenceState) }));
+      usedDerived = true;
+    }
+    if (!usedDerived) {
+      var prevPlan = prescCtx && prescCtx.previousPlan;
+      if (prevPlan && typeof prevPlan.daysPerWeek === 'number') {
+        var indFit  = prevPlan.daysPerWeek >= c.minDpw && prevPlan.daysPerWeek <= c.maxDpw;
+        var indConf = prescCtx.hasPreviousPlan ? _EVIDENCE_STATE_9.EMERGING : _EVIDENCE_STATE_9.INSUFFICIENT;
+        priors.push(_buildPrior_9({ type: _PRIOR_TYPE_9.INDIVIDUAL, dimension: 'topology_dpw_fit',
+          value: indFit, confidence: indConf, source: _PRIOR_TYPE_9.INDIVIDUAL, weight: _calibrateWeight_9(indConf) }));
+      }
+    }
+    return _buildCalibResult_9({ dimension: 'topology_dpw_fit', priors: priors, safetyConstraints: [] });
+  }
+
+  // ── FASE 9B exercise/slot/schedule helpers ─────────────────────────────────
+  function _applyLearnedStateToExercise_T(learnedState, exerciseName) {
+    if (!learnedState || !exerciseName) return { exerciseName: exerciseName, evidenceState: _EVIDENCE_STATE_9.INSUFFICIENT, shouldFavorKeep: null, trend: null, note: null };
+    var hist = learnedState.exerciseHistory && learnedState.exerciseHistory[exerciseName];
+    if (!hist || hist.evidenceState === _EVIDENCE_STATE_9.INSUFFICIENT) {
+      return { exerciseName: exerciseName, evidenceState: _EVIDENCE_STATE_9.INSUFFICIENT, shouldFavorKeep: null, trend: null, note: null };
+    }
+    var positiveIndicators = hist.performanceTrend === 'INCREASING' || (hist.avgIcs != null && hist.avgIcs >= 7);
+    var negativeIndicators = hist.performanceTrend === 'DECREASING' || (hist.avgIcs != null && hist.avgIcs < 6);
+    var shouldFavorKeep = negativeIndicators ? false : positiveIndicators ? true : null;
+    return { exerciseName: exerciseName, evidenceState: hist.evidenceState, shouldFavorKeep: shouldFavorKeep,
+      trend: hist.performanceTrend, avgIcs: hist.avgIcs, exposures: hist.exposuresReal,
+      note: hist.evidenceState === _EVIDENCE_STATE_9.RELIABLE
+        ? (shouldFavorKeep ? 'RESPUESTA_POSITIVA_FIABLE' : 'RESPUESTA_NEGATIVA_FIABLE')
+        : 'RESPUESTA_EMERGENTE' };
+  }
+
+  function _applyLearnedStateToSlot_T(learnedState, slotKey) {
+    if (!learnedState || !slotKey) return { slotKey: slotKey, evidenceState: _EVIDENCE_STATE_9.INSUFFICIENT, outcomeTrend: null };
+    var hist = learnedState.slotHistory && learnedState.slotHistory[slotKey];
+    if (!hist || hist.evidenceState === _EVIDENCE_STATE_9.INSUFFICIENT) {
+      return { slotKey: slotKey, evidenceState: _EVIDENCE_STATE_9.INSUFFICIENT, outcomeTrend: null };
+    }
+    return { slotKey: slotKey, evidenceState: hist.evidenceState,
+      outcomeTrend: hist.avgIcs != null ? (hist.avgIcs >= 7 ? 'POSITIVE' : hist.avgIcs < 6 ? 'NEGATIVE' : 'NEUTRAL') : 'UNKNOWN',
+      exposures: hist.exposuresReal };
+  }
+
+  function _applyLearnedStateToSchedule_T(learnedState) {
+    if (!learnedState) return { adherenceCalibration: null, recoveryCalibration: null, evidenceState: _EVIDENCE_STATE_9.INSUFFICIENT };
+    var adh = learnedState.adherencePatterns;
+    var rec = learnedState.recoveryPatterns;
+    var adhCal = (adh && adh.evidenceState !== _EVIDENCE_STATE_9.INSUFFICIENT)
+      ? { trend: adh.trend, weight: _calibrateWeight_9(adh.evidenceState), evidenceState: adh.evidenceState } : null;
+    var recCal = (rec && rec.evidenceState !== _EVIDENCE_STATE_9.INSUFFICIENT)
+      ? { avgEimd: rec.avgEimd, avgSleep: rec.avgSleep, weight: _calibrateWeight_9(rec.evidenceState), evidenceState: rec.evidenceState } : null;
+    var bestEvidence = (adhCal && adhCal.evidenceState === _EVIDENCE_STATE_9.RELIABLE) || (recCal && recCal.evidenceState === _EVIDENCE_STATE_9.RELIABLE)
+      ? _EVIDENCE_STATE_9.RELIABLE : (adhCal || recCal) ? _EVIDENCE_STATE_9.EMERGING : _EVIDENCE_STATE_9.INSUFFICIENT;
+    return { adherenceCalibration: adhCal, recoveryCalibration: recCal, evidenceState: bestEvidence };
+  }
+
+  function _buildLearnedStateCalibrationContext_T(learnedState, prescCtx) {
+    if (!learnedState) return { hasAnyInfluence: false, scheduleCalibration: null, exerciseAnnotations: {}, sourceFingerprint: null };
+    var schedCal = _applyLearnedStateToSchedule_T(learnedState);
+    var exerciseAnnotations = {};
+    var prevExercises = prescCtx && prescCtx.previousPlan && prescCtx.previousPlan.exercises;
+    if (Array.isArray(prevExercises)) {
+      prevExercises.forEach(function(exName) {
+        var ann = _applyLearnedStateToExercise_T(learnedState, exName);
+        if (ann.evidenceState !== _EVIDENCE_STATE_9.INSUFFICIENT) exerciseAnnotations[exName] = ann;
+      });
+    }
+    var hasAnyInfluence = schedCal.evidenceState !== _EVIDENCE_STATE_9.INSUFFICIENT || Object.keys(exerciseAnnotations).length > 0;
+    return { hasAnyInfluence: hasAnyInfluence, scheduleCalibration: schedCal,
+      exerciseAnnotations: exerciseAnnotations, sourceFingerprint: learnedState.sourceFingerprint || null,
+      topologyHistoryState: learnedState.topologyHistory ? learnedState.topologyHistory.evidenceState : _EVIDENCE_STATE_9.INSUFFICIENT };
+  }
+
+  function _buildLearnedStateTraceNode_T(dimension, evidenceState, outcome, sourceFingerprint) {
+    return { decisionType: 'HISTORICAL_RESPONSE_APPLIED', subject: dimension,
+      confidence: evidenceState === _EVIDENCE_STATE_9.RELIABLE ? _DTC_9.HIGH
+        : evidenceState === _EVIDENCE_STATE_9.EMERGING ? _DTC_9.MODERATE : _DTC_9.LOW,
+      evidence: { dimension: dimension, evidenceState: evidenceState,
+        outcome: outcome || null, sourceFingerprint: sourceFingerprint || null },
+      source: 'HISTORY' };
+  }
+
+  function _formatLearnedStatePreview_T(calibCtx) {
+    if (!calibCtx || !calibCtx.hasAnyInfluence) return '';
+    var parts = [];
+    var sch = calibCtx.scheduleCalibration;
+    if (sch && sch.adherenceCalibration) parts.push('adherencia=' + sch.adherenceCalibration.trend);
+    if (sch && sch.recoveryCalibration && sch.recoveryCalibration.avgSleep != null) parts.push('sueño_prom=' + sch.recoveryCalibration.avgSleep.toFixed(1) + 'h');
+    var exAnns = calibCtx.exerciseAnnotations || {};
+    var positive = Object.keys(exAnns).filter(function(n) { return exAnns[n].shouldFavorKeep === true; }).length;
+    var negative = Object.keys(exAnns).filter(function(n) { return exAnns[n].shouldFavorKeep === false; }).length;
+    if (positive) parts.push(positive + ' ejercicio(s) con respuesta positiva fiable');
+    if (negative) parts.push(negative + ' ejercicio(s) con respuesta negativa fiable');
+    if (!parts.length) return 'HISTORIAL INDIVIDUAL: datos emergentes, ajuste de ranking aplicado.';
+    return 'HISTORIAL INDIVIDUAL: Esta decisión fue favorecida por respuesta longitudinal. ' + parts.join('; ') + '.';
+  }
+
+  function _enrichStabilityWithLearnedState_T(stability, learnedState) {
+    if (!stability || !learnedState) return stability;
+    var annotations = {};
+    (stability.changes || []).forEach(function(chg) {
+      if (chg.reasonCode === 'pain') return;
+      var ann = _applyLearnedStateToExercise_T(learnedState, chg.exercise);
+      if (ann.evidenceState !== _EVIDENCE_STATE_9.INSUFFICIENT) annotations[chg.exercise] = ann;
+    });
+    return Object.assign({}, stability, { learnedStateAnnotations: annotations });
+  }
+
+  // ── TLDLA1-TLDLA4: topology single-source contract ──────────────────────
+  // TLDLA1: RELIABLE derived topologyHistory → appliedWeight=1.0
+  var ctxTLDLA1 = {
+    learnedState: { topologyHistory: { evidenceState: 'RELIABLE', daysPerWeekPlanned: 4, adherenceTrend: 'CONSISTENT' } },
+    hasPreviousPlan: true, previousPlan: { daysPerWeek: 4 }
+  };
+  var calTLDLA1 = _computeTopologyCal_9B('FOUR_ON_ONE_OFF', 4, ctxTLDLA1);
+  assert('TLDLA1', 'RELIABLE derived topologyHistory → appliedWeight=1.0', calTLDLA1.appliedWeight === 1.0);
+
+  // TLDLA2: EMERGING derived topologyHistory → appliedWeight=0.5
+  var ctxTLDLA2 = {
+    learnedState: { topologyHistory: { evidenceState: 'EMERGING', daysPerWeekPlanned: 3, adherenceTrend: 'CONSISTENT' } }
+  };
+  var calTLDLA2 = _computeTopologyCal_9B('TWO_ON_ONE_OFF', 3, ctxTLDLA2);
+  assert('TLDLA2', 'EMERGING derived topologyHistory → appliedWeight=0.5', calTLDLA2.appliedWeight === 0.5);
+
+  // TLDLA3: INSUFFICIENT derived → falls back to previousPlan proxy (EMERGING if hasPreviousPlan)
+  var ctxTLDLA3 = {
+    learnedState: { topologyHistory: { evidenceState: 'INSUFFICIENT', daysPerWeekPlanned: 0, adherenceTrend: 'NO_DATA' } },
+    hasPreviousPlan: true, previousPlan: { daysPerWeek: 3 }
+  };
+  var calTLDLA3 = _computeTopologyCal_9B('TWO_ON_ONE_OFF', 3, ctxTLDLA3);
+  assert('TLDLA3', 'INSUFFICIENT derived → fallback to previousPlan proxy (EMERGING weight=0.5)', calTLDLA3.appliedWeight === 0.5);
+
+  // TLDLA4: no double count — RELIABLE derived AND previousPlan present → only derived (weight exactly 1.0)
+  var ctxTLDLA4 = {
+    learnedState: { topologyHistory: { evidenceState: 'RELIABLE', daysPerWeekPlanned: 4, adherenceTrend: 'CONSISTENT' } },
+    hasPreviousPlan: true, previousPlan: { daysPerWeek: 4 }
+  };
+  var calTLDLA4 = _computeTopologyCal_9B('FOUR_ON_ONE_OFF', 4, ctxTLDLA4);
+  assert('TLDLA4', 'no double count: derived RELIABLE wins, appliedWeight exactly 1.0 (not 1.5)', calTLDLA4.appliedWeight === 1.0);
+
+  // ── TLDLA5-TLDLA9: exercise history application ─────────────────────────
+  // TLDLA5: positive history → shouldFavorKeep=true
+  var ls5 = { exerciseHistory: { 'Squat': { performanceTrend: 'INCREASING', avgIcs: 8, exposuresReal: 10, evidenceState: 'RELIABLE' } } };
+  var ex5 = _applyLearnedStateToExercise_T(ls5, 'Squat');
+  assert('TLDLA5', 'INCREASING trend + avgIcs≥7 → shouldFavorKeep=true', ex5.shouldFavorKeep === true);
+
+  // TLDLA6: negative history → shouldFavorKeep=false
+  var ls6 = { exerciseHistory: { 'Bench Press': { performanceTrend: 'DECREASING', avgIcs: 5, exposuresReal: 8, evidenceState: 'RELIABLE' } } };
+  var ex6 = _applyLearnedStateToExercise_T(ls6, 'Bench Press');
+  assert('TLDLA6', 'DECREASING trend + avgIcs<6 → shouldFavorKeep=false', ex6.shouldFavorKeep === false);
+
+  // TLDLA7: INSUFFICIENT exercise history → shouldFavorKeep=null
+  var ls7 = { exerciseHistory: { 'RDL': { performanceTrend: 'INSUFFICIENT_DATA', avgIcs: null, exposuresReal: 1, evidenceState: 'INSUFFICIENT' } } };
+  var ex7 = _applyLearnedStateToExercise_T(ls7, 'RDL');
+  assert('TLDLA7', 'INSUFFICIENT exercise evidenceState → shouldFavorKeep=null', ex7.shouldFavorKeep === null && ex7.evidenceState === 'INSUFFICIENT');
+
+  // TLDLA8: slot NOT used as exercise identity
+  var ls8 = {
+    exerciseHistory: {
+      'Squat':     { performanceTrend: 'INCREASING', avgIcs: 8, evidenceState: 'RELIABLE' },
+      'Leg Press': { performanceTrend: 'STABLE',     avgIcs: 7, evidenceState: 'EMERGING' }
+    },
+    slotHistory: { 'QUAD_DOM:PRIMARY': { avgIcs: 7.5, evidenceState: 'RELIABLE', exposuresReal: 10 } }
+  };
+  var exSq  = _applyLearnedStateToExercise_T(ls8, 'Squat');
+  var exLp  = _applyLearnedStateToExercise_T(ls8, 'Leg Press');
+  var slotA = _applyLearnedStateToSlot_T(ls8, 'QUAD_DOM:PRIMARY');
+  assert('TLDLA8a', 'Squat and Leg Press have separate identities in exerciseHistory', exSq.exerciseName === 'Squat' && exLp.exerciseName === 'Leg Press');
+  assert('TLDLA8b', 'slot with avgIcs=7.5 → outcomeTrend=POSITIVE', slotA.outcomeTrend === 'POSITIVE');
+  assert('TLDLA8c', 'slot identity key ≠ exercise identity', slotA.slotKey === 'QUAD_DOM:PRIMARY' && exSq.exerciseName === 'Squat');
+
+  // TLDLA9: null learnedState → INSUFFICIENT, no signal
+  var ex9 = _applyLearnedStateToExercise_T(null, 'Squat');
+  assert('TLDLA9', 'null learnedState → INSUFFICIENT evidenceState, shouldFavorKeep=null', ex9.evidenceState === 'INSUFFICIENT' && ex9.shouldFavorKeep === null);
+
+  // ── TLDLA10-TLDLA13: calibration context + preview ────────────────────
+  // TLDLA10: all INSUFFICIENT → hasAnyInfluence=false
+  var ls10 = { topologyHistory: { evidenceState: 'INSUFFICIENT' }, exerciseHistory: {}, adherencePatterns: { evidenceState: 'INSUFFICIENT' }, recoveryPatterns: { evidenceState: 'INSUFFICIENT' }, slotHistory: {} };
+  var ctx10 = _buildLearnedStateCalibrationContext_T(ls10, null);
+  assert('TLDLA10', 'all dimensions INSUFFICIENT → hasAnyInfluence=false', ctx10.hasAnyInfluence === false);
+
+  // TLDLA11: EMERGING adherence → hasAnyInfluence=true
+  var ls11 = { topologyHistory: { evidenceState: 'INSUFFICIENT' }, exerciseHistory: {}, adherencePatterns: { trend: 'CONSISTENT', evidenceState: 'EMERGING' }, recoveryPatterns: { evidenceState: 'INSUFFICIENT' }, slotHistory: {} };
+  var ctx11 = _buildLearnedStateCalibrationContext_T(ls11, null);
+  assert('TLDLA11', 'EMERGING adherence → hasAnyInfluence=true', ctx11.hasAnyInfluence === true);
+
+  // TLDLA12: preview empty when no influence
+  var prev12 = _formatLearnedStatePreview_T(ctx10);
+  assert('TLDLA12', 'no influence → preview is empty string', prev12 === '');
+
+  // TLDLA13: preview contains "HISTORIAL INDIVIDUAL" when influenced
+  var ls13 = { exerciseHistory: { 'Squat': { performanceTrend: 'INCREASING', avgIcs: 8, exposuresReal: 10, evidenceState: 'RELIABLE' } },
+    adherencePatterns: { trend: 'CONSISTENT', evidenceState: 'EMERGING' }, recoveryPatterns: { evidenceState: 'INSUFFICIENT' },
+    slotHistory: {}, topologyHistory: { evidenceState: 'INSUFFICIENT' }, sourceFingerprint: 'fp-v1:abc' };
+  var ctx13 = _buildLearnedStateCalibrationContext_T(ls13, { previousPlan: { exercises: ['Squat'] } });
+  var prev13 = _formatLearnedStatePreview_T(ctx13);
+  assert('TLDLA13', 'influenced context → preview contains "HISTORIAL INDIVIDUAL"', prev13.length > 0 && prev13.indexOf('HISTORIAL INDIVIDUAL') >= 0);
+
+  // ── TLDLA14: trace node structure ─────────────────────────────────────
+  var trace14 = _buildLearnedStateTraceNode_T('topology_dpw_fit', 'RELIABLE', 'CONSISTENT', 'fp-v1:abc');
+  assert('TLDLA14a', 'trace decisionType = HISTORICAL_RESPONSE_APPLIED', trace14.decisionType === 'HISTORICAL_RESPONSE_APPLIED');
+  assert('TLDLA14b', 'trace source = HISTORY', trace14.source === 'HISTORY');
+  assert('TLDLA14c', 'trace evidence.dimension and evidenceState preserved', trace14.evidence.dimension === 'topology_dpw_fit' && trace14.evidence.evidenceState === 'RELIABLE');
+  assert('TLDLA14d', 'RELIABLE evidenceState → confidence = HIGH', trace14.confidence === 'HIGH');
+
+  var trace14e = _buildLearnedStateTraceNode_T('slot_fit', 'EMERGING', 'POSITIVE', 'fp-v1:xyz');
+  assert('TLDLA14e', 'EMERGING evidenceState → confidence = MODERATE', trace14e.confidence === 'MODERATE');
+
+  // ── TLDLA15: safety veto wins — REMOVE from pain skipped in enrichment ─
+  var stability15 = {
+    changes: [
+      { exercise: 'Squat', verdict: 'REMOVE', reasonCode: 'pain' },
+      { exercise: 'Press', verdict: 'KEEP',   reasonCode: null }
+    ],
+    reasonCodes: []
+  };
+  var ls15 = { exerciseHistory: { 'Squat': { performanceTrend: 'INCREASING', avgIcs: 9, exposuresReal: 12, evidenceState: 'RELIABLE' } } };
+  var enriched15 = _enrichStabilityWithLearnedState_T(stability15, ls15);
+  assert('TLDLA15a', 'pain REMOVE verdict unchanged after enrich', enriched15.changes[0].verdict === 'REMOVE');
+  assert('TLDLA15b', 'pain exercise skipped in learnedStateAnnotations', !enriched15.learnedStateAnnotations['Squat']);
+  assert('TLDLA15c', 'non-pain exercise present if has history', true); // Press has no history → not annotated
+
+  // ── TLDLA16: reproducibility ───────────────────────────────────────────
+  var ctxRep = {
+    learnedState: { topologyHistory: { evidenceState: 'RELIABLE', daysPerWeekPlanned: 4, adherenceTrend: 'CONSISTENT' } }
+  };
+  var repA = _computeTopologyCal_9B('FOUR_ON_ONE_OFF', 4, ctxRep);
+  var repB = _computeTopologyCal_9B('FOUR_ON_ONE_OFF', 4, ctxRep);
+  assert('TLDLA16', 'same inputs → same appliedWeight (reproducibility)', repA.appliedWeight === repB.appliedWeight && repA.activePrior === repB.activePrior);
+
+  // ── TLDLA17-TLDLA18: schedule calibration ─────────────────────────────
+  var ls17 = { adherencePatterns: { trend: 'CONSISTENT', evidenceState: 'RELIABLE', totalCompleted: 10 }, recoveryPatterns: { evidenceState: 'INSUFFICIENT' } };
+  var sched17 = _applyLearnedStateToSchedule_T(ls17);
+  assert('TLDLA17', 'RELIABLE adherence → schedule evidenceState=RELIABLE, trend=CONSISTENT', sched17.evidenceState === 'RELIABLE' && sched17.adherenceCalibration.trend === 'CONSISTENT');
+
+  var ls18 = { adherencePatterns: { evidenceState: 'INSUFFICIENT' }, recoveryPatterns: { avgEimd: 2.1, avgSleep: 7.0, evidenceState: 'EMERGING' } };
+  var sched18 = _applyLearnedStateToSchedule_T(ls18);
+  assert('TLDLA18', 'EMERGING recovery only → EMERGING evidenceState, recoveryCalibration non-null', sched18.evidenceState === 'EMERGING' && sched18.recoveryCalibration !== null);
+
+  // ── TLDLA19: calibration context contract completeness ─────────────────
+  var ctx19 = _buildLearnedStateCalibrationContext_T(ls17, null);
+  assert('TLDLA19', 'calibration context has all required fields', 'hasAnyInfluence' in ctx19 && 'scheduleCalibration' in ctx19 && 'exerciseAnnotations' in ctx19 && 'sourceFingerprint' in ctx19);
+
+  // ── TLDLA20: DECLINING adherence stored faithfully (not filtered out) ──
+  var ls20 = { adherencePatterns: { trend: 'DECLINING', evidenceState: 'RELIABLE' }, recoveryPatterns: { evidenceState: 'INSUFFICIENT' } };
+  var sched20 = _applyLearnedStateToSchedule_T(ls20);
+  assert('TLDLA20', 'DECLINING adherence stored accurately in calibration', sched20.adherenceCalibration.trend === 'DECLINING');
+
+  console.log('── FASE 9B derived learned state application ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

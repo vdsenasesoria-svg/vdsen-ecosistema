@@ -56,9 +56,9 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ---
 
-## FASE 3–8 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
+## FASE 3–9B — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1413 ✓ 0 ✗** · HEAD post-FASE8
+> Suite: **1441 ✓ 0 ✗** · HEAD post-FASE9B
 
 ### Arquitectura conceptual
 
@@ -250,6 +250,42 @@ baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score fi
 **Tests:** TTLS1-TTLS24 (TTCAL1-TTCAL12 en suite FASE 7; TTLS en FASE 8)
 
 **Suite: 1413 ✓ 0 ✗**
+
+---
+
+### FASE 9B — Derived Learned State Application
+
+**Principio:** DERIVE → VALIDATE → CALIBRATE → APPLY TO RANKING → TRACE
+
+**Single-source fix:** `_computeTopologyCalibration` prefiere `topologyHistory` derivado sobre proxy `previousPlan`. Flag `usedDerived` garantiza que solo un camino corre — nunca doble conteo.
+
+**Funciones añadidas:**
+
+| Función | Propósito |
+|---------|-----------|
+| `_applyLearnedStateToExercise(ls, name)` | → `{shouldFavorKeep, trend, avgIcs, evidenceState}` — identidad por nombre, no slot |
+| `_applyLearnedStateToSlot(ls, slotKey)` | → `{outcomeTrend, evidenceState}` — slot = motorPattern:role, NO proxy de identidad |
+| `_applyLearnedStateToSchedule(ls)` | → `{adherenceCalibration, recoveryCalibration, evidenceState}` |
+| `_buildLearnedStateCalibrationContext(ls, prescCtx)` | Contexto completo derivado una vez por generación |
+| `_buildLearnedStateTraceNode(dim, ev, outcome, fp)` | Nodo `HISTORICAL_RESPONSE_APPLIED` con metadata |
+| `_formatLearnedStatePreview(calibCtx)` | Línea compacta "HISTORIAL INDIVIDUAL: ..." para motor |
+| `_enrichStabilityWithLearnedState(stability, ls, ctx)` | Anotaciones ADITIVAS — nunca cambia veredictos de safety |
+| `_learnedStateStabilityToText(annotations)` | Texto inyectable al motor con ✓/⚠ por ejercicio |
+| `_runLearnedStateApplicationTests()` | Tests TLDLA1-TLDLA20 inline (browser) |
+
+**Contratos clave:**
+
+- `INSUFFICIENT` → 0 cambios en decisiones, 0 cambio en fingerprint
+- `EMERGING` → ajuste aditivo de ranking, contextualización — no override de coach
+- `RELIABLE` → puede ganar ranking válido — nunca rompe safety/constraints
+- `pain` reasonCode → siempre excluido de anotaciones (safety inviolable)
+- Slot ≠ identidad: `slotHistory` keyed por `"motorPattern:role"`, `exerciseHistory` por `exerciseName`
+
+**Motor Prompt Delta:** subsección "LEARNED STATE OPERATIVO (FASE 9B)" añadida bajo "LEARNED STATE PERSISTENCE RULE" en `_MOTOR_PROMPT_EMBEDDED`.
+
+**Tests:** TLDLA1-TLDLA20 (28 aserciones: 20 principales + sub-aserciones 8a/b/c, 14a/b/c/d/e, 15a/b/c)
+
+**Suite: 1441 ✓ 0 ✗**
 
 ---
 
