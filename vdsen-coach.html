@@ -6559,18 +6559,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       );
       const _effGate55 = (function() {
         var _ph = _buildLongitudinalRepairHints(_longValReport, {});
-        if (!_ph || !_ph.length) return _longGate;
-        var _lc = _buildExerciseCandidatesForLV(training, _prevPlanForLV);
-        var _lr = _applyLongitudinalRepairHintsToCandidates(_lc, _ph, {});
-        var _ti = _lr.adjusted.length ? _lr.adjusted[0].id : null;
-        var _sa = _auditCandidateSelection(_lr.adjusted, _ti, null, {});
-        if (!_sa.selectedCandidate) return _longGate;
-        var _oa = _auditRepairOutcome(_sa.selectedCandidate, training, { prevPlan: _prevPlanForLV });
-        var _vb = { unexpectedChanges: _ph.map(function(h) { return { type: h.type, severity: h.severity }; }) };
-        var _ea = _auditRepairEffectiveness(_sa, _oa, _vb, _longValReport, { prevPlan: _prevPlanForLV });
-        var _g55 = _applyRepairEffectivenessGate(_longGate, _ea, {});
-        var _ca56 = _auditRepairDecisionConsistency(_sa, _oa, _ea, _g55, {});
-        return _applyConsistencyGate(_g55, _ca56, {});
+        return _runFinalRepairRevalidation(_ph, training, _prevPlanForLV, _longValReport, _longGate, {}).gate;
       })();
       if (_effGate55.status === 'REVIEW_REQUIRED' && _effGate55.criticalIssues.length) {
         const _issueHtml = _effGate55.criticalIssues.slice(0, 3).map(function(d) { return '• ' + _escH(d); }).join('<br>');
@@ -10687,6 +10676,52 @@ El esfuerzo no es negociable.
   }
   window._applyConsistencyGate = _applyConsistencyGate;
 
+  // ─── FASE 57: Final Repair Pre-Write Revalidation ────────────────────────────
+  // Pure orchestrator. Reconstructs the full F51–F56 chain using the actual
+  // final training plan (_finalTraining) and the computed hints array.
+  // Elevates gate for: REPAIR_NOT_REFLECTED, STRUCTURAL_REPAIR_NOT_REFLECTED,
+  // REGRESSED (via F55), and CRITICAL inconsistency (via F56).
+  // Returns { gate, selectionAudit, outcomeAudit, effectivenessAudit, consistencyAudit }.
+  function _runFinalRepairRevalidation(hints, finalTraining, prevPlan, longValReport, baseGate, context) {
+    var RANK = { 'OK': 0, 'WARN': 1, 'REVIEW_REQUIRED': 2 };
+    function _cloneGate(g) {
+      return {
+        status:        (g && g.status) || 'OK',
+        criticalIssues:(g && Array.isArray(g.criticalIssues)) ? g.criticalIssues.slice() : [],
+        warnings:      (g && Array.isArray(g.warnings))       ? g.warnings.slice()       : [],
+        longVerdict:   (g && g.longVerdict) || 'OK',
+        repairEffectivenessNote: (g && g.repairEffectivenessNote !== undefined) ? g.repairEffectivenessNote : null,
+        consistencyNote:         (g && g.consistencyNote !== undefined)         ? g.consistencyNote         : null
+      };
+    }
+    var _empty = { gate: _cloneGate(baseGate), selectionAudit: null, outcomeAudit: null, effectivenessAudit: null, consistencyAudit: null };
+    if (!hints || !hints.length) return _empty;
+
+    var _lc = _buildExerciseCandidatesForLV(finalTraining, prevPlan);
+    var _lr = _applyLongitudinalRepairHintsToCandidates(_lc, hints, {});
+    var _ti = _lr.adjusted.length ? _lr.adjusted[0].id : null;
+    var _sa = _auditCandidateSelection(_lr.adjusted, _ti, null, {});
+    if (!_sa || !_sa.selectedCandidate) return Object.assign({}, _empty, { selectionAudit: _sa });
+
+    var _oa = _auditRepairOutcome(_sa.selectedCandidate, finalTraining, { prevPlan: prevPlan });
+    var _vb = { unexpectedChanges: hints.map(function(h) { return { type: h.type, severity: h.severity }; }) };
+    var _ea = _auditRepairEffectiveness(_sa, _oa, _vb, longValReport, { prevPlan: prevPlan });
+
+    // Elevate gate for REPAIR_NOT_REFLECTED / STRUCTURAL_REPAIR_NOT_REFLECTED
+    var _g0 = _cloneGate(baseGate);
+    if (_oa && _oa.alert && (_oa.alert.code === 'REPAIR_NOT_REFLECTED' || _oa.alert.code === 'STRUCTURAL_REPAIR_NOT_REFLECTED')) {
+      if ((RANK['REVIEW_REQUIRED'] || 0) > (RANK[_g0.status] || 0)) _g0.status = 'REVIEW_REQUIRED';
+      _g0.criticalIssues.push(_oa.alert.code + ': repair not reflected in final plan — longitudinal integrity compromised.');
+    }
+
+    var _g1 = _applyRepairEffectivenessGate(_g0, _ea, {});
+    var _ca = _auditRepairDecisionConsistency(_sa, _oa, _ea, _g1, {});
+    var _finalGate = _applyConsistencyGate(_g1, _ca, {});
+
+    return { gate: _finalGate, selectionAudit: _sa, outcomeAudit: _oa, effectivenessAudit: _ea, consistencyAudit: _ca };
+  }
+  window._runFinalRepairRevalidation = _runFinalRepairRevalidation;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10831,18 +10866,7 @@ El esfuerzo no es negociable.
       );
       const _effGate55b = (function() {
         var _ph2 = _buildLongitudinalRepairHints(_longValReport2, {});
-        if (!_ph2 || !_ph2.length) return _longGate2;
-        var _lc2 = _buildExerciseCandidatesForLV(training, _prevPlanForLV2);
-        var _lr2 = _applyLongitudinalRepairHintsToCandidates(_lc2, _ph2, {});
-        var _ti2 = _lr2.adjusted.length ? _lr2.adjusted[0].id : null;
-        var _sa2 = _auditCandidateSelection(_lr2.adjusted, _ti2, null, {});
-        if (!_sa2.selectedCandidate) return _longGate2;
-        var _oa2 = _auditRepairOutcome(_sa2.selectedCandidate, training, { prevPlan: _prevPlanForLV2 });
-        var _vb2 = { unexpectedChanges: _ph2.map(function(h) { return { type: h.type, severity: h.severity }; }) };
-        var _ea2 = _auditRepairEffectiveness(_sa2, _oa2, _vb2, _longValReport2, { prevPlan: _prevPlanForLV2 });
-        var _g55b = _applyRepairEffectivenessGate(_longGate2, _ea2, {});
-        var _ca56b = _auditRepairDecisionConsistency(_sa2, _oa2, _ea2, _g55b, {});
-        return _applyConsistencyGate(_g55b, _ca56b, {});
+        return _runFinalRepairRevalidation(_ph2, training, _prevPlanForLV2, _longValReport2, _longGate2, {}).gate;
       })();
       if (_effGate55b.status === 'REVIEW_REQUIRED' && _effGate55b.criticalIssues.length) {
         const _issueHtml2 = _effGate55b.criticalIssues.slice(0, 3).map(d => '• ' + _escH(d)).join('<br>');

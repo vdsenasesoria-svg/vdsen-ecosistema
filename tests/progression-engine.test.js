@@ -10933,4 +10933,210 @@ function _makeG56(status, criticalIssues, warnings) {
   assert('F56-Mb', 'no mutation of inputs', JSON.stringify({ sa: sa, oa: oa, ea: ea, g: g }) === snap);
 })();
 
+// ─── FASE 57: Final Repair Pre-Write Revalidation ───────────────────────────
+function _runFinalRepairRevalidation(hints, finalTraining, prevPlan, longValReport, baseGate, context) {
+  var RANK = { 'OK': 0, 'WARN': 1, 'REVIEW_REQUIRED': 2 };
+  function _cloneGate(g) {
+    return {
+      status:        (g && g.status) || 'OK',
+      criticalIssues:(g && Array.isArray(g.criticalIssues)) ? g.criticalIssues.slice() : [],
+      warnings:      (g && Array.isArray(g.warnings))       ? g.warnings.slice()       : [],
+      longVerdict:   (g && g.longVerdict) || 'OK',
+      repairEffectivenessNote: (g && g.repairEffectivenessNote !== undefined) ? g.repairEffectivenessNote : null,
+      consistencyNote:         (g && g.consistencyNote !== undefined)         ? g.consistencyNote         : null
+    };
+  }
+  var _empty = { gate: _cloneGate(baseGate), selectionAudit: null, outcomeAudit: null, effectivenessAudit: null, consistencyAudit: null };
+  if (!hints || !hints.length) return _empty;
+  var _lc = _buildExerciseCandidatesForLV(finalTraining, prevPlan);
+  var _lr = _applyLongitudinalRepairHintsToCandidates(_lc, hints, {});
+  var _ti = _lr.adjusted.length ? _lr.adjusted[0].id : null;
+  var _sa = _auditCandidateSelection(_lr.adjusted, _ti, null, {});
+  if (!_sa || !_sa.selectedCandidate) return Object.assign({}, _empty, { selectionAudit: _sa });
+  var _oa = _auditRepairOutcome(_sa.selectedCandidate, finalTraining, { prevPlan: prevPlan });
+  var _vb = { unexpectedChanges: hints.map(function(h) { return { type: h.type, severity: h.severity }; }) };
+  var _ea = _auditRepairEffectiveness(_sa, _oa, _vb, longValReport, { prevPlan: prevPlan });
+  var _g0 = _cloneGate(baseGate);
+  if (_oa && _oa.alert && (_oa.alert.code === 'REPAIR_NOT_REFLECTED' || _oa.alert.code === 'STRUCTURAL_REPAIR_NOT_REFLECTED')) {
+    if ((RANK['REVIEW_REQUIRED'] || 0) > (RANK[_g0.status] || 0)) _g0.status = 'REVIEW_REQUIRED';
+    _g0.criticalIssues.push(_oa.alert.code + ': repair not reflected in final plan — longitudinal integrity compromised.');
+  }
+  var _g1 = _applyRepairEffectivenessGate(_g0, _ea, {});
+  var _ca = _auditRepairDecisionConsistency(_sa, _oa, _ea, _g1, {});
+  var _finalGate = _applyConsistencyGate(_g1, _ca, {});
+  return { gate: _finalGate, selectionAudit: _sa, outcomeAudit: _oa, effectivenessAudit: _ea, consistencyAudit: _ca };
+}
+
+function _makeF57Plan(exerciseNames) {
+  return { days: [{ dayIndex: 0, exercises: (exerciseNames || []).map(function(n) { return { exerciseName: n }; }) }] };
+}
+function _makeF57PrevPlan(exerciseNames) {
+  return { daysPerWeek: 1, weeks: 4, days: [{ dayIndex: 0, exercises: (exerciseNames || []).map(function(n) { return { exerciseName: n }; }) }] };
+}
+function _makeF57Hint(type, targetId) {
+  return { type: type, targetExerciseId: targetId || null, severity: 'SUSPECT', preferredAction: 'REPLACE_OR_REMOVE', reasonCodes: [type] };
+}
+function _makeF57LvReport(verdict, changes) {
+  return { unexpectedChanges: changes || [], exerciseContinuity: { keptCount: 0, newCount: 0, lostCount: 0, replacedCount: 0 }, verdict: verdict || 'OK' };
+}
+function _makeF57Gate(status, criticalIssues) {
+  return { status: status || 'OK', criticalIssues: criticalIssues || [], warnings: [], longVerdict: status === 'OK' ? 'OK' : 'WARNING' };
+}
+
+// F57-A: null hints → gate pass-through, all audits null
+(function() {
+  console.log('\nF57-A — null hints → gate pass-through');
+  var base = _makeF57Gate('WARN', ['prior']);
+  var r = _runFinalRepairRevalidation(null, _makeF57Plan(['Ex1']), _makeF57PrevPlan(['Ex1']), _makeF57LvReport('OK'), base, {});
+  assert('F57-Aa', 'gate status preserved', r.gate.status === 'WARN');
+  assert('F57-Ab', 'selectionAudit null', r.selectionAudit === null);
+})();
+
+// F57-B: empty hints → gate pass-through
+(function() {
+  console.log('\nF57-B — empty hints → gate pass-through');
+  var base = _makeF57Gate('OK');
+  var r = _runFinalRepairRevalidation([], _makeF57Plan(['Ex1']), _makeF57PrevPlan(['Ex1']), _makeF57LvReport('OK'), base, {});
+  assert('F57-Ba', 'gate status OK', r.gate.status === 'OK');
+  assert('F57-Bb', 'prior criticalIssues preserved (empty)', r.gate.criticalIssues.length === 0);
+})();
+
+// F57-C: PainEx still in final plan + PAIN_HISTORY_EXERCISE_KEPT hint → NOT_APPLIED → REVIEW_REQUIRED
+(function() {
+  console.log('\nF57-C — repair not reflected: PainEx still present → gate REVIEW_REQUIRED');
+  var finalPlan = _makeF57Plan(['PainEx']);
+  var prevPlan  = _makeF57PrevPlan(['PainEx']);
+  var hints = [_makeF57Hint('PAIN_HISTORY_EXERCISE_KEPT', 'PainEx')];
+  var lvReport = _makeF57LvReport('SUSPECT', [{ type: 'PAIN_HISTORY_EXERCISE_KEPT', severity: 'SUSPECT' }]);
+  var r = _runFinalRepairRevalidation(hints, finalPlan, prevPlan, lvReport, _makeF57Gate('OK'), {});
+  assert('F57-Ca', 'gate=REVIEW_REQUIRED for NOT_APPLIED', r.gate.status === 'REVIEW_REQUIRED');
+  assert('F57-Cb', 'outcomeAudit.outcome=NOT_APPLIED', r.outcomeAudit && r.outcomeAudit.outcome === 'NOT_APPLIED');
+  assert('F57-Cc', 'criticalIssues has REPAIR_NOT_REFLECTED', r.gate.criticalIssues.some(function(c) { return c.indexOf('REPAIR_NOT_REFLECTED') !== -1; }));
+})();
+
+// F57-D: multiple hints, pain exercise still present → REVIEW_REQUIRED preserved
+(function() {
+  console.log('\nF57-D — multiple hints, pain exercise still present → REVIEW_REQUIRED');
+  var hints = [
+    _makeF57Hint('PAIN_HISTORY_EXERCISE_KEPT', 'PainEx'),
+    _makeF57Hint('FREQUENCY_CHANGED', null)
+  ];
+  var r = _runFinalRepairRevalidation(hints, _makeF57Plan(['PainEx']), _makeF57PrevPlan(['PainEx']), _makeF57LvReport('SUSPECT'), _makeF57Gate('OK'), {});
+  assert('F57-Da', 'gate REVIEW_REQUIRED with multiple hints', r.gate.status === 'REVIEW_REQUIRED');
+})();
+
+// F57-E: return shape has all 5 required fields
+(function() {
+  console.log('\nF57-E — return shape: gate + 4 audit fields');
+  var r = _runFinalRepairRevalidation(
+    [_makeF57Hint('PAIN_HISTORY_EXERCISE_KEPT', 'PainEx')],
+    _makeF57Plan(['PainEx']), _makeF57PrevPlan(['PainEx']),
+    _makeF57LvReport('SUSPECT'), _makeF57Gate('OK'), {}
+  );
+  assert('F57-Ea', 'has gate', r.gate !== undefined && r.gate !== null);
+  assert('F57-Eb', 'has selectionAudit', 'selectionAudit' in r);
+  assert('F57-Ec', 'has outcomeAudit', 'outcomeAudit' in r);
+  assert('F57-Ed', 'has effectivenessAudit', 'effectivenessAudit' in r);
+  assert('F57-Ee', 'has consistencyAudit', 'consistencyAudit' in r);
+})();
+
+// F57-F: RESTORE_OR_KEEP exercise dropped from plan → NOT_APPLIED → gate REVIEW_REQUIRED
+(function() {
+  console.log('\nF57-F — RESTORE_OR_KEEP: good exercise dropped → REPAIR_NOT_REFLECTED → REVIEW_REQUIRED');
+  var finalPlan = _makeF57Plan(['OtherEx']);            // GoodEx was dropped
+  var prevPlan  = _makeF57PrevPlan(['GoodEx', 'OtherEx']);  // GoodEx was in prev
+  var hints = [{ type: 'POSITIVE_HISTORY_EXERCISE_DROPPED', targetExerciseId: 'GoodEx',
+    severity: 'WARNING', preferredAction: 'RESTORE_OR_KEEP', reasonCodes: ['EXERCISE_POSITIVE_HISTORY'] }];
+  var r = _runFinalRepairRevalidation(hints, finalPlan, prevPlan, _makeF57LvReport('WARNING'), _makeF57Gate('OK'), {});
+  // RESTORE_OR_KEEP candidate 'GoodEx' (in prevPlan, not in finalPlan) → selected (priority boosted)
+  // outcomeAudit: exercisePresent=false → NOT_APPLIED → REPAIR_NOT_REFLECTED → REVIEW_REQUIRED
+  assert('F57-Fa', 'gate REVIEW_REQUIRED for dropped positive exercise', r.gate.status === 'REVIEW_REQUIRED');
+  assert('F57-Fb', 'outcomeAudit outcome NOT_APPLIED', r.outcomeAudit && r.outcomeAudit.outcome === 'NOT_APPLIED');
+})();
+
+// F57-G: gate only elevates — REVIEW_REQUIRED base + no-issue result stays REVIEW_REQUIRED
+(function() {
+  console.log('\nF57-G — gate only elevates: REVIEW_REQUIRED base preserved');
+  var base = _makeF57Gate('REVIEW_REQUIRED', ['prior-critical']);
+  // No matching hints for exercise candidates → no REPAIR_NOT_REFLECTED
+  var r = _runFinalRepairRevalidation([], _makeF57Plan(['Ex1']), _makeF57PrevPlan(['Ex1']), _makeF57LvReport('OK'), base, {});
+  assert('F57-Ga', 'status stays REVIEW_REQUIRED', r.gate.status === 'REVIEW_REQUIRED');
+  assert('F57-Gb', 'prior criticalIssues preserved', r.gate.criticalIssues[0] === 'prior-critical');
+})();
+
+// F57-H: effectivenessAudit is NOT_VERIFIABLE when outcome is NOT_APPLIED
+(function() {
+  console.log('\nF57-H — effectivenessAudit=NOT_VERIFIABLE when outcome=NOT_APPLIED');
+  var r = _runFinalRepairRevalidation(
+    [_makeF57Hint('PAIN_HISTORY_EXERCISE_KEPT', 'PainEx')],
+    _makeF57Plan(['PainEx']), _makeF57PrevPlan(['PainEx']),
+    _makeF57LvReport('SUSPECT'), _makeF57Gate('OK'), {}
+  );
+  assert('F57-Ha', 'effectivenessAudit=NOT_VERIFIABLE (outcome was NOT_APPLIED)', r.effectivenessAudit && r.effectivenessAudit.effectiveness === 'NOT_VERIFIABLE');
+})();
+
+// F57-I: selectionAudit.selectedCandidate is set and has expected shape
+(function() {
+  console.log('\nF57-I — selectionAudit.selectedCandidate set with type');
+  var r = _runFinalRepairRevalidation(
+    [_makeF57Hint('PAIN_HISTORY_EXERCISE_KEPT', 'PainEx')],
+    _makeF57Plan(['PainEx']), _makeF57PrevPlan(['PainEx']),
+    _makeF57LvReport('SUSPECT'), _makeF57Gate('OK'), {}
+  );
+  assert('F57-Ia', 'selectedCandidate.type=REPLACE_OR_REMOVE', r.selectionAudit && r.selectionAudit.selectedCandidate && r.selectionAudit.selectedCandidate.type === 'REPLACE_OR_REMOVE');
+  assert('F57-Ib', 'selectedCandidate.targetExerciseId=PainEx', r.selectionAudit.selectedCandidate.targetExerciseId === 'PainEx');
+})();
+
+// F57-J: determinism — same inputs produce identical output
+(function() {
+  console.log('\nF57-J — determinism: same inputs → same result');
+  var hints = [_makeF57Hint('PAIN_HISTORY_EXERCISE_KEPT', 'PainEx')];
+  var plan  = _makeF57Plan(['PainEx']);
+  var prev  = _makeF57PrevPlan(['PainEx']);
+  var lv    = _makeF57LvReport('SUSPECT');
+  var base  = _makeF57Gate('OK');
+  var r1 = _runFinalRepairRevalidation(hints, plan, prev, lv, base, {});
+  var r2 = _runFinalRepairRevalidation(hints, plan, prev, lv, base, {});
+  assert('F57-Ja', 'same gate status', r1.gate.status === r2.gate.status);
+  assert('F57-Jb', 'same criticalIssues count', r1.gate.criticalIssues.length === r2.gate.criticalIssues.length);
+})();
+
+// F57-K: no mutation — all inputs unchanged after call
+(function() {
+  console.log('\nF57-K — no mutation: inputs unchanged after call');
+  var hints = [_makeF57Hint('PAIN_HISTORY_EXERCISE_KEPT', 'PainEx')];
+  var plan  = _makeF57Plan(['PainEx']);
+  var prev  = _makeF57PrevPlan(['PainEx']);
+  var lv    = _makeF57LvReport('SUSPECT');
+  var base  = _makeF57Gate('OK');
+  var snapH = JSON.stringify(hints);
+  var snapP = JSON.stringify(plan);
+  var snapB = JSON.stringify(base);
+  _runFinalRepairRevalidation(hints, plan, prev, lv, base, {});
+  assert('F57-Ka', 'hints unchanged', JSON.stringify(hints) === snapH);
+  assert('F57-Kb', 'plan unchanged', JSON.stringify(plan) === snapP);
+  assert('F57-Kc', 'baseGate unchanged', JSON.stringify(base) === snapB);
+})();
+
+// F57-L: base gate warnings preserved through orchestrator
+(function() {
+  console.log('\nF57-L — base gate warnings preserved in output');
+  var base = { status: 'WARN', criticalIssues: [], warnings: ['prior-warning'], longVerdict: 'WARNING' };
+  var r = _runFinalRepairRevalidation([], _makeF57Plan([]), _makeF57PrevPlan([]), _makeF57LvReport('OK'), base, {});
+  assert('F57-La', 'prior warning preserved', r.gate.warnings[0] === 'prior-warning');
+})();
+
+// F57-M: consistencyAudit present and has consistent=true for normal NOT_APPLIED path
+(function() {
+  console.log('\nF57-M — consistencyAudit present, consistent for NOT_APPLIED path');
+  var r = _runFinalRepairRevalidation(
+    [_makeF57Hint('PAIN_HISTORY_EXERCISE_KEPT', 'PainEx')],
+    _makeF57Plan(['PainEx']), _makeF57PrevPlan(['PainEx']),
+    _makeF57LvReport('SUSPECT'), _makeF57Gate('OK'), {}
+  );
+  // NOT_APPLIED → NOT_VERIFIABLE effectiveness → no consistency CRITICAL
+  assert('F57-Ma', 'consistencyAudit present', r.consistencyAudit !== null);
+  assert('F57-Mb', 'consistent=true (NOT_VERIFIABLE path has no critical)', r.consistencyAudit.consistent === true);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
