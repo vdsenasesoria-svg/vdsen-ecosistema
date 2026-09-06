@@ -11867,6 +11867,7 @@ El esfuerzo no es negociable.
     REPAIR_CANDIDATE_REJECTED: 'REPAIR_CANDIDATE_REJECTED',
     REPAIR_CANDIDATE_SELECTED: 'REPAIR_CANDIDATE_SELECTED',
     PLAN_CONFIRMATION_REQUIRED: 'PLAN_CONFIRMATION_REQUIRED',
+    HISTORICAL_RESPONSE_APPLIED: 'HISTORICAL_RESPONSE_APPLIED',
   };
 
   // Normalized source enum (spec §3)
@@ -12135,6 +12136,195 @@ El esfuerzo no es negociable.
   window._DECISION_TRACE_ENGINE     = _DECISION_TRACE_ENGINE;
   window._DECISION_TRACE_CONFIDENCE = _DECISION_TRACE_CONFIDENCE;
   window._DECISION_TRACE_AUDIT_MODE = _DECISION_TRACE_AUDIT_MODE;
+
+  // ── FASE 5: DECISION TRACE → LONGITUDINAL LEARNING CONTRACT ──────────────
+  // TRACE ≠ LEARNING. El trace explica decisiones.
+  // Solo evidencia longitudinal real y suficiente puede modificar learned state.
+
+  var _LEARNING_ELIGIBILITY = {
+    NEVER:        'NEVER',        // jamás alimenta learned state
+    CONTEXT_ONLY: 'CONTEXT_ONLY', // contextualiza pero no cambia priors
+    CANDIDATE:    'CANDIDATE',    // puede contribuir si hay evidencia longitudinal
+    ELIGIBLE:     'ELIGIBLE',     // señal válida para agregación longitudinal
+  };
+
+  var _EVIDENCE_STATE = {
+    INSUFFICIENT: 'INSUFFICIENT',
+    EMERGING:     'EMERGING',
+    RELIABLE:     'RELIABLE',
+  };
+
+  var _OUTCOME_STATE = {
+    POSITIVE:   'POSITIVE',
+    NEUTRAL:    'NEUTRAL',
+    NEGATIVE:   'NEGATIVE',
+    UNRESOLVED: 'UNRESOLVED',
+  };
+
+  // Map decisionType → learning eligibility (spec §2–§4)
+  var _LEARNING_ELIGIBILITY_BY_TYPE = {
+    PROFILE_VALUE_RESOLVED:      _LEARNING_ELIGIBILITY.CONTEXT_ONLY,
+    PRIORITY_RESOLVED:           _LEARNING_ELIGIBILITY.CONTEXT_ONLY,
+    VOLUME_TARGET_RESOLVED:      _LEARNING_ELIGIBILITY.CONTEXT_ONLY,
+    FREQUENCY_TARGET_RESOLVED:   _LEARNING_ELIGIBILITY.CONTEXT_ONLY,
+    TOPOLOGY_SELECTED:           _LEARNING_ELIGIBILITY.CANDIDATE,
+    TOPOLOGY_REJECTED:           _LEARNING_ELIGIBILITY.NEVER,
+    DISTRIBUTION_ASSIGNED:       _LEARNING_ELIGIBILITY.CANDIDATE,
+    MAINTENANCE_ROLE_ASSIGNED:   _LEARNING_ELIGIBILITY.CANDIDATE,
+    EXERCISE_SLOT_ASSIGNED:      _LEARNING_ELIGIBILITY.CANDIDATE,
+    EXERCISE_SELECTED:           _LEARNING_ELIGIBILITY.CANDIDATE,
+    EXERCISE_REPLACED:           _LEARNING_ELIGIBILITY.CANDIDATE,
+    EXERCISE_RETAINED:           _LEARNING_ELIGIBILITY.CANDIDATE,
+    SESSION_ORDER_DECISION:      _LEARNING_ELIGIBILITY.CONTEXT_ONLY,
+    STABILITY_DECISION:          _LEARNING_ELIGIBILITY.CONTEXT_ONLY,
+    STRUCTURAL_FATIGUE_FLAG:     _LEARNING_ELIGIBILITY.CONTEXT_ONLY,
+    QUALITY_GATE_RESULT:         _LEARNING_ELIGIBILITY.NEVER,
+    REPAIR_CANDIDATE_CREATED:    _LEARNING_ELIGIBILITY.NEVER,
+    REPAIR_CANDIDATE_REJECTED:   _LEARNING_ELIGIBILITY.NEVER,
+    REPAIR_CANDIDATE_SELECTED:   _LEARNING_ELIGIBILITY.CANDIDATE, // only if applied+confirmed+outcomes
+    PLAN_CONFIRMATION_REQUIRED:  _LEARNING_ELIGIBILITY.NEVER,
+    HISTORICAL_RESPONSE_APPLIED: _LEARNING_ELIGIBILITY.NEVER,     // trace of learning, not source
+  };
+
+  // Returns the learning eligibility for a decisionType string.
+  // Unknown types default to NEVER.
+  function _getLearningEligibility(decisionType) {
+    return _LEARNING_ELIGIBILITY_BY_TYPE[decisionType] || _LEARNING_ELIGIBILITY.NEVER;
+  }
+
+  // Data-quality check on outcomes object.
+  // Returns {ok, reason} — ok=false means data is tainted and cannot feed learning.
+  // spec §11: autoFilled, autoClosed, synthetic, unresolved identity → reject.
+  function _assessOutcomeDataQuality(outcomes) {
+    if (!outcomes || typeof outcomes !== 'object') return { ok: false, reason: 'NO_OUTCOMES' };
+    if (outcomes.hasAutoFilled)          return { ok: false, reason: 'AUTOFILLED' };
+    if (outcomes.hasAutoClosed)          return { ok: false, reason: 'AUTOCLOSED' };
+    if (outcomes.hasSyntheticPostsession) return { ok: false, reason: 'SYNTHETIC' };
+    if (outcomes.hasDuplicatedLogs)      return { ok: false, reason: 'DUPLICATED_LOGS' };
+    if (outcomes.identityResolved === false) return { ok: false, reason: 'UNRESOLVED_IDENTITY' };
+    return { ok: true, reason: null };
+  }
+
+  // spec §6: single observation cannot modify structural learned state.
+  // sessionsReal > 1 = minimum for longitudinal evidence.
+  function _hasLongitudinalEvidence(outcomes) {
+    return !!(outcomes && (outcomes.sessionsReal || 0) > 1);
+  }
+
+  // Classifies trace nodes into learning buckets.
+  // outcomes: { sessionsReal, hasAutoFilled, hasAutoClosed, hasSyntheticPostsession,
+  //             hasDuplicatedLogs, identityResolved, adherence, performanceTrend, ... }
+  // Returns { eligible[], contextOnly[], rejected[], insufficientEvidence[] }
+  function _auditLearningEligibility(traceNodes, outcomes) {
+    var nodes = Array.isArray(traceNodes) ? traceNodes : [];
+    var result = { eligible: [], contextOnly: [], rejected: [], insufficientEvidence: [] };
+    var dq = _assessOutcomeDataQuality(outcomes);
+    var hasLong = _hasLongitudinalEvidence(outcomes);
+
+    nodes.forEach(function(n) {
+      if (!n || !n.decisionType) { result.rejected.push(n); return; }
+      var elig = _getLearningEligibility(n.decisionType);
+      if (elig === _LEARNING_ELIGIBILITY.NEVER) {
+        result.rejected.push(n);
+      } else if (elig === _LEARNING_ELIGIBILITY.CONTEXT_ONLY) {
+        result.contextOnly.push(n);
+      } else if (elig === _LEARNING_ELIGIBILITY.CANDIDATE || elig === _LEARNING_ELIGIBILITY.ELIGIBLE) {
+        if (!dq.ok) {
+          result.insufficientEvidence.push(n);
+        } else if (!hasLong) {
+          // spec §6: single observation ≠ learning
+          result.insufficientEvidence.push(n);
+        } else {
+          result.eligible.push(n);
+        }
+      } else {
+        result.rejected.push(n);
+      }
+    });
+    return result;
+  }
+
+  // Build an outcome contract for one intervention (spec §5).
+  // evidenceState must be provided by caller — no thresholds invented here.
+  function _buildOutcomeContract(opts) {
+    if (!opts || !opts.interventionKey || !opts.interventionType) {
+      throw new Error('_buildOutcomeContract: interventionKey and interventionType required');
+    }
+    return {
+      interventionKey:        opts.interventionKey,
+      interventionType:       opts.interventionType,
+      decisionFingerprint:    opts.decisionFingerprint || null,
+      startedAt:              opts.startedAt || null,
+      observations: {
+        sessionsReal:        opts.sessionsReal        || 0,
+        exposuresReal:       opts.exposuresReal       || 0,
+        adherence:           opts.adherence           != null ? opts.adherence : null,
+        performanceTrend:    opts.performanceTrend    || null,
+        rirConsistency:      opts.rirConsistency      || null,
+        recoveryTrend:       opts.recoveryTrend       || null,
+        painTrend:           opts.painTrend           || null,
+      },
+      evidenceState: opts.evidenceState || _EVIDENCE_STATE.INSUFFICIENT,
+      outcome:       opts.outcome       || _OUTCOME_STATE.UNRESOLVED,
+    };
+  }
+
+  // Build the runtime learned state object (spec §12).
+  // In-memory only — never written directly to Firestore as a new collection.
+  function _buildLearnedState(opts) {
+    return {
+      learnedStateVersion:            'learned-state-v1',
+      topologyHistory:                Array.isArray(opts && opts.topologyHistory) ? opts.topologyHistory.slice() : [],
+      slotHistory:                    Array.isArray(opts && opts.slotHistory)     ? opts.slotHistory.slice()     : [],
+      exerciseHistory:                Array.isArray(opts && opts.exerciseHistory) ? opts.exerciseHistory.slice() : [],
+      recoveryPatterns:               Array.isArray(opts && opts.recoveryPatterns)? opts.recoveryPatterns.slice(): [],
+      adherencePatterns:              Array.isArray(opts && opts.adherencePatterns)? opts.adherencePatterns.slice():[],
+      lastUpdatedFromFingerprint:     (opts && opts.lastUpdatedFromFingerprint)   || null,
+    };
+  }
+
+  // Create a HISTORICAL_RESPONSE_APPLIED trace node (spec §16).
+  // Emitted when learned state actually influences a generation decision.
+  function _createHistoricalResponseNode(opts) {
+    if (!opts || !opts.subject || !opts.decision || !opts.engine) {
+      throw new Error('_createHistoricalResponseNode: subject, decision, engine required');
+    }
+    return _createTraceNode({
+      stage:        opts.stage || _DECISION_TRACE_STAGE.STABILITY,
+      decisionType: _DECISION_TRACE_TYPE.HISTORICAL_RESPONSE_APPLIED,
+      subject:      opts.subject,
+      decision:     opts.decision,
+      reasonCodes:  ['HISTORICAL_RESPONSE'],
+      sources:      [_DECISION_TRACE_SOURCE.HISTORY],
+      engine:       opts.engine,
+      confidence:   opts.confidence || _DECISION_TRACE_CONFIDENCE.MODERATE,
+      evidence:     Array.isArray(opts.evidence) ? opts.evidence : undefined,
+      structural:   false,
+    });
+  }
+
+  // Whether learned state should influence the input fingerprint (spec §17).
+  // Only true when learnedState has at least one reliable-evidence entry.
+  function _learnedStateAffectsFingerprint(learnedState) {
+    if (!learnedState) return false;
+    var histories = (learnedState.topologyHistory || [])
+      .concat(learnedState.slotHistory || [])
+      .concat(learnedState.exerciseHistory || []);
+    return histories.some(function(h) { return h && h.evidenceState === _EVIDENCE_STATE.RELIABLE; });
+  }
+
+  window._LEARNING_ELIGIBILITY          = _LEARNING_ELIGIBILITY;
+  window._EVIDENCE_STATE                = _EVIDENCE_STATE;
+  window._OUTCOME_STATE                 = _OUTCOME_STATE;
+  window._LEARNING_ELIGIBILITY_BY_TYPE  = _LEARNING_ELIGIBILITY_BY_TYPE;
+  window._getLearningEligibility        = _getLearningEligibility;
+  window._assessOutcomeDataQuality      = _assessOutcomeDataQuality;
+  window._hasLongitudinalEvidence       = _hasLongitudinalEvidence;
+  window._auditLearningEligibility      = _auditLearningEligibility;
+  window._buildOutcomeContract          = _buildOutcomeContract;
+  window._buildLearnedState             = _buildLearnedState;
+  window._createHistoricalResponseNode  = _createHistoricalResponseNode;
+  window._learnedStateAffectsFingerprint = _learnedStateAffectsFingerprint;
 
   // Generates candidate fixes from quality audit results.
   // type:'remove_exercise' → actionable (checkbox); type:'flag_only' → advisory.
@@ -13903,6 +14093,184 @@ El esfuerzo no es negociable.
     return { pass: pass, fail: fail };
   }
   window._runDecisionTraceTests = _runDecisionTraceTests;
+
+  // ── FASE 5: Learning Contract Tests ──────────────────────────────────────
+  function _runLearningContractTests() {
+    var pass = 0, fail = 0;
+    function assert(label, cond) {
+      if (cond) { pass++; } else { fail++; console.error('[LS FAIL] ' + label); }
+    }
+
+    // ── LS1: _LEARNING_ELIGIBILITY enum ───────────────────────────────────
+    assert('LS1 NEVER',        _LEARNING_ELIGIBILITY.NEVER        === 'NEVER');
+    assert('LS1 CONTEXT_ONLY', _LEARNING_ELIGIBILITY.CONTEXT_ONLY === 'CONTEXT_ONLY');
+    assert('LS1 CANDIDATE',    _LEARNING_ELIGIBILITY.CANDIDATE    === 'CANDIDATE');
+    assert('LS1 ELIGIBLE',     _LEARNING_ELIGIBILITY.ELIGIBLE     === 'ELIGIBLE');
+
+    // ── LS2: _EVIDENCE_STATE enum ─────────────────────────────────────────
+    assert('LS2 INSUFFICIENT', _EVIDENCE_STATE.INSUFFICIENT === 'INSUFFICIENT');
+    assert('LS2 EMERGING',     _EVIDENCE_STATE.EMERGING     === 'EMERGING');
+    assert('LS2 RELIABLE',     _EVIDENCE_STATE.RELIABLE     === 'RELIABLE');
+
+    // ── LS3: _OUTCOME_STATE enum ──────────────────────────────────────────
+    assert('LS3 POSITIVE',   _OUTCOME_STATE.POSITIVE   === 'POSITIVE');
+    assert('LS3 NEUTRAL',    _OUTCOME_STATE.NEUTRAL    === 'NEUTRAL');
+    assert('LS3 NEGATIVE',   _OUTCOME_STATE.NEGATIVE   === 'NEGATIVE');
+    assert('LS3 UNRESOLVED', _OUTCOME_STATE.UNRESOLVED === 'UNRESOLVED');
+
+    // ── LS4: HISTORICAL_RESPONSE_APPLIED exists in _DECISION_TRACE_TYPE ───
+    assert('LS4 HISTORICAL_RESPONSE_APPLIED', _DECISION_TRACE_TYPE.HISTORICAL_RESPONSE_APPLIED === 'HISTORICAL_RESPONSE_APPLIED');
+
+    // ── LS5: _LEARNING_ELIGIBILITY_BY_TYPE has all 21 types ───────────────
+    var allTypes = Object.keys(_DECISION_TRACE_TYPE);
+    assert('LS5 all 21 types have eligibility',
+      allTypes.every(function(t) { return !!_LEARNING_ELIGIBILITY_BY_TYPE[t]; }));
+
+    // ── LS6: NEVER types ──────────────────────────────────────────────────
+    var neverTypes = ['QUALITY_GATE_RESULT','PLAN_CONFIRMATION_REQUIRED','REPAIR_CANDIDATE_CREATED','REPAIR_CANDIDATE_REJECTED','TOPOLOGY_REJECTED','HISTORICAL_RESPONSE_APPLIED'];
+    neverTypes.forEach(function(t) { assert('LS6 NEVER:' + t, _getLearningEligibility(t) === 'NEVER'); });
+
+    // ── LS7: CONTEXT_ONLY types ───────────────────────────────────────────
+    var ctxTypes = ['PROFILE_VALUE_RESOLVED','PRIORITY_RESOLVED','SESSION_ORDER_DECISION','STABILITY_DECISION','STRUCTURAL_FATIGUE_FLAG'];
+    ctxTypes.forEach(function(t) { assert('LS7 CONTEXT_ONLY:' + t, _getLearningEligibility(t) === 'CONTEXT_ONLY'); });
+
+    // ── LS8: CANDIDATE types ──────────────────────────────────────────────
+    var candTypes = ['TOPOLOGY_SELECTED','DISTRIBUTION_ASSIGNED','EXERCISE_SLOT_ASSIGNED','EXERCISE_SELECTED','EXERCISE_REPLACED','EXERCISE_RETAINED','REPAIR_CANDIDATE_SELECTED'];
+    candTypes.forEach(function(t) { assert('LS8 CANDIDATE:' + t, _getLearningEligibility(t) === 'CANDIDATE'); });
+
+    // ── LS9: unknown type → NEVER ─────────────────────────────────────────
+    assert('LS9 unknown type → NEVER', _getLearningEligibility('MADE_UP_TYPE') === 'NEVER');
+
+    // ── LS10: _assessOutcomeDataQuality — clean data ──────────────────────
+    var cleanOk = _assessOutcomeDataQuality({ sessionsReal:3, hasAutoFilled:false, hasAutoClosed:false, identityResolved:true });
+    assert('LS10 clean data → ok', cleanOk.ok);
+    assert('LS10 clean reason null', cleanOk.reason === null);
+
+    // ── LS11: _assessOutcomeDataQuality — autoFilled taints ───────────────
+    var afRes = _assessOutcomeDataQuality({ hasAutoFilled: true, sessionsReal: 5 });
+    assert('LS11 autoFilled → not ok', !afRes.ok);
+    assert('LS11 autoFilled reason', afRes.reason === 'AUTOFILLED');
+
+    // ── LS12: _assessOutcomeDataQuality — autoClosed taints ───────────────
+    var acRes = _assessOutcomeDataQuality({ hasAutoClosed: true, sessionsReal: 5 });
+    assert('LS12 autoClosed → not ok', !acRes.ok);
+    assert('LS12 autoClosed reason', acRes.reason === 'AUTOCLOSED');
+
+    // ── LS13: _assessOutcomeDataQuality — unresolved identity ─────────────
+    var uiRes = _assessOutcomeDataQuality({ identityResolved: false, sessionsReal: 5 });
+    assert('LS13 unresolved identity → not ok', !uiRes.ok);
+    assert('LS13 unresolved reason', uiRes.reason === 'UNRESOLVED_IDENTITY');
+
+    // ── LS14: _assessOutcomeDataQuality — null outcomes ───────────────────
+    var nullRes = _assessOutcomeDataQuality(null);
+    assert('LS14 null outcomes → not ok', !nullRes.ok);
+    assert('LS14 null reason', nullRes.reason === 'NO_OUTCOMES');
+
+    // ── LS15: _hasLongitudinalEvidence — spec §6 ─────────────────────────
+    assert('LS15 0 sessions → no longitudinal',   !_hasLongitudinalEvidence({ sessionsReal: 0 }));
+    assert('LS15 1 session → no longitudinal',    !_hasLongitudinalEvidence({ sessionsReal: 1 }));
+    assert('LS15 2 sessions → has longitudinal',   _hasLongitudinalEvidence({ sessionsReal: 2 }));
+    assert('LS15 null → no longitudinal',         !_hasLongitudinalEvidence(null));
+
+    // ── LS16: _auditLearningEligibility — NEVER nodes always rejected ─────
+    var neverNode = _createTraceNode({ stage:_DECISION_TRACE_STAGE.QUALITY, decisionType:_DECISION_TRACE_TYPE.QUALITY_GATE_RESULT, subject:'gate', decision:'PASS' });
+    var goodOutcomes = { sessionsReal:3, hasAutoFilled:false, hasAutoClosed:false, identityResolved:true };
+    var res16 = _auditLearningEligibility([neverNode], goodOutcomes);
+    assert('LS16 NEVER node → rejected', res16.rejected.length === 1 && res16.eligible.length === 0);
+
+    // ── LS17: _auditLearningEligibility — CONTEXT_ONLY → contextOnly ──────
+    var ctxNode = _createTraceNode({ stage:_DECISION_TRACE_STAGE.TARGETS, decisionType:_DECISION_TRACE_TYPE.PRIORITY_RESOLVED, subject:'quad', decision:'HIGH' });
+    var res17 = _auditLearningEligibility([ctxNode], goodOutcomes);
+    assert('LS17 CONTEXT_ONLY → contextOnly', res17.contextOnly.length === 1 && res17.eligible.length === 0);
+
+    // ── LS18: _auditLearningEligibility — CANDIDATE + good outcomes → eligible
+    var candNode = _createTraceNode({ stage:_DECISION_TRACE_STAGE.TOPOLOGY, decisionType:_DECISION_TRACE_TYPE.TOPOLOGY_SELECTED, subject:'global', decision:'PPL' });
+    var res18 = _auditLearningEligibility([candNode], goodOutcomes);
+    assert('LS18 CANDIDATE + good outcomes → eligible', res18.eligible.length === 1);
+
+    // ── LS19: CANDIDATE + single session → insufficientEvidence (spec §6) ──
+    var singleObs = { sessionsReal:1, hasAutoFilled:false, identityResolved:true };
+    var res19 = _auditLearningEligibility([candNode], singleObs);
+    assert('LS19 single session → insufficientEvidence', res19.insufficientEvidence.length === 1 && res19.eligible.length === 0);
+
+    // ── LS20: CANDIDATE + autoFilled outcomes → insufficientEvidence ───────
+    var afObs = { sessionsReal:5, hasAutoFilled:true };
+    var res20 = _auditLearningEligibility([candNode], afObs);
+    assert('LS20 autoFilled outcomes → insufficientEvidence', res20.insufficientEvidence.length === 1);
+
+    // ── LS21: CANDIDATE + null outcomes → insufficientEvidence ─────────────
+    var res21 = _auditLearningEligibility([candNode], null);
+    assert('LS21 null outcomes → insufficientEvidence', res21.insufficientEvidence.length === 1);
+
+    // ── LS22: mixed trace → correct buckets ────────────────────────────────
+    var mixed = [neverNode, ctxNode, candNode];
+    var res22 = _auditLearningEligibility(mixed, goodOutcomes);
+    assert('LS22 rejected=1', res22.rejected.length    === 1);
+    assert('LS22 contextOnly=1', res22.contextOnly.length === 1);
+    assert('LS22 eligible=1', res22.eligible.length    === 1);
+    assert('LS22 insufficient=0', res22.insufficientEvidence.length === 0);
+
+    // ── LS23: _buildOutcomeContract — required fields ─────────────────────
+    var oc = _buildOutcomeContract({ interventionKey:'TOPOLOGY_SELECTED:global', interventionType:'TOPOLOGY_SELECTED', sessionsReal:3, performanceTrend:'POSITIVE', evidenceState:_EVIDENCE_STATE.EMERGING, outcome:_OUTCOME_STATE.POSITIVE });
+    assert('LS23 interventionKey', oc.interventionKey === 'TOPOLOGY_SELECTED:global');
+    assert('LS23 interventionType', oc.interventionType === 'TOPOLOGY_SELECTED');
+    assert('LS23 evidenceState', oc.evidenceState === 'EMERGING');
+    assert('LS23 outcome', oc.outcome === 'POSITIVE');
+    assert('LS23 sessionsReal', oc.observations.sessionsReal === 3);
+    assert('LS23 performanceTrend', oc.observations.performanceTrend === 'POSITIVE');
+    assert('LS23 defaults fingerprint null', oc.decisionFingerprint === null);
+
+    // ── LS24: _buildOutcomeContract — missing required throws ─────────────
+    var threwOC = false;
+    try { _buildOutcomeContract({ interventionKey:'x' }); } catch(e) { threwOC = true; }
+    assert('LS24 missing interventionType throws', threwOC);
+
+    // ── LS25: _buildLearnedState — structure ──────────────────────────────
+    var ls = _buildLearnedState({ topologyHistory:[{topology:'PPL', exposures:3, evidenceState:'EMERGING'}], lastUpdatedFromFingerprint:'fp_abc' });
+    assert('LS25 learnedStateVersion', ls.learnedStateVersion === 'learned-state-v1');
+    assert('LS25 topologyHistory', ls.topologyHistory.length === 1 && ls.topologyHistory[0].topology === 'PPL');
+    assert('LS25 slotHistory empty', ls.slotHistory.length === 0);
+    assert('LS25 exerciseHistory empty', ls.exerciseHistory === undefined || ls.exerciseHistory.length === 0);
+    assert('LS25 lastUpdatedFromFingerprint', ls.lastUpdatedFromFingerprint === 'fp_abc');
+
+    // ── LS26: _buildLearnedState — empty defaults ─────────────────────────
+    var lsEmpty = _buildLearnedState(null);
+    assert('LS26 empty topologyHistory', Array.isArray(lsEmpty.topologyHistory) && lsEmpty.topologyHistory.length === 0);
+    assert('LS26 empty lastUpdated null', lsEmpty.lastUpdatedFromFingerprint === null);
+
+    // ── LS27: _createHistoricalResponseNode — structure ───────────────────
+    var hrn = _createHistoricalResponseNode({ subject:'quadriceps', decision:'PPL bien tolerado (3 ciclos)', engine:_DECISION_TRACE_ENGINE.TOPOLOGY });
+    assert('LS27 decisionType', hrn.decisionType === 'HISTORICAL_RESPONSE_APPLIED');
+    assert('LS27 source HISTORY', hrn.sources.indexOf('HISTORY') >= 0);
+    assert('LS27 reasonCode', hrn.reasonCodes.indexOf('HISTORICAL_RESPONSE') >= 0);
+    assert('LS27 structural false', hrn.structural === false);
+    assert('LS27 deterministic id', hrn.id === 'HISTORICAL_RESPONSE_APPLIED:quadriceps');
+
+    // ── LS28: _createHistoricalResponseNode — missing required throws ──────
+    var threwHRN = false;
+    try { _createHistoricalResponseNode({ subject:'x' }); } catch(e) { threwHRN = true; }
+    assert('LS28 missing decision+engine throws', threwHRN);
+
+    // ── LS29: _learnedStateAffectsFingerprint ────────────────────────────
+    var lsNoReliable = _buildLearnedState({ topologyHistory:[{ evidenceState:'EMERGING' }] });
+    assert('LS29 EMERGING → does not affect fingerprint', !_learnedStateAffectsFingerprint(lsNoReliable));
+
+    var lsReliable = _buildLearnedState({ topologyHistory:[{ evidenceState:'RELIABLE' }] });
+    assert('LS29 RELIABLE → affects fingerprint', _learnedStateAffectsFingerprint(lsReliable));
+
+    assert('LS29 null → false', !_learnedStateAffectsFingerprint(null));
+
+    // ── LS30: repair simulated / not applied → never eligible ────────────
+    var repCreatedNode = _createTraceNode({ stage:_DECISION_TRACE_STAGE.REPAIR, decisionType:_DECISION_TRACE_TYPE.REPAIR_CANDIDATE_CREATED, subject:'slot_1', decision:'CREATED' });
+    var repRejectedNode = _createTraceNode({ stage:_DECISION_TRACE_STAGE.REPAIR, decisionType:_DECISION_TRACE_TYPE.REPAIR_CANDIDATE_REJECTED, subject:'slot_1', decision:'REJECTED' });
+    var res30 = _auditLearningEligibility([repCreatedNode, repRejectedNode], goodOutcomes);
+    assert('LS30 REPAIR_CANDIDATE_CREATED → rejected',  res30.rejected.some(function(n){ return n.decisionType === 'REPAIR_CANDIDATE_CREATED'; }));
+    assert('LS30 REPAIR_CANDIDATE_REJECTED → rejected', res30.rejected.some(function(n){ return n.decisionType === 'REPAIR_CANDIDATE_REJECTED'; }));
+
+    console.log('[LEARNING CONTRACT TESTS] ' + pass + ' passed, ' + fail + ' failed');
+    return { pass: pass, fail: fail };
+  }
+  window._runLearningContractTests = _runLearningContractTests;
 
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);

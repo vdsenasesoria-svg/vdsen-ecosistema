@@ -8413,6 +8413,282 @@ console.log('\nDT — Decision Trace Completeness (full spec)');
   assert('DT30b', 'traceNodeId no subject → global', _traceNodeId_T('PRIORITY_RESOLVED', null) === 'PRIORITY_RESOLVED:global');
 })();
 
+// ════════════════ FASE 5 — Longitudinal Learning Contract ════════════════
+// Inline T-suffix copies — node-runnable, full spec
+
+var _LEARNING_ELIGIBILITY_T = { NEVER:'NEVER', CONTEXT_ONLY:'CONTEXT_ONLY', CANDIDATE:'CANDIDATE', ELIGIBLE:'ELIGIBLE' };
+var _EVIDENCE_STATE_T = { INSUFFICIENT:'INSUFFICIENT', EMERGING:'EMERGING', RELIABLE:'RELIABLE' };
+var _OUTCOME_STATE_T  = { POSITIVE:'POSITIVE', NEUTRAL:'NEUTRAL', NEGATIVE:'NEGATIVE', UNRESOLVED:'UNRESOLVED' };
+
+// 21 decision types (20 original + HISTORICAL_RESPONSE_APPLIED)
+var _DECISION_TRACE_TYPE_F5_T = Object.assign({}, _DECISION_TRACE_TYPE_T, {
+  HISTORICAL_RESPONSE_APPLIED: 'HISTORICAL_RESPONSE_APPLIED',
+});
+
+var _LEARNING_ELIGIBILITY_BY_TYPE_T = {
+  PROFILE_VALUE_RESOLVED:      'CONTEXT_ONLY',
+  PRIORITY_RESOLVED:           'CONTEXT_ONLY',
+  VOLUME_TARGET_RESOLVED:      'CONTEXT_ONLY',
+  FREQUENCY_TARGET_RESOLVED:   'CONTEXT_ONLY',
+  TOPOLOGY_SELECTED:           'CANDIDATE',
+  TOPOLOGY_REJECTED:           'NEVER',
+  DISTRIBUTION_ASSIGNED:       'CANDIDATE',
+  MAINTENANCE_ROLE_ASSIGNED:   'CANDIDATE',
+  EXERCISE_SLOT_ASSIGNED:      'CANDIDATE',
+  EXERCISE_SELECTED:           'CANDIDATE',
+  EXERCISE_REPLACED:           'CANDIDATE',
+  EXERCISE_RETAINED:           'CANDIDATE',
+  SESSION_ORDER_DECISION:      'CONTEXT_ONLY',
+  STABILITY_DECISION:          'CONTEXT_ONLY',
+  STRUCTURAL_FATIGUE_FLAG:     'CONTEXT_ONLY',
+  QUALITY_GATE_RESULT:         'NEVER',
+  REPAIR_CANDIDATE_CREATED:    'NEVER',
+  REPAIR_CANDIDATE_REJECTED:   'NEVER',
+  REPAIR_CANDIDATE_SELECTED:   'CANDIDATE',
+  PLAN_CONFIRMATION_REQUIRED:  'NEVER',
+  HISTORICAL_RESPONSE_APPLIED: 'NEVER',
+};
+
+function _getLearningEligibility_T(decisionType) {
+  return _LEARNING_ELIGIBILITY_BY_TYPE_T[decisionType] || 'NEVER';
+}
+
+function _assessOutcomeDataQuality_T(outcomes) {
+  if (!outcomes || typeof outcomes !== 'object') return { ok:false, reason:'NO_OUTCOMES' };
+  if (outcomes.hasAutoFilled)          return { ok:false, reason:'AUTOFILLED' };
+  if (outcomes.hasAutoClosed)          return { ok:false, reason:'AUTOCLOSED' };
+  if (outcomes.hasSyntheticPostsession) return { ok:false, reason:'SYNTHETIC' };
+  if (outcomes.hasDuplicatedLogs)      return { ok:false, reason:'DUPLICATED_LOGS' };
+  if (outcomes.identityResolved === false) return { ok:false, reason:'UNRESOLVED_IDENTITY' };
+  return { ok:true, reason:null };
+}
+
+function _hasLongitudinalEvidence_T(outcomes) {
+  return !!(outcomes && (outcomes.sessionsReal || 0) > 1);
+}
+
+function _auditLearningEligibility_T(traceNodes, outcomes) {
+  var nodes = Array.isArray(traceNodes) ? traceNodes : [];
+  var result = { eligible:[], contextOnly:[], rejected:[], insufficientEvidence:[] };
+  var dq = _assessOutcomeDataQuality_T(outcomes);
+  var hasLong = _hasLongitudinalEvidence_T(outcomes);
+  nodes.forEach(function(n) {
+    if (!n || !n.decisionType) { result.rejected.push(n); return; }
+    var elig = _getLearningEligibility_T(n.decisionType);
+    if (elig === 'NEVER') { result.rejected.push(n); }
+    else if (elig === 'CONTEXT_ONLY') { result.contextOnly.push(n); }
+    else if (elig === 'CANDIDATE' || elig === 'ELIGIBLE') {
+      if (!dq.ok || !hasLong) { result.insufficientEvidence.push(n); }
+      else { result.eligible.push(n); }
+    } else { result.rejected.push(n); }
+  });
+  return result;
+}
+
+function _buildOutcomeContract_T(opts) {
+  if (!opts || !opts.interventionKey || !opts.interventionType) throw new Error('_buildOutcomeContract_T: required');
+  return {
+    interventionKey: opts.interventionKey, interventionType: opts.interventionType,
+    decisionFingerprint: opts.decisionFingerprint || null, startedAt: opts.startedAt || null,
+    observations: { sessionsReal:opts.sessionsReal||0, exposuresReal:opts.exposuresReal||0,
+      adherence:opts.adherence!=null?opts.adherence:null, performanceTrend:opts.performanceTrend||null,
+      rirConsistency:opts.rirConsistency||null, recoveryTrend:opts.recoveryTrend||null, painTrend:opts.painTrend||null },
+    evidenceState: opts.evidenceState || 'INSUFFICIENT',
+    outcome: opts.outcome || 'UNRESOLVED',
+  };
+}
+
+function _buildLearnedState_T(opts) {
+  return {
+    learnedStateVersion: 'learned-state-v1',
+    topologyHistory:     Array.isArray(opts&&opts.topologyHistory) ? opts.topologyHistory.slice() : [],
+    slotHistory:         Array.isArray(opts&&opts.slotHistory) ? opts.slotHistory.slice() : [],
+    exerciseHistory:     Array.isArray(opts&&opts.exerciseHistory) ? opts.exerciseHistory.slice() : [],
+    recoveryPatterns:    Array.isArray(opts&&opts.recoveryPatterns) ? opts.recoveryPatterns.slice() : [],
+    adherencePatterns:   Array.isArray(opts&&opts.adherencePatterns) ? opts.adherencePatterns.slice() : [],
+    lastUpdatedFromFingerprint: (opts&&opts.lastUpdatedFromFingerprint)||null,
+  };
+}
+
+function _createHistoricalResponseNode_T(opts) {
+  if (!opts || !opts.subject || !opts.decision || !opts.engine) throw new Error('_createHistoricalResponseNode_T: required');
+  return _createTraceNode_T({
+    stage: opts.stage || 'STABILITY', decisionType: 'HISTORICAL_RESPONSE_APPLIED',
+    subject: opts.subject, decision: opts.decision,
+    reasonCodes: ['HISTORICAL_RESPONSE'], sources: ['HISTORY'],
+    engine: opts.engine, structural: false,
+  });
+}
+
+function _learnedStateAffectsFingerprint_T(learnedState) {
+  if (!learnedState) return false;
+  return (learnedState.topologyHistory||[]).concat(learnedState.slotHistory||[]).concat(learnedState.exerciseHistory||[])
+    .some(function(h){ return h && h.evidenceState === 'RELIABLE'; });
+}
+
+console.log('\nLS — Longitudinal Learning Contract');
+(function() {
+  // LS1: _LEARNING_ELIGIBILITY enum
+  assert('LS1a', 'NEVER',        _LEARNING_ELIGIBILITY_T.NEVER        === 'NEVER');
+  assert('LS1b', 'CONTEXT_ONLY', _LEARNING_ELIGIBILITY_T.CONTEXT_ONLY === 'CONTEXT_ONLY');
+  assert('LS1c', 'CANDIDATE',    _LEARNING_ELIGIBILITY_T.CANDIDATE    === 'CANDIDATE');
+  assert('LS1d', 'ELIGIBLE',     _LEARNING_ELIGIBILITY_T.ELIGIBLE     === 'ELIGIBLE');
+
+  // LS2: _EVIDENCE_STATE enum
+  assert('LS2a', 'INSUFFICIENT', _EVIDENCE_STATE_T.INSUFFICIENT === 'INSUFFICIENT');
+  assert('LS2b', 'EMERGING',     _EVIDENCE_STATE_T.EMERGING     === 'EMERGING');
+  assert('LS2c', 'RELIABLE',     _EVIDENCE_STATE_T.RELIABLE     === 'RELIABLE');
+
+  // LS3: _OUTCOME_STATE enum
+  assert('LS3a', 'POSITIVE',   _OUTCOME_STATE_T.POSITIVE   === 'POSITIVE');
+  assert('LS3b', 'NEUTRAL',    _OUTCOME_STATE_T.NEUTRAL    === 'NEUTRAL');
+  assert('LS3c', 'NEGATIVE',   _OUTCOME_STATE_T.NEGATIVE   === 'NEGATIVE');
+  assert('LS3d', 'UNRESOLVED', _OUTCOME_STATE_T.UNRESOLVED === 'UNRESOLVED');
+
+  // LS4: HISTORICAL_RESPONSE_APPLIED exists
+  assert('LS4a', 'HISTORICAL_RESPONSE_APPLIED', _DECISION_TRACE_TYPE_F5_T.HISTORICAL_RESPONSE_APPLIED === 'HISTORICAL_RESPONSE_APPLIED');
+
+  // LS5: all 21 types have eligibility mapping
+  var all21 = Object.keys(_DECISION_TRACE_TYPE_F5_T);
+  assert('LS5a', '21 types mapped', all21.every(function(t){ return !!_LEARNING_ELIGIBILITY_BY_TYPE_T[t]; }));
+
+  // LS6: NEVER types
+  var neverTypes = ['QUALITY_GATE_RESULT','PLAN_CONFIRMATION_REQUIRED','REPAIR_CANDIDATE_CREATED','REPAIR_CANDIDATE_REJECTED','TOPOLOGY_REJECTED','HISTORICAL_RESPONSE_APPLIED'];
+  neverTypes.forEach(function(t){ assert('LS6_'+t, 'NEVER:'+t, _getLearningEligibility_T(t) === 'NEVER'); });
+
+  // LS7: CONTEXT_ONLY types
+  var ctxTypes = ['PROFILE_VALUE_RESOLVED','PRIORITY_RESOLVED','SESSION_ORDER_DECISION','STABILITY_DECISION','STRUCTURAL_FATIGUE_FLAG'];
+  ctxTypes.forEach(function(t){ assert('LS7_'+t, 'CTX:'+t, _getLearningEligibility_T(t) === 'CONTEXT_ONLY'); });
+
+  // LS8: CANDIDATE types
+  var candTypes = ['TOPOLOGY_SELECTED','DISTRIBUTION_ASSIGNED','EXERCISE_SLOT_ASSIGNED','EXERCISE_SELECTED','EXERCISE_REPLACED','EXERCISE_RETAINED','REPAIR_CANDIDATE_SELECTED'];
+  candTypes.forEach(function(t){ assert('LS8_'+t, 'CAND:'+t, _getLearningEligibility_T(t) === 'CANDIDATE'); });
+
+  // LS9: unknown type → NEVER
+  assert('LS9a', 'unknown → NEVER', _getLearningEligibility_T('MADE_UP') === 'NEVER');
+
+  // LS10: _assessOutcomeDataQuality_T — clean data
+  var cleanOk = _assessOutcomeDataQuality_T({ sessionsReal:3, hasAutoFilled:false, identityResolved:true });
+  assert('LS10a', 'clean → ok',        cleanOk.ok);
+  assert('LS10b', 'clean reason null', cleanOk.reason === null);
+
+  // LS11: autoFilled taints
+  var afRes = _assessOutcomeDataQuality_T({ hasAutoFilled:true, sessionsReal:5 });
+  assert('LS11a', 'autoFilled → not ok',  !afRes.ok);
+  assert('LS11b', 'autoFilled reason',    afRes.reason === 'AUTOFILLED');
+
+  // LS12: autoClosed taints
+  var acRes = _assessOutcomeDataQuality_T({ hasAutoClosed:true });
+  assert('LS12a', 'autoClosed → not ok',  !acRes.ok);
+  assert('LS12b', 'autoClosed reason',    acRes.reason === 'AUTOCLOSED');
+
+  // LS13: unresolved identity
+  var uiRes = _assessOutcomeDataQuality_T({ identityResolved:false, sessionsReal:5 });
+  assert('LS13a', 'unresolved → not ok',    !uiRes.ok);
+  assert('LS13b', 'unresolved reason',      uiRes.reason === 'UNRESOLVED_IDENTITY');
+
+  // LS14: null outcomes
+  var nullRes = _assessOutcomeDataQuality_T(null);
+  assert('LS14a', 'null → not ok',    !nullRes.ok);
+  assert('LS14b', 'null reason',      nullRes.reason === 'NO_OUTCOMES');
+
+  // LS15: _hasLongitudinalEvidence_T — spec §6
+  assert('LS15a', '0 sessions → false',  !_hasLongitudinalEvidence_T({ sessionsReal:0 }));
+  assert('LS15b', '1 session → false',   !_hasLongitudinalEvidence_T({ sessionsReal:1 }));
+  assert('LS15c', '2 sessions → true',    _hasLongitudinalEvidence_T({ sessionsReal:2 }));
+  assert('LS15d', 'null → false',        !_hasLongitudinalEvidence_T(null));
+
+  // LS16: NEVER nodes always rejected
+  var neverNode = _createTraceNode_T({ stage:'QUALITY', decisionType:'QUALITY_GATE_RESULT', subject:'gate', decision:'PASS' });
+  var goodObs = { sessionsReal:3, hasAutoFilled:false, hasAutoClosed:false, identityResolved:true };
+  var res16 = _auditLearningEligibility_T([neverNode], goodObs);
+  assert('LS16a', 'NEVER rejected=1', res16.rejected.length === 1 && res16.eligible.length === 0);
+
+  // LS17: CONTEXT_ONLY → contextOnly
+  var ctxNode = _createTraceNode_T({ stage:'TARGETS', decisionType:'PRIORITY_RESOLVED', subject:'quad', decision:'HIGH' });
+  var res17 = _auditLearningEligibility_T([ctxNode], goodObs);
+  assert('LS17a', 'CONTEXT_ONLY → contextOnly=1', res17.contextOnly.length === 1 && res17.eligible.length === 0);
+
+  // LS18: CANDIDATE + good outcomes → eligible
+  var candNode = _createTraceNode_T({ stage:'TOPOLOGY', decisionType:'TOPOLOGY_SELECTED', subject:'global', decision:'PPL' });
+  var res18 = _auditLearningEligibility_T([candNode], goodObs);
+  assert('LS18a', 'CANDIDATE + good → eligible=1', res18.eligible.length === 1);
+
+  // LS19: single session → insufficientEvidence (spec §6)
+  var singleObs = { sessionsReal:1, hasAutoFilled:false, identityResolved:true };
+  var res19 = _auditLearningEligibility_T([candNode], singleObs);
+  assert('LS19a', 'single session → insufficient=1', res19.insufficientEvidence.length === 1 && res19.eligible.length === 0);
+
+  // LS20: autoFilled outcomes → insufficientEvidence
+  var afObs = { sessionsReal:5, hasAutoFilled:true };
+  var res20 = _auditLearningEligibility_T([candNode], afObs);
+  assert('LS20a', 'autoFilled → insufficient=1', res20.insufficientEvidence.length === 1);
+
+  // LS21: null outcomes → insufficientEvidence
+  var res21 = _auditLearningEligibility_T([candNode], null);
+  assert('LS21a', 'null outcomes → insufficient=1', res21.insufficientEvidence.length === 1);
+
+  // LS22: mixed trace → correct buckets
+  var res22 = _auditLearningEligibility_T([neverNode, ctxNode, candNode], goodObs);
+  assert('LS22a', 'rejected=1',     res22.rejected.length    === 1);
+  assert('LS22b', 'contextOnly=1',  res22.contextOnly.length === 1);
+  assert('LS22c', 'eligible=1',     res22.eligible.length    === 1);
+  assert('LS22d', 'insufficient=0', res22.insufficientEvidence.length === 0);
+
+  // LS23: _buildOutcomeContract_T
+  var oc = _buildOutcomeContract_T({ interventionKey:'TOPOLOGY_SELECTED:global', interventionType:'TOPOLOGY_SELECTED', sessionsReal:3, performanceTrend:'POSITIVE', evidenceState:'EMERGING', outcome:'POSITIVE' });
+  assert('LS23a', 'interventionKey',   oc.interventionKey    === 'TOPOLOGY_SELECTED:global');
+  assert('LS23b', 'interventionType',  oc.interventionType   === 'TOPOLOGY_SELECTED');
+  assert('LS23c', 'evidenceState',     oc.evidenceState      === 'EMERGING');
+  assert('LS23d', 'outcome',           oc.outcome            === 'POSITIVE');
+  assert('LS23e', 'sessionsReal',      oc.observations.sessionsReal === 3);
+  assert('LS23f', 'fingerprint null',  oc.decisionFingerprint === null);
+
+  // LS24: _buildOutcomeContract_T — missing required throws
+  var threwOC = false;
+  try { _buildOutcomeContract_T({ interventionKey:'x' }); } catch(e) { threwOC = true; }
+  assert('LS24a', 'missing interventionType throws', threwOC);
+
+  // LS25: _buildLearnedState_T — structure
+  var ls = _buildLearnedState_T({ topologyHistory:[{topology:'PPL', evidenceState:'EMERGING'}], lastUpdatedFromFingerprint:'fp_abc' });
+  assert('LS25a', 'learnedStateVersion', ls.learnedStateVersion === 'learned-state-v1');
+  assert('LS25b', 'topologyHistory len', ls.topologyHistory.length === 1);
+  assert('LS25c', 'slotHistory empty',   ls.slotHistory.length === 0);
+  assert('LS25d', 'lastUpdated fp',      ls.lastUpdatedFromFingerprint === 'fp_abc');
+
+  // LS26: _buildLearnedState_T — empty defaults
+  var lsEmpty = _buildLearnedState_T(null);
+  assert('LS26a', 'empty topologyHistory', Array.isArray(lsEmpty.topologyHistory) && lsEmpty.topologyHistory.length === 0);
+  assert('LS26b', 'lastUpdated null',      lsEmpty.lastUpdatedFromFingerprint === null);
+
+  // LS27: _createHistoricalResponseNode_T
+  var hrn = _createHistoricalResponseNode_T({ subject:'quadriceps', decision:'PPL bien tolerado', engine:'TOPOLOGY' });
+  assert('LS27a', 'decisionType',    hrn.decisionType === 'HISTORICAL_RESPONSE_APPLIED');
+  assert('LS27b', 'source HISTORY',  hrn.sources.indexOf('HISTORY') >= 0);
+  assert('LS27c', 'reasonCode',      hrn.reasonCodes.indexOf('HISTORICAL_RESPONSE') >= 0);
+  assert('LS27d', 'structural false', hrn.structural === false);
+  assert('LS27e', 'deterministic id', hrn.id === 'HISTORICAL_RESPONSE_APPLIED:quadriceps');
+
+  // LS28: _createHistoricalResponseNode_T — missing required throws
+  var threwHRN = false;
+  try { _createHistoricalResponseNode_T({ subject:'x' }); } catch(e) { threwHRN = true; }
+  assert('LS28a', 'missing throws', threwHRN);
+
+  // LS29: _learnedStateAffectsFingerprint_T
+  var lsNoR = _buildLearnedState_T({ topologyHistory:[{ evidenceState:'EMERGING' }] });
+  assert('LS29a', 'EMERGING → false',  !_learnedStateAffectsFingerprint_T(lsNoR));
+  var lsRel = _buildLearnedState_T({ topologyHistory:[{ evidenceState:'RELIABLE' }] });
+  assert('LS29b', 'RELIABLE → true',    _learnedStateAffectsFingerprint_T(lsRel));
+  assert('LS29c', 'null → false',       !_learnedStateAffectsFingerprint_T(null));
+
+  // LS30: repair not applied → NEVER
+  var repCreated  = _createTraceNode_T({ stage:'REPAIR', decisionType:'REPAIR_CANDIDATE_CREATED',  subject:'slot_1', decision:'CREATED' });
+  var repRejected = _createTraceNode_T({ stage:'REPAIR', decisionType:'REPAIR_CANDIDATE_REJECTED', subject:'slot_1', decision:'REJECTED' });
+  var res30 = _auditLearningEligibility_T([repCreated, repRejected], goodObs);
+  assert('LS30a', 'REPAIR_CREATED → rejected',  res30.rejected.some(function(n){ return n.decisionType === 'REPAIR_CANDIDATE_CREATED'; }));
+  assert('LS30b', 'REPAIR_REJECTED → rejected', res30.rejected.some(function(n){ return n.decisionType === 'REPAIR_CANDIDATE_REJECTED'; }));
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
