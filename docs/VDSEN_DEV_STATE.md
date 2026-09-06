@@ -56,9 +56,9 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ---
 
-## FASE 3–11 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
+## FASE 3–12 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1514 ✓ 0 ✗** · HEAD post-FASE11
+> Suite: **1544 ✓ 0 ✗** · HEAD post-FASE12
 
 ### Arquitectura conceptual
 
@@ -359,6 +359,42 @@ baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score fi
 **Tests:** TLC1-TLC18 (27 aserciones) en `tests/progression-engine.test.js`
 
 **Suite: 1514 ✓ 0 ✗**
+
+---
+
+### FASE 12 — Learned State → Topology / Distribution Feedback
+
+**Archivos modificados:** `vdsen-coach.html` (funciones FASE 12 + motor prompt delta), `tests/progression-engine.test.js` (sección TLT1-TLT14)
+
+**Funciones añadidas a `vdsen-coach.html`:**
+- `_HISTORICAL_RESPONSE` — enum 8 valores (POSITIVE, NEUTRAL, NEGATIVE, RECOVERY_TOLERANCE_GOOD, RECOVERY_TOLERANCE_LIMITED, ADHERENCE_PATTERN_SUPPORT, PAIN_HISTORY_CONCERN, INSUFFICIENT_HISTORY)
+- `_TOPOLOGY_ADJUSTMENT_DELTA` — `{ POSITIVE: 0.1, NEUTRAL: 0.0, NEGATIVE: -0.1 }` (HEURISTIC)
+- `_computeTopologyHistoryAdjustment(topologyHistory)` — señales → POSITIVE/NEUTRAL/NEGATIVE; pain = override absoluto negativo
+- `_applyLearnedTopologyAdjustment(candidates, learnedState)` — hard-rejected nunca modificados; soporta topologyHistoryMap (FASE 12) y topologyHistory.topology (FASE 9B legacy)
+- `_applyLearnedDistributionFeedback(distributions, learnedState)` — frequencyTarget NUNCA cambia; ajusta spacing entre distribuciones ya válidas
+- `_buildTopologyLearnedState(topologyId, opts)` — runtime state (no Firestore)
+- `_buildTopologyFeedbackTraceNode(reasonCodes, confidence, adjustment, topologyId)` — `{source:'HISTORY', engine:'TOPOLOGY', decisionType:'TOPOLOGY_LEARNED_ADJUSTMENT'|'TOPOLOGY_HISTORY_NEUTRAL'}`
+- `_runLearnedTopologyFeedbackTests()` — inline browser: TLT1-TLT14 (26 aserciones)
+
+**TOPOLOGY FEEDBACK CONTRACT:**
+| Condición | Resultado |
+|-----------|-----------|
+| Pain signals presentes | NEGATIVE override absoluto |
+| NONE/LOW confidence | NEUTRAL + INSUFFICIENT_HISTORY |
+| Hard-rejected candidate | Pass-through con HARD_FILTER_REJECTED, sin ajuste |
+| frequencyTarget | NUNCA modificado por distribution feedback |
+| recoveryTrend INCREASING | +1 score, RECOVERY_TOLERANCE_GOOD |
+| recoveryTrend DECREASING | -1 score, RECOVERY_TOLERANCE_LIMITED |
+| adherenceTrend CONSISTENT/INCREASING | +1 score, ADHERENCE_PATTERN_SUPPORT |
+| performanceTrend INCREASING | +1 score |
+| avgEimd > 2 + HIGH spacing | +0.05 DELTA_SPC (HEURISTIC) |
+| adherenceTrend CONSISTENT | +0.02 DELTA_ADH (HEURISTIC) |
+
+**Motor Prompt Delta:** sección "### LEARNED STATE → TOPOLOGÍA (FASE 12)" añadida en `_MOTOR_PROMPT_EMBEDDED` tras FASE 11.
+
+**Tests:** TLT1-TLT14 (30 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1544 ✓ 0 ✗**
 
 ---
 

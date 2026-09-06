@@ -10144,6 +10144,275 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 11 longitudinal learning contract ✓');
 })();
 
+// ═══════════════ FASE 12 — Learned State → Topology / Distribution Feedback ═══════════════
+// Node-runnable T-suffix copies of FASE 12 functions.
+(function() {
+  console.log('\n── FASE 12: Learned Topology Feedback ───────────────────────');
+
+  // ── Local constants ───────────────────────────────────────────────────────
+  var _HR = {
+    POSITIVE:                   'HISTORICAL_RESPONSE_POSITIVE',
+    NEUTRAL:                    'HISTORICAL_RESPONSE_NEUTRAL',
+    NEGATIVE:                   'HISTORICAL_RESPONSE_NEGATIVE',
+    RECOVERY_TOLERANCE_GOOD:    'RECOVERY_TOLERANCE_GOOD',
+    RECOVERY_TOLERANCE_LIMITED: 'RECOVERY_TOLERANCE_LIMITED',
+    ADHERENCE_PATTERN_SUPPORT:  'ADHERENCE_PATTERN_SUPPORT',
+    PAIN_HISTORY_CONCERN:       'PAIN_HISTORY_CONCERN',
+    INSUFFICIENT_HISTORY:       'INSUFFICIENT_HISTORY'
+  };
+  var _TAD = { POSITIVE: 0.1, NEUTRAL: 0.0, NEGATIVE: -0.1 };
+
+  // ── T-suffix copies ───────────────────────────────────────────────────────
+  function _computeTopologyHistoryAdjustment(topologyHistory) {
+    if (!topologyHistory) return { adjustment: 'NEUTRAL', reasonCodes: [_HR.INSUFFICIENT_HISTORY], confidence: 'NONE' };
+    var conf = topologyHistory.confidence;
+    if (conf === 'NONE' || conf === 'LOW') {
+      return { adjustment: 'NEUTRAL', reasonCodes: [_HR.INSUFFICIENT_HISTORY], confidence: conf || 'NONE' };
+    }
+    if (topologyHistory.painSignals && topologyHistory.painSignals.length > 0) {
+      return { adjustment: 'NEGATIVE', reasonCodes: [_HR.PAIN_HISTORY_CONCERN], confidence: conf };
+    }
+    var score = 0; var reasons = [];
+    if (topologyHistory.recoveryTrend === 'INCREASING') {
+      score += 1; reasons.push(_HR.RECOVERY_TOLERANCE_GOOD);
+    } else if (topologyHistory.recoveryTrend === 'DECREASING') {
+      score -= 1; reasons.push(_HR.RECOVERY_TOLERANCE_LIMITED);
+    }
+    if (topologyHistory.adherenceTrend === 'CONSISTENT' || topologyHistory.adherenceTrend === 'INCREASING') {
+      score += 1; reasons.push(_HR.ADHERENCE_PATTERN_SUPPORT);
+    }
+    if (topologyHistory.performanceTrend === 'INCREASING') {
+      score += 1; reasons.push(_HR.POSITIVE);
+    } else if (topologyHistory.performanceTrend === 'DECREASING') {
+      score -= 1; reasons.push(_HR.NEGATIVE);
+    }
+    var adj = score > 0 ? 'POSITIVE' : score < 0 ? 'NEGATIVE' : 'NEUTRAL';
+    if (reasons.length === 0) reasons.push(_HR.NEUTRAL);
+    return { adjustment: adj, reasonCodes: reasons, confidence: conf };
+  }
+
+  function _applyLearnedTopologyAdjustment(candidates, learnedState) {
+    if (!candidates || candidates.length === 0) return [];
+    return candidates.map(function(c) {
+      var out = Object.assign({}, c);
+      if (out.rejectedByHardFilter) {
+        out.reasonCodes = (out.reasonCodes || []).concat(['HARD_FILTER_REJECTED']);
+        return out;
+      }
+      var topologyId = out.topology || out.topologyId || null;
+      var topologyHistory = null;
+      if (learnedState && learnedState.topologyHistoryMap && topologyId && learnedState.topologyHistoryMap[topologyId]) {
+        topologyHistory = learnedState.topologyHistoryMap[topologyId];
+      } else if (learnedState && learnedState.topologyHistory && learnedState.topologyHistory.topology === topologyId) {
+        topologyHistory = learnedState.topologyHistory;
+      }
+      var result = _computeTopologyHistoryAdjustment(topologyHistory);
+      var delta = _TAD[result.adjustment] || 0;
+      out.baseScore = typeof out.score === 'number' ? out.score : 0;
+      out.learnedAdjustment = delta;
+      out.adjustedScore = out.baseScore + delta;
+      out.reasonCodes = (out.reasonCodes || []).concat(result.reasonCodes);
+      out.confidence = result.confidence;
+      return out;
+    });
+  }
+
+  function _applyLearnedDistributionFeedback(distributions, learnedState) {
+    if (!distributions || distributions.length === 0) return [];
+    var recoveryLimited = false;
+    var consistentAdherence = false;
+    if (learnedState) {
+      var avgEimd = learnedState.avgEimd;
+      if (typeof avgEimd === 'number' && avgEimd > 2) recoveryLimited = true;
+      var adh = learnedState.adherenceTrend;
+      if (adh === 'CONSISTENT' || adh === 'INCREASING') consistentAdherence = true;
+    }
+    return distributions.map(function(d) {
+      var out = Object.assign({}, d);
+      if (out.rejectedByHardFilter) return out;
+      var baseScore = typeof out.score === 'number' ? out.score : 0;
+      var spacingAdj = 0; var reasons = [];
+      if (recoveryLimited) {
+        var spacing = out.spacing || 'MODERATE';
+        if (spacing === 'HIGH') {
+          spacingAdj += 0.05; reasons.push(_HR.RECOVERY_TOLERANCE_LIMITED);
+        } else if (spacing === 'LOW') {
+          spacingAdj -= 0.05; reasons.push(_HR.RECOVERY_TOLERANCE_LIMITED);
+        }
+      }
+      var adherenceAdj = 0;
+      if (consistentAdherence) {
+        adherenceAdj += 0.02; reasons.push(_HR.ADHERENCE_PATTERN_SUPPORT);
+      }
+      out.baseScore = baseScore;
+      out.spacingAdjustment = spacingAdj + adherenceAdj;
+      out.adjustedScore = baseScore + spacingAdj + adherenceAdj;
+      out.reasonCodes = (out.reasonCodes || []).concat(reasons);
+      return out;
+    });
+  }
+
+  function _buildTopologyLearnedState(topologyId, opts) {
+    var o = opts || {};
+    return {
+      topology:        topologyId,
+      observations:    o.observations     || 0,
+      adherenceTrend:  o.adherenceTrend   || 'STABLE',
+      performanceTrend:o.performanceTrend || 'STABLE',
+      recoveryTrend:   o.recoveryTrend    || 'STABLE',
+      rirConsistency:  o.rirConsistency   || null,
+      painSignals:     o.painSignals      || [],
+      confidence:      o.confidence       || 'NONE'
+    };
+  }
+
+  function _buildTopologyFeedbackTraceNode(reasonCodes, confidence, adjustment, topologyId) {
+    var influenced = adjustment !== 'NEUTRAL';
+    return {
+      source:       'HISTORY',
+      engine:       'TOPOLOGY',
+      decisionType: influenced ? 'TOPOLOGY_LEARNED_ADJUSTMENT' : 'TOPOLOGY_HISTORY_NEUTRAL',
+      topologyId:   topologyId || null,
+      confidence:   confidence,
+      adjustment:   adjustment,
+      reasonCodes:  reasonCodes || [],
+      influenced:   influenced
+    };
+  }
+
+  // ── TLT1: hard-rejected candidate is never modified by learned state ─────
+  (function TLT1() {
+    var cands = [{ topology: 'TWO_ON_ONE_OFF', score: 0.8, rejectedByHardFilter: true }];
+    var ls = { topologyHistoryMap: { 'TWO_ON_ONE_OFF': { confidence: 'HIGH', performanceTrend: 'INCREASING', recoveryTrend: 'INCREASING', adherenceTrend: 'CONSISTENT', painSignals: [] } } };
+    var res = _applyLearnedTopologyAdjustment(cands, ls);
+    assert('TLT1a', 'hard-rejected passes through', res[0].rejectedByHardFilter === true);
+    assert('TLT1b', 'hard-rejected score not changed', res[0].adjustedScore === undefined || res[0].score === 0.8);
+    assert('TLT1c', 'hard-rejected has HARD_FILTER_REJECTED reason', res[0].reasonCodes && res[0].reasonCodes.indexOf('HARD_FILTER_REJECTED') >= 0);
+  })();
+
+  // ── TLT2: pain signals → NEGATIVE regardless of positive performance ─────
+  (function TLT2() {
+    var th = _buildTopologyLearnedState('THREE_ON_ONE_OFF', { confidence: 'HIGH', performanceTrend: 'INCREASING', recoveryTrend: 'INCREASING', adherenceTrend: 'CONSISTENT', painSignals: ['KNEE_PAIN'] });
+    var r = _computeTopologyHistoryAdjustment(th);
+    assert('TLT2a', 'pain signals → NEGATIVE', r.adjustment === 'NEGATIVE');
+    assert('TLT2b', 'PAIN_HISTORY_CONCERN in reasons', r.reasonCodes.indexOf(_HR.PAIN_HISTORY_CONCERN) >= 0);
+  })();
+
+  // ── TLT3: all positive signals → POSITIVE ───────────────────────────────
+  (function TLT3() {
+    var th = _buildTopologyLearnedState('TWO_ON_ONE_OFF', { confidence: 'HIGH', performanceTrend: 'INCREASING', recoveryTrend: 'INCREASING', adherenceTrend: 'CONSISTENT', painSignals: [] });
+    var r = _computeTopologyHistoryAdjustment(th);
+    assert('TLT3a', 'all positive → POSITIVE', r.adjustment === 'POSITIVE');
+    assert('TLT3b', 'RECOVERY_TOLERANCE_GOOD reason present', r.reasonCodes.indexOf(_HR.RECOVERY_TOLERANCE_GOOD) >= 0);
+  })();
+
+  // ── TLT4: LOW confidence → NEUTRAL + INSUFFICIENT_HISTORY ───────────────
+  (function TLT4() {
+    var th = _buildTopologyLearnedState('TWO_ON_ONE_OFF', { confidence: 'LOW', performanceTrend: 'INCREASING', recoveryTrend: 'INCREASING', adherenceTrend: 'CONSISTENT', painSignals: [] });
+    var r = _computeTopologyHistoryAdjustment(th);
+    assert('TLT4a', 'LOW confidence → NEUTRAL', r.adjustment === 'NEUTRAL');
+    assert('TLT4b', 'INSUFFICIENT_HISTORY reason', r.reasonCodes.indexOf(_HR.INSUFFICIENT_HISTORY) >= 0);
+  })();
+
+  // ── TLT5: positive history breaks tie between two equal-score candidates ─
+  (function TLT5() {
+    var cands = [
+      { topology: 'TWO_ON_ONE_OFF',   score: 0.7 },
+      { topology: 'THREE_ON_ONE_OFF', score: 0.7 }
+    ];
+    var ls = {
+      topologyHistoryMap: {
+        'TWO_ON_ONE_OFF':   { confidence: 'HIGH', performanceTrend: 'INCREASING', recoveryTrend: 'INCREASING', adherenceTrend: 'CONSISTENT', painSignals: [] },
+        'THREE_ON_ONE_OFF': { confidence: 'HIGH', performanceTrend: 'STABLE', recoveryTrend: 'STABLE', adherenceTrend: 'STABLE', painSignals: [] }
+      }
+    };
+    var res = _applyLearnedTopologyAdjustment(cands, ls);
+    var two   = res.find(function(x){ return x.topology === 'TWO_ON_ONE_OFF'; });
+    var three = res.find(function(x){ return x.topology === 'THREE_ON_ONE_OFF'; });
+    assert('TLT5a', 'tie broken by learned state', two.adjustedScore !== three.adjustedScore);
+    assert('TLT5b', 'positive topology has higher adjustedScore', two.adjustedScore > three.adjustedScore);
+  })();
+
+  // ── TLT6: distribution hard-rejected passes through untouched ────────────
+  (function TLT6() {
+    var dists = [{ spacing: 'HIGH', score: 0.6, frequencyTarget: 3, rejectedByHardFilter: true }];
+    var ls = { avgEimd: 2.5, adherenceTrend: 'CONSISTENT' };
+    var res = _applyLearnedDistributionFeedback(dists, ls);
+    assert('TLT6a', 'dist hard-rejected passes through', res[0].rejectedByHardFilter === true);
+    assert('TLT6b', 'dist hard-rejected has no spacingAdjustment', res[0].spacingAdjustment === undefined);
+  })();
+
+  // ── TLT7: frequencyTarget NEVER changed ─────────────────────────────────
+  (function TLT7() {
+    var dists = [{ spacing: 'HIGH', score: 0.7, frequencyTarget: 3 }];
+    var ls = { avgEimd: 2.5, adherenceTrend: 'CONSISTENT' };
+    var res = _applyLearnedDistributionFeedback(dists, ls);
+    assert('TLT7', 'frequencyTarget unchanged', res[0].frequencyTarget === 3);
+  })();
+
+  // ── TLT8: recovery limited + HIGH spacing → positive spacing delta ───────
+  (function TLT8() {
+    var dists = [{ spacing: 'HIGH', score: 0.5, frequencyTarget: 3 }];
+    var ls = { avgEimd: 2.5 };
+    var res = _applyLearnedDistributionFeedback(dists, ls);
+    assert('TLT8a', 'recovery limited HIGH spacing → positive adj', res[0].spacingAdjustment > 0);
+    assert('TLT8b', 'adjustedScore > baseScore', res[0].adjustedScore > res[0].baseScore);
+  })();
+
+  // ── TLT9: reproducibility — same input yields same output ────────────────
+  (function TLT9() {
+    var th = _buildTopologyLearnedState('TWO_ON_ONE_OFF', { confidence: 'HIGH', performanceTrend: 'INCREASING', recoveryTrend: 'STABLE', adherenceTrend: 'CONSISTENT', painSignals: [] });
+    var r1 = _computeTopologyHistoryAdjustment(th);
+    var r2 = _computeTopologyHistoryAdjustment(th);
+    assert('TLT9', 'reproducible results', r1.adjustment === r2.adjustment && r1.confidence === r2.confidence);
+  })();
+
+  // ── TLT10: null topologyHistory → INSUFFICIENT_HISTORY + NONE confidence ─
+  (function TLT10() {
+    var r = _computeTopologyHistoryAdjustment(null);
+    assert('TLT10a', 'null → NEUTRAL', r.adjustment === 'NEUTRAL');
+    assert('TLT10b', 'null → INSUFFICIENT_HISTORY', r.reasonCodes.indexOf(_HR.INSUFFICIENT_HISTORY) >= 0);
+    assert('TLT10c', 'null → confidence NONE', r.confidence === 'NONE');
+  })();
+
+  // ── TLT11: trace decisionType = TOPOLOGY_LEARNED_ADJUSTMENT when influenced
+  (function TLT11() {
+    var trace = _buildTopologyFeedbackTraceNode([_HR.POSITIVE], 'HIGH', 'POSITIVE', 'TWO_ON_ONE_OFF');
+    assert('TLT11a', 'influenced=true', trace.influenced === true);
+    assert('TLT11b', 'decisionType TOPOLOGY_LEARNED_ADJUSTMENT', trace.decisionType === 'TOPOLOGY_LEARNED_ADJUSTMENT');
+    assert('TLT11c', 'source HISTORY', trace.source === 'HISTORY');
+    assert('TLT11d', 'engine TOPOLOGY', trace.engine === 'TOPOLOGY');
+  })();
+
+  // ── TLT12: trace decisionType = TOPOLOGY_HISTORY_NEUTRAL when not influenced
+  (function TLT12() {
+    var trace = _buildTopologyFeedbackTraceNode([_HR.NEUTRAL], 'MODERATE', 'NEUTRAL', 'TWO_ON_ONE_OFF');
+    assert('TLT12a', 'influenced=false', trace.influenced === false);
+    assert('TLT12b', 'decisionType TOPOLOGY_HISTORY_NEUTRAL', trace.decisionType === 'TOPOLOGY_HISTORY_NEUTRAL');
+  })();
+
+  // ── TLT13: no mutation of input arrays ──────────────────────────────────
+  (function TLT13() {
+    var cands = [{ topology: 'TWO_ON_ONE_OFF', score: 0.7 }];
+    var ls = { topologyHistoryMap: { 'TWO_ON_ONE_OFF': { confidence: 'HIGH', performanceTrend: 'INCREASING', recoveryTrend: 'INCREASING', adherenceTrend: 'CONSISTENT', painSignals: [] } } };
+    var origScore = cands[0].score;
+    _applyLearnedTopologyAdjustment(cands, ls);
+    assert('TLT13a', 'input candidate not mutated (score)', cands[0].score === origScore);
+    assert('TLT13b', 'input candidate not mutated (adjustedScore absent)', cands[0].adjustedScore === undefined);
+  })();
+
+  // ── TLT14: CONSISTENT adherence → ADHERENCE_PATTERN_SUPPORT reason ───────
+  (function TLT14() {
+    var dists = [{ spacing: 'MODERATE', score: 0.6, frequencyTarget: 3 }];
+    var ls = { avgEimd: 1.5, adherenceTrend: 'CONSISTENT' };
+    var res = _applyLearnedDistributionFeedback(dists, ls);
+    assert('TLT14a', 'ADHERENCE_PATTERN_SUPPORT reason present', res[0].reasonCodes && res[0].reasonCodes.indexOf(_HR.ADHERENCE_PATTERN_SUPPORT) >= 0);
+    assert('TLT14b', 'adherence spacingAdjustment > 0', res[0].spacingAdjustment > 0);
+  })();
+
+  console.log('── FASE 12 learned topology feedback ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
