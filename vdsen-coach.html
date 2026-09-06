@@ -6596,9 +6596,31 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           + (ec.lostCount ? ' · ✗' + ec.lostCount + ' perd' : '') + (ec.replacedCount ? ' · ↺' + ec.replacedCount + ' reem' : '') + '</span>'
           + warnLine + '</div>';
       })() : '';
+      const _hintsHtml = (function() {
+        var _hints = _buildLongitudinalRepairHints(_longValReport, {});
+        if (!_hints || !_hints.length) return '';
+        var _labelFor = {
+          'REPLACE_OR_REMOVE': 'Reemplazar o eliminar',
+          'RESTORE_OR_KEEP': 'Restaurar o conservar',
+          'REVIEW_STABILITY': 'Revisar estabilidad',
+          'REVIEW_DISTRIBUTION_TOPOLOGY': 'Revisar distribución',
+          'REVIEW_TOPOLOGY_CHOICE': 'Revisar topología',
+          'REVIEW': 'Revisar'
+        };
+        var rows = _hints.slice(0, 3).map(function(h) {
+          var col = h.severity === 'SUSPECT' ? 'var(--danger)' : '#f0a500';
+          var lbl = _labelFor[h.preferredAction] || h.preferredAction;
+          var ex = h.targetExerciseId ? ' · <em>' + _escH(String(h.targetExerciseId).substring(0, 40)) + '</em>' : '';
+          return '<div style="color:' + col + ';font-size:10px;margin-top:2px">→ ' + _escH(lbl) + ex + '</div>';
+        }).join('');
+        return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
+          + '<span style="color:var(--text-muted);font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
+          + rows + '</div>';
+      })();
       setStatus('<div style="color:var(--success);font-weight:700">✅ Generado y cargado: ' + saved.join(' · ') + '</div>'
         + '<div style="color:var(--text-muted);font-size:11px;margin-top:4px">Tokens: ' + (u.input_tokens || '?') + ' in / ' + (u.output_tokens || '?') + ' out' + cacheNote + ' · Ya visible para el cliente en su app.</div>'
         + _lvHtml
+        + _hintsHtml
         + '<button onclick="downloadPlanPDF(\'' + clientId + '\')" class="btn-secondary" style="margin-top:10px">📄 Descargar PDF del plan</button>'
         + ' <button onclick="notifyPlanReady(\'' + clientId + '\')" class="btn-secondary" style="margin-top:10px;border-color:#25D366;color:#25D366">📣 Avisar al cliente</button>' + trunc);
       showToast('✅ Plan generado y activado');
@@ -10016,6 +10038,56 @@ El esfuerzo no es negociable.
   }
   window._applyLongitudinalValidationGate = _applyLongitudinalValidationGate;
 
+  // ─── FASE 49: Longitudinal Repair Bridge ──────────────────────────────────
+  // Pure mapper: converts unexpectedChanges from _buildLongitudinalValidationReport
+  // into structured repair hints for the coach. NEVER auto-applies changes.
+  // context: optional { generatedPlan?, restrictions? } — reserved for future enrichment.
+  // Returns: Array<{ type, targetExerciseId, targetSlot, preferredAction, reasonCodes, severity, description }>
+  //   sorted SUSPECT first, then WARNING.
+  function _buildLongitudinalRepairHints(longitudinalValidation, context) {
+    if (!longitudinalValidation) return [];
+    var changes = Array.isArray(longitudinalValidation.unexpectedChanges) ? longitudinalValidation.unexpectedChanges : [];
+    if (!changes.length) return [];
+
+    var _actionMap = {
+      'PAIN_HISTORY_EXERCISE_KEPT':             'REPLACE_OR_REMOVE',
+      'POSITIVE_HISTORY_EXERCISE_DROPPED':       'RESTORE_OR_KEEP',
+      'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION':  'REVIEW_STABILITY',
+      'FREQUENCY_CHANGED':                       'REVIEW_DISTRIBUTION_TOPOLOGY',
+      'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE':       'REVIEW_TOPOLOGY_CHOICE',
+      'TOPOLOGY_LS_PREFERENCE_IGNORED':          'REVIEW_TOPOLOGY_CHOICE'
+    };
+    var _codeMap = {
+      'PAIN_HISTORY_EXERCISE_KEPT':             ['EXERCISE_PAIN_HISTORY'],
+      'POSITIVE_HISTORY_EXERCISE_DROPPED':       ['EXERCISE_POSITIVE_HISTORY'],
+      'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION':  ['NO_HISTORY_SIGNAL'],
+      'FREQUENCY_CHANGED':                       ['FREQUENCY_MISMATCH'],
+      'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE':       ['TOPOLOGY_NO_TRACE'],
+      'TOPOLOGY_LS_PREFERENCE_IGNORED':          ['TOPOLOGY_PREFERENCE_IGNORED']
+    };
+
+    var hints = changes.map(function(c) {
+      var exMatch = c.description && c.description.match(/^"([^"]+)"/);
+      return {
+        type:             c.type,
+        targetExerciseId: exMatch ? exMatch[1] : null,
+        targetSlot:       null,
+        preferredAction:  _actionMap[c.type] || 'REVIEW',
+        reasonCodes:      (_codeMap[c.type] || ['UNKNOWN_DIVERGENCE']).slice(),
+        severity:         c.severity || 'WARNING',
+        description:      c.description || ''
+      };
+    });
+
+    hints.sort(function(a, b) {
+      if (a.severity === b.severity) return 0;
+      return a.severity === 'SUSPECT' ? -1 : 1;
+    });
+
+    return hints;
+  }
+  window._buildLongitudinalRepairHints = _buildLongitudinalRepairHints;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10205,10 +10277,31 @@ El esfuerzo no es negociable.
           + (ec.lostCount ? ' · ✗' + ec.lostCount + ' perd' : '') + (ec.replacedCount ? ' · ↺' + ec.replacedCount + ' reem' : '') + '</span>'
           + warnLine + '</div>';
       })() : '';
+      const _hintsHtml2 = (function() {
+        var _hints2 = _buildLongitudinalRepairHints(_longValReport2, {});
+        if (!_hints2 || !_hints2.length) return '';
+        var _labelFor2 = {
+          'REPLACE_OR_REMOVE': 'Reemplazar o eliminar',
+          'RESTORE_OR_KEEP': 'Restaurar o conservar',
+          'REVIEW_STABILITY': 'Revisar estabilidad',
+          'REVIEW_DISTRIBUTION_TOPOLOGY': 'Revisar distribución',
+          'REVIEW_TOPOLOGY_CHOICE': 'Revisar topología',
+          'REVIEW': 'Revisar'
+        };
+        var rows2 = _hints2.slice(0, 3).map(function(h) {
+          var col2 = h.severity === 'SUSPECT' ? '#e05555' : '#f0a500';
+          var lbl2 = _labelFor2[h.preferredAction] || h.preferredAction;
+          var ex2 = h.targetExerciseId ? ' · <em>' + _escH(String(h.targetExerciseId).substring(0, 40)) + '</em>' : '';
+          return '<div style="color:' + col2 + ';font-size:10px;margin-top:2px">→ ' + _escH(lbl2) + ex2 + '</div>';
+        }).join('');
+        return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
+          + '<span style="color:#888;font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
+          + rows2 + '</div>';
+      })();
       setStatus(`<div style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);border-radius:8px;padding:12px;margin-top:4px">
         <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Generado: ${saved.join(' · ')}</div>
         <div style="color:#888;font-size:11px">Tokens: ${u.input_tokens||'?'} in / ${u.output_tokens||'?'} out${cacheNote}</div>
-        ${_lvHtml2}${trunc}
+        ${_lvHtml2}${_hintsHtml2}${trunc}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button onclick="_switchClientTab('plan')" style="padding:6px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">🏋️ Ver Plan</button>
           <button onclick="downloadPlanPDF('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.25);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📄 PDF</button>

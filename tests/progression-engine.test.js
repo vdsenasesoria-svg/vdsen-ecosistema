@@ -9174,4 +9174,206 @@ function _applyLongitudinalValidationGate(qualityAudit, longitudinalValidation) 
   assert('F48-Jc', 'lv.verdict not mutated', lv.verdict === 'WARNING');
 })();
 
+// ── FASE 49: _buildLongitudinalRepairHints — inline copy ─────────────────────
+function _buildLongitudinalRepairHints(longitudinalValidation, context) {
+  if (!longitudinalValidation) return [];
+  var changes = Array.isArray(longitudinalValidation.unexpectedChanges) ? longitudinalValidation.unexpectedChanges : [];
+  if (!changes.length) return [];
+  var _actionMap = {
+    'PAIN_HISTORY_EXERCISE_KEPT':            'REPLACE_OR_REMOVE',
+    'POSITIVE_HISTORY_EXERCISE_DROPPED':     'RESTORE_OR_KEEP',
+    'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION':'REVIEW_STABILITY',
+    'FREQUENCY_CHANGED':                     'REVIEW_DISTRIBUTION_TOPOLOGY',
+    'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE':     'REVIEW_TOPOLOGY_CHOICE',
+    'TOPOLOGY_LS_PREFERENCE_IGNORED':        'REVIEW_TOPOLOGY_CHOICE'
+  };
+  var _codeMap = {
+    'PAIN_HISTORY_EXERCISE_KEPT':            ['EXERCISE_PAIN_HISTORY'],
+    'POSITIVE_HISTORY_EXERCISE_DROPPED':     ['EXERCISE_POSITIVE_HISTORY'],
+    'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION':['NO_HISTORY_SIGNAL'],
+    'FREQUENCY_CHANGED':                     ['FREQUENCY_MISMATCH'],
+    'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE':     ['TOPOLOGY_NO_TRACE'],
+    'TOPOLOGY_LS_PREFERENCE_IGNORED':        ['TOPOLOGY_PREFERENCE_IGNORED']
+  };
+  var hints = changes.map(function(c) {
+    var exMatch = c.description && c.description.match(/^"([^"]+)"/);
+    return {
+      type:             c.type,
+      targetExerciseId: exMatch ? exMatch[1] : null,
+      targetSlot:       null,
+      preferredAction:  _actionMap[c.type] || 'REVIEW',
+      reasonCodes:      (_codeMap[c.type] || ['UNKNOWN_DIVERGENCE']).slice(),
+      severity:         c.severity || 'WARNING',
+      description:      c.description || ''
+    };
+  });
+  hints.sort(function(a, b) {
+    if (a.severity === b.severity) return 0;
+    return a.severity === 'SUSPECT' ? -1 : 1;
+  });
+  return hints;
+}
+
+// ═════════════════ F49: Longitudinal Repair Hints ═══════════════════════════
+
+// F49-A: null LV → empty array
+(function() {
+  console.log('\nF49-A — null LV → empty hints');
+  var r = _buildLongitudinalRepairHints(null, {});
+  assert('F49-Aa', 'returns array', Array.isArray(r));
+  assert('F49-Ab', 'empty on null', r.length === 0);
+})();
+
+// F49-B: LV with no changes → empty array
+(function() {
+  console.log('\nF49-B — LV with no changes → empty hints');
+  var lv = { verdict: 'OK', unexpectedChanges: [] };
+  var r = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Ba', 'empty on no changes', r.length === 0);
+})();
+
+// F49-C: PAIN_HISTORY_EXERCISE_KEPT → REPLACE_OR_REMOVE + EXERCISE_PAIN_HISTORY
+(function() {
+  console.log('\nF49-C — PAIN_HISTORY_EXERCISE_KEPT maps correctly');
+  var lv = { verdict: 'SUSPECT', unexpectedChanges: [
+    { type: 'PAIN_HISTORY_EXERCISE_KEPT', description: '"Sentadilla" tiene señal de dolor', severity: 'SUSPECT' }
+  ]};
+  var r = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Ca', 'one hint', r.length === 1);
+  assert('F49-Cb', 'preferredAction=REPLACE_OR_REMOVE', r[0].preferredAction === 'REPLACE_OR_REMOVE');
+  assert('F49-Cc', 'reasonCode EXERCISE_PAIN_HISTORY', r[0].reasonCodes[0] === 'EXERCISE_PAIN_HISTORY');
+  assert('F49-Cd', 'severity=SUSPECT', r[0].severity === 'SUSPECT');
+  assert('F49-Ce', 'targetExerciseId extracted', r[0].targetExerciseId === 'Sentadilla');
+})();
+
+// F49-D: POSITIVE_HISTORY_EXERCISE_DROPPED → RESTORE_OR_KEEP + EXERCISE_POSITIVE_HISTORY
+(function() {
+  console.log('\nF49-D — POSITIVE_HISTORY_EXERCISE_DROPPED maps correctly');
+  var lv = { verdict: 'SUSPECT', unexpectedChanges: [
+    { type: 'POSITIVE_HISTORY_EXERCISE_DROPPED', description: '"Press Banca" era positivo y fue eliminado', severity: 'SUSPECT' }
+  ]};
+  var r = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Da', 'preferredAction=RESTORE_OR_KEEP', r[0].preferredAction === 'RESTORE_OR_KEEP');
+  assert('F49-Db', 'reasonCode EXERCISE_POSITIVE_HISTORY', r[0].reasonCodes[0] === 'EXERCISE_POSITIVE_HISTORY');
+  assert('F49-Dc', 'targetExerciseId=Press Banca', r[0].targetExerciseId === 'Press Banca');
+})();
+
+// F49-E: EXERCISE_DROPPED_WITHOUT_JUSTIFICATION → REVIEW_STABILITY + NO_HISTORY_SIGNAL
+(function() {
+  console.log('\nF49-E — EXERCISE_DROPPED_WITHOUT_JUSTIFICATION maps correctly');
+  var lv = { verdict: 'WARNING', unexpectedChanges: [
+    { type: 'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION', description: '"Curl Martillo" eliminado sin señal', severity: 'WARNING' }
+  ]};
+  var r = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Ea', 'preferredAction=REVIEW_STABILITY', r[0].preferredAction === 'REVIEW_STABILITY');
+  assert('F49-Eb', 'reasonCode NO_HISTORY_SIGNAL', r[0].reasonCodes[0] === 'NO_HISTORY_SIGNAL');
+})();
+
+// F49-F: FREQUENCY_CHANGED → REVIEW_DISTRIBUTION_TOPOLOGY + FREQUENCY_MISMATCH
+(function() {
+  console.log('\nF49-F — FREQUENCY_CHANGED maps correctly');
+  var lv = { verdict: 'WARNING', unexpectedChanges: [
+    { type: 'FREQUENCY_CHANGED', description: 'Frecuencia cambió de 4 a 3 días', severity: 'WARNING' }
+  ]};
+  var r = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Fa', 'preferredAction=REVIEW_DISTRIBUTION_TOPOLOGY', r[0].preferredAction === 'REVIEW_DISTRIBUTION_TOPOLOGY');
+  assert('F49-Fb', 'reasonCode FREQUENCY_MISMATCH', r[0].reasonCodes[0] === 'FREQUENCY_MISMATCH');
+  assert('F49-Fc', 'targetExerciseId=null (no exercise)', r[0].targetExerciseId === null);
+})();
+
+// F49-G: TOPOLOGY_CHANGED_WITHOUT_LS_TRACE and TOPOLOGY_LS_PREFERENCE_IGNORED both → REVIEW_TOPOLOGY_CHOICE
+(function() {
+  console.log('\nF49-G — topology types map to REVIEW_TOPOLOGY_CHOICE');
+  var lv = { verdict: 'WARNING', unexpectedChanges: [
+    { type: 'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE', description: 'Topología cambió sin traza LS', severity: 'WARNING' },
+    { type: 'TOPOLOGY_LS_PREFERENCE_IGNORED', description: 'Preferencia LS ignorada', severity: 'WARNING' }
+  ]};
+  var r = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Ga', 'two hints', r.length === 2);
+  assert('F49-Gb', 'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE → REVIEW_TOPOLOGY_CHOICE', r[0].preferredAction === 'REVIEW_TOPOLOGY_CHOICE');
+  assert('F49-Gc', 'TOPOLOGY_LS_PREFERENCE_IGNORED → REVIEW_TOPOLOGY_CHOICE', r[1].preferredAction === 'REVIEW_TOPOLOGY_CHOICE');
+  assert('F49-Gd', 'codes: TOPOLOGY_NO_TRACE', r[0].reasonCodes[0] === 'TOPOLOGY_NO_TRACE');
+  assert('F49-Ge', 'codes: TOPOLOGY_PREFERENCE_IGNORED', r[1].reasonCodes[0] === 'TOPOLOGY_PREFERENCE_IGNORED');
+})();
+
+// F49-H: SUSPECT sorted before WARNING
+(function() {
+  console.log('\nF49-H — SUSPECT hints sorted before WARNING hints');
+  var lv = { verdict: 'SUSPECT', unexpectedChanges: [
+    { type: 'FREQUENCY_CHANGED', description: 'días', severity: 'WARNING' },
+    { type: 'PAIN_HISTORY_EXERCISE_KEPT', description: '"Peso Muerto" dolor', severity: 'SUSPECT' }
+  ]};
+  var r = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Ha', 'two hints returned', r.length === 2);
+  assert('F49-Hb', 'first hint is SUSPECT', r[0].severity === 'SUSPECT');
+  assert('F49-Hc', 'second hint is WARNING', r[1].severity === 'WARNING');
+})();
+
+// F49-I: determinism — same input produces same output order
+(function() {
+  console.log('\nF49-I — determinism: same input → same output');
+  var lv = { verdict: 'SUSPECT', unexpectedChanges: [
+    { type: 'FREQUENCY_CHANGED', description: 'frec', severity: 'WARNING' },
+    { type: 'PAIN_HISTORY_EXERCISE_KEPT', description: '"Press Militar" dolor', severity: 'SUSPECT' },
+    { type: 'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION', description: '"Remo" sin señal', severity: 'WARNING' }
+  ]};
+  var r1 = _buildLongitudinalRepairHints(lv, {});
+  var r2 = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Ia', 'same count both calls', r1.length === r2.length);
+  assert('F49-Ib', 'r1[0].type === r2[0].type', r1[0].type === r2[0].type);
+  assert('F49-Ic', 'r1[1].type === r2[1].type', r1[1].type === r2[1].type);
+  assert('F49-Id', 'r1[2].type === r2[2].type', r1[2].type === r2[2].type);
+})();
+
+// F49-J: no-mutation — input not mutated by function
+(function() {
+  console.log('\nF49-J — pureza: inputs no mutados');
+  var lv = { verdict: 'SUSPECT', unexpectedChanges: [
+    { type: 'PAIN_HISTORY_EXERCISE_KEPT', description: '"Leg Press" dolor', severity: 'SUSPECT' }
+  ]};
+  var origLen = lv.unexpectedChanges.length;
+  var origDesc = lv.unexpectedChanges[0].description;
+  _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Ja', 'unexpectedChanges not mutated', lv.unexpectedChanges.length === origLen);
+  assert('F49-Jb', 'description not mutated', lv.unexpectedChanges[0].description === origDesc);
+  assert('F49-Jc', 'verdict not mutated', lv.verdict === 'SUSPECT');
+})();
+
+// F49-K: reasonCodes are new array (no aliasing)
+(function() {
+  console.log('\nF49-K — reasonCodes: no aliasing con _codeMap interno');
+  var lv = { verdict: 'SUSPECT', unexpectedChanges: [
+    { type: 'PAIN_HISTORY_EXERCISE_KEPT', description: '"Hip Thrust" dolor', severity: 'SUSPECT' }
+  ]};
+  var r = _buildLongitudinalRepairHints(lv, {});
+  r[0].reasonCodes.push('EXTRA');
+  var r2 = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-Ka', 'reasonCodes not aliased (second call still has 1)', r2[0].reasonCodes.length === 1);
+})();
+
+// F49-L: unknown type → preferredAction=REVIEW, reasonCodes=['UNKNOWN_DIVERGENCE']
+(function() {
+  console.log('\nF49-L — unknown divergence type → REVIEW + UNKNOWN_DIVERGENCE');
+  var lv = { verdict: 'WARNING', unexpectedChanges: [
+    { type: 'SOME_FUTURE_TYPE', description: 'algo raro', severity: 'WARNING' }
+  ]};
+  var r = _buildLongitudinalRepairHints(lv, {});
+  assert('F49-La', 'one hint', r.length === 1);
+  assert('F49-Lb', 'preferredAction=REVIEW', r[0].preferredAction === 'REVIEW');
+  assert('F49-Lc', 'reasonCodes=[UNKNOWN_DIVERGENCE]', r[0].reasonCodes[0] === 'UNKNOWN_DIVERGENCE');
+})();
+
+// F49-M: no-auto-apply constraint — function returns hints, does not modify any plan structure
+(function() {
+  console.log('\nF49-M — no auto-apply: función no modifica estructuras externas');
+  var fakePlan = { days: [{ dayIndex: 0, exercises: [{ exerciseName: 'Sentadilla' }] }] };
+  var planSnapshot = JSON.stringify(fakePlan);
+  var lv = { verdict: 'SUSPECT', unexpectedChanges: [
+    { type: 'PAIN_HISTORY_EXERCISE_KEPT', description: '"Sentadilla" dolor', severity: 'SUSPECT' }
+  ]};
+  _buildLongitudinalRepairHints(lv, { plan: fakePlan });
+  assert('F49-Ma', 'plan structure unmodified', JSON.stringify(fakePlan) === planSnapshot);
+  assert('F49-Mb', 'hints are suggestions only (no side effect)', true);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
