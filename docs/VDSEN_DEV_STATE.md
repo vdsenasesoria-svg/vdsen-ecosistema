@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-06 · branch `claude/learned-state-activation-d5b69n` · Bug fixes: RIR-0 / XSS-preview / LS-diverge · Suite 1226/1226
+> Actualizado: 2026-09-06 · branch `claude/learned-state-activation-d5b69n` · Audit nocturno completo · Suite 1226/1226
 
 ---
 
@@ -43,6 +43,13 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | Bug: RIR-0 | FIXED — RIR 0 (fallo) no colapsa a default 2 en saveExpress/markExpressSerie/SS paths (vdsen-cliente.html) |
 | Bug: XSS-preview | FIXED — _escH aplicada en vdsenAIPreview decisionTrace/flags/warnings/audit (vdsen-coach.html) |
 | Bug: LS-diverge | FIXED — autoGeneratePlan aplica los 3 learned state engines igual que _autoGenerateForModal (vdsen-coach.html) |
+| XSS: _askConfirm | FIXED — displayName/email/ejercicio en 4 sitios de _askConfirm (commit 044b503) |
+| XSS: UI_STATES | FIXED — vdsenAIPreview UI_STATES + partial-escape en _autoGenerateForModal catch (commit 08b3d54) |
+| Audit: hard constraints | VERIFIED SAFE — hardRejected gate en línea 9700 previa a score; VETO throw en import antes de aceptar plan |
+| Audit: write amplification | SAFE — dual-write en _doSaveLogs es T1 intencional (migración mesos/); sin loops de escritura |
+| Audit: read amplification | SAFE — carga de clientes usa Promise.all batching; buildPrescriptionContext ≤3 reads; sin polling |
+| Audit: Decision Trace | BY DESIGN — trace de vdsenAIPreview viene de respuesta API; LS trace solo en console (v1) |
+| Audit: LB/KG display | LOW PRIORITY — label "kg" hardcodeado en monitor coach (display-only, integridad de datos OK) |
 | FASE 37 | DONE — LOGS_BY_WEEK index en memoria · commit `96fbc1b` |
 | FASE 38 | DONE — XSS guards _escH en 8 interpolaciones coach · commit `470a261` |
 | FASE 39 | DONE — Fix _buildCheckInData adherencia + rir_real_prom · commit `eb1a825` |
