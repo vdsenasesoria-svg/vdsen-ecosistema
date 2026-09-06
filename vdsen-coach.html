@@ -2343,7 +2343,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   window.mergeClients = mergeClients;
 
   async function deleteClient(uid, name) {
-    if (!await _askConfirm(`¿Eliminar a "${name}" de tu lista de clientes?\n\nEsto borra sus datos en Firestore (plan, logs, perfil). La cuenta de acceso en Firebase Auth no se elimina automáticamente.\n\nEsta acción no se puede deshacer.`)) return;
+    if (!await _askConfirm(`¿Eliminar a "<strong>${_escH(name)}</strong>" de tu lista de clientes?\n\nEsto borra sus datos en Firestore (plan, logs, perfil). La cuenta de acceso en Firebase Auth no se elimina automáticamente.\n\nEsta acción no se puede deshacer.`)) return;
     try {
       // Get client doc first to clean up phone_index
       const cSnap = await getDoc(doc(db, 'clients', uid));
@@ -2484,7 +2484,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password") {
           // Mostrar opción de recuperar contraseña
           const ncEmail = document.getElementById('nc-email')?.value?.trim() || email;
-          const useReset = await _askConfirm(`El email ya existe con otra contraseña.<br><span style="color:#888;font-size:12px">¿Enviar un enlace de reseteo de contraseña al correo ${ncEmail}?</span>`);
+          const useReset = await _askConfirm(`El email ya existe con otra contraseña.<br><span style="color:#888;font-size:12px">¿Enviar un enlace de reseteo de contraseña al correo ${_escH(ncEmail)}?</span>`);
           if (useReset) {
             try { await sendPasswordResetEmail(auth, ncEmail); showToast('Enlace de reseteo enviado a ' + ncEmail); }
             catch(re) { showToast('Error al enviar: ' + re.message, true); }
@@ -3473,7 +3473,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       };
 
       closeMesoBtn.onclick = async () => {
-        if (!await _askConfirm(`¿Cerrar mesociclo semana ${actualWeek} de ${clientData.displayName}?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
+        if (!await _askConfirm(`¿Cerrar mesociclo semana ${actualWeek} de <strong>${_escH(clientData.displayName || '')}</strong>?<br><span style="color:#888;font-size:12px">Se archivan los datos y se reinicia a semana 1.</span>`)) return;
         closeMesoBtn.disabled = true; closeMesoBtn.textContent = "Archivando...";
         try {
           const logsRef = doc(db, 'logs', select.value);
@@ -11889,7 +11889,7 @@ El esfuerzo no es negociable.
 
   // ========== ELIMINAR EJERCICIO ==========
   async function deleteExercise(id, name) {
-    if (!await _askConfirm(`¿Eliminar <strong>${name}</strong> del catálogo?`)) return;
+    if (!await _askConfirm(`¿Eliminar <strong>${_escH(name)}</strong> del catálogo?`)) return;
     try {
       await deleteDoc(doc(db, "exercises", id));
       showToast(`"${name}" eliminado`);
