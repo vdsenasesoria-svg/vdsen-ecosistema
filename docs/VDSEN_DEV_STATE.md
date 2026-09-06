@@ -56,6 +56,137 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ---
 
+## FASE 3–6 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
+
+> Suite: **1377 ✓ 0 ✗** · HEAD `bdc3de9`
+
+### Arquitectura conceptual
+
+```
+TRACE EXPLAINS          — Decision Trace describe la intervención
+OUTCOME OBSERVES        — solo outcomes reales, longitudinales, identidad resuelta
+LEARNED STATE SUMMARIZES — resumen calibrado de respuesta individual (en memoria, no Firestore)
+FUTURE ENGINE USES      — influye decisiones optimizables bajo jerarquía de priors
+```
+
+**Principio maestro: TRACE ≠ LEARNING**
+VDSEN nunca aprende directamente del Decision Trace. El trace describe la intervención; el aprendizaje solo ocurre cuando esa intervención se vincula con outcomes reales, longitudinales y de identidad resuelta. `autoFilled`, `autoClosed`, warnings, simulaciones y decisiones no aplicadas nunca alimentan learned state.
+
+---
+
+### FASE 3 — Generation Fingerprint + Reproducibility Audit (commit `8acef48`)
+
+- `_buildInputFingerprint(prescCtx)` — hash determinista de las entradas del generador
+- `_buildDecisionFingerprint(training, topology, distribution)` — hash determinista de las decisiones tomadas
+- `_buildGenerationResponse(training, prescCtx, decisionTrace, inputFingerprint, decisionFingerprint, auditMode)` — respuesta canónica del generador
+- `_runReproducibilityAudit(response1, response2)` — compara dos respuestas; detecta INPUT_CHANGED, DECISION_CHANGED, IDENTICAL
+- `_AUDIT_MODE` enum: OFF, WARN, STRICT
+
+---
+
+### FASE 4 — Decision Trace Completeness (commit `1a73f89`)
+
+**Enums normalizados:**
+
+| Enum | Valores |
+|------|---------|
+| `_DECISION_TRACE_SOURCE` | CLIENT, COACH, PHOTO, INBODY, SYSTEM, HISTORY, PLAN, LOGS, CHECKIN, GENERATOR, ENGINE (11) |
+| `_DECISION_TRACE_ENGINE` | PROFILE, TARGET, TOPOLOGY, CONSTRAINT, DISTRIBUTION, MAINTENANCE, STABILITY, GENERATION, SLOT, SESSION_COMPOSITION, INTERACTION, STRUCTURAL_FATIGUE, QUALITY_GATE, REPAIR, PREVIEW (15) |
+| `_DECISION_TRACE_TYPE` | 20 tipos (TOPOLOGY_SELECTED, DISTRIBUTION_ASSIGNED, EXERCISE_SLOT_ASSIGNED, etc.) |
+| `_DECISION_TRACE_CONFIDENCE` | LOW, MODERATE, HIGH, CERTAIN (4) |
+| `_DECISION_TRACE_STAGE` | 10 stages (PROFILE, TARGETS, TOPOLOGY, CONSTRAINTS, DISTRIBUTION, MAINTENANCE, STABILITY, GENERATION, QUALITY, REPAIR) |
+
+**IDs deterministas:** `${decisionType}:${subject}` (ej. `TOPOLOGY_SELECTED:global`)
+
+**Funciones clave:**
+- `_createTraceNode(opts)` — crea nodo de trace con ID determinista
+- `_auditDecisionTraceCompleteness(trace, auditMode)` — retorna `{ missingNodes[], incompleteNodes[], duplicateIds[], summary }` 
+- `_diffDecisionTrace(trace1, trace2)` — detecta added/removed/changed
+- `_exportDecisionTraceForAI(trace)` — formato markdown compacto para prompt
+- Tests DT1-DT30
+
+---
+
+### FASE 5 — Longitudinal Learning Contract (commit `dac5a02`)
+
+**Enums:**
+
+| Enum | Valores |
+|------|---------|
+| `_LEARNING_ELIGIBILITY` | NEVER, CONTEXT_ONLY, CANDIDATE, ELIGIBLE |
+| `_EVIDENCE_STATE` | INSUFFICIENT, EMERGING, RELIABLE |
+| `_OUTCOME_STATE` | POSITIVE, NEUTRAL, NEGATIVE, UNRESOLVED |
+
+**Clasificación por tipo de decisión (`_LEARNING_ELIGIBILITY_BY_TYPE`):**
+- `CONTEXT_ONLY`: PROFILE_VALUE_RESOLVED, PRIORITY_RESOLVED, VOLUME_TARGET_RESOLVED, FREQUENCY_TARGET_RESOLVED, SESSION_ORDER_DECISION, STABILITY_DECISION, STRUCTURAL_FATIGUE_FLAG
+- `CANDIDATE`: TOPOLOGY_SELECTED, DISTRIBUTION_ASSIGNED, MAINTENANCE_ROLE_ASSIGNED, EXERCISE_SLOT_ASSIGNED, EXERCISE_SELECTED, EXERCISE_REPLACED, EXERCISE_RETAINED, REPAIR_CANDIDATE_SELECTED
+- `NEVER`: TOPOLOGY_REJECTED, QUALITY_GATE_RESULT, REPAIR_CANDIDATE_CREATED, REPAIR_CANDIDATE_REJECTED, PLAN_CONFIRMATION_REQUIRED, HISTORICAL_RESPONSE_APPLIED
+
+**Regla §6:** `sessionsReal > 1` requerido para evidencia longitudinal. Una sola observación nunca puede modificar learned state estructural.
+
+**Regla §11:** `autoFilled`, `autoClosed`, `synthetic`, `duplicated`, `identityResolved=false` → fallo de calidad de datos → rechazado.
+
+**Funciones clave:**
+- `_getLearningEligibility(decisionType)` → enum value
+- `_assessOutcomeDataQuality(outcomes)` → `{ ok, reason }`
+- `_hasLongitudinalEvidence(outcomes)` → boolean (sessionsReal > 1)
+- `_auditLearningEligibility(traceNodes, outcomes)` → `{ eligible[], contextOnly[], rejected[], insufficientEvidence[] }`
+- `_buildOutcomeContract(opts)` → contrato de outcome con `evidenceState` + `observations`
+- `_buildLearnedState(opts)` → runtime-only learned state (nunca se persiste a Firestore nuevo)
+- `_createHistoricalResponseNode(opts)` → nodo HISTORICAL_RESPONSE_APPLIED
+- `_learnedStateAffectsFingerprint(learnedState)` → true solo si algún entry tiene `evidenceState=RELIABLE`
+- Tests LS1-LS30
+
+**`learnedState` es runtime-only (en memoria).** No se persiste a ninguna nueva colección Firestore.
+
+---
+
+### FASE 6 — Learned State Calibration & Conflict Resolution (commit `bdc3de9`)
+
+**Jerarquía de priors (inmutable):**
+
+```
+Safety / Constraints / Vetos           ← SIEMPRE GANA
+       ↑
+Individual Learned State (RELIABLE)    ← desplaza coach prior en dims optimizables
+       ↑
+Coach Prior                            ← desplaza population prior
+       ↑
+Individual Learned State (EMERGING)    ← ajuste de ranking, no override
+       ↑
+Population Prior                        ← baseline heurístico
+```
+
+**Enums:**
+
+| Enum | Valores |
+|------|---------|
+| `_PRIOR_TYPE` | POPULATION, COACH, INDIVIDUAL |
+| `_CONFLICT_TYPE` | COACH_VS_POPULATION, INDIVIDUAL_VS_COACH, INDIVIDUAL_VS_POPULATION, TRIPLE |
+| `_RESOLUTION_STRATEGY` | OVERRIDE, BLEND, DEFER |
+
+**Pesos por evidenceState (`_calibrateLearnedWeight`):**
+- `INSUFFICIENT` → 0.0 (sin peso operativo)
+- `EMERGING` → 0.5 (ajusta ranking, no override)
+- `RELIABLE` → 1.0 (puede desplazar coach prior)
+
+**Funciones clave:**
+- `_buildPriorTier(opts)` — crea prior tipado para una dimensión (`priorTierVersion: 'prior-tier-v1'`)
+- `_detectPriorConflict(priors)` — clasifica conflicto: `{ hasConflict, conflictType, conflictingPriors[] }`
+- `_resolvePriorConflict(conflict)` — aplica jerarquía: `{ resolvedValue, strategy, winner, reasonCode }`
+- `_buildCalibrationResult(opts)` — resultado completo para una dimensión con safety override: `{ dimension, activePrior, strategy, conflicts[], appliedWeight, safetyOverride }`
+- Tests CAL1-CAL30
+
+**Reglas operativas:**
+1. `RELIABLE` puede desplazar coach prior → emite `HISTORICAL_RESPONSE_APPLIED` en trace
+2. `EMERGING` ajusta ranking, no reemplaza coach prior
+3. `INSUFFICIENT` = peso 0, equivale a no tener learned state
+4. Safety siempre gana. Ningún learned state valida lo rechazado por safety/veto/restricción
+
+**Motor Prompt actualizado:** sección "PRIOR RESOLUTION CONTRACT" añadida a `_MOTOR_PROMPT_EMBEDDED` con jerarquía explícita, reglas operativas y checklist de 5 ítems en OUTPUT FINAL.
+
+---
+
 ## Reglas de dominio vigentes
 
 ### Deload — REGLA CORREGIDA (2026-08-31)
