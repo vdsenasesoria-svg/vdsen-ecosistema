@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-02 · main `69ae048` · FASE 39–44 DONE · Suite 1119/1119
+> Actualizado: 2026-09-02 · branch `f7c32d8` · FASE 45-47 DONE · Suite 1119/1119
 
 ---
 
@@ -47,9 +47,466 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 43 | DONE — Orphan listeners (_waitUnsubClientDoc/Plan), duplicate click-out handlers, dead code renderEmpty() · commit `0e53dd3` |
 | FASE 44 | DONE — Consistencia REAL_WEEK en submitPostSession postsession_ key · commit `81faae5` |
 | FASE 42b | DONE — XSS _escH en e.code|e.message del diagnóstico Firebase (3 sitios) · commit `69ae048` |
+| FASE 45 | DONE — Error-State & Recovery: 9 sitios; onAuthStateChanged blank-screen, showClientDetail spinner infinito, JSON.parse visibility loops, guardarNutriLog sin catch, AI import sin toast · commit `a839cee` |
+| FASE 46 | DONE — Accessibility: Escape key handler clientModal coach · commit `a839cee` |
+| FASE 47 | DONE — Cross-App Data Consistency: 6 findings (2 ALTA·3 MEDIA·1 false-positive). postsession rpe/sleep/articular/patron contract; ci.sueno alias; nutritionRaw.texto sync; supplementsRaw=null on manual edit; rirByWeek en library template; live listener nutritionPlan:{} guard · commits `8fa00ca`+`f7c32d8` |
 | Vercel | auto-deploy en push a main |
 | FASE 35 | MERGED — Historical Data Scalability Discovery: reporte completo 28 puntos |
 | FASE 36 | DONE (T1) — Log Rotation Architecture · commits `1e2a3ed`+`9833dc0` · Suite 1087/1087 PASS |
+
+---
+
+## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
+
+> Suite: **1639 ✓ 0 ✗** · HEAD post-FASE14
+
+### Arquitectura conceptual
+
+```
+TRACE EXPLAINS          — Decision Trace describe la intervención
+OUTCOME OBSERVES        — solo outcomes reales, longitudinales, identidad resuelta
+LEARNED STATE SUMMARIZES — resumen calibrado de respuesta individual (en memoria, no Firestore)
+FUTURE ENGINE USES      — influye decisiones optimizables bajo jerarquía de priors
+```
+
+**Principio maestro: TRACE ≠ LEARNING**
+VDSEN nunca aprende directamente del Decision Trace. El trace describe la intervención; el aprendizaje solo ocurre cuando esa intervención se vincula con outcomes reales, longitudinales y de identidad resuelta. `autoFilled`, `autoClosed`, warnings, simulaciones y decisiones no aplicadas nunca alimentan learned state.
+
+---
+
+### FASE 3 — Generation Fingerprint + Reproducibility Audit (commit `8acef48`)
+
+- `_buildInputFingerprint(prescCtx)` — hash determinista de las entradas del generador
+- `_buildDecisionFingerprint(training, topology, distribution)` — hash determinista de las decisiones tomadas
+- `_buildGenerationResponse(training, prescCtx, decisionTrace, inputFingerprint, decisionFingerprint, auditMode)` — respuesta canónica del generador
+- `_runReproducibilityAudit(response1, response2)` — compara dos respuestas; detecta INPUT_CHANGED, DECISION_CHANGED, IDENTICAL
+- `_AUDIT_MODE` enum: OFF, WARN, STRICT
+
+---
+
+### FASE 4 — Decision Trace Completeness (commit `1a73f89`)
+
+**Enums normalizados:**
+
+| Enum | Valores |
+|------|---------|
+| `_DECISION_TRACE_SOURCE` | CLIENT, COACH, PHOTO, INBODY, SYSTEM, HISTORY, PLAN, LOGS, CHECKIN, GENERATOR, ENGINE (11) |
+| `_DECISION_TRACE_ENGINE` | PROFILE, TARGET, TOPOLOGY, CONSTRAINT, DISTRIBUTION, MAINTENANCE, STABILITY, GENERATION, SLOT, SESSION_COMPOSITION, INTERACTION, STRUCTURAL_FATIGUE, QUALITY_GATE, REPAIR, PREVIEW (15) |
+| `_DECISION_TRACE_TYPE` | 20 tipos (TOPOLOGY_SELECTED, DISTRIBUTION_ASSIGNED, EXERCISE_SLOT_ASSIGNED, etc.) |
+| `_DECISION_TRACE_CONFIDENCE` | LOW, MODERATE, HIGH, CERTAIN (4) |
+| `_DECISION_TRACE_STAGE` | 10 stages (PROFILE, TARGETS, TOPOLOGY, CONSTRAINTS, DISTRIBUTION, MAINTENANCE, STABILITY, GENERATION, QUALITY, REPAIR) |
+
+**IDs deterministas:** `${decisionType}:${subject}` (ej. `TOPOLOGY_SELECTED:global`)
+
+**Funciones clave:**
+- `_createTraceNode(opts)` — crea nodo de trace con ID determinista
+- `_auditDecisionTraceCompleteness(trace, auditMode)` — retorna `{ missingNodes[], incompleteNodes[], duplicateIds[], summary }` 
+- `_diffDecisionTrace(trace1, trace2)` — detecta added/removed/changed
+- `_exportDecisionTraceForAI(trace)` — formato markdown compacto para prompt
+- Tests DT1-DT30
+
+---
+
+### FASE 5 — Longitudinal Learning Contract (commit `dac5a02`)
+
+**Enums:**
+
+| Enum | Valores |
+|------|---------|
+| `_LEARNING_ELIGIBILITY` | NEVER, CONTEXT_ONLY, CANDIDATE, ELIGIBLE |
+| `_EVIDENCE_STATE` | INSUFFICIENT, EMERGING, RELIABLE |
+| `_OUTCOME_STATE` | POSITIVE, NEUTRAL, NEGATIVE, UNRESOLVED |
+
+**Clasificación por tipo de decisión (`_LEARNING_ELIGIBILITY_BY_TYPE`):**
+- `CONTEXT_ONLY`: PROFILE_VALUE_RESOLVED, PRIORITY_RESOLVED, VOLUME_TARGET_RESOLVED, FREQUENCY_TARGET_RESOLVED, SESSION_ORDER_DECISION, STABILITY_DECISION, STRUCTURAL_FATIGUE_FLAG
+- `CANDIDATE`: TOPOLOGY_SELECTED, DISTRIBUTION_ASSIGNED, MAINTENANCE_ROLE_ASSIGNED, EXERCISE_SLOT_ASSIGNED, EXERCISE_SELECTED, EXERCISE_REPLACED, EXERCISE_RETAINED, REPAIR_CANDIDATE_SELECTED
+- `NEVER`: TOPOLOGY_REJECTED, QUALITY_GATE_RESULT, REPAIR_CANDIDATE_CREATED, REPAIR_CANDIDATE_REJECTED, PLAN_CONFIRMATION_REQUIRED, HISTORICAL_RESPONSE_APPLIED
+
+**Regla §6:** `sessionsReal > 1` requerido para evidencia longitudinal. Una sola observación nunca puede modificar learned state estructural.
+
+**Regla §11:** `autoFilled`, `autoClosed`, `synthetic`, `duplicated`, `identityResolved=false` → fallo de calidad de datos → rechazado.
+
+**Funciones clave:**
+- `_getLearningEligibility(decisionType)` → enum value
+- `_assessOutcomeDataQuality(outcomes)` → `{ ok, reason }`
+- `_hasLongitudinalEvidence(outcomes)` → boolean (sessionsReal > 1)
+- `_auditLearningEligibility(traceNodes, outcomes)` → `{ eligible[], contextOnly[], rejected[], insufficientEvidence[] }`
+- `_buildOutcomeContract(opts)` → contrato de outcome con `evidenceState` + `observations`
+- `_buildLearnedState(opts)` → runtime-only learned state (nunca se persiste a Firestore nuevo)
+- `_createHistoricalResponseNode(opts)` → nodo HISTORICAL_RESPONSE_APPLIED
+- `_learnedStateAffectsFingerprint(learnedState)` → true solo si algún entry tiene `evidenceState=RELIABLE`
+- Tests LS1-LS30
+
+**`learnedState` es runtime-only (en memoria).** No se persiste a ninguna nueva colección Firestore.
+
+---
+
+### FASE 6 — Learned State Calibration & Conflict Resolution (commit `bdc3de9`)
+
+**Jerarquía de priors (inmutable):**
+
+```
+Safety / Constraints / Vetos           ← SIEMPRE GANA
+       ↑
+Individual Learned State (RELIABLE)    ← desplaza coach prior en dims optimizables
+       ↑
+Coach Prior                            ← desplaza population prior
+       ↑
+Individual Learned State (EMERGING)    ← ajuste de ranking, no override
+       ↑
+Population Prior                        ← baseline heurístico
+```
+
+**Enums:**
+
+| Enum | Valores |
+|------|---------|
+| `_PRIOR_TYPE` | POPULATION, COACH, INDIVIDUAL |
+| `_CONFLICT_TYPE` | COACH_VS_POPULATION, INDIVIDUAL_VS_COACH, INDIVIDUAL_VS_POPULATION, TRIPLE |
+| `_RESOLUTION_STRATEGY` | OVERRIDE, BLEND, DEFER |
+
+**Pesos por evidenceState (`_calibrateLearnedWeight`):**
+- `INSUFFICIENT` → 0.0 (sin peso operativo)
+- `EMERGING` → 0.5 (ajusta ranking, no override)
+- `RELIABLE` → 1.0 (puede desplazar coach prior)
+
+**Funciones clave:**
+- `_buildPriorTier(opts)` — crea prior tipado para una dimensión (`priorTierVersion: 'prior-tier-v1'`)
+- `_detectPriorConflict(priors)` — clasifica conflicto: `{ hasConflict, conflictType, conflictingPriors[] }`
+- `_resolvePriorConflict(conflict)` — aplica jerarquía: `{ resolvedValue, strategy, winner, reasonCode }`
+- `_buildCalibrationResult(opts)` — resultado completo para una dimensión con safety override: `{ dimension, activePrior, strategy, conflicts[], appliedWeight, safetyOverride }`
+- Tests CAL1-CAL30
+
+**Reglas operativas:**
+1. `RELIABLE` puede desplazar coach prior → emite `HISTORICAL_RESPONSE_APPLIED` en trace
+2. `EMERGING` ajusta ranking, no reemplaza coach prior
+3. `INSUFFICIENT` = peso 0, equivale a no tener learned state
+4. Safety siempre gana. Ningún learned state valida lo rechazado por safety/veto/restricción
+
+**Motor Prompt actualizado:** sección "PRIOR RESOLUTION CONTRACT" añadida a `_MOTOR_PROMPT_EMBEDDED` con jerarquía explícita, reglas operativas y checklist de 5 ítems en OUTPUT FINAL.
+
+---
+
+### FASE 7 — Topology Calibrated Learned State (single-source principle)
+
+**Problema resuelto:** el paso 5 de `_scoreTopologyCandidate` aplicaba el learned-state bonus con factor hardcodeado `0.8` directamente sobre el score base, creando riesgo de doble conteo si `_buildCalibrationResult` también lo aplicaba.
+
+**Solución:** paso 5 eliminado del scoring. La calibración es la única fuente.
+
+**Pipeline de scoring por candidato:**
+```
+baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score final
+```
+
+**`_computeTopologyCalibration(key, daysPerWeek, prescCtx)`**
+- Construye population prior (¿DPW del candidato cubre el DPW pedido?)
+- Construye individual prior si existe `previousPlan` (`hasPreviousPlan` → EMERGING / INSUFFICIENT)
+- Llama `_buildCalibrationResult()` → `{ appliedWeight, activePrior, strategy, conflicts[] }`
+- Ajuste efectivo solo si `appliedWeight > 0 && activePrior === true`
+
+**`runTopologyEngine` output extendido:**
+- `learnedStateCalibration` — calibración de la topología ganadora
+- `historicalResponseApplied` — boolean, true si learned state ajustó el score
+
+**`_topologyDecisionToText`:** emite línea `[HISTORICAL_RESPONSE_APPLIED]` cuando applied.
+
+**Tests:** TT1 actualizado (2 campos nuevos), TT14 reescrito, TT15-TT21 añadidos.
+
+---
+
+### FASE 8 — Learned State Persistence Contract
+
+**Principio:** DERIVE FIRST — PERSIST ONLY IF NECESSARY.
+
+**Audit de fuentes (persistence matrix):**
+
+| STATE | SOURCE DATA | DERIVABLE? | COST | IDENTITY RELIABILITY | RECOMENDACIÓN |
+|---|---|---|---|---|---|
+| TOPOLOGY HISTORY | `done_{W}_{D}` + plan activo | ✓ SÍ | BAJO | ALTA (plan define topología) | DERIVE_ONLY |
+| SLOT HISTORY | log entries + plan (motorPattern:role) | ✓ SÍ | BAJO | MODERADA (slot ≠ ejercicio) | DERIVE_ONLY |
+| EXERCISE HISTORY | log entries + plan (dayIndex×exIdx→name) | ✓ SÍ | MODERADO | MODERADA (requiere PID) | DERIVE_ONLY |
+| RECOVERY PATTERNS | `postsession_{W}_{D}` + `ci_sem_{W}` | ✓ SÍ | BAJO | ALTA | DERIVE_ONLY |
+| ADHERENCE PATTERNS | `done_{W}_{D}` | ✓ SÍ | BAJO | ALTA | DERIVE_ONLY |
+| STABILITY RESPONSE | `progrec_{W}_{D}` + loads delta | ✓ SÍ | MODERADO | MODERADA | DERIVE_ONLY |
+
+**Conclusión:** todos los estados actuales son DERIVE_ONLY. No se crea nueva colección Firestore.
+
+**Funciones implementadas (0 nuevas lecturas Firestore):**
+
+- `_passesDataQualityGate(entry)` — gate único: excluye `autoFilled`, `autoClosed`, `identityAmbiguous`, `unresolvedLegacy`, unit mismatch
+- `_computeSourceFingerprint(logs, plans)` — fingerprint determinista (excluye `ts`, UI state, ordering accidental)
+- `_buildDerivedLearnedState({ logs, plans })` → `{ version, topologyHistory, slotHistory, exerciseHistory, recoveryPatterns, adherencePatterns, dataQuality, sourceFingerprint }`
+- `_evaluateLearnedStatePersistenceNeed(state)` → `{ recommendation: 'DERIVE_ONLY', reasons[] }` — función pura
+- `_shouldLearnedStateAlterFingerprint(state)` — true solo si evidenceState ≠ INSUFFICIENT en alguna dimensión
+
+**Thresholds evidenceState:**
+- TOPOLOGY HISTORY: INSUFFICIENT < 2 semanas, EMERGING 2-3, RELIABLE ≥ 4
+- ADHERENCE PATTERNS: INSUFFICIENT < 3 sesiones, EMERGING 3-7, RELIABLE ≥ 8
+- RECOVERY PATTERNS: INSUFFICIENT < 2 postsessions, EMERGING 2-3, RELIABLE ≥ 4
+- EXERCISE HISTORY: INSUFFICIENT < 3 sets reales, EMERGING 3-7, RELIABLE ≥ 8
+
+**Motor Prompt:** sección "LEARNED STATE PERSISTENCE RULE" añadida a `_MOTOR_PROMPT_EMBEDDED` con regla de 5 ítems: DERIVE_ONLY por defecto, persistencia solo si no reconstruible, nunca dos fuentes de verdad.
+
+**Tests:** TTLS1-TTLS24 (TTCAL1-TTCAL12 en suite FASE 7; TTLS en FASE 8)
+
+**Suite: 1413 ✓ 0 ✗**
+
+---
+
+### FASE 9B — Derived Learned State Application
+
+**Principio:** DERIVE → VALIDATE → CALIBRATE → APPLY TO RANKING → TRACE
+
+**Single-source fix:** `_computeTopologyCalibration` prefiere `topologyHistory` derivado sobre proxy `previousPlan`. Flag `usedDerived` garantiza que solo un camino corre — nunca doble conteo.
+
+**Funciones añadidas:**
+
+| Función | Propósito |
+|---------|-----------|
+| `_applyLearnedStateToExercise(ls, name)` | → `{shouldFavorKeep, trend, avgIcs, evidenceState}` — identidad por nombre, no slot |
+| `_applyLearnedStateToSlot(ls, slotKey)` | → `{outcomeTrend, evidenceState}` — slot = motorPattern:role, NO proxy de identidad |
+| `_applyLearnedStateToSchedule(ls)` | → `{adherenceCalibration, recoveryCalibration, evidenceState}` |
+| `_buildLearnedStateCalibrationContext(ls, prescCtx)` | Contexto completo derivado una vez por generación |
+| `_buildLearnedStateTraceNode(dim, ev, outcome, fp)` | Nodo `HISTORICAL_RESPONSE_APPLIED` con metadata |
+| `_formatLearnedStatePreview(calibCtx)` | Línea compacta "HISTORIAL INDIVIDUAL: ..." para motor |
+| `_enrichStabilityWithLearnedState(stability, ls, ctx)` | Anotaciones ADITIVAS — nunca cambia veredictos de safety |
+| `_learnedStateStabilityToText(annotations)` | Texto inyectable al motor con ✓/⚠ por ejercicio |
+| `_runLearnedStateApplicationTests()` | Tests TLDLA1-TLDLA20 inline (browser) |
+
+**Contratos clave:**
+
+- `INSUFFICIENT` → 0 cambios en decisiones, 0 cambio en fingerprint
+- `EMERGING` → ajuste aditivo de ranking, contextualización — no override de coach
+- `RELIABLE` → puede ganar ranking válido — nunca rompe safety/constraints
+- `pain` reasonCode → siempre excluido de anotaciones (safety inviolable)
+- Slot ≠ identidad: `slotHistory` keyed por `"motorPattern:role"`, `exerciseHistory` por `exerciseName`
+
+**Motor Prompt Delta:** subsección "LEARNED STATE OPERATIVO (FASE 9B)" añadida bajo "LEARNED STATE PERSISTENCE RULE" en `_MOTOR_PROMPT_EMBEDDED`.
+
+**Tests:** TLDLA1-TLDLA20 (28 aserciones: 20 principales + sub-aserciones 8a/b/c, 14a/b/c/d/e, 15a/b/c)
+
+**Suite: 1441 ✓ 0 ✗**
+
+---
+
+### FASE 10 — Cross-Plan Continuity Audit
+
+**Archivos modificados:** `vdsen-coach.html` (funciones FASE 10 + window exports + motor prompt delta), `tests/progression-engine.test.js` (sección TCP1-TCP20)
+
+**Funciones añadidas a `vdsen-coach.html`:**
+- `_CONTINUITY_TYPE` / `_CONTINUITY_SCORE` / `_IDENTITY_BASIS` — enums de continuidad
+- `_extractPlanExercises(plan)` — flatten plan.days[].exercises[] a descriptores (dayIndex solo para MOVED, nunca para identidad)
+- `_checkSlotCompatibility(prevEx, currEx)` — compatibilidad de prescriptionSlot entre planes
+- `_normalizeCrossPlanLoad(entry)` — KG as-is, LB×0.453592, BW/no-cuantificable→null
+- `_matchExercisesAcrossPlans(prevPlan, currPlan)` — matcher 5 pasos: PID→exerciseId→nombre único→slot→UNRESOLVED; inner `_resolveType` detecta MOVED/STRUCTURAL_SLOT_CHANGE
+- `_auditCrossPlanContinuity(prevPlan, currPlan)` — resumen audit: exactMatches/functionalContinuities/structuralChanges/ambiguous/unresolved/removed
+- `_formatContinuityPreview(auditResult)` — preview compacto multi-línea para panel coach
+- `_buildContinuityTraceNode(continuityType, exerciseName, identityBasis, planId)` — trace node source:'PLAN' engine:'STABILITY'
+- `_canExerciseHistoryCrossPlans(match)` — gate: solo EXACT||STRONG → true
+- `_canSlotHistoryCrossPlans(match)` — gate: cualquier no-UNRESOLVED → true
+- `_runCrossPlanContinuityTests()` — inline browser: TCP1-TCP20 (40 aserciones)
+
+**CONTINUITY_TYPE contract:**
+| Tipo | Identidad | Condición |
+|------|-----------|-----------|
+| `SAME_PRESCRIPTION` | resuelta/PID | mismo PID, mismo slot/day |
+| `SAME_EXERCISE_NEW_PRESCRIPTION` | resuelta/exerciseId | mismo exerciseId, nuevo PID |
+| `SAME_SLOT_REPLACEMENT` | NONE | misma slot, diferente ejercicio |
+| `STRUCTURAL_SLOT_CHANGE` | resuelta | misma identidad, slot cambió |
+| `MOVED` | resuelta | misma identidad, dayIndex cambió |
+| `REMOVED` | N/A | ejercicio previo sin contraparte |
+| `ADDED` | N/A | ejercicio nuevo sin antecedente |
+| `UNRESOLVED_CROSS_PLAN` | NONE | no hay match posible |
+| `AMBIGUOUS` | NONE | nombre duplicado o slot multiple candidates |
+
+**Posición nunca como identidad:** `dayIndex/exerciseIndex` almacenados solo para detección de MOVED post-resolución. TCP8 verifica: mismo dayIndex, distinto ejercicio → UNRESOLVED.
+
+**Motor Prompt Delta:** sección "### CONTINUIDAD CROSS-PLAN (FASE 10)" añadida en `_MOTOR_PROMPT_EMBEDDED` tras FASE 9B.
+
+**Tests:** TCP1-TCP20 (40 aserciones) — sección FASE 10 en `tests/progression-engine.test.js`
+
+**Suite: 1481 ✓ 0 ✗**
+
+---
+
+### FASE 11 — Longitudinal Learning Contract
+
+**Archivos modificados:** `vdsen-coach.html` (funciones FASE 11 + motor prompt delta), `tests/progression-engine.test.js` (sección TLC1-TLC18)
+
+**Funciones añadidas a `vdsen-coach.html`:**
+- `_filterEligibleObservations(rawObs)` — excluye autoFilled/autoClosed totalmente; BW→null (obs retenida)
+- `_deriveLearningConfidence(eligibleCount)` — NONE/LOW/MODERATE/HIGH (umbrales HEURISTIC)
+- `_evaluateLearningEligibility(match, observations)` → `{exerciseEligible, slotEligible, reasons[]}`
+- `_deriveTrend(values)` — comparación primera/segunda mitad, umbral HEURISTIC 0.3
+- `_buildExerciseLearningState(match, eligibleObs)` → `{exerciseIdentity, observations, loadTrend, rirConsistency, icsTrend, tolerance, confidence}`
+- `_buildSlotLearningState(match, eligibleObs, postsessions)` → `{prescriptionSlot, observations, performanceTrend, recoveryTrend, adherenceTrend, painSignals, confidence}`
+- `_buildLearningTraceNode(dimension, reasonCode, confidence, exerciseName, planId)` → trace node `{source:'HISTORY', engine:'LEARNING', decisionType:'LEARNING_STATE_APPLIED'}`
+- `_runLearningContractTests()` — inline browser: TLC1-TLC18 (27 aserciones)
+
+**LEARNING ELIGIBILITY CONTRACT:**
+| Match confidence | Slot compatible | exerciseEligible | slotEligible |
+|-----------------|-----------------|-----------------|-------------|
+| EXACT           | true            | ✓               | ✓           |
+| STRONG          | true            | ✓               | ✓           |
+| EXACT           | false (STRUCTURAL_SLOT_CHANGE) | ✓ | ✗ |
+| FUNCTIONAL      | true (SAME_SLOT_REPLACEMENT) | ✗ | ✓ |
+| UNRESOLVED      | any             | ✗               | ✗           |
+| EXACT (REMOVED) | — (current=null) | ✗              | ✗           |
+| EXACT (MOVED)   | true            | ✓               | ✓           |
+
+**Motor Prompt Delta:** sección "### LEARNING ELIGIBILITY (FASE 11)" añadida en `_MOTOR_PROMPT_EMBEDDED` tras FASE 10.
+
+**Tests:** TLC1-TLC18 (27 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1514 ✓ 0 ✗**
+
+---
+
+### FASE 12 — Learned State → Topology / Distribution Feedback
+
+**Archivos modificados:** `vdsen-coach.html` (funciones FASE 12 + motor prompt delta), `tests/progression-engine.test.js` (sección TLT1-TLT14)
+
+**Funciones añadidas a `vdsen-coach.html`:**
+- `_HISTORICAL_RESPONSE` — enum 8 valores (POSITIVE, NEUTRAL, NEGATIVE, RECOVERY_TOLERANCE_GOOD, RECOVERY_TOLERANCE_LIMITED, ADHERENCE_PATTERN_SUPPORT, PAIN_HISTORY_CONCERN, INSUFFICIENT_HISTORY)
+- `_TOPOLOGY_ADJUSTMENT_DELTA` — `{ POSITIVE: 0.1, NEUTRAL: 0.0, NEGATIVE: -0.1 }` (HEURISTIC)
+- `_computeTopologyHistoryAdjustment(topologyHistory)` — señales → POSITIVE/NEUTRAL/NEGATIVE; pain = override absoluto negativo
+- `_applyLearnedTopologyAdjustment(candidates, learnedState)` — hard-rejected nunca modificados; soporta topologyHistoryMap (FASE 12) y topologyHistory.topology (FASE 9B legacy)
+- `_applyLearnedDistributionFeedback(distributions, learnedState)` — frequencyTarget NUNCA cambia; ajusta spacing entre distribuciones ya válidas
+- `_buildTopologyLearnedState(topologyId, opts)` — runtime state (no Firestore)
+- `_buildTopologyFeedbackTraceNode(reasonCodes, confidence, adjustment, topologyId)` — `{source:'HISTORY', engine:'TOPOLOGY', decisionType:'TOPOLOGY_LEARNED_ADJUSTMENT'|'TOPOLOGY_HISTORY_NEUTRAL'}`
+- `_runLearnedTopologyFeedbackTests()` — inline browser: TLT1-TLT14 (26 aserciones)
+
+**TOPOLOGY FEEDBACK CONTRACT:**
+| Condición | Resultado |
+|-----------|-----------|
+| Pain signals presentes | NEGATIVE override absoluto |
+| NONE/LOW confidence | NEUTRAL + INSUFFICIENT_HISTORY |
+| Hard-rejected candidate | Pass-through con HARD_FILTER_REJECTED, sin ajuste |
+| frequencyTarget | NUNCA modificado por distribution feedback |
+| recoveryTrend INCREASING | +1 score, RECOVERY_TOLERANCE_GOOD |
+| recoveryTrend DECREASING | -1 score, RECOVERY_TOLERANCE_LIMITED |
+| adherenceTrend CONSISTENT/INCREASING | +1 score, ADHERENCE_PATTERN_SUPPORT |
+| performanceTrend INCREASING | +1 score |
+| avgEimd > 2 + HIGH spacing | +0.05 DELTA_SPC (HEURISTIC) |
+| adherenceTrend CONSISTENT | +0.02 DELTA_ADH (HEURISTIC) |
+
+**Motor Prompt Delta:** sección "### LEARNED STATE → TOPOLOGÍA (FASE 12)" añadida en `_MOTOR_PROMPT_EMBEDDED` tras FASE 11.
+
+**Tests:** TLT1-TLT14 (30 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1544 ✓ 0 ✗**
+
+---
+
+### FASE 13 — Learned State Persistence Contract
+
+**Archivos modificados:** `vdsen-coach.html` (funciones FASE 13 + motor prompt delta), `tests/progression-engine.test.js` (sección TLP1-TLP18)
+
+**Funciones añadidas a `vdsen-coach.html`:**
+- `_LEARNED_STATE_SCHEMA_VERSION` — `'vdsen-learned-state-v1'` (distinto de FASE 8's `_LEARNED_STATE_VERSION = 'derived-v1'`)
+- `_LEARNED_STATE_STATUS` — enum `{ ACTIVE, STALE, INVALID }`
+- `_LEARNED_STATE_SIZE_THRESHOLD` — `{ INLINE_SAFE: 51200, REVIEW_NEEDED: 204800 }` (HEURISTIC)
+- `_buildPersistableLearnedState(type, data, opts)` — construye estado persistible; devuelve null si autoFilled/autoClosed/confidence=NONE/observations<1; incluye stateVersion + sourcePlanIds + updatedAt
+- `_validatePersistedLearnedState(state)` — valida versión, tipo, confidence, observations, provenance, timestamp → `{ valid, reasons[] }`
+- `_classifyLearnedStateStatus(state, context)` — ACTIVE / STALE / INVALID según slot/identity/engineVersion changes
+- `_estimateLearnedStateSize(learnedStateBundle)` — JSON.stringify size estimate → INLINE_SAFE / REVIEW_NEEDED / DEFERRED_NEEDS_DECISION
+- `_mergeCompatibleLearnedState(existing, incoming, context)` — prefiere incoming si existing es STALE/INVALID o versión incompatible; no mezcla versiones incompatibles silenciosamente
+- `_runPersistenceContractTests()` — inline browser: TLP1-TLP18 (26 aserciones)
+
+**PERSISTENCE CONTRACT:**
+| Condición | Resultado |
+|-----------|-----------|
+| autoFilled/autoClosed | No persistir (null) |
+| confidence = NONE | No persistir (null) |
+| observations < 1 | No persistir (null) |
+| stateVersion incompatible | INVALID → ignorar |
+| slot changed structurally | STALE → no influye |
+| exerciseIdentity changed | STALE → no influye |
+| engineVersion changed | STALE → no influye |
+| STALE + valid incoming | merge usa incoming |
+| null/null merge | null, no crash |
+| totalBytes < 50KB | INLINE_SAFE |
+| totalBytes 50-200KB | REVIEW_NEEDED |
+| totalBytes > 200KB | DEFERRED_NEEDS_DECISION |
+
+**Storage audit:** `clients/{uid}.learnedState` como bloque aditivo, pendiente FASE 14 para decidir si tamaño/crecimiento justifica colección separada.
+
+**Motor Prompt Delta:** sección "### LEARNED STATE PERSISTENCE (FASE 13)" añadida en `_MOTOR_PROMPT_EMBEDDED` tras FASE 12.
+
+**Tests:** TLP1-TLP18 (26 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1568 ✓ 0 ✗**
+
+---
+
+### FASE — Generation Provider UX Cleanup
+
+**Objetivo:** Eliminar duplicación del path de generación y limpiar la UX de configuración del proveedor.
+
+**Archivos modificados:** `vdsen-coach.html`, `tests/progression-engine.test.js`
+
+**Cambios:**
+- `autoGeneratePlan()` → thin wrapper (5 líneas) que delega a `_autoGenerateForModal(clientId, _uiOpts)`
+- `_autoGenerateForModal` acepta `_uiOpts = { statusElId, btnElId }` para mapear elementos UI del tab Plan o del modal
+- Pre-generation context (topology/distribution/maintenance/stability) añadido a `_autoGenerateForModal.userMsg`
+- Botón Plan tab: `"🤖 Generar plan automático (motor VDSEN)"` → `"⚡ Generar plan"`
+- API key UI movida a sección colapsable "⚙️ Configuración avanzada de proveedor"
+- Mensajes de error desacoplados de "Anthropic API key" → "Configura el proveedor en Config → Configuración avanzada"
+- API key nunca aparece en userMsg, traces, outputs ni Firestore (solo se pasa como `x-api-key` header)
+
+**CONTRACT:**
+| Invariante | Garantía |
+|------------|----------|
+| Single generation path | `autoGeneratePlan` no llama a `fetch('/api/generate-plan')` directamente |
+| API key isolation | `sk-ant-` never in userMsg, trace, or Firestore write |
+| UI opts fallback | No opts → modal IDs; `statusElId/btnElId` override → plan tab IDs |
+| Pre-gen context parity | Ambos handlers incluyen topology/distribution/maintenance/stability |
+
+**Tests:** TUGC1-TUGC8 (26 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1594 ✓ 0 ✗**
+
+---
+
+### FASE 14 — Learned State Storage Strategy
+
+**Objetivo:** Decidir y preparar la persistencia real del Learned State sin crear crecimiento ilimitado.
+
+**Archivos modificados:** `vdsen-coach.html`, `tests/progression-engine.test.js`
+
+**Funciones añadidas:**
+- `_pruneLearnedState(bundle)` — elimina INVALID; preserva ACTIVE siempre (nunca por antigüedad); conserva STALE solo con provenance útil (`sourcePlanIds.length > 0`)
+- `_compactLearnedStateProvenance(state)` — deduplica `sourcePlanIds[]`; elimina `rawLogs`, `decisionTrace`, `snapshot`, `rawObservations`, `observations_raw`; no muta el original
+- `_recommendLearnedStateStorage(bundle)` — usa `_estimateLearnedStateSize()` sin cambiar thresholds (51KB/200KB); devuelve `{ recommendation, estimatedBytes, classification, readImpact, writeImpact, migrationRequired, reasonCodes }`
+- `_getActivePersistedLearnedState(clientData)` — 0 reads Firestore extra; usa solo `clientData.learnedState` ya cargado; devuelve solo entradas ACTIVE; STALE/INVALID no influyen automáticamente
+
+**STORAGE_RECOMMENDATION resultado:**
+
+| Escenario | estimatedBytes | Resultado |
+|-----------|---------------|-----------|
+| 10 ex + 3 slots + 2 topos | ~3 KB | INLINE |
+| 25 ex + 5 slots + 4 topos | ~7 KB | INLINE |
+| 50 ex + 8 slots + 4 topos | ~14 KB | INLINE |
+| 100 ex + 10 slots + 4 topos | ~28 KB | INLINE |
+
+→ **STORAGE_RECOMMENDATION: INLINE** — `clients/{uid}.learnedState` es seguro a largo plazo para el volumen proyectado real.
+
+**CONTRACT:**
+| Invariante | Garantía |
+|------------|----------|
+| ACTIVE nunca eliminado por edad | `_pruneLearnedState` solo descarta INVALID y STALE-sin-provenance |
+| 0 reads extra | `_getActivePersistedLearnedState` opera sobre clientData ya cargado |
+| STALE/INVALID no influyen | solo ACTIVE alimenta engines (FASE 15) |
+| Sin subcollection ni migración | thresholds 51KB/200KB preservados sin cambio |
+| rawLogs/decisionTrace NO en estado | `_compactLearnedStateProvenance` los bloquea por diseño |
+
+**Eventos de escritura válidos:** cierre de mesociclo · generación del siguiente plan · recálculo longitudinal explícito. NO por set / render / check-in.
+
+**Tests:** TLS1-TLS25 (45 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1639 ✓ 0 ✗**
+
+**Siguiente fase:** FASE 15 — Learned State Activation (state ACTIVE persistido alimenta Topology/Distribution en el siguiente ciclo)
 
 ---
 
