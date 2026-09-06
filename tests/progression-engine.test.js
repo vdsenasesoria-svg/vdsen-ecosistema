@@ -8689,6 +8689,221 @@ console.log('\nLS — Longitudinal Learning Contract');
   assert('LS30b', 'REPAIR_REJECTED → rejected', res30.rejected.some(function(n){ return n.decisionType === 'REPAIR_CANDIDATE_REJECTED'; }));
 })();
 
+// ════════════════ FASE 6 — Learned State Calibration & Conflict Resolution ════════════════
+// Inline T-suffix copies — node-runnable, full spec
+// Hierarchy: Population Prior → Coach Prior → Learned Individual Response (always under Safety)
+// VDSEN never learns directly from Decision Trace.
+
+(function() {
+  var _PRIOR_TYPE_T = { POPULATION:'POPULATION', COACH:'COACH', INDIVIDUAL:'INDIVIDUAL' };
+  var _CONFLICT_TYPE_T = {
+    COACH_VS_POPULATION:'COACH_VS_POPULATION',
+    INDIVIDUAL_VS_COACH:'INDIVIDUAL_VS_COACH',
+    INDIVIDUAL_VS_POPULATION:'INDIVIDUAL_VS_POPULATION',
+    TRIPLE:'TRIPLE',
+  };
+  var _RESOLUTION_STRATEGY_T = { OVERRIDE:'OVERRIDE', BLEND:'BLEND', DEFER:'DEFER' };
+  var _EVIDENCE_STATE_F6_T    = { INSUFFICIENT:'INSUFFICIENT', EMERGING:'EMERGING', RELIABLE:'RELIABLE' };
+  var _CONFIDENCE_F6_T        = { LOW:'LOW', MODERATE:'MODERATE', HIGH:'HIGH', CERTAIN:'CERTAIN' };
+
+  function _calibrateLearnedWeight_T(evidenceState) {
+    if (evidenceState === 'RELIABLE')  return 1.0;
+    if (evidenceState === 'EMERGING')  return 0.5;
+    return 0.0;
+  }
+
+  function _buildPriorTier_T(opts) {
+    if (!opts || !opts.type)  throw new Error('_buildPriorTier: type required');
+    if (!opts.dimension)      throw new Error('_buildPriorTier: dimension required');
+    return {
+      priorTierVersion: 'prior-tier-v1',
+      type:       opts.type,
+      dimension:  opts.dimension,
+      value:      opts.value !== undefined ? opts.value : null,
+      confidence: opts.confidence || 'LOW',
+      source:     opts.source     || 'POPULATION',
+      weight:     typeof opts.weight === 'number' ? opts.weight : 1.0,
+    };
+  }
+
+  function _detectPriorConflict_T(priors) {
+    if (!Array.isArray(priors) || priors.length < 2) return { hasConflict:false, conflictType:null, conflictingPriors:[] };
+    var vals   = priors.map(function(p){ return JSON.stringify(p.value); });
+    var unique = vals.filter(function(v,i){ return vals.indexOf(v)===i; });
+    if (unique.length < 2) return { hasConflict:false, conflictType:null, conflictingPriors:[] };
+    var hasI = priors.some(function(p){ return p.type==='INDIVIDUAL'; });
+    var hasC = priors.some(function(p){ return p.type==='COACH'; });
+    var hasP = priors.some(function(p){ return p.type==='POPULATION'; });
+    var ct = (hasI&&hasC&&hasP) ? 'TRIPLE' : (hasI&&hasC) ? 'INDIVIDUAL_VS_COACH' : (hasI&&hasP) ? 'INDIVIDUAL_VS_POPULATION' : 'COACH_VS_POPULATION';
+    return { hasConflict:true, conflictType:ct, conflictingPriors:priors };
+  }
+
+  function _resolvePriorConflict_T(conflict) {
+    if (!conflict || !conflict.hasConflict) return { resolvedValue:null, strategy:'DEFER', winner:'POPULATION', reasonCode:'NO_CONFLICT' };
+    var priors = conflict.conflictingPriors || [];
+    var ind = priors.find(function(p){ return p.type==='INDIVIDUAL'; });
+    var coa = priors.find(function(p){ return p.type==='COACH'; });
+    var pop = priors.find(function(p){ return p.type==='POPULATION'; });
+    if (ind && _calibrateLearnedWeight_T(ind.confidence) === 1.0) return { resolvedValue:ind.value, strategy:'OVERRIDE', winner:'INDIVIDUAL', reasonCode:'INDIVIDUAL_RELIABLE' };
+    if (ind && _calibrateLearnedWeight_T(ind.confidence) > 0) {
+      var base = coa || pop;
+      return { resolvedValue:base?base.value:null, strategy:'DEFER', winner:base?base.type:'POPULATION', reasonCode:'INDIVIDUAL_EMERGING_DEFER' };
+    }
+    if (coa) return { resolvedValue:coa.value, strategy:'OVERRIDE', winner:'COACH', reasonCode:'COACH_OVERRIDE' };
+    return { resolvedValue:pop?pop.value:null, strategy:'DEFER', winner:'POPULATION', reasonCode:'POPULATION_DEFAULT' };
+  }
+
+  function _buildCalibrationResult_T(opts) {
+    if (!opts || !opts.dimension) throw new Error('_buildCalibrationResult: dimension required');
+    var priors    = Array.isArray(opts.priors) ? opts.priors : [];
+    var safety    = Array.isArray(opts.safetyConstraints) ? opts.safetyConstraints : [];
+    var dimension = opts.dimension;
+    var sm = safety.find(function(c){ return c.dimension===dimension; });
+    if (sm) return { dimension:dimension, activePrior:sm.value, strategy:'OVERRIDE', conflicts:[], appliedWeight:1.0, safetyOverride:true };
+    var conflict   = _detectPriorConflict_T(priors);
+    var resolution = conflict.hasConflict
+      ? _resolvePriorConflict_T(conflict)
+      : { resolvedValue:priors.length?priors[0].value:null, strategy:'DEFER', winner:priors.length?priors[0].type:'POPULATION', reasonCode:'NO_CONFLICT' };
+    var ind = priors.find(function(p){ return p.type==='INDIVIDUAL'; });
+    var aw  = ind ? _calibrateLearnedWeight_T(ind.confidence) : 0.0;
+    return {
+      dimension:dimension, activePrior:resolution.resolvedValue, strategy:resolution.strategy,
+      conflicts: conflict.hasConflict ? [{ conflictType:conflict.conflictType, resolution:resolution.reasonCode }] : [],
+      appliedWeight:aw, safetyOverride:false,
+    };
+  }
+
+  // ── CAL1-CAL3: enum constants ─────────────────────────────────────────────
+  assert('CAL1', 'PRIOR_TYPE has 3 values', Object.keys(_PRIOR_TYPE_T).length === 3);
+  assert('CAL2', 'CONFLICT_TYPE has 4 values', Object.keys(_CONFLICT_TYPE_T).length === 4);
+  assert('CAL3', 'RESOLUTION_STRATEGY has 3 values', Object.keys(_RESOLUTION_STRATEGY_T).length === 3);
+
+  // ── CAL4-CAL7: _buildPriorTier ────────────────────────────────────────────
+  var pt = _buildPriorTier_T({ type:'COACH', dimension:'topology', value:'PPL' });
+  assert('CAL4a', 'priorTierVersion', pt.priorTierVersion === 'prior-tier-v1');
+  assert('CAL4b', 'type+dim+value', pt.type==='COACH' && pt.dimension==='topology' && pt.value==='PPL');
+  var threwNoType=false; try { _buildPriorTier_T({ dimension:'d' }); } catch(e){ threwNoType=true; }
+  assert('CAL5', 'missing type throws', threwNoType);
+  var threwNoDim=false; try { _buildPriorTier_T({ type:'COACH' }); } catch(e){ threwNoDim=true; }
+  assert('CAL6', 'missing dimension throws', threwNoDim);
+  var ptD = _buildPriorTier_T({ type:'POPULATION', dimension:'volume' });
+  assert('CAL7', 'defaults weight=1.0 confidence=LOW', ptD.weight===1.0 && ptD.confidence==='LOW');
+
+  // ── CAL8-CAL11: _calibrateLearnedWeight ───────────────────────────────────
+  assert('CAL8',  'INSUFFICIENT → 0.0', _calibrateLearnedWeight_T('INSUFFICIENT')===0.0);
+  assert('CAL9',  'EMERGING → 0.5',     _calibrateLearnedWeight_T('EMERGING')===0.5);
+  assert('CAL10', 'RELIABLE → 1.0',     _calibrateLearnedWeight_T('RELIABLE')===1.0);
+  assert('CAL11', 'unknown → 0.0',      _calibrateLearnedWeight_T('BOGUS')===0.0);
+
+  // ── CAL12-CAL16: _detectPriorConflict ────────────────────────────────────
+  var dc12 = _detectPriorConflict_T([_buildPriorTier_T({ type:'POPULATION', dimension:'t', value:'A' })]);
+  assert('CAL12', 'single → no conflict', !dc12.hasConflict);
+  var dc13 = _detectPriorConflict_T([
+    _buildPriorTier_T({ type:'POPULATION', dimension:'t', value:'PPL' }),
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL' }),
+  ]);
+  assert('CAL13', 'same value → no conflict', !dc13.hasConflict);
+  var dc14 = _detectPriorConflict_T([
+    _buildPriorTier_T({ type:'POPULATION', dimension:'t', value:'FBW' }),
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL' }),
+  ]);
+  assert('CAL14', 'COACH vs POP → COACH_VS_POPULATION', dc14.hasConflict && dc14.conflictType==='COACH_VS_POPULATION');
+  var dc15 = _detectPriorConflict_T([
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL', confidence:'RELIABLE' }),
+    _buildPriorTier_T({ type:'INDIVIDUAL', dimension:'t', value:'FBW', confidence:'RELIABLE' }),
+  ]);
+  assert('CAL15', 'IND vs COACH → INDIVIDUAL_VS_COACH', dc15.hasConflict && dc15.conflictType==='INDIVIDUAL_VS_COACH');
+  var dc16 = _detectPriorConflict_T([
+    _buildPriorTier_T({ type:'POPULATION', dimension:'t', value:'FBW' }),
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL' }),
+    _buildPriorTier_T({ type:'INDIVIDUAL', dimension:'t', value:'UL',  confidence:'RELIABLE' }),
+  ]);
+  assert('CAL16', 'three diff → TRIPLE', dc16.hasConflict && dc16.conflictType==='TRIPLE');
+
+  // ── CAL17-CAL21: _resolvePriorConflict ───────────────────────────────────
+  var cIndRel = _detectPriorConflict_T([
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL', confidence:'RELIABLE' }),
+    _buildPriorTier_T({ type:'INDIVIDUAL', dimension:'t', value:'UL',  confidence:'RELIABLE' }),
+  ]);
+  var r17 = _resolvePriorConflict_T(cIndRel);
+  assert('CAL17', 'IND RELIABLE → OVERRIDE INDIVIDUAL', r17.winner==='INDIVIDUAL' && r17.strategy==='OVERRIDE');
+
+  var cIndEmerg = _detectPriorConflict_T([
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL', confidence:'RELIABLE' }),
+    _buildPriorTier_T({ type:'INDIVIDUAL', dimension:'t', value:'UL',  confidence:'EMERGING' }),
+  ]);
+  var r18 = _resolvePriorConflict_T(cIndEmerg);
+  assert('CAL18', 'IND EMERGING → DEFER coach', r18.winner==='COACH' && r18.strategy==='DEFER');
+
+  var cIndInsuf = _detectPriorConflict_T([
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL', confidence:'RELIABLE' }),
+    _buildPriorTier_T({ type:'INDIVIDUAL', dimension:'t', value:'UL',  confidence:'INSUFFICIENT' }),
+  ]);
+  var r19 = _resolvePriorConflict_T(cIndInsuf);
+  assert('CAL19', 'IND INSUFFICIENT → coach wins', r19.winner==='COACH');
+
+  var cCoachPop = _detectPriorConflict_T([
+    _buildPriorTier_T({ type:'POPULATION', dimension:'t', value:'FBW' }),
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL' }),
+  ]);
+  var r20 = _resolvePriorConflict_T(cCoachPop);
+  assert('CAL20', 'COACH vs POP → COACH OVERRIDE', r20.winner==='COACH' && r20.strategy==='OVERRIDE');
+  var r21 = _resolvePriorConflict_T(null);
+  assert('CAL21', 'null → DEFER NO_CONFLICT', r21.strategy==='DEFER' && r21.reasonCode==='NO_CONFLICT');
+
+  // ── CAL22-CAL30: _buildCalibrationResult ─────────────────────────────────
+  var cr22 = _buildCalibrationResult_T({ dimension:'topology', priors:[], safetyConstraints:[] });
+  assert('CAL22', 'structure complete', 'dimension' in cr22 && 'activePrior' in cr22 && 'strategy' in cr22 && 'conflicts' in cr22 && 'appliedWeight' in cr22 && 'safetyOverride' in cr22);
+
+  var cr23 = _buildCalibrationResult_T({ dimension:'topology', priors:[_buildPriorTier_T({type:'COACH',dimension:'topology',value:'PPL'})], safetyConstraints:[{dimension:'topology',value:'FBW'}] });
+  assert('CAL23', 'safety beats all', cr23.safetyOverride===true && cr23.activePrior==='FBW');
+
+  var cr24 = _buildCalibrationResult_T({ dimension:'topology', priors:[_buildPriorTier_T({type:'COACH',dimension:'topology',value:'PPL'})], safetyConstraints:[] });
+  assert('CAL24', 'no conflict → first prior', cr24.activePrior==='PPL' && cr24.conflicts.length===0);
+
+  var priRel = [
+    _buildPriorTier_T({ type:'POPULATION', dimension:'t', value:'FBW' }),
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL' }),
+    _buildPriorTier_T({ type:'INDIVIDUAL', dimension:'t', value:'UL',  confidence:'RELIABLE' }),
+  ];
+  var cr25 = _buildCalibrationResult_T({ dimension:'t', priors:priRel });
+  assert('CAL25', 'RELIABLE ind → UL + appliedWeight=1.0', cr25.activePrior==='UL' && cr25.appliedWeight===1.0);
+
+  var priEmerg = [
+    _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'PPL' }),
+    _buildPriorTier_T({ type:'INDIVIDUAL', dimension:'t', value:'UL',  confidence:'EMERGING' }),
+  ];
+  var cr26 = _buildCalibrationResult_T({ dimension:'t', priors:priEmerg });
+  assert('CAL26', 'EMERGING ind → coach wins + appliedWeight=0.5', cr26.activePrior==='PPL' && cr26.appliedWeight===0.5);
+
+  var priNoInd = [
+    _buildPriorTier_T({ type:'POPULATION', dimension:'volume', value:16 }),
+    _buildPriorTier_T({ type:'COACH',      dimension:'volume', value:20 }),
+  ];
+  var cr27 = _buildCalibrationResult_T({ dimension:'volume', priors:priNoInd });
+  assert('CAL27', 'no individual → coach + aw=0.0', cr27.activePrior===20 && cr27.appliedWeight===0.0);
+
+  var cr28 = _buildCalibrationResult_T({ dimension:'volume', priors:[_buildPriorTier_T({type:'POPULATION',dimension:'volume',value:16})] });
+  assert('CAL28', 'only population → pop value + aw=0.0', cr28.activePrior===16 && cr28.appliedWeight===0.0);
+
+  var cr29 = _buildCalibrationResult_T({ dimension:'freq', priors:[] });
+  assert('CAL29', 'no priors → null + no conflicts', cr29.activePrior===null && cr29.conflicts.length===0);
+
+  // CAL30: full hierarchy contract
+  var p30A = _buildPriorTier_T({ type:'POPULATION', dimension:'t', value:'A' });
+  var p30B = _buildPriorTier_T({ type:'COACH',      dimension:'t', value:'B' });
+  var p30C = _buildPriorTier_T({ type:'INDIVIDUAL', dimension:'t', value:'C', confidence:'RELIABLE' });
+  var s30D = [{ dimension:'t', value:'D' }];
+  var r30_pop   = _buildCalibrationResult_T({ dimension:'t', priors:[p30A] });
+  var r30_coach = _buildCalibrationResult_T({ dimension:'t', priors:[p30A, p30B] });
+  var r30_ind   = _buildCalibrationResult_T({ dimension:'t', priors:[p30A, p30B, p30C] });
+  var r30_safe  = _buildCalibrationResult_T({ dimension:'t', priors:[p30A, p30B, p30C], safetyConstraints:s30D });
+  assert('CAL30a', 'hierarchy: pop=A',                 r30_pop.activePrior==='A');
+  assert('CAL30b', 'hierarchy: coach>pop → B',         r30_coach.activePrior==='B');
+  assert('CAL30c', 'hierarchy: ind(RELIABLE)>coach → C', r30_ind.activePrior==='C');
+  assert('CAL30d', 'hierarchy: safety>all → D',        r30_safe.activePrior==='D' && r30_safe.safetyOverride===true);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
