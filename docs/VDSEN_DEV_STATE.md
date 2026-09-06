@@ -56,9 +56,9 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ---
 
-## FASE 3–10 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
+## FASE 3–11 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1481 ✓ 0 ✗** · HEAD post-FASE10
+> Suite: **1514 ✓ 0 ✗** · HEAD post-FASE11
 
 ### Arquitectura conceptual
 
@@ -326,6 +326,39 @@ baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score fi
 **Tests:** TCP1-TCP20 (40 aserciones) — sección FASE 10 en `tests/progression-engine.test.js`
 
 **Suite: 1481 ✓ 0 ✗**
+
+---
+
+### FASE 11 — Longitudinal Learning Contract
+
+**Archivos modificados:** `vdsen-coach.html` (funciones FASE 11 + motor prompt delta), `tests/progression-engine.test.js` (sección TLC1-TLC18)
+
+**Funciones añadidas a `vdsen-coach.html`:**
+- `_filterEligibleObservations(rawObs)` — excluye autoFilled/autoClosed totalmente; BW→null (obs retenida)
+- `_deriveLearningConfidence(eligibleCount)` — NONE/LOW/MODERATE/HIGH (umbrales HEURISTIC)
+- `_evaluateLearningEligibility(match, observations)` → `{exerciseEligible, slotEligible, reasons[]}`
+- `_deriveTrend(values)` — comparación primera/segunda mitad, umbral HEURISTIC 0.3
+- `_buildExerciseLearningState(match, eligibleObs)` → `{exerciseIdentity, observations, loadTrend, rirConsistency, icsTrend, tolerance, confidence}`
+- `_buildSlotLearningState(match, eligibleObs, postsessions)` → `{prescriptionSlot, observations, performanceTrend, recoveryTrend, adherenceTrend, painSignals, confidence}`
+- `_buildLearningTraceNode(dimension, reasonCode, confidence, exerciseName, planId)` → trace node `{source:'HISTORY', engine:'LEARNING', decisionType:'LEARNING_STATE_APPLIED'}`
+- `_runLearningContractTests()` — inline browser: TLC1-TLC18 (27 aserciones)
+
+**LEARNING ELIGIBILITY CONTRACT:**
+| Match confidence | Slot compatible | exerciseEligible | slotEligible |
+|-----------------|-----------------|-----------------|-------------|
+| EXACT           | true            | ✓               | ✓           |
+| STRONG          | true            | ✓               | ✓           |
+| EXACT           | false (STRUCTURAL_SLOT_CHANGE) | ✓ | ✗ |
+| FUNCTIONAL      | true (SAME_SLOT_REPLACEMENT) | ✗ | ✓ |
+| UNRESOLVED      | any             | ✗               | ✗           |
+| EXACT (REMOVED) | — (current=null) | ✗              | ✗           |
+| EXACT (MOVED)   | true            | ✓               | ✓           |
+
+**Motor Prompt Delta:** sección "### LEARNING ELIGIBILITY (FASE 11)" añadida en `_MOTOR_PROMPT_EMBEDDED` tras FASE 10.
+
+**Tests:** TLC1-TLC18 (27 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1514 ✓ 0 ✗**
 
 ---
 

@@ -9904,6 +9904,246 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 10 cross-plan continuity ✓');
 })();
 
+// ════════════════ FASE 11 — Longitudinal Learning Contract ════════════════
+// Node-runnable T-suffix copies of FASE 11 functions.
+// Covers: EXACT/STRONG eligible, SAME_SLOT_REPLACEMENT gate, STRUCTURAL_SLOT_CHANGE gate,
+// UNRESOLVED/AMBIGUOUS blocked, autoFilled/autoClosed filtered, BW→null, LB→KG,
+// REMOVED blocked, confidence levels, exerciseState/slotState fields, trace node,
+// MOVED eligible, exerciseIdentity preserved.
+
+(function() {
+  console.log('\n── FASE 11: Longitudinal Learning Contract ──────────────────');
+
+  // ── Local constants ───────────────────────────────────────────────────────
+  var _CS11 = { EXACT: 'EXACT', STRONG: 'STRONG', FUNCTIONAL: 'FUNCTIONAL', UNRESOLVED: 'UNRESOLVED' };
+  var _DTC11 = { NONE: 'NONE', LOW: 'LOW', MODERATE: 'MODERATE', HIGH: 'HIGH' };
+
+  // ── T-suffix copies ───────────────────────────────────────────────────────
+  function _normalizeCrossPlanLoad_11(entry) {
+    if (!entry) return null;
+    if (!entry.unit || entry.unit === 'BW') return null;
+    var carga = parseFloat(entry.carga);
+    if (isNaN(carga) || carga <= 0) return null;
+    return entry.unit === 'LB' ? carga * 0.453592 : carga;
+  }
+
+  function _filterEligibleObservations_T(rawObservations) {
+    if (!Array.isArray(rawObservations)) return [];
+    return rawObservations.filter(function(obs) {
+      if (!obs) return false;
+      if (obs.autoFilled) return false;
+      if (obs.autoClosed) return false;
+      return true;
+    });
+  }
+
+  function _deriveLearningConfidence_T(eligibleCount) {
+    if (!eligibleCount || eligibleCount < 1) return _DTC11.NONE;
+    if (eligibleCount < 3)  return _DTC11.LOW;
+    if (eligibleCount < 6)  return _DTC11.MODERATE;
+    return _DTC11.HIGH;
+  }
+
+  function _evaluateLearningEligibility_T(match, observations) {
+    if (!match) return { exerciseEligible: false, slotEligible: false, reasons: ['NO_MATCH'] };
+    if (!match.current) return { exerciseEligible: false, slotEligible: false, reasons: ['REMOVED_NO_CURRENT'] };
+    var reasons = [];
+    var eligibleObs = _filterEligibleObservations_T(observations);
+    var hasObs = eligibleObs.length > 0;
+
+    var exerciseEligible = false;
+    if (match.confidence === _CS11.EXACT || match.confidence === _CS11.STRONG) {
+      if (hasObs) { exerciseEligible = true; }
+      else { reasons.push('NO_ELIGIBLE_EXERCISE_OBSERVATIONS'); }
+    } else {
+      reasons.push('IDENTITY_NOT_RESOLVED_FOR_EXERCISE');
+    }
+
+    var slotEligible = false;
+    var slotCompat = !!(match.slotCompatibility && match.slotCompatibility.compatible);
+    if (match.confidence !== _CS11.UNRESOLVED && slotCompat) {
+      if (hasObs) { slotEligible = true; }
+      else { reasons.push('NO_ELIGIBLE_SLOT_OBSERVATIONS'); }
+    } else if (match.confidence === _CS11.UNRESOLVED) {
+      reasons.push('UNRESOLVED_SLOT_CONTINUITY');
+    } else if (!slotCompat) {
+      reasons.push('SLOT_INCOMPATIBLE');
+    }
+
+    return { exerciseEligible: exerciseEligible, slotEligible: slotEligible, reasons: reasons };
+  }
+
+  function _deriveTrend_T(values) {
+    var nums = values.filter(function(v) { return typeof v === 'number' && !isNaN(v); });
+    if (nums.length < 2) return 'INSUFFICIENT';
+    var mid = Math.floor(nums.length / 2);
+    var firstMean  = nums.slice(0, mid).reduce(function(a, b) { return a + b; }, 0) / mid;
+    var secondMean = nums.slice(mid).reduce(function(a, b) { return a + b; }, 0) / (nums.length - mid);
+    var delta = secondMean - firstMean;
+    if (delta > 0.3)  return 'INCREASING';
+    if (delta < -0.3) return 'DECREASING';
+    return 'STABLE';
+  }
+
+  function _buildExerciseLearningState_T(match, eligibleObs) {
+    if (!match || !match.current) return null;
+    var loads = eligibleObs.map(function(o) { return _normalizeCrossPlanLoad_11(o); })
+                           .filter(function(v) { return v !== null; });
+    var icsVals = eligibleObs.map(function(o) { return o.ics; });
+    var rirVals = eligibleObs.map(function(o) { return o.rir_real; })
+                             .filter(function(v) { return typeof v === 'number' && !isNaN(v); });
+    var rirConsistency = 'INSUFFICIENT';
+    if (rirVals.length >= 2) {
+      var mean = rirVals.reduce(function(a, b) { return a + b; }, 0) / rirVals.length;
+      var vari = rirVals.reduce(function(s, v) { return s + (v - mean) * (v - mean); }, 0) / rirVals.length;
+      rirConsistency = vari < 1.0 ? 'CONSISTENT' : 'VARIABLE';
+    }
+    var icsNums = icsVals.filter(function(v) { return typeof v === 'number' && !isNaN(v); });
+    var tolerance = icsNums.length === 0 ? 'UNKNOWN'
+                  : (icsNums.reduce(function(a, b) { return a + b; }, 0) / icsNums.length) >= 7
+                    ? 'HIGH' : 'MODERATE';
+    return {
+      exerciseIdentity: { name: match.current.exerciseName, prescriptionExerciseId: match.current.prescriptionExerciseId || null, exerciseId: match.current.exerciseId || null },
+      observations:   eligibleObs.length,
+      loadTrend:      _deriveTrend_T(loads),
+      rirConsistency: rirConsistency,
+      icsTrend:       _deriveTrend_T(icsVals),
+      tolerance:      tolerance,
+      confidence:     _deriveLearningConfidence_T(eligibleObs.length)
+    };
+  }
+
+  function _buildSlotLearningState_T(match, eligibleObs, postsessions) {
+    if (!match || !match.current || !match.current.prescriptionSlot) return null;
+    var postArr     = Array.isArray(postsessions) ? postsessions : [];
+    var eimdVals    = postArr.map(function(p) { return p.eimd; });
+    var painSignals = postArr.some(function(p) { return p.articular === 'si'; }) ? 'PRESENT' : 'NONE';
+    var icsVals     = eligibleObs.map(function(o) { return o.ics; });
+    var recovVals   = eimdVals.map(function(v) { return typeof v === 'number' ? -v : NaN; });
+    return {
+      prescriptionSlot: match.current.prescriptionSlot,
+      observations:     eligibleObs.length,
+      performanceTrend: _deriveTrend_T(icsVals),
+      recoveryTrend:    _deriveTrend_T(recovVals),
+      adherenceTrend:   'INSUFFICIENT',
+      painSignals:      painSignals,
+      confidence:       _deriveLearningConfidence_T(eligibleObs.length)
+    };
+  }
+
+  function _buildLearningTraceNode_T(dimension, reasonCode, confidence, exerciseName, planId) {
+    return {
+      decisionType: 'LEARNING_STATE_APPLIED',
+      subject:      exerciseName || 'unknown',
+      source:       'HISTORY',
+      engine:       'LEARNING',
+      confidence:   confidence || _DTC11.NONE,
+      evidence:     { dimension: dimension, reasonCode: reasonCode || 'HISTORICAL_RESPONSE', planId: planId || null }
+    };
+  }
+
+  // ── Shared fixtures ───────────────────────────────────────────────────────
+  var EX = { exerciseName: 'Squat', prescriptionExerciseId: 'pid-01', exerciseId: 'ex-sq', prescriptionSlot: 'QUAD:PRI' };
+  var mExact   = { confidence: 'EXACT',      slotCompatibility: { compatible: true,  slot: 'QUAD:PRI' }, current: EX, previous: EX, continuityType: 'SAME_PRESCRIPTION' };
+  var mStrong  = { confidence: 'STRONG',     slotCompatibility: { compatible: true,  slot: 'QUAD:PRI' }, current: EX, previous: EX, continuityType: 'SAME_EXERCISE_NEW_PRESCRIPTION' };
+  var mFunc    = { confidence: 'FUNCTIONAL', slotCompatibility: { compatible: true,  slot: 'QUAD:PRI' }, current: { exerciseName: 'Belt Squat', prescriptionSlot: 'QUAD:PRI' }, previous: EX, continuityType: 'SAME_SLOT_REPLACEMENT' };
+  var mStruct  = { confidence: 'EXACT',      slotCompatibility: { compatible: false, slot: null       }, current: { exerciseName: 'Squat', prescriptionExerciseId: 'pid-01', prescriptionSlot: 'QUAD:ACC' }, previous: EX, continuityType: 'STRUCTURAL_SLOT_CHANGE' };
+  var mUnres   = { confidence: 'UNRESOLVED', slotCompatibility: null, current: { exerciseName: 'Leg Press' }, continuityType: 'UNRESOLVED_CROSS_PLAN' };
+  var mRemoved = { confidence: 'EXACT',      current: null, previous: EX, continuityType: 'REMOVED' };
+  var mMoved   = { confidence: 'EXACT',      slotCompatibility: { compatible: true,  slot: 'QUAD:PRI' }, current: EX, previous: EX, continuityType: 'MOVED' };
+  var realObs  = [{ ics: 8, rir_real: 2, carga: 100, unit: 'KG' }];
+  var afObs    = [{ ics: 8, rir_real: 2, carga: 100, unit: 'KG', autoFilled: true }];
+  var acObs    = [{ ics: 7, rir_real: 3, autoClosed: true }];
+
+  // ── TLC1: EXACT + real obs → both eligible ────────────────────────────────
+  var r1 = _evaluateLearningEligibility_T(mExact, realObs);
+  assert('TLC1a', 'EXACT match → exerciseEligible=true', r1.exerciseEligible === true);
+  assert('TLC1b', 'EXACT match → slotEligible=true',     r1.slotEligible     === true);
+
+  // ── TLC2: STRONG + real obs → both eligible ───────────────────────────────
+  var r2 = _evaluateLearningEligibility_T(mStrong, realObs);
+  assert('TLC2a', 'STRONG match → exerciseEligible=true', r2.exerciseEligible === true);
+  assert('TLC2b', 'STRONG match → slotEligible=true',     r2.slotEligible     === true);
+
+  // ── TLC3: FUNCTIONAL (SAME_SLOT_REPLACEMENT) → slot yes, exercise no ──────
+  var r3 = _evaluateLearningEligibility_T(mFunc, realObs);
+  assert('TLC3a', 'FUNCTIONAL → exerciseEligible=false', r3.exerciseEligible === false);
+  assert('TLC3b', 'FUNCTIONAL → slotEligible=true',      r3.slotEligible     === true);
+
+  // ── TLC4: STRUCTURAL_SLOT_CHANGE → exercise yes, slot no ─────────────────
+  var r4 = _evaluateLearningEligibility_T(mStruct, realObs);
+  assert('TLC4a', 'STRUCTURAL_SLOT_CHANGE → exerciseEligible=true',  r4.exerciseEligible === true);
+  assert('TLC4b', 'STRUCTURAL_SLOT_CHANGE → slotEligible=false',     r4.slotEligible     === false);
+  assert('TLC4c', 'STRUCTURAL_SLOT_CHANGE → SLOT_INCOMPATIBLE reason', r4.reasons.indexOf('SLOT_INCOMPATIBLE') >= 0);
+
+  // ── TLC5: UNRESOLVED → neither ────────────────────────────────────────────
+  var r5 = _evaluateLearningEligibility_T(mUnres, realObs);
+  assert('TLC5a', 'UNRESOLVED → exerciseEligible=false', r5.exerciseEligible === false);
+  assert('TLC5b', 'UNRESOLVED → slotEligible=false',     r5.slotEligible     === false);
+
+  // ── TLC6: autoFilled obs → filtered → not eligible ────────────────────────
+  var r6 = _evaluateLearningEligibility_T(mExact, afObs);
+  assert('TLC6', 'autoFilled obs → exerciseEligible=false', r6.exerciseEligible === false && r6.reasons.indexOf('NO_ELIGIBLE_EXERCISE_OBSERVATIONS') >= 0);
+
+  // ── TLC7: autoClosed obs → filtered → not eligible ────────────────────────
+  var r7 = _evaluateLearningEligibility_T(mExact, acObs);
+  assert('TLC7', 'autoClosed obs → exerciseEligible=false', r7.exerciseEligible === false);
+
+  // ── TLC8: BW load → null ─────────────────────────────────────────────────
+  assert('TLC8', 'BW unit → null (never 0)', _normalizeCrossPlanLoad_11({ carga: 80, unit: 'BW' }) === null);
+
+  // ── TLC9: LB → KG ────────────────────────────────────────────────────────
+  var lbLoad = _normalizeCrossPlanLoad_11({ carga: 100, unit: 'LB' });
+  assert('TLC9', 'LB converted to KG (±0.01)', lbLoad !== null && Math.abs(lbLoad - 45.3592) < 0.01);
+
+  // ── TLC10: REMOVED match → neither ────────────────────────────────────────
+  var r10 = _evaluateLearningEligibility_T(mRemoved, realObs);
+  assert('TLC10a', 'REMOVED (current=null) → exerciseEligible=false', r10.exerciseEligible === false);
+  assert('TLC10b', 'REMOVED (current=null) → slotEligible=false',     r10.slotEligible     === false);
+
+  // ── TLC11: confidence levels (HEURISTIC thresholds) ──────────────────────
+  assert('TLC11a', '0 obs → NONE',     _deriveLearningConfidence_T(0) === 'NONE');
+  assert('TLC11b', '1 obs → LOW',      _deriveLearningConfidence_T(1) === 'LOW');
+  assert('TLC11c', '3 obs → MODERATE', _deriveLearningConfidence_T(3) === 'MODERATE');
+  assert('TLC11d', '6 obs → HIGH',     _deriveLearningConfidence_T(6) === 'HIGH');
+
+  // ── TLC12: exerciseState contract ────────────────────────────────────────
+  var obs12 = [{ ics: 8, rir_real: 2, carga: 100, unit: 'KG' }, { ics: 8, rir_real: 2, carga: 105, unit: 'KG' }, { ics: 9, rir_real: 2, carga: 110, unit: 'KG' }];
+  var eState = _buildExerciseLearningState_T(mExact, obs12);
+  assert('TLC12a', 'exerciseState has exerciseIdentity', !!eState && 'exerciseIdentity' in eState);
+  assert('TLC12b', 'exerciseState.observations = 3',     eState.observations === 3);
+  assert('TLC12c', 'exerciseState has all trend fields', 'loadTrend' in eState && 'rirConsistency' in eState && 'icsTrend' in eState && 'tolerance' in eState && 'confidence' in eState);
+
+  // ── TLC13: slotState contract ─────────────────────────────────────────────
+  var sState = _buildSlotLearningState_T(mFunc, obs12, [{ eimd: 1, articular: 'no' }]);
+  assert('TLC13a', 'slotState.prescriptionSlot preserved', !!sState && sState.prescriptionSlot === 'QUAD:PRI');
+  assert('TLC13b', 'slotState has all fields', 'performanceTrend' in sState && 'recoveryTrend' in sState && 'adherenceTrend' in sState && 'painSignals' in sState && 'confidence' in sState);
+
+  // ── TLC14: learning trace node contract ───────────────────────────────────
+  var tr14 = _buildLearningTraceNode_T('load_trend', 'HISTORICAL_RESPONSE', 'HIGH', 'Squat', 'plan-a');
+  assert('TLC14a', 'trace source = HISTORY',                        tr14.source       === 'HISTORY');
+  assert('TLC14b', 'trace engine = LEARNING',                       tr14.engine       === 'LEARNING');
+  assert('TLC14c', 'trace decisionType = LEARNING_STATE_APPLIED',   tr14.decisionType === 'LEARNING_STATE_APPLIED');
+
+  // ── TLC15: AMBIGUOUS → neither ────────────────────────────────────────────
+  var mAmb = { confidence: 'UNRESOLVED', slotCompatibility: null, current: { exerciseName: 'Squat' }, continuityType: 'AMBIGUOUS' };
+  var r15  = _evaluateLearningEligibility_T(mAmb, realObs);
+  assert('TLC15', 'AMBIGUOUS → neither eligible', r15.exerciseEligible === false && r15.slotEligible === false);
+
+  // ── TLC16: null match → neither ───────────────────────────────────────────
+  var r16 = _evaluateLearningEligibility_T(null, realObs);
+  assert('TLC16', 'null match → neither eligible', r16.exerciseEligible === false && r16.slotEligible === false);
+
+  // ── TLC17: MOVED match → exerciseEligible=true (identity preserved) ───────
+  var r17 = _evaluateLearningEligibility_T(mMoved, realObs);
+  assert('TLC17', 'MOVED match → exerciseEligible=true (identity resolved regardless of day)', r17.exerciseEligible === true);
+
+  // ── TLC18: exerciseIdentity.name matches match.current.exerciseName ────────
+  assert('TLC18', 'exerciseState.exerciseIdentity.name = match.current.exerciseName', !!eState && eState.exerciseIdentity.name === mExact.current.exerciseName);
+
+  console.log('── FASE 11 longitudinal learning contract ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
