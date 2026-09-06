@@ -11144,7 +11144,7 @@ function _makeF57Gate(status, criticalIssues) {
 // Pure: _buildClientMirrorView(plan) → HTML string; 0 I/O, 0 mutation.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Inline _buildClientMirrorView (mirrors main file exactly)
+// Inline _buildClientMirrorView (mirrors main file exactly — updated F59)
 function _buildClientMirrorView(plan) {
   var _e = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); };
   if (!plan || !Array.isArray(plan.days) || !plan.days.length) {
@@ -11172,29 +11172,98 @@ function _buildClientMirrorView(plan) {
     if (n < 60) return n + 's';
     return Math.floor(n/60) + 'min' + (n%60 ? ' '+(n%60)+'s' : '');
   }
+  function _zonaBadge(rt) {
+    if (rt == null || typeof rt !== 'number') return '';
+    var zona, color, bg;
+    if      (rt <= 5)  { zona = 'PESADAS';      color = '#7ec0ff'; bg = 'rgba(126,192,255,.12)'; }
+    else if (rt <= 8)  { zona = 'MOD. PESADAS'; color = '#88bbff'; bg = 'rgba(136,187,255,.12)'; }
+    else if (rt <= 12) { zona = 'MODERADAS';    color = '#44BB88'; bg = 'rgba(68,187,136,.12)'; }
+    else if (rt <= 15) { zona = 'MOD. LIGERAS'; color = '#99cc44'; bg = 'rgba(153,204,68,.12)'; }
+    else               { zona = 'LIGERAS';      color = '#C4FF00'; bg = 'rgba(196,255,0,.12)'; }
+    return '<span style="font-size:8px;font-weight:900;letter-spacing:.8px;color:'+color+';background:'+bg+';border:1px solid '+color+';padding:2px 6px;border-radius:4px;margin-left:6px">'+zona+'</span>';
+  }
+  var _nmDefs = {
+    fundamental:          { t:'FUNDAMENTAL',   c:'#cc4444', bg:'rgba(204,68,68,.1)' },
+    suplementario:        { t:'SUPLEMENTARIO', c:'#FF8844', bg:'rgba(255,136,68,.1)' },
+    asistencia_mayor:     { t:'ASISTENCIA+',   c:'#C4FF00', bg:'rgba(196,255,0,.08)' },
+    asistencia_secundario:{ t:'ASISTENCIA',    c:'#888888', bg:'rgba(136,136,136,.08)' }
+  };
+  function _nmBadge(nm) {
+    var d = _nmDefs[nm]; if (!d) return '';
+    return '<span style="font-size:8px;font-weight:900;letter-spacing:.6px;padding:2px 6px;border-radius:4px;background:'+d.bg+';border:1px solid '+d.c+'55;color:'+d.c+'">'+d.t+'</span> ';
+  }
   var _techColors = { 'drop':'#FF6644','rest-pause':'#FF8844','cluster':'#CCAA00','myoreps':'#44AACC','y3t':'#CC44AA','superset':'#6B6B66','giant':'#6B6B66','myo-match':'#2288AA' };
   function _techBadge(tech) {
     if (!tech || tech === 'straight') return '';
     var col = _techColors[tech] || '#777';
     return '<span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:3px;background:'+col+'22;border:1px solid '+col+'55;color:'+col+';margin-left:4px;text-transform:uppercase">'+_e(tech)+'</span>';
   }
-  var _nmC = { fundamental:'#FF6644', suplementario:'#FF9900', asistencia_mayor:'#CCAA00', asistencia_secundario:'#777' };
-  var _nmL = { fundamental:'F', suplementario:'S', asistencia_mayor:'AM', asistencia_secundario:'AS' };
-  function _nmBadge(nm) {
-    if (!nm || !_nmC[nm]) return '';
-    return '<span style="font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;background:'+_nmC[nm]+'22;border:1px solid '+_nmC[nm]+'55;color:'+_nmC[nm]+'">'+(_nmL[nm]||_e(nm))+'</span> ';
+  var _techMeta = {
+    drop:        { label:'BAJAR PESO Y SEGUIR (Drop Set)',        color:'#FF8844', icon:'⬇️' },
+    myoreps:     { label:'SERIES CORTAS CON PAUSA (Myo-Reps)',   color:'#44BB88', icon:'🔂' },
+    'rest-pause':{ label:'PAUSA CORTA Y SIGUE (Rest-Pause)',     color:'#e8a040', icon:'⏸' },
+    cluster:     { label:'PAUSAS ENTRE REPETICIONES (Cluster)',  color:'#4488cc', icon:'🧩' },
+    superset:    { label:'DOS EJERCICIOS SEGUIDOS (Superserie)', color:'#6B6B66', icon:'🔁' },
+    fst7:        { label:'7 SERIES SEGUIDAS (FST-7)',            color:'#cc44aa', icon:'7️⃣' },
+    y3t:         { label:'MÉTODO SEMANAL (Y3T)',                 color:'#f0c040', icon:'🔄' },
+    giant:       { label:'CIRCUITO DE EJERCICIOS (Giant Set)',   color:'#6B6B66', icon:'🔁' },
+    'myo-match': { label:'MYO-MATCH',                            color:'#2288AA', icon:'🔂' }
+  };
+  var _techDesc = {
+    drop:        'Haz tu serie hasta no poder hacer ni una rep más. Sin descansar, baja el peso un 20-30% y sigue.',
+    myoreps:     'Primero haz 12-20 reps hasta casi no poder más. Luego descansa 15 segundos y haz 3-5 reps más. Repite ese ciclo hasta cumplir el total.',
+    'rest-pause':'Haz tu serie hasta no poder más. Descansa 10-15 segundos respirando profundo. Con el mismo peso, haz reps de nuevo. Repite 2-3 veces en total.',
+    cluster:     'Divide las reps en bloques de 2-3 con 10-20 segundos de descanso entre ellos.',
+    y3t:         'Semana 1 — pocas reps con el mayor peso posible, descansa 3-4 min. Semana 2 — reps moderadas, al terminar las últimas 2 series estira el músculo 45-60 segundos. Semana 3 — muchas reps con protocolo SST al final.',
+    fst7:        '7 series seguidas, 40 segundos de descanso entre cada una.',
+    superset:    'Dos ejercicios seguidos sin descanso entre ellos.',
+    giant:       'Realiza todos los ejercicios del circuito seguidos sin descanso.',
+    'myo-match': 'Haz tus series cortas hasta casi no poder más. Pausa breve y continúa.'
+  };
+  function _techDescBlock(tech) {
+    if (!tech || tech === 'straight') return '';
+    var m = _techMeta[tech]; if (!m) return '';
+    var desc = _techDesc[tech] || '';
+    return '<div style="margin:6px 0 4px;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.03);border-left:3px solid '+m.color+'88">'
+      + '<div style="font-size:10px;font-weight:800;color:'+m.color+';margin-bottom:3px">'+m.icon+' '+_e(m.label)+'</div>'
+      + (desc ? '<div style="font-size:11px;color:#aaa;line-height:1.5">'+_e(desc)+'</div>' : '')
+      + '</div>';
   }
+  var _snLabels = {
+    'S1 · FUERZA':                                        { icon:'💪', text:'PESADO' },
+    'S2 · HIPERTROFIA':                                   { icon:'📈', text:'VOLUMEN' },
+    'S3 · SST':                                           { icon:'🔥', text:'PROTOCOLO FINAL' },
+    'FST7 · Serie 7 FALLO':                              { icon:'⚡', text:'FALLO TOTAL' },
+    'PARCIALES ELONGADOS · hasta fallo técnico':          { icon:'📐', text:'ESTIRAMIENTO · AMRAP' },
+    'Serie principal':                                    { icon:'💪', text:'SERIE PRINCIPAL' },
+    'RIR 0 → N negativas asistidas · 4-6s excéntrico': { icon:'⬇️', text:'NEGATIVAS' },
+    'SST-RIV-PROTOCOL · 8 sets piramidal':               { icon:'🔻', text:'SST-RIV · 8 SETS' }
+  };
   function _setRow(s, si) {
-    var sMark = s.drop   ? '<span style="font-size:9px;color:#FF6644;font-weight:700"> DROP</span>' : '';
-    var tMark = s.tempo  ? '<span style="font-size:9px;color:#888"> tempo:'+_e(s.tempo)+'</span>' : '';
-    var nMark = s.setNote? '<span style="font-size:9px;color:#7788cc;margin-left:4px">'+_e(s.setNote)+'</span>' : '';
+    var sMark = s.drop ? '<span style="font-size:9px;color:#FF6644;font-weight:700"> DROP</span>' : '';
+    var tMark = s.tempo ? '<span style="font-size:9px;color:#888"> tempo:'+_e(s.tempo)+'</span>' : '';
+    var nMark = '';
+    if (s.setNote) {
+      var snl = _snLabels[s.setNote];
+      if (snl) nMark = '<span style="font-size:9px;color:#7788cc;margin-left:4px">'+snl.icon+' '+_e(snl.text)+'</span>';
+      else     nMark = '<span style="font-size:9px;color:#7788cc;margin-left:4px">'+_e(s.setNote)+'</span>';
+    }
+    var rt = s.repsTarget;
     return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0 4px 8px;border-bottom:1px solid rgba(244,244,240,.04)">'
       + '<span style="font-size:11px;color:#555;min-width:22px;font-weight:700">S'+(si+1)+sMark+'</span>'
-      + '<span style="font-size:12px;color:#F4F4F0;font-weight:700;min-width:32px">'+_e(_fmtReps(s.repsTarget))+'</span>'
+      + '<span style="font-size:12px;color:#F4F4F0;font-weight:700;min-width:32px">'+_e(_fmtReps(rt))+'</span>'
+      + _zonaBadge(typeof rt === 'number' ? rt : null)
       + '<span style="font-size:11px;color:#888">'+_e(_fmtRIR(s.rirTarget))+'</span>'
       + '<span style="font-size:11px;color:#44BB88;margin-left:auto">'+_e(_fmtLoad(s.load))+'</span>'
       + (_fmtRest(s.restSeconds) ? '<span style="font-size:10px;color:#555;padding:1px 5px;border-radius:3px;background:rgba(244,244,240,.04)">⏸ '+_e(_fmtRest(s.restSeconds))+'</span>' : '')
       + tMark + nMark + '</div>';
+  }
+  function _coachNoteBlock(note) {
+    if (!note || !String(note).trim()) return '';
+    return '<div style="margin-top:8px;padding:8px 12px;background:rgba(68,136,204,.07);border-left:3px solid rgba(68,136,204,.45);border-radius:0 8px 8px 0">'
+      + '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:#6699bb;margin-bottom:3px">NOTA DEL COACH</div>'
+      + '<div style="font-size:12px;color:#a8c8ee;line-height:1.55;white-space:pre-line">'+_e(String(note).trim())+'</div>'
+      + '</div>';
   }
   var days = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
   var html = '<div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;padding:6px 10px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.12);border-radius:6px;display:flex;align-items:center;gap:6px">'
@@ -11204,7 +11273,7 @@ function _buildClientMirrorView(plan) {
     var d = days[di];
     var exs = d.exercises || [];
     html += '<div style="margin-bottom:14px;border:1px solid rgba(244,244,240,.12);border-radius:10px;overflow:hidden">'
-      + '<div style="background:rgba(244,244,240,.07);padding:8px 12px;border-bottom:1px solid rgba(244,244,244,.08)">'
+      + '<div style="background:rgba(244,244,240,.07);padding:8px 12px;border-bottom:1px solid rgba(244,244,240,.08)">'
       + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span></div>';
     if (!exs.length) {
       html += '<div style="padding:10px 12px;color:#555;font-size:12px">Sin ejercicios</div>';
@@ -11227,10 +11296,17 @@ function _buildClientMirrorView(plan) {
       if (_vv && _vv.semana_variacion != null) {
         vvHtml = '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(100,150,255,.12);border:1px solid rgba(100,150,255,.3);color:#7aabff;margin-left:4px">↻ S'+_e(String(_vv.semana_variacion))+'</span>';
       }
-      var notesHtml = '';
-      if (ex.coachNote || ex.nota) {
-        notesHtml += '<div style="font-size:10px;color:#7788cc;margin-top:3px;line-height:1.4">📝 '+_e(ex.coachNote||ex.nota)+'</div>';
+      var tfwHtml = '';
+      if (ex.techniqueFromWeek != null) {
+        tfwHtml = '<div style="margin:6px 0 4px;padding:8px 10px;border-radius:8px;background:rgba(153,102,204,.15);border:2px solid rgba(153,102,204,.6);display:flex;align-items:flex-start;gap:8px">'
+          + '<span style="font-size:18px;line-height:1">✨</span>'
+          + '<div><div style="font-size:10px;font-weight:800;letter-spacing:.8px;color:#c080ff;margin-bottom:2px">NUEVA ESTA SEMANA</div>'
+          + '<div style="font-size:11px;color:#aaa;line-height:1.45">Tu coach activó esta técnica a partir de la semana '+_e(String(ex.techniqueFromWeek))+'. Léela con atención antes de empezar.</div>'
+          + '</div></div>';
       }
+      var notesHtml = '';
+      var rawCoachNote = ex.coachNote || ex.nota;
+      if (rawCoachNote) notesHtml += _coachNoteBlock(rawCoachNote);
       if (ex.techniqueNote) {
         notesHtml += '<div style="font-size:10px;color:#CC8844;margin-top:2px;line-height:1.4">⚙️ '+_e(ex.techniqueNote)+'</div>';
       }
@@ -11248,13 +11324,85 @@ function _buildClientMirrorView(plan) {
         + '<span style="font-size:13px;font-weight:700;color:#F4F4F0">'+_e(name)+'</span>'
         + _techBadge(tech !== 'straight' ? tech : '')
         + ssMark + vvHtml + '</div>'
-        + altHtml + notesHtml
+        + altHtml
+        + _techDescBlock(tech)
+        + tfwHtml
+        + notesHtml
         + '<div style="border-radius:6px;overflow:hidden;border:1px solid rgba(244,244,240,.07)">'+setsHtml+'</div>'
         + '</div>';
     }
     html += '</div>';
   }
   return html;
+}
+
+// Inline _auditClientMirrorParity (mirrors main file exactly)
+function _auditClientMirrorParity(plan, mirrorHtml) {
+  var missing = [], mismatched = [];
+  function _e(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function _fmtReps(rt) {
+    if (rt === 'SST-PROTOCOL')     return 'SST';
+    if (rt === 'SST-RIV-PROTOCOL') return 'SST-RIV';
+    if (rt === 999 || rt === '999' || rt === 'AMRAP') return 'AMRAP';
+    if (rt == null) return '?';
+    return String(rt);
+  }
+  function _fmtRIR(rir) { return rir == null ? 'RIR —' : 'RIR ' + rir; }
+  var html = mirrorHtml || '';
+  if (!plan || !Array.isArray(plan.days)) {
+    return { status:'OK', missing:[], mismatched:[], summary:'No plan to audit.' };
+  }
+  for (var di = 0; di < plan.days.length; di++) {
+    var d = plan.days[di];
+    var dayLabel = d.label || ('Día ' + (di+1));
+    if (html.indexOf(_e(dayLabel)) === -1)
+      missing.push({ field:'day.label', exerciseName:null, detail:dayLabel });
+    var exs = d.exercises || [];
+    for (var ei = 0; ei < exs.length; ei++) {
+      var ex = exs[ei];
+      var name = ex.exerciseName || ex.nombre || 'Ejercicio';
+      if (html.indexOf(_e(name)) === -1)
+        missing.push({ field:'exerciseName', exerciseName:name, detail:name });
+      var rawNote = ex.coachNote || ex.nota;
+      if (rawNote) {
+        if (html.indexOf(_e(String(rawNote).trim())) === -1)
+          missing.push({ field:'coachNote', exerciseName:name, detail:rawNote });
+        if (html.indexOf('NOTA DEL COACH') === -1)
+          missing.push({ field:'coachNote.label', exerciseName:name, detail:'NOTA DEL COACH' });
+      }
+      if (ex.techniqueNote && html.indexOf(_e(ex.techniqueNote)) === -1)
+        missing.push({ field:'techniqueNote', exerciseName:name, detail:ex.techniqueNote });
+      if (Array.isArray(ex.alternatives)) {
+        for (var ai = 0; ai < ex.alternatives.length; ai++) {
+          var a = ex.alternatives[ai];
+          var altName = typeof a === 'string' ? a : (a.nombre || a.name || String(a));
+          if (altName && html.indexOf(_e(altName)) === -1)
+            missing.push({ field:'alternative', exerciseName:name, detail:altName });
+        }
+      }
+      if (ex.supersetGroup != null && html.indexOf('SS:'+_e(String(ex.supersetGroup))) === -1)
+        missing.push({ field:'supersetGroup', exerciseName:name, detail:String(ex.supersetGroup) });
+      var sets = ex.sets || [];
+      for (var si = 0; si < sets.length; si++) {
+        var s = sets[si];
+        var eReps = _e(_fmtReps(s.repsTarget));
+        if (eReps && eReps !== '?' && html.indexOf(eReps) === -1)
+          mismatched.push({ field:'set.repsTarget', exerciseName:name, expected:eReps, found:'not found in HTML' });
+        var eRIR = _e(_fmtRIR(s.rirTarget));
+        if (html.indexOf(eRIR) === -1)
+          mismatched.push({ field:'set.rirTarget', exerciseName:name, expected:eRIR, found:'not found in HTML' });
+      }
+    }
+  }
+  var total = missing.length + mismatched.length;
+  return {
+    status:     total === 0 ? 'OK' : 'HAS_GAPS',
+    missing:    missing,
+    mismatched: mismatched,
+    summary:    total === 0
+      ? 'All plan fields found in mirror HTML.'
+      : total+' gap(s): '+missing.length+' missing, '+mismatched.length+' mismatched.'
+  };
 }
 
 // F58 helpers
@@ -11377,6 +11525,135 @@ function _makeF58Ex(overrides) {
   var r1 = _buildClientMirrorView(plan);
   var r2 = _buildClientMirrorView(plan);
   assert('F58-Ma', 'identical output on two calls', r1 === r2);
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE 59 — CLIENT MIRROR PARITY AUDIT
+// Pure: _auditClientMirrorParity(plan, mirrorHtml) → { status, missing, mismatched, summary }
+// ═══════════════════════════════════════════════════════════════════════════
+
+// F59-A: null plan → status OK, no crash
+(function() {
+  console.log('\nF59-A — null plan → OK');
+  var r = _auditClientMirrorParity(null, '<div>something</div>');
+  assert('F59-Aa', 'status OK on null plan', r.status === 'OK');
+  assert('F59-Ab', 'missing empty', r.missing.length === 0);
+  assert('F59-Ac', 'mismatched empty', r.mismatched.length === 0);
+})();
+
+// F59-B: basic plan rendered → auditor finds all fields → status OK
+(function() {
+  console.log('\nF59-B — basic plan parity OK');
+  var plan = { days:[{ dayIndex:0, label:'Día A', exercises:[{ exerciseName:'Press Banca', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }] }] };
+  var mirrorHtml = _buildClientMirrorView(plan);
+  var r = _auditClientMirrorParity(plan, mirrorHtml);
+  assert('F59-Ba', 'status OK', r.status === 'OK');
+  assert('F59-Bb', 'no missing', r.missing.length === 0);
+  assert('F59-Bc', 'no mismatched', r.mismatched.length === 0);
+})();
+
+// F59-C: coachNote missing in HTML → detected as MISSING_IN_MIRROR
+(function() {
+  console.log('\nF59-C — coachNote missing detected');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Squat', coachNote:'Espalda neutral', sets:[{ setIndex:0, repsTarget:5, rirTarget:1, load:100, restSeconds:180 }] }] }] };
+  var r = _auditClientMirrorParity(plan, '<div>Squat</div><div>D1</div><div>5</div><div>RIR 1</div>');
+  var hasCoachNote = r.missing.some(function(m){ return m.field === 'coachNote'; });
+  assert('F59-Ca', 'coachNote gap detected', hasCoachNote);
+  assert('F59-Cb', 'status HAS_GAPS', r.status === 'HAS_GAPS');
+})();
+
+// F59-D: alternative missing in HTML → detected
+(function() {
+  console.log('\nF59-D — alternative missing detected');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Curl', alternatives:['Martillo'], sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:20, restSeconds:60 }] }] }] };
+  var r = _auditClientMirrorParity(plan, '<div>Curl</div><div>D1</div><div>10</div><div>RIR 2</div>');
+  var hasAlt = r.missing.some(function(m){ return m.field === 'alternative' && m.detail === 'Martillo'; });
+  assert('F59-Da', 'alternative Martillo gap detected', hasAlt);
+})();
+
+// F59-E: supersetGroup missing in HTML → detected
+(function() {
+  console.log('\nF59-E — supersetGroup missing detected');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Curl', supersetGroup:'B', sets:[{ setIndex:0, repsTarget:12, rirTarget:2, load:15, restSeconds:0 }] }] }] };
+  var r = _auditClientMirrorParity(plan, '<div>Curl</div><div>D1</div><div>12</div><div>RIR 2</div>');
+  var hasSS = r.missing.some(function(m){ return m.field === 'supersetGroup'; });
+  assert('F59-Ea', 'supersetGroup gap detected', hasSS);
+})();
+
+// F59-F: set repsTarget missing in HTML → mismatched
+(function() {
+  console.log('\nF59-F — set repsTarget mismatch detected');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Press', sets:[{ setIndex:0, repsTarget:6, rirTarget:1, load:90, restSeconds:90 }] }] }] };
+  var r = _auditClientMirrorParity(plan, '<div>Press</div><div>D1</div><div>RIR 1</div>');
+  var hasMismatch = r.mismatched.some(function(m){ return m.field === 'set.repsTarget' && m.expected === '6'; });
+  assert('F59-Fa', 'repsTarget=6 mismatch detected', hasMismatch);
+})();
+
+// F59-G: techniqueNote missing in HTML → detected
+(function() {
+  console.log('\nF59-G — techniqueNote missing detected');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Pull-up', techniqueNote:'Pausa arriba', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:0, restSeconds:90 }] }] }] };
+  var r = _auditClientMirrorParity(plan, '<div>Pull-up</div><div>D1</div><div>8</div><div>RIR 2</div>');
+  var hasTN = r.missing.some(function(m){ return m.field === 'techniqueNote'; });
+  assert('F59-Ga', 'techniqueNote gap detected', hasTN);
+})();
+
+// F59-H: nivel_medio renders full label FUNDAMENTAL (not abbreviated 'F')
+(function() {
+  console.log('\nF59-H — nivel_medio full label FUNDAMENTAL');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Squat', nivel_medio:'fundamental', sets:[{ setIndex:0, repsTarget:5, rirTarget:1, load:150, restSeconds:180 }] }] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F59-Ha', 'FUNDAMENTAL label present', r.indexOf('FUNDAMENTAL') !== -1);
+  assert('F59-Hb', 'abbreviated F not used as badge', r.indexOf('>F<') === -1);
+})();
+
+// F59-I: zona badge present for numeric repsTarget (e.g. 8 → MOD. PESADAS)
+(function() {
+  console.log('\nF59-I — zona badge for numeric repsTarget');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Press', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F59-Ia', 'zona badge MOD. PESADAS present', r.indexOf('MOD. PESADAS') !== -1);
+})();
+
+// F59-J: coachNote renders "NOTA DEL COACH" label (not 📝 emoji only)
+(function() {
+  console.log('\nF59-J — coachNote renders NOTA DEL COACH label');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Remo', coachNote:'Codos pegados', sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:60, restSeconds:90 }] }] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F59-Ja', 'NOTA DEL COACH label present', r.indexOf('NOTA DEL COACH') !== -1);
+  assert('F59-Jb', 'coachNote text present', r.indexOf('Codos pegados') !== -1);
+})();
+
+// F59-K: SET_NOTE_LABELS pretty label rendered for known setNote
+(function() {
+  console.log('\nF59-K — SET_NOTE_LABELS pretty label for S1 · FUERZA');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Sentadilla', sets:[{ setIndex:0, repsTarget:5, rirTarget:1, load:130, restSeconds:180, setNote:'S1 · FUERZA' }] }] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F59-Ka', 'pretty label PESADO present', r.indexOf('PESADO') !== -1);
+  assert('F59-Kb', 'raw setNote S1 · FUERZA not shown verbatim in badge', r.indexOf('>S1 · FUERZA<') === -1);
+})();
+
+// F59-L: no mutation of plan input
+(function() {
+  console.log('\nF59-L — no mutation');
+  var plan = _makeF58Plan({ ex:{ exerciseName:'Peso Muerto', nivel_medio:'fundamental', coachNote:'Neutro', sets:[{setIndex:0,repsTarget:8,rirTarget:2,load:100,restSeconds:120}] } });
+  var snap = JSON.stringify(plan);
+  _buildClientMirrorView(plan);
+  assert('F59-La', 'plan unchanged after _buildClientMirrorView', JSON.stringify(plan) === snap);
+  _auditClientMirrorParity(plan, _buildClientMirrorView(plan));
+  assert('F59-Lb', 'plan unchanged after _auditClientMirrorParity', JSON.stringify(plan) === snap);
+})();
+
+// F59-M: determinism — both functions return same output on repeated calls
+(function() {
+  console.log('\nF59-M — determinism');
+  var plan = _makeF58Plan({ ex:{ exerciseName:'Hack Squat', nivel_medio:'suplementario', alternatives:['Leg Press'], coachNote:'3s excéntrico', sets:[{setIndex:0,repsTarget:12,rirTarget:2,load:120,restSeconds:90}] } });
+  var h1 = _buildClientMirrorView(plan);
+  var h2 = _buildClientMirrorView(plan);
+  assert('F59-Ma', '_buildClientMirrorView deterministic', h1 === h2);
+  var a1 = JSON.stringify(_auditClientMirrorParity(plan, h1));
+  var a2 = JSON.stringify(_auditClientMirrorParity(plan, h1));
+  assert('F59-Mb', '_auditClientMirrorParity deterministic', a1 === a2);
 })();
 
 process.exit(_fail > 0 ? 1 : 0);
