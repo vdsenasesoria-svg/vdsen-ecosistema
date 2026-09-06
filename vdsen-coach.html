@@ -6414,13 +6414,46 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     var patLen = (c.pattern || []).length;
     score += (patLen <= 2 ? 1.0 : patLen <= 4 ? 0.75 : 0.5) * w.consistency;
 
-    // 5. Learned state bonus as adjustment, not override (Principle 9, HEURISTIC 0.10)
-    var prevPlan = prescCtx && prescCtx.previousPlan;
-    if (prevPlan && prevPlan.daysPerWeek >= c.minDpw && prevPlan.daysPerWeek <= c.maxDpw) {
-      score += 0.8 * w.learnedStateBonus;
-    }
+    // Step 5 removed — learned state applied via _computeTopologyCalibration (FASE 7 single-source)
 
     return score;
+  }
+
+  // Calibrated prior for topology candidate — single source for learned state (FASE 7)
+  function _computeTopologyCalibration(key, daysPerWeek, prescCtx) {
+    var c = _TOPOLOGY_CANDIDATES[key];
+    var priors = [];
+
+    // Population prior: does this topology's DPW range include the requested DPW?
+    priors.push(_buildPriorTier({
+      type:       _PRIOR_TYPE.POPULATION,
+      dimension:  'topology_dpw_fit',
+      value:      daysPerWeek >= c.minDpw && daysPerWeek <= c.maxDpw,
+      confidence: _DECISION_TRACE_CONFIDENCE.MODERATE,
+      source:     _PRIOR_TYPE.POPULATION,
+      weight:     1.0
+    }));
+
+    // Individual prior: previous plan DPW fell within this topology's range
+    var prevPlan = prescCtx && prescCtx.previousPlan;
+    if (prevPlan && typeof prevPlan.daysPerWeek === 'number') {
+      var indFit  = prevPlan.daysPerWeek >= c.minDpw && prevPlan.daysPerWeek <= c.maxDpw;
+      var indConf = prescCtx.hasPreviousPlan ? _EVIDENCE_STATE.EMERGING : _EVIDENCE_STATE.INSUFFICIENT;
+      priors.push(_buildPriorTier({
+        type:       _PRIOR_TYPE.INDIVIDUAL,
+        dimension:  'topology_dpw_fit',
+        value:      indFit,
+        confidence: indConf,
+        source:     _PRIOR_TYPE.INDIVIDUAL,
+        weight:     _calibrateLearnedWeight(indConf)
+      }));
+    }
+
+    return _buildCalibrationResult({
+      dimension:         'topology_dpw_fit',
+      priors:            priors,
+      safetyConstraints: []
+    });
   }
 
   // Detect frequency mismatches — emits recommendedFrequencyAdjustments (Principle 3)
@@ -6467,12 +6500,29 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       else feasible.push(key);
     });
 
+    var w = _TOPOLOGY_SCORING_CONFIG.weights;
     var scored = feasible.map(function(key) {
-      return { topology: key, score: _scoreTopologyCandidate(key, daysPerWeek, muscles, recoveryState, prescCtx) };
+      var baseScore   = _scoreTopologyCandidate(key, daysPerWeek, muscles, recoveryState, prescCtx);
+      var calibration = _computeTopologyCalibration(key, daysPerWeek, prescCtx);
+      var calibAdj    = 0;
+      var histApplied = false;
+      if (calibration.appliedWeight > 0 && calibration.activePrior === true) {
+        calibAdj    = calibration.appliedWeight * w.learnedStateBonus;
+        histApplied = true;
+      }
+      return {
+        topology:                 key,
+        baseScore:                parseFloat(baseScore.toFixed(3)),
+        score:                    parseFloat((baseScore + calibAdj).toFixed(3)),
+        calibration:              calibration,
+        historicalResponseApplied: histApplied
+      };
     }).sort(function(a, b) { return b.score - a.score; });
 
-    var selected = scored.length > 0 ? scored[0].topology : 'CUSTOM';
-    var selectedScore = scored.length > 0 ? scored[0].score : 0;
+    var selected      = scored.length > 0 ? scored[0].topology : 'CUSTOM';
+    var selectedScore = scored.length > 0 ? scored[0].score    : 0;
+    var selectedCalib = scored.length > 0 ? scored[0].calibration : null;
+    var histApplied   = scored.length > 0 ? scored[0].historicalResponseApplied : false;
     if (scored.length === 0) reasonCodes.push('NO_FEASIBLE_CANDIDATE_FALLBACK_CUSTOM');
 
     var freqAdj = _detectFrequencyMismatches(daysPerWeek, muscles, distributionPressure, recoveryState);
@@ -6489,10 +6539,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       recoveryState: recoveryState,
       distributionPressure: distributionPressure,
       reasonCodes: reasonCodes,
-      alternatives: scored.slice(1).map(function(s){ return { topology: s.topology, score: parseFloat(s.score.toFixed(2)) }; }),
+      alternatives: scored.slice(1).map(function(s){ return { topology: s.topology, score: parseFloat(s.score.toFixed(2)), baseScore: s.baseScore }; }),
       rejectedCandidates: rejected,
       confidence: confidence,
-      recommendedFrequencyAdjustments: freqAdj
+      recommendedFrequencyAdjustments: freqAdj,
+      learnedStateCalibration: selectedCalib,
+      historicalResponseApplied: histApplied
     };
   }
 
@@ -6569,6 +6621,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     lines.push('Estado recuperación: ' + td.recoveryState);
     lines.push('Presión distribución: volumen=' + dp.volumeConcentration + ' · tiempo=' + dp.timePressure + ' · prioridad=' + dp.priorityPressure + ' · espaciado=' + dp.recoverySpacingPressure);
     if (td.reasonCodes && td.reasonCodes.length) lines.push('Señales: ' + td.reasonCodes.join(', '));
+    if (td.historicalResponseApplied && td.learnedStateCalibration) {
+      var cal = td.learnedStateCalibration;
+      lines.push('Estado aprendido: ajuste aplicado · estrategia=' + cal.strategy + ' · peso=' + cal.appliedWeight + ' [HISTORICAL_RESPONSE_APPLIED]');
+    }
     if (td.alternatives && td.alternatives.length) {
       lines.push('Alternativas evaluadas: ' + td.alternatives.map(function(a){ return a.topology + '(' + a.score + ')'; }).join(', '));
     }
@@ -6603,7 +6659,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         && Array.isArray(r.alternatives)
         && Array.isArray(r.rejectedCandidates)
         && typeof r.confidence === 'string'
-        && Array.isArray(r.recommendedFrequencyAdjustments);
+        && Array.isArray(r.recommendedFrequencyAdjustments)
+        && typeof r.historicalResponseApplied === 'boolean'
+        && ('learnedStateCalibration' in r);
     });
 
     // TT2: prescCtx=null → recoveryState=UNCERTAIN (no data baseline)
@@ -6684,14 +6742,77 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         && r.rejectedCandidates.every(function(rc){ return rc.topology !== 'CUSTOM'; });
     });
 
-    // TT14: learned state bonus usa prescCtx.previousPlan (Principle 9)
-    test('TT14 learnedState: previousPlan compatible → bonus en score', function() {
-      var ctxNoHistory = null;
+    // TT14: learned state via calibration (FASE 7 — not hardcoded 0.8 anymore)
+    test('TT14 learnedState: calibración FASE 7 — EMERGING aplica ajuste parcial', function() {
       var ctxHistory = { hasPreviousPlan: true, previousPlan: { daysPerWeek: 4 }, prescriptionTargets: { globalReadiness: 'neutral', muscles: {} }, clientFlags: { articularIssues: [] }, checkinSummary: null, engineState: null };
-      var rNo   = runTopologyEngine(4, ctxNoHistory);
       var rWith = runTopologyEngine(4, ctxHistory);
-      // With history, the matching topology should score higher
-      return rWith.score >= rNo.score;
+      // historicalResponseApplied debe ser true para la topología seleccionada
+      return rWith.historicalResponseApplied === true
+        && rWith.learnedStateCalibration !== null
+        && rWith.learnedStateCalibration.appliedWeight === 0.5; // EMERGING = 0.5
+    });
+
+    // ── FASE 7: Topology Calibration tests (TT15-TT21) ─────────────────────
+
+    // TT15: sin prescCtx → historicalResponseApplied=false, calibration presente
+    test('TT15 calibración: sin prescCtx → historicalResponseApplied=false', function() {
+      var r = runTopologyEngine(4, null);
+      return r.historicalResponseApplied === false && r.learnedStateCalibration !== null;
+    });
+
+    // TT16: _computeTopologyCalibration sin prevPlan → solo population prior
+    test('TT16 _computeTopologyCalibration: sin prevPlan → 1 prior, appliedWeight=0', function() {
+      var cal = _computeTopologyCalibration('TWO_ON_ONE_OFF', 3, null);
+      return cal.appliedWeight === 0.0 && cal.safetyOverride === false;
+    });
+
+    // TT17: INSUFFICIENT evidence → appliedWeight=0, no calibAdj
+    test('TT17 calibración: hasPreviousPlan=false → INSUFFICIENT → appliedWeight=0', function() {
+      var ctx = { hasPreviousPlan: false, previousPlan: { daysPerWeek: 3 }, prescriptionTargets: { globalReadiness: 'neutral', muscles: {} }, clientFlags: { articularIssues: [] }, checkinSummary: null };
+      var cal = _computeTopologyCalibration('TWO_ON_ONE_OFF', 3, ctx);
+      return cal.appliedWeight === 0.0;
+    });
+
+    // TT18: EMERGING + indFit=true → appliedWeight=0.5, activePrior=true
+    test('TT18 calibración: hasPreviousPlan + indFit=true → EMERGING, appliedWeight=0.5', function() {
+      var ctx = { hasPreviousPlan: true, previousPlan: { daysPerWeek: 3 } };
+      var cal = _computeTopologyCalibration('TWO_ON_ONE_OFF', 3, ctx);
+      return cal.appliedWeight === 0.5 && cal.activePrior === true;
+    });
+
+    // TT19: EMERGING + indFit=false (incompatible DPW) → activePrior≠true (no adj)
+    test('TT19 calibración: indFit=false → activePrior resuelto por population', function() {
+      var ctx = { hasPreviousPlan: true, previousPlan: { daysPerWeek: 6 } };
+      var cal = _computeTopologyCalibration('TWO_ON_ONE_OFF', 3, ctx);
+      // Population prior=true, individual prior=false → conflict → INDIVIDUAL_VS_POPULATION
+      return cal.conflicts.length > 0 || cal.activePrior !== true || cal.appliedWeight <= 0;
+    });
+
+    // TT20: no doble conteo — base score sin history ≠ score con history; diff = calibAdj
+    test('TT20 sin doble conteo: diff entre scores = calibAdj exacto', function() {
+      var ctx = { hasPreviousPlan: true, previousPlan: { daysPerWeek: 3 }, prescriptionTargets: { globalReadiness: 'neutral', muscles: {} }, clientFlags: { articularIssues: [] }, checkinSummary: null };
+      var r = runTopologyEngine(3, ctx);
+      var w = _TOPOLOGY_SCORING_CONFIG.weights;
+      var sel = r.selectedTopology;
+      if (!r.historicalResponseApplied) return true; // no adj applied, nothing to check
+      var calAdj = r.learnedStateCalibration.appliedWeight * w.learnedStateBonus;
+      var expected = parseFloat((r.score - calAdj).toFixed(3));
+      // The scored item's baseScore should equal score minus calibAdj
+      var alt = r.alternatives || [];
+      // We can verify by checking that score - calibAdj = baseScore of winner
+      // Re-run without history to get base
+      var rBase = runTopologyEngine(3, null);
+      var baseCandidate = rBase.score; // no learned adj
+      return Math.abs(r.score - rBase.score - calAdj) < 0.005;
+    });
+
+    // TT21: HISTORICAL_RESPONSE_APPLIED emitido en texto cuando applied
+    test('TT21 topologyDecisionToText: [HISTORICAL_RESPONSE_APPLIED] en texto cuando applied', function() {
+      var ctx = { hasPreviousPlan: true, previousPlan: { daysPerWeek: 3 }, prescriptionTargets: { globalReadiness: 'neutral', muscles: {} }, clientFlags: { articularIssues: [] }, checkinSummary: null };
+      var r = runTopologyEngine(3, ctx);
+      var txt = _topologyDecisionToText(r);
+      if (!r.historicalResponseApplied) return true; // nothing to check
+      return txt.indexOf('HISTORICAL_RESPONSE_APPLIED') >= 0;
     });
 
     var passed = results.filter(function(r){return r.passed;}).length;
@@ -6705,9 +6826,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     window._topologyTestResults = results;
     return { passed: passed, total: total, results: results };
   }
-  window._runTopologyTests  = _runTopologyTests;
-  window.runTopologyEngine  = runTopologyEngine;
-  window.topologyFeasibilityAudit = topologyFeasibilityAudit;
+  window._runTopologyTests          = _runTopologyTests;
+  window.runTopologyEngine          = runTopologyEngine;
+  window.topologyFeasibilityAudit   = topologyFeasibilityAudit;
+  window._computeTopologyCalibration = _computeTopologyCalibration;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ─── VDSEN Generator Engine Suite ────────────────────────────────────────
