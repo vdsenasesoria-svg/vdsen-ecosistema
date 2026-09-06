@@ -9533,6 +9533,7 @@ El esfuerzo no es negociable.
   // Returns only the subset of activeState valid for the given engine.
   // 'topology'     → topologyState only (no exerciseState, no slotState)
   // 'distribution' → slotState only    (no exerciseState, no topologyState)
+  // 'stability'    → exerciseState only (no topologyState, no slotState)
   // Returns null when the relevant subset is absent.
   function _selectLearnedStateForEngine(activeState, engine) {
     if (!activeState || typeof activeState !== 'object') return null;
@@ -9543,6 +9544,10 @@ El esfuerzo no es negociable.
     if (engine === 'distribution') {
       return (activeState.slotState && typeof activeState.slotState === 'object')
         ? { slotState: activeState.slotState } : null;
+    }
+    if (engine === 'stability') {
+      return (activeState.exerciseState && typeof activeState.exerciseState === 'object')
+        ? { exerciseState: activeState.exerciseState } : null;
     }
     return null;
   }
@@ -9629,6 +9634,119 @@ El esfuerzo no es negociable.
   }
   window._applyLearnedDistributionFeedback = _applyLearnedDistributionFeedback;
 
+  // ─── FASE 46: Exercise Learned State Activation ────────────────────────────
+  // Adjusts exercise candidate ranking using persisted exerciseState.
+  // candidates: Array<{ id, name?, baseScore?, score?, hardRejected?, slotCompatible? }>
+  // activeLearnedState: the full ACTIVE learnedState (null-safe; no-op when null)
+  // context: { continuityType?, continuityStatus? } — slot-level context
+  //
+  // Decision order (preserved):
+  //   SAFETY/VETO → CONSTRAINTS → SLOT COMPATIBILITY → BASE SCORE → LEARNED EXERCISE ADJUSTMENT → FINAL
+  //
+  // Invariants:
+  //   - hardRejected and slotCompatible=false candidates NEVER adjusted
+  //   - frequencyTarget NEVER touched
+  //   - SAME_SLOT context → no state transfer (different exercise identity)
+  //   - UNRESOLVED continuity or AMBIGUOUS identity → no adjustment
+  //   - confidence NONE/LOW → adjustment neutral
+  //   - input arrays/objects not mutated
+  //   - trace source:'HISTORY' only when influence actually changed ranking
+  //   - 0 new Firestore reads (pure sync function)
+  //
+  // Returns { candidates: [...enriched], trace: [...] }
+  function _applyLearnedExerciseAdjustment(candidates, activeLearnedState, context) {
+    var base = { candidates: candidates, trace: [] };
+    if (!Array.isArray(candidates)) return base;
+    if (!candidates.length) return base;
+    var subset = _selectLearnedStateForEngine(activeLearnedState, 'stability');
+    if (!subset) return base;
+    var exState = subset.exerciseState;
+    var exercises = (exState.exercises && typeof exState.exercises === 'object') ? exState.exercises : null;
+    if (!exercises) return base;
+
+    var ctx = context || {};
+    // SAME_SLOT: replacement context — no exercise state transfer between distinct identities
+    if (ctx.continuityType === 'SAME_SLOT') return base;
+
+    var anyInfluence = false;
+    var adjusted = candidates.map(function(c) {
+      var bs = typeof c.baseScore === 'number' ? c.baseScore : (typeof c.score === 'number' ? c.score : 0);
+      var enriched = Object.assign({}, c, {
+        baseScore: bs,
+        learnedAdjustment: 0,
+        adjustedScore: bs,
+        reasonCodes: [],
+        learnedInfluence: false
+      });
+
+      // Safety gates: hard-rejected or slot-incompatible → skip adjustment
+      if (c.hardRejected || c.slotCompatible === false) return enriched;
+
+      // Find per-exercise record by identity (name or id, case-insensitive)
+      var lookup = String(c.name || c.id || '').toLowerCase();
+      var record = null;
+      var keys = Object.keys(exercises);
+      for (var ki = 0; ki < keys.length; ki++) {
+        if (keys[ki].toLowerCase() === lookup) { record = exercises[keys[ki]]; break; }
+      }
+      if (!record) return enriched;
+
+      // UNRESOLVED continuity or AMBIGUOUS identity → no adjustment
+      if (record.continuityStatus === 'UNRESOLVED') return enriched;
+      if (record.continuityType === 'AMBIGUOUS') return enriched;
+
+      // Confidence gate: NONE or LOW → neutral
+      var conf = String(record.confidence || 'none').toLowerCase();
+      if (conf === 'none' || conf === 'low') return enriched;
+
+      // MODERATE or HIGH: compute adjustment
+      var adj = 0;
+      var codes = [];
+
+      if (Array.isArray(record.painSignals) && record.painSignals.length > 0) {
+        adj = -0.1;
+        codes.push('EXERCISE_PAIN_HISTORY');
+      } else if (record.continuityType === 'KEPT' || record.continuityType === 'MOVED') {
+        var obs = Array.isArray(record.observations) ? record.observations : [];
+        var positive = obs.some(function(o) {
+          var s = String(o).toLowerCase();
+          return s.indexOf('good') >= 0 || s.indexOf('positive') >= 0 ||
+                 s.indexOf('progressive') >= 0 || s.indexOf('toleran') >= 0;
+        });
+        if (positive) {
+          adj = 0.1;
+          codes.push('EXERCISE_POSITIVE_HISTORY');
+        }
+      }
+
+      if (adj === 0) return enriched;
+
+      anyInfluence = true;
+      return Object.assign({}, enriched, {
+        learnedAdjustment: adj,
+        adjustedScore: bs + adj,
+        reasonCodes: codes,
+        learnedInfluence: true
+      });
+    });
+
+    // Return enriched candidates regardless; trace only when influence was applied.
+    return {
+      candidates: adjusted,
+      trace: anyInfluence ? [{
+        source: 'HISTORY',
+        engine: 'stability',
+        reasonCodes: ['EXERCISE_LEARNED_STATE_APPLIED'],
+        evidence: {
+          stateVersion: exState.stateVersion || null,
+          confidence: exState.overallConfidence || null,
+          influencedCount: adjusted.filter(function(c) { return c.learnedInfluence; }).length
+        }
+      }] : []
+    };
+  }
+  window._applyLearnedExerciseAdjustment = _applyLearnedExerciseAdjustment;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -9672,6 +9790,14 @@ El esfuerzo no es negociable.
       const _lsDistDecision = prescCtx ? { frequencyTarget: null, spacing: null, alternatives: [] } : null;
       const _lsDistResult = _applyLearnedDistributionFeedback(_lsDistDecision, _activeLearnedState);
       if (_lsDistResult.trace.length) console.info('[VDSEN LS] distribution trace:', _lsDistResult.trace);
+
+      // FASE 46: Exercise Learned State Adjustment
+      // Candidates derived from previous plan exercises; 0 new Firestore reads.
+      const _lsExerciseCandidates = (prescCtx && prescCtx.previousPlan && Array.isArray(prescCtx.previousPlan.exercises))
+        ? prescCtx.previousPlan.exercises.map(function(name) { return { id: name, name: name, score: 0.5 }; })
+        : [];
+      const _lsExerciseResult = _applyLearnedExerciseAdjustment(_lsExerciseCandidates, _activeLearnedState, {});
+      if (_lsExerciseResult.trace.length) console.info('[VDSEN LS] exercise trace:', _lsExerciseResult.trace);
 
       setStatus('<span style="color:#888">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();

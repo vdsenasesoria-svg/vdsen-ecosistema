@@ -7814,7 +7814,85 @@ function _selectLearnedStateForEngine(activeState, engine) {
     return (activeState.slotState && typeof activeState.slotState === 'object')
       ? { slotState: activeState.slotState } : null;
   }
+  if (engine === 'stability') {
+    return (activeState.exerciseState && typeof activeState.exerciseState === 'object')
+      ? { exerciseState: activeState.exerciseState } : null;
+  }
   return null;
+}
+// ── FASE 46: Exercise Learned State Activation — inline copy ─────────────────
+function _applyLearnedExerciseAdjustment(candidates, activeLearnedState, context) {
+  var base = { candidates: candidates, trace: [] };
+  if (!Array.isArray(candidates)) return base;
+  if (!candidates.length) return base;
+  var subset = _selectLearnedStateForEngine(activeLearnedState, 'stability');
+  if (!subset) return base;
+  var exState = subset.exerciseState;
+  var exercises = (exState.exercises && typeof exState.exercises === 'object') ? exState.exercises : null;
+  if (!exercises) return base;
+  var ctx = context || {};
+  if (ctx.continuityType === 'SAME_SLOT') return base;
+  var anyInfluence = false;
+  var adjusted = candidates.map(function(c) {
+    var bs = typeof c.baseScore === 'number' ? c.baseScore : (typeof c.score === 'number' ? c.score : 0);
+    var enriched = Object.assign({}, c, {
+      baseScore: bs,
+      learnedAdjustment: 0,
+      adjustedScore: bs,
+      reasonCodes: [],
+      learnedInfluence: false
+    });
+    if (c.hardRejected || c.slotCompatible === false) return enriched;
+    var lookup = String(c.name || c.id || '').toLowerCase();
+    var record = null;
+    var keys = Object.keys(exercises);
+    for (var ki = 0; ki < keys.length; ki++) {
+      if (keys[ki].toLowerCase() === lookup) { record = exercises[keys[ki]]; break; }
+    }
+    if (!record) return enriched;
+    if (record.continuityStatus === 'UNRESOLVED') return enriched;
+    if (record.continuityType === 'AMBIGUOUS') return enriched;
+    var conf = String(record.confidence || 'none').toLowerCase();
+    if (conf === 'none' || conf === 'low') return enriched;
+    var adj = 0;
+    var codes = [];
+    if (Array.isArray(record.painSignals) && record.painSignals.length > 0) {
+      adj = -0.1;
+      codes.push('EXERCISE_PAIN_HISTORY');
+    } else if (record.continuityType === 'KEPT' || record.continuityType === 'MOVED') {
+      var obs = Array.isArray(record.observations) ? record.observations : [];
+      var positive = obs.some(function(o) {
+        var s = String(o).toLowerCase();
+        return s.indexOf('good') >= 0 || s.indexOf('positive') >= 0 ||
+               s.indexOf('progressive') >= 0 || s.indexOf('toleran') >= 0;
+      });
+      if (positive) {
+        adj = 0.1;
+        codes.push('EXERCISE_POSITIVE_HISTORY');
+      }
+    }
+    if (adj === 0) return enriched;
+    anyInfluence = true;
+    return Object.assign({}, enriched, {
+      learnedAdjustment: adj,
+      adjustedScore: bs + adj,
+      reasonCodes: codes,
+      learnedInfluence: true
+    });
+  });
+  return {
+    candidates: adjusted,
+    trace: anyInfluence ? [{
+      source: 'HISTORY',
+      engine: 'stability',
+      reasonCodes: ['EXERCISE_LEARNED_STATE_APPLIED'],
+      evidence: {
+        stateVersion: exState.stateVersion || null,
+        confidence: exState.overallConfidence || null,
+        influencedCount: adjusted.filter(function(c) { return c.learnedInfluence; }).length
+      }
+    }] : []
+  };
 }
 function _applyLearnedTopologyAdjustment(topologyCandidates, activeLearnedState) {
   if (!Array.isArray(topologyCandidates)) return { candidates: topologyCandidates, trace: [] };
@@ -8067,12 +8145,342 @@ function _applyLearnedDistributionFeedback(distributionDecision, activeLearnedSt
   assert('F45-Je', 'ejecución <5ms (sin I/O)', elapsed < 5);
 })();
 
-// ═════════════════════════ RESUMEN ═════════════════════════
-console.log('\n' + '═'.repeat(60));
-console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
-if (_errors.length) {
-  console.log('\nFALLIDOS:');
-  _errors.forEach(function(e){ console.log('  • '+e); });
-}
-console.log('═'.repeat(60));
+// ═════════════════ F46: Exercise Learned State Activation ═══════════════════
+
+// F46-A: ACTIVE + positive obs → favors KEEP (adj +0.1, trace emitted)
+(function() {
+  console.log('\nF46-A — ACTIVE exerciseState positivo: favorece KEEP sobre candidato neutro');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'press banca': {
+          continuityType: 'KEPT',
+          continuityStatus: 'RESOLVED',
+          confidence: 'moderate',
+          observations: ['good_tolerance', 'progressive_load'],
+          painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [
+    { id: 'press banca', name: 'press banca', score: 0.5 },
+    { id: 'press inclinado', name: 'press inclinado', score: 0.5 }
+  ];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Aa', 'candidato con historia positiva subió adjustedScore', result.candidates[0].adjustedScore > result.candidates[0].baseScore);
+  assert('F46-Ab', 'learnedAdjustment = +0.1', Math.abs(result.candidates[0].learnedAdjustment - 0.1) < 0.001);
+  assert('F46-Ac', 'candidato neutro sin cambio de adjustedScore', result.candidates[1].adjustedScore === result.candidates[1].baseScore);
+  assert('F46-Ad', 'trace source HISTORY emitido', result.trace.length === 1 && result.trace[0].source === 'HISTORY');
+  assert('F46-Ae', 'trace engine = stability', result.trace[0].engine === 'stability');
+  assert('F46-Af', 'reasonCode EXERCISE_POSITIVE_HISTORY', result.candidates[0].reasonCodes.indexOf('EXERCISE_POSITIVE_HISTORY') >= 0);
+  assert('F46-Ag', 'learnedInfluence = true en candidato ajustado', result.candidates[0].learnedInfluence === true);
+  assert('F46-Ah', 'learnedInfluence = false en candidato neutro', result.candidates[1].learnedInfluence === false);
+})();
+
+// F46-B: painSignals penaliza candidato (adj -0.1, trace emitido)
+(function() {
+  console.log('\nF46-B — painSignals: penaliza candidato con historial de dolor');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'sentadilla': {
+          continuityType: 'KEPT',
+          continuityStatus: 'RESOLVED',
+          confidence: 'high',
+          observations: [],
+          painSignals: ['rodilla']
+        }
+      }
+    }
+  };
+  var candidates = [
+    { id: 'sentadilla', name: 'sentadilla', score: 0.7 },
+    { id: 'prensa', name: 'prensa', score: 0.5 }
+  ];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Ba', 'candidato con dolor bajó adjustedScore', result.candidates[0].adjustedScore < result.candidates[0].baseScore);
+  assert('F46-Bb', 'learnedAdjustment = -0.1', Math.abs(result.candidates[0].learnedAdjustment + 0.1) < 0.001);
+  assert('F46-Bc', 'reasonCode EXERCISE_PAIN_HISTORY', result.candidates[0].reasonCodes.indexOf('EXERCISE_PAIN_HISTORY') >= 0);
+  assert('F46-Bd', 'trace emitido', result.trace.length === 1);
+})();
+
+// F46-C: confidence NONE → sin cambio (adj = 0, sin trace)
+(function() {
+  console.log('\nF46-C — confidence NONE: sin ajuste');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'jalón al pecho': {
+          continuityType: 'KEPT',
+          continuityStatus: 'RESOLVED',
+          confidence: 'none',
+          observations: ['good_tolerance'],
+          painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [{ id: 'jalón al pecho', name: 'jalón al pecho', score: 0.6 }];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Ca', 'adjustedScore sin cambio con confidence none', result.candidates[0].adjustedScore === 0.6);
+  assert('F46-Cb', 'sin trace con confidence none', result.trace.length === 0);
+})();
+
+// F46-D: confidence LOW → sin cambio (adj = 0, sin trace)
+(function() {
+  console.log('\nF46-D — confidence LOW: sin ajuste');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'remo con barra': {
+          continuityType: 'KEPT',
+          continuityStatus: 'RESOLVED',
+          confidence: 'low',
+          observations: ['good_tolerance'],
+          painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [{ id: 'remo con barra', name: 'remo con barra', score: 0.6 }];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Da', 'adjustedScore sin cambio con confidence low', result.candidates[0].adjustedScore === 0.6);
+  assert('F46-Db', 'sin trace con confidence low', result.trace.length === 0);
+})();
+
+// F46-E: STALE learnedState → ignorado (getActivePersistedLearnedState retorna null)
+(function() {
+  console.log('\nF46-E — STALE: _getActivePersistedLearnedState retorna null → sin efecto');
+  var staleLS = {
+    status: 'STALE',
+    exerciseState: {
+      exercises: {
+        'curl bíceps': {
+          continuityType: 'KEPT', continuityStatus: 'RESOLVED',
+          confidence: 'high', observations: ['good_tolerance'], painSignals: []
+        }
+      }
+    }
+  };
+  var activeLS = _getActivePersistedLearnedState({ learnedState: staleLS });
+  assert('F46-Ea', '_getActivePersistedLearnedState retorna null para STALE', activeLS === null);
+  var candidates = [{ id: 'curl bíceps', name: 'curl bíceps', score: 0.5 }];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Eb', 'score sin cambio con STALE', result.candidates[0].adjustedScore === undefined || result.candidates === candidates);
+  assert('F46-Ec', 'sin trace con STALE', result.trace.length === 0);
+})();
+
+// F46-F: INVALID learnedState → ignorado
+(function() {
+  console.log('\nF46-F — INVALID: sin efecto en exercise selection');
+  var invalidLS = { status: 'INVALID', exerciseState: { exercises: { 'press militar': { continuityType: 'KEPT', continuityStatus: 'RESOLVED', confidence: 'high', observations: ['good_tolerance'], painSignals: [] } } } };
+  var activeLS = _getActivePersistedLearnedState({ learnedState: invalidLS });
+  assert('F46-Fa', '_getActivePersistedLearnedState retorna null para INVALID', activeLS === null);
+  var result = _applyLearnedExerciseAdjustment([{ id: 'press militar', name: 'press militar', score: 0.5 }], activeLS, {});
+  assert('F46-Fb', 'sin trace con INVALID', result.trace.length === 0);
+})();
+
+// F46-G: hardRejected (veto) nunca ajustado aunque haya historia positiva
+(function() {
+  console.log('\nF46-G — hardRejected: veto gana siempre, sin ajuste positivo');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'peso muerto': {
+          continuityType: 'KEPT', continuityStatus: 'RESOLVED',
+          confidence: 'high', observations: ['good_tolerance', 'progressive_load'], painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [
+    { id: 'peso muerto', name: 'peso muerto', score: 0.8, hardRejected: true },
+    { id: 'rdl', name: 'rdl', score: 0.5 }
+  ];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  var pesoMuerto = result.candidates[0];
+  assert('F46-Ga', 'hardRejected: learnedAdjustment = 0', pesoMuerto.learnedAdjustment === 0);
+  assert('F46-Gb', 'hardRejected: learnedInfluence = false', pesoMuerto.learnedInfluence === false);
+  assert('F46-Gc', 'hardRejected: adjustedScore = baseScore', pesoMuerto.adjustedScore === pesoMuerto.baseScore);
+})();
+
+// F46-H: slotCompatible=false nunca revive el candidato
+(function() {
+  console.log('\nF46-H — slotCompatible=false: slot incompatible nunca ajustado');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'dominadas': {
+          continuityType: 'KEPT', continuityStatus: 'RESOLVED',
+          confidence: 'high', observations: ['good_tolerance'], painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [{ id: 'dominadas', name: 'dominadas', score: 0.7, slotCompatible: false }];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Ha', 'slotCompatible=false: learnedAdjustment = 0', result.candidates[0].learnedAdjustment === 0);
+  assert('F46-Hb', 'slotCompatible=false: learnedInfluence = false', result.candidates[0].learnedInfluence === false);
+  assert('F46-Hc', 'sin trace con slotCompatible=false', result.trace.length === 0);
+})();
+
+// F46-I: continuityStatus UNRESOLVED → sin ajuste
+(function() {
+  console.log('\nF46-I — UNRESOLVED continuity: sin influencia');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'curl martillo': {
+          continuityType: 'KEPT', continuityStatus: 'UNRESOLVED',
+          confidence: 'high', observations: ['good_tolerance'], painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [{ id: 'curl martillo', name: 'curl martillo', score: 0.5 }];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Ia', 'UNRESOLVED: learnedAdjustment = 0', result.candidates[0].learnedAdjustment === 0);
+  assert('F46-Ib', 'UNRESOLVED: sin trace', result.trace.length === 0);
+})();
+
+// F46-J: SAME_SLOT context → no transferencia de exercise state entre identidades distintas
+(function() {
+  console.log('\nF46-J — SAME_SLOT context: no heredar exercise state de ejercicio anterior');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'extensión tríceps': {
+          continuityType: 'KEPT', continuityStatus: 'RESOLVED',
+          confidence: 'high', observations: ['good_tolerance'], painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [{ id: 'extensión tríceps', name: 'extensión tríceps', score: 0.5 }];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, { continuityType: 'SAME_SLOT' });
+  assert('F46-Ja', 'SAME_SLOT: learnedAdjustment = 0', result.candidates[0].learnedAdjustment === undefined || result.candidates === candidates);
+  assert('F46-Jb', 'SAME_SLOT: sin trace', result.trace.length === 0);
+})();
+
+// F46-K: MOVED continuityType + positive obs → adj +0.1 (identidad preservada)
+(function() {
+  console.log('\nF46-K — MOVED: mantiene aprendizaje por identidad entre slots');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'sentadilla búlgara': {
+          continuityType: 'MOVED', continuityStatus: 'RESOLVED',
+          confidence: 'moderate', observations: ['positive_response', 'good_tolerance'], painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [
+    { id: 'sentadilla búlgara', name: 'sentadilla búlgara', score: 0.5 },
+    { id: 'leg press', name: 'leg press', score: 0.5 }
+  ];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Ka', 'MOVED: adjustedScore subió para ejercicio con identidad preservada', result.candidates[0].adjustedScore > 0.5);
+  assert('F46-Kb', 'MOVED: learnedAdjustment = +0.1', Math.abs(result.candidates[0].learnedAdjustment - 0.1) < 0.001);
+  assert('F46-Kc', 'MOVED: trace emitido', result.trace.length === 1);
+  assert('F46-Kd', 'candidato sin historia: sin ajuste', result.candidates[1].learnedAdjustment === 0);
+})();
+
+// F46-L: sin observations positivas → sin adj positivo aunque confidence sea HIGH
+(function() {
+  console.log('\nF46-L — sin observations positivas: sin adj positivo (no monotonía artificial)');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'press arnold': {
+          continuityType: 'KEPT', continuityStatus: 'RESOLVED',
+          confidence: 'high', observations: ['neutral', 'auto_filled'], painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [{ id: 'press arnold', name: 'press arnold', score: 0.5 }];
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-La', 'sin obs positivas: learnedAdjustment = 0', result.candidates[0].learnedAdjustment === 0);
+  assert('F46-Lb', 'sin obs positivas: sin trace', result.trace.length === 0);
+})();
+
+// F46-M: determinismo — mismo input + mismo learnedState → misma salida
+(function() {
+  console.log('\nF46-M — determinismo: mismo input + mismo learned state = misma salida');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'remo en máquina': {
+          continuityType: 'KEPT', continuityStatus: 'RESOLVED',
+          confidence: 'moderate', observations: ['good_tolerance'], painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [
+    { id: 'remo en máquina', name: 'remo en máquina', score: 0.6 },
+    { id: 'remo cable', name: 'remo cable', score: 0.5 }
+  ];
+  var r1 = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  var r2 = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Ma', 'adjustedScore candidato 0 idéntico en ambas llamadas', r1.candidates[0].adjustedScore === r2.candidates[0].adjustedScore);
+  assert('F46-Mb', 'adjustedScore candidato 1 idéntico en ambas llamadas', r1.candidates[1].adjustedScore === r2.candidates[1].adjustedScore);
+  assert('F46-Mc', 'trace length idéntico', r1.trace.length === r2.trace.length);
+})();
+
+// F46-N: inmutabilidad — input candidates/state no mutados
+(function() {
+  console.log('\nF46-N — inmutabilidad: input candidates y exerciseState no mutados');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: {
+      exercises: {
+        'curl bíceps': {
+          continuityType: 'KEPT', continuityStatus: 'RESOLVED',
+          confidence: 'high', observations: ['good_tolerance'], painSignals: []
+        }
+      }
+    }
+  };
+  var candidates = [{ id: 'curl bíceps', name: 'curl bíceps', score: 0.5 }];
+  var origScore = candidates[0].score;
+  var origExercises = Object.keys(activeLS.exerciseState.exercises).length;
+  _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  assert('F46-Na', 'candidato original no mutado (score)', candidates[0].score === origScore);
+  assert('F46-Nb', 'exerciseState.exercises no mutado (keys count)', Object.keys(activeLS.exerciseState.exercises).length === origExercises);
+  assert('F46-Nc', 'learnedAdjustment no inyectado en original', candidates[0].learnedAdjustment === undefined);
+})();
+
+// F46-O: trace HISTORY solo cuando hubo influencia real; 0 nuevas reads (síncrona/pura)
+(function() {
+  console.log('\nF46-O — pureza: síncrona, sin I/O, trace HISTORY solo con influencia real');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: { exercises: {} }
+  };
+  var candidates = [{ id: 'press banca', name: 'press banca', score: 0.5 }];
+  var t0 = Date.now();
+  var result = _applyLearnedExerciseAdjustment(candidates, activeLS, {});
+  var elapsed = Date.now() - t0;
+  assert('F46-Oa', 'sin trace cuando exercises vacío (sin influencia real)', result.trace.length === 0);
+  assert('F46-Ob', 'ejecución <5ms (sin I/O)', elapsed < 5);
+  // Verify _selectLearnedStateForEngine stability branch
+  var subset = _selectLearnedStateForEngine(activeLS, 'stability');
+  assert('F46-Oc', '_selectLearnedStateForEngine stability retorna exerciseState subset', subset !== null && subset.exerciseState !== undefined);
+  var topoSubset = _selectLearnedStateForEngine(activeLS, 'topology');
+  assert('F46-Od', '_selectLearnedStateForEngine topology retorna null sin topologyState en exerciseOnly state', topoSubset === null);
+})();
 process.exit(_fail > 0 ? 1 : 0);
