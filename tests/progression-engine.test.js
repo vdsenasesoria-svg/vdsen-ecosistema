@@ -10349,4 +10349,198 @@ function _makeStructPlan(daysPerWeek, labeledDays, exercises) {
   assert('F53-Ma', 'prevPlan unchanged', JSON.stringify(prev) === prevSnapshot);
 })();
 
+// ─── F54 inline: _auditRepairEffectiveness ───────────────────────────────────
+function _auditRepairEffectiveness(selectionAudit, outcomeAudit, validationBefore, validationAfter, context) {
+  if (!outcomeAudit || !validationBefore || !validationAfter) {
+    return { effectiveness: 'NOT_VERIFIABLE', evidence: 'Missing audit or validation data.', alert: null };
+  }
+  if (outcomeAudit.outcome === 'OUTCOME_NOT_VERIFIABLE') {
+    return { effectiveness: 'NOT_VERIFIABLE', evidence: 'Outcome not verifiable — effectiveness indeterminate.', alert: null };
+  }
+  if (outcomeAudit.outcome === 'NOT_APPLIED') {
+    return { effectiveness: 'NOT_VERIFIABLE', evidence: 'Repair not applied — effectiveness cannot be evaluated.', alert: null };
+  }
+  var changesBefore = Array.isArray(validationBefore.unexpectedChanges) ? validationBefore.unexpectedChanges : [];
+  var changesAfter  = Array.isArray(validationAfter.unexpectedChanges)  ? validationAfter.unexpectedChanges  : [];
+  var typesBefore = {};
+  changesBefore.forEach(function(c) { if (c.type) typesBefore[c.type] = c.severity || 'WARNING'; });
+  var typesAfter = {};
+  changesAfter.forEach(function(c) { if (c.type) typesAfter[c.type] = c.severity || 'WARNING'; });
+  var typesBf = Object.keys(typesBefore);
+  var candidateId = selectionAudit && selectionAudit.selectedCandidate ? selectionAudit.selectedCandidate.id : null;
+  var newSuspects = Object.keys(typesAfter).filter(function(t) {
+    return typesAfter[t] === 'SUSPECT' && typesBefore[t] !== 'SUSPECT';
+  });
+  if (newSuspects.length > 0) {
+    return { effectiveness: 'REGRESSED', evidence: 'New SUSPECT issues: [' + newSuspects.join(', ') + '].',
+             alert: { code: 'REPAIR_REGRESSION', candidateId: candidateId, newSuspects: newSuspects,
+                      detail: 'New critical issues after repair: [' + newSuspects.join(', ') + '].' } };
+  }
+  if (!typesBf.length) {
+    return { effectiveness: 'NOT_VERIFIABLE', evidence: 'No longitudinal issues in validationBefore to compare.', alert: null };
+  }
+  var resolvedTypes  = typesBf.filter(function(t) { return !typesAfter[t]; });
+  var persistingTypes = typesBf.filter(function(t) { return !!typesAfter[t]; });
+  if (resolvedTypes.length === typesBf.length) {
+    return { effectiveness: 'RESOLVED', evidence: 'All issues resolved: [' + resolvedTypes.join(', ') + '].', alert: null };
+  }
+  if (resolvedTypes.length > 0) {
+    return { effectiveness: 'IMPROVED', evidence: 'Partial: ' + resolvedTypes.length + '/' + typesBf.length + ' issues resolved.', alert: null };
+  }
+  var alertObj = null;
+  if (outcomeAudit.outcome === 'APPLIED_AS_EXPECTED') {
+    alertObj = { code: 'REPAIR_INEFFECTIVE', candidateId: candidateId, persistingTypes: persistingTypes,
+                 detail: 'Repair applied (APPLIED_AS_EXPECTED) but original issues persist: [' + persistingTypes.join(', ') + '].' };
+  }
+  return { effectiveness: 'UNCHANGED', evidence: 'Issues unchanged: [' + persistingTypes.join(', ') + '].', alert: alertObj };
+}
+
+function _makeEffSel(overrides) {
+  return Object.assign({
+    selectedCandidate: { id: 'ex:replace:PressB', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'PressB' },
+    selectionReason: 'TOP_RANKED', historyInfluence: false, reasonCodes: [], alert: null
+  }, overrides || {});
+}
+function _makeEffOut(outcome) {
+  return { outcome: outcome, evidence: 'test', alert: null };
+}
+function _makeEffVal(changes) {
+  return { unexpectedChanges: (changes || []).map(function(c) { return typeof c === 'string' ? { type: c, severity: 'SUSPECT' } : c; }) };
+}
+
+// ─── F54: _auditRepairEffectiveness ──────────────────────────────────────────
+
+// F54-A: missing validationAfter → NOT_VERIFIABLE
+(function() {
+  console.log('\nF54-A — missing validationAfter → NOT_VERIFIABLE');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('APPLIED_AS_EXPECTED'),
+    _makeEffVal(['PAIN_HISTORY_EXERCISE_KEPT']), null, {});
+  assert('F54-Aa', 'effectiveness = NOT_VERIFIABLE', r.effectiveness === 'NOT_VERIFIABLE');
+  assert('F54-Ab', 'alert is null', r.alert === null);
+})();
+
+// F54-B: outcomeAudit.outcome = OUTCOME_NOT_VERIFIABLE → NOT_VERIFIABLE
+(function() {
+  console.log('\nF54-B — OUTCOME_NOT_VERIFIABLE → effectiveness NOT_VERIFIABLE');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('OUTCOME_NOT_VERIFIABLE'),
+    _makeEffVal(['PAIN_HISTORY_EXERCISE_KEPT']), _makeEffVal([]), {});
+  assert('F54-Ba', 'effectiveness = NOT_VERIFIABLE', r.effectiveness === 'NOT_VERIFIABLE');
+  assert('F54-Bb', 'alert is null', r.alert === null);
+})();
+
+// F54-C: outcomeAudit.outcome = NOT_APPLIED → NOT_VERIFIABLE
+(function() {
+  console.log('\nF54-C — NOT_APPLIED → effectiveness NOT_VERIFIABLE');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('NOT_APPLIED'),
+    _makeEffVal(['PAIN_HISTORY_EXERCISE_KEPT']), _makeEffVal(['PAIN_HISTORY_EXERCISE_KEPT']), {});
+  assert('F54-Ca', 'effectiveness = NOT_VERIFIABLE', r.effectiveness === 'NOT_VERIFIABLE');
+  assert('F54-Cb', 'alert is null', r.alert === null);
+})();
+
+// F54-D: all before-issues resolved in after → RESOLVED, no alert
+(function() {
+  console.log('\nF54-D — all issues resolved → RESOLVED');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('APPLIED_AS_EXPECTED'),
+    _makeEffVal(['PAIN_HISTORY_EXERCISE_KEPT', 'FREQUENCY_CHANGED']), _makeEffVal([]), {});
+  assert('F54-Da', 'effectiveness = RESOLVED', r.effectiveness === 'RESOLVED');
+  assert('F54-Db', 'alert is null', r.alert === null);
+})();
+
+// F54-E: some before-issues resolved, some persist → IMPROVED, no alert
+(function() {
+  console.log('\nF54-E — some issues resolved → IMPROVED');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('APPLIED_AS_EXPECTED'),
+    _makeEffVal(['PAIN_HISTORY_EXERCISE_KEPT', 'FREQUENCY_CHANGED']),
+    _makeEffVal(['FREQUENCY_CHANGED']), {});
+  assert('F54-Ea', 'effectiveness = IMPROVED', r.effectiveness === 'IMPROVED');
+  assert('F54-Eb', 'alert is null', r.alert === null);
+})();
+
+// F54-F: no issues resolved, APPLIED_AS_EXPECTED → UNCHANGED + REPAIR_INEFFECTIVE
+(function() {
+  console.log('\nF54-F — no issues resolved, applied → UNCHANGED + REPAIR_INEFFECTIVE');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('APPLIED_AS_EXPECTED'),
+    _makeEffVal([{ type: 'PAIN_HISTORY_EXERCISE_KEPT', severity: 'SUSPECT' }]),
+    _makeEffVal([{ type: 'PAIN_HISTORY_EXERCISE_KEPT', severity: 'SUSPECT' }]), {});
+  assert('F54-Fa', 'effectiveness = UNCHANGED', r.effectiveness === 'UNCHANGED');
+  assert('F54-Fb', 'alert.code = REPAIR_INEFFECTIVE', r.alert && r.alert.code === 'REPAIR_INEFFECTIVE');
+  assert('F54-Fc', 'persistingTypes includes issue', r.alert && Array.isArray(r.alert.persistingTypes) && r.alert.persistingTypes.indexOf('PAIN_HISTORY_EXERCISE_KEPT') >= 0);
+})();
+
+// F54-G: new SUSPECT issues in after → REGRESSED + REPAIR_REGRESSION
+(function() {
+  console.log('\nF54-G — new SUSPECT issues → REGRESSED + REPAIR_REGRESSION');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('APPLIED_AS_EXPECTED'),
+    _makeEffVal([{ type: 'PAIN_HISTORY_EXERCISE_KEPT', severity: 'SUSPECT' }]),
+    _makeEffVal([
+      { type: 'PAIN_HISTORY_EXERCISE_KEPT', severity: 'SUSPECT' },
+      { type: 'POSITIVE_HISTORY_EXERCISE_DROPPED', severity: 'SUSPECT' }
+    ]), {});
+  assert('F54-Ga', 'effectiveness = REGRESSED', r.effectiveness === 'REGRESSED');
+  assert('F54-Gb', 'alert.code = REPAIR_REGRESSION', r.alert && r.alert.code === 'REPAIR_REGRESSION');
+  assert('F54-Gc', 'newSuspects in alert', r.alert && Array.isArray(r.alert.newSuspects) && r.alert.newSuspects.length > 0);
+})();
+
+// F54-H: historyInfluence=true but new SUSPECT issues → still REGRESSED (history cannot compensate)
+(function() {
+  console.log('\nF54-H — historyInfluence=true + new SUSPECT → still REGRESSED');
+  var sel = _makeEffSel({ historyInfluence: true });
+  var r = _auditRepairEffectiveness(sel, _makeEffOut('APPLIED_AS_EXPECTED'),
+    _makeEffVal([{ type: 'FREQUENCY_CHANGED', severity: 'WARNING' }]),
+    _makeEffVal([{ type: 'FREQUENCY_CHANGED', severity: 'WARNING' }, { type: 'PAIN_HISTORY_EXERCISE_KEPT', severity: 'SUSPECT' }]),
+    {});
+  assert('F54-Ha', 'effectiveness = REGRESSED regardless of historyInfluence', r.effectiveness === 'REGRESSED');
+  assert('F54-Hb', 'alert.code = REPAIR_REGRESSION', r.alert && r.alert.code === 'REPAIR_REGRESSION');
+})();
+
+// F54-I: PARTIALLY_APPLIED + all issues resolved → RESOLVED (effectiveness from issues, not outcome type)
+(function() {
+  console.log('\nF54-I — PARTIALLY_APPLIED + all issues resolved → RESOLVED');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('PARTIALLY_APPLIED'),
+    _makeEffVal(['PAIN_HISTORY_EXERCISE_KEPT']), _makeEffVal([]), {});
+  assert('F54-Ia', 'effectiveness = RESOLVED', r.effectiveness === 'RESOLVED');
+  assert('F54-Ib', 'alert is null', r.alert === null);
+})();
+
+// F54-J: empty validationBefore (no issues) → NOT_VERIFIABLE
+(function() {
+  console.log('\nF54-J — empty validationBefore → NOT_VERIFIABLE');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('APPLIED_AS_EXPECTED'),
+    _makeEffVal([]), _makeEffVal([]), {});
+  assert('F54-Ja', 'effectiveness = NOT_VERIFIABLE', r.effectiveness === 'NOT_VERIFIABLE');
+  assert('F54-Jb', 'alert is null', r.alert === null);
+})();
+
+// F54-K: PARTIALLY_APPLIED + no issues resolved → UNCHANGED, no REPAIR_INEFFECTIVE (not APPLIED_AS_EXPECTED)
+(function() {
+  console.log('\nF54-K — PARTIALLY_APPLIED + no issues resolved → UNCHANGED, no alert');
+  var r = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('PARTIALLY_APPLIED'),
+    _makeEffVal([{ type: 'FREQUENCY_CHANGED', severity: 'WARNING' }]),
+    _makeEffVal([{ type: 'FREQUENCY_CHANGED', severity: 'WARNING' }]), {});
+  assert('F54-Ka', 'effectiveness = UNCHANGED', r.effectiveness === 'UNCHANGED');
+  assert('F54-Kb', 'no REPAIR_INEFFECTIVE alert for PARTIALLY_APPLIED', r.alert === null);
+})();
+
+// F54-L: Determinism — same inputs twice → identical output
+(function() {
+  console.log('\nF54-L — determinism: same inputs → identical output');
+  var before = _makeEffVal(['PAIN_HISTORY_EXERCISE_KEPT']);
+  var after  = _makeEffVal([]);
+  var r1 = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('APPLIED_AS_EXPECTED'), before, after, {});
+  var r2 = _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('APPLIED_AS_EXPECTED'), before, after, {});
+  assert('F54-La', 'same effectiveness both calls', r1.effectiveness === r2.effectiveness);
+  assert('F54-Lb', 'same alert both calls', JSON.stringify(r1.alert) === JSON.stringify(r2.alert));
+})();
+
+// F54-M: No mutation — inputs unchanged after call
+(function() {
+  console.log('\nF54-M — no mutation: inputs unchanged after call');
+  var before = { unexpectedChanges: [{ type: 'PAIN_HISTORY_EXERCISE_KEPT', severity: 'SUSPECT' }] };
+  var after  = { unexpectedChanges: [] };
+  var beforeSnap = JSON.stringify(before);
+  var afterSnap  = JSON.stringify(after);
+  _auditRepairEffectiveness(_makeEffSel(), _makeEffOut('APPLIED_AS_EXPECTED'), before, after, {});
+  assert('F54-Ma', 'inputs unchanged', JSON.stringify(before) === beforeSnap && JSON.stringify(after) === afterSnap);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

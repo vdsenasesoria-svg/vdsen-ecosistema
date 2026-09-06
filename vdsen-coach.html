@@ -6625,11 +6625,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         var _dtLine = '';
         if (_selAudit.selectedCandidate) {
           var _outAudit = _auditRepairOutcome(_selAudit.selectedCandidate, training, { prevPlan: _prevPlanForLV });
+          var _validBefore = { unexpectedChanges: _hints.map(function(h) { return { type: h.type, severity: h.severity }; }) };
+          var _effAudit = _auditRepairEffectiveness(_selAudit, _outAudit, _validBefore, _longValReport, { prevPlan: _prevPlanForLV });
           var _dtId = _escH(String(_selAudit.selectedCandidate.targetExerciseId || _selAudit.selectedCandidate.id).substring(0, 40));
           var _dtHist = _selAudit.historyInfluence ? ' · HISTORY:✓' : '';
           var _dtOutcome = _outAudit ? ' · ' + _escH(_outAudit.outcome) : '';
-          var _dtAlert = _selAudit.alert ? ' <span style="color:var(--danger);font-size:9px">[!' + _escH(_selAudit.alert.code) + ']</span>' : '';
-          _dtLine = '<div style="color:var(--text-muted);font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId + ' · ' + _escH(_selAudit.selectionReason) + _dtHist + _dtOutcome + _dtAlert + '</div>';
+          var _dtEff = _effAudit ? ' · ' + _escH(_effAudit.effectiveness) : '';
+          var _dtAlert = (_selAudit.alert || (_outAudit && _outAudit.alert) || (_effAudit && _effAudit.alert))
+            ? ' <span style="color:var(--danger);font-size:9px">[!'
+              + _escH((_effAudit && _effAudit.alert && _effAudit.alert.code)
+                  || (_outAudit && _outAudit.alert && _outAudit.alert.code)
+                  || (_selAudit.alert && _selAudit.alert.code) || '') + ']</span>'
+            : '';
+          _dtLine = '<div style="color:var(--text-muted);font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId + ' · ' + _escH(_selAudit.selectionReason) + _dtHist + _dtOutcome + _dtEff + _dtAlert + '</div>';
         }
         return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
           + '<span style="color:var(--text-muted);font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
@@ -10490,6 +10498,60 @@ El esfuerzo no es negociable.
   }
   window._auditRepairOutcome = _auditRepairOutcome;
 
+  // ─── FASE 54: Repair Effectiveness Audit ────────────────────────────────────
+  // Pure post-hoc: compares longitudinal issues before/after to classify effectiveness.
+  // validationBefore: { unexpectedChanges:[{type,severity},...] } — can be derived from hints
+  // validationAfter:  result of _buildLongitudinalValidationReport for the resulting plan
+  // Outcomes: RESOLVED, IMPROVED, UNCHANGED, REGRESSED, NOT_VERIFIABLE
+  // Alerts: REPAIR_INEFFECTIVE (applied but issues unchanged), REPAIR_REGRESSION (new SUSPECT issues)
+  // Restriction: APPLIED_AS_EXPECTED ≠ RESOLVED; historyInfluence cannot compensate new criticalIssues.
+  function _auditRepairEffectiveness(selectionAudit, outcomeAudit, validationBefore, validationAfter, context) {
+    if (!outcomeAudit || !validationBefore || !validationAfter) {
+      return { effectiveness: 'NOT_VERIFIABLE', evidence: 'Missing audit or validation data.', alert: null };
+    }
+    if (outcomeAudit.outcome === 'OUTCOME_NOT_VERIFIABLE') {
+      return { effectiveness: 'NOT_VERIFIABLE', evidence: 'Outcome not verifiable — effectiveness indeterminate.', alert: null };
+    }
+    if (outcomeAudit.outcome === 'NOT_APPLIED') {
+      return { effectiveness: 'NOT_VERIFIABLE', evidence: 'Repair not applied — effectiveness cannot be evaluated.', alert: null };
+    }
+    var changesBefore = Array.isArray(validationBefore.unexpectedChanges) ? validationBefore.unexpectedChanges : [];
+    var changesAfter  = Array.isArray(validationAfter.unexpectedChanges)  ? validationAfter.unexpectedChanges  : [];
+    var typesBefore = {};
+    changesBefore.forEach(function(c) { if (c.type) typesBefore[c.type] = c.severity || 'WARNING'; });
+    var typesAfter = {};
+    changesAfter.forEach(function(c) { if (c.type) typesAfter[c.type] = c.severity || 'WARNING'; });
+    var typesBf = Object.keys(typesBefore);
+    var candidateId = selectionAudit && selectionAudit.selectedCandidate ? selectionAudit.selectedCandidate.id : null;
+    // New SUSPECT issues not present (or not SUSPECT) before — history cannot compensate
+    var newSuspects = Object.keys(typesAfter).filter(function(t) {
+      return typesAfter[t] === 'SUSPECT' && typesBefore[t] !== 'SUSPECT';
+    });
+    if (newSuspects.length > 0) {
+      return { effectiveness: 'REGRESSED', evidence: 'New SUSPECT issues: [' + newSuspects.join(', ') + '].',
+               alert: { code: 'REPAIR_REGRESSION', candidateId: candidateId, newSuspects: newSuspects,
+                        detail: 'New critical issues after repair: [' + newSuspects.join(', ') + '].' } };
+    }
+    if (!typesBf.length) {
+      return { effectiveness: 'NOT_VERIFIABLE', evidence: 'No longitudinal issues in validationBefore to compare.', alert: null };
+    }
+    var resolvedTypes  = typesBf.filter(function(t) { return !typesAfter[t]; });
+    var persistingTypes = typesBf.filter(function(t) { return !!typesAfter[t]; });
+    if (resolvedTypes.length === typesBf.length) {
+      return { effectiveness: 'RESOLVED', evidence: 'All issues resolved: [' + resolvedTypes.join(', ') + '].', alert: null };
+    }
+    if (resolvedTypes.length > 0) {
+      return { effectiveness: 'IMPROVED', evidence: 'Partial: ' + resolvedTypes.length + '/' + typesBf.length + ' issues resolved.', alert: null };
+    }
+    var alert = null;
+    if (outcomeAudit.outcome === 'APPLIED_AS_EXPECTED') {
+      alert = { code: 'REPAIR_INEFFECTIVE', candidateId: candidateId, persistingTypes: persistingTypes,
+                detail: 'Repair applied (APPLIED_AS_EXPECTED) but original issues persist: [' + persistingTypes.join(', ') + '].' };
+    }
+    return { effectiveness: 'UNCHANGED', evidence: 'Issues unchanged: [' + persistingTypes.join(', ') + '].', alert: alert };
+  }
+  window._auditRepairEffectiveness = _auditRepairEffectiveness;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10708,11 +10770,19 @@ El esfuerzo no es negociable.
         var _dtLine2 = '';
         if (_selAudit2.selectedCandidate) {
           var _outAudit2 = _auditRepairOutcome(_selAudit2.selectedCandidate, training, { prevPlan: _prevPlanForLV2 });
+          var _validBefore2 = { unexpectedChanges: _hints2.map(function(h) { return { type: h.type, severity: h.severity }; }) };
+          var _effAudit2 = _auditRepairEffectiveness(_selAudit2, _outAudit2, _validBefore2, _longValReport2, { prevPlan: _prevPlanForLV2 });
           var _dtId2 = _escH(String(_selAudit2.selectedCandidate.targetExerciseId || _selAudit2.selectedCandidate.id).substring(0, 40));
           var _dtHist2 = _selAudit2.historyInfluence ? ' · HISTORY:✓' : '';
           var _dtOutcome2 = _outAudit2 ? ' · ' + _escH(_outAudit2.outcome) : '';
-          var _dtAlert2 = _selAudit2.alert ? ' <span style="color:#e05555;font-size:9px">[!' + _escH(_selAudit2.alert.code) + ']</span>' : '';
-          _dtLine2 = '<div style="color:#888;font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId2 + ' · ' + _escH(_selAudit2.selectionReason) + _dtHist2 + _dtOutcome2 + _dtAlert2 + '</div>';
+          var _dtEff2 = _effAudit2 ? ' · ' + _escH(_effAudit2.effectiveness) : '';
+          var _dtAlert2 = (_selAudit2.alert || (_outAudit2 && _outAudit2.alert) || (_effAudit2 && _effAudit2.alert))
+            ? ' <span style="color:#e05555;font-size:9px">[!'
+              + _escH((_effAudit2 && _effAudit2.alert && _effAudit2.alert.code)
+                  || (_outAudit2 && _outAudit2.alert && _outAudit2.alert.code)
+                  || (_selAudit2.alert && _selAudit2.alert.code) || '') + ']</span>'
+            : '';
+          _dtLine2 = '<div style="color:#888;font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId2 + ' · ' + _escH(_selAudit2.selectionReason) + _dtHist2 + _dtOutcome2 + _dtEff2 + _dtAlert2 + '</div>';
         }
         return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
           + '<span style="color:#888;font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
