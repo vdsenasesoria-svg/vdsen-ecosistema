@@ -6543,6 +6543,27 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const _volTargetWarnings = _auditVolumeVsTargets(_volAudit, _muscleTargets || {});
       if (_volTargetWarnings.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings);
 
+      // FASE 48: Longitudinal Validation Gate (0 new Firestore reads)
+      const _prevPlanForLV = (prescCtx && prescCtx.previousPlan && prescCtx.previousPlan._rawDays)
+        ? { daysPerWeek: prescCtx.previousPlan.daysPerWeek, weeks: prescCtx.previousPlan.weeks, days: prescCtx.previousPlan._rawDays }
+        : null;
+      const _longValReport = _buildLongitudinalValidationReport(
+        { _clientData: (prescCtx && prescCtx._clientData) || {}, restrictions: _restrictions },
+        _prevPlanForLV,
+        {},
+        training ? _normalizeTrainingPlan(training) : null
+      );
+      const _longGate = _applyLongitudinalValidationGate(
+        { valid: validation.valid, errors: validation.errors, warnings: validation.warnings },
+        _longValReport
+      );
+      if (_longGate.status === 'REVIEW_REQUIRED' && _longGate.criticalIssues.length) {
+        const _issueHtml = _longGate.criticalIssues.slice(0, 3).map(function(d) { return '• ' + _escH(d); }).join('<br>');
+        const _confirmed = await _askConfirm('⚠️ <strong>REVISIÓN REQUERIDA — Continuidad longitudinal</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _issueHtml + '</div><br>¿Activar el plan de todas formas?');
+        if (!_confirmed) { setStatus('<div style="color:#888">Activación cancelada. Revisa el plan o re-genera.</div>'); return; }
+      }
+      if (_longGate.warnings.length) console.warn('[VDSEN LV] longitudinal warnings:', _longGate.warnings);
+
       setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
@@ -6561,8 +6582,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const u = data.usage || {};
       const trunc = data.stop_reason === 'max_tokens' ? '<div style="color:var(--danger);font-size:11px;margin-top:4px">⚠ La respuesta se truncó (max_tokens). Revisa el plan; puede faltar contenido.</div>' : '';
       const cacheNote = u.cache_read_input_tokens ? ' · caché ✓' : (u.cache_creation_input_tokens ? ' · caché creado' : '');
+      const _lvHtml = _longValReport ? (function() {
+        var ec = _longValReport.exerciseContinuity;
+        var vd = _longValReport.verdict;
+        var col = vd === 'OK' ? 'var(--success)' : (vd === 'SUSPECT' ? 'var(--danger)' : '#f0a500');
+        var ic = vd === 'OK' ? '✅' : (vd === 'SUSPECT' ? '⚠️' : '⚡');
+        var warnLine = _longGate.warnings.length
+          ? '<div style="color:#f0a500;font-size:10px;margin-top:2px">' + _longGate.warnings.slice(0, 2).map(function(w) { return '· ' + _escH(String(w).substring(0, 80)); }).join('<br>') + '</div>'
+          : '';
+        return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:6px;font-size:11px">'
+          + '<span style="color:' + col + ';font-weight:600">' + ic + ' CONTINUIDAD: ' + vd + '</span>'
+          + ' <span style="color:var(--text-muted)">✔' + ec.keptCount + ' cons · ⊕' + ec.newCount + ' nuevos'
+          + (ec.lostCount ? ' · ✗' + ec.lostCount + ' perd' : '') + (ec.replacedCount ? ' · ↺' + ec.replacedCount + ' reem' : '') + '</span>'
+          + warnLine + '</div>';
+      })() : '';
       setStatus('<div style="color:var(--success);font-weight:700">✅ Generado y cargado: ' + saved.join(' · ') + '</div>'
         + '<div style="color:var(--text-muted);font-size:11px;margin-top:4px">Tokens: ' + (u.input_tokens || '?') + ' in / ' + (u.output_tokens || '?') + ' out' + cacheNote + ' · Ya visible para el cliente en su app.</div>'
+        + _lvHtml
         + '<button onclick="downloadPlanPDF(\'' + clientId + '\')" class="btn-secondary" style="margin-top:10px">📄 Descargar PDF del plan</button>'
         + ' <button onclick="notifyPlanReady(\'' + clientId + '\')" class="btn-secondary" style="margin-top:10px;border-color:#25D366;color:#25D366">📣 Avisar al cliente</button>' + trunc);
       showToast('✅ Plan generado y activado');
@@ -9764,6 +9800,222 @@ El esfuerzo no es negociable.
   }
   window._applyLearnedExerciseAdjustment = _applyLearnedExerciseAdjustment;
 
+  // ─── FASE 47: Longitudinal Validation Framework ────────────────────────────
+  // Pure post-hoc auditor: compares Learned State engine signals against the
+  // generated plan. 0 I/O — operates on already-loaded data.
+  function _buildLongitudinalValidationReport(clientContext, previousPlan, logs, generatedPlan) {
+    var report = {
+      inputSummary:        {},
+      targetChanges:       {},
+      topologyDecision:    {},
+      distributionDecision:{},
+      exerciseContinuity:  { keptCount:0, movedCount:0, replacedCount:0, lostCount:0, newCount:0 },
+      learnedInfluences:   [],
+      qualityStatus:       { valid: true, errors: [], warnings: [] },
+      unexpectedChanges:   [],
+      verdict:             'OK'
+    };
+
+    var clientData   = (clientContext && clientContext._clientData) || clientContext || {};
+    var activeLS     = _getActivePersistedLearnedState(clientData);
+    var restrictions = (clientContext && clientContext.restrictions) || {};
+    var evitar       = Array.isArray(restrictions.ejerciciosEvitar) ? restrictions.ejerciciosEvitar : [];
+
+    var prevDays = previousPlan
+      ? (previousPlan.daysPerWeek || (Array.isArray(previousPlan.days) ? previousPlan.days.length : 0))
+      : null;
+    var newDays = generatedPlan
+      ? (generatedPlan.daysPerWeek || (Array.isArray(generatedPlan.days) ? generatedPlan.days.length : 0))
+      : null;
+    report.inputSummary = {
+      learnedStateStatus: (clientData.learnedState && clientData.learnedState.status) || 'ABSENT',
+      lsActive:           activeLS !== null,
+      prevPlanDays:       prevDays,
+      prevPlanWeeks:      previousPlan ? (previousPlan.weeks || null) : null,
+      newPlanDays:        newDays,
+      newPlanWeeks:       generatedPlan ? (generatedPlan.weeks || null) : null,
+      exercisesEvitar:    evitar.length
+    };
+
+    if (prevDays !== null && newDays !== null && prevDays !== newDays) {
+      report.unexpectedChanges.push({
+        type:        'FREQUENCY_CHANGED',
+        description: 'daysPerWeek cambió de ' + prevDays + ' a ' + newDays + ' sin modificador LS de frecuencia',
+        severity:    'WARNING'
+      });
+    }
+
+    var prevDayLabels = (previousPlan && Array.isArray(previousPlan.days))
+      ? previousPlan.days.map(function(d){ return d.label || ('Día'+d.dayIndex); })
+      : [];
+    var newDayLabels = (generatedPlan && Array.isArray(generatedPlan.days))
+      ? generatedPlan.days.map(function(d){ return d.label || ('Día'+d.dayIndex); })
+      : [];
+    var prevPattern = prevDayLabels.join('|');
+    var newPattern  = newDayLabels.join('|');
+    var topoCandidates = previousPlan ? [{ id: prevPattern, dayLabels: prevDayLabels, score: 0.5 }] : [];
+    var topoResult = _applyLearnedTopologyAdjustment(topoCandidates, activeLS);
+    var patternChanged = prevPattern !== newPattern && prevPattern !== '' && newPattern !== '';
+    report.topologyDecision = {
+      prevPattern: prevPattern, newPattern: newPattern,
+      patternChanged: patternChanged, lsTrace: topoResult.trace
+    };
+    if (topoResult.trace.length) {
+      report.learnedInfluences.push({ engine: 'topology', trace: topoResult.trace });
+    }
+    if (patternChanged && activeLS && !topoResult.trace.length) {
+      report.unexpectedChanges.push({
+        type:        'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE',
+        description: 'Patrón de días cambió [' + prevPattern + '] → [' + newPattern + '] con LS ACTIVE pero sin trace topology',
+        severity:    'WARNING'
+      });
+    }
+    if (patternChanged && topoResult.trace.length) {
+      var topoState = activeLS && activeLS.topologyState;
+      var lsPref = (topoState && Array.isArray(topoState.preferredPatterns)) ? topoState.preferredPatterns : [];
+      var newPatternPreferred = lsPref.some(function(p){ return p === newPattern || newPattern.indexOf(p) >= 0 || p.indexOf(newPattern) >= 0; });
+      var oldPatternPreferred = lsPref.some(function(p){ return p === prevPattern; });
+      if (oldPatternPreferred && !newPatternPreferred) {
+        report.unexpectedChanges.push({
+          type:        'TOPOLOGY_LS_PREFERENCE_IGNORED',
+          description: 'LS prefería [' + prevPattern + '] pero plan generado usó [' + newPattern + '] sin que sea un patrón preferido',
+          severity:    'WARNING'
+        });
+      }
+    }
+
+    var distDecision = { frequencyTarget: prevDays, spacing: 'even', alternatives: [] };
+    var distResult = _applyLearnedDistributionFeedback(distDecision, activeLS);
+    report.distributionDecision = {
+      spacing: distResult.decision.spacing,
+      learnedApplied: !!distResult.decision._learnedSpacingApplied,
+      lsTrace: distResult.trace
+    };
+    if (distResult.trace.length) {
+      report.learnedInfluences.push({ engine: 'distribution', trace: distResult.trace });
+    }
+
+    var prevExercises = [];
+    if (previousPlan && Array.isArray(previousPlan.days)) {
+      previousPlan.days.forEach(function(d) {
+        if (Array.isArray(d.exercises)) {
+          d.exercises.forEach(function(e) {
+            if (e.exerciseName) prevExercises.push({ name: e.exerciseName, dayLabel: d.label || '' });
+          });
+        }
+      });
+    }
+    var newExercises = [];
+    if (generatedPlan && Array.isArray(generatedPlan.days)) {
+      generatedPlan.days.forEach(function(d) {
+        if (Array.isArray(d.exercises)) {
+          d.exercises.forEach(function(e) {
+            if (e.exerciseName) newExercises.push({ name: e.exerciseName, dayLabel: d.label || '' });
+          });
+        }
+      });
+    }
+    var newExNames = newExercises.map(function(e){ return e.name.toLowerCase(); });
+    var exCandidates = prevExercises.map(function(e){
+      return { id: e.name.toLowerCase(), name: e.name, score: 0.5 };
+    });
+    var exResult = _applyLearnedExerciseAdjustment(exCandidates, activeLS, {});
+    if (exResult.trace.length) {
+      report.learnedInfluences.push({ engine: 'stability', trace: exResult.trace });
+    }
+    var lsAdjByName = {};
+    exResult.candidates.forEach(function(c){
+      lsAdjByName[String(c.id || '').toLowerCase()] = {
+        adjustment: c.learnedAdjustment, reasonCodes: c.reasonCodes, influenced: c.learnedInfluence
+      };
+    });
+    prevExercises.forEach(function(pe) {
+      var peLow  = pe.name.toLowerCase();
+      var inNew  = newExNames.indexOf(peLow) >= 0;
+      var lsAdj  = lsAdjByName[peLow] || { adjustment: 0, reasonCodes: [], influenced: false };
+      var isVetoed = evitar.some(function(v){
+        return peLow.includes(v.toLowerCase()) || v.toLowerCase().includes(peLow);
+      });
+      if (inNew) {
+        if (lsAdj.adjustment < 0) {
+          report.unexpectedChanges.push({
+            type: 'PAIN_HISTORY_EXERCISE_KEPT',
+            description: '"' + pe.name + '" tiene señal de dolor (adj=' + lsAdj.adjustment + ') pero permanece en el plan generado',
+            severity: 'SUSPECT'
+          });
+        }
+        var newEntry = null;
+        for (var ni = 0; ni < newExercises.length; ni++) {
+          if (newExercises[ni].name.toLowerCase() === peLow) { newEntry = newExercises[ni]; break; }
+        }
+        if (newEntry && newEntry.dayLabel !== pe.dayLabel) { report.exerciseContinuity.movedCount++; }
+        else { report.exerciseContinuity.keptCount++; }
+      } else {
+        if (isVetoed || lsAdj.adjustment < 0) {
+          report.exerciseContinuity.replacedCount++;
+        } else if (lsAdj.adjustment > 0) {
+          report.unexpectedChanges.push({
+            type: 'POSITIVE_HISTORY_EXERCISE_DROPPED',
+            description: '"' + pe.name + '" tiene historial positivo (adj=+' + lsAdj.adjustment + ') pero fue eliminado del plan',
+            severity: 'SUSPECT'
+          });
+          report.exerciseContinuity.lostCount++;
+        } else if (activeLS) {
+          report.unexpectedChanges.push({
+            type: 'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION',
+            description: '"' + pe.name + '" eliminado del plan sin señal de dolor, sin veto, y sin registro en LS ACTIVE',
+            severity: 'WARNING'
+          });
+          report.exerciseContinuity.lostCount++;
+        } else {
+          report.exerciseContinuity.lostCount++;
+        }
+      }
+    });
+    newExercises.forEach(function(ne) {
+      var neLow = ne.name.toLowerCase();
+      if (!prevExercises.some(function(e){ return e.name.toLowerCase() === neLow; }))
+        report.exerciseContinuity.newCount++;
+    });
+
+    var suspectCount = report.unexpectedChanges.filter(function(c){ return c.severity === 'SUSPECT'; }).length;
+    var warnCount    = report.unexpectedChanges.filter(function(c){ return c.severity === 'WARNING'; }).length;
+    report.qualityStatus.valid = suspectCount === 0;
+    if (suspectCount > 0) report.qualityStatus.errors.push(suspectCount + ' divergencia(s) SUSPECT detectada(s)');
+    if (warnCount > 0)    report.qualityStatus.warnings.push(warnCount + ' advertencia(s)');
+    report.verdict = suspectCount > 0 ? 'SUSPECT' : (warnCount > 0 ? 'WARNING' : 'OK');
+    return report;
+  }
+  window._buildLongitudinalValidationReport = _buildLongitudinalValidationReport;
+
+  // ─── FASE 48: Longitudinal Validation Gate ────────────────────────────────
+  // Pure combiner: never reduces quality audit severity, only maintains or elevates.
+  // qualityAudit:          { valid: bool, errors: [], warnings: [] }
+  // longitudinalValidation: result of _buildLongitudinalValidationReport (or null)
+  // Returns: { status: 'OK'|'WARN'|'REVIEW_REQUIRED', criticalIssues: [], warnings: [], longVerdict: string }
+  function _applyLongitudinalValidationGate(qualityAudit, longitudinalValidation) {
+    var result = {
+      status:         (qualityAudit && !qualityAudit.valid) ? 'REVIEW_REQUIRED' : 'OK',
+      criticalIssues: [],
+      warnings:       (qualityAudit && Array.isArray(qualityAudit.warnings)) ? qualityAudit.warnings.slice() : [],
+      longVerdict:    (longitudinalValidation && longitudinalValidation.verdict) || 'OK'
+    };
+    if (!longitudinalValidation) return result;
+    var changes = Array.isArray(longitudinalValidation.unexpectedChanges) ? longitudinalValidation.unexpectedChanges : [];
+    changes.forEach(function(c) {
+      if (c.severity === 'SUSPECT')      result.criticalIssues.push(c.description);
+      else if (c.severity === 'WARNING') result.warnings.push(c.description);
+    });
+    var verdict = longitudinalValidation.verdict || 'OK';
+    if (verdict === 'SUSPECT' && result.status !== 'REVIEW_REQUIRED') {
+      result.status = 'REVIEW_REQUIRED';
+    } else if (verdict === 'WARNING' && result.status === 'OK') {
+      result.status = 'WARN';
+    }
+    return result;
+  }
+  window._applyLongitudinalValidationGate = _applyLongitudinalValidationGate;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -9892,6 +10144,27 @@ El esfuerzo no es negociable.
       const _volTargetWarnings2 = _auditVolumeVsTargets(_volAudit2, _muscleTargets2 || {});
       if (_volTargetWarnings2.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings2);
 
+      // FASE 48: Longitudinal Validation Gate (0 new Firestore reads)
+      const _prevPlanForLV2 = (prescCtx && prescCtx.previousPlan && prescCtx.previousPlan._rawDays)
+        ? { daysPerWeek: prescCtx.previousPlan.daysPerWeek, weeks: prescCtx.previousPlan.weeks, days: prescCtx.previousPlan._rawDays }
+        : null;
+      const _longValReport2 = _buildLongitudinalValidationReport(
+        { _clientData: _detailClientData || {}, restrictions: _restrictions2 },
+        _prevPlanForLV2,
+        {},
+        training ? _normalizeTrainingPlan(training) : null
+      );
+      const _longGate2 = _applyLongitudinalValidationGate(
+        { valid: validation.valid, errors: validation.errors, warnings: validation.warnings },
+        _longValReport2
+      );
+      if (_longGate2.status === 'REVIEW_REQUIRED' && _longGate2.criticalIssues.length) {
+        const _issueHtml2 = _longGate2.criticalIssues.slice(0, 3).map(d => '• ' + _escH(d)).join('<br>');
+        const _confirmed2 = await _askConfirm('⚠️ <strong>REVISIÓN REQUERIDA — Continuidad longitudinal</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _issueHtml2 + '</div><br>¿Activar el plan de todas formas?');
+        if (!_confirmed2) { setStatus('<div style="color:#e05555">Activación cancelada. Revisa el plan o re-genera.</div>'); return; }
+      }
+      if (_longGate2.warnings.length) console.warn('[VDSEN LV] longitudinal warnings:', _longGate2.warnings);
+
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
       if (planObj) {
@@ -9918,10 +10191,24 @@ El esfuerzo no es negociable.
       const u = respData.usage || {};
       const trunc = respData.stop_reason === 'max_tokens' ? '<div style="color:#e05555;font-size:11px;margin-top:4px">⚠ Respuesta truncada — revisa que el plan esté completo.</div>' : '';
       const cacheNote = u.cache_read_input_tokens ? ' · caché ✓' : (u.cache_creation_input_tokens ? ' · caché creado' : '');
+      const _lvHtml2 = _longValReport2 ? (function() {
+        var ec = _longValReport2.exerciseContinuity;
+        var vd = _longValReport2.verdict;
+        var col = vd === 'OK' ? '#44BB88' : (vd === 'SUSPECT' ? '#e05555' : '#f0a500');
+        var ic = vd === 'OK' ? '✅' : (vd === 'SUSPECT' ? '⚠️' : '⚡');
+        var warnLine = _longGate2.warnings.length
+          ? '<div style="color:#f0a500;font-size:10px;margin-top:2px">' + _longGate2.warnings.slice(0, 2).map(function(w) { return '· ' + _escH(String(w).substring(0, 80)); }).join('<br>') + '</div>'
+          : '';
+        return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:6px;font-size:11px">'
+          + '<span style="color:' + col + ';font-weight:600">' + ic + ' CONTINUIDAD: ' + vd + '</span>'
+          + ' <span style="color:#888">✔' + ec.keptCount + ' cons · ⊕' + ec.newCount + ' nuevos'
+          + (ec.lostCount ? ' · ✗' + ec.lostCount + ' perd' : '') + (ec.replacedCount ? ' · ↺' + ec.replacedCount + ' reem' : '') + '</span>'
+          + warnLine + '</div>';
+      })() : '';
       setStatus(`<div style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);border-radius:8px;padding:12px;margin-top:4px">
         <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Generado: ${saved.join(' · ')}</div>
         <div style="color:#888;font-size:11px">Tokens: ${u.input_tokens||'?'} in / ${u.output_tokens||'?'} out${cacheNote}</div>
-        ${trunc}
+        ${_lvHtml2}${trunc}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button onclick="_switchClientTab('plan')" style="padding:6px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">🏋️ Ver Plan</button>
           <button onclick="downloadPlanPDF('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.25);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📄 PDF</button>

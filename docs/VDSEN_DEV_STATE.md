@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-06 · branch `claude/learned-state-activation-d5b69n` · Audit nocturno completo · Suite 1226/1226
+> Actualizado: 2026-09-06 · branch `claude/learned-state-activation-d5b69n` · FASE 48 DONE · Suite 1299/1299
 
 ---
 
@@ -37,7 +37,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 32 | MERGED — commit `1975fd8` · UX Cliente: touch targets, setDone flash, ring fix |
 | FASE 33 | DONE — commits `7a29aa6`+`f10c75f` · End-to-End Integration Audit: 25 bugs corregidos |
 | FASE 34 | DONE — Legacy Identity Hardening: BUG H-3 + BUG G4 corregidos, 17 tests nuevos |
-| Suite tests | **1263/1263 PASS** (P01–P426 + F34-A–J + F36-B–N + F37-A–I + F39-A–E + F45-A–J + F46-A–O + BUG-RIR0-A–I + BUG-XSS-A–F + BUG-LS-DIV-A–D + F47-A–I) |
+| Suite tests | **1299/1299 PASS** (P01–P426 + F34-A–J + F36-B–N + F37-A–I + F39-A–E + F45-A–J + F46-A–O + BUG-RIR0-A–I + BUG-XSS-A–F + BUG-LS-DIV-A–D + F47-A–I + F48-A–J) |
 | FASE 45 | DONE — Learned State Activation v1 (topology + distribution engines) |
 | FASE 46 | MERGED — Exercise Learned State Activation v1 · `099fd74` (fast-forward desde `claude/learned-state-activation-d5b69n`) |
 | Bug: RIR-0 | FIXED — RIR 0 (fallo) no colapsa a default 2 en saveExpress/markExpressSerie/SS paths (vdsen-cliente.html) |
@@ -51,6 +51,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | Audit: Decision Trace | BY DESIGN — trace de vdsenAIPreview viene de respuesta API; LS trace solo en console (v1) |
 | Audit: LB/KG display | LOW PRIORITY — label "kg" hardcodeado en monitor coach (display-only, integridad de datos OK) |
 | FASE 47 | DONE — Longitudinal Validation Framework: `_buildLongitudinalValidationReport` + 9 fixtures (FIX-A–I) · Suite 1263/1263 |
+| FASE 48 | DONE — Longitudinal Validation Gate: `_buildLongitudinalValidationReport` + `_applyLongitudinalValidationGate` en coach; gate en autoGeneratePlan + _autoGenerateForModal; CONTINUIDAD block en success UI · Suite 1299/1299 |
 | FASE 37 | DONE — LOGS_BY_WEEK index en memoria · commit `96fbc1b` |
 | FASE 38 | DONE — XSS guards _escH en 8 interpolaciones coach · commit `470a261` |
 | FASE 39 | DONE — Fix _buildCheckInData adherencia + rir_real_prom · commit `eb1a825` |

@@ -9001,4 +9001,177 @@ function _makeActiveLS(opts) {
   assert('F47-I3', 'FIX-I: clientCtx.learnedState.status no mutado', clientCtx.learnedState.status === 'ACTIVE');
 })();
 
+// ── FASE 48: _applyLongitudinalValidationGate — inline copy ──────────────────
+function _applyLongitudinalValidationGate(qualityAudit, longitudinalValidation) {
+  var result = {
+    status:         (qualityAudit && !qualityAudit.valid) ? 'REVIEW_REQUIRED' : 'OK',
+    criticalIssues: [],
+    warnings:       (qualityAudit && Array.isArray(qualityAudit.warnings)) ? qualityAudit.warnings.slice() : [],
+    longVerdict:    (longitudinalValidation && longitudinalValidation.verdict) || 'OK'
+  };
+  if (!longitudinalValidation) return result;
+  var changes = Array.isArray(longitudinalValidation.unexpectedChanges) ? longitudinalValidation.unexpectedChanges : [];
+  changes.forEach(function(c) {
+    if (c.severity === 'SUSPECT')      result.criticalIssues.push(c.description);
+    else if (c.severity === 'WARNING') result.warnings.push(c.description);
+  });
+  var verdict = longitudinalValidation.verdict || 'OK';
+  if (verdict === 'SUSPECT' && result.status !== 'REVIEW_REQUIRED') {
+    result.status = 'REVIEW_REQUIRED';
+  } else if (verdict === 'WARNING' && result.status === 'OK') {
+    result.status = 'WARN';
+  }
+  return result;
+}
+
+// ═════════════════ F48: Longitudinal Validation Gate ════════════════════════
+
+// F48-A: null longitudinalValidation → baseline from qualityAudit only
+(function() {
+  console.log('\nF48-A — null longitudinalValidation: baseline qualityAudit');
+  var qa = { valid: true, errors: [], warnings: [] };
+  var r = _applyLongitudinalValidationGate(qa, null);
+  assert('F48-Aa', 'status=OK when valid and no LV', r.status === 'OK');
+  assert('F48-Ab', 'no criticalIssues', r.criticalIssues.length === 0);
+  assert('F48-Ac', 'no warnings', r.warnings.length === 0);
+  assert('F48-Ad', 'longVerdict defaults to OK', r.longVerdict === 'OK');
+})();
+
+// F48-B: valid qualityAudit + OK longitudinal verdict → OK
+(function() {
+  console.log('\nF48-B — valid QA + OK verdict → status=OK');
+  var prevPlan = _makePlan(4, [_makeDay(0,'Push',['Press Banca']), _makeDay(1,'Pull',['Remo'])]);
+  var genPlan  = _makePlan(4, [_makeDay(0,'Push',['Press Banca']), _makeDay(1,'Pull',['Remo'])]);
+  var qa = { valid: true, errors: [], warnings: [] };
+  var lv = _buildLongitudinalValidationReport({}, prevPlan, {}, genPlan);
+  var r = _applyLongitudinalValidationGate(qa, lv);
+  assert('F48-Ba', 'verdict OK → status=OK', r.status === 'OK');
+  assert('F48-Bb', 'no criticalIssues', r.criticalIssues.length === 0);
+  assert('F48-Bc', 'longVerdict=OK', r.longVerdict === 'OK');
+})();
+
+// F48-C: valid QA + WARNING longitudinal verdict → WARN
+(function() {
+  console.log('\nF48-C — valid QA + WARNING verdict → status=WARN');
+  var prevPlan = _makePlan(4, [_makeDay(0,'A',['Ej1'])]);
+  var genPlan  = _makePlan(5, [_makeDay(0,'A',['Ej1']),_makeDay(1,'B',['Ej2'])]);
+  var qa = { valid: true, errors: [], warnings: [] };
+  var lv = _buildLongitudinalValidationReport({}, prevPlan, {}, genPlan);
+  assert('F48-Ca', 'LV verdict should be WARNING (frequency changed)', lv.verdict === 'WARNING');
+  var r = _applyLongitudinalValidationGate(qa, lv);
+  assert('F48-Cb', 'gate elevates to WARN', r.status === 'WARN');
+  assert('F48-Cc', 'no criticalIssues from WARNING-only LV', r.criticalIssues.length === 0);
+  assert('F48-Cd', 'warnings populated', r.warnings.length > 0);
+  assert('F48-Ce', 'longVerdict=WARNING', r.longVerdict === 'WARNING');
+})();
+
+// F48-D: valid QA + SUSPECT longitudinal verdict → REVIEW_REQUIRED
+(function() {
+  console.log('\nF48-D — valid QA + SUSPECT verdict → REVIEW_REQUIRED + criticalIssues');
+  var activeLS = _makeActiveLS({
+    ex: {
+      overallConfidence: 'HIGH', stateVersion: 1,
+      exercises: {
+        'sentadilla barra': { painSignals: ['rodilla'], confidence: 'HIGH', continuityStatus: 'RESOLVED', observations: [] }
+      }
+    }
+  });
+  var prevPlan = _makePlan(3, [_makeDay(0,'Piernas',['Sentadilla Barra'])]);
+  var genPlan  = _makePlan(3, [_makeDay(0,'Piernas',['Sentadilla Barra'])]);
+  var clientCtx = { learnedState: activeLS };
+  var lv = _buildLongitudinalValidationReport(clientCtx, prevPlan, {}, genPlan);
+  assert('F48-Da', 'LV verdict SUSPECT (pain kept)', lv.verdict === 'SUSPECT');
+  var qa = { valid: true, errors: [], warnings: [] };
+  var r = _applyLongitudinalValidationGate(qa, lv);
+  assert('F48-Db', 'gate elevates to REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F48-Dc', 'criticalIssues non-empty', r.criticalIssues.length > 0);
+  assert('F48-Dd', 'longVerdict=SUSPECT', r.longVerdict === 'SUSPECT');
+})();
+
+// F48-E: invalid qualityAudit (valid=false) + OK verdict → REVIEW_REQUIRED preserved
+(function() {
+  console.log('\nF48-E — invalid QA + OK LV → REVIEW_REQUIRED preserved (never reduce)');
+  var qa = { valid: false, errors: ['constraint violated'], warnings: [] };
+  var lv = { verdict: 'OK', unexpectedChanges: [] };
+  var r = _applyLongitudinalValidationGate(qa, lv);
+  assert('F48-Ea', 'REVIEW_REQUIRED from QA stays when LV is OK', r.status === 'REVIEW_REQUIRED');
+  assert('F48-Eb', 'no criticalIssues (LV was OK)', r.criticalIssues.length === 0);
+})();
+
+// F48-F: invalid QA + WARNING LV → REVIEW_REQUIRED preserved (not downgraded to WARN)
+(function() {
+  console.log('\nF48-F — invalid QA + WARNING LV → REVIEW_REQUIRED preserved');
+  var qa = { valid: false, errors: ['e1'], warnings: ['w1'] };
+  var lv = { verdict: 'WARNING', unexpectedChanges: [{ type: 'FREQUENCY_CHANGED', description: 'desc', severity: 'WARNING' }] };
+  var r = _applyLongitudinalValidationGate(qa, lv);
+  assert('F48-Fa', 'REVIEW_REQUIRED preserved', r.status === 'REVIEW_REQUIRED');
+  assert('F48-Fb', 'no criticalIssues (WARNING-only)', r.criticalIssues.length === 0);
+  assert('F48-Fc', 'longVerdict=WARNING', r.longVerdict === 'WARNING');
+})();
+
+// F48-G: invalid QA + SUSPECT LV → REVIEW_REQUIRED (both want it, no double-elevation)
+(function() {
+  console.log('\nF48-G — invalid QA + SUSPECT LV → REVIEW_REQUIRED, criticalIssues from LV');
+  var qa = { valid: false, errors: ['veto'], warnings: [] };
+  var lv = {
+    verdict: 'SUSPECT',
+    unexpectedChanges: [{ type: 'PAIN_HISTORY_EXERCISE_KEPT', description: 'dolor en ej', severity: 'SUSPECT' }]
+  };
+  var r = _applyLongitudinalValidationGate(qa, lv);
+  assert('F48-Ga', 'REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F48-Gb', 'criticalIssues from SUSPECT change', r.criticalIssues.length === 1);
+  assert('F48-Gc', 'criticalIssues description preserved', r.criticalIssues[0] === 'dolor en ej');
+})();
+
+// F48-H: SUSPECT with multiple changes → criticalIssues all populated
+(function() {
+  console.log('\nF48-H — SUSPECT with 2 changes → 2 criticalIssues');
+  var qa = { valid: true, errors: [], warnings: [] };
+  var lv = {
+    verdict: 'SUSPECT',
+    unexpectedChanges: [
+      { type: 'PAIN_HISTORY_EXERCISE_KEPT', description: 'dolor1', severity: 'SUSPECT' },
+      { type: 'POSITIVE_HISTORY_EXERCISE_DROPPED', description: 'perd1', severity: 'SUSPECT' },
+      { type: 'FREQUENCY_CHANGED', description: 'freq cambio', severity: 'WARNING' }
+    ]
+  };
+  var r = _applyLongitudinalValidationGate(qa, lv);
+  assert('F48-Ha', 'REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F48-Hb', '2 criticalIssues (SUSPECT only)', r.criticalIssues.length === 2);
+  assert('F48-Hc', 'WARNING appears in warnings not criticalIssues', r.warnings.indexOf('freq cambio') >= 0);
+  assert('F48-Hd', 'criticalIssues[0] correct', r.criticalIssues[0] === 'dolor1');
+  assert('F48-He', 'criticalIssues[1] correct', r.criticalIssues[1] === 'perd1');
+})();
+
+// F48-I: pre-existing QA warnings preserved alongside LV warnings
+(function() {
+  console.log('\nF48-I — existing QA warnings preserved alongside LV warnings');
+  var qa = { valid: true, errors: [], warnings: ['volumen bajo en gemelos'] };
+  var lv = {
+    verdict: 'WARNING',
+    unexpectedChanges: [{ type: 'FREQUENCY_CHANGED', description: 'días cambió', severity: 'WARNING' }]
+  };
+  var r = _applyLongitudinalValidationGate(qa, lv);
+  assert('F48-Ia', 'status=WARN', r.status === 'WARN');
+  assert('F48-Ib', 'original QA warning preserved', r.warnings.indexOf('volumen bajo en gemelos') >= 0);
+  assert('F48-Ic', 'LV warning also present', r.warnings.indexOf('días cambió') >= 0);
+  assert('F48-Id', '2 total warnings', r.warnings.length === 2);
+})();
+
+// F48-J: pure function — inputs not mutated
+(function() {
+  console.log('\nF48-J — pureza: inputs no mutados');
+  var qa = { valid: true, errors: [], warnings: ['w1'] };
+  var lv = {
+    verdict: 'WARNING',
+    unexpectedChanges: [{ type: 'FREQUENCY_CHANGED', description: 'd1', severity: 'WARNING' }]
+  };
+  var origQaWarns = qa.warnings.length;
+  var origLvChanges = lv.unexpectedChanges.length;
+  _applyLongitudinalValidationGate(qa, lv);
+  assert('F48-Ja', 'qa.warnings not mutated', qa.warnings.length === origQaWarns);
+  assert('F48-Jb', 'lv.unexpectedChanges not mutated', lv.unexpectedChanges.length === origLvChanges);
+  assert('F48-Jc', 'lv.verdict not mutated', lv.verdict === 'WARNING');
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
