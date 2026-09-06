@@ -6557,12 +6557,25 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         { valid: validation.valid, errors: validation.errors, warnings: validation.warnings },
         _longValReport
       );
-      if (_longGate.status === 'REVIEW_REQUIRED' && _longGate.criticalIssues.length) {
-        const _issueHtml = _longGate.criticalIssues.slice(0, 3).map(function(d) { return '• ' + _escH(d); }).join('<br>');
+      const _effGate55 = (function() {
+        var _ph = _buildLongitudinalRepairHints(_longValReport, {});
+        if (!_ph || !_ph.length) return _longGate;
+        var _lc = _buildExerciseCandidatesForLV(training, _prevPlanForLV);
+        var _lr = _applyLongitudinalRepairHintsToCandidates(_lc, _ph, {});
+        var _ti = _lr.adjusted.length ? _lr.adjusted[0].id : null;
+        var _sa = _auditCandidateSelection(_lr.adjusted, _ti, null, {});
+        if (!_sa.selectedCandidate) return _longGate;
+        var _oa = _auditRepairOutcome(_sa.selectedCandidate, training, { prevPlan: _prevPlanForLV });
+        var _vb = { unexpectedChanges: _ph.map(function(h) { return { type: h.type, severity: h.severity }; }) };
+        var _ea = _auditRepairEffectiveness(_sa, _oa, _vb, _longValReport, { prevPlan: _prevPlanForLV });
+        return _applyRepairEffectivenessGate(_longGate, _ea, {});
+      })();
+      if (_effGate55.status === 'REVIEW_REQUIRED' && _effGate55.criticalIssues.length) {
+        const _issueHtml = _effGate55.criticalIssues.slice(0, 3).map(function(d) { return '• ' + _escH(d); }).join('<br>');
         const _confirmed = await _askConfirm('⚠️ <strong>REVISIÓN REQUERIDA — Continuidad longitudinal</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _issueHtml + '</div><br>¿Activar el plan de todas formas?');
         if (!_confirmed) { setStatus('<div style="color:#888">Activación cancelada. Revisa el plan o re-genera.</div>'); return; }
       }
-      if (_longGate.warnings.length) console.warn('[VDSEN LV] longitudinal warnings:', _longGate.warnings);
+      if (_effGate55.warnings.length) console.warn('[VDSEN LV] longitudinal warnings:', _effGate55.warnings);
 
       setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
       const saved = [];
@@ -10552,6 +10565,44 @@ El esfuerzo no es negociable.
   }
   window._auditRepairEffectiveness = _auditRepairEffectiveness;
 
+  // ─── FASE 55: Repair Effectiveness Gate ─────────────────────────────────────
+  // Pure combiner: only elevates gate status, never reduces.
+  // REGRESSED   → REVIEW_REQUIRED + criticalIssue
+  // UNCHANGED + REPAIR_INEFFECTIVE → WARN + warning
+  // RESOLVED / IMPROVED → repairEffectivenessNote only (no elevation)
+  // NOT_VERIFIABLE / null → no change
+  // Returns a new gate object (copy of currentGate with additions).
+  function _applyRepairEffectivenessGate(currentGate, effectivenessAudit, context) {
+    var RANK = { 'OK': 0, 'WARN': 1, 'REVIEW_REQUIRED': 2 };
+    var result = {
+      status:        (currentGate && currentGate.status) || 'OK',
+      criticalIssues:(currentGate && Array.isArray(currentGate.criticalIssues)) ? currentGate.criticalIssues.slice() : [],
+      warnings:      (currentGate && Array.isArray(currentGate.warnings))       ? currentGate.warnings.slice()       : [],
+      longVerdict:   (currentGate && currentGate.longVerdict) || 'OK',
+      repairEffectivenessNote: null
+    };
+    if (!effectivenessAudit) return result;
+    var eff = effectivenessAudit.effectiveness;
+    function elevate(target) {
+      if ((RANK[target] || 0) > (RANK[result.status] || 0)) result.status = target;
+    }
+    if (eff === 'REGRESSED') {
+      elevate('REVIEW_REQUIRED');
+      var note = 'REPAIR_REGRESSION: ' + (effectivenessAudit.evidence || '');
+      result.criticalIssues.push(note);
+      result.repairEffectivenessNote = note;
+    } else if (eff === 'UNCHANGED' && effectivenessAudit.alert && effectivenessAudit.alert.code === 'REPAIR_INEFFECTIVE') {
+      elevate('WARN');
+      var warnNote = 'REPAIR_INEFFECTIVE: ' + (effectivenessAudit.evidence || '');
+      result.warnings.push(warnNote);
+      result.repairEffectivenessNote = warnNote;
+    } else if (eff === 'RESOLVED' || eff === 'IMPROVED') {
+      result.repairEffectivenessNote = eff + ': ' + (effectivenessAudit.evidence || '');
+    }
+    return result;
+  }
+  window._applyRepairEffectivenessGate = _applyRepairEffectivenessGate;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10694,12 +10745,25 @@ El esfuerzo no es negociable.
         { valid: validation.valid, errors: validation.errors, warnings: validation.warnings },
         _longValReport2
       );
-      if (_longGate2.status === 'REVIEW_REQUIRED' && _longGate2.criticalIssues.length) {
-        const _issueHtml2 = _longGate2.criticalIssues.slice(0, 3).map(d => '• ' + _escH(d)).join('<br>');
+      const _effGate55b = (function() {
+        var _ph2 = _buildLongitudinalRepairHints(_longValReport2, {});
+        if (!_ph2 || !_ph2.length) return _longGate2;
+        var _lc2 = _buildExerciseCandidatesForLV(training, _prevPlanForLV2);
+        var _lr2 = _applyLongitudinalRepairHintsToCandidates(_lc2, _ph2, {});
+        var _ti2 = _lr2.adjusted.length ? _lr2.adjusted[0].id : null;
+        var _sa2 = _auditCandidateSelection(_lr2.adjusted, _ti2, null, {});
+        if (!_sa2.selectedCandidate) return _longGate2;
+        var _oa2 = _auditRepairOutcome(_sa2.selectedCandidate, training, { prevPlan: _prevPlanForLV2 });
+        var _vb2 = { unexpectedChanges: _ph2.map(function(h) { return { type: h.type, severity: h.severity }; }) };
+        var _ea2 = _auditRepairEffectiveness(_sa2, _oa2, _vb2, _longValReport2, { prevPlan: _prevPlanForLV2 });
+        return _applyRepairEffectivenessGate(_longGate2, _ea2, {});
+      })();
+      if (_effGate55b.status === 'REVIEW_REQUIRED' && _effGate55b.criticalIssues.length) {
+        const _issueHtml2 = _effGate55b.criticalIssues.slice(0, 3).map(d => '• ' + _escH(d)).join('<br>');
         const _confirmed2 = await _askConfirm('⚠️ <strong>REVISIÓN REQUERIDA — Continuidad longitudinal</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _issueHtml2 + '</div><br>¿Activar el plan de todas formas?');
         if (!_confirmed2) { setStatus('<div style="color:#e05555">Activación cancelada. Revisa el plan o re-genera.</div>'); return; }
       }
-      if (_longGate2.warnings.length) console.warn('[VDSEN LV] longitudinal warnings:', _longGate2.warnings);
+      if (_effGate55b.warnings.length) console.warn('[VDSEN LV] longitudinal warnings:', _effGate55b.warnings);
 
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;

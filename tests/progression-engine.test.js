@@ -10543,4 +10543,175 @@ function _makeEffVal(changes) {
   assert('F54-Ma', 'inputs unchanged', JSON.stringify(before) === beforeSnap && JSON.stringify(after) === afterSnap);
 })();
 
+// ─── F55 inline: _applyRepairEffectivenessGate ───────────────────────────────
+function _applyRepairEffectivenessGate(currentGate, effectivenessAudit, context) {
+  var RANK = { 'OK': 0, 'WARN': 1, 'REVIEW_REQUIRED': 2 };
+  var result = {
+    status:        (currentGate && currentGate.status) || 'OK',
+    criticalIssues:(currentGate && Array.isArray(currentGate.criticalIssues)) ? currentGate.criticalIssues.slice() : [],
+    warnings:      (currentGate && Array.isArray(currentGate.warnings))       ? currentGate.warnings.slice()       : [],
+    longVerdict:   (currentGate && currentGate.longVerdict) || 'OK',
+    repairEffectivenessNote: null
+  };
+  if (!effectivenessAudit) return result;
+  var eff = effectivenessAudit.effectiveness;
+  function elevate(target) {
+    if ((RANK[target] || 0) > (RANK[result.status] || 0)) result.status = target;
+  }
+  if (eff === 'REGRESSED') {
+    elevate('REVIEW_REQUIRED');
+    var note = 'REPAIR_REGRESSION: ' + (effectivenessAudit.evidence || '');
+    result.criticalIssues.push(note);
+    result.repairEffectivenessNote = note;
+  } else if (eff === 'UNCHANGED' && effectivenessAudit.alert && effectivenessAudit.alert.code === 'REPAIR_INEFFECTIVE') {
+    elevate('WARN');
+    var warnNote = 'REPAIR_INEFFECTIVE: ' + (effectivenessAudit.evidence || '');
+    result.warnings.push(warnNote);
+    result.repairEffectivenessNote = warnNote;
+  } else if (eff === 'RESOLVED' || eff === 'IMPROVED') {
+    result.repairEffectivenessNote = eff + ': ' + (effectivenessAudit.evidence || '');
+  }
+  return result;
+}
+
+function _makeGate(status, criticalIssues, warnings) {
+  return { status: status, criticalIssues: criticalIssues || [], warnings: warnings || [], longVerdict: 'OK' };
+}
+function _makeEff55(effectiveness, alertCode) {
+  var alert = alertCode ? { code: alertCode } : null;
+  return { effectiveness: effectiveness, evidence: 'test evidence', alert: alert };
+}
+
+// ─── F55: _applyRepairEffectivenessGate ──────────────────────────────────────
+
+// F55-A: REGRESSED from OK → REVIEW_REQUIRED, criticalIssue added
+(function() {
+  console.log('\nF55-A — REGRESSED from OK → REVIEW_REQUIRED');
+  var g = _makeGate('OK', [], []);
+  var ea = _makeEff55('REGRESSED', 'REPAIR_REGRESSION');
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Aa', 'status = REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F55-Ab', 'criticalIssues has REGRESSION note', r.criticalIssues.some(function(c) { return c.indexOf('REPAIR_REGRESSION') >= 0; }));
+})();
+
+// F55-B: REGRESSED from WARN → elevates to REVIEW_REQUIRED
+(function() {
+  console.log('\nF55-B — REGRESSED from WARN → REVIEW_REQUIRED');
+  var g = _makeGate('WARN', [], ['existing warning']);
+  var ea = _makeEff55('REGRESSED', 'REPAIR_REGRESSION');
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Ba', 'status = REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F55-Bb', 'prior warning preserved', r.warnings.indexOf('existing warning') >= 0);
+})();
+
+// F55-C: REGRESSED from REVIEW_REQUIRED → still REVIEW_REQUIRED, note appended
+(function() {
+  console.log('\nF55-C — REGRESSED from REVIEW_REQUIRED → stays REVIEW_REQUIRED');
+  var g = _makeGate('REVIEW_REQUIRED', ['prior critical'], []);
+  var ea = _makeEff55('REGRESSED', 'REPAIR_REGRESSION');
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Ca', 'status = REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F55-Cb', 'prior critical preserved, new added', r.criticalIssues.length === 2);
+})();
+
+// F55-D: UNCHANGED + REPAIR_INEFFECTIVE from OK → elevates to WARN
+(function() {
+  console.log('\nF55-D — UNCHANGED+REPAIR_INEFFECTIVE from OK → WARN');
+  var g = _makeGate('OK', [], []);
+  var ea = _makeEff55('UNCHANGED', 'REPAIR_INEFFECTIVE');
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Da', 'status = WARN', r.status === 'WARN');
+  assert('F55-Db', 'warnings has REPAIR_INEFFECTIVE note', r.warnings.some(function(w) { return w.indexOf('REPAIR_INEFFECTIVE') >= 0; }));
+})();
+
+// F55-E: UNCHANGED + REPAIR_INEFFECTIVE from REVIEW_REQUIRED → stays REVIEW_REQUIRED (no downgrade)
+(function() {
+  console.log('\nF55-E — UNCHANGED+REPAIR_INEFFECTIVE from REVIEW_REQUIRED → no downgrade');
+  var g = _makeGate('REVIEW_REQUIRED', ['prior critical'], []);
+  var ea = _makeEff55('UNCHANGED', 'REPAIR_INEFFECTIVE');
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Ea', 'status stays REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F55-Eb', 'warning added but status not reduced', r.warnings.length > 0 && r.status === 'REVIEW_REQUIRED');
+})();
+
+// F55-F: RESOLVED → no status change, repairEffectivenessNote set
+(function() {
+  console.log('\nF55-F — RESOLVED → no status change, note set');
+  var g = _makeGate('OK', [], []);
+  var ea = _makeEff55('RESOLVED', null);
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Fa', 'status remains OK', r.status === 'OK');
+  assert('F55-Fb', 'repairEffectivenessNote set', r.repairEffectivenessNote !== null);
+})();
+
+// F55-G: IMPROVED → no status change, no critical/warn added
+(function() {
+  console.log('\nF55-G — IMPROVED → no elevation, no new issues');
+  var g = _makeGate('OK', [], []);
+  var ea = _makeEff55('IMPROVED', null);
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Ga', 'status remains OK', r.status === 'OK');
+  assert('F55-Gb', 'no criticalIssues added', r.criticalIssues.length === 0);
+})();
+
+// F55-H: NOT_VERIFIABLE → no change whatsoever
+(function() {
+  console.log('\nF55-H — NOT_VERIFIABLE → no change');
+  var g = _makeGate('WARN', ['c'], ['w']);
+  var ea = _makeEff55('NOT_VERIFIABLE', null);
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Ha', 'status unchanged = WARN', r.status === 'WARN');
+  assert('F55-Hb', 'repairEffectivenessNote null', r.repairEffectivenessNote === null);
+})();
+
+// F55-I: null effectivenessAudit → return copy of currentGate unchanged
+(function() {
+  console.log('\nF55-I — null effectivenessAudit → gate copy unchanged');
+  var g = _makeGate('WARN', ['c1'], ['w1']);
+  var r = _applyRepairEffectivenessGate(g, null, {});
+  assert('F55-Ia', 'status copied = WARN', r.status === 'WARN');
+  assert('F55-Ib', 'criticalIssues copied', r.criticalIssues[0] === 'c1');
+})();
+
+// F55-J: UNCHANGED without REPAIR_INEFFECTIVE alert → no WARN elevation (just UNCHANGED, no alert)
+(function() {
+  console.log('\nF55-J — UNCHANGED without REPAIR_INEFFECTIVE → no elevation');
+  var g = _makeGate('OK', [], []);
+  var ea = { effectiveness: 'UNCHANGED', evidence: 'test', alert: null };
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Ja', 'status remains OK', r.status === 'OK');
+  assert('F55-Jb', 'no warnings added', r.warnings.length === 0);
+})();
+
+// F55-K: REVIEW_REQUIRED stays when effectiveness=RESOLVED (never downgrade)
+(function() {
+  console.log('\nF55-K — never downgrade: REVIEW_REQUIRED + RESOLVED → stays REVIEW_REQUIRED');
+  var g = _makeGate('REVIEW_REQUIRED', ['critical'], []);
+  var ea = _makeEff55('RESOLVED', null);
+  var r = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Ka', 'status stays REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F55-Kb', 'criticalIssues unchanged', r.criticalIssues[0] === 'critical');
+})();
+
+// F55-L: Determinism — same inputs → identical output
+(function() {
+  console.log('\nF55-L — determinism: same inputs → identical output');
+  var g = _makeGate('OK', [], []);
+  var ea = _makeEff55('REGRESSED', 'REPAIR_REGRESSION');
+  var r1 = _applyRepairEffectivenessGate(g, ea, {});
+  var r2 = _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-La', 'same status both calls', r1.status === r2.status);
+  assert('F55-Lb', 'same note both calls', r1.repairEffectivenessNote === r2.repairEffectivenessNote);
+})();
+
+// F55-M: No mutation — inputs unchanged after call
+(function() {
+  console.log('\nF55-M — no mutation: inputs unchanged after call');
+  var g = { status: 'OK', criticalIssues: [], warnings: [], longVerdict: 'OK' };
+  var ea = _makeEff55('REGRESSED', 'REPAIR_REGRESSION');
+  var gSnap = JSON.stringify(g);
+  _applyRepairEffectivenessGate(g, ea, {});
+  assert('F55-Ma', 'currentGate unchanged', JSON.stringify(g) === gSnap);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
