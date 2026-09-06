@@ -6624,7 +6624,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         }).join('');
         var _dtLine = '';
         if (_selAudit.selectedCandidate) {
-          var _outAudit = _auditRepairOutcome(_selAudit.selectedCandidate, training, {});
+          var _outAudit = _auditRepairOutcome(_selAudit.selectedCandidate, training, { prevPlan: _prevPlanForLV });
           var _dtId = _escH(String(_selAudit.selectedCandidate.targetExerciseId || _selAudit.selectedCandidate.id).substring(0, 40));
           var _dtHist = _selAudit.historyInfluence ? ' · HISTORY:✓' : '';
           var _dtOutcome = _outAudit ? ' · ' + _escH(_outAudit.outcome) : '';
@@ -10303,6 +10303,108 @@ El esfuerzo no es negociable.
   }
   window._auditCandidateSelection = _auditCandidateSelection;
 
+  // ── FASE 53: _auditStructuralRepairOutcome ────────────────────────────────
+  // Pure post-hoc structural auditor. Called by _auditRepairOutcome for
+  // REVIEW_TOPOLOGY_CHOICE / REVIEW_DISTRIBUTION_TOPOLOGY / REVIEW_STABILITY.
+  // context.prevPlan optional: { daysPerWeek?, days:[{label?, exercises?}] }
+  // Alert code: STRUCTURAL_REPAIR_NOT_REFLECTED
+  function _auditStructuralRepairOutcome(selectedCandidate, resultingPlan, context) {
+    var prevPlan = (context && context.prevPlan) || null;
+
+    if (!selectedCandidate) {
+      return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No structural candidate.', alert: null };
+    }
+
+    var type = selectedCandidate.type;
+
+    if (type === 'REVIEW_DISTRIBUTION_TOPOLOGY') {
+      if (!prevPlan || !resultingPlan) {
+        return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No plan data for distribution comparison.', alert: null };
+      }
+      var prevD = typeof prevPlan.daysPerWeek === 'number' ? prevPlan.daysPerWeek
+                : (Array.isArray(prevPlan.days) ? prevPlan.days.length : null);
+      var newD  = typeof resultingPlan.daysPerWeek === 'number' ? resultingPlan.daysPerWeek
+                : (Array.isArray(resultingPlan.days) ? resultingPlan.days.length : null);
+      if (prevD === null || newD === null) {
+        return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'Cannot determine session count from plans.', alert: null };
+      }
+      if (prevD !== newD) {
+        return { outcome: 'APPLIED_AS_EXPECTED',
+                 evidence: 'Session count changed: ' + prevD + ' → ' + newD + '.', alert: null };
+      }
+      return { outcome: 'NOT_APPLIED',
+               evidence: 'Session count unchanged at ' + newD + '.',
+               alert: { code: 'STRUCTURAL_REPAIR_NOT_REFLECTED', candidateId: selectedCandidate.id,
+                        candidateType: type, expected: 'session-count change',
+                        detail: 'REVIEW_DISTRIBUTION_TOPOLOGY selected but daysPerWeek unchanged (' + newD + ').' } };
+    }
+
+    if (type === 'REVIEW_TOPOLOGY_CHOICE') {
+      if (!prevPlan || !resultingPlan) {
+        return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No plan data for topology comparison.', alert: null };
+      }
+      var prevLbls = {};
+      (Array.isArray(prevPlan.days) ? prevPlan.days : []).forEach(function(d) { if (d.label) prevLbls[d.label] = true; });
+      var newLbls  = {};
+      (Array.isArray(resultingPlan.days) ? resultingPlan.days : []).forEach(function(d) { if (d.label) newLbls[d.label] = true; });
+      var prevKeys = Object.keys(prevLbls).sort();
+      var newKeys  = Object.keys(newLbls).sort();
+      if (!prevKeys.length || !newKeys.length) {
+        return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'Day labels not available for topology comparison.', alert: null };
+      }
+      if (prevKeys.join('|') === newKeys.join('|')) {
+        return { outcome: 'NOT_APPLIED',
+                 evidence: 'Topology unchanged: label set identical [' + prevKeys.join(', ') + '].',
+                 alert: { code: 'STRUCTURAL_REPAIR_NOT_REFLECTED', candidateId: selectedCandidate.id,
+                          candidateType: type, expected: 'topology change',
+                          detail: 'REVIEW_TOPOLOGY_CHOICE selected but day labels unchanged.' } };
+      }
+      var overlap = prevKeys.filter(function(k) { return newLbls[k]; }).length;
+      if (overlap === 0) {
+        return { outcome: 'APPLIED_AS_EXPECTED',
+                 evidence: 'Topology changed: label set completely different.', alert: null };
+      }
+      return { outcome: 'PARTIALLY_APPLIED',
+               evidence: 'Topology partially changed: ' + overlap + '/' + prevKeys.length + ' labels shared.', alert: null };
+    }
+
+    if (type === 'REVIEW_STABILITY') {
+      if (!prevPlan || !resultingPlan) {
+        return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No plan data for stability check.', alert: null };
+      }
+      var prevEx = {};
+      (Array.isArray(prevPlan.days) ? prevPlan.days : []).forEach(function(d) {
+        (Array.isArray(d.exercises) ? d.exercises : []).forEach(function(e) { if (e.exerciseName) prevEx[e.exerciseName] = true; });
+      });
+      var newEx  = {};
+      (Array.isArray(resultingPlan.days) ? resultingPlan.days : []).forEach(function(d) {
+        (Array.isArray(d.exercises) ? d.exercises : []).forEach(function(e) { if (e.exerciseName) newEx[e.exerciseName] = true; });
+      });
+      var prevExKeys = Object.keys(prevEx);
+      if (!prevExKeys.length) {
+        return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No previous exercises to assess stability.', alert: null };
+      }
+      var preserved = prevExKeys.filter(function(k) { return newEx[k]; }).length;
+      var ratio = preserved / prevExKeys.length;
+      if (ratio >= 0.7) {
+        return { outcome: 'APPLIED_AS_EXPECTED',
+                 evidence: 'Stability maintained: ' + preserved + '/' + prevExKeys.length + ' prev exercises kept.', alert: null };
+      }
+      if (ratio >= 0.3) {
+        return { outcome: 'PARTIALLY_APPLIED',
+                 evidence: 'Partial stability: ' + preserved + '/' + prevExKeys.length + ' prev exercises kept.', alert: null };
+      }
+      return { outcome: 'NOT_APPLIED',
+               evidence: 'Low stability: ' + preserved + '/' + prevExKeys.length + ' prev exercises kept.',
+               alert: { code: 'STRUCTURAL_REPAIR_NOT_REFLECTED', candidateId: selectedCandidate.id,
+                        candidateType: type, expected: 'exercise-set stability',
+                        detail: 'Only ' + preserved + '/' + prevExKeys.length + ' prev exercises preserved.' } };
+    }
+
+    return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'Unknown structural type [' + type + '].', alert: null };
+  }
+  window._auditStructuralRepairOutcome = _auditStructuralRepairOutcome;
+
   // ── FASE 52: _auditRepairOutcome ──────────────────────────────────────────
   // Pure post-hoc outcome auditor. Does NOT correct or modify the plan.
   // selectedCandidate: candidate object from F51 (or null).
@@ -10319,7 +10421,7 @@ El esfuerzo no es negociable.
     var targetId = selectedCandidate.targetExerciseId;
 
     if (type === 'REVIEW_TOPOLOGY_CHOICE' || type === 'REVIEW_DISTRIBUTION_TOPOLOGY' || type === 'REVIEW_STABILITY') {
-      return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'Structural candidate — not verifiable from plan data.', alert: null };
+      return _auditStructuralRepairOutcome(selectedCandidate, resultingPlan, context);
     }
 
     if (!targetId) {
@@ -10605,7 +10707,7 @@ El esfuerzo no es negociable.
         }).join('');
         var _dtLine2 = '';
         if (_selAudit2.selectedCandidate) {
-          var _outAudit2 = _auditRepairOutcome(_selAudit2.selectedCandidate, training, {});
+          var _outAudit2 = _auditRepairOutcome(_selAudit2.selectedCandidate, training, { prevPlan: _prevPlanForLV2 });
           var _dtId2 = _escH(String(_selAudit2.selectedCandidate.targetExerciseId || _selAudit2.selectedCandidate.id).substring(0, 40));
           var _dtHist2 = _selAudit2.historyInfluence ? ' · HISTORY:✓' : '';
           var _dtOutcome2 = _outAudit2 ? ' · ' + _escH(_outAudit2.outcome) : '';

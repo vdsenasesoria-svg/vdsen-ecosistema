@@ -10120,4 +10120,233 @@ function _makeF52Plan(exerciseNames) {
   assert('F52-Nb', 'alert is null', r.alert === null);
 })();
 
+// ─── F53 inline: _auditStructuralRepairOutcome ───────────────────────────────
+function _auditStructuralRepairOutcome(selectedCandidate, resultingPlan, context) {
+  var prevPlan = (context && context.prevPlan) || null;
+  if (!selectedCandidate) { return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No structural candidate.', alert: null }; }
+  var type = selectedCandidate.type;
+
+  if (type === 'REVIEW_DISTRIBUTION_TOPOLOGY') {
+    if (!prevPlan || !resultingPlan) { return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No plan data.', alert: null }; }
+    var prevD = typeof prevPlan.daysPerWeek === 'number' ? prevPlan.daysPerWeek
+              : (Array.isArray(prevPlan.days) ? prevPlan.days.length : null);
+    var newD  = typeof resultingPlan.daysPerWeek === 'number' ? resultingPlan.daysPerWeek
+              : (Array.isArray(resultingPlan.days) ? resultingPlan.days.length : null);
+    if (prevD === null || newD === null) { return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'Cannot determine session count.', alert: null }; }
+    if (prevD !== newD) { return { outcome: 'APPLIED_AS_EXPECTED', evidence: 'Session count changed: ' + prevD + ' → ' + newD + '.', alert: null }; }
+    return { outcome: 'NOT_APPLIED', evidence: 'Session count unchanged at ' + newD + '.',
+             alert: { code: 'STRUCTURAL_REPAIR_NOT_REFLECTED', candidateId: selectedCandidate.id,
+                      candidateType: type, expected: 'session-count change',
+                      detail: 'REVIEW_DISTRIBUTION_TOPOLOGY selected but daysPerWeek unchanged (' + newD + ').' } };
+  }
+
+  if (type === 'REVIEW_TOPOLOGY_CHOICE') {
+    if (!prevPlan || !resultingPlan) { return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No plan data.', alert: null }; }
+    var prevLbls = {};
+    (Array.isArray(prevPlan.days) ? prevPlan.days : []).forEach(function(d) { if (d.label) prevLbls[d.label] = true; });
+    var newLbls = {};
+    (Array.isArray(resultingPlan.days) ? resultingPlan.days : []).forEach(function(d) { if (d.label) newLbls[d.label] = true; });
+    var prevKeys = Object.keys(prevLbls).sort();
+    var newKeys  = Object.keys(newLbls).sort();
+    if (!prevKeys.length || !newKeys.length) { return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'Day labels not available.', alert: null }; }
+    if (prevKeys.join('|') === newKeys.join('|')) {
+      return { outcome: 'NOT_APPLIED', evidence: 'Topology unchanged: [' + prevKeys.join(', ') + '].',
+               alert: { code: 'STRUCTURAL_REPAIR_NOT_REFLECTED', candidateId: selectedCandidate.id,
+                        candidateType: type, expected: 'topology change', detail: 'Day labels unchanged.' } };
+    }
+    var overlap = prevKeys.filter(function(k) { return newLbls[k]; }).length;
+    if (overlap === 0) { return { outcome: 'APPLIED_AS_EXPECTED', evidence: 'Topology changed: label set completely different.', alert: null }; }
+    return { outcome: 'PARTIALLY_APPLIED', evidence: 'Topology partially changed: ' + overlap + '/' + prevKeys.length + ' labels shared.', alert: null };
+  }
+
+  if (type === 'REVIEW_STABILITY') {
+    if (!prevPlan || !resultingPlan) { return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No plan data.', alert: null }; }
+    var prevEx = {};
+    (Array.isArray(prevPlan.days) ? prevPlan.days : []).forEach(function(d) {
+      (Array.isArray(d.exercises) ? d.exercises : []).forEach(function(e) { if (e.exerciseName) prevEx[e.exerciseName] = true; });
+    });
+    var newEx = {};
+    (Array.isArray(resultingPlan.days) ? resultingPlan.days : []).forEach(function(d) {
+      (Array.isArray(d.exercises) ? d.exercises : []).forEach(function(e) { if (e.exerciseName) newEx[e.exerciseName] = true; });
+    });
+    var prevExKeys = Object.keys(prevEx);
+    if (!prevExKeys.length) { return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No previous exercises.', alert: null }; }
+    var preserved = prevExKeys.filter(function(k) { return newEx[k]; }).length;
+    var ratio = preserved / prevExKeys.length;
+    if (ratio >= 0.7) { return { outcome: 'APPLIED_AS_EXPECTED', evidence: 'Stability maintained: ' + preserved + '/' + prevExKeys.length + '.', alert: null }; }
+    if (ratio >= 0.3) { return { outcome: 'PARTIALLY_APPLIED', evidence: 'Partial stability: ' + preserved + '/' + prevExKeys.length + '.', alert: null }; }
+    return { outcome: 'NOT_APPLIED', evidence: 'Low stability: ' + preserved + '/' + prevExKeys.length + '.',
+             alert: { code: 'STRUCTURAL_REPAIR_NOT_REFLECTED', candidateId: selectedCandidate.id,
+                      candidateType: type, expected: 'exercise-set stability',
+                      detail: 'Only ' + preserved + '/' + prevExKeys.length + ' prev exercises preserved.' } };
+  }
+  return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'Unknown structural type [' + type + '].', alert: null };
+}
+
+function _makeStructCand(type, overrides) {
+  return Object.assign({
+    id: 'struct:' + type, type: type, targetExerciseId: null,
+    priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false,
+    tags: ['structural'], reasonCodes: []
+  }, overrides || {});
+}
+function _makeStructPlan(daysPerWeek, labeledDays, exercises) {
+  var days = (labeledDays || []).map(function(lbl) {
+    return { label: lbl, exercises: (exercises || []).map(function(n) { return { exerciseName: n }; }) };
+  });
+  return { daysPerWeek: daysPerWeek, days: days };
+}
+
+// ─── F53: _auditStructuralRepairOutcome ──────────────────────────────────────
+
+// F53-A: REVIEW_DISTRIBUTION_TOPOLOGY — day count changes → APPLIED_AS_EXPECTED
+(function() {
+  console.log('\nF53-A — DISTRIBUTION_TOPOLOGY session count changed → APPLIED_AS_EXPECTED');
+  var c = _makeStructCand('REVIEW_DISTRIBUTION_TOPOLOGY');
+  var prev = _makeStructPlan(4, ['A','B','C','D'], []);
+  var next = _makeStructPlan(5, ['A','B','C','D','E'], []);
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Aa', 'outcome = APPLIED_AS_EXPECTED', r.outcome === 'APPLIED_AS_EXPECTED');
+  assert('F53-Ab', 'alert is null', r.alert === null);
+})();
+
+// F53-B: REVIEW_DISTRIBUTION_TOPOLOGY — same day count → NOT_APPLIED + alert
+(function() {
+  console.log('\nF53-B — DISTRIBUTION_TOPOLOGY session count unchanged → NOT_APPLIED');
+  var c = _makeStructCand('REVIEW_DISTRIBUTION_TOPOLOGY');
+  var prev = _makeStructPlan(4, ['A','B','C','D'], []);
+  var next = _makeStructPlan(4, ['A','B','C','D'], []);
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Ba', 'outcome = NOT_APPLIED', r.outcome === 'NOT_APPLIED');
+  assert('F53-Bb', 'alert.code = STRUCTURAL_REPAIR_NOT_REFLECTED', r.alert && r.alert.code === 'STRUCTURAL_REPAIR_NOT_REFLECTED');
+  assert('F53-Bc', 'evidence mentions unchanged', r.evidence.indexOf('unchanged') >= 0);
+})();
+
+// F53-C: REVIEW_DISTRIBUTION_TOPOLOGY — no prevPlan → OUTCOME_NOT_VERIFIABLE
+(function() {
+  console.log('\nF53-C — DISTRIBUTION_TOPOLOGY no prevPlan → OUTCOME_NOT_VERIFIABLE');
+  var c = _makeStructCand('REVIEW_DISTRIBUTION_TOPOLOGY');
+  var next = _makeStructPlan(4, ['A','B','C','D'], []);
+  var r = _auditStructuralRepairOutcome(c, next, {});
+  assert('F53-Ca', 'outcome = OUTCOME_NOT_VERIFIABLE', r.outcome === 'OUTCOME_NOT_VERIFIABLE');
+  assert('F53-Cb', 'alert is null', r.alert === null);
+})();
+
+// F53-D: REVIEW_TOPOLOGY_CHOICE — completely different labels → APPLIED_AS_EXPECTED
+(function() {
+  console.log('\nF53-D — TOPOLOGY_CHOICE completely different labels → APPLIED_AS_EXPECTED');
+  var c = _makeStructCand('REVIEW_TOPOLOGY_CHOICE');
+  var prev = _makeStructPlan(3, ['Push','Pull','Legs'], []);
+  var next = _makeStructPlan(3, ['Tren superior A','Tren superior B','Tren inferior'], []);
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Da', 'outcome = APPLIED_AS_EXPECTED', r.outcome === 'APPLIED_AS_EXPECTED');
+  assert('F53-Db', 'alert is null', r.alert === null);
+})();
+
+// F53-E: REVIEW_TOPOLOGY_CHOICE — identical labels → NOT_APPLIED + alert
+(function() {
+  console.log('\nF53-E — TOPOLOGY_CHOICE identical labels → NOT_APPLIED');
+  var c = _makeStructCand('REVIEW_TOPOLOGY_CHOICE');
+  var prev = _makeStructPlan(3, ['Push','Pull','Legs'], []);
+  var next = _makeStructPlan(3, ['Legs','Pull','Push'], []);
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Ea', 'outcome = NOT_APPLIED', r.outcome === 'NOT_APPLIED');
+  assert('F53-Eb', 'alert.code = STRUCTURAL_REPAIR_NOT_REFLECTED', r.alert && r.alert.code === 'STRUCTURAL_REPAIR_NOT_REFLECTED');
+})();
+
+// F53-F: REVIEW_TOPOLOGY_CHOICE — no labels in either plan → OUTCOME_NOT_VERIFIABLE
+(function() {
+  console.log('\nF53-F — TOPOLOGY_CHOICE no labels → OUTCOME_NOT_VERIFIABLE');
+  var c = _makeStructCand('REVIEW_TOPOLOGY_CHOICE');
+  var prev = { days: [{ exercises: [] }, { exercises: [] }] };
+  var next = { days: [{ exercises: [] }, { exercises: [] }] };
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Fa', 'outcome = OUTCOME_NOT_VERIFIABLE', r.outcome === 'OUTCOME_NOT_VERIFIABLE');
+  assert('F53-Fb', 'alert is null', r.alert === null);
+})();
+
+// F53-G: REVIEW_TOPOLOGY_CHOICE — partial label overlap → PARTIALLY_APPLIED
+(function() {
+  console.log('\nF53-G — TOPOLOGY_CHOICE partial overlap → PARTIALLY_APPLIED');
+  var c = _makeStructCand('REVIEW_TOPOLOGY_CHOICE');
+  var prev = _makeStructPlan(3, ['Push','Pull','Legs'], []);
+  var next = _makeStructPlan(3, ['Push','Tren superior B','Tren inferior'], []);
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Ga', 'outcome = PARTIALLY_APPLIED', r.outcome === 'PARTIALLY_APPLIED');
+  assert('F53-Gb', 'alert is null', r.alert === null);
+})();
+
+// F53-H: REVIEW_STABILITY — high preservation ratio (≥0.7) → APPLIED_AS_EXPECTED
+(function() {
+  console.log('\nF53-H — STABILITY high ratio ≥0.7 → APPLIED_AS_EXPECTED');
+  var c = _makeStructCand('REVIEW_STABILITY');
+  var exPrev = ['Ex1','Ex2','Ex3','Ex4','Ex5','Ex6','Ex7','Ex8','Ex9','Ex10'];
+  var exNext = ['Ex1','Ex2','Ex3','Ex4','Ex5','Ex6','Ex7','Ex8','Ex9','New1'];
+  var prev = _makeStructPlan(1, ['A'], exPrev);
+  var next = _makeStructPlan(1, ['A'], exNext);
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Ha', 'outcome = APPLIED_AS_EXPECTED', r.outcome === 'APPLIED_AS_EXPECTED');
+  assert('F53-Hb', 'alert is null', r.alert === null);
+})();
+
+// F53-I: REVIEW_STABILITY — mid ratio (0.3–0.7) → PARTIALLY_APPLIED
+(function() {
+  console.log('\nF53-I — STABILITY mid ratio → PARTIALLY_APPLIED');
+  var c = _makeStructCand('REVIEW_STABILITY');
+  var exPrev = ['Ex1','Ex2','Ex3','Ex4','Ex5','Ex6','Ex7','Ex8','Ex9','Ex10'];
+  var exNext = ['Ex1','Ex2','Ex3','Ex4','NewA','NewB','NewC','NewD','NewE','NewF'];
+  var prev = _makeStructPlan(1, ['A'], exPrev);
+  var next = _makeStructPlan(1, ['A'], exNext);
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Ia', 'outcome = PARTIALLY_APPLIED', r.outcome === 'PARTIALLY_APPLIED');
+  assert('F53-Ib', 'alert is null', r.alert === null);
+})();
+
+// F53-J: REVIEW_STABILITY — low ratio (<0.3) → NOT_APPLIED + alert
+(function() {
+  console.log('\nF53-J — STABILITY low ratio → NOT_APPLIED');
+  var c = _makeStructCand('REVIEW_STABILITY');
+  var exPrev = ['Ex1','Ex2','Ex3','Ex4','Ex5','Ex6','Ex7','Ex8','Ex9','Ex10'];
+  var exNext = ['NewA','NewB','NewC','NewD','NewE','NewF','NewG','NewH','NewI','NewJ'];
+  var prev = _makeStructPlan(1, ['A'], exPrev);
+  var next = _makeStructPlan(1, ['A'], exNext);
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Ja', 'outcome = NOT_APPLIED', r.outcome === 'NOT_APPLIED');
+  assert('F53-Jb', 'alert.code = STRUCTURAL_REPAIR_NOT_REFLECTED', r.alert && r.alert.code === 'STRUCTURAL_REPAIR_NOT_REFLECTED');
+})();
+
+// F53-K: REVIEW_STABILITY — no previous exercises → OUTCOME_NOT_VERIFIABLE
+(function() {
+  console.log('\nF53-K — STABILITY no prev exercises → OUTCOME_NOT_VERIFIABLE');
+  var c = _makeStructCand('REVIEW_STABILITY');
+  var prev = { days: [{ exercises: [] }] };
+  var next = _makeStructPlan(1, ['A'], ['Ex1','Ex2']);
+  var r = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Ka', 'outcome = OUTCOME_NOT_VERIFIABLE', r.outcome === 'OUTCOME_NOT_VERIFIABLE');
+  assert('F53-Kb', 'alert is null', r.alert === null);
+})();
+
+// F53-L: Determinism — same inputs twice → identical output
+(function() {
+  console.log('\nF53-L — determinism: same inputs → identical output');
+  var c = _makeStructCand('REVIEW_DISTRIBUTION_TOPOLOGY');
+  var prev = _makeStructPlan(4, ['A','B','C','D'], []);
+  var next = _makeStructPlan(5, ['A','B','C','D','E'], []);
+  var r1 = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  var r2 = _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-La', 'same outcome both calls', r1.outcome === r2.outcome);
+  assert('F53-Lb', 'same alert both calls', JSON.stringify(r1.alert) === JSON.stringify(r2.alert));
+})();
+
+// F53-M: No mutation — inputs unchanged after call
+(function() {
+  console.log('\nF53-M — no mutation: inputs unchanged after call');
+  var c = _makeStructCand('REVIEW_STABILITY');
+  var prev = { daysPerWeek: 1, days: [{ label: 'A', exercises: [{ exerciseName: 'Ex1' }] }] };
+  var next = _makeStructPlan(1, ['A'], ['Ex1']);
+  var prevSnapshot = JSON.stringify(prev);
+  _auditStructuralRepairOutcome(c, next, { prevPlan: prev });
+  assert('F53-Ma', 'prevPlan unchanged', JSON.stringify(prev) === prevSnapshot);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
