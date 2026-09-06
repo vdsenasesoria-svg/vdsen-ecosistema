@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-06 · branch `main` · FASE 51 DONE · Suite 1414/1414
+> Actualizado: 2026-09-06 · branch `main` · FASE 52 DONE · Suite 1440/1440
 
 ---
 
@@ -37,7 +37,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 32 | MERGED — commit `1975fd8` · UX Cliente: touch targets, setDone flash, ring fix |
 | FASE 33 | DONE — commits `7a29aa6`+`f10c75f` · End-to-End Integration Audit: 25 bugs corregidos |
 | FASE 34 | DONE — Legacy Identity Hardening: BUG H-3 + BUG G4 corregidos, 17 tests nuevos |
-| Suite tests | **1414/1414 PASS** (P01–P426 + F34-A–J + F36-B–N + F37-A–I + F39-A–E + F45-A–J + F46-A–O + BUG-RIR0-A–I + BUG-XSS-A–F + BUG-LS-DIV-A–D + F47-A–I + F48-A–J + F49-A–M + F50-A–Q + F51-A–M) |
+| Suite tests | **1440/1440 PASS** (P01–P426 + F34-A–J + F36-B–N + F37-A–I + F39-A–E + F45-A–J + F46-A–O + BUG-RIR0-A–I + BUG-XSS-A–F + BUG-LS-DIV-A–D + F47-A–I + F48-A–J + F49-A–M + F50-A–Q + F51-A–M + F52-A–N) |
 | FASE 45 | DONE — Learned State Activation v1 (topology + distribution engines) |
 | FASE 46 | MERGED — Exercise Learned State Activation v1 · `099fd74` (fast-forward desde `claude/learned-state-activation-d5b69n`) |
 | Bug: RIR-0 | FIXED — RIR 0 (fallo) no colapsa a default 2 en saveExpress/markExpressSerie/SS paths (vdsen-cliente.html) |
@@ -55,6 +55,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 49 | DONE — Longitudinal Repair Bridge: `_buildLongitudinalRepairHints` puro (6 tipos → preferredAction/reasonCodes); integrado en success UI de ambos flows (max 3 "MEJORAS LONGITUDINALES PROPUESTAS"); tests F49-A–M (37 assertions) · Suite 1336/1336 |
 | FASE 50 | DONE — Longitudinal Repair Execution Bridge: `_buildExerciseCandidatesForLV` (candidatos desde training+prevPlan) + `_applyLongitudinalRepairHintsToCandidates` (puro, ajusta priority/cost de candidatos válidos, re-audit gate wouldAddCriticalIssue, sort priority DESC/cost ASC); badge [reasonCode] en hints con candidato matched; tests F50-A–Q (52 assertions) · Suite 1388/1388 |
 | FASE 51 | DONE — Longitudinal Repair Selection Audit: `_auditCandidateSelection` puro (selectedCandidate, selectionReason, historyInfluence, reasonCodes, alert); detecta TOP_RANKED_REPAIR_NOT_SELECTED cuando candidato superior elegible fue ignorado sin justificación; Decision Trace "📋 candidato · reason · HISTORY:✓" en Preview de ambos flujos; 0 auto-apply; tests F51-A–M (26 assertions) · Suite 1414/1414 |
+| FASE 52 | DONE — Longitudinal Repair Outcome Validation: `_auditRepairOutcome` puro (post-hoc, 0 writes, 0 correcciones); clasifica APPLIED_AS_EXPECTED / PARTIALLY_APPLIED / NOT_APPLIED / OUTCOME_NOT_VERIFIABLE; alerta REPAIR_NOT_REFLECTED cuando selección no se refleja en plan; candidatos estructurales → NOT_VERIFIABLE; PARTIALLY_APPLIED cuando plan tiene días sin datos de ejercicio; outcome integrado en Decision Trace de ambos flujos; tests F52-A–N (26 assertions) · Suite 1440/1440 |
 | FASE 37 | DONE — LOGS_BY_WEEK index en memoria · commit `96fbc1b` |
 | FASE 38 | DONE — XSS guards _escH en 8 interpolaciones coach · commit `470a261` |
 | FASE 39 | DONE — Fix _buildCheckInData adherencia + rir_real_prom · commit `eb1a825` |

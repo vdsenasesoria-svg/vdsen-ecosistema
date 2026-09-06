@@ -9918,4 +9918,206 @@ function _makeAdj(overrides) {
   assert('F51-Mb', 'reasonCodes[0] = pain-kept', r.reasonCodes[0] === 'pain-kept');
 })();
 
+// ── FASE 52: _auditRepairOutcome ──────────────────────────────────────────────
+function _auditRepairOutcome(selectedCandidate, resultingPlan, context) {
+  if (!selectedCandidate) {
+    return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No candidate selected.', alert: null };
+  }
+  var type = selectedCandidate.type;
+  var targetId = selectedCandidate.targetExerciseId;
+  if (type === 'REVIEW_TOPOLOGY_CHOICE' || type === 'REVIEW_DISTRIBUTION_TOPOLOGY' || type === 'REVIEW_STABILITY') {
+    return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'Structural candidate — not verifiable from plan data.', alert: null };
+  }
+  if (!targetId) {
+    return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No targetExerciseId — outcome not verifiable.', alert: null };
+  }
+  if (!resultingPlan || !Array.isArray(resultingPlan.days) || resultingPlan.days.length === 0) {
+    return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No resulting plan to verify against.', alert: null };
+  }
+  var hasAnyExercises = resultingPlan.days.some(function(d) {
+    return Array.isArray(d.exercises) && d.exercises.length > 0;
+  });
+  if (!hasAnyExercises) {
+    return { outcome: 'PARTIALLY_APPLIED', evidence: 'Plan structure present but no exercise data to verify against.', alert: null };
+  }
+  var daysWithExercise = 0;
+  resultingPlan.days.forEach(function(day) {
+    if (!Array.isArray(day.exercises)) return;
+    day.exercises.forEach(function(ex) {
+      if (ex.exerciseName === targetId) daysWithExercise++;
+    });
+  });
+  var exercisePresent = daysWithExercise > 0;
+  var outcome, evidence, alert = null;
+  if (type === 'REPLACE_OR_REMOVE') {
+    if (!exercisePresent) {
+      outcome = 'APPLIED_AS_EXPECTED';
+      evidence = targetId + ' absent from resulting plan — removed/replaced as selected.';
+    } else {
+      outcome = 'NOT_APPLIED';
+      evidence = targetId + ' still present in ' + daysWithExercise + ' day(s) — not removed/replaced.';
+      alert = { code: 'REPAIR_NOT_REFLECTED', candidateId: selectedCandidate.id, candidateType: type,
+                expected: 'exercise removed or replaced',
+                detail: targetId + ' still present in resulting plan after REPLACE_OR_REMOVE selection.' };
+    }
+  } else if (type === 'RESTORE_OR_KEEP') {
+    if (exercisePresent) {
+      outcome = 'APPLIED_AS_EXPECTED';
+      evidence = targetId + ' found in ' + daysWithExercise + ' day(s) — restored/kept as selected.';
+    } else {
+      outcome = 'NOT_APPLIED';
+      evidence = targetId + ' absent from resulting plan — not restored/kept.';
+      alert = { code: 'REPAIR_NOT_REFLECTED', candidateId: selectedCandidate.id, candidateType: type,
+                expected: 'exercise present in plan',
+                detail: targetId + ' absent from resulting plan after RESTORE_OR_KEEP selection.' };
+    }
+  } else {
+    outcome = 'OUTCOME_NOT_VERIFIABLE';
+    evidence = 'Unknown candidate type [' + type + '].';
+  }
+  return { outcome: outcome, evidence: evidence, alert: alert };
+}
+
+function _makeExCand(overrides) {
+  return Object.assign({
+    id: 'ex:replace:Press Banca', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Press Banca',
+    priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false,
+    tags: ['exercise'], reasonCodes: []
+  }, overrides || {});
+}
+function _makeF52Plan(exerciseNames) {
+  return { days: [{ exercises: (exerciseNames || []).map(function(n) { return { exerciseName: n }; }) }] };
+}
+
+// F52-A: REPLACE_OR_REMOVE, exercise not in plan → APPLIED_AS_EXPECTED, no alert
+(function() {
+  console.log('\nF52-A — REPLACE_OR_REMOVE, exercise absent → APPLIED_AS_EXPECTED');
+  var c = _makeExCand();
+  var plan = _makeF52Plan(['Sentadilla', 'Peso Muerto']);
+  var r = _auditRepairOutcome(c, plan, {});
+  assert('F52-Aa', 'outcome = APPLIED_AS_EXPECTED', r.outcome === 'APPLIED_AS_EXPECTED');
+  assert('F52-Ab', 'alert is null', r.alert === null);
+  assert('F52-Ac', 'evidence non-empty', r.evidence.length > 0);
+})();
+
+// F52-B: REPLACE_OR_REMOVE, exercise still in plan → NOT_APPLIED, alert REPAIR_NOT_REFLECTED
+(function() {
+  console.log('\nF52-B — REPLACE_OR_REMOVE, exercise still present → NOT_APPLIED + alert');
+  var c = _makeExCand();
+  var plan = _makeF52Plan(['Press Banca', 'Sentadilla']);
+  var r = _auditRepairOutcome(c, plan, {});
+  assert('F52-Ba', 'outcome = NOT_APPLIED', r.outcome === 'NOT_APPLIED');
+  assert('F52-Bb', 'alert.code = REPAIR_NOT_REFLECTED', r.alert && r.alert.code === 'REPAIR_NOT_REFLECTED');
+  assert('F52-Bc', 'alert.candidateType = REPLACE_OR_REMOVE', r.alert && r.alert.candidateType === 'REPLACE_OR_REMOVE');
+})();
+
+// F52-C: RESTORE_OR_KEEP, exercise in plan → APPLIED_AS_EXPECTED, no alert
+(function() {
+  console.log('\nF52-C — RESTORE_OR_KEEP, exercise present → APPLIED_AS_EXPECTED');
+  var c = _makeExCand({ id: 'ex:restore:Hip Thrust', type: 'RESTORE_OR_KEEP', targetExerciseId: 'Hip Thrust' });
+  var plan = _makeF52Plan(['Hip Thrust', 'Sentadilla']);
+  var r = _auditRepairOutcome(c, plan, {});
+  assert('F52-Ca', 'outcome = APPLIED_AS_EXPECTED', r.outcome === 'APPLIED_AS_EXPECTED');
+  assert('F52-Cb', 'alert is null', r.alert === null);
+})();
+
+// F52-D: RESTORE_OR_KEEP, exercise NOT in plan → NOT_APPLIED, alert
+(function() {
+  console.log('\nF52-D — RESTORE_OR_KEEP, exercise absent → NOT_APPLIED + alert');
+  var c = _makeExCand({ id: 'ex:restore:Hip Thrust', type: 'RESTORE_OR_KEEP', targetExerciseId: 'Hip Thrust' });
+  var plan = _makeF52Plan(['Sentadilla', 'Press Banca']);
+  var r = _auditRepairOutcome(c, plan, {});
+  assert('F52-Da', 'outcome = NOT_APPLIED', r.outcome === 'NOT_APPLIED');
+  assert('F52-Db', 'alert.code = REPAIR_NOT_REFLECTED', r.alert && r.alert.code === 'REPAIR_NOT_REFLECTED');
+})();
+
+// F52-E: REVIEW_TOPOLOGY_CHOICE → OUTCOME_NOT_VERIFIABLE, no alert
+(function() {
+  console.log('\nF52-E — REVIEW_TOPOLOGY_CHOICE → OUTCOME_NOT_VERIFIABLE');
+  var c = _makeExCand({ id: 'struct:topology', type: 'REVIEW_TOPOLOGY_CHOICE', targetExerciseId: null });
+  var plan = _makeF52Plan(['Sentadilla']);
+  var r = _auditRepairOutcome(c, plan, {});
+  assert('F52-Ea', 'outcome = OUTCOME_NOT_VERIFIABLE', r.outcome === 'OUTCOME_NOT_VERIFIABLE');
+  assert('F52-Eb', 'alert is null', r.alert === null);
+})();
+
+// F52-F: null selectedCandidate → OUTCOME_NOT_VERIFIABLE
+(function() {
+  console.log('\nF52-F — null selectedCandidate → OUTCOME_NOT_VERIFIABLE');
+  var r = _auditRepairOutcome(null, _makeF52Plan(['Sentadilla']), {});
+  assert('F52-Fa', 'outcome = OUTCOME_NOT_VERIFIABLE', r.outcome === 'OUTCOME_NOT_VERIFIABLE');
+  assert('F52-Fb', 'alert is null', r.alert === null);
+})();
+
+// F52-G: null resultingPlan → OUTCOME_NOT_VERIFIABLE
+(function() {
+  console.log('\nF52-G — null resultingPlan → OUTCOME_NOT_VERIFIABLE');
+  var r = _auditRepairOutcome(_makeExCand(), null, {});
+  assert('F52-Ga', 'outcome = OUTCOME_NOT_VERIFIABLE', r.outcome === 'OUTCOME_NOT_VERIFIABLE');
+  assert('F52-Gb', 'alert is null', r.alert === null);
+})();
+
+// F52-H: plan has days but no exercises → PARTIALLY_APPLIED
+(function() {
+  console.log('\nF52-H — days with no exercises → PARTIALLY_APPLIED');
+  var plan = { days: [{ exercises: [] }, { exercises: [] }] };
+  var r = _auditRepairOutcome(_makeExCand(), plan, {});
+  assert('F52-Ha', 'outcome = PARTIALLY_APPLIED', r.outcome === 'PARTIALLY_APPLIED');
+  assert('F52-Hb', 'alert is null', r.alert === null);
+})();
+
+// F52-I: no mutation of selectedCandidate
+(function() {
+  console.log('\nF52-I — no mutation of selectedCandidate');
+  var c = _makeExCand();
+  var origC = JSON.stringify(c);
+  _auditRepairOutcome(c, _makeF52Plan(['Press Banca']), {});
+  assert('F52-Ia', 'selectedCandidate not mutated', JSON.stringify(c) === origC);
+})();
+
+// F52-J: no mutation of resultingPlan
+(function() {
+  console.log('\nF52-J — no mutation of resultingPlan');
+  var plan = _makeF52Plan(['Press Banca', 'Sentadilla']);
+  var origP = JSON.stringify(plan);
+  _auditRepairOutcome(_makeExCand(), plan, {});
+  assert('F52-Ja', 'resultingPlan not mutated', JSON.stringify(plan) === origP);
+})();
+
+// F52-K: determinism — identical calls produce same output
+(function() {
+  console.log('\nF52-K — determinism');
+  var c = _makeExCand();
+  var plan = _makeF52Plan(['Press Banca']);
+  var r1 = _auditRepairOutcome(c, plan, {});
+  var r2 = _auditRepairOutcome(c, plan, {});
+  assert('F52-Ka', 'same outcome', r1.outcome === r2.outcome);
+})();
+
+// F52-L: alert.candidateId and alert.candidateType are correct
+(function() {
+  console.log('\nF52-L — alert.candidateId and alert.candidateType correct');
+  var c = _makeExCand({ id: 'ex:replace:Press Banca', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Press Banca' });
+  var plan = _makeF52Plan(['Press Banca']);
+  var r = _auditRepairOutcome(c, plan, {});
+  assert('F52-La', 'alert.candidateId = ex:replace:Press Banca', r.alert && r.alert.candidateId === 'ex:replace:Press Banca');
+  assert('F52-Lb', 'alert.candidateType = REPLACE_OR_REMOVE', r.alert && r.alert.candidateType === 'REPLACE_OR_REMOVE');
+})();
+
+// F52-M: REVIEW_DISTRIBUTION_TOPOLOGY → OUTCOME_NOT_VERIFIABLE
+(function() {
+  console.log('\nF52-M — REVIEW_DISTRIBUTION_TOPOLOGY → OUTCOME_NOT_VERIFIABLE');
+  var c = _makeExCand({ id: 'struct:distribution', type: 'REVIEW_DISTRIBUTION_TOPOLOGY', targetExerciseId: null });
+  var r = _auditRepairOutcome(c, _makeF52Plan(['Sentadilla']), {});
+  assert('F52-Ma', 'outcome = OUTCOME_NOT_VERIFIABLE', r.outcome === 'OUTCOME_NOT_VERIFIABLE');
+})();
+
+// F52-N: empty days array → OUTCOME_NOT_VERIFIABLE (no days to check)
+(function() {
+  console.log('\nF52-N — empty days array → OUTCOME_NOT_VERIFIABLE');
+  var r = _auditRepairOutcome(_makeExCand(), { days: [] }, {});
+  assert('F52-Na', 'outcome = OUTCOME_NOT_VERIFIABLE', r.outcome === 'OUTCOME_NOT_VERIFIABLE');
+  assert('F52-Nb', 'alert is null', r.alert === null);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

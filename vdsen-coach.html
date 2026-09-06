@@ -6624,10 +6624,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         }).join('');
         var _dtLine = '';
         if (_selAudit.selectedCandidate) {
+          var _outAudit = _auditRepairOutcome(_selAudit.selectedCandidate, training, {});
           var _dtId = _escH(String(_selAudit.selectedCandidate.targetExerciseId || _selAudit.selectedCandidate.id).substring(0, 40));
           var _dtHist = _selAudit.historyInfluence ? ' · HISTORY:✓' : '';
+          var _dtOutcome = _outAudit ? ' · ' + _escH(_outAudit.outcome) : '';
           var _dtAlert = _selAudit.alert ? ' <span style="color:var(--danger);font-size:9px">[!' + _escH(_selAudit.alert.code) + ']</span>' : '';
-          _dtLine = '<div style="color:var(--text-muted);font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId + ' · ' + _escH(_selAudit.selectionReason) + _dtHist + _dtAlert + '</div>';
+          _dtLine = '<div style="color:var(--text-muted);font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId + ' · ' + _escH(_selAudit.selectionReason) + _dtHist + _dtOutcome + _dtAlert + '</div>';
         }
         return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
           + '<span style="color:var(--text-muted);font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
@@ -10301,6 +10303,91 @@ El esfuerzo no es negociable.
   }
   window._auditCandidateSelection = _auditCandidateSelection;
 
+  // ── FASE 52: _auditRepairOutcome ──────────────────────────────────────────
+  // Pure post-hoc outcome auditor. Does NOT correct or modify the plan.
+  // selectedCandidate: candidate object from F51 (or null).
+  // resultingPlan: { days:[{exercises:[{exerciseName}]}] } or null.
+  // Returns { outcome, evidence, alert }.
+  // outcome: APPLIED_AS_EXPECTED | PARTIALLY_APPLIED | NOT_APPLIED | OUTCOME_NOT_VERIFIABLE
+  // alert: { code:'REPAIR_NOT_REFLECTED', candidateId, candidateType, expected, detail } | null
+  function _auditRepairOutcome(selectedCandidate, resultingPlan, context) {
+    if (!selectedCandidate) {
+      return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No candidate selected.', alert: null };
+    }
+
+    var type = selectedCandidate.type;
+    var targetId = selectedCandidate.targetExerciseId;
+
+    if (type === 'REVIEW_TOPOLOGY_CHOICE' || type === 'REVIEW_DISTRIBUTION_TOPOLOGY' || type === 'REVIEW_STABILITY') {
+      return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'Structural candidate — not verifiable from plan data.', alert: null };
+    }
+
+    if (!targetId) {
+      return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No targetExerciseId — outcome not verifiable.', alert: null };
+    }
+
+    if (!resultingPlan || !Array.isArray(resultingPlan.days) || resultingPlan.days.length === 0) {
+      return { outcome: 'OUTCOME_NOT_VERIFIABLE', evidence: 'No resulting plan to verify against.', alert: null };
+    }
+
+    // Plan has days but no exercise data → partial verification only
+    var hasAnyExercises = resultingPlan.days.some(function(d) {
+      return Array.isArray(d.exercises) && d.exercises.length > 0;
+    });
+    if (!hasAnyExercises) {
+      return { outcome: 'PARTIALLY_APPLIED', evidence: 'Plan structure present but no exercise data to verify against.', alert: null };
+    }
+
+    var daysWithExercise = 0;
+    resultingPlan.days.forEach(function(day) {
+      if (!Array.isArray(day.exercises)) return;
+      day.exercises.forEach(function(ex) {
+        if (ex.exerciseName === targetId) daysWithExercise++;
+      });
+    });
+    var exercisePresent = daysWithExercise > 0;
+
+    var outcome, evidence, alert = null;
+
+    if (type === 'REPLACE_OR_REMOVE') {
+      if (!exercisePresent) {
+        outcome = 'APPLIED_AS_EXPECTED';
+        evidence = targetId + ' absent from resulting plan — removed/replaced as selected.';
+      } else {
+        outcome = 'NOT_APPLIED';
+        evidence = targetId + ' still present in ' + daysWithExercise + ' day(s) — not removed/replaced.';
+        alert = {
+          code: 'REPAIR_NOT_REFLECTED',
+          candidateId: selectedCandidate.id,
+          candidateType: type,
+          expected: 'exercise removed or replaced',
+          detail: targetId + ' still present in resulting plan after REPLACE_OR_REMOVE selection.'
+        };
+      }
+    } else if (type === 'RESTORE_OR_KEEP') {
+      if (exercisePresent) {
+        outcome = 'APPLIED_AS_EXPECTED';
+        evidence = targetId + ' found in ' + daysWithExercise + ' day(s) — restored/kept as selected.';
+      } else {
+        outcome = 'NOT_APPLIED';
+        evidence = targetId + ' absent from resulting plan — not restored/kept.';
+        alert = {
+          code: 'REPAIR_NOT_REFLECTED',
+          candidateId: selectedCandidate.id,
+          candidateType: type,
+          expected: 'exercise present in plan',
+          detail: targetId + ' absent from resulting plan after RESTORE_OR_KEEP selection.'
+        };
+      }
+    } else {
+      outcome = 'OUTCOME_NOT_VERIFIABLE';
+      evidence = 'Unknown candidate type [' + type + '].';
+    }
+
+    return { outcome: outcome, evidence: evidence, alert: alert };
+  }
+  window._auditRepairOutcome = _auditRepairOutcome;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10518,10 +10605,12 @@ El esfuerzo no es negociable.
         }).join('');
         var _dtLine2 = '';
         if (_selAudit2.selectedCandidate) {
+          var _outAudit2 = _auditRepairOutcome(_selAudit2.selectedCandidate, training, {});
           var _dtId2 = _escH(String(_selAudit2.selectedCandidate.targetExerciseId || _selAudit2.selectedCandidate.id).substring(0, 40));
           var _dtHist2 = _selAudit2.historyInfluence ? ' · HISTORY:✓' : '';
+          var _dtOutcome2 = _outAudit2 ? ' · ' + _escH(_outAudit2.outcome) : '';
           var _dtAlert2 = _selAudit2.alert ? ' <span style="color:#e05555;font-size:9px">[!' + _escH(_selAudit2.alert.code) + ']</span>' : '';
-          _dtLine2 = '<div style="color:#888;font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId2 + ' · ' + _escH(_selAudit2.selectionReason) + _dtHist2 + _dtAlert2 + '</div>';
+          _dtLine2 = '<div style="color:#888;font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId2 + ' · ' + _escH(_selAudit2.selectionReason) + _dtHist2 + _dtOutcome2 + _dtAlert2 + '</div>';
         }
         return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
           + '<span style="color:#888;font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
