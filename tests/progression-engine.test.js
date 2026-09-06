@@ -11139,4 +11139,244 @@ function _makeF57Gate(status, criticalIssues) {
   assert('F57-Mb', 'consistent=true (NOT_VERIFIABLE path has no critical)', r.consistencyAudit.consistent === true);
 })();
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE 58 — COACH CLIENT-PLAN MIRROR VIEW
+// Pure: _buildClientMirrorView(plan) → HTML string; 0 I/O, 0 mutation.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Inline _buildClientMirrorView (mirrors main file exactly)
+function _buildClientMirrorView(plan) {
+  var _e = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); };
+  if (!plan || !Array.isArray(plan.days) || !plan.days.length) {
+    return '<div style="padding:32px 16px;text-align:center;color:#555;font-size:13px">Sin plan activo o plan sin días.</div>';
+  }
+  function _fmtReps(rt) {
+    if (rt === 'SST-PROTOCOL')     return 'SST';
+    if (rt === 'SST-RIV-PROTOCOL') return 'SST-RIV';
+    if (rt === 999 || rt === '999' || rt === 'AMRAP') return 'AMRAP';
+    if (rt == null) return '?';
+    return String(rt);
+  }
+  function _fmtLoad(load) {
+    var n = parseFloat(load);
+    if (isNaN(n) || n === 0) return '—';
+    return n + ' kg';
+  }
+  function _fmtRIR(rir) {
+    if (rir == null) return 'RIR —';
+    return 'RIR ' + rir;
+  }
+  function _fmtRest(sec) {
+    var n = parseInt(sec);
+    if (!n) return '';
+    if (n < 60) return n + 's';
+    return Math.floor(n/60) + 'min' + (n%60 ? ' '+(n%60)+'s' : '');
+  }
+  var _techColors = { 'drop':'#FF6644','rest-pause':'#FF8844','cluster':'#CCAA00','myoreps':'#44AACC','y3t':'#CC44AA','superset':'#6B6B66','giant':'#6B6B66','myo-match':'#2288AA' };
+  function _techBadge(tech) {
+    if (!tech || tech === 'straight') return '';
+    var col = _techColors[tech] || '#777';
+    return '<span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:3px;background:'+col+'22;border:1px solid '+col+'55;color:'+col+';margin-left:4px;text-transform:uppercase">'+_e(tech)+'</span>';
+  }
+  var _nmC = { fundamental:'#FF6644', suplementario:'#FF9900', asistencia_mayor:'#CCAA00', asistencia_secundario:'#777' };
+  var _nmL = { fundamental:'F', suplementario:'S', asistencia_mayor:'AM', asistencia_secundario:'AS' };
+  function _nmBadge(nm) {
+    if (!nm || !_nmC[nm]) return '';
+    return '<span style="font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;background:'+_nmC[nm]+'22;border:1px solid '+_nmC[nm]+'55;color:'+_nmC[nm]+'">'+(_nmL[nm]||_e(nm))+'</span> ';
+  }
+  function _setRow(s, si) {
+    var sMark = s.drop   ? '<span style="font-size:9px;color:#FF6644;font-weight:700"> DROP</span>' : '';
+    var tMark = s.tempo  ? '<span style="font-size:9px;color:#888"> tempo:'+_e(s.tempo)+'</span>' : '';
+    var nMark = s.setNote? '<span style="font-size:9px;color:#7788cc;margin-left:4px">'+_e(s.setNote)+'</span>' : '';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0 4px 8px;border-bottom:1px solid rgba(244,244,240,.04)">'
+      + '<span style="font-size:11px;color:#555;min-width:22px;font-weight:700">S'+(si+1)+sMark+'</span>'
+      + '<span style="font-size:12px;color:#F4F4F0;font-weight:700;min-width:32px">'+_e(_fmtReps(s.repsTarget))+'</span>'
+      + '<span style="font-size:11px;color:#888">'+_e(_fmtRIR(s.rirTarget))+'</span>'
+      + '<span style="font-size:11px;color:#44BB88;margin-left:auto">'+_e(_fmtLoad(s.load))+'</span>'
+      + (_fmtRest(s.restSeconds) ? '<span style="font-size:10px;color:#555;padding:1px 5px;border-radius:3px;background:rgba(244,244,240,.04)">⏸ '+_e(_fmtRest(s.restSeconds))+'</span>' : '')
+      + tMark + nMark + '</div>';
+  }
+  var days = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
+  var html = '<div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;padding:6px 10px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.12);border-radius:6px;display:flex;align-items:center;gap:6px">'
+    + '<span style="color:#C4FF00;font-weight:700">👁 VISTA CLIENTE</span>'
+    + ' <span style="color:#555">— Solo lectura · Sin logs · Sin progresión</span></div>';
+  for (var di = 0; di < days.length; di++) {
+    var d = days[di];
+    var exs = d.exercises || [];
+    html += '<div style="margin-bottom:14px;border:1px solid rgba(244,244,240,.12);border-radius:10px;overflow:hidden">'
+      + '<div style="background:rgba(244,244,240,.07);padding:8px 12px;border-bottom:1px solid rgba(244,244,244,.08)">'
+      + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span></div>';
+    if (!exs.length) {
+      html += '<div style="padding:10px 12px;color:#555;font-size:12px">Sin ejercicios</div>';
+    }
+    for (var ei = 0; ei < exs.length; ei++) {
+      var ex = exs[ei];
+      var name = ex.exerciseName || ex.nombre || 'Ejercicio';
+      var tech = (ex.technique||'straight').toLowerCase().trim();
+      if (tech === 'rest_pause') tech = 'rest-pause';
+      var sets = ex.sets || [];
+      var ssMark = ex.supersetGroup
+        ? '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(107,107,102,.15);border:1px solid rgba(107,107,102,.35);color:#888;margin-left:4px">SS:'+_e(String(ex.supersetGroup))+'</span>'
+        : '';
+      var altHtml = '';
+      if (Array.isArray(ex.alternatives) && ex.alternatives.length) {
+        altHtml = '<div style="font-size:10px;color:#555;margin-top:2px">Alt: '+ex.alternatives.map(function(a){ return _e(typeof a==='string'?a:(a.nombre||a.name||String(a))); }).filter(Boolean).join(' · ')+'</div>';
+      }
+      var vvHtml = '';
+      var _vv = ex.variacion_vertical;
+      if (_vv && _vv.semana_variacion != null) {
+        vvHtml = '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(100,150,255,.12);border:1px solid rgba(100,150,255,.3);color:#7aabff;margin-left:4px">↻ S'+_e(String(_vv.semana_variacion))+'</span>';
+      }
+      var notesHtml = '';
+      if (ex.coachNote || ex.nota) {
+        notesHtml += '<div style="font-size:10px;color:#7788cc;margin-top:3px;line-height:1.4">📝 '+_e(ex.coachNote||ex.nota)+'</div>';
+      }
+      if (ex.techniqueNote) {
+        notesHtml += '<div style="font-size:10px;color:#CC8844;margin-top:2px;line-height:1.4">⚙️ '+_e(ex.techniqueNote)+'</div>';
+      }
+      var setsHtml = '';
+      if (!sets.length) {
+        var legReps = _fmtReps(ex.repsTarget != null ? ex.repsTarget : 8);
+        var legRir  = _fmtRIR(ex.rirTarget  != null ? ex.rirTarget  : 2);
+        setsHtml = '<div style="font-size:11px;color:#888;padding:4px 8px">'+_e(String(ex.numSeries||3))+'×'+_e(legReps)+' · '+_e(legRir)+'</div>';
+      } else {
+        for (var si = 0; si < sets.length; si++) setsHtml += _setRow(sets[si], si);
+      }
+      html += '<div style="padding:10px 12px;'+(ei?'border-top:1px solid rgba(244,244,240,.07)':'')+'">'
+        + '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;margin-bottom:6px">'
+        + _nmBadge(ex.nivel_medio)
+        + '<span style="font-size:13px;font-weight:700;color:#F4F4F0">'+_e(name)+'</span>'
+        + _techBadge(tech !== 'straight' ? tech : '')
+        + ssMark + vvHtml + '</div>'
+        + altHtml + notesHtml
+        + '<div style="border-radius:6px;overflow:hidden;border:1px solid rgba(244,244,240,.07)">'+setsHtml+'</div>'
+        + '</div>';
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+// F58 helpers
+function _makeF58Plan(opts) {
+  opts = opts || {};
+  var ex = Object.assign({ exerciseName: 'Press Banca', sets: [{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }, opts.ex || {});
+  return { weeks:4, daysPerWeek:3, days:[{ dayIndex:0, label: opts.label||'Día A - Empuje', exercises:[ex] }] };
+}
+function _makeF58Ex(overrides) {
+  return Object.assign({ exerciseName:'Squat', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:100, restSeconds:90 }] }, overrides||{});
+}
+
+// F58-A: null plan → no-plan message
+(function() {
+  console.log('\nF58-A — null plan → no-plan placeholder');
+  var r = _buildClientMirrorView(null);
+  assert('F58-Aa', 'returns string', typeof r === 'string');
+  assert('F58-Ab', 'contains placeholder text', r.indexOf('Sin plan') !== -1);
+})();
+
+// F58-B: basic plan → contains exerciseName and day label
+(function() {
+  console.log('\nF58-B — basic plan: exerciseName and day label present');
+  var r = _buildClientMirrorView(_makeF58Plan());
+  assert('F58-Ba', 'contains exerciseName', r.indexOf('Press Banca') !== -1);
+  assert('F58-Bb', 'contains day label', r.indexOf('Día A') !== -1);
+  assert('F58-Bc', 'VISTA CLIENTE banner present', r.indexOf('VISTA CLIENTE') !== -1);
+})();
+
+// F58-C: RIR=0 → "RIR 0" shown explicitly (not defaulted/missing)
+(function() {
+  console.log('\nF58-C — RIR=0 shown as "RIR 0"');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[_makeF58Ex({ sets:[{ setIndex:0, repsTarget:5, rirTarget:0, load:120, restSeconds:180 }] })] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F58-Ca', 'contains RIR 0', r.indexOf('RIR 0') !== -1);
+})();
+
+// F58-D: load=0 → shows "—" not "0 kg"
+(function() {
+  console.log('\nF58-D — load=0 → "—" not "0 kg"');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[_makeF58Ex({ sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:0, restSeconds:90 }] })] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F58-Da', 'contains — for load=0', r.indexOf('—') !== -1);
+  assert('F58-Db', 'does NOT contain "0 kg"', r.indexOf('0 kg') === -1);
+})();
+
+// F58-E: legacy plan (no sets array, repsTarget/rirTarget at exercise level)
+(function() {
+  console.log('\nF58-E — legacy plan: exercise-level repsTarget/rirTarget');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Curl', numSeries:3, repsTarget:12, rirTarget:1 }] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F58-Ea', 'contains exercise name', r.indexOf('Curl') !== -1);
+  assert('F58-Eb', 'contains 3x (numSeries×reps)', r.indexOf('3') !== -1 && r.indexOf('12') !== -1);
+  assert('F58-Ec', 'contains RIR 1', r.indexOf('RIR 1') !== -1);
+})();
+
+// F58-F: SST-PROTOCOL → "SST" label
+(function() {
+  console.log('\nF58-F — SST-PROTOCOL → "SST" displayed');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[_makeF58Ex({ sets:[{ setIndex:0, repsTarget:'SST-PROTOCOL', rirTarget:0, load:0, restSeconds:15 }] })] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F58-Fa', 'shows SST', r.indexOf('>SST<') !== -1);
+  assert('F58-Fb', 'no raw SST-PROTOCOL string visible', r.indexOf('>SST-PROTOCOL<') === -1);
+})();
+
+// F58-G: repsTarget=999 (AMRAP) → "AMRAP"
+(function() {
+  console.log('\nF58-G — repsTarget=999 → "AMRAP"');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[_makeF58Ex({ sets:[{ setIndex:0, repsTarget:999, rirTarget:0, load:60, restSeconds:60 }] })] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F58-Ga', 'shows AMRAP', r.indexOf('>AMRAP<') !== -1);
+})();
+
+// F58-H: alternatives array → included in output
+(function() {
+  console.log('\nF58-H — alternatives shown');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[_makeF58Ex({ alternatives:['Hack Squat','Leg Press'] })] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F58-Ha', 'Hack Squat in output', r.indexOf('Hack Squat') !== -1);
+  assert('F58-Hb', 'Leg Press in output', r.indexOf('Leg Press') !== -1);
+})();
+
+// F58-I: coachNote → included in output
+(function() {
+  console.log('\nF58-I — coachNote present in output');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[_makeF58Ex({ coachNote:'Pausa 2s abajo' })] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F58-Ia', 'coachNote text in output', r.indexOf('Pausa 2s abajo') !== -1);
+})();
+
+// F58-J: techniqueNote → included in output
+(function() {
+  console.log('\nF58-J — techniqueNote present in output');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[_makeF58Ex({ technique:'rest-pause', techniqueNote:'20 reps, 10s, máximo posible' })] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F58-Ja', 'techniqueNote text in output', r.indexOf('20 reps, 10s') !== -1);
+})();
+
+// F58-K: supersetGroup → SS marker in output
+(function() {
+  console.log('\nF58-K — supersetGroup → SS marker');
+  var plan = { days:[{ dayIndex:0, label:'D1', exercises:[_makeF58Ex({ exerciseName:'Curl', supersetGroup:'A' }), _makeF58Ex({ exerciseName:'Extensión', supersetGroup:'A' })] }] };
+  var r = _buildClientMirrorView(plan);
+  assert('F58-Ka', 'SS:A marker present', r.indexOf('SS:A') !== -1);
+})();
+
+// F58-L: no mutation — plan unchanged after call
+(function() {
+  console.log('\nF58-L — no mutation');
+  var plan = _makeF58Plan();
+  var snap = JSON.stringify(plan);
+  _buildClientMirrorView(plan);
+  assert('F58-La', 'plan object unchanged', JSON.stringify(plan) === snap);
+})();
+
+// F58-M: determinism — same input → same output
+(function() {
+  console.log('\nF58-M — determinism');
+  var plan = _makeF58Plan({ ex:{ exerciseName:'Peso Muerto', alternatives:['RDL'], coachNote:'Espalda recta', sets:[{setIndex:0,repsTarget:5,rirTarget:1,load:150,restSeconds:180}] } });
+  var r1 = _buildClientMirrorView(plan);
+  var r2 = _buildClientMirrorView(plan);
+  assert('F58-Ma', 'identical output on two calls', r1 === r2);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
