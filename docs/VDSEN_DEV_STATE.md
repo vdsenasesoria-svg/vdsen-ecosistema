@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-06 · branch `main` · FASE 55 DONE · Suite 1518/1518
+> Actualizado: 2026-09-06 · branch `main` · FASE 56 DONE · Suite 1546/1546
 
 ---
 
@@ -37,7 +37,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 32 | MERGED — commit `1975fd8` · UX Cliente: touch targets, setDone flash, ring fix |
 | FASE 33 | DONE — commits `7a29aa6`+`f10c75f` · End-to-End Integration Audit: 25 bugs corregidos |
 | FASE 34 | DONE — Legacy Identity Hardening: BUG H-3 + BUG G4 corregidos, 17 tests nuevos |
-| Suite tests | **1518/1518 PASS** (P01–P426 + F34-A–J + F36-B–N + F37-A–I + F39-A–E + F45-A–J + F46-A–O + BUG-RIR0-A–I + BUG-XSS-A–F + BUG-LS-DIV-A–D + F47-A–I + F48-A–J + F49-A–M + F50-A–Q + F51-A–M + F52-A–N + F53-A–M + F54-A–M + F55-A–M) |
+| Suite tests | **1546/1546 PASS** (P01–P426 + F34-A–J + F36-B–N + F37-A–I + F39-A–E + F45-A–J + F46-A–O + BUG-RIR0-A–I + BUG-XSS-A–F + BUG-LS-DIV-A–D + F47-A–I + F48-A–J + F49-A–M + F50-A–Q + F51-A–M + F52-A–N + F53-A–M + F54-A–M + F55-A–M + F56-A–M) |
 | FASE 45 | DONE — Learned State Activation v1 (topology + distribution engines) |
 | FASE 46 | MERGED — Exercise Learned State Activation v1 · `099fd74` (fast-forward desde `claude/learned-state-activation-d5b69n`) |
 | Bug: RIR-0 | FIXED — RIR 0 (fallo) no colapsa a default 2 en saveExpress/markExpressSerie/SS paths (vdsen-cliente.html) |
@@ -59,6 +59,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 53 | DONE — Structural Repair Outcome Verification: `_auditStructuralRepairOutcome` puro; verifica REVIEW_DISTRIBUTION_TOPOLOGY (cambio en daysPerWeek), REVIEW_TOPOLOGY_CHOICE (cambio en set de labels de días), REVIEW_STABILITY (ratio ejercicios preservados ≥0.7/≥0.3/<0.3); alerta STRUCTURAL_REPAIR_NOT_REFLECTED; ruteado desde `_auditRepairOutcome`; Preview flows actualizados con `context:{prevPlan:_prevPlanForLV[2]}`; tests F53-A–M (26 assertions) · Suite 1466/1466 |
 | FASE 54 | DONE — Repair Effectiveness Audit: `_auditRepairEffectiveness` puro; compara issues longitudinales antes/después (validationBefore derivado de hints, validationAfter=_longValReport); clasifica RESOLVED/IMPROVED/UNCHANGED/REGRESSED/NOT_VERIFIABLE; alerta REPAIR_INEFFECTIVE cuando applied pero issues persisten, REPAIR_REGRESSION cuando aparecen nuevas SUSPECT; APPLIED_AS_EXPECTED ≠ RESOLVED; historyInfluence no compensa nuevas criticalIssues; Decision Trace extendido en ambos flujos con _effAudit.effectiveness; tests F54-A–M (27 assertions) · Suite 1493/1493 |
 | FASE 55 | DONE — Repair Effectiveness Gate: `_applyRepairEffectivenessGate` puro conecta efectividad al quality gate real; REGRESSED → REVIEW_REQUIRED + criticalIssues; UNCHANGED+REPAIR_INEFFECTIVE → WARN + warnings; RESOLVED/IMPROVED → note only (sin elevación); NOT_VERIFIABLE y null → sin cambio; gate solo eleva nunca reduce; integrado en ambos flujos antes del write con IIFE `_effGate55`/`_effGate55b`; confirmación muestra razón compacta; tests F55-A–M (25 assertions) · Suite 1518/1518 |
+| FASE 56 | DONE — Repair Decision Consistency Audit: `_auditRepairDecisionConsistency` puro detecta combinaciones imposibles/contradictorias entre selectionAudit/outcomeAudit/effectivenessAudit/gate; CRITICAL: RESOLVED_WITHOUT_APPLICATION (eff=RESOLVED/IMPROVED + outcome=NOT_APPLIED), REGRESSED_NOT_ELEVATED (REGRESSED sin gate=REVIEW_REQUIRED), APPLIED_WITHOUT_CANDIDATE (APPLIED_AS_EXPECTED sin selectedCandidate); WARNING: HISTORY_INFLUENCE_WITHOUT_REASONS, RESOLVED_BUT_OUTCOME_NOT_VERIFIABLE; `_applyConsistencyGate` eleva gate según severidad (CRITICAL→REVIEW_REQUIRED, WARNING→WARN, nunca reduce); IIFEs `_effGate55`/`_effGate55b` extendidos para encadenar `_ca56`/`_ca56b`; Decision Trace extendido con `_consAudit56`/`_consAudit56b`; tests F56-A–M (28 assertions) · Suite 1546/1546 |
 | FASE 37 | DONE — LOGS_BY_WEEK index en memoria · commit `96fbc1b` |
 | FASE 38 | DONE — XSS guards _escH en 8 interpolaciones coach · commit `470a261` |
 | FASE 39 | DONE — Fix _buildCheckInData adherencia + rir_real_prom · commit `eb1a825` |

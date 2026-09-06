@@ -6568,7 +6568,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         var _oa = _auditRepairOutcome(_sa.selectedCandidate, training, { prevPlan: _prevPlanForLV });
         var _vb = { unexpectedChanges: _ph.map(function(h) { return { type: h.type, severity: h.severity }; }) };
         var _ea = _auditRepairEffectiveness(_sa, _oa, _vb, _longValReport, { prevPlan: _prevPlanForLV });
-        return _applyRepairEffectivenessGate(_longGate, _ea, {});
+        var _g55 = _applyRepairEffectivenessGate(_longGate, _ea, {});
+        var _ca56 = _auditRepairDecisionConsistency(_sa, _oa, _ea, _g55, {});
+        return _applyConsistencyGate(_g55, _ca56, {});
       })();
       if (_effGate55.status === 'REVIEW_REQUIRED' && _effGate55.criticalIssues.length) {
         const _issueHtml = _effGate55.criticalIssues.slice(0, 3).map(function(d) { return '• ' + _escH(d); }).join('<br>');
@@ -6640,13 +6642,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           var _outAudit = _auditRepairOutcome(_selAudit.selectedCandidate, training, { prevPlan: _prevPlanForLV });
           var _validBefore = { unexpectedChanges: _hints.map(function(h) { return { type: h.type, severity: h.severity }; }) };
           var _effAudit = _auditRepairEffectiveness(_selAudit, _outAudit, _validBefore, _longValReport, { prevPlan: _prevPlanForLV });
+          var _consAudit56 = _auditRepairDecisionConsistency(_selAudit, _outAudit, _effAudit, { status: 'OK', criticalIssues: [], warnings: [] }, {});
           var _dtId = _escH(String(_selAudit.selectedCandidate.targetExerciseId || _selAudit.selectedCandidate.id).substring(0, 40));
           var _dtHist = _selAudit.historyInfluence ? ' · HISTORY:✓' : '';
           var _dtOutcome = _outAudit ? ' · ' + _escH(_outAudit.outcome) : '';
           var _dtEff = _effAudit ? ' · ' + _escH(_effAudit.effectiveness) : '';
-          var _dtAlert = (_selAudit.alert || (_outAudit && _outAudit.alert) || (_effAudit && _effAudit.alert))
+          var _dtAlert = (_selAudit.alert || (_outAudit && _outAudit.alert) || (_effAudit && _effAudit.alert) || (_consAudit56 && _consAudit56.alert))
             ? ' <span style="color:var(--danger);font-size:9px">[!'
-              + _escH((_effAudit && _effAudit.alert && _effAudit.alert.code)
+              + _escH((_consAudit56 && _consAudit56.alert && _consAudit56.alert.code)
+                  || (_effAudit && _effAudit.alert && _effAudit.alert.code)
                   || (_outAudit && _outAudit.alert && _outAudit.alert.code)
                   || (_selAudit.alert && _selAudit.alert.code) || '') + ']</span>'
             : '';
@@ -10603,6 +10607,86 @@ El esfuerzo no es negociable.
   }
   window._applyRepairEffectivenessGate = _applyRepairEffectivenessGate;
 
+  // ─── FASE 56: Repair Decision Consistency Audit ──────────────────────────────
+  // Pure cross-layer auditor. Checks impossible/contradictory combinations across
+  // the repair pipeline (selectionAudit, outcomeAudit, effectivenessAudit, gate).
+  // Returns { consistent:bool, inconsistencies:[{code,severity,detail}], alert }.
+  function _auditRepairDecisionConsistency(selectionAudit, outcomeAudit, effectivenessAudit, gate, context) {
+    var inconsistencies = [];
+    var sa  = selectionAudit    || {};
+    var oa  = outcomeAudit      || {};
+    var ea  = effectivenessAudit || {};
+    var g   = gate              || {};
+    var eff = ea.effectiveness  || null;
+    var out = oa.outcome        || null;
+    var gStatus = g.status      || 'OK';
+
+    // CRITICAL: RESOLVED/IMPROVED impossible if repair was NOT_APPLIED
+    if ((eff === 'RESOLVED' || eff === 'IMPROVED') && out === 'NOT_APPLIED') {
+      inconsistencies.push({ code: 'RESOLVED_WITHOUT_APPLICATION', severity: 'CRITICAL',
+        detail: 'effectiveness=' + eff + ' but outcome=NOT_APPLIED — improvement impossible without repair.' });
+    }
+    // CRITICAL: REGRESSED must have elevated gate to REVIEW_REQUIRED
+    if (eff === 'REGRESSED' && gStatus !== 'REVIEW_REQUIRED') {
+      inconsistencies.push({ code: 'REGRESSED_NOT_ELEVATED', severity: 'CRITICAL',
+        detail: 'effectiveness=REGRESSED but gate.status=' + gStatus + ' — gate should be REVIEW_REQUIRED.' });
+    }
+    // CRITICAL: APPLIED_AS_EXPECTED with no selectedCandidate
+    if (out === 'APPLIED_AS_EXPECTED' && !sa.selectedCandidate) {
+      inconsistencies.push({ code: 'APPLIED_WITHOUT_CANDIDATE', severity: 'CRITICAL',
+        detail: 'outcome=APPLIED_AS_EXPECTED but no selectedCandidate — application requires a candidate.' });
+    }
+    // WARNING: historyInfluence marked without reasonCodes
+    if (sa.historyInfluence === true && (!sa.reasonCodes || !sa.reasonCodes.length)) {
+      inconsistencies.push({ code: 'HISTORY_INFLUENCE_WITHOUT_REASONS', severity: 'WARNING',
+        detail: 'historyInfluence=true but no reasonCodes — history claim has no evidential basis.' });
+    }
+    // WARNING: RESOLVED with OUTCOME_NOT_VERIFIABLE (evidence questionable)
+    if (eff === 'RESOLVED' && out === 'OUTCOME_NOT_VERIFIABLE') {
+      inconsistencies.push({ code: 'RESOLVED_BUT_OUTCOME_NOT_VERIFIABLE', severity: 'WARNING',
+        detail: 'effectiveness=RESOLVED but outcome=OUTCOME_NOT_VERIFIABLE — resolution evidence may be unreliable.' });
+    }
+
+    var hasCritical = inconsistencies.some(function(i) { return i.severity === 'CRITICAL'; });
+    var alert = inconsistencies.length
+      ? { code: 'REPAIR_DECISION_INCONSISTENT', inconsistencies: inconsistencies,
+          detail: inconsistencies.map(function(i) { return '[' + i.code + '] ' + i.detail; }).join(' | ') }
+      : null;
+    return { consistent: !hasCritical, inconsistencies: inconsistencies, alert: alert };
+  }
+  window._auditRepairDecisionConsistency = _auditRepairDecisionConsistency;
+
+  // Pure gate combiner: elevates gate based on consistency audit.
+  // CRITICAL → REVIEW_REQUIRED; WARNING → WARN. Never reduces prior severity.
+  function _applyConsistencyGate(currentGate, consistencyAudit, context) {
+    var RANK = { 'OK': 0, 'WARN': 1, 'REVIEW_REQUIRED': 2 };
+    var result = {
+      status:        (currentGate && currentGate.status) || 'OK',
+      criticalIssues:(currentGate && Array.isArray(currentGate.criticalIssues)) ? currentGate.criticalIssues.slice() : [],
+      warnings:      (currentGate && Array.isArray(currentGate.warnings))       ? currentGate.warnings.slice()       : [],
+      longVerdict:   (currentGate && currentGate.longVerdict) || 'OK',
+      repairEffectivenessNote: (currentGate && currentGate.repairEffectivenessNote) || null,
+      consistencyNote: null
+    };
+    if (!consistencyAudit || !consistencyAudit.inconsistencies || !consistencyAudit.inconsistencies.length) return result;
+    function elevate(target) { if ((RANK[target] || 0) > (RANK[result.status] || 0)) result.status = target; }
+    var crit = consistencyAudit.inconsistencies.filter(function(i) { return i.severity === 'CRITICAL'; });
+    var warn = consistencyAudit.inconsistencies.filter(function(i) { return i.severity === 'WARNING'; });
+    if (crit.length) {
+      elevate('REVIEW_REQUIRED');
+      var note = 'REPAIR_DECISION_INCONSISTENT: ' + crit.map(function(i) { return i.code; }).join(', ');
+      result.criticalIssues.push(note);
+      result.consistencyNote = note;
+    } else if (warn.length) {
+      elevate('WARN');
+      var wNote = 'REPAIR_DECISION_INCONSISTENT (warning): ' + warn.map(function(i) { return i.code; }).join(', ');
+      result.warnings.push(wNote);
+      result.consistencyNote = wNote;
+    }
+    return result;
+  }
+  window._applyConsistencyGate = _applyConsistencyGate;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10756,7 +10840,9 @@ El esfuerzo no es negociable.
         var _oa2 = _auditRepairOutcome(_sa2.selectedCandidate, training, { prevPlan: _prevPlanForLV2 });
         var _vb2 = { unexpectedChanges: _ph2.map(function(h) { return { type: h.type, severity: h.severity }; }) };
         var _ea2 = _auditRepairEffectiveness(_sa2, _oa2, _vb2, _longValReport2, { prevPlan: _prevPlanForLV2 });
-        return _applyRepairEffectivenessGate(_longGate2, _ea2, {});
+        var _g55b = _applyRepairEffectivenessGate(_longGate2, _ea2, {});
+        var _ca56b = _auditRepairDecisionConsistency(_sa2, _oa2, _ea2, _g55b, {});
+        return _applyConsistencyGate(_g55b, _ca56b, {});
       })();
       if (_effGate55b.status === 'REVIEW_REQUIRED' && _effGate55b.criticalIssues.length) {
         const _issueHtml2 = _effGate55b.criticalIssues.slice(0, 3).map(d => '• ' + _escH(d)).join('<br>');
@@ -10836,13 +10922,15 @@ El esfuerzo no es negociable.
           var _outAudit2 = _auditRepairOutcome(_selAudit2.selectedCandidate, training, { prevPlan: _prevPlanForLV2 });
           var _validBefore2 = { unexpectedChanges: _hints2.map(function(h) { return { type: h.type, severity: h.severity }; }) };
           var _effAudit2 = _auditRepairEffectiveness(_selAudit2, _outAudit2, _validBefore2, _longValReport2, { prevPlan: _prevPlanForLV2 });
+          var _consAudit56b = _auditRepairDecisionConsistency(_selAudit2, _outAudit2, _effAudit2, { status: 'OK', criticalIssues: [], warnings: [] }, {});
           var _dtId2 = _escH(String(_selAudit2.selectedCandidate.targetExerciseId || _selAudit2.selectedCandidate.id).substring(0, 40));
           var _dtHist2 = _selAudit2.historyInfluence ? ' · HISTORY:✓' : '';
           var _dtOutcome2 = _outAudit2 ? ' · ' + _escH(_outAudit2.outcome) : '';
           var _dtEff2 = _effAudit2 ? ' · ' + _escH(_effAudit2.effectiveness) : '';
-          var _dtAlert2 = (_selAudit2.alert || (_outAudit2 && _outAudit2.alert) || (_effAudit2 && _effAudit2.alert))
+          var _dtAlert2 = (_selAudit2.alert || (_outAudit2 && _outAudit2.alert) || (_effAudit2 && _effAudit2.alert) || (_consAudit56b && _consAudit56b.alert))
             ? ' <span style="color:#e05555;font-size:9px">[!'
-              + _escH((_effAudit2 && _effAudit2.alert && _effAudit2.alert.code)
+              + _escH((_consAudit56b && _consAudit56b.alert && _consAudit56b.alert.code)
+                  || (_effAudit2 && _effAudit2.alert && _effAudit2.alert.code)
                   || (_outAudit2 && _outAudit2.alert && _outAudit2.alert.code)
                   || (_selAudit2.alert && _selAudit2.alert.code) || '') + ']</span>'
             : '';

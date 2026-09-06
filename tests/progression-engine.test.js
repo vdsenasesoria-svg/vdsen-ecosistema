@@ -10714,4 +10714,223 @@ function _makeEff55(effectiveness, alertCode) {
   assert('F55-Ma', 'currentGate unchanged', JSON.stringify(g) === gSnap);
 })();
 
+// ─── FASE 56: Repair Decision Consistency Audit ─────────────────────────────
+function _auditRepairDecisionConsistency(selectionAudit, outcomeAudit, effectivenessAudit, gate, context) {
+  var inconsistencies = [];
+  var sa  = selectionAudit    || {};
+  var oa  = outcomeAudit      || {};
+  var ea  = effectivenessAudit || {};
+  var g   = gate              || {};
+  var eff = ea.effectiveness  || null;
+  var out = oa.outcome        || null;
+  var gStatus = g.status      || 'OK';
+  if ((eff === 'RESOLVED' || eff === 'IMPROVED') && out === 'NOT_APPLIED') {
+    inconsistencies.push({ code: 'RESOLVED_WITHOUT_APPLICATION', severity: 'CRITICAL',
+      detail: 'effectiveness=' + eff + ' but outcome=NOT_APPLIED — improvement impossible without repair.' });
+  }
+  if (eff === 'REGRESSED' && gStatus !== 'REVIEW_REQUIRED') {
+    inconsistencies.push({ code: 'REGRESSED_NOT_ELEVATED', severity: 'CRITICAL',
+      detail: 'effectiveness=REGRESSED but gate.status=' + gStatus + ' — gate should be REVIEW_REQUIRED.' });
+  }
+  if (out === 'APPLIED_AS_EXPECTED' && !sa.selectedCandidate) {
+    inconsistencies.push({ code: 'APPLIED_WITHOUT_CANDIDATE', severity: 'CRITICAL',
+      detail: 'outcome=APPLIED_AS_EXPECTED but no selectedCandidate — application requires a candidate.' });
+  }
+  if (sa.historyInfluence === true && (!sa.reasonCodes || !sa.reasonCodes.length)) {
+    inconsistencies.push({ code: 'HISTORY_INFLUENCE_WITHOUT_REASONS', severity: 'WARNING',
+      detail: 'historyInfluence=true but no reasonCodes — history claim has no evidential basis.' });
+  }
+  if (eff === 'RESOLVED' && out === 'OUTCOME_NOT_VERIFIABLE') {
+    inconsistencies.push({ code: 'RESOLVED_BUT_OUTCOME_NOT_VERIFIABLE', severity: 'WARNING',
+      detail: 'effectiveness=RESOLVED but outcome=OUTCOME_NOT_VERIFIABLE — resolution evidence may be unreliable.' });
+  }
+  var hasCritical = inconsistencies.some(function(i) { return i.severity === 'CRITICAL'; });
+  var alert = inconsistencies.length
+    ? { code: 'REPAIR_DECISION_INCONSISTENT', inconsistencies: inconsistencies,
+        detail: inconsistencies.map(function(i) { return '[' + i.code + '] ' + i.detail; }).join(' | ') }
+    : null;
+  return { consistent: !hasCritical, inconsistencies: inconsistencies, alert: alert };
+}
+function _applyConsistencyGate(currentGate, consistencyAudit, context) {
+  var RANK = { 'OK': 0, 'WARN': 1, 'REVIEW_REQUIRED': 2 };
+  var result = {
+    status:        (currentGate && currentGate.status) || 'OK',
+    criticalIssues:(currentGate && Array.isArray(currentGate.criticalIssues)) ? currentGate.criticalIssues.slice() : [],
+    warnings:      (currentGate && Array.isArray(currentGate.warnings))       ? currentGate.warnings.slice()       : [],
+    longVerdict:   (currentGate && currentGate.longVerdict) || 'OK',
+    repairEffectivenessNote: (currentGate && currentGate.repairEffectivenessNote) || null,
+    consistencyNote: null
+  };
+  if (!consistencyAudit || !consistencyAudit.inconsistencies || !consistencyAudit.inconsistencies.length) return result;
+  function elevate(target) { if ((RANK[target] || 0) > (RANK[result.status] || 0)) result.status = target; }
+  var crit = consistencyAudit.inconsistencies.filter(function(i) { return i.severity === 'CRITICAL'; });
+  var warn = consistencyAudit.inconsistencies.filter(function(i) { return i.severity === 'WARNING'; });
+  if (crit.length) {
+    elevate('REVIEW_REQUIRED');
+    var note = 'REPAIR_DECISION_INCONSISTENT: ' + crit.map(function(i) { return i.code; }).join(', ');
+    result.criticalIssues.push(note);
+    result.consistencyNote = note;
+  } else if (warn.length) {
+    elevate('WARN');
+    var wNote = 'REPAIR_DECISION_INCONSISTENT (warning): ' + warn.map(function(i) { return i.code; }).join(', ');
+    result.warnings.push(wNote);
+    result.consistencyNote = wNote;
+  }
+  return result;
+}
+
+function _makeSel56(overrides) {
+  return Object.assign({ selectedCandidate: { id: 'ex1' }, selectionReason: 'TOP_PRIORITY', historyInfluence: false, reasonCodes: [], eligibleCount: 1, alert: null }, overrides || {});
+}
+function _makeOut56(outcome) { return { outcome: outcome, evidence: 'test', alert: null }; }
+function _makeEff56(effectiveness, alertCode) {
+  return { effectiveness: effectiveness, evidence: 'test', alert: alertCode ? { code: alertCode } : null };
+}
+function _makeG56(status, criticalIssues, warnings) {
+  return { status: status || 'OK', criticalIssues: criticalIssues || [], warnings: warnings || [], longVerdict: 'OK' };
+}
+
+// F56-A: consistent case (APPLIED_AS_EXPECTED + RESOLVED + gate=OK) → no inconsistencies
+(function() {
+  console.log('\nF56-A — consistent baseline (APPLIED+RESOLVED+gate OK)');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56(), _makeOut56('APPLIED_AS_EXPECTED'), _makeEff56('RESOLVED', null), _makeG56('OK'), {}
+  );
+  assert('F56-Aa', 'consistent=true', r.consistent === true);
+  assert('F56-Ab', 'no inconsistencies', r.inconsistencies.length === 0);
+  assert('F56-Ac', 'alert null', r.alert === null);
+})();
+
+// F56-B: RESOLVED but NOT_APPLIED → RESOLVED_WITHOUT_APPLICATION (CRITICAL)
+(function() {
+  console.log('\nF56-B — RESOLVED but NOT_APPLIED → RESOLVED_WITHOUT_APPLICATION');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56(), _makeOut56('NOT_APPLIED'), _makeEff56('RESOLVED', null), _makeG56('OK'), {}
+  );
+  assert('F56-Ba', 'consistent=false', r.consistent === false);
+  assert('F56-Bb', 'RESOLVED_WITHOUT_APPLICATION found', r.inconsistencies.some(function(i) { return i.code === 'RESOLVED_WITHOUT_APPLICATION'; }));
+  assert('F56-Bc', 'alert code set', r.alert && r.alert.code === 'REPAIR_DECISION_INCONSISTENT');
+})();
+
+// F56-C: IMPROVED but NOT_APPLIED → same RESOLVED_WITHOUT_APPLICATION (CRITICAL)
+(function() {
+  console.log('\nF56-C — IMPROVED but NOT_APPLIED → RESOLVED_WITHOUT_APPLICATION');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56(), _makeOut56('NOT_APPLIED'), _makeEff56('IMPROVED', null), _makeG56('OK'), {}
+  );
+  assert('F56-Ca', 'consistent=false', r.consistent === false);
+  assert('F56-Cb', 'CRITICAL severity', r.inconsistencies[0].severity === 'CRITICAL');
+})();
+
+// F56-D: REGRESSED with gate=OK → REGRESSED_NOT_ELEVATED (CRITICAL)
+(function() {
+  console.log('\nF56-D — REGRESSED + gate=OK → REGRESSED_NOT_ELEVATED');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56(), _makeOut56('APPLIED_AS_EXPECTED'), _makeEff56('REGRESSED', null), _makeG56('OK'), {}
+  );
+  assert('F56-Da', 'consistent=false', r.consistent === false);
+  assert('F56-Db', 'REGRESSED_NOT_ELEVATED found', r.inconsistencies.some(function(i) { return i.code === 'REGRESSED_NOT_ELEVATED'; }));
+})();
+
+// F56-E: REGRESSED with gate=WARN → still REGRESSED_NOT_ELEVATED (CRITICAL)
+(function() {
+  console.log('\nF56-E — REGRESSED + gate=WARN → still REGRESSED_NOT_ELEVATED');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56(), _makeOut56('APPLIED_AS_EXPECTED'), _makeEff56('REGRESSED', null), _makeG56('WARN'), {}
+  );
+  assert('F56-Ea', 'consistent=false', r.consistent === false);
+  assert('F56-Eb', 'REGRESSED_NOT_ELEVATED present', r.inconsistencies.some(function(i) { return i.code === 'REGRESSED_NOT_ELEVATED'; }));
+})();
+
+// F56-F: REGRESSED with gate=REVIEW_REQUIRED → no REGRESSED_NOT_ELEVATED
+(function() {
+  console.log('\nF56-F — REGRESSED + gate=REVIEW_REQUIRED → consistent');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56(), _makeOut56('APPLIED_AS_EXPECTED'), _makeEff56('REGRESSED', null), _makeG56('REVIEW_REQUIRED'), {}
+  );
+  assert('F56-Fa', 'no REGRESSED_NOT_ELEVATED', !r.inconsistencies.some(function(i) { return i.code === 'REGRESSED_NOT_ELEVATED'; }));
+})();
+
+// F56-G: APPLIED_AS_EXPECTED without selectedCandidate → APPLIED_WITHOUT_CANDIDATE (CRITICAL)
+(function() {
+  console.log('\nF56-G — APPLIED_AS_EXPECTED without selectedCandidate → APPLIED_WITHOUT_CANDIDATE');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56({ selectedCandidate: null }), _makeOut56('APPLIED_AS_EXPECTED'), _makeEff56('RESOLVED', null), _makeG56('OK'), {}
+  );
+  assert('F56-Ga', 'consistent=false', r.consistent === false);
+  assert('F56-Gb', 'APPLIED_WITHOUT_CANDIDATE found', r.inconsistencies.some(function(i) { return i.code === 'APPLIED_WITHOUT_CANDIDATE'; }));
+})();
+
+// F56-H: historyInfluence=true without reasonCodes → HISTORY_INFLUENCE_WITHOUT_REASONS (WARNING)
+(function() {
+  console.log('\nF56-H — historyInfluence=true without reasonCodes → WARNING');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56({ historyInfluence: true, reasonCodes: [] }),
+    _makeOut56('APPLIED_AS_EXPECTED'), _makeEff56('RESOLVED', null), _makeG56('OK'), {}
+  );
+  assert('F56-Ha', 'still consistent (only WARNING)', r.consistent === true);
+  assert('F56-Hb', 'HISTORY_INFLUENCE_WITHOUT_REASONS found', r.inconsistencies.some(function(i) { return i.code === 'HISTORY_INFLUENCE_WITHOUT_REASONS'; }));
+  assert('F56-Hc', 'severity=WARNING', r.inconsistencies.find(function(i) { return i.code === 'HISTORY_INFLUENCE_WITHOUT_REASONS'; }).severity === 'WARNING');
+})();
+
+// F56-I: historyInfluence=true WITH reasonCodes → no history inconsistency
+(function() {
+  console.log('\nF56-I — historyInfluence=true with reasonCodes → no history inconsistency');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56({ historyInfluence: true, reasonCodes: ['EXERCISE_PAIN_HISTORY'] }),
+    _makeOut56('APPLIED_AS_EXPECTED'), _makeEff56('RESOLVED', null), _makeG56('OK'), {}
+  );
+  assert('F56-Ia', 'no HISTORY_INFLUENCE_WITHOUT_REASONS', !r.inconsistencies.some(function(i) { return i.code === 'HISTORY_INFLUENCE_WITHOUT_REASONS'; }));
+})();
+
+// F56-J: RESOLVED with OUTCOME_NOT_VERIFIABLE → WARNING (not CRITICAL)
+(function() {
+  console.log('\nF56-J — RESOLVED + OUTCOME_NOT_VERIFIABLE → WARNING inconsistency');
+  var r = _auditRepairDecisionConsistency(
+    _makeSel56(), _makeOut56('OUTCOME_NOT_VERIFIABLE'), _makeEff56('RESOLVED', null), _makeG56('OK'), {}
+  );
+  assert('F56-Ja', 'still consistent (only WARNING)', r.consistent === true);
+  assert('F56-Jb', 'RESOLVED_BUT_OUTCOME_NOT_VERIFIABLE found', r.inconsistencies.some(function(i) { return i.code === 'RESOLVED_BUT_OUTCOME_NOT_VERIFIABLE'; }));
+})();
+
+// F56-K: _applyConsistencyGate — CRITICAL → elevates to REVIEW_REQUIRED
+(function() {
+  console.log('\nF56-K — _applyConsistencyGate CRITICAL → REVIEW_REQUIRED');
+  var g = _makeG56('OK', [], []);
+  var ca = _auditRepairDecisionConsistency(
+    _makeSel56(), _makeOut56('NOT_APPLIED'), _makeEff56('RESOLVED', null), g, {}
+  );
+  var r = _applyConsistencyGate(g, ca, {});
+  assert('F56-Ka', 'status=REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F56-Kb', 'criticalIssues has consistency note', r.criticalIssues.some(function(c) { return c.indexOf('REPAIR_DECISION_INCONSISTENT') !== -1; }));
+  assert('F56-Kc', 'consistencyNote set', r.consistencyNote !== null);
+})();
+
+// F56-L: _applyConsistencyGate — WARNING only → elevates to WARN, no downgrade from REVIEW_REQUIRED
+(function() {
+  console.log('\nF56-L — _applyConsistencyGate WARNING from REVIEW_REQUIRED → no downgrade');
+  var g = _makeG56('REVIEW_REQUIRED', ['existing'], []);
+  var ca = _auditRepairDecisionConsistency(
+    _makeSel56({ historyInfluence: true, reasonCodes: [] }),
+    _makeOut56('APPLIED_AS_EXPECTED'), _makeEff56('RESOLVED', null), _makeG56('OK'), {}
+  );
+  var r = _applyConsistencyGate(g, ca, {});
+  assert('F56-La', 'status stays REVIEW_REQUIRED', r.status === 'REVIEW_REQUIRED');
+  assert('F56-Lb', 'prior criticalIssues preserved', r.criticalIssues[0] === 'existing');
+})();
+
+// F56-M: determinism + no mutation
+(function() {
+  console.log('\nF56-M — determinism and no mutation');
+  var sa = _makeSel56();
+  var oa = _makeOut56('APPLIED_AS_EXPECTED');
+  var ea = _makeEff56('RESOLVED', null);
+  var g  = _makeG56('OK', [], []);
+  var snap = JSON.stringify({ sa: sa, oa: oa, ea: ea, g: g });
+  var r1 = _auditRepairDecisionConsistency(sa, oa, ea, g, {});
+  var r2 = _auditRepairDecisionConsistency(sa, oa, ea, g, {});
+  assert('F56-Ma', 'determinism: same result', r1.consistent === r2.consistent && r1.inconsistencies.length === r2.inconsistencies.length);
+  assert('F56-Mb', 'no mutation of inputs', JSON.stringify({ sa: sa, oa: oa, ea: ea, g: g }) === snap);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
