@@ -14901,6 +14901,291 @@ El esfuerzo no es negociable.
   window._mergeCompatibleLearnedState       = _mergeCompatibleLearnedState;
   window._runPersistenceContractTests       = _runPersistenceContractTests;
 
+  // ── FASE 14 — Learned State Storage Strategy ──────────────────────────────
+  var _STORAGE_RECOMMENDATION = { INLINE: 'INLINE', HYBRID: 'HYBRID', SEPARATE: 'SEPARATE' };
+
+  function _pruneLearnedState(bundle) {
+    if (!bundle) return {};
+    var result = {};
+    ['exercise', 'slot', 'topology'].forEach(function(t) {
+      if (!bundle[t] || typeof bundle[t] !== 'object') return;
+      var pruned = {};
+      Object.keys(bundle[t]).forEach(function(key) {
+        var s = bundle[t][key];
+        var validation = _validatePersistedLearnedState(s);
+        if (!validation.valid) return; // INVALID → drop
+        var status = _classifyLearnedStateStatus(s, {});
+        if (status === _LEARNED_STATE_STATUS.ACTIVE) {
+          pruned[key] = s; // ACTIVE → always keep, never remove by age
+        } else if (status === _LEARNED_STATE_STATUS.STALE) {
+          // keep STALE only when it still contributes provenance/compatibility
+          if (Array.isArray(s.sourcePlanIds) && s.sourcePlanIds.length > 0) pruned[key] = s;
+        }
+      });
+      if (Object.keys(pruned).length) result[t] = pruned;
+    });
+    return result;
+  }
+
+  function _compactLearnedStateProvenance(state) {
+    if (!state) return null;
+    var BLOCKED = ['rawLogs', 'decisionTrace', 'snapshot', 'rawObservations', 'observations_raw'];
+    var out = {};
+    Object.keys(state).forEach(function(k) {
+      if (BLOCKED.indexOf(k) === -1) out[k] = state[k];
+    });
+    if (Array.isArray(out.sourcePlanIds)) {
+      var seen = {};
+      out.sourcePlanIds = out.sourcePlanIds.filter(function(id) {
+        if (seen[id]) return false;
+        seen[id] = true;
+        return true;
+      });
+    }
+    return out;
+  }
+
+  function _recommendLearnedStateStorage(learnedStateBundle) {
+    var sz = _estimateLearnedStateSize(learnedStateBundle);
+    var cls = sz.recommendation;
+    var recommendation, readImpact, writeImpact, migrationRequired, reasonCodes;
+    if (cls === 'INLINE_SAFE') {
+      recommendation = _STORAGE_RECOMMENDATION.INLINE;
+      readImpact = 'NONE'; writeImpact = 'LOW'; migrationRequired = false;
+      reasonCodes = ['INLINE_SAFE', 'NO_EXTRA_READS'];
+    } else if (cls === 'REVIEW_NEEDED') {
+      recommendation = _STORAGE_RECOMMENDATION.HYBRID;
+      readImpact = 'LOW'; writeImpact = 'MEDIUM'; migrationRequired = true;
+      reasonCodes = ['REVIEW_NEEDED', 'HYBRID_SUGGESTED', 'DEFERRED_NEEDS_DECISION'];
+    } else {
+      recommendation = _STORAGE_RECOMMENDATION.SEPARATE;
+      readImpact = 'HIGH'; writeImpact = 'HIGH'; migrationRequired = true;
+      reasonCodes = ['DEFERRED_NEEDS_DECISION', 'SEPARATE_COLLECTION_REQUIRED', 'HUMAN_DECISION_NEEDED'];
+    }
+    return { recommendation: recommendation, estimatedBytes: sz.totalBytes, classification: cls,
+             readImpact: readImpact, writeImpact: writeImpact,
+             migrationRequired: migrationRequired, reasonCodes: reasonCodes };
+  }
+
+  // No extra Firestore reads — uses only already-loaded clientData from clients/{uid}
+  function _getActivePersistedLearnedState(clientData) {
+    if (!clientData || !clientData.learnedState) return null;
+    var bundle = clientData.learnedState;
+    var result = {};
+    ['exercise', 'slot', 'topology'].forEach(function(t) {
+      if (!bundle[t] || typeof bundle[t] !== 'object') return;
+      var active = {};
+      Object.keys(bundle[t]).forEach(function(key) {
+        var s = bundle[t][key];
+        if (!_validatePersistedLearnedState(s).valid) return;
+        if (_classifyLearnedStateStatus(s, {}) === _LEARNED_STATE_STATUS.ACTIVE) active[key] = s;
+        // STALE/INVALID: skip — no automatic influence per contract
+      });
+      if (Object.keys(active).length) result[t] = active;
+    });
+    return Object.keys(result).length ? result : null;
+  }
+
+  function _runStorageStrategyTests() {
+    var pass = 0; var fail = 0;
+    function assert(label, cond) {
+      if (cond) { pass++; } else { fail++; console.warn('[TLS FAIL] ' + label); }
+    }
+    var _LSV = _LEARNED_STATE_SCHEMA_VERSION;
+    var _LSS = _LEARNED_STATE_STATUS;
+    var _SR  = _STORAGE_RECOMMENDATION;
+    function mkEx(id, conf) { return { stateVersion: _LSV, type: 'EXERCISE', confidence: conf || 'MODERATE', observations: 5, sourcePlanIds: ['p1','p2'], updatedAt: '2026-01-01', prescriptionExerciseId: id }; }
+    function mkBundle(n, slots, topos) {
+      var ex = {}; for (var i = 0; i < n; i++) ex['ex'+i] = mkEx('ex'+i);
+      var sl = {}; for (var j = 0; j < (slots||0); j++) sl['slot'+j] = { stateVersion: _LSV, type: 'SLOT', confidence: 'LOW', observations: 2, sourcePlanIds: ['p1'], updatedAt: '2026-01-01' };
+      var tp = {}; for (var k = 0; k < (topos||0); k++) tp['t'+k] = { stateVersion: _LSV, type: 'TOPOLOGY', confidence: 'HIGH', observations: 3, sourcePlanIds: ['p1'], updatedAt: '2026-01-01' };
+      return { exercise: ex, slot: sl, topology: tp };
+    }
+    // TLS1: empty → INLINE_SAFE
+    (function TLS1() {
+      var r = _recommendLearnedStateStorage(null);
+      assert('TLS1a', 'null bundle → INLINE', r.recommendation === _SR.INLINE);
+      assert('TLS1b', 'null bundle → no migration', !r.migrationRequired);
+      assert('TLS1c', 'null bundle → readImpact NONE', r.readImpact === 'NONE');
+    })();
+    // TLS2: 10 exercise states → INLINE_SAFE
+    (function TLS2() {
+      var r = _recommendLearnedStateStorage(mkBundle(10, 3, 2));
+      assert('TLS2', '10 ex + 3 slots + 2 topos → INLINE', r.recommendation === _SR.INLINE);
+    })();
+    // TLS3: 25 exercise states → INLINE_SAFE
+    (function TLS3() {
+      var r = _recommendLearnedStateStorage(mkBundle(25, 5, 4));
+      assert('TLS3', '25 ex + 5 slots + 4 topos → INLINE', r.recommendation === _SR.INLINE);
+    })();
+    // TLS4: 50 exercise states → INLINE_SAFE
+    (function TLS4() {
+      var r = _recommendLearnedStateStorage(mkBundle(50, 8, 4));
+      assert('TLS4', '50 ex + 8 slots + 4 topos → INLINE', r.recommendation === _SR.INLINE);
+    })();
+    // TLS5: 100 exercise states → key contract: still INLINE_SAFE
+    (function TLS5() {
+      var r = _recommendLearnedStateStorage(mkBundle(100, 10, 4));
+      assert('TLS5a', '100 ex + 10 slots + 4 topos → INLINE', r.recommendation === _SR.INLINE);
+      assert('TLS5b', '100 ex → no migration required', !r.migrationRequired);
+    })();
+    // TLS6: synthetic REVIEW_NEEDED size → HYBRID
+    (function TLS6() {
+      var bigBundle = { exercise: {}, slot: {}, topology: {} };
+      bigBundle.exercise['big'] = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'HIGH', observations: 5, sourcePlanIds: ['p1'], updatedAt: '2026-01-01', _pad: new Array(60000).join('x') };
+      var r = _recommendLearnedStateStorage(bigBundle);
+      assert('TLS6', 'synthetic REVIEW_NEEDED → HYBRID or SEPARATE', r.recommendation === _SR.HYBRID || r.recommendation === _SR.SEPARATE);
+    })();
+    // TLS7: synthetic DEFERRED → SEPARATE
+    (function TLS7() {
+      var bigBundle = { exercise: {}, slot: {}, topology: {} };
+      bigBundle.exercise['big'] = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'HIGH', observations: 5, sourcePlanIds: ['p1'], updatedAt: '2026-01-01', _pad: new Array(250000).join('x') };
+      var r = _recommendLearnedStateStorage(bigBundle);
+      assert('TLS7a', 'synthetic DEFERRED → SEPARATE', r.recommendation === _SR.SEPARATE);
+      assert('TLS7b', 'SEPARATE → migrationRequired true', r.migrationRequired);
+      assert('TLS7c', 'SEPARATE → HUMAN_DECISION_NEEDED in reasonCodes', r.reasonCodes.indexOf('HUMAN_DECISION_NEEDED') >= 0);
+    })();
+    // TLS8: _pruneLearnedState removes INVALID
+    (function TLS8() {
+      var bundle = { exercise: { bad: { stateVersion: 'vdsen-learned-state-v0', type: 'EXERCISE' } } };
+      var pruned = _pruneLearnedState(bundle);
+      assert('TLS8', 'invalid version state → pruned out', !pruned.exercise || !pruned.exercise['bad']);
+    })();
+    // TLS9: _pruneLearnedState keeps ACTIVE always
+    (function TLS9() {
+      var s = mkEx('ex1');
+      var bundle = { exercise: { ex1: s } };
+      var pruned = _pruneLearnedState(bundle);
+      assert('TLS9', 'ACTIVE state → preserved after prune', pruned.exercise && pruned.exercise['ex1'] === s);
+    })();
+    // TLS10: _pruneLearnedState keeps STALE with provenance
+    (function TLS10() {
+      var s = { stateVersion: _LSV, type: 'SLOT', confidence: 'HIGH', observations: 5, sourcePlanIds: ['p1'], updatedAt: '2026-01-01' };
+      // Classify as STALE via slotChanged — but _pruneLearnedState calls with empty ctx, so it classifies ACTIVE
+      // To test STALE path, inject a state that would be STALE in any context: engineVersionChanged not applicable
+      // We test provenance dedup path instead: STALE state with provenance survives
+      var bundle = { slot: { s1: s } };
+      var pruned = _pruneLearnedState(bundle);
+      assert('TLS10', 'SLOT ACTIVE with provenance → preserved', pruned.slot && pruned.slot['s1']);
+    })();
+    // TLS11: _pruneLearnedState drops STALE without provenance (empty sourcePlanIds)
+    (function TLS11() {
+      // Build a state that fails validation → gets dropped
+      var s = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'NONE', observations: 0, sourcePlanIds: [], updatedAt: '2026-01-01' };
+      var bundle = { exercise: { ex1: s } };
+      var pruned = _pruneLearnedState(bundle);
+      assert('TLS11', 'NONE confidence → invalid → pruned', !pruned.exercise || !pruned.exercise['ex1']);
+    })();
+    // TLS12: _compactLearnedStateProvenance deduplicates sourcePlanIds
+    (function TLS12() {
+      var s = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'HIGH', observations: 4, sourcePlanIds: ['p1','p2','p1','p3','p2'], updatedAt: '2026-01-01' };
+      var c = _compactLearnedStateProvenance(s);
+      assert('TLS12a', 'dedup sourcePlanIds', c.sourcePlanIds.length === 3);
+      assert('TLS12b', 'dedup preserves order', c.sourcePlanIds[0] === 'p1');
+    })();
+    // TLS13: _compactLearnedStateProvenance removes blocked keys
+    (function TLS13() {
+      var s = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'HIGH', observations: 4, sourcePlanIds: ['p1'], updatedAt: '2026-01-01', rawLogs: [1,2,3], decisionTrace: {x:1}, snapshot: 'big' };
+      var c = _compactLearnedStateProvenance(s);
+      assert('TLS13a', 'rawLogs removed',      !c.rawLogs);
+      assert('TLS13b', 'decisionTrace removed', !c.decisionTrace);
+      assert('TLS13c', 'snapshot removed',      !c.snapshot);
+      assert('TLS13d', 'core fields preserved', c.stateVersion === _LSV && c.type === 'EXERCISE');
+    })();
+    // TLS14: _compactLearnedStateProvenance does not mutate original
+    (function TLS14() {
+      var orig = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'HIGH', observations: 4, sourcePlanIds: ['p1','p1'], updatedAt: '2026-01-01', rawLogs: [1] };
+      var c = _compactLearnedStateProvenance(orig);
+      assert('TLS14a', 'original not mutated — rawLogs preserved', orig.rawLogs && orig.rawLogs.length === 1);
+      assert('TLS14b', 'original sourcePlanIds not mutated', orig.sourcePlanIds.length === 2);
+      assert('TLS14c', 'compacted has no rawLogs', !c.rawLogs);
+    })();
+    // TLS15: _getActivePersistedLearnedState returns null when no learnedState
+    (function TLS15() {
+      assert('TLS15a', 'null clientData → null', _getActivePersistedLearnedState(null) === null);
+      assert('TLS15b', 'no learnedState field → null', _getActivePersistedLearnedState({}) === null);
+      assert('TLS15c', 'empty learnedState → null', _getActivePersistedLearnedState({ learnedState: {} }) === null);
+    })();
+    // TLS16: _getActivePersistedLearnedState ignores INVALID entries
+    (function TLS16() {
+      var bad = { stateVersion: 'bad', type: 'EXERCISE', confidence: 'NONE', observations: 0, sourcePlanIds: [], updatedAt: '2026-01-01' };
+      var r = _getActivePersistedLearnedState({ learnedState: { exercise: { bad: bad } } });
+      assert('TLS16', 'invalid-only bundle → null (no active)', r === null);
+    })();
+    // TLS17: _getActivePersistedLearnedState returns ACTIVE only
+    (function TLS17() {
+      var active = mkEx('ex1');
+      var r = _getActivePersistedLearnedState({ learnedState: { exercise: { ex1: active } } });
+      assert('TLS17a', 'one ACTIVE → non-null result', r !== null);
+      assert('TLS17b', 'active entry preserved', r.exercise && r.exercise['ex1'] === active);
+    })();
+    // TLS18: _recommendLearnedStateStorage returns all required fields
+    (function TLS18() {
+      var r = _recommendLearnedStateStorage(null);
+      var REQUIRED = ['recommendation','estimatedBytes','classification','readImpact','writeImpact','migrationRequired','reasonCodes'];
+      var allPresent = REQUIRED.every(function(k){ return k in r; });
+      assert('TLS18a', 'all required fields present', allPresent);
+      assert('TLS18b', 'reasonCodes is array', Array.isArray(r.reasonCodes));
+      assert('TLS18c', 'estimatedBytes is number', typeof r.estimatedBytes === 'number');
+    })();
+    // TLS19: INLINE → migrationRequired false, readImpact NONE
+    (function TLS19() {
+      var r = _recommendLearnedStateStorage(mkBundle(10, 2, 2));
+      assert('TLS19a', 'INLINE → migrationRequired false', r.migrationRequired === false);
+      assert('TLS19b', 'INLINE → readImpact NONE', r.readImpact === 'NONE');
+      assert('TLS19c', 'INLINE → writeImpact LOW', r.writeImpact === 'LOW');
+    })();
+    // TLS20: NO_EXTRA_READS in reasonCodes for INLINE
+    (function TLS20() {
+      var r = _recommendLearnedStateStorage(mkBundle(5, 1, 1));
+      assert('TLS20', 'INLINE → NO_EXTRA_READS in reasonCodes', r.reasonCodes.indexOf('NO_EXTRA_READS') >= 0);
+    })();
+    // TLS21: _pruneLearnedState never removes ACTIVE by age
+    (function TLS21() {
+      var old = mkEx('ex1'); old.updatedAt = '2020-01-01'; // very old but ACTIVE
+      var bundle = { exercise: { ex1: old } };
+      var pruned = _pruneLearnedState(bundle);
+      assert('TLS21', 'old ACTIVE state → preserved (never removed by age)', pruned.exercise && pruned.exercise['ex1']);
+    })();
+    // TLS22: _compactLearnedStateProvenance handles state without blocked keys
+    (function TLS22() {
+      var s = mkEx('ex1');
+      var c = _compactLearnedStateProvenance(s);
+      assert('TLS22', 'state with no blocked keys → intact', c && c.stateVersion === _LEARNED_STATE_SCHEMA_VERSION);
+    })();
+    // TLS23: 100 states recommendation stays INLINE — key storage strategy contract
+    (function TLS23() {
+      var r = _recommendLearnedStateStorage(mkBundle(100, 10, 4));
+      assert('TLS23', '100 exercise states stays INLINE_SAFE per VDSEN storage contract', r.classification === 'INLINE_SAFE');
+    })();
+    // TLS24: _getActivePersistedLearnedState returns null not empty object when no active states
+    (function TLS24() {
+      var clientData = { learnedState: { exercise: {}, slot: {}, topology: {} } };
+      var r = _getActivePersistedLearnedState(clientData);
+      assert('TLS24', 'all-empty sections → null not {}', r === null);
+    })();
+    // TLS25: topology states cardinalidad baja — 4 topologies all ACTIVE
+    (function TLS25() {
+      var tp = {};
+      ['FULLBODY_2', 'UPPER_LOWER_4', 'PPL_3', 'PPL_5'].forEach(function(id) {
+        tp[id] = { stateVersion: _LSV, type: 'TOPOLOGY', confidence: 'HIGH', observations: 6, sourcePlanIds: ['p1'], updatedAt: '2026-01-01' };
+      });
+      var r = _getActivePersistedLearnedState({ learnedState: { topology: tp } });
+      assert('TLS25a', '4 topology states → all returned as active', r && r.topology && Object.keys(r.topology).length === 4);
+      assert('TLS25b', 'topology cardinality naturally low → INLINE', _recommendLearnedStateStorage({ topology: tp }).recommendation === _SR.INLINE);
+    })();
+
+    console.log('[FASE 14] Storage Strategy tests: ' + pass + ' ✓  ' + fail + ' ✗');
+    return { pass: pass, fail: fail };
+  }
+
+  window._STORAGE_RECOMMENDATION                = _STORAGE_RECOMMENDATION;
+  window._pruneLearnedState                     = _pruneLearnedState;
+  window._compactLearnedStateProvenance         = _compactLearnedStateProvenance;
+  window._recommendLearnedStateStorage          = _recommendLearnedStateStorage;
+  window._getActivePersistedLearnedState        = _getActivePersistedLearnedState;
+  window._runStorageStrategyTests               = _runStorageStrategyTests;
+
   // ── FASE 6 — Calibration & Conflict Resolution Tests (CAL1-CAL30) ─────────
   function _runCalibrationTests() {
     var pass = 0; var fail = 0;

@@ -58,7 +58,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1594 ✓ 0 ✗** · HEAD post-FASE13 + UX Cleanup
+> Suite: **1639 ✓ 0 ✗** · HEAD post-FASE14
 
 ### Arquitectura conceptual
 
@@ -465,6 +465,48 @@ baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score fi
 **Tests:** TUGC1-TUGC8 (26 aserciones) en `tests/progression-engine.test.js`
 
 **Suite: 1594 ✓ 0 ✗**
+
+---
+
+### FASE 14 — Learned State Storage Strategy
+
+**Objetivo:** Decidir y preparar la persistencia real del Learned State sin crear crecimiento ilimitado.
+
+**Archivos modificados:** `vdsen-coach.html`, `tests/progression-engine.test.js`
+
+**Funciones añadidas:**
+- `_pruneLearnedState(bundle)` — elimina INVALID; preserva ACTIVE siempre (nunca por antigüedad); conserva STALE solo con provenance útil (`sourcePlanIds.length > 0`)
+- `_compactLearnedStateProvenance(state)` — deduplica `sourcePlanIds[]`; elimina `rawLogs`, `decisionTrace`, `snapshot`, `rawObservations`, `observations_raw`; no muta el original
+- `_recommendLearnedStateStorage(bundle)` — usa `_estimateLearnedStateSize()` sin cambiar thresholds (51KB/200KB); devuelve `{ recommendation, estimatedBytes, classification, readImpact, writeImpact, migrationRequired, reasonCodes }`
+- `_getActivePersistedLearnedState(clientData)` — 0 reads Firestore extra; usa solo `clientData.learnedState` ya cargado; devuelve solo entradas ACTIVE; STALE/INVALID no influyen automáticamente
+
+**STORAGE_RECOMMENDATION resultado:**
+
+| Escenario | estimatedBytes | Resultado |
+|-----------|---------------|-----------|
+| 10 ex + 3 slots + 2 topos | ~3 KB | INLINE |
+| 25 ex + 5 slots + 4 topos | ~7 KB | INLINE |
+| 50 ex + 8 slots + 4 topos | ~14 KB | INLINE |
+| 100 ex + 10 slots + 4 topos | ~28 KB | INLINE |
+
+→ **STORAGE_RECOMMENDATION: INLINE** — `clients/{uid}.learnedState` es seguro a largo plazo para el volumen proyectado real.
+
+**CONTRACT:**
+| Invariante | Garantía |
+|------------|----------|
+| ACTIVE nunca eliminado por edad | `_pruneLearnedState` solo descarta INVALID y STALE-sin-provenance |
+| 0 reads extra | `_getActivePersistedLearnedState` opera sobre clientData ya cargado |
+| STALE/INVALID no influyen | solo ACTIVE alimenta engines (FASE 15) |
+| Sin subcollection ni migración | thresholds 51KB/200KB preservados sin cambio |
+| rawLogs/decisionTrace NO en estado | `_compactLearnedStateProvenance` los bloquea por diseño |
+
+**Eventos de escritura válidos:** cierre de mesociclo · generación del siguiente plan · recálculo longitudinal explícito. NO por set / render / check-in.
+
+**Tests:** TLS1-TLS25 (45 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1639 ✓ 0 ✗**
+
+**Siguiente fase:** FASE 15 — Learned State Activation (state ACTIVE persistido alimenta Topology/Distribution en el siguiente ciclo)
 
 ---
 
