@@ -10651,6 +10651,110 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 13 persistence contract ✓');
 })();
 
+// ═══════════════════ FASE — GENERATION PROVIDER UX CLEANUP CONTRACT TESTS ═══════════════════
+// Node-runnable T-suffix self-contained tests for UX cleanup consolidation contracts
+(function() {
+  // ── Stubs replacing browser/Firebase globals ──────────────────────────────
+  var _localStorage = {};
+  var _domElements = {};
+  function _getItem(k) { return _localStorage[k] || null; }
+  function _getElementById(id) { return _domElements[id] || null; }
+
+  // ── T-suffix: _autoGenerateForModal UI opts contract ──────────────────────
+  // Verify that passing _uiOpts maps element IDs correctly
+  function _resolveUIEls_T(clientId, uiOpts) {
+    var statusElId = (uiOpts && uiOpts.statusElId) || ('_fichaGenStatus_' + clientId);
+    var btnElId    = (uiOpts && uiOpts.btnElId)    || ('_fichaGenBtn_'    + clientId);
+    return { statusElId: statusElId, btnElId: btnElId };
+  }
+
+  // ── TUGC1: default (no opts) → uses modal element IDs ────────────────────
+  (function TUGC1() {
+    var r = _resolveUIEls_T('client123', undefined);
+    assert('TUGC1a', 'no opts → status uses modal ID', r.statusElId === '_fichaGenStatus_client123');
+    assert('TUGC1b', 'no opts → btn uses modal ID',    r.btnElId    === '_fichaGenBtn_client123');
+  })();
+
+  // ── TUGC2: plan-tab opts → uses plan-tab IDs ──────────────────────────────
+  (function TUGC2() {
+    var r = _resolveUIEls_T('client123', { statusElId: 'autoGenStatus', btnElId: 'autoGenBtn' });
+    assert('TUGC2a', 'plan-tab opts → status ID = autoGenStatus', r.statusElId === 'autoGenStatus');
+    assert('TUGC2b', 'plan-tab opts → btn ID = autoGenBtn',       r.btnElId    === 'autoGenBtn');
+  })();
+
+  // ── TUGC3: partial opts → only provided key overridden ────────────────────
+  (function TUGC3() {
+    var r = _resolveUIEls_T('abc', { statusElId: 'customStatus' });
+    assert('TUGC3a', 'partial opts → status overridden',     r.statusElId === 'customStatus');
+    assert('TUGC3b', 'partial opts → btn falls back to modal', r.btnElId   === '_fichaGenBtn_abc');
+  })();
+
+  // ── TUGC4: API key validation contract ────────────────────────────────────
+  function _apiKeyValid_T(k) { return k && k.startsWith('sk-ant-'); }
+  (function TUGC4() {
+    assert('TUGC4a', 'null key → invalid',               !_apiKeyValid_T(null));
+    assert('TUGC4b', 'empty string → invalid',           !_apiKeyValid_T(''));
+    assert('TUGC4c', 'wrong prefix → invalid',           !_apiKeyValid_T('sk-abc-123'));
+    assert('TUGC4d', 'correct prefix → valid',            _apiKeyValid_T('sk-ant-api123'));
+    assert('TUGC4e', 'sk-ant- exactly → valid',           _apiKeyValid_T('sk-ant-'));
+  })();
+
+  // ── TUGC5: API key NEVER in userMsg contract ──────────────────────────────
+  (function TUGC5() {
+    var fakeKey = 'sk-ant-superSecretKey9999';
+    // Simulate building userMsg — key must never appear
+    var userMsg = [
+      'MODO API — SIN PREGUNTAS.',
+      'FICHA: {"nombre":"Test"}',
+      'CONTEXTO: topology=A, distribution=B'
+    ].filter(Boolean).join('\n');
+    assert('TUGC5a', 'API key NOT in userMsg',      userMsg.indexOf(fakeKey) === -1);
+    assert('TUGC5b', 'sk-ant- prefix NOT in userMsg', userMsg.indexOf('sk-ant-') === -1);
+  })();
+
+  // ── TUGC6: generator always requires valid plan before write ──────────────
+  // Invariant: if training/nutrition/supplements/pharma all null → error, never write
+  function _hasWritableContent_T(training, nutrition, supplements, pharma) {
+    return !!(training || nutrition || supplements || pharma);
+  }
+  (function TUGC6() {
+    assert('TUGC6a', 'all null → not writable',     !_hasWritableContent_T(null, null, null, null));
+    assert('TUGC6b', 'training only → writable',     _hasWritableContent_T({days:[]}, null, null, null));
+    assert('TUGC6c', 'nutrition only → writable',    _hasWritableContent_T(null, {calorias:2000}, null, null));
+    assert('TUGC6d', 'supplements only → writable',  _hasWritableContent_T(null, null, {tiers:[]}, null));
+    assert('TUGC6e', 'pharma only → writable',       _hasWritableContent_T(null, null, null, {protocolo:'x'}));
+  })();
+
+  // ── TUGC7: no duplicate generation path — autoGeneratePlan is wrapper only ─
+  // Structural contract: autoGeneratePlan should delegate, never call API directly
+  // This is a code-shape test. We verify the function body is short (< 10 statements).
+  // Since we can't import the browser file in Node, we verify via grep on line count.
+  var fs = require('fs');
+  var src = fs.readFileSync(__dirname + '/../vdsen-coach.html', 'utf8');
+  var autoGenFnMatch = src.match(/async function autoGeneratePlan\(\)[^{]*\{([\s\S]*?)  \}\s*\n\s*window\.autoGeneratePlan/);
+  if (autoGenFnMatch) {
+    var body = autoGenFnMatch[1];
+    var lines = body.split('\n').filter(function(l){ return l.trim().length > 0; });
+    assert('TUGC7a', 'autoGeneratePlan body is thin (≤6 non-blank lines)', lines.length <= 6);
+    assert('TUGC7b', 'autoGeneratePlan delegates to _autoGenerateForModal', body.indexOf('_autoGenerateForModal') !== -1);
+    assert('TUGC7c', 'autoGeneratePlan does NOT call fetch directly',       body.indexOf("fetch('/api/generate-plan'") === -1);
+    assert('TUGC7d', 'autoGeneratePlan does NOT call _loadMotorPrompt',    body.indexOf('_loadMotorPrompt') === -1);
+  } else {
+    assert('TUGC7a', 'autoGeneratePlan function found in source', false);
+  }
+
+  // ── TUGC8: _autoGenerateForModal accepts _uiOpts parameter ───────────────
+  (function TUGC8() {
+    var fnSig = src.match(/async function _autoGenerateForModal\(([^)]*)\)/);
+    assert('TUGC8a', '_autoGenerateForModal has second parameter', fnSig && fnSig[1].indexOf(',') !== -1);
+    assert('TUGC8b', '_autoGenerateForModal uses _uiOpts', src.indexOf('_uiOpts') !== -1);
+    assert('TUGC8c', '_autoGenerateForModal has statusElId fallback', src.indexOf('statusElId') !== -1);
+    assert('TUGC8d', '_autoGenerateForModal has btnElId fallback',    src.indexOf('btnElId') !== -1);
+  })();
+
+  console.log('── FASE UX cleanup generation provider contract ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

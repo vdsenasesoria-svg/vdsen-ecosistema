@@ -289,7 +289,7 @@
   <div id="crearPlan" class="section"><div class="flex items-center justify-between mb-4 flex-wrap gap-2"><h2 class="text-2xl font-bold" style="margin:0">Plan</h2><button onclick="showSection('templates')" style="padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">📑 Templates →</button></div><select id="planClientSelect" class="input-field mb-2"></select>
     <div class="card p-4 mb-4">
       <div class="flex items-center gap-3 flex-wrap">
-        <button id="autoGenBtn" onclick="autoGeneratePlan()" class="btn-primary">🤖 Generar plan automático (motor VDSEN)</button>
+        <button id="autoGenBtn" onclick="autoGeneratePlan()" class="btn-primary">⚡ Generar plan</button>
         <button id="planPdfBtn" onclick="downloadPlanPDF(document.getElementById('planClientSelect').value)" class="btn-secondary">📄 Descargar PDF del plan</button>
         <span class="text-xs" style="color:var(--text-muted);max-width:420px;line-height:1.4">Lee la ficha del cliente y genera <b>entrenamiento + nutrición + suplementación</b> 100% con el modelo VDSEN. Los guarda y activa solos — el cliente los ve al instante en su app.</span>
       </div>
@@ -336,10 +336,13 @@
       </div>
     </div>
     <div class="card p-4 mb-4">
-      <label class="block text-sm font-medium mb-1">🔑 API Key de Anthropic (Claude)</label>
-      <input type="password" id="apiKeyInput" class="input-field" placeholder="sk-ant-..." autocomplete="off">
-      <button id="saveApiKeyBtn" class="btn-primary mt-3">Guardar en este navegador</button>
-      <p class="text-xs text-[#888] mt-2">⚠️ La clave se almacena solo en tu navegador (localStorage). Nunca se guarda en Firestore ni en el servidor.</p>
+      <button onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:12px;padding:0;text-align:left">⚙️ Configuración avanzada de proveedor ▸</button>
+      <div hidden style="margin-top:12px">
+        <label class="block text-sm font-medium mb-1" style="color:var(--text-muted)">Proveedor de generación</label>
+        <input type="password" id="apiKeyInput" class="input-field" placeholder="sk-ant-..." autocomplete="off" style="margin-bottom:8px">
+        <button id="saveApiKeyBtn" class="btn-secondary" style="font-size:12px">Guardar en este navegador</button>
+        <p class="text-xs mt-2" style="color:var(--text-muted)">⚠️ Se almacena solo en tu navegador. Nunca en Firestore ni en el servidor.</p>
+      </div>
     </div>
     <div class="card p-4 mb-4">
       <label class="block text-sm font-medium mb-1">📚 Compendio (PDF)</label>
@@ -7631,215 +7634,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (!currentCoach) { showToast('⚠️ No hay sesión activa.', true); return; }
     const clientId = document.getElementById('planClientSelect').value;
     if (!clientId) { showToast('Selecciona un cliente primero', true); return; }
-    const apiKey = localStorage.getItem('vdsen_apikey');
-    if (!apiKey || !apiKey.startsWith('sk-ant-')) { showToast('Configura tu API key de Anthropic en Config primero', true); return; }
-    const statusBox = document.getElementById('autoGenStatus');
-    const setStatus = html => { if (statusBox) statusBox.innerHTML = html; };
-    const btn = document.getElementById('autoGenBtn');
-    if (btn) { btn.disabled = true; btn._t = btn.textContent; btn.textContent = '⏳ Generando…'; }
-    try {
-      setStatus('<span style="color:var(--text-muted)">Leyendo ficha…</span>');
-      const fs = await getDoc(doc(db, 'fichas_onboarding', clientId));
-      let ficha = fs.exists() ? fs.data() : null;
-      if (!ficha || !ficha.data) {
-        const cd = (await getDoc(doc(db, 'clients', clientId))).data() || {};
-        if (cd.intake && cd.intake.data) ficha = cd.intake;
-      }
-      if (!ficha || !ficha.data || !Object.keys(ficha.data).length) {
-        throw new Error('Este cliente no tiene ficha. Llena la ficha en la pestaña Evaluación primero.');
-      }
-      const fichaTxt = (typeof intakeFormat === 'function') ? intakeFormat(ficha.data, 'md') : JSON.stringify(ficha.data, null, 2);
-      const isPED = String(ficha.data.perfil || '').toLowerCase() === 'ped';
-
-      // P2 + P7: Decision Engine — leer contexto longitudinal antes de llamar a Claude
-      setStatus('<span style="color:var(--text-muted)">Leyendo historial del cliente…</span>');
-      const prescCtx = await buildPrescriptionContext(clientId);
-      const prescCtxTxt = _prescriptionContextToText(prescCtx);
-
-      // Topology Engine v2: select training topology before days[] construction (Principles 1-12)
-      const _fichaDpw = (ficha.data.entrenamiento && ficha.data.entrenamiento.dias_semana)
-        ? Number(ficha.data.entrenamiento.dias_semana) : 4;
-      const topologyDecision = runTopologyEngine(_fichaDpw, prescCtx);
-      const topologyTxt = _topologyDecisionToText(topologyDecision);
-      console.info('[VDSEN TopologyEngine v2]', topologyDecision);
-
-      // Generator Engine Suite — runs pre-generation to inject structured context into Claude prompt
-      const _gsMuscles = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
-      const constraintModel     = buildConstraintModel(prescCtx);
-      const distributionDecision = runDistributionEngine(topologyDecision, _gsMuscles, _fichaDpw, constraintModel);
-      const maintenanceVol      = computeMaintenanceVolume(_gsMuscles);
-      const stabilityDecision   = runPlanStabilityEngine((prescCtx && prescCtx.previousPlan) || null, prescCtx);
-      const constraintTxt       = _constraintModelToText(constraintModel);
-      const distributionTxt     = _distributionToText(distributionDecision);
-      const maintenanceTxt      = _maintenanceVolumeToText(maintenanceVol);
-      const stabilityTxt        = _stabilityToText(stabilityDecision);
-      console.info('[VDSEN ConstraintModel]', constraintModel);
-      console.info('[VDSEN DistributionEngine]', distributionDecision);
-      console.info('[VDSEN MaintenanceVolume]', maintenanceVol);
-      console.info('[VDSEN PlanStability]', stabilityDecision);
-
-      setStatus('<span style="color:var(--text-muted)">Cargando motor VDSEN…</span>');
-      const motor = await _loadMotorPrompt();
-
-      setStatus('<span style="color:var(--text-muted)">Generando con el motor VDSEN… (10–40 s)</span>');
-      const userMsg = [
-        'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
-        'Con la ficha de abajo, genera en UNA sola respuesta UN ÚNICO bloque JSON con schema "vdsen-plan-v2" que integre:',
-        '  • "entrenamiento": objeto con days[], weeks, daysPerWeek (PARTE D)',
-        '  • "nutricion": objeto con calorias, proteina, carbos, grasas, comidas[] (PARTE D2)',
-        '  • "suplementacion": objeto con tiers[] (PARTE D3)',
-        isPED ? '  • "farmacologia": objeto con protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct (PARTE D4)' : '',
-        'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
-        'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
-        'Cumple el CHECKLIST final del motor antes de responder.',
-        prescCtxTxt,
-        topologyTxt,
-        constraintTxt,
-        distributionTxt,
-        maintenanceTxt,
-        stabilityTxt,
-        'FICHA DEL CLIENTE:', fichaTxt
-      ].filter(Boolean).join('\n');
-      const body = {
-        model: 'claude-sonnet-5',
-        max_tokens: 8000,
-        thinking: { type: 'disabled' },
-        system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: userMsg }]
-      };
-      const resp = await fetch('/api/generate-plan', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
-        body: JSON.stringify(body)
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error((data && (data.error?.message || data.error)) || ('API ' + resp.status));
-      const text = Array.isArray(data.content) ? data.content.filter(c => c.type === 'text').map(c => c.text).join('\n') : '';
-      if (!text) throw new Error('Respuesta vacía del modelo');
-
-      setStatus('<span style="color:var(--text-muted)">Validando plan…</span>');
-      const _rawBlocks = _extractJsonBlocks(text);
-      const _rawJson   = _rawBlocks[0] || null;
-      let { training, nutrition, supplements, pharma } = _classifyBlocks(_rawBlocks);
-      if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
-
-      // P3 + P9.2 + P9.5: Full validation with restrictions and schema check
-      const _restrictions = (prescCtx && prescCtx.restrictions) || {};
-      const validation = validatePlan({ training, nutrition, supplements }, _restrictions, _rawJson);
-
-      // P9.5: VETO errors are immediate — unrecoverable
-      const _vetoErrs = validation.errors.filter(e => e.includes('VETO'));
-      if (_vetoErrs.length) throw new Error('Plan vetado por restricciones del cliente: ' + _vetoErrs.join('; '));
-
-      if (!validation.valid) {
-        // P4 + P9.1: Deterministic repair for structural nulls only
-        const repairResult = repairPlan({ training, nutrition, supplements, pharma }, validation.errors);
-        if (repairResult.remaining.length) {
-          throw new Error('Plan con errores irrecuperables:\n• ' + repairResult.remaining.join('\n• '));
-        }
-        if (repairResult.changed) {
-          ({ training, nutrition, supplements, pharma } = repairResult.repaired);
-          console.info('[VDSEN] repairPlan aplicado:', validation.errors);
-        }
-        // P9.1: Controlled repair for missing prescription fields (no defaults invented)
-        if (repairResult.needsControlledRepair) {
-          setStatus('<span style="color:var(--text-muted)">Reparación controlada (campos prescripción ausentes)…</span>');
-          training = await _controlledRepairViaClaude(training, repairResult.incompleteItems, apiKey, motor);
-          const _reVal = validatePlan({ training, nutrition, supplements }, _restrictions, null);
-          if (!_reVal.valid) throw new Error('Plan irrecuperable tras reparación controlada:\n• ' + _reVal.errors.join('\n• '));
-        }
-      }
-      if (validation.warnings.length) console.info('[VDSEN] validatePlan warnings:', validation.warnings);
-
-      // P9.3 + P10.9: Volume audit + comparison against prescriptionTargets
-      const _volAudit = auditFractionalVolume(training, []);
-      if (_volAudit.warnings.length) console.info('[VDSEN] Volume audit:', _volAudit.warnings);
-      const _muscleTargets = prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles;
-      const _volTargetWarnings = _auditVolumeVsTargets(_volAudit, _muscleTargets || {});
-      if (_volTargetWarnings.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings);
-
-      // Slot Constraints Audit — verifies prescriptionSlot contracts post-generation (0 reads)
-      const _priorityMuscleList = prescCtx && prescCtx.prescriptionTargets
-        ? Object.keys(prescCtx.prescriptionTargets.muscles || {}).filter(function(m) {
-            return (prescCtx.prescriptionTargets.muscles[m] || {}).priority === 'high';
-          })
-        : [];
-      const _slotAudit = training ? _auditSlotConstraints(training, _priorityMuscleList) : null;
-      if (_slotAudit) {
-        if (_slotAudit.issues.length)   console.warn('[VDSEN SlotAudit] Issues:', _slotAudit.issues);
-        if (_slotAudit.warnings.length) console.info('[VDSEN SlotAudit] Warnings:', _slotAudit.warnings);
-      }
-
-      // Session Composition Audit — holistic day coherence check (0 reads)
-      const _sessionAudit = training ? _auditSessionComposition(training, prescCtx) : null;
-      if (_sessionAudit) {
-        _sessionAudit.byDay.forEach(function(d) {
-          if (d.quality !== 'OPTIMAL')
-            console.info('[VDSEN SessionComposition] ' + d.dayLabel + ' · ' + d.quality, d.reasonCodes);
-          // Surface actionable interaction signals from the Interaction Engine
-          if (d.interactions) {
-            d.interactions.forEach(function(pair) {
-              if (pair.classification === 'REDUNDANT')
-                console.warn('[VDSEN InteractionEngine] REDUNDANT: ' + pair.exerciseA + ' + ' + pair.exerciseB, pair.reasonCodes);
-              else if (pair.classification === 'JOINT_STRESS_OVERLAP')
-                console.warn('[VDSEN InteractionEngine] JOINT_STRESS_OVERLAP: ' + pair.exerciseA + ' + ' + pair.exerciseB, pair.reasonCodes);
-            });
-          }
-        });
-      }
-
-      // Topology Feasibility Audit — post-distribution validation (Principle 12)
-      const _topoAudit = training ? topologyFeasibilityAudit(training, topologyDecision, prescCtx, _restrictions) : null;
-      if (_topoAudit) {
-        if (_topoAudit.issues.length)   console.warn('[VDSEN TopologyAudit] Issues:', _topoAudit.issues);
-        if (_topoAudit.warnings.length) console.info('[VDSEN TopologyAudit] Warnings:', _topoAudit.warnings);
-      }
-      // Structural Fatigue Audit — post-generation, per day (HEURISTIC: LOW/MODERATE/HIGH)
-      const _structFatigueByDay = training ? (training.days || []).map(function(d) {
-        return auditStructuralFatigue(d.exercises || []);
-      }) : null;
-      if (_structFatigueByDay) {
-        const _highFatigue = _structFatigueByDay.filter(function(f){ return f.level === 'HIGH'; });
-        if (_highFatigue.length) console.warn('[VDSEN StructFatigue] HIGH days:', _highFatigue);
-        else console.info('[VDSEN StructFatigue]', _structFatigueByDay.map(function(f){ return f.level; }));
-      }
-      // Decision trace stored outside pure plan per VDSEN contracts
-      window._lastTopologyTrace = {
-        decision: topologyDecision, audit: _topoAudit,
-        distribution: distributionDecision, stability: stabilityDecision,
-        structFatigue: _structFatigueByDay,
-        clientId: clientId, ts: Date.now()
-      };
-
-      setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
-      const saved = [];
-      const planObj = training ? _normalizeTrainingPlan(training) : null;
-      if (planObj) {
-        window._importedPlan = planObj;
-        await saveImportedPlan(clientId);  // activa el plan del cliente
-        saved.push(planObj.days.length + ' día(s) de entrenamiento');
-      }
-      const clientUpdates = {};
-      if (nutrition) { clientUpdates.nutritionPlan = _nutritionJsonToPlan(nutrition); clientUpdates.nutritionRaw = nutrition; saved.push('nutrición'); }
-      const supPlan = supplements ? _supplementsJsonToPlan(supplements) : null;
-      if (supPlan) { clientUpdates.supplementPlan = supPlan; clientUpdates.supplementsRaw = supplements; saved.push('suplementación'); }
-      if (pharma) { clientUpdates.pharmacoPlan = pharma; saved.push('farmacología'); }
-      if (Object.keys(clientUpdates).length) await updateDoc(doc(db, 'clients', clientId), clientUpdates);
-
-      const u = data.usage || {};
-      const trunc = data.stop_reason === 'max_tokens' ? '<div style="color:var(--danger);font-size:11px;margin-top:4px">⚠ La respuesta se truncó (max_tokens). Revisa el plan; puede faltar contenido.</div>' : '';
-      const cacheNote = u.cache_read_input_tokens ? ' · caché ✓' : (u.cache_creation_input_tokens ? ' · caché creado' : '');
-      setStatus('<div style="color:var(--success);font-weight:700">✅ Generado y cargado: ' + saved.join(' · ') + '</div>'
-        + '<div style="color:var(--text-muted);font-size:11px;margin-top:4px">Tokens: ' + (u.input_tokens || '?') + ' in / ' + (u.output_tokens || '?') + ' out' + cacheNote + ' · Ya visible para el cliente en su app.</div>'
-        + '<button onclick="downloadPlanPDF(\'' + clientId + '\')" class="btn-secondary" style="margin-top:10px">📄 Descargar PDF del plan</button>'
-        + ' <button onclick="notifyPlanReady(\'' + clientId + '\')" class="btn-secondary" style="margin-top:10px;border-color:#25D366;color:#25D366">📣 Avisar al cliente</button>' + trunc);
-      showToast('✅ Plan generado y activado');
-    } catch (e) {
-      setStatus('<div style="color:var(--danger);font-weight:700">❌ ' + _escH(e.message || String(e)) + '</div>');
-      showToast('Error: ' + (e.message || e), true);
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = btn._t || '🤖 Generar plan automático (motor VDSEN)'; }
-    }
+    await _autoGenerateForModal(clientId, { statusElId: 'autoGenStatus', btnElId: 'autoGenBtn' });
   }
   window.autoGeneratePlan = autoGeneratePlan;
 
@@ -16606,14 +16401,16 @@ El esfuerzo no es negociable.
   window._runLearningContractTests    = _runLearningContractTests;
 
 
-  async function _autoGenerateForModal(clientId) {
-    const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
-    const btn      = document.getElementById('_fichaGenBtn_' + clientId);
+  async function _autoGenerateForModal(clientId, _uiOpts) {
+    const _statusElId = (_uiOpts && _uiOpts.statusElId) || ('_fichaGenStatus_' + clientId);
+    const _btnElId    = (_uiOpts && _uiOpts.btnElId)    || ('_fichaGenBtn_'    + clientId);
+    const statusEl = document.getElementById(_statusElId);
+    const btn      = document.getElementById(_btnElId);
     const setStatus = html => { if (statusEl) statusEl.innerHTML = html; };
     if (!currentCoach) { setStatus('<div style="color:#e05555">⚠ No hay sesión activa.</div>'); return; }
     const apiKey = localStorage.getItem('vdsen_apikey');
     if (!apiKey || !apiKey.startsWith('sk-ant-')) {
-      setStatus('<div style="color:#e05555">⚠ Configura tu API key de Anthropic en <strong>Config</strong> primero.</div>'); return;
+      setStatus('<div style="color:#e05555">⚠ Configura el proveedor en <strong>Config → Configuración avanzada</strong>.</div>'); return;
     }
     if (btn) { btn.disabled = true; btn._t = btn.innerHTML; btn.innerHTML = '⏳ Generando plan…'; }
     try {
@@ -16634,6 +16431,23 @@ El esfuerzo no es negociable.
       setStatus('<span style="color:#888">Leyendo historial del cliente…</span>');
       const prescCtx = await buildPrescriptionContext(clientId);
       const prescCtxTxt = _prescriptionContextToText(prescCtx);
+
+      // Generator Engine Suite — pre-generation context (topology/distribution/maintenance/stability)
+      const _gsMoFichaDpw = (ficha.data.entrenamiento && ficha.data.entrenamiento.dias_semana)
+        ? Number(ficha.data.entrenamiento.dias_semana) : 4;
+      const _gsMoTopology    = runTopologyEngine(_gsMoFichaDpw, prescCtx);
+      const _gsMoMuscles     = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles) || {};
+      const _gsMoConstraints = buildConstraintModel(prescCtx);
+      const _gsMoDist        = runDistributionEngine(_gsMoTopology, _gsMoMuscles, _gsMoFichaDpw, _gsMoConstraints);
+      const _gsMoMaint       = computeMaintenanceVolume(_gsMoMuscles);
+      const _gsMoStability   = runPlanStabilityEngine((prescCtx && prescCtx.previousPlan) || null, prescCtx);
+      const _gsMoTopoTxt     = _topologyDecisionToText(_gsMoTopology);
+      const _gsMoConstrTxt   = _constraintModelToText(_gsMoConstraints);
+      const _gsMoDistTxt     = _distributionToText(_gsMoDist);
+      const _gsMoMaintTxt    = _maintenanceVolumeToText(_gsMoMaint);
+      const _gsMoStabTxt     = _stabilityToText(_gsMoStability);
+      console.info('[VDSEN GenerateModal] TopologyEngine', _gsMoTopology);
+      console.info('[VDSEN GenerateModal] DistributionEngine', _gsMoDist);
 
       // FASE 4: decision trace accumulator
       const _decisionTrace4 = [];
@@ -16716,6 +16530,11 @@ El esfuerzo no es negociable.
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
         prescCtxTxt,
+        _gsMoTopoTxt,
+        _gsMoConstrTxt,
+        _gsMoDistTxt,
+        _gsMoMaintTxt,
+        _gsMoStabTxt,
         'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
       const reqBody = {

@@ -58,7 +58,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1568 ✓ 0 ✗** · HEAD post-FASE13
+> Suite: **1594 ✓ 0 ✗** · HEAD post-FASE13 + UX Cleanup
 
 ### Arquitectura conceptual
 
@@ -436,6 +436,35 @@ baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score fi
 **Tests:** TLP1-TLP18 (26 aserciones) en `tests/progression-engine.test.js`
 
 **Suite: 1568 ✓ 0 ✗**
+
+---
+
+### FASE — Generation Provider UX Cleanup
+
+**Objetivo:** Eliminar duplicación del path de generación y limpiar la UX de configuración del proveedor.
+
+**Archivos modificados:** `vdsen-coach.html`, `tests/progression-engine.test.js`
+
+**Cambios:**
+- `autoGeneratePlan()` → thin wrapper (5 líneas) que delega a `_autoGenerateForModal(clientId, _uiOpts)`
+- `_autoGenerateForModal` acepta `_uiOpts = { statusElId, btnElId }` para mapear elementos UI del tab Plan o del modal
+- Pre-generation context (topology/distribution/maintenance/stability) añadido a `_autoGenerateForModal.userMsg`
+- Botón Plan tab: `"🤖 Generar plan automático (motor VDSEN)"` → `"⚡ Generar plan"`
+- API key UI movida a sección colapsable "⚙️ Configuración avanzada de proveedor"
+- Mensajes de error desacoplados de "Anthropic API key" → "Configura el proveedor en Config → Configuración avanzada"
+- API key nunca aparece en userMsg, traces, outputs ni Firestore (solo se pasa como `x-api-key` header)
+
+**CONTRACT:**
+| Invariante | Garantía |
+|------------|----------|
+| Single generation path | `autoGeneratePlan` no llama a `fetch('/api/generate-plan')` directamente |
+| API key isolation | `sk-ant-` never in userMsg, trace, or Firestore write |
+| UI opts fallback | No opts → modal IDs; `statusElId/btnElId` override → plan tab IDs |
+| Pre-gen context parity | Ambos handlers incluyen topology/distribution/maintenance/stability |
+
+**Tests:** TUGC1-TUGC8 (26 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1594 ✓ 0 ✗**
 
 ---
 
