@@ -5629,6 +5629,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         }
       );
 
+      ctx._clientData = clientData; // expose for learned state activation (0 extra reads)
       return ctx;
     } catch (e) {
       console.warn('buildPrescriptionContext error:', e.message);
@@ -6450,6 +6451,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const prescCtx = await buildPrescriptionContext(clientId);
       const prescCtxTxt = _prescriptionContextToText(prescCtx);
 
+      // Learned State Activation: clientData already read inside buildPrescriptionContext (0 new reads)
+      const _activeLearnedState = _getActivePersistedLearnedState((prescCtx && prescCtx._clientData) || {});
+      const _lsTopoCandidates = (prescCtx && prescCtx.hasPreviousPlan && prescCtx.previousPlan)
+        ? [{ id: (prescCtx.previousPlan.dayLabels || []).join('|'), dayLabels: prescCtx.previousPlan.dayLabels || [], score: 0.5 }]
+        : [];
+      const _lsTopoResult = _applyLearnedTopologyAdjustment(_lsTopoCandidates, _activeLearnedState);
+      if (_lsTopoResult.trace.length) console.info('[VDSEN LS] topology trace:', _lsTopoResult.trace);
+      const _lsDistDecision = prescCtx ? { frequencyTarget: null, spacing: null, alternatives: [] } : null;
+      const _lsDistResult = _applyLearnedDistributionFeedback(_lsDistDecision, _activeLearnedState);
+      if (_lsDistResult.trace.length) console.info('[VDSEN LS] distribution trace:', _lsDistResult.trace);
+      const _lsExerciseCandidates = (prescCtx && prescCtx.previousPlan && Array.isArray(prescCtx.previousPlan.exercises))
+        ? prescCtx.previousPlan.exercises.map(function(name) { return { id: name, name: name, score: 0.5 }; })
+        : [];
+      const _lsExerciseResult = _applyLearnedExerciseAdjustment(_lsExerciseCandidates, _activeLearnedState, {});
+      if (_lsExerciseResult.trace.length) console.info('[VDSEN LS] exercise trace:', _lsExerciseResult.trace);
+
       setStatus('<span style="color:var(--text-muted)">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();
 
@@ -7245,7 +7262,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     // Decision trace
     let traceHtml = decisionTrace.length
-      ? decisionTrace.map(t => `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">${JSON.stringify(t)}</div>`).join('')
+      ? decisionTrace.map(t => `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">${_escH(JSON.stringify(t))}</div>`).join('')
       : '<em style="color:var(--text-muted);font-size:12px">Sin trace</em>';
 
     // Flags + Warnings + moduleStatus
@@ -7254,9 +7271,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const modNonReady = Object.entries(modStatus).filter(([, v]) => v !== 'READY');
     let flagsHtml = '';
     if (flags.length || warnings.length || modNonReady.length) {
-      flagsHtml += modNonReady.map(([k, v]) => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(139,92,246,.15);margin-bottom:4px;font-weight:600">🔍 ${k}: ${v}</div>`).join('');
-      flagsHtml += flags.map(f => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(245,158,11,.15);margin-bottom:4px">${f.code || ''}: ${f.message || ''}</div>`).join('');
-      flagsHtml += warnings.map(w => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(239,68,68,.1);margin-bottom:4px">⚠️ ${w}</div>`).join('');
+      flagsHtml += modNonReady.map(([k, v]) => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(139,92,246,.15);margin-bottom:4px;font-weight:600">🔍 ${_escH(k)}: ${_escH(String(v))}</div>`).join('');
+      flagsHtml += flags.map(f => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(245,158,11,.15);margin-bottom:4px">${_escH(f.code || '')}: ${_escH(f.message || '')}</div>`).join('');
+      flagsHtml += warnings.map(w => `<div style="font-size:12px;padding:3px 6px;border-radius:4px;background:rgba(239,68,68,.1);margin-bottom:4px">⚠️ ${_escH(String(w))}</div>`).join('');
     } else {
       flagsHtml = '<em style="color:var(--text-muted);font-size:12px">Sin flags</em>';
     }
@@ -7264,7 +7281,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // Audit
     let auditHtml = '<em style="color:var(--text-muted);font-size:12px">Sin audit</em>';
     if (Object.keys(audit).length) {
-      auditHtml = `<pre style="font-size:10px;overflow:auto;max-height:120px;background:rgba(0,0,0,.2);padding:8px;border-radius:6px">${JSON.stringify(audit, null, 2)}</pre>`;
+      auditHtml = `<pre style="font-size:10px;overflow:auto;max-height:120px;background:rgba(0,0,0,.2);padding:8px;border-radius:6px">${_escH(JSON.stringify(audit, null, 2))}</pre>`;
     }
     if (consistencyIssues.length) {
       auditHtml = `<div style="background:rgba(239,68,68,.15);color:#ef4444;padding:8px;border-radius:6px;font-size:12px;margin-bottom:6px">` +

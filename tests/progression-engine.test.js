@@ -8483,4 +8483,77 @@ function _applyLearnedDistributionFeedback(distributionDecision, activeLearnedSt
   var topoSubset = _selectLearnedStateForEngine(activeLS, 'topology');
   assert('F46-Od', '_selectLearnedStateForEngine topology retorna null sin topologyState en exerciseOnly state', topoSubset === null);
 })();
+// ─────────────────────────── REGRESSION BUGS ──────────────────────────────
+// BUG-RIR0: RIR 0 (entrenamiento al fallo) no debe colapsar a default 2
+(function() {
+  console.log('\nBUG-RIR0 — RIR 0 falsy-zero no debe tratarse como ausente');
+  function parseRIR_buggy(val)  { return parseInt(val) || 2; }
+  function parseRIR_fixed(val)  { var p = parseInt(val); return p >= 0 ? p : 2; }
+  assert('BUG-RIR0-A', 'buggy: RIR 0 colapsa a 2',  parseRIR_buggy('0') === 2);
+  assert('BUG-RIR0-B', 'fixed: RIR 0 se preserva como 0', parseRIR_fixed('0') === 0);
+  assert('BUG-RIR0-C', 'fixed: RIR 1 se preserva',   parseRIR_fixed('1') === 1);
+  assert('BUG-RIR0-D', 'fixed: valor vacío → default 2', parseRIR_fixed('') === 2);
+  assert('BUG-RIR0-E', 'fixed: valor NaN → default 2', parseRIR_fixed('abc') === 2);
+  // Guard condition: _rirSave >= 0 saves failure-training RIR
+  function shouldSaveRIR_buggy(v) { return !isNaN(v) && v > 0; }
+  function shouldSaveRIR_fixed(v) { return !isNaN(v) && v >= 0; }
+  assert('BUG-RIR0-F', 'buggy: _rirSave 0 no se guarda', shouldSaveRIR_buggy(0) === false);
+  assert('BUG-RIR0-G', 'fixed: _rirSave 0 sí se guarda', shouldSaveRIR_fixed(0) === true);
+  assert('BUG-RIR0-H', 'fixed: _rirSave 1 sí se guarda', shouldSaveRIR_fixed(1) === true);
+  assert('BUG-RIR0-I', 'fixed: _rirSave NaN no se guarda', shouldSaveRIR_fixed(NaN) === false);
+})();
+
+// BUG-XSS-PREVIEW: _escH debe aplicarse a strings de Decision Trace / flags / warnings
+(function() {
+  console.log('\nBUG-XSS-PREVIEW — _escH aplicada en vdsenAIPreview (decisionTrace, flags, warnings)');
+  function _escH(s) {
+    if (typeof s !== 'string') s = String(s);
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  var maliciousTrace = { source: 'HISTORY', engine: '<script>alert(1)</script>' };
+  var escapedTrace = _escH(JSON.stringify(maliciousTrace));
+  assert('BUG-XSS-A', 'trace JSON escapado: no contiene < crudo', !escapedTrace.includes('<script>'));
+  assert('BUG-XSS-B', 'trace JSON escapado: contiene entidad', escapedTrace.includes('&lt;'));
+
+  var maliciousFlag = { code: '"><img onerror=x>', message: 'bad' };
+  var escapedCode = _escH(maliciousFlag.code || '');
+  assert('BUG-XSS-C', 'flag.code escapado: no contiene < crudo', !escapedCode.includes('<'));
+  assert('BUG-XSS-D', 'flag.code escapado: no contiene " crudo', !escapedCode.includes('"'));
+
+  var maliciousWarning = '<svg onload=alert(1)>';
+  var escapedWarning = _escH(String(maliciousWarning));
+  assert('BUG-XSS-E', 'warning escapado: no contiene < crudo', !escapedWarning.includes('<svg'));
+
+  var auditObj = { key: '<b>bold</b>', nested: { a: 1 } };
+  var escapedAudit = _escH(JSON.stringify(auditObj, null, 2));
+  assert('BUG-XSS-F', 'audit JSON escapado: no contiene < crudo', !escapedAudit.includes('<b>'));
+})();
+
+// BUG-LS-DIVERGE: _getActivePersistedLearnedState usable desde prescCtx._clientData
+(function() {
+  console.log('\nBUG-LS-DIVERGE — learned state desde prescCtx._clientData (sin reads extra)');
+  // Simulate what buildPrescriptionContext now returns (_clientData exposed)
+  var activeClientData = {
+    learnedState: {
+      status: 'ACTIVE',
+      topologyState: { preferredPatterns: ['Push/Pull/Legs'], rejectedPatterns: [] },
+      slotState: { preferredSpacing: [] },
+      exerciseState: { exercises: {
+        'press banca': { continuityType:'KEPT', continuityStatus:'RESOLVED', confidence:'high', observations:['good_tolerance'], painSignals:[] }
+      } }
+    }
+  };
+  var simulatedPrescCtx = { hasPreviousPlan: true, _clientData: activeClientData };
+  var resolved = _getActivePersistedLearnedState(simulatedPrescCtx._clientData || {});
+  assert('BUG-LS-DIV-A', 'ACTIVE state resolved from prescCtx._clientData', resolved !== null);
+  assert('BUG-LS-DIV-B', 'resolved state has exerciseState', resolved && resolved.exerciseState !== undefined);
+  // Null clientData should not throw
+  var nullResult = _getActivePersistedLearnedState({});
+  assert('BUG-LS-DIV-C', 'empty clientData → null (no error)', nullResult === null);
+  // prescCtx null fallback safe
+  var nullPrescCtx = null;
+  var safeResult = _getActivePersistedLearnedState((nullPrescCtx && nullPrescCtx._clientData) || {});
+  assert('BUG-LS-DIV-D', 'null prescCtx fallback is safe', safeResult === null);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

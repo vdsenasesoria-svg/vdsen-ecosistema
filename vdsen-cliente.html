@@ -5341,7 +5341,7 @@ function markExpressDone(di, ei) {
   if (!reps || reps < 1) { showToast('Indica las reps realizadas en la última serie', true); return; }
   var carga   = cargaEl ? (cargaEl.value.trim() || '0') : '0';
   var sets    = setsEl  ? (parseInt(setsEl.value)  || 3) : 3;
-  var rirLast = rirEl   ? (parseInt(rirEl.value)         || 2) : 2;
+  var rirLast = rirEl   ? (parseInt(rirEl.value) >= 0 ? parseInt(rirEl.value) : 2) : 2;
   var ics     = icsEl   ? (parseInt(icsEl.value)         || null) : null;
   var pump    = pumpEl  ? (parseInt(pumpEl.value)        || null) : null;
   var unit    = getExUnit(di, ei) || 'KG';
@@ -5432,7 +5432,7 @@ function markExpressSerie(di, ei, si) {
   if (cEl && _cargaSave !== null) cEl.value = _cargaSave;
   if (rEl && _repsSave  !== null) rEl.value = _repsSave;
   if (iEl && _icsSave   !== null) iEl.value = _icsSave;
-  if (!isNaN(_rirSave) && _rirSave > 0) expressSetRIR(expK, _rirSave);
+  if (!isNaN(_rirSave) && _rirSave >= 0) expressSetRIR(expK, _rirSave);
   if (!isNaN(_pumpSave) && _pumpSave > 0) expressSetPump(expK, _pumpSave);
 
   var _ejCur = (_EJERCICIOS_DIA || [])[ei] || null;
@@ -5703,7 +5703,7 @@ function markExpressSSDone(di, ssMembers) {
   var rirEl  = document.getElementById('xrir_val_'+_ssk);
   var icsEl  = document.getElementById('xics_'+_ssk);
   var pumpEl = document.getElementById('xpump_val_'+_ssk);
-  var rirLast = rirEl  ? (parseInt(rirEl.value)  || 2) : 2;
+  var rirLast = rirEl  ? (parseInt(rirEl.value) >= 0 ? parseInt(rirEl.value) : 2) : 2;
   var ics     = icsEl  ? (parseInt(icsEl.value)  || null) : null;
   var pump    = pumpEl ? (parseInt(pumpEl.value) || null) : null;
   var now = Date.now();
@@ -5846,7 +5846,7 @@ function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
   var rirEl  = document.getElementById('xrir_val_'+_ssk);
   var icsEl  = document.getElementById('xics_'+_ssk);
   var pumpEl = document.getElementById('xpump_val_'+_ssk);
-  var rirLast = rirEl  ? (parseInt(rirEl.value)  || 2) : 2;
+  var rirLast = rirEl  ? (parseInt(rirEl.value) >= 0 ? parseInt(rirEl.value) : 2) : 2;
   var ics     = icsEl  ? (parseInt(icsEl.value)  || null) : null;
   var pump    = pumpEl ? (parseInt(pumpEl.value) || null) : null;
   var curIdx = ssMembers[lastMIdx];
