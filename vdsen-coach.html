@@ -6599,6 +6599,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const _hintsHtml = (function() {
         var _hints = _buildLongitudinalRepairHints(_longValReport, {});
         if (!_hints || !_hints.length) return '';
+        var _lvCands = _buildExerciseCandidatesForLV(training, _prevPlanForLV);
+        var _lvRepair = _applyLongitudinalRepairHintsToCandidates(_lvCands, _hints, {});
+        var _matchIdx = {};
+        _lvRepair.hintMatches.forEach(function(m, i) { if (m.matched) _matchIdx[i] = true; });
         var _labelFor = {
           'REPLACE_OR_REMOVE': 'Reemplazar o eliminar',
           'RESTORE_OR_KEEP': 'Restaurar o conservar',
@@ -6607,11 +6611,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           'REVIEW_TOPOLOGY_CHOICE': 'Revisar topología',
           'REVIEW': 'Revisar'
         };
-        var rows = _hints.slice(0, 3).map(function(h) {
+        var rows = _hints.slice(0, 3).map(function(h, hi) {
           var col = h.severity === 'SUSPECT' ? 'var(--danger)' : '#f0a500';
           var lbl = _labelFor[h.preferredAction] || h.preferredAction;
           var ex = h.targetExerciseId ? ' · <em>' + _escH(String(h.targetExerciseId).substring(0, 40)) + '</em>' : '';
-          return '<div style="color:' + col + ';font-size:10px;margin-top:2px">→ ' + _escH(lbl) + ex + '</div>';
+          var badge = (_matchIdx[hi] && h.reasonCodes && h.reasonCodes.length)
+            ? ' <span style="font-size:9px;background:rgba(255,255,255,.1);padding:1px 4px;border-radius:3px">' + _escH(h.reasonCodes[0]) + '</span>'
+            : '';
+          return '<div style="color:' + col + ';font-size:10px;margin-top:2px">→ ' + _escH(lbl) + ex + badge + '</div>';
         }).join('');
         return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
           + '<span style="color:var(--text-muted);font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
@@ -10088,6 +10095,141 @@ El esfuerzo no es negociable.
   }
   window._buildLongitudinalRepairHints = _buildLongitudinalRepairHints;
 
+  // ── FASE 50: _buildExerciseCandidatesForLV ────────────────────────────────
+  // Derives repair candidates from training + previous plan.
+  // REPLACE_OR_REMOVE for exercises in current plan.
+  // RESTORE_OR_KEEP for exercises in prev plan not in current plan.
+  // Structural topology + distribution candidates always included.
+  // Pure — 0 I/O, does not create candidates FROM hints.
+  function _buildExerciseCandidatesForLV(training, prevPlan) {
+    var candidates = [];
+    var inCurrent = {};
+    if (training && Array.isArray(training.days)) {
+      training.days.forEach(function(day) {
+        if (!Array.isArray(day.exercises)) return;
+        day.exercises.forEach(function(ex) {
+          var name = ex.exerciseName;
+          if (!name || inCurrent[name]) return;
+          inCurrent[name] = true;
+          candidates.push({
+            id: 'ex:replace:' + name,
+            type: 'REPLACE_OR_REMOVE',
+            targetExerciseId: name,
+            priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false,
+            tags: ['exercise'], reasonCodes: []
+          });
+        });
+      });
+    }
+    if (prevPlan && Array.isArray(prevPlan.days)) {
+      prevPlan.days.forEach(function(day) {
+        if (!Array.isArray(day.exercises)) return;
+        day.exercises.forEach(function(ex) {
+          var name = ex.exerciseName;
+          if (!name || inCurrent[name]) return;
+          inCurrent[name] = 'prev';
+          candidates.push({
+            id: 'ex:restore:' + name,
+            type: 'RESTORE_OR_KEEP',
+            targetExerciseId: name,
+            priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false,
+            tags: ['exercise'], reasonCodes: []
+          });
+        });
+      });
+    }
+    candidates.push({
+      id: 'struct:topology',
+      type: 'REVIEW_TOPOLOGY_CHOICE', targetExerciseId: null,
+      priority: 0, cost: 60, isValid: true, wouldAddCriticalIssue: false,
+      tags: ['topology'], reasonCodes: []
+    });
+    candidates.push({
+      id: 'struct:distribution',
+      type: 'REVIEW_DISTRIBUTION_TOPOLOGY', targetExerciseId: null,
+      priority: 0, cost: 55, isValid: true, wouldAddCriticalIssue: false,
+      tags: ['distribution'], reasonCodes: []
+    });
+    return candidates;
+  }
+  window._buildExerciseCandidatesForLV = _buildExerciseCandidatesForLV;
+
+  // ── FASE 50: _applyLongitudinalRepairHintsToCandidates ────────────────────
+  // Pure adapter. Adjusts priority/cost of existing isValid candidates via hints.
+  // NEVER creates new candidates. NEVER boosts candidates where wouldAddCriticalIssue=true.
+  // Returns { adjusted: sortedCandidates, hintMatches: [{hint, matched}] }.
+  function _applyLongitudinalRepairHintsToCandidates(candidates, hints, context) {
+    if (!Array.isArray(candidates)) candidates = [];
+    if (!Array.isArray(hints)) hints = [];
+
+    var working = candidates.filter(function(c) { return c && c.isValid !== false; }).map(function(c) {
+      return {
+        id:                   c.id,
+        type:                 c.type,
+        targetExerciseId:     c.targetExerciseId || null,
+        priority:             typeof c.priority === 'number' ? c.priority : 0,
+        cost:                 typeof c.cost === 'number' ? c.cost : 50,
+        isValid:              true,
+        wouldAddCriticalIssue: !!c.wouldAddCriticalIssue,
+        tags:                 Array.isArray(c.tags) ? c.tags.slice() : [],
+        reasonCodes:          Array.isArray(c.reasonCodes) ? c.reasonCodes.slice() : []
+      };
+    });
+
+    var hintMatches = hints.map(function(h) { return { hint: h, matched: false }; });
+
+    hints.forEach(function(hint, hi) {
+      var hType = hint.type;
+      var hExId = hint.targetExerciseId || null;
+
+      working.forEach(function(c) {
+        if (c.wouldAddCriticalIssue) return; // re-audit gate: skip — would worsen criticalIssues
+        var hasTopo = c.tags.indexOf('topology') >= 0;
+        var hasDist = c.tags.indexOf('distribution') >= 0;
+        var boosted = false;
+
+        switch (hType) {
+          case 'PAIN_HISTORY_EXERCISE_KEPT':
+            if (c.type === 'REPLACE_OR_REMOVE' && hExId && c.targetExerciseId === hExId) {
+              c.priority += 25; boosted = true;
+            }
+            break;
+          case 'POSITIVE_HISTORY_EXERCISE_DROPPED':
+            if (c.type === 'RESTORE_OR_KEEP' && hExId && c.targetExerciseId === hExId) {
+              c.priority += 25; boosted = true;
+            }
+            break;
+          case 'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION':
+            if (c.type === 'REVIEW_STABILITY' && hExId && c.targetExerciseId === hExId) {
+              c.cost = Math.max(0, c.cost - 15); boosted = true;
+            }
+            break;
+          case 'FREQUENCY_CHANGED':
+            if (c.type === 'REVIEW_DISTRIBUTION_TOPOLOGY' || hasDist) {
+              c.priority += 10; boosted = true;
+            }
+            break;
+          case 'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE':
+          case 'TOPOLOGY_LS_PREFERENCE_IGNORED':
+            if (c.type === 'REVIEW_TOPOLOGY_CHOICE' || hasTopo) {
+              c.priority += 10; boosted = true;
+            }
+            break;
+        }
+
+        if (boosted) hintMatches[hi].matched = true;
+      });
+    });
+
+    working.sort(function(a, b) {
+      if (b.priority !== a.priority) return b.priority - a.priority;
+      return a.cost - b.cost;
+    });
+
+    return { adjusted: working, hintMatches: hintMatches };
+  }
+  window._applyLongitudinalRepairHintsToCandidates = _applyLongitudinalRepairHintsToCandidates;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10280,6 +10422,10 @@ El esfuerzo no es negociable.
       const _hintsHtml2 = (function() {
         var _hints2 = _buildLongitudinalRepairHints(_longValReport2, {});
         if (!_hints2 || !_hints2.length) return '';
+        var _lvCands2 = _buildExerciseCandidatesForLV(training, _prevPlanForLV2);
+        var _lvRepair2 = _applyLongitudinalRepairHintsToCandidates(_lvCands2, _hints2, {});
+        var _matchIdx2 = {};
+        _lvRepair2.hintMatches.forEach(function(m, i) { if (m.matched) _matchIdx2[i] = true; });
         var _labelFor2 = {
           'REPLACE_OR_REMOVE': 'Reemplazar o eliminar',
           'RESTORE_OR_KEEP': 'Restaurar o conservar',
@@ -10288,11 +10434,14 @@ El esfuerzo no es negociable.
           'REVIEW_TOPOLOGY_CHOICE': 'Revisar topología',
           'REVIEW': 'Revisar'
         };
-        var rows2 = _hints2.slice(0, 3).map(function(h) {
+        var rows2 = _hints2.slice(0, 3).map(function(h, hi) {
           var col2 = h.severity === 'SUSPECT' ? '#e05555' : '#f0a500';
           var lbl2 = _labelFor2[h.preferredAction] || h.preferredAction;
           var ex2 = h.targetExerciseId ? ' · <em>' + _escH(String(h.targetExerciseId).substring(0, 40)) + '</em>' : '';
-          return '<div style="color:' + col2 + ';font-size:10px;margin-top:2px">→ ' + _escH(lbl2) + ex2 + '</div>';
+          var badge2 = (_matchIdx2[hi] && h.reasonCodes && h.reasonCodes.length)
+            ? ' <span style="font-size:9px;background:rgba(255,255,255,.1);padding:1px 4px;border-radius:3px">' + _escH(h.reasonCodes[0]) + '</span>'
+            : '';
+          return '<div style="color:' + col2 + ';font-size:10px;margin-top:2px">→ ' + _escH(lbl2) + ex2 + badge2 + '</div>';
         }).join('');
         return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
           + '<span style="color:#888;font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'

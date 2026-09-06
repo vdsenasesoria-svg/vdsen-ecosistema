@@ -9376,4 +9376,358 @@ function _buildLongitudinalRepairHints(longitudinalValidation, context) {
   assert('F49-Mb', 'hints are suggestions only (no side effect)', true);
 })();
 
+// ── FASE 50: inline copies ────────────────────────────────────────────────────
+
+function _buildExerciseCandidatesForLV(training, prevPlan) {
+  var candidates = [];
+  var inCurrent = {};
+  if (training && Array.isArray(training.days)) {
+    training.days.forEach(function(day) {
+      if (!Array.isArray(day.exercises)) return;
+      day.exercises.forEach(function(ex) {
+        var name = ex.exerciseName;
+        if (!name || inCurrent[name]) return;
+        inCurrent[name] = true;
+        candidates.push({ id: 'ex:replace:' + name, type: 'REPLACE_OR_REMOVE', targetExerciseId: name,
+          priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] });
+      });
+    });
+  }
+  if (prevPlan && Array.isArray(prevPlan.days)) {
+    prevPlan.days.forEach(function(day) {
+      if (!Array.isArray(day.exercises)) return;
+      day.exercises.forEach(function(ex) {
+        var name = ex.exerciseName;
+        if (!name || inCurrent[name]) return;
+        inCurrent[name] = 'prev';
+        candidates.push({ id: 'ex:restore:' + name, type: 'RESTORE_OR_KEEP', targetExerciseId: name,
+          priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] });
+      });
+    });
+  }
+  candidates.push({ id: 'struct:topology', type: 'REVIEW_TOPOLOGY_CHOICE', targetExerciseId: null,
+    priority: 0, cost: 60, isValid: true, wouldAddCriticalIssue: false, tags: ['topology'], reasonCodes: [] });
+  candidates.push({ id: 'struct:distribution', type: 'REVIEW_DISTRIBUTION_TOPOLOGY', targetExerciseId: null,
+    priority: 0, cost: 55, isValid: true, wouldAddCriticalIssue: false, tags: ['distribution'], reasonCodes: [] });
+  return candidates;
+}
+
+function _applyLongitudinalRepairHintsToCandidates(candidates, hints, context) {
+  if (!Array.isArray(candidates)) candidates = [];
+  if (!Array.isArray(hints)) hints = [];
+  var working = candidates.filter(function(c) { return c && c.isValid !== false; }).map(function(c) {
+    return {
+      id: c.id, type: c.type, targetExerciseId: c.targetExerciseId || null,
+      priority: typeof c.priority === 'number' ? c.priority : 0,
+      cost: typeof c.cost === 'number' ? c.cost : 50,
+      isValid: true, wouldAddCriticalIssue: !!c.wouldAddCriticalIssue,
+      tags: Array.isArray(c.tags) ? c.tags.slice() : [],
+      reasonCodes: Array.isArray(c.reasonCodes) ? c.reasonCodes.slice() : []
+    };
+  });
+  var hintMatches = hints.map(function(h) { return { hint: h, matched: false }; });
+  hints.forEach(function(hint, hi) {
+    var hType = hint.type;
+    var hExId = hint.targetExerciseId || null;
+    working.forEach(function(c) {
+      if (c.wouldAddCriticalIssue) return;
+      var hasTopo = c.tags.indexOf('topology') >= 0;
+      var hasDist = c.tags.indexOf('distribution') >= 0;
+      var boosted = false;
+      switch (hType) {
+        case 'PAIN_HISTORY_EXERCISE_KEPT':
+          if (c.type === 'REPLACE_OR_REMOVE' && hExId && c.targetExerciseId === hExId) { c.priority += 25; boosted = true; }
+          break;
+        case 'POSITIVE_HISTORY_EXERCISE_DROPPED':
+          if (c.type === 'RESTORE_OR_KEEP' && hExId && c.targetExerciseId === hExId) { c.priority += 25; boosted = true; }
+          break;
+        case 'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION':
+          if (c.type === 'REVIEW_STABILITY' && hExId && c.targetExerciseId === hExId) { c.cost = Math.max(0, c.cost - 15); boosted = true; }
+          break;
+        case 'FREQUENCY_CHANGED':
+          if (c.type === 'REVIEW_DISTRIBUTION_TOPOLOGY' || hasDist) { c.priority += 10; boosted = true; }
+          break;
+        case 'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE':
+        case 'TOPOLOGY_LS_PREFERENCE_IGNORED':
+          if (c.type === 'REVIEW_TOPOLOGY_CHOICE' || hasTopo) { c.priority += 10; boosted = true; }
+          break;
+      }
+      if (boosted) hintMatches[hi].matched = true;
+    });
+  });
+  working.sort(function(a, b) {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    return a.cost - b.cost;
+  });
+  return { adjusted: working, hintMatches: hintMatches };
+}
+
+// ═════════════════ F50: Longitudinal Repair Execution Bridge ════════════════
+
+// F50-A: null/empty inputs → empty adjusted, empty hintMatches
+(function() {
+  console.log('\nF50-A — null/empty inputs → empty adjusted');
+  var r = _applyLongitudinalRepairHintsToCandidates(null, null, {});
+  assert('F50-Aa', 'adjusted is array', Array.isArray(r.adjusted));
+  assert('F50-Ab', 'adjusted is empty', r.adjusted.length === 0);
+  assert('F50-Ac', 'hintMatches is array', Array.isArray(r.hintMatches));
+  assert('F50-Ad', 'hintMatches is empty', r.hintMatches.length === 0);
+})();
+
+// F50-B: empty candidates + hints → no candidates in adjusted, hintMatches unmatched
+(function() {
+  console.log('\nF50-B — empty candidates + hints → no candidates, unmatched');
+  var hints = [{ type: 'PAIN_HISTORY_EXERCISE_KEPT', targetExerciseId: 'Sentadilla',
+    preferredAction: 'REPLACE_OR_REMOVE', reasonCodes: ['EXERCISE_PAIN_HISTORY'], severity: 'SUSPECT' }];
+  var r = _applyLongitudinalRepairHintsToCandidates([], hints, {});
+  assert('F50-Ba', 'adjusted empty', r.adjusted.length === 0);
+  assert('F50-Bb', 'hintMatches length = hints length', r.hintMatches.length === 1);
+  assert('F50-Bc', 'hint not matched (no candidates)', r.hintMatches[0].matched === false);
+})();
+
+// F50-C: PAIN_HISTORY_EXERCISE_KEPT → boosts matching REPLACE_OR_REMOVE candidate by 25
+(function() {
+  console.log('\nF50-C — PAIN_HISTORY_EXERCISE_KEPT boosts REPLACE_OR_REMOVE');
+  var cands = [
+    { id: 'c1', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Sentadilla',
+      priority: 10, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] },
+    { id: 'c2', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Press Banca',
+      priority: 10, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] }
+  ];
+  var hints = [{ type: 'PAIN_HISTORY_EXERCISE_KEPT', targetExerciseId: 'Sentadilla',
+    preferredAction: 'REPLACE_OR_REMOVE', reasonCodes: ['EXERCISE_PAIN_HISTORY'], severity: 'SUSPECT' }];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  var sentadilla = r.adjusted.find(function(c) { return c.targetExerciseId === 'Sentadilla'; });
+  var pressBanca = r.adjusted.find(function(c) { return c.targetExerciseId === 'Press Banca'; });
+  assert('F50-Ca', 'Sentadilla priority boosted to 35', sentadilla.priority === 35);
+  assert('F50-Cb', 'Press Banca priority unchanged at 10', pressBanca.priority === 10);
+  assert('F50-Cc', 'hint matched', r.hintMatches[0].matched === true);
+  assert('F50-Cd', 'Sentadilla sorts first (higher priority)', r.adjusted[0].targetExerciseId === 'Sentadilla');
+})();
+
+// F50-D: POSITIVE_HISTORY_EXERCISE_DROPPED → boosts matching RESTORE_OR_KEEP by 25
+(function() {
+  console.log('\nF50-D — POSITIVE_HISTORY_EXERCISE_DROPPED boosts RESTORE_OR_KEEP');
+  var cands = [
+    { id: 'c1', type: 'RESTORE_OR_KEEP', targetExerciseId: 'Hip Thrust',
+      priority: 5, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] }
+  ];
+  var hints = [{ type: 'POSITIVE_HISTORY_EXERCISE_DROPPED', targetExerciseId: 'Hip Thrust',
+    preferredAction: 'RESTORE_OR_KEEP', reasonCodes: ['EXERCISE_POSITIVE_HISTORY'], severity: 'SUSPECT' }];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  assert('F50-Da', 'priority boosted to 30', r.adjusted[0].priority === 30);
+  assert('F50-Db', 'hint matched', r.hintMatches[0].matched === true);
+})();
+
+// F50-E: EXERCISE_DROPPED_WITHOUT_JUSTIFICATION → reduces cost on REVIEW_STABILITY candidate
+(function() {
+  console.log('\nF50-E — EXERCISE_DROPPED_WITHOUT_JUSTIFICATION reduces cost');
+  var cands = [
+    { id: 'c1', type: 'REVIEW_STABILITY', targetExerciseId: 'Curl Martillo',
+      priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] }
+  ];
+  var hints = [{ type: 'EXERCISE_DROPPED_WITHOUT_JUSTIFICATION', targetExerciseId: 'Curl Martillo',
+    preferredAction: 'REVIEW_STABILITY', reasonCodes: ['NO_HISTORY_SIGNAL'], severity: 'WARNING' }];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  assert('F50-Ea', 'cost reduced to 35', r.adjusted[0].cost === 35);
+  assert('F50-Eb', 'priority unchanged at 0', r.adjusted[0].priority === 0);
+  assert('F50-Ec', 'hint matched', r.hintMatches[0].matched === true);
+})();
+
+// F50-F: FREQUENCY_CHANGED → boosts distribution-tagged candidate only
+(function() {
+  console.log('\nF50-F — FREQUENCY_CHANGED boosts distribution candidate only');
+  var cands = [
+    { id: 'dist', type: 'REVIEW_DISTRIBUTION_TOPOLOGY', targetExerciseId: null,
+      priority: 0, cost: 55, isValid: true, wouldAddCriticalIssue: false, tags: ['distribution'], reasonCodes: [] },
+    { id: 'topo', type: 'REVIEW_TOPOLOGY_CHOICE', targetExerciseId: null,
+      priority: 0, cost: 60, isValid: true, wouldAddCriticalIssue: false, tags: ['topology'], reasonCodes: [] }
+  ];
+  var hints = [{ type: 'FREQUENCY_CHANGED', targetExerciseId: null,
+    preferredAction: 'REVIEW_DISTRIBUTION_TOPOLOGY', reasonCodes: ['FREQUENCY_MISMATCH'], severity: 'WARNING' }];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  var dist = r.adjusted.find(function(c) { return c.id === 'dist'; });
+  var topo = r.adjusted.find(function(c) { return c.id === 'topo'; });
+  assert('F50-Fa', 'distribution priority boosted to 10', dist.priority === 10);
+  assert('F50-Fb', 'topology priority unchanged (FREQUENCY does not boost topology)', topo.priority === 0);
+  assert('F50-Fc', 'hint matched', r.hintMatches[0].matched === true);
+})();
+
+// F50-G: TOPOLOGY_* → boosts topology candidate only
+(function() {
+  console.log('\nF50-G — TOPOLOGY hints boost topology candidate only');
+  var cands = [
+    { id: 'topo', type: 'REVIEW_TOPOLOGY_CHOICE', targetExerciseId: null,
+      priority: 0, cost: 60, isValid: true, wouldAddCriticalIssue: false, tags: ['topology'], reasonCodes: [] },
+    { id: 'dist', type: 'REVIEW_DISTRIBUTION_TOPOLOGY', targetExerciseId: null,
+      priority: 0, cost: 55, isValid: true, wouldAddCriticalIssue: false, tags: ['distribution'], reasonCodes: [] }
+  ];
+  var hints = [
+    { type: 'TOPOLOGY_CHANGED_WITHOUT_LS_TRACE', targetExerciseId: null,
+      preferredAction: 'REVIEW_TOPOLOGY_CHOICE', reasonCodes: ['TOPOLOGY_NO_TRACE'], severity: 'WARNING' },
+    { type: 'TOPOLOGY_LS_PREFERENCE_IGNORED', targetExerciseId: null,
+      preferredAction: 'REVIEW_TOPOLOGY_CHOICE', reasonCodes: ['TOPOLOGY_PREFERENCE_IGNORED'], severity: 'WARNING' }
+  ];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  var topo = r.adjusted.find(function(c) { return c.id === 'topo'; });
+  var dist = r.adjusted.find(function(c) { return c.id === 'dist'; });
+  assert('F50-Ga', 'topology boosted twice (+20)', topo.priority === 20);
+  assert('F50-Gb', 'distribution unchanged', dist.priority === 0);
+  assert('F50-Gc', 'both topology hints matched', r.hintMatches[0].matched && r.hintMatches[1].matched);
+})();
+
+// F50-H: type mismatch → no ranking change
+(function() {
+  console.log('\nF50-H — type mismatch: no ranking change when hint has no matching candidate');
+  var cands = [
+    { id: 'c1', type: 'RESTORE_OR_KEEP', targetExerciseId: 'Sentadilla',
+      priority: 10, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] }
+  ];
+  var hints = [{ type: 'PAIN_HISTORY_EXERCISE_KEPT', targetExerciseId: 'Sentadilla',
+    preferredAction: 'REPLACE_OR_REMOVE', reasonCodes: ['EXERCISE_PAIN_HISTORY'], severity: 'SUSPECT' }];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  assert('F50-Ha', 'priority unchanged (type mismatch)', r.adjusted[0].priority === 10);
+  assert('F50-Hb', 'hint not matched', r.hintMatches[0].matched === false);
+})();
+
+// F50-I: wouldAddCriticalIssue=true → candidate not boosted (re-audit gate)
+(function() {
+  console.log('\nF50-I — wouldAddCriticalIssue=true: not boosted (re-audit gate)');
+  var cands = [
+    { id: 'c1', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Peso Muerto',
+      priority: 5, cost: 50, isValid: true, wouldAddCriticalIssue: true, tags: ['exercise'], reasonCodes: [] }
+  ];
+  var hints = [{ type: 'PAIN_HISTORY_EXERCISE_KEPT', targetExerciseId: 'Peso Muerto',
+    preferredAction: 'REPLACE_OR_REMOVE', reasonCodes: ['EXERCISE_PAIN_HISTORY'], severity: 'SUSPECT' }];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  assert('F50-Ia', 'priority not boosted (would worsen criticalIssues)', r.adjusted[0].priority === 5);
+  assert('F50-Ib', 'hint not matched (gate blocked boost)', r.hintMatches[0].matched === false);
+})();
+
+// F50-J: hintMatches reports each hint correctly
+(function() {
+  console.log('\nF50-J — hintMatches: correct per-hint match/no-match');
+  var cands = [
+    { id: 'c1', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Sentadilla',
+      priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] }
+  ];
+  var hints = [
+    { type: 'PAIN_HISTORY_EXERCISE_KEPT', targetExerciseId: 'Sentadilla',
+      preferredAction: 'REPLACE_OR_REMOVE', reasonCodes: ['EXERCISE_PAIN_HISTORY'], severity: 'SUSPECT' },
+    { type: 'POSITIVE_HISTORY_EXERCISE_DROPPED', targetExerciseId: 'Press Banca',
+      preferredAction: 'RESTORE_OR_KEEP', reasonCodes: ['EXERCISE_POSITIVE_HISTORY'], severity: 'SUSPECT' }
+  ];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  assert('F50-Ja', 'hintMatches length = 2', r.hintMatches.length === 2);
+  assert('F50-Jb', 'first hint matched (Sentadilla REPLACE_OR_REMOVE exists)', r.hintMatches[0].matched === true);
+  assert('F50-Jc', 'second hint not matched (no RESTORE_OR_KEEP candidate)', r.hintMatches[1].matched === false);
+})();
+
+// F50-K: no mutation of inputs
+(function() {
+  console.log('\nF50-K — pureza: no mutación de inputs');
+  var cands = [
+    { id: 'c1', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Leg Press',
+      priority: 5, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] }
+  ];
+  var hints = [{ type: 'PAIN_HISTORY_EXERCISE_KEPT', targetExerciseId: 'Leg Press',
+    preferredAction: 'REPLACE_OR_REMOVE', reasonCodes: ['EXERCISE_PAIN_HISTORY'], severity: 'SUSPECT' }];
+  var origPriority = cands[0].priority;
+  var origTagsLen = cands[0].tags.length;
+  var origHintType = hints[0].type;
+  _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  assert('F50-Ka', 'candidate priority not mutated', cands[0].priority === origPriority);
+  assert('F50-Kb', 'candidate tags not mutated', cands[0].tags.length === origTagsLen);
+  assert('F50-Kc', 'hint type not mutated', hints[0].type === origHintType);
+})();
+
+// F50-L: determinism — same inputs produce same output
+(function() {
+  console.log('\nF50-L — determinismo: mismo input → mismo output');
+  var cands = [
+    { id: 'c1', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Sentadilla',
+      priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] },
+    { id: 'c2', type: 'RESTORE_OR_KEEP', targetExerciseId: 'Press Banca',
+      priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: ['exercise'], reasonCodes: [] }
+  ];
+  var hints = [
+    { type: 'PAIN_HISTORY_EXERCISE_KEPT', targetExerciseId: 'Sentadilla',
+      preferredAction: 'REPLACE_OR_REMOVE', reasonCodes: ['EXERCISE_PAIN_HISTORY'], severity: 'SUSPECT' }
+  ];
+  var r1 = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  var r2 = _applyLongitudinalRepairHintsToCandidates(cands, hints, {});
+  assert('F50-La', 'same adjusted length', r1.adjusted.length === r2.adjusted.length);
+  assert('F50-Lb', 'same first candidate type', r1.adjusted[0].type === r2.adjusted[0].type);
+  assert('F50-Lc', 'same first candidate priority', r1.adjusted[0].priority === r2.adjusted[0].priority);
+})();
+
+// F50-M: isValid=false candidates filtered out
+(function() {
+  console.log('\nF50-M — isValid=false filtrado del output');
+  var cands = [
+    { id: 'c1', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Sentadilla',
+      priority: 0, cost: 50, isValid: false, wouldAddCriticalIssue: false, tags: [], reasonCodes: [] },
+    { id: 'c2', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Press Banca',
+      priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false, tags: [], reasonCodes: [] }
+  ];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, [], {});
+  assert('F50-Ma', 'only 1 candidate in adjusted (isValid=false filtered)', r.adjusted.length === 1);
+  assert('F50-Mb', 'remaining candidate is Press Banca', r.adjusted[0].targetExerciseId === 'Press Banca');
+})();
+
+// F50-N: sort — priority DESC, cost ASC
+(function() {
+  console.log('\nF50-N — sort: priority DESC, cost ASC');
+  var cands = [
+    { id: 'a', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'A', priority: 10, cost: 30, isValid: true, wouldAddCriticalIssue: false, tags: [], reasonCodes: [] },
+    { id: 'b', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'B', priority: 20, cost: 70, isValid: true, wouldAddCriticalIssue: false, tags: [], reasonCodes: [] },
+    { id: 'c', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'C', priority: 20, cost: 40, isValid: true, wouldAddCriticalIssue: false, tags: [], reasonCodes: [] }
+  ];
+  var r = _applyLongitudinalRepairHintsToCandidates(cands, [], {});
+  assert('F50-Na', 'priority 20 before 10', r.adjusted[0].priority === 20);
+  assert('F50-Nb', 'among priority-20, lower cost first (C before B)', r.adjusted[0].targetExerciseId === 'C');
+  assert('F50-Nc', 'B second (same priority, higher cost)', r.adjusted[1].targetExerciseId === 'B');
+  assert('F50-Nd', 'A last (lower priority)', r.adjusted[2].targetExerciseId === 'A');
+})();
+
+// F50-O: _buildExerciseCandidatesForLV: training exercises → REPLACE_OR_REMOVE candidates
+(function() {
+  console.log('\nF50-O — _buildExerciseCandidatesForLV: training exercises → REPLACE_OR_REMOVE');
+  var training = { days: [
+    { exercises: [{ exerciseName: 'Sentadilla' }, { exerciseName: 'Press Banca' }] },
+    { exercises: [{ exerciseName: 'Sentadilla' }, { exerciseName: 'Remo' }] }  // Sentadilla repeated
+  ]};
+  var cands = _buildExerciseCandidatesForLV(training, null);
+  var replaces = cands.filter(function(c) { return c.type === 'REPLACE_OR_REMOVE'; });
+  var names = replaces.map(function(c) { return c.targetExerciseId; });
+  assert('F50-Oa', 'Sentadilla appears once (deduped)', names.filter(function(n) { return n === 'Sentadilla'; }).length === 1);
+  assert('F50-Ob', 'Press Banca present', names.indexOf('Press Banca') >= 0);
+  assert('F50-Oc', 'Remo present', names.indexOf('Remo') >= 0);
+  assert('F50-Od', '3 REPLACE_OR_REMOVE (deduped)', replaces.length === 3);
+})();
+
+// F50-P: _buildExerciseCandidatesForLV: prev exercises not in current → RESTORE_OR_KEEP
+(function() {
+  console.log('\nF50-P — _buildExerciseCandidatesForLV: prev exercises → RESTORE_OR_KEEP');
+  var training = { days: [{ exercises: [{ exerciseName: 'Sentadilla' }] }] };
+  var prev = { days: [{ exercises: [{ exerciseName: 'Sentadilla' }, { exerciseName: 'Hip Thrust' }] }] };
+  var cands = _buildExerciseCandidatesForLV(training, prev);
+  var restores = cands.filter(function(c) { return c.type === 'RESTORE_OR_KEEP'; });
+  assert('F50-Pa', 'one RESTORE_OR_KEEP (Hip Thrust not in current)', restores.length === 1);
+  assert('F50-Pb', 'Hip Thrust is the restore candidate', restores[0].targetExerciseId === 'Hip Thrust');
+  assert('F50-Pc', 'Sentadilla not in restores (already in current)', restores.every(function(c) { return c.targetExerciseId !== 'Sentadilla'; }));
+})();
+
+// F50-Q: _buildExerciseCandidatesForLV: topology + distribution always included
+(function() {
+  console.log('\nF50-Q — _buildExerciseCandidatesForLV: topology + distribution candidates always present');
+  var cands = _buildExerciseCandidatesForLV(null, null);
+  var topo = cands.find(function(c) { return c.type === 'REVIEW_TOPOLOGY_CHOICE'; });
+  var dist = cands.find(function(c) { return c.type === 'REVIEW_DISTRIBUTION_TOPOLOGY'; });
+  assert('F50-Qa', 'topology candidate exists', !!topo);
+  assert('F50-Qb', 'topology tagged with topology', topo.tags.indexOf('topology') >= 0);
+  assert('F50-Qc', 'distribution candidate exists', !!dist);
+  assert('F50-Qd', 'distribution tagged with distribution', dist.tags.indexOf('distribution') >= 0);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
