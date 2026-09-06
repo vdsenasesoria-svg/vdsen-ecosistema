@@ -18,7 +18,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `69ae048` |
+| main HEAD | `099fd74` |
 | Rama activa | `main` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
@@ -39,7 +39,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 34 | DONE — Legacy Identity Hardening: BUG H-3 + BUG G4 corregidos, 17 tests nuevos |
 | Suite tests | **1226/1226 PASS** (P01–P426 + F34-A–J + F36-B–N + F37-A–I + F39-A–E + F45-A–J + F46-A–O + BUG-RIR0-A–I + BUG-XSS-A–F + BUG-LS-DIV-A–D) |
 | FASE 45 | DONE — Learned State Activation v1 (topology + distribution engines) |
-| FASE 46 | DONE — Exercise Learned State Activation v1 · branch `claude/learned-state-activation-d5b69n` |
+| FASE 46 | MERGED — Exercise Learned State Activation v1 · `099fd74` (fast-forward desde `claude/learned-state-activation-d5b69n`) |
 | Bug: RIR-0 | FIXED — RIR 0 (fallo) no colapsa a default 2 en saveExpress/markExpressSerie/SS paths (vdsen-cliente.html) |
 | Bug: XSS-preview | FIXED — _escH aplicada en vdsenAIPreview decisionTrace/flags/warnings/audit (vdsen-coach.html) |
 | Bug: LS-diverge | FIXED — autoGeneratePlan aplica los 3 learned state engines igual que _autoGenerateForModal (vdsen-coach.html) |
@@ -60,7 +60,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 44 | DONE — Consistencia REAL_WEEK en submitPostSession postsession_ key · commit `81faae5` |
 | FASE 42b | DONE — XSS _escH en e.code|e.message del diagnóstico Firebase (3 sitios) · commit `69ae048` |
 | FASE 45 | DONE — Learned State Activation v1 (topology + distribution) · commit `08313e9` |
-| FASE 46 | DONE — Exercise Learned State Activation v1 (branch `claude/learned-state-activation-d5b69n`) |
+| FASE 46 | MERGED — Exercise Learned State Activation v1 · main `099fd74` |
 | Vercel | auto-deploy en push a main |
 | FASE 35 | MERGED — Historical Data Scalability Discovery: reporte completo 28 puntos |
 | FASE 36 | DONE (T1) — Log Rotation Architecture · commits `1e2a3ed`+`9833dc0` · Suite 1087/1087 PASS |
