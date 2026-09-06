@@ -6591,10 +6591,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       idle:                () => { if (btn) { btn.disabled = false; btn.textContent = '🔬 Generar con VDSEN AI — Preview'; } setStatus(''); },
       building_request:    () => { if (btn) { btn.disabled = true; btn.textContent = '⏳ Construyendo solicitud…'; } setStatus('<span style="color:var(--text-muted)">Leyendo datos del cliente…</span>'); },
       generating:          () => { if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando…'; } setStatus('<span style="color:var(--text-muted)">Motor VDSEN en proceso (puede tardar 2-3 minutos)…</span>'); },
-      needs_input:         (msg) => setStatus(`<span style="color:#f59e0b">⚠️ Faltan datos: ${msg}</span>`),
-      needs_coach_review:  (msg) => setStatus(`<span style="color:#8b5cf6">🔍 Requiere revisión: ${msg}</span>`),
-      invalid:             (msg) => setStatus(`<span style="color:#ef4444">❌ Solicitud inválida: ${msg}</span>`),
-      error:               (msg) => setStatus(`<span style="color:#ef4444">❌ Error: ${msg}</span>`),
+      needs_input:         (msg) => setStatus(`<span style="color:#f59e0b">⚠️ Faltan datos: ${_escH(String(msg))}</span>`),
+      needs_coach_review:  (msg) => setStatus(`<span style="color:#8b5cf6">🔍 Requiere revisión: ${_escH(String(msg))}</span>`),
+      invalid:             (msg) => setStatus(`<span style="color:#ef4444">❌ Solicitud inválida: ${_escH(String(msg))}</span>`),
+      error:               (msg) => setStatus(`<span style="color:#ef4444">❌ Error: ${_escH(String(msg))}</span>`),
     };
 
     try {
@@ -9930,7 +9930,7 @@ El esfuerzo no es negociable.
       </div>`);
       showToast('✅ Plan completo generado y activado');
     } catch (e) {
-      setStatus(`<div style="background:rgba(220,60,60,.08);border:1px solid rgba(220,60,60,.3);border-radius:8px;padding:12px"><div style="color:#e05555;font-weight:700">❌ ${(e.message || e).replace(/</g,'&lt;')}</div></div>`);
+      setStatus(`<div style="background:rgba(220,60,60,.08);border:1px solid rgba(220,60,60,.3);border-radius:8px;padding:12px"><div style="color:#e05555;font-weight:700">❌ ${_escH(String(e.message || e))}</div></div>`);
       showToast('Error: ' + (e.message || e), true);
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = btn._t || '🤖 GENERAR PLAN COMPLETO (Motor VDSEN)'; }
