@@ -1,5 +1,5 @@
 # VDSEN Dev State — Handoff Document
-> Actualizado: 2026-09-06 · branch `main` · FASE 59 DONE · Suite 1618/1618
+> Actualizado: 2026-09-06 · branch `main` · FASE 60 DONE · Suite 1650/1650
 
 ---
 
@@ -37,7 +37,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 32 | MERGED — commit `1975fd8` · UX Cliente: touch targets, setDone flash, ring fix |
 | FASE 33 | DONE — commits `7a29aa6`+`f10c75f` · End-to-End Integration Audit: 25 bugs corregidos |
 | FASE 34 | DONE — Legacy Identity Hardening: BUG H-3 + BUG G4 corregidos, 17 tests nuevos |
-| Suite tests | **1618/1618 PASS** (P01–P426 + F34-A–J + F36-B–N + F37-A–I + F39-A–E + F45-A–J + F46-A–O + BUG-RIR0-A–I + BUG-XSS-A–F + BUG-LS-DIV-A–D + F47-A–I + F48-A–J + F49-A–M + F50-A–Q + F51-A–M + F52-A–N + F53-A–M + F54-A–M + F55-A–M + F56-A–M + F57-A–M + F58-A–M + F59-A–M) |
+| Suite tests | **1650/1650 PASS** (P01–P426 + F34-A–J + F36-B–N + F37-A–I + F39-A–E + F45-A–J + F46-A–O + BUG-RIR0-A–I + BUG-XSS-A–F + BUG-LS-DIV-A–D + F47-A–I + F48-A–J + F49-A–M + F50-A–Q + F51-A–M + F52-A–N + F53-A–M + F54-A–M + F55-A–M + F56-A–M + F57-A–M + F58-A–M + F59-A–M + F60-A–M) |
 | FASE 45 | DONE — Learned State Activation v1 (topology + distribution engines) |
 | FASE 46 | MERGED — Exercise Learned State Activation v1 · `099fd74` (fast-forward desde `claude/learned-state-activation-d5b69n`) |
 | Bug: RIR-0 | FIXED — RIR 0 (fallo) no colapsa a default 2 en saveExpress/markExpressSerie/SS paths (vdsen-cliente.html) |
@@ -63,6 +63,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 | FASE 57 | DONE — Final Repair Pre-Write Revalidation: `_runFinalRepairRevalidation` puro orquesta la cadena F51–F56 completa contra el `_finalTraining` real (plan persisted al Firestore), no preview hipotético; eleva gate a REVIEW_REQUIRED para REPAIR_NOT_REFLECTED, STRUCTURAL_REPAIR_NOT_REFLECTED, REGRESSED (via F55), inconsistencia CRITICAL (via F56); ambos IIFEs `_effGate55`/`_effGate55b` simplificados a 3 líneas usando `.gate` del orquestador; checks REVIEW_REQUIRED pre-write inalterados (bloquean write hasta revisión explícita); tests F57-A–M (28 assertions) · Suite 1574/1574 |
 | FASE 58 | DONE — Coach Client-Plan Mirror View: `_buildClientMirrorView(plan)` puro (0 I/O, 0 mutation) renderiza el plan activo del cliente con paridad visual/semántica con la app cliente; maneja RIR=0/load=0/SST/AMRAP/legacy/alternatives/coachNote/techniqueNote/supersetGroup/variacion_vertical; `_openClientMirrorModal()` abre overlay read-only desde botón "👁 Ver como cliente" en planActionsHtml; sin logs/progresión/autofill/writes; tests F58-A–M (21 assertions) · Suite 1595/1595 |
 | FASE 59 | DONE — Client Mirror Parity Audit: `_auditClientMirrorParity(plan, mirrorHtml)` puro detecta MISSING_IN_MIRROR (day.label, exerciseName, coachNote, coachNote.label, techniqueNote, alternative, supersetGroup) y VALUE_MISMATCH (set.repsTarget, set.rirTarget); `_buildClientMirrorView` corregido con 6 gaps de paridad vs vdsen-cliente.html: nivel_medio full labels (FUNDAMENTAL/SUPLEMENTARIO/ASISTENCIA+/ASISTENCIA) + colores correctos (#cc4444/#FF8844/#C4FF00/#888888), zona badge (_getZonaBadge), coachNote blue-border "NOTA DEL COACH", TECHNIQUE_META+TECHNIQUE_DESCRIPTIONS.short block, SET_NOTE_LABELS pretty labels, techniqueFromWeek "NUEVA ESTA SEMANA" badge; tests F59-A–M (23 assertions) · Suite 1618/1618 |
+| FASE 60 | DONE — Week-Aware Client Mirror: `_buildClientMirrorView(plan, week)` ahora acepta semana para renderizar estado visual dependiente de semana; helpers puros `_getTotalWeeksMirror`, `_isY3TExerciseMirror`, `_getY3TPhaseMirror`, `_isTechniqueActiveMirror`, `_getEffectiveSetsMirror`, `_getAdjustedRIRMirror`, `_buildClientMirrorWeekContext(plan, week)` → `{week, totalWeeks, isDeload, days:[{exercises:[{isY3T, y3tPhase, y3tPhaseMeta, effectiveSets, techniqueActive, adjustedRIR}]}]}`; lógica de semana idéntica a vdsen-cliente.html (getY3TPhase/getEffectiveSets/isTechniqueActive); Y3T muestra badge de fase (S1·FUERZA/S2·HIPERTROFIA/S3·METABÓLICA/DELOAD) y filtra effectiveSets; FST7/SST/SST_RIV inactivos en deload → "⏸ No disponible esta semana"; techniqueFromWeek badge solo en semana exacta de activación; `_openClientMirrorModal()` con selector de semana read-only (pills 1..N, ⟲ en última); 0 writes, 0 logs, 0 cambios de estado real; tests F60-A–M (32 assertions) · Suite 1650/1650 |
 | FASE 37 | DONE — LOGS_BY_WEEK index en memoria · commit `96fbc1b` |
 | FASE 38 | DONE — XSS guards _escH en 8 interpolaciones coach · commit `470a261` |
 | FASE 39 | DONE — Fix _buildCheckInData adherencia + rir_real_prom · commit `eb1a825` |

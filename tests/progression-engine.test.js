@@ -11144,8 +11144,8 @@ function _makeF57Gate(status, criticalIssues) {
 // Pure: _buildClientMirrorView(plan) → HTML string; 0 I/O, 0 mutation.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Inline _buildClientMirrorView (mirrors main file exactly — updated F59)
-function _buildClientMirrorView(plan) {
+// Inline _buildClientMirrorView (mirrors main file exactly — updated F60)
+function _buildClientMirrorView(plan, week) {
   var _e = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); };
   if (!plan || !Array.isArray(plan.days) || !plan.days.length) {
     return '<div style="padding:32px 16px;text-align:center;color:#555;font-size:13px">Sin plan activo o plan sin días.</div>';
@@ -11221,7 +11221,7 @@ function _buildClientMirrorView(plan) {
     'myo-match': 'Haz tus series cortas hasta casi no poder más. Pausa breve y continúa.'
   };
   function _techDescBlock(tech) {
-    if (!tech || tech === 'straight') return '';
+    if (!tech || tech === 'straight' || tech === 'y3t') return '';
     var m = _techMeta[tech]; if (!m) return '';
     var desc = _techDesc[tech] || '';
     return '<div style="margin:6px 0 4px;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.03);border-left:3px solid '+m.color+'88">'
@@ -11265,16 +11265,29 @@ function _buildClientMirrorView(plan) {
       + '<div style="font-size:12px;color:#a8c8ee;line-height:1.55;white-space:pre-line">'+_e(String(note).trim())+'</div>'
       + '</div>';
   }
+  var totalWeeksT = _getTotalWeeksMirror(plan);
+  if (week != null) { if (week < 1) week = 1; if (week > totalWeeksT) week = totalWeeksT; }
+  var weekCtx = (week != null) ? _buildClientMirrorWeekContext(plan, week) : null;
   var days = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
+  var bannerWeek = '';
+  if (weekCtx) {
+    bannerWeek = ' · <span style="color:#88ffcc;font-weight:700">Sem '+weekCtx.week+'/'+weekCtx.totalWeeks+'</span>';
+    if (weekCtx.isDeload) bannerWeek += ' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(126,192,255,.12);border:1px solid rgba(126,192,255,.4);color:#7ec0ff;font-weight:700">⟲ DELOAD</span>';
+  }
   var html = '<div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;padding:6px 10px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.12);border-radius:6px;display:flex;align-items:center;gap:6px">'
     + '<span style="color:#C4FF00;font-weight:700">👁 VISTA CLIENTE</span>'
+    + bannerWeek
     + ' <span style="color:#555">— Solo lectura · Sin logs · Sin progresión</span></div>';
   for (var di = 0; di < days.length; di++) {
     var d = days[di];
     var exs = d.exercises || [];
+    var dayWCtx = weekCtx ? weekCtx.days[di] : null;
+    var dayDeloadBadge = (weekCtx && weekCtx.isDeload)
+      ? ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(126,192,255,.12);border:1px solid rgba(126,192,255,.4);color:#7ec0ff;font-weight:700;text-transform:uppercase">⟲ DELOAD</span>'
+      : '';
     html += '<div style="margin-bottom:14px;border:1px solid rgba(244,244,240,.12);border-radius:10px;overflow:hidden">'
       + '<div style="background:rgba(244,244,240,.07);padding:8px 12px;border-bottom:1px solid rgba(244,244,240,.08)">'
-      + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span></div>';
+      + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span>'+dayDeloadBadge+'</div>';
     if (!exs.length) {
       html += '<div style="padding:10px 12px;color:#555;font-size:12px">Sin ejercicios</div>';
     }
@@ -11284,6 +11297,16 @@ function _buildClientMirrorView(plan) {
       var tech = (ex.technique||'straight').toLowerCase().trim();
       if (tech === 'rest_pause') tech = 'rest-pause';
       var sets = ex.sets || [];
+      var exWCtx = dayWCtx ? dayWCtx.exercises[ei] : null;
+      if (exWCtx && !exWCtx.techniqueActive) {
+        html += '<div style="padding:8px 12px;'+(ei?'border-top:1px solid rgba(244,244,240,.07)':'')+'">'
+          + '<div style="display:flex;align-items:center;gap:6px">'
+          + '<span style="font-size:13px;font-weight:700;color:#444">'+_e(name)+'</span>'
+          + '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(100,100,100,.1);border:1px solid rgba(100,100,100,.2);color:#555">⏸ No disponible esta semana</span>'
+          + '</div></div>';
+        continue;
+      }
+      var renderSets = (exWCtx && exWCtx.isY3T) ? exWCtx.effectiveSets : sets;
       var ssMark = ex.supersetGroup
         ? '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(107,107,102,.15);border:1px solid rgba(107,107,102,.35);color:#888;margin-left:4px">SS:'+_e(String(ex.supersetGroup))+'</span>'
         : '';
@@ -11297,12 +11320,29 @@ function _buildClientMirrorView(plan) {
         vvHtml = '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(100,150,255,.12);border:1px solid rgba(100,150,255,.3);color:#7aabff;margin-left:4px">↻ S'+_e(String(_vv.semana_variacion))+'</span>';
       }
       var tfwHtml = '';
-      if (ex.techniqueFromWeek != null) {
+      if (exWCtx) {
+        if (ex.techniqueFromWeek != null && weekCtx && weekCtx.week === ex.techniqueFromWeek) {
+          tfwHtml = '<div style="margin:6px 0 4px;padding:8px 10px;border-radius:8px;background:rgba(153,102,204,.15);border:2px solid rgba(153,102,204,.6);display:flex;align-items:flex-start;gap:8px">'
+            + '<span style="font-size:18px;line-height:1">✨</span>'
+            + '<div><div style="font-size:10px;font-weight:800;letter-spacing:.8px;color:#c080ff;margin-bottom:2px">NUEVA ESTA SEMANA</div>'
+            + '<div style="font-size:11px;color:#aaa;line-height:1.45">Tu coach activó esta técnica a partir de la semana '+_e(String(ex.techniqueFromWeek))+'. Léela con atención antes de empezar.</div>'
+            + '</div></div>';
+        }
+      } else if (ex.techniqueFromWeek != null) {
         tfwHtml = '<div style="margin:6px 0 4px;padding:8px 10px;border-radius:8px;background:rgba(153,102,204,.15);border:2px solid rgba(153,102,204,.6);display:flex;align-items:flex-start;gap:8px">'
           + '<span style="font-size:18px;line-height:1">✨</span>'
           + '<div><div style="font-size:10px;font-weight:800;letter-spacing:.8px;color:#c080ff;margin-bottom:2px">NUEVA ESTA SEMANA</div>'
           + '<div style="font-size:11px;color:#aaa;line-height:1.45">Tu coach activó esta técnica a partir de la semana '+_e(String(ex.techniqueFromWeek))+'. Léela con atención antes de empezar.</div>'
           + '</div></div>';
+      }
+      var y3tPhaseHtml = '';
+      if (exWCtx && exWCtx.isY3T && exWCtx.y3tPhaseMeta) {
+        var pm = exWCtx.y3tPhaseMeta;
+        y3tPhaseHtml = '<div style="margin:4px 0 6px;padding:6px 10px;border-radius:6px;background:'+pm.color+'18;border:1px solid '+pm.color+'44;display:flex;align-items:center;gap:10px">'
+          + '<span style="font-size:11px;font-weight:900;color:'+pm.color+';letter-spacing:.5px">'+_e(pm.label)+'</span>'
+          + '<span style="font-size:10px;color:#888">'+_e(pm.range)+'</span>'
+          + '<span style="font-size:10px;color:#666">⏸ '+_e(pm.rest)+'</span>'
+          + '</div>';
       }
       var notesHtml = '';
       var rawCoachNote = ex.coachNote || ex.nota;
@@ -11316,7 +11356,7 @@ function _buildClientMirrorView(plan) {
         var legRir  = _fmtRIR(ex.rirTarget  != null ? ex.rirTarget  : 2);
         setsHtml = '<div style="font-size:11px;color:#888;padding:4px 8px">'+_e(String(ex.numSeries||3))+'×'+_e(legReps)+' · '+_e(legRir)+'</div>';
       } else {
-        for (var si = 0; si < sets.length; si++) setsHtml += _setRow(sets[si], si);
+        for (var si = 0; si < renderSets.length; si++) setsHtml += _setRow(renderSets[si], si);
       }
       html += '<div style="padding:10px 12px;'+(ei?'border-top:1px solid rgba(244,244,240,.07)':'')+'">'
         + '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;margin-bottom:6px">'
@@ -11326,6 +11366,7 @@ function _buildClientMirrorView(plan) {
         + ssMark + vvHtml + '</div>'
         + altHtml
         + _techDescBlock(tech)
+        + y3tPhaseHtml
         + tfwHtml
         + notesHtml
         + '<div style="border-radius:6px;overflow:hidden;border:1px solid rgba(244,244,240,.07)">'+setsHtml+'</div>'
@@ -11405,7 +11446,127 @@ function _auditClientMirrorParity(plan, mirrorHtml) {
   };
 }
 
-// F58 helpers
+// ─── F60 inline helpers (mirror vdsen-cliente.html week logic exactly) ───────
+
+var _Y3T_PHASE_META_MIRROR = {
+  s1:     { label:'S1 · FUERZA',      color:'#7ec0ff', range:'4-6 reps',  rest:'3-4 min' },
+  s2:     { label:'S2 · HIPERTROFIA', color:'#44BB88', range:'8-12 reps', rest:'2-2.5 min' },
+  s3:     { label:'S3 · METABÓLICA',  color:'#9966cc', range:'8-12 reps', rest:'2 min' },
+  deload: { label:'DELOAD',           color:'#7ec0ff', range:'10-15 reps', rest:'90 s' }
+};
+
+function _getTotalWeeksMirror(plan) {
+  if (!plan) return 6;
+  return (plan.weeks || plan.totalWeeks) || 6;
+}
+
+function _isY3TExerciseMirror(ex) {
+  if (!ex) return false;
+  var tech = (ex.technique || '').toLowerCase();
+  if (tech === 'y3t') return true;
+  if ((ex.techniqueNote || ex.coachNote || '').toUpperCase().indexOf('Y3T') !== -1) return true;
+  var sets = ex.sets || [];
+  if (sets.some(function(s){ return s.setNote && (s.setNote.indexOf('S1') !== -1 || s.setNote.indexOf('S2') !== -1); })) return true;
+  var nonSst = sets.filter(function(s){ return s.repsTarget !== 'SST-PROTOCOL' && s.repsTarget !== 'SST-RIV-PROTOCOL'; });
+  if (nonSst.length < 3) return false;
+  return Number(nonSst[0].repsTarget) <= 6 && Number(nonSst[nonSst.length - 1].repsTarget) >= 8;
+}
+
+function _getY3TPhaseMirror(week, totalWeeks) {
+  if (!week || week < 1) week = 1;
+  if (!totalWeeks) totalWeeks = 6;
+  if (week >= totalWeeks) return 'deload';
+  var phase = ((week - 1) % 3) + 1;
+  return phase === 1 ? 's1' : (phase === 2 ? 's2' : 's3');
+}
+
+function _isTechniqueActiveMirror(ex, week, totalWeeks) {
+  if (!ex) return true;
+  if (!totalWeeks) totalWeeks = 6;
+  var tech = (ex.technique || '').toLowerCase();
+  if ((tech === 'sst' || tech === 'sst_riv' || tech === 'fst7') && week >= totalWeeks) return false;
+  if (!ex.techniqueFromWeek) return true;
+  return week >= ex.techniqueFromWeek;
+}
+
+function _getEffectiveSetsMirror(ex, week, totalWeeks) {
+  var sets = ex.sets || [];
+  var tech = (ex.technique || '').toLowerCase();
+  if (tech === 'fst7' || tech === 'sst_riv' || tech === 'lengthened_partials') {
+    return _isTechniqueActiveMirror(ex, week, totalWeeks) ? sets : [];
+  }
+  if (!_isY3TExerciseMirror(ex)) return sets;
+  if (!week || week < 1) week = 1;
+  var phase = _getY3TPhaseMirror(week, totalWeeks);
+  if (phase === 's3') return sets;
+  var hasNotes = sets.some(function(s){ return s.setNote && (s.setNote.indexOf('S1') !== -1 || s.setNote.indexOf('S2') !== -1); });
+  function _isSstLit(r){ return r === 'SST-PROTOCOL' || r === 'SST-RIV-PROTOCOL'; }
+  if (phase === 's1') {
+    var s1 = hasNotes
+      ? sets.filter(function(s){ return !_isSstLit(s.repsTarget) && (s.setNote||'').indexOf('S1') !== -1; })
+      : sets.filter(function(s){ return !_isSstLit(s.repsTarget) && s.repsTarget <= 6; });
+    if (s1.length) return s1;
+    var nonSstAll = sets.filter(function(s){ return !_isSstLit(s.repsTarget); });
+    return nonSstAll.slice(0, Math.max(1, Math.ceil(nonSstAll.length / 2)));
+  }
+  if (phase === 's2') {
+    var s12 = hasNotes
+      ? sets.filter(function(s){ var n=s.setNote||''; return !_isSstLit(s.repsTarget)&&(n.indexOf('S1')!==-1||n.indexOf('S2')!==-1); })
+      : sets.filter(function(s){ return !_isSstLit(s.repsTarget); });
+    return s12.length ? s12 : sets.filter(function(s){ return !_isSstLit(s.repsTarget); });
+  }
+  var deloads = hasNotes
+    ? sets.filter(function(s){ return !_isSstLit(s.repsTarget)&&(s.setNote||'').indexOf('S2')!==-1; })
+    : sets.filter(function(s){ return !_isSstLit(s.repsTarget)&&s.repsTarget>=8; });
+  return deloads.length ? deloads : sets.filter(function(s){ return !_isSstLit(s.repsTarget); });
+}
+
+function _getAdjustedRIRMirror(baseRIR, week, totalWeeks) {
+  if (!totalWeeks) totalWeeks = 6;
+  var base = parseInt(baseRIR) || 2;
+  if (week === totalWeeks) return base + 2;
+  if (week >= totalWeeks - 2) return Math.max(0, base - 1);
+  return base;
+}
+
+function _buildClientMirrorWeekContext(plan, week) {
+  var totalWeeks = _getTotalWeeksMirror(plan);
+  if (!week || week < 1) week = 1;
+  if (week > totalWeeks) week = totalWeeks;
+  var isDeload = (week >= totalWeeks);
+  var days = [];
+  if (plan && Array.isArray(plan.days)) {
+    var sortedDays = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
+    for (var di = 0; di < sortedDays.length; di++) {
+      var d = sortedDays[di];
+      var exContexts = [];
+      var exs = d.exercises || [];
+      for (var ei = 0; ei < exs.length; ei++) {
+        var ex = exs[ei];
+        var isY3T = _isY3TExerciseMirror(ex);
+        var y3tPhase = isY3T ? _getY3TPhaseMirror(week, totalWeeks) : null;
+        var y3tPhaseMeta = y3tPhase ? _Y3T_PHASE_META_MIRROR[y3tPhase] : null;
+        var techniqueActive = _isTechniqueActiveMirror(ex, week, totalWeeks);
+        var effectiveSets = _getEffectiveSetsMirror(ex, week, totalWeeks);
+        var baseRIR = (ex.sets && ex.sets[0] && ex.sets[0].rirTarget != null) ? ex.sets[0].rirTarget : (ex.rirTarget != null ? ex.rirTarget : 2);
+        exContexts.push({
+          exerciseName:   ex.exerciseName || ex.nombre || 'Ejercicio',
+          techniqueActive: techniqueActive,
+          isY3T:          isY3T,
+          y3tPhase:       y3tPhase,
+          y3tPhaseMeta:   y3tPhaseMeta,
+          effectiveSets:  effectiveSets,
+          adjustedRIR:    _getAdjustedRIRMirror(baseRIR, week, totalWeeks)
+        });
+      }
+      days.push({ dayIndex: d.dayIndex, label: d.label, exercises: exContexts });
+    }
+  }
+  return { week: week, totalWeeks: totalWeeks, isDeload: isDeload, days: days };
+}
+
+// ─── F58 helpers ──────────────────────────────────────────────────────────────
+
 function _makeF58Plan(opts) {
   opts = opts || {};
   var ex = Object.assign({ exerciseName: 'Press Banca', sets: [{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }, opts.ex || {});
@@ -11654,6 +11815,200 @@ function _makeF58Ex(overrides) {
   var a1 = JSON.stringify(_auditClientMirrorParity(plan, h1));
   var a2 = JSON.stringify(_auditClientMirrorParity(plan, h1));
   assert('F59-Mb', '_auditClientMirrorParity deterministic', a1 === a2);
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE 60 — WEEK-AWARE CLIENT MIRROR
+// ═══════════════════════════════════════════════════════════════════════════
+
+// F60-A: null plan → no crash, days=[]
+(function() {
+  console.log('\nF60-A — null plan no crash');
+  var ctx = _buildClientMirrorWeekContext(null, 1);
+  assert('F60-Aa', 'no crash on null plan', ctx !== undefined);
+  assert('F60-Ab', 'days is empty array', Array.isArray(ctx.days) && ctx.days.length === 0);
+  assert('F60-Ac', 'week defaults to 1', ctx.week === 1);
+})();
+
+// F60-B: Y3T exercise, week=1 → phase s1, effectiveSets = only repsTarget≤6 sets
+(function() {
+  console.log('\nF60-B — Y3T week=1 → S1 effectiveSets');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Sentadilla', technique:'y3t',
+    sets:[
+      { setIndex:0, repsTarget:5,  rirTarget:1, load:140, restSeconds:180 },
+      { setIndex:1, repsTarget:10, rirTarget:2, load:100, restSeconds:90  },
+      { setIndex:2, repsTarget:15, rirTarget:3, load:70,  restSeconds:60  }
+    ]
+  }] }] };
+  var ctx = _buildClientMirrorWeekContext(plan, 1);
+  var exCtx = ctx.days[0].exercises[0];
+  assert('F60-Ba', 'isY3T=true', exCtx.isY3T === true);
+  assert('F60-Bb', 'y3tPhase=s1', exCtx.y3tPhase === 's1');
+  assert('F60-Bc', 'effectiveSets has only S1 set (repsTarget≤6)', exCtx.effectiveSets.length === 1 && exCtx.effectiveSets[0].repsTarget === 5);
+})();
+
+// F60-C: Y3T exercise, week=2 → phase s2, effectiveSets = all non-SST sets
+(function() {
+  console.log('\nF60-C — Y3T week=2 → S2 effectiveSets');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Sentadilla', technique:'y3t',
+    sets:[
+      { setIndex:0, repsTarget:5,  rirTarget:1, load:140, restSeconds:180 },
+      { setIndex:1, repsTarget:10, rirTarget:2, load:100, restSeconds:90  },
+      { setIndex:2, repsTarget:15, rirTarget:3, load:70,  restSeconds:60  }
+    ]
+  }] }] };
+  var ctx = _buildClientMirrorWeekContext(plan, 2);
+  var exCtx = ctx.days[0].exercises[0];
+  assert('F60-Ca', 'y3tPhase=s2', exCtx.y3tPhase === 's2');
+  assert('F60-Cb', 'effectiveSets has all 3 sets', exCtx.effectiveSets.length === 3);
+})();
+
+// F60-D: Y3T exercise, week=3 → phase s3, effectiveSets = all sets
+(function() {
+  console.log('\nF60-D — Y3T week=3 → S3 effectiveSets');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Sentadilla', technique:'y3t',
+    sets:[
+      { setIndex:0, repsTarget:5,  rirTarget:1, load:140, restSeconds:180 },
+      { setIndex:1, repsTarget:10, rirTarget:2, load:100, restSeconds:90  },
+      { setIndex:2, repsTarget:15, rirTarget:3, load:70,  restSeconds:60  }
+    ]
+  }] }] };
+  var ctx = _buildClientMirrorWeekContext(plan, 3);
+  var exCtx = ctx.days[0].exercises[0];
+  assert('F60-Da', 'y3tPhase=s3', exCtx.y3tPhase === 's3');
+  assert('F60-Db', 'effectiveSets has all 3 sets', exCtx.effectiveSets.length === 3);
+})();
+
+// F60-E: week=totalWeeks → isDeload=true
+(function() {
+  console.log('\nF60-E — week=totalWeeks → isDeload=true');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[] }] };
+  var ctx = _buildClientMirrorWeekContext(plan, 6);
+  assert('F60-Ea', 'isDeload=true', ctx.isDeload === true);
+  assert('F60-Eb', 'week=6', ctx.week === 6);
+  assert('F60-Ec', 'totalWeeks=6', ctx.totalWeeks === 6);
+})();
+
+// F60-F: _buildClientMirrorView Y3T week=1 → "S1 · FUERZA" in HTML
+(function() {
+  console.log('\nF60-F — _buildClientMirrorView Y3T week=1 → S1 badge');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Prensa', technique:'y3t',
+    sets:[
+      { setIndex:0, repsTarget:5,  rirTarget:1, load:200, restSeconds:180 },
+      { setIndex:1, repsTarget:10, rirTarget:2, load:140, restSeconds:90  },
+      { setIndex:2, repsTarget:15, rirTarget:3, load:90,  restSeconds:60  }
+    ]
+  }] }] };
+  var html = _buildClientMirrorView(plan, 1);
+  assert('F60-Fa', 'S1 · FUERZA phase label in HTML', html.indexOf('S1 · FUERZA') !== -1);
+  assert('F60-Fb', 'Sem 1/6 in banner', html.indexOf('Sem 1/6') !== -1);
+  assert('F60-Fc', 'only S1 set rendered (repsTarget=5)', html.indexOf('>5<') !== -1);
+  assert('F60-Fd', 'S3 set not rendered (repsTarget=15 absent)', html.indexOf('>15<') === -1);
+})();
+
+// F60-G: _buildClientMirrorView Y3T week=3 → "S3 · METABÓLICA" in HTML
+(function() {
+  console.log('\nF60-G — _buildClientMirrorView Y3T week=3 → S3 badge');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Prensa', technique:'y3t',
+    sets:[
+      { setIndex:0, repsTarget:5,  rirTarget:1, load:200, restSeconds:180 },
+      { setIndex:1, repsTarget:10, rirTarget:2, load:140, restSeconds:90  },
+      { setIndex:2, repsTarget:15, rirTarget:3, load:90,  restSeconds:60  }
+    ]
+  }] }] };
+  var html = _buildClientMirrorView(plan, 3);
+  assert('F60-Ga', 'S3 · METABÓLICA phase label in HTML', html.indexOf('S3 · MET') !== -1);
+  assert('F60-Gb', 'all 3 sets rendered', html.indexOf('>5<') !== -1 && html.indexOf('>10<') !== -1 && html.indexOf('>15<') !== -1);
+})();
+
+// F60-H: techniqueFromWeek=2, week=2 → NUEVA ESTA SEMANA shown
+(function() {
+  console.log('\nF60-H — techniqueFromWeek=2 week=2 → NUEVA badge');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Pull-up', technique:'drop', techniqueFromWeek:2,
+    sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:0, restSeconds:120 }]
+  }] }] };
+  var html = _buildClientMirrorView(plan, 2);
+  assert('F60-Ha', 'NUEVA ESTA SEMANA badge shown at week=techniqueFromWeek', html.indexOf('NUEVA ESTA SEMANA') !== -1);
+})();
+
+// F60-I: techniqueFromWeek=2, week=1 → NUEVA ESTA SEMANA NOT shown
+(function() {
+  console.log('\nF60-I — techniqueFromWeek=2 week=1 → no NUEVA badge');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Pull-up', technique:'drop', techniqueFromWeek:2,
+    sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:0, restSeconds:120 }]
+  }] }] };
+  var html = _buildClientMirrorView(plan, 1);
+  assert('F60-Ia', 'NUEVA ESTA SEMANA not shown when week<techniqueFromWeek', html.indexOf('NUEVA ESTA SEMANA') === -1);
+})();
+
+// F60-J: FST7 in deload week → inactive notice shown
+(function() {
+  console.log('\nF60-J — FST7 deload week → inactive notice');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Curl Araña', technique:'fst7',
+    sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:30, restSeconds:40 }]
+  }] }] };
+  var html = _buildClientMirrorView(plan, 6);
+  assert('F60-Ja', 'inactive notice in HTML for FST7 deload', html.indexOf('No disponible esta semana') !== -1);
+  assert('F60-Jb', 'DELOAD badge in banner', html.indexOf('DELOAD') !== -1);
+})();
+
+// F60-K: non-Y3T exercise → all sets regardless of week
+(function() {
+  console.log('\nF60-K — non-Y3T: all sets for any week');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Press Banca', technique:'straight',
+    sets:[
+      { setIndex:0, repsTarget:8,  rirTarget:2, load:100, restSeconds:120 },
+      { setIndex:1, repsTarget:10, rirTarget:3, load:90,  restSeconds:90  }
+    ]
+  }] }] };
+  var ctx1 = _buildClientMirrorWeekContext(plan, 1);
+  var ctx3 = _buildClientMirrorWeekContext(plan, 3);
+  assert('F60-Ka', 'week=1: 2 effectiveSets', ctx1.days[0].exercises[0].effectiveSets.length === 2);
+  assert('F60-Kb', 'week=3: 2 effectiveSets', ctx3.days[0].exercises[0].effectiveSets.length === 2);
+})();
+
+// F60-L: invalid week limits clamped
+(function() {
+  console.log('\nF60-L — week=0 → clamped to 1, week=99 → clamped to totalWeeks');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[] }] };
+  var ctxLow  = _buildClientMirrorWeekContext(plan, 0);
+  var ctxHigh = _buildClientMirrorWeekContext(plan, 99);
+  assert('F60-La', 'week=0 clamped to 1', ctxLow.week === 1);
+  assert('F60-Lb', 'week=99 clamped to totalWeeks', ctxHigh.week === 6);
+  var htmlLow  = _buildClientMirrorView(plan, 0);
+  var htmlHigh = _buildClientMirrorView(plan, 99);
+  assert('F60-Lc', '_buildClientMirrorView week=0 no crash', htmlLow.length > 0);
+  assert('F60-Ld', '_buildClientMirrorView week=99 no crash', htmlHigh.length > 0);
+})();
+
+// F60-M: determinism and no mutation
+(function() {
+  console.log('\nF60-M — determinism and no mutation');
+  var plan = { weeks:6, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Sentadilla', technique:'y3t',
+    sets:[
+      { setIndex:0, repsTarget:5,  rirTarget:1, load:140, restSeconds:180 },
+      { setIndex:1, repsTarget:10, rirTarget:2, load:100, restSeconds:90  },
+      { setIndex:2, repsTarget:15, rirTarget:3, load:70,  restSeconds:60  }
+    ]
+  }] }] };
+  var snap = JSON.stringify(plan);
+  var h1 = _buildClientMirrorView(plan, 2);
+  var h2 = _buildClientMirrorView(plan, 2);
+  assert('F60-Ma', '_buildClientMirrorView deterministic', h1 === h2);
+  var c1 = JSON.stringify(_buildClientMirrorWeekContext(plan, 2));
+  var c2 = JSON.stringify(_buildClientMirrorWeekContext(plan, 2));
+  assert('F60-Mb', '_buildClientMirrorWeekContext deterministic', c1 === c2);
+  assert('F60-Mc', 'plan not mutated by either call', JSON.stringify(plan) === snap);
 })();
 
 process.exit(_fail > 0 ? 1 : 0);
