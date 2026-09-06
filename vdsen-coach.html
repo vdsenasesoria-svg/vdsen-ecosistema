@@ -6603,6 +6603,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         var _lvRepair = _applyLongitudinalRepairHintsToCandidates(_lvCands, _hints, {});
         var _matchIdx = {};
         _lvRepair.hintMatches.forEach(function(m, i) { if (m.matched) _matchIdx[i] = true; });
+        var _topId = _lvRepair.adjusted.length ? _lvRepair.adjusted[0].id : null;
+        var _selAudit = _auditCandidateSelection(_lvRepair.adjusted, _topId, null, {});
         var _labelFor = {
           'REPLACE_OR_REMOVE': 'Reemplazar o eliminar',
           'RESTORE_OR_KEEP': 'Restaurar o conservar',
@@ -6620,9 +6622,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             : '';
           return '<div style="color:' + col + ';font-size:10px;margin-top:2px">→ ' + _escH(lbl) + ex + badge + '</div>';
         }).join('');
+        var _dtLine = '';
+        if (_selAudit.selectedCandidate) {
+          var _dtId = _escH(String(_selAudit.selectedCandidate.targetExerciseId || _selAudit.selectedCandidate.id).substring(0, 40));
+          var _dtHist = _selAudit.historyInfluence ? ' · HISTORY:✓' : '';
+          var _dtAlert = _selAudit.alert ? ' <span style="color:var(--danger);font-size:9px">[!' + _escH(_selAudit.alert.code) + ']</span>' : '';
+          _dtLine = '<div style="color:var(--text-muted);font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId + ' · ' + _escH(_selAudit.selectionReason) + _dtHist + _dtAlert + '</div>';
+        }
         return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
           + '<span style="color:var(--text-muted);font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
-          + rows + '</div>';
+          + rows + _dtLine + '</div>';
       })();
       setStatus('<div style="color:var(--success);font-weight:700">✅ Generado y cargado: ' + saved.join(' · ') + '</div>'
         + '<div style="color:var(--text-muted);font-size:11px;margin-top:4px">Tokens: ' + (u.input_tokens || '?') + ' in / ' + (u.output_tokens || '?') + ' out' + cacheNote + ' · Ya visible para el cliente en su app.</div>'
@@ -10230,6 +10239,68 @@ El esfuerzo no es negociable.
   }
   window._applyLongitudinalRepairHintsToCandidates = _applyLongitudinalRepairHintsToCandidates;
 
+  // ── FASE 51: _auditCandidateSelection ─────────────────────────────────────
+  // Pure selection auditor. 0 I/O, 0 auto-apply, does not create candidates.
+  // adjusted: sorted candidate[] from _applyLongitudinalRepairHintsToCandidates.
+  // selectedId: id of the chosen candidate (string | null).
+  // justification: coach-provided reason for non-top selection (string | null).
+  // Returns { selectedCandidate, selectionReason, historyInfluence, reasonCodes, alert }.
+  // alert = { code:'TOP_RANKED_REPAIR_NOT_SELECTED', topRanked, selected, detail } | null.
+  function _auditCandidateSelection(adjusted, selectedId, justification, context) {
+    var arr = Array.isArray(adjusted) ? adjusted : [];
+
+    // First valid candidate not blocked by re-audit gate
+    var topEligible = null;
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i].isValid !== false && !arr[i].wouldAddCriticalIssue) {
+        topEligible = arr[i];
+        break;
+      }
+    }
+
+    if (!selectedId) {
+      return { selectedCandidate: null, selectionReason: 'NO_ELIGIBLE_CANDIDATES',
+               historyInfluence: false, reasonCodes: [], alert: null };
+    }
+
+    var selected = null;
+    for (var j = 0; j < arr.length; j++) {
+      if (arr[j].id === selectedId) { selected = arr[j]; break; }
+    }
+
+    if (!selected) {
+      return { selectedCandidate: null, selectionReason: 'CANDIDATE_NOT_FOUND',
+               historyInfluence: false, reasonCodes: [], alert: null };
+    }
+
+    var isTopRanked = topEligible !== null && selected.id === topEligible.id;
+    var selectionReason;
+    var alert = null;
+
+    if (isTopRanked) {
+      selectionReason = 'TOP_RANKED';
+    } else if (justification && String(justification).trim().length > 0) {
+      selectionReason = 'JUSTIFIED';
+    } else {
+      selectionReason = 'MANUAL_OVERRIDE';
+      if (topEligible) {
+        alert = {
+          code: 'TOP_RANKED_REPAIR_NOT_SELECTED',
+          topRanked: topEligible,
+          selected: selected,
+          detail: 'Top-ranked [' + topEligible.id + '] ignored without justification. Selected: [' + selected.id + '].'
+        };
+      }
+    }
+
+    var historyInfluence = typeof selected.priority === 'number' && selected.priority > 0;
+    var reasonCodes = Array.isArray(selected.reasonCodes) ? selected.reasonCodes.slice() : [];
+
+    return { selectedCandidate: selected, selectionReason: selectionReason,
+             historyInfluence: historyInfluence, reasonCodes: reasonCodes, alert: alert };
+  }
+  window._auditCandidateSelection = _auditCandidateSelection;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -10426,6 +10497,8 @@ El esfuerzo no es negociable.
         var _lvRepair2 = _applyLongitudinalRepairHintsToCandidates(_lvCands2, _hints2, {});
         var _matchIdx2 = {};
         _lvRepair2.hintMatches.forEach(function(m, i) { if (m.matched) _matchIdx2[i] = true; });
+        var _topId2 = _lvRepair2.adjusted.length ? _lvRepair2.adjusted[0].id : null;
+        var _selAudit2 = _auditCandidateSelection(_lvRepair2.adjusted, _topId2, null, {});
         var _labelFor2 = {
           'REPLACE_OR_REMOVE': 'Reemplazar o eliminar',
           'RESTORE_OR_KEEP': 'Restaurar o conservar',
@@ -10443,9 +10516,16 @@ El esfuerzo no es negociable.
             : '';
           return '<div style="color:' + col2 + ';font-size:10px;margin-top:2px">→ ' + _escH(lbl2) + ex2 + badge2 + '</div>';
         }).join('');
+        var _dtLine2 = '';
+        if (_selAudit2.selectedCandidate) {
+          var _dtId2 = _escH(String(_selAudit2.selectedCandidate.targetExerciseId || _selAudit2.selectedCandidate.id).substring(0, 40));
+          var _dtHist2 = _selAudit2.historyInfluence ? ' · HISTORY:✓' : '';
+          var _dtAlert2 = _selAudit2.alert ? ' <span style="color:#e05555;font-size:9px">[!' + _escH(_selAudit2.alert.code) + ']</span>' : '';
+          _dtLine2 = '<div style="color:#888;font-size:9px;margin-top:3px;border-top:1px solid rgba(255,255,255,.07);padding-top:3px">📋 ' + _dtId2 + ' · ' + _escH(_selAudit2.selectionReason) + _dtHist2 + _dtAlert2 + '</div>';
+        }
         return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
           + '<span style="color:#888;font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
-          + rows2 + '</div>';
+          + rows2 + _dtLine2 + '</div>';
       })();
       setStatus(`<div style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);border-radius:8px;padding:12px;margin-top:4px">
         <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Generado: ${saved.join(' · ')}</div>

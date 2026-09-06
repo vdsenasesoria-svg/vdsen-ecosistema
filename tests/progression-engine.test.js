@@ -9730,4 +9730,192 @@ function _applyLongitudinalRepairHintsToCandidates(candidates, hints, context) {
   assert('F50-Qd', 'distribution tagged with distribution', dist.tags.indexOf('distribution') >= 0);
 })();
 
+// ── FASE 51: _auditCandidateSelection ────────────────────────────────────────
+function _auditCandidateSelection(adjusted, selectedId, justification, context) {
+  var arr = Array.isArray(adjusted) ? adjusted : [];
+  var topEligible = null;
+  for (var i = 0; i < arr.length; i++) {
+    if (arr[i].isValid !== false && !arr[i].wouldAddCriticalIssue) { topEligible = arr[i]; break; }
+  }
+  if (!selectedId) {
+    return { selectedCandidate: null, selectionReason: 'NO_ELIGIBLE_CANDIDATES',
+             historyInfluence: false, reasonCodes: [], alert: null };
+  }
+  var selected = null;
+  for (var j = 0; j < arr.length; j++) {
+    if (arr[j].id === selectedId) { selected = arr[j]; break; }
+  }
+  if (!selected) {
+    return { selectedCandidate: null, selectionReason: 'CANDIDATE_NOT_FOUND',
+             historyInfluence: false, reasonCodes: [], alert: null };
+  }
+  var isTopRanked = topEligible !== null && selected.id === topEligible.id;
+  var selectionReason;
+  var alert = null;
+  if (isTopRanked) {
+    selectionReason = 'TOP_RANKED';
+  } else if (justification && String(justification).trim().length > 0) {
+    selectionReason = 'JUSTIFIED';
+  } else {
+    selectionReason = 'MANUAL_OVERRIDE';
+    if (topEligible) {
+      alert = {
+        code: 'TOP_RANKED_REPAIR_NOT_SELECTED',
+        topRanked: topEligible,
+        selected: selected,
+        detail: 'Top-ranked [' + topEligible.id + '] ignored without justification. Selected: [' + selected.id + '].'
+      };
+    }
+  }
+  var historyInfluence = typeof selected.priority === 'number' && selected.priority > 0;
+  var reasonCodes = Array.isArray(selected.reasonCodes) ? selected.reasonCodes.slice() : [];
+  return { selectedCandidate: selected, selectionReason: selectionReason,
+           historyInfluence: historyInfluence, reasonCodes: reasonCodes, alert: alert };
+}
+
+function _makeAdj(overrides) {
+  return Object.assign({
+    id: 'c1', type: 'REPLACE_OR_REMOVE', targetExerciseId: 'Press Banca',
+    priority: 0, cost: 50, isValid: true, wouldAddCriticalIssue: false,
+    tags: ['exercise'], reasonCodes: []
+  }, overrides || {});
+}
+
+// F51-A: top-ranked selected → TOP_RANKED, no alert
+(function() {
+  console.log('\nF51-A — top-ranked selected → TOP_RANKED, no alert');
+  var adj = [
+    _makeAdj({ id: 'a', priority: 25 }),
+    _makeAdj({ id: 'b', priority: 0 })
+  ];
+  var r = _auditCandidateSelection(adj, 'a', null, {});
+  assert('F51-Aa', 'selectionReason = TOP_RANKED', r.selectionReason === 'TOP_RANKED');
+  assert('F51-Ab', 'alert is null', r.alert === null);
+  assert('F51-Ac', 'selectedCandidate not null', r.selectedCandidate !== null);
+})();
+
+// F51-B: second-ranked selected without justification → MANUAL_OVERRIDE + alert
+(function() {
+  console.log('\nF51-B — second-ranked without justification → MANUAL_OVERRIDE + TOP_RANKED_REPAIR_NOT_SELECTED');
+  var adj = [
+    _makeAdj({ id: 'a', priority: 25 }),
+    _makeAdj({ id: 'b', priority: 0 })
+  ];
+  var r = _auditCandidateSelection(adj, 'b', null, {});
+  assert('F51-Ba', 'selectionReason = MANUAL_OVERRIDE', r.selectionReason === 'MANUAL_OVERRIDE');
+  assert('F51-Bb', 'alert.code = TOP_RANKED_REPAIR_NOT_SELECTED', r.alert && r.alert.code === 'TOP_RANKED_REPAIR_NOT_SELECTED');
+  assert('F51-Bc', 'selectedCandidate.id = b', r.selectedCandidate && r.selectedCandidate.id === 'b');
+})();
+
+// F51-C: second-ranked with justification → JUSTIFIED, no alert
+(function() {
+  console.log('\nF51-C — second-ranked with justification → JUSTIFIED, no alert');
+  var adj = [
+    _makeAdj({ id: 'a', priority: 25 }),
+    _makeAdj({ id: 'b', priority: 0 })
+  ];
+  var r = _auditCandidateSelection(adj, 'b', 'coach preference', {});
+  assert('F51-Ca', 'selectionReason = JUSTIFIED', r.selectionReason === 'JUSTIFIED');
+  assert('F51-Cb', 'alert is null', r.alert === null);
+})();
+
+// F51-D: selectedId not found → CANDIDATE_NOT_FOUND
+(function() {
+  console.log('\nF51-D — selectedId not found → CANDIDATE_NOT_FOUND');
+  var adj = [_makeAdj({ id: 'a' })];
+  var r = _auditCandidateSelection(adj, 'xyz', null, {});
+  assert('F51-Da', 'selectionReason = CANDIDATE_NOT_FOUND', r.selectionReason === 'CANDIDATE_NOT_FOUND');
+  assert('F51-Db', 'selectedCandidate is null', r.selectedCandidate === null);
+})();
+
+// F51-E: null selectedId → NO_ELIGIBLE_CANDIDATES
+(function() {
+  console.log('\nF51-E — null selectedId → NO_ELIGIBLE_CANDIDATES');
+  var r = _auditCandidateSelection([], null, null, {});
+  assert('F51-Ea', 'selectionReason = NO_ELIGIBLE_CANDIDATES', r.selectionReason === 'NO_ELIGIBLE_CANDIDATES');
+  assert('F51-Eb', 'selectedCandidate is null', r.selectedCandidate === null);
+})();
+
+// F51-F: top has wouldAddCriticalIssue=true, second is eligible → second is TOP_RANKED
+(function() {
+  console.log('\nF51-F — top blocked by re-audit gate, second is effective top-ranked');
+  var adj = [
+    _makeAdj({ id: 'bad', priority: 100, wouldAddCriticalIssue: true }),
+    _makeAdj({ id: 'good', priority: 0, wouldAddCriticalIssue: false })
+  ];
+  var r = _auditCandidateSelection(adj, 'good', null, {});
+  assert('F51-Fa', 'selectionReason = TOP_RANKED (second is effective top)', r.selectionReason === 'TOP_RANKED');
+  assert('F51-Fb', 'alert is null', r.alert === null);
+})();
+
+// F51-G: historyInfluence true when priority > 0
+(function() {
+  console.log('\nF51-G — historyInfluence true when priority > 0');
+  var adj = [_makeAdj({ id: 'a', priority: 25 })];
+  var r = _auditCandidateSelection(adj, 'a', null, {});
+  assert('F51-Ga', 'historyInfluence = true', r.historyInfluence === true);
+  assert('F51-Gb', 'selectedCandidate not null', r.selectedCandidate !== null);
+})();
+
+// F51-H: historyInfluence false when priority = 0
+(function() {
+  console.log('\nF51-H — historyInfluence false when priority = 0');
+  var adj = [_makeAdj({ id: 'a', priority: 0 })];
+  var r = _auditCandidateSelection(adj, 'a', null, {});
+  assert('F51-Ha', 'historyInfluence = false', r.historyInfluence === false);
+})();
+
+// F51-I: no mutation of input adjusted array
+(function() {
+  console.log('\nF51-I — no mutation of input adjusted');
+  var adj = [_makeAdj({ id: 'a', priority: 10 })];
+  var orig = JSON.stringify(adj);
+  _auditCandidateSelection(adj, 'a', null, {});
+  assert('F51-Ia', 'adj not mutated', JSON.stringify(adj) === orig);
+  var origId = 'a';
+  _auditCandidateSelection(adj, origId, null, {});
+  assert('F51-Ib', 'selectedId not mutated', origId === 'a');
+})();
+
+// F51-J: determinism — same inputs produce same output
+(function() {
+  console.log('\nF51-J — determinism');
+  var adj = [
+    _makeAdj({ id: 'a', priority: 25 }),
+    _makeAdj({ id: 'b', priority: 0 })
+  ];
+  var r1 = _auditCandidateSelection(adj, 'b', null, {});
+  var r2 = _auditCandidateSelection(adj, 'b', null, {});
+  assert('F51-Ja', 'same selectionReason', r1.selectionReason === r2.selectionReason);
+})();
+
+// F51-K: null adjusted + null selectedId → NO_ELIGIBLE_CANDIDATES
+(function() {
+  console.log('\nF51-K — null adjusted + null selectedId → NO_ELIGIBLE_CANDIDATES');
+  var r = _auditCandidateSelection(null, null, null, {});
+  assert('F51-Ka', 'selectionReason = NO_ELIGIBLE_CANDIDATES', r.selectionReason === 'NO_ELIGIBLE_CANDIDATES');
+  assert('F51-Kb', 'selectedCandidate is null', r.selectedCandidate === null);
+})();
+
+// F51-L: alert.topRanked and alert.selected contain correct candidates
+(function() {
+  console.log('\nF51-L — alert.topRanked and alert.selected correct');
+  var adj = [
+    _makeAdj({ id: 'a', priority: 25 }),
+    _makeAdj({ id: 'b', priority: 0 })
+  ];
+  var r = _auditCandidateSelection(adj, 'b', null, {});
+  assert('F51-La', 'alert.topRanked.id = a', r.alert && r.alert.topRanked.id === 'a');
+  assert('F51-Lb', 'alert.selected.id = b', r.alert && r.alert.selected.id === 'b');
+})();
+
+// F51-M: reasonCodes from selected candidate passed through
+(function() {
+  console.log('\nF51-M — reasonCodes from selected passed through');
+  var adj = [_makeAdj({ id: 'a', reasonCodes: ['pain-kept', 'ped-free'] })];
+  var r = _auditCandidateSelection(adj, 'a', null, {});
+  assert('F51-Ma', 'reasonCodes length = 2', r.reasonCodes.length === 2);
+  assert('F51-Mb', 'reasonCodes[0] = pain-kept', r.reasonCodes[0] === 'pain-kept');
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
