@@ -9511,6 +9511,124 @@ El esfuerzo no es negociable.
     }, 300);
   };
 
+  // ─── Learned State Activation v1 (FASE 45) ─────────────────────────────────
+  // Infrastructure for applying persisted learned state as post-heuristic
+  // adjustments to Topology and Distribution engines during pre-generation.
+  // 0 new Firestore reads — state from already-loaded _detailClientData.
+  //
+  // Only ACTIVE status influences decisions. STALE and INVALID are ignored.
+  // Decision order: SAFETY/VETOES → TARGETS → HARD FILTERS → HEURISTIC SCORE
+  //                 → LEARNED STATE ADJUSTMENT → FINAL RANK
+  //
+  // Trace (source:'HISTORY') emitted only when ranking/spacing actually changed.
+
+  function _getActivePersistedLearnedState(clientData) {
+    if (!clientData || typeof clientData !== 'object') return null;
+    var ls = clientData.learnedState;
+    if (!ls || typeof ls !== 'object') return null;
+    return ls.status === 'ACTIVE' ? ls : null;
+  }
+  window._getActivePersistedLearnedState = _getActivePersistedLearnedState;
+
+  // Returns only the subset of activeState valid for the given engine.
+  // 'topology'     → topologyState only (no exerciseState, no slotState)
+  // 'distribution' → slotState only    (no exerciseState, no topologyState)
+  // Returns null when the relevant subset is absent.
+  function _selectLearnedStateForEngine(activeState, engine) {
+    if (!activeState || typeof activeState !== 'object') return null;
+    if (engine === 'topology') {
+      return (activeState.topologyState && typeof activeState.topologyState === 'object')
+        ? { topologyState: activeState.topologyState } : null;
+    }
+    if (engine === 'distribution') {
+      return (activeState.slotState && typeof activeState.slotState === 'object')
+        ? { slotState: activeState.slotState } : null;
+    }
+    return null;
+  }
+  window._selectLearnedStateForEngine = _selectLearnedStateForEngine;
+
+  // Adjusts topology candidate ranking using persisted topology learned state.
+  // topologyCandidates: Array<{ id, dayLabels?, score, hardRejected? }>
+  // Invariants:
+  //   - hardRejected candidates NEVER re-scored (hard filter respected)
+  //   - frequencyTarget NEVER modified
+  //   - input array/objects not mutated
+  //   - trace created only when ranking actually changed
+  // Returns { candidates: [...], trace: [...] }
+  function _applyLearnedTopologyAdjustment(topologyCandidates, activeLearnedState) {
+    if (!Array.isArray(topologyCandidates)) return { candidates: topologyCandidates, trace: [] };
+    var base = { candidates: topologyCandidates, trace: [] };
+    if (!topologyCandidates.length) return base;
+    var subset = _selectLearnedStateForEngine(activeLearnedState, 'topology');
+    if (!subset) return base;
+    var ts = subset.topologyState;
+    var preferred = Array.isArray(ts.preferredPatterns) ? ts.preferredPatterns : [];
+    var rejected  = Array.isArray(ts.rejectedPatterns)  ? ts.rejectedPatterns  : [];
+    if (!preferred.length && !rejected.length) return base;
+    var rankChanged = false;
+    var adjusted = topologyCandidates.map(function(c) {
+      if (c.hardRejected) return c; // safety gate: hard-rejected never revived
+      var label = Array.isArray(c.dayLabels) ? c.dayLabels.join('|') : '';
+      var isPreferred = preferred.indexOf(c.id) >= 0 || (label && preferred.indexOf(label) >= 0);
+      var isRejected  = rejected.indexOf(c.id) >= 0  || (label && rejected.indexOf(label) >= 0);
+      if (!isPreferred && !isRejected) return c;
+      var newScore = (c.score || 0) + (isPreferred ? 0.1 : 0) + (isRejected ? -0.1 : 0);
+      rankChanged = true;
+      return Object.assign({}, c, { score: newScore });
+    });
+    if (!rankChanged) return base;
+    return {
+      candidates: adjusted,
+      trace: [{
+        source: 'HISTORY',
+        engine: 'topology',
+        reasonCodes: ['TOPOLOGY_LEARNED_STATE_APPLIED'],
+        evidence: { preferredCount: preferred.length, rejectedCount: rejected.length }
+      }]
+    };
+  }
+  window._applyLearnedTopologyAdjustment = _applyLearnedTopologyAdjustment;
+
+  // Adjusts distribution spacing using persisted slot learned state.
+  // distributionDecision: { frequencyTarget, spacing, alternatives?: Array<{ spacing, hardRejected? }> }
+  // Invariants:
+  //   - frequencyTarget NEVER modified
+  //   - hardRejected alternatives NEVER selected
+  //   - input objects not mutated
+  //   - trace created only when spacing actually changed
+  // Returns { decision: {...}, trace: [...] }
+  function _applyLearnedDistributionFeedback(distributionDecision, activeLearnedState) {
+    var base = { decision: distributionDecision, trace: [] };
+    if (!distributionDecision || typeof distributionDecision !== 'object') return base;
+    var subset = _selectLearnedStateForEngine(activeLearnedState, 'distribution');
+    if (!subset) return base;
+    var ss = subset.slotState;
+    var preferred = Array.isArray(ss.preferredSpacing) ? ss.preferredSpacing : [];
+    if (!preferred.length) return base;
+    var alts = Array.isArray(distributionDecision.alternatives) ? distributionDecision.alternatives : [];
+    if (!alts.length) return base;
+    var matched = null;
+    for (var pi = 0; pi < preferred.length && !matched; pi++) {
+      var ps = preferred[pi];
+      for (var ai = 0; ai < alts.length; ai++) {
+        var alt = alts[ai];
+        if (!alt.hardRejected && alt.spacing === ps) { matched = alt; break; }
+      }
+    }
+    if (!matched || matched.spacing === distributionDecision.spacing) return base;
+    return {
+      decision: Object.assign({}, distributionDecision, { spacing: matched.spacing, _learnedSpacingApplied: true }),
+      trace: [{
+        source: 'HISTORY',
+        engine: 'distribution',
+        reasonCodes: ['DISTRIBUTION_SPACING_ADJUSTED'],
+        evidence: { from: distributionDecision.spacing, to: matched.spacing }
+      }]
+    };
+  }
+  window._applyLearnedDistributionFeedback = _applyLearnedDistributionFeedback;
+
   async function _autoGenerateForModal(clientId) {
     const statusEl = document.getElementById('_fichaGenStatus_' + clientId);
     const btn      = document.getElementById('_fichaGenBtn_' + clientId);
@@ -9535,10 +9653,25 @@ El esfuerzo no es negociable.
       const fichaTxt = (typeof intakeFormat === 'function') ? intakeFormat(ficha.data, 'md') : JSON.stringify(ficha.data, null, 2);
       const isPED = String(ficha.data.perfil || '').toLowerCase() === 'ped';
 
+      // Learned State Activation v1: resolve once from already-loaded _detailClientData
+      // (0 new Firestore reads — clientData available before this point)
+      const _activeLearnedState = _getActivePersistedLearnedState(_detailClientData || {});
+
       // P2 + P7: Decision Engine — leer contexto longitudinal antes de llamar a Claude
       setStatus('<span style="color:#888">Leyendo historial del cliente…</span>');
       const prescCtx = await buildPrescriptionContext(clientId);
       const prescCtxTxt = _prescriptionContextToText(prescCtx);
+
+      // Apply learned state adjustments to topology and distribution engines.
+      // No-ops when _activeLearnedState is null (STALE, INVALID, or absent).
+      const _lsTopoCandidates = (prescCtx && prescCtx.hasPreviousPlan && prescCtx.previousPlan)
+        ? [{ id: (prescCtx.previousPlan.dayLabels || []).join('|'), dayLabels: prescCtx.previousPlan.dayLabels || [], score: 0.5 }]
+        : [];
+      const _lsTopoResult = _applyLearnedTopologyAdjustment(_lsTopoCandidates, _activeLearnedState);
+      if (_lsTopoResult.trace.length) console.info('[VDSEN LS] topology trace:', _lsTopoResult.trace);
+      const _lsDistDecision = prescCtx ? { frequencyTarget: null, spacing: null, alternatives: [] } : null;
+      const _lsDistResult = _applyLearnedDistributionFeedback(_lsDistDecision, _activeLearnedState);
+      if (_lsDistResult.trace.length) console.info('[VDSEN LS] distribution trace:', _lsDistResult.trace);
 
       setStatus('<span style="color:#888">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();

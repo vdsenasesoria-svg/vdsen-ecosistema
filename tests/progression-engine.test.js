@@ -7796,6 +7796,277 @@ console.log('\nF39-E — adherencia 0% cuando no hay sesion done (vs semana vac�
   assert('F39-Ea', 'adherencia = 0% cuando ninguna done', adherencia === 0);
 })();
 
+// ── Learned State Activation v1 — inline copies for unit testing ────────────
+// Mirror of the functions in vdsen-coach.html (same logic, same invariants).
+function _getActivePersistedLearnedState(clientData) {
+  if (!clientData || typeof clientData !== 'object') return null;
+  var ls = clientData.learnedState;
+  if (!ls || typeof ls !== 'object') return null;
+  return ls.status === 'ACTIVE' ? ls : null;
+}
+function _selectLearnedStateForEngine(activeState, engine) {
+  if (!activeState || typeof activeState !== 'object') return null;
+  if (engine === 'topology') {
+    return (activeState.topologyState && typeof activeState.topologyState === 'object')
+      ? { topologyState: activeState.topologyState } : null;
+  }
+  if (engine === 'distribution') {
+    return (activeState.slotState && typeof activeState.slotState === 'object')
+      ? { slotState: activeState.slotState } : null;
+  }
+  return null;
+}
+function _applyLearnedTopologyAdjustment(topologyCandidates, activeLearnedState) {
+  if (!Array.isArray(topologyCandidates)) return { candidates: topologyCandidates, trace: [] };
+  var base = { candidates: topologyCandidates, trace: [] };
+  if (!topologyCandidates.length) return base;
+  var subset = _selectLearnedStateForEngine(activeLearnedState, 'topology');
+  if (!subset) return base;
+  var ts = subset.topologyState;
+  var preferred = Array.isArray(ts.preferredPatterns) ? ts.preferredPatterns : [];
+  var rejected  = Array.isArray(ts.rejectedPatterns)  ? ts.rejectedPatterns  : [];
+  if (!preferred.length && !rejected.length) return base;
+  var rankChanged = false;
+  var adjusted = topologyCandidates.map(function(c) {
+    if (c.hardRejected) return c;
+    var label = Array.isArray(c.dayLabels) ? c.dayLabels.join('|') : '';
+    var isPreferred = preferred.indexOf(c.id) >= 0 || (label && preferred.indexOf(label) >= 0);
+    var isRejected  = rejected.indexOf(c.id) >= 0  || (label && rejected.indexOf(label) >= 0);
+    if (!isPreferred && !isRejected) return c;
+    var newScore = (c.score || 0) + (isPreferred ? 0.1 : 0) + (isRejected ? -0.1 : 0);
+    rankChanged = true;
+    return Object.assign({}, c, { score: newScore });
+  });
+  if (!rankChanged) return base;
+  return {
+    candidates: adjusted,
+    trace: [{
+      source: 'HISTORY',
+      engine: 'topology',
+      reasonCodes: ['TOPOLOGY_LEARNED_STATE_APPLIED'],
+      evidence: { preferredCount: preferred.length, rejectedCount: rejected.length }
+    }]
+  };
+}
+function _applyLearnedDistributionFeedback(distributionDecision, activeLearnedState) {
+  var base = { decision: distributionDecision, trace: [] };
+  if (!distributionDecision || typeof distributionDecision !== 'object') return base;
+  var subset = _selectLearnedStateForEngine(activeLearnedState, 'distribution');
+  if (!subset) return base;
+  var ss = subset.slotState;
+  var preferred = Array.isArray(ss.preferredSpacing) ? ss.preferredSpacing : [];
+  if (!preferred.length) return base;
+  var alts = Array.isArray(distributionDecision.alternatives) ? distributionDecision.alternatives : [];
+  if (!alts.length) return base;
+  var matched = null;
+  for (var pi = 0; pi < preferred.length && !matched; pi++) {
+    var ps = preferred[pi];
+    for (var ai = 0; ai < alts.length; ai++) {
+      var alt = alts[ai];
+      if (!alt.hardRejected && alt.spacing === ps) { matched = alt; break; }
+    }
+  }
+  if (!matched || matched.spacing === distributionDecision.spacing) return base;
+  return {
+    decision: Object.assign({}, distributionDecision, { spacing: matched.spacing, _learnedSpacingApplied: true }),
+    trace: [{
+      source: 'HISTORY',
+      engine: 'distribution',
+      reasonCodes: ['DISTRIBUTION_SPACING_ADJUSTED'],
+      evidence: { from: distributionDecision.spacing, to: matched.spacing }
+    }]
+  };
+}
+
+// ═════════════════ F45: Learned State Activation v1 ═════════════════════════
+
+// F45-A: ACTIVE topology state modifica ranking de candidato compatible
+(function() {
+  console.log('\nF45-A — ACTIVE topology: modifica ranking de candidato compatible');
+  var candidates = [
+    { id: 'push|pull|legs', dayLabels: ['push', 'pull', 'legs'], score: 0.5 },
+    { id: 'upper|lower',    dayLabels: ['upper', 'lower'],       score: 0.6 }
+  ];
+  var activeLS = {
+    status: 'ACTIVE',
+    topologyState: { preferredPatterns: ['push|pull|legs'], rejectedPatterns: [] }
+  };
+  var result = _applyLearnedTopologyAdjustment(candidates, activeLS);
+  assert('F45-Aa', 'candidato preferido subió score', result.candidates[0].score > 0.5);
+  assert('F45-Ab', 'candidato no preferido sin cambio', result.candidates[1].score === 0.6);
+  assert('F45-Ac', 'trace source HISTORY emitido', result.trace.length === 1 && result.trace[0].source === 'HISTORY');
+  assert('F45-Ad', 'trace engine = topology', result.trace[0].engine === 'topology');
+})();
+
+// F45-B: STALE no influye en topology
+(function() {
+  console.log('\nF45-B — STALE topology state: no influye');
+  var candidates = [{ id: 'push|pull|legs', dayLabels: ['push', 'pull', 'legs'], score: 0.5 }];
+  var staleLS = {
+    status: 'STALE',
+    topologyState: { preferredPatterns: ['push|pull|legs'], rejectedPatterns: [] }
+  };
+  var activeLS = _getActivePersistedLearnedState({ learnedState: staleLS });
+  assert('F45-Ba', '_getActivePersistedLearnedState devuelve null para STALE', activeLS === null);
+  var result = _applyLearnedTopologyAdjustment(candidates, activeLS);
+  assert('F45-Bb', 'score sin cambio cuando STALE', result.candidates[0].score === 0.5);
+  assert('F45-Bc', 'sin trace cuando STALE', result.trace.length === 0);
+})();
+
+// F45-C: INVALID no influye en topology
+(function() {
+  console.log('\nF45-C — INVALID topology state: no influye');
+  var candidates = [{ id: 'upper|lower', dayLabels: ['upper', 'lower'], score: 0.4 }];
+  var invalidLS = {
+    status: 'INVALID',
+    topologyState: { preferredPatterns: ['upper|lower'], rejectedPatterns: [] }
+  };
+  var activeLS = _getActivePersistedLearnedState({ learnedState: invalidLS });
+  assert('F45-Ca', '_getActivePersistedLearnedState devuelve null para INVALID', activeLS === null);
+  var result = _applyLearnedTopologyAdjustment(candidates, activeLS);
+  assert('F45-Cb', 'score sin cambio cuando INVALID', result.candidates[0].score === 0.4);
+  assert('F45-Cc', 'sin trace cuando INVALID', result.trace.length === 0);
+})();
+
+// F45-D: cliente sin learnedState mantiene output anterior
+(function() {
+  console.log('\nF45-D — sin learnedState: output inalterado');
+  var candidates = [
+    { id: 'a', score: 0.3 },
+    { id: 'b', score: 0.7 }
+  ];
+  var activeLS = _getActivePersistedLearnedState({});
+  assert('F45-Da', '_getActivePersistedLearnedState retorna null sin campo', activeLS === null);
+  var topo = _applyLearnedTopologyAdjustment(candidates, activeLS);
+  var dist = _applyLearnedDistributionFeedback({ frequencyTarget: 3, spacing: 'A', alternatives: [{ spacing: 'B' }] }, activeLS);
+  assert('F45-Db', 'topology: mismos candidatos', topo.candidates === candidates);
+  assert('F45-Dc', 'topology: sin trace', topo.trace.length === 0);
+  assert('F45-Dd', 'distribution: misma decisión', dist.decision.spacing === 'A');
+  assert('F45-De', 'distribution: sin trace', dist.trace.length === 0);
+})();
+
+// F45-E: hard-rejected candidate nunca revive con ACTIVE topology
+(function() {
+  console.log('\nF45-E — hard-rejected candidate: nunca revivido por ACTIVE topology');
+  var candidates = [
+    { id: 'A', score: 0.2, hardRejected: true },
+    { id: 'B', score: 0.5 }
+  ];
+  var activeLS = {
+    status: 'ACTIVE',
+    topologyState: { preferredPatterns: ['A'], rejectedPatterns: [] }
+  };
+  var result = _applyLearnedTopologyAdjustment(candidates, activeLS);
+  // hardRejected candidato A no debe cambiar de score aunque esté en preferredPatterns
+  var cA = result.candidates.find(function(c) { return c.id === 'A'; });
+  assert('F45-Ea', 'hard-rejected score sin cambio', cA && cA.score === 0.2);
+  assert('F45-Eb', 'hardRejected flag preservado', cA && cA.hardRejected === true);
+  // solo B pudo haber cambiado si estuviera en preferred — no está, así que sin trace
+  assert('F45-Ec', 'sin trace (only hard-rejected matched)', result.trace.length === 0);
+})();
+
+// F45-F: ACTIVE distribution cambia spacing sin cambiar frequencyTarget
+(function() {
+  console.log('\nF45-F — ACTIVE distribution: cambia spacing, no frequencyTarget');
+  var decision = {
+    frequencyTarget: 3,
+    spacing: 'alternating',
+    alternatives: [
+      { spacing: 'alternating', hardRejected: false },
+      { spacing: 'consecutive', hardRejected: false }
+    ]
+  };
+  var activeLS = {
+    status: 'ACTIVE',
+    slotState: { preferredSpacing: ['consecutive'] }
+  };
+  var result = _applyLearnedDistributionFeedback(decision, activeLS);
+  assert('F45-Fa', 'spacing cambiado a preferido', result.decision.spacing === 'consecutive');
+  assert('F45-Fb', 'frequencyTarget inalterado', result.decision.frequencyTarget === 3);
+  assert('F45-Fc', 'trace source HISTORY emitido', result.trace.length === 1 && result.trace[0].source === 'HISTORY');
+  assert('F45-Fd', 'trace engine = distribution', result.trace[0].engine === 'distribution');
+  assert('F45-Fe', '_learnedSpacingApplied marcado', result.decision._learnedSpacingApplied === true);
+})();
+
+// F45-G: exerciseState no influye en Topology ni Distribution
+(function() {
+  console.log('\nF45-G — exerciseState: no influye en Topology ni Distribution');
+  var activeLS = {
+    status: 'ACTIVE',
+    exerciseState: { preferred: ['Sentadilla'], rejected: ['Peso Muerto'] }
+    // sin topologyState ni slotState
+  };
+  var topoResult = _selectLearnedStateForEngine(activeLS, 'topology');
+  var distResult = _selectLearnedStateForEngine(activeLS, 'distribution');
+  assert('F45-Ga', '_selectLearnedStateForEngine topology retorna null sin topologyState', topoResult === null);
+  assert('F45-Gb', '_selectLearnedStateForEngine distribution retorna null sin slotState', distResult === null);
+  var candidates = [{ id: 'X', score: 0.5 }];
+  var topoCands = _applyLearnedTopologyAdjustment(candidates, activeLS);
+  assert('F45-Gc', 'topology score sin cambio con solo exerciseState', topoCands.candidates[0].score === 0.5);
+  assert('F45-Gd', 'topology sin trace con solo exerciseState', topoCands.trace.length === 0);
+  var distDec = { frequencyTarget: 2, spacing: 'X', alternatives: [{ spacing: 'Y' }] };
+  var distRes = _applyLearnedDistributionFeedback(distDec, activeLS);
+  assert('F45-Ge', 'distribution spacing sin cambio con solo exerciseState', distRes.decision.spacing === 'X');
+  assert('F45-Gf', 'distribution sin trace con solo exerciseState', distRes.trace.length === 0);
+})();
+
+// F45-H: misma entrada + mismo learnedState → misma salida (determinismo)
+(function() {
+  console.log('\nF45-H — determinismo: misma entrada + mismo learnedState = misma salida');
+  var candidates = [
+    { id: 'P|PL|L', dayLabels: ['P', 'PL', 'L'], score: 0.4 },
+    { id: 'U|L',    dayLabels: ['U', 'L'],         score: 0.6 }
+  ];
+  var activeLS = {
+    status: 'ACTIVE',
+    topologyState: { preferredPatterns: ['U|L'], rejectedPatterns: ['P|PL|L'] }
+  };
+  var r1 = _applyLearnedTopologyAdjustment(candidates, activeLS);
+  var r2 = _applyLearnedTopologyAdjustment(candidates, activeLS);
+  assert('F45-Ha', 'score candidato 0 idéntico en ambas llamadas', r1.candidates[0].score === r2.candidates[0].score);
+  assert('F45-Hb', 'score candidato 1 idéntico en ambas llamadas', r1.candidates[1].score === r2.candidates[1].score);
+  assert('F45-Hc', 'trace length idéntico', r1.trace.length === r2.trace.length);
+})();
+
+// F45-I: input learnedState no mutado
+(function() {
+  console.log('\nF45-I — inmutabilidad: input learnedState y candidatos no mutados');
+  var candidates = [{ id: 'A', score: 0.5 }];
+  var activeLS = {
+    status: 'ACTIVE',
+    topologyState: { preferredPatterns: ['A'], rejectedPatterns: [] }
+  };
+  var origScore = candidates[0].score;
+  var origPreferred = activeLS.topologyState.preferredPatterns.slice();
+  _applyLearnedTopologyAdjustment(candidates, activeLS);
+  assert('F45-Ia', 'candidato original no mutado', candidates[0].score === origScore);
+  assert('F45-Ib', 'activeLS.topologyState.preferredPatterns no mutado', activeLS.topologyState.preferredPatterns.length === origPreferred.length);
+
+  var decision = { frequencyTarget: 4, spacing: 'X', alternatives: [{ spacing: 'Y' }] };
+  var origFT = decision.frequencyTarget;
+  var lsForDist = { status: 'ACTIVE', slotState: { preferredSpacing: ['Y'] } };
+  _applyLearnedDistributionFeedback(decision, lsForDist);
+  assert('F45-Ic', 'decision original no mutado (frequencyTarget)', decision.frequencyTarget === origFT);
+  assert('F45-Id', 'decision.spacing original no mutado', decision.spacing === 'X');
+})();
+
+// F45-J: 0 nuevas reads — funciones son síncronas y puras
+(function() {
+  console.log('\nF45-J — pureza: funciones sincronas, sin I/O ni efectos');
+  var startMark = Date.now();
+  var cd = { learnedState: { status: 'ACTIVE', topologyState: { preferredPatterns: [], rejectedPatterns: [] } } };
+  var ls = _getActivePersistedLearnedState(cd);
+  var sel = _selectLearnedStateForEngine(ls, 'topology');
+  var topo = _applyLearnedTopologyAdjustment([], ls);
+  var dist = _applyLearnedDistributionFeedback(null, ls);
+  var elapsed = Date.now() - startMark;
+  assert('F45-Ja', '_getActivePersistedLearnedState es síncrona y no lanza', ls !== undefined);
+  assert('F45-Jb', '_selectLearnedStateForEngine es síncrona y no lanza', sel !== undefined);
+  assert('F45-Jc', '_applyLearnedTopologyAdjustment es síncrona y no lanza', topo !== undefined);
+  assert('F45-Jd', '_applyLearnedDistributionFeedback es síncrona y no lanza', dist !== undefined);
+  assert('F45-Je', 'ejecución <5ms (sin I/O)', elapsed < 5);
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
