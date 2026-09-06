@@ -56,9 +56,9 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ---
 
-## FASE 3–12 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
+## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1544 ✓ 0 ✗** · HEAD post-FASE12
+> Suite: **1568 ✓ 0 ✗** · HEAD post-FASE13
 
 ### Arquitectura conceptual
 
@@ -395,6 +395,47 @@ baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score fi
 **Tests:** TLT1-TLT14 (30 aserciones) en `tests/progression-engine.test.js`
 
 **Suite: 1544 ✓ 0 ✗**
+
+---
+
+### FASE 13 — Learned State Persistence Contract
+
+**Archivos modificados:** `vdsen-coach.html` (funciones FASE 13 + motor prompt delta), `tests/progression-engine.test.js` (sección TLP1-TLP18)
+
+**Funciones añadidas a `vdsen-coach.html`:**
+- `_LEARNED_STATE_SCHEMA_VERSION` — `'vdsen-learned-state-v1'` (distinto de FASE 8's `_LEARNED_STATE_VERSION = 'derived-v1'`)
+- `_LEARNED_STATE_STATUS` — enum `{ ACTIVE, STALE, INVALID }`
+- `_LEARNED_STATE_SIZE_THRESHOLD` — `{ INLINE_SAFE: 51200, REVIEW_NEEDED: 204800 }` (HEURISTIC)
+- `_buildPersistableLearnedState(type, data, opts)` — construye estado persistible; devuelve null si autoFilled/autoClosed/confidence=NONE/observations<1; incluye stateVersion + sourcePlanIds + updatedAt
+- `_validatePersistedLearnedState(state)` — valida versión, tipo, confidence, observations, provenance, timestamp → `{ valid, reasons[] }`
+- `_classifyLearnedStateStatus(state, context)` — ACTIVE / STALE / INVALID según slot/identity/engineVersion changes
+- `_estimateLearnedStateSize(learnedStateBundle)` — JSON.stringify size estimate → INLINE_SAFE / REVIEW_NEEDED / DEFERRED_NEEDS_DECISION
+- `_mergeCompatibleLearnedState(existing, incoming, context)` — prefiere incoming si existing es STALE/INVALID o versión incompatible; no mezcla versiones incompatibles silenciosamente
+- `_runPersistenceContractTests()` — inline browser: TLP1-TLP18 (26 aserciones)
+
+**PERSISTENCE CONTRACT:**
+| Condición | Resultado |
+|-----------|-----------|
+| autoFilled/autoClosed | No persistir (null) |
+| confidence = NONE | No persistir (null) |
+| observations < 1 | No persistir (null) |
+| stateVersion incompatible | INVALID → ignorar |
+| slot changed structurally | STALE → no influye |
+| exerciseIdentity changed | STALE → no influye |
+| engineVersion changed | STALE → no influye |
+| STALE + valid incoming | merge usa incoming |
+| null/null merge | null, no crash |
+| totalBytes < 50KB | INLINE_SAFE |
+| totalBytes 50-200KB | REVIEW_NEEDED |
+| totalBytes > 200KB | DEFERRED_NEEDS_DECISION |
+
+**Storage audit:** `clients/{uid}.learnedState` como bloque aditivo, pendiente FASE 14 para decidir si tamaño/crecimiento justifica colección separada.
+
+**Motor Prompt Delta:** sección "### LEARNED STATE PERSISTENCE (FASE 13)" añadida en `_MOTOR_PROMPT_EMBEDDED` tras FASE 12.
+
+**Tests:** TLP1-TLP18 (26 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1568 ✓ 0 ✗**
 
 ---
 

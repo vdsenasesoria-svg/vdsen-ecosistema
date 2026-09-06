@@ -10413,6 +10413,244 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 12 learned topology feedback ✓');
 })();
 
+// ════════════════ FASE 13 — Learned State Persistence Contract ════════════════
+// Node-runnable T-suffix copies of FASE 13 functions.
+(function() {
+  console.log('\n── FASE 13: Learned State Persistence Contract ──────────────');
+
+  // ── Local constants ───────────────────────────────────────────────────────
+  var _LEARNED_STATE_SCHEMA_VERSION = 'vdsen-learned-state-v1';
+  var _LSS = { ACTIVE: 'ACTIVE', STALE: 'STALE', INVALID: 'INVALID' };
+  var _LEARNED_STATE_SIZE_THRESHOLD = { INLINE_SAFE: 51200, REVIEW_NEEDED: 204800 };
+
+  // ── T-suffix copies ───────────────────────────────────────────────────────
+  function _buildPersistableLearnedState_T(type, data, opts) {
+    if (!data) return null;
+    var o = opts || {};
+    var conf = data.confidence;
+    if (!conf || conf === 'NONE') return null;
+    var obs = data.observations;
+    if (!obs || obs < 1) return null;
+    if (data.autoFilled || data.autoClosed) return null;
+    var base = {
+      stateVersion:  _LEARNED_STATE_SCHEMA_VERSION,
+      engineVersion: o.engineVersion || null,
+      type:          type,
+      status:        _LSS.ACTIVE,
+      confidence:    conf,
+      observations:  obs,
+      sourcePlanIds: Array.isArray(o.sourcePlanIds) ? o.sourcePlanIds.slice() : [],
+      updatedAt:     o.now || null
+    };
+    if (type === 'EXERCISE') {
+      base.exerciseIdentity = data.exerciseIdentity || null;
+      base.loadTrend        = data.loadTrend        || null;
+      base.rirConsistency   = data.rirConsistency   || null;
+      base.icsTrend         = data.icsTrend         || null;
+      base.tolerance        = data.tolerance        || null;
+      base.painSignals      = data.painSignals      || [];
+    } else if (type === 'SLOT') {
+      base.prescriptionSlot  = data.prescriptionSlot  || null;
+      base.performanceTrend  = data.performanceTrend  || null;
+      base.recoveryTrend     = data.recoveryTrend     || null;
+      base.adherenceTrend    = data.adherenceTrend    || null;
+      base.painSignals       = data.painSignals       || [];
+      base.toleratedSpacing  = data.toleratedSpacing  || null;
+    } else if (type === 'TOPOLOGY') {
+      base.topology         = data.topology         || null;
+      base.adherenceTrend   = data.adherenceTrend   || null;
+      base.performanceTrend = data.performanceTrend || null;
+      base.recoveryTrend    = data.recoveryTrend    || null;
+      base.rirConsistency   = data.rirConsistency   || null;
+      base.painSignals      = data.painSignals      || [];
+    }
+    return base;
+  }
+
+  function _validatePersistedLearnedState_T(state) {
+    if (!state) return { valid: false, reasons: ['NULL_STATE'] };
+    var reasons = [];
+    if (!state.stateVersion)                                           reasons.push('MISSING_VERSION');
+    else if (state.stateVersion !== _LEARNED_STATE_SCHEMA_VERSION)    reasons.push('INCOMPATIBLE_VERSION');
+    if (!state.type)                                                   reasons.push('MISSING_TYPE');
+    if (!state.confidence || state.confidence === 'NONE')             reasons.push('NO_CONFIDENCE');
+    if (!state.observations || state.observations < 1)                reasons.push('NO_OBSERVATIONS');
+    if (!Array.isArray(state.sourcePlanIds))                          reasons.push('MISSING_PROVENANCE');
+    if (!state.updatedAt)                                             reasons.push('MISSING_UPDATED_AT');
+    return { valid: reasons.length === 0, reasons: reasons };
+  }
+
+  function _classifyLearnedStateStatus_T(state, context) {
+    if (!state) return _LSS.INVALID;
+    var validation = _validatePersistedLearnedState_T(state);
+    if (!validation.valid) return _LSS.INVALID;
+    var ctx = context || {};
+    if (state.type === 'SLOT'     && ctx.slotChanged)             return _LSS.STALE;
+    if (state.type === 'EXERCISE' && ctx.exerciseIdentityChanged) return _LSS.STALE;
+    if (ctx.engineVersionChanged)                                  return _LSS.STALE;
+    return _LSS.ACTIVE;
+  }
+
+  function _estimateLearnedStateSize_T(bundle) {
+    if (!bundle) return { exerciseBytes: 0, slotBytes: 0, topologyBytes: 0, totalBytes: 0, recommendation: 'INLINE_SAFE' };
+    var exerciseBytes  = JSON.stringify(bundle.exercise  || {}).length;
+    var slotBytes      = JSON.stringify(bundle.slot      || {}).length;
+    var topologyBytes  = JSON.stringify(bundle.topology  || {}).length;
+    var totalBytes     = exerciseBytes + slotBytes + topologyBytes;
+    var recommendation = totalBytes < _LEARNED_STATE_SIZE_THRESHOLD.INLINE_SAFE   ? 'INLINE_SAFE'
+                       : totalBytes < _LEARNED_STATE_SIZE_THRESHOLD.REVIEW_NEEDED ? 'REVIEW_NEEDED'
+                       : 'DEFERRED_NEEDS_DECISION';
+    return { exerciseBytes: exerciseBytes, slotBytes: slotBytes, topologyBytes: topologyBytes, totalBytes: totalBytes, recommendation: recommendation };
+  }
+
+  function _mergeCompatibleLearnedState_T(existing, incoming, context) {
+    var ctx = context || {};
+    if (!existing) {
+      if (!incoming) return null;
+      return _validatePersistedLearnedState_T(incoming).valid ? incoming : null;
+    }
+    var existStatus = _classifyLearnedStateStatus_T(existing, ctx);
+    var valIn = _validatePersistedLearnedState_T(incoming);
+    if (!valIn.valid) return existing;
+    if (existing.stateVersion !== _LEARNED_STATE_SCHEMA_VERSION) return incoming;
+    if (existStatus === _LSS.STALE || existStatus === _LSS.INVALID) return incoming;
+    var confOrder = { HIGH: 3, MODERATE: 2, LOW: 1, NONE: 0 };
+    var existConf = confOrder[existing.confidence] || 0;
+    var inConf    = confOrder[incoming.confidence] || 0;
+    return inConf >= existConf ? incoming : existing;
+  }
+
+  var _LSV = _LEARNED_STATE_SCHEMA_VERSION;
+
+  // ── TLP1: ACTIVE state classifies correctly ───────────────────────────────
+  (function TLP1() {
+    var s = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'HIGH', observations: 8, sourcePlanIds: ['p1'], updatedAt: '2026-01-01', status: 'ACTIVE' };
+    assert('TLP1', 'valid state → ACTIVE', _classifyLearnedStateStatus_T(s, {}) === _LSS.ACTIVE);
+  })();
+
+  // ── TLP2: STALE state when slot changed ───────────────────────────────────
+  (function TLP2() {
+    var s = { stateVersion: _LSV, type: 'SLOT', confidence: 'HIGH', observations: 6, sourcePlanIds: ['p1'], updatedAt: '2026-01-01' };
+    assert('TLP2', 'slot changed → STALE', _classifyLearnedStateStatus_T(s, { slotChanged: true }) === _LSS.STALE);
+  })();
+
+  // ── TLP3: INVALID state — null input ─────────────────────────────────────
+  (function TLP3() {
+    assert('TLP3', 'null → INVALID', _classifyLearnedStateStatus_T(null, {}) === _LSS.INVALID);
+  })();
+
+  // ── TLP4: incompatible stateVersion → INVALID ────────────────────────────
+  (function TLP4() {
+    var s = { stateVersion: 'vdsen-learned-state-v0', type: 'EXERCISE', confidence: 'HIGH', observations: 5, sourcePlanIds: ['p1'], updatedAt: '2026-01-01' };
+    var v = _validatePersistedLearnedState_T(s);
+    assert('TLP4a', 'old version → validate invalid', !v.valid);
+    assert('TLP4b', 'old version → INCOMPATIBLE_VERSION reason', v.reasons.indexOf('INCOMPATIBLE_VERSION') >= 0);
+  })();
+
+  // ── TLP5: autoFilled → not persistable ───────────────────────────────────
+  (function TLP5() {
+    var data = { confidence: 'HIGH', observations: 5, autoFilled: true };
+    assert('TLP5', 'autoFilled → null', _buildPersistableLearnedState_T('EXERCISE', data, {}) === null);
+  })();
+
+  // ── TLP6: autoClosed → not persistable ───────────────────────────────────
+  (function TLP6() {
+    var data = { confidence: 'HIGH', observations: 5, autoClosed: true };
+    assert('TLP6', 'autoClosed → null', _buildPersistableLearnedState_T('EXERCISE', data, {}) === null);
+  })();
+
+  // ── TLP7: NONE confidence (unresolved) → not persistable ─────────────────
+  (function TLP7() {
+    var data = { confidence: 'NONE', observations: 0 };
+    assert('TLP7', 'NONE confidence → null', _buildPersistableLearnedState_T('EXERCISE', data, {}) === null);
+  })();
+
+  // ── TLP8: structural slot change → STALE ─────────────────────────────────
+  (function TLP8() {
+    var s = { stateVersion: _LSV, type: 'SLOT', confidence: 'MODERATE', observations: 4, sourcePlanIds: ['p1'], updatedAt: '2026-01-01' };
+    assert('TLP8', 'structural slot change → STALE', _classifyLearnedStateStatus_T(s, { slotChanged: true }) === _LSS.STALE);
+  })();
+
+  // ── TLP9: same-slot replacement → slot state ACTIVE ──────────────────────
+  (function TLP9() {
+    var s = { stateVersion: _LSV, type: 'SLOT', confidence: 'MODERATE', observations: 4, sourcePlanIds: ['p1'], updatedAt: '2026-01-01' };
+    assert('TLP9', 'no slot change → ACTIVE', _classifyLearnedStateStatus_T(s, { slotChanged: false }) === _LSS.ACTIVE);
+  })();
+
+  // ── TLP10: exercise identity changed → STALE → merge returns incoming ─────
+  (function TLP10() {
+    var existing = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'HIGH', observations: 8, sourcePlanIds: ['p1'], updatedAt: '2026-01-01' };
+    var incoming = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'MODERATE', observations: 4, sourcePlanIds: ['p2'], updatedAt: '2026-02-01' };
+    var ctx = { exerciseIdentityChanged: true };
+    assert('TLP10a', 'identity changed → STALE', _classifyLearnedStateStatus_T(existing, ctx) === _LSS.STALE);
+    var merged = _mergeCompatibleLearnedState_T(existing, incoming, ctx);
+    assert('TLP10b', 'merge stale existing → incoming', merged === incoming);
+  })();
+
+  // ── TLP11: topology state separate from exercise state ───────────────────
+  (function TLP11() {
+    var data = { topology: 'TWO_ON_ONE_OFF', confidence: 'HIGH', observations: 6, adherenceTrend: 'CONSISTENT', performanceTrend: 'INCREASING', recoveryTrend: 'STABLE', rirConsistency: null, painSignals: [] };
+    var s = _buildPersistableLearnedState_T('TOPOLOGY', data, { sourcePlanIds: ['p1'], now: '2026-01-01', engineVersion: '3.0.0' });
+    assert('TLP11a', 'topology state has topology field', s && s.topology === 'TWO_ON_ONE_OFF');
+    assert('TLP11b', 'topology state has no exerciseIdentity', s && s.exerciseIdentity === undefined);
+  })();
+
+  // ── TLP12: provenance preserved in sourcePlanIds ──────────────────────────
+  (function TLP12() {
+    var data = { confidence: 'HIGH', observations: 6, exerciseIdentity: { name: 'Squat' }, painSignals: [] };
+    var s = _buildPersistableLearnedState_T('EXERCISE', data, { sourcePlanIds: ['planA', 'planB'], now: '2026-01-01' });
+    assert('TLP12', 'sourcePlanIds preserved', s && s.sourcePlanIds.length === 2 && s.sourcePlanIds[0] === 'planA');
+  })();
+
+  // ── TLP13: no mutation of input data ─────────────────────────────────────
+  (function TLP13() {
+    var data = { confidence: 'HIGH', observations: 5, painSignals: [], exerciseIdentity: { name: 'RDL' } };
+    var origConf = data.confidence;
+    _buildPersistableLearnedState_T('EXERCISE', data, { sourcePlanIds: ['p1'], now: '2026-01-01' });
+    assert('TLP13', 'input data not mutated', data.confidence === origConf && data.stateVersion === undefined);
+  })();
+
+  // ── TLP14: size estimator returns recommendation ──────────────────────────
+  (function TLP14() {
+    var bundle = { exercise: { confidence: 'HIGH', observations: 5 }, slot: {}, topology: {} };
+    var est = _estimateLearnedStateSize_T(bundle);
+    assert('TLP14a', 'estimator returns totalBytes', typeof est.totalBytes === 'number' && est.totalBytes > 0);
+    assert('TLP14b', 'small bundle → INLINE_SAFE', est.recommendation === 'INLINE_SAFE');
+  })();
+
+  // ── TLP15: zero observations → not persistable (write strategy gate) ──────
+  (function TLP15() {
+    var data = { confidence: 'NONE', observations: 0 };
+    assert('TLP15', 'zero observations → not persistable', _buildPersistableLearnedState_T('EXERCISE', data, {}) === null);
+  })();
+
+  // ── TLP16: backward compatibility — null/null → no crash ─────────────────
+  (function TLP16() {
+    var result;
+    try { result = _mergeCompatibleLearnedState_T(null, null, {}); } catch(e) { result = 'ERROR'; }
+    assert('TLP16', 'null/null merge → no crash, returns null', result === null);
+  })();
+
+  // ── TLP17: incompatible stateVersion → classify INVALID ──────────────────
+  (function TLP17() {
+    var s = { stateVersion: 'vdsen-learned-state-v99', type: 'EXERCISE', confidence: 'HIGH', observations: 5, sourcePlanIds: [], updatedAt: '2026-01-01' };
+    var v = _validatePersistedLearnedState_T(s);
+    assert('TLP17a', 'bad version → not valid', !v.valid);
+    assert('TLP17b', 'bad version → classify INVALID', _classifyLearnedStateStatus_T(s, {}) === _LSS.INVALID);
+  })();
+
+  // ── TLP18: merge prefers valid newer over incompatible old ────────────────
+  (function TLP18() {
+    var existing = { stateVersion: 'vdsen-learned-state-v0', type: 'EXERCISE', confidence: 'HIGH', observations: 10, sourcePlanIds: ['p1'], updatedAt: '2025-01-01' };
+    var incoming = { stateVersion: _LSV, type: 'EXERCISE', confidence: 'MODERATE', observations: 4, sourcePlanIds: ['p2'], updatedAt: '2026-01-01' };
+    var merged = _mergeCompatibleLearnedState_T(existing, incoming, {});
+    assert('TLP18a', 'merge prefers valid newer over incompatible old', merged === incoming);
+    assert('TLP18b', 'merged has current schema version', merged && merged.stateVersion === _LSV);
+  })();
+
+  console.log('── FASE 13 persistence contract ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
