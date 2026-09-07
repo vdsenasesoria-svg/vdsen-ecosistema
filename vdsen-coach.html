@@ -11269,9 +11269,55 @@ El esfuerzo no es negociable.
       } else if (execDay && execDay.sessionDone) {
         dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(68,187,136,.1);border:1px solid rgba(68,187,136,.35);color:#44BB88;font-weight:700">✓ COMPLETADA</span>';
       }
+      // FASE 63 — compute day summary from execDay (real sets only)
+      var _f63setsReal = 0, _f63setsAF = 0, _f63exReal = 0, _f63rirSum = 0, _f63rirN = 0, _f63vKg = 0, _f63vLb = 0;
+      var _f63setsTotal = 0;
+      for (var _f63i = 0; _f63i < exs.length; _f63i++) { _f63setsTotal += (exs[_f63i].sets||[]).length || (exs[_f63i].numSeries||0); }
+      if (execDay) {
+        var _f63xl = execDay.exercises || [];
+        for (var _f63ei = 0; _f63ei < _f63xl.length; _f63ei++) {
+          var _f63xex = _f63xl[_f63ei]; var _f63exH = false;
+          var _f63sl = _f63xex.sets || [];
+          for (var _f63si = 0; _f63si < _f63sl.length; _f63si++) {
+            var _f63xs = _f63sl[_f63si];
+            if (_f63xs.isAutoFilled) { _f63setsAF++; }
+            else if (_f63xs.done) {
+              _f63setsReal++; _f63exH = true;
+              if (_f63xs.rir_real != null) { _f63rirSum += _f63xs.rir_real; _f63rirN++; }
+              var _f63c = _f63xs.carga != null ? parseFloat(_f63xs.carga) : 0;
+              var _f63r = _f63xs.reps  != null ? parseFloat(_f63xs.reps)  : 0;
+              var _f63v = (isNaN(_f63c)||isNaN(_f63r)) ? 0 : _f63c * _f63r;
+              if ((_f63xs.unit||'kg').toLowerCase()==='lb') _f63vLb += _f63v; else _f63vKg += _f63v;
+            }
+          }
+          if (_f63exH) _f63exReal++;
+        }
+      }
+      var _f63avgRir = _f63rirN > 0 ? Math.round((_f63rirSum / _f63rirN) * 10) / 10 : null;
+      var _f63hasAny = _f63setsReal > 0 || _f63setsAF > 0;
+      var _f63summaryHtml = '';
+      if (execDay && (_f63hasAny || (execDay.sessionDone) || (execDay.sessionAutoClosed))) {
+        var _f63parts = [];
+        _f63parts.push('<span style="color:#aaa">Series:</span> <span style="color:#F4F4F0;font-weight:700">'
+          + _f63setsReal + '</span><span style="color:#555">/'+_f63setsTotal+'</span>');
+        _f63parts.push('<span style="color:#aaa">Ejerc.:</span> <span style="color:#F4F4F0;font-weight:700">'
+          + _f63exReal + '</span><span style="color:#555">/'+exs.length+'</span>');
+        if (_f63avgRir !== null)
+          _f63parts.push('<span style="color:#aaa">RIR real:</span> <span style="color:#F4F4F0;font-weight:700">'+_f63avgRir+'</span>');
+        if (_f63vKg > 0)
+          _f63parts.push('<span style="color:#aaa">Vol:</span> <span style="color:#F4F4F0;font-weight:700">'+Math.round(_f63vKg)+' kg</span>');
+        if (_f63vLb > 0)
+          _f63parts.push('<span style="color:#aaa">Vol:</span> <span style="color:#F4F4F0;font-weight:700">'+Math.round(_f63vLb)+' lb</span>');
+        if (_f63setsAF > 0)
+          _f63parts.push('<span style="color:#666">auto-relleno: '+_f63setsAF+'</span>');
+        _f63summaryHtml = '<div style="padding:5px 12px;display:flex;flex-wrap:wrap;gap:10px;font-size:11px;background:rgba(244,244,240,.03);border-bottom:1px solid rgba(244,244,240,.06)">'
+          + _f63parts.join(' <span style="color:#333">·</span> ')
+          + '</div>';
+      }
       html += '<div style="margin-bottom:14px;border:1px solid rgba(244,244,240,.12);border-radius:10px;overflow:hidden">'
         + '<div style="background:rgba(244,244,240,.07);padding:8px 12px;border-bottom:1px solid rgba(244,244,240,.08)">'
-        + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span>'+dayDeloadBadge+dayExecBadge+'</div>';
+        + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span>'+dayDeloadBadge+dayExecBadge+'</div>'
+        + _f63summaryHtml;
       if (!exs.length) {
         html += '<div style="padding:10px 12px;color:#555;font-size:12px">Sin ejercicios</div>';
       }
@@ -11916,6 +11962,83 @@ El esfuerzo no es negociable.
     return { status: status, issues: issues, summary: summary };
   }
   window._auditClientMirrorExecutionParity = _auditClientMirrorExecutionParity;
+
+  // ========== FASE 63 — CLIENT MIRROR SESSION SUMMARY ==========
+
+  function _buildClientMirrorSessionSummary(plan, logs, week, execState) {
+    var result = { week: week, days: [] };
+    if (!plan || !Array.isArray(plan.days) || !execState || !Array.isArray(execState.days)) return result;
+    var sortedDays = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
+    for (var di = 0; di < sortedDays.length; di++) {
+      var d = sortedDays[di];
+      var D = d.dayIndex != null ? d.dayIndex : di;
+      var exs = d.exercises || [];
+      var execDay = null;
+      for (var xdi = 0; xdi < execState.days.length; xdi++) {
+        if (execState.days[xdi].dayIndex === D) { execDay = execState.days[xdi]; break; }
+      }
+      // Prescribed set count across exercises (using sets array lengths)
+      var setsTotal = 0;
+      for (var ei = 0; ei < exs.length; ei++) {
+        setsTotal += (exs[ei].sets || []).length || (exs[ei].numSeries || 0);
+      }
+      var setsReal      = 0;
+      var setsAutoFilled = 0;
+      var exercisesReal = 0;
+      var ririSum       = 0;
+      var rirCount      = 0;
+      var volKg         = 0;
+      var volLb         = 0;
+      var hasAnyExecData = false;
+      if (execDay) {
+        var exList = execDay.exercises || [];
+        for (var ei2 = 0; ei2 < exList.length; ei2++) {
+          var xEx = exList[ei2];
+          var exHasReal = false;
+          var sets = xEx.sets || [];
+          for (var si = 0; si < sets.length; si++) {
+            var xs = sets[si];
+            hasAnyExecData = true;
+            if (xs.isAutoFilled) {
+              setsAutoFilled++;
+            } else if (xs.done) {
+              setsReal++;
+              exHasReal = true;
+              if (xs.rir_real != null) { ririSum += xs.rir_real; rirCount++; }
+              var carga = xs.carga != null ? parseFloat(xs.carga) : 0;
+              var reps  = xs.reps  != null ? parseFloat(xs.reps)  : 0;
+              var vol   = isNaN(carga) || isNaN(reps) ? 0 : carga * reps;
+              if ((xs.unit || 'kg').toLowerCase() === 'lb') volLb += vol;
+              else                                           volKg  += vol;
+            }
+          }
+          if (exHasReal) exercisesReal++;
+        }
+      }
+      var sessionState;
+      if (execDay && execDay.sessionAutoClosed) sessionState = 'admin';
+      else if (execDay && execDay.sessionDone)  sessionState = 'complete';
+      else if (setsReal > 0)                    sessionState = 'partial';
+      else                                      sessionState = 'none';
+      var avgRirReal = rirCount > 0 ? Math.round((ririSum / rirCount) * 10) / 10 : null;
+      result.days.push({
+        dayIndex:      D,
+        label:         d.label || '',
+        sessionState:  sessionState,
+        setsReal:      setsReal,
+        setsTotal:     setsTotal,
+        setsAutoFilled:setsAutoFilled,
+        exercisesReal: exercisesReal,
+        exercisesTotal:exs.length,
+        avgRirReal:    avgRirReal,
+        volKg:         volKg,
+        volLb:         volLb,
+        hasAnyExecData:hasAnyExecData
+      });
+    }
+    return result;
+  }
+  window._buildClientMirrorSessionSummary = _buildClientMirrorSessionSummary;
 
   // ========== FASE 26 — COMPARACIÓN DE PLANES ==========
 

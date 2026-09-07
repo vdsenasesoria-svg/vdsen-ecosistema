@@ -11296,9 +11296,18 @@ function _buildClientMirrorView(plan, week, execState) {
     } else if (execDay && execDay.sessionDone) {
       dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(68,187,136,.1);border:1px solid rgba(68,187,136,.35);color:#44BB88;font-weight:700">✓ COMPLETADA</span>';
     }
+    // FASE 63 — compute day summary from execDay (real sets only)
+    var _f63setsReal=0,_f63setsAF=0,_f63exReal=0,_f63rirSum=0,_f63rirN=0,_f63vKg=0,_f63vLb=0,_f63setsTotal=0;
+    for(var _f63i=0;_f63i<exs.length;_f63i++){_f63setsTotal+=(exs[_f63i].sets||[]).length||(exs[_f63i].numSeries||0);}
+    if(execDay){var _f63xl=execDay.exercises||[];for(var _f63ei=0;_f63ei<_f63xl.length;_f63ei++){var _f63xex=_f63xl[_f63ei];var _f63exH=false;var _f63sl=_f63xex.sets||[];for(var _f63si=0;_f63si<_f63sl.length;_f63si++){var _f63xs=_f63sl[_f63si];if(_f63xs.isAutoFilled){_f63setsAF++;}else if(_f63xs.done){_f63setsReal++;_f63exH=true;if(_f63xs.rir_real!=null){_f63rirSum+=_f63xs.rir_real;_f63rirN++;}var _f63c=_f63xs.carga!=null?parseFloat(_f63xs.carga):0;var _f63r=_f63xs.reps!=null?parseFloat(_f63xs.reps):0;var _f63v=(isNaN(_f63c)||isNaN(_f63r))?0:_f63c*_f63r;if((_f63xs.unit||'kg').toLowerCase()==='lb')_f63vLb+=_f63v;else _f63vKg+=_f63v;}}if(_f63exH)_f63exReal++;}}
+    var _f63avgRir=_f63rirN>0?Math.round((_f63rirSum/_f63rirN)*10)/10:null;
+    var _f63hasAny=_f63setsReal>0||_f63setsAF>0;
+    var _f63summaryHtml='';
+    if(execDay&&(_f63hasAny||(execDay.sessionDone)||(execDay.sessionAutoClosed))){var _f63parts=[];_f63parts.push('<span style="color:#aaa">Series:</span> <span style="color:#F4F4F0;font-weight:700">'+_f63setsReal+'</span><span style="color:#555">/'+_f63setsTotal+'</span>');_f63parts.push('<span style="color:#aaa">Ejerc.:</span> <span style="color:#F4F4F0;font-weight:700">'+_f63exReal+'</span><span style="color:#555">/'+exs.length+'</span>');if(_f63avgRir!==null)_f63parts.push('<span style="color:#aaa">RIR real:</span> <span style="color:#F4F4F0;font-weight:700">'+_f63avgRir+'</span>');if(_f63vKg>0)_f63parts.push('<span style="color:#aaa">Vol:</span> <span style="color:#F4F4F0;font-weight:700">'+Math.round(_f63vKg)+' kg</span>');if(_f63vLb>0)_f63parts.push('<span style="color:#aaa">Vol:</span> <span style="color:#F4F4F0;font-weight:700">'+Math.round(_f63vLb)+' lb</span>');if(_f63setsAF>0)_f63parts.push('<span style="color:#666">auto-relleno: '+_f63setsAF+'</span>');_f63summaryHtml='<div style="padding:5px 12px;display:flex;flex-wrap:wrap;gap:10px;font-size:11px;background:rgba(244,244,240,.03);border-bottom:1px solid rgba(244,244,240,.06)">'+_f63parts.join(' <span style="color:#333">·</span> ')+'</div>';}
     html += '<div style="margin-bottom:14px;border:1px solid rgba(244,244,240,.12);border-radius:10px;overflow:hidden">'
       + '<div style="background:rgba(244,244,240,.07);padding:8px 12px;border-bottom:1px solid rgba(244,244,240,.08)">'
-      + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span>'+dayDeloadBadge+dayExecBadge+'</div>';
+      + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span>'+dayDeloadBadge+dayExecBadge+'</div>'
+      + _f63summaryHtml;
     if (!exs.length) {
       html += '<div style="padding:10px 12px;color:#555;font-size:12px">Sin ejercicios</div>';
     }
@@ -12749,6 +12758,298 @@ function _auditClientMirrorExecutionParity(plan, logs, week, execState) {
   var vm = audit.issues.filter(function(i){ return i.type === 'VALUE_MISMATCH' && i.detail && i.detail.indexOf('rir_real') !== -1; });
   assert('F62-Nb', 'no rir_real VALUE_MISMATCH when both are 0', vm.length === 0);
   assert('F62-Nc', 'status OK', audit.status === 'OK');
+})();
+
+// ─── F63 inline helper (pure, mirrors coach implementation exactly) ───────────
+
+function _buildClientMirrorSessionSummary(plan, logs, week, execState) {
+  var result = { week: week, days: [] };
+  if (!plan || !Array.isArray(plan.days) || !execState || !Array.isArray(execState.days)) return result;
+  var sortedDays = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
+  for (var di = 0; di < sortedDays.length; di++) {
+    var d = sortedDays[di];
+    var D = d.dayIndex != null ? d.dayIndex : di;
+    var exs = d.exercises || [];
+    var execDay = null;
+    for (var xdi = 0; xdi < execState.days.length; xdi++) {
+      if (execState.days[xdi].dayIndex === D) { execDay = execState.days[xdi]; break; }
+    }
+    var setsTotal = 0;
+    for (var ei = 0; ei < exs.length; ei++) { setsTotal += (exs[ei].sets||[]).length || (exs[ei].numSeries||0); }
+    var setsReal=0, setsAutoFilled=0, exercisesReal=0, ririSum=0, rirCount=0, volKg=0, volLb=0, hasAnyExecData=false;
+    if (execDay) {
+      var exList = execDay.exercises || [];
+      for (var ei2 = 0; ei2 < exList.length; ei2++) {
+        var xEx = exList[ei2]; var exHasReal = false;
+        var sets = xEx.sets || [];
+        for (var si = 0; si < sets.length; si++) {
+          var xs = sets[si]; hasAnyExecData = true;
+          if (xs.isAutoFilled) { setsAutoFilled++; }
+          else if (xs.done) {
+            setsReal++; exHasReal = true;
+            if (xs.rir_real != null) { ririSum += xs.rir_real; rirCount++; }
+            var carga = xs.carga != null ? parseFloat(xs.carga) : 0;
+            var reps  = xs.reps  != null ? parseFloat(xs.reps)  : 0;
+            var vol   = isNaN(carga)||isNaN(reps) ? 0 : carga * reps;
+            if ((xs.unit||'kg').toLowerCase()==='lb') volLb += vol; else volKg += vol;
+          }
+        }
+        if (exHasReal) exercisesReal++;
+      }
+    }
+    var sessionState;
+    if      (execDay && execDay.sessionAutoClosed) sessionState = 'admin';
+    else if (execDay && execDay.sessionDone)       sessionState = 'complete';
+    else if (setsReal > 0)                         sessionState = 'partial';
+    else                                           sessionState = 'none';
+    var avgRirReal = rirCount > 0 ? Math.round((ririSum / rirCount) * 10) / 10 : null;
+    result.days.push({ dayIndex:D, label:d.label||'', sessionState:sessionState,
+      setsReal:setsReal, setsTotal:setsTotal, setsAutoFilled:setsAutoFilled,
+      exercisesReal:exercisesReal, exercisesTotal:exs.length,
+      avgRirReal:avgRirReal, volKg:volKg, volLb:volLb, hasAnyExecData:hasAnyExecData });
+  }
+  return result;
+}
+
+// ─── F63 TEST CASES ───────────────────────────────────────────────────────────
+
+// F63-A: Sesión completa — todos los sets reales
+(function() {
+  console.log('\nF63-A — sesión completa, todos los sets reales');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Press', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 },
+                                  { setIndex:1, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:82, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:9, pump:1, ts:100 },
+    'log_1_0_0_s1': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:2, ics:8, pump:1, ts:200 },
+    'done_1_0': { ts:300 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var summ  = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  var day = summ.days[0];
+  assert('F63-Aa', 'sessionState=complete', day.sessionState === 'complete');
+  assert('F63-Ab', 'setsReal=2', day.setsReal === 2);
+  assert('F63-Ac', 'setsTotal=2', day.setsTotal === 2);
+  assert('F63-Ad', 'exercisesReal=1', day.exercisesReal === 1);
+  assert('F63-Ae', 'setsAutoFilled=0', day.setsAutoFilled === 0);
+  assert('F63-Af', 'avgRirReal=1.5', day.avgRirReal === 1.5);
+  assert('F63-Ag', 'volKg=82*8+80*8=1296', day.volKg === 1296);
+  assert('F63-Ah', 'volLb=0', day.volLb === 0);
+})();
+
+// F63-B: Sesión parcial — solo algunos sets completados
+(function() {
+  console.log('\nF63-B — sesión parcial');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Squat', sets:[{ setIndex:0, repsTarget:5, rirTarget:1, load:120, restSeconds:180 },
+                                  { setIndex:1, repsTarget:5, rirTarget:1, load:120, restSeconds:180 },
+                                  { setIndex:2, repsTarget:5, rirTarget:1, load:120, restSeconds:180 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:120, reps:5, unit:'kg', done:true, rir:1, rir_real:0, ics:9, pump:1, ts:100 }
+    // s1 and s2 missing
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var summ  = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  var day = summ.days[0];
+  assert('F63-Ba', 'sessionState=partial (setsReal>0, no done key)', day.sessionState === 'partial');
+  assert('F63-Bb', 'setsReal=1', day.setsReal === 1);
+  assert('F63-Bc', 'setsTotal=3', day.setsTotal === 3);
+  assert('F63-Bd', 'exercisesReal=1', day.exercisesReal === 1);
+  assert('F63-Be', 'avgRirReal=0 (rir_real=0 is valid)', day.avgRirReal === 0);
+  assert('F63-Bf', 'volKg=600', day.volKg === 600);
+})();
+
+// F63-C: Sesión administrativa (autoClosed)
+(function() {
+  console.log('\nF63-C — sesión administrativa (autoClosed)');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Jalón', sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:60, restSeconds:90 }] }
+  ] }] };
+  var logs = { entries: { 'done_1_0': { ts:500, autoClosed:true } } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var summ  = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  var day = summ.days[0];
+  assert('F63-Ca', 'sessionState=admin', day.sessionState === 'admin');
+  assert('F63-Cb', 'setsReal=0 (no real sets logged)', day.setsReal === 0);
+  assert('F63-Cc', 'avgRirReal=null (no real sets)', day.avgRirReal === null);
+  assert('F63-Cd', 'volKg=0', day.volKg === 0);
+})();
+
+// F63-D: RIR=0 preservado — no colapsa a null
+(function() {
+  console.log('\nF63-D — rir_real=0 preservado');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Press Banca', sets:[{ setIndex:0, repsTarget:5, rirTarget:0, load:120, restSeconds:180 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:120, reps:5, unit:'kg', done:true, rir:0, rir_real:0, ics:9, pump:1, ts:100 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var summ  = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  var day = summ.days[0];
+  assert('F63-Da', 'avgRirReal=0 (not null)', day.avgRirReal === 0);
+  assert('F63-Db', 'rirCount contributes (0 is valid)', day.setsReal === 1);
+})();
+
+// F63-E: KG/LB unidades separadas — autoFilled excluido de volumen
+(function() {
+  console.log('\nF63-E — KG/LB separados, autoFilled excluido del volumen');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Curl KG', sets:[{ setIndex:0, repsTarget:12, rirTarget:2, load:20, restSeconds:60 }] },
+    { exerciseName:'Curl LB', sets:[{ setIndex:0, repsTarget:12, rirTarget:2, load:44, restSeconds:60 }] },
+    { exerciseName:'Relleno',  sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:30, restSeconds:60 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:20, reps:12, unit:'kg', done:true, rir:2, rir_real:2, ics:8, pump:1, ts:100 },
+    'log_1_0_1_s0': { carga:44, reps:12, unit:'lb', done:true, rir:2, rir_real:2, ics:8, pump:1, ts:200 },
+    'log_1_0_2_s0': { carga:30, reps:10, unit:'kg', done:true, rir:2, rir_real:2, ics:8, pump:1, autoFilled:true, ts:300 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var summ  = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  var day = summ.days[0];
+  assert('F63-Ea', 'volKg=20*12=240 (no autoFilled)', day.volKg === 240);
+  assert('F63-Eb', 'volLb=44*12=528', day.volLb === 528);
+  assert('F63-Ec', 'setsAutoFilled=1', day.setsAutoFilled === 1);
+  assert('F63-Ed', 'setsReal=2 (not counting autoFilled)', day.setsReal === 2);
+  assert('F63-Ee', 'exercisesReal=2 (not counting autoFilled-only exercise)', day.exercisesReal === 2);
+})();
+
+// F63-F: Día sin logs — sessionState=none, todos los contadores en 0
+(function() {
+  console.log('\nF63-F — día sin logs → sessionState=none');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Press', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }
+  ] }] };
+  var logs = { entries: {} };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var summ  = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  var day = summ.days[0];
+  assert('F63-Fa', 'sessionState=none', day.sessionState === 'none');
+  assert('F63-Fb', 'setsReal=0', day.setsReal === 0);
+  assert('F63-Fc', 'avgRirReal=null', day.avgRirReal === null);
+  assert('F63-Fd', 'hasAnyExecData=false', day.hasAnyExecData === false);
+  assert('F63-Fe', 'setsTotal=1 (from plan)', day.setsTotal === 1);
+})();
+
+// F63-G: Múltiples días — cada uno tiene su propio resumen
+(function() {
+  console.log('\nF63-G — múltiples días, cada uno con su resumen');
+  var plan = { weeks:4, days:[
+    { dayIndex:0, label:'D1', exercises:[{ exerciseName:'A', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }] },
+    { dayIndex:1, label:'D2', exercises:[{ exerciseName:'B', sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:50, restSeconds:90 }] }] }
+  ] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:9, pump:1, ts:100 },
+    'done_1_0': { ts:200 }
+    // D1 has log, D2 has nothing
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var summ  = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  assert('F63-Ga', 'two days in summary', summ.days.length === 2);
+  var d0 = summ.days[0], d1 = summ.days[1];
+  assert('F63-Gb', 'D1 sessionState=complete', d0.sessionState === 'complete');
+  assert('F63-Gc', 'D1 setsReal=1', d0.setsReal === 1);
+  assert('F63-Gd', 'D2 sessionState=none', d1.sessionState === 'none');
+  assert('F63-Ge', 'D2 setsReal=0', d1.setsReal === 0);
+  assert('F63-Gf', 'D1 volKg=640', d0.volKg === 640);
+})();
+
+// F63-H: No mutación de inputs, determinismo
+(function() {
+  console.log('\nF63-H — no mutación, determinismo');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Curl', sets:[{ setIndex:0, repsTarget:12, rirTarget:2, load:20, restSeconds:60 }] }
+  ] }] };
+  var logs = { entries: { 'log_1_0_0_s0': { carga:20, reps:12, unit:'kg', done:true, rir:2, rir_real:2, ics:8, pump:1, ts:100 } } };
+  var planSnap  = JSON.stringify(plan);
+  var logsSnap  = JSON.stringify(logs);
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var stateSnap = JSON.stringify(state);
+  var s1 = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  var s2 = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  assert('F63-Ha', 'plan not mutated', JSON.stringify(plan) === planSnap);
+  assert('F63-Hb', 'logs not mutated', JSON.stringify(logs) === logsSnap);
+  assert('F63-Hc', 'state not mutated', JSON.stringify(state) === stateSnap);
+  assert('F63-Hd', 'deterministic', JSON.stringify(s1) === JSON.stringify(s2));
+})();
+
+// F63-I: autoFilled no cuenta como ejercicio real ni como volumen
+(function() {
+  console.log('\nF63-I — autoFilled excluido de exercisesReal y volumen');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Sentadilla', sets:[
+      { setIndex:0, repsTarget:5, rirTarget:1, load:150, restSeconds:180 },
+      { setIndex:1, repsTarget:5, rirTarget:1, load:150, restSeconds:180 }
+    ] }
+  ] }] };
+  var logs = { entries: {
+    // s0: autoFilled only, s1: autoFilled only → exercise has NO real sets
+    'log_1_0_0_s0': { carga:150, reps:5, unit:'kg', done:true, rir:1, rir_real:1, ics:8, pump:1, autoFilled:true, ts:100 },
+    'log_1_0_0_s1': { carga:150, reps:5, unit:'kg', done:true, rir:1, rir_real:1, ics:8, pump:1, autoFilled:true, ts:200 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var summ  = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  var day = summ.days[0];
+  assert('F63-Ia', 'exercisesReal=0 (all autoFilled)', day.exercisesReal === 0);
+  assert('F63-Ib', 'setsReal=0', day.setsReal === 0);
+  assert('F63-Ic', 'setsAutoFilled=2', day.setsAutoFilled === 2);
+  assert('F63-Id', 'volKg=0 (autoFilled not counted)', day.volKg === 0);
+  assert('F63-Ie', 'avgRirReal=null (no real sets)', day.avgRirReal === null);
+})();
+
+// F63-J: avgRirReal promedia correctamente varios sets
+(function() {
+  console.log('\nF63-J — avgRirReal promedio correcto');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Press', sets:[
+      { setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 },
+      { setIndex:1, repsTarget:8, rirTarget:2, load:80, restSeconds:120 },
+      { setIndex:2, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }
+    ] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:3, ics:8, pump:1, ts:100 },
+    'log_1_0_0_s1': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:2, ics:8, pump:1, ts:200 },
+    'log_1_0_0_s2': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:8, pump:1, ts:300 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var summ  = _buildClientMirrorSessionSummary(plan, logs, 1, state);
+  var day = summ.days[0];
+  assert('F63-Ja', 'avgRirReal=(3+2+1)/3=2', day.avgRirReal === 2);
+  assert('F63-Jb', 'setsReal=3', day.setsReal === 3);
+})();
+
+// F63-K: HTML del mirror contiene el bloque de resumen cuando hay execState
+(function() {
+  console.log('\nF63-K — mirror HTML contiene resumen de sesión');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'Día A', exercises:[
+    { exerciseName:'Press', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:9, pump:1, ts:100 },
+    'done_1_0': { ts:200 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F63-Ka', 'Series label in HTML', html.indexOf('Series:') !== -1);
+  assert('F63-Kb', 'Ejerc. label in HTML', html.indexOf('Ejerc.:') !== -1);
+  assert('F63-Kc', 'RIR real label in HTML', html.indexOf('RIR real:') !== -1);
+  assert('F63-Kd', 'Vol label in HTML', html.indexOf('Vol:') !== -1);
+  assert('F63-Ke', 'no summary block when no execState', _buildClientMirrorView(plan, 1, null).indexOf('Series:') === -1);
+})();
+
+// F63-L: Summary block absent when day has no execDay (no logs for that day)
+(function() {
+  console.log('\nF63-L — sin execDay → no bloque resumen en HTML');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Curl', sets:[{ setIndex:0, repsTarget:12, rirTarget:2, load:20, restSeconds:60 }] }
+  ] }] };
+  var logs = { entries: {} }; // no logs
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F63-La', 'no summary block for day with no execDay', html.indexOf('Series:') === -1);
 })();
 
 process.exit(_fail > 0 ? 1 : 0);
