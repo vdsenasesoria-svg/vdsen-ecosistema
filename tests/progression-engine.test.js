@@ -15198,6 +15198,135 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
 })();
 
 // ============================================================
+// FASE 76 — Skipped Session Semantics & Data Integrity
+// Pure functions: _getSessionCompletionState, _isRealExecution
+// countDone-equivalent, buildStreakWidget-equivalent, weekDone checks.
+// ============================================================
+(function() {
+  function _getSessionCompletionState(doneEntry) {
+    if (!doneEntry) return 'PENDING';
+    if (typeof doneEntry !== 'object') return 'REAL_COMPLETE';
+    if (doneEntry.skipped && !doneEntry.autoClosed) return 'SKIPPED';
+    if (doneEntry.autoClosed && doneEntry.skipped) return 'AUTO_CLOSED_NO_DATA';
+    if (doneEntry.autoClosed) return 'AUTO_CLOSED';
+    return 'REAL_COMPLETE';
+  }
+  function _isRealExecution(doneEntry) {
+    var s = _getSessionCompletionState(doneEntry);
+    return s === 'REAL_COMPLETE' || s === 'AUTO_CLOSED';
+  }
+
+  console.log('\n=== FASE 76 — Skipped Session Semantics ===');
+
+  // F76-A: State machine — all 5 states
+  console.log('\nF76-A — _getSessionCompletionState covers all states');
+  assert('F76-Aa', 'null→PENDING',                    _getSessionCompletionState(null)  === 'PENDING');
+  assert('F76-Ab', 'undefined→PENDING',               _getSessionCompletionState(undefined) === 'PENDING');
+  assert('F76-Ac', '{ts}→REAL_COMPLETE',              _getSessionCompletionState({ts:1}) === 'REAL_COMPLETE');
+  assert('F76-Ad', '{skipped}→SKIPPED',               _getSessionCompletionState({ts:1,skipped:true}) === 'SKIPPED');
+  assert('F76-Ae', '{autoClosed}→AUTO_CLOSED',        _getSessionCompletionState({ts:1,autoClosed:true}) === 'AUTO_CLOSED');
+  assert('F76-Af', '{autoClosed,skipped}→AUTO_CLOSED_NO_DATA', _getSessionCompletionState({ts:1,autoClosed:true,skipped:true}) === 'AUTO_CLOSED_NO_DATA');
+  assert('F76-Ag', 'legacy boolean true→REAL_COMPLETE', _getSessionCompletionState(true) === 'REAL_COMPLETE');
+
+  // F76-B: _isRealExecution
+  console.log('\nF76-B — _isRealExecution excludes SKIPPED and AUTO_CLOSED_NO_DATA');
+  assert('F76-Ba', 'PENDING not real',              !_isRealExecution(null));
+  assert('F76-Bb', 'REAL_COMPLETE is real',         _isRealExecution({ts:1}));
+  assert('F76-Bc', 'SKIPPED not real',              !_isRealExecution({ts:1,skipped:true}));
+  assert('F76-Bd', 'AUTO_CLOSED is real',           _isRealExecution({ts:1,autoClosed:true}));
+  assert('F76-Be', 'AUTO_CLOSED_NO_DATA not real',  !_isRealExecution({ts:1,autoClosed:true,skipped:true}));
+  assert('F76-Bf', 'legacy boolean real',            _isRealExecution(true));
+
+  // F76-C: countDone equivalent — skipped excluded
+  console.log('\nF76-C — countDone excludes SKIPPED');
+  function mockCountDone(logs, totalWeeks) {
+    return Object.keys(logs).filter(function(k) {
+      if (!k.startsWith('done_')) return false;
+      var parts = k.split('_'); var week = parseInt(parts[1]);
+      return week >= 1 && week <= totalWeeks && _isRealExecution(logs[k]);
+    }).length;
+  }
+  var logsC1 = { 'done_1_0': {ts:1}, 'done_1_1': {ts:1,skipped:true}, 'done_1_2': {ts:1} };
+  assert('F76-Ca', '2 real + 1 skipped → count=2', mockCountDone(logsC1, 6) === 2);
+  var logsC2 = { 'done_1_0': {ts:1,skipped:true}, 'done_1_1': {ts:1,skipped:true} };
+  assert('F76-Cb', 'all-skipped → count=0',         mockCountDone(logsC2, 6) === 0);
+  var logsC3 = { 'done_1_0': {ts:1}, 'done_1_1': {ts:1} };
+  assert('F76-Cc', 'all-real → count=2',             mockCountDone(logsC3, 6) === 2);
+  var logsC4 = { 'done_1_0': {ts:1,autoClosed:true}, 'done_1_1': {ts:1,autoClosed:true,skipped:true} };
+  assert('F76-Cd', 'autoClosed(real)=1 + autoClosed_no_data(not real)=0 → count=1', mockCountDone(logsC4, 6) === 1);
+
+  // F76-D: streak excludes skipped (skipped breaks streak)
+  console.log('\nF76-D — streak excludes SKIPPED sessions');
+  function mockStreak(logs, numDias, totalWeeks, currentWeek, diaActivo) {
+    var seq = [];
+    for (var w = 1; w <= currentWeek; w++) {
+      var diasEnSem = (w < currentWeek) ? numDias : Math.min(diaActivo + 1, numDias);
+      var isDeload = (w === totalWeeks);
+      for (var d = 0; d < diasEnSem; d++) {
+        seq.push(isDeload || _isRealExecution(logs['done_'+w+'_'+d]));
+      }
+    }
+    var cur = 0;
+    for (var i = seq.length - 1; i >= 0; i--) { if (seq[i]) cur++; else break; }
+    return cur;
+  }
+  var logsD1 = { 'done_1_0': {ts:1}, 'done_1_1': {ts:1,skipped:true} };
+  assert('F76-Da', 'real then skipped → streak=0 (skipped breaks)',  mockStreak(logsD1, 2, 6, 1, 1) === 0);
+  var logsD2 = { 'done_1_0': {ts:1}, 'done_1_1': {ts:1} };
+  assert('F76-Db', 'two real → streak=2',                            mockStreak(logsD2, 2, 6, 1, 1) === 2);
+  var logsD3 = { 'done_1_0': {ts:1}, 'done_1_1': {ts:1,autoClosed:true} };
+  assert('F76-Dc', 'AUTO_CLOSED counts for streak',                  mockStreak(logsD3, 2, 6, 1, 1) === 2);
+  var logsD4 = {};
+  assert('F76-Dd', 'no done → streak=0',                             mockStreak(logsD4, 2, 6, 1, 1) === 0);
+
+  // F76-E: week "done-real" vs "resolved" distinction
+  console.log('\nF76-E — week resolved (nav) != week done-real (adherence)');
+  function mockWeekReal(logs, numDias, week) {
+    return numDias > 0 && Array.from({length:numDias}, function(_,i){ return _isRealExecution(logs['done_'+week+'_'+i]); }).every(Boolean);
+  }
+  function mockWeekResolved(logs, numDias, week) {
+    return numDias > 0 && Array.from({length:numDias}, function(_,i){ return !!logs['done_'+week+'_'+i]; }).every(Boolean);
+  }
+  var logsE1 = { 'done_2_0': {ts:1}, 'done_2_1': {ts:1,skipped:true} };
+  assert('F76-Ea', 'mixed: resolved=true (nav ok)',    mockWeekResolved(logsE1, 2, 2));
+  assert('F76-Eb', 'mixed: done-real=false (no green)', !mockWeekReal(logsE1, 2, 2));
+  var logsE2 = { 'done_2_0': {ts:1}, 'done_2_1': {ts:1} };
+  assert('F76-Ec', 'all-real: resolved=true',          mockWeekResolved(logsE2, 2, 2));
+  assert('F76-Ed', 'all-real: done-real=true',         mockWeekReal(logsE2, 2, 2));
+  var logsE3 = { 'done_2_0': {ts:1,skipped:true}, 'done_2_1': {ts:1,skipped:true} };
+  assert('F76-Ee', 'all-skipped: resolved=true',       mockWeekResolved(logsE3, 2, 2));
+  assert('F76-Ef', 'all-skipped: done-real=false',     !mockWeekReal(logsE3, 2, 2));
+
+  // F76-F: reopen (null) → PENDING
+  console.log('\nF76-F — reopening a skipped session yields PENDING');
+  var reopened = null; // markSessionDone toggle-off sets LOGS[key] = null
+  assert('F76-Fa', 'null→PENDING after reopen',  _getSessionCompletionState(reopened) === 'PENDING');
+  assert('F76-Fb', 'null not real',               !_isRealExecution(reopened));
+
+  // F76-G: immutability — helpers do not mutate input
+  console.log('\nF76-G — no mutation of doneEntry object');
+  var dObj = { ts: 1, skipped: true };
+  var beforeKeys = Object.keys(dObj).join(',');
+  _getSessionCompletionState(dObj);
+  _isRealExecution(dObj);
+  assert('F76-Ga', 'skipped unchanged after call',  dObj.skipped === true);
+  assert('F76-Gb', 'no keys added',                 Object.keys(dObj).join(',') === beforeKeys);
+
+  // F76-H: determinism
+  console.log('\nF76-H — determinism across repeated calls');
+  var dH = { ts: 42, autoClosed: true };
+  assert('F76-Ha', 'state stable across 3 calls',
+    _getSessionCompletionState(dH) === _getSessionCompletionState(dH) &&
+    _getSessionCompletionState(dH) === _getSessionCompletionState(dH));
+
+  // F76-I: skipped-with-prior-sets stays SKIPPED (does NOT auto-become REAL_COMPLETE)
+  console.log('\nF76-I — skipped entry stays SKIPPED regardless of set logs');
+  var dI = { ts: 1, skipped: true };
+  assert('F76-Ia', '{skipped:true} stays SKIPPED even if set logs exist', _getSessionCompletionState(dI) === 'SKIPPED');
+  assert('F76-Ib', 'not counted as real',                                  !_isRealExecution(dI));
+})();
+
+// ============================================================
 // FASE 72 — Learned State Preview Block (_lsHintHtml logic)
 // Pure inline tests of the IIFE logic used in both generation flows.
 // ============================================================

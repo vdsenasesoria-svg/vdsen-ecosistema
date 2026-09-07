@@ -320,15 +320,6 @@
       <div id="autoGenStatus" class="text-sm mt-3"></div>
     </div>
 
-    <!-- VDSEN AI Preview (FASE D.1 — experimental, read-only) -->
-    <div style="border:1px dashed var(--border);border-radius:10px;padding:14px 16px;margin-bottom:16px;background:rgba(99,102,241,.04)">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <button id="vdsenPreviewBtn" onclick="vdsenAIPreview()" style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:1px solid rgba(99,102,241,.5);background:rgba(99,102,241,.12);color:var(--text);font-size:13px;font-weight:600;cursor:pointer">🔬 Generar con VDSEN AI — Preview</button>
-        <span class="text-xs" style="color:var(--text-muted);max-width:360px;line-height:1.4">Experimental. Lee la ficha del cliente y muestra un preview del plan generado por el Motor VDSEN (OpenAI). <b>No guarda nada.</b></span>
-      </div>
-      <div id="vdsenPreviewStatus" class="text-sm mt-3"></div>
-    </div>
-
     <div style="position:relative;display:inline-block;margin-bottom:16px" id="importPlanMenuWrap">
       <button onclick="toggleImportPlanMenu()" style="display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;font-weight:600;cursor:pointer">📥 Importar / crear plan <span>▾</span></button>
       <div id="importPlanMenu" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:6px;min-width:230px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.4)">
@@ -13554,18 +13545,20 @@ El esfuerzo no es negociable.
       html += `<div style="display:grid;grid-template-columns:40px ${Array(dpw).fill('1fr').join(' ')};gap:3px;margin-bottom:3px">`;
       html += `<div style="display:flex;align-items:center;font-size:9px;font-weight:700;color:${isCur?'#C4FF00':'#888'};padding-right:4px">S${w}${w===totalWeeks?'🔵':''}</div>`;
       for (let d = 0; d < dpw; d++) {
-        const done = !!entries['done_'+w+'_'+d];
+        const _doneEntry = entries['done_'+w+'_'+d];
+        const isSkipped = !!(_doneEntry && typeof _doneEntry === 'object' && _doneEntry.skipped && !_doneEntry.autoClosed);
+        const done = !!_doneEntry;
         const hasAny = Object.keys(entries).some(k => k.startsWith('log_'+w+'_'+d+'_'));
-        const bg = done ? '#44BB88' : hasAny ? 'rgba(196,255,0,.5)' : isFuture ? 'rgba(244,244,240,.04)' : w < currentWeek ? 'rgba(255,68,68,.22)' : 'rgba(244,244,240,.06)';
-        const textColor = done ? '#000' : hasAny ? '#000' : '#555';
-        const icon = done ? '✓' : hasAny ? '◑' : isFuture ? '' : w < currentWeek ? '✗' : '·';
-        html += `<div title="Sem ${w} · Día ${d+1}: ${done?'Completa':hasAny?'Parcial':isFuture?'Pendiente':'Faltó'}" style="height:28px;border-radius:5px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${textColor};border:${isCur&&!done?'1px solid rgba(196,255,0,.4)':'1px solid transparent'}">${icon}</div>`;
+        const bg = isSkipped ? 'rgba(107,107,102,.35)' : done ? '#44BB88' : hasAny ? 'rgba(196,255,0,.5)' : isFuture ? 'rgba(244,244,240,.04)' : w < currentWeek ? 'rgba(255,68,68,.22)' : 'rgba(244,244,240,.06)';
+        const textColor = isSkipped ? '#888' : done ? '#000' : hasAny ? '#000' : '#555';
+        const icon = isSkipped ? '⏸' : done ? '✓' : hasAny ? '◑' : isFuture ? '' : w < currentWeek ? '✗' : '·';
+        html += `<div title="Sem ${w} · Día ${d+1}: ${isSkipped?'Omitida':done?'Completa':hasAny?'Parcial':isFuture?'Pendiente':'Faltó'}" style="height:28px;border-radius:5px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${textColor};border:${isCur&&!done?'1px solid rgba(196,255,0,.4)':'1px solid transparent'}">${icon}</div>`;
       }
       html += `</div>`;
     }
     // Leyenda
     html += `<div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">`;
-    [['#44BB88','✓ Completa'],['rgba(196,255,0,.5)','◑ Parcial'],['rgba(255,68,68,.22)','✗ Faltó'],['rgba(244,244,240,.04)','— Pendiente']].forEach(([c,l])=>{
+    [['#44BB88','✓ Completa'],['rgba(196,255,0,.5)','◑ Parcial'],['rgba(107,107,102,.35)','⏸ Omitida'],['rgba(255,68,68,.22)','✗ Faltó'],['rgba(244,244,240,.04)','— Pendiente']].forEach(([c,l])=>{
       html += `<div style="display:flex;align-items:center;gap:4px;font-size:9px;color:#888"><div style="width:10px;height:10px;border-radius:2px;background:${c}"></div>${l}</div>`;
     });
     html += `</div></div>`;

@@ -2739,9 +2739,10 @@ function renderResumen() {
   const _numDiasGrid = getSesiones().length;
   const _totalWeeksGrid = getTotalWeeks();
   for (let w=1; w<=_totalWeeksGrid; w++) {
-    const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => !!LOGS['done_'+w+'_'+i]).every(Boolean);
+    const _wResolved = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => !!LOGS['done_'+w+'_'+i]).every(Boolean);
+    const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _isRealExecution(LOGS['done_'+w+'_'+i])).every(Boolean);
     const cls = w===semActiva?'active':(_wDone?'done':(w===_totalWeeksGrid?'deload':''));
-    const lbl = w===_totalWeeksGrid?'DELOAD':w===semActiva?'ACTIVA':'';
+    const lbl = w===_totalWeeksGrid?'DELOAD':w===semActiva?'ACTIVA':(_wResolved&&!_wDone?'⏸':'');
     weekHtml += `<div class="wk ${cls}" onclick="goToWeek(${w})">
       <div class="wk-num">${w}</div>
       <div class="wk-lbl">${lbl||'SEM'}</div>
@@ -2814,7 +2815,7 @@ function buildStreakWidget() {
     var diasEnEstaSemana = (w < CURRENT_WEEK) ? numDias : Math.min(DIA_ACTIVO + 1, numDias);
     var isDeloadWeek = (w === totalWeeks);
     for (var d = 0; d < diasEnEstaSemana; d++) {
-      seq.push(isDeloadWeek || !!LOGS['done_'+w+'_'+d]);
+      seq.push(isDeloadWeek || _isRealExecution(LOGS['done_'+w+'_'+d]));
     }
   }
 
@@ -3184,13 +3185,33 @@ function countSessions() {
   var totalW = (typeof getTotalWeeks === 'function') ? (getTotalWeeks() - 1) : 5; // exclude deload week
   return Math.max(numDias, 1) * Math.max(totalW, 1);
 }
+// ── F76 — Session completion semantics ───────────────────────────────────────
+// REAL_COMPLETE: user completed via post-session modal
+// SKIPPED:       user explicitly skipped (skipSession) — navigation only
+// AUTO_CLOSED:   week closed with data (markWeekDoneWithPartialData, hasData=true)
+// AUTO_CLOSED_NO_DATA: week closed without data — navigation only
+// PENDING:       not done yet
+function _getSessionCompletionState(doneEntry) {
+  if (!doneEntry) return 'PENDING';
+  if (typeof doneEntry !== 'object') return 'REAL_COMPLETE'; // legacy boolean
+  if (doneEntry.skipped && !doneEntry.autoClosed) return 'SKIPPED';
+  if (doneEntry.autoClosed && doneEntry.skipped) return 'AUTO_CLOSED_NO_DATA';
+  if (doneEntry.autoClosed) return 'AUTO_CLOSED';
+  return 'REAL_COMPLETE';
+}
+function _isRealExecution(doneEntry) {
+  var s = _getSessionCompletionState(doneEntry);
+  return s === 'REAL_COMPLETE' || s === 'AUTO_CLOSED';
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function countDone() {
   var _tw = getTotalWeeks();
   return Object.keys(LOGS).filter(function(k) {
     if (!k.startsWith('done_')) return false;
     var parts = k.split('_');
     var week = parseInt(parts[1]);
-    return week >= 1 && week <= _tw;
+    return week >= 1 && week <= _tw && _isRealExecution(LOGS[k]);
   }).length;
 }
 
@@ -8296,7 +8317,11 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
     if (!fromOtherWeekView) CURRENT_WEEK = REAL_WEEK;
     if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
     await _doSaveLogs();
-    showToast('🏆 SEMANA COMPLETA — Avanzaste a SEM '+REAL_WEEK);
+    var _prevW = REAL_WEEK - 1;
+    var _skipCnt = sesiones.filter(function(_,i){ return _getSessionCompletionState(LOGS['done_'+_prevW+'_'+i]) === 'SKIPPED'; }).length;
+    showToast(_skipCnt > 0
+      ? '✓ SEM '+_prevW+' cerrada · '+(sesiones.length-_skipCnt)+' realizadas · '+_skipCnt+' omitida'+(sesiones.length-_skipCnt !== 1 ? 's' : '')
+      : '🏆 SEMANA COMPLETA — Avanzaste a SEM '+REAL_WEEK);
     _autoAdvanceDia(); // primer día pendiente de la nueva semana
     renderEntrenamiento();
     renderResumen();
