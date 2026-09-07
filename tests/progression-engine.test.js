@@ -11145,7 +11145,7 @@ function _makeF57Gate(status, criticalIssues) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Inline _buildClientMirrorView (mirrors main file exactly — updated F60)
-function _buildClientMirrorView(plan, week) {
+function _buildClientMirrorView(plan, week, execState) {
   var _e = function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); };
   if (!plan || !Array.isArray(plan.days) || !plan.days.length) {
     return '<div style="padding:32px 16px;text-align:center;color:#555;font-size:13px">Sin plan activo o plan sin días.</div>';
@@ -11274,20 +11274,31 @@ function _buildClientMirrorView(plan, week) {
     bannerWeek = ' · <span style="color:#88ffcc;font-weight:700">Sem '+weekCtx.week+'/'+weekCtx.totalWeeks+'</span>';
     if (weekCtx.isDeload) bannerWeek += ' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(126,192,255,.12);border:1px solid rgba(126,192,255,.4);color:#7ec0ff;font-weight:700">⟲ DELOAD</span>';
   }
+  var hasExecData = !!(execState && execState.days && execState.days.length);
   var html = '<div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;padding:6px 10px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.12);border-radius:6px;display:flex;align-items:center;gap:6px">'
     + '<span style="color:#C4FF00;font-weight:700">👁 VISTA CLIENTE</span>'
     + bannerWeek
-    + ' <span style="color:#555">— Solo lectura · Sin logs · Sin progresión</span></div>';
+    + (hasExecData
+        ? ' <span style="color:#44BB88;font-size:9px;font-weight:700">· Con ejecución real</span>'
+        : ' <span style="color:#555">— Solo lectura · Sin logs · Sin progresión</span>')
+    + '</div>';
   for (var di = 0; di < days.length; di++) {
     var d = days[di];
     var exs = d.exercises || [];
     var dayWCtx = weekCtx ? weekCtx.days[di] : null;
+    var execDay = (hasExecData && execState.days[di]) ? execState.days[di] : null;
     var dayDeloadBadge = (weekCtx && weekCtx.isDeload)
       ? ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(126,192,255,.12);border:1px solid rgba(126,192,255,.4);color:#7ec0ff;font-weight:700;text-transform:uppercase">⟲ DELOAD</span>'
       : '';
+    var dayExecBadge = '';
+    if (execDay && execDay.sessionAutoClosed) {
+      dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(136,136,136,.12);border:1px solid rgba(136,136,136,.35);color:#888;font-weight:700">⚠️ ADMIN</span>';
+    } else if (execDay && execDay.sessionDone) {
+      dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(68,187,136,.1);border:1px solid rgba(68,187,136,.35);color:#44BB88;font-weight:700">✓ COMPLETADA</span>';
+    }
     html += '<div style="margin-bottom:14px;border:1px solid rgba(244,244,240,.12);border-radius:10px;overflow:hidden">'
       + '<div style="background:rgba(244,244,240,.07);padding:8px 12px;border-bottom:1px solid rgba(244,244,240,.08)">'
-      + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span>'+dayDeloadBadge+'</div>';
+      + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span>'+dayDeloadBadge+dayExecBadge+'</div>';
     if (!exs.length) {
       html += '<div style="padding:10px 12px;color:#555;font-size:12px">Sin ejercicios</div>';
     }
@@ -11298,6 +11309,7 @@ function _buildClientMirrorView(plan, week) {
       if (tech === 'rest_pause') tech = 'rest-pause';
       var sets = ex.sets || [];
       var exWCtx = dayWCtx ? dayWCtx.exercises[ei] : null;
+      var execEx = execDay ? execDay.exercises[ei] : null;
       if (exWCtx && !exWCtx.techniqueActive) {
         html += '<div style="padding:8px 12px;'+(ei?'border-top:1px solid rgba(244,244,240,.07)':'')+'">'
           + '<div style="display:flex;align-items:center;gap:6px">'
@@ -11350,13 +11362,53 @@ function _buildClientMirrorView(plan, week) {
       if (ex.techniqueNote) {
         notesHtml += '<div style="font-size:10px;color:#CC8844;margin-top:2px;line-height:1.4">⚙️ '+_e(ex.techniqueNote)+'</div>';
       }
+      // Build execSet lookup: setIndex → exec entry
+      var execSetMap = {};
+      if (execEx && execEx.sets && execEx.sets.length) {
+        for (var xsi = 0; xsi < execEx.sets.length; xsi++) {
+          var xs = execEx.sets[xsi]; execSetMap[xs.setIndex] = xs;
+        }
+      }
+      function _execOverlayRow(prescSet, xs) {
+        if (!xs) return '';
+        if (xs.isAutoFilled) {
+          var af = '';
+          if (xs.carga != null) af += xs.carga + ' ' + (xs.unit||'kg');
+          if (xs.reps  != null) af += (af?' × ':'') + xs.reps + ' reps';
+          return '<div style="padding:1px 8px 4px 32px;font-size:10px;color:#666;background:rgba(100,100,100,.03)">'
+            + '<span style="color:#555;font-weight:700">⚠️ auto</span>'
+            + (af ? ' <span style="color:#777">'+_e(af)+'</span>' : '')
+            + (xs.rir_real != null ? ' <span style="color:#666">RIR '+_e(String(xs.rir_real))+'</span>' : '')
+            + '</div>';
+        }
+        if (!xs.done) return '';
+        var rl = '';
+        if (xs.carga != null) rl += '<span style="color:#44BB88;font-weight:700">'+_e(String(xs.carga))+' '+(xs.unit||'kg')+'</span>';
+        if (xs.reps  != null) rl += (rl?' × ':'') + '<span style="color:#88ffcc">'+_e(String(xs.reps))+' reps</span>';
+        if (xs.rir_real != null) rl += ' <span style="color:#888">RIR '+_e(String(xs.rir_real))+'</span>';
+        if (xs.ics  != null) rl += ' <span style="color:#aaa">ICS '+_e(String(xs.ics))+'</span>';
+        return '<div style="padding:1px 8px 4px 32px;font-size:10px;background:rgba(68,187,136,.03)">'
+          + '✅ ' + rl + '</div>';
+      }
       var setsHtml = '';
       if (!sets.length) {
         var legReps = _fmtReps(ex.repsTarget != null ? ex.repsTarget : 8);
         var legRir  = _fmtRIR(ex.rirTarget  != null ? ex.rirTarget  : 2);
         setsHtml = '<div style="font-size:11px;color:#888;padding:4px 8px">'+_e(String(ex.numSeries||3))+'×'+_e(legReps)+' · '+_e(legRir)+'</div>';
       } else {
-        for (var si = 0; si < renderSets.length; si++) setsHtml += _setRow(renderSets[si], si);
+        for (var si = 0; si < renderSets.length; si++) {
+          var rs = renderSets[si];
+          var matchedXs = execSetMap[rs.setIndex != null ? rs.setIndex : si] || execSetMap[si] || null;
+          setsHtml += _setRow(rs, si) + _execOverlayRow(rs, matchedXs);
+        }
+      }
+      var progrecHtml = '';
+      if (execEx && execEx.progrecSuggestion && execEx.progrecSuggestion.newLoad != null) {
+        progrecHtml = '<div style="margin-top:6px;padding:5px 8px;border-radius:5px;background:rgba(196,255,0,.04);border:1px dashed rgba(196,255,0,.2)">'
+          + '<span style="font-size:9px;font-weight:800;color:#C4FF00;letter-spacing:.5px">💡 SUGERENCIA PRÓX. CARGA</span>'
+          + ' <span style="font-size:11px;color:#aaa">'+_e(String(execEx.progrecSuggestion.newLoad))+' kg</span>'
+          + ' <span style="font-size:9px;color:#555">(solo sugerencia — no prescripción)</span>'
+          + '</div>';
       }
       html += '<div style="padding:10px 12px;'+(ei?'border-top:1px solid rgba(244,244,240,.07)':'')+'">'
         + '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;margin-bottom:6px">'
@@ -11370,6 +11422,7 @@ function _buildClientMirrorView(plan, week) {
         + tfwHtml
         + notesHtml
         + '<div style="border-radius:6px;overflow:hidden;border:1px solid rgba(244,244,240,.07)">'+setsHtml+'</div>'
+        + progrecHtml
         + '</div>';
     }
     html += '</div>';
@@ -11563,6 +11616,98 @@ function _buildClientMirrorWeekContext(plan, week) {
     }
   }
   return { week: week, totalWeeks: totalWeeks, isDeload: isDeload, days: days };
+}
+
+// ─── F61 inline helper (pure, mirrors coach implementation exactly) ───────────
+
+function _buildClientMirrorExecutionState(plan, logs, week) {
+  var result = { week: week, days: [] };
+  if (!plan || !Array.isArray(plan.days) || !logs || !logs.entries) return result;
+  var entries = logs.entries;
+  var W = week;
+  var sortedDays = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
+  for (var di = 0; di < sortedDays.length; di++) {
+    var d = sortedDays[di];
+    var D = d.dayIndex != null ? d.dayIndex : di;
+    var exs = d.exercises || [];
+    var doneKey = 'done_' + W + '_' + D;
+    var doneEntry = entries[doneKey];
+    var sessionDone = !!(doneEntry && (doneEntry === true || (typeof doneEntry === 'object' && doneEntry.ts)));
+    var sessionAutoClosed = !!(doneEntry && typeof doneEntry === 'object' && doneEntry.autoClosed);
+    var progrecKey = 'progrec_' + W + '_' + D;
+    var progrecEntry = entries[progrecKey];
+    var progrecRecs = (progrecEntry && Array.isArray(progrecEntry.recommendations)) ? progrecEntry.recommendations : [];
+    var logPrefix = 'log_' + W + '_' + D + '_';
+    var byPid  = {};
+    var byExId = {};
+    var byPos  = {};
+    var keys = Object.keys(entries);
+    for (var ki = 0; ki < keys.length; ki++) {
+      var key = keys[ki];
+      if (key.indexOf(logPrefix) !== 0) continue;
+      var rest = key.slice(logPrefix.length);
+      var sIdx = rest.indexOf('_s');
+      if (sIdx === -1) continue;
+      var E = parseInt(rest.slice(0, sIdx));
+      var S = parseInt(rest.slice(sIdx + 2));
+      if (isNaN(E) || isNaN(S)) continue;
+      var entry = entries[key];
+      if (!entry || typeof entry !== 'object') continue;
+      var ePid  = entry.prescriptionExerciseId || null;
+      var eExId = entry.exerciseId || null;
+      var row   = { E: E, S: S, entry: entry };
+      if (ePid)        { if (!byPid[ePid])   byPid[ePid]   = []; byPid[ePid].push(row);   }
+      else if (eExId)  { if (!byExId[eExId]) byExId[eExId] = []; byExId[eExId].push(row); }
+      else             { if (!byPos[E])       byPos[E]      = []; byPos[E].push(row);       }
+    }
+    var dayResult = { dayIndex: D, label: d.label || '', sessionDone: sessionDone, sessionAutoClosed: sessionAutoClosed, exercises: [] };
+    for (var ei = 0; ei < exs.length; ei++) {
+      var ex = exs[ei];
+      var exName  = ex.exerciseName || ex.nombre || 'Ejercicio';
+      var exPid   = ex.prescriptionExerciseId || null;
+      var exExId  = ex.exerciseId || null;
+      var matchedRows = null;
+      if      (exPid  && byPid[exPid])   matchedRows = byPid[exPid];
+      else if (exExId && byExId[exExId]) matchedRows = byExId[exExId];
+      else if (byPos[ei])                matchedRows = byPos[ei];
+      var sets = [];
+      if (matchedRows) {
+        var sortedRows = matchedRows.slice().sort(function(a,b){ return a.S - b.S; });
+        for (var mi = 0; mi < sortedRows.length; mi++) {
+          var r = sortedRows[mi];
+          var e = r.entry;
+          sets.push({
+            setIndex:     r.S,
+            carga:        e.carga    != null ? e.carga    : null,
+            reps:         e.reps     != null ? e.reps     : null,
+            unit:         e.unit     || 'kg',
+            done:         !!e.done,
+            rir:          e.rir      != null ? e.rir      : null,
+            rir_real:     e.rir_real != null ? e.rir_real : null,
+            ics:          e.ics      != null ? e.ics      : null,
+            pump:         e.pump     != null ? e.pump     : null,
+            ts:           e.ts       || null,
+            isAutoFilled: !!e.autoFilled
+          });
+        }
+      }
+      var progrecSuggestion = null;
+      var normName = exName.toLowerCase().trim();
+      for (var ri = 0; ri < progrecRecs.length; ri++) {
+        var rec = progrecRecs[ri];
+        var recName  = (rec.exerciseName || rec.nombre || '').toLowerCase().trim();
+        var pidMatch  = exPid  && rec.prescriptionExerciseId === exPid;
+        var exidMatch = exExId && rec.exerciseId             === exExId;
+        if (pidMatch || exidMatch || recName === normName) {
+          if (rec.newLoad != null) progrecSuggestion = { newLoad: rec.newLoad };
+          break;
+        }
+      }
+      dayResult.exercises.push({ exerciseName: exName, sets: sets, progrecSuggestion: progrecSuggestion });
+    }
+    result.days.push(dayResult);
+  }
+  return result;
 }
 
 // ─── F58 helpers ──────────────────────────────────────────────────────────────
@@ -12009,6 +12154,228 @@ function _makeF58Ex(overrides) {
   var c2 = JSON.stringify(_buildClientMirrorWeekContext(plan, 2));
   assert('F60-Mb', '_buildClientMirrorWeekContext deterministic', c1 === c2);
   assert('F60-Mc', 'plan not mutated by either call', JSON.stringify(plan) === snap);
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FASE 61 — CLIENT MIRROR EXECUTION STATE OVERLAY
+// ═══════════════════════════════════════════════════════════════════════════
+
+// F61-A: No logs → execState empty, no crash
+(function() {
+  console.log('\nF61-A — no logs → empty execState, no crash');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Squat', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:100, restSeconds:90 }] }] }] };
+  var state = _buildClientMirrorExecutionState(plan, null, 1);
+  assert('F61-Aa', 'no crash on null logs', state !== undefined);
+  assert('F61-Ab', 'days is empty', Array.isArray(state.days) && state.days.length === 0);
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F61-Ac', '_buildClientMirrorView no crash with empty execState', html.length > 0);
+  assert('F61-Ad', 'no exec banner with empty execState', html.indexOf('Con ejecución real') === -1);
+})();
+
+// F61-B: Real execution (done, !autoFilled) → shows carga/reps/RIR in HTML
+(function() {
+  console.log('\nF61-B — real execution overlay shows carga/reps/RIR');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Press Banca', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }]
+  }] }] };
+  var logs = { entries: { 'log_1_0_0_s0': { carga:85, reps:9, unit:'kg', done:true, rir:2, rir_real:1, ics:8, pump:1, ts:1700000000 } } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  assert('F61-Ba', 'day exists in state', state.days.length === 1);
+  var exState = state.days[0].exercises[0];
+  assert('F61-Bb', 'set found', exState.sets.length === 1);
+  assert('F61-Bc', 'carga=85', exState.sets[0].carga === 85);
+  assert('F61-Bd', 'reps=9', exState.sets[0].reps === 9);
+  assert('F61-Be', 'rir_real=1', exState.sets[0].rir_real === 1);
+  assert('F61-Bf', 'done=true', exState.sets[0].done === true);
+  assert('F61-Bg', 'isAutoFilled=false', exState.sets[0].isAutoFilled === false);
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F61-Bh', 'exec banner present', html.indexOf('Con ejecución real') !== -1);
+  assert('F61-Bi', '85 kg in HTML', html.indexOf('85') !== -1);
+  assert('F61-Bj', 'RIR 1 in HTML (rir_real)', html.indexOf('RIR 1') !== -1);
+})();
+
+// F61-C: autoFilled set → shows ⚠️ auto badge, NOT as real execution
+(function() {
+  console.log('\nF61-C — autoFilled → auto badge, not real execution');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Sentadilla', sets:[{ setIndex:0, repsTarget:6, rirTarget:1, load:120, restSeconds:180 }]
+  }] }] };
+  var logs = { entries: { 'log_2_0_0_s0': { carga:120, reps:6, unit:'kg', done:true, rir:1, rir_real:1, autoFilled:true, ts:1700100000 } } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 2);
+  var xs = state.days[0].exercises[0].sets[0];
+  assert('F61-Ca', 'isAutoFilled=true', xs.isAutoFilled === true);
+  var html = _buildClientMirrorView(plan, 2, state);
+  assert('F61-Cb', 'auto badge in HTML', html.indexOf('auto') !== -1);
+  assert('F61-Cc', 'no ✅ real execution marker', html.indexOf('✅') === -1);
+})();
+
+// F61-D: autoClosed session → ADMIN badge on day header, NOT real execution
+(function() {
+  console.log('\nF61-D — autoClosed → ADMIN badge on day');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'Día A', exercises:[{ exerciseName:'Curl', sets:[{ setIndex:0, repsTarget:12, rirTarget:2, load:20, restSeconds:60 }] }] }] };
+  var logs = { entries: { 'done_1_0': { ts: 1700200000, autoClosed: true } } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  assert('F61-Da', 'sessionAutoClosed=true', state.days[0].sessionAutoClosed === true);
+  assert('F61-Db', 'sessionDone=true (has ts)', state.days[0].sessionDone === true);
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F61-Dc', 'ADMIN badge in HTML', html.indexOf('ADMIN') !== -1);
+  assert('F61-Dd', 'no COMPLETADA badge (autoClosed takes priority)', html.indexOf('COMPLETADA') === -1);
+})();
+
+// F61-E: RIR=0 → shown correctly (zero is falsy, must not disappear)
+(function() {
+  console.log('\nF61-E — RIR=0 shown correctly');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'RDL', sets:[{ setIndex:0, repsTarget:8, rirTarget:0, load:100, restSeconds:120 }] }] }] };
+  var logs = { entries: { 'log_1_0_0_s0': { carga:105, reps:8, unit:'kg', done:true, rir:0, rir_real:0, ics:9, pump:1, ts:1700300000 } } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var xs = state.days[0].exercises[0].sets[0];
+  assert('F61-Ea', 'rir=0 preserved (not null)', xs.rir === 0);
+  assert('F61-Eb', 'rir_real=0 preserved', xs.rir_real === 0);
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F61-Ec', 'RIR 0 in HTML', html.indexOf('RIR 0') !== -1);
+})();
+
+// F61-F: KG vs LB unit → unit propagated correctly
+(function() {
+  console.log('\nF61-F — LB unit propagated in execState');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Press', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:0, restSeconds:120 }] }] }] };
+  var logs = { entries: { 'log_1_0_0_s0': { carga:200, reps:8, unit:'lb', done:true, rir:2, rir_real:2, ts:1700400000 } } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var xs = state.days[0].exercises[0].sets[0];
+  assert('F61-Fa', 'unit=lb', xs.unit === 'lb');
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F61-Fb', 'lb in HTML', html.indexOf('lb') !== -1);
+})();
+
+// F61-G: PID-first matching after reorder → correct exercise matched regardless of position
+(function() {
+  console.log('\nF61-G — PID-first matching after plan exercise reorder');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Sentadilla', prescriptionExerciseId:'pid-squat', sets:[{ setIndex:0, repsTarget:5, rirTarget:1, load:140, restSeconds:180 }] },
+    { exerciseName:'Press Banca', prescriptionExerciseId:'pid-bench', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }
+  ] }] };
+  // Logs were recorded with Squat at position 1 (ei=1), but plan now has Squat at ei=0 (reordered)
+  // PID stored in log entry value → should still match correctly
+  var logs = { entries: {
+    'log_1_0_1_s0': { carga:145, reps:5, unit:'kg', done:true, rir:1, rir_real:0, prescriptionExerciseId:'pid-squat', ts:1700500000 },
+    'log_1_0_0_s0': { carga:82,  reps:8, unit:'kg', done:true, rir:2, rir_real:2, prescriptionExerciseId:'pid-bench', ts:1700500001 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var sqEx = state.days[0].exercises[0]; // Sentadilla (PID: pid-squat)
+  var bpEx = state.days[0].exercises[1]; // Press Banca (PID: pid-bench)
+  assert('F61-Ga', 'Sentadilla matched 145kg via PID', sqEx.sets.length > 0 && sqEx.sets[0].carga === 145);
+  assert('F61-Gb', 'Press Banca matched 82kg via PID', bpEx.sets.length > 0 && bpEx.sets[0].carga === 82);
+})();
+
+// F61-H: exerciseId fallback matching (no PID, uses exerciseId)
+(function() {
+  console.log('\nF61-H — exerciseId fallback matching');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Dominadas', exerciseId:'exid-pullup', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:0, restSeconds:90 }] }
+  ] }] };
+  // Log entry has exerciseId but no prescriptionExerciseId
+  var logs = { entries: {
+    'log_1_0_5_s0': { carga:10, reps:8, unit:'kg', done:true, rir:2, rir_real:1, exerciseId:'exid-pullup', ts:1700600000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var exState = state.days[0].exercises[0];
+  assert('F61-Ha', 'matched via exerciseId', exState.sets.length === 1 && exState.sets[0].carga === 10);
+})();
+
+// F61-I: Positional fallback when no PID and no exerciseId
+(function() {
+  console.log('\nF61-I — positional fallback (no PID, no exerciseId)');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Remo', sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:60, restSeconds:90 }] }
+  ] }] };
+  // No PID, no exerciseId in log entry — positional match: E=0, S=0
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:65, reps:10, unit:'kg', done:true, rir:2, rir_real:2, ts:1700700000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var exState = state.days[0].exercises[0];
+  assert('F61-Ia', 'matched positionally', exState.sets.length === 1 && exState.sets[0].carga === 65);
+})();
+
+// F61-J: Partial logs — some sets logged, some not → not-logged sets have no overlay
+(function() {
+  console.log('\nF61-J — partial logs: logged sets shown, unlogged sets absent');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Prensa', sets:[
+      { setIndex:0, repsTarget:10, rirTarget:2, load:200, restSeconds:90 },
+      { setIndex:1, repsTarget:10, rirTarget:2, load:200, restSeconds:90 },
+      { setIndex:2, repsTarget:10, rirTarget:2, load:200, restSeconds:90 }
+    ]
+  }] }] };
+  // Only S0 and S1 logged; S2 not logged
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:200, reps:10, unit:'kg', done:true, rir:2, rir_real:2, ts:1700800000 },
+    'log_1_0_0_s1': { carga:195, reps:10, unit:'kg', done:true, rir:2, rir_real:2, ts:1700800060 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var exState = state.days[0].exercises[0];
+  assert('F61-Ja', '2 sets in execState', exState.sets.length === 2);
+  assert('F61-Jb', 'S0 carga=200', exState.sets[0].carga === 200);
+  assert('F61-Jc', 'S1 carga=195', exState.sets[1].carga === 195);
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F61-Jd', '195 in HTML', html.indexOf('195') !== -1);
+})();
+
+// F61-K: progrec suggestion → shown as suggestion badge, NOT as prescribed load
+(function() {
+  console.log('\nF61-K — progrec.newLoad → suggestion badge, never prescribed');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{
+    exerciseName:'Press Banca', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }]
+  }] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:80, reps:9, unit:'kg', done:true, rir:2, rir_real:1, ts:1700900000 },
+    'progrec_1_0': { recommendations: [{ exerciseName:'Press Banca', newLoad:85, reps:'8-10', note:'Listo para subir' }], deloadTriggers:[] }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var progSugg = state.days[0].exercises[0].progrecSuggestion;
+  assert('F61-Ka', 'progrecSuggestion present', progSugg !== null);
+  assert('F61-Kb', 'newLoad=85', progSugg.newLoad === 85);
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F61-Kc', 'SUGERENCIA in HTML (not prescribed)', html.indexOf('SUGERENCIA') !== -1);
+  assert('F61-Kd', 'solo sugerencia label present', html.indexOf('solo sugerencia') !== -1);
+  assert('F61-Ke', '85 in HTML (suggestion value)', html.indexOf('85') !== -1);
+})();
+
+// F61-L: sessionDone true (no autoClosed) → COMPLETADA badge shown
+(function() {
+  console.log('\nF61-L — sessionDone + !autoClosed → COMPLETADA badge');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'Día A', exercises:[{ exerciseName:'Jalón', sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:60, restSeconds:90 }] }] }] };
+  var logs = { entries: { 'done_1_0': { ts: 1701000000 } } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  assert('F61-La', 'sessionDone=true', state.days[0].sessionDone === true);
+  assert('F61-Lb', 'sessionAutoClosed=false', state.days[0].sessionAutoClosed === false);
+  var html = _buildClientMirrorView(plan, 1, state);
+  assert('F61-Lc', 'COMPLETADA badge present', html.indexOf('COMPLETADA') !== -1);
+})();
+
+// F61-M: No mutation of plan or logs inputs
+(function() {
+  console.log('\nF61-M — no mutation of plan or logs');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Curl', sets:[{ setIndex:0, repsTarget:12, rirTarget:2, load:20, restSeconds:60 }] }] }] };
+  var logs = { entries: { 'log_1_0_0_s0': { carga:22, reps:12, unit:'kg', done:true, rir:2, rir_real:2, ts:1701100000 } } };
+  var planSnap = JSON.stringify(plan);
+  var logsSnap = JSON.stringify(logs);
+  var state1 = _buildClientMirrorExecutionState(plan, logs, 1);
+  var state2 = _buildClientMirrorExecutionState(plan, logs, 1);
+  _buildClientMirrorView(plan, 1, state1);
+  assert('F61-Ma', 'plan not mutated', JSON.stringify(plan) === planSnap);
+  assert('F61-Mb', 'logs not mutated', JSON.stringify(logs) === logsSnap);
+  assert('F61-Mc', 'execState deterministic', JSON.stringify(state1) === JSON.stringify(state2));
+})();
+
+// F61-N: execState=null → same output as calling without execState (backward compat)
+(function() {
+  console.log('\nF61-N — execState=null backward compat with no-execState call');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Press', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }] }] };
+  var h1 = _buildClientMirrorView(plan, 1, null);
+  var h2 = _buildClientMirrorView(plan, 1);
+  assert('F61-Na', 'null execState === no execState', h1 === h2);
+  assert('F61-Nb', 'no exec banner in either', h1.indexOf('Con ejecución real') === -1);
 })();
 
 process.exit(_fail > 0 ? 1 : 0);

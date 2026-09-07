@@ -8342,6 +8342,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   let _detailPrevPlanData   = null;   // FASE 26 — plan anterior (lazy, desde plans_backup)
   let _detailFichaData      = null;
   let _detailRenovacionData = null;
+  let _detailLogsData    = null;   // FASE 61 — logs del cliente para mirror de ejecución
   let _detailActiveTab  = 'plan';
 
   async function showClientDetail(clientId) {
@@ -8388,6 +8389,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     try {
       const renovSnap = await getDoc(doc(db, 'fichas_renovacion', clientId));
       if (renovSnap.exists()) _detailRenovacionData = renovSnap.data();
+    } catch(_) {}
+
+    _detailLogsData = null;   // FASE 61
+    try {
+      const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      if (logsSnap.exists()) _detailLogsData = logsSnap.data();
     } catch(_) {}
 
     body.innerHTML = `
@@ -11106,7 +11113,7 @@ El esfuerzo no es negociable.
 
   // ========== FASE 58 — COACH CLIENT-PLAN MIRROR VIEW ==========
   // Pure: 0 I/O, 0 writes, 0 mutation. Returns read-only HTML matching client-app semantics.
-  function _buildClientMirrorView(plan, week) {
+  function _buildClientMirrorView(plan, week, execState) {
     var _e = window._escH || function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); };
     if (!plan || !Array.isArray(plan.days) || !plan.days.length) {
       return '<div style="padding:32px 16px;text-align:center;color:#555;font-size:13px">Sin plan activo o plan sin días.</div>';
@@ -11240,20 +11247,31 @@ El esfuerzo no es negociable.
       bannerWeek = ' · <span style="color:#88ffcc;font-weight:700">Sem '+weekCtx.week+'/'+weekCtx.totalWeeks+'</span>';
       if (weekCtx.isDeload) bannerWeek += ' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(126,192,255,.12);border:1px solid rgba(126,192,255,.4);color:#7ec0ff;font-weight:700">⟲ DELOAD</span>';
     }
+    var hasExecData = !!(execState && execState.days && execState.days.length);
     var html = '<div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;padding:6px 10px;background:rgba(196,255,0,.05);border:1px solid rgba(196,255,0,.12);border-radius:6px;display:flex;align-items:center;gap:6px">'
       + '<span style="color:#C4FF00;font-weight:700">👁 VISTA CLIENTE</span>'
       + bannerWeek
-      + ' <span style="color:#555">— Solo lectura · Sin logs · Sin progresión</span></div>';
+      + (hasExecData
+          ? ' <span style="color:#44BB88;font-size:9px;font-weight:700">· Con ejecución real</span>'
+          : ' <span style="color:#555">— Solo lectura · Sin logs · Sin progresión</span>')
+      + '</div>';
     for (var di = 0; di < days.length; di++) {
       var d = days[di];
       var exs = d.exercises || [];
       var dayWCtx = weekCtx ? weekCtx.days[di] : null;
+      var execDay = (hasExecData && execState.days[di]) ? execState.days[di] : null;
       var dayDeloadBadge = (weekCtx && weekCtx.isDeload)
         ? ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(126,192,255,.12);border:1px solid rgba(126,192,255,.4);color:#7ec0ff;font-weight:700;text-transform:uppercase">⟲ DELOAD</span>'
         : '';
+      var dayExecBadge = '';
+      if (execDay && execDay.sessionAutoClosed) {
+        dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(136,136,136,.12);border:1px solid rgba(136,136,136,.35);color:#888;font-weight:700">⚠️ ADMIN</span>';
+      } else if (execDay && execDay.sessionDone) {
+        dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(68,187,136,.1);border:1px solid rgba(68,187,136,.35);color:#44BB88;font-weight:700">✓ COMPLETADA</span>';
+      }
       html += '<div style="margin-bottom:14px;border:1px solid rgba(244,244,240,.12);border-radius:10px;overflow:hidden">'
         + '<div style="background:rgba(244,244,240,.07);padding:8px 12px;border-bottom:1px solid rgba(244,244,240,.08)">'
-        + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span>'+dayDeloadBadge+'</div>';
+        + '<span style="font-size:13px;font-weight:800;color:#F4F4F0;letter-spacing:.5px">'+_e(d.label||'Día '+(di+1))+'</span>'+dayDeloadBadge+dayExecBadge+'</div>';
       if (!exs.length) {
         html += '<div style="padding:10px 12px;color:#555;font-size:12px">Sin ejercicios</div>';
       }
@@ -11264,6 +11282,7 @@ El esfuerzo no es negociable.
         if (tech === 'rest_pause') tech = 'rest-pause';
         var sets = ex.sets || [];
         var exWCtx = dayWCtx ? dayWCtx.exercises[ei] : null;
+        var execEx = execDay ? execDay.exercises[ei] : null;
         // Inactive technique: show placeholder and skip
         if (exWCtx && !exWCtx.techniqueActive) {
           html += '<div style="padding:8px 12px;'+(ei?'border-top:1px solid rgba(244,244,240,.07)':'')+'">'
@@ -11320,6 +11339,36 @@ El esfuerzo no es negociable.
         if (ex.techniqueNote) {
           notesHtml += '<div style="font-size:10px;color:#CC8844;margin-top:2px;line-height:1.4">⚙️ '+_e(ex.techniqueNote)+'</div>';
         }
+        // Build execSet lookup: setIndex → exec entry
+        var execSetMap = {};
+        if (execEx && execEx.sets && execEx.sets.length) {
+          for (var xsi = 0; xsi < execEx.sets.length; xsi++) {
+            var xs = execEx.sets[xsi];
+            execSetMap[xs.setIndex] = xs;
+          }
+        }
+        // Overlay row below prescription row for real/synthetic execution
+        function _execOverlayRow(prescSet, xs) {
+          if (!xs) return '';
+          if (xs.isAutoFilled) {
+            var af = '';
+            if (xs.carga != null) af += xs.carga + ' ' + (xs.unit||'kg');
+            if (xs.reps  != null) af += (af?' × ':'') + xs.reps + ' reps';
+            return '<div style="padding:1px 8px 4px 32px;font-size:10px;color:#666;background:rgba(100,100,100,.03)">'
+              + '<span style="color:#555;font-weight:700">⚠️ auto</span>'
+              + (af ? ' <span style="color:#777">'+_e(af)+'</span>' : '')
+              + (xs.rir_real != null ? ' <span style="color:#666">RIR '+_e(String(xs.rir_real))+'</span>' : '')
+              + '</div>';
+          }
+          if (!xs.done) return '';
+          var rl = '';
+          if (xs.carga != null) rl += '<span style="color:#44BB88;font-weight:700">'+_e(String(xs.carga))+' '+(xs.unit||'kg')+'</span>';
+          if (xs.reps  != null) rl += (rl?' × ':'') + '<span style="color:#88ffcc">'+_e(String(xs.reps))+' reps</span>';
+          if (xs.rir_real != null) rl += ' <span style="color:#888">RIR '+_e(String(xs.rir_real))+'</span>';
+          if (xs.ics  != null) rl += ' <span style="color:#aaa">ICS '+_e(String(xs.ics))+'</span>';
+          return '<div style="padding:1px 8px 4px 32px;font-size:10px;background:rgba(68,187,136,.03)">'
+            + '✅ ' + rl + '</div>';
+        }
         var setsHtml = '';
         if (!sets.length) {
           // Legacy: exercise-level repsTarget/rirTarget (no sets array)
@@ -11327,7 +11376,20 @@ El esfuerzo no es negociable.
           var legRir  = _fmtRIR(ex.rirTarget  != null ? ex.rirTarget  : 2);
           setsHtml = '<div style="font-size:11px;color:#888;padding:4px 8px">'+_e(String(ex.numSeries||3))+'×'+_e(legReps)+' · '+_e(legRir)+'</div>';
         } else {
-          for (var si = 0; si < renderSets.length; si++) setsHtml += _setRow(renderSets[si], si);
+          for (var si = 0; si < renderSets.length; si++) {
+            var rs = renderSets[si];
+            var matchedXs = execSetMap[rs.setIndex != null ? rs.setIndex : si] || execSetMap[si] || null;
+            setsHtml += _setRow(rs, si) + _execOverlayRow(rs, matchedXs);
+          }
+        }
+        // progrec suggestion block
+        var progrecHtml = '';
+        if (execEx && execEx.progrecSuggestion && execEx.progrecSuggestion.newLoad != null) {
+          progrecHtml = '<div style="margin-top:6px;padding:5px 8px;border-radius:5px;background:rgba(196,255,0,.04);border:1px dashed rgba(196,255,0,.2)">'
+            + '<span style="font-size:9px;font-weight:800;color:#C4FF00;letter-spacing:.5px">💡 SUGERENCIA PRÓX. CARGA</span>'
+            + ' <span style="font-size:11px;color:#aaa">'+_e(String(execEx.progrecSuggestion.newLoad))+' kg</span>'
+            + ' <span style="font-size:9px;color:#555">(solo sugerencia — no prescripción)</span>'
+            + '</div>';
         }
         html += '<div style="padding:10px 12px;'+(ei?'border-top:1px solid rgba(244,244,240,.07)':'')+'">'
           + '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;margin-bottom:6px">'
@@ -11341,6 +11403,7 @@ El esfuerzo no es negociable.
           + tfwHtml
           + notesHtml
           + '<div style="border-radius:6px;overflow:hidden;border:1px solid rgba(244,244,240,.07)">'+setsHtml+'</div>'
+          + progrecHtml
           + '</div>';
       }
       html += '</div>';
@@ -11366,7 +11429,11 @@ El esfuerzo no es negociable.
         + '<span style="font-size:10px;color:#555;font-weight:700;align-self:center;margin-right:4px">Semana:</span>'
         + pills + '</div>';
     }
-    var mirrorHtml = _buildClientMirrorView(plan, initWeek);
+    var logs = _detailLogsData || null;
+    function _computeExecState(w) {
+      return (logs && window._buildClientMirrorExecutionState) ? window._buildClientMirrorExecutionState(plan, logs, w || 1) : null;
+    }
+    var mirrorHtml = _buildClientMirrorView(plan, initWeek, _computeExecState(initWeek || 1));
     var overlay = document.createElement('div');
     overlay.id = 'clientMirrorOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:2000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:32px 16px';
@@ -11389,7 +11456,7 @@ El esfuerzo no es negociable.
         if (!btn) return;
         var w = parseInt(btn.dataset.week);
         var content = overlay.querySelector('#cmMirrorContent');
-        if (content) content.innerHTML = _buildClientMirrorView(plan, w);
+        if (content) content.innerHTML = _buildClientMirrorView(plan, w, _computeExecState(w));
         var allPills = pillsEl.querySelectorAll('[data-week]');
         for (var i = 0; i < allPills.length; i++) {
           var active = parseInt(allPills[i].dataset.week) === w;
@@ -11600,6 +11667,109 @@ El esfuerzo no es negociable.
     return { week: week, totalWeeks: totalWeeks, isDeload: isDeload, days: days };
   }
   window._buildClientMirrorWeekContext = _buildClientMirrorWeekContext;
+
+  // ========== FASE 61 — CLIENT MIRROR EXECUTION STATE OVERLAY ==========
+  // Pure: 0 I/O, 0 writes, 0 listeners, no mutation of inputs, deterministic.
+  // Matching: PID-first (prescriptionExerciseId), exerciseId as canonical fallback, positional last.
+  // autoFilled=true → synthetic, NOT real execution.
+  // autoClosed=true on done entry → session closed administratively, NOT real execution.
+  // progrecSuggestion.newLoad → suggestion only, NEVER prescribed load.
+
+  function _buildClientMirrorExecutionState(plan, logs, week) {
+    var result = { week: week, days: [] };
+    if (!plan || !Array.isArray(plan.days) || !logs || !logs.entries) return result;
+    var entries = logs.entries;
+    var W = week;
+    var sortedDays = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
+    for (var di = 0; di < sortedDays.length; di++) {
+      var d = sortedDays[di];
+      var D = d.dayIndex != null ? d.dayIndex : di;
+      var exs = d.exercises || [];
+      // Session-level state
+      var doneKey = 'done_' + W + '_' + D;
+      var doneEntry = entries[doneKey];
+      var sessionDone = !!(doneEntry && (doneEntry === true || (typeof doneEntry === 'object' && doneEntry.ts)));
+      var sessionAutoClosed = !!(doneEntry && typeof doneEntry === 'object' && doneEntry.autoClosed);
+      // Progrec for this day
+      var progrecKey = 'progrec_' + W + '_' + D;
+      var progrecEntry = entries[progrecKey];
+      var progrecRecs = (progrecEntry && Array.isArray(progrecEntry.recommendations)) ? progrecEntry.recommendations : [];
+      // Collect log entries for this week+day and index by PID/exerciseId/position
+      var logPrefix = 'log_' + W + '_' + D + '_';
+      var byPid  = {};   // prescriptionExerciseId → [row]
+      var byExId = {};   // exerciseId → [row]
+      var byPos  = {};   // E (positional index at log time) → [row]
+      var keys = Object.keys(entries);
+      for (var ki = 0; ki < keys.length; ki++) {
+        var key = keys[ki];
+        if (key.indexOf(logPrefix) !== 0) continue;
+        var rest = key.slice(logPrefix.length);  // "{E}_s{S}"
+        var sIdx = rest.indexOf('_s');
+        if (sIdx === -1) continue;
+        var E = parseInt(rest.slice(0, sIdx));
+        var S = parseInt(rest.slice(sIdx + 2));
+        if (isNaN(E) || isNaN(S)) continue;
+        var entry = entries[key];
+        if (!entry || typeof entry !== 'object') continue;
+        var ePid  = entry.prescriptionExerciseId || null;
+        var eExId = entry.exerciseId || null;
+        var row   = { E: E, S: S, entry: entry };
+        if (ePid)  { if (!byPid[ePid])   byPid[ePid]   = []; byPid[ePid].push(row);   }
+        else if (eExId) { if (!byExId[eExId]) byExId[eExId] = []; byExId[eExId].push(row); }
+        else            { if (!byPos[E])  byPos[E]      = []; byPos[E].push(row);       }
+      }
+      var dayResult = { dayIndex: D, label: d.label || '', sessionDone: sessionDone, sessionAutoClosed: sessionAutoClosed, exercises: [] };
+      for (var ei = 0; ei < exs.length; ei++) {
+        var ex = exs[ei];
+        var exName  = ex.exerciseName || ex.nombre || 'Ejercicio';
+        var exPid   = ex.prescriptionExerciseId || null;
+        var exExId  = ex.exerciseId || null;
+        // PID-first → exerciseId → positional fallback
+        var matchedRows = null;
+        if      (exPid  && byPid[exPid])   matchedRows = byPid[exPid];
+        else if (exExId && byExId[exExId]) matchedRows = byExId[exExId];
+        else if (byPos[ei])                matchedRows = byPos[ei];
+        var sets = [];
+        if (matchedRows) {
+          var sortedRows = matchedRows.slice().sort(function(a,b){ return a.S - b.S; });
+          for (var mi = 0; mi < sortedRows.length; mi++) {
+            var r = sortedRows[mi];
+            var e = r.entry;
+            sets.push({
+              setIndex:    r.S,
+              carga:       e.carga    != null ? e.carga    : null,
+              reps:        e.reps     != null ? e.reps     : null,
+              unit:        e.unit     || 'kg',
+              done:        !!e.done,
+              rir:         e.rir      != null ? e.rir      : null,
+              rir_real:    e.rir_real != null ? e.rir_real : null,
+              ics:         e.ics      != null ? e.ics      : null,
+              pump:        e.pump     != null ? e.pump     : null,
+              ts:          e.ts       || null,
+              isAutoFilled: !!e.autoFilled
+            });
+          }
+        }
+        // Find progrec suggestion for this exercise (name or PID/exerciseId match)
+        var progrecSuggestion = null;
+        var normName = exName.toLowerCase().trim();
+        for (var ri = 0; ri < progrecRecs.length; ri++) {
+          var rec = progrecRecs[ri];
+          var recName = (rec.exerciseName || rec.nombre || '').toLowerCase().trim();
+          var pidMatch  = exPid  && rec.prescriptionExerciseId === exPid;
+          var exidMatch = exExId && rec.exerciseId             === exExId;
+          if (pidMatch || exidMatch || recName === normName) {
+            if (rec.newLoad != null) progrecSuggestion = { newLoad: rec.newLoad };
+            break;
+          }
+        }
+        dayResult.exercises.push({ exerciseName: exName, sets: sets, progrecSuggestion: progrecSuggestion });
+      }
+      result.days.push(dayResult);
+    }
+    return result;
+  }
+  window._buildClientMirrorExecutionState = _buildClientMirrorExecutionState;
 
   // ========== FASE 26 — COMPARACIÓN DE PLANES ==========
 
