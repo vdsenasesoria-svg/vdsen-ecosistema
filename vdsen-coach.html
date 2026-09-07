@@ -6506,6 +6506,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const _intentConstraintTxt = (typeof window._buildCoachIntentConstraintText === 'function')
         ? window._buildCoachIntentConstraintText(_coachIntent) : '';
 
+      // FASE 67 — Missing Data Classification
+      const _missingResult = (typeof window._classifyMissingInputs === 'function')
+        ? window._classifyMissingInputs(ficha.data, prescCtx) : { missingInputs: [], blockingCount: 0, summaryText: '' };
+      const _missingRec = _missingResult.missingInputs.filter(function(m) { return m.severity === 'RECOMMENDED'; });
+      const _missingDataTxt = _missingRec.length
+        ? 'NOTA — Datos ausentes que el motor debe estimar con defaults:\n' + _missingRec.map(function(m) { return '• ' + m.detail; }).join('\n')
+        : '';
+
       setStatus('<span style="color:var(--text-muted)">Generando con el motor VDSEN… (10–40 s)</span>');
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
@@ -6518,6 +6526,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
         _intentConstraintTxt,
+        _missingDataTxt,
         prescCtxTxt,
         'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
@@ -6711,9 +6720,19 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           + '<span style="color:var(--text-muted);font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
           + rows + _dtLine + '</div>';
       })();
+      // FASE 67 — Missing data preview block
+      const _missingDataHtml = (function() {
+        var recItems = _missingResult.missingInputs.filter(function(m) { return m.severity === 'RECOMMENDED'; });
+        if (!recItems.length) return '';
+        return '<div style="border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:10px;color:#f0a500">'
+          + '<span style="font-weight:600">⚠ DATOS AUSENTES (' + recItems.length + ')</span> — el motor usó defaults:<br>'
+          + recItems.map(function(m) { return '· ' + _escH(m.detail); }).join('<br>')
+          + '</div>';
+      })();
       setStatus('<div style="color:var(--success);font-weight:700">✅ Generado y cargado: ' + saved.join(' · ') + '</div>'
         + '<div style="color:var(--text-muted);font-size:11px;margin-top:4px">Tokens: ' + (u.input_tokens || '?') + ' in / ' + (u.output_tokens || '?') + ' out' + cacheNote + ' · Ya visible para el cliente en su app.</div>'
         + _intentTraceHtml
+        + _missingDataHtml
         + _lvHtml
         + _hintsHtml
         + '<button onclick="downloadPlanPDF(\'' + clientId + '\')" class="btn-secondary" style="margin-top:10px">📄 Descargar PDF del plan</button>'
@@ -10883,6 +10902,14 @@ El esfuerzo no es negociable.
       const _intentConstraintTxt2 = (typeof window._buildCoachIntentConstraintText === 'function')
         ? window._buildCoachIntentConstraintText(_coachIntent2) : '';
 
+      // FASE 67 — Missing Data Classification (modal flow)
+      const _missingResult2 = (typeof window._classifyMissingInputs === 'function')
+        ? window._classifyMissingInputs(ficha.data, prescCtx) : { missingInputs: [], blockingCount: 0, summaryText: '' };
+      const _missingRec2 = _missingResult2.missingInputs.filter(function(m) { return m.severity === 'RECOMMENDED'; });
+      const _missingDataTxt2 = _missingRec2.length
+        ? 'NOTA — Datos ausentes que el motor debe estimar con defaults:\n' + _missingRec2.map(function(m) { return '• ' + m.detail; }).join('\n')
+        : '';
+
       setStatus('<span style="color:#888">Generando con el motor VDSEN… (10–40 s)</span>');
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
@@ -10895,6 +10922,7 @@ El esfuerzo no es negociable.
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
         _intentConstraintTxt2,
+        _missingDataTxt2,
         prescCtxTxt,
         'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
@@ -11096,10 +11124,19 @@ El esfuerzo no es negociable.
           + '<span style="color:#888;font-weight:600">🔧 MEJORAS LONGITUDINALES PROPUESTAS</span>'
           + rows2 + _dtLine2 + '</div>';
       })();
+      // FASE 67 — Missing data preview block (modal flow)
+      const _missingDataHtml2 = (function() {
+        var recItems2 = _missingResult2.missingInputs.filter(function(m) { return m.severity === 'RECOMMENDED'; });
+        if (!recItems2.length) return '';
+        return '<div style="border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:10px;color:#f0a500">'
+          + '<span style="font-weight:600">⚠ DATOS AUSENTES (' + recItems2.length + ')</span> — el motor usó defaults:<br>'
+          + recItems2.map(function(m) { return '· ' + _escH(m.detail); }).join('<br>')
+          + '</div>';
+      })();
       setStatus(`<div style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);border-radius:8px;padding:12px;margin-top:4px">
         <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Generado: ${saved.join(' · ')}</div>
         <div style="color:#888;font-size:11px">Tokens: ${u.input_tokens||'?'} in / ${u.output_tokens||'?'} out${cacheNote}</div>
-        ${_intentTraceHtml2}${_lvHtml2}${_hintsHtml2}${trunc}
+        ${_intentTraceHtml2}${_missingDataHtml2}${_lvHtml2}${_hintsHtml2}${trunc}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button onclick="_switchClientTab('plan')" style="padding:6px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">🏋️ Ver Plan</button>
           <button onclick="downloadPlanPDF('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.25);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📄 PDF</button>
@@ -12446,6 +12483,77 @@ El esfuerzo no es negociable.
     return '\nRESTRICCIONES EXPLÍCITAS DEL COACH (máxima prioridad, solo superadas por vetos médicos):\n' + lines.join('\n');
   }
   window._buildCoachIntentConstraintText = _buildCoachIntentConstraintText;
+
+  // ========== FASE 67 — MISSING DATA CLASSIFICATION ==========
+  // Pure: 0 I/O, 0 mutation, deterministic.
+  // Classifies absent ficha + longitudinal fields before generation.
+  // Severity: 'RECOMMENDED' (quality impact) | 'INFO' (no quality impact)
+  // Never returns severity='REQUIRED' — the motor handles all fields with defaults.
+  // Used to inform the coach in the preview and inject a hint into the prompt.
+  function _classifyMissingInputs(fichaData, prescCtx) {
+    var fd = (fichaData && typeof fichaData === 'object') ? fichaData : {};
+    var pc = (prescCtx && typeof prescCtx === 'object') ? prescCtx : {};
+    var items = [];
+    function _present(obj, keys) {
+      var ks = Array.isArray(keys) ? keys : [keys];
+      return ks.some(function(k) {
+        var v = obj[k];
+        return v != null && v !== '' && v !== 'null' && !(Array.isArray(v) && v.length === 0);
+      });
+    }
+    // ── FICHA — biometric data ──────────────────────────────────────────────
+    if (!_present(fd, ['peso_kg', 'peso', 'weight'])) {
+      items.push({ field: 'peso_kg', severity: 'RECOMMENDED', category: 'biometrica',
+        detail: 'Peso ausente — calorías y TDEE estimados con defaults poblacionales' });
+    }
+    if (!_present(fd, ['talla_cm', 'estatura', 'height', 'talla'])) {
+      items.push({ field: 'talla_cm', severity: 'RECOMMENDED', category: 'biometrica',
+        detail: 'Talla ausente — IMC y TDEE menos precisos' });
+    }
+    if (!_present(fd, ['edad', 'age'])) {
+      items.push({ field: 'edad', severity: 'RECOMMENDED', category: 'biometrica',
+        detail: 'Edad ausente — volumen y recuperación prescrita con defaults' });
+    }
+    // ── FICHA — training intent ─────────────────────────────────────────────
+    if (!_present(fd, ['nivel', 'training_level', 'experience'])) {
+      items.push({ field: 'nivel', severity: 'RECOMMENDED', category: 'entrenamiento',
+        detail: 'Nivel de entrenamiento ausente — se usará "intermedio" por defecto' });
+    }
+    if (!_present(fd, ['objetivo_mesociclo', 'enfoque_actual', 'objetivo'])) {
+      items.push({ field: 'objetivo_mesociclo', severity: 'RECOMMENDED', category: 'entrenamiento',
+        detail: 'Objetivo del mesociclo ausente — el motor infiere por contexto' });
+    }
+    if (!_present(fd, ['objetivo_calorico', 'caloric_goal'])) {
+      items.push({ field: 'objetivo_calorico', severity: 'RECOMMENDED', category: 'nutricion',
+        detail: 'Objetivo calórico ausente — el motor infiere por objetivo de entrenamiento' });
+    }
+    // ── FICHA — scheduling ─────────────────────────────────────────────────
+    if (!_present(fd, ['dias_semana', 'dias_disponibles', 'available_days', 'training_days'])) {
+      items.push({ field: 'dias_semana', severity: 'INFO', category: 'entrenamiento',
+        detail: 'Días disponibles ausentes en ficha — el motor determinará días óptimos (puede ser sobreescrito por intención del Coach)' });
+    }
+    // ── LONGITUDINAL data ──────────────────────────────────────────────────
+    if (!pc.hasPreviousPlan) {
+      items.push({ field: 'previousPlan', severity: 'INFO', category: 'longitudinal',
+        detail: 'Sin plan previo — primer mesociclo, sin referencia de continuidad' });
+    }
+    var _hasProgrec = Array.isArray(pc.progressionSummary) && pc.progressionSummary.length > 0;
+    if (!_hasProgrec) {
+      items.push({ field: 'progressionSummary', severity: 'INFO', category: 'longitudinal',
+        detail: 'Sin historial de progresión — sin datos de rendimiento longitudinal' });
+    }
+    if (!pc.checkinSummary) {
+      items.push({ field: 'checkIns', severity: 'INFO', category: 'longitudinal',
+        detail: 'Sin check-ins semanales — sin tendencia de peso/HRV/WHO5' });
+    }
+    var blockingCount = items.filter(function(i) { return i.severity === 'REQUIRED'; }).length;
+    var recCount      = items.filter(function(i) { return i.severity === 'RECOMMENDED'; }).length;
+    var summaryText   = recCount > 0
+      ? recCount + ' campo(s) recomendado(s) ausente(s) — el motor usará defaults'
+      : '';
+    return { missingInputs: items, blockingCount: blockingCount, summaryText: summaryText };
+  }
+  window._classifyMissingInputs = _classifyMissingInputs;
 
   // ========== FASE 26 — COMPARACIÓN DE PLANES ==========
 

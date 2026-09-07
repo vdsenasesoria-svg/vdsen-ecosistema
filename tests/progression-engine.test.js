@@ -13663,4 +13663,179 @@ function _buildCoachIntentConstraintText(coachIntent) {
   assert('F66-Oe', 'deterministic trace', JSON.stringify(t1) === JSON.stringify(t2));
 })();
 
+// ─────────────────────────── FASE 67 — MISSING DATA CLASSIFICATION ────────────────────────────
+// Inline copy of _classifyMissingInputs for pure unit testing (0 I/O)
+function _classifyMissingInputs(fichaData, prescCtx) {
+  var fd = (fichaData && typeof fichaData === 'object') ? fichaData : {};
+  var pc = (prescCtx && typeof prescCtx === 'object') ? prescCtx : {};
+  var items = [];
+  function _present(obj, keys) {
+    var ks = Array.isArray(keys) ? keys : [keys];
+    return ks.some(function(k) {
+      var v = obj[k];
+      return v != null && v !== '' && v !== 'null' && !(Array.isArray(v) && v.length === 0);
+    });
+  }
+  if (!_present(fd, ['peso_kg', 'peso', 'weight'])) {
+    items.push({ field: 'peso_kg', severity: 'RECOMMENDED', category: 'biometrica',
+      detail: 'Peso ausente — calorías y TDEE estimados con defaults poblacionales' });
+  }
+  if (!_present(fd, ['talla_cm', 'estatura', 'height', 'talla'])) {
+    items.push({ field: 'talla_cm', severity: 'RECOMMENDED', category: 'biometrica',
+      detail: 'Talla ausente — IMC y TDEE menos precisos' });
+  }
+  if (!_present(fd, ['edad', 'age'])) {
+    items.push({ field: 'edad', severity: 'RECOMMENDED', category: 'biometrica',
+      detail: 'Edad ausente — volumen y recuperación prescrita con defaults' });
+  }
+  if (!_present(fd, ['nivel', 'training_level', 'experience'])) {
+    items.push({ field: 'nivel', severity: 'RECOMMENDED', category: 'entrenamiento',
+      detail: 'Nivel de entrenamiento ausente — se usará "intermedio" por defecto' });
+  }
+  if (!_present(fd, ['objetivo_mesociclo', 'enfoque_actual', 'objetivo'])) {
+    items.push({ field: 'objetivo_mesociclo', severity: 'RECOMMENDED', category: 'entrenamiento',
+      detail: 'Objetivo del mesociclo ausente — el motor infiere por contexto' });
+  }
+  if (!_present(fd, ['objetivo_calorico', 'caloric_goal'])) {
+    items.push({ field: 'objetivo_calorico', severity: 'RECOMMENDED', category: 'nutricion',
+      detail: 'Objetivo calórico ausente — el motor infiere por objetivo de entrenamiento' });
+  }
+  if (!_present(fd, ['dias_semana', 'dias_disponibles', 'available_days', 'training_days'])) {
+    items.push({ field: 'dias_semana', severity: 'INFO', category: 'entrenamiento',
+      detail: 'Días disponibles ausentes en ficha — el motor determinará días óptimos (puede ser sobreescrito por intención del Coach)' });
+  }
+  if (!pc.hasPreviousPlan) {
+    items.push({ field: 'previousPlan', severity: 'INFO', category: 'longitudinal',
+      detail: 'Sin plan previo — primer mesociclo, sin referencia de continuidad' });
+  }
+  var _hasProgrec = Array.isArray(pc.progressionSummary) && pc.progressionSummary.length > 0;
+  if (!_hasProgrec) {
+    items.push({ field: 'progressionSummary', severity: 'INFO', category: 'longitudinal',
+      detail: 'Sin historial de progresión — sin datos de rendimiento longitudinal' });
+  }
+  if (!pc.checkinSummary) {
+    items.push({ field: 'checkIns', severity: 'INFO', category: 'longitudinal',
+      detail: 'Sin check-ins semanales — sin tendencia de peso/HRV/WHO5' });
+  }
+  var blockingCount = items.filter(function(i) { return i.severity === 'REQUIRED'; }).length;
+  var recCount      = items.filter(function(i) { return i.severity === 'RECOMMENDED'; }).length;
+  var summaryText   = recCount > 0
+    ? recCount + ' campo(s) recomendado(s) ausente(s) — el motor usará defaults'
+    : '';
+  return { missingInputs: items, blockingCount: blockingCount, summaryText: summaryText };
+}
+
+// F67-A: empty fichaData → all major RECOMMENDED fields detected
+(function() {
+  console.log('\nF67-A — empty fichaData → all RECOMMENDED fields missing');
+  var r = _classifyMissingInputs({}, {});
+  var recItems = r.missingInputs.filter(function(i) { return i.severity === 'RECOMMENDED'; });
+  assert('F67-Aa', 'returns object with missingInputs array', Array.isArray(r.missingInputs));
+  assert('F67-Ab', 'peso_kg detected', r.missingInputs.some(function(m) { return m.field === 'peso_kg'; }));
+  assert('F67-Ac', 'talla_cm detected', r.missingInputs.some(function(m) { return m.field === 'talla_cm'; }));
+  assert('F67-Ad', 'edad detected', r.missingInputs.some(function(m) { return m.field === 'edad'; }));
+  assert('F67-Ae', 'nivel detected', r.missingInputs.some(function(m) { return m.field === 'nivel'; }));
+  assert('F67-Af', 'objetivo_mesociclo detected', r.missingInputs.some(function(m) { return m.field === 'objetivo_mesociclo'; }));
+  assert('F67-Ag', 'objetivo_calorico detected', r.missingInputs.some(function(m) { return m.field === 'objetivo_calorico'; }));
+  assert('F67-Ah', 'blockingCount always 0', r.blockingCount === 0);
+  assert('F67-Ai', 'summaryText non-empty when rec items exist', r.summaryText.length > 0);
+})();
+
+// F67-B: complete fichaData → only INFO items (no RECOMMENDED)
+(function() {
+  console.log('\nF67-B — complete ficha → no RECOMMENDED items');
+  var fd = {
+    peso_kg: 75, talla_cm: 175, edad: 28,
+    nivel: 'avanzado', objetivo_mesociclo: 'hipertrofia',
+    objetivo_calorico: 'superávit', dias_semana: 4
+  };
+  var pc = {
+    hasPreviousPlan: true,
+    progressionSummary: [{ name: 'Press', lastAction: 'increase_load', weeks: 3 }],
+    checkinSummary: { weeksTracked: 4, avgHRV: '55.0' }
+  };
+  var r = _classifyMissingInputs(fd, pc);
+  var recItems = r.missingInputs.filter(function(i) { return i.severity === 'RECOMMENDED'; });
+  assert('F67-Ba', 'no RECOMMENDED items', recItems.length === 0);
+  assert('F67-Bb', 'summaryText empty when no rec items', r.summaryText === '');
+  assert('F67-Bc', 'blockingCount=0', r.blockingCount === 0);
+})();
+
+// F67-C: weight present via alt key → no peso_kg item
+(function() {
+  console.log('\nF67-C — alternate field names for weight');
+  var r1 = _classifyMissingInputs({ peso: 80 }, {});
+  assert('F67-Ca', 'peso alt key → no peso_kg item', !r1.missingInputs.some(function(m) { return m.field === 'peso_kg'; }));
+  var r2 = _classifyMissingInputs({ weight: 80 }, {});
+  assert('F67-Cb', 'weight alt key → no peso_kg item', !r2.missingInputs.some(function(m) { return m.field === 'peso_kg'; }));
+})();
+
+// F67-D: null fichaData → treated as empty object (no crash)
+(function() {
+  console.log('\nF67-D — null fichaData → no crash, all fields missing');
+  var r = _classifyMissingInputs(null, null);
+  assert('F67-Da', 'returns missingInputs array', Array.isArray(r.missingInputs));
+  assert('F67-Db', 'blockingCount=0', r.blockingCount === 0);
+})();
+
+// F67-E: prescCtx with hasPreviousPlan=true → no previousPlan INFO item
+(function() {
+  console.log('\nF67-E — prescCtx hasPreviousPlan=true → no previousPlan INFO item');
+  var fd = { peso_kg: 70, talla_cm: 170, edad: 25, nivel: 'intermedio', objetivo_mesociclo: 'hipertrofia', objetivo_calorico: 'mantenimiento', dias_semana: 3 };
+  var pc = { hasPreviousPlan: true, progressionSummary: [{ name: 'ex', weeks: 2 }], checkinSummary: { weeksTracked: 2 } };
+  var r = _classifyMissingInputs(fd, pc);
+  assert('F67-Ea', 'no previousPlan INFO', !r.missingInputs.some(function(m) { return m.field === 'previousPlan'; }));
+  assert('F67-Eb', 'no progressionSummary INFO', !r.missingInputs.some(function(m) { return m.field === 'progressionSummary'; }));
+  assert('F67-Ec', 'no checkIns INFO', !r.missingInputs.some(function(m) { return m.field === 'checkIns'; }));
+})();
+
+// F67-F: prescCtx with no checkins → checkIns INFO item present
+(function() {
+  console.log('\nF67-F — no checkinSummary → checkIns INFO item');
+  var r = _classifyMissingInputs({}, { hasPreviousPlan: true, progressionSummary: [{}], checkinSummary: null });
+  assert('F67-Fa', 'checkIns INFO present', r.missingInputs.some(function(m) { return m.field === 'checkIns' && m.severity === 'INFO'; }));
+})();
+
+// F67-G: severity breakdown — never REQUIRED
+(function() {
+  console.log('\nF67-G — blockingCount always 0 (no REQUIRED items)');
+  var r = _classifyMissingInputs({}, {});
+  var requiredItems = r.missingInputs.filter(function(i) { return i.severity === 'REQUIRED'; });
+  assert('F67-Ga', 'zero REQUIRED items', requiredItems.length === 0);
+  assert('F67-Gb', 'blockingCount=0', r.blockingCount === 0);
+})();
+
+// F67-H: 'null' string value treated as absent
+(function() {
+  console.log('\nF67-H — string "null" treated as absent');
+  var r = _classifyMissingInputs({ peso_kg: 'null', edad: 'null' }, {});
+  assert('F67-Ha', 'peso_kg="null" → still missing', r.missingInputs.some(function(m) { return m.field === 'peso_kg'; }));
+  assert('F67-Hb', 'edad="null" → still missing', r.missingInputs.some(function(m) { return m.field === 'edad'; }));
+})();
+
+// F67-I: no mutation of inputs
+(function() {
+  console.log('\nF67-I — no mutation of inputs');
+  var fd = { peso_kg: 70 };
+  var pc = { hasPreviousPlan: false };
+  var fdSnap = JSON.stringify(fd);
+  var pcSnap = JSON.stringify(pc);
+  _classifyMissingInputs(fd, pc);
+  assert('F67-Ia', 'fichaData not mutated', JSON.stringify(fd) === fdSnap);
+  assert('F67-Ib', 'prescCtx not mutated', JSON.stringify(pc) === pcSnap);
+})();
+
+// F67-J: deterministic — same inputs → same output
+(function() {
+  console.log('\nF67-J — deterministic');
+  var fd = { nivel: 'avanzado' };
+  var pc = { hasPreviousPlan: false, progressionSummary: [] };
+  var r1 = _classifyMissingInputs(fd, pc);
+  var r2 = _classifyMissingInputs(fd, pc);
+  assert('F67-Ja', 'same missingInputs length', r1.missingInputs.length === r2.missingInputs.length);
+  assert('F67-Jb', 'same blockingCount', r1.blockingCount === r2.blockingCount);
+  assert('F67-Jc', 'same summaryText', r1.summaryText === r2.summaryText);
+  assert('F67-Jd', 'deep equal output', JSON.stringify(r1) === JSON.stringify(r2));
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
