@@ -6729,9 +6729,28 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           + recItems.map(function(m) { return '· ' + _escH(m.detail); }).join('<br>')
           + '</div>';
       })();
+      // FASE 68 — Plan Quality Audit (post-write, read-only)
+      const _qualityAudit = (typeof window._buildPlanQualityAudit === 'function')
+        ? window._buildPlanQualityAudit(training, nutrition, supplements) : null;
+      const _qualityHtml = (function() {
+        if (!_qualityAudit) return '';
+        var qa = _qualityAudit;
+        var col = qa.status === 'OK' ? 'var(--success)' : (qa.status === 'REVIEW' ? 'var(--danger)' : '#f0a500');
+        var ic  = qa.status === 'OK' ? '✅' : (qa.status === 'REVIEW' ? '⚠️' : '⚡');
+        var statsLine = qa.stats.days + ' días · ' + qa.stats.exercises + ' ejercicios · ' + qa.stats.sets + ' series'
+          + (qa.stats.meals ? ' · ' + qa.stats.meals + ' comidas' : '');
+        var issueLines = qa.issues.slice(0, 5).map(function(i) {
+          return '<div style="color:' + (i.severity === 'REVIEW' ? 'var(--danger)' : '#f0a500') + ';font-size:10px;margin-top:2px">· ' + _escH(i.msg) + '</div>';
+        }).join('');
+        return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
+          + '<span style="color:' + col + ';font-weight:600">' + ic + ' AUDITORÍA: ' + qa.status + '</span>'
+          + ' <span style="color:var(--text-muted)">' + _escH(statsLine) + '</span>'
+          + issueLines + '</div>';
+      })();
       setStatus('<div style="color:var(--success);font-weight:700">✅ Generado y cargado: ' + saved.join(' · ') + '</div>'
         + '<div style="color:var(--text-muted);font-size:11px;margin-top:4px">Tokens: ' + (u.input_tokens || '?') + ' in / ' + (u.output_tokens || '?') + ' out' + cacheNote + ' · Ya visible para el cliente en su app.</div>'
         + _intentTraceHtml
+        + _qualityHtml
         + _missingDataHtml
         + _lvHtml
         + _hintsHtml
@@ -11133,10 +11152,28 @@ El esfuerzo no es negociable.
           + recItems2.map(function(m) { return '· ' + _escH(m.detail); }).join('<br>')
           + '</div>';
       })();
+      // FASE 68 — Plan Quality Audit (post-write, read-only, modal flow)
+      const _qualityAudit2 = (typeof window._buildPlanQualityAudit === 'function')
+        ? window._buildPlanQualityAudit(training, nutrition, supplements) : null;
+      const _qualityHtml2 = (function() {
+        if (!_qualityAudit2) return '';
+        var qa2 = _qualityAudit2;
+        var col2 = qa2.status === 'OK' ? '#44BB88' : (qa2.status === 'REVIEW' ? '#e05555' : '#f0a500');
+        var ic2  = qa2.status === 'OK' ? '✅' : (qa2.status === 'REVIEW' ? '⚠️' : '⚡');
+        var statsLine2 = qa2.stats.days + ' días · ' + qa2.stats.exercises + ' ejercicios · ' + qa2.stats.sets + ' series'
+          + (qa2.stats.meals ? ' · ' + qa2.stats.meals + ' comidas' : '');
+        var issueLines2 = qa2.issues.slice(0, 5).map(function(i2) {
+          return '<div style="color:' + (i2.severity === 'REVIEW' ? '#e05555' : '#f0a500') + ';font-size:10px;margin-top:2px">· ' + _escH(i2.msg) + '</div>';
+        }).join('');
+        return '<div style="border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
+          + '<span style="color:' + col2 + ';font-weight:600">' + ic2 + ' AUDITORÍA: ' + qa2.status + '</span>'
+          + ' <span style="color:#888">' + _escH(statsLine2) + '</span>'
+          + issueLines2 + '</div>';
+      })();
       setStatus(`<div style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);border-radius:8px;padding:12px;margin-top:4px">
         <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Generado: ${saved.join(' · ')}</div>
         <div style="color:#888;font-size:11px">Tokens: ${u.input_tokens||'?'} in / ${u.output_tokens||'?'} out${cacheNote}</div>
-        ${_intentTraceHtml2}${_missingDataHtml2}${_lvHtml2}${_hintsHtml2}${trunc}
+        ${_intentTraceHtml2}${_qualityHtml2}${_missingDataHtml2}${_lvHtml2}${_hintsHtml2}${trunc}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button onclick="_switchClientTab('plan')" style="padding:6px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">🏋️ Ver Plan</button>
           <button onclick="downloadPlanPDF('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.25);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📄 PDF</button>
@@ -12554,6 +12591,78 @@ El esfuerzo no es negociable.
     return { missingInputs: items, blockingCount: blockingCount, summaryText: summaryText };
   }
   window._classifyMissingInputs = _classifyMissingInputs;
+
+  // ========== FASE 68 — PLAN QUALITY AUDIT (post-generation, read-only) ==========
+  // Pure: 0 I/O, 0 writes, 0 mutation, deterministic.
+  // Produces a compact quality summary for the coach preview.
+  // Does NOT block writes — called after plan is already saved.
+  // status: 'OK' | 'WARNINGS' | 'REVIEW'
+  function _buildPlanQualityAudit(training, nutrition, supplements) {
+    var issues = [];
+    var stats  = { days: 0, exercises: 0, sets: 0, meals: 0 };
+    function _warn(msg)   { issues.push({ severity: 'WARN',   msg: msg }); }
+    function _review(msg) { issues.push({ severity: 'REVIEW', msg: msg }); }
+    // ── Training ──────────────────────────────────────────────────────────────
+    if (training && Array.isArray(training.days)) {
+      stats.days = training.days.length;
+      training.days.forEach(function(day, di) {
+        var dayLabel = (day.label || 'Día ' + (di + 1));
+        if (!Array.isArray(day.exercises) || day.exercises.length === 0) {
+          _review(dayLabel + ': sin ejercicios');
+          return;
+        }
+        day.exercises.forEach(function(ex) {
+          stats.exercises++;
+          var exName = (ex.exerciseName || '').trim();
+          if (!exName) _review('Día ' + (di + 1) + ': ejercicio sin nombre');
+          if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
+            _review(dayLabel + ' / ' + (exName || '?') + ': sin series');
+            return;
+          }
+          ex.sets.forEach(function(s, si) {
+            stats.sets++;
+            if (s.repsTarget == null || isNaN(Number(s.repsTarget)) || Number(s.repsTarget) < 1) {
+              _warn((exName || '?') + ' s' + (si + 1) + ': repsTarget inválido (' + s.repsTarget + ')');
+            }
+            if (s.rirTarget == null || isNaN(Number(s.rirTarget)) || Number(s.rirTarget) < 0) {
+              _warn((exName || '?') + ' s' + (si + 1) + ': rirTarget inválido (' + s.rirTarget + ')');
+            }
+            if (s.restSeconds == null || isNaN(Number(s.restSeconds)) || Number(s.restSeconds) <= 0) {
+              _warn((exName || '?') + ' s' + (si + 1) + ': restSeconds inválido (' + s.restSeconds + ')');
+            }
+          });
+        });
+      });
+      if (stats.days === 0) _review('Sin días de entrenamiento');
+      if (stats.sets === 0 && stats.days > 0) _review('Cero series en total');
+    } else if (training != null) {
+      _review('training.days no es array');
+    }
+    // ── Nutrition ─────────────────────────────────────────────────────────────
+    if (nutrition) {
+      var meals = Array.isArray(nutrition.comidas) ? nutrition.comidas.filter(function(c) { return c && typeof c === 'object'; }) : [];
+      stats.meals = meals.length;
+      if (!nutrition.calorias || isNaN(Number(nutrition.calorias)) || Number(nutrition.calorias) < 100) {
+        _warn('Calorías ausentes o < 100 kcal');
+      }
+      if (meals.length === 0) _warn('Sin comidas en el plan nutricional');
+      var macroCheck = ['proteina', 'carbos', 'grasas'].filter(function(k) {
+        return nutrition[k] == null || isNaN(Number(nutrition[k])) || Number(nutrition[k]) < 0;
+      });
+      if (macroCheck.length) _warn('Macros inválidos o ausentes: ' + macroCheck.join(', '));
+    }
+    // ── Supplements ───────────────────────────────────────────────────────────
+    if (supplements) {
+      if (!Array.isArray(supplements.tiers) || supplements.tiers.length === 0) {
+        _warn('Plan de suplementación sin tiers');
+      }
+    }
+    var hasReview = issues.some(function(i) { return i.severity === 'REVIEW'; });
+    var hasWarn   = issues.some(function(i) { return i.severity === 'WARN'; });
+    var status    = hasReview ? 'REVIEW' : (hasWarn ? 'WARNINGS' : 'OK');
+    return { status: status, stats: stats, issues: issues };
+  }
+  window._buildPlanQualityAudit = _buildPlanQualityAudit;
 
   // ========== FASE 26 — COMPARACIÓN DE PLANES ==========
 

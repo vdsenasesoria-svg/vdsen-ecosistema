@@ -13838,4 +13838,177 @@ function _classifyMissingInputs(fichaData, prescCtx) {
   assert('F67-Jd', 'deep equal output', JSON.stringify(r1) === JSON.stringify(r2));
 })();
 
+// ─────────────────────────── FASE 68 — PLAN QUALITY AUDIT ────────────────────────────
+// Inline copy of _buildPlanQualityAudit for pure unit testing (0 I/O, post-write, read-only)
+function _buildPlanQualityAudit(training, nutrition, supplements) {
+  var issues = [];
+  var stats  = { days: 0, exercises: 0, sets: 0, meals: 0 };
+  function _warn(msg)   { issues.push({ severity: 'WARN',   msg: msg }); }
+  function _review(msg) { issues.push({ severity: 'REVIEW', msg: msg }); }
+  if (training && Array.isArray(training.days)) {
+    stats.days = training.days.length;
+    training.days.forEach(function(day, di) {
+      var dayLabel = (day.label || 'Día ' + (di + 1));
+      if (!Array.isArray(day.exercises) || day.exercises.length === 0) {
+        _review(dayLabel + ': sin ejercicios'); return;
+      }
+      day.exercises.forEach(function(ex) {
+        stats.exercises++;
+        var exName = (ex.exerciseName || '').trim();
+        if (!exName) _review('Día ' + (di + 1) + ': ejercicio sin nombre');
+        if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
+          _review(dayLabel + ' / ' + (exName || '?') + ': sin series'); return;
+        }
+        ex.sets.forEach(function(s, si) {
+          stats.sets++;
+          if (s.repsTarget == null || isNaN(Number(s.repsTarget)) || Number(s.repsTarget) < 1) {
+            _warn((exName || '?') + ' s' + (si + 1) + ': repsTarget inválido (' + s.repsTarget + ')');
+          }
+          if (s.rirTarget == null || isNaN(Number(s.rirTarget)) || Number(s.rirTarget) < 0) {
+            _warn((exName || '?') + ' s' + (si + 1) + ': rirTarget inválido (' + s.rirTarget + ')');
+          }
+          if (s.restSeconds == null || isNaN(Number(s.restSeconds)) || Number(s.restSeconds) <= 0) {
+            _warn((exName || '?') + ' s' + (si + 1) + ': restSeconds inválido (' + s.restSeconds + ')');
+          }
+        });
+      });
+    });
+    if (stats.days === 0) _review('Sin días de entrenamiento');
+    if (stats.sets === 0 && stats.days > 0) _review('Cero series en total');
+  } else if (training != null) {
+    _review('training.days no es array');
+  }
+  if (nutrition) {
+    var meals = Array.isArray(nutrition.comidas) ? nutrition.comidas.filter(function(c) { return c && typeof c === 'object'; }) : [];
+    stats.meals = meals.length;
+    if (!nutrition.calorias || isNaN(Number(nutrition.calorias)) || Number(nutrition.calorias) < 100) {
+      _warn('Calorías ausentes o < 100 kcal');
+    }
+    if (meals.length === 0) _warn('Sin comidas en el plan nutricional');
+    var macroCheck = ['proteina', 'carbos', 'grasas'].filter(function(k) {
+      return nutrition[k] == null || isNaN(Number(nutrition[k])) || Number(nutrition[k]) < 0;
+    });
+    if (macroCheck.length) _warn('Macros inválidos o ausentes: ' + macroCheck.join(', '));
+  }
+  if (supplements) {
+    if (!Array.isArray(supplements.tiers) || supplements.tiers.length === 0) {
+      _warn('Plan de suplementación sin tiers');
+    }
+  }
+  var hasReview = issues.some(function(i) { return i.severity === 'REVIEW'; });
+  var hasWarn   = issues.some(function(i) { return i.severity === 'WARN'; });
+  var status    = hasReview ? 'REVIEW' : (hasWarn ? 'WARNINGS' : 'OK');
+  return { status: status, stats: stats, issues: issues };
+}
+
+// F68-A: valid minimal plan → status OK
+(function() {
+  console.log('\nF68-A — valid plan → OK');
+  var training = {
+    daysPerWeek: 2, days: [
+      { label: 'A', exercises: [{ exerciseName: 'Press', sets: [{ setIndex: 0, repsTarget: 10, rirTarget: 2, load: 80, restSeconds: 120 }] }] },
+      { label: 'B', exercises: [{ exerciseName: 'Sentadilla', sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 100, restSeconds: 180 }] }] }
+    ]
+  };
+  var nut = { calorias: 2500, proteina: 180, carbos: 250, grasas: 70, comidas: [{ nombre: 'Desayuno' }, { nombre: 'Comida' }, { nombre: 'Cena' }] };
+  var supp = { tiers: [{ nombre: 'Tier 1', items: [{ nombre: 'Creatina' }] }] };
+  var r = _buildPlanQualityAudit(training, nut, supp);
+  assert('F68-Aa', 'status OK', r.status === 'OK');
+  assert('F68-Ab', 'stats.days=2', r.stats.days === 2);
+  assert('F68-Ac', 'stats.exercises=2', r.stats.exercises === 2);
+  assert('F68-Ad', 'stats.sets=2', r.stats.sets === 2);
+  assert('F68-Ae', 'stats.meals=3', r.stats.meals === 3);
+  assert('F68-Af', 'no issues', r.issues.length === 0);
+})();
+
+// F68-B: missing restSeconds → WARN
+(function() {
+  console.log('\nF68-B — missing restSeconds → WARN');
+  var training = { days: [{ label: 'A', exercises: [{ exerciseName: 'Press', sets: [{ setIndex: 0, repsTarget: 10, rirTarget: 2, load: 80, restSeconds: 0 }] }] }] };
+  var r = _buildPlanQualityAudit(training, null, null);
+  assert('F68-Ba', 'status WARNINGS', r.status === 'WARNINGS');
+  assert('F68-Bb', 'WARN for restSeconds', r.issues.some(function(i) { return i.msg.indexOf('restSeconds') !== -1 && i.severity === 'WARN'; }));
+})();
+
+// F68-C: day without exercises → REVIEW
+(function() {
+  console.log('\nF68-C — day without exercises → REVIEW');
+  var training = { days: [{ label: 'A', exercises: [] }] };
+  var r = _buildPlanQualityAudit(training, null, null);
+  assert('F68-Ca', 'status REVIEW', r.status === 'REVIEW');
+  assert('F68-Cb', 'REVIEW for sin ejercicios', r.issues.some(function(i) { return i.msg.indexOf('sin ejercicios') !== -1 && i.severity === 'REVIEW'; }));
+})();
+
+// F68-D: exercise without name → REVIEW
+(function() {
+  console.log('\nF68-D — exercise without name → REVIEW');
+  var training = { days: [{ label: 'A', exercises: [{ exerciseName: '', sets: [{ repsTarget: 10, rirTarget: 2, restSeconds: 90 }] }] }] };
+  var r = _buildPlanQualityAudit(training, null, null);
+  assert('F68-Da', 'status REVIEW', r.status === 'REVIEW');
+  assert('F68-Db', 'REVIEW for nombre', r.issues.some(function(i) { return i.msg.indexOf('sin nombre') !== -1; }));
+})();
+
+// F68-E: nutrition missing calories → WARN
+(function() {
+  console.log('\nF68-E — nutrition missing calories → WARN');
+  var nut = { proteina: 180, carbos: 250, grasas: 70, comidas: [{}] };
+  var r = _buildPlanQualityAudit(null, nut, null);
+  assert('F68-Ea', 'WARN for calories', r.issues.some(function(i) { return i.msg.indexOf('Calorías') !== -1 && i.severity === 'WARN'; }));
+})();
+
+// F68-F: nutrition no meals → WARN
+(function() {
+  console.log('\nF68-F — nutrition no meals → WARN');
+  var nut = { calorias: 2500, proteina: 180, carbos: 250, grasas: 70, comidas: [] };
+  var r = _buildPlanQualityAudit(null, nut, null);
+  assert('F68-Fa', 'WARN for no meals', r.issues.some(function(i) { return i.msg.indexOf('comidas') !== -1 && i.severity === 'WARN'; }));
+})();
+
+// F68-G: supplements empty tiers → WARN
+(function() {
+  console.log('\nF68-G — supplements empty tiers → WARN');
+  var r = _buildPlanQualityAudit(null, null, { tiers: [] });
+  assert('F68-Ga', 'WARN for no tiers', r.issues.some(function(i) { return i.msg.indexOf('tiers') !== -1 && i.severity === 'WARN'; }));
+})();
+
+// F68-H: REVIEW beats WARN — mixed issues → REVIEW
+(function() {
+  console.log('\nF68-H — REVIEW beats WARN → status REVIEW');
+  var training = { days: [{ label: 'A', exercises: [] }] }; // REVIEW: no ejercicios
+  var nut = { calorias: 0, proteina: 180, carbos: 250, grasas: 70, comidas: [{}] }; // WARN: calorías
+  var r = _buildPlanQualityAudit(training, nut, null);
+  assert('F68-Ha', 'status REVIEW not WARNINGS', r.status === 'REVIEW');
+})();
+
+// F68-I: null inputs → OK with empty stats
+(function() {
+  console.log('\nF68-I — null inputs → OK');
+  var r = _buildPlanQualityAudit(null, null, null);
+  assert('F68-Ia', 'status OK with nulls', r.status === 'OK');
+  assert('F68-Ib', 'zero stats', r.stats.days === 0 && r.stats.exercises === 0 && r.stats.sets === 0);
+  assert('F68-Ic', 'no issues', r.issues.length === 0);
+})();
+
+// F68-J: RIR 0 valid → no warning for rirTarget=0
+(function() {
+  console.log('\nF68-J — rirTarget=0 is valid (no WARN)');
+  var training = { days: [{ label: 'A', exercises: [{ exerciseName: 'Press', sets: [{ repsTarget: 8, rirTarget: 0, restSeconds: 120 }] }] }] };
+  var r = _buildPlanQualityAudit(training, null, null);
+  assert('F68-Ja', 'no WARN for rirTarget=0', !r.issues.some(function(i) { return i.msg.indexOf('rirTarget') !== -1; }));
+  assert('F68-Jb', 'status OK', r.status === 'OK');
+})();
+
+// F68-K: pureza — no mutation, deterministic
+(function() {
+  console.log('\nF68-K — pureza y determinismo');
+  var training = { days: [{ label: 'A', exercises: [{ exerciseName: 'Press', sets: [{ repsTarget: 10, rirTarget: 2, restSeconds: 90 }] }] }] };
+  var nut = { calorias: 2500, proteina: 180, carbos: 250, grasas: 70, comidas: [{}] };
+  var tSnap = JSON.stringify(training); var nSnap = JSON.stringify(nut);
+  var r1 = _buildPlanQualityAudit(training, nut, null);
+  var r2 = _buildPlanQualityAudit(training, nut, null);
+  assert('F68-Ka', 'training not mutated', JSON.stringify(training) === tSnap);
+  assert('F68-Kb', 'nutrition not mutated', JSON.stringify(nut) === nSnap);
+  assert('F68-Kc', 'deterministic', JSON.stringify(r1) === JSON.stringify(r2));
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
