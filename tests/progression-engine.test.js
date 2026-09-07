@@ -15739,4 +15739,48 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
 
 })();
 
+// ========== F80 — CLIENT UX: SESSION STATE DISPLAY PARITY ==========
+// isDone must use _isRealExecution; SKIPPED → _isSkipped flag; display differs
+(function() {
+  // Inline the state derivation logic (mirrors vdsen-cliente.html)
+  function _isRealExecution80(doneEntry) {
+    if (!doneEntry) return false;
+    if (typeof doneEntry !== 'object') return true; // legacy boolean
+    if (doneEntry.skipped && !doneEntry.autoClosed) return false;  // SKIPPED
+    if (doneEntry.autoClosed && doneEntry.skipped) return false;   // AUTO_CLOSED_NO_DATA
+    return true;
+  }
+  function deriveSessionDisplay(doneEntry) {
+    var isDone     = _isRealExecution80(doneEntry);
+    var _isSkipped = !!doneEntry && !isDone && typeof doneEntry === 'object' && doneEntry.skipped && !doneEntry.autoClosed;
+    return { isDone: isDone, isSkipped: _isSkipped };
+  }
+
+  console.log('\nF80 — Client UX: session state display parity');
+
+  var rA = deriveSessionDisplay(null);
+  assert('F80-Aa', 'PENDING → isDone=false, isSkipped=false', !rA.isDone && !rA.isSkipped);
+
+  var rB = deriveSessionDisplay({ ts: 1 });
+  assert('F80-Ba', 'REAL_COMPLETE → isDone=true', rB.isDone);
+  assert('F80-Bb', 'REAL_COMPLETE → isSkipped=false', !rB.isSkipped);
+
+  var rC = deriveSessionDisplay({ ts: 1, skipped: true });
+  assert('F80-Ca', 'SKIPPED → isDone=false', !rC.isDone);
+  assert('F80-Cb', 'SKIPPED → isSkipped=true', rC.isSkipped);
+
+  var rD = deriveSessionDisplay({ ts: 1, autoClosed: true });
+  assert('F80-Da', 'AUTO_CLOSED → isDone=true', rD.isDone);
+  assert('F80-Db', 'AUTO_CLOSED → isSkipped=false', !rD.isSkipped);
+
+  var rE = deriveSessionDisplay({ ts: 1, autoClosed: true, skipped: true });
+  assert('F80-Ea', 'AUTO_CLOSED_NO_DATA → isDone=false', !rE.isDone);
+  assert('F80-Eb', 'AUTO_CLOSED_NO_DATA → isSkipped=false (not user-skipped)', !rE.isSkipped);
+
+  var rF = deriveSessionDisplay(true); // legacy
+  assert('F80-Fa', 'legacy boolean → isDone=true', rF.isDone);
+  assert('F80-Fb', 'legacy boolean → isSkipped=false', !rF.isSkipped);
+
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
