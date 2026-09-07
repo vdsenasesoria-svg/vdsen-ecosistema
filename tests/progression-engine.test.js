@@ -14346,4 +14346,79 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
   assert('F71-Jb', 'deterministic', r1 === r2);
 })();
 
+// ============================================================
+// FASE 72 — Learned State Preview Block (_lsHintHtml logic)
+// Pure inline tests of the IIFE logic used in both generation flows.
+// ============================================================
+(function() {
+  // Inline copy of the _escH helper used in the IIFE
+  function _escH(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  // Inline copy of the IIFE logic (flow 1)
+  function buildLsHintHtml(lsHint) {
+    if (!lsHint) return '';
+    var _lsLines = lsHint.split('\n').filter(Boolean);
+    var _lsBody = _lsLines.slice(1, 4);
+    return '<div style="border:1px solid rgba(100,220,200,.2);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
+      + '<span style="color:#64DCC8;font-weight:600">🧠 HISTORIAL ACTIVADO</span>'
+      + (_lsBody.length ? '<div style="color:var(--text-muted);font-size:10px;margin-top:2px">'
+        + _lsBody.map(function(l) { return '· ' + _escH(l.substring(0, 100)); }).join('<br>') + '</div>' : '')
+      + '</div>';
+  }
+
+  // F72-A: empty hint → empty string
+  console.log('\nF72-A — empty hint returns empty string');
+  assert('F72-Aa', '_lsHint="" → ""', buildLsHintHtml('') === '');
+  assert('F72-Ab', '_lsHint=null → ""', buildLsHintHtml(null) === '');
+  assert('F72-Ac', '_lsHint=undefined → ""', buildLsHintHtml(undefined) === '');
+
+  // F72-B: non-empty hint → contains brain emoji label
+  console.log('\nF72-B — non-empty hint renders block');
+  var hint1 = 'LEARNED STATE ACTIVADO — datos del historial:\nTOPOLOGÍAS PREFERIDAS: PPL · PUSH';
+  var h1 = buildLsHintHtml(hint1);
+  assert('F72-Ba', 'contains 🧠 emoji', h1.indexOf('🧠') >= 0);
+  assert('F72-Bb', 'contains HISTORIAL ACTIVADO', h1.indexOf('HISTORIAL ACTIVADO') >= 0);
+  assert('F72-Bc', 'contains 64DCC8 color', h1.indexOf('64DCC8') >= 0);
+
+  // F72-C: body lines — header line (index 0) is excluded, data lines (1-3) included
+  console.log('\nF72-C — header excluded, data lines included');
+  var hintMulti = 'LEARNED STATE ACTIVADO — header line\nLINEA_1_DATA\nLINEA_2_DATA\nLINEA_3_DATA\nLINEA_4_EXTRA';
+  var hMulti = buildLsHintHtml(hintMulti);
+  assert('F72-Ca', 'header line not in body', hMulti.indexOf('header line') < 0);
+  assert('F72-Cb', 'LINEA_1_DATA present', hMulti.indexOf('LINEA_1_DATA') >= 0);
+  assert('F72-Cc', 'LINEA_3_DATA present (max 3)', hMulti.indexOf('LINEA_3_DATA') >= 0);
+  assert('F72-Cd', 'LINEA_4_EXTRA not present (max 3 body lines)', hMulti.indexOf('LINEA_4_EXTRA') < 0);
+
+  // F72-D: body line truncated at 100 chars
+  console.log('\nF72-D — body lines truncated at 100 chars');
+  var longLine = 'X'.repeat(150);
+  var hintLong = 'HEADER\n' + longLine;
+  var hLong = buildLsHintHtml(hintLong);
+  assert('F72-Da', 'does not contain 150-char line verbatim', hLong.indexOf(longLine) < 0);
+  assert('F72-Db', 'contains first 100 chars', hLong.indexOf('X'.repeat(100)) >= 0);
+  assert('F72-Dc', 'does not contain char 101', hLong.indexOf('X'.repeat(101)) < 0);
+
+  // F72-E: HTML-escape in body lines
+  console.log('\nF72-E — HTML escaping in body lines');
+  var hintXss = 'HEADER\n<script>alert(1)</script>';
+  var hXss = buildLsHintHtml(hintXss);
+  assert('F72-Ea', 'raw <script> not present', hXss.indexOf('<script>') < 0);
+  assert('F72-Eb', 'escaped &lt;script&gt; present', hXss.indexOf('&lt;script&gt;') >= 0);
+
+  // F72-F: hint with only header (no data lines) → no body div
+  console.log('\nF72-F — hint with only header produces no body div');
+  var hintHeaderOnly = 'LEARNED STATE ACTIVADO — solo header sin datos';
+  var hHeader = buildLsHintHtml(hintHeaderOnly);
+  assert('F72-Fa', 'block still rendered (non-empty)', hHeader.length > 0);
+  assert('F72-Fb', 'no body <div> for empty data', hHeader.indexOf('text-muted') < 0);
+
+  // F72-G: determinism
+  console.log('\nF72-G — determinism');
+  var hintDet = 'LEARNED STATE ACTIVADO — det\nTOPO: PPL\nEJ_POS: Press Banca';
+  var rA = buildLsHintHtml(hintDet);
+  var rB = buildLsHintHtml(hintDet);
+  assert('F72-Ga', 'deterministic output', rA === rB);
+  assert('F72-Gb', 'input not mutated (string is primitive)', hintDet === 'LEARNED STATE ACTIVADO — det\nTOPO: PPL\nEJ_POS: Press Banca');
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
