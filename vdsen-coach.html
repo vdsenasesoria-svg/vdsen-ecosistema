@@ -6523,6 +6523,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         ? 'NOTA — Datos ausentes que el motor debe estimar con defaults:\n' + _missingRec.map(function(m) { return '• ' + m.detail; }).join('\n')
         : '';
 
+      // FASE 71 — Learned State Prompt Hint
+      const _lsHint = (typeof window._buildLearnedStatePromptHint === 'function')
+        ? window._buildLearnedStatePromptHint(_activeLearnedState) : '';
+
       setStatus('<span style="color:var(--text-muted)">Generando con el motor VDSEN… (10–40 s)</span>');
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
@@ -6535,6 +6539,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
         _intentConstraintTxt,
+        _lsHint,
         _missingDataTxt,
         prescCtxTxt,
         'FICHA DEL CLIENTE:', fichaTxt
@@ -10954,6 +10959,10 @@ El esfuerzo no es negociable.
         ? 'NOTA — Datos ausentes que el motor debe estimar con defaults:\n' + _missingRec2.map(function(m) { return '• ' + m.detail; }).join('\n')
         : '';
 
+      // FASE 71 — Learned State Prompt Hint (modal flow)
+      const _lsHint2 = (typeof window._buildLearnedStatePromptHint === 'function')
+        ? window._buildLearnedStatePromptHint(_activeLearnedState) : '';
+
       setStatus('<span style="color:#888">Generando con el motor VDSEN… (10–40 s)</span>');
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
@@ -10966,6 +10975,7 @@ El esfuerzo no es negociable.
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
         _intentConstraintTxt2,
+        _lsHint2,
         _missingDataTxt2,
         prescCtxTxt,
         'FICHA DEL CLIENTE:', fichaTxt
@@ -12545,6 +12555,52 @@ El esfuerzo no es negociable.
     return '\nRESTRICCIONES EXPLÍCITAS DEL COACH (máxima prioridad, solo superadas por vetos médicos):\n' + lines.join('\n');
   }
   window._buildCoachIntentConstraintText = _buildCoachIntentConstraintText;
+
+  // ========== FASE 71 — LEARNED STATE PROMPT HINT ==========
+  // Pure function. 0 I/O, 0 writes, 0 mutation.
+  // Returns a compact text block to inject into the motor API prompt when learned state
+  // has medium/high confidence data — topology preferences, exercise history.
+  // Returns '' when no actionable learned state is present.
+  function _buildLearnedStatePromptHint(activeLearnedState) {
+    if (!activeLearnedState || typeof activeLearnedState !== 'object') return '';
+    var lines = [];
+
+    // Topology hints
+    var ts = activeLearnedState.topologyState;
+    if (ts && typeof ts === 'object') {
+      var preferred = Array.isArray(ts.preferredPatterns) ? ts.preferredPatterns.filter(Boolean) : [];
+      var rejected  = Array.isArray(ts.rejectedPatterns)  ? ts.rejectedPatterns.filter(Boolean)  : [];
+      if (preferred.length) lines.push('TOPOLOGÍAS PREFERIDAS (cliente respondió bien): ' + preferred.join(' · '));
+      if (rejected.length)  lines.push('TOPOLOGÍAS RECHAZADAS (mala respuesta/adherencia): ' + rejected.join(' · '));
+    }
+
+    // Exercise history hints — only medium/high confidence
+    var es = activeLearnedState.exerciseState;
+    if (es && typeof es === 'object') {
+      var exMap = (es.exercises && typeof es.exercises === 'object') ? es.exercises : {};
+      var toKeep = [], toAvoid = [];
+      Object.keys(exMap).forEach(function(name) {
+        var rec = exMap[name];
+        if (!rec || typeof rec !== 'object') return;
+        var conf = String(rec.confidence || 'none').toLowerCase();
+        if (conf === 'none' || conf === 'low') return;
+        var hasPain = Array.isArray(rec.painSignals) && rec.painSignals.length > 0;
+        if (hasPain) { toAvoid.push(name); return; }
+        var obs = Array.isArray(rec.observations) ? rec.observations : [];
+        var positive = obs.some(function(o) {
+          var s = String(o).toLowerCase();
+          return s.indexOf('good') >= 0 || s.indexOf('positive') >= 0 || s.indexOf('progressive') >= 0 || s.indexOf('toleran') >= 0;
+        });
+        if (positive && (rec.continuityType === 'KEPT' || rec.continuityType === 'MOVED')) toKeep.push(name);
+      });
+      if (toKeep.length)  lines.push('EJERCICIOS CON HISTORIAL POSITIVO (mantener si aplica): ' + toKeep.slice(0, 8).join(', '));
+      if (toAvoid.length) lines.push('EJERCICIOS CON SEÑAL DE DOLOR (evitar o sustituir): ' + toAvoid.slice(0, 8).join(', '));
+    }
+
+    if (!lines.length) return '';
+    return 'LEARNED STATE ACTIVADO — datos del historial individual del cliente (jerarquía: learned_state > prior):\n' + lines.join('\n');
+  }
+  window._buildLearnedStatePromptHint = _buildLearnedStatePromptHint;
 
   // ========== FASE 70 — PRE-WRITE PLAN INTEGRITY GUARD ==========
   // Pure function. 0 I/O, 0 writes, 0 mutation.

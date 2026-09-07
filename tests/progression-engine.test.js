@@ -14215,4 +14215,135 @@ function _guardPlanIntegrity(planObj) {
   assert('F70-Kb', 'deterministic', JSON.stringify(r1) === JSON.stringify(r2));
 })();
 
+// ========== FASE 71 — LEARNED STATE PROMPT HINT ==========
+function _buildLearnedStatePromptHint(activeLearnedState) {
+  if (!activeLearnedState || typeof activeLearnedState !== 'object') return '';
+  var lines = [];
+  var ts = activeLearnedState.topologyState;
+  if (ts && typeof ts === 'object') {
+    var preferred = Array.isArray(ts.preferredPatterns) ? ts.preferredPatterns.filter(Boolean) : [];
+    var rejected  = Array.isArray(ts.rejectedPatterns)  ? ts.rejectedPatterns.filter(Boolean)  : [];
+    if (preferred.length) lines.push('TOPOLOGÍAS PREFERIDAS (cliente respondió bien): ' + preferred.join(' · '));
+    if (rejected.length)  lines.push('TOPOLOGÍAS RECHAZADAS (mala respuesta/adherencia): ' + rejected.join(' · '));
+  }
+  var es = activeLearnedState.exerciseState;
+  if (es && typeof es === 'object') {
+    var exMap = (es.exercises && typeof es.exercises === 'object') ? es.exercises : {};
+    var toKeep = [], toAvoid = [];
+    Object.keys(exMap).forEach(function(name) {
+      var rec = exMap[name];
+      if (!rec || typeof rec !== 'object') return;
+      var conf = String(rec.confidence || 'none').toLowerCase();
+      if (conf === 'none' || conf === 'low') return;
+      var hasPain = Array.isArray(rec.painSignals) && rec.painSignals.length > 0;
+      if (hasPain) { toAvoid.push(name); return; }
+      var obs = Array.isArray(rec.observations) ? rec.observations : [];
+      var positive = obs.some(function(o) {
+        var s = String(o).toLowerCase();
+        return s.indexOf('good') >= 0 || s.indexOf('positive') >= 0 || s.indexOf('progressive') >= 0 || s.indexOf('toleran') >= 0;
+      });
+      if (positive && (rec.continuityType === 'KEPT' || rec.continuityType === 'MOVED')) toKeep.push(name);
+    });
+    if (toKeep.length)  lines.push('EJERCICIOS CON HISTORIAL POSITIVO (mantener si aplica): ' + toKeep.slice(0, 8).join(', '));
+    if (toAvoid.length) lines.push('EJERCICIOS CON SEÑAL DE DOLOR (evitar o sustituir): ' + toAvoid.slice(0, 8).join(', '));
+  }
+  if (!lines.length) return '';
+  return 'LEARNED STATE ACTIVADO — datos del historial individual del cliente (jerarquía: learned_state > prior):\n' + lines.join('\n');
+}
+
+// F71-A: null → empty string
+(function() {
+  console.log('\nF71-A — null learned state → empty string');
+  assert('F71-Aa', 'returns empty for null', _buildLearnedStatePromptHint(null) === '');
+  assert('F71-Ab', 'returns empty for undefined', _buildLearnedStatePromptHint(undefined) === '');
+})();
+
+// F71-B: empty object (no topologyState, no exerciseState) → empty string
+(function() {
+  console.log('\nF71-B — empty object → empty string');
+  assert('F71-Ba', 'no actionable data → empty', _buildLearnedStatePromptHint({}) === '');
+})();
+
+// F71-C: topology with preferred patterns → hint includes them
+(function() {
+  console.log('\nF71-C — preferred topology → included in hint');
+  var ls = { topologyState: { preferredPatterns: ['Push/Pull/Legs', 'Upper/Lower'], rejectedPatterns: [] } };
+  var h = _buildLearnedStatePromptHint(ls);
+  assert('F71-Ca', 'hint non-empty', h.length > 0);
+  assert('F71-Cb', 'includes TOPOLOGÍAS PREFERIDAS', h.indexOf('TOPOLOGÍAS PREFERIDAS') !== -1);
+  assert('F71-Cc', 'includes pattern name', h.indexOf('Push/Pull/Legs') !== -1);
+})();
+
+// F71-D: topology with rejected patterns → hint includes rejection
+(function() {
+  console.log('\nF71-D — rejected topology → included in hint');
+  var ls = { topologyState: { preferredPatterns: [], rejectedPatterns: ['FullBody'] } };
+  var h = _buildLearnedStatePromptHint(ls);
+  assert('F71-Da', 'includes TOPOLOGÍAS RECHAZADAS', h.indexOf('TOPOLOGÍAS RECHAZADAS') !== -1);
+  assert('F71-Db', 'includes FullBody', h.indexOf('FullBody') !== -1);
+})();
+
+// F71-E: exercise with medium confidence + positive history → toKeep
+(function() {
+  console.log('\nF71-E — positive exercise history → toKeep hint');
+  var ls = { exerciseState: { exercises: {
+    'Press Banca': { confidence: 'medium', continuityType: 'KEPT', painSignals: [], observations: ['good_progression'] }
+  }}};
+  var h = _buildLearnedStatePromptHint(ls);
+  assert('F71-Ea', 'includes HISTORIAL POSITIVO', h.indexOf('HISTORIAL POSITIVO') !== -1);
+  assert('F71-Eb', 'includes Press Banca', h.indexOf('Press Banca') !== -1);
+})();
+
+// F71-F: exercise with pain signals → toAvoid hint
+(function() {
+  console.log('\nF71-F — pain signals → toAvoid hint');
+  var ls = { exerciseState: { exercises: {
+    'Peso Muerto': { confidence: 'high', continuityType: 'KEPT', painSignals: ['lower_back'], observations: [] }
+  }}};
+  var h = _buildLearnedStatePromptHint(ls);
+  assert('F71-Fa', 'includes SEÑAL DE DOLOR', h.indexOf('SEÑAL DE DOLOR') !== -1);
+  assert('F71-Fb', 'includes Peso Muerto', h.indexOf('Peso Muerto') !== -1);
+})();
+
+// F71-G: exercise with low confidence → not included
+(function() {
+  console.log('\nF71-G — low confidence exercise → excluded');
+  var ls = { exerciseState: { exercises: {
+    'Curl Bicep': { confidence: 'low', continuityType: 'KEPT', painSignals: [], observations: ['good'] }
+  }}};
+  var h = _buildLearnedStatePromptHint(ls);
+  assert('F71-Ga', 'low confidence not included', h.indexOf('Curl Bicep') === -1);
+})();
+
+// F71-H: exercise with none confidence → not included
+(function() {
+  console.log('\nF71-H — none confidence → excluded');
+  var ls = { exerciseState: { exercises: {
+    'Sentadilla': { confidence: 'none', continuityType: 'KEPT', painSignals: [], observations: ['positive'] }
+  }}};
+  var h = _buildLearnedStatePromptHint(ls);
+  assert('F71-Ha', 'none confidence not included', h.indexOf('Sentadilla') === -1);
+})();
+
+// F71-I: includes LEARNED STATE header when there is actionable data
+(function() {
+  console.log('\nF71-I — actionable data → includes header');
+  var ls = { topologyState: { preferredPatterns: ['Push/Pull'], rejectedPatterns: [] } };
+  var h = _buildLearnedStatePromptHint(ls);
+  assert('F71-Ia', 'includes LEARNED STATE header', h.indexOf('LEARNED STATE ACTIVADO') !== -1);
+  assert('F71-Ib', 'header mentions jerarquía', h.indexOf('learned_state > prior') !== -1);
+})();
+
+// F71-J: no mutation, deterministic
+(function() {
+  console.log('\nF71-J — pureza y determinismo');
+  var ls = { topologyState: { preferredPatterns: ['PPL'], rejectedPatterns: ['FullBody'] },
+             exerciseState: { exercises: { 'Press': { confidence: 'high', continuityType: 'KEPT', painSignals: [], observations: ['positive'] } } } };
+  var snap = JSON.stringify(ls);
+  var r1 = _buildLearnedStatePromptHint(ls);
+  var r2 = _buildLearnedStatePromptHint(ls);
+  assert('F71-Ja', 'input not mutated', JSON.stringify(ls) === snap);
+  assert('F71-Jb', 'deterministic', r1 === r2);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
