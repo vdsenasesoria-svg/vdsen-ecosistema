@@ -15494,4 +15494,249 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
   assert('F77-Cf', 'no entries for week → doneCount=0', mockCoachDoneCount({},2) === 0);
 })();
 
+// ========== F78 — FINAL GENERATION QUALITY GATE ==========
+// Inlines _guardPlanIntegrity (already at line 14070) + _runPreWritePlanGate
+(function() {
+  // --- inline _runPreWritePlanGate (mirrors vdsen-coach.html) ---
+  function _runPreWritePlanGate(planObj, context) {
+    var _RANK = { 'PASS': 0, 'WARN': 1, 'REVIEW_REQUIRED': 2, 'BLOCK': 3 };
+    var _status = 'PASS';
+    var _blockers = [];
+    var _warnings = [];
+    function _elevate(lvl) { if ((_RANK[lvl] || 0) > (_RANK[_status] || 0)) _status = lvl; }
+    var _ctx = context || {};
+
+    var _g70 = _guardPlanIntegrity(planObj);
+    if (!_g70.valid) {
+      _elevate('BLOCK');
+      _g70.errors.forEach(function(e) { _blockers.push('[STRUCT] ' + e); });
+    }
+    _g70.warnings.forEach(function(w) { _warnings.push('[STRUCT] ' + w); });
+
+    if (Array.isArray(planObj && planObj.days)) {
+      planObj.days.forEach(function(day, di) {
+        var dlabel = (day && day.label) || ('Día ' + (di + 1));
+        if (Array.isArray(day && day.exercises)) {
+          var _dayNames = [];
+          day.exercises.forEach(function(ex, ei) {
+            var exName = (ex && ex.exerciseName || '').trim();
+            if (exName) {
+              var _lower = exName.toLowerCase();
+              if (_dayNames.indexOf(_lower) !== -1) {
+                _elevate('WARN');
+                _warnings.push('[DUP_DAY] ' + dlabel + ': "' + exName + '" aparece 2+ veces en el mismo día');
+              } else {
+                _dayNames.push(_lower);
+              }
+            }
+            if (Array.isArray(ex && ex.sets)) {
+              ex.sets.forEach(function(s, si) {
+                var sid = dlabel + ' / ' + (exName || 'Ej' + (ei + 1)) + ' s' + (si + 1);
+                if (s.load != null) {
+                  var _ld = Number(s.load);
+                  if (isNaN(_ld) || _ld < 0) {
+                    _elevate('WARN');
+                    _warnings.push('[LOAD] ' + sid + ': load inválido (' + s.load + ') — debe ser numérico ≥ 0');
+                  }
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+
+    var _evitar = (_ctx.restrictions && Array.isArray(_ctx.restrictions.ejerciciosEvitar))
+      ? _ctx.restrictions.ejerciciosEvitar : [];
+    if (_evitar.length && Array.isArray(planObj && planObj.days)) {
+      planObj.days.forEach(function(day) {
+        (day && day.exercises || []).forEach(function(ex) {
+          var exName = (ex && ex.exerciseName || '').trim();
+          if (exName) {
+            var vetoed = _evitar.some(function(v) {
+              return exName.toLowerCase().includes(v.toLowerCase()) || v.toLowerCase().includes(exName.toLowerCase());
+            });
+            if (vetoed) {
+              _elevate('REVIEW_REQUIRED');
+              _blockers.push('[VETO] "' + exName + '" está en ejercicios_evitar del cliente');
+            }
+          }
+        });
+      });
+    }
+
+    if (_ctx.nutrition && _ctx.nutrition.calorias && Array.isArray(_ctx.nutrition.comidas)) {
+      var _nut = _ctx.nutrition;
+      var _nutFields = ['proteina', 'carbos', 'grasas'];
+      var _sumM = { proteina: 0, carbos: 0, grasas: 0 };
+      _nut.comidas.forEach(function(m) {
+        _nutFields.forEach(function(f) { _sumM[f] += Number(m[f] || 0); });
+      });
+      _nutFields.forEach(function(f) {
+        var _root = Number(_nut[f] || 0);
+        if (_root > 0) {
+          var _delta = Math.abs(_sumM[f] - _root) / _root;
+          if (_delta > 0.03) {
+            _elevate('WARN');
+            _warnings.push('[MACRO] ' + f + ': suma de comidas ' + _sumM[f].toFixed(1) + ' vs. total ' + _root + ' (Δ' + (_delta * 100).toFixed(1) + '%)');
+          }
+        }
+      });
+    }
+
+    var _extGates = [_ctx.effGate, _ctx.longGate];
+    _extGates.forEach(function(eg) {
+      if (!eg) return;
+      var _mapped = eg.status === 'OK' ? 'PASS' : (eg.status || 'PASS');
+      _elevate(_mapped);
+      if (Array.isArray(eg.criticalIssues)) eg.criticalIssues.forEach(function(ci) { _blockers.push('[LONG] ' + ci); });
+      if (Array.isArray(eg.warnings)) eg.warnings.forEach(function(w) { _warnings.push('[LONG] ' + w); });
+    });
+
+    return { status: _status, blockers: _blockers, warnings: _warnings };
+  }
+
+  // --- helpers ---
+  function _mkSet(overrides) {
+    return Object.assign({ setIndex:0, repsTarget:10, rirTarget:2, load:0, restSeconds:90 }, overrides);
+  }
+  function _mkEx(name, setsOverrides) {
+    return { exerciseName: name, sets: (setsOverrides || [_mkSet()]) };
+  }
+  function _mkPlan(days) {
+    return { weeks:4, daysPerWeek: days.length, days: days };
+  }
+  function _day1() {
+    return { label:'Lunes', exercises: [_mkEx('Press Banca'), _mkEx('Sentadilla')] };
+  }
+  function _cleanPlan() {
+    return _mkPlan([_day1()]);
+  }
+
+  console.log('\nF78 — Final Generation Quality Gate');
+
+  // --- F78-A: clean plan → PASS ---
+  console.log('\nF78-A — clean plan');
+  var gA = _runPreWritePlanGate(_cleanPlan(), {});
+  assert('F78-Aa', 'clean plan → PASS', gA.status === 'PASS');
+  assert('F78-Ab', 'no blockers',       gA.blockers.length === 0);
+  assert('F78-Ac', 'no warnings',       gA.warnings.length === 0);
+
+  // --- F78-B: structural failures → BLOCK ---
+  console.log('\nF78-B — structural failures → BLOCK');
+  var gB1 = _runPreWritePlanGate(null, {});
+  assert('F78-Ba', 'null planObj → BLOCK', gB1.status === 'BLOCK');
+
+  var gB2 = _runPreWritePlanGate({ weeks:4, days:[] }, {});
+  assert('F78-Bb', 'empty days[] → BLOCK', gB2.status === 'BLOCK');
+
+  var gB3 = _runPreWritePlanGate({ weeks:4, days:[{ label:'A', exercises:[] }] }, {});
+  assert('F78-Bc', 'empty exercises → BLOCK', gB3.status === 'BLOCK');
+
+  var gB4 = _runPreWritePlanGate({ weeks:4, days:[{ label:'A', exercises:[{ exerciseName:'X', sets:[] }] }] }, {});
+  assert('F78-Bd', 'empty sets → BLOCK', gB4.status === 'BLOCK');
+
+  // --- F78-C: load contract ---
+  console.log('\nF78-C — load contract violations → WARN');
+  var gC1 = _runPreWritePlanGate(_mkPlan([{ label:'A', exercises:[_mkEx('X', [_mkSet({load: -5})])] }]), {});
+  assert('F78-Ca', 'negative load → WARN', gC1.status === 'WARN');
+  assert('F78-Cb', 'warning contains [LOAD]', gC1.warnings.some(function(w){ return w.includes('[LOAD]'); }));
+
+  var gC2 = _runPreWritePlanGate(_mkPlan([{ label:'A', exercises:[_mkEx('X', [_mkSet({load: 'abc'})])] }]), {});
+  assert('F78-Cc', 'non-numeric load → WARN', gC2.status === 'WARN');
+
+  var gC3 = _runPreWritePlanGate(_mkPlan([{ label:'A', exercises:[_mkEx('X', [_mkSet({load: 0})])] }]), {});
+  assert('F78-Cd', 'load=0 is valid → PASS', gC3.status === 'PASS');
+
+  // --- F78-D: duplicate exercise in same day → WARN ---
+  console.log('\nF78-D — duplicate exercise in same day → WARN');
+  var gD1 = _runPreWritePlanGate(_mkPlan([{ label:'A', exercises:[_mkEx('Press Banca'), _mkEx('Press Banca')] }]), {});
+  assert('F78-Da', 'same name in same day → WARN', gD1.status === 'WARN');
+  assert('F78-Db', 'warning has [DUP_DAY]', gD1.warnings.some(function(w){ return w.includes('[DUP_DAY]'); }));
+
+  var gD2 = _runPreWritePlanGate(_mkPlan([
+    { label:'A', exercises:[_mkEx('Press Banca')] },
+    { label:'B', exercises:[_mkEx('Press Banca')] }
+  ]), {});
+  assert('F78-Dc', 'same name in different days → PASS (not a per-day dup)', gD2.status === 'PASS');
+
+  // --- F78-E: VETO → REVIEW_REQUIRED ---
+  console.log('\nF78-E — VETO violations → REVIEW_REQUIRED');
+  var gE1 = _runPreWritePlanGate(
+    _cleanPlan(),
+    { restrictions: { ejerciciosEvitar: ['Press Banca'] } }
+  );
+  assert('F78-Ea', 'VETO match → REVIEW_REQUIRED', gE1.status === 'REVIEW_REQUIRED');
+  assert('F78-Eb', 'blocker has [VETO]', gE1.blockers.some(function(b){ return b.includes('[VETO]'); }));
+
+  var gE2 = _runPreWritePlanGate(
+    _cleanPlan(),
+    { restrictions: { ejerciciosEvitar: ['Curl Martillo'] } }
+  );
+  assert('F78-Ec', 'no VETO match → PASS', gE2.status === 'PASS');
+
+  // --- F78-F: nutrition macro coherence → WARN ---
+  console.log('\nF78-F — nutrition macro coherence → WARN when Δ>3%');
+  var gF1 = _runPreWritePlanGate(_cleanPlan(), {
+    nutrition: {
+      calorias: 2000, proteina: 160, carbos: 200, grasas: 60,
+      comidas: [
+        { proteina: 80, carbos: 100, grasas: 30 },
+        { proteina: 80, carbos: 100, grasas: 30 }
+      ]
+    }
+  });
+  assert('F78-Fa', 'exact macro match → PASS', gF1.status === 'PASS');
+
+  var gF2 = _runPreWritePlanGate(_cleanPlan(), {
+    nutrition: {
+      calorias: 2000, proteina: 160, carbos: 200, grasas: 60,
+      comidas: [
+        { proteina: 60, carbos: 90, grasas: 20 },
+        { proteina: 60, carbos: 90, grasas: 20 }
+      ]
+    }
+  });
+  assert('F78-Fb', 'macro gap >3% → WARN', gF2.status === 'WARN');
+  assert('F78-Fc', 'warning has [MACRO]', gF2.warnings.some(function(w){ return w.includes('[MACRO]'); }));
+
+  // --- F78-G: gate propagation from effGate / longGate ---
+  console.log('\nF78-G — external gate propagation (never downgrade)');
+  var gG1 = _runPreWritePlanGate(_cleanPlan(), {
+    effGate: { status: 'REVIEW_REQUIRED', criticalIssues: ['repair not reflected'], warnings: [] }
+  });
+  assert('F78-Ga', 'effGate REVIEW_REQUIRED propagated', gG1.status === 'REVIEW_REQUIRED');
+  assert('F78-Gb', 'blocker from effGate present', gG1.blockers.some(function(b){ return b.includes('[LONG]'); }));
+
+  var gG2 = _runPreWritePlanGate(_cleanPlan(), {
+    longGate: { status: 'WARN', criticalIssues: [], warnings: ['exercise continuity low'] }
+  });
+  assert('F78-Gc', 'longGate WARN propagated', gG2.status === 'WARN');
+  assert('F78-Gd', 'warning from longGate present', gG2.warnings.some(function(w){ return w.includes('[LONG]'); }));
+
+  var gG3 = _runPreWritePlanGate(_cleanPlan(), {
+    effGate: { status: 'OK', criticalIssues: [], warnings: [] }
+  });
+  assert('F78-Ge', 'effGate OK → PASS (mapped correctly)', gG3.status === 'PASS');
+
+  // --- F78-H: severity never downgraded ---
+  console.log('\nF78-H — severity never downgraded');
+  // BLOCK from structural + effGate WARN → stays BLOCK
+  var gH1 = _runPreWritePlanGate({ weeks:4, days:[] }, {
+    effGate: { status: 'WARN', criticalIssues: [], warnings: ['minor'] }
+  });
+  assert('F78-Ha', 'BLOCK + WARN effGate → stays BLOCK', gH1.status === 'BLOCK');
+
+  // REVIEW_REQUIRED from VETO + longGate WARN → stays REVIEW_REQUIRED
+  var gH2 = _runPreWritePlanGate(
+    _cleanPlan(),
+    {
+      restrictions: { ejerciciosEvitar: ['Press Banca'] },
+      longGate: { status: 'WARN', criticalIssues: [], warnings: [] }
+    }
+  );
+  assert('F78-Hb', 'REVIEW_REQUIRED + WARN → stays REVIEW_REQUIRED', gH2.status === 'REVIEW_REQUIRED');
+
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

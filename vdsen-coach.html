@@ -5023,14 +5023,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
     const planObj = window._importedPlan;
     if (!planObj) { showToast("No hay plan cargado", true); return; }
-    // FASE 70 — Pre-write plan integrity guard
-    if (typeof window._guardPlanIntegrity === 'function') {
-      const _g70 = window._guardPlanIntegrity(planObj);
-      if (!_g70.valid) {
-        showToast('⚠️ Plan inválido — no se guardó: ' + _g70.errors.slice(0, 2).join(' · '), true);
+    // FASE 78 — Unified pre-write plan gate (integrates F70 structural check + load + VETO + nutrition)
+    if (typeof window._runPreWritePlanGate === 'function') {
+      const _g78 = window._runPreWritePlanGate(planObj, {});
+      if (_g78.status === 'BLOCK') {
+        showToast('⚠️ Plan inválido — no se guardó: ' + _g78.blockers.slice(0, 2).join(' · '), true);
         return;
       }
-      if (_g70.warnings.length) console.warn('[VDSEN F70] plan integrity warnings:', _g70.warnings);
+      if (_g78.status === 'REVIEW_REQUIRED' && _g78.blockers.length) {
+        console.warn('[VDSEN F78] plan gate REVIEW_REQUIRED:', _g78.blockers);
+      }
+      if (_g78.warnings.length) console.warn('[VDSEN F78] plan gate warnings:', _g78.warnings);
     }
     _savingImportedPlan = true;
     const _importBtn = document.getElementById('saveImportedPlanBtn');
@@ -12960,6 +12963,120 @@ El esfuerzo no es negociable.
     return { valid: errors.length === 0, errors: errors, warnings: warnings };
   }
   window._guardPlanIntegrity = _guardPlanIntegrity;
+
+  // ========== FASE 78 — FINAL GENERATION QUALITY GATE ==========
+  // Unified pre-write gate. Called before any Firestore write of a plan.
+  // Integrates without duplicating: structural (F70), load contract, per-day duplicates,
+  // VETO (when restrictions provided), nutrition macro coherence (when nutrition provided),
+  // and longitudinal gate severity propagation (effGate / longGate never downgraded).
+  // Returns: { status: 'PASS'|'WARN'|'REVIEW_REQUIRED'|'BLOCK', blockers:[], warnings:[] }
+  // Severity hierarchy (never reduces): BLOCK > REVIEW_REQUIRED > WARN > PASS
+  function _runPreWritePlanGate(planObj, context) {
+    var _RANK = { 'PASS': 0, 'WARN': 1, 'REVIEW_REQUIRED': 2, 'BLOCK': 3 };
+    var _status = 'PASS';
+    var _blockers = [];
+    var _warnings = [];
+    function _elevate(lvl) { if ((_RANK[lvl] || 0) > (_RANK[_status] || 0)) _status = lvl; }
+
+    var _ctx = context || {};
+
+    // 1. Structural integrity (F70) — any structural failure → BLOCK
+    var _g70 = _guardPlanIntegrity(planObj);
+    if (!_g70.valid) {
+      _elevate('BLOCK');
+      _g70.errors.forEach(function(e) { _blockers.push('[STRUCT] ' + e); });
+    }
+    _g70.warnings.forEach(function(w) { _warnings.push('[STRUCT] ' + w); });
+
+    // 2. Set-level load contract — non-numeric or negative load → WARN
+    if (Array.isArray(planObj && planObj.days)) {
+      planObj.days.forEach(function(day, di) {
+        var dlabel = (day && day.label) || ('Día ' + (di + 1));
+        if (Array.isArray(day && day.exercises)) {
+          // Per-day duplicate exercise name check (same day = stricter than cross-plan)
+          var _dayNames = [];
+          day.exercises.forEach(function(ex, ei) {
+            var exName = (ex && ex.exerciseName || '').trim();
+            if (exName) {
+              var _lower = exName.toLowerCase();
+              if (_dayNames.indexOf(_lower) !== -1) {
+                _elevate('WARN');
+                _warnings.push('[DUP_DAY] ' + dlabel + ': "' + exName + '" aparece 2+ veces en el mismo día');
+              } else {
+                _dayNames.push(_lower);
+              }
+            }
+            if (Array.isArray(ex && ex.sets)) {
+              ex.sets.forEach(function(s, si) {
+                var sid = dlabel + ' / ' + (exName || 'Ej' + (ei + 1)) + ' s' + (si + 1);
+                if (s.load != null) {
+                  var _ld = Number(s.load);
+                  if (isNaN(_ld) || _ld < 0) {
+                    _elevate('WARN');
+                    _warnings.push('[LOAD] ' + sid + ': load inválido (' + s.load + ') — debe ser numérico ≥ 0');
+                  }
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // 3. VETO check — restrictions.ejerciciosEvitar → REVIEW_REQUIRED
+    var _evitar = (_ctx.restrictions && Array.isArray(_ctx.restrictions.ejerciciosEvitar))
+      ? _ctx.restrictions.ejerciciosEvitar : [];
+    if (_evitar.length && Array.isArray(planObj && planObj.days)) {
+      planObj.days.forEach(function(day) {
+        (day && day.exercises || []).forEach(function(ex) {
+          var exName = (ex && ex.exerciseName || '').trim();
+          if (exName) {
+            var vetoed = _evitar.some(function(v) {
+              return exName.toLowerCase().includes(v.toLowerCase()) || v.toLowerCase().includes(exName.toLowerCase());
+            });
+            if (vetoed) {
+              _elevate('REVIEW_REQUIRED');
+              _blockers.push('[VETO] "' + exName + '" está en ejercicios_evitar del cliente');
+            }
+          }
+        });
+      });
+    }
+
+    // 4. Nutrition macro coherence — if nutrition provided: |root - sum(meals)| > 3% → WARN
+    if (_ctx.nutrition && _ctx.nutrition.calorias && Array.isArray(_ctx.nutrition.comidas)) {
+      var _nut = _ctx.nutrition;
+      var _nutFields = ['proteina', 'carbos', 'grasas'];
+      var _sumM = { proteina: 0, carbos: 0, grasas: 0 };
+      _nut.comidas.forEach(function(m) {
+        _nutFields.forEach(function(f) { _sumM[f] += Number(m[f] || 0); });
+      });
+      _nutFields.forEach(function(f) {
+        var _root = Number(_nut[f] || 0);
+        if (_root > 0) {
+          var _delta = Math.abs(_sumM[f] - _root) / _root;
+          if (_delta > 0.03) {
+            _elevate('WARN');
+            _warnings.push('[MACRO] ' + f + ': suma de comidas ' + _sumM[f].toFixed(1) + ' vs. total ' + _root + ' (Δ' + (_delta * 100).toFixed(1) + '%)');
+          }
+        }
+      });
+    }
+
+    // 5. Propagate longitudinal gate severity (never downgrade)
+    var _extGates = [_ctx.effGate, _ctx.longGate];
+    _extGates.forEach(function(eg) {
+      if (!eg) return;
+      // Map external gate statuses: OK → PASS, WARN → WARN, REVIEW_REQUIRED → REVIEW_REQUIRED
+      var _mapped = eg.status === 'OK' ? 'PASS' : (eg.status || 'PASS');
+      _elevate(_mapped);
+      if (Array.isArray(eg.criticalIssues)) eg.criticalIssues.forEach(function(ci) { _blockers.push('[LONG] ' + ci); });
+      if (Array.isArray(eg.warnings)) eg.warnings.forEach(function(w) { _warnings.push('[LONG] ' + w); });
+    });
+
+    return { status: _status, blockers: _blockers, warnings: _warnings };
+  }
+  window._runPreWritePlanGate = _runPreWritePlanGate;
 
   // ========== FASE 67 — MISSING DATA CLASSIFICATION ==========
   // Pure: 0 I/O, 0 mutation, deterministic.
