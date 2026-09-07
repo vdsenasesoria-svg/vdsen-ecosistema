@@ -7682,6 +7682,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const nutr     = plan.nutricion     || {};
     const suppl    = plan.suplementacion || {};
 
+    // FASE 78 — Final gate on generated plan before write (with nutrition context)
+    if (typeof window._runPreWritePlanGate === 'function' && Array.isArray(training.days) && training.days.length) {
+      const _gCtx = { nutrition: nutr.calorias ? nutr : undefined };
+      const _g78gen = window._runPreWritePlanGate(training, _gCtx);
+      if (_g78gen.status === 'BLOCK') throw new Error('[F78] Plan no pasó gate: ' + _g78gen.blockers.slice(0, 2).join(' · '));
+      if (_g78gen.warnings.length) console.warn('[VDSEN F78-gen] gate warnings:', _g78gen.warnings);
+    }
+
     // Review summary (0 items if VALID — no review required)
     const reviewState = _vdsenReviewState[requestId] || {};
     const revItems    = reviewState.__items || [];
