@@ -14065,4 +14065,154 @@ function _buildPlanQualityAudit(training, nutrition, supplements) {
   assert('F69-Ea', 'same result both calls', JSON.stringify(r1) === JSON.stringify(r2));
 })();
 
+// ========== FASE 70 — PRE-WRITE PLAN INTEGRITY GUARD ==========
+// Inline copy of _guardPlanIntegrity for isolated test
+function _guardPlanIntegrity(planObj) {
+  var errors = [], warnings = [];
+  if (!planObj || typeof planObj !== 'object' || Array.isArray(planObj)) {
+    return { valid: false, errors: ['plan inválido (no es objeto)'], warnings: [] };
+  }
+  if (!Array.isArray(planObj.days) || planObj.days.length === 0) {
+    errors.push('days[] ausente o vacío');
+  } else {
+    planObj.days.forEach(function(day, di) {
+      var dlabel = (day.label || 'Día ' + (di + 1));
+      if (!Array.isArray(day.exercises) || day.exercises.length === 0) {
+        errors.push(dlabel + ': sin ejercicios');
+      } else {
+        day.exercises.forEach(function(ex) {
+          var exName = (ex.exerciseName || '').trim();
+          if (!exName) warnings.push('Día ' + (di + 1) + ': ejercicio sin nombre');
+          if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
+            errors.push((exName || 'ejercicio sin nombre') + ': sin series');
+          } else {
+            ex.sets.forEach(function(s, si) {
+              if (s.repsTarget == null || Number(s.repsTarget) < 1 || isNaN(Number(s.repsTarget))) {
+                warnings.push((exName || '?') + ' s' + (si + 1) + ': repsTarget inválido');
+              }
+              if (s.rirTarget == null || Number(s.rirTarget) < 0 || isNaN(Number(s.rirTarget))) {
+                warnings.push((exName || '?') + ' s' + (si + 1) + ': rirTarget inválido');
+              }
+              if (s.restSeconds == null || Number(s.restSeconds) <= 0 || isNaN(Number(s.restSeconds))) {
+                warnings.push((exName || '?') + ' s' + (si + 1) + ': restSeconds inválido');
+              }
+            });
+          }
+        });
+      }
+    });
+  }
+  var FORBIDDEN = ['audit','decisionTrace','targets','moduleStatus','warnings','errors','model','requestId','generatedAt','documents'];
+  FORBIDDEN.forEach(function(f) {
+    if (planObj[f] !== undefined) warnings.push('campo no permitido en plan puro: "' + f + '"');
+  });
+  return { valid: errors.length === 0, errors: errors, warnings: warnings };
+}
+
+// F70-A: valid minimal plan → valid:true, no errors
+(function() {
+  console.log('\nF70-A — valid plan → valid:true');
+  var plan = { weeks: 6, daysPerWeek: 3, days: [
+    { dayIndex: 0, label: 'A', exercises: [
+      { exerciseName: 'Press', sets: [{ repsTarget: 8, rirTarget: 2, restSeconds: 120 }] }
+    ]}
+  ]};
+  var r = _guardPlanIntegrity(plan);
+  assert('F70-Aa', 'valid:true', r.valid === true);
+  assert('F70-Ab', 'no errors', r.errors.length === 0);
+})();
+
+// F70-B: null → valid:false, error about non-object
+(function() {
+  console.log('\nF70-B — null → valid:false');
+  var r = _guardPlanIntegrity(null);
+  assert('F70-Ba', 'valid:false', r.valid === false);
+  assert('F70-Bb', 'error present', r.errors.length > 0);
+})();
+
+// F70-C: empty days → valid:false
+(function() {
+  console.log('\nF70-C — empty days → valid:false');
+  var r = _guardPlanIntegrity({ days: [] });
+  assert('F70-Ca', 'valid:false for empty days', r.valid === false);
+  assert('F70-Cb', 'error mentions days', r.errors.some(function(e){ return e.indexOf('days') !== -1; }));
+})();
+
+// F70-D: day with no exercises → valid:false
+(function() {
+  console.log('\nF70-D — day with no exercises → valid:false');
+  var r = _guardPlanIntegrity({ days: [{ label: 'A', exercises: [] }] });
+  assert('F70-Da', 'valid:false', r.valid === false);
+  assert('F70-Db', 'error mentions day', r.errors.some(function(e){ return e.indexOf('sin ejercicios') !== -1; }));
+})();
+
+// F70-E: exercise with no sets → valid:false
+(function() {
+  console.log('\nF70-E — exercise with no sets → valid:false');
+  var r = _guardPlanIntegrity({ days: [{ label: 'A', exercises: [{ exerciseName: 'Squat', sets: [] }] }] });
+  assert('F70-Ea', 'valid:false', r.valid === false);
+  assert('F70-Eb', 'error mentions sets', r.errors.some(function(e){ return e.indexOf('sin series') !== -1; }));
+})();
+
+// F70-F: exercise without name → warning (not error), still valid
+(function() {
+  console.log('\nF70-F — exercise without name → warning only');
+  var r = _guardPlanIntegrity({ days: [{ label: 'A', exercises: [
+    { exerciseName: '', sets: [{ repsTarget: 8, rirTarget: 2, restSeconds: 90 }] }
+  ]}]});
+  assert('F70-Fa', 'valid:true (name is warning not error)', r.valid === true);
+  assert('F70-Fb', 'warning about name', r.warnings.some(function(w){ return w.indexOf('sin nombre') !== -1; }));
+})();
+
+// F70-G: invalid repsTarget → warning, not error
+(function() {
+  console.log('\nF70-G — repsTarget=0 → warning');
+  var r = _guardPlanIntegrity({ days: [{ label: 'A', exercises: [
+    { exerciseName: 'Press', sets: [{ repsTarget: 0, rirTarget: 2, restSeconds: 90 }] }
+  ]}]});
+  assert('F70-Ga', 'valid:true (set issue is warning)', r.valid === true);
+  assert('F70-Gb', 'warning about repsTarget', r.warnings.some(function(w){ return w.indexOf('repsTarget') !== -1; }));
+})();
+
+// F70-H: rirTarget=0 → valid (RIR 0 is valid)
+(function() {
+  console.log('\nF70-H — rirTarget=0 → no warning');
+  var r = _guardPlanIntegrity({ days: [{ label: 'A', exercises: [
+    { exerciseName: 'Press', sets: [{ repsTarget: 8, rirTarget: 0, restSeconds: 90 }] }
+  ]}]});
+  assert('F70-Ha', 'valid:true', r.valid === true);
+  assert('F70-Hb', 'no rirTarget warning for value 0', !r.warnings.some(function(w){ return w.indexOf('rirTarget') !== -1; }));
+})();
+
+// F70-I: forbidden field present → warning (not error)
+(function() {
+  console.log('\nF70-I — forbidden field → warning');
+  var plan = { days: [{ label: 'A', exercises: [
+    { exerciseName: 'Squat', sets: [{ repsTarget: 8, rirTarget: 2, restSeconds: 90 }] }
+  ]}], audit: { some: 'data' } };
+  var r = _guardPlanIntegrity(plan);
+  assert('F70-Ia', 'valid:true (forbidden is warning)', r.valid === true);
+  assert('F70-Ib', 'warning about audit field', r.warnings.some(function(w){ return w.indexOf('audit') !== -1; }));
+})();
+
+// F70-J: array input → valid:false
+(function() {
+  console.log('\nF70-J — array input → valid:false');
+  var r = _guardPlanIntegrity([]);
+  assert('F70-Ja', 'valid:false for array', r.valid === false);
+})();
+
+// F70-K: no mutation of input, deterministic
+(function() {
+  console.log('\nF70-K — pureza y determinismo');
+  var plan = { days: [{ label: 'A', exercises: [
+    { exerciseName: 'Press', sets: [{ repsTarget: 8, rirTarget: 2, restSeconds: 90 }] }
+  ]}]};
+  var snap = JSON.stringify(plan);
+  var r1 = _guardPlanIntegrity(plan);
+  var r2 = _guardPlanIntegrity(plan);
+  assert('F70-Ka', 'input not mutated', JSON.stringify(plan) === snap);
+  assert('F70-Kb', 'deterministic', JSON.stringify(r1) === JSON.stringify(r2));
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

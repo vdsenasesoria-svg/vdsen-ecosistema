@@ -5032,6 +5032,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
     const planObj = window._importedPlan;
     if (!planObj) { showToast("No hay plan cargado", true); return; }
+    // FASE 70 — Pre-write plan integrity guard
+    if (typeof window._guardPlanIntegrity === 'function') {
+      const _g70 = window._guardPlanIntegrity(planObj);
+      if (!_g70.valid) {
+        showToast('⚠️ Plan inválido — no se guardó: ' + _g70.errors.slice(0, 2).join(' · '), true);
+        return;
+      }
+      if (_g70.warnings.length) console.warn('[VDSEN F70] plan integrity warnings:', _g70.warnings);
+    }
     _savingImportedPlan = true;
     const _importBtn = document.getElementById('saveImportedPlanBtn');
     if (_importBtn) { _importBtn.disabled = true; _importBtn.textContent = '⏳ Guardando...'; }
@@ -12536,6 +12545,54 @@ El esfuerzo no es negociable.
     return '\nRESTRICCIONES EXPLÍCITAS DEL COACH (máxima prioridad, solo superadas por vetos médicos):\n' + lines.join('\n');
   }
   window._buildCoachIntentConstraintText = _buildCoachIntentConstraintText;
+
+  // ========== FASE 70 — PRE-WRITE PLAN INTEGRITY GUARD ==========
+  // Pure function. 0 I/O, 0 writes, 0 mutation.
+  // Returns { valid: boolean, errors: string[], warnings: string[] }
+  // valid:false → caller must abort write. warnings → caller may warn but still write.
+  function _guardPlanIntegrity(planObj) {
+    var errors   = [];
+    var warnings = [];
+    if (!planObj || typeof planObj !== 'object' || Array.isArray(planObj)) {
+      return { valid: false, errors: ['plan inválido (no es objeto)'], warnings: [] };
+    }
+    if (!Array.isArray(planObj.days) || planObj.days.length === 0) {
+      errors.push('days[] ausente o vacío');
+    } else {
+      planObj.days.forEach(function(day, di) {
+        var dlabel = (day.label || 'Día ' + (di + 1));
+        if (!Array.isArray(day.exercises) || day.exercises.length === 0) {
+          errors.push(dlabel + ': sin ejercicios');
+        } else {
+          day.exercises.forEach(function(ex) {
+            var exName = (ex.exerciseName || '').trim();
+            if (!exName) warnings.push('Día ' + (di + 1) + ': ejercicio sin nombre');
+            if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
+              errors.push((exName || 'ejercicio sin nombre') + ': sin series');
+            } else {
+              ex.sets.forEach(function(s, si) {
+                if (s.repsTarget == null || Number(s.repsTarget) < 1 || isNaN(Number(s.repsTarget))) {
+                  warnings.push((exName || '?') + ' s' + (si + 1) + ': repsTarget inválido');
+                }
+                if (s.rirTarget == null || Number(s.rirTarget) < 0 || isNaN(Number(s.rirTarget))) {
+                  warnings.push((exName || '?') + ' s' + (si + 1) + ': rirTarget inválido');
+                }
+                if (s.restSeconds == null || Number(s.restSeconds) <= 0 || isNaN(Number(s.restSeconds))) {
+                  warnings.push((exName || '?') + ' s' + (si + 1) + ': restSeconds inválido');
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+    var FORBIDDEN = ['audit','decisionTrace','targets','moduleStatus','warnings','errors','model','requestId','generatedAt','documents'];
+    FORBIDDEN.forEach(function(f) {
+      if (planObj[f] !== undefined) warnings.push('campo no permitido en plan puro: "' + f + '"');
+    });
+    return { valid: errors.length === 0, errors: errors, warnings: warnings };
+  }
+  window._guardPlanIntegrity = _guardPlanIntegrity;
 
   // ========== FASE 67 — MISSING DATA CLASSIFICATION ==========
   // Pure: 0 I/O, 0 mutation, deterministic.
