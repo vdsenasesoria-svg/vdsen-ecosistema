@@ -6524,6 +6524,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const _resolvedConstraintTxt = (typeof window._buildResolvedIntentConstraintText === 'function')
         ? window._buildResolvedIntentConstraintText(_tdResolution, _mpResolution) : '';
       if (_tdResolution.conflicts.length) console.warn('[VDSEN F73] trainingDays conflicts:', _tdResolution.conflicts);
+      // FASE 74 — Pre-call REVIEW_REQUIRED guard
+      const _tdRRConflicts = _tdResolution.conflicts.filter(function(c) { return c.type === 'REVIEW_REQUIRED'; });
+      if (_tdRRConflicts.length) {
+        const _rrDetail = _tdRRConflicts.map(function(c) { return '• ' + _escH(c.detail); }).join('<br>');
+        const _rrOk = await _askConfirm('⚠️ <strong>REVISIÓN REQUERIDA — Cardinalidad de días</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _rrDetail + '</div><br>¿Generar de todas formas con esta configuración?');
+        if (!_rrOk) { setStatus('<div style="color:#888">Generación cancelada. Ajusta los días en la ficha del cliente.</div>'); return; }
+      }
 
       // FASE 67 — Missing Data Classification
       const _missingResult = (typeof window._classifyMissingInputs === 'function')
@@ -6637,6 +6644,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         if (!_confirmed) { setStatus('<div style="color:#888">Activación cancelada. Revisa el plan o re-genera.</div>'); return; }
       }
       if (_effGate55.warnings.length) console.warn('[VDSEN LV] longitudinal warnings:', _effGate55.warnings);
+      // FASE 74 — Pre-write Cardinality Conformance Guard
+      if (typeof window._guardCardinalityConformance === 'function' && training) {
+        const _ccGuard = window._guardCardinalityConformance(
+          _tdResolution ? _tdResolution.resolvedValue : null,
+          _mpResolution ? _mpResolution.resolvedValue : null,
+          training, nutrition
+        );
+        if (!_ccGuard.valid) {
+          throw new Error('Conformance de cardinalidad fallida:\n• ' + _ccGuard.errors.join('\n• '));
+        }
+      }
 
       setStatus('<span style="color:var(--text-muted)">Procesando y guardando…</span>');
       const saved = [];
@@ -10993,6 +11011,13 @@ El esfuerzo no es negociable.
       const _resolvedConstraintTxt2 = (typeof window._buildResolvedIntentConstraintText === 'function')
         ? window._buildResolvedIntentConstraintText(_tdResolution2, _mpResolution2) : '';
       if (_tdResolution2.conflicts.length) console.warn('[VDSEN F73] trainingDays conflicts (modal):', _tdResolution2.conflicts);
+      // FASE 74 — Pre-call REVIEW_REQUIRED guard (modal flow)
+      const _tdRRConflicts2 = _tdResolution2.conflicts.filter(function(c) { return c.type === 'REVIEW_REQUIRED'; });
+      if (_tdRRConflicts2.length) {
+        const _rrDetail2 = _tdRRConflicts2.map(function(c) { return '• ' + _escH(c.detail); }).join('<br>');
+        const _rrOk2 = await _askConfirm('⚠️ <strong>REVISIÓN REQUERIDA — Cardinalidad de días</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _rrDetail2 + '</div><br>¿Generar de todas formas con esta configuración?');
+        if (!_rrOk2) { setStatus('<div style="color:#e05555">Generación cancelada. Ajusta los días en la ficha del cliente.</div>'); return; }
+      }
 
       // FASE 67 — Missing Data Classification (modal flow)
       const _missingResult2 = (typeof window._classifyMissingInputs === 'function')
@@ -11106,6 +11131,17 @@ El esfuerzo no es negociable.
         if (!_confirmed2) { setStatus('<div style="color:#e05555">Activación cancelada. Revisa el plan o re-genera.</div>'); return; }
       }
       if (_effGate55b.warnings.length) console.warn('[VDSEN LV] longitudinal warnings:', _effGate55b.warnings);
+      // FASE 74 — Pre-write Cardinality Conformance Guard (modal flow)
+      if (typeof window._guardCardinalityConformance === 'function' && training) {
+        const _ccGuard2 = window._guardCardinalityConformance(
+          _tdResolution2 ? _tdResolution2.resolvedValue : null,
+          _mpResolution2 ? _mpResolution2.resolvedValue : null,
+          training, nutrition
+        );
+        if (!_ccGuard2.valid) {
+          throw new Error('Conformance de cardinalidad fallida:\n• ' + _ccGuard2.errors.join('\n• '));
+        }
+      }
 
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
@@ -12642,28 +12678,31 @@ El esfuerzo no es negociable.
       var conflicts = [];
       var avail = _getDias();
       if (avail != null && req > avail) {
-        conflicts.push({ type: 'SOFT', field: 'trainingDays', detail: 'Coach solicitó ' + req + ' días pero ficha indica disponibilidad de ' + avail + ' días/sem' });
+        conflicts.push({ type: 'REVIEW_REQUIRED', field: 'trainingDays', detail: 'Coach solicitó ' + req + ' días pero ficha indica disponibilidad de ' + avail + ' días/sem' });
       }
       return { requestedMode: 'EXPLICIT', requestedValue: req, resolvedValue: req, source: 'COACH_EXPLICIT', reasonCodes: ['COACH_OVERRIDE'], confidence: 'HIGH', conflicts: conflicts };
     }
-    // AUTO — priority 1: explicit ficha availability
+    // AUTO — compute nivel-optimal first; diasFicha is a ceiling, not the target (FASE 74)
+    var nivel = String(fd.nivel || (fd.entrenamiento && fd.entrenamiento.nivel) || '').toLowerCase();
+    var hasNivel = nivel === 'principiante' || nivel === 'beginner' || nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite' || nivel === 'intermedio' || nivel === 'intermediate';
+    var nivelOptimal = (nivel === 'principiante' || nivel === 'beginner') ? 3
+                     : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 5
+                     : 4;
+    var nivelCode = (nivel === 'principiante' || nivel === 'beginner') ? 'NIVEL_PRINCIPIANTE'
+                  : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 'NIVEL_AVANZADO'
+                  : (nivel === 'intermedio' || nivel === 'intermediate') ? 'NIVEL_INTERMEDIO'
+                  : 'NO_DATA';
     var diasFicha = _getDias();
     if (diasFicha != null) {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: Math.min(diasFicha, 6), source: 'CLIENT_AVAILABILITY_LIMIT', reasonCodes: ['FICHA_DIAS_SEMANA'], confidence: 'HIGH', conflicts: [] };
+      if (diasFicha < nivelOptimal) {
+        // Client availability is the binding constraint — can't do more days than available
+        return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: diasFicha, source: 'CLIENT_AVAILABILITY_LIMIT', reasonCodes: ['FICHA_DIAS_SEMANA', nivelCode], confidence: 'HIGH', conflicts: [] };
+      }
+      // Availability doesn't constrain — optimize for nivel
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: nivelOptimal, source: hasNivel ? 'ENGINE_OPTIMIZED' : 'SAFE_DEFAULT', reasonCodes: [nivelCode], confidence: hasNivel ? 'MEDIUM' : 'LOW', conflicts: [] };
     }
-    // AUTO — priority 2: nivel heuristic
-    var nivel = String(fd.nivel || (fd.entrenamiento && fd.entrenamiento.nivel) || '').toLowerCase();
-    if (nivel === 'principiante' || nivel === 'beginner') {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 3, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_PRINCIPIANTE'], confidence: 'MEDIUM', conflicts: [] };
-    }
-    if (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_AVANZADO'], confidence: 'MEDIUM', conflicts: [] };
-    }
-    if (nivel === 'intermedio' || nivel === 'intermediate') {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_INTERMEDIO'], confidence: 'MEDIUM', conflicts: [] };
-    }
-    // AUTO — safe default
-    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_DATA'], confidence: 'LOW', conflicts: [] };
+    // No availability data — nivel only
+    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: nivelOptimal, source: hasNivel ? 'ENGINE_OPTIMIZED' : 'SAFE_DEFAULT', reasonCodes: [nivelCode], confidence: hasNivel ? 'MEDIUM' : 'LOW', conflicts: [] };
   }
   window._resolveTrainingDaysIntent = _resolveTrainingDaysIntent;
 
@@ -12723,6 +12762,35 @@ El esfuerzo no es negociable.
     return '\n' + lines.join('\n');
   }
   window._buildResolvedIntentConstraintText = _buildResolvedIntentConstraintText;
+
+  // ========== FASE 74 — CARDINALITY CONFORMANCE GUARD ==========
+  // Pure function. 0 I/O, 0 writes.
+  // Validates that the LLM-generated plan matches the pre-resolved cardinality.
+  // Returns { valid: boolean, errors: string[] }. Call before saveImportedPlan.
+  function _guardCardinalityConformance(resolvedDays, resolvedMeals, training, nutrition) {
+    var errors = [];
+    if (resolvedDays != null && isFinite(Number(resolvedDays))) {
+      var rd = Number(resolvedDays);
+      if (training) {
+        if (Number(training.daysPerWeek) !== rd) {
+          errors.push('daysPerWeek=' + training.daysPerWeek + ' ≠ resolvedDays=' + rd);
+        }
+        var daysLen = Array.isArray(training.days) ? training.days.length : null;
+        if (daysLen !== rd) {
+          errors.push('days.length=' + daysLen + ' ≠ resolvedDays=' + rd);
+        }
+      }
+    }
+    if (resolvedMeals != null && isFinite(Number(resolvedMeals)) && nutrition) {
+      var rm = Number(resolvedMeals);
+      var comidasLen = Array.isArray(nutrition.comidas) ? nutrition.comidas.length : null;
+      if (comidasLen !== rm) {
+        errors.push('comidas.length=' + comidasLen + ' ≠ resolvedMeals=' + rm);
+      }
+    }
+    return { valid: errors.length === 0, errors: errors };
+  }
+  window._guardCardinalityConformance = _guardCardinalityConformance;
 
   // ========== FASE 71 — LEARNED STATE PROMPT HINT ==========
   // Pure function. 0 I/O, 0 writes, 0 mutation.

@@ -14369,25 +14369,28 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
       var conflicts = [];
       var avail = _getDias();
       if (avail != null && req > avail) {
-        conflicts.push({ type: 'SOFT', field: 'trainingDays', detail: 'Coach solicitó ' + req + ' días pero ficha indica disponibilidad de ' + avail + ' días/sem' });
+        conflicts.push({ type: 'REVIEW_REQUIRED', field: 'trainingDays', detail: 'Coach solicitó ' + req + ' días pero ficha indica disponibilidad de ' + avail + ' días/sem' });
       }
       return { requestedMode: 'EXPLICIT', requestedValue: req, resolvedValue: req, source: 'COACH_EXPLICIT', reasonCodes: ['COACH_OVERRIDE'], confidence: 'HIGH', conflicts: conflicts };
     }
+    // AUTO — compute nivel-optimal first; diasFicha is a ceiling, not the target (FASE 74)
+    var nivel = String(fd.nivel || (fd.entrenamiento && fd.entrenamiento.nivel) || '').toLowerCase();
+    var hasNivel = nivel === 'principiante' || nivel === 'beginner' || nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite' || nivel === 'intermedio' || nivel === 'intermediate';
+    var nivelOptimal = (nivel === 'principiante' || nivel === 'beginner') ? 3
+                     : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 5
+                     : 4;
+    var nivelCode = (nivel === 'principiante' || nivel === 'beginner') ? 'NIVEL_PRINCIPIANTE'
+                  : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 'NIVEL_AVANZADO'
+                  : (nivel === 'intermedio' || nivel === 'intermediate') ? 'NIVEL_INTERMEDIO'
+                  : 'NO_DATA';
     var diasFicha = _getDias();
     if (diasFicha != null) {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: Math.min(diasFicha, 6), source: 'CLIENT_AVAILABILITY_LIMIT', reasonCodes: ['FICHA_DIAS_SEMANA'], confidence: 'HIGH', conflicts: [] };
+      if (diasFicha < nivelOptimal) {
+        return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: diasFicha, source: 'CLIENT_AVAILABILITY_LIMIT', reasonCodes: ['FICHA_DIAS_SEMANA', nivelCode], confidence: 'HIGH', conflicts: [] };
+      }
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: nivelOptimal, source: hasNivel ? 'ENGINE_OPTIMIZED' : 'SAFE_DEFAULT', reasonCodes: [nivelCode], confidence: hasNivel ? 'MEDIUM' : 'LOW', conflicts: [] };
     }
-    var nivel = String(fd.nivel || (fd.entrenamiento && fd.entrenamiento.nivel) || '').toLowerCase();
-    if (nivel === 'principiante' || nivel === 'beginner') {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 3, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_PRINCIPIANTE'], confidence: 'MEDIUM', conflicts: [] };
-    }
-    if (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_AVANZADO'], confidence: 'MEDIUM', conflicts: [] };
-    }
-    if (nivel === 'intermedio' || nivel === 'intermediate') {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_INTERMEDIO'], confidence: 'MEDIUM', conflicts: [] };
-    }
-    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_DATA'], confidence: 'LOW', conflicts: [] };
+    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: nivelOptimal, source: hasNivel ? 'ENGINE_OPTIMIZED' : 'SAFE_DEFAULT', reasonCodes: [nivelCode], confidence: hasNivel ? 'MEDIUM' : 'LOW', conflicts: [] };
   }
 
   // ---- Inline _resolveMealsPerDayIntent ----
@@ -14456,22 +14459,31 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
   assert('F73-Ba', 'resolvedValue still 6 (coach wins)', rConflict.resolvedValue === 6);
   assert('F73-Bb', 'source COACH_EXPLICIT', rConflict.source === 'COACH_EXPLICIT');
   assert('F73-Bc', 'conflict recorded', rConflict.conflicts.length > 0);
-  assert('F73-Bd', 'conflict type SOFT', rConflict.conflicts[0].type === 'SOFT');
+  assert('F73-Bd', 'conflict type REVIEW_REQUIRED', rConflict.conflicts[0].type === 'REVIEW_REQUIRED');
   assert('F73-Be', 'conflict detail mentions 4', rConflict.conflicts[0].detail.indexOf('4') >= 0);
 
-  // F73-C: AUTO with dias_semana in ficha → uses ficha value (CLIENT_AVAILABILITY_LIMIT)
-  console.log('\nF73-C — AUTO with explicit dias_semana in ficha');
-  [3, 4, 5, 6].forEach(function(v) {
-    var r = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: v }, null, null);
-    assert('F73-Ca-' + v, 'resolvedValue=' + v + ' from ficha', r.resolvedValue === v);
-    assert('F73-Cb-' + v, 'source=CLIENT_AVAILABILITY_LIMIT', r.source === 'CLIENT_AVAILABILITY_LIMIT');
-  });
+  // F73-C: AUTO with dias_semana — ceiling logic (FASE 74 corrected)
+  console.log('\nF73-C — AUTO with dias_semana: ceiling logic');
+  // Binding: dias_semana < nivelOptimal → CLIENT_AVAILABILITY_LIMIT, resolvedValue=diasFicha
+  var rCBind1 = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 3, nivel: 'avanzado' }, null, null);
+  assert('F73-Ca', 'dias=3 < avanzado(opt=5) → CLIENT_AVAILABILITY_LIMIT', rCBind1.source === 'CLIENT_AVAILABILITY_LIMIT');
+  assert('F73-Cb', 'resolvedValue=3 (binding)', rCBind1.resolvedValue === 3);
+  var rCBind2 = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 3, nivel: 'intermedio' }, null, null);
+  assert('F73-Cc', 'dias=3 < intermedio(opt=4) → CLIENT_AVAILABILITY_LIMIT', rCBind2.source === 'CLIENT_AVAILABILITY_LIMIT');
+  assert('F73-Cd', 'resolvedValue=3', rCBind2.resolvedValue === 3);
+  // Non-binding: dias_semana >= nivelOptimal → ENGINE_OPTIMIZED, resolvedValue=nivelOptimal
+  var rCFree1 = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 6, nivel: 'intermedio' }, null, null);
+  assert('F73-Ce', 'dias=6 >= intermedio(opt=4) → ENGINE_OPTIMIZED', rCFree1.source === 'ENGINE_OPTIMIZED');
+  assert('F73-Cf', 'resolvedValue=4 (nivelOptimal, not 6)', rCFree1.resolvedValue === 4);
+  var rCFree2 = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 7, nivel: 'avanzado' }, null, null);
+  assert('F73-Cg', 'dias=7 >= avanzado(opt=5) → ENGINE_OPTIMIZED', rCFree2.source === 'ENGINE_OPTIMIZED');
+  assert('F73-Ch', 'resolvedValue=5 (nivelOptimal, not 7)', rCFree2.resolvedValue === 5);
 
-  // F73-D: AUTO with dias_semana 7 → clamped to 6
-  console.log('\nF73-D — AUTO with dias_semana=7 clamped to 6');
+  // F73-D: AUTO with dias_semana=7, no nivel → nivelOptimal=4, 7≥4 → SAFE_DEFAULT=4 (FASE 74)
+  console.log('\nF73-D — AUTO with dias_semana=7, no nivel → nivelOptimal=4, SAFE_DEFAULT');
   var rClamp = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 7 }, null, null);
-  assert('F73-Da', 'clamped to 6', rClamp.resolvedValue === 6);
-  assert('F73-Db', 'CLIENT_AVAILABILITY_LIMIT', rClamp.source === 'CLIENT_AVAILABILITY_LIMIT');
+  assert('F73-Da', 'resolvedValue=4 (nivelOptimal, not capped to 7 or 6)', rClamp.resolvedValue === 4);
+  assert('F73-Db', 'SAFE_DEFAULT (no nivel data)', rClamp.source === 'SAFE_DEFAULT');
 
   // F73-E: AUTO with nivel only (no dias_semana)
   console.log('\nF73-E — AUTO resolved from nivel when no dias_semana');
@@ -14489,11 +14501,14 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
   assert('F73-Fb', 'source=SAFE_DEFAULT', rDef.source === 'SAFE_DEFAULT');
   assert('F73-Fc', 'confidence=LOW', rDef.confidence === 'LOW');
 
-  // F73-G: entrenamiento.dias_semana nested path
+  // F73-G: entrenamiento.dias_semana nested path — ceiling logic (FASE 74)
   console.log('\nF73-G — AUTO reads nested entrenamiento.dias_semana');
   var rNested = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { entrenamiento: { dias_semana: 5 } }, null, null);
-  assert('F73-Ga', 'nested dias_semana=5 → resolvedValue=5', rNested.resolvedValue === 5);
-  assert('F73-Gb', 'CLIENT_AVAILABILITY_LIMIT', rNested.source === 'CLIENT_AVAILABILITY_LIMIT');
+  assert('F73-Ga', 'nested dias=5, no nivel → nivelOptimal=4, resolvedValue=4', rNested.resolvedValue === 4);
+  assert('F73-Gb', 'SAFE_DEFAULT (no nivel)', rNested.source === 'SAFE_DEFAULT');
+  var rNestedNivel = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { entrenamiento: { dias_semana: 3, nivel: 'avanzado' } }, null, null);
+  assert('F73-Gc', 'nested dias=3, avanzado(opt=5) → CLIENT_AVAILABILITY_LIMIT', rNestedNivel.source === 'CLIENT_AVAILABILITY_LIMIT');
+  assert('F73-Gd', 'resolvedValue=3 (binding)', rNestedNivel.resolvedValue === 3);
 
   // F73-H: EXPLICIT meals → exact value
   console.log('\nF73-H — EXPLICIT meals preserves exact value');
@@ -14579,6 +14594,174 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
   var rQ2 = _resolveMealsPerDayIntent(slotQ, fdQ, {});
   assert('F73-Qa', 'fdQ not mutated', JSON.stringify(fdQ) === snapQ);
   assert('F73-Qb', 'deterministic', JSON.stringify(rQ1) === JSON.stringify(rQ2));
+})();
+
+// ============================================================
+// FASE 74 — Cardinality Conformance + Policy Correction
+// Tests the fixed _resolveTrainingDaysIntent ceiling logic,
+// REVIEW_REQUIRED conflict type, and _guardCardinalityConformance.
+// ============================================================
+(function() {
+  function assert(id, desc, cond) {
+    if (!cond) throw new Error('FAIL [' + id + '] ' + desc);
+    console.log('  PASS [' + id + '] ' + desc);
+  }
+
+  // ---- Inline _resolveTrainingDaysIntent (FASE 74 version) ----
+  function _resolveTrainingDaysIntent(intentSlot, fichaData) {
+    var slot = intentSlot && typeof intentSlot === 'object' ? intentSlot : { mode: 'AUTO', value: null };
+    var fd = fichaData && typeof fichaData === 'object' ? fichaData : {};
+    var _getDias = function() {
+      var raw = (fd.dias_semana != null) ? fd.dias_semana
+              : (fd.entrenamiento && fd.entrenamiento.dias_semana != null) ? fd.entrenamiento.dias_semana
+              : null;
+      if (raw == null) return null;
+      var n = parseInt(String(raw), 10);
+      return (isFinite(n) && n >= 1 && n <= 7) ? n : null;
+    };
+    if (slot.mode === 'EXPLICIT') {
+      var req = Number(slot.value);
+      var conflicts = [];
+      var avail = _getDias();
+      if (avail != null && req > avail) {
+        conflicts.push({ type: 'REVIEW_REQUIRED', field: 'trainingDays', detail: 'Coach solicitó ' + req + ' días pero ficha indica disponibilidad de ' + avail + ' días/sem' });
+      }
+      return { requestedMode: 'EXPLICIT', requestedValue: req, resolvedValue: req, source: 'COACH_EXPLICIT', reasonCodes: ['COACH_OVERRIDE'], confidence: 'HIGH', conflicts: conflicts };
+    }
+    var nivel = String(fd.nivel || (fd.entrenamiento && fd.entrenamiento.nivel) || '').toLowerCase();
+    var hasNivel = nivel === 'principiante' || nivel === 'beginner' || nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite' || nivel === 'intermedio' || nivel === 'intermediate';
+    var nivelOptimal = (nivel === 'principiante' || nivel === 'beginner') ? 3
+                     : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 5
+                     : 4;
+    var nivelCode = (nivel === 'principiante' || nivel === 'beginner') ? 'NIVEL_PRINCIPIANTE'
+                  : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 'NIVEL_AVANZADO'
+                  : (nivel === 'intermedio' || nivel === 'intermediate') ? 'NIVEL_INTERMEDIO'
+                  : 'NO_DATA';
+    var diasFicha = _getDias();
+    if (diasFicha != null) {
+      if (diasFicha < nivelOptimal) {
+        return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: diasFicha, source: 'CLIENT_AVAILABILITY_LIMIT', reasonCodes: ['FICHA_DIAS_SEMANA', nivelCode], confidence: 'HIGH', conflicts: [] };
+      }
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: nivelOptimal, source: hasNivel ? 'ENGINE_OPTIMIZED' : 'SAFE_DEFAULT', reasonCodes: [nivelCode], confidence: hasNivel ? 'MEDIUM' : 'LOW', conflicts: [] };
+    }
+    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: nivelOptimal, source: hasNivel ? 'ENGINE_OPTIMIZED' : 'SAFE_DEFAULT', reasonCodes: [nivelCode], confidence: hasNivel ? 'MEDIUM' : 'LOW', conflicts: [] };
+  }
+
+  // ---- Inline _guardCardinalityConformance ----
+  function _guardCardinalityConformance(resolvedDays, resolvedMeals, training, nutrition) {
+    var errors = [];
+    if (resolvedDays != null && isFinite(Number(resolvedDays))) {
+      var rd = Number(resolvedDays);
+      if (training) {
+        if (Number(training.daysPerWeek) !== rd) {
+          errors.push('daysPerWeek=' + training.daysPerWeek + ' ≠ resolvedDays=' + rd);
+        }
+        var daysLen = Array.isArray(training.days) ? training.days.length : null;
+        if (daysLen !== rd) {
+          errors.push('days.length=' + daysLen + ' ≠ resolvedDays=' + rd);
+        }
+      }
+    }
+    if (resolvedMeals != null && isFinite(Number(resolvedMeals)) && nutrition) {
+      var rm = Number(resolvedMeals);
+      var comidasLen = Array.isArray(nutrition.comidas) ? nutrition.comidas.length : null;
+      if (comidasLen !== rm) {
+        errors.push('comidas.length=' + comidasLen + ' ≠ resolvedMeals=' + rm);
+      }
+    }
+    return { valid: errors.length === 0, errors: errors };
+  }
+
+  console.log('\n=== FASE 74 — Cardinality Conformance + Policy Correction ===');
+
+  // F74-A: EXPLICIT > availability → REVIEW_REQUIRED (not SOFT)
+  console.log('\nF74-A — EXPLICIT conflict type is REVIEW_REQUIRED');
+  var rA = _resolveTrainingDaysIntent({ mode: 'EXPLICIT', value: 6 }, { dias_semana: 4 });
+  assert('F74-Aa', 'conflict type REVIEW_REQUIRED', rA.conflicts.length > 0 && rA.conflicts[0].type === 'REVIEW_REQUIRED');
+  assert('F74-Ab', 'resolvedValue still 6 (EXPLICIT not silently changed)', rA.resolvedValue === 6);
+
+  // F74-B: AUTO ceiling — diasFicha < nivelOptimal → CLIENT_AVAILABILITY_LIMIT
+  console.log('\nF74-B — AUTO ceiling: diasFicha < nivelOptimal → CLIENT_AVAILABILITY_LIMIT');
+  var rB1 = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 2, nivel: 'avanzado' });
+  assert('F74-Ba', 'dias=2 < avanzado(opt=5) → CLIENT_AVAILABILITY_LIMIT', rB1.source === 'CLIENT_AVAILABILITY_LIMIT');
+  assert('F74-Bb', 'resolvedValue=2 (not 5)', rB1.resolvedValue === 2);
+  var rB2 = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 3, nivel: 'intermedio' });
+  assert('F74-Bc', 'dias=3 < intermedio(opt=4) → CLIENT_AVAILABILITY_LIMIT', rB2.source === 'CLIENT_AVAILABILITY_LIMIT');
+  assert('F74-Bd', 'resolvedValue=3', rB2.resolvedValue === 3);
+
+  // F74-C: AUTO ceiling — diasFicha >= nivelOptimal → ENGINE_OPTIMIZED with nivelOptimal
+  console.log('\nF74-C — AUTO ceiling: diasFicha >= nivelOptimal → ENGINE_OPTIMIZED');
+  var rC1 = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 6, nivel: 'intermedio' });
+  assert('F74-Ca', 'dias=6 >= intermedio(opt=4) → ENGINE_OPTIMIZED', rC1.source === 'ENGINE_OPTIMIZED');
+  assert('F74-Cb', 'resolvedValue=4 (nivelOptimal, not 6)', rC1.resolvedValue === 4);
+  var rC2 = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 5, nivel: 'principiante' });
+  assert('F74-Cc', 'dias=5 >= principiante(opt=3) → ENGINE_OPTIMIZED', rC2.source === 'ENGINE_OPTIMIZED');
+  assert('F74-Cd', 'resolvedValue=3 (nivelOptimal, not 5)', rC2.resolvedValue === 3);
+
+  // F74-D: diasFicha=7, nivel=avanzado → ENGINE_OPTIMIZED=5
+  console.log('\nF74-D — diasFicha=7, nivel=avanzado → ENGINE_OPTIMIZED=5');
+  var rD = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 7, nivel: 'avanzado' });
+  assert('F74-Da', 'ENGINE_OPTIMIZED', rD.source === 'ENGINE_OPTIMIZED');
+  assert('F74-Db', 'resolvedValue=5 (not 7 or 6)', rD.resolvedValue === 5);
+
+  // F74-E: diasFicha=7, no nivel → SAFE_DEFAULT=4
+  console.log('\nF74-E — diasFicha=7, no nivel → SAFE_DEFAULT=4');
+  var rE = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 7 });
+  assert('F74-Ea', 'SAFE_DEFAULT', rE.source === 'SAFE_DEFAULT');
+  assert('F74-Eb', 'resolvedValue=4', rE.resolvedValue === 4);
+
+  // F74-F: _guardCardinalityConformance — all valid
+  console.log('\nF74-F — _guardCardinalityConformance: all valid');
+  var trF = { daysPerWeek: 4, days: [{}, {}, {}, {}] };
+  var nuF = { comidas: [{}, {}, {}, {}, {}] };
+  var gF = _guardCardinalityConformance(4, 5, trF, nuF);
+  assert('F74-Fa', 'valid:true when all match', gF.valid === true);
+  assert('F74-Fb', 'no errors', gF.errors.length === 0);
+
+  // F74-G: daysPerWeek mismatch
+  console.log('\nF74-G — _guardCardinalityConformance: daysPerWeek mismatch');
+  var trG = { daysPerWeek: 5, days: [{}, {}, {}, {}] };
+  var gG = _guardCardinalityConformance(4, null, trG, null);
+  assert('F74-Ga', 'valid:false when daysPerWeek≠resolved', gG.valid === false);
+  assert('F74-Gb', 'error mentions daysPerWeek=5', gG.errors.some(function(e) { return e.indexOf('daysPerWeek=5') >= 0; }));
+
+  // F74-H: days.length mismatch
+  console.log('\nF74-H — _guardCardinalityConformance: days.length mismatch');
+  var trH = { daysPerWeek: 4, days: [{}, {}, {}] };
+  var gH = _guardCardinalityConformance(4, null, trH, null);
+  assert('F74-Ha', 'valid:false when days.length≠resolved', gH.valid === false);
+  assert('F74-Hb', 'error mentions days.length=3', gH.errors.some(function(e) { return e.indexOf('days.length=3') >= 0; }));
+
+  // F74-I: comidas.length mismatch
+  console.log('\nF74-I — _guardCardinalityConformance: comidas.length mismatch');
+  var nuI = { comidas: [{}, {}, {}] };
+  var gI = _guardCardinalityConformance(null, 5, null, nuI);
+  assert('F74-Ia', 'valid:false when comidas≠resolved', gI.valid === false);
+  assert('F74-Ib', 'error mentions comidas.length=3', gI.errors.some(function(e) { return e.indexOf('comidas.length=3') >= 0; }));
+
+  // F74-J: null resolvedDays → training check skipped
+  console.log('\nF74-J — null resolvedDays → training check skipped');
+  var trJ = { daysPerWeek: 99, days: [{}, {}, {}, {}, {}, {}, {}, {}, {}] };
+  var gJ = _guardCardinalityConformance(null, null, trJ, null);
+  assert('F74-Ja', 'valid:true when resolvedDays=null (skip check)', gJ.valid === true);
+
+  // F74-K: null training → training check skipped
+  console.log('\nF74-K — null training → training check skipped');
+  var gK = _guardCardinalityConformance(4, null, null, null);
+  assert('F74-Ka', 'valid:true when training=null', gK.valid === true);
+
+  // F74-L: null nutrition → meals check skipped
+  console.log('\nF74-L — null nutrition → meals check skipped');
+  var gL = _guardCardinalityConformance(null, 5, null, null);
+  assert('F74-La', 'valid:true when nutrition=null', gL.valid === true);
+
+  // F74-M: multiple errors accumulate
+  console.log('\nF74-M — multiple conformance errors accumulate');
+  var trM = { daysPerWeek: 3, days: [{}, {}] };
+  var nuM = { comidas: [{}, {}, {}, {}, {}, {}] };
+  var gM = _guardCardinalityConformance(4, 5, trM, nuM);
+  assert('F74-Ma', 'valid:false (multiple errors)', gM.valid === false);
+  assert('F74-Mb', 'at least 3 errors (daysPerWeek, days.length, comidas)', gM.errors.length >= 3);
 })();
 
 // ============================================================
