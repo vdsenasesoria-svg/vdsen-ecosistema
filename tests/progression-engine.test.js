@@ -12378,4 +12378,377 @@ function _makeF58Ex(overrides) {
   assert('F61-Nb', 'no exec banner in either', h1.indexOf('Con ejecución real') === -1);
 })();
 
+// ─── F62 inline helper (pure, mirrors coach implementation exactly) ───────────
+
+function _auditClientMirrorExecutionParity(plan, logs, week, execState) {
+  var issues = [];
+  function issue(type, severity, dayIndex, exerciseName, setIndex, detail) {
+    issues.push({ type: type, severity: severity, dayIndex: dayIndex, exerciseName: exerciseName, setIndex: setIndex, detail: detail });
+  }
+  if (!plan || !Array.isArray(plan.days) || !logs || !logs.entries || !execState || !Array.isArray(execState.days)) {
+    return { status: 'OK', issues: [], summary: 'No data to audit.' };
+  }
+  var entries = logs.entries;
+  var W = week;
+  var sortedDays = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
+  for (var di = 0; di < sortedDays.length; di++) {
+    var d = sortedDays[di];
+    var D = d.dayIndex != null ? d.dayIndex : di;
+    var exs = d.exercises || [];
+    var planPids  = {};
+    var planExIds = {};
+    for (var ei = 0; ei < exs.length; ei++) {
+      var ex = exs[ei];
+      if (ex.prescriptionExerciseId) planPids[ex.prescriptionExerciseId]   = ei;
+      if (ex.exerciseId)             planExIds[ex.exerciseId]               = ei;
+    }
+    var logPrefix = 'log_' + W + '_' + D + '_';
+    var rawKeys = Object.keys(entries);
+    for (var ki = 0; ki < rawKeys.length; ki++) {
+      var key = rawKeys[ki];
+      if (key.indexOf(logPrefix) !== 0) continue;
+      var rest = key.slice(logPrefix.length);
+      var sIdx = rest.indexOf('_s');
+      if (sIdx === -1) continue;
+      var E = parseInt(rest.slice(0, sIdx));
+      var S = parseInt(rest.slice(sIdx + 2));
+      if (isNaN(E) || isNaN(S)) continue;
+      var rawEntry = entries[key];
+      if (!rawEntry || typeof rawEntry !== 'object') continue;
+      var ePid  = rawEntry.prescriptionExerciseId || null;
+      var eExId = rawEntry.exerciseId || null;
+      if (ePid  && !(ePid  in planPids))  issue('IDENTITY_MISMATCH', 'WARN',  D, 'unknown (E=' + E + ')', S, 'PID "' + ePid  + '" in log key "' + key + '" has no matching plan exercise');
+      if (!ePid && eExId && !(eExId in planExIds)) issue('IDENTITY_MISMATCH', 'WARN', D, 'unknown (E=' + E + ')', S, 'exerciseId "' + eExId + '" in log key "' + key + '" has no matching plan exercise');
+    }
+    var execDay = null;
+    for (var xdi = 0; xdi < execState.days.length; xdi++) {
+      if (execState.days[xdi].dayIndex === D) { execDay = execState.days[xdi]; break; }
+    }
+    for (var ei2 = 0; ei2 < exs.length; ei2++) {
+      var ex2   = exs[ei2];
+      var exName  = ex2.exerciseName || ex2.nombre || 'Ejercicio';
+      var exPid   = ex2.prescriptionExerciseId || null;
+      var exExId  = ex2.exerciseId || null;
+      var byPid2  = {};
+      var byExId2 = {};
+      var byPos2  = {};
+      for (var ki2 = 0; ki2 < rawKeys.length; ki2++) {
+        var key2 = rawKeys[ki2];
+        if (key2.indexOf(logPrefix) !== 0) continue;
+        var rest2 = key2.slice(logPrefix.length);
+        var sIdx2 = rest2.indexOf('_s');
+        if (sIdx2 === -1) continue;
+        var E2 = parseInt(rest2.slice(0, sIdx2));
+        var S2 = parseInt(rest2.slice(sIdx2 + 2));
+        if (isNaN(E2) || isNaN(S2)) continue;
+        var raw2 = entries[key2];
+        if (!raw2 || typeof raw2 !== 'object') continue;
+        var rPid  = raw2.prescriptionExerciseId || null;
+        var rExId = raw2.exerciseId || null;
+        if      (rPid)              { if (!byPid2[rPid])   byPid2[rPid]   = []; byPid2[rPid].push({ E:E2, S:S2, entry:raw2 }); }
+        else if (rExId)             { if (!byExId2[rExId]) byExId2[rExId] = []; byExId2[rExId].push({ E:E2, S:S2, entry:raw2 }); }
+        else                        { if (!byPos2[E2])     byPos2[E2]      = []; byPos2[E2].push({ E:E2, S:S2, entry:raw2 }); }
+      }
+      var matchedRows2 = null;
+      if      (exPid  && byPid2[exPid])   matchedRows2 = byPid2[exPid];
+      else if (exExId && byExId2[exExId]) matchedRows2 = byExId2[exExId];
+      else if (byPos2[ei2])               matchedRows2 = byPos2[ei2];
+      var execEx2 = (execDay && execDay.exercises) ? execDay.exercises[ei2] : null;
+      if (matchedRows2 && matchedRows2.length > 0) {
+        if (!execEx2 || execEx2.sets.length === 0) {
+          issue('MISSING_EXECUTION_STATE', 'ERROR', D, exName, null, 'Raw log entries exist for exercise but execState has 0 sets');
+        } else {
+          var execSetMap2 = {};
+          for (var xs2i = 0; xs2i < execEx2.sets.length; xs2i++) {
+            var xs2 = execEx2.sets[xs2i];
+            execSetMap2[xs2.setIndex] = xs2;
+          }
+          for (var mi2 = 0; mi2 < matchedRows2.length; mi2++) {
+            var rr = matchedRows2[mi2];
+            var rEntry = rr.entry;
+            var S3 = rr.S;
+            var xsMatch = execSetMap2[S3] != null ? execSetMap2[S3] : null;
+            if (!xsMatch) {
+              issue('MISSING_EXECUTION_STATE', 'ERROR', D, exName, S3, 'Raw set S=' + S3 + ' exists but not found in execState.sets');
+              continue;
+            }
+            if (xsMatch.done && !xsMatch.isAutoFilled) {
+              if (rEntry.autoFilled === true) {
+                issue('FALSE_REAL_EXECUTION', 'ERROR', D, exName, S3, 'execState.isAutoFilled=false but raw.autoFilled=true');
+              }
+              if (!rEntry.done) {
+                issue('FALSE_REAL_EXECUTION', 'ERROR', D, exName, S3, 'execState.done=true but raw.done is falsy');
+              }
+            }
+            function _norm(v, def) { return v != null ? v : def; }
+            var rawUnit = rEntry.unit || 'kg';
+            var xsUnit  = xsMatch.unit || 'kg';
+            if (rawUnit !== xsUnit) issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'unit: raw="' + rawUnit + '" execState="' + xsUnit + '"');
+            if (_norm(rEntry.carga, null)    !== _norm(xsMatch.carga, null))    issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'carga: raw=' + rEntry.carga + ' execState=' + xsMatch.carga);
+            if (_norm(rEntry.reps, null)     !== _norm(xsMatch.reps, null))     issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'reps: raw=' + rEntry.reps + ' execState=' + xsMatch.reps);
+            if (_norm(rEntry.rir_real, null) !== _norm(xsMatch.rir_real, null)) issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'rir_real: raw=' + rEntry.rir_real + ' execState=' + xsMatch.rir_real);
+            if (_norm(rEntry.ics, null)      !== _norm(xsMatch.ics, null))      issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'ics: raw=' + rEntry.ics + ' execState=' + xsMatch.ics);
+            if (_norm(rEntry.pump, null)     !== _norm(xsMatch.pump, null))     issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'pump: raw=' + rEntry.pump + ' execState=' + xsMatch.pump);
+          }
+        }
+      }
+    }
+  }
+  var hasError = issues.some(function(i){ return i.severity === 'ERROR'; });
+  var hasWarn  = issues.some(function(i){ return i.severity === 'WARN'; });
+  var status = hasError ? 'HAS_ERRORS' : (hasWarn ? 'HAS_WARNINGS' : 'OK');
+  var summary = status === 'OK' ? 'No parity issues found.' : (issues.length + ' issue(s): ' + issues.filter(function(i){ return i.severity==='ERROR'; }).length + ' ERROR, ' + issues.filter(function(i){ return i.severity==='WARN'; }).length + ' WARN.');
+  return { status: status, issues: issues, summary: summary };
+}
+
+// ─── F62 TEST CASES ───────────────────────────────────────────────────────────
+
+// F62-A: No logs / empty execState → OK, no issues
+(function() {
+  console.log('\nF62-A — no logs / empty execState → OK');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Press', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }] }] };
+  var logs = { entries: {} };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  assert('F62-Aa', 'status OK', audit.status === 'OK');
+  assert('F62-Ab', 'no issues', audit.issues.length === 0);
+  // null inputs
+  var audit2 = _auditClientMirrorExecutionParity(null, null, 1, null);
+  assert('F62-Ac', 'null plan → OK', audit2.status === 'OK');
+})();
+
+// F62-B: Real execution matches exactly → OK
+(function() {
+  console.log('\nF62-B — real execution matches exactly → OK');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Sentadilla', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:100, restSeconds:120 }] }] }] };
+  var logs = { entries: { 'log_1_0_0_s0': { carga:100, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:8, pump:1, ts:1700000000 } } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  assert('F62-Ba', 'status OK', audit.status === 'OK');
+  assert('F62-Bb', 'no issues', audit.issues.length === 0);
+})();
+
+// F62-C: autoFilled set correctly marked → no FALSE_REAL_EXECUTION
+(function() {
+  console.log('\nF62-C — autoFilled correctly marked → no FALSE_REAL_EXECUTION');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[{ exerciseName:'Curl', sets:[{ setIndex:0, repsTarget:12, rirTarget:2, load:20, restSeconds:60 }] }] }] };
+  var logs = { entries: { 'log_1_0_0_s0': { carga:20, reps:12, unit:'kg', done:true, rir:2, rir_real:2, ics:8, pump:1, autoFilled:true, ts:1700000000 } } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  // execState.isAutoFilled=true so FALSE_REAL_EXECUTION check is skipped
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  var fre = audit.issues.filter(function(i){ return i.type === 'FALSE_REAL_EXECUTION'; });
+  assert('F62-Ca', 'no FALSE_REAL_EXECUTION', fre.length === 0);
+})();
+
+// F62-D: PID reorder — exercise at position 1 but PID matches position 0 in plan → OK
+(function() {
+  console.log('\nF62-D — PID reorder correct matching → OK');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'A', prescriptionExerciseId:'pid-A', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] },
+    { exerciseName:'B', prescriptionExerciseId:'pid-B', sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:50, restSeconds:90 }] }
+  ] }] };
+  // Logged at E=1 (position 1) but has PID=pid-A (belongs to position 0) → PID-first matching
+  var logs = { entries: {
+    'log_1_0_1_s0': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:8, pump:1, prescriptionExerciseId:'pid-A', ts:1700000000 },
+    'log_1_0_0_s0': { carga:50, reps:10, unit:'kg', done:true, rir:2, rir_real:2, ics:7, pump:2, prescriptionExerciseId:'pid-B', ts:1700000100 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  // pid-A should match exercise A (ei=0), pid-B should match exercise B (ei=1)
+  assert('F62-Da', 'ex-A carga=80 via PID', state.days[0].exercises[0].sets[0].carga === 80);
+  assert('F62-Db', 'ex-B carga=50 via PID', state.days[0].exercises[1].sets[0].carga === 50);
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  assert('F62-Dc', 'status OK for PID reorder', audit.status === 'OK');
+})();
+
+// F62-E: Orphaned PID (no plan exercise has it) → IDENTITY_MISMATCH WARN
+(function() {
+  console.log('\nF62-E — orphaned PID → IDENTITY_MISMATCH');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Press', prescriptionExerciseId:'pid-X', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }
+  ] }] };
+  // Log with PID that doesn't exist in plan
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:8, pump:1, prescriptionExerciseId:'pid-GHOST', ts:1700000000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  // pid-GHOST doesn't match pid-X, so no sets for Press
+  assert('F62-Ea', 'no sets for Press (orphaned PID)', state.days[0].exercises[0].sets.length === 0);
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  var im = audit.issues.filter(function(i){ return i.type === 'IDENTITY_MISMATCH'; });
+  assert('F62-Eb', 'IDENTITY_MISMATCH detected', im.length >= 1);
+  assert('F62-Ec', 'severity WARN', im[0].severity === 'WARN');
+  assert('F62-Ed', 'status HAS_WARNINGS (no errors)', audit.status === 'HAS_WARNINGS');
+})();
+
+// F62-F: exerciseId fallback → OK
+(function() {
+  console.log('\nF62-F — exerciseId fallback → OK');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Jalón', exerciseId:'exid-J', sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:60, restSeconds:90 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:60, reps:10, unit:'kg', done:true, rir:2, rir_real:1, ics:9, pump:1, exerciseId:'exid-J', ts:1700000000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  assert('F62-Fa', 'exerciseId matched, carga=60', state.days[0].exercises[0].sets[0].carga === 60);
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  assert('F62-Fb', 'status OK', audit.status === 'OK');
+})();
+
+// F62-G: Positional fallback (no PID, no exid in log) → OK
+(function() {
+  console.log('\nF62-G — positional fallback → OK');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Remo', sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:70, restSeconds:90 }] }
+  ] }] };
+  // No PID, no exerciseId → positional match E=0 → exercise index 0
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:70, reps:10, unit:'kg', done:true, rir:2, rir_real:1, ics:7, pump:2, ts:1700000000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  assert('F62-Ga', 'positional match, carga=70', state.days[0].exercises[0].sets[0].carga === 70);
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  assert('F62-Gb', 'status OK', audit.status === 'OK');
+  var im = audit.issues.filter(function(i){ return i.type === 'IDENTITY_MISMATCH'; });
+  assert('F62-Gc', 'no IDENTITY_MISMATCH for positional fallback', im.length === 0);
+})();
+
+// F62-H: Log entries exist but none match exercise → MISSING_EXECUTION_STATE
+(function() {
+  console.log('\nF62-H — log entries that don\'t match exercise → MISSING_EXECUTION_STATE');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Press', prescriptionExerciseId:'pid-PRESS', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }] }
+  ] }] };
+  // Log exists with wrong PID → execState has 0 sets for Press
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:8, pump:1, prescriptionExerciseId:'pid-OTHER', ts:1700000000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  // pid-OTHER doesn't match pid-PRESS, and since it has a PID, no positional fallback
+  // The audit should detect IDENTITY_MISMATCH (orphaned pid-OTHER) but NOT MISSING_EXECUTION_STATE
+  // because no log entry actually matches the exercise
+  assert('F62-Ha', 'execState has 0 sets for Press', state.days[0].exercises[0].sets.length === 0);
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  // matchedRows for Press is null (pid-PRESS has no log entries), so no MISSING_EXECUTION_STATE
+  var mse = audit.issues.filter(function(i){ return i.type === 'MISSING_EXECUTION_STATE'; });
+  assert('F62-Hb', 'no MISSING_EXECUTION_STATE (exercise has no matching log)', mse.length === 0);
+  var im = audit.issues.filter(function(i){ return i.type === 'IDENTITY_MISMATCH'; });
+  assert('F62-Hc', 'IDENTITY_MISMATCH for orphaned pid-OTHER', im.length >= 1);
+})();
+
+// F62-I: execState says real (done=true, !isAutoFilled) but raw is autoFilled → FALSE_REAL_EXECUTION
+(function() {
+  console.log('\nF62-I — execState says real but raw is autoFilled → FALSE_REAL_EXECUTION');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Curl', sets:[{ setIndex:0, repsTarget:12, rirTarget:2, load:20, restSeconds:60 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:20, reps:12, unit:'kg', done:true, rir:2, rir_real:2, ics:8, pump:1, autoFilled:true, ts:1700000000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  // Tamper execState to claim it's real (not autoFilled)
+  state.days[0].exercises[0].sets[0].isAutoFilled = false;
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  var fre = audit.issues.filter(function(i){ return i.type === 'FALSE_REAL_EXECUTION'; });
+  assert('F62-Ia', 'FALSE_REAL_EXECUTION detected', fre.length >= 1);
+  assert('F62-Ib', 'severity ERROR', fre[0].severity === 'ERROR');
+  assert('F62-Ic', 'status HAS_ERRORS', audit.status === 'HAS_ERRORS');
+})();
+
+// F62-J: VALUE_MISMATCH — carga in execState differs from raw
+(function() {
+  console.log('\nF62-J — VALUE_MISMATCH carga');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Peso Muerto', sets:[{ setIndex:0, repsTarget:5, rirTarget:1, load:150, restSeconds:180 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:150, reps:5, unit:'kg', done:true, rir:1, rir_real:0, ics:9, pump:1, ts:1700000000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  // Tamper carga in execState
+  state.days[0].exercises[0].sets[0].carga = 140;
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  var vm = audit.issues.filter(function(i){ return i.type === 'VALUE_MISMATCH'; });
+  assert('F62-Ja', 'VALUE_MISMATCH detected for carga', vm.length >= 1);
+  assert('F62-Jb', 'severity ERROR', vm[0].severity === 'ERROR');
+  assert('F62-Jc', 'detail mentions carga', vm[0].detail.indexOf('carga') !== -1);
+})();
+
+// F62-K: Partial session (some sets done, one set missing from execState) → MISSING_EXECUTION_STATE per set
+(function() {
+  console.log('\nF62-K — partial session, missing set in execState');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Press', sets:[
+      { setIndex:0, repsTarget:8, rirTarget:2, load:80, restSeconds:120 },
+      { setIndex:1, repsTarget:8, rirTarget:2, load:80, restSeconds:120 }
+    ] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:8, pump:1, ts:1700000000 },
+    'log_1_0_0_s1': { carga:80, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:8, pump:1, ts:1700000100 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  assert('F62-Ka', 'both sets in execState', state.days[0].exercises[0].sets.length === 2);
+  // Now remove set S=1 from execState to simulate a bug/partial
+  state.days[0].exercises[0].sets = state.days[0].exercises[0].sets.filter(function(s){ return s.setIndex !== 1; });
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  var mse = audit.issues.filter(function(i){ return i.type === 'MISSING_EXECUTION_STATE' && i.setIndex === 1; });
+  assert('F62-Kb', 'MISSING_EXECUTION_STATE for set S=1', mse.length >= 1);
+})();
+
+// F62-L: progrec suggestion present → no issues (suggestion is not audited as a value)
+(function() {
+  console.log('\nF62-L — progrec suggestion present → OK (suggestion not in value audit)');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Squat', sets:[{ setIndex:0, repsTarget:8, rirTarget:2, load:100, restSeconds:120 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:100, reps:8, unit:'kg', done:true, rir:2, rir_real:1, ics:8, pump:1, ts:1700000000 },
+    'progrec_1_0': { recommendations:[{ exerciseName:'Squat', newLoad:105 }], deloadTriggers:[] }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  assert('F62-La', 'progrecSuggestion present', state.days[0].exercises[0].progrecSuggestion !== null);
+  assert('F62-Lb', 'suggestion newLoad=105', state.days[0].exercises[0].progrecSuggestion.newLoad === 105);
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  assert('F62-Lc', 'status OK', audit.status === 'OK');
+})();
+
+// F62-M: No mutation of inputs, deterministic
+(function() {
+  console.log('\nF62-M — no mutation, deterministic');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Jalón', sets:[{ setIndex:0, repsTarget:10, rirTarget:2, load:60, restSeconds:90 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:60, reps:10, unit:'kg', done:true, rir:2, rir_real:1, ics:9, pump:1, ts:1700000000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  var planSnap = JSON.stringify(plan);
+  var logsSnap = JSON.stringify(logs);
+  var stateSnap = JSON.stringify(state);
+  var audit1 = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  var audit2 = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  assert('F62-Ma', 'plan not mutated', JSON.stringify(plan) === planSnap);
+  assert('F62-Mb', 'logs not mutated', JSON.stringify(logs) === logsSnap);
+  assert('F62-Mc', 'state not mutated', JSON.stringify(state) === stateSnap);
+  assert('F62-Md', 'deterministic', JSON.stringify(audit1) === JSON.stringify(audit2));
+})();
+
+// F62-N: rir_real=0 correctly preserved (0 != null)
+(function() {
+  console.log('\nF62-N — rir_real=0 correctly preserved, no VALUE_MISMATCH');
+  var plan = { weeks:4, days:[{ dayIndex:0, label:'D1', exercises:[
+    { exerciseName:'Press Banca', sets:[{ setIndex:0, repsTarget:5, rirTarget:0, load:120, restSeconds:180 }] }
+  ] }] };
+  var logs = { entries: {
+    'log_1_0_0_s0': { carga:120, reps:5, unit:'kg', done:true, rir:0, rir_real:0, ics:9, pump:1, ts:1700000000 }
+  } };
+  var state = _buildClientMirrorExecutionState(plan, logs, 1);
+  assert('F62-Na', 'rir_real=0 in execState', state.days[0].exercises[0].sets[0].rir_real === 0);
+  var audit = _auditClientMirrorExecutionParity(plan, logs, 1, state);
+  var vm = audit.issues.filter(function(i){ return i.type === 'VALUE_MISMATCH' && i.detail && i.detail.indexOf('rir_real') !== -1; });
+  assert('F62-Nb', 'no rir_real VALUE_MISMATCH when both are 0', vm.length === 0);
+  assert('F62-Nc', 'status OK', audit.status === 'OK');
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

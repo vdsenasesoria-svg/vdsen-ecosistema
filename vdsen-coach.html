@@ -11771,6 +11771,152 @@ El esfuerzo no es negociable.
   }
   window._buildClientMirrorExecutionState = _buildClientMirrorExecutionState;
 
+  // ========== FASE 62 — CLIENT MIRROR EXECUTION PARITY AUDIT ==========
+
+  function _auditClientMirrorExecutionParity(plan, logs, week, execState) {
+    var issues = [];
+    function issue(type, severity, dayIndex, exerciseName, setIndex, detail) {
+      issues.push({ type: type, severity: severity, dayIndex: dayIndex, exerciseName: exerciseName, setIndex: setIndex, detail: detail });
+    }
+
+    if (!plan || !Array.isArray(plan.days) || !logs || !logs.entries || !execState || !Array.isArray(execState.days)) {
+      var result = { status: 'OK', issues: [], summary: 'No data to audit.' };
+      return result;
+    }
+
+    var entries = logs.entries;
+    var W = week;
+    var sortedDays = plan.days.slice().sort(function(a,b){ return (a.dayIndex||0)-(b.dayIndex||0); });
+
+    // Build PID→plan-ex and exId→plan-ex index to detect IDENTITY_MISMATCH
+    for (var di = 0; di < sortedDays.length; di++) {
+      var d = sortedDays[di];
+      var D = d.dayIndex != null ? d.dayIndex : di;
+      var exs = d.exercises || [];
+
+      // Collect all PIDs and exerciseIds in this plan day
+      var planPids  = {};
+      var planExIds = {};
+      for (var ei = 0; ei < exs.length; ei++) {
+        var ex = exs[ei];
+        if (ex.prescriptionExerciseId) planPids[ex.prescriptionExerciseId]   = ei;
+        if (ex.exerciseId)             planExIds[ex.exerciseId]               = ei;
+      }
+
+      // Scan raw log entries for this week+day to find orphaned PIDs/exerciseIds
+      var logPrefix = 'log_' + W + '_' + D + '_';
+      var rawKeys = Object.keys(entries);
+      for (var ki = 0; ki < rawKeys.length; ki++) {
+        var key = rawKeys[ki];
+        if (key.indexOf(logPrefix) !== 0) continue;
+        var rest = key.slice(logPrefix.length);
+        var sIdx = rest.indexOf('_s');
+        if (sIdx === -1) continue;
+        var E = parseInt(rest.slice(0, sIdx));
+        var S = parseInt(rest.slice(sIdx + 2));
+        if (isNaN(E) || isNaN(S)) continue;
+        var rawEntry = entries[key];
+        if (!rawEntry || typeof rawEntry !== 'object') continue;
+        var ePid  = rawEntry.prescriptionExerciseId || null;
+        var eExId = rawEntry.exerciseId || null;
+        if (ePid  && !(ePid  in planPids))  issue('IDENTITY_MISMATCH', 'WARN',  D, 'unknown (E=' + E + ')', S, 'PID "' + ePid  + '" in log key "' + key + '" has no matching plan exercise');
+        if (!ePid && eExId && !(eExId in planExIds)) issue('IDENTITY_MISMATCH', 'WARN', D, 'unknown (E=' + E + ')', S, 'exerciseId "' + eExId + '" in log key "' + key + '" has no matching plan exercise');
+      }
+
+      // Verify per-exercise execState vs raw entries
+      var execDay = null;
+      for (var xdi = 0; xdi < execState.days.length; xdi++) {
+        if (execState.days[xdi].dayIndex === D) { execDay = execState.days[xdi]; break; }
+      }
+
+      for (var ei2 = 0; ei2 < exs.length; ei2++) {
+        var ex2   = exs[ei2];
+        var exName  = ex2.exerciseName || ex2.nombre || 'Ejercicio';
+        var exPid   = ex2.prescriptionExerciseId || null;
+        var exExId  = ex2.exerciseId || null;
+
+        // Find matching raw rows (same logic as _buildClientMirrorExecutionState)
+        var byPid2  = {};
+        var byExId2 = {};
+        var byPos2  = {};
+        for (var ki2 = 0; ki2 < rawKeys.length; ki2++) {
+          var key2 = rawKeys[ki2];
+          if (key2.indexOf(logPrefix) !== 0) continue;
+          var rest2 = key2.slice(logPrefix.length);
+          var sIdx2 = rest2.indexOf('_s');
+          if (sIdx2 === -1) continue;
+          var E2 = parseInt(rest2.slice(0, sIdx2));
+          var S2 = parseInt(rest2.slice(sIdx2 + 2));
+          if (isNaN(E2) || isNaN(S2)) continue;
+          var raw2 = entries[key2];
+          if (!raw2 || typeof raw2 !== 'object') continue;
+          var rPid  = raw2.prescriptionExerciseId || null;
+          var rExId = raw2.exerciseId || null;
+          if      (rPid)              { if (!byPid2[rPid])   byPid2[rPid]   = []; byPid2[rPid].push({ E:E2, S:S2, entry:raw2 }); }
+          else if (rExId)             { if (!byExId2[rExId]) byExId2[rExId] = []; byExId2[rExId].push({ E:E2, S:S2, entry:raw2 }); }
+          else                        { if (!byPos2[E2])     byPos2[E2]      = []; byPos2[E2].push({ E:E2, S:S2, entry:raw2 }); }
+        }
+
+        var matchedRows2 = null;
+        if      (exPid  && byPid2[exPid])   matchedRows2 = byPid2[exPid];
+        else if (exExId && byExId2[exExId]) matchedRows2 = byExId2[exExId];
+        else if (byPos2[ei2])               matchedRows2 = byPos2[ei2];
+
+        var execEx2 = (execDay && execDay.exercises) ? execDay.exercises[ei2] : null;
+
+        if (matchedRows2 && matchedRows2.length > 0) {
+          // There are raw logs for this exercise — execState should have sets
+          if (!execEx2 || execEx2.sets.length === 0) {
+            issue('MISSING_EXECUTION_STATE', 'ERROR', D, exName, null, 'Raw log entries exist for exercise but execState has 0 sets');
+          } else {
+            // Verify each raw row against execState
+            var execSetMap2 = {};
+            for (var xs2i = 0; xs2i < execEx2.sets.length; xs2i++) {
+              var xs2 = execEx2.sets[xs2i];
+              execSetMap2[xs2.setIndex] = xs2;
+            }
+            for (var mi2 = 0; mi2 < matchedRows2.length; mi2++) {
+              var rr = matchedRows2[mi2];
+              var rEntry = rr.entry;
+              var S3 = rr.S;
+              var xsMatch = execSetMap2[S3] != null ? execSetMap2[S3] : null;
+              if (!xsMatch) {
+                issue('MISSING_EXECUTION_STATE', 'ERROR', D, exName, S3, 'Raw set S=' + S3 + ' exists but not found in execState.sets');
+                continue;
+              }
+              // FALSE_REAL_EXECUTION: execState says done=true & !isAutoFilled but raw contradicts
+              if (xsMatch.done && !xsMatch.isAutoFilled) {
+                if (rEntry.autoFilled === true) {
+                  issue('FALSE_REAL_EXECUTION', 'ERROR', D, exName, S3, 'execState.isAutoFilled=false but raw.autoFilled=true — synthetic set presented as real');
+                }
+                if (!rEntry.done) {
+                  issue('FALSE_REAL_EXECUTION', 'ERROR', D, exName, S3, 'execState.done=true but raw.done is falsy — set not actually completed');
+                }
+              }
+              // VALUE_MISMATCH for core fields
+              function _norm(v, def) { return v != null ? v : def; }
+              var rawUnit = rEntry.unit || 'kg';
+              var xsUnit  = xsMatch.unit || 'kg';
+              if (rawUnit !== xsUnit) issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'unit: raw="' + rawUnit + '" execState="' + xsUnit + '"');
+              if (_norm(rEntry.carga, null)    !== _norm(xsMatch.carga, null))    issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'carga: raw=' + rEntry.carga + ' execState=' + xsMatch.carga);
+              if (_norm(rEntry.reps, null)     !== _norm(xsMatch.reps, null))     issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'reps: raw=' + rEntry.reps + ' execState=' + xsMatch.reps);
+              if (_norm(rEntry.rir_real, null) !== _norm(xsMatch.rir_real, null)) issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'rir_real: raw=' + rEntry.rir_real + ' execState=' + xsMatch.rir_real);
+              if (_norm(rEntry.ics, null)      !== _norm(xsMatch.ics, null))      issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'ics: raw=' + rEntry.ics + ' execState=' + xsMatch.ics);
+              if (_norm(rEntry.pump, null)     !== _norm(xsMatch.pump, null))     issue('VALUE_MISMATCH', 'ERROR', D, exName, S3, 'pump: raw=' + rEntry.pump + ' execState=' + xsMatch.pump);
+            }
+          }
+        }
+      }
+    }
+
+    var hasError = issues.some(function(i){ return i.severity === 'ERROR'; });
+    var hasWarn  = issues.some(function(i){ return i.severity === 'WARN'; });
+    var status = hasError ? 'HAS_ERRORS' : (hasWarn ? 'HAS_WARNINGS' : 'OK');
+    var summary = status === 'OK' ? 'No parity issues found.' : (issues.length + ' issue(s): ' + issues.filter(function(i){ return i.severity==='ERROR'; }).length + ' ERROR, ' + issues.filter(function(i){ return i.severity==='WARN'; }).length + ' WARN.');
+    return { status: status, issues: issues, summary: summary };
+  }
+  window._auditClientMirrorExecutionParity = _auditClientMirrorExecutionParity;
+
   // ========== FASE 26 — COMPARACIÓN DE PLANES ==========
 
   function _normNameF26(s) {
