@@ -287,6 +287,31 @@
   </div>
   <div id="crearPlan" class="section"><div class="flex items-center justify-between mb-4 flex-wrap gap-2"><h2 class="text-2xl font-bold" style="margin:0">Plan</h2><button onclick="showSection('templates')" style="padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-size:12px;cursor:pointer">📑 Templates →</button></div><select id="planClientSelect" class="input-field mb-2"></select>
     <div class="card p-4 mb-4">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        <div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);font-weight:700;margin-bottom:4px">Días de entrenamiento</div>
+          <select id="genTrainingDays" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;cursor:pointer">
+            <option value="AUTO">AUTO — VDSEN decide</option>
+            <option value="2">2 días/semana</option>
+            <option value="3">3 días/semana</option>
+            <option value="4">4 días/semana</option>
+            <option value="5">5 días/semana</option>
+            <option value="6">6 días/semana</option>
+            <option value="7">7 días/semana</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);font-weight:700;margin-bottom:4px">Comidas por día</div>
+          <select id="genMealsPerDay" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;cursor:pointer">
+            <option value="AUTO">AUTO — VDSEN decide</option>
+            <option value="2">2 comidas</option>
+            <option value="3">3 comidas</option>
+            <option value="4">4 comidas</option>
+            <option value="5">5 comidas</option>
+            <option value="6">6 comidas</option>
+          </select>
+        </div>
+      </div>
       <div class="flex items-center gap-3 flex-wrap">
         <button id="autoGenBtn" onclick="autoGeneratePlan()" class="btn-primary">🤖 Generar plan automático (motor VDSEN)</button>
         <button id="planPdfBtn" onclick="downloadPlanPDF(document.getElementById('planClientSelect').value)" class="btn-secondary">📄 Descargar PDF del plan</button>
@@ -6470,6 +6495,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       setStatus('<span style="color:var(--text-muted)">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();
 
+      // FASE 66 — Coach Intent: read selects, normalize intent
+      const _ciRaw = {
+        trainingDays: (document.getElementById('genTrainingDays') || {}).value || 'AUTO',
+        mealsPerDay:  (document.getElementById('genMealsPerDay')  || {}).value || 'AUTO'
+      };
+      const _coachIntent = (typeof window._normalizeCoachIntent === 'function')
+        ? window._normalizeCoachIntent(_ciRaw)
+        : { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'AUTO', value: null } };
+      const _intentConstraintTxt = (typeof window._buildCoachIntentConstraintText === 'function')
+        ? window._buildCoachIntentConstraintText(_coachIntent) : '';
+
       setStatus('<span style="color:var(--text-muted)">Generando con el motor VDSEN… (10–40 s)</span>');
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
@@ -6481,6 +6517,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
+        _intentConstraintTxt,
         prescCtxTxt,
         'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
@@ -6583,6 +6620,31 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (pharma) { clientUpdates.pharmacoPlan = pharma; saved.push('farmacología'); }
       if (Object.keys(clientUpdates).length) await updateDoc(doc(db, 'clients', clientId), clientUpdates);
 
+      // FASE 66 — Conformance audit + Decision Trace
+      const _intentConformance = (typeof window._auditCoachIntentConformance === 'function')
+        ? window._auditCoachIntentConformance(_coachIntent, training, nutrition) : { status: 'OK', issues: [] };
+      if (_intentConformance.status === 'MISMATCH') {
+        const _mismatchLines = _intentConformance.issues.map(function(iss) { return '• ' + _escH(iss.detail); }).join('<br>');
+        const _continueMismatch = await _askConfirm('⚠️ <strong>DIVERGENCIA — Intención del Coach</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _mismatchLines + '</div><br>¿Guardar el plan de todas formas?');
+        if (!_continueMismatch) { setStatus('<div style="color:#888">Generación cancelada por divergencia de intención.</div>'); return; }
+      }
+      const _resolvedDpw = training ? (training.daysPerWeek != null ? Number(training.daysPerWeek) : (Array.isArray(training.days) ? training.days.length : null)) : null;
+      const _resolvedMeals = (nutrition && Array.isArray(nutrition.comidas)) ? nutrition.comidas.filter(function(c){ return c && typeof c === 'object'; }).length : null;
+      const _intentTrace = (typeof window._buildCoachIntentDecisionTrace === 'function')
+        ? window._buildCoachIntentDecisionTrace(_coachIntent, _resolvedDpw, _resolvedMeals) : null;
+      const _intentTraceHtml = _intentTrace ? (function() {
+        function _srcLabel(src) { return src === 'COACH_EXPLICIT' ? '👤 Coach' : '⚙️ VDSEN'; }
+        var tdD = _intentTrace.trainingDaysDecision; var mpD = _intentTrace.mealsPerDayDecision;
+        return '<div style="border:1px solid rgba(196,255,0,.15);border-radius:6px;padding:6px 10px;margin-top:6px;font-size:11px">'
+          + '<div style="font-weight:700;color:#888;margin-bottom:4px">CONFIGURACIÓN RESUELTA</div>'
+          + '<div style="display:flex;gap:16px;flex-wrap:wrap">'
+          + '<div><span style="color:#F4F4F0">' + (tdD.resolvedValue != null ? tdD.resolvedValue + ' días/sem' : '?') + '</span>'
+          + ' <span style="color:#555;font-size:10px">' + _srcLabel(tdD.source) + '</span></div>'
+          + '<div><span style="color:#F4F4F0">' + (mpD.resolvedValue != null ? mpD.resolvedValue + ' comidas/día' : '?') + '</span>'
+          + ' <span style="color:#555;font-size:10px">' + _srcLabel(mpD.source) + '</span></div>'
+          + '</div></div>';
+      })() : '';
+
       const u = data.usage || {};
       const trunc = data.stop_reason === 'max_tokens' ? '<div style="color:var(--danger);font-size:11px;margin-top:4px">⚠ La respuesta se truncó (max_tokens). Revisa el plan; puede faltar contenido.</div>' : '';
       const cacheNote = u.cache_read_input_tokens ? ' · caché ✓' : (u.cache_creation_input_tokens ? ' · caché creado' : '');
@@ -6651,6 +6713,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       })();
       setStatus('<div style="color:var(--success);font-weight:700">✅ Generado y cargado: ' + saved.join(' · ') + '</div>'
         + '<div style="color:var(--text-muted);font-size:11px;margin-top:4px">Tokens: ' + (u.input_tokens || '?') + ' in / ' + (u.output_tokens || '?') + ' out' + cacheNote + ' · Ya visible para el cliente en su app.</div>'
+        + _intentTraceHtml
         + _lvHtml
         + _hintsHtml
         + '<button onclick="downloadPlanPDF(\'' + clientId + '\')" class="btn-secondary" style="margin-top:10px">📄 Descargar PDF del plan</button>'
@@ -9132,6 +9195,31 @@ El esfuerzo no es negociable.
       <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.16);border-radius:10px;padding:13px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#8aaa44;font-weight:700;margin-bottom:6px">🤖 Motor VDSEN</div>
         <div style="font-size:11px;color:#666;line-height:1.6;margin-bottom:10px">Genera plan de entrenamiento, nutricional y suplementación según la ficha. Requiere API key y ficha completa.</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#666;font-weight:700;margin-bottom:3px">Días/semana</div>
+            <select id="_genTrainingDays_${clientId}" style="padding:4px 7px;border-radius:5px;border:1px solid rgba(196,255,0,.25);background:#0d1117;color:#C4FF00;font-size:11px;cursor:pointer">
+              <option value="AUTO">AUTO</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#666;font-weight:700;margin-bottom:3px">Comidas/día</div>
+            <select id="_genMealsPerDay_${clientId}" style="padding:4px 7px;border-radius:5px;border:1px solid rgba(196,255,0,.25);background:#0d1117;color:#C4FF00;font-size:11px;cursor:pointer">
+              <option value="AUTO">AUTO</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+          </div>
+        </div>
         <button id="_fichaGenBtn_${clientId}" onclick="_autoGenerateForModal('${clientId}')" style="width:100%;padding:10px;border-radius:7px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.03em">🤖 GENERAR PLAN COMPLETO</button>
         <div id="_fichaGenStatus_${clientId}" style="font-size:11px;line-height:1.7;margin-top:8px"></div>
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
@@ -10784,6 +10872,17 @@ El esfuerzo no es negociable.
       setStatus('<span style="color:#888">Cargando motor VDSEN…</span>');
       const motor = await _loadMotorPrompt();
 
+      // FASE 66 — Coach Intent: read modal selects, normalize intent
+      const _ciRaw2 = {
+        trainingDays: (document.getElementById('_genTrainingDays_' + clientId) || {}).value || 'AUTO',
+        mealsPerDay:  (document.getElementById('_genMealsPerDay_'  + clientId) || {}).value || 'AUTO'
+      };
+      const _coachIntent2 = (typeof window._normalizeCoachIntent === 'function')
+        ? window._normalizeCoachIntent(_ciRaw2)
+        : { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'AUTO', value: null } };
+      const _intentConstraintTxt2 = (typeof window._buildCoachIntentConstraintText === 'function')
+        ? window._buildCoachIntentConstraintText(_coachIntent2) : '';
+
       setStatus('<span style="color:#888">Generando con el motor VDSEN… (10–40 s)</span>');
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
@@ -10795,6 +10894,7 @@ El esfuerzo no es negociable.
         'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
+        _intentConstraintTxt2,
         prescCtxTxt,
         'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
@@ -10905,6 +11005,31 @@ El esfuerzo no es negociable.
         Object.assign(_detailClientData, clientUpdates);
       }
 
+      // FASE 66 — Conformance audit + Decision Trace (modal flow)
+      const _intentConformance2 = (typeof window._auditCoachIntentConformance === 'function')
+        ? window._auditCoachIntentConformance(_coachIntent2, training, nutrition) : { status: 'OK', issues: [] };
+      if (_intentConformance2.status === 'MISMATCH') {
+        const _mismatchLines2 = _intentConformance2.issues.map(function(iss) { return '• ' + _escH(iss.detail); }).join('<br>');
+        const _continueMismatch2 = await _askConfirm('⚠️ <strong>DIVERGENCIA — Intención del Coach</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _mismatchLines2 + '</div><br>¿Guardar el plan de todas formas?');
+        if (!_continueMismatch2) { setStatus('<div style="color:#e05555">Generación cancelada por divergencia de intención.</div>'); return; }
+      }
+      const _resolvedDpw2 = training ? (training.daysPerWeek != null ? Number(training.daysPerWeek) : (Array.isArray(training.days) ? training.days.length : null)) : null;
+      const _resolvedMeals2 = (nutrition && Array.isArray(nutrition.comidas)) ? nutrition.comidas.filter(function(c){ return c && typeof c === 'object'; }).length : null;
+      const _intentTrace2 = (typeof window._buildCoachIntentDecisionTrace === 'function')
+        ? window._buildCoachIntentDecisionTrace(_coachIntent2, _resolvedDpw2, _resolvedMeals2) : null;
+      const _intentTraceHtml2 = _intentTrace2 ? (function() {
+        function _srcLabel2(src) { return src === 'COACH_EXPLICIT' ? '👤 Coach' : '⚙️ VDSEN'; }
+        var tdD2 = _intentTrace2.trainingDaysDecision; var mpD2 = _intentTrace2.mealsPerDayDecision;
+        return '<div style="border:1px solid rgba(196,255,0,.15);border-radius:6px;padding:6px 10px;margin-top:6px;font-size:11px">'
+          + '<div style="font-weight:700;color:#888;margin-bottom:4px">CONFIGURACIÓN RESUELTA</div>'
+          + '<div style="display:flex;gap:16px;flex-wrap:wrap">'
+          + '<div><span style="color:#F4F4F0">' + (tdD2.resolvedValue != null ? tdD2.resolvedValue + ' días/sem' : '?') + '</span>'
+          + ' <span style="color:#555;font-size:10px">' + _srcLabel2(tdD2.source) + '</span></div>'
+          + '<div><span style="color:#F4F4F0">' + (mpD2.resolvedValue != null ? mpD2.resolvedValue + ' comidas/día' : '?') + '</span>'
+          + ' <span style="color:#555;font-size:10px">' + _srcLabel2(mpD2.source) + '</span></div>'
+          + '</div></div>';
+      })() : '';
+
       const u = respData.usage || {};
       const trunc = respData.stop_reason === 'max_tokens' ? '<div style="color:#e05555;font-size:11px;margin-top:4px">⚠ Respuesta truncada — revisa que el plan esté completo.</div>' : '';
       const cacheNote = u.cache_read_input_tokens ? ' · caché ✓' : (u.cache_creation_input_tokens ? ' · caché creado' : '');
@@ -10974,7 +11099,7 @@ El esfuerzo no es negociable.
       setStatus(`<div style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);border-radius:8px;padding:12px;margin-top:4px">
         <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Generado: ${saved.join(' · ')}</div>
         <div style="color:#888;font-size:11px">Tokens: ${u.input_tokens||'?'} in / ${u.output_tokens||'?'} out${cacheNote}</div>
-        ${_lvHtml2}${_hintsHtml2}${trunc}
+        ${_intentTraceHtml2}${_lvHtml2}${_hintsHtml2}${trunc}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button onclick="_switchClientTab('plan')" style="padding:6px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">🏋️ Ver Plan</button>
           <button onclick="downloadPlanPDF('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.25);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📄 PDF</button>
@@ -12209,6 +12334,118 @@ El esfuerzo no es negociable.
     return result('READY', logsData, 'Logs verified for client "' + selectedClientId + '"');
   }
   window._resolveClientMirrorLogSource = _resolveClientMirrorLogSource;
+
+  // ========== FASE 66 — COACH INTENT: TRAINING DAYS & MEALS PER DAY ==========
+  // Pure helpers. 0 I/O, 0 writes, 0 mutation, deterministic.
+
+  // Normalize raw UI values into structured intent.
+  // rawIntent: { trainingDays: string|null, mealsPerDay: string|null }
+  // Each slot → { mode: 'EXPLICIT'|'AUTO', value: number|null }
+  // AUTO triggers: null, undefined, '', 'AUTO', or any non-positive number string.
+  function _normalizeCoachIntent(rawIntent) {
+    function _slot(raw) {
+      if (raw == null || raw === '' || String(raw).toUpperCase() === 'AUTO') {
+        return { mode: 'AUTO', value: null };
+      }
+      var n = parseInt(String(raw), 10);
+      if (!isFinite(n) || n <= 0) return { mode: 'AUTO', value: null };
+      return { mode: 'EXPLICIT', value: n };
+    }
+    var r = rawIntent && typeof rawIntent === 'object' ? rawIntent : {};
+    return {
+      trainingDays: _slot(r.trainingDays != null ? r.trainingDays : null),
+      mealsPerDay:  _slot(r.mealsPerDay  != null ? r.mealsPerDay  : null)
+    };
+  }
+  window._normalizeCoachIntent = _normalizeCoachIntent;
+
+  // Post-generation conformance audit against EXPLICIT intents.
+  // coachIntent: output of _normalizeCoachIntent
+  // plan: training object with daysPerWeek and days[]
+  // nutrition: nutrition object with comidas[]
+  // Returns { status: 'OK'|'MISMATCH', issues: [{field, expected, resolved, detail}] }
+  function _auditCoachIntentConformance(coachIntent, plan, nutrition) {
+    var issues = [];
+    if (!coachIntent || typeof coachIntent !== 'object') {
+      return { status: 'OK', issues: [] };
+    }
+
+    // Training days conformance
+    var td = coachIntent.trainingDays;
+    if (td && td.mode === 'EXPLICIT' && td.value != null) {
+      var resolvedDpw = null;
+      if (plan && typeof plan === 'object') {
+        resolvedDpw = plan.daysPerWeek != null ? Number(plan.daysPerWeek) : (Array.isArray(plan.days) ? plan.days.length : null);
+      }
+      if (resolvedDpw == null) {
+        issues.push({ field: 'trainingDays', expected: td.value, resolved: null, detail: 'Plan missing — cannot verify training days' });
+      } else if (resolvedDpw !== td.value) {
+        issues.push({ field: 'trainingDays', expected: td.value, resolved: resolvedDpw, detail: 'Plan has ' + resolvedDpw + ' days but coach requested ' + td.value });
+      }
+    }
+
+    // Meals per day conformance
+    var mp = coachIntent.mealsPerDay;
+    if (mp && mp.mode === 'EXPLICIT' && mp.value != null) {
+      var resolvedMeals = null;
+      if (nutrition && Array.isArray(nutrition.comidas)) {
+        // Count only real meals — items that are objects with at least a name/alimentos property.
+        // Substitutions are nested arrays within each meal, not top-level comidas entries.
+        resolvedMeals = nutrition.comidas.filter(function(c) {
+          return c && typeof c === 'object';
+        }).length;
+      }
+      if (resolvedMeals == null) {
+        issues.push({ field: 'mealsPerDay', expected: mp.value, resolved: null, detail: 'Nutrition missing — cannot verify meal count' });
+      } else if (resolvedMeals !== mp.value) {
+        issues.push({ field: 'mealsPerDay', expected: mp.value, resolved: resolvedMeals, detail: 'Nutrition has ' + resolvedMeals + ' meals but coach requested ' + mp.value });
+      }
+    }
+
+    return { status: issues.length > 0 ? 'MISMATCH' : 'OK', issues: issues };
+  }
+  window._auditCoachIntentConformance = _auditCoachIntentConformance;
+
+  // Build Decision Trace for intent resolution.
+  // coachIntent: _normalizeCoachIntent output
+  // resolvedTrainingDays: number resolved from plan (or null)
+  // resolvedMealsPerDay: number resolved from nutrition (or null)
+  // Returns { trainingDaysDecision, mealsPerDayDecision }
+  function _buildCoachIntentDecisionTrace(coachIntent, resolvedTrainingDays, resolvedMealsPerDay) {
+    function _decision(slot, resolved) {
+      var isExplicit = slot && slot.mode === 'EXPLICIT';
+      return {
+        source: isExplicit ? 'COACH_EXPLICIT' : 'ENGINE_OPTIMIZED',
+        requestedValue: isExplicit ? (slot ? slot.value : null) : null,
+        resolvedValue: resolved != null ? resolved : (isExplicit ? (slot ? slot.value : null) : null),
+        reasonCodes: isExplicit ? ['COACH_OVERRIDE'] : ['ENGINE_AUTO']
+      };
+    }
+    var ci = coachIntent && typeof coachIntent === 'object' ? coachIntent : { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'AUTO', value: null } };
+    return {
+      trainingDaysDecision: _decision(ci.trainingDays, resolvedTrainingDays),
+      mealsPerDayDecision:  _decision(ci.mealsPerDay,  resolvedMealsPerDay)
+    };
+  }
+  window._buildCoachIntentDecisionTrace = _buildCoachIntentDecisionTrace;
+
+  // Build intent constraint string for injection into the generation userMsg.
+  // Returns a string to append to the prompt, or '' when both are AUTO.
+  function _buildCoachIntentConstraintText(coachIntent) {
+    var ci = coachIntent && typeof coachIntent === 'object' ? coachIntent : {};
+    var lines = [];
+    var td = ci.trainingDays;
+    var mp = ci.mealsPerDay;
+    if (td && td.mode === 'EXPLICIT') {
+      lines.push('RESTRICCIÓN ENTRENAMIENTO (indicado por coach): El plan debe tener EXACTAMENTE ' + td.value + ' día(s) de entrenamiento (daysPerWeek=' + td.value + ', days[] con exactamente ' + td.value + ' entradas). No cambiar este número aunque el Engine prefiera otro.');
+    }
+    if (mp && mp.mode === 'EXPLICIT') {
+      lines.push('RESTRICCIÓN NUTRICIÓN (indicado por coach): El plan nutricional debe tener EXACTAMENTE ' + mp.value + ' comidas principales en comidas[]. No contar sustituciones ni suplementos como comidas. Distribuir macros dentro de esas ' + mp.value + ' comidas.');
+    }
+    if (!lines.length) return '';
+    return '\nRESTRICCIONES EXPLÍCITAS DEL COACH (máxima prioridad, solo superadas por vetos médicos):\n' + lines.join('\n');
+  }
+  window._buildCoachIntentConstraintText = _buildCoachIntentConstraintText;
 
   // ========== FASE 26 — COMPARACIÓN DE PLANES ==========
 

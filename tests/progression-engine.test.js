@@ -13430,4 +13430,237 @@ function _resolveClientMirrorLogSource(selectedClientId, cachedLogsRef, requestC
   assert('F65-Jc', 'deterministic', r1.status === r2.status && r1.logs === r2.logs);
 })();
 
+// ─── F66 inline helpers (pure, mirrors coach implementation exactly) ──────────
+
+function _normalizeCoachIntent(rawIntent) {
+  function _slot(raw) {
+    if (raw == null || raw === '' || String(raw).toUpperCase() === 'AUTO') return { mode: 'AUTO', value: null };
+    var n = parseInt(String(raw), 10);
+    if (!isFinite(n) || n <= 0) return { mode: 'AUTO', value: null };
+    return { mode: 'EXPLICIT', value: n };
+  }
+  var r = rawIntent && typeof rawIntent === 'object' ? rawIntent : {};
+  return {
+    trainingDays: _slot(r.trainingDays != null ? r.trainingDays : null),
+    mealsPerDay:  _slot(r.mealsPerDay  != null ? r.mealsPerDay  : null)
+  };
+}
+
+function _auditCoachIntentConformance(coachIntent, plan, nutrition) {
+  var issues = [];
+  if (!coachIntent || typeof coachIntent !== 'object') return { status: 'OK', issues: [] };
+  var td = coachIntent.trainingDays;
+  if (td && td.mode === 'EXPLICIT' && td.value != null) {
+    var resolvedDpw = null;
+    if (plan && typeof plan === 'object') {
+      resolvedDpw = plan.daysPerWeek != null ? Number(plan.daysPerWeek) : (Array.isArray(plan.days) ? plan.days.length : null);
+    }
+    if (resolvedDpw == null) {
+      issues.push({ field: 'trainingDays', expected: td.value, resolved: null, detail: 'Plan missing — cannot verify training days' });
+    } else if (resolvedDpw !== td.value) {
+      issues.push({ field: 'trainingDays', expected: td.value, resolved: resolvedDpw, detail: 'Plan has ' + resolvedDpw + ' days but coach requested ' + td.value });
+    }
+  }
+  var mp = coachIntent.mealsPerDay;
+  if (mp && mp.mode === 'EXPLICIT' && mp.value != null) {
+    var resolvedMeals = null;
+    if (nutrition && Array.isArray(nutrition.comidas)) {
+      resolvedMeals = nutrition.comidas.filter(function(c){ return c && typeof c === 'object'; }).length;
+    }
+    if (resolvedMeals == null) {
+      issues.push({ field: 'mealsPerDay', expected: mp.value, resolved: null, detail: 'Nutrition missing — cannot verify meal count' });
+    } else if (resolvedMeals !== mp.value) {
+      issues.push({ field: 'mealsPerDay', expected: mp.value, resolved: resolvedMeals, detail: 'Nutrition has ' + resolvedMeals + ' meals but coach requested ' + mp.value });
+    }
+  }
+  return { status: issues.length > 0 ? 'MISMATCH' : 'OK', issues: issues };
+}
+
+function _buildCoachIntentDecisionTrace(coachIntent, resolvedTrainingDays, resolvedMealsPerDay) {
+  function _decision(slot, resolved) {
+    var isExplicit = slot && slot.mode === 'EXPLICIT';
+    return {
+      source: isExplicit ? 'COACH_EXPLICIT' : 'ENGINE_OPTIMIZED',
+      requestedValue: isExplicit ? (slot ? slot.value : null) : null,
+      resolvedValue: resolved != null ? resolved : (isExplicit ? (slot ? slot.value : null) : null),
+      reasonCodes: isExplicit ? ['COACH_OVERRIDE'] : ['ENGINE_AUTO']
+    };
+  }
+  var ci = coachIntent && typeof coachIntent === 'object' ? coachIntent : { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'AUTO', value: null } };
+  return {
+    trainingDaysDecision: _decision(ci.trainingDays, resolvedTrainingDays),
+    mealsPerDayDecision:  _decision(ci.mealsPerDay,  resolvedMealsPerDay)
+  };
+}
+
+function _buildCoachIntentConstraintText(coachIntent) {
+  var ci = coachIntent && typeof coachIntent === 'object' ? coachIntent : {};
+  var lines = [];
+  var td = ci.trainingDays; var mp = ci.mealsPerDay;
+  if (td && td.mode === 'EXPLICIT') lines.push('RESTRICCIÓN ENTRENAMIENTO (indicado por coach): El plan debe tener EXACTAMENTE ' + td.value + ' día(s)...');
+  if (mp && mp.mode === 'EXPLICIT') lines.push('RESTRICCIÓN NUTRICIÓN (indicado por coach): El plan nutricional debe tener EXACTAMENTE ' + mp.value + ' comidas...');
+  if (!lines.length) return '';
+  return '\nRESTRICCIONES EXPLÍCITAS DEL COACH:\n' + lines.join('\n');
+}
+
+// F66-A: _normalizeCoachIntent — valores explícitos numéricos
+(function() {
+  console.log('\nF66-A — normalización explícita');
+  var r = _normalizeCoachIntent({ trainingDays: '4', mealsPerDay: '3' });
+  assert('F66-Aa', 'trainingDays EXPLICIT', r.trainingDays.mode === 'EXPLICIT');
+  assert('F66-Ab', 'trainingDays value=4', r.trainingDays.value === 4);
+  assert('F66-Ac', 'mealsPerDay EXPLICIT', r.mealsPerDay.mode === 'EXPLICIT');
+  assert('F66-Ad', 'mealsPerDay value=3', r.mealsPerDay.value === 3);
+})();
+
+// F66-B: _normalizeCoachIntent — AUTO triggers
+(function() {
+  console.log('\nF66-B — AUTO triggers');
+  var r1 = _normalizeCoachIntent({ trainingDays: 'AUTO', mealsPerDay: null });
+  var r2 = _normalizeCoachIntent({ trainingDays: '', mealsPerDay: undefined });
+  var r3 = _normalizeCoachIntent(null);
+  assert('F66-Ba', 'AUTO string → mode AUTO', r1.trainingDays.mode === 'AUTO' && r1.trainingDays.value === null);
+  assert('F66-Bb', 'null → mode AUTO', r1.mealsPerDay.mode === 'AUTO');
+  assert('F66-Bc', 'empty string → AUTO', r2.trainingDays.mode === 'AUTO');
+  assert('F66-Bd', 'undefined → AUTO', r2.mealsPerDay.mode === 'AUTO');
+  assert('F66-Be', 'null rawIntent → both AUTO', r3.trainingDays.mode === 'AUTO' && r3.mealsPerDay.mode === 'AUTO');
+})();
+
+// F66-C: _normalizeCoachIntent — valores no positivos → AUTO
+(function() {
+  console.log('\nF66-C — valores no positivos → AUTO (no números mágicos)');
+  var r = _normalizeCoachIntent({ trainingDays: '0', mealsPerDay: '-1' });
+  assert('F66-Ca', '0 → AUTO', r.trainingDays.mode === 'AUTO' && r.trainingDays.value === null);
+  assert('F66-Cb', '-1 → AUTO', r.mealsPerDay.mode === 'AUTO' && r.mealsPerDay.value === null);
+})();
+
+// F66-D: _normalizeCoachIntent — integer mode='EXPLICIT' value=5
+(function() {
+  console.log('\nF66-D — entero 5 → EXPLICIT 5');
+  var r = _normalizeCoachIntent({ trainingDays: 5, mealsPerDay: 5 });
+  assert('F66-Da', 'trainingDays EXPLICIT=5', r.trainingDays.mode === 'EXPLICIT' && r.trainingDays.value === 5);
+  assert('F66-Db', 'mealsPerDay EXPLICIT=5', r.mealsPerDay.mode === 'EXPLICIT' && r.mealsPerDay.value === 5);
+})();
+
+// F66-E: _auditCoachIntentConformance — EXPLICIT match → OK
+(function() {
+  console.log('\nF66-E — conformance EXPLICIT match → OK');
+  var ci = { trainingDays: { mode: 'EXPLICIT', value: 4 }, mealsPerDay: { mode: 'EXPLICIT', value: 3 } };
+  var plan = { daysPerWeek: 4, days: [{},{},{},{}] };
+  var nutrition = { comidas: [{name:'D'},{name:'A'},{name:'C'}] };
+  var r = _auditCoachIntentConformance(ci, plan, nutrition);
+  assert('F66-Ea', 'status OK', r.status === 'OK');
+  assert('F66-Eb', 'no issues', r.issues.length === 0);
+})();
+
+// F66-F: _auditCoachIntentConformance — EXPLICIT training days mismatch → MISMATCH
+(function() {
+  console.log('\nF66-F — days mismatch → MISMATCH');
+  var ci = { trainingDays: { mode: 'EXPLICIT', value: 5 }, mealsPerDay: { mode: 'AUTO', value: null } };
+  var plan = { daysPerWeek: 4, days: [{},{},{},{}] };
+  var r = _auditCoachIntentConformance(ci, plan, null);
+  assert('F66-Fa', 'status MISMATCH', r.status === 'MISMATCH');
+  assert('F66-Fb', 'issue on trainingDays', r.issues[0].field === 'trainingDays');
+  assert('F66-Fc', 'expected=5 resolved=4', r.issues[0].expected === 5 && r.issues[0].resolved === 4);
+})();
+
+// F66-G: _auditCoachIntentConformance — EXPLICIT meals mismatch → MISMATCH
+(function() {
+  console.log('\nF66-G — meals mismatch → MISMATCH');
+  var ci = { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'EXPLICIT', value: 3 } };
+  var nutrition = { comidas: [{name:'D1'},{name:'D2'},{name:'D3'},{name:'D4'},{name:'D5'}] };
+  var r = _auditCoachIntentConformance(ci, null, nutrition);
+  assert('F66-Ga', 'status MISMATCH', r.status === 'MISMATCH');
+  assert('F66-Gb', 'issue on mealsPerDay', r.issues[0].field === 'mealsPerDay');
+  assert('F66-Gc', 'expected=3 resolved=5', r.issues[0].expected === 3 && r.issues[0].resolved === 5);
+})();
+
+// F66-H: _auditCoachIntentConformance — AUTO both → OK (no checks)
+(function() {
+  console.log('\nF66-H — AUTO both → always OK');
+  var ci = { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'AUTO', value: null } };
+  var r = _auditCoachIntentConformance(ci, { daysPerWeek: 99 }, { comidas: [] });
+  assert('F66-Ha', 'status OK when both AUTO', r.status === 'OK');
+  assert('F66-Hb', 'no issues', r.issues.length === 0);
+})();
+
+// F66-I: _auditCoachIntentConformance — EXPLICIT training days via days.length when daysPerWeek absent
+(function() {
+  console.log('\nF66-I — daysPerWeek absent → fallback to days.length');
+  var ci = { trainingDays: { mode: 'EXPLICIT', value: 3 }, mealsPerDay: { mode: 'AUTO', value: null } };
+  var plan = { days: [{},{},{}] }; // no daysPerWeek
+  var r = _auditCoachIntentConformance(ci, plan, null);
+  assert('F66-Ia', 'status OK via days.length fallback', r.status === 'OK');
+})();
+
+// F66-J: _auditCoachIntentConformance — plan null when EXPLICIT → MISMATCH
+(function() {
+  console.log('\nF66-J — plan null with EXPLICIT → MISMATCH (cannot verify)');
+  var ci = { trainingDays: { mode: 'EXPLICIT', value: 4 }, mealsPerDay: { mode: 'AUTO', value: null } };
+  var r = _auditCoachIntentConformance(ci, null, null);
+  assert('F66-Ja', 'status MISMATCH', r.status === 'MISMATCH');
+  assert('F66-Jb', 'resolved null', r.issues[0].resolved === null);
+})();
+
+// F66-K: _buildCoachIntentDecisionTrace — EXPLICIT source
+(function() {
+  console.log('\nF66-K — decision trace EXPLICIT');
+  var ci = { trainingDays: { mode: 'EXPLICIT', value: 5 }, mealsPerDay: { mode: 'EXPLICIT', value: 4 } };
+  var t = _buildCoachIntentDecisionTrace(ci, 5, 4);
+  assert('F66-Ka', 'trainingDays source COACH_EXPLICIT', t.trainingDaysDecision.source === 'COACH_EXPLICIT');
+  assert('F66-Kb', 'mealsPerDay source COACH_EXPLICIT', t.mealsPerDayDecision.source === 'COACH_EXPLICIT');
+  assert('F66-Kc', 'requestedValue=5', t.trainingDaysDecision.requestedValue === 5);
+  assert('F66-Kd', 'resolvedValue=5', t.trainingDaysDecision.resolvedValue === 5);
+  assert('F66-Ke', 'reasonCodes COACH_OVERRIDE', t.trainingDaysDecision.reasonCodes[0] === 'COACH_OVERRIDE');
+})();
+
+// F66-L: _buildCoachIntentDecisionTrace — AUTO source
+(function() {
+  console.log('\nF66-L — decision trace AUTO');
+  var ci = { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'AUTO', value: null } };
+  var t = _buildCoachIntentDecisionTrace(ci, 4, 5);
+  assert('F66-La', 'trainingDays source ENGINE_OPTIMIZED', t.trainingDaysDecision.source === 'ENGINE_OPTIMIZED');
+  assert('F66-Lb', 'mealsPerDay source ENGINE_OPTIMIZED', t.mealsPerDayDecision.source === 'ENGINE_OPTIMIZED');
+  assert('F66-Lc', 'requestedValue null', t.trainingDaysDecision.requestedValue === null);
+  assert('F66-Ld', 'resolvedValue=4 from plan', t.trainingDaysDecision.resolvedValue === 4);
+  assert('F66-Le', 'reasonCodes ENGINE_AUTO', t.trainingDaysDecision.reasonCodes[0] === 'ENGINE_AUTO');
+})();
+
+// F66-M: _buildCoachIntentConstraintText — EXPLICIT both → non-empty
+(function() {
+  console.log('\nF66-M — constraint text EXPLICIT both');
+  var ci = { trainingDays: { mode: 'EXPLICIT', value: 3 }, mealsPerDay: { mode: 'EXPLICIT', value: 2 } };
+  var txt = _buildCoachIntentConstraintText(ci);
+  assert('F66-Ma', 'returns non-empty string', typeof txt === 'string' && txt.length > 0);
+  assert('F66-Mb', 'mentions 3 days', txt.indexOf('3') !== -1);
+  assert('F66-Mc', 'mentions 2 meals', txt.indexOf('2') !== -1);
+})();
+
+// F66-N: _buildCoachIntentConstraintText — both AUTO → empty string
+(function() {
+  console.log('\nF66-N — constraint text both AUTO → empty');
+  var ci = { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'AUTO', value: null } };
+  var txt = _buildCoachIntentConstraintText(ci);
+  assert('F66-Na', 'empty string when both AUTO', txt === '');
+})();
+
+// F66-O: Pureza — no mutación, determinismo
+(function() {
+  console.log('\nF66-O — pureza y determinismo');
+  var raw = { trainingDays: '4', mealsPerDay: '3' };
+  var rawSnap = JSON.stringify(raw);
+  var ci = _normalizeCoachIntent(raw);
+  var ciSnap = JSON.stringify(ci);
+  var t1 = _buildCoachIntentDecisionTrace(ci, 4, 3);
+  var t2 = _buildCoachIntentDecisionTrace(ci, 4, 3);
+  var plan = { daysPerWeek: 4 }; var nut = { comidas: [{},{},{}] };
+  var planSnap = JSON.stringify(plan); var nutSnap = JSON.stringify(nut);
+  var a1 = _auditCoachIntentConformance(ci, plan, nut);
+  assert('F66-Oa', 'raw not mutated', JSON.stringify(raw) === rawSnap);
+  assert('F66-Ob', 'ci not mutated', JSON.stringify(ci) === ciSnap);
+  assert('F66-Oc', 'plan not mutated', JSON.stringify(plan) === planSnap);
+  assert('F66-Od', 'nut not mutated', JSON.stringify(nut) === nutSnap);
+  assert('F66-Oe', 'deterministic trace', JSON.stringify(t1) === JSON.stringify(t2));
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
