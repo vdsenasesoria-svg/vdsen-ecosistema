@@ -7510,9 +7510,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       supplHtml = '<em style="color:var(--text-muted)">Sin suplementación en respuesta</em>';
     }
 
-    // Decision trace
+    // Decision trace — human-readable when entries have known fields
+    function _fmtTraceEntry(t) {
+      if (typeof t === 'string') return _escH(t);
+      var parts = [];
+      if (t.type || t.module) parts.push('<strong>' + _escH(String(t.type || t.module || '')) + '</strong>');
+      if (t.decision || t.value) parts.push(_escH(String(t.decision || t.value || '')));
+      if (t.reason || t.why)    parts.push('<span style="color:var(--text-muted)">' + _escH(String(t.reason || t.why || '')) + '</span>');
+      if (t.source)             parts.push('<span style="color:#4488cc;font-size:10px">[' + _escH(String(t.source)) + ']</span>');
+      return parts.length ? parts.join(' · ') : _escH(JSON.stringify(t));
+    }
     let traceHtml = decisionTrace.length
-      ? decisionTrace.map(t => `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">${_escH(JSON.stringify(t))}</div>`).join('')
+      ? decisionTrace.map(t => `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)">${_fmtTraceEntry(t)}</div>`).join('')
       : '<em style="color:var(--text-muted);font-size:12px">Sin trace</em>';
 
     // Flags + Warnings + moduleStatus
