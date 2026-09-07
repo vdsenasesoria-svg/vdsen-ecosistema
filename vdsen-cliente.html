@@ -4786,13 +4786,21 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   }
 
   // Banner sesión completa — INFORMATIVO, sets siguen siendo editables
+  var _doneLog = LOGS['done_'+CURRENT_WEEK+'_'+di];
+  var _isSkipped = !!(typeof _doneLog === 'object' && _doneLog && _doneLog.skipped);
   var closedBannerHtml = sessionDone
-    ? '<div style="background:rgba(110,154,110,.08);border:1px solid rgba(110,154,110,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
-        '<span style="font-size:14px">✓</span>'+
-        '<span style="font-size:11px;color:var(--grn);font-weight:700;flex:1">Sesión completada · puedes seguir editando series</span>'+
-        '<button onclick="goTab(0)" style="font-size:10px;font-weight:700;color:#C4FF00;background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.35);padding:3px 10px;border-radius:6px;cursor:pointer">📊 Ver Resumen</button>'+
-        '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
-      '</div>'
+    ? (_isSkipped
+      ? '<div style="background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+          '<span style="font-size:14px">⏸</span>'+
+          '<span style="font-size:11px;color:var(--mt);font-weight:700;flex:1">Sesión omitida · puedes reabrirla</span>'+
+          '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
+        '</div>'
+      : '<div style="background:rgba(110,154,110,.08);border:1px solid rgba(110,154,110,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+          '<span style="font-size:14px">✓</span>'+
+          '<span style="font-size:11px;color:var(--grn);font-weight:700;flex:1">Sesión completada · puedes seguir editando series</span>'+
+          '<button onclick="goTab(0)" style="font-size:10px;font-weight:700;color:#C4FF00;background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.35);padding:3px 10px;border-radius:6px;cursor:pointer">📊 Ver Resumen</button>'+
+          '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
+        '</div>')
     : '';
 
   var expressTipHtml = '';
@@ -6440,12 +6448,13 @@ function renderEntrenamiento() {
   // ── Day tabs ─────────────────────────────────────────────────────
   var tabsHtml = sesiones.map(function(s, i) {
     var done = LOGS['done_'+CURRENT_WEEK+'_'+i];
+    var isSkipped = !!(done && typeof done === 'object' && done.skipped);
     var active = i === DIA_ACTIVO;
     var rawLabel = (s.dia||'').replace(/^(SESI[OÓ]N\s*\d+[:\s]+|D[IÍ]A\s*\d+[:\s]+)/i,'').replace(/\([^)]+\)/,'').trim().substring(0,10)||('DÍA '+(i+1));
-    var iconColor = active ? 'var(--accent)' : done ? 'var(--grn)' : 'var(--mt)';
-    var txtColor  = active ? 'var(--tx)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
+    var iconColor = active ? 'var(--accent)' : isSkipped ? 'var(--mt)' : done ? 'var(--grn)' : 'var(--mt)';
+    var txtColor  = active ? 'var(--tx)' : isSkipped ? 'rgba(160,160,160,.7)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
     var bg = active ? 'rgba(196,255,0,.06)' : 'var(--surface)';
-    var borderB = active ? '3px solid var(--accent)' : done ? '3px solid rgba(110,154,110,.5)' : '3px solid transparent';
+    var borderB = active ? '3px solid var(--accent)' : isSkipped ? '3px solid rgba(160,160,160,.3)' : done ? '3px solid rgba(110,154,110,.5)' : '3px solid transparent';
     // Progreso parcial de sets
     var _exs = s.exercises || [];
     var _tSets = 0, _dSets = 0;
@@ -6459,12 +6468,12 @@ function renderEntrenamiento() {
     });
     var _partial = !done && _dSets > 0;
     var _pPct = _tSets > 0 ? Math.round(_dSets / _tSets * 100) : 0;
-    var _barColor = done ? 'var(--grn)' : 'var(--accent)';
+    var _barColor = isSkipped ? 'var(--mt)' : done ? 'var(--grn)' : 'var(--accent)';
     return '<button onclick="selDia('+i+')" style="'+
       'flex:1;min-width:0;padding:8px 6px 6px;border:none;cursor:pointer;'+
       'background:'+bg+';border-bottom:'+borderB+';'+
       'border-right:1px solid var(--border);transition:background .15s;-webkit-tap-highlight-color:transparent">'+
-      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:2px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(done?'✓':(_partial?_dSets+'/'+_tSets:'·'))+'</div>'+
+      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:2px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(isSkipped?'⏸':done?'✓':(_partial?_dSets+'/'+_tSets:'·'))+'</div>'+
       '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'+rawLabel+'</div>'+
       '<div style="height:2px;border-radius:1px;background:var(--border);overflow:hidden">'+
         '<div style="height:100%;width:'+(done?100:_pPct)+'%;background:'+_barColor+';border-radius:1px;transition:width .3s"></div>'+
@@ -6642,6 +6651,7 @@ function renderEntrenamiento() {
         ? '<div style="background:rgba(110,154,110,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
         : '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">'+
           '<button onclick="markSessionDone('+DIA_ACTIVO+')" title="Marcar esta sesión como completada" style="background:rgba(196,255,0,.12);border:1px solid var(--accent);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:800;color:var(--accent);cursor:pointer;letter-spacing:.5px">✓ COMPLETAR</button>'+
+          (CURRENT_WEEK === REAL_WEEK ? '<button onclick="skipSession('+DIA_ACTIVO+')" title="Omitir esta sesión y avanzar al siguiente día" style="background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.3);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px">⏸ Saltar</button>' : '') +
           (CURRENT_WEEK > 1 ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Copia los datos de la semana anterior en todos los sets y marca la sesión como completada" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ Copiar sem. anterior</button>' : '') +
           '</div>')+
     '</div>'+
@@ -8291,6 +8301,25 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
     renderEntrenamiento();
     renderResumen();
   }
+}
+
+async function skipSession(di) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
+  var key = 'done_'+CURRENT_WEEK+'_'+di;
+  LOGS[key] = { ts: Date.now(), skipped: true };
+  if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+  var _ok = await _doSaveLogs();
+  if (_ok === false) {
+    delete LOGS[key];
+    showToast('⚠ NO SE GUARDÓ — revisa conexión. Reintenta.', true);
+    renderEntrenamiento();
+    return;
+  }
+  showToast('⏸ Sesión omitida · puedes reabrirla');
+  _autoAdvanceDia();
+  renderEntrenamiento();
+  renderResumen();
+  await _autoAdvanceWeekIfDone(CURRENT_WEEK !== REAL_WEEK);
 }
 
 async function marcarDia(di) {
