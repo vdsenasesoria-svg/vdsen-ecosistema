@@ -13052,4 +13052,233 @@ function _buildClientMirrorSessionSummary(plan, logs, week, execState) {
   assert('F63-La', 'no summary block for day with no execDay', html.indexOf('Series:') === -1);
 })();
 
+// ─── F64 inline helper (pure, mirrors coach implementation exactly) ───────────
+
+function _resolveClientMirrorPlanSource(selectedClient, activePlanRef, cachedPlans, requestContext) {
+  function result(status, plan, reason) {
+    return { status: status, plan: plan || null, reason: reason || '' };
+  }
+  if (!selectedClient || typeof selectedClient !== 'object') {
+    return result('NOT_VERIFIABLE', null, 'selectedClient missing');
+  }
+  var selClientId = selectedClient.clientId   || null;
+  var selPlanId   = selectedClient.activePlanId || null;
+  if (requestContext && typeof requestContext === 'object') {
+    var rClientId = requestContext.requestClientId   || null;
+    var rPlanId   = requestContext.requestActivePlanId || null;
+    if (rClientId && rClientId !== selClientId) {
+      return result('STALE', null, 'Client changed since request: was "' + rClientId + '", now "' + selClientId + '"');
+    }
+    if (rPlanId && rPlanId !== selPlanId) {
+      return result('STALE', null, 'activePlanId changed since request: was "' + rPlanId + '", now "' + selPlanId + '"');
+    }
+  }
+  if (!selPlanId) {
+    return result('NO_ACTIVE_PLAN', null, 'selectedClient has no activePlanId');
+  }
+  var resolvedPlan = null;
+  if (activePlanRef && typeof activePlanRef === 'object') {
+    var refPlanId   = activePlanRef.planId   || null;
+    var refPlanData = activePlanRef.planData  || null;
+    if (refPlanId && refPlanId !== selPlanId) {
+      return result('CLIENT_MISMATCH', null, 'activePlanRef.planId "' + refPlanId + '" != selectedClient.activePlanId "' + selPlanId + '"');
+    }
+    if (refPlanId === selPlanId && refPlanData) {
+      resolvedPlan = refPlanData;
+    }
+  }
+  if (!resolvedPlan && cachedPlans && typeof cachedPlans === 'object') {
+    var cached = cachedPlans[selPlanId];
+    if (cached) resolvedPlan = cached;
+  }
+  if (!resolvedPlan) {
+    return result('NOT_VERIFIABLE', null, 'Plan data not found for activePlanId "' + selPlanId + '"');
+  }
+  return result('READY', resolvedPlan, 'Plan "' + selPlanId + '" verified for client "' + selClientId + '"');
+}
+
+// ─── F64 TEST CASES ───────────────────────────────────────────────────────────
+
+// F64-A: Cliente correcto, plan verificado → READY
+(function() {
+  console.log('\nF64-A — cliente correcto, plan en caché → READY');
+  var planData = { weeks:4, days:[] };
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId:'plan-1' },
+    { planId:'plan-1', planData: planData },
+    null,
+    { requestClientId:'uid-A', requestActivePlanId:'plan-1' }
+  );
+  assert('F64-Aa', 'status READY', res.status === 'READY');
+  assert('F64-Ab', 'plan returned', res.plan === planData);
+  assert('F64-Ac', 'reason non-empty', typeof res.reason === 'string');
+})();
+
+// F64-B: Cambio rápido de cliente — requestClientId difiere del selectedClient → STALE
+(function() {
+  console.log('\nF64-B — cambio rápido de cliente → STALE');
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-B', activePlanId:'plan-2' },   // current selected client
+    { planId:'plan-2', planData:{ weeks:4, days:[] } },
+    null,
+    { requestClientId:'uid-A', requestActivePlanId:'plan-2' }  // old client at request time
+  );
+  assert('F64-Ba', 'status STALE', res.status === 'STALE');
+  assert('F64-Bb', 'plan null', res.plan === null);
+  assert('F64-Bc', 'reason mentions client change', res.reason.indexOf('uid-A') !== -1);
+})();
+
+// F64-C: Respuesta tardía — activePlanId cambió entre request y resolución → STALE
+(function() {
+  console.log('\nF64-C — activePlanId cambió → STALE');
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId:'plan-NEW' }, // plan was updated
+    { planId:'plan-NEW', planData:{ weeks:4, days:[] } },
+    null,
+    { requestClientId:'uid-A', requestActivePlanId:'plan-OLD' } // old plan at request time
+  );
+  assert('F64-Ca', 'status STALE', res.status === 'STALE');
+  assert('F64-Cb', 'plan null', res.plan === null);
+  assert('F64-Cc', 'reason mentions plan change', res.reason.indexOf('plan-OLD') !== -1);
+})();
+
+// F64-D: activePlanRef tiene planId diferente al activePlanId del cliente → CLIENT_MISMATCH
+(function() {
+  console.log('\nF64-D — activePlanRef planId != selectedClient.activePlanId → CLIENT_MISMATCH');
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId:'plan-2' },
+    { planId:'plan-1', planData:{ weeks:4, days:[] } }, // stale cached plan
+    null,
+    null
+  );
+  assert('F64-Da', 'status CLIENT_MISMATCH', res.status === 'CLIENT_MISMATCH');
+  assert('F64-Db', 'plan null', res.plan === null);
+  assert('F64-Dc', 'reason mentions both ids', res.reason.indexOf('plan-1') !== -1 && res.reason.indexOf('plan-2') !== -1);
+})();
+
+// F64-E: Plan eliminado — activePlanId set pero planData null → NOT_VERIFIABLE
+(function() {
+  console.log('\nF64-E — plan eliminado/no encontrado → NOT_VERIFIABLE');
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId:'plan-1' },
+    { planId:'plan-1', planData: null },  // plan was deleted
+    null,
+    null
+  );
+  assert('F64-Ea', 'status NOT_VERIFIABLE', res.status === 'NOT_VERIFIABLE');
+  assert('F64-Eb', 'plan null', res.plan === null);
+})();
+
+// F64-F: Caché stale — activePlanRef vacío pero cachedPlans tiene el plan → READY
+(function() {
+  console.log('\nF64-F — activePlanRef vacío, cachedPlans tiene el plan → READY');
+  var planData = { weeks:6, days:[] };
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId:'plan-X' },
+    null,  // no activePlanRef
+    { 'plan-X': planData },  // cachedPlans has it
+    null
+  );
+  assert('F64-Fa', 'status READY from cachedPlans', res.status === 'READY');
+  assert('F64-Fb', 'plan returned from cache', res.plan === planData);
+})();
+
+// F64-G: Ausencia de activePlanId → NO_ACTIVE_PLAN
+(function() {
+  console.log('\nF64-G — sin activePlanId → NO_ACTIVE_PLAN');
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId: null },
+    { planId: null, planData: null },
+    null,
+    null
+  );
+  assert('F64-Ga', 'status NO_ACTIVE_PLAN', res.status === 'NO_ACTIVE_PLAN');
+  assert('F64-Gb', 'plan null', res.plan === null);
+  // undefined activePlanId
+  var res2 = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A' },   // no activePlanId key
+    null, null, null
+  );
+  assert('F64-Gc', 'undefined activePlanId → NO_ACTIVE_PLAN', res2.status === 'NO_ACTIVE_PLAN');
+})();
+
+// F64-H: No fallback silencioso — activePlanRef planId matches but planData missing, cachedPlans miss too → NOT_VERIFIABLE
+(function() {
+  console.log('\nF64-H — no fallback silencioso a draft/preview → NOT_VERIFIABLE');
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId:'plan-1' },
+    { planId:'plan-1', planData: null },
+    { 'plan-DRAFT': { weeks:4, days:[] } },  // cache has draft, not plan-1
+    null
+  );
+  assert('F64-Ha', 'status NOT_VERIFIABLE (no draft fallback)', res.status === 'NOT_VERIFIABLE');
+  assert('F64-Hb', 'plan null (draft not returned)', res.plan === null);
+})();
+
+// F64-I: selectedClient null/missing → NOT_VERIFIABLE
+(function() {
+  console.log('\nF64-I — selectedClient null → NOT_VERIFIABLE');
+  var res = _resolveClientMirrorPlanSource(null, null, null, null);
+  assert('F64-Ia', 'null selectedClient → NOT_VERIFIABLE', res.status === 'NOT_VERIFIABLE');
+  var res2 = _resolveClientMirrorPlanSource('not-an-object', null, null, null);
+  assert('F64-Ib', 'string selectedClient → NOT_VERIFIABLE', res2.status === 'NOT_VERIFIABLE');
+})();
+
+// F64-J: requestContext clientId matches current → no STALE (client is the same)
+(function() {
+  console.log('\nF64-J — requestContext clientId matches current → no STALE');
+  var planData = { weeks:4, days:[] };
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId:'plan-1' },
+    { planId:'plan-1', planData: planData },
+    null,
+    { requestClientId:'uid-A', requestActivePlanId:'plan-1' }
+  );
+  assert('F64-Ja', 'status READY when context matches', res.status === 'READY');
+})();
+
+// F64-K: requestContext planId matches current even if requestClientId omitted → READY
+(function() {
+  console.log('\nF64-K — requestContext planId omitted → no false STALE');
+  var planData = { weeks:4, days:[] };
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId:'plan-1' },
+    { planId:'plan-1', planData: planData },
+    null,
+    { requestClientId: null, requestActivePlanId: null }  // no context to compare
+  );
+  assert('F64-Ka', 'null context fields → READY', res.status === 'READY');
+})();
+
+// F64-L: No mutación de inputs, determinismo
+(function() {
+  console.log('\nF64-L — no mutación, determinismo');
+  var planData  = { weeks:4, days:[] };
+  var selClient = { clientId:'uid-A', activePlanId:'plan-1' };
+  var ref       = { planId:'plan-1', planData: planData };
+  var ctx       = { requestClientId:'uid-A', requestActivePlanId:'plan-1' };
+  var scSnap = JSON.stringify(selClient), refSnap = JSON.stringify(ref), ctxSnap = JSON.stringify(ctx);
+  var r1 = _resolveClientMirrorPlanSource(selClient, ref, null, ctx);
+  var r2 = _resolveClientMirrorPlanSource(selClient, ref, null, ctx);
+  assert('F64-La', 'selectedClient not mutated', JSON.stringify(selClient) === scSnap);
+  assert('F64-Lb', 'activePlanRef not mutated', JSON.stringify(ref) === refSnap);
+  assert('F64-Lc', 'requestContext not mutated', JSON.stringify(ctx) === ctxSnap);
+  assert('F64-Ld', 'deterministic', JSON.stringify(r1) === JSON.stringify(r2));
+})();
+
+// F64-M: activePlanRef has correct planId but planData is object (valid) → READY; draft-only cache not used
+(function() {
+  console.log('\nF64-M — activePlanRef correct → READY; cachedPlans draft not used');
+  var realPlan  = { weeks:6, days:[{ dayIndex:0 }] };
+  var draftPlan = { weeks:6, days:[{ dayIndex:0 }, { dayIndex:1 }] };
+  var res = _resolveClientMirrorPlanSource(
+    { clientId:'uid-A', activePlanId:'plan-1' },
+    { planId:'plan-1', planData: realPlan },
+    { 'plan-1': draftPlan },  // cache has a different version — activePlanRef wins
+    null
+  );
+  assert('F64-Ma', 'status READY', res.status === 'READY');
+  assert('F64-Mb', 'activePlanRef data returned, not cache', res.plan === realPlan);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

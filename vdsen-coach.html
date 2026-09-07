@@ -11458,8 +11458,46 @@ El esfuerzo no es negociable.
   }
   window._buildClientMirrorView = _buildClientMirrorView;
 
-  function _openClientMirrorModal() {
-    var plan = _detailPlanData;
+  function _openClientMirrorModal(callerClientId) {
+    // FASE 64 — source integrity guard: verify the plan is still valid for the current client
+    var _snapClientId  = _detailClientId;
+    var _snapPlanId    = (_detailClientData && _detailClientData.activePlanId) || null;
+    var _sourceResult  = window._resolveClientMirrorPlanSource
+      ? window._resolveClientMirrorPlanSource(
+          { clientId: _snapClientId, activePlanId: _snapPlanId },
+          { planId: _snapPlanId, planData: _detailPlanData },
+          null,
+          { requestClientId: callerClientId || _snapClientId, requestActivePlanId: _snapPlanId }
+        )
+      : { status: 'READY', plan: _detailPlanData, reason: '' };
+    // If callerClientId was given and differs from current detail, it's stale
+    if (callerClientId && callerClientId !== _snapClientId) {
+      _sourceResult = { status: 'STALE', plan: null, reason: 'Caller client "' + callerClientId + '" != current detail "' + _snapClientId + '"' };
+    }
+    if (_sourceResult.status !== 'READY') {
+      var _errMessages = {
+        NO_ACTIVE_PLAN: 'Este cliente no tiene un plan activo.',
+        STALE:          'Los datos del cliente han cambiado. Cierra y abre de nuevo el panel del cliente.',
+        CLIENT_MISMATCH:'El plan en caché no corresponde al plan activo del cliente. Recarga el panel.',
+        NOT_VERIFIABLE: 'No se pudo verificar el plan activo. Recarga el panel del cliente.'
+      };
+      var _errMsg = _errMessages[_sourceResult.status] || 'Error al resolver el plan.';
+      var _errOverlay = document.createElement('div');
+      _errOverlay.id = 'clientMirrorOverlay';
+      _errOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:2000;display:flex;align-items:center;justify-content:center;padding:32px 16px';
+      _errOverlay.innerHTML = '<div style="background:#141414;border:1px solid rgba(255,80,80,.3);border-radius:14px;width:100%;max-width:420px;padding:24px;position:relative">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+        + '<span style="font-size:15px;font-weight:800;color:#ff8888">👁 Vista como cliente</span>'
+        + '<button onclick="document.getElementById(\'clientMirrorOverlay\').remove()" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;padding:4px 8px;line-height:1">✕</button>'
+        + '</div>'
+        + '<div style="font-size:12px;color:#ff8888;margin-bottom:8px">⚠️ ' + _errMsg + '</div>'
+        + '<div style="font-size:10px;color:#555">Causa: ' + (_sourceResult.reason||'desconocida') + '</div>'
+        + '</div>';
+      document.body.appendChild(_errOverlay);
+      _errOverlay.addEventListener('click', function(ev){ if(ev.target===_errOverlay) _errOverlay.remove(); });
+      return;
+    }
+    var plan = _sourceResult.plan;
     var totalWeeks = _getTotalWeeksMirror(plan);
     var useWeekCtx = totalWeeks > 1;
     var initWeek = useWeekCtx ? 1 : null;
@@ -12039,6 +12077,73 @@ El esfuerzo no es negociable.
     return result;
   }
   window._buildClientMirrorSessionSummary = _buildClientMirrorSessionSummary;
+
+  // ========== FASE 64 — ACTIVE PLAN MIRROR SOURCE INTEGRITY ==========
+  // Pure: 0 I/O, 0 writes, 0 mutation. Verifies plan identity before mirror render.
+  //
+  // selectedClient   : { clientId, activePlanId }
+  // activePlanRef    : { planId, planData }         — the plan currently in the detail cache
+  // cachedPlans      : { [planId]: planData }        — optional extra cache (may be null/empty)
+  // requestContext   : { requestClientId, requestActivePlanId } — snapshot at request time
+  //
+  // Returns { status, plan, reason }
+  //   status: 'READY' | 'NO_ACTIVE_PLAN' | 'STALE' | 'CLIENT_MISMATCH' | 'NOT_VERIFIABLE'
+  function _resolveClientMirrorPlanSource(selectedClient, activePlanRef, cachedPlans, requestContext) {
+    function result(status, plan, reason) {
+      return { status: status, plan: plan || null, reason: reason || '' };
+    }
+    // Guard 1: basic argument presence
+    if (!selectedClient || typeof selectedClient !== 'object') {
+      return result('NOT_VERIFIABLE', null, 'selectedClient missing');
+    }
+    var selClientId   = selectedClient.clientId   || null;
+    var selPlanId     = selectedClient.activePlanId || null;
+
+    // Guard 2: stale request — requestContext differs from current selectedClient
+    if (requestContext && typeof requestContext === 'object') {
+      var rClientId = requestContext.requestClientId   || null;
+      var rPlanId   = requestContext.requestActivePlanId || null;
+      if (rClientId && rClientId !== selClientId) {
+        return result('STALE', null, 'Client changed since request: was "' + rClientId + '", now "' + selClientId + '"');
+      }
+      if (rPlanId && rPlanId !== selPlanId) {
+        return result('STALE', null, 'activePlanId changed since request: was "' + rPlanId + '", now "' + selPlanId + '"');
+      }
+    }
+
+    // Guard 3: no active plan
+    if (!selPlanId) {
+      return result('NO_ACTIVE_PLAN', null, 'selectedClient has no activePlanId');
+    }
+
+    // Guard 4: resolve plan data — activePlanRef first, then cachedPlans
+    var resolvedPlan = null;
+    if (activePlanRef && typeof activePlanRef === 'object') {
+      var refPlanId   = activePlanRef.planId   || null;
+      var refPlanData = activePlanRef.planData  || null;
+      if (refPlanId && refPlanId !== selPlanId) {
+        // The cached ref is for a different plan than what the client currently has
+        return result('CLIENT_MISMATCH', null, 'activePlanRef.planId "' + refPlanId + '" != selectedClient.activePlanId "' + selPlanId + '"');
+      }
+      if (refPlanId === selPlanId && refPlanData) {
+        resolvedPlan = refPlanData;
+      }
+    }
+
+    // Fallback to cachedPlans if activePlanRef didn't yield data
+    if (!resolvedPlan && cachedPlans && typeof cachedPlans === 'object') {
+      var cached = cachedPlans[selPlanId];
+      if (cached) resolvedPlan = cached;
+    }
+
+    // Guard 5: plan data not available despite known activePlanId
+    if (!resolvedPlan) {
+      return result('NOT_VERIFIABLE', null, 'Plan data not found for activePlanId "' + selPlanId + '"');
+    }
+
+    return result('READY', resolvedPlan, 'Plan "' + selPlanId + '" verified for client "' + selClientId + '"');
+  }
+  window._resolveClientMirrorPlanSource = _resolveClientMirrorPlanSource;
 
   // ========== FASE 26 — COMPARACIÓN DE PLANES ==========
 
