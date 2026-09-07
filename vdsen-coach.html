@@ -1897,7 +1897,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
           const ciDone = !!(ci.peso || ci.hrv || ci.who5 || ci.energia || ci.sueno);
           let doneCount = 0;
-          Object.keys(entries).forEach(k => { if (k.startsWith('done_'+week+'_') && entries[k]) doneCount++; });
+          Object.keys(entries).forEach(k => { if (k.startsWith('done_'+week+'_')) { const _de = entries[k]; if (_de && !(typeof _de === 'object' && _de.skipped)) doneCount++; } });
           const ciStatusBadge = `<span class="text-[10px] ml-2" style="color:${ciDone?'#44BB88':'#555'}">${ciDone?'CI ✓':'CI ✕'}</span>`;
           const sessBadge = doneCount > 0 ? `<span class="text-[10px] ml-1" style="color:#888">${doneCount}ses</span>` : '';
           const statusIcon = c.activePlanId

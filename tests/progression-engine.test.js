@@ -15401,4 +15401,97 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
   assert('F72-Gb', 'input not mutated (string is primitive)', hintDet === 'LEARNED STATE ACTIVADO — det\nTOPO: PPL\nEJ_POS: Press Banca');
 })();
 
+// ═════════════════════════ FASE 9 — F77: INTEGRIDAD SESIONES ADMINISTRATIVAS ═════════════════════════
+// Verifica que SKIPPED/AUTO_CLOSED_NO_DATA no contaminen adherencia, contadores de coach ni banner.
+(function() {
+  console.log('\n═══ F77 — ADMINISTRATIVE SESSION INTEGRITY ═══');
+
+  // Inline helpers (mirrors vdsen-cliente.html)
+  function _getSessionCompletionState77(doneEntry) {
+    if (!doneEntry) return 'PENDING';
+    if (typeof doneEntry !== 'object') return 'REAL_COMPLETE';
+    if (doneEntry.skipped && !doneEntry.autoClosed) return 'SKIPPED';
+    if (doneEntry.autoClosed && doneEntry.skipped) return 'AUTO_CLOSED_NO_DATA';
+    if (doneEntry.autoClosed) return 'AUTO_CLOSED';
+    return 'REAL_COMPLETE';
+  }
+  function _isRealExecution77(doneEntry) {
+    var s = _getSessionCompletionState77(doneEntry);
+    return s === 'REAL_COMPLETE' || s === 'AUTO_CLOSED';
+  }
+
+  // --- F77-A: _buildCheckInData adherencia_pct — SKIPPED excluded ---
+  console.log('\nF77-A — _buildCheckInData adherencia_pct excludes SKIPPED');
+  function mockAdherencia(logs, numSessions, week) {
+    var completadas = 0;
+    for (var i = 0; i < numSessions; i++) {
+      if (_isRealExecution77(logs['done_' + week + '_' + i])) completadas++;
+    }
+    return numSessions > 0 ? Math.round(completadas / numSessions * 100) : null;
+  }
+  var logsA1 = { 'done_1_0': {ts:1}, 'done_1_1': {ts:2, skipped:true}, 'done_1_2': {ts:3} };
+  var logsA2 = { 'done_1_0': {ts:1, skipped:true}, 'done_1_1': {ts:2, skipped:true} };
+  var logsA3 = { 'done_1_0': {ts:1}, 'done_1_1': {ts:2} };
+  var logsA4 = { 'done_1_0': {ts:1, autoClosed:true}, 'done_1_1': {ts:2, skipped:true} };
+  var logsA5 = { 'done_1_0': {ts:1, autoClosed:true, skipped:true}, 'done_1_1': {ts:2} };
+  assert('F77-Aa', '2-real + 1-skipped → adherencia=67%', mockAdherencia(logsA1,3,1) === 67);
+  assert('F77-Ab', 'all-skipped → adherencia=0%',          mockAdherencia(logsA2,2,1) === 0);
+  assert('F77-Ac', 'all-real → adherencia=100%',           mockAdherencia(logsA3,2,1) === 100);
+  assert('F77-Ad', 'autoClosed(real) + skipped → adherencia=50%', mockAdherencia(logsA4,2,1) === 50);
+  assert('F77-Ae', 'AUTO_CLOSED_NO_DATA not counted, real=1 → adherencia=50%', mockAdherencia(logsA5,2,1) === 50);
+  assert('F77-Af', '0 sessions → adherencia=null', mockAdherencia({},0,1) === null);
+
+  // --- F77-B: close-week banner counts (pendiente / completada / omitida) ---
+  console.log('\nF77-B — close-week banner counts');
+  function mockBannerCounts(logs, numSessions, week) {
+    var doneCnt = 0, skipCnt = 0, pendCnt = 0;
+    for (var i = 0; i < numSessions; i++) {
+      var e = logs['done_' + week + '_' + i];
+      if (!e) pendCnt++;
+      else if (_isRealExecution77(e)) doneCnt++;
+      else skipCnt++;
+    }
+    return { doneCnt: doneCnt, skipCnt: skipCnt, pendCnt: pendCnt };
+  }
+  var logsB1 = { 'done_1_0': {ts:1}, 'done_1_1': {ts:2, skipped:true} };
+  var logsB2 = { 'done_1_0': {ts:1, skipped:true} };
+  var logsB3 = {};
+  var logsB4 = { 'done_1_0': {ts:1, autoClosed:true, skipped:true}, 'done_1_1': {ts:2} };
+  var bB1 = mockBannerCounts(logsB1, 3, 1);
+  assert('F77-Ba', 'real=1 + skipped=1 + pend=1 → pendCnt=1', bB1.pendCnt === 1);
+  assert('F77-Bb', 'real=1 + skipped=1 + pend=1 → doneCnt=1', bB1.doneCnt === 1);
+  assert('F77-Bc', 'real=1 + skipped=1 + pend=1 → skipCnt=1', bB1.skipCnt === 1);
+  var bB2 = mockBannerCounts(logsB2, 2, 1);
+  assert('F77-Bd', 'skipped=1 + pend=1 → skipCnt=1, doneCnt=0', bB2.skipCnt === 1 && bB2.doneCnt === 0);
+  assert('F77-Be', 'skipped not counted as pending',            bB2.pendCnt === 1);
+  var bB3 = mockBannerCounts(logsB3, 2, 1);
+  assert('F77-Bf', 'no entries → pendCnt=2', bB3.pendCnt === 2);
+  var bB4 = mockBannerCounts(logsB4, 2, 1);
+  assert('F77-Bg', 'AUTO_CLOSED_NO_DATA goes to skipCnt', bB4.skipCnt === 1 && bB4.doneCnt === 1);
+
+  // --- F77-C: coach monitor doneCount — SKIPPED excluded ---
+  console.log('\nF77-C — coach monitor doneCount excludes SKIPPED');
+  function mockCoachDoneCount(entries, week) {
+    var doneCount = 0;
+    Object.keys(entries).forEach(function(k) {
+      if (k.indexOf('done_'+week+'_') === 0) {
+        var _de = entries[k];
+        if (_de && !(typeof _de === 'object' && _de.skipped)) doneCount++;
+      }
+    });
+    return doneCount;
+  }
+  var entriesC1 = { 'done_2_0': {ts:1}, 'done_2_1': {ts:2, skipped:true}, 'done_2_2': {ts:3} };
+  var entriesC2 = { 'done_2_0': {ts:1, skipped:true}, 'done_2_1': {ts:2, skipped:true} };
+  var entriesC3 = { 'done_2_0': {ts:1}, 'done_2_1': {ts:2}, 'done_1_0': {ts:9} };
+  var entriesC4 = { 'done_2_0': {ts:1, autoClosed:true} };
+  var entriesC5 = { 'done_2_0': {ts:1, autoClosed:true, skipped:true} };
+  assert('F77-Ca', '2-real + 1-skipped → doneCount=2', mockCoachDoneCount(entriesC1,2) === 2);
+  assert('F77-Cb', 'all-skipped → doneCount=0',         mockCoachDoneCount(entriesC2,2) === 0);
+  assert('F77-Cc', 'only counts target week',            mockCoachDoneCount(entriesC3,2) === 2);
+  assert('F77-Cd', 'autoClosed (real) → doneCount=1',   mockCoachDoneCount(entriesC4,2) === 1);
+  assert('F77-Ce', 'AUTO_CLOSED_NO_DATA → doneCount=0', mockCoachDoneCount(entriesC5,2) === 0);
+  assert('F77-Cf', 'no entries for week → doneCount=0', mockCoachDoneCount({},2) === 0);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
