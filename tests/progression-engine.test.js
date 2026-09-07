@@ -13281,4 +13281,153 @@ function _resolveClientMirrorPlanSource(selectedClient, activePlanRef, cachedPla
   assert('F64-Mb', 'activePlanRef data returned, not cache', res.plan === realPlan);
 })();
 
+// ─── F65 inline helper (pure, mirrors coach implementation exactly) ───────────
+
+function _resolveClientMirrorLogSource(selectedClientId, cachedLogsRef, requestContext) {
+  function result(status, logs, reason) { return { status: status, logs: logs, reason: reason || '' }; }
+  if (!selectedClientId || typeof selectedClientId !== 'string') {
+    return result('NOT_VERIFIABLE', null, 'selectedClientId missing or invalid');
+  }
+  if (requestContext && typeof requestContext === 'object') {
+    var rClientId = requestContext.requestClientId || null;
+    if (rClientId && rClientId !== selectedClientId) {
+      return result('STALE', null, 'Client changed since request: was "' + rClientId + '", now "' + selectedClientId + '"');
+    }
+  }
+  if (!cachedLogsRef || typeof cachedLogsRef !== 'object') {
+    return result('NO_LOGS', null, 'No logs available for client "' + selectedClientId + '"');
+  }
+  var refClientId = cachedLogsRef.clientId || null;
+  if (refClientId && refClientId !== selectedClientId) {
+    return result('CLIENT_MISMATCH', null, 'cachedLogsRef.clientId "' + refClientId + '" != selectedClientId "' + selectedClientId + '"');
+  }
+  if (!refClientId) {
+    return result('NOT_VERIFIABLE', null, 'cachedLogsRef has no clientId — cannot verify provenance');
+  }
+  var logsData = cachedLogsRef.data || null;
+  if (!logsData) {
+    return result('NO_LOGS', null, 'Logs ref present for client "' + selectedClientId + '" but data is empty');
+  }
+  return result('READY', logsData, 'Logs verified for client "' + selectedClientId + '"');
+}
+
+// F65-A: Caso normal — logs del mismo cliente verificables → READY
+(function() {
+  console.log('\nF65-A — logs del mismo cliente → READY');
+  var logsData = { entries: { 'log_1_0_0_s0': { carga:80, reps:10 } } };
+  var res = _resolveClientMirrorLogSource(
+    'uid-A',
+    { clientId: 'uid-A', data: logsData },
+    { requestClientId: 'uid-A' }
+  );
+  assert('F65-Aa', 'status READY', res.status === 'READY');
+  assert('F65-Ab', 'logs data returned', res.logs === logsData);
+  assert('F65-Ac', 'reason non-empty', typeof res.reason === 'string' && res.reason.length > 0);
+})();
+
+// F65-B: selectedClientId ausente → NOT_VERIFIABLE
+(function() {
+  console.log('\nF65-B — selectedClientId ausente → NOT_VERIFIABLE');
+  var r1 = _resolveClientMirrorLogSource(null, { clientId:'uid-A', data:{} }, null);
+  var r2 = _resolveClientMirrorLogSource('',   { clientId:'uid-A', data:{} }, null);
+  assert('F65-Ba', 'null → NOT_VERIFIABLE', r1.status === 'NOT_VERIFIABLE');
+  assert('F65-Bb', 'empty string → NOT_VERIFIABLE', r2.status === 'NOT_VERIFIABLE');
+  assert('F65-Bc', 'logs null', r1.logs === null && r2.logs === null);
+})();
+
+// F65-C: requestClientId difiere del selectedClientId → STALE
+(function() {
+  console.log('\nF65-C — requestClientId difiere → STALE');
+  var res = _resolveClientMirrorLogSource(
+    'uid-B',
+    { clientId: 'uid-B', data: { entries:{} } },
+    { requestClientId: 'uid-A' }  // request was for uid-A, now uid-B
+  );
+  assert('F65-Ca', 'status STALE', res.status === 'STALE');
+  assert('F65-Cb', 'logs null', res.logs === null);
+  assert('F65-Cc', 'reason mentions uid-A', res.reason.indexOf('uid-A') !== -1);
+})();
+
+// F65-D: cachedLogsRef.clientId difiere del selectedClientId → CLIENT_MISMATCH
+(function() {
+  console.log('\nF65-D — cachedLogsRef pertenece a otro cliente → CLIENT_MISMATCH');
+  var res = _resolveClientMirrorLogSource(
+    'uid-A',
+    { clientId: 'uid-B', data: { entries:{} } },
+    { requestClientId: 'uid-A' }
+  );
+  assert('F65-Da', 'status CLIENT_MISMATCH', res.status === 'CLIENT_MISMATCH');
+  assert('F65-Db', 'logs null', res.logs === null);
+  assert('F65-Dc', 'reason mentions both ids', res.reason.indexOf('uid-B') !== -1 && res.reason.indexOf('uid-A') !== -1);
+})();
+
+// F65-E: cachedLogsRef es null → NO_LOGS (plan renderiza sin ejecución, no error)
+(function() {
+  console.log('\nF65-E — cachedLogsRef null → NO_LOGS');
+  var res = _resolveClientMirrorLogSource('uid-A', null, { requestClientId: 'uid-A' });
+  assert('F65-Ea', 'status NO_LOGS', res.status === 'NO_LOGS');
+  assert('F65-Eb', 'logs null', res.logs === null);
+})();
+
+// F65-F: cachedLogsRef sin clientId — provenance imposible de verificar → NOT_VERIFIABLE
+(function() {
+  console.log('\nF65-F — cachedLogsRef sin clientId → NOT_VERIFIABLE');
+  var res = _resolveClientMirrorLogSource(
+    'uid-A',
+    { data: { entries:{} } },  // missing clientId
+    null
+  );
+  assert('F65-Fa', 'status NOT_VERIFIABLE', res.status === 'NOT_VERIFIABLE');
+  assert('F65-Fb', 'logs null', res.logs === null);
+})();
+
+// F65-G: cachedLogsRef con clientId correcto pero data vacío → NO_LOGS
+(function() {
+  console.log('\nF65-G — clientId correcto pero data vacío → NO_LOGS');
+  var r1 = _resolveClientMirrorLogSource('uid-A', { clientId:'uid-A', data: null }, null);
+  var r2 = _resolveClientMirrorLogSource('uid-A', { clientId:'uid-A' },             null);
+  assert('F65-Ga', 'data null → NO_LOGS', r1.status === 'NO_LOGS');
+  assert('F65-Gb', 'data missing → NO_LOGS', r2.status === 'NO_LOGS');
+  assert('F65-Gc', 'logs null', r1.logs === null && r2.logs === null);
+})();
+
+// F65-H: requestContext ausente o sin requestClientId — no aplica guard 2 → READY
+(function() {
+  console.log('\nF65-H — sin requestContext → READY (no guard 2)');
+  var logsData = { entries: {} };
+  var r1 = _resolveClientMirrorLogSource('uid-A', { clientId:'uid-A', data: logsData }, null);
+  var r2 = _resolveClientMirrorLogSource('uid-A', { clientId:'uid-A', data: logsData }, {});
+  assert('F65-Ha', 'null context → READY', r1.status === 'READY');
+  assert('F65-Hb', 'empty context → READY', r2.status === 'READY');
+  assert('F65-Hc', 'logs returned', r1.logs === logsData && r2.logs === logsData);
+})();
+
+// F65-I: requestClientId igual al selectedClientId — guard 2 no dispara → READY
+(function() {
+  console.log('\nF65-I — requestClientId === selectedClientId → guard 2 no dispara');
+  var logsData = { entries: { 'log_2_1_0_s0': { carga:100, reps:8 } } };
+  var res = _resolveClientMirrorLogSource(
+    'uid-A',
+    { clientId:'uid-A', data: logsData },
+    { requestClientId: 'uid-A' }
+  );
+  assert('F65-Ia', 'status READY', res.status === 'READY');
+  assert('F65-Ib', 'logs returned', res.logs === logsData);
+})();
+
+// F65-J: Pureza — inputs no mutados, determinismo
+(function() {
+  console.log('\nF65-J — pureza e inputs inmutables');
+  var logsData = { entries: { 'log_1_0_0_s0': { carga:60 } } };
+  var ref = { clientId:'uid-A', data: logsData };
+  var ctx = { requestClientId:'uid-A' };
+  var refSnap = JSON.stringify(ref);
+  var ctxSnap = JSON.stringify(ctx);
+  var r1 = _resolveClientMirrorLogSource('uid-A', ref, ctx);
+  var r2 = _resolveClientMirrorLogSource('uid-A', ref, ctx);
+  assert('F65-Ja', 'cachedLogsRef not mutated', JSON.stringify(ref) === refSnap);
+  assert('F65-Jb', 'requestContext not mutated', JSON.stringify(ctx) === ctxSnap);
+  assert('F65-Jc', 'deterministic', r1.status === r2.status && r1.logs === r2.logs);
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

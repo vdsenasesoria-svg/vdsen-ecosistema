@@ -8394,7 +8394,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailLogsData = null;   // FASE 61
     try {
       const logsSnap = await getDoc(doc(db, 'logs', clientId));
-      if (logsSnap.exists()) _detailLogsData = logsSnap.data();
+      if (logsSnap.exists()) _detailLogsData = { clientId: clientId, data: logsSnap.data() };  // FASE 65 — provenance
     } catch(_) {}
 
     body.innerHTML = `
@@ -11513,9 +11513,28 @@ El esfuerzo no es negociable.
         + '<span style="font-size:10px;color:#555;font-weight:700;align-self:center;margin-right:4px">Semana:</span>'
         + pills + '</div>';
     }
-    var logs = _detailLogsData || null;
+    // FASE 65 — log source integrity guard
+    var _logResult = window._resolveClientMirrorLogSource
+      ? window._resolveClientMirrorLogSource(
+          _snapClientId,
+          _detailLogsData,
+          { requestClientId: callerClientId || _snapClientId }
+        )
+      : { status: 'READY', logs: (_detailLogsData && _detailLogsData.data) || null, reason: '' };
+    var _resolvedLogs = null;
+    var _logNoticeHtml = '';
+    if (_logResult.status === 'READY') {
+      _resolvedLogs = _logResult.logs;
+    } else if (_logResult.status === 'NO_LOGS') {
+      _resolvedLogs = null;  // normal: plan renders without execution overlay
+    } else {
+      // STALE, CLIENT_MISMATCH, NOT_VERIFIABLE — never feed to _buildClientMirrorExecutionState
+      _resolvedLogs = null;
+      _logNoticeHtml = '<div style="margin-bottom:10px;padding:8px 10px;background:rgba(255,160,0,.08);border:1px solid rgba(255,160,0,.25);border-radius:6px;font-size:10px;color:#FFB347">⚠️ Datos de ejecución no disponibles ('
+        + _logResult.status + '). Plan mostrado sin overlay de ejecución.</div>';
+    }
     function _computeExecState(w) {
-      return (logs && window._buildClientMirrorExecutionState) ? window._buildClientMirrorExecutionState(plan, logs, w || 1) : null;
+      return (_resolvedLogs && window._buildClientMirrorExecutionState) ? window._buildClientMirrorExecutionState(plan, _resolvedLogs, w || 1) : null;
     }
     var mirrorHtml = _buildClientMirrorView(plan, initWeek, _computeExecState(initWeek || 1));
     var overlay = document.createElement('div');
@@ -11527,6 +11546,7 @@ El esfuerzo no es negociable.
       + '<div style="font-size:11px;color:#555;margin-top:2px">Solo lectura — exactamente lo que ve el cliente</div></div>'
       + '<button onclick="document.getElementById(\'clientMirrorOverlay\').remove()" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px;line-height:1">✕</button>'
       + '</div>'
+      + _logNoticeHtml
       + weekSelectorHtml
       + '<div id="cmMirrorContent">' + mirrorHtml + '</div>'
       + '</div>';
@@ -12144,6 +12164,51 @@ El esfuerzo no es negociable.
     return result('READY', resolvedPlan, 'Plan "' + selPlanId + '" verified for client "' + selClientId + '"');
   }
   window._resolveClientMirrorPlanSource = _resolveClientMirrorPlanSource;
+
+  // ========== FASE 65 — CLIENT MIRROR LOG SOURCE INTEGRITY ==========
+  // Pure: 0 I/O, 0 writes, 0 listeners. Returns { status, logs, reason }.
+  // Statuses: READY | NO_LOGS | STALE | CLIENT_MISMATCH | NOT_VERIFIABLE
+  function _resolveClientMirrorLogSource(selectedClientId, cachedLogsRef, requestContext) {
+    function result(status, logs, reason) { return { status: status, logs: logs, reason: reason || '' }; }
+
+    // Guard 1: selectedClientId missing or invalid
+    if (!selectedClientId || typeof selectedClientId !== 'string') {
+      return result('NOT_VERIFIABLE', null, 'selectedClientId missing or invalid');
+    }
+
+    // Guard 2: stale request — requestContext clientId differs from selectedClientId
+    if (requestContext && typeof requestContext === 'object') {
+      var rClientId = requestContext.requestClientId || null;
+      if (rClientId && rClientId !== selectedClientId) {
+        return result('STALE', null, 'Client changed since request: was "' + rClientId + '", now "' + selectedClientId + '"');
+      }
+    }
+
+    // Guard 3: no cached logs ref at all → NO_LOGS (not an error — plan with no execution data)
+    if (!cachedLogsRef || typeof cachedLogsRef !== 'object') {
+      return result('NO_LOGS', null, 'No logs available for client "' + selectedClientId + '"');
+    }
+
+    // Guard 4: logs belong to a different client → CLIENT_MISMATCH
+    var refClientId = cachedLogsRef.clientId || null;
+    if (refClientId && refClientId !== selectedClientId) {
+      return result('CLIENT_MISMATCH', null, 'cachedLogsRef.clientId "' + refClientId + '" != selectedClientId "' + selectedClientId + '"');
+    }
+
+    // Guard 5: ref has no clientId — cannot verify provenance → NOT_VERIFIABLE
+    if (!refClientId) {
+      return result('NOT_VERIFIABLE', null, 'cachedLogsRef has no clientId — cannot verify provenance');
+    }
+
+    // Guard 6: provenance verified but no actual data → NO_LOGS
+    var logsData = cachedLogsRef.data || null;
+    if (!logsData) {
+      return result('NO_LOGS', null, 'Logs ref present for client "' + selectedClientId + '" but data is empty');
+    }
+
+    return result('READY', logsData, 'Logs verified for client "' + selectedClientId + '"');
+  }
+  window._resolveClientMirrorLogSource = _resolveClientMirrorLogSource;
 
   // ========== FASE 26 — COMPARACIÓN DE PLANES ==========
 
