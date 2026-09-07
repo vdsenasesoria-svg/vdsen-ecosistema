@@ -14011,4 +14011,58 @@ function _buildPlanQualityAudit(training, nutrition, supplements) {
   assert('F68-Kc', 'deterministic', JSON.stringify(r1) === JSON.stringify(r2));
 })();
 
+// ========== FASE 69 — FICHA COMPLETENESS INDICATOR (integration) ==========
+// Pure derivation logic: _classifyMissingInputs → _fichaComplRec → indicator
+// No UI rendering tested (inline template), just the classification contract used by the indicator.
+
+// F69-A: empty ficha → RECOMMENDED items present → indicator shows warning
+(function() {
+  console.log('\nF69-A — empty ficha → completeness shows warning');
+  var result = _classifyMissingInputs({}, {});
+  var rec = result.missingInputs.filter(function(m){ return m.severity === 'RECOMMENDED'; });
+  assert('F69-Aa', 'rec items > 0 for empty ficha', rec.length > 0);
+  assert('F69-Ab', 'blockingCount always 0', result.blockingCount === 0);
+})();
+
+// F69-B: complete ficha → no RECOMMENDED → indicator shows ✅
+(function() {
+  console.log('\nF69-B — complete ficha → no RECOMMENDED items');
+  var full = {
+    peso_kg: 80, talla_cm: 178, edad: 30, nivel: 'intermedio',
+    objetivo_mesociclo: 'hipertrofia', objetivo_calorico: 'superavit', dias_semana: 4
+  };
+  var result = _classifyMissingInputs(full, { hasPreviousPlan: true, progressionSummary: [{}], checkinSummary: 'ok' });
+  var rec = result.missingInputs.filter(function(m){ return m.severity === 'RECOMMENDED'; });
+  assert('F69-Ba', 'no RECOMMENDED items for complete ficha', rec.length === 0);
+  assert('F69-Bb', 'summaryText empty', result.summaryText === '');
+})();
+
+// F69-C: null fichaData → no crash (same as F67-D, validates the indicator guards)
+(function() {
+  console.log('\nF69-C — null fichaData → no crash');
+  var result;
+  assert('F69-Ca', 'no exception', (function(){ try { result = _classifyMissingInputs(null, null); return true; } catch(e){ return false; } })());
+  assert('F69-Cb', 'returns valid structure', result && Array.isArray(result.missingInputs) && typeof result.blockingCount === 'number');
+})();
+
+// F69-D: indicator fieldNames derivation — field names appear in missingInputs
+(function() {
+  console.log('\nF69-D — indicator derives field names from missingInputs');
+  var result = _classifyMissingInputs({}, {});
+  var rec = result.missingInputs.filter(function(m){ return m.severity === 'RECOMMENDED'; });
+  var fieldNames = rec.map(function(m){ return m.field; });
+  assert('F69-Da', 'fieldNames includes peso_kg', fieldNames.indexOf('peso_kg') !== -1);
+  assert('F69-Db', 'fieldNames includes edad',    fieldNames.indexOf('edad') !== -1);
+  assert('F69-Dc', 'fieldNames includes nivel',   fieldNames.indexOf('nivel') !== -1);
+})();
+
+// F69-E: deterministic — indicator computation is stable across calls
+(function() {
+  console.log('\nF69-E — deterministic indicator');
+  var fd = { peso_kg: 75, talla_cm: 175 };
+  var r1 = _classifyMissingInputs(fd, {});
+  var r2 = _classifyMissingInputs(fd, {});
+  assert('F69-Ea', 'same result both calls', JSON.stringify(r1) === JSON.stringify(r2));
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

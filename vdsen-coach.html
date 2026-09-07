@@ -9070,6 +9070,21 @@ El esfuerzo no es negociable.
       ? new Date(ficha.updatedAt).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' })
       : null;
 
+    // FASE 69 — Ficha Completeness Indicator (zero Firestore reads — uses cached fichaData)
+    const _fichaCompl = (typeof window._classifyMissingInputs === 'function')
+      ? window._classifyMissingInputs(fichaData || {}, {})
+      : { missingInputs: [], blockingCount: 0, summaryText: '' };
+    const _fichaComplRec = _fichaCompl.missingInputs.filter(function(m){ return m.severity === 'RECOMMENDED'; });
+    const _fichaComplHtml = (function() {
+      if (!_fichaComplRec.length) {
+        return '<div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#44BB88;margin-bottom:8px">✅ <span>Ficha completa para generación</span></div>';
+      }
+      const fieldNames = _fichaComplRec.map(function(m){ return m.field; }).join(', ');
+      return '<div style="display:flex;align-items:flex-start;gap:5px;font-size:10px;color:#f0a500;margin-bottom:8px;line-height:1.5">'
+        + '⚡ <span><b>' + _fichaComplRec.length + ' campo(s) recomendado(s) ausente(s)</b> — el motor usará defaults<br>'
+        + '<span style="color:#666">' + fieldNames.replace(/</g,'&lt;') + '</span></span></div>';
+    })();
+
     // ── helpers ──────────────────────────────────────────────────────────────
     const _v = (id) => {
       const v = d[id];
@@ -9232,6 +9247,7 @@ El esfuerzo no es negociable.
 
       <div style="background:rgba(196,255,0,.04);border:1px solid rgba(196,255,0,.16);border-radius:10px;padding:13px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#8aaa44;font-weight:700;margin-bottom:6px">🤖 Motor VDSEN</div>
+        ${_fichaComplHtml}
         <div style="font-size:11px;color:#666;line-height:1.6;margin-bottom:10px">Genera plan de entrenamiento, nutricional y suplementación según la ficha. Requiere API key y ficha completa.</div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
           <div>
