@@ -6512,8 +6512,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const _coachIntent = (typeof window._normalizeCoachIntent === 'function')
         ? window._normalizeCoachIntent(_ciRaw)
         : { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'AUTO', value: null } };
-      const _intentConstraintTxt = (typeof window._buildCoachIntentConstraintText === 'function')
-        ? window._buildCoachIntentConstraintText(_coachIntent) : '';
+      // FASE 73 — Intent Resolution Engine (pre-generation, deterministic)
+      const _tdResolution = (typeof window._resolveTrainingDaysIntent === 'function')
+        ? window._resolveTrainingDaysIntent(_coachIntent.trainingDays, ficha.data, prescCtx, _activeLearnedState)
+        : { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_FUNCTION'], confidence: 'LOW', conflicts: [] };
+      const _mpResolution = (typeof window._resolveMealsPerDayIntent === 'function')
+        ? window._resolveMealsPerDayIntent(_coachIntent.mealsPerDay, ficha.data, {
+            calorias: Number(ficha.data.objetivo_calorico || (ficha.data.nutricion && ficha.data.nutricion.objetivo_calorico) || 0)
+          })
+        : { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_FUNCTION'], confidence: 'LOW', conflicts: [] };
+      const _resolvedConstraintTxt = (typeof window._buildResolvedIntentConstraintText === 'function')
+        ? window._buildResolvedIntentConstraintText(_tdResolution, _mpResolution) : '';
+      if (_tdResolution.conflicts.length) console.warn('[VDSEN F73] trainingDays conflicts:', _tdResolution.conflicts);
 
       // FASE 67 — Missing Data Classification
       const _missingResult = (typeof window._classifyMissingInputs === 'function')
@@ -6538,7 +6548,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
-        _intentConstraintTxt,
+        _resolvedConstraintTxt,
         _lsHint,
         _missingDataTxt,
         prescCtxTxt,
@@ -6651,22 +6661,33 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const _continueMismatch = await _askConfirm('⚠️ <strong>DIVERGENCIA — Intención del Coach</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _mismatchLines + '</div><br>¿Guardar el plan de todas formas?');
         if (!_continueMismatch) { setStatus('<div style="color:#888">Generación cancelada por divergencia de intención.</div>'); return; }
       }
-      const _resolvedDpw = training ? (training.daysPerWeek != null ? Number(training.daysPerWeek) : (Array.isArray(training.days) ? training.days.length : null)) : null;
-      const _resolvedMeals = (nutrition && Array.isArray(nutrition.comidas)) ? nutrition.comidas.filter(function(c){ return c && typeof c === 'object'; }).length : null;
-      const _intentTrace = (typeof window._buildCoachIntentDecisionTrace === 'function')
-        ? window._buildCoachIntentDecisionTrace(_coachIntent, _resolvedDpw, _resolvedMeals) : null;
-      const _intentTraceHtml = _intentTrace ? (function() {
-        function _srcLabel(src) { return src === 'COACH_EXPLICIT' ? '👤 Coach' : '⚙️ VDSEN'; }
-        var tdD = _intentTrace.trainingDaysDecision; var mpD = _intentTrace.mealsPerDayDecision;
+      // FASE 73 — Intent Resolution preview (pre-resolved values, not post-generated)
+      const _intentTraceHtml = (function() {
+        function _srcLbl(src) {
+          if (src === 'COACH_EXPLICIT') return '👤 Coach';
+          if (src === 'CLIENT_AVAILABILITY_LIMIT') return '📋 Ficha';
+          if (src === 'CLIENT_PREFERENCE') return '📋 Preferencia';
+          if (src === 'SAFE_DEFAULT') return '⚙️ Default';
+          return '⚙️ VDSEN';
+        }
+        var daysVal = _tdResolution ? _tdResolution.resolvedValue : null;
+        var daysSrc = _tdResolution ? _tdResolution.source : null;
+        var daysConflict = (_tdResolution && _tdResolution.conflicts && _tdResolution.conflicts.length)
+          ? _tdResolution.conflicts[0].detail : null;
+        var mealsVal = _mpResolution ? _mpResolution.resolvedValue : null;
+        var mealsSrc = _mpResolution ? _mpResolution.source : null;
+        if (daysVal == null && mealsVal == null) return '';
+        var conflictLine = daysConflict
+          ? '<div style="color:#f0a500;font-size:10px;margin-top:2px">⚠ ' + _escH(daysConflict) + '</div>' : '';
         return '<div style="border:1px solid rgba(196,255,0,.15);border-radius:6px;padding:6px 10px;margin-top:6px;font-size:11px">'
           + '<div style="font-weight:700;color:#888;margin-bottom:4px">CONFIGURACIÓN RESUELTA</div>'
           + '<div style="display:flex;gap:16px;flex-wrap:wrap">'
-          + '<div><span style="color:#F4F4F0">' + (tdD.resolvedValue != null ? tdD.resolvedValue + ' días/sem' : '?') + '</span>'
-          + ' <span style="color:#555;font-size:10px">' + _srcLabel(tdD.source) + '</span></div>'
-          + '<div><span style="color:#F4F4F0">' + (mpD.resolvedValue != null ? mpD.resolvedValue + ' comidas/día' : '?') + '</span>'
-          + ' <span style="color:#555;font-size:10px">' + _srcLabel(mpD.source) + '</span></div>'
-          + '</div></div>';
-      })() : '';
+          + '<div><span style="color:var(--text-main)">' + (daysVal != null ? daysVal + ' días/sem' : '?') + '</span>'
+          + ' <span style="color:#555;font-size:10px">' + _srcLbl(daysSrc) + '</span></div>'
+          + '<div><span style="color:var(--text-main)">' + (mealsVal != null ? mealsVal + ' comidas/día' : '?') + '</span>'
+          + ' <span style="color:#555;font-size:10px">' + _srcLbl(mealsSrc) + '</span></div>'
+          + '</div>' + conflictLine + '</div>';
+      })();
 
       const u = data.usage || {};
       const trunc = data.stop_reason === 'max_tokens' ? '<div style="color:var(--danger);font-size:11px;margin-top:4px">⚠ La respuesta se truncó (max_tokens). Revisa el plan; puede faltar contenido.</div>' : '';
@@ -10960,8 +10981,18 @@ El esfuerzo no es negociable.
       const _coachIntent2 = (typeof window._normalizeCoachIntent === 'function')
         ? window._normalizeCoachIntent(_ciRaw2)
         : { trainingDays: { mode: 'AUTO', value: null }, mealsPerDay: { mode: 'AUTO', value: null } };
-      const _intentConstraintTxt2 = (typeof window._buildCoachIntentConstraintText === 'function')
-        ? window._buildCoachIntentConstraintText(_coachIntent2) : '';
+      // FASE 73 — Intent Resolution Engine (modal flow, pre-generation)
+      const _tdResolution2 = (typeof window._resolveTrainingDaysIntent === 'function')
+        ? window._resolveTrainingDaysIntent(_coachIntent2.trainingDays, ficha.data, prescCtx, _activeLearnedState)
+        : { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_FUNCTION'], confidence: 'LOW', conflicts: [] };
+      const _mpResolution2 = (typeof window._resolveMealsPerDayIntent === 'function')
+        ? window._resolveMealsPerDayIntent(_coachIntent2.mealsPerDay, ficha.data, {
+            calorias: Number(ficha.data.objetivo_calorico || (ficha.data.nutricion && ficha.data.nutricion.objetivo_calorico) || 0)
+          })
+        : { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_FUNCTION'], confidence: 'LOW', conflicts: [] };
+      const _resolvedConstraintTxt2 = (typeof window._buildResolvedIntentConstraintText === 'function')
+        ? window._buildResolvedIntentConstraintText(_tdResolution2, _mpResolution2) : '';
+      if (_tdResolution2.conflicts.length) console.warn('[VDSEN F73] trainingDays conflicts (modal):', _tdResolution2.conflicts);
 
       // FASE 67 — Missing Data Classification (modal flow)
       const _missingResult2 = (typeof window._classifyMissingInputs === 'function')
@@ -10986,7 +11017,7 @@ El esfuerzo no es negociable.
         'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'Cumple el CHECKLIST final del motor antes de responder.',
-        _intentConstraintTxt2,
+        _resolvedConstraintTxt2,
         _lsHint2,
         _missingDataTxt2,
         prescCtxTxt,
@@ -11107,22 +11138,33 @@ El esfuerzo no es negociable.
         const _continueMismatch2 = await _askConfirm('⚠️ <strong>DIVERGENCIA — Intención del Coach</strong><br><div style="color:#e05555;font-size:12px;margin-top:8px">' + _mismatchLines2 + '</div><br>¿Guardar el plan de todas formas?');
         if (!_continueMismatch2) { setStatus('<div style="color:#e05555">Generación cancelada por divergencia de intención.</div>'); return; }
       }
-      const _resolvedDpw2 = training ? (training.daysPerWeek != null ? Number(training.daysPerWeek) : (Array.isArray(training.days) ? training.days.length : null)) : null;
-      const _resolvedMeals2 = (nutrition && Array.isArray(nutrition.comidas)) ? nutrition.comidas.filter(function(c){ return c && typeof c === 'object'; }).length : null;
-      const _intentTrace2 = (typeof window._buildCoachIntentDecisionTrace === 'function')
-        ? window._buildCoachIntentDecisionTrace(_coachIntent2, _resolvedDpw2, _resolvedMeals2) : null;
-      const _intentTraceHtml2 = _intentTrace2 ? (function() {
-        function _srcLabel2(src) { return src === 'COACH_EXPLICIT' ? '👤 Coach' : '⚙️ VDSEN'; }
-        var tdD2 = _intentTrace2.trainingDaysDecision; var mpD2 = _intentTrace2.mealsPerDayDecision;
+      // FASE 73 — Intent Resolution preview (modal flow, pre-resolved values)
+      const _intentTraceHtml2 = (function() {
+        function _srcLbl2(src) {
+          if (src === 'COACH_EXPLICIT') return '👤 Coach';
+          if (src === 'CLIENT_AVAILABILITY_LIMIT') return '📋 Ficha';
+          if (src === 'CLIENT_PREFERENCE') return '📋 Preferencia';
+          if (src === 'SAFE_DEFAULT') return '⚙️ Default';
+          return '⚙️ VDSEN';
+        }
+        var daysVal2 = _tdResolution2 ? _tdResolution2.resolvedValue : null;
+        var daysSrc2 = _tdResolution2 ? _tdResolution2.source : null;
+        var daysConflict2 = (_tdResolution2 && _tdResolution2.conflicts && _tdResolution2.conflicts.length)
+          ? _tdResolution2.conflicts[0].detail : null;
+        var mealsVal2 = _mpResolution2 ? _mpResolution2.resolvedValue : null;
+        var mealsSrc2 = _mpResolution2 ? _mpResolution2.source : null;
+        if (daysVal2 == null && mealsVal2 == null) return '';
+        var conflictLine2 = daysConflict2
+          ? '<div style="color:#f0a500;font-size:10px;margin-top:2px">⚠ ' + _escH(daysConflict2) + '</div>' : '';
         return '<div style="border:1px solid rgba(196,255,0,.15);border-radius:6px;padding:6px 10px;margin-top:6px;font-size:11px">'
           + '<div style="font-weight:700;color:#888;margin-bottom:4px">CONFIGURACIÓN RESUELTA</div>'
           + '<div style="display:flex;gap:16px;flex-wrap:wrap">'
-          + '<div><span style="color:#F4F4F0">' + (tdD2.resolvedValue != null ? tdD2.resolvedValue + ' días/sem' : '?') + '</span>'
-          + ' <span style="color:#555;font-size:10px">' + _srcLabel2(tdD2.source) + '</span></div>'
-          + '<div><span style="color:#F4F4F0">' + (mpD2.resolvedValue != null ? mpD2.resolvedValue + ' comidas/día' : '?') + '</span>'
-          + ' <span style="color:#555;font-size:10px">' + _srcLabel2(mpD2.source) + '</span></div>'
-          + '</div></div>';
-      })() : '';
+          + '<div><span style="color:#F4F4F0">' + (daysVal2 != null ? daysVal2 + ' días/sem' : '?') + '</span>'
+          + ' <span style="color:#555;font-size:10px">' + _srcLbl2(daysSrc2) + '</span></div>'
+          + '<div><span style="color:#F4F4F0">' + (mealsVal2 != null ? mealsVal2 + ' comidas/día' : '?') + '</span>'
+          + ' <span style="color:#555;font-size:10px">' + _srcLbl2(mealsSrc2) + '</span></div>'
+          + '</div>' + conflictLine2 + '</div>';
+      })();
 
       const u = respData.usage || {};
       const trunc = respData.stop_reason === 'max_tokens' ? '<div style="color:#e05555;font-size:11px;margin-top:4px">⚠ Respuesta truncada — revisa que el plan esté completo.</div>' : '';
@@ -12578,6 +12620,109 @@ El esfuerzo no es negociable.
     return '\nRESTRICCIONES EXPLÍCITAS DEL COACH (máxima prioridad, solo superadas por vetos médicos):\n' + lines.join('\n');
   }
   window._buildCoachIntentConstraintText = _buildCoachIntentConstraintText;
+
+  // ========== FASE 73 — INTENT RESOLUTION ENGINE ==========
+  // Pure functions. 0 I/O, 0 writes, 0 mutation of inputs.
+  // Resolves trainingDays and mealsPerDay BEFORE the motor API call.
+  // Returns {requestedMode, requestedValue, resolvedValue, source, reasonCodes, confidence, conflicts}.
+  // Sources: COACH_EXPLICIT | CLIENT_AVAILABILITY_LIMIT | CLIENT_PREFERENCE | ENGINE_OPTIMIZED | SAFE_DEFAULT
+  function _resolveTrainingDaysIntent(intentSlot, fichaData, prescCtx, longitudinalCtx) {
+    var slot = intentSlot && typeof intentSlot === 'object' ? intentSlot : { mode: 'AUTO', value: null };
+    var fd = fichaData && typeof fichaData === 'object' ? fichaData : {};
+    var _getDias = function() {
+      var raw = (fd.dias_semana != null) ? fd.dias_semana
+              : (fd.entrenamiento && fd.entrenamiento.dias_semana != null) ? fd.entrenamiento.dias_semana
+              : null;
+      if (raw == null) return null;
+      var n = parseInt(String(raw), 10);
+      return (isFinite(n) && n >= 1 && n <= 7) ? n : null;
+    };
+    if (slot.mode === 'EXPLICIT') {
+      var req = Number(slot.value);
+      var conflicts = [];
+      var avail = _getDias();
+      if (avail != null && req > avail) {
+        conflicts.push({ type: 'SOFT', field: 'trainingDays', detail: 'Coach solicitó ' + req + ' días pero ficha indica disponibilidad de ' + avail + ' días/sem' });
+      }
+      return { requestedMode: 'EXPLICIT', requestedValue: req, resolvedValue: req, source: 'COACH_EXPLICIT', reasonCodes: ['COACH_OVERRIDE'], confidence: 'HIGH', conflicts: conflicts };
+    }
+    // AUTO — priority 1: explicit ficha availability
+    var diasFicha = _getDias();
+    if (diasFicha != null) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: Math.min(diasFicha, 6), source: 'CLIENT_AVAILABILITY_LIMIT', reasonCodes: ['FICHA_DIAS_SEMANA'], confidence: 'HIGH', conflicts: [] };
+    }
+    // AUTO — priority 2: nivel heuristic
+    var nivel = String(fd.nivel || (fd.entrenamiento && fd.entrenamiento.nivel) || '').toLowerCase();
+    if (nivel === 'principiante' || nivel === 'beginner') {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 3, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_PRINCIPIANTE'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    if (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_AVANZADO'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    if (nivel === 'intermedio' || nivel === 'intermediate') {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_INTERMEDIO'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    // AUTO — safe default
+    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_DATA'], confidence: 'LOW', conflicts: [] };
+  }
+  window._resolveTrainingDaysIntent = _resolveTrainingDaysIntent;
+
+  function _resolveMealsPerDayIntent(intentSlot, fichaData, nutritionCtx) {
+    var slot = intentSlot && typeof intentSlot === 'object' ? intentSlot : { mode: 'AUTO', value: null };
+    var fd = fichaData && typeof fichaData === 'object' ? fichaData : {};
+    var nc = nutritionCtx && typeof nutritionCtx === 'object' ? nutritionCtx : {};
+    if (slot.mode === 'EXPLICIT') {
+      return { requestedMode: 'EXPLICIT', requestedValue: Number(slot.value), resolvedValue: Number(slot.value), source: 'COACH_EXPLICIT', reasonCodes: ['COACH_OVERRIDE'], confidence: 'HIGH', conflicts: [] };
+    }
+    // AUTO — priority 1: num_comidas from ficha
+    var ncRaw = (fd.num_comidas != null) ? fd.num_comidas
+              : (fd.nutricion && fd.nutricion.num_comidas != null) ? fd.nutricion.num_comidas
+              : null;
+    if (ncRaw != null) {
+      var nc1 = parseInt(String(ncRaw), 10);
+      if (isFinite(nc1) && nc1 >= 1 && nc1 <= 8) {
+        return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: Math.max(3, Math.min(6, nc1)), source: 'CLIENT_PREFERENCE', reasonCodes: ['FICHA_NUM_COMIDAS'], confidence: 'HIGH', conflicts: [] };
+      }
+    }
+    // AUTO — priority 2: calorie target
+    var kcal = Number(nc.calorias || fd.objetivo_calorico || (fd.nutricion && fd.nutricion.objetivo_calorico) || 0);
+    if (kcal > 3000) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['HIGH_CALORIE_TARGET'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    if (kcal > 0 && kcal <= 1800) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 3, source: 'ENGINE_OPTIMIZED', reasonCodes: ['LOW_CALORIE_TARGET'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    // AUTO — priority 3: objetivo
+    var obj = String(fd.objetivo_mesociclo || (fd.entrenamiento && fd.entrenamiento.objetivo_mesociclo) || '').toLowerCase();
+    if (obj.indexOf('volumen') >= 0 || obj.indexOf('masa') >= 0 || obj.indexOf('ganar') >= 0 || obj.indexOf('bulk') >= 0) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['OBJETIVO_VOLUMEN'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    if (obj.indexOf('defin') >= 0 || obj.indexOf('corte') >= 0 || obj.indexOf('cut') >= 0 || obj.indexOf('perder') >= 0) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'ENGINE_OPTIMIZED', reasonCodes: ['OBJETIVO_DEFINICION'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    // AUTO — safe default
+    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_DATA'], confidence: 'LOW', conflicts: [] };
+  }
+  window._resolveMealsPerDayIntent = _resolveMealsPerDayIntent;
+
+  // Builds constraint text injected into the API prompt.
+  // ALWAYS injects the resolved value (EXPLICIT or AUTO) — LLM never decides days/meals freely.
+  function _buildResolvedIntentConstraintText(tdResolution, mpResolution) {
+    var td = tdResolution && typeof tdResolution === 'object' ? tdResolution : null;
+    var mp = mpResolution && typeof mpResolution === 'object' ? mpResolution : null;
+    var days = td ? Number(td.resolvedValue) : NaN;
+    var meals = mp ? Number(mp.resolvedValue) : NaN;
+    if (!isFinite(days) || days < 1) return '';
+    var lines = [
+      'CARDINALIDAD FIJA (calculada pre-generación, no negociable):',
+      '- Días de entrenamiento: EXACTAMENTE ' + days + ' días (daysPerWeek=' + days + ', days[] con EXACTAMENTE ' + days + ' entradas). No cambiar aunque el Engine prefiera otra distribución.'
+    ];
+    if (isFinite(meals) && meals >= 1) {
+      lines.push('- Comidas principales: EXACTAMENTE ' + meals + ' comidas en comidas[] (no contar suplementos ni sustituciones). Distribuir macros en esas ' + meals + ' comidas.');
+    }
+    return '\n' + lines.join('\n');
+  }
+  window._buildResolvedIntentConstraintText = _buildResolvedIntentConstraintText;
 
   // ========== FASE 71 — LEARNED STATE PROMPT HINT ==========
   // Pure function. 0 I/O, 0 writes, 0 mutation.

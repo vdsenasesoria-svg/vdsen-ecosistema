@@ -14347,6 +14347,241 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
 })();
 
 // ============================================================
+// FASE 73 — Intent Resolution Engine
+// Inline copies of _resolveTrainingDaysIntent, _resolveMealsPerDayIntent,
+// _buildResolvedIntentConstraintText for pure unit testing.
+// ============================================================
+(function() {
+  // ---- Inline _resolveTrainingDaysIntent ----
+  function _resolveTrainingDaysIntent(intentSlot, fichaData, prescCtx, longitudinalCtx) {
+    var slot = intentSlot && typeof intentSlot === 'object' ? intentSlot : { mode: 'AUTO', value: null };
+    var fd = fichaData && typeof fichaData === 'object' ? fichaData : {};
+    var _getDias = function() {
+      var raw = (fd.dias_semana != null) ? fd.dias_semana
+              : (fd.entrenamiento && fd.entrenamiento.dias_semana != null) ? fd.entrenamiento.dias_semana
+              : null;
+      if (raw == null) return null;
+      var n = parseInt(String(raw), 10);
+      return (isFinite(n) && n >= 1 && n <= 7) ? n : null;
+    };
+    if (slot.mode === 'EXPLICIT') {
+      var req = Number(slot.value);
+      var conflicts = [];
+      var avail = _getDias();
+      if (avail != null && req > avail) {
+        conflicts.push({ type: 'SOFT', field: 'trainingDays', detail: 'Coach solicitó ' + req + ' días pero ficha indica disponibilidad de ' + avail + ' días/sem' });
+      }
+      return { requestedMode: 'EXPLICIT', requestedValue: req, resolvedValue: req, source: 'COACH_EXPLICIT', reasonCodes: ['COACH_OVERRIDE'], confidence: 'HIGH', conflicts: conflicts };
+    }
+    var diasFicha = _getDias();
+    if (diasFicha != null) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: Math.min(diasFicha, 6), source: 'CLIENT_AVAILABILITY_LIMIT', reasonCodes: ['FICHA_DIAS_SEMANA'], confidence: 'HIGH', conflicts: [] };
+    }
+    var nivel = String(fd.nivel || (fd.entrenamiento && fd.entrenamiento.nivel) || '').toLowerCase();
+    if (nivel === 'principiante' || nivel === 'beginner') {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 3, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_PRINCIPIANTE'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    if (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_AVANZADO'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    if (nivel === 'intermedio' || nivel === 'intermediate') {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'ENGINE_OPTIMIZED', reasonCodes: ['NIVEL_INTERMEDIO'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_DATA'], confidence: 'LOW', conflicts: [] };
+  }
+
+  // ---- Inline _resolveMealsPerDayIntent ----
+  function _resolveMealsPerDayIntent(intentSlot, fichaData, nutritionCtx) {
+    var slot = intentSlot && typeof intentSlot === 'object' ? intentSlot : { mode: 'AUTO', value: null };
+    var fd = fichaData && typeof fichaData === 'object' ? fichaData : {};
+    var nc = nutritionCtx && typeof nutritionCtx === 'object' ? nutritionCtx : {};
+    if (slot.mode === 'EXPLICIT') {
+      return { requestedMode: 'EXPLICIT', requestedValue: Number(slot.value), resolvedValue: Number(slot.value), source: 'COACH_EXPLICIT', reasonCodes: ['COACH_OVERRIDE'], confidence: 'HIGH', conflicts: [] };
+    }
+    var ncRaw = (fd.num_comidas != null) ? fd.num_comidas
+              : (fd.nutricion && fd.nutricion.num_comidas != null) ? fd.nutricion.num_comidas
+              : null;
+    if (ncRaw != null) {
+      var nc1 = parseInt(String(ncRaw), 10);
+      if (isFinite(nc1) && nc1 >= 1 && nc1 <= 8) {
+        return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: Math.max(3, Math.min(6, nc1)), source: 'CLIENT_PREFERENCE', reasonCodes: ['FICHA_NUM_COMIDAS'], confidence: 'HIGH', conflicts: [] };
+      }
+    }
+    var kcal = Number(nc.calorias || fd.objetivo_calorico || (fd.nutricion && fd.nutricion.objetivo_calorico) || 0);
+    if (kcal > 3000) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['HIGH_CALORIE_TARGET'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    if (kcal > 0 && kcal <= 1800) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 3, source: 'ENGINE_OPTIMIZED', reasonCodes: ['LOW_CALORIE_TARGET'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    var obj = String(fd.objetivo_mesociclo || (fd.entrenamiento && fd.entrenamiento.objetivo_mesociclo) || '').toLowerCase();
+    if (obj.indexOf('volumen') >= 0 || obj.indexOf('masa') >= 0 || obj.indexOf('ganar') >= 0 || obj.indexOf('bulk') >= 0) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['OBJETIVO_VOLUMEN'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    if (obj.indexOf('defin') >= 0 || obj.indexOf('corte') >= 0 || obj.indexOf('cut') >= 0 || obj.indexOf('perder') >= 0) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'ENGINE_OPTIMIZED', reasonCodes: ['OBJETIVO_DEFINICION'], confidence: 'MEDIUM', conflicts: [] };
+    }
+    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_DATA'], confidence: 'LOW', conflicts: [] };
+  }
+
+  // ---- Inline _buildResolvedIntentConstraintText ----
+  function _buildResolvedIntentConstraintText(tdResolution, mpResolution) {
+    var td = tdResolution && typeof tdResolution === 'object' ? tdResolution : null;
+    var mp = mpResolution && typeof mpResolution === 'object' ? mpResolution : null;
+    var days = td ? Number(td.resolvedValue) : NaN;
+    var meals = mp ? Number(mp.resolvedValue) : NaN;
+    if (!isFinite(days) || days < 1) return '';
+    var lines = [
+      'CARDINALIDAD FIJA (calculada pre-generación, no negociable):',
+      '- Días de entrenamiento: EXACTAMENTE ' + days + ' días (daysPerWeek=' + days + ', days[] con EXACTAMENTE ' + days + ' entradas). No cambiar aunque el Engine prefiera otra distribución.'
+    ];
+    if (isFinite(meals) && meals >= 1) {
+      lines.push('- Comidas principales: EXACTAMENTE ' + meals + ' comidas en comidas[] (no contar suplementos ni sustituciones). Distribuir macros en esas ' + meals + ' comidas.');
+    }
+    return '\n' + lines.join('\n');
+  }
+
+  // F73-A: EXPLICIT days — exact value preserved
+  console.log('\nF73-A — EXPLICIT training days preserves exact value');
+  [3, 5, 7].forEach(function(v) {
+    var r = _resolveTrainingDaysIntent({ mode: 'EXPLICIT', value: v }, {}, null, null);
+    assert('F73-Aa-' + v, 'EXPLICIT ' + v + ' → resolvedValue=' + v, r.resolvedValue === v);
+    assert('F73-Ab-' + v, 'source=COACH_EXPLICIT', r.source === 'COACH_EXPLICIT');
+    assert('F73-Ac-' + v, 'no conflicts when no ficha availability', r.conflicts.length === 0);
+  });
+
+  // F73-B: EXPLICIT with ficha conflict (coach > availability)
+  console.log('\nF73-B — EXPLICIT days with availability conflict');
+  var rConflict = _resolveTrainingDaysIntent({ mode: 'EXPLICIT', value: 6 }, { dias_semana: 4 }, null, null);
+  assert('F73-Ba', 'resolvedValue still 6 (coach wins)', rConflict.resolvedValue === 6);
+  assert('F73-Bb', 'source COACH_EXPLICIT', rConflict.source === 'COACH_EXPLICIT');
+  assert('F73-Bc', 'conflict recorded', rConflict.conflicts.length > 0);
+  assert('F73-Bd', 'conflict type SOFT', rConflict.conflicts[0].type === 'SOFT');
+  assert('F73-Be', 'conflict detail mentions 4', rConflict.conflicts[0].detail.indexOf('4') >= 0);
+
+  // F73-C: AUTO with dias_semana in ficha → uses ficha value (CLIENT_AVAILABILITY_LIMIT)
+  console.log('\nF73-C — AUTO with explicit dias_semana in ficha');
+  [3, 4, 5, 6].forEach(function(v) {
+    var r = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: v }, null, null);
+    assert('F73-Ca-' + v, 'resolvedValue=' + v + ' from ficha', r.resolvedValue === v);
+    assert('F73-Cb-' + v, 'source=CLIENT_AVAILABILITY_LIMIT', r.source === 'CLIENT_AVAILABILITY_LIMIT');
+  });
+
+  // F73-D: AUTO with dias_semana 7 → clamped to 6
+  console.log('\nF73-D — AUTO with dias_semana=7 clamped to 6');
+  var rClamp = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { dias_semana: 7 }, null, null);
+  assert('F73-Da', 'clamped to 6', rClamp.resolvedValue === 6);
+  assert('F73-Db', 'CLIENT_AVAILABILITY_LIMIT', rClamp.source === 'CLIENT_AVAILABILITY_LIMIT');
+
+  // F73-E: AUTO with nivel only (no dias_semana)
+  console.log('\nF73-E — AUTO resolved from nivel when no dias_semana');
+  var cases = [['principiante', 3], ['intermedio', 4], ['avanzado', 5]];
+  cases.forEach(function(c) {
+    var r = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { nivel: c[0] }, null, null);
+    assert('F73-Ea-' + c[0], c[0] + ' → ' + c[1] + ' días', r.resolvedValue === c[1]);
+    assert('F73-Eb-' + c[0], 'source ENGINE_OPTIMIZED', r.source === 'ENGINE_OPTIMIZED');
+  });
+
+  // F73-F: AUTO with no data → SAFE_DEFAULT=4
+  console.log('\nF73-F — AUTO with no data → SAFE_DEFAULT=4');
+  var rDef = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, {}, null, null);
+  assert('F73-Fa', 'resolvedValue=4', rDef.resolvedValue === 4);
+  assert('F73-Fb', 'source=SAFE_DEFAULT', rDef.source === 'SAFE_DEFAULT');
+  assert('F73-Fc', 'confidence=LOW', rDef.confidence === 'LOW');
+
+  // F73-G: entrenamiento.dias_semana nested path
+  console.log('\nF73-G — AUTO reads nested entrenamiento.dias_semana');
+  var rNested = _resolveTrainingDaysIntent({ mode: 'AUTO', value: null }, { entrenamiento: { dias_semana: 5 } }, null, null);
+  assert('F73-Ga', 'nested dias_semana=5 → resolvedValue=5', rNested.resolvedValue === 5);
+  assert('F73-Gb', 'CLIENT_AVAILABILITY_LIMIT', rNested.source === 'CLIENT_AVAILABILITY_LIMIT');
+
+  // F73-H: EXPLICIT meals → exact value
+  console.log('\nF73-H — EXPLICIT meals preserves exact value');
+  [2, 3, 6].forEach(function(v) {
+    var r = _resolveMealsPerDayIntent({ mode: 'EXPLICIT', value: v }, {}, {});
+    assert('F73-Ha-' + v, 'resolvedValue=' + v, r.resolvedValue === v);
+    assert('F73-Hb-' + v, 'COACH_EXPLICIT', r.source === 'COACH_EXPLICIT');
+  });
+
+  // F73-I: AUTO with num_comidas in ficha → CLIENT_PREFERENCE (clamped to [3,6])
+  console.log('\nF73-I — AUTO meals from num_comidas in ficha');
+  var rMeals1 = _resolveMealsPerDayIntent({ mode: 'AUTO', value: null }, { num_comidas: 5 }, {});
+  assert('F73-Ia', 'num_comidas=5 → resolvedValue=5', rMeals1.resolvedValue === 5);
+  assert('F73-Ib', 'CLIENT_PREFERENCE', rMeals1.source === 'CLIENT_PREFERENCE');
+  // clamp: num_comidas=1 → 3 (min clamp)
+  var rMealsClampLo = _resolveMealsPerDayIntent({ mode: 'AUTO', value: null }, { num_comidas: 1 }, {});
+  assert('F73-Ic', 'num_comidas=1 clamped to 3', rMealsClampLo.resolvedValue === 3);
+  // clamp: num_comidas=8 → 6 (max clamp)
+  var rMealsClampHi = _resolveMealsPerDayIntent({ mode: 'AUTO', value: null }, { num_comidas: 8 }, {});
+  assert('F73-Id', 'num_comidas=8 clamped to 6', rMealsClampHi.resolvedValue === 6);
+
+  // F73-J: AUTO meals with high calories (>3000) → 5
+  console.log('\nF73-J — AUTO meals from high calorie target');
+  var rHiKcal = _resolveMealsPerDayIntent({ mode: 'AUTO', value: null }, {}, { calorias: 3500 });
+  assert('F73-Ja', 'kcal>3000 → 5 meals', rHiKcal.resolvedValue === 5);
+  assert('F73-Jb', 'ENGINE_OPTIMIZED', rHiKcal.source === 'ENGINE_OPTIMIZED');
+  assert('F73-Jc', 'reason HIGH_CALORIE_TARGET', rHiKcal.reasonCodes[0] === 'HIGH_CALORIE_TARGET');
+
+  // F73-K: AUTO meals with low calories (<=1800) → 3
+  console.log('\nF73-K — AUTO meals from low calorie target');
+  var rLoKcal = _resolveMealsPerDayIntent({ mode: 'AUTO', value: null }, {}, { calorias: 1600 });
+  assert('F73-Ka', 'kcal<=1800 → 3 meals', rLoKcal.resolvedValue === 3);
+  assert('F73-Kb', 'reason LOW_CALORIE_TARGET', rLoKcal.reasonCodes[0] === 'LOW_CALORIE_TARGET');
+
+  // F73-L: AUTO meals from objetivo_mesociclo
+  console.log('\nF73-L — AUTO meals from objetivo_mesociclo');
+  var rVol = _resolveMealsPerDayIntent({ mode: 'AUTO', value: null }, { objetivo_mesociclo: 'ganar volumen' }, {});
+  assert('F73-La', 'volumen → 5 meals', rVol.resolvedValue === 5);
+  assert('F73-Lb', 'OBJETIVO_VOLUMEN reason', rVol.reasonCodes[0] === 'OBJETIVO_VOLUMEN');
+  var rDef2 = _resolveMealsPerDayIntent({ mode: 'AUTO', value: null }, { objetivo_mesociclo: 'definicion corporal' }, {});
+  assert('F73-Lc', 'definicion → 4 meals', rDef2.resolvedValue === 4);
+  assert('F73-Ld', 'OBJETIVO_DEFINICION reason', rDef2.reasonCodes[0] === 'OBJETIVO_DEFINICION');
+
+  // F73-M: AUTO meals with no data → SAFE_DEFAULT=4
+  console.log('\nF73-M — AUTO meals with no data → SAFE_DEFAULT=4');
+  var rMDef = _resolveMealsPerDayIntent({ mode: 'AUTO', value: null }, {}, {});
+  assert('F73-Ma', 'resolvedValue=4', rMDef.resolvedValue === 4);
+  assert('F73-Mb', 'SAFE_DEFAULT', rMDef.source === 'SAFE_DEFAULT');
+
+  // F73-N: _buildResolvedIntentConstraintText — always injects both values
+  console.log('\nF73-N — _buildResolvedIntentConstraintText injects specific values');
+  var tdR = { resolvedValue: 4 }; var mpR = { resolvedValue: 5 };
+  var ctxt = _buildResolvedIntentConstraintText(tdR, mpR);
+  assert('F73-Na', 'CARDINALIDAD FIJA header present', ctxt.indexOf('CARDINALIDAD FIJA') >= 0);
+  assert('F73-Nb', 'days=4 in constraint text', ctxt.indexOf('EXACTAMENTE 4 días') >= 0);
+  assert('F73-Nc', 'meals=5 in constraint text', ctxt.indexOf('EXACTAMENTE 5 comidas') >= 0);
+  assert('F73-Nd', 'daysPerWeek=4 in text', ctxt.indexOf('daysPerWeek=4') >= 0);
+
+  // F73-O: _buildResolvedIntentConstraintText — no days → empty string
+  console.log('\nF73-O — constraint text empty when no valid days');
+  assert('F73-Oa', 'null tdResolution → empty', _buildResolvedIntentConstraintText(null, mpR) === '');
+  assert('F73-Ob', 'resolvedValue=0 → empty', _buildResolvedIntentConstraintText({ resolvedValue: 0 }, mpR) === '');
+  assert('F73-Oc', 'NaN resolvedValue → empty', _buildResolvedIntentConstraintText({ resolvedValue: NaN }, mpR) === '');
+
+  // F73-P: no mutation, determinism (training days)
+  console.log('\nF73-P — no mutation, determinism');
+  var fd73 = { dias_semana: 4, nivel: 'avanzado' };
+  var snap73 = JSON.stringify(fd73);
+  var slot73 = { mode: 'AUTO', value: null };
+  var snapSlot73 = JSON.stringify(slot73);
+  var rP1 = _resolveTrainingDaysIntent(slot73, fd73, null, null);
+  var rP2 = _resolveTrainingDaysIntent(slot73, fd73, null, null);
+  assert('F73-Pa', 'fd not mutated', JSON.stringify(fd73) === snap73);
+  assert('F73-Pb', 'slot not mutated', JSON.stringify(slot73) === snapSlot73);
+  assert('F73-Pc', 'deterministic', JSON.stringify(rP1) === JSON.stringify(rP2));
+
+  // F73-Q: no mutation, determinism (meals)
+  console.log('\nF73-Q — meals no mutation, determinism');
+  var fdQ = { num_comidas: 5 };
+  var snapQ = JSON.stringify(fdQ);
+  var slotQ = { mode: 'AUTO', value: null };
+  var rQ1 = _resolveMealsPerDayIntent(slotQ, fdQ, {});
+  var rQ2 = _resolveMealsPerDayIntent(slotQ, fdQ, {});
+  assert('F73-Qa', 'fdQ not mutated', JSON.stringify(fdQ) === snapQ);
+  assert('F73-Qb', 'deterministic', JSON.stringify(rQ1) === JSON.stringify(rQ2));
+})();
+
+// ============================================================
 // FASE 72 — Learned State Preview Block (_lsHintHtml logic)
 // Pure inline tests of the IIFE logic used in both generation flows.
 // ============================================================
