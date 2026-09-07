@@ -12658,10 +12658,47 @@ El esfuerzo no es negociable.
   window._buildCoachIntentConstraintText = _buildCoachIntentConstraintText;
 
   // ========== FASE 73 — INTENT RESOLUTION ENGINE ==========
+  // FASE 75 — Contextual Auto Cardinality Optimizer (multi-signal deterministic evaluator)
   // Pure functions. 0 I/O, 0 writes, 0 mutation of inputs.
   // Resolves trainingDays and mealsPerDay BEFORE the motor API call.
-  // Returns {requestedMode, requestedValue, resolvedValue, source, reasonCodes, confidence, conflicts}.
+  // Returns {requestedMode, requestedValue, resolvedValue, source, reasonCodes, confidence, candidateScores, conflicts}.
   // Sources: COACH_EXPLICIT | CLIENT_AVAILABILITY_LIMIT | CLIENT_PREFERENCE | ENGINE_OPTIMIZED | SAFE_DEFAULT
+
+  function _extractTDSignals(fd, pc) {
+    var nivel = String(fd.nivel || (fd.entrenamiento && fd.entrenamiento.nivel) || '').toLowerCase();
+    var hasNivel = nivel === 'principiante' || nivel === 'beginner' || nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite' || nivel === 'intermedio' || nivel === 'intermediate';
+    var nivelOpt = (nivel === 'principiante' || nivel === 'beginner') ? 3
+                 : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 5 : 4;
+    var nivelCode = !hasNivel ? 'NO_DATA'
+                  : (nivel === 'principiante' || nivel === 'beginner') ? 'NIVEL_PRINCIPIANTE'
+                  : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 'NIVEL_AVANZADO'
+                  : 'NIVEL_INTERMEDIO';
+    var durMin = Number(fd.duracion_sesion || (fd.entrenamiento && fd.entrenamiento.duracion_sesion) || 0);
+    var prios = fd.prioridades && typeof fd.prioridades === 'object' ? fd.prioridades : {};
+    var gCount = (Array.isArray(prios.grupos_musculares) ? prios.grupos_musculares.length : 0)
+               + (Array.isArray(prios.grupos_mantenimiento) ? prios.grupos_mantenimiento.length : 0);
+    var rd = (pc && pc.prescriptionTargets && pc.prescriptionTargets.globalReadiness) || 'neutral';
+    var dl = !!(pc && pc.prescriptionTargets && pc.prescriptionTargets.deloadCandidate);
+    var art = !!(pc && pc.clientFlags && Array.isArray(pc.clientFlags.articularIssues) && pc.clientFlags.articularIssues.length > 0);
+    var prev = (pc && pc.hasPreviousPlan && pc.previousPlan && pc.previousPlan.daysPerWeek) ? Number(pc.previousPlan.daysPerWeek) : null;
+    var objRaw = String(fd.objetivo_mesociclo || (fd.entrenamiento && fd.entrenamiento.objetivo_mesociclo) || '').toLowerCase();
+    var obj = (objRaw.indexOf('volumen') >= 0 || objRaw.indexOf('masa') >= 0 || objRaw.indexOf('ganar') >= 0 || objRaw.indexOf('bulk') >= 0) ? 'volume'
+            : (objRaw.indexOf('defin') >= 0 || objRaw.indexOf('corte') >= 0 || objRaw.indexOf('cut') >= 0 || objRaw.indexOf('perder') >= 0) ? 'cut' : null;
+    return { nivelOpt: hasNivel ? nivelOpt : null, nivelCode: nivelCode, durMin: durMin, gCount: gCount, readiness: rd, deload: dl, articular: art, prevDays: prev, objective: obj };
+  }
+  function _scoreTrainingDaysCandidate(d, sig) {
+    var s = 0; var c = {};
+    if (sig.nivelOpt !== null) { c[sig.nivelCode] = Math.max(-1.5, -Math.abs(d - sig.nivelOpt) * 0.5); s += c[sig.nivelCode]; }
+    if (sig.durMin > 0) { c.SESSION_DURATION = sig.durMin < 45 ? (d - 3) * 0.4 : sig.durMin > 75 ? (3 - d) * 0.4 : 0; s += c.SESSION_DURATION; }
+    if (sig.gCount > 0) { var od = Math.min(7, Math.max(2, Math.ceil(sig.gCount / 2.0))); c.PRIORITY_GROUPS = Math.max(-1, -Math.abs(d - od) * 0.5); s += c.PRIORITY_GROUPS; }
+    if (sig.readiness === 'fatigued') { c.READINESS_FATIGUED = Math.max(-1.5, -0.5 * (d - 3) * (d - 3) + 0.5); s += c.READINESS_FATIGUED; }
+    else if (sig.readiness === 'progressing') { c.READINESS_PROGRESSING = (d - 3) * 0.25; s += c.READINESS_PROGRESSING; }
+    if (sig.articular) { c.ARTICULAR_ISSUES = Math.max(-0.8, (3 - d) * 0.3); s += c.ARTICULAR_ISSUES; }
+    if (sig.prevDays && d === sig.prevDays) { c.PREV_PLAN_CONTINUITY = 0.3; s += 0.3; }
+    if (sig.objective) { c.OBJETIVO = sig.objective === 'volume' ? (d >= 4 ? 0.5 : -0.5) : (d <= 4 ? 0.5 : -0.5); s += c.OBJETIVO; }
+    if (sig.deload) { c.DELOAD_CANDIDATE = Math.max(-1.0, (3 - d) * 0.5); s += c.DELOAD_CANDIDATE; }
+    return { score: s, contribs: c };
+  }
   function _resolveTrainingDaysIntent(intentSlot, fichaData, prescCtx, longitudinalCtx) {
     var slot = intentSlot && typeof intentSlot === 'object' ? intentSlot : { mode: 'AUTO', value: null };
     var fd = fichaData && typeof fichaData === 'object' ? fichaData : {};
@@ -12682,30 +12719,70 @@ El esfuerzo no es negociable.
       }
       return { requestedMode: 'EXPLICIT', requestedValue: req, resolvedValue: req, source: 'COACH_EXPLICIT', reasonCodes: ['COACH_OVERRIDE'], confidence: 'HIGH', conflicts: conflicts };
     }
-    // AUTO — compute nivel-optimal first; diasFicha is a ceiling, not the target (FASE 74)
-    var nivel = String(fd.nivel || (fd.entrenamiento && fd.entrenamiento.nivel) || '').toLowerCase();
-    var hasNivel = nivel === 'principiante' || nivel === 'beginner' || nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite' || nivel === 'intermedio' || nivel === 'intermediate';
-    var nivelOptimal = (nivel === 'principiante' || nivel === 'beginner') ? 3
-                     : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 5
-                     : 4;
-    var nivelCode = (nivel === 'principiante' || nivel === 'beginner') ? 'NIVEL_PRINCIPIANTE'
-                  : (nivel === 'avanzado' || nivel === 'advanced' || nivel === 'elite') ? 'NIVEL_AVANZADO'
-                  : (nivel === 'intermedio' || nivel === 'intermediate') ? 'NIVEL_INTERMEDIO'
-                  : 'NO_DATA';
-    var diasFicha = _getDias();
-    if (diasFicha != null) {
-      if (diasFicha < nivelOptimal) {
-        // Client availability is the binding constraint — can't do more days than available
-        return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: diasFicha, source: 'CLIENT_AVAILABILITY_LIMIT', reasonCodes: ['FICHA_DIAS_SEMANA', nivelCode], confidence: 'HIGH', conflicts: [] };
-      }
-      // Availability doesn't constrain — optimize for nivel
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: nivelOptimal, source: hasNivel ? 'ENGINE_OPTIMIZED' : 'SAFE_DEFAULT', reasonCodes: [nivelCode], confidence: hasNivel ? 'MEDIUM' : 'LOW', conflicts: [] };
+    // FASE 75 — Multi-signal deterministic candidate evaluator
+    var _sig = _extractTDSignals(fd, prescCtx);
+    var _hasSig = _sig.nivelOpt !== null || _sig.durMin > 0 || _sig.gCount > 0
+               || _sig.readiness !== 'neutral' || _sig.deload || _sig.articular
+               || _sig.prevDays != null || _sig.objective != null;
+    if (!_hasSig) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_DATA'], confidence: 'LOW', candidateScores: [], conflicts: [] };
     }
-    // No availability data — nivel only
-    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: nivelOptimal, source: hasNivel ? 'ENGINE_OPTIMIZED' : 'SAFE_DEFAULT', reasonCodes: [nivelCode], confidence: hasNivel ? 'MEDIUM' : 'LOW', conflicts: [] };
+    var _diasFicha = _getDias();
+    var _maxDays = Math.min(_diasFicha != null ? _diasFicha : 7, 7);
+    var _cands = [];
+    for (var _d = 2; _d <= _maxDays; _d++) {
+      var _tr = _scoreTrainingDaysCandidate(_d, _sig);
+      _cands.push({ days: _d, score: Math.round(_tr.score * 1000) / 1000, contribs: _tr.contribs });
+    }
+    var _uncons = [];
+    for (var _u = 2; _u <= 7; _u++) {
+      var _ur = _scoreTrainingDaysCandidate(_u, _sig);
+      _uncons.push({ days: _u, score: _ur.score });
+    }
+    _uncons.sort(function(a, b) { return b.score - a.score || a.days - b.days; });
+    var _unconsDays = _uncons[0].days;
+    _cands.sort(function(a, b) { return b.score - a.score || a.days - b.days; });
+    var _win = _cands[0]; var _ru = _cands[1];
+    var _margin = _ru ? (_win.score - _ru.score) : 2;
+    var _isLim = _diasFicha != null && _unconsDays > _diasFicha;
+    var _src = _isLim ? 'CLIENT_AVAILABILITY_LIMIT' : 'ENGINE_OPTIMIZED';
+    var _conf = _margin >= 1.5 ? 'HIGH' : _margin >= 0.5 ? 'MEDIUM' : 'LOW';
+    var _wc = _win.contribs;
+    var _codes = Object.keys(_wc).filter(function(k) { return _wc[k] > 0; }).sort(function(a, b) { return _wc[b] - _wc[a]; }).slice(0, 3);
+    if (!_codes.length) _codes = [_sig.nivelCode || 'NO_DATA'];
+    if (_isLim) _codes = ['FICHA_DIAS_SEMANA'].concat(_codes);
+    return {
+      requestedMode: 'AUTO', requestedValue: null, resolvedValue: _win.days, source: _src,
+      reasonCodes: _codes, confidence: _conf,
+      candidateScores: _cands.map(function(x) { return { days: x.days, score: x.score }; }),
+      conflicts: []
+    };
   }
   window._resolveTrainingDaysIntent = _resolveTrainingDaysIntent;
 
+  function _extractMPDSignals(fd, nc) {
+    var kcal = Number(nc.calorias || fd.objetivo_calorico || (fd.nutricion && fd.nutricion.objetivo_calorico) || 0);
+    var protein = Number(nc.proteina || fd.proteina || (fd.nutricion && fd.nutricion.proteina) || 0);
+    var objRaw = String(fd.objetivo_mesociclo || (fd.entrenamiento && fd.entrenamiento.objetivo_mesociclo) || '').toLowerCase();
+    var obj = (objRaw.indexOf('volumen') >= 0 || objRaw.indexOf('masa') >= 0 || objRaw.indexOf('ganar') >= 0 || objRaw.indexOf('bulk') >= 0) ? 'volume'
+            : (objRaw.indexOf('defin') >= 0 || objRaw.indexOf('corte') >= 0 || objRaw.indexOf('cut') >= 0 || objRaw.indexOf('perder') >= 0) ? 'cut' : null;
+    var pref = fd.preferencias && typeof fd.preferencias === 'object' ? fd.preferencias : {};
+    var horRaw = pref.horarios || pref.horario || fd.horarios || null;
+    var restricted = horRaw ? /restrin|limit|pocas|ocupad/i.test(String(horRaw)) : false;
+    return { kcal: kcal, protein: protein, objective: obj, restricted: restricted };
+  }
+  function _scoreMealsPerDayCandidate(m, sig) {
+    var s = 0; var c = {};
+    if (sig.kcal > 3000) { c.HIGH_CALORIE_TARGET = 0.4 - Math.abs(m - 5) * 0.4; s += c.HIGH_CALORIE_TARGET; }
+    else if (sig.kcal > 0 && sig.kcal <= 1800) { c.LOW_CALORIE_TARGET = 0.4 - Math.abs(m - 3) * 0.4; s += c.LOW_CALORIE_TARGET; }
+    if (sig.protein >= 150) { c.HIGH_PROTEIN = m >= 4 ? 0.3 : -0.3; s += c.HIGH_PROTEIN; }
+    else if (sig.protein > 0 && sig.protein < 80) { c.LOW_PROTEIN = m <= 4 ? 0.2 : -0.2; s += c.LOW_PROTEIN; }
+    if (sig.restricted) { c.HORARIO_RESTRINGIDO = Math.max(-0.8, (3 - m) * 0.3); s += c.HORARIO_RESTRINGIDO; }
+    if (sig.objective === 'volume') { c.OBJETIVO_VOLUMEN = 0.4 - Math.abs(m - 5) * 0.4; s += c.OBJETIVO_VOLUMEN; }
+    else if (sig.objective === 'cut') { c.OBJETIVO_DEFINICION = 0.4 - Math.abs(m - 4) * 0.4; s += c.OBJETIVO_DEFINICION; }
+    c.COMPLEXITY_PENALTY = -(m - 3) * 0.15; s += c.COMPLEXITY_PENALTY;
+    return { score: s, contribs: c };
+  }
   function _resolveMealsPerDayIntent(intentSlot, fichaData, nutritionCtx) {
     var slot = intentSlot && typeof intentSlot === 'object' ? intentSlot : { mode: 'AUTO', value: null };
     var fd = fichaData && typeof fichaData === 'object' ? fichaData : {};
@@ -12713,7 +12790,7 @@ El esfuerzo no es negociable.
     if (slot.mode === 'EXPLICIT') {
       return { requestedMode: 'EXPLICIT', requestedValue: Number(slot.value), resolvedValue: Number(slot.value), source: 'COACH_EXPLICIT', reasonCodes: ['COACH_OVERRIDE'], confidence: 'HIGH', conflicts: [] };
     }
-    // AUTO — priority 1: num_comidas from ficha
+    // AUTO — priority 1: num_comidas from ficha → CLIENT_PREFERENCE (bypasses scorer)
     var ncRaw = (fd.num_comidas != null) ? fd.num_comidas
               : (fd.nutricion && fd.nutricion.num_comidas != null) ? fd.nutricion.num_comidas
               : null;
@@ -12723,24 +12800,31 @@ El esfuerzo no es negociable.
         return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: Math.max(3, Math.min(6, nc1)), source: 'CLIENT_PREFERENCE', reasonCodes: ['FICHA_NUM_COMIDAS'], confidence: 'HIGH', conflicts: [] };
       }
     }
-    // AUTO — priority 2: calorie target
-    var kcal = Number(nc.calorias || fd.objetivo_calorico || (fd.nutricion && fd.nutricion.objetivo_calorico) || 0);
-    if (kcal > 3000) {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['HIGH_CALORIE_TARGET'], confidence: 'MEDIUM', conflicts: [] };
+    // FASE 75 — Multi-signal deterministic candidate evaluator for meals
+    var _mSig = _extractMPDSignals(fd, nc);
+    var _mHasSig = (_mSig.kcal > 3000 || (_mSig.kcal > 0 && _mSig.kcal <= 1800))
+                || _mSig.protein >= 150 || (_mSig.protein > 0 && _mSig.protein < 80)
+                || _mSig.objective != null || _mSig.restricted;
+    if (!_mHasSig) {
+      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_DATA'], confidence: 'LOW', candidateScores: [], conflicts: [] };
     }
-    if (kcal > 0 && kcal <= 1800) {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 3, source: 'ENGINE_OPTIMIZED', reasonCodes: ['LOW_CALORIE_TARGET'], confidence: 'MEDIUM', conflicts: [] };
+    var _mCands = [];
+    for (var _mi = 2; _mi <= 6; _mi++) {
+      var _mr = _scoreMealsPerDayCandidate(_mi, _mSig);
+      _mCands.push({ meals: _mi, score: Math.round(_mr.score * 1000) / 1000, contribs: _mr.contribs });
     }
-    // AUTO — priority 3: objetivo
-    var obj = String(fd.objetivo_mesociclo || (fd.entrenamiento && fd.entrenamiento.objetivo_mesociclo) || '').toLowerCase();
-    if (obj.indexOf('volumen') >= 0 || obj.indexOf('masa') >= 0 || obj.indexOf('ganar') >= 0 || obj.indexOf('bulk') >= 0) {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 5, source: 'ENGINE_OPTIMIZED', reasonCodes: ['OBJETIVO_VOLUMEN'], confidence: 'MEDIUM', conflicts: [] };
-    }
-    if (obj.indexOf('defin') >= 0 || obj.indexOf('corte') >= 0 || obj.indexOf('cut') >= 0 || obj.indexOf('perder') >= 0) {
-      return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'ENGINE_OPTIMIZED', reasonCodes: ['OBJETIVO_DEFINICION'], confidence: 'MEDIUM', conflicts: [] };
-    }
-    // AUTO — safe default
-    return { requestedMode: 'AUTO', requestedValue: null, resolvedValue: 4, source: 'SAFE_DEFAULT', reasonCodes: ['NO_DATA'], confidence: 'LOW', conflicts: [] };
+    _mCands.sort(function(a, b) { return b.score - a.score || a.meals - b.meals; });
+    var _mWin = _mCands[0]; var _mRU = _mCands[1];
+    var _mMargin = _mRU ? (_mWin.score - _mRU.score) : 2;
+    var _mWC = _mWin.contribs;
+    var _mCodes = Object.keys(_mWC).filter(function(k) { return _mWC[k] > 0 && k !== 'COMPLEXITY_PENALTY'; }).sort(function(a, b) { return _mWC[b] - _mWC[a]; }).slice(0, 3);
+    if (!_mCodes.length) _mCodes = ['NO_DATA'];
+    return {
+      requestedMode: 'AUTO', requestedValue: null, resolvedValue: _mWin.meals, source: 'ENGINE_OPTIMIZED',
+      reasonCodes: _mCodes, confidence: _mMargin >= 0.8 ? 'MEDIUM' : 'LOW',
+      candidateScores: _mCands.map(function(x) { return { meals: x.meals, score: x.score }; }),
+      conflicts: []
+    };
   }
   window._resolveMealsPerDayIntent = _resolveMealsPerDayIntent;
 
