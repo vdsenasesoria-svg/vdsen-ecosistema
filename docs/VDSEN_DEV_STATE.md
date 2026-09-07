@@ -18,7 +18,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 | Item | Valor |
 |------|-------|
-| main HEAD | `pending push` |
+| main HEAD | `0635434` |
 | Rama activa | `main` |
 | FASE 12–15 | MERGED |
 | FASE 16 | MERGED — commit `3e277d1` |
