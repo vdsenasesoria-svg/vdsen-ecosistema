@@ -11457,6 +11457,214 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 17 RIR authority ✓');
 })();
 
+// ── FASE 17 — COMMAND CENTER SIGNALS (TCCX) ──────────────────────────────────
+(function() {
+  console.log('\n── FASE 17 — Command Center Signals (TCCX) ──────────────────────────────');
+
+  // Mirror of _computeCommandCenterSignals with explicit data injection
+  function _computeCCSignals_T(clientData) {
+    var client = clientData.client, logs = clientData.logs, plan = clientData.plan;
+    var entries = (logs && logs.entries) || {};
+    var cw = (logs && logs.currentWeek) || 1;
+    var planWeeks = (plan && plan.weeks) || 6;
+    var dpw = (plan && plan.daysPerWeek) || (plan && plan.days ? plan.days.length : 0) || 0;
+    var scanDays = Math.max(dpw, 7);
+    var pwks = cw > 1 ? [cw, cw-1] : [cw];
+    var signals = [];
+
+    // 1. PAIN_ALERT
+    var painPatterns = [];
+    pwks.forEach(function(w) {
+      for (var di = 0; di < scanDays; di++) {
+        var ps = entries['postsession_'+w+'_'+di];
+        if (ps && ps.articular) painPatterns.push(ps.patron || 'No especificado');
+      }
+    });
+    if (painPatterns.length) {
+      var uniq = painPatterns.filter(function(v,i,a){ return a.indexOf(v)===i; });
+      signals.push({ reasonCode:'PAIN_ALERT', severity:'HIGH', evidence:uniq.slice(0,2).join(', '), lastDate:null, action:'REVISAR' });
+    }
+
+    // 2. INACTIVITY
+    var lastTs = 0;
+    Object.keys(entries).forEach(function(k) {
+      if (k.indexOf('log_') !== 0 || (entries[k] && entries[k].autoFilled)) return;
+      var ts = entries[k] && entries[k].ts;
+      var t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+      if (!isNaN(t) && t > lastTs) lastTs = t;
+    });
+    var daysSince = lastTs ? Math.floor((Date.now()-lastTs)/86400000) : null;
+    if (daysSince !== null && daysSince > 3 && client.activePlanId) {
+      signals.push({ reasonCode:'INACTIVITY', severity: daysSince > 7 ? 'HIGH' : 'MEDIUM', evidence:daysSince+' días sin registrar', lastDate:new Date(lastTs).toLocaleDateString('es-MX',{month:'short',day:'numeric'}), action:'CONTACTAR' });
+    }
+
+    // 3. ADHERENCE_DROP
+    var hasRealLog = Object.keys(entries).some(function(k){ return k.indexOf('log_')===0 && entries[k] && entries[k].done && !entries[k].autoFilled; });
+    if (hasRealLog && client.activePlanId && dpw > 0 && cw > 1) {
+      var doneThisWeek = 0;
+      for (var di=0; di<scanDays; di++) if (entries['done_'+cw+'_'+di]) doneThisWeek++;
+      if (doneThisWeek === 0) {
+        var donePrevWeek = 0;
+        for (var di2=0; di2<scanDays; di2++) if (entries['done_'+(cw-1)+'_'+di2]) donePrevWeek++;
+        signals.push({ reasonCode:'ADHERENCE_DROP', severity: donePrevWeek===0 ? 'HIGH' : 'MEDIUM', evidence:'S'+cw+': 0/'+dpw+' sesiones · S'+(cw-1)+': '+donePrevWeek+'/'+dpw, lastDate:null, action:'CONTACTAR' });
+      }
+    }
+
+    // 4. PROGRAM_ENDING
+    if (plan && planWeeks > 0 && cw >= planWeeks-1) {
+      var doneLastWeek = 0;
+      for (var di3=0; di3<dpw; di3++) if (entries['done_'+planWeeks+'_'+di3]) doneLastWeek++;
+      var completed = dpw > 0 && doneLastWeek >= dpw;
+      if (completed) {
+        signals.push({ reasonCode:'PROGRAM_ENDING', severity:'HIGH', evidence:'Mesociclo '+planWeeks+'sem completado', lastDate:null, action:'PREPARAR_PLAN' });
+      } else if (cw >= planWeeks) {
+        signals.push({ reasonCode:'PROGRAM_ENDING', severity:'MEDIUM', evidence:'S'+cw+'/'+planWeeks+' — última semana', lastDate:null, action:'PREPARAR_PLAN' });
+      } else {
+        signals.push({ reasonCode:'PROGRAM_ENDING', severity:'LOW', evidence:'S'+cw+'/'+planWeeks+' — siguiente semana es la última', lastDate:null, action:'PREPARAR_PLAN' });
+      }
+    }
+
+    // 5. PERFORMANCE_DROP
+    var dropExs = [];
+    pwks.forEach(function(w) {
+      for (var di=0; di<scanDays; di++) {
+        var pr = entries['progrec_'+w+'_'+di];
+        if (pr && pr.recommendations) pr.recommendations.forEach(function(rec) {
+          if (rec && rec.reason === 'PERFORMANCE_REGRESSION') {
+            var ex = rec.exerciseName ? rec.exerciseName.split(' ').slice(0,2).join(' ') : null;
+            if (ex && dropExs.indexOf(ex)<0) dropExs.push(ex);
+          }
+        });
+      }
+    });
+    if (dropExs.length) signals.push({ reasonCode:'PERFORMANCE_DROP', severity:'MEDIUM', evidence:dropExs.slice(0,2).join(', '), lastDate:null, action:'VER_PROGRESION' });
+
+    // 6. PENDING_PROGRESSION
+    var pendExs = [];
+    pwks.forEach(function(w) {
+      for (var di=0; di<scanDays; di++) {
+        var pr = entries['progrec_'+w+'_'+di];
+        if (pr && pr.recommendations) pr.recommendations.forEach(function(rec) {
+          if (rec && rec.action === 'increase_load') {
+            var ex = rec.exerciseName ? rec.exerciseName.split(' ').slice(0,2).join(' ') : null;
+            if (ex && pendExs.indexOf(ex)<0) pendExs.push(ex);
+          }
+        });
+      }
+    });
+    if (pendExs.length) signals.push({ reasonCode:'PENDING_PROGRESSION', severity:'LOW', evidence:pendExs.slice(0,3).join(', '), lastDate:null, action:'VER_PROGRESION' });
+
+    // Deduplicate by reasonCode
+    var seen = {};
+    return signals.filter(function(s){ if(seen[s.reasonCode]) return false; seen[s.reasonCode]=true; return true; });
+  }
+
+  // TCCX1: PAIN_ALERT fires when postsession has articular=true
+  (function TCCX1() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:3, entries:{'postsession_3_0':{articular:true,patron:'Rodilla'}}}, plan:{weeks:6,daysPerWeek:4} });
+    assert('TCCX1a', 'PAIN_ALERT fires on articular', sigs.some(function(s){return s.reasonCode==='PAIN_ALERT';}));
+    var pa = sigs.find(function(s){return s.reasonCode==='PAIN_ALERT';});
+    assert('TCCX1b', 'severity HIGH', pa && pa.severity==='HIGH');
+    assert('TCCX1c', 'evidence includes patron', pa && pa.evidence.indexOf('Rodilla')>=0);
+  })();
+
+  // TCCX2: PAIN_ALERT does NOT fire when articular=false
+  (function TCCX2() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:3, entries:{'postsession_3_0':{articular:false,eimd:1,rpe:7}}}, plan:{weeks:6,daysPerWeek:4} });
+    assert('TCCX2', 'PAIN_ALERT absent when articular=false', !sigs.some(function(s){return s.reasonCode==='PAIN_ALERT';}));
+  })();
+
+  // TCCX3: INACTIVITY fires at 5 days (MEDIUM), HIGH at >7 days
+  (function TCCX3() {
+    var old5 = Date.now()-(5*86400000);
+    var sigs5 = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:2, entries:{'log_1_0_0_s0':{done:true,carga:80,reps:10,ts:old5}}}, plan:{weeks:6,daysPerWeek:4} });
+    assert('TCCX3a', 'INACTIVITY fires at 5d', sigs5.some(function(s){return s.reasonCode==='INACTIVITY';}));
+    var ia5 = sigs5.find(function(s){return s.reasonCode==='INACTIVITY';});
+    assert('TCCX3b', 'MEDIUM at 5d (not >7)', ia5 && ia5.severity==='MEDIUM');
+    var old8 = Date.now()-(8*86400000);
+    var sigs8 = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:2, entries:{'log_1_0_0_s0':{done:true,carga:80,reps:10,ts:old8}}}, plan:{weeks:6,daysPerWeek:4} });
+    var ia8 = sigs8.find(function(s){return s.reasonCode==='INACTIVITY';});
+    assert('TCCX3c', 'HIGH at 8d (>7)', ia8 && ia8.severity==='HIGH');
+  })();
+
+  // TCCX4: INACTIVITY does NOT fire when last log < 3 days ago
+  (function TCCX4() {
+    var recent = Date.now()-(2*86400000);
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:2, entries:{'log_1_0_0_s0':{done:true,carga:80,reps:10,ts:recent}}}, plan:{weeks:6,daysPerWeek:4} });
+    assert('TCCX4', 'INACTIVITY absent when last log < 3 days ago', !sigs.some(function(s){return s.reasonCode==='INACTIVITY';}));
+  })();
+
+  // TCCX5: PROGRAM_ENDING fires on last week (MEDIUM), HIGH when all days done
+  (function TCCX5() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:6, entries:{}}, plan:{weeks:6,daysPerWeek:4,days:[{},{},{},{}]} });
+    assert('TCCX5a', 'PROGRAM_ENDING fires at cw=planWeeks', sigs.some(function(s){return s.reasonCode==='PROGRAM_ENDING';}));
+    var pe = sigs.find(function(s){return s.reasonCode==='PROGRAM_ENDING';});
+    assert('TCCX5b', 'MEDIUM (last week, not all done)', pe && pe.severity==='MEDIUM');
+  })();
+
+  // TCCX6: PROGRAM_ENDING does NOT fire when cw < planWeeks-1
+  (function TCCX6() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:3, entries:{}}, plan:{weeks:6,daysPerWeek:4} });
+    assert('TCCX6', 'PROGRAM_ENDING absent at cw=3 (planWeeks=6)', !sigs.some(function(s){return s.reasonCode==='PROGRAM_ENDING';}));
+  })();
+
+  // TCCX7: PROGRAM_ENDING HIGH when all last-week sessions done
+  (function TCCX7() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:6, entries:{'done_6_0':true,'done_6_1':true,'done_6_2':true,'done_6_3':true}}, plan:{weeks:6,daysPerWeek:4,days:[{},{},{},{}]} });
+    var pe = sigs.find(function(s){return s.reasonCode==='PROGRAM_ENDING';});
+    assert('TCCX7a', 'PROGRAM_ENDING present when all days done', !!pe);
+    assert('TCCX7b', 'HIGH when mesociclo completed', pe && pe.severity==='HIGH');
+    assert('TCCX7c', 'evidence contains "completado"', pe && pe.evidence.indexOf('completado')>=0);
+  })();
+
+  // TCCX8: ADHERENCE_DROP fires: has prior log + plan + no sessions this week + cw>1
+  (function TCCX8() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:3, entries:{'log_1_0_0_s0':{done:true,carga:80,reps:10,ts:Date.now()-864000000},'done_2_0':true,'done_2_1':true}}, plan:{weeks:6,daysPerWeek:4} });
+    assert('TCCX8a', 'ADHERENCE_DROP fires when 0 sessions this week', sigs.some(function(s){return s.reasonCode==='ADHERENCE_DROP';}));
+    var ad = sigs.find(function(s){return s.reasonCode==='ADHERENCE_DROP';});
+    assert('TCCX8b', 'MEDIUM (had sessions last week)', ad && ad.severity==='MEDIUM');
+  })();
+
+  // TCCX9: ADHERENCE_DROP does NOT fire on week 1 (no prior week to compare)
+  (function TCCX9() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:1, entries:{'log_1_0_0_s0':{done:true,carga:80,reps:10,ts:Date.now()}}}, plan:{weeks:6,daysPerWeek:4} });
+    assert('TCCX9', 'ADHERENCE_DROP absent on week 1', !sigs.some(function(s){return s.reasonCode==='ADHERENCE_DROP';}));
+  })();
+
+  // TCCX10: PERFORMANCE_DROP fires on PERFORMANCE_REGRESSION in progrec
+  (function TCCX10() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:3, entries:{'progrec_3_0':{recommendations:[{action:'reduce_load',reason:'PERFORMANCE_REGRESSION',exerciseName:'Press banca'}]}}}, plan:{weeks:6,daysPerWeek:4} });
+    assert('TCCX10a', 'PERFORMANCE_DROP fires on PERFORMANCE_REGRESSION', sigs.some(function(s){return s.reasonCode==='PERFORMANCE_DROP';}));
+    var pd = sigs.find(function(s){return s.reasonCode==='PERFORMANCE_DROP';});
+    assert('TCCX10b', 'evidence includes exercise name', pd && pd.evidence.indexOf('Press banca')>=0);
+    assert('TCCX10c', 'severity MEDIUM', pd && pd.severity==='MEDIUM');
+  })();
+
+  // TCCX11: PENDING_PROGRESSION fires on increase_load in progrec
+  (function TCCX11() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:3, entries:{'progrec_3_0':{recommendations:[{action:'increase_load',newLoad:85,exerciseName:'Sentadilla'}]}}}, plan:{weeks:6,daysPerWeek:4} });
+    assert('TCCX11a', 'PENDING_PROGRESSION fires on increase_load', sigs.some(function(s){return s.reasonCode==='PENDING_PROGRESSION';}));
+    var pp = sigs.find(function(s){return s.reasonCode==='PENDING_PROGRESSION';});
+    assert('TCCX11b', 'severity LOW', pp && pp.severity==='LOW');
+    assert('TCCX11c', 'evidence includes exercise', pp && pp.evidence.indexOf('Sentadilla')>=0);
+  })();
+
+  // TCCX12: No signals when no plan and no logs
+  (function TCCX12() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:null}, logs:{currentWeek:1, entries:{}}, plan:null });
+    assert('TCCX12', 'no signals for client with no plan and no logs', sigs.length === 0);
+  })();
+
+  // TCCX13: Multiple postsession articular entries → single deduplicated PAIN_ALERT
+  (function TCCX13() {
+    var sigs = _computeCCSignals_T({ client:{activePlanId:'p1'}, logs:{currentWeek:3, entries:{'postsession_3_0':{articular:true,patron:'Rodilla'},'postsession_3_1':{articular:true,patron:'Hombro'},'postsession_2_0':{articular:true,patron:'Rodilla'}}}, plan:{weeks:6,daysPerWeek:4} });
+    var painSigs = sigs.filter(function(s){return s.reasonCode==='PAIN_ALERT';});
+    assert('TCCX13', 'PAIN_ALERT deduplicated to 1 signal entry', painSigs.length === 1);
+  })();
+
+  console.log('── FASE 17 Command Center Signals (TCCX) ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

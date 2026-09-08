@@ -1328,6 +1328,114 @@
   }
   window._computeClientAttentionState = _computeClientAttentionState;
 
+  // ── COMMAND CENTER SIGNALS ────────────────────────────────────────────────
+  // Pure: reads window._clientCache[clientId]. 0 new Firestore reads.
+  // Returns: [{reasonCode, severity:'HIGH'|'MEDIUM'|'LOW', evidence, lastDate, action}]
+  function _computeCommandCenterSignals(clientId) {
+    const d = window._clientCache && window._clientCache[clientId];
+    if (!d) return [];
+    const { client, logs, plan } = d;
+    const entries = logs?.entries || {};
+    const cw = logs?.currentWeek || 1;
+    const planWeeks = plan?.weeks || 6;
+    const dpw = plan?.daysPerWeek || (plan?.days || []).length || 0;
+    const scanDays = Math.max(dpw, 7);
+    const pwks = cw > 1 ? [cw, cw - 1] : [cw];
+    const signals = [];
+
+    // 1. PAIN_ALERT: articular reportado en semana actual o anterior
+    const painPatterns = [];
+    pwks.forEach(w => {
+      for (let di = 0; di < scanDays; di++) {
+        const ps = entries[`postsession_${w}_${di}`];
+        if (ps?.articular) painPatterns.push(ps.patron || 'No especificado');
+      }
+    });
+    if (painPatterns.length) {
+      const uniq = [...new Set(painPatterns)];
+      signals.push({ reasonCode:'PAIN_ALERT', severity:'HIGH', evidence:uniq.slice(0,2).join(', '), lastDate:null, action:'REVISAR' });
+    }
+
+    // 2. INACTIVITY: >3 días sin registro real
+    let lastTs = 0;
+    Object.keys(entries).forEach(k => {
+      if (!k.startsWith('log_') || entries[k]?.autoFilled) return;
+      const ts = entries[k]?.ts;
+      const t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+      if (!isNaN(t) && t > lastTs) lastTs = t;
+    });
+    if (!lastTs && logs?.updatedAt) {
+      const t = typeof logs.updatedAt === 'string' ? Date.parse(logs.updatedAt) : Number(logs.updatedAt);
+      if (!isNaN(t)) lastTs = t;
+    }
+    const daysSince = lastTs ? Math.floor((Date.now() - lastTs) / 86400000) : null;
+    if (daysSince !== null && daysSince > 3 && client.activePlanId) {
+      const lastDateStr = new Date(lastTs).toLocaleDateString('es-MX', { month:'short', day:'numeric' });
+      signals.push({ reasonCode:'INACTIVITY', severity: daysSince > 7 ? 'HIGH' : 'MEDIUM', evidence:`${daysSince} días sin registrar`, lastDate:lastDateStr, action:'CONTACTAR' });
+    }
+
+    // 3. ADHERENCE_DROP: 0 sesiones completadas en semana actual (tiene historial y plan)
+    const hasRealLog = Object.keys(entries).some(k => k.startsWith('log_') && entries[k]?.done && !entries[k]?.autoFilled);
+    if (hasRealLog && client.activePlanId && dpw > 0 && cw > 1) {
+      let doneThisWeek = 0;
+      for (let di = 0; di < scanDays; di++) if (entries[`done_${cw}_${di}`]) doneThisWeek++;
+      if (doneThisWeek === 0) {
+        let donePrevWeek = 0;
+        for (let di = 0; di < scanDays; di++) if (entries[`done_${cw-1}_${di}`]) donePrevWeek++;
+        signals.push({ reasonCode:'ADHERENCE_DROP', severity: donePrevWeek === 0 ? 'HIGH' : 'MEDIUM', evidence:`S${cw}: 0/${dpw} sesiones · S${cw-1}: ${donePrevWeek}/${dpw}`, lastDate:null, action:'CONTACTAR' });
+      }
+    }
+
+    // 4. PROGRAM_ENDING: mesociclo terminado o penúltima semana
+    if (plan && planWeeks > 0 && cw >= planWeeks - 1) {
+      let doneLastWeek = 0;
+      for (let di = 0; di < dpw; di++) if (entries[`done_${planWeeks}_${di}`]) doneLastWeek++;
+      const completed = dpw > 0 && doneLastWeek >= dpw;
+      if (completed) {
+        signals.push({ reasonCode:'PROGRAM_ENDING', severity:'HIGH', evidence:`Mesociclo ${planWeeks}sem completado`, lastDate:null, action:'PREPARAR_PLAN' });
+      } else if (cw >= planWeeks) {
+        signals.push({ reasonCode:'PROGRAM_ENDING', severity:'MEDIUM', evidence:`S${cw}/${planWeeks} — última semana`, lastDate:null, action:'PREPARAR_PLAN' });
+      } else {
+        signals.push({ reasonCode:'PROGRAM_ENDING', severity:'LOW', evidence:`S${cw}/${planWeeks} — siguiente semana es la última`, lastDate:null, action:'PREPARAR_PLAN' });
+      }
+    }
+
+    // 5. PERFORMANCE_DROP: PERFORMANCE_REGRESSION en progrec recientes
+    const dropExs = [];
+    pwks.forEach(w => {
+      for (let di = 0; di < scanDays; di++) {
+        const pr = entries[`progrec_${w}_${di}`];
+        if (pr) (pr.recommendations || []).forEach(rec => {
+          if (rec?.reason === 'PERFORMANCE_REGRESSION') {
+            const ex = rec.exerciseName ? rec.exerciseName.split(' ').slice(0,2).join(' ') : null;
+            if (ex && !dropExs.includes(ex)) dropExs.push(ex);
+          }
+        });
+      }
+    });
+    if (dropExs.length) signals.push({ reasonCode:'PERFORMANCE_DROP', severity:'MEDIUM', evidence:dropExs.slice(0,2).join(', '), lastDate:null, action:'VER_PROGRESION' });
+
+    // 6. PENDING_PROGRESSION: increase_load pendiente en progrec
+    const pendExs = [];
+    pwks.forEach(w => {
+      for (let di = 0; di < scanDays; di++) {
+        const pr = entries[`progrec_${w}_${di}`];
+        if (pr) (pr.recommendations || []).forEach(rec => {
+          if (rec?.action === 'increase_load') {
+            const ex = rec.exerciseName ? rec.exerciseName.split(' ').slice(0,2).join(' ') : null;
+            if (ex && !pendExs.includes(ex)) pendExs.push(ex);
+          }
+        });
+      }
+    });
+    if (pendExs.length) signals.push({ reasonCode:'PENDING_PROGRESSION', severity:'LOW', evidence:pendExs.slice(0,3).join(', '), lastDate:null, action:'VER_PROGRESION' });
+
+    // Deduplicate by reasonCode (keep first)
+    const seen = new Set();
+    return signals.filter(s => { if (seen.has(s.reasonCode)) return false; seen.add(s.reasonCode); return true; });
+  }
+  window._computeCommandCenterSignals = _computeCommandCenterSignals;
+
   // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
   function _getLiveInfo(entries, planData) {
     if (!entries) return null;
@@ -1916,7 +2024,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           if (alert) alerts.push({ id: c.id, name: c.displayName, alert });
           const liveInfo = _getLiveInfo(entries, planData);
           const live = !!liveInfo;
-          return { c, logData, planData, entries, week, attn, alert, live, liveInfo };
+          const signals = _computeCommandCenterSignals(c.id);
+          return { c, logData, planData, entries, week, attn, alert, live, liveInfo, signals };
         });
 
         // Sort: REVIEW > PROGRESSING > STABLE > NO_DATA; live bumps within tier; alpha tiebreak
@@ -1927,94 +2036,138 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           return (a.c.displayName || a.c.email || '').localeCompare(b.c.displayName || b.c.email || '', 'es', { sensitivity: 'base' });
         });
 
-        // Summary header counts
-        const attnC = { REVIEW: 0, PROGRESSING: 0, STABLE: 0, NO_DATA: 0 };
-        rowData.forEach(r => { attnC[r.attn.state] = (attnC[r.attn.state] || 0) + 1; });
-        const summaryHtml = `<div class="card p-3 mb-3" style="border:1px solid rgba(255,255,255,.07)">
-          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
-            ${attnC.REVIEW      ? `<span style="color:#FF4444;font-weight:800;font-size:13px">🔴 ${attnC.REVIEW} revisar</span>` : ''}
-            ${attnC.PROGRESSING ? `<span style="color:#44BB88;font-weight:800;font-size:13px">🟢 ${attnC.PROGRESSING} progresando</span>` : ''}
-            ${attnC.STABLE      ? `<span style="color:#888;font-weight:700;font-size:13px">⚪ ${attnC.STABLE} estable${attnC.STABLE>1?'s':''}</span>` : ''}
-            ${attnC.NO_DATA     ? `<span style="color:#555;font-weight:700;font-size:13px">◌ ${attnC.NO_DATA} sin datos</span>` : ''}
-          </div>
-        </div>`;
-
-        // Build row HTML
-        const rows = rowData.map(({ c, logData, planData, entries, week, attn, alert, live, liveInfo }) => {
-          const totalWeeks = planData?.weeks || 6;
-          const ci = entries['ci_sem_'+week] || {};
-          let extraBadges = '';
-          if (ci.who5 && parseInt(ci.who5) < 52) extraBadges += '<span class="text-xs ml-1" style="color:#FF4444">WHO5↓</span>';
-          const ciDone = !!(ci.peso || ci.hrv || ci.who5 || ci.energia || ci.sueno);
-          let doneCount = 0;
-          Object.keys(entries).forEach(k => { if (k.startsWith('done_'+week+'_') && entries[k]) doneCount++; });
-          const ciStatusBadge = `<span class="text-[10px] ml-2" style="color:${ciDone?'#44BB88':'#555'}">${ciDone?'CI ✓':'CI ✕'}</span>`;
-          const sessBadge = doneCount > 0 ? `<span class="text-[10px] ml-1" style="color:#888">${doneCount}ses</span>` : '';
-          const statusIcon = c.activePlanId
-            ? (planData ? "✅" : '<span title="activePlanId referencia un plan eliminado" style="cursor:help">🔴</span>')
-            : "⚠️";
-          // live / liveInfo already computed in rowData; build rich badge
-          let liveBadge = '';
+        // ── COMMAND CENTER render ─────────────────────────────────────────────
+        const _CC_META = {
+          PAIN_ALERT:          { label:'DOLOR',       color:'#FF4444', actionLabel:'Revisar →' },
+          ADHERENCE_DROP:      { label:'ADHERENCIA',  color:'#FF8844', actionLabel:'Contactar →' },
+          INACTIVITY:          { label:'INACTIVIDAD', color:'#FF8844', actionLabel:'Contactar →' },
+          PROGRAM_ENDING:      { label:'FIN MESO',    color:'#44BB88', actionLabel:'Preparar plan →' },
+          PERFORMANCE_DROP:    { label:'RENDIMIENTO', color:'#FFCC44', actionLabel:'Ver progresión →' },
+          PENDING_PROGRESSION: { label:'PROGRESIÓN',  color:'#7788cc', actionLabel:'Ver progresión →' },
+        };
+        const _SEV_ORD = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+        // Split into attention (has signals) vs stable
+        const _ccAttention = [], _ccStable = [];
+        rowData.forEach(row => {
+          if (row.signals && row.signals.length > 0) _ccAttention.push(row);
+          else _ccStable.push(row);
+        });
+        // Sort attention: HIGH first, then MEDIUM, then alpha
+        _ccAttention.sort((a, b) => {
+          const sa = _SEV_ORD[a.signals[0]?.severity] ?? 2;
+          const sb = _SEV_ORD[b.signals[0]?.severity] ?? 2;
+          if (sa !== sb) return sa - sb;
+          return (a.c.displayName||a.c.email||'').localeCompare(b.c.displayName||b.c.email||'','es',{sensitivity:'base'});
+        });
+        _ccStable.sort((a, b) =>
+          (a.c.displayName||a.c.email||'').localeCompare(b.c.displayName||b.c.email||'','es',{sensitivity:'base'})
+        );
+        // Signal type counts → filter pills
+        const _ccTypeCounts = {};
+        _ccAttention.forEach(r => r.signals.forEach(s => { _ccTypeCounts[s.reasonCode] = (_ccTypeCounts[s.reasonCode]||0)+1; }));
+        const _ccFilterPills = Object.keys(_ccTypeCounts).map(code => {
+          const m = _CC_META[code]||{label:code,color:'#888'};
+          return `<button class="_cc-filter" data-code="${code}" data-active="0" onclick="window._ccToggleFilter(this,'${code}')" style="padding:3px 10px;border-radius:12px;border:1px solid ${m.color}55;background:${m.color}11;color:${m.color};font-size:11px;font-weight:700;cursor:pointer;transition:box-shadow .15s">${_escH(m.label)} ${_ccTypeCounts[code]}</button>`;
+        }).join(' ');
+        // Attention cards
+        const _ccAttRows = _ccAttention.map(({ c, planData, entries, week, live, liveInfo, signals }) => {
+          const totalWeeks = planData?.weeks||6;
+          const isDeload = week === totalWeeks;
+          const wkColor = isDeload ? '#7ec0ff' : '#C4FF00';
+          const wkBg = isDeload ? 'rgba(126,192,255,.08)' : 'rgba(196,255,0,.08)';
+          const wkBorder = isDeload ? 'rgba(126,192,255,.35)' : 'rgba(196,255,0,.35)';
+          const weekLabel = isDeload ? `S${week} DELOAD` : `S${week}/${totalWeeks}`;
+          const sig = signals[0];
+          const m = _CC_META[sig.reasonCode]||{label:sig.reasonCode,color:'#888',actionLabel:'Ver →'};
+          const sevColor = sig.severity==='HIGH' ? '#FF4444' : sig.severity==='MEDIUM' ? '#FF8844' : '#FFCC44';
+          const otherBadges = signals.slice(1).map(s => {
+            const mm = _CC_META[s.reasonCode]||{label:s.reasonCode,color:'#888'};
+            return `<span style="font-size:9px;padding:1px 5px;border-radius:8px;border:1px solid ${mm.color}55;color:${mm.color};font-weight:700">${_escH(mm.label)}</span>`;
+          }).join(' ');
+          let liveTag = '';
           if (live && liveInfo) {
             const _ld = liveInfo.exerciseName ? ` · <span style="opacity:.8">${_escH(liveInfo.exerciseName)}</span>` : '';
-            const _ls = liveInfo.totalSets > 0 ? ` <span style="font-size:9px;color:#888">${liveInfo.completedSets}/${liveInfo.totalSets}s</span>` : '';
-            liveBadge = `<span id="lv_${c.id}" style="display:inline-flex;align-items:center;gap:2px;font-size:10px;font-weight:800;background:rgba(68,187,136,.18);border:1px solid #44BB88;color:#44BB88;animation:pulseLive 1.6s ease-in-out infinite;padding:2px 7px;border-radius:4px;margin-left:6px">● EN VIVO${_ld}${_ls}</span>`;
+            liveTag = `<span id="lv_${c.id}" style="font-size:9px;font-weight:800;color:#44BB88;border:1px solid #44BB88;padding:1px 5px;border-radius:4px;margin-left:4px;animation:pulseLive 1.6s infinite">● VIVO${_ld}</span>`;
           } else {
-            liveBadge = `<span id="lv_${c.id}" style="display:inline"></span>`;
+            liveTag = `<span id="lv_${c.id}"></span>`;
           }
-          const isDeload = week === totalWeeks;
-          const weekColor = isDeload ? '#7ec0ff' : '#C4FF00';
-          const weekBorder = isDeload ? 'rgba(126,192,255,.35)' : 'rgba(196,255,0,.35)';
-          const weekBg = isDeload ? 'rgba(126,192,255,.08)' : 'rgba(196,255,0,.08)';
-          const weekLabel = isDeload ? `S${week} DELOAD` : `S${week}/${totalWeeks}`;
-          const weekBadge = c.activePlanId
-            ? `<span style="font-size:11px;font-weight:800;color:${weekColor};background:${weekBg};border:1px solid ${weekBorder};padding:2px 8px;border-radius:6px;letter-spacing:.5px;margin-left:8px">${weekLabel}</span>`
+          const waBtn = (sig.reasonCode==='INACTIVITY'||sig.reasonCode==='ADHERENCE_DROP')
+            ? `<button onclick="(function(){var d=window._clientCache['${c.id}'];openWhatsAppFor(d.client,getClientAlert(d.client,d.logs,d.plan));})()" style="padding:4px 10px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.12);color:#25D366;font-size:11px;font-weight:700;cursor:pointer">📲 WA</button>`
             : '';
-          // Attention badge
-          const ab = _ATTN_BADGE[attn.state] || _ATTN_BADGE.NO_DATA;
-          const attnBadge = `<span style="font-size:10px;font-weight:800;color:${ab.color};background:${ab.color}18;border:1px solid ${ab.color}55;padding:2px 7px;border-radius:5px;margin-left:6px;letter-spacing:.5px">${ab.icon} ${ab.label}</span>`;
-          // Reasons (max 3, compact inline)
-          const reasonsHtml = attn.reasons.length
-            ? `<div style="font-size:10px;color:#aaa;margin-top:3px;line-height:1.6">${attn.reasons.map(r => (r.ex ? `<span style="color:#ccc;font-weight:600">${_escH(r.ex)}</span>: ` : '') + _escH(r.label)).join(' · ')}</div>`
-            : '';
-          let alertChip = '';
-          let waBtn = '';
-          if (alert) {
-            alertChip = `<span class="text-[10px] ml-2 px-2 py-0.5 rounded" style="background:${alert.color}22;border:1px solid ${alert.color};color:${alert.color};font-weight:700">${alert.label}</span>`;
-            waBtn = `<button onclick="(function(){var d=window._clientCache['${c.id}'];openWhatsAppFor(d.client, getClientAlert(d.client,d.logs,d.plan));})()" title="Enviar recordatorio por WhatsApp" class="ml-2" style="padding:4px 10px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.15);color:#25D366;font-size:11px;font-weight:700;cursor:pointer">📲 WhatsApp</button>`;
-          }
-          const search = _escH((c.displayName + ' ' + c.email).toLowerCase());
-          return `<div class="card p-3 mb-2 _client-row" data-search="${search}" style="border-left:3px solid ${ab.color}55">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
-              <div>
-                <span><strong>${_escH(c.displayName)}</strong>${weekBadge} <span class="text-[#888] text-xs">(${_escH(c.email)})</span> ${statusIcon}${extraBadges}${ciStatusBadge}${sessBadge}${liveBadge}${attnBadge}${alertChip}</span>
-                ${reasonsHtml}
+          const srch = _escH((c.displayName+' '+c.email).toLowerCase());
+          return `<div class="card mb-2 _client-row _cc-att-row" data-search="${srch}" data-codes="${_escH(signals.map(s=>s.reasonCode).join(','))}" style="border-left:4px solid ${sevColor};padding:10px 12px">
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+                  <strong style="font-size:13px;color:#F4F4F0">${_escH(c.displayName||c.email)}</strong>
+                  ${c.activePlanId ? `<span style="font-size:10px;font-weight:800;color:${wkColor};background:${wkBg};border:1px solid ${wkBorder};padding:1px 6px;border-radius:5px">${weekLabel}</span>` : ''}
+                  <span style="font-size:9px;font-weight:800;color:${m.color};background:${m.color}11;border:1px solid ${m.color}44;padding:1px 7px;border-radius:8px;letter-spacing:.5px">${_escH(m.label)}</span>
+                  ${otherBadges}${liveTag}
+                </div>
+                <div style="font-size:11px;color:#aaa;margin-bottom:2px">${_escH(sig.evidence)}${sig.lastDate ? ` <span style="color:#666">· ${_escH(sig.lastDate)}</span>` : ''}</div>
+                <div style="font-size:10px;color:#555">${_escH(c.email)}</div>
               </div>
-              <span class="flex items-center gap-1 flex-wrap">${waBtn}<button class="text-[#F4F4F0] text-sm font-medium px-2" onclick="showClientDetail('${c.id}')">Ver →</button><button onclick="showMergeModal('${c.id}')" title="Fusionar con cliente duplicado" style="padding:3px 8px;border-radius:6px;border:1px solid #7788cc;background:rgba(119,136,204,.1);color:#7788cc;font-size:13px;cursor:pointer">⇌</button></span>
+              <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;align-items:flex-end">
+                ${waBtn}
+                <button onclick="showClientDetail('${c.id}')" style="padding:5px 12px;border-radius:6px;border:1px solid ${m.color}66;background:${m.color}18;color:${m.color};font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">${_escH(m.actionLabel)}</button>
+                <button onclick="showMergeModal('${c.id}')" title="Fusionar con cliente duplicado" style="padding:2px 7px;border-radius:5px;border:1px solid #7788cc;background:rgba(119,136,204,.1);color:#7788cc;font-size:11px;cursor:pointer">⇌</button>
+              </div>
             </div>
           </div>`;
         }).join('');
-
-        // Legacy banner (inactivos / mesoEnd → WhatsApp masivo)
-        let banner = '';
-        if (alerts.length) {
-          const inactiveAlerts = alerts.filter(a => a.alert.type === 'inactive');
-          const bulkWABtn = inactiveAlerts.length > 1
-            ? `<button onclick="_sendBulkWhatsApp(${JSON.stringify(inactiveAlerts.map(a=>a.id))})" style="margin-top:8px;padding:6px 14px;border-radius:6px;border:1px solid #25D366;background:rgba(37,211,102,.18);color:#25D366;font-size:11px;font-weight:700;cursor:pointer;display:block">📲 WhatsApp a todos los inactivos (${inactiveAlerts.length})</button>`
-            : '';
-          banner = `<div class="card p-3 mb-3" style="background:linear-gradient(90deg,rgba(255,136,68,.08),rgba(244,244,240,.04));border:1px solid rgba(255,136,68,.3)">
-            <div class="text-xs text-[#FF8844] mb-2 uppercase tracking-wide font-bold">⚠️ Acción requerida · ${alerts.length} cliente${alerts.length>1?'s':''}</div>
-            <div class="flex flex-wrap gap-2">
-              ${alerts.map(a => `<button onclick="showClientDetail('${a.id}')" style="padding:5px 10px;border-radius:6px;border:1px solid ${a.alert.color};background:${a.alert.color}1A;color:${a.alert.color};font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px">${_escH(a.name)} <span style="opacity:.7">· ${a.alert.label.replace(/^.*? /,'')}</span></button>`).join('')}
-            </div>
-            ${bulkWABtn}
+        // Stable compact rows
+        const _ccStableRows = _ccStable.map(({ c, planData, entries, week, live, liveInfo }) => {
+          const totalWeeks = planData?.weeks||6;
+          const isDeload = week === totalWeeks;
+          const weekLabel = c.activePlanId ? (isDeload ? `S${week} DELOAD` : `S${week}/${totalWeeks}`) : 'Sin plan';
+          const dpwS = planData?.daysPerWeek||(planData?.days||[]).length||0;
+          let doneCount = 0;
+          Object.keys(entries).forEach(k => { if(k.startsWith('done_'+week+'_')&&entries[k]) doneCount++; });
+          const sesInfo = doneCount > 0 ? ` · ${doneCount}/${dpwS} ses` : '';
+          let liveMini = '';
+          if (live && liveInfo) {
+            liveMini = `<span id="lv_${c.id}" style="font-size:9px;color:#44BB88;margin-left:4px;font-weight:700;animation:pulseLive 1.6s infinite">● VIVO</span>`;
+          } else {
+            liveMini = `<span id="lv_${c.id}"></span>`;
+          }
+          const srch = _escH((c.displayName+' '+c.email).toLowerCase());
+          return `<div class="_client-row" data-search="${srch}" style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);margin-bottom:4px">
+            <div><span style="font-size:12px;color:#ccc;font-weight:600">${_escH(c.displayName||c.email)}</span><span style="font-size:10px;color:#555;margin-left:6px">${_escH(weekLabel)}${_escH(sesInfo)}</span>${liveMini}</div>
+            <span style="display:flex;gap:5px;align-items:center">
+              <button onclick="showMergeModal('${c.id}')" title="Fusionar" style="font-size:11px;color:#7788cc;padding:2px 7px;border-radius:4px;border:1px solid #7788cc;background:rgba(119,136,204,.1);cursor:pointer">⇌</button>
+              <button onclick="showClientDetail('${c.id}')" style="font-size:11px;color:#888;padding:2px 8px;border-radius:4px;border:1px solid #333;background:none;cursor:pointer">Ver →</button>
+            </span>
           </div>`;
-        }
+        }).join('');
+        // Inject Command Center HTML
         container.innerHTML += `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
-          ${summaryHtml}
-          ${banner}
-          <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'':'none';});})(this.value)">
-          ${rows}`;
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              ${_ccFilterPills ? `<span style="font-size:10px;font-weight:800;color:#555;letter-spacing:1px;text-transform:uppercase">Filtrar:</span> ${_ccFilterPills} <button id="_ccClearBtn" onclick="window._ccClearFilters()" style="display:none;padding:3px 10px;border-radius:12px;border:1px solid #444;background:none;color:#777;font-size:11px;cursor:pointer">✕</button>` : ''}
+            </div>
+            <input id="clientSearchInput" class="input-field" style="max-width:200px;margin:0;padding:5px 10px" placeholder="🔍 Buscar…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'':'none';});})(this.value)">
+          </div>
+          ${_ccAttention.length > 0 ? `<div style="font-size:11px;font-weight:800;color:#FF8844;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">⚠ REQUIEREN ATENCIÓN · ${_ccAttention.length} cliente${_ccAttention.length>1?'s':''}</div>${_ccAttRows}` : ''}
+          ${_ccStable.length > 0 ? `<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-top:${_ccAttention.length>0?'14px':'0'};margin-bottom:6px">✓ ESTABLES · ${_ccStable.length}</div>${_ccStableRows}` : ''}
+          ${rowData.length === 0 ? '<p class="text-[#555] text-sm">No hay clientes.</p>' : ''}`;
+        window._ccToggleFilter = function(btn, code) {
+          const isActive = btn.getAttribute('data-active') === '1';
+          btn.setAttribute('data-active', isActive ? '0' : '1');
+          btn.style.boxShadow = isActive ? 'none' : ('0 0 0 2px ' + (btn.style.color || '#888'));
+          const activeCodes = [...document.querySelectorAll('._cc-filter[data-active="1"]')].map(b => b.getAttribute('data-code'));
+          const clearBtn = document.getElementById('_ccClearBtn');
+          if (clearBtn) clearBtn.style.display = activeCodes.length ? '' : 'none';
+          document.querySelectorAll('._cc-att-row').forEach(row => {
+            if (!activeCodes.length) { row.style.display = ''; return; }
+            const codes = (row.getAttribute('data-codes')||'').split(',');
+            row.style.display = activeCodes.some(c => codes.includes(c)) ? '' : 'none';
+          });
+        };
+        window._ccClearFilters = function() {
+          document.querySelectorAll('._cc-filter').forEach(b => { b.setAttribute('data-active','0'); b.style.boxShadow='none'; });
+          const cb = document.getElementById('_ccClearBtn'); if(cb) cb.style.display='none';
+          document.querySelectorAll('._cc-att-row').forEach(r => { r.style.display=''; });
+        };
         // Render dashboard with already-loaded data — avoids a second Firestore read cycle
         const _dashLogsMap = {}, _dashPlanMap = {};
         _clientDocs.forEach(c => {

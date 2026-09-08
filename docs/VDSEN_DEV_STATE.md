@@ -58,7 +58,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1700 ✓ 0 ✗** · HEAD post-FASE17
+> Suite: **1725 ✓ 0 ✗** · HEAD post-FASE17 (Coach Command Center)
 
 ### Arquitectura conceptual
 
@@ -649,9 +649,32 @@ Wired en `validatePlan` como error bloqueante. Exportado: `window._auditNutritio
 
 **Tests:** TRIRA1-TRIRA7 (13 aserciones) en `tests/progression-engine.test.js`
 
-**Suite: 1700 ✓ 0 ✗** (post-FASE17)
+---
 
-**Siguiente fase:** Prescription Intent — preservar intención de prescripción (slot funcional vs ejercicio concreto)
+### FASE 17 (producto) — Coach Command Center (rama `claude/client-app-improvements-qayy4n`)
+
+**Objetivo:** Vista management-by-exception que reemplaza la lista plana de clientes. Clientes con señales arriba (REQUIEREN ATENCIÓN), estables abajo. Sin acciones automáticas — solo señales deterministas + botón de acción primaria.
+
+**Señales implementadas:**
+
+| reasonCode | Condición | Severidad | Acción primaria |
+|-----------|-----------|-----------|----------------|
+| `PAIN_ALERT` | `postsession.articular=true` en S-actual o S-anterior | HIGH | Revisar → |
+| `INACTIVITY` | >3 días sin log real (>7d = HIGH, 3-7d = MEDIUM) | HIGH/MED | Contactar → (+ WA) |
+| `ADHERENCE_DROP` | 0 sesiones completadas en semana actual con historial previo | HIGH/MED | Contactar → (+ WA) |
+| `PROGRAM_ENDING` | cw ≥ planWeeks-1: completado=HIGH, última sem=MED, penúltima=LOW | HIGH/MED/LOW | Preparar plan → |
+| `PERFORMANCE_DROP` | `PERFORMANCE_REGRESSION` en progrec de S-actual o S-anterior | MEDIUM | Ver progresión → |
+| `PENDING_PROGRESSION` | `increase_load` pendiente en progrec | LOW | Ver progresión → |
+
+**Función principal:** `_computeCommandCenterSignals(clientId)` — lee `window._clientCache[clientId]`, 0 nuevas lecturas Firestore.
+
+**UI:** filter pills por tipo de señal, búsqueda por nombre, sección ESTABLES compacta debajo. WA button solo para INACTIVITY/ADHERENCE_DROP.
+
+**Tests:** TCCX1-TCCX13 (25 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1725 ✓ 0 ✗** (post-FASE17 + Command Center)
+
+**Siguiente fase:** Decision Inbox (F18) o Prescription Intent
 
 ---
 
