@@ -3474,12 +3474,21 @@ function getSemProgresion(week) {
   return 'PROGRESIÓN';
 }
 
-function getAdjustedRIR(baseRIR, week) {
+function _isFreeBarbell(exName) {
+  var n = (exName || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return /sentadilla|press.{0,10}banca|press militar|peso muerto|\brdl\b|rumano|deadlift|\bsquat\b|bench press|\bohp\b/.test(n);
+}
+
+// exName is optional — when supplied, free barbell compounds are floored at RIR 1 in any week
+function getAdjustedRIR(baseRIR, week, exName) {
   var total = getTotalWeeks();
   const base = parseInt(baseRIR) || 2;
-  if (week === total) return base + 2;           // deload
-  if (week >= total - 2) return Math.max(0, base - 1); // peak/intensif
-  return base;
+  var adj;
+  if (week === total) adj = base + 2;           // deload
+  else if (week >= total - 2) adj = Math.max(0, base - 1); // peak/intensif
+  else adj = base;
+  if (exName && _isFreeBarbell(exName)) return Math.max(1, adj);
+  return adj;
 }
 
 function setWeek(w) {
@@ -4089,7 +4098,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (repsTarget === 'SST-PROTOCOL') repsTarget = 'SST';
   if (repsTarget === 'SST-RIV-PROTOCOL') repsTarget = 'SST-RIV';
   if (repsTarget === 999) repsTarget = 'AMRAP';
-  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK);
+  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK, nombre);
   var _seriesLabel = ((ej.technique||'').toLowerCase() === 'cluster') ? 'CLUSTERS' : 'SERIES';
   var unit = getExUnit(di, ei);
   var _planRestSecs = (_firstEffSet && parseInt(_firstEffSet.restSeconds) > 0) ? parseInt(_firstEffSet.restSeconds) : (ej.restSeconds || 90);
@@ -6882,7 +6891,7 @@ function buildBoostcampExercise(ej, di, ei) {
     '</div>';
   }
   var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
-  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK);
+  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK, ej.nombre || ej.exerciseName);
 
   // Obtener recomendación de progresión para el header del ejercicio
   var headerRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
@@ -7010,7 +7019,7 @@ function buildBoostcampExercise(ej, di, ei) {
 
     // Auto-prog suggestion: buscar recomendación del algoritmo de progresión
     var progRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
-    var baseRIRforRef = getAdjustedRIR(parseInt(ej.rir)||2, CURRENT_WEEK);
+    var baseRIRforRef = getAdjustedRIR(parseInt(ej.rir)||2, CURRENT_WEEK, ej.nombre || ej.exerciseName);
     var refBlockHtml = (!completed)
       ? _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK, _isY3TBC ? numSeries : undefined)
       : '';
@@ -7438,7 +7447,7 @@ function _maybeSuggestExtraSet(di, ei, si) {
     var rirVals = sets.map(function(x){ return parseFloat(x.rir_real); }).filter(function(v){ return !isNaN(v); });
     if (!rirVals.length) return;
     var avgRIR  = _avgArr(rirVals);
-    var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK);
+    var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK, exName);
 
     if (!avgICS || avgICS < 8) return;   // técnica no lo suficientemente sólida
     if (avgPump > 2) return;             // pump bajo → no forzar más volumen
@@ -7545,10 +7554,12 @@ function completeSet(key, di, ei, si, unit) {
   }
 
   var _ejMeta = (_EJERCICIOS_DIA || [])[ei] || {};
-  LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now(),
+  var _ejMetaName = _ejMeta.exerciseName || _ejMeta.nombre || '';
+  var _ejMetaBase = parseInt(_ejMeta.rir) || ((_ejMeta.sets && _ejMeta.sets[0]) ? (_ejMeta.sets[0].rirTarget || 2) : 2);
+  LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), rir_real: rirReal, ics, pump, ts: Date.now(),
     prescriptionExerciseId: _ejMeta.prescriptionExerciseId || undefined,
     exerciseId: _ejMeta.exerciseId || undefined,
-    exerciseNameSnapshot: _ejMeta.exerciseName || _ejMeta.nombre || undefined
+    exerciseNameSnapshot: _ejMetaName || undefined
   };
   _lbwTrack(key);
 
@@ -7559,7 +7570,7 @@ function completeSet(key, di, ei, si, unit) {
   // detectar récord personal. Solo cuenta el SET DE TRABAJO (top set): drop sets y series
   // finales con fatiga no pisan el peso real de trabajo (ver _recordExerciseHistoryAndPR).
   if (done) {
-    _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(2, CURRENT_WEEK), unit);
+    _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), unit);
   }
 
   saveLogs();

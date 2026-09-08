@@ -6290,6 +6290,27 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       });
     });
 
+    // Step 2c: RIR floor conflicts — barbell compounds with rirTarget ≤ 1 hit RIR 0 in peak week
+    var _totalW = parseInt(training.weeks) || 6;
+    if (_totalW >= 2) {
+      var _peakW = _totalW - 1;
+      var _freeBarbRe = /sentadilla|press.{0,10}banca|press militar|peso muerto|\brdl\b|rumano|bench press/;
+      training.days.forEach(function(day) {
+        (day.exercises || []).forEach(function(ex) {
+          var n = (ex.exerciseName || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+          if (!_freeBarbRe.test(n)) return;
+          var exRir = (ex.sets && ex.sets[0] && ex.sets[0].rirTarget !== undefined)
+            ? parseInt(ex.sets[0].rirTarget) : 2;
+          if (exRir <= 1) {
+            patFindings.push({ code: 'RIR_FLOOR_CONFLICT', severity: 'WARN',
+              exerciseName: ex.exerciseName,
+              dayLabel: day.label || ('Día ' + day.dayIndex),
+              rirTarget: exRir, peakWeekNum: _peakW });
+          }
+        });
+      });
+    }
+
     // Step 3: per-muscle comparison + findings
     var findings = patFindings.slice();
     var muscleReport = {};
@@ -6369,6 +6390,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
   window._auditPlan = _auditPlan;
 
+  // Mirror of client getAdjustedRIR floor — used for coach-side RIR audit detection
+  function _computeEffectiveRIR(exName, weekRIR) {
+    var n = (exName || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    var isFreeBarbell = /sentadilla|press.{0,10}banca|press militar|peso muerto|\brdl\b|rumano|bench press/.test(n);
+    var rir = Math.max(0, parseInt(weekRIR) || 0);
+    return isFreeBarbell ? Math.max(1, rir) : rir;
+  }
+  window._computeEffectiveRIR = _computeEffectiveRIR;
+
   function _formatAuditPlanHtml(result) {
     if (!result || result.status === 'SKIP' || result.status === 'OK') return '';
     var st  = result.status;
@@ -6386,6 +6416,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       else if (f.code === 'UNRESOLVED_EXERCISES') msg = f.unresolvedCount + '/' + f.totalExercises + ' ej sin identidad canónica: ' + (f.exercises||[]).slice(0,3).join(', ');
       else if (f.code === 'AUDIT_COVERAGE_LOW')  msg = 'Cobertura insuficiente (' + f.unresolvedCount + '/' + f.totalExercises + ' UNRESOLVED)';
       else if (f.code === 'PAT_REDUNDANCY')       msg = f.dayLabel + ': ' + f.count + '× patrón ' + f.pattern + ' (redundancia biomecánica)';
+      else if (f.code === 'RIR_FLOOR_CONFLICT')   msg = f.exerciseName + ' (' + f.dayLabel + '): rirTarget ' + f.rirTarget + ' → RIR 0 en S' + f.peakWeekNum + ' (compuesto libre; floor=1)';
       else                                        msg = f.code + (f.muscle ? ' · ' + f.muscle : '');
       return '<div style="color:' + fcol + ';font-size:10px;margin-top:2px">· ' + _escH(msg) + '</div>';
     }).join('');
@@ -6819,6 +6850,27 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var r = _auditPlan(fakePlan, fakeTgts, []);
       var found = r.findings.some(function(f){ return f.code === 'PAT_REDUNDANCY'; });
       return !found ? true : 'no esperaba PAT_REDUNDANCY pero se encontró: ' + JSON.stringify(r.findings.filter(function(f){return f.code==='PAT_REDUNDANCY';}));
+    });
+
+    // ── RIR floor regression tests (T61–T63) ──────────────────────────────────
+    test('T61 _computeEffectiveRIR: compuesto libre con RIR 0 → efectivo 1', function() {
+      var eff = _computeEffectiveRIR('Sentadilla Trasera Barra', 0);
+      return eff === 1 ? true : 'esperaba 1, obtuvo ' + eff;
+    });
+
+    test('T62 _computeEffectiveRIR: aislamiento con RIR 0 → permanece 0', function() {
+      var eff = _computeEffectiveRIR('Curl de Bíceps en Polea', 0);
+      return eff === 0 ? true : 'esperaba 0, obtuvo ' + eff;
+    });
+
+    test('T63 _auditPlan: detecta RIR_FLOOR_CONFLICT en press banca con rirTarget=1', function() {
+      var fakePlan = { weeks:6, daysPerWeek:1, days: [{ dayIndex:0, label:'Día 1', exercises: [
+        { exerciseName:'Press Banca con Barra', sets:[{setIndex:0,repsTarget:8,rirTarget:1,load:0,restSeconds:120}] }
+      ]}]};
+      var fakeTgts = { pectoral:{ priority:'high', volumeTarget:14, volumeRange:{min:12,max:16}, frequencyTarget:2, source:'test' } };
+      var r = _auditPlan(fakePlan, fakeTgts, []);
+      return r.findings.some(function(f){ return f.code==='RIR_FLOOR_CONFLICT' && f.exerciseName==='Press Banca con Barra'; })
+        ? true : 'esperaba RIR_FLOOR_CONFLICT, findings=' + JSON.stringify(r.findings.map(function(f){return f.code;}));
     });
 
     var passed = results.filter(function(r){return r.passed;}).length;
