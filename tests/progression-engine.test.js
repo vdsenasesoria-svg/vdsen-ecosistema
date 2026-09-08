@@ -11350,6 +11350,113 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 16 topology contract ✓');
 })();
 
+// ═══════════════════════════════════════════════════════════
+// FASE 17 — RIR Authority Contract
+// set.rirTarget es la base; getAdjustedRIR es modificador contextual;
+// rirByWeek es fallback solo para planes legacy sin rirTarget por set.
+// ═══════════════════════════════════════════════════════════
+(function() {
+  // Inline helpers (mirrors vdsen-cliente.html _resolveEffectiveRIR + getAdjustedRIR,
+  // and vdsen-coach.html _rirWeekLabel — kept local so test file has no HTML dependency)
+  var _getAdjustedRIR_T = function(baseRIR, week, totalWeeks) {
+    var base = parseInt(baseRIR) || 2;
+    if (week === totalWeeks) return base + 2;
+    if (week >= totalWeeks - 2) return Math.max(0, base - 1);
+    return base;
+  };
+  var _resolveEffectiveRIR_T = function(setSpec, week, totalWeeks) {
+    var baseRir = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null)
+      ? parseInt(setSpec.rirTarget) : 2;
+    return _getAdjustedRIR_T(isNaN(baseRir) ? 2 : baseRir, week, totalWeeks);
+  };
+  var _rirWeekLabel_T = function(plan) {
+    if (!plan) return '';
+    var setRirs = [];
+    (plan.days || []).forEach(function(day) {
+      (day.exercises || []).forEach(function(ex) {
+        (ex.sets || []).forEach(function(s) {
+          var v = parseInt(s.rirTarget);
+          if (!isNaN(v)) setRirs.push(v);
+        });
+      });
+    });
+    if (setRirs.length > 0) {
+      var mn = Math.min.apply(null, setRirs);
+      var mx = Math.max.apply(null, setRirs);
+      return mn === mx ? ('RIR ' + mn + ' (por set)') : ('RIR ' + mn + '–' + mx + ' (por ejercicio)');
+    }
+    if (plan.rirByWeek) {
+      return 'Esquema: ' + Object.keys(plan.rirByWeek).sort(function(a,b){ return +a-+b; }).map(function(w){ return 'S'+w+'='+plan.rirByWeek[w]; }).join(' · ');
+    }
+    return '';
+  };
+
+  // TRIRA1: compuesto con rirTarget=2 en semana 5 (peak, W=6) → efectivo 1, NO 0
+  (function() {
+    var eff = _resolveEffectiveRIR_T({ rirTarget: 2 }, 5, 6);
+    assert('TRIRA1', 'compound rirTarget=2 peak week5/W6 → effective RIR 1 (not 0 from global scheme)', eff === 1);
+  })();
+
+  // TRIRA2: aislamiento con rirTarget=1 en semana 5 (peak, W=6) → RIR0 permitido
+  (function() {
+    var eff = _resolveEffectiveRIR_T({ rirTarget: 1 }, 5, 6);
+    assert('TRIRA2', 'isolation rirTarget=1 peak week5/W6 → RIR0 allowed', eff === 0);
+  })();
+
+  // TRIRA3: plan mixto (varios rirTarget) → UI refleja rango, sin afirmar RIR único engañoso
+  (function() {
+    var plan = { days: [
+      { exercises: [{ sets: [{ rirTarget: 2 }, { rirTarget: 2 }] }] },
+      { exercises: [{ sets: [{ rirTarget: 1 }] }, { sets: [{ rirTarget: 0 }] }] }
+    ]};
+    var lbl = _rirWeekLabel_T(plan);
+    assert('TRIRA3a', 'mixed rirTarget plan → label shows range "RIR 0–2 (por ejercicio)"', lbl === 'RIR 0–2 (por ejercicio)');
+    assert('TRIRA3b', 'mixed rirTarget plan → label does NOT contain "S5=0"', lbl.indexOf('S5=0') === -1);
+  })();
+
+  // TRIRA4: rir_error = rir_real - effectiveTargetRIR (signed, 1 decimal)
+  (function() {
+    var effectiveRIR = _resolveEffectiveRIR_T({ rirTarget: 2 }, 5, 6); // → 1 (peak week)
+    var rirReal = 0.5; // client went harder than prescribed
+    var rirError = parseFloat((rirReal - effectiveRIR).toFixed(1));
+    assert('TRIRA4a', 'rir_error negative when client goes harder than prescribed', rirError === -0.5);
+    var rirRealEasy = 2.0; // client went easier
+    var rirErrorEasy = parseFloat((rirRealEasy - effectiveRIR).toFixed(1));
+    assert('TRIRA4b', 'rir_error positive when client goes easier than prescribed', rirErrorEasy === 1.0);
+    assert('TRIRA4c', 'rir_error zero when client hits target exactly', parseFloat((1.0 - effectiveRIR).toFixed(1)) === 0.0);
+  })();
+
+  // TRIRA5: planes legacy (solo rirByWeek, sin rirTarget por set) → fallback explícito sin errores
+  (function() {
+    // 5a: _resolveEffectiveRIR_T con setSpec=null → usa base 2 (fallback)
+    var effLegacy = _resolveEffectiveRIR_T(null, 3, 6);
+    assert('TRIRA5a', 'legacy plan (null setSpec) → effectiveRIR fallback to 2 in mid-week', effLegacy === 2);
+    // 5b: setSpec sin rirTarget → mismo fallback
+    var effNoRir = _resolveEffectiveRIR_T({ repsTarget: 8, load: 60 }, 3, 6);
+    assert('TRIRA5b', 'legacy set without rirTarget → effectiveRIR fallback to 2', effNoRir === 2);
+    // 5c: _rirWeekLabel_T con plan sin rirTarget por set → usa rirByWeek del esquema
+    var legacyPlan = { days: [{ exercises: [{ sets: [{ repsTarget: 8 }] }] }], rirByWeek: { 1:3, 2:2, 3:2, 4:1, 5:0, 6:3 } };
+    var lblLegacy = _rirWeekLabel_T(legacyPlan);
+    assert('TRIRA5c', 'legacy plan with only rirByWeek → label starts with "Esquema:"', lblLegacy.indexOf('Esquema:') === 0);
+    assert('TRIRA5d', 'legacy plan rirByWeek → label includes S5=0', lblLegacy.indexOf('S5=0') > -1);
+  })();
+
+  // TRIRA6: plan con rirTarget uniforme → label compacto sin rango
+  (function() {
+    var plan = { days: [{ exercises: [{ sets: [{ rirTarget: 2 }, { rirTarget: 2 }] }] }] };
+    var lbl = _rirWeekLabel_T(plan);
+    assert('TRIRA6', 'uniform rirTarget=2 → label "RIR 2 (por set)"', lbl === 'RIR 2 (por set)');
+  })();
+
+  // TRIRA7: deload week safety (week === totalWeeks → base+2)
+  (function() {
+    var eff = _resolveEffectiveRIR_T({ rirTarget: 1 }, 6, 6); // deload week
+    assert('TRIRA7', 'deload week: rirTarget=1 → effective RIR 3 (base+2)', eff === 3);
+  })();
+
+  console.log('── FASE 17 RIR authority ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

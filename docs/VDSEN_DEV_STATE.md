@@ -58,7 +58,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1687 ✓ 0 ✗** · HEAD post-FASE16
+> Suite: **1700 ✓ 0 ✗** · HEAD post-FASE17
 
 ### Arquitectura conceptual
 
@@ -599,7 +599,59 @@ Wired en `validatePlan` como error bloqueante. Exportado: `window._auditNutritio
 
 **Suite: 1687 ✓ 0 ✗** (post-FASE16)
 
-**Siguiente fase:** RIR Authority — contradicción RIR por ejercicio vs header global de semana
+---
+
+### FASE 17 (rama `claude/client-app-improvements-qayy4n`) — RIR Authority Contract
+
+**Objetivo:** Eliminar la contradicción entre `set.rirTarget` (prescripción específica) y el esquema global `rirByWeek` (header semanal). Definir una sola cadena de autoridad y añadir `rir_error` a los logs.
+
+#### Regla de autoridad (contrato)
+
+> `set.rirTarget` es la base prescrita. `getAdjustedRIR(base, week)` aplica el modificador contextual de semana (peak/deload). `rirByWeek` es fallback **solo** para planes legacy sin `rirTarget` por set.
+
+#### Cambios en `vdsen-cliente.html`
+
+1. **`_resolveEffectiveRIR(setSpec, week)`** — nueva función pura (exportada):
+   - Si `setSpec.rirTarget` existe → `getAdjustedRIR(rirTarget, week)`
+   - Si no → `getAdjustedRIR(2, week)` (fallback)
+
+2. **`completeSet` log save** — dos bugs corregidos:
+   - `rir` field: era `getAdjustedRIR(2, CURRENT_WEEK)` (hardcoded base!) → ahora `_resolveEffectiveRIR(sets[si], CURRENT_WEEK)`
+   - Nuevo campo `rir_error = rir_real - effectiveTargetRIR` (undefined si no hay `rir_real`)
+
+3. **`_recordExerciseHistoryAndPR` fallback**: era `getAdjustedRIR(2, ...)` → ahora `_effectiveRIR`
+
+4. **Superseries `_ssBaseRIR`**: prefiere `rirTarget` del primer miembro vía `_resolveEffectiveRIR`; `rirByWeek` solo como fallback legacy
+
+#### Cambios en `vdsen-coach.html`
+
+5. **`_rirWeekLabel(plan)`** — nueva helper (exportada):
+   - Plan con `sets[].rirTarget` → `"RIR N–M (por ejercicio)"` o `"RIR N (por set)"`
+   - Plan solo `rirByWeek` → `"Esquema: S1=3 · S2=2 · ..."`
+
+6. **Coach UI (panel cliente)**: reemplaza display del esquema global por `_rirWeekLabel(plan)`
+   - Antes: `"S1=3 · S2=2 · S3=2 · S4=1 · S5=0 · S6=3"` (engañoso)
+   - Ahora: `"RIR 0–2 (por ejercicio)"` para Ayrton
+
+#### CONTRACT FASE 17
+
+| Contrato | Implementación |
+|----------|---------------|
+| `set.rirTarget` = base de autoridad | `_resolveEffectiveRIR` |
+| `getAdjustedRIR(base, week)` = modificador contextual | peak: `max(0, base-1)`; deload: `base+2` |
+| Compuesto `rirTarget=2` en peak (W5/6) → RIR 1 (no 0) | `getAdjustedRIR(2, 5)` con W=6 |
+| Aislamiento `rirTarget=1` en peak → RIR 0 (permitido) | `getAdjustedRIR(1, 5)` con W=6 |
+| `rir_error = rir_real - effectiveTargetRIR` | `completeSet` log |
+| `rir_error undefined` si no hay rir_real | guarda implícito (JSON skip) |
+| `rirByWeek` = fallback legacy | solo cuando `setSpec.rirTarget === undefined` |
+| UI coach muestra rango por ejercicio | `_rirWeekLabel(plan)` |
+| 0 lecturas Firestore extra | todo en memoria |
+
+**Tests:** TRIRA1-TRIRA7 (13 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1700 ✓ 0 ✗** (post-FASE17)
+
+**Siguiente fase:** Prescription Intent — preservar intención de prescripción (slot funcional vs ejercicio concreto)
 
 ---
 

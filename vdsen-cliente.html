@@ -6027,6 +6027,13 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     var _iptS2 = 'width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 8px;outline:none;text-align:center';
     var _rirDescsss = ['Fallo','1 rep','2 reps','3 reps','Cómodo'];
     var _ssBaseRIR = (function() {
+      // Prefer per-set rirTarget from first SS member (authority chain, FASE 17)
+      var _ssFirstEj = (_EJERCICIOS_DIA || [])[ssMembers[0]] || {};
+      var _ssFirstSpec = _ssFirstEj.sets && _ssFirstEj.sets[0] ? _ssFirstEj.sets[0] : null;
+      if (_ssFirstSpec && _ssFirstSpec.rirTarget !== undefined) {
+        return getAdjustedRIR(parseInt(_ssFirstSpec.rirTarget) || 2, CURRENT_WEEK);
+      }
+      // Fallback to rirByWeek global scheme (legacy plans without per-set rirTarget)
       var _ssD = {}; var _ssTW = getTotalWeeks();
       for (var _si=1;_si<=_ssTW;_si++){_ssD[_si]=_si===_ssTW?3:_si===_ssTW-1?0:_si>=_ssTW-2?1:_si===1?3:2;}
       var wro=(PLAN&&PLAN.rirByWeek)?PLAN.rirByWeek:_ssD;
@@ -7610,6 +7617,16 @@ function addExtraSetNow(di, ei) {
   showToast('➕ Serie extra agregada — ¡a por ella!');
 }
 
+// RIR Authority (FASE 17): set.rirTarget es la base prescrita; getAdjustedRIR aplica
+// el modificador contextual de semana (peak/deload). rirByWeek es fallback para planes
+// legacy sin rirTarget por set.
+function _resolveEffectiveRIR(setSpec, week) {
+  var baseRir = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null)
+    ? parseInt(setSpec.rirTarget) : 2;
+  return getAdjustedRIR(isNaN(baseRir) ? 2 : baseRir, week);
+}
+window._resolveEffectiveRIR = _resolveEffectiveRIR;
+
 function completeSet(key, di, ei, si, unit) {
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   if (CURRENT_WEEK < REAL_WEEK) { showToast('Semana pasada — modo lectura', true); return; }
@@ -7665,7 +7682,13 @@ function completeSet(key, di, ei, si, unit) {
 
   if (done) _vib(40);
   var _ejMeta = (_EJERCICIOS_DIA || [])[ei] || {};
-  LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(2, CURRENT_WEEK), rir_real: rirReal, ics, pump, ts: Date.now(),
+  var _setSpec = (_ejMeta.sets && si < _ejMeta.sets.length) ? _ejMeta.sets[si] : null;
+  var _effectiveRIR = _resolveEffectiveRIR(_setSpec, CURRENT_WEEK);
+  var _rirRealNum = rirReal !== '' ? parseFloat(rirReal) : NaN;
+  var _rirError = !isNaN(_rirRealNum) ? parseFloat((_rirRealNum - _effectiveRIR).toFixed(1)) : undefined;
+  LOGS[key] = { carga, reps, unit, done, rir: _effectiveRIR, rir_real: rirReal,
+    rir_error: _rirError,
+    ics, pump, ts: Date.now(),
     prescriptionExerciseId: _ejMeta.prescriptionExerciseId || undefined,
     exerciseId: _ejMeta.exerciseId || undefined,
     exerciseNameSnapshot: _ejMeta.exerciseName || _ejMeta.nombre || undefined
@@ -7679,7 +7702,7 @@ function completeSet(key, di, ei, si, unit) {
   // detectar récord personal. Solo cuenta el SET DE TRABAJO (top set): drop sets y series
   // finales con fatiga no pisan el peso real de trabajo (ver _recordExerciseHistoryAndPR).
   if (done) {
-    _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(2, CURRENT_WEEK), unit);
+    _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || _effectiveRIR, unit);
   }
 
   saveLogs();

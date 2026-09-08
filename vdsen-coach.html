@@ -1118,6 +1118,31 @@
   }
   window.rirSchemeForWeeks = rirSchemeForWeeks;
 
+  // RIR Authority (FASE 17): cuando el plan tiene rirTarget por set, muestra rango real
+  // en lugar del esquema global (que puede afirmar S5=0 aunque compuestos tengan RIR 2)
+  function _rirWeekLabel(plan) {
+    if (!plan) return '';
+    var setRirs = [];
+    (plan.days || []).forEach(function(day) {
+      (day.exercises || []).forEach(function(ex) {
+        (ex.sets || []).forEach(function(s) {
+          var v = parseInt(s.rirTarget);
+          if (!isNaN(v)) setRirs.push(v);
+        });
+      });
+    });
+    if (setRirs.length > 0) {
+      var mn = Math.min.apply(null, setRirs);
+      var mx = Math.max.apply(null, setRirs);
+      return mn === mx ? ('RIR ' + mn + ' (por set)') : ('RIR ' + mn + '–' + mx + ' (por ejercicio)');
+    }
+    if (plan.rirByWeek) {
+      return 'Esquema: ' + Object.keys(plan.rirByWeek).sort(function(a,b){ return +a-+b; }).map(function(w){ return 'S'+w+'='+plan.rirByWeek[w]; }).join(' · ');
+    }
+    return '';
+  }
+  window._rirWeekLabel = _rirWeekLabel;
+
   // Backup automático: copia el plan actual a `plans_backup` antes de sobrescribir
   async function backupPlanIfExists(clientId) {
     try {
@@ -17345,7 +17370,7 @@ El esfuerzo no es negociable.
             − 1 semana
           </button>
         </div>
-        <p class="text-sm text-[#888] mb-2">${(p.days||[]).length} días/semana${p.rirByWeek ? ' · RIR scheme: ' + Object.entries(p.rirByWeek).map(([w,r])=>`S${w}=${r}`).join(' · ') : ''}</p>
+        <p class="text-sm text-[#888] mb-2">${(p.days||[]).length} días/semana${_rirWeekLabel(p) ? ' · ' + _escH(_rirWeekLabel(p)) : ''}</p>
         <div class="mb-3">${dayList}</div>${zonaHtml}`;
       planEditorHtml = renderTrainingEditor(p.days || [], c.activePlanId);
       planActionsHtml = `
