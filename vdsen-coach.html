@@ -5103,6 +5103,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _motorPromptCache = _MOTOR_PROMPT_EMBEDDED;
     return _motorPromptCache;
   }
+  function _buildMotorPrompt(isPED) {
+    var full = _MOTOR_PROMPT_EMBEDDED;
+    if (isPED) return full;
+    // For natural clients strip pharmacology sections to reduce content-filter risk.
+    // The full motor is only needed when the client profile is PED.
+    var pharmaMarker = '\n## MÓDULO FARMACOLÓGICO';
+    var idx = full.indexOf(pharmaMarker);
+    return idx > -1 ? full.slice(0, idx) : full;
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  VDSEN DECISION ENGINE v2 — P9 Hardening
@@ -6999,7 +7008,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (_lsExerciseResult.trace.length) console.info('[VDSEN LS] exercise trace:', _lsExerciseResult.trace);
 
       setStatus('<span style="color:var(--text-muted)">Cargando motor VDSEN…</span>');
-      const motor = await _loadMotorPrompt();
+      const motor = _buildMotorPrompt(isPED);
 
       // FASE 66 — Coach Intent: read selects, normalize intent
       const _ciRaw = {
@@ -7050,7 +7059,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         '  • "entrenamiento": objeto con days[], weeks, daysPerWeek (PARTE D)',
         '  • "nutricion": objeto con calorias, proteina, carbos, grasas, comidas[] (PARTE D2)',
         '  • "suplementacion": objeto con tiers[] (PARTE D3)',
-        isPED ? '  • "farmacologia": objeto con protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct (PARTE D4)' : '',
+        isPED ? '  • "farmacologia": objeto del protocolo de soporte (PARTE D4)' : '',
         'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ', "volumeProjection": {...} }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'RESTRICCIONES DE VOLUMEN MÍNIMO — OBLIGATORIAS (el plan se rechaza si no se cumplen):',
@@ -7077,8 +7086,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error((data && (data.error?.message || data.error)) || ('API ' + resp.status));
-      const text = (data.choices && data.choices[0] && data.choices[0].message) ? data.choices[0].message.content : '';
+      // Detect explicit content_filter before inspecting message content
+      const _choice1 = data.choices && data.choices[0];
+      if (_choice1 && _choice1.finish_reason === 'content_filter') {
+        throw new Error('[CONTENT_FILTER] El modelo rechazó la solicitud por política de contenido. Regenera el plan; si el error persiste, revisa el perfil del cliente o contacta soporte.');
+      }
+      const text = (_choice1 && _choice1.message) ? _choice1.message.content : '';
       if (!text) throw new Error('Respuesta vacía del modelo');
+      // Detect soft refusals (model returns text instead of JSON)
+      if (!text.includes('```') && /cannot|can't|unable to|i (won'?t|don'?t|apologize)|sorry|violat|policy|guideline/i.test(text.slice(0, 500))) {
+        throw new Error('[REFUSAL] El modelo rechazó la solicitud. Vista previa:\n' + text.slice(0, 300) + '\n\nSolución: regenera el plan; si persiste, contacta soporte.');
+      }
 
       setStatus('<span style="color:var(--text-muted)">Validando plan…</span>');
       console.log('[VDSEN] raw model response (first 500 chars):', text.slice(0, 500));
@@ -11522,7 +11540,7 @@ El esfuerzo no es negociable.
       if (_lsExerciseResult.trace.length) console.info('[VDSEN LS] exercise trace:', _lsExerciseResult.trace);
 
       setStatus('<span style="color:#888">Cargando motor VDSEN…</span>');
-      const motor = await _loadMotorPrompt();
+      const motor = _buildMotorPrompt(isPED);
 
       // FASE 66 — Coach Intent: read modal selects, normalize intent
       const _ciRaw2 = {
@@ -11573,7 +11591,7 @@ El esfuerzo no es negociable.
         '  • "entrenamiento": objeto con days[], weeks, daysPerWeek (PARTE D)',
         '  • "nutricion": objeto con calorias, proteina, carbos, grasas, comidas[] (PARTE D2)',
         '  • "suplementacion": objeto con tiers[] (PARTE D3)',
-        isPED ? '  • "farmacologia": objeto con protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct (PARTE D4)' : '',
+        isPED ? '  • "farmacologia": objeto del protocolo de soporte (PARTE D4)' : '',
         'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ', "volumeProjection": {...} }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'RESTRICCIONES DE VOLUMEN MÍNIMO — OBLIGATORIAS (el plan se rechaza si no se cumplen):',
@@ -11600,8 +11618,17 @@ El esfuerzo no es negociable.
       });
       const respData = await resp.json();
       if (!resp.ok) throw new Error((respData && (respData.error?.message || respData.error)) || ('API ' + resp.status));
-      const text = (respData.choices && respData.choices[0] && respData.choices[0].message) ? respData.choices[0].message.content : '';
+      // Detect explicit content_filter before inspecting message content
+      const _choice2 = respData.choices && respData.choices[0];
+      if (_choice2 && _choice2.finish_reason === 'content_filter') {
+        throw new Error('[CONTENT_FILTER] El modelo rechazó la solicitud por política de contenido. Regenera el plan; si el error persiste, revisa el perfil del cliente o contacta soporte.');
+      }
+      const text = (_choice2 && _choice2.message) ? _choice2.message.content : '';
       if (!text) throw new Error('Respuesta vacía del modelo');
+      // Detect soft refusals (model returns text instead of JSON)
+      if (!text.includes('```') && /cannot|can't|unable to|i (won'?t|don'?t|apologize)|sorry|violat|policy|guideline/i.test(text.slice(0, 500))) {
+        throw new Error('[REFUSAL] El modelo rechazó la solicitud. Vista previa:\n' + text.slice(0, 300) + '\n\nSolución: regenera el plan; si persiste, contacta soporte.');
+      }
 
       setStatus('<span style="color:#888">Validando plan…</span>');
       console.log('[VDSEN] raw model response (first 500 chars):', text.slice(0, 500));

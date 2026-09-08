@@ -33,6 +33,10 @@ export default async function handler(req, res) {
       text_length:     textLength
     }));
 
+    if (choice && choice.finish_reason === 'content_filter') {
+      return res.status(422).json({ error: '[CONTENT_FILTER] El modelo rechazó la solicitud por política de contenido.' });
+    }
+
     res.status(response.status).json(data);
   } catch (e) {
     res.status(500).json({ error: e.message });
