@@ -2707,7 +2707,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       if (md && parseInt(md[1], 10) === week) {
         var d = parseInt(md[2], 10);
         if (!dayMap[d]) dayMap[d] = { dayIndex: d, exMap: {} };
-        dayMap[d].done = logs[k] === true;
+        var _dv84 = logs[k];
+        dayMap[d].done = _dv84 === true || (typeof _dv84 === 'object' && _dv84 && !_dv84.skipped);
       }
       var mp = k.match(/^postsession_(\d+)_(\d+)$/);
       if (mp && parseInt(mp[1], 10) === week) {
@@ -2795,7 +2796,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     var setsCompleted = 0;
     var setsTotal = 0;
     for (var day = 0; day < totalDays; day++) {
-      if (entries['done_' + week + '_' + day] === true) sessionsCompleted++;
+      var _de84 = entries['done_' + week + '_' + day];
+      if (_de84 === true || (typeof _de84 === 'object' && _de84 && !_de84.skipped)) sessionsCompleted++;
     }
     if (planData && planData.days) {
       planData.days.forEach(function(dayObj) {
@@ -5246,7 +5248,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // Factor 4: check-in quality
     if (checkinSummary && (checkinSummary.avgHRV != null || checkinSummary.avgWHO5 != null)) score += 1;
     // Factor 5: density penalty — many sets in very few sessions = low reliability
-    var doneDays = Object.keys(entries).filter(function(k){ return k.startsWith('done_'); }).length;
+    var doneDays = Object.keys(entries).filter(function(k) {
+      if (!k.startsWith('done_')) return false;
+      var v = entries[k]; if (!v) return false;
+      if (v === true) return true;
+      return typeof v === 'object' && !v.skipped;
+    }).length;
     if (doneDays > 0 && loggedSets / doneDays > 25) score -= 2;
     if (score <= 1) return 'none';
     if (score <= 2) return 'low';
@@ -13698,12 +13705,13 @@ El esfuerzo no es negociable.
       for (let d = 0; d < dpw; d++) {
         const _doneEntry = entries['done_'+w+'_'+d];
         const isSkipped = !!(_doneEntry && typeof _doneEntry === 'object' && _doneEntry.skipped && !_doneEntry.autoClosed);
-        const done = !!_doneEntry;
+        const _isAdminClosed84 = !!(_doneEntry && typeof _doneEntry === 'object' && _doneEntry.autoClosed && _doneEntry.skipped);
+        const done = _doneEntry === true || (typeof _doneEntry === 'object' && _doneEntry && !_doneEntry.skipped);
         const hasAny = Object.keys(entries).some(k => k.startsWith('log_'+w+'_'+d+'_'));
-        const bg = isSkipped ? 'rgba(107,107,102,.35)' : done ? '#44BB88' : hasAny ? 'rgba(196,255,0,.5)' : isFuture ? 'rgba(244,244,240,.04)' : w < currentWeek ? 'rgba(255,68,68,.22)' : 'rgba(244,244,240,.06)';
-        const textColor = isSkipped ? '#888' : done ? '#000' : hasAny ? '#000' : '#555';
-        const icon = isSkipped ? '⏸' : done ? '✓' : hasAny ? '◑' : isFuture ? '' : w < currentWeek ? '✗' : '·';
-        html += `<div title="Sem ${w} · Día ${d+1}: ${isSkipped?'Omitida':done?'Completa':hasAny?'Parcial':isFuture?'Pendiente':'Faltó'}" style="height:28px;border-radius:5px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${textColor};border:${isCur&&!done?'1px solid rgba(196,255,0,.4)':'1px solid transparent'}">${icon}</div>`;
+        const bg = (isSkipped||_isAdminClosed84) ? 'rgba(107,107,102,.35)' : done ? '#44BB88' : hasAny ? 'rgba(196,255,0,.5)' : isFuture ? 'rgba(244,244,240,.04)' : w < currentWeek ? 'rgba(255,68,68,.22)' : 'rgba(244,244,240,.06)';
+        const textColor = (isSkipped||_isAdminClosed84) ? '#888' : done ? '#000' : hasAny ? '#000' : '#555';
+        const icon = (isSkipped||_isAdminClosed84) ? '⏸' : done ? '✓' : hasAny ? '◑' : isFuture ? '' : w < currentWeek ? '✗' : '·';
+        html += `<div title="Sem ${w} · Día ${d+1}: ${(isSkipped||_isAdminClosed84)?'Omitida':done?'Completa':hasAny?'Parcial':isFuture?'Pendiente':'Faltó'}" style="height:28px;border-radius:5px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${textColor};border:${isCur&&!done&&!_isAdminClosed84?'1px solid rgba(196,255,0,.4)':'1px solid transparent'}">${icon}</div>`;
       }
       html += `</div>`;
     }

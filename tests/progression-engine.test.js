@@ -15985,4 +15985,132 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
 
 })();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F84 — Coach monitor: _coachCalcAdherence, _coachBuildBitacora,
+//        mesocycle heatmap, _computeConfidenceScore doneDays
+// ─────────────────────────────────────────────────────────────────────────────
+(function() {
+  // ── Inline mirror: _coachCalcAdherence fix (F84-1) ─────────────────────────
+  // Returns sessionsCompleted count using fixed _isRealExecution inline check.
+  function coachCalcAdherence(entries, week, daysPerWeek) {
+    var sessionsCompleted = 0;
+    for (var day = 0; day < daysPerWeek; day++) {
+      var _de84 = entries['done_' + week + '_' + day];
+      if (_de84 === true || (typeof _de84 === 'object' && _de84 && !_de84.skipped)) sessionsCompleted++;
+    }
+    return sessionsCompleted;
+  }
+
+  console.log('\nF84 — _coachCalcAdherence: real execution counting');
+
+  var e_rc  = { 'done_1_0': { ts: 1 } };                               // REAL_COMPLETE
+  var e_ac  = { 'done_1_0': { ts: 1, autoClosed: true } };             // AUTO_CLOSED
+  var e_sk  = { 'done_1_0': { ts: 1, skipped: true } };                // SKIPPED
+  var e_acnd= { 'done_1_0': { ts: 1, autoClosed: true, skipped: true } }; // AUTO_CLOSED_NO_DATA
+  var e_leg = { 'done_1_0': true };                                     // legacy boolean
+  var e_none= {};                                                        // PENDING
+
+  assert('F84-A1', 'REAL_COMPLETE counts as adherence', coachCalcAdherence(e_rc, 1, 1) === 1);
+  assert('F84-A2', 'AUTO_CLOSED counts as adherence', coachCalcAdherence(e_ac, 1, 1) === 1);
+  assert('F84-A3', 'SKIPPED does NOT count as adherence', coachCalcAdherence(e_sk, 1, 1) === 0);
+  assert('F84-A4', 'AUTO_CLOSED_NO_DATA does NOT count as adherence', coachCalcAdherence(e_acnd, 1, 1) === 0);
+  assert('F84-A5', 'legacy boolean counts as adherence', coachCalcAdherence(e_leg, 1, 1) === 1);
+  assert('F84-A6', 'PENDING → 0 adherence', coachCalcAdherence(e_none, 1, 1) === 0);
+
+  // Mixed 3-day week: REAL + AUTO_CLOSED + SKIPPED → 2/3 real
+  var e_mix3 = {
+    'done_2_0': { ts: 1 },
+    'done_2_1': { ts: 1, autoClosed: true },
+    'done_2_2': { ts: 1, skipped: true }
+  };
+  assert('F84-A7', 'mixed 3-day: 2 real out of 3', coachCalcAdherence(e_mix3, 2, 3) === 2);
+
+  // ── Inline mirror: _coachBuildBitacora done flag fix (F84-2) ──────────────
+  function buildBitacoraDay(logs, key) {
+    var _dv84 = logs[key];
+    return _dv84 === true || (typeof _dv84 === 'object' && _dv84 && !_dv84.skipped);
+  }
+
+  console.log('\nF84 — _coachBuildBitacora: done flag for day header');
+
+  assert('F84-B1', 'bitacora REAL_COMPLETE → done=true', buildBitacoraDay({'done_1_0': { ts: 1 }}, 'done_1_0') === true);
+  assert('F84-B2', 'bitacora AUTO_CLOSED → done=true', buildBitacoraDay({'done_1_0': { ts: 1, autoClosed: true }}, 'done_1_0') === true);
+  assert('F84-B3', 'bitacora SKIPPED → done=false', buildBitacoraDay({'done_1_0': { ts: 1, skipped: true }}, 'done_1_0') === false);
+  assert('F84-B4', 'bitacora AUTO_CLOSED_NO_DATA → done=false', buildBitacoraDay({'done_1_0': { ts: 1, autoClosed: true, skipped: true }}, 'done_1_0') === false);
+  assert('F84-B5', 'bitacora legacy boolean → done=true', buildBitacoraDay({'done_1_0': true}, 'done_1_0') === true);
+  assert('F84-B6', 'bitacora PENDING → done=false', buildBitacoraDay({}, 'done_1_0') === false);
+
+  // ── Mesocycle heatmap rendering (F84-3) ────────────────────────────────────
+  function heatmapState(_doneEntry) {
+    var isSkipped = !!(_doneEntry && typeof _doneEntry === 'object' && _doneEntry.skipped && !_doneEntry.autoClosed);
+    var _isAdminClosed84 = !!(_doneEntry && typeof _doneEntry === 'object' && _doneEntry.autoClosed && _doneEntry.skipped);
+    var done = _doneEntry === true || (typeof _doneEntry === 'object' && _doneEntry && !_doneEntry.skipped);
+    var icon = (isSkipped || _isAdminClosed84) ? '⏸' : done ? '✓' : '·';
+    var label = (isSkipped || _isAdminClosed84) ? 'Omitida' : done ? 'Completa' : 'Pendiente';
+    return { isSkipped, _isAdminClosed84, done, icon, label };
+  }
+
+  console.log('\nF84 — Mesocycle heatmap: correct icons/labels for all 5 states');
+
+  var hRC   = heatmapState({ ts: 1 });
+  assert('F84-C1', 'REAL_COMPLETE: done=true, icon=✓, Completa', hRC.done && !hRC.isSkipped && !hRC._isAdminClosed84 && hRC.icon === '✓' && hRC.label === 'Completa');
+
+  var hAC   = heatmapState({ ts: 1, autoClosed: true });
+  assert('F84-C2', 'AUTO_CLOSED: done=true, icon=✓, Completa', hAC.done && !hAC.isSkipped && !hAC._isAdminClosed84 && hAC.icon === '✓');
+
+  var hSK   = heatmapState({ ts: 1, skipped: true });
+  assert('F84-C3', 'SKIPPED: isSkipped=true, icon=⏸, Omitida', hSK.isSkipped && !hSK._isAdminClosed84 && hSK.icon === '⏸' && hSK.label === 'Omitida');
+
+  var hACND = heatmapState({ ts: 1, autoClosed: true, skipped: true });
+  assert('F84-C4', 'AUTO_CLOSED_NO_DATA: isAdminClosed=true, NOT isSkipped, icon=⏸, Omitida', !hACND.isSkipped && hACND._isAdminClosed84 && hACND.icon === '⏸' && hACND.label === 'Omitida');
+
+  var hPend = heatmapState(null);
+  assert('F84-C5', 'PENDING: done=false, icon=·', !hPend.done && !hPend.isSkipped && !hPend._isAdminClosed84 && hPend.icon === '·');
+
+  var hLeg  = heatmapState(true);
+  assert('F84-C6', 'legacy boolean: done=true, icon=✓', hLeg.done && hLeg.icon === '✓');
+
+  // Key regression: AUTO_CLOSED_NO_DATA must NOT show as ✓ (old bug)
+  assert('F84-C7', 'AUTO_CLOSED_NO_DATA REGRESSION: must not show as ✓', hACND.icon !== '✓');
+  assert('F84-C8', 'AUTO_CLOSED_NO_DATA done=false (navigation-only week)', !hACND.done);
+
+  // ── _computeConfidenceScore doneDays fix (F84-4) ───────────────────────────
+  function countDoneDays(entries) {
+    return Object.keys(entries).filter(function(k) {
+      if (!k.startsWith('done_')) return false;
+      var v = entries[k]; if (!v) return false;
+      if (v === true) return true;
+      return typeof v === 'object' && !v.skipped;
+    }).length;
+  }
+
+  console.log('\nF84 — _computeConfidenceScore doneDays: excludes non-real sessions');
+
+  var dAll5 = {
+    'done_1_0': { ts: 1 },                             // REAL_COMPLETE → counts
+    'done_1_1': { ts: 1, autoClosed: true },            // AUTO_CLOSED → counts
+    'done_1_2': { ts: 1, skipped: true },               // SKIPPED → excluded
+    'done_1_3': { ts: 1, autoClosed: true, skipped: true }, // AUTO_CLOSED_NO_DATA → excluded
+    'log_1_0_0': { load: 80, reps: 10 }                // non-done_ → excluded
+  };
+  assert('F84-D1', 'doneDays counts only real executions from 5-entry mix', countDoneDays(dAll5) === 2);
+
+  var dLeg = { 'done_1_0': true };
+  assert('F84-D2', 'legacy boolean counted in doneDays', countDoneDays(dLeg) === 1);
+
+  var dEmpty = {};
+  assert('F84-D3', 'empty entries → doneDays=0', countDoneDays(dEmpty) === 0);
+
+  // Density penalty: with inflated doneDays from SKIPPED sessions, ratio appears low
+  // With fix: only real sessions count → ratio may trigger penalty correctly
+  var dPenalty = {};
+  for (var i = 0; i < 30; i++) dPenalty['log_1_0_'+i] = { load: 80 }; // 30 sets
+  dPenalty['done_1_0'] = { ts: 1 };                    // 1 real day
+  dPenalty['done_1_1'] = { ts: 1, skipped: true };     // SKIPPED — excluded from denominator
+  var realDays = countDoneDays(dPenalty);
+  assert('F84-D4', 'density: SKIPPED not in denominator → 1 real day', realDays === 1);
+  assert('F84-D5', 'density: 30 sets / 1 real day = 30 > 25 → penalty applies', (30 / realDays) > 25);
+
+})();
+
 process.exit(_fail > 0 ? 1 : 0);
