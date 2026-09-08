@@ -5924,12 +5924,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         day.exercises.forEach(function(ex, ei) {
           if (!ex.exerciseName || ex.exerciseName.trim().length < 2) { ex.exerciseName = 'Ejercicio '+(ei+1); changed = true; }
           if (!Array.isArray(ex.sets))                     { ex.sets = [];               changed = true; }
-          // P10.1: collect missing/invalid exercise-level fields for controlled repair
+          // P10.1: deterministic defaults for nivel_medio / variacion_vertical when GPT omits them
           var _vnm = ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'];
-          var exMissing = [];
-          if (!ex.nivel_medio || !_vnm.includes(ex.nivel_medio)) exMissing.push('nivel_medio');
-          if (!ex.variacion_vertical || typeof ex.variacion_vertical !== 'object' || ex.variacion_vertical.semana_inicio == null) exMissing.push('variacion_vertical');
-          if (exMissing.length) incompleteItems.push({ dayLabel: day.label, exerciseName: ex.exerciseName, setIndex: -1, missing: exMissing });
+          if (!ex.nivel_medio || !_vnm.includes(ex.nivel_medio)) { ex.nivel_medio = 'suplementario'; changed = true; }
+          if (!ex.variacion_vertical || typeof ex.variacion_vertical !== 'object' || ex.variacion_vertical.semana_inicio == null) {
+            ex.variacion_vertical = { semana_inicio: 3, semana_variacion: null, ejercicio_sustituto: null, nivel_sustituto: null };
+            changed = true;
+          }
 
           ex.sets.forEach(function(s, si) {
             if (s.setIndex == null) { s.setIndex = si; changed = true; }
@@ -5946,9 +5947,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
 
     var reVal = validatePlan({ training: training, nutrition: nutrition, supplements: supplements }, {});
-    // Remaining blocking errors exclude prescription fields (those go to controlled repair)
+    // Remaining blocking errors: exclude prescription fields (→ controlled repair) and
+    // sustituciones (food substitutions — optional enrichment, coach fills manually)
     var remaining = reVal.errors.filter(function(e) {
-      return !e.includes('repsTarget') && !e.includes('rirTarget') && !e.includes('restSeconds');
+      return !e.includes('repsTarget') && !e.includes('rirTarget') && !e.includes('restSeconds')
+        && !e.includes('sustituciones');
     });
 
     return {
