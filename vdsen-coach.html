@@ -3963,9 +3963,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         if (name.length > 1) {
           const numSets    = parseInt(setsMatch[1]) || 3;
           const repsStr    = setsMatch[2] || '8';
-          // Usar MÁXIMO del rango como target (permite double progression)
+          // Preservar rango: 8-10 → repsMin=8, repsMax=10, repsTarget=10 (extremo alto)
           const _repsParts = repsStr.split(/[-–]/);
           const repsTarget = parseInt(_repsParts[_repsParts.length - 1]) || 8;
+          const repsMin    = _repsParts.length > 1 ? (parseInt(_repsParts[0]) || null) : null;
+          const repsMax    = _repsParts.length > 1 ? repsTarget : null;
           const rirMatch   = RIR_RE.exec(line);
           const kgMatch    = KG_RE.exec(line);
 
@@ -3975,6 +3977,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             sets: Array.from({ length: numSets }, (_, i) => ({
               setIndex: i,
               repsTarget,
+              ...(repsMin !== null && { repsMin }),
+              ...(repsMax !== null && { repsMax }),
               rirTarget: parseInt(rirMatch?.[1] ?? 2),
               load: parseFloat(kgMatch?.[1] ?? 0),
               restSeconds: 90
@@ -4837,6 +4841,25 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return lines.join('\n');
   }
 
+  // ─── _auditNutritionMath (FASE 15a) ──────────────────────────────────────
+  // Recalculates kcal from macros (4P+4C+9G) and compares vs declared kcal.
+  // Never invents macros. Returns INVALID only when all 4 macro fields present + discrepancy > ±3%.
+  function _auditNutritionMath(nutrition) {
+    if (!nutrition) return { valid: true, reasonCodes: ['NO_NUTRITION'], kcalFromMacros: 0, kcalDeclared: 0, discrepancyPct: 0 };
+    var P = parseFloat(nutrition.proteina  || 0);
+    var C = parseFloat(nutrition.carbos    || 0);
+    var G = parseFloat(nutrition.grasas    || 0);
+    var declared = parseFloat(nutrition.calorias || 0);
+    var hasMacros = nutrition.proteina != null && nutrition.carbos != null && nutrition.grasas != null;
+    if (!hasMacros) return { valid: true, reasonCodes: ['MACROS_MISSING'], kcalFromMacros: 0, kcalDeclared: declared, discrepancyPct: 0 };
+    var kcalFromMacros = Math.round(P * 4 + C * 4 + G * 9);
+    var diff = declared > 0 ? Math.abs(declared - kcalFromMacros) / declared : (kcalFromMacros > 0 ? 1 : 0);
+    var valid = diff <= 0.03;
+    var reasonCodes = valid ? ['MACRO_MATH_VALID'] : ['MACRO_KCAL_DISCREPANCY'];
+    if (declared === 0) reasonCodes.push('KCAL_DECLARED_ZERO');
+    return { valid: valid, kcalFromMacros: kcalFromMacros, kcalDeclared: declared, discrepancyPct: parseFloat((diff * 100).toFixed(1)), reasonCodes: reasonCodes };
+  }
+
   // ─── validatePlan (P3 + P9.2 + P10.1 + P10.8) ───────────────────────────
   // Validates the generated plan against the VDSEN contract before persisting.
   // P10.1: schema, nivel_medio, variacion_vertical, macros ±3%, <3 subs → ERRORS.
@@ -4915,6 +4938,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                   } else if (s.load === 0) {
                     warnings.push(sid + ': load=0 (¿peso corporal?)');
                   }
+                  // FASE 15b: rep range contract integrity
+                  if (s.repsMin != null && s.repsMax != null) {
+                    var _tgt = parseInt(s.repsTarget);
+                    if (s.repsMin > s.repsMax) warnings.push(sid + ': repsMin (' + s.repsMin + ') > repsMax (' + s.repsMax + ') — rango invertido');
+                    else if (_tgt < s.repsMin || _tgt > s.repsMax) warnings.push(sid + ': repsTarget (' + _tgt + ') fuera del rango [' + s.repsMin + '-' + s.repsMax + '] — doble progresión puede estar mal calibrada');
+                  }
                 });
               }
             });
@@ -4970,6 +4999,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           if (diff > 0.03) errors.push('Macros raíz (' + rootKcal + ' kcal) difieren ' + (diff*100).toFixed(1) + '% de suma de comidas (' + Math.round(mealKcalSum) + ' kcal) — excede ±3% (plan nutricional inválido)');
         }
         if (subErrors.length) errors.push('≥3 sustituciones faltantes en: ' + subErrors.slice(0,5).join(', ') + (subErrors.length>5?' (+más)':'') + ' — obligatorio en vdsen-plan-v2');
+      }
+      // FASE 15a: macro math audit (4P+4C+9G must match declared kcal ±3%)
+      var _mathAudit = _auditNutritionMath(nutrition);
+      if (!_mathAudit.valid && _mathAudit.reasonCodes.indexOf('MACROS_MISSING') === -1) {
+        errors.push('MACRO_KCAL_DISCREPANCY: ' + _mathAudit.kcalDeclared + ' kcal declaradas vs ' + _mathAudit.kcalFromMacros + ' kcal desde macros (4P+4C+9G) — diferencia ' + _mathAudit.discrepancyPct + '% excede ±3%');
       }
     }
 
@@ -7543,6 +7577,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         sets: Array.isArray(ex.sets) && ex.sets.length ? ex.sets.map((s, si) => ({
           setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
           repsTarget: parseInt(s.repsTarget) || 8,
+          repsMin: s.repsMin != null ? (parseInt(s.repsMin) || null) : null,
+          repsMax: s.repsMax != null ? (parseInt(s.repsMax) || null) : null,
           rirTarget: parseInt(s.rirTarget ?? 2),
           load: parseFloat(s.load ?? 0) || 0,
           restSeconds: parseInt(s.restSeconds ?? 90) || 90,
@@ -15185,6 +15221,105 @@ El esfuerzo no es negociable.
   window._recommendLearnedStateStorage          = _recommendLearnedStateStorage;
   window._getActivePersistedLearnedState        = _getActivePersistedLearnedState;
   window._runStorageStrategyTests               = _runStorageStrategyTests;
+  window._auditNutritionMath                    = _auditNutritionMath;
+
+  // ── FASE 15 — Nutrition Math + Rep Range Contract Tests ───────────────────
+  function _runFase15Tests() {
+    var pass = 0; var fail = 0;
+    function assert(label, desc, cond) {
+      if (cond) { pass++; } else { fail++; console.warn('[FASE15 FAIL] ' + label + ': ' + desc); }
+    }
+
+    // ── FASE 15a — Nutrition Math (TNM prefix) ────────────────────────────
+    // TNM1: null → valid (no block)
+    (function TNM1() {
+      var r = _auditNutritionMath(null);
+      assert('TNM1', 'null nutrition → valid + NO_NUTRITION', r.valid === true && r.reasonCodes.indexOf('NO_NUTRITION') !== -1);
+    })();
+    // TNM2: macros missing → valid (no block)
+    (function TNM2() {
+      var r = _auditNutritionMath({ calorias: 2500 });
+      assert('TNM2', 'missing macros → valid + MACROS_MISSING', r.valid === true && r.reasonCodes.indexOf('MACROS_MISSING') !== -1);
+    })();
+    // TNM3: perfect macro match → valid
+    (function TNM3() {
+      // 150P*4 + 300C*4 + 100G*9 = 600+1200+900 = 2700
+      var r = _auditNutritionMath({ calorias: 2700, proteina: 150, carbos: 300, grasas: 100 });
+      assert('TNM3a', 'exact match → valid', r.valid === true);
+      assert('TNM3b', 'exact match → MACRO_MATH_VALID', r.reasonCodes.indexOf('MACRO_MATH_VALID') !== -1);
+      assert('TNM3c', 'exact match → 0% discrepancy', r.discrepancyPct === 0);
+    })();
+    // TNM4: within ±3% tolerance → valid
+    (function TNM4() {
+      // macros = 2700, declared 2750 → diff = 50/2750 = 1.8%
+      var r = _auditNutritionMath({ calorias: 2750, proteina: 150, carbos: 300, grasas: 100 });
+      assert('TNM4', '1.8% discrepancy → valid (within ±3%)', r.valid === true);
+    })();
+    // TNM5: Ayrton golden fixture — 3300 declared vs 3190 from macros → INVALID
+    (function TNM5() {
+      // 230P*4 + 320C*4 + 110G*9 = 920+1280+990 = 3190. diff = 110/3300 = 3.33%
+      var r = _auditNutritionMath({ calorias: 3300, proteina: 230, carbos: 320, grasas: 110 });
+      assert('TNM5a', 'Ayrton: 3300 declared vs 3190 from macros → invalid', r.valid === false);
+      assert('TNM5b', 'Ayrton: kcalFromMacros = 3190', r.kcalFromMacros === 3190);
+      assert('TNM5c', 'Ayrton: discrepancyPct > 3', r.discrepancyPct > 3);
+      assert('TNM5d', 'Ayrton: MACRO_KCAL_DISCREPANCY in reasonCodes', r.reasonCodes.indexOf('MACRO_KCAL_DISCREPANCY') !== -1);
+    })();
+    // TNM6: declared = 0 → adds KCAL_DECLARED_ZERO flag and invalid
+    (function TNM6() {
+      var r = _auditNutritionMath({ calorias: 0, proteina: 150, carbos: 300, grasas: 100 });
+      assert('TNM6a', 'declared=0 → invalid', r.valid === false);
+      assert('TNM6b', 'declared=0 → KCAL_DECLARED_ZERO in codes', r.reasonCodes.indexOf('KCAL_DECLARED_ZERO') !== -1);
+    })();
+    // TNM7: large discrepancy ~10% → invalid
+    (function TNM7() {
+      // 2700 from macros, declared 3000 → diff = 300/3000 = 10%
+      var r = _auditNutritionMath({ calorias: 3000, proteina: 150, carbos: 300, grasas: 100 });
+      assert('TNM7', '10% discrepancy → invalid', r.valid === false && r.discrepancyPct > 9);
+    })();
+
+    // ── FASE 15b — Rep Range Contract (TRR prefix) ────────────────────────
+    // TRR1-4: parser repsMin/repsMax (tested via validatePlan since parser is internal)
+    // We test _normalizeTrainingPlan path via validatePlan warnings
+    (function TRR1() {
+      // validatePlan: valid range where repsTarget = repsMax (standard double-progression)
+      var plan = { weeks: 4, daysPerWeek: 3, days: [{ dayIndex: 0, label: 'A', exercises: [{ exerciseName: 'Squat', sets: [{ setIndex: 0, repsTarget: 10, repsMin: 8, repsMax: 10, rirTarget: 2, load: 60, restSeconds: 120 }] }] }] };
+      var r = validatePlan(plan);
+      var hasRepWarning = r.warnings.some(function(w) { return w.indexOf('repsTarget') !== -1 && w.indexOf('fuera del rango') !== -1; });
+      assert('TRR1', 'repsTarget=repsMax → no out-of-range warning', !hasRepWarning);
+    })();
+    (function TRR2() {
+      // repsTarget outside range → warning
+      var plan = { weeks: 4, daysPerWeek: 3, days: [{ dayIndex: 0, label: 'A', exercises: [{ exerciseName: 'Squat', sets: [{ setIndex: 0, repsTarget: 12, repsMin: 8, repsMax: 10, rirTarget: 2, load: 60, restSeconds: 120 }] }] }] };
+      var r = validatePlan(plan);
+      var hasRepWarning = r.warnings.some(function(w) { return w.indexOf('fuera del rango') !== -1; });
+      assert('TRR2', 'repsTarget=12 outside [8-10] → out-of-range warning', hasRepWarning);
+    })();
+    (function TRR3() {
+      // inverted range: repsMin > repsMax → warning
+      var plan = { weeks: 4, daysPerWeek: 3, days: [{ dayIndex: 0, label: 'A', exercises: [{ exerciseName: 'Squat', sets: [{ setIndex: 0, repsTarget: 10, repsMin: 12, repsMax: 8, rirTarget: 2, load: 60, restSeconds: 120 }] }] }] };
+      var r = validatePlan(plan);
+      var hasInvertedWarning = r.warnings.some(function(w) { return w.indexOf('rango invertido') !== -1; });
+      assert('TRR3', 'repsMin(12) > repsMax(8) → inverted range warning', hasInvertedWarning);
+    })();
+    (function TRR4() {
+      // no repsMin/repsMax → no range warnings at all
+      var plan = { weeks: 4, daysPerWeek: 3, days: [{ dayIndex: 0, label: 'A', exercises: [{ exerciseName: 'Squat', sets: [{ setIndex: 0, repsTarget: 8, rirTarget: 2, load: 60, restSeconds: 120 }] }] }] };
+      var r = validatePlan(plan);
+      var hasRepWarning = r.warnings.some(function(w) { return w.indexOf('repsTarget') !== -1; });
+      assert('TRR4', 'no repsMin/repsMax → no range warnings', !hasRepWarning);
+    })();
+    (function TRR5() {
+      // repsMin present but repsMax null → no range validation (field incomplete, no spurious warning)
+      var plan = { weeks: 4, daysPerWeek: 3, days: [{ dayIndex: 0, label: 'A', exercises: [{ exerciseName: 'Squat', sets: [{ setIndex: 0, repsTarget: 8, repsMin: 6, rirTarget: 2, load: 60, restSeconds: 120 }] }] }] };
+      var r = validatePlan(plan);
+      var hasRepWarning = r.warnings.some(function(w) { return w.indexOf('repsTarget') !== -1 && w.indexOf('fuera del rango') !== -1; });
+      assert('TRR5', 'repsMin without repsMax → no range validation', !hasRepWarning);
+    })();
+
+    console.log('[FASE 15] Nutrition Math + Rep Range tests: ' + pass + ' ✓  ' + fail + ' ✗');
+    return { pass: pass, fail: fail };
+  }
+  window._runFase15Tests = _runFase15Tests;
 
   // ── FASE 6 — Calibration & Conflict Resolution Tests (CAL1-CAL30) ─────────
   function _runCalibrationTests() {

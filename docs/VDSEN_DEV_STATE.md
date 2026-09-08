@@ -58,7 +58,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1639 ✓ 0 ✗** · HEAD post-FASE14
+> Suite: **1662 ✓ 0 ✗** · HEAD post-FASE15
 
 ### Arquitectura conceptual
 
@@ -504,9 +504,51 @@ baseScore (pasos 1-4) + calibAdj (appliedWeight × learnedStateBonus) = score fi
 
 **Tests:** TLS1-TLS25 (45 aserciones) en `tests/progression-engine.test.js`
 
-**Suite: 1639 ✓ 0 ✗**
+**Suite: 1639 ✓ 0 ✗** (post-FASE14)
 
-**Siguiente fase:** FASE 15 — Learned State Activation (state ACTIVE persistido alimenta Topology/Distribution en el siguiente ciclo)
+---
+
+### FASE 15 — Nutrition Math Audit + Rep Range Contract
+
+**Objetivo:** Cerrar dos gaps de integridad en `validatePlan`: (1) nunca verificaba que kcal declaradas cuadren con macros 4P+4C+9G; (2) el parser desechaba el rango mínimo de reps (`8-10` → solo guardaba `10`).
+
+#### 15a — Nutrition Math Audit (`_auditNutritionMath`)
+
+| Input | Resultado |
+|-------|-----------|
+| `null` | `valid:true, NO_NUTRITION` (sin bloqueo) |
+| macros faltantes | `valid:true, MACROS_MISSING` (sin bloqueo) |
+| macros cuadran ±3% | `valid:true, MACRO_MATH_VALID` |
+| discrepancia > 3% | `valid:false, MACRO_KCAL_DISCREPANCY` → error en `validatePlan` |
+| `calorias:0` | `valid:false, KCAL_DECLARED_ZERO` añadido |
+
+**Fixture Ayrton:** `3300 kcal / 230P / 320C / 110G` → `4×230+4×320+9×110 = 3190 kcal` → 3.33% → INVÁLIDO (atrapado).
+
+Wired en `validatePlan` como error bloqueante. Exportado: `window._auditNutritionMath`.
+
+#### 15b — Rep Range Contract (`repsMin` / `repsMax`)
+
+- **Parser texto:** `"3×8-10"` → `repsMin=8, repsMax=10, repsTarget=10` (extremo alto para doble progresión)
+- **`_normalizeTrainingPlan`:** preserva `repsMin`/`repsMax` como campos opcionales (null si ausentes)
+- **`validatePlan` set loop:** warning si `repsMin > repsMax` (rango invertido) o `repsTarget` fuera de `[repsMin, repsMax]`
+- **Sin repsMin/repsMax:** validación de rango se omite silenciosamente (retrocompatible)
+
+#### CONTRACT FASE 15
+
+| Contrato | Implementación |
+|----------|---------------|
+| `4P+4C+9G` = kcal declaradas ±3% | `_auditNutritionMath` |
+| Macros faltantes → sin bloqueo | `MACROS_MISSING` check antes de calcular |
+| Parser preserva rango min-max | `repsMin`/`repsMax` en sets |
+| `repsTarget` debe estar en `[repsMin, repsMax]` | warning en `validatePlan` |
+| Rango invertido detectado | warning `rango invertido` |
+| 0 lecturas Firestore extra | todo en memoria sobre datos ya cargados |
+
+**Tests:** TNM1-TNM8 (12 aserciones) + TRR1-TRR8 (8 aserciones) = 20 nuevas aserciones en `tests/progression-engine.test.js`
+
+**Suite: 1662 ✓ 0 ✗** (post-FASE15)
+
+**Siguiente fase:** FASE 15c — Topology Repair (days.length===6 no debe inferir SIX_ON_ONE_OFF; discriminar PPL_6 vs otros patrones de 6 días)
 
 ---
 
