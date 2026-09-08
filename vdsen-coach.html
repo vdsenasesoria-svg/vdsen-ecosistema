@@ -6311,6 +6311,31 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       });
     }
 
+    // Step 2d: DIRECT_TARGET_MISS — isolation muscles that are high-priority but have 0 primary exercises
+    var _directPrimaryMuscles = {};
+    training.days.forEach(function(day) {
+      (day.exercises || []).forEach(function(ex) {
+        var lc  = (ex.exerciseName || '').trim().toLowerCase();
+        var lcN = lc.normalize('NFD').replace(/[̀-ͯ]/g, '');
+        var meta = _EXERCISE_CANONICAL_METADATA[lc] || _EXERCISE_CANONICAL_METADATA[lcN];
+        if (meta && meta.primaryMuscles) {
+          meta.primaryMuscles.forEach(function(m) { _directPrimaryMuscles[m] = true; });
+        } else {
+          var n = lcN;
+          if (/face.?pull|p[aá]jaro|vuelo.?posterior|rear.?delt|mariposa.*invertida/.test(n)) {
+            _directPrimaryMuscles['deltoides_posterior'] = true;
+          }
+        }
+      });
+    });
+    var _NEEDS_DIRECT_EX = ['deltoides_posterior'];
+    _NEEDS_DIRECT_EX.forEach(function(muscle) {
+      if (!muscleTargets[muscle] || muscleTargets[muscle].priority !== 'high') return;
+      if (!_directPrimaryMuscles[muscle]) {
+        patFindings.push({ code: 'DIRECT_TARGET_MISS', severity: 'WARN', muscle: muscle });
+      }
+    });
+
     // Step 3: per-muscle comparison + findings
     var findings = patFindings.slice();
     var muscleReport = {};
@@ -6342,7 +6367,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
             prescribed:prescribed, targetSets:target.volumeTarget,
             rangeMin:target.volumeRange.min, rangeMax:target.volumeRange.max, delta:delta, ratio:ratio });
         }
-        if (freqActual < target.frequencyTarget - 1) {
+        if (freqActual < target.frequencyTarget) {
           findings.push({ code:'FREQ_LOW', muscle:muscle, severity:'WARN',
             frequencyTarget:target.frequencyTarget, frequencyActual:freqActual });
         }
@@ -6417,6 +6442,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       else if (f.code === 'AUDIT_COVERAGE_LOW')  msg = 'Cobertura insuficiente (' + f.unresolvedCount + '/' + f.totalExercises + ' UNRESOLVED)';
       else if (f.code === 'PAT_REDUNDANCY')       msg = f.dayLabel + ': ' + f.count + '× patrón ' + f.pattern + ' (redundancia biomecánica)';
       else if (f.code === 'RIR_FLOOR_CONFLICT')   msg = f.exerciseName + ' (' + f.dayLabel + '): rirTarget ' + f.rirTarget + ' → RIR 0 en S' + f.peakWeekNum + ' (compuesto libre; floor=1)';
+      else if (f.code === 'DIRECT_TARGET_MISS')   msg = f.muscle + ': objetivo prioritario sin ejercicio directo (face pull / pájaro / vuelo posterior)';
       else                                        msg = f.code + (f.muscle ? ' · ' + f.muscle : '');
       return '<div style="color:' + fcol + ';font-size:10px;margin-top:2px">· ' + _escH(msg) + '</div>';
     }).join('');
@@ -6871,6 +6897,49 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var r = _auditPlan(fakePlan, fakeTgts, []);
       return r.findings.some(function(f){ return f.code==='RIR_FLOOR_CONFLICT' && f.exerciseName==='Press Banca con Barra'; })
         ? true : 'esperaba RIR_FLOOR_CONFLICT, findings=' + JSON.stringify(r.findings.map(function(f){return f.code;}));
+    });
+
+    test('T64 _auditPlan: FREQ_LOW fires when freqActual=1 and frequencyTarget=2 (threshold fix)', function() {
+      var training = { days:[
+        { dayIndex:0, label:'Día 1', exercises:[{ exerciseName:'Remo con Barra', sets:[{},{},{},{}] }] },
+        { dayIndex:1, label:'Día 2', exercises:[{ exerciseName:'Press Banca', sets:[{},{},{},{}] }] }
+      ]};
+      var targets = {
+        dorsales: { priority:'high', volumeTarget:10, volumeRange:{min:8,max:18}, frequencyTarget:2, source:'test' }
+      };
+      var r = _auditPlan(training, targets, []);
+      return r.findings.some(function(f){ return f.code==='FREQ_LOW' && f.muscle==='dorsales'; })
+        ? true : 'esperaba FREQ_LOW para dorsales, findings=' + JSON.stringify(r.findings.map(function(f){return f.code+':'+f.muscle;}));
+    });
+
+    test('T65 _auditPlan: DIRECT_TARGET_MISS fires when deltoides_posterior is high-priority but no direct exercise', function() {
+      var training = { days:[
+        { dayIndex:0, label:'Día 1', exercises:[
+          { exerciseName:'Remo en Máquina', sets:[{},{},{},{}] },
+          { exerciseName:'Jalón al Pecho', sets:[{},{},{},{}] }
+        ]}
+      ]};
+      var targets = {
+        deltoides_posterior: { priority:'high', volumeTarget:8, volumeRange:{min:6,max:14}, frequencyTarget:2, source:'test' }
+      };
+      var r = _auditPlan(training, targets, []);
+      return r.findings.some(function(f){ return f.code==='DIRECT_TARGET_MISS' && f.muscle==='deltoides_posterior'; })
+        ? true : 'esperaba DIRECT_TARGET_MISS, findings=' + JSON.stringify(r.findings.map(function(f){return f.code+':'+f.muscle;}));
+    });
+
+    test('T66 _auditPlan: sin DIRECT_TARGET_MISS cuando face pull está presente', function() {
+      var training = { days:[
+        { dayIndex:0, label:'Día 1', exercises:[
+          { exerciseName:'Remo en Máquina', sets:[{},{},{},{}] },
+          { exerciseName:'Face Pull', sets:[{},{},{},{}] }
+        ]}
+      ]};
+      var targets = {
+        deltoides_posterior: { priority:'high', volumeTarget:8, volumeRange:{min:6,max:14}, frequencyTarget:2, source:'test' }
+      };
+      var r = _auditPlan(training, targets, []);
+      return !r.findings.some(function(f){ return f.code==='DIRECT_TARGET_MISS'; })
+        ? true : 'no debería haber DIRECT_TARGET_MISS con face pull presente';
     });
 
     var passed = results.filter(function(r){return r.passed;}).length;
@@ -17659,7 +17728,7 @@ El esfuerzo no es negociable.
       lines.push('  • Tempo excéntrico mínimo 2s · ROM completo innegociable.');
       lines.push('  • Registra cada serie en la app: carga, reps, RIR real, ICS, pump.');
       lines.push('  • Check-in semanal: peso, HRV, WHO-5. Check-in post-sesión: EIMD, articular, sueño, RPE.');
-      lines.push('  • El RIR objetivo escala automáticamente según el esquema arriba.');
+      lines.push('  • El RIR objetivo escala automáticamente según el esquema arriba (compuestos libres: RIR ≥1 siempre, aunque el esquema global marque 0).');
       lines.push('');
       lines.push('  — VDSEN · El esfuerzo no es negociable.');
       lines.push(sep());
