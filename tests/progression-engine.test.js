@@ -16113,4 +16113,87 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
 
 })();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F85 — getClientAlert mesoEnd: excludes AUTO_CLOSED_NO_DATA from last-week count
+// ─────────────────────────────────────────────────────────────────────────────
+(function() {
+  // Inline mirror of mesoEnd doneLastWeek count after F85 fix
+  function countDoneLastWeek(entries, planWeeks, dpw) {
+    var doneLastWeek = 0;
+    for (var d = 0; d < dpw; d++) {
+      var _dlw = entries['done_' + planWeeks + '_' + d];
+      if (_dlw === true || (typeof _dlw === 'object' && _dlw && !(_dlw.autoClosed && _dlw.skipped))) doneLastWeek++;
+    }
+    return doneLastWeek;
+  }
+
+  // Inline mirror of mesoEnd condition
+  function isMesoEnd(entries, planWeeks, dpw) {
+    var doneLastWeek = countDoneLastWeek(entries, planWeeks, dpw);
+    return doneLastWeek >= dpw && dpw > 0;
+  }
+
+  console.log('\nF85 — getClientAlert mesoEnd: excludes AUTO_CLOSED_NO_DATA');
+
+  var planWeeks = 6, dpw = 3;
+
+  // All REAL_COMPLETE → mesoEnd fires
+  var eAllReal = {
+    'done_6_0': { ts: 1 },
+    'done_6_1': { ts: 1 },
+    'done_6_2': { ts: 1 }
+  };
+  assert('F85-A1', 'all REAL_COMPLETE → mesoEnd fires', isMesoEnd(eAllReal, planWeeks, dpw));
+
+  // All AUTO_CLOSED → mesoEnd fires (real execution)
+  var eAllAC = {
+    'done_6_0': { ts: 1, autoClosed: true },
+    'done_6_1': { ts: 1, autoClosed: true },
+    'done_6_2': { ts: 1, autoClosed: true }
+  };
+  assert('F85-A2', 'all AUTO_CLOSED → mesoEnd fires', isMesoEnd(eAllAC, planWeeks, dpw));
+
+  // All SKIPPED → mesoEnd fires (explicit user choice, plan week ended)
+  var eAllSK = {
+    'done_6_0': { ts: 1, skipped: true },
+    'done_6_1': { ts: 1, skipped: true },
+    'done_6_2': { ts: 1, skipped: true }
+  };
+  assert('F85-A3', 'all SKIPPED → mesoEnd fires (active user decision)', isMesoEnd(eAllSK, planWeeks, dpw));
+
+  // All AUTO_CLOSED_NO_DATA → mesoEnd must NOT fire (navigation-only, no training)
+  var eAllACND = {
+    'done_6_0': { ts: 1, autoClosed: true, skipped: true },
+    'done_6_1': { ts: 1, autoClosed: true, skipped: true },
+    'done_6_2': { ts: 1, autoClosed: true, skipped: true }
+  };
+  assert('F85-A4', 'all AUTO_CLOSED_NO_DATA → mesoEnd MUST NOT fire (key regression)', !isMesoEnd(eAllACND, planWeeks, dpw));
+  assert('F85-A5', 'AUTO_CLOSED_NO_DATA count = 0', countDoneLastWeek(eAllACND, planWeeks, dpw) === 0);
+
+  // Mixed: 2 real + 1 AUTO_CLOSED_NO_DATA → count = 2, NOT >= 3 → no mesoEnd
+  var eMixed = {
+    'done_6_0': { ts: 1 },
+    'done_6_1': { ts: 1, autoClosed: true },
+    'done_6_2': { ts: 1, autoClosed: true, skipped: true }  // navigation only
+  };
+  assert('F85-A6', 'mixed 2 real + 1 AUTO_CLOSED_NO_DATA → no mesoEnd (count=2 < dpw=3)', !isMesoEnd(eMixed, planWeeks, dpw));
+  assert('F85-A7', 'mixed count = 2', countDoneLastWeek(eMixed, planWeeks, dpw) === 2);
+
+  // Legacy boolean counts
+  var eLeg = {
+    'done_6_0': true,
+    'done_6_1': true,
+    'done_6_2': true
+  };
+  assert('F85-A8', 'legacy booleans → mesoEnd fires', isMesoEnd(eLeg, planWeeks, dpw));
+
+  // PENDING sessions → no mesoEnd
+  var ePend = {};
+  assert('F85-A9', 'all PENDING → no mesoEnd', !isMesoEnd(ePend, planWeeks, dpw));
+
+  // dpw=0 guard
+  assert('F85-A10', 'dpw=0 → no mesoEnd (guard)', !isMesoEnd(eAllReal, planWeeks, 0));
+
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

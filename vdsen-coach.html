@@ -1161,7 +1161,11 @@
     if (planWeeks > 0 && cw >= planWeeks) {
       // ¿completó todos los días de la última semana?
       let doneLastWeek = 0;
-      for (let d = 0; d < dpw; d++) if (entries['done_' + planWeeks + '_' + d]) doneLastWeek++;
+      for (let d = 0; d < dpw; d++) {
+        const _dlw = entries['done_' + planWeeks + '_' + d];
+        // Exclude AUTO_CLOSED_NO_DATA (navigation-only, no real training data)
+        if (_dlw === true || (typeof _dlw === 'object' && _dlw && !(_dlw.autoClosed && _dlw.skipped))) doneLastWeek++;
+      }
       if (doneLastWeek >= dpw && dpw > 0) {
         return {
           type: 'mesoEnd',
