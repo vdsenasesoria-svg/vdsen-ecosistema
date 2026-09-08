@@ -6336,6 +6336,32 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }
     });
 
+    // Step 2e: HAMSTRING_HINGE_MISS — isquiotibiales high-priority but no canonical hip-hinge exercise
+    if (muscleTargets['isquiotibiales'] && muscleTargets['isquiotibiales'].priority === 'high') {
+      var _hasHipHinge = false;
+      var _hipHingePatterns = ['hip_hinge', 'rdl'];
+      var _hipHingeRegex = /\brdl\b|rumano|peso.?muerto(?!\s+en\s+m[aá]quina)|deadlift|good.?morning/i;
+      training.days.forEach(function(day) {
+        (day.exercises || []).forEach(function(ex) {
+          if (_hasHipHinge) return;
+          var lc  = (ex.exerciseName || '').trim().toLowerCase();
+          var lcN = lc.normalize('NFD').replace(/[̀-ͯ]/g, '');
+          var meta = _EXERCISE_CANONICAL_METADATA[lc] || _EXERCISE_CANONICAL_METADATA[lcN];
+          if (meta) {
+            if (_hipHingePatterns.indexOf(meta.movementPattern) !== -1 &&
+                meta.primaryMuscles && meta.primaryMuscles.indexOf('isquiotibiales') !== -1) {
+              _hasHipHinge = true;
+            }
+          } else if (_hipHingeRegex.test(lcN)) {
+            _hasHipHinge = true;
+          }
+        });
+      });
+      if (!_hasHipHinge) {
+        patFindings.push({ code: 'HAMSTRING_HINGE_MISS', severity: 'WARN', muscle: 'isquiotibiales' });
+      }
+    }
+
     // Step 3: per-muscle comparison + findings
     var findings = patFindings.slice();
     var muscleReport = {};
@@ -6443,6 +6469,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       else if (f.code === 'PAT_REDUNDANCY')       msg = f.dayLabel + ': ' + f.count + '× patrón ' + f.pattern + ' (redundancia biomecánica)';
       else if (f.code === 'RIR_FLOOR_CONFLICT')   msg = f.exerciseName + ' (' + f.dayLabel + '): rirTarget ' + f.rirTarget + ' → RIR 0 en S' + f.peakWeekNum + ' (compuesto libre; floor=1)';
       else if (f.code === 'DIRECT_TARGET_MISS')   msg = f.muscle + ': objetivo prioritario sin ejercicio directo (face pull / pájaro / vuelo posterior)';
+      else if (f.code === 'HAMSTRING_HINGE_MISS') msg = 'isquiotibiales: objetivo prioritario sin bisagra de cadera canónica (RDL / peso muerto rumano / deadlift)';
       else                                        msg = f.code + (f.muscle ? ' · ' + f.muscle : '');
       return '<div style="color:' + fcol + ';font-size:10px;margin-top:2px">· ' + _escH(msg) + '</div>';
     }).join('');
@@ -6940,6 +6967,51 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var r = _auditPlan(training, targets, []);
       return !r.findings.some(function(f){ return f.code==='DIRECT_TARGET_MISS'; })
         ? true : 'no debería haber DIRECT_TARGET_MISS con face pull presente';
+    });
+
+    test('T67 _auditPlan: HAMSTRING_HINGE_MISS fires when isquiotibiales high-priority but only curl', function() {
+      var training = { days:[
+        { dayIndex:0, label:'Día 1', exercises:[
+          { exerciseName:'Curl Femoral Tumbado', sets:[{},{},{},{}] },
+          { exerciseName:'Prensa', sets:[{},{},{},{}] }
+        ]}
+      ]};
+      var targets = {
+        isquiotibiales: { priority:'high', volumeTarget:10, volumeRange:{min:8,max:16}, frequencyTarget:2, source:'test' }
+      };
+      var r = _auditPlan(training, targets, []);
+      return r.findings.some(function(f){ return f.code==='HAMSTRING_HINGE_MISS'; })
+        ? true : 'esperaba HAMSTRING_HINGE_MISS, findings=' + JSON.stringify(r.findings.map(function(f){return f.code;}));
+    });
+
+    test('T68 _auditPlan: sin HAMSTRING_HINGE_MISS cuando RDL presente', function() {
+      var training = { days:[
+        { dayIndex:0, label:'Día 1', exercises:[
+          { exerciseName:'RDL', sets:[{},{},{},{}] },
+          { exerciseName:'Curl Femoral Tumbado', sets:[{},{},{},{}] }
+        ]}
+      ]};
+      var targets = {
+        isquiotibiales: { priority:'high', volumeTarget:10, volumeRange:{min:8,max:16}, frequencyTarget:2, source:'test' }
+      };
+      var r = _auditPlan(training, targets, []);
+      return !r.findings.some(function(f){ return f.code==='HAMSTRING_HINGE_MISS'; })
+        ? true : 'no debería haber HAMSTRING_HINGE_MISS con RDL presente';
+    });
+
+    test('T69 _auditPlan: GHD solo NO satisface HAMSTRING_HINGE_MISS', function() {
+      var training = { days:[
+        { dayIndex:0, label:'Día 1', exercises:[
+          { exerciseName:'GHD', sets:[{},{},{},{}] },
+          { exerciseName:'Curl Femoral Tumbado', sets:[{},{},{},{}] }
+        ]}
+      ]};
+      var targets = {
+        isquiotibiales: { priority:'high', volumeTarget:10, volumeRange:{min:8,max:16}, frequencyTarget:2, source:'test' }
+      };
+      var r = _auditPlan(training, targets, []);
+      return r.findings.some(function(f){ return f.code==='HAMSTRING_HINGE_MISS'; })
+        ? true : 'GHD no debería satisfacer hip hinge para isquios, esperaba HAMSTRING_HINGE_MISS';
     });
 
     var passed = results.filter(function(r){return r.passed;}).length;
