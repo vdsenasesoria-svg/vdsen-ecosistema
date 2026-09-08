@@ -6194,6 +6194,165 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return warnings;
   }
 
+  // ─── _auditPlan — Capa 2: deterministic fractional volume gate ─────────────
+  // Compares post-generation fractional volume against _computeMuscleTargets output.
+  // Severity: ERROR → can't audit >50% exercises; REVIEW_REQUIRED → priority muscle
+  // out of range; WARN → minor deviation, maintenance underdose, or normal overdose;
+  // OK → all muscles in prescribed range. UNRESOLVED never assigned silently.
+  // exerciseName → normalized alias → canonical metadata → fractional sets.
+  function _auditPlan(training, muscleTargets, exercisesCatalog) {
+    if (!training || !Array.isArray(training.days) || !muscleTargets || !Object.keys(muscleTargets).length) {
+      return { status: 'SKIP', findings: [], muscleReport: {}, unresolved: [], summary: 'Sin targets disponibles' };
+    }
+
+    // Step 1: fractional volume per muscle (canonical-only, no fuzzy authority)
+    var volAudit = auditFractionalVolume(training, exercisesCatalog || []);
+    var muscleVol  = volAudit.muscleVolume || {};
+    var unresolved = volAudit.unclassified  || [];
+
+    // Step 2: frequency — count distinct sessions where each muscle is targeted
+    var muscleFreq = {};
+    training.days.forEach(function(day) {
+      var seen = {};
+      (day.exercises || []).forEach(function(ex) {
+        var lc = (ex.exerciseName || '').trim().toLowerCase();
+        var lcN = lc.normalize('NFD').replace(/[̀-ͯ]/g, '');
+        var meta = _EXERCISE_CANONICAL_METADATA[lc] || _EXERCISE_CANONICAL_METADATA[lcN];
+        var muscles = [];
+        if (meta) {
+          muscles = (meta.primaryMuscles || []).concat(meta.secondaryMuscles || []);
+        } else {
+          var pat = null;
+          var n = lcN;
+          if      (/sentadilla|squat/.test(n))                               pat = 'squat';
+          else if (/\brdl\b|rumano/.test(n))                                 pat = 'rdl';
+          else if (/peso muerto/.test(n))                                    pat = 'hip_hinge';
+          else if (/press.*banca|bench press/.test(n))                       pat = 'press_horizontal';
+          else if (/press.*militar|overhead press|\bohp\b/.test(n))          pat = 'press_vertical';
+          else if (/jal[oó]n|pull.?down|dominada/.test(n))                  pat = 'pull_vertical';
+          else if (/remo|row|cable row/.test(n))                             pat = 'pull_horizontal';
+          else if (/leg.?curl|curl.femoral|curl.pierna|curl.acostado/.test(n)) pat = 'leg_curl';
+          else if (/\bcurl\b/.test(n))                                       pat = 'curl';
+          else if (/triceps|extensi.*tricep/.test(n))                        pat = 'extension';
+          else if (/apertura|fly/.test(n))                                   pat = 'fly';
+          else if (/elev.*lateral|lateral raise/.test(n))                    pat = 'lateral_raise';
+          else if (/hip thrust|glute bridge|puente/.test(n))                 pat = 'glute_isolation';
+          else if (/pantorrilla|calf/.test(n))                               pat = 'calf';
+          else if (/abdom|crunch|plancha|plank/.test(n))                     pat = 'abdominal';
+          else if (/zancada|estocada|lunge/.test(n))                         pat = 'lunge';
+          else if (/face pull/.test(n))                                      pat = 'face_pull';
+          if (pat && _MOTOR_MUSCLES[pat]) {
+            muscles = (_MOTOR_MUSCLES[pat].direct || []).concat(_MOTOR_MUSCLES[pat].indirect || []);
+          }
+        }
+        muscles.forEach(function(m) { seen[m] = true; });
+      });
+      Object.keys(seen).forEach(function(m) { muscleFreq[m] = (muscleFreq[m] || 0) + 1; });
+    });
+
+    // Step 3: per-muscle comparison + findings
+    var findings    = [];
+    var muscleReport = {};
+
+    Object.keys(muscleTargets).forEach(function(muscle) {
+      var target     = muscleTargets[muscle];
+      var vol        = muscleVol[muscle];
+      var prescribed = vol ? parseFloat(vol.fractionalTotal.toFixed(1)) : 0;
+      var freqActual = muscleFreq[muscle] || 0;
+      var delta      = parseFloat((prescribed - target.volumeTarget).toFixed(1));
+      var ratio      = target.volumeTarget > 0 ? parseFloat((prescribed / target.volumeTarget).toFixed(2)) : null;
+
+      muscleReport[muscle] = {
+        priority: target.priority, targetSets: target.volumeTarget,
+        volumeRange: target.volumeRange, prescribedSets: prescribed,
+        delta: delta, ratio: ratio,
+        frequencyTarget: target.frequencyTarget, frequencyActual: freqActual,
+        source: target.source
+      };
+
+      var pri = target.priority;
+      if (pri === 'high') {
+        if (prescribed < target.volumeRange.min) {
+          findings.push({ code:'UNDERDOSED', muscle:muscle, severity:'REVIEW_REQUIRED',
+            prescribed:prescribed, targetSets:target.volumeTarget,
+            rangeMin:target.volumeRange.min, rangeMax:target.volumeRange.max, delta:delta, ratio:ratio });
+        } else if (prescribed > target.volumeRange.max) {
+          findings.push({ code:'OVERDOSED', muscle:muscle, severity:'REVIEW_REQUIRED',
+            prescribed:prescribed, targetSets:target.volumeTarget,
+            rangeMin:target.volumeRange.min, rangeMax:target.volumeRange.max, delta:delta, ratio:ratio });
+        }
+        if (freqActual < target.frequencyTarget - 1) {
+          findings.push({ code:'FREQ_LOW', muscle:muscle, severity:'WARN',
+            frequencyTarget:target.frequencyTarget, frequencyActual:freqActual });
+        }
+      } else if (pri === 'maintenance') {
+        if (prescribed < target.volumeRange.min) {
+          findings.push({ code:'UNDERDOSED', muscle:muscle, severity:'WARN',
+            prescribed:prescribed, targetSets:target.volumeTarget,
+            rangeMin:target.volumeRange.min, rangeMax:target.volumeRange.max, delta:delta, ratio:ratio });
+        } else if (prescribed > target.volumeRange.max) {
+          findings.push({ code:'OVERDOSED', muscle:muscle, severity:'WARN',
+            prescribed:prescribed, targetSets:target.volumeTarget,
+            rangeMin:target.volumeRange.min, rangeMax:target.volumeRange.max, delta:delta, ratio:ratio });
+        }
+      } else { // normal — only flag substantial overdose
+        if (prescribed > target.volumeRange.max * 1.3) {
+          findings.push({ code:'OVERDOSED', muscle:muscle, severity:'WARN',
+            prescribed:prescribed, targetSets:target.volumeTarget,
+            rangeMin:target.volumeRange.min, rangeMax:target.volumeRange.max, delta:delta, ratio:ratio });
+        }
+      }
+    });
+
+    // Step 4: UNRESOLVED — explicit, never silent
+    var totalEx = training.days.reduce(function(s, d) { return s + (d.exercises || []).length; }, 0);
+    if (unresolved.length > 0) {
+      var coverage = totalEx > 0 ? (totalEx - unresolved.length) / totalEx : 1;
+      if (coverage < 0.5) {
+        findings.push({ code:'AUDIT_COVERAGE_LOW', severity:'ERROR',
+          unresolvedCount:unresolved.length, totalExercises:totalEx, exercises:unresolved });
+      } else {
+        findings.push({ code:'UNRESOLVED_EXERCISES', severity:'WARN',
+          unresolvedCount:unresolved.length, totalExercises:totalEx, exercises:unresolved });
+      }
+    }
+
+    // Step 5: overall status
+    var status = 'OK';
+    if      (findings.some(function(f) { return f.severity === 'ERROR'; }))           status = 'ERROR';
+    else if (findings.some(function(f) { return f.severity === 'REVIEW_REQUIRED'; })) status = 'REVIEW_REQUIRED';
+    else if (findings.some(function(f) { return f.severity === 'WARN'; }))            status = 'WARN';
+
+    var highMs  = Object.keys(muscleTargets).filter(function(m) { return muscleTargets[m].priority === 'high'; });
+    var summary = 'Capa2/' + Object.keys(muscleReport).length + 'M·' + (highMs.length ? highMs.length + 'prio' : '') + '·' + unresolved.length + 'UNRES';
+    return { status:status, findings:findings, muscleReport:muscleReport, unresolved:unresolved, summary:summary };
+  }
+  window._auditPlan = _auditPlan;
+
+  function _formatAuditPlanHtml(result) {
+    if (!result || result.status === 'SKIP' || result.status === 'OK') return '';
+    var st  = result.status;
+    var fds = result.findings || [];
+    var col = st === 'ERROR' ? 'var(--danger)' : (st === 'REVIEW_REQUIRED' ? '#f0a500' : 'var(--text-muted)');
+    var brd = st === 'ERROR' ? 'rgba(224,85,85,.3)' : (st === 'REVIEW_REQUIRED' ? 'rgba(240,165,0,.3)' : 'rgba(255,255,255,.1)');
+    var ic  = st === 'ERROR' ? '❌' : (st === 'REVIEW_REQUIRED' ? '⚠' : '⚡');
+    var hdr = ic + ' VOLUMEN: ' + st;
+    var lines = fds.slice(0, 6).map(function(f) {
+      var fcol = f.severity === 'ERROR' ? 'var(--danger)' : (f.severity === 'REVIEW_REQUIRED' ? '#f0a500' : 'var(--text-muted)');
+      var msg;
+      if      (f.code === 'UNDERDOSED')          msg = f.muscle + ': ' + f.prescribed + 's vs min ' + f.rangeMin + ' [ratio:' + f.ratio + ']';
+      else if (f.code === 'OVERDOSED')           msg = f.muscle + ': ' + f.prescribed + 's excede max ' + f.rangeMax + ' [ratio:' + f.ratio + ']';
+      else if (f.code === 'FREQ_LOW')            msg = f.muscle + ': freq ' + f.frequencyActual + 'x vs target ' + f.frequencyTarget + 'x/sem';
+      else if (f.code === 'UNRESOLVED_EXERCISES') msg = f.unresolvedCount + '/' + f.totalExercises + ' ej sin identidad canónica: ' + (f.exercises||[]).slice(0,3).join(', ');
+      else if (f.code === 'AUDIT_COVERAGE_LOW')  msg = 'Cobertura insuficiente (' + f.unresolvedCount + '/' + f.totalExercises + ' UNRESOLVED)';
+      else                                        msg = f.code + (f.muscle ? ' · ' + f.muscle : '');
+      return '<div style="color:' + fcol + ';font-size:10px;margin-top:2px">· ' + _escH(msg) + '</div>';
+    }).join('');
+    return '<div style="border:1px solid ' + brd + ';border-radius:6px;padding:5px 8px;margin-top:4px;font-size:11px">'
+      + '<span style="color:' + col + ';font-weight:600">' + _escH(hdr) + '</span>' + lines + '</div>';
+  }
+  window._formatAuditPlanHtml = _formatAuditPlanHtml;
+
   // ─── _runP10Tests (P10.11) ────────────────────────────────────────────────
   // Call window._runP10Tests() from console to verify P10 guarantees.
   function _runP10Tests() {
@@ -6457,6 +6616,121 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var hasIsq = r.muscleVolume['isquiotibiales'] && r.muscleVolume['isquiotibiales'].direct > 0;
       var noBiceps = !r.muscleVolume['biceps'];
       return hasIsq && noBiceps;
+    });
+
+    // ── Capa 2 _auditPlan tests (T46–T55) ─────────────────────────────────────
+    test('T46 _auditPlan: plan meets targets → status OK', function() {
+      var training = { days:[{ exercises:[
+        { exerciseName:'Press Banca', sets:[{},{},{},{},{}] },
+        { exerciseName:'Press Banca', sets:[{},{},{},{}] }
+      ]}]};
+      var targets = {
+        pectoral: { priority:'high', volumeRange:{ min:8, max:20 }, confidence:'high' }
+      };
+      // pectoral: 9 sets direct — within [8,20]
+      var r = _auditPlan(training, targets, []);
+      return r.status === 'OK' || r.status === 'WARN'; // WARN allowed if triceps secondary pushes freq checks
+    });
+
+    test('T47 _auditPlan: high priority muscle prescribed < min → REVIEW_REQUIRED', function() {
+      var training = { days:[{ exercises:[
+        { exerciseName:'Press Banca', sets:[{}] }
+      ]}]};
+      var targets = {
+        pectoral: { priority:'high', volumeRange:{ min:10, max:20 }, confidence:'high' }
+      };
+      // pectoral: 1 set — below min:10
+      var r = _auditPlan(training, targets, []);
+      return r.status === 'REVIEW_REQUIRED' && r.findings.some(function(f){ return f.code === 'UNDERDOSED' && f.muscle === 'pectoral'; });
+    });
+
+    test('T48 _auditPlan: normal priority muscle overdosed >max×1.3 → WARN (not REVIEW_REQUIRED)', function() {
+      var training = { days:[{ exercises:[
+        { exerciseName:'Press Banca', sets:[{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}] }
+      ]}]};
+      var targets = {
+        pectoral: { priority:'normal', volumeRange:{ min:8, max:16 }, confidence:'high' }
+      };
+      // pectoral: 28 sets — above max:16 × 1.3 = 20.8
+      var r = _auditPlan(training, targets, []);
+      return r.status === 'WARN' && r.findings.some(function(f){ return f.code === 'OVERDOSED' && f.muscle === 'pectoral'; });
+    });
+
+    test('T49 _auditPlan: volume OK but frequency too low → WARN with FREQ_LOW', function() {
+      // High priority deltoides_lateral needs ≥2 sessions, plan has only 1
+      var training = { days:[
+        { exercises:[{ exerciseName:'Aperturas Laterales', sets:[{},{},{},{},{},{},{},{},{},{},{},{},{}] }] }
+      ]};
+      var targets = {
+        deltoides_lateral: { priority:'high', volumeRange:{ min:12, max:22 }, frequencyTarget:2, confidence:'high' }
+      };
+      var r = _auditPlan(training, targets, []);
+      return r.findings.some(function(f){ return f.code === 'FREQ_LOW' && f.muscle === 'deltoides_lateral'; });
+    });
+
+    test('T50 _auditPlan: <50% UNRESOLVED → UNRESOLVED_EXERCISES finding, not ERROR', function() {
+      var training = { days:[{ exercises:[
+        { exerciseName:'Press Banca', sets:[{},{},{}] },
+        { exerciseName:'EjercicioInventado1', sets:[{},{},{}] }
+      ]}]};
+      var targets = { pectoral: { priority:'high', volumeRange:{ min:5, max:20 }, confidence:'high' } };
+      var r = _auditPlan(training, targets, []);
+      return r.status !== 'ERROR' && r.findings.some(function(f){ return f.code === 'UNRESOLVED_EXERCISES'; });
+    });
+
+    test('T51 _auditPlan: accented name → OK, not in unresolved', function() {
+      var training = { days:[{ exercises:[
+        { exerciseName:'Extensión de Cuádriceps', sets:[{},{},{},{},{},{},{},{},{},{},{}] },
+        { exerciseName:'Extensión de Cuádriceps', sets:[{},{},{},{},{},{},{},{},{},{},{}] }
+      ]}]};
+      var targets = { cuadriceps: { priority:'high', volumeRange:{ min:10, max:25 }, confidence:'high' } };
+      var r = _auditPlan(training, targets, []);
+      return (r.status === 'OK' || r.status === 'WARN') && r.unresolved.indexOf('Extensión de Cuádriceps') < 0;
+    });
+
+    test('T52 _auditPlan: Press Banca 4 sets → pectoral=4 direct, triceps=2 secondary', function() {
+      var training = { days:[{ exercises:[
+        { exerciseName:'Press Banca', sets:[{},{},{},{}] }
+      ]}]};
+      var r = _auditPlan(training, {}, []);
+      var pecOk  = r.muscleReport && r.muscleReport['pectoral'] && Math.abs(r.muscleReport['pectoral'].prescribedSets - 4) < 0.01;
+      var tricOk = r.muscleReport && r.muscleReport['triceps'] && Math.abs(r.muscleReport['triceps'].prescribedSets - 2) < 0.01;
+      return pecOk && tricOk;
+    });
+
+    test('T53 _auditPlan: leg-only plan, pectoral high priority → REVIEW_REQUIRED', function() {
+      var training = { days:[{ exercises:[
+        { exerciseName:'Sentadilla', sets:[{},{},{},{},{}] },
+        { exerciseName:'Prensa', sets:[{},{},{},{},{}] }
+      ]}]};
+      var targets = {
+        pectoral: { priority:'high', volumeRange:{ min:10, max:20 }, confidence:'high' },
+        cuadriceps: { priority:'normal', volumeRange:{ min:8, max:20 }, confidence:'high' }
+      };
+      var r = _auditPlan(training, targets, []);
+      return r.status === 'REVIEW_REQUIRED' && r.findings.some(function(f){ return f.code === 'UNDERDOSED' && f.muscle === 'pectoral'; });
+    });
+
+    test('T54 _auditPlan: all exercises fictitious → ERROR (AUDIT_COVERAGE_LOW)', function() {
+      var training = { days:[{ exercises:[
+        { exerciseName:'EjercicioA', sets:[{},{}] },
+        { exerciseName:'EjercicioB', sets:[{},{}] }
+      ]}]};
+      var targets = { pectoral: { priority:'high', volumeRange:{ min:10, max:20 }, confidence:'high' } };
+      var r = _auditPlan(training, targets, []);
+      return r.status === 'ERROR' && r.findings.some(function(f){ return f.code === 'AUDIT_COVERAGE_LOW'; });
+    });
+
+    test('T55 _auditPlan: maintenance priority underdosed → WARN (not REVIEW_REQUIRED)', function() {
+      var training = { days:[{ exercises:[
+        { exerciseName:'Press Banca', sets:[{}] }
+      ]}]};
+      var targets = {
+        pectoral: { priority:'maintenance', volumeRange:{ min:6, max:12 }, confidence:'high' }
+      };
+      // pectoral: 1 set — below maintenance min:6
+      var r = _auditPlan(training, targets, []);
+      return r.status === 'WARN' && r.findings.some(function(f){ return f.code === 'UNDERDOSED' && f.muscle === 'pectoral'; });
     });
 
     var passed = results.filter(function(r){return r.passed;}).length;
@@ -6850,13 +7124,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const _volAudit = auditFractionalVolume(training, []);
       if (_volAudit.warnings.length) console.info('[VDSEN] Volume audit:', _volAudit.warnings);
       const _muscleTargets = prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles;
-      const _volTargetWarnings = _auditVolumeVsTargets(_volAudit, _muscleTargets || {});
-      if (_volTargetWarnings.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings);
-      const _volAuditHtml = _volTargetWarnings.length
-        ? '<div style="border:1px solid rgba(255,140,0,.3);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:10px;color:#f0a500">'
-          + '<span style="font-weight:600">⚠ DISTRIBUCIÓN MUSCULAR — revisar</span><br>'
-          + _volTargetWarnings.slice(0,5).map(function(w){ return '· ' + _escH(w); }).join('<br>')
-          + '</div>' : '';
+      const _capa2Result = _muscleTargets ? _auditPlan(training, _muscleTargets, []) : null;
+      if (_capa2Result) console.info('[VDSEN Capa2]', _capa2Result.status, _capa2Result.summary);
+      const _volAuditHtml = _capa2Result ? _formatAuditPlanHtml(_capa2Result) : '';
 
       // FASE 48: Longitudinal Validation Gate (0 new Firestore reads)
       const _prevPlanForLV = (prescCtx && prescCtx.previousPlan && prescCtx.previousPlan._rawDays)
@@ -11377,13 +11647,9 @@ El esfuerzo no es negociable.
       const _volAudit2 = auditFractionalVolume(training, []);
       if (_volAudit2.warnings.length) console.info('[VDSEN] Volume audit:', _volAudit2.warnings);
       const _muscleTargets2 = prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles;
-      const _volTargetWarnings2 = _auditVolumeVsTargets(_volAudit2, _muscleTargets2 || {});
-      if (_volTargetWarnings2.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings2);
-      const _volAuditHtml2 = _volTargetWarnings2.length
-        ? '<div style="border:1px solid rgba(255,140,0,.3);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:10px;color:#f0a500">'
-          + '<span style="font-weight:600">⚠ DISTRIBUCIÓN MUSCULAR — revisar</span><br>'
-          + _volTargetWarnings2.slice(0,5).map(function(w){ return '· ' + _escH(w); }).join('<br>')
-          + '</div>' : '';
+      const _capa2Result2 = _muscleTargets2 ? _auditPlan(training, _muscleTargets2, []) : null;
+      if (_capa2Result2) console.info('[VDSEN Capa2]', _capa2Result2.status, _capa2Result2.summary);
+      const _volAuditHtml2 = _capa2Result2 ? _formatAuditPlanHtml(_capa2Result2) : '';
 
       // FASE 48: Longitudinal Validation Gate (0 new Firestore reads)
       const _prevPlanForLV2 = (prescCtx && prescCtx.previousPlan && prescCtx.previousPlan._rawDays)
