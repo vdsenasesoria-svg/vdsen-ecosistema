@@ -5130,7 +5130,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     'carry':            { direct: ['trapecio_superior'],                     indirect: ['deltoides'] },
     'glute_isolation':  { direct: ['gluteos'],                               indirect: ['aductores'] },
     'calf':             { direct: ['gastrocnemio','soleo'],                  indirect: [] },
-    'face_pull':        { direct: ['deltoides_posterior','rotadores_ext'],   indirect: ['trapecio_medio','romboides'] }
+    'face_pull':        { direct: ['deltoides_posterior','rotadores_ext'],   indirect: ['trapecio_medio','romboides'] },
+    'leg_curl':         { direct: ['isquiotibiales'],                        indirect: ['gastrocnemio'] }
   };
 
   // Pain pattern → motor patterns to avoid (P9.4)
@@ -5225,7 +5226,36 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     'estocada':             { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:['abdominales'], movementPattern:'lunge', resistanceProfile:'BP', longLengthBias:true, stability:'medium' },
     'plancha':              { primaryMuscles:['abdominales','oblicuos'], secondaryMuscles:['erectores','deltoides'], stabilizers:[], movementPattern:'abdominal', resistanceProfile:null, longLengthBias:null, stability:'high' },
     'crunch':               { primaryMuscles:['abdominales'], secondaryMuscles:['oblicuos'], stabilizers:[], movementPattern:'abdominal', resistanceProfile:null, longLengthBias:null, stability:'high' },
-    'pull-over':            { primaryMuscles:['dorsales','pectoral'], secondaryMuscles:['triceps'], stabilizers:[], movementPattern:'pull_vertical', resistanceProfile:'AP', longLengthBias:true, stability:'high' }
+    'pull-over':            { primaryMuscles:['dorsales','pectoral'], secondaryMuscles:['triceps'], stabilizers:[], movementPattern:'pull_vertical', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    // ── DELTA MÍNIMO — aliases alta frecuencia (no presentes previamente) ────
+    'prensa':                               { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:[], movementPattern:'squat', resistanceProfile:'DP', longLengthBias:true, stability:'high' },
+    'prensa de piernas':                    { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:[], movementPattern:'squat', resistanceProfile:'DP', longLengthBias:true, stability:'high' },
+    'prensa de piernas 45':                 { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:[], movementPattern:'squat', resistanceProfile:'DP', longLengthBias:true, stability:'high' },
+    'prensa de piernas 45°':               { primaryMuscles:['cuadriceps','gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:[], movementPattern:'squat', resistanceProfile:'DP', longLengthBias:true, stability:'high' },
+    'extension de cuadriceps':              { primaryMuscles:['cuadriceps'], secondaryMuscles:[], stabilizers:[], movementPattern:'squat', resistanceProfile:'DP', longLengthBias:false, stability:'high' },
+    'press inclinado mancuernas':           { primaryMuscles:['pectoral','pectoral_clavicular'], secondaryMuscles:['triceps','deltoides_anterior'], stabilizers:['rotadores_ext'], movementPattern:'press_horizontal', resistanceProfile:'DP', longLengthBias:false, stability:'medium' },
+    'press de hombros con mancuernas':      { primaryMuscles:['deltoides'], secondaryMuscles:['triceps'], stabilizers:['rotadores_ext'], movementPattern:'press_vertical', resistanceProfile:'DP', longLengthBias:false, stability:'medium' },
+    'pec deck':                             { primaryMuscles:['pectoral'], secondaryMuscles:[], stabilizers:[], movementPattern:'fly', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'cruce de poleas':                      { primaryMuscles:['pectoral'], secondaryMuscles:['deltoides_anterior'], stabilizers:[], movementPattern:'fly', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'aperturas con mancuernas':             { primaryMuscles:['pectoral'], secondaryMuscles:['deltoides_anterior'], stabilizers:[], movementPattern:'fly', resistanceProfile:'BP', longLengthBias:true, stability:'medium' },
+    'pull-over con mancuerna':              { primaryMuscles:['dorsales','pectoral'], secondaryMuscles:['triceps'], stabilizers:[], movementPattern:'pull_vertical', resistanceProfile:'AP', longLengthBias:true, stability:'high' },
+    'pajaro':                               { primaryMuscles:['deltoides_posterior'], secondaryMuscles:['romboides','trapecio_medio'], stabilizers:[], movementPattern:'face_pull', resistanceProfile:'BP', longLengthBias:true, stability:'medium' },
+    'pajaro / vuelo posterior':             { primaryMuscles:['deltoides_posterior'], secondaryMuscles:['romboides','trapecio_medio'], stabilizers:[], movementPattern:'face_pull', resistanceProfile:'BP', longLengthBias:true, stability:'medium' },
+    'vuelo posterior':                      { primaryMuscles:['deltoides_posterior'], secondaryMuscles:['romboides','trapecio_medio'], stabilizers:[], movementPattern:'face_pull', resistanceProfile:'BP', longLengthBias:true, stability:'medium' },
+    'fondos en paralelas':                  { primaryMuscles:['pectoral','triceps'], secondaryMuscles:['deltoides_anterior'], stabilizers:['rotadores_ext'], movementPattern:'press_horizontal', resistanceProfile:'BP', longLengthBias:false, stability:'medium' },
+    'fondos entre bancos':                  { primaryMuscles:['triceps'], secondaryMuscles:['pectoral','deltoides_anterior'], stabilizers:[], movementPattern:'extension', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'extension de triceps en polea':        { primaryMuscles:['triceps'], secondaryMuscles:[], stabilizers:[], movementPattern:'extension', resistanceProfile:'AP', longLengthBias:false, stability:'high' },
+    'extension de triceps sobre la cabeza': { primaryMuscles:['triceps'], secondaryMuscles:[], stabilizers:[], movementPattern:'extension', resistanceProfile:'AP', longLengthBias:true, stability:'medium' },
+    'patada de triceps en polea':           { primaryMuscles:['triceps'], secondaryMuscles:[], stabilizers:[], movementPattern:'extension', resistanceProfile:'AP', longLengthBias:false, stability:'high' },
+    'leg curl acostado':                    { primaryMuscles:['isquiotibiales'], secondaryMuscles:['gastrocnemio'], stabilizers:[], movementPattern:'leg_curl', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'leg curl sentado':                     { primaryMuscles:['isquiotibiales'], secondaryMuscles:['gastrocnemio'], stabilizers:[], movementPattern:'leg_curl', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'curl femoral':                         { primaryMuscles:['isquiotibiales'], secondaryMuscles:['gastrocnemio'], stabilizers:[], movementPattern:'leg_curl', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'curl femoral acostado':                { primaryMuscles:['isquiotibiales'], secondaryMuscles:['gastrocnemio'], stabilizers:[], movementPattern:'leg_curl', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'puente de gluteo':                     { primaryMuscles:['gluteos'], secondaryMuscles:['isquiotibiales'], stabilizers:['abdominales'], movementPattern:'glute_isolation', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'abduccion de cadera':                  { primaryMuscles:['gluteos'], secondaryMuscles:[], stabilizers:[], movementPattern:'glute_isolation', resistanceProfile:'BP', longLengthBias:false, stability:'high' },
+    'elevacion de talones de pie':          { primaryMuscles:['gastrocnemio','soleo'], secondaryMuscles:[], stabilizers:[], movementPattern:'calf', resistanceProfile:'DP', longLengthBias:false, stability:'high' },
+    'elevacion de talones sentado':         { primaryMuscles:['soleo'], secondaryMuscles:['gastrocnemio'], stabilizers:[], movementPattern:'calf', resistanceProfile:'DP', longLengthBias:false, stability:'high' },
+    'elevacion de piernas colgado':         { primaryMuscles:['abdominales'], secondaryMuscles:['oblicuos'], stabilizers:[], movementPattern:'abdominal', resistanceProfile:null, longLengthBias:null, stability:'medium' }
   };
 
   // ─── _computeConfidenceScore (P10.6) ─────────────────────────────────────
@@ -5400,8 +5430,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         var nameLc = name.toLowerCase();
         var numSets = (ex.sets || []).length;
 
-        // P10.7: canonical metadata first
-        var canonical = _EXERCISE_CANONICAL_METADATA[nameLc];
+        // P10.7: canonical metadata first (normalize accents for lookup robustness)
+        var nameLcNorm = nameLc.normalize('NFD').replace(/[̀-ͯ]/g,'');
+        var canonical = _EXERCISE_CANONICAL_METADATA[nameLc] || _EXERCISE_CANONICAL_METADATA[nameLcNorm];
         if (canonical) {
           (canonical.primaryMuscles || []).forEach(function(m) {
             if (!muscleVolume[m]) muscleVolume[m] = { direct: 0, indirect: 0, fractionalTotal: 0 };
@@ -5429,6 +5460,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           else if (/press.*militar|overhead press|\bohp\b/.test(nameLc))      pattern = 'press_vertical';
           else if (/jal[oó]n|pull.?down|dominada/.test(nameLc))              pattern = 'pull_vertical';
           else if (/remo|row|cable row/.test(nameLc))                         pattern = 'pull_horizontal';
+          else if (/leg.?curl|curl.femoral|curl.pierna|curl.acostado/.test(nameLc)) pattern = 'leg_curl';
           else if (/\bcurl\b/.test(nameLc))                                   pattern = 'curl';
           else if (/triceps|skull crusher|extensi.*tricep/.test(nameLc))      pattern = 'extension';
           else if (/apertura|fly/.test(nameLc))                               pattern = 'fly';
@@ -6380,6 +6412,51 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       // Must mention volumeProjection requirement
       var hasVP = txt.includes('volumeProjection');
       return allCovered && hasAlta && hasVP;
+    });
+
+    // T41 (delta mínimo — leg curl semántico)
+    test('T41 Leg Curl Acostado → isquiotibiales (NOT biceps)', function() {
+      var plan = { days:[{ exercises:[{ exerciseName:'Leg Curl Acostado', sets:[{},{},{}] }] }] };
+      var r = auditFractionalVolume(plan, []);
+      var hasIsq = r.muscleVolume['isquiotibiales'] && r.muscleVolume['isquiotibiales'].direct > 0;
+      var noBiceps = !r.muscleVolume['biceps'];
+      return hasIsq && noBiceps;
+    });
+
+    // T42 (delta mínimo — Prensa ya no UNRESOLVED)
+    test('T42 Prensa → cuadriceps/gluteos (alias canónico)', function() {
+      var plan = { days:[{ exercises:[{ exerciseName:'Prensa', sets:[{},{},{}] }] }] };
+      var r = auditFractionalVolume(plan, []);
+      var hasCuad = r.muscleVolume['cuadriceps'] && r.muscleVolume['cuadriceps'].direct > 0;
+      var noUnresolved = r.unclassified.indexOf('Prensa') < 0;
+      return hasCuad && noUnresolved;
+    });
+
+    // T43 (delta mínimo — Fondos en Paralelas compound)
+    test('T43 Fondos en Paralelas → pectoral + triceps directo', function() {
+      var plan = { days:[{ exercises:[{ exerciseName:'Fondos en Paralelas', sets:[{},{},{}] }] }] };
+      var r = auditFractionalVolume(plan, []);
+      var hasPec  = r.muscleVolume['pectoral']  && r.muscleVolume['pectoral'].direct  > 0;
+      var hasTric = r.muscleVolume['triceps']   && r.muscleVolume['triceps'].direct   > 0;
+      return hasPec && hasTric;
+    });
+
+    // T44 (delta mínimo — normalización de tildes)
+    test('T44 Extensión de Cuádriceps (con tildes) → cuadriceps vía lookup normalizado', function() {
+      var plan = { days:[{ exercises:[{ exerciseName:'Extensión de Cuádriceps', sets:[{},{},{}] }] }] };
+      var r = auditFractionalVolume(plan, []);
+      var hasCuad = r.muscleVolume['cuadriceps'] && r.muscleVolume['cuadriceps'].direct > 0;
+      var noUnresolved = r.unclassified.indexOf('Extensión de Cuádriceps') < 0;
+      return hasCuad && noUnresolved;
+    });
+
+    // T45 (delta mínimo — Curl Femoral no contamina bíceps)
+    test('T45 Curl Femoral → isquiotibiales (keyword leg_curl, NOT curl pattern)', function() {
+      var plan = { days:[{ exercises:[{ exerciseName:'Curl Femoral Acostado', sets:[{},{},{}] }] }] };
+      var r = auditFractionalVolume(plan, []);
+      var hasIsq = r.muscleVolume['isquiotibiales'] && r.muscleVolume['isquiotibiales'].direct > 0;
+      var noBiceps = !r.muscleVolume['biceps'];
+      return hasIsq && noBiceps;
     });
 
     var passed = results.filter(function(r){return r.passed;}).length;
