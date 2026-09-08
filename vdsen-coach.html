@@ -351,8 +351,8 @@
       </div>
     </div>
     <div class="card p-4 mb-4">
-      <label class="block text-sm font-medium mb-1">🔑 API Key de Anthropic (Claude)</label>
-      <input type="password" id="apiKeyInput" class="input-field" placeholder="sk-ant-..." autocomplete="off">
+      <label class="block text-sm font-medium mb-1">🔑 API Key de OpenAI (ChatGPT)</label>
+      <input type="password" id="apiKeyInput" class="input-field" placeholder="sk-..." autocomplete="off">
       <button id="saveApiKeyBtn" class="btn-primary mt-3">Guardar en este navegador</button>
       <p class="text-xs text-[#888] mt-2">⚠️ La clave se almacena solo en tu navegador (localStorage). Nunca se guarda en Firestore ni en el servidor.</p>
     </div>
@@ -5975,10 +5975,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       'Devuelve el objeto "entrenamiento" completo (con todos los días y sets) con los campos rellenados.'
     ].join('\n');
     var body = {
-      model: 'claude-sonnet-5', max_tokens: 4000,
-      thinking: { type: 'disabled' },
-      system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
+      model: 'gpt-4o', max_tokens: 4000,
       messages: [
+        { role: 'system', content: motor },
         { role: 'user', content: repairMsg },
         { role: 'assistant', content: '```json\n' + JSON.stringify({ schema: 'vdsen-plan-v2', entrenamiento: training }, null, 2) + '\n```' },
         { role: 'user', content: 'Devuelve el JSON completo de "entrenamiento" con todos los sets corregidos en un bloque ```json.' }
@@ -5986,12 +5985,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     };
     var resp = await fetch('/api/generate-plan', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
+      headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify(body)
     });
     var data = await resp.json();
     if (!resp.ok) throw new Error('Controlled repair API: ' + ((data && (data.error && (data.error.message || data.error))) || resp.status));
-    var txt = Array.isArray(data.content) ? data.content.filter(function(c){return c.type==='text';}).map(function(c){return c.text;}).join('\n') : '';
+    var txt = (data.choices && data.choices[0] && data.choices[0].message) ? data.choices[0].message.content : '';
     if (!txt) throw new Error('Controlled repair: respuesta vacía del modelo');
     var blocks = _extractJsonBlocks(txt);
     for (var i = 0; i < blocks.length; i++) {
@@ -6476,7 +6475,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const clientId = document.getElementById('planClientSelect').value;
     if (!clientId) { showToast('Selecciona un cliente primero', true); return; }
     const apiKey = localStorage.getItem('vdsen_apikey');
-    if (!apiKey || !apiKey.startsWith('sk-ant-')) { showToast('Configura tu API key de Anthropic en Config primero', true); return; }
+    if (!apiKey || !apiKey.startsWith('sk-')) { showToast('Configura tu API key de OpenAI en Config primero', true); return; }
     const statusBox = document.getElementById('autoGenStatus');
     const setStatus = html => { if (statusBox) statusBox.innerHTML = html; };
     const btn = document.getElementById('autoGenBtn');
@@ -6577,20 +6576,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
       const body = {
-        model: 'claude-sonnet-5',
+        model: 'gpt-4o',
         max_tokens: 8000,
-        thinking: { type: 'disabled' },
-        system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: userMsg }]
+        messages: [{ role: 'system', content: motor }, { role: 'user', content: userMsg }]
       };
       const resp = await fetch('/api/generate-plan', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
+        headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
         body: JSON.stringify(body)
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error((data && (data.error?.message || data.error)) || ('API ' + resp.status));
-      const text = Array.isArray(data.content) ? data.content.filter(c => c.type === 'text').map(c => c.text).join('\n') : '';
+      const text = (data.choices && data.choices[0] && data.choices[0].message) ? data.choices[0].message.content : '';
       if (!text) throw new Error('Respuesta vacía del modelo');
 
       setStatus('<span style="color:var(--text-muted)">Validando plan…</span>');
@@ -10981,8 +10978,8 @@ El esfuerzo no es negociable.
     const setStatus = html => { if (statusEl) statusEl.innerHTML = html; };
     if (!currentCoach) { setStatus('<div style="color:#e05555">⚠ No hay sesión activa.</div>'); return; }
     const apiKey = localStorage.getItem('vdsen_apikey');
-    if (!apiKey || !apiKey.startsWith('sk-ant-')) {
-      setStatus('<div style="color:#e05555">⚠ Configura tu API key de Anthropic en <strong>Config</strong> primero.</div>'); return;
+    if (!apiKey || !apiKey.startsWith('sk-')) {
+      setStatus('<div style="color:#e05555">⚠ Configura tu API key de OpenAI en <strong>Config</strong> primero.</div>'); return;
     }
     if (btn) { btn.disabled = true; btn._t = btn.innerHTML; btn.innerHTML = '⏳ Generando plan…'; }
     try {
@@ -11088,20 +11085,18 @@ El esfuerzo no es negociable.
         'FICHA DEL CLIENTE:', fichaTxt
       ].filter(Boolean).join('\n');
       const reqBody = {
-        model: 'claude-sonnet-5',
+        model: 'gpt-4o',
         max_tokens: 8000,
-        thinking: { type: 'disabled' },
-        system: [{ type: 'text', text: motor, cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: userMsg }]
+        messages: [{ role: 'system', content: motor }, { role: 'user', content: userMsg }]
       };
       const resp = await fetch('/api/generate-plan', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
+        headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
         body: JSON.stringify(reqBody)
       });
       const respData = await resp.json();
       if (!resp.ok) throw new Error((respData && (respData.error?.message || respData.error)) || ('API ' + resp.status));
-      const text = Array.isArray(respData.content) ? respData.content.filter(c => c.type === 'text').map(c => c.text).join('\n') : '';
+      const text = (respData.choices && respData.choices[0] && respData.choices[0].message) ? respData.choices[0].message.content : '';
       if (!text) throw new Error('Respuesta vacía del modelo');
 
       setStatus('<span style="color:#888">Validando plan…</span>');
@@ -17150,12 +17145,12 @@ El esfuerzo no es negociable.
   // Configuración: guardar API key
   document.getElementById("saveApiKeyBtn")?.addEventListener("click", () => {
     const key = document.getElementById("apiKeyInput").value.trim();
-    if (key && key.startsWith("sk-ant-")) {
+    if (key && key.startsWith("sk-")) {
       localStorage.setItem("vdsen_apikey", key);
       document.getElementById("apiKeyInput").value = "••••••••••••••••";
       showToast("API key guardada en este navegador. No se sube a ningún servidor.");
     } else if (key) {
-      showToast("La clave debe comenzar con 'sk-ant-'", true);
+      showToast("La clave debe comenzar con 'sk-'", true);
     } else {
       showToast("Ingresa una clave válida", true);
     }
