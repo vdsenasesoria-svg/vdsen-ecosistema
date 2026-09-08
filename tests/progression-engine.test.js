@@ -11204,6 +11204,152 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 15 nutrition math + rep range ✓');
 })();
 
+// ═══════════════ FASE 16 — Topology Contract (rotary vs weekly) ══════════════
+(function() {
+  console.log('\n── FASE 16: Topology Contract — TWO_ON_ONE_OFF round-trip ──');
+
+  // Inline _TOPOLOGY_CANDIDATES_T (mirrors vdsen-coach.html)
+  var _TC = {
+    ONE_ON_ONE_OFF:   { key: 'ONE_ON_ONE_OFF',   cycleLength: 2, trainingPerCycle: 1, isRotary: true,  minDpw: 1, maxDpw: 3 },
+    TWO_ON_ONE_OFF:   { key: 'TWO_ON_ONE_OFF',   cycleLength: 3, trainingPerCycle: 2, isRotary: true,  minDpw: 2, maxDpw: 5 },
+    THREE_ON_ONE_OFF: { key: 'THREE_ON_ONE_OFF', cycleLength: 4, trainingPerCycle: 3, isRotary: true,  minDpw: 3, maxDpw: 5 },
+    FOUR_ON_ONE_OFF:  { key: 'FOUR_ON_ONE_OFF',  cycleLength: 5, trainingPerCycle: 4, isRotary: true,  minDpw: 4, maxDpw: 6 },
+    FIVE_ON_TWO_OFF:  { key: 'FIVE_ON_TWO_OFF',  cycleLength: 7, trainingPerCycle: 5, isRotary: false, minDpw: 5, maxDpw: 5 },
+    SIX_ON_ONE_OFF:   { key: 'SIX_ON_ONE_OFF',   cycleLength: 7, trainingPerCycle: 6, isRotary: false, minDpw: 6, maxDpw: 6 },
+    CUSTOM:           { key: 'CUSTOM',            cycleLength: 7, trainingPerCycle: null, isRotary: false, minDpw: 1, maxDpw: 7 }
+  };
+
+  // Inline feasibility audit logic
+  function _checkTopologySessionCount_T(sessionCount, topologyKey) {
+    var tc = _TC[topologyKey];
+    if (!tc || topologyKey === 'CUSTOM') return { valid: true };
+    if (tc.isRotary) {
+      if (tc.trainingPerCycle && sessionCount % tc.trainingPerCycle !== 0) {
+        return { valid: false, code: 'TOPOLOGY_SESSION_COUNT_INVALID', msg: sessionCount + ' sesiones con ' + topologyKey + ' — se requiere múltiplo de ' + tc.trainingPerCycle };
+      }
+      return { valid: true };
+    } else {
+      if (sessionCount < tc.minDpw || sessionCount > tc.maxDpw) {
+        return { valid: false, code: 'TOPOLOGY_DAYS_MISMATCH', msg: sessionCount + ' days vs ' + topologyKey + ' [' + tc.minDpw + '-' + tc.maxDpw + ']' };
+      }
+      return { valid: true };
+    }
+  }
+
+  // Inline _topologyLabel_T
+  var _LABELS = {
+    ONE_ON_ONE_OFF: '1 ON / 1 OFF rotativo', TWO_ON_ONE_OFF: '2 ON / 1 OFF rotativo',
+    THREE_ON_ONE_OFF: '3 ON / 1 OFF rotativo', FOUR_ON_ONE_OFF: '4 ON / 1 OFF rotativo',
+    FIVE_ON_TWO_OFF: '5 días/sem', SIX_ON_ONE_OFF: '6 días/sem', CUSTOM: 'personalizado'
+  };
+  function _topologyLabel_T(plan) {
+    if (!plan) return '—';
+    var topo = plan.trainingTopology;
+    if (topo && _LABELS[topo]) return _LABELS[topo];
+    var dpw = plan.daysPerWeek || plan.sessionCount;
+    return dpw ? (dpw + ' días/sem') : '—';
+  }
+
+  // ── TTOPO tests (Topology Contract) ────────────────────────────────────────
+
+  // TTOPO1: TWO_ON_ONE_OFF + 6 sessions → VALID (3 full cycles × 2)
+  (function TTOPO1() {
+    var r = _checkTopologySessionCount_T(6, 'TWO_ON_ONE_OFF');
+    assert('TTOPO1', 'TWO_ON_ONE_OFF 6 sesiones → válido (3 ciclos completos)', r.valid === true);
+  })();
+  // TTOPO2: TWO_ON_ONE_OFF + 4 sessions → VALID (2 full cycles)
+  (function TTOPO2() {
+    var r = _checkTopologySessionCount_T(4, 'TWO_ON_ONE_OFF');
+    assert('TTOPO2', 'TWO_ON_ONE_OFF 4 sesiones → válido (2 ciclos)', r.valid === true);
+  })();
+  // TTOPO3: TWO_ON_ONE_OFF + 2 sessions → VALID (1 full cycle)
+  (function TTOPO3() {
+    var r = _checkTopologySessionCount_T(2, 'TWO_ON_ONE_OFF');
+    assert('TTOPO3', 'TWO_ON_ONE_OFF 2 sesiones → válido (1 ciclo)', r.valid === true);
+  })();
+  // TTOPO4: TWO_ON_ONE_OFF + 5 sessions → INVALID (not multiple of 2)
+  (function TTOPO4() {
+    var r = _checkTopologySessionCount_T(5, 'TWO_ON_ONE_OFF');
+    assert('TTOPO4a', 'TWO_ON_ONE_OFF 5 sesiones → inválido', r.valid === false);
+    assert('TTOPO4b', 'TWO_ON_ONE_OFF 5 sesiones → TOPOLOGY_SESSION_COUNT_INVALID', r.code === 'TOPOLOGY_SESSION_COUNT_INVALID');
+  })();
+  // TTOPO5: THREE_ON_ONE_OFF + 6 sessions → VALID (2 full cycles × 3)
+  (function TTOPO5() {
+    var r = _checkTopologySessionCount_T(6, 'THREE_ON_ONE_OFF');
+    assert('TTOPO5', 'THREE_ON_ONE_OFF 6 sesiones → válido (2 ciclos)', r.valid === true);
+  })();
+  // TTOPO6: THREE_ON_ONE_OFF + 5 sessions → INVALID
+  (function TTOPO6() {
+    var r = _checkTopologySessionCount_T(5, 'THREE_ON_ONE_OFF');
+    assert('TTOPO6', 'THREE_ON_ONE_OFF 5 sesiones → inválido (no múltiplo de 3)', r.valid === false);
+  })();
+  // TTOPO7: SIX_ON_ONE_OFF + 6 sessions → VALID (weekly, dpw check)
+  (function TTOPO7() {
+    var r = _checkTopologySessionCount_T(6, 'SIX_ON_ONE_OFF');
+    assert('TTOPO7', 'SIX_ON_ONE_OFF 6 días → válido', r.valid === true);
+  })();
+  // TTOPO8: SIX_ON_ONE_OFF + 5 sessions → INVALID (weekly, outside range)
+  (function TTOPO8() {
+    var r = _checkTopologySessionCount_T(5, 'SIX_ON_ONE_OFF');
+    assert('TTOPO8', 'SIX_ON_ONE_OFF 5 días → inválido (fuera de rango semanal)', r.valid === false && r.code === 'TOPOLOGY_DAYS_MISMATCH');
+  })();
+  // TTOPO9: FIVE_ON_TWO_OFF + 5 sessions → VALID (weekly)
+  (function TTOPO9() {
+    var r = _checkTopologySessionCount_T(5, 'FIVE_ON_TWO_OFF');
+    assert('TTOPO9', 'FIVE_ON_TWO_OFF 5 días → válido', r.valid === true);
+  })();
+  // TTOPO10: isRotary flags — TWO/THREE/FOUR_ON_ONE_OFF → true; FIVE/SIX_ON → false
+  (function TTOPO10() {
+    assert('TTOPO10a', 'TWO_ON_ONE_OFF → isRotary=true',    _TC.TWO_ON_ONE_OFF.isRotary === true);
+    assert('TTOPO10b', 'THREE_ON_ONE_OFF → isRotary=true',  _TC.THREE_ON_ONE_OFF.isRotary === true);
+    assert('TTOPO10c', 'FOUR_ON_ONE_OFF → isRotary=true',   _TC.FOUR_ON_ONE_OFF.isRotary === true);
+    assert('TTOPO10d', 'FIVE_ON_TWO_OFF → isRotary=false',  _TC.FIVE_ON_TWO_OFF.isRotary === false);
+    assert('TTOPO10e', 'SIX_ON_ONE_OFF → isRotary=false',   _TC.SIX_ON_ONE_OFF.isRotary === false);
+  })();
+  // TTOPO11: _topologyLabel — TWO_ON_ONE_OFF → "2 ON / 1 OFF rotativo"
+  (function TTOPO11() {
+    var plan = { trainingTopology: 'TWO_ON_ONE_OFF', daysPerWeek: 6, sessionCount: 6 };
+    assert('TTOPO11', '_topologyLabel TWO_ON_ONE_OFF → "2 ON / 1 OFF rotativo"',
+      _topologyLabel_T(plan) === '2 ON / 1 OFF rotativo');
+  })();
+  // TTOPO12: _topologyLabel — no topology → falls back to daysPerWeek
+  (function TTOPO12() {
+    var plan = { daysPerWeek: 4, sessionCount: 4 };
+    assert('TTOPO12', '_topologyLabel without topology → "4 días/sem"',
+      _topologyLabel_T(plan) === '4 días/sem');
+  })();
+  // TTOPO13: _topologyLabel — null plan → "—"
+  (function TTOPO13() {
+    assert('TTOPO13', '_topologyLabel null → "—"', _topologyLabel_T(null) === '—');
+  })();
+  // TTOPO14: Ayrton fixture — round-trip: 6 sessions, TWO_ON_ONE_OFF, sessionCount preserved
+  (function TTOPO14() {
+    // Simulate _normalizeTrainingPlan output for Ayrton
+    var normPlan = {
+      weeks: 4,
+      daysPerWeek: 4,        // weekly equivalent, NOT 6
+      sessionCount: 6,       // true session count
+      trainingTopology: 'TWO_ON_ONE_OFF',
+      days: [{label:'D1'},{label:'D2'},{label:'D3'},{label:'D4'},{label:'D5'},{label:'D6'}]
+    };
+    assert('TTOPO14a', 'Ayrton: sessionCount=6', normPlan.sessionCount === 6);
+    assert('TTOPO14b', 'Ayrton: daysPerWeek=4 (weekly equiv, not 6)', normPlan.daysPerWeek === 4);
+    assert('TTOPO14c', 'Ayrton: trainingTopology=TWO_ON_ONE_OFF', normPlan.trainingTopology === 'TWO_ON_ONE_OFF');
+    assert('TTOPO14d', 'Ayrton: label → "2 ON / 1 OFF rotativo"', _topologyLabel_T(normPlan) === '2 ON / 1 OFF rotativo');
+    var check = _checkTopologySessionCount_T(normPlan.sessionCount, normPlan.trainingTopology);
+    assert('TTOPO14e', 'Ayrton: 6 sesiones TWO_ON_ONE_OFF → válido', check.valid === true);
+  })();
+  // TTOPO15: backward compat — old plan without trainingTopology → no false errors
+  (function TTOPO15() {
+    var oldPlan = { daysPerWeek: 4, sessionCount: 4 };
+    var r = _checkTopologySessionCount_T(4, null);
+    assert('TTOPO15a', 'old plan null topology → _checkTopologySessionCount valid', r.valid === true);
+    assert('TTOPO15b', 'old plan no topology → label fallback', _topologyLabel_T(oldPlan) === '4 días/sem');
+  })();
+
+  console.log('── FASE 16 topology contract ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

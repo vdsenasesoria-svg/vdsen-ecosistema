@@ -58,7 +58,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1662 ✓ 0 ✗** · HEAD post-FASE15
+> Suite: **1687 ✓ 0 ✗** · HEAD post-FASE16
 
 ### Arquitectura conceptual
 
@@ -548,7 +548,58 @@ Wired en `validatePlan` como error bloqueante. Exportado: `window._auditNutritio
 
 **Suite: 1662 ✓ 0 ✗** (post-FASE15)
 
-**Siguiente fase:** FASE 15c — Topology Repair (days.length===6 no debe inferir SIX_ON_ONE_OFF; discriminar PPL_6 vs otros patrones de 6 días)
+---
+
+### FASE 16 (rama `claude/client-app-improvements-qayy4n`) — Topology Contract: TWO_ON_ONE_OFF
+
+**Objetivo:** Reparar la distinción entre `sessionCount`, `daysPerWeek` y `trainingTopology` para que planes rotatorios (2 on/1 off, 3 on/1 off, etc.) con 6 sesiones no degraden a `SIX_ON_ONE_OFF`.
+
+#### Cambios en `vdsen-coach.html`
+
+1. **`_TOPOLOGY_CANDIDATES`** — 3 campos nuevos por candidato:
+   - `isRotary: true/false` — ciclo-based vs semanal
+   - `cycleLength` — días totales por ciclo (TWO_ON_ONE_OFF = 3)
+   - `trainingPerCycle` — sesiones de entrenamiento por ciclo (TWO_ON_ONE_OFF = 2)
+
+2. **`topologyFeasibilityAudit`** — lógica bifurcada por `isRotary`:
+   - Rotario: verifica `sessionCount % trainingPerCycle === 0` (ciclos completos)
+   - Semanal: verifica `daysPerWeek ∈ [minDpw, maxDpw]` (rango semanal)
+
+3. **`_normalizeTrainingPlan`** — añade campos:
+   - `trainingTopology` — preservado del JSON del Motor (si presente)
+   - `sessionCount` — `days.length` explícito, no inferido
+
+4. **`validatePlan`** — warning `daysPerWeek ≠ days.length` omitido para topologías rotatorias (divergencia esperada)
+
+5. **`_topologyLabel(plan)`** — helper de display:
+   - TWO_ON_ONE_OFF → `"2 ON / 1 OFF rotativo"`
+   - Semanales → `"N días/sem"`
+   - Fallback → `daysPerWeek || sessionCount || "—"`
+
+6. **Prompt del Motor** — Regla 9 añadida: topología rotativa emite `"trainingTopology"` en raíz del objeto entrenamiento; `daysPerWeek` = equivalente semanal (NO total de sesiones)
+
+7. **UI** — PDF report y HTML report usan `_topologyLabel(plan)` en lugar de `daysPerWeek` crudo
+
+#### CONTRACT FASE 16
+
+| Contrato | Implementación |
+|----------|---------------|
+| `sessionCount = days.length` (explícito) | `_normalizeTrainingPlan` |
+| Rotario: ciclos completos válidos | `sessionCount % trainingPerCycle === 0` |
+| Semanal: rango dpw | `daysPerWeek ∈ [minDpw, maxDpw]` |
+| TWO_ON_ONE_OFF 6 sesiones → VÁLIDO | 3 ciclos × 2 sesiones |
+| TWO_ON_ONE_OFF 5 sesiones → INVÁLIDO | no múltiplo de 2 |
+| dpw ≠ days.length → warning omitido para rotarios | `validatePlan` |
+| Motor emite `trainingTopology` en JSON | Regla 9 prompt |
+| UI muestra "2 ON / 1 OFF rotativo" | `_topologyLabel` |
+| 0 lecturas Firestore extra | todo en memoria |
+| Backward compat: plan sin `trainingTopology` → sin errores falsos | `_topologyLabel` fallback |
+
+**Tests:** TTOPO1-TTOPO15 (25 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1687 ✓ 0 ✗** (post-FASE16)
+
+**Siguiente fase:** RIR Authority — contradicción RIR por ejercicio vs header global de semana
 
 ---
 
