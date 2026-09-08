@@ -1549,13 +1549,20 @@ async function loadPlan(user) {
     CALIB_VOLUMETRICA = (clientData.calibracion_volumetrica && clientData.calibracion_volumetrica.resultados)
       ? clientData.calibracion_volumetrica.resultados : null;
 
+    // FASE 81 — Parallel prefetch: exercise catalog + meso log (independent reads, saves 1 serial RTT)
+    const _pfExercises = clientData.coachId
+      ? FB.getDocs(FB.query(FB.collection(FB.db, 'exercises'), FB.where('coachId', '==', clientData.coachId))).catch(function(){ return null; })
+      : Promise.resolve(null);
+    const _pfMeso = activePlanId
+      ? FB.getDoc(FB.doc(FB.db, 'logs', user.uid, 'mesos', activePlanId)).catch(function(){ return null; })
+      : Promise.resolve(null);
+    const [_exSnapPF, _mesoSnapPF] = await Promise.all([_pfExercises, _pfMeso]);
+
     // Cargar catálogo de ejercicios del coach (para algoritmo de progresión)
     try {
-      if (clientData.coachId) {
-        const exQ = FB.query(FB.collection(FB.db, 'exercises'), FB.where('coachId', '==', clientData.coachId));
-        const exSnap = await FB.getDocs(exQ);
+      if (clientData.coachId && _exSnapPF) {
         EXERCISE_CATALOG = {};
-        exSnap.forEach(function(d) {
+        _exSnapPF.forEach(function(d) {
           var ex = d.data();
           EXERCISE_CATALOG[(ex.name||'').toLowerCase().trim()] = {
             fatigueCost: ex.fatigueCost || 3,
@@ -1572,12 +1579,8 @@ async function loadPlan(user) {
     ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual
     var _showBitacoraInfo = false;
     try {
-      // T1 new-first read: intentar path de mesociclo; fallback a legacy si no existe.
-      var _mesoSnap = null;
-      if (activePlanId) {
-        try { _mesoSnap = await FB.getDoc(FB.doc(FB.db, 'logs', user.uid, 'mesos', activePlanId)); }
-        catch(_me2) { _mesoSnap = null; }
-      }
+      // T1 new-first read (prefetched in parallel above): meso log → fallback a legacy si no existe.
+      var _mesoSnap = (_mesoSnapPF && typeof _mesoSnapPF.exists === 'function') ? _mesoSnapPF : null;
       const logRef = FB.doc(FB.db, 'logs', user.uid);
       const logSnap = (_mesoSnap && _mesoSnap.exists()) ? _mesoSnap : await FB.getDoc(logRef);
       if (logSnap.exists()) {
