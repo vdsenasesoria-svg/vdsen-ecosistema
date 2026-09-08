@@ -15783,4 +15783,59 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
 
 })();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F82 — Coach adherence: sessionsDone must exclude SKIPPED + AUTO_CLOSED_NO_DATA
+// Bug: aggregateClientLogs line 3699 counted any truthy done_ entry.
+// Fix: only REAL_COMPLETE and AUTO_CLOSED (with data) count as real adherence.
+// ─────────────────────────────────────────────────────────────────────────────
+(function() {
+  // Inline mirror of the FIXED sessionsDone filter from aggregateClientLogs
+  function countRealSessions(entries) {
+    return Object.keys(entries).filter(function(k) {
+      if (!/^done_\d+_\d+$/.test(k)) return false;
+      var v = entries[k];
+      if (!v) return false;
+      if (v === true) return true;              // legacy boolean → REAL_COMPLETE
+      if (typeof v !== 'object') return false;
+      if (v.skipped && !v.autoClosed) return false; // SKIPPED — navigation only
+      if (v.autoClosed && v.skipped) return false;  // AUTO_CLOSED_NO_DATA — navigation only
+      return true; // REAL_COMPLETE or AUTO_CLOSED
+    }).length;
+  }
+
+  console.log('\nF82 — Coach adherence: sessionsDone excludes SKIPPED + AUTO_CLOSED_NO_DATA');
+
+  var entries_A = { 'done_1_0': { ts: 1 } };
+  assert('F82-A', 'REAL_COMPLETE counts as done', countRealSessions(entries_A) === 1);
+
+  var entries_B = { 'done_1_0': { ts: 1, autoClosed: true } };
+  assert('F82-B', 'AUTO_CLOSED counts as done', countRealSessions(entries_B) === 1);
+
+  var entries_C = { 'done_1_0': { ts: 1, skipped: true } };
+  assert('F82-C', 'SKIPPED does NOT count as done', countRealSessions(entries_C) === 0);
+
+  var entries_D = { 'done_1_0': { ts: 1, autoClosed: true, skipped: true } };
+  assert('F82-D', 'AUTO_CLOSED_NO_DATA does NOT count as done', countRealSessions(entries_D) === 0);
+
+  var entries_E = { 'done_1_0': true };
+  assert('F82-E', 'legacy boolean counts as done', countRealSessions(entries_E) === 1);
+
+  var entries_F = {};
+  assert('F82-F', 'PENDING (no entry) → 0', countRealSessions(entries_F) === 0);
+
+  // Mixed: 2 real + 1 skipped + 1 auto-no-data out of 4 planned → adherence 50%, not 100%
+  var entries_G = {
+    'done_1_0': { ts: 1 },                            // REAL_COMPLETE
+    'done_1_1': { ts: 1, autoClosed: true },           // AUTO_CLOSED
+    'done_1_2': { ts: 1, skipped: true },              // SKIPPED — excluded
+    'done_1_3': { ts: 1, autoClosed: true, skipped: true } // AUTO_CLOSED_NO_DATA — excluded
+  };
+  assert('F82-G', 'mixed: only 2/4 count as real adherence', countRealSessions(entries_G) === 2);
+
+  // Non-done_ keys must be ignored
+  var entries_H = { 'log_1_0_0': { load: 80, reps: 10 }, 'done_1_0': { ts: 1 } };
+  assert('F82-H', 'non-done_ keys not counted', countRealSessions(entries_H) === 1);
+
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

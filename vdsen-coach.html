@@ -3694,9 +3694,19 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       return { name, weekly, loadDelta, tonnageDelta, techniques: [...perExercise[name].techniques], totalSets: perExercise[name].sets };
     }).sort((a,b)=> b.tonnageDelta - a.tonnageDelta);
 
-    // Adherencia
+    // Adherencia — solo cuentan REAL_COMPLETE y AUTO_CLOSED (con datos).
+    // SKIPPED y AUTO_CLOSED_NO_DATA son "navigation-only" y NO cuentan como adherencia real.
     const sessionsPlanned = (planObj?.daysPerWeek || days.length || 1) * Math.max(1, currentWeek);
-    const sessionsDone = Object.keys(entries).filter(k => /^done_\d+_\d+$/.test(k) && entries[k]).length;
+    const sessionsDone = Object.keys(entries).filter(k => {
+      if (!/^done_\d+_\d+$/.test(k)) return false;
+      const v = entries[k];
+      if (!v) return false;
+      if (v === true) return true; // legacy boolean → REAL_COMPLETE
+      if (typeof v !== 'object') return false;
+      if (v.skipped && !v.autoClosed) return false; // SKIPPED — navigation only
+      if (v.autoClosed && v.skipped) return false;  // AUTO_CLOSED_NO_DATA — navigation only
+      return true; // REAL_COMPLETE or AUTO_CLOSED
+    }).length;
     const adherence = sessionsPlanned ? Math.min(100, Math.round((sessionsDone / sessionsPlanned) * 100)) : 0;
 
     return { exerciseStats, perWeek, postSession, weeklyCheckin, exnotes, sessionsDone, sessionsPlanned, adherence };
