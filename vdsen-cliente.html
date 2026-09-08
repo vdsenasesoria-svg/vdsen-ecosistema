@@ -1539,6 +1539,7 @@ async function loadPlan(user) {
         : null,
       rirByWeek: planData.rirByWeek || null,
       totalWeeks: parseInt(planData.weeks) || 6,
+      trainingTopology: planData.trainingTopology || null,
       carb_cycling_y3t: planData.carb_cycling_y3t || null
     };
 
@@ -2946,8 +2947,8 @@ function renderResumen() {
     ${_primeraSesionHtml}
 
     <div class="card" style="margin-top:10px">
-      <div class="card-title">HOY — SEM ${semActiva}</div>
-      ${getTodaySummary()}
+      <div class="card-title">HOY</div>
+      ${_renderClientToday()}
     </div>
 
     <div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px;margin-top:14px">PROGRESIÓN — ${_totalWeeksGrid} SEMANAS</div>
@@ -3301,6 +3302,127 @@ function _computeNextAction(sesiones) {
   var _ci = LOGS['ci_sem_'+REAL_WEEK] || null;
   if (!_ci || (!_ci.peso && !_ci.who5)) return { type:'CHECKIN', week:REAL_WEEK };
   return { type:'DONE', week:REAL_WEEK };
+}
+
+// ── Client Today — topology-aware state resolver ──────────────────────────
+var _CLIENT_TOPO_META = {
+  ONE_ON_ONE_OFF:   { trainingPerCycle: 1, isRotary: true },
+  TWO_ON_ONE_OFF:   { trainingPerCycle: 2, isRotary: true },
+  THREE_ON_ONE_OFF: { trainingPerCycle: 3, isRotary: true },
+  FOUR_ON_ONE_OFF:  { trainingPerCycle: 4, isRotary: true },
+};
+
+function _countDoneSessionsFromLogs(logs) {
+  var fullyDone = 0, partlyDone = 0;
+  Object.keys(logs).forEach(function(k) {
+    var m = k.match(/^done_(\d+)_(\d+)$/);
+    if (m && logs[k] === true) {
+      if (logs['postsession_' + m[1] + '_' + m[2]]) fullyDone++;
+      else partlyDone++;
+    }
+  });
+  return { fullyDone: fullyDone, partlyDone: partlyDone };
+}
+window._countDoneSessionsFromLogs = _countDoneSessionsFromLogs;
+
+function _resolveTodayState(topology, logs, sesiones) {
+  if (!sesiones || !sesiones.length) return { state: 'NO_ACTIVE_PLAN' };
+  var topoMeta = topology && _CLIENT_TOPO_META[topology];
+  if (!topoMeta || !topoMeta.isRotary) {
+    var nba = _computeNextAction(sesiones);
+    if (nba.type === 'NO_PLAN') return { state: 'NO_ACTIVE_PLAN' };
+    if (nba.type === 'START')    return { state: 'TRAIN_TODAY', session: sesiones[nba.di], sessionIndex: nba.di };
+    if (nba.type === 'CONTINUE') return { state: 'TRAIN_TODAY', session: sesiones[nba.di], sessionIndex: nba.di, inProgress: true };
+    if (nba.type === 'POSTSESSION') return { state: 'SESSION_ALREADY_COMPLETED', session: sesiones[nba.di], sessionIndex: nba.di };
+    return { state: 'SESSION_ALREADY_COMPLETED', session: sesiones[sesiones.length - 1], sessionIndex: sesiones.length - 1, allDone: true };
+  }
+  var totalSessions = sesiones.length;
+  var counts = _countDoneSessionsFromLogs(logs);
+  var fullyDone = counts.fullyDone;
+  var partlyDone = counts.partlyDone;
+  if (partlyDone > 0) {
+    var si = Math.min(fullyDone, totalSessions - 1);
+    return { state: 'SESSION_ALREADY_COMPLETED', session: sesiones[si], sessionIndex: si };
+  }
+  if (fullyDone >= totalSessions) {
+    return { state: 'REST_TODAY', isEndOfMesocycle: true };
+  }
+  var tpc = topoMeta.trainingPerCycle;
+  if (fullyDone > 0 && fullyDone % tpc === 0) {
+    return { state: 'REST_TODAY', nextSession: sesiones[fullyDone], nextSessionIndex: fullyDone };
+  }
+  return { state: 'TRAIN_TODAY', session: sesiones[fullyDone], sessionIndex: fullyDone };
+}
+window._resolveTodayState = _resolveTodayState;
+
+function _renderClientToday() {
+  if (!PLAN) return '<div style="color:var(--mt);font-size:12px">Sin plan activo</div>';
+  var sesiones = getSesiones();
+  var topo = PLAN.trainingTopology || null;
+  var st = _resolveTodayState(topo, LOGS, sesiones);
+
+  if (st.state === 'NO_ACTIVE_PLAN') {
+    return '<div style="text-align:center;padding:12px 0;color:var(--mt);font-size:12px">Sin plan activo</div>';
+  }
+
+  if (st.state === 'REST_TODAY') {
+    var restMsg = st.isEndOfMesocycle
+      ? 'Mesociclo completado · Contactá a tu coach para el siguiente plan'
+      : ('Próxima sesión: ' + _escHTml(st.nextSession
+          ? (st.nextSession.label || st.nextSession.dia || st.nextSession.nombre || '')
+          : ''));
+    return '<div style="text-align:center;padding:8px 0">'
+      + '<div style="font-family:var(--ff);font-size:10px;font-weight:800;letter-spacing:2px;color:#44BB88;margin-bottom:6px">😴 DÍA DE DESCANSO</div>'
+      + '<div style="font-size:12px;color:var(--mt);margin-bottom:12px">' + restMsg + '</div>'
+      + '<button onclick="goTab(1)" style="width:100%;padding:10px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);color:var(--mt);font-family:var(--ff);font-size:11px;font-weight:700;letter-spacing:1.5px;cursor:pointer;border-radius:6px">VER ENTRENAMIENTO ▶</button>'
+      + '</div>';
+  }
+
+  if (st.state === 'SESSION_ALREADY_COMPLETED') {
+    var compSes = st.session || sesiones[0];
+    var compLabel = _escHTml(compSes.label || compSes.dia || compSes.nombre || '');
+    if (st.allDone) {
+      return '<div style="text-align:center;padding:8px 0">'
+        + '<div style="font-family:var(--ff);font-size:10px;font-weight:800;letter-spacing:2px;color:var(--grn);margin-bottom:6px">✓ TODO AL DÍA</div>'
+        + '<div style="font-size:12px;color:var(--mt)">Sesiones y check-in completados</div>'
+        + '</div>';
+    }
+    return '<div style="padding:8px 0">'
+      + '<div style="font-family:var(--ff);font-size:10px;font-weight:800;letter-spacing:2px;color:var(--grn);margin-bottom:4px">✓ ENTRENAMIENTO LISTO</div>'
+      + '<div style="font-size:12px;color:var(--gold);margin-bottom:10px">' + compLabel + '</div>'
+      + '<button onclick="goTab(1)" style="width:100%;padding:11px;background:rgba(196,255,0,.12);border:1px solid rgba(196,255,0,.4);color:var(--accent);font-family:var(--ff);font-size:12px;font-weight:800;letter-spacing:1.5px;cursor:pointer;border-radius:6px">COMPLETAR POST-SESIÓN →</button>'
+      + '</div>';
+  }
+
+  // TRAIN_TODAY
+  var trainSes = st.session || sesiones[0];
+  var trainLabel = _escHTml(trainSes.label || trainSes.dia || trainSes.nombre || '');
+  var exList = trainSes.exercises || [];
+  var exCount = exList.length;
+  var totalSets = 0;
+  exList.forEach(function(ej) { totalSets += ej.sets ? ej.sets.length : (ej.numSeries || 3); });
+  var estMin = 0;
+  if (exList.length) {
+    exList.forEach(function(ej) {
+      var sets = ej.sets || [];
+      var numSets = sets.length || (ej.numSeries || 3);
+      var avgRest = sets.length ? sets.reduce(function(a,s){ return a + (s.restSeconds||90); }, 0) / sets.length : 90;
+      estMin += Math.round(numSets * 0.75 + (numSets - 1) * (avgRest / 60));
+    });
+    estMin = Math.max(estMin, 20);
+  }
+  var metaHtml = '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
+    + (exCount ? '<span style="font-size:10px;color:var(--mt)">' + exCount + ' ejercicios</span>' : '')
+    + (totalSets ? '<span style="font-size:10px;color:var(--mt)">·</span><span style="font-size:10px;color:var(--mt)">' + totalSets + ' series</span>' : '')
+    + (estMin > 0 ? '<span style="font-size:10px;color:var(--mt)">·</span><span style="font-size:10px;color:var(--mt)">~' + estMin + ' min</span>' : '')
+    + '</div>';
+  var ctaLabel = st.inProgress ? 'CONTINUAR ENTRENAMIENTO →' : 'INICIAR ENTRENAMIENTO →';
+  return '<div>'
+    + '<div style="font-family:var(--ff);font-size:10px;font-weight:800;letter-spacing:2px;color:var(--accent);margin-bottom:4px">🏋️ HOY ENTRENÁS</div>'
+    + '<div style="font-size:14px;font-weight:700;color:var(--tx);margin-bottom:8px">' + trainLabel + '</div>'
+    + metaHtml
+    + '<button onclick="goTab(1)" style="width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">' + ctaLabel + '</button>'
+    + '</div>';
 }
 
 // Renders the "AHORA" NBA block. onclick: JS expression string (numbers only, safe to inline).

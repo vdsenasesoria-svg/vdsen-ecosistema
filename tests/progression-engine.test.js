@@ -11836,6 +11836,178 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 18 Decision Inbox (TDIX) ✓');
 })();
 
+// ═══════════════════════ FASE 19 Client Today (CTDY) ═══════════════════════
+(function() {
+  // Inline testable versions (no globals)
+  var _CTDY_TOPO_META = {
+    ONE_ON_ONE_OFF:   { trainingPerCycle: 1, isRotary: true },
+    TWO_ON_ONE_OFF:   { trainingPerCycle: 2, isRotary: true },
+    THREE_ON_ONE_OFF: { trainingPerCycle: 3, isRotary: true },
+    FOUR_ON_ONE_OFF:  { trainingPerCycle: 4, isRotary: true },
+  };
+
+  function _countDoneSessionsFromLogs_T(logs) {
+    var fullyDone = 0, partlyDone = 0;
+    Object.keys(logs).forEach(function(k) {
+      var m = k.match(/^done_(\d+)_(\d+)$/);
+      if (m && logs[k] === true) {
+        if (logs['postsession_' + m[1] + '_' + m[2]]) fullyDone++;
+        else partlyDone++;
+      }
+    });
+    return { fullyDone: fullyDone, partlyDone: partlyDone };
+  }
+
+  function _resolveTodayState_T(topology, logs, sesiones) {
+    if (!sesiones || !sesiones.length) return { state: 'NO_ACTIVE_PLAN' };
+    var topoMeta = topology && _CTDY_TOPO_META[topology];
+    if (!topoMeta || !topoMeta.isRotary) {
+      // Non-rotary: use simple week-based logic (stub for tests)
+      return { state: 'TRAIN_TODAY', session: sesiones[0], sessionIndex: 0 };
+    }
+    var totalSessions = sesiones.length;
+    var counts = _countDoneSessionsFromLogs_T(logs);
+    var fullyDone = counts.fullyDone;
+    var partlyDone = counts.partlyDone;
+    if (partlyDone > 0) {
+      var si = Math.min(fullyDone, totalSessions - 1);
+      return { state: 'SESSION_ALREADY_COMPLETED', session: sesiones[si], sessionIndex: si };
+    }
+    if (fullyDone >= totalSessions) {
+      return { state: 'REST_TODAY', isEndOfMesocycle: true };
+    }
+    var tpc = topoMeta.trainingPerCycle;
+    if (fullyDone > 0 && fullyDone % tpc === 0) {
+      return { state: 'REST_TODAY', nextSession: sesiones[fullyDone], nextSessionIndex: fullyDone };
+    }
+    return { state: 'TRAIN_TODAY', session: sesiones[fullyDone], sessionIndex: fullyDone };
+  }
+
+  // Ayrton fixture: 6 sessions, TWO_ON_ONE_OFF (tpc=2)
+  // Expected cycle: D1, D2, REST, D3, D4, REST, D5, D6, REST(end)
+  var TOPO = 'TWO_ON_ONE_OFF';
+  var SESIONES = [
+    { nombre: 'D1', exercises: [] },
+    { nombre: 'D2', exercises: [] },
+    { nombre: 'D3', exercises: [] },
+    { nombre: 'D4', exercises: [] },
+    { nombre: 'D5', exercises: [] },
+    { nombre: 'D6', exercises: [] },
+  ];
+
+  function mkLogs(fullyDoneCount, partlyDoneCount) {
+    var logs = {};
+    for (var i = 0; i < fullyDoneCount; i++) {
+      logs['done_1_' + i] = true;
+      logs['postsession_1_' + i] = { rpe: 7 };
+    }
+    for (var j = 0; j < partlyDoneCount; j++) {
+      var idx = fullyDoneCount + j;
+      logs['done_1_' + idx] = true;
+      // no postsession → partlyDone
+    }
+    return logs;
+  }
+
+  // CTDY1: 0 done → TRAIN_TODAY, session=D1
+  (function CTDY1() {
+    var r = _resolveTodayState_T(TOPO, {}, SESIONES);
+    assert('CTDY1a', 'state=TRAIN_TODAY', r.state === 'TRAIN_TODAY');
+    assert('CTDY1b', 'session=D1',        r.session.nombre === 'D1');
+    assert('CTDY1c', 'sessionIndex=0',    r.sessionIndex === 0);
+  })();
+
+  // CTDY2: D1 done but no postsession → SESSION_ALREADY_COMPLETED, session=D1
+  (function CTDY2() {
+    var logs = { 'done_1_0': true };
+    var r = _resolveTodayState_T(TOPO, logs, SESIONES);
+    assert('CTDY2a', 'state=SESSION_ALREADY_COMPLETED', r.state === 'SESSION_ALREADY_COMPLETED');
+    assert('CTDY2b', 'session=D1',                      r.session.nombre === 'D1');
+  })();
+
+  // CTDY3: D1 fully done → TRAIN_TODAY, session=D2
+  (function CTDY3() {
+    var r = _resolveTodayState_T(TOPO, mkLogs(1, 0), SESIONES);
+    assert('CTDY3a', 'state=TRAIN_TODAY', r.state === 'TRAIN_TODAY');
+    assert('CTDY3b', 'session=D2',        r.session.nombre === 'D2');
+    assert('CTDY3c', 'sessionIndex=1',    r.sessionIndex === 1);
+  })();
+
+  // CTDY4: D1+D2 fully done → REST_TODAY, nextSession=D3
+  (function CTDY4() {
+    var r = _resolveTodayState_T(TOPO, mkLogs(2, 0), SESIONES);
+    assert('CTDY4a', 'state=REST_TODAY',    r.state === 'REST_TODAY');
+    assert('CTDY4b', 'nextSession=D3',      r.nextSession.nombre === 'D3');
+    assert('CTDY4c', 'no isEndOfMesocycle', !r.isEndOfMesocycle);
+  })();
+
+  // CTDY5: D1+D2+D3 fully done → TRAIN_TODAY, session=D4
+  (function CTDY5() {
+    var r = _resolveTodayState_T(TOPO, mkLogs(3, 0), SESIONES);
+    assert('CTDY5a', 'state=TRAIN_TODAY', r.state === 'TRAIN_TODAY');
+    assert('CTDY5b', 'session=D4',        r.session.nombre === 'D4');
+  })();
+
+  // CTDY6: D1+D2+D3+D4 fully done → REST_TODAY, nextSession=D5
+  (function CTDY6() {
+    var r = _resolveTodayState_T(TOPO, mkLogs(4, 0), SESIONES);
+    assert('CTDY6a', 'state=REST_TODAY', r.state === 'REST_TODAY');
+    assert('CTDY6b', 'nextSession=D5',   r.nextSession.nombre === 'D5');
+  })();
+
+  // CTDY7: D1..D5 fully done → TRAIN_TODAY, session=D6
+  (function CTDY7() {
+    var r = _resolveTodayState_T(TOPO, mkLogs(5, 0), SESIONES);
+    assert('CTDY7a', 'state=TRAIN_TODAY', r.state === 'TRAIN_TODAY');
+    assert('CTDY7b', 'session=D6',        r.session.nombre === 'D6');
+  })();
+
+  // CTDY8: all 6 fully done → REST_TODAY, isEndOfMesocycle=true
+  (function CTDY8() {
+    var r = _resolveTodayState_T(TOPO, mkLogs(6, 0), SESIONES);
+    assert('CTDY8a', 'state=REST_TODAY',    r.state === 'REST_TODAY');
+    assert('CTDY8b', 'isEndOfMesocycle',    r.isEndOfMesocycle === true);
+    assert('CTDY8c', 'no nextSession',      !r.nextSession);
+  })();
+
+  // CTDY9: no sessions → NO_ACTIVE_PLAN
+  (function CTDY9() {
+    var r = _resolveTodayState_T(TOPO, {}, []);
+    assert('CTDY9', 'state=NO_ACTIVE_PLAN', r.state === 'NO_ACTIVE_PLAN');
+  })();
+
+  // CTDY10: session order NOT determined by weekday — D4 shown when fullyDone=3, regardless of date
+  (function CTDY10() {
+    var r = _resolveTodayState_T(TOPO, mkLogs(3, 0), SESIONES);
+    assert('CTDY10a', 'TRAIN_TODAY at fullyDone=3',    r.state === 'TRAIN_TODAY');
+    assert('CTDY10b', 'session is index 3 (D4), not weekday', r.session.nombre === 'D4' && r.sessionIndex === 3);
+  })();
+
+  // CTDY11: ONE_ON_ONE_OFF (tpc=1) — after each training, REST
+  (function CTDY11() {
+    var SES2 = [{ nombre: 'A', exercises: [] }, { nombre: 'B', exercises: [] }];
+    var r0 = _resolveTodayState_T('ONE_ON_ONE_OFF', {}, SES2);
+    assert('CTDY11a', '0 done → TRAIN session A', r0.state === 'TRAIN_TODAY' && r0.session.nombre === 'A');
+    var r1 = _resolveTodayState_T('ONE_ON_ONE_OFF', mkLogs(1,0), SES2);
+    assert('CTDY11b', '1 done → REST nextSession B', r1.state === 'REST_TODAY' && r1.nextSession.nombre === 'B');
+    var r2 = _resolveTodayState_T('ONE_ON_ONE_OFF', mkLogs(2,0), SES2);
+    assert('CTDY11c', '2 done → REST isEndOfMesocycle', r2.state === 'REST_TODAY' && r2.isEndOfMesocycle === true);
+  })();
+
+  // CTDY12: partlyDone — done flag present but no postsession across any W,D → SESSION_ALREADY_COMPLETED
+  (function CTDY12() {
+    var logs = {
+      'done_2_0': true, 'postsession_2_0': { rpe: 8 },  // fullyDone
+      'done_2_1': true                                    // partlyDone (no postsession)
+    };
+    var r = _resolveTodayState_T(TOPO, logs, SESIONES);
+    assert('CTDY12a', 'state=SESSION_ALREADY_COMPLETED', r.state === 'SESSION_ALREADY_COMPLETED');
+    assert('CTDY12b', 'session=D2 (index 1)',            r.sessionIndex === 1);
+  })();
+
+  console.log('── FASE 19 Client Today (CTDY) ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');

@@ -58,7 +58,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1751 ✓ 0 ✗** · HEAD post-FASE18 (Decision Inbox)
+> Suite: **1779 ✓ 0 ✗** · HEAD post-FASE19 (Client Today)
 
 ### Arquitectura conceptual
 
@@ -702,6 +702,36 @@ Wired en `validatePlan` como error bloqueante. Exportado: `window._auditNutritio
 **Tests:** TDIX1–TDIX12 (26 aserciones) en `tests/progression-engine.test.js`
 
 **Suite: 1751 ✓ 0 ✗** (post-FASE18 + Decision Inbox)
+
+---
+
+## FASE 19 — Client Today (branch `claude/client-app-improvements-qayy4n`)
+
+**Estado:** DONE
+
+**Objetivo:** Resolver de forma determinista qué sesión corresponde hoy según `trainingTopology` y el estado real de ejecución, sin usar día de la semana como autoridad para topologías rotativas.
+
+**Cambios:**
+
+- `vdsen-cliente.html`: Se agrega `trainingTopology: planData.trainingTopology || null` al objeto `PLAN` en `loadPlan`.
+- `vdsen-cliente.html`: Nuevas funciones:
+  - `_CLIENT_TOPO_META` — metadatos de topologías rotativas (tpc, isRotary)
+  - `_countDoneSessionsFromLogs(logs)` — cuenta `fullyDone` / `partlyDone` de todas las claves `done_W_D` en LOGS
+  - `_resolveTodayState(topology, logs, sesiones)` → `{ state, session, sessionIndex, ... }` con estados `NO_ACTIVE_PLAN | TRAIN_TODAY | REST_TODAY | SESSION_ALREADY_COMPLETED`
+  - `_renderClientToday()` — renderiza la tarjeta HOY con CTA según estado
+- `vdsen-cliente.html`: En `renderResumen`, reemplaza la tarjeta `HOY — SEM ${semActiva}` + `getTodaySummary()` por `HOY` + `_renderClientToday()`.
+
+**Algoritmo rotativo:**
+- `fullyDone % tpc !== 0 → TRAIN_TODAY (sesion[fullyDone])`
+- `fullyDone % tpc === 0 && fullyDone > 0 → REST_TODAY (nextSession = sesiones[fullyDone])`
+- `fullyDone >= totalSessions → REST_TODAY (isEndOfMesocycle)`
+- `partlyDone > 0 → SESSION_ALREADY_COMPLETED`
+
+**0 nuevas lecturas Firestore** — usa LOGS ya cargados.
+
+**Tests:** CTDY1–CTDY12 (28 aserciones) — ciclo completo Ayrton TWO_ON_ONE_OFF (D1,D2,REST,D3,D4,REST,D5,D6,REST), ONE_ON_ONE_OFF, partlyDone, NO_ACTIVE_PLAN, orden no dependiente del día de la semana.
+
+**Suite: 1779 ✓ 0 ✗** (post-FASE19 + Client Today)
 
 ---
 
