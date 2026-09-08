@@ -58,7 +58,7 @@ Generator contract: `docs/CONTEXTO_GENERADOR.md` — leer únicamente para tarea
 
 ## FASE 3–13 — Generation Intelligence Layer (branch `claude/client-app-improvements-qayy4n`)
 
-> Suite: **1725 ✓ 0 ✗** · HEAD post-FASE17 (Coach Command Center)
+> Suite: **1751 ✓ 0 ✗** · HEAD post-FASE18 (Decision Inbox)
 
 ### Arquitectura conceptual
 
@@ -674,7 +674,34 @@ Wired en `validatePlan` como error bloqueante. Exportado: `window._auditNutritio
 
 **Suite: 1725 ✓ 0 ✗** (post-FASE17 + Command Center)
 
-**Siguiente fase:** Decision Inbox (F18) o Prescription Intent
+---
+
+### FASE 18 (rama `claude/client-app-improvements-qayy4n`) — Decision Inbox
+
+**Objetivo:** Capa de decisiones accionables sobre las señales del Command Center.
+
+**Señales → decisiones (4 de 6):**
+- `PENDING_PROGRESSION` → `PROGRESSION_REVIEW` (sugerencia de carga del Motor, sin auto-aplicar)
+- `PAIN_ALERT` → `PAIN_REVIEW` (revisión ejercicio/plan, nunca sustitución automática)
+- `PERFORMANCE_DROP` → `PERFORMANCE_REVIEW` (evidencia longitudinal)
+- `PROGRAM_ENDING` → `PLAN_PREPARATION` (preparar siguiente mesociclo)
+- `INACTIVITY` / `ADHERENCE_DROP` → siguen como alertas del CC, NO generan decisiones
+
+**Funciones añadidas a `vdsen-coach.html`:**
+- `_SIGNAL_TO_DECISION`: mapa config señal→decisión (decisionType, suggestedAction, color)
+- `_buildDecisionInbox(rows, coachUid)`: construye y ordena decisiones (HIGH→MEDIUM→LOW, alpha tiebreak); dedup por `clientId|reasonCode`; excluye dismissed (localStorage, scope por semana)
+- `_renderDecisionInbox(rows, coachUid)`: genera HTML del inbox con type-filter pills y cards
+- `_diDismiss(key)`, `_diToggleFilter(btn, dtype)`, `_diClearFilters()`: interactividad
+
+**Ubicación UI:** sección "DECISIONES PENDIENTES" ENCIMA del Command Center. Si no hay decisiones, el bloque no se renderiza.
+
+**Dismiss persistence:** `vdsen_di_{coachUid}_{clientId}_{reasonCode}_w{cw}` en localStorage. Scope semanal: señales descartadas reaparecen en nueva semana.
+
+**0 nuevas lecturas Firestore** — lee de `window._clientCache` ya poblado.
+
+**Tests:** TDIX1–TDIX12 (26 aserciones) en `tests/progression-engine.test.js`
+
+**Suite: 1751 ✓ 0 ✗** (post-FASE18 + Decision Inbox)
 
 ---
 

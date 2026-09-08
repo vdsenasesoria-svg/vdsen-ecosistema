@@ -1436,6 +1436,101 @@
   }
   window._computeCommandCenterSignals = _computeCommandCenterSignals;
 
+  // ── DECISION INBOX ────────────────────────────────────────────────────────
+  // SIGNAL != DECISION. Signals are observations; Decisions require coach action.
+  // Only PENDING_PROGRESSION, PAIN_ALERT, PERFORMANCE_DROP, PROGRAM_ENDING → decisions.
+  // INACTIVITY and ADHERENCE_DROP remain alerts only.
+  const _SIGNAL_TO_DECISION = {
+    PENDING_PROGRESSION: { decisionType:'PROGRESSION_REVIEW', suggestedAction:'Revisar sugerencia de carga del Motor. Confirmar o ajustar antes de aplicar.', color:'#7788cc' },
+    PAIN_ALERT:          { decisionType:'PAIN_REVIEW',        suggestedAction:'Revisar ejercicios y plan por dolor articular. No sustituir automáticamente.', color:'#FF4444' },
+    PERFORMANCE_DROP:    { decisionType:'PERFORMANCE_REVIEW', suggestedAction:'Revisar rendimiento longitudinal y evaluar ajuste de carga si necesario.', color:'#FFCC44' },
+    PROGRAM_ENDING:      { decisionType:'PLAN_PREPARATION',   suggestedAction:'Preparar siguiente mesociclo antes de que finalice el actual.', color:'#44BB88' },
+  };
+
+  // rows: [{c, logData, signals}] — already in memory from loadClientList
+  // coachUid: for dismiss key namespacing
+  function _buildDecisionInbox(rows, coachUid) {
+    const decisions = [];
+    const _seen = new Set(); // dedup: clientId|reasonCode
+    (rows || []).forEach(({ c, logData, signals }) => {
+      if (!signals || !signals.length) return;
+      const clientName = c.displayName || c.email || c.id;
+      const cw = logData?.currentWeek || 1;
+      signals.forEach(sig => {
+        const meta = _SIGNAL_TO_DECISION[sig.reasonCode];
+        if (!meta) return; // signal not eligible for decision
+        const dedupeKey = c.id + '|' + sig.reasonCode;
+        if (_seen.has(dedupeKey)) return;
+        _seen.add(dedupeKey);
+        const dismissKey = 'vdsen_di_' + (coachUid||'anon') + '_' + c.id + '_' + sig.reasonCode + '_w' + cw;
+        try { if (localStorage.getItem(dismissKey) === '1') return; } catch(e) {}
+        decisions.push({
+          decisionType: meta.decisionType,
+          clientId: c.id,
+          clientName,
+          severity: sig.severity,
+          reasonCode: sig.reasonCode,
+          evidence: sig.evidence,
+          suggestedAction: meta.suggestedAction,
+          createdFromSignal: { reasonCode: sig.reasonCode, severity: sig.severity, evidence: sig.evidence },
+          actions: ['OPEN_CLIENT', 'DISMISS'],
+          dismissKey,
+          color: meta.color,
+        });
+      });
+    });
+    const _so = { HIGH:0, MEDIUM:1, LOW:2 };
+    decisions.sort((a, b) => {
+      const sa = _so[a.severity]??2, sb = _so[b.severity]??2;
+      if (sa !== sb) return sa - sb;
+      return a.clientName.localeCompare(b.clientName, 'es', { sensitivity:'base' });
+    });
+    return decisions;
+  }
+  window._buildDecisionInbox = _buildDecisionInbox;
+
+  function _renderDecisionInbox(rows, coachUid) {
+    const decisions = _buildDecisionInbox(rows, coachUid);
+    if (!decisions.length) return '';
+    const typeCounts = {};
+    decisions.forEach(d => { typeCounts[d.decisionType] = (typeCounts[d.decisionType]||0)+1; });
+    const typeFilters = Object.keys(typeCounts).map(dt => {
+      const m = Object.values(_SIGNAL_TO_DECISION).find(v => v.decisionType === dt) || { color:'#888' };
+      const label = dt.replace(/_/g,' ');
+      return `<button class="_di-filter" data-dtype="${dt}" data-active="0" onclick="window._diToggleFilter(this,'${dt}')" style="padding:2px 9px;border-radius:10px;border:1px solid ${m.color}55;background:${m.color}11;color:${m.color};font-size:10px;font-weight:700;cursor:pointer;transition:box-shadow .15s">${_escH(label)} ${typeCounts[dt]}</button>`;
+    }).join(' ');
+    const cards = decisions.map(d => {
+      const sev = d.severity==='HIGH' ? '#FF4444' : d.severity==='MEDIUM' ? '#FF8844' : '#FFCC44';
+      const labelDt = d.decisionType.replace(/_/g,' ');
+      const safeKey = _escH(d.dismissKey);
+      return `<div class="_di-card" id="_dic_${safeKey}" data-dtype="${_escH(d.decisionType)}" style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-left:3px solid ${sev};border-radius:8px;margin-bottom:6px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">
+            <span style="font-size:9px;font-weight:800;color:${d.color};background:${d.color}11;border:1px solid ${d.color}44;padding:1px 6px;border-radius:7px;letter-spacing:.5px">${_escH(labelDt)}</span>
+            <strong style="font-size:12px;color:#ddd">${_escH(d.clientName)}</strong>
+          </div>
+          <div style="font-size:11px;color:#aaa;margin-bottom:3px">${_escH(d.evidence)}</div>
+          <div style="font-size:10px;color:#666;font-style:italic">${_escH(d.suggestedAction)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;align-items:flex-end">
+          <button onclick="showClientDetail('${_escH(d.clientId)}')" style="padding:4px 10px;border-radius:6px;border:1px solid ${d.color}66;background:${d.color}18;color:${d.color};font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">Abrir →</button>
+          <button onclick="window._diDismiss('${safeKey}')" style="padding:2px 8px;border-radius:5px;border:1px solid #333;background:none;color:#555;font-size:10px;cursor:pointer;white-space:nowrap">✕ Archivar</button>
+        </div>
+      </div>`;
+    }).join('');
+    return `<div id="_diInbox" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+        <span id="_diHdr" style="font-size:11px;font-weight:800;color:#7788cc;text-transform:uppercase;letter-spacing:1px">📋 DECISIONES PENDIENTES · ${decisions.length}</span>
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+          ${typeFilters}
+          <button id="_diClearBtn" onclick="window._diClearFilters()" style="display:none;padding:2px 8px;border-radius:10px;border:1px solid #444;background:none;color:#666;font-size:10px;cursor:pointer">✕</button>
+        </div>
+      </div>
+      <div id="_diCards">${cards}</div>
+    </div>`;
+  }
+  window._renderDecisionInbox = _renderDecisionInbox;
+
   // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
   function _getLiveInfo(entries, planData) {
     if (!entries) return null;
@@ -2139,8 +2234,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             </span>
           </div>`;
         }).join('');
-        // Inject Command Center HTML
+        // Inject Decision Inbox + Command Center HTML
+        const _diHtml = _renderDecisionInbox(rowData, currentCoach?.uid || 'anon');
         container.innerHTML += `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
+          ${_diHtml}
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
               ${_ccFilterPills ? `<span style="font-size:10px;font-weight:800;color:#555;letter-spacing:1px;text-transform:uppercase">Filtrar:</span> ${_ccFilterPills} <button id="_ccClearBtn" onclick="window._ccClearFilters()" style="display:none;padding:3px 10px;border-radius:12px;border:1px solid #444;background:none;color:#777;font-size:11px;cursor:pointer">✕</button>` : ''}
@@ -2167,6 +2264,32 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           document.querySelectorAll('._cc-filter').forEach(b => { b.setAttribute('data-active','0'); b.style.boxShadow='none'; });
           const cb = document.getElementById('_ccClearBtn'); if(cb) cb.style.display='none';
           document.querySelectorAll('._cc-att-row').forEach(r => { r.style.display=''; });
+        };
+        window._diDismiss = function(dismissKey) {
+          try { localStorage.setItem(dismissKey, '1'); } catch(e) {}
+          const el = document.getElementById('_dic_' + dismissKey);
+          if (el) el.remove();
+          const remaining = document.querySelectorAll('#_diCards ._di-card').length;
+          const hdr = document.getElementById('_diHdr');
+          if (hdr) hdr.textContent = '📋 DECISIONES PENDIENTES · ' + remaining;
+          if (remaining === 0) { const inbox = document.getElementById('_diInbox'); if (inbox) inbox.style.display = 'none'; }
+        };
+        window._diToggleFilter = function(btn, dtype) {
+          const isActive = btn.getAttribute('data-active') === '1';
+          btn.setAttribute('data-active', isActive ? '0' : '1');
+          btn.style.boxShadow = isActive ? 'none' : ('0 0 0 2px ' + (btn.style.color || '#888'));
+          const activeDtypes = [...document.querySelectorAll('._di-filter[data-active="1"]')].map(b => b.getAttribute('data-dtype'));
+          const clearBtn = document.getElementById('_diClearBtn');
+          if (clearBtn) clearBtn.style.display = activeDtypes.length ? '' : 'none';
+          document.querySelectorAll('#_diCards ._di-card').forEach(card => {
+            if (!activeDtypes.length) { card.style.display = ''; return; }
+            card.style.display = activeDtypes.includes(card.getAttribute('data-dtype')) ? '' : 'none';
+          });
+        };
+        window._diClearFilters = function() {
+          document.querySelectorAll('._di-filter').forEach(b => { b.setAttribute('data-active','0'); b.style.boxShadow='none'; });
+          const cb = document.getElementById('_diClearBtn'); if(cb) cb.style.display='none';
+          document.querySelectorAll('#_diCards ._di-card').forEach(c => { c.style.display=''; });
         };
         // Render dashboard with already-loaded data — avoids a second Firestore read cycle
         const _dashLogsMap = {}, _dashPlanMap = {};

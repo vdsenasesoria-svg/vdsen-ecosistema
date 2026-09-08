@@ -11665,6 +11665,177 @@ console.log('\nLS — Longitudinal Learning Contract');
   console.log('── FASE 17 Command Center Signals (TCCX) ✓');
 })();
 
+// ═══════════════════════════════════════════════════════════════
+// FASE 18 — Decision Inbox (TDIX)
+// ═══════════════════════════════════════════════════════════════
+(function() {
+  // Inline testable variant: accepts explicit dismissed-keys Set (no localStorage in Node.js)
+  var _SIGNAL_TO_DECISION_T = {
+    PENDING_PROGRESSION: { decisionType:'PROGRESSION_REVIEW', suggestedAction:'Revisar sugerencia de carga.', color:'#7788cc' },
+    PAIN_ALERT:          { decisionType:'PAIN_REVIEW',        suggestedAction:'Revisar ejercicios por dolor.', color:'#FF4444' },
+    PERFORMANCE_DROP:    { decisionType:'PERFORMANCE_REVIEW', suggestedAction:'Revisar rendimiento longitudinal.', color:'#FFCC44' },
+    PROGRAM_ENDING:      { decisionType:'PLAN_PREPARATION',   suggestedAction:'Preparar siguiente mesociclo.', color:'#44BB88' },
+  };
+  function _buildDecisionInbox_T(rows, coachUid, dismissedKeys) {
+    var dismissed = dismissedKeys || new Set();
+    var decisions = [];
+    var _seen = new Set();
+    (rows || []).forEach(function(row) {
+      var c = row.c, logData = row.logData, signals = row.signals;
+      if (!signals || !signals.length) return;
+      var clientName = c.displayName || c.email || c.id;
+      var cw = (logData && logData.currentWeek) || 1;
+      signals.forEach(function(sig) {
+        var meta = _SIGNAL_TO_DECISION_T[sig.reasonCode];
+        if (!meta) return;
+        var dedupeKey = c.id + '|' + sig.reasonCode;
+        if (_seen.has(dedupeKey)) return;
+        _seen.add(dedupeKey);
+        var dismissKey = 'vdsen_di_' + (coachUid||'anon') + '_' + c.id + '_' + sig.reasonCode + '_w' + cw;
+        if (dismissed.has(dismissKey)) return;
+        decisions.push({
+          decisionType: meta.decisionType,
+          clientId: c.id,
+          clientName: clientName,
+          severity: sig.severity,
+          reasonCode: sig.reasonCode,
+          evidence: sig.evidence,
+          suggestedAction: meta.suggestedAction,
+          createdFromSignal: { reasonCode: sig.reasonCode, severity: sig.severity, evidence: sig.evidence },
+          actions: ['OPEN_CLIENT', 'DISMISS'],
+          dismissKey: dismissKey,
+          color: meta.color,
+        });
+      });
+    });
+    var _so = { HIGH:0, MEDIUM:1, LOW:2 };
+    decisions.sort(function(a, b) {
+      var sa = _so[a.severity]!=null?_so[a.severity]:2, sb = _so[b.severity]!=null?_so[b.severity]:2;
+      if (sa !== sb) return sa - sb;
+      return a.clientName.localeCompare(b.clientName, 'es', { sensitivity:'base' });
+    });
+    return decisions;
+  }
+
+  var mkSig = function(reasonCode, severity, evidence) {
+    return { reasonCode: reasonCode, severity: severity||'MEDIUM', evidence: evidence||'test evidence' };
+  };
+  var mkRow = function(id, name, signals, cw) {
+    return { c: { id: id, displayName: name }, logData: { currentWeek: cw||1 }, signals: signals };
+  };
+
+  // TDIX1: PENDING_PROGRESSION → PROGRESSION_REVIEW
+  (function TDIX1() {
+    var rows = [mkRow('c1','Ana',[mkSig('PENDING_PROGRESSION','LOW','Sentadilla +2.5kg')])];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    assert('TDIX1a', 'PENDING_PROGRESSION → PROGRESSION_REVIEW', d.length===1 && d[0].decisionType==='PROGRESSION_REVIEW');
+    assert('TDIX1b', 'clientId preserved', d[0].clientId==='c1');
+  })();
+
+  // TDIX2: PAIN_ALERT → PAIN_REVIEW
+  (function TDIX2() {
+    var rows = [mkRow('c2','Ben',[mkSig('PAIN_ALERT','HIGH','rodilla - semana 3')])];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    assert('TDIX2a', 'PAIN_ALERT → PAIN_REVIEW', d.length===1 && d[0].decisionType==='PAIN_REVIEW');
+    assert('TDIX2b', 'severity HIGH', d[0].severity==='HIGH');
+  })();
+
+  // TDIX3: PERFORMANCE_DROP → PERFORMANCE_REVIEW
+  (function TDIX3() {
+    var rows = [mkRow('c3','Car',[mkSig('PERFORMANCE_DROP','MEDIUM','Press banca -10%')])];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    assert('TDIX3', 'PERFORMANCE_DROP → PERFORMANCE_REVIEW', d.length===1 && d[0].decisionType==='PERFORMANCE_REVIEW');
+  })();
+
+  // TDIX4: PROGRAM_ENDING → PLAN_PREPARATION
+  (function TDIX4() {
+    var rows = [mkRow('c4','Dan',[mkSig('PROGRAM_ENDING','MEDIUM','Semana 6 de 6')])];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    assert('TDIX4', 'PROGRAM_ENDING → PLAN_PREPARATION', d.length===1 && d[0].decisionType==='PLAN_PREPARATION');
+  })();
+
+  // TDIX5: INACTIVITY → NO decision (alert only)
+  (function TDIX5() {
+    var rows = [mkRow('c5','Eve',[mkSig('INACTIVITY','MEDIUM','7 días sin actividad')])];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    assert('TDIX5', 'INACTIVITY does not generate a decision', d.length===0);
+  })();
+
+  // TDIX6: ADHERENCE_DROP → NO decision (alert only)
+  (function TDIX6() {
+    var rows = [mkRow('c6','Fra',[mkSig('ADHERENCE_DROP','MEDIUM','3 sesiones perdidas')])];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    assert('TDIX6', 'ADHERENCE_DROP does not generate a decision', d.length===0);
+  })();
+
+  // TDIX7: same signal + same client → 1 decision (dedup)
+  (function TDIX7() {
+    var rows = [mkRow('c7','Gia',[mkSig('PAIN_ALERT','HIGH','rodilla'),mkSig('PAIN_ALERT','HIGH','rodilla')])];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    assert('TDIX7', 'duplicate signals deduplicated to 1 decision', d.length===1);
+  })();
+
+  // TDIX8: dismissed key → excluded from results
+  (function TDIX8() {
+    var rows = [mkRow('c8','Hec',[mkSig('PAIN_ALERT','HIGH','hombro')],1)];
+    var dismissKey = 'vdsen_di_coach1_c8_PAIN_ALERT_w1';
+    var d = _buildDecisionInbox_T(rows,'coach1', new Set([dismissKey]));
+    assert('TDIX8', 'dismissed decision excluded', d.length===0);
+  })();
+
+  // TDIX9: decision has all required fields
+  (function TDIX9() {
+    var rows = [mkRow('c9','Isa',[mkSig('PENDING_PROGRESSION','LOW','Squat +2.5kg')])];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    var dec = d[0];
+    assert('TDIX9a', 'has decisionType',       typeof dec.decisionType==='string');
+    assert('TDIX9b', 'has clientId',            typeof dec.clientId==='string');
+    assert('TDIX9c', 'has severity',            typeof dec.severity==='string');
+    assert('TDIX9d', 'has reasonCode',          typeof dec.reasonCode==='string');
+    assert('TDIX9e', 'has evidence',            typeof dec.evidence==='string');
+    assert('TDIX9f', 'has suggestedAction',     typeof dec.suggestedAction==='string');
+    assert('TDIX9g', 'has createdFromSignal',   dec.createdFromSignal && dec.createdFromSignal.reasonCode==='PENDING_PROGRESSION');
+    assert('TDIX9h', 'has actions array',       Array.isArray(dec.actions) && dec.actions.includes('OPEN_CLIENT') && dec.actions.includes('DISMISS'));
+    assert('TDIX9i', 'has dismissKey',          typeof dec.dismissKey==='string');
+  })();
+
+  // TDIX10: sorting HIGH → MEDIUM → LOW
+  (function TDIX10() {
+    var rows = [
+      mkRow('c10a','Z',[mkSig('PENDING_PROGRESSION','LOW','low')]),
+      mkRow('c10b','A',[mkSig('PAIN_ALERT','HIGH','high')]),
+      mkRow('c10c','M',[mkSig('PERFORMANCE_DROP','MEDIUM','med')]),
+    ];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    assert('TDIX10a', 'first decision is HIGH', d[0].severity==='HIGH');
+    assert('TDIX10b', 'second decision is MEDIUM', d[1].severity==='MEDIUM');
+    assert('TDIX10c', 'third decision is LOW', d[2].severity==='LOW');
+  })();
+
+  // TDIX11: multiple clients → correct count
+  (function TDIX11() {
+    var rows = [
+      mkRow('ca','Client A',[mkSig('PAIN_ALERT','HIGH','hombro')]),
+      mkRow('cb','Client B',[mkSig('PROGRAM_ENDING','MEDIUM','semana 6')]),
+      mkRow('cc','Client C',[mkSig('INACTIVITY','MEDIUM','7 días')]),
+    ];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    assert('TDIX11', 'only 2 eligible signals become decisions', d.length===2);
+  })();
+
+  // TDIX12: createdFromSignal matches source signal fields
+  (function TDIX12() {
+    var rows = [mkRow('cx','X',[mkSig('PERFORMANCE_DROP','MEDIUM','Bench press -10%')])];
+    var d = _buildDecisionInbox_T(rows,'coach1');
+    var cfs = d[0].createdFromSignal;
+    assert('TDIX12a', 'createdFromSignal.reasonCode matches', cfs.reasonCode==='PERFORMANCE_DROP');
+    assert('TDIX12b', 'createdFromSignal.severity matches',   cfs.severity==='MEDIUM');
+    assert('TDIX12c', 'createdFromSignal.evidence matches',   cfs.evidence==='Bench press -10%');
+  })();
+
+  console.log('── FASE 18 Decision Inbox (TDIX) ✓');
+})();
+
 // ═════════════════════════ RESUMEN ═════════════════════════
 console.log('\n' + '═'.repeat(60));
 console.log('RESULTADOS: ' + _pass + ' ✓   ' + _fail + ' ✗   (total: ' + (_pass+_fail) + ')');
