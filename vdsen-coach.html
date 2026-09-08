@@ -6324,10 +6324,22 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (!bodyRaw) continue;
       try { blocks.push(JSON.parse(bodyRaw)); } catch (e) {}
     }
-    // Fallback: sin fences, intentar objetos {...} de primer nivel
+    // Fallback: sin fences — encontrar objeto JSON completo por conteo de llaves
     if (!blocks.length) {
-      const objRe = /\{[\s\S]*?\}(?=\s*(?:\{|$))/g; let o;
-      while ((o = objRe.exec(text)) !== null) { try { blocks.push(JSON.parse(o[0])); } catch (e) {} }
+      let si = 0;
+      while (si < text.length) {
+        const start = text.indexOf('{', si);
+        if (start === -1) break;
+        let depth = 0, i = start;
+        for (; i < text.length; i++) {
+          if (text[i] === '{') depth++;
+          else if (text[i] === '}') { depth--; if (depth === 0) break; }
+        }
+        if (depth === 0) {
+          try { blocks.push(JSON.parse(text.slice(start, i + 1))); } catch (e) {}
+        }
+        si = i + 1;
+      }
     }
     return blocks;
   }
@@ -6591,7 +6603,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (!text) throw new Error('Respuesta vacía del modelo');
 
       setStatus('<span style="color:var(--text-muted)">Validando plan…</span>');
+      console.log('[VDSEN] raw model response (first 500 chars):', text.slice(0, 500));
       const _rawBlocks = _extractJsonBlocks(text);
+      console.log('[VDSEN] blocks extracted:', _rawBlocks.length);
       const _rawJson   = _rawBlocks[0] || null;
       let { training, nutrition, supplements, pharma } = _classifyBlocks(_rawBlocks);
       if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
@@ -11100,7 +11114,9 @@ El esfuerzo no es negociable.
       if (!text) throw new Error('Respuesta vacía del modelo');
 
       setStatus('<span style="color:#888">Validando plan…</span>');
+      console.log('[VDSEN] raw model response (first 500 chars):', text.slice(0, 500));
       const _rawBlocks2 = _extractJsonBlocks(text);
+      console.log('[VDSEN] blocks extracted:', _rawBlocks2.length);
       const _rawJson2   = _rawBlocks2[0] || null;
       let { training, nutrition, supplements, pharma } = _classifyBlocks(_rawBlocks2);
       if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
