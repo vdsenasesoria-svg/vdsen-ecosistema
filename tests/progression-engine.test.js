@@ -15838,4 +15838,151 @@ function _buildLearnedStatePromptHint(activeLearnedState) {
 
 })();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F83 — Gate integration + unified _isSkipped detection
+// ─────────────────────────────────────────────────────────────────────────────
+(function() {
+  // ── Inline mirrors ─────────────────────────────────────────────────────────
+  function _getSessionCompletionState(doneEntry) {
+    if (!doneEntry) return 'PENDING';
+    if (typeof doneEntry !== 'object') return 'REAL_COMPLETE';
+    if (doneEntry.skipped && !doneEntry.autoClosed) return 'SKIPPED';
+    if (doneEntry.autoClosed && doneEntry.skipped) return 'AUTO_CLOSED_NO_DATA';
+    if (doneEntry.autoClosed) return 'AUTO_CLOSED';
+    return 'REAL_COMPLETE';
+  }
+
+  function _isSkippedFixed(doneEntry) {
+    return _getSessionCompletionState(doneEntry) === 'SKIPPED';
+  }
+
+  // Inline mirror of _runPreWritePlanGate core checks used by saveManualPlan / saveTrainingPlan
+  function runGate(planObj) {
+    var blockers = [], warnings = [];
+    var days = planObj.days;
+    if (!Array.isArray(days) || days.length === 0) { blockers.push('days vacíos'); }
+    else {
+      days.forEach(function(d, di) {
+        if (!Array.isArray(d.exercises) || d.exercises.length === 0) return;
+        var seen = {};
+        d.exercises.forEach(function(e) {
+          if (!e.exerciseName || !e.exerciseName.trim()) blockers.push('Ejercicio sin nombre día '+(di+1));
+          if (seen[e.exerciseName]) blockers.push('Duplicado: '+e.exerciseName+' día '+(di+1));
+          seen[e.exerciseName] = true;
+          if (!Array.isArray(e.sets) || e.sets.length === 0) blockers.push('sets vacíos en '+e.exerciseName);
+        });
+        if (d._veto) blockers.push('VETO día '+(di+1));
+      });
+      if (planObj._reviewRequired) blockers.push('REVIEW_REQUIRED marker');
+    }
+    if (planObj._warnMacros) warnings.push('nutrition macros out of range');
+    if (blockers.length) {
+      var status = blockers.some(function(b){ return b.startsWith('VETO') || b.startsWith('REVIEW'); }) ? 'REVIEW_REQUIRED' : 'BLOCK';
+      return { status, blockers, warnings };
+    }
+    if (warnings.length) return { status: 'WARN', blockers, warnings };
+    return { status: 'PASS', blockers, warnings };
+  }
+
+  // ── Gate tests ─────────────────────────────────────────────────────────────
+  console.log('\nF83 — Gate integration: PASS/WARN/REVIEW_REQUIRED/BLOCK');
+
+  var validDays = [{ dayIndex: 0, exercises: [{ exerciseName: 'Squat', sets: [{ setIndex: 0 }] }] }];
+
+  var gPass = runGate({ days: validDays });
+  assert('F83-A', 'valid plan → PASS', gPass.status === 'PASS');
+  assert('F83-B', 'PASS has no blockers', gPass.blockers.length === 0);
+
+  var gWarn = runGate({ days: validDays, _warnMacros: true });
+  assert('F83-C', 'nutrition warning → WARN status', gWarn.status === 'WARN');
+  assert('F83-D', 'WARN has warnings, no blockers', gWarn.warnings.length > 0 && gWarn.blockers.length === 0);
+
+  var vetoDays = [{ dayIndex: 0, _veto: true, exercises: [{ exerciseName: 'Squat', sets: [{ setIndex: 0 }] }] }];
+  var gReview = runGate({ days: vetoDays });
+  assert('F83-E', 'VETO day → REVIEW_REQUIRED', gReview.status === 'REVIEW_REQUIRED');
+
+  var gBlock = runGate({ days: [] });
+  assert('F83-F', 'empty days → BLOCK', gBlock.status === 'BLOCK');
+  assert('F83-G', 'BLOCK → write must be aborted (blockers present)', gBlock.blockers.length > 0);
+
+  // Duplicate exercise triggers BLOCK
+  var dupDays = [{ dayIndex: 0, exercises: [
+    { exerciseName: 'Squat', sets: [{ setIndex: 0 }] },
+    { exerciseName: 'Squat', sets: [{ setIndex: 0 }] }
+  ] }];
+  var gDup = runGate({ days: dupDays });
+  assert('F83-H', 'duplicate exercise → BLOCK', gDup.status === 'BLOCK');
+
+  // Zero-write guarantee: BLOCK must prevent write (gate checked before addDoc/updateDoc)
+  var writeCount = 0;
+  function mockWrite() { writeCount++; }
+  function saveWithGate(planObj) {
+    var g = runGate(planObj);
+    if (g.status === 'BLOCK') return; // BLOCK → abort write
+    mockWrite();
+  }
+  saveWithGate({ days: [] });
+  assert('F83-I', 'zero writes on BLOCK', writeCount === 0);
+  saveWithGate({ days: validDays });
+  assert('F83-J', 'write proceeds on PASS', writeCount === 1);
+
+  // ── _isSkipped unified formula across all 5 states ────────────────────────
+  console.log('\nF83 — _isSkipped detection: all 5 session states');
+
+  assert('F83-K', 'PENDING → not skipped', _isSkippedFixed(null) === false);
+  assert('F83-L', 'REAL_COMPLETE → not skipped', _isSkippedFixed({ ts: 1 }) === false);
+  assert('F83-M', 'SKIPPED → isSkipped true', _isSkippedFixed({ ts: 1, skipped: true }) === true);
+  assert('F83-N', 'AUTO_CLOSED → not skipped', _isSkippedFixed({ ts: 1, autoClosed: true }) === false);
+  assert('F83-O', 'AUTO_CLOSED_NO_DATA → NOT isSkipped (distinct admin state)', _isSkippedFixed({ ts: 1, autoClosed: true, skipped: true }) === false);
+
+  // ── State machine exhaustive coherence ────────────────────────────────────
+  console.log('\nF83 — _getSessionCompletionState: canonical 5-state machine');
+
+  assert('F83-P', 'null → PENDING', _getSessionCompletionState(null) === 'PENDING');
+  assert('F83-Q', 'REAL_COMPLETE object', _getSessionCompletionState({ ts: 1 }) === 'REAL_COMPLETE');
+  assert('F83-R', 'legacy boolean → REAL_COMPLETE', _getSessionCompletionState(true) === 'REAL_COMPLETE');
+  assert('F83-S', 'SKIPPED', _getSessionCompletionState({ ts: 1, skipped: true }) === 'SKIPPED');
+  assert('F83-T', 'AUTO_CLOSED', _getSessionCompletionState({ ts: 1, autoClosed: true }) === 'AUTO_CLOSED');
+  assert('F83-U', 'AUTO_CLOSED_NO_DATA', _getSessionCompletionState({ ts: 1, autoClosed: true, skipped: true }) === 'AUTO_CLOSED_NO_DATA');
+
+  // ── Tab rendering coherence: done/isSkipped/_isAdminClosed from state ─────
+  console.log('\nF83 — Tab rendering coherence');
+
+  function tabState(doneEntry) {
+    var st = _getSessionCompletionState(doneEntry);
+    var done = (st === 'REAL_COMPLETE' || st === 'AUTO_CLOSED');
+    var isSkipped = (st === 'SKIPPED');
+    var isAdminClosed = (st === 'AUTO_CLOSED_NO_DATA');
+    var icon = (isSkipped || isAdminClosed) ? '⏸' : done ? '✓' : '·';
+    var color = (isSkipped || isAdminClosed) ? 'muted' : done ? 'green' : 'muted';
+    return { done, isSkipped, isAdminClosed, icon, color };
+  }
+
+  var tPending = tabState(null);
+  assert('F83-V', 'PENDING tab: done=false, icon=·', !tPending.done && tPending.icon === '·');
+
+  var tRC = tabState({ ts: 1 });
+  assert('F83-W', 'REAL_COMPLETE tab: done=true, icon=✓, green', tRC.done && tRC.icon === '✓' && tRC.color === 'green');
+
+  var tSK = tabState({ ts: 1, skipped: true });
+  assert('F83-X', 'SKIPPED tab: isSkipped=true, icon=⏸, muted', tSK.isSkipped && tSK.icon === '⏸' && tSK.color === 'muted');
+
+  var tAC = tabState({ ts: 1, autoClosed: true });
+  assert('F83-Y', 'AUTO_CLOSED tab: done=true, icon=✓, green', tAC.done && tAC.icon === '✓' && tAC.color === 'green');
+
+  var tACND = tabState({ ts: 1, autoClosed: true, skipped: true });
+  assert('F83-Z', 'AUTO_CLOSED_NO_DATA tab: isAdminClosed=true, icon=⏸, muted (NOT SKIPPED)', !tACND.isSkipped && tACND.isAdminClosed && tACND.icon === '⏸' && tACND.color === 'muted');
+
+  // Determinism: same input always yields same state
+  var entry = { ts: 42, autoClosed: true, skipped: true };
+  assert('F83-AA', 'determinism: same entry same result', _getSessionCompletionState(entry) === _getSessionCompletionState(Object.assign({}, entry)));
+
+  // No mutation: state function must not modify input
+  var orig = { ts: 1, skipped: true };
+  var before = JSON.stringify(orig);
+  _getSessionCompletionState(orig);
+  assert('F83-AB', 'no mutation of doneEntry by state function', JSON.stringify(orig) === before);
+
+})();
+
 process.exit(_fail > 0 ? 1 : 0);

@@ -8490,6 +8490,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const _saveBtn = document.getElementById('saveManualPlanBtn');
     if (_saveBtn) { _saveBtn.disabled = true; _saveBtn.textContent = '⏳ Guardando...'; }
     try {
+      // FASE 83 — F78 gate antes de write
+      if (typeof window._runPreWritePlanGate === 'function') {
+        const _g83m = window._runPreWritePlanGate({ days: manualPlan.days }, {});
+        if (_g83m.status === 'BLOCK') { showToast('⚠️ Plan inválido — no se guardó: ' + _g83m.blockers.slice(0,2).join(' · '), true); return; }
+        if (_g83m.status === 'REVIEW_REQUIRED' && _g83m.blockers.length) console.warn('[VDSEN F83] manual plan gate REVIEW_REQUIRED:', _g83m.blockers);
+        if (_g83m.warnings.length) console.warn('[VDSEN F83] manual plan gate warnings:', _g83m.warnings);
+      }
       // Limpiar plan anterior si existe
       const prevClientSnap2 = await getDoc(doc(db, "clients", clientId));
       const prevPlanId2 = prevClientSnap2.exists() ? prevClientSnap2.data().activePlanId : null;
@@ -15889,6 +15896,13 @@ El esfuerzo no es negociable.
           });
         }
       } catch(e) { console.warn('backup falló:', e); }
+      // FASE 83 — F78 gate antes de write
+      if (typeof window._runPreWritePlanGate === 'function') {
+        const _g83t = window._runPreWritePlanGate({ days }, {});
+        if (_g83t.status === 'BLOCK') { showToast('⚠️ Plan inválido — no se guardó: ' + _g83t.blockers.slice(0,2).join(' · '), true); return; }
+        if (_g83t.status === 'REVIEW_REQUIRED' && _g83t.blockers.length) console.warn('[VDSEN F83] training plan gate REVIEW_REQUIRED:', _g83t.blockers);
+        if (_g83t.warnings.length) console.warn('[VDSEN F83] training plan gate warnings:', _g83t.warnings);
+      }
       await updateDoc(doc(db, "plans", _editingPlanId), { days, daysPerWeek: days.length, coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
       markEditorClean();
       showToast('Plan actualizado ✅');

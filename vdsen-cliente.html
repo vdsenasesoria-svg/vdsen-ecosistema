@@ -4811,7 +4811,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
 
   // Banner sesión completa — INFORMATIVO, sets siguen siendo editables
   var _doneLog = LOGS['done_'+CURRENT_WEEK+'_'+di];
-  var _isSkipped = !!(typeof _doneLog === 'object' && _doneLog && _doneLog.skipped);
+  var _isSkipped = !!(typeof _doneLog === 'object' && _doneLog && _doneLog.skipped && !_doneLog.autoClosed);
   var closedBannerHtml = sessionDone
     ? (_isSkipped
       ? '<div style="background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
@@ -6471,14 +6471,17 @@ function renderEntrenamiento() {
 
   // ── Day tabs ─────────────────────────────────────────────────────
   var tabsHtml = sesiones.map(function(s, i) {
-    var done = LOGS['done_'+CURRENT_WEEK+'_'+i];
-    var isSkipped = !!(done && typeof done === 'object' && done.skipped);
+    var _rawEntry = LOGS['done_'+CURRENT_WEEK+'_'+i];
+    var _st = _getSessionCompletionState(_rawEntry);
+    var done = (_st === 'REAL_COMPLETE' || _st === 'AUTO_CLOSED');
+    var isSkipped = (_st === 'SKIPPED');
+    var _isAdminClosed = (_st === 'AUTO_CLOSED_NO_DATA');
     var active = i === DIA_ACTIVO;
     var rawLabel = (s.dia||'').replace(/^(SESI[OÓ]N\s*\d+[:\s]+|D[IÍ]A\s*\d+[:\s]+)/i,'').replace(/\([^)]+\)/,'').trim().substring(0,10)||('DÍA '+(i+1));
-    var iconColor = active ? 'var(--accent)' : isSkipped ? 'var(--mt)' : done ? 'var(--grn)' : 'var(--mt)';
-    var txtColor  = active ? 'var(--tx)' : isSkipped ? 'rgba(160,160,160,.7)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
+    var iconColor = active ? 'var(--accent)' : (isSkipped || _isAdminClosed) ? 'var(--mt)' : done ? 'var(--grn)' : 'var(--mt)';
+    var txtColor  = active ? 'var(--tx)' : (isSkipped || _isAdminClosed) ? 'rgba(160,160,160,.7)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
     var bg = active ? 'rgba(196,255,0,.06)' : 'var(--surface)';
-    var borderB = active ? '3px solid var(--accent)' : isSkipped ? '3px solid rgba(160,160,160,.3)' : done ? '3px solid rgba(110,154,110,.5)' : '3px solid transparent';
+    var borderB = active ? '3px solid var(--accent)' : (isSkipped || _isAdminClosed) ? '3px solid rgba(160,160,160,.3)' : done ? '3px solid rgba(110,154,110,.5)' : '3px solid transparent';
     // Progreso parcial de sets
     var _exs = s.exercises || [];
     var _tSets = 0, _dSets = 0;
@@ -6490,14 +6493,14 @@ function renderEntrenamiento() {
         if ((LOGS['log_'+CURRENT_WEEK+'_'+i+'_'+ei+'_s'+ss]||{}).done) _dSets++;
       }
     });
-    var _partial = !done && _dSets > 0;
+    var _partial = !_rawEntry && _dSets > 0;
     var _pPct = _tSets > 0 ? Math.round(_dSets / _tSets * 100) : 0;
-    var _barColor = isSkipped ? 'var(--mt)' : done ? 'var(--grn)' : 'var(--accent)';
+    var _barColor = (isSkipped || _isAdminClosed) ? 'var(--mt)' : done ? 'var(--grn)' : 'var(--accent)';
     return '<button onclick="selDia('+i+')" style="'+
       'flex:1;min-width:0;padding:8px 6px 6px;border:none;cursor:pointer;'+
       'background:'+bg+';border-bottom:'+borderB+';'+
       'border-right:1px solid var(--border);transition:background .15s;-webkit-tap-highlight-color:transparent">'+
-      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:2px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(isSkipped?'⏸':done?'✓':(_partial?_dSets+'/'+_tSets:'·'))+'</div>'+
+      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:2px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(( isSkipped||_isAdminClosed)?'⏸':done?'✓':(_partial?_dSets+'/'+_tSets:'·'))+'</div>'+
       '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'+rawLabel+'</div>'+
       '<div style="height:2px;border-radius:1px;background:var(--border);overflow:hidden">'+
         '<div style="height:100%;width:'+(done?100:_pPct)+'%;background:'+_barColor+';border-radius:1px;transition:width .3s"></div>'+
