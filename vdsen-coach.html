@@ -6311,37 +6311,66 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   // ═══════════════════════════════════════════════════════════════════════════
 
+  // Remove trailing commas before ] or } — GPT-4o sometimes adds them
+  function _lenientJson(str) {
+    try { return JSON.parse(str); } catch(e) {}
+    try { return JSON.parse(str.replace(/,(\s*[}\]])/g, '$1')); } catch(e) {}
+    return null;
+  }
+
+  // String-aware: walk chars, skip content inside JSON strings so { } inside values don't throw off depth
+  function _extractOutermostJson(text, startPos) {
+    let depth = 0, inStr = false, esc = false;
+    for (let i = startPos; i < text.length; i++) {
+      const ch = text[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\' && inStr) { esc = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === '{') depth++;
+      else if (ch === '}') { if (--depth === 0) return text.slice(startPos, i + 1); }
+    }
+    return null;
+  }
+
   function _extractJsonBlocks(text) {
     const blocks = [];
+    // 1. Code fences: ```json ... ``` or ``` ... ```
     const re = /```(?:json)?\s*([\s\S]*?)```/g;
     let m;
     while ((m = re.exec(text)) !== null) {
       const bodyRaw = m[1].trim();
       if (!bodyRaw) continue;
-      try { blocks.push(JSON.parse(bodyRaw)); } catch (e) { /* fence no-JSON: ignorar */ }
+      const parsed = _lenientJson(bodyRaw);
+      if (parsed) blocks.push(parsed);
     }
-    // Bloques delimitados por marcadores ---VDSEN-*--- / ---FIN-*--- (v3.4)
+    // 2. VDSEN markers ---VDSEN-*--- / ---FIN-*---
     const markerRe = /---VDSEN-[A-Z-]+---\s*([\s\S]*?)\s*---FIN-[A-Z-]+---/g;
     while ((m = markerRe.exec(text)) !== null) {
       const bodyRaw = m[1].trim();
       if (!bodyRaw) continue;
-      try { blocks.push(JSON.parse(bodyRaw)); } catch (e) {}
+      const parsed = _lenientJson(bodyRaw);
+      if (parsed) blocks.push(parsed);
     }
-    // Fallback: sin fences — encontrar objeto JSON completo por conteo de llaves
+    // 3. Whole text is pure JSON (API-mode response without fences)
+    if (!blocks.length) {
+      const parsed = _lenientJson(text.trim());
+      if (parsed && typeof parsed === 'object') blocks.push(parsed);
+    }
+    // 4. String-aware brace-depth extraction for unfenced inline JSON
     if (!blocks.length) {
       let si = 0;
       while (si < text.length) {
         const start = text.indexOf('{', si);
         if (start === -1) break;
-        let depth = 0, i = start;
-        for (; i < text.length; i++) {
-          if (text[i] === '{') depth++;
-          else if (text[i] === '}') { depth--; if (depth === 0) break; }
+        const slice = _extractOutermostJson(text, start);
+        if (slice) {
+          const parsed = _lenientJson(slice);
+          if (parsed) blocks.push(parsed);
+          si = start + slice.length;
+        } else {
+          si = start + 1;
         }
-        if (depth === 0) {
-          try { blocks.push(JSON.parse(text.slice(start, i + 1))); } catch (e) {}
-        }
-        si = i + 1;
       }
     }
     return blocks;
@@ -6608,10 +6637,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       setStatus('<span style="color:var(--text-muted)">Validando plan…</span>');
       console.log('[VDSEN] raw model response (first 500 chars):', text.slice(0, 500));
       const _rawBlocks = _extractJsonBlocks(text);
-      console.log('[VDSEN] blocks extracted:', _rawBlocks.length);
+      console.log('[VDSEN] blocks extracted:', _rawBlocks.length, _rawBlocks.map(function(b){return Object.keys(b||{}).slice(0,4).join(',');}));
       const _rawJson   = _rawBlocks[0] || null;
       let { training, nutrition, supplements, pharma } = _classifyBlocks(_rawBlocks);
-      if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
+      if (!training && !nutrition && !supplements && !pharma) {
+        const _preview = text ? text.slice(0, 250) : '(vacío)';
+        throw new Error('No se encontraron bloques JSON válidos. Respuesta del modelo:\n' + _preview);
+      }
 
       // P3 + P9.2 + P9.5: Full validation with restrictions and schema check
       const _restrictions = (prescCtx && prescCtx.restrictions) || {};
@@ -11119,10 +11151,13 @@ El esfuerzo no es negociable.
       setStatus('<span style="color:#888">Validando plan…</span>');
       console.log('[VDSEN] raw model response (first 500 chars):', text.slice(0, 500));
       const _rawBlocks2 = _extractJsonBlocks(text);
-      console.log('[VDSEN] blocks extracted:', _rawBlocks2.length);
+      console.log('[VDSEN] blocks extracted:', _rawBlocks2.length, _rawBlocks2.map(function(b){return Object.keys(b||{}).slice(0,4).join(',');}));
       const _rawJson2   = _rawBlocks2[0] || null;
       let { training, nutrition, supplements, pharma } = _classifyBlocks(_rawBlocks2);
-      if (!training && !nutrition && !supplements && !pharma) throw new Error('No se encontraron bloques JSON válidos en la respuesta');
+      if (!training && !nutrition && !supplements && !pharma) {
+        const _preview2 = text ? text.slice(0, 250) : '(vacío)';
+        throw new Error('No se encontraron bloques JSON válidos. Respuesta del modelo:\n' + _preview2);
+      }
 
       // P3 + P9.2 + P9.5: Full validation with restrictions and schema check
       const _restrictions2 = (prescCtx && prescCtx.restrictions) || {};
