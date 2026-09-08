@@ -5795,6 +5795,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           if (!Array.isArray(day.exercises) || day.exercises.length === 0) {
             errors.push('Día ' + (di+1) + ' (' + (day.label||'?') + ') sin ejercicios');
           } else {
+            if (day.exercises.length < 4) {
+              warnings.push('Día ' + (di+1) + ' (' + (day.label||'?') + '): ' + day.exercises.length + ' ejercicio(s) — mínimo 4 recomendado (MEV VDSEN)');
+            }
             day.exercises.forEach(function(ex, ei) {
               var exName = (ex.exerciseName || '').trim();
               if (exName.length < 2) warnings.push('Día ' + (di+1) + ' ej ' + (ei+1) + ': exerciseName vacío');
@@ -6118,6 +6121,28 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   window._runP9Tests = _runP9Tests;
 
   // ─── _auditVolumeVsTargets (P10.9) ───────────────────────────────────────
+  // Builds a comprehensive per-muscle volume-target table for userMsg injection.
+  // Covers ALL muscles (not just high/maintenance/learned) so GPT-4o always has
+  // concrete targets, including for new clients with no learned state.
+  // Uses only values resolved by _computeMuscleTargets — no targets invented here.
+  function _buildVolumeTargetPromptTxt(muscleTargets) {
+    if (!muscleTargets || !Object.keys(muscleTargets).length) return '';
+    var pOrder = ['high', 'maintenance', 'normal'];
+    var sorted = Object.keys(muscleTargets).slice().sort(function(a, b) {
+      return pOrder.indexOf(muscleTargets[a].priority) - pOrder.indexOf(muscleTargets[b].priority);
+    });
+    var rows = sorted.map(function(m) {
+      var t = muscleTargets[m];
+      var pLabel = t.priority === 'high' ? 'ALTA' : (t.priority === 'maintenance' ? 'MNT' : 'normal');
+      var src = t.source === 'learned_state' ? ' [learned]' : '';
+      return '  ' + m + ': target=' + t.volumeTarget + 's [min:' + t.volumeRange.min + ' max:' + t.volumeRange.max + '] ' + t.frequencyTarget + 'x/sem prioridad=' + pLabel + src;
+    });
+    return 'TABLA DE VOLUMEN SEMANAL OBJETIVO — usar como restricciones de diseño (no recalcular, no bajar):\n'
+      + rows.join('\n')
+      + '\nREQUERIDO en el JSON: "volumeProjection": { "<grupo_muscular>": <series_sem_prescritas> } para cada grupo cubierto — permite verificar TARGET vs PRESCRIBED.';
+  }
+  window._buildVolumeTargetPromptTxt = _buildVolumeTargetPromptTxt;
+
   // Compares post-generation fractional volume against prescriptionTargets.
   // Returns warnings for priority muscles below range or unknowns over range.
   function _auditVolumeVsTargets(volAudit, muscleTargets) {
@@ -6295,6 +6320,66 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       var ehrenTarget = tEhren.pectoral && tEhren.pectoral.volumeTarget;
       var popTarget   = tPop.pectoral   && tPop.pectoral.volumeTarget;
       return tEhren.pectoral && tEhren.pectoral.source === 'ehrenstein_prior' && ehrenTarget !== popTarget;
+    });
+
+    // ─── PRODUCT regression: Ayrton VD plan failure (primera evidencia real) ──
+    // Context: plan real generado en 855a113 con 5 días × 2 ejercicios × 1 serie
+    // (~10 sets/semana total). Debe fallar validatePlan por piso MEV VDSEN.
+    // Referencia: ChatGPT HIGH — GENERATOR OUTPUT QUALITY audit, sept 2026.
+
+    // T37 (Ayrton): plan con 1 serie/ejercicio → ERROR MEV VDSEN (piso estructural)
+    test('T37 (Ayrton regression) 1 serie/ejercicio → ERROR bloqueante (MEV VDSEN)', function() {
+      // Mirrors Ayrton plan shape: 5 days × 2 exercises × 1 set
+      var singleSet = _set();
+      var ex1 = { exerciseName:'Sentadilla Barra', nivel_medio:'fundamental', variacion_vertical:_vv, sets:[singleSet] };
+      var ex2 = { exerciseName:'Prensa', nivel_medio:'suplementario', variacion_vertical:_vv, sets:[singleSet] };
+      var day = { label:'A', exercises:[ex1, ex2] };
+      var r = validatePlan({ training:{ days:[day, day, day, day, day] }, nutrition:null, supplements:null });
+      return r.valid === false && r.errors.some(function(e){ return e.includes('solo 1 serie'); });
+    });
+
+    // T38 (cardinality ≠ distribution): plan con ≥4 ejercicios y ≥3 series pasa
+    // validatePlan (cardinalidad OK) aunque toda la sesión sea el mismo músculo.
+    // Demuestra que el validador estático no detecta sub-dosificación fraccional.
+    // La auditoría fraccional (_auditVolumeVsTargets) opera en capa separada.
+    test('T38 (cardinality gap) ≥4 ejercicios ≥3 series → validatePlan pasa (distribución muscular no verificada aquí)', function() {
+      // All 4 exercises target pectoral — cardinality satisfied, distribution bad
+      var s3 = [_set({setIndex:0}), _set({setIndex:1}), _set({setIndex:2})];
+      var makeEx = function(nm) { return { exerciseName:nm, nivel_medio:'suplementario', variacion_vertical:_vv, sets:s3 }; };
+      var d = { label:'A', exercises:[makeEx('Press Banca'), makeEx('Press Inclinado'), makeEx('Aperturas'), makeEx('Pec Deck')] };
+      var r = validatePlan({ training:{ days:[d] }, nutrition:null, supplements:null });
+      // Must pass structural validation — distribution gap is not caught here
+      return r.valid === true;
+    });
+
+    // T39 (vol audit scope): _auditVolumeVsTargets solo reporta VOL_TARGET_MISS
+    // para músculos de prioridad ALTA (no para normal). Demuestra que la auditoría
+    // fraccional actual solo cubre músculos prioritarios — brecha documentada.
+    test('T39 (vol audit scope) VOL_TARGET_MISS solo se dispara para prioridad alta', function() {
+      var targets = {
+        pectoral: { priority:'normal', volumeRange:{ min:10, max:20 }, confidence:'low' },
+        delt_lateral: { priority:'high', volumeRange:{ min:12, max:20 }, confidence:'low' }
+      };
+      var volAudit = { muscleVolume: { pectoral: { fractionalTotal: 2 }, delt_lateral: { fractionalTotal: 2 } } };
+      var w = _auditVolumeVsTargets(volAudit, targets);
+      // normal priority pectoral with 2 sets < min should NOT fire VOL_TARGET_MISS
+      var noNormalMiss = !w.some(function(msg){ return msg.includes('VOL_TARGET_MISS') && msg.includes('pectoral'); });
+      // high priority delt_lateral with 2 sets < 12 MUST fire VOL_TARGET_MISS
+      var highMissFires = w.some(function(msg){ return msg.includes('VOL_TARGET_MISS') && msg.includes('delt_lateral'); });
+      return noNormalMiss && highMissFires; // gap: normal muscles go unchecked
+    });
+
+    // T40: _buildVolumeTargetPromptTxt produce texto para todos los músculos
+    test('T40 _buildVolumeTargetPromptTxt: cubre todos los músculos (incluyendo normal)', function() {
+      var targets = _computeMuscleTargets(null, {stalled:[]}, { priorityMuscles:['pectoral'] });
+      var txt = _buildVolumeTargetPromptTxt(targets);
+      // Must cover all muscles in targets, not just high priority
+      var allCovered = Object.keys(targets).every(function(m){ return txt.includes(m); });
+      // Must include ALTA marker for priority muscle
+      var hasAlta = txt.includes('ALTA');
+      // Must mention volumeProjection requirement
+      var hasVP = txt.includes('volumeProjection');
+      return allCovered && hasAlta && hasVP;
     });
 
     var passed = results.filter(function(r){return r.passed;}).length;
@@ -6606,6 +6691,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         ? window._buildLearnedStatePromptHint(_activeLearnedState) : '';
 
       setStatus('<span style="color:var(--text-muted)">Generando con el motor VDSEN… (10–40 s)</span>');
+      const _volTargetPromptTxt = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles)
+        ? _buildVolumeTargetPromptTxt(prescCtx.prescriptionTargets.muscles) : '';
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
         'Con la ficha de abajo, genera en UNA sola respuesta UN ÚNICO bloque JSON con schema "vdsen-plan-v2" que integre:',
@@ -6613,12 +6700,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         '  • "nutricion": objeto con calorias, proteina, carbos, grasas, comidas[] (PARTE D2)',
         '  • "suplementacion": objeto con tiers[] (PARTE D3)',
         isPED ? '  • "farmacologia": objeto con protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct (PARTE D4)' : '',
-        'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
+        'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ', "volumeProjection": {...} }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'RESTRICCIONES DE VOLUMEN MÍNIMO — OBLIGATORIAS (el plan se rechaza si no se cumplen):',
         '  • Cada ejercicio: MÍNIMO 3 sets con repsTarget, rirTarget y restSeconds',
         '  • Cada día de entrenamiento: MÍNIMO 4 ejercicios',
         '  • Volumen semanal por grupo muscular respetando MEV/MRV del compendio (natural: 10-20 sets/sem por grupo, PED: 20-30)',
+        _volTargetPromptTxt,
         'Cumple el CHECKLIST final del motor antes de responder.',
         _resolvedConstraintTxt,
         _lsHint,
@@ -6687,6 +6775,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const _muscleTargets = prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles;
       const _volTargetWarnings = _auditVolumeVsTargets(_volAudit, _muscleTargets || {});
       if (_volTargetWarnings.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings);
+      const _volAuditHtml = _volTargetWarnings.length
+        ? '<div style="border:1px solid rgba(255,140,0,.3);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:10px;color:#f0a500">'
+          + '<span style="font-weight:600">⚠ DISTRIBUCIÓN MUSCULAR — revisar</span><br>'
+          + _volTargetWarnings.slice(0,5).map(function(w){ return '· ' + _escH(w); }).join('<br>')
+          + '</div>' : '';
 
       // FASE 48: Longitudinal Validation Gate (0 new Firestore reads)
       const _prevPlanForLV = (prescCtx && prescCtx.previousPlan && prescCtx.previousPlan._rawDays)
@@ -6884,6 +6977,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         + _intentTraceHtml
         + _lsHintHtml
         + _qualityHtml
+        + _volAuditHtml
         + _missingDataHtml
         + _lvHtml
         + _hintsHtml
@@ -11124,6 +11218,8 @@ El esfuerzo no es negociable.
         ? window._buildLearnedStatePromptHint(_activeLearnedState) : '';
 
       setStatus('<span style="color:#888">Generando con el motor VDSEN… (10–40 s)</span>');
+      const _volTargetPromptTxt2 = (prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles)
+        ? _buildVolumeTargetPromptTxt(prescCtx.prescriptionTargets.muscles) : '';
       const userMsg = [
         'MODO API — SIN PREGUNTAS. Ignora el "FLUJO DE INICIO" interactivo del sistema.',
         'Con la ficha de abajo, genera en UNA sola respuesta UN ÚNICO bloque JSON con schema "vdsen-plan-v2" que integre:',
@@ -11131,12 +11227,13 @@ El esfuerzo no es negociable.
         '  • "nutricion": objeto con calorias, proteina, carbos, grasas, comidas[] (PARTE D2)',
         '  • "suplementacion": objeto con tiers[] (PARTE D3)',
         isPED ? '  • "farmacologia": objeto con protocolo, compuestos[], ancilares[], biomarcadores_basales, monitoreo, pct (PARTE D4)' : '',
-        'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ' }',
+        'Emite EXACTAMENTE UN bloque ' + '```json' + ' con la estructura: { "schema": "vdsen-plan-v2", "entrenamiento": {...}, "nutricion": {...}, "suplementacion": {...}' + (isPED ? ', "farmacologia": {...}' : '') + ', "volumeProjection": {...} }',
         'Sin texto ni comentarios dentro del JSON. Si falta un dato secundario, aplica default razonable y anótalo en assumptions — NO preguntes.',
         'RESTRICCIONES DE VOLUMEN MÍNIMO — OBLIGATORIAS (el plan se rechaza si no se cumplen):',
         '  • Cada ejercicio: MÍNIMO 3 sets con repsTarget, rirTarget y restSeconds',
         '  • Cada día de entrenamiento: MÍNIMO 4 ejercicios',
         '  • Volumen semanal por grupo muscular respetando MEV/MRV del compendio (natural: 10-20 sets/sem por grupo, PED: 20-30)',
+        _volTargetPromptTxt2,
         'Cumple el CHECKLIST final del motor antes de responder.',
         _resolvedConstraintTxt2,
         _lsHint2,
@@ -11205,6 +11302,11 @@ El esfuerzo no es negociable.
       const _muscleTargets2 = prescCtx && prescCtx.prescriptionTargets && prescCtx.prescriptionTargets.muscles;
       const _volTargetWarnings2 = _auditVolumeVsTargets(_volAudit2, _muscleTargets2 || {});
       if (_volTargetWarnings2.length) console.warn('[VDSEN] Volume vs targets:', _volTargetWarnings2);
+      const _volAuditHtml2 = _volTargetWarnings2.length
+        ? '<div style="border:1px solid rgba(255,140,0,.3);border-radius:6px;padding:5px 8px;margin-top:4px;font-size:10px;color:#f0a500">'
+          + '<span style="font-weight:600">⚠ DISTRIBUCIÓN MUSCULAR — revisar</span><br>'
+          + _volTargetWarnings2.slice(0,5).map(function(w){ return '· ' + _escH(w); }).join('<br>')
+          + '</div>' : '';
 
       // FASE 48: Longitudinal Validation Gate (0 new Firestore reads)
       const _prevPlanForLV2 = (prescCtx && prescCtx.previousPlan && prescCtx.previousPlan._rawDays)
@@ -11408,7 +11510,7 @@ El esfuerzo no es negociable.
       setStatus(`<div style="background:rgba(68,187,136,.08);border:1px solid rgba(68,187,136,.3);border-radius:8px;padding:12px;margin-top:4px">
         <div style="color:#44BB88;font-weight:700;font-size:13px;margin-bottom:6px">✅ Generado: ${saved.join(' · ')}</div>
         <div style="color:#888;font-size:11px">Tokens: ${u.input_tokens||'?'} in / ${u.output_tokens||'?'} out${cacheNote}</div>
-        ${_intentTraceHtml2}${_lsHintHtml2}${_qualityHtml2}${_missingDataHtml2}${_lvHtml2}${_hintsHtml2}${trunc}
+        ${_intentTraceHtml2}${_lsHintHtml2}${_qualityHtml2}${_volAuditHtml2}${_missingDataHtml2}${_lvHtml2}${_hintsHtml2}${trunc}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button onclick="_switchClientTab('plan')" style="padding:6px 14px;border-radius:6px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:700;cursor:pointer">🏋️ Ver Plan</button>
           <button onclick="downloadPlanPDF('${clientId}')" style="padding:6px 14px;border-radius:6px;border:1px solid rgba(244,244,240,.25);background:rgba(244,244,240,.08);color:#F4F4F0;font-size:12px;font-weight:600;cursor:pointer">📄 PDF</button>
