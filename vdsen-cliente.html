@@ -374,6 +374,12 @@ var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, m
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
 var CALIB_VOLUMETRICA = null; // Módulo A Ehrenstein — calibración volumétrica {VME_individual, VMR_individual}
+var _CLIENT_TOPO_META = {
+  'TWO_ON_ONE_OFF':   { tpc: 2 },
+  'THREE_ON_ONE_OFF': { tpc: 3 },
+  'FOUR_ON_ONE_OFF':  { tpc: 4 },
+  'FIVE_ON_TWO_OFF':  { tpc: 5 },
+};
 var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el tab de entreno
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
@@ -1542,7 +1548,8 @@ async function loadPlan(user) {
         : null,
       rirByWeek: planData.rirByWeek || null,
       totalWeeks: parseInt(planData.weeks) || 6,
-      carb_cycling_y3t: planData.carb_cycling_y3t || null
+      carb_cycling_y3t: planData.carb_cycling_y3t || null,
+      trainingTopology: planData.trainingTopology || null
     };
 
     // Módulo A — Ehrenstein: calibración volumétrica (solo lectura en cliente)
@@ -2770,7 +2777,7 @@ function renderResumen() {
 
     <div class="card" style="margin-top:10px">
       <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
-      ${getTodaySummary()}
+      ${_renderClientToday()}
     </div>
 
     <div class="card" style="margin-top:8px;border-color:${ciDone?'rgba(107,107,102,.4)':'rgba(201,74,58,.25)'}">
@@ -3120,6 +3127,74 @@ function buildMesocicloReportWidget() {
     '<div style="margin-top:10px;font-size:11px;color:var(--mt);line-height:1.5;text-align:center">Resumen de todo el bloque — tu coach lo usa para armar el próximo mesociclo.</div>'+
   '</div>';
 }
+
+// ── F19 — Client Today ──────────────────────────────────────────────────────
+function _countDoneSessionsFromLogs(logs) {
+  var fullyDone = 0;
+  Object.keys(logs).forEach(function(k) {
+    if (!/^done_\d+_\d+$/.test(k)) return;
+    if (_isRealExecution(logs[k])) fullyDone++;
+  });
+  return { fullyDone: fullyDone };
+}
+
+// Returns { state, sessionIdx?, sesion?, isEndOfMesocycle? }
+// States: TRAIN_TODAY | REST_TODAY | NO_ACTIVE_PLAN
+function _resolveTodayState(topology, logs, sesiones) {
+  var totalSessions = sesiones.length;
+  if (!totalSessions) return { state: 'NO_ACTIVE_PLAN' };
+
+  var counted = _countDoneSessionsFromLogs(logs);
+  var fullyDone = counted.fullyDone;
+
+  if (fullyDone >= totalSessions) {
+    return { state: 'REST_TODAY', isEndOfMesocycle: true, fullyDone: fullyDone };
+  }
+
+  var meta = _CLIENT_TOPO_META[topology];
+  if (!meta) {
+    // Linear plan: next pending session
+    return { state: 'TRAIN_TODAY', sessionIdx: fullyDone, sesion: sesiones[fullyDone] };
+  }
+
+  var tpc = meta.tpc;
+  if (fullyDone > 0 && fullyDone % tpc === 0) {
+    return { state: 'REST_TODAY', isEndOfMesocycle: false, fullyDone: fullyDone };
+  }
+
+  return { state: 'TRAIN_TODAY', sessionIdx: fullyDone, sesion: sesiones[fullyDone] };
+}
+
+function _renderClientToday() {
+  if (!PLAN || !PLAN.entrenamiento) {
+    return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
+  }
+  var sesiones = getSesiones();
+  var resolved = _resolveTodayState(PLAN.trainingTopology || null, LOGS, sesiones);
+
+  if (resolved.state === 'NO_ACTIVE_PLAN') {
+    return '<button onclick="goTab(1)" style="width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">VER ENTRENAMIENTO ▶</button>';
+  }
+
+  if (resolved.state === 'REST_TODAY') {
+    var eom = resolved.isEndOfMesocycle;
+    return '<div style="text-align:center;padding:10px 0">' +
+      '<div style="font-family:var(--ff);font-size:13px;font-weight:900;letter-spacing:2px;color:var(--gold)">' + (eom ? '✓ FIN DE MESOCICLO' : '— DESCANSO —') + '</div>' +
+      '<div style="font-size:11px;color:var(--mt);margin-top:5px">' + (eom ? 'Completaste todas las sesiones del plan' : 'Día de recuperación. Siguiente sesión en el próximo ciclo.') + '</div>' +
+      '</div>' +
+      '<button onclick="goTab(1)" style="margin-top:10px;width:100%;padding:11px;background:var(--gdim);border:1px solid rgba(107,107,102,.3);color:var(--gold);font-family:var(--ff);font-size:13px;font-weight:700;letter-spacing:2px;cursor:pointer;border-radius:6px">VER PLAN →</button>';
+  }
+
+  // TRAIN_TODAY
+  var sesion = resolved.sesion;
+  var nombre = _escHTml(sesion.dia || sesion.nombre || ('Sesión ' + (resolved.sessionIdx + 1)));
+  var ejerciciosLine = (sesion.contenido||'').split('\n').filter(function(l){ return /\d\s*[×x]\s*\d|RIR/i.test(l); });
+  var nEj = sesion.exercises ? sesion.exercises.length : ejerciciosLine.length;
+  return '<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:4px">' + nombre + '</div>' +
+    (nEj ? '<div style="font-size:10px;color:var(--mt)">' + nEj + ' ejercicios</div>' : '') +
+    '<button onclick="goTab(1)" style="margin-top:10px;width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">INICIAR ENTRENAMIENTO ▶</button>';
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 function getTodaySummary() {
   if (!PLAN || !PLAN.entrenamiento) return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
