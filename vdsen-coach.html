@@ -1884,12 +1884,14 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         // Summary header counts
         const attnC = { REVIEW: 0, PROGRESSING: 0, STABLE: 0, NO_DATA: 0 };
         rowData.forEach(r => { attnC[r.attn.state] = (attnC[r.attn.state] || 0) + 1; });
-        const summaryHtml = `<div class="card p-3 mb-3" style="border:1px solid rgba(255,255,255,.07)">
-          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
-            ${attnC.REVIEW      ? `<span style="color:#FF4444;font-weight:800;font-size:13px">🔴 ${attnC.REVIEW} revisar</span>` : ''}
-            ${attnC.PROGRESSING ? `<span style="color:#44BB88;font-weight:800;font-size:13px">🟢 ${attnC.PROGRESSING} progresando</span>` : ''}
-            ${attnC.STABLE      ? `<span style="color:#888;font-weight:700;font-size:13px">⚪ ${attnC.STABLE} estable${attnC.STABLE>1?'s':''}</span>` : ''}
-            ${attnC.NO_DATA     ? `<span style="color:#555;font-weight:700;font-size:13px">◌ ${attnC.NO_DATA} sin datos</span>` : ''}
+        const total = rowData.length;
+        const summaryHtml = `<div style="margin-bottom:16px">
+          <div style="font-size:9px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#555;margin-bottom:10px">${total} CLIENTE${total!==1?'S':''}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px">
+            ${attnC.REVIEW ? `<div style="padding:10px;border-radius:6px;border:1px solid rgba(225,6,0,.25);background:rgba(225,6,0,.06)"><div style="font-size:18px;font-weight:900;color:#E10600;line-height:1">${attnC.REVIEW}</div><div style="font-size:9px;color:#888;letter-spacing:.8px;margin-top:3px;text-transform:uppercase">REVISAR</div></div>` : ''}
+            ${attnC.PROGRESSING ? `<div style="padding:10px;border-radius:6px;border:1px solid rgba(110,154,110,.25);background:rgba(110,154,110,.06)"><div style="font-size:18px;font-weight:900;color:#6E9A6E;line-height:1">${attnC.PROGRESSING}</div><div style="font-size:9px;color:#888;letter-spacing:.8px;margin-top:3px;text-transform:uppercase">PROGRESANDO</div></div>` : ''}
+            ${attnC.STABLE ? `<div style="padding:10px;border-radius:6px;border:1px solid rgba(244,244,240,.07);background:rgba(244,244,240,.02)"><div style="font-size:18px;font-weight:900;color:#A5A59E;line-height:1">${attnC.STABLE}</div><div style="font-size:9px;color:#666;letter-spacing:.8px;margin-top:3px;text-transform:uppercase">ESTABLE${attnC.STABLE>1?'S':''}</div></div>` : ''}
+            ${attnC.NO_DATA ? `<div style="padding:10px;border-radius:6px;border:1px solid rgba(244,244,240,.05);background:transparent"><div style="font-size:18px;font-weight:900;color:#444;line-height:1">${attnC.NO_DATA}</div><div style="font-size:9px;color:#444;letter-spacing:.8px;margin-top:3px;text-transform:uppercase">SIN DATOS</div></div>` : ''}
           </div>
         </div>`;
 
@@ -1964,8 +1966,11 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             ${bulkWABtn}
           </div>`;
         }
+        window._decisionInboxFilter = window._decisionInboxFilter || 'ALL';
+        window._decisionInboxItems = _coachBuildDecisionInbox(window._clientCache);
         container.innerHTML += `<style>@keyframes pulseLive{0%,100%{opacity:1}50%{opacity:.55}}</style>
           ${summaryHtml}
+          <div id="decisionInboxMount">${_renderDecisionInbox(window._decisionInboxItems, window._decisionInboxFilter)}</div>
           ${banner}
           <input id="clientSearchInput" class="input-field mb-3" placeholder="🔍 Buscar por nombre o email…" oninput="(function(v){v=v.toLowerCase().trim();document.querySelectorAll('._client-row').forEach(r=>{r.style.display=(!v||r.dataset.search.includes(v))?'':'none';});})(this.value)">
           ${rows}`;
@@ -2830,6 +2835,434 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       setPct: setPct
     };
   }
+
+  // Since Last Review — pure delta builder, no Firestore reads and no decisions.
+  function _coachReviewMs(ts) {
+    if (!ts) return 0;
+    try {
+      if (ts && typeof ts.toDate === 'function') return ts.toDate().getTime();
+      if (ts instanceof Date) return ts.getTime();
+      if (typeof ts === 'number') return ts > 100000000000 ? ts : ts * 1000;
+      var d = new Date(ts);
+      var t = d.getTime();
+      return isNaN(t) ? 0 : t;
+    } catch(e) { return 0; }
+  }
+
+  function _coachEntryMs(entry) {
+    if (!entry || typeof entry !== 'object') return 0;
+    return _coachReviewMs(entry.ts || entry.updatedAt || entry.calculatedAt || entry.generatedAt || entry.completedAt);
+  }
+
+  function _coachDoneIsReal(doneEntry) {
+    return doneEntry === true || (typeof doneEntry === 'object' && doneEntry && !doneEntry.skipped);
+  }
+
+  function _coachDoneIsSkipped(doneEntry) {
+    return !!(doneEntry && typeof doneEntry === 'object' && doneEntry.skipped && !doneEntry.autoClosed);
+  }
+
+  function _coachPlanExerciseName(planData, dayIndex, exIndex) {
+    var day = null;
+    if (planData && planData.days) day = planData.days.find(function(d) { return d.dayIndex === dayIndex; }) || planData.days[dayIndex];
+    var ex = day && day.exercises ? day.exercises[exIndex] : null;
+    return ex ? (ex.exerciseName || ex.nombre || ('Ejercicio ' + (exIndex + 1))) : ('Ejercicio ' + (exIndex + 1));
+  }
+
+  function _coachSessionEvidenceMs(entries, week, day) {
+    var maxMs = _coachEntryMs(entries['done_' + week + '_' + day]);
+    Object.keys(entries || {}).forEach(function(k) {
+      if (k.indexOf('log_' + week + '_' + day + '_') === 0 || k === 'postsession_' + week + '_' + day) {
+        var t = _coachEntryMs(entries[k]);
+        if (t > maxMs) maxMs = t;
+      }
+    });
+    return maxMs;
+  }
+
+  function _coachCollectSetRows(entries, planData) {
+    var rows = [];
+    Object.keys(entries || {}).forEach(function(k) {
+      var m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
+      if (!m) return;
+      var e = entries[k];
+      if (!e || !e.done || e.autoFilled) return;
+      var w = +m[1], d = +m[2], ei = +m[3], si = +m[4];
+      var name = e.exerciseNameSnapshot || _coachPlanExerciseName(planData, d, ei);
+      var id = e.prescriptionExerciseId || ('legacy:' + d + ':' + ei);
+      rows.push({ key: k, week: w, day: d, exerciseIndex: ei, setIndex: si, identity: id + ':s' + si, name: name, load: parseFloat(e.carga), reps: parseFloat(e.reps), tsMs: _coachEntryMs(e) });
+    });
+    rows.sort(function(a, b) {
+      if (a.tsMs !== b.tsMs) return a.tsMs - b.tsMs;
+      if (a.week !== b.week) return a.week - b.week;
+      if (a.day !== b.day) return a.day - b.day;
+      if (a.exerciseIndex !== b.exerciseIndex) return a.exerciseIndex - b.exerciseIndex;
+      return a.setIndex - b.setIndex;
+    });
+    return rows;
+  }
+
+  function _coachBuildSinceLastReview(entries, planData, currentWeek, lastReviewedAt) {
+    entries = entries || {};
+    var lastMs = _coachReviewMs(lastReviewedAt);
+    var firstReview = !lastMs;
+    var totalDays = (planData && (planData.daysPerWeek || (planData.days && planData.days.length))) || 0;
+    var items = [];
+    var changed = false;
+    function after(entry) {
+      if (firstReview) return true;
+      var t = _coachEntryMs(entry);
+      return t > lastMs;
+    }
+    function add(type, label, evidence) {
+      items.push({ type: type, label: label, evidence: evidence || '' });
+      changed = true;
+    }
+
+    var completed = 0, skipped = 0;
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^done_(\d+)_(\d+)$/);
+      if (!m) return;
+      var v = entries[k], w = +m[1], d = +m[2];
+      var evidenceMs = _coachSessionEvidenceMs(entries, w, d);
+      if (!firstReview && evidenceMs <= lastMs) return;
+      if (_coachDoneIsSkipped(v)) skipped++;
+      else if (_coachDoneIsReal(v)) completed++;
+    });
+    if (completed || skipped) add('sessions', completed + ' sesión(es) completada(s)' + (skipped ? ' · ' + skipped + ' omitida(s)' : ''), 'done_* con evidencia posterior a la revisión');
+
+    var setRows = _coachCollectSetRows(entries, planData);
+    var afterRows = setRows.filter(function(r) { return firstReview || r.tsMs > lastMs; });
+    if (firstReview && afterRows.length) add('sets', afterRows.length + ' set(s) registrados', 'log_* reales, excluye autoFilled');
+    var loadChanges = [];
+    afterRows.forEach(function(r) {
+      if (!r.tsMs || firstReview) return;
+      var prev = null;
+      for (var i = setRows.length - 1; i >= 0; i--) {
+        var p = setRows[i];
+        if (p.identity === r.identity && p.tsMs && p.tsMs < r.tsMs && p.tsMs <= lastMs) { prev = p; break; }
+      }
+      if (!prev) return;
+      var loadChanged = !isNaN(r.load) && !isNaN(prev.load) && Math.abs(r.load - prev.load) >= 0.5;
+      var repsChanged = !isNaN(r.reps) && !isNaN(prev.reps) && Math.abs(r.reps - prev.reps) >= 1;
+      if (loadChanged || repsChanged) {
+        loadChanges.push(r.name + ' S' + (r.setIndex + 1) + ': ' + (isNaN(prev.load) ? '—' : prev.load) + 'x' + (isNaN(prev.reps) ? '—' : prev.reps) + ' → ' + (isNaN(r.load) ? '—' : r.load) + 'x' + (isNaN(r.reps) ? '—' : r.reps));
+      }
+    });
+    if (loadChanges.length) add('load_reps', loadChanges.slice(0, 3).join(' · '), 'comparado contra exposición previa antes de la revisión');
+
+    var checkins = _coachGetWeeklyCheckins(entries, 99).slice().sort(function(a, b) { return a.week - b.week; });
+    var afterCheckins = checkins.filter(function(ci) { return after(ci.data); });
+    if (afterCheckins.length) {
+      var latest = afterCheckins[afterCheckins.length - 1];
+      var prevCi = null;
+      for (var ci = checkins.length - 1; ci >= 0; ci--) {
+        if (checkins[ci].week < latest.week) { prevCi = checkins[ci]; break; }
+      }
+      var parts = [];
+      var peso = parseFloat(latest.data && latest.data.peso);
+      var prevPeso = parseFloat(prevCi && prevCi.data && prevCi.data.peso);
+      if (!isNaN(peso)) {
+        if (!isNaN(prevPeso) && Math.abs(peso - prevPeso) >= 0.1) parts.push('peso ' + (peso - prevPeso > 0 ? '+' : '') + (peso - prevPeso).toFixed(1) + ' kg');
+        else if (firstReview) parts.push('peso ' + peso + ' kg');
+      }
+      if (latest.data && latest.data.who5 != null) parts.push('WHO-5 ' + latest.data.who5);
+      if (parts.length) add('checkin', 'Check-in sem ' + latest.week + ': ' + parts.join(' · '), 'ci_sem_' + latest.week);
+    }
+
+    var painRows = [];
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^postsession_(\d+)_(\d+)$/);
+      if (!m || !after(entries[k])) return;
+      var ps = entries[k] || {};
+      var art = ps.articular === true || ps.articular === 'si';
+      var eimd = parseInt(ps.eimd, 10);
+      if (art || eimd >= 3) painRows.push('S' + m[1] + 'D' + (+m[2] + 1) + (art ? ' dolor' + (ps.patron ? ' ' + ps.patron : '') : '') + (eimd >= 3 ? ' EIMD ' + eimd : ''));
+    });
+    if (painRows.length) add('pain', painRows.slice(0, 3).join(' · '), 'postsession_*');
+
+    var progRows = [];
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^progrec_(\d+)_(\d+)$/);
+      if (!m || !after(entries[k])) return;
+      var pr = entries[k] || {};
+      var recs = Array.isArray(pr.recommendations) ? pr.recommendations : [];
+      recs.forEach(function(r) {
+        if (!r || r.action === 'maintain' || r.action === 'freeze_load') return;
+        progRows.push((r.exerciseName || 'Ejercicio') + ': ' + (r.action || 'progresión'));
+      });
+      if (!recs.length && Array.isArray(pr.deloadTriggers) && pr.deloadTriggers.length) progRows.push('deload candidate');
+    });
+    if (progRows.length) add('progression', progRows.slice(0, 4).join(' · '), 'progrec_* existente, no aplicado');
+
+    if (!firstReview) {
+      var adh = _coachCalcAdherence(entries, currentWeek || 1, totalDays, planData);
+      if (adh && (completed || skipped || afterRows.length)) add('adherence', 'Adherencia actual sem ' + (currentWeek || 1) + ': ' + adh.sessionsCompleted + '/' + adh.sessionsTotal + ' sesiones' + (adh.setPct != null ? ' · ' + adh.setPct + '% sets' : ''), 'helper _coachCalcAdherence');
+    }
+
+    return {
+      firstReview: firstReview,
+      lastReviewedAt: lastReviewedAt || null,
+      hasChanges: changed,
+      status: changed ? 'CHANGES' : 'SIN CAMBIOS RELEVANTES',
+      items: changed ? items : [{ type: 'none', label: 'SIN CAMBIOS RELEVANTES', evidence: '' }]
+    };
+  }
+  window._coachBuildSinceLastReview = _coachBuildSinceLastReview;
+
+  // Decision Inbox — SIGNAL -> DECISION. No new detection rules; maps existing signals.
+  var _DI_SEVERITY_RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  var _DI_TYPE_LABEL = {
+    PROGRESSION_REVIEW: 'Progresión',
+    PAIN_REVIEW: 'Dolor',
+    PERFORMANCE_REVIEW: 'Performance',
+    PLAN_PREPARATION: 'Plan'
+  };
+  var _DI_REASON_LABEL = {
+    PAIN: 'Reportó dolor articular',
+    EIMD_HIGH: 'Daño muscular elevado (EIMD alto)',
+    PERFORMANCE_REGRESSION: 'Regresión de rendimiento detectada',
+    TOO_HARD_REPEATED: 'Carga excesiva en múltiples sesiones',
+    deload: 'Candidato a deload activo',
+    reduce_load: 'Sugiere reducir la carga',
+    reduce_sets: 'Sugiere reducir el volumen de series',
+    MESOCYCLE_COMPLETED: 'Mesociclo completado — listo para siguiente plan',
+    PROGRESSION_SIGNAL: 'Señal de progresión lista para revisión'
+  };
+  var _DI_ACTION_LABEL = {
+    PLAN_PREPARATION: 'PREPARAR PLAN',
+    PERFORMANCE_REVIEW: 'ABRIR MONITOR',
+    PROGRESSION_REVIEW: 'VER SUGERENCIA',
+    PAIN_REVIEW: 'ABRIR MONITOR'
+  };
+
+  function _diSafe(s) {
+    return String(s || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 90);
+  }
+
+  function _diResolvedMap(client) {
+    return (client && client.decisionResolutions && typeof client.decisionResolutions === 'object') ? client.decisionResolutions : {};
+  }
+
+  function _diIsResolved(client, decision) {
+    var r = _diResolvedMap(client)[decision.decisionId];
+    if (!r) return false;
+    var resolvedMs = _coachReviewMs((typeof r === 'object' && r) ? r.resolvedAt : r);
+    var relevantMs = _coachReviewMs(decision.relevantDate);
+    return !!resolvedMs && (!relevantMs || resolvedMs >= relevantMs);
+  }
+
+  function _diLatestMesoEndDate(entries, planWeeks, dpw) {
+    var maxMs = 0;
+    for (var d = 0; d < dpw; d++) {
+      var t = _coachSessionEvidenceMs(entries, planWeeks, d);
+      if (t > maxMs) maxMs = t;
+    }
+    return maxMs ? new Date(maxMs).toISOString() : '';
+  }
+
+  function _diPushDecision(out, client, payload) {
+    var d = Object.assign({}, payload);
+    d.clientId = client.id;
+    d.clientName = client.displayName || client.email || client.id;
+    d.decisionId = _diSafe([d.clientId, d.decisionType, d.reasonCode, d.sourceSignal, d.relevantDate || 'nodate'].join('__'));
+    if (!_diIsResolved(client, d)) out.push(d);
+  }
+
+  function _coachBuildDecisionInboxForClient(client, logsData, planData) {
+    if (!client) return [];
+    logsData = logsData || {};
+    var entries = logsData.entries || {};
+    var currentWeek = logsData.currentWeek || 1;
+    var out = [];
+    var since = _coachBuildSinceLastReview(entries, planData, currentWeek, client.lastReviewedAt);
+    var sinceEvidence = {};
+    (since.items || []).forEach(function(it) { if (it && it.type) sinceEvidence[it.type] = it.label; });
+    _computeClientAttentionState(entries, planData, currentWeek);
+
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^postsession_(\d+)_(\d+)$/);
+      if (!m) return;
+      var ps = entries[k] || {};
+      var art = ps.articular === true || ps.articular === 'si';
+      var eimd = parseInt(ps.eimd, 10);
+      if (!art && eimd < 3) return;
+      var relevantDate = _coachEntryMs(ps) ? new Date(_coachEntryMs(ps)).toISOString() : '';
+      _diPushDecision(out, client, {
+        decisionType: 'PAIN_REVIEW',
+        severity: 'HIGH',
+        reasonCode: art ? 'PAIN' : 'EIMD_HIGH',
+        evidence: sinceEvidence.pain || ('S' + m[1] + 'D' + (+m[2] + 1) + (art ? ' dolor' + (ps.patron ? ' ' + ps.patron : '') : '') + (eimd >= 3 ? ' EIMD ' + eimd : '')),
+        sourceSignal: k,
+        relevantDate: relevantDate,
+        suggestedAction: 'Abrir el Monitor del cliente y revisar postsession antes de cambiar el plan.'
+      });
+    });
+
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^progrec_(\d+)_(\d+)$/);
+      if (!m) return;
+      var pr = entries[k] || {};
+      var recs = Array.isArray(pr.recommendations) ? pr.recommendations : [];
+      var relevantDate = _coachEntryMs(pr) ? new Date(_coachEntryMs(pr)).toISOString() : '';
+      var grouped = {};
+      recs.forEach(function(rec) {
+        if (!rec || rec.action === 'maintain' || rec.action === 'freeze_load') return;
+        var isPerformance = rec.reason === 'PERFORMANCE_REGRESSION' || rec.reason === 'TOO_HARD_REPEATED' || rec.action === 'deload' || rec.action === 'reduce_load' || rec.action === 'reduce_sets';
+        var type = isPerformance ? 'PERFORMANCE_REVIEW' : 'PROGRESSION_REVIEW';
+        var reason = rec.reason || rec.action || 'PROGRESSION_SIGNAL';
+        var gk = type + '|' + reason;
+        grouped[gk] = grouped[gk] || { type: type, reason: reason, parts: [] };
+        grouped[gk].parts.push((rec.exerciseName || 'Ejercicio') + ': ' + (rec.action || 'revisar') + (rec.newLoad != null ? ' · sugerido ' + rec.newLoad : ''));
+      });
+      Object.keys(grouped).forEach(function(gk) {
+        var g = grouped[gk];
+        _diPushDecision(out, client, {
+          decisionType: g.type,
+          severity: g.type === 'PERFORMANCE_REVIEW' ? 'HIGH' : 'MEDIUM',
+          reasonCode: g.reason,
+          evidence: g.parts.slice(0, 4).join(' · '),
+          sourceSignal: k,
+          relevantDate: relevantDate,
+          suggestedAction: 'Revisar la sugerencia existente en Monitor. No aplicar automáticamente.'
+        });
+      });
+    });
+
+    var alert = getClientAlert(client, logsData, planData);
+    if (alert && alert.type === 'mesoEnd') {
+      var dpw = planData?.daysPerWeek || (planData?.days || []).length || 0;
+      var rel = _diLatestMesoEndDate(entries, alert.context.planWeeks, dpw);
+      _diPushDecision(out, client, {
+        decisionType: 'PLAN_PREPARATION',
+        severity: 'MEDIUM',
+        reasonCode: 'MESOCYCLE_COMPLETED',
+        evidence: 'Mesociclo completado: sem ' + alert.context.planWeeks + ' con ' + dpw + ' día(s) cerrados',
+        sourceSignal: 'getClientAlert:mesoEnd',
+        relevantDate: rel,
+        suggestedAction: 'Abrir cliente, revisar bitácora/check-in y preparar el siguiente plan.'
+      });
+    }
+
+    out.sort(function(a, b) {
+      var sd = (_DI_SEVERITY_RANK[a.severity] ?? 9) - (_DI_SEVERITY_RANK[b.severity] ?? 9);
+      if (sd) return sd;
+      return _coachReviewMs(b.relevantDate) - _coachReviewMs(a.relevantDate);
+    });
+    return out;
+  }
+  window._coachBuildDecisionInboxForClient = _coachBuildDecisionInboxForClient;
+
+  function _coachBuildDecisionInbox(cache) {
+    var out = [];
+    Object.keys(cache || {}).forEach(function(id) {
+      var d = cache[id] || {};
+      var client = Object.assign({ id: id }, d.client || {});
+      out = out.concat(_coachBuildDecisionInboxForClient(client, d.logs || {}, d.plan || null));
+    });
+    var seen = {};
+    out = out.filter(function(d) {
+      if (seen[d.decisionId]) return false;
+      seen[d.decisionId] = true;
+      return true;
+    });
+    out.sort(function(a, b) {
+      var sd = (_DI_SEVERITY_RANK[a.severity] ?? 9) - (_DI_SEVERITY_RANK[b.severity] ?? 9);
+      if (sd) return sd;
+      return _coachReviewMs(b.relevantDate) - _coachReviewMs(a.relevantDate);
+    });
+    return out;
+  }
+  window._coachBuildDecisionInbox = _coachBuildDecisionInbox;
+
+  function _renderDecisionInbox(decisions, activeType) {
+    decisions = Array.isArray(decisions) ? decisions : [];
+    activeType = activeType || 'ALL';
+    var counts = { ALL: decisions.length };
+    Object.keys(_DI_TYPE_LABEL).forEach(function(t) { counts[t] = 0; });
+    decisions.forEach(function(d) { counts[d.decisionType] = (counts[d.decisionType] || 0) + 1; });
+    var shown = activeType === 'ALL' ? decisions : decisions.filter(function(d) { return d.decisionType === activeType; });
+    var filters = ['ALL'].concat(Object.keys(_DI_TYPE_LABEL)).map(function(t) {
+      var label = t === 'ALL' ? 'Todas' : _DI_TYPE_LABEL[t];
+      var on = t === activeType;
+      return '<button onclick="_diSetFilter(\'' + t + '\')" style="padding:4px 10px;border-radius:20px;border:1px solid ' + (on ? '#C4FF00' : 'rgba(244,244,240,.10)') + ';background:' + (on ? 'rgba(196,255,0,.12)' : 'transparent') + ';color:' + (on ? '#C4FF00' : '#555') + ';font-size:9px;font-weight:700;cursor:pointer;letter-spacing:.5px">' + label + (counts[t] ? ' ' + counts[t] : '') + '</button>';
+    }).join('');
+    var rows = shown.length ? shown.map(function(d) {
+      var isHigh = d.severity === 'HIGH';
+      var col = isHigh ? '#E10600' : d.severity === 'MEDIUM' ? '#FF8844' : '#888';
+      var bgAccent = isHigh ? 'rgba(225,6,0,.07)' : 'rgba(255,136,68,.05)';
+      var humanReason = _DI_REASON_LABEL[d.reasonCode] || _escH(d.reasonCode || '');
+      var typeLabel = _DI_TYPE_LABEL[d.decisionType] || d.decisionType;
+      var dateTxt = d.relevantDate ? new Date(d.relevantDate).toLocaleDateString('es-MX', { day:'2-digit', month:'short' }) : '';
+      var primaryLabel = _DI_ACTION_LABEL[d.decisionType] || 'ABRIR CLIENTE';
+      var openMonitor = d.decisionType === 'PERFORMANCE_REVIEW' || d.decisionType === 'PAIN_REVIEW';
+      var primaryBtn = '<button onclick="_diOpenClient(\'' + _escH(d.clientId) + '\'' + (openMonitor ? ', true' : '') + ')" '
+        + 'style="padding:7px 14px;border-radius:3px;border:none;background:' + col + ';color:#fff;font-size:10px;font-weight:800;letter-spacing:.8px;cursor:pointer;white-space:nowrap">'
+        + primaryLabel + '</button>';
+      var resolveBtn = '<button onclick="_diResolve(\'' + _escH(d.clientId) + '\',\'' + _escH(d.decisionId) + '\')" '
+        + 'style="padding:7px 12px;border-radius:3px;border:1px solid rgba(110,154,110,.4);background:transparent;color:#6E9A6E;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">RESUELTO ✓</button>';
+      return '<div class="_di-row" style="margin-top:8px;padding:12px;border-radius:6px;background:' + bgAccent + ';border:1px solid ' + col + '2a;border-left:3px solid ' + col + '">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'
+        + '<div style="min-width:0;flex:1">'
+        + '<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;flex-wrap:wrap">'
+        + '<span style="font-size:8px;font-weight:900;color:' + col + ';text-transform:uppercase;letter-spacing:1.5px">' + _escH(d.severity) + '</span>'
+        + '<span style="font-size:8px;color:#555;text-transform:uppercase;letter-spacing:.8px">· ' + _escH(typeLabel) + '</span>'
+        + (dateTxt ? '<span style="font-size:8px;color:#444">· ' + _escH(dateTxt) + '</span>' : '')
+        + '</div>'
+        + '<div style="font-size:15px;font-weight:800;color:#F4F4F0;line-height:1.2;margin-bottom:4px">' + _escH(d.clientName) + '</div>'
+        + '<div style="font-size:12px;color:#B0B0AB;line-height:1.4;margin-bottom:4px">' + humanReason + '</div>'
+        + (d.evidence ? '<div style="font-size:10px;color:#555;line-height:1.4;font-style:italic">' + _escH(d.evidence) + '</div>' : '')
+        + '</div>'
+        + '<div style="display:flex;flex-direction:column;gap:5px;align-items:stretch;flex-shrink:0;min-width:120px">'
+        + primaryBtn + resolveBtn
+        + '</div>'
+        + '</div></div>';
+    }).join('') : '<div style="padding:18px;text-align:center;font-size:12px;color:#444;border:1px dashed rgba(244,244,240,.07);border-radius:6px;margin-top:8px">Sin decisiones pendientes</div>';
+    var headerColor = decisions.length > 0 ? '#E10600' : '#555';
+    return '<div id="decisionInboxBox" style="margin-bottom:16px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'
+      + '<div>'
+      + '<div style="font-size:9px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:' + headerColor + ';margin-bottom:2px">DECISIONES PENDIENTES</div>'
+      + '<div style="font-size:11px;color:#555">' + decisions.length + (decisions.length === 1 ? ' acción requiere' : ' acciones requieren') + ' tu revisión</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap">' + filters + '</div>'
+      + '</div>'
+      + rows
+      + '</div>';
+  }
+  window._renderDecisionInbox = _renderDecisionInbox;
+
+  window._diSetFilter = function(type) {
+    window._decisionInboxFilter = type || 'ALL';
+    var el = document.getElementById('decisionInboxMount');
+    if (el) el.innerHTML = _renderDecisionInbox(window._decisionInboxItems || [], window._decisionInboxFilter);
+  };
+
+  window._diOpenClient = function(clientId, monitor) {
+    showClientDetail(clientId);
+    if (monitor) setTimeout(function() { _switchClientTab('monitor'); }, 120);
+  };
+
+  window._diResolve = async function(clientId, decisionId) {
+    if (!clientId || !decisionId) return;
+    var nowIso = new Date().toISOString();
+    try {
+      var payload = {};
+      payload['decisionResolutions.' + decisionId] = { resolvedAt: nowIso, resolvedBy: currentCoach ? currentCoach.uid : null };
+      await updateDoc(doc(db, 'clients', clientId), payload);
+      if (window._clientCache && window._clientCache[clientId]) {
+        var c = window._clientCache[clientId].client || {};
+        c.decisionResolutions = c.decisionResolutions || {};
+        c.decisionResolutions[decisionId] = payload['decisionResolutions.' + decisionId];
+        window._clientCache[clientId].client = c;
+        window._decisionInboxItems = _coachBuildDecisionInbox(window._clientCache);
+        window._diSetFilter(window._decisionInboxFilter || 'ALL');
+      }
+      showToast('Decisión marcada como resuelta');
+    } catch(e) {
+      showToast('Error al resolver decisión: ' + (e.message || e.code || ''), true);
+    }
+  };
 
   async function loadMonitorClients() {
     if (!currentCoach) return;
@@ -14364,6 +14797,60 @@ El esfuerzo no es negociable.
     }
   };
 
+  var _SLR_TYPE_ICON = {
+    sessions: '📋', sets: '💪', load_reps: '📈', checkin: '⚖', pain: '⚠', progression: '🎯', adherence: '📊', none: '—'
+  };
+  var _SLR_TYPE_COLOR = {
+    sessions: '#C4FF00', sets: '#6E9A6E', load_reps: '#2C8BEA', checkin: '#A5A59E',
+    pain: '#E10600', progression: '#C4FF00', adherence: '#A5A59E', none: '#444'
+  };
+
+  function _renderSinceLastReviewCard(summary, lastReviewedAt) {
+    summary = summary || { status: 'SIN CAMBIOS RELEVANTES', items: [] };
+    var lastTxt = lastReviewedAt ? new Date(lastReviewedAt).toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }) : 'Primera revisión';
+    var hasChanges = summary.hasChanges;
+    var hasPain = (summary.items || []).some(function(it) { return it.type === 'pain'; });
+    var border = hasPain ? '#E10600' : hasChanges ? '#C4FF00' : 'rgba(244,244,240,.08)';
+    var items = (summary.items || []).filter(function(it) { return it.type !== 'none'; });
+    var tilesHtml = items.length ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:12px">'
+      + items.map(function(it) {
+        var ic = _SLR_TYPE_ICON[it.type] || '·';
+        var col = _SLR_TYPE_COLOR[it.type] || '#888';
+        return '<div style="padding:10px;border-radius:6px;background:rgba(244,244,240,.03);border:1px solid ' + col + '22">'
+          + '<div style="font-size:11px;color:' + col + ';font-weight:700;margin-bottom:4px">' + ic + ' ' + _escH(it.label || '') + '</div>'
+          + (it.evidence ? '<div style="font-size:9px;color:#555;line-height:1.4">' + _escH(it.evidence) + '</div>' : '')
+          + '</div>';
+      }).join('')
+      + '</div>'
+      : '<div style="margin-top:10px;font-size:11px;color:#444;padding:10px;border-radius:6px;border:1px dashed rgba(244,244,240,.07);text-align:center">Sin cambios desde la última revisión</div>';
+    return '<div style="padding:14px;border-radius:8px;background:rgba(244,244,240,.02);border:1px solid rgba(244,244,240,.07);border-left:3px solid ' + border + ';margin-bottom:12px">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+      + '<div>'
+      + '<div style="font-size:9px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#666;margin-bottom:3px">DESDE TU ÚLTIMA REVISIÓN</div>'
+      + '<div style="font-size:11px;color:#444">' + _escH(lastTxt) + '</div>'
+      + '</div>'
+      + '<button onclick="_markClientReviewed()" style="padding:7px 14px;border-radius:3px;border:1px solid rgba(196,255,0,.4);background:rgba(196,255,0,.08);color:#C4FF00;font-size:10px;font-weight:800;letter-spacing:.8px;cursor:pointer">MARCAR REVISADO</button>'
+      + '</div>'
+      + tilesHtml
+      + '</div>';
+  }
+
+  async function _markClientReviewed() {
+    if (!_detailClientId) return;
+    var nowIso = new Date().toISOString();
+    try {
+      await updateDoc(doc(db, 'clients', _detailClientId), { lastReviewedAt: nowIso });
+      if (_detailClientData) _detailClientData.lastReviewedAt = nowIso;
+      if (window._clientCache && window._clientCache[_detailClientId]) window._clientCache[_detailClientId].client.lastReviewedAt = nowIso;
+      showToast('Cliente marcado como revisado');
+      var cont = document.getElementById('clientDetailTabContent');
+      if (cont && _detailActiveTab === 'monitor') _renderClientTabMonitor(cont);
+    } catch(e) {
+      showToast('Error al marcar revisión: ' + (e.message || e.code || ''), true);
+    }
+  }
+  window._markClientReviewed = _markClientReviewed;
+
   async function _renderClientTabMonitor(cont) {
     cont.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos...</div>`;
     const clientId = _detailClientId;
@@ -14372,7 +14859,11 @@ El esfuerzo no es negociable.
 
     const logsSnap = await getDoc(doc(db, 'logs', clientId)).catch(() => null);
     if (!logsSnap || !logsSnap.exists()) {
-      cont.innerHTML = `<p class="text-[#888] text-sm mt-2">Sin datos de entrenamiento registrados aún.</p>`; return;
+      cont.innerHTML = _renderSinceLastReviewCard(
+        _coachBuildSinceLastReview({}, p, 1, c && c.lastReviewedAt),
+        c && c.lastReviewedAt
+      ) + `<p class="text-[#888] text-sm mt-2">Sin datos de entrenamiento registrados aún.</p>`;
+      return;
     }
     const logsData  = logsSnap.data();
     const entries   = logsData.entries || {};
@@ -14420,6 +14911,11 @@ El esfuerzo no es negociable.
     }
 
     let html = '';
+
+    html += _renderSinceLastReviewCard(
+      _coachBuildSinceLastReview(entries, p, currentWeek, c && c.lastReviewedAt),
+      c && c.lastReviewedAt
+    );
 
     // ── Check-in semanal actual
     html += `<div class="card p-3 mb-3" style="border-left:3px solid #C4FF00;border-radius:0 8px 8px 0">

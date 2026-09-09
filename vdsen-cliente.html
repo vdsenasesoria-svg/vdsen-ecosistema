@@ -2776,7 +2776,7 @@ function renderResumen() {
     ${_missingHintsHtml}
 
     <div class="card" style="margin-top:10px">
-      <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>HOY</span><span style="font-size:10px;font-family:var(--ff);letter-spacing:1.5px;color:var(--mt);font-weight:700">SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</span></div>
       ${_renderClientToday()}
     </div>
 
@@ -3167,32 +3167,76 @@ function _resolveTodayState(topology, logs, sesiones) {
 
 function _renderClientToday() {
   if (!PLAN || !PLAN.entrenamiento) {
-    return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
+    return '<div style="text-align:center;padding:18px 0">'
+      + '<div style="font-size:11px;color:var(--mt);margin-bottom:14px">Aún no tienes un plan activo</div>'
+      + '</div>';
   }
   var sesiones = getSesiones();
   var resolved = _resolveTodayState(PLAN.trainingTopology || null, LOGS, sesiones);
 
   if (resolved.state === 'NO_ACTIVE_PLAN') {
-    return '<button onclick="goTab(1)" style="width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">VER ENTRENAMIENTO ▶</button>';
+    return '<div style="text-align:center;padding:14px 0">'
+      + '<div style="font-size:11px;color:var(--mt);margin-bottom:12px">Sin plan activo</div>'
+      + '<button onclick="goTab(1)" style="width:100%;padding:15px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:4px">VER ENTRENAMIENTO ▶</button>'
+      + '</div>';
   }
 
   if (resolved.state === 'REST_TODAY') {
     var eom = resolved.isEndOfMesocycle;
-    return '<div style="text-align:center;padding:10px 0">' +
-      '<div style="font-family:var(--ff);font-size:13px;font-weight:900;letter-spacing:2px;color:var(--gold)">' + (eom ? '✓ FIN DE MESOCICLO' : '— DESCANSO —') + '</div>' +
-      '<div style="font-size:11px;color:var(--mt);margin-top:5px">' + (eom ? 'Completaste todas las sesiones del plan' : 'Día de recuperación. Siguiente sesión en el próximo ciclo.') + '</div>' +
-      '</div>' +
-      '<button onclick="goTab(1)" style="margin-top:10px;width:100%;padding:11px;background:var(--gdim);border:1px solid rgba(107,107,102,.3);color:var(--gold);font-family:var(--ff);font-size:13px;font-weight:700;letter-spacing:2px;cursor:pointer;border-radius:6px">VER PLAN →</button>';
+    var topoLabel = PLAN.trainingTopology ? PLAN.trainingTopology.replace(/_/g, ' ') : '';
+    var nextIdx = resolved.fullyDone !== undefined ? resolved.fullyDone % sesiones.length : 0;
+    var nextSesion = sesiones[nextIdx];
+    var nextNombre = nextSesion ? _escHTml(nextSesion.dia || nextSesion.nombre || ('Sesión ' + (nextIdx + 1))) : '';
+    if (eom) {
+      return '<div style="padding:16px;border-radius:6px;border:1px solid rgba(196,255,0,.2);background:rgba(196,255,0,.04);text-align:center;margin-bottom:12px">'
+        + '<div style="font-family:var(--ff);font-size:10px;font-weight:900;letter-spacing:2.5px;color:var(--accent);margin-bottom:6px">✓ MESOCICLO COMPLETO</div>'
+        + '<div style="font-size:20px;font-family:var(--ff);font-weight:900;color:var(--tx);letter-spacing:1px">MISIÓN CUMPLIDA</div>'
+        + '<div style="font-size:11px;color:var(--mt);margin-top:6px">Completaste todas las sesiones del plan. Tu coach preparará el siguiente.</div>'
+        + '</div>'
+        + '<button onclick="goTab(1)" style="width:100%;padding:12px;background:transparent;border:1px solid rgba(196,255,0,.3);color:var(--accent);font-family:var(--ff);font-size:12px;font-weight:700;letter-spacing:2px;cursor:pointer;border-radius:4px">VER HISTORIAL →</button>';
+    }
+    return '<div style="padding:16px;border-radius:6px;border:1px solid rgba(244,244,240,.06);background:rgba(244,244,240,.02);margin-bottom:12px">'
+      + '<div style="font-family:var(--ff);font-size:9px;font-weight:900;letter-spacing:2.5px;color:var(--mt);margin-bottom:8px">' + (topoLabel || 'DESCANSO PROGRAMADO') + '</div>'
+      + '<div style="font-size:18px;font-family:var(--ff);font-weight:900;color:var(--tx);letter-spacing:1px">— DESCANSO —</div>'
+      + '<div style="font-size:11px;color:var(--mt);margin-top:6px">Día de recuperación activa. El sistema detecta que necesitas descanso hoy.</div>'
+      + (nextNombre ? '<div style="margin-top:10px;padding:8px;border-radius:4px;background:rgba(244,244,240,.03);border:1px solid rgba(244,244,240,.06)">'
+        + '<div style="font-size:9px;color:var(--mt);letter-spacing:1px;margin-bottom:3px">PRÓXIMA SESIÓN</div>'
+        + '<div style="font-size:12px;font-weight:700;color:var(--platinum)">' + nextNombre + '</div>'
+        + '</div>' : '')
+      + '</div>'
+      + '<button onclick="goTab(1)" style="width:100%;padding:12px;background:transparent;border:1px solid rgba(244,244,240,.10);color:var(--platinum);font-family:var(--ff);font-size:12px;font-weight:700;letter-spacing:2px;cursor:pointer;border-radius:4px">VER PLAN →</button>';
   }
 
   // TRAIN_TODAY
   var sesion = resolved.sesion;
   var nombre = _escHTml(sesion.dia || sesion.nombre || ('Sesión ' + (resolved.sessionIdx + 1)));
-  var ejerciciosLine = (sesion.contenido||'').split('\n').filter(function(l){ return /\d\s*[×x]\s*\d|RIR/i.test(l); });
-  var nEj = sesion.exercises ? sesion.exercises.length : ejerciciosLine.length;
-  return '<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:4px">' + nombre + '</div>' +
-    (nEj ? '<div style="font-size:10px;color:var(--mt)">' + nEj + ' ejercicios</div>' : '') +
-    '<button onclick="goTab(1)" style="margin-top:10px;width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">INICIAR ENTRENAMIENTO ▶</button>';
+  var nEj = sesion.exercises ? sesion.exercises.length : (sesion.contenido||'').split('\n').filter(function(l){ return /\d\s*[×x]\s*\d|RIR/i.test(l); }).length;
+  var totalSets = 0;
+  if (sesion.exercises) {
+    sesion.exercises.forEach(function(ex) { totalSets += ex.sets ? ex.sets.length : 0; });
+  }
+  var progressInSesion = 0;
+  if (sesion.exercises) {
+    sesion.exercises.forEach(function(ex, ei) {
+      if (!ex.sets) return;
+      ex.sets.forEach(function(s, si) {
+        var logKey = 'log_' + CURRENT_WEEK + '_' + resolved.sessionIdx + '_' + ei + '_s' + si;
+        if (LOGS[logKey] && LOGS[logKey].done) progressInSesion++;
+      });
+    });
+  }
+  var progressLine = totalSets > 0 && progressInSesion > 0
+    ? '<div style="margin-top:6px;height:2px;border-radius:1px;background:rgba(244,244,240,.07)">'
+      + '<div style="height:2px;border-radius:1px;background:var(--accent);width:' + Math.round(progressInSesion/totalSets*100) + '%"></div>'
+      + '</div><div style="font-size:9px;color:var(--mt);margin-top:3px">' + progressInSesion + '/' + totalSets + ' sets completados</div>'
+    : '';
+  return '<div style="margin-bottom:12px">'
+    + '<div style="font-size:9px;font-weight:900;letter-spacing:2px;color:var(--mt);margin-bottom:6px;text-transform:uppercase">SESIÓN DE HOY</div>'
+    + '<div style="font-size:20px;font-family:var(--ff);font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.1;margin-bottom:4px">' + nombre + '</div>'
+    + (nEj ? '<div style="font-size:11px;color:var(--mt)">' + nEj + ' ejercicios' + (totalSets ? ' · ' + totalSets + ' sets' : '') + '</div>' : '')
+    + progressLine
+    + '</div>'
+    + '<button onclick="goTab(1)" style="width:100%;padding:16px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:15px;font-weight:900;letter-spacing:2.5px;cursor:pointer;border-radius:4px;-webkit-tap-highlight-color:transparent">INICIAR ▶</button>';
 }
 // ────────────────────────────────────────────────────────────────────────────
 
