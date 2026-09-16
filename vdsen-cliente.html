@@ -10449,7 +10449,8 @@ async function guardarCI() {
     // El coach lee estos datos en el Motor de Decisiones Semanal
     if (FB && USER && USER.email) {
       var emailKey = USER.email.replace(/[.@#$[\]]/g,'_');
-      var histRef  = FB.collection(FB.db, 'expedientes', emailKey, 'historial');
+      // setDoc con ID determinista para evitar duplicados por semana
+      var histDocRef = FB.doc(FB.db, 'expedientes', emailKey, 'historial', 'sem_' + CURRENT_WEEK);
       var checkinDoc = {
         tipo          : 'checkin_cliente',
         semana        : CURRENT_WEEK,
@@ -10481,7 +10482,7 @@ async function guardarCI() {
       };
       // Eliminar nulls para no ensuciar Firestore
       Object.keys(checkinDoc).forEach(function(k){ if (checkinDoc[k] === null) delete checkinDoc[k]; });
-      await FB.addDoc(histRef, checkinDoc);
+      await FB.setDoc(histDocRef, checkinDoc);
     }
 
     showToast('CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · Tu coach lo revisará en el panel de monitoreo');
