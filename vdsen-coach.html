@@ -10249,6 +10249,8 @@ El esfuerzo no es negociable.
   window._showCalibForm = _showCalibForm;
 
   async function _saveCalibVolumetrica(clientId) {
+    const _btn = document.querySelector('[onclick^="_saveCalibVolumetrica"]');
+    if (_btn) { _btn.disabled = true; _btn.textContent = '⏳ Calculando...'; }
     var fieldIds = ['genero','edad_decada','altura_clasificacion','peso_clasificacion','nivel_fuerza','capacidad_trabajo_historica','recuperacion_historica','recuperacion_externa','novedad_programa','estres_fisico_externo','estres_no_fisico','reposo_descanso','habitos_alimenticios','uso_aas'];
     var f = {};
     fieldIds.forEach(function(id) {
@@ -10273,6 +10275,9 @@ El esfuerzo no es negociable.
       showToast('Calibración guardada ✓ VME=' + res.VME + ' VMR=' + res.VMR);
       _switchClientTab('ficha');
     } catch(err) { showToast('Error: ' + err.message, true); }
+    finally {
+      if (_btn) { _btn.disabled = false; _btn.textContent = '💾 Calcular y guardar VME/VMR'; }
+    }
   }
   window._saveCalibVolumetrica = _saveCalibVolumetrica;
 
@@ -15173,11 +15178,16 @@ El esfuerzo no es negociable.
 
   async function saveAllNotes() {
     if (!_detailClientId) return;
+    const _btn = document.querySelector('[onclick="saveAllNotes()"]');
+    if (_btn) { _btn.disabled = true; _btn.textContent = '⏳ Guardando...'; }
     try {
       await saveCoachNote();
       await saveClientMessage();
       showToast('Notas guardadas ✅');
     } catch(e) { showToast('Error al guardar: '+e.message, true); }
+    finally {
+      if (_btn) { _btn.disabled = false; _btn.textContent = '💾 Guardar notas'; }
+    }
   }
   window.saveAllNotes = saveAllNotes;
 
