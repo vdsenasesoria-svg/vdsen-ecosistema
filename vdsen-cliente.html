@@ -10374,7 +10374,10 @@ function setCISubj(fieldId, val) {
 }
 window.setCISubj = setCISubj;
 
+var _guardarCIInFlight = false;
 async function guardarCI() {
+  if (_guardarCIInFlight) return;
+  _guardarCIInFlight = true;
   var _ciBtns = Array.from(document.querySelectorAll('[onclick="guardarCI()"]'));
   var _ciOrigTexts = _ciBtns.map(function(b) { return b.textContent; });
   _ciBtns.forEach(function(b) { b.disabled = true; b.textContent = 'GUARDANDO...'; });
@@ -10488,6 +10491,7 @@ async function guardarCI() {
     showToast('ERROR AL GUARDAR: ' + e.message, true);
     console.error('guardarCI error:', e);
   } finally {
+    _guardarCIInFlight = false;
     _ciBtns.forEach(function(b, i) { b.disabled = false; b.textContent = _ciOrigTexts[i] || ('✓ GUARDAR CHECK-IN SEM ' + CURRENT_WEEK); });
   }
 }
