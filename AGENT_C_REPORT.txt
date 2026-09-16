@@ -1,0 +1,223 @@
+TRACK: QA
+BASELINE: c17f89f (T109 integration)
+FINDINGS: 5
+AGENT: C (QA / Cross-Track Auditor)
+DATE: 2026-09-16
+
+════════════════════════════════════════════════════════════
+ALL EXISTING TESTS PASS (14 suites, zero failures)
+════════════════════════════════════════════════════════════
+
+════════════════════════════════════════════════════════════
+CLIENT_FINDINGS
+════════════════════════════════════════════════════════════
+
+QA_FINDING:
+  AREA: Cross-track shared state — coach reset vs client live listener
+  FILE: vdsen-cliente.html
+  LINE: ~1734
+  SEVERITY: high
+  REPRO:
+    1. Client is in week 3 (REAL_WEEK=3) with an active session (several sets logged).
+    2. Coach clicks "🗑 Reiniciar semana → 1 (borrar todo)" in the monitoring panel.
+    3. Coach action calls setDoc(logs/{uid}, { entries:{}, currentWeek:1, ... }).
+    4. Client's onSnapshot listener fires with newWeek=1, entriesCount=0.
+    5. Guard at line 1734: `if (newWeek > REAL_WEEK)` → 1 > 3 → FALSE.
+       → REAL_WEEK stays at 3; CURRENT_WEEK unchanged.
+       → LOGS is emptied (line 1735: LOGS = d.entries || {}).
+    6. Client is now in week 3 (REAL_WEEK=3, CURRENT_WEEK=3) with LOGS={}.
+    7. Client logs next set → key is `log_3_*_*_s*` (week 3, not week 1).
+    8. On next page reload: loadPlan reads currentWeek=1 → client starts at week 1.
+       Firestore has orphaned week-3 entries that bypass the "reset" intent.
+  EXPECTED: After coach reset, REAL_WEEK and CURRENT_WEEK are updated to 1 by the
+            listener (or a toast+reload is triggered like the activePlanId path does).
+  ACTUAL: REAL_WEEK stays at 3; client silently writes week-3 log keys after reset.
+  SUGGESTED_OWNER: CLIENT
+
+════════════════════════════════════════════════════════════
+COACH_FINDINGS
+════════════════════════════════════════════════════════════
+
+QA_FINDING:
+  AREA: Contract — _applyAllModuloD missing updatedAt in write → client plan listener deaf
+  FILE: vdsen-coach.html
+  LINE: ~14853
+  SEVERITY: high
+  REPRO:
+    1. Coach opens monitoring panel for a client in week ≥ 2.
+    2. Coach runs "Módulo D" analysis → recommendations appear.
+    3. Coach clicks "⚡ Aplicar ajustes al plan".
+    4. _applyAllModuloD() calls:
+         updateDoc(doc(db,'plans',planId), { days: updatedDays })
+       — NO updatedAt field in this write (compare _applyRecLoadsToMonitor line 15118
+         which correctly includes updatedAt).
+    5. Firestore fires onSnapshot on the client side.
+    6. Client's plan listener (vdsen-cliente.html ~1706):
+         var updatedAt = pd.updatedAt || '';  → reads OLD updatedAt (unchanged by step 4)
+         if (updatedAt === FB._planLastUpdatedAt) return;  → TRUE → ignored
+    7. Client does NOT see the updated loads. Client's pre-fill and progression reference
+       still use old load values until next page reload.
+  EXPECTED: Load changes applied via _applyAllModuloD are immediately visible to the
+            active client session (same behavior as _applyRecLoadsToMonitor).
+  ACTUAL: Client plan listener ignores the Firestore change; loads only refresh on reload.
+  NOTE: _applyRecLoadsToMonitor (line 15118) correctly includes updatedAt and works.
+        _applyAllModuloD is the only path that omits it.
+  SUGGESTED_OWNER: COACH
+
+QA_FINDING:
+  AREA: In-flight guard — _applyAllModuloD missing double-click protection
+  FILE: vdsen-coach.html
+  LINE: ~14826
+  SEVERITY: medium
+  REPRO:
+    1. Coach opens Módulo D panel, recommendations available.
+    2. Coach double-clicks "⚡ Aplicar ajustes al plan" quickly.
+    3. _applyAllModuloD() has no in-flight guard variable and does not disable the button.
+    4. Two concurrent calls proceed:
+         — Both call getDoc(plans/planId) → both read same snapshot before first write.
+         — Both call updateDoc(plans/planId, {days: updatedDays}).
+    5. Second updateDoc overwrites the first with identical data (idempotent in this case),
+       but the window is open for a future non-idempotent change to corrupt the plan.
+  EXPECTED: Button disabled + _applyAllModuloD returns early if already running
+            (same pattern as _applyRecBtn guard at line 3298).
+  ACTUAL: No guard; concurrent writes possible.
+  SUGGESTED_OWNER: COACH
+
+════════════════════════════════════════════════════════════
+SHARED_FINDINGS
+════════════════════════════════════════════════════════════
+
+QA_FINDING:
+  AREA: Cross-track shared state — _logsLastSeen 500ms echo-suppression window
+  FILE: vdsen-cliente.html
+  LINE: ~1726
+  SEVERITY: medium
+  REPRO:
+    1. Client completes a set → saveSet() fires updateDoc/setDoc to logs/{uid}
+       with updatedAt = T (ms timestamp).  _logsLastSeen is set to T.
+    2. Within 500ms, coach uses "📅 Cambiar semana actual" (setClientWeekManual) to
+       advance the client to week 2, writing updatedAt = T+300 to logs/{uid}.
+    3. Client snapshot fires with ts = T+300.
+    4. Guard: `_logsLastSeen && ts <= _logsLastSeen + 500` → T+300 <= T+500 → TRUE → return.
+    5. Coach's week advance is silently swallowed. Client stays at old week.
+    6. Client has no indication the coach changed their week; continues at wrong week
+       until page reload.
+  EXPECTED: External writes (from a different originator) should bypass the echo guard,
+            OR the guard window should be tightened to ≤ 50ms (only own echo).
+  ACTUAL: Coach week-change within 500ms of any client save is silently ignored.
+  NOTE: The coach's write uses `updatedAt: new Date().toISOString()` (ISO string) while
+        the client uses `updatedAt: Date.now()` (numeric ms). The guard compares numeric
+        ts to numeric _logsLastSeen. The ISO string coerces to NaN → ts = NaN →
+        `NaN <= _logsLastSeen + 500` → FALSE → guard does NOT fire for ISO string writes.
+        This means setClientWeekManual (ISO string) is NOT affected by this bug.
+        But resetClientWeek uses `updatedAt: Date.now()` (numeric) — it IS affected.
+  REFINED_REPRO: resetClientWeek uses Date.now() → echo guard fires within 500ms of client save.
+  SUGGESTED_OWNER: SHARED
+
+QA_FINDING:
+  AREA: Contract verification — prescriptionExerciseId stable on drag/reorder
+  FILE: vdsen-coach.html
+  LINE: ~16762
+  SEVERITY: medium
+  REPRO:
+    1. Coach opens training editor for a client with existing plan (exercises have PIDs).
+    2. Coach drags exercise from position 0 to position 2 (reorder via drag-and-drop).
+    3. DOM is reordered; the `data-prescription-id` attribute stays with the row element.
+    4. Coach saves. saveTrainingPlan() rebuilds days by DOM order (querySelectorAll).
+    5. `row.dataset.prescriptionId` correctly reads each row's PID → PIDs stay stable.
+       THIS PATH IS CORRECT.
+    6. BUT: addExRow() at line 16672 calls _exRowHtml(..., '', 0) — prescriptionId='' (empty).
+       The new row gets `data-prescription-id=""` in the DOM.
+    7. At save time: `row.dataset.prescriptionId || _genPrescriptionId()` — empty string is
+       falsy → new ID generated at save time, not at add time.
+    8. If coach adds an exercise, saves (ID X generated), reopens editor (X now in DOM),
+       drags the exercise to a new position, saves again → X is preserved. CORRECT.
+    9. But if coach adds exercise, saves, DISCARDS (calls _discardEditorChanges which
+       re-renders from _detailPlanData), _detailPlanData still has the OLD plan (before save).
+       Wait — _discardEditorChanges is only called when coach discards WITHOUT saving,
+       so the new exercise would not be in _detailPlanData. This is the intended behavior.
+  ACTUAL: The prescriptionId assignment on new exercises is lazy (at save time).
+          This is architecturally acceptable but creates a test gap:
+          no test verifies that drag+reorder preserves existing PIDs in the DOM.
+  SUGGESTED_OWNER: COACH
+
+════════════════════════════════════════════════════════════
+TEST_GAPS
+════════════════════════════════════════════════════════════
+
+1. NO TEST: coach resetClientWeek + client onSnapshot listener — REAL_WEEK regression
+   path. Critical cross-track interaction has zero test coverage.
+
+2. NO TEST: _applyAllModuloD omits updatedAt → verify client plan listener is triggered
+   or not. The contrast with _applyRecLoadsToMonitor (which includes updatedAt) is
+   undocumented in tests.
+
+3. NO TEST: _applyAllModuloD in-flight guard (because there is no guard).
+
+4. NO TEST: _liveUnsubPlan → plan listener baseline vs delta (FB._planLastUpdatedAt).
+   The condition `if (updatedAt === FB._planLastUpdatedAt) return` is untested.
+
+5. NO TEST: showUpdatePlanModal success path — button remains disabled until overlay
+   removal. Existing t107h-update-plan-inflight.test.js only covers the error path
+   restoration (3 assertions, success-state visual not covered).
+
+6. NO TEST: prescriptionExerciseId stability across drag+reorder in training editor DOM.
+
+════════════════════════════════════════════════════════════
+CONTRACT_ISSUES
+════════════════════════════════════════════════════════════
+
+1. INCONSISTENT updatedAt in plan writes:
+   - saveTrainingPlan (line 16799):       includes updatedAt ✓
+   - showUpdatePlanModal (line 17285):    includes updatedAt ✓ (via _planUpd object)
+   - _applyRecLoadsToMonitor (line 15118): includes updatedAt ✓
+   - _applyAllModuloD (line 14853):       MISSING updatedAt ✗
+   Client live plan listener silently ignores writes without a new updatedAt value.
+
+2. CONSISTENT setDoc for sem_N historial: guardarCI (line 10492) uses setDoc with
+   deterministic doc ID — CORRECT, idempotent.
+
+3. CONSISTENT _lbwTrack dedup: T104-C fix (indexOf check before push) covers all
+   call sites (log_ and progrec_ prefixes). No path bypasses the dedup.
+
+4. prescriptionExerciseId stable in saveTrainingPlan and showUpdatePlanModal
+   (_stampPrescriptionIds preserves existing IDs). CORRECT.
+
+5. plans/{id} status field: 'active' for manual/copy plans, 'draft_approved' for
+   Motor VDSEN generated plans. Client guards only 'draft' — both active and
+   draft_approved are loadable. CONSISTENT.
+
+════════════════════════════════════════════════════════════
+RECOMMENDATIONS (integration risks to watch)
+════════════════════════════════════════════════════════════
+
+R1 [BLOCKING]: Before merging, fix _applyAllModuloD to include
+   `updatedAt: new Date().toISOString()` in the updateDoc payload. Otherwise
+   coaches using Módulo D adjustment in production will see plan changes that
+   active clients silently miss. This is a one-line fix.
+
+R2 [HIGH]: The client live-logs listener REAL_WEEK regression bug means that
+   coach week-reset operations during active client sessions leave the client
+   in an inconsistent state. Consider either:
+   (a) Treating a decrease in currentWeek from Firestore as a reload trigger
+       (like activePlanId change), OR
+   (b) Adding a toast + location.reload() in the listener when newWeek < REAL_WEEK.
+
+R3 [MEDIUM]: Add an in-flight guard to _applyAllModuloD (disable button, set
+   _applyModuloDInFlight flag) — mirrors the _applyRecBtn guard pattern at line 3298.
+
+R4 [LOW]: The _logsLastSeen 500ms echo-suppression window is wider than needed.
+   Tightening to 50-100ms would reduce the risk of swallowing concurrent coach
+   writes during active client sessions. (Note: ISO string vs numeric updatedAt
+   already provides some natural separation between coach and client writes.)
+
+R5 [INFO]: T107-H test scope is narrow — it tests button disabled state on error
+   but not visual state on success. Since the modal removes itself, this is not
+   a user-visible regression risk, but the test intent should be documented.
+
+TEST_FILES_ADDED:
+  tests/t109c-applymoduloD-updatedat.test.js
+    Static analysis test that catches the _applyAllModuloD missing-updatedAt bug.
+    Fails (3/4) on baseline c17f89f confirming the defect.
+    Passes once COACH track adds updatedAt to the updateDoc payload.
+PUSH_REQUIRED: true (test file added)
