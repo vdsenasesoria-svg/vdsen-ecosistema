@@ -8773,6 +8773,13 @@ function setWeek(w) {
   // NOTE: do NOT call saveLogs() here — only the viewed week changes, not the
   // real training week.
   window._ciSubjTemp = null;
+  // Discard cached superset step-state from the previous week.
+  // _ssStep uses week-agnostic keys (di+'_'+grp) and caches which round/member
+  // is current. When CURRENT_WEEK changes, the cache is stale: the new week has
+  // no completed rounds yet, but the old cache would make the UI start at the
+  // wrong round. Clearing here forces _buildExpressSupersetPanel to reconstruct
+  // the state from the new week's LOGS (all zeros for a fresh week).
+  window._ssStep = {};
   _autoAdvanceDia();
   renderEntrenamiento();
   renderResumen();
