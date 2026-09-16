@@ -16644,6 +16644,7 @@ El esfuerzo no es negociable.
     view.style.display   = open ? 'block' : 'none';
     if (!open) {
       document.querySelectorAll('[id^="exlist_"]').forEach(function(list) { _updateReorderBtns(list); });
+      editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }
 
