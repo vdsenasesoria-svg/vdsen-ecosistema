@@ -9652,7 +9652,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     `;
   }
 
+  var _savingInbody = false;
   async function _inbodySave(clientId) {
+    if (_savingInbody) return;
+    _savingInbody = true;
+    const _btn = document.querySelector('[onclick^="_inbodySave"]');
+    if (_btn) { _btn.disabled = true; _btn.textContent = '⏳ Guardando...'; }
     const entry = { ts: Date.now(), fecha: document.getElementById('inb_fecha')?.value || '' };
     _INBODY_FIELDS.forEach(f => {
       const el = document.getElementById('inb_'+f.id);
@@ -9663,7 +9668,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     });
     const nota = document.getElementById('inb_nota')?.value?.trim();
     if (nota) entry.nota = nota;
-    if (Object.keys(entry).length <= 2) { showToast('Ingresá al menos un valor', true); return; }
+    if (Object.keys(entry).length <= 2) {
+      showToast('Ingresá al menos un valor', true);
+      _savingInbody = false;
+      if (_btn) { _btn.disabled = false; _btn.textContent = 'Guardar medición'; }
+      return;
+    }
     try {
       const ref = doc(db, 'clients', clientId);
       const snap = await getDoc(ref);
@@ -9674,6 +9684,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       _detailClientData = Object.assign({}, snap.data(), { inbodyResults: existing });
       _switchClientTab('inbody');
     } catch(e) { showToast('Error: '+e.message, true); }
+    finally {
+      _savingInbody = false;
+      if (_btn) { _btn.disabled = false; _btn.textContent = 'Guardar medición'; }
+    }
   }
   window._inbodySave = _inbodySave;
 
