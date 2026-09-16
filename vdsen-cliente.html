@@ -6677,6 +6677,11 @@ function renderEntrenamiento() {
       '</div></div>';
   }
 
+  // T117-C: Save rest timer state before innerHTML wipes the overlay/pill elements.
+  // renderEntrenamiento replaces cont.innerHTML (which contains #restTimerOverlay and
+  // #timerPill) and resets their display to 'none', making a running timer invisible.
+  var _timerWasMin = !!_restTimer && !!(document.getElementById('timerPill') && document.getElementById('timerPill').style.display === 'flex');
+
   cont.innerHTML =
     // Semana activa — header prominente
     weekHeaderHtml+
@@ -6812,6 +6817,19 @@ function renderEntrenamiento() {
   }
   if (_restEndMs && _restEndMs > Date.now()) {
     setTimeout(function(){_updateRestRing();},50);
+  }
+  // T117-C: Restore rest timer overlay/pill visibility after innerHTML wipe.
+  // _restEl is also stale (detached node) — re-fetch from the fresh DOM.
+  if (_restTimer) {
+    _restEl = document.getElementById('restTimerNum');
+    var _rov = document.getElementById('restTimerOverlay');
+    var _rpill = document.getElementById('timerPill');
+    if (_timerWasMin) {
+      if (_rpill) _rpill.style.display = 'flex';
+    } else {
+      if (_rov) _rov.style.display = 'flex';
+    }
+    updateTimerDisplay();
   }
 }
 
