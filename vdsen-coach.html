@@ -16666,7 +16666,8 @@ El esfuerzo no es negociable.
     if (inp) inp.focus();
   }
 
-  function removeExRow(di, ei) {
+  async function removeExRow(di, ei) {
+    if (!(await _askConfirm('¿Eliminar este ejercicio?'))) return;
     const el = document.getElementById('exrow_'+di+'_'+ei);
     if (el) el.remove();
     if (typeof markEditorDirty === 'function') markEditorDirty();
