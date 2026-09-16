@@ -12560,13 +12560,19 @@ function _rebuildLogsByWeek() {
 }
 
 function _lbwTrack(k) {
-  var _w;
+  var _w, _arr;
   if (k.indexOf('log_') === 0) {
     _w = parseInt(k.split('_')[1]);
-    if (!isNaN(_w)) { if (!LOGS_BY_WEEK.log[_w]) LOGS_BY_WEEK.log[_w] = []; LOGS_BY_WEEK.log[_w].push(k); }
+    if (!isNaN(_w)) {
+      _arr = LOGS_BY_WEEK.log[_w] || (LOGS_BY_WEEK.log[_w] = []);
+      if (_arr.indexOf(k) < 0) _arr.push(k);
+    }
   } else if (k.indexOf('progrec_') === 0) {
     _w = parseInt(k.split('_')[1]);
-    if (!isNaN(_w)) { if (!LOGS_BY_WEEK.progrec[_w]) LOGS_BY_WEEK.progrec[_w] = []; LOGS_BY_WEEK.progrec[_w].push(k); }
+    if (!isNaN(_w)) {
+      _arr = LOGS_BY_WEEK.progrec[_w] || (LOGS_BY_WEEK.progrec[_w] = []);
+      if (_arr.indexOf(k) < 0) _arr.push(k);
+    }
   }
 }
 
