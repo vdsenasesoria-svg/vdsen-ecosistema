@@ -17219,7 +17219,9 @@ El esfuerzo no es negociable.
         <div id="upd-plan-status" class="text-xs mt-2"></div>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.querySelector('#upd-plan-apply').onclick = async () => {
+    const _updApplyBtn = overlay.querySelector('#upd-plan-apply');
+    _updApplyBtn.onclick = async () => {
+      if (_updApplyBtn.disabled) return;
       const raw = overlay.querySelector('#upd-plan-json').value.trim();
       const st  = overlay.querySelector('#upd-plan-status');
       if (!raw) { st.style.color='#c94a3a'; st.textContent='Pega el JSON'; return; }
@@ -17265,6 +17267,8 @@ El esfuerzo no es negociable.
         st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;
         return;
       }
+      _updApplyBtn.disabled = true;
+      _updApplyBtn.textContent = '⏳ Aplicando...';
       try {
         const _planUpd = {
           days: _stampPrescriptionIds(days),
@@ -17282,6 +17286,8 @@ El esfuerzo no es negociable.
         st.textContent = '✓ Plan actualizado · semana del cliente intacta · bitácora preservada';
         setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 900);
       } catch(e) {
+        _updApplyBtn.disabled = false;
+        _updApplyBtn.textContent = 'Aplicar actualización';
         st.style.color = '#c94a3a';
         st.textContent = 'Error al guardar: ' + (e.code || e.message);
       }
