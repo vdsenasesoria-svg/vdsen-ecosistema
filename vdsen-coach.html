@@ -15841,13 +15841,27 @@ El esfuerzo no es negociable.
     showClientDetail(_clientIdList[next]);
   }
 
+  // T114-H: _navToClient — dirty-aware client switch from nav bar.
+  // Mirrors navClient's guard so clicking a nav-bar pill while the plan editor
+  // is dirty prompts the coach before discarding unsaved changes.
+  async function _navToClient(id) {
+    if (_dirtyEditor && _detailActiveTab === 'plan') {
+      const ok = await _askConfirm('Tienes <strong>cambios sin guardar</strong> en el plan.<br><span style="color:#888;font-size:12px">¿Navegar a otro cliente sin guardar?</span>');
+      if (!ok) return;
+      _discardEditorChanges();
+      markEditorClean();
+    }
+    showClientDetail(id);
+  }
+  window._navToClient = _navToClient;
+
   function _renderClientNavBar(activeId) {
     var bar = document.getElementById('clientNavBar');
     if (!bar || !_clientIdList.length) return;
     bar.innerHTML = _clientIdList.map(function(id) {
       var name = (_clientNameMap[id] || '?').split(' ')[0]; // primer nombre
       var active = id === activeId;
-      return '<button onclick="showClientDetail(\''+id+'\')" style="'+
+      return '<button onclick="_navToClient(\''+id+'\')" style="'+
         'padding:4px 10px;border:1px solid '+(active?'#F4F4F0':'#2A2A2A')+';'+
         'background:'+(active?'rgba(244,244,240,.15)':'transparent')+';'+
         'color:'+(active?'#F4F4F0':'#888')+';font-size:11px;font-weight:'+(active?'700':'400')+';'+
