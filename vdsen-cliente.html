@@ -10292,6 +10292,7 @@ function toggleMeal(id) {
 function ciKey() { return 'ci_sem_' + CURRENT_WEEK; }
 
 var _ciAutoSaveTimer = null;
+var _ciSaving = false;
 function ciSet(campo, valor) {
   var k = ciKey();
   if (!LOGS[k]) LOGS[k] = {};
@@ -10375,6 +10376,8 @@ function setCISubj(fieldId, val) {
 window.setCISubj = setCISubj;
 
 async function guardarCI() {
+  if (_ciSaving) return;
+  _ciSaving = true;
   var _ciBtn = document.querySelector('[onclick="guardarCI()"]');
   if (_ciBtn) { _ciBtn.disabled = true; _ciBtn.textContent = 'GUARDANDO...'; }
   var k = ciKey();
@@ -10487,6 +10490,7 @@ async function guardarCI() {
     showToast('ERROR AL GUARDAR: ' + e.message, true);
     console.error('guardarCI error:', e);
   } finally {
+    _ciSaving = false;
     if (_ciBtn) { _ciBtn.disabled = false; _ciBtn.textContent = '✓ GUARDAR CHECK-IN SEM ' + CURRENT_WEEK; }
   }
 }
