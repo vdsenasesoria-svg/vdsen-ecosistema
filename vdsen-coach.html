@@ -14397,7 +14397,10 @@ El esfuerzo no es negociable.
       }
       window._importedPlan = planObj;
       await saveImportedPlan(clientId);
-      document.getElementById('_importPlanArea').innerHTML = '';
+      // T111-H: refresh modal so Plan tab reflects the newly saved plan.
+      // showClientDetail resets the whole modal body, so clearing _importPlanArea
+      // is not necessary — the area will no longer exist after the reload.
+      showClientDetail(_detailClientId || clientId, { tab: 'plan' });
     } catch(e) {
       console.error('[VDSEN IMPORT DEBUG] EXCEPCIÓN:', e);
       if (status) status.textContent = 'Error: ' + e.message;
@@ -14825,7 +14828,14 @@ El esfuerzo no es negociable.
     cont.innerHTML = html;
   }
 
+  var _applyModuloDInFlight = false;
   async function _applyAllModuloD() {
+    // F3-fix: in-flight guard prevents double-click from spawning concurrent writes.
+    if (_applyModuloDInFlight) return;
+    _applyModuloDInFlight = true;
+    var _applyBtn = document.querySelector('[onclick="_applyAllModuloD()"]');
+    if (_applyBtn) { _applyBtn.disabled = true; _applyBtn.textContent = '⏳ Aplicando...'; }
+    try {
     const results = window._moduloDPending;
     if (!results || !results.length) return;
     const planId = _detailClientData && _detailClientData.activePlanId;
@@ -14852,10 +14862,15 @@ El esfuerzo no es negociable.
         });
         return {...day, exercises};
       });
-      await updateDoc(doc(db,'plans',planId),{days:updatedDays});
-      if (_detailPlanData) _detailPlanData.days = updatedDays;
+      // F2-fix: include updatedAt so the client's live plan listener sees the change.
+      await updateDoc(doc(db,'plans',planId),{days:updatedDays, updatedAt: new Date().toISOString()});
+      if (_detailPlanData) { _detailPlanData.days = updatedDays; _detailPlanData.updatedAt = new Date().toISOString(); }
       alert(`✓ ${toApply.length} ejercicio(s) actualizados en el plan.`);
     } catch(e) { alert('Error al aplicar: '+e.message); }
+    } finally {
+      _applyModuloDInFlight = false;
+      if (_applyBtn) { _applyBtn.disabled = false; _applyBtn.textContent = '⚡ Aplicar ajustes al plan'; }
+    }
   }
   window._applyAllModuloD = _applyAllModuloD;
 
