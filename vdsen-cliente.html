@@ -3420,7 +3420,14 @@ document.addEventListener('visibilitychange', function() {
     if (_ciAutoSaveTimer && USER && FB) {
       clearTimeout(_ciAutoSaveTimer);
       _ciAutoSaveTimer = null;
-      guardarCI().catch(function(){});
+      var _savedWeek = _ciAutoSaveWeek;
+      _ciAutoSaveWeek = null;
+      // Only flush if CURRENT_WEEK matches the week captured when the timer was scheduled.
+      // A mismatch means the user navigated to a different week — flushing now would corrupt
+      // the wrong week's check-in data.
+      if (!_savedWeek || CURRENT_WEEK === _savedWeek) {
+        guardarCI().catch(function(){});
+      }
     }
     return;
   }
@@ -3503,15 +3510,6 @@ function getAdjustedRIR(baseRIR, week, exName) {
   if (exName && _isFreeBarbell(exName)) return Math.max(1, adj);
   return adj;
 }
-
-function setWeek(w) {
-  CURRENT_WEEK = w;
-  renderEntrenamiento();
-  renderResumen();
-  // NO llamar saveLogs() aquí: solo cambia la semana vista, no la semana real de entrenamiento
-}
-
-function goToWeek(w) { setWeek(w); goTab(1); }
 
 // ── Activación condicional por semana de mesociclo (Y3T / SST) ──────────
 // Devuelve true si el ejercicio debe mostrarse en la semana actual.
@@ -8768,6 +8766,13 @@ function loadBackupLogs() {
 
 function setWeek(w) {
   CURRENT_WEEK = w;
+  // Discard unsaved subjective CI button state from the previous week.
+  // _ciSubjTemp accumulates across setCISubj() clicks without being committed
+  // to LOGS until guardarCI() runs. If the week changes before saving, those
+  // temp values would bleed into the new week's check-in on the next save.
+  // NOTE: do NOT call saveLogs() here — only the viewed week changes, not the
+  // real training week.
+  window._ciSubjTemp = null;
   _autoAdvanceDia();
   renderEntrenamiento();
   renderResumen();
@@ -10305,16 +10310,24 @@ function toggleMeal(id) {
 function ciKey() { return 'ci_sem_' + CURRENT_WEEK; }
 
 var _ciAutoSaveTimer = null;
+var _ciAutoSaveWeek  = null; // week captured when timer was scheduled — guards stale-week writes
+function _scheduleCISave() {
+  var captured = CURRENT_WEEK;
+  _ciAutoSaveWeek = captured;
+  if (_ciAutoSaveTimer) clearTimeout(_ciAutoSaveTimer);
+  _ciAutoSaveTimer = setTimeout(function() {
+    _ciAutoSaveTimer = null;
+    if (CURRENT_WEEK !== _ciAutoSaveWeek) { _ciAutoSaveWeek = null; return; } // week changed — skip stale save
+    _ciAutoSaveWeek = null;
+    guardarCI().catch(function(){});
+  }, 2000);
+}
 function ciSet(campo, valor) {
   var k = ciKey();
   if (!LOGS[k]) LOGS[k] = {};
   LOGS[k][campo] = valor;
   // Auto-save debounced 2s after last change
-  if (_ciAutoSaveTimer) clearTimeout(_ciAutoSaveTimer);
-  _ciAutoSaveTimer = setTimeout(function() {
-    _ciAutoSaveTimer = null;
-    guardarCI().catch(function(){});
-  }, 2000);
+  _scheduleCISave();
 }
 
 function ciW5(qi, val) {
@@ -10326,8 +10339,7 @@ function ciW5(qi, val) {
     LOGS[k].who5 = String(LOGS[k].w5s.reduce(function(a,b){ return a+b; },0) * 4);
   }
   renderCheckin();
-  if (_ciAutoSaveTimer) clearTimeout(_ciAutoSaveTimer);
-  _ciAutoSaveTimer = setTimeout(function() { _ciAutoSaveTimer = null; guardarCI().catch(function(){}); }, 2000);
+  _scheduleCISave();
 }
 
 function ciICSSet(key, val) {
@@ -10346,8 +10358,7 @@ function ciICSSet(key, val) {
   LOGS[k].ics_promedio = icsVals.length
     ? Math.round(icsVals.reduce(function(a,b){return a+b;},0) / icsVals.length * 10) / 10
     : null;
-  if (_ciAutoSaveTimer) clearTimeout(_ciAutoSaveTimer);
-  _ciAutoSaveTimer = setTimeout(function() { _ciAutoSaveTimer = null; guardarCI().catch(function(){}); }, 2000);
+  _scheduleCISave();
 }
 window.ciICSSet = ciICSSet;
 
