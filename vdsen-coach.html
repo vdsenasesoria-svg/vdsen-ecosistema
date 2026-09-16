@@ -9356,6 +9356,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   let _detailLogsData    = null;   // FASE 61 — logs del cliente para mirror de ejecución
   let _detailActiveTab  = 'plan';
 
+  // T121-H — Returns true when the currently-open client has at least one log entry.
+  // Used to guard structural reorder operations that would misalign positional log keys.
+  // Relies on _detailLogsData loaded by showClientDetail — no extra Firestore reads needed.
+  function _activeLogsExist() {
+    if (!_detailLogsData) return false;
+    var entries = (_detailLogsData.data || {}).entries;
+    if (!entries) return false;
+    return Object.keys(entries).length > 0;
+  }
+
   // opts.tab — optional tab to open instead of default 'ficha' (e.g. { tab: 'plan' } after a plan save)
   async function showClientDetail(clientId, opts) {
     var _initialTab = (opts && opts.tab) || 'ficha';
@@ -16641,6 +16651,12 @@ El esfuerzo no es negociable.
   // ── Drag & drop para reordenar ejercicios ──
   var _exDragSrc = null;
   function _exDragStart(e) {
+    // T121-H: warn immediately if active logs exist; drag will be blocked in _exDragOver.
+    if (typeof _activeLogsExist === 'function' && _activeLogsExist()) {
+      e.preventDefault();
+      if (typeof showToast === 'function') showToast('⚠️ Este cliente tiene registros activos. Reordenar ejercicios desalinearía los logs existentes. Para reorganizar, crea un nuevo plan.', true);
+      return;
+    }
     _exDragSrc = e.currentTarget;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', '');
@@ -16650,6 +16666,8 @@ El esfuerzo no es negociable.
     e.preventDefault();
     var target = e.currentTarget;
     if (!_exDragSrc || target === _exDragSrc || target.dataset.di !== _exDragSrc.dataset.di) return false;
+    // T121-H: Block drag-based reorder when client has active logs (same reason as _moveExRow).
+    if (typeof _activeLogsExist === 'function' && _activeLogsExist()) return false;
     var rect = target.getBoundingClientRect();
     if (e.clientY < rect.top + rect.height / 2) {
       target.parentNode.insertBefore(_exDragSrc, target);
@@ -16663,6 +16681,13 @@ El esfuerzo no es negociable.
 
   // ── Botones ↑↓ para reordenar (mobile-friendly) ──
   function _moveExRow(btn, dir) {
+    // T121-H: Block structural reorder when client has active logs.
+    // Log keys are positional (log_W_D_ei_sN); swapping exercise positions
+    // would cause existing log entries to display under the wrong exercise.
+    if (typeof _activeLogsExist === 'function' && _activeLogsExist()) {
+      if (typeof showToast === 'function') showToast('⚠️ Este cliente tiene registros activos. Reordenar ejercicios desalinearía los logs existentes. Para reorganizar, crea un nuevo plan o edita en una semana sin registros.', true);
+      return;
+    }
     var row = btn.closest('.exrow-item');
     if (!row) return;
     var list = row.parentNode;
@@ -16732,6 +16757,13 @@ El esfuerzo no es negociable.
   }
 
   async function removeExRow(di, ei) {
+    // T121-H: Block deletion when client has active logs.
+    // Removing an exercise shifts the index of every subsequent exercise, misaligning
+    // existing log entries (log_W_D_ei_sN) with the exercises they recorded.
+    if (typeof _activeLogsExist === 'function' && _activeLogsExist()) {
+      if (typeof showToast === 'function') showToast('⚠️ Este cliente tiene registros activos. Eliminar un ejercicio desplazaría los índices de los ejercicios siguientes, desalineando los logs. Para reorganizar, crea un nuevo plan.', true);
+      return;
+    }
     if (!(await _askConfirm('¿Eliminar este ejercicio?'))) return;
     const el = document.getElementById('exrow_'+di+'_'+ei);
     if (el) el.remove();
@@ -17332,6 +17364,30 @@ El esfuerzo no es negociable.
         st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;
         return;
       }
+      // T121-H: Structural reorder guard — block if exercise count per day changed and client
+      // has active logs. Log keys are positional (log_W_D_ei_sN); adding/removing exercises
+      // mid-day shifts existing log entries to the wrong exercises.
+      if (typeof _activeLogsExist === 'function' && _activeLogsExist()) {
+        const curExCounts = (cur.days || []).map(function(d) { return (d.exercises || []).length; });
+        const newExCounts = days.map(function(d) { return (d.exercises || []).length; });
+        const exCountMismatch = curExCounts.some(function(cnt, i) { return cnt !== newExCounts[i]; });
+        if (exCountMismatch) {
+          st.style.color = '#c94a3a';
+          st.textContent = '⚠️ El cliente tiene registros activos y el número de ejercicios por día difiere del plan actual. Esto desalinearía los logs existentes. Si necesitas añadir o eliminar ejercicios, crea un nuevo plan en lugar de actualizar en sitio.';
+          return;
+        }
+        // Same count per day but order may have changed — require a second click to confirm.
+        if (_updApplyBtn.dataset.logsWarned !== '1') {
+          _updApplyBtn.dataset.logsWarned = '1';
+          st.style.color = '#FF8844';
+          st.textContent = '⚠️ Este cliente tiene registros activos. Si reordenaste ejercicios dentro de un día, los logs existentes quedarán desalineados. Haz clic en "Aplicar actualización" de nuevo para confirmar, o cancela y crea un nuevo plan.';
+          _updApplyBtn.disabled = false;
+          _updApplyBtn.textContent = 'Confirmar de todas formas';
+          return;
+        }
+        // Second click — proceed
+      }
+      _updApplyBtn.dataset.logsWarned = '';
       _updApplyBtn.disabled = true;
       _updApplyBtn.textContent = '⏳ Aplicando...';
       try {
@@ -18043,6 +18099,7 @@ El esfuerzo no es negociable.
   window.submitQuickAdd = submitQuickAdd;
   window.addDayBlock = addDayBlock;
   window._moveExRow = _moveExRow;
+  window._activeLogsExist = _activeLogsExist;
   window._exDragStart = _exDragStart;
   window._exDragOver = _exDragOver;
   window._exDrop = _exDrop;
