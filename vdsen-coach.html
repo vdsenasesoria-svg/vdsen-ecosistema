@@ -4625,6 +4625,17 @@ Reporte:
     const select = document.getElementById("planClientSelect");
     select.innerHTML = '<option value="">-- Selecciona cliente --</option>';
     snap.forEach(d => { const _o = document.createElement('option'); _o.value = d.id; _o.textContent = d.data().displayName || d.id; select.appendChild(_o); });
+    // T117-H: clear stale _importedPlan and planBuilder when the selected client changes.
+    // Without this, a plan parsed for client A remains in window._importedPlan after the
+    // coach switches planClientSelect to client B; clicking "Guardar y activar" would then
+    // write client A's plan to client B.
+    select.onchange = function() {
+      window._importedPlan = null;
+      var pb = document.getElementById('planBuilder');
+      if (pb) pb.innerHTML = '';
+      var st = document.getElementById('autoGenStatus');
+      if (st) st.innerHTML = '';
+    };
   }
   
   var _importMenuClickOutHandler = null;
