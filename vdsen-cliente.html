@@ -1201,9 +1201,12 @@ async function doLogin() {
 }
 
 async function doLogout() {
+  // T118-C: Nullify USER before signOut so any buffered Firestore snapshot
+  // callbacks that fire after unsub() see USER===null and abort early.
+  USER = null;
   _clearLiveListeners();
   await FB.signOut(FB.auth);
-  PLAN = null; USER = null; LOGS = {};
+  PLAN = null; LOGS = {};
 }
 
 // ── Modal one-shot: confirmar/actualizar celular ────────────────────────
@@ -1386,6 +1389,7 @@ async function loadPlan(user) {
       // Listener en tiempo real: cuando el coach asigne un plan, navegar automáticamente
       try {
         _waitUnsubActivePlan = FB.onSnapshot(FB.doc(FB.db, 'clients', user.uid), function(s){
+          if (!USER) return; // T118-C: guard against buffered snapshot after logout
           if (s.exists() && s.data().activePlanId) {
             _waitUnsubActivePlan && _waitUnsubActivePlan(); _waitUnsubActivePlan = null;
             showToast('🎉 ¡Tu coach ya cargó tu plan! Cargando...');
