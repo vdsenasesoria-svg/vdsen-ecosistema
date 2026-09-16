@@ -472,6 +472,10 @@ function toggleExUnit(di, ei) {
     var prog = LOGS[k];
     if (!prog || !prog.recommendations || !prog.recommendations[ei]) return;
     var rec = prog.recommendations[ei];
+    // Name guard: solo convertir si la recomendación corresponde al ejercicio actual.
+    // Protege contra reorden del coach — evita mutar y guardar el rec equivocado.
+    if (ej && rec.exerciseName &&
+        _normName(rec.exerciseName) !== _normName(ej.nombre || ej.exerciseName || '')) return;
     if (rec.newLoad && isFinite(rec.newLoad))
       rec.newLoad = _roundUnit(parseFloat(rec.newLoad) * factor, newUnit);
     if (rec.trend && rec.trend.prevLoad && isFinite(rec.trend.prevLoad))
@@ -12650,9 +12654,17 @@ function _getProgRecForExercise(di, ei, exName) {
     for (var ki = 0; ki < keys.length; ki++) {
       var prog = LOGS[keys[ki]];
       if (!prog || !prog.recommendations) continue;
-      // Buscar por índice de ejercicio primero (más preciso)
-      if (prog.recommendations[ei] && keys[ki] === 'progrec_'+w+'_'+di) {
-        return prog.recommendations[ei];
+      // Buscar por índice de ejercicio (fast path: preciso solo cuando no hubo reorden).
+      // Name guard: si ambos exName y rec.exerciseName están presentes deben coincidir.
+      // Sin nombre en alguno → compatibilidad con datos legados (sin exerciseName).
+      var _posRec = prog.recommendations[ei];
+      if (_posRec && keys[ki] === 'progrec_'+w+'_'+di) {
+        if (!exName || !_posRec.exerciseName ||
+            _normName(_posRec.exerciseName) === _normName(exName)) {
+          return _posRec;
+        }
+        // Nombre no coincide → índice apunta a otro ejercicio (reorden del coach).
+        // No retornar: caemos a búsqueda por nombre.
       }
       // Buscar por nombre de ejercicio (fallback)
       if (exName) {
