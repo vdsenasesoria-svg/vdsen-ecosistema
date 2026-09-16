@@ -16845,6 +16845,11 @@ El esfuerzo no es negociable.
 
   // ── Quick Add: agregar ejercicio a un plan sin abrir editor completo ──
   async function showQuickAddExercise(planId) {
+    // T112-H: guard against discarding unsaved training-editor changes.
+    if (_dirtyEditor) {
+      showToast('Guarda o descarta los cambios del editor antes de usar Quick Add.', true);
+      return;
+    }
     // Crear mini-modal inline
     var existing = document.getElementById('quickAddPanel');
     if (existing) { existing.remove(); return; }
