@@ -3409,6 +3409,12 @@ document.addEventListener('visibilitychange', function() {
       _saveLogsTimer = null;
       _doSaveLogs(); // fire-and-forget intencional: Safari suspende rápido
     }
+    // Flush también el autosave de CI para que el historial del coach se actualice
+    if (_ciAutoSaveTimer && USER && FB) {
+      clearTimeout(_ciAutoSaveTimer);
+      _ciAutoSaveTimer = null;
+      guardarCI().catch(function(){});
+    }
     return;
   }
   if (document.visibilityState !== 'visible') return;
