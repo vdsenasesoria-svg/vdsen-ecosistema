@@ -1730,6 +1730,13 @@ async function loadPlan(user) {
         var newWeek = parseInt(d.currentWeek || 1);
         var entriesCount = Object.keys(d.entries || {}).length;
         var localCount   = Object.keys(LOGS || {}).length;
+        // Rollback detectado: el coach reinició la semana del cliente.
+        // Un reload limpio es más seguro que intentar revertir estado en caliente.
+        if (newWeek < REAL_WEEK) {
+          showToast('Tu coach ha ajustado tu semana de entrenamiento. Recargando...', true);
+          setTimeout(function() { location.reload(); }, 1800);
+          return;
+        }
         if (newWeek !== REAL_WEEK || Math.abs(entriesCount - localCount) > 0) {
           if (newWeek > REAL_WEEK) { REAL_WEEK = newWeek; CURRENT_WEEK = newWeek; }
           LOGS = d.entries || {};
@@ -10493,6 +10500,7 @@ async function guardarCI() {
     }
 
     showToast('CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · Tu coach lo revisará en el panel de monitoreo');
+    window._ciSubjTemp = null; // limpiar buffer de botones subjetivos para evitar sangrado a la semana siguiente
     renderResumen();
   } catch(e) {
     showToast('ERROR AL GUARDAR: ' + e.message, true);
@@ -12418,7 +12426,7 @@ async function submitPostSession() {
     ts: Date.now()
   };
 
-  var postKey = 'postsession_'+REAL_WEEK+'_'+di;
+  var postKey = 'postsession_'+CURRENT_WEEK+'_'+di;
   LOGS[postKey] = postData;
 
   // Calcular y guardar recomendaciones de progresión
