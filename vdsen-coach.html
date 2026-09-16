@@ -5076,7 +5076,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         clientId,
         status: "active",
         generatedBy: "import",
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
       if (prevPlanId && prevPlanId !== planRef.id) {
@@ -9312,7 +9313,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         clientId,
         status: "active",
         generatedBy: "manual",
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
       if (prevPlanId2 && prevPlanId2 !== planRef.id) {
