@@ -9434,6 +9434,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       btn.style.color = isDirty ? '#0A0A0A' : '';
       btn.textContent = isDirty ? '⚠️ Cambios sin guardar — Guardar ahora' : '💾 Guardar y activar plan';
     }
+    var tBtn = document.querySelector('[onclick="saveTrainingPlan()"]');
+    if (tBtn && !tBtn.disabled) {
+      tBtn.style.background = isDirty ? '#FF8844' : '';
+      tBtn.style.color = isDirty ? '#0A0A0A' : '';
+      tBtn.textContent = isDirty ? '⚠️ Guardar cambios' : '💾 Guardar cambios';
+    }
   }
   window._updateDirtyTabUI = _updateDirtyTabUI;
 
