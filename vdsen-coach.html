@@ -15705,6 +15705,8 @@ El esfuerzo no es negociable.
   };
 
   async function saveNutritionPlan() {
+    const _btn = document.querySelector('[onclick="saveNutritionPlan()"]');
+    if (_btn) { _btn.disabled = true; _btn.textContent = '⏳ Guardando...'; }
     const data = {
       calorias: document.getElementById("nut-kcal")?.value.trim() || "",
       proteina: document.getElementById("nut-prot")?.value.trim() || "",
@@ -15723,17 +15725,27 @@ El esfuerzo no es negociable.
       document.getElementById("nutrition-view").innerHTML = renderNutritionView(data);
       togglePlanEditor("nutrition");
       showToast("Nutrición guardada ✅");
-    } catch(e) { showToast("Error: " + e.message, true); }
+    } catch(e) {
+      showToast("Error: " + e.message, true);
+    } finally {
+      if (_btn) { _btn.disabled = false; _btn.textContent = 'Guardar nutrición'; }
+    }
   }
 
   async function saveSupplementPlan() {
+    const _btn = document.querySelector('[onclick="saveSupplementPlan()"]');
+    if (_btn) { _btn.disabled = true; _btn.textContent = '⏳ Guardando...'; }
     const data = { texto: document.getElementById("sup-texto")?.value.trim() || "" };
     try {
       await updateDoc(doc(db, "clients", _detailClientId), { supplementPlan: data });
       document.getElementById("supplement-view").innerHTML = renderSupplementView(data);
       togglePlanEditor("supplement");
       showToast("Suplementación guardada ✅");
-    } catch(e) { showToast("Error: " + e.message, true); }
+    } catch(e) {
+      showToast("Error: " + e.message, true);
+    } finally {
+      if (_btn) { _btn.disabled = false; _btn.textContent = 'Guardar suplementación'; }
+    }
   }
 
 
