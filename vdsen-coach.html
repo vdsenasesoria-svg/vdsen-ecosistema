@@ -9244,6 +9244,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     });
     if (typeof markEditorDirty === 'function') markEditorDirty();
     renderMPEditor();
+    const ei = manualPlan.days[di].exercises.length - 1;
+    const inp = document.getElementById('exname_'+di+'_'+ei);
+    if (inp) inp.focus();
   }
 
   function removeExercise(di, ei) {
@@ -16652,6 +16655,8 @@ El esfuerzo no es negociable.
     list.appendChild(tmp.content.firstElementChild);
     _updateReorderBtns(list);
     if (typeof markEditorDirty === 'function') markEditorDirty();
+    const inp = document.getElementById('exname_'+di+'_'+ei);
+    if (inp) inp.focus();
   }
 
   function removeExRow(di, ei) {
@@ -16711,6 +16716,8 @@ El esfuerzo no es negociable.
     if (_savingTrainingPlan) return;
     if (!_editingPlanId) return;
     _savingTrainingPlan = true;
+    const _stpBtn = document.querySelector('[onclick="saveTrainingPlan()"]');
+    if (_stpBtn) { _stpBtn.disabled = true; _stpBtn.textContent = '⏳ Guardando...'; }
     const dayBlocks = document.querySelectorAll('[id^="dayblock_"]');
     const days = [];
     dayBlocks.forEach((block, di) => {
@@ -16774,7 +16781,10 @@ El esfuerzo no es negociable.
       showClientDetail(_detailClientId);
       _autoAddExercisesToCatalog(days);
     } catch(e) { showToast('Error al guardar: ' + e.message + (e.code ? ' ['+e.code+']' : ''), true); }
-    finally { _savingTrainingPlan = false; }
+    finally {
+      _savingTrainingPlan = false;
+      if (_stpBtn) { _stpBtn.disabled = false; _stpBtn.textContent = '💾 Guardar cambios'; }
+    }
   }
 
   // ── Agregar día al editor ──
@@ -16850,6 +16860,8 @@ El esfuerzo no es negociable.
     // Insertar después del training-view
     const trainView = document.getElementById('training-view');
     if (trainView) trainView.parentNode.insertBefore(panel, trainView.nextSibling);
+    const qaName = document.getElementById('qa_name');
+    if (qaName) setTimeout(function() { qaName.focus(); }, 50);
   }
 
   async function submitQuickAdd(planId) {
