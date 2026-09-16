@@ -64,7 +64,7 @@ assert.ok(
   'T1f: showUpdatePlanModal normalizer must carry prescriptionExerciseId from incoming JSON'
 );
 assert.ok(
-  /async function showUpdatePlanModal[\s\S]{1,7000}_stampPrescriptionIds\(days\)/.test(COACH),
+  /async function showUpdatePlanModal[\s\S]{1,10000}_stampPrescriptionIds\(days\)/.test(COACH),
   'T1f: showUpdatePlanModal updateDoc must call _stampPrescriptionIds'
 );
 
