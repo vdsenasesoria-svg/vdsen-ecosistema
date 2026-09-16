@@ -9462,6 +9462,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
   window._discardEditorChanges = _discardEditorChanges;
 
+  function _discardTrainingEditorChanges() {
+    _discardEditorChanges();
+    if (typeof markEditorClean === 'function') markEditorClean();
+    toggleTrainingEditor();
+  }
+  window._discardTrainingEditorChanges = _discardTrainingEditorChanges;
+
   async function _switchClientTab(tab) {
     if (_shouldWarnDirtyLeave(_detailActiveTab, tab, _dirtyEditor)) {
       const ok = await _askConfirm('Tienes <strong>cambios sin guardar</strong> en el plan.<br><span style="color:#888;font-size:12px">¿Salir sin guardar?</span>');
@@ -16639,7 +16646,10 @@ El esfuerzo no es negociable.
     }).join('');
     return `<div id="trainingEditorDays">${daysHtml}</div>
       <button onclick="addDayBlock()" class="text-[#F4F4F0] text-xs underline mt-1 mb-3 block">➕ Agregar día de entrenamiento</button>
-      <button onclick="saveTrainingPlan()" class="btn-primary w-full mt-2">💾 Guardar cambios</button>`;
+      <div class="flex gap-2 mt-2">
+        <button onclick="_discardTrainingEditorChanges()" class="btn-secondary flex-1">↩ Descartar</button>
+        <button onclick="saveTrainingPlan()" class="btn-primary flex-1">💾 Guardar cambios</button>
+      </div>`;
   }
 
   function toggleTrainingEditor() {
