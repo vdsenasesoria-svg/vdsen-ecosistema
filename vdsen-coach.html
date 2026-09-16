@@ -9249,7 +9249,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (inp) inp.focus();
   }
 
-  function removeExercise(di, ei) {
+  async function removeExercise(di, ei) {
+    if (!(await _askConfirm('¿Eliminar este ejercicio?'))) return;
     manualPlan.days[di].exercises.splice(ei, 1);
     if (typeof markEditorDirty === 'function') markEditorDirty();
     renderMPEditor();
