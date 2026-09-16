@@ -15782,6 +15782,8 @@ El esfuerzo no es negociable.
   async function saveNutritionPlan() {
     const _btn = document.querySelector('[onclick="saveNutritionPlan()"]');
     if (_btn) { _btn.disabled = true; _btn.textContent = '⏳ Guardando...'; }
+    // T118-H: capture clientId before any await so async completion can guard DOM writes
+    const _clientIdSnap = _detailClientId;
     const data = {
       calorias: document.getElementById("nut-kcal")?.value.trim() || "",
       proteina: document.getElementById("nut-prot")?.value.trim() || "",
@@ -15790,13 +15792,15 @@ El esfuerzo no es negociable.
       texto:    document.getElementById("nut-texto")?.value.trim() || ""
     };
     try {
-      await updateDoc(doc(db, "clients", _detailClientId), {
+      await updateDoc(doc(db, "clients", _clientIdSnap), {
         nutritionPlan: data,
         'nutritionRaw.calorias': data.calorias,
         'nutritionRaw.proteina': data.proteina,
         'nutritionRaw.carbos':   data.carbos,
         'nutritionRaw.grasas':   data.grasas
       });
+      // T118-H: abort DOM update if coach navigated to a different client while save was in flight
+      if (_detailClientId !== _clientIdSnap) return;
       document.getElementById("nutrition-view").innerHTML = renderNutritionView(data);
       togglePlanEditor("nutrition");
       showToast("Nutrición guardada ✅");
@@ -15810,9 +15814,13 @@ El esfuerzo no es negociable.
   async function saveSupplementPlan() {
     const _btn = document.querySelector('[onclick="saveSupplementPlan()"]');
     if (_btn) { _btn.disabled = true; _btn.textContent = '⏳ Guardando...'; }
+    // T118-H: capture clientId before any await
+    const _clientIdSnap = _detailClientId;
     const data = { texto: document.getElementById("sup-texto")?.value.trim() || "" };
     try {
-      await updateDoc(doc(db, "clients", _detailClientId), { supplementPlan: data });
+      await updateDoc(doc(db, "clients", _clientIdSnap), { supplementPlan: data });
+      // T118-H: abort DOM update if coach navigated to a different client while save was in flight
+      if (_detailClientId !== _clientIdSnap) return;
       document.getElementById("supplement-view").innerHTML = renderSupplementView(data);
       togglePlanEditor("supplement");
       showToast("Suplementación guardada ✅");
