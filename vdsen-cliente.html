@@ -10375,8 +10375,9 @@ function setCISubj(fieldId, val) {
 window.setCISubj = setCISubj;
 
 async function guardarCI() {
-  var _ciBtn = document.querySelector('[onclick="guardarCI()"]');
-  if (_ciBtn) { _ciBtn.disabled = true; _ciBtn.textContent = 'GUARDANDO...'; }
+  var _ciBtns = Array.from(document.querySelectorAll('[onclick="guardarCI()"]'));
+  var _ciOrigTexts = _ciBtns.map(function(b) { return b.textContent; });
+  _ciBtns.forEach(function(b) { b.disabled = true; b.textContent = 'GUARDANDO...'; });
   var k = ciKey();
   if (!LOGS[k]) LOGS[k] = {};
   var d = LOGS[k];
@@ -10487,7 +10488,7 @@ async function guardarCI() {
     showToast('ERROR AL GUARDAR: ' + e.message, true);
     console.error('guardarCI error:', e);
   } finally {
-    if (_ciBtn) { _ciBtn.disabled = false; _ciBtn.textContent = '✓ GUARDAR CHECK-IN SEM ' + CURRENT_WEEK; }
+    _ciBtns.forEach(function(b, i) { b.disabled = false; b.textContent = _ciOrigTexts[i] || ('✓ GUARDAR CHECK-IN SEM ' + CURRENT_WEEK); });
   }
 }
 
