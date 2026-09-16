@@ -4614,7 +4614,7 @@ Reporte:
       if (lbl) lbl.textContent = newW;
       showToast(`✅ Mesociclo ${delta > 0 ? 'extendido' : 'reducido'} a ${newW} semanas`);
       // Refrescar la vista del cliente
-      if (_detailClientId) showClientDetail(_detailClientId);
+      if (_detailClientId) showClientDetail(_detailClientId, { tab: 'plan' });
     } catch(e) { showToast('Error: ' + e.message, true); console.error(e); }
   }
   window.extendPlanWeeks = extendPlanWeeks;
@@ -9342,9 +9342,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   let _detailLogsData    = null;   // FASE 61 — logs del cliente para mirror de ejecución
   let _detailActiveTab  = 'plan';
 
-  async function showClientDetail(clientId) {
+  // opts.tab — optional tab to open instead of default 'ficha' (e.g. { tab: 'plan' } after a plan save)
+  async function showClientDetail(clientId, opts) {
+    var _initialTab = (opts && opts.tab) || 'ficha';
     _detailClientId   = clientId;
-    _detailActiveTab  = 'plan';
+    _detailActiveTab  = _initialTab;
     markEditorClean();
     const modal = document.getElementById("clientModal");
     const body  = document.getElementById("modalClientBody");
@@ -9415,7 +9417,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         <button id="ctab_renovar" onclick="_switchClientTab('renovar')" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:13px;font-weight:600;cursor:pointer;color:#888;white-space:nowrap;transition:all .15s">🔄 Renovar</button>
       </div>
       <div id="clientDetailTabContent"></div>`;
-    _switchClientTab('ficha');
+    _switchClientTab(_initialTab);
   }
 
   // FASE 24 — helper puro: label del tab Plan según estado dirty.
@@ -15269,7 +15271,7 @@ El esfuerzo no es negociable.
     if (closeModal) closeModal();
     showToast('Plan aplicado desde template ✅');
     _autoAddExercisesToCatalog(days);
-    showClientDetail(clientId);
+    showClientDetail(clientId, { tab: 'plan' });
     loadClientList();
   }
 
@@ -16800,7 +16802,7 @@ El esfuerzo no es negociable.
       markEditorClean();
       showToast('Plan actualizado ✅');
       toggleTrainingEditor();
-      showClientDetail(_detailClientId);
+      showClientDetail(_detailClientId, { tab: 'plan' });
       _autoAddExercisesToCatalog(days);
     } catch(e) { showToast('Error al guardar: ' + e.message + (e.code ? ' ['+e.code+']' : ''), true); }
     finally {
@@ -16919,7 +16921,7 @@ El esfuerzo no es negociable.
       await updateDoc(doc(db, "plans", planId), { days: _stampPrescriptionIds(days), coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
       showToast(`"${name}" agregado a ${days[dayIdx].label} ✅`);
       document.getElementById('quickAddPanel')?.remove();
-      showClientDetail(_detailClientId); // recargar
+      showClientDetail(_detailClientId, { tab: 'plan' }); // recargar
       _autoAddExercisesToCatalog(days); // auto-agregar al catálogo en background
     } catch(e) {
       showToast('Error: ' + e.message, true);
@@ -17078,7 +17080,7 @@ El esfuerzo no es negociable.
         st.style.color = '#44BB88';
         st.textContent = '✓ Guardado' + (newEmail !== c.email ? ' (campo email del doc actualizado; Auth real no cambió)' : '');
         loadClientList();
-        setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 600);
+        setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 600); // profile edit → ficha tab is correct default
       } catch(e) {
         st.style.color = '#c94a3a';
         st.textContent = 'Error: ' + (e.code || e.message);
@@ -17287,7 +17289,7 @@ El esfuerzo no es negociable.
         _autoAddExercisesToCatalog(days);
         st.style.color = '#44BB88';
         st.textContent = '✓ Plan actualizado · semana del cliente intacta · bitácora preservada';
-        setTimeout(() => { overlay.remove(); showClientDetail(clientId); }, 900);
+        setTimeout(() => { overlay.remove(); showClientDetail(clientId, { tab: 'plan' }); }, 900);
       } catch(e) {
         _updApplyBtn.disabled = false;
         _updApplyBtn.textContent = 'Aplicar actualización';
@@ -17322,7 +17324,7 @@ El esfuerzo no es negociable.
       if (!logsSnap.exists()) { showToast('Sin registros de logs para este cliente', true); return; }
       await updateDoc(logsRef, { currentWeek: w, updatedAt: Date.now() });
       showToast('✅ Semana cambiada a ' + w + ' — el cliente verá el cambio al recargar');
-      showClientDetail(clientId);
+      showClientDetail(clientId, { tab: 'plan' });
     } catch(e) {
       showToast('Error: ' + (e.code || '') + ' ' + e.message, true);
     }
@@ -17347,7 +17349,7 @@ El esfuerzo no es negociable.
       }
       await setDoc(logsRef, _resetPayload);
       showToast('✅ Semana reiniciada a 1');
-      showClientDetail(clientId);
+      showClientDetail(clientId, { tab: 'plan' });
     } catch(e) {
       showToast('Error al reiniciar semana: ' + (e.code||'') + ' ' + e.message, true);
     }
@@ -17379,7 +17381,7 @@ El esfuerzo no es negociable.
       }
       await setDoc(logsRef, _keepPayload);
       showToast('✅ Reiniciada a semana 1 — registros de la semana 1 conservados');
-      showClientDetail(clientId);
+      showClientDetail(clientId, { tab: 'plan' });
     } catch(e) {
       showToast('Error: ' + (e.code||'') + ' ' + e.message, true);
     }
@@ -17391,7 +17393,7 @@ El esfuerzo no es negociable.
       await ensureCoachDoc();
       await updateDoc(doc(db, "clients", clientId), { activePlanId: null });
       showToast('✅ Referencia limpiada — el cliente ya puede entrar a la app (pantalla de espera)');
-      showClientDetail(clientId);
+      showClientDetail(clientId, { tab: 'plan' });
       loadClientList();
     } catch(e) {
       showToast('Error: ' + (e.code||'') + ' ' + e.message, true);
@@ -17419,7 +17421,7 @@ El esfuerzo no es negociable.
       }
     }
     showToast('✅ Plan eliminado');
-    showClientDetail(clientId);
+    showClientDetail(clientId, { tab: 'plan' });
     loadClientList();
   }
 
@@ -17445,7 +17447,7 @@ El esfuerzo no es negociable.
       await updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id });
 
       showToast('Plan duplicado y asignado ✓');
-      showClientDetail(targetId);
+      showClientDetail(targetId, { tab: 'plan' });
       loadClientList();
     } catch(e) { showToast('Error: ' + e.message, true); }
   }
