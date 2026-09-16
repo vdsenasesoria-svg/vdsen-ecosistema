@@ -9482,10 +9482,10 @@ function renderNutricion() {
     <div style="padding:0 14px 100px">
       ${rdBanner}
       ${carbCyclingBanner}
+      ${comidasHtml}
       ${macroPanel}
       ${buildCalorieAdjustWidget(+kcal||0)}
       ${buildNutriLogWidget(+kcal||0, +prot||0, +carb||0, +gras||0)}
-      ${comidasHtml}
       ${(function(){
         var st = PLAN.suplementacion && PLAN.suplementacion.texto;
         var si = PLAN.suplementacion && PLAN.suplementacion.items;
