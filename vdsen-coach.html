@@ -8543,6 +8543,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       status:              'draft_approved',
       // Lifecycle
       createdAt:           serverTimestamp(),
+      updatedAt:           serverTimestamp(),  // T119-H (QA-R3-02): client listener requires updatedAt
       approvedAt:          serverTimestamp(),
       approvedByCoachId:   coachId,
       // Training (flat — backward compat with client app)
@@ -15293,7 +15294,8 @@ El esfuerzo no es negociable.
       clientId,
       status: 'active',
       generatedBy: 'template:' + (template.name || ''),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()  // T119-H (QA-R3-02): client listener requires updatedAt
     });
     await updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id });
     if (closeModal) closeModal();
@@ -17299,6 +17301,9 @@ El esfuerzo no es negociable.
         label: String(d.label || `Día ${di + 1}`),
         exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
           exerciseName: String(ex.exerciseName || '').trim(),
+          // T119-H (QA-R3-01): carry over prescriptionExerciseId so _stampPrescriptionIds
+          // preserves existing exercise identity; new/missing IDs get fresh UUIDs from stamp.
+          prescriptionExerciseId: ex.prescriptionExerciseId,
           alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
           technique: String(ex.technique || 'straight').toLowerCase().trim(),
           techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
@@ -17496,7 +17501,8 @@ El esfuerzo no es negociable.
       const targetId = sel.id;
 
       // Crear copia del plan (nueva prescripción = nuevos IDs)
-      const newPlan = { ...planData, days: _restampPrescriptionIds(planData.days), clientId: targetId, createdAt: new Date().toISOString(), status: 'active' };
+      // T119-H (QA-R3-03): explicit updatedAt overrides any stale value from the spread
+      const newPlan = { ...planData, days: _restampPrescriptionIds(planData.days), clientId: targetId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), status: 'active' };
       delete newPlan.id; // limpiar ID anterior si existía
       const newRef = await addDoc(collection(db, "plans"), newPlan);
       await updateDoc(doc(db, "clients", targetId), { activePlanId: newRef.id });
@@ -17755,7 +17761,8 @@ El esfuerzo no es negociable.
       const planRef = await addDoc(collection(db, "plans"), {
         days: _stampPrescriptionIds(days), weeks: template.weeks || 6, daysPerWeek: days.length,
         coachId: currentCoach.uid, clientId, status: 'active',
-        generatedBy: 'template:'+template.name, createdAt: new Date().toISOString()
+        generatedBy: 'template:'+template.name, createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()  // T119-H (QA-R3-02): client listener requires updatedAt
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
       showToast('Plan asignado a '+opts[ci].name+' ✅');
@@ -18017,7 +18024,8 @@ El esfuerzo no es negociable.
             coachId: currentCoach.uid,
             status: 'active',
             generatedBy: 'duplicate-to-client',
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()  // T119-H (QA-R3-03): explicit updatedAt overrides spread
           });
           // Eliminar plan anterior del destino si existía
           const tgtClient = await getDoc(doc(db, "clients", targetId));
