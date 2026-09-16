@@ -16775,6 +16775,9 @@ El esfuerzo no es negociable.
       });
       days.push({ dayIndex: di, label, exercises });
     });
+    const _emptyExRows = document.querySelectorAll('[id^="dayblock_"] .exrow-item [data-field="name"]');
+    const _hasEmptyName = Array.from(_emptyExRows).some(inp => !inp.value.trim());
+    if (_hasEmptyName) { showToast('⚠️ Hay ejercicios sin nombre — completa todos los campos antes de guardar', true); _savingTrainingPlan = false; if (_stpBtn) { _stpBtn.disabled = false; _stpBtn.textContent = '💾 Guardar cambios'; } return; }
     try {
       // Backup pre-sobrescribir
       try {
