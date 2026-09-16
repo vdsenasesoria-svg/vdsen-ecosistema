@@ -5033,7 +5033,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   let _savingImportedPlan = false;
   async function saveImportedPlan(clientIdArg) {
-    if (_savingImportedPlan && !clientIdArg) return;
+    if (_savingImportedPlan) return;
     if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
     const clientId = clientIdArg || document.getElementById("planClientSelect").value;
     if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
@@ -14341,6 +14341,8 @@ El esfuerzo no es negociable.
     const ta = document.getElementById('_importPlanTa');
     const status = document.getElementById('_importPlanStatus');
     if (!ta || !ta.value.trim()) { if(status) status.textContent='⚠ El campo está vacío'; return; }
+    const _importBtn = document.querySelector('[onclick^="_submitModalImport"]');
+    if (_importBtn) { _importBtn.disabled = true; _importBtn.textContent = '⏳ Guardando...'; }
     if (status) status.textContent = 'Analizando…';
     try {
       let planObj = null;
@@ -14380,6 +14382,8 @@ El esfuerzo no es negociable.
     } catch(e) {
       console.error('[VDSEN IMPORT DEBUG] EXCEPCIÓN:', e);
       if (status) status.textContent = 'Error: ' + e.message;
+    } finally {
+      if (_importBtn) { _importBtn.disabled = false; _importBtn.textContent = '💾 Guardar plan'; }
     }
   };
 
