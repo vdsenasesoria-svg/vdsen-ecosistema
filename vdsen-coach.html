@@ -4868,6 +4868,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
           supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
           coachNote: String(ex.coachNote || '').trim(),
+          // T150-H: preserve a pre-existing prescriptionExerciseId (e.g. re-importing
+          // a previously-exported plan doc) so _stampPrescriptionIds can keep it
+          // instead of minting a brand-new one — new IDs would sever progression
+          // history continuity for exercises the coach didn't actually change.
+          ...(ex.prescriptionExerciseId ? { prescriptionExerciseId: String(ex.prescriptionExerciseId) } : {}),
           sets: Array.isArray(ex.sets) && ex.sets.length > 0
             ? ex.sets.map((s, si) => ({
                 setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
@@ -15476,11 +15481,16 @@ El esfuerzo no es negociable.
       return {
         dayIndex: di,
         label: d.label || ('Día ' + (di + 1)),
-        exercises: (d.exercises || []).map(function(e) {
-          return typeof e === 'string' ? _parseTemplateExercise(e) : e;
-        })
+        // T150-H: drop exercises with no name and no sets — a malformed legacy
+        // custom-template string (empty line, unparsable format) previously
+        // produced a silently-accepted exercise with an empty name instead of
+        // being dropped, matching the same guard parsePlanFromJSON already
+        // applies to pasted-JSON imports.
+        exercises: (d.exercises || [])
+          .map(function(e) { return typeof e === 'string' ? _parseTemplateExercise(e) : e; })
+          .filter(function(e) { return e && e.exerciseName && e.exerciseName.trim().length > 1 && Array.isArray(e.sets) && e.sets.length > 0; })
       };
-    });
+    }).filter(function(d) { return d.exercises.length > 0; });
     // Restamp: todos los IDs son nuevos, sin herencia del template
     days = _restampPrescriptionIds(days);
     try {
