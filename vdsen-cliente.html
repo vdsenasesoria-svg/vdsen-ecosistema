@@ -12420,7 +12420,11 @@ function closePostSessionModal() {
   var m = document.getElementById('postSessionModal');
   if (m) m.style.display = 'none';
   _postSessionDi = null;
-  _postSessionSubmitting = false;
+  // T126-C: do NOT reset _postSessionSubmitting here — if an in-flight submit called
+  // closePostSessionModal() to hide the modal early, the flag must remain true until
+  // the async work completes (handled by the try/finally in submitPostSession).
+  // When the user closes manually (X button) no submission is in progress so the
+  // flag is already false — no reset needed in either case.
 }
 
 function selectEimd(val) {
@@ -12495,40 +12499,49 @@ async function submitPostSession() {
   // Cerrar el modal PRIMERO — cualquier error posterior no deja al usuario bloqueado
   closePostSessionModal();
 
-  var postData = {
-    eimd: eimd,
-    articularPain: { present: articularVal==='si', pattern: articularVal==='si' ? articularPattern : '' },
-    sleepHours: sueno,
-    rpeAverage: rpe,
-    ts: Date.now()
-  };
-
-  var postKey = 'postsession_'+CURRENT_WEEK+'_'+di;
-  LOGS[postKey] = postData;
-
-  // Calcular y guardar recomendaciones de progresión
-  // Todo envuelto en try/catch: si el algoritmo falla, el guardado de la sesión sigue adelante.
-  // Sanitizar NaN/Infinity → null (Firestore rechaza valores no-finitos).
+  // T126-C: wrap ALL async work in try/finally so _postSessionSubmitting is ALWAYS
+  // reset to false when this function exits — even if an unexpected exception escapes.
+  // The flag must stay true from the point of this call until _confirmSessionDone
+  // resolves, to prevent a concurrent second submission from slipping through the guard.
   try {
-    var rec = calculateProgression(di, postData);
-    if (rec) {
-      var _sanitize = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
-      var recSafe = JSON.parse(JSON.stringify(rec, _sanitize));
-      LOGS['progrec_'+CURRENT_WEEK+'_'+di] = recSafe;
-      // P5: Longitudinal Engine — engine_state persiste en logs para la próxima generación
-      if (rec.engineState) {
-        LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _sanitize));
-      }
-    }
-  } catch(calcErr) {
-    console.warn('calculateProgression error:', calcErr.message, calcErr);
-    // Sin progrec esta vez — no bloquear el guardado de la sesión
-  }
+    var postData = {
+      eimd: eimd,
+      articularPain: { present: articularVal==='si', pattern: articularVal==='si' ? articularPattern : '' },
+      sleepHours: sueno,
+      rpeAverage: rpe,
+      ts: Date.now()
+    };
 
-  var _saved = await _confirmSessionDone(di);
-  // T125-C: solo mostrar el resumen si la sesión se persistió con éxito en Firestore.
-  // Si _confirmSessionDone devolvió false, ya mostró toast de error — no mostrar "SESIÓN COMPLETA".
-  if (_saved !== false) showSessionSummary(di);
+    var postKey = 'postsession_'+CURRENT_WEEK+'_'+di;
+    LOGS[postKey] = postData;
+
+    // Calcular y guardar recomendaciones de progresión
+    // Todo envuelto en try/catch: si el algoritmo falla, el guardado de la sesión sigue adelante.
+    // Sanitizar NaN/Infinity → null (Firestore rechaza valores no-finitos).
+    try {
+      var rec = calculateProgression(di, postData);
+      if (rec) {
+        var _sanitize = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
+        var recSafe = JSON.parse(JSON.stringify(rec, _sanitize));
+        LOGS['progrec_'+CURRENT_WEEK+'_'+di] = recSafe;
+        // P5: Longitudinal Engine — engine_state persiste en logs para la próxima generación
+        if (rec.engineState) {
+          LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _sanitize));
+        }
+      }
+    } catch(calcErr) {
+      console.warn('calculateProgression error:', calcErr.message, calcErr);
+      // Sin progrec esta vez — no bloquear el guardado de la sesión
+    }
+
+    var _saved = await _confirmSessionDone(di);
+    // T125-C: solo mostrar el resumen si la sesión se persistió con éxito en Firestore.
+    // Si _confirmSessionDone devolvió false, ya mostró toast de error — no mostrar "SESIÓN COMPLETA".
+    if (_saved !== false) showSessionSummary(di);
+  } finally {
+    // Always unlock — both success and unexpected-exception paths land here.
+    _postSessionSubmitting = false;
+  }
 }
 
 // ── Resumen visual post-sesión ────────────────────────────────────────────────
