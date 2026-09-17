@@ -16821,6 +16821,10 @@ El esfuerzo no es negociable.
     if (_savingTrainingPlan) return;
     if (!_editingPlanId) return;
     _savingTrainingPlan = true;
+    // T123-H: capture clientId before any await so stale-context can be detected post-write.
+    // If the coach navigates to a different client while the backup writes are in flight,
+    // the post-write UI refresh must NOT open the new client's detail instead of the original.
+    const _clientIdSnap = _detailClientId;
     const _stpBtn = document.querySelector('[onclick="saveTrainingPlan()"]');
     if (_stpBtn) { _stpBtn.disabled = true; _stpBtn.textContent = '⏳ Guardando...'; }
     const dayBlocks = document.querySelectorAll('[id^="dayblock_"]');
@@ -16886,6 +16890,9 @@ El esfuerzo no es negociable.
       markEditorClean();
       showToast('Plan actualizado ✅');
       toggleTrainingEditor();
+      // T123-H: guard UI refresh — if coach navigated to a different client while backup
+      // writes were in flight, do not open the wrong client's detail panel.
+      if (_detailClientId !== _clientIdSnap) return;
       showClientDetail(_detailClientId, { tab: 'plan' });
       _autoAddExercisesToCatalog(days);
     } catch(e) { showToast('Error al guardar: ' + e.message + (e.code ? ' ['+e.code+']' : ''), true); }
