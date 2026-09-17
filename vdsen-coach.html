@@ -11932,14 +11932,19 @@ El esfuerzo no es negociable.
       const fichaTxt = (typeof intakeFormat === 'function') ? intakeFormat(ficha.data, 'md') : JSON.stringify(ficha.data, null, 2);
       const isPED = String(ficha.data.perfil || '').toLowerCase() === 'ped';
 
-      // Learned State Activation v1: resolve once from already-loaded _detailClientData
-      // (0 new Firestore reads — clientData available before this point)
-      const _activeLearnedState = _getActivePersistedLearnedState(_detailClientData || {});
-
       // P2 + P7: Decision Engine — leer contexto longitudinal antes de llamar a Claude
       setStatus('<span style="color:#888">Leyendo historial del cliente…</span>');
       const prescCtx = await buildPrescriptionContext(clientId);
       const prescCtxTxt = _prescriptionContextToText(prescCtx);
+
+      // Learned State Activation v1: T139-H — resolve from prescCtx._clientData (fetched
+      // fresh above for THIS clientId), not the global _detailClientData. This function
+      // takes several awaits (getDoc ficha, buildPrescriptionContext, the AI call itself),
+      // and _detailClientData tracks whichever client is CURRENTLY open in the main detail
+      // modal — if the coach navigates to a different client while this generation is in
+      // flight, _detailClientData no longer belongs to `clientId`, and its learned-state
+      // hints (topology/exercise history) would leak into the OTHER client's plan.
+      const _activeLearnedState = _getActivePersistedLearnedState((prescCtx && prescCtx._clientData) || {});
 
       // Apply learned state adjustments to topology and distribution engines.
       // No-ops when _activeLearnedState is null (STALE, INVALID, or absent).
@@ -12107,8 +12112,10 @@ El esfuerzo no es negociable.
       const _prevPlanForLV2 = (prescCtx && prescCtx.previousPlan && prescCtx.previousPlan._rawDays)
         ? { daysPerWeek: prescCtx.previousPlan.daysPerWeek, weeks: prescCtx.previousPlan.weeks, days: prescCtx.previousPlan._rawDays }
         : null;
+      // T139-H: use prescCtx._clientData (fetched for `clientId` above), not the
+      // possibly-stale global _detailClientData — see note at the learned-state block.
       const _longValReport2 = _buildLongitudinalValidationReport(
-        { _clientData: _detailClientData || {}, restrictions: _restrictions2 },
+        { _clientData: (prescCtx && prescCtx._clientData) || {}, restrictions: _restrictions2 },
         _prevPlanForLV2,
         {},
         training ? _normalizeTrainingPlan(training) : null
@@ -12155,7 +12162,14 @@ El esfuerzo no es negociable.
         const newPlanId = (await getDoc(doc(db, 'clients', clientId))).data()?.activePlanId;
         if (newPlanId) {
           const ps = await getDoc(doc(db, 'plans', newPlanId));
-          if (ps.exists()) { _detailPlanData = ps.data(); _detailClientData.activePlanId = newPlanId; }
+          // T139-H: _detailClientData is the globally-shared "currently open client"
+          // object. If the coach navigated to a different client while this
+          // generation was running, _detailClientId !== clientId here, and
+          // _detailClientData now belongs to THAT other client — writing this
+          // client's activePlanId onto it would corrupt the other client's
+          // in-memory/rendered state even though the Firestore write above was
+          // correctly scoped to `clientId`.
+          if (ps.exists() && _detailClientId === clientId) { _detailPlanData = ps.data(); _detailClientData.activePlanId = newPlanId; }
         }
       }
       const clientUpdates = {};
@@ -12165,7 +12179,9 @@ El esfuerzo no es negociable.
       if (pharma) { clientUpdates.pharmacoPlan = pharma; saved.push('farmacología'); }
       if (Object.keys(clientUpdates).length) {
         await updateDoc(doc(db, 'clients', clientId), clientUpdates);
-        Object.assign(_detailClientData, clientUpdates);
+        // T139-H: same stale-context guard — only mirror onto _detailClientData
+        // when it still represents `clientId`.
+        if (_detailClientId === clientId) Object.assign(_detailClientData, clientUpdates);
       }
 
       // FASE 66 — Conformance audit + Decision Trace (modal flow)
