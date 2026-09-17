@@ -8794,6 +8794,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     if (d2Status) d2Status.innerHTML = '';
 
     try {
+      // T146-H: back up the outgoing active plan (if any) to plans_backup before
+      // replacing it — same pattern as every other plan-replacing path
+      // (saveManualPlan/duplicatePlan/_applyTemplateToClient/_autoGenerateForModal).
+      // No-ops safely when there is no active plan yet (first activation).
+      await backupPlanIfExists(clientId);
       await _vdsenActivatePlanInFirestore(planId, clientId);
 
       if (btn) { btn.disabled = true; btn.textContent = '✅ Plan activado'; }
