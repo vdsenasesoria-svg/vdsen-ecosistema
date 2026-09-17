@@ -1754,6 +1754,19 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         initCoachUI();
       }
     } else {
+      // T129: full session-scoped reset — the coach app never reloads on logout, so without
+      // this, a second coach logging in on the same device/tab would inherit the previous
+      // coach's in-memory client-detail state (selected client, imported plan draft, cached
+      // client/plan/ficha/logs data) until they happened to open a client themselves.
+      currentCoach = null;
+      _detailClientId = null;
+      _detailClientData = null;
+      _detailPlanData = null;
+      _detailPrevPlanData = null;
+      _detailFichaData = null;
+      _detailRenovacionData = null;
+      _detailLogsData = null;
+      window._importedPlan = null;
       // Sin auto-login — mostrar pantalla propia de login VDSEN
       {
         document.body.innerHTML = `<div class="flex items-center justify-center h-screen" style="background:var(--bg-base);min-height:100vh"><div class="card p-6" style="max-width:380px;width:calc(100% - 32px)"><div style="text-align:center;margin-bottom:18px"><div style="font-family:'Big Shoulders Display','Inter',sans-serif;font-size:32px;font-weight:800;letter-spacing:2px;color:var(--text-primary)">VDSEN<span style="display:inline-block;width:7px;height:7px;background:var(--accent);transform:rotate(45deg);margin-left:6px"></span></div><div style="font-size:9px;letter-spacing:2px;color:var(--platinum);text-transform:uppercase;margin-top:4px">Sistema Coach</div></div>

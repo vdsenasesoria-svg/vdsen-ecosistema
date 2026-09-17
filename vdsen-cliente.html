@@ -1211,7 +1211,19 @@ async function doLogout() {
   _clearLiveListeners();
   await FB.signOut(FB.auth);
   PLAN = null; LOGS = {};
-  try { localStorage.removeItem('vdsen_active_plan_id'); } catch(e){} // R8-GAP-01: avoid stale plan id bleeding to next user on shared device
+  // T129: full session-scoped reset — without this, a next user who logs in with no
+  // Firestore logs doc yet (new client) inherits the previous user's in-memory
+  // EXERCISE_UNITS/EXERCISE_HISTORY/week counters, since loadPlan only overwrites
+  // these when logSnap.exists() is true.
+  EXERCISE_UNITS = {}; EXERCISE_HISTORY = {};
+  REAL_WEEK = 1; CURRENT_WEEK = 1;
+  MENU_CUSTOM = {};
+  try { stopRestTimer(); } catch(e){}
+  try {
+    localStorage.removeItem('vdsen_active_plan_id'); // R8-GAP-01: avoid stale plan id bleeding to next user on shared device
+    localStorage.removeItem('vdsen_logs_backup');     // T129: contains previous user's LOGS/exercise data
+    localStorage.removeItem('vdsen_menu_custom');     // T129: previous user's custom nutrition entries
+  } catch(e){}
 }
 
 // ── Modal one-shot: confirmar/actualizar celular ────────────────────────
