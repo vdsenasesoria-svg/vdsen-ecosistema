@@ -1246,8 +1246,10 @@
         // postsession entries
         const ps = entries[`postsession_${w}_${d}`];
         if (ps) {
-          if (ps.articular)
-            reviewR.push({ code: 'PAIN', label: 'Dolor articular reportado' + (ps.patron ? ' · ' + ps.patron : '') });
+          const psArticular = ps.articularPain ? ps.articularPain.present : ps.articular;
+          const psPatron = ps.articularPain ? ps.articularPain.pattern : ps.patron;
+          if (psArticular)
+            reviewR.push({ code: 'PAIN', label: 'Dolor articular reportado' + (psPatron ? ' · ' + psPatron : '') });
           if (parseInt(ps.eimd) >= 3)
             reviewR.push({ code: 'EIMD_HIGH', label: 'Daño muscular elevado reportado' });
         }
@@ -3007,7 +3009,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             Object.keys(logs).forEach(k => { const m = k.match(/^postsession_(\d+)_(\d+)$/); if(m){ const w=+m[1],d=+m[2]; if(w>lastPostW||(w===lastPostW&&d>lastPostD)){lastPostW=w;lastPostD=d;lastPost=logs[k];} } });
             const eimds = lastPost ? ['—','Leve','Moderado','Alto'][parseInt(lastPost.eimd)||0]||'—' : null;
             const eimdColor = lastPost ? ['#888','#44BB88','#FF8844','#FF4444'][parseInt(lastPost.eimd)||0]||'#888' : '#888';
-            const postBadge = lastPost ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">EIMD:</span> <span style="color:${eimdColor};font-weight:700">${eimds}</span>${lastPost.rpe?` · <span style="color:#888">RPE</span> <span style="font-weight:700">${lastPost.rpe}</span>`:''}</div>` : '';
+            const lastPostRpe = lastPost ? (lastPost.rpeAverage != null ? lastPost.rpeAverage : lastPost.rpe) : null;
+            const postBadge = lastPost ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">EIMD:</span> <span style="color:${eimdColor};font-weight:700">${eimds}</span>${lastPostRpe?` · <span style="color:#888">RPE</span> <span style="font-weight:700">${lastPostRpe}</span>`:''}</div>` : '';
             const badges = [adherBadge, pesoBadge, who5Badge, hrvBadge, postBadge].filter(Boolean).join('');
             return badges ? `<div class="flex gap-2 flex-wrap mt-3">${badges}</div>` : '';
           })()}
@@ -3266,8 +3269,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           var postInfo = '';
           if (post) {
             var eimd = parseInt(post.eimd) || 0;
-            postInfo = ' · RPE ' + (post.rpe || '—') + ' · EIMD <span style="color:' + eimdColors[eimd] + '">' + eimdLabels[eimd] + '</span>';
-            if (post.sleep) postInfo += ' · 😴 ' + post.sleep + 'h';
+            var postRpe = post.rpeAverage != null ? post.rpeAverage : post.rpe;
+            var postSleep = post.sleepHours != null ? post.sleepHours : post.sleep;
+            postInfo = ' · RPE ' + (postRpe || '—') + ' · EIMD <span style="color:' + eimdColors[eimd] + '">' + eimdLabels[eimd] + '</span>';
+            if (postSleep) postInfo += ' · 😴 ' + postSleep + 'h';
           }
           var dayHeader = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
             + '<span style="font-size:11px;font-weight:800;letter-spacing:1px;color:' + (day.done ? '#44BB88' : '#888') + '">' + (day.done ? '✓' : '○') + ' ' + _escH(day.label) + '</span>'
@@ -3926,8 +3931,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           Object.keys(agg.postSession).forEach(k => {
             if (k.startsWith(w+'_')) {
               const ps = agg.postSession[k];
+              const psRpe = ps && (ps.rpeAverage != null ? ps.rpeAverage : ps.rpe);
               if (ps?.eimd != null) { eimdS += +ps.eimd; eimdN++; }
-              if (ps?.rpe != null)  { rpeS  += +ps.rpe;  rpeN++;  }
+              if (psRpe != null)    { rpeS  += +psRpe;   rpeN++;  }
             }
           });
           checkPage(7);
@@ -4056,7 +4062,11 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const ps = agg.postSession[k];
           checkPage(6);
           pdf.setFontSize(7.5); pdf.setFont('helvetica','normal'); pdf.setTextColor(40,40,40);
-          pdf.text(`S${w} D${+d+1}  ·  EIMD ${ps.eimd ?? '—'}  ·  Articular ${ps.articular ?? '—'}${ps.patron ? ' ('+ps.patron+')' : ''}  ·  Sueño ${ps.sleep ?? '—'} h  ·  RPE ${ps.rpe ?? '—'}`, margin, y);
+          const psArt = ps.articularPain ? (ps.articularPain.present ? 'si' : 'no') : ps.articular;
+          const psPat = ps.articularPain ? ps.articularPain.pattern : ps.patron;
+          const psSlp = ps.sleepHours != null ? ps.sleepHours : ps.sleep;
+          const psRpe2 = ps.rpeAverage != null ? ps.rpeAverage : ps.rpe;
+          pdf.text(`S${w} D${+d+1}  ·  EIMD ${ps.eimd ?? '—'}  ·  Articular ${psArt ?? '—'}${psPat ? ' ('+psPat+')' : ''}  ·  Sueño ${psSlp ?? '—'} h  ·  RPE ${psRpe2 ?? '—'}`, margin, y);
           y += 4.5;
         });
         y += 2;
@@ -4187,9 +4197,11 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         Object.keys(agg.postSession).forEach(k => {
           if (k.startsWith(w+'_')) {
             const ps=agg.postSession[k];
+            const psRpe3 = ps && (ps.rpeAverage != null ? ps.rpeAverage : ps.rpe);
+            const psSlp3 = ps && (ps.sleepHours != null ? ps.sleepHours : ps.sleep);
             if (ps?.eimd!=null){eS+=+ps.eimd;eN++;}
-            if (ps?.rpe!=null){pS+=+ps.rpe;pN++;}
-            if (ps?.sleep!=null){sS+=+ps.sleep;sN++;}
+            if (psRpe3!=null){pS+=+psRpe3;pN++;}
+            if (psSlp3!=null){sS+=+psSlp3;sN++;}
           }
         });
         const ci = agg.weeklyCheckin[w] || {};
@@ -4362,7 +4374,7 @@ Reporte:
         const wd = agg.perWeek[w];
         let eN=0,eS=0,pN=0,pS=0;
         Object.keys(agg.postSession).forEach(k => {
-          if (k.startsWith(w+'_')) { const ps=agg.postSession[k]; if (ps?.eimd!=null){eS+=+ps.eimd;eN++;} if (ps?.rpe!=null){pS+=+ps.rpe;pN++;} }
+          if (k.startsWith(w+'_')) { const ps=agg.postSession[k]; const psRpe4 = ps && (ps.rpeAverage != null ? ps.rpeAverage : ps.rpe); if (ps?.eimd!=null){eS+=+ps.eimd;eN++;} if (psRpe4!=null){pS+=+psRpe4;pN++;} }
         });
         const ci = agg.weeklyCheckin[w] || {};
         return `<tr>
@@ -4420,7 +4432,11 @@ Reporte:
       const psRows = Object.keys(agg.postSession).sort().map(k => {
         const [w,d] = k.split('_');
         const ps = agg.postSession[k];
-        return `<tr><td>S${w} D${+d+1}</td><td>${ps.eimd ?? '—'}</td><td>${ps.articular ?? '—'}${ps.patron ? ' ('+esc(ps.patron)+')' : ''}</td><td>${ps.sleep ?? '—'} h</td><td>${ps.rpe ?? '—'}</td></tr>`;
+        const psArt2 = ps.articularPain ? (ps.articularPain.present ? 'si' : 'no') : ps.articular;
+        const psPat2 = ps.articularPain ? ps.articularPain.pattern : ps.patron;
+        const psSlp2 = ps.sleepHours != null ? ps.sleepHours : ps.sleep;
+        const psRpe5 = ps.rpeAverage != null ? ps.rpeAverage : ps.rpe;
+        return `<tr><td>S${w} D${+d+1}</td><td>${ps.eimd ?? '—'}</td><td>${psArt2 ?? '—'}${psPat2 ? ' ('+esc(psPat2)+')' : ''}</td><td>${psSlp2 ?? '—'} h</td><td>${psRpe5 ?? '—'}</td></tr>`;
       }).join('') || '<tr><td colspan="5" style="text-align:center;color:#888">Sin check-ins post-sesión</td></tr>';
 
       const recHTML = lastRec?.recommendations?.length
@@ -14640,7 +14656,8 @@ El esfuerzo no es negociable.
     for (let w = 1; w <= currentWeek; w++) {
       for (let d = 0; d < dpw; d++) {
         const ps = entries['postsession_'+w+'_'+d];
-        if (ps && ps.rpe) rpePts.push({ w, label: 'S'+w+'D'+(d+1), v: parseFloat(ps.rpe) });
+        const psRpe6 = ps && (ps.rpeAverage != null ? ps.rpeAverage : ps.rpe);
+        if (psRpe6) rpePts.push({ w, label: 'S'+w+'D'+(d+1), v: parseFloat(psRpe6) });
       }
     }
     if (rpePts.length >= 2) {
@@ -14657,14 +14674,20 @@ El esfuerzo no es negociable.
       const sesLabel = dayObj ? dayObj.label : `Día ${lastDoneD+1}`;
       html += `<div class="text-xs text-[#888] mb-2 uppercase tracking-wide font-semibold">Última sesión — ${sesLabel} · Sem ${lastDoneW}</div>`;
       const ps = entries['postsession_'+lastDoneW+'_'+lastDoneD];
-      if (ps) html += `<div class="card p-3 mb-3" style="border-left:2px solid rgba(244,244,240,.15);border-radius:0 8px 8px 0">
+      if (ps) {
+        const psRpe7 = ps.rpeAverage != null ? ps.rpeAverage : ps.rpe;
+        const psSlp4 = ps.sleepHours != null ? ps.sleepHours : ps.sleep;
+        const psArtBool = ps.articularPain ? ps.articularPain.present : (ps.articular === 'si');
+        const psPat3 = ps.articularPain ? ps.articularPain.pattern : ps.patron;
+        html += `<div class="card p-3 mb-3" style="border-left:2px solid rgba(244,244,240,.15);border-radius:0 8px 8px 0">
         <div class="flex gap-4 flex-wrap text-sm">
-          ${ps.rpe    ? `<span><span class="text-[#888]">RPE</span> <strong>${ps.rpe}/10</strong></span>` : ''}
+          ${psRpe7    ? `<span><span class="text-[#888]">RPE</span> <strong>${psRpe7}/10</strong></span>` : ''}
           ${ps.eimd   ? `<span><span class="text-[#888]">EIMD</span> <strong>${['','Leve','Moderado','Alto'][ps.eimd]||ps.eimd}</strong></span>` : ''}
-          ${ps.sleep  ? `<span><span class="text-[#888]">Sueño</span> <strong>${ps.sleep}h</strong></span>` : ''}
-          ${ps.articular==='si' ? `<span style="color:#FF8844">⚠️ Dolor articular${ps.patron?' · '+ps.patron:''}</span>` : ''}
+          ${psSlp4  ? `<span><span class="text-[#888]">Sueño</span> <strong>${psSlp4}h</strong></span>` : ''}
+          ${psArtBool ? `<span style="color:#FF8844">⚠️ Dolor articular${psPat3?' · '+psPat3:''}</span>` : ''}
         </div>
       </div>`;
+      }
 
       const exList = p && p.days ? ((p.days.find(d => d.dayIndex === lastDoneD) || p.days[lastDoneD] || {}).exercises || []) : [];
       const eiKeys = Object.keys(lastSets).map(Number).sort((a,b)=>a-b);
@@ -16507,11 +16530,11 @@ El esfuerzo no es negociable.
           setIndex: '', load: '', unit: '', reps: '', rir_real: '', ics: '', pump: '',
           autoFilled: '', done: '',
           weight: '', hrv: '', who5: '',
-          sleep: v.sleep != null ? v.sleep : '',
+          sleep: v.sleepHours != null ? v.sleepHours : (v.sleep != null ? v.sleep : ''),
           eimd: v.eimd != null ? v.eimd : '',
-          articular: v.articular != null ? v.articular : '',
-          patron: v.patron != null ? v.patron : '',
-          rpe: v.rpe != null ? v.rpe : '',
+          articular: v.articularPain ? (v.articularPain.present ? 'si' : 'no') : (v.articular != null ? v.articular : ''),
+          patron: v.articularPain ? (v.articularPain.pattern || '') : (v.patron != null ? v.patron : ''),
+          rpe: v.rpeAverage != null ? v.rpeAverage : (v.rpe != null ? v.rpe : ''),
           progressionAction: '', progressionReason: '',
           timestamp: _normalizeTimestamp(v.ts)
         });
