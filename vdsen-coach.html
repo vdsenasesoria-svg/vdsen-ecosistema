@@ -829,7 +829,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -4842,6 +4842,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           technique: techRaw,
           techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
           supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
+          coachNote: String(ex.coachNote || '').trim(),
           sets: Array.isArray(ex.sets) && ex.sets.length > 0
             ? ex.sets.map((s, si) => ({
                 setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
@@ -15945,7 +15946,14 @@ El esfuerzo no es negociable.
         'nutritionRaw.calorias': data.calorias,
         'nutritionRaw.proteina': data.proteina,
         'nutritionRaw.carbos':   data.carbos,
-        'nutritionRaw.grasas':   data.grasas
+        'nutritionRaw.grasas':   data.grasas,
+        // QA-GAP-03: a manual macro edit invalidates any structured meal breakdown
+        // from a prior AI-generated/imported plan — clear it instead of leaving a
+        // stale comidas[] that no longer sums to the edited macros (client's PDF
+        // export prefers nutritionRaw wholesale over the simpler nutritionPlan doc).
+        'nutritionRaw.comidas':   deleteField(),
+        'nutritionRaw.calculos':  deleteField(),
+        'nutritionRaw.monitoreo': deleteField()
       });
       // T118-H: abort DOM update if coach navigated to a different client while save was in flight
       if (_detailClientId !== _clientIdSnap) return;
