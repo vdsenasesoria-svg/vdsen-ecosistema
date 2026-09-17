@@ -7298,12 +7298,15 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return { texto: lines.join('\n') };
   }
 
+  let _autoGenInFlight = false; // T143-H: block concurrent autoGeneratePlan() calls regardless of entry point
   async function autoGeneratePlan() {
+    if (_autoGenInFlight) return;
     if (!currentCoach) { showToast('⚠️ No hay sesión activa.', true); return; }
     const clientId = document.getElementById('planClientSelect').value;
     if (!clientId) { showToast('Selecciona un cliente primero', true); return; }
     const apiKey = localStorage.getItem('vdsen_apikey');
     if (!apiKey || !apiKey.startsWith('sk-')) { showToast('Configura tu API key de OpenAI en Config primero', true); return; }
+    _autoGenInFlight = true;
     const statusBox = document.getElementById('autoGenStatus');
     const setStatus = html => { if (statusBox) statusBox.innerHTML = html; };
     const btn = document.getElementById('autoGenBtn');
@@ -7702,6 +7705,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       setStatus('<div style="color:var(--danger);font-weight:700">❌ ' + (e.message || e) + '</div>');
       showToast('Error: ' + (e.message || e), true);
     } finally {
+      _autoGenInFlight = false;
       if (btn) { btn.disabled = false; btn.textContent = btn._t || '🤖 Generar plan automático (motor VDSEN)'; }
     }
   }
