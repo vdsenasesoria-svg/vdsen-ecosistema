@@ -17950,7 +17950,12 @@ El esfuerzo no es negociable.
         updatedAt: new Date().toISOString()  // T119-H (QA-R3-02): client listener requires updatedAt
       });
       await updateDoc(doc(db, "clients", clientId), { activePlanId: planRef.id });
-      showToast('Plan asignado a '+opts[ci].name+' ✅');
+      // T137-H: this used to reference an undefined loop-index variable here,
+      // throwing a ReferenceError AFTER the plan had already been created and
+      // activated above, so the coach saw a false error toast for an
+      // operation that had actually succeeded. `sel` (from _selectModal)
+      // already carries the chosen client's { id, name }.
+      showToast('Plan asignado a '+sel.name+' ✅');
       _autoAddExercisesToCatalog(days); // auto-agregar ejercicios del template al catálogo
       loadClientList();
       loadDashboard();
