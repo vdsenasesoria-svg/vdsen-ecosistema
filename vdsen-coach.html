@@ -9349,6 +9349,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       // Limpiar plan anterior si existe
       const prevClientSnap2 = await getDoc(doc(db, "clients", clientId));
       const prevPlanId2 = prevClientSnap2.exists() ? prevClientSnap2.data().activePlanId : null;
+      // T134-H: back up the outgoing active plan before it is deleted below.
+      // Without this, saveManualPlan permanently destroys the previous plan
+      // (deleteDoc, no plans_backup entry) with no confirmation — unlike
+      // saveImportedPlan/duplicatePlanToClient, which call backupPlanIfExists
+      // first. That backup is also what powers the "plan anterior" compare
+      // view (showClientDetail ~L14351), so skipping it silently breaks that
+      // feature for manually-created plans too.
+      await backupPlanIfExists(clientId);
 
       const planRef = await addDoc(collection(db, "plans"), {
         ...manualPlan,
