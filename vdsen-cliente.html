@@ -4529,7 +4529,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         '</div>'+
         '<div>'+
           '<div style="font-size:9px;color:'+(isIsometric?'var(--accent)':'var(--mt)')+';letter-spacing:1px;margin-bottom:4px;font-weight:600">'+_repsLbl+'</div>'+
-          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="done" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+unit+'\','+baseRIR+')">'+
+          '<input id="xreps_'+_expK+'" type="number" value="'+(_exPfReps||'')+'" placeholder="'+(isIsometric?'seg':'reps')+'" inputmode="numeric" enterkeyhint="next" style="'+_iptS+'" onfocus="this.select()" oninput="xBcHint(\''+_expK+'\',\''+unit+'\','+baseRIR+')" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'xics_'+_expK+'\');if(r)r.focus();}">'+
         '</div>'+
       '</div>'+
       '<div id="xhint_'+_expK+'" data-exname="'+_escHTml(nombre)+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-bottom:2px"></div>'+
