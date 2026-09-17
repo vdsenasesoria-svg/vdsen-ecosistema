@@ -1733,8 +1733,15 @@ async function loadPlan(user) {
           return;
         }
         // Actualizar nutrición/suplementación/perfil en vivo sin recargar
-        if (newData.nutritionPlan) { PLAN.nutricion = newData.nutritionPlan; try { renderNutricion(); } catch(e){} }
-        if (newData.supplementPlan) { PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] }; }
+        // T149-C: update both PLAN.nutricion and PLAN.suplementacion BEFORE
+        // rendering — renderNutricion() reads both, so calling it between the
+        // two assignments (as before) showed stale supplement text on a
+        // supplement-only coach edit (nutritionPlan is present on every
+        // snapshot regardless of what changed, so the render always fired).
+        var _nutricionChanged = !!newData.nutritionPlan;
+        if (newData.nutritionPlan) PLAN.nutricion = newData.nutritionPlan;
+        if (newData.supplementPlan) PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] };
+        if (_nutricionChanged) { try { renderNutricion(); } catch(e){} }
         if (newData.profileType && newData.profileType !== PLAN.profileType) { PLAN.profileType = newData.profileType; try { renderPerfil(); } catch(e){} }
       });
 
