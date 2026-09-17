@@ -18,6 +18,20 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(function(){});
   });
 }
+// T155-H: capture beforeinstallprompt as early as possible (it can fire
+// before the module script below finishes loading/defining the UI updater).
+window._pwaDeferredPrompt = null;
+window._pwaInstalled = false;
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  window._pwaDeferredPrompt = e;
+  if (typeof window._updatePwaInstallUI === 'function') window._updatePwaInstallUI();
+});
+window.addEventListener('appinstalled', function() {
+  window._pwaInstalled = true;
+  window._pwaDeferredPrompt = null;
+  if (typeof window._updatePwaInstallUI === 'function') window._updatePwaInstallUI();
+});
 </script>
 <!-- Firebase -->
 <script type="module">
@@ -11233,8 +11247,13 @@ function renderPerfil() {
     <button onclick="showFAQModal()" style="width:100%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.35);color:var(--gold);font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer;margin-top:14px">❓ AYUDA · CÓMO USAR LA APP</button>
     <div id="_coachContactBtn" style="margin-top:10px"><button onclick="_loadCoachContact()" style="width:100%;background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.4);color:#25D166;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer">💬 CONTACTAR A MI COACH</button></div>
     <button class="pdf-btn" onclick="downloadMyPlanPDF()" style="margin-top:10px">⬇ DESCARGAR MI PLAN PDF</button>
+    <div id="_pwaInstallRow" style="display:none;margin-top:10px">
+      <button onclick="_pwaInstallGo()" style="width:100%;background:rgba(126,192,255,.08);border:1px solid rgba(126,192,255,.35);color:#7ec0ff;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:700;padding:14px;border-radius:10px;cursor:pointer">📲 INSTALAR VDSEN</button>
+      <div id="_pwaInstallDesc" style="font-size:10px;color:var(--mt);margin-top:6px;text-align:center;line-height:1.4"></div>
+    </div>
     <button class="logout-btn" onclick="doLogout()">CERRAR SESIÓN</button>
     <div style="text-align:center;font-size:9px;color:var(--mt);margin-top:16px;letter-spacing:1px">MOTOR VDSEN v3.2 · SOLO USO DEL CLIENTE</div>`;
+  try { window._updatePwaInstallUI(); } catch(e) {}
 }
 
 async function _loadCoachContact() {
@@ -11269,6 +11288,62 @@ async function _loadCoachContact() {
 // ══════════════════════════════════════════════════════════════════════════
 // FAQ / INSTRUCCIONES DE USO DE LA APP
 // ══════════════════════════════════════════════════════════════════════════
+// T155-H: PWA install CTA (Client only). No new deps — plain beforeinstallprompt/
+// appinstalled + a small instructions modal reusing the existing modal pattern.
+function _pwaIsStandalone() {
+  try {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  } catch(e) { return false; }
+}
+function _pwaIsIOS() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent || '') && !window.MSStream;
+}
+window._updatePwaInstallUI = function() {
+  var row = document.getElementById('_pwaInstallRow');
+  if (!row) return;
+  var desc = document.getElementById('_pwaInstallDesc');
+  if (_pwaIsStandalone() || window._pwaInstalled) { row.style.display = 'none'; return; }
+  if (window._pwaDeferredPrompt) {
+    row.style.display = '';
+    if (desc) desc.textContent = 'Agrega VDSEN a tu pantalla de inicio para acceso rápido.';
+    return;
+  }
+  if (_pwaIsIOS()) {
+    row.style.display = '';
+    if (desc) desc.textContent = 'Compartir → Agregar a pantalla de inicio.';
+    return;
+  }
+  row.style.display = 'none';
+};
+window._pwaInstallGo = async function() {
+  if (window._pwaDeferredPrompt) {
+    var promptEvent = window._pwaDeferredPrompt;
+    window._pwaDeferredPrompt = null; // a captured prompt can only be used once
+    try {
+      promptEvent.prompt();
+      await promptEvent.userChoice; // accepted/dismissed both handled identically here — never announce a fake outcome
+    } catch(e) {}
+    window._updatePwaInstallUI();
+    return;
+  }
+  if (_pwaIsIOS()) { _pwaShowIOSInstructions(); return; }
+};
+function _pwaShowIOSInstructions() {
+  var existing = document.getElementById('_pwaIosModal');
+  if (existing) { existing.style.display = 'flex'; return; }
+  var html =
+    '<div id="_pwaIosModal" style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px 12px">'+
+      '<div style="background:var(--bg);max-width:340px;width:100%;border:1px solid var(--gold);border-radius:14px;padding:20px 18px;box-shadow:0 0 40px rgba(0,0,0,.6);text-align:center">'+
+        '<div style="font-size:32px;margin-bottom:10px">📲</div>'+
+        '<div style="font-family:var(--ff);font-size:14px;letter-spacing:1.5px;color:var(--gold);font-weight:800;margin-bottom:10px">INSTALAR VDSEN</div>'+
+        '<div style="font-size:13px;color:var(--tx);line-height:1.7">Para instalar VDSEN en tu iPhone:<br>Toca <strong>Compartir</strong> <span style="font-size:15px">⬆️</span> y luego <strong>"Agregar a pantalla de inicio"</strong>.</div>'+
+        '<button onclick="document.getElementById(\'_pwaIosModal\').style.display=\'none\'" style="width:100%;background:var(--gold);color:#000;border:none;font-family:var(--ff);font-size:13px;letter-spacing:1.5px;font-weight:800;padding:12px;border-radius:8px;cursor:pointer;margin-top:16px">ENTENDIDO</button>'+
+      '</div>'+
+    '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+window._pwaShowIOSInstructions = _pwaShowIOSInstructions;
+
 function showFAQModal() {
   var existing = document.getElementById('faqModal');
   if (existing) { existing.style.display = 'flex'; return; }
