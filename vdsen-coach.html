@@ -15294,25 +15294,31 @@ El esfuerzo no es negociable.
     });
     // Restamp: todos los IDs son nuevos, sin herencia del template
     days = _restampPrescriptionIds(days);
-    // Crear plan primero; solo asignar activePlanId si el create tiene éxito
-    const planRef = await addDoc(collection(db, 'plans'), {
-      days,
-      weeks: template.weeks || 6,
-      daysPerWeek: days.length,
-      rirByWeek: rirSchemeForWeeks(template.weeks || 6),
-      coachId: currentCoach.uid,
-      clientId,
-      status: 'active',
-      generatedBy: 'template:' + (template.name || ''),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()  // T119-H (QA-R3-02): client listener requires updatedAt
-    });
-    await updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id });
-    if (closeModal) closeModal();
-    showToast('Plan aplicado desde template ✅');
-    _autoAddExercisesToCatalog(days);
-    showClientDetail(clientId, { tab: 'plan' });
-    loadClientList();
+    try {
+      // T126-H: wrap Firestore writes so failures surface as toast, not silent rejection
+      // Crear plan primero; solo asignar activePlanId si el create tiene éxito
+      const planRef = await addDoc(collection(db, 'plans'), {
+        days,
+        weeks: template.weeks || 6,
+        daysPerWeek: days.length,
+        rirByWeek: rirSchemeForWeeks(template.weeks || 6),
+        coachId: currentCoach.uid,
+        clientId,
+        status: 'active',
+        generatedBy: 'template:' + (template.name || ''),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()  // T119-H (QA-R3-02): client listener requires updatedAt
+      });
+      await updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id });
+      if (closeModal) closeModal();
+      showToast('Plan aplicado desde template ✅');
+      _autoAddExercisesToCatalog(days);
+      showClientDetail(clientId, { tab: 'plan' });
+      loadClientList();
+    } catch(e) {
+      console.error('Error applying template:', e);
+      showToast('Error al aplicar plantilla. Intenta de nuevo.', true); // T126-H
+    }
   }
 
   // FASE 11 — Modal de biblioteca: abre desde detalle cliente, aplica al cliente activo
@@ -15392,8 +15398,8 @@ El esfuerzo no es negociable.
           useBtn.textContent = '…';
           try {
             await _applyTemplateToClient(t, clientId, close);
-          } catch(err) {
-            showToast('Error al aplicar template: ' + err.message, true);
+          } finally {
+            // T126-H: _applyTemplateToClient owns error display; always restore guard
             useBtn.disabled = false;
             useBtn.textContent = 'Usar →';
             applying = false;
