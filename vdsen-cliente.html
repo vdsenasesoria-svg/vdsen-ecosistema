@@ -1211,6 +1211,7 @@ async function doLogout() {
   _clearLiveListeners();
   await FB.signOut(FB.auth);
   PLAN = null; LOGS = {};
+  try { localStorage.removeItem('vdsen_active_plan_id'); } catch(e){} // R8-GAP-01: avoid stale plan id bleeding to next user on shared device
 }
 
 // ── Modal one-shot: confirmar/actualizar celular ────────────────────────

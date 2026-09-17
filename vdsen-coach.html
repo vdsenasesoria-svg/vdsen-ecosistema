@@ -9371,6 +9371,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     var _initialTab = (opts && opts.tab) || 'ficha';
     _detailClientId   = clientId;
     _detailActiveTab  = _initialTab;
+    window._importedPlan = null; // R8-GAP-02: clear stale imported-plan state from a previous client
     markEditorClean();
     const modal = document.getElementById("clientModal");
     const body  = document.getElementById("modalClientBody");
@@ -15231,8 +15232,10 @@ El esfuerzo no es negociable.
   async function saveCoachNote() {
     const val = (document.getElementById('coachNoteTA')?.value || '').trim();
     if (!_detailClientId) return;
+    const _clientIdSnap = _detailClientId;
     try {
-      await updateDoc(doc(db,'clients',_detailClientId), { coachNote: val, coachNoteUpdatedAt: new Date().toISOString() });
+      await updateDoc(doc(db,'clients',_clientIdSnap), { coachNote: val, coachNoteUpdatedAt: new Date().toISOString() });
+      if (_detailClientId !== _clientIdSnap) return; // R8-GAP-03: coach switched clients mid-write
       if (_detailClientData) { _detailClientData.coachNote = val; _detailClientData.coachNoteUpdatedAt = new Date().toISOString(); }
     } catch(e) { throw e; }
   }
@@ -15241,8 +15244,10 @@ El esfuerzo no es negociable.
   async function saveClientMessage() {
     const val = (document.getElementById('clientMsgTA')?.value || '').trim();
     if (!_detailClientId) return;
+    const _clientIdSnap = _detailClientId;
     try {
-      await updateDoc(doc(db,'clients',_detailClientId), { clientMessage: val, clientMessageUpdatedAt: new Date().toISOString() });
+      await updateDoc(doc(db,'clients',_clientIdSnap), { clientMessage: val, clientMessageUpdatedAt: new Date().toISOString() });
+      if (_detailClientId !== _clientIdSnap) return; // R8-GAP-04: coach switched clients mid-write
       if (_detailClientData) _detailClientData.clientMessage = val;
     } catch(e) { throw e; }
   }

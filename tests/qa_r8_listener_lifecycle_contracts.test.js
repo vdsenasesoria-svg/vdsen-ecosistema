@@ -6,9 +6,10 @@
  * cleanup, timer cleanup, session-boundary state resets, and modal state
  * isolation in vdsen-cliente.html (CLIENT) and vdsen-coach.html (COACH).
  *
- * Gap-doc pattern: confirmed structural bugs are documented with
- * console.warn('[R8-GAP-XX] ...') and do NOT call assert.fail so the
- * suite keeps running.  Agent A/B should address each GAP.
+ * R8-GAP-01..04 (localStorage plan-id leak on logout, stale _importedPlan
+ * on client switch, missing snapshot guards in saveCoachNote/saveClientMessage)
+ * were found by this suite and fixed directly in the integration branch;
+ * all four are now real assert.ok() checks below.
  *
  * Run: node tests/qa_r8_listener_lifecycle_contracts.test.js
  */
@@ -239,17 +240,7 @@ function extractFunction(src, name) {
   assert.ok(logoutFn, 'C-07 prerequisite: doLogout exists in CLIENT');
 
   const cleared = /removeItem\s*\(\s*['"]vdsen_active_plan_id['"]/.test(logoutFn);
-  if (!cleared) {
-    console.warn(
-      '[R8-GAP-01] CLIENT doLogout does not call ' +
-      "localStorage.removeItem('vdsen_active_plan_id').  " +
-      'On a shared device, a second user sees the first user\'s stale plan ID, ' +
-      'triggering an unnecessary plan-version reload.  ' +
-      'Fix: add localStorage.removeItem(\'vdsen_active_plan_id\') in doLogout().'
-    );
-  } else {
-    assert.ok(cleared, 'C-07: doLogout must clear vdsen_active_plan_id from localStorage');
-  }
+  assert.ok(cleared, 'C-07: doLogout must clear vdsen_active_plan_id from localStorage');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -370,18 +361,7 @@ function extractFunction(src, name) {
 
   // Does showClientDetail clear _importedPlan anywhere in its body?
   const clearedInDetail = /_importedPlan\s*=\s*null/.test(fn);
-
-  if (!clearedInDetail) {
-    console.warn(
-      '[R8-GAP-02] COACH showClientDetail does NOT clear window._importedPlan ' +
-      'when switching clients.  Only planClientSelect.onchange and saveImportedPlan ' +
-      'clear it.  The navClient → showClientDetail path leaves a stale plan object ' +
-      'that can be written to the wrong client on the next saveImportedPlan() call.  ' +
-      'Fix: add `window._importedPlan = null;` at the top of showClientDetail().'
-    );
-  } else {
-    assert.ok(clearedInDetail, 'H-04: showClientDetail must clear window._importedPlan on entry');
-  }
+  assert.ok(clearedInDetail, 'H-04: showClientDetail must clear window._importedPlan on entry');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -402,19 +382,7 @@ function extractFunction(src, name) {
   //   or:  if (_detailClientId !== _clientIdSnap) return  (after the await)
   const hasGuard = /const\s+_\w*[Ss]nap\w*\s*=\s*_detailClientId/.test(fn) ||
                    /_detailClientId\s*!==\s*_\w*[Ss]nap/.test(fn);
-
-  if (!hasGuard) {
-    console.warn(
-      '[R8-GAP-03] COACH saveCoachNote has no snapshot guard for _detailClientId. ' +
-      'It writes `_detailClientData.coachNote = val` after an await.  If the coach ' +
-      'switches clients while the write is in-flight, _detailClientData now points to ' +
-      'the new client\'s data and the mutation corrupts it.  ' +
-      'Fix: capture `const _clientIdSnap = _detailClientId` before the first await ' +
-      'and add `if (_detailClientId !== _clientIdSnap) return;` before post-await DOM/data writes.'
-    );
-  } else {
-    assert.ok(hasGuard, 'H-05a: saveCoachNote must have a stale-client snapshot guard');
-  }
+  assert.ok(hasGuard, 'H-05a: saveCoachNote must have a stale-client snapshot guard');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -429,19 +397,7 @@ function extractFunction(src, name) {
 
   const hasGuard = /const\s+_\w*[Ss]nap\w*\s*=\s*_detailClientId/.test(fn) ||
                    /_detailClientId\s*!==\s*_\w*[Ss]nap/.test(fn);
-
-  if (!hasGuard) {
-    console.warn(
-      '[R8-GAP-04] COACH saveClientMessage has no snapshot guard for _detailClientId. ' +
-      'It writes `_detailClientData.clientMessage = val` after an await.  ' +
-      'Same race as GAP-03 — if client is switched during the await, the mutation ' +
-      'corrupts the new client\'s in-memory data.  ' +
-      'Fix: same pattern as saveNutritionPlan — capture _clientIdSnap before await, ' +
-      'guard the post-await data mutation.'
-    );
-  } else {
-    assert.ok(hasGuard, 'H-05b: saveClientMessage must have a stale-client snapshot guard');
-  }
+  assert.ok(hasGuard, 'H-05b: saveClientMessage must have a stale-client snapshot guard');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -505,13 +461,13 @@ console.log('  CLIENT C-04  loadPlan calls _clearLiveListeners before sub  PASS'
 console.log('  CLIENT C-05  startRestTimer clears interval before re-arming PASS');
 console.log('  CLIENT C-06a _ciSubjTemp nulled in setWeek                  PASS');
 console.log('  CLIENT C-06b _ssStep reset in setWeek                       PASS');
-console.log('  CLIENT C-07  vdsen_active_plan_id cleared on logout         GAP  → [R8-GAP-01]');
+console.log('  CLIENT C-07  vdsen_active_plan_id cleared on logout         PASS');
 console.log('  COACH  H-01  All onSnapshot calls stored in ref             PASS');
 console.log('  COACH  H-02  Monitor unsubscribes before re-subscribing     PASS');
 console.log('  COACH  H-03  All monitor listener refs stored and nulled    PASS');
-console.log('  COACH  H-04  _importedPlan cleared in showClientDetail      GAP  → [R8-GAP-02]');
-console.log('  COACH  H-05a saveCoachNote has snapshot guard               GAP  → [R8-GAP-03]');
-console.log('  COACH  H-05b saveClientMessage has snapshot guard           GAP  → [R8-GAP-04]');
+console.log('  COACH  H-04  _importedPlan cleared in showClientDetail      PASS');
+console.log('  COACH  H-05a saveCoachNote has snapshot guard               PASS');
+console.log('  COACH  H-05b saveClientMessage has snapshot guard           PASS');
 console.log('  COACH  H-05c saveNutritionPlan snapshot guard (positive)    PASS');
 console.log('  COACH  H-02x logout clears monitor listeners                PASS');
 console.log('');
