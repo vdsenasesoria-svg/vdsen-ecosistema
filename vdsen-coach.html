@@ -17632,6 +17632,14 @@ El esfuerzo no es negociable.
       if (!sel) return;
       const targetId = sel.id;
 
+      // T135-H: back up the target's outgoing active plan (if any) before it is
+      // orphaned below. duplicatePlanToClient already does this; duplicatePlan
+      // repointed activePlanId with no backupPlanIfExists() call and no confirm,
+      // silently making the target's previous active plan unreachable from the
+      // app (and invisible to the "plan anterior" compare view, which reads
+      // plans_backup) whenever the chosen target already had a plan.
+      await backupPlanIfExists(targetId);
+
       // Crear copia del plan (nueva prescripción = nuevos IDs)
       // T119-H (QA-R3-03): explicit updatedAt overrides any stale value from the spread
       const newPlan = { ...planData, days: _restampPrescriptionIds(planData.days), clientId: targetId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), status: 'active' };
