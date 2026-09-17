@@ -4582,7 +4582,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var setTempo = setSpec && setSpec.tempo ? String(setSpec.tempo).trim() : '';
     var setSpecBadges = '';
     if (setIsDrop) setSpecBadges += '<span style="display:inline-block;font-size:9px;font-weight:900;letter-spacing:1px;color:#FF8844;background:rgba(255,140,50,.12);border:1px solid #FF8844;padding:2px 7px;border-radius:5px;margin-right:5px">⬇ DROP</span>';
-    if (setTempo) setSpecBadges += '<span style="display:inline-block;font-size:9px;font-weight:800;letter-spacing:1px;color:var(--mt2);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:2px 7px;border-radius:5px;margin-right:5px">⏱ '+setTempo+'</span>';
+    if (setTempo) setSpecBadges += '<span style="display:inline-block;font-size:9px;font-weight:800;letter-spacing:1px;color:var(--mt2);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:2px 7px;border-radius:5px;margin-right:5px">⏱ '+_escHTml(setTempo)+'</span>';
     // Objetivo por set — solo para ejercicios heterogéneos (S1·FUERZA ≠ S2·HIPERTROFIA, etc.)
     var _psReps = setSpec ? setSpec.repsTarget : null;
     var _psRir  = (setSpec && setSpec.rirTarget !== undefined && setSpec.rirTarget !== null) ? setSpec.rirTarget : null;
@@ -6573,7 +6573,7 @@ function renderEntrenamiento() {
       'background:'+bg+';border-bottom:'+borderB+';'+
       'border-right:1px solid var(--border);transition:background .15s;-webkit-tap-highlight-color:transparent">'+
       '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:2px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(( isSkipped||_isAdminClosed)?'⏸':done?'✓':(_partial?_dSets+'/'+_tSets:'·'))+'</div>'+
-      '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'+rawLabel+'</div>'+
+      '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'+_escHTml(rawLabel)+'</div>'+
       '<div style="height:2px;border-radius:1px;background:var(--border);overflow:hidden">'+
         '<div style="height:100%;width:'+(done?100:_pPct)+'%;background:'+_barColor+';border-radius:1px;transition:width .3s"></div>'+
       '</div>'+
@@ -6754,7 +6754,7 @@ function renderEntrenamiento() {
       'background:linear-gradient(180deg,rgba(196,255,0,.04) 0%,transparent 100%);border-bottom:1px solid rgba(196,255,0,.06)">'+
       '<div>'+
         '<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:'+(CURRENT_WEEK!==REAL_WEEK?'#FF8844':'var(--accent)')+';text-transform:uppercase;margin-bottom:4px">'+(CURRENT_WEEK!==REAL_WEEK?'👁 ':'🗓 ')+'SEM '+CURRENT_WEEK+' · '+getSemProgresion(CURRENT_WEEK)+(CURRENT_WEEK!==REAL_WEEK?' (VISTA)':'')+'</div>'+
-        '<div style="font-size:20px;font-weight:800;color:var(--tx);line-height:1.15;letter-spacing:-.3px">'+(ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim()+'</div>'+
+        '<div style="font-size:20px;font-weight:800;color:var(--tx);line-height:1.15;letter-spacing:-.3px">'+_escHTml((ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim())+'</div>'+
         '<div style="font-size:11px;color:var(--mt);margin-top:3px;display:flex;align-items:center;gap:8px">'+
           (function(){var _ejAct=ejercicios.filter(function(ej){return isTechniqueActive(ej,CURRENT_WEEK);});var _tot=_ejAct.length;var _dn=ejercicios.filter(function(ej,_ei){return isTechniqueActive(ej,CURRENT_WEEK)&&_isExerciseFullyDone(DIA_ACTIVO,_ei,ej);}).length;return _dn===_tot&&_tot>0?'<span style="color:var(--grn);font-weight:700">'+_tot+'/'+_tot+' ejercicios ✓</span>':'<span>'+_dn+'/'+_tot+' ejercicios</span>';})()+'</div>'+
       '</div>'+
@@ -11456,7 +11456,7 @@ function formatTextoSup(texto) {
         <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)">
           <div style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${style.bg};border:1px solid ${style.border};border-radius:10px;font-size:20px">${icon}</div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:14px;color:var(--tx);font-weight:700;line-height:1.2">${item.nombre}</div>
+            <div style="font-size:14px;color:var(--tx);font-weight:700;line-height:1.2">${_escHTml(item.nombre)}</div>
             ${item.momento ? `<div style="font-size:10px;color:var(--mt);margin-top:3px;letter-spacing:.5px;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:5px;font-weight:600">${timingIcon} ${item.momento}</div>` : ''}
           </div>
           <div style="text-align:right;flex-shrink:0">
@@ -11465,14 +11465,14 @@ function formatTextoSup(texto) {
           </div>
         </div>`;
       }
-      return `<div style="font-size:11px;color:var(--mt);padding:6px 0;font-style:italic;line-height:1.5;border-left:2px solid ${style.border};padding-left:10px;margin:4px 0">${item.texto}</div>`;
+      return `<div style="font-size:11px;color:var(--mt);padding:6px 0;font-style:italic;line-height:1.5;border-left:2px solid ${style.border};padding-left:10px;margin:4px 0">${_escHTml(item.texto)}</div>`;
     }).join('');
     if (!itemsHtml) return '';
     return `
       <div style="margin-bottom:14px;border:1px solid ${style.border};background:${style.bg};border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.15)">
         <div style="padding:12px 14px;border-bottom:1px solid ${style.border};display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.15)">
           <span style="font-size:16px">${tierIcon}</span>
-          <div style="font-family:var(--ff);font-size:12px;letter-spacing:2px;color:${style.color};font-weight:800;flex:1">${sec.titulo}</div>
+          <div style="font-family:var(--ff);font-size:12px;letter-spacing:2px;color:${style.color};font-weight:800;flex:1">${_escHTml(sec.titulo)}</div>
           <span style="font-size:9px;color:var(--mt);letter-spacing:1px">${sec.items.filter(i=>i.tipo==='sup').length} items</span>
         </div>
         <div style="padding:4px 14px 8px">${itemsHtml}</div>
