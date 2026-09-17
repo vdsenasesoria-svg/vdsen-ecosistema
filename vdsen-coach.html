@@ -9379,6 +9379,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     modal.style.display = "flex";
 
     const clientSnap = await getDoc(doc(db, "clients", clientId));
+    // T127-H: stale-context guard — abort if coach navigated to a different client
+    // while this fetch was in flight, preventing wrong-client globals and DOM writes.
+    if (_detailClientId !== clientId) return;
     if (!clientSnap.exists()) { body.innerHTML = `<p class="text-red-400">Cliente no encontrado.</p>`; return; }
     _detailClientData = clientSnap.data();
     const c = _detailClientData;
@@ -9394,12 +9397,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailPrevPlanData = null;   // FASE 26 — reset lazy cache al abrir nuevo cliente
     if (c.activePlanId) {
       const planSnap = await getDoc(doc(db, "plans", c.activePlanId));
+      if (_detailClientId !== clientId) return;  // T127-H
       if (planSnap.exists()) _detailPlanData = planSnap.data();
     }
 
     _detailFichaData = null;
     try {
       const fichaSnap = await getDoc(doc(db, 'fichas_onboarding', clientId));
+      if (_detailClientId !== clientId) return;  // T127-H
       if (fichaSnap.exists()) {
         _detailFichaData = fichaSnap.data();
       } else {
@@ -9407,18 +9412,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         if (c.intake && c.intake.data) _detailFichaData = c.intake;
       }
     } catch(_) {}
+    if (_detailClientId !== clientId) return;  // T127-H
 
     _detailRenovacionData = null;
     try {
       const renovSnap = await getDoc(doc(db, 'fichas_renovacion', clientId));
+      if (_detailClientId !== clientId) return;  // T127-H
       if (renovSnap.exists()) _detailRenovacionData = renovSnap.data();
     } catch(_) {}
+    if (_detailClientId !== clientId) return;  // T127-H
 
     _detailLogsData = null;   // FASE 61
     try {
       const logsSnap = await getDoc(doc(db, 'logs', clientId));
+      if (_detailClientId !== clientId) return;  // T127-H
       if (logsSnap.exists()) _detailLogsData = { clientId: clientId, data: logsSnap.data() };  // FASE 65 — provenance
     } catch(_) {}
+    if (_detailClientId !== clientId) return;  // T127-H final guard before DOM write
 
     body.innerHTML = `
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
