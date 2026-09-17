@@ -226,15 +226,14 @@ const cd_ok = /await _doSaveLogs[\s\S]*?showToast\('SES/.test(fnConfirmSessionDo
 assert.ok(cd_ok, '_confirmSessionDone: success toast must appear after await _doSaveLogs');
 console.log('R6-02: _confirmSessionDone success-after-write: OK');
 
-// GAP R6-GAP-02: submitPostSession calls showSessionSummary unconditionally
-// after _confirmSessionDone. If the save failed (error toast already shown),
-// the summary modal still appears — misleading UX.
-const hasUnconditionalSummary = /await _confirmSessionDone[\s\S]{0,80}showSessionSummary/.test(fnSubmitPostSession);
-console.log('R6-02: submitPostSession showSessionSummary-after-failed-save:',
-  hasUnconditionalSummary
-    ? 'GAP (R6-GAP-02) — showSessionSummary unconditional; shows even if save failed'
-    : 'OK');
-// Not asserting — gap documented; Agent B may fix
+// R6-GAP-02 fixed by T125-C: submitPostSession now guards showSessionSummary
+// with `if (_saved !== false)` — only shows summary when save succeeded.
+const hasConditionalSummary = /if\s*\(_saved\s*!==\s*false\)\s*showSessionSummary/.test(fnSubmitPostSession);
+assert.ok(
+  hasConditionalSummary,
+  'R6-02 (T125-C): submitPostSession must guard showSessionSummary with _saved !== false'
+);
+console.log('R6-02: submitPostSession showSessionSummary-after-failed-save: OK (T125-C)');
 
 // ─── CONTRACT R6-03: button re-enable in finally or catch ────────────────────
 console.log('\n=== R6-03: button re-enable on failure ===');
