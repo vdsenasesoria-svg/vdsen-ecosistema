@@ -7879,7 +7879,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const firstWarn = (respJson.warnings || [])[0] || '';
         const detail = [modSummary, firstWarn ? firstWarn.substring(0, 120) : ''].filter(Boolean).join(' — ');
         UI_STATES.needs_coach_review(detail || 'módulos requieren revisión del coach');
-        if (respJson.plan) _vdsenAIShowPreview(respJson, request, clientId);
+        // T144-H: don't force-pop the full-screen preview modal over whatever the
+        // coach is doing now if they've since selected a different client — this
+        // request (2-3 min) may resolve long after they moved on.
+        if (respJson.plan) {
+          if (document.getElementById('planClientSelect')?.value !== clientId) {
+            showToast('🔬 Preview de otro cliente listo — vuelve a seleccionarlo para verlo', true);
+          } else {
+            _vdsenAIShowPreview(respJson, request, clientId);
+          }
+        }
         return;
       }
       if (status === 'INVALID') {
@@ -7895,6 +7904,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const respValidation = window.VDSEN_BUILD.validateGenerationResponse(respJson);
         if (!respValidation.valid) {
           console.warn('[VDSEN D.1] Response contract violation:', respValidation);
+        }
+        // T144-H: same stale-context guard as the NEEDS_COACH_REVIEW branch above.
+        if (document.getElementById('planClientSelect')?.value !== clientId) {
+          setStatus('<span style="color:#22c55e">✅ Plan generado (otro cliente) — vuelve a seleccionarlo para ver el preview</span>');
+          showToast('🔬 Preview de otro cliente listo — vuelve a seleccionarlo para verlo', true);
+          return;
         }
         setStatus('<span style="color:#22c55e">✅ Plan generado — mostrando preview</span>');
         _vdsenAIShowPreview(respJson, request, clientId);
