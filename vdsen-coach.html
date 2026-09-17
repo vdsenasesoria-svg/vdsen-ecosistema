@@ -314,12 +314,14 @@
       </div>
       <div class="flex items-center gap-3 flex-wrap">
         <button id="autoGenBtn" onclick="autoGeneratePlan()" class="btn-primary">🤖 Generar plan automático (motor VDSEN)</button>
+        <span id="autoGenInstantBadge" style="font-size:10px;font-weight:700;color:#ef4444;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);padding:2px 8px;border-radius:10px;white-space:nowrap">⚡ ACTIVA AL INSTANTE — sin preview</span>
         <button id="planPdfBtn" onclick="downloadPlanPDF(document.getElementById('planClientSelect').value)" class="btn-secondary">📄 Descargar PDF del plan</button>
         <span class="text-xs" style="color:var(--text-muted);max-width:420px;line-height:1.4">Lee la ficha del cliente y genera <b>entrenamiento + nutrición + suplementación</b> 100% con el modelo VDSEN. Los guarda y activa solos — el cliente los ve al instante en su app.</span>
       </div>
       <div id="autoGenStatus" class="text-sm mt-3"></div>
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <button id="vdsenPreviewBtn" onclick="vdsenAIPreview()" class="btn-secondary">🔬 Generar con VDSEN AI — Preview</button>
+        <span id="vdsenPreviewRecommendedBadge" style="font-size:10px;font-weight:700;color:#22c55e;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);padding:2px 8px;border-radius:10px;white-space:nowrap">✓ RECOMENDADO — revisas antes de activar</span>
         <span class="text-xs" style="color:var(--text-muted);max-width:420px;line-height:1.4">Igual que arriba, pero te muestra el plan antes de guardarlo — revisas y decides <b>Guardar borrador</b> o <b>Activar</b> por separado. No se activa nada automáticamente.</span>
       </div>
       <div id="vdsenPreviewStatus" class="text-sm mt-2"></div>

@@ -62,7 +62,7 @@ const previewBtnIdx = COACH.indexOf('id="vdsenPreviewBtn"');
 assert.ok(crearPlanIdx !== -1 && autoGenBtnIdx !== -1 && previewBtnIdx !== -1,
   'T141-H prerequisite: crearPlan section, autoGenBtn and vdsenPreviewBtn must all exist');
 assert.ok(
-  crearPlanIdx < autoGenBtnIdx && autoGenBtnIdx < previewBtnIdx && previewBtnIdx - crearPlanIdx < 3000,
+  crearPlanIdx < autoGenBtnIdx && autoGenBtnIdx < previewBtnIdx && previewBtnIdx - crearPlanIdx < 5000,
   'T141-H: vdsenPreviewBtn must live in the same Plan section as autoGenBtn, close enough to ' +
   'share the same #planClientSelect dropdown'
 );
