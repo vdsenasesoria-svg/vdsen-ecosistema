@@ -8727,6 +8727,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ Error: sin preview activo</span>';
       return;
     }
+    // T145-H: block if the coach has since selected a different client — this
+    // preview belongs to _vdsenCurrentPreview.clientId, not whatever is
+    // currently in #planClientSelect.
+    if (document.getElementById('planClientSelect')?.value !== _vdsenCurrentPreview.clientId) {
+      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ Este preview es de otro cliente — vuelve a seleccionarlo para guardar el borrador</span>';
+      return;
+    }
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
     if (d2Status) d2Status.innerHTML = '';
 
@@ -8764,6 +8771,14 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const btn          = document.getElementById('vdsenPreview_activateBtn');
     const d2Status     = document.getElementById('vdsenPreview_d2Status');
     const badge        = document.getElementById('vdsenPreview_badge');
+
+    // T145-H: block if the coach has since selected a different client — same
+    // guard as _vdsenSaveDraftClick, checked again here since activation can
+    // happen well after the draft save, with more time for context to drift.
+    if (document.getElementById('planClientSelect')?.value !== clientId) {
+      if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ Este borrador es de otro cliente — vuelve a seleccionarlo para activar el plan</span>';
+      return;
+    }
 
     const confirmed = window.confirm(
       '¿Activar plan para este cliente?\n\n' +
