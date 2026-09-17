@@ -1346,6 +1346,10 @@ function _clearLiveListeners() {
   if (_liveUnsubLogs)      { try { _liveUnsubLogs();      } catch(e){} _liveUnsubLogs      = null; }
   if (_waitUnsubClientDoc) { try { _waitUnsubClientDoc(); } catch(e){} _waitUnsubClientDoc = null; }
   if (_waitUnsubActivePlan){ try { _waitUnsubActivePlan();} catch(e){} _waitUnsubActivePlan= null; }
+  // T125-C: reset plan-update baseline — if loadPlan is called again without a page reload
+  // (e.g. Firebase token refresh fires onAuthStateChanged), the new _liveUnsubPlan listener
+  // must treat its first snapshot as the new baseline, not compare against a stale timestamp.
+  if (FB) FB._planLastUpdatedAt = null;
 }
 async function loadPlan(user) {
   _clearLiveListeners();
@@ -1626,6 +1630,10 @@ async function loadPlan(user) {
           REAL_WEEK      = 1;
           _rebuildLogsByWeek();
           await _doSaveLogs(); // Guardar el estado limpio de la semana 1
+          // T123-C: clear stale rest timer — the old plan's in-progress rest must not bleed into
+          // the new plan session. The restore code later in loadPlan reads localStorage blindly,
+          // so we must wipe these keys now while we know a plan switch occurred.
+          try { localStorage.removeItem('vdsen_restEnd'); localStorage.removeItem('vdsen_restTotal'); } catch(e2) {}
           showToast('✅ Nuevo plan cargado — comenzando desde semana 1');
           _showBitacoraInfo = true;
         } else {
@@ -3392,6 +3400,16 @@ async function _refreshLogsFromFirestore(reason) {
     const snap = await FB.getDoc(ref);
     if (!snap.exists()) return;
     const data = snap.data();
+    // T124-C: guard against stale entries from a different plan.
+    // After a plan switch the legacy logs/{uid} doc may still carry planId of the previous plan
+    // until the first _doSaveLogs() of the new plan updates it.  Loading those entries here
+    // would populate LOGS with the wrong plan's data (visible on background→foreground resume).
+    if (data.planId && ACTIVE_PLAN_ID && data.planId !== ACTIVE_PLAN_ID) {
+      // Preserve cross-plan weight history only; do not load entries or week from the old plan.
+      if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
+      if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
+      return;
+    }
     var fsWeek = parseInt(data.currentWeek || 1);
     var fsEntries = data.entries || {};
     var weekChanged = (fsWeek !== REAL_WEEK);
