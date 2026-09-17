@@ -8367,7 +8367,7 @@ async function _confirmSessionDone(di) {
     showToast('⚠ NO SE GUARDÓ — revisa conexión / errores. Reintenta.', true);
     renderEntrenamiento();
     renderResumen();
-    return;
+    return false; // T125-C: señala fallo al caller para suprimir el resumen de sesión
   }
   showToast('SESIÓN COMPLETADA ✓');
   _autoAdvanceDia(); // avanzar al siguiente día pendiente antes de re-renderizar
@@ -8377,6 +8377,7 @@ async function _confirmSessionDone(di) {
   // Avanza mientras la semana REAL siga completa, hasta 6 (deload).
   // Esto cubre el caso de marcar varias semanas atrasadas de un tirón.
   await _autoAdvanceWeekIfDone(CURRENT_WEEK !== REAL_WEEK /*fromOtherWeekView*/);
+  return true; // T125-C: señala éxito al caller
 }
 
 // Avanza REAL_WEEK mientras todas las sesiones de la semana real estén completas.
@@ -9684,9 +9685,16 @@ async function guardarNutriLog() {
   LOGS[k].fecha = _todayKey();
   LOGS[k].ts = Date.now();
   try {
-    await saveLogs();
-    showToast('✓ Registro nutricional guardado');
-    renderNutricion();
+    // T126-C: usar _doSaveLogs() directamente (bypass debounce) para que el await sea real.
+    // saveLogs() solo pone un timer y resuelve de inmediato — el toast se disparaba siempre
+    // sin importar si Firestore falló.
+    var _ok = await _doSaveLogs();
+    if (_ok === false) {
+      showToast('⚠ Error al guardar el registro — revisa conexión', true);
+    } else {
+      showToast('✓ Registro nutricional guardado');
+      renderNutricion();
+    }
   } finally {
     if (_nlBtn) { _nlBtn.disabled = false; _nlBtn.textContent = '✓ GUARDAR REGISTRO'; }
   }
@@ -12517,8 +12525,10 @@ async function submitPostSession() {
     // Sin progrec esta vez — no bloquear el guardado de la sesión
   }
 
-  await _confirmSessionDone(di);
-  showSessionSummary(di);
+  var _saved = await _confirmSessionDone(di);
+  // T125-C: solo mostrar el resumen si la sesión se persistió con éxito en Firestore.
+  // Si _confirmSessionDone devolvió false, ya mostró toast de error — no mostrar "SESIÓN COMPLETA".
+  if (_saved !== false) showSessionSummary(di);
 }
 
 // ── Resumen visual post-sesión ────────────────────────────────────────────────
