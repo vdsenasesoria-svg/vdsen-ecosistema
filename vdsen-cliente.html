@@ -12776,8 +12776,14 @@ function _getExposures(prescriptionExerciseId, di, ei, nombre, maxExposures) {
       if (candidateSets.length && Object.keys(positions).length === 1) {
         candidateSets.sort(function(a,b){ return a.setIdx - b.setIdx; });
         sets = candidateSets.map(function(c){ return c.entry; }); confidence = 'HIGH';
+      } else if (candidateSets.length && Object.keys(positions).length > 1) {
+        // DUPLICATE_PRESCRIPTION_ID: same id logged at >1 (di,ei) position this week —
+        // corrupt identity for this week. Same contract as _getPrevWeekData: do not
+        // fall back to positional matching (risks mixing load/reps from a DIFFERENT
+        // exercise into this one's trend/PR calculation). Skip this week entirely.
+        continue;
       }
-      // ambiguity → skip, fall through to positional
+      // not found at all (no candidateSets) → fall through to positional
     }
 
     if (!sets.length) {
