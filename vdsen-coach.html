@@ -2858,6 +2858,22 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     };
   }
 
+  // T154-H: when Client didn't complete the 5-item WHO-5 questionnaire (ci.who5
+  // absent), show the real Ehrenstein wellness fields the client DID report
+  // instead of a fake/broken WHO-5 state. No composite score, no new thresholds
+  // — just a plain listing of whichever fields exist, on their own native scale.
+  function _ciWellnessFallbackText(ci) {
+    if (!ci || ci.who5 != null) return null;
+    var parts = [];
+    if (ci.estres != null)     parts.push('Estrés '    + ci.estres     + '/5');
+    if (ci.animo != null)      parts.push('Ánimo '     + ci.animo      + '/5');
+    if (ci.fatiga != null)     parts.push('Energía '   + ci.fatiga     + '/5');
+    if (ci.sueno_cal != null)  parts.push('Sueño '     + ci.sueno_cal  + '/5');
+    if (ci.dolor_gral != null) parts.push('Dolor '     + ci.dolor_gral + '/5');
+    if (ci.vulner != null)     parts.push('Vulnerab. ' + ci.vulner     + '/7');
+    return parts.length ? parts.join(' · ') : null;
+  }
+
   async function loadMonitorClients() {
     if (!currentCoach) return;
     if (window._monitorUnsub) { window._monitorUnsub(); window._monitorUnsub = null; }
@@ -3027,7 +3043,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             const who5 = ci.who5 != null ? parseInt(ci.who5) : null;
             const who5Color = who5 == null ? '#888' : (who5 >= 68 ? '#44BB88' : who5 >= 52 ? '#C4FF00' : '#FF4444');
             const pesoBadge = ci.peso ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">Peso:</span> <span style="color:#F4F4F0;font-weight:700">${ci.peso} kg</span>${ciPrev.peso?`<span style="color:#555"> (prev:${ciPrev.peso})</span>`:''}</div>` : '';
-            const who5Badge = who5 != null ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid ${who5Color}40"><span style="color:#888">WHO-5:</span> <span style="color:${who5Color};font-weight:700">${who5}</span></div>` : '';
+            const wellnessFallback = who5 == null ? _ciWellnessFallbackText(ci) : null;
+            const who5Badge = who5 != null ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid ${who5Color}40"><span style="color:#888">WHO-5:</span> <span style="color:${who5Color};font-weight:700">${who5}</span></div>` : (wellnessFallback ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">Bienestar / Check-in:</span> <span style="color:#F4F4F0;font-weight:700">${wellnessFallback}</span></div>` : '');
             const hrvBadge = ci.hrv ? `<div class="px-3 py-1.5 rounded-lg text-xs" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)"><span style="color:#888">HRV:</span> <span style="color:#c89cff;font-weight:700">${ci.hrv}</span></div>` : '';
             // Last postsession
             let lastPost = null; let lastPostW = 0, lastPostD = 0;
@@ -3828,7 +3845,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(30,30,30);
       doc.text(`Sem ${w}:`, margin, y);
       doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
-      doc.text(`Peso: ${ci.peso||'—'} kg  ·  HRV: ${ci.hrv||'—'}  ·  WHO-5: ${ci.who5||'—'}`, margin + 18, y);
+      const wellnessLine = ci.who5 != null ? `WHO-5: ${ci.who5}` : (function(){ const fb = _ciWellnessFallbackText(ci); return fb ? `Bienestar/Check-in: ${fb}` : 'WHO-5: —'; })();
+      doc.text(`Peso: ${ci.peso||'—'} kg  ·  HRV: ${ci.hrv||'—'}  ·  ${wellnessLine}`, margin + 18, y);
       y += 6;
     }
 
@@ -4071,7 +4089,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           checkPage(7);
           pdf.setFontSize(8); pdf.setFont('helvetica','bold'); pdf.setTextColor(40,40,40); pdf.text(`Sem ${w}:`, margin, y);
           pdf.setFont('helvetica','normal'); pdf.setTextColor(80,80,80);
-          pdf.text(`Peso ${ci.peso ?? '—'} kg  ·  HRV ${ci.hrv ?? '—'}  ·  WHO-5 ${ci.who5 ?? '—'}`, margin + 16, y);
+          const wellnessLine2 = ci.who5 != null ? `WHO-5 ${ci.who5}` : (function(){ const fb = _ciWellnessFallbackText(ci); return fb ? `Bienestar/Check-in ${fb}` : 'WHO-5 —'; })();
+          pdf.text(`Peso ${ci.peso ?? '—'} kg  ·  HRV ${ci.hrv ?? '—'}  ·  ${wellnessLine2}`, margin + 16, y);
           y += 5;
         });
         y += 2;
