@@ -1340,6 +1340,11 @@ window.showPhoneConfirmModal = showPhoneConfirmModal;
 // ══════════════════════════════════════════════════
 var _liveUnsubClient = null, _liveUnsubPlan = null, _liveUnsubLogs = null;
 var _waitUnsubClientDoc = null, _waitUnsubActivePlan = null;
+// T127-C: generation counter — incremented each time loadPlan starts.
+// Listeners captured their generation at registration time; if a newer loadPlan
+// has started by the time this call reaches the registration point, this call
+// must abort registering to avoid orphaning the newer call's globals.
+var _loadPlanSeq = 0;
 function _clearLiveListeners() {
   if (_liveUnsubClient)    { try { _liveUnsubClient();    } catch(e){} _liveUnsubClient    = null; }
   if (_liveUnsubPlan)      { try { _liveUnsubPlan();      } catch(e){} _liveUnsubPlan      = null; }
@@ -1353,6 +1358,7 @@ function _clearLiveListeners() {
 }
 async function loadPlan(user) {
   _clearLiveListeners();
+  var _mySeq = ++_loadPlanSeq; // T127-C: capture generation — detect superseding concurrent calls
   USER = user;
   if (!user || !user.email) {
     showScreen('scrLogin');
@@ -1690,6 +1696,13 @@ async function loadPlan(user) {
     if (!clientData.phoneConfirmedAt && !(clientData.phoneSkippedAt && Date.now() - clientData.phoneSkippedAt < 7*86400000)) {
       setTimeout(function(){ showPhoneConfirmModal(clientRef, clientData); }, 900);
     }
+
+    // T127-C: abort if a newer loadPlan call has already started (concurrent onAuthStateChanged).
+    // Without this guard, the newer call's _clearLiveListeners() runs before this call has
+    // registered any listeners, so it clears nothing. Then this call registers listeners and
+    // stores them in the globals; the newer call overwrites the globals without cancelling
+    // these subscriptions — orphaning them permanently (P1: duplicate listener accumulation).
+    if (_mySeq !== _loadPlanSeq) return;
 
     // Escuchar cambios en tiempo real: cliente (nutrición, nuevo plan) + plan (ediciones del coach)
     try {
