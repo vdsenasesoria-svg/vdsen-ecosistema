@@ -1,0 +1,118 @@
+AGENT C — QA Round 6 Report
+Error Recovery and Failure Contract Matrix
+==========================================
+Date: 2026-09-17
+Branch: claude/qa-post-t124
+Baseline: 0437901 (T124)
+
+─────────────────────────────────────────────────────────────────────
+COMPLETE FAILURE CONTRACTS MATRIX
+─────────────────────────────────────────────────────────────────────
+
+Operation                      | try/catch | success-after-write | btn-restore  | data-preserved
+-------------------------------|-----------|---------------------|--------------|---------------
+CLIENT: guardarCI              |    Y      |         Y           |  Y (finally) |  Y (pre-try)
+CLIENT: submitPostSession      |  Y(inner) |      N (GAP-02)     |  N (GAP-03)  |  Y
+CLIENT: _confirmSessionDone    |  N(ret-F) |         Y           |  N/A         |  Y (rollback)
+CLIENT: _doSaveLogs            |    Y      |         Y           |  N/A         |  N/A
+COACH:  saveTrainingPlan       |    Y      |         Y           |  Y (finally) |  Y (DOM)
+COACH:  saveManualPlan         |    Y      |         Y           |  Y (finally) |  Y (in-try)
+COACH:  saveImportedPlan       |    Y      |         Y           |  Y (finally) |  Y (in-try)
+COACH:  saveNutritionPlan      |    Y      |         Y           |  Y (finally) |  Y (DOM)
+COACH:  saveSupplementPlan     |    Y      |         Y           |  Y (finally) |  Y (DOM)
+COACH:  showUpdatePlanModal    |    Y      |         Y           |  Y (catch)   |  Y (DOM)
+COACH:  activatePlan (inline)  |  Y(embed) |      Y(embed)       |  Y(embed)    |  Y
+COACH:  _applyTemplateToClient |    N      |         N           |  N           |  Y
+
+Legend:
+  (ret-F)  = return-false pattern: _doSaveLogs catches all exceptions and returns false
+  (embed)  = activation embedded in saveImportedPlan / saveManualPlan (both fully guarded)
+  (in-try) = state variable cleared inside try block only — preserved in memory on failure
+  N/A      = no interactive button in this code path
+
+Notes:
+  - activatePlan: no standalone function exists. The `clients/{uid}.activePlanId` write
+    is embedded in saveImportedPlan and saveManualPlan (both fully guarded with try/catch
+    + finally + button restore). The helper _applyTemplateToClient does template-based
+    activation and is NOT guarded (see GAP-04).
+  - _confirmSessionDone uses a return-false contract (not try/catch). It sets LOGS[key]
+    optimistically, awaits _doSaveLogs(), and deletes LOGS[key] if the return value is
+    false. This is safe because _doSaveLogs absorbs all exceptions internally.
+
+─────────────────────────────────────────────────────────────────────
+GAPS FOUND (4 total)
+─────────────────────────────────────────────────────────────────────
+
+R6-GAP-01 (SEVERITY: LOW)
+  Function: submitPostSession (vdsen-cliente.html)
+  Issue: The call to `await _confirmSessionDone(di)` is not wrapped in a try/catch.
+  Current safety: _confirmSessionDone never throws (its own write is guarded by
+  _doSaveLogs which absorbs all exceptions). This is a fragile contract — a future
+  refactor of _confirmSessionDone could expose an unhandled rejection.
+  Risk: Low in current code, medium in future.
+
+R6-GAP-02 (SEVERITY: MEDIUM)
+  Function: submitPostSession (vdsen-cliente.html)
+  Issue: `showSessionSummary(di)` is called unconditionally after
+  `await _confirmSessionDone(di)`. If the save failed, _confirmSessionDone shows an
+  error toast ("⚠ NO SE GUARDÓ") AND then submitPostSession proceeds to call
+  showSessionSummary — showing a "session complete" summary modal even though the
+  session was not persisted. The user sees conflicting feedback: error toast followed
+  by success summary.
+  Risk: Medium UX confusion. User may believe the session was saved when it was not.
+  Fix: Check a return value from _confirmSessionDone (or have it set a flag) before
+  calling showSessionSummary.
+
+R6-GAP-03 (SEVERITY: LOW)
+  Function: submitPostSession (vdsen-cliente.html)
+  Issue: The in-flight guard `_postSessionSubmitting` is reset to false by
+  closePostSessionModal() which is called BEFORE `await _confirmSessionDone(di)`.
+  There is no finally block to reset it on unexpected exception.
+  Risk: Low in current code (because _confirmSessionDone never throws). Theoretical
+  stuck-guard if an exception were ever introduced in the submit path.
+
+R6-GAP-04 (SEVERITY: MEDIUM)
+  Function: _applyTemplateToClient (vdsen-coach.html)
+  Issue: This helper (called by openPlanTemplateLibrary) performs two Firestore writes:
+  `await addDoc(collection(db, 'plans'), ...)` and
+  `await updateDoc(doc(db, 'clients', clientId), { activePlanId: planRef.id })`.
+  Neither is wrapped in try/catch, there is no finally block, and there is no user-
+  visible error message on failure. A Firestore write failure silently aborts the
+  template application with no feedback to the coach and no state restoration.
+  Risk: Medium — silent data loss / silent activation failure.
+  Fix: Wrap the writes in try/catch with a showToast on error.
+
+─────────────────────────────────────────────────────────────────────
+TEST RESULTS
+─────────────────────────────────────────────────────────────────────
+
+New test file: tests/qa_r6_failure_contracts.test.js
+
+Contracts tested (hard asserts — must pass):
+  R6-00: all 10 critical functions exist in source
+  R6-01: 8 functions have try/catch (guardarCI, _doSaveLogs, saveTrainingPlan,
+         saveManualPlan, saveImportedPlan, saveNutritionPlan, saveSupplementPlan,
+         showUpdatePlanModal)
+  R6-02: all 8 writes have success toast/navigation AFTER the last await in their
+         try block (saveTrainingPlan, saveManualPlan, saveImportedPlan,
+         saveNutritionPlan, saveSupplementPlan, showUpdatePlanModal, guardarCI,
+         _confirmSessionDone)
+  R6-03: all 7 button-bearing functions restore disabled=false in catch or finally
+         (all 5 COACH saves, showUpdatePlanModal, guardarCI)
+  R6-04: form state preserved — guardarCI builds LOGS[k] before try; saveManualPlan
+         and saveImportedPlan clear state only inside try (after writes)
+  R6-05: _confirmSessionDone sets LOGS[key] before write; rolls back on failure;
+         _autoAdvanceWeekIfDone guards REAL_WEEK++ behind all-done check
+
+Gaps documented (console.log, no assert fail):
+  R6-GAP-01, R6-GAP-02, R6-GAP-03: submitPostSession write path
+  R6-GAP-04: _applyTemplateToClient (template activation helper)
+
+Full suite results:
+  node --test tests/*.test.js
+  41/41 pass, 0 fail
+
+─────────────────────────────────────────────────────────────────────
+FINAL HEAD COMMIT HASH
+─────────────────────────────────────────────────────────────────────
+(updated after commit)
