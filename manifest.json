@@ -3,6 +3,7 @@
   "short_name": "VDSEN",
   "description": "App de entrenamiento VDSEN",
   "start_url": "/cliente",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#0a0a0a",
