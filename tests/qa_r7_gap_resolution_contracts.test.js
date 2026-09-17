@@ -11,9 +11,7 @@
 //            silent failure, no user feedback, no UI state restore.
 //            Fix: wrap addDoc + updateDoc in try/catch; show error toast in catch.
 //
-// Tests follow the gap-documentation pattern: they pass (exit 0) regardless of
-// whether the fix is already merged.  Gaps are logged to stdout; the orchestrator
-// upgrades log lines to assert() calls after integration.
+// Tests verify both fixes are present in the integrated branch.
 
 const assert = require('assert');
 const fs     = require('fs');
@@ -127,20 +125,9 @@ const pss_finallyResetIdx = (() => {
 
 const pss_finallyHasReset = pss_finallyResetIdx !== -1;
 
-if (!pss_hasFinally || !pss_finallyHasReset) {
-  // Document the gap — do NOT assert; Agent A may be landing the fix in parallel.
-  console.log('R7-01 Check 2: _postSessionSubmitting finally guard: GAP (R6-GAP-03)');
-  console.log('  Current state: reset via closePostSessionModal() called PRE-await;');
-  console.log('  no finally block ensures reset on unexpected exception.');
-  console.log('  Expected fix: try { ... } finally { _postSessionSubmitting = false; ... }');
-} else {
-  // Fix is already merged — upgrade to an assertion.
-  assert.ok(
-    true,  // already verified above
-    'R7-01 Check 2: _postSessionSubmitting finally guard present and resets flag'
-  );
-  console.log('R7-01 Check 2: _postSessionSubmitting reset in finally — OK (fix merged)');
-}
+assert.ok(pss_hasFinally, 'R7-01 Check 2: submitPostSession must have a finally block');
+assert.ok(pss_finallyHasReset, 'R7-01 Check 2: finally block must reset _postSessionSubmitting = false');
+console.log('R7-01 Check 2: _postSessionSubmitting reset in finally — OK');
 
 // ─── CONTRACT R7-02: _applyTemplateToClient error recovery ───────────────────
 // (R6-GAP-04)
@@ -152,31 +139,17 @@ console.log('\n=== R7-02: _applyTemplateToClient error recovery (R6-GAP-04) ==='
 const at_hasTry   = /\btry\s*\{/.test(fnApplyTemplate);
 const at_hasCatch = /\bcatch\s*\(/.test(fnApplyTemplate);
 
-if (!at_hasTry || !at_hasCatch) {
-  // Document the gap — do NOT assert; Agent B may be landing the fix in parallel.
-  console.log('R7-02: _applyTemplateToClient error recovery: GAP (R6-GAP-04)');
-  console.log('  has try:', at_hasTry, '/ has catch:', at_hasCatch);
-  console.log('  Current state: addDoc + updateDoc are unguarded;');
-  console.log('  a Firestore error silently escapes with no user feedback.');
-  console.log('  Expected fix: wrap addDoc+updateDoc in try/catch; showToast(err, true) in catch.');
-} else {
-  // Fix is already merged.
-  assert.ok(at_hasTry,   '_applyTemplateToClient must have try block');
-  assert.ok(at_hasCatch, '_applyTemplateToClient must have catch block');
-  console.log('R7-02: _applyTemplateToClient has try/catch — OK (fix merged)');
+assert.ok(at_hasTry,   '_applyTemplateToClient must have try block');
+assert.ok(at_hasCatch, '_applyTemplateToClient must have catch block');
+console.log('R7-02: _applyTemplateToClient has try/catch — OK');
 
-  // Additional check: catch block should surface the error to the user.
-  const catchMatch = /\bcatch\s*\(/.exec(fnApplyTemplate);
-  if (catchMatch) {
-    const afterCatch = fnApplyTemplate.slice(catchMatch.index);
-    const hasFeedback = /showToast/.test(afterCatch.slice(0, afterCatch.indexOf('}') + 1));
-    if (!hasFeedback) {
-      console.log('R7-02 (advisory): catch block found but no showToast — user feedback may be missing');
-    } else {
-      console.log('R7-02: catch block calls showToast — user receives error feedback: OK');
-    }
-  }
-}
+// catch block must surface the error to the user.
+const catchMatch = /\bcatch\s*\(/.exec(fnApplyTemplate);
+assert.ok(catchMatch, '_applyTemplateToClient catch clause must exist');
+const afterCatch = fnApplyTemplate.slice(catchMatch.index);
+const hasFeedback = /showToast/.test(afterCatch.slice(0, afterCatch.indexOf('}') + 1));
+assert.ok(hasFeedback, '_applyTemplateToClient catch block must call showToast for user feedback');
+console.log('R7-02: catch block calls showToast — user receives error feedback: OK');
 
 // ─── RESIDUAL SCAN ────────────────────────────────────────────────────────────
 // Brief scan for patterns similar to R6-GAP-03 and R6-GAP-04.
@@ -299,11 +272,8 @@ console.log([
   '',
   'Contract  | Finding                              | Status',
   '----------|--------------------------------------|-------',
-  'R7-01     | _postSessionSubmitting finally guard  | ' + (pss_hasFinally && pss_finallyHasReset ? 'OK (fix merged)' : 'GAP (R6-GAP-03) — Agent A fixing'),
-  'R7-02     | _applyTemplateToClient try/catch      | ' + (at_hasTry && at_hasCatch ? 'OK (fix merged)' : 'GAP (R6-GAP-04) — Agent B fixing'),
-  '',
-  'Upgrade path: once both gaps are fixed and integrated, promote the gap-doc',
-  'console.log blocks above to assert.ok() calls (delete the if/else wrappers).',
+  'R7-01     | _postSessionSubmitting finally guard  | OK',
+  'R7-02     | _applyTemplateToClient try/catch      | OK',
   '',
 ].join('\n'));
 
