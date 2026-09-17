@@ -15404,6 +15404,12 @@ El esfuerzo no es negociable.
     days = _restampPrescriptionIds(days);
     try {
       // T126-H: wrap Firestore writes so failures surface as toast, not silent rejection
+      // T138-H: back up the client's outgoing active plan (if any) before it is
+      // orphaned by the activePlanId repoint below — same gap as T134-H/T135-H
+      // (saveManualPlan/duplicatePlan): applying a template silently made any
+      // existing active plan unreachable and invisible to the "plan anterior"
+      // compare view (reads plans_backup), with no backup and no confirmation.
+      await backupPlanIfExists(clientId);
       // Crear plan primero; solo asignar activePlanId si el create tiene éxito
       const planRef = await addDoc(collection(db, 'plans'), {
         days,
@@ -17943,6 +17949,10 @@ El esfuerzo no es negociable.
     }));
 
     try {
+      // T138-H: back up the client's outgoing active plan before it is
+      // orphaned below — same gap fixed in _applyTemplateToClient/
+      // saveManualPlan/duplicatePlan (T134-H/T135-H).
+      await backupPlanIfExists(clientId);
       const planRef = await addDoc(collection(db, "plans"), {
         days: _stampPrescriptionIds(days), weeks: template.weeks || 6, daysPerWeek: days.length,
         coachId: currentCoach.uid, clientId, status: 'active',
