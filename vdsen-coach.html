@@ -1658,6 +1658,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     window._vdsenSignOut = () => {
       if (window._monitorUnsub)    { window._monitorUnsub();    window._monitorUnsub = null; }
       if (window._monitorPlanUnsub){ window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
+      if (window._monitorClientUnsub){ window._monitorClientUnsub(); window._monitorClientUnsub = null; } // T148-H
       if (window._fichasUnsub)     { window._fichasUnsub();     window._fichasUnsub = null; }
       signOut(auth);
     };
@@ -2879,6 +2880,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       const _myMonGen = ++_monitorGeneration;
       if (window._monitorUnsub) { window._monitorUnsub(); window._monitorUnsub = null; }
       if (window._monitorPlanUnsub) { window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
+      if (window._monitorClientUnsub) { window._monitorClientUnsub(); window._monitorClientUnsub = null; } // T148-H
       if (!select.value) return;
       const container = document.getElementById("monitorTable");
       container.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos del cliente...</div>`;
@@ -2897,15 +2899,31 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       if (_myMonGen !== _monitorGeneration) return;
 
       // onSnapshot para plan: mantiene _activePlanCache fresco si el plan es editado
-      if (window._monitorPlanUnsub) { window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
-      if (clientData.activePlanId) {
-        window._monitorPlanUnsub = onSnapshot(doc(db, 'plans', clientData.activePlanId), (planSnap) => {
+      let _monitorActivePlanId = clientData.activePlanId || null;
+      function _monitorSubscribeToPlan(planId) {
+        if (window._monitorPlanUnsub) { window._monitorPlanUnsub(); window._monitorPlanUnsub = null; }
+        if (!planId) { _activePlanCache = null; return; }
+        window._monitorPlanUnsub = onSnapshot(doc(db, 'plans', planId), (planSnap) => {
           if (planSnap.exists()) {
             _activePlanCache = planSnap.data();
             _renderMonitorForWeek();
           }
         }, () => {});
       }
+      _monitorSubscribeToPlan(_monitorActivePlanId);
+      // T148-H: onSnapshot on the CLIENT doc — if activePlanId changes while this
+      // client is being monitored (plan activated/replaced from any path), re-point
+      // the plan listener at the new plan instead of leaving it stuck on the
+      // superseded plan doc (which is never deleted/mutated, so the stale listener
+      // would otherwise keep firing with old data forever).
+      window._monitorClientUnsub = onSnapshot(doc(db, 'clients', select.value), (clientSnap) => {
+        if (!clientSnap.exists()) return;
+        const newActivePlanId = clientSnap.data().activePlanId || null;
+        if (newActivePlanId === _monitorActivePlanId) return;
+        _monitorActivePlanId = newActivePlanId;
+        _monitorSubscribeToPlan(newActivePlanId);
+        _renderMonitorForWeek();
+      }, () => {});
 
       // Estado de navegación semanal — reset al cambiar de cliente
       let _monitorSelectedWeek = null;
