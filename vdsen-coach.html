@@ -5076,19 +5076,28 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   let _savingImportedPlan = false;
+  // T136-H: returns true only when the plan was actually written & activated,
+  // false on every early-exit (missing selection, gate BLOCK, coach declines
+  // the "reemplazar plan activo" confirm) or caught error. Callers that chain
+  // nutrition/supplement/pharma writes after this (autoGeneratePlan,
+  // loadPlanFromPastedAnalysis, the AI review-confirm flow, _submitModalImport)
+  // must check this return value — previously they ignored it and would still
+  // report "día(s) de entrenamiento" saved / write the other client fields even
+  // when the coach cancelled the replace-plan confirm, leaving inconsistent
+  // partial state with a misleading success message.
   async function saveImportedPlan(clientIdArg) {
-    if (_savingImportedPlan) return;
-    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return; }
+    if (_savingImportedPlan) return false;
+    if (!currentCoach) { showToast("⚠️ No hay sesión activa.", true); return false; }
     const clientId = clientIdArg || document.getElementById("planClientSelect").value;
-    if (!clientId) { showToast("Selecciona un cliente primero", true); return; }
+    if (!clientId) { showToast("Selecciona un cliente primero", true); return false; }
     const planObj = window._importedPlan;
-    if (!planObj) { showToast("No hay plan cargado", true); return; }
+    if (!planObj) { showToast("No hay plan cargado", true); return false; }
     // FASE 78 — Unified pre-write plan gate (integrates F70 structural check + load + VETO + nutrition)
     if (typeof window._runPreWritePlanGate === 'function') {
       const _g78 = window._runPreWritePlanGate(planObj, {});
       if (_g78.status === 'BLOCK') {
         showToast('⚠️ Plan inválido — no se guardó: ' + _g78.blockers.slice(0, 2).join(' · '), true);
-        return;
+        return false;
       }
       if (_g78.status === 'REVIEW_REQUIRED' && _g78.blockers.length) {
         console.warn('[VDSEN F78] plan gate REVIEW_REQUIRED:', _g78.blockers);
@@ -5107,7 +5116,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         const prevDays = prevPlanSnap && prevPlanSnap.exists() ? (prevPlanSnap.data().days || []) : [];
         const newDays  = planObj.days || [];
         const confirmed = await _askConfirm(`⚠️ Reemplazar plan activo\n\nPlan actual: ${prevDays.length} días · ${prevPlanSnap?.data()?.weeks||'?'} semanas\nPlan nuevo: ${newDays.length} días · ${newDays[0]?.exercises?.length||'?'} ej. el primer día\n\nEl plan actual se guardará como respaldo y será reemplazado.`);
-        if (!confirmed) return;
+        if (!confirmed) return false;
       }
       // Backup automático del plan anterior
       await backupPlanIfExists(clientId);
@@ -5132,8 +5141,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       window._importedPlan = null;
       document.getElementById("planBuilder").innerHTML = "";
       document.getElementById("parsedPlanPreview") && (document.getElementById("parsedPlanPreview").innerHTML = "");
+      return true;
     } catch (e) {
       showToast("Error al guardar: " + e.message, true);
+      return false;
     } finally {
       _savingImportedPlan = false;
       if (_importBtn) { _importBtn.disabled = false; _importBtn.textContent = '💾 Guardar y activar plan'; }
@@ -7508,7 +7519,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       const planObj = training ? _normalizeTrainingPlan(training) : null;
       if (planObj) {
         window._importedPlan = planObj;
-        await saveImportedPlan(clientId);  // activa el plan del cliente
+        // T136-H: saveImportedPlan returns false (no throw) when the coach declines
+        // the "reemplazar plan activo" confirm, the plan gate blocks, etc. Without
+        // checking this, we'd still report "entrenamiento" as saved and go on to
+        // write nutrition/supplementación/farmacología to the client doc — a
+        // partial-state write the coach never approved.
+        const _trainingSaved = await saveImportedPlan(clientId);  // activa el plan del cliente
+        if (!_trainingSaved) {
+          setStatus('<div style="color:#888">Generación cancelada — el plan de entrenamiento no se guardó.</div>');
+          return;
+        }
         saved.push(planObj.days.length + ' día(s) de entrenamiento');
       }
       const clientUpdates = {};
@@ -8771,7 +8791,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         throw new Error('No encontré bloques JSON válidos (entrenamiento/nutrición/suplementación/farmacología) en el texto pegado.');
       const saved = [];
       const planObj = training ? _normalizeTrainingPlan(training) : null;
-      if (planObj) { window._importedPlan = planObj; await saveImportedPlan(clientId); saved.push(planObj.days.length + ' día(s) de entrenamiento'); }
+      if (planObj) {
+        window._importedPlan = planObj;
+        // T136-H: don't report/apply the rest of the batch if the coach declined
+        // saveImportedPlan's "reemplazar plan activo" confirm (it now returns
+        // false instead of throwing).
+        const _trainingSaved = await saveImportedPlan(clientId);
+        if (!_trainingSaved) {
+          setStatus('<div style="color:var(--danger);font-weight:700">Carga cancelada — el plan de entrenamiento no se guardó.</div>');
+          return;
+        }
+        saved.push(planObj.days.length + ' día(s) de entrenamiento');
+      }
       const upd = {};
       if (nutrition) { upd.nutritionPlan = _nutritionJsonToPlan(nutrition); upd.nutritionRaw = nutrition; saved.push('nutrición'); }
       const sp = supplements ? _supplementsJsonToPlan(supplements) : null;
@@ -12112,7 +12143,13 @@ El esfuerzo no es negociable.
       const planObj = training ? _normalizeTrainingPlan(training) : null;
       if (planObj) {
         window._importedPlan = planObj;
-        await saveImportedPlan(clientId);
+        // T136-H: abort the rest of the apply if the coach declined saveImportedPlan's
+        // "reemplazar plan activo" confirm (returns false instead of throwing).
+        const _trainingSaved2 = await saveImportedPlan(clientId);
+        if (!_trainingSaved2) {
+          setStatus('<div style="color:#e05555">Activación cancelada — el plan de entrenamiento no se guardó.</div>');
+          return;
+        }
         saved.push(planObj.days.length + ' día(s) de entrenamiento');
         // Reload plan data for the Plan tab
         const newPlanId = (await getDoc(doc(db, 'clients', clientId))).data()?.activePlanId;
@@ -14472,7 +14509,15 @@ El esfuerzo no es negociable.
         return;
       }
       window._importedPlan = planObj;
-      await saveImportedPlan(clientId);
+      // T136-H: saveImportedPlan returns false (no throw) when the coach declines
+      // its "reemplazar plan activo" confirm or a gate blocks the write. Without
+      // this check we'd still reload/close the modal as if the plan had been
+      // saved and activated.
+      const _trainingSaved3 = await saveImportedPlan(clientId);
+      if (!_trainingSaved3) {
+        if (status) status.textContent = 'Cancelado — el plan de entrenamiento no se guardó.';
+        return;
+      }
       // T111-H: refresh modal so Plan tab reflects the newly saved plan.
       // showClientDetail resets the whole modal body, so clearing _importPlanArea
       // is not necessary — the area will no longer exist after the reload.
