@@ -13917,7 +13917,14 @@ function calculateProgression(di, postData) {
       if (prevWeek && prevWeek.avgReps > 0) {
         // Mantuvo reps a mismo/menor RIR con misma/más carga
         var repsHeld   = avgReps >= prevWeek.avgReps - 0.5;
-        var rirHeld    = avgRIR  <= prevWeek.avgRIR  + 0.5;
+        // prevWeek.avgRIR es null cuando la semana anterior no tiene rir_real
+        // válido (campo opcional — el cliente puede registrar carga/reps sin
+        // RIR). Sin dato previo no hay señal de retroceso que evaluar: no
+        // bloquear la progresión por un `null + 0.5` que en JS se evalúa
+        // como `avgRIR <= 0.5` y vetaría increase_load casi siempre.
+        var rirHeld    = (prevWeek.avgRIR === null || prevWeek.avgRIR === undefined)
+                        ? true
+                        : (avgRIR <= prevWeek.avgRIR + 0.5);
         var loadHeld   = load    >= prevWeek.avgLoad * 0.98;
         performedWell  = repsHeld && rirHeld && loadHeld;
       } else {
