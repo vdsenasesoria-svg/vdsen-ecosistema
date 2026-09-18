@@ -1699,8 +1699,8 @@ async function loadPlan(user) {
     var _rTab = 1, _rDia = DIA_ACTIVO;
     try { var _t = parseInt(localStorage.getItem('vdsen_last_tab')); if (!isNaN(_t) && _t >= 0 && _t <= 4) _rTab = _t; } catch(e) {}
     try { var _d = parseInt(localStorage.getItem('vdsen_last_dia')); if (!isNaN(_d) && _d >= 0) _rDia = _d; } catch(e) {}
-    DIA_ACTIVO = _rDia;
     CURRENT_WEEK = REAL_WEEK;
+    DIA_ACTIVO = _resolveResumeDayIndex(_rDia);
     goTab(_rTab);
     // Restaurar rest timer si un page reload interrumpió el descanso
     setTimeout(function() {
@@ -1890,6 +1890,22 @@ function _autoAdvanceDia() {
   }
   // Todas completas — quedarse en el último
   DIA_ACTIVO = sesiones.length - 1;
+}
+
+function _resolveResumeDayIndex(restoredDia) {
+  var sesiones = getSesiones();
+  if (!sesiones.length) return 0;
+  var idx = parseInt(restoredDia, 10);
+  if (isNaN(idx) || idx < 0 || idx >= sesiones.length) idx = 0;
+  if (CURRENT_WEEK !== REAL_WEEK) return idx;
+
+  var firstPending = -1;
+  for (var _d = 0; _d < sesiones.length; _d++) {
+    if (!LOGS['done_'+CURRENT_WEEK+'_'+_d]) { firstPending = _d; break; }
+  }
+  if (firstPending === -1) return sesiones.length - 1;
+  if (LOGS['done_'+CURRENT_WEEK+'_'+idx]) return firstPending;
+  return idx;
 }
 
 function renderAll() {
