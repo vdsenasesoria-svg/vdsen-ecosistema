@@ -15048,29 +15048,113 @@ El esfuerzo no es negociable.
       }
     }
 
-    // ── Recomendaciones de progresión
+    // ── Recomendaciones de progresión — T163: consumo exceptions-first de la
+    // salida YA CALCULADA y persistida por el Motor de progresión. Coach no
+    // recalcula nada aquí; solo categoriza/ordena/formatea campos existentes.
     if (lastRec && lastRec.recommendations && lastRec.recommendations.length) {
       const aL = { deload:{label:'DELOAD',color:'#4488cc'}, reduce_load:{label:'↓ CARGA',color:'#FF4444'}, reduce_sets:{label:'↓ SERIES',color:'#FF8844'}, add_sets:{label:'+ SERIES',color:'#44BB88'}, increase_load:{label:'↑ CARGA',color:'#44BB88'}, freeze_load:{label:'CONGELAR',color:'#F4F4F0'}, maintain:{label:'MANTENER',color:'#888'} };
-      html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Progresión recomendada — Sem ${lastRecW} · Día ${lastRecD+1}</div>
-        <div class="space-y-2">`;
-      lastRec.recommendations.forEach(r => {
+
+      // PID-first identity check (PASO 6): a recommendation whose
+      // prescriptionExerciseId no longer exists in the CURRENT active plan
+      // (exercise substituted/removed since this rec was computed) is
+      // flagged REVIEW for display — never silently shown as still current,
+      // never mapped back by name/position. A missing PID (pre-existing
+      // legacy progrec_ entries, or a plan that never stamped PIDs) is NOT
+      // itself flagged REVIEW — that would just be legacy-compatibility
+      // noise, not a real identity conflict, since there is nothing to
+      // compare against.
+      const planPidSet = new Set();
+      ((p && p.days) || []).forEach(d => (d.exercises||[]).forEach(ex => { if (ex.prescriptionExerciseId) planPidSet.add(ex.prescriptionExerciseId); }));
+
+      function _categorizeRec(r) {
+        if (r.prescriptionExerciseId && planPidSet.size && !planPidSet.has(r.prescriptionExerciseId)) return 'REVIEW';
+        if (r.action === 'freeze_load') return 'FREEZE';
+        if (r.action === 'deload') return 'DELOAD';
+        if (r.action === 'reduce_load' || r.action === 'reduce_sets') return 'DOWN_LOAD';
+        if (r.action === 'increase_load' || r.action === 'add_sets') return 'PROGRESS_LOAD';
+        if (r.action === 'maintain' && r.trend && r.newReps != null && r.trend.prevReps != null && r.newReps > r.trend.prevReps) return 'PROGRESS_REPS';
+        return 'KEEP';
+      }
+
+      // Exceptions-first order (PASO 3) — KEEP always last, never dominant.
+      const CAT_META = {
+        REVIEW:        { order:0, label:'REVIEW',        color:'#FF66FF' },
+        FREEZE:        { order:1, label:'FREEZE',        color:'#F4F4F0' },
+        DOWN_LOAD:     { order:2, label:'DOWN_LOAD',     color:'#FF4444' },
+        DELOAD:        { order:3, label:'DELOAD',        color:'#4488cc' },
+        PROGRESS_LOAD: { order:4, label:'PROGRESS_LOAD', color:'#44BB88' },
+        PROGRESS_REPS: { order:5, label:'PROGRESS_REPS', color:'#66CCFF' },
+        KEEP:          { order:6, label:'KEEP',          color:'#888'    }
+      };
+
+      const categorized = lastRec.recommendations.map(r => ({ r: r, cat: _categorizeRec(r) }));
+      const counts = { REVIEW:0, FREEZE:0, DOWN_LOAD:0, DELOAD:0, PROGRESS_LOAD:0, PROGRESS_REPS:0, KEEP:0 };
+      categorized.forEach(x => { counts[x.cat] = (counts[x.cat]||0) + 1; });
+      const sorted = categorized.slice().sort((a,b) => CAT_META[a.cat].order - CAT_META[b.cat].order);
+
+      function _fmtNum(v, suffix) {
+        if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) return '—';
+        if (typeof v === 'number') return (Number.isInteger(v) ? v : v.toFixed(1)) + (suffix||'');
+        return v + (suffix||'');
+      }
+
+      // ── Exceptions-first summary (PASO 2) — real states, no invented score ──
+      html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Progresión recomendada — Sem ${lastRecW} · Día ${lastRecD+1} <span style="color:#555;text-transform:none">· Motor de progresión</span></div>`;
+      html += `<div class="flex gap-3 flex-wrap mb-2 text-xs">
+        <span class="text-[#888]">EVALUADOS: <strong class="text-white">${categorized.length}</strong></span>
+        ${Object.keys(CAT_META).filter(k => counts[k] > 0).map(k => `<span style="color:${CAT_META[k].color};font-weight:700">${CAT_META[k].label}: ${counts[k]}</span>`).join('')}
+      </div>`;
+
+      // ── Deload/recovery signal (PASO 7) — shown only when the persisted
+      // engine output actually triggered it; never derived from week number.
+      if (Array.isArray(lastRec.deloadTriggers) && lastRec.deloadTriggers.length) {
+        html += `<div class="mb-2 p-2 rounded text-xs" style="background:rgba(68,136,204,.08);border:1px solid rgba(68,136,204,.3);color:#7ab8e8">
+          🔄 DELOAD REACTIVO — ${lastRec.deloadTriggers.length} señal${lastRec.deloadTriggers.length!==1?'es':''} de recuperación
+        </div>`;
+      }
+
+      function _renderRecCard(item) {
+        const r = item.r, cat = item.cat, meta = CAT_META[cat];
         const al = aL[r.action] || aL.maintain;
-        html += `<div class="card p-3">
+        if (cat === 'REVIEW') {
+          return `<div class="card p-3" style="border-left:3px solid ${meta.color}">
+            <div class="flex justify-between items-center mb-1">
+              <span class="font-semibold text-sm">${r.exerciseName || '—'}</span>
+              <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${meta.color}">${meta.label}</span>
+            </div>
+            <div class="text-xs mt-1" style="color:${meta.color}">⚠️ Identidad no resuelta — este ejercicio ya no coincide con el plan activo (posible sustitución). No se aplica automáticamente.</div>
+          </div>`;
+        }
+        return `<div class="card p-3"${(cat==='FREEZE'||cat==='DOWN_LOAD')?` style="border-left:3px solid ${meta.color}"`:''}>
           <div class="flex justify-between items-center mb-1">
-            <span class="font-semibold text-sm">${r.exerciseName}</span>
-            <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${al.color}">${al.label}</span>
+            <span class="font-semibold text-sm">${r.exerciseName || '—'}</span>
+            <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${meta.color}">${meta.label} · ${al.label}</span>
           </div>
           <div class="flex gap-3 text-xs flex-wrap">
-            <span class="text-[#888]">Carga: <strong class="text-white">${r.newLoad} kg</strong></span>
-            <span class="text-[#888]">Series: <strong class="text-white">${r.newSets}</strong></span>
-            ${r.newReps?`<span class="text-[#888]">Reps: <strong class="text-white">${r.newReps}</strong></span>`:''}
-            <span class="text-[#888]">RIR obj: <strong>${r.rirTarget}</strong></span>
+            <span class="text-[#888]">Prescrito: <strong class="text-white">${_fmtNum(r.repRangeTarget && r.repRangeTarget.low)}–${_fmtNum(r.repRangeTarget && r.repRangeTarget.high)} reps · RIR ${_fmtNum(r.prescribedRIR)}</strong></span>
+            <span class="text-[#888]">Ejecutado: <strong class="text-white">RIR real ${_fmtNum(r.observedRIR)}</strong></span>
           </div>
-          ${r.trend?`<div class="text-xs text-[#555] mt-1">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets}s · ICS ${r.trend.prevICS.toFixed(1)}</div>`:''}
-          <div class="text-xs text-[#888] mt-1">${r.reason}</div>
+          <div class="flex gap-3 text-xs flex-wrap mt-1">
+            <span class="text-[#888]">Siguiente: <strong class="text-white">${_fmtNum(r.newLoad,' kg')} · ${_fmtNum(r.newSets)}s${r.newReps!=null?' · '+r.newReps+' reps':''} · RIR obj ${_fmtNum(r.rirTarget)}</strong></span>
+          </div>
+          ${r.trend?`<div class="text-xs text-[#555] mt-1">Sem anterior: ${_fmtNum(r.trend.prevLoad)} kg · ${_fmtNum(r.trend.prevSets)}s · ICS ${_fmtNum(r.trend.prevICS)}</div>`:''}
+          <div class="text-xs text-[#888] mt-1">${r.reason || '—'}</div>
         </div>`;
-      });
+      }
+
+      const exceptions = sorted.filter(x => x.cat !== 'KEEP');
+      const keeps      = sorted.filter(x => x.cat === 'KEEP');
+
+      html += `<div class="space-y-2">`;
+      exceptions.forEach(item => { html += _renderRecCard(item); });
       html += `</div>`;
+
+      // Noise control (PASO 9): KEEP exercises collapsed, never dominant.
+      if (keeps.length) {
+        html += `<details class="mt-2"><summary class="text-xs text-[#666] cursor-pointer">Ver ${keeps.length} ejercicio${keeps.length!==1?'s':''} sin cambios (KEEP)</summary><div class="space-y-2 mt-2">`;
+        keeps.forEach(item => { html += _renderRecCard(item); });
+        html += `</div></details>`;
+      }
     } else if (!lastRec) {
       html += `<p class="text-[#888] text-sm mt-2">Sin recomendaciones de progresión aún — el cliente debe completar una sesión con check-in.</p>`;
     }
