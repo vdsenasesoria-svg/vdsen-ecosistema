@@ -6269,9 +6269,21 @@ function applyExSub(di, ei, newNombre, originalNombre) {
 // T163-bug: endMs lets a COMPLETED session freeze at its real duration
 // instead of always ticking against Date.now() (which never stops on its
 // own once a session is marked done and its dashboard stays visible).
+// T173.1: a real single training session never spans more than a few
+// hours. If start/end don't form a plausible same-session pair (malformed,
+// start after end, or a gap this large — e.g. a set logged days before the
+// session was finally marked done, or a stale start leaked from another
+// day) the pairing is untrustworthy: never fabricate a duration from it,
+// show the same neutral "--:--" already used for "no start at all".
 function _fmtElapsed(startMs, endMs) {
-  if (!startMs) return '--:--';
-  var elapsed = Math.max(0, Math.floor(((endMs || Date.now()) - startMs) / 1000));
+  var _maxPlausibleMs = 12 * 60 * 60 * 1000; // 12h — generous upper bound, never a real session
+  var start = Number(startMs);
+  if (!startMs || isNaN(start) || start <= 0) return '--:--';
+  var end = (endMs !== undefined && endMs !== null) ? Number(endMs) : Date.now();
+  if (isNaN(end)) return '--:--';
+  var diffMs = end - start;
+  if (diffMs < 0 || diffMs > _maxPlausibleMs) return '--:--';
+  var elapsed = Math.floor(diffMs / 1000);
   var h = Math.floor(elapsed / 3600), m = Math.floor((elapsed % 3600) / 60), s = elapsed % 60;
   if (h > 0) return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
   return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
@@ -6445,7 +6457,12 @@ function _refreshSessionDashboard() {
   var _sesRIR = _sesStats.avgRIR !== null ? _sesStats.avgRIR : null;
   var _sesICS = _sesStats.avgICS !== null ? _sesStats.avgICS : null;
   var _icsColor = _sesICS !== null ? (_sesICS >= 8 ? 'var(--grn)' : _sesICS >= 7 ? 'var(--gold)' : 'var(--red)') : 'var(--mt)';
-  if (_sesStats.sessionStart && !window._sesTimerStart) window._sesTimerStart = _sesStats.sessionStart;
+  // T173.1: always take the freshly-computed start for THIS week/day — the
+  // previous `!window._sesTimerStart` guard let a stale start from a
+  // different day/week/session survive across lightweight refreshes
+  // (renderEntrenamiento's own dashboard block, right below, already does
+  // this unconditionally — this one must match, single source of truth).
+  window._sesTimerStart = _sesStats.sessionStart;
   // T163-bug: freeze at the real duration once the session is done — same
   // fix as renderEntrenamiento's own dashboard block, kept in sync here.
   var _sesDoneEntry = LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
