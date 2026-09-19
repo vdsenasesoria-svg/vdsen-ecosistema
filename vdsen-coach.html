@@ -15034,7 +15034,14 @@ El esfuerzo no es negociable.
     // Ehrenstein semaphore above — no recalculated progression, no new
     // clinical threshold, no plan mutation (decision support only).
     {
-      const _wsEs = entries.engine_state || null;
+      // T183 residual audit: engine_state is a single, non-week-scoped key —
+      // if the client already advanced to a new currentWeek without a fresh
+      // calc yet, engine_state.weekNum lags behind. Blending a stale week's
+      // exerciseSummary/confidence with THIS week's ci_sem_/postsession_
+      // would misclassify — so only trust engine_state here when its own
+      // weekNum stamp matches the week actually being displayed.
+      const _wsEsRaw = entries.engine_state || null;
+      const _wsEs = (_wsEsRaw && _wsEsRaw.weekNum && _wsEsRaw.weekNum !== currentWeek) ? null : _wsEsRaw;
       const _wsPosts = [];
       Object.keys(entries).forEach(k => {
         const m = k.match(/^postsession_(\d+)_(\d+)$/);
