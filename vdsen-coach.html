@@ -313,18 +313,18 @@
         </div>
       </div>
       <div class="flex items-center gap-3 flex-wrap">
-        <button id="autoGenBtn" onclick="autoGeneratePlan()" class="btn-primary">🤖 Generar plan automático (motor VDSEN)</button>
-        <span id="autoGenInstantBadge" style="font-size:10px;font-weight:700;color:#ef4444;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);padding:2px 8px;border-radius:10px;white-space:nowrap">⚡ ACTIVA AL INSTANTE — sin preview</span>
-        <button id="planPdfBtn" onclick="downloadPlanPDF(document.getElementById('planClientSelect').value)" class="btn-secondary">📄 Descargar PDF del plan</button>
-        <span class="text-xs" style="color:var(--text-muted);max-width:420px;line-height:1.4">Lee la ficha del cliente y genera <b>entrenamiento + nutrición + suplementación</b> 100% con el modelo VDSEN. Los guarda y activa solos — el cliente los ve al instante en su app.</span>
-      </div>
-      <div id="autoGenStatus" class="text-sm mt-3"></div>
-      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <button id="vdsenPreviewBtn" onclick="vdsenAIPreview()" class="btn-secondary">🔬 Generar con VDSEN AI — Preview</button>
+        <button id="vdsenPreviewBtn" onclick="vdsenAIPreview()" class="btn-primary">🔬 Generar plan con revisión</button>
         <span id="vdsenPreviewRecommendedBadge" style="font-size:10px;font-weight:700;color:#22c55e;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);padding:2px 8px;border-radius:10px;white-space:nowrap">✓ RECOMENDADO — revisas antes de activar</span>
-        <span class="text-xs" style="color:var(--text-muted);max-width:420px;line-height:1.4">Igual que arriba, pero te muestra el plan antes de guardarlo — revisas y decides <b>Guardar borrador</b> o <b>Activar</b> por separado. No se activa nada automáticamente.</span>
+        <button id="planPdfBtn" onclick="downloadPlanPDF(document.getElementById('planClientSelect').value)" class="btn-secondary">📄 Descargar PDF del plan</button>
+        <span class="text-xs" style="color:var(--text-muted);max-width:420px;line-height:1.4">Lee la ficha y el historial de progresión real del cliente, y genera <b>entrenamiento + nutrición + suplementación</b> con el modelo VDSEN. Revisas el plan antes de guardarlo — decides <b>Guardar borrador</b> o <b>Activar</b> por separado. No se activa nada automáticamente.</span>
       </div>
       <div id="vdsenPreviewStatus" class="text-sm mt-2"></div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button id="autoGenBtn" onclick="autoGeneratePlan()" class="btn-secondary">⚡ Generación rápida (legacy — sin revisión)</button>
+        <span id="autoGenInstantBadge" style="font-size:10px;font-weight:700;color:#ef4444;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);padding:2px 8px;border-radius:10px;white-space:nowrap">⚡ ACTIVA AL INSTANTE — sin preview</span>
+        <span class="text-xs" style="color:var(--text-muted);max-width:420px;line-height:1.4">Ruta anterior — genera y activa de inmediato, sin revisión y sin continuidad de progresión entre mesociclos (prescriptionExerciseId/progressionHistory). Usa el botón de arriba salvo que necesites activar sin revisar.</span>
+      </div>
+      <div id="autoGenStatus" class="text-sm mt-3"></div>
     </div>
 
     <div style="position:relative;display:inline-block;margin-bottom:16px" id="importPlanMenuWrap">
@@ -7801,7 +7801,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       showToast('Error: ' + (e.message || e), true);
     } finally {
       _autoGenInFlight = false;
-      if (btn) { btn.disabled = false; btn.textContent = btn._t || '🤖 Generar plan automático (motor VDSEN)'; }
+      if (btn) { btn.disabled = false; btn.textContent = btn._t || '⚡ Generación rápida (legacy — sin revisión)'; }
     }
   }
   window.autoGeneratePlan = autoGeneratePlan;
@@ -7819,7 +7819,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const setStatus = html => { if (statusBox) statusBox.innerHTML = html; };
 
     const UI_STATES = {
-      idle:                () => { if (btn) { btn.disabled = false; btn.textContent = '🔬 Generar con VDSEN AI — Preview'; } setStatus(''); },
+      idle:                () => { if (btn) { btn.disabled = false; btn.textContent = '🔬 Generar plan con revisión'; } setStatus(''); },
       building_request:    () => { if (btn) { btn.disabled = true; btn.textContent = '⏳ Construyendo solicitud…'; } setStatus('<span style="color:var(--text-muted)">Leyendo datos del cliente…</span>'); },
       generating:          () => { if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando…'; } setStatus('<span style="color:var(--text-muted)">Motor VDSEN en proceso (puede tardar 2-3 minutos)…</span>'); },
       needs_input:         (msg) => setStatus(`<span style="color:#f59e0b">⚠️ Faltan datos: ${_escH(String(msg))}</span>`),
@@ -8018,7 +8018,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       UI_STATES.error(err.message || 'Error inesperado');
     } finally {
       const btn2 = document.getElementById('vdsenPreviewBtn');
-      if (btn2) { btn2.disabled = false; btn2.textContent = '🔬 Generar con VDSEN AI — Preview'; }
+      if (btn2) { btn2.disabled = false; btn2.textContent = '🔬 Generar plan con revisión'; }
     }
   }
   window.vdsenAIPreview = vdsenAIPreview;
@@ -10448,8 +10448,8 @@ El esfuerzo no es negociable.
             </select>
           </div>
         </div>
-        <button id="_fichaGenBtn_${clientId}" onclick="_autoGenerateForModal('${clientId}')" style="width:100%;padding:10px;border-radius:7px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.03em">🤖 GENERAR PLAN COMPLETO</button>
-        <button onclick="_previewFromFicha('${clientId}')" style="width:100%;margin-top:6px;padding:8px;border-radius:7px;border:1px solid rgba(196,255,0,.3);background:rgba(196,255,0,.06);color:#C4FF00;font-size:11px;font-weight:700;cursor:pointer">🔬 Generar con Preview (revisar antes de activar)</button>
+        <button onclick="_previewFromFicha('${clientId}')" style="width:100%;padding:10px;border-radius:7px;border:none;background:#C4FF00;color:#0A0A0A;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.03em">🔬 GENERAR PLAN CON REVISIÓN</button>
+        <button id="_fichaGenBtn_${clientId}" onclick="_autoGenerateForModal('${clientId}')" style="width:100%;margin-top:6px;padding:8px;border-radius:7px;border:1px solid rgba(244,244,240,.2);background:rgba(244,244,240,.04);color:#888;font-size:11px;font-weight:700;cursor:pointer">⚡ Generación rápida (legacy — sin revisión)</button>
         <div id="_fichaGenStatus_${clientId}" style="font-size:11px;line-height:1.7;margin-top:8px"></div>
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
           <button onclick="_switchClientTab('plan');setTimeout(()=>_modalImportPlan('json','${clientId}'),100)" style="padding:5px 11px;border-radius:6px;border:1px solid rgba(196,255,0,.3);background:rgba(196,255,0,.06);color:#C4FF00;font-size:11px;font-weight:600;cursor:pointer">📋 Pegar JSON plan</button>
@@ -12482,7 +12482,7 @@ El esfuerzo no es negociable.
       setStatus(`<div style="background:rgba(220,60,60,.08);border:1px solid rgba(220,60,60,.3);border-radius:8px;padding:12px"><div style="color:#e05555;font-weight:700">❌ ${_escH(String(e.message || e))}</div></div>`);
       showToast('Error: ' + (e.message || e), true);
     } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = btn._t || '🤖 GENERAR PLAN COMPLETO (Motor VDSEN)'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = btn._t || '⚡ Generación rápida (legacy — sin revisión)'; }
     }
   }
   window._autoGenerateForModal = _autoGenerateForModal;

@@ -60,8 +60,11 @@ assert.ok(
 
 const fichaGenBtnIdx    = COACH.indexOf('id="_fichaGenBtn_${clientId}"');
 const previewShortcutIdx = COACH.indexOf("onclick=\"_previewFromFicha('${clientId}')\"");
-assert.ok(fichaGenBtnIdx !== -1 && previewShortcutIdx !== -1 && fichaGenBtnIdx < previewShortcutIdx,
-  'T151-H: the Preview shortcut button must appear right after the instant-generate button in the Ficha tab');
+// T173 — Preview is now the primary/first CTA in this modal too (product
+// decision: progression-first canonical path leads); the instant-generate
+// button now appears right after it, not before.
+assert.ok(fichaGenBtnIdx !== -1 && previewShortcutIdx !== -1 && previewShortcutIdx < fichaGenBtnIdx,
+  'T151-H/T173: the instant-generate button must appear right after the Preview shortcut button in the Ficha tab');
 
 const previewFromFichaFn = extractFunction(COACH, 'window._previewFromFicha = async function(clientId)');
 assert.ok(previewFromFichaFn, '_previewFromFicha must exist');

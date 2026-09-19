@@ -61,17 +61,22 @@ const autoGenBtnIdx = COACH.indexOf('id="autoGenBtn"');
 const previewBtnIdx = COACH.indexOf('id="vdsenPreviewBtn"');
 assert.ok(crearPlanIdx !== -1 && autoGenBtnIdx !== -1 && previewBtnIdx !== -1,
   'T141-H prerequisite: crearPlan section, autoGenBtn and vdsenPreviewBtn must all exist');
+// T173 — Preview is now the primary/first CTA in this section (product
+// decision: the progression-first canonical path leads), autoGenBtn (legacy,
+// instant-activate) now sits second. Same-section/shared-dropdown intent
+// preserved; only which one comes first has flipped.
 assert.ok(
-  crearPlanIdx < autoGenBtnIdx && autoGenBtnIdx < previewBtnIdx && previewBtnIdx - crearPlanIdx < 5000,
-  'T141-H: vdsenPreviewBtn must live in the same Plan section as autoGenBtn, close enough to ' +
+  crearPlanIdx < previewBtnIdx && previewBtnIdx < autoGenBtnIdx && autoGenBtnIdx - crearPlanIdx < 5000,
+  'T141-H/T173: autoGenBtn must live in the same Plan section as vdsenPreviewBtn, close enough to ' +
   'share the same #planClientSelect dropdown'
 );
 
 console.log('Preview button placed in the same Plan section as the existing generate button — OK');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Regression guard: the existing instant-generate button and its behavior
-// are completely untouched — this is a purely additive change.
+// Regression guard: autoGenBtn still calls the same function (T173 only
+// changed its visual prominence/label/position, not its onclick wiring or
+// the autoGeneratePlan() implementation itself — kept as legacy).
 // ─────────────────────────────────────────────────────────────────────────────
 
 assert.ok(

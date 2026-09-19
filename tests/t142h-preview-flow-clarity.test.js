@@ -42,13 +42,17 @@ const recBadgeIdx    = COACH.indexOf('id="vdsenPreviewRecommendedBadge"');
 assert.ok(autoGenIdx !== -1 && instantBadgeIdx !== -1 && previewBtnIdx !== -1 && recBadgeIdx !== -1,
   'T142-H prerequisite: both buttons and both new badges must exist');
 
+// T173 — Preview is now the primary/first CTA (product decision: the
+// progression-first canonical path leads); autoGenBtn (legacy, instant
+// activate) now sits second. Each button still sits directly next to its
+// own badge — only which pair comes first has flipped.
 assert.ok(
-  autoGenIdx < instantBadgeIdx && instantBadgeIdx < previewBtnIdx,
-  'T142-H: the instant-activate badge must sit right after autoGenBtn, before the preview button'
+  previewBtnIdx < recBadgeIdx && recBadgeIdx < autoGenIdx,
+  'T142-H/T173: the recommended badge must sit right after vdsenPreviewBtn, which now leads'
 );
 assert.ok(
-  previewBtnIdx < recBadgeIdx,
-  'T142-H: the recommended badge must sit right after vdsenPreviewBtn'
+  autoGenIdx < instantBadgeIdx,
+  'T142-H: the instant-activate badge must sit right after autoGenBtn'
 );
 
 // Badge text must be unambiguous without relying on the caption below.
