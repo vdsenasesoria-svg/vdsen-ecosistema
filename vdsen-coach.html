@@ -1388,6 +1388,28 @@
   }
   window._computeClientAttentionState = _computeClientAttentionState;
 
+  // T180 — Exception-first client ranking. NOT a medical risk score: a pure,
+  // deterministic bucket combining two ALREADY-EXISTING classifications —
+  // _computeClientAttentionState's REVIEW/PROGRESSING/STABLE/NO_DATA (client
+  // list, already deployed) and, when available, the richer T177
+  // _classifyWeeklyStatus (window.VDSEN_WEEKLY, PAIN_REVIEW/COACH_REVIEW/
+  // RECOVERY_LIMITED/ADHERENCE_LIMITED/PERFORMANCE_STALL/PROGRESSING/STABLE/
+  // DATA_INSUFFICIENT). Neither is recomputed here.
+  var CLIENT_PRIORITY = {
+    NEEDS_REVIEW:      'NEEDS_REVIEW',
+    WATCH:              'WATCH',
+    ON_TRACK:           'ON_TRACK',
+    INSUFFICIENT_DATA: 'INSUFFICIENT_DATA'
+  };
+  function _rankClientPriority(attnState, weeklyStatus) {
+    if (attnState === 'NO_DATA' && !weeklyStatus) return CLIENT_PRIORITY.INSUFFICIENT_DATA;
+    if (weeklyStatus === 'DATA_INSUFFICIENT' && (!attnState || attnState === 'NO_DATA')) return CLIENT_PRIORITY.INSUFFICIENT_DATA;
+    if (attnState === 'REVIEW' || weeklyStatus === 'PAIN_REVIEW' || weeklyStatus === 'COACH_REVIEW') return CLIENT_PRIORITY.NEEDS_REVIEW;
+    if (weeklyStatus === 'RECOVERY_LIMITED' || weeklyStatus === 'ADHERENCE_LIMITED' || weeklyStatus === 'PERFORMANCE_STALL') return CLIENT_PRIORITY.WATCH;
+    return CLIENT_PRIORITY.ON_TRACK;
+  }
+  window._rankClientPriority = _rankClientPriority;
+
   // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
   function _getLiveInfo(entries, planData) {
     if (!entries) return null;
