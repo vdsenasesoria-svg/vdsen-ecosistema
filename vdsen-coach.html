@@ -14704,6 +14704,118 @@ El esfuerzo no es negociable.
     }
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T176-179 — WEEKLY COACH DECISION SUPPORT (interpretation layer, NOT a
+  //  second progression engine). Consumes ONLY already-computed/persisted
+  //  signals (engine_state, progrec_, ci_sem_, postsession_) and already-
+  //  established thresholds (ICS>=7 gold/8 green from the Coach's own
+  //  rendering, the 0.5 "majority" split already used for MAJORITY_STALLED
+  //  in buildPrescriptionContext, engine_state.confidence's none/low/medium/
+  //  high scale from calculateProgression). Never recalculates progression
+  //  math, never invents a new clinical score/threshold.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // T176 — extracted verbatim from the pre-existing inline "Monitoreo
+  // Subjetivo Ehrenstein" semaphore (unchanged behavior, now reusable by the
+  // new weekly classification below instead of being duplicated).
+  function _calcEhrensteinSemaphore(subjScore, subjVulner, avgICS, umbral) {
+    if (subjScore === null || subjScore === undefined) return null;
+    var scoreOk = subjScore >= umbral;
+    var icsOk   = avgICS === null || avgICS === undefined || avgICS >= 7;
+    var vuln    = subjVulner >= 4;
+    var semColor, semLabel, semIcon;
+    if (!scoreOk && !icsOk) { semColor = '#FF4444'; semLabel = 'Rojo';    semIcon = '🔴'; }
+    else if (!scoreOk || !icsOk || vuln) { semColor = '#FF8844'; semLabel = 'Naranja'; semIcon = '🟠'; }
+    else { semColor = '#44BB88'; semLabel = 'Verde'; semIcon = '🟢'; }
+    return { scoreOk: scoreOk, icsOk: icsOk, vuln: vuln, semColor: semColor, semLabel: semLabel, semIcon: semIcon };
+  }
+
+  // T177 — deterministic weekly classification. Priority order mirrors the
+  // AUTHORITY ORDER (safety first): a real pain signal or an unresolved
+  // identity/coach-edit conflict always outranks a performance read; a
+  // performance read is never trusted below the engine's own established
+  // "none/low" confidence floor.
+  var WEEKLY_STATUS = {
+    PAIN_REVIEW:        'PAIN_REVIEW',
+    COACH_REVIEW:        'COACH_REVIEW',
+    DATA_INSUFFICIENT:  'DATA_INSUFFICIENT',
+    ADHERENCE_LIMITED:  'ADHERENCE_LIMITED',
+    RECOVERY_LIMITED:   'RECOVERY_LIMITED',
+    PERFORMANCE_STALL:  'PERFORMANCE_STALL',
+    PROGRESSING:        'PROGRESSING',
+    STABLE:             'STABLE'
+  };
+  function _classifyWeeklyStatus(input) {
+    input = input || {};
+    var es   = input.engineState || null;
+    var ci   = input.ciSem || null;
+    var posts = Array.isArray(input.postsessionsThisWeek) ? input.postsessionsThisWeek : [];
+    var reviewCount = input.reviewCount || 0;
+    var semaphore   = input.semaphore || null;
+
+    // 1. SAFETY — a real, reported pain event this week outranks everything.
+    var hasPain = posts.some(function(p) { return p && p.articularPain && p.articularPain.present === true; });
+    if (hasPain) return WEEKLY_STATUS.PAIN_REVIEW;
+
+    // 2. COACH — an unresolved identity/coach-edit conflict needs a coach
+    // decision before anything else can be trusted (reuses the SAME REVIEW
+    // categorization already shown in "Recomendaciones de progresión", T163/T170).
+    if (reviewCount > 0) return WEEKLY_STATUS.COACH_REVIEW;
+
+    // 3. No reliable signal source at all — never invent a read from nothing.
+    if (!es && !ci) return WEEKLY_STATUS.DATA_INSUFFICIENT;
+
+    // 4. Reuses engine_state.confidence (calculateProgression's own
+    // observationsCount-based none/low/medium/high scale) — not a new
+    // adherence threshold, the SAME floor the Progression Engine itself
+    // already uses to decide whether it trusts its own read.
+    if (es && (es.confidence === 'none' || es.confidence === 'low')) return WEEKLY_STATUS.ADHERENCE_LIMITED;
+
+    // 5. Reactive deload (engine_state.deloadTriggered, T162) OR the
+    // Ehrenstein semaphore reading orange/red — two independent,
+    // already-established recovery signals, neither recomputed here.
+    var recoveryFlag = !!(es && es.deloadTriggered) || !!(semaphore && (!semaphore.scoreOk || !semaphore.icsOk || semaphore.vuln));
+    if (recoveryFlag) return WEEKLY_STATUS.RECOVERY_LIMITED;
+
+    // 6/7. Majority read from engine_state.exerciseSummary — reuses the
+    // EXACT 0.5 "majority" split already established for MAJORITY_STALLED
+    // in buildPrescriptionContext, not a new threshold.
+    var summary = (es && Array.isArray(es.exerciseSummary)) ? es.exerciseSummary : [];
+    if (summary.length) {
+      var stalled = summary.filter(function(s) { return s && (s.action === 'maintain' || s.action === 'freeze_load'); }).length;
+      var progressing = summary.filter(function(s) { return s && (s.action === 'increase_load' || s.action === 'add_sets'); }).length;
+      if (stalled > summary.length * 0.5) return WEEKLY_STATUS.PERFORMANCE_STALL;
+      if (progressing > 0 && progressing >= stalled) return WEEKLY_STATUS.PROGRESSING;
+    }
+
+    // 8. Real data exists, nothing bad, no clear majority either way.
+    return WEEKLY_STATUS.STABLE;
+  }
+
+  // T178 — volume/recovery decision support. Never auto-changes volume; only
+  // ever recommends what the Coach should review. Reuses the same ICS>=7
+  // threshold already established in the Coach's own rendering (see
+  // _calcEhrensteinSemaphore/icsOk above) — no new number invented.
+  function _decideVolumeAction(status, ciSem) {
+    switch (status) {
+      case WEEKLY_STATUS.PAIN_REVIEW:
+      case WEEKLY_STATUS.RECOVERY_LIMITED:
+      case WEEKLY_STATUS.ADHERENCE_LIMITED:
+      case WEEKLY_STATUS.DATA_INSUFFICIENT:
+      case WEEKLY_STATUS.COACH_REVIEW:
+        return 'FREEZE';
+      case WEEKLY_STATUS.PERFORMANCE_STALL:
+        return 'REVIEW_DECREASE';
+      case WEEKLY_STATUS.PROGRESSING: {
+        var ics = ciSem && ciSem.ics_promedio != null ? parseFloat(ciSem.ics_promedio) : null;
+        if (ics !== null && !isNaN(ics) && ics < 7) return 'KEEP'; // technique not stable enough yet to justify more volume
+        return 'REVIEW_INCREASE';
+      }
+      default:
+        return 'KEEP';
+    }
+  }
+
   async function _renderClientTabMonitor(cont) {
     cont.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos...</div>`;
     const clientId = _detailClientId;
@@ -14774,6 +14886,7 @@ El esfuerzo no es negociable.
     </div>`;
 
     // ── Ehrenstein — Cuestionario Subjetivo + Semáforo integrado (Módulo E)
+    let _ehrenSemForWeekly = null; // T177: hoisted so the weekly-status block below can reuse it
     {
       const subjScore   = ci.subj_score != null ? ci.subj_score : null;
       const subjVulner  = ci.subj_vulner != null ? ci.subj_vulner : null;
@@ -14788,14 +14901,13 @@ El esfuerzo no es negociable.
       Object.values(lastSets).forEach(setArr => setArr.forEach(s => { if (s.ics) icsVals.push(parseFloat(s.ics)); }));
       const avgICS = icsVals.length ? icsVals.reduce((a,b)=>a+b,0)/icsVals.length : null;
 
+      const _ehrenSem = _calcEhrensteinSemaphore(subjScore, subjVulner, avgICS, umbral);
+      _ehrenSemForWeekly = _ehrenSem;
       if (subjScore !== null) {
-        const scoreOk   = subjScore >= umbral;
-        const icsOk     = avgICS === null || avgICS >= 7;
-        const vuln      = subjVulner >= 4;
-        let semColor, semLabel, semIcon;
-        if (!scoreOk && !icsOk) { semColor='#FF4444'; semLabel='Rojo'; semIcon='🔴'; }
-        else if (!scoreOk || !icsOk || vuln) { semColor='#FF8844'; semLabel='Naranja'; semIcon='🟠'; }
-        else { semColor='#44BB88'; semLabel='Verde'; semIcon='🟢'; }
+        const scoreOk   = _ehrenSem.scoreOk;
+        const icsOk     = _ehrenSem.icsOk;
+        const vuln      = _ehrenSem.vuln;
+        const semColor  = _ehrenSem.semColor, semLabel = _ehrenSem.semLabel, semIcon = _ehrenSem.semIcon;
 
         const items = [
           ['Fatiga', ci.subj_fatiga], ['Sueño', ci.subj_sueno_cal],
@@ -14833,6 +14945,71 @@ El esfuerzo no es negociable.
           ${(!scoreOk || vuln) ? `<div style="padding:6px 10px;border-radius:6px;background:rgba(255,136,68,.08);border:1px solid rgba(255,136,68,.25);font-size:11px;color:#FF8844">⚠️ ${!scoreOk ? 'Score bajo umbral ('+umbral+')' : ''}${!scoreOk && vuln ? ' · ' : ''}${vuln ? 'Vulnerabilidad a lesiones elevada' : ''} — Considerar deload o −20% volumen.</div>` : ''}
         </div>`;
       }
+    }
+
+    // ── T177-179 — Weekly Decision Support: one compact, exceptions-first
+    // block. Reuses engine_state/progrec_/ci_sem_/postsession_ + the
+    // Ehrenstein semaphore above — no recalculated progression, no new
+    // clinical threshold, no plan mutation (decision support only).
+    {
+      const _wsEs = entries.engine_state || null;
+      const _wsPosts = [];
+      Object.keys(entries).forEach(k => {
+        const m = k.match(/^postsession_(\d+)_(\d+)$/);
+        if (m && +m[1] === currentWeek) _wsPosts.push(entries[k]);
+      });
+      // Reuses the SAME identity/coach-edit-staleness rule as "Recomendaciones
+      // de progresión" below (T163/T165/T170) — a tiny, independent re-check
+      // of the same two-line predicate, not a second categorization system.
+      const _wsPlanPidSet = new Set();
+      ((p && p.days) || []).forEach(d => (d.exercises || []).forEach(ex => { if (ex.prescriptionExerciseId) _wsPlanPidSet.add(ex.prescriptionExerciseId); }));
+      let _wsReviewCount = 0;
+      if (lastRec && Array.isArray(lastRec.recommendations)) {
+        lastRec.recommendations.forEach(r => {
+          const idStale = !!(r.prescriptionExerciseId && _wsPlanPidSet.size && !_wsPlanPidSet.has(r.prescriptionExerciseId));
+          const editStale = !!(p && p.updatedAt && r.calculatedAt && Date.parse(p.updatedAt) > Date.parse(r.calculatedAt));
+          if (idStale || editStale) _wsReviewCount++;
+        });
+      }
+
+      const _wsStatus = _classifyWeeklyStatus({
+        engineState: _wsEs,
+        ciSem: (ci && Object.keys(ci).length) ? ci : null,
+        postsessionsThisWeek: _wsPosts,
+        reviewCount: _wsReviewCount,
+        semaphore: _ehrenSemForWeekly
+      });
+      const _wsVolume = _decideVolumeAction(_wsStatus, ci);
+
+      const _WS_META = {
+        PAIN_REVIEW:       { label: 'PAIN REVIEW',       color: '#FF4444', next: 'Revisar dolor/molestia articular antes de continuar' },
+        COACH_REVIEW:      { label: 'COACH REVIEW',      color: '#FF66FF', next: 'Resolver recomendación(es) con identidad no resuelta' },
+        DATA_INSUFFICIENT: { label: 'DATOS INSUFICIENTES', color: '#888',  next: 'Esperar más sesiones registradas' },
+        ADHERENCE_LIMITED: { label: 'ADHERENCIA LIMITADA', color: '#FF8844', next: 'Revisar adherencia antes de concluir sobre progresión' },
+        RECOVERY_LIMITED:  { label: 'RECUPERACIÓN LIMITA', color: '#4488cc', next: 'Revisar recuperación (sueño/HRV/bienestar)' },
+        PERFORMANCE_STALL: { label: 'ESTANCADO',          color: '#FF8844', next: 'Revisar volumen/ejercicio — posible estancamiento' },
+        PROGRESSING:       { label: 'PROGRESANDO',        color: '#44BB88', next: 'Mantener rumbo' },
+        STABLE:            { label: 'ESTABLE',            color: '#66CCFF', next: 'Mantener' }
+      };
+      const _wsMeta = _WS_META[_wsStatus] || _WS_META.STABLE;
+      const _wsVolLabel = { KEEP: 'Volumen: mantener', REVIEW_INCREASE: 'Volumen: revisar aumento', REVIEW_DECREASE: 'Volumen: revisar reducción', FREEZE: 'Volumen: congelar (no tocar)' }[_wsVolume] || 'Volumen: mantener';
+
+      const _wsSummary = _wsEs && Array.isArray(_wsEs.exerciseSummary) ? _wsEs.exerciseSummary : [];
+      const _wsProgCount = _wsSummary.filter(s => s && (s.action === 'increase_load' || s.action === 'add_sets')).length;
+      const _wsStallCount = _wsSummary.filter(s => s && (s.action === 'maintain' || s.action === 'freeze_load')).length;
+
+      html += `<div class="card p-3 mb-3" style="border-left:3px solid ${_wsMeta.color};border-radius:0 8px 8px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+          <div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">Decisión semanal — Sem ${currentWeek}</div>
+          <div style="font-size:13px;font-weight:800;color:${_wsMeta.color}">${_wsMeta.label}</div>
+        </div>
+        <div class="flex gap-3 flex-wrap text-xs mb-2" style="color:#888">
+          ${_wsSummary.length ? `<span>${_wsProgCount} progresión${_wsProgCount!==1?'es':''}</span><span>${_wsStallCount} sin cambio</span>` : ''}
+          ${ci && ci.adherencia_pct != null ? `<span>adherencia ${ci.adherencia_pct}%</span>` : ''}
+          <span style="color:${_wsMeta.color}">${_wsVolLabel}</span>
+        </div>
+        <div class="text-xs" style="color:#aaa">${_wsMeta.next}</div>
+      </div>`;
     }
 
     // ── Gráfica de tendencia de peso
