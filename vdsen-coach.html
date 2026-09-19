@@ -15119,8 +15119,21 @@ El esfuerzo no es negociable.
       const planPidSet = new Set();
       ((p && p.days) || []).forEach(d => (d.exercises||[]).forEach(ex => { if (ex.prescriptionExerciseId) planPidSet.add(ex.prescriptionExerciseId); }));
 
+      // T170 — Client/Coach sync: a recommendation can also be non-current
+      // because the COACH edited the plan (same _progRecStale check T165
+      // added client-side) AFTER it was calculated. Without this, the coach
+      // would see PROGRESS_LOAD/etc. as if it will apply next exposure while
+      // the client silently skips it — same persisted progrec, same rule,
+      // both sides must agree on what "current" means.
+      function _isIdentityStale(r) {
+        return !!(r.prescriptionExerciseId && planPidSet.size && !planPidSet.has(r.prescriptionExerciseId));
+      }
+      function _isCoachEditStale(r) {
+        return !!(p && p.updatedAt && r.calculatedAt && Date.parse(p.updatedAt) > Date.parse(r.calculatedAt));
+      }
+
       function _categorizeRec(r) {
-        if (r.prescriptionExerciseId && planPidSet.size && !planPidSet.has(r.prescriptionExerciseId)) return 'REVIEW';
+        if (_isIdentityStale(r) || _isCoachEditStale(r)) return 'REVIEW';
         if (r.action === 'freeze_load') return 'FREEZE';
         if (r.action === 'deload') return 'DELOAD';
         if (r.action === 'reduce_load' || r.action === 'reduce_sets') return 'DOWN_LOAD';
@@ -15170,12 +15183,15 @@ El esfuerzo no es negociable.
         const r = item.r, cat = item.cat, meta = CAT_META[cat];
         const al = aL[r.action] || aL.maintain;
         if (cat === 'REVIEW') {
+          const _reviewMsg = _isIdentityStale(r)
+            ? '⚠️ Identidad no resuelta — este ejercicio ya no coincide con el plan activo (posible sustitución). No se aplica automáticamente.'
+            : '⚠️ Editaste el plan después de calcularse esta recomendación — quedó desactualizada. El cliente NO la aplicará automáticamente en la próxima sesión.';
           return `<div class="card p-3" style="border-left:3px solid ${meta.color}">
             <div class="flex justify-between items-center mb-1">
               <span class="font-semibold text-sm">${r.exerciseName || '—'}</span>
               <span class="text-xs font-bold px-2 py-1 rounded" style="background:rgba(0,0,0,.3);color:${meta.color}">${meta.label}</span>
             </div>
-            <div class="text-xs mt-1" style="color:${meta.color}">⚠️ Identidad no resuelta — este ejercicio ya no coincide con el plan activo (posible sustitución). No se aplica automáticamente.</div>
+            <div class="text-xs mt-1" style="color:${meta.color}">${_reviewMsg}</div>
           </div>`;
         }
         return `<div class="card p-3"${(cat==='FREEZE'||cat==='DOWN_LOAD')?` style="border-left:3px solid ${meta.color}"`:''}>
