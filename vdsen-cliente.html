@@ -14167,14 +14167,26 @@ function calculateProgression(di, postData) {
 
     return {
       exerciseName: exName,
+      // Identity — POSITION ≠ IDENTITY: persist the same prescriptionExerciseId
+      // already used for history matching above, so downstream consumers (Coach
+      // monitor, Generator) can match this recommendation to the exact prescribed
+      // instance instead of falling back to array position.
+      prescriptionExerciseId: ej.prescriptionExerciseId || undefined,
+      exerciseId: ej.exerciseId || undefined,
       action: action,
       newLoad: newLoad,
       newSets: newSets,
       newReps: newReps,
+      // What this recommendation was evaluated AGAINST this week (prescribed) vs
+      // what the client actually reported (observed) — kept distinct from
+      // rirTarget, which is the target for the NEXT exposure.
+      prescribedRIR: rirObj,
+      observedRIR: _rirRaw.length ? +avgRIR.toFixed(2) : null,
+      repRangeTarget: { low: repsLow, high: repsTarget },
       rirTarget: rirTarget,
       reason: reasons.join(' | '),
       substituteExercise: sub,
-      trend: prevWeek ? { prevLoad: prevWeek.avgLoad, prevSets: prevWeek.numSets, prevICS: prevWeek.avgICS } : null,
+      trend: prevWeek ? { prevLoad: prevWeek.avgLoad, prevReps: prevWeek.avgReps, prevSets: prevWeek.numSets, prevICS: prevWeek.avgICS } : null,
       setMetrics: {
         validSetCount: validSetCount !== undefined ? validSetCount : 0,
         minRIR: minRIR !== undefined ? minRIR : null,

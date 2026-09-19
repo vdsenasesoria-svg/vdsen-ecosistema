@@ -48,7 +48,7 @@ Claves en `entries`:
 - Articular: si/no + patrón afectado
 - Sleep: horas
 - RPE sesión: 1-10
-- Semana 6 = deload automático
+- Deload reactivo (no por calendario): se activa cuando `deloadTriggers.length >= 2` (WHO-5<52, RPE>9, sueño<6h, HRV descendente, energía baja). La última semana del mesociclo NO fuerza deload por sí sola.
 - Recomendaciones guardadas en `progrec_{W}_{D}` → coach las ve en panel de monitoreo
 
 ## Schemas JSON (Motor VDSEN)
@@ -107,7 +107,7 @@ Secciones: `base` (datos personales/biométricos), `entrenamiento` (nivel/días/
 - Unidad KG/LB por ejercicio (toggle independiente por ejercicio)
 - Completar sesión → modal post-sesión (EIMD, dolor articular, sueño, RPE)
 - Algoritmo progresión: calcula recomendaciones por ejercicio y las guarda en logs
-- Semana 6 = deload automático
+- Deload reactivo por señales de fatiga acumuladas (no automático por semana fija — ver algoritmo de progresión arriba)
 - Tabs: Resumen, Entrenamiento, Nutrición, Check-in, Perfil
 - Logs guardados en `logs/{uid}` (por UID, no por email)
 
