@@ -325,10 +325,11 @@ function _mapPreviousPlan(planDoc) {
 
 function _mapLogs(logsDoc) {
   var result = {
-    trainingLogs:  null,
-    checkins:      null,
-    engineState:   null,
-    _diagnostics:  {}
+    trainingLogs:       null,
+    checkins:           null,
+    engineState:        null,
+    progressionHistory: null,
+    _diagnostics:       {}
   };
 
   if (!logsDoc || !logsDoc.entries) {
@@ -390,6 +391,10 @@ function _mapLogs(logsDoc) {
   // engineState block
   result.engineState = engineState || null;
 
+  // progressionHistory block (T160) — PID-indexed longitudinal summary,
+  // built from the same raw progrecs already collected above.
+  result.progressionHistory = _mapExerciseProgressionHistory(progrecs);
+
   // diagnostics
   result._diagnostics = {
     logsAvailable:  true,
@@ -401,6 +406,77 @@ function _mapLogs(logsDoc) {
   };
 
   return result;
+}
+
+// ─── EXERCISE PROGRESSION HISTORY mapping (T160) ─────────────────────────────
+// Closes the longitudinal chain per exercise: builds a prescriptionExerciseId
+// -indexed summary from the raw progrec_W_D entries (each recommendation
+// already carries prescriptionExerciseId/exerciseId/prescribedRIR/observedRIR/
+// repRangeTarget/trend since the T159 persistence fix). Pure structural
+// adapter — no invented data, no recalculation, no LLM involvement.
+//
+// PID-first, no silent association: a recommendation with no
+// prescriptionExerciseId (pre-T159 legacy logs, or a plan that predates PID
+// stamping) is counted in unindexedCount but never guessed into a bucket by
+// name or position — ambiguity/absence of identity means no association,
+// not a best-effort match.
+function _mapExerciseProgressionHistory(progrecs) {
+  var byPID = {};
+  var unindexedCount = 0;
+
+  var weekKeys = Object.keys(progrecs || {}).sort(function(a, b) {
+    var wa = parseInt(a.split('_')[1], 10) || 0;
+    var wb = parseInt(b.split('_')[1], 10) || 0;
+    return wa - wb;
+  });
+
+  weekKeys.forEach(function(key) {
+    var entry = progrecs[key];
+    var week  = parseInt(key.split('_')[1], 10) || null;
+    var recs  = (entry && Array.isArray(entry.recommendations)) ? entry.recommendations : [];
+
+    recs.forEach(function(rec) {
+      if (!rec || !rec.prescriptionExerciseId) { unindexedCount++; return; }
+      var pid = rec.prescriptionExerciseId;
+      if (!byPID[pid]) {
+        byPID[pid] = {
+          prescriptionExerciseId: pid,
+          exerciseId:   rec.exerciseId   || null,
+          exerciseName: rec.exerciseName || null,
+          history: []
+        };
+      }
+      // Keep the most recent non-empty name/exerciseId (catalog/name can evolve).
+      if (rec.exerciseName) byPID[pid].exerciseName = rec.exerciseName;
+      if (rec.exerciseId)   byPID[pid].exerciseId   = rec.exerciseId;
+
+      byPID[pid].history.push({
+        week:           week,
+        action:         rec.action !== undefined ? rec.action : null,
+        newLoad:        rec.newLoad !== undefined ? rec.newLoad : null,
+        newReps:        rec.newReps !== undefined ? rec.newReps : null,
+        newSets:        rec.newSets !== undefined ? rec.newSets : null,
+        rirTarget:      rec.rirTarget !== undefined ? rec.rirTarget : null,
+        prescribedRIR:  rec.prescribedRIR !== undefined ? rec.prescribedRIR : null,
+        observedRIR:    rec.observedRIR !== undefined ? rec.observedRIR : null,
+        repRangeTarget: rec.repRangeTarget || null,
+        trend:          rec.trend || null,
+        reason:         rec.reason || ''
+      });
+    });
+  });
+
+  // Per-exercise confidence — how much longitudinal evidence exists for THIS
+  // specific exercise (distinct from engineState's plan-wide confidence).
+  // learned_state can only outrank general priors once evidence is real;
+  // this is the count that gates that, per exercise.
+  Object.keys(byPID).forEach(function(pid) {
+    var n = byPID[pid].history.length;
+    byPID[pid].confidence = n === 0 ? 'none' : n <= 2 ? 'low' : n <= 4 ? 'medium' : 'high';
+    byPID[pid].latest = byPID[pid].history.length ? byPID[pid].history[byPID[pid].history.length - 1] : null;
+  });
+
+  return { byPrescriptionExerciseId: byPID, unindexedCount: unindexedCount };
 }
 
 // ─── NUTRITION CONTEXT mapping ────────────────────────────────────────────────
@@ -473,6 +549,10 @@ function summarizeGenerationRequest(req, validationResult) {
   if (req.checkins)      summary.fields['checkins']      = 'present';
   if (req.engineState)   summary.fields['engineState']   = 'present';
   if (req.previousPlan)  summary.fields['previousPlan']  = 'present';
+  if (req.progressionHistory) {
+    var _pidCount = Object.keys(req.progressionHistory.byPrescriptionExerciseId || {}).length;
+    summary.fields['progressionHistory'] = 'exercises[' + _pidCount + '] unindexed=' + (req.progressionHistory.unindexedCount || 0);
+  }
 
   // MODULE_CRITICALITY gap scan for REQUIRED fields
   var modules = ['training', 'nutritionTargets', 'nutritionMenu', 'supplementation'];
@@ -588,6 +668,7 @@ function buildGenerationRequest(params) {
     trainingLogs:      logsResult.trainingLogs,
     checkins:          logsResult.checkins,
     engineState:       logsResult.engineState,
+    progressionHistory:logsResult.progressionHistory,
     attachments:       [],  // multimodal upload not yet implemented (Phase B stub)
     options:           Object.assign({}, options, eqResult.gymInfo ? { gymInfo: eqResult.gymInfo } : {})
   };
@@ -623,6 +704,7 @@ module.exports = {
   _mapEquipment:        _mapEquipment,
   _mapPreviousPlan:     _mapPreviousPlan,
   _mapLogs:             _mapLogs,
+  _mapExerciseProgressionHistory: _mapExerciseProgressionHistory,
   _mapNutritionContext: _mapNutritionContext,
   _mapSupplementContext:_mapSupplementContext,
 };
