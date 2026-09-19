@@ -316,8 +316,10 @@ function makeEngine(LOGS, totalWeeks) {
 (function testT159T161Regressions() {
   ok(!CLIENT.includes('Semana 6 = deload automático'), 'T159 regression: no automatic week-6 deload claim in the Generator prompt/CLAUDE.md');
   ok(CLIENT.includes('prescriptionExerciseId: ej.prescriptionExerciseId || undefined,'), 'T159/T161 regression: prescriptionExerciseId still persisted on each recommendation');
-  ok(CLIENT.includes('var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId) ? progrec : null;'),
-    'T161 regression: PID-verified auto-apply gate unchanged');
+  // T165 added a further "&& !_progRecStale" clause to this gate (coach-edit
+  // staleness) — the PID-verification intent this test checks is unchanged.
+  ok(CLIENT.includes('progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;'),
+    'T161 regression: PID-verified auto-apply gate unchanged (T165 wording)');
 })();
 
 console.log('');

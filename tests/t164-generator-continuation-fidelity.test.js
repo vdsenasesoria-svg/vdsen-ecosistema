@@ -257,7 +257,9 @@ function categorizeForGenerator(pidEntry) {
   const BUILD_REQUEST_SRC = fs.readFileSync(path.join(__dirname, '..', 'api', 'vdsen-build-request.js'), 'utf8');
   ok(BUILD_REQUEST_SRC.includes('function _mapExerciseProgressionHistory(progrecs)'), 'T160/T164 regression: _mapExerciseProgressionHistory unchanged (lives in api/vdsen-build-request.js, not touched by this prompt-only ticket)');
   const CLIENT = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'), 'utf8');
-  ok(CLIENT.includes('var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId) ? progrec : null;'), 'T161 regression: PID-verified next-exposure auto-apply gate unchanged (Client untouched by this ticket)');
+  // T165 added a further "&& !_progRecStale" clause (coach-edit staleness) —
+  // the PID-verification intent this test checks is unchanged.
+  ok(CLIENT.includes('progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;'), 'T161 regression: PID-verified next-exposure auto-apply gate unchanged (T165 wording)');
   ok(CLIENT.includes('function _computeDeloadTriggers(week, postDataOverride)'), 'T162 regression: shared reactive deload trigger helper unchanged (Client untouched by this ticket)');
   ok(COACH.includes("function _categorizeRec(r) {"), 'T163 regression: Coach exceptions-first categorization unchanged (Monitor untouched by this ticket)');
 })();
