@@ -1587,7 +1587,11 @@ async function loadPlan(user) {
         : null,
       rirByWeek: planData.rirByWeek || null,
       totalWeeks: parseInt(planData.weeks) || 6,
-      carb_cycling_y3t: planData.carb_cycling_y3t || null
+      carb_cycling_y3t: planData.carb_cycling_y3t || null,
+      // T165 — coach override authority: timestamp of the coach's last plan edit.
+      // Used to detect a progression recommendation calculated BEFORE that edit
+      // (stale relative to the coach's explicit decision) so it never auto-applies.
+      updatedAt: planData.updatedAt || null
     };
 
     // Módulo A — Ehrenstein: calibración volumétrica (solo lectura en cliente)
@@ -4216,7 +4220,14 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // fallback legacy por nombre/posición. Ambigüedad o identidad ausente → sin
   // aplicación automática (el hint "OBJETIVO" arriba puede seguir mostrándose para
   // planes legacy vía el fallback, pero no muta el valor del input).
-  var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId) ? progrec : null;
+  // T165 — coach override authority: a recommendation calculated BEFORE the
+  // coach's last plan edit predates that explicit decision (e.g. coach manually
+  // changed reps/RIR/sets for this same exercise, same PID) and must not
+  // auto-apply — the coach's edit outranks a stale automated suggestion.
+  // Missing/malformed timestamps never trigger staleness (Date.parse → NaN,
+  // every NaN comparison is false) — safe default for legacy plans/recs.
+  var _progRecStale = !!(PLAN.updatedAt && progrec && progrec.calculatedAt && Date.parse(PLAN.updatedAt) > Date.parse(progrec.calculatedAt));
+  var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;
 
   // ── Determinar numSeries: 3 pasos en orden ──────────────────────────────
   //
