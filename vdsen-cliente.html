@@ -4196,8 +4196,17 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (exMod.rir !== undefined && exMod.rir !== '') baseRIR = parseInt(exMod.rir);
 
   // ── Recomendación de la sesión anterior (única llamada, reutilizada en todo el panel) ──
-  var progrec = _getProgRecForExercise(di, ei, nombre);
+  // T161: PID-first — pasa prescriptionExerciseId para que la búsqueda intente
+  // coincidencia exacta de identidad antes de caer al fallback legacy por
+  // posición/nombre (ver _getProgRecForExercise).
+  var progrec = _getProgRecForExercise(di, ei, nombre, ej.prescriptionExerciseId);
   var progRec = progrec; // alias PascalCase — usado en _buildSetReferenceHtml
+  // T161: la aplicación AUTOMÁTICA de la recomendación (prefill de carga/reps del
+  // próximo set) exige coincidencia VERIFICADA de prescriptionExerciseId — nunca el
+  // fallback legacy por nombre/posición. Ambigüedad o identidad ausente → sin
+  // aplicación automática (el hint "OBJETIVO" arriba puede seguir mostrándose para
+  // planes legacy vía el fallback, pero no muta el valor del input).
+  var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId) ? progrec : null;
 
   // ── Determinar numSeries: 3 pasos en orden ──────────────────────────────
   //
@@ -4578,7 +4587,13 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // semana anterior mismo set → historial. Solo si el set aún no fue registrado.
     // Convertir KG↔LB si la unidad guardada difiere de la unidad actual del ejercicio.
     var _prefill = !saved.carga && !saved.reps;
-    var _progCargaConv = (_prefill && s===0 && progrec && progrec.newLoad !== undefined && progrec.newLoad !== null) ? parseFloat(progrec.newLoad).toFixed(1) : '';
+    // T161 — next-exposure automatic application: only _progAutoApply (verified
+    // prescriptionExerciseId match, see above) may prefill the actual input value.
+    // A loose name/position-matched progrec (legacy, no PID) never mutates this —
+    // it can still show as the "OBJETIVO" reference hint, but the client re-enters
+    // the number themselves for that case.
+    var _progCargaConv = (_prefill && s===0 && _progAutoApply && _progAutoApply.newLoad !== undefined && _progAutoApply.newLoad !== null && !isNaN(parseFloat(_progAutoApply.newLoad))) ? parseFloat(_progAutoApply.newLoad).toFixed(1) : '';
+    var _progRepsApply  = (_prefill && s===0 && _progAutoApply && typeof _progAutoApply.newReps === 'number') ? _progAutoApply.newReps : '';
     var _prevCargaConv = (_prefill && prev.carga) ? _convertCarga(prev.carga, prev.unit, unit) : '';
     var _histCargaConv = (_prefill && s===0 && histEx.load) ? _convertCarga(histEx.load, histEx.unit, unit) : '';
     // Auto-fill desde la serie anterior de ESTA sesión (s>0): si ya la completaron, copiar sus valores
@@ -4595,8 +4610,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // Detectar ejercicio heterogéneo (distintos reps por set — Y3T o plan mixto)
     var _allSetsArr = _isY3T ? (_effectiveSets || []) : (ej.sets || []);
     var _isHeteroSets = _allSetsArr.length > 1 && (new Set(_allSetsArr.map(function(sv){ return sv ? sv.repsTarget : null; }))).size > 1;
-    var carga   = saved.carga   || '';
-    var reps    = saved.reps    || '';
+    var carga   = saved.carga   || _progCargaConv || '';
+    var reps    = saved.reps    || _progRepsApply || '';
     var rirReal = saved.rir_real|| '';
     var setNote = setSpec && setSpec.setNote ? String(setSpec.setNote).trim() : '';
     var setIsDrop = setSpec && setSpec.drop === true;
@@ -12791,7 +12806,33 @@ function _lbwTrack(k) {
 }
 
 // Buscar la recomendación de progresión más reciente para un ejercicio
-function _getProgRecForExercise(di, ei, exName) {
+// T161 — PID-first: cuando se provee prescriptionExerciseId, intenta una
+// coincidencia exacta de identidad ANTES del fallback legacy por posición/nombre.
+// Ambigüedad (el mismo PID aparece más de una vez en las recomendaciones de una
+// misma semana — datos corruptos) detiene la búsqueda por PID sin caer al
+// fallback: mejor no encontrar nada que asociar mal. Ausencia de PID en el
+// historial (ejercicio nuevo o plan legacy) sí cae al fallback existente —
+// ese resultado solo se usa para el hint informativo, nunca para mutar un
+// input automáticamente (ver _progAutoApply en _buildExCard).
+function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
+  if (prescriptionExerciseId) {
+    for (var wp = CURRENT_WEEK; wp >= 1; wp--) {
+      var _pidMatches = [];
+      var _weekKeysP = LOGS_BY_WEEK.progrec[wp] || [];
+      for (var kp = 0; kp < _weekKeysP.length; kp++) {
+        var _progP = LOGS[_weekKeysP[kp]];
+        if (!_progP || !Array.isArray(_progP.recommendations)) continue;
+        _progP.recommendations.forEach(function(r) {
+          if (r && r.prescriptionExerciseId === prescriptionExerciseId) _pidMatches.push(r);
+        });
+      }
+      if (_pidMatches.length === 1) return _pidMatches[0];
+      if (_pidMatches.length > 1) return null; // ambiguous identity — do not guess
+      // 0 matches this week → keep looking further back
+    }
+    // No PID match anywhere → fall through to legacy position/name search below.
+  }
+
   // Buscar progrec_ en orden descendente (semana más reciente primero)
   var bestRec = null;
   for (var w = CURRENT_WEEK; w >= 1; w--) {
