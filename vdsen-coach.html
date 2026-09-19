@@ -731,7 +731,7 @@
   }
 
   function _mapLogs(logsDoc) {
-    var result = { trainingLogs: null, checkins: null, engineState: null, _diagnostics: {} };
+    var result = { trainingLogs: null, checkins: null, engineState: null, progressionHistory: null, _diagnostics: {} };
     if (!logsDoc || !logsDoc.entries) { result._diagnostics.logsAvailable = false; return result; }
     var entries = logsDoc.entries, currentWeek = logsDoc.currentWeek || null;
     var setLogs = {}, sessionDone = {}, postSessions = {}, progrecs = {}, ciSemanas = {}, engineState = null;
@@ -748,8 +748,60 @@
     if (setCount > 0 || postCount > 0) result.trainingLogs = { currentWeek: currentWeek, setLogs: setLogs, sessionDone: sessionDone, postSessions: postSessions, progrecs: progrecs };
     if (ciCount > 0) result.checkins = { weeksTracked: ciCount, ciByWeek: ciSemanas };
     result.engineState = engineState || null;
+    // T166 fix — this browser-embedded _mapLogs had drifted from the T160
+    // api/vdsen-build-request.js version: progressionHistory was computed and
+    // tested there, but never ported here, so the LIVE "Generar plan automático"
+    // request (window.VDSEN_BUILD.buildGenerationRequest) never carried it —
+    // the entire progressionHistory/continuity chain was inert in production.
+    result.progressionHistory = _mapExerciseProgressionHistory(progrecs);
     result._diagnostics = { logsAvailable: true, setCount: setCount, ciCount: ciCount, postCount: postCount, currentWeek: currentWeek, sizeWarning: setCount > 500 ? 'LARGE_LOG_SET_count_' + setCount : null };
     return result;
+  }
+
+  // T166 — ported from api/vdsen-build-request.js (T160), kept byte-identical
+  // in behavior so the browser-executed generation request matches the
+  // server-side/tested implementation. See that file for full rationale.
+  function _mapExerciseProgressionHistory(progrecs) {
+    var byPID = {};
+    var unindexedCount = 0;
+    var weekKeys = Object.keys(progrecs || {}).sort(function(a, b) {
+      var wa = parseInt(a.split('_')[1], 10) || 0;
+      var wb = parseInt(b.split('_')[1], 10) || 0;
+      return wa - wb;
+    });
+    weekKeys.forEach(function(key) {
+      var entry = progrecs[key];
+      var week  = parseInt(key.split('_')[1], 10) || null;
+      var recs  = (entry && Array.isArray(entry.recommendations)) ? entry.recommendations : [];
+      recs.forEach(function(rec) {
+        if (!rec || !rec.prescriptionExerciseId) { unindexedCount++; return; }
+        var pid = rec.prescriptionExerciseId;
+        if (!byPID[pid]) {
+          byPID[pid] = { prescriptionExerciseId: pid, exerciseId: rec.exerciseId || null, exerciseName: rec.exerciseName || null, history: [] };
+        }
+        if (rec.exerciseName) byPID[pid].exerciseName = rec.exerciseName;
+        if (rec.exerciseId)   byPID[pid].exerciseId   = rec.exerciseId;
+        byPID[pid].history.push({
+          week: week,
+          action: rec.action !== undefined ? rec.action : null,
+          newLoad: rec.newLoad !== undefined ? rec.newLoad : null,
+          newReps: rec.newReps !== undefined ? rec.newReps : null,
+          newSets: rec.newSets !== undefined ? rec.newSets : null,
+          rirTarget: rec.rirTarget !== undefined ? rec.rirTarget : null,
+          prescribedRIR: rec.prescribedRIR !== undefined ? rec.prescribedRIR : null,
+          observedRIR: rec.observedRIR !== undefined ? rec.observedRIR : null,
+          repRangeTarget: rec.repRangeTarget || null,
+          trend: rec.trend || null,
+          reason: rec.reason || ''
+        });
+      });
+    });
+    Object.keys(byPID).forEach(function(pid) {
+      var n = byPID[pid].history.length;
+      byPID[pid].confidence = n === 0 ? 'none' : n <= 2 ? 'low' : n <= 4 ? 'medium' : 'high';
+      byPID[pid].latest = byPID[pid].history.length ? byPID[pid].history[byPID[pid].history.length - 1] : null;
+    });
+    return { byPrescriptionExerciseId: byPID, unindexedCount: unindexedCount };
   }
 
   function _mapNutritionContext(fd) {
@@ -816,6 +868,7 @@
       trainingLogs:      logsResult.trainingLogs,
       checkins:          logsResult.checkins,
       engineState:       logsResult.engineState,
+      progressionHistory: logsResult.progressionHistory,
       attachments:       [],
       options:           Object.assign({}, options, eqResult.gymInfo ? { gymInfo: eqResult.gymInfo } : {})
     };
