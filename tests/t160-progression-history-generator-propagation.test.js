@@ -162,7 +162,10 @@ function ok(cond, msg) {
   ok(COACH.includes('`progressionHistory` por `prescriptionExerciseId`'), 'the prompt tells the Generator progressionHistory is the precomputed progression output');
   ok(COACH.includes('NO recalcules progresión desde `trainingLogs` crudo cuando `progressionHistory` esté disponible'), 'the prompt forbids the LLM from re-deriving a second, ad-hoc progression engine from raw logs');
   ok(COACH.includes('Continuidad de ejercicios entre mesociclos'), 'the prompt now has an explicit exercise-continuity rule');
-  ok(COACH.includes('no los rotes \\"para variar\\"'), 'the prompt explicitly forbids calendar/variety-based exercise rotation');
+  // T164 rewrote/expanded this rule's exact wording (confidence tiers, deload-is-not-failure,
+  // PID echo-back) — the phrase itself evolved but the forbidding-rotation intent must remain.
+  // See tests/t164-generator-continuation-fidelity.test.js for the full T164-era assertions.
+  ok(COACH.includes('para variar') && COACH.includes('ninguna de esas es una razon valida de cambio'), 'the prompt explicitly forbids calendar/variety-based exercise rotation (T164 wording)');
   ok(COACH.includes('El menor cambio suficiente gana.'), 'the prompt states the "smallest sufficient change" principle for exercise substitution');
 
   // T159 regression — must still hold under T160's edits to the same prompt.
