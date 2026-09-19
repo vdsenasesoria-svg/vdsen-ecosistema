@@ -3549,9 +3549,12 @@ function _restTimerTick() {
 
 function getTotalWeeks() { return (PLAN && PLAN.totalWeeks) ? PLAN.totalWeeks : 6; }
 
+// T162 — the last week only reads as 'DELOAD' when the reactive engine's own
+// trigger check confirms real fatigue evidence for it (SEMANA 6 ≠ DELOAD
+// AUTOMÁTICO); otherwise it's a checkpoint, not a foregone conclusion.
 function getSemProgresion(week) {
   var total = getTotalWeeks();
-  if (week >= total) return 'DELOAD';
+  if (week >= total) return _computeDeloadTriggers(week).isDeload ? 'DELOAD' : 'SEMANA FINAL';
   // Detectar plan Y3T: al menos un ejercicio con patrón Y3T en cualquier sesión
   var _ses = (typeof getSesiones === 'function') ? getSesiones() : [];
   var _hasY3T = _ses.some(function(ses){
@@ -3573,13 +3576,20 @@ function _isFreeBarbell(exName) {
 }
 
 // exName is optional — when supplied, free barbell compounds are floored at RIR 1 in any week
+// T162 — the +2 (deload/easier) adjustment now requires the SAME reactive
+// evidence _computeDeloadTriggers() uses everywhere else — never merely
+// because `week` equals the mesocycle's last one. SEMANA 6 ≠ DELOAD
+// AUTOMÁTICO: with no real fatigue signal, the last week is a normal week
+// (no +2, and explicitly excluded from the peak/intensif -1 branch too —
+// it just uses the plan's own base RIR, letting normal progression proceed).
 function getAdjustedRIR(baseRIR, week, exName) {
   var total = getTotalWeeks();
   const base = parseInt(baseRIR) || 2;
   var adj;
-  if (week === total) adj = base + 2;           // deload
-  else if (week >= total - 2) adj = Math.max(0, base - 1); // peak/intensif
-  else adj = base;
+  var isLastWeek = week === total;
+  if (_computeDeloadTriggers(week).isDeload) adj = base + 2;              // deload (reactive, any week)
+  else if (!isLastWeek && week >= total - 2) adj = Math.max(0, base - 1); // peak/intensif (2nd/3rd-to-last week only)
+  else adj = base;                                                       // normal — includes a clean last week
   if (exName && _isFreeBarbell(exName)) return Math.max(1, adj);
   return adj;
 }
@@ -6469,7 +6479,6 @@ function renderEntrenamiento() {
     var isReal  = w === REAL_WEEK;
     var isView  = w === CURRENT_WEEK;
     var done    = w < REAL_WEEK;
-    var deload  = w === _tw;
     var numColor, subColor, bg, borderBot;
     if (isReal && isView) {
       bg = 'rgba(107,107,102,.22)'; borderBot = 'var(--accent)'; numColor = '#fff'; subColor = 'var(--accent)';
@@ -6498,7 +6507,7 @@ function renderEntrenamiento() {
       '<span style="font-size:'+sz+';font-weight:900;color:'+numColor+';margin-top:'+mt+';'+(isReal?'text-shadow:0 0 10px rgba(107,107,102,.6);':'')+'">'+
         (done&&!isView?'✓':w)+'</span>'+
       '<span style="font-size:7.5px;letter-spacing:.5px;font-weight:'+(isReal?'800':'600')+';color:'+subColor+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;padding:0 2px">'+
-        (deload?'DELOAD':getSemProgresion(w))+'</span>'+
+        getSemProgresion(w)+'</span>'+
       '</button>';
   }
 
@@ -8436,7 +8445,8 @@ async function _confirmSessionDone(di) {
   renderEntrenamiento();
   renderResumen();
   // Auto-avance de semana: NO depende de la semana que se esté viendo.
-  // Avanza mientras la semana REAL siga completa, hasta 6 (deload).
+  // Avanza mientras la semana REAL siga completa, hasta getTotalWeeks()
+  // (la última semana es un checkpoint de mesociclo, no un deload garantizado).
   // Esto cubre el caso de marcar varias semanas atrasadas de un tirón.
   await _autoAdvanceWeekIfDone(CURRENT_WEEK !== REAL_WEEK /*fromOtherWeekView*/);
   return true; // T125-C: señala éxito al caller
@@ -13895,6 +13905,49 @@ function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exercis
   };
 }
 
+// T162 — Single source of truth for reactive deload-trigger detection.
+// Used by calculateProgression() (real-time, driven by the just-completed
+// session's postData) AND by getAdjustedRIR() (render-time, no postData in
+// scope — derives EIMD/RPE/sleep from the most recent postsession_{week}_*
+// LOGS entry instead, falling back to the same neutral defaults
+// calculateProgression already used when no data exists). One engine, two
+// callers — SEMANA 6 ≠ DELOAD AUTOMÁTICO relies on both reading the same
+// real signals, never a calendar check on its own.
+function _computeDeloadTriggers(week, postDataOverride) {
+  var postData = postDataOverride;
+  if (!postData) {
+    var _latestPost = null, _latestPostD = -1;
+    Object.keys(LOGS).forEach(function(k) {
+      var m = k.match(/^postsession_(\d+)_(\d+)$/);
+      if (m && parseInt(m[1], 10) === week) {
+        var d = parseInt(m[2], 10);
+        if (d > _latestPostD) { _latestPostD = d; _latestPost = LOGS[k]; }
+      }
+    });
+    postData = _latestPost || {};
+  }
+  var rpe   = postData.rpeAverage || 7;
+  var sleep = postData.sleepHours || 7;
+
+  var triggers = [];
+  var ciKey = 'ci_sem_'+week;
+  var ci = LOGS[ciKey] || {};
+  var who5 = ci.who5 ? parseInt(ci.who5) : 0;
+  if (who5 > 0 && who5 < 52) triggers.push('Bienestar WHO-5 bajo ('+who5+'/100)');
+  if (rpe > 9) triggers.push('RPE promedio > 9');
+  if (sleep < 6) triggers.push('Sueño < 6h');
+  // HRV: tendencia descendente (comparar con semana anterior)
+  var prevCI = LOGS['ci_sem_'+(week-1)] || {};
+  if (ci.hrv && prevCI.hrv && (parseFloat(ci.hrv) < parseFloat(prevCI.hrv) * 0.85)) {
+    triggers.push('HRV descendente (-'+ Math.round((1 - parseFloat(ci.hrv)/parseFloat(prevCI.hrv))*100) +'%)');
+  }
+  // Energía subjetiva baja
+  if (ci.energia && parseInt(ci.energia) <= 3) {
+    triggers.push('Energía subjetiva muy baja ('+ci.energia+'/10)');
+  }
+  return { triggers: triggers, isDeload: triggers.length >= 2 };
+}
+
 function calculateProgression(di, postData) {
   var sesiones = getSesiones();
   var dia = sesiones[di];
@@ -13920,33 +13973,17 @@ function calculateProgression(di, postData) {
                   : weekRirObj[String(nextWeekNum)] !== undefined ? weekRirObj[String(nextWeekNum)]
                   : defaultRir[nextWeekNum]         !== undefined ? defaultRir[nextWeekNum] : 2;
   var eimd = postData.eimd || 2;
-  var rpe  = postData.rpeAverage || 7;
-  var sleep = postData.sleepHours || 7;
   var articular = postData.articularPain || {present:false};
 
-  // ── Gatillos de deload (ampliados) ──
-  var deloadTriggers = [];
-  var ciKey = 'ci_sem_'+CURRENT_WEEK;
-  var ci = LOGS[ciKey] || {};
-  var who5 = ci.who5 ? parseInt(ci.who5) : 0;
-  if (who5 > 0 && who5 < 52) deloadTriggers.push('Bienestar WHO-5 bajo ('+who5+'/100)');
-  if (rpe > 9) deloadTriggers.push('RPE promedio > 9');
-  if (sleep < 6) deloadTriggers.push('Sueño < 6h');
-  // HRV: tendencia descendente (comparar con semana anterior)
-  var prevCI = LOGS['ci_sem_'+(CURRENT_WEEK-1)] || {};
-  if (ci.hrv && prevCI.hrv && (parseFloat(ci.hrv) < parseFloat(prevCI.hrv) * 0.85)) {
-    deloadTriggers.push('HRV descendente (-'+ Math.round((1 - parseFloat(ci.hrv)/parseFloat(prevCI.hrv))*100) +'%)');
-  }
-  // Energía subjetiva baja
-  if (ci.energia && parseInt(ci.energia) <= 3) {
-    deloadTriggers.push('Energía subjetiva muy baja ('+ci.energia+'/10)');
-  }
+  // ── Gatillos de deload — single source of truth: _computeDeloadTriggers ──
+  var _deloadResult = _computeDeloadTriggers(CURRENT_WEEK, postData);
+  var deloadTriggers = _deloadResult.triggers;
 
   // P6: Deload reactivo — el deload se activa por señales reales, no por
   // semana fija. La última semana del plan puede ser deload pero no lo fuerza.
   var _tw2 = getTotalWeeks();
   var isLastWeek = CURRENT_WEEK >= _tw2;
-  var isDeload = deloadTriggers.length >= 2;
+  var isDeload = _deloadResult.isDeload;
 
   // Obtener ejercicios del día
   var exercises = [];

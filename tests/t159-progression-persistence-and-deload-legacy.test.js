@@ -96,7 +96,12 @@ console.log('Legacy "week 6 = automatic deload" claim removed from Generator pro
 
 const calcProgFn = extractFunction(CLIENT, 'function calculateProgression(di, postData)');
 assert.ok(calcProgFn, 'calculateProgression must exist');
-assert.ok(calcProgFn.includes('var isDeload = deloadTriggers.length >= 2;'), 'T159 regression: reactive deload trigger condition must remain unchanged');
+// T162 refactored the inline trigger check into a shared _computeDeloadTriggers()
+// helper (single source of truth, also reused by getAdjustedRIR) — the >= 2
+// threshold itself is unchanged, just relocated. Verify both sides of that.
+assert.ok(calcProgFn.includes('var isDeload = _deloadResult.isDeload;'), 'T159/T162 regression: calculateProgression must still derive isDeload from the shared trigger result');
+const deloadTriggersFn = extractFunction(CLIENT, 'function _computeDeloadTriggers(week, postDataOverride)');
+assert.ok(deloadTriggersFn && deloadTriggersFn.includes('return { triggers: triggers, isDeload: triggers.length >= 2 };'), 'T159/T162 regression: the >= 2 reactive deload trigger condition must remain unchanged inside the shared helper');
 assert.ok(calcProgFn.includes('var isLastWeek = CURRENT_WEEK >= _tw2;'), 'T159 regression: isLastWeek must remain a separate, non-forcing flag');
 assert.ok(
   !/isLastWeek\s*&&\s*!isDeload[\s\S]{0,40}isDeload\s*=\s*true/.test(calcProgFn),
