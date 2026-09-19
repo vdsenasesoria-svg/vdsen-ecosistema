@@ -6255,9 +6255,12 @@ function applyExSub(di, ei, newNombre, originalNombre) {
 }
 
 // FASE 8 — Session dashboard helpers
-function _fmtElapsed(startMs) {
+// T163-bug: endMs lets a COMPLETED session freeze at its real duration
+// instead of always ticking against Date.now() (which never stops on its
+// own once a session is marked done and its dashboard stays visible).
+function _fmtElapsed(startMs, endMs) {
   if (!startMs) return '--:--';
-  var elapsed = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+  var elapsed = Math.max(0, Math.floor(((endMs || Date.now()) - startMs) / 1000));
   var h = Math.floor(elapsed / 3600), m = Math.floor((elapsed % 3600) / 60), s = elapsed % 60;
   if (h > 0) return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
   return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
@@ -6432,14 +6435,19 @@ function _refreshSessionDashboard() {
   var _sesICS = _sesStats.avgICS !== null ? _sesStats.avgICS : null;
   var _icsColor = _sesICS !== null ? (_sesICS >= 8 ? 'var(--grn)' : _sesICS >= 7 ? 'var(--gold)' : 'var(--red)') : 'var(--mt)';
   if (_sesStats.sessionStart && !window._sesTimerStart) window._sesTimerStart = _sesStats.sessionStart;
+  // T163-bug: freeze at the real duration once the session is done — same
+  // fix as renderEntrenamiento's own dashboard block, kept in sync here.
+  var _sesDoneEntry = LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
+  window._sesTimerEnd = (_sesDoneEntry && _sesDoneEntry.ts) ? _sesDoneEntry.ts : null;
   el.innerHTML =
     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:6px 12px 8px;background:rgba(0,0,0,.10)">' +
     _statCell(_sesStats.completedSets + '/' + _sesTotSets, 'series', 'var(--tx)') +
-    _statCell('<span id="_sesTime">' + _fmtElapsed(window._sesTimerStart) + '</span>', 'tiempo', 'var(--tx)') +
+    _statCell('<span id="_sesTime">' + _fmtElapsed(window._sesTimerStart, window._sesTimerEnd) + '</span>', 'tiempo', 'var(--tx)') +
     _statCell(_sesRIR !== null ? _sesRIR : '—', 'rir medio', 'var(--tx)') +
     _statCell(_sesICS !== null ? _sesICS : '—', 'ics medio', _icsColor) +
     '</div>';
-  if (window._sesTimerStart && !window._sesTimerInterval) {
+  if (window._sesTimerInterval) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; }
+  if (window._sesTimerStart && !window._sesTimerEnd) {
     window._sesTimerInterval = setInterval(function() {
       var _te = document.getElementById('_sesTime');
       if (!_te) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; return; }
@@ -6765,10 +6773,15 @@ function renderEntrenamiento() {
     var _sesICS = _sesStats.avgICS !== null ? _sesStats.avgICS : null;
     var _icsColor = _sesICS !== null ? (_sesICS >= 8 ? 'var(--grn)' : _sesICS >= 7 ? 'var(--gold)' : 'var(--red)') : 'var(--mt)';
     window._sesTimerStart = _sesStats.sessionStart;
+    // T163-bug: once the session is marked done, freeze the elapsed time at
+    // its real end (the done_ timestamp) instead of letting it keep ticking
+    // against Date.now() forever — no interval is started for it below.
+    var _sesDoneEntry = LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
+    window._sesTimerEnd = (_sesDoneEntry && _sesDoneEntry.ts) ? _sesDoneEntry.ts : null;
     sessionStatsHtml =
       '<div id="_sesDashboard"><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:6px 12px 8px;background:rgba(0,0,0,.10)">' +
       _statCell(_sesStats.completedSets + '/' + _sesTotSets, 'series', 'var(--tx)') +
-      _statCell('<span id="_sesTime">' + _fmtElapsed(_sesStats.sessionStart) + '</span>', 'tiempo', 'var(--tx)') +
+      _statCell('<span id="_sesTime">' + _fmtElapsed(_sesStats.sessionStart, window._sesTimerEnd) + '</span>', 'tiempo', 'var(--tx)') +
       _statCell(_sesRIR !== null ? _sesRIR : '—', 'rir medio', 'var(--tx)') +
       _statCell(_sesICS !== null ? _sesICS : '—', 'ics medio', _icsColor) +
       '</div></div>';
@@ -6902,8 +6915,10 @@ function renderEntrenamiento() {
       '<span id="timerPillNum" style="font-size:22px;font-weight:800;color:var(--accent);font-family:monospace;letter-spacing:1px">—</span>'+
       '<span style="font-size:11px;color:var(--mt);font-weight:600">Toca para ver</span>'+
     '</div>';
-  // Session timer live update
-  if (window._sesTimerStart) {
+  // Session timer live update — T163-bug: never ticks for a session already
+  // marked done (window._sesTimerEnd set above); its display was already
+  // rendered frozen at the real duration, so there is nothing to update.
+  if (window._sesTimerStart && !window._sesTimerEnd) {
     if (window._sesTimerInterval) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; }
     function _updateSesTimer() {
       var el = document.getElementById('_sesTime');
