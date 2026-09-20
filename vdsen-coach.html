@@ -1973,6 +1973,76 @@
   window._isRecommendationSupersededByIntervention = _isRecommendationSupersededByIntervention;
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  T242 — CANONICAL EVIDENCE TIMESTAMP. Per T241's provenance audit: the
+  //  ONLY real, non-fabricated, scope-exact timestamps available are
+  //  progrec_{W}_{D}'s own `calculatedAt` (EXERCISE, matched via
+  //  recommendations[].prescriptionExerciseId -- never rec.calculatedAt,
+  //  which is never set) aggregated up to MUSCLE via the SAME canonical
+  //  exercise->muscle metadata auditFractionalVolume already trusts, and
+  //  postsession_{W}_{D}.ts / ci_sem_{W}.fecha / inbodyResults[].ts for
+  //  CLIENT (MESOCYCLE has no distinct source of its own -- it reuses the
+  //  same client-level signals). Never Date.now(), never a render-time
+  //  timestamp, never evidence from a different target. Returns null
+  //  (never fabricated) when no real evidence exists for that exact scope.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _getLatestEvidenceTimestampForScope(targetType, targetId, entries, planDoc, clientDoc) {
+    entries = entries || {};
+    var latest = null;
+    function bump(iso) {
+      if (!iso) return;
+      var t = Date.parse(iso);
+      if (isNaN(t)) return;
+      if (latest === null || t > Date.parse(latest)) latest = iso;
+    }
+
+    if (targetType === INTERVENTION_TARGET_TYPE.EXERCISE) {
+      Object.keys(entries).forEach(function(k) {
+        if (!/^progrec_\d+_\d+$/.test(k)) return;
+        var entry = entries[k];
+        if (!entry || !entry.calculatedAt || !Array.isArray(entry.recommendations)) return;
+        var matches = entry.recommendations.some(function(r) { return r && r.prescriptionExerciseId === targetId; });
+        if (matches) bump(entry.calculatedAt);
+      });
+      return latest;
+    }
+
+    if (targetType === INTERVENTION_TARGET_TYPE.MUSCLE) {
+      // Resolve which PIDs in the CURRENT plan actually train this exact
+      // muscle -- never by matching an exercise/recommendation NAME.
+      var pidsForMuscle = {};
+      ((planDoc && planDoc.days) || []).forEach(function(d) {
+        (d.exercises || []).forEach(function(ex) {
+          if (!ex.prescriptionExerciseId) return;
+          var nameLc = (ex.exerciseName || '').trim().toLowerCase();
+          var canonical = _EXERCISE_CANONICAL_METADATA[nameLc];
+          if (canonical && (canonical.primaryMuscles || []).indexOf(targetId) !== -1) pidsForMuscle[ex.prescriptionExerciseId] = true;
+        });
+      });
+      if (!Object.keys(pidsForMuscle).length) return null;
+      Object.keys(entries).forEach(function(k) {
+        if (!/^progrec_\d+_\d+$/.test(k)) return;
+        var entry = entries[k];
+        if (!entry || !entry.calculatedAt || !Array.isArray(entry.recommendations)) return;
+        var matches = entry.recommendations.some(function(r) { return r && r.prescriptionExerciseId && pidsForMuscle[r.prescriptionExerciseId]; });
+        if (matches) bump(entry.calculatedAt);
+      });
+      return latest;
+    }
+
+    if (targetType === INTERVENTION_TARGET_TYPE.CLIENT || targetType === INTERVENTION_TARGET_TYPE.MESOCYCLE) {
+      Object.keys(entries).forEach(function(k) {
+        if (/^postsession_\d+_\d+$/.test(k) && entries[k] && entries[k].ts) bump(new Date(entries[k].ts).toISOString());
+        if (/^ci_sem_\d+$/.test(k) && entries[k] && entries[k].fecha) bump(entries[k].fecha);
+      });
+      ((clientDoc && clientDoc.inbodyResults) || []).forEach(function(r) { if (r && r.ts) bump(new Date(r.ts).toISOString()); });
+      return latest;
+    }
+
+    return null; // unknown targetType -- never guessed
+  }
+  window._getLatestEvidenceTimestampForScope = _getLatestEvidenceTimestampForScope;
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  T236 — MONITOR ACTION WORKFLOW. From the "Atención del Coach" card
   //  (T229), lets the Coach explicitly resolve the flagged supervision
   //  item. Reuses the EXACT established persistence pattern already used
