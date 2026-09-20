@@ -17881,6 +17881,53 @@ El esfuerzo no es negociable.
       </div>`;
     }
 
+    // ── T288 — Coach visibility for the T284-287 evidence-quality layer.
+    // Sourced entirely from _monitorSnapshot.evidenceQuality (T286) -- no
+    // second quality engine. Exceptions-first: hidden entirely when
+    // overall is VALID (the common case), never a permanent diagnostics
+    // panel. Shows WHY a conclusion is being withheld, not raw timestamps.
+    if (_monitorSnapshot && _monitorSnapshot.evidenceQuality && _monitorSnapshot.evidenceQuality.overall !== 'VALID') {
+      const _eq288 = _monitorSnapshot.evidenceQuality;
+      const _EQ_META288 = {
+        UNRESOLVED:  { label: 'DATOS INSUFICIENTES', color: '#888' },
+        STALE:       { label: 'DESACTUALIZADO',       color: '#FFAA33' },
+        PARTIAL:     { label: 'PARCIAL',              color: '#FFCC44' },
+        CONFLICTING: { label: 'CONFLICTIVO',          color: '#FF4444' },
+        LEGACY:      { label: 'LEGADO',               color: '#888' }
+      };
+      const _eqMeta288 = _EQ_META288[_eq288.overall] || _EQ_META288.UNRESOLVED;
+      const _EQ_DOMAIN_LABEL288 = {
+        execution: 'Ejecución de entrenamiento', recovery: 'Check-in semanal',
+        progression: 'Progresión de ejercicios', nutrition: 'Adherencia nutricional',
+        bodyComposition: 'Composición corporal', coachIntervention: 'Intervención del coach'
+      };
+      const _EQ_REASON_LINE288 = {
+        missing_value: 'sin datos registrados', scope_mismatch: 'los datos de recuperación son de una semana anterior',
+        incomplete: 'incompleto', conflict_flag: 'mediciones inconsistentes entre sí',
+        no_safe_identity: 'incluye evidencia sin ejercicio identificado', identity_unknown: 'identidad no verificable',
+        identity_mismatch: 'no corresponde al ejercicio/plan actual'
+      };
+      const _attentionItems288 = Object.keys(_EQ_DOMAIN_LABEL288).filter(function(k) {
+        const d = _eq288[k];
+        return d && d.status !== 'VALID';
+      }).map(function(k) {
+        const d = _eq288[k];
+        const line = _EQ_REASON_LINE288[d.reason] || d.reason;
+        const pct = (d.status === 'PARTIAL' && typeof d.completeness === 'number') ? ' (' + Math.round(d.completeness * 100) + '%)' : '';
+        return '<li>' + _escH(_EQ_DOMAIN_LABEL288[k]) + ': ' + _escH(line) + pct + '</li>';
+      }).join('');
+
+      if (_attentionItems288) {
+        html += `<div class="card p-3 mb-3" style="border-left:3px solid ${_eqMeta288.color};border-radius:0 8px 8px 0">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+            <div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">Estado de evidencia</div>
+            <div style="font-size:13px;font-weight:800;color:${_eqMeta288.color}">${_eqMeta288.label}</div>
+          </div>
+          <ul class="text-xs" style="margin:0;padding-left:16px;color:#aaa;line-height:1.6">${_attentionItems288}</ul>
+        </div>`;
+      }
+    }
+
     // ── T229 — Monitor drill-down: COACH ATTENTION. Sourced entirely from
     // _monitorSnapshot.coachSupervision (T279) -- the EXACT SAME
     // _rankClientPriority/_computeInterventionReasonAction call the
