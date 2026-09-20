@@ -16599,6 +16599,73 @@ El esfuerzo no es negociable.
       }
     }
 
+    // ── T229 — Monitor drill-down: COACH ATTENTION. Combines T226's
+    // priority + T227's reason/action from the SAME already-computed
+    // signals (attnState, weeklyStatus, prescriptionEffectiveness) --
+    // exceptions-first: renders nothing at all when priority is ON_TRACK,
+    // and never repeats the exercise/body-comp detail already shown in the
+    // T206/T215/T223 cards above.
+    if (p && typeof window.VDSEN_OUTCOME !== 'undefined' && typeof window.VDSEN_LEARNED !== 'undefined' && typeof window.VDSEN_ADHERENCE !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {
+      const _attnState229 = _computeClientAttentionState(entries, p, currentWeek);
+      const _progrecs229 = {};
+      Object.keys(entries).forEach(k => { if (/^progrec_\d+_\d+$/.test(k)) _progrecs229[k] = entries[k]; });
+      const _progHist229 = window.VDSEN_BUILD._mapExerciseProgressionHistory(_progrecs229);
+      const _perf229 = window.VDSEN_OUTCOME.computePerformanceResponse(p, _progHist229);
+      const _goal229 = (_detailFichaData && _detailFichaData.data && _detailFichaData.data.objetivo_calorico) || null;
+      const _bodyComp229 = window.VDSEN_OUTCOME.computeBodyCompositionResponse(c && c.inbodyResults, _goal229);
+      const _recSens229 = window.VDSEN_LEARNED.computeRecoverySensitivity(entries, p, _progHist229);
+      const _sessionAdh229 = window.VDSEN_ADHERENCE.computeSessionSummary(entries, currentWeek);
+      const _hasPain229 = _wsStatusForAdaptive === 'PAIN_REVIEW';
+      const _effectiveness229 = window.VDSEN_OUTCOME.computeEffectiveness({
+        performanceResponse: _perf229, bodyCompositionResponse: _bodyComp229,
+        sessionAdherence: _sessionAdh229, recoverySensitivity: _recSens229, hasPain: _hasPain229
+      });
+      const _priority229 = _rankClientPriority(_attnState229.state, _wsStatusForAdaptive, _effectiveness229.overall);
+      const _reasonAction229 = _computeInterventionReasonAction(_priority229, {
+        attnReasons: _attnState229.reasons, weeklyStatus: _wsStatusForAdaptive,
+        effectiveness: _effectiveness229, mesocycleAction: null
+      });
+
+      if (_priority229 !== 'ON_TRACK') {
+        const _PRIORITY_META229 = {
+          URGENT_REVIEW:      { label: 'URGENTE',                color: '#FF2222' },
+          NEEDS_REVIEW:        { label: 'REVISAR',                 color: '#FF4444' },
+          WATCH:               { label: 'OBSERVAR',                color: '#FFAA33' },
+          INSUFFICIENT_DATA:  { label: 'DATOS INSUFICIENTES',     color: '#888' }
+        };
+        const _REASON_LABEL229 = {
+          safety_signal: 'Señal de seguridad activa',
+          unresolved_coach_review: 'Revisión de coach sin resolver',
+          under_responding_despite_adherence: 'Sin respuesta pese a adherencia adecuada',
+          recovery_limited: 'Recuperación limitada',
+          review_flagged: 'Marcado para revisión',
+          adherence_limited: 'Adherencia limitada',
+          performance_stall: 'Estancamiento de rendimiento',
+          recovery_cost: 'Costo de recuperación',
+          mesocycle_renewal_pending: 'Renovación de mesociclo pendiente',
+          general_watch: 'Observación general',
+          insufficient_data: 'Datos insuficientes'
+        };
+        const _ACTION_LABEL229 = {
+          SAFETY_REVIEW: 'Revisión de seguridad', RECOVERY_REVIEW: 'Revisión de recuperación',
+          ADHERENCE_REVIEW: 'Revisión de adherencia', PROGRESSION_REVIEW: 'Revisión de progresión',
+          PRESCRIPTION_REVIEW: 'Revisión de prescripción', MESOCYCLE_REVIEW: 'Revisión de mesociclo',
+          DATA_REVIEW: 'Revisión de datos', NO_ACTION: 'Sin acción'
+        };
+        const _meta229 = _PRIORITY_META229[_priority229] || _PRIORITY_META229.WATCH;
+
+        html += `<div class="card p-3 mb-3" style="border-left:3px solid ${_meta229.color};border-radius:0 8px 8px 0">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+            <div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">Atención del Coach</div>
+            <div style="font-size:13px;font-weight:800;color:${_meta229.color}">${_meta229.label}</div>
+          </div>
+          <div class="text-xs mb-1"><span style="font-weight:700">Motivo:</span> ${_escH(_REASON_LABEL229[_reasonAction229.primaryReason] || _reasonAction229.primaryReason)}</div>
+          ${_reasonAction229.supportingReasons.length ? `<div class="text-xs mb-1" style="color:#aaa">${_reasonAction229.supportingReasons.map(r => _escH(r)).join(' · ')}</div>` : ''}
+          <div class="text-xs" style="color:#aaa"><span style="font-weight:700">Revisión sugerida:</span> ${_escH(_ACTION_LABEL229[_reasonAction229.action] || _reasonAction229.action)}</div>
+        </div>`;
+      }
+    }
+
     // ── Gráfica de tendencia de peso
     if (weightPts.length >= 2) html += _buildMiniTrendChart(weightPts, 'Tendencia de peso (kg)', '#C4FF00');
 
