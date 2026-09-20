@@ -1862,6 +1862,52 @@
   }
   window._buildCoachIntervention = _buildCoachIntervention;
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T235 — STALENESS / INVALIDATION RULES. A Coach intervention invalidates
+  //  only automated decisions that PREDATE it AND concern the SAME scope --
+  //  never a global invalidation, never same-name association when a PID
+  //  exists. History is never deleted (the interventions array is
+  //  append-only); only the freshest matching, non-historical entry has
+  //  authority for a given scope.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Exact scope match only (PID-first for EXERCISE, muscle-name for
+  // MUSCLE, 'MESOCYCLE' for mesocycle-level, plan-independent for CLIENT).
+  // An intervention tied to a DIFFERENT plan than the one currently active
+  // is historical (CASE H: a prior mesocycle's decision is not active
+  // authority for the current one) -- CLIENT-scoped decisions are the one
+  // exception, since they are not plan-specific by definition.
+  function _isInterventionActiveForScope(intervention, targetType, targetId, currentPlanId) {
+    if (!intervention) return false;
+    if (intervention.targetType !== targetType || intervention.targetId !== targetId) return false;
+    if (intervention.targetType !== INTERVENTION_TARGET_TYPE.CLIENT && intervention.planId && currentPlanId && intervention.planId !== currentPlanId) return false;
+    return true;
+  }
+
+  // Finds the single most recent ACTIVE intervention for a scope, from the
+  // full (append-only) history array -- never mutates or filters out the
+  // history itself, only selects which entry currently holds authority.
+  function _findActiveIntervention(interventions, targetType, targetId, currentPlanId) {
+    var list = Array.isArray(interventions) ? interventions : [];
+    var matches = list.filter(function(i) { return _isInterventionActiveForScope(i, targetType, targetId, currentPlanId); });
+    if (!matches.length) return null;
+    matches.sort(function(a, b) { return Date.parse(b.decidedAt || 0) - Date.parse(a.decidedAt || 0); });
+    return matches[0];
+  }
+
+  // Whether a piece of automated evidence (its own timestamp, e.g. a
+  // progrec's calculatedAt or a postsession's ts) postdates the
+  // intervention -- if so, that NEW evidence is not superseded by the
+  // older Coach decision (a Coach decision must not erase evidence
+  // generated AFTER it; authority is chronological AND scoped).
+  function _isEvidenceNewerThanIntervention(intervention, evidenceTimestampIso) {
+    if (!intervention || !evidenceTimestampIso) return false;
+    return Date.parse(evidenceTimestampIso) > Date.parse(intervention.decidedAt || 0);
+  }
+
+  window._findActiveIntervention = _findActiveIntervention;
+  window._isEvidenceNewerThanIntervention = _isEvidenceNewerThanIntervention;
+
   // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
   function _getLiveInfo(entries, planData) {
     if (!entries) return null;
