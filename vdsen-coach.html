@@ -758,6 +758,14 @@
     return result;
   }
 
+  // T203 — ported from api/vdsen-build-request.js, kept byte-identical.
+  function _classifyExerciseExecutionFidelity(setCompletionRate) {
+    if (typeof setCompletionRate !== 'number' || setCompletionRate <= 0) return 'NONE';
+    if (setCompletionRate < 0.5) return 'LOW';
+    if (setCompletionRate < 0.8) return 'MEDIUM';
+    return 'HIGH';
+  }
+
   // T166 — ported from api/vdsen-build-request.js (T160), kept byte-identical
   // in behavior so the browser-executed generation request matches the
   // server-side/tested implementation. See that file for full rationale.
@@ -795,7 +803,8 @@
           reason: rec.reason || '',
           // T205 — execution fidelity for THIS week (see api/vdsen-build-request.js
           // for the full rationale; kept identical between both copies).
-          setCompletionRate: (rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null
+          setCompletionRate: (rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null,
+          fidelity: _classifyExerciseExecutionFidelity((rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null)
         });
       });
     });
@@ -1064,7 +1073,8 @@
     buildGenerationRequest:     buildGenerationRequest,
     validateGenerationRequest:  validateGenerationRequest,
     validateGenerationResponse: validateGenerationResponse,
-    _mapExerciseProgressionHistory: _mapExerciseProgressionHistory // T198: Coach Monitor reuse, no second engine
+    _mapExerciseProgressionHistory: _mapExerciseProgressionHistory, // T198: Coach Monitor reuse, no second engine
+    _classifyExerciseExecutionFidelity: _classifyExerciseExecutionFidelity // T203/T206: Coach Monitor reuse, no second engine
   };
 })();
 </script>

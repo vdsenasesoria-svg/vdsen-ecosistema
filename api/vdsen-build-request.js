@@ -420,6 +420,17 @@ function _mapLogs(logsDoc) {
 // stamping) is counted in unindexedCount but never guessed into a bucket by
 // name or position — ambiguity/absence of identity means no association,
 // not a best-effort match.
+// T203 — HIGH/MEDIUM/LOW/NONE per-exercise (PID-scoped) execution fidelity,
+// classifying the SAME setCompletionRate the T205 confidence fix averages.
+// Never called with a name-matched rate -- only ever with one already
+// resolved by prescriptionExerciseId (see the PID-first rule above).
+function _classifyExerciseExecutionFidelity(setCompletionRate) {
+  if (typeof setCompletionRate !== 'number' || setCompletionRate <= 0) return 'NONE';
+  if (setCompletionRate < 0.5) return 'LOW';
+  if (setCompletionRate < 0.8) return 'MEDIUM';
+  return 'HIGH';
+}
+
 function _mapExerciseProgressionHistory(progrecs) {
   var byPID = {};
   var unindexedCount = 0;
@@ -466,7 +477,9 @@ function _mapExerciseProgressionHistory(progrecs) {
         // from the already-computed, already-PID-scoped, already-autoFilled-
         // excluding setMetrics (see calculateProgression). null when a
         // legacy recommendation predates setMetrics (unknown, not poor).
-        setCompletionRate:  (rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null
+        setCompletionRate:  (rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null,
+        // T203 — this week's HIGH/MEDIUM/LOW/NONE execution fidelity label.
+        fidelity:           _classifyExerciseExecutionFidelity((rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null)
       });
     });
   });
@@ -731,6 +744,7 @@ module.exports = {
   _mapPreviousPlan:     _mapPreviousPlan,
   _mapLogs:             _mapLogs,
   _mapExerciseProgressionHistory: _mapExerciseProgressionHistory,
+  _classifyExerciseExecutionFidelity: _classifyExerciseExecutionFidelity,
   _mapNutritionContext: _mapNutritionContext,
   _mapSupplementContext:_mapSupplementContext,
 };

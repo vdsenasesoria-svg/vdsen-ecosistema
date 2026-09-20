@@ -76,8 +76,9 @@ function extractFunction(src, decl) {
 (function testEmbeddedMapLogsCarriesProgressionHistory() {
   const src = extractFunction(COACH, 'function _mapExerciseProgressionHistory(progrecs)');
   ok(src, 'vdsen-coach.html now has its own _mapExerciseProgressionHistory (ported from api/vdsen-build-request.js)');
+  const fidelitySrc = extractFunction(COACH, 'function _classifyExerciseExecutionFidelity(setCompletionRate)');
 
-  const fn = new Function('return ' + src)();
+  const fn = new Function(fidelitySrc + ';\nreturn ' + src)();
   const progrecs = {
     'progrec_1_0': { recommendations: [
       { prescriptionExerciseId: 'pid-x', exerciseName: 'Sentadilla', exerciseId: 'ex-1', action: 'maintain' }
@@ -124,7 +125,8 @@ function extractFunction(src, decl) {
 
 (function testNoSilentNameAssociation() {
   const src = extractFunction(COACH, 'function _mapExerciseProgressionHistory(progrecs)');
-  const fn = new Function('return ' + src)();
+  const fidelitySrc = extractFunction(COACH, 'function _classifyExerciseExecutionFidelity(setCompletionRate)');
+  const fn = new Function(fidelitySrc + ';\nreturn ' + src)();
 
   // CASO C — same exerciseName, but two DIFFERENT PIDs (e.g. a duplicated
   // exercise, or the Generator failed to recognize continuity for what a

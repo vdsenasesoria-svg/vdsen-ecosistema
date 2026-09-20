@@ -84,7 +84,7 @@ const _decideMesocycleTransition = new Function('return ' + decideSrc)();
 
 ok(COACH.includes('window.VDSEN_MESOCYCLE = { decide: _decideMesocycleTransition };'), 'exposed via window.VDSEN_MESOCYCLE for the Coach Monitor to reuse (no second engine)');
 ok(COACH.includes('mesocycleDecision: mesocycleDecision,'), 'buildGenerationRequest wires mesocycleDecision into the canonical request additively');
-ok(COACH.includes('_mapExerciseProgressionHistory: _mapExerciseProgressionHistory // T198: Coach Monitor reuse'), 'progressionHistory mapper exposed for the Coach Monitor to reuse the same data');
+ok(COACH.includes('_mapExerciseProgressionHistory: _mapExerciseProgressionHistory, // T198: Coach Monitor reuse'), 'progressionHistory mapper exposed for the Coach Monitor to reuse the same data');
 
 function pidHistory(weeks) {
   // weeks: array of {action} in chronological order
