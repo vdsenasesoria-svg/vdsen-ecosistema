@@ -15546,6 +15546,16 @@ El esfuerzo no es negociable.
       const _wsProgCount = _wsSummary.filter(s => s && (s.action === 'increase_load' || s.action === 'add_sets')).length;
       const _wsStallCount = _wsSummary.filter(s => s && (s.action === 'maintain' || s.action === 'freeze_load')).length;
 
+      // T206 — compact, exceptions-first execution-fidelity visibility.
+      // Reuses the SAME sessionAdherence computed above (T202) and
+      // classifies THIS week's recommendations' setMetrics via T203's
+      // _classifyExerciseExecutionFidelity — no recalculated logic.
+      const _wsExecRate = _wsSessionAdherence && typeof _wsSessionAdherence.executionRate === 'number' ? _wsSessionAdherence.executionRate : null;
+      const _wsLowFidelityNames = (lastRec && Array.isArray(lastRec.recommendations) ? lastRec.recommendations : [])
+        .filter(r => r && r.setMetrics && typeof r.setMetrics.setCompletionRate === 'number')
+        .filter(r => { const f = _classifyExerciseExecutionFidelity(r.setMetrics.setCompletionRate); return f === 'LOW' || f === 'NONE'; })
+        .map(r => r.exerciseName || 'ejercicio sin nombre');
+
       html += `<div class="card p-3 mb-3" style="border-left:3px solid ${_wsMeta.color};border-radius:0 8px 8px 0">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap">
           <div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">Decisión semanal — Sem ${currentWeek}</div>
@@ -15554,9 +15564,11 @@ El esfuerzo no es negociable.
         <div class="flex gap-3 flex-wrap text-xs mb-2" style="color:#888">
           ${_wsSummary.length ? `<span>${_wsProgCount} progresión${_wsProgCount!==1?'es':''}</span><span>${_wsStallCount} sin cambio</span>` : ''}
           ${ci && ci.adherencia_pct != null ? `<span>adherencia ${ci.adherencia_pct}%</span>` : ''}
+          ${_wsExecRate !== null ? `<span${_wsExecRate < 0.6 ? ' style="color:#FF8844"' : ''}>ejecución real ${Math.round(_wsExecRate*100)}%</span>` : ''}
           <span style="color:${_wsMeta.color}">${_wsVolLabel}</span>
         </div>
         <div class="text-xs" style="color:#aaa">${_wsMeta.next}</div>
+        ${_wsLowFidelityNames.length ? `<div class="text-xs mt-1" style="color:#FF8844"><span style="font-weight:700">Ejecución baja:</span> ${_wsLowFidelityNames.map(n => _escH(n)).join(', ')}</div>` : ''}
       </div>`;
     }
 
