@@ -792,14 +792,26 @@
           observedRIR: rec.observedRIR !== undefined ? rec.observedRIR : null,
           repRangeTarget: rec.repRangeTarget || null,
           trend: rec.trend || null,
-          reason: rec.reason || ''
+          reason: rec.reason || '',
+          // T205 — execution fidelity for THIS week (see api/vdsen-build-request.js
+          // for the full rationale; kept identical between both copies).
+          setCompletionRate: (rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null
         });
       });
     });
     Object.keys(byPID).forEach(function(pid) {
-      var n = byPID[pid].history.length;
-      byPID[pid].confidence = n === 0 ? 'none' : n <= 2 ? 'low' : n <= 4 ? 'medium' : 'high';
-      byPID[pid].latest = byPID[pid].history.length ? byPID[pid].history[byPID[pid].history.length - 1] : null;
+      var hist = byPID[pid].history;
+      var n = hist.length;
+      var rates = hist.map(function(h) { return h.setCompletionRate; }).filter(function(r) { return typeof r === 'number'; });
+      var avgCompletion = rates.length ? (rates.reduce(function(a, b) { return a + b; }, 0) / rates.length) : null;
+      var tier = n === 0 ? 'none' : n <= 2 ? 'low' : n <= 4 ? 'medium' : 'high';
+      if (avgCompletion !== null) {
+        if (avgCompletion < 0.5 && tier !== 'none') tier = 'low';
+        else if (avgCompletion < 0.75 && tier === 'high') tier = 'medium';
+      }
+      byPID[pid].confidence = tier;
+      byPID[pid].executionCompleteness = avgCompletion;
+      byPID[pid].latest = hist.length ? hist[hist.length - 1] : null;
     });
     return { byPrescriptionExerciseId: byPID, unindexedCount: unindexedCount };
   }

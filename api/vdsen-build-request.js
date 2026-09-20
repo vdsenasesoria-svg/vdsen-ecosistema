@@ -451,17 +451,22 @@ function _mapExerciseProgressionHistory(progrecs) {
       if (rec.exerciseId)   byPID[pid].exerciseId   = rec.exerciseId;
 
       byPID[pid].history.push({
-        week:           week,
-        action:         rec.action !== undefined ? rec.action : null,
-        newLoad:        rec.newLoad !== undefined ? rec.newLoad : null,
-        newReps:        rec.newReps !== undefined ? rec.newReps : null,
-        newSets:        rec.newSets !== undefined ? rec.newSets : null,
-        rirTarget:      rec.rirTarget !== undefined ? rec.rirTarget : null,
-        prescribedRIR:  rec.prescribedRIR !== undefined ? rec.prescribedRIR : null,
-        observedRIR:    rec.observedRIR !== undefined ? rec.observedRIR : null,
-        repRangeTarget: rec.repRangeTarget || null,
-        trend:          rec.trend || null,
-        reason:         rec.reason || ''
+        week:               week,
+        action:             rec.action !== undefined ? rec.action : null,
+        newLoad:            rec.newLoad !== undefined ? rec.newLoad : null,
+        newReps:            rec.newReps !== undefined ? rec.newReps : null,
+        newSets:            rec.newSets !== undefined ? rec.newSets : null,
+        rirTarget:          rec.rirTarget !== undefined ? rec.rirTarget : null,
+        prescribedRIR:      rec.prescribedRIR !== undefined ? rec.prescribedRIR : null,
+        observedRIR:        rec.observedRIR !== undefined ? rec.observedRIR : null,
+        repRangeTarget:     rec.repRangeTarget || null,
+        trend:              rec.trend || null,
+        reason:             rec.reason || '',
+        // T205 — execution fidelity for THIS week's recommendation, sourced
+        // from the already-computed, already-PID-scoped, already-autoFilled-
+        // excluding setMetrics (see calculateProgression). null when a
+        // legacy recommendation predates setMetrics (unknown, not poor).
+        setCompletionRate:  (rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null
       });
     });
   });
@@ -470,10 +475,31 @@ function _mapExerciseProgressionHistory(progrecs) {
   // specific exercise (distinct from engineState's plan-wide confidence).
   // learned_state can only outrank general priors once evidence is real;
   // this is the count that gates that, per exercise.
+  //
+  // T205 — week COUNT alone cannot justify high confidence: a recommendation
+  // must never read as well-evidenced from weeks where only a fraction of the
+  // prescribed sets were actually executed (e.g. 1-of-4 sets/week for several
+  // weeks must never yield 'high'). Average setCompletionRate across the
+  // weeks that have it gates/downgrades the count-based tier. Weeks without
+  // the field (legacy data) are excluded from the average, not treated as
+  // poor execution.
   Object.keys(byPID).forEach(function(pid) {
-    var n = byPID[pid].history.length;
-    byPID[pid].confidence = n === 0 ? 'none' : n <= 2 ? 'low' : n <= 4 ? 'medium' : 'high';
-    byPID[pid].latest = byPID[pid].history.length ? byPID[pid].history[byPID[pid].history.length - 1] : null;
+    var hist = byPID[pid].history;
+    var n = hist.length;
+    var rates = hist
+      .map(function(h) { return h.setCompletionRate; })
+      .filter(function(r) { return typeof r === 'number'; });
+    var avgCompletion = rates.length ? (rates.reduce(function(a, b) { return a + b; }, 0) / rates.length) : null;
+
+    var tier = n === 0 ? 'none' : n <= 2 ? 'low' : n <= 4 ? 'medium' : 'high';
+    if (avgCompletion !== null) {
+      if (avgCompletion < 0.5 && tier !== 'none') tier = 'low';
+      else if (avgCompletion < 0.75 && tier === 'high') tier = 'medium';
+    }
+
+    byPID[pid].confidence = tier;
+    byPID[pid].executionCompleteness = avgCompletion;
+    byPID[pid].latest = hist.length ? hist[hist.length - 1] : null;
   });
 
   return { byPrescriptionExerciseId: byPID, unindexedCount: unindexedCount };
