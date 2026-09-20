@@ -1011,12 +1011,20 @@
   // guardrail/summary context -- never a second prioritization engine, and
   // it summarizes the SAME weeklyDecision/prescriptionEffectiveness signals
   // already assembled, never re-derived from raw logs.
-  function _computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness) {
+  function _computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness, currentWeek) {
     if (typeof window._computeClientAttentionState === 'undefined' ||
         typeof window._rankClientPriority === 'undefined' ||
         typeof window._computeInterventionReasonAction === 'undefined') return null;
 
-    var currentWeek = (entries && entries.engine_state && entries.engine_state.weekNum) || 1;
+    // T279 residual finding: this used to derive its OWN week from
+    // entries.engine_state.weekNum, which can genuinely differ from the
+    // client's real logs/{uid}.currentWeek (e.g. engine_state not yet
+    // updated for the week just entered) -- the exact "Generator and
+    // Monitor using different week" divergence risk the canonical snapshot
+    // exists to close. Now takes the SAME real week every other block in
+    // the snapshot already uses, with the old derivation only as a
+    // last-resort fallback for a caller that genuinely has no better week.
+    currentWeek = currentWeek || (entries && entries.engine_state && entries.engine_state.weekNum) || 1;
     var attn = window._computeClientAttentionState(entries, planDoc, currentWeek);
     var weeklyStatus = weeklyDecision ? weeklyDecision.status : null;
     var effectivenessOverall = prescriptionEffectiveness ? prescriptionEffectiveness.overall : null;
@@ -1294,7 +1302,7 @@
     var learnedState = _computeLearnedStateForRequest(entries, planDoc, logsResult.progressionHistory);
     var prescriptionEffectiveness = _computePrescriptionEffectivenessForRequest(planDoc, fd, clientDoc, weeklyDecision, logsResult.progressionHistory, learnedState);
     var nutritionDecision = _computeNutritionDecisionForRequest(entries, clientDoc, fd);
-    var coachSupervision = _computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness);
+    var coachSupervision = _computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness, week);
     var coachInterventionContext = _computeCoachInterventionContextForRequest(clientDoc, planDoc);
 
     // T277 — provenance: only real, already-existing timestamps, never
@@ -17517,30 +17525,33 @@ El esfuerzo no es negociable.
       }
     }
 
+    // ── T279 — ONE canonical decision snapshot for this whole render.
+    // T275's audit found the T223/T229/T272 cards below each independently
+    // recomputing performanceResponse/bodyCompositionResponse/effectiveness/
+    // nutritionDecision through slightly different paths (T229 even derived
+    // its OWN week from entries.engine_state.weekNum, divergent from the
+    // real currentWeek used everywhere else -- fixed here by threading the
+    // real currentWeek through). Reuses window.VDSEN_SNAPSHOT.build (T276)
+    // -- 0 new Firestore reads (same entries/planDoc/clientDoc/ficha already
+    // loaded for this render); the SAME snapshot the Generator (T278) would
+    // build from this exact evidence.
+    const _monitorSnapshot = (typeof window.VDSEN_SNAPSHOT !== 'undefined')
+      ? window.VDSEN_SNAPSHOT.build({
+          clientId: clientId, clientDoc: c, planDoc: p, planId: (c && c.activePlanId) || null,
+          logsDoc: logsData, fd: (_detailFichaData && _detailFichaData.data) || {}
+        })
+      : null;
+
     // ── T223 — Coach visibility for the T218-221 outcome-response/
-    // effectiveness layer. Reuses window.VDSEN_OUTCOME entirely, the SAME
-    // progressionHistory already built above, and the already-loaded
-    // _detailFichaData (0 new Firestore reads, same discipline as FASE 45)
-    // for the stated goal. Exceptions-first: only the exercises needing
-    // attention are named; LOW/NONE-confidence reads are never presented
-    // as authoritative (NONE is not shown at all; LOW is labeled as such).
-    if (p && typeof window.VDSEN_OUTCOME !== 'undefined' && typeof window.VDSEN_LEARNED !== 'undefined' && typeof window.VDSEN_ADHERENCE !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {
-      const _outcomeProgrecs = {};
-      Object.keys(entries).forEach(k => { if (/^progrec_\d+_\d+$/.test(k)) _outcomeProgrecs[k] = entries[k]; });
-      const _outcomeProgHist = window.VDSEN_BUILD._mapExerciseProgressionHistory(_outcomeProgrecs);
-      const _outcomePerf = window.VDSEN_OUTCOME.computePerformanceResponse(p, _outcomeProgHist);
-      const _outcomeGoal = (_detailFichaData && _detailFichaData.data && _detailFichaData.data.objetivo_calorico) || null;
-      const _outcomeBodyComp = window.VDSEN_OUTCOME.computeBodyCompositionResponse(c && c.inbodyResults, _outcomeGoal);
-      const _outcomeRecoverySens = window.VDSEN_LEARNED.computeRecoverySensitivity(entries, p, _outcomeProgHist);
-      const _outcomeHasPain = _wsStatusForAdaptive === 'PAIN_REVIEW';
-      // Recomputed fresh (same pure, cheap function as the T202/T206 card
-      // above, no Firestore read) rather than reaching into that card's
-      // own block scope -- same discipline T215 already uses for progHist.
-      const _outcomeSessionAdherence = window.VDSEN_ADHERENCE.computeSessionSummary(entries, currentWeek);
-      const _outcomeEffectiveness = window.VDSEN_OUTCOME.computeEffectiveness({
-        performanceResponse: _outcomePerf, bodyCompositionResponse: _outcomeBodyComp,
-        sessionAdherence: _outcomeSessionAdherence, recoverySensitivity: _outcomeRecoverySens, hasPain: _outcomeHasPain
-      });
+    // effectiveness layer. Sourced entirely from _monitorSnapshot.
+    // prescriptionEffectiveness -- no longer recomputed here. Exceptions-
+    // first: only the exercises needing attention are named; LOW/NONE-
+    // confidence reads are never presented as authoritative (NONE is not
+    // shown at all; LOW is labeled as such).
+    if (p && _monitorSnapshot && _monitorSnapshot.prescriptionEffectiveness) {
+      const _outcomeEffectiveness = _monitorSnapshot.prescriptionEffectiveness;
+      const _outcomePerf = _outcomeEffectiveness.performanceResponse || {};
+      const _outcomeBodyComp = _outcomeEffectiveness.bodyCompositionResponse || { classification: 'INSUFFICIENT_DATA', confidence: 'none' };
 
       if (_outcomeEffectiveness.confidence !== 'none') {
         const _OUTCOME_META = {
@@ -17579,20 +17590,17 @@ El esfuerzo no es negociable.
     }
 
     // ── T272 — Coach visibility for the T268-270 nutrition adherence/
-    // response/decision layer. Reuses window.VDSEN_NUTRITION entirely (no
-    // second engine), the SAME already-loaded _detailFichaData for the
-    // stated goal, and `entries` already available in this function (0 new
-    // Firestore reads). Exceptions-first: the Motivo line only surfaces
-    // when the recommendation isn't a plain KEEP -- no giant dashboard, no
-    // unsupported adherence claim (INSUFFICIENT_DATA is shown as such,
-    // never hidden or guessed).
-    if (typeof window.VDSEN_NUTRITION !== 'undefined') {
-      const _nutriLog272 = [];
-      Object.keys(entries).forEach(k => { if (k.indexOf('nutrilog_') === 0) _nutriLog272.push(entries[k]); });
-      const _nutriAdherence272 = window.VDSEN_NUTRITION.classifyAdherence(_nutriLog272, c && c.nutritionRaw);
-      const _nutriGoal272 = (_detailFichaData && _detailFichaData.data && _detailFichaData.data.objetivo_calorico) || null;
-      const _nutriResponse272 = window.VDSEN_NUTRITION.classifyResponse(c && c.inbodyResults, _nutriGoal272);
-      const _nutriDecision272 = window.VDSEN_NUTRITION.decide({ adherence: _nutriAdherence272, response: _nutriResponse272 });
+    // response/decision layer. Sourced entirely from _monitorSnapshot.
+    // nutritionDecision (T279) -- no longer recomputed here, so this card
+    // and the Generator's own nutritionDecision (T271) can never disagree
+    // given the same evidence. Exceptions-first: the Motivo line only
+    // surfaces when the recommendation isn't a plain KEEP -- no giant
+    // dashboard, no unsupported adherence claim (INSUFFICIENT_DATA is
+    // shown as such, never hidden or guessed).
+    if (_monitorSnapshot && _monitorSnapshot.nutritionDecision) {
+      const _nutriAdherence272 = _monitorSnapshot.nutritionDecision.adherence;
+      const _nutriResponse272 = _monitorSnapshot.nutritionDecision.response;
+      const _nutriDecision272 = { action: _monitorSnapshot.nutritionDecision.action, reasons: _monitorSnapshot.nutritionDecision.reasons };
 
       const _ADH_META272 = {
         HIGH: { label: 'ALTA', color: '#44BB88' }, MEDIUM: { label: 'MEDIA', color: '#FFCC44' },
@@ -17627,32 +17635,22 @@ El esfuerzo no es negociable.
       </div>`;
     }
 
-    // ── T229 — Monitor drill-down: COACH ATTENTION. Combines T226's
-    // priority + T227's reason/action from the SAME already-computed
-    // signals (attnState, weeklyStatus, prescriptionEffectiveness) --
-    // exceptions-first: renders nothing at all when priority is ON_TRACK,
-    // and never repeats the exercise/body-comp detail already shown in the
-    // T206/T215/T223 cards above.
-    if (p && typeof window.VDSEN_OUTCOME !== 'undefined' && typeof window.VDSEN_LEARNED !== 'undefined' && typeof window.VDSEN_ADHERENCE !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {
-      const _attnState229 = _computeClientAttentionState(entries, p, currentWeek);
-      const _progrecs229 = {};
-      Object.keys(entries).forEach(k => { if (/^progrec_\d+_\d+$/.test(k)) _progrecs229[k] = entries[k]; });
-      const _progHist229 = window.VDSEN_BUILD._mapExerciseProgressionHistory(_progrecs229);
-      const _perf229 = window.VDSEN_OUTCOME.computePerformanceResponse(p, _progHist229);
-      const _goal229 = (_detailFichaData && _detailFichaData.data && _detailFichaData.data.objetivo_calorico) || null;
-      const _bodyComp229 = window.VDSEN_OUTCOME.computeBodyCompositionResponse(c && c.inbodyResults, _goal229);
-      const _recSens229 = window.VDSEN_LEARNED.computeRecoverySensitivity(entries, p, _progHist229);
-      const _sessionAdh229 = window.VDSEN_ADHERENCE.computeSessionSummary(entries, currentWeek);
-      const _hasPain229 = _wsStatusForAdaptive === 'PAIN_REVIEW';
-      const _effectiveness229 = window.VDSEN_OUTCOME.computeEffectiveness({
-        performanceResponse: _perf229, bodyCompositionResponse: _bodyComp229,
-        sessionAdherence: _sessionAdh229, recoverySensitivity: _recSens229, hasPain: _hasPain229
-      });
-      const _priority229 = _rankClientPriority(_attnState229.state, _wsStatusForAdaptive, _effectiveness229.overall);
-      const _reasonAction229 = _computeInterventionReasonAction(_priority229, {
-        attnReasons: _attnState229.reasons, weeklyStatus: _wsStatusForAdaptive,
-        effectiveness: _effectiveness229, mesocycleAction: null
-      });
+    // ── T229 — Monitor drill-down: COACH ATTENTION. Sourced entirely from
+    // _monitorSnapshot.coachSupervision (T279) -- the EXACT SAME
+    // _rankClientPriority/_computeInterventionReasonAction call the
+    // Generator's own coachSupervision field (T271/T278) uses, over the
+    // SAME real currentWeek (T279 also fixed coachSupervision's own
+    // internal week derivation to accept it instead of guessing from
+    // engine_state). Exceptions-first: renders nothing at all when
+    // priority is ON_TRACK, and never repeats the exercise/body-comp
+    // detail already shown in the T206/T215/T223 cards above.
+    if (p && _monitorSnapshot && _monitorSnapshot.coachSupervision) {
+      const _priority229 = _monitorSnapshot.coachSupervision.priority;
+      const _reasonAction229 = {
+        primaryReason: _monitorSnapshot.coachSupervision.primaryReason,
+        action: _monitorSnapshot.coachSupervision.action,
+        supportingReasons: _monitorSnapshot.coachSupervision.supportingReasons
+      };
 
       if (_priority229 !== 'ON_TRACK') {
         const _PRIORITY_META229 = {

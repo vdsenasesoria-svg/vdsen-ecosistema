@@ -25,10 +25,18 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // Structural: reuses the real T219-221 functions, no second engine.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes('const _outcomePerf = window.VDSEN_OUTCOME.computePerformanceResponse(p, _outcomeProgHist);'), 'calls the real T219 performance-response function');
-ok(COACH.includes('const _outcomeBodyComp = window.VDSEN_OUTCOME.computeBodyCompositionResponse(c && c.inbodyResults, _outcomeGoal);'), 'calls the real T220 body-composition-response function');
-ok(COACH.includes('const _outcomeEffectiveness = window.VDSEN_OUTCOME.computeEffectiveness({'), 'calls the real T221 synthesis function');
-ok(COACH.includes('const _outcomeGoal = (_detailFichaData && _detailFichaData.data && _detailFichaData.data.objetivo_calorico) || null;'), 'the stated goal is read from the already-loaded ficha data -- no new Firestore read');
+// T279: this card no longer calls window.VDSEN_OUTCOME directly -- it
+// sources performanceResponse/bodyCompositionResponse/effectiveness from
+// the ONE shared _monitorSnapshot.prescriptionEffectiveness (T276), which
+// itself still calls the exact same T219-221 functions verbatim (via
+// _computePrescriptionEffectivenessForRequest) -- no second engine, no
+// recalculated logic, just relocated one level in to close the
+// Monitor/Generator duplication T275's audit found.
+ok(COACH.includes('const _outcomeEffectiveness = _monitorSnapshot.prescriptionEffectiveness;'), 'sources the T221 synthesis from the shared snapshot');
+ok(COACH.includes('const _outcomePerf = _outcomeEffectiveness.performanceResponse || {};'), 'sources the real T219 performance-response from the same shared synthesis');
+ok(COACH.includes('const _outcomeBodyComp = _outcomeEffectiveness.bodyCompositionResponse || { classification: \'INSUFFICIENT_DATA\', confidence: \'none\' };'), 'sources the real T220 body-composition-response from the same shared synthesis');
+ok(COACH.includes('_computePrescriptionEffectivenessForRequest(planDoc, fd, clientDoc, weeklyDecision, logsResult.progressionHistory, learnedState)'), 'the underlying computation (inside the snapshot builder) still calls the real T219-221 functions verbatim, unchanged');
+ok(COACH.includes('var objetivoCalorico = fd.objetivo_calorico || (fd.nutricion && fd.nutricion.objetivo_calorico) || null;'), 'the stated goal is still read from ficha data -- no new Firestore read (now inside _computePrescriptionEffectivenessForRequest itself)');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structural: NONE-confidence is never shown; LOW is shown but explicitly
@@ -53,8 +61,8 @@ ok(!/<table[^>]*>[\s\S]{0,80}Respuesta a la prescripción/.test(COACH), 'the pre
 // T198/T200/T215 guard, and never mutates any Firestore document.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes("if (p && typeof window.VDSEN_OUTCOME !== 'undefined' && typeof window.VDSEN_LEARNED !== 'undefined' && typeof window.VDSEN_ADHERENCE !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {"),
-  'the whole block is gated on the active plan (p) being present and every dependency being loaded');
+ok(COACH.includes('if (p && _monitorSnapshot && _monitorSnapshot.prescriptionEffectiveness) {'),
+  'the whole block is gated on the active plan (p) being present and the shared snapshot having a real prescriptionEffectiveness (FIXED for T279\'s snapshot routing)');
 
 console.log('');
 console.log('T223 — Prescription effectiveness Coach visibility: ' + pass + ' assertions PASSED');

@@ -31,17 +31,15 @@
  *   the full mesocycle decision in two more places would duplicate a
  *   large amount of T192-197 setup for a labeling refinement only.
  *
- *   P3-3 (minor CPU duplication, not a correctness bug): T223's and
- *   T229's Monitor blocks each independently recompute
- *   performanceResponse/bodyCompositionResponse/effectiveness from the
- *   same entries/planDoc, rather than one block passing its result to the
- *   other. Consistent with this codebase's established per-block
- *   recomputation convention (T215 does the same for progressionHistory)
- *   and keeps each card's block self-contained and independently
- *   correct -- not fixed, since sharing state across the render
- *   function's separate `if` blocks would need hoisting several `const`s
- *   the same way T202/T206 already had to for sessionAdherence, for a
- *   pure-function CPU saving with no Firestore-read cost either way.
+ *   P3-3 (FIXED by T279): T223's and T229's Monitor blocks used to each
+ *   independently recompute performanceResponse/bodyCompositionResponse/
+ *   effectiveness from the same entries/planDoc. The canonical decision
+ *   snapshot (T276-279) closed this: both cards (plus T272's nutrition
+ *   card) now source their data from ONE shared window.VDSEN_SNAPSHOT.build
+ *   call per render, and T229's own week-derivation divergence
+ *   (_computeCoachSupervisionForRequest previously guessed from
+ *   entries.engine_state.weekNum instead of the real currentWeek) was
+ *   fixed alongside it.
  *
  * Run: node tests/t232-residual-audit.test.js
  */
@@ -76,12 +74,23 @@ ok(!reasonBody.includes('updateDoc') && !reasonBody.includes('setDoc'), 'PRIORIT
 // ─────────────────────────────────────────────────────────────────────────────
 // CLIENT LIST -> MONITOR: both surfaces call the SAME _rankClientPriority
 // (already verified behaviorally in T231 CASE L) -- here, confirm no
-// OTHER, third call site exists that could diverge (e.g. a mobile-only
-// row renderer using the old attnState-only badge).
+// OTHER, third INDEPENDENT call site exists that could diverge (e.g. a
+// mobile-only row renderer using the old attnState-only badge).
+//
+// T279 UPDATE: Monitor's OWN direct call was removed -- it now reads
+// coachSupervision.priority off the shared canonical snapshot (T276),
+// whose implementation is the ONE remaining direct call
+// (window._rankClientPriority(...) inside _computeCoachSupervisionForRequest).
+// So the direct-call count dropped from 2 to 1 by design (one fewer
+// duplicate, not a new gap) -- loadClientList's own direct call is the
+// other. Still exactly 2 PATHS to the real function, now with one fewer
+// place that could have silently drifted.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const rankCallSites = (COACH.match(/= _rankClientPriority\(/g) || []).length;
-ok(rankCallSites === 2, 'CLIENT LIST<->MONITOR: exactly 2 live call sites for _rankClientPriority exist (loadClientList + the T229 Monitor card) -- no third, potentially-diverging consumer');
+const directRankCallSites = (COACH.match(/= _rankClientPriority\(/g) || []).length;
+ok(directRankCallSites === 1, 'exactly 1 direct call site remains for the bare _rankClientPriority(...) form (loadClientList) -- Monitor\'s former duplicate direct call was closed by routing through the shared snapshot instead (T279)');
+const windowRankCallSites = (COACH.match(/= window\._rankClientPriority\(/g) || []).length;
+ok(windowRankCallSites === 1, 'exactly 1 cross-block window._rankClientPriority(...) call exists (inside _computeCoachSupervisionForRequest) -- the ONLY place Monitor\'s coachSupervision-sourced priority now ultimately comes from');
 
 // P3-1: confirm the dead-code finding precisely (defined, never read again).
 const afterAttnBadgeDef = COACH.slice(COACH.indexOf('const _ATTN_BADGE = {', COACH.indexOf('const _ATTN_BADGE = {') + 1) + 1);
@@ -100,4 +109,4 @@ ok(!fs.readFileSync(path.join(__dirname, '..', 'api', 'vdsen-contracts.js'), 'ut
   'GENERATOR: the request-shape validator has no knowledge of coachSupervision -- confirms it is purely additive, never required, consistent with weeklyDecision/learnedState/prescriptionEffectiveness before it');
 
 console.log('');
-console.log('T232 — Residual audit: ' + pass + ' assertions PASSED, 0 P0/P1/P2 findings, 3 P3 documented');
+console.log('T232 — Residual audit: ' + pass + ' assertions PASSED, 0 P0/P1/P2 findings, 2 P3 documented (P3-3 fixed by T279)');

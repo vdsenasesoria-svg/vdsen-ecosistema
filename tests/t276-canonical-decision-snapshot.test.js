@@ -62,7 +62,7 @@ ok(!/Object\.assign\(clientDoc|Object\.assign\(planDoc|clientDoc\.\w+\s*=|planDo
   '_computeLearnedStateForRequest(entries, planDoc, logsResult.progressionHistory)',
   '_computePrescriptionEffectivenessForRequest(planDoc, fd, clientDoc, weeklyDecision, logsResult.progressionHistory, learnedState)',
   '_computeNutritionDecisionForRequest(entries, clientDoc, fd)',
-  '_computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness)',
+  '_computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness, week)', // T279 added the real week as a 5th arg
   '_computeCoachInterventionContextForRequest(clientDoc, planDoc)'
 ].forEach(function(callSig) {
   ok(snapshotOnly.includes(callSig), 'snapshot composes the real ' + callSig.split('(')[0] + ' call verbatim, not a reimplementation');

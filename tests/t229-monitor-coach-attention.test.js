@@ -24,10 +24,18 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // _wsStatusForAdaptive (T177), no second engine.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes('const _priority229 = _rankClientPriority(_attnState229.state, _wsStatusForAdaptive, _effectiveness229.overall);'), 'calls the real T226 _rankClientPriority with attnState + the already-computed weeklyStatus + effectiveness.overall');
-ok(COACH.includes('const _reasonAction229 = _computeInterventionReasonAction(_priority229, {'), 'calls the real T227 reason/action function');
-ok(COACH.includes('const _attnState229 = _computeClientAttentionState(entries, p, currentWeek);'), 'reuses the real 0-Firestore-read _computeClientAttentionState, not a reimplementation');
-ok(COACH.includes('const _effectiveness229 = window.VDSEN_OUTCOME.computeEffectiveness({'), 'reuses the real T221 effectiveness synthesis');
+// T279: this card no longer independently calls _rankClientPriority/
+// _computeInterventionReasonAction/_computeClientAttentionState/
+// window.VDSEN_OUTCOME -- it sources priority/primaryReason/action/
+// supportingReasons from the ONE shared _monitorSnapshot.coachSupervision
+// (T276), whose OWN implementation (_computeCoachSupervisionForRequest)
+// still calls the exact same real T226/T227 functions verbatim over the
+// SAME real currentWeek Generator uses -- closing the Monitor/Generator
+// duplication (and the week-divergence bug) T275's audit found.
+ok(COACH.includes('const _priority229 = _monitorSnapshot.coachSupervision.priority;'), 'sources priority from the shared snapshot\'s coachSupervision');
+ok(COACH.includes('action: _monitorSnapshot.coachSupervision.action,') && COACH.includes('supportingReasons: _monitorSnapshot.coachSupervision.supportingReasons'), 'sources action/supportingReasons from the same shared coachSupervision');
+ok(COACH.includes('var attn = window._computeClientAttentionState(entries, planDoc, currentWeek);'), 'the underlying computation (inside _computeCoachSupervisionForRequest) still calls the real _computeClientAttentionState verbatim, unchanged');
+ok(COACH.includes('var priority = window._rankClientPriority(attn.state, weeklyStatus, effectivenessOverall);'), 'the underlying computation still calls the real T226 _rankClientPriority verbatim, unchanged');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structural: exceptions-first -- nothing rendered for ON_TRACK, no giant
@@ -36,8 +44,8 @@ ok(COACH.includes('const _effectiveness229 = window.VDSEN_OUTCOME.computeEffecti
 
 ok(COACH.includes("if (_priority229 !== 'ON_TRACK') {"), 'the whole card is skipped entirely when priority is ON_TRACK -- nothing shown for a client who needs no attention');
 ok(!/<table[^>]*>[\s\S]{0,80}Atención del Coach/.test(COACH), 'the Coach Attention card is not rendered as a giant table');
-ok(COACH.includes("if (p && typeof window.VDSEN_OUTCOME !== 'undefined' && typeof window.VDSEN_LEARNED !== 'undefined' && typeof window.VDSEN_ADHERENCE !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {\n      const _attnState229"),
-  'the whole block is gated on the active plan (p) being present and every dependency being loaded');
+ok(COACH.includes('if (p && _monitorSnapshot && _monitorSnapshot.coachSupervision) {\n      const _priority229'),
+  'the whole block is gated on the active plan (p) being present and the shared snapshot having a real coachSupervision (FIXED for T279\'s snapshot routing)');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Structural: shows priority, primary reason, supporting reasons, and

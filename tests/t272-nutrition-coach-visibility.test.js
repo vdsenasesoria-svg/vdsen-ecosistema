@@ -1,11 +1,12 @@
 'use strict';
 /**
  * T272 — Coach visibility. Verifies the compact "Estado nutricional" card
- * in _renderClientTabMonitor: reuses window.VDSEN_NUTRITION entirely (no
- * second engine), reads inbodyResults/nutritionRaw/_detailFichaData/entries
- * already loaded (0 new Firestore reads), is exceptions-first (Motivo line
- * only when the recommendation isn't a plain KEEP), and never fabricates a
- * confident adherence/response label when the real classification is
+ * in _renderClientTabMonitor: sources adherence/response/action from the
+ * shared canonical decision snapshot (T279's _monitorSnapshot.nutritionDecision,
+ * itself built by window.VDSEN_SNAPSHOT.build, T276 -- no second nutrition
+ * engine in the render), is exceptions-first (Motivo line only when the
+ * recommendation isn't a plain KEEP), and never fabricates a confident
+ * adherence/response label when the real classification is
  * INSUFFICIENT_DATA.
  *
  * Run: node tests/t272-nutrition-coach-visibility.test.js
@@ -32,14 +33,17 @@ function extractBlock(src, marker) {
 let pass = 0;
 function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + msg); }
 
-const block = extractBlock(COACH, "if (typeof window.VDSEN_NUTRITION !== 'undefined') {\n      const _nutriLog272");
+const block = extractBlock(COACH, "if (_monitorSnapshot && _monitorSnapshot.nutritionDecision) {\n      const _nutriAdherence272");
 ok(block, 'the T272 nutrition status card block extracts cleanly');
 
-ok(block.includes('window.VDSEN_NUTRITION.classifyAdherence(') && block.includes('window.VDSEN_NUTRITION.classifyResponse(') && block.includes('window.VDSEN_NUTRITION.decide('),
-  'reuses window.VDSEN_NUTRITION entirely -- no second nutrition engine in the render');
-ok(block.includes('_detailFichaData') && block.includes('c && c.inbodyResults') && block.includes('c && c.nutritionRaw'),
-  'reads inbodyResults/nutritionRaw/_detailFichaData already loaded -- 0 new Firestore reads');
+ok(block.includes('_monitorSnapshot.nutritionDecision.adherence') && block.includes('_monitorSnapshot.nutritionDecision.response') && block.includes('_monitorSnapshot.nutritionDecision.action'),
+  'sources adherence/response/action from the shared canonical snapshot -- no second nutrition engine in the render (FIXED for T279\'s snapshot routing)');
 ok(!/getDoc\(|await /.test(block), 'the render block performs no Firestore reads of its own');
+// The snapshot itself (built once per render, T279) is what actually reads
+// inbodyResults/nutritionRaw/ficha -- confirmed at the snapshot-build call
+// site, not duplicated inside this card's own block anymore.
+ok(COACH.includes('clientDoc: c, planDoc: p, planId: (c && c.activePlanId) || null,') && COACH.includes('logsDoc: logsData, fd: (_detailFichaData && _detailFichaData.data) || {}'),
+  'the shared snapshot build call (once per render) is what supplies clientDoc/planDoc/ficha -- 0 new Firestore reads, same discipline as before, just centralized');
 ok(block.includes("_nutriDecision272.action !== 'KEEP'"), 'exceptions-first: the Motivo/reason line only renders when the recommendation is not a plain KEEP');
 ok(block.includes('INSUFFICIENT_DATA: { label: \'DATOS INSUFICIENTES\''), 'INSUFFICIENT_DATA is shown as such (both adherence and response meta maps) -- never fabricated as a confident HIGH/LOW/ON_TARGET reading');
 ok(block.includes('.map(r => _escH(r))'), 'reasons are HTML-escaped before rendering (same _escH helper used by the T223 attention-names line)');
@@ -51,19 +55,12 @@ ok(block.includes('.map(r => _escH(r))'), 'reasons are HTML-escaped before rende
 
 function runBlock(nutriAdherence, nutriResponse, nutriDecision) {
   const escH = function(s) { return String(s).replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
-  const fakeVDSEN = {
-    classifyAdherence: function() { return nutriAdherence; },
-    classifyResponse: function() { return nutriResponse; },
-    decide: function() { return nutriDecision; }
+  const _monitorSnapshot = {
+    nutritionDecision: { adherence: nutriAdherence, response: nutriResponse, action: nutriDecision.action, reasons: nutriDecision.reasons }
   };
-  const entries = {};
-  const c = { nutritionRaw: {}, inbodyResults: [] };
-  const _detailFichaData = { data: {} };
   let html = '';
-  const fn = new Function('window', '_escH', 'entries', 'c', '_detailFichaData', 'html',
-    'window.VDSEN_NUTRITION = arguments[0];\n' + block + '\nreturn html;'
-  );
-  return fn(fakeVDSEN, escH, entries, c, _detailFichaData, html);
+  const fn = new Function('_escH', '_monitorSnapshot', 'html', block + '\nreturn html;');
+  return fn(escH, _monitorSnapshot, html);
 }
 
 {

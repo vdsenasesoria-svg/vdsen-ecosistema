@@ -199,7 +199,14 @@ function entriesWithLog(week, day) {
 
 (function testCaseL() {
   ok(COACH.includes('const priority = _rankClientPriority(attn.state, weeklyDecision ? weeklyDecision.status : null);'), 'CASE L: loadClientList (client list) calls the real _rankClientPriority');
-  ok(COACH.includes('const _priority229 = _rankClientPriority(_attnState229.state, _wsStatusForAdaptive, _effectiveness229.overall);'), 'CASE L: _renderClientTabMonitor (Monitor detail) calls the SAME real _rankClientPriority');
+  // T279: Monitor no longer calls _rankClientPriority directly -- it reads
+  // _monitorSnapshot.coachSupervision.priority, whose OWN implementation
+  // (_computeCoachSupervisionForRequest) still calls the exact same real
+  // window._rankClientPriority(attn.state, weeklyStatus, effectivenessOverall)
+  // verbatim, over the SAME real currentWeek -- the two consumers still
+  // resolve through the identical pure function, just via one shared call.
+  ok(COACH.includes('const _priority229 = _monitorSnapshot.coachSupervision.priority;'), 'CASE L: _renderClientTabMonitor (Monitor detail) sources priority from the shared canonical snapshot (FIXED for T279\'s snapshot routing)');
+  ok(COACH.includes('var priority = window._rankClientPriority(attn.state, weeklyStatus, effectivenessOverall);'), 'CASE L: the snapshot\'s own coachSupervision computation still calls the SAME real _rankClientPriority Monitor used to call directly');
   const listResult = eng.rankPriority('REVIEW', 'PAIN_REVIEW', null);
   const monitorResult = eng.rankPriority('REVIEW', 'PAIN_REVIEW', 'SAFETY_REVIEW');
   ok(listResult === 'URGENT_REVIEW' && monitorResult === 'URGENT_REVIEW', 'CASE L: given the same core signals, both call sites resolve to the same priority (the Monitor\'s extra 3rd-arg signal only ever agrees with or refines the list\'s read, never contradicts it for a real safety case)');
