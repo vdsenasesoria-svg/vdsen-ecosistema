@@ -2065,6 +2065,121 @@
   window._getLatestEvidenceTimestampForScope = _getLatestEvidenceTimestampForScope;
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  T252 — CANONICAL HISTORICAL MESOCYCLE MODEL. Converts an existing,
+  //  already-persisted logs/{uid}/mesos/{planId} snapshot (+ the still-
+  //  immutable plans/{planId} doc, + the client's own coachInterventions[])
+  //  into a READ-ONLY summary for Coach Monitor (T251's audit). Reuses
+  //  window.VDSEN_BUILD._mapExerciseProgressionHistory (T160/166) for
+  //  per-exercise progression -- no second engine. Never invents dates,
+  //  sessions, loads, adherence, or exercise-name equivalences; a field
+  //  with no real underlying data is null, never guessed. Pure function --
+  //  no Firestore read/write here (T253 does the actual document read).
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _buildHistoricalMesocycleView(planId, mesoDoc, planDoc, coachInterventions) {
+    if (!planId) return null;
+    var entries = (mesoDoc && mesoDoc.entries) || {};
+    var hasMesoData = !!(mesoDoc && mesoDoc.entries && Object.keys(mesoDoc.entries).length);
+
+    // Plan metadata -- degrade gracefully if plans/{planId} is missing.
+    var planAvailable = !!(planDoc && typeof planDoc === 'object');
+    var planName = planAvailable ? (planDoc.nombre || planDoc.planName || null) : null;
+    var totalWeeks = planAvailable ? (planDoc.weeks || null) : null;
+    var daysPerWeek = (planAvailable && Array.isArray(planDoc.days)) ? planDoc.days.length : null;
+
+    // started/ended -- best-effort from REAL timestamps only. No stored
+    // "createdAt" exists (T251): startedAt is the earliest real evidence
+    // found inside this mesociclo's own entries, or null if none exists.
+    // endedAt is mesoDoc.updatedAt (the last real save while this plan was
+    // active) -- a genuine, reliable proxy, unlike startedAt.
+    var evidenceMs = [];
+    Object.keys(entries).forEach(function(k) {
+      if (/^postsession_\d+_\d+$/.test(k) && entries[k] && entries[k].ts) evidenceMs.push(entries[k].ts);
+      if (/^progrec_\d+_\d+$/.test(k) && entries[k] && entries[k].calculatedAt) {
+        var t = Date.parse(entries[k].calculatedAt);
+        if (!isNaN(t)) evidenceMs.push(t);
+      }
+    });
+    var startedAt = evidenceMs.length ? new Date(Math.min.apply(null, evidenceMs)).toISOString() : null;
+    var endedAt = (mesoDoc && mesoDoc.updatedAt) ? new Date(mesoDoc.updatedAt).toISOString() : null;
+
+    // Sessions/adherence -- simple, transparent truthy count of done_{W}_{D}.
+    var weeksReached = (mesoDoc && mesoDoc.currentWeek) || null;
+    var sessionsCompleted = 0;
+    Object.keys(entries).forEach(function(k) { if (/^done_\d+_\d+$/.test(k) && entries[k]) sessionsCompleted++; });
+    var totalSessions = (daysPerWeek && weeksReached) ? daysPerWeek * weeksReached : null;
+    var adherence = (totalSessions && totalSessions > 0) ? Math.round((sessionsCompleted / totalSessions) * 100) : null;
+
+    // Progression summary -- reuse the REAL T160/166 mapper, no new logic.
+    var progrecs = {};
+    Object.keys(entries).forEach(function(k) { if (/^progrec_\d+_\d+$/.test(k)) progrecs[k] = entries[k]; });
+    var progressionHistory = (typeof window.VDSEN_BUILD !== 'undefined')
+      ? window.VDSEN_BUILD._mapExerciseProgressionHistory(progrecs)
+      : { byPrescriptionExerciseId: {}, unindexedCount: 0 };
+
+    // Exercises -- PID-exact identity. plans/{planId} is the source of
+    // truth for names when available; the recommendation's own name is
+    // used ONLY when the plan doc itself is unavailable -- never invented,
+    // never cross-matched by name against a DIFFERENT PID.
+    var exercisesByPid = {};
+    if (planAvailable) {
+      (planDoc.days || []).forEach(function(d) {
+        (d.exercises || []).forEach(function(ex) {
+          if (ex.prescriptionExerciseId) exercisesByPid[ex.prescriptionExerciseId] = { prescriptionExerciseId: ex.prescriptionExerciseId, exerciseName: ex.exerciseName || null, hasEvidence: false, progressionSummary: null };
+        });
+      });
+    }
+    Object.keys(progressionHistory.byPrescriptionExerciseId).forEach(function(pid) {
+      var hist = progressionHistory.byPrescriptionExerciseId[pid];
+      if (!exercisesByPid[pid]) exercisesByPid[pid] = { prescriptionExerciseId: pid, exerciseName: hist.exerciseName || null, hasEvidence: false, progressionSummary: null };
+      exercisesByPid[pid].hasEvidence = true;
+      exercisesByPid[pid].progressionSummary = hist;
+    });
+    var exercises = Object.keys(exercisesByPid).map(function(pid) { return exercisesByPid[pid]; });
+
+    // Pain signals -- real week/day/pattern only, from postsession entries.
+    var painSignals = [];
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^postsession_(\d+)_(\d+)$/);
+      if (!m) return;
+      var ps = entries[k];
+      if (ps && ps.articularPain && ps.articularPain.present) {
+        painSignals.push({ week: parseInt(m[1], 10), day: parseInt(m[2], 10), pattern: ps.articularPain.pattern || null });
+      }
+    });
+
+    // Coach decisions -- EXERCISE/MUSCLE/MESOCYCLE scope is planId-exact.
+    // CLIENT scope is included only as a temporal (decidedAt within
+    // [startedAt,endedAt]) read, never structurally claimed as "belonging"
+    // to this specific plan (T235/T251's own contract).
+    var coachDecisions = (Array.isArray(coachInterventions) ? coachInterventions : []).filter(function(i) {
+      if (!i) return false;
+      if (i.targetType !== INTERVENTION_TARGET_TYPE.CLIENT) return i.planId === planId;
+      if (!startedAt || !endedAt || !i.decidedAt) return false;
+      var t = Date.parse(i.decidedAt);
+      return !isNaN(t) && t >= Date.parse(startedAt) && t <= Date.parse(endedAt);
+    });
+
+    return {
+      planId: planId,
+      planName: planName,
+      planAvailable: planAvailable,
+      dataAvailable: hasMesoData,
+      startedAt: startedAt,
+      endedAt: endedAt,
+      weeks: totalWeeks,
+      weeksReached: weeksReached,
+      sessionsCompleted: sessionsCompleted,
+      totalSessions: totalSessions,
+      adherence: adherence,
+      exercises: exercises,
+      painSignals: painSignals,
+      coachDecisions: coachDecisions,
+      unindexedRecommendations: progressionHistory.unindexedCount
+    };
+  }
+  window._buildHistoricalMesocycleView = _buildHistoricalMesocycleView;
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  T236 — MONITOR ACTION WORKFLOW. From the "Atención del Coach" card
   //  (T229), lets the Coach explicitly resolve the flagged supervision
   //  item. Reuses the EXACT established persistence pattern already used
