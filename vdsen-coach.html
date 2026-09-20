@@ -15809,10 +15809,93 @@ El esfuerzo no es negociable.
     return { classification: classification, confidence: confidence, measurementsUsed: valid.length, deltas: { peso: dPeso, smm: dSmm, pbf: dPbf } };
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T221 — PRESCRIPTION EFFECTIVENESS SYNTHESIS. Combines T219 (performance
+  //  response), T220 (body-composition response), T202 (session adherence)
+  //  and T213 (recovery sensitivity) into ONE deterministic effectiveness
+  //  summary. TOLERANCE != EFFECTIVENESS (Core Principle): adherence gates
+  //  whether an outcome can be attributed to the prescription at all,
+  //  BEFORE any positive/negative response is weighed. No numeric score --
+  //  a named state + reasons only.
+  // ═══════════════════════════════════════════════════════════════════════════
+  var _CONF_RANK = { none: 0, low: 1, medium: 2, high: 3 };
+
+  function _computePrescriptionEffectivenessSynthesis(input) {
+    input = input || {};
+    var perfResponses = input.performanceResponse || {};
+    var bodyComp = input.bodyCompositionResponse || null;
+    var sessionAdherence = input.sessionAdherence || null;
+    var recoverySensitivity = input.recoverySensitivity || null;
+    var hasPain = !!input.hasPain;
+    var reasons = [];
+
+    var pidValues = Object.keys(perfResponses).map(function(p) { return perfResponses[p]; });
+
+    // 1. SAFETY — a real pain signal, or any exercise already flagged
+    // COACH_REVIEW by T219 (good progression despite pain), outranks
+    // everything else. Never labeled "effective" while safety is open.
+    var anyCoachReview = hasPain || pidValues.some(function(v) { return v.classification === 'COACH_REVIEW'; });
+    if (anyCoachReview) {
+      reasons.push('safety_signal_present');
+      return { overall: 'SAFETY_REVIEW', confidence: 'none', reasons: reasons };
+    }
+
+    // 2. Low adherence -> DATA_INSUFFICIENT before blaming the prescription
+    // (Core Principle: never concludes ineffectiveness from noisy/
+    // insufficient execution).
+    var execRate = (sessionAdherence && typeof sessionAdherence.executionRate === 'number') ? sessionAdherence.executionRate : null;
+    if (execRate !== null && execRate < 0.6) {
+      reasons.push('low_adherence');
+      return { overall: 'DATA_INSUFFICIENT', confidence: 'none', reasons: reasons };
+    }
+
+    var respondingCount      = pidValues.filter(function(v) { return v.classification === 'RESPONDING'; }).length;
+    var underRespondingCount = pidValues.filter(function(v) { return v.classification === 'UNDER_RESPONDING'; }).length;
+    var recoveryLimitedCount = pidValues.filter(function(v) { return v.classification === 'RECOVERY_LIMITED'; }).length;
+    var judgeable = pidValues.filter(function(v) { return v.classification !== 'INSUFFICIENT_DATA'; });
+
+    var bodyOk      = !!(bodyComp && (bodyComp.classification === 'ON_TARGET' || bodyComp.classification === 'PARTIAL_RESPONSE'));
+    var bodyUnclear = !bodyComp || ['INSUFFICIENT_DATA', 'MEASUREMENT_CONFLICT', 'COACH_REVIEW'].indexOf(bodyComp.classification) !== -1;
+
+    var positiveResponse = (judgeable.length > 0 && respondingCount > judgeable.length / 2) || bodyOk;
+    var negativeResponse = judgeable.length > 0 && underRespondingCount > judgeable.length / 2 && !bodyOk;
+    var recoveryProblem  = recoveryLimitedCount > 0 || (recoverySensitivity && recoverySensitivity.pattern === 'DECLINES_AT_HIGHER_STRESS');
+
+    var overall;
+    if (!judgeable.length && bodyUnclear) {
+      overall = 'DATA_INSUFFICIENT';
+      reasons.push('insufficient_response_evidence');
+    } else if (positiveResponse && recoveryProblem) {
+      overall = 'EFFECTIVE_BUT_COSTLY';
+      reasons.push('positive_response_with_recovery_cost');
+    } else if (positiveResponse) {
+      overall = 'EFFECTIVE_TOLERATED';
+      reasons.push('positive_response_adequate_recovery');
+    } else if (negativeResponse && !recoveryProblem) {
+      overall = 'TOLERATED_BUT_UNDER_RESPONDING';
+      reasons.push('adequate_adherence_and_recovery_but_no_progress');
+    } else {
+      overall = 'INEFFECTIVE_OR_UNCLEAR';
+      reasons.push('no_clear_response_pattern');
+    }
+
+    // Confidence: the WEAKEST link among the evidence actually used to
+    // form this conclusion, not the strongest -- a synthesis can only be
+    // as trustworthy as its least-confident real contributor.
+    var confTiers = judgeable.map(function(v) { return v.confidence; });
+    if (bodyComp && bodyComp.confidence) confTiers.push(bodyComp.confidence);
+    var confidence = confTiers.length
+      ? confTiers.reduce(function(worst, t) { return _CONF_RANK[t] < _CONF_RANK[worst] ? t : worst; }, 'high')
+      : 'none';
+
+    return { overall: overall, confidence: confidence, reasons: reasons };
+  }
+
   window.VDSEN_OUTCOME = {
     computeConfidence: _computeOutcomeConfidence,
     computePerformanceResponse: _classifyPerformanceResponse,
-    computeBodyCompositionResponse: _classifyBodyCompositionResponse
+    computeBodyCompositionResponse: _classifyBodyCompositionResponse,
+    computeEffectiveness: _computePrescriptionEffectivenessSynthesis
   };
 
   var WEEKLY_STATUS = {
