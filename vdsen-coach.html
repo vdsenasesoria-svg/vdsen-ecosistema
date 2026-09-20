@@ -15354,12 +15354,14 @@ El esfuerzo no es negociable.
     // are not loaded in this panel (no ficha read here) — the compute
     // function already defaults safely without them; the canonical
     // Generator request (T188) has the full ficha context separately.
+    let _apMapForMeso = null; // T198: hoisted so the mesocycle-decision block below can reuse it
     {
       const _apMap = _computeAdaptivePrescriptionMap({
         planDoc: p, engineState: _wsEsForAdaptive,
         weeklyDecision: { status: _wsStatusForAdaptive || 'DATA_INSUFFICIENT' },
         ehrensteinCalib: (_detailClientData && _detailClientData.calibracion_volumetrica) || null
       });
+      _apMapForMeso = _apMap;
       const _apDecisions = _apMap.muscleDecisions || {};
       const _apEntries = Object.keys(_apDecisions)
         .map(m => ({ muscle: m, d: _apDecisions[m] }))
@@ -15399,6 +15401,48 @@ El esfuerzo no es negociable.
           html += `</div></details>`;
         }
       }
+    }
+
+    // ── T192-198 — Mesocycle transition decision: one compact,
+    // exceptions-first card. Reuses window.VDSEN_MESOCYCLE.decide (T193-197)
+    // and window.VDSEN_BUILD._mapExerciseProgressionHistory (T160/166)
+    // entirely — no recalculated progression, no plan mutation.
+    if (typeof window.VDSEN_MESOCYCLE !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {
+      const _mesoProgrecs = {};
+      Object.keys(entries).forEach(k => { if (/^progrec_\d+_\d+$/.test(k)) _mesoProgrecs[k] = entries[k]; });
+      const _mesoProgHist = window.VDSEN_BUILD._mapExerciseProgressionHistory(_mesoProgrecs);
+      const _mesoTotalWeeks = (p && p.weeks) || 6;
+      const _mesoDecision = window.VDSEN_MESOCYCLE.decide({
+        weeklyDecision: { status: _wsStatusForAdaptive || 'DATA_INSUFFICIENT' },
+        adaptivePrescription: _apMapForMeso,
+        progressionHistory: _mesoProgHist,
+        isCheckpointWeek: currentWeek >= _mesoTotalWeeks
+      });
+      // PID -> exercise name lookup from the active plan, for display only.
+      const _mesoPidNames = {};
+      ((p && p.days) || []).forEach(d => (d.exercises || []).forEach(ex => {
+        if (ex.prescriptionExerciseId) _mesoPidNames[ex.prescriptionExerciseId] = ex.exerciseName || ex.prescriptionExerciseId;
+      }));
+      const _MESO_META = {
+        STOP_FOR_SAFETY:        { label: 'DETENER — SEGURIDAD', color: '#FF4444' },
+        COACH_REVIEW:           { label: 'REVISAR CON COACH',   color: '#FF66FF' },
+        RENEW_WITH_ADJUSTMENTS: { label: 'RENOVAR CON AJUSTES', color: '#FF8844' },
+        RENEW_MINIMAL:          { label: 'RENOVAR MÍNIMO',      color: '#66CCFF' },
+        CONTINUE:               { label: 'CONTINUAR',           color: '#44BB88' }
+      };
+      const _mesoMeta = _MESO_META[_mesoDecision.action] || _MESO_META.CONTINUE;
+      const _mesoReviewNames = (_mesoDecision.reviewExercisePids || []).map(pid => _mesoPidNames[pid] || pid);
+      const _mesoPreserveNames = (_mesoDecision.preserveExercisePids || []).map(pid => _mesoPidNames[pid] || pid);
+
+      html += `<div class="card p-3 mb-3" style="border-left:3px solid ${_mesoMeta.color};border-radius:0 8px 8px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+          <div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">Decisión de mesociclo</div>
+          <div style="font-size:13px;font-weight:800;color:${_mesoMeta.color}">${_mesoMeta.label}</div>
+        </div>
+        ${_mesoReviewNames.length ? `<div class="text-xs mb-1"><span style="color:${_mesoMeta.color};font-weight:700">REVISAR:</span> ${_mesoReviewNames.map(n => _escH(n)).join(', ')}</div>` : ''}
+        ${(!_mesoReviewNames.length && _mesoPreserveNames.length) ? `<details class="mt-1"><summary class="text-xs text-[#666] cursor-pointer">Ver ${_mesoPreserveNames.length} ejercicio${_mesoPreserveNames.length !== 1 ? 's' : ''} preservados (MANTENER)</summary><div class="text-xs mt-1" style="color:#888">${_mesoPreserveNames.map(n => _escH(n)).join(', ')}</div></details>` : ''}
+        <div class="text-xs mt-1" style="color:#aaa">${(_mesoDecision.reasons || []).join(', ')}</div>
+      </div>`;
     }
 
     // ── Gráfica de tendencia de peso
