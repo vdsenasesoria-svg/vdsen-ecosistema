@@ -15283,6 +15283,53 @@ El esfuerzo no es negociable.
     computeMuscleAdherence: computeMuscleAdherence // T204
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T210 — EVIDENCE ACCUMULATION / CONFIDENCE. One deterministic rule for
+  //  when longitudinal evidence becomes trustworthy, reused by volume
+  //  tolerance (T211), exercise/pattern tolerance (T212) and recovery
+  //  sensitivity (T213) learning. Reuses the EXACT formula already shipped
+  //  in T205's _mapExerciseProgressionHistory confidence fix (count-based
+  //  tier, gated/downgraded by average observation quality) -- no new
+  //  statistical/Bayesian model.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // observations: array of numbers in [0,1], each ALREADY a single valid,
+  // PID/pattern-scoped exposure's quality (e.g. setCompletionRate,
+  // executionRate, adherence ratio). Merging by name instead of PID, or
+  // inventing a rate for missing data, is the CALLER's responsibility to
+  // avoid -- this function only aggregates what it is given.
+  // malformedCount: exposures seen but excluded as unusable/partial before
+  // being handed here (optional, default 0) -- still lowers confidence,
+  // since an unreliable TRACKING record is itself a reason for caution even
+  // when the few clean observations look good.
+  function _computeEvidenceConfidence(observations, malformedCount) {
+    observations = Array.isArray(observations) ? observations : [];
+    malformedCount = malformedCount || 0;
+    var n = observations.length;
+
+    // Count-based tier: one exposure can never be HIGH (T210 rule).
+    var tier = n === 0 ? 'none' : n <= 2 ? 'low' : n <= 4 ? 'medium' : 'high';
+
+    // Quality gate: poor adherence/fidelity cannot produce HIGH confidence,
+    // even with many exposures (T210 rule) -- same thresholds as T205.
+    var avgQuality = n ? (observations.reduce(function(a, b) { return a + b; }, 0) / n) : null;
+    if (avgQuality !== null) {
+      if (avgQuality < 0.5 && tier !== 'none') tier = 'low';
+      else if (avgQuality < 0.75 && tier === 'high') tier = 'medium';
+    }
+
+    // Malformed/partial data lowers confidence: if unusable exposures
+    // outnumber (or match) the usable ones, the tracking itself is
+    // unreliable -- cap at low regardless of how good the clean ones look.
+    if (malformedCount > 0 && malformedCount >= n && tier !== 'none') tier = 'low';
+
+    return tier;
+  }
+
+  window.VDSEN_LEARNED = {
+    computeConfidence: _computeEvidenceConfidence
+  };
+
   var WEEKLY_STATUS = {
     PAIN_REVIEW:        'PAIN_REVIEW',
     COACH_REVIEW:        'COACH_REVIEW',
