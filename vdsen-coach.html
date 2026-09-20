@@ -16785,9 +16785,106 @@ El esfuerzo no es negociable.
     return Object.assign({}, base, { classification: refined, ratePctPerWeek: Math.round(ratePctPerWeek * 100) / 100 });
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T270 — NUTRITION DECISION ENGINE. Combines T268 (adherence) + T269
+  //  (response) into ONE deterministic REVIEW recommendation. Never mutates
+  //  active nutrition itself -- returns a recommendation + reasons only.
+  //  Core Principle enforced here: low/insufficient adherence ALWAYS gates
+  //  before any outcome-based conclusion, so a poor result under unproven
+  //  execution is never attributed to the calorie target.
+  //
+  //  NUTRITION_ACTION.REVIEW_MEAL_STRUCTURE is declared for API completeness
+  //  but never returned today: no current signal (meal-timing/hunger
+  //  check-in data) exists to trigger it -- documented gap, not fabricated
+  //  logic, same pattern as T264's P3.
+  // ═══════════════════════════════════════════════════════════════════════════
+  var NUTRITION_ACTION = {
+    KEEP:                     'KEEP',
+    REVIEW_DECREASE_CALORIES: 'REVIEW_DECREASE_CALORIES',
+    REVIEW_INCREASE_CALORIES: 'REVIEW_INCREASE_CALORIES',
+    REVIEW_MACROS:            'REVIEW_MACROS',
+    REVIEW_MEAL_STRUCTURE:    'REVIEW_MEAL_STRUCTURE',
+    FREEZE:                   'FREEZE',
+    COACH_REVIEW:             'COACH_REVIEW'
+  };
+
+  function _decideNutritionAction(input) {
+    input = input || {};
+    var adherence = input.adherence || { classification: 'INSUFFICIENT_DATA' };
+    var response  = input.response  || { classification: 'INSUFFICIENT_DATA' };
+    var recoveryDeclining = !!input.recoveryDeclining;
+    var reasons = [];
+
+    // 1. Data integrity outranks any outcome conclusion.
+    if (response.classification === 'MEASUREMENT_CONFLICT') {
+      reasons.push('measurement_conflict');
+      return { action: NUTRITION_ACTION.FREEZE, reasons: reasons };
+    }
+    if (response.classification === 'COACH_REVIEW') {
+      reasons.push('goal_not_stated');
+      return { action: NUTRITION_ACTION.COACH_REVIEW, reasons: reasons };
+    }
+
+    // 2. Low/insufficient adherence gates any outcome-based conclusion --
+    // insufficient execution evidence means FREEZE, never a calorie change.
+    if (adherence.classification === 'LOW' || adherence.classification === 'INSUFFICIENT_DATA') {
+      reasons.push('adherence_' + adherence.classification.toLowerCase());
+      return { action: NUTRITION_ACTION.FREEZE, reasons: reasons };
+    }
+
+    // 3. Real adherence exists (HIGH/MEDIUM) but the outcome itself is not
+    // yet judgeable -- nothing to decide on, defer to the Coach.
+    if (response.classification === 'INSUFFICIENT_DATA') {
+      reasons.push('response_insufficient_data');
+      return { action: NUTRITION_ACTION.COACH_REVIEW, reasons: reasons };
+    }
+
+    // 4. Fast response is never automatically "better" -- a concurrent
+    // recovery/performance decline needs a Coach judgment call, not an
+    // automatic calorie increase.
+    if (response.classification === 'FAST_RESPONSE') {
+      if (recoveryDeclining) {
+        reasons.push('fast_response_with_recovery_decline');
+        return { action: NUTRITION_ACTION.COACH_REVIEW, reasons: reasons };
+      }
+      reasons.push('fast_response');
+      return { action: NUTRITION_ACTION.REVIEW_INCREASE_CALORIES, reasons: reasons };
+    }
+
+    if (response.classification === 'ON_TARGET') {
+      reasons.push('on_target');
+      return { action: NUTRITION_ACTION.KEEP, reasons: reasons };
+    }
+
+    if (response.classification === 'SLOW_RESPONSE') {
+      if (adherence.classification === 'HIGH') {
+        reasons.push('high_adherence_slow_response');
+        return { action: NUTRITION_ACTION.REVIEW_DECREASE_CALORIES, reasons: reasons };
+      }
+      // MEDIUM adherence -- execution isn't fully proven yet, cannot
+      // confidently attribute the slow outcome to the calorie target.
+      reasons.push('medium_adherence_slow_response');
+      return { action: NUTRITION_ACTION.COACH_REVIEW, reasons: reasons };
+    }
+
+    if (response.classification === 'OFF_TARGET') {
+      if (adherence.classification === 'HIGH') {
+        reasons.push('high_adherence_off_target');
+        return { action: NUTRITION_ACTION.REVIEW_MACROS, reasons: reasons };
+      }
+      reasons.push('medium_adherence_off_target');
+      return { action: NUTRITION_ACTION.COACH_REVIEW, reasons: reasons };
+    }
+
+    reasons.push('unclassified_response');
+    return { action: NUTRITION_ACTION.COACH_REVIEW, reasons: reasons };
+  }
+
   window.VDSEN_NUTRITION = {
     classifyAdherence: _classifyNutritionAdherence,
-    classifyResponse: _classifyNutritionResponse
+    classifyResponse: _classifyNutritionResponse,
+    decide: _decideNutritionAction,
+    ACTION: NUTRITION_ACTION
   };
 
   var WEEKLY_STATUS = {
