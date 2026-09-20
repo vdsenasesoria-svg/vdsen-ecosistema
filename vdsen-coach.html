@@ -1251,6 +1251,85 @@
     };
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T276 — CANONICAL CLIENT DECISION SNAPSHOT. Composes the EXISTING
+  //  T158-T274 decision helpers (never reimplemented) into ONE pure,
+  //  synchronous, read-only object. Same client + same evidence (clientDoc/
+  //  planDoc/logsDoc/fd) ALWAYS produces the same decision state -- the
+  //  Generator (T278), Coach Monitor (T279) and client list (T280) all
+  //  derive their decision blocks from a call to this SAME function instead
+  //  of independently recomputing overlapping state through slightly
+  //  different paths. No Firestore reads/writes here (pure compute over
+  //  already-loaded docs); no caching (T277: a fresh call is always
+  //  correct, so there is nothing to invalidate).
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _buildClientDecisionSnapshot(params) {
+    params = params || {};
+    var clientId  = params.clientId  || null;
+    var coachId   = params.coachId   || null;
+    var clientDoc = params.clientDoc || null;
+    var planDoc   = params.planDoc   || null;
+    var logsDoc   = params.logsDoc   || null;
+    var fd        = params.fd        || {};
+    var now       = params.now       || new Date().toISOString();
+
+    var entries = (logsDoc && logsDoc.entries) || {};
+    var activePlanId = (clientDoc && clientDoc.activePlanId) || null;
+    var week = (logsDoc && logsDoc.currentWeek) || null;
+
+    var logsResult = _mapLogs(logsDoc);
+    var weeklyDecision = _computeWeeklyDecisionForRequest(entries, planDoc);
+    var adaptivePrescription = _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, logsResult.engineState, weeklyDecision, entries);
+    var mesocycleDecision = _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc, entries);
+    var executionFidelity = _computeExecutionFidelityForRequest(planDoc, weeklyDecision, logsResult.progressionHistory);
+    var learnedState = _computeLearnedStateForRequest(entries, planDoc, logsResult.progressionHistory);
+    var prescriptionEffectiveness = _computePrescriptionEffectivenessForRequest(planDoc, fd, clientDoc, weeklyDecision, logsResult.progressionHistory, learnedState);
+    var nutritionDecision = _computeNutritionDecisionForRequest(entries, clientDoc, fd);
+    var coachSupervision = _computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness);
+    var coachInterventionContext = _computeCoachInterventionContextForRequest(clientDoc, planDoc);
+
+    // T277 — provenance: only real, already-existing timestamps, never
+    // fabricated/render-time. Reuses T242's canonical CLIENT-scope evidence
+    // timestamp (window._getLatestEvidenceTimestampForScope) and the
+    // client's own coachInterventions[].decidedAt -- no new timestamp
+    // source invented.
+    var latestCoachDecisionAt = null;
+    ((clientDoc && Array.isArray(clientDoc.coachInterventions)) ? clientDoc.coachInterventions : []).forEach(function(iv) {
+      if (!iv || !iv.decidedAt) return;
+      var t = Date.parse(iv.decidedAt);
+      if (!isNaN(t) && (latestCoachDecisionAt === null || t > Date.parse(latestCoachDecisionAt))) latestCoachDecisionAt = iv.decidedAt;
+    });
+    var provenance = {
+      clientId:              clientId,
+      activePlanId:          activePlanId,
+      week:                  week,
+      clientUpdatedAt:       (clientDoc && clientDoc.updatedAt) || null,
+      planUpdatedAt:         (planDoc && planDoc.updatedAt) || null,
+      latestExecutionAt:     (typeof window._getLatestEvidenceTimestampForScope === 'function')
+        ? window._getLatestEvidenceTimestampForScope('CLIENT', clientId, entries, planDoc, clientDoc)
+        : null,
+      latestCoachDecisionAt: latestCoachDecisionAt
+    };
+
+    return {
+      identity: { clientId: clientId, coachId: coachId, activePlanId: activePlanId, week: week },
+      progression:               logsResult.progressionHistory,
+      executionFidelity:         executionFidelity,
+      weeklyDecision:            weeklyDecision,
+      adaptivePrescription:      adaptivePrescription,
+      mesocycleDecision:         mesocycleDecision,
+      learnedState:              learnedState,
+      prescriptionEffectiveness: prescriptionEffectiveness,
+      nutritionDecision:         nutritionDecision,
+      coachSupervision:          coachSupervision,
+      coachInterventionContext:  coachInterventionContext,
+      logsResult:                logsResult,
+      provenance:                provenance,
+      generatedAt:               now
+    };
+  }
+  window.VDSEN_SNAPSHOT = { build: _buildClientDecisionSnapshot };
+
   function buildGenerationRequest(params) {
     params = params || {};
     var clientId   = params.clientId   || null;
