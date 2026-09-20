@@ -16048,6 +16048,65 @@ El esfuerzo no es negociable.
       </div>`;
     }
 
+    // ── T215 — Coach visibility for the T210-213 longitudinal learned-state
+    // layer. Reuses window.VDSEN_LEARNED and the SAME progressionHistory
+    // (_mesoProgHist) already built for the mesocycle card above — no
+    // recalculated logic. Compact, exceptions-first: NONE-confidence items
+    // are never shown (nothing useful to say yet), and the item list
+    // collapses into a <details> beyond a few entries, same pattern as the
+    // mesocycle card's preserved-exercises list.
+    if (p && typeof window.VDSEN_LEARNED !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {
+      const _learnedProgrecs = {};
+      Object.keys(entries).forEach(k => { if (/^progrec_\d+_\d+$/.test(k)) _learnedProgrecs[k] = entries[k]; });
+      const _learnedProgHist = window.VDSEN_BUILD._mapExerciseProgressionHistory(_learnedProgrecs);
+      const _learnedVolTolerance = window.VDSEN_LEARNED.computeVolumeTolerance(p, _learnedProgHist, []);
+      const _learnedExTolerance  = window.VDSEN_LEARNED.computeExerciseTolerance(p, _learnedProgHist);
+      const _learnedRecovery     = window.VDSEN_LEARNED.computeRecoverySensitivity(entries, p, _learnedProgHist);
+
+      const _learnedPidNames = {};
+      ((p && p.days) || []).forEach(d => (d.exercises || []).forEach(ex => {
+        if (ex.prescriptionExerciseId) _learnedPidNames[ex.prescriptionExerciseId] = ex.exerciseName || ex.prescriptionExerciseId;
+      }));
+
+      const _LEARNED_EX_LABEL = { PRODUCTIVE: 'Productivo', TOLERATED: 'Tolerado', NEUTRAL: 'Neutral', LOW_TOLERANCE: 'Baja tolerancia', REVIEW: 'Revisar' };
+      const _LEARNED_REC_LABEL = { DECLINES_AT_HIGHER_STRESS: 'Sensible a mayor concentración de estímulo', STABLE_AT_CURRENT_STRESS: 'Estable al nivel de estímulo actual' };
+
+      const _learnedMuscleLines = Object.keys(_learnedVolTolerance)
+        .filter(m => _learnedVolTolerance[m].confidence !== 'none')
+        .map(m => {
+          const rec = _learnedVolTolerance[m];
+          const rangeTxt = rec.toleratedRange ? `${rec.toleratedRange.min}–${rec.toleratedRange.max} series efectivas` : (rec.evidence === 'MAY_EXCEED_TOLERANCE' ? 'puede exceder tolerancia' : 'insuficiente');
+          return `<div class="text-xs mb-1"><span style="font-weight:700">${_escH(m)}</span> — ${_escH(rangeTxt)} <span style="color:#888">(confianza ${rec.confidence})</span></div>`;
+        });
+
+      const _learnedExLines = Object.keys(_learnedExTolerance)
+        .filter(pid => _learnedExTolerance[pid].confidence !== 'none')
+        .map(pid => {
+          const rec = _learnedExTolerance[pid];
+          const name = _learnedPidNames[pid] || pid;
+          const color = rec.classification === 'REVIEW' ? '#FF8844' : rec.classification === 'LOW_TOLERANCE' ? '#FF8844' : '#aaa';
+          return `<div class="text-xs mb-1"><span style="font-weight:700">${_escH(name)}</span> — <span style="color:${color}">${_LEARNED_EX_LABEL[rec.classification] || rec.classification}</span> <span style="color:#888">(confianza ${rec.confidence})</span></div>`;
+        });
+
+      const _learnedRecoveryLine = (_learnedRecovery && _learnedRecovery.confidence !== 'none' && _LEARNED_REC_LABEL[_learnedRecovery.pattern])
+        ? `<div class="text-xs mb-1"><span style="font-weight:700">Recuperación</span> — ${_LEARNED_REC_LABEL[_learnedRecovery.pattern]} <span style="color:#888">(confianza ${_learnedRecovery.confidence})</span></div>`
+        : '';
+
+      const _learnedHasAnything = _learnedMuscleLines.length || _learnedExLines.length || _learnedRecoveryLine;
+      if (_learnedHasAnything) {
+        const _learnedVisibleMuscles = _learnedMuscleLines.slice(0, 3);
+        const _learnedVisibleEx = _learnedExLines.slice(0, 3);
+        html += `<div class="card p-3 mb-3">
+          <div class="text-xs uppercase font-semibold tracking-wide mb-2" style="color:#888">Estado aprendido</div>
+          ${_learnedVisibleMuscles.join('')}
+          ${_learnedMuscleLines.length > 3 ? `<details class="mt-1 mb-1"><summary class="text-xs text-[#666] cursor-pointer">Ver ${_learnedMuscleLines.length - 3} músculo(s) más</summary>${_learnedMuscleLines.slice(3).join('')}</details>` : ''}
+          ${_learnedVisibleEx.join('')}
+          ${_learnedExLines.length > 3 ? `<details class="mt-1 mb-1"><summary class="text-xs text-[#666] cursor-pointer">Ver ${_learnedExLines.length - 3} ejercicio(s) más</summary>${_learnedExLines.slice(3).join('')}</details>` : ''}
+          ${_learnedRecoveryLine}
+        </div>`;
+      }
+    }
+
     // ── Gráfica de tendencia de peso
     if (weightPts.length >= 2) html += _buildMiniTrendChart(weightPts, 'Tendencia de peso (kg)', '#C4FF00');
 
