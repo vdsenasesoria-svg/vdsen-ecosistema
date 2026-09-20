@@ -853,7 +853,12 @@
     return window.VDSEN_ADAPTIVE.computeMap({
       planDoc: planDoc, engineState: engineState, weeklyDecision: weeklyDecision,
       priorityMuscles: priorityMuscles, maintenanceMuscles: maintenanceMuscles,
-      nivel: nivel, ehrensteinCalib: ehrensteinCalib
+      nivel: nivel, ehrensteinCalib: ehrensteinCalib,
+      // T240 residual audit fix: thread the Coach's real intervention
+      // history through so T237's per-muscle override actually reaches the
+      // Generator request, not just isolated tests.
+      interventions: (clientDoc && clientDoc.coachInterventions) || null,
+      currentPlanId: (clientDoc && clientDoc.activePlanId) || null
     });
   }
 
@@ -1104,7 +1109,7 @@
   }
 
   // T197 — wires the above into the canonical Generator request.
-  function _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription) {
+  function _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc) {
     // T200 residual audit: no previous plan at all means there is no
     // mesocycle to transition FROM — this is a genuine first-ever
     // generation, not "insufficient evidence for a renewal decision".
@@ -1120,7 +1125,12 @@
       weeklyDecision: weeklyDecision,
       adaptivePrescription: adaptivePrescription,
       progressionHistory: logsResult ? logsResult.progressionHistory : null,
-      isCheckpointWeek: isCheckpointWeek
+      isCheckpointWeek: isCheckpointWeek,
+      // T240 residual audit fix: without this, T237's Coach KEEP override
+      // was unreachable from the real Generator request path -- clientDoc
+      // was never passed into this wrapper at all.
+      interventions: (clientDoc && clientDoc.coachInterventions) || null,
+      currentPlanId: (clientDoc && clientDoc.activePlanId) || null
     });
   }
 
@@ -1226,7 +1236,7 @@
     var supplementContext = _mapSupplementContext(fd);
     var weeklyDecision = _computeWeeklyDecisionForRequest(logsDoc && logsDoc.entries, planDoc);
     var adaptivePrescription = _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, logsResult.engineState, weeklyDecision);
-    var mesocycleDecision = _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription);
+    var mesocycleDecision = _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc);
     var executionFidelity = _computeExecutionFidelityForRequest(planDoc, weeklyDecision, logsResult.progressionHistory);
     var learnedState = _computeLearnedStateForRequest(logsDoc && logsDoc.entries, planDoc, logsResult.progressionHistory);
     var prescriptionEffectiveness = _computePrescriptionEffectivenessForRequest(planDoc, fd, clientDoc, weeklyDecision, logsResult.progressionHistory, learnedState);
@@ -6550,7 +6560,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         target: muscleTargets[muscle],
         actualVolume: previousPlanVolumes[muscle] || null,
         actualFrequency: actualFrequencyByMuscle[muscle] != null ? actualFrequencyByMuscle[muscle] : null,
-        sessionQualityDrop: sessionQualityDrop
+        sessionQualityDrop: sessionQualityDrop,
+        // T240 residual audit fix: without this, T237's Coach-intervention
+        // override on _decideAdaptivePrescription was unreachable from BOTH
+        // real production call sites (Generator request + Coach Monitor
+        // display) -- neither ever threaded muscleId/interventions/
+        // currentPlanId through this shared assembler, so CASE C/D silently
+        // never fired outside isolated unit tests.
+        muscleId: muscle,
+        interventions: opts.interventions || null,
+        currentPlanId: opts.currentPlanId || null
       });
       muscleDecisions[muscle] = Object.assign({
         currentVolume: previousPlanVolumes[muscle] ? previousPlanVolumes[muscle].fractionalTotal : null,
@@ -16641,7 +16660,12 @@ El esfuerzo no es negociable.
       const _apMap = _computeAdaptivePrescriptionMap({
         planDoc: p, engineState: _wsEsForAdaptive,
         weeklyDecision: { status: _wsStatusForAdaptive || 'DATA_INSUFFICIENT' },
-        ehrensteinCalib: (_detailClientData && _detailClientData.calibracion_volumetrica) || null
+        ehrensteinCalib: (_detailClientData && _detailClientData.calibracion_volumetrica) || null,
+        // T240 residual audit fix: without this, the Monitor's own panel
+        // showed the stale automated verdict even after a Coach KEEP --
+        // disagreeing with what the Generator would now do (T237/T238).
+        interventions: (_detailClientData && _detailClientData.coachInterventions) || null,
+        currentPlanId: (_detailClientData && _detailClientData.activePlanId) || null
       });
       _apMapForMeso = _apMap;
       const _apDecisions = _apMap.muscleDecisions || {};
@@ -16701,7 +16725,12 @@ El esfuerzo no es negociable.
         weeklyDecision: { status: _wsStatusForAdaptive || 'DATA_INSUFFICIENT' },
         adaptivePrescription: _apMapForMeso,
         progressionHistory: _mesoProgHist,
-        isCheckpointWeek: currentWeek >= _mesoTotalWeeks
+        isCheckpointWeek: currentWeek >= _mesoTotalWeeks,
+        // T240 residual audit fix: same gap as the adaptive map above -- the
+        // Monitor's mesocycle panel must agree with the Generator on which
+        // PID a Coach KEEP already settled (CASE L).
+        interventions: (_detailClientData && _detailClientData.coachInterventions) || null,
+        currentPlanId: (_detailClientData && _detailClientData.activePlanId) || null
       });
       // PID -> exercise name lookup from the active plan, for display only.
       const _mesoPidNames = {};
