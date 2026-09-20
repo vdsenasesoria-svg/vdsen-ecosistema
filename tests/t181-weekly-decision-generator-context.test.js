@@ -45,7 +45,9 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // Structural: weeklyDecision is wired into the assembled request additively.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes('weeklyDecision:    _computeWeeklyDecisionForRequest(logsDoc && logsDoc.entries, planDoc),'), 'buildGenerationRequest wires weeklyDecision into the assembled request');
+// T188 hoisted this computation into a `weeklyDecision` variable (reused by
+// the new adaptivePrescription field too) — same value, wired the same way.
+ok(COACH.includes('var weeklyDecision = _computeWeeklyDecisionForRequest(logsDoc && logsDoc.entries, planDoc);') && COACH.includes('weeklyDecision:    weeklyDecision,'), 'buildGenerationRequest wires weeklyDecision into the assembled request (T188 wording)');
 ok(COACH.includes('window.VDSEN_WEEKLY = { classify: _classifyWeeklyStatus, decideVolume: _decideVolumeAction, STATUS: WEEKLY_STATUS };'), 'the T177/T178 classifier is exposed via window.VDSEN_WEEKLY for cross-script-block reuse (no second engine)');
 
 const computeSrc = extractFunction(COACH, 'function _computeWeeklyDecisionForRequest(entries, planDoc)');

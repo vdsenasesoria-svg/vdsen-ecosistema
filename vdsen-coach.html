@@ -816,6 +816,24 @@
     return Object.keys(ctx).length ? ctx : null;
   }
 
+  // T188 — additive Generator context: exposes the SAME per-muscle adaptive-
+  // prescription decisions (T185-187, window.VDSEN_ADAPTIVE, defined later
+  // in the main app script) via the identical lazy cross-script-block lookup
+  // pattern as _computeWeeklyDecisionForRequest above. Safe null fallback.
+  function _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, engineState, weeklyDecision) {
+    if (typeof window.VDSEN_ADAPTIVE === 'undefined') return null;
+    fd = fd || {};
+    var priorityMuscles = (fd.prioridades && Array.isArray(fd.prioridades.grupos_musculares)) ? fd.prioridades.grupos_musculares : [];
+    var maintenanceMuscles = (fd.prioridades && Array.isArray(fd.prioridades.grupos_mantenimiento)) ? fd.prioridades.grupos_mantenimiento : [];
+    var nivel = (fd.entrenamiento && fd.entrenamiento.nivel) || (fd.base && fd.base.nivel) || 'intermedio';
+    var ehrensteinCalib = clientDoc && clientDoc.calibracion_volumetrica ? clientDoc.calibracion_volumetrica : null;
+    return window.VDSEN_ADAPTIVE.computeMap({
+      planDoc: planDoc, engineState: engineState, weeklyDecision: weeklyDecision,
+      priorityMuscles: priorityMuscles, maintenanceMuscles: maintenanceMuscles,
+      nivel: nivel, ehrensteinCalib: ehrensteinCalib
+    });
+  }
+
   // ── buildGenerationRequest ─────────────────────────────────────────────────
   // T181 — additive Generator context: exposes the SAME deterministic weekly
   // classification the Coach Monitor renders (T177/T178, window.VDSEN_WEEKLY,
@@ -903,6 +921,8 @@
     diagnostics.logsDiagnostics = logsResult._diagnostics;
     var nutritionContext  = _mapNutritionContext(fd);
     var supplementContext = _mapSupplementContext(fd);
+    var weeklyDecision = _computeWeeklyDecisionForRequest(logsDoc && logsDoc.entries, planDoc);
+    var adaptivePrescription = _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, logsResult.engineState, weeklyDecision);
     var request = {
       schema:      'vdsen-generation-request-v1',
       requestId:   _uuid(),
@@ -921,7 +941,8 @@
       checkins:          logsResult.checkins,
       engineState:       logsResult.engineState,
       progressionHistory: logsResult.progressionHistory,
-      weeklyDecision:    _computeWeeklyDecisionForRequest(logsDoc && logsDoc.entries, planDoc),
+      weeklyDecision:    weeklyDecision,
+      adaptivePrescription: adaptivePrescription,
       attachments:       [],
       options:           Object.assign({}, options, eqResult.gymInfo ? { gymInfo: eqResult.gymInfo } : {})
     };
@@ -5740,6 +5761,140 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     return { muscleVolume: muscleVolume, unclassified: unclassified, warnings: warnings };
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T185-188 — ADAPTIVE PRESCRIPTION (decision support, NOT a second engine).
+  //  Reuses _computeMuscleTargets (P10.2-5, already derives frequency FROM
+  //  volume — "not chosen independently") and auditFractionalVolume
+  //  (direct×1/indirect×0.5/stabilizer×0, unchanged) to compare the PREVIOUS
+  //  plan's real applied volume/frequency against the computed target, gated
+  //  by the T177 weeklyDecision status (safety/adherence/recovery first).
+  //  Never writes/mutates a plan — pure classification, per muscle.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // T185/T186/T187 — per-muscle verdict. volumeAction ∈ KEEP/REVIEW_INCREASE/
+  // REVIEW_DECREASE/REDISTRIBUTE/FREEZE/COACH_REVIEW.
+  function _decideAdaptivePrescription(input) {
+    input = input || {};
+    var weeklyStatus = input.weeklyStatus;
+    var reasons = [];
+
+    // Safety/adherence/recovery/data gate (Authority Order) — outranks any
+    // volume/frequency read, reuses T177's classification verbatim.
+    if (weeklyStatus === 'PAIN_REVIEW' || weeklyStatus === 'RECOVERY_LIMITED' ||
+        weeklyStatus === 'DATA_INSUFFICIENT' || weeklyStatus === 'ADHERENCE_LIMITED') {
+      return { volumeAction: 'FREEZE', frequencyAction: 'KEEP', distributionAction: 'KEEP', reasons: ['weekly_status_' + weeklyStatus] };
+    }
+    if (weeklyStatus === 'COACH_REVIEW') {
+      return { volumeAction: 'COACH_REVIEW', frequencyAction: 'KEEP', distributionAction: 'KEEP', reasons: ['unresolved_identity_conflict'] };
+    }
+
+    var target = input.target || null; // from _computeMuscleTargets: {volumeTarget, volumeRange:{min,max}, frequencyTarget, ...}
+    var actual = input.actualVolume || null; // from auditFractionalVolume: {direct, indirect, fractionalTotal}
+    var actualTotal = actual ? actual.fractionalTotal : null;
+    var volumeAction = 'KEEP';
+
+    if (target && actualTotal != null) {
+      if (actualTotal > target.volumeRange.max) {
+        volumeAction = 'REVIEW_DECREASE'; reasons.push('above_target_range');
+      } else if (weeklyStatus === 'PERFORMANCE_STALL') {
+        // Persistent stall within/below range -> capacity/fatigue mismatch worth a look,
+        // never an automatic increase just because it "should" progress.
+        volumeAction = 'REVIEW_DECREASE'; reasons.push('performance_stall');
+      } else if (weeklyStatus === 'PROGRESSING' && actualTotal < target.volumeRange.min) {
+        volumeAction = 'REVIEW_INCREASE'; reasons.push('below_target_range_and_progressing');
+      } else if (weeklyStatus === 'PROGRESSING' && actualTotal <= target.volumeTarget) {
+        // "Good progression != automatically add sets" — only when adherence/recovery
+        // already cleared the gate above AND there is real headroom to the target.
+        volumeAction = 'REVIEW_INCREASE'; reasons.push('progressing_with_headroom_to_target');
+      } else {
+        reasons.push('within_target_range');
+      }
+    } else {
+      reasons.push('no_previous_volume_data');
+    }
+
+    // T186 — session capacity/distribution: reuses the SAME ICS>=7 quality
+    // threshold already established (T177/_calcEhrensteinSemaphore) — no new
+    // universal max-sets-per-session invented. A real quality drop means
+    // "redistribute before adding", and defers an increase rather than
+    // silently granting it.
+    var distributionAction = 'KEEP';
+    if (input.sessionQualityDrop === true) {
+      distributionAction = 'REVIEW';
+      reasons.push('session_quality_drop');
+      if (volumeAction === 'REVIEW_INCREASE') { volumeAction = 'REDISTRIBUTE'; reasons.push('increase_deferred_pending_redistribution'); }
+    }
+
+    // T187 — frequency is derived FROM volume by _computeMuscleTargets
+    // (P10.4), never chosen independently here. Only reviewed when it moves
+    // in the SAME direction as an already-justified volume change.
+    var frequencyAction = 'KEEP';
+    if (target && input.actualFrequency != null) {
+      if (volumeAction === 'REVIEW_INCREASE' && target.frequencyTarget > input.actualFrequency) {
+        frequencyAction = 'REVIEW_INCREASE'; reasons.push('target_frequency_exceeds_current');
+      } else if (volumeAction === 'REVIEW_DECREASE' && target.frequencyTarget < input.actualFrequency) {
+        frequencyAction = 'REVIEW_DECREASE'; reasons.push('target_frequency_below_current');
+      }
+    }
+
+    return { volumeAction: volumeAction, frequencyAction: frequencyAction, distributionAction: distributionAction, reasons: reasons };
+  }
+
+  // T188 — assembles the full per-muscle adaptivePrescription map for the
+  // canonical Generator request. Reuses _computeMuscleTargets/
+  // auditFractionalVolume/weeklyDecision entirely — no recomputation.
+  function _computeAdaptivePrescriptionMap(opts) {
+    opts = opts || {};
+    var planDoc = opts.planDoc || null;
+    var weeklyDecision = opts.weeklyDecision || null;
+    var weeklyStatus = weeklyDecision ? weeklyDecision.status : 'DATA_INSUFFICIENT';
+    var readiness = (weeklyStatus === 'RECOVERY_LIMITED' || weeklyStatus === 'PAIN_REVIEW') ? 'fatigued' : 'neutral';
+
+    var prevAudit = planDoc ? auditFractionalVolume({ days: planDoc.days || [] }, opts.exercisesCatalog || []) : { muscleVolume: {} };
+    var previousPlanVolumes = prevAudit.muscleVolume || {};
+
+    // Actual current frequency per muscle = number of distinct days it appears in.
+    var actualFrequencyByMuscle = {};
+    ((planDoc && planDoc.days) || []).forEach(function(day) {
+      var musclesThisDay = {};
+      (day.exercises || []).forEach(function(ex) {
+        var nameLc = (ex.exerciseName || '').trim().toLowerCase();
+        var canonical = _EXERCISE_CANONICAL_METADATA[nameLc];
+        if (canonical) (canonical.primaryMuscles || []).forEach(function(m) { musclesThisDay[m] = true; });
+      });
+      Object.keys(musclesThisDay).forEach(function(m) { actualFrequencyByMuscle[m] = (actualFrequencyByMuscle[m] || 0) + 1; });
+    });
+
+    var muscleTargets = _computeMuscleTargets(opts.engineState || null, null, {
+      priorityMuscles: opts.priorityMuscles, maintenanceMuscles: opts.maintenanceMuscles,
+      nivel: opts.nivel, readiness: readiness, previousPlanVolumes: previousPlanVolumes, ehrensteinCalib: opts.ehrensteinCalib
+    });
+
+    // No existing per-muscle technique-quality signal exists in this codebase
+    // — reuses the SAME whole-session ICS<7 read already used for weeklyDecision
+    // (T177), applied uniformly rather than inventing new per-muscle tracking.
+    var sessionQualityDrop = !!opts.sessionQualityDrop;
+
+    var muscleDecisions = {};
+    Object.keys(muscleTargets).forEach(function(muscle) {
+      var decision = _decideAdaptivePrescription({
+        weeklyStatus: weeklyStatus,
+        target: muscleTargets[muscle],
+        actualVolume: previousPlanVolumes[muscle] || null,
+        actualFrequency: actualFrequencyByMuscle[muscle] != null ? actualFrequencyByMuscle[muscle] : null,
+        sessionQualityDrop: sessionQualityDrop
+      });
+      muscleDecisions[muscle] = Object.assign({
+        currentVolume: previousPlanVolumes[muscle] ? previousPlanVolumes[muscle].fractionalTotal : null,
+        targetRange: muscleTargets[muscle].volumeRange
+      }, decision);
+    });
+
+    return { muscleDecisions: muscleDecisions };
+  }
+
+  window.VDSEN_ADAPTIVE = { decide: _decideAdaptivePrescription, computeMap: _computeAdaptivePrescriptionMap };
 
   // ─── buildPrescriptionContext (P2 + P7 + P9.4 + P10.2-6) ────────────────
   // Returns a structured PrescriptionContext. Text for Claude derived via
@@ -15033,6 +15188,7 @@ El esfuerzo no es negociable.
     // block. Reuses engine_state/progrec_/ci_sem_/postsession_ + the
     // Ehrenstein semaphore above — no recalculated progression, no new
     // clinical threshold, no plan mutation (decision support only).
+    let _wsStatusForAdaptive = null, _wsEsForAdaptive = null; // T189: hoisted so the adaptive-prescription block below can reuse them
     {
       // T183 residual audit: engine_state is a single, non-week-scoped key —
       // if the client already advanced to a new currentWeek without a fresh
@@ -15069,6 +15225,7 @@ El esfuerzo no es negociable.
         semaphore: _ehrenSemForWeekly
       });
       const _wsVolume = _decideVolumeAction(_wsStatus, ci);
+      _wsStatusForAdaptive = _wsStatus; _wsEsForAdaptive = _wsEs;
 
       const _WS_META = {
         PAIN_REVIEW:       { label: 'PAIN REVIEW',       color: '#FF4444', next: 'Revisar dolor/molestia articular antes de continuar' },
@@ -15099,6 +15256,60 @@ El esfuerzo no es negociable.
         </div>
         <div class="text-xs" style="color:#aaa">${_wsMeta.next}</div>
       </div>`;
+    }
+
+    // ── T185-189 — Adaptive prescription: per-muscle volume/frequency/
+    // distribution decision support, exceptions-first. Reuses
+    // _computeAdaptivePrescriptionMap entirely (T185-188) — no recalculated
+    // targets, no plan mutation. priorityMuscles/maintenanceMuscles/nivel
+    // are not loaded in this panel (no ficha read here) — the compute
+    // function already defaults safely without them; the canonical
+    // Generator request (T188) has the full ficha context separately.
+    {
+      const _apMap = _computeAdaptivePrescriptionMap({
+        planDoc: p, engineState: _wsEsForAdaptive,
+        weeklyDecision: { status: _wsStatusForAdaptive || 'DATA_INSUFFICIENT' },
+        ehrensteinCalib: (_detailClientData && _detailClientData.calibracion_volumetrica) || null
+      });
+      const _apDecisions = _apMap.muscleDecisions || {};
+      const _apEntries = Object.keys(_apDecisions)
+        .map(m => ({ muscle: m, d: _apDecisions[m] }))
+        .filter(x => x.d.currentVolume != null); // only muscles with real applied-volume data
+      const _AP_ORDER = { COACH_REVIEW: 0, FREEZE: 1, REVIEW_DECREASE: 2, REDISTRIBUTE: 3, REVIEW_INCREASE: 4, KEEP: 5 };
+      const _AP_META = {
+        COACH_REVIEW:    { label: 'REVISAR', color: '#FF66FF' },
+        FREEZE:          { label: 'CONGELAR', color: '#4488cc' },
+        REVIEW_DECREASE: { label: '↓ REVISAR', color: '#FF8844' },
+        REDISTRIBUTE:    { label: 'REDISTRIBUIR', color: '#66CCFF' },
+        REVIEW_INCREASE: { label: '↑ REVISAR', color: '#44BB88' },
+        KEEP:            { label: 'MANTENER', color: '#888' }
+      };
+      _apEntries.sort((a, b) => (_AP_ORDER[a.d.volumeAction] ?? 9) - (_AP_ORDER[b.d.volumeAction] ?? 9));
+      const _apExceptions = _apEntries.filter(x => x.d.volumeAction !== 'KEEP');
+      const _apKeeps      = _apEntries.filter(x => x.d.volumeAction === 'KEEP');
+
+      function _renderApCard(x) {
+        const meta = _AP_META[x.d.volumeAction] || _AP_META.KEEP;
+        const freqNote = x.d.frequencyAction !== 'KEEP' ? ` · Frecuencia: ${_AP_META[x.d.frequencyAction] ? _AP_META[x.d.frequencyAction].label : x.d.frequencyAction}` : '';
+        const distNote = x.d.distributionAction !== 'KEEP' ? ' · Distribución: REVISAR' : '';
+        return `<div class="card p-2 mb-1" style="border-left:3px solid ${meta.color}">
+          <div class="flex justify-between items-center">
+            <span class="font-semibold text-xs uppercase">${_escH(x.muscle)}</span>
+            <span class="text-xs font-bold px-2 py-0.5 rounded" style="background:rgba(0,0,0,.3);color:${meta.color}">${meta.label}${freqNote}${distNote}</span>
+          </div>
+          <div class="text-xs mt-1" style="color:#888">Volumen actual: ${x.d.currentVolume} · Rango objetivo: ${x.d.targetRange.min}–${x.d.targetRange.max} · ${(x.d.reasons||[]).slice(0,2).join(', ')}</div>
+        </div>`;
+      }
+
+      if (_apEntries.length) {
+        html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Prescripción adaptativa por músculo</div>`;
+        _apExceptions.forEach(x => { html += _renderApCard(x); });
+        if (_apKeeps.length) {
+          html += `<details class="mt-1"><summary class="text-xs text-[#666] cursor-pointer">Ver ${_apKeeps.length} músculo${_apKeeps.length !== 1 ? 's' : ''} sin cambios (MANTENER)</summary><div class="mt-1">`;
+          _apKeeps.forEach(x => { html += _renderApCard(x); });
+          html += `</div></details>`;
+        }
+      }
     }
 
     // ── Gráfica de tendencia de peso
