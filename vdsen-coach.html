@@ -9108,6 +9108,31 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     };
   }
 
+  // T244 — non-blocking Coach-intervention continuity check: does the newly
+  // generated plan actually preserve the exact PIDs the Coach's own
+  // RESOLVED KEEP decisions call for (req.coachInterventionContext,
+  // T238)? Never recomputes intervention/staleness logic (already
+  // resolved upstream) -- this is a pure OUTPUT continuity check, same
+  // shape/spirit as _checkResponseConsistency below, just for a different
+  // mismatch. Advisory only: never blocks save/activation, never
+  // auto-fixes the plan -- the Coach decides what to do with the warning.
+  function _checkCoachInterventionContinuity(req, rawPlan) {
+    var ctx = req && req.coachInterventionContext;
+    if (!ctx || !Array.isArray(ctx.resolvedItems) || !ctx.resolvedItems.length) return [];
+    var plan = _normalizePlan(rawPlan);
+    var planPids = {};
+    ((plan.entrenamiento && plan.entrenamiento.days) || []).forEach(function(d) {
+      (d.exercises || []).forEach(function(ex) { if (ex.prescriptionExerciseId) planPids[ex.prescriptionExerciseId] = true; });
+    });
+    var issues = [];
+    ctx.resolvedItems.forEach(function(item) {
+      if (item && item.targetType === 'EXERCISE' && item.action === 'KEEP' && item.targetId && !planPids[item.targetId]) {
+        issues.push('el Coach marcó MANTENER un ejercicio (id ' + item.targetId + ') que ya no aparece en el plan generado — revisar si el cambio fue intencional');
+      }
+    });
+    return issues;
+  }
+
   // Detect mismatch between what the audit implies and what the plan contains.
   // Returns array of issue strings (empty = consistent).
   // Supports both flat audit (macroCheck) and nested audit (audit.validation.macroEnergyCheck).
@@ -9473,6 +9498,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
     // Response consistency check
     const consistencyIssues = _checkResponseConsistency(audit, rawPlan);
+    // T244 — Coach-intervention continuity check (non-blocking).
+    const interventionContinuityIssues = _checkCoachInterventionContinuity(req, rawPlan);
 
     // Training
     const training = plan.entrenamiento;
@@ -9554,6 +9581,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       auditHtml = `<div style="background:rgba(239,68,68,.15);color:#ef4444;padding:8px;border-radius:6px;font-size:12px;margin-bottom:6px">` +
         `⚠️ Respuesta inconsistente: audit contiene datos de módulo no presente.<br>` +
         consistencyIssues.map(i => '• ' + i).join('<br>') +
+        `</div>` + auditHtml;
+    }
+    if (interventionContinuityIssues.length) {
+      auditHtml = `<div style="background:rgba(245,158,11,.15);color:#f59e0b;padding:8px;border-radius:6px;font-size:12px;margin-bottom:6px">` +
+        `⚠️ Decisión del Coach no reflejada en el nuevo plan.<br>` +
+        interventionContinuityIssues.map(i => '• ' + _escH(i)).join('<br>') +
         `</div>` + auditHtml;
     }
 
