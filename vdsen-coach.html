@@ -15479,10 +15479,68 @@ El esfuerzo no es negociable.
     return result;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T213 — RECOVERY SENSITIVITY LEARNING. Identifies whether the client
+  //  repeatedly shows recovery decline at higher training-stress weeks, by
+  //  comparing the EXISTING per-week deload-trigger record (progrec_{W}_{D}
+  //  .deloadTriggers, already computed with EXISTING clinical thresholds --
+  //  WHO-5<52/RPE>9/sleep<6h/HRV descending/energy low, T162's reactive
+  //  deload logic, no new threshold invented here) against a per-week
+  //  "stress level" proxy reusing T211's OWN weekly execution snapshots
+  //  (total executed sets that week). Purely comparative (this client's
+  //  high-stress weeks vs this client's own low-stress weeks) -- no
+  //  absolute/population threshold, no new clinical score.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _computeRecoverySensitivity(entries, planDoc, progressionHistory) {
+    entries = entries || {};
+    var deloadByWeek = {};
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(/^progrec_(\d+)_\d+$/);
+      if (!m) return;
+      var w = parseInt(m[1], 10);
+      var entry = entries[k];
+      var triggerCount = (entry && Array.isArray(entry.deloadTriggers)) ? entry.deloadTriggers.length : 0;
+      deloadByWeek[w] = Math.max(deloadByWeek[w] || 0, triggerCount);
+    });
+
+    var weekMap = _buildWeeklyExecutionSnapshots(planDoc, progressionHistory);
+    var weekStress = {};
+    Object.keys(weekMap).forEach(function(w) {
+      weekStress[w] = weekMap[w].exercises.reduce(function(sum, ex) { return sum + (ex.sets ? ex.sets.length : 0); }, 0);
+    });
+
+    var weeks = Object.keys(weekStress).map(Number).filter(function(w) { return deloadByWeek.hasOwnProperty(w); });
+    var n = weeks.length;
+    var confidence = _computeEvidenceConfidence(weeks.map(function() { return 1; }));
+
+    if (confidence === 'none' || confidence === 'low') {
+      return { pattern: 'INSUFFICIENT_DATA', confidence: confidence, weeksObserved: n };
+    }
+
+    var avgStress = weeks.reduce(function(sum, w) { return sum + weekStress[w]; }, 0) / n;
+    var highStressWeeks = weeks.filter(function(w) { return weekStress[w] > avgStress; });
+    var lowStressWeeks  = weeks.filter(function(w) { return weekStress[w] <= avgStress; });
+
+    var highDeloadRate = highStressWeeks.length ? highStressWeeks.filter(function(w) { return deloadByWeek[w] > 0; }).length / highStressWeeks.length : 0;
+    var lowDeloadRate  = lowStressWeeks.length  ? lowStressWeeks.filter(function(w) { return deloadByWeek[w] > 0; }).length / lowStressWeeks.length : 0;
+
+    var pattern = 'STABLE_AT_CURRENT_STRESS';
+    if (highStressWeeks.length && lowStressWeeks.length && highDeloadRate > lowDeloadRate && highDeloadRate >= 0.5) {
+      pattern = 'DECLINES_AT_HIGHER_STRESS';
+    }
+
+    return {
+      pattern: pattern, confidence: confidence, weeksObserved: n,
+      highStressDeloadRate: parseFloat(highDeloadRate.toFixed(2)),
+      lowStressDeloadRate:  parseFloat(lowDeloadRate.toFixed(2))
+    };
+  }
+
   window.VDSEN_LEARNED = {
     computeConfidence: _computeEvidenceConfidence,
     computeVolumeTolerance: _computeVolumeToleranceByMuscle,
-    computeExerciseTolerance: _computeExerciseToleranceByPid
+    computeExerciseTolerance: _computeExerciseToleranceByPid,
+    computeRecoverySensitivity: _computeRecoverySensitivity
   };
 
   var WEEKLY_STATUS = {
