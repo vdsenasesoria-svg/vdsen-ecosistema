@@ -15625,6 +15625,54 @@ El esfuerzo no es negociable.
     computeRecoverySensitivity: _computeRecoverySensitivity
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T218 — GOAL-RESPONSE CONFIDENCE. One deterministic NONE/LOW/MEDIUM/HIGH
+  //  rule for OUTCOME observations (performance response, T219; body-
+  //  composition response, T220), building on T210's shared count+quality
+  //  rule and adding two outcome-specific gates neither T210 nor T205
+  //  needed: measurement-METHOD consistency (mixing an InBody device
+  //  reading with a photo-estimated value is less trustworthy than one
+  //  consistent source) and TIME HORIZON (the body/performance cannot show
+  //  a real trend faster than a minimum real-world interval -- default 14
+  //  days, tunable per caller, never invented as a clinical certainty).
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // measurements: array of { qualityWeight (0-1, optional, default 1 --
+  // e.g. adherence/execution-fidelity for that observation), ts (optional,
+  // epoch ms), method (optional string, e.g. 'inbody'/'photo'/'progression') }
+  function _computeOutcomeConfidence(measurements, options) {
+    measurements = Array.isArray(measurements) ? measurements : [];
+    options = options || {};
+    var minDays = options.minDays != null ? options.minDays : 14;
+
+    var qualities = measurements.map(function(m) { return (m && typeof m.qualityWeight === 'number') ? m.qualityWeight : 1; });
+    var tier = _computeEvidenceConfidence(qualities);
+    if (tier === 'none') return tier;
+
+    // Different measurement methods -> confidence reduced (one measurement
+    // never determines this on its own -- it only matters once 2+ methods
+    // are actually mixed).
+    var methods = measurements.map(function(m) { return (m && m.method) || null; }).filter(function(m) { return m !== null; });
+    var uniqueMethods = methods.filter(function(m, i) { return methods.indexOf(m) === i; });
+    if (uniqueMethods.length > 1) {
+      if (tier === 'high') tier = 'medium';
+      else if (tier === 'medium') tier = 'low';
+    }
+
+    // Insufficient time horizon -> capped at low, regardless of count/quality.
+    var timestamps = measurements.map(function(m) { return m && m.ts; }).filter(function(t) { return typeof t === 'number'; });
+    if (timestamps.length >= 2) {
+      var spanDays = (Math.max.apply(null, timestamps) - Math.min.apply(null, timestamps)) / 86400000;
+      if (spanDays < minDays && tier !== 'none') tier = 'low';
+    }
+
+    return tier;
+  }
+
+  window.VDSEN_OUTCOME = {
+    computeConfidence: _computeOutcomeConfidence
+  };
+
   var WEEKLY_STATUS = {
     PAIN_REVIEW:        'PAIN_REVIEW',
     COACH_REVIEW:        'COACH_REVIEW',
