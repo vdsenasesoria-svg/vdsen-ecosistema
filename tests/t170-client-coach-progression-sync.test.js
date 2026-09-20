@@ -35,7 +35,14 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // Client's T165 fix — same source of truth, same rule, both sides.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes("function _isCoachEditStale(r) {\n        return !!(p && p.updatedAt && r.calculatedAt && Date.parse(p.updatedAt) > Date.parse(r.calculatedAt));\n      }"), 'Coach _isCoachEditStale uses the identical expression to Client\'s T165 _progRecStale (same source of truth)');
+// T249 fix: calculatedAt lives on the PARENT progrec object (lastRec),
+// never on the individual recommendation r -- this now genuinely matches
+// the Client's own T165 expression (Date.parse(PLAN.updatedAt) >
+// Date.parse(progrec.calculatedAt), i.e. the PARENT object, checked
+// below), where the original version of this assertion (checking for
+// r.calculatedAt) was actually asserting the MISMATCHED, never-firing
+// expression -- contradicting this file's own documented intent.
+ok(COACH.includes('return !!(p && p.updatedAt && lastRec && lastRec.calculatedAt && Date.parse(p.updatedAt) > Date.parse(lastRec.calculatedAt));'), 'Coach _isCoachEditStale now reads the parent lastRec\'s calculatedAt -- genuinely the same source of truth as Client\'s T165 progrec.calculatedAt check (T249 fix)');
 ok(CLIENT.includes('Date.parse(PLAN.updatedAt) > Date.parse(progrec.calculatedAt)'), 'Client T165 staleness expression (regression check — unchanged by this ticket)');
 ok(COACH.includes("if (_isIdentityStale(r) || _isCoachEditStale(r)) return 'REVIEW';"), '_categorizeRec now routes BOTH identity mismatch AND coach-edit staleness into REVIEW');
 ok(COACH.includes('_isIdentityStale(r)\n            ? \'⚠️ Identidad no resuelta'), 'the REVIEW card shows the correct message for identity mismatch');

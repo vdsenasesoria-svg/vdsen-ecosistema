@@ -1193,7 +1193,11 @@
         if (!entry || !Array.isArray(entry.recommendations)) return;
         entry.recommendations.forEach(function(r) {
           var idStale = !!(r.prescriptionExerciseId && planPidSet.size && !planPidSet.has(r.prescriptionExerciseId));
-          var editStale = !!(planDoc && planDoc.updatedAt && r.calculatedAt && Date.parse(planDoc.updatedAt) > Date.parse(r.calculatedAt));
+          // T249 — calculatedAt is stamped on the PARENT progrec_{W}_{D}
+          // object (entry), never on the individual recommendation (r) --
+          // r.calculatedAt is never set by vdsen-cliente.html (T241's
+          // audited finding). Use entry.calculatedAt, the real source.
+          var editStale = !!(planDoc && planDoc.updatedAt && entry.calculatedAt && Date.parse(planDoc.updatedAt) > Date.parse(entry.calculatedAt));
           if (idStale || editStale) reviewItems.push(r.exerciseName || 'ejercicio sin nombre');
         });
       });
@@ -16714,7 +16718,9 @@ El esfuerzo no es negociable.
       if (lastRec && Array.isArray(lastRec.recommendations)) {
         lastRec.recommendations.forEach(r => {
           const idStale = !!(r.prescriptionExerciseId && _wsPlanPidSet.size && !_wsPlanPidSet.has(r.prescriptionExerciseId));
-          const editStale = !!(p && p.updatedAt && r.calculatedAt && Date.parse(p.updatedAt) > Date.parse(r.calculatedAt));
+          // T249 — calculatedAt lives on the PARENT progrec object (lastRec),
+          // never on the individual recommendation (T241's audited finding).
+          const editStale = !!(p && p.updatedAt && lastRec.calculatedAt && Date.parse(p.updatedAt) > Date.parse(lastRec.calculatedAt));
           if (idStale || editStale) _wsReviewCount++;
         });
       }
@@ -17405,7 +17411,11 @@ El esfuerzo no es negociable.
         return !!(r.prescriptionExerciseId && planPidSet.size && !planPidSet.has(r.prescriptionExerciseId));
       }
       function _isCoachEditStale(r) {
-        return !!(p && p.updatedAt && r.calculatedAt && Date.parse(p.updatedAt) > Date.parse(r.calculatedAt));
+        // T249 — calculatedAt lives on the PARENT progrec object (lastRec,
+        // in scope via closure), never on the individual recommendation r
+        // itself (T241's audited finding: vdsen-cliente.html only ever
+        // stamps calculatedAt once per whole weekly batch).
+        return !!(p && p.updatedAt && lastRec && lastRec.calculatedAt && Date.parse(p.updatedAt) > Date.parse(lastRec.calculatedAt));
       }
 
       function _categorizeRec(r) {

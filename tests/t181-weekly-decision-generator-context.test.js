@@ -96,7 +96,10 @@ const computeWeeklyDecision = makeComputeFn();
 (function testCoachEditStaleReviewItem() {
   const entries = {
     engine_state: { weekNum: 5, confidence: 'medium', deloadTriggered: false, exerciseSummary: [] },
-    'progrec_5_0': { recommendations: [{ prescriptionExerciseId: 'pid-x', exerciseName: 'Sentadilla', action: 'increase_load', calculatedAt: '2026-02-01T10:00:00.000Z' }] }
+    // T249 fix: calculatedAt is stamped on the PARENT progrec object in
+    // real production data (vdsen-cliente.html), never on the individual
+    // recommendation -- this fixture now matches that real shape.
+    'progrec_5_0': { calculatedAt: '2026-02-01T10:00:00.000Z', recommendations: [{ prescriptionExerciseId: 'pid-x', exerciseName: 'Sentadilla', action: 'increase_load' }] }
   };
   const planDoc = { updatedAt: '2026-02-01T12:00:00.000Z', days: [{ exercises: [{ prescriptionExerciseId: 'pid-x' }] }] }; // coach edited AFTER the calc
   const decision = computeWeeklyDecision(entries, planDoc);
