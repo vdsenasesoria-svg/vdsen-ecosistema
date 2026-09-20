@@ -17864,6 +17864,40 @@ El esfuerzo no es negociable.
     return html;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T256 — MESOCYCLE COMPARISON. Only compares metrics that are reliably
+  //  computable from data that already exists in both
+  //  _buildHistoricalMesocycleView (T252) outputs. Exercise-level
+  //  continuity is claimed ONLY for the exact same prescriptionExerciseId
+  //  appearing in both mesociclos (the one real "explicit mapping" this
+  //  system has -- the Generator's own preserveExercisePids rule copies a
+  //  continuing exercise's PID verbatim into the next plan; T237/T238) --
+  //  never by exercise name. No artificial score, no automatic
+  //  better/worse conclusion of any kind -- raw numbers only, side by side.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _compareHistoricalMesocycles(viewA, viewB) {
+    if (!viewA || !viewB) return null;
+    var pidsA = {}; (viewA.exercises || []).forEach(function(e) { if (e.hasEvidence) pidsA[e.prescriptionExerciseId] = e; });
+    var pidsB = {}; (viewB.exercises || []).forEach(function(e) { if (e.hasEvidence) pidsB[e.prescriptionExerciseId] = e; });
+    var sharedExercises = Object.keys(pidsA).filter(function(pid) { return pidsB[pid]; }).map(function(pid) {
+      return {
+        prescriptionExerciseId: pid,
+        exerciseName: pidsA[pid].exerciseName || pidsB[pid].exerciseName || null,
+        weeksExecutedA: pidsA[pid].progressionSummary ? pidsA[pid].progressionSummary.history.map(function(h) { return h.week; }) : [],
+        weeksExecutedB: pidsB[pid].progressionSummary ? pidsB[pid].progressionSummary.history.map(function(h) { return h.week; }) : []
+      };
+    });
+    return {
+      planIdA: viewA.planId, planIdB: viewB.planId,
+      sessionsCompleted: { a: viewA.sessionsCompleted, b: viewB.sessionsCompleted },
+      totalSessions: { a: viewA.totalSessions, b: viewB.totalSessions },
+      adherence: { a: viewA.adherence, b: viewB.adherence },
+      painIncidents: { a: (viewA.painSignals || []).length, b: (viewB.painSignals || []).length },
+      sharedExercises: sharedExercises // ONLY exact-PID matches -- never a name-based guess
+    };
+  }
+  window._compareHistoricalMesocycles = _compareHistoricalMesocycles;
+
   var _applyModuloDInFlight = false;
   async function _applyAllModuloD() {
     // F3-fix: in-flight guard prevents double-click from spawning concurrent writes.
