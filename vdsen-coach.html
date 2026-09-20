@@ -881,7 +881,14 @@
       var entry = progHist[pid];
       var hist = entry.history || [];
       var plateaued = hist.length >= 2 && hist.slice(-2).every(function(h) { return h && (h.action === 'maintain' || h.action === 'freeze_load'); });
-      if (plateaued) reviewExercisePids.push(pid); else preserveExercisePids.push(pid);
+      // T205(d) — a "plateau" verdict from 2 static-looking weeks must not be
+      // drawn from an exercise with insufficient execution evidence behind
+      // it (entry.confidence === 'none'/'low', T205's completeness-gated
+      // scale). Under-executed sets are not proof the exercise stopped
+      // responding -- absent confidence data (legacy fixtures/pre-T205)
+      // falls back to the original count-only behavior.
+      var hasReliableEvidence = entry.confidence !== 'none' && entry.confidence !== 'low';
+      if (plateaued && hasReliableEvidence) reviewExercisePids.push(pid); else preserveExercisePids.push(pid);
     });
 
     // SAFETY — outranks everything. Nothing is preserved programmatically
