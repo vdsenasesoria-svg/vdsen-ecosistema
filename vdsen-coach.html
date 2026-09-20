@@ -1330,6 +1330,38 @@
     });
   }
 
+  // Training-execution completeness -- reuses T202's own executionRate
+  // (weeklyDecision.sessionAdherence), never a second attendance count.
+  function _classifyExecutionQuality(weeklyDecision) {
+    if (typeof window.VDSEN_EVIDENCE === 'undefined') return null;
+    var sessionAdherence = weeklyDecision && weeklyDecision.sessionAdherence;
+    var rate = (sessionAdherence && typeof sessionAdherence.executionRate === 'number') ? sessionAdherence.executionRate : null;
+    return window.VDSEN_EVIDENCE.classify({ value: rate !== null ? sessionAdherence : null, completeness: rate });
+  }
+
+  // Coach intervention authority -- the ABSENCE of any intervention is a
+  // known, valid fact (the Coach simply hasn't intervened), never treated
+  // as missing/UNRESOLVED evidence. _isInterventionActiveForScope (T235)
+  // already filters activeDecisions down to plan/scope-CURRENT ones
+  // upstream, so anything present here is already guaranteed current.
+  function _classifyCoachInterventionQuality(coachInterventionContext) {
+    if (typeof window.VDSEN_EVIDENCE === 'undefined') return null;
+    return window.VDSEN_EVIDENCE.classify({ value: coachInterventionContext || { activeDecisions: [], resolvedItems: [] } });
+  }
+
+  // Worst-of rollup (same "weakest link" discipline as T221's confidence
+  // ranking) -- one overall read, never averaged/hidden.
+  var _EVIDENCE_SEVERITY = { CONFLICTING: 0, STALE: 1, UNRESOLVED: 2, LEGACY: 3, PARTIAL: 4, VALID: 5 };
+  function _rollupEvidenceQuality(domainResults) {
+    var worst = null, worstRank = 6;
+    domainResults.forEach(function(r) {
+      if (!r || !r.status) return;
+      var rank = _EVIDENCE_SEVERITY[r.status];
+      if (rank !== undefined && rank < worstRank) { worstRank = rank; worst = r.status; }
+    });
+    return worst || 'VALID';
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   //  T276 — CANONICAL CLIENT DECISION SNAPSHOT. Composes the EXISTING
   //  T158-T274 decision helpers (never reimplemented) into ONE pure,
@@ -1376,6 +1408,29 @@
     var coachSupervision = _computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness, week);
     var coachInterventionContext = _computeCoachInterventionContextForRequest(clientDoc, planDoc);
 
+    // T286 — evidence quality: additive metadata describing the SAME
+    // evidence cut this snapshot already represents (T277's provenance),
+    // never a second decision engine. Each domain reuses the exact
+    // already-computed field the decision blocks above already produced.
+    var eqExecution        = _classifyExecutionQuality(weeklyDecision);
+    var eqRecovery         = _classifyWeeklyCheckinQuality(logsDoc, entries);
+    var eqProgression      = _classifyProgressionLegacyQuality(logsResult.progressionHistory);
+    var eqNutrition        = _classifyNutritionAdherenceQuality(nutritionDecision);
+    var eqBodyComposition  = _classifyBodyCompositionQuality(prescriptionEffectiveness);
+    var eqCoachIntervention = _classifyCoachInterventionQuality(coachInterventionContext);
+    var _eqDomains = { execution: eqExecution, recovery: eqRecovery, progression: eqProgression, nutrition: eqNutrition, bodyComposition: eqBodyComposition, coachIntervention: eqCoachIntervention };
+    var evidenceQuality = {
+      overall:           _rollupEvidenceQuality([eqExecution, eqRecovery, eqProgression, eqNutrition, eqBodyComposition, eqCoachIntervention]),
+      execution:         eqExecution,
+      recovery:          eqRecovery,
+      progression:       eqProgression,
+      nutrition:         eqNutrition,
+      bodyComposition:   eqBodyComposition,
+      coachIntervention: eqCoachIntervention,
+      conflicts:  Object.keys(_eqDomains).filter(function(k) { return _eqDomains[k] && _eqDomains[k].status === 'CONFLICTING'; }),
+      unresolved: Object.keys(_eqDomains).filter(function(k) { return _eqDomains[k] && _eqDomains[k].status === 'UNRESOLVED'; })
+    };
+
     // T277 — provenance: only real, already-existing timestamps, never
     // fabricated/render-time. Reuses T242's canonical CLIENT-scope evidence
     // timestamp (window._getLatestEvidenceTimestampForScope) and the
@@ -1411,6 +1466,7 @@
       nutritionDecision:         nutritionDecision,
       coachSupervision:          coachSupervision,
       coachInterventionContext:  coachInterventionContext,
+      evidenceQuality:           evidenceQuality,
       logsResult:                logsResult,
       provenance:                provenance,
       generatedAt:               now
