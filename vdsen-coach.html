@@ -15669,8 +15669,79 @@ El esfuerzo no es negociable.
     return tier;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T219 — PERFORMANCE RESPONSE CLASSIFICATION. Classifies how each
+  //  currently-prescribed exercise (PID-first, same "only PIDs in the
+  //  current plan" rule as T212) is responding TOWARD THE GOAL, distinct
+  //  from T212's TOLERANCE question. Reuses progressionHistory's own
+  //  action trend and T203's hadPainFlag; confidence comes from T218
+  //  (week numbers converted to a relative day timeline so the time-
+  //  horizon gate is meaningful). No new data collection.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _classifyPerformanceResponse(planDoc, progressionHistory) {
+    var activePids = {};
+    ((planDoc && planDoc.days) || []).forEach(function(day) {
+      (day.exercises || []).forEach(function(ex) { if (ex.prescriptionExerciseId) activePids[ex.prescriptionExerciseId] = true; });
+    });
+    var byPID = (progressionHistory && progressionHistory.byPrescriptionExerciseId) || {};
+
+    var result = {};
+    Object.keys(activePids).forEach(function(pid) {
+      var entry = byPID[pid];
+      var hist = (entry && entry.history) || [];
+      var n = hist.length;
+
+      var measurements = hist.map(function(h) {
+        return {
+          ts: (typeof h.week === 'number' ? h.week : 0) * 7 * 86400000,
+          qualityWeight: typeof h.setCompletionRate === 'number' ? h.setCompletionRate : 1,
+          method: 'progression'
+        };
+      });
+      var confidence = _computeOutcomeConfidence(measurements);
+
+      if (confidence === 'none' || confidence === 'low') {
+        // Core Principle: no progress + poor adherence/insufficient time
+        // is INSUFFICIENT_DATA, never UNDER_RESPONDING -- we cannot yet
+        // attribute the outcome to the prescription.
+        result[pid] = { classification: 'INSUFFICIENT_DATA', confidence: confidence, weeksObserved: n };
+        return;
+      }
+
+      var painWeeks = hist.filter(function(h) { return h.hadPainFlag; }).length;
+      var increase  = hist.filter(function(h) { return h.action === 'increase_load' || h.action === 'add_sets'; }).length;
+      var decline   = hist.filter(function(h) { return h.action === 'freeze_load' || h.action === 'reduce_load' || h.action === 'reduce_sets'; }).length;
+
+      var classification;
+      if (increase > n / 2 && painWeeks > 0) {
+        // Good progression + pain -> safety/review, NOT a "successful response".
+        classification = 'COACH_REVIEW';
+      } else if (painWeeks > 0) {
+        classification = 'RECOVERY_LIMITED';
+      } else if (increase > n / 2) {
+        classification = 'RESPONDING';
+      } else if (decline > n / 2) {
+        // Repeated real decline under real adherence/time -> a genuine
+        // non-response, not attributable to poor execution.
+        classification = 'UNDER_RESPONDING';
+      } else if (confidence === 'high') {
+        // No progress despite abundant good-quality, well-spaced evidence
+        // -> enough to flag non-response even without active decline.
+        classification = 'UNDER_RESPONDING';
+      } else {
+        // No progress yet, but not enough sustained evidence to conclude
+        // non-response -- stays a cautious STABLE read.
+        classification = 'STABLE';
+      }
+
+      result[pid] = { classification: classification, confidence: confidence, weeksObserved: n };
+    });
+    return result;
+  }
+
   window.VDSEN_OUTCOME = {
-    computeConfidence: _computeOutcomeConfidence
+    computeConfidence: _computeOutcomeConfidence,
+    computePerformanceResponse: _classifyPerformanceResponse
   };
 
   var WEEKLY_STATUS = {
