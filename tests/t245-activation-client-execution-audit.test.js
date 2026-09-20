@@ -131,8 +131,17 @@ ok(CLIENT.includes('await FB.setDoc(ref, _payload);'), 'the save is a full setDo
 
 ok(CLIENT.includes("FB.setDoc(FB.doc(FB.db, 'logs', USER.uid, 'mesos', ACTIVE_PLAN_ID), _payload)"), 'every save also mirrors into a plan-scoped archival doc -- the OLD plan\'s data is preserved there when the switch is detected, since this write already happened continuously while that plan was active');
 ok(CLIENT.includes("FB.getDoc(FB.doc(FB.db, 'logs', user.uid, 'mesos', activePlanId))"), 'the CLIENT reads its own per-mesociclo mirror back (new-first, legacy-fallback) -- self-consistent, not a write-only dead path from the client\'s own perspective');
-ok((COACH.match(/setDoc\(doc\(db, 'logs', clientId, 'mesos', newPlanId\)/g) || []).length >= 2, 'vdsen-coach.html only WRITES to logs/{uid}/mesos/{planId} (manual reset-week admin actions) -- confirmed no matching getDoc/query read exists in vdsen-coach.html');
-ok(!/getDoc\([^)]*'mesos'/.test(COACH) && !/collection\([^)]*'mesos'/.test(COACH), 'confirmed: no read path for logs/{uid}/mesos/* exists anywhere in vdsen-coach.html -- Coach-side engines (progressionHistory/weeklyDecision/adaptivePrescription/mesocycleDecision/Generator/Coach Intervention evidence) are scoped to the CURRENT plan only, consistent with T235\'s own plan-scoping principle (CASE H)');
+ok((COACH.match(/setDoc\(doc\(db, 'logs', clientId, 'mesos', newPlanId\)/g) || []).length >= 2, 'vdsen-coach.html only WRITES to logs/{uid}/mesos/{planId} (manual reset-week admin actions), pre-T253');
+// T253 update: a read-only HISTORICAL MONITOR VIEW now intentionally reads
+// logs/{uid}/mesos/* (via _vdsenListHistoricalMesocycles/_buildHistoricalMesocycleView)
+// -- but this is display-only, never wired into any DECISION function.
+// The principle this test originally protected still holds precisely:
+// progressionHistory/weeklyDecision/adaptivePrescription/mesocycleDecision/
+// the Generator's request, and Coach Intervention evidence timestamps
+// never read mesos data for CURRENT-plan decisions (CASE H unaffected).
+ok(COACH.includes("getDocs(collection(db, 'logs', clientId, 'mesos'))"), 'T253: the ONLY mesos read path is the read-only historical discovery function -- confirmed intentional, not an accidental new consumer');
+ok(!COACH.slice(0, COACH.indexOf('function _sortHistoricalMesocycles')).match(/getDoc\([^)]*'mesos'/) ,
+  'confirmed no OTHER mesos read exists anywhere BEFORE the T253 historical-view functions in the file -- in particular, none of the pre-existing decision functions (_computeWeeklyDecisionForRequest, _decideAdaptivePrescription, _decideMesocycleTransition, buildGenerationRequest, _getLatestEvidenceTimestampForScope) read it, preserving CASE H\'s plan-scoping principle for all actual decisions');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PID collision risk across different plans: negligible (UUID-based

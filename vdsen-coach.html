@@ -2180,6 +2180,48 @@
   window._buildHistoricalMesocycleView = _buildHistoricalMesocycleView;
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  T253 — HISTORICAL MESOCYCLE DISCOVERY. Reuses the EXISTING
+  //  logs/{uid}/mesos subcollection (T1-era, already written continuously
+  //  by the client) -- no new collection, no schema change, no writes.
+  //  Deliberately does NOT fetch plans/{planId} for every discovered
+  //  mesociclo (that would be N+1) -- callers fetch a SINGLE plan doc only
+  //  when the Coach actually selects one specific historical mesociclo
+  //  (T254), reusing _buildHistoricalMesocycleView (T252) at that point.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Pure step: sorts/annotates already-fetched mesos docs. Never excludes
+  // the active plan itself (a caller-level UI choice) -- always correctly
+  // marks it via isActive, so it can never be silently misidentified as
+  // "historical". Deterministic chronological order (ascending updatedAt).
+  function _sortHistoricalMesocycles(mesosDocs, activePlanId) {
+    var list = (Array.isArray(mesosDocs) ? mesosDocs : []).map(function(d) {
+      var data = (d && d.data) || {};
+      return {
+        planId: d && d.id,
+        updatedAt: data.updatedAt || null,
+        currentWeek: data.currentWeek || null,
+        isActive: !!(activePlanId && d && d.id === activePlanId),
+        hasData: !!(data.entries && Object.keys(data.entries).length)
+      };
+    }).filter(function(x) { return !!x.planId; });
+    list.sort(function(a, b) { return (a.updatedAt || 0) - (b.updatedAt || 0); });
+    return list;
+  }
+  window._sortHistoricalMesocycles = _sortHistoricalMesocycles;
+
+  // Thin async wrapper: exactly 2 reads regardless of how many historical
+  // mesociclos exist (1 client doc for activePlanId + 1 mesos subcollection
+  // query) -- no N+1, no plan-doc fetches here.
+  async function _vdsenListHistoricalMesocycles(clientId) {
+    var clientSnap = await getDoc(doc(db, 'clients', clientId));
+    var activePlanId = clientSnap.exists() ? (clientSnap.data().activePlanId || null) : null;
+    var mesosSnap = await getDocs(collection(db, 'logs', clientId, 'mesos'));
+    var docs = mesosSnap.docs.map(function(d) { return { id: d.id, data: d.data() }; });
+    return _sortHistoricalMesocycles(docs, activePlanId);
+  }
+  window._vdsenListHistoricalMesocycles = _vdsenListHistoricalMesocycles;
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  T236 — MONITOR ACTION WORKFLOW. From the "Atención del Coach" card
   //  (T229), lets the Coach explicitly resolve the flagged supervision
   //  item. Reuses the EXACT established persistence pattern already used
