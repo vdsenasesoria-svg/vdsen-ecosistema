@@ -5889,6 +5889,61 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  T204 — MUSCLE-LEVEL ADHERENCE, reusing auditFractionalVolume's EXACT
+  //  DIRECT×1/INDIRECT×0.5/(unlisted=STABILIZER)×0 fractional weights
+  //  UNCHANGED, by calling it TWICE: once against the real prescribed plan
+  //  (as-is), once against a synthetic "executed" shape where each
+  //  exercise's set COUNT is replaced by however many sets were actually
+  //  executed this week (sourced from T203's setCompletionRate, already
+  //  PID-scoped). Zero duplicated classification logic, zero new muscle-
+  //  mapping rules. Adherence EVIDENCE only -- never an automatic volume
+  //  trigger (a low ratio here feeds decision confidence, T205, it never by
+  //  itself changes a plan).
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _buildExecutedTrainingShape(training, progressionHistory) {
+    if (!training || !Array.isArray(training.days)) return training;
+    var byPID = (progressionHistory && progressionHistory.byPrescriptionExerciseId) || {};
+    return {
+      days: training.days.map(function(day) {
+        return {
+          exercises: (day.exercises || []).map(function(ex) {
+            var prescribedSets = (ex.sets || []).length;
+            var pid = ex.prescriptionExerciseId;
+            var entry = pid ? byPID[pid] : null;
+            // PID-first, same as T203: an exercise with no PID or no
+            // longitudinal entry has no execution evidence -- 0 executed,
+            // never guessed from name/position.
+            var rate = (entry && entry.latest && typeof entry.latest.setCompletionRate === 'number') ? entry.latest.setCompletionRate : null;
+            var executedCount = (rate === null) ? 0 : Math.max(0, Math.round(rate * prescribedSets));
+            var executedSets = [];
+            for (var i = 0; i < executedCount; i++) executedSets.push({});
+            return Object.assign({}, ex, { sets: executedSets });
+          })
+        };
+      })
+    };
+  }
+
+  function computeMuscleAdherence(training, exercisesCatalog, progressionHistory) {
+    var prescribed = auditFractionalVolume(training, exercisesCatalog);
+    var executedTraining = _buildExecutedTrainingShape(training, progressionHistory);
+    var executed = auditFractionalVolume(executedTraining, exercisesCatalog);
+
+    var muscles = {};
+    Object.keys(prescribed.muscleVolume).forEach(function(m) {
+      var prescribedVol = prescribed.muscleVolume[m].fractionalTotal;
+      var executedVol   = (executed.muscleVolume[m] && executed.muscleVolume[m].fractionalTotal) || 0;
+      var ratio = prescribedVol > 0 ? parseFloat((executedVol / prescribedVol).toFixed(2)) : null;
+      muscles[m] = { prescribedFractionalVolume: prescribedVol, executedFractionalVolume: executedVol, adherenceRatio: ratio };
+    });
+    return { muscles: muscles, unclassified: prescribed.unclassified };
+  }
+
+  // (exposed on window.VDSEN_ADHERENCE together with the T202 functions,
+  // further down where that object is created — computeMuscleAdherence is a
+  // hoisted function declaration, so the definition order here is safe.)
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  T185-188 — ADAPTIVE PRESCRIPTION (decision support, NOT a second engine).
   //  Reuses _computeMuscleTargets (P10.2-5, already derives frequency FROM
   //  volume — "not chosen independently") and auditFractionalVolume
@@ -15184,7 +15239,8 @@ El esfuerzo no es negociable.
     sessionExecutionRatio: _sessionExecutionRatio,
     classifySession:       _classifySessionAdherence,
     computeSessionSummary: _computeSessionAdherenceSummary,
-    classifyExerciseFidelity: _classifyExerciseExecutionFidelity
+    classifyExerciseFidelity: _classifyExerciseExecutionFidelity,
+    computeMuscleAdherence: computeMuscleAdherence // T204
   };
 
   var WEEKLY_STATUS = {
