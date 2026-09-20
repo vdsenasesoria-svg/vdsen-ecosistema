@@ -10792,6 +10792,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailClientId   = clientId;
     _detailActiveTab  = _initialTab;
     window._importedPlan = null; // R8-GAP-02: clear stale imported-plan state from a previous client
+    _historicalMesoState = null; // T254: invalidate the previous client's historical-mesocycle context
     markEditorClean();
     const modal = document.getElementById("clientModal");
     const body  = document.getElementById("modalClientBody");
@@ -17670,7 +17671,115 @@ El esfuerzo no es negociable.
     } else if (!lastRec) {
       html += `<p class="text-[#888] text-sm mt-2">Sin recomendaciones de progresión aún — el cliente debe completar una sesión con check-in.</p>`;
     }
+
+    // T254 — Historial de mesociclos: discrete, collapsed by default
+    // (progressive disclosure), lazy-loaded only on first expand. READ-ONLY:
+    // no edit affordance anywhere in this section, and its own state
+    // (_historicalMesoState) is kept entirely separate from
+    // _detailPlanData/_detailClientData -- viewing history never touches
+    // the active plan's state.
+    html += `<details class="mt-4" id="_historicalMesoDetails" ontoggle="window._onHistoricalMesoToggle('${clientId}', this.open)">
+      <summary class="text-xs text-[#666] cursor-pointer">📜 Historial de mesociclos</summary>
+      <div id="_historicalMesoContainer" class="mt-2 text-xs text-[#888]">Cargando…</div>
+    </details>`;
+
     cont.innerHTML = html;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T254 — COACH MONITOR HISTORICAL MESOCYCLE UI (read-only). Never
+  //  touches activePlanId/logs/weeklyDecision/interventions/the plan/
+  //  current week-day, and never mutates _detailPlanData/_detailClientData
+  //  -- all state lives in the SEPARATE _historicalMesoState object, reset
+  //  to null on every client switch (showClientDetail, above).
+  // ═══════════════════════════════════════════════════════════════════════════
+  var _historicalMesoState = null; // { clientId, mesosDocs, list, planDocCache }
+  var _historicalMesoLoading = false;
+
+  window._onHistoricalMesoToggle = async function(clientId, isOpen) {
+    if (!isOpen) return; // collapsing needs no work -- nothing to invalidate
+    if (_detailClientId !== clientId) return; // stale-client guard
+    if (_historicalMesoState && _historicalMesoState.clientId === clientId) { _renderHistoricalMesoList(); return; }
+    if (_historicalMesoLoading) return;
+    _historicalMesoLoading = true;
+    var cont = document.getElementById('_historicalMesoContainer');
+    try {
+      var clientSnap = await getDoc(doc(db, 'clients', clientId));
+      var activePlanId = clientSnap.exists() ? (clientSnap.data().activePlanId || null) : null;
+      var mesosSnap = await getDocs(collection(db, 'logs', clientId, 'mesos'));
+      var mesosDocs = mesosSnap.docs.map(function(d) { return { id: d.id, data: d.data() }; });
+      var list = _sortHistoricalMesocycles(mesosDocs, activePlanId);
+      if (_detailClientId !== clientId) return; // stale-client guard after await -- discard silently
+      _historicalMesoState = { clientId: clientId, mesosDocs: mesosDocs, list: list, planDocCache: {} };
+      _renderHistoricalMesoList();
+    } catch (e) {
+      if (_detailClientId === clientId && cont) cont.innerHTML = '<span style="color:#c94a3a">Error al cargar historial: ' + _escH(e.message || '') + '</span>';
+    } finally {
+      _historicalMesoLoading = false;
+    }
+  };
+
+  function _renderHistoricalMesoList() {
+    var cont = document.getElementById('_historicalMesoContainer');
+    if (!cont || !_historicalMesoState) return;
+    var past = _historicalMesoState.list.filter(function(m) { return !m.isActive; });
+    if (!past.length) { cont.innerHTML = '<p class="text-[#666]">Sin mesociclos anteriores registrados.</p>'; return; }
+    var html = '<div class="space-y-1">';
+    past.slice().reverse().forEach(function(m) { // most recent first
+      var dateLabel = m.updatedAt ? new Date(m.updatedAt).toLocaleDateString() : 'fecha desconocida';
+      html += '<div class="cursor-pointer hover:text-white" onclick="window._onHistoricalMesoSelect(\'' + m.planId + '\')" style="padding:4px 0">▸ Mesociclo hasta ' + _escH(dateLabel) + (m.currentWeek ? ' · semana ' + m.currentWeek : '') + '</div>';
+      html += '<div id="_historicalMesoDetail_' + m.planId + '"></div>';
+    });
+    html += '</div>';
+    cont.innerHTML = html;
+  }
+
+  window._onHistoricalMesoSelect = async function(planId) {
+    if (!_historicalMesoState) return;
+    var clientId = _historicalMesoState.clientId;
+    if (_detailClientId !== clientId) return; // stale-client guard
+    var detailEl = document.getElementById('_historicalMesoDetail_' + planId);
+    if (!detailEl) return;
+    if (detailEl.dataset.loaded === '1') { detailEl.style.display = (detailEl.style.display === 'none') ? 'block' : 'none'; return; }
+    detailEl.innerHTML = '<span class="text-[#666]">Cargando…</span>';
+    var mesoEntry = _historicalMesoState.mesosDocs.find(function(d) { return d.id === planId; });
+    var mesoDoc = mesoEntry ? mesoEntry.data : null;
+    var planDoc = _historicalMesoState.planDocCache[planId];
+    if (planDoc === undefined) {
+      try {
+        var planSnap = await getDoc(doc(db, 'plans', planId));
+        planDoc = planSnap.exists() ? planSnap.data() : null;
+      } catch (e) { planDoc = null; }
+      if (_detailClientId !== clientId || !_historicalMesoState || _historicalMesoState.clientId !== clientId) return; // stale-client guard after await
+      _historicalMesoState.planDocCache[planId] = planDoc;
+    }
+    var view = _buildHistoricalMesocycleView(planId, mesoDoc, planDoc, (_detailClientData && _detailClientData.coachInterventions) || []);
+    detailEl.innerHTML = _renderHistoricalMesoDetailHtml(view);
+    detailEl.dataset.loaded = '1';
+  };
+
+  function _renderHistoricalMesoDetailHtml(view) {
+    if (!view) return '<p class="text-[#666]">No disponible.</p>';
+    var html = '<div style="padding:8px 0 8px 16px;border-left:2px solid #333;margin:4px 0">';
+    html += '<div>' + (view.planAvailable ? _escH(view.planName || 'Plan sin nombre') : '<em>Plan histórico no disponible</em>') + '</div>';
+    if (view.weeksReached != null) html += '<div class="text-[#666]">' + view.weeksReached + (view.weeks != null ? ' de ' + view.weeks : '') + ' semana(s) alcanzadas</div>';
+    if (view.adherence != null) html += '<div class="text-[#666]">Adherencia: ' + view.adherence + '% (' + view.sessionsCompleted + '/' + view.totalSessions + ' sesiones)</div>';
+    if (view.exercises && view.exercises.length) {
+      var withEvidence = view.exercises.filter(function(e) { return e.hasEvidence; });
+      if (withEvidence.length) {
+        html += '<div class="mt-1">Ejercicios principales:</div><ul style="margin-left:16px">';
+        withEvidence.forEach(function(e) { html += '<li>' + _escH(e.exerciseName || 'Ejercicio sin nombre') + '</li>'; });
+        html += '</ul>';
+      }
+    }
+    if (view.painSignals && view.painSignals.length) {
+      html += '<div class="mt-1" style="color:#FF8844">⚠ ' + view.painSignals.length + ' incidencia(s) de dolor articular reportadas</div>';
+    }
+    if (view.coachDecisions && view.coachDecisions.length) {
+      html += '<div class="mt-1">Decisiones del Coach en este período: ' + view.coachDecisions.length + '</div>';
+    }
+    html += '</div>';
+    return html;
   }
 
   var _applyModuloDInFlight = false;
