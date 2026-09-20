@@ -1028,6 +1028,16 @@
       // responding -- absent confidence data (legacy fixtures/pre-T205)
       // falls back to the original count-only behavior.
       var hasReliableEvidence = entry.confidence !== 'none' && entry.confidence !== 'low';
+      // T237 (CASE A) — an active Coach KEEP intervention for this EXACT
+      // PID outranks the automated plateau/confidence read: the stale
+      // "needs review" suggestion is never resurfaced once the Coach has
+      // explicitly decided to keep the exercise. Lazy window.* lookup: this
+      // function lives in the early IIFE, T235/T237's functions in the
+      // later main app script (same established cross-script pattern).
+      var supersededByCoach = (typeof window !== 'undefined' && typeof window._isRecommendationSupersededByIntervention === 'function')
+        ? window._isRecommendationSupersededByIntervention(input.interventions, 'EXERCISE', pid, input.currentPlanId, null)
+        : null;
+      if (supersededByCoach && supersededByCoach.action === 'KEEP') { preserveExercisePids.push(pid); return; }
       if (plateaued && hasReliableEvidence) reviewExercisePids.push(pid); else preserveExercisePids.push(pid);
     });
 
@@ -1907,6 +1917,23 @@
 
   window._findActiveIntervention = _findActiveIntervention;
   window._isEvidenceNewerThanIntervention = _isEvidenceNewerThanIntervention;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T237 — DOWNSTREAM DECISION INTEGRATION. One reusable check reused by
+  //  every automated engine (mesocycleDecision, adaptivePrescription, ...):
+  //  a recent, in-scope Coach decision outranks a conflicting automated
+  //  recommendation -- UNLESS genuinely newer evidence (per T235's
+  //  _isEvidenceNewerThanIntervention) already postdates that decision, in
+  //  which case the Coach decision does not supersede it. No second
+  //  authority engine: this composes the real T235 functions only.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _isRecommendationSupersededByIntervention(interventions, targetType, targetId, currentPlanId, recTimestampIso) {
+    var active = _findActiveIntervention(interventions, targetType, targetId, currentPlanId);
+    if (!active) return null;
+    if (_isEvidenceNewerThanIntervention(active, recTimestampIso)) return null;
+    return active;
+  }
+  window._isRecommendationSupersededByIntervention = _isRecommendationSupersededByIntervention;
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  T236 — MONITOR ACTION WORKFLOW. From the "Atención del Coach" card
@@ -6420,6 +6447,23 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       distributionAction = 'REVIEW';
       reasons.push('session_quality_drop');
       if (volumeAction === 'REVIEW_INCREASE') { volumeAction = 'REDISTRIBUTE'; reasons.push('increase_deferred_pending_redistribution'); }
+    }
+
+    // T237 (CASE C/D) — an active Coach decision for this EXACT muscle
+    // outranks a conflicting automated volume suggestion: once the Coach
+    // has reviewed and decided (KEEP the current volume, or already
+    // ADJUST_VOLUME/REDISTRIBUTE_VOLUME by hand), the stale REVIEW_INCREASE/
+    // REVIEW_DECREASE/REDISTRIBUTE is never resurfaced. Never reaches the
+    // safety/adherence/recovery/data gates above -- those already returned
+    // before this point, so a new pain signal still outranks the Coach.
+    var supersedingInterv = (input.interventions && input.muscleId && typeof _isRecommendationSupersededByIntervention === 'function')
+      ? _isRecommendationSupersededByIntervention(input.interventions, 'MUSCLE', input.muscleId, input.currentPlanId, null)
+      : null;
+    if (supersedingInterv && ['KEEP', 'ADJUST_VOLUME', 'REDISTRIBUTE_VOLUME'].indexOf(supersedingInterv.action) !== -1 &&
+        (volumeAction === 'REVIEW_INCREASE' || volumeAction === 'REVIEW_DECREASE' || volumeAction === 'REDISTRIBUTE')) {
+      reasons.push('coach_decision_supersedes_automated_volume_suggestion');
+      volumeAction = 'KEEP';
+      distributionAction = 'KEEP';
     }
 
     // T187 — frequency is derived FROM volume by _computeMuscleTargets
