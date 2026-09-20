@@ -198,7 +198,9 @@ function entriesWithLog(week, day) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 (function testCaseL() {
-  ok(COACH.includes('const priority = _rankClientPriority(attn.state, weeklyDecision ? weeklyDecision.status : null);'), 'CASE L: loadClientList (client list) calls the real _rankClientPriority');
+  // T280 added a real (but reduced, 0-extra-read) effectivenessOverall as
+  // a 3rd arg to the list's call -- still the exact same real function.
+  ok(COACH.includes('const priority = _rankClientPriority(attn.state, weeklyDecision ? weeklyDecision.status : null, reducedEffectiveness ? reducedEffectiveness.overall : null);'), 'CASE L: loadClientList (client list) calls the real _rankClientPriority (FIXED for T280\'s reduced-effectiveness projection)');
   // T279: Monitor no longer calls _rankClientPriority directly -- it reads
   // _monitorSnapshot.coachSupervision.priority, whose OWN implementation
   // (_computeCoachSupervisionForRequest) still calls the exact same real

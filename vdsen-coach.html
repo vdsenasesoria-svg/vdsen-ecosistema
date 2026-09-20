@@ -3044,7 +3044,35 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const weeklyDecision = (typeof window.VDSEN_BUILD !== 'undefined' && window.VDSEN_BUILD._computeWeeklyDecisionForRequest)
             ? window.VDSEN_BUILD._computeWeeklyDecisionForRequest(entries, planData)
             : null;
-          const priority = _rankClientPriority(attn.state, weeklyDecision ? weeklyDecision.status : null);
+          // T280 — reduced canonical-effectiveness projection: the SAME
+          // real _rankClientPriority/computeEffectiveness/computePerformanceResponse
+          // functions Monitor uses (T279), over the SAME entries/planData
+          // already loaded here -- 0 new Firestore reads (CRITICAL
+          // PERFORMANCE RULE: no N+1). The ONE thing genuinely unavailable
+          // without an extra read is the ficha's stated objetivo_calorico,
+          // so bodyCompositionResponse is explicitly null here (never
+          // fabricated) -- this makes the list's read a real but REDUCED
+          // evidence cut of the exact same canonical function, never a
+          // third/different priority model. Closes T275's audit finding
+          // that TOLERATED_BUT_UNDER_RESPONDING/EFFECTIVE_BUT_COSTLY/the
+          // performance-side SAFETY_REVIEW branch of effectivenessOverall
+          // were structurally unreachable from the list before.
+          var reducedEffectiveness = null;
+          if (typeof window.VDSEN_OUTCOME !== 'undefined' && typeof window.VDSEN_ADHERENCE !== 'undefined' &&
+              typeof window.VDSEN_LEARNED !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {
+            const _progrecs280 = {};
+            Object.keys(entries).forEach(k => { if (/^progrec_\d+_\d+$/.test(k)) _progrecs280[k] = entries[k]; });
+            const _progHist280 = window.VDSEN_BUILD._mapExerciseProgressionHistory(_progrecs280);
+            const _perf280 = window.VDSEN_OUTCOME.computePerformanceResponse(planData, _progHist280);
+            const _sessionAdh280 = window.VDSEN_ADHERENCE.computeSessionSummary(entries, week);
+            const _recSens280 = window.VDSEN_LEARNED.computeRecoverySensitivity(entries, planData, _progHist280);
+            reducedEffectiveness = window.VDSEN_OUTCOME.computeEffectiveness({
+              performanceResponse: _perf280, bodyCompositionResponse: null,
+              sessionAdherence: _sessionAdh280, recoverySensitivity: _recSens280,
+              hasPain: weeklyDecision ? weeklyDecision.status === 'PAIN_REVIEW' : false
+            });
+          }
+          const priority = _rankClientPriority(attn.state, weeklyDecision ? weeklyDecision.status : null, reducedEffectiveness ? reducedEffectiveness.overall : null);
           const alert = getClientAlert(c, logData, planData);
           if (alert) alerts.push({ id: c.id, name: c.displayName, alert });
           const liveInfo = _getLiveInfo(entries, planData);

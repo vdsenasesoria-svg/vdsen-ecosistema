@@ -37,7 +37,10 @@ ok(!/getDoc\(doc\(db,\s*['"]logs['"],\s*c\.id\)\)[\s\S]{0,400}getDoc\(doc\(db,\s
 // coherent source of truth, not three independent readings.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes('const priority = _rankClientPriority(attn.state, weeklyDecision ? weeklyDecision.status : null);'), 'priority is computed once per client row using the real T226 function');
+// T280 added a real (but reduced, 0-extra-read) effectivenessOverall as a
+// 3rd arg -- still the SAME real T226 function, called once per client row.
+ok(COACH.includes('const priority = _rankClientPriority(attn.state, weeklyDecision ? weeklyDecision.status : null, reducedEffectiveness ? reducedEffectiveness.overall : null);'),
+  'priority is computed once per client row using the real T226 function (FIXED for T280\'s reduced-effectiveness projection)');
 ok(COACH.includes('const pa = (_PRIORITY_ORDER[a.priority] ?? 4) * 2 - (a.live ? 1 : 0);'), 'the client list now sorts by the 5-tier priority order, not the raw 4-tier attnState');
 ok(COACH.includes('const priorityC = { URGENT_REVIEW: 0, NEEDS_REVIEW: 0, WATCH: 0, ON_TRACK: 0, INSUFFICIENT_DATA: 0 };'), 'the summary header now counts by the 5-tier priority');
 ok(COACH.includes('const ab = _PRIORITY_BADGE[priority] || _PRIORITY_BADGE.INSUFFICIENT_DATA;'), 'the attnBadge itself now renders from the priority-based badge map, not the raw attnState badge map');
