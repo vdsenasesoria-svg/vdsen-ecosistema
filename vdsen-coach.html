@@ -1812,6 +1812,56 @@
     INSUFFICIENT_DATA:  { icon: '◌',  label: 'SIN DATOS',   color: '#555' }
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T234 — COACH INTERVENTION DECISION MODEL. One deterministic
+  //  representation of an explicit Coach decision made from the T229
+  //  "Atención del Coach" card. Pure data-shape builder -- no Firestore
+  //  call here (T236 persists the built record). Minimum useful states
+  //  only, no medical-treatment system, no free-form workflow.
+  // ═══════════════════════════════════════════════════════════════════════════
+  var INTERVENTION_STATUS = { OPEN: 'OPEN', REVIEWED: 'REVIEWED', RESOLVED: 'RESOLVED' };
+  var INTERVENTION_TARGET_TYPE = { CLIENT: 'CLIENT', MUSCLE: 'MUSCLE', EXERCISE: 'EXERCISE', MESOCYCLE: 'MESOCYCLE' };
+  var INTERVENTION_DECISION_ACTION = {
+    KEEP:                 'KEEP',
+    ADJUST_LOAD:          'ADJUST_LOAD',
+    ADJUST_REPS:          'ADJUST_REPS',
+    ADJUST_VOLUME:        'ADJUST_VOLUME',
+    REDISTRIBUTE_VOLUME:  'REDISTRIBUTE_VOLUME',
+    SUBSTITUTE_EXERCISE:  'SUBSTITUTE_EXERCISE',
+    MODIFY_FREQUENCY:     'MODIFY_FREQUENCY',
+    CONTINUE_MESOCYCLE:   'CONTINUE_MESOCYCLE',
+    RENEW_MESOCYCLE:      'RENEW_MESOCYCLE',
+    PAUSE_FOR_REVIEW:     'PAUSE_FOR_REVIEW',
+    NO_CHANGE:            'NO_CHANGE'
+  };
+
+  // Builds ONE intervention record. Returns null on invalid targetType/
+  // action/targetId rather than guessing a default -- the Coach's explicit
+  // choice is required, never invented. `status` defaults to OPEN (a
+  // decision was made but not yet marked reviewed/resolved by the Coach).
+  function _buildCoachIntervention(input) {
+    input = input || {};
+    if (Object.keys(INTERVENTION_TARGET_TYPE).indexOf(input.targetType) === -1) return null;
+    if (Object.keys(INTERVENTION_DECISION_ACTION).indexOf(input.action) === -1) return null;
+    if (!input.targetId) return null;
+
+    return {
+      id:                     _genPrescriptionId(),
+      status:                 (Object.keys(INTERVENTION_STATUS).indexOf(input.status) !== -1) ? input.status : INTERVENTION_STATUS.OPEN,
+      action:                 input.action,
+      targetType:             input.targetType,
+      targetId:               input.targetId,
+      reason:                 input.reason || null,
+      decidedAt:              input.decidedAt || new Date().toISOString(),
+      decidedBy:              input.decidedBy || null,
+      sourcePriority:         input.sourcePriority || null,
+      sourceAction:           input.sourceAction || null,
+      planId:                 input.planId || null,
+      planUpdatedAtSnapshot:  input.planUpdatedAtSnapshot || null
+    };
+  }
+  window._buildCoachIntervention = _buildCoachIntervention;
+
   // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
   function _getLiveInfo(entries, planData) {
     if (!entries) return null;
