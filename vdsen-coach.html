@@ -1696,6 +1696,75 @@
   }
   window._rankClientPriority = _rankClientPriority;
 
+  // T227 — Intervention reason/action classification. For a given priority
+  // (T226) and the SAME already-computed signals, names the primary reason,
+  // up to 3 supporting reasons, and ONE recommended review category. Purely
+  // explanatory/decision-support — never edits the plan, never gives
+  // medical/treatment advice.
+  var INTERVENTION_ACTION = {
+    SAFETY_REVIEW:       'SAFETY_REVIEW',
+    RECOVERY_REVIEW:     'RECOVERY_REVIEW',
+    ADHERENCE_REVIEW:    'ADHERENCE_REVIEW',
+    PROGRESSION_REVIEW:  'PROGRESSION_REVIEW',
+    PRESCRIPTION_REVIEW: 'PRESCRIPTION_REVIEW',
+    MESOCYCLE_REVIEW:    'MESOCYCLE_REVIEW',
+    DATA_REVIEW:         'DATA_REVIEW',
+    NO_ACTION:           'NO_ACTION'
+  };
+  function _computeInterventionReasonAction(priority, input) {
+    input = input || {};
+    var attnReasons = Array.isArray(input.attnReasons) ? input.attnReasons : [];
+    var weeklyStatus = input.weeklyStatus || null;
+    var effectiveness = input.effectiveness || null;
+    var mesocycleAction = input.mesocycleAction || null;
+
+    var supporting = attnReasons.map(function(r) { return r.label; });
+    var primaryReason, action;
+
+    if (priority === CLIENT_PRIORITY.URGENT_REVIEW) {
+      primaryReason = 'safety_signal';
+      action = INTERVENTION_ACTION.SAFETY_REVIEW;
+    } else if (priority === CLIENT_PRIORITY.NEEDS_REVIEW) {
+      if (weeklyStatus === 'COACH_REVIEW') {
+        primaryReason = 'unresolved_coach_review';
+        action = INTERVENTION_ACTION.PRESCRIPTION_REVIEW;
+      } else if (effectiveness && effectiveness.overall === 'TOLERATED_BUT_UNDER_RESPONDING') {
+        primaryReason = 'under_responding_despite_adherence';
+        action = INTERVENTION_ACTION.PRESCRIPTION_REVIEW;
+      } else if (attnReasons.some(function(r) { return r.code === 'DELOAD_CANDIDATE' || r.code === 'TOO_HARD_REPEATED'; })) {
+        primaryReason = 'recovery_limited';
+        action = INTERVENTION_ACTION.RECOVERY_REVIEW;
+      } else {
+        primaryReason = 'review_flagged';
+        action = INTERVENTION_ACTION.PROGRESSION_REVIEW;
+      }
+      if (mesocycleAction === 'COACH_REVIEW') supporting.push('mesocycle_decision_coach_review');
+    } else if (priority === CLIENT_PRIORITY.WATCH) {
+      if (weeklyStatus === 'RECOVERY_LIMITED') {
+        primaryReason = 'recovery_limited'; action = INTERVENTION_ACTION.RECOVERY_REVIEW;
+      } else if (weeklyStatus === 'ADHERENCE_LIMITED') {
+        primaryReason = 'adherence_limited'; action = INTERVENTION_ACTION.ADHERENCE_REVIEW;
+      } else if (weeklyStatus === 'PERFORMANCE_STALL') {
+        primaryReason = 'performance_stall'; action = INTERVENTION_ACTION.PROGRESSION_REVIEW;
+      } else if (effectiveness && effectiveness.overall === 'EFFECTIVE_BUT_COSTLY') {
+        primaryReason = 'recovery_cost'; action = INTERVENTION_ACTION.RECOVERY_REVIEW;
+      } else if (mesocycleAction === 'RENEW_WITH_ADJUSTMENTS' || mesocycleAction === 'RENEW_MINIMAL') {
+        primaryReason = 'mesocycle_renewal_pending'; action = INTERVENTION_ACTION.MESOCYCLE_REVIEW;
+      } else {
+        primaryReason = 'general_watch'; action = INTERVENTION_ACTION.PROGRESSION_REVIEW;
+      }
+    } else if (priority === CLIENT_PRIORITY.INSUFFICIENT_DATA) {
+      primaryReason = 'insufficient_data';
+      action = INTERVENTION_ACTION.DATA_REVIEW;
+    } else {
+      primaryReason = 'on_track';
+      action = INTERVENTION_ACTION.NO_ACTION;
+    }
+
+    return { primaryReason: primaryReason, supportingReasons: supporting.slice(0, 3), action: action };
+  }
+  window._computeInterventionReasonAction = _computeInterventionReasonAction;
+
   // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
   function _getLiveInfo(entries, planData) {
     if (!entries) return null;
