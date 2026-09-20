@@ -479,7 +479,13 @@ function _mapExerciseProgressionHistory(progrecs) {
         // legacy recommendation predates setMetrics (unknown, not poor).
         setCompletionRate:  (rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null,
         // T203 — this week's HIGH/MEDIUM/LOW/NONE execution fidelity label.
-        fidelity:           _classifyExerciseExecutionFidelity((rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null)
+        fidelity:           _classifyExerciseExecutionFidelity((rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null),
+        // T212 — whether THIS week's session (the one this exercise was
+        // performed in) had a reported articular-pain flag. Session-scoped,
+        // not exercise-specific (calculateProgression attaches it to every
+        // exercise recommended that day) -- a coarse but real, already-
+        // computed signal, not a new clinical measure.
+        hadPainFlag:        !!rec.substituteExercise
       });
     });
   });

@@ -804,7 +804,9 @@
           // T205 — execution fidelity for THIS week (see api/vdsen-build-request.js
           // for the full rationale; kept identical between both copies).
           setCompletionRate: (rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null,
-          fidelity: _classifyExerciseExecutionFidelity((rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null)
+          fidelity: _classifyExerciseExecutionFidelity((rec.setMetrics && typeof rec.setMetrics.setCompletionRate === 'number') ? rec.setMetrics.setCompletionRate : null),
+          // T212 — ported from api/vdsen-build-request.js, kept byte-identical.
+          hadPainFlag: !!rec.substituteExercise
         });
       });
     });
@@ -15425,9 +15427,62 @@ El esfuerzo no es negociable.
     return result;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T212 — EXERCISE & PATTERN TOLERANCE LEARNING. Classifies each currently-
+  //  prescribed exercise (PID-first) as PRODUCTIVE/TOLERATED/NEUTRAL/
+  //  LOW_TOLERANCE/REVIEW/INSUFFICIENT_DATA from its own progressionHistory.
+  //  Reuses the SAME >50% majority convention already established for
+  //  MAJORITY_STALLED/_classifyWeeklyStatus (no new threshold), T210's
+  //  confidence rule, and T212's own hadPainFlag field. Only PIDs present in
+  //  the CURRENT plan are classified: a Coach-initiated substitution simply
+  //  removes the PID from this map, so stale history for a removed exercise
+  //  can never contradict or outrank the Coach's own decision -- stronger
+  //  evidence than any heuristic. No "best exercise" ranking is produced.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _computeExerciseToleranceByPid(planDoc, progressionHistory) {
+    var activePids = {};
+    ((planDoc && planDoc.days) || []).forEach(function(day) {
+      (day.exercises || []).forEach(function(ex) { if (ex.prescriptionExerciseId) activePids[ex.prescriptionExerciseId] = true; });
+    });
+    var byPID = (progressionHistory && progressionHistory.byPrescriptionExerciseId) || {};
+
+    var result = {};
+    Object.keys(activePids).forEach(function(pid) {
+      var entry = byPID[pid];
+      var hist = (entry && entry.history) || [];
+      var n = hist.length;
+      var rates = hist.map(function(h) { return h.setCompletionRate; }).filter(function(r) { return typeof r === 'number'; });
+      var confidence = _computeEvidenceConfidence(rates);
+
+      if (confidence === 'none' || confidence === 'low') {
+        result[pid] = { classification: 'INSUFFICIENT_DATA', confidence: confidence, weeksObserved: n };
+        return;
+      }
+
+      var painWeeks = hist.filter(function(h) { return h.hadPainFlag; }).length;
+      if (painWeeks > 0) {
+        result[pid] = { classification: 'REVIEW', confidence: confidence, weeksObserved: n, reason: 'pain_signal_present' };
+        return;
+      }
+
+      var increase = hist.filter(function(h) { return h.action === 'increase_load' || h.action === 'add_sets'; }).length;
+      var decline  = hist.filter(function(h) { return h.action === 'freeze_load' || h.action === 'reduce_load' || h.action === 'reduce_sets'; }).length;
+
+      var classification;
+      if (increase > n / 2)      classification = 'PRODUCTIVE';
+      else if (decline > n / 2)  classification = 'LOW_TOLERANCE';
+      else if (decline === 0)    classification = 'TOLERATED';
+      else                       classification = 'NEUTRAL';
+
+      result[pid] = { classification: classification, confidence: confidence, weeksObserved: n };
+    });
+    return result;
+  }
+
   window.VDSEN_LEARNED = {
     computeConfidence: _computeEvidenceConfidence,
-    computeVolumeTolerance: _computeVolumeToleranceByMuscle
+    computeVolumeTolerance: _computeVolumeToleranceByMuscle,
+    computeExerciseTolerance: _computeExerciseToleranceByPid
   };
 
   var WEEKLY_STATUS = {
