@@ -9812,6 +9812,25 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
   window._vdsenAIShowPreview = _vdsenAIShowPreview;
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T260 — PRESENCE VS EXPLICIT-EMPTY SEMANTICS. Core principle: absence
+  //  of a new nutrition/supplement section must NEVER be treated as an
+  //  instruction to delete the existing one, but an EXPLICIT empty/remove
+  //  must remain distinguishable from "not provided". No new schema field:
+  //  reuses plain JS/JSON semantics already meaningful at the source --
+  //  `undefined` (key genuinely absent) vs `null` (explicit removal) vs any
+  //  real value (explicit content) -- exactly mirroring the already-correct
+  //  `if (nutrition) {...}` import-path convention (T259), generalized into
+  //  one reusable helper instead of re-deriving the same 3-way branch at
+  //  every call site.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _resolveOptionalPlanSection(previousValue, incomingRawValue) {
+    if (incomingRawValue === undefined) return { action: 'PRESERVE', value: previousValue };
+    if (incomingRawValue === null) return { action: 'REMOVE', value: null };
+    return { action: 'REPLACE', value: incomingRawValue };
+  }
+  window._resolveOptionalPlanSection = _resolveOptionalPlanSection;
+
   // ── D.2-A: Save Approved Draft ─────────────────────────────────────────────
 
   async function _vdsenSaveDraftToFirestore() {
