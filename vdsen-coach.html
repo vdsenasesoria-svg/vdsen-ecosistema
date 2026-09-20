@@ -17779,7 +17779,12 @@ El esfuerzo no es negociable.
       html += '<div class="mt-1" style="color:#FF8844">⚠ ' + view.painSignals.length + ' incidencia(s) de dolor articular reportadas</div>';
     }
     if (view.coachDecisions && view.coachDecisions.length) {
-      html += '<div class="mt-1">Decisiones del Coach en este período: ' + view.coachDecisions.length + '</div>';
+      html += '<div class="mt-1">Decisiones del Coach en este período:</div><ul style="margin-left:16px">';
+      view.coachDecisions.forEach(function(d) {
+        var when = d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : 'fecha desconocida';
+        html += '<li>' + _escH(d.targetType || '?') + ' · ' + _escH(d.action || '?') + ' · ' + _escH(d.status || '?') + ' (' + when + ')</li>';
+      });
+      html += '</ul>';
     }
     html += '</div>';
     return html;
