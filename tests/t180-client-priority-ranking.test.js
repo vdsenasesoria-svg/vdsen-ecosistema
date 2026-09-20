@@ -45,7 +45,7 @@ let pass = 0;
 function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + msg); }
 
 const priorityEnumSrc = COACH.slice(COACH.indexOf('var CLIENT_PRIORITY = {'), COACH.indexOf('function _rankClientPriority'));
-const rankSrc = extractFunction(COACH, 'function _rankClientPriority(attnState, weeklyStatus)');
+const rankSrc = extractFunction(COACH, 'function _rankClientPriority(attnState, weeklyStatus, effectivenessOverall)');
 ok(rankSrc, '_rankClientPriority extracts cleanly');
 const _rankClientPriority = new Function(priorityEnumSrc + ';\nreturn ' + rankSrc + ';')();
 
@@ -54,7 +54,11 @@ ok(COACH.includes("window._computeClientAttentionState = _computeClientAttention
 
 (function testNeedsReview() {
   ok(_rankClientPriority('REVIEW', null) === 'NEEDS_REVIEW', 'existing attnState REVIEW -> NEEDS_REVIEW even with no weeklyStatus available');
-  ok(_rankClientPriority('STABLE', 'PAIN_REVIEW') === 'NEEDS_REVIEW', 'weeklyStatus PAIN_REVIEW always -> NEEDS_REVIEW, regardless of attnState');
+  // T226 — pain/safety now gets its own top tier (URGENT_REVIEW), split out
+  // of NEEDS_REVIEW: Core Principle "safety must always outrank performance"
+  // needs a MORE urgent bucket than a plain unresolved coach-identity
+  // conflict. See tests/t226-*.test.js for the full URGENT_REVIEW suite.
+  ok(_rankClientPriority('STABLE', 'PAIN_REVIEW') === 'URGENT_REVIEW', 'T226: weeklyStatus PAIN_REVIEW now -> URGENT_REVIEW (was NEEDS_REVIEW before T226 split out the safety tier)');
   ok(_rankClientPriority('PROGRESSING', 'COACH_REVIEW') === 'NEEDS_REVIEW', 'weeklyStatus COACH_REVIEW always -> NEEDS_REVIEW, even if attnState looked fine');
 })();
 
@@ -76,7 +80,7 @@ ok(COACH.includes("window._computeClientAttentionState = _computeClientAttention
 })();
 
 (function testNoFakePrecisionScore() {
-  ok(!rankSrc.includes('score') && !/\d\.\d/.test(rankSrc), '_rankClientPriority never computes or returns a numeric precision score — only one of 4 operational category strings');
+  ok(!rankSrc.includes('score') && !/\d\.\d/.test(rankSrc), '_rankClientPriority never computes or returns a numeric precision score — only one of the named operational category strings');
 })();
 
 console.log('');

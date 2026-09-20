@@ -74,15 +74,20 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // ─────────────────────────────────────────────────────────────────────────────
 
 ok(COACH.includes('function _computeClientAttentionState(entries, planData, currentWeek)'), '_computeClientAttentionState confirmed present (0-Firestore-read attention state)');
-ok(COACH.includes('function _rankClientPriority(attnState, weeklyStatus)'), '_rankClientPriority (T180) confirmed present with its current 2-arg signature');
-ok(COACH.includes('var CLIENT_PRIORITY = {') && COACH.includes('NEEDS_REVIEW:      \'NEEDS_REVIEW\','), 'CLIENT_PRIORITY confirmed as the existing 4-tier enum (no URGENT_REVIEW yet)');
+// NOTE: at T225's original baseline this was a 2-arg (attnState, weeklyStatus)
+// signature with a 4-tier CLIENT_PRIORITY enum and zero call sites -- MISMATCH
+// #1 below. T226 (next phase, same commit sequence) closed it by adding the
+// 3rd param and the URGENT_REVIEW tier directly onto this same function
+// rather than building a parallel system; see tests/t226-*.test.js for that
+// suite. This map file itself is re-asserted against the CURRENT (post-T226)
+// signature so it keeps passing as the ticket's own phases build on it.
+ok(COACH.includes('function _rankClientPriority(attnState, weeklyStatus, effectivenessOverall)'), '_rankClientPriority (T180, extended by T226) confirmed present');
+ok(COACH.includes('var CLIENT_PRIORITY = {') && COACH.includes('URGENT_REVIEW:      \'URGENT_REVIEW\','), 'CLIENT_PRIORITY confirmed as the 5-tier enum (T226 added URGENT_REVIEW)');
 
-// MISMATCH #1: _rankClientPriority is exported but never called by any
-// render loop (confirmed via the absence of any live call site outside
-// its own function definition).
+// MISMATCH #1 (baseline finding, since closed by T228 -- see tests/t228-*):
+// at T225's baseline, _rankClientPriority was exported but never called by
+// any render loop.
 ok(COACH.includes('window._rankClientPriority = _rankClientPriority;'), '_rankClientPriority is exported...');
-const afterDefinition = COACH.slice(COACH.indexOf('window._rankClientPriority = _rankClientPriority;') + 1);
-ok(!afterDefinition.includes('_rankClientPriority(') , 'MISMATCH #1 confirmed: no code anywhere AFTER its own export calls _rankClientPriority(...) -- never actually invoked by any render loop yet');
 
 // MISMATCH #2: _computeWeeklyDecisionForRequest is not on window.VDSEN_BUILD
 // (only _mapExerciseProgressionHistory and _classifyExerciseExecutionFidelity

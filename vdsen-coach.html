@@ -1658,24 +1658,40 @@
   }
   window._computeClientAttentionState = _computeClientAttentionState;
 
-  // T180 — Exception-first client ranking. NOT a medical risk score: a pure,
-  // deterministic bucket combining two ALREADY-EXISTING classifications —
+  // T180/T226 — Exception-first client ranking. NOT a medical risk score, not
+  // a numeric ranking: a pure, deterministic bucket combining THREE
+  // ALREADY-EXISTING classifications, none recomputed here —
   // _computeClientAttentionState's REVIEW/PROGRESSING/STABLE/NO_DATA (client
-  // list, already deployed) and, when available, the richer T177
-  // _classifyWeeklyStatus (window.VDSEN_WEEKLY, PAIN_REVIEW/COACH_REVIEW/
-  // RECOVERY_LIMITED/ADHERENCE_LIMITED/PERFORMANCE_STALL/PROGRESSING/STABLE/
-  // DATA_INSUFFICIENT). Neither is recomputed here.
+  // list, already deployed), the richer T177 _classifyWeeklyStatus
+  // (window.VDSEN_WEEKLY, PAIN_REVIEW/COACH_REVIEW/RECOVERY_LIMITED/
+  // ADHERENCE_LIMITED/PERFORMANCE_STALL/PROGRESSING/STABLE/DATA_INSUFFICIENT)
+  // when available, and T221's prescriptionEffectiveness.overall when
+  // available (3rd param, optional/backward-compatible).
+  //
+  // T226 Core Principle: SAFETY MUST ALWAYS OUTRANK PERFORMANCE — pure pain/
+  // safety signals get their OWN top tier (URGENT_REVIEW), split out from
+  // the general NEEDS_REVIEW bucket a plain unresolved coach-identity
+  // conflict falls into.
   var CLIENT_PRIORITY = {
-    NEEDS_REVIEW:      'NEEDS_REVIEW',
-    WATCH:              'WATCH',
-    ON_TRACK:           'ON_TRACK',
-    INSUFFICIENT_DATA: 'INSUFFICIENT_DATA'
+    URGENT_REVIEW:      'URGENT_REVIEW',
+    NEEDS_REVIEW:        'NEEDS_REVIEW',
+    WATCH:               'WATCH',
+    ON_TRACK:            'ON_TRACK',
+    INSUFFICIENT_DATA:  'INSUFFICIENT_DATA'
   };
-  function _rankClientPriority(attnState, weeklyStatus) {
+  function _rankClientPriority(attnState, weeklyStatus, effectivenessOverall) {
+    // 1. SAFETY — outranks everything, including an unresolved coach review.
+    if (weeklyStatus === 'PAIN_REVIEW' || effectivenessOverall === 'SAFETY_REVIEW') return CLIENT_PRIORITY.URGENT_REVIEW;
     if (attnState === 'NO_DATA' && !weeklyStatus) return CLIENT_PRIORITY.INSUFFICIENT_DATA;
     if (weeklyStatus === 'DATA_INSUFFICIENT' && (!attnState || attnState === 'NO_DATA')) return CLIENT_PRIORITY.INSUFFICIENT_DATA;
-    if (attnState === 'REVIEW' || weeklyStatus === 'PAIN_REVIEW' || weeklyStatus === 'COACH_REVIEW') return CLIENT_PRIORITY.NEEDS_REVIEW;
+    if (attnState === 'REVIEW' || weeklyStatus === 'COACH_REVIEW') return CLIENT_PRIORITY.NEEDS_REVIEW;
+    // T221: repeated real non-response under adequate adherence/confidence
+    // is a legitimate NEEDS_REVIEW, distinct from a plain performance stall.
+    if (effectivenessOverall === 'TOLERATED_BUT_UNDER_RESPONDING') return CLIENT_PRIORITY.NEEDS_REVIEW;
     if (weeklyStatus === 'RECOVERY_LIMITED' || weeklyStatus === 'ADHERENCE_LIMITED' || weeklyStatus === 'PERFORMANCE_STALL') return CLIENT_PRIORITY.WATCH;
+    // T221: a positive response with a repeated recovery cost still merits
+    // a watchful eye, even when weeklyStatus alone reads clean.
+    if (effectivenessOverall === 'EFFECTIVE_BUT_COSTLY') return CLIENT_PRIORITY.WATCH;
     return CLIENT_PRIORITY.ON_TRACK;
   }
   window._rankClientPriority = _rankClientPriority;
