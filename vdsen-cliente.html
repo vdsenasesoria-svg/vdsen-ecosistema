@@ -8483,7 +8483,13 @@ async function _confirmSessionDone(di) {
     renderResumen();
     return false; // T125-C: señala fallo al caller para suprimir el resumen de sesión
   }
-  showToast('SESIÓN COMPLETADA ✓');
+  // T295 — same offline-honesty distinction as _showSaveOk: the write
+  // above already resolved (locally-queued under persistentLocalCache()),
+  // so this never blocks/changes control flow -- only the wording avoids
+  // claiming server-confirmed completion while genuinely offline.
+  showToast((typeof navigator !== 'undefined' && navigator.onLine === false)
+    ? 'SESIÓN GUARDADA LOCALMENTE ✓ (pendiente de sincronizar)'
+    : 'SESIÓN COMPLETADA ✓');
   _autoAdvanceDia(); // avanzar al siguiente día pendiente antes de re-renderizar
   renderEntrenamiento();
   renderResumen();
@@ -8895,7 +8901,15 @@ function _showSaveOk() {
     el.style.cssText = 'position:fixed;bottom:90px;right:16px;background:rgba(110,154,110,.15);border:1px solid var(--grn);color:var(--grn);font-family:var(--ff);font-size:11px;font-weight:700;padding:6px 12px;border-radius:8px;z-index:9999;letter-spacing:1px;opacity:0;transition:opacity .3s';
     document.body.appendChild(el);
   }
-  el.textContent = '✓ GUARDADO';
+  // T295 — Firestore is initialized with persistentLocalCache() (offline
+  // persistence): setDoc()'s promise resolves once the write is durably
+  // QUEUED locally, not necessarily once the server has acknowledged it.
+  // navigator.onLine is a cheap, already-available signal to avoid
+  // claiming server-confirmed success when we genuinely cannot confirm it
+  // -- no new offline-sync system, no changed return value/control flow,
+  // every existing caller of _doSaveLogs()/_showSaveOk() is unaffected.
+  var _offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+  el.textContent = _offline ? '⏳ GUARDADO LOCAL — pendiente de sincronizar' : '✓ GUARDADO';
   el.style.opacity = '1';
   setTimeout(function(){ el.style.opacity = '0'; }, 2000);
 }

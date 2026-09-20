@@ -222,7 +222,12 @@ const ci_ok = successAfterAwaitInTry(fnGuardarCI, /showToast/);
 assert.ok(ci_ok, 'guardarCI: showToast must appear inside try AFTER last await');
 console.log('R6-02: guardarCI success-after-write: OK');
 
-const cd_ok = /await _doSaveLogs[\s\S]*?showToast\('SES/.test(fnConfirmSessionDone);
+// T295: the success toast's literal text is now an offline-aware ternary
+// (showToast((...) ? 'SESIÓN GUARDADA LOCALMENTE...' : 'SESIÓN COMPLETADA ✓'))
+// instead of a bare string literal -- still appears after the await, in
+// the same place, still names the SESIÓN completion, just honestly
+// distinguishing a locally-pending write from a server-confirmed one.
+const cd_ok = /await _doSaveLogs[\s\S]*?showToast\(\(typeof navigator[\s\S]*?SESIÓN/.test(fnConfirmSessionDone);
 assert.ok(cd_ok, '_confirmSessionDone: success toast must appear after await _doSaveLogs');
 console.log('R6-02: _confirmSessionDone success-after-write: OK');
 
