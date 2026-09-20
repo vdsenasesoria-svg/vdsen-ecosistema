@@ -15326,8 +15326,108 @@ El esfuerzo no es negociable.
     return tier;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T211 — VOLUME TOLERANCE LEARNING. Learns a client-specific tolerated
+  //  fractional-volume RANGE per muscle from REPEATED real weekly outcomes,
+  //  never from a single week. Reuses auditFractionalVolume UNMODIFIED
+  //  (black-box, same trick as T204's _buildExecutedTrainingShape) against
+  //  one synthetic per-week training shape per week found in
+  //  progressionHistory, and _computeEvidenceConfidence (T210) gated on
+  //  that muscle's own weekly execution quality. Never auto-changes volume
+  //  -- this only LEARNS the prior; _decideAdaptivePrescription (T185-188)
+  //  remains the only place that ever recommends a change.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Reconstructs one synthetic "training" shape per historical week from
+  // progressionHistory alone: for every PID with a history entry for that
+  // week, the executed set count is estimated from that week's
+  // setCompletionRate against the CURRENT plan's prescribed set count for
+  // that PID (or, if the PID is no longer in the current plan -- e.g.
+  // substituted away -- the history entry's own newSets, when present).
+  // A PID with no basis to estimate sets from is skipped for that week,
+  // never guessed.
+  function _buildWeeklyExecutionSnapshots(planDoc, progressionHistory) {
+    var byPID = (progressionHistory && progressionHistory.byPrescriptionExerciseId) || {};
+    var planSetsByPid = {};
+    ((planDoc && planDoc.days) || []).forEach(function(day) {
+      (day.exercises || []).forEach(function(ex) {
+        if (ex.prescriptionExerciseId) planSetsByPid[ex.prescriptionExerciseId] = (ex.sets || []).length;
+      });
+    });
+
+    var weekMap = {};
+    Object.keys(byPID).forEach(function(pid) {
+      var entry = byPID[pid];
+      var name = entry.exerciseName;
+      if (!name) return;
+      var prescribedSets = planSetsByPid.hasOwnProperty(pid) ? planSetsByPid[pid] : null;
+      (entry.history || []).forEach(function(h) {
+        if (h == null || h.week == null) return;
+        var rate = typeof h.setCompletionRate === 'number' ? h.setCompletionRate : null;
+        var baseSets = prescribedSets != null ? prescribedSets : (typeof h.newSets === 'number' ? h.newSets : null);
+        if (baseSets == null || baseSets <= 0) return; // no basis to estimate -- never guess
+        var executedCount = rate == null ? baseSets : Math.max(0, Math.round(rate * baseSets));
+        if (!weekMap[h.week]) weekMap[h.week] = { exercises: [], perPidQuality: [], perPidAction: [] };
+        var sets = []; for (var i = 0; i < executedCount; i++) sets.push({});
+        weekMap[h.week].exercises.push({ prescriptionExerciseId: pid, exerciseName: name, sets: sets });
+        if (rate != null) weekMap[h.week].perPidQuality.push({ pid: pid, rate: rate });
+        weekMap[h.week].perPidAction.push({ pid: pid, action: h.action || null });
+      });
+    });
+    return weekMap;
+  }
+
+  function _computeVolumeToleranceByMuscle(planDoc, progressionHistory, exercisesCatalog) {
+    var weekMap = _buildWeeklyExecutionSnapshots(planDoc, progressionHistory);
+    var weekKeys = Object.keys(weekMap);
+    var perMuscle = {}; // muscle -> [{ volume, quality (0-1|null), goodOutcome }]
+
+    weekKeys.forEach(function(wk) {
+      var snap = weekMap[wk];
+      var audit = auditFractionalVolume({ days: [{ exercises: snap.exercises }] }, exercisesCatalog || []);
+      var goodCount = snap.perPidAction.filter(function(a) { return a.action === 'increase_load' || a.action === 'maintain'; }).length;
+      var badCount  = snap.perPidAction.filter(function(a) { return a.action === 'freeze_load' || a.action === 'reduce_load'; }).length;
+      var goodOutcome = goodCount >= badCount; // tie/no signal -> not treated as a bad week
+      var qualities = snap.perPidQuality.map(function(q) { return q.rate; });
+      var avgQuality = qualities.length ? (qualities.reduce(function(a, b) { return a + b; }, 0) / qualities.length) : null;
+
+      Object.keys(audit.muscleVolume).forEach(function(m) {
+        if (!perMuscle[m]) perMuscle[m] = [];
+        perMuscle[m].push({ volume: audit.muscleVolume[m].fractionalTotal, quality: avgQuality, goodOutcome: goodOutcome });
+      });
+    });
+
+    var result = {};
+    Object.keys(perMuscle).forEach(function(m) {
+      var obs = perMuscle[m];
+      var qualityObservations = obs.map(function(o) { return o.quality; }).filter(function(q) { return q !== null; });
+      var confidence = _computeEvidenceConfidence(qualityObservations);
+
+      var goodVolumes = obs.filter(function(o) { return o.goodOutcome; }).map(function(o) { return o.volume; });
+      var badVolumes  = obs.filter(function(o) { return !o.goodOutcome; }).map(function(o) { return o.volume; });
+      var toleratedRange = goodVolumes.length ? { min: Math.min.apply(null, goodVolumes), max: Math.max.apply(null, goodVolumes) } : null;
+
+      var evidence;
+      if (confidence === 'none' || confidence === 'low') {
+        // Core Principle: insufficient evidence, never conclude low tolerance
+        // from low adherence/confidence alone.
+        evidence = 'INSUFFICIENT_DATA';
+      } else if (!goodVolumes.length && badVolumes.length) {
+        evidence = 'MAY_EXCEED_TOLERANCE'; // never a good outcome at all, at real confidence
+      } else if (badVolumes.length && toleratedRange && Math.min.apply(null, badVolumes) >= toleratedRange.max) {
+        evidence = 'MAY_EXCEED_TOLERANCE'; // bad outcomes cluster at/above the tolerated ceiling
+      } else {
+        evidence = 'TOLERATED';
+      }
+
+      result[m] = { toleratedRange: toleratedRange, confidence: confidence, weeksObserved: obs.length, evidence: evidence };
+    });
+    return result;
+  }
+
   window.VDSEN_LEARNED = {
-    computeConfidence: _computeEvidenceConfidence
+    computeConfidence: _computeEvidenceConfidence,
+    computeVolumeTolerance: _computeVolumeToleranceByMuscle
   };
 
   var WEEKLY_STATUS = {
