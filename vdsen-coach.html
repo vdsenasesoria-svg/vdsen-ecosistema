@@ -16740,8 +16740,54 @@ El esfuerzo no es negociable.
     };
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T269 — NUTRITION RESPONSE CLASSIFICATION. Reuses T220's
+  //  _classifyBodyCompositionResponse verbatim (no second outcome engine) --
+  //  only adds a weekly-rate refinement (SLOW_RESPONSE/FAST_RESPONSE) on TOP
+  //  of an already-ON_TARGET directional read, for a déficit/superávit goal.
+  //  INSUFFICIENT_DATA/MEASUREMENT_CONFLICT/COACH_REVIEW/OFF_TARGET pass
+  //  through unchanged -- T220 already got those exactly right. mantenimiento
+  //  (recomposition) has no directional weekly-rate axis (weight is SUPPOSED
+  //  to be stable), so it is never rate-refined.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _classifyNutritionResponse(inbodyResults, objetivoCalorico) {
+    var base = _classifyBodyCompositionResponse(inbodyResults, objetivoCalorico);
+
+    if (base.classification === 'INSUFFICIENT_DATA' || base.classification === 'MEASUREMENT_CONFLICT' ||
+        base.classification === 'COACH_REVIEW' || base.classification === 'OFF_TARGET') {
+      return base;
+    }
+
+    // PARTIAL_RESPONSE (direction correct, composition checks incomplete) ->
+    // SLOW_RESPONSE: something isn't fully working yet, worth a Coach look,
+    // mapped onto the requested vocabulary without inventing a new state.
+    if (base.classification === 'PARTIAL_RESPONSE') {
+      return Object.assign({}, base, { classification: 'SLOW_RESPONSE' });
+    }
+    if (objetivoCalorico === 'mantenimiento') return base; // already ON_TARGET here, no rate axis
+
+    var results = (Array.isArray(inbodyResults) ? inbodyResults : [])
+      .filter(function(r) { return r && typeof r.peso === 'number' && typeof r.ts === 'number'; })
+      .sort(function(a, b) { return a.ts - b.ts; });
+    var first = results[0], last = results[results.length - 1];
+    var spanWeeks = (first && last) ? (last.ts - first.ts) / (7 * 86400000) : 0;
+    if (!first || !first.peso || spanWeeks <= 0) return base; // cannot compute a rate -- defer to base's ON_TARGET read
+
+    var ratePctPerWeek = ((last.peso - first.peso) / first.peso / spanWeeks) * 100;
+    var absRate = Math.abs(ratePctPerWeek);
+    // Documented, coach-reviewable default bands (sustainable weekly %BW
+    // change) -- same style as the codebase's other named thresholds
+    // (execRate<0.6, ICS<7, minDays=14): a round, transparent default, not
+    // hidden precision.
+    var bands = objetivoCalorico === 'déficit' ? { slow: 0.25, fast: 1.5 } : { slow: 0.1, fast: 0.75 };
+
+    var refined = absRate < bands.slow ? 'SLOW_RESPONSE' : absRate > bands.fast ? 'FAST_RESPONSE' : 'ON_TARGET';
+    return Object.assign({}, base, { classification: refined, ratePctPerWeek: Math.round(ratePctPerWeek * 100) / 100 });
+  }
+
   window.VDSEN_NUTRITION = {
-    classifyAdherence: _classifyNutritionAdherence
+    classifyAdherence: _classifyNutritionAdherence,
+    classifyResponse: _classifyNutritionResponse
   };
 
   var WEEKLY_STATUS = {
