@@ -1589,13 +1589,29 @@
     try {
       const clientSnap = await getDoc(doc(db, "clients", clientId));
       if (!clientSnap.exists()) return null;
-      const activeId = clientSnap.data().activePlanId;
+      const clientData = clientSnap.data();
+      const activeId = clientData.activePlanId;
       if (!activeId) return null;
       const planSnap = await getDoc(doc(db, "plans", activeId));
       if (!planSnap.exists()) return null;
       const planData = planSnap.data();
+      // T265 — the outgoing PLAN doc's own nutritionDisplay/nutritionRaw/
+      // supplementDisplay/supplementsRaw can drift from what's actually
+      // active on clients/{uid} (a nutrition-only edit via the
+      // already-correct direct import-path writers, T259/T263, updates
+      // ONLY the client doc, never the original plan doc). The backup
+      // must preserve what the client was ACTUALLY seeing at this moment,
+      // so it prefers the client doc's current values, falling back to
+      // the plan doc's own only when the client doc genuinely lacks them.
+      // `{...planData, ...}` (spread first, override after) never mutates
+      // planData/clientData themselves -- both stay byte-identical after
+      // this call, only a brand-new backup object is constructed.
       const backupRef = await addDoc(collection(db, "plans_backup"), {
         ...planData,
+        nutritionDisplay:  clientData.nutritionPlan  !== undefined ? clientData.nutritionPlan  : planData.nutritionDisplay,
+        nutritionRaw:      clientData.nutritionRaw   !== undefined ? clientData.nutritionRaw   : planData.nutritionRaw,
+        supplementDisplay: clientData.supplementPlan !== undefined ? clientData.supplementPlan : planData.supplementDisplay,
+        supplementsRaw:    clientData.supplementsRaw !== undefined ? clientData.supplementsRaw : planData.supplementsRaw,
         originalPlanId: activeId,
         backedUpAt: new Date().toISOString(),
         backedUpBy: currentCoach?.uid || null
