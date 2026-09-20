@@ -1336,7 +1336,17 @@
     if (typeof window.VDSEN_EVIDENCE === 'undefined') return null;
     var sessionAdherence = weeklyDecision && weeklyDecision.sessionAdherence;
     var rate = (sessionAdherence && typeof sessionAdherence.executionRate === 'number') ? sessionAdherence.executionRate : null;
-    return window.VDSEN_EVIDENCE.classify({ value: rate !== null ? sessionAdherence : null, completeness: rate });
+    // T287 — completeness is calibrated to the SAME execRate<0.6 threshold
+    // _computePrescriptionEffectivenessSynthesis already uses to gate
+    // DATA_INSUFFICIENT (never a fresh number invented here): below it,
+    // real evidence is genuinely too thin for the engine to draw a
+    // conclusion at all, so PARTIAL is meaningful. Using raw executionRate
+    // directly as completeness would make PARTIAL fire for nearly every
+    // client (perfect 100% attendance is not the normal case) -- noise,
+    // not signal.
+    var EXECUTION_SUFFICIENT_RATE = 0.6;
+    var completeness = rate !== null ? Math.min(1, rate / EXECUTION_SUFFICIENT_RATE) : null;
+    return window.VDSEN_EVIDENCE.classify({ value: rate !== null ? sessionAdherence : null, completeness: completeness });
   }
 
   // Coach intervention authority -- the ABSENCE of any intervention is a
