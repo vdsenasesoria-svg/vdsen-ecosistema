@@ -903,6 +903,14 @@
 
   // T197 — wires the above into the canonical Generator request.
   function _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription) {
+    // T200 residual audit: no previous plan at all means there is no
+    // mesocycle to transition FROM — this is a genuine first-ever
+    // generation, not "insufficient evidence for a renewal decision".
+    // Without this guard, a brand-new client with no planDoc/logs would
+    // get mesocycleDecision.action === COACH_REVIEW (DATA_INSUFFICIENT),
+    // and the prompt's own COACH_REVIEW rule ("limitate a mantener lo ya
+    // prescrito") makes no sense when nothing was ever prescribed yet.
+    if (!planDoc) return null;
     var totalWeeks = planDoc && planDoc.weeks;
     var currentWeek = logsResult && logsResult.trainingLogs && logsResult.trainingLogs.currentWeek;
     var isCheckpointWeek = !!(totalWeeks && currentWeek && currentWeek >= totalWeeks);
@@ -15407,7 +15415,10 @@ El esfuerzo no es negociable.
     // exceptions-first card. Reuses window.VDSEN_MESOCYCLE.decide (T193-197)
     // and window.VDSEN_BUILD._mapExerciseProgressionHistory (T160/166)
     // entirely — no recalculated progression, no plan mutation.
-    if (typeof window.VDSEN_MESOCYCLE !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {
+    // T200 residual audit: no active plan means no mesocycle to describe a
+    // transition for (mirrors the same guard added to
+    // _computeMesocycleDecisionForRequest for the Generator side).
+    if (p && typeof window.VDSEN_MESOCYCLE !== 'undefined' && typeof window.VDSEN_BUILD !== 'undefined') {
       const _mesoProgrecs = {};
       Object.keys(entries).forEach(k => { if (/^progrec_\d+_\d+$/.test(k)) _mesoProgrecs[k] = entries[k]; });
       const _mesoProgHist = window.VDSEN_BUILD._mapExerciseProgressionHistory(_mesoProgrecs);
