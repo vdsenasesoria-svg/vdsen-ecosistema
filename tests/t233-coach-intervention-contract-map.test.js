@@ -62,7 +62,11 @@ ok(COACH.includes('_vdsenReviewState[requestId][idx] = action;'), 'confirmed _vd
 ok(!/setDoc\([^)]*_vdsenReviewState/.test(COACH) && !/updateDoc\([^)]*_vdsenReviewState/.test(COACH), 'confirmed _vdsenReviewState is never written to Firestore anywhere');
 
 // KEY FINDING: no existing coachIntervention-shaped field anywhere yet.
-ok(!COACH.includes('coachIntervention'), 'KEY FINDING confirmed: no coachIntervention field/concept exists anywhere in vdsen-coach.html yet -- genuinely new ground for T234');
+// KEY FINDING (baseline): at T233's own baseline, no coachIntervention
+// field/concept existed anywhere -- confirmed genuinely new ground. T234
+// (_buildCoachIntervention) and T236 (clients/{uid}.coachInterventions[])
+// have since closed this; see tests/t234-*/t236-*.test.js.
+ok(COACH.includes('function _buildCoachIntervention(input)'), 'the coachIntervention model now exists (T234), closing this baseline gap');
 
 // Confirm the reuse precedent (inbodyResults array pattern) this ticket
 // will model the new field on.

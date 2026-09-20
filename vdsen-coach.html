@@ -1908,6 +1908,58 @@
   window._findActiveIntervention = _findActiveIntervention;
   window._isEvidenceNewerThanIntervention = _isEvidenceNewerThanIntervention;
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T236 — MONITOR ACTION WORKFLOW. From the "Atención del Coach" card
+  //  (T229), lets the Coach explicitly resolve the flagged supervision
+  //  item. Reuses the EXACT established persistence pattern already used
+  //  by _inbodySave (read-modify-write on the SAME clients/{uid} document,
+  //  no new collection) and saveTrainingPlan/coachNote's stale-client-
+  //  context guard (_clientIdSnap, compare before touching UI). No false-
+  //  success: the toast only fires after the write genuinely resolves. No
+  //  duplicate writes on double click: a single in-flight boolean guards
+  //  the whole call, mirroring _savingInbody/_savingTrainingPlan.
+  // ═══════════════════════════════════════════════════════════════════════════
+  var _savingCoachIntervention = false;
+  async function _vdsenCoachIntervene(action, status) {
+    if (_savingCoachIntervention) return; // no duplicate writes on double click
+    const ctx = window._vdsenSupervisionContext;
+    if (!ctx || !ctx.clientId) return;
+    const _clientIdSnap = ctx.clientId; // T123-H-style snapshot: captured BEFORE any await
+
+    const record = _buildCoachIntervention({
+      targetType: 'CLIENT', targetId: ctx.clientId, action: action, status: status,
+      reason: ctx.reason, decidedBy: (typeof currentCoach !== 'undefined' && currentCoach) ? currentCoach.uid : null,
+      sourcePriority: ctx.priority, sourceAction: ctx.sourceAction,
+      planId: ctx.planId, planUpdatedAtSnapshot: ctx.planUpdatedAt
+    });
+    if (!record) { showToast('No se pudo registrar la intervención', true); return; }
+
+    _savingCoachIntervention = true;
+    const _btnRow = document.getElementById('_intvBtnRow229');
+    if (_btnRow) _btnRow.querySelectorAll('button').forEach(b => b.disabled = true);
+
+    try {
+      const ref = doc(db, 'clients', _clientIdSnap);
+      const snap = await getDoc(ref);
+      const existing = (snap.exists() && Array.isArray(snap.data().coachInterventions)) ? snap.data().coachInterventions : [];
+      existing.push(record);
+      await updateDoc(ref, { coachInterventions: existing }); // confirmed persistence -- no toast before this resolves
+      if (_detailClientId !== _clientIdSnap) return; // stale client context guard: coach switched clients mid-write -- no cross-client UI leakage
+      showToast('✅ Intervención registrada');
+      _detailClientData = Object.assign({}, _detailClientData, { coachInterventions: existing });
+      await _switchClientTab('monitor'); // same refresh path _inbodySave already uses -- no guessed container id
+    } catch (e) {
+      showToast('Error: ' + e.message, true);
+    } finally {
+      _savingCoachIntervention = false;
+      if (_detailClientId === _clientIdSnap) {
+        const _btnRow2 = document.getElementById('_intvBtnRow229');
+        if (_btnRow2) _btnRow2.querySelectorAll('button').forEach(b => b.disabled = false);
+      }
+    }
+  }
+  window._vdsenCoachIntervene = _vdsenCoachIntervene;
+
   // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
   function _getLiveInfo(entries, planData) {
     if (!entries) return null;
@@ -16782,6 +16834,33 @@ El esfuerzo no es negociable.
         };
         const _meta229 = _PRIORITY_META229[_priority229] || _PRIORITY_META229.WATCH;
 
+        // T236 — Monitor action workflow: reuses T235's _findActiveIntervention
+        // to show which action (if any) is already the CLIENT-scoped active
+        // decision, and stashes the context the 3 buttons need so their
+        // onclick handlers stay primitive (no JSON embedded in HTML attrs).
+        const _priorInterventions229 = (c && c.coachInterventions) || [];
+        const _activeInterv229 = (typeof window._findActiveIntervention === 'function')
+          ? window._findActiveIntervention(_priorInterventions229, 'CLIENT', clientId, (c && c.activePlanId) || null)
+          : null;
+        window._vdsenSupervisionContext = {
+          clientId: clientId,
+          priority: _priority229,
+          sourceAction: _reasonAction229.action,
+          reason: _reasonAction229.primaryReason,
+          planId: (c && c.activePlanId) || null,
+          planUpdatedAt: (p && p.updatedAt) || null
+        };
+        const _INTV_BTN229 = [
+          { action: 'KEEP',             label: 'MANTENER',        status: 'RESOLVED' },
+          { action: 'PAUSE_FOR_REVIEW', label: 'AJUSTAR',         status: 'REVIEWED' },
+          { action: 'NO_CHANGE',        label: 'MARCAR REVISADO', status: 'REVIEWED' }
+        ].map(b => {
+          const active = _activeInterv229 && _activeInterv229.action === b.action;
+          return `<button id="_intvBtn229_${b.action}" onclick="window._vdsenCoachIntervene('${b.action}','${b.status}')"
+            style="font-size:11px;padding:5px 12px;border-radius:20px;border:1px solid ${active ? _meta229.color : 'rgba(244,244,240,.2)'};cursor:pointer;
+            background:${active ? _meta229.color + '22' : 'transparent'};color:${active ? _meta229.color : '#aaa'};font-weight:${active ? '700' : '400'}">${b.label}</button>`;
+        }).join('');
+
         html += `<div class="card p-3 mb-3" style="border-left:3px solid ${_meta229.color};border-radius:0 8px 8px 0">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;flex-wrap:wrap">
             <div class="text-xs uppercase font-semibold tracking-wide" style="color:#888">Atención del Coach</div>
@@ -16789,7 +16868,8 @@ El esfuerzo no es negociable.
           </div>
           <div class="text-xs mb-1"><span style="font-weight:700">Motivo:</span> ${_escH(_REASON_LABEL229[_reasonAction229.primaryReason] || _reasonAction229.primaryReason)}</div>
           ${_reasonAction229.supportingReasons.length ? `<div class="text-xs mb-1" style="color:#aaa">${_reasonAction229.supportingReasons.map(r => _escH(r)).join(' · ')}</div>` : ''}
-          <div class="text-xs" style="color:#aaa"><span style="font-weight:700">Revisión sugerida:</span> ${_escH(_ACTION_LABEL229[_reasonAction229.action] || _reasonAction229.action)}</div>
+          <div class="text-xs mb-2" style="color:#aaa"><span style="font-weight:700">Revisión sugerida:</span> ${_escH(_ACTION_LABEL229[_reasonAction229.action] || _reasonAction229.action)}</div>
+          <div id="_intvBtnRow229" style="display:flex;gap:6px;flex-wrap:wrap">${_INTV_BTN229}</div>
         </div>`;
       }
     }
