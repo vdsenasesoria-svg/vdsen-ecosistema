@@ -989,16 +989,23 @@
         });
       });
     }
+    // T202/T205 — same lazy cross-script-block reuse as window.VDSEN_WEEKLY:
+    // null-safe, never recomputed as a second adherence engine.
+    var sessionAdherence = (week && typeof window.VDSEN_ADHERENCE !== 'undefined')
+      ? window.VDSEN_ADHERENCE.computeSessionSummary(entries, week)
+      : null;
     var status = window.VDSEN_WEEKLY.classify({
       engineState: es, ciSem: ciSem, postsessionsThisWeek: posts,
-      reviewCount: reviewItems.length, semaphore: null // Ehrenstein semaphore needs client-doc fields not available here — Coach Monitor (T179) has the full read
+      reviewCount: reviewItems.length, semaphore: null, // Ehrenstein semaphore needs client-doc fields not available here — Coach Monitor (T179) has the full read
+      sessionAdherence: sessionAdherence
     });
     var volumeDecision = window.VDSEN_WEEKLY.decideVolume(status, ciSem);
     return {
       status: status,
       recovery: status === 'RECOVERY_LIMITED' ? 'LIMITED' : 'ADEQUATE',
       volumeDecision: volumeDecision,
-      reviewItems: reviewItems
+      reviewItems: reviewItems,
+      sessionAdherence: sessionAdherence
     };
   }
 
@@ -15084,6 +15091,102 @@ El esfuerzo no es negociable.
   // identity/coach-edit conflict always outranks a performance read; a
   // performance read is never trusted below the engine's own established
   // "none/low" confidence floor.
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T202 — SESSION ADHERENCE: PRESCRIBED SESSION -> ACTUAL EXECUTION.
+  //  Pure classifiers over data ALREADY computed and persisted: the F76
+  //  session-completion state machine (ported verbatim from
+  //  vdsen-cliente.html) and calculateProgression's setMetrics.setCompletionRate
+  //  (already PID-scoped, already excluding autoFilled, already persisted in
+  //  THIS SAME session's progrec_{W}_{D} entry). No new Firestore field, no
+  //  new plan-structure lookup, decision-support only -- never auto-applies
+  //  anything.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // F76 — Session completion semantics (vdsen-cliente.html, ported verbatim).
+  function _getSessionCompletionState(doneEntry) {
+    if (!doneEntry) return 'PENDING';
+    if (typeof doneEntry !== 'object') return 'REAL_COMPLETE'; // legacy boolean
+    if (doneEntry.skipped && !doneEntry.autoClosed) return 'SKIPPED';
+    if (doneEntry.autoClosed && doneEntry.skipped) return 'AUTO_CLOSED_NO_DATA';
+    if (doneEntry.autoClosed) return 'AUTO_CLOSED';
+    return 'REAL_COMPLETE';
+  }
+
+  // How much of THIS session's prescribed sets were actually executed, 0-1.
+  // null means "real execution occurred but no set-level evidence exists to
+  // grade it" (unknown, not zero) -- e.g. a very old session predating
+  // setMetrics.
+  function _sessionExecutionRatio(doneEntry, progrecEntry) {
+    var state = _getSessionCompletionState(doneEntry);
+    if (state === 'PENDING') return null; // not due for judgement yet -- opening the workout is not adherence evidence
+    if (state === 'SKIPPED' || state === 'AUTO_CLOSED_NO_DATA') return 0; // explicitly did not happen
+    var recs = (progrecEntry && Array.isArray(progrecEntry.recommendations)) ? progrecEntry.recommendations : [];
+    var rates = recs
+      .map(function(r) { return (r && r.setMetrics && typeof r.setMetrics.setCompletionRate === 'number') ? r.setMetrics.setCompletionRate : null; })
+      .filter(function(r) { return r !== null; });
+    if (!rates.length) return null;
+    return rates.reduce(function(a, b) { return a + b; }, 0) / rates.length;
+  }
+
+  // COMPLETE / PARTIAL / MISSED / INSUFFICIENT_DATA.
+  function _classifySessionAdherence(doneEntry, progrecEntry) {
+    var ratio = _sessionExecutionRatio(doneEntry, progrecEntry);
+    if (ratio === null) return 'INSUFFICIENT_DATA';
+    if (ratio >= 0.8) return 'COMPLETE';
+    if (ratio >= 0.3) return 'PARTIAL';
+    return 'MISSED';
+  }
+
+  // Aggregates every done_{week}_{d} session for a given week. executionRate
+  // is the plain average of each session's own ratio (nulls excluded, never
+  // treated as zero) -- a direct, WEEK-SCOPED signal, distinct from
+  // engine_state.confidence (a CUMULATIVE raw-logged-set count across the
+  // whole mesocycle so far, which can read 'medium'/'high' purely from
+  // elapsed time even when every single week was poorly executed).
+  function _computeSessionAdherenceSummary(entries, week) {
+    entries = entries || {};
+    if (!week) return { week: week || null, sessions: [], counts: { COMPLETE: 0, PARTIAL: 0, MISSED: 0, INSUFFICIENT_DATA: 0 }, executionRate: null };
+    var re = new RegExp('^done_' + week + '_(\\d+)$');
+    var sessions = [];
+    var counts = { COMPLETE: 0, PARTIAL: 0, MISSED: 0, INSUFFICIENT_DATA: 0 };
+    var ratios = [];
+    Object.keys(entries).forEach(function(k) {
+      var m = k.match(re);
+      if (!m) return;
+      var day = parseInt(m[1], 10);
+      var progrecEntry = entries['progrec_' + week + '_' + day] || null;
+      var ratio  = _sessionExecutionRatio(entries[k], progrecEntry);
+      var status = _classifySessionAdherence(entries[k], progrecEntry);
+      counts[status] = (counts[status] || 0) + 1;
+      sessions.push({ day: day, status: status, ratio: ratio });
+      if (ratio !== null) ratios.push(ratio);
+    });
+    var executionRate = ratios.length ? (ratios.reduce(function(a, b) { return a + b; }, 0) / ratios.length) : null;
+    return { week: week, sessions: sessions, counts: counts, executionRate: executionRate };
+  }
+
+  // T203 — ported verbatim (same tiers as the VDSEN_BUILD-IIFE copy and
+  // api/vdsen-build-request.js) so the muscle-adherence aggregation below
+  // (T204) and the Coach Monitor card (T206) can classify fidelity without
+  // a second engine.
+  function _classifyExerciseExecutionFidelity(setCompletionRate) {
+    if (typeof setCompletionRate !== 'number' || setCompletionRate <= 0) return 'NONE';
+    if (setCompletionRate < 0.5) return 'LOW';
+    if (setCompletionRate < 0.8) return 'MEDIUM';
+    return 'HIGH';
+  }
+
+  // T202 — exposed for the EARLY VDSEN_BUILD IIFE (buildGenerationRequest)
+  // and the Coach Monitor to reuse via the same lazy cross-script-block
+  // pattern already used by window.VDSEN_WEEKLY/VDSEN_ADAPTIVE/VDSEN_MESOCYCLE.
+  window.VDSEN_ADHERENCE = {
+    sessionState:          _getSessionCompletionState,
+    sessionExecutionRatio: _sessionExecutionRatio,
+    classifySession:       _classifySessionAdherence,
+    computeSessionSummary: _computeSessionAdherenceSummary,
+    classifyExerciseFidelity: _classifyExerciseExecutionFidelity
+  };
+
   var WEEKLY_STATUS = {
     PAIN_REVIEW:        'PAIN_REVIEW',
     COACH_REVIEW:        'COACH_REVIEW',
@@ -15119,6 +15222,18 @@ El esfuerzo no es negociable.
     // adherence threshold, the SAME floor the Progression Engine itself
     // already uses to decide whether it trusts its own read.
     if (es && (es.confidence === 'none' || es.confidence === 'low')) return WEEKLY_STATUS.ADHERENCE_LIMITED;
+
+    // 4b. T205 — engine_state.confidence is a CUMULATIVE raw-logged-set count
+    // across the whole mesocycle so far, so it can still read 'medium'/'high'
+    // even when THIS week's actual execution was poor (e.g. consistent
+    // attendance with only ~45% of prescribed sets done every week
+    // eventually accumulates a large raw count without any single week ever
+    // being a genuinely well-executed one). input.sessionAdherence (T202) is
+    // a direct, week-scoped signal that closes exactly that gap: insufficient
+    // execution must block a progression/stall conclusion, never be silently
+    // outvoted by a large historical count.
+    var execRate = (input.sessionAdherence && typeof input.sessionAdherence.executionRate === 'number') ? input.sessionAdherence.executionRate : null;
+    if (execRate !== null && execRate < 0.6) return WEEKLY_STATUS.ADHERENCE_LIMITED;
 
     // 5. Reactive deload (engine_state.deloadTriggered, T162) OR the
     // Ehrenstein semaphore reading orange/red — two independent,
@@ -15336,12 +15451,17 @@ El esfuerzo no es negociable.
         });
       }
 
+      // T202/T205 — same week-scoped execution-rate signal fed into the
+      // Generator's copy of this classification (_computeWeeklyDecisionForRequest).
+      const _wsSessionAdherence = _computeSessionAdherenceSummary(entries, currentWeek);
+
       const _wsStatus = _classifyWeeklyStatus({
         engineState: _wsEs,
         ciSem: (ci && Object.keys(ci).length) ? ci : null,
         postsessionsThisWeek: _wsPosts,
         reviewCount: _wsReviewCount,
-        semaphore: _ehrenSemForWeekly
+        semaphore: _ehrenSemForWeekly,
+        sessionAdherence: _wsSessionAdherence
       });
       const _wsVolume = _decideVolumeAction(_wsStatus, ci);
       _wsStatusForAdaptive = _wsStatus; _wsEsForAdaptive = _wsEs;
