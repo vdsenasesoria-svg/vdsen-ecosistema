@@ -110,8 +110,9 @@ const coachSrc = extractFunction(COACH, 'function _mapExerciseProgressionHistory
 ok(coachSrc, "vdsen-coach.html's ported _mapExerciseProgressionHistory extracts cleanly");
 ok(coachSrc.includes('setCompletionRate'), 'the ported copy carries the same T205 setCompletionRate fix');
 ok(coachSrc.includes('executionCompleteness'), 'the ported copy carries the same T205 executionCompleteness field');
+const coachFidelitySrc = extractFunction(COACH, 'function _classifyExerciseExecutionFidelity(setCompletionRate)');
 
-const coachMapFn = new Function(coachSrc + ';\nreturn _mapExerciseProgressionHistory;')();
+const coachMapFn = new Function(coachFidelitySrc + ';\n' + coachSrc + ';\nreturn _mapExerciseProgressionHistory;')();
 
 (function testCoachCopyMatchesApiCopy() {
   const progrecs = makeProgrecs([1, 2, 3, 4, 5], [0.25, 0.25, 0.25, 0.25, 0.25]);
