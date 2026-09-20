@@ -17481,6 +17481,55 @@ El esfuerzo no es negociable.
       }
     }
 
+    // ── T272 — Coach visibility for the T268-270 nutrition adherence/
+    // response/decision layer. Reuses window.VDSEN_NUTRITION entirely (no
+    // second engine), the SAME already-loaded _detailFichaData for the
+    // stated goal, and `entries` already available in this function (0 new
+    // Firestore reads). Exceptions-first: the Motivo line only surfaces
+    // when the recommendation isn't a plain KEEP -- no giant dashboard, no
+    // unsupported adherence claim (INSUFFICIENT_DATA is shown as such,
+    // never hidden or guessed).
+    if (typeof window.VDSEN_NUTRITION !== 'undefined') {
+      const _nutriLog272 = [];
+      Object.keys(entries).forEach(k => { if (k.indexOf('nutrilog_') === 0) _nutriLog272.push(entries[k]); });
+      const _nutriAdherence272 = window.VDSEN_NUTRITION.classifyAdherence(_nutriLog272, c && c.nutritionRaw);
+      const _nutriGoal272 = (_detailFichaData && _detailFichaData.data && _detailFichaData.data.objetivo_calorico) || null;
+      const _nutriResponse272 = window.VDSEN_NUTRITION.classifyResponse(c && c.inbodyResults, _nutriGoal272);
+      const _nutriDecision272 = window.VDSEN_NUTRITION.decide({ adherence: _nutriAdherence272, response: _nutriResponse272 });
+
+      const _ADH_META272 = {
+        HIGH: { label: 'ALTA', color: '#44BB88' }, MEDIUM: { label: 'MEDIA', color: '#FFCC44' },
+        LOW: { label: 'BAJA', color: '#FF8844' }, INSUFFICIENT_DATA: { label: 'DATOS INSUFICIENTES', color: '#888' }
+      };
+      const _RESP_META272 = {
+        ON_TARGET: { label: 'EN OBJETIVO', color: '#44BB88' }, SLOW_RESPONSE: { label: 'LENTA', color: '#FFCC44' },
+        FAST_RESPONSE: { label: 'RÁPIDA', color: '#FFCC44' }, OFF_TARGET: { label: 'FUERA DE OBJETIVO', color: '#FF8844' },
+        MEASUREMENT_CONFLICT: { label: 'MEDICIONES INCONSISTENTES', color: '#FF4444' },
+        INSUFFICIENT_DATA: { label: 'DATOS INSUFICIENTES', color: '#888' }, COACH_REVIEW: { label: 'OBJETIVO NO DEFINIDO', color: '#FF8844' }
+      };
+      const _ACTION_META272 = {
+        KEEP: { label: 'MANTENER', color: '#44BB88' },
+        REVIEW_DECREASE_CALORIES: { label: 'REVISAR — BAJAR CALORÍAS', color: '#FF8844' },
+        REVIEW_INCREASE_CALORIES: { label: 'REVISAR — SUBIR CALORÍAS', color: '#FF8844' },
+        REVIEW_MACROS: { label: 'REVISAR MACROS', color: '#FF8844' },
+        REVIEW_MEAL_STRUCTURE: { label: 'REVISAR ESTRUCTURA', color: '#FF8844' },
+        FREEZE: { label: 'CONGELAR — SIN CAMBIOS', color: '#888' }, COACH_REVIEW: { label: 'REVISAR', color: '#FF4444' }
+      };
+      const _adhMeta272  = _ADH_META272[_nutriAdherence272.classification] || _ADH_META272.INSUFFICIENT_DATA;
+      const _respMeta272 = _RESP_META272[_nutriResponse272.classification] || _RESP_META272.INSUFFICIENT_DATA;
+      const _actMeta272  = _ACTION_META272[_nutriDecision272.action] || _ACTION_META272.COACH_REVIEW;
+
+      html += `<div class="card p-3 mb-3" style="border-left:3px solid ${_actMeta272.color};border-radius:0 8px 8px 0">
+        <div class="text-xs uppercase font-semibold tracking-wide mb-2" style="color:#888">Estado nutricional</div>
+        <div class="flex gap-4 flex-wrap mb-1">
+          <div class="text-xs"><span style="color:#888">Adherencia:</span> <span style="font-weight:700;color:${_adhMeta272.color}">${_adhMeta272.label}</span></div>
+          <div class="text-xs"><span style="color:#888">Respuesta:</span> <span style="font-weight:700;color:${_respMeta272.color}">${_respMeta272.label}</span></div>
+          <div class="text-xs"><span style="color:#888">Recomendación:</span> <span style="font-weight:700;color:${_actMeta272.color}">${_actMeta272.label}</span></div>
+        </div>
+        ${_nutriDecision272.action !== 'KEEP' && _nutriDecision272.reasons && _nutriDecision272.reasons.length ? `<div class="text-xs mt-1" style="color:#888"><span style="font-weight:700">Motivo:</span> ${_nutriDecision272.reasons.map(r => _escH(r)).join(', ')}</div>` : ''}
+      </div>`;
+    }
+
     // ── T229 — Monitor drill-down: COACH ATTENTION. Combines T226's
     // priority + T227's reason/action from the SAME already-computed
     // signals (attnState, weeklyStatus, prescriptionEffectiveness) --
