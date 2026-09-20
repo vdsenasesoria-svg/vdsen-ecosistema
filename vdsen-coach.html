@@ -16688,6 +16688,62 @@ El esfuerzo no es negociable.
     computeEffectiveness: _computePrescriptionEffectivenessSynthesis
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T268 — NUTRITION ADHERENCE CLASSIFICATION. Reads REAL client-reported
+  //  daily macros (logs/{uid}.entries['nutrilog_YYYY-MM-DD'], T267) against
+  //  the ACTIVE nutritionRaw target -- never inferred from bodyweight/InBody
+  //  (Core Principle: bodyweight outcome != nutrition adherence). Too few
+  //  logged days, or no real target to compare against, -> INSUFFICIENT_DATA;
+  //  never fake precision from thin evidence.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _classifyNutritionAdherence(nutrilogEntries, targets, options) {
+    options = options || {};
+    var windowDays = options.windowDays != null ? options.windowDays : 7;
+    var minDays    = options.minDays != null ? options.minDays : 3;
+
+    var valid = (Array.isArray(nutrilogEntries) ? nutrilogEntries : [])
+      .filter(function(e) { return e && typeof e.kcal === 'number' && e.kcal > 0; })
+      .sort(function(a, b) { return (a.ts || 0) - (b.ts || 0); });
+
+    if (valid.length && windowDays != null) {
+      var cutoff = (valid[valid.length - 1].ts || 0) - windowDays * 86400000;
+      valid = valid.filter(function(e) { return (e.ts || 0) >= cutoff; });
+    }
+
+    var kcalTarget = targets && typeof targets.calorias === 'number' && targets.calorias > 0 ? targets.calorias : null;
+
+    if (!kcalTarget || valid.length < minDays) {
+      return { classification: 'INSUFFICIENT_DATA', daysLogged: valid.length, windowDays: windowDays };
+    }
+
+    var protTarget = targets && typeof targets.proteina === 'number' && targets.proteina > 0 ? targets.proteina : null;
+
+    var kcalDevs = valid.map(function(e) { return Math.abs(e.kcal - kcalTarget) / kcalTarget; });
+    var avgKcalDev = kcalDevs.reduce(function(a, b) { return a + b; }, 0) / kcalDevs.length;
+
+    var protRatios = protTarget
+      ? valid.filter(function(e) { return typeof e.prot === 'number'; }).map(function(e) { return e.prot / protTarget; })
+      : [];
+    var avgProtRatio = protRatios.length ? protRatios.reduce(function(a, b) { return a + b; }, 0) / protRatios.length : null;
+
+    var classification;
+    if (avgKcalDev <= 0.15 && (avgProtRatio === null || avgProtRatio >= 0.85)) classification = 'HIGH';
+    else if (avgKcalDev <= 0.30 && (avgProtRatio === null || avgProtRatio >= 0.65)) classification = 'MEDIUM';
+    else classification = 'LOW';
+
+    return {
+      classification: classification,
+      daysLogged: valid.length,
+      windowDays: windowDays,
+      avgKcalDeviationPct: Math.round(avgKcalDev * 1000) / 10,
+      avgProteinRatio: avgProtRatio !== null ? Math.round(avgProtRatio * 100) / 100 : null
+    };
+  }
+
+  window.VDSEN_NUTRITION = {
+    classifyAdherence: _classifyNutritionAdherence
+  };
+
   var WEEKLY_STATUS = {
     PAIN_REVIEW:        'PAIN_REVIEW',
     COACH_REVIEW:        'COACH_REVIEW',
