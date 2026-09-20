@@ -89,7 +89,7 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 
 ok(COACH.includes('async function _vdsenActivatePlanInFirestore(planId, clientId)'), 'the real activation entry point exists');
 ok(COACH.includes("if (clientData.activePlanId === planId) return;"), 'activation is idempotent -- re-activating the same plan is a no-op, no duplicate writes');
-ok(COACH.includes('t.update(clientRef, {') && COACH.includes('activePlanId:   planId,'), 'activation writes ONLY clients/{uid}.activePlanId -- plans/{planId} and plans/{prevPlanId} are never touched, preserving history by non-mutation');
+ok(COACH.includes('t.update(clientRef, clientUpdate);') && COACH.includes('var clientUpdate = { activePlanId: planId };'), 'activation writes ONLY clients/{uid} (activePlanId + conditional nutrition/supplement mirrors, T261) -- plans/{planId} and plans/{prevPlanId} are never touched, preserving history by non-mutation');
 ok(COACH.includes("if (planData.coachId !== coachId) throw new Error('FOREIGN_OWNER"), 'ownership is checked before activation -- no cross-coach plan hijacking');
 
 // ─────────────────────────────────────────────────────────────────────────────

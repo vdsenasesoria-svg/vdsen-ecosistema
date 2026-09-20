@@ -9951,22 +9951,37 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       daysPerWeek:         (training.daysPerWeek !== undefined ? training.daysPerWeek : 0),
       days:                _stampPrescriptionIds(Array.isArray(training.days) ? training.days : []),
       rirByWeek:           rirSchemeForWeeks(training.weeks || 6),
-      // Nutrition
-      nutritionDisplay: {
-        calorias: nutr.calorias || 0,
-        proteina: nutr.proteina || 0,
-        carbos:   nutr.carbos   || 0,
-        grasas:   nutr.grasas   || 0,
-        texto:    nutr.texto    || '',
-      },
-      nutritionRaw:    nutr,
-      // Supplements
-      supplementDisplay: { texto: supplText },
-      supplementsRaw:    suppl,
       // Review summary (no individual clicks, no raw response, no secrets)
       reviewSummary: { totalItems: totalItems, acceptedItems: acceptedItems },
       // EXCLUDED: farmacologia, pharmacoPlan, raw model response, prompt, API keys
     };
+
+    // T261 — Nutrition/supplement continuity: only stamp these fields onto
+    // the draft plan doc when the Generator response actually PROVIDED that
+    // section (T260's _resolveOptionalPlanSection). An absent section is
+    // never collapsed into a zeroed placeholder here -- that collapse is
+    // exactly what silently overwrote a client's valid existing data on
+    // activation before this fix (T259's audited finding). rawPlan.nutricion/
+    // suplementacion (pre-normalization) is the presence source of truth:
+    // undefined (key absent) -> omit these fields entirely from the draft;
+    // null (explicit removal) -> stamp null (activation will clear);
+    // any real value -> stamp the real display/raw content.
+    var nutResolved = _resolveOptionalPlanSection(undefined, plan.nutricion);
+    if (nutResolved.action === 'REPLACE') {
+      draftDoc.nutritionDisplay = { calorias: nutr.calorias || 0, proteina: nutr.proteina || 0, carbos: nutr.carbos || 0, grasas: nutr.grasas || 0, texto: nutr.texto || '' };
+      draftDoc.nutritionRaw = nutResolved.value;
+    } else if (nutResolved.action === 'REMOVE') {
+      draftDoc.nutritionDisplay = null;
+      draftDoc.nutritionRaw = null;
+    }
+    var supplResolved = _resolveOptionalPlanSection(undefined, plan.suplementacion);
+    if (supplResolved.action === 'REPLACE') {
+      draftDoc.supplementDisplay = { texto: supplText };
+      draftDoc.supplementsRaw = supplResolved.value;
+    } else if (supplResolved.action === 'REMOVE') {
+      draftDoc.supplementDisplay = null;
+      draftDoc.supplementsRaw = null;
+    }
 
     await setDoc(planRef, draftDoc);
     return { idempotent: false, planId: requestId };
@@ -10006,15 +10021,36 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       // Mirrors de compatibilidad: clients/{uid}.nutritionPlan/nutritionRaw/supplementPlan/supplementsRaw
       // son derivados de plans/{planId} para que vdsen-cliente.html los lea sin cambio de contrato.
       // La fuente de verdad permanece en plans/{activePlanId}. Los mirrors NO son fuente autoritativa.
-      t.update(clientRef, {
-        activePlanId:   planId,
-        // Compatibility mirrors — vdsen-cliente.html lee de clients/{uid}, no del plan doc
-        nutritionPlan:  planData.nutritionDisplay || {},
-        nutritionRaw:   planData.nutritionRaw     || {},
-        supplementPlan: planData.supplementDisplay || {},
-        supplementsRaw: planData.supplementsRaw   || {},
-        // NO: farmacologia, pharmacoPlan, ni ningún campo PED
-      });
+      //
+      // T261 — activation merge policy (T260's presence semantics): a plan
+      // that does not explicitly provide a nutrition/supplement section
+      // must PRESERVE the client's existing valid data, never silently
+      // overwrite it with an empty/zeroed placeholder (T259's audited bug).
+      // t.update is itself a PARTIAL merge -- simply omitting a key here
+      // already achieves "preserve" with zero extra logic; only REPLACE/
+      // REMOVE need an explicit write.
+      var clientUpdate = { activePlanId: planId };
+      var nutResolved = _resolveOptionalPlanSection(undefined, planData.nutritionRaw);
+      if (nutResolved.action === 'REPLACE') {
+        clientUpdate.nutritionPlan = planData.nutritionDisplay || {};
+        clientUpdate.nutritionRaw = nutResolved.value;
+      } else if (nutResolved.action === 'REMOVE') {
+        clientUpdate.nutritionPlan = deleteField();
+        clientUpdate.nutritionRaw = deleteField();
+      }
+      // PRESERVE (planData.nutritionRaw undefined -- this plan never addressed nutrition) -> omit entirely
+
+      var supplResolved = _resolveOptionalPlanSection(undefined, planData.supplementsRaw);
+      if (supplResolved.action === 'REPLACE') {
+        clientUpdate.supplementPlan = planData.supplementDisplay || {};
+        clientUpdate.supplementsRaw = supplResolved.value;
+      } else if (supplResolved.action === 'REMOVE') {
+        clientUpdate.supplementPlan = deleteField();
+        clientUpdate.supplementsRaw = deleteField();
+      }
+      // NO: farmacologia, pharmacoPlan, ni ningún campo PED
+
+      t.update(clientRef, clientUpdate);
     });
   }
 

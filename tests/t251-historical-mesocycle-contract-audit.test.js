@@ -99,7 +99,7 @@ ok(CLIENT.includes("EXERCISE_HISTORY[exNameKey] = { load: carga, reps: String(re
 // degrade, never guess plan metadata from the mesos doc alone.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes('t.update(clientRef, {') && COACH.includes('activePlanId:   planId,'), 'confirmed (T245 cross-reference) plans/{planId} itself is never mutated by activation -- reading it later for historical plan metadata (name/days/PIDs) is safe and reliable IF the doc still exists');
+ok(COACH.includes('t.update(clientRef, clientUpdate);') && COACH.includes('var clientUpdate = { activePlanId: planId };'), 'confirmed (T245 cross-reference) plans/{planId} itself is never mutated by activation -- reading it later for historical plan metadata (name/days/PIDs) is safe and reliable IF the doc still exists');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // coachInterventions[] is already the sole intervention record (no

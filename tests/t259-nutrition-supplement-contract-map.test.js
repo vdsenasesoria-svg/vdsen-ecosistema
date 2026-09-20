@@ -44,17 +44,19 @@ let pass = 0;
 function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + msg); }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The buggy pipeline, confirmed present at baseline (T259 documents the
-// CURRENT state before T261's fix -- this test intentionally captures the
-// bug pattern so T261's fix has a concrete before/after to diff against).
+// The buggy pipeline, as it existed at T259's baseline. T261 (later in
+// this SAME ticket) closed this gap -- these assertions now document the
+// FIX, mirroring the established pattern (T233/T209/T225) of updating an
+// audit-map assertion once a later phase in the same ticket resolves the
+// finding it documented, rather than leaving a stale false claim.
 // ─────────────────────────────────────────────────────────────────────────────
 
 ok(COACH.includes("const nutr     = plan.nutricion     || {};") && COACH.includes("const suppl    = plan.suplementacion || {};"),
-  'confirmed: _vdsenSaveDraftToFirestore collapses an ABSENT nutricion/suplementacion key into an empty object at parse time, losing the presence signal before the draftDoc is even built');
-ok(COACH.includes('nutritionRaw:    nutr,') && COACH.includes('supplementsRaw:    suppl,'),
-  'confirmed: the draft plan doc always gets nutritionRaw/supplementsRaw fields (never genuinely absent), even for a training-only generation');
-ok(COACH.includes('nutritionPlan:  planData.nutritionDisplay || {},') && COACH.includes('supplementPlan: planData.supplementDisplay || {},'),
-  'confirmed: activation unconditionally mirrors plan-doc nutrition/supplement fields onto clients/{uid} with an || {} fallback -- an absent OR zeroed plan-doc field both silently overwrite the client\'s existing valid data');
+  'the plan.nutricion/suplementacion collapse still happens at THIS line (used for the zeroed-default display object), but T261 no longer relies on it to decide presence -- it resolves against plan.nutricion/suplementacion directly, before this collapse, via _resolveOptionalPlanSection');
+ok(COACH.includes('_resolveOptionalPlanSection(undefined, plan.nutricion)') && COACH.includes('_resolveOptionalPlanSection(undefined, plan.suplementacion)'),
+  'FIXED by T261: the draft plan doc now only gets nutritionRaw/supplementsRaw fields when the Generator response actually provided that section -- genuinely absent for a training-only generation, never a zeroed placeholder');
+ok(COACH.includes('_resolveOptionalPlanSection(undefined, planData.nutritionRaw)') && COACH.includes('_resolveOptionalPlanSection(undefined, planData.supplementsRaw)'),
+  'FIXED by T261: activation now conditionally mirrors plan-doc nutrition/supplement fields -- an absent plan-doc field is OMITTED from the client update entirely (preserving the client\'s existing valid data), never defaulted to {}');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The already-correct import paths (confirmed NOT buggy -- must not be

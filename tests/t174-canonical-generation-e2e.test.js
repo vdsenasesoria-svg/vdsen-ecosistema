@@ -220,7 +220,7 @@ function coachCategorize(planPidSet, planUpdatedAt, r) {
   ok(COACH.includes('BORRADOR — NO APLICADO'), 'CASE F — Preview still shows the not-applied draft badge (T142-H regression, review-gated)');
   const activateFn = extractFunction(COACH, 'async function _vdsenActivatePlanInFirestore(planId, clientId)');
   ok(activateFn && !activateFn.includes('t.update(planRef'), 'CASE F — activation transaction never re-writes plans/{planId} — the drafted days/PIDs are immutable once saved');
-  ok(activateFn && activateFn.includes('t.update(clientRef, {') && activateFn.includes('activePlanId:   planId,'), 'CASE F — activation only flips clients/{clientId}.activePlanId (+ nutrition/supplement mirrors), exactly the reviewed/drafted plan');
+  ok(activateFn && activateFn.includes('t.update(clientRef, clientUpdate);') && activateFn.includes('var clientUpdate = { activePlanId: planId };'), 'CASE F — activation only flips clients/{clientId}.activePlanId (+ nutrition/supplement mirrors, conditionally per T261), exactly the reviewed/drafted plan');
   ok(activateFn && activateFn.includes("if (planData.status !== 'draft_approved')"), 'CASE F — activation refuses anything that isn\'t the exact reviewed (draft_approved) plan');
 })();
 
