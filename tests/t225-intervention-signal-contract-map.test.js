@@ -89,11 +89,11 @@ ok(COACH.includes('var CLIENT_PRIORITY = {') && COACH.includes('URGENT_REVIEW:  
 // any render loop.
 ok(COACH.includes('window._rankClientPriority = _rankClientPriority;'), '_rankClientPriority is exported...');
 
-// MISMATCH #2: _computeWeeklyDecisionForRequest is not on window.VDSEN_BUILD
-// (only _mapExerciseProgressionHistory and _classifyExerciseExecutionFidelity
-// are exported there today).
+// MISMATCH #2 (baseline finding, since closed by T228): at T225's baseline
+// _computeWeeklyDecisionForRequest was not on window.VDSEN_BUILD. T228
+// added the export; see tests/t228-*.test.js for the client-list wiring.
 ok(COACH.includes('function _computeWeeklyDecisionForRequest(entries, planDoc)'), 'confirmed _computeWeeklyDecisionForRequest exists, taking exactly (entries, planDoc) -- the same two values already computed per client in loadClientList\'s rowData');
-ok(!COACH.includes('_computeWeeklyDecisionForRequest: _computeWeeklyDecisionForRequest'), 'MISMATCH #2 confirmed: not yet exposed on window.VDSEN_BUILD -- unreachable from loadClientList\'s later script block');
+ok(COACH.includes('_computeWeeklyDecisionForRequest: _computeWeeklyDecisionForRequest'), 'now exposed on window.VDSEN_BUILD (T228) -- reachable from loadClientList\'s later script block');
 
 // Confirm loadClientList already loads `entries`/`planData` per client with
 // 0 new reads possible for weeklyStatus (same substrate _computeClientAttentionState uses).

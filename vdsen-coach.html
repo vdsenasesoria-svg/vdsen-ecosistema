@@ -1204,7 +1204,8 @@
     validateGenerationRequest:  validateGenerationRequest,
     validateGenerationResponse: validateGenerationResponse,
     _mapExerciseProgressionHistory: _mapExerciseProgressionHistory, // T198: Coach Monitor reuse, no second engine
-    _classifyExerciseExecutionFidelity: _classifyExerciseExecutionFidelity // T203/T206: Coach Monitor reuse, no second engine
+    _classifyExerciseExecutionFidelity: _classifyExerciseExecutionFidelity, // T203/T206: Coach Monitor reuse, no second engine
+    _computeWeeklyDecisionForRequest: _computeWeeklyDecisionForRequest // T228: client-list priority reuse, no second engine, 0 new Firestore reads
   };
 })();
 </script>
@@ -1764,6 +1765,20 @@
     return { primaryReason: primaryReason, supportingReasons: supporting.slice(0, 3), action: action };
   }
   window._computeInterventionReasonAction = _computeInterventionReasonAction;
+
+  // T228 — client-list display constants for the 5-tier CLIENT_PRIORITY,
+  // replacing (not duplicating) the raw 4-tier _ATTN_BADGE/_ATTN_PRIORITY
+  // as the list's single attention badge/sort key -- the priority already
+  // incorporates attnState as one of its own inputs, so showing both would
+  // be the same concern rendered twice.
+  const _PRIORITY_ORDER = { URGENT_REVIEW: 0, NEEDS_REVIEW: 1, WATCH: 2, ON_TRACK: 3, INSUFFICIENT_DATA: 4 };
+  const _PRIORITY_BADGE = {
+    URGENT_REVIEW:      { icon: '🆘', label: 'URGENTE',     color: '#FF2222' },
+    NEEDS_REVIEW:        { icon: '🔴', label: 'REVISAR',     color: '#FF4444' },
+    WATCH:               { icon: '🟡', label: 'OBSERVAR',    color: '#FFAA33' },
+    ON_TRACK:            { icon: '🟢', label: 'EN CURSO',    color: '#44BB88' },
+    INSUFFICIENT_DATA:  { icon: '◌',  label: 'SIN DATOS',   color: '#555' }
+  };
 
   // FASE 8 — Live training context helper (0 Firestore reads, same 5-min threshold as isClientLiveTraining)
   function _getLiveInfo(entries, planData) {
@@ -2376,35 +2391,45 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const entries = logData.entries || {};
           const week = logData.currentWeek || 1;
           const attn = _computeClientAttentionState(entries, planData, week);
+          // T228 — richer priority using the SAME entries/planData already
+          // loaded above, 0 new Firestore reads: weeklyStatus reuses T177's
+          // classifier (window.VDSEN_WEEKLY, via _computeWeeklyDecisionForRequest
+          // now exposed on window.VDSEN_BUILD) over the exact same data
+          // _computeClientAttentionState already scanned.
+          const weeklyDecision = (typeof window.VDSEN_BUILD !== 'undefined' && window.VDSEN_BUILD._computeWeeklyDecisionForRequest)
+            ? window.VDSEN_BUILD._computeWeeklyDecisionForRequest(entries, planData)
+            : null;
+          const priority = _rankClientPriority(attn.state, weeklyDecision ? weeklyDecision.status : null);
           const alert = getClientAlert(c, logData, planData);
           if (alert) alerts.push({ id: c.id, name: c.displayName, alert });
           const liveInfo = _getLiveInfo(entries, planData);
           const live = !!liveInfo;
-          return { c, logData, planData, entries, week, attn, alert, live, liveInfo };
+          return { c, logData, planData, entries, week, attn, priority, alert, live, liveInfo };
         });
 
-        // Sort: REVIEW > PROGRESSING > STABLE > NO_DATA; live bumps within tier; alpha tiebreak
+        // Sort: URGENT_REVIEW > NEEDS_REVIEW > WATCH > ON_TRACK > INSUFFICIENT_DATA; live bumps within tier; alpha tiebreak
         rowData.sort((a, b) => {
-          const pa = (_ATTN_PRIORITY[a.attn.state] ?? 3) * 2 - (a.live ? 1 : 0);
-          const pb = (_ATTN_PRIORITY[b.attn.state] ?? 3) * 2 - (b.live ? 1 : 0);
+          const pa = (_PRIORITY_ORDER[a.priority] ?? 4) * 2 - (a.live ? 1 : 0);
+          const pb = (_PRIORITY_ORDER[b.priority] ?? 4) * 2 - (b.live ? 1 : 0);
           if (pa !== pb) return pa - pb;
           return (a.c.displayName || a.c.email || '').localeCompare(b.c.displayName || b.c.email || '', 'es', { sensitivity: 'base' });
         });
 
         // Summary header counts
-        const attnC = { REVIEW: 0, PROGRESSING: 0, STABLE: 0, NO_DATA: 0 };
-        rowData.forEach(r => { attnC[r.attn.state] = (attnC[r.attn.state] || 0) + 1; });
+        const priorityC = { URGENT_REVIEW: 0, NEEDS_REVIEW: 0, WATCH: 0, ON_TRACK: 0, INSUFFICIENT_DATA: 0 };
+        rowData.forEach(r => { priorityC[r.priority] = (priorityC[r.priority] || 0) + 1; });
         const summaryHtml = `<div class="card p-3 mb-3" style="border:1px solid rgba(255,255,255,.07)">
           <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
-            ${attnC.REVIEW      ? `<span style="color:#FF4444;font-weight:800;font-size:13px">🔴 ${attnC.REVIEW} revisar</span>` : ''}
-            ${attnC.PROGRESSING ? `<span style="color:#44BB88;font-weight:800;font-size:13px">🟢 ${attnC.PROGRESSING} progresando</span>` : ''}
-            ${attnC.STABLE      ? `<span style="color:#888;font-weight:700;font-size:13px">⚪ ${attnC.STABLE} estable${attnC.STABLE>1?'s':''}</span>` : ''}
-            ${attnC.NO_DATA     ? `<span style="color:#555;font-weight:700;font-size:13px">◌ ${attnC.NO_DATA} sin datos</span>` : ''}
+            ${priorityC.URGENT_REVIEW     ? `<span style="color:#FF2222;font-weight:800;font-size:13px">🆘 ${priorityC.URGENT_REVIEW} urgente${priorityC.URGENT_REVIEW>1?'s':''}</span>` : ''}
+            ${priorityC.NEEDS_REVIEW      ? `<span style="color:#FF4444;font-weight:800;font-size:13px">🔴 ${priorityC.NEEDS_REVIEW} revisar</span>` : ''}
+            ${priorityC.WATCH             ? `<span style="color:#FFAA33;font-weight:800;font-size:13px">🟡 ${priorityC.WATCH} observar</span>` : ''}
+            ${priorityC.ON_TRACK          ? `<span style="color:#44BB88;font-weight:700;font-size:13px">🟢 ${priorityC.ON_TRACK} en curso</span>` : ''}
+            ${priorityC.INSUFFICIENT_DATA ? `<span style="color:#555;font-weight:700;font-size:13px">◌ ${priorityC.INSUFFICIENT_DATA} sin datos</span>` : ''}
           </div>
         </div>`;
 
         // Build row HTML
-        const rows = rowData.map(({ c, logData, planData, entries, week, attn, alert, live, liveInfo }) => {
+        const rows = rowData.map(({ c, logData, planData, entries, week, attn, priority, alert, live, liveInfo }) => {
           const totalWeeks = planData?.weeks || 6;
           const ci = entries['ci_sem_'+week] || {};
           let extraBadges = '';
@@ -2434,8 +2459,10 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const weekBadge = c.activePlanId
             ? `<span style="font-size:11px;font-weight:800;color:${weekColor};background:${weekBg};border:1px solid ${weekBorder};padding:2px 8px;border-radius:6px;letter-spacing:.5px;margin-left:8px">${weekLabel}</span>`
             : '';
-          // Attention badge
-          const ab = _ATTN_BADGE[attn.state] || _ATTN_BADGE.NO_DATA;
+          // T228 — attention badge now shows the richer 5-tier priority
+          // (attnState + weeklyStatus), not the raw 4-tier attnState alone
+          // -- one badge, not two, per "do not duplicate badges".
+          const ab = _PRIORITY_BADGE[priority] || _PRIORITY_BADGE.INSUFFICIENT_DATA;
           const attnBadge = `<span style="font-size:10px;font-weight:800;color:${ab.color};background:${ab.color}18;border:1px solid ${ab.color}55;padding:2px 7px;border-radius:5px;margin-left:6px;letter-spacing:.5px">${ab.icon} ${ab.label}</span>`;
           // Reasons (max 3, compact inline)
           const reasonsHtml = attn.reasons.length
