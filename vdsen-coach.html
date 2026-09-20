@@ -15739,9 +15739,80 @@ El esfuerzo no es negociable.
     return result;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T220 — BODY-COMPOSITION RESPONSE CLASSIFICATION. A response classifier,
+  //  NOT a medical diagnosis. Reuses clients/{uid}.inbodyResults[] (the
+  //  ONLY body-composition data source used here -- fotometria/photo-
+  //  estimates are a DIFFERENT measurement method per T217's own map, and
+  //  are deliberately NOT cross-referenced here to avoid comparing unlike
+  //  measurements as equivalent) and the stated goal (objetivo_calorico) --
+  //  never invented when absent. No missing metric (smm/pbf) is ever
+  //  guessed; a metric simply drops out of the check when unavailable.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _classifyBodyCompositionResponse(inbodyResults, objetivoCalorico) {
+    var results = Array.isArray(inbodyResults) ? inbodyResults.slice().sort(function(a, b) { return (a.ts || 0) - (b.ts || 0); }) : [];
+    var valid = results.filter(function(r) { return r && typeof r.peso === 'number'; });
+
+    if (!valid.length) return { classification: 'INSUFFICIENT_DATA', confidence: 'none', measurementsUsed: 0 };
+
+    // MEASUREMENT_CONFLICT — an implausible consecutive weight swing (data-
+    // entry/device error is more likely than a real biological change at
+    // this pace) outranks any trend conclusion. Not a clinical diagnosis,
+    // just a sanity gate: no single noisy point should drive a conclusion.
+    for (var i = 1; i < valid.length; i++) {
+      var a = valid[i - 1], b = valid[i];
+      var dtDays = (typeof a.ts === 'number' && typeof b.ts === 'number') ? Math.abs(b.ts - a.ts) / 86400000 : null;
+      if (dtDays !== null && dtDays < 14 && Math.abs(b.peso - a.peso) > 5) {
+        return { classification: 'MEASUREMENT_CONFLICT', confidence: 'none', measurementsUsed: valid.length, reason: 'implausible_weight_swing' };
+      }
+    }
+
+    var measurements = valid.map(function(r) { return { ts: r.ts, qualityWeight: 1, method: 'inbody' }; });
+    var confidence = _computeOutcomeConfidence(measurements);
+    if (confidence === 'none' || confidence === 'low') {
+      return { classification: 'INSUFFICIENT_DATA', confidence: confidence, measurementsUsed: valid.length };
+    }
+
+    // No stated goal -> cannot judge direction; never assumed.
+    if (['superávit', 'mantenimiento', 'déficit'].indexOf(objetivoCalorico) === -1) {
+      return { classification: 'COACH_REVIEW', confidence: confidence, measurementsUsed: valid.length, reason: 'goal_not_stated' };
+    }
+
+    var first = valid[0], last = valid[valid.length - 1];
+    var dPeso = last.peso - first.peso;
+    var dSmm  = (typeof first.smm === 'number' && typeof last.smm === 'number') ? (last.smm - first.smm) : null;
+    var dPbf  = (typeof first.pbf === 'number' && typeof last.pbf === 'number') ? (last.pbf - first.pbf) : null;
+
+    var goal = objetivoCalorico === 'déficit'
+      ? { peso: 'down', pbf: 'down', smm: 'up_or_stable' }
+      : objetivoCalorico === 'superávit'
+      ? { peso: 'up', pbf: 'up_or_stable', smm: 'up' }
+      : { peso: 'stable', pbf: 'down', smm: 'up' }; // mantenimiento -- recomposition
+
+    var checks = [];
+    if (goal.peso === 'down') checks.push(dPeso < -0.1);
+    else if (goal.peso === 'up') checks.push(dPeso > 0.1);
+    else checks.push(Math.abs(dPeso) <= 1);
+
+    if (dPbf !== null) {
+      if (goal.pbf === 'down') checks.push(dPbf < -0.3);
+      else checks.push(true); // up_or_stable -- no requirement
+    }
+    if (dSmm !== null) {
+      if (goal.smm === 'up') checks.push(dSmm > 0);
+      else if (goal.smm === 'up_or_stable') checks.push(dSmm >= -0.2);
+    }
+
+    var metCount = checks.filter(Boolean).length;
+    var classification = metCount === checks.length ? 'ON_TARGET' : metCount === 0 ? 'OFF_TARGET' : 'PARTIAL_RESPONSE';
+
+    return { classification: classification, confidence: confidence, measurementsUsed: valid.length, deltas: { peso: dPeso, smm: dSmm, pbf: dPbf } };
+  }
+
   window.VDSEN_OUTCOME = {
     computeConfidence: _computeOutcomeConfidence,
-    computePerformanceResponse: _classifyPerformanceResponse
+    computePerformanceResponse: _classifyPerformanceResponse,
+    computeBodyCompositionResponse: _classifyBodyCompositionResponse
   };
 
   var WEEKLY_STATUS = {
