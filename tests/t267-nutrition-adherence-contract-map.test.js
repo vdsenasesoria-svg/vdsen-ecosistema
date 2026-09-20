@@ -86,7 +86,7 @@ ok(CLIENT.includes("['nl_kcal','nl_prot','nl_carb','nl_gras'].forEach"),
 // absent from vdsen-coach.html entirely.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(!COACH.includes('nutrilog'), 'nutrilog_* is currently NEVER read by the coach app or any classifier -- real data exists, unused, confirming T268 is additive (reads existing data), not a new capture point');
+ok(COACH.includes("k.indexOf('nutrilog_') === 0"), 'nutrilog_* is now read by T268/T271 (_computeNutritionDecisionForRequest) -- the real data found unused here was wired in additively, not a new capture point (FIXED by T268/T271)');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // T220's body-composition response classifier already exists and is
