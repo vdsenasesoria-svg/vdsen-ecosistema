@@ -843,7 +843,7 @@
   // prescription decisions (T185-187, window.VDSEN_ADAPTIVE, defined later
   // in the main app script) via the identical lazy cross-script-block lookup
   // pattern as _computeWeeklyDecisionForRequest above. Safe null fallback.
-  function _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, engineState, weeklyDecision) {
+  function _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, engineState, weeklyDecision, entries) {
     if (typeof window.VDSEN_ADAPTIVE === 'undefined') return null;
     fd = fd || {};
     var priorityMuscles = (fd.prioridades && Array.isArray(fd.prioridades.grupos_musculares)) ? fd.prioridades.grupos_musculares : [];
@@ -858,7 +858,11 @@
       // history through so T237's per-muscle override actually reaches the
       // Generator request, not just isolated tests.
       interventions: (clientDoc && clientDoc.coachInterventions) || null,
-      currentPlanId: (clientDoc && clientDoc.activePlanId) || null
+      currentPlanId: (clientDoc && clientDoc.activePlanId) || null,
+      // T243 — real per-muscle evidence timestamps (T242) need entries/
+      // clientDoc; planDoc is already passed above.
+      entries: entries || null,
+      clientDoc: clientDoc || null
     });
   }
 
@@ -1063,8 +1067,16 @@
       // explicitly decided to keep the exercise. Lazy window.* lookup: this
       // function lives in the early IIFE, T235/T237's functions in the
       // later main app script (same established cross-script pattern).
+      // T243 — real per-PID evidence timestamp (T242), never fabricated:
+      // if genuinely NEWER evidence exists for this exact PID than the
+      // Coach's own decidedAt, the intervention no longer supersedes it
+      // (T235's _isEvidenceNewerThanIntervention, composed inside
+      // _isRecommendationSupersededByIntervention).
+      var evidenceTs229237 = (typeof window !== 'undefined' && typeof window._getLatestEvidenceTimestampForScope === 'function')
+        ? window._getLatestEvidenceTimestampForScope('EXERCISE', pid, input.entries, input.planDoc, input.clientDoc)
+        : null;
       var supersededByCoach = (typeof window !== 'undefined' && typeof window._isRecommendationSupersededByIntervention === 'function')
-        ? window._isRecommendationSupersededByIntervention(input.interventions, 'EXERCISE', pid, input.currentPlanId, null)
+        ? window._isRecommendationSupersededByIntervention(input.interventions, 'EXERCISE', pid, input.currentPlanId, evidenceTs229237)
         : null;
       if (supersededByCoach && supersededByCoach.action === 'KEEP') { preserveExercisePids.push(pid); return; }
       if (plateaued && hasReliableEvidence) reviewExercisePids.push(pid); else preserveExercisePids.push(pid);
@@ -1109,7 +1121,7 @@
   }
 
   // T197 — wires the above into the canonical Generator request.
-  function _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc) {
+  function _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc, entries) {
     // T200 residual audit: no previous plan at all means there is no
     // mesocycle to transition FROM — this is a genuine first-ever
     // generation, not "insufficient evidence for a renewal decision".
@@ -1130,7 +1142,13 @@
       // was unreachable from the real Generator request path -- clientDoc
       // was never passed into this wrapper at all.
       interventions: (clientDoc && clientDoc.coachInterventions) || null,
-      currentPlanId: (clientDoc && clientDoc.activePlanId) || null
+      currentPlanId: (clientDoc && clientDoc.activePlanId) || null,
+      // T243 — real per-PID evidence timestamps (T242) need entries/
+      // planDoc/clientDoc to resolve; threaded through so a Coach KEEP can
+      // be superseded by genuinely newer evidence for that exact PID.
+      entries: entries || null,
+      planDoc: planDoc,
+      clientDoc: clientDoc || null
     });
   }
 
@@ -1235,8 +1253,8 @@
     var nutritionContext  = _mapNutritionContext(fd);
     var supplementContext = _mapSupplementContext(fd);
     var weeklyDecision = _computeWeeklyDecisionForRequest(logsDoc && logsDoc.entries, planDoc);
-    var adaptivePrescription = _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, logsResult.engineState, weeklyDecision);
-    var mesocycleDecision = _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc);
+    var adaptivePrescription = _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, logsResult.engineState, weeklyDecision, logsDoc && logsDoc.entries);
+    var mesocycleDecision = _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc, logsDoc && logsDoc.entries);
     var executionFidelity = _computeExecutionFidelityForRequest(planDoc, weeklyDecision, logsResult.progressionHistory);
     var learnedState = _computeLearnedStateForRequest(logsDoc && logsDoc.entries, planDoc, logsResult.progressionHistory);
     var prescriptionEffectiveness = _computePrescriptionEffectivenessForRequest(planDoc, fd, clientDoc, weeklyDecision, logsResult.progressionHistory, learnedState);
@@ -6563,8 +6581,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     // REVIEW_DECREASE/REDISTRIBUTE is never resurfaced. Never reaches the
     // safety/adherence/recovery/data gates above -- those already returned
     // before this point, so a new pain signal still outranks the Coach.
+    // T243 — real per-muscle evidence timestamp (T242), never fabricated.
+    var evidenceTs6427237 = (input.muscleId && typeof _getLatestEvidenceTimestampForScope === 'function')
+      ? _getLatestEvidenceTimestampForScope('MUSCLE', input.muscleId, input.entries, input.planDoc, input.clientDoc)
+      : null;
     var supersedingInterv = (input.interventions && input.muscleId && typeof _isRecommendationSupersededByIntervention === 'function')
-      ? _isRecommendationSupersededByIntervention(input.interventions, 'MUSCLE', input.muscleId, input.currentPlanId, null)
+      ? _isRecommendationSupersededByIntervention(input.interventions, 'MUSCLE', input.muscleId, input.currentPlanId, evidenceTs6427237)
       : null;
     if (supersedingInterv && ['KEEP', 'ADJUST_VOLUME', 'REDISTRIBUTE_VOLUME'].indexOf(supersedingInterv.action) !== -1 &&
         (volumeAction === 'REVIEW_INCREASE' || volumeAction === 'REVIEW_DECREASE' || volumeAction === 'REDISTRIBUTE')) {
@@ -6639,7 +6661,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         // never fired outside isolated unit tests.
         muscleId: muscle,
         interventions: opts.interventions || null,
-        currentPlanId: opts.currentPlanId || null
+        currentPlanId: opts.currentPlanId || null,
+        // T243 — real per-muscle evidence timestamps (T242).
+        entries: opts.entries || null,
+        planDoc: planDoc,
+        clientDoc: opts.clientDoc || null
       });
       muscleDecisions[muscle] = Object.assign({
         currentVolume: previousPlanVolumes[muscle] ? previousPlanVolumes[muscle].fractionalTotal : null,
@@ -16735,7 +16761,11 @@ El esfuerzo no es negociable.
         // showed the stale automated verdict even after a Coach KEEP --
         // disagreeing with what the Generator would now do (T237/T238).
         interventions: (_detailClientData && _detailClientData.coachInterventions) || null,
-        currentPlanId: (_detailClientData && _detailClientData.activePlanId) || null
+        currentPlanId: (_detailClientData && _detailClientData.activePlanId) || null,
+        // T243 — real per-muscle evidence timestamps (T242): lets a Coach
+        // KEEP be superseded by genuinely newer evidence for that muscle.
+        entries: entries,
+        clientDoc: _detailClientData || null
       });
       _apMapForMeso = _apMap;
       const _apDecisions = _apMap.muscleDecisions || {};
@@ -16800,7 +16830,11 @@ El esfuerzo no es negociable.
         // Monitor's mesocycle panel must agree with the Generator on which
         // PID a Coach KEEP already settled (CASE L).
         interventions: (_detailClientData && _detailClientData.coachInterventions) || null,
-        currentPlanId: (_detailClientData && _detailClientData.activePlanId) || null
+        currentPlanId: (_detailClientData && _detailClientData.activePlanId) || null,
+        // T243 — real per-PID evidence timestamps (T242).
+        entries: entries,
+        planDoc: p,
+        clientDoc: _detailClientData || null
       });
       // PID -> exercise name lookup from the active plan, for display only.
       const _mesoPidNames = {};

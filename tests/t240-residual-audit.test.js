@@ -88,7 +88,7 @@ ok(apMapSrc && apMapSrc.includes('muscleId: muscle,') && apMapSrc.includes('inte
 // supply real Coach intervention data instead of nothing.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const forRequestSrc = extractFunction(COACH, 'function _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, engineState, weeklyDecision)');
+const forRequestSrc = extractFunction(COACH, 'function _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, engineState, weeklyDecision, entries)');
 ok(forRequestSrc && forRequestSrc.includes("interventions: (clientDoc && clientDoc.coachInterventions) || null,") && forRequestSrc.includes("currentPlanId: (clientDoc && clientDoc.activePlanId) || null"),
   'FIX #1b: _computeAdaptivePrescriptionForRequest (the REAL Generator path) now passes the client\'s real coachInterventions/activePlanId through');
 
@@ -102,11 +102,11 @@ ok(COACH.includes('const _apMap = _computeAdaptivePrescriptionMap({') &&
 // sites (Generator + Coach Monitor).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const mesoForRequestSrc = extractFunction(COACH, 'function _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc)');
+const mesoForRequestSrc = extractFunction(COACH, 'function _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc, entries)');
 ok(mesoForRequestSrc, 'FIX #1d: _computeMesocycleDecisionForRequest\'s signature now accepts clientDoc at all (previously absent -- clientDoc could not reach it)');
 ok(mesoForRequestSrc.includes("interventions: (clientDoc && clientDoc.coachInterventions) || null,") && mesoForRequestSrc.includes("currentPlanId: (clientDoc && clientDoc.activePlanId) || null"),
   'FIX #1d: ...and threads it into _decideMesocycleTransition\'s input');
-ok(COACH.includes('var mesocycleDecision = _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc);'),
+ok(COACH.includes('var mesocycleDecision = _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc, logsDoc && logsDoc.entries);'),
   'FIX #1e: buildGenerationRequest\'s call site now passes clientDoc (the REAL Generator path)');
 
 ok(COACH.includes('const _mesoDecision = window.VDSEN_MESOCYCLE.decide({') &&

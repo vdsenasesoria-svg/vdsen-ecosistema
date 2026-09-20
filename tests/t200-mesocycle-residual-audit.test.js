@@ -59,7 +59,7 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 
 ok(COACH.includes('if (!planDoc) return null;'), 'Finding #1: _computeMesocycleDecisionForRequest returns null when no previous plan exists (no mesocycle to transition from)');
 
-const computeSrc = extractFunction(COACH, 'function _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc)');
+const computeSrc = extractFunction(COACH, 'function _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc, entries)');
 ok(computeSrc, '_computeMesocycleDecisionForRequest extracts cleanly');
 const decideSrc = extractFunction(COACH, 'function _decideMesocycleTransition(input)');
 const _computeMesocycleDecisionForRequest = new Function(decideSrc + ';\n' + computeSrc + ';\nreturn _computeMesocycleDecisionForRequest;')();
