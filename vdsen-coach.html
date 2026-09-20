@@ -17378,6 +17378,13 @@ El esfuerzo no es negociable.
     const p = _detailPlanData;
 
     const logsSnap = await getDoc(doc(db, 'logs', clientId)).catch(() => null);
+    // T292 — stale-client guard (same T127-H pattern as showClientDetail/
+    // _onHistoricalMesoToggle): #clientDetailTabContent is ONE shared,
+    // persistent DOM element across every client's detail view, never
+    // recreated per client -- if the coach switched to a different client
+    // while this getDoc was in flight, a stale response must never
+    // overwrite the NEW client's already-rendered Monitor tab.
+    if (_detailClientId !== clientId) return;
     if (!logsSnap || !logsSnap.exists()) {
       cont.innerHTML = `<p class="text-[#888] text-sm mt-2">Sin datos de entrenamiento registrados aún.</p>`; return;
     }

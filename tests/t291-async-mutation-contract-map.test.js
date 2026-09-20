@@ -122,8 +122,8 @@ const monitorFnBody = COACH.slice(idx, end + 1);
 
 ok(monitorFnBody.includes('const clientId = _detailClientId;') && monitorFnBody.includes('await getDoc(doc(db, \'logs\', clientId))'),
   'prerequisite: _renderClientTabMonitor captures clientId then awaits a client-scoped getDoc, exactly the shape T127-H guards elsewhere');
-ok((monitorFnBody.match(/_detailClientId/g) || []).length === 1,
-  'FINDING confirmed: _detailClientId appears exactly ONCE in the whole function (the initial capture) -- no re-check exists anywhere after the await, unlike every other pattern above');
+ok((monitorFnBody.match(/_detailClientId/g) || []).length === 2,
+  'FINDING FIXED by T292: _detailClientId now appears twice (the initial capture + the post-await re-check), matching every other pattern above');
 ok(COACH.includes("else if (tab === 'monitor') _renderClientTabMonitor(cont);") && COACH.includes("const cont = document.getElementById('clientDetailTabContent');"),
   'confirmed: cont (#clientDetailTabContent) is ONE shared, persistent DOM element across every client\'s detail view, not recreated per client -- a stale write here is not harmlessly orphaned, it overwrites whatever client is currently displayed');
 
