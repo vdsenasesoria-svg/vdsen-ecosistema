@@ -17768,7 +17768,10 @@ El esfuerzo no es negociable.
       var withEvidence = view.exercises.filter(function(e) { return e.hasEvidence; });
       if (withEvidence.length) {
         html += '<div class="mt-1">Ejercicios principales:</div><ul style="margin-left:16px">';
-        withEvidence.forEach(function(e) { html += '<li>' + _escH(e.exerciseName || 'Ejercicio sin nombre') + '</li>'; });
+        withEvidence.forEach(function(e) {
+          html += '<li class="cursor-pointer hover:text-white" onclick="window._onHistoricalExerciseSelect(\'' + view.planId + '\',\'' + e.prescriptionExerciseId + '\')">' + _escH(e.exerciseName || 'Ejercicio sin nombre') + '</li>';
+          html += '<div id="_historicalExerciseDetail_' + view.planId + '_' + e.prescriptionExerciseId + '"></div>';
+        });
         html += '</ul>';
       }
     }
@@ -17778,6 +17781,85 @@ El esfuerzo no es negociable.
     if (view.coachDecisions && view.coachDecisions.length) {
       html += '<div class="mt-1">Decisiones del Coach en este período: ' + view.coachDecisions.length + '</div>';
     }
+    html += '</div>';
+    return html;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T255 — EXERCISE HISTORY BY PID (within a historical mesociclo).
+  //  Deliberately does NOT reconstruct per-set carga/reps/RIR-real from
+  //  raw log_{W}_{D}_{E}_s{S} entries -- those keys are POSITIONAL
+  //  (day+exercise INDEX, T241/T246's audited finding), and if the plan
+  //  was reordered mid-mesociclo, resolving them against the plan's
+  //  (possibly later-edited) current day/exercise order would silently
+  //  misattribute sets to the wrong exercise. The only PID-safe evolution
+  //  data is each week's progrec recommendation (already exact via
+  //  prescriptionExerciseId, immune to reordering) -- reusing
+  //  window.VDSEN_BUILD._mapExerciseProgressionHistory (T160/166)
+  //  verbatim, no second engine, no per-set reconstruction invented.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _buildHistoricalExerciseDetail(planId, mesoDoc, planDoc, prescriptionExerciseId) {
+    if (!planId || !prescriptionExerciseId) return null;
+    var entries = (mesoDoc && mesoDoc.entries) || {};
+    var progrecs = {};
+    Object.keys(entries).forEach(function(k) { if (/^progrec_\d+_\d+$/.test(k)) progrecs[k] = entries[k]; });
+    var mapped = (typeof window.VDSEN_BUILD !== 'undefined')
+      ? window.VDSEN_BUILD._mapExerciseProgressionHistory(progrecs)
+      : { byPrescriptionExerciseId: {}, unindexedCount: 0 };
+    var hist = mapped.byPrescriptionExerciseId[prescriptionExerciseId] || null;
+
+    // Name resolution: the plan doc is authoritative for THIS exact PID
+    // (never a different PID sharing the same name); the recommendation's
+    // own name is only a fallback when the plan doc itself is unavailable.
+    var exerciseName = null;
+    if (planDoc && Array.isArray(planDoc.days)) {
+      planDoc.days.forEach(function(d) {
+        (d.exercises || []).forEach(function(ex) {
+          if (ex.prescriptionExerciseId === prescriptionExerciseId) exerciseName = ex.exerciseName || exerciseName;
+        });
+      });
+    }
+    if (!exerciseName && hist) exerciseName = hist.exerciseName || null;
+
+    return {
+      prescriptionExerciseId: prescriptionExerciseId,
+      exerciseName: exerciseName,
+      resolved: !!hist, // false = legacy/unresolved -- no real evidence for this EXACT pid in this mesociclo, never guessed from another
+      weeksExecuted: hist ? hist.history.map(function(h) { return h.week; }) : [],
+      weeklyEvolution: hist ? hist.history : [], // per-week newLoad/newReps/observedRIR/trend/reason/fidelity/hadPainFlag -- already PID-exact
+      confidence: hist ? hist.confidence : 'none',
+      painWeeks: hist ? hist.history.filter(function(h) { return h.hadPainFlag; }).map(function(h) { return h.week; }) : []
+    };
+  }
+  window._buildHistoricalExerciseDetail = _buildHistoricalExerciseDetail;
+
+  window._onHistoricalExerciseSelect = async function(planId, prescriptionExerciseId) {
+    if (!_historicalMesoState || _historicalMesoState.clientId !== _detailClientId) return; // stale-client guard
+    var el = document.getElementById('_historicalExerciseDetail_' + planId + '_' + prescriptionExerciseId);
+    if (!el) return;
+    if (el.dataset.loaded === '1') { el.style.display = (el.style.display === 'none') ? 'block' : 'none'; return; }
+    var mesoEntry = _historicalMesoState.mesosDocs.find(function(d) { return d.id === planId; });
+    var mesoDoc = mesoEntry ? mesoEntry.data : null;
+    var planDoc = _historicalMesoState.planDocCache[planId] || null; // already cached by the T254 mesociclo-level selection -- no extra read
+    var detail = _buildHistoricalExerciseDetail(planId, mesoDoc, planDoc, prescriptionExerciseId);
+    el.innerHTML = _renderHistoricalExerciseDetailHtml(detail);
+    el.dataset.loaded = '1';
+  };
+
+  function _renderHistoricalExerciseDetailHtml(detail) {
+    if (!detail) return '';
+    if (!detail.resolved) {
+      return '<div style="padding:4px 0 4px 16px;color:#666;font-style:italic">Sin evidencia registrada para este ejercicio en este mesociclo (legacy/no resuelto).</div>';
+    }
+    var html = '<div style="padding:4px 0 8px 16px;border-left:1px solid #333">';
+    html += '<div class="text-[#666]">Semanas ejecutadas: ' + detail.weeksExecuted.join(', ') + '</div>';
+    if (detail.painWeeks.length) html += '<div style="color:#FF8844">⚠ Incidencia en semana(s): ' + detail.painWeeks.join(', ') + '</div>';
+    html += '<ul style="margin-left:16px">';
+    detail.weeklyEvolution.forEach(function(h) {
+      html += '<li>Sem ' + h.week + ': ' + (h.newLoad != null ? h.newLoad + ' kg' : '—') + (h.newReps != null ? ' · ' + h.newReps + ' reps' : '') +
+        (h.observedRIR != null ? ' · RIR real ' + h.observedRIR : '') + (h.action ? ' · ' + _escH(h.action) : '') + '</li>';
+    });
+    html += '</ul>';
     html += '</div>';
     return html;
   }
