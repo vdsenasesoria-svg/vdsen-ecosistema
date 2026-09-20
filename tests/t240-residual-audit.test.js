@@ -106,8 +106,13 @@ const mesoForRequestSrc = extractFunction(COACH, 'function _computeMesocycleDeci
 ok(mesoForRequestSrc, 'FIX #1d: _computeMesocycleDecisionForRequest\'s signature now accepts clientDoc at all (previously absent -- clientDoc could not reach it)');
 ok(mesoForRequestSrc.includes("interventions: (clientDoc && clientDoc.coachInterventions) || null,") && mesoForRequestSrc.includes("currentPlanId: (clientDoc && clientDoc.activePlanId) || null"),
   'FIX #1d: ...and threads it into _decideMesocycleTransition\'s input');
-ok(COACH.includes('var mesocycleDecision = _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc, logsDoc && logsDoc.entries);'),
-  'FIX #1e: buildGenerationRequest\'s call site now passes clientDoc (the REAL Generator path)');
+// T278: this exact call now lives inside the canonical
+// _buildClientDecisionSnapshot (T276), which buildGenerationRequest routes
+// through instead of calling it inline -- the clientDoc-threading fix
+// itself is unchanged, just relocated one level in.
+ok(COACH.includes('_computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc, entries)'),
+  'FIX #1e: the snapshot builder\'s call site still passes clientDoc (the REAL Generator path, FIXED for T278\'s snapshot routing)');
+ok(COACH.includes('var mesocycleDecision         = snapshot.mesocycleDecision;'), 'FIX #1e: buildGenerationRequest sources mesocycleDecision from the snapshot, which was built with clientDoc threaded through');
 
 ok(COACH.includes('const _mesoDecision = window.VDSEN_MESOCYCLE.decide({') &&
    /const _mesoDecision = window\.VDSEN_MESOCYCLE\.decide\(\{[\s\S]{0,700}interventions: \(_detailClientData && _detailClientData\.coachInterventions\) \|\| null,[\s\S]{0,100}currentPlanId: \(_detailClientData && _detailClientData\.activePlanId\) \|\| null/.test(COACH),

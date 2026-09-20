@@ -38,7 +38,11 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // Structural: wired into buildGenerationRequest additively.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes('var coachSupervision = _computeCoachSupervisionForRequest(logsDoc && logsDoc.entries, planDoc, weeklyDecision, prescriptionEffectiveness);'), 'buildGenerationRequest computes coachSupervision');
+// T278: buildGenerationRequest now sources this from the canonical
+// _buildClientDecisionSnapshot (which itself still calls the exact same
+// _computeCoachSupervisionForRequest verbatim) rather than an inline call.
+ok(COACH.includes('_computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness)'), 'the real computation still happens verbatim (inside the snapshot builder, T276)');
+ok(COACH.includes('var coachSupervision          = snapshot.coachSupervision;'), 'buildGenerationRequest computes coachSupervision (FIXED for T278\'s snapshot routing)');
 ok(COACH.includes('coachSupervision:  coachSupervision,'), 'coachSupervision is wired into the assembled request additively');
 
 const computeSrc = extractFunction(COACH, 'function _computeCoachSupervisionForRequest(entries, planDoc, weeklyDecision, prescriptionEffectiveness)');

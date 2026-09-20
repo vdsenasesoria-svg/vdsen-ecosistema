@@ -1369,19 +1369,28 @@
     if (mpResult._gaps.length) diagnostics.musclePriorityGaps = mpResult._gaps;
     var eqResult = _mapEquipment(fd);
     diagnostics.equipmentCompleteness = eqResult._equipmentDataCompleteness;
-    var logsResult = _mapLogs(logsDoc);
-    diagnostics.logsDiagnostics = logsResult._diagnostics;
     var nutritionContext  = _mapNutritionContext(fd);
     var supplementContext = _mapSupplementContext(fd);
-    var weeklyDecision = _computeWeeklyDecisionForRequest(logsDoc && logsDoc.entries, planDoc);
-    var adaptivePrescription = _computeAdaptivePrescriptionForRequest(planDoc, fd, clientDoc, logsResult.engineState, weeklyDecision, logsDoc && logsDoc.entries);
-    var mesocycleDecision = _computeMesocycleDecisionForRequest(logsResult, planDoc, weeklyDecision, adaptivePrescription, clientDoc, logsDoc && logsDoc.entries);
-    var executionFidelity = _computeExecutionFidelityForRequest(planDoc, weeklyDecision, logsResult.progressionHistory);
-    var learnedState = _computeLearnedStateForRequest(logsDoc && logsDoc.entries, planDoc, logsResult.progressionHistory);
-    var prescriptionEffectiveness = _computePrescriptionEffectivenessForRequest(planDoc, fd, clientDoc, weeklyDecision, logsResult.progressionHistory, learnedState);
-    var nutritionDecision = _computeNutritionDecisionForRequest(logsDoc && logsDoc.entries, clientDoc, fd);
-    var coachSupervision = _computeCoachSupervisionForRequest(logsDoc && logsDoc.entries, planDoc, weeklyDecision, prescriptionEffectiveness);
-    var coachInterventionContext = _computeCoachInterventionContextForRequest(clientDoc, planDoc);
+    // T278 — one canonical decision snapshot instead of independently
+    // recomputing each block: planDoc here is ALWAYS clientDoc's own
+    // activePlanId doc (fetched that way by every caller), so planId is
+    // passed through for the snapshot's own isLive bookkeeping (T277).
+    var snapshot = _buildClientDecisionSnapshot({
+      clientId: clientId, coachId: coachId, clientDoc: clientDoc,
+      planDoc: planDoc, planId: (clientDoc && clientDoc.activePlanId) || null,
+      logsDoc: logsDoc, fd: fd
+    });
+    var logsResult = snapshot.logsResult;
+    diagnostics.logsDiagnostics = logsResult._diagnostics;
+    var weeklyDecision            = snapshot.weeklyDecision;
+    var adaptivePrescription      = snapshot.adaptivePrescription;
+    var mesocycleDecision         = snapshot.mesocycleDecision;
+    var executionFidelity         = snapshot.executionFidelity;
+    var learnedState              = snapshot.learnedState;
+    var prescriptionEffectiveness = snapshot.prescriptionEffectiveness;
+    var nutritionDecision         = snapshot.nutritionDecision;
+    var coachSupervision          = snapshot.coachSupervision;
+    var coachInterventionContext  = snapshot.coachInterventionContext;
     var request = {
       schema:      'vdsen-generation-request-v1',
       requestId:   _uuid(),

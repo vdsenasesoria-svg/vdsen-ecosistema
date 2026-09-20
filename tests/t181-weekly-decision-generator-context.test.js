@@ -47,7 +47,9 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 
 // T188 hoisted this computation into a `weeklyDecision` variable (reused by
 // the new adaptivePrescription field too) — same value, wired the same way.
-ok(COACH.includes('var weeklyDecision = _computeWeeklyDecisionForRequest(logsDoc && logsDoc.entries, planDoc);') && COACH.includes('weeklyDecision:    weeklyDecision,'), 'buildGenerationRequest wires weeklyDecision into the assembled request (T188 wording)');
+// T278 routed it through the canonical _buildClientDecisionSnapshot instead
+// of an inline call, but the request still carries the exact same value.
+ok(COACH.includes('var weeklyDecision            = snapshot.weeklyDecision;') && COACH.includes('weeklyDecision:    weeklyDecision,'), 'buildGenerationRequest wires weeklyDecision into the assembled request (T188 wording, FIXED for T278\'s snapshot routing)');
 ok(COACH.includes('window.VDSEN_WEEKLY = { classify: _classifyWeeklyStatus, decideVolume: _decideVolumeAction, STATUS: WEEKLY_STATUS };'), 'the T177/T178 classifier is exposed via window.VDSEN_WEEKLY for cross-script-block reuse (no second engine)');
 
 const computeSrc = extractFunction(COACH, 'function _computeWeeklyDecisionForRequest(entries, planDoc)');

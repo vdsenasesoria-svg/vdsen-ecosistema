@@ -38,8 +38,13 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // Wiring: request assembly calls the new function and attaches its result.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes('var nutritionDecision = _computeNutritionDecisionForRequest(logsDoc && logsDoc.entries, clientDoc, fd);'),
-  'the request builder computes nutritionDecision from the real T268-270 chain');
+// T278: the exact same call now lives inside the canonical
+// _buildClientDecisionSnapshot (T276), which buildGenerationRequest routes
+// through instead of calling it inline.
+ok(COACH.includes('_computeNutritionDecisionForRequest(entries, clientDoc, fd)'),
+  'the real computation still happens verbatim (inside the snapshot builder, T276)');
+ok(COACH.includes('var nutritionDecision         = snapshot.nutritionDecision;'),
+  'the request builder computes nutritionDecision from the real T268-270 chain (FIXED for T278\'s snapshot routing)');
 ok(COACH.includes('nutritionDecision: nutritionDecision,'),
   'nutritionDecision is attached to the generation request object');
 

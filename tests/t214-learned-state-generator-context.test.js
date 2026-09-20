@@ -37,7 +37,11 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // Structural: wired into buildGenerationRequest additively.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(COACH.includes('var learnedState = _computeLearnedStateForRequest(logsDoc && logsDoc.entries, planDoc, logsResult.progressionHistory);'), 'buildGenerationRequest computes learnedState');
+// T278: buildGenerationRequest now sources this from the canonical
+// _buildClientDecisionSnapshot (which itself still calls the exact same
+// _computeLearnedStateForRequest verbatim) rather than an inline call.
+ok(COACH.includes('_computeLearnedStateForRequest(entries, planDoc, logsResult.progressionHistory)'), 'the real computation still happens verbatim (inside the snapshot builder, T276)');
+ok(COACH.includes('var learnedState              = snapshot.learnedState;'), 'buildGenerationRequest computes learnedState (FIXED for T278\'s snapshot routing)');
 ok(COACH.includes('learnedState:      learnedState,'), 'learnedState is wired into the assembled request additively');
 
 const computeSrc = extractFunction(COACH, 'function _computeLearnedStateForRequest(entries, planDoc, progressionHistory)');
