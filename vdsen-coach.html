@@ -1269,6 +1269,7 @@
     var coachId   = params.coachId   || null;
     var clientDoc = params.clientDoc || null;
     var planDoc   = params.planDoc   || null;
+    var planId    = params.planId    !== undefined ? params.planId : null;
     var logsDoc   = params.logsDoc   || null;
     var fd        = params.fd        || {};
     var now       = params.now       || new Date().toISOString();
@@ -1276,6 +1277,14 @@
     var entries = (logsDoc && logsDoc.entries) || {};
     var activePlanId = (clientDoc && clientDoc.activePlanId) || null;
     var week = (logsDoc && logsDoc.currentWeek) || null;
+    // T277 — a caller that KNOWS the real id of the planDoc it passed in
+    // (e.g. a historical/read-only view feeding an OLD plan doc alongside
+    // the client's CURRENT clientDoc) can say so via `planId`, and the
+    // snapshot honestly reports whether that plan is still the client's
+    // live active plan. Unknown (planId omitted, the common live-consumer
+    // case) -> null, never assumed true -- a historical plan must never be
+    // able to masquerade as live just because isLive wasn't checked.
+    var isLive = (planId !== null && activePlanId !== null) ? (planId === activePlanId) : null;
 
     var logsResult = _mapLogs(logsDoc);
     var weeklyDecision = _computeWeeklyDecisionForRequest(entries, planDoc);
@@ -1312,7 +1321,7 @@
     };
 
     return {
-      identity: { clientId: clientId, coachId: coachId, activePlanId: activePlanId, week: week },
+      identity: { clientId: clientId, coachId: coachId, activePlanId: activePlanId, planId: planId, isLive: isLive, week: week },
       progression:               logsResult.progressionHistory,
       executionFidelity:         executionFidelity,
       weeklyDecision:            weeklyDecision,
