@@ -1260,6 +1260,77 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  T285 — DOMAIN STALENESS/CONFLICT GATES. Each function judges ALREADY-
+  //  COMPUTED signals (never re-derives raw Firestore data, never invents
+  //  a calendar-age threshold) through the T284 canonical classifier.
+  //  Scope > arbitrary time. No existing engine is modified by these --
+  //  they are pure additive readers of the same evidence the snapshot
+  //  already assembles.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // FINDING 1 (T283): progressionHistory.unindexedCount (legacy PID-less
+  // recommendations) was computed but never surfaced in the live path.
+  function _classifyProgressionLegacyQuality(progressionHistory) {
+    if (typeof window.VDSEN_EVIDENCE === 'undefined') return null;
+    var byPid = (progressionHistory && progressionHistory.byPrescriptionExerciseId) || {};
+    var hasIndexed = Object.keys(byPid).length > 0;
+    var unindexed = (progressionHistory && typeof progressionHistory.unindexedCount === 'number') ? progressionHistory.unindexedCount : 0;
+    if (!hasIndexed && !unindexed) return window.VDSEN_EVIDENCE.classify({ value: null });
+    return window.VDSEN_EVIDENCE.classify({ value: progressionHistory, legacy: unindexed > 0 });
+  }
+
+  // FINDING 2 (T283): weeklyDecision's internal week (entries.engine_state.
+  // weekNum) is a different source from the canonical logsDoc.currentWeek.
+  // Missing check-in evidence for the canonical week -> UNRESOLVED (never
+  // "recovery good" by default); a real check-in exists but the engine's
+  // own week lags behind it -> STALE.
+  function _classifyWeeklyCheckinQuality(logsDoc, entries) {
+    if (typeof window.VDSEN_EVIDENCE === 'undefined') return null;
+    var canonicalWeek = (logsDoc && logsDoc.currentWeek) || null;
+    var ciSem = canonicalWeek ? ((entries && entries['ci_sem_' + canonicalWeek]) || null) : null;
+    var es = (entries && entries.engine_state) || null;
+    var engineWeek = (es && typeof es.weekNum === 'number') ? es.weekNum : null;
+    return window.VDSEN_EVIDENCE.classify({
+      value: ciSem,
+      expectedScope: canonicalWeek,
+      actualScope: engineWeek !== null ? engineWeek : canonicalWeek
+    });
+  }
+
+  // Nutrition adherence completeness -- reuses T268's own daysLogged/
+  // windowDays (already computed), never a new decision-window rule.
+  function _classifyNutritionAdherenceQuality(nutritionDecision) {
+    if (typeof window.VDSEN_EVIDENCE === 'undefined') return null;
+    var adherence = nutritionDecision && nutritionDecision.adherence;
+    if (!adherence) return window.VDSEN_EVIDENCE.classify({ value: null });
+    var daysLogged = typeof adherence.daysLogged === 'number' ? adherence.daysLogged : null;
+    // T268's own minDays=3 threshold (not the full 7-day window) is what
+    // actually gates HIGH/MEDIUM/LOW vs INSUFFICIENT_DATA there -- reused
+    // here verbatim so "complete" means "enough days to trust the read",
+    // not "logged every single calendar day" (occasional missed days are
+    // normal and not evidence of unreliable adherence tracking).
+    var MIN_DAYS_FOR_FULL_COMPLETENESS = 3;
+    var completeness = daysLogged !== null ? Math.min(1, daysLogged / MIN_DAYS_FOR_FULL_COMPLETENESS) : null;
+    return window.VDSEN_EVIDENCE.classify({
+      value: (daysLogged !== null && daysLogged > 0) ? adherence : null,
+      completeness: completeness
+    });
+  }
+
+  // Body-composition conflict -- reuses T220's own MEASUREMENT_CONFLICT/
+  // measurementsUsed, never a second comparison of raw InBody rows.
+  function _classifyBodyCompositionQuality(prescriptionEffectiveness) {
+    if (typeof window.VDSEN_EVIDENCE === 'undefined') return null;
+    var bodyComp = prescriptionEffectiveness && prescriptionEffectiveness.bodyCompositionResponse;
+    if (!bodyComp) return window.VDSEN_EVIDENCE.classify({ value: null });
+    var hasMeasurements = typeof bodyComp.measurementsUsed === 'number' && bodyComp.measurementsUsed > 0;
+    return window.VDSEN_EVIDENCE.classify({
+      value: hasMeasurements ? bodyComp : null,
+      conflict: bodyComp.classification === 'MEASUREMENT_CONFLICT'
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  T276 — CANONICAL CLIENT DECISION SNAPSHOT. Composes the EXISTING
   //  T158-T274 decision helpers (never reimplemented) into ONE pure,
   //  synchronous, read-only object. Same client + same evidence (clientDoc/
