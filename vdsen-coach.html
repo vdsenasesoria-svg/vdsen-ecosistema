@@ -17051,6 +17051,87 @@ El esfuerzo no es negociable.
     ACTION: NUTRITION_ACTION
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  T284 — CANONICAL EVIDENCE QUALITY CLASSIFIER. One pure, deterministic
+  //  gate: PRESENCE != RELIABILITY. Domain call sites (T285) pass in
+  //  already-computed signals (never raw re-derivation) -- this function
+  //  only judges what those signals mean, it never inspects Firestore
+  //  data itself. No fake precision: a signal that isn't provided is
+  //  simply not checked, never guessed.
+  // ═══════════════════════════════════════════════════════════════════════════
+  var EVIDENCE_QUALITY = {
+    VALID:       'VALID',
+    PARTIAL:     'PARTIAL',
+    STALE:       'STALE',
+    CONFLICTING: 'CONFLICTING',
+    LEGACY:      'LEGACY',
+    UNRESOLVED:  'UNRESOLVED'
+  };
+
+  function _classifyEvidenceQuality(input) {
+    input = input || {};
+    var value    = input.value;
+    var identity = input.identity || null; // { expected, actual }
+    var conflict = !!input.conflict;
+    var legacy   = !!input.legacy;
+    var completeness  = typeof input.completeness === 'number' ? input.completeness : null;
+    var expectedScope = input.expectedScope !== undefined ? input.expectedScope : null;
+    var actualScope   = input.actualScope   !== undefined ? input.actualScope   : null;
+
+    // 1. Missing -- nothing to judge, never guessed as normal/zero.
+    if (value === null || value === undefined) {
+      return { status: EVIDENCE_QUALITY.UNRESOLVED, reason: 'missing_value' };
+    }
+
+    // 2. Explicit conflict (e.g. method-incompatible measurements, two
+    // disagreeing sources) outranks everything else that follows.
+    if (conflict) {
+      return { status: EVIDENCE_QUALITY.CONFLICTING, reason: 'conflict_flag' };
+    }
+
+    // 3. Identity mismatch -- real evidence exists, but for a DIFFERENT
+    // identity than the one it's being read for (e.g. a different PID/plan).
+    // No actual identity to compare against -> UNRESOLVED (unknown, not a
+    // proven conflict); a real, different identity -> CONFLICTING.
+    if (identity && identity.expected !== undefined && identity.expected !== null) {
+      if (identity.actual === undefined || identity.actual === null) {
+        return { status: EVIDENCE_QUALITY.UNRESOLVED, reason: 'identity_unknown' };
+      }
+      if (identity.expected !== identity.actual) {
+        return { status: EVIDENCE_QUALITY.CONFLICTING, reason: 'identity_mismatch' };
+      }
+    }
+
+    // 4. Legacy -- evidence structurally lacks a safe identity to match
+    // against at all (e.g. no prescriptionExerciseId). Distinct from a
+    // mismatch, which implies a real comparable identity existed.
+    if (legacy) {
+      return { status: EVIDENCE_QUALITY.LEGACY, reason: 'no_safe_identity' };
+    }
+
+    // 5. Scope mismatch -- evidence collected for a DIFFERENT scope than
+    // the one it is now being read for (e.g. a previous week's data read
+    // as if it were the current week's). Domain-relative, never a
+    // calendar-age threshold invented here.
+    if (expectedScope !== null && actualScope !== null && expectedScope !== actualScope) {
+      return { status: EVIDENCE_QUALITY.STALE, reason: 'scope_mismatch' };
+    }
+
+    // 6. Partial -- real evidence exists but is incomplete relative to
+    // what full confidence needs (e.g. 1 of 7 decision-window days logged).
+    if (completeness !== null && completeness < 1) {
+      return { status: EVIDENCE_QUALITY.PARTIAL, reason: 'incomplete', completeness: completeness };
+    }
+
+    // 7. Nothing wrong found -- valid, current evidence.
+    return { status: EVIDENCE_QUALITY.VALID, reason: 'ok' };
+  }
+
+  window.VDSEN_EVIDENCE = {
+    classify: _classifyEvidenceQuality,
+    STATUS: EVIDENCE_QUALITY
+  };
+
   var WEEKLY_STATUS = {
     PAIN_REVIEW:        'PAIN_REVIEW',
     COACH_REVIEW:        'COACH_REVIEW',
