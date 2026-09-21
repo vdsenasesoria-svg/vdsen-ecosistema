@@ -3267,10 +3267,13 @@ function countSessions() {
 // SKIPPED:       user explicitly skipped (skipSession) — navigation only
 // AUTO_CLOSED:   week closed with data (markWeekDoneWithPartialData, hasData=true)
 // AUTO_CLOSED_NO_DATA: week closed without data — navigation only
+// PARTIAL:       T301 — user intentionally ended an individual session early
+//                ("TERMINAR POR HOY"), real sets preserved, no fabrication
 // PENDING:       not done yet
 function _getSessionCompletionState(doneEntry) {
   if (!doneEntry) return 'PENDING';
   if (typeof doneEntry !== 'object') return 'REAL_COMPLETE'; // legacy boolean
+  if (doneEntry.partial) return 'PARTIAL';
   if (doneEntry.skipped && !doneEntry.autoClosed) return 'SKIPPED';
   if (doneEntry.autoClosed && doneEntry.skipped) return 'AUTO_CLOSED_NO_DATA';
   if (doneEntry.autoClosed) return 'AUTO_CLOSED';
@@ -3278,7 +3281,52 @@ function _getSessionCompletionState(doneEntry) {
 }
 function _isRealExecution(doneEntry) {
   var s = _getSessionCompletionState(doneEntry);
-  return s === 'REAL_COMPLETE' || s === 'AUTO_CLOSED';
+  return s === 'REAL_COMPLETE' || s === 'AUTO_CLOSED' || s === 'PARTIAL';
+}
+
+// ── T300 — Canonical Client session lifecycle state (single source of truth) ──
+// Pure, deterministic. Reads ONLY real persisted LOGS data -- never infers
+// execution from autofill, prescribed/placeholder values, or the mere fact a
+// screen was opened. No Firestore write inside it (read-only resolver).
+// Returns exactly one of: NOT_STARTED | IN_PROGRESS | COMPLETE | PARTIAL | SKIPPED
+//   NOT_STARTED : no done_ entry, no real logged set exists for this session
+//   IN_PROGRESS : no done_ entry yet, but >=1 real (non-autoFilled) set is logged
+//   COMPLETE    : REAL_COMPLETE (genuine full-completion contract satisfied)
+//   PARTIAL     : real execution exists and the session was intentionally ended
+//                 early (T301 per-session close, or legacy AUTO_CLOSED-with-data
+//                 whole-week close -- same semantic, different trigger UI)
+//   SKIPPED     : explicit no-execution closure (SKIPPED or AUTO_CLOSED_NO_DATA)
+// AUTOFILLED != EXECUTED. PARTIAL != COMPLETE. SKIPPED != COMPLETE. SKIPPED != EXECUTED.
+function _sessionHasRealLoggedSets(logs, week, di) {
+  var prefix = 'log_' + week + '_' + di + '_';
+  for (var k in logs) {
+    if (k.indexOf(prefix) !== 0) continue;
+    var e = logs[k];
+    if (e && e.done && !e.autoFilled) return true;
+  }
+  return false;
+}
+function _getSessionLifecycleState(logs, week, di) {
+  logs = logs || {};
+  var doneEntry = logs['done_' + week + '_' + di];
+  if (!doneEntry) {
+    return _sessionHasRealLoggedSets(logs, week, di) ? 'IN_PROGRESS' : 'NOT_STARTED';
+  }
+  var s = _getSessionCompletionState(doneEntry);
+  if (s === 'REAL_COMPLETE') return 'COMPLETE';
+  if (s === 'AUTO_CLOSED' || s === 'PARTIAL') return 'PARTIAL';
+  return 'SKIPPED'; // SKIPPED or AUTO_CLOSED_NO_DATA
+}
+// Natural Spanish labels for the 5 canonical states -- never expose raw enum names.
+var _SESSION_LIFECYCLE_LABELS = {
+  NOT_STARTED: 'Pendiente',
+  IN_PROGRESS: 'En curso',
+  COMPLETE:    'Completada',
+  PARTIAL:     'Parcial',
+  SKIPPED:     'Omitida'
+};
+function _getSessionLifecycleLabel(logs, week, di) {
+  return _SESSION_LIFECYCLE_LABELS[_getSessionLifecycleState(logs, week, di)] || 'Pendiente';
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
