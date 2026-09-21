@@ -104,17 +104,20 @@ function extractFunction(src, decl) {
 ok(CLIENT.includes("function renderResumen() {"), 'Home lives in renderResumen() (tab index 0) -- no separate renderHoy/renderHome exists');
 ok(!/function renderHoy\b|function renderHome\b|function navHoy\b/.test(CLIENT), 'confirmed no competing Home renderer exists to accidentally diverge from');
 
-// ── FINDING 1: getTodaySummary has no lifecycle awareness. ──────────────────
+// ── FINDING 1: getTodaySummary had no lifecycle awareness. FIXED in T308/T309:
+// it now delegates entirely to _getTodayHomeState, a pure projection of the
+// canonical lifecycle, with a distinct CTA per state. ──────────────────────
 const todaySummarySrc = extractFunction(CLIENT, 'function getTodaySummary() {');
-ok(todaySummarySrc.includes("if (!LOGS['done_' + CURRENT_WEEK + '_' + _si]) { idx = _si; break; }"),
-  'FINDING 1 confirmed: getTodaySummary uses a raw done_ truthiness loop, duplicated from _autoAdvanceDia, with no per-lifecycle-state branch');
-ok((todaySummarySrc.match(/ENTRENAR AHORA/g) || []).length === 1 && !todaySummarySrc.includes('_getSessionLifecycleState'),
-  'FINDING 1 confirmed: exactly one hardcoded CTA string, never varies by COMPLETE/PARTIAL/SKIPPED/IN_PROGRESS/NOT_STARTED');
+ok(!todaySummarySrc.includes("LOGS['done_"),
+  'FINDING 1 RESOLVED (T308/T309): getTodaySummary no longer runs its own raw done_ truthiness loop -- delegates to _getTodayHomeState');
+ok(todaySummarySrc.includes('_getTodayHomeState(LOGS, CURRENT_WEEK, sesiones)') && todaySummarySrc.includes("case 'COMPLETE':"),
+  'FINDING 1 RESOLVED (T308/T309): the CTA now branches per lifecycle state instead of a single hardcoded string');
 
-// ── FINDING 2: no persistent Home-level stale-session surface. ─────────────
+// ── FINDING 2: no persistent Home-level stale-session surface. Still open --
+// scheduled for T311. ───────────────────────────────────────────────────────
 const renderResumenSrc = extractFunction(CLIENT, 'function renderResumen() {');
 ok(!renderResumenSrc.includes('_findStaleOpenSession') && !renderResumenSrc.includes('SESIÓN ANTERIOR SIN CERRAR'),
-  'FINDING 2 confirmed: renderResumen never checks for a stale session -- the only surface is loadPlan\'s one-time modal');
+  'FINDING 2 still open as of T307/T308/T309: renderResumen never checks for a stale session -- the only surface is loadPlan\'s one-time modal (fixed in T311)');
 
 // ── Known P3 (already documented, not a new finding): week-grid conflates
 // all-PARTIAL with all-COMPLETE. ────────────────────────────────────────────

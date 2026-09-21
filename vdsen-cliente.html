@@ -3203,20 +3203,56 @@ function buildMesocicloReportWidget() {
   '</div>';
 }
 
+// T309 — single routing path for every Home CTA. No duplicated routing logic:
+// whatever lifecycle state produced the CTA, opening it always means "go to
+// this day in the Entrenamiento tab."
+function _goToHomeDay(idx) {
+  selDia(idx);
+  goTab(1);
+}
+window._goToHomeDay = _goToHomeDay;
+
 function getTodaySummary() {
   if (!PLAN || !PLAN.entrenamiento) return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
   const sesiones = getSesiones();
   if (sesiones.length === 0) return `<button onclick="goTab(1)" style="width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">VER ENTRENAMIENTO ▶</button>`;
-  // Find first incomplete session in current week; fall back to last session
-  var idx = sesiones.length - 1;
-  for (var _si = 0; _si < sesiones.length; _si++) {
-    if (!LOGS['done_' + CURRENT_WEEK + '_' + _si]) { idx = _si; break; }
-  }
+
+  // T308/T309 — Home is a PROJECTION of the canonical session lifecycle:
+  // one dominant CTA whose label AND action vary by real state, never a
+  // single hardcoded "ENTRENAR AHORA" regardless of COMPLETE/PARTIAL/SKIPPED.
+  const home = _getTodayHomeState(LOGS, CURRENT_WEEK, sesiones);
+  const idx = home.dayIndex;
   const hoy = sesiones[idx];
   const ejercicios = (hoy.contenido||'').split('\n').filter(l=>/\d\s*[×x]\s*\d|RIR/i.test(l)).length;
+
+  // Per-state styling -- label text always carries the meaning; color is
+  // never the only signal (VDSEN tokens only, no new colors).
+  var btnStyle, statusLine = '';
+  switch (home.lifecycle) {
+    case 'COMPLETE':
+      btnStyle = 'background:transparent;border:1px solid var(--grn);color:var(--grn)';
+      statusLine = '<div style="font-size:10px;color:var(--grn);letter-spacing:1px;margin-top:4px;font-weight:700">✓ COMPLETADA</div>';
+      break;
+    case 'SKIPPED':
+      btnStyle = 'background:transparent;border:1px solid var(--mt);color:var(--mt)';
+      statusLine = '<div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-top:4px;font-weight:700">⏸ OMITIDA</div>';
+      break;
+    case 'PARTIAL':
+      btnStyle = 'background:transparent;border:2px solid var(--tx);color:var(--tx)';
+      statusLine = '<div style="font-size:10px;color:var(--tx);letter-spacing:1px;margin-top:4px;font-weight:700">◐ PARCIAL — '+home.progress.completedSets+'/'+home.progress.totalSets+' series</div>';
+      break;
+    case 'IN_PROGRESS':
+      btnStyle = 'background:var(--accent);border:none;color:#0A0A0A';
+      statusLine = '<div style="font-size:10px;color:var(--accent);letter-spacing:1px;margin-top:4px;font-weight:700">● EN CURSO — '+home.progress.completedSets+'/'+home.progress.totalSets+' series</div>';
+      break;
+    default: // NOT_STARTED
+      btnStyle = 'background:var(--accent);border:none;color:#0A0A0A';
+  }
+
   return `<div style="font-size:12px;color:var(--gold);letter-spacing:1px;margin-bottom:4px">${_escHTml(hoy.dia||'')}</div>
     <div style="font-size:10px;color:var(--mt)">${ejercicios} ejercicios</div>
-    <button onclick="selDia(${idx});goTab(1)" style="margin-top:10px;width:100%;padding:13px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">ENTRENAR AHORA ▶</button>`;
+    ${statusLine}
+    <button onclick="_goToHomeDay(${idx})" style="margin-top:10px;width:100%;padding:13px;${btnStyle};font-family:var(--ff);font-size:14px;font-weight:900;letter-spacing:2px;cursor:pointer;border-radius:8px">${home.primaryAction.label}</button>`;
 }
 
 function getSupToday() {
