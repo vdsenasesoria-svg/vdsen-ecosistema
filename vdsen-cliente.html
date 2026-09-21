@@ -4808,7 +4808,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       //   1) PROGRESIÓN (algoritmo) → card grande dorada con flecha + acción
       //   2) SEM ANTERIOR (datos reales) → badge naranja pequeño
       //   3) HISTORIAL (último mesociclo) → badge azul pequeño, sólo si NO hay sem anterior
-      var refHtml = _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIR, CURRENT_WEEK, _isY3T ? numSeries : undefined);
+      var refHtml = _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIR, CURRENT_WEEK, _isY3T ? numSeries : undefined, key);
       var prevRefHtml = refHtml;
 
       // Etiqueta de sub-fase por set: Y3T (S1/S2/S3/SST) / FST-7 (N/7) / PARCIALES (AMRAP)
@@ -7299,7 +7299,7 @@ function buildBoostcampExercise(ej, di, ei) {
     var progRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
     var baseRIRforRef = getAdjustedRIR(parseInt(ej.rir)||2, CURRENT_WEEK, ej.nombre || ej.exerciseName);
     var refBlockHtml = (!completed)
-      ? _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK, _isY3TBC ? numSeries : undefined)
+      ? _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK, _isY3TBC ? numSeries : undefined, key)
       : '';
 
     var borderCol = completed ? 'rgba(110,154,110,.5)' : 'var(--border)';
@@ -14088,7 +14088,22 @@ function _getWeeklyVolumeByPattern(pattern) {
 //   2) SEM ANTERIOR (dato real de la semana W-1) — badge naranja pequeño
 //   3) HISTORIAL (último mesociclo registrado) — badge azul pequeño
 // Se muestran apiladas; PROGRESIÓN siempre arriba y prominente cuando existe.
-function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount) {
+// T305 — "REPETIR CARGA ANTERIOR": one-tap prefill of the LOAD/REPS/RIR inputs
+// from a reference (previous week or historial). Prefill != executed --
+// this only fills the editable inputs; nothing is saved/marked done until
+// the user taps GUARDAR (completeSet), same validation/persistence path as
+// any manually-typed value.
+function _prefillFromReference(key, carga, reps, rir) {
+  var c = document.getElementById('carga_'+key);
+  var r = document.getElementById('reps_'+key);
+  if (c && carga) c.value = carga;
+  if (r && reps) r.value = reps;
+  if (rir !== undefined && rir !== null && rir !== '' && !isNaN(parseInt(rir))) setRirReal(key, parseInt(rir));
+  bcProgHint(key);
+  showToast('↺ Prellenado — revisá y confirmá con GUARDAR');
+}
+
+function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount, key) {
   var blocks = [];
 
   // ── 1) OBJETIVO: carga recomendada por el algoritmo ──
@@ -14109,6 +14124,7 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
       '<div style="margin-bottom:6px;font-size:10px;color:#FF8844;background:rgba(255,140,50,.06);border:1px solid rgba(255,140,50,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
         '<span style="font-weight:800;letter-spacing:.8px">↩ SEM '+(curWeek-1)+'</span>'+
         '<span style="color:var(--mt2)">'+prevCargaShown+' '+unit+prevConvMark+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+'</span>'+
+        (key ? '<button onclick="_prefillFromReference(\''+key+'\','+JSON.stringify(String(prevCargaShown))+','+JSON.stringify(String(prev.reps||''))+','+JSON.stringify(prev.rir_real!=null?String(prev.rir_real):'')+')" style="margin-left:auto;padding:2px 8px;border-radius:5px;border:1px solid rgba(255,140,50,.4);background:rgba(255,140,50,.1);color:#FF8844;font-size:9px;font-weight:800;cursor:pointer;white-space:nowrap">↺ USAR</button>' : '')+
       '</div>'
     );
   }
@@ -14120,6 +14136,7 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
       '<div style="margin-bottom:6px;font-size:10px;color:rgba(108,150,255,.9);background:rgba(140,140,134,.06);border:1px solid rgba(140,140,134,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
         '<span style="font-weight:800;letter-spacing:.8px">📋 HISTORIAL</span>'+
         '<span style="color:var(--mt2)">'+histCargaShown+' '+unit+histConvMark+(histEx.reps?' × '+histEx.reps+' reps':'')+(histEx.rir?' · RIR '+histEx.rir:'')+'</span>'+
+        (key ? '<button onclick="_prefillFromReference(\''+key+'\','+JSON.stringify(String(histCargaShown))+','+JSON.stringify(String(histEx.reps||''))+','+JSON.stringify(histEx.rir!=null?String(histEx.rir):'')+')" style="margin-left:auto;padding:2px 8px;border-radius:5px;border:1px solid rgba(108,150,255,.4);background:rgba(108,150,255,.1);color:rgba(108,150,255,.9);font-size:9px;font-weight:800;cursor:pointer;white-space:nowrap">↺ USAR</button>' : '')+
       '</div>'
     );
   }
