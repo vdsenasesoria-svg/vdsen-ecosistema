@@ -5023,6 +5023,11 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       // log_W_D_E_sS
       let m = k.match(/^log_(\d+)_(\d+)_(\d+)_s(\d+)$/);
       if (m) {
+        // T325 — autoFilled != execution: a set the client never actually
+        // logged (auto-filled from history when they closed a session
+        // without registering set-by-set) must not inflate the coach-facing
+        // report's real tonnage/sets/RIR/ICS aggregates.
+        if (v && v.autoFilled) return;
         const [_, w, d, e, s] = m;
         const key = `${d}_${e}`;
         const ex = planEx[key];
@@ -6482,7 +6487,17 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     try {
       // Confirmación si ya hay plan activo
       const prevClientSnap = await getDoc(doc(db, "clients", clientId));
-      const prevPlanId = prevClientSnap.exists() ? prevClientSnap.data().activePlanId : null;
+      // T325 — ownership check, matching the same guard the AI-preview
+      // activation path (_vdsenActivatePlanInFirestore) already enforces.
+      // Firestore Rules independently block a cross-coach write on
+      // clients/{id} (coachId is immutable, update requires
+      // resource.data.coachId == request.auth.uid) — this is the real
+      // security boundary and is unaffected either way. This check exists
+      // so a coach never sees a raw Firestore permission-denied exception;
+      // they get a clean, honest message instead.
+      if (!prevClientSnap.exists()) { showToast("Cliente no encontrado en Firestore", true); return false; }
+      if (prevClientSnap.data().coachId !== currentCoach.uid) { showToast("❌ No tenés permiso sobre este cliente", true); return false; }
+      const prevPlanId = prevClientSnap.data().activePlanId;
       if (prevPlanId) {
         const prevPlanSnap = await getDoc(doc(db, "plans", prevPlanId)).catch(() => null);
         const prevDays = prevPlanSnap && prevPlanSnap.exists() ? (prevPlanSnap.data().days || []) : [];
@@ -6699,7 +6714,12 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // More nuanced than raw set count: considers weeks, RIR consistency, check-ins, density.
   function _computeConfidenceScore(entries, checkinSummary) {
     var score = 0;
-    var logKeys = Object.keys(entries).filter(function(k){ return k.startsWith('log_'); });
+    // T325 — autoFilled != execution: a set the client never actually
+    // logged must not inflate the confidence score this Decision Engine
+    // input feeds into (_computeMuscleTargets can grant more volume on a
+    // medium/high confidence read that included fabricated placeholder
+    // data).
+    var logKeys = Object.keys(entries).filter(function(k){ return k.startsWith('log_') && !(entries[k] && entries[k].autoFilled); });
     var loggedSets = logKeys.length;
     // Factor 1: set count (capped at 3 pts)
     if      (loggedSets >= 60) score += 3;
@@ -9487,10 +9507,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         return;
       }
       if (status === 'VALID') {
-        // Validate response contract
+        // Validate response contract. `errors` are hard contract violations
+        // (wrong schema, missing plan, forbidden fields) -- these must BLOCK
+        // the preview, never just warn: a malformed/off-contract response
+        // silently shown as a normal preview could be saved as a draft and
+        // activated, producing an invalid vdsen-plan-v2 document downstream.
+        // `warnings` alone (e.g. a missing requestId echo) are soft and do
+        // not block.
         const respValidation = window.VDSEN_BUILD.validateGenerationResponse(respJson);
+        if (respValidation.warnings && respValidation.warnings.length) {
+          console.warn('[VDSEN D.1] Response contract warnings:', respValidation.warnings);
+        }
         if (!respValidation.valid) {
-          console.warn('[VDSEN D.1] Response contract violation:', respValidation);
+          console.error('[VDSEN D.1] Response contract violation:', respValidation.errors);
+          UI_STATES.invalid('Respuesta del Motor VDSEN no cumple el contrato — ' + respValidation.errors.join('; '));
+          return;
         }
         // T144-H: same stale-context guard as the NEEDS_COACH_REVIEW branch above.
         if (document.getElementById('planClientSelect')?.value !== clientId) {
@@ -10439,7 +10470,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     }
   };
 
+  let _vdsenActivatingPlan = false;
   window._vdsenActivatePlanClick = async function() {
+    if (_vdsenActivatingPlan) return;
     if (!_vdsenCurrentPreview || !_vdsenDraftPlanId) return;
     const { clientId } = _vdsenCurrentPreview;
     const planId       = _vdsenDraftPlanId;
@@ -10455,20 +10488,28 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       return;
     }
 
-    const confirmed = window.confirm(
-      '¿Activar plan para este cliente?\n\n' +
-      'Plan ID: ' + planId + '\n' +
-      'Cliente: ' + clientId + '\n\n' +
-      'El plan aprobado se convierte en el plan activo.\n' +
-      'El plan anterior (si existe) queda inactivo pero se conserva en el historial.\n' +
-      'Esta acción escribe en Firestore y activa el plan para el cliente inmediatamente.'
-    );
-    if (!confirmed) return;
-
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Activando…'; }
-    if (d2Status) d2Status.innerHTML = '';
-
+    // T331 — in-flight guard: window.confirm() is modal/blocking in every
+    // real browser (no other click can reach this handler while it's open),
+    // and _vdsenActivatePlanInFirestore's own transaction is independently
+    // idempotent, so double-activation was never really reachable -- this
+    // is defense-in-depth for consistency with every other plan-writing
+    // click handler in this file, set before the confirm dialog so it also
+    // covers the (event-loop-theoretical) gap between clicks.
+    _vdsenActivatingPlan = true;
     try {
+      const confirmed = window.confirm(
+        '¿Activar plan para este cliente?\n\n' +
+        'Plan ID: ' + planId + '\n' +
+        'Cliente: ' + clientId + '\n\n' +
+        'El plan aprobado se convierte en el plan activo.\n' +
+        'El plan anterior (si existe) queda inactivo pero se conserva en el historial.\n' +
+        'Esta acción escribe en Firestore y activa el plan para el cliente inmediatamente.'
+      );
+      if (!confirmed) return;
+
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Activando…'; }
+      if (d2Status) d2Status.innerHTML = '';
+
       // T146-H: back up the outgoing active plan (if any) to plans_backup before
       // replacing it — same pattern as every other plan-replacing path
       // (saveManualPlan/duplicatePlan/_applyTemplateToClient/_autoGenerateForModal).
@@ -10490,6 +10531,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       if (btn) { btn.disabled = false; btn.textContent = '⚡ Activar plan'; }
       if (d2Status) d2Status.innerHTML = '<span style="color:#ef4444">❌ ' + _escH(err.message || 'Error desconocido') + '</span>';
       console.error('[VDSEN D.2-B] Activate plan error:', err);
+    } finally {
+      _vdsenActivatingPlan = false;
     }
   };
 

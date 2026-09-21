@@ -45,10 +45,13 @@ let pass = 0;
 function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + msg); }
 
 // ── Activate plan: synchronous disable right after confirm(), before any await. ──
-ok(COACH.includes("if (!confirmed) return;\n\n    if (btn) { btn.disabled = true; btn.textContent = '⏳ Activando…'; }"),
-  'activate-plan disables its button synchronously immediately after confirm() returns, before either await');
+ok(COACH.includes("if (!confirmed) return;\n\n      if (btn) { btn.disabled = true; btn.textContent = '⏳ Activando…'; }"),
+  'activate-plan disables its button synchronously immediately after confirm() returns, before either await ' +
+  '(T325 wrapped this in an outer try/finally for an _vdsenActivatingPlan in-flight flag -- same relative order, one indent level deeper)');
 ok(COACH.includes('if (clientData.activePlanId === planId) return;') || COACH.includes('activePlanId === planId'),
   '_vdsenActivatePlanInFirestore still has its own deterministic idempotency guard (re-activating the same plan is a no-op) -- already proven by T266 CASE M');
+ok(COACH.includes('let _vdsenActivatingPlan = false;') && COACH.includes('if (_vdsenActivatingPlan) return;'),
+  'T325: activate-plan also now has an explicit in-flight boolean guard (defense-in-depth, matching every other plan-writing click handler in this file)');
 
 // ── Save draft. ──────────────────────────────────────────────────────────
 ok(COACH.includes("if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }"), 'save-draft disables its button synchronously before the await');
