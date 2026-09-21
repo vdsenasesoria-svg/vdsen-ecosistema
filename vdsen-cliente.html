@@ -2819,6 +2819,15 @@ function buildHistorialWidget() {
 
 function renderResumen() {
   if (!PLAN) return;
+  // T318/T320 (real week-consistency fix): Home is "today," never a past-week
+  // view -- if the client left CURRENT_WEEK pointed at an older week (e.g.
+  // navigated there from Entrenamiento's week grid, then tapped the bottom
+  // nav straight to Resumen without CURRENT_WEEK ever resetting), every
+  // Home block below (HOY card, week grid "ACTIVA" label, check-in card,
+  // day chips, stale-session banner) would otherwise silently render that
+  // OLD week as if it were current. Reset here, exactly like goTab(1)
+  // already does for Entrenamiento.
+  CURRENT_WEEK = REAL_WEEK;
   const sesionesTotal = countSessions();
   const sesionesHechas = countDone();
   const pct = Math.round(sesionesHechas / Math.max(sesionesTotal,1) * 100);
@@ -8777,8 +8786,17 @@ async function markSessionDone(di) {
         if (CURRENT_WEEK > REAL_WEEK) CURRENT_WEEK = REAL_WEEK;
       }
     }
-    await saveLogs();
+    // T318 (same false-success bug class as guardarCI, fixed together):
+    // saveLogs() only schedules a debounced timer -- it never awaits the
+    // real write. Bypass it so "Marcado como pendiente" only shows once
+    // the reopen has actually reached the server.
+    if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+    var _reopenOk = await _doSaveLogs();
     _markSessionBusy[di] = false;
+    if (_reopenOk === false) {
+      showToast('⚠ NO SE GUARDÓ — revisa conexión. Reintenta.', true);
+      return;
+    }
     showToast('Marcado como pendiente');
     renderEntrenamiento();
     renderResumen();
@@ -11134,8 +11152,22 @@ async function guardarCI() {
   d.subj_score  = _subj_score;
   d.subj_vulner = parseInt(d['ci_vulner']) || 0;
 
+  // T318 (FINDING 1 + FINDING 3, T315): capture identity before the await,
+  // and bypass the fire-and-forget saveLogs() -- it only schedules a
+  // debounced timer and resolves immediately, never waiting for the real
+  // write. Every other terminal action in this file (session completion,
+  // partial closure, nutrition log) already awaits _doSaveLogs() directly
+  // and gates its success toast on the real result; this was the one
+  // holdout still showing "GUARDADO ✓" regardless of actual persistence.
+  var _uidAtStart = USER && USER.uid;
   try {
-    await saveLogs();
+    if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+    var _ciOk = await _doSaveLogs();
+    if (!USER || USER.uid !== _uidAtStart) return; // client switched away mid-save
+    if (_ciOk === false) {
+      showToast('⚠ NO SE GUARDÓ — revisa conexión. Reintenta.', true);
+      return;
+    }
 
     // ── GAP 5: sincronizar check-in en expedientes/{email}/historial ──
     // El coach lee estos datos en el Motor de Decisiones Semanal

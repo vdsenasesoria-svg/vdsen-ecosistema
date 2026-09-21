@@ -128,8 +128,8 @@ const saveLogsSrc = extractFunction(CLIENT, 'async function saveLogs() {');
 ok(saveLogsSrc.includes('_saveLogsTimer = setTimeout(_doSaveLogs, 400);') && !saveLogsSrc.includes('await _doSaveLogs'),
   'confirmed: saveLogs() only schedules _doSaveLogs on a timer -- it never awaits the actual write, so awaiting saveLogs() resolves immediately regardless of real persistence');
 const guardarCISrc = extractFunction(CLIENT, 'async function guardarCI() {');
-ok(guardarCISrc.includes('await saveLogs();'),
-  'FINDING 1 confirmed: guardarCI() awaits the fire-and-forget saveLogs(), not the real _doSaveLogs() -- its "GUARDADO ✓" toast is not gated on actual Firestore confirmation of the ci_sem_ write (fixed in T318)');
+ok(guardarCISrc.includes('var _ciOk = await _doSaveLogs();'),
+  'FINDING 1 RESOLVED (T318): guardarCI() now awaits the real _doSaveLogs() -- see tests/t318-checkin-lifecycle-home-surfacing.test.js');
 
 // ── Nutrition log already uses the CORRECT bypass pattern (contrast case). ──
 const guardarNutriLogSrc = extractFunction(CLIENT, 'async function guardarNutriLog() {');
@@ -142,8 +142,7 @@ ok(guardarNutriLogSrc.includes('isNaN(_v) || _v < 0'), 'FINDING 2 RESOLVED (T317
 // ── FINDING 3: nutrition side RESOLVED in T317; check-in side still open
 // (scheduled for T318, alongside FINDING 1). ────────────────────────────────
 ok(guardarNutriLogSrc.includes('_uidAtStart'), 'FINDING 3 RESOLVED (nutrition, T317): stale-client-context re-check now present after its own await');
-ok(!guardarCISrc.includes('_uidAtStart') && !/if \(!USER \|\| USER\.uid/.test(guardarCISrc),
-  'FINDING 3 still open (check-in) as of T317: no stale-client-context re-check after its own await -- fixed together with FINDING 1 in T318');
+ok(guardarCISrc.includes('_uidAtStart'), 'FINDING 3 RESOLVED (check-in, T318): stale-client-context re-check now present after its own await');
 
 // ── PROGRESS view: confirmed already honest (no fabricated single-point trend). ──
 const historialSrc = extractFunction(CLIENT, 'function buildHistorialWidget() {');
