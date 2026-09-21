@@ -121,7 +121,7 @@ ok(autoAdvSrc.includes("!!LOGS['done_'+REAL_WEEK+'_'+i]"), '_autoAdvanceWeekIfDo
 
 // ── CASE G: the real gap this audit confirms -- PENDING cannot distinguish
 // NOT_STARTED from IN_PROGRESS (real sets exist but no done_ yet). ──────────
-ok(!CLIENT.includes('function _getSessionLifecycleState('), 'CASE G confirmed: no canonical resolver exists yet that distinguishes NOT_STARTED from IN_PROGRESS -- this is exactly T300\'s job (implemented in the next phase/commit)');
+ok(CLIENT.includes('function _getSessionLifecycleState('), 'CASE G: resolved by T300 -- _getSessionLifecycleState now distinguishes NOT_STARTED from IN_PROGRESS (see tests/t300-session-lifecycle-state.test.js)');
 
 console.log('');
 console.log('T299 — Session lifecycle audit: ' + pass + ' assertions PASSED. No P0 data-loss issue found. No broad patch applied (audit-only phase).');

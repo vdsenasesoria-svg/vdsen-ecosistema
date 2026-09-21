@@ -4988,12 +4988,20 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
 
   // Banner sesión completa — INFORMATIVO, sets siguen siendo editables
   var _doneLog = LOGS['done_'+CURRENT_WEEK+'_'+di];
-  var _isSkipped = !!(typeof _doneLog === 'object' && _doneLog && _doneLog.skipped && !_doneLog.autoClosed);
+  var _cardLifecycle = _getSessionLifecycleState(LOGS, CURRENT_WEEK, di);
+  var _isSkipped = (_cardLifecycle === 'SKIPPED');
+  var _isPartialClosedCard = (_cardLifecycle === 'PARTIAL');
   var closedBannerHtml = sessionDone
     ? (_isSkipped
       ? '<div style="background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
           '<span style="font-size:14px">⏸</span>'+
           '<span style="font-size:11px;color:var(--mt);font-weight:700;flex:1">Sesión omitida · puedes reabrirla</span>'+
+          '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
+        '</div>'
+      : _isPartialClosedCard
+      ? '<div style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.3);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+          '<span style="font-size:14px">◐</span>'+
+          '<span style="font-size:11px;color:#C8A54A;font-weight:700;flex:1">Sesión parcial · se conservó todo lo realizado</span>'+
           '<button onclick="markSessionDone('+di+')" style="font-size:10px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:3px 10px;border-radius:6px;cursor:pointer">Reabrir</button>'+
         '</div>'
       : '<div style="background:rgba(110,154,110,.08);border:1px solid rgba(110,154,110,.25);border-radius:10px;padding:8px 14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
@@ -6674,15 +6682,19 @@ function renderEntrenamiento() {
   var tabsHtml = sesiones.map(function(s, i) {
     var _rawEntry = LOGS['done_'+CURRENT_WEEK+'_'+i];
     var _st = _getSessionCompletionState(_rawEntry);
-    var done = (_st === 'REAL_COMPLETE' || _st === 'AUTO_CLOSED');
+    var done = (_st === 'REAL_COMPLETE');
     var isSkipped = (_st === 'SKIPPED');
     var _isAdminClosed = (_st === 'AUTO_CLOSED_NO_DATA');
+    // T301/T300: AUTO_CLOSED (legacy week-close with data) and PARTIAL (per-session
+    // "Terminar por hoy") are both real execution ended early -- PARTIAL != COMPLETE,
+    // so they get their own distinct visual, never the same checkmark as done.
+    var _isPartialClosed = (_st === 'AUTO_CLOSED' || _st === 'PARTIAL');
     var active = i === DIA_ACTIVO;
     var rawLabel = (s.dia||'').replace(/^(SESI[OÓ]N\s*\d+[:\s]+|D[IÍ]A\s*\d+[:\s]+)/i,'').replace(/\([^)]+\)/,'').trim().substring(0,10)||('DÍA '+(i+1));
-    var iconColor = active ? 'var(--accent)' : (isSkipped || _isAdminClosed) ? 'var(--mt)' : done ? 'var(--grn)' : 'var(--mt)';
-    var txtColor  = active ? 'var(--tx)' : (isSkipped || _isAdminClosed) ? 'rgba(160,160,160,.7)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
+    var iconColor = active ? 'var(--accent)' : (isSkipped || _isAdminClosed) ? 'var(--mt)' : _isPartialClosed ? '#C8A54A' : done ? 'var(--grn)' : 'var(--mt)';
+    var txtColor  = active ? 'var(--tx)' : (isSkipped || _isAdminClosed) ? 'rgba(160,160,160,.7)' : _isPartialClosed ? 'rgba(200,165,74,.85)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
     var bg = active ? 'rgba(196,255,0,.06)' : 'var(--surface)';
-    var borderB = active ? '3px solid var(--accent)' : (isSkipped || _isAdminClosed) ? '3px solid rgba(160,160,160,.3)' : done ? '3px solid rgba(110,154,110,.5)' : '3px solid transparent';
+    var borderB = active ? '3px solid var(--accent)' : (isSkipped || _isAdminClosed) ? '3px solid rgba(160,160,160,.3)' : _isPartialClosed ? '3px solid rgba(200,165,74,.5)' : done ? '3px solid rgba(110,154,110,.5)' : '3px solid transparent';
     // Progreso parcial de sets
     var _exs = s.exercises || [];
     var _tSets = 0, _dSets = 0;
@@ -6694,17 +6706,17 @@ function renderEntrenamiento() {
         if ((LOGS['log_'+CURRENT_WEEK+'_'+i+'_'+ei+'_s'+ss]||{}).done) _dSets++;
       }
     });
-    var _partial = !_rawEntry && _dSets > 0;
+    var _partial = !_rawEntry && _dSets > 0; // IN_PROGRESS: real sets, no done_ yet
     var _pPct = _tSets > 0 ? Math.round(_dSets / _tSets * 100) : 0;
-    var _barColor = (isSkipped || _isAdminClosed) ? 'var(--mt)' : done ? 'var(--grn)' : 'var(--accent)';
+    var _barColor = (isSkipped || _isAdminClosed) ? 'var(--mt)' : _isPartialClosed ? '#C8A54A' : done ? 'var(--grn)' : 'var(--accent)';
     return '<button onclick="selDia('+i+')" style="'+
       'flex:1;min-width:0;padding:8px 6px 6px;border:none;cursor:pointer;'+
       'background:'+bg+';border-bottom:'+borderB+';'+
       'border-right:1px solid var(--border);transition:background .15s;-webkit-tap-highlight-color:transparent">'+
-      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:2px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(( isSkipped||_isAdminClosed)?'⏸':done?'✓':(_partial?_dSets+'/'+_tSets:'·'))+'</div>'+
+      '<div style="font-size:13px;font-weight:900;color:'+iconColor+';line-height:1;margin-bottom:2px'+(active?';text-shadow:0 0 8px rgba(196,255,0,.4)':'')+'">'+(( isSkipped||_isAdminClosed)?'⏸':_isPartialClosed?'◐':done?'✓':(_partial?_dSets+'/'+_tSets:'·'))+'</div>'+
       '<div style="font-size:9px;letter-spacing:.5px;font-weight:700;color:'+txtColor+';line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'+_escHTml(rawLabel)+'</div>'+
       '<div style="height:2px;border-radius:1px;background:var(--border);overflow:hidden">'+
-        '<div style="height:100%;width:'+(done?100:_pPct)+'%;background:'+_barColor+';border-radius:1px;transition:width .3s"></div>'+
+        '<div style="height:100%;width:'+((done||_isPartialClosed)?100:_pPct)+'%;background:'+_barColor+';border-radius:1px;transition:width .3s"></div>'+
       '</div>'+
       '</button>';
   }).join('');
@@ -6742,9 +6754,11 @@ function renderEntrenamiento() {
   // ── Sesión activa ────────────────────────────────────────────────
   var ses = sesiones[DIA_ACTIVO];
   var _doneEntry = LOGS['done_'+CURRENT_WEEK+'_'+DIA_ACTIVO];
-  var isDone     = _isRealExecution(_doneEntry);  // REAL_COMPLETE or AUTO_CLOSED only
-  // SKIPPED: explicit user skip (skipped:true, no autoClosed). AUTO_CLOSED_NO_DATA excluded.
-  var _isSkipped = !!_doneEntry && !isDone && typeof _doneEntry === 'object' && _doneEntry.skipped && !_doneEntry.autoClosed;
+  // T300: canonical resolver -- single source of truth for this session's status badge.
+  var _lifecycleState  = _getSessionLifecycleState(LOGS, CURRENT_WEEK, DIA_ACTIVO);
+  var isDone            = (_lifecycleState === 'COMPLETE');
+  var _isPartialClosed  = (_lifecycleState === 'PARTIAL'); // real execution, ended early -- never shown as COMPLETE
+  var _isSkipped         = (_lifecycleState === 'SKIPPED');
   var readinessBanner = buildReadinessBanner(DIA_ACTIVO, isDone);
 
   // Usar exercises estructurados si existen (plan de Firestore), sino parsear texto
@@ -6894,10 +6908,15 @@ function renderEntrenamiento() {
       '</div>'+
       (isDone
         ? '<div style="background:rgba(110,154,110,.15);border:1px solid var(--grn);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--grn)">✓ COMPLETA</div>'
+        : _isPartialClosed
+          ? '<div style="background:rgba(200,165,74,.12);border:1px solid #C8A54A;border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:#C8A54A">◐ PARCIAL</div>'
         : _isSkipped
           ? '<div style="background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.4);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;color:var(--mt)">⏸ OMITIDA</div>'
           : '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">'+
             '<button onclick="markSessionDone('+DIA_ACTIVO+')" title="Marcar esta sesión como completada" style="background:rgba(196,255,0,.12);border:1px solid var(--accent);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:800;color:var(--accent);cursor:pointer;letter-spacing:.5px">✓ COMPLETAR</button>'+
+            (CURRENT_WEEK === REAL_WEEK && _calcSessionStats(LOGS, DIA_ACTIVO, CURRENT_WEEK).completedSets > 0
+              ? '<button onclick="_endSessionAsPartial('+DIA_ACTIVO+')" title="Terminar la sesión ahora conservando lo ya registrado" style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.4);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:700;color:#C8A54A;cursor:pointer;letter-spacing:.5px">⏳ Terminar por hoy</button>'
+              : '') +
             (CURRENT_WEEK === REAL_WEEK ? '<button onclick="skipSession('+DIA_ACTIVO+')" title="Omitir esta sesión y avanzar al siguiente día" style="background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.3);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px">⏸ Saltar</button>' : '') +
             (CURRENT_WEEK > 1 ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Copia los datos de la semana anterior en todos los sets y marca la sesión como completada" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ Copiar sem. anterior</button>' : '') +
             '</div>')+
@@ -8597,6 +8616,80 @@ async function skipSession(di) {
   renderResumen();
   await _autoAdvanceWeekIfDone(CURRENT_WEEK !== REAL_WEEK);
 }
+
+// T301 — "TERMINAR POR HOY": lets the client intentionally end an INCOMPLETE
+// session as PARTIAL. Preserves every real set already logged, never
+// fabricates missing sets/load/reps/RIR, feeds only real sets to progression
+// (calculateProgression already excludes autoFilled internally), and never
+// shows false success on a failed write (T125-C/T295 pattern reused as-is).
+async function _endSessionAsPartial(di) {
+  if (_markSessionBusy[di]) return; // double-tap guard
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
+  if (LOGS['done_'+CURRENT_WEEK+'_'+di]) { showToast('Esta sesión ya está cerrada', true); return; }
+  var stats = _calcSessionStats(LOGS, di, CURRENT_WEEK);
+  var completedSets = stats.completedSets;
+  if (completedSets === 0) {
+    showToast('No hay series registradas — usá "Saltar" si no vas a entrenar hoy', true);
+    return;
+  }
+  var sesiones = getSesiones();
+  var ses = sesiones[di];
+  if (!ses) return;
+  var totalSets = 0;
+  (ses.exercises || []).forEach(function(ej, ei) {
+    if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
+    var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
+    totalSets += exMod.numSeries ? (parseInt(exMod.numSeries) || 0) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+  });
+
+  var weekAtStart = CURRENT_WEEK;
+  _markSessionBusy[di] = true; // lock BEFORE the confirm dialog -- blocks a second tap from opening a duplicate dialog
+  var confirmed = await _askConfirmPartial(
+    'Completaste ' + completedSets + ' de ' + totalSets + ' series. Se conservará todo lo realizado. ' +
+    'La sesión quedará registrada como parcial y podrás continuar con tu programa.'
+  );
+  // T127-H: re-check identity after the await -- week/session context may have changed while the dialog was open
+  if (weekAtStart !== CURRENT_WEEK) { _markSessionBusy[di] = false; return; }
+  if (!confirmed) { _markSessionBusy[di] = false; return; }
+  if (LOGS['done_'+CURRENT_WEEK+'_'+di]) { _markSessionBusy[di] = false; showToast('Esta sesión ya está cerrada', true); return; }
+
+  var key = 'done_'+CURRENT_WEEK+'_'+di;
+  LOGS[key] = { ts: Date.now(), partial: true };
+  var postKey = 'postsession_'+CURRENT_WEEK+'_'+di;
+  var _hadPostSession = !!LOGS[postKey];
+  if (!_hadPostSession) {
+    LOGS[postKey] = { eimd: 2, articularPain: { present: false, pattern: '' }, sleepHours: 7, rpeAverage: 7, ts: Date.now(), partial: true };
+  }
+  try {
+    var rec = calculateProgression(di, LOGS[postKey]);
+    if (rec) {
+      var _san = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
+      LOGS['progrec_'+CURRENT_WEEK+'_'+di] = JSON.parse(JSON.stringify(rec, _san));
+      if (rec.engineState) LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _san));
+    }
+  } catch(e) { console.warn('progression on partial close failed:', e && e.message); }
+
+  if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+  var ok = await _doSaveLogs();
+  if (ok === false) {
+    delete LOGS[key];
+    if (!_hadPostSession) delete LOGS[postKey];
+    delete LOGS['progrec_'+CURRENT_WEEK+'_'+di];
+    _markSessionBusy[di] = false;
+    showToast('⚠ NO SE GUARDÓ — revisa conexión. Reintenta.', true);
+    renderEntrenamiento();
+    return;
+  }
+  _markSessionBusy[di] = false;
+  showToast((typeof navigator !== 'undefined' && navigator.onLine === false)
+    ? 'SESIÓN PARCIAL GUARDADA LOCALMENTE ✓ (pendiente de sincronizar)'
+    : '✓ SESIÓN GUARDADA COMO PARCIAL');
+  _autoAdvanceDia();
+  renderEntrenamiento();
+  renderResumen();
+  await _autoAdvanceWeekIfDone(CURRENT_WEEK !== REAL_WEEK);
+}
+window._endSessionAsPartial = _endSessionAsPartial;
 
 async function marcarDia(di) {
   await markSessionDone(di);
@@ -12602,6 +12695,26 @@ function _askConfirm(msg) {
     function done(v) { ov.remove(); resolve(v); }
     ov.querySelector('#_ac_si').onclick = function() { done(true); };
     ov.querySelector('#_ac_no').onclick = function() { done(false); };
+    ov.onclick = function(e) { if (e.target === ov) done(false); };
+  });
+}
+
+// T301 — same modal shape as _askConfirm, but with the exact CANCELAR /
+// GUARDAR COMO PARCIAL button copy the "Terminar por hoy" flow requires.
+function _askConfirmPartial(msg) {
+  return new Promise(function(resolve) {
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:340px;width:100%;font-family:var(--ff)">'
+      + '<p style="color:var(--tx);font-size:14px;line-height:1.5;margin:0 0 18px">' + msg + '</p>'
+      + '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">'
+      + '<button id="_acp_no" style="padding:9px 16px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">CANCELAR</button>'
+      + '<button id="_acp_si" style="padding:9px 16px;border-radius:8px;border:1px solid #C8A54A;background:rgba(200,165,74,.12);color:#C8A54A;font-size:12px;font-weight:800;cursor:pointer">GUARDAR COMO PARCIAL</button>'
+      + '</div></div>';
+    document.body.appendChild(ov);
+    function done(v) { ov.remove(); resolve(v); }
+    ov.querySelector('#_acp_si').onclick = function() { done(true); };
+    ov.querySelector('#_acp_no').onclick = function() { done(false); };
     ov.onclick = function(e) { if (e.target === ov) done(false); };
   });
 }
