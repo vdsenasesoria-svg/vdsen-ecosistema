@@ -1,6 +1,6 @@
 'use strict';
 
-var A = require('./vdsen-auth');
+var A = require('./_vdsenAuth');
 var extractBearerToken       = A.extractBearerToken;
 var authenticateCoachRequest = A.authenticateCoachRequest;
 var ERR = A.ERR;

@@ -20,7 +20,7 @@ var contracts    = require('./vdsen-contracts');
 var validateReq  = contracts.validateGenerationRequest;
 var validateResp = contracts.validateGenerationResponse;
 
-var vdsenAuth              = require('./vdsen-auth');
+var vdsenAuth              = require('./_vdsenAuth');
 var authenticateCoachRequest = vdsenAuth.authenticateCoachRequest;
 
 // ─── Error codes ─────────────────────────────────────────────────────────────

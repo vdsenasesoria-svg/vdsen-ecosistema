@@ -2,7 +2,7 @@
 
 /**
  * Lazy Firebase Admin initialization — real implementation behind
- * api/vdsen-auth.js's injectable deps. Required only at call time (never at
+ * api/_vdsenAuth.js's injectable deps. Required only at call time (never at
  * module load), so nothing outside a real request touches firebase-admin.
  *
  * Credential comes ONLY from environment variables (Vercel Project Settings
@@ -41,7 +41,7 @@ function getAdminApp() {
 }
 
 // -> Promise<{ uid: string }>. Throws on any invalid/expired/malformed token
-// (signature, issuer, audience, expiry) -- the caller (vdsen-auth.js) maps
+// (signature, issuer, audience, expiry) -- the caller (_vdsenAuth.js) maps
 // any throw to a generic 401, never distinguishing the reason to the client.
 async function verifyIdToken(token) {
   var admin = require('firebase-admin');

@@ -2,9 +2,9 @@
 /**
  * T335 — Authenticated AI generation gate (Coach client-side half).
  *
- * The server-side half (api/vdsen-generate.js's auth step, api/vdsen-auth.js,
+ * The server-side half (api/vdsen-generate.js's auth step, api/_vdsenAuth.js,
  * api/_firebaseAdmin.js) has its own dedicated test files
- * (api/vdsen-auth.test.js, api/_firebaseAdmin.test.js) and its own
+ * (api/_vdsenAuth.test.js, api/_firebaseAdmin.test.js) and its own
  * integration cases inside api/vdsen-generate.test.js (T-AUTH-A..J). This
  * file covers what only exists in the browser: vdsenAIPreview() now sends a
  * real Firebase ID token, guards against calling the endpoint while logged
