@@ -2865,6 +2865,7 @@ function renderResumen() {
       ${getTodaySummary()}
       ${buildWeekDayChips()}
     </div>
+    ${buildStaleSessionHomeBanner()}
 
     <div class="card" style="margin-top:8px;border-color:${ciDone?'rgba(107,107,102,.4)':'rgba(201,74,58,.25)'}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -3222,6 +3223,48 @@ function _goToHomeDay(idx) {
   goTab(1);
 }
 window._goToHomeDay = _goToHomeDay;
+
+// T311 — persistent Home surface for a stale open session (FINDING 2, T307).
+// Reuses the EXISTING T303 detector -- Home never runs a second stale check
+// and never fires a second modal loop; it only reads the same read-only
+// result to render an always-visible banner (unlike the one-shot load
+// modal, this survives being dismissed and reappears on every Home render
+// until the session is actually resolved). If the stale day differs from
+// "today"'s own pick (e.g. the client worked ahead on a later day while an
+// earlier one was left open), the banner names its OWN day explicitly so
+// the two are never conflated.
+function _resumeStaleSessionFromHome(week, di) {
+  CURRENT_WEEK = week;
+  _goToHomeDay(di);
+}
+window._resumeStaleSessionFromHome = _resumeStaleSessionFromHome;
+
+function _closeStaleSessionAsPartialFromHome(week, di) {
+  CURRENT_WEEK = week;
+  DIA_ACTIVO = di;
+  _endSessionAsPartial(di); // same guarded, real-sets-only closure as everywhere else
+}
+window._closeStaleSessionAsPartialFromHome = _closeStaleSessionAsPartialFromHome;
+
+function buildStaleSessionHomeBanner() {
+  var stale = _findStaleOpenSession(LOGS, REAL_WEEK, getSesiones());
+  if (!stale) return '';
+  var sesiones = getSesiones();
+  var ses = sesiones[stale.di] || {};
+  var label = (ses.dia || '').replace(/^(SESI[OÓ]N|D[IÍ]A)\s*\d+[:\s]*/i, '').trim() || ('Día ' + (stale.di + 1));
+  var daysAgo = Math.max(1, Math.round((Date.now() - stale.lastTs) / 86400000));
+  return '<div class="card" style="margin-top:8px;border-color:rgba(200,165,74,.4);background:rgba(200,165,74,.05)">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+      '<span style="font-size:16px" aria-hidden="true">⏳</span>'+
+      '<div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#C8A54A">SESIÓN ANTERIOR SIN CERRAR</div>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--tx);margin-bottom:10px">"'+_escHTml(label)+'" (Día '+(stale.di+1)+') quedó sin cerrar hace '+daysAgo+' día'+(daysAgo!==1?'s':'')+'.</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="_closeStaleSessionAsPartialFromHome('+stale.week+','+stale.di+')" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(200,165,74,.4);background:rgba(200,165,74,.1);color:#C8A54A;font-size:11px;font-weight:800;letter-spacing:.5px;cursor:pointer">TERMINAR COMO PARCIAL</button>'+
+      '<button onclick="_resumeStaleSessionFromHome('+stale.week+','+stale.di+')" style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--accent);color:#0A0A0A;font-size:11px;font-weight:800;letter-spacing:.5px;cursor:pointer">CONTINUAR</button>'+
+    '</div>'+
+  '</div>';
+}
 
 // T310 — compact per-day state strip for the current week, shown on Home
 // under the primary CTA. Uses the canonical lifecycle resolver/labels only
