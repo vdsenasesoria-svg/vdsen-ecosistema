@@ -71,7 +71,7 @@ const REAL_SRC = [
 }).join('\n');
 
 const ASYNC_SRC = [
-  'async function skipSession(di) {',
+  'async function skipSession(di, reason) {',
   'async function _endSessionAsPartial(di) {',
   'async function markSessionDone(di) {',
   'async function _confirmSessionDone(di) {',

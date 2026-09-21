@@ -4376,9 +4376,19 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _histExBanner = EXERCISE_HISTORY[_exNameBanner] || {};
   var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
   var _exNoteInline = _getExNote(di, ei);
+  // T302 — SKIP EXERCISE: only offered while the exercise isn't already
+  // resolved (done or skipped) and only in the active real week -- never a
+  // fabricated shortcut, just an honest omission with an optional reason.
+  var _exSkipEntry = LOGS['exskip_'+CURRENT_WEEK+'_'+di+'_'+ei];
+  var _exSkipLinkHtml = (!_exSkipEntry && !_isExerciseFullyDone(di, ei, ej) && CURRENT_WEEK === REAL_WEEK)
+    ? '<button onclick="_skipExerciseWithReason('+di+','+ei+')" title="Omitir este ejercicio" style="margin-top:6px;padding:4px 10px;border-radius:7px;border:1px solid rgba(107,107,102,.3);background:rgba(107,107,102,.06);color:var(--mt);font-size:10px;font-weight:700;letter-spacing:.3px;cursor:pointer">⏭ Omitir ejercicio</button>'
+    : (_exSkipEntry
+        ? '<div style="margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:7px;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.25);font-size:10px;color:var(--mt);font-weight:700">⏸ Ejercicio omitido</div>'
+        : '');
   var headerHtml =
     '<div style="margin-bottom:14px">'+
       '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+_escHTml(nombre)+'</div>'+
+      _exSkipLinkHtml+
       (_exNoteInline
         ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_escHTml(_exNoteInline)+'</div>'
         : '')+
@@ -5492,6 +5502,10 @@ function completeCircuito(key, di, ei) {
 // Cardio/Circuito: 1 log key (sin _s{S}). Fuerza/Calistenia/Estacion: por sets.
 function _isExerciseFullyDone(di, ei, ej) {
   if (!ej) return false;
+  // T302: a skipped exercise is treated as resolved for navigation purposes
+  // (never blocks moving to the next exercise) -- it never fabricates a
+  // log_ set entry, so it is never counted as real execution anywhere else.
+  if (LOGS['exskip_'+CURRENT_WEEK+'_'+di+'_'+ei]) return true;
   var t = _getExType(ej);
   if (t === 'cardio' || t === 'circuito') {
     var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei;
@@ -6959,7 +6973,7 @@ function renderEntrenamiento() {
             (CURRENT_WEEK === REAL_WEEK && _calcSessionStats(LOGS, DIA_ACTIVO, CURRENT_WEEK).completedSets > 0
               ? '<button onclick="_endSessionAsPartial('+DIA_ACTIVO+')" title="Terminar la sesión ahora conservando lo ya registrado" style="background:rgba(200,165,74,.08);border:1px solid rgba(200,165,74,.4);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:700;color:#C8A54A;cursor:pointer;letter-spacing:.5px">⏳ Terminar por hoy</button>'
               : '') +
-            (CURRENT_WEEK === REAL_WEEK ? '<button onclick="skipSession('+DIA_ACTIVO+')" title="Omitir esta sesión y avanzar al siguiente día" style="background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.3);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px">⏸ Saltar</button>' : '') +
+            (CURRENT_WEEK === REAL_WEEK ? '<button onclick="_skipSessionWithReason('+DIA_ACTIVO+')" title="Omitir esta sesión y avanzar al siguiente día" style="background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.3);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px">⏸ Saltar</button>' : '') +
             (CURRENT_WEEK > 1 ? '<button onclick="markSessionDoneFromHistory('+DIA_ACTIVO+')" title="Copia los datos de la semana anterior en todos los sets y marca la sesión como completada" style="background:rgba(107,107,102,.06);border:1px solid rgba(244,244,240,.18);border-radius:20px;padding:7px 14px;font-size:11px;font-weight:700;color:var(--mt);cursor:pointer;letter-spacing:.5px;min-height:36px">⚡ Copiar sem. anterior</button>' : '') +
             '</div>')+
     '</div>'+
@@ -8640,10 +8654,13 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
   }
 }
 
-async function skipSession(di) {
+async function skipSession(di, reason) {
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var key = 'done_'+CURRENT_WEEK+'_'+di;
-  LOGS[key] = { ts: Date.now(), skipped: true };
+  var entry = { ts: Date.now(), skipped: true };
+  // T302 — optional TIME/EQUIPMENT/PAIN/OTHER reason, never required, never a questionnaire.
+  if (reason && ['TIME','EQUIPMENT','PAIN','OTHER'].indexOf(reason) !== -1) entry.reason = reason;
+  LOGS[key] = entry;
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
   var _ok = await _doSaveLogs();
   if (_ok === false) {
@@ -8652,12 +8669,64 @@ async function skipSession(di) {
     renderEntrenamiento();
     return;
   }
-  showToast('⏸ Sesión omitida · puedes reabrirla');
+  // PAIN keeps a safety-visible signal: the client sees an explicit nudge to
+  // tell their coach (the existing contract this ticket may not extend is the
+  // coach-side Monitor UI, so the signal stays visible where the client is,
+  // stored on the reason field for any future/manual coach review of raw logs).
+  showToast(reason === 'PAIN' ? '⏸ Sesión omitida (dolor/molestia) — avisale a tu coach' : '⏸ Sesión omitida · puedes reabrirla');
   _autoAdvanceDia();
   renderEntrenamiento();
   renderResumen();
   await _autoAdvanceWeekIfDone(CURRENT_WEEK !== REAL_WEEK);
 }
+window.skipSession = skipSession;
+
+// T302 — "Saltar" UI entry point: asks for an optional reason first, then
+// delegates to the real skipSession(di, reason) above. Cancelling the reason
+// picker cancels the skip entirely -- no skip happens without this resolving.
+async function _skipSessionWithReason(di) {
+  var reason = await _pickSkipReason('¿Por qué omitís esta sesión? (opcional)');
+  if (reason === null) return; // cancelled -- no skip
+  await skipSession(di, reason);
+}
+window._skipSessionWithReason = _skipSessionWithReason;
+
+// T302 — SKIP EXERCISE: omit a single exercise without fabricating any
+// set/load/reps/RIR and without generating progression evidence for it. The
+// rest of the session continues normally. Reuses the existing logs/{uid}
+// document (no new collection) via a new exskip_ key, same pattern as
+// exmod_/exnote_/readiness_.
+async function skipExercise(di, ei, reason) {
+  if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
+  var key = 'exskip_'+CURRENT_WEEK+'_'+di+'_'+ei;
+  if (LOGS[key]) { showToast('Este ejercicio ya está omitido', true); return; }
+  var entry = { ts: Date.now() };
+  if (reason && ['TIME','EQUIPMENT','PAIN','OTHER'].indexOf(reason) !== -1) entry.reason = reason;
+  LOGS[key] = entry;
+  if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+  var ok = await _doSaveLogs();
+  if (ok === false) {
+    delete LOGS[key];
+    showToast('⚠ NO SE GUARDÓ — revisa conexión. Reintenta.', true);
+    return;
+  }
+  showToast(reason === 'PAIN' ? '⏸ Ejercicio omitido (dolor/molestia) — avisale a tu coach' : '⏸ Ejercicio omitido');
+  // Advance to the next active, not-yet-done exercise (same shape as completeSet's own advance).
+  for (var _n = ei + 1; _n < (_EJERCICIOS_DIA || []).length; _n++) {
+    var _o = _EJERCICIOS_DIA[_n];
+    if (_o && isTechniqueActive(_o, CURRENT_WEEK) && !_isExerciseFullyDone(di, _n, _o)) { EJ_ACTIVO = _n; break; }
+  }
+  renderEntrenamiento();
+}
+window.skipExercise = skipExercise;
+
+// T302 — "Omitir ejercicio" UI entry point, mirrors _skipSessionWithReason.
+async function _skipExerciseWithReason(di, ei) {
+  var reason = await _pickSkipReason('¿Por qué omitís este ejercicio? (opcional)');
+  if (reason === null) return;
+  await skipExercise(di, ei, reason);
+}
+window._skipExerciseWithReason = _skipExerciseWithReason;
 
 // T301 — "TERMINAR POR HOY": lets the client intentionally end an INCOMPLETE
 // session as PARTIAL. Preserves every real set already logged, never
@@ -12796,6 +12865,42 @@ function _showStaleSessionRecovery(staleInfo) {
     _endSessionAsPartial(staleInfo.di);
   };
   ov.onclick = function(e) { if (e.target === ov) dismiss(); }; // dismiss-only click-outside -- never auto-closes as COMPLETE
+}
+
+// T302 — Optional skip reason (TIME/EQUIPMENT/PAIN/OTHER). Deliberately NOT a
+// questionnaire: one tap picks a reason, or the user can skip without one.
+// Resolves to a reason code, '' (skipped with no reason), or null (cancelled
+// entirely -- the caller must not skip at all in that case).
+function _pickSkipReason(title) {
+  return new Promise(function(resolve) {
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    var opts = [
+      { code: 'TIME', label: '⏱ Tiempo' },
+      { code: 'EQUIPMENT', label: '🏋 Equipo ocupado' },
+      { code: 'PAIN', label: '⚠ Dolor/molestia' },
+      { code: 'OTHER', label: '· Otro' }
+    ];
+    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:320px;width:100%;font-family:var(--ff)">'
+      + '<p style="color:var(--tx);font-size:13px;font-weight:700;letter-spacing:.5px;margin:0 0 14px">'+_escHTml(title)+'</p>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'
+      + opts.map(function(o){
+          return '<button data-reason="'+o.code+'" style="padding:11px 8px;border-radius:9px;border:1px solid var(--bd);background:var(--input-bg);color:var(--tx);font-size:12px;font-weight:700;cursor:pointer">'+o.label+'</button>';
+        }).join('')
+      + '</div>'
+      + '<div style="display:flex;gap:10px;justify-content:space-between">'
+      + '<button id="_psr_none" style="padding:9px 14px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mt);font-size:12px;cursor:pointer">Omitir sin razón</button>'
+      + '<button id="_psr_cancel" style="padding:9px 14px;border-radius:8px;border:none;background:transparent;color:var(--mt);font-size:12px;cursor:pointer">Cancelar</button>'
+      + '</div></div>';
+    document.body.appendChild(ov);
+    function done(v) { ov.remove(); resolve(v); }
+    Array.prototype.forEach.call(ov.querySelectorAll('[data-reason]'), function(btn) {
+      btn.onclick = function() { done(btn.getAttribute('data-reason')); };
+    });
+    ov.querySelector('#_psr_none').onclick = function() { done(''); };
+    ov.querySelector('#_psr_cancel').onclick = function() { done(null); };
+    ov.onclick = function(e) { if (e.target === ov) done(null); };
+  });
 }
 
 function showToast(msg, isError=false) {
