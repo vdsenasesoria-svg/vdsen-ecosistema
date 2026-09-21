@@ -136,14 +136,14 @@ const guardarNutriLogSrc = extractFunction(CLIENT, 'async function guardarNutriL
 ok(guardarNutriLogSrc.includes('var _ok = await _doSaveLogs();') && guardarNutriLogSrc.includes("if (_ok === false) {"),
   'contrast: guardarNutriLog() already does this correctly (T126-C) -- real await, real success gate');
 
-// ── FINDING 2: no validation before write in nutrition log. ────────────────
-ok(!/parseFloat|isNaN/.test(guardarNutriLogSrc), 'FINDING 2 confirmed: guardarNutriLog() never validates the numeric fields before writing (fixed in T317)');
+// ── FINDING 2: RESOLVED in T317 -- validation now runs before write. ──────
+ok(guardarNutriLogSrc.includes('isNaN(_v) || _v < 0'), 'FINDING 2 RESOLVED (T317): guardarNutriLog() now validates the numeric fields before writing (0 stays valid, NaN/negative aborts)');
 
-// ── FINDING 3: no stale-identity guard after either await. ─────────────────
-ok(!guardarNutriLogSrc.includes('USER.uid') && !guardarNutriLogSrc.includes('_uidAtStart'),
-  'FINDING 3 confirmed (nutrition): no stale-client-context re-check after its own await');
+// ── FINDING 3: nutrition side RESOLVED in T317; check-in side still open
+// (scheduled for T318, alongside FINDING 1). ────────────────────────────────
+ok(guardarNutriLogSrc.includes('_uidAtStart'), 'FINDING 3 RESOLVED (nutrition, T317): stale-client-context re-check now present after its own await');
 ok(!guardarCISrc.includes('_uidAtStart') && !/if \(!USER \|\| USER\.uid/.test(guardarCISrc),
-  'FINDING 3 confirmed (check-in): no stale-client-context re-check after its own await');
+  'FINDING 3 still open (check-in) as of T317: no stale-client-context re-check after its own await -- fixed together with FINDING 1 in T318');
 
 // ── PROGRESS view: confirmed already honest (no fabricated single-point trend). ──
 const historialSrc = extractFunction(CLIENT, 'function buildHistorialWidget() {');

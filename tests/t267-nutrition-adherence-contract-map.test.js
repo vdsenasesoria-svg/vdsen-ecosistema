@@ -78,8 +78,9 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 
 ok(CLIENT.includes("var k = 'nutrilog_'+_todayKey();") && CLIENT.includes('function guardarNutriLog()'),
   'client writes a real per-day nutrilog_{date} entry to LOGS (guardarNutriLog) -- not fabricated, not a placeholder');
-ok(CLIENT.includes("['nl_kcal','nl_prot','nl_carb','nl_gras'].forEach"),
-  'nutrilog captures kcal/prot/carb/gras -- directly comparable against nutritionRaw targets (same units)');
+ok(CLIENT.includes("var _fields = ['nl_kcal','nl_prot','nl_carb','nl_gras'];") && CLIENT.includes('_fields.forEach(function(id) {'),
+  'nutrilog captures kcal/prot/carb/gras -- directly comparable against nutritionRaw targets (same units) ' +
+  '(T317 extracted the literal array into _fields to also drive its new pre-write validation loop; same fields, same capture)');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ...but is NEVER read by the coach app or any engine today -- confirmed

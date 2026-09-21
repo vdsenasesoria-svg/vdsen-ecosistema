@@ -10254,9 +10254,29 @@ function nutriLogSet(campo, val) {
 async function guardarNutriLog() {
   var _nlBtn = document.querySelector('[onclick="guardarNutriLog()"]');
   if (_nlBtn) { _nlBtn.disabled = true; _nlBtn.textContent = 'GUARDANDO...'; }
+
+  // T317 (FINDING 2) — validate before writing: 0 is a valid value (skipped
+  // a meal, fasted, etc.); a negative or non-numeric value is not.
+  var _fields = ['nl_kcal','nl_prot','nl_carb','nl_gras'];
+  for (var _fi = 0; _fi < _fields.length; _fi++) {
+    var _el = document.getElementById(_fields[_fi]);
+    if (!_el || _el.value === '') continue;
+    var _v = parseFloat(_el.value);
+    if (isNaN(_v) || _v < 0) {
+      showToast('⚠ Valor inválido — ingresá un número igual o mayor a 0', true);
+      if (_nlBtn) { _nlBtn.disabled = false; _nlBtn.textContent = '✓ GUARDAR REGISTRO'; }
+      return;
+    }
+  }
+
+  // T317 (FINDING 3) — stale-client-context guard, same pattern as the
+  // rest of this file (T127-H): capture identity before the await, never
+  // apply the result to a UI that no longer belongs to this user.
+  var _uidAtStart = USER && USER.uid;
+
   var k = 'nutrilog_'+_todayKey();
   if (!LOGS[k]) LOGS[k] = {};
-  ['nl_kcal','nl_prot','nl_carb','nl_gras'].forEach(function(id) {
+  _fields.forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
     var campo = id.replace('nl_','');
@@ -10269,6 +10289,7 @@ async function guardarNutriLog() {
     // saveLogs() solo pone un timer y resuelve de inmediato — el toast se disparaba siempre
     // sin importar si Firestore falló.
     var _ok = await _doSaveLogs();
+    if (!USER || USER.uid !== _uidAtStart) return; // client switched away mid-save -- never touch a UI that isn't theirs
     if (_ok === false) {
       showToast('⚠ Error al guardar el registro — revisa conexión', true);
     } else {
