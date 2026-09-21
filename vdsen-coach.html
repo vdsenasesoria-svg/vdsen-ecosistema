@@ -1586,9 +1586,9 @@
 </script>
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
   const firebaseConfig = {
@@ -3807,9 +3807,9 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       }
       const btn = document.getElementById("nc-submit");
       btn.disabled = true; btn.textContent = "Creando...";
-      const { initializeApp: initSecondary, deleteApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+      const { initializeApp: initSecondary, deleteApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
       const secondaryApp = initSecondary(firebaseConfig, "secondary");
-      const secAuth = (await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js")).getAuth(secondaryApp);
+      const secAuth = (await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js")).getAuth(secondaryApp);
       try {
         let uid;
         try {
@@ -9344,7 +9344,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       UI_STATES.building_request();
 
       // 1. Read client data from Firestore (READ ONLY)
-      const { doc, getDoc, collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { doc, getDoc, collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
       const clientRef = doc(db, 'clients', clientId);
       const clientSnap = await getDoc(clientRef);
       if (!clientSnap.exists()) {
