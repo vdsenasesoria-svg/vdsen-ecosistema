@@ -102,8 +102,13 @@ ok(extractFunction(CLIENT, 'async function guardarNutriLog() {').includes('_v < 
 const clientOnSnapshotCount = (CLIENT.match(/FB\.onSnapshot\(/g) || []).length;
 ok(clientOnSnapshotCount === 5, 'NOT FOUND: duplicate Firestore listeners -- still exactly 5 (T294 baseline unchanged by this run)');
 
-// inaccessible div-as-button (documented, not fixed -- see T313/T322)
-ok(CLIENT.includes('<div class="wk ${cls}" onclick="goToWeek(${w})">'), 'DOCUMENTED (not fixed, P3): week-grid cells remain a clickable <div> rather than a <button> -- converting risks the existing .wk CSS contract; out of this run\'s bounded scope');
+// inaccessible div-as-button -- CLOSED in T322 (converted after this audit
+// pass confirmed it was safe: no JS queries .wk by tag, only by class; the
+// CSS class already fully defines background/border/padding, so it applies
+// identically to a <button>; grid-item behavior is unaffected by the
+// child's own display value).
+ok(!CLIENT.includes('<div class="wk ${cls}" onclick="goToWeek(${w})">'), 'RESOLVED (T322): week-grid cells are no longer a clickable <div>');
+ok(CLIENT.includes('<button type="button" class="wk ${cls}" onclick="goToWeek(${w})" aria-label="Semana'), 'RESOLVED (T322): week-grid cells are now real <button> elements with an aria-label (keyboard-focusable, screen-reader meaningful)');
 
 // bottom-nav covering primary CTA
 ok(CLIENT.includes('.bnav{display:flex;background:rgba(6,14,26,.96)') && CLIENT.includes('flex-shrink:0'),

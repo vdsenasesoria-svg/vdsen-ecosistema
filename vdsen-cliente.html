@@ -168,7 +168,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .stat-val{font-family:'Big Shoulders Display',var(--ff);font-size:34px;font-weight:800;color:var(--tx);line-height:1}
 .stat-lbl{font-size:11px;color:var(--platinum);letter-spacing:1.5px;margin-top:4px;text-transform:uppercase;font-weight:600}
 .week-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:16px}
-.wk{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 4px;text-align:center;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent}
+.wk{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 4px;text-align:center;cursor:pointer;transition:all .2s;-webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none;font-family:inherit;width:100%;min-height:44px}
 .wk.done{border-color:rgba(110,154,110,.4);background:rgba(110,154,110,.06)}
 .wk.active{border-color:var(--accent);background:rgba(196,255,0,.08);box-shadow:0 0 8px rgba(196,255,0,.12)}
 .wk.deload{border-color:rgba(140,140,134,.4);background:rgba(140,140,134,.06)}
@@ -2847,10 +2847,10 @@ function renderResumen() {
     const _wHasPartial = _wDone && !_wAllComplete;
     const cls = w===semActiva?'active':(_wAllComplete?'done':(_wHasPartial?'partial':(w===_totalWeeksGrid?'deload':'')));
     const lbl = w===_totalWeeksGrid?'DELOAD':w===semActiva?'ACTIVA':(_wHasPartial?'PARCIAL':(_wResolved&&!_wDone?'⏸':''));
-    weekHtml += `<div class="wk ${cls}" onclick="goToWeek(${w})">
+    weekHtml += `<button type="button" class="wk ${cls}" onclick="goToWeek(${w})" aria-label="Semana ${w}${lbl?': '+lbl:''}">
       <div class="wk-num">${w}</div>
       <div class="wk-lbl">${lbl||'SEM'}</div>
-    </div>`;
+    </button>`;
   }
 
   // Check-in de esta semana
