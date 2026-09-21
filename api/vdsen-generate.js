@@ -20,6 +20,9 @@ var contracts    = require('./vdsen-contracts');
 var validateReq  = contracts.validateGenerationRequest;
 var validateResp = contracts.validateGenerationResponse;
 
+var vdsenAuth              = require('./vdsen-auth');
+var authenticateCoachRequest = vdsenAuth.authenticateCoachRequest;
+
 // ─── Error codes ─────────────────────────────────────────────────────────────
 
 var ERR = {
@@ -300,7 +303,7 @@ function buildErrorResponse(errorCode, requestId, details) {
 // Injectable OpenAI client factory — enables mock testing without network calls.
 // factory(apiKey) → { responses: { create: async (params) → rawResponse } }
 
-function createHandlerWithClient(openaiClientFactory) {
+function createHandlerWithClient(openaiClientFactory, authDeps) {
   return async function handler(req, res) {
     var startMs    = Date.now();
     var requestId  = null;
@@ -308,6 +311,20 @@ function createHandlerWithClient(openaiClientFactory) {
 
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+
+    // ── 0. Authenticate BEFORE reading/trusting the body or calling OpenAI ───
+    // Identity comes ONLY from the verified Firebase ID token's own uid --
+    // never from body.coachId/clientId/email, which are never used as proof
+    // of who the caller is anywhere in this file. Errors are generic on
+    // purpose: the client never learns whether the token was missing,
+    // malformed, invalid, or valid-but-not-a-coach beyond the 401/403 split.
+    var authHeader = req.headers && (req.headers['authorization'] || req.headers['Authorization']);
+    var authResult = await authenticateCoachRequest(authHeader, authDeps || {});
+    if (!authResult.ok) {
+      return res.status(authResult.status).json({
+        error: authResult.status === 403 ? 'FORBIDDEN' : 'UNAUTHORIZED'
+      });
     }
 
     var body = req.body || {};
@@ -439,14 +456,27 @@ function createHandlerWithClient(openaiClientFactory) {
 }
 
 // ─── Default Vercel handler ───────────────────────────────────────────────────
-// openai package loaded lazily so tests don't require it to be installed.
+// openai/firebase-admin packages loaded lazily so tests don't require either
+// to be installed -- only a real request through the default export touches
+// them at all.
 
 var _defaultFactory = function(apiKey) {
   var OpenAI = require('openai');
   return new OpenAI({ apiKey: apiKey });
 };
 
-var handler = createHandlerWithClient(_defaultFactory);
+var _defaultAuthDeps = {
+  verifyIdToken: function(token) {
+    var fbAdmin = require('./_firebaseAdmin');
+    return fbAdmin.verifyIdToken(token);
+  },
+  isAuthorizedCoach: function(uid) {
+    var fbAdmin = require('./_firebaseAdmin');
+    return fbAdmin.isAuthorizedCoach(uid);
+  }
+};
+
+var handler = createHandlerWithClient(_defaultFactory, _defaultAuthDeps);
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
 

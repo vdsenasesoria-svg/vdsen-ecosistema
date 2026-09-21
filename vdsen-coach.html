@@ -9428,6 +9428,27 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         return;
       }
 
+      // T335 — the endpoint now requires a real Firebase ID token: no logged-in
+      // Coach → never call it at all (not even a network round-trip to fail).
+      if (!auth.currentUser) {
+        UI_STATES.error('Sesión de coach no activa — vuelve a iniciar sesión');
+        return;
+      }
+      let _vdsenIdToken;
+      try {
+        _vdsenIdToken = await auth.currentUser.getIdToken();
+      } catch (tokenErr) {
+        UI_STATES.error('No se pudo verificar tu sesión: ' + tokenErr.message);
+        return;
+      }
+      // T144-H-style stale-context guard: getIdToken() is itself an await: if
+      // the coach logged out (or switched away) while it was pending, don't
+      // proceed as if nothing happened.
+      if (!auth.currentUser) {
+        UI_STATES.error('Sesión de coach no activa — vuelve a iniciar sesión');
+        return;
+      }
+
       UI_STATES.generating();
       console.info('[VDSEN D.1] Sending to /api/vdsen-generate — schema:', request.schema, 'mode:', request.mode);
 
@@ -9438,7 +9459,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       try {
         httpResp = await fetch('/api/vdsen-generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _vdsenIdToken },
           body: JSON.stringify(request),
           signal: _abortCtrl.signal,
         });
@@ -9548,6 +9569,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
 
   function _vdsenAIHttpError(status, body, UI_STATES) {
     const preview = body ? body.substring(0, 200) : '';
+    if (status === 401) { UI_STATES.error('401 — tu sesión expiró, vuelve a iniciar sesión'); return; }
+    if (status === 403) { UI_STATES.error('403 — tu cuenta no tiene permisos de coach'); return; }
     if (status === 400) { UI_STATES.invalid('400 Bad Request — ' + preview); return; }
     if (status === 422) { UI_STATES.invalid('422 Unprocessable — ' + preview); return; }
     if (status === 500) { UI_STATES.error('500 Internal Server Error'); return; }
