@@ -14386,6 +14386,13 @@ El esfuerzo no es negociable.
       var dayExecBadge = '';
       if (execDay && execDay.sessionAutoClosed) {
         dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(136,136,136,.12);border:1px solid rgba(136,136,136,.35);color:#888;font-weight:700">⚠️ ADMIN</span>';
+      } else if (execDay && execDay.sessionSkipped) {
+        // T329 — an explicit skip is never real execution; never show COMPLETADA.
+        dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(136,136,136,.12);border:1px solid rgba(136,136,136,.35);color:#888;font-weight:700">⏸ OMITIDA</span>';
+      } else if (execDay && execDay.sessionPartial) {
+        // T329 — real execution ended early (Client's "Terminar por hoy", T301,
+        // or a legacy week-bulk AUTO_CLOSED-with-data close) is never full completion.
+        dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.35);color:#C4FF00;font-weight:700">◐ PARCIAL</span>';
       } else if (execDay && execDay.sessionDone) {
         dayExecBadge = ' <span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(68,187,136,.1);border:1px solid rgba(68,187,136,.35);color:#44BB88;font-weight:700">✓ COMPLETADA</span>';
       }
@@ -14912,8 +14919,17 @@ El esfuerzo no es negociable.
       // Session-level state
       var doneKey = 'done_' + W + '_' + D;
       var doneEntry = entries[doneKey];
-      var sessionDone = !!(doneEntry && (doneEntry === true || (typeof doneEntry === 'object' && doneEntry.ts)));
-      var sessionAutoClosed = !!(doneEntry && typeof doneEntry === 'object' && doneEntry.autoClosed);
+      // T329 — this previously counted ANY object with a .ts as sessionDone,
+      // which is also true of a SKIPPED entry ({ts, skipped:true}) and of a
+      // genuine PARTIAL closure ({ts, partial:true}, T301) -- both were
+      // rendering downstream as "✓ COMPLETADA", never distinguished from a
+      // real full completion. sessionSkipped/sessionPartial are now split
+      // out explicitly; sessionDone is real completion only.
+      var _doneIsObj = doneEntry && typeof doneEntry === 'object';
+      var sessionSkipped = !!(_doneIsObj && doneEntry.skipped && !doneEntry.autoClosed);
+      var sessionPartial = !!(_doneIsObj && !doneEntry.skipped && (doneEntry.partial || doneEntry.autoClosed));
+      var sessionDone = !!(doneEntry === true || (_doneIsObj && doneEntry.ts && !doneEntry.skipped && !sessionPartial));
+      var sessionAutoClosed = !!(_doneIsObj && doneEntry.autoClosed);
       // Progrec for this day
       var progrecKey = 'progrec_' + W + '_' + D;
       var progrecEntry = entries[progrecKey];
@@ -14942,7 +14958,7 @@ El esfuerzo no es negociable.
         else if (eExId) { if (!byExId[eExId]) byExId[eExId] = []; byExId[eExId].push(row); }
         else            { if (!byPos[E])  byPos[E]      = []; byPos[E].push(row);       }
       }
-      var dayResult = { dayIndex: D, label: d.label || '', sessionDone: sessionDone, sessionAutoClosed: sessionAutoClosed, exercises: [] };
+      var dayResult = { dayIndex: D, label: d.label || '', sessionDone: sessionDone, sessionAutoClosed: sessionAutoClosed, sessionSkipped: sessionSkipped, sessionPartial: sessionPartial, exercises: [] };
       for (var ei = 0; ei < exs.length; ei++) {
         var ex = exs[ei];
         var exName  = ex.exerciseName || ex.nombre || 'Ejercicio';
@@ -16374,6 +16390,14 @@ El esfuerzo no es negociable.
   function _getSessionCompletionState(doneEntry) {
     if (!doneEntry) return 'PENDING';
     if (typeof doneEntry !== 'object') return 'REAL_COMPLETE'; // legacy boolean
+    // T329 — cross-app contract fix: the Client's "TERMINAR POR HOY" (T301)
+    // writes done_{w}_{d} = {ts, partial:true}. This classifier had no
+    // branch for it, so a genuinely PARTIAL session was falling through to
+    // the final `return 'REAL_COMPLETE'` below -- the Coach side (Monitor,
+    // adherence, Decision Engine evidence) was seeing a client's honest
+    // partial closure as full completion. Mirrors the Client's own
+    // _getSessionCompletionState (vdsen-cliente.html) branch order exactly.
+    if (doneEntry.partial) return 'PARTIAL';
     if (doneEntry.skipped && !doneEntry.autoClosed) return 'SKIPPED';
     if (doneEntry.autoClosed && doneEntry.skipped) return 'AUTO_CLOSED_NO_DATA';
     if (doneEntry.autoClosed) return 'AUTO_CLOSED';
@@ -18092,12 +18116,21 @@ El esfuerzo no es negociable.
         const _doneEntry = entries['done_'+w+'_'+d];
         const isSkipped = !!(_doneEntry && typeof _doneEntry === 'object' && _doneEntry.skipped && !_doneEntry.autoClosed);
         const _isAdminClosed84 = !!(_doneEntry && typeof _doneEntry === 'object' && _doneEntry.autoClosed && _doneEntry.skipped);
-        const done = _doneEntry === true || (typeof _doneEntry === 'object' && _doneEntry && !_doneEntry.skipped);
+        // T329 — a genuine partial closure (Client's "Terminar por hoy", T301,
+        // done_={partial:true}) or a legacy week-bulk AUTO_CLOSED-with-real-
+        // data entry is real execution ended early, never full completion.
+        // This heatmap was rendering both as a solid green "✓ Completa" cell,
+        // indistinguishable from a truly complete session -- reuses the
+        // existing lime "◑ Parcial" bucket (already used for in-progress/
+        // unclosed sessions with real logs), matching the Client's own
+        // canonical PARTIAL classification exactly.
+        const isPartialClosed = !!(_doneEntry && typeof _doneEntry === 'object' && !_doneEntry.skipped && (_doneEntry.partial || _doneEntry.autoClosed));
+        const done = _doneEntry === true || (typeof _doneEntry === 'object' && _doneEntry && !_doneEntry.skipped && !isPartialClosed);
         const hasAny = Object.keys(entries).some(k => k.startsWith('log_'+w+'_'+d+'_'));
-        const bg = (isSkipped||_isAdminClosed84) ? 'rgba(107,107,102,.35)' : done ? '#44BB88' : hasAny ? 'rgba(196,255,0,.5)' : isFuture ? 'rgba(244,244,240,.04)' : w < currentWeek ? 'rgba(255,68,68,.22)' : 'rgba(244,244,240,.06)';
-        const textColor = (isSkipped||_isAdminClosed84) ? '#888' : done ? '#000' : hasAny ? '#000' : '#555';
-        const icon = (isSkipped||_isAdminClosed84) ? '⏸' : done ? '✓' : hasAny ? '◑' : isFuture ? '' : w < currentWeek ? '✗' : '·';
-        html += `<div title="Sem ${w} · Día ${d+1}: ${(isSkipped||_isAdminClosed84)?'Omitida':done?'Completa':hasAny?'Parcial':isFuture?'Pendiente':'Faltó'}" style="height:28px;border-radius:5px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${textColor};border:${isCur&&!done&&!_isAdminClosed84?'1px solid rgba(196,255,0,.4)':'1px solid transparent'}">${icon}</div>`;
+        const bg = (isSkipped||_isAdminClosed84) ? 'rgba(107,107,102,.35)' : done ? '#44BB88' : (hasAny||isPartialClosed) ? 'rgba(196,255,0,.5)' : isFuture ? 'rgba(244,244,240,.04)' : w < currentWeek ? 'rgba(255,68,68,.22)' : 'rgba(244,244,240,.06)';
+        const textColor = (isSkipped||_isAdminClosed84) ? '#888' : done ? '#000' : (hasAny||isPartialClosed) ? '#000' : '#555';
+        const icon = (isSkipped||_isAdminClosed84) ? '⏸' : done ? '✓' : (hasAny||isPartialClosed) ? '◑' : isFuture ? '' : w < currentWeek ? '✗' : '·';
+        html += `<div title="Sem ${w} · Día ${d+1}: ${(isSkipped||_isAdminClosed84)?'Omitida':done?'Completa':(hasAny||isPartialClosed)?'Parcial':isFuture?'Pendiente':'Faltó'}" style="height:28px;border-radius:5px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${textColor};border:${isCur&&!done&&!_isAdminClosed84?'1px solid rgba(196,255,0,.4)':'1px solid transparent'}">${icon}</div>`;
       }
       html += `</div>`;
     }
