@@ -1721,6 +1721,14 @@ async function loadPlan(user) {
     }, 300);
     showWhatsNew();
     if (_showBitacoraInfo) { setTimeout(function(){ showBitacoraInfoModal(); }, 500); }
+    // T303: stale open-session recovery -- checked once per app load, after the
+    // other startup modals so it doesn't stack on top of them.
+    setTimeout(function() {
+      try {
+        var _stale = _findStaleOpenSession(LOGS, REAL_WEEK, getSesiones());
+        if (_stale) _showStaleSessionRecovery(_stale);
+      } catch(e) { console.warn('stale session check failed:', e && e.message); }
+    }, 1300);
 
     // Pedir confirmar/actualizar celular la primera vez tras esta actualización
     // (una sola vez por cliente — se guarda phoneConfirmedAt en Firestore)
@@ -3327,6 +3335,40 @@ var _SESSION_LIFECYCLE_LABELS = {
 };
 function _getSessionLifecycleLabel(logs, week, di) {
   return _SESSION_LIFECYCLE_LABELS[_getSessionLifecycleState(logs, week, di)] || 'Pendiente';
+}
+
+// ── T303 — Stale open session detection (pure, read-only, no Firestore write) ──
+// A session is "stale" when it is genuinely IN_PROGRESS (real sets logged,
+// never closed) but the most recent real set was logged on a DIFFERENT
+// calendar day than today -- i.e. left open across a day boundary (app
+// closed mid-session, or simply forgotten). Never treats an autoFilled set
+// as real activity. Only scans REAL_WEEK -- CURRENT_WEEK/REAL_WEEK semantics
+// (view-only navigation to other weeks) are untouched.
+function _lastRealSetTs(logs, week, di) {
+  var prefix = 'log_' + week + '_' + di + '_';
+  var max = null;
+  for (var k in logs) {
+    if (k.indexOf(prefix) !== 0) continue;
+    var e = logs[k];
+    if (!e || !e.done || e.autoFilled) continue;
+    var ts = e.ts;
+    var t = typeof ts === 'string' ? Date.parse(ts) : Number(ts);
+    if (!isNaN(t) && t > 0 && (max === null || t > max)) max = t;
+  }
+  return max;
+}
+function _findStaleOpenSession(logs, week, sesiones, nowMs) {
+  if (!sesiones || !sesiones.length) return null;
+  nowMs = nowMs || Date.now();
+  var todayStr = new Date(nowMs).toDateString();
+  for (var i = 0; i < sesiones.length; i++) {
+    if (_getSessionLifecycleState(logs, week, i) !== 'IN_PROGRESS') continue;
+    var lastTs = _lastRealSetTs(logs, week, i);
+    if (lastTs && new Date(lastTs).toDateString() !== todayStr) {
+      return { week: week, di: i, lastTs: lastTs };
+    }
+  }
+  return null;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -12717,6 +12759,43 @@ function _askConfirmPartial(msg) {
     ov.querySelector('#_acp_no').onclick = function() { done(false); };
     ov.onclick = function(e) { if (e.target === ov) done(false); };
   });
+}
+
+// T303 — "SESIÓN ANTERIOR SIN CERRAR": shown once per app load when a stale
+// IN_PROGRESS session is found (see _findStaleOpenSession). Never auto-marks
+// COMPLETE. CONTINUAR just navigates there so the user can keep logging or
+// finish normally; TERMINAR COMO PARCIAL reuses _endSessionAsPartial (T301)
+// so the closure goes through the exact same safety checks (real sets only,
+// no fabrication, guarded write). Never permanently traps the user -- both
+// actions dismiss the modal and leave the app fully navigable either way.
+function _showStaleSessionRecovery(staleInfo) {
+  var sesiones = getSesiones();
+  var ses = sesiones[staleInfo.di];
+  var label = (ses && ses.dia) ? ses.dia.replace(/^(SESI[OÓ]N|D[IÍ]A)\s*\d+[:\s]*/i, '').trim() : ('Día ' + (staleInfo.di + 1));
+  var daysAgo = Math.max(1, Math.round((Date.now() - staleInfo.lastTs) / 86400000));
+  var ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:340px;width:100%;font-family:var(--ff)">'
+    + '<div style="font-size:13px;font-weight:800;letter-spacing:.5px;color:#C8A54A;margin-bottom:10px">⏳ SESIÓN ANTERIOR SIN CERRAR</div>'
+    + '<p style="color:var(--tx);font-size:14px;line-height:1.5;margin:0 0 18px">Tenés "'+_escHTml(label)+'" sin cerrar desde hace '+daysAgo+' día'+(daysAgo!==1?'s':'')+'. Podés continuarla o cerrarla como parcial conservando lo ya registrado.</p>'
+    + '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">'
+    + '<button id="_ssr_partial" style="padding:9px 16px;border-radius:8px;border:1px solid rgba(200,165,74,.4);background:rgba(200,165,74,.08);color:#C8A54A;font-size:12px;font-weight:700;cursor:pointer">TERMINAR COMO PARCIAL</button>'
+    + '<button id="_ssr_continue" style="padding:9px 16px;border-radius:8px;border:none;background:var(--gold-gradient);color:#0a0a0a;font-size:12px;font-weight:800;cursor:pointer">CONTINUAR</button>'
+    + '</div></div>';
+  document.body.appendChild(ov);
+  function dismiss() { ov.remove(); }
+  ov.querySelector('#_ssr_continue').onclick = function() {
+    dismiss();
+    CURRENT_WEEK = staleInfo.week;
+    selDia(staleInfo.di);
+  };
+  ov.querySelector('#_ssr_partial').onclick = function() {
+    dismiss();
+    CURRENT_WEEK = staleInfo.week;
+    DIA_ACTIVO = staleInfo.di;
+    _endSessionAsPartial(staleInfo.di);
+  };
+  ov.onclick = function(e) { if (e.target === ov) dismiss(); }; // dismiss-only click-outside -- never auto-closes as COMPLETE
 }
 
 function showToast(msg, isError=false) {
