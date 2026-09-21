@@ -3337,6 +3337,94 @@ function _getSessionLifecycleLabel(logs, week, di) {
   return _SESSION_LIFECYCLE_LABELS[_getSessionLifecycleState(logs, week, di)] || 'Pendiente';
 }
 
+// ── T308 — Canonical Home ("Hoy") state resolver ────────────────────────────
+// Home is a PROJECTION of the canonical session lifecycle, never a second
+// state engine: every field below is derived from _getSessionLifecycleState.
+// Pure, read-only, no Firestore write, no DOM access.
+//
+// "Today" = the first NOT_STARTED/IN_PROGRESS day in `week` (the next thing
+// the client should act on); once every day in the week is resolved
+// (COMPLETE/PARTIAL/SKIPPED), it falls back to the LAST day so Home can show
+// its final resolved state instead of silently going blank.
+function _getTodayHomeState(logs, week, sesiones) {
+  logs = logs || {};
+  sesiones = sesiones || [];
+  if (!sesiones.length) {
+    return {
+      lifecycle: null, label: null, dayIndex: -1, week: week,
+      primaryAction: { code: 'VIEW_PLAN', label: 'VER ENTRENAMIENTO ▶' },
+      secondaryAction: null, progress: null, isToday: false,
+      canStart: false, canResume: false, canReview: true, weekFullyResolved: false
+    };
+  }
+
+  var dayIndex = sesiones.length - 1;
+  var weekFullyResolved = true;
+  for (var i = 0; i < sesiones.length; i++) {
+    var scanState = _getSessionLifecycleState(logs, week, i);
+    if (scanState === 'NOT_STARTED' || scanState === 'IN_PROGRESS') { dayIndex = i; weekFullyResolved = false; break; }
+  }
+
+  var lifecycle = _getSessionLifecycleState(logs, week, dayIndex);
+  var label = _getSessionLifecycleLabel(logs, week, dayIndex);
+
+  var stats = _calcSessionStats(logs, dayIndex, week);
+  var totalSets = 0;
+  var ses = sesiones[dayIndex] || {};
+  (ses.exercises || []).forEach(function(ej, ei) {
+    if (typeof isTechniqueActive === 'function' && !isTechniqueActive(ej, week)) return;
+    var exMod = logs['exmod_'+week+'_'+dayIndex+'_'+ei] || {};
+    totalSets += exMod.numSeries ? (parseInt(exMod.numSeries) || 0) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+  });
+
+  var primaryAction, secondaryAction = null, canStart = false, canResume = false, canReview = false;
+  switch (lifecycle) {
+    case 'NOT_STARTED':
+      primaryAction = { code: 'START', label: 'EMPEZAR ENTRENAMIENTO ▶' };
+      canStart = true;
+      break;
+    case 'IN_PROGRESS':
+      primaryAction = { code: 'CONTINUE', label: 'CONTINUAR ENTRENAMIENTO ▶' };
+      canResume = true;
+      break;
+    case 'PARTIAL':
+      // Real execution exists and the client intentionally ended it early --
+      // offer to pick back up, never a fresh "start" (that would suggest
+      // discarding what was already logged).
+      primaryAction = { code: 'RESUME', label: 'RETOMAR SESIÓN ▶' };
+      canResume = true;
+      break;
+    case 'COMPLETE':
+      // No fake "start again" on a genuinely completed session.
+      primaryAction = { code: 'VIEW', label: 'VER ENTRENAMIENTO' };
+      canReview = true;
+      break;
+    case 'SKIPPED':
+      // Explicit, honest state -- never disguised as pending.
+      primaryAction = { code: 'VIEW_SKIPPED', label: 'VER SESIÓN OMITIDA' };
+      canReview = true;
+      break;
+    default:
+      primaryAction = { code: 'VIEW', label: 'VER ENTRENAMIENTO' };
+      canReview = true;
+  }
+
+  return {
+    lifecycle: lifecycle,
+    label: label,
+    dayIndex: dayIndex,
+    week: week,
+    primaryAction: primaryAction,
+    secondaryAction: secondaryAction,
+    progress: { completedSets: stats.completedSets, totalSets: totalSets },
+    isToday: !weekFullyResolved,
+    canStart: canStart,
+    canResume: canResume,
+    canReview: canReview,
+    weekFullyResolved: weekFullyResolved
+  };
+}
+
 // ── T303 — Stale open session detection (pure, read-only, no Firestore write) ──
 // A session is "stale" when it is genuinely IN_PROGRESS (real sets logged,
 // never closed) but the most recent real set was logged on a DIFFERENT
