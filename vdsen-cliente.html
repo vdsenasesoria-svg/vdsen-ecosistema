@@ -2849,7 +2849,13 @@ function renderResumen() {
   const ciDone = !!(ci.peso || ci.hrv);
   const _missingHintsHtml = _renderClientMissingHints(_detectMissingData(LOGS, PLAN, semActiva));
   document.getElementById('tabResumen').innerHTML = `
-    <div class="stat-row">
+    <div class="card" style="margin-top:0">
+      <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
+      ${getTodaySummary()}
+      ${buildWeekDayChips()}
+    </div>
+
+    <div class="stat-row" style="margin-top:10px">
       <div class="stat"><div class="stat-val">${semActiva}</div><div class="stat-lbl">SEMANA</div></div>
       <div class="stat"><div class="stat-val">${sesionesHechas}</div><div class="stat-lbl">SESIONES</div></div>
       <div class="stat"><div class="stat-val">${pct}%</div><div class="stat-lbl">PROGRESO</div></div>
@@ -2860,11 +2866,6 @@ function renderResumen() {
     <div class="week-grid">${weekHtml}</div>
     ${_missingHintsHtml}
 
-    <div class="card" style="margin-top:10px">
-      <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
-      ${getTodaySummary()}
-      ${buildWeekDayChips()}
-    </div>
     ${buildStaleSessionHomeBanner()}
 
     <div class="card" style="margin-top:8px;border-color:${ciDone?'rgba(107,107,102,.4)':'rgba(201,74,58,.25)'}">
