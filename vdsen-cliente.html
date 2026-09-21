@@ -172,10 +172,14 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .wk.done{border-color:rgba(110,154,110,.4);background:rgba(110,154,110,.06)}
 .wk.active{border-color:var(--accent);background:rgba(196,255,0,.08);box-shadow:0 0 8px rgba(196,255,0,.12)}
 .wk.deload{border-color:rgba(140,140,134,.4);background:rgba(140,140,134,.06)}
+/* T310 -- a week resolved via PARTIAL closures must never look identical to
+   one fully COMPLETE (P3 closed): distinct border/number color, hueso not verde. */
+.wk.partial{border-color:rgba(244,244,240,.35);background:rgba(244,244,240,.04)}
 .wk-num{font-family:'Big Shoulders Display',var(--ff);font-size:24px;font-weight:400;color:var(--mt);line-height:1}
 .wk.done .wk-num{color:var(--grn)}
 .wk.active .wk-num{color:var(--accent)}
 .wk.deload .wk-num{color:var(--blue)}
+.wk.partial .wk-num{color:var(--tx)}
 .wk-lbl{font-size:8px;color:var(--mt);letter-spacing:.8px;margin-top:3px;text-transform:uppercase;font-weight:600}
 .progress-bar{height:2px;background:var(--mt2);margin-bottom:14px;border-radius:99px}
 .pb-fill{height:100%;background:var(--gold-gradient);transition:width .8s ease;border-radius:99px}
@@ -2826,8 +2830,14 @@ function renderResumen() {
   for (let w=1; w<=_totalWeeksGrid; w++) {
     const _wResolved = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => !!LOGS['done_'+w+'_'+i]).every(Boolean);
     const _wDone = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _isRealExecution(LOGS['done_'+w+'_'+i])).every(Boolean);
-    const cls = w===semActiva?'active':(_wDone?'done':(w===_totalWeeksGrid?'deload':''));
-    const lbl = w===_totalWeeksGrid?'DELOAD':w===semActiva?'ACTIVA':(_wResolved&&!_wDone?'⏸':'');
+    // T310 (closes the known P3): a week resolved entirely via COMPLETE is
+    // "done" (green); one resolved via real execution but containing at
+    // least one PARTIAL gets its own distinct "partial" look -- never the
+    // same green checkmark as a fully-COMPLETE week.
+    const _wAllComplete = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _getSessionLifecycleState(LOGS, w, i) === 'COMPLETE').every(Boolean);
+    const _wHasPartial = _wDone && !_wAllComplete;
+    const cls = w===semActiva?'active':(_wAllComplete?'done':(_wHasPartial?'partial':(w===_totalWeeksGrid?'deload':'')));
+    const lbl = w===_totalWeeksGrid?'DELOAD':w===semActiva?'ACTIVA':(_wHasPartial?'PARCIAL':(_wResolved&&!_wDone?'⏸':''));
     weekHtml += `<div class="wk ${cls}" onclick="goToWeek(${w})">
       <div class="wk-num">${w}</div>
       <div class="wk-lbl">${lbl||'SEM'}</div>
@@ -2853,6 +2863,7 @@ function renderResumen() {
     <div class="card" style="margin-top:10px">
       <div class="card-title">HOY — SEM ${semActiva}${semActiva===_totalWeeksGrid?' · DELOAD':''}</div>
       ${getTodaySummary()}
+      ${buildWeekDayChips()}
     </div>
 
     <div class="card" style="margin-top:8px;border-color:${ciDone?'rgba(107,107,102,.4)':'rgba(201,74,58,.25)'}">
@@ -3211,6 +3222,26 @@ function _goToHomeDay(idx) {
   goTab(1);
 }
 window._goToHomeDay = _goToHomeDay;
+
+// T310 — compact per-day state strip for the current week, shown on Home
+// under the primary CTA. Uses the canonical lifecycle resolver/labels only
+// -- shape (icon) + title/aria-label carry the state, never color alone.
+function buildWeekDayChips() {
+  var sesiones = getSesiones();
+  if (!sesiones.length) return '';
+  var chipColor = { NOT_STARTED:'var(--mt)', IN_PROGRESS:'var(--accent)', PARTIAL:'var(--tx)', COMPLETE:'var(--grn)', SKIPPED:'var(--mt)' };
+  var chipIcon  = { NOT_STARTED:'·', IN_PROGRESS:'●', PARTIAL:'◐', COMPLETE:'✓', SKIPPED:'⏸' };
+  var chips = sesiones.map(function(s, i) {
+    var st = _getSessionLifecycleState(LOGS, CURRENT_WEEK, i);
+    var label = _getSessionLifecycleLabel(LOGS, CURRENT_WEEK, i);
+    return '<button onclick="_goToHomeDay('+i+')" title="Día '+(i+1)+': '+label+'" aria-label="Día '+(i+1)+': '+label+'" '+
+      'style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;background:transparent;border:none;cursor:pointer">'+
+      '<span style="font-size:14px;font-weight:900;color:'+(chipColor[st]||'var(--mt)')+'" aria-hidden="true">'+(chipIcon[st]||'·')+'</span>'+
+      '<span style="font-size:8px;letter-spacing:.4px;color:var(--mt);font-weight:700">D'+(i+1)+'</span>'+
+      '</button>';
+  }).join('');
+  return '<div style="display:flex;margin-top:10px;border-top:1px solid var(--bd);padding-top:8px">'+chips+'</div>';
+}
 
 function getTodaySummary() {
   if (!PLAN || !PLAN.entrenamiento) return '<div style="color:var(--mt);font-size:11px">Sin entrenamiento</div>';
