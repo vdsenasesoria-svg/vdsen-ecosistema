@@ -362,7 +362,7 @@ console.log([
   'Operation                      | try/catch | success-after-write | btn-restore  | data-preserved',
   '-------------------------------|-----------|---------------------|--------------|---------------',
   'CLIENT: guardarCI              |    Y      |         Y           |  Y (finally) |  Y (pre-try)  ',
-  'CLIENT: submitPostSession      |  Y(inner) |      N (GAP-02)     |  N (GAP-03)  |  Y            ',
+  'CLIENT: submitPostSession      |  Y(inner) |    Y (T125-C)       |  Y (T126-C)  |  Y            ',
   'CLIENT: _confirmSessionDone    |  N(ret-F) |         Y           |  N/A         |  Y (rollback) ',
   'CLIENT: _doSaveLogs            |    Y      |         Y           |  N/A         |  N/A          ',
   'COACH:  saveTrainingPlan       |    Y      |         Y           |  Y (finally) |  Y (DOM)      ',
@@ -372,24 +372,36 @@ console.log([
   'COACH:  saveSupplementPlan     |    Y      |         Y           |  Y (finally) |  Y (DOM)      ',
   'COACH:  showUpdatePlanModal    |    Y      |         Y           |  Y (catch)   |  Y (DOM)      ',
   'COACH:  activatePlan (inline)  |  Y(embed) |      Y(embed)       |  Y(embed)    |  Y            ',
-  'COACH:  _applyTemplateToClient |    N      |         N           |  N           |  Y            ',
+  'COACH:  _applyTemplateToClient |  Y(T126-H)|      Y(T126-H)      |  Y(caller)   |  Y            ',
   '',
   '(ret-F)  = return-false pattern: _doSaveLogs handles all exceptions',
   '(embed)  = activation via saveImportedPlan / saveManualPlan (both fully guarded)',
   '(in-try) = data cleared inside try block, not before — preserved on failure',
+  '(caller) = _applyTemplateToClient itself has try/catch + a real error toast (T126-H)',
+  '           but no OWN finally; its one real caller (useBtn.onclick) wraps the call in',
+  '           its own try/finally that always restores the button -- verified live below.',
   '',
-  'GAPS FOUND (4 total):',
-  '  R6-GAP-01 (LOW)    submitPostSession: main write path has no dedicated try/catch.',
-  '                     Safe only because _confirmSessionDone never throws currently.',
-  '  R6-GAP-02 (MEDIUM) submitPostSession: showSessionSummary called unconditionally',
-  '                     after _confirmSessionDone. If save failed, success summary still',
-  '                     shows alongside the error toast — misleading UX.',
-  '  R6-GAP-03 (LOW)    submitPostSession: _postSessionSubmitting flag reset before await,',
-  '                     not in finally. Theoretical stuck-guard on unexpected exception.',
-  '  R6-GAP-04 (MEDIUM) _applyTemplateToClient: no try/catch and no finally block.',
-  '                     A Firestore error is completely unhandled — silent failure,',
-  '                     no user feedback, no UI restore.',
+  // T296 residual-audit update: this table used to list 4 open gaps.
+  // Re-verified against the CURRENT source: GAP-02 (T125-C) and GAP-03
+  // (T126-C) are fully fixed; GAP-04 is fixed in practice (T126-H, see
+  // (caller) note above) even though the function itself still has no
+  // OWN finally. Only GAP-01 remains genuinely open, and it is LOW/inert
+  // (nothing in the wrapped block currently throws) -- left as documented
+  // debt per "do not fix P3-style debt".
+  'GAPS FOUND (1 open, 3 fixed since first documented):',
+  '  R6-GAP-01 (LOW, STILL OPEN) submitPostSession: main write path has no dedicated',
+  '                     try/catch of its own (only try/finally). Safe only because',
+  '                     nothing in that block currently throws past its own inner',
+  '                     try/catch (calculateProgression) -- fragile, not actively broken.',
+  '  R6-GAP-02 (FIXED by T125-C) submitPostSession now guards showSessionSummary with',
+  '                     `if (_saved !== false)` -- no more misleading success summary',
+  '                     after a failed save.',
+  '  R6-GAP-03 (FIXED by T126-C) _postSessionSubmitting is now reset in a `finally`',
+  '                     block, not before the await -- no stuck-guard risk.',
+  '  R6-GAP-04 (FIXED IN PRACTICE by T126-H) _applyTemplateToClient now has its own',
+  '                     try/catch with a real error toast; its one caller wraps the call',
+  '                     in its own try/finally that always restores the button state.',
   '',
 ].join('\n'));
 
-console.log('All R6 contract tests passed (gaps documented above).');
+console.log('All R6 contract tests passed (1 LOW gap documented above, 3 previously-listed gaps re-verified fixed).');
