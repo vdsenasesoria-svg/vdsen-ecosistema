@@ -7848,6 +7848,9 @@ function _showPresessionCheck(di) {
   if (document.getElementById('presessionCheckOv')) return;
   var ov = document.createElement('div');
   ov.id = 'presessionCheckOv';
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-modal', 'true');
+  ov.setAttribute('aria-label', 'Check-in antes de entrenar');
   ov.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:3000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 20px;overflow-y:auto';
   var mkBtns = function(prefix, field, ids) {
     return [1,2,3,4,5].map(function(v){
@@ -7877,6 +7880,8 @@ function _showPresessionCheck(di) {
     +'<button onclick="_skipPresession('+di+')" style="width:100%;padding:12px;background:none;border:1px solid var(--bd);border-radius:8px;color:var(--mt);font-size:13px;cursor:pointer;margin-top:10px">Saltar esta vez</button>'
     +'</div>';
   document.body.appendChild(ov);
+  var firstRating = document.getElementById('preE1');
+  if (firstRating) firstRating.focus();
 }
 window._showPresessionCheck = _showPresessionCheck;
 
