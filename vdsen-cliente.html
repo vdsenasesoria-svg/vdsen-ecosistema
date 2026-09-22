@@ -9325,6 +9325,7 @@ async function markWeekCompleteFromHistory() {
   if (CURRENT_WEEK !== REAL_WEEK) {
     showToast('Ve a la semana activa (SEM '+REAL_WEEK+') para cerrarla', true); return;
   }
+  var weekAtStart = CURRENT_WEEK;
   var sesiones = getSesiones();
   if (!sesiones.length) return;
   var pendientes = [];
@@ -9339,6 +9340,16 @@ async function markWeekCompleteFromHistory() {
     'Los datos que ya registraste manualmente se respetan.\n\n¿Continuar?';
   if (!confirm(msg)) return;
 
+  var rollback = {}, rollbackHistory = {};
+  var capture = function(key) {
+    if (rollback[key]) return;
+    rollback[key] = { had: Object.prototype.hasOwnProperty.call(LOGS, key), value: LOGS[key] };
+  };
+  var captureHistory = function(key) {
+    if (rollbackHistory[key]) return;
+    rollbackHistory[key] = { had: Object.prototype.hasOwnProperty.call(EXERCISE_HISTORY, key), value: EXERCISE_HISTORY[key] };
+  };
+  capture('engine_state');
   var defaultRIR = getAdjustedRIR(2, CURRENT_WEEK);
   var defaultPost = { eimd: 2, articularPain: { present: false, pattern: '' }, sleepHours: 7, rpeAverage: 7, ts: Date.now(), autoClosed: true };
   var totalFilled = 0;
@@ -9383,6 +9394,7 @@ async function markWeekCompleteFromHistory() {
       for (var _s = 0; _s < numSeries; _s++) {
         var _k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_s;
         if (LOGS[_k] && LOGS[_k].done) continue; // respetar sets ya registrados
+        capture(_k);
         LOGS[_k] = {
           carga: String(refLoad), reps: String(refReps), unit: currentUnit,
           done: true, rir: defaultRIR, rir_real: refRir, ics: 8, pump: 2,
@@ -9391,6 +9403,7 @@ async function markWeekCompleteFromHistory() {
         _lbwTrack(_k);
         totalFilled++;
       }
+      captureHistory(exName);
       EXERCISE_HISTORY[exName] = { load: String(refLoad), reps: String(refReps), rir: refRir, unit: currentUnit, updatedAt: Date.now() };
     }
 
@@ -9402,6 +9415,7 @@ async function markWeekCompleteFromHistory() {
     // CURRENT_WEEK. Using REAL_WEEK here was inconsistent; if the guard were ever
     // relaxed, REAL_WEEK writes would silently corrupt the active week.
     var postKey = 'postsession_'+CURRENT_WEEK+'_'+di;
+    capture(postKey);
     if (!LOGS[postKey]) LOGS[postKey] = defaultPost;
 
     try {
@@ -9409,18 +9423,31 @@ async function markWeekCompleteFromHistory() {
       if (rec) {
         var _san2 = function(_k2, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
         var recSafe = JSON.parse(JSON.stringify(rec, _san2));
+        capture('progrec_'+CURRENT_WEEK+'_'+di);
         LOGS['progrec_'+CURRENT_WEEK+'_'+di] = recSafe;
         _lbwTrack('progrec_'+CURRENT_WEEK+'_'+di);
         if (rec.engineState) LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _san2));
       }
     } catch(e) { console.warn('progrec failed in markWeekCompleteFromHistory:', e && e.message); }
 
-    LOGS['done_'+CURRENT_WEEK+'_'+di] = { ts: Date.now(), autoClosed: true, fromHistory: true };
+    var doneKey = 'done_'+CURRENT_WEEK+'_'+di;
+    capture(doneKey);
+    LOGS[doneKey] = { ts: Date.now(), autoClosed: true, fromHistory: true };
   }
 
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
   var ok = await _doSaveLogs();
-  if (ok === false) { showToast('⚠ NO SE GUARDÓ — revisa conexión y reintenta', true); return; }
+  if (ok === false) {
+    Object.keys(rollback).forEach(function(key) { if (rollback[key].had) LOGS[key] = rollback[key].value; else delete LOGS[key]; });
+    Object.keys(rollbackHistory).forEach(function(key) { if (rollbackHistory[key].had) EXERCISE_HISTORY[key] = rollbackHistory[key].value; else delete EXERCISE_HISTORY[key]; });
+    _rebuildLogsByWeek();
+    showToast('⚠ NO SE GUARDÓ — revisa conexión y reintenta', true);
+    renderEntrenamiento();
+    renderResumen();
+    return;
+  }
+
+  if (CURRENT_WEEK !== weekAtStart || REAL_WEEK !== weekAtStart) return;
 
   showToast('✓ '+totalFilled+' sets rellenados · SEM '+REAL_WEEK+' cerrada desde historial');
   await _autoAdvanceWeekIfDone(false);
