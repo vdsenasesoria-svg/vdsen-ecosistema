@@ -9253,6 +9253,20 @@ async function markWeekDoneWithPartialData() {
   try {
   if (!await _askConfirm(msg)) return;
 
+  var rollback = {};
+  var capture = function(key) {
+    rollback[key] = {
+      had: Object.prototype.hasOwnProperty.call(LOGS, key),
+      value: LOGS[key]
+    };
+  };
+  pendientes.forEach(function(di) {
+    capture('done_'+REAL_WEEK+'_'+di);
+    capture('postsession_'+REAL_WEEK+'_'+di);
+    capture('progrec_'+REAL_WEEK+'_'+di);
+  });
+  capture('engine_state');
+
   var defaultPost = {
     eimd: 2,
     articularPain: { present: false, pattern: '' },
@@ -9283,7 +9297,13 @@ async function markWeekDoneWithPartialData() {
   if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
   var ok = await _doSaveLogs();
   if (ok === false) {
+    Object.keys(rollback).forEach(function(key) {
+      if (rollback[key].had) LOGS[key] = rollback[key].value;
+      else delete LOGS[key];
+    });
     showToast('⚠ NO SE GUARDÓ — revisa conexión y reintenta', true);
+    renderEntrenamiento();
+    renderResumen();
     return;
   }
   showToast('✓ Semana '+REAL_WEEK+' cerrada — '+conData+' con data, '+sinData+' saltada(s)');
