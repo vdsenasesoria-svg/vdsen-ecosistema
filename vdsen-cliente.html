@@ -7314,7 +7314,7 @@ function renderEntrenamiento() {
           '<button onclick="event.stopPropagation();adjustRestTimer(30)" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:12px;color:var(--mt);font-size:14px;font-weight:700;padding:12px 8px;cursor:pointer;transition:all .15s">+30s</button>'+
         '</div>'+
         '<div id="nextActionHint" style="display:none;font-size:11px;color:var(--mt);letter-spacing:.5px;text-align:center;margin-bottom:12px"></div>'+
-        '<button onclick="stopRestTimer()" style="width:100%;background:var(--gold-gradient);border:none;border-radius:14px;color:#0a0a0a;font-size:14px;font-weight:800;padding:15px;cursor:pointer;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.3)">SIGUIENTE SERIE ▶</button>'+
+        '<button onclick="_continueNextWorkoutAction()" style="width:100%;background:var(--gold-gradient);border:none;border-radius:14px;color:#0a0a0a;font-size:14px;font-weight:800;padding:15px;cursor:pointer;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.3)">CONTINUAR ▶</button>'+
       '</div>'+
     '</div>'+
     // Pastilla flotante (timer minimizado)
@@ -8495,7 +8495,7 @@ function _ensureRestTimerOverlay() {
         '<div style="display:flex;gap:5px">'+
           '<button onclick="event.stopPropagation();adjustRestTimer(-15)" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;padding:10px 0;cursor:pointer;min-height:44px">−15s</button>'+
           '<button onclick="event.stopPropagation();adjustRestTimer(15)" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.5);font-size:11px;font-weight:700;padding:10px 0;cursor:pointer;min-height:44px">+15s</button>'+
-          '<button onclick="_nextSerie()" style="flex:2;background:#C4FF00;border:none;border-radius:8px;color:#0a0a0a;font-size:11px;font-weight:800;padding:10px 0;cursor:pointer;letter-spacing:.5px;min-height:44px">SIGUIENTE ▶</button>'+
+          '<button onclick="_continueNextWorkoutAction()" style="flex:2;background:#C4FF00;border:none;border-radius:8px;color:#0a0a0a;font-size:11px;font-weight:800;padding:10px 0;cursor:pointer;letter-spacing:.5px;min-height:44px">CONTINUAR ▶</button>'+
         '</div>'+
       '</div>'+
     '</div>';
@@ -8520,6 +8520,20 @@ function _nextSerie() {
   _scrollToNextPendingSet();
 }
 window._nextSerie = _nextSerie;
+
+function _continueNextWorkoutAction() {
+  var action = window._nextAction25;
+  stopRestTimer();
+  if (!action) { _scrollToNextPendingSet(); return; }
+  if (action.type === 'NEXT_EXERCISE' && Number.isInteger(action.ei)) {
+    setEjActivo(action.ei);
+  } else if (action.type === 'SESSION_DONE') {
+    markSessionDone(DIA_ACTIVO);
+  } else {
+    _scrollToNextPendingSet();
+  }
+}
+window._continueNextWorkoutAction = _continueNextWorkoutAction;
 
 // FASE 25 — Resolver determinista de siguiente acción.
 // Función pura: no modifica estado, no hace I/O.
@@ -8561,7 +8575,7 @@ function _resolveNextWorkoutAction(di, exercises, lastEi, lastSi, logs, currentW
     for (var ns = 0; ns < nNum; ns++) {
       var nk = 'log_' + currentWeek + '_' + di + '_' + nei + '_s' + ns;
       if (!logs[nk] || !logs[nk].done) {
-        return { type: 'NEXT_EXERCISE', label: nex.exerciseName || nex.nombre || '' };
+        return { type: 'NEXT_EXERCISE', label: nex.exerciseName || nex.nombre || '', ei: nei };
       }
     }
   }
