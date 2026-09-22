@@ -9220,7 +9220,9 @@ async function markSessionDoneFromHistory(di) {
 // corre calculateProgression con valores post-sesión por defecto para que la
 // progresión de la siguiente semana use esa data real. Las sesiones sin
 // ningún set se marcan como skipped (no generan progrec — se cae al histórico).
+var _markWeekPartialBusy = false;
 async function markWeekDoneWithPartialData() {
+  if (_markWeekPartialBusy) return;
   if (CURRENT_WEEK !== REAL_WEEK) {
     showToast('Ve a la semana activa (SEM '+REAL_WEEK+') para cerrarla', true);
     return;
@@ -9247,6 +9249,8 @@ async function markWeekDoneWithPartialData() {
     +(conData ? '• '+conData+' con datos parciales → se usarán para la progresión<br>' : '')
     +(sinData ? '• '+sinData+' sin registro → se saltarán<br>' : '')
     +'<br>Después avanzarás a la siguiente semana.';
+  _markWeekPartialBusy = true;
+  try {
   if (!await _askConfirm(msg)) return;
 
   var defaultPost = {
@@ -9286,6 +9290,9 @@ async function markWeekDoneWithPartialData() {
   await _autoAdvanceWeekIfDone(false);
   renderEntrenamiento();
   renderResumen();
+  } finally {
+    _markWeekPartialBusy = false;
+  }
 }
 window.markWeekDoneWithPartialData = markWeekDoneWithPartialData;
 
