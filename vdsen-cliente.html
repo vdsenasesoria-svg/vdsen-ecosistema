@@ -13369,6 +13369,13 @@ async function submitPostSession() {
     };
 
     var postKey = 'postsession_'+CURRENT_WEEK+'_'+di;
+    var progKey = 'progrec_'+CURRENT_WEEK+'_'+di;
+    var hadPost = Object.prototype.hasOwnProperty.call(LOGS, postKey);
+    var hadProg = Object.prototype.hasOwnProperty.call(LOGS, progKey);
+    var hadEngineState = Object.prototype.hasOwnProperty.call(LOGS, 'engine_state');
+    var previousPost = LOGS[postKey];
+    var previousProg = LOGS[progKey];
+    var previousEngineState = LOGS.engine_state;
     LOGS[postKey] = postData;
 
     // Calcular y guardar recomendaciones de progresión
@@ -13379,7 +13386,7 @@ async function submitPostSession() {
       if (rec) {
         var _sanitize = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
         var recSafe = JSON.parse(JSON.stringify(rec, _sanitize));
-        LOGS['progrec_'+CURRENT_WEEK+'_'+di] = recSafe;
+        LOGS[progKey] = recSafe;
         // P5: Longitudinal Engine — engine_state persiste en logs para la próxima generación
         if (rec.engineState) {
           LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _sanitize));
@@ -13393,6 +13400,12 @@ async function submitPostSession() {
     var _saved = await _confirmSessionDone(di);
     // T125-C: solo mostrar el resumen si la sesión se persistió con éxito en Firestore.
     // Si _confirmSessionDone devolvió false, ya mostró toast de error — no mostrar "SESIÓN COMPLETA".
+    if (_saved === false) {
+      if (hadPost) LOGS[postKey] = previousPost; else delete LOGS[postKey];
+      if (hadProg) LOGS[progKey] = previousProg; else delete LOGS[progKey];
+      if (hadEngineState) LOGS.engine_state = previousEngineState; else delete LOGS.engine_state;
+      return false;
+    }
     if (_saved !== false) showSessionSummary(di);
   } finally {
     // Always unlock — both success and unexpected-exception paths land here.
