@@ -7901,21 +7901,47 @@ function _preSelect(field, val) {
 }
 window._preSelect = _preSelect;
 
-function _submitPresession(di) {
+async function _submitPresession(di) {
   if (!_preSelState.energia || !_preSelState.sueno || !_preSelState.motivacion) return;
   var key = 'presession_pre_'+CURRENT_WEEK+'_'+di;
   LOGS[key] = { energia: _preSelState.energia, sueno: _preSelState.sueno, motivacion: _preSelState.motivacion, ts: Date.now() };
+  var _uidAtStart = USER && USER.uid;
+  var ov = document.getElementById('presessionCheckOv');
+  var buttons = ov ? ov.querySelectorAll('button') : [];
+  buttons.forEach(function(btn) { btn.disabled = true; });
+  var ok = await _doSaveLogs();
+  if (!USER || USER.uid !== _uidAtStart) return false;
+  if (ok === false) {
+    delete LOGS[key];
+    buttons.forEach(function(btn) { btn.disabled = false; });
+    _preSelect('motivacion', _preSelState.motivacion);
+    showToast('⚠ No se pudo guardar el pre check — revisa conexión', true);
+    return false;
+  }
   _preSelState = {};
-  saveLogs();
-  var ov = document.getElementById('presessionCheckOv'); if (ov) ov.remove();
+  if (ov) ov.remove();
+  return true;
 }
 window._submitPresession = _submitPresession;
 
-function _skipPresession(di) {
-  LOGS['presession_pre_'+CURRENT_WEEK+'_'+di] = { skipped: true, ts: Date.now() };
+async function _skipPresession(di) {
+  var key = 'presession_pre_'+CURRENT_WEEK+'_'+di;
+  LOGS[key] = { skipped: true, ts: Date.now() };
+  var _uidAtStart = USER && USER.uid;
+  var ov = document.getElementById('presessionCheckOv');
+  var buttons = ov ? ov.querySelectorAll('button') : [];
+  buttons.forEach(function(btn) { btn.disabled = true; });
+  var ok = await _doSaveLogs();
+  if (!USER || USER.uid !== _uidAtStart) return false;
+  if (ok === false) {
+    delete LOGS[key];
+    buttons.forEach(function(btn) { btn.disabled = false; });
+    showToast('⚠ No se pudo guardar la omisión — revisa conexión', true);
+    return false;
+  }
   _preSelState = {};
-  saveLogs();
-  var ov = document.getElementById('presessionCheckOv'); if (ov) ov.remove();
+  if (ov) ov.remove();
+  return true;
 }
 window._skipPresession = _skipPresession;
 
