@@ -332,13 +332,13 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var
     </div>
     <div class="login-card">
       <div class="lf">
-        <label>Celular o correo</label>
+        <label for="liEmail">Celular o correo</label>
         <input type="text" id="liEmail" placeholder="5551234567 o tucorreo@email.com" autocomplete="username" inputmode="tel">
         <div id="liHint" style="font-size:10px;color:var(--mt);line-height:1.5;margin-top:4px">
           📌 Si usás celular: <strong style="color:var(--tx)">10 dígitos</strong> (sin espacios, guiones ni paréntesis). Ej. <span style="color:var(--accent);font-weight:700">5551234567</span>
         </div>
       </div>
-      <div class="lf"><label>Contraseña</label><div style="position:relative"><input type="password" id="liPass" placeholder="••••••••" autocomplete="current-password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="_togglePwd('liPass',this)" aria-label="Mostrar/ocultar contraseña" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:var(--mt);font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div></div>
+      <div class="lf"><label for="liPass">Contraseña</label><div style="position:relative"><input type="password" id="liPass" placeholder="••••••••" autocomplete="current-password" style="padding-right:42px;width:100%;box-sizing:border-box"><button type="button" onclick="_togglePwd('liPass',this)" aria-label="Mostrar/ocultar contraseña" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:var(--mt);font-size:18px;cursor:pointer;padding:4px 8px">👁</button></div></div>
       <div class="login-err" id="liErr"></div>
       <button class="login-btn" onclick="doLogin()">ACCEDER</button>
       <div style="text-align:center;margin-top:8px">
