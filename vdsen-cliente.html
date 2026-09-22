@@ -7642,11 +7642,11 @@ function buildBoostcampExercise(ej, di, ei) {
               '<input id="reps_'+key+'" type="number" value="'+(reps||'')+'" placeholder="reps" inputmode="numeric" min="1" enterkeyhint="next"'+
               ' style="flex:1;min-width:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:var(--tx);font-size:16px;font-weight:600;padding:8px 6px;outline:none;text-align:center;box-sizing:border-box"'+
-              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'ics_'+key+'\');if(r)r.focus();}">'+
-              '<input id="rir_'+key+'" type="number" value="'+(rirReal||'')+'" placeholder="RIR" inputmode="numeric" min="0" max="5" enterkeyhint="done"'+
+              ' oninput="bcProgHint(\''+key+'\')" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'rir_'+key+'\');if(r)r.focus();}">'+
+              '<input id="rir_'+key+'" type="number" value="'+(rirReal||'')+'" placeholder="RIR" inputmode="numeric" min="0" max="5" enterkeyhint="next"'+
               ' style="width:46px;flex-shrink:0;background:var(--input-bg);border:1px solid '+(completed?'var(--grn)':'var(--border)')+';'+
               'border-radius:8px;color:#e8a040;font-size:14px;font-weight:700;padding:8px 4px;outline:none;text-align:center;box-sizing:border-box"'+
-              ' onfocus="this.select()">'+
+              ' onfocus="this.select()" onkeydown="if(event.key===\'Enter\'||event.key===\'Tab\'){event.preventDefault();var r=document.getElementById(\'ics_'+key+'\');if(r)r.focus();}">'+
             '</div>'+
             '<div id="hint_'+key+'" data-base-rir="'+baseRIR+'" style="font-size:10px;color:var(--grn);min-height:12px;margin-top:2px"></div>'+
             '<div id="plates_'+key+'" style="font-size:10px;color:var(--blue);min-height:0;margin-top:1px"></div>'+
@@ -7779,6 +7779,8 @@ function copiarSerie(key, s, di, ei) {
   if (icsEl && ics)  { icsEl.value = ics; updateICSColor(key); }
   if (pump)          { setPump(key, pump); }
   bcProgHint(key);
+  var _copyFocus = rirEl || icsEl || document.querySelector('button[onclick*=\"completeSet\"]');
+  if (_copyFocus && typeof _copyFocus.focus === 'function') _copyFocus.focus();
 }
 
 // Actualiza EXERCISE_HISTORY con la misma regla que ya existía (solo sobreescribe si la
