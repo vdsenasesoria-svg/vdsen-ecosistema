@@ -8045,7 +8045,7 @@ function _showAddSetSuggestion(di, ei, reasonText) {
     el.id = 'addSetSuggestion';
     document.body.appendChild(el);
   }
-  el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:90px;max-width:456px;margin:0 auto;background:rgba(18,18,16,.97);border:1px solid rgba(110,154,110,.5);border-radius:14px;padding:12px 14px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)';
+  el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(90px + env(safe-area-inset-bottom,0px));max-width:456px;margin:0 auto;background:rgba(18,18,16,.97);border:1px solid rgba(110,154,110,.5);border-radius:14px;padding:12px 14px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)';
   el.innerHTML =
     '<div style="display:flex;align-items:flex-start;gap:10px">'+
       '<div style="font-size:22px;line-height:1">💪</div>'+
@@ -9423,7 +9423,7 @@ async function _doSaveLogs() {
     if (!errEl) {
       errEl = document.createElement('div');
       errEl.id = 'saveErrBadge';
-      errEl.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:#3a0a0a;border:1px solid #c94a3a;color:#e07070;font-family:monospace;font-size:11px;padding:8px 16px;z-index:9999;border-radius:8px;text-align:center;max-width:340px;line-height:1.5;cursor:pointer';
+      errEl.style.cssText = 'position:fixed;bottom:calc(72px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:#3a0a0a;border:1px solid #c94a3a;color:#e07070;font-family:monospace;font-size:11px;padding:8px 16px;z-index:9999;border-radius:8px;text-align:center;max-width:340px;line-height:1.5;cursor:pointer';
       errEl.title = 'Tap para reintentar';
       errEl.addEventListener('click', function(){ errEl.style.display='none'; _doSaveLogs(); });
       document.body.appendChild(errEl);
@@ -9439,7 +9439,7 @@ function _showSaveOk() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'saveOkBadge';
-    el.style.cssText = 'position:fixed;bottom:90px;right:16px;background:rgba(110,154,110,.15);border:1px solid var(--grn);color:var(--grn);font-family:var(--ff);font-size:11px;font-weight:700;padding:6px 12px;border-radius:8px;z-index:9999;letter-spacing:1px;opacity:0;transition:opacity .3s';
+    el.style.cssText = 'position:fixed;bottom:calc(90px + env(safe-area-inset-bottom,0px));right:calc(16px + env(safe-area-inset-right,0px));background:rgba(110,154,110,.15);border:1px solid var(--grn);color:var(--grn);font-family:var(--ff);font-size:11px;font-weight:700;padding:6px 12px;border-radius:8px;z-index:9999;letter-spacing:1px;opacity:0;transition:opacity .3s';
     document.body.appendChild(el);
   }
   // T295 — Firestore is initialized with persistentLocalCache() (offline
@@ -13434,7 +13434,7 @@ function showSessionSummary(di) {
   if (old) old.remove();
   var ov = document.createElement('div');
   ov.id = 'sessionSummaryOv';
-  ov.style.cssText = 'position:fixed;left:12px;right:12px;bottom:90px;max-width:456px;margin:0 auto;background:var(--card);border:1px solid rgba(196,255,0,.4);border-radius:16px;padding:14px 16px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:fadeSlideIn .25s ease-out both';
+  ov.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(90px + env(safe-area-inset-bottom,0px));max-width:456px;margin:0 auto;background:var(--card);border:1px solid rgba(196,255,0,.4);border-radius:16px;padding:14px 16px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:fadeSlideIn .25s ease-out both';
   ov.innerHTML =
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'+
       '<div style="font-size:28px;line-height:1">🏆</div>'+
