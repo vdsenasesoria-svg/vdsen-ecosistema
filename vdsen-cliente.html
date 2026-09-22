@@ -11242,6 +11242,8 @@ async function guardarCI() {
   var _ciOrigTexts = _ciBtns.map(function(b) { return b.textContent; });
   _ciBtns.forEach(function(b) { b.disabled = true; b.textContent = 'GUARDANDO...'; });
   var k = ciKey();
+  var _hadCheckin = Object.prototype.hasOwnProperty.call(LOGS, k);
+  var _previousCheckin = _hadCheckin ? JSON.parse(JSON.stringify(LOGS[k])) : null;
   if (!LOGS[k]) LOGS[k] = {};
   var d = LOGS[k];
   // Leer inputs por si el usuario escribió sin disparar oninput
@@ -11316,6 +11318,8 @@ async function guardarCI() {
     var _ciOk = await _doSaveLogs();
     if (!USER || USER.uid !== _uidAtStart) return; // client switched away mid-save
     if (_ciOk === false) {
+      if (_hadCheckin) LOGS[k] = _previousCheckin;
+      else delete LOGS[k];
       showToast('⚠ NO SE GUARDÓ — revisa conexión. Reintenta.', true);
       return;
     }
