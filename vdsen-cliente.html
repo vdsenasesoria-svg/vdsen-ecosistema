@@ -11332,6 +11332,7 @@ async function guardarCI() {
 
     // ── GAP 5: sincronizar check-in en expedientes/{email}/historial ──
     // El coach lee estos datos en el Motor de Decisiones Semanal
+    var _coachHistoryPending = false;
     if (FB && USER && USER.email) {
       var emailKey = USER.email.replace(/[.@#$[\]]/g,'_');
       // setDoc con ID determinista para evitar duplicados por semana
@@ -11367,10 +11368,17 @@ async function guardarCI() {
       };
       // Eliminar nulls para no ensuciar Firestore
       Object.keys(checkinDoc).forEach(function(k){ if (checkinDoc[k] === null) delete checkinDoc[k]; });
-      await FB.setDoc(histDocRef, checkinDoc);
+      try {
+        await FB.setDoc(histDocRef, checkinDoc);
+      } catch(histErr) {
+        _coachHistoryPending = true;
+        console.warn('check-in history sync failed:', histErr && histErr.message);
+      }
     }
 
-    showToast('CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · Tu coach lo revisará en el panel de monitoreo');
+    showToast(_coachHistoryPending
+      ? 'CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · sincronización con coach pendiente'
+      : 'CHECK-IN SEM ' + CURRENT_WEEK + ' GUARDADO ✓ · Tu coach lo revisará en el panel de monitoreo');
     window._ciSubjTemp = null; // limpiar buffer de botones subjetivos para evitar sangrado a la semana siguiente
     renderResumen();
   } catch(e) {
