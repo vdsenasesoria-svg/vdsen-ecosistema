@@ -10444,6 +10444,8 @@ async function guardarNutriLog() {
   var _uidAtStart = USER && USER.uid;
 
   var k = 'nutrilog_'+_todayKey();
+  var _hadNutriLog = Object.prototype.hasOwnProperty.call(LOGS, k);
+  var _previousNutriLog = _hadNutriLog ? JSON.parse(JSON.stringify(LOGS[k])) : null;
   if (!LOGS[k]) LOGS[k] = {};
   _fields.forEach(function(id) {
     var el = document.getElementById(id);
@@ -10460,6 +10462,8 @@ async function guardarNutriLog() {
     var _ok = await _doSaveLogs();
     if (!USER || USER.uid !== _uidAtStart) return; // client switched away mid-save -- never touch a UI that isn't theirs
     if (_ok === false) {
+      if (_hadNutriLog) LOGS[k] = _previousNutriLog;
+      else delete LOGS[k];
       showToast('⚠ Error al guardar el registro — revisa conexión', true);
     } else {
       showToast('✓ Registro nutricional guardado');
