@@ -9249,9 +9249,11 @@ async function markWeekDoneWithPartialData() {
     +(conData ? '• '+conData+' con datos parciales → se usarán para la progresión<br>' : '')
     +(sinData ? '• '+sinData+' sin registro → se saltarán<br>' : '')
     +'<br>Después avanzarás a la siguiente semana.';
+  var weekAtStart = REAL_WEEK;
   _markWeekPartialBusy = true;
   try {
   if (!await _askConfirm(msg)) return;
+  if (CURRENT_WEEK !== weekAtStart || REAL_WEEK !== weekAtStart) return;
 
   var rollback = {};
   var capture = function(key) {
