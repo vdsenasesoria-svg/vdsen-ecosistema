@@ -121,7 +121,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .screen{display:none;flex-direction:column;height:100%;overflow:hidden}
 .screen.on{display:flex}
 /* ── HEADER ── */
-.hdr{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;background:rgba(6,14,26,.92);border-bottom:1px solid var(--border);flex-shrink:0;position:-webkit-sticky;position:sticky;top:0;z-index:20;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 1px 0 rgba(196,255,0,.08),0 4px 24px rgba(0,0,0,.5)}
+.hdr{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;position:-webkit-sticky;position:sticky;top:0;z-index:20}
 .logo{font-family:'Big Shoulders Display',var(--ff);font-size:22px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--tx);line-height:1}
 .logo::after{content:'';display:inline-block;width:5px;height:5px;background:var(--accent);transform:rotate(45deg);margin-left:5px;vertical-align:baseline}
 .logo em{display:block;font-family:var(--ff);font-style:normal;font-size:8px;letter-spacing:2.5px;color:var(--platinum);margin-top:3px;font-weight:500;text-transform:uppercase;-webkit-text-fill-color:var(--platinum)}
@@ -132,12 +132,13 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .scroll::-webkit-scrollbar{width:2px}
 .scroll::-webkit-scrollbar-thumb{background:var(--border)}
 /* ── BOTTOM NAV ── */
-.bnav{display:flex;background:rgba(6,14,26,.96);border-top:1px solid rgba(196,255,0,.12);flex-shrink:0;padding-bottom:env(safe-area-inset-bottom);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 -4px 32px rgba(0,0,0,.6)}
-.nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px;gap:3px;background:none;border:none;cursor:pointer;color:var(--mt);transition:color .15s;-webkit-tap-highlight-color:transparent;position:relative}
-.nb.on{color:var(--accent)}
-.nb.on::before{content:'';position:absolute;top:6px;left:8%;right:8%;height:36px;background:rgba(196,255,0,.1);border-radius:12px;pointer-events:none}
+.bnav{display:flex;background:var(--surface2);border-top:1px solid var(--border);flex-shrink:0;padding-bottom:env(safe-area-inset-bottom)}
+.nb{flex:1;min-width:0;min-height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 3px;gap:3px;background:none;border:none;cursor:pointer;color:var(--mt);transition:color .15s;-webkit-tap-highlight-color:transparent;position:relative}
+.nb.on{color:var(--tx)}
+.nb.on::before{content:'';position:absolute;top:0;left:22%;right:22%;height:2px;background:var(--accent);pointer-events:none}
 .nb-ico{font-size:22px;line-height:1;transition:transform .15s}
 .nb.on .nb-ico{transform:scale(1.08)}
+.nb:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
 .nb-lbl{font-size:11px;letter-spacing:.8px;font-weight:700;text-transform:uppercase;transition:color .15s}
 @keyframes _tabIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 .tab-in{animation:_tabIn .16s ease both}
@@ -356,7 +357,7 @@ button:active{opacity:.85}
   </div>
   <!-- BOTTOM NAV -->
   <nav class="bnav">
-    <button class="nb on" id="nb0" onclick="goTab(0)">
+    <button class="nb on" id="nb0" onclick="goTab(0)" aria-current="page">
       <span class="nb-ico">🏠</span><span class="nb-lbl">Inicio</span>
     </button>
     <button class="nb" id="nb1" onclick="goTab(1)">
@@ -1875,6 +1876,8 @@ function goTab(i) {
   });
   document.querySelectorAll('.nb').forEach((b,j) => {
     b.classList.toggle('on', j===i);
+    if (j===i) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
   });
   try { localStorage.setItem('vdsen_last_tab', i); } catch(e) {}
   if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();

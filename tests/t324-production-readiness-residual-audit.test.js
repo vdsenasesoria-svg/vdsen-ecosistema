@@ -111,7 +111,8 @@ ok(!CLIENT.includes('<div class="wk ${cls}" onclick="goToWeek(${w})">'), 'RESOLV
 ok(CLIENT.includes('<button type="button" class="wk ${cls}" onclick="goToWeek(${w})" aria-label="Semana'), 'RESOLVED (T322): week-grid cells are now real <button> elements with an aria-label (keyboard-focusable, screen-reader meaningful)');
 
 // bottom-nav covering primary CTA
-ok(CLIENT.includes('.bnav{display:flex;background:rgba(6,14,26,.96)') && CLIENT.includes('flex-shrink:0'),
+const bottomNavRule = CLIENT.match(/\.bnav\{([^}]*)\}/)?.[1] || '';
+ok(/display:flex/.test(bottomNavRule) && /flex-shrink:0/.test(bottomNavRule) && !/position:(?:fixed|absolute)/.test(bottomNavRule),
   'NOT FOUND: bottom-nav covering primary CTA -- .bnav is laid out via flexbox (flex-shrink:0) alongside the scrollable content, never position:fixed overlaying it');
 
 console.log('');
