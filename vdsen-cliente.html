@@ -7275,16 +7275,16 @@ function renderEntrenamiento() {
       _buildExNav(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
     // Exercise detail panel
-    '<div id="exPanel" style="padding:0 12px 100px">'+
+    '<div id="exPanel" style="padding:0 12px 32px">'+
       _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
     // Rest timer overlay (hidden) — premium design
     '<div id="restTimerOverlay" onclick="stopRestTimer()" style="display:none;position:fixed;inset:0;background:rgba(6,14,26,.88);z-index:9000;align-items:center;justify-content:center;flex-direction:column;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);padding-bottom:env(safe-area-inset-bottom)">'+
       '<div onclick="event.stopPropagation()" style="'+
-        'background:linear-gradient(160deg,rgba(10,18,32,1) 0%,rgba(6,14,26,1) 100%);'+
-        'border:1px solid rgba(196,255,0,.28);border-radius:28px;padding:36px 40px 32px;'+
+        'background:var(--surface);'+
+        'border:1px solid rgba(196,255,0,.28);border-radius:2px;padding:28px 24px 24px;'+
         'text-align:center;min-width:280px;max-width:320px;width:calc(100vw - 48px);'+
-        'box-shadow:0 0 0 1px rgba(196,255,0,.08),0 32px 64px rgba(0,0,0,.7),0 0 80px rgba(196,255,0,.06)">'+
+        'box-shadow:0 8px 28px rgba(0,0,0,.55)">'+
         '<div style="font-size:10px;color:var(--platinum);letter-spacing:3px;margin-bottom:8px;font-weight:700;text-transform:uppercase;opacity:.7">DESCANSO ACTIVO</div>'+
         '<div id="restLastSet" style="font-size:12px;color:var(--grn);font-weight:700;min-height:18px;margin-bottom:14px;letter-spacing:.5px"></div>'+
         '<div style="position:relative;width:160px;height:160px;margin:0 auto 20px">'+
