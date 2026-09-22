@@ -104,7 +104,7 @@ test('stale guard present after logs getDoc', function() {
 test('final guard present before body.innerHTML write', function() {
   assert.ok(body, 'body must be found');
   // The body.innerHTML write with the modal content
-  var bodyWriteIdx = body.indexOf('body.innerHTML = `\n');
+  var bodyWriteIdx = body.search(/body\.innerHTML = `\r?\n\s*<div class="flex items-center justify-between/);
   assert.ok(bodyWriteIdx > -1, 'body.innerHTML modal write must be present');
   // Find the last guard before that write
   var guardBeforeBody = body.lastIndexOf('_detailClientId !== clientId', bodyWriteIdx);

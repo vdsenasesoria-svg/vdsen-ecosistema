@@ -121,7 +121,7 @@ assert.ok(
   'T155-H Test8: _updatePwaInstallUI must default to hidden when neither a deferred prompt nor iOS applies (unsupported browser — no error, no CTA)'
 );
 assert.ok(
-  updateUiFn.startsWith("window._updatePwaInstallUI = function() {\n  var row = document.getElementById('_pwaInstallRow');\n  if (!row) return;"),
+  /window\._updatePwaInstallUI = function\(\) \{\s*var row = document\.getElementById\('_pwaInstallRow'\);\s*if \(!row\) return;/.test(updateUiFn),
   'T155-H Test8: _updatePwaInstallUI must no-op safely (not throw) if the row does not exist yet'
 );
 
@@ -201,7 +201,7 @@ assert.ok(CLIENT.includes('id="_pwaInstallRow" style="display:none;'), 'T155-H: 
 const renderPerfilFn = extractFunction(CLIENT, 'function renderPerfil()');
 assert.ok(renderPerfilFn, 'renderPerfil must exist');
 assert.ok(
-  renderPerfilFn.trim().endsWith("try { window._updatePwaInstallUI(); } catch(e) {}\n}"),
+  /try \{\s*window\._updatePwaInstallUI\(\);\s*\} catch\(e\) \{\}\s*\}$/.test(renderPerfilFn.trim()),
   'T155-H: renderPerfil() must re-sync the install CTA visibility on every render (tab switch, profile update, etc.)'
 );
 

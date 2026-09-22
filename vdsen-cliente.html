@@ -207,6 +207,9 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .save-ex-btn{width:100%;padding:9px;background:var(--ink-light);border:1px solid var(--ink-border);border-radius:8px;color:var(--accent);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;transition:background .15s}
 .save-ex-btn:hover{background:rgba(244,244,240,.22)}
 .save-ex-btn.saved{background:rgba(110,154,110,.1);border-color:rgba(110,154,110,.3);color:var(--grn)}
+.workout-set{background:var(--surface);border:1px solid var(--border);border-radius:2px}
+.workout-set-current{border-left:3px solid var(--accent)}
+.workout-set-saved{border-left:2px solid var(--grn);background:var(--surface2)}
 .log-input.auto-fill{border-color:var(--ink-border);background:var(--ink-light);color:var(--accent)}
 .unit-toggle{display:flex;gap:3px}
 .unit-btn{background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--mt);font-size:11px;font-weight:700;letter-spacing:1px;padding:5px 12px;cursor:pointer;transition:all .15s}
@@ -4777,7 +4780,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           ? ((_epCargaRaw>0 ? 'BW + '+_epCargaFmt+' '+unit : 'Peso corporal')+' \u00d7 '+_expressEntry.reps+' reps')
           : (_epCargaFmt+' '+unit+' \u00d7 '+_expressEntry.reps+' reps'));
     setsHtml =
-      '<div style="background:rgba(110,154,110,.07);border:1px solid rgba(110,154,110,.22);border-radius:14px;padding:14px 16px">'+
+      '<div class="workout-set workout-set-saved" style="padding:14px 16px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">\u2713 EJERCICIO REGISTRADO</div>'+
           '<button onclick="clearExpressDone('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:4px 12px;border-radius:7px;cursor:pointer">\u270f Editar</button>'+
@@ -4855,7 +4858,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       : '')+
       '<input type="hidden" id="xsets_'+_expK+'" value="'+numSeries+'">';
     setsHtml +=
-      '<div style="background:rgba(107,107,102,.04);border:2px solid rgba(107,107,102,.3);border-radius:12px;padding:14px;margin-top:4px">'+
+      '<div class="workout-set workout-set-current" style="padding:14px;margin-top:4px">'+
       '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent);margin-bottom:8px">'+
         'SERIE '+numSeries+(numSeries > 1 ? ' \u2014 \u00daLTIMA \u00b7 REGISTRA LOS DATOS' : ' \u2014 REGISTRA LOS DATOS')+_xLastLabel+_getZonaBadge(typeof repsTarget === 'number' ? repsTarget : null)+
       '</div>'+
@@ -5016,8 +5019,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         : (isBodyweight
             ? ((parseFloat(saved.carga)>0 ? 'BW + '+saved.carga+' '+unit : 'Peso corporal')+' × '+saved.reps+' reps')
             : (saved.carga+' '+unit+' × '+saved.reps+' reps'));
-      setsHtml += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;'+
-        'background:rgba(110,154,110,.07);border:1px solid rgba(110,154,110,.18);border-radius:12px;margin-bottom:8px">'+
+      setsHtml += '<div class="workout-set workout-set-saved" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin-bottom:8px">'+
         '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
@@ -5070,7 +5072,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           if (_snBadge) _setSubLabel = ' <span style="font-size:8px;font-weight:900;letter-spacing:.5px;color:#e8a040;background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">'+_snBadge+'</span>';
         }
       }
-      setsHtml += '<div id="setrow_'+key+'" data-exname="'+_escHTml(nombre)+'" data-pending="1" style="border:2px solid rgba(196,255,0,.4);border-radius:14px;padding:14px;background:rgba(107,107,102,.03);margin-bottom:8px">'+
+      setsHtml += '<div id="setrow_'+key+'" class="workout-set workout-set-current" data-exname="'+_escHTml(nombre)+'" data-pending="1" style="padding:14px;margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+_getZonaBadge(_psReps || repsTarget)+'</div>'+
         '</div>'+

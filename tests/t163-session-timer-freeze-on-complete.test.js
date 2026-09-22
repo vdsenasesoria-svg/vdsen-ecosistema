@@ -36,7 +36,7 @@ const assert = require('assert');
 const fs     = require('fs');
 const path   = require('path');
 
-const CLIENT = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'), 'utf8');
+const CLIENT = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'), 'utf8').replace(/\r\n/g, '\n');
 
 function extractFunction(src, decl) {
   const idx = src.indexOf(decl);

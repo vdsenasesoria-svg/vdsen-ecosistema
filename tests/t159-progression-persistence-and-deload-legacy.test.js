@@ -163,7 +163,7 @@ console.log('All pre-existing calculateProgression() return fields unchanged —
 
 const getPrevWeekFn = extractFunction(CLIENT, 'function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exerciseName)');
 assert.ok(getPrevWeekFn, '_getPrevWeekData must exist');
-assert.ok(getPrevWeekFn.includes("if (candidateSets.length && Object.keys(positions).length > 1) {\n      return null; // corrupt identity — do not match silently"), 'T159 regression: ambiguous prescriptionExerciseId across positions must still refuse to match (no silent mutation)');
+assert.ok(/if \(candidateSets\.length && Object\.keys\(positions\)\.length > 1\) \{\s*return null; \/\/ corrupt identity/.test(getPrevWeekFn), 'T159 regression: ambiguous prescriptionExerciseId across positions must still refuse to match (no silent mutation)');
 assert.ok(getPrevWeekFn.includes('return null; // name mismatch → NEW_EXERCISE_REFERENCE (no incorrect history)'), 'T159 regression: legacy positional fallback name-guard must remain (prevents cross-exercise history contamination)');
 
 console.log('_getPrevWeekData PID-first identity resolution and ambiguity/name guards unchanged — OK');

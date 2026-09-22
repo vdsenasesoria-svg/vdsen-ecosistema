@@ -59,7 +59,7 @@ function extractFunction(src, decl) {
 const completeSetSrc = extractFunction(CLIENT, 'function completeSet(key, di, ei, si, unit) {');
 ok(completeSetSrc.includes("showToast('Ingresa la carga (> 0)', true); return;"), 'completeSet validates load BEFORE writing to LOGS -- an invalid attempt never mutates state');
 ok(completeSetSrc.indexOf('LOGS[key] = {') > completeSetSrc.indexOf("showToast('Ingresa la carga"), 'the LOGS write happens strictly after all validation returns -- a failed save can never look confirmed');
-ok(completeSetSrc.includes('if (_partnerPending) {') && completeSetSrc.includes('return;\n    }\n\n    // FASE 9'),
+ok(/if \(_partnerPending\) \{[\s\S]*?return;\s*\}\s*\/\/ FASE 9/.test(completeSetSrc),
   'a pending superset partner short-circuits BEFORE any rest timer starts -- logging the partner is never blocked by a timer');
 ok(completeSetSrc.includes('if (prev.autoFilled) { showToast(') , 'an autoFilled set never starts a rest timer either (no fabricated "effort" is rewarded with a timer)');
 
