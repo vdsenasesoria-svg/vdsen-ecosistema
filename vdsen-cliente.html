@@ -9303,6 +9303,7 @@ async function markWeekDoneWithPartialData() {
       if (rollback[key].had) LOGS[key] = rollback[key].value;
       else delete LOGS[key];
     });
+    _rebuildLogsByWeek();
     showToast('⚠ NO SE GUARDÓ — revisa conexión y reintenta', true);
     renderEntrenamiento();
     renderResumen();

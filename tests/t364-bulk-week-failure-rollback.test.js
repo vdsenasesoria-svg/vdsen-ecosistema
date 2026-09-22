@@ -29,6 +29,8 @@ test('failed bulk close removes locally fabricated session closure evidence', as
   global._askConfirm = async () => true;
   global._doSaveLogs = async () => false;
   global.showToast = () => {};
+  let rebuilt = 0;
+  global._rebuildLogsByWeek = () => { rebuilt++; };
   let renders = 0;
   global.renderEntrenamiento = () => { renders++; };
   global.renderResumen = () => { renders++; };
@@ -37,6 +39,7 @@ test('failed bulk close removes locally fabricated session closure evidence', as
   assert.equal(LOGS.done_2_0, undefined);
   assert.equal(LOGS.postsession_2_0, undefined);
   assert.equal(LOGS.progrec_2_0, undefined);
+  assert.equal(rebuilt, 1);
   assert.equal(renders, 2);
   assert.equal(_markWeekPartialBusy, false);
 });
