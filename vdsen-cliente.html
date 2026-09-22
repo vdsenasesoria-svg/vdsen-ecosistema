@@ -188,6 +188,11 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 #tabNutr,#tabCheckin{overflow-x:hidden}
 .ci-measures-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 #ci_eng_row{display:flex;gap:3px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+.nutri-targets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin-bottom:14px}
+.nutri-target{min-width:0;text-align:center;padding:8px 4px;border-right:1px solid var(--border)}
+.nutri-target:last-child{border-right:none}
+.profile-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px;margin-top:10px}
+.profile-fact{min-width:0;padding:9px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
 @media(max-width:420px){.ci-measures-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ci-measures-grid>div:last-child:nth-child(odd){grid-column:1/-1}}
 /* ── RESUMEN stats ── */
 .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
@@ -10075,23 +10080,20 @@ function renderNutricion() {
           <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);margin-top:2px">KCAL/DÍA</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
-        <div style="text-align:center;padding:14px 6px;background:rgba(140,140,134,.08);border:1px solid rgba(140,140,134,.3);border-radius:10px">
-          <div style="font-size:18px;margin-bottom:2px">💪</div>
-          <div style="font-family:var(--ff);font-size:24px;color:#6aacee;line-height:1;font-weight:900">${prot||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
-          <div style="font-size:9px;letter-spacing:1.5px;color:#6aacee;margin-top:4px;font-weight:700">PROTEÍNA</div>
+      <div class="nutri-targets">
+        <div class="nutri-target">
+          <div style="font-family:'Courier Prime',monospace;font-size:24px;color:var(--tx);line-height:1;font-weight:700">${prot||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
+          <div style="font-size:10px;letter-spacing:1px;color:var(--mt);margin-top:4px;font-weight:700">PROTEÍNA</div>
           <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctP}% · ${(+prot||0)*4} kcal</div>
         </div>
-        <div style="text-align:center;padding:14px 6px;background:rgba(74,170,94,.08);border:1px solid rgba(74,170,94,.3);border-radius:10px">
-          <div style="font-size:18px;margin-bottom:2px">🌾</div>
-          <div style="font-family:var(--ff);font-size:24px;color:#6acc7e;line-height:1;font-weight:900">${carb||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
-          <div style="font-size:9px;letter-spacing:1.5px;color:#6acc7e;margin-top:4px;font-weight:700">CARBOS</div>
+        <div class="nutri-target">
+          <div style="font-family:'Courier Prime',monospace;font-size:24px;color:var(--tx);line-height:1;font-weight:700">${carb||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
+          <div style="font-size:10px;letter-spacing:1px;color:var(--mt);margin-top:4px;font-weight:700">CARBOS</div>
           <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctC}% · ${(+carb||0)*4} kcal</div>
         </div>
-        <div style="text-align:center;padding:14px 6px;background:rgba(204,136,68,.08);border:1px solid rgba(204,136,68,.3);border-radius:10px">
-          <div style="font-size:18px;margin-bottom:2px">🥑</div>
-          <div style="font-family:var(--ff);font-size:24px;color:#e8a060;line-height:1;font-weight:900">${gras||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
-          <div style="font-size:9px;letter-spacing:1.5px;color:#e8a060;margin-top:4px;font-weight:700">GRASAS</div>
+        <div class="nutri-target">
+          <div style="font-family:'Courier Prime',monospace;font-size:24px;color:var(--tx);line-height:1;font-weight:700">${gras||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
+          <div style="font-size:10px;letter-spacing:1px;color:var(--mt);margin-top:4px;font-weight:700">GRASAS</div>
           <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctG}% · ${(+gras||0)*9} kcal</div>
         </div>
       </div>
@@ -10186,6 +10188,10 @@ function renderNutricion() {
           <div class="sec-kicker">PLAN NUTRICIONAL</div>
           <div style="font-size:11px;color:var(--mt);margin-top:1px">Tu alimentación diaria personalizada</div>
         </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--tx)">OBJETIVO · <strong>${kcal||'—'} kcal</strong> · ${prot||'—'} g proteína</span>
+        <a href="#nl_kcal" style="font-size:11px;font-weight:800;color:var(--accent);white-space:nowrap">REGISTRAR HOY ↓</a>
       </div>
     </div>
     <div style="padding:0 14px 100px">
@@ -11577,13 +11583,12 @@ function renderCheckin() {
     +   '<button onclick="guardarCI()">GUARDAR CHECK-IN</button>'
     + '</div>'
     + '<div class="sec-kicker">CHECK-IN SEM ' + sem + '</div>'
-    + '<div style="display:inline-block;margin-bottom:8px;padding:2px 10px;background:rgba(107,107,102,.10);border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1px;color:'
-    + (CURRENT_WEEK < REAL_WEEK ? 'rgba(107,107,102,.5)' : 'var(--mt)') + '">SEMANA ' + CURRENT_WEEK + ' DE ' + getTotalWeeks() + '</div>'
-    + '<div style="font-size:12px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">Rellena al inicio de cada semana — tu coach lo usa para ajustar el plan</div>'
+    + '<div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--mt);margin-bottom:12px">SEMANA ' + CURRENT_WEEK + ' DE ' + getTotalWeeks() + '</div>'
 
     // ── MEDIDAS ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
     +   '<div class="sec-kicker">MEDIDAS DEL DÍA</div>'
+    +   '<div style="font-size:11px;color:var(--mt);margin-bottom:12px">Completa al inicio de la semana para ajustar tu plan.</div>'
     +   '<div class="ci-measures-grid">'
     +   _ciField('peso',  'PESO (kg)', '0.1', 'decimal', (PLAN.peso||''), 22, 'En ayunas · mismo día')
     +   _ciField('hrv',   'HRV',       '1',   'numeric', '65',            22, 'Polar, Oura, Garmin…')
@@ -11731,23 +11736,22 @@ function renderPerfil() {
   var _profMeta = _PROF_META[_profType] || _PROF_META.hipertrofia;
 
   cont.innerHTML = `
-    <div style="margin-bottom:14px;padding:14px 16px;background:${_profMeta.bg};border:1px solid ${_profMeta.border};border-radius:12px;display:flex;align-items:center;gap:14px">
-      <div style="font-size:28px;flex-shrink:0">${_profMeta.icon}</div>
+    <div style="margin-bottom:14px;padding:14px 0;border-top:2px solid var(--accent);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px">
       <div style="flex:1;min-width:0">
         <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);font-weight:700;margin-bottom:3px">PERFIL DE COACHING</div>
-        <div style="font-family:var(--ff);font-size:14px;letter-spacing:1.3px;color:${_profMeta.color};font-weight:900;line-height:1.2">${_profMeta.label}</div>
+        <div style="font-family:'Big Shoulders Display',var(--ff);font-size:21px;color:var(--tx);font-weight:800;line-height:1.2">${_profMeta.label}</div>
         <div style="font-size:11px;color:var(--mt);margin-top:4px;line-height:1.4">${_profMeta.desc}</div>
       </div>
     </div>
     <div class="card">
       <div class="card-title">MI PERFIL</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      <div class="profile-facts">
         ${[
           ['NOMBRE',PLAN.nombre],['OBJETIVO',PLAN.obj||PLAN.objetivo],
           ['PESO',`${PLAN.peso||'—'} kg`],['LBM',`${PLAN.lbm||'—'} kg`],
           ['% GRASA',`${PLAN.pct||PLAN.pctGrasa||'—'}%`],['EXPERIENCIA',PLAN.exp||PLAN.experiencia||'—'],
           ['DÍAS/SEM',PLAN.dias||PLAN.diasEntr||'—'],['COMIDAS/DÍA',PLAN.comidas||'—']
-        ].map(([l,v])=>`<div style="background:var(--dk);border:1px solid var(--bd);padding:8px;border-radius:4px">
+        ].map(([l,v])=>`<div class="profile-fact">
           <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt)">${l}</div>
           <div style="font-family:'Big Shoulders Display',var(--ff);font-size:16px;font-weight:700;color:var(--tx);margin-top:2px">${v||'—'}</div>
         </div>`).join('')}
@@ -11832,8 +11836,8 @@ function renderPerfil() {
           <div style="font-size:13px;color:var(--tx);font-weight:700">Modo detallado</div>
           <div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">${isExpressDisabled()?'Activado — cada serie tiene su propio formulario y timer.':'Desactivado — modo express: se registra solo la última serie.'}</div>
         </div>
-        <button onclick="setExpressDisabled(${isExpressDisabled()?'false':'true'})" role="switch" aria-checked="${isExpressDisabled()?'true':'false'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isExpressDisabled()?'rgba(126,192,255,.5)':'var(--bd)'};background:${isExpressDisabled()?'rgba(126,192,255,.2)':'var(--dk)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
-          <span style="position:absolute;top:2px;left:${isExpressDisabled()?'24px':'2px'};width:24px;height:24px;border-radius:50%;background:${isExpressDisabled()?'#7ec0ff':'var(--mt)'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
+        <button onclick="setExpressDisabled(${isExpressDisabled()?'false':'true'})" role="switch" aria-checked="${isExpressDisabled()?'true':'false'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isExpressDisabled()?'var(--accent)':'var(--bd)'};background:${isExpressDisabled()?'var(--accent)':'var(--dk)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
+          <span style="position:absolute;top:2px;left:${isExpressDisabled()?'24px':'2px'};width:24px;height:24px;border-radius:50%;background:${isExpressDisabled()?'#0a0a0a':'var(--mt)'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
         </button>
       </div>
     </div>
