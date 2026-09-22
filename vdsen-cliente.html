@@ -8926,6 +8926,8 @@ async function _confirmSessionDone(di) {
 async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
   var sesiones = getSesiones();
   if (!sesiones.length) return;
+  var previousRealWeek = REAL_WEEK;
+  var previousCurrentWeek = CURRENT_WEEK;
   var advanced = false;
   // Loop: puede avanzar varias semanas si el usuario marcó varias atrasadas
   while (REAL_WEEK < getTotalWeeks()) {
@@ -8939,7 +8941,15 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
     // semana real (no si está revisando una semana pasada explícitamente).
     if (!fromOtherWeekView) CURRENT_WEEK = REAL_WEEK;
     if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
-    await _doSaveLogs();
+    var saved = await _doSaveLogs();
+    if (saved === false) {
+      REAL_WEEK = previousRealWeek;
+      CURRENT_WEEK = previousCurrentWeek;
+      showToast('⚠ NO SE GUARDÓ EL AVANCE DE SEMANA — revisa conexión. Reintenta.', true);
+      renderEntrenamiento();
+      renderResumen();
+      return false;
+    }
     var _prevW = REAL_WEEK - 1;
     var _skipCnt = sesiones.filter(function(_,i){ return _getSessionCompletionState(LOGS['done_'+_prevW+'_'+i]) === 'SKIPPED'; }).length;
     showToast(_skipCnt > 0
@@ -8948,6 +8958,7 @@ async function _autoAdvanceWeekIfDone(fromOtherWeekView) {
     _autoAdvanceDia(); // primer día pendiente de la nueva semana
     renderEntrenamiento();
     renderResumen();
+    return true;
   }
 }
 
