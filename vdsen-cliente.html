@@ -137,10 +137,11 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .nb{flex:1;min-width:0;min-height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 3px;gap:3px;background:none;border:none;cursor:pointer;color:var(--mt);transition:color .15s;-webkit-tap-highlight-color:transparent;position:relative}
 .nb.on{color:var(--tx)}
 .nb.on::before{content:'';position:absolute;top:0;left:22%;right:22%;height:2px;background:var(--accent);pointer-events:none}
-.nb-ico{font-size:22px;line-height:1;transition:transform .15s}
-.nb.on .nb-ico{transform:scale(1.08)}
+.nb-ico{font-size:18px;line-height:1;filter:grayscale(1);opacity:.75}
+.nb.on .nb-ico{filter:none;opacity:1}
 .nb:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
 .nb-lbl{font-size:11px;letter-spacing:.8px;font-weight:700;text-transform:uppercase;transition:color .15s}
+.nb.on .nb-lbl{font-weight:800}
 @keyframes _tabIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 .tab-in{animation:_tabIn .16s ease both}
 /* ── LOGIN ── */
@@ -150,7 +151,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .login-logo .vd-brand::after{content:'';display:inline-block;width:9px;height:9px;background:var(--accent);transform:rotate(45deg);margin-left:8px;vertical-align:baseline}
 .login-logo .vd-descriptor{font-size:8.5px;letter-spacing:2.5px;color:var(--platinum);font-weight:500;text-transform:uppercase;display:block;margin-bottom:10px}
 .login-logo .vd-slogan{font-size:11px;letter-spacing:1.5px;color:var(--mt);font-weight:500;display:block}
-.login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-gold)}
+.login-card{background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--accent);border-radius:2px;padding:24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px}
 .lf{display:flex;flex-direction:column;gap:6px}
 .lf label{font-size:10px;letter-spacing:1.5px;color:var(--platinum);font-weight:600;text-transform:uppercase}
 .lf input{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--tx);font-family:var(--ff);font-size:16px;padding:13px 14px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
@@ -160,12 +161,11 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .login-err{color:var(--red);font-size:12px;text-align:center;min-height:16px}
 .login-foot{font-size:10px;letter-spacing:1px;color:var(--mt);text-align:center;text-transform:uppercase}
 /* ── CARDS ── */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;box-shadow:var(--shadow-card);position:relative;overflow:hidden}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--border)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:16px;margin-bottom:10px;position:relative;overflow:hidden}
 .card-title{font-family:'Big Shoulders Display',var(--ff);font-size:21px;font-weight:700;color:var(--tx);margin-bottom:4px;letter-spacing:0;line-height:1.1}
 .card-sub{font-size:11px;color:var(--platinum);letter-spacing:.5px}
 .today-panel{padding:4px 0 16px;border-bottom:1px solid var(--border);margin-bottom:14px}
-.today-kicker{font-family:'Big Shoulders Display',var(--ff);font-size:18px;font-weight:700;line-height:1.1;color:var(--platinum);margin-bottom:10px}
+.today-kicker{font-family:var(--ff);font-size:11px;font-weight:800;letter-spacing:1.5px;line-height:1.3;color:var(--mt);margin-bottom:10px}
 .today-session{font-family:'Big Shoulders Display',var(--ff);font-size:27px;font-weight:800;line-height:1.08;color:var(--tx);overflow-wrap:anywhere}
 .today-meta{font-size:12px;color:var(--mt);margin-top:4px}
 .today-action{width:100%;min-height:48px;margin-top:14px;padding:12px 16px;font-family:'Big Shoulders Display',var(--ff);font-size:19px;font-weight:800;letter-spacing:0;line-height:1.1;cursor:pointer;border-radius:2px}
@@ -191,8 +191,8 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 @media(max-width:420px){.ci-measures-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ci-measures-grid>div:last-child:nth-child(odd){grid-column:1/-1}}
 /* ── RESUMEN stats ── */
 .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
-.stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;position:relative;overflow:hidden}
-.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--border)}
+.stat{background:transparent;border-right:1px solid var(--border);border-radius:0;padding:12px 8px;text-align:center}
+.stat:last-child{border-right:none}
 .stat-val{font-family:'Big Shoulders Display',var(--ff);font-size:34px;font-weight:800;color:var(--tx);line-height:1}
 .stat-lbl{font-size:11px;color:var(--platinum);letter-spacing:1.5px;margin-top:4px;text-transform:uppercase;font-weight:600}
 .week-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:16px}
@@ -240,7 +240,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .ws-btn.done{border-color:var(--grn);color:var(--grn)}
 .ws-btn.deload{border-color:var(--ink);color:var(--platinum)}
 /* ── NUTRICIÓN ── */
-.meal-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden}
+.meal-card{background:var(--surface);border:1px solid var(--border);border-radius:2px;margin-bottom:10px;overflow:hidden}
 .meal-hdr{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
 .meal-name{font-size:15px;font-weight:700;color:var(--tx)}
 .meal-macros{font-size:11px;color:var(--mt);margin-top:2px}
@@ -262,7 +262,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .sup-dose{font-size:16px;font-weight:700;color:var(--accent)}
 .sup-time{font-size:11px;color:var(--mt);margin-top:2px}
 /* ── TOAST ── */
-.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);background:rgba(17,17,17,.97);color:var(--tx);font-size:13px;font-weight:700;padding:11px 24px;border-radius:24px;border:1px solid rgba(196,255,0,.2);opacity:0;transition:all .22s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:999;white-space:normal;text-align:center;max-width:calc(100vw - 48px);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.toast{position:fixed;bottom:calc(90px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%) translateY(16px);background:var(--surface2);color:var(--tx);font-size:13px;font-weight:700;padding:11px 24px;border-radius:2px;border:1px solid var(--border);opacity:0;transition:all .22s ease;pointer-events:none;z-index:999;white-space:normal;text-align:center;max-width:calc(100vw - 48px)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.error{background:var(--red);color:#fff;border-color:var(--red)}
 /* ── LOADING ── */
@@ -296,6 +296,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .tab-appear{animation:fadeSlideIn .22s ease-out both}
 /* ── Tap feedback en botones generales ── */
 button:active{opacity:.85}
+button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* ── Scrollbar horizontal invisible ── */
 ::-webkit-scrollbar{width:2px;height:2px}
 /* ══ VDSEN 2.0 — bordes editoriales (≤2px), sin cajas redondeadas ══ */
