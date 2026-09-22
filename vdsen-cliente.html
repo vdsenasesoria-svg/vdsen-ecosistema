@@ -167,7 +167,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .today-panel{padding:4px 0 16px;border-bottom:1px solid var(--border);margin-bottom:14px}
 .today-kicker{font-family:var(--ff);font-size:11px;font-weight:800;letter-spacing:1.5px;line-height:1.3;color:var(--mt);margin-bottom:10px}
 .today-session{font-family:'Big Shoulders Display',var(--ff);font-size:27px;font-weight:800;line-height:1.08;color:var(--tx);overflow-wrap:anywhere}
-.today-meta{font-size:12px;color:var(--mt);margin-top:4px}
+.today-meta{font-size:12px;color:var(--mt);margin-top:10px}
 .today-action{width:100%;min-height:48px;margin-top:14px;padding:12px 16px;font-family:'Big Shoulders Display',var(--ff);font-size:19px;font-weight:800;letter-spacing:0;line-height:1.1;cursor:pointer;border-radius:2px}
 .sess-status{font-size:11px;letter-spacing:1px;margin-top:6px;font-weight:700;text-transform:uppercase}
 .sess-mark{font-size:14px;font-weight:900;line-height:1}
@@ -176,7 +176,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .sess-partial{color:var(--sess-partial)}
 .sess-done{color:var(--grn)}
 .sess-skipped{color:var(--mt);opacity:.75}
-.today-action.sess-cta-pending{background:transparent;border:1px solid var(--ink-border);color:var(--tx)}
+.today-action.sess-cta-pending{background:var(--accent);border:1px solid var(--accent);color:#0A0A0A}
 .today-action.sess-cta-live{background:var(--accent);border:none;color:#0A0A0A}
 .today-action.sess-cta-partial{background:transparent;border:2px solid var(--sess-partial);color:var(--sess-partial)}
 .today-action.sess-cta-done{background:transparent;border:1px solid var(--grn);color:var(--grn)}
@@ -2905,16 +2905,16 @@ function renderResumen() {
     </div>
     <div class="progress-bar" style="margin-bottom:12px"><div class="pb-fill" style="width:${pct}%"></div></div>
 
-    <div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px">PROGRESIÓN — ${_totalWeeksGrid} SEMANAS</div>
+    <div class="today-kicker">PROGRESIÓN — ${_totalWeeksGrid} SEMANAS</div>
     <div class="week-grid">${weekHtml}</div>
     ${_missingHintsHtml}
 
     ${buildStaleSessionHomeBanner()}
 
-    <div class="card" style="margin-top:8px;border-color:${ciDone?'rgba(107,107,102,.4)':'rgba(201,74,58,.25)'}">
+    <div class="card" style="margin-top:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div class="card-title" style="margin-bottom:0">CHECK-IN SEM ${semActiva}</div>
-        <span style="font-family:var(--ff);font-size:12px;color:${ciDone?'var(--grn)':'var(--red)'}">${ciDone?'✓ COMPLETADO':'⚠ PENDIENTE'}</span>
+        <span style="font-family:var(--ff);font-size:12px;color:${ciDone?'var(--grn)':'var(--mt)'}">${ciDone?'✓ COMPLETADO':'· PENDIENTE'}</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
         <div style="background:var(--dk);border:1px solid var(--bd);padding:10px;text-align:center;border-radius:6px">
@@ -3349,7 +3349,7 @@ function getTodaySummary() {
   switch (home.lifecycle) {
     case 'COMPLETE':
       btnClass = 'sess-cta-done';
-      statusLine = '<div class="sess-status sess-done">✓ COMPLETADA</div>';
+      statusLine = '<div class="sess-status sess-done">✓ COMPLETADA — '+home.progress.completedSets+'/'+home.progress.totalSets+' series</div>';
       break;
     case 'SKIPPED':
       btnClass = 'sess-cta-skipped';
@@ -3365,13 +3365,13 @@ function getTodaySummary() {
       break;
     default: // NOT_STARTED
       btnClass = 'sess-cta-pending';
-      statusLine = '<div class="sess-status sess-pending">· PENDIENTE</div>';
+      statusLine = '<div class="sess-status sess-pending">· PENDIENTE — '+home.progress.totalSets+' series previstas</div>';
   }
 
   return `<div class="today-session">${_escHTml(hoy.dia||'')}</div>
-    <div class="today-meta">${ejercicios} ejercicios</div>
     ${statusLine}
-    <button onclick="_goToHomeDay(${idx})" class="today-action ${btnClass}">${home.primaryAction.label}</button>`;
+    <button onclick="_goToHomeDay(${idx})" class="today-action ${btnClass}">${home.primaryAction.label}</button>
+    <div class="today-meta">${ejercicios} ejercicios</div>`;
 }
 
 function getSupToday() {
