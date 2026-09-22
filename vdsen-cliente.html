@@ -4646,7 +4646,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+_escHTml(nombre)+'</div>'+
       _exSkipLinkHtml+
       (_exNoteInline
-        ? '<div id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Toca para editar">📝 '+_escHTml(_exNoteInline)+'</div>'
+        ? '<button type="button" id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="display:block;width:100%;margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border:0;border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;text-align:left;font:inherit;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Editar nota del ejercicio">📝 '+_escHTml(_exNoteInline)+'</button>'
         : '')+
       // FASE 18 — Coach note visible al cliente durante workout (inmutable, solo lectura)
       _coachNoteHtml(ej.coachNote)+
@@ -5343,7 +5343,7 @@ function _perfHeader(ej, di, ei, chip, statsHtml) {
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">'+chipHtml+'</div>'+
       '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.25;text-transform:uppercase">'+_escHTml(nombre)+
         (_exNoteInline
-          ? '<span onclick="toggleUserNote('+di+','+ei+')" title="Toca para editar nota" style="font-family:var(--ff);font-size:13px;font-weight:500;font-style:italic;color:#d4b96a;letter-spacing:0;text-transform:none;cursor:pointer;margin-left:5px"> (nota: '+_escHTml(_exNoteInline)+')</span>'
+          ? '<button type="button" onclick="toggleUserNote('+di+','+ei+')" title="Editar nota del ejercicio" style="margin-left:5px;padding:0;background:none;border:0;font-family:var(--ff);font-size:13px;font-weight:500;font-style:italic;color:#d4b96a;letter-spacing:0;text-align:left;text-transform:none;cursor:pointer"> (nota: '+_escHTml(_exNoteInline)+')</button>'
           : '')+
       '</div>'+
       (statsHtml || '')+
