@@ -7890,7 +7890,7 @@ function _preSelect(field, val) {
   });
   var filled = [_preSelState.energia, _preSelState.sueno, _preSelState.motivacion].filter(Boolean).length;
   var btn = document.getElementById('preContinueBtn');
-  var ok = filled >= 2;
+  var ok = filled === 3;
   if (btn) {
     btn.disabled = !ok;
     btn.style.opacity = ok ? '1' : '.4';
