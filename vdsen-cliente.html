@@ -181,7 +181,10 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .today-action.sess-cta-partial{background:transparent;border:2px solid var(--sess-partial);color:var(--sess-partial)}
 .today-action.sess-cta-done{background:transparent;border:1px solid var(--grn);color:var(--grn)}
 .today-action.sess-cta-skipped{background:transparent;border:1px solid var(--border);color:var(--mt);opacity:.75}
+.sec-kicker{font-family:'Big Shoulders Display',var(--ff);font-size:18px;font-weight:700;letter-spacing:0;line-height:1.1;color:var(--tx);margin-bottom:8px}
 .sess-hdr-btn{min-height:44px;min-width:44px;padding:10px 14px;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.5px;border-radius:2px}
+.ci-float{position:fixed;bottom:calc(72px + env(safe-area-inset-bottom,0px));right:14px;z-index:300}
+.ci-float button{min-height:44px;padding:12px 18px;background:var(--accent);border:none;color:#0A0A0A;font-family:'Big Shoulders Display',var(--ff);font-size:14px;font-weight:800;letter-spacing:1px;cursor:pointer;border-radius:2px;box-shadow:0 4px 20px rgba(196,255,0,.28);white-space:nowrap}
 /* ── RESUMEN stats ── */
 .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
 .stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;position:relative;overflow:hidden}
@@ -10052,17 +10055,16 @@ function renderNutricion() {
   const pctG = totalGr ? 100 - pctP - pctC : 0;
 
   const macroPanel = `
-    <div style="background:linear-gradient(180deg,rgba(107,107,102,.06),rgba(107,107,102,.02));border:1px solid rgba(107,107,102,.25);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.2)">
+    <div style="background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:16px 0;margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:20px">🥗</span>
           <div>
-            <div style="font-family:var(--ff);font-size:13px;letter-spacing:1.5px;color:var(--gold);font-weight:800">MACROS DIARIOS</div>
+            <div class="sec-kicker">MACROS DIARIOS</div>
             <div style="font-size:10px;color:var(--mt);margin-top:1px">Tu objetivo nutricional</div>
           </div>
         </div>
         <div style="text-align:right">
-          <div style="font-family:var(--ff);font-size:28px;color:var(--gold);line-height:1;font-weight:900">${kcal||'—'}</div>
+          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:32px;color:var(--accent);line-height:1;font-weight:900">${kcal||'—'}</div>
           <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);margin-top:2px">KCAL/DÍA</div>
         </div>
       </div>
@@ -10171,11 +10173,10 @@ function renderNutricion() {
   }
 
   cont.innerHTML = `
-    <div style="padding:14px 16px 8px;border-bottom:1px solid var(--bd);margin-bottom:14px;background:linear-gradient(180deg,rgba(107,107,102,.04),transparent)">
+    <div style="padding:14px 16px 8px;border-bottom:1px solid var(--border);margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:24px">🍽️</span>
         <div>
-          <div style="font-family:var(--ff);font-size:18px;letter-spacing:2px;color:var(--gold);font-weight:900">PLAN NUTRICIONAL</div>
+          <div class="sec-kicker">PLAN NUTRICIONAL</div>
           <div style="font-size:11px;color:var(--mt);margin-top:1px">Tu alimentación diaria personalizada</div>
         </div>
       </div>
@@ -11565,17 +11566,17 @@ function renderCheckin() {
 
   cont.innerHTML =
     // Botón flotante de guardar
-    + '<div id="ciFloatSave" style="position:fixed;bottom:80px;right:14px;z-index:300">'
-    +   '<button onclick="guardarCI()" style="padding:12px 18px;background:var(--accent);border:none;color:#0A0A0A;font-family:var(--ff);font-size:13px;font-weight:800;letter-spacing:1.5px;cursor:pointer;border-radius:50px;box-shadow:0 4px 20px rgba(196,255,0,.35);white-space:nowrap">💾 GUARDAR</button>'
+    '<div id="ciFloatSave" class="ci-float">'
+    +   '<button onclick="guardarCI()">GUARDAR CHECK-IN</button>'
     + '</div>'
-    + '<div style="font-family:var(--ff);font-size:17px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">CHECK-IN SEM ' + sem + '</div>'
+    + '<div class="sec-kicker">CHECK-IN SEM ' + sem + '</div>'
     + '<div style="display:inline-block;margin-bottom:8px;padding:2px 10px;background:rgba(107,107,102,.10);border-radius:20px;font-size:10px;font-weight:700;letter-spacing:1px;color:'
     + (CURRENT_WEEK < REAL_WEEK ? 'rgba(107,107,102,.5)' : 'var(--mt)') + '">SEMANA ' + CURRENT_WEEK + ' DE ' + getTotalWeeks() + '</div>'
     + '<div style="font-size:12px;color:var(--mt);letter-spacing:1px;margin-bottom:16px">Rellena al inicio de cada semana — tu coach lo usa para ajustar el plan</div>'
 
     // ── MEDIDAS ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
-    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:14px">MEDIDAS DEL DÍA</div>'
+    +   '<div class="sec-kicker">MEDIDAS DEL DÍA</div>'
     +   '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'
     +   _ciField('peso',  'PESO (kg)', '0.1', 'decimal', (PLAN.peso||''), 22, 'En ayunas · mismo día')
     +   _ciField('hrv',   'HRV',       '1',   'numeric', '65',            22, 'Polar, Oura, Garmin…')
@@ -11627,7 +11628,7 @@ function renderCheckin() {
 
     // ── ENERGÍA ──────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
-    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:6px">ENERGÍA SUBJETIVA</div>'
+    +   '<div class="sec-kicker">ENERGÍA SUBJETIVA</div>'
     +   '<div style="font-size:11px;color:var(--mt);margin-bottom:12px">¿Cómo te has sentido en general esta semana? No solo hoy.</div>'
     +   '<div style="display:flex;gap:3px" id="ci_eng_row">' + engHtml + '</div>'
     +   '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--mt);margin-top:5px">'
@@ -11636,7 +11637,7 @@ function renderCheckin() {
 
     // ── WHO-5 ─────────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
-    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">ÍNDICE WHO-5 — BIENESTAR OMS</div>'
+    +   '<div class="sec-kicker">ÍNDICE WHO-5 — BIENESTAR OMS</div>'
     +   '<div style="font-size:12px;color:var(--mt);margin-bottom:4px">¿Con qué frecuencia en los últimos 14 días?</div>'
     +   '<div style="font-size:11px;color:var(--mt);background:var(--dk);border:1px solid var(--bd);padding:10px;margin-bottom:14px;line-height:1.6">'
     +   '0=Nunca · 1=Alguna vez · 2=Menos de la mitad · 3=Más de la mitad · 4=Casi siempre · 5=Siempre<br>'
