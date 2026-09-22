@@ -83,7 +83,8 @@ window.addEventListener('load',    _updateOfflineBanner);
   --surface2:#0D0D0D;                    /* Fondo profundo */
   --border:rgba(244,244,240,.09);        /* Hairline hueso */
   --border-soft:rgba(244,244,240,.045);
-  --accent:#C4FF00;                      /* Lima ácido — solo métricas + 1 CTA */
+  --accent:#C6FF00;                      /* Lima ácido — solo métricas + 1 CTA */
+  --accent-rgb:198,255,0;
   --platinum:#A5A59E;                    /* Neutro secundario legible */
   --grn:#6E9A6E;                         /* Verde apagado — estado hecho */
   --red:#C0564A;                         /* Rojo apagado — error */
@@ -92,16 +93,16 @@ window.addEventListener('load',    _updateOfflineBanner);
   --ink-border:rgba(244,244,240,.16);
   --gold:#F4F4F0;                        /* Compat: títulos/labels → hueso (no lima) */
   --tx:#F4F4F0;                          /* Hueso — texto principal */
-  --mt:#6B6B66;                          /* Gris funcional — metadatos */
+  --mt:#A5A59E;                          /* Metadatos legibles sobre Off-Black */
   --mt2:#454542;
   --input-bg:#0E0E0E;
-  --gold-gradient:#C4FF00;               /* Sin degradados: lima sólido */
+  --gold-gradient:var(--accent);          /* Compat: lima sólido */
   --shadow-gold:0 0 0 1px rgba(244,244,240,.07),0 6px 24px rgba(0,0,0,.55);
   --shadow-card:0 1px 0 rgba(244,244,240,.02),0 4px 18px rgba(0,0,0,.5);
   --shadow-ink:0 0 0 1px rgba(244,244,240,.06),0 4px 16px rgba(0,0,0,.5);
   /* legacy compat */
   --bk:#0A0A0A;--dk:#0D0D0D;--card:#111111;--bd:rgba(244,244,240,.09);
-  --g2:#C4FF00;--gdim:rgba(244,244,240,.06);--blue:#4A9FDC;
+  --g2:var(--accent);--gdim:rgba(244,244,240,.06);--blue:#4A9FDC;
   --ff:'Inter',system-ui,sans-serif;--fb:'Inter',system-ui,sans-serif;
 }
 :root.light-mode{
@@ -159,7 +160,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 /* ── CARDS ── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;box-shadow:var(--shadow-card);position:relative;overflow:hidden}
 .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--border)}
-.card-title{font-family:'Big Shoulders Display',var(--ff);font-size:17px;font-weight:700;color:var(--tx);margin-bottom:4px;letter-spacing:.8px}
+.card-title{font-family:'Big Shoulders Display',var(--ff);font-size:21px;font-weight:700;color:var(--tx);margin-bottom:4px;letter-spacing:0;line-height:1.1}
 .card-sub{font-size:11px;color:var(--platinum);letter-spacing:.5px}
 /* ── RESUMEN stats ── */
 .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
@@ -249,7 +250,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .week-selector{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px}
 .day-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden}
 .day-hdr{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
-.day-name{font-family:'Big Shoulders Display',var(--ff);font-size:21px;font-weight:400;letter-spacing:.5px;color:var(--tx)}
+.day-name{font-family:'Big Shoulders Display',var(--ff);font-size:23px;font-weight:700;letter-spacing:0;line-height:1.1;color:var(--tx)}
 .day-muscles{font-size:11px;color:var(--mt);margin-top:2px}
 .day-body{display:none;border-top:1px solid var(--border)}
 .day-body.open{display:block}
