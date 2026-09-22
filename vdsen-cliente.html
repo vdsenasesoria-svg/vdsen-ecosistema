@@ -6857,6 +6857,10 @@ function renderEntrenamiento() {
   if (window._sesTimerInterval) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; }
   var cont = document.getElementById('tabEntr');
   var sesiones = getSesiones();
+  if (sesiones.length && (isNaN(DIA_ACTIVO) || DIA_ACTIVO < 0 || DIA_ACTIVO >= sesiones.length)) {
+    DIA_ACTIVO = 0;
+    try { localStorage.setItem('vdsen_last_dia', DIA_ACTIVO); } catch(e) {}
+  }
 
   // ── Semana selector ──────────────────────────────────────────────
   var _tw = getTotalWeeks();
