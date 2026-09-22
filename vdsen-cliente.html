@@ -11245,6 +11245,7 @@ async function guardarCI() {
   var _ciBtns = Array.from(document.querySelectorAll('[onclick="guardarCI()"]'));
   var _ciOrigTexts = _ciBtns.map(function(b) { return b.textContent; });
   _ciBtns.forEach(function(b) { b.disabled = true; b.textContent = 'GUARDANDO...'; });
+  var _weekAtStart = CURRENT_WEEK;
   var k = ciKey();
   var _hadCheckin = Object.prototype.hasOwnProperty.call(LOGS, k);
   var _previousCheckin = _hadCheckin ? JSON.parse(JSON.stringify(LOGS[k])) : null;
@@ -11321,6 +11322,7 @@ async function guardarCI() {
     if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
     var _ciOk = await _doSaveLogs();
     if (!USER || USER.uid !== _uidAtStart) return; // client switched away mid-save
+    if (CURRENT_WEEK !== _weekAtStart) return; // week changed mid-save: never mirror old data into the new week's history
     if (_ciOk === false) {
       if (_hadCheckin) LOGS[k] = _previousCheckin;
       else delete LOGS[k];
