@@ -231,6 +231,10 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .workout-set{background:var(--surface);border:1px solid var(--border);border-radius:2px}
 .workout-set-current{border-left:3px solid var(--accent)}
 .workout-set-saved{border-left:2px solid var(--grn);background:var(--surface2)}
+#exPanel input[type="number"]{min-height:44px}
+#exPanel input[type="number"]:focus{box-shadow:0 0 0 2px var(--accent)}
+.workout-set-current button,.workout-set-saved button{min-height:44px}
+.set-save-primary{width:100%;min-height:50px;padding:13px 16px;background:var(--accent);border:0;border-radius:2px;color:#0A0A0A;font-family:'Big Shoulders Display',var(--ff);font-size:18px;font-weight:800;letter-spacing:.5px;cursor:pointer}
 .log-input.auto-fill{border-color:var(--ink-border);background:var(--ink-light);color:var(--accent)}
 .unit-toggle{display:flex;gap:3px}
 .unit-btn{background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--mt);font-size:11px;font-weight:700;letter-spacing:1px;padding:5px 12px;cursor:pointer;transition:all .15s}
@@ -4107,15 +4111,14 @@ function _buildExNav(ejercicios, di) {
     var ssLabelTag = ssGroup + (ssPos || 1);
     if (isSS && ssPos > 1) return ''; // miembros no-primarios se muestran dentro del panel combinado
     // ── Estilos: cuando es SS sobreescribe colores para máxima visibilidad ──
-    var borderCol = isActive ? 'rgba(107,107,102,.75)' : allDone ? 'rgba(110,154,110,.4)' : 'rgba(255,255,255,.09)';
-    var bgCol = isActive ? 'rgba(107,107,102,.13)' : allDone ? 'rgba(110,154,110,.07)' : 'rgba(12,22,38,.9)';
-    var glowStyle = isActive ? 'box-shadow:0 0 16px rgba(107,107,102,.25),0 4px 12px rgba(0,0,0,.4);' : allDone ? 'box-shadow:0 0 10px rgba(110,154,110,.15);' : '';
+    var borderCol = isActive ? 'var(--accent)' : allDone ? 'rgba(110,154,110,.4)' : 'var(--border)';
+    var bgCol = isActive ? 'var(--surface2)' : 'var(--surface)';
+    var glowStyle = '';
     var borderWidth = '2px';
     if (isSS) {
-      borderCol = isActive ? '#6B6B66' : 'rgba(107,107,102,.55)';
-      bgCol = isActive ? 'rgba(107,107,102,.18)' : 'rgba(107,107,102,.08)';
+      borderCol = isActive ? 'var(--accent)' : 'var(--border)';
+      bgCol = isActive ? 'var(--surface2)' : 'var(--surface)';
       borderWidth = '2px';
-      glowStyle = isActive ? 'box-shadow:0 0 16px rgba(107,107,102,.3);' : '';
     }
     var ssTagTop = isSS
       ? '<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#6B6B66;color:#fff;font-size:8px;font-weight:900;letter-spacing:1px;padding:2px 7px;border-radius:8px;box-shadow:0 2px 6px rgba(107,107,102,.45);white-space:nowrap">🔁 '+ssLabelTag+'</div>'
@@ -4923,7 +4926,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<input type="hidden" id="xpump_val_'+_expK+'" value="">'+
         '</div>'+
       '</div>'+
-      '<button onclick="markExpressDone('+di+','+ei+')" style="width:100%;padding:15px;border:none;border-radius:14px;cursor:pointer;background:var(--gold-gradient);color:#0a0a0a;font-size:14px;font-weight:900;letter-spacing:1.5px;box-shadow:0 4px 20px rgba(196,255,0,.35);-webkit-tap-highlight-color:transparent">\u2713 COMPLETAR EJERCICIO</button>'+
+      '<button onclick="markExpressDone('+di+','+ei+')" class="set-save-primary">\u2713 COMPLETAR EJERCICIO</button>'+
       '</div>';
   } else {
   // Barra de progreso (modo normal: myoreps/rest-pause/cluster)
@@ -4934,6 +4937,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   }
   var _nPct = numSeries > 0 ? Math.round(_ndone / numSeries * 100) : 0;
   setsHtml += '<div style="display:flex;align-items:center;gap:8px;padding:0 0 8px">'+
+    '<span style="font-size:10px;font-weight:800;letter-spacing:1px;color:var(--mt)">SERIES</span>'+
     '<div style="flex:1;height:3px;border-radius:2px;background:var(--border);overflow:hidden">'+
       '<div style="height:100%;width:'+_nPct+'%;background:var(--grn);transition:width .3s;border-radius:2px"></div>'+
     '</div>'+
@@ -5043,7 +5047,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             ? ((parseFloat(saved.carga)>0 ? 'BW + '+saved.carga+' '+unit : 'Peso corporal')+' × '+saved.reps+' reps')
             : (saved.carga+' '+unit+' × '+saved.reps+' reps'));
       setsHtml += '<div class="workout-set workout-set-saved" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin-bottom:8px">'+
-        '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:var(--grn);color:#fff;'+
+        '<div style="width:28px;height:28px;flex-shrink:0;color:var(--grn);'+
           'display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">✓</div>'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--grn)">'+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+(function(){ var _tl=(ej.technique||'').toLowerCase(); if (_isY3T&&_effectiveSets&&_effectiveSets[s]) { var _rt=_effectiveSets[s].repsTarget; var _isSST=_rt==='SST-PROTOCOL'; var _c=_isSST?'#FF8844':(_rt<=6?'#7ec0ff':(_y3tPhase==='s3'?'#FF8844':'#44BB88')); var _l=_isSST?'SST':(_rt<=6?'S1':(_y3tPhase==='s3'?'S3':'S2')); return ' <span style="font-size:8px;font-weight:900;color:'+_c+';background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">'+_l+'</span>'; } if (_tl==='fst7') { var _ft=(ej.sets||[]).length||7; return ' <span style="font-size:8px;font-weight:900;color:#cc44aa;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">FST-7 · '+(s+1)+'/'+_ft+'</span>'; } if (_tl==='lengthened_partials') { return ' <span style="font-size:8px;font-weight:900;color:#22aadd;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:3px">PARCIALES</span>'; } return ''; })()+'</div>'+
@@ -5189,9 +5193,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
                 'flex:0 0 auto;padding:12px 16px;border:1px solid var(--border);border-radius:10px;'+
                 'background:var(--input-bg);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer">= Copiar</button>'
             : '')+
-          '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" style="'+
-            'flex:1;padding:13px;border:none;border-radius:10px;cursor:pointer;'+
-            'background:var(--accent);color:#0a0a0a;font-size:14px;font-weight:800;letter-spacing:.5px">'+
+          '<button onclick="completeSet(\''+key+'\','+di+','+ei+','+s+',\''+unit+'\')" class="set-save-primary" style="flex:1">'+
             '✓ GUARDAR '+(_techLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+
           '</button>'+
         '</div>'+
@@ -7196,8 +7198,8 @@ function renderEntrenamiento() {
     // Readiness pre-sesión
     readinessBanner+
     // Session header
-    '<div class="tab-appear" style="padding:14px 16px 8px;display:flex;align-items:center;justify-content:space-between;'+
-      'background:linear-gradient(180deg,rgba(196,255,0,.04) 0%,transparent 100%);border-bottom:1px solid rgba(196,255,0,.06)">'+
+    '<div class="tab-appear" style="padding:14px 16px 8px;display:flex;align-items:center;justify-content:space-between;gap:12px;'+
+      'background:var(--bg);border-bottom:1px solid var(--border)">'+
       '<div>'+
         '<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:'+(CURRENT_WEEK!==REAL_WEEK?'#FF8844':'var(--accent)')+';text-transform:uppercase;margin-bottom:4px">'+(CURRENT_WEEK!==REAL_WEEK?'👁 ':'🗓 ')+'SEM '+CURRENT_WEEK+' · '+getSemProgresion(CURRENT_WEEK)+(CURRENT_WEEK!==REAL_WEEK?' (VISTA)':'')+'</div>'+
         '<div style="font-size:20px;font-weight:800;color:var(--tx);line-height:1.15;letter-spacing:-.3px">'+_escHTml((ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim())+'</div>'+
