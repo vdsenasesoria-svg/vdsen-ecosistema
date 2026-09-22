@@ -8841,6 +8841,9 @@ async function markSessionDone(di) {
   if (CURRENT_WEEK > REAL_WEEK) { _markSessionBusy[di] = false; showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   var key = 'done_'+CURRENT_WEEK+'_'+di;
   if (LOGS[key]) {
+    var previousDone = LOGS[key];
+    var previousRealWeek = REAL_WEEK;
+    var previousCurrentWeek = CURRENT_WEEK;
     // Toggle off
     LOGS[key] = null;
     // Recalcular REAL_WEEK: buscar hacia atrás la primera semana incompleta
@@ -8866,7 +8869,12 @@ async function markSessionDone(di) {
     var _reopenOk = await _doSaveLogs();
     _markSessionBusy[di] = false;
     if (_reopenOk === false) {
+      LOGS[key] = previousDone;
+      REAL_WEEK = previousRealWeek;
+      CURRENT_WEEK = previousCurrentWeek;
       showToast('⚠ NO SE GUARDÓ — revisa conexión. Reintenta.', true);
+      renderEntrenamiento();
+      renderResumen();
       return;
     }
     showToast('Marcado como pendiente');
