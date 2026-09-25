@@ -7138,18 +7138,24 @@ function renderEntrenamiento() {
 
   // ── Populate global ejercicios + auto-select active ─────────────────
   _EJERCICIOS_DIA = ejercicios;
-  var _foundActive = false;
-  for (var _ae = 0; _ae < ejercicios.length; _ae++) {
-    // Saltar ejercicios inactivos esta semana (techniqueFromWeek)
-    if (!isTechniqueActive(ejercicios[_ae], CURRENT_WEEK)) continue;
-    if (!_isExerciseFullyDone(DIA_ACTIVO, _ae, ejercicios[_ae])) {
-      EJ_ACTIVO = _ae; _foundActive = true; break;
+  var _activeExercise = ejercicios[EJ_ACTIVO];
+  var _keepActiveExercise = _activeExercise
+    && isTechniqueActive(_activeExercise, CURRENT_WEEK)
+    && !_isExerciseFullyDone(DIA_ACTIVO, EJ_ACTIVO, _activeExercise);
+  if (!_keepActiveExercise) {
+    var _foundActive = false;
+    for (var _ae = 0; _ae < ejercicios.length; _ae++) {
+      // Saltar ejercicios inactivos esta semana (techniqueFromWeek)
+      if (!isTechniqueActive(ejercicios[_ae], CURRENT_WEEK)) continue;
+      if (!_isExerciseFullyDone(DIA_ACTIVO, _ae, ejercicios[_ae])) {
+        EJ_ACTIVO = _ae; _foundActive = true; break;
+      }
     }
-  }
-  if (!_foundActive) {
-    // Buscar el último ejercicio activo como fallback
-    for (var _fb = ejercicios.length - 1; _fb >= 0; _fb--) {
-      if (isTechniqueActive(ejercicios[_fb], CURRENT_WEEK)) { EJ_ACTIVO = _fb; break; }
+    if (!_foundActive) {
+      // Buscar el último ejercicio activo como fallback
+      for (var _fb = ejercicios.length - 1; _fb >= 0; _fb--) {
+        if (isTechniqueActive(ejercicios[_fb], CURRENT_WEEK)) { EJ_ACTIVO = _fb; break; }
+      }
     }
   }
 
@@ -8767,6 +8773,7 @@ window.resetRestTimer = resetRestTimer;
 function stopRestTimer() {
   if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
   _restEndMs = 0;
+  window._nextAction25 = null;
   localStorage.removeItem('vdsen_restEnd');
   var overlay = document.getElementById('restTimerOverlay');
   if (overlay) overlay.style.display = 'none';
@@ -8780,7 +8787,9 @@ function stopRestTimer() {
 }
 
 function selDia(i) {
+  stopRestTimer();
   DIA_ACTIVO = i;
+  EJ_ACTIVO = 0;
   try { localStorage.setItem('vdsen_last_dia', i); } catch(e) {}
   renderEntrenamiento();
 }
@@ -9593,6 +9602,7 @@ function loadBackupLogs() {
 }
 
 function setWeek(w) {
+  if (w !== CURRENT_WEEK) stopRestTimer();
   CURRENT_WEEK = w;
   // Discard unsaved subjective CI button state from the previous week.
   // _ciSubjTemp accumulates across setCISubj() clicks without being committed

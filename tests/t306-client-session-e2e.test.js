@@ -85,7 +85,7 @@ const labelsMapSrc = CLIENT.slice(labelsMapIdx, CLIENT.indexOf('};', labelsMapId
 
 const harnessSrc = `
 'use strict';
-var LOGS = {}, CURRENT_WEEK = 1, REAL_WEEK = 1, DIA_ACTIVO = 0;
+var LOGS = {}, CURRENT_WEEK = 1, REAL_WEEK = 1, DIA_ACTIVO = 0, EJ_ACTIVO = 0;
 var __sesiones = [], __totalWeeks = 6, __saveResult = true, __confirmPartialResult = true;
 var __toasts = [], __saveLogsCalls = 0, __progressionCalls = [], __renderCalls = 0, __modalOpened = null, __lastConfirmMsg = null;
 var _saveLogsTimer = null, _markSessionBusy = {};
@@ -97,6 +97,7 @@ function isTechniqueActive(ej, week) { return true; }
 function showToast(msg, isError) { __toasts.push({ msg: msg, isError: !!isError }); }
 function renderEntrenamiento() { __renderCalls++; }
 function renderResumen() { __renderCalls++; }
+function stopRestTimer() {}
 function showPostSessionModal(di) { __modalOpened = di; }
 function calculateProgression(di, postData) { __progressionCalls.push({ di: di, postData: postData }); return { engineState: null }; }
 function _askConfirmPartial(msg) { __lastConfirmMsg = msg; return Promise.resolve(__confirmPartialResult); }
