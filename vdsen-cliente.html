@@ -1276,6 +1276,15 @@ async function doLogout() {
   _clearLiveListeners();
   await FB.signOut(FB.auth);
   PLAN = null; LOGS = {};
+  ACTIVE_PLAN_ID = null;
+  LOGS_BY_WEEK = { log: {}, progrec: {} };
+  DIA_ACTIVO = 0; EJ_ACTIVO = 0; _EJERCICIOS_DIA = [];
+  _weeksExpanded = false;
+  CALIB_VOLUMETRICA = null;
+  _preSelState = {}; _postSessionDi = null;
+  if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+  if (_ciAutoSaveTimer) { clearTimeout(_ciAutoSaveTimer); _ciAutoSaveTimer = null; }
+  if (window._sesTimerInterval) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; }
   // T129: full session-scoped reset — without this, a next user who logs in with no
   // Firestore logs doc yet (new client) inherits the previous user's in-memory
   // EXERCISE_UNITS/EXERCISE_HISTORY/week counters, since loadPlan only overwrites
@@ -1288,6 +1297,7 @@ async function doLogout() {
     localStorage.removeItem('vdsen_active_plan_id'); // R8-GAP-01: avoid stale plan id bleeding to next user on shared device
     localStorage.removeItem('vdsen_logs_backup');     // T129: contains previous user's LOGS/exercise data
     localStorage.removeItem('vdsen_menu_custom');     // T129: previous user's custom nutrition entries
+    localStorage.removeItem('vdsen_last_dia');
   } catch(e){}
 }
 
@@ -1448,6 +1458,7 @@ async function loadPlan(user) {
     // ── SISTEMA NUEVO: clients/{uid} → activePlanId → plans/{planId} ──
     const clientRef = FB.doc(FB.db, 'clients', user.uid);
     const clientSnap = await FB.getDoc(clientRef);
+    if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
 
     if (!clientSnap.exists()) {
       PLAN = null;
@@ -1467,6 +1478,7 @@ async function loadPlan(user) {
     if (window._pendingPhoneToSave && clientData.phone !== window._pendingPhoneToSave) {
       try {
         await FB.updateDoc(clientRef, { phone: window._pendingPhoneToSave });
+        if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
         clientData.phone = window._pendingPhoneToSave;
       } catch(_e) { console.warn('No se pudo guardar phone:', _e && _e.message); }
     }
@@ -1494,6 +1506,7 @@ async function loadPlan(user) {
 
     // Leer plan
     const planSnap = await FB.getDoc(FB.doc(FB.db, 'plans', activePlanId));
+    if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
     if (!planSnap.exists()) {
       PLAN = null;
       renderPlanRoto();
@@ -1621,6 +1634,7 @@ async function loadPlan(user) {
       }
     });
 
+    if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
     PLAN = {
       nombre: clientData.displayName || user.email,
       objetivo: clientData.objetivo || '',
@@ -1657,6 +1671,7 @@ async function loadPlan(user) {
       ? FB.getDoc(FB.doc(FB.db, 'logs', user.uid, 'mesos', activePlanId)).catch(function(){ return null; })
       : Promise.resolve(null);
     const [_exSnapPF, _mesoSnapPF] = await Promise.all([_pfExercises, _pfMeso]);
+    if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
 
     // Cargar catálogo de ejercicios del coach (para algoritmo de progresión)
     try {
@@ -1683,6 +1698,7 @@ async function loadPlan(user) {
       var _mesoSnap = (_mesoSnapPF && typeof _mesoSnapPF.exists === 'function') ? _mesoSnapPF : null;
       const logRef = FB.doc(FB.db, 'logs', user.uid);
       const logSnap = (_mesoSnap && _mesoSnap.exists()) ? _mesoSnap : await FB.getDoc(logRef);
+      if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
       if (logSnap.exists()) {
         var logData = logSnap.data();
         // Preservar siempre el historial de pesos (sobrevive a cambio de plan)
@@ -1740,6 +1756,7 @@ async function loadPlan(user) {
     }
     try { if (sessionStorage.getItem('vdsen_plan_updated_info') === '1') { sessionStorage.removeItem('vdsen_plan_updated_info'); _showBitacoraInfo = true; } } catch(e2) {}
 
+    if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
     document.getElementById('hdName').textContent = (PLAN.nombre||'').toUpperCase();
     document.getElementById('hdGoal').textContent = PLAN.objetivo || '—';
 
@@ -9590,6 +9607,7 @@ async function saveLogs() {
 
 async function _doSaveLogs() {
   if (!USER || !FB) return false;
+  var _uidAtStart = USER.uid;
   _saveLogsTimer = null; // limpiar ID del timer que ya disparó (evita false-positive en visibilitychange)
   _logsWriteInFlight++;
   try {
@@ -9602,11 +9620,13 @@ async function _doSaveLogs() {
     // T1 dual-write: nuevo path por mesociclo primero (future source), legacy segundo (compatibilidad coach).
     // El fallo del path nuevo es no-fatal: datos seguros en legacy y localStorage.
     if (ACTIVE_PLAN_ID) {
-      try { await FB.setDoc(FB.doc(FB.db, 'logs', USER.uid, 'mesos', ACTIVE_PLAN_ID), _payload); }
+      try { await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload); }
       catch(_me) { console.warn('[logs/mesos] write:', _me && _me.code, _me && _me.message); }
     }
-    const ref = FB.doc(FB.db, 'logs', USER.uid);
+    if (!USER || USER.uid !== _uidAtStart) return false;
+    const ref = FB.doc(FB.db, 'logs', _uidAtStart);
     await FB.setDoc(ref, _payload);
+    if (!USER || USER.uid !== _uidAtStart) return false;
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
@@ -9614,6 +9634,7 @@ async function _doSaveLogs() {
     _showSaveOk();
     return true;
   } catch(e) {
+    if (!USER || USER.uid !== _uidAtStart) return false;
     console.error('saveLogs error:', e.code, e.message, e);
     var _errMsg = '⚠ Error al guardar: ' + (e.code ? '['+e.code+'] ' : '') + (e.message || 'sin conexión');
     // Toast visible + badge persistente
