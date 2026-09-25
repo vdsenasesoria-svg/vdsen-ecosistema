@@ -129,7 +129,7 @@ ok(CLIENT.includes('await FB.setDoc(ref, _payload);'), 'the save is a full setDo
 // plan-scoping principle, not a data-loss bug).
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(CLIENT.includes("FB.setDoc(FB.doc(FB.db, 'logs', USER.uid, 'mesos', ACTIVE_PLAN_ID), _payload)"), 'every save also mirrors into a plan-scoped archival doc -- the OLD plan\'s data is preserved there when the switch is detected, since this write already happened continuously while that plan was active');
+ok(CLIENT.includes("FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload)"), 'every save mirrors into the originating user\'s plan-scoped archival doc, never a later-authenticated user');
 ok(CLIENT.includes("FB.getDoc(FB.doc(FB.db, 'logs', user.uid, 'mesos', activePlanId))"), 'the CLIENT reads its own per-mesociclo mirror back (new-first, legacy-fallback) -- self-consistent, not a write-only dead path from the client\'s own perspective');
 ok((COACH.match(/setDoc\(doc\(db, 'logs', clientId, 'mesos', newPlanId\)/g) || []).length >= 2, 'vdsen-coach.html only WRITES to logs/{uid}/mesos/{planId} (manual reset-week admin actions), pre-T253');
 // T253 update: a read-only HISTORICAL MONITOR VIEW now intentionally reads

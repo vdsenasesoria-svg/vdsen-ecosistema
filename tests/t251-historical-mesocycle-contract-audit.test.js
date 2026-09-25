@@ -83,7 +83,7 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 
 ok(CLIENT.includes("const _payload = { entries: _safeEntries, currentWeek: REAL_WEEK, planId: ACTIVE_PLAN_ID, exerciseUnits: _safeUnits, exerciseHistory: _safeHist, updatedAt: Date.now() };"),
   'confirmed the exact mesos/flat-doc payload shape: entries, currentWeek, planId, exerciseUnits, exerciseHistory, updatedAt -- no separate "createdAt"/"startedAt" field exists');
-ok(CLIENT.includes("await FB.setDoc(FB.doc(FB.db, 'logs', USER.uid, 'mesos', ACTIVE_PLAN_ID), _payload);"), 'confirmed mesos/{planId} is a Firestore SUBCOLLECTION of logs/{uid} -- already discoverable via collection(), no new collection needed');
+ok(CLIENT.includes("await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload);"), 'confirmed mesos/{planId} is written under the captured originating logs/{uid} scope');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXERCISE_HISTORY is name-keyed, not PID-keyed -- must never be presented
