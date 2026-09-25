@@ -3294,7 +3294,11 @@ window._goToHomeDay = _goToHomeDay;
 // the two are never conflated.
 function _resumeStaleSessionFromHome(week, di) {
   CURRENT_WEEK = week;
-  _goToHomeDay(di);
+  selDia(di);
+  // goTab(1) normally returns to REAL_WEEK. This resume targets an explicit
+  // stale week, so preserve that context for this one navigation.
+  _goTabSkipWeekReset = true;
+  goTab(1);
 }
 window._resumeStaleSessionFromHome = _resumeStaleSessionFromHome;
 

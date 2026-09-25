@@ -50,7 +50,8 @@ ok(CLIENT.includes('if (_stale) _showStaleSessionRecovery(_stale);'), 'loadPlan 
 // ── Both actions delegate to already-guarded production functions -- no
 // reimplemented closure/navigation logic. ───────────────────────────────────
 const resumeSrc = extractFunction(CLIENT, 'function _resumeStaleSessionFromHome(week, di) {');
-ok(resumeSrc.includes('_goToHomeDay(di);'), 'CONTINUAR delegates to the same _goToHomeDay routing every other Home CTA uses');
+ok(resumeSrc.includes('selDia(di);') && resumeSrc.includes('_goTabSkipWeekReset = true;') && resumeSrc.includes('goTab(1);'),
+  'CONTINUAR preserves its stale week while routing through the existing day/tab navigation');
 const closeSrc = extractFunction(CLIENT, 'function _closeStaleSessionAsPartialFromHome(week, di) {');
 ok(closeSrc.includes('_endSessionAsPartial(di);'), 'TERMINAR COMO PARCIAL delegates to the already-guarded T301 _endSessionAsPartial -- same real-sets-only/no-fabrication/confirm-dialog/failure-revert safety, not reimplemented');
 ok(closeSrc.includes('CURRENT_WEEK = week;') && closeSrc.includes('DIA_ACTIVO = di;'),
