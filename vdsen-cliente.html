@@ -3797,7 +3797,7 @@ var _lastHiddenAt = 0;
 // Es importante para Safari iOS y para mantener consistente la semana ACTIVA entre
 // dispositivos / pestañas del mismo usuario.
 async function _refreshLogsFromFirestore(reason) {
-  if (!USER || !FB) return;
+  if (!USER || !FB || _logsWriteInFlight > 0) return;
   try {
     const ref = FB.doc(FB.db, 'logs', USER.uid);
     const snap = await FB.getDoc(ref);
@@ -9538,6 +9538,7 @@ async function markWeekCompleteFromHistory() {
 window.markWeekCompleteFromHistory = markWeekCompleteFromHistory;
 
 var _saveLogsTimer = null;
+var _logsWriteInFlight = 0;
 async function saveLogs() {
   // Debounce: si se llama varias veces rápido, solo ejecuta la última
   if (_saveLogsTimer) clearTimeout(_saveLogsTimer);
@@ -9550,6 +9551,7 @@ async function saveLogs() {
 async function _doSaveLogs() {
   if (!USER || !FB) return false;
   _saveLogsTimer = null; // limpiar ID del timer que ya disparó (evita false-positive en visibilitychange)
+  _logsWriteInFlight++;
   try {
     // Sanear: Firestore rechaza objetos con `undefined`. JSON.parse(JSON.stringify(...))
     // descarta cualquier campo undefined heredado de versiones anteriores o de bugs.
@@ -9588,6 +9590,8 @@ async function _doSaveLogs() {
     errEl.style.display = 'block';
     errEl.textContent = _errMsg + ' — tap para reintentar';
     return false;
+  } finally {
+    _logsWriteInFlight = Math.max(0, _logsWriteInFlight - 1);
   }
 }
 
