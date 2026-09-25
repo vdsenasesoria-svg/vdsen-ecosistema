@@ -7812,6 +7812,36 @@ function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir,
 }
 window._recordExerciseHistoryAndPR = _recordExerciseHistoryAndPR;
 
+// LOGS is the execution source of truth. Rebuild this convenience reference
+// after a correction so an invalidated high-water mark cannot survive.
+function _rebuildExerciseHistoryFromLogs(exNameKey, prescriptionExerciseId) {
+  var best = null, bestKg = -1;
+  Object.keys(LOGS || {}).forEach(function(key) {
+    if (key.indexOf('log_') !== 0) return;
+    var entry = LOGS[key];
+    if (!entry || !entry.done || entry.autoFilled) return;
+    var sameExercise = prescriptionExerciseId
+      ? entry.prescriptionExerciseId === prescriptionExerciseId
+      : _normName(entry.exerciseNameSnapshot || '') === _normName(exNameKey || '');
+    if (!sameExercise) return;
+    var unit = (entry.unit || 'KG').toUpperCase();
+    var loadKg = parseFloat(_convertCarga(String(entry.carga || 0), unit, 'KG')) || 0;
+    if (loadKg <= 0) return;
+    if (!best || loadKg > bestKg || (loadKg === bestKg && (parseInt(entry.reps) || 0) > (parseInt(best.reps) || 0))) {
+      best = entry; bestKg = loadKg;
+    }
+  });
+  if (best) {
+    EXERCISE_HISTORY[exNameKey] = {
+      load: String(best.carga), reps: String(best.reps), rir: best.rir_real,
+      unit: (best.unit || 'KG').toUpperCase(), updatedAt: best.ts || Date.now()
+    };
+  } else {
+    delete EXERCISE_HISTORY[exNameKey];
+  }
+}
+window._rebuildExerciseHistoryFromLogs = _rebuildExerciseHistoryFromLogs;
+
 function showPRCelebration(exDisplayName, load, unit, reps) {
   var old = document.getElementById('prCeleb');
   if (old) old.remove();
@@ -8176,6 +8206,7 @@ async function completeSet(key, di, ei, si, unit) {
   // detectar récord personal. Solo cuenta el SET DE TRABAJO (top set): drop sets y series
   // finales con fatiga no pisan el peso real de trabajo (ver _recordExerciseHistoryAndPR).
   var _setIsPR = done && _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), unit, false);
+  _rebuildExerciseHistoryFromLogs(exName, _ejMeta.prescriptionExerciseId || null);
 
   // A set is execution evidence: unlike UI-only preferences, do not advance
   // the workout until its write is accepted. This keeps a failed write

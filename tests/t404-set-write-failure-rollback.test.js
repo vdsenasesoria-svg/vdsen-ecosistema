@@ -37,6 +37,7 @@ function makeRuntime() {
       if (showCelebration !== false) celebrations++;
       return true;
     }
+    function _rebuildExerciseHistoryFromLogs() {}
     function showPRCelebration() { celebrations++; }
     function saveLogs() {}
     var resolveSave;

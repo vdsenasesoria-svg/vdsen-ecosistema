@@ -31,6 +31,7 @@ function makeRuntime() {
     function getAdjustedRIR() { return 2; }
     function _lbwTrack() {}
     function _recordExerciseHistoryAndPR() {}
+    function _rebuildExerciseHistoryFromLogs() {}
     function saveLogs() {}
     async function _doSaveLogs() { return true; }
     function _isExerciseFullyDone() { return false; }
