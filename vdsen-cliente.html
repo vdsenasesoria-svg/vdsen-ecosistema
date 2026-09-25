@@ -8965,6 +8965,8 @@ async function markSessionDone(di) {
 }
 
 async function _confirmSessionDone(di) {
+  var _weekAtStart = CURRENT_WEEK;
+  var _dayAtStart = DIA_ACTIVO;
   var key = 'done_'+CURRENT_WEEK+'_'+di;
   LOGS[key] = { ts: Date.now() };
   // Guardar inmediatamente (bypass debounce) — crítico en Safari iOS donde los timers
@@ -8974,11 +8976,14 @@ async function _confirmSessionDone(di) {
   if (_ok === false) {
     // No persistió en Firestore — revertir el done_ y avisar al usuario.
     delete LOGS[key];
-    showToast('⚠ NO SE GUARDÓ — revisa conexión / errores. Reintenta.', true);
-    renderEntrenamiento();
-    renderResumen();
+    if (CURRENT_WEEK === _weekAtStart && DIA_ACTIVO === _dayAtStart) {
+      showToast('⚠ NO SE GUARDÓ — revisa conexión / errores. Reintenta.', true);
+      renderEntrenamiento();
+      renderResumen();
+    }
     return false; // T125-C: señala fallo al caller para suprimir el resumen de sesión
   }
+  if (CURRENT_WEEK !== _weekAtStart || DIA_ACTIVO !== _dayAtStart) return true;
   // T295 — same offline-honesty distinction as _showSaveOk: the write
   // above already resolved (locally-queued under persistentLocalCache()),
   // so this never blocks/changes control flow -- only the wording avoids
@@ -13512,6 +13517,8 @@ async function submitPostSession() {
   if (_postSessionSubmitting) return;
   var di = _postSessionDi;
   if (di == null) return;
+  var _weekAtPostStart = CURRENT_WEEK;
+  var _dayAtPostStart = typeof DIA_ACTIVO !== 'undefined' ? DIA_ACTIVO : di;
   _postSessionSubmitting = true;
 
   var eimd = parseInt(document.getElementById('psEimd').value);
@@ -13577,7 +13584,9 @@ async function submitPostSession() {
       if (hadEngineState) LOGS.engine_state = previousEngineState; else delete LOGS.engine_state;
       return false;
     }
-    if (_saved !== false) showSessionSummary(di);
+    if (CURRENT_WEEK === _weekAtPostStart && DIA_ACTIVO === _dayAtPostStart) {
+      if (_saved !== false) showSessionSummary(di);
+    }
   } finally {
     // Always unlock — both success and unexpected-exception paths land here.
     _postSessionSubmitting = false;
