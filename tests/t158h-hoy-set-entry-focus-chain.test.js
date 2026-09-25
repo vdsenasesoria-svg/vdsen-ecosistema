@@ -114,7 +114,7 @@ console.log('buildBoostcampExercise confirmed still dead code — correctly left
 // all intact.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const completeSetFn = extractFunction(CLIENT, 'function completeSet(key, di, ei, si, unit)');
+const completeSetFn = extractFunction(CLIENT, 'async function completeSet(key, di, ei, si, unit)');
 assert.ok(completeSetFn, 'completeSet must exist unchanged');
 assert.ok(completeSetFn.includes('if (prev.done) return;'), 'T158-H regression: repeated save events are idempotent; corrections use editSet()');
 assert.ok(completeSetFn.includes("showToast('Ingresa la carga (> 0)', true); return;"), 'T158-H regression: required-field validation (carga) must remain unchanged');

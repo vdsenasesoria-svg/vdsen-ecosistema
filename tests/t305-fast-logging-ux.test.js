@@ -56,7 +56,7 @@ function extractFunction(src, decl) {
 }
 
 // ── Pre-existing correctness (audit, no change). ────────────────────────────
-const completeSetSrc = extractFunction(CLIENT, 'function completeSet(key, di, ei, si, unit) {');
+const completeSetSrc = extractFunction(CLIENT, 'async function completeSet(key, di, ei, si, unit) {');
 ok(completeSetSrc.includes("showToast('Ingresa la carga (> 0)', true); return;"), 'completeSet validates load BEFORE writing to LOGS -- an invalid attempt never mutates state');
 ok(completeSetSrc.indexOf('LOGS[key] = {') > completeSetSrc.indexOf("showToast('Ingresa la carga"), 'the LOGS write happens strictly after all validation returns -- a failed save can never look confirmed');
 ok(/if \(_partnerPending\) \{[\s\S]*?return;\s*\}\s*\/\/ FASE 9/.test(completeSetSrc),

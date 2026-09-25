@@ -7798,8 +7798,8 @@ function copiarSerie(key, s, di, ei) {
 // Actualiza EXERCISE_HISTORY con la misma regla que ya existía (solo sobreescribe si la
 // nueva carga es ≥ la guardada) y detecta si la serie registrada es un récord personal
 // (carga mayor a la histórica, o misma carga con más reps) para mostrar una celebración.
-function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir, unit) {
-  if (!carga || parseFloat(carga) <= 0) return;
+function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir, unit, showCelebration) {
+  if (!carga || parseFloat(carga) <= 0) return false;
   var prev = EXERCISE_HISTORY[exNameKey] || {};
   var newLoad = parseFloat(carga) || 0;
   var prevLoadInUnit = prev.load ? (parseFloat(_convertCarga(prev.load, prev.unit, unit)) || 0) : 0;
@@ -7807,7 +7807,8 @@ function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir,
   if (!prev.load || newLoad >= prevLoadInUnit) {
     EXERCISE_HISTORY[exNameKey] = { load: carga, reps: String(reps), rir: rir, unit: unit, updatedAt: Date.now() };
   }
-  if (isPR) showPRCelebration(exDisplayName, carga, unit, reps);
+  if (isPR && showCelebration !== false) showPRCelebration(exDisplayName, carga, unit, reps);
+  return isPR;
 }
 window._recordExerciseHistoryAndPR = _recordExerciseHistoryAndPR;
 
@@ -8100,7 +8101,7 @@ function addExtraSetNow(di, ei) {
   showToast('➕ Serie extra agregada — ¡a por ella!');
 }
 
-function completeSet(key, di, ei, si, unit) {
+async function completeSet(key, di, ei, si, unit) {
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   if (CURRENT_WEEK < REAL_WEEK) { showToast('Semana pasada — modo lectura', true); return; }
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
@@ -8113,6 +8114,11 @@ function completeSet(key, di, ei, si, unit) {
   var ics = icsEl ? (parseInt(icsEl.value) || null) : null;
   var prev  = LOGS[key] || {};
   if (prev.done) return; // correction uses editSet(); repeated save events are idempotent
+  var _hadSetLog = Object.prototype.hasOwnProperty.call(LOGS, key);
+  var _previousSetLog = _hadSetLog ? JSON.parse(JSON.stringify(LOGS[key])) : null;
+  var _weekAtSetStart = CURRENT_WEEK;
+  var _dayAtSetStart = typeof DIA_ACTIVO !== 'undefined' ? DIA_ACTIVO : di;
+  var _exerciseAtSetStart = EJ_ACTIVO;
   var pump  = prev.pump || null; // set via setPump buttons
   var done  = true;
 
@@ -8160,15 +8166,45 @@ function completeSet(key, di, ei, si, unit) {
 
   // Leer nombre del ejercicio antes de re-render
   var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  var _historyStore = typeof EXERCISE_HISTORY !== 'undefined' ? EXERCISE_HISTORY : null;
+  var _hadExerciseHistory = !!_historyStore && Object.prototype.hasOwnProperty.call(_historyStore, exName);
+  var _previousExerciseHistory = _hadExerciseHistory ? JSON.parse(JSON.stringify(_historyStore[exName])) : null;
+  var _hadWeekLogKey = typeof LOGS_BY_WEEK !== 'undefined' && !!LOGS_BY_WEEK.log[CURRENT_WEEK]
+    && LOGS_BY_WEEK.log[CURRENT_WEEK].indexOf(key) >= 0;
 
   // Actualizar historial de ejercicio (peso/RIR para continuidad entre mesociclos) y
   // detectar récord personal. Solo cuenta el SET DE TRABAJO (top set): drop sets y series
   // finales con fatiga no pisan el peso real de trabajo (ver _recordExerciseHistoryAndPR).
-  if (done) {
-    _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), unit);
+  var _setIsPR = done && _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), unit, false);
+
+  // A set is execution evidence: unlike UI-only preferences, do not advance
+  // the workout until its write is accepted. This keeps a failed write
+  // retryable without leaving a phantom completed set in memory.
+  if (_saveLogsTimer) { clearTimeout(_saveLogsTimer); _saveLogsTimer = null; }
+  var _setSaved = await _doSaveLogs();
+  if (_setSaved === false) {
+    if (_hadSetLog) LOGS[key] = _previousSetLog;
+    else delete LOGS[key];
+    if (_historyStore) {
+      if (_hadExerciseHistory) _historyStore[exName] = _previousExerciseHistory;
+      else delete _historyStore[exName];
+    }
+    if (!_hadWeekLogKey && typeof LOGS_BY_WEEK !== 'undefined' && LOGS_BY_WEEK.log[_weekAtSetStart]) {
+      var _failedLogIndex = LOGS_BY_WEEK.log[_weekAtSetStart].indexOf(key);
+      if (_failedLogIndex >= 0) LOGS_BY_WEEK.log[_weekAtSetStart].splice(_failedLogIndex, 1);
+    }
+    if (CURRENT_WEEK === _weekAtSetStart && DIA_ACTIVO === _dayAtSetStart && EJ_ACTIVO === _exerciseAtSetStart) {
+      showToast('⚠ NO SE GUARDÓ — revisa conexión y reintenta', true);
+    }
+    return false;
   }
 
-  saveLogs();
+  // The write belongs to its original log key, but its follow-up UI belongs
+  // only to the context where it started. Navigation while saving must not
+  // move the client to another exercise/day when it resolves.
+  if (CURRENT_WEEK !== _weekAtSetStart || DIA_ACTIVO !== _dayAtSetStart || EJ_ACTIVO !== _exerciseAtSetStart) return true;
+
+  if (_setIsPR) showPRCelebration(_exNombre || exName, carga, unit, reps);
 
   // Auto-avance al siguiente ejercicio incompleto cuando se termina el actual
   if (done) {
