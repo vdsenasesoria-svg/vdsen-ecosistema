@@ -116,12 +116,12 @@ console.log('buildBoostcampExercise confirmed still dead code — correctly left
 
 const completeSetFn = extractFunction(CLIENT, 'function completeSet(key, di, ei, si, unit)');
 assert.ok(completeSetFn, 'completeSet must exist unchanged');
-assert.ok(completeSetFn.includes('var done  = !prev.done; // toggle'), 'T158-H regression: completeSet\'s toggle semantics must remain unchanged');
+assert.ok(completeSetFn.includes('if (prev.done) return;'), 'T158-H regression: repeated save events are idempotent; corrections use editSet()');
 assert.ok(completeSetFn.includes("showToast('Ingresa la carga (> 0)', true); return;"), 'T158-H regression: required-field validation (carga) must remain unchanged');
 assert.ok(completeSetFn.includes('_isExerciseFullyDone(di, ei, _ejForAdv)'), 'T158-H regression: auto-advance-to-next-exercise logic must remain unchanged');
 assert.ok(completeSetFn.includes('startRestTimer(restTime, key);'), 'T158-H regression: rest timer trigger must remain unchanged');
 
-console.log('completeSet() core contract (toggle, validation, auto-advance, rest timer) unchanged — OK');
+console.log('completeSet() core contract (idempotency, validation, auto-advance, rest timer) unchanged — OK');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Regression: session resume / next-set / last-set-into-next-exercise /

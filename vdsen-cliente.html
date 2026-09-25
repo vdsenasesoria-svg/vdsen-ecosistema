@@ -8112,8 +8112,9 @@ function completeSet(key, di, ei, si, unit) {
   var icsEl = document.getElementById('ics_'+key);
   var ics = icsEl ? (parseInt(icsEl.value) || null) : null;
   var prev  = LOGS[key] || {};
+  if (prev.done) return; // correction uses editSet(); repeated save events are idempotent
   var pump  = prev.pump || null; // set via setPump buttons
-  var done  = !prev.done; // toggle
+  var done  = true;
 
   // ── Validación: campos obligatorios antes de marcar como hecha ──
   // Detección de tipo (debe coincidir con la del renderer):
