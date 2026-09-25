@@ -90,8 +90,8 @@ ok(CLIENT.includes("await FB.setDoc(FB.doc(FB.db, 'logs', USER.uid, 'mesos', ACT
 // as authoritative per-PID history.
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(CLIENT.includes("EXERCISE_HISTORY[exNameKey] = { load: carga, reps: String(reps), rir: rir, unit: unit, updatedAt: Date.now() };"),
-  'confirmed EXERCISE_HISTORY is keyed by exercise NAME (lowercase), storing only the LAST logged set -- not PID-anchored, not a full history, must never be shown as authoritative per-PID progression');
+ok(CLIENT.includes("EXERCISE_HISTORY[historyKey] = { load: carga, reps: String(reps), rir: rir, unit: unit, updatedAt: Date.now() };"),
+  'confirmed EXERCISE_HISTORY writes through the derived canonical history key, with legacy name fallback preserved');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // plans/{planId} remains immutable and independently readable (T245) --
