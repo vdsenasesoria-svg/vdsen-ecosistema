@@ -8205,8 +8205,9 @@ async function completeSet(key, di, ei, si, unit) {
   // Leer nombre del ejercicio antes de re-render
   var exName = (document.getElementById('setrow_'+key)?.dataset.exname || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   var _historyStore = typeof EXERCISE_HISTORY !== 'undefined' ? EXERCISE_HISTORY : null;
-  var _hadExerciseHistory = !!_historyStore && Object.prototype.hasOwnProperty.call(_historyStore, exName);
-  var _previousExerciseHistory = _hadExerciseHistory ? JSON.parse(JSON.stringify(_historyStore[exName])) : null;
+  var _historyKey = _historyPidKey(_ejMeta.prescriptionExerciseId || null) || exName;
+  var _hadExerciseHistory = !!_historyStore && Object.prototype.hasOwnProperty.call(_historyStore, _historyKey);
+  var _previousExerciseHistory = _hadExerciseHistory ? JSON.parse(JSON.stringify(_historyStore[_historyKey])) : null;
   var _hadWeekLogKey = typeof LOGS_BY_WEEK !== 'undefined' && !!LOGS_BY_WEEK.log[CURRENT_WEEK]
     && LOGS_BY_WEEK.log[CURRENT_WEEK].indexOf(key) >= 0;
 
@@ -8225,8 +8226,8 @@ async function completeSet(key, di, ei, si, unit) {
     if (_hadSetLog) LOGS[key] = _previousSetLog;
     else delete LOGS[key];
     if (_historyStore) {
-      if (_hadExerciseHistory) _historyStore[exName] = _previousExerciseHistory;
-      else delete _historyStore[exName];
+      if (_hadExerciseHistory) _historyStore[_historyKey] = _previousExerciseHistory;
+      else delete _historyStore[_historyKey];
     }
     if (!_hadWeekLogKey && typeof LOGS_BY_WEEK !== 'undefined' && LOGS_BY_WEEK.log[_weekAtSetStart]) {
       var _failedLogIndex = LOGS_BY_WEEK.log[_weekAtSetStart].indexOf(key);
