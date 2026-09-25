@@ -1,18 +1,13 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const test = require('node:test');
+global.window = {};
 
 const client = fs.readFileSync('vdsen-cliente.html', 'utf8');
-const start = client.indexOf('function _rebuildExerciseHistoryFromLogs(exNameKey, prescriptionExerciseId) {');
+const start = client.indexOf('function _historyPidKey(');
 assert.notEqual(start, -1, 'T417 rebuild helper exists');
-let depth = 0;
-const brace = client.indexOf('{', start);
-let end = brace;
-for (; end < client.length; end++) {
-  if (client[end] === '{') depth++;
-  if (client[end] === '}' && --depth === 0) break;
-}
-const rebuildSource = client.slice(start, end + 1);
+const end = client.indexOf('\nfunction showPRCelebration', start);
+const rebuildSource = client.slice(start, end);
 
 function rebuild(entries) {
   return new Function(`
@@ -22,7 +17,7 @@ function rebuild(entries) {
     function _convertCarga(v) { return v; }
     ${rebuildSource}
     _rebuildExerciseHistoryFromLogs('press', 'pid-press');
-    return EXERCISE_HISTORY.press;
+    return EXERCISE_HISTORY['__pid__pid-press'] || EXERCISE_HISTORY.press;
   `)();
 }
 

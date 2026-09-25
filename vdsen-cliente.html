@@ -4634,7 +4634,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
   };
   var _exNameBanner = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  var _histExBanner = EXERCISE_HISTORY[_exNameBanner] || {};
+  var _histExBanner = _getExerciseHistoryEntry(_exNameBanner, ej.prescriptionExerciseId);
   var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
   var _exNoteInline = _getExNote(di, ei);
   // T302 — SKIP EXERCISE: only offered while the exercise isn't already
@@ -4747,7 +4747,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     }
     if (!wuRefLoad) {
       var _exNLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      var _histWu = EXERCISE_HISTORY[_exNLower] || {};
+      var _histWu = _getExerciseHistoryEntry(_exNLower, ej.prescriptionExerciseId);
       if (_histWu.load) wuRefLoad = parseFloat(_histWu.load) || 0;
     }
     // Fallback semana 1: usar la carga planificada del primer set
@@ -4803,7 +4803,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // Pre-fill: prioridad progrec \u2192 sem anterior s0 \u2192 historial
   var _exPrevS0 = LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0'] || {};
   var _exHistLow2 = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  var _exHistRaw2 = EXERCISE_HISTORY[_exHistLow2] || {};
+  var _exHistRaw2 = _getExerciseHistoryEntry(_exHistLow2, ej.prescriptionExerciseId);
   var _exPfCarga = '';
   var _exPfReps = '';
   var _exPfRIR = Math.max(0, Math.min(4, parseInt(baseRIR) || 2));
@@ -4965,7 +4965,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var saved = LOGS[key] || {};
     var prev = LOGS[prevKey] || {};
     var exNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    var histEx = EXERCISE_HISTORY[exNameLower] || {};
+    var histEx = _getExerciseHistoryEntry(exNameLower, ej.prescriptionExerciseId);
     // Auto-fill: prioridad progrec (s=0 solo) → serie anterior DE ESTA SESIÓN (s>0) →
     // semana anterior mismo set → historial. Solo si el set aún no fue registrado.
     // Convertir KG↔LB si la unidad guardada difiere de la unidad actual del ejercicio.
@@ -6138,7 +6138,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     var _isIsoM = _techM === 'iso-hold' || /^plancha|isometric|hollow|l[- ]?sit|wall sit/i.test(memberNames[curMIdx]);
     var _isBwM = _isIsoM || /^(dominad|fondo|plancha|burpee|abdominal|crunch(?! en polea)|rueda abdomin|elevaci[oó]n de piernas (colgad|libre)|push.?up|flexi[óo]n|muscle.?up|pull.?up|hollow)/i.test(memberNames[curMIdx]);
     var _prevM = LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+curIdx+'_s0'] || {};
-    var _histM = EXERCISE_HISTORY[memberNames[curMIdx].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')] || {};
+    var _histM = _getExerciseHistoryEntry(memberNames[curMIdx].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''), ejM.prescriptionExerciseId);
     var _pfCM = '', _pfRM = ejM.sets ? (ejM.sets[0] ? (ejM.sets[0].repsTarget || 10) : 10) : 10;
     var _progM = _getProgRecForExercise(di, curIdx, memberNames[curMIdx]);
     if (_progM && _progM.newLoad !== undefined && _progM.newLoad !== null) {
@@ -7421,7 +7421,7 @@ function buildBoostcampExercise(ej, di, ei) {
     }
     if (!wuRefLoad) {
       var exNLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      var histWu = EXERCISE_HISTORY[exNLower] || {};
+      var histWu = _getExerciseHistoryEntry(exNLower, ej.prescriptionExerciseId);
       if (histWu.load) wuRefLoad = parseFloat(histWu.load) || 0;
     }
     // Fallback semana 1: usar la carga planificada del primer set
@@ -7568,7 +7568,7 @@ function buildBoostcampExercise(ej, di, ei) {
     var unit = saved.unit || getExUnit(di, ei);
     // Pre-fill desde historial de ejercicio si no hay dato guardado ni semana anterior
     var exNameLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    var histEx = EXERCISE_HISTORY[exNameLower] || {};
+    var histEx = _getExerciseHistoryEntry(exNameLower, ej.prescriptionExerciseId);
     // Auto-fill: usar semana anterior primero, luego historial (solo si el set aún no se registró)
     // Convertir KG↔LB si la unidad guardada difiere de la unidad actual.
     var _prefill = !saved.carga && !saved.reps;
@@ -7798,14 +7798,22 @@ function copiarSerie(key, s, di, ei) {
 // Actualiza EXERCISE_HISTORY con la misma regla que ya existía (solo sobreescribe si la
 // nueva carga es ≥ la guardada) y detecta si la serie registrada es un récord personal
 // (carga mayor a la histórica, o misma carga con más reps) para mostrar una celebración.
-function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir, unit, showCelebration) {
+function _historyPidKey(prescriptionExerciseId) {
+  return prescriptionExerciseId ? '__pid__' + String(prescriptionExerciseId) : '';
+}
+function _getExerciseHistoryEntry(exNameKey, prescriptionExerciseId) {
+  var pidKey = _historyPidKey(prescriptionExerciseId);
+  return (pidKey && EXERCISE_HISTORY[pidKey]) || EXERCISE_HISTORY[exNameKey] || {};
+}
+function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir, unit, showCelebration, prescriptionExerciseId) {
   if (!carga || parseFloat(carga) <= 0) return false;
-  var prev = EXERCISE_HISTORY[exNameKey] || {};
+  var historyKey = _historyPidKey(prescriptionExerciseId) || exNameKey;
+  var prev = _getExerciseHistoryEntry(exNameKey, prescriptionExerciseId);
   var newLoad = parseFloat(carga) || 0;
   var prevLoadInUnit = prev.load ? (parseFloat(_convertCarga(prev.load, prev.unit, unit)) || 0) : 0;
   var isPR = !!prev.load && (newLoad > prevLoadInUnit || (newLoad === prevLoadInUnit && parseInt(reps) > (parseInt(prev.reps) || 0)));
   if (!prev.load || newLoad >= prevLoadInUnit) {
-    EXERCISE_HISTORY[exNameKey] = { load: carga, reps: String(reps), rir: rir, unit: unit, updatedAt: Date.now() };
+    EXERCISE_HISTORY[historyKey] = { load: carga, reps: String(reps), rir: rir, unit: unit, updatedAt: Date.now() };
   }
   if (isPR && showCelebration !== false) showPRCelebration(exDisplayName, carga, unit, reps);
   return isPR;
@@ -7832,12 +7840,12 @@ function _rebuildExerciseHistoryFromLogs(exNameKey, prescriptionExerciseId) {
     }
   });
   if (best) {
-    EXERCISE_HISTORY[exNameKey] = {
+    EXERCISE_HISTORY[_historyPidKey(prescriptionExerciseId) || exNameKey] = {
       load: String(best.carga), reps: String(best.reps), rir: best.rir_real,
       unit: (best.unit || 'KG').toUpperCase(), updatedAt: best.ts || Date.now()
     };
   } else {
-    delete EXERCISE_HISTORY[exNameKey];
+    delete EXERCISE_HISTORY[_historyPidKey(prescriptionExerciseId) || exNameKey];
   }
 }
 window._rebuildExerciseHistoryFromLogs = _rebuildExerciseHistoryFromLogs;
@@ -8205,7 +8213,7 @@ async function completeSet(key, di, ei, si, unit) {
   // Actualizar historial de ejercicio (peso/RIR para continuidad entre mesociclos) y
   // detectar récord personal. Solo cuenta el SET DE TRABAJO (top set): drop sets y series
   // finales con fatiga no pisan el peso real de trabajo (ver _recordExerciseHistoryAndPR).
-  var _setIsPR = done && _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), unit, false);
+  var _setIsPR = done && _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), unit, false, _ejMeta.prescriptionExerciseId || null);
   _rebuildExerciseHistoryFromLogs(exName, _ejMeta.prescriptionExerciseId || null);
 
   // A set is execution evidence: unlike UI-only preferences, do not advance
