@@ -185,6 +185,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .today-action.sess-cta-skipped{background:transparent;border:1px solid var(--border);color:var(--mt);opacity:.75}
 .sec-kicker{font-family:'Big Shoulders Display',var(--ff);font-size:18px;font-weight:700;letter-spacing:0;line-height:1.1;color:var(--tx);margin-bottom:8px}
 .sess-hdr-btn{min-height:44px;min-width:44px;padding:10px 14px;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:.5px;border-radius:2px}
+.tap-target{min-height:44px;min-width:44px}
 .session-head{align-items:center}
 .ci-float{position:fixed;bottom:calc(72px + env(safe-area-inset-bottom,0px));right:calc(14px + env(safe-area-inset-right,0px));z-index:300}
 .ci-float button{min-height:44px;padding:12px 18px;background:var(--accent);border:none;color:#0A0A0A;font-family:'Big Shoulders Display',var(--ff);font-size:14px;font-weight:800;letter-spacing:1px;cursor:pointer;border-radius:2px;box-shadow:0 4px 20px rgba(196,255,0,.28);white-space:nowrap}
@@ -5101,17 +5102,17 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
-        '<button onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
+        '<button class="tap-target" onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
         (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
         (_exNoteInline?'<span style="font-size:10px;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">📝 Nota</span>':'')+
         '<div style="position:relative;margin-left:auto">'+
-          '<button id="exOpts_'+di+'_'+ei+'" onclick="toggleExOpts('+di+','+ei+')" style="font-size:13px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 11px;border-radius:6px;cursor:pointer;line-height:1">⋮</button>'+
+          '<button class="tap-target" id="exOpts_'+di+'_'+ei+'" aria-label="Opciones del ejercicio" onclick="toggleExOpts('+di+','+ei+')" style="font-size:13px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 11px;border-radius:6px;cursor:pointer;line-height:1">⋮</button>'+
           '<div id="exOptsMenu_'+di+'_'+ei+'" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;min-width:160px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.4);overflow:hidden">'+
-            '<button onclick="showExHistory('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">📈 Historial</button>'+
-            '<button onclick="showExSubModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">🔄 Cambiar ejercicio</button>'+
-            '<button onclick="showExModModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">⚙ Ajustar series/reps</button>'+
-            '<button onclick="toggleUserNote('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:none;border:none;cursor:pointer">📝 '+(	_exNoteInline?'Editar nota':'Añadir nota')+'</button>'+
+            '<button class="tap-target" onclick="showExHistory('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">📈 Historial</button>'+
+            '<button class="tap-target" onclick="showExSubModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">🔄 Cambiar ejercicio</button>'+
+            '<button class="tap-target" onclick="showExModModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">⚙ Ajustar series/reps</button>'+
+            '<button class="tap-target" onclick="toggleUserNote('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:none;border:none;cursor:pointer">📝 '+(	_exNoteInline?'Editar nota':'Añadir nota')+'</button>'+
           '</div>'+
         '</div>'+
       '</div>'+
@@ -5180,7 +5181,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       }).join('');
       var _wuId = 'wu_'+di+'_'+ei;
       wuHtml = '<div style="margin-bottom:12px;border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0;background:rgba(70,130,200,.06)">'+
-        '<button onclick="(function(el,btn){var open=el.style.display===\'none\';el.style.display=open?\'block\':\'none\';btn.querySelector(\'span:last-child\').textContent=open?\'▾\':\'▸\';})(document.getElementById(\''+_wuId+'\'),this)" style="width:100%;text-align:left;padding:7px 12px;display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer">'+
+        '<button class="tap-target" aria-controls="'+_wuId+'" aria-expanded="false" onclick="(function(el,btn){var open=el.style.display===\'none\';el.style.display=open?\'block\':\'none\';btn.setAttribute(\'aria-expanded\',open?\'true\':\'false\');btn.querySelector(\'span:last-child\').textContent=open?\'▾\':\'▸\';})(document.getElementById(\''+_wuId+'\'),this)" style="width:100%;text-align:left;padding:7px 12px;display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer">'+
           '<span style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px">🔥 CALENTAMIENTO</span>'+
           '<span style="margin-left:auto;font-size:10px;color:var(--mt2)">▸</span>'+
         '</button>'+
@@ -7476,9 +7477,9 @@ function renderEntrenamiento() {
           (_skipCnt > 0 ? ' · '+_skipCnt+' omitida(s)' : '')+
         '</div>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button onclick="markWeekCompleteFromHistory()" style="flex:1;min-width:140px;padding:9px 12px;border:1px solid #C4FF00;border-radius:10px;cursor:pointer;background:rgba(196,255,0,.1);color:#C4FF00;font-size:11px;font-weight:800;letter-spacing:.5px;white-space:nowrap">⚡ DESDE HISTORIAL</button>'+
+          '<button class="tap-target" onclick="markWeekCompleteFromHistory()" style="flex:1;min-width:140px;padding:9px 12px;border:1px solid #C4FF00;border-radius:10px;cursor:pointer;background:rgba(196,255,0,.1);color:#C4FF00;font-size:11px;font-weight:800;letter-spacing:.5px;white-space:nowrap">⚡ DESDE HISTORIAL</button>'+
           (_doneCnt > 0 || _skipCnt > 0
-            ? '<button onclick="markWeekDoneWithPartialData()" style="flex:1;min-width:120px;padding:9px 12px;border:1px solid rgba(200,165,74,.45);border-radius:10px;cursor:pointer;background:rgba(200,165,74,.07);color:#C8A54A;font-size:11px;font-weight:700;letter-spacing:.5px;white-space:nowrap">✓ DATOS PARCIALES</button>'
+            ? '<button class="tap-target" onclick="markWeekDoneWithPartialData()" style="flex:1;min-width:120px;padding:9px 12px;border:1px solid rgba(200,165,74,.45);border-radius:10px;cursor:pointer;background:rgba(200,165,74,.07);color:#C8A54A;font-size:11px;font-weight:700;letter-spacing:.5px;white-space:nowrap">✓ DATOS PARCIALES</button>'
             : '')+
         '</div>'+
       '</div>';
@@ -8131,8 +8132,8 @@ function buildBoostcampExercise(ej, di, ei) {
         mrvWarnHtml+
       '</div>'+
       // Expand note button + user note button
-      (wuRefLoad>0?'<button onclick="toggleNota(\'wu_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Calentamiento">🔥</button>':'')+
-      '<button onclick="toggleUserNote('+di+','+ei+')" style="background:none;border:none;color:'+(_getExNote(di,ei)?'var(--accent)':'var(--mt2)')+';font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Mi nota">📝</button>'+
+      (wuRefLoad>0?'<button class="tap-target" onclick="toggleNota(\'wu_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Calentamiento" aria-label="Mostrar calentamiento">🔥</button>':'')+
+      '<button class="tap-target" onclick="toggleUserNote('+di+','+ei+')" style="background:none;border:none;color:'+(_getExNote(di,ei)?'var(--accent)':'var(--mt2)')+';font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Mi nota" aria-label="Abrir mi nota del ejercicio">📝</button>'+
     '</div>'+
 
     // Warm-up section (collapsible)
@@ -8160,8 +8161,8 @@ function buildBoostcampExercise(ej, di, ei) {
       '<div style="width:28px;flex-shrink:0"></div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;gap:6px">'+
-          '<div onclick="toggleExUnit('+di+','+ei+')" style="flex:1;text-align:center;font-size:10px;font-weight:600;color:var(--accent);letter-spacing:1px;cursor:pointer;user-select:none">'+
-            getExUnit(di,ei)+' ⇄</div>'+
+          '<button class="tap-target" onclick="toggleExUnit('+di+','+ei+')" style="flex:1;text-align:center;font-size:10px;font-weight:600;color:var(--accent);letter-spacing:1px;cursor:pointer;user-select:none;background:none;border:none;padding:0">'+
+            getExUnit(di,ei)+' ⇄</button>'+
           '<div style="flex:1;text-align:center;font-size:10px;font-weight:600;color:var(--mt);letter-spacing:1px">REPS</div>'+
           '<div style="width:40px;text-align:center;font-size:10px;font-weight:600;color:var(--mt);letter-spacing:1px;flex-shrink:0">RIR</div>'+
           '<div style="width:44px;text-align:center;font-size:10px;font-weight:600;color:var(--mt);letter-spacing:1px;flex-shrink:0">✓</div>'+
@@ -12008,13 +12009,13 @@ function buildICSSection(d, sem) {
     + '</div></div>';
 
   // ── Filas de ejercicios ────────────────────────────────────────────
-  function fila(labelHtml, key, val) {
+  function fila(labelHtml, key, val, ariaLabel) {
     var bc = val ? icsColor(val) : 'var(--bd)';
     var tc = val ? icsColor(val) : 'var(--mt)';
     return '<div style="display:grid;grid-template-columns:1fr 78px;gap:8px;margin-bottom:8px;align-items:center">'
       + labelHtml
       + '<input type="number" min="1" max="10" inputmode="numeric" placeholder="—" value="' + (val || '') + '"'
-      + ' data-icskey="' + key + '"'
+      + ' data-icskey="' + key + '" aria-label="' + _escHTml(ariaLabel || 'ICS del ejercicio') + '"'
       + ' style="background:var(--bk);border:1px solid ' + bc + ';color:' + tc + ';font-family:var(--ff);font-size:20px;padding:8px;text-align:center;outline:none"'
       + ' oninput="var k=this.getAttribute(\'data-icskey\');ciICSSet(k,this.value);this.style.borderColor=icsColor(this.value);this.style.color=icsColor(this.value)">'
       + '</div>';
@@ -12026,11 +12027,11 @@ function buildICSSection(d, sem) {
       var key = 'libre_' + i;
       var val = icsData[key] || '';
       var nomKey = 'nom_' + key;
-      var nomLabel = '<input type="text" placeholder="Ejercicio..." value=""'
+      var nomLabel = '<input type="text" aria-label="Nombre del ejercicio" placeholder="Ejercicio..." value=""'
         + ' style="background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:13px;padding:8px;outline:none"'
         + ' data-nomkey="' + nomKey + '"'
         + ' oninput="var k=this.getAttribute(\'data-nomkey\');ciICSSet(k,this.value)">';
-      rowsHtml += fila(nomLabel, key, val);
+      rowsHtml += fila(nomLabel, key, val, 'ICS del ejercicio libre '+(i + 1));
     }
   } else {
     ejercicios.slice(0, 8).forEach(function(ej, i) {
@@ -12050,7 +12051,7 @@ function buildICSSection(d, sem) {
         : '';
       rowsHtml += fila(
         '<div style="font-size:12px;color:var(--tx);line-height:1.4">' + name + hint + '</div>',
-        key, val
+        key, val, 'ICS de '+ej
       );
     });
   }
@@ -12239,7 +12240,7 @@ function renderCheckin() {
     var v = d[id] || '';
     var prevVal = prevCI[id];
     var prevHint = prevVal ? '<div style="font-size:10px;color:var(--mt);margin-top:3px">Sem. ant.: <strong style="color:var(--platinum)">' + prevVal + '</strong></div>' : '';
-    return '<div><div style="font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">'+label+'</div>'
+    return '<div><label for="ci_'+id+'" style="display:block;font-size:12px;font-family:var(--ff);color:var(--mt);letter-spacing:1px;margin-bottom:5px">'+label+'</label>'
       + '<input id="ci_'+id+'" type="number" step="'+step+'" inputmode="'+imode+'" value="'+v+'" placeholder="'+ph+'" oninput="ciSet(\''+id+'\',this.value)"'
       + ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid '+(v?'var(--grn)':'var(--bd)')+';color:var(--tx);font-family:var(--ff);font-size:'+fz+'px;padding:10px;text-align:center;outline:none">'
       + prevHint
@@ -12403,7 +12404,7 @@ function renderCheckin() {
 
     // ── NOTAS PARA COACH ──────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
-    +   '<div style="font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">NOTAS PARA TU COACH</div>'
+    +   '<label for="ci_notas" style="display:block;font-family:var(--ff);font-size:14px;letter-spacing:2px;color:var(--gold);margin-bottom:10px">NOTAS PARA TU COACH</label>'
     +   '<textarea id="ci_notas" placeholder="Dolor, fatiga inusual, estrés, cambios de horario, sueño alterado..." oninput="ciSet(\'notas\',this.value)"'
     +   ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:15px;padding:12px;outline:none;min-height:90px;resize:vertical;line-height:1.6">'
     +   (d.notas||'') + '</textarea>'
