@@ -229,6 +229,27 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .ex-badge{font-size:10px;padding:2px 8px;background:rgba(107,107,102,.12);border:1px solid rgba(107,107,102,.3);color:var(--gold);border-radius:10px}
 .ex-params{font-size:12px;color:var(--mt);margin-bottom:8px}
 .ex-note{font-size:12px;color:var(--platinum);font-style:italic;margin-bottom:10px;padding:8px 12px;border-left:2px solid var(--ink-border);background:var(--ink-light);border-radius:0 8px 8px 0}
+.exercise-guide,.exercise-rationale{margin:0 0 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:#0d0d0d}
+.exercise-guide summary,.exercise-rationale summary{list-style:none;min-height:44px;padding:11px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;font-family:'Big Shoulders Display',var(--ff);font-size:14px;font-weight:800;letter-spacing:1.4px;color:var(--accent)}
+.exercise-guide summary::-webkit-details-marker,.exercise-rationale summary::-webkit-details-marker{display:none}
+.exercise-guide-body{padding:2px 0 12px}
+.exercise-guide-section{padding:10px 0;border-top:1px solid rgba(244,244,240,.08)}
+.exercise-guide-label{font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt);margin-bottom:5px}
+.exercise-guide-copy{font-size:13px;color:var(--tx);line-height:1.55;overflow-wrap:anywhere}
+.exercise-guide-individual{padding:10px 12px;margin:2px 0 8px;border-left:3px solid var(--accent);background:rgba(198,255,0,.06)}
+.exercise-rationale>div{padding:0 0 12px;font-size:12px;line-height:1.55;color:var(--platinum)}
+.advanced-client{margin:14px 0 10px;border-top:2px solid var(--accent);border-bottom:1px solid var(--border);padding:14px 0}
+.advanced-client-title{font-family:'Big Shoulders Display',var(--ff);font-size:24px;font-weight:800;color:var(--tx);letter-spacing:.4px}
+.advanced-client-meta{font-size:11px;color:var(--mt);line-height:1.55;margin-top:4px}
+.advanced-module{border-top:1px solid var(--border);padding:12px 0}
+.advanced-module:first-of-type{margin-top:12px}
+.advanced-module-title{list-style:none;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;font-size:10px;font-weight:800;letter-spacing:1.6px;color:var(--accent)}
+.advanced-module-title::-webkit-details-marker{display:none}
+.advanced-row{display:grid;grid-template-columns:minmax(105px,.8fr) minmax(0,1.7fr);gap:10px;padding:6px 0;border-bottom:1px solid rgba(244,244,240,.06)}
+.advanced-row:last-child{border-bottom:none}
+.advanced-key{font-size:10px;color:var(--mt);letter-spacing:.5px;text-transform:uppercase}
+.advanced-value{font-size:12px;color:var(--tx);line-height:1.45;overflow-wrap:anywhere}
+@media(max-width:380px){.advanced-row{grid-template-columns:1fr;gap:3px}}
 .log-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
 .log-field{display:flex;flex-direction:column;gap:3px}
 .log-label{font-size:11px;letter-spacing:1px;color:var(--mt);font-weight:600;text-transform:uppercase}
@@ -436,9 +457,11 @@ var REAL_WEEK = 1;     // semana real de entrenamiento (no cambia al navegar)
 var _weeksExpanded = false; // selector: mostrar semanas pasadas
 var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
+var EXERCISE_CATALOG_BY_ID = {}; // { exerciseId: metadata canónica } — evita resolver identidad por posición/nombre
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
 var CALIB_VOLUMETRICA = null; // Módulo A Ehrenstein — calibración volumétrica {VME_individual, VMR_individual}
+var CLIENT_ADVANCED = null; // módulos opcionales, read-only y filtrados por visibilidad explícita
 var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el tab de entreno
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
@@ -1290,6 +1313,8 @@ async function doLogout() {
   // EXERCISE_UNITS/EXERCISE_HISTORY/week counters, since loadPlan only overwrites
   // these when logSnap.exists() is true.
   EXERCISE_UNITS = {}; EXERCISE_HISTORY = {};
+  EXERCISE_CATALOG = {}; EXERCISE_CATALOG_BY_ID = {};
+  CLIENT_ADVANCED = null;
   REAL_WEEK = 1; CURRENT_WEEK = 1;
   MENU_CUSTOM = {};
   try { stopRestTimer(); } catch(e){}
@@ -1444,6 +1469,65 @@ function _clearLiveListeners() {
   // must treat its first snapshot as the new baseline, not compare against a stale timestamp.
   if (FB) FB._planLastUpdatedAt = null;
 }
+
+// ── Client-only visibility/read adapter ────────────────────────────────────
+// A module existing in Firestore is not enough to expose it. Visibility must
+// be explicit on the module, in clientVisibility, or inherited from an
+// explicitly visible Competitive Physique container. Sensitive health and
+// pharmacology modules never inherit visibility from another container.
+function _clientModuleIsVisible(value, key, planData, clientData, inheritedVisible) {
+  if (value === null || value === undefined) return false;
+  if (value && typeof value === 'object') {
+    if (value.clientVisible === true || value.visibility === 'client') return true;
+    if (Array.isArray(value.audience) && value.audience.indexOf('client') !== -1) return true;
+  }
+  var maps = [planData && planData.clientVisibility, clientData && clientData.clientVisibility];
+  for (var i = 0; i < maps.length; i++) {
+    if (maps[i] && maps[i][key] === true) return true;
+  }
+  return inheritedVisible === true;
+}
+
+function _pickClientModule(key, aliases, sources, planData, clientData, inheritedVisible) {
+  for (var si = 0; si < sources.length; si++) {
+    var src = sources[si];
+    if (!src || typeof src !== 'object') continue;
+    for (var ai = 0; ai < aliases.length; ai++) {
+      var value = src[aliases[ai]];
+      if (value === null || value === undefined) continue;
+      if (_clientModuleIsVisible(value, key, planData, clientData, inheritedVisible)) return value;
+    }
+  }
+  return null;
+}
+
+function _buildClientAdvancedState(planData, clientData) {
+  planData = planData || {};
+  clientData = clientData || {};
+  var roots = [planData, clientData];
+  var competitiveRaw = planData.competitivePhysique || planData.competitive || clientData.competitivePhysique || clientData.competitive || null;
+  var competitiveVisible = _clientModuleIsVisible(competitiveRaw, 'competitivePhysique', planData, clientData, false);
+  var competitiveSources = competitiveRaw && typeof competitiveRaw === 'object'
+    ? [competitiveRaw, planData, clientData]
+    : roots;
+  return {
+    competitivePhysique: competitiveVisible ? competitiveRaw : null,
+    competitivePriorities: _pickClientModule('competitivePriorities', ['competitivePriorities','priorities','prioridades'], competitiveSources, planData, clientData, competitiveVisible),
+    stageGap: _pickClientModule('stageGap', ['stageGap','stage_gap'], competitiveSources, planData, clientData, competitiveVisible),
+    contestPrep: _pickClientModule('contestPrep', ['contestPrep','prep','contest_prep'], competitiveSources, planData, clientData, competitiveVisible),
+    posing: _pickClientModule('posing', ['posing','posingPlan'], competitiveSources, planData, clientData, competitiveVisible),
+    cardio: _pickClientModule('cardio', ['cardio','cardioPlan'], competitiveSources, planData, clientData, competitiveVisible),
+    neat: _pickClientModule('neat', ['neat','steps','stepsPlan'], competitiveSources, planData, clientData, competitiveVisible),
+    stageReadiness: _pickClientModule('stageReadiness', ['stageReadiness','stage_readiness'], competitiveSources, planData, clientData, competitiveVisible),
+    trialPeak: _pickClientModule('trialPeak', ['trialPeak','trial_peak'], competitiveSources, planData, clientData, competitiveVisible),
+    peakWeek: _pickClientModule('peakWeek', ['peakWeek','peak_week'], competitiveSources, planData, clientData, competitiveVisible),
+    postContestRecovery: _pickClientModule('postContestRecovery', ['postContestRecovery','postContest','post_contest_recovery'], competitiveSources, planData, clientData, competitiveVisible),
+    // Explicit per-module visibility is mandatory for these sensitive domains.
+    healthSurveillance: _pickClientModule('healthSurveillance', ['healthSurveillance','health','health_surveillance'], roots, planData, clientData, false),
+    pharmacologyContext: _pickClientModule('pharmacologyContext', ['pharmacologyContext','pharmacology','farmacologia'], roots, planData, clientData, false)
+  };
+}
+
 async function loadPlan(user) {
   _clearLiveListeners();
   var _mySeq = ++_loadPlanSeq; // T127-C: capture generation — detect superseding concurrent calls
@@ -1459,6 +1543,7 @@ async function loadPlan(user) {
     const clientRef = FB.doc(FB.db, 'clients', user.uid);
     const clientSnap = await FB.getDoc(clientRef);
     if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
+    CLIENT_ADVANCED = null; EXERCISE_CATALOG = {}; EXERCISE_CATALOG_BY_ID = {};
 
     if (!clientSnap.exists()) {
       PLAN = null;
@@ -1570,7 +1655,20 @@ async function loadPlan(user) {
           setsReps: numSets + '×' + _repsRangeStr,
           // Identidad estable de la instancia prescrita — requerida por el Progression Engine
           prescriptionExerciseId: e.prescriptionExerciseId || undefined,
-          exerciseId: e.exerciseId || undefined
+          exerciseId: e.exerciseId || undefined,
+          // Guía canónica + override individual. Todo opcional y null-safe.
+          exerciseInstructions: e.exerciseInstructions || e.instructions || ((e.setupInstructions || e.executionInstructions || e.romInstructions || e.technicalCues || e.commonErrors) ? {
+            setup: e.setupInstructions || null,
+            execution: e.executionInstructions || null,
+            rangeOfMotion: e.romInstructions || null,
+            cues: e.technicalCues || [],
+            avoid: e.commonErrors || []
+          } : null),
+          athleteSpecificTechniqueNote: e.athleteSpecificTechniqueNote || e.individualTechniqueNote || e.individualNotes || (e.exerciseInstructions && e.exerciseInstructions.individualNotes) || null,
+          clientSelectionRationale: e.clientSelectionRationale || ((e.selectionRationale && e.selectionRationale.clientVisible === true) ? e.selectionRationale.text : null),
+          videoUrl: e.videoUrl || e.video || null,
+          imageUrl: e.imageUrl || e.image || null,
+          mediaClientVisible: e.mediaClientVisible === true || e.clientVisibleMedia === true || (e.media && e.media.clientVisible === true)
         };
         // Auto-detectar Y3T en loadPlan para que todos los render paths hereden technique:'y3t'
         if (ex.technique !== 'y3t' && isY3TExercise(ex)) ex.technique = 'y3t';
@@ -1656,8 +1754,14 @@ async function loadPlan(user) {
       // T165 — coach override authority: timestamp of the coach's last plan edit.
       // Used to detect a progression recommendation calculated BEFORE that edit
       // (stale relative to the coach's explicit decision) so it never auto-applies.
-      updatedAt: planData.updatedAt || null
+      updatedAt: planData.updatedAt || null,
+      schema: planData.schema || 'vdsen-plan-v2'
     };
+
+    // Read adapter exclusivo del cliente. No crea ni modifica contratos Firestore.
+    // Salud, farmacología, competencia e imágenes solo atraviesan esta frontera
+    // cuando existe autorización clientVisible explícita.
+    CLIENT_ADVANCED = _buildClientAdvancedState(planData, clientData);
 
     // Módulo A — Ehrenstein: calibración volumétrica (solo lectura en cliente)
     CALIB_VOLUMETRICA = (clientData.calibracion_volumetrica && clientData.calibracion_volumetrica.resultados)
@@ -1677,15 +1781,34 @@ async function loadPlan(user) {
     try {
       if (clientData.coachId && _exSnapPF) {
         EXERCISE_CATALOG = {};
+        EXERCISE_CATALOG_BY_ID = {};
         _exSnapPF.forEach(function(d) {
           var ex = d.data();
-          EXERCISE_CATALOG[(ex.name||'').toLowerCase().trim()] = {
+          var _catalogEntry = {
+            exerciseId: ex.exerciseId || d.id,
+            name: ex.name || ex.exerciseName || '',
+            aliases: Array.isArray(ex.aliases) ? ex.aliases : [],
             fatigueCost: ex.fatigueCost || 3,
             resistanceCurve: ex.resistanceCurve || 'mid',
             muscleType: ex.muscleType || 'typeIIx',
             motorPattern: ex.motorPattern || '',
-            executionNotes: ex.executionNotes || ''
+            executionNotes: ex.executionNotes || '',
+            instructionVersion: ex.instructionVersion || null,
+            exerciseInstructions: ex.exerciseInstructions || ex.instructions || null,
+            setupInstructions: ex.setupInstructions || null,
+            executionInstructions: ex.executionInstructions || null,
+            romInstructions: ex.romInstructions || null,
+            technicalCues: Array.isArray(ex.technicalCues) ? ex.technicalCues : [],
+            commonErrors: Array.isArray(ex.commonErrors) ? ex.commonErrors : [],
+            equipmentSettingsSchema: ex.equipmentSettingsSchema || null
           };
+          var _catalogName = (_catalogEntry.name || '').toLowerCase().trim();
+          if (_catalogName) EXERCISE_CATALOG[_catalogName] = _catalogEntry;
+          if (_catalogEntry.exerciseId) EXERCISE_CATALOG_BY_ID[String(_catalogEntry.exerciseId)] = _catalogEntry;
+          _catalogEntry.aliases.forEach(function(alias) {
+            var _aliasKey = String(alias || '').toLowerCase().trim();
+            if (_aliasKey && !EXERCISE_CATALOG[_aliasKey]) EXERCISE_CATALOG[_aliasKey] = _catalogEntry;
+          });
         });
       }
     } catch(catErr) { console.warn('catálogo no disponible:', catErr.message); }
@@ -1837,6 +1960,8 @@ async function loadPlan(user) {
         if (newData.supplementPlan) PLAN.suplementacion = { texto: newData.supplementPlan.texto, items: [] };
         if (_nutricionChanged) { try { renderNutricion(); } catch(e){} }
         if (newData.profileType && newData.profileType !== PLAN.profileType) { PLAN.profileType = newData.profileType; try { renderPerfil(); } catch(e){} }
+        CLIENT_ADVANCED = _buildClientAdvancedState(planData, newData);
+        try { renderResumen(); } catch(e){}
       });
 
       // ── 2. Listener sobre el doc del PLAN (detecta ediciones del coach al plan activo) ──
@@ -2883,6 +3008,175 @@ function buildHistorialWidget() {
     + '</div>';
 }
 
+// ══ Competitive Physique / vigilancia — presentación client-safe ══════════
+function _advValue(obj, keys) {
+  if (!obj || typeof obj !== 'object') return null;
+  for (var i = 0; i < keys.length; i++) {
+    var v = obj[keys[i]];
+    if (v !== undefined && v !== null && v !== '') return v;
+  }
+  return null;
+}
+
+function _advText(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (Array.isArray(value)) {
+    return value.map(function(item) {
+      if (item && typeof item === 'object') return item.label || item.name || item.title || item.pose || item.value || '';
+      return item;
+    }).filter(Boolean).map(function(v){ return _escHTml(String(v)); }).join(' · ');
+  }
+  if (value && typeof value === 'object') return _escHTml(String(value.label || value.name || value.text || value.summary || value.status || ''));
+  return _escHTml(String(value));
+}
+
+function _advRows(rows) {
+  return rows.map(function(row) {
+    var text = _advText(row[1]);
+    return text ? '<div class="advanced-row"><div class="advanced-key">'+row[0]+'</div><div class="advanced-value">'+text+'</div></div>' : '';
+  }).join('');
+}
+
+function _advModule(title, rows, open) {
+  var body = _advRows(rows);
+  if (!body) return '';
+  return '<details class="advanced-module"'+(open?' open':'')+'><summary class="advanced-module-title">'+title+' <span aria-hidden="true">＋</span></summary><div>'+body+'</div></details>';
+}
+
+function _stageReadinessLabel(raw) {
+  var status = raw && typeof raw === 'object' ? (raw.status || raw.state || raw.code) : raw;
+  var labels = {
+    NOT_READY:'Aún no listo', ON_TRACK:'En ruta', AHEAD_OF_SCHEDULE:'Adelantado al calendario',
+    CONDITIONING_LIMITED:'El conditioning es el foco actual', FULLNESS_LIMITED:'La plenitud muscular es el foco actual',
+    POSING_LIMITED:'El posing es el foco actual', FATIGUE_LIMITED:'La fatiga limita el estado actual',
+    HEALTH_LIMITED:'La salud requiere revisión antes de avanzar', MEASUREMENT_UNCERTAIN:'Información aún insuficiente'
+  };
+  return labels[status] || (status ? String(status).replace(/_/g,' ').toLowerCase() : '');
+}
+
+function _competitivePriorities(value) {
+  var list = Array.isArray(value) ? value : _advValue(value, ['items','priorities','current']);
+  if (!Array.isArray(list)) return _advText(list || value);
+  return list.map(function(item, i) {
+    var label = item && typeof item === 'object' ? (item.label || item.name || item.area || item.priority) : item;
+    return label ? (i+1)+'. '+_escHTml(String(label)) : '';
+  }).filter(Boolean).join('<br>');
+}
+
+function buildAdvancedClientOverview() {
+  var a = CLIENT_ADVANCED;
+  if (!a) return '';
+  var hasCompetitive = !!(a.competitivePhysique || a.competitivePriorities || a.stageGap || a.contestPrep || a.posing || a.cardio || a.neat || a.stageReadiness || a.trialPeak || a.peakWeek || a.postContestRecovery);
+  var hasSensitive = !!(a.healthSurveillance || a.pharmacologyContext);
+  if (!hasCompetitive && !hasSensitive) return '';
+
+  var c = a.competitivePhysique || {};
+  var summary = '';
+  if (hasCompetitive) {
+    summary += _advRows([
+      ['Evento', _advValue(c, ['event','eventName','competition'])],
+      ['Fecha', _advValue(c, ['eventDate','date','competitionDate'])],
+      ['División', _advValue(c, ['division','category'])],
+      ['Semanas restantes', _advValue(c, ['weeksRemaining','weeksOut'])],
+      ['Foco actual', _advValue(c, ['currentFocus','focus','prepFocus'])],
+      ['Estado', _stageReadinessLabel(a.stageReadiness)]
+    ]);
+    var priorities = _competitivePriorities(a.competitivePriorities);
+    if (priorities) summary += '<div class="advanced-row"><div class="advanced-key">Prioridades actuales</div><div class="advanced-value">'+priorities+'</div></div>';
+  }
+
+  var modules = '';
+  modules += _advModule('STAGE GAP · FOCO ACTUAL', [
+    ['Resumen', _advValue(a.stageGap, ['summary','currentFocus','focus'])],
+    ['Muscularidad', _advValue(a.stageGap, ['muscularity'])],
+    ['Simetría', _advValue(a.stageGap, ['symmetry'])],
+    ['Conditioning', _advValue(a.stageGap, ['conditioning'])],
+    ['Posing', _advValue(a.stageGap, ['posing'])],
+    ['Presentación', _advValue(a.stageGap, ['presentation'])],
+    ['Recuperación', _advValue(a.stageGap, ['recovery'])]
+  ], false);
+  modules += _advModule('PREP STATUS', [
+    ['Semanas restantes', _advValue(a.contestPrep, ['weeksRemaining','weeksOut'])],
+    ['Peso / tendencia', _advValue(a.contestPrep, ['weightTrend','weight'])],
+    ['Adherencia', _advValue(a.contestPrep, ['adherence'])],
+    ['Entrenamiento', _advValue(a.contestPrep, ['training','trainingStatus'])],
+    ['Recuperación', _advValue(a.contestPrep, ['recovery','recoveryStatus'])],
+    ['Notas', _advValue(a.contestPrep, ['notes','clientNotes'])]
+  ], false);
+  modules += _advModule('POSING', [
+    ['Poses', _advValue(a.posing, ['poses','prescribedPoses'])],
+    ['Duración', _advValue(a.posing, ['duration','durationMinutes'])],
+    ['Rondas / series', _advValue(a.posing, ['rounds','sets'])],
+    ['Holds', _advValue(a.posing, ['holds','holdSeconds'])],
+    ['Transiciones', _advValue(a.posing, ['transitions'])],
+    ['Frecuencia semanal', _advValue(a.posing, ['weeklyFrequency','frequencyPerWeek'])],
+    ['Claves', _advValue(a.posing, ['cues'])],
+    ['Evita', _advValue(a.posing, ['errors','commonErrors'])],
+    ['Cumplimiento', _advValue(a.posing, ['compliance','adherence'])]
+  ], false);
+  modules += _advModule('CARDIO', [
+    ['Modalidad', _advValue(a.cardio, ['modality','mode','type'])],
+    ['Frecuencia', _advValue(a.cardio, ['frequency','weeklyFrequency'])],
+    ['Duración', _advValue(a.cardio, ['duration','durationMinutes'])],
+    ['Intensidad', _advValue(a.cardio, ['intensity','zone'])],
+    ['Objetivo / contexto', _advValue(a.cardio, ['objective','context'])],
+    ['Notas', _advValue(a.cardio, ['notes','clientNotes'])]
+  ], false);
+  modules += _advModule('PASOS / NEAT', [
+    ['Pasos', _advValue(a.neat, ['steps','dailySteps','targetSteps'])],
+    ['Frecuencia', _advValue(a.neat, ['frequency'])],
+    ['Objetivo / contexto', _advValue(a.neat, ['objective','context'])],
+    ['Notas', _advValue(a.neat, ['notes','clientNotes'])]
+  ], false);
+
+  var trial = a.trialPeak;
+  modules += _advModule('TRIAL PEAK', [
+    ['Fecha', _advValue(trial, ['date'])],
+    ['Plan aprobado', _advValue(trial, ['approvedPlan','planSummary'])],
+    ['Observaciones', _advValue(trial, ['observations','notes'])],
+    ['Check-in', _advValue(trial, ['checkin','checkIn'])]
+  ], false);
+
+  var peak = a.peakWeek;
+  var peakApproved = peak && peak.approved === true && peak.clientVisible === true;
+  modules += _advModule('PEAK WEEK', [
+    ['Entrenamiento', _advValue(peak, ['training'])],
+    ['Posing', _advValue(peak, ['posing'])],
+    ['Nutrición prescrita', _advValue(peak, ['prescribedNutrition','nutrition'])],
+    ['Líquidos / sodio', peakApproved ? _advValue(peak, ['fluidsAndSodium','waterSodium']) : null],
+    ['Horarios', _advValue(peak, ['schedule','timing'])],
+    ['Notas', _advValue(peak, ['notes','clientNotes'])]
+  ], false);
+  modules += _advModule('POST-CONTEST RECOVERY', [
+    ['Entrenamiento', _advValue(a.postContestRecovery, ['training'])],
+    ['Nutrición', _advValue(a.postContestRecovery, ['nutrition'])],
+    ['Cardio', _advValue(a.postContestRecovery, ['cardio'])],
+    ['Sueño', _advValue(a.postContestRecovery, ['sleep'])],
+    ['Recuperación', _advValue(a.postContestRecovery, ['recovery'])],
+    ['Check-ins', _advValue(a.postContestRecovery, ['checkins','checkIns'])],
+    ['Objetivo de transición', _advValue(a.postContestRecovery, ['transitionGoal','objective'])]
+  ], false);
+  modules += _advModule('SALUD / MONITOREO', [
+    ['Controles pendientes', _advValue(a.healthSurveillance, ['pendingChecks','pendingControls'])],
+    ['Próximos laboratorios', _advValue(a.healthSurveillance, ['nextLabs','labs'])],
+    ['Presión registrada', _advValue(a.healthSurveillance, ['bloodPressure','pressureRecords'])],
+    ['Síntomas reportados', _advValue(a.healthSurveillance, ['reportedSymptoms','symptoms'])],
+    ['Revisión profesional', _advValue(a.healthSurveillance, ['professionalReview','reviewNotice'])]
+  ], false);
+  modules += _advModule('MEDICACIÓN / CONTEXTO FARMACOLÓGICO', [
+    ['Agentes reportados', _advValue(a.pharmacologyContext, ['reportedAgents','agents'])],
+    ['Estado', _advValue(a.pharmacologyContext, ['status','activeStatus'])],
+    ['Fuente', _advValue(a.pharmacologyContext, ['provenance','source'])],
+    ['Controles relacionados', _advValue(a.pharmacologyContext, ['monitoring','relatedLabs'])],
+    ['Avisos de vigilancia', _advValue(a.pharmacologyContext, ['surveillanceNotices','warnings'])]
+  ], false);
+
+  return '<section class="advanced-client">'+
+    '<div class="advanced-client-title">'+(hasCompetitive?'PREPARACIÓN COMPETITIVA':'SALUD / MONITOREO')+'</div>'+
+    '<div class="advanced-client-meta">Información prescrita y autorizada para tu vista. La app no modifica decisiones de preparación ni interpreta datos clínicos.</div>'+
+    summary+modules+'</section>';
+}
+
 function renderResumen() {
   if (!PLAN) return;
   // T318/T320 (real week-consistency fix): Home is "today," never a past-week
@@ -2942,6 +3236,8 @@ function renderResumen() {
     ${_missingHintsHtml}
 
     ${buildStaleSessionHomeBanner()}
+
+    ${buildAdvancedClientOverview()}
 
     <div class="card" style="margin-top:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -4279,8 +4575,105 @@ function getSetNoteBadge(setNote) {
   return null;
 }
 
-function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
+function _instructionValue(obj, keys) {
+  if (!obj || typeof obj !== 'object') return null;
+  for (var i = 0; i < keys.length; i++) {
+    var value = obj[keys[i]];
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return null;
+}
+
+function _instructionText(value) {
+  if (Array.isArray(value)) {
+    var items = value.filter(function(v){ return v !== null && v !== undefined && String(v).trim(); });
+    if (!items.length) return '';
+    return '<ul style="margin:0;padding-left:18px">'+items.map(function(v){ return '<li style="margin-bottom:4px">'+_escHTml(String(v))+'</li>'; }).join('')+'</ul>';
+  }
+  if (value && typeof value === 'object') {
+    var vals = Object.keys(value).map(function(k){ return value[k]; }).filter(function(v){ return typeof v === 'string' && v.trim(); });
+    return vals.length ? _instructionText(vals) : '';
+  }
+  return value !== null && value !== undefined && String(value).trim() ? _escHTml(String(value)) : '';
+}
+
+function _normalizeExerciseInstructions(ej, catData) {
+  var catalogGuide = catData && (catData.exerciseInstructions || catData.instructions) || null;
+  var planGuide = ej && ej.exerciseInstructions || null;
+  var canonical = catalogGuide || planGuide || {};
+  function first(keys, directValue) {
+    return _instructionValue(canonical, keys) || directValue || _instructionValue(planGuide, keys);
+  }
+  var executionFallback = catData && (catData.executionInstructions || catData.executionNotes);
+  var guide = {
+    setup: first(['setup','setupInstructions'], catData && catData.setupInstructions),
+    equipmentSetup: first(['equipmentSetup','equipmentSettings'], null),
+    bodyPosition: first(['bodyPosition','position'], null),
+    execution: first(['execution','executionInstructions'], executionFallback),
+    rangeOfMotion: first(['rangeOfMotion','rom','romInstructions'], catData && catData.romInstructions),
+    breathingBracing: first(['breathingBracing','breathing','bracing'], null),
+    tempoNotes: first(['tempoNotes','tempo'], null),
+    cues: first(['cues','technicalCues','keys'], catData && catData.technicalCues),
+    avoid: first(['avoid','commonErrors','errors'], catData && catData.commonErrors),
+    individualNotes: ej && ej.athleteSpecificTechniqueNote
+  };
+  var hasAny = Object.keys(guide).some(function(k) {
+    var v = guide[k];
+    return Array.isArray(v) ? v.length > 0 : !!(v && String(v).trim ? String(v).trim() : v);
+  });
+  return hasAny ? guide : null;
+}
+
+function _exerciseInstructionSection(label, values) {
+  var parts = (Array.isArray(values) ? values : [values]).map(_instructionText).filter(Boolean);
+  if (!parts.length) return '';
+  return '<div class="exercise-guide-section"><div class="exercise-guide-label">'+label+'</div><div class="exercise-guide-copy">'+parts.join('<div style="height:5px"></div>')+'</div></div>';
+}
+
+function _buildExerciseGuideHtml(ej, catData, di, ei) {
+  var guide = _normalizeExerciseInstructions(ej, catData);
+  var rationale = ej && ej.clientSelectionRationale;
   var html = '';
+  if (guide) {
+    var body = '';
+    if (guide.individualNotes) {
+      body += '<div class="exercise-guide-individual"><div class="exercise-guide-label">AJUSTE PARA TI</div><div class="exercise-guide-copy">'+_instructionText(guide.individualNotes)+'</div></div>';
+    }
+    body += _exerciseInstructionSection('SETUP', [guide.setup, guide.equipmentSetup, guide.bodyPosition]);
+    body += _exerciseInstructionSection('EJECUCIÓN', [guide.execution, guide.breathingBracing, guide.tempoNotes]);
+    body += _exerciseInstructionSection('ROM', guide.rangeOfMotion);
+    body += _exerciseInstructionSection('CLAVES TÉCNICAS', guide.cues);
+    body += _exerciseInstructionSection('EVITA', guide.avoid);
+    html += '<details class="exercise-guide" id="exerciseGuide_'+di+'_'+ei+'">'+
+      '<summary>CÓMO REALIZARLO <span aria-hidden="true">＋</span></summary>'+
+      '<div class="exercise-guide-body">'+body+'</div></details>';
+  }
+  if (rationale) {
+    html += '<details class="exercise-rationale"><summary>¿POR QUÉ ESTE EJERCICIO?</summary><div>'+_escHTml(String(rationale))+'</div></details>';
+  }
+  return html;
+}
+
+function _safeClientMediaUrl(value) {
+  var raw = value && typeof value === 'object' ? (value.url || value.src) : value;
+  if (!raw) return '';
+  var url = String(raw).trim();
+  return (/^https:\/\//i.test(url) || /^\/[^/]/.test(url) || /^assets\//i.test(url)) ? _escHTml(url) : '';
+}
+
+function _buildExerciseMediaHtml(ej) {
+  if (!ej || ej.mediaClientVisible !== true) return '';
+  var image = _safeClientMediaUrl(ej.imageUrl);
+  var video = _safeClientMediaUrl(ej.videoUrl);
+  if (!image && !video) return '';
+  return '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">'+
+    (image?'<img src="'+image+'" loading="lazy" alt="Demostración del ejercicio" style="width:88px;height:66px;object-fit:cover;border:1px solid var(--border);border-radius:2px">':'')+
+    (video?'<a href="'+video+'" target="_blank" rel="noopener noreferrer" style="min-height:44px;display:inline-flex;align-items:center;padding:8px 12px;border:1px solid var(--border);color:var(--accent);font-size:11px;font-weight:800;text-decoration:none">VER VIDEO</a>':'')+
+    '</div>';
+}
+
+function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
+  var html = _buildExerciseGuideHtml(ej, catData, di, ei);
   var tech = (ej.technique || 'straight').toLowerCase();
   var meta = TECHNIQUE_META[tech];
   var _tdesc = TECHNIQUE_DESCRIPTIONS[tech] || null;
@@ -4549,7 +4942,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (_exSubData && _exSubData.nombre) ej = Object.assign({}, ej, { nombre: _exSubData.nombre, exerciseName: _exSubData.nombre });
   var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
   var machine = getMachineForExercise(nombre);
-  var catData = _getCatalogData(nombre);
+  var catData = (!_exSubData && ej.exerciseId && EXERCISE_CATALOG_BY_ID[String(ej.exerciseId)])
+    ? EXERCISE_CATALOG_BY_ID[String(ej.exerciseId)]
+    : _getCatalogData(nombre);
   // ── Y3T: detectar fase y sets efectivos para esta semana ──────────────
   var _isY3T = isY3TExercise(ej);
   var _y3tPhase = _isY3T ? getY3TPhase(CURRENT_WEEK, getTotalWeeks()) : null;
@@ -4672,6 +5067,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         : '')+
       // FASE 18 — Coach note visible al cliente durante workout (inmutable, solo lectura)
       _coachNoteHtml(ej.coachNote)+
+      _buildExerciseMediaHtml(ej)+
       (function(){
         if (!_isY3T || !_y3tPhase) return '';
         var pm = Y3T_PHASE_META[_y3tPhase];
@@ -5372,6 +5768,8 @@ function _perfHeader(ej, di, ei, chip, statsHtml) {
       '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">'+
         '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(107,107,102,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(107,107,102,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
       '</div>'+
+      _buildExerciseMediaHtml(ej)+
+      _buildExerciseGuideHtml(ej, _getCatalogDataForExercise(ej), di, ei)+
     '</div>';
 }
 
@@ -11395,7 +11793,7 @@ async function guardarCI() {
   if (!LOGS[k]) LOGS[k] = {};
   var d = LOGS[k];
   // Leer inputs por si el usuario escribió sin disparar oninput
-  ['ci_peso','ci_hrv','ci_sleep','ci_notas','ci_cintura','ci_brazo','ci_pierna','ci_pecho','ci_ib_pct_grasa','ci_ib_masa_muscular','ci_ib_grasa_visceral','ci_fatiga','ci_sueno_cal','ci_dolor_gral','ci_estres','ci_animo','ci_vulner'].forEach(function(id) {
+  ['ci_peso','ci_hrv','ci_sleep','ci_notas','ci_cintura','ci_brazo','ci_pierna','ci_pecho','ci_ib_pct_grasa','ci_ib_masa_muscular','ci_ib_grasa_visceral','ci_fatiga','ci_sueno_cal','ci_dolor_gral','ci_estres','ci_animo','ci_vulner','ci_pasos','ci_cardio_min','ci_posing_min','ci_hambre','ci_digestion','ci_dolor','ci_rendimiento','ci_cumplimiento_entreno','ci_cumplimiento_nutricion','ci_molestias','ci_sintomas'].forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
     var campo = id.replace('ci_','');
@@ -11849,6 +12247,21 @@ function renderCheckin() {
       + '</div>';
   }
 
+  function _ciOptionalNumber(id, label, step, ph, note, min, max) {
+    var v = d[id] !== undefined && d[id] !== null ? d[id] : '';
+    return '<div><label for="ci_'+id+'" style="display:block;font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:5px">'+label+'</label>'
+      + '<input id="ci_'+id+'" type="number" step="'+step+'" '+(min!==null?'min="'+min+'" ':'')+(max!==null?'max="'+max+'" ':'')+'inputmode="decimal" value="'+_escHTml(String(v))+'" placeholder="'+ph+'" oninput="ciSet(\''+id+'\',this.value)"'
+      + ' style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--ff);font-size:17px;padding:10px;text-align:center;outline:none">'
+      + (note?'<div style="font-size:9px;color:var(--mt2);margin-top:4px;line-height:1.4">'+note+'</div>':'')+'</div>';
+  }
+
+  function _ciOptionalText(id, label, placeholder) {
+    var v = d[id] || '';
+    return '<div style="margin-top:10px"><label for="ci_'+id+'" style="display:block;font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:5px">'+label+'</label>'
+      + '<textarea id="ci_'+id+'" placeholder="'+placeholder+'" oninput="ciSet(\''+id+'\',this.value)" style="width:100%;box-sizing:border-box;background:var(--bk);border:1px solid var(--bd);color:var(--tx);font-family:var(--fb);font-size:13px;padding:10px;outline:none;min-height:64px;resize:vertical;line-height:1.5">'
+      + _escHTml(String(v))+'</textarea></div>';
+  }
+
   cont.innerHTML =
     // Botón flotante de guardar
     '<div id="ciFloatSave" class="ci-float">'
@@ -11918,6 +12331,29 @@ function renderCheckin() {
     +   '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--mt);margin-top:5px">'
     +   '<span>Muy baja (1)</span><span>Óptima (10)</span></div>'
     + '</div>'
+
+    // ── SEGUIMIENTO ADICIONAL (todo opcional) ─────────
+    + '<details style="margin-bottom:10px" '+((d.pasos||d.cardio_min||d.posing_min||d.hambre||d.digestion||d.dolor||d.rendimiento||d.molestias||d.sintomas)?'open':'')+'>'
+    + '<summary style="background:var(--card);border:1px solid var(--bd);padding:12px 16px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;min-height:44px">'
+    +   '<span style="font-family:var(--ff);font-size:13px;letter-spacing:1.5px;color:var(--mt)">SEGUIMIENTO ADICIONAL</span>'
+    +   '<span style="font-size:11px;color:var(--mt2)">opcional ▾</span>'
+    + '</summary>'
+    + '<div style="background:var(--card);border:1px solid var(--bd);border-top:none;padding:16px">'
+    +   '<div style="font-size:11px;color:var(--mt);line-height:1.5;margin-bottom:12px">Completa únicamente lo que aplique a tu semana. Ningún campo es obligatorio.</div>'
+    +   '<div class="ci-measures-grid">'
+    +     _ciOptionalNumber('pasos','PASOS / DÍA','1','ej: 9000','Promedio diario',0,null)
+    +     _ciOptionalNumber('cardio_min','CARDIO (min)','1','ej: 120','Total semanal',0,null)
+    +     _ciOptionalNumber('posing_min','POSING (min)','1','ej: 60','Total semanal',0,null)
+    +     _ciOptionalNumber('hambre','HAMBRE (1-10)','1','1-10','1 = baja · 10 = muy alta',1,10)
+    +     _ciOptionalNumber('digestion','DIGESTIÓN (1-10)','1','1-10','1 = muy mala · 10 = óptima',1,10)
+    +     _ciOptionalNumber('dolor','DOLOR (0-10)','1','0-10','0 = sin dolor · 10 = máximo',0,10)
+    +     _ciOptionalNumber('rendimiento','RENDIMIENTO (1-10)','1','1-10','Percepción semanal',1,10)
+    +     _ciOptionalNumber('cumplimiento_entreno','CUMPL. ENTRENO (%)','1','0-100','Estimación honesta',0,100)
+    +     _ciOptionalNumber('cumplimiento_nutricion','CUMPL. NUTRICIÓN (%)','1','0-100','Estimación honesta',0,100)
+    +   '</div>'
+    +   _ciOptionalText('molestias','MOLESTIAS / LIMITACIONES','Zona, movimiento y cuándo aparece…')
+    +   _ciOptionalText('sintomas','SÍNTOMAS REPORTADOS','Describe cualquier síntoma que deba revisar tu coach o profesional…')
+    + '</div></details>'
 
     // ── WHO-5 ─────────────────────────────────────────
     + '<div style="background:var(--card);border:1px solid var(--bd);padding:16px;margin-bottom:10px">'
@@ -14314,6 +14750,13 @@ function _getCatalogData(exName) {
     if (bk.includes(key) || key.includes(bk)) return BUILTIN_CATALOG[builtKeys[j]];
   }
   return null;
+}
+
+function _getCatalogDataForExercise(exercise) {
+  if (!exercise) return null;
+  var id = exercise.exerciseId;
+  if (id && EXERCISE_CATALOG_BY_ID[String(id)]) return EXERCISE_CATALOG_BY_ID[String(id)];
+  return _getCatalogData(exercise.nombre || exercise.exerciseName || '');
 }
 
 // Catálogo combinado: coach + built-in (coach tiene prioridad)
