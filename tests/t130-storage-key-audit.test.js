@@ -22,7 +22,7 @@
  *   vdsen_plan_changed / vdsen_plan_updated_info (sessionStorage) — self-consuming
  *                          one-shot flags (removed immediately on read); a stale
  *                          flag only forces an extra safe reset, never a data leak
- *   vdsen_wn_v6            device-global — "what's new" dismiss flag, versioned by
+ *   vdsen_wn_v7            device-global — "what's new" dismiss flag, versioned by
  *                          release, not user data
  *
  * COACH key found leaking (fixed by this round):
