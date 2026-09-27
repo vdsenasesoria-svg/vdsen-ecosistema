@@ -13,7 +13,7 @@ function ok(condition, message) { assert.ok(condition, message); pass++; console
 
 const sanDiego = catalog.gyms['smart-fit-san-diego'];
 ok(sanDiego && sanDiego.gym === 'Smart Fit San Diego', 'catalog exposes the Smart Fit San Diego site explicitly');
-ok(sanDiego.entries.length === 30, 'all 30 confirmed machines/implements are represented');
+ok(sanDiego.entries.length === 31, 'all 31 confirmed machines/implements are represented');
 
 const required = ['exerciseId','exerciseName','gym','equipment','instructions','setup','execution','commonErrors','variants'];
 sanDiego.entries.forEach((entry) => {

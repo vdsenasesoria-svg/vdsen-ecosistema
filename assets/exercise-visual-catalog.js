@@ -107,6 +107,14 @@
       [{ name:'Remo Inclinado Impulse — agarre neutro', objective:'Tracción con muñeca neutra y codos próximos al torso.', setup:'Usa las manijas neutras y ajusta el pecho al pad.' }],
       ['Remo Inclinado Impulse']),
 
+    Object.assign(entry('sf-sd-converging-lat-pulldown-plate-loaded', 'Jalón Dorsal Convergente discos', 'Máquina plate-loaded · discos',
+      'Tracción vertical convergente con brazos independientes para trabajar el dorsal con el torso y los muslos estabilizados.',
+      'Carga ambos lados por igual. Ajusta el asiento y el soporte de muslos para quedar firme, con los brazos extendidos hacia las manijas altas sin elevar los hombros.',
+      'Inicia deprimiendo las escápulas y lleva ambos codos hacia abajo y hacia los costados del torso. Permite que los brazos independientes converjan de forma natural y regresa con control hasta el estiramiento overhead.',
+      ['Cargar los brazos de forma desigual.', 'Perder el apoyo de muslos o despegarse del asiento.', 'Convertir el jalón en un remo inclinando demasiado el torso.', 'Acortar el regreso overhead.'],
+      [],
+      ['Jalón dorsal plate-loaded']), { equipmentId:'sf-sd-converging-lat-pulldown-plate-loaded' }),
+
     entry('sf-sd-preacher-curl-bench', 'Curl de Bíceps Predicador en banco', 'Banco predicador',
       'Flexión de codo estable con el brazo apoyado y el bíceps como limitante.',
       'Ajusta el banco para apoyar toda la parte posterior del brazo sin elevar los hombros. Usa la carga o implemento prescrito.',
@@ -316,7 +324,7 @@
   );
   sharedGymCatalog.legacyEntries = legacyVisualEntries;
   return {
-    version: '2026.09.26',
+    version: '2026.09.27',
     functionalEquipment: functionalEquipment,
     gyms: {
       'smart-fit-san-diego': sharedGymCatalog,
