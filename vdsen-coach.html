@@ -1585,7 +1585,8 @@
 })();
 </script>
 
-<script type="module">
+  <script src="assets/exercise-visual-metadata-editor.js"></script>
+  <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -3953,6 +3954,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         _delBtn.className = 'text-red-400 hover:text-red-300 px-2';
         _delBtn.textContent = '🗑️';
         _delBtn.onclick = () => deleteExercise(ex.id, ex.name || '');
+        const _visualBtn = document.createElement('button');
+        _visualBtn.className = 'text-lime-300 hover:text-white px-2 text-xs';
+        _visualBtn.textContent = 'Visual';
+        _visualBtn.title = 'Editar metadata visual';
+        _visualBtn.onclick = () => openVisualMetadataEditor(ex);
+        _exRow.appendChild(_visualBtn);
         _exRow.appendChild(_exInfo); _exRow.appendChild(_delBtn);
         container.appendChild(_exRow);
       });
@@ -3994,6 +4001,56 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       };
     };
   }
+
+  // Editor mínimo: escribe únicamente campos visuales en el documento exercises.
+  var _visualEditorExercise = null;
+  function _visualEditorText(id) { return (document.getElementById(id) || {}).value || ''; }
+  function _visualEditorClose() { var el = document.getElementById('visualMetadataEditor'); if (el) el.remove(); _visualEditorExercise = null; }
+  function openVisualMetadataEditor(exercise) {
+    if (!exercise || !currentCoach || !exercise.id) return;
+    _visualEditorExercise = { id: exercise.id, coachId: currentCoach.uid, exerciseId: exercise.exerciseId || exercise.id, prescriptionExerciseId: exercise.prescriptionExerciseId || null };
+    var gyms = [...new Set(['Smart Fit San Diego'].concat(_allExercises.map(function (x) { return x.gym; }).filter(Boolean)))];
+    var variants = Array.isArray(exercise.variants) && exercise.variants.length ? JSON.stringify(exercise.variants, null, 2) : '';
+    var ov = document.createElement('div'); ov.id = 'visualMetadataEditor';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.innerHTML = '<div style="background:#171717;border:1px solid #444;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:20px;border-radius:10px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;color:#f4f4f0">Metadata visual</h3><button id="visualMetaClose" class="btn-secondary">Cerrar</button></div>' +
+      '<p style="color:#888;font-size:12px">Identidad protegida · ' + _escH(exercise.name || '') + (exercise.prescriptionExerciseId ? ' · PID: ' + _escH(exercise.prescriptionExerciseId) : '') + '</p>' +
+      '<label>Sede<select id="vm-gym" class="input-field w-full">' + gyms.map(function (g) { return '<option>' + _escH(g) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Equipo<input id="vm-equipment" class="input-field w-full"></label>' +
+      '<label>Asset local<input id="vm-asset" class="input-field w-full" placeholder="assets/exercises/pending-license.svg"></label>' +
+      '<label>URL HTTPS<input id="vm-image" class="input-field w-full" placeholder="https://..."></label>' +
+      '<label>Objetivo técnico<textarea id="vm-objective" class="input-field w-full" rows="2"></textarea></label>' +
+      '<label>Preparación<textarea id="vm-setup" class="input-field w-full" rows="3"></textarea></label>' +
+      '<label>Ejecución<textarea id="vm-execution" class="input-field w-full" rows="3"></textarea></label>' +
+      '<label>Instrucciones<textarea id="vm-instructions" class="input-field w-full" rows="2"></textarea></label>' +
+      '<label>Errores comunes <small>(uno por línea)</small><textarea id="vm-errors" class="input-field w-full" rows="3"></textarea></label>' +
+      '<label>Variantes <small>(JSON opcional)</small><textarea id="vm-variants" class="input-field w-full" rows="4"></textarea></label>' +
+      '<button id="visualMetaSave" class="btn-primary mt-3">Guardar metadata visual</button><span id="visualMetaStatus" style="margin-left:10px;color:#f08080"></span></div>';
+    document.body.appendChild(ov);
+    document.getElementById('vm-gym').value = exercise.gym || gyms[0];
+    document.getElementById('vm-equipment').value = exercise.equipment || '';
+    document.getElementById('vm-asset').value = exercise.assetRef || '';
+    document.getElementById('vm-image').value = exercise.imageUrl || '';
+    document.getElementById('vm-objective').value = exercise.technicalObjective || '';
+    document.getElementById('vm-setup').value = exercise.setup || '';
+    document.getElementById('vm-execution').value = exercise.execution || '';
+    document.getElementById('vm-instructions').value = exercise.instructions || exercise.exerciseInstructions || '';
+    document.getElementById('vm-errors').value = (exercise.commonErrors || []).join('\n');
+    document.getElementById('vm-variants').value = variants;
+    document.getElementById('visualMetaClose').onclick = _visualEditorClose;
+    document.getElementById('visualMetaSave').onclick = async function () {
+      var status = document.getElementById('visualMetaStatus');
+      try {
+        if (!_visualEditorExercise || _visualEditorExercise.coachId !== currentCoach.uid || _visualEditorExercise.id !== exercise.id) throw new Error('El contexto del editor cambió; vuelve a abrirlo.');
+        var patch = window.VDSEN_VISUAL_METADATA_EDITOR.buildPatch({ gym:_visualEditorText('vm-gym'), equipment:_visualEditorText('vm-equipment'), assetRef:_visualEditorText('vm-asset'), imageUrl:_visualEditorText('vm-image'), technicalObjective:_visualEditorText('vm-objective'), setup:_visualEditorText('vm-setup'), execution:_visualEditorText('vm-execution'), instructions:_visualEditorText('vm-instructions'), commonErrors:_visualEditorText('vm-errors'), variants:_visualEditorText('vm-variants') });
+        var btn = document.getElementById('visualMetaSave'); btn.disabled = true; btn.textContent = 'Guardando...';
+        await updateDoc(doc(db, 'exercises', _visualEditorExercise.id), patch);
+        showToast('Metadata visual guardada'); _visualEditorClose(); await loadExerciseCatalog();
+      } catch (e) { status.textContent = e.message || 'No se pudo guardar'; }
+    };
+  }
+  window.openVisualMetadataEditor = openVisualMetadataEditor;
   
   // FASE 15 — Helpers de navegación semanal (0 Firestore reads)
   function _coachClampSelectedWeek(selected, currentWeek, totalWeeks) {
