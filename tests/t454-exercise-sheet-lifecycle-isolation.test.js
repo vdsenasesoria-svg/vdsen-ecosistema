@@ -53,9 +53,10 @@ assert.strictEqual(title.textContent, 'Ejercicio', 'close removes the previous-c
 assert.strictEqual(focusRestored, 1, 'close returns focus to the invoking control');
 
 const lifecycle = client.slice(start, end);
-['LOGS', 'saveLogs(', '_doSaveLogs(', 'startRestTimer(', 'CURRENT_WEEK =', 'DIA_ACTIVO =', 'EJ_ACTIVO ='].forEach((forbidden) => {
+['saveLogs(', '_doSaveLogs(', 'startRestTimer(', 'CURRENT_WEEK =', 'DIA_ACTIVO =', 'EJ_ACTIVO ='].forEach((forbidden) => {
   assert.ok(!lifecycle.includes(forbidden), 'exercise sheet lifecycle must not mutate session state: ' + forbidden);
 });
+assert.ok(!/\bLOGS\s*\[[^\]]+\]\s*=/.test(lifecycle) && !/delete\s+LOGS/.test(lifecycle), 'exercise sheet may read substitution state but never writes LOGS');
 assert.ok(client.includes("ACTIVE_GYM_ID = ''; ACTIVE_GYM_NAME = '';"), 'logout clears active gym state');
 assert.ok(client.includes('PRESCRIPTION_EXERCISE_CATALOG_BY_ID = {}; AMBIGUOUS_PRESCRIPTION_EXERCISE_IDS = {};'), 'logout clears prescription-scoped visual metadata');
 

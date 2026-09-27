@@ -4952,7 +4952,19 @@ function _buildExerciseVisualSheetHtml(exercise, catData) {
 function _getPlanExerciseAt(di, ei) {
   var sessions = PLAN && PLAN.entrenamiento && PLAN.entrenamiento.sesiones;
   var session = sessions && sessions[di];
-  return session && session.exercises ? session.exercises[ei] : null;
+  var exercise = session && session.exercises ? session.exercises[ei] : null;
+  if (!exercise) return null;
+  var substitution = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei] || null;
+  if (!substitution || !substitution.nombre) return exercise;
+  var displayed = Object.assign({}, exercise, {
+    nombre: substitution.nombre,
+    exerciseName: substitution.nombre
+  });
+  // La sustitución de sesión solo registra un nombre legacy. Nunca hereda las
+  // identidades del ejercicio original para resolver una ficha distinta.
+  delete displayed.prescriptionExerciseId;
+  delete displayed.exerciseId;
+  return displayed;
 }
 
 function openExerciseVisualSheet(di, ei) {
