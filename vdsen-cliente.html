@@ -7635,6 +7635,15 @@ function _refreshSessionDashboard() {
     window._sesTimerInterval = setInterval(function() {
       var _te = document.getElementById('_sesTime');
       if (!_te) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; return; }
+      // T463: completion can arrive while this interval callback is already
+      // alive (for example after an async close or a lightweight refresh).
+      // Stop the live ticker at the persisted completion timestamp instead of
+      // falling back to Date.now() for one more render cycle.
+      if (window._sesTimerEnd) {
+        clearInterval(window._sesTimerInterval); window._sesTimerInterval = null;
+        _te.textContent = _fmtElapsed(window._sesTimerStart, window._sesTimerEnd);
+        return;
+      }
       _te.textContent = _fmtElapsed(window._sesTimerStart);
     }, 1000);
   }
@@ -8128,6 +8137,13 @@ function renderEntrenamiento() {
     function _updateSesTimer() {
       var el = document.getElementById('_sesTime');
       if (!el) { clearInterval(window._sesTimerInterval); window._sesTimerInterval = null; return; }
+      // T463: close the live ticker even when completion lands between full
+      // renders; completed sessions must never be recomputed from Date.now().
+      if (window._sesTimerEnd) {
+        clearInterval(window._sesTimerInterval); window._sesTimerInterval = null;
+        el.textContent = _fmtElapsed(window._sesTimerStart, window._sesTimerEnd);
+        return;
+      }
       el.textContent = _fmtElapsed(window._sesTimerStart);
     }
     window._sesTimerInterval = setInterval(_updateSesTimer, 1000);
