@@ -10,9 +10,9 @@ const canonical = new Set(visual.entries.flatMap(e => [e.exerciseName, ...(e.ali
 const added = new Set(visual.legacyEntries.map(e => e.exerciseName).map(norm));
 const covered = names.filter(n => canonical.has(norm(n)) || added.has(norm(n)));
 assert.equal(names.length, 85);
-assert.equal(visual.legacyEntries.length, 28);
-assert.equal(covered.length, 28);
-assert.equal(new Set(visual.legacyEntries.map(e => e.exerciseId)).size, 28);
-assert.equal(new Set(visual.legacyEntries.map(e => norm(e.exerciseName))).size, 28);
+assert.equal(visual.legacyEntries.length, 40);
+assert.equal(covered.length, 40);
+assert.equal(new Set(visual.legacyEntries.map(e => e.exerciseId)).size, 40);
+assert.equal(new Set(visual.legacyEntries.map(e => norm(e.exerciseName))).size, 40);
 assert.ok(visual.legacyEntries.every(e => e.assetRef && e.imageUrl === null && e.setup && e.execution && e.technicalObjective && e.commonErrors.length));
 console.log('T461 — expanded legacy coverage inventory: PASS');
