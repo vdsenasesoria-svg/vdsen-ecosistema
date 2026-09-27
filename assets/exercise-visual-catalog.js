@@ -362,9 +362,15 @@
     legacyEntry('legacy-plancha-frontal', 'Plancha frontal', 'Peso corporal', 'Apoya antebrazos y puntas de los pies con los codos bajo los hombros y el cuerpo alineado.', 'Mantén tensión de abdomen y glúteos mientras respiras sin cambiar la posición de pelvis y tronco.', 'Resistencia isométrica a la extensión del tronco.', ['Dejar caer la cadera.', 'Elevar demasiado la pelvis.', 'Contener la respiración.']),
     legacyEntry('legacy-plancha-lateral', 'Plancha lateral', 'Peso corporal', 'Apoya un antebrazo con el codo bajo el hombro y alinea pies, pelvis y tronco de lado.', 'Eleva y sostén la pelvis formando una línea recta sin rotar el torso; respira durante el tiempo prescrito.', 'Resistencia isométrica a la flexión lateral y control frontal de pelvis.', ['Dejar caer la pelvis.', 'Rotar el tronco.', 'Cargar el hombro fuera de alineación.'])
   );
+  legacyVisualEntries.push(
+    legacyEntry('legacy-rotacion-polea', 'Rotación con polea', 'Estación de Poleas', 'Coloca la polea a la altura del pecho, toma el agarre con ambas manos y estabiliza pies y pelvis.', 'Rota el tronco llevando las manos al lado opuesto con los brazos firmes y vuelve sin que la pelvis siga el giro.', 'Rotación cargada del tronco con control de pelvis.', ['Girar solo los brazos.', 'Rotar la pelvis.', 'Usar impulso.']),
+    legacyEntry('legacy-remo-maquina-bilateral', 'Remo en máquina bilateral', 'Máquina de remo bilateral', 'Ajusta asiento y apoyo torácico para alcanzar ambas manijas con el pecho estable y los pies apoyados.', 'Lleva ambos codos atrás de forma simétrica y vuelve permitiendo un estiramiento escapular controlado.', 'Tracción horizontal bilateral guiada con soporte de tronco.', ['Despegar el pecho.', 'Tirar con impulso lumbar.', 'Elevar los hombros.']),
+    legacyEntry('legacy-remo-maquina-unilateral', 'Remo en máquina unilateral', 'Máquina de remo unilateral', 'Ajusta asiento y apoyo para estabilizar el tronco y toma una manija con el brazo activo.', 'Lleva el codo atrás hacia la cadera sin rotar el torso y vuelve hasta el estiramiento controlado.', 'Tracción horizontal unilateral guiada para controlar asimetrías.', ['Rotar el torso.', 'Separarse del apoyo.', 'Acortar el regreso.']),
+    legacyEntry('legacy-remo-chest-support-maquina', 'Remo chest support máquina', 'Máquina de remo con apoyo de pecho', 'Ajusta el asiento para apoyar el pecho por completo y alcanzar las manijas sin elevar los hombros.', 'Tira de las manijas llevando los codos atrás sin separar el pecho y regresa con control.', 'Tracción horizontal con soporte torácico para minimizar compensación lumbar.', ['Despegar el pecho.', 'Extender la zona lumbar.', 'Encoger los hombros.'])
+  );
   sharedGymCatalog.legacyEntries = legacyVisualEntries;
   return {
-    version: '2026.09.26',
+    version: '2026.09.27',
     functionalEquipment: functionalEquipment,
     gyms: {
       'smart-fit-san-diego': sharedGymCatalog,
