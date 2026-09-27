@@ -4894,6 +4894,7 @@ function _buildExerciseMediaHtml(ej) {
 }
 
 var _exerciseSheetPreviousFocus = null;
+var _exerciseSheetPreviousBodyOverflow = '';
 var EXERCISE_SHEET_PLACEHOLDER = 'assets/exercises/pending-license.svg';
 
 function _exerciseSheetSection(label, value) {
@@ -4963,6 +4964,7 @@ function openExerciseVisualSheet(di, ei) {
   if (!exercise || !overlay || !title || !body || !dialog) return;
   var catData = _resolveExerciseVisualCatalog(exercise);
   _exerciseSheetPreviousFocus = document.activeElement;
+  _exerciseSheetPreviousBodyOverflow = document.body.style.overflow || '';
   title.textContent = exercise.exerciseName || exercise.nombre || 'Ejercicio';
   body.innerHTML = _buildExerciseVisualSheetHtml(exercise, catData);
   overlay.classList.add('open');
@@ -4973,8 +4975,13 @@ function openExerciseVisualSheet(di, ei) {
 function closeExerciseVisualSheet() {
   var overlay = document.getElementById('exerciseSheetOverlay');
   if (!overlay || !overlay.classList.contains('open')) return;
+  var title = document.getElementById('exerciseSheetTitle');
+  var body = document.getElementById('exerciseSheetBody');
   overlay.classList.remove('open');
-  document.body.style.overflow = '';
+  document.body.style.overflow = _exerciseSheetPreviousBodyOverflow;
+  _exerciseSheetPreviousBodyOverflow = '';
+  if (body) body.innerHTML = '';
+  if (title) title.textContent = 'Ejercicio';
   if (_exerciseSheetPreviousFocus && typeof _exerciseSheetPreviousFocus.focus === 'function') _exerciseSheetPreviousFocus.focus();
   _exerciseSheetPreviousFocus = null;
 }
