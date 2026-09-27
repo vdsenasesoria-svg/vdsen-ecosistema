@@ -1,0 +1,68 @@
+'use strict';
+
+function record(canonicalName, existingEquipment, group, classification, visualExerciseId, options) {
+  options = options || {};
+  return {
+    canonicalName: canonicalName,
+    existingEquipment: existingEquipment,
+    group: group,
+    aliases: [],
+    existingIds: [],
+    observableUse: ['vdsen-coach.html:BASE_EXERCISES'].concat(options.promptReference ? ['references/prompt-maestro-vdsen-coach.md'] : []),
+    probablePrimaryEquipment: options.primaryEquipment || existingEquipment,
+    technicalAmbiguity: options.ambiguity || null,
+    secondaryEquipmentNeeded: options.secondary || [],
+    collisionRisk: options.collisionRisk || 'none: exact canonical identity only',
+    classification: classification,
+    implementationStatus: visualExerciseId ? 'implemented' : 'blocked',
+    visualExerciseId: visualExerciseId || null
+  };
+}
+
+module.exports = [
+  record('Aperturas plano mancuernas', 'Mancuernas', 'Empuje', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-aperturas-plano-mancuernas', { secondary:['Banco multiposición'] }),
+  record('Aperturas inclinado mancuernas', 'Mancuernas', 'Empuje', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-aperturas-inclinado-mancuernas', { secondary:['Banco multiposición'] }),
+  record('Press pecho máquina', 'Máquina', 'Empuje', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-press-pecho-maquina', { primaryEquipment:'Máquina de press de pecho' }),
+  record('Press hombro máquina', 'Máquina', 'Empuje', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-press-hombro-maquina', { primaryEquipment:'Máquina de press de hombro' }),
+  record('Elevaciones laterales polea baja', 'Polea', 'Empuje', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-elevaciones-laterales-polea-baja', { primaryEquipment:'Polea Baja', promptReference:true }),
+  record('Elevaciones frontales mancuernas', 'Mancuernas', 'Empuje', 'P3_LOW_VALUE_HIGH_CONFIDENCE', 'legacy-elevaciones-frontales-mancuernas'),
+  record('Press francés mancuernas', 'Mancuernas', 'Empuje', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-press-frances-mancuernas', { secondary:['Banco multiposición'] }),
+  record('Extensión tríceps sobre cabeza polea', 'Polea', 'Empuje', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-extension-triceps-sobre-cabeza-polea', { primaryEquipment:'Polea Baja' }),
+  record('Fondos tríceps banco', 'Banco', 'Empuje', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-fondos-triceps-banco', { primaryEquipment:'Banco multiposición' }),
+  record('Jalón al pecho agarre supino', 'Polea', 'Halar', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-jalon-pecho-supino', { primaryEquipment:'Polea Alta', promptReference:true }),
+  record('Dominadas agarre supino', 'Barra fija', 'Halar', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-dominadas-supino'),
+  record('Remo polea baja bilateral', 'Polea', 'Halar', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-remo-polea-baja-bilateral', { primaryEquipment:'Polea Baja' }),
+  record('Remo polea baja unilateral', 'Polea', 'Halar', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-remo-polea-baja-unilateral', { primaryEquipment:'Polea Baja' }),
+  record('Remo en máquina bilateral', 'Máquina', 'Halar', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-remo-maquina-bilateral', { primaryEquipment:'Máquina de remo bilateral' }),
+  record('Remo en máquina unilateral', 'Máquina', 'Halar', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-remo-maquina-unilateral', { primaryEquipment:'Máquina de remo unilateral' }),
+  record('Remo chest support máquina', 'Máquina', 'Halar', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-remo-chest-support-maquina', { primaryEquipment:'Máquina de remo con apoyo de pecho' }),
+  record('Pull-over polea alta', 'Polea', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-pullover-polea-alta', { primaryEquipment:'Polea Alta' }),
+  record('Pull-over mancuerna', 'Mancuernas', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-pullover-mancuerna', { secondary:['Banco multiposición'] }),
+  record('Face pull polea', 'Polea', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-face-pull-polea', { primaryEquipment:'Estación de Poleas' }),
+  record('Pájaro mancuernas', 'Mancuernas', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-pajaro-mancuernas'),
+  record('Pájaro máquina (pec deck invertido)', 'Máquina', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-pajaro-maquina-pec-deck-invertido', { primaryEquipment:'Pec deck invertido' }),
+  record('Pájaro polea', 'Polea', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-pajaro-polea', { primaryEquipment:'Estación de Poleas' }),
+  record('Curl barra EZ', 'Barra', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-curl-barra-ez', { primaryEquipment:'Barra olímpica' }),
+  record('Curl predicador máquina', 'Máquina', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-curl-predicador-maquina', { primaryEquipment:'Máquina de curl predicador' }),
+  record('Curl predicador barra EZ', 'Barra', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-curl-predicador-barra-ez', { primaryEquipment:'Barra olímpica', secondary:['Banco predicador'] }),
+  record('Curl concentrado mancuerna', 'Mancuernas', 'Halar', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-curl-concentrado-mancuerna'),
+  record('Leg press horizontal', 'Máquina', 'Squat', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-leg-press-horizontal', { primaryEquipment:'Prensa horizontal de pierna' }),
+  record('Sentadilla búlgara barra', 'Barra', 'Squat', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-sentadilla-bulgara-barra', { primaryEquipment:'Barra olímpica', secondary:['Banco multiposición'] }),
+  record('RDL barra', 'Barra', 'Bisagra', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-rdl-barra', { primaryEquipment:'Barra olímpica' }),
+  record('RDL unilateral mancuerna', 'Mancuernas', 'Bisagra', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-rdl-unilateral-mancuerna'),
+  record('Good morning barra', 'Barra', 'Bisagra', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-good-morning-barra', { primaryEquipment:'Barra olímpica' }),
+  record('Hip thrust máquina', 'Máquina', 'Bisagra', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-hip-thrust-maquina', { primaryEquipment:'Hip Thrust Machine' }),
+  record('Curl femoral acostado máquina', 'Máquina', 'Bisagra', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-curl-femoral-acostado-maquina', { primaryEquipment:'Máquina de curl femoral acostado' }),
+  record('Curl femoral sentado máquina', 'Máquina', 'Bisagra', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-curl-femoral-sentado-maquina', { primaryEquipment:'Máquina de curl femoral sentado' }),
+  record('Curl femoral unilateral máquina', 'Máquina', 'Bisagra', 'BLOCKED_EQUIPMENT', null, { primaryEquipment:'Máquina de curl femoral sentado o acostado, no determinable', ambiguity:'El nombre no determina si la máquina y la preparación son sentadas o acostadas.', collisionRisk:'high: mapping would conflate seated and lying machine identities' }),
+  record('Curl nórdico', 'Peso corporal', 'Bisagra', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-curl-nordico', { secondary:['Anclaje estable de tobillos'], promptReference:true }),
+  record('Abducción cadera máquina', 'Máquina', 'Bisagra', 'P1_HIGH_VALUE_HIGH_CONFIDENCE', 'legacy-abduccion-cadera-maquina', { primaryEquipment:'Máquina de abducción de cadera' }),
+  record('Patada glúteo polea', 'Polea', 'Bisagra', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-patada-gluteo-polea', { primaryEquipment:'Polea Baja', promptReference:true }),
+  record('Crunch en polea', 'Polea', 'Core', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-crunch-polea', { primaryEquipment:'Polea Alta', promptReference:true }),
+  record('Crunch en máquina', 'Máquina', 'Core', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-crunch-maquina', { primaryEquipment:'Máquina abdominal', promptReference:true }),
+  record('Elevación de piernas colgado', 'Barra fija', 'Core', 'P2_MEDIUM_VALUE_HIGH_CONFIDENCE', 'legacy-elevacion-piernas-colgado', { promptReference:true }),
+  record('Ab wheel rollout', 'Rueda', 'Core', 'P3_LOW_VALUE_HIGH_CONFIDENCE', 'legacy-ab-wheel-rollout', { primaryEquipment:'Rueda abdominal' }),
+  record('Plancha frontal', 'Peso corporal', 'Core', 'P3_LOW_VALUE_HIGH_CONFIDENCE', 'legacy-plancha-frontal'),
+  record('Plancha lateral', 'Peso corporal', 'Core', 'P3_LOW_VALUE_HIGH_CONFIDENCE', 'legacy-plancha-lateral', { promptReference:true }),
+  record('Rotación con polea', 'Polea', 'Core', 'P3_LOW_VALUE_HIGH_CONFIDENCE', 'legacy-rotacion-polea', { primaryEquipment:'Estación de Poleas' })
+];

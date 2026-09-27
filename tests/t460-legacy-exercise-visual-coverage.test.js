@@ -13,7 +13,7 @@ const added = names.filter(n => legacy.has(norm(n)));
 assert.equal(names.length, 85);
 assert.equal(mapped.length, 0);
 assert.equal(added.length, visual.legacyEntries.length);
-assert.ok(visual.legacyEntries.length >= 8 && visual.legacyEntries.length <= 40);
+assert.ok(visual.legacyEntries.length >= 8 && visual.legacyEntries.length <= names.length);
 assert.equal(new Set(visual.legacyEntries.map(e => e.exerciseId)).size, visual.legacyEntries.length);
 assert.ok(visual.legacyEntries.every(e => e.assetRef && e.setup && e.execution && e.technicalObjective && e.commonErrors.length));
 assert.match(fs.readFileSync('vdsen-cliente.html', 'utf8'), /legacyEntries/);
