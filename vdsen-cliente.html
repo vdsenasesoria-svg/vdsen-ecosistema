@@ -5238,8 +5238,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (_exSubData && _exSubData.nombre) ej = Object.assign({}, ej, { nombre: _exSubData.nombre, exerciseName: _exSubData.nombre });
   var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
   var machine = getMachineForExercise(nombre);
-  var catData = !_exSubData ? _resolveExerciseVisualCatalog(ej) : null;
-  if (!catData) catData = (!_exSubData && ej.exerciseId && EXERCISE_CATALOG_BY_ID[String(ej.exerciseId)])
+  // Metadata visual es presentación/instrucción; nunca alimenta progresión,
+  // fatiga, MRV, warm-up ni decisiones de sustitución.
+  var visualCatData = !_exSubData ? _resolveExerciseVisualCatalog(ej) : null;
+  var catData = (!_exSubData && ej.exerciseId && EXERCISE_CATALOG_BY_ID[String(ej.exerciseId)])
     ? EXERCISE_CATALOG_BY_ID[String(ej.exerciseId)]
     : _getCatalogData(nombre);
   // ── Y3T: detectar fase y sets efectivos para esta semana ──────────────
@@ -6034,7 +6036,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     : '';
 
   var expressTipHtml = '';
-  var techInstrHtml = _buildTechniqueAndInstructionsHtml(ej, catData, di, ei);
+  var techInstrHtml = _buildTechniqueAndInstructionsHtml(ej, visualCatData || catData, di, ei);
   return machineHtml + headerHtml + techInstrHtml + notaHtml + closedBannerHtml + expressTipHtml + wuHtml + setsHtml + completedBlockHtml;
 }
 
