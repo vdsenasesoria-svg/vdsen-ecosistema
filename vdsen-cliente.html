@@ -538,8 +538,14 @@ function _catalogEntryMatchesGym(entry) {
   var entryGym = entry.gymId || entry.gym || entry.site || entry.sede || '';
   if (!entryGym) return true;
   if (!ACTIVE_GYM_ID && !ACTIVE_GYM_NAME) return false;
-  return _resolveExerciseGymId(entryGym) === ACTIVE_GYM_ID ||
-    _normalizeExerciseCatalogKey(entryGym) === _normalizeExerciseCatalogKey(ACTIVE_GYM_NAME);
+  // Static equipment aliases share one canonical catalog, but Firestore
+  // overrides remain site-specific: Bugambilias must not inherit a
+  // San Diego override merely because both sites share base equipment.
+  var entryKey = _normalizeExerciseCatalogKey(entryGym);
+  var activeKey = _normalizeExerciseCatalogKey(ACTIVE_GYM_NAME);
+  if (entryKey === activeKey) return true;
+  var sanDiegoKeys = ['san diego', 'smart fit san diego', 'smart-fit-san-diego'];
+  return sanDiegoKeys.indexOf(entryKey) !== -1 && sanDiegoKeys.indexOf(activeKey) !== -1;
 }
 
 function _catalogEntryHasGymScope(entry) {

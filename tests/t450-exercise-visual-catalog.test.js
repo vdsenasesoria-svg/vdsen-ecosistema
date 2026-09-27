@@ -59,7 +59,8 @@ ok(resolverSandbox._resolveExerciseVisualCatalog({ exerciseName:'Remo Inclinado 
 
 resolverSandbox.ACTIVE_GYM_ID = 'bugambilias';
 resolverSandbox.ACTIVE_GYM_NAME = 'Bugambilias';
-ok(resolverSandbox._resolveExerciseVisualCatalog({ exerciseName:'Belt Squat' }) === null, 'site catalog does not leak into a different gym');
+const bugambiliasShared = resolverSandbox._resolveExerciseVisualCatalog({ exerciseName:'Belt Squat' });
+ok(bugambiliasShared && bugambiliasShared.exerciseId === 'sf-sd-belt-squat', 'Bugambilias resolves the shared base catalog');
 
 resolverSandbox.ACTIVE_GYM_ID = 'smart-fit-san-diego';
 resolverSandbox.ACTIVE_GYM_NAME = 'San Diego';

@@ -231,15 +231,20 @@
       ['Velcro flojo.', 'Mosquetón abierto.', 'Girar la pelvis para completar el recorrido.'], [], ['Tobilleras para Polea', 'Grilletes de Polea'])
   ];
 
+  // San Diego y Bugambilias comparten una única fuente de equipo base.
+  // Los overrides Firestore siguen comparándose contra ACTIVE_GYM_ID antes
+  // de llegar aquí, por lo que permanecen específicos de cada sede.
+  var sharedGymCatalog = {
+    gymId: GYM_ID,
+    gym: GYM,
+    aliases: ['San Diego', 'Smart Fit San Diego', 'Bugambilias'],
+    entries: smartFitSanDiego
+  };
   return {
     version: '2026.09.26',
     gyms: {
-      'smart-fit-san-diego': {
-        gymId: GYM_ID,
-        gym: GYM,
-        aliases: ['San Diego', 'Smart Fit San Diego'],
-        entries: smartFitSanDiego
-      }
+      'smart-fit-san-diego': sharedGymCatalog,
+      'bugambilias': sharedGymCatalog
     }
   };
 });

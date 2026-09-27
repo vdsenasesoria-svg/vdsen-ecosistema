@@ -4009,7 +4009,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   function openVisualMetadataEditor(exercise) {
     if (!exercise || !currentCoach || !exercise.id) return;
     _visualEditorExercise = { id: exercise.id, coachId: currentCoach.uid, exerciseId: exercise.exerciseId || exercise.id, prescriptionExerciseId: exercise.prescriptionExerciseId || null };
-    var gyms = [...new Set(['Smart Fit San Diego'].concat(_allExercises.map(function (x) { return x.gym; }).filter(Boolean)))];
+    var gyms = [...new Set(['San Diego', 'Smart Fit San Diego', 'Bugambilias'].concat(_allExercises.map(function (x) { return x.gym; }).filter(Boolean)))];
     var variants = Array.isArray(exercise.variants) && exercise.variants.length ? JSON.stringify(exercise.variants, null, 2) : '';
     var ov = document.createElement('div'); ov.id = 'visualMetadataEditor';
     ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:18px';
