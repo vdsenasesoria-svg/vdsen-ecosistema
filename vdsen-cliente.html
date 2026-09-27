@@ -4986,9 +4986,35 @@ function closeExerciseVisualSheet() {
   _exerciseSheetPreviousFocus = null;
 }
 
-if (typeof document !== 'undefined') document.addEventListener('keydown', function(event) {
-  if (event.key === 'Escape') closeExerciseVisualSheet();
-});
+function _handleExerciseSheetKeydown(event) {
+  var overlay = document.getElementById('exerciseSheetOverlay');
+  if (!overlay || !overlay.classList.contains('open')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeExerciseVisualSheet();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  var dialog = document.getElementById('exerciseSheetDialog');
+  if (!dialog) return;
+  var focusable = Array.prototype.slice.call(dialog.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'));
+  if (!focusable.length) {
+    event.preventDefault();
+    dialog.focus();
+    return;
+  }
+  var first = focusable[0];
+  var last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+if (typeof document !== 'undefined') document.addEventListener('keydown', _handleExerciseSheetKeydown);
 if (typeof window !== 'undefined') {
   window.openExerciseVisualSheet = openExerciseVisualSheet;
   window.closeExerciseVisualSheet = closeExerciseVisualSheet;
