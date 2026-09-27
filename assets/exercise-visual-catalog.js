@@ -260,6 +260,25 @@
     { equipmentId:'functional-adjustable-bench', name:'Banco multiposición', equipmentType:'bench', aliases:['Banco ajustable'] },
     { equipmentId:'functional-hyperextension-bench', name:'Banco ajustable para hiperextensión de espalda baja', equipmentType:'bench', aliases:['Banco de hiperextensión', 'Banco 45°'] }
   ];
+  function legacyEntry(exerciseId, exerciseName, equipment, setup, execution, objective, errors, aliases) {
+    return { exerciseId: exerciseId, exerciseName: exerciseName, name: exerciseName,
+      gym: GYM, gymId: GYM_ID, equipment: equipment, equipmentType: equipmentType(equipment),
+      imageUrl: null, assetRef: PENDING_ASSET, imageStatus: 'pending_license',
+      instructions: objective, technicalObjective: objective, setup: setup, execution: execution,
+      commonErrors: errors, variants: [], aliases: aliases || [] };
+  }
+  // Explicit legacy mappings: exact Coach names only, never fuzzy authority.
+  var legacyVisualEntries = [
+    legacyEntry('legacy-press-banca-plano-barra', 'Press banca plano barra', 'Barra olímpica', 'Ajusta el banco plano y coloca la barra en soportes seguros.', 'Desciende la barra al pecho con control y empuja manteniendo el torso estable.', 'Press horizontal con barra y pectoral como limitante principal.', ['Perder estabilidad escapular.', 'Rebotar la barra.']),
+    legacyEntry('legacy-press-banca-inclinado-barra', 'Press banca inclinado barra', 'Barra olímpica', 'Ajusta el banco a una inclinación moderada y verifica los seguros.', 'Baja la barra hacia la parte alta del pecho y empuja sin despegar los glúteos.', 'Press inclinado con barra para pectoral clavicular y deltoides anterior.', ['Exceso de inclinación.', 'Despegar la pelvis.']),
+    legacyEntry('legacy-press-banca-plano-mancuernas', 'Press banca plano mancuernas', 'Mancuernas', 'Coloca el banco plano y selecciona un par igual de mancuernas.', 'Desciende con control hasta un estiramiento cómodo y empuja sin perder la posición del hombro.', 'Press horizontal unilateral/bilateral con mancuernas.', ['Usar mancuernas desiguales.', 'Perder control al iniciar.']),
+    legacyEntry('legacy-press-militar-barra', 'Press militar barra', 'Barra olímpica', 'Coloca la barra a la altura de las clavículas y activa el tronco.', 'Empuja verticalmente sin hiperextender la zona lumbar y baja con control.', 'Empuje vertical con barra para hombros y tríceps.', ['Compensar con la espalda.', 'Empujar fuera de la trayectoria.']),
+    legacyEntry('legacy-press-militar-mancuernas', 'Press militar mancuernas', 'Mancuernas', 'Usa un banco con respaldo estable y lleva las mancuernas a los hombros.', 'Empuja arriba siguiendo una trayectoria controlada y regresa sin encoger hombros.', 'Empuje vertical con mancuernas.', ['Balancear el torso.', 'Bajar fuera del rango tolerado.']),
+    legacyEntry('legacy-remo-barra-prono', 'Remo con barra prono', 'Barra olímpica', 'Carga la barra de forma simétrica y adopta una bisagra con columna neutral.', 'Lleva la barra hacia el abdomen manteniendo el torso estable y desciende controlando.', 'Tracción horizontal con barra y control de la bisagra.', ['Redondear la espalda.', 'Impulsarse con el torso.']),
+    legacyEntry('legacy-sentadilla-trasera-barra', 'Sentadilla trasera barra', 'Barra olímpica', 'Coloca la barra de forma estable sobre la espalda y ajusta los seguros.', 'Desciende con apoyo completo del pie y sube coordinando rodillas y cadera.', 'Sentadilla libre con barra para tren inferior.', ['Perder apoyo del pie.', 'Colapsar las rodillas.']),
+    legacyEntry('legacy-peso-muerto-convencional-barra', 'Peso muerto convencional barra', 'Barra olímpica', 'Centra la barra sobre el mediopié y toma un agarre simétrico con columna neutral.', 'Empuja el suelo y extiende rodillas y cadera juntas; baja guiando la barra cerca del cuerpo.', 'Tracción desde el suelo con barra olímpica.', ['Redondear la espalda.', 'Elevar primero la cadera.'])
+  ];
+  sharedGymCatalog.legacyEntries = legacyVisualEntries;
   return {
     version: '2026.09.26',
     functionalEquipment: functionalEquipment,

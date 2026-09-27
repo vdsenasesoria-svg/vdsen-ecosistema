@@ -556,7 +556,8 @@ function _getActiveVisualCatalogEntries() {
   var visual = window.VDSEN_EXERCISE_VISUAL_CATALOG;
   var gyms = visual && visual.gyms ? visual.gyms : {};
   var gym = ACTIVE_GYM_ID && gyms[ACTIVE_GYM_ID];
-  return gym && Array.isArray(gym.entries) ? gym.entries : [];
+  if (!gym) return [];
+  return (Array.isArray(gym.entries) ? gym.entries : []).concat(Array.isArray(gym.legacyEntries) ? gym.legacyEntries : []);
 }
 
 function _findPrescribedVariant(entry, exerciseName) {
