@@ -247,6 +247,25 @@ body{background:var(--bg);color:var(--tx);font-family:var(--ff);font-size:16px;l
 .exercise-guide-copy{font-size:13px;color:var(--tx);line-height:1.55;overflow-wrap:anywhere}
 .exercise-guide-individual{padding:10px 12px;margin:2px 0 8px;border-left:3px solid var(--accent);background:rgba(198,255,0,.06)}
 .exercise-rationale>div{padding:0 0 12px;font-size:12px;line-height:1.55;color:var(--platinum)}
+.exercise-name-trigger{display:block;width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;text-transform:inherit;letter-spacing:inherit;line-height:inherit}
+.exercise-sheet-overlay{position:fixed;inset:0;z-index:10000;display:none;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.82);padding:20px 0 0}
+.exercise-sheet-overlay.open{display:flex}
+.exercise-sheet-dialog{width:min(720px,100%);max-height:92vh;overflow-y:auto;background:var(--bg);border-top:2px solid var(--accent);box-shadow:0 -20px 60px rgba(0,0,0,.55)}
+.exercise-sheet-head{position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;gap:16px;padding:18px 18px 14px;background:rgba(10,10,10,.98);border-bottom:1px solid var(--border)}
+.exercise-sheet-kicker{font-size:9px;font-weight:800;letter-spacing:1.8px;color:var(--accent);text-transform:uppercase;margin-bottom:4px}
+.exercise-sheet-title{font-family:'Big Shoulders Display',var(--ff);font-size:27px;font-weight:800;line-height:1.05;color:var(--tx);text-transform:uppercase}
+.exercise-sheet-close{margin-left:auto;min-width:44px;min-height:44px;border:1px solid var(--border);background:transparent;color:var(--tx);font-size:22px;cursor:pointer}
+.exercise-sheet-body{padding:0 18px 28px}
+.exercise-sheet-media{margin:0 -18px 16px;background:#111;border-bottom:1px solid var(--border)}
+.exercise-sheet-media img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.exercise-sheet-media-note{padding:8px 12px;font-size:10px;color:var(--mt);line-height:1.45;border-top:1px solid var(--border)}
+.exercise-sheet-meta{display:flex;gap:8px;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--border)}
+.exercise-sheet-meta span{font-size:10px;font-weight:800;letter-spacing:.8px;color:var(--platinum);text-transform:uppercase}
+.exercise-sheet-section{padding:14px 0;border-bottom:1px solid var(--border)}
+.exercise-sheet-label{font-size:9px;font-weight:800;letter-spacing:1.7px;color:var(--mt);text-transform:uppercase;margin-bottom:7px}
+.exercise-sheet-copy{font-size:14px;line-height:1.58;color:var(--tx)}
+.exercise-sheet-variant{padding:12px;margin:14px 0 0;border-left:3px solid var(--accent);background:rgba(198,255,0,.06)}
+@media (min-width:721px){.exercise-sheet-overlay{align-items:center;padding:24px}.exercise-sheet-dialog{border:2px solid var(--accent);max-height:88vh}}
 .advanced-client{margin:14px 0 10px;border-top:2px solid var(--accent);border-bottom:1px solid var(--border);padding:14px 0}
 .advanced-client-title{font-family:'Big Shoulders Display',var(--ff);font-size:24px;font-weight:800;color:var(--tx);letter-spacing:.4px}
 .advanced-client-meta{font-size:11px;color:var(--mt);line-height:1.55;margin-top:4px}
@@ -453,6 +472,21 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
+<!-- FICHA VISUAL DE EJERCICIO -->
+<div class="exercise-sheet-overlay" id="exerciseSheetOverlay" role="presentation" onclick="if(event.target===this)closeExerciseVisualSheet()">
+  <section class="exercise-sheet-dialog" id="exerciseSheetDialog" role="dialog" aria-modal="true" aria-labelledby="exerciseSheetTitle" tabindex="-1">
+    <div class="exercise-sheet-head">
+      <div style="min-width:0;flex:1">
+        <div class="exercise-sheet-kicker">Ficha técnica de ejercicio</div>
+        <div class="exercise-sheet-title" id="exerciseSheetTitle">Ejercicio</div>
+      </div>
+      <button type="button" class="exercise-sheet-close" id="exerciseSheetClose" onclick="closeExerciseVisualSheet()" aria-label="Cerrar ficha">×</button>
+    </div>
+    <div class="exercise-sheet-body" id="exerciseSheetBody"></div>
+  </section>
+</div>
+
+<script src="assets/exercise-visual-catalog.js"></script>
 <script>
 // ══════════════════════════════════════════════════
 // STATE
@@ -467,6 +501,11 @@ var _weeksExpanded = false; // selector: mostrar semanas pasadas
 var EXERCISE_UNITS = {}; // { "di_ei": 'KG'|'LB' } — unidad por ejercicio
 var EXERCISE_CATALOG = {}; // { "nombre_lower": {fatigueCost, resistanceCurve, muscleType, motorPattern} }
 var EXERCISE_CATALOG_BY_ID = {}; // { exerciseId: metadata canónica } — evita resolver identidad por posición/nombre
+var EXERCISE_CATALOG_ENTRIES = []; // entradas Firestore completas; permite filtrar catálogo por sede
+var PRESCRIPTION_EXERCISE_CATALOG_BY_ID = {}; // asociación exacta de instancia prescrita → ficha resuelta
+var AMBIGUOUS_PRESCRIPTION_EXERCISE_IDS = {}; // PID duplicado no se usa como autoridad visual
+var ACTIVE_GYM_ID = '';
+var ACTIVE_GYM_NAME = '';
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
 var CALIB_VOLUMETRICA = null; // Módulo A Ehrenstein — calibración volumétrica {VME_individual, VMR_individual}
@@ -475,6 +514,138 @@ var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el t
 
 function getUnit() { return PLAN?.unidad || 'KG'; } // fallback global
 function getExUnit(di, ei) { return EXERCISE_UNITS[di+'_'+ei] || PLAN?.unidad || 'KG'; }
+
+function _normalizeExerciseCatalogKey(value) {
+  return String(value || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+}
+
+function _resolveExerciseGymId(value) {
+  var key = _normalizeExerciseCatalogKey(value);
+  if (!key) return '';
+  var visual = window.VDSEN_EXERCISE_VISUAL_CATALOG;
+  var gyms = visual && visual.gyms ? visual.gyms : {};
+  var ids = Object.keys(gyms);
+  for (var i = 0; i < ids.length; i++) {
+    var gym = gyms[ids[i]] || {};
+    var names = [ids[i], gym.gym, gym.gymId].concat(Array.isArray(gym.aliases) ? gym.aliases : []);
+    if (names.some(function(name){ return _normalizeExerciseCatalogKey(name) === key; })) return gym.gymId || ids[i];
+  }
+  return key.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function _catalogEntryMatchesGym(entry) {
+  if (!entry) return false;
+  var entryGym = entry.gymId || entry.gym || entry.site || entry.sede || '';
+  if (!entryGym) return true;
+  if (!ACTIVE_GYM_ID && !ACTIVE_GYM_NAME) return false;
+  return _resolveExerciseGymId(entryGym) === ACTIVE_GYM_ID ||
+    _normalizeExerciseCatalogKey(entryGym) === _normalizeExerciseCatalogKey(ACTIVE_GYM_NAME);
+}
+
+function _getActiveVisualCatalogEntries() {
+  var visual = window.VDSEN_EXERCISE_VISUAL_CATALOG;
+  var gyms = visual && visual.gyms ? visual.gyms : {};
+  var gym = ACTIVE_GYM_ID && gyms[ACTIVE_GYM_ID];
+  return gym && Array.isArray(gym.entries) ? gym.entries : [];
+}
+
+function _findPrescribedVariant(entry, exerciseName) {
+  if (!entry || !Array.isArray(entry.variants)) return null;
+  var key = _normalizeExerciseCatalogKey(exerciseName);
+  if (!key) return null;
+  for (var i = 0; i < entry.variants.length; i++) {
+    if (_normalizeExerciseCatalogKey(entry.variants[i] && entry.variants[i].name) === key) return entry.variants[i];
+  }
+  return null;
+}
+
+function _decorateResolvedExerciseCatalog(entry, exerciseName, source, identityLevel) {
+  if (!entry) return null;
+  var variant = _findPrescribedVariant(entry, exerciseName);
+  var resolved = Object.assign({}, entry, variant || {});
+  resolved.exerciseName = entry.exerciseName || entry.name || exerciseName || '';
+  resolved.name = resolved.exerciseName;
+  resolved._prescribedVariant = variant || null;
+  resolved._catalogSource = source || 'unknown';
+  resolved._identityLevel = identityLevel || 'legacy';
+  return resolved;
+}
+
+function _findExactCatalogByName(exerciseName) {
+  var key = _normalizeExerciseCatalogKey(exerciseName);
+  if (!key) return null;
+  var firestoreMatches = EXERCISE_CATALOG_ENTRIES.filter(function(entry) {
+    if (!_catalogEntryMatchesGym(entry)) return false;
+    var names = [entry.name, entry.exerciseName].concat(Array.isArray(entry.aliases) ? entry.aliases : []);
+    return names.some(function(name){ return _normalizeExerciseCatalogKey(name) === key; });
+  });
+  if (firestoreMatches.length === 1) return _decorateResolvedExerciseCatalog(firestoreMatches[0], exerciseName, 'firestore', 'legacy_exact');
+  if (firestoreMatches.length > 1) return null; // ambiguo → no elegir por posición/orden de lectura
+
+  var siteEntries = _getActiveVisualCatalogEntries();
+  var siteMatches = siteEntries.filter(function(entry) {
+    var names = [entry.name, entry.exerciseName].concat(Array.isArray(entry.aliases) ? entry.aliases : []);
+    if (Array.isArray(entry.variants)) names = names.concat(entry.variants.map(function(v){ return v && v.name; }));
+    return names.some(function(name){ return _normalizeExerciseCatalogKey(name) === key; });
+  });
+  if (siteMatches.length === 1) return _decorateResolvedExerciseCatalog(siteMatches[0], exerciseName, 'site_catalog', 'legacy_exact');
+  if (siteMatches.length > 1) return null;
+
+  var built = null;
+  if (typeof BUILTIN_CATALOG !== 'undefined') {
+    var builtKeys = Object.keys(BUILTIN_CATALOG);
+    for (var b = 0; b < builtKeys.length; b++) {
+      if (_normalizeExerciseCatalogKey(builtKeys[b]) === key) { built = BUILTIN_CATALOG[builtKeys[b]]; break; }
+    }
+  }
+  return built ? _decorateResolvedExerciseCatalog(built, exerciseName, 'builtin', 'legacy_exact') : null;
+}
+
+// POSITION != IDENTITY. La ficha visual resuelve instancia exacta, después
+// exerciseId canónico y solo al final nombre/alias exacto para planes legacy.
+function _resolveExerciseVisualCatalog(exercise) {
+  if (!exercise) return null;
+  var pid = exercise.prescriptionExerciseId ? String(exercise.prescriptionExerciseId) : '';
+  var exerciseId = exercise.exerciseId ? String(exercise.exerciseId) : '';
+  var exerciseName = exercise.exerciseName || exercise.nombre || '';
+  if (pid && !AMBIGUOUS_PRESCRIPTION_EXERCISE_IDS[pid] && PRESCRIPTION_EXERCISE_CATALOG_BY_ID[pid]) return PRESCRIPTION_EXERCISE_CATALOG_BY_ID[pid];
+
+  var resolved = null;
+  if (exerciseId) {
+    var firestoreById = EXERCISE_CATALOG_BY_ID[exerciseId];
+    if (firestoreById && _catalogEntryMatchesGym(firestoreById)) {
+      resolved = _decorateResolvedExerciseCatalog(firestoreById, exerciseName, 'firestore', 'exerciseId');
+    } else {
+      var siteById = _getActiveVisualCatalogEntries().filter(function(entry){ return String(entry.exerciseId || '') === exerciseId; });
+      if (siteById.length === 1) resolved = _decorateResolvedExerciseCatalog(siteById[0], exerciseName, 'site_catalog', 'exerciseId');
+    }
+  }
+  if (!resolved) resolved = _findExactCatalogByName(exerciseName);
+  if (resolved && pid && !AMBIGUOUS_PRESCRIPTION_EXERCISE_IDS[pid]) {
+    resolved = Object.assign({}, resolved, { _identityLevel: 'prescriptionExerciseId', _resolvedPrescriptionExerciseId: pid });
+    PRESCRIPTION_EXERCISE_CATALOG_BY_ID[pid] = resolved;
+  }
+  return resolved;
+}
+
+function _primePrescriptionExerciseCatalog() {
+  PRESCRIPTION_EXERCISE_CATALOG_BY_ID = {};
+  AMBIGUOUS_PRESCRIPTION_EXERCISE_IDS = {};
+  var sessions = PLAN && PLAN.entrenamiento && Array.isArray(PLAN.entrenamiento.sesiones) ? PLAN.entrenamiento.sesiones : [];
+  var pidCounts = {};
+  sessions.forEach(function(session) {
+    (session.exercises || []).forEach(function(exercise) {
+      var pid = exercise && exercise.prescriptionExerciseId ? String(exercise.prescriptionExerciseId) : '';
+      if (pid) pidCounts[pid] = (pidCounts[pid] || 0) + 1;
+    });
+  });
+  Object.keys(pidCounts).forEach(function(pid) {
+    if (pidCounts[pid] > 1) AMBIGUOUS_PRESCRIPTION_EXERCISE_IDS[pid] = true;
+  });
+  sessions.forEach(function(session) {
+    (session.exercises || []).forEach(function(exercise) { _resolveExerciseVisualCatalog(exercise); });
+  });
+}
 
 var _exOptsClickOutHandler = null;
 function _clearExOptsClickOut() {
@@ -1322,10 +1493,13 @@ async function doLogout() {
   // EXERCISE_UNITS/EXERCISE_HISTORY/week counters, since loadPlan only overwrites
   // these when logSnap.exists() is true.
   EXERCISE_UNITS = {}; EXERCISE_HISTORY = {};
-  EXERCISE_CATALOG = {}; EXERCISE_CATALOG_BY_ID = {};
+  EXERCISE_CATALOG = {}; EXERCISE_CATALOG_BY_ID = {}; EXERCISE_CATALOG_ENTRIES = [];
+  PRESCRIPTION_EXERCISE_CATALOG_BY_ID = {}; AMBIGUOUS_PRESCRIPTION_EXERCISE_IDS = {};
+  ACTIVE_GYM_ID = ''; ACTIVE_GYM_NAME = '';
   CLIENT_ADVANCED = null;
   REAL_WEEK = 1; CURRENT_WEEK = 1;
   MENU_CUSTOM = {};
+  try { closeExerciseVisualSheet(); } catch(e){}
   try { stopRestTimer(); } catch(e){}
   try {
     localStorage.removeItem('vdsen_active_plan_id'); // R8-GAP-01: avoid stale plan id bleeding to next user on shared device
@@ -1776,27 +1950,42 @@ async function loadPlan(user) {
     CALIB_VOLUMETRICA = (clientData.calibracion_volumetrica && clientData.calibracion_volumetrica.resultados)
       ? clientData.calibracion_volumetrica.resultados : null;
 
-    // FASE 81 — Parallel prefetch: exercise catalog + meso log (independent reads, saves 1 serial RTT)
+    // FASE 81 — Prefetch independiente: catálogo, sede declarada en ficha y meso log.
+    // La sede solo selecciona metadata de catálogo; nunca se copia dentro del plan.
     const _pfExercises = clientData.coachId
       ? FB.getDocs(FB.query(FB.collection(FB.db, 'exercises'), FB.where('coachId', '==', clientData.coachId))).catch(function(){ return null; })
       : Promise.resolve(null);
+    const _pfFicha = FB.getDoc(FB.doc(FB.db, 'fichas_onboarding', user.uid)).catch(function(){ return null; });
     const _pfMeso = activePlanId
       ? FB.getDoc(FB.doc(FB.db, 'logs', user.uid, 'mesos', activePlanId)).catch(function(){ return null; })
       : Promise.resolve(null);
-    const [_exSnapPF, _mesoSnapPF] = await Promise.all([_pfExercises, _pfMeso]);
+    const [_exSnapPF, _fichaSnapPF, _mesoSnapPF] = await Promise.all([_pfExercises, _pfFicha, _pfMeso]);
     if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
+
+    var _fichaData = (_fichaSnapPF && typeof _fichaSnapPF.exists === 'function' && _fichaSnapPF.exists())
+      ? ((_fichaSnapPF.data() && _fichaSnapPF.data().data) || {}) : {};
+    ACTIVE_GYM_NAME = _fichaData.gimnasio || clientData.gimnasio || planData.gym || planData.sede || '';
+    ACTIVE_GYM_ID = _resolveExerciseGymId(ACTIVE_GYM_NAME);
 
     // Cargar catálogo de ejercicios del coach (para algoritmo de progresión)
     try {
+      EXERCISE_CATALOG = {};
+      EXERCISE_CATALOG_BY_ID = {};
+      EXERCISE_CATALOG_ENTRIES = [];
       if (clientData.coachId && _exSnapPF) {
-        EXERCISE_CATALOG = {};
-        EXERCISE_CATALOG_BY_ID = {};
         _exSnapPF.forEach(function(d) {
           var ex = d.data();
           var _catalogEntry = {
             exerciseId: ex.exerciseId || d.id,
             name: ex.name || ex.exerciseName || '',
+            exerciseName: ex.exerciseName || ex.name || '',
             aliases: Array.isArray(ex.aliases) ? ex.aliases : [],
+            gym: ex.gym || ex.site || ex.sede || null,
+            gymId: ex.gymId || null,
+            equipment: ex.equipment || '',
+            imageUrl: ex.imageUrl || null,
+            assetRef: ex.assetRef || ex.imageAssetRef || null,
+            imageStatus: ex.imageStatus || null,
             fatigueCost: ex.fatigueCost || 3,
             resistanceCurve: ex.resistanceCurve || 'mid',
             muscleType: ex.muscleType || 'typeIIx',
@@ -1804,23 +1993,30 @@ async function loadPlan(user) {
             executionNotes: ex.executionNotes || '',
             instructionVersion: ex.instructionVersion || null,
             exerciseInstructions: ex.exerciseInstructions || ex.instructions || null,
-            setupInstructions: ex.setupInstructions || null,
-            executionInstructions: ex.executionInstructions || null,
+            instructions: ex.instructions || ex.exerciseInstructions || null,
+            setup: ex.setup || ex.setupInstructions || null,
+            setupInstructions: ex.setupInstructions || ex.setup || null,
+            execution: ex.execution || ex.executionInstructions || null,
+            executionInstructions: ex.executionInstructions || ex.execution || null,
+            technicalObjective: ex.technicalObjective || ex.objective || null,
             romInstructions: ex.romInstructions || null,
             technicalCues: Array.isArray(ex.technicalCues) ? ex.technicalCues : [],
             commonErrors: Array.isArray(ex.commonErrors) ? ex.commonErrors : [],
+            variants: Array.isArray(ex.variants) ? ex.variants : [],
             equipmentSettingsSchema: ex.equipmentSettingsSchema || null
           };
-          var _catalogName = (_catalogEntry.name || '').toLowerCase().trim();
+          EXERCISE_CATALOG_ENTRIES.push(_catalogEntry);
+          var _catalogName = _normalizeExerciseCatalogKey(_catalogEntry.name);
           if (_catalogName) EXERCISE_CATALOG[_catalogName] = _catalogEntry;
           if (_catalogEntry.exerciseId) EXERCISE_CATALOG_BY_ID[String(_catalogEntry.exerciseId)] = _catalogEntry;
           _catalogEntry.aliases.forEach(function(alias) {
-            var _aliasKey = String(alias || '').toLowerCase().trim();
+            var _aliasKey = _normalizeExerciseCatalogKey(alias);
             if (_aliasKey && !EXERCISE_CATALOG[_aliasKey]) EXERCISE_CATALOG[_aliasKey] = _catalogEntry;
           });
         });
       }
     } catch(catErr) { console.warn('catálogo no disponible:', catErr.message); }
+    _primePrescriptionExerciseCatalog();
 
     // Cargar logs (no-fatal)
     ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual
@@ -4615,10 +4811,11 @@ function _normalizeExerciseInstructions(ej, catData) {
   }
   var executionFallback = catData && (catData.executionInstructions || catData.executionNotes);
   var guide = {
-    setup: first(['setup','setupInstructions'], catData && catData.setupInstructions),
+    technicalObjective: first(['technicalObjective','objective','instructions'], catData && (catData.technicalObjective || (typeof catData.instructions === 'string' ? catData.instructions : null))),
+    setup: first(['setup','setupInstructions'], catData && (catData.setup || catData.setupInstructions)),
     equipmentSetup: first(['equipmentSetup','equipmentSettings'], null),
     bodyPosition: first(['bodyPosition','position'], null),
-    execution: first(['execution','executionInstructions'], executionFallback),
+    execution: first(['execution','executionInstructions'], catData && (catData.execution || executionFallback)),
     rangeOfMotion: first(['rangeOfMotion','rom','romInstructions'], catData && catData.romInstructions),
     breathingBracing: first(['breathingBracing','breathing','bracing'], null),
     tempoNotes: first(['tempoNotes','tempo'], null),
@@ -4648,6 +4845,11 @@ function _buildExerciseGuideHtml(ej, catData, di, ei) {
     if (guide.individualNotes) {
       body += '<div class="exercise-guide-individual"><div class="exercise-guide-label">AJUSTE PARA TI</div><div class="exercise-guide-copy">'+_instructionText(guide.individualNotes)+'</div></div>';
     }
+    if (catData && catData._prescribedVariant) {
+      body += '<div class="exercise-guide-individual"><div class="exercise-guide-label">VARIANTE PRESCRITA</div><div class="exercise-guide-copy"><strong>'+_escHTml(catData._prescribedVariant.name || '')+'</strong>'+
+        (catData._prescribedVariant.objective ? '<div style="margin-top:4px">'+_instructionText(catData._prescribedVariant.objective)+'</div>' : '')+'</div></div>';
+    }
+    body += _exerciseInstructionSection('OBJETIVO TÉCNICO', guide.technicalObjective);
     body += _exerciseInstructionSection('SETUP', [guide.setup, guide.equipmentSetup, guide.bodyPosition]);
     body += _exerciseInstructionSection('EJECUCIÓN', [guide.execution, guide.breathingBracing, guide.tempoNotes]);
     body += _exerciseInstructionSection('ROM', guide.rangeOfMotion);
@@ -4679,6 +4881,91 @@ function _buildExerciseMediaHtml(ej) {
     (image?'<img src="'+image+'" loading="lazy" alt="Demostración del ejercicio" style="width:88px;height:66px;object-fit:cover;border:1px solid var(--border);border-radius:2px">':'')+
     (video?'<a href="'+video+'" target="_blank" rel="noopener noreferrer" style="min-height:44px;display:inline-flex;align-items:center;padding:8px 12px;border:1px solid var(--border);color:var(--accent);font-size:11px;font-weight:800;text-decoration:none">VER VIDEO</a>':'')+
     '</div>';
+}
+
+var _exerciseSheetPreviousFocus = null;
+
+function _exerciseSheetSection(label, value) {
+  var copy = _instructionText(value);
+  return copy ? '<div class="exercise-sheet-section"><div class="exercise-sheet-label">'+label+'</div><div class="exercise-sheet-copy">'+copy+'</div></div>' : '';
+}
+
+function _buildExerciseSheetMediaHtml(catData) {
+  var status = catData && catData.imageStatus;
+  var imageUrl = status === 'pending_license' ? '' : _safeClientMediaUrl(catData && catData.imageUrl);
+  if (imageUrl) {
+    return '<div class="exercise-sheet-media"><img src="'+imageUrl+'" loading="lazy" alt="Demostración técnica del ejercicio"></div>';
+  }
+  var placeholder = _safeClientMediaUrl(catData && catData.assetRef) || 'assets/exercises/pending-license.svg';
+  return '<div class="exercise-sheet-media"><img src="'+placeholder+'" alt="Imagen del ejercicio pendiente de licencia">'+
+    '<div class="exercise-sheet-media-note">Imagen pendiente: VDSEN solo publicará material con licencia y procedencia verificadas.</div></div>';
+}
+
+function _buildExerciseVisualSheetHtml(exercise, catData) {
+  var guide = _normalizeExerciseInstructions(exercise || {}, catData);
+  var variant = catData && catData._prescribedVariant;
+  var equipment = catData && catData.equipment;
+  var gym = (catData && (catData.gym || catData.sede)) || ACTIVE_GYM_NAME;
+  var html = _buildExerciseSheetMediaHtml(catData);
+  html += '<div class="exercise-sheet-meta">'+
+    (gym ? '<span>'+_escHTml(String(gym))+'</span>' : '')+
+    (equipment ? '<span>· '+_escHTml(String(equipment))+'</span>' : '')+
+    '</div>';
+  if (variant) {
+    html += '<div class="exercise-sheet-variant"><div class="exercise-sheet-label">Variante prescrita</div><div class="exercise-sheet-copy"><strong>'+_escHTml(variant.name || '')+'</strong>'+
+      (variant.objective ? '<div style="margin-top:6px">'+_instructionText(variant.objective)+'</div>' : '')+'</div></div>';
+  }
+  if (guide) {
+    html += _exerciseSheetSection('Objetivo técnico', guide.technicalObjective);
+    html += _exerciseSheetSection('Preparación', [guide.setup, guide.equipmentSetup, guide.bodyPosition]);
+    html += _exerciseSheetSection('Ejecución', [guide.execution, guide.breathingBracing, guide.tempoNotes]);
+    html += _exerciseSheetSection('Rango de movimiento', guide.rangeOfMotion);
+    html += _exerciseSheetSection('Claves técnicas', guide.cues);
+    html += _exerciseSheetSection('Errores a evitar', guide.avoid);
+    html += _exerciseSheetSection('Ajuste para ti', guide.individualNotes);
+  } else {
+    html += '<div class="exercise-sheet-section"><div class="exercise-sheet-label">Ficha pendiente</div><div class="exercise-sheet-copy">Todavía no hay instrucciones canónicas para este ejercicio. Confirma la ejecución con tu coach.</div></div>';
+  }
+  return html;
+}
+
+function _getPlanExerciseAt(di, ei) {
+  var sessions = PLAN && PLAN.entrenamiento && PLAN.entrenamiento.sesiones;
+  var session = sessions && sessions[di];
+  return session && session.exercises ? session.exercises[ei] : null;
+}
+
+function openExerciseVisualSheet(di, ei) {
+  var exercise = _getPlanExerciseAt(di, ei);
+  var overlay = document.getElementById('exerciseSheetOverlay');
+  var title = document.getElementById('exerciseSheetTitle');
+  var body = document.getElementById('exerciseSheetBody');
+  var dialog = document.getElementById('exerciseSheetDialog');
+  if (!exercise || !overlay || !title || !body || !dialog) return;
+  var catData = _resolveExerciseVisualCatalog(exercise);
+  _exerciseSheetPreviousFocus = document.activeElement;
+  title.textContent = exercise.exerciseName || exercise.nombre || 'Ejercicio';
+  body.innerHTML = _buildExerciseVisualSheetHtml(exercise, catData);
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  setTimeout(function(){ var close = document.getElementById('exerciseSheetClose'); if (close) close.focus(); }, 0);
+}
+
+function closeExerciseVisualSheet() {
+  var overlay = document.getElementById('exerciseSheetOverlay');
+  if (!overlay || !overlay.classList.contains('open')) return;
+  overlay.classList.remove('open');
+  document.body.style.overflow = '';
+  if (_exerciseSheetPreviousFocus && typeof _exerciseSheetPreviousFocus.focus === 'function') _exerciseSheetPreviousFocus.focus();
+  _exerciseSheetPreviousFocus = null;
+}
+
+if (typeof document !== 'undefined') document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') closeExerciseVisualSheet();
+});
+if (typeof window !== 'undefined') {
+  window.openExerciseVisualSheet = openExerciseVisualSheet;
+  window.closeExerciseVisualSheet = closeExerciseVisualSheet;
 }
 
 function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
@@ -4951,7 +5238,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (_exSubData && _exSubData.nombre) ej = Object.assign({}, ej, { nombre: _exSubData.nombre, exerciseName: _exSubData.nombre });
   var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
   var machine = getMachineForExercise(nombre);
-  var catData = (!_exSubData && ej.exerciseId && EXERCISE_CATALOG_BY_ID[String(ej.exerciseId)])
+  var catData = !_exSubData ? _resolveExerciseVisualCatalog(ej) : null;
+  if (!catData) catData = (!_exSubData && ej.exerciseId && EXERCISE_CATALOG_BY_ID[String(ej.exerciseId)])
     ? EXERCISE_CATALOG_BY_ID[String(ej.exerciseId)]
     : _getCatalogData(nombre);
   // ── Y3T: detectar fase y sets efectivos para esta semana ──────────────
@@ -5069,7 +5357,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         : '');
   var headerHtml =
     '<div style="margin-bottom:14px">'+
-      '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+_escHTml(nombre)+'</div>'+
+      '<button type="button" class="exercise-name-trigger" onclick="openExerciseVisualSheet('+di+','+ei+')" aria-label="Abrir ficha técnica de '+_escHTml(nombre)+'" style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.2;text-transform:uppercase">'+_escHTml(nombre)+' <span aria-hidden="true" style="font-size:13px;color:var(--accent);white-space:nowrap">VER FICHA ↗</span></button>'+
       _exSkipLinkHtml+
       (_exNoteInline
         ? '<button type="button" id="exnote_inline_'+di+'_'+ei+'" onclick="toggleUserNote('+di+','+ei+')" style="display:block;width:100%;margin-top:6px;padding:7px 10px;background:rgba(107,107,102,.08);border:0;border-left:3px solid rgba(107,107,102,.5);border-radius:0 6px 6px 0;text-align:left;font:inherit;font-size:12px;color:#d4b96a;line-height:1.45;cursor:pointer" title="Editar nota del ejercicio">📝 '+_escHTml(_exNoteInline)+'</button>'
@@ -5768,11 +6056,10 @@ function _perfHeader(ej, di, ei, chip, statsHtml) {
     : '';
   return '<div style="margin-bottom:14px">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">'+chipHtml+'</div>'+
-      '<div style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.25;text-transform:uppercase">'+_escHTml(nombre)+
-        (_exNoteInline
-          ? '<button type="button" onclick="toggleUserNote('+di+','+ei+')" title="Editar nota del ejercicio" style="margin-left:5px;padding:0;background:none;border:0;font-family:var(--ff);font-size:13px;font-weight:500;font-style:italic;color:#d4b96a;letter-spacing:0;text-align:left;text-transform:none;cursor:pointer"> (nota: '+_escHTml(_exNoteInline)+')</button>'
-          : '')+
-      '</div>'+
+      '<button type="button" class="exercise-name-trigger" onclick="openExerciseVisualSheet('+di+','+ei+')" aria-label="Abrir ficha técnica de '+_escHTml(nombre)+'" style="font-size:22px;font-weight:900;color:var(--tx);letter-spacing:.5px;line-height:1.25;text-transform:uppercase">'+_escHTml(nombre)+' <span aria-hidden="true" style="font-size:13px;color:var(--accent);white-space:nowrap">VER FICHA ↗</span></button>'+
+      (_exNoteInline
+        ? '<button type="button" onclick="toggleUserNote('+di+','+ei+')" title="Editar nota del ejercicio" style="margin-top:5px;padding:0;background:none;border:0;font-family:var(--ff);font-size:13px;font-weight:500;font-style:italic;color:#d4b96a;letter-spacing:0;text-align:left;text-transform:none;cursor:pointer">Nota: '+_escHTml(_exNoteInline)+'</button>'
+        : '')+
       (statsHtml || '')+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">'+
         '<button onclick="toggleUserNote('+di+','+ei+')" style="font-size:11px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:'+(_exNoteInline?'rgba(107,107,102,.1)':'rgba(255,255,255,.05)')+';border:1px solid '+(_exNoteInline?'rgba(107,107,102,.3)':'var(--border)')+';padding:4px 12px;border-radius:6px;cursor:pointer">📝 Nota</button>'+
@@ -8126,7 +8413,7 @@ function buildBoostcampExercise(ej, di, ei) {
       '</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:15px;font-weight:700;color:var(--tx);line-height:1.3;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-          ej.nombre+
+          '<button type="button" class="exercise-name-trigger" onclick="openExerciseVisualSheet('+di+','+ei+')" aria-label="Abrir ficha técnica de '+_escHTml(ej.nombre || 'Ejercicio')+'" style="width:auto;flex:0 1 auto;font-size:15px;font-weight:700;color:var(--tx)">'+_escHTml(ej.nombre || 'Ejercicio')+' <span aria-hidden="true" style="font-size:10px;color:var(--accent)">↗</span></button>'+
           (ej.rezagado?'<span style="font-size:9px;background:rgba(107,107,102,.15);border:1px solid rgba(107,107,102,.4);color:var(--accent);padding:2px 7px;border-radius:10px;letter-spacing:1px;font-weight:700">★ REZAGADO</span>':'')+
           _getNivelMedioBadge(ej.nivel_medio)+
         '</div>'+
@@ -14763,6 +15050,8 @@ function _getCatalogData(exName) {
 
 function _getCatalogDataForExercise(exercise) {
   if (!exercise) return null;
+  var visual = _resolveExerciseVisualCatalog(exercise);
+  if (visual) return visual;
   var id = exercise.exerciseId;
   if (id && EXERCISE_CATALOG_BY_ID[String(id)]) return EXERCISE_CATALOG_BY_ID[String(id)];
   return _getCatalogData(exercise.nombre || exercise.exerciseName || '');
