@@ -4894,21 +4894,30 @@ function _buildExerciseMediaHtml(ej) {
 }
 
 var _exerciseSheetPreviousFocus = null;
+var EXERCISE_SHEET_PLACEHOLDER = 'assets/exercises/pending-license.svg';
 
 function _exerciseSheetSection(label, value) {
   var copy = _instructionText(value);
   return copy ? '<div class="exercise-sheet-section"><div class="exercise-sheet-label">'+label+'</div><div class="exercise-sheet-copy">'+copy+'</div></div>' : '';
 }
 
+function _fallbackExerciseSheetImage(img) {
+  if (!img) return;
+  img.onerror = null;
+  img.src = EXERCISE_SHEET_PLACEHOLDER;
+  img.alt = 'Imagen del ejercicio pendiente de licencia';
+  if (img.nextElementSibling && img.nextElementSibling.style) img.nextElementSibling.style.display = 'block';
+}
+
 function _buildExerciseSheetMediaHtml(catData) {
   var status = catData && catData.imageStatus;
   var imageUrl = status === 'pending_license' ? '' : _safeClientMediaUrl(catData && catData.imageUrl);
-  if (imageUrl) {
-    return '<div class="exercise-sheet-media"><img src="'+imageUrl+'" loading="lazy" alt="Demostración técnica del ejercicio"></div>';
-  }
-  var placeholder = _safeClientMediaUrl(catData && catData.assetRef) || 'assets/exercises/pending-license.svg';
-  return '<div class="exercise-sheet-media"><img src="'+placeholder+'" alt="Imagen del ejercicio pendiente de licencia">'+
-    '<div class="exercise-sheet-media-note">Imagen pendiente: VDSEN solo publicará material con licencia y procedencia verificadas.</div></div>';
+  var assetRef = _safeClientMediaUrl(catData && catData.assetRef);
+  var src = imageUrl || assetRef || EXERCISE_SHEET_PLACEHOLDER;
+  var isPlaceholder = status === 'pending_license' || src === EXERCISE_SHEET_PLACEHOLDER;
+  return '<div class="exercise-sheet-media"><img src="'+src+'" loading="lazy" onerror="_fallbackExerciseSheetImage(this)" alt="'+
+    (isPlaceholder ? 'Imagen del ejercicio pendiente de licencia' : 'Demostración técnica del ejercicio')+'">'+
+    '<div class="exercise-sheet-media-note" style="display:'+(isPlaceholder?'block':'none')+'">Imagen pendiente: VDSEN solo publicará material con licencia y procedencia verificadas.</div></div>';
 }
 
 function _buildExerciseVisualSheetHtml(exercise, catData) {
@@ -4976,6 +4985,7 @@ if (typeof document !== 'undefined') document.addEventListener('keydown', functi
 if (typeof window !== 'undefined') {
   window.openExerciseVisualSheet = openExerciseVisualSheet;
   window.closeExerciseVisualSheet = closeExerciseVisualSheet;
+  window._fallbackExerciseSheetImage = _fallbackExerciseSheetImage;
 }
 
 function _buildTechniqueAndInstructionsHtml(ej, catData, di, ei) {
