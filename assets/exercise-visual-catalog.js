@@ -9,6 +9,17 @@
   var GYM = 'Smart Fit San Diego';
   var GYM_ID = 'smart-fit-san-diego';
 
+  function equipmentType(equipment) {
+    var key = String(equipment || '').toLowerCase();
+    if (key.indexOf('mancuer') !== -1) return 'free_weight';
+    if (key.indexOf('barra hex') !== -1) return 'trap_bar';
+    if (key.indexOf('barra') !== -1) return 'barbell';
+    if (key.indexOf('polea') !== -1 || key.indexOf('cable') !== -1) return 'cable';
+    if (key.indexOf('banco') !== -1 || key.indexOf('bench') !== -1) return 'bench';
+    if (key.indexOf('accesorio') !== -1) return 'other_functional_equipment';
+    return 'machine';
+  }
+
   function entry(exerciseId, exerciseName, equipment, objective, setup, execution, commonErrors, variants, aliases) {
     return {
       exerciseId: exerciseId,
@@ -17,6 +28,7 @@
       gym: GYM,
       gymId: GYM_ID,
       equipment: equipment,
+      equipmentType: equipmentType(equipment),
       imageUrl: null,
       assetRef: PENDING_ASSET,
       imageStatus: 'pending_license',
@@ -240,8 +252,17 @@
     aliases: ['San Diego', 'Smart Fit San Diego', 'Bugambilias'],
     entries: smartFitSanDiego
   };
+  var functionalEquipment = [
+    { equipmentId:'functional-dumbbells', name:'Mancuernas', equipmentType:'free_weight', aliases:['Mancuerna'] },
+    { equipmentId:'functional-cable-station', name:'Estación de Poleas', equipmentType:'cable', aliases:['Poleas', 'Estación de cable', 'Cable station'] },
+    { equipmentId:'functional-olympic-barbell', name:'Barra olímpica', equipmentType:'barbell', aliases:['Barra olimpica', 'Barra'] },
+    { equipmentId:'functional-trap-bar', name:'Barra hexagonal', equipmentType:'trap_bar', aliases:['Trap Bar'] },
+    { equipmentId:'functional-adjustable-bench', name:'Banco multiposición', equipmentType:'bench', aliases:['Banco ajustable'] },
+    { equipmentId:'functional-hyperextension-bench', name:'Banco ajustable para hiperextensión de espalda baja', equipmentType:'bench', aliases:['Banco de hiperextensión', 'Banco 45°'] }
+  ];
   return {
     version: '2026.09.26',
+    functionalEquipment: functionalEquipment,
     gyms: {
       'smart-fit-san-diego': sharedGymCatalog,
       'bugambilias': sharedGymCatalog

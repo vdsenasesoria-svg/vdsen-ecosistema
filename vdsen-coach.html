@@ -1585,6 +1585,7 @@
 })();
 </script>
 
+  <script src="assets/exercise-visual-catalog.js"></script>
   <script src="assets/exercise-visual-metadata-editor.js"></script>
   <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -4017,7 +4018,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       '<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;color:#f4f4f0">Metadata visual</h3><button id="visualMetaClose" class="btn-secondary">Cerrar</button></div>' +
       '<p style="color:#888;font-size:12px">Identidad protegida · ' + _escH(exercise.name || '') + (exercise.prescriptionExerciseId ? ' · PID: ' + _escH(exercise.prescriptionExerciseId) : '') + '</p>' +
       '<label>Sede<select id="vm-gym" class="input-field w-full">' + gyms.map(function (g) { return '<option>' + _escH(g) + '</option>'; }).join('') + '</select></label>' +
-      '<label>Equipo<input id="vm-equipment" class="input-field w-full"></label>' +
+      '<label>Equipo<input id="vm-equipment" list="vm-equipment-options" class="input-field w-full"><datalist id="vm-equipment-options">' + ((window.VDSEN_EXERCISE_VISUAL_CATALOG && window.VDSEN_EXERCISE_VISUAL_CATALOG.functionalEquipment) || []).map(function (x) { return '<option value="' + _escH(x.name) + '">'; }).join('') + '</datalist></label>' +
       '<label>Asset local<input id="vm-asset" class="input-field w-full" placeholder="assets/exercises/pending-license.svg"></label>' +
       '<label>URL HTTPS<input id="vm-image" class="input-field w-full" placeholder="https://..."></label>' +
       '<label>Objetivo técnico<textarea id="vm-objective" class="input-field w-full" rows="2"></textarea></label>' +
