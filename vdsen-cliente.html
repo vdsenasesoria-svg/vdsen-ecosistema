@@ -542,6 +542,10 @@ function _catalogEntryMatchesGym(entry) {
     _normalizeExerciseCatalogKey(entryGym) === _normalizeExerciseCatalogKey(ACTIVE_GYM_NAME);
 }
 
+function _catalogEntryHasGymScope(entry) {
+  return !!(entry && (entry.gymId || entry.gym || entry.site || entry.sede));
+}
+
 function _getActiveVisualCatalogEntries() {
   var visual = window.VDSEN_EXERCISE_VISUAL_CATALOG;
   var gyms = visual && visual.gyms ? visual.gyms : {};
@@ -574,13 +578,15 @@ function _decorateResolvedExerciseCatalog(entry, exerciseName, source, identityL
 function _findExactCatalogByName(exerciseName) {
   var key = _normalizeExerciseCatalogKey(exerciseName);
   if (!key) return null;
-  var firestoreMatches = EXERCISE_CATALOG_ENTRIES.filter(function(entry) {
-    if (!_catalogEntryMatchesGym(entry)) return false;
+  var firestoreExact = EXERCISE_CATALOG_ENTRIES.filter(function(entry) {
     var names = [entry.name, entry.exerciseName].concat(Array.isArray(entry.aliases) ? entry.aliases : []);
     return names.some(function(name){ return _normalizeExerciseCatalogKey(name) === key; });
   });
-  if (firestoreMatches.length === 1) return _decorateResolvedExerciseCatalog(firestoreMatches[0], exerciseName, 'firestore', 'legacy_exact');
-  if (firestoreMatches.length > 1) return null; // ambiguo → no elegir por posición/orden de lectura
+  var firestoreSiteMatches = firestoreExact.filter(function(entry) {
+    return _catalogEntryHasGymScope(entry) && _catalogEntryMatchesGym(entry);
+  });
+  if (firestoreSiteMatches.length === 1) return _decorateResolvedExerciseCatalog(firestoreSiteMatches[0], exerciseName, 'firestore_site', 'legacy_exact');
+  if (firestoreSiteMatches.length > 1) return null; // ambiguo dentro de la misma fuente específica
 
   var siteEntries = _getActiveVisualCatalogEntries();
   var siteMatches = siteEntries.filter(function(entry) {
@@ -590,6 +596,10 @@ function _findExactCatalogByName(exerciseName) {
   });
   if (siteMatches.length === 1) return _decorateResolvedExerciseCatalog(siteMatches[0], exerciseName, 'site_catalog', 'legacy_exact');
   if (siteMatches.length > 1) return null;
+
+  var firestoreGenericMatches = firestoreExact.filter(function(entry) { return !_catalogEntryHasGymScope(entry); });
+  if (firestoreGenericMatches.length === 1) return _decorateResolvedExerciseCatalog(firestoreGenericMatches[0], exerciseName, 'firestore_coach', 'legacy_exact');
+  if (firestoreGenericMatches.length > 1) return null;
 
   var built = null;
   if (typeof BUILTIN_CATALOG !== 'undefined') {
