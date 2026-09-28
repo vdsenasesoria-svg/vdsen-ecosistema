@@ -496,6 +496,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var
 let USER = null;
 let PLAN = null;
 let LOGS = {};         // { "semana_dia_ejercicio": {carga, reps, rir} }
+var _logsAuthorityUpdatedAt = 0; // version of the root/meso entries currently in LOGS
 var LOGS_BY_WEEK = { log: {}, progrec: {} }; // derived index: { w: [key1,...] } — rebuilt on bulk load, appended on writes
 let CURRENT_WEEK = 1;
 var REAL_WEEK = 1;     // semana real de entrenamiento (no cambia al navegar)
@@ -1498,6 +1499,7 @@ async function doLogout() {
   _clearLiveListeners();
   await FB.signOut(FB.auth);
   PLAN = null; LOGS = {};
+  _logsAuthorityUpdatedAt = 0;
   ACTIVE_PLAN_ID = null;
   LOGS_BY_WEEK = { log: {}, progrec: {} };
   DIA_ACTIVO = 0; EJ_ACTIVO = 0; _EJERCICIOS_DIA = [];
@@ -1979,7 +1981,8 @@ async function loadPlan(user) {
     const _pfMeso = activePlanId
       ? FB.getDoc(FB.doc(FB.db, 'logs', user.uid, 'mesos', activePlanId)).catch(function(){ return null; })
       : Promise.resolve(null);
-    const [_exSnapPF, _fichaSnapPF, _mesoSnapPF] = await Promise.all([_pfExercises, _pfFicha, _pfMeso]);
+    const _pfRoot = FB.getDoc(FB.doc(FB.db, 'logs', user.uid)).catch(function(){ return null; });
+    const [_exSnapPF, _fichaSnapPF, _mesoSnapPF, _rootSnapPF] = await Promise.all([_pfExercises, _pfFicha, _pfMeso, _pfRoot]);
     if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
 
     var _fichaData = (_fichaSnapPF && typeof _fichaSnapPF.exists === 'function' && _fichaSnapPF.exists())
@@ -2040,15 +2043,18 @@ async function loadPlan(user) {
 
     // Cargar logs (no-fatal)
     ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual
+    _logsAuthorityUpdatedAt = 0;
     var _showBitacoraInfo = false;
     try {
-      // T1 new-first read (prefetched in parallel above): meso log → fallback a legacy si no existe.
+      // Both paths are read: a successful root write can be newer than a failed meso mirror.
       var _mesoSnap = (_mesoSnapPF && typeof _mesoSnapPF.exists === 'function') ? _mesoSnapPF : null;
       const logRef = FB.doc(FB.db, 'logs', user.uid);
-      const logSnap = (_mesoSnap && _mesoSnap.exists()) ? _mesoSnap : await FB.getDoc(logRef);
+      const rootSnap = _rootSnapPF || ((!_mesoSnap || !_mesoSnap.exists()) ? await FB.getDoc(logRef) : null);
       if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
-      if (logSnap.exists()) {
-        var logData = logSnap.data();
+      var logData = _selectLogAuthority(_mesoSnap && _mesoSnap.exists() ? _mesoSnap.data() : null,
+        rootSnap && rootSnap.exists() ? rootSnap.data() : null, activePlanId);
+      if (logData) {
+        _logsAuthorityUpdatedAt = Number(logData.updatedAt) || 0;
         // Preservar siempre el historial de pesos (sobrevive a cambio de plan)
         if (logData.exerciseHistory) EXERCISE_HISTORY = logData.exerciseHistory;
         if (logData.exerciseUnits)   EXERCISE_UNITS   = logData.exerciseUnits;
@@ -2220,7 +2226,9 @@ async function loadPlan(user) {
         if (_readShadowQueue().some(function(item) { return item.uid === user.uid && item.planId === ACTIVE_PLAN_ID; }))
           _drainShadowProgression().catch(function(e) { console.warn('Shadow recovery:', e); });
         var ts = d.updatedAt || 0;
-        if (_logsLastSeen && ts <= _logsLastSeen + 500) return; // ignoramos el eco propio
+        var newerRoot = _selectLogAuthority({ planId: ACTIVE_PLAN_ID, updatedAt: _logsAuthorityUpdatedAt },
+          d, ACTIVE_PLAN_ID) === d;
+        if (_logsLastSeen && ts <= _logsLastSeen + 500 && !newerRoot) return; // ignoramos el eco propio
         _logsLastSeen = ts;
         // Si el update viene de otro lado y la semana o las entries cambiaron,
         // refrescar UI sin recargar la página.
@@ -2234,9 +2242,11 @@ async function loadPlan(user) {
           setTimeout(function() { location.reload(); }, 1800);
           return;
         }
-        if (newWeek !== REAL_WEEK || Math.abs(entriesCount - localCount) > 0) {
+        if (!_saveLogsTimer && _logsWriteInFlight === 0 &&
+            (newerRoot || (!ts && (newWeek !== REAL_WEEK || entriesCount !== localCount)))) {
           if (newWeek > REAL_WEEK) { REAL_WEEK = newWeek; CURRENT_WEEK = newWeek; }
           LOGS = d.entries || {};
+          _logsAuthorityUpdatedAt = Number(d.updatedAt) || 0;
           _rebuildLogsByWeek();
           if (d.exerciseUnits)   EXERCISE_UNITS   = d.exerciseUnits;
           if (d.exerciseHistory) EXERCISE_HISTORY = d.exerciseHistory;
@@ -4361,11 +4371,15 @@ async function _refreshLogsFromFirestore(reason) {
     // Si Firestore tiene una semana mayor → otro dispositivo avanzó. Adoptarla.
     if (fsWeek > REAL_WEEK) { REAL_WEEK = fsWeek; CURRENT_WEEK = fsWeek; }
     // Si la cantidad de entries cambió significativamente, recargar LOGS en memoria
-    var entriesChanged = Object.keys(fsEntries).length !== Object.keys(LOGS || {}).length;
-    if (entriesChanged) { LOGS = fsEntries; _rebuildLogsByWeek(); }
+    var newerRoot = _selectLogAuthority({ planId: ACTIVE_PLAN_ID, updatedAt: _logsAuthorityUpdatedAt },
+      data, ACTIVE_PLAN_ID) === data;
+    var entriesChanged = newerRoot || (!data.updatedAt && Object.keys(fsEntries).length !== Object.keys(LOGS || {}).length);
+    if (entriesChanged && !_saveLogsTimer) {
+      LOGS = fsEntries; _logsAuthorityUpdatedAt = Number(data.updatedAt) || 0; _rebuildLogsByWeek();
+    }
     if (data.exerciseUnits)   EXERCISE_UNITS   = data.exerciseUnits;
     if (data.exerciseHistory) EXERCISE_HISTORY = data.exerciseHistory;
-    if (weekChanged || entriesChanged) {
+    if (weekChanged || (entriesChanged && !_saveLogsTimer)) {
       try { renderEntrenamiento(); } catch(e){}
     }
     // Resumen siempre re-renderizado: ediciones in-place (mismo key, distinto valor) no cambian count
@@ -10403,6 +10417,15 @@ async function saveLogs() {
   try { localStorage.setItem('vdsen_logs_backup', JSON.stringify({entries:LOGS,currentWeek:REAL_WEEK,planId:ACTIVE_PLAN_ID,exerciseUnits:EXERCISE_UNITS,exerciseHistory:EXERCISE_HISTORY,ts:Date.now()})); } catch(le){}
 }
 
+// Same _doSaveLogs payload/updatedAt is written to both paths. If the mirror
+// write fails, the newer root document is the saved execution for this plan.
+function _selectLogAuthority(mesoData, rootData, planId) {
+  if (!mesoData) return rootData || null;
+  if (!rootData || (rootData.planId && rootData.planId !== planId)) return mesoData;
+  if (mesoData.planId && mesoData.planId !== planId) return rootData;
+  return Number(rootData.updatedAt || 0) > Number(mesoData.updatedAt || 0) ? rootData : mesoData;
+}
+
 async function _doSaveLogs() {
   if (!USER || !FB) return false;
   var _uidAtStart = USER.uid;
@@ -10428,6 +10451,7 @@ async function _doSaveLogs() {
     const ref = FB.doc(FB.db, 'logs', _uidAtStart);
     await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });
     if (!USER || USER.uid !== _uidAtStart) return false;
+    if (ACTIVE_PLAN_ID === _payload.planId) _logsAuthorityUpdatedAt = _payload.updatedAt;
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';
@@ -10544,17 +10568,21 @@ async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) 
     }
     var mesoSource = (mesoData.entries || {})[progKey];
     var rootSource = (rootData.entries || {})[progKey];
-    var sourceMatches = matchesSource(mesoSource);
-    var repairMirror = !sourceMatches && matchesSource(rootSource) &&
-      (!mesoSource || !mesoSource.calculatedAt || String(mesoSource.calculatedAt) < String(parentRec.calculatedAt));
-    // Root accepted the session but the mirror did not: repair the exact
-    // source inside the audit transaction, never record a false STALE.
-    if (repairMirror) sourceMatches = true;
-    // Neither path has reached this session yet. This is pending sync, not a
-    // terminal source change; a later reconnect/reentry may complete it.
-    if (!sourceMatches && !repairMirror &&
-        (!mesoSource || String(mesoSource.calculatedAt || '') < String(parentRec.calculatedAt)) &&
-        (!rootSource || String(rootSource.calculatedAt || '') < String(parentRec.calculatedAt))) return false;
+    var mesoAt = Date.parse(mesoSource && mesoSource.calculatedAt) || 0;
+    var rootAt = Date.parse(rootSource && rootSource.calculatedAt) || 0;
+    var rootLogNewer = Number(rootData.updatedAt || 0) > Number(mesoData.updatedAt || 0);
+    // A newer root log may have removed this source; never revive it from an old mirror.
+    if (rootLogNewer && (!rootSource || !Array.isArray(rootSource.recommendations) || rootAt < mesoAt)) return false;
+    // With equal log versions, conflicting evidence at the same timestamp is ambiguous.
+    if (!rootLogNewer && rootAt && rootAt === mesoAt &&
+        JSON.stringify(rootSource.recommendations) !== JSON.stringify(mesoSource.recommendations)) return false;
+    var rootNewer = rootLogNewer || rootAt > mesoAt;
+    var authoritativeSource = rootNewer ? rootSource : mesoSource;
+    var sourceMatches = matchesSource(authoritativeSource);
+    // A future parent may simply be waiting for its cached log write to sync.
+    if (!sourceMatches && Math.max(rootAt, mesoAt) < (Date.parse(parentRec.calculatedAt) || 0)) return false;
+    var repairMirror = rootNewer && Array.isArray(rootSource && rootSource.recommendations);
+    if (rootNewer && !repairMirror) return false;
     var records = Object.assign({}, mesoData.progressionApplications || {});
     var at = new Date().toISOString();
     parentRec.recommendations.forEach(function(rec) {
@@ -10575,6 +10603,8 @@ async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) 
         if (prior.planId !== planId || prior.clientId !== uid ||
             prior.prescriptionExerciseId !== candidate.prescriptionExerciseId ||
             prior.source.calculatedAt !== candidate.source.calculatedAt) throw new Error('SHADOW_KEY_COLLISION');
+        if (prior.state === shadow.STATES.PENDING && candidate.state === shadow.STATES.STALE)
+          records[candidate.key] = shadow.markStale(prior, candidate.reasonCode, at);
         return;
       }
       Object.keys(records).forEach(function(key) {
@@ -10587,10 +10617,14 @@ async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) 
       records[candidate.key] = candidate;
     });
     var summary = shadow.summarize(records, planId);
-    if (repairMirror) tx.set(mesoRef, { planId: planId,
-      entries: Object.assign({}, mesoData.entries || {}, { [progKey]: rootSource }),
-      progressionApplications: records, progressionApplicationSummary: summary },
-      { mergeFields: ['planId', 'entries', 'progressionApplications', 'progressionApplicationSummary'] });
+    if (repairMirror) {
+      var copyRootEntries = Number(rootData.updatedAt || 0) > Number(mesoData.updatedAt || 0);
+      var repairPayload = { planId: planId,
+        entries: copyRootEntries ? rootData.entries : Object.assign({}, mesoData.entries || {}, { [progKey]: rootSource }),
+        progressionApplications: records, progressionApplicationSummary: summary };
+      if (copyRootEntries) repairPayload.updatedAt = rootData.updatedAt;
+      tx.set(mesoRef, repairPayload, { mergeFields: Object.keys(repairPayload) });
+    }
     else tx.set(mesoRef, { progressionApplications: records, progressionApplicationSummary: summary }, { merge: true });
     tx.set(rootRef, { progressionApplicationSummary: summary }, { merge: true });
     return true;
@@ -14634,6 +14668,7 @@ async function submitPostSession() {
     }
     if (_recForShadow && _uidAtPostStart && _planAtPostStart) {
       var _shadowQueued = _queueShadowProgression(_uidAtPostStart, _planAtPostStart, _weekAtPostStart, di, _recForShadow);
+      var _noDurableRetry = '⚠ Evaluación AUTO no registrada: no se pudo guardar un reintento local. Avisa a tu coach.';
       try {
         var _shadowSaved = await _recordShadowProgression(_uidAtPostStart, _planAtPostStart, _weekAtPostStart, di, _recForShadow);
         if (_shadowSaved && _shadowQueued) {
@@ -14641,11 +14676,11 @@ async function submitPostSession() {
           _writeShadowQueue(_readShadowQueue().filter(function(item) { return item.key !== _shadowKey; }));
         }
         if (!_shadowSaved && USER && USER.uid === _uidAtPostStart && ACTIVE_PLAN_ID === _planAtPostStart)
-          showToast('⚠ No se registró la evaluación AUTO; revisa la sincronización.', true);
+          showToast(_shadowQueued ? '⚠ Evaluación AUTO pendiente de sincronización.' : _noDurableRetry, true);
       } catch(shadowErr) {
         console.warn('Shadow progression audit failed:', shadowErr);
         if (USER && USER.uid === _uidAtPostStart && ACTIVE_PLAN_ID === _planAtPostStart)
-          showToast('⚠ Registro AUTO pendiente; revisa conexión y reintenta la sincronización.', true);
+          showToast(_shadowQueued ? '⚠ Evaluación AUTO pendiente de sincronización.' : _noDurableRetry, true);
       }
     }
     if (CURRENT_WEEK === _weekAtPostStart && DIA_ACTIVO === _dayAtPostStart) {

@@ -94,6 +94,7 @@ function clientContext(f) {
   vm.createContext(context);
   ['_getSessionCompletionState', '_sessionHasRealLoggedSets', '_getSessionLifecycleState']
     .forEach(name => vm.runInContext(functionSource(clientHtml, name), context));
+  vm.runInContext(functionSource(clientHtml, '_selectLogAuthority'), context);
   vm.runInContext(functionSource(clientHtml, '_doSaveLogs'), context);
   vm.runInContext(functionSource(clientHtml, '_recordShadowProgression'), context);
   return context;
@@ -152,6 +153,41 @@ test('root-only save repairs a lagging meso source atomically without false STAL
   const meso = (await getDoc(mesoRef)).data(), rootLog = (await getDoc(rootRef)).data();
   assert.deepEqual(meso.entries.progrec_1_0, f.parent);
   assert.equal(Object.values(meso.progressionApplications)[0].state, 'PENDING');
+  assert.deepEqual(rootLog.progressionApplicationSummary, meso.progressionApplicationSummary);
+});
+
+test('reentry selects newer root; repair and subsequent save retain it', { timeout: 30000 }, async () => {
+  const f = await fixture(), ctx = clientContext(f);
+  const mesoRef = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId);
+  const rootRef = doc(f.client.db, 'logs', f.client.uid);
+  const old = { calculatedAt: new Date(Date.parse(f.parent.calculatedAt) - 30000).toISOString(),
+    recommendations: f.parent.recommendations };
+  await adminDb.doc(mesoRef.path).set({ planId: f.planId,
+    entries: { progrec_1_0: old, done_1_0: { ts: 100 } }, updatedAt: 100 });
+  await adminDb.doc(rootRef.path).set({ planId: f.planId,
+    entries: { progrec_1_0: f.parent, done_1_0: { ts: 200 } }, updatedAt: 200 });
+  const mesoBefore = (await getDoc(mesoRef)).data(), rootBefore = (await getDoc(rootRef)).data();
+  ctx.LOGS = ctx._selectLogAuthority(mesoBefore, rootBefore, f.planId).entries;
+  assert.equal(ctx.LOGS.progrec_1_0.calculatedAt, f.parent.calculatedAt);
+  assert.equal(await ctx._recordShadowProgression(f.client.uid, f.planId, 1, 0, f.parent), true);
+  assert.deepEqual((await getDoc(mesoRef)).data().entries, rootBefore.entries);
+  assert.equal(await ctx._doSaveLogs(), true);
+  assert.deepEqual((await getDoc(mesoRef)).data().entries.progrec_1_0, f.parent);
+  assert.deepEqual((await getDoc(rootRef)).data().entries.progrec_1_0, f.parent);
+});
+
+test('older queued evidence cannot become PENDING when root execution is newer', { timeout: 30000 }, async () => {
+  const f = await fixture(), ctx = clientContext(f);
+  const mesoRef = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId);
+  const rootRef = doc(f.client.db, 'logs', f.client.uid);
+  const old = { calculatedAt: new Date(Date.parse(f.parent.calculatedAt) - 30000).toISOString(),
+    recommendations: f.parent.recommendations };
+  await adminDb.doc(mesoRef.path).set({ entries: { progrec_1_0: old } }, { merge: true });
+  assert.equal(await ctx._recordShadowProgression(f.client.uid, f.planId, 1, 0, old), true);
+  const meso = (await getDoc(mesoRef)).data(), rootLog = (await getDoc(rootRef)).data();
+  assert.deepEqual(meso.entries.progrec_1_0, f.parent);
+  assert.equal(Object.values(meso.progressionApplications)[0].state, 'STALE');
+  assert.equal(rootLog.progressionApplicationSummary.autoCount, 0);
   assert.deepEqual(rootLog.progressionApplicationSummary, meso.progressionApplicationSummary);
 });
 
