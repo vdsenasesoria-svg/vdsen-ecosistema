@@ -19,7 +19,8 @@ const base = { clientId: 'client-A', planId: 'plan-A', activePlanId: 'plan-A', p
   week: 1, dayIndex: 0, calculatedAt: at, recommendation: rec, sourceMatches: true, sourcePidCount: 1 };
 
 function functionSource(source, name) {
-  const start = source.indexOf('async function ' + name + '(');
+  let start = source.indexOf('async function ' + name + '(');
+  if (start < 0) start = source.indexOf('function ' + name + '(');
   assert.ok(start >= 0, name + ' exists');
   let depth = 0, quote = null, escaped = false, body = false;
   for (let i = source.indexOf('{', start); i < source.length; i++) {
@@ -88,6 +89,8 @@ test('client transaction persists authority and Monitor summary atomically; retr
   const context = { window: { VDSEN_AUTO_APPLY_SHADOW: shadow }, USER: { uid: 'client-A' },
     ACTIVE_PLAN_ID: 'plan-A', FB: { db: {}, doc: (_db, ...parts) => parts.join('/'), runTransaction: async (_db, fn) => fn(tx) } };
   vm.createContext(context);
+  ['_getSessionCompletionState', '_sessionHasRealLoggedSets', '_getSessionLifecycleState']
+    .forEach(name => vm.runInContext(functionSource(client, name), context));
   vm.runInContext(functionSource(client, '_recordShadowProgression'), context);
   assert.equal(await context._recordShadowProgression('client-A', 'plan-A', 1, 0, parent), true);
   const meso = docs.get('logs/client-A/mesos/plan-A');

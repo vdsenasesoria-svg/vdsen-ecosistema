@@ -72,6 +72,7 @@ function _updateOfflineBanner() {
   if (b) b.style.display = navigator.onLine ? 'none' : 'block';
 }
 window.addEventListener('online',  _updateOfflineBanner);
+window.addEventListener('online', function() { _drainShadowProgression().catch(function(e) { console.warn('Shadow recovery:', e); }); });
 window.addEventListener('offline', _updateOfflineBanner);
 window.addEventListener('load',    _updateOfflineBanner);
 </script>
@@ -1522,6 +1523,7 @@ async function doLogout() {
   try {
     localStorage.removeItem('vdsen_active_plan_id'); // R8-GAP-01: avoid stale plan id bleeding to next user on shared device
     localStorage.removeItem('vdsen_logs_backup');     // T129: contains previous user's LOGS/exercise data
+    localStorage.removeItem('vdsen_shadow_progression_queue'); // audit recovery contains user/plan evidence
     localStorage.removeItem('vdsen_menu_custom');     // T129: previous user's custom nutrition entries
     localStorage.removeItem('vdsen_last_dia');
   } catch(e){}
@@ -2120,6 +2122,8 @@ async function loadPlan(user) {
     DIA_ACTIVO = _rDia;
     CURRENT_WEEK = REAL_WEEK;
     goTab(_rTab);
+    // A queued audit belongs to the persisted session, not to this page load.
+    _drainShadowProgression().catch(function(e) { console.warn('Shadow recovery:', e); });
     // Restaurar rest timer si un page reload interrumpió el descanso
     setTimeout(function() {
       var _savedEnd = parseInt(localStorage.getItem('vdsen_restEnd') || '0');
@@ -2213,6 +2217,8 @@ async function loadPlan(user) {
       _liveUnsubLogs = FB.onSnapshot(FB.doc(FB.db, 'logs', user.uid), function(snap) {
         if (!snap.exists()) return;
         var d = snap.data();
+        if (_readShadowQueue().some(function(item) { return item.uid === user.uid && item.planId === ACTIVE_PLAN_ID; }))
+          _drainShadowProgression().catch(function(e) { console.warn('Shadow recovery:', e); });
         var ts = d.updatedAt || 0;
         if (_logsLastSeen && ts <= _logsLastSeen + 500) return; // ignoramos el eco propio
         _logsLastSeen = ts;
@@ -10451,6 +10457,58 @@ async function _doSaveLogs() {
   }
 }
 
+// A bounded, user/plan-scoped recovery intent for a session already saved in
+// logs. Retain failed audits across reloads; a transaction rechecks the source.
+function _readShadowQueue() {
+  try {
+    var queue = JSON.parse(localStorage.getItem('vdsen_shadow_progression_queue') || '[]');
+    if (!Array.isArray(queue)) return [];
+    return queue.filter(function(item) { return item && item.queuedAt &&
+      Date.now() - item.queuedAt < 30 * 86400000; }).slice(-32);
+  } catch(e) { return []; }
+}
+
+function _writeShadowQueue(queue) {
+  try { localStorage.setItem('vdsen_shadow_progression_queue', JSON.stringify(queue.slice(-32))); return true; }
+  catch(e) { console.warn('Shadow recovery queue unavailable:', e); return false; }
+}
+
+function _queueShadowProgression(uid, planId, week, dayIndex, parentRec) {
+  if (!uid || !planId || !parentRec || !parentRec.calculatedAt ||
+      !Array.isArray(parentRec.recommendations) || !parentRec.recommendations.length) return false;
+  var queue = _readShadowQueue();
+  var key = JSON.stringify([uid, planId, week, dayIndex, parentRec.calculatedAt]);
+  if (!queue.some(function(item) { return item.key === key; }))
+    queue.push({ key: key, uid: uid, planId: planId, week: week, dayIndex: dayIndex,
+      parentRec: parentRec, queuedAt: Date.now() });
+  return _writeShadowQueue(queue);
+}
+
+async function _drainShadowProgression() {
+  if (window._shadowDrainInFlight) { window._shadowDrainRequested = true; return false; }
+  if (!FB || !USER || !ACTIVE_PLAN_ID) return false;
+  window._shadowDrainInFlight = true;
+  try {
+    var uid = USER.uid, planId = ACTIVE_PLAN_ID;
+    var queue = _readShadowQueue().filter(function(item) { return item.uid === uid && item.planId === planId; });
+    for (var i = 0; i < queue.length; i++) {
+      if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) break;
+      var item = queue[i];
+      try {
+        var recorded = await _recordShadowProgression(uid, planId, item.week, item.dayIndex, item.parentRec);
+        if (recorded) _writeShadowQueue(_readShadowQueue().filter(function(saved) { return saved.key !== item.key; }));
+      } catch(e) { console.warn('Shadow recovery deferred:', e); break; }
+    }
+    return true;
+  } finally {
+    window._shadowDrainInFlight = false;
+    if (window._shadowDrainRequested) {
+      window._shadowDrainRequested = false;
+      Promise.resolve().then(_drainShadowProgression).catch(function(e) { console.warn('Shadow recovery:', e); });
+    }
+  }
+}
+
 // Phase 1: audit only. The mesocycle log owns the records; the legacy log
 // receives their compact Monitor projection in the same transaction.
 async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) {
@@ -10468,19 +10526,35 @@ async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) 
     var planSnap = await tx.get(planRef);
     var mesoSnap = await tx.get(mesoRef);
     var rootSnap = await tx.get(rootRef);
-    if (!clientSnap.exists() || !planSnap.exists() || !mesoSnap.exists() || !rootSnap.exists()) return false;
-    var clientData = clientSnap.data(), planData = planSnap.data(), mesoData = mesoSnap.data();
+    if (!clientSnap.exists() || !planSnap.exists() || !rootSnap.exists()) return false;
+    var clientData = clientSnap.data(), planData = planSnap.data(), mesoData = mesoSnap.exists() ? mesoSnap.data() : {};
+    var rootData = rootSnap.data();
     if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId || clientData.activePlanId !== planId ||
-        mesoData.planId !== planId || rootSnap.data().planId !== planId) return false;
-    var source = (mesoData.entries || {})['progrec_' + week + '_' + dayIndex];
-    var sourceMatches = !!(source && source.calculatedAt === parentRec.calculatedAt &&
-      Array.isArray(source.recommendations) && source.recommendations.length === parentRec.recommendations.length &&
-      source.recommendations.every(function(r, index) {
+        (mesoSnap.exists() && mesoData.planId !== planId) || rootData.planId !== planId) return false;
+    var progKey = 'progrec_' + week + '_' + dayIndex;
+    function matchesSource(source) {
+      return !!(source && source.calculatedAt === parentRec.calculatedAt &&
+        Array.isArray(source.recommendations) && source.recommendations.length === parentRec.recommendations.length &&
+        source.recommendations.every(function(r, index) {
         var scope = { clientId: uid, planId: planId, week: week, dayIndex: dayIndex,
           calculatedAt: parentRec.calculatedAt };
         return shadow.idempotencyKey(Object.assign({}, scope, { recommendation: r })) ===
           shadow.idempotencyKey(Object.assign({}, scope, { recommendation: parentRec.recommendations[index] }));
-      }));
+        }));
+    }
+    var mesoSource = (mesoData.entries || {})[progKey];
+    var rootSource = (rootData.entries || {})[progKey];
+    var sourceMatches = matchesSource(mesoSource);
+    var repairMirror = !sourceMatches && matchesSource(rootSource) &&
+      (!mesoSource || !mesoSource.calculatedAt || String(mesoSource.calculatedAt) < String(parentRec.calculatedAt));
+    // Root accepted the session but the mirror did not: repair the exact
+    // source inside the audit transaction, never record a false STALE.
+    if (repairMirror) sourceMatches = true;
+    // Neither path has reached this session yet. This is pending sync, not a
+    // terminal source change; a later reconnect/reentry may complete it.
+    if (!sourceMatches && !repairMirror &&
+        (!mesoSource || String(mesoSource.calculatedAt || '') < String(parentRec.calculatedAt)) &&
+        (!rootSource || String(rootSource.calculatedAt || '') < String(parentRec.calculatedAt))) return false;
     var records = Object.assign({}, mesoData.progressionApplications || {});
     var at = new Date().toISOString();
     parentRec.recommendations.forEach(function(rec) {
@@ -10492,6 +10566,10 @@ async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) 
         sourcePidCount: rec.prescriptionExerciseId
           ? parentRec.recommendations.filter(function(r) { return r && r.prescriptionExerciseId === rec.prescriptionExerciseId; }).length : 0 };
       var candidate = shadow.buildRecord(input, at);
+      if (candidate.state === shadow.STATES.PENDING && candidate.nextExposure &&
+          (_getSessionLifecycleState(mesoData.entries, candidate.nextExposure.week, candidate.nextExposure.dayIndex) !== 'NOT_STARTED' ||
+           _getSessionLifecycleState(rootData.entries, candidate.nextExposure.week, candidate.nextExposure.dayIndex) !== 'NOT_STARTED'))
+        candidate = shadow.markStale(candidate, shadow.REASONS.EXPOSURE_PASSED, at);
       if (records[candidate.key]) {
         var prior = records[candidate.key];
         if (prior.planId !== planId || prior.clientId !== uid ||
@@ -10509,7 +10587,11 @@ async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) 
       records[candidate.key] = candidate;
     });
     var summary = shadow.summarize(records, planId);
-    tx.set(mesoRef, { progressionApplications: records, progressionApplicationSummary: summary }, { merge: true });
+    if (repairMirror) tx.set(mesoRef, { planId: planId,
+      entries: Object.assign({}, mesoData.entries || {}, { [progKey]: rootSource }),
+      progressionApplications: records, progressionApplicationSummary: summary },
+      { mergeFields: ['planId', 'entries', 'progressionApplications', 'progressionApplicationSummary'] });
+    else tx.set(mesoRef, { progressionApplications: records, progressionApplicationSummary: summary }, { merge: true });
     tx.set(rootRef, { progressionApplicationSummary: summary }, { merge: true });
     return true;
   });
@@ -14551,8 +14633,13 @@ async function submitPostSession() {
       return false;
     }
     if (_recForShadow && _uidAtPostStart && _planAtPostStart) {
+      var _shadowQueued = _queueShadowProgression(_uidAtPostStart, _planAtPostStart, _weekAtPostStart, di, _recForShadow);
       try {
         var _shadowSaved = await _recordShadowProgression(_uidAtPostStart, _planAtPostStart, _weekAtPostStart, di, _recForShadow);
+        if (_shadowSaved && _shadowQueued) {
+          var _shadowKey = JSON.stringify([_uidAtPostStart, _planAtPostStart, _weekAtPostStart, di, _recForShadow.calculatedAt]);
+          _writeShadowQueue(_readShadowQueue().filter(function(item) { return item.key !== _shadowKey; }));
+        }
         if (!_shadowSaved && USER && USER.uid === _uidAtPostStart && ACTIVE_PLAN_ID === _planAtPostStart)
           showToast('⚠ No se registró la evaluación AUTO; revisa la sincronización.', true);
       } catch(shadowErr) {

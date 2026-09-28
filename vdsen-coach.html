@@ -19202,10 +19202,7 @@ El esfuerzo no es negociable.
     }
     var match = _resolveExerciseRowId(exerciseName, _activePlanCache, pid || '', dayIndex);
     if (!match) return;
-    var row = match.pid
-      ? document.querySelector('[data-prescription-id="' + match.pid.replace(/</g,'&lt;').replace(/"/g,'&quot;') + '"]')
-      : null;
-    if (!row) row = document.getElementById('exrow_' + match.di + '_' + match.ei);
+    var row = document.getElementById('exrow_' + match.di + '_' + match.ei);
     if (!row) return;
     setTimeout(function() {
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
