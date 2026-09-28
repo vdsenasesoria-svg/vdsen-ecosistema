@@ -5397,7 +5397,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   }
   // Solo reduce_sets puede ajustar series en el renderer (conservador).
   // add_sets y deload son candidatos para el coach — no mutan el plan visual.
-  if (progrec && progrec.newSets && progrec.action === 'reduce_sets') {
+  if (_isFreshPidProgRec(progrec, ej.prescriptionExerciseId) && progrec.newSets && progrec.action === 'reduce_sets') {
     numSeries = Math.max(progrec.newSets, _doneCount);
   }
 
@@ -7036,8 +7036,8 @@ function markExpressSSDone(di, ssMembers) {
     var _ejIdx = _EJERCICIOS_DIA && _EJERCICIOS_DIA[idx] ? _EJERCICIOS_DIA[idx] : null;
     var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
     // Progrec puede haber ajustado el nº de series
-    var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '');
-    if (_pcRec && _pcRec.newSets && _pcRec.action === 'reduce_sets') numSets = _pcRec.newSets;
+    var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '', _ejIdx && _ejIdx.prescriptionExerciseId);
+    if (_isFreshPidProgRec(_pcRec, _ejIdx && _ejIdx.prescriptionExerciseId) && _pcRec.newSets && _pcRec.action === 'reduce_sets') numSets = _pcRec.newSets;
     LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:carga, reps:String(reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:unit, done:true, ts:now };
     for (var s = 0; s < numSets; s++) {
       var _ssKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s;
@@ -7182,8 +7182,8 @@ function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
     var lastSD = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+round+'_m'+i] || {};
     var _ejIdx = (_EJERCICIOS_DIA || [])[idx] || null;
     var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
-    var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '');
-    if (_pcRec && _pcRec.newSets && _pcRec.action === 'reduce_sets') numSets = _pcRec.newSets;
+    var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '', _ejIdx && _ejIdx.prescriptionExerciseId);
+    if (_isFreshPidProgRec(_pcRec, _ejIdx && _ejIdx.prescriptionExerciseId) && _pcRec.newSets && _pcRec.action === 'reduce_sets') numSets = _pcRec.newSets;
     LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:lastSD.carga||'0', reps:String(lastSD.reps||reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:lastSD.unit||unit_i, done:true, ts:now };
     for (var s = 0; s < numSets; s++) {
       var sdS = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+s+'_m'+i] || lastSD;
@@ -8178,7 +8178,7 @@ function buildBoostcampExercise(ej, di, ei) {
   var _isFirstOfPattern = (ei === 0) && (_wuPatternKey !== 'Core') && (_wuPatternKey !== 'Cardio');
 
   var wuRefLoad = 0;
-  var progRecForWu = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
+  var progRecForWu = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName, ej.prescriptionExerciseId);
 
   // ── Determinar numSeries (misma lógica de 3 pasos que _buildExCard) ──
   // Paso 1: continuidad desde semana anterior
@@ -8197,7 +8197,7 @@ function buildBoostcampExercise(ej, di, ei) {
         LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_scBC].done) _dcBC = _scBC + 1;
   }
   // Solo reduce_sets puede ajustar series en el renderer (conservador).
-  if (progRecForWu && progRecForWu.newSets && progRecForWu.action === 'reduce_sets') {
+  if (_isFreshPidProgRec(progRecForWu, ej.prescriptionExerciseId) && progRecForWu.newSets && progRecForWu.action === 'reduce_sets') {
     numSeries = Math.max(progRecForWu.newSets, _dcBC);
   }
   // Paso 3: nunca ocultar sets ya registrados
@@ -8846,11 +8846,11 @@ function _maybeSuggestExtraSet(di, ei, si) {
     for (var _sc = 0; _sc < 12; _sc++) {
       if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
     }
-    var progrec = _getProgRecForExercise(di, ei, exName);
+    var progrec = _getProgRecForExercise(di, ei, exName, ej.prescriptionExerciseId);
     // Ninguna recomendación de progresión modifica el plan activo automáticamente.
     // Solo reduce_sets puede ajustar series en el renderer (seguridad conservadora).
     // add_sets y deload son candidatos: el coach decide el cambio real de programa.
-    if (progrec && progrec.newSets && progrec.action === 'reduce_sets') {
+    if (_isFreshPidProgRec(progrec, ej.prescriptionExerciseId) && progrec.newSets && progrec.action === 'reduce_sets') {
       numSeries = Math.max(progrec.newSets, _doneCount);
     }
 
@@ -14635,6 +14635,15 @@ function _lbwTrack(k) {
 // ese resultado solo se usa para el hint informativo, nunca para mutar un
 // input automáticamente (ver _progAutoApply en _buildExCard).
 function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
+  // T470: calculatedAt is authoritative on the parent progrec_{W}_{D}
+  // document. Enrich the child only when that parent timestamp exists;
+  // legacy records without it remain non-authoritative for stale checks.
+  function _withParentCalculatedAt(parent, child) {
+    if (!child) return child;
+    return parent && parent.calculatedAt
+      ? Object.assign({}, child, { calculatedAt: parent.calculatedAt })
+      : child;
+  }
   if (prescriptionExerciseId) {
     for (var wp = CURRENT_WEEK; wp >= 1; wp--) {
       var _pidMatches = [];
@@ -14643,10 +14652,10 @@ function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
         var _progP = LOGS[_weekKeysP[kp]];
         if (!_progP || !Array.isArray(_progP.recommendations)) continue;
         _progP.recommendations.forEach(function(r) {
-          if (r && r.prescriptionExerciseId === prescriptionExerciseId) _pidMatches.push(r);
+          if (r && r.prescriptionExerciseId === prescriptionExerciseId) _pidMatches.push({ rec: r, parent: _progP });
         });
       }
-      if (_pidMatches.length === 1) return _pidMatches[0];
+      if (_pidMatches.length === 1) return _withParentCalculatedAt(_pidMatches[0].parent, _pidMatches[0].rec);
       if (_pidMatches.length > 1) return null; // ambiguous identity — do not guess
       // 0 matches this week → keep looking further back
     }
@@ -14671,7 +14680,7 @@ function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
       if (_posRec && keys[ki] === 'progrec_'+w+'_'+di) {
         if (!exName || !_posRec.exerciseName ||
             _normName(_posRec.exerciseName) === _normName(exName)) {
-          return _posRec;
+          return _withParentCalculatedAt(prog, _posRec);
         }
         // Nombre no coincide → índice apunta a otro ejercicio (reorden del coach).
         // No retornar: caemos a búsqueda por nombre.
@@ -14682,13 +14691,22 @@ function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
         for (var ri = 0; ri < prog.recommendations.length; ri++) {
           var rec = prog.recommendations[ri];
           if (rec.exerciseName && rec.exerciseName.toLowerCase().trim() === exLower) {
-            return rec;
+            return _withParentCalculatedAt(prog, rec);
           }
         }
       }
     }
   }
   return null;
+}
+
+// T471: presentation changes from reduce_sets require the same exact PID and
+// a trustworthy parent-derived timestamp used by the stale guard.
+function _isFreshPidProgRec(rec, prescriptionExerciseId) {
+  if (!rec || !prescriptionExerciseId || rec.prescriptionExerciseId !== prescriptionExerciseId) return false;
+  if (!rec.calculatedAt || isNaN(Date.parse(rec.calculatedAt))) return false;
+  if (PLAN && PLAN.updatedAt && Date.parse(PLAN.updatedAt) > Date.parse(rec.calculatedAt)) return false;
+  return true;
 }
 
 // ── FASE 6 — EXERCISE HISTORY HELPERS ──────────────────────────────────

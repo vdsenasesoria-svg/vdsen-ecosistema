@@ -18868,9 +18868,8 @@ El esfuerzo no es negociable.
   }
 
   // Pure: construye lista de ejercicios aplicables con matchConfidence.
-  // Solo include_load y reduce_load. AMBIGUOUS (2+ ejercicios con mismo nombre) y
-  // NONE (sin coincidencia) son excluidos. prescriptionExerciseId se toma del plan,
-  // no de la rec — es el anchor para re-resolución en la lectura fresca.
+  // Solo include_load y reduce_load. Las mutaciones requieren PID exacto:
+  // recomendaciones legacy sin PID quedan fuera de este flujo mutante.
   function _buildRecApplyPreview(lastRec, lastRecDay, activePlanCache) {
     if (!lastRec || !activePlanCache || !activePlanCache.days) return [];
     var dayObj = _findDayByIndex(activePlanCache.days, lastRecDay);
@@ -18879,10 +18878,10 @@ El esfuerzo no es negociable.
     var recs = Array.isArray(lastRec.recommendations) ? lastRec.recommendations : [];
     recs.forEach(function(r) {
       if (r.action !== 'increase_load' && r.action !== 'reduce_load') return;
-      var rKey = _normN20(r.exerciseName);
+      if (!r.prescriptionExerciseId) return;
       var matches = [];
       for (var j = 0; j < dayObj.exercises.length; j++) {
-        if (_normN20(dayObj.exercises[j].exerciseName || dayObj.exercises[j].nombre || '') === rKey) matches.push(j);
+        if (dayObj.exercises[j].prescriptionExerciseId === r.prescriptionExerciseId) matches.push(j);
       }
       if (matches.length !== 1) return; // NONE (0) o AMBIGUOUS (2+) → excluir
       var ei = matches[0];
@@ -18903,7 +18902,7 @@ El esfuerzo no es negociable.
         currentLoad: currentLoad,
         recommendedLoad: recommendedLoad,
         action: r.action,
-        matchConfidence: 'LEGACY',
+        matchConfidence: 'PID',
         setCount: sets.length,
         mixedCurrentLoads: mixedCurrentLoads,
         unit: unit
