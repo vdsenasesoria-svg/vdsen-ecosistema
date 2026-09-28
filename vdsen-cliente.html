@@ -9824,6 +9824,10 @@ async function _confirmSessionDone(di) {
     }
     return false; // T125-C: señala fallo al caller para suprimir el resumen de sesión
   }
+  // T465: a successfully closed session cannot retain an operative rest
+  // timer or its next-set CTA. Do this only after persistence succeeds so a
+  // failed close keeps the active session's timer intact for retry.
+  if (typeof stopRestTimer === 'function') stopRestTimer();
   if (CURRENT_WEEK !== _weekAtStart || DIA_ACTIVO !== _dayAtStart) return true;
   // T295 — same offline-honesty distinction as _showSaveOk: the write
   // above already resolved (locally-queued under persistentLocalCache()),
@@ -10021,6 +10025,9 @@ async function _endSessionAsPartial(di) {
     renderEntrenamiento();
     return;
   }
+  // T465: partial is a closed session too; clear any live rest callback only
+  // after the close is confirmed, preserving retry behavior on failure.
+  if (typeof stopRestTimer === 'function') stopRestTimer();
   _markSessionBusy[di] = false;
   showToast((typeof navigator !== 'undefined' && navigator.onLine === false)
     ? 'SESIÓN PARCIAL GUARDADA LOCALMENTE ✓ (pendiente de sincronizar)'
