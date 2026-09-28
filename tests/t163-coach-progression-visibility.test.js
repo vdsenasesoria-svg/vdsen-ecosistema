@@ -263,7 +263,9 @@ const PLAN_WITH_PIDS = { days: [{ dayIndex: 0, exercises: [
 
 (function testExistingApplyFlowUntouched() {
   ok(COACH.includes('function _buildRecApplyPreview(lastRec, lastRecDay, activePlanCache)'), 'Regression: the existing recommendation-apply-to-plan preview builder is untouched');
-  ok(COACH.includes('function _resolveExerciseRowId(exerciseName, planCache, pid)'), 'Regression: the existing PID-first exercise row resolver is untouched');
+  ok(COACH.includes('function _resolveExerciseRowId(exerciseName, planCache, pid, dayIndex)') &&
+     COACH.includes('return pidCount === 1 ? foundByPid : null;'),
+     'Regression: exercise row resolution remains PID-first and rejects stale or ambiguous PID');
   ok(COACH.includes('window._applyAllModuloD = _applyAllModuloD;'), 'Regression: the existing apply-adjustments-to-plan action is untouched (no new override schema invented)');
 })();
 

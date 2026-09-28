@@ -38,7 +38,7 @@ window.addEventListener('appinstalled', function() {
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, setPersistence, browserLocalPersistence }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot }
+import { initializeFirestore, persistentLocalCache, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, orderBy, limit, onSnapshot, runTransaction }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ══════════════════════════════════════════════════
@@ -62,7 +62,7 @@ setPersistence(auth, browserLocalPersistence).catch(() => {});
 window._fb = { auth, db, signInWithEmailAndPassword, signOut, onAuthStateChanged,
                sendPasswordResetEmail,
                doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs,
-               addDoc, orderBy, limit, onSnapshot };
+               addDoc, orderBy, limit, onSnapshot, runTransaction };
 window._fbReady = true;
 window.dispatchEvent(new Event('fbReady'));
 
@@ -487,6 +487,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var
 </div>
 
 <script src="assets/exercise-visual-catalog.js"></script>
+<script src="assets/progression-auto-apply-shadow.js"></script>
 <script>
 // ══════════════════════════════════════════════════
 // STATE
@@ -10408,15 +10409,18 @@ async function _doSaveLogs() {
     const _safeUnits   = JSON.parse(JSON.stringify(EXERCISE_UNITS || {}));
     const _safeHist    = JSON.parse(JSON.stringify(EXERCISE_HISTORY || {}));
     const _payload = { entries: _safeEntries, currentWeek: REAL_WEEK, planId: ACTIVE_PLAN_ID, exerciseUnits: _safeUnits, exerciseHistory: _safeHist, updatedAt: Date.now() };
+    // Replace each owned top-level field atomically (including the entire entries map),
+    // while preserving progressionApplications/summary written by the shadow transaction.
+    const _ownedFields = Object.keys(_payload);
     // T1 dual-write: nuevo path por mesociclo primero (future source), legacy segundo (compatibilidad coach).
     // El fallo del path nuevo es no-fatal: datos seguros en legacy y localStorage.
     if (ACTIVE_PLAN_ID) {
-      try { await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload); }
+      try { await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields }); }
       catch(_me) { console.warn('[logs/mesos] write:', _me && _me.code, _me && _me.message); }
     }
     if (!USER || USER.uid !== _uidAtStart) return false;
     const ref = FB.doc(FB.db, 'logs', _uidAtStart);
-    await FB.setDoc(ref, _payload);
+    await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });
     if (!USER || USER.uid !== _uidAtStart) return false;
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
@@ -10445,6 +10449,70 @@ async function _doSaveLogs() {
   } finally {
     _logsWriteInFlight = Math.max(0, _logsWriteInFlight - 1);
   }
+}
+
+// Phase 1: audit only. The mesocycle log owns the records; the legacy log
+// receives their compact Monitor projection in the same transaction.
+async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) {
+  var shadow = window.VDSEN_AUTO_APPLY_SHADOW;
+  if (!shadow || !FB || !USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId ||
+      !parentRec || !Array.isArray(parentRec.recommendations) || !parentRec.recommendations.length) return false;
+  var clientRef = FB.doc(FB.db, 'clients', uid);
+  var planRef = FB.doc(FB.db, 'plans', planId);
+  var mesoRef = FB.doc(FB.db, 'logs', uid, 'mesos', planId);
+  var rootRef = FB.doc(FB.db, 'logs', uid);
+  return FB.runTransaction(FB.db, async function(tx) {
+    if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) return false;
+    // Firestore requires every transaction read before its first write.
+    var clientSnap = await tx.get(clientRef);
+    var planSnap = await tx.get(planRef);
+    var mesoSnap = await tx.get(mesoRef);
+    var rootSnap = await tx.get(rootRef);
+    if (!clientSnap.exists() || !planSnap.exists() || !mesoSnap.exists() || !rootSnap.exists()) return false;
+    var clientData = clientSnap.data(), planData = planSnap.data(), mesoData = mesoSnap.data();
+    if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId || clientData.activePlanId !== planId ||
+        mesoData.planId !== planId || rootSnap.data().planId !== planId) return false;
+    var source = (mesoData.entries || {})['progrec_' + week + '_' + dayIndex];
+    var sourceMatches = !!(source && source.calculatedAt === parentRec.calculatedAt &&
+      Array.isArray(source.recommendations) && source.recommendations.length === parentRec.recommendations.length &&
+      source.recommendations.every(function(r, index) {
+        var scope = { clientId: uid, planId: planId, week: week, dayIndex: dayIndex,
+          calculatedAt: parentRec.calculatedAt };
+        return shadow.idempotencyKey(Object.assign({}, scope, { recommendation: r })) ===
+          shadow.idempotencyKey(Object.assign({}, scope, { recommendation: parentRec.recommendations[index] }));
+      }));
+    var records = Object.assign({}, mesoData.progressionApplications || {});
+    var at = new Date().toISOString();
+    parentRec.recommendations.forEach(function(rec) {
+      if (!rec) return;
+      var input = { clientId: uid, planId: planId, activePlanId: clientData.activePlanId,
+        plan: planData, interventions: clientData.coachInterventions,
+        week: week, dayIndex: dayIndex, calculatedAt: parentRec.calculatedAt,
+        recommendation: rec, sourceMatches: sourceMatches,
+        sourcePidCount: rec.prescriptionExerciseId
+          ? parentRec.recommendations.filter(function(r) { return r && r.prescriptionExerciseId === rec.prescriptionExerciseId; }).length : 0 };
+      var candidate = shadow.buildRecord(input, at);
+      if (records[candidate.key]) {
+        var prior = records[candidate.key];
+        if (prior.planId !== planId || prior.clientId !== uid ||
+            prior.prescriptionExerciseId !== candidate.prescriptionExerciseId ||
+            prior.source.calculatedAt !== candidate.source.calculatedAt) throw new Error('SHADOW_KEY_COLLISION');
+        return;
+      }
+      Object.keys(records).forEach(function(key) {
+        var old = records[key];
+        if (old && old.state === shadow.STATES.PENDING && old.prescriptionExerciseId &&
+            old.prescriptionExerciseId === candidate.prescriptionExerciseId &&
+            old.source.week === week && old.source.dayIndex === dayIndex)
+          records[key] = shadow.markStale(old, shadow.REASONS.SOURCE_MISMATCH, at);
+      });
+      records[candidate.key] = candidate;
+    });
+    var summary = shadow.summarize(records, planId);
+    tx.set(mesoRef, { progressionApplications: records, progressionApplicationSummary: summary }, { merge: true });
+    tx.set(rootRef, { progressionApplicationSummary: summary }, { merge: true });
+    return true;
+  });
 }
 
 function _showSaveOk() {
@@ -14413,6 +14481,8 @@ async function submitPostSession() {
   if (di == null) return;
   var _weekAtPostStart = CURRENT_WEEK;
   var _dayAtPostStart = typeof DIA_ACTIVO !== 'undefined' ? DIA_ACTIVO : di;
+  var _uidAtPostStart = typeof USER !== 'undefined' && USER && USER.uid;
+  var _planAtPostStart = typeof ACTIVE_PLAN_ID !== 'undefined' ? ACTIVE_PLAN_ID : null;
   _postSessionSubmitting = true;
 
   var eimd = parseInt(document.getElementById('psEimd').value);
@@ -14453,12 +14523,14 @@ async function submitPostSession() {
     // Calcular y guardar recomendaciones de progresión
     // Todo envuelto en try/catch: si el algoritmo falla, el guardado de la sesión sigue adelante.
     // Sanitizar NaN/Infinity → null (Firestore rechaza valores no-finitos).
+    var _recForShadow = null;
     try {
       var rec = calculateProgression(di, postData);
       if (rec) {
         var _sanitize = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
         var recSafe = JSON.parse(JSON.stringify(rec, _sanitize));
         LOGS[progKey] = recSafe;
+        _recForShadow = recSafe;
         // P5: Longitudinal Engine — engine_state persiste en logs para la próxima generación
         if (rec.engineState) {
           LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _sanitize));
@@ -14477,6 +14549,17 @@ async function submitPostSession() {
       if (hadProg) LOGS[progKey] = previousProg; else delete LOGS[progKey];
       if (hadEngineState) LOGS.engine_state = previousEngineState; else delete LOGS.engine_state;
       return false;
+    }
+    if (_recForShadow && _uidAtPostStart && _planAtPostStart) {
+      try {
+        var _shadowSaved = await _recordShadowProgression(_uidAtPostStart, _planAtPostStart, _weekAtPostStart, di, _recForShadow);
+        if (!_shadowSaved && USER && USER.uid === _uidAtPostStart && ACTIVE_PLAN_ID === _planAtPostStart)
+          showToast('⚠ No se registró la evaluación AUTO; revisa la sincronización.', true);
+      } catch(shadowErr) {
+        console.warn('Shadow progression audit failed:', shadowErr);
+        if (USER && USER.uid === _uidAtPostStart && ACTIVE_PLAN_ID === _planAtPostStart)
+          showToast('⚠ Registro AUTO pendiente; revisa conexión y reintenta la sincronización.', true);
+      }
     }
     if (CURRENT_WEEK === _weekAtPostStart && DIA_ACTIVO === _dayAtPostStart) {
       if (_saved !== false) showSessionSummary(di);

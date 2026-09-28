@@ -27,9 +27,13 @@ for (let i = braceStart; i < COACH.length; i++) {
 }
 const monitorFnBody = COACH.slice(idx, end + 1);
 
-ok(monitorFnBody.includes("const logsSnap = await getDoc(doc(db, 'logs', clientId)).catch(() => null);\n    // T292"), 'the guard is inserted immediately after the getDoc await, before any use of the result');
-ok(monitorFnBody.includes('if (_detailClientId !== clientId) return;'), 'the fix re-checks _detailClientId against the captured clientId, matching the T127-H pattern used everywhere else');
-ok((monitorFnBody.match(/_detailClientId/g) || []).length === 2, 'exactly 2 references now: the initial capture and the new post-await guard');
+ok(monitorFnBody.includes("try { logsSnap = await getDoc(doc(db, 'logs', clientId)); }") &&
+   monitorFnBody.includes("if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;\n    if (!logsSnap"),
+   'the guard runs after the logs read, before its result can render into another client or tab');
+ok(monitorFnBody.includes("if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;"),
+  'the fix re-checks captured client and active tab after the read');
+ok((monitorFnBody.match(/_detailClientId/g) || []).length >= 3,
+  'client identity is captured and checked after every Monitor await before rendering');
 
 // ── Functional: execute the ACTUAL guard line logic with the exact real
 // variable names, both when identity matches and when it has drifted

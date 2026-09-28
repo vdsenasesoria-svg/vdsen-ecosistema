@@ -120,7 +120,8 @@ ok(/if \(_saveLogsTimer\) \{ clearTimeout\(_saveLogsTimer\); _saveLogsTimer = nu
   'a pending debounced save is flushed to Firestore BEFORE the reset -- data already in LOGS is never silently dropped on a plan switch');
 ok(/LOGS\s*=\s*\{\};\s*\n\s*EXERCISE_UNITS = \{\};.*\n\s*CURRENT_WEEK\s*=\s*1;\s*\n\s*REAL_WEEK\s*=\s*1;/.test(CLIENT),
   'the reset is a full, clean wipe (LOGS/week) -- no possibility of week-N-plan-A entries surviving alongside week-N-plan-B entries in the same flat document');
-ok(CLIENT.includes('await FB.setDoc(ref, _payload);'), 'the save is a full setDoc (atomic document replace), not a partial/merge update -- no interleaved partial state between old and new plan data');
+ok(CLIENT.includes('const _ownedFields = Object.keys(_payload);') && CLIENT.includes('await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });'),
+  'the save atomically replaces all owned top-level fields, including the whole entries map, while preserving unrelated shadow audit fields');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Old plan's evidence: genuinely preserved via the per-mesociclo mirror,
@@ -129,7 +130,7 @@ ok(CLIENT.includes('await FB.setDoc(ref, _payload);'), 'the save is a full setDo
 // plan-scoping principle, not a data-loss bug).
 // ─────────────────────────────────────────────────────────────────────────────
 
-ok(CLIENT.includes("FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload)"), 'every save mirrors into the originating user\'s plan-scoped archival doc, never a later-authenticated user');
+ok(CLIENT.includes("FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields })"), 'every save mirrors into the originating user\'s plan-scoped archival doc, never a later-authenticated user');
 ok(CLIENT.includes("FB.getDoc(FB.doc(FB.db, 'logs', user.uid, 'mesos', activePlanId))"), 'the CLIENT reads its own per-mesociclo mirror back (new-first, legacy-fallback) -- self-consistent, not a write-only dead path from the client\'s own perspective');
 ok((COACH.match(/setDoc\(doc\(db, 'logs', clientId, 'mesos', newPlanId\)/g) || []).length >= 2, 'vdsen-coach.html only WRITES to logs/{uid}/mesos/{planId} (manual reset-week admin actions), pre-T253');
 // T253 update: a read-only HISTORICAL MONITOR VIEW now intentionally reads

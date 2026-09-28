@@ -122,11 +122,12 @@ const monitorFnBody = COACH.slice(idx, end + 1);
 
 ok(monitorFnBody.includes('const clientId = _detailClientId;') && monitorFnBody.includes('await getDoc(doc(db, \'logs\', clientId))'),
   'prerequisite: _renderClientTabMonitor captures clientId then awaits a client-scoped getDoc, exactly the shape T127-H guards elsewhere');
-ok((monitorFnBody.match(/_detailClientId/g) || []).length === 2,
-  'FINDING FIXED by T292: _detailClientId now appears twice (the initial capture + the post-await re-check), matching every other pattern above');
+ok((monitorFnBody.match(/_detailClientId/g) || []).length >= 3 &&
+   monitorFnBody.includes("if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;"),
+  'Monitor captures client identity and re-checks client/tab context after asynchronous reads');
 ok(COACH.includes("else if (tab === 'monitor') _renderClientTabMonitor(cont);") && COACH.includes("const cont = document.getElementById('clientDetailTabContent');"),
   'confirmed: cont (#clientDetailTabContent) is ONE shared, persistent DOM element across every client\'s detail view, not recreated per client -- a stale write here is not harmlessly orphaned, it overwrites whatever client is currently displayed');
 
 console.log('');
 console.log('T291 — Async mutation contract map: ' + pass + ' assertions PASSED');
-console.log('CONCLUSION: 1 real finding -- _renderClientTabMonitor missing the T127-H stale-client-context guard after its own getDoc await.');
+console.log('CONCLUSION: Monitor retains the T127-H stale-client-context guard after its asynchronous reads.');

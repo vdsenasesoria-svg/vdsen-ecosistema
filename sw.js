@@ -1,5 +1,5 @@
 // VDSEN Service Worker — offline support
-const CACHE = 'vdsen-v8';
+const CACHE = 'vdsen-v9';
 
 // Assets to pre-cache on install (propio HTML)
 const PRECACHE = [
@@ -8,6 +8,7 @@ const PRECACHE = [
   '/manifest.json',
   '/assets/vdsen-logo-official.jpg',
   '/assets/exercise-visual-catalog.js',
+  '/assets/progression-auto-apply-shadow.js',
   '/assets/exercises/pending-license.svg'
 ];
 

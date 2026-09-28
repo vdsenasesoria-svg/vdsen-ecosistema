@@ -1587,6 +1587,7 @@
 
   <script src="assets/exercise-visual-catalog.js"></script>
   <script src="assets/exercise-visual-metadata-editor.js"></script>
+  <script src="assets/progression-auto-apply-shadow.js"></script>
   <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -17525,21 +17526,44 @@ El esfuerzo no es negociable.
     const c = _detailClientData;
     const p = _detailPlanData;
 
-    const logsSnap = await getDoc(doc(db, 'logs', clientId)).catch(() => null);
+    let logsSnap;
+    try { logsSnap = await getDoc(doc(db, 'logs', clientId)); }
+    catch(e) {
+      if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
+      cont.innerHTML = '<p role="alert" class="text-sm mt-2" style="color:#c94a3a">Error al cargar Monitor.</p>'
+        + '<button type="button" id="retryMonitorLoad" class="text-xs underline mt-2">Reintentar</button>';
+      cont.querySelector('#retryMonitorLoad').addEventListener('click', function() { _renderClientTabMonitor(cont); });
+      return;
+    }
     // T292 — stale-client guard (same T127-H pattern as showClientDetail/
     // _onHistoricalMesoToggle): #clientDetailTabContent is ONE shared,
     // persistent DOM element across every client's detail view, never
     // recreated per client -- if the coach switched to a different client
     // while this getDoc was in flight, a stale response must never
     // overwrite the NEW client's already-rendered Monitor tab.
-    if (_detailClientId !== clientId) return;
+    if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
     if (!logsSnap || !logsSnap.exists()) {
-      cont.innerHTML = `<p class="text-[#888] text-sm mt-2">Sin datos de entrenamiento registrados aún.</p>`; return;
+      _shadowMonitorContext = null;
+      cont.innerHTML = (c && c.activePlanId
+        ? _renderShadowAutoFeed(window.VDSEN_AUTO_APPLY_SHADOW.summarize({}, c.activePlanId)) : '')
+        + `<p class="text-[#888] text-sm mt-2">Sin datos de entrenamiento registrados aún.</p>`; return;
     }
     const logsData  = logsSnap.data();
     const entries   = logsData.entries || {};
     const currentWeek = logsData.currentWeek || 1;
     const ci = entries['ci_sem_' + currentWeek] || {};
+    let autoSummary = logsData.progressionApplicationSummary;
+    if (autoSummary && autoSummary.planId === (c && c.activePlanId) &&
+        (autoSummary.autoCount > 0 || (autoSummary.items || []).some(function(item) {
+          return item.state === 'REJECTED' && item.reasonCode === 'COACH_KEEP_ORIGINAL';
+        }))) {
+      try {
+        autoSummary = await _reconcileShadowAuto(clientId, autoSummary.planId) || autoSummary;
+      } catch(e) {
+        console.warn('AUTO shadow reconciliation failed:', e);
+      }
+      if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
+    }
 
     // Última sesión completada
     let lastDoneW = 0, lastDoneD = 0;
@@ -17582,6 +17606,18 @@ El esfuerzo no es negociable.
     }
 
     let html = '';
+
+    // Compact shadow audit from the same logs snapshot as the rest of Monitor.
+    // The summary is written atomically with logs/{clientId}/mesos/{planId}.
+    if (c && c.activePlanId) {
+      if (!autoSummary || autoSummary.planId !== c.activePlanId)
+        autoSummary = window.VDSEN_AUTO_APPLY_SHADOW.summarize({}, c.activePlanId);
+      _shadowMonitorContext = { clientId: clientId, planId: autoSummary.planId,
+        items: autoSummary.items || [] };
+      html += _renderShadowAutoFeed(autoSummary);
+    } else {
+      _shadowMonitorContext = null;
+    }
 
     // ── Check-in semanal actual
     html += `<div class="card p-3 mb-3" style="border-left:3px solid #C4FF00;border-radius:0 8px 8px 0">
@@ -18588,6 +18624,194 @@ El esfuerzo no es negociable.
     </details>`;
 
     cont.innerHTML = html;
+    if (!cont._shadowAutoClickBound) {
+      cont._shadowAutoClickBound = true;
+      cont.addEventListener('click', function(event) {
+        var button = event.target.closest('[data-shadow-action]');
+        if (!button || !cont.contains(button)) return;
+        _onShadowAutoAction(button.dataset.shadowAction, button.dataset.shadowKey,
+          Number(button.dataset.shadowRevision), button);
+      });
+    }
+  }
+
+  var _shadowMonitorContext = null;
+  var _shadowActionBusy = false;
+  async function _reconcileShadowAuto(clientId, planId) {
+    var shadow = window.VDSEN_AUTO_APPLY_SHADOW;
+    return runTransaction(db, async function(tx) {
+      var clientRef = doc(db, 'clients', clientId), planRef = doc(db, 'plans', planId);
+      var mesoRef = doc(db, 'logs', clientId, 'mesos', planId), rootRef = doc(db, 'logs', clientId);
+      var clientSnap = await tx.get(clientRef), planSnap = await tx.get(planRef);
+      var mesoSnap = await tx.get(mesoRef), rootSnap = await tx.get(rootRef);
+      if (!clientSnap.exists() || !planSnap.exists() || !mesoSnap.exists() || !rootSnap.exists()) return null;
+      var clientData = clientSnap.data(), planData = planSnap.data(), mesoData = mesoSnap.data();
+      if (_detailClientId !== clientId || _detailActiveTab !== 'monitor' || !currentCoach ||
+          clientData.coachId !== currentCoach.uid || clientData.activePlanId !== planId ||
+          mesoData.planId !== planId || rootSnap.data().planId !== planId) return null;
+      var records = Object.assign({}, mesoData.progressionApplications || {}), entries = mesoData.entries || {};
+      var changed = false, at = new Date().toISOString();
+      Object.keys(records).forEach(function(key) {
+        var record = records[key];
+        if (!record || record.clientId !== clientId || record.planId !== planId ||
+            (record.state !== shadow.STATES.PENDING &&
+              !(record.state === shadow.STATES.REJECTED && record.reasonCode === shadow.REASONS.COACH_KEEP_ORIGINAL))) return;
+        var parent = entries['progrec_' + record.source.week + '_' + record.source.dayIndex];
+        var matches = (parent && parent.recommendations || []).filter(function(r) {
+          return shadow.idempotencyKey({ clientId: clientId, planId: planId,
+            week: record.source.week, dayIndex: record.source.dayIndex,
+            calculatedAt: record.source.calculatedAt, recommendation: r }) === record.key;
+        });
+        var sourceMatches = !!(parent && parent.calculatedAt === record.source.calculatedAt && matches.length === 1);
+        var assessment = shadow.assess({ clientId: clientId, planId: planId, activePlanId: clientData.activePlanId,
+          plan: planData, interventions: clientData.coachInterventions,
+          week: record.source.week, dayIndex: record.source.dayIndex, calculatedAt: record.source.calculatedAt,
+          recommendation: matches[0] || { prescriptionExerciseId: record.prescriptionExerciseId, action: record.action },
+          sourceMatches: sourceMatches, sourcePidCount: matches.length });
+        var exposure = record.nextExposure;
+        var freshNext = shadow.resolveNextExposure(planData, record.prescriptionExerciseId,
+          record.source.week, record.source.dayIndex);
+        var nextChanged = !freshNext || !exposure ||
+          freshNext.week !== exposure.week || freshNext.dayIndex !== exposure.dayIndex;
+        var exposurePassed = exposure && entries['done_' + exposure.week + '_' + exposure.dayIndex];
+        var reason = record.state === shadow.STATES.REJECTED
+          ? !sourceMatches ? shadow.REASONS.SOURCE_MISMATCH
+            : !planData.updatedAt || !Number.isFinite(Date.parse(planData.updatedAt)) ||
+              Date.parse(planData.updatedAt) > Date.parse(record.source.calculatedAt) || nextChanged
+              ? shadow.REASONS.PLAN_CHANGED : exposurePassed ? shadow.REASONS.EXPOSURE_PASSED : null
+          : assessment.state !== shadow.STATES.PENDING ? assessment.reasonCode
+            : nextChanged ? shadow.REASONS.PLAN_CHANGED
+            : exposurePassed ? shadow.REASONS.EXPOSURE_PASSED : null;
+        if (reason) { records[key] = shadow.markStale(record, reason, at); changed = true; }
+      });
+      var summary = shadow.summarize(records, planId);
+      if (changed) {
+        tx.set(mesoRef, { progressionApplications: records, progressionApplicationSummary: summary }, { merge: true });
+        tx.set(rootRef, { progressionApplicationSummary: summary }, { merge: true });
+      }
+      return summary;
+    });
+  }
+  function _renderShadowAutoFeed(summary) {
+    var items = Array.isArray(summary.items) ? summary.items : [];
+    var rows = items.map(function(item) {
+      if (!/^v1_[a-f0-9]{16}$/.test(item.key || '') || !Number.isInteger(item.revision)) return '';
+      var label = item.state === 'PENDING' ? 'PENDIENTE' : item.state === 'STALE' ? 'OBSOLETA' : 'RECHAZADA';
+      var button = item.state === 'PENDING'
+        ? '<button type="button" data-shadow-action="KEEP_ORIGINAL" data-shadow-key="' + item.key + '" data-shadow-revision="' + item.revision + '">Mantener original</button>'
+        : item.state === 'REJECTED' && item.reasonCode === 'COACH_KEEP_ORIGINAL'
+          ? '<button type="button" data-shadow-action="REVERT_DECISION" data-shadow-key="' + item.key + '" data-shadow-revision="' + item.revision + '">Revertir decisión</button>' : '';
+      return '<li style="padding:6px 0;border-top:1px solid rgba(244,244,240,.08)">'
+        + '<span>' + _escH(item.exerciseNameSnapshot || 'Ejercicio sin nombre') + ' · '
+        + _escH(item.dimension || 'EVALUACIÓN') + ' · ' + label + '</span>'
+        + '<span style="display:block;color:#888;font-size:11px">' + _escH(item.reasonCode || '') + '</span>'
+        + '<button type="button" data-shadow-action="OPEN" data-shadow-key="' + item.key + '">Abrir ejercicio</button> '
+        + button + '</li>';
+    }).join('');
+    return '<section class="card p-3 mb-3" aria-label="Auto apply en observación">'
+      + '<div class="text-xs uppercase font-semibold tracking-wide">AUTO ' + (Number.isInteger(summary.autoCount) ? summary.autoCount : 0) + '</div>'
+      + '<p class="text-xs text-[#888]">Modo observación · prescripción original intacta</p>'
+      + (rows ? '<ul style="list-style:none;margin:8px 0 0;padding:0">' + rows + '</ul>'
+        : '<p class="text-xs text-[#888]">Sin decisiones registradas.</p>') + '</section>';
+  }
+
+  async function _onShadowAutoAction(action, key, expectedRevision, button) {
+    var ctx = _shadowMonitorContext;
+    if (!ctx || _detailClientId !== ctx.clientId ||
+        !_detailClientData || _detailClientData.activePlanId !== ctx.planId) return;
+    var item = ctx.items.find(function(r) { return r.key === key; });
+    if (!item) return;
+    if (action === 'OPEN') {
+      if (!item.prescriptionExerciseId) { showToast('Sin identidad verificable para abrir ejercicio.', true); return; }
+      var exposureDay = item.nextExposure ? item.nextExposure.dayIndex : item.source && item.source.dayIndex;
+      var exact = _resolveExerciseRowId(item.exerciseNameSnapshot, _activePlanCache, item.prescriptionExerciseId, exposureDay);
+      if (!exact || exact.pid !== item.prescriptionExerciseId) { showToast('El ejercicio ya no está en el plan activo.', true); return; }
+      _deepLinkToExercise(item.exerciseNameSnapshot, item.prescriptionExerciseId, exposureDay);
+      return;
+    }
+    if (_shadowActionBusy || (action !== 'KEEP_ORIGINAL' && action !== 'REVERT_DECISION')) return;
+    _shadowActionBusy = true;
+    button.disabled = true;
+    var shadow = window.VDSEN_AUTO_APPLY_SHADOW;
+    var clientId = ctx.clientId, planId = ctx.planId;
+    var at = new Date().toISOString();
+    var actorId = currentCoach && currentCoach.uid;
+    var operationKey = key + ':' + action + ':' + expectedRevision;
+    var intervention = _buildCoachIntervention({
+      targetType: 'EXERCISE', targetId: item.prescriptionExerciseId,
+      action: action === 'KEEP_ORIGINAL' ? 'KEEP' : 'NO_CHANGE', status: 'RESOLVED',
+      reason: action === 'KEEP_ORIGINAL' ? 'AUTO shadow: mantener prescripción original' : 'AUTO shadow: revertir decisión',
+      decidedAt: at, decidedBy: actorId, planId: planId,
+      planUpdatedAtSnapshot: _detailPlanData && _detailPlanData.updatedAt
+    });
+    try {
+      if (!intervention) throw new Error('Intervención inválida');
+      var result = await runTransaction(db, async function(tx) {
+        var clientRef = doc(db, 'clients', clientId), planRef = doc(db, 'plans', planId);
+        var mesoRef = doc(db, 'logs', clientId, 'mesos', planId), rootRef = doc(db, 'logs', clientId);
+        var clientSnap = await tx.get(clientRef), planSnap = await tx.get(planRef);
+        var mesoSnap = await tx.get(mesoRef), rootSnap = await tx.get(rootRef);
+        if (!clientSnap.exists() || !planSnap.exists() || !mesoSnap.exists() || !rootSnap.exists())
+          return { ok: false, reasonCode: 'SOURCE_MISSING' };
+        var clientData = clientSnap.data(), planData = planSnap.data(), mesoData = mesoSnap.data();
+        if (_detailClientId !== clientId || !currentCoach || currentCoach.uid !== actorId ||
+            clientData.coachId !== actorId ||
+            clientData.activePlanId !== planId || mesoData.planId !== planId || rootSnap.data().planId !== planId ||
+            (planData.clientId && planData.clientId !== clientId)) return { ok: false, reasonCode: 'PLAN_CHANGED' };
+        var records = Object.assign({}, mesoData.progressionApplications || {}), record = records[key];
+        if (!record || record.clientId !== clientId || record.planId !== planId) return { ok: false, reasonCode: 'RECORD_MISSING' };
+        var source = (mesoData.entries || {})['progrec_' + record.source.week + '_' + record.source.dayIndex];
+        var sourceValid = source && source.calculatedAt === record.source.calculatedAt &&
+          (source.recommendations || []).some(function(r) {
+            return shadow.idempotencyKey({ clientId: clientId, planId: planId,
+              week: record.source.week, dayIndex: record.source.dayIndex,
+              calculatedAt: record.source.calculatedAt, recommendation: r }) === record.key;
+          });
+        var freshExposure = shadow.resolveNextExposure(planData, record.prescriptionExerciseId,
+          record.source.week, record.source.dayIndex);
+        var planChanged = !planData.updatedAt || !Number.isFinite(Date.parse(planData.updatedAt)) ||
+          !record.source.calculatedAt || !Number.isFinite(Date.parse(record.source.calculatedAt)) ||
+          Date.parse(planData.updatedAt) > Date.parse(record.source.calculatedAt) ||
+          !freshExposure || !record.nextExposure ||
+          freshExposure.week !== record.nextExposure.week || freshExposure.dayIndex !== record.nextExposure.dayIndex;
+        var exposurePassed = record.nextExposure && (mesoData.entries || {})[
+          'done_' + record.nextExposure.week + '_' + record.nextExposure.dayIndex];
+        if (!sourceValid || planChanged || exposurePassed) {
+          records[key] = shadow.markStale(record, planChanged ? shadow.REASONS.PLAN_CHANGED
+            : exposurePassed ? shadow.REASONS.EXPOSURE_PASSED : shadow.REASONS.SOURCE_MISMATCH, at);
+          var staleSummary = shadow.summarize(records, planId);
+          tx.set(mesoRef, { progressionApplications: records, progressionApplicationSummary: staleSummary }, { merge: true });
+          tx.set(rootRef, { progressionApplicationSummary: staleSummary }, { merge: true });
+          return { ok: false, reasonCode: 'STALE' };
+        }
+        var changed = shadow.transition(record, action, expectedRevision, operationKey, at, actorId);
+        if (!changed.ok || changed.idempotent) return changed;
+        records[key] = changed.record;
+        var summary = shadow.summarize(records, planId);
+        var interventions = Array.isArray(clientData.coachInterventions) ? clientData.coachInterventions.slice() : [];
+        interventions.push(intervention);
+        tx.update(clientRef, { coachInterventions: interventions });
+        tx.set(mesoRef, { progressionApplications: records, progressionApplicationSummary: summary }, { merge: true });
+        tx.set(rootRef, { progressionApplicationSummary: summary }, { merge: true });
+        return { ok: true, summary: summary, interventions: interventions };
+      });
+      if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
+      if (result.ok) {
+        if (result.interventions) _detailClientData.coachInterventions = result.interventions;
+        showToast(action === 'KEEP_ORIGINAL' ? 'Prescripción original mantenida.' : 'Decisión revertida.');
+      } else showToast('AUTO: ' + (result.reasonCode || 'No se guardó la decisión'), true);
+      var cont = document.getElementById('clientDetailTabContent');
+      if (cont) {
+        await _renderClientTabMonitor(cont);
+        var nextButton = cont.querySelector('[data-shadow-key="' + key + '"]');
+        if (nextButton) nextButton.focus();
+      }
+    } catch(e) {
+      if (_detailClientId === clientId) showToast('Error al guardar decisión AUTO: ' + e.message, true);
+    } finally {
+      _shadowActionBusy = false;
+      if (_detailClientId === clientId) button.disabled = false;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -18931,18 +19155,21 @@ El esfuerzo no es negociable.
   // FASE 22 — helper puro: resuelve posición de un ejercicio en el plan por nombre normalizado.
   // Retorna { di, ei, pid } o null si no encontrado.
   // FASE 22 FIX — pid es clave primaria; exerciseName es fallback legacy.
-  function _resolveExerciseRowId(exerciseName, planCache, pid) {
+  function _resolveExerciseRowId(exerciseName, planCache, pid, dayIndex) {
     if (!planCache || !planCache.days) return null;
     // PRIMARY: buscar por prescriptionExerciseId (evita ambigüedad en nombres duplicados)
     if (pid) {
+      var foundByPid = null, pidCount = 0;
       for (var di = 0; di < planCache.days.length; di++) {
         var exs = planCache.days[di].exercises || [];
         for (var ei = 0; ei < exs.length; ei++) {
-          if ((exs[ei].prescriptionExerciseId || '') === pid) {
-            return { di: di, ei: ei, pid: pid };
+          if ((exs[ei].prescriptionExerciseId || '') === pid &&
+              (dayIndex == null || planCache.days[di].dayIndex === dayIndex)) {
+            foundByPid = { di: di, ei: ei, pid: pid }; pidCount++;
           }
         }
       }
+      return pidCount === 1 ? foundByPid : null; // stale/ambiguous PID never falls back to a visible name
     }
     // FALLBACK: nombre normalizado — retorna solo si ÚNICO en el plan (AMBIGUOUS → null)
     if (!exerciseName) return null;
@@ -18962,7 +19189,7 @@ El esfuerzo no es negociable.
 
   // FASE 22 — deep link: desde Monitor, navega a Plan → editor → fila del ejercicio.
   // pid (opcional): prescriptionExerciseId para resolver sin ambigüedad nombres duplicados.
-  function _deepLinkToExercise(exerciseName, pid) {
+  function _deepLinkToExercise(exerciseName, pid, dayIndex) {
     _switchClientTab('plan');
     var editor = document.getElementById('training-editor');
     var view   = document.getElementById('training-view');
@@ -18973,7 +19200,7 @@ El esfuerzo no es negociable.
         if (typeof _updateReorderBtns === 'function') _updateReorderBtns(list);
       });
     }
-    var match = _resolveExerciseRowId(exerciseName, _activePlanCache, pid || '');
+    var match = _resolveExerciseRowId(exerciseName, _activePlanCache, pid || '', dayIndex);
     if (!match) return;
     var row = match.pid
       ? document.querySelector('[data-prescription-id="' + match.pid.replace(/</g,'&lt;').replace(/"/g,'&quot;') + '"]')
@@ -18982,6 +19209,8 @@ El esfuerzo no es negociable.
     if (!row) return;
     setTimeout(function() {
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (!row.hasAttribute('tabindex')) row.tabIndex = -1;
+      row.focus({ preventScroll: true });
       row.style.outline = '2px solid #44BB88';
       setTimeout(function() { row.style.outline = ''; }, 2000);
     }, 80);
@@ -21449,10 +21678,10 @@ El esfuerzo no es negociable.
       const _resetPayload = { entries: {}, currentWeek: 1, planId: newPlanId, exerciseHistory: prevHist, exerciseUnits: {}, updatedAt: Date.now() };
       // T1: también resetear el doc de mesociclo si existe planId
       if (newPlanId) {
-        try { await setDoc(doc(db, 'logs', clientId, 'mesos', newPlanId), _resetPayload); }
+         try { await setDoc(doc(db, 'logs', clientId, 'mesos', newPlanId), _resetPayload, { mergeFields: Object.keys(_resetPayload) }); }
         catch(_me) { console.warn('[logs/mesos] coach reset:', _me && _me.message); }
       }
-      await setDoc(logsRef, _resetPayload);
+       await setDoc(logsRef, _resetPayload, { mergeFields: Object.keys(_resetPayload) });
       showToast('✅ Semana reiniciada a 1');
       showClientDetail(clientId, { tab: 'plan' });
     } catch(e) {
@@ -21481,10 +21710,10 @@ El esfuerzo no es negociable.
       const _keepPayload = { entries: keptEntries, currentWeek: 1, planId: newPlanId, exerciseHistory: data.exerciseHistory || {}, exerciseUnits: data.exerciseUnits || {}, updatedAt: Date.now() };
       // T1: también resetear el doc de mesociclo si existe planId
       if (newPlanId) {
-        try { await setDoc(doc(db, 'logs', clientId, 'mesos', newPlanId), _keepPayload); }
+         try { await setDoc(doc(db, 'logs', clientId, 'mesos', newPlanId), _keepPayload, { mergeFields: Object.keys(_keepPayload) }); }
         catch(_me) { console.warn('[logs/mesos] coach reset-keep:', _me && _me.message); }
       }
-      await setDoc(logsRef, _keepPayload);
+       await setDoc(logsRef, _keepPayload, { mergeFields: Object.keys(_keepPayload) });
       showToast('✅ Reiniciada a semana 1 — registros de la semana 1 conservados');
       showClientDetail(clientId, { tab: 'plan' });
     } catch(e) {
