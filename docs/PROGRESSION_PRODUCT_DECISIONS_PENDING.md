@@ -6,7 +6,7 @@
 |---|---|---|
 | 1. Regla D/E | **1A — solo revisión del Coach** | D y E nunca generan candidato numérico; estado `COACH_REVIEW_REQUIRED`. No se reduce automáticamente carga, reps objetivo, series ni RIR. |
 | 2. Precedencia C/E | **2B — C primero y E si persiste** | Primera ocurrencia comparable de C → REST +30 s únicamente. Si la misma condición persiste en la siguiente exposición comparable → E → `COACH_REVIEW_REQUIRED`. Nunca doble intervención automática. |
-| 3. Serie representativa | **3A — última serie de trabajo** | Última serie de trabajo válida ejecutada (sin calentamiento, autofill, express ni series de descenso planificadas; sin sustituir series faltantes). Procedencia `VDSEN_PRODUCT_POLICY_LAST_WORKING_SET`. |
+| 3. Serie representativa | **3A — última serie de trabajo** | Última serie de trabajo válida ejecutada (sin calentamiento, autofill, express ni series de descenso planificadas; sin sustituir series faltantes). Procedencia `VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET`. |
 | 4. "Serie extra" (A.12 / legado) | No se restaura | Referencia `LEGACY_REFERENCE_NON_AUTHORITATIVE`; la autoridad de volumen es solo el Coach / política estructural canónica. |
 | 5. Windows T478 | No bloqueante | `NON_BLOCKING_TECHNICAL_PENDING`; la validación en Linux sigue siendo obligatoria y pasa. |
 

@@ -74,7 +74,7 @@ test('T524.F the LAST working set controls the policy (not an earlier or better 
   assert.equal(easyLast.overlay.dimension, 'LOAD', 'rule A from the last set even though earlier sets were hard');
   const hardLast = scenario({ prior: [{ rir_real: 3 }, { rir_real: 3 }, { rir_real: 0 }], latest: [{ rir_real: 3 }, { rir_real: 3 }, { rir_real: 0 }] });
   assert.equal(hardLast.rec.magnitude.coachReviewRequired.branch, 'D');
-  assert.equal(hardLast.rec.magnitude.evidence.basis, 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET');
+  assert.equal(hardLast.rec.magnitude.evidence.basis, 'VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET');
 });
 
 test('T524.G warm-ups cannot alter the representative set', () => {

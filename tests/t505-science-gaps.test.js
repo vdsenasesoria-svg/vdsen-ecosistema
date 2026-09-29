@@ -24,7 +24,7 @@ const plan1 = (r) => consumer.planApplication({ record: r, context: { clientId: 
 
 test('T505.1 (T523) the three historical gaps are closed product policy, kept only as provenance', () => {
   assert.deepEqual(policy.PRODUCT_POLICIES.map(p => p.resolves), ['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
-  assert.deepEqual(policy.PRODUCT_POLICIES.map(p => p.id), ['RULE_D_E_COACH_REVIEW_ONLY', 'RULE_C_THEN_E_COACH_REVIEW', 'REPRESENTATIVE_SET_LAST_WORKING_SET']);
+  assert.deepEqual(policy.PRODUCT_POLICIES.map(p => p.id), ['RULE_D_E_COACH_REVIEW_ONLY', 'RULE_C_THEN_E_COACH_REVIEW', 'REPRESENTATIVE_SET_LAST_STANDARD_WORKING_SET']);
   assert.ok(Object.isFrozen(policy.PRODUCT_POLICIES) && policy.PRODUCT_POLICIES.every(p => Object.isFrozen(p) && p.source === 'VDSEN_PRODUCT_POLICY' && p.scientificClaim === false));
   assert.deepEqual([...policy.SCIENCE_GAPS], [], 'no genuinely unknown science branch remains');
   assert.deepEqual([...consumer.ACTIVATION_PREREQUISITES], []);
@@ -50,14 +50,14 @@ test('T505.3 C then E: first comparable C -> REST only with explicit product pre
 
 test('T505.4 the representative set is the last WORKING set with product-policy provenance', () => {
   const r = rec({ rir_real: 3 });
-  assert.equal(r.magnitude.evidence.basis, 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET');
-  assert.equal(policy.EVIDENCE_BASIS, 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET');
+  assert.equal(r.magnitude.evidence.basis, 'VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET');
+  assert.equal(policy.EVIDENCE_BASIS, 'VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET');
 });
 
 test('T505.5 readiness lists product policies, no science prerequisites; nothing is executable while the flag is off', () => {
   const d = plan1(rec({ rir_real: 3 }));
   assert.deepEqual(d.readiness.activationPrerequisites, []); assert.deepEqual(d.readiness.globalProvisional, []);
-  assert.deepEqual(d.readiness.productPolicies, ['RULE_D_E_COACH_REVIEW_ONLY', 'RULE_C_THEN_E_COACH_REVIEW', 'REPRESENTATIVE_SET_LAST_WORKING_SET']);
+  assert.deepEqual(d.readiness.productPolicies, ['RULE_D_E_COACH_REVIEW_ONLY', 'RULE_C_THEN_E_COACH_REVIEW', 'REPRESENTATIVE_SET_LAST_STANDARD_WORKING_SET']);
   assert.equal(d.readiness.executable, false); assert.equal(consumer.NUMERIC_APPLY_ENABLED, false); assert.equal(policy.NUMERIC_APPLY_ENABLED, false);
 });
 

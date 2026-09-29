@@ -28,7 +28,7 @@ test('T521.2 (T523) no scientific claim was invented: the three decisions are cl
   const policy = require(path.join(root, 'assets/progression-magnitude-policy.js'));
   assert.ok(policy.PRODUCT_POLICIES.every(p => p.source === 'VDSEN_PRODUCT_POLICY' && p.scientificClaim === false));
   assert.deepEqual(policy.PRODUCT_POLICIES.map(p => p.resolves), ['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
-  assert.equal(policy.EVIDENCE_BASIS, 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET');
+  assert.equal(policy.EVIDENCE_BASIS, 'VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET');
   assert.equal(policy.NUMERIC_APPLY_ENABLED, false);
 });
 

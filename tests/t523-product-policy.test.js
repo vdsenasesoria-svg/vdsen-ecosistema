@@ -91,9 +91,9 @@ test('T523.7 no E escalation from a stale / non-comparable exposure', () => {
 // ---------------- representative set = LAST valid WORKING set
 test('T523.8 the representative set is the LAST valid working set; provenance is product policy', () => {
   const d = run(pair([{ rirReal: 3 }, { rirReal: 0 }, { rirReal: 3 }], [{ rirReal: 3 }, { rirReal: 0 }, { rirReal: 3 }]));
-  assert.equal(d.evidence.setIndex, 2); assert.equal(d.evidence.rirObserved, 3); assert.equal(d.evidence.basis, 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET');
+  assert.equal(d.evidence.setIndex, 2); assert.equal(d.evidence.rirObserved, 3); assert.equal(d.evidence.basis, 'VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET');
   assert.equal(d.ruleId, 'A', 'the first sets do not control the policy');
-  assert.equal(policy.PRODUCT_POLICIES.find(p => p.id === 'REPRESENTATIVE_SET_LAST_WORKING_SET').provenance, 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET');
+  assert.equal(policy.PRODUCT_POLICIES.find(p => p.id === 'REPRESENTATIVE_SET_LAST_STANDARD_WORKING_SET').provenance, 'VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET');
 });
 
 test('T523.9 warm-up sets (flag on the log or on the prescribed set) never become the representative set', () => {

@@ -86,7 +86,7 @@ test('T512.4 Rule A (load / reps) and Rule C first occurrence (rest) are indepen
 
 test('T512.5 (T523) the representative set is closed product policy: provenance, no provisional/global blocker', () => {
   const d = plan1(rec(GOOD));
-  assert.deepEqual(d.readiness.globalProvisional, []); assert.ok(d.readiness.productPolicies.includes('REPRESENTATIVE_SET_LAST_WORKING_SET'));
+  assert.deepEqual(d.readiness.globalProvisional, []); assert.ok(d.readiness.productPolicies.includes('REPRESENTATIVE_SET_LAST_STANDARD_WORKING_SET'));
   assert.ok(!d.blockers.includes('SCIENCE_POLICY_UNRESOLVED'));
 });
 

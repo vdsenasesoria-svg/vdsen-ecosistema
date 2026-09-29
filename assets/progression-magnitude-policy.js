@@ -18,7 +18,7 @@
  *               condition persists at the NEXT comparable exposure, E is reached and, by the rule above, goes to
  *               COACH_REVIEW_REQUIRED. Never a double automatic intervention.
  *   Representative set = the LAST valid WORKING set of the exposure (warm-ups, autofilled, express and planned drop
- *               sets excluded; nothing substituted). Provenance VDSEN_PRODUCT_POLICY_LAST_WORKING_SET.
+ *               sets excluded; nothing substituted). Provenance VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET.
  * Rule A and Rule C (first occurrence) are independent of these review branches. Equipment increments have no
  * contract here: raw load candidates never get a finalCandidate.
  */
@@ -36,7 +36,7 @@
   });
   var MIN_COMPARABLE_EXPOSURES = 2;
   var NUMERIC_APPLY_ENABLED = false;
-  var EVIDENCE_BASIS = 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET';
+  var EVIDENCE_BASIS = 'VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET';
   // T523: the three formerly open decisions are now CLOSED VDSEN PRODUCT POLICY (director decisions). They are product choices,
   // never scientific claims. The historical gap ids are kept only as provenance.
   var PRODUCT_POLICIES = Object.freeze([
@@ -44,7 +44,7 @@
       behavior: 'D and E never produce a numeric candidate; the state is COACH_REVIEW_REQUIRED.' }),
     Object.freeze({ id: 'RULE_C_THEN_E_COACH_REVIEW', resolves: 'RULE_C_E_PRECEDENCE_NOT_DEFINED', rules: ['C', 'E'], source: 'VDSEN_PRODUCT_POLICY', scientificClaim: false,
       behavior: 'First comparable C -> REST +30 s only; the same condition at the next comparable exposure -> COACH_REVIEW_REQUIRED.' }),
-    Object.freeze({ id: 'REPRESENTATIVE_SET_LAST_WORKING_SET', resolves: 'REPRESENTATIVE_SET_NOT_DEFINED', rules: ['A', 'C', 'D', 'E'], source: 'VDSEN_PRODUCT_POLICY', scientificClaim: false,
+    Object.freeze({ id: 'REPRESENTATIVE_SET_LAST_STANDARD_WORKING_SET', resolves: 'REPRESENTATIVE_SET_NOT_DEFINED', rules: ['A', 'C', 'D', 'E'], source: 'VDSEN_PRODUCT_POLICY', scientificClaim: false,
       provenance: EVIDENCE_BASIS, behavior: 'The last valid executed working set of the exposure represents it.' })
   ]);
   // Genuinely UNKNOWN science branches would be listed here (and block with SCIENCE_POLICY_UNRESOLVED). None remain.
@@ -122,7 +122,8 @@
         prescriptionExerciseId: pid, planId: scope && scope.planId, clientId: scope && scope.clientId, sets: [], painFlag: pain });
       g.sets.push({ setIndex: Number(m[4]), load: e.carga, reps: e.reps, unit: e.unit, done: e.done === true,
         rirPrescribed: e.rir, rirReal: e.rir_real, autoFilled: e.autoFilled === true, express: e.express === true,
-        warmup: e.warmup === true || e.isWarmup === true, ts: e.ts });
+        warmup: e.warmup === true || e.isWarmup === true, drop: e.drop === true || e.isDrop === true || e.isDropSet === true || e.dropSet === true,
+        intensification: e.intensification === true || e.isIntensification === true, setType: typeof e.setType === 'string' ? e.setType : undefined, ts: e.ts });
     });
     Object.keys(groups).forEach(function(k) {
       groups[k].sets.sort(function(a, b) { return a.setIndex - b.setIndex; });
@@ -132,18 +133,27 @@
     return out;
   }
 
-  // T523: a WORKING set is an executed set that is not a warm-up (explicit flag on the log or on the prescribed set) and not a
-  // planned drop set (a technique set at a reduced load after the working load). Missing sets are never substituted.
+  // T528: a STANDARD WORKING set is an executed set that is not explicitly tagged as a warm-up, a planned drop set or another
+  // intensification set. ONLY explicit tags/structure classify (boolean flags or an exact setType token); a load decrease, a label or
+  // a name never does. Excluded sets stay legitimate training work (LOGS/volume) -- they are excluded from representative selection only.
+  var NON_STANDARD_TYPES = Object.freeze({ warmup: 'WARMUP', warm_up: 'WARMUP', 'warm-up': 'WARMUP', 'drop-set': 'DROP_SET', drop: 'DROP_SET', dropset: 'DROP_SET', drop_set: 'DROP_SET', intensification: 'INTENSIFICATION' });
+  function _explicitKind(x) {
+    if (!x || typeof x !== 'object') return null;
+    if (x.warmup === true || x.isWarmup === true) return 'WARMUP';
+    if (x.drop === true || x.isDrop === true || x.isDropSet === true || x.dropSet === true) return 'DROP_SET';
+    if (x.intensification === true || x.isIntensification === true) return 'INTENSIFICATION';
+    var t = x.setType !== undefined ? x.setType : x.type;
+    return typeof t === 'string' && Object.prototype.hasOwnProperty.call(NON_STANDARD_TYPES, t) ? NON_STANDARD_TYPES[t] : null;   // exact token, no normalization
+  }
   function _isWorkingSet(s, prescription) {
-    if (!s || s.warmup === true) return false;
+    if (!s || _explicitKind(s)) return false;
     var ps = prescription && Array.isArray(prescription.sets) ? prescription.sets[s.setIndex] : null;
-    if (ps && (ps.warmup === true || ps.isWarmup === true || ps.drop === true || /^warm/i.test(String(ps.type || ps.setType || '')))) return false;
-    return true;
+    return !_explicitKind(ps);
   }
 
-  // T523: THE representative-set authority. Every canonical magnitude/evidence consumer selects the exposure's representative
-  // set here: the LAST valid executed working set, in the canonical (setIndex) order. Provenance
-  // VDSEN_PRODUCT_POLICY_LAST_WORKING_SET -- a product heuristic, not scientific consensus. exposure.sets are already working sets.
+  // T523/T528: THE representative-set authority. Every canonical consumer selects the exposure representative
+  // set here: the LAST valid executed STANDARD working set, in the canonical (setIndex) order. Provenance
+  // VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET -- a product heuristic, not scientific consensus. exposure.sets are already working sets.
   function selectRepresentativeSet(exposure, prescription) {
     var sets = exposure && Array.isArray(exposure.sets) ? exposure.sets.filter(function(s) { return _isWorkingSet(s, prescription); }) : [];
     if (!sets.length) return null;

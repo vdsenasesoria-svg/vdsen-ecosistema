@@ -62,5 +62,5 @@ Ninguna de las tres reglas tiene respaldo suficiente. No se modificó `progressi
 
 El director cerró las tres decisiones como **política de producto VDSEN** (no como hechos científicos ni reglas de Ehrenstein): D/E → revisión del Coach (1A),
 C→E → C primero y, si persiste en la siguiente exposición comparable, revisión del Coach (2B), serie representativa → última serie de trabajo válida (3A,
-`VDSEN_PRODUCT_POLICY_LAST_WORKING_SET`). Esta búsqueda se conserva como historia de por qué existían las brechas. A.12 y la guía histórica de "serie extra" son
+`VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET`). Esta búsqueda se conserva como historia de por qué existían las brechas. A.12 y la guía histórica de "serie extra" son
 `LEGACY_REFERENCE_NON_AUTHORITATIVE`: no se editan y no restauran la función. Ver `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md` (ahora "DECIDIDAS").

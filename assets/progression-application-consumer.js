@@ -82,7 +82,7 @@
   // T505: science/product items that must be closed (director decision) before numeric application may be enabled.
   // Kept in sync with progression-magnitude-policy.js SCIENCE_GAPS (verified by tests).
   var ACTIVATION_PREREQUISITES = Object.freeze([]);
-  var PRODUCT_POLICIES = Object.freeze(['RULE_D_E_COACH_REVIEW_ONLY', 'RULE_C_THEN_E_COACH_REVIEW', 'REPRESENTATIVE_SET_LAST_WORKING_SET']);
+  var PRODUCT_POLICIES = Object.freeze(['RULE_D_E_COACH_REVIEW_ONLY', 'RULE_C_THEN_E_COACH_REVIEW', 'REPRESENTATIVE_SET_LAST_STANDARD_WORKING_SET']);
 
   // T512: unsupported science is LOCALIZED: only branches that need a missing rule are blocked. D and E adjustments need the
   // reps-vs-load alternative; Rule A and Rule C candidates do not. C+E is informational (E deferred, C stands).

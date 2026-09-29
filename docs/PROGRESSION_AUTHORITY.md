@@ -48,8 +48,8 @@ Restos operativos CONTENIDOS (T515): **Temporizador de descanso** (`fatigueCost`
 
 Decisiones del director (política de producto VDSEN; **no** reglas científicas ni de Ehrenstein): **D/E → `COACH_REVIEW_REQUIRED`** (sin candidato numérico; no se reduce
 carga, reps objetivo, series ni RIR); **C→E**: primera ocurrencia comparable → REST +30 s únicamente, si la misma condición persiste en la siguiente exposición
-comparable → revisión del Coach; **serie representativa = última serie de trabajo válida** (sin calentamiento, autofill, express ni series de descenso planificadas; sin
-sustituir series faltantes), procedencia `VDSEN_PRODUCT_POLICY_LAST_WORKING_SET`. La guía histórica A.12 de "serie extra" es `LEGACY_REFERENCE_NON_AUTHORITATIVE` (no se
+comparable → revisión del Coach; **serie representativa = última serie de trabajo ESTÁNDAR válida** (T528: se excluyen calentamiento, autofill, express, series de descenso planificadas y otras series de intensificación SOLO cuando una etiqueta explícita lo establece — nunca por bajada de carga ni por nombre; siguen siendo trabajo de entrenamiento en LOGS; sin
+sustituir series faltantes), procedencia `VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET`. La guía histórica A.12 de "serie extra" es `LEGACY_REFERENCE_NON_AUTHORITATIVE` (no se
 edita ni se restaura). Windows T478 es `NON_BLOCKING_TECHNICAL_PENDING`. Los tres huecos históricos (`RULE_D_E_ALTERNATIVE_NOT_DEFINED`, `RULE_C_E_PRECEDENCE_NOT_DEFINED`,
 `REPRESENTATIVE_SET_NOT_DEFINED`) ya no bloquean: se conservan solo como procedencia (`PRODUCT_POLICIES[].resolves`). `SCIENCE_POLICY_UNRESOLVED` sigue disponible para una rama
 futura genuinamente desconocida.

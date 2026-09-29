@@ -8,7 +8,7 @@ Generado por `node scripts/generate-activation-docs.cjs`. **Evidencia estática 
 |---|---|
 | Política de producto D/E | COACH_REVIEW_REQUIRED (1A) — sin candidato numérico |
 | Política C→E | primera ocurrencia comparable → REST +30 s; persistencia → COACH_REVIEW_REQUIRED (2B) |
-| Serie representativa | LAST_WORKING_SET · `VDSEN_PRODUCT_POLICY_LAST_WORKING_SET` |
+| Serie representativa | LAST_STANDARD_WORKING_SET · `VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET` |
 | Bloqueos científicos abiertos | 0 |
 | Resolvedor de equipo | listo (identidad + precedencia + rejilla física + rechazo explícito) |
 | UX de configuración de equipo | lista (editor, cola, carga masiva, vista previa de impacto, procedencia) |
