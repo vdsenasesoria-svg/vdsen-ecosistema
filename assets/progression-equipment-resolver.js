@@ -138,6 +138,18 @@
     return res;
   }
 
+  // T503: realizable-load resolution for a canonical shadow magnitude decision (LOAD candidate only).
+  // current = candidate.previousValue, desired = candidate.rawCandidate, direction/unit from the decision.
+  // Returns null when the decision has no LOAD candidate. Pure; never applies anything.
+  function resolveForCandidate(input) {
+    input = input || {};
+    var m = input.magnitude || {}, cands = Array.isArray(m.candidates) ? m.candidates : [];
+    var c = cands.filter(function(d) { return d && d.dimension === 'LOAD'; })[0];
+    if (!c) return null;
+    return resolveLoad({ currentLoad: c.previousValue, desiredLoad: c.rawCandidate, direction: m.direction,
+      unit: m.evidence && m.evidence.unit, equipment: input.equipment, roundingMode: input.roundingMode });
+  }
+
   // T502: strict Coach configuration input -> sourced metadata (or null to clear). Configuration data only:
   // nothing is defaulted, the equipment type never fills a value, the source is always COACH_CONFIGURED.
   var CONFIG_KINDS = { STEP: true, PLATE_LOADED_BAR: true, AVAILABLE_LOADS: true };
@@ -192,5 +204,6 @@
 
   return { STATES: STATES, MODES: MODES, SOURCES: Object.keys(SOURCES), INCREMENT_METADATA: INCREMENT_METADATA,
     lookupIncrement: lookupIncrement, describeGrid: describeGrid, resolveLoad: resolveLoad,
-    equipmentRefFromCatalogEntry: equipmentRefFromCatalogEntry, normalizeLoadIncrementInput: normalizeLoadIncrementInput };
+    equipmentRefFromCatalogEntry: equipmentRefFromCatalogEntry, normalizeLoadIncrementInput: normalizeLoadIncrementInput,
+    resolveForCandidate: resolveForCandidate };
 });

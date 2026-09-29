@@ -78,10 +78,10 @@ test('T493.4 LOAD needs a resolved physical load; without equipment metadata it 
   only(plan1(rec, { equipmentResolution: undefined }), B.UNRESOLVED_EQUIPMENT_INCREMENT);
   const unresolved = resolver.resolveLoad({ currentLoad: 100, desiredLoad: 102.5, direction: 'UP', unit: 'KG', equipment: { equipmentId: 'x', equipmentType: 'machine' } });
   only(plan1(rec, { equipmentResolution: unresolved }), B.UNRESOLVED_EQUIPMENT_INCREMENT);
-  only(plan1(rec, { equipmentResolution: resolution({ desiredLoad: 101 }) }), B.EQUIPMENT_RESOLUTION_MISMATCH);
+  only(plan1(rec, { equipmentResolution: resolution({ desiredLoad: 101, roundingMode: 'CEIL' }) }), B.EQUIPMENT_RESOLUTION_MISMATCH); // resolved, but for another desired load
   only(plan1(rec, { equipmentResolution: resolution({ roundingMode: 'CEIL', desiredLoad: 102.5 }) }), null);
   const stack5 = resolution({ equipment: { equipmentId: 'st', gymId: 'g', loadIncrement: { kind: 'STEP', step: 5, unit: 'KG', source: 'COACH_CONFIGURED' } } });
-  only(plan1(rec, { equipmentResolution: stack5 }), B.EQUIPMENT_RESOLUTION_MISMATCH);
+  only(plan1(rec, { equipmentResolution: stack5 }), B.DIRECTION_NOT_REALIZABLE); // T503: specific blocker instead of a generic mismatch
 });
 
 function customRecord(repsBySet, rir, rirReal, last = {}) {

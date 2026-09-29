@@ -27,6 +27,8 @@
     COACH_KEEP_ORIGINAL: 'COACH_KEEP_ORIGINAL', SAFETY_CONFLICT: 'SAFETY_CONFLICT',
     NOT_ELIGIBLE: 'NOT_ELIGIBLE', POLICY_BRANCH_REQUIRES_RESOLUTION: 'POLICY_BRANCH_REQUIRES_RESOLUTION',
     UNRESOLVED_EQUIPMENT_INCREMENT: 'UNRESOLVED_EQUIPMENT_INCREMENT', EQUIPMENT_RESOLUTION_MISMATCH: 'EQUIPMENT_RESOLUTION_MISMATCH',
+    DIRECTION_NOT_REALIZABLE: 'DIRECTION_NOT_REALIZABLE', UNIT_MISMATCH: 'UNIT_MISMATCH', EQUIPMENT_OUT_OF_RANGE: 'EQUIPMENT_OUT_OF_RANGE',
+    EQUIPMENT_INPUT_INVALID: 'EQUIPMENT_INPUT_INVALID',
     NO_ACTIONABLE_CANDIDATE: 'NO_ACTIONABLE_CANDIDATE', STRUCTURAL_DIMENSION_NOT_AUTHORIZED: 'STRUCTURAL_DIMENSION_NOT_AUTHORIZED',
     ALREADY_RECORDED: 'ALREADY_RECORDED', STALE_CALLBACK: 'STALE_CALLBACK', REVISION_CONFLICT: 'REVISION_CONFLICT'
   });
@@ -56,8 +58,10 @@
     if (c.dimension === 'LOAD') {
       var r = ctx.equipmentResolution;
       if (!r || r.resolutionState !== 'RESOLVED' || _num(r.realizableLoad) === null) {
-        blockers.push(r && r.resolutionState && r.resolutionState !== 'RESOLVED' && r.resolutionState !== 'UNRESOLVED_EQUIPMENT_INCREMENT'
-          ? BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH : BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT);
+        var byState = { DIRECTION_NOT_REALIZABLE: BLOCKERS.DIRECTION_NOT_REALIZABLE, UNIT_MISMATCH: BLOCKERS.UNIT_MISMATCH,
+          OUT_OF_RANGE: BLOCKERS.EQUIPMENT_OUT_OF_RANGE, INVALID_INPUT: BLOCKERS.EQUIPMENT_INPUT_INVALID,
+          UNRESOLVED_EQUIPMENT_INCREMENT: BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT };
+        blockers.push(!r ? BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT : (byState[r.resolutionState] || BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH));
         return null;
       }
       if (_num(r.requestedLoad) !== _num(c.rawCandidate) || !r.equipmentId) { blockers.push(BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH); return null; }
@@ -76,7 +80,7 @@
   // Dry-run planner. Pure: reads its inputs, returns a decision; never writes.
   function planApplication(input) {
     input = input || {}; var record = input.record, ctx = input.context || {}, blockers = [];
-    var out = { mode: 'DRY_RUN', schema: SCHEMA, canApply: false, wouldApply: false, blockers: blockers, overlay: null,
+    var out = { mode: 'DRY_RUN', schema: SCHEMA, canApply: false, wouldApply: false, blockers: blockers, overlay: null, equipment: null,
       numericApplyEnabled: NUMERIC_APPLY_ENABLED, applied: false, recordKey: record && record.key || null, audit: null };
     var m = record && record.magnitude;
     if (!record || !record.key || !m || m.mode !== 'SHADOW' || m.numericApplyAllowed !== false || m.schema !== 'vdsen-magnitude-shadow-v1' ||
@@ -127,6 +131,13 @@
     }
     if (!NUMERIC_APPLY_ENABLED) blockers.push(BLOCKERS.NUMERIC_APPLY_DISABLED);
     out.canApply = out.wouldApply && NUMERIC_APPLY_ENABLED && blockers.length === 0;
+    var er = ctx.equipmentResolution;
+    if (er && m && (m.candidates || []).some(function(cd) { return cd && cd.dimension === 'LOAD'; })) {
+      out.equipment = { equipmentId: er.equipmentId || null, equipmentType: er.equipmentType || null, unit: er.unit || null,
+        requestedLoad: _num(er.requestedLoad), currentLoad: _num(er.currentLoad), realizableLoad: _num(er.realizableLoad), delta: _num(er.delta),
+        roundingReason: er.roundingReason || null, incrementSource: er.incrementSource || null,
+        resolutionState: er.resolutionState || null, reasons: Array.isArray(er.reasons) ? er.reasons.slice() : [] };
+    }
     out.audit = { event: out.wouldApply ? 'OVERLAY_WOULD_APPLY' : 'OVERLAY_BLOCKED', at: ctx.now || null, actor: 'SYSTEM_DRY_RUN',
       recordKey: out.recordKey, revision: record && record.revision !== undefined ? record.revision : null, blockers: blockers.slice(),
       overlayKey: out.overlay ? out.overlay.key : null };

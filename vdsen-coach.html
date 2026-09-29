@@ -17655,14 +17655,22 @@ El esfuerzo no es negociable.
       // exposure and what blocks it. Nothing is written; NUMERIC_APPLY_ENABLED=false.
       const _dryRuns = {};
       try {
-        (autoSummary.items || []).forEach(function(it) {
+        for (const it of (autoSummary.items || [])) {
           var full = _canonicalRecords && _canonicalRecords[it.key];
-          if (!full || !window.VDSEN_APPLICATION_CONSUMER) return;
+          if (!full || !window.VDSEN_APPLICATION_CONSUMER) continue;
+          // LOAD candidates need explicit equipment increment metadata (T503); other dimensions never do.
+          var _eqRes;
+          if (window.VDSEN_EQUIPMENT_RESOLVER && full.magnitude && (full.magnitude.candidates || []).some(function(cd) { return cd && cd.dimension === 'LOAD'; })) {
+            var _eqRef = await _equipmentRefForRecord(full, p);
+            if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
+            _eqRes = window.VDSEN_EQUIPMENT_RESOLVER.resolveForCandidate({ magnitude: full.magnitude, equipment: _eqRef || { equipmentId: null } }) || undefined;
+          }
           _dryRuns[it.key] = window.VDSEN_APPLICATION_CONSUMER.planApplication({ record: full, context: {
+            equipmentResolution: _eqRes,
             clientId: clientId, planId: autoSummary.planId, activePlanId: c.activePlanId, plan: p, entries: entries,
             interventions: c.coachInterventions, existingOverlays: _existingOverlays,
             resolveNextExposure: window.VDSEN_AUTO_APPLY_SHADOW.resolveNextExposure, now: new Date().toISOString() } });
-        });
+        }
       } catch(e) { console.warn('Dry-run application audit unavailable:', e); }
       html += _renderShadowAutoFeed(autoSummary, _dryRuns);
     } else {
@@ -18796,6 +18804,24 @@ El esfuerzo no es negociable.
         + ' (evidencia, no aplicada)</span>' : '');
   }
   // T494: Spanish labels for the dry-run blockers and the would-be overlay line.
+  // T503: equipment reference for a canonical record, by EXACT identity only: PID -> unique plan exercise in the
+  // target day -> its exerciseId -> the coach-owned exercises/{exerciseId} doc (source of loadIncrement).
+  // Never name matching. Returns null when any link is missing (=> UNRESOLVED_EQUIPMENT_INCREMENT).
+  async function _equipmentRefForRecord(record, plan) {
+    try {
+      var t = record && record.nextExposure, pid = record && record.prescriptionExerciseId;
+      var day = (Array.isArray(plan && plan.days) ? plan.days : []).filter(function(d) { return d.dayIndex === (t && t.dayIndex); })[0];
+      var rows = ((day && day.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; });
+      if (rows.length !== 1 || !rows[0].exerciseId) return null;
+      var exerciseId = String(rows[0].exerciseId);
+      var snap = await getDoc(doc(db, 'exercises', exerciseId));
+      if (!snap.exists()) return null;
+      var d = snap.data() || {};
+      if (!currentCoach || (d.coachId && d.coachId !== currentCoach.uid)) return null;
+      return { equipmentId: d.equipmentId || ('exercise:' + exerciseId), equipmentType: d.equipmentType || null, gymId: d.gymId || null,
+        loadIncrement: d.loadIncrement || null };
+    } catch (e) { return null; }
+  }
   function _dryRunLine(decision) {
     if (!decision) return '';
     var labels = { NUMERIC_APPLY_DISABLED: 'aplicación numérica desactivada', NOT_CANONICAL_RECORD: 'registro no canónico',
@@ -18806,13 +18832,21 @@ El esfuerzo no es negociable.
       NOT_ELIGIBLE: 'evidencia no elegible', POLICY_BRANCH_REQUIRES_RESOLUTION: 'rama de política sin resolver',
       UNRESOLVED_EQUIPMENT_INCREMENT: 'incremento del equipo sin definir', EQUIPMENT_RESOLUTION_MISMATCH: 'resolución de equipo inconsistente',
       NO_ACTIONABLE_CANDIDATE: 'sin candidato accionable', STRUCTURAL_DIMENSION_NOT_AUTHORIZED: 'dimensión estructural no autorizada',
-      ALREADY_RECORDED: 'ya registrado' };
+      ALREADY_RECORDED: 'ya registrado', DIRECTION_NOT_REALIZABLE: 'el equipo no permite ese movimiento de carga', UNIT_MISMATCH: 'unidad distinta a la del incremento configurado',
+      EQUIPMENT_OUT_OF_RANGE: 'fuera del rango del equipo', EQUIPMENT_INPUT_INVALID: 'entrada de equipo inválida' };
     var real = (decision.blockers || []).filter(function(b) { return b !== 'NUMERIC_APPLY_DISABLED'; });
     var o = decision.overlay;
     var text = decision.wouldApply && o
       ? 'Aplicaría en Sem ' + o.target.week + ' · Día ' + (o.target.dayIndex + 1) + ': ' + o.dimension + ' ' + (o.previousValue === null ? '—' : o.previousValue) + ' → ' + o.appliedValue + ' (simulación, no activo)'
       : 'No se aplicaría: ' + (real.length ? real.map(function(b) { return labels[b] || b; }).join(', ') : 'sin candidato');
-    return '<span style="display:block;font-size:10px;color:#666">Simulación (dry-run): ' + _escH(text) + '</span>';
+    var e = decision.equipment, eqLine = '';
+    if (e) {
+      eqLine = 'Equipo ' + (e.equipmentId || '—') + ' · ' + e.resolutionState + ' · deseada ' + (e.requestedLoad === null ? '—' : e.requestedLoad) + ' ' + (e.unit || '')
+        + ' → realizable ' + (e.realizableLoad === null ? '—' : e.realizableLoad)
+        + ' · fuente ' + (e.incrementSource || 'sin incremento configurado') + (e.roundingReason ? ' · redondeo ' + e.roundingReason : '');
+    }
+    return '<span style="display:block;font-size:10px;color:#666">Simulación (dry-run): ' + _escH(text) + '</span>'
+      + (eqLine ? '<span style="display:block;font-size:10px;color:#666">' + _escH(eqLine) + '</span>' : '');
   }
   function _renderShadowAutoFeed(summary, dryRuns) {
     var items = Array.isArray(summary.items) ? summary.items : [];
