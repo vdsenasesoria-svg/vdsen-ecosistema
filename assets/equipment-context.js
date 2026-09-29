@@ -100,6 +100,54 @@
       exerciseId: ctx.exerciseId || null };
   }
 
+  var QUEUE_STATUS = Object.freeze({ IDENTITY_UNRESOLVED: 'IDENTITY_UNRESOLVED', INCREMENT_INVALID: 'INCREMENT_INVALID', INCREMENT_UNRESOLVED: 'INCREMENT_UNRESOLVED',
+    UNIT_MISMATCH: 'UNIT_MISMATCH', READY: 'READY' });
+
+  // T510: compact readiness queue -- which equipment blocks canonical LOAD candidates.
+  // input: { catalog, config?, exerciseOverrides? {exerciseId: loadIncrement}, candidates? [{ equipmentId|null, exerciseId?, unit }] }
+  function buildEquipmentQueue(input) {
+    input = input || {};
+    var catalog = input.catalog || {}, cfg = normalizeConfig(input.config), overrides = input.exerciseOverrides || {}, candidates = Array.isArray(input.candidates) ? input.candidates : [];
+    var index = identity.buildIndex(catalog), rows = {}, seenGyms = {};
+    function rowFor(key, base) { return rows[key] || (rows[key] = Object.assign({ aliases: {}, exerciseIds: [] }, base)); }
+    Object.keys(catalog.gyms || {}).forEach(function(k) {
+      var g = catalog.gyms[k], gymId = g.gymId || k;
+      if (seenGyms[gymId]) return; seenGyms[gymId] = true;
+      (g.entries || []).concat(g.legacyEntries || []).forEach(function(e) {
+        var id = identity.identify(index, { equipmentId: e.equipmentId, label: e.equipment, gymId: gymId });
+        var key = id.equipmentId ? id.equipmentId : 'unresolved|' + gymId + '|' + identity.normalizeLabel(e.equipment);
+        var r = rowFor(key, { key: key, equipmentId: id.equipmentId, name: id.canonicalName || e.equipment, equipmentType: id.equipmentType || e.equipmentType || null,
+          gymId: gymId, identityStatus: id.status, identityReason: id.reason });
+        r.aliases[e.equipment] = true; r.exerciseIds.push(e.exerciseId);
+      });
+    });
+    (catalog.functionalEquipment || []).forEach(function(f) {
+      if (!Object.keys(rows).some(function(k) { return rows[k].equipmentId === f.equipmentId; }))
+        rowFor(f.equipmentId, { key: f.equipmentId, equipmentId: f.equipmentId, name: f.name, equipmentType: f.equipmentType || null, gymId: null, identityStatus: 'EXPLICIT_ID', identityReason: null }).aliases[f.name] = true;
+    });
+    var out = Object.keys(rows).map(function(k) {
+      var r = rows[k], resolved = r.identityStatus !== 'UNRESOLVED';
+      var meta = resolved ? resolveIncrementMetadata({ gymId: r.gymId, equipmentId: r.equipmentId, config: cfg }) : { meta: null, scope: null, invalidReason: null };
+      var mine = candidates.filter(function(c) { return resolved ? c.equipmentId === r.equipmentId : (!c.equipmentId && r.exerciseIds.indexOf(c.exerciseId) >= 0); });
+      var overrideCount = r.exerciseIds.filter(function(id) { return !!overrides[id]; }).length;
+      var incState = !resolved ? 'NOT_APPLICABLE' : meta.invalidReason ? 'INVALID' : meta.meta ? 'CONFIGURED' : 'NONE';
+      var unitMismatch = meta.meta && mine.some(function(c) { return c.unit && String(c.unit).toUpperCase() !== String(meta.meta.unit).toUpperCase(); });
+      var status = !resolved ? QUEUE_STATUS.IDENTITY_UNRESOLVED : incState === 'INVALID' ? QUEUE_STATUS.INCREMENT_INVALID : incState === 'NONE' ? QUEUE_STATUS.INCREMENT_UNRESOLVED
+        : unitMismatch ? QUEUE_STATUS.UNIT_MISMATCH : QUEUE_STATUS.READY;
+      var missing = [];
+      if (!resolved) missing.push('identidad canónica (' + (r.identityReason || 'NO_CANONICAL_DEFINITION') + '): solo configurable por ejercicio');
+      else if (incState === 'NONE') missing.push('incremento explícito (STEP: paso · PLATE_LOADED_BAR: barra + disco mínimo · AVAILABLE_LOADS: cargas) y unidad');
+      else if (incState === 'INVALID') missing.push('corregir incremento inválido (' + meta.invalidReason + ')');
+      else if (unitMismatch) missing.push('unidad del incremento (' + meta.meta.unit + ') distinta a la de la evidencia');
+      return { key: r.key, equipmentId: r.equipmentId, name: r.name, equipmentType: r.equipmentType, gymId: r.gymId, aliases: Object.keys(r.aliases).sort(),
+        identityStatus: r.identityStatus, identityReason: r.identityReason, exerciseCount: r.exerciseIds.length, exerciseOverrideCount: overrideCount,
+        incrementState: incState, incrementScope: meta.scope, incrementSource: meta.meta ? meta.meta.source : null, incrementUnit: meta.meta ? meta.meta.unit : null,
+        candidatesAffected: mine.length, status: status, blocker: status === QUEUE_STATUS.READY ? null : status, missing: missing };
+    });
+    return out.sort(function(a, b) { return b.candidatesAffected - a.candidatesAffected || b.exerciseCount - a.exerciseCount || a.name.localeCompare(b.name) || String(a.key).localeCompare(String(b.key)); });
+  }
+
   return { SCOPES: SCOPES, emptyConfig: emptyConfig, normalizeConfig: normalizeConfig, resolveIncrementMetadata: resolveIncrementMetadata,
-    setEquipmentIncrement: setEquipmentIncrement, equipmentRefForExercise: equipmentRefForExercise };
+    setEquipmentIncrement: setEquipmentIncrement, equipmentRefForExercise: equipmentRefForExercise,
+    QUEUE_STATUS: QUEUE_STATUS, buildEquipmentQueue: buildEquipmentQueue };
 });
