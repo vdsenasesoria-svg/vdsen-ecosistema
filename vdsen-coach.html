@@ -1589,6 +1589,8 @@
   <script src="assets/exercise-visual-metadata-editor.js"></script>
   <script src="assets/progression-magnitude-policy.js"></script>
   <script src="assets/progression-equipment-resolver.js"></script>
+  <script src="assets/equipment-identity.js"></script>
+  <script src="assets/equipment-context.js"></script>
   <script src="assets/progression-application-consumer.js"></script>
   <script src="assets/progression-auto-apply-shadow.js"></script>
   <script type="module">
@@ -4109,6 +4111,77 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     };
   }
   window.openLoadIncrementEditor = openLoadIncrementEditor;
+
+  // T509: configuración del incremento por EQUIPO (compartido o por sede). El Coach lo ingresa una sola vez y aplica a
+  // todos los ejercicios que usan ese equipo. Se guarda de forma aditiva en coaches/{uid}.equipmentIncrements.
+  var _coachEquipmentConfig = null;
+  async function _loadCoachEquipmentConfig(force) {
+    if (_coachEquipmentConfig && !force) return _coachEquipmentConfig;
+    var cfg = null;
+    try { var snap = await getDoc(doc(db, 'coaches', currentCoach.uid)); cfg = snap.exists() ? snap.data().equipmentIncrements : null; } catch (e) { cfg = null; }
+    _coachEquipmentConfig = window.VDSEN_EQUIPMENT_CONTEXT.normalizeConfig(cfg);
+    return _coachEquipmentConfig;
+  }
+  function _incFormMarkup(cur) {
+    cur = cur || {};
+    var numIn = function(id, label, val) { return '<label>' + label + '<input id="' + id + '" class="input-field w-full" inputmode="decimal" value="' + _escH(val === undefined || val === null ? '' : String(val)) + '"></label>'; };
+    return '<label>Tipo<select id="ei-kind" class="input-field w-full"><option value="">Sin configurar</option><option value="STEP">Paso fijo (stack / placa integrada)</option><option value="PLATE_LOADED_BAR">Barra + discos</option><option value="AVAILABLE_LOADS">Cargas disponibles (mancuernas / fijos)</option></select></label>' +
+      '<label>Unidad<select id="ei-unit" class="input-field w-full"><option value="KG">KG</option><option value="LB">LB</option></select></label>' +
+      '<div id="ei-step">' + numIn('ei-step-v', 'Paso', cur.step) + numIn('ei-min', 'Mínimo (opcional)', cur.min) + numIn('ei-max', 'Máximo (opcional)', cur.max) + '</div>' +
+      '<div id="ei-bar">' + numIn('ei-bar-w', 'Peso de la barra', cur.barWeight) + numIn('ei-plate', 'Disco más pequeño', cur.smallestPlate) + numIn('ei-bar-max', 'Máximo (opcional)', cur.max) + '</div>' +
+      '<div id="ei-loads"><label>Cargas disponibles <small>(separadas por espacio, ; o salto de línea)</small><textarea id="ei-loads-v" class="input-field w-full" rows="3">' + _escH(Array.isArray(cur.loads) ? cur.loads.join(' ') : '') + '</textarea></label></div>';
+  }
+  function _incFormBind(cur) {
+    var kindEl = document.getElementById('ei-kind');
+    kindEl.value = (cur && cur.kind) || ''; document.getElementById('ei-unit').value = (cur && cur.unit) || 'KG';
+    var sync = function() {
+      document.getElementById('ei-step').style.display = kindEl.value === 'STEP' ? '' : 'none';
+      document.getElementById('ei-bar').style.display = kindEl.value === 'PLATE_LOADED_BAR' ? '' : 'none';
+      document.getElementById('ei-loads').style.display = kindEl.value === 'AVAILABLE_LOADS' ? '' : 'none';
+    };
+    kindEl.onchange = sync; sync();
+  }
+  function _incFormRead() {
+    var v = function(id) { return (document.getElementById(id) || {}).value || ''; };
+    var kind = v('ei-kind');
+    return window.VDSEN_EQUIPMENT_RESOLVER.normalizeLoadIncrementInput({ kind: kind, unit: v('ei-unit'), step: v('ei-step-v'), min: v('ei-min'),
+      max: kind === 'PLATE_LOADED_BAR' ? v('ei-bar-max') : v('ei-max'), barWeight: v('ei-bar-w'), smallestPlate: v('ei-plate'), loads: v('ei-loads-v') });
+  }
+  // item: { equipmentId, name, gymId }  (canonical equipment; identity must already be resolved)
+  async function openEquipmentIncrementEditor(item) {
+    if (!item || !item.equipmentId || !currentCoach) return;
+    var cfg = await _loadCoachEquipmentConfig(true);
+    var gymId = item.gymId || '';
+    var curShared = cfg.shared[item.equipmentId] || null, curGym = gymId && cfg.gyms[gymId] ? (cfg.gyms[gymId][item.equipmentId] || null) : null;
+    var ov = document.createElement('div'); ov.id = 'equipmentIncrementEditor';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.innerHTML = '<div style="background:#171717;border:1px solid #444;max-width:520px;width:100%;max-height:90vh;overflow:auto;padding:20px;border-radius:10px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;color:#f4f4f0">Incremento · ' + _escH(item.name || item.equipmentId) + '</h3><button id="eiClose" class="btn-secondary">Cerrar</button></div>' +
+      '<p style="color:#888;font-size:12px">' + _escH(item.equipmentId) + ' · se configura una vez y aplica a todos los ejercicios con este equipo. Solo valores reales; sin valor = sin redondeo.</p>' +
+      '<label>Alcance<select id="ei-scope" class="input-field w-full"><option value="SHARED">Compartido (todas las sedes)</option>' + (gymId ? '<option value="GYM">Solo esta sede (' + _escH(gymId) + ')</option>' : '') + '</select></label>' +
+      _incFormMarkup(curGym || curShared) +
+      '<button id="eiSave" class="btn-primary mt-3">Guardar incremento</button><span id="eiStatus" style="margin-left:10px;color:#f08080"></span></div>';
+    document.body.appendChild(ov);
+    var close = function() { var el = document.getElementById('equipmentIncrementEditor'); if (el) el.remove(); };
+    document.getElementById('eiClose').onclick = close;
+    var scopeEl = document.getElementById('ei-scope');
+    if (curGym && gymId) scopeEl.value = 'GYM';
+    _incFormBind(scopeEl.value === 'GYM' ? curGym : curShared);
+    scopeEl.onchange = function() { var c = scopeEl.value === 'GYM' ? curGym : curShared; document.getElementById('ei-kind').value = (c && c.kind) || ''; document.getElementById('ei-kind').onchange(); };
+    document.getElementById('eiSave').onclick = async function() {
+      var status = document.getElementById('eiStatus');
+      try {
+        var meta = _incFormRead();
+        var next = window.VDSEN_EQUIPMENT_CONTEXT.setEquipmentIncrement(cfg, { scope: scopeEl.value, gymId: gymId, equipmentId: item.equipmentId, meta: meta });
+        var btn = document.getElementById('eiSave'); btn.disabled = true; btn.textContent = 'Guardando...';
+        await updateDoc(doc(db, 'coaches', currentCoach.uid), { equipmentIncrements: next });
+        _coachEquipmentConfig = next;
+        showToast(meta ? 'Incremento guardado' : 'Incremento eliminado'); close();
+        if (typeof window._onEquipmentConfigChanged === 'function') window._onEquipmentConfigChanged();
+      } catch (e) { status.textContent = e.message || 'No se pudo guardar'; var b = document.getElementById('eiSave'); if (b) { b.disabled = false; b.textContent = 'Guardar incremento'; } }
+    };
+  }
+  window.openEquipmentIncrementEditor = openEquipmentIncrementEditor;
   
   // FASE 15 — Helpers de navegación semanal (0 Firestore reads)
   function _coachClampSelectedWeek(selected, currentWeek, totalWeeks) {
@@ -18804,22 +18877,23 @@ El esfuerzo no es negociable.
         + ' (evidencia, no aplicada)</span>' : '');
   }
   // T494: Spanish labels for the dry-run blockers and the would-be overlay line.
-  // T503: equipment reference for a canonical record, by EXACT identity only: PID -> unique plan exercise in the
-  // target day -> its exerciseId -> the coach-owned exercises/{exerciseId} doc (source of loadIncrement).
-  // Never name matching. Returns null when any link is missing (=> UNRESOLVED_EQUIPMENT_INCREMENT).
+  // T503/T509: equipment reference for a canonical record, by EXACT identity only: PID -> unique plan exercise in the
+  // target day -> its exerciseId -> (coach-owned exercises/{exerciseId} override doc, static catalog entry) -> canonical
+  // equipment identity -> metadata precedence (exercise > gym equipment > shared equipment). Never name matching.
   async function _equipmentRefForRecord(record, plan) {
     try {
       var t = record && record.nextExposure, pid = record && record.prescriptionExerciseId;
       var day = (Array.isArray(plan && plan.days) ? plan.days : []).filter(function(d) { return d.dayIndex === (t && t.dayIndex); })[0];
       var rows = ((day && day.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; });
       if (rows.length !== 1 || !rows[0].exerciseId) return null;
-      var exerciseId = String(rows[0].exerciseId);
-      var snap = await getDoc(doc(db, 'exercises', exerciseId));
-      if (!snap.exists()) return null;
-      var d = snap.data() || {};
-      if (!currentCoach || (d.coachId && d.coachId !== currentCoach.uid)) return null;
-      return { equipmentId: d.equipmentId || ('exercise:' + exerciseId), equipmentType: d.equipmentType || null, gymId: d.gymId || null,
-        loadIncrement: d.loadIncrement || null };
+      var exerciseId = String(rows[0].exerciseId), exerciseDoc = null;
+      try {
+        var snap = await getDoc(doc(db, 'exercises', exerciseId));
+        if (snap.exists()) { var d = snap.data() || {}; if (currentCoach && (!d.coachId || d.coachId === currentCoach.uid)) exerciseDoc = d; }
+      } catch (e) { exerciseDoc = null; }
+      var cfg = await _loadCoachEquipmentConfig(false);
+      return window.VDSEN_EQUIPMENT_CONTEXT.equipmentRefForExercise({ catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, exerciseId: exerciseId,
+        exerciseDoc: exerciseDoc, config: cfg });
     } catch (e) { return null; }
   }
   function _dryRunLine(decision) {

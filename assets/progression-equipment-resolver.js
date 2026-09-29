@@ -21,6 +21,7 @@
   var STATES = Object.freeze({
     RESOLVED: 'RESOLVED',
     UNRESOLVED_EQUIPMENT_INCREMENT: 'UNRESOLVED_EQUIPMENT_INCREMENT',
+    UNRESOLVED_EQUIPMENT_IDENTITY: 'UNRESOLVED_EQUIPMENT_IDENTITY',
     DIRECTION_NOT_REALIZABLE: 'DIRECTION_NOT_REALIZABLE',
     OUT_OF_RANGE: 'OUT_OF_RANGE',
     UNIT_MISMATCH: 'UNIT_MISMATCH',
@@ -44,7 +45,7 @@
       requestedLoad: _num(input && input.desiredLoad), currentLoad: _num(input && input.currentLoad),
       realizableLoad: null, delta: null, roundingReason: null,
       equipmentId: eq.equipmentId || null, equipmentType: eq.equipmentType || null, gymId: eq.gymId || null,
-      unit: input && input.unit || null, incrementSource: null, resolutionState: STATES.UNRESOLVED_EQUIPMENT_INCREMENT,
+      unit: input && input.unit || null, incrementSource: null, incrementScope: eq.incrementScope || null, resolutionState: STATES.UNRESOLVED_EQUIPMENT_INCREMENT,
       reasons: [], numericApplyAllowed: false, applied: false
     }, extra || {});
   }
@@ -103,6 +104,7 @@
     var eq = input.equipment || {};
     var meta = lookupIncrement(input.incrementMetadata, eq.gymId, eq.equipmentId);
     if (!meta && input.equipment && input.equipment.loadIncrement) meta = input.equipment.loadIncrement;
+    if (!meta && !eq.equipmentId) return _result(input, { resolutionState: STATES.UNRESOLVED_EQUIPMENT_IDENTITY, reasons: ['UNRESOLVED_EQUIPMENT_IDENTITY'] });
     if (!meta) return _result(input, { reasons: ['UNRESOLVED_EQUIPMENT_INCREMENT'] });
     var grid = describeGrid(meta, input.unit);
     if (!grid.ok) {

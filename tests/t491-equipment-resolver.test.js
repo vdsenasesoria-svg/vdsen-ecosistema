@@ -112,7 +112,8 @@ test('T491.10 real catalog entries carry no increment metadata, so every one res
     const ref = resolver.equipmentRefFromCatalogEntry(e);
     if (ref.loadIncrement) continue; // once increments are authored this branch is exercised by T491.2-9
     const r = resolveLoad({ currentLoad: 100, desiredLoad: 102.5, direction: 'UP', unit: 'KG', equipment: ref });
-    assert.equal(r.resolutionState, STATES.UNRESOLVED_EQUIPMENT_INCREMENT, e.exerciseName || e.name);
+    // T509: an entry without an equipmentId is an unresolved IDENTITY; with one it is an unresolved increment. Never RESOLVED.
+    assert.equal(r.resolutionState, ref.equipmentId ? STATES.UNRESOLVED_EQUIPMENT_INCREMENT : STATES.UNRESOLVED_EQUIPMENT_IDENTITY, e.exerciseName || e.name);
     checked++;
   }
   assert.ok(checked > 50);
