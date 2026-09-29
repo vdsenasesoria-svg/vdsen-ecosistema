@@ -350,12 +350,7 @@ test('Phase 1 contracts intact: strict PID identity, wiring and blocker names', 
   assert.equal(policy.REASONS.NUMERIC_ACTIVATION_DISABLED, 'NUMERIC_ACTIVATION_DISABLED');
 });
 
-test('Modulo D still duplicates A/D/E and is not migrated: delta documented', () => {
-  const block = coach.slice(coach.indexOf('Módulo D — Micro-ajuste Ehrenstein'), coach.indexOf('Módulo D — Micro-ajuste Ehrenstein') + 6000);
-  assert.ok(block.includes('rirDiff*2.5') && block.includes('falt * 5'), 'independent A/D/E arithmetic still lives in Modulo D');
-  assert.ok(!block.includes('VDSEN_MAGNITUDE_POLICY'), 'Modulo D does not consume the policy yet (no broad refactor in 2A)');
-  assert.ok(/window\._moduloDPending/.test(block), 'its display state is untouched');
-});
+// T481 supersedes the former 'Modulo D still duplicates A/D/E' pin: Modulo D is now a consumer (see t481).
 
 test('extraction keeps autoFilled/express flags so they are ignored from real LOG entries', () => {
   const entries = {};

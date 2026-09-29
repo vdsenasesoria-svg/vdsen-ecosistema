@@ -40,49 +40,22 @@ const src = fs.readFileSync(
   console.log("PASS T111-B: import refresh opens Plan tab");
 })();
 
-// ─── T111-C: _applyAllModuloD includes updatedAt in updateDoc call ────────────
-(function testUpdatedAt() {
-  // The updateDoc call inside _applyAllModuloD must include updatedAt
-  // We find the function body by looking for updatedDays + updatedAt in close proximity
-  const hasUpdatedAt = /updateDoc\(doc\(db,'plans',planId\),\{days:updatedDays,\s*updatedAt/.test(src);
-  if (!hasUpdatedAt) {
-    console.error('FAIL T111-C: _applyAllModuloD updateDoc does not include updatedAt');
+// ─── T111-C/D/E: superseded by T481 — the Modulo D apply-to-plan path is neutralized ──────────────
+// Its former updatedAt / in-flight-guard / button-restore hardening protected a plan write that no
+// longer exists. The contract now is: no plan write is reachable from _applyAllModuloD.
+(function testModuloDApplyNeutralized() {
+  const idx = src.indexOf('async function _applyAllModuloD(');
+  if (idx === -1) { console.error('FAIL T111-C: _applyAllModuloD missing'); process.exit(1); }
+  const body = src.slice(idx, src.indexOf('window._applyAllModuloD', idx));
+  if (/updateDoc|setDoc|addDoc|getDoc|runTransaction|_moduloDPending/.test(body)) {
+    console.error('FAIL T111-C: _applyAllModuloD must not write plans (T481)');
     process.exit(1);
   }
-  console.log('PASS T111-C: _applyAllModuloD sets updatedAt on plan doc (client listener will fire)');
-})();
-
-// ─── T111-D: _applyAllModuloD has in-flight guard ────────────────────────────
-(function testInflightGuard() {
-  const hasGuardVar = src.includes('_applyModuloDInFlight');
-  if (!hasGuardVar) {
-    console.error('FAIL T111-D: _applyModuloDInFlight guard variable not found');
+  if (src.includes('Aplicar ajustes al plan</button>') || src.includes('onclick="_applyAllModuloD()"')) {
+    console.error('FAIL T111-D: the Modulo D apply button must not be rendered (T481)');
     process.exit(1);
   }
-  // Guard must check before proceeding
-  const hasGuardCheck = src.includes('if (_applyModuloDInFlight) return;');
-  if (!hasGuardCheck) {
-    console.error('FAIL T111-D: guard check `if (_applyModuloDInFlight) return;` not found');
-    process.exit(1);
-  }
-  // Guard must reset in finally
-  const hasFinallyReset = src.includes('_applyModuloDInFlight = false;');
-  if (!hasFinallyReset) {
-    console.error('FAIL T111-D: _applyModuloDInFlight is not reset to false in finally block');
-    process.exit(1);
-  }
-  console.log('PASS T111-D: _applyAllModuloD has proper in-flight guard with finally reset');
-})();
-
-// ─── T111-E: button is disabled during in-flight ──────────────────────────────
-(function testButtonDisable() {
-  const hasDisable = src.includes("_applyBtn.disabled = true;");
-  const hasRestore = src.includes("_applyBtn.disabled = false;");
-  if (!hasDisable || !hasRestore) {
-    console.error('FAIL T111-E: apply button is not disabled during async operation');
-    process.exit(1);
-  }
-  console.log('PASS T111-E: apply button is disabled during _applyAllModuloD and restored in finally');
+  console.log('PASS T111-C/D/E: Modulo D apply-to-plan path neutralized (T481)');
 })();
 
 console.log('\nAll T111-H tests passed.');

@@ -43,13 +43,11 @@ test('_applyAllModuloD is defined', function() {
     '_applyAllModuloD not found in vdsen-coach.html');
 });
 
-test('_applyAllModuloD includes updatedAt in its updateDoc call', function() {
+test('_applyAllModuloD no longer writes plans (T481 neutralized it), so no updatedAt gap can exist', function() {
   var body = extractFnBody(src, 'async function _applyAllModuloD');
   assert.ok(body, '_applyAllModuloD body not extractable');
-  // Must include updatedAt in the updateDoc payload
-  assert.ok(body.indexOf('updatedAt') !== -1,
-    '_applyAllModuloD calls updateDoc without updatedAt — client live listener will ignore this write. ' +
-    'Reference fix: add updatedAt: new Date().toISOString() to the updateDoc payload (see _applyRecLoadsToMonitor line 15118).');
+  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction/.test(body),
+    '_applyAllModuloD must not perform any plan write (T481)');
 });
 
 test('client live plan listener gates on updatedAt (contract exists)', function() {

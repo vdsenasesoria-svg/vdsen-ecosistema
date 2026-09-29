@@ -306,7 +306,12 @@
       unresolved: decision.unresolved ? decision.unresolved.code : null,
       candidates: (decision.candidates || []).map(function(c) {
         return { dimension: c.dimension, ruleId: c.ruleId, rawCandidate: c.rawCandidate,
-          finalCandidate: c.finalCandidate, blockers: c.blockers }; }),
+          finalCandidate: c.finalCandidate, deltaSeconds: c.deltaSeconds === undefined ? null : c.deltaSeconds,
+          blockers: c.blockers }; }),
+      evidence: decision.evidence ? { basis: decision.evidence.basis, rirPrescribed: decision.evidence.rirPrescribed,
+        rirObserved: decision.evidence.rirObserved, repsTarget: decision.evidence.repsTarget,
+        repsExecuted: decision.evidence.repsExecuted, load: decision.evidence.load, unit: decision.evidence.unit } : null,
+      activationBlockers: decision.activationBlockers || [],
       coachReview: (decision.coachReview || []).map(function(r) { return r.code; }),
       reasonCodes: decision.reasonCodes, numericApplyAllowed: false, applied: false,
       primaryRaw: primary ? primary.rawCandidate : null };

@@ -17606,6 +17606,17 @@ El esfuerzo no es negociable.
       if (wci && wci.peso) weightPts.push({ w, v: parseFloat(wci.peso) });
     }
 
+    // Full canonical shadow records (Modulo D consumer); the compact summary is the fallback.
+    let _canonicalRecords = null;
+    if (c && c.activePlanId) {
+      try {
+        const _mesoCanon = await getDoc(doc(db, 'logs', clientId, 'mesos', c.activePlanId));
+        if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
+        if (_mesoCanon.exists() && _mesoCanon.data().planId === c.activePlanId)
+          _canonicalRecords = _mesoCanon.data().progressionApplications || null;
+      } catch(e) { console.warn('Canonical shadow records unavailable:', e); }
+    }
+
     let html = '';
 
     // Compact shadow audit from the same logs snapshot as the rest of Monitor.
@@ -18349,105 +18360,22 @@ El esfuerzo no es negociable.
       }
     }
 
-    // ── Módulo D — Micro-ajuste Ehrenstein
+    // ── Módulo D — vista de decisiones shadow canónicas (T481).
+    // No calcula magnitudes: consume record.magnitude (progression-magnitude-policy.js) por PID exacto.
     if (lastDoneW > 0 && p && p.days) {
-      const _mdDayExercises = ((p.days.find(d => d.dayIndex === lastDoneD) || p.days[lastDoneD] || {}).exercises || []);
-      const _mdResults = [];
-      Object.keys(lastSets).map(Number).sort((a,b)=>a-b).forEach(ei => {
-        const exObj = _mdDayExercises[ei] || {};
-        const sets = (lastSets[ei] || []).sort((a,b)=>a.si-b.si);
-        if (!sets.length || !exObj.sets || !exObj.sets.length) return;
-        const setsWithRIR = sets.filter(s => s.rir_real !== null && s.rir_real !== undefined && s.rir_real !== '');
-        if (!setsWithRIR.length) return;
-        const rirFinal = parseFloat(setsWithRIR[setsWithRIR.length-1].rir_real);
-        if (isNaN(rirFinal)) return;
-        const planLastSet = exObj.sets[exObj.sets.length-1] || exObj.sets[0];
-        const rirObjetivo = parseFloat(planLastSet.rirTarget !== undefined ? planLastSet.rirTarget : 2);
-        const repsTarget = parseFloat(planLastSet.repsTarget || planLastSet.reps || 0);
-        const repsArr = sets.map(s=>parseFloat(s.reps)).filter(x=>!isNaN(x));
-        const lastRepsReal = repsArr.length ? repsArr[repsArr.length-1] : null;
-        const loadArr = sets.map(s=>parseFloat(s.carga)).filter(x=>!isNaN(x));
-        const carga = loadArr.length ? Math.max(...loadArr) : null;
-        const rirDiff = rirFinal - rirObjetivo;
-        let diagnostico='', ajuste='', color='#888', tipo='mantiene', nuevaCarga=carga, nuevasReps=repsTarget, puedeAgregarSerie=false;
-        if (lastRepsReal !== null && !isNaN(repsTarget) && lastRepsReal < repsTarget) {
-          // Regla E: no completa reps
-          const falt = repsTarget - lastRepsReal;
-          const pctD = falt * 5;
-          nuevaCarga = carga ? +(carga*(1-pctD/100)).toFixed(1) : null;
-          diagnostico=`Reps incompletas (${lastRepsReal}/${repsTarget})`;
-          ajuste=`−${pctD}% carga${nuevaCarga?' → '+nuevaCarga+' kg':''} (o −${falt*2} reps)`;
-          color='#FF4444'; tipo='reduce';
-        } else if (rirDiff > 0) {
-          // Regla A: RIR sobró
-          diagnostico=`RIR real ${rirFinal} > obj ${rirObjetivo}`;
-          if (rirObjetivo >= 2) {
-            const pctU = rirDiff*2.5;
-            nuevaCarga = carga ? +(carga*(1+pctU/100)).toFixed(1) : null;
-            ajuste=`+${pctU}% carga${nuevaCarga?' → '+nuevaCarga+' kg':''}`;
-          } else {
-            nuevasReps = repsTarget + rirDiff;
-            ajuste=`+${rirDiff} rep${rirDiff>1?'s':''}`;
-          }
-          color='#44BB88'; tipo='progresa';
-          if (repsArr.length >= 2) {
-            const l2 = repsArr.slice(-2);
-            if (l2.filter(r=>r>=repsTarget+2).length >= 2) puedeAgregarSerie=true;
-          }
-        } else if (rirDiff < 0) {
-          // Regla D: RIR más difícil
-          diagnostico=`RIR real ${rirFinal} < obj ${rirObjetivo}`;
-          const pctD = Math.abs(rirDiff)*2.5;
-          nuevaCarga = carga ? +(carga*(1-pctD/100)).toFixed(1) : null;
-          ajuste=`−${pctD}% carga${nuevaCarga?' → '+nuevaCarga+' kg':''}`;
-          color='#FF8844'; tipo='reduce';
-        } else {
-          // Regla C: RIR correcto
-          diagnostico=`RIR correcto (${rirFinal})`;
-          ajuste='+30s descanso si no completa reps';
-          color='#C4FF00'; tipo='mantiene';
-        }
-        _mdResults.push({ name: exObj.exerciseName||`Ejercicio ${ei+1}`, rirObjetivo, rirFinal, repsTarget, lastRepsReal, carga, nuevaCarga: tipo!=='mantiene'?nuevaCarga:carga, nuevasReps, diagnostico, ajuste, color, tipo, puedeAgregarSerie, ei });
+      const _mdDay = p.days.find(d => d.dayIndex === lastDoneD) || {};
+      const _mdExercises = Object.keys(lastSets).map(Number).sort((a,b)=>a-b).map(ei => {
+        const sets = lastSets[ei] || [];
+        const pids = [...new Set(sets.map(s => s.prescriptionExerciseId).filter(Boolean))];
+        const snap = sets.map(s => s.exerciseNameSnapshot).find(Boolean);
+        const planEx = (_mdDay.exercises || [])[ei] || {};
+        return { ei: ei, name: snap || planEx.exerciseName || `Ejercicio ${ei+1}`,
+          pid: pids.length === 1 ? pids[0] : '', pidConflict: pids.length > 1 };
       });
-      if (_mdResults.length) {
-        const nProg=_mdResults.filter(r=>r.tipo==='progresa').length;
-        const nRed=_mdResults.filter(r=>r.tipo==='reduce').length;
-        const nMant=_mdResults.filter(r=>r.tipo==='mantiene').length;
-        const fatSist=nRed>=3;
-        window._moduloDPending = _mdResults;
-        window._moduloDDayIndex = lastDoneD;
-        html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Micro-ajuste Ehrenstein — Sem ${lastDoneW} · Día ${lastDoneD+1}</div>
-          <div class="card p-3 mb-3" style="border-left:3px solid #C4FF00;border-radius:0 8px 8px 0">
-            <div class="flex gap-4 flex-wrap mb-2">
-              <div><div class="text-xs text-[#888]">PROGRESAN</div><div class="text-xl font-bold" style="color:#44BB88">${nProg}</div></div>
-              <div><div class="text-xs text-[#888]">MANTIENEN</div><div class="text-xl font-bold" style="color:#C4FF00">${nMant}</div></div>
-              <div><div class="text-xs text-[#888]">REDUCEN</div><div class="text-xl font-bold" style="color:#FF4444">${nRed}</div></div>
-            </div>
-            ${fatSist?`<div style="padding:6px 10px;border-radius:6px;background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.25);font-size:11px;color:#FF4444">⚠️ Fatiga sistémica: ≥3 ejercicios reducen carga. Considerar deload o semana de recuperación.</div>`:''}
-          </div>
-          <div class="card p-3 mb-3" style="overflow-x:auto">
-            <table style="width:100%;font-size:11px;border-collapse:collapse;min-width:440px">
-              <thead><tr style="color:#888;border-bottom:1px solid rgba(244,244,240,.1)">
-                <th style="text-align:left;padding:4px 6px">Ejercicio</th>
-                <th style="padding:4px 6px;text-align:center">RIR obj</th>
-                <th style="padding:4px 6px;text-align:center">RIR real</th>
-                <th style="padding:4px 6px;text-align:center">Reps</th>
-                <th style="padding:4px 6px;text-align:left">Ajuste</th>
-                <th style="padding:4px 6px;text-align:center">Nueva carga</th>
-              </tr></thead>
-              <tbody>
-              ${_mdResults.map(r=>`<tr style="border-top:1px solid rgba(244,244,240,.05)">
-                <td style="padding:5px 6px;font-weight:600">${r.name}${r.puedeAgregarSerie?' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(68,187,136,.15);color:#44BB88;border:1px solid rgba(68,187,136,.3)">+SER</span>':''}</td>
-                <td style="padding:5px 6px;text-align:center;color:#555">${r.rirObjetivo}</td>
-                <td style="padding:5px 6px;text-align:center;font-weight:700;color:${r.color}">${r.rirFinal}</td>
-                <td style="padding:5px 6px;text-align:center;color:#888">${r.lastRepsReal!==null?r.lastRepsReal+'/'+r.repsTarget:'—'}</td>
-                <td style="padding:5px 6px;text-align:left;font-size:10px;color:${r.color}">${r.ajuste}</td>
-                <td style="padding:5px 6px;text-align:center;font-weight:700;color:${r.color}">${r.nuevaCarga!==null&&r.tipo!=='mantiene'?r.nuevaCarga+' kg':'—'}</td>
-              </tr>`).join('')}
-              </tbody>
-            </table>
-          </div>
-          <button onclick="_applyAllModuloD()" class="btn-primary w-full mb-3" style="background:rgba(196,255,0,.1);border:1px solid rgba(196,255,0,.3);color:#C4FF00">⚡ Aplicar ajustes al plan</button>`;
+      if (_mdExercises.length) {
+        const _mdRows = _moduloDCanonicalView(_canonicalRecords || (autoSummary && autoSummary.items) || [],
+          { clientId: clientId, planId: c && c.activePlanId, week: lastDoneW, dayIndex: lastDoneD, exercises: _mdExercises });
+        html += _renderModuloDShadow(_mdRows, lastDoneW, lastDoneD);
       }
     }
 
@@ -18692,6 +18620,89 @@ El esfuerzo no es negociable.
       }
       return summary;
     });
+  }
+  // T481: Modulo D consumes canonical shadow decisions; it never recomputes magnitudes.
+  // Identity is the exact prescriptionExerciseId snapshotted in the executed logs (never a name
+  // or a position); anything ambiguous yields no candidate.
+  function _moduloDCanonicalView(records, ctx) {
+    var all = Array.isArray(records) ? records : Object.keys(records || {}).map(function(k) { return records[k]; });
+    var scoped = all.filter(function(r) {
+      return r && r.source && (r.planId === undefined || r.planId === ctx.planId) &&
+        (r.clientId === undefined || r.clientId === ctx.clientId) &&
+        r.source.week === ctx.week && r.source.dayIndex === ctx.dayIndex;
+    });
+    var counts = {};
+    ctx.exercises.forEach(function(x) { if (x.pid) counts[x.pid] = (counts[x.pid] || 0) + 1; });
+    return ctx.exercises.map(function(x) {
+      var row = { ei: x.ei, name: x.name, pid: x.pid || '', status: 'NO_CANONICAL', reasonCode: null, record: null };
+      if (x.pidConflict) { row.status = 'PID_CONFLICT'; return row; }
+      if (!x.pid) { row.status = 'NO_PID'; return row; }
+      if (counts[x.pid] > 1) { row.status = 'DUPLICATE_PID'; return row; }
+      var mine = scoped.filter(function(r) { return r.prescriptionExerciseId === x.pid; });
+      if (!mine.length) return row;
+      mine.sort(function(a, b) {
+        return String(b.updatedAt).localeCompare(String(a.updatedAt)) ||
+          String(b.source.calculatedAt).localeCompare(String(a.source.calculatedAt));
+      });
+      var rec = mine[0];
+      if (rec.state !== 'PENDING') {
+        row.record = rec; row.reasonCode = rec.reasonCode || null;
+        row.status = rec.state === 'STALE' ? 'STALE' : 'REJECTED';
+        return row;
+      }
+      if (!rec.magnitude || rec.magnitude.mode !== 'SHADOW') return row;
+      row.record = rec; row.reasonCode = rec.reasonCode || null; row.status = 'PENDING';
+      return row;
+    });
+  }
+  function _renderModuloDShadow(rows, week, dayIndex) {
+    var unusable = { STALE: 'OBSOLETA', REJECTED: 'RECHAZADA', PID_CONFLICT: 'CONFLICTO DE PID',
+      DUPLICATE_PID: 'PID DUPLICADO', NO_PID: 'SIN PID VERIFICABLE' };
+    function cell(v) { return v === null || v === undefined || v === '' ? '—' : _escH(String(v)); }
+    var nCand = rows.filter(function(r) { return r.status === 'PENDING'; }).length;
+    var nOpen = rows.filter(function(r) { return r.status === 'PENDING' && r.record.magnitude.unresolved; }).length;
+    var nReview = rows.filter(function(r) { return r.status === 'PENDING' && (r.record.magnitude.coachReview || []).length; }).length;
+    var body = rows.map(function(r) {
+      var head = '<td style="padding:5px 6px;font-weight:600">' + _escH(r.name)
+        + '<span style="display:block;font-size:9px;color:#888;font-weight:400">' + (r.pid ? 'PID ' + _escH(r.pid) : 'sin PID') + '</span></td>';
+      if (r.status !== 'PENDING') {
+        var label = r.status === 'NO_CANONICAL'
+          ? 'NO SHADOW CANDIDATE / INSUFFICIENT CANONICAL EVIDENCE'
+          : (unusable[r.status] || r.status) + ' · no es un candidato utilizable' + (r.reasonCode ? ' · ' + r.reasonCode : '');
+        return '<tr style="border-top:1px solid rgba(244,244,240,.05)">' + head
+          + '<td colspan="3" style="padding:5px 6px;font-size:10px;color:#888">' + _escH(label) + '</td></tr>';
+      }
+      var m = r.record.magnitude, ev = m.evidence || {};
+      var cands = (m.candidates || []).map(function(c) {
+        var txt = c.dimension === 'REST' ? '+' + cell(c.deltaSeconds) + ' s descanso (primera intervención)'
+          : c.dimension === 'LOAD' ? 'carga cruda ' + cell(c.rawCandidate) + ' (final: ' + cell(c.finalCandidate) + ')'
+          : 'reps ' + cell(c.rawCandidate) + ' (final: ' + cell(c.finalCandidate) + ')';
+        return _escH('Regla ' + c.ruleId + ' · ') + txt + (c.blockers && c.blockers.length ? ' · ' + _escH(c.blockers.join(', ')) : '');
+      });
+      var next = r.record.nextExposure ? 'Sem ' + r.record.nextExposure.week + ' · Día ' + (r.record.nextExposure.dayIndex + 1) : '—';
+      var lines = [
+        '<span style="color:#C4FF00">CANDIDATO SHADOW · NO APLICADO</span> · Regla ' + cell(m.ruleId) + ' · ' + _escH(m.methodologyFamily || '') + ' · nivel ' + cell(m.evidenceLevel),
+        'RIR prescrito ' + cell(ev.rirPrescribed) + ' · observado ' + cell(ev.rirObserved) + ' · reps objetivo ' + cell(ev.repsTarget) + ' · ejecutadas ' + cell(ev.repsExecuted),
+        'Exposiciones comparables: ' + cell(m.comparableExposureCount) + (m.eligible ? '' : ' · evidencia/política incompleta')
+      ];
+      if (cands.length) lines.push(cands.join('<br>'));
+      if (m.unresolved) lines.push('Rama sin resolver: ' + cell(m.unresolved) + ' (no se elige entre reps y carga)');
+      (m.coachReview || []).forEach(function(code) { lines.push(cell(code) + ' · revisión del Coach; no se agregan series automáticamente'); });
+      lines.push('Bloqueos de activación: ' + cell((m.activationBlockers || []).join(', ')) + ' · próxima exposición: ' + _escH(next));
+      return '<tr style="border-top:1px solid rgba(244,244,240,.05)">' + head
+        + '<td colspan="3" style="padding:5px 6px;font-size:10px;color:#888">' + lines.join('<br>') + '</td></tr>';
+    }).join('');
+    return '<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Micro-ajuste Ehrenstein (shadow) — Sem '
+      + _escH(String(week)) + ' · Día ' + _escH(String(dayIndex + 1)) + '</div>'
+      + '<div class="card p-3 mb-3" style="border-left:3px solid #C4FF00;border-radius:0 8px 8px 0">'
+      + '<div class="flex gap-4 flex-wrap mb-2">'
+      + '<div><div class="text-xs text-[#888]">CANDIDATOS SHADOW</div><div class="text-xl font-bold" style="color:#C4FF00">' + nCand + '</div></div>'
+      + '<div><div class="text-xs text-[#888]">SIN RESOLVER</div><div class="text-xl font-bold" style="color:#FF8844">' + nOpen + '</div></div>'
+      + '<div><div class="text-xs text-[#888]">REVISIÓN COACH</div><div class="text-xl font-bold" style="color:#44BB88">' + nReview + '</div></div></div>'
+      + '<div style="font-size:11px;color:#888">Shadow / no aplicado: ninguna carga, repetición ni serie se modifica desde aquí. '
+      + 'Mantener original / Revertir decisión: panel AUTO de este Monitor.</div></div>'
+      + '<div class="card p-3 mb-3" style="overflow-x:auto"><table style="width:100%;font-size:11px;border-collapse:collapse;min-width:440px"><tbody>'
+      + body + '</tbody></table></div>';
   }
   // Phase 2A: a shadow numeric candidate is an observation, never an applied adjustment.
   function _renderShadowMagnitude(item) {
@@ -19053,49 +19064,11 @@ El esfuerzo no es negociable.
   }
   window._compareHistoricalMesocycles = _compareHistoricalMesocycles;
 
-  var _applyModuloDInFlight = false;
+  // T481: the Modulo D-specific "apply to plan" path is neutralized. While numeric auto-apply is
+  // disabled (NUMERIC_APPLY_ENABLED=false) no magnitude may reach the plan from Modulo D.
   async function _applyAllModuloD() {
-    // F3-fix: in-flight guard prevents double-click from spawning concurrent writes.
-    if (_applyModuloDInFlight) return;
-    _applyModuloDInFlight = true;
-    var _applyBtn = document.querySelector('[onclick="_applyAllModuloD()"]');
-    if (_applyBtn) { _applyBtn.disabled = true; _applyBtn.textContent = '⏳ Aplicando...'; }
-    try {
-    const results = window._moduloDPending;
-    if (!results || !results.length) return;
-    const planId = _detailClientData && _detailClientData.activePlanId;
-    if (!planId) { alert('No hay plan activo.'); return; }
-    const toApply = results.filter(r => r.tipo !== 'mantiene' && r.nuevaCarga !== null);
-    if (!toApply.length) { alert('No hay ajustes que aplicar.'); return; }
-    try {
-      const planSnap = await getDoc(doc(db,'plans',planId));
-      if (!planSnap.exists()) { alert('Plan no encontrado.'); return; }
-      const plan = planSnap.data();
-      const dayIdx = window._moduloDDayIndex;
-      const updatedDays = (plan.days||[]).map(day => {
-        if (day.dayIndex !== dayIdx) return day;
-        const exercises = (day.exercises||[]).map((ex,ei) => {
-          const adj = toApply.find(r=>r.ei===ei);
-          if (!adj) return ex;
-          const updSets = (ex.sets||[]).map(s => {
-            const ns = {...s};
-            if (adj.nuevaCarga !== null) ns.load = adj.nuevaCarga;
-            if (adj.tipo==='progresa' && parseFloat(adj.rirObjetivo)<2 && adj.nuevasReps) ns.repsTarget = adj.nuevasReps;
-            return ns;
-          });
-          return {...ex, sets: updSets};
-        });
-        return {...day, exercises};
-      });
-      // F2-fix: include updatedAt so the client's live plan listener sees the change.
-      await updateDoc(doc(db,'plans',planId),{days:updatedDays, updatedAt: new Date().toISOString()});
-      if (_detailPlanData) { _detailPlanData.days = updatedDays; _detailPlanData.updatedAt = new Date().toISOString(); }
-      alert(`✓ ${toApply.length} ejercicio(s) actualizados en el plan.`);
-    } catch(e) { alert('Error al aplicar: '+e.message); }
-    } finally {
-      _applyModuloDInFlight = false;
-      if (_applyBtn) { _applyBtn.disabled = false; _applyBtn.textContent = '⚡ Aplicar ajustes al plan'; }
-    }
+    alert('Shadow / no aplicado: la aplicación numérica automática está desactivada.');
+    return false;
   }
   window._applyAllModuloD = _applyAllModuloD;
 
