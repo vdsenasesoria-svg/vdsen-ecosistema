@@ -44,6 +44,25 @@ LOGS (ejecución real) → evidencia comparable por PID → política canónica 
 
 Restos operativos CONTENIDOS (T515): **Temporizador de descanso** (`fatigueCost`) y los valores de visualización (RIR 2 / descanso 90 s cuando el Coach los omitió) son solo respaldo de UI: el conversor los marca (`rirDefaulted`/`restDefaulted`), un `restSeconds` o RIR de 0 escrito por el Coach se preserva (antes un descanso 0 de superserie se mostraba como 90), el RIR prescrito solo se registra en el log si lo escribió el Coach, el historial ya no guarda el RIR prescrito como observado y nada de esto se persiste como prescripción.
 
+## Estado pre-activación (T508–T516)
+
+| Eje | Estado |
+|---|---|
+| Autoridad operativa legada | 0 |
+| Autoridad de mutación por nombre | 0 (los nombres son etiquetas; identidad = PID / ids exactos) |
+| Autoridad de prescripción del atleta | 0 |
+| Progresión canónica / ruta de aplicación canónica | 1 / 1 (única escritura `tx.set` de overlays, en el consumidor) |
+| Aplicación numérica real | APAGADA (`NUMERIC_APPLY_ENABLED=false`, sin estado APPLIED) |
+| Identidad de equipo | 20 de 26 grupos con id canónico (50 de 71 ejercicios); 6 sin resolver con motivo (familias, "Máquina", accesorio) — `docs/EQUIPMENT_INCREMENT_INVENTORY.md` |
+| Incrementos de equipo | solo valores escritos por el Coach; ninguno en el repositorio. Modelo: ejercicio > sede+equipo > equipo compartido > sin resolver, en `coaches/{uid}.equipmentIncrements` y `exercises/{id}.loadIncrement` |
+| Cola de equipos del Coach | modal "Equipos" + `docs/EQUIPMENT_ACTIVATION_READINESS.md` |
+| Candidato listo (sintético) | `READY_BUT_DISABLED`; con la bandera forzada en un sandbox → `EXECUTABLE` (T513) |
+| Guardia de activación | 18 verificaciones independientes; `canApply` exige `guard.ok` |
+| Reproducción en sombra | `docs/SHADOW_REPLAY_REPORT.md` (15 escenarios sintéticos, motivos de bloqueo) |
+| Ciencia sin resolver | solo bloquea ramas D/E (`SCIENCE_POLICY_UNRESOLVED`); Reglas A y C independientes; serie representativa = supuesto global provisional |
+
+Falta antes de activar: (1) el Coach carga incrementos reales de equipo, (2) decisiones de ciencia: D/E, precedencia C/E, serie representativa, (3) validar el runner en Windows.
+
 ## Guardia de activación (T513)
 
 `verifyActivationPreconditions` re-verifica 18 hechos directamente (cliente exacto, plan activo exacto, PID exacto, exposición origen válida,
