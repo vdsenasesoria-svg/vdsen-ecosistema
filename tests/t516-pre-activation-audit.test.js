@@ -93,15 +93,15 @@ test('T516.8 READY candidates are possible (synthetic) and BLOCKERS are explicit
   assert.ok(s.readyButDisabled >= 2 && s.executable === 0);
   assert.ok(!('NOT_ELIGIBLE' in s.blockersByReason));
   const by = Object.fromEntries(replay.rows.map(r => [r.name, r]));
-  assert.deepEqual(by['C rest ready (independent of equipment)'].blockers, [], 'Rule C is not blocked by equipment or science');
+  assert.deepEqual(by['C rest ready, first occurrence (independent of equipment)'].blockers, [], 'Rule C is not blocked by equipment or science');
   assert.deepEqual(by['A-load ready (synthetic shared step)'].blockers, []);
   for (const r of replay.rows.filter(x => x.scienceGaps.length)) assert.ok(/D\/E|D branch/.test(r.name), 'science blocks only D/E branches: ' + r.name);
   const labelled = coach.slice(coach.indexOf('function _dryRunLine'), coach.indexOf('function _renderShadowAutoFeed'));
   for (const c of Object.values(consumer.BLOCKERS).filter(c => !['STALE_CALLBACK', 'REVISION_CONFLICT', 'NOT_CANONICAL_RECORD'].includes(c))) assert.ok(new RegExp('\\b' + c + ':').test(labelled), c);
 });
 
-test('T516.9 the activation guard has 18 checks and the pre-activation documents are current', () => {
-  assert.equal(consumer.GUARD_CHECKS.length, 18);
+test('T516.9 the activation guard has 19 checks and the pre-activation documents are current', () => {
+  assert.equal(consumer.GUARD_CHECKS.length, 19);
   const { spawnSync } = require('node:child_process');
   for (const s of ['equipment-increment-inventory.cjs', 'equipment-readiness-report.cjs', 'replay-application-readiness.cjs'])
     assert.equal(spawnSync(process.execPath, [path.join(root, 'scripts', s), '--check']).status, 0, s);

@@ -28,6 +28,8 @@ const ctx = {};
 vm.createContext(ctx);
 const escStart = coach.indexOf('  function _escH(s) {');
 vm.runInContext(coach.slice(escStart, coach.indexOf('\n  }\n', escStart) + 4), ctx); // exact production _escH
+const revStart = coach.indexOf('  var _REVIEW_BRANCH = {');
+vm.runInContext(coach.slice(revStart, coach.indexOf('  function _moduloDCanonicalView(')), ctx); // T523 review helpers (production source)
 ['_moduloDCanonicalView', '_renderModuloDShadow'].forEach(n => vm.runInContext(functionSource(coach, n), ctx));
 const viewSource = functionSource(coach, '_moduloDCanonicalView') + functionSource(coach, '_renderModuloDShadow');
 const blockStart = coach.indexOf('// ── Módulo D — vista de decisiones shadow canónicas (T481).');
@@ -75,16 +77,20 @@ test('6. Rule C canonical magnitude shows +30 s rest first', () => {
   assert.ok(out.includes('CANDIDATO SHADOW · NO APLICADO'));
 });
 
-test('7. Rule D shows both unresolved alternatives', () => {
+test('7. (T523) Rule D shows COACH REVIEW REQUIRED with no numeric candidate', () => {
   const out = html(view([record('pid-A', { rir_real: 1 })], [ex('pid-A')]));
-  assert.ok(out.includes('Rama sin resolver') && out.includes('no se elige entre reps y carga'));
-  assert.ok(out.includes('reps 9') && out.includes('carga cruda 97.5'));
+  assert.ok(out.includes('REVISIÓN DEL COACH REQUERIDA') && out.includes('Regla D'));
+  assert.ok(out.includes('política de producto VDSEN (no es una regla científica)'));
+  assert.ok(out.includes('PID pid-A') && out.includes('Sem 1 · Día 3') && out.includes('exposición destino: no aplica'));
+  assert.ok(!out.includes('carga cruda') && !out.includes('CANDIDATO SHADOW') && !/reps 9/.test(out));
 });
 
-test('8. Rule E shows both unresolved alternatives', () => {
+test('8. (T523) Rule E shows COACH REVIEW REQUIRED with observed vs prescribed values and no apply path', () => {
   const out = html(view([record('pid-A', { reps: '9', rir_real: '' })], [ex('pid-A')]));
-  assert.ok(out.includes('Rama sin resolver'));
-  assert.ok(out.includes('reps 8') && out.includes('carga cruda 95'));
+  assert.ok(out.includes('REVISIÓN DEL COACH REQUERIDA') && out.includes('Regla E'));
+  assert.ok(out.includes('Observado: reps 9') && out.includes('Prescrito: reps 10 · RIR 2'));
+  assert.ok(out.includes('No se reduce ninguna carga, repetición, serie ni RIR automáticamente'));
+  assert.ok(!/aplicar autom/i.test(out) && !/<button/i.test(out));
 });
 
 test('9. Rule B shows Coach review only', () => {

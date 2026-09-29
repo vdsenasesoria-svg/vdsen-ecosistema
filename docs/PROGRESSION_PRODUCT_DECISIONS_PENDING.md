@@ -1,4 +1,20 @@
-# Decisiones de producto pendientes de la progresión canónica (T521)
+# Decisiones de producto de la progresión canónica (T521 → CERRADAS en T523)
+
+## DECISIONES FINALES (director, T523) — política de producto VDSEN, no ciencia
+
+| Decisión | Opción elegida | Comportamiento implementado |
+|---|---|---|
+| 1. Regla D/E | **1A — solo revisión del Coach** | D y E nunca generan candidato numérico; estado `COACH_REVIEW_REQUIRED`. No se reduce automáticamente carga, reps objetivo, series ni RIR. |
+| 2. Precedencia C/E | **2B — C primero y E si persiste** | Primera ocurrencia comparable de C → REST +30 s únicamente. Si la misma condición persiste en la siguiente exposición comparable → E → `COACH_REVIEW_REQUIRED`. Nunca doble intervención automática. |
+| 3. Serie representativa | **3A — última serie de trabajo** | Última serie de trabajo válida ejecutada (sin calentamiento, autofill, express ni series de descenso planificadas; sin sustituir series faltantes). Procedencia `VDSEN_PRODUCT_POLICY_LAST_WORKING_SET`. |
+| 4. "Serie extra" (A.12 / legado) | No se restaura | Referencia `LEGACY_REFERENCE_NON_AUTHORITATIVE`; la autoridad de volumen es solo el Coach / política estructural canónica. |
+| 5. Windows T478 | No bloqueante | `NON_BLOCKING_TECHNICAL_PENDING`; la validación en Linux sigue siendo obligatoria y pasa. |
+
+Lo que sigue es el análisis original de opciones (histórico); las etiquetas "Hoy" describen el estado ANTES de T523.
+
+---
+
+# (Histórico) Decisiones de producto pendientes de la progresión canónica (T521)
 
 Estas opciones **no son hechos científicos** y no están ordenadas por validez. Cada una es una política de producto viable con sus consecuencias. Hasta que el director
 elija, cada rama sigue bloqueada con su código explícito y `NUMERIC_APPLY_ENABLED=false`. Fuentes revisadas: `docs/PROGRESSION_SCIENCE_SOURCE_SEARCH.md`.

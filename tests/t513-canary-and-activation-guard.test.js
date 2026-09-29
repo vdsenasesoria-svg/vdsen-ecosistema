@@ -1,6 +1,6 @@
 // T513: (a) end-to-end SYNTHETIC canary: with every required fact available the candidate is READY_BUT_DISABLED and the only
 // missing runtime switch is NUMERIC_APPLY_ENABLED; (b) permanent ACTIVATION GUARD: even with the flag forced on, a candidate
-// fails unless each of the 18 preconditions holds. Synthetic equipment metadata lives only in this test, never in the catalog.
+// fails unless each of the 19 preconditions holds. Synthetic equipment metadata lives only in this test, never in the catalog.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -48,12 +48,12 @@ test('T513.1 CANARY: synthetic chain evidence -> candidate -> PID -> exposure ->
   assert.equal(rec.magnitude.eligible, true); assert.equal(rec.magnitude.directionConsistency, 'CONSISTENT'); assert.equal(rec.magnitude.comparableExposureCount, 2);
   const d = run(consumer, rec);
   assert.equal(d.readiness.state, 'READY_BUT_DISABLED');
-  assert.deepEqual(d.readiness.gates.map(g => g.state), Array(13).fill('PASS'));
+  assert.deepEqual(d.readiness.gates.map(g => g.state), Array(14).fill('PASS'));
   assert.deepEqual(d.blockers, ['NUMERIC_APPLY_DISABLED'], 'the ONLY remaining blocker is the activation flag');
   assert.equal(d.wouldApply, true); assert.equal(d.canApply, false); assert.equal(d.applied, false);
   assert.deepEqual([d.overlay.dimension, d.overlay.previousValue, d.overlay.appliedValue, d.overlay.equipmentId], ['LOAD', 100, 102.5, 'functional-dumbbells']);
   assert.deepEqual([d.equipment.resolutionState, d.equipment.incrementSource], ['RESOLVED', 'COACH_CONFIGURED']);
-  assert.equal(d.guard.ok, true); assert.equal(d.guard.checks.length, 18);
+  assert.equal(d.guard.ok, true); assert.equal(d.guard.checks.length, 19);
   assert.deepEqual([d.overlay.target.week, d.overlay.target.dayIndex], [2, 0]);
 });
 
@@ -83,6 +83,7 @@ const TAMPER = {
   planNotChanged: (r, c) => { c.plan = Object.assign({}, c.plan, { updatedAt: '2026-09-30T00:00:00.000Z' }); },
   noCoachOverride: (r, c) => { c.interventions = [{ targetType: 'EXERCISE', targetId: PID, planId: 'p', decidedAt: '2026-09-27T14:00:00.000Z', action: 'CHANGE' }]; },
   noSafetyConflict: (r, c) => { c.safetyConflict = true; },
+  noPolicyReview: (r) => { r.magnitude = Object.assign({}, r.magnitude, { coachReviewRequired: { code: 'COACH_REVIEW_REQUIRED', branch: 'D' } }); },
   evidenceEligible: (r) => { r.magnitude = Object.assign({}, r.magnitude, { comparableExposureCount: 1 }); },
   directionConsistent: (r) => { r.magnitude = Object.assign({}, r.magnitude, { directionConsistency: 'CONFLICTING' }); },
   magnitudeResolved: (r) => { r.magnitude = Object.assign({}, r.magnitude, { unresolved: { code: 'X', rules: ['D'] } }); },
@@ -94,9 +95,9 @@ const TAMPER = {
   transactionContextCurrent: (r, c) => { c.transactionCurrent = false; }
 };
 
-test('T513.4 the guard has exactly the 18 required preconditions, all with a tamper test', () => {
+test('T513.4 the guard has exactly the 19 required preconditions, all with a tamper test', () => {
   assert.deepEqual([...consumer.GUARD_CHECKS].sort(), Object.keys(TAMPER).sort());
-  assert.equal(consumer.GUARD_CHECKS.length, 18);
+  assert.equal(consumer.GUARD_CHECKS.length, 19);
 });
 
 test('T513.5 the guard re-verifies each fact directly (independent of the blocker list): one tamper -> that check fails', () => {

@@ -36,58 +36,70 @@ function facts() {
 const box = ok => ok ? '[x]' : '[ ]';
 function checklist(f) {
   const flagOff = f.flag.every(v => v === false);
+  const policyResolved = policy.PRODUCT_POLICIES.length === 3 && policy.SCIENCE_GAPS.length === 0 && policy.PRODUCT_POLICIES.every(p => p.source === 'VDSEN_PRODUCT_POLICY' && p.scientificClaim === false);
   const items = [
     [f.exercisesWithIdentity === f.exercises, 'Identidades de equipo resueltas para los ejercicios objetivo', f.exercisesWithIdentity + ' de ' + f.exercises + ' ejercicios del catálogo (' + f.resolvedGroups + ' de ' + f.groups + ' equipos). Sin resolver por evidencia del repositorio: ' + f.unresolvedGroups.map(r => r.name + ' (' + r.identityReason + ')').join(', ') + '. Mecanismo verificado: t508, t517.'],
     [f.configured === f.groups - f.unresolvedGroups.length && f.groups > 0, 'Incrementos de equipo escritos por el Coach', f.configured + ' de ' + (f.groups - f.unresolvedGroups.length) + ' equipos con identidad tienen incremento. Mecanismo verificado: t509, t518, t519. **Datos pendientes del Coach.**'],
     [f.configured > 0 && f.readyGroups === f.configured, 'Unidades compatibles', 'No evaluable sin incrementos escritos; la incompatibilidad se detecta como `UNIT_MISMATCH` (t503, t512, t518).'],
     [true, 'Elegibilidad de evidencia (≥2 exposiciones comparables)', 'Por candidato; verificado por el canario y los tests t492/t504/t512.'],
     [true, 'Dirección consistente', 'Por candidato; `DIRECTION_CONFLICTING` / `DIRECTION_UNCONFIRMED` (t492, t512).'],
-    [false, 'Rama de ciencia resuelta (D/E; precedencia C/E)', 'Sin resolver: `RULE_D_E_ALTERNATIVE_NOT_DEFINED`, `RULE_C_E_PRECEDENCE_NOT_DEFINED`. Ver `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md`.'],
-    [false, 'Política de serie representativa resuelta', 'Sin resolver: `REPRESENTATIVE_SET_NOT_DEFINED` (hoy última serie, supuesto provisional). Ver `docs/REPRESENTATIVE_SET_SIMULATION.md`.'],
+    [policyResolved, 'Rama D/E y precedencia C→E resueltas', '**PRODUCT POLICY RESOLVED** (fuente `VDSEN_PRODUCT_POLICY`, no ciencia): D/E → `COACH_REVIEW_REQUIRED` (1A, sin candidato numérico); C primero → REST +30 s y, si persiste en la siguiente exposición comparable, revisión del Coach (2B). Verificado por t523.'],
+    [policyResolved, 'Política de serie representativa resuelta', '**LAST_WORKING_SET** — fuente `VDSEN_PRODUCT_POLICY` (procedencia `' + policy.EVIDENCE_BASIS + '`); heurística de producto, no consenso científico. El simulador `docs/REPRESENTATIVE_SET_SIMULATION.md` es solo análisis.'],
     [true, 'Exposición destino exacta y no iniciada', 'Por candidato: `TARGET_EXPOSURE_CHANGED`, `TARGET_ALREADY_STARTED` y la guardia de 18 verificaciones (t513).'],
     [true, 'Sin override del Coach', 'Por candidato: `COACH_OVERRIDE` / `COACH_KEEP_ORIGINAL` (t493, t512, t513).'],
     [true, 'Seguridad despejada', 'Por candidato: `SAFETY_CONFLICT` / `READINESS_VETO` (t492, t512).'],
     [!!(f.canary && f.canary.state === 'READY_BUT_DISABLED'), 'Canario sintético `READY_BUT_DISABLED`', 'Estado del canario en esta generación: ' + (f.canary && f.canary.state) + ' (t513, `docs/SHADOW_REPLAY_REPORT.md`).'],
-    [win.status === 'VALIDATED', 'Runner T478 validado en Windows (o exención explícita)', 'Estado registrado: **' + win.status + '**' + (win.recordedAt ? ' (' + win.recordedAt + ')' : '') + '. Se valida con `node scripts/record-windows-validation.cjs` en Windows; Linux no lo emula.'],
+    [win.status === 'VALIDATED', 'Validación del runner T478 en Windows (WINDOWS_HARNESS_VALIDATION)', (win.status === 'VALIDATED' ? '**VALIDATED**' : '**NON_BLOCKING_TECHNICAL_PENDING** (registro: ' + win.status + ')') + (win.recordedAt ? ' (' + win.recordedAt + ')' : '') + '. No bloquea la activación de producto; la validación en Linux sigue siendo obligatoria y pasa. Se valida con `node scripts/record-windows-validation.cjs` en Windows; Linux no lo emula y no se marca PASS.', true],
     [false, '`NUMERIC_APPLY_ENABLED` cambiado intencionalmente', 'Actualmente `' + (flagOff ? 'false' : 'INESPERADO') + '` en los tres módulos. **No se cambia en esta ejecución.**'],
     [f.rollback, 'Reversión verificada', '`planReversal` revierte antes de que empiece la exposición destino y se bloquea después (t493, verificado al generar).'],
     [f.audit, 'Auditoría visible para el Coach', 'Línea dry-run con clase de vista rápida, cola de equipos y matriz de preparación en el Monitor (t494, t510, t520).']
   ];
-  const done = items.filter(i => i[0]).length;
+  const done = items.filter(i => i[0]).length, blocking = items.filter(i => !i[0] && !i[3]);
   const L = ['# Lista de verificación de activación de la auto-aplicación', '',
     'Generado por `node scripts/generate-activation-docs.cjs` a partir de hechos vivos del repositorio; verificado por `tests/t522-activation-docs.test.js`. `[x]` = cumplido; `[ ]` = pendiente.',
     'Los ítems por candidato se cumplen en tiempo de ejecución para cada candidato (guardia de activación); aquí se marcan como verificados por sus tests.', '',
-    '**Estado: ' + done + ' de ' + items.length + ' cumplidos. La bandera NO se activa con esta lista; requiere decisión explícita del director.**', ''];
+    '**Estado: ' + done + ' de ' + items.length + ' cumplidos; pendientes bloqueantes: ' + blocking.length + '. La bandera NO se activa con esta lista; requiere decisión explícita del director.**', ''];
   items.forEach(i => L.push('- ' + box(i[0]) + ' **' + i[1] + '** — ' + i[2]));
   L.push('', '## Bloqueos para activar (resumen)', '',
-    '1. Datos del Coach: incrementos reales de equipo (ver `docs/EQUIPMENT_ACTIVATION_READINESS.md`).',
-    '2. Decisiones del director: D/E, C/E y serie representativa (ver `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md`).',
-    '3. Validación del runner en Windows (o exención explícita).', '');
+    '1. **Datos del Coach:** incrementos reales de equipo (ver `docs/EQUIPMENT_DATA_REQUIRED_NEXT.md` y `docs/EQUIPMENT_ACTIVATION_READINESS.md`). Es el bloqueo operativo principal.',
+    '2. **Decisión intencional** de cambiar `NUMERIC_APPLY_ENABLED` (no se cambia en esta ejecución).',
+    '3. No bloqueante: validación del runner en Windows (`NON_BLOCKING_TECHNICAL_PENDING`).', '',
+    'Las decisiones D/E, C→E y serie representativa ya NO son bloqueos: están cerradas como política de producto VDSEN (ver `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md`).', '');
   return L.join('\n');
 }
 
 function readiness(f) {
-  const s = f.replay.summary, top = Object.entries(s.blockersByReason).slice(0, 5);
+  const s = f.replay.summary, top = Object.entries(s.blockersByReason).slice(0, 6);
+  const flagOff = f.flag.every(v => v === false);
   const L = ['# Preparación real de la auto-aplicación', '',
     'Generado por `node scripts/generate-activation-docs.cjs`. **Evidencia estática / sintética / local únicamente; no hay métricas de producción.**', '',
+    '## 1. Preparación de CÓDIGO / POLÍTICA', '',
+    '| Elemento | Estado |', '|---|---|',
+    '| Política de producto D/E | COACH_REVIEW_REQUIRED (1A) — sin candidato numérico |',
+    '| Política C→E | primera ocurrencia comparable → REST +30 s; persistencia → COACH_REVIEW_REQUIRED (2B) |',
+    '| Serie representativa | LAST_WORKING_SET · `' + policy.EVIDENCE_BASIS + '` |',
+    '| Bloqueos científicos abiertos | ' + policy.SCIENCE_GAPS.length + ' |',
+    '| Resolvedor de equipo | listo (identidad + precedencia + rejilla física + rechazo explícito) |',
+    '| UX de configuración de equipo | lista (editor, cola, carga masiva, vista previa de impacto, procedencia) |',
+    '| Guardia de activación | 19 verificaciones independientes |',
+    '| Repetición sintética | ' + s.candidates + ' escenarios: ' + s.readyButDisabled + ' READY_BUT_DISABLED · ' + s.coachReviewState + ' COACH_REVIEW_REQUIRED · ' + s.blocked + ' bloqueados · ' + s.executable + ' ejecutables |',
+    '| Bloqueados por equipo / revisión del Coach / otra política | ' + s.equipmentBlocked + ' / ' + s.coachReview + ' / ' + s.scienceBlocked + ' |',
+    '| Validación de plataforma (Windows T478) | NON_BLOCKING_TECHNICAL_PENDING (registro: ' + win.status + ') |',
+    '| Bandera `NUMERIC_APPLY_ENABLED` | ' + (flagOff ? 'false (apagada en los 3 módulos)' : 'INESPERADO') + ' |',
+    '| Estado APPLIED | inexistente |', '',
+    '## 2. Preparación de DATOS REALES DE EQUIPO', '',
     '| Métrica | Valor |', '|---|---|',
     '| Cobertura de identidad de equipo (grupos) | ' + f.resolvedGroups + ' / ' + f.groups + ' |',
     '| Cobertura de identidad (ejercicios del catálogo) | ' + f.exercisesWithIdentity + ' / ' + f.exercises + ' |',
     '| Cobertura de incrementos (equipos con incremento) | ' + f.configured + ' / ' + (f.groups - f.unresolvedGroups.length) + ' |',
-    '| Ejercicios del catálogo listos por equipo | ' + f.exercisesReady + ' / ' + f.exercises + ' |',
-    '| Candidatos listos (repetición sintética) | ' + s.readyButDisabled + ' de ' + s.candidates + ' (READY_BUT_DISABLED) |',
-    '| Candidatos bloqueados (repetición sintética) | ' + s.blocked + ' de ' + s.candidates + ' |',
-    '| Ejecutables | ' + s.executable + ' |',
-    '| Bloqueados por datos de equipo / por ciencia | ' + s.equipmentBlocked + ' / ' + s.scienceBlocked + ' |',
-    '| Ciencia sin resolver | ' + f.science.join(', ') + ' |',
-    '| Validación de plataforma (Windows T478) | ' + win.status + ' |',
-    '| Bandera `NUMERIC_APPLY_ENABLED` | ' + (f.flag.every(v => v === false) ? 'false (apagada en los 3 módulos)' : 'INESPERADO') + ' |',
-    '| Estado APPLIED | inexistente |', '',
-    '## Principales motivos de bloqueo (sintético)', '', '| Motivo | Candidatos |', '|---|---|'];
+    '| Ejercicios del catálogo listos por equipo (LOAD) | ' + f.exercisesReady + ' / ' + f.exercises + ' |',
+    '| Candidatos LOAD ejecutables con el catálogo real | 0 (sin incrementos: sin redondeo implícito, sin respaldo por tipo de equipo) |', '',
+    '**Bloqueo operativo principal restante: incrementos reales de equipo (datos del Coach).**', '',
+    '## Principales motivos de bloqueo o revisión (sintético)', '', '| Motivo | Candidatos |', '|---|---|'];
   top.forEach(([k, v]) => L.push('| ' + k + ' | ' + v + ' |'));
   L.push('', '## Equipos que más desbloquearían (ranking por uso en el catálogo)', '', '| # | Equipo | Ejercicios | Estado |', '|---|---|---|---|');
   f.queue.slice(0, 8).forEach((r, i) => L.push('| ' + (i + 1) + ' | ' + r.name + ' | ' + r.exerciseCount + ' | ' + r.status + ' |'));
-  L.push('', 'Documentos relacionados: `docs/AUTO_APPLY_ACTIVATION_CHECKLIST.md`, `docs/EQUIPMENT_ACTIVATION_READINESS.md`, `docs/SHADOW_REPLAY_REPORT.md`, `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md`.', '');
+  L.push('', 'Documentos relacionados: `docs/AUTO_APPLY_ACTIVATION_CHECKLIST.md`, `docs/EQUIPMENT_DATA_REQUIRED_NEXT.md`, `docs/EQUIPMENT_ACTIVATION_READINESS.md`, `docs/SHADOW_REPLAY_REPORT.md`, `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md`.', '');
   return L.join('\n');
 }
 

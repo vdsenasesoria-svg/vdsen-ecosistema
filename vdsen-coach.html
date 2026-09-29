@@ -18818,6 +18818,24 @@ El esfuerzo no es negociable.
   // T481: Modulo D consumes canonical shadow decisions; it never recomputes magnitudes.
   // Identity is the exact prescriptionExerciseId snapshotted in the executed logs (never a name
   // or a position); anything ambiguous yields no candidate.
+  // T523: Coach-review branches (VDSEN product policy, NOT scientific claims): D, E and a persistent C->E are never applied automatically.
+  var _REVIEW_BRANCH = { 'D': 'Regla D · esfuerzo más duro que el prescrito', 'E': 'Regla E · repeticiones incompletas', 'D+E': 'Reglas D+E · reps incompletas y esfuerzo más duro',
+    'A+E': 'Reglas A+E · reps incompletas con esfuerzo más fácil', 'C+E': 'Regla C→E · la condición de C persiste' };
+  var _REVIEW_REASON = { C_PERSISTS_AT_NEXT_COMPARABLE_EXPOSURE: 'RIR correcto con reps incompletas otra vez en la siguiente exposición comparable (ya se propuso +30 s de descanso)',
+    EFFORT_HARDER_THAN_PRESCRIBED: 'esfuerzo observado claramente más duro que el prescrito', REPS_INCOMPLETE_WITHOUT_RIR_EVIDENCE: 'reps prescritas no alcanzadas y sin RIR observado',
+    REPS_INCOMPLETE_AND_EFFORT_HARDER_THAN_PRESCRIBED: 'reps prescritas no alcanzadas y esfuerzo más duro que el prescrito',
+    REPS_INCOMPLETE_WITH_EASIER_EFFORT_THAN_PRESCRIBED: 'reps prescritas no alcanzadas aunque el esfuerzo fue más fácil que el prescrito' };
+  function _reviewRequiredLines(m, pid) {
+    var r = m && m.coachReviewRequired; if (!r) return [];
+    function expo(e) { return e && Number.isInteger(e.week) && Number.isInteger(e.dayIndex) ? 'Sem ' + e.week + ' · Día ' + (e.dayIndex + 1) : '—'; }
+    var o = r.observed || {}, p = r.prescribed || {};
+    return ['<span style="color:#44BB88;font-weight:700">REVISIÓN DEL COACH REQUERIDA</span> · ' + _escH(_REVIEW_BRANCH[r.branch] || r.branch) + ' · política de producto VDSEN (no es una regla científica)',
+      'Motivo: ' + _escH(_REVIEW_REASON[r.reason] || r.reason || '—'),
+      'Ejercicio PID ' + _escH(pid || '—') + ' · exposición origen: ' + _escH(expo(r.sourceExposure)) + (r.previousExposure ? ' · exposición previa: ' + _escH(expo(r.previousExposure)) : '') + ' · exposición destino: no aplica',
+      'Observado: reps ' + _escH(String(o.repsExecuted === null || o.repsExecuted === undefined ? '—' : o.repsExecuted)) + ' · RIR ' + _escH(String(o.rirObserved === null || o.rirObserved === undefined ? '—' : o.rirObserved))
+        + ' · Prescrito: reps ' + _escH(String(p.repsTarget === null || p.repsTarget === undefined ? '—' : p.repsTarget)) + ' · RIR ' + _escH(String(p.rirTarget === null || p.rirTarget === undefined ? '—' : p.rirTarget)),
+      'No se reduce ninguna carga, repetición, serie ni RIR automáticamente; la decisión es del Coach.'];
+  }
   function _moduloDCanonicalView(records, ctx) {
     var all = Array.isArray(records) ? records : Object.keys(records || {}).map(function(k) { return records[k]; });
     var scoped = all.filter(function(r) {
@@ -18855,7 +18873,7 @@ El esfuerzo no es negociable.
     function cell(v) { return v === null || v === undefined || v === '' ? '—' : _escH(String(v)); }
     var nCand = rows.filter(function(r) { return r.status === 'PENDING'; }).length;
     var nOpen = rows.filter(function(r) { return r.status === 'PENDING' && r.record.magnitude.unresolved; }).length;
-    var nReview = rows.filter(function(r) { return r.status === 'PENDING' && (r.record.magnitude.coachReview || []).length; }).length;
+    var nReview = rows.filter(function(r) { return r.status === 'PENDING' && ((r.record.magnitude.coachReview || []).length || r.record.magnitude.coachReviewRequired); }).length;
     var body = rows.map(function(r) {
       var head = '<td style="padding:5px 6px;font-weight:600">' + _escH(r.name)
         + '<span style="display:block;font-size:9px;color:#888;font-weight:400">' + (r.pid ? 'PID ' + _escH(r.pid) : 'sin PID') + '</span></td>';
@@ -18874,6 +18892,10 @@ El esfuerzo no es negociable.
         return _escH('Regla ' + c.ruleId + ' · ') + txt + (c.blockers && c.blockers.length ? ' · ' + _escH(c.blockers.join(', ')) : '');
       });
       var next = r.record.nextExposure ? 'Sem ' + r.record.nextExposure.week + ' · Día ' + (r.record.nextExposure.dayIndex + 1) : '—';
+      if (m.coachReviewRequired) {
+        return '<tr style="border-top:1px solid rgba(244,244,240,.05)">' + head
+          + '<td colspan="3" style="padding:5px 6px;font-size:10px;color:#888">' + _reviewRequiredLines(m, r.pid).join('<br>') + '</td></tr>';
+      }
       var lines = [
         '<span style="color:#C4FF00">CANDIDATO SHADOW · NO APLICADO</span> · Regla ' + cell(m.ruleId) + ' · ' + _escH(m.methodologyFamily || '') + ' · nivel ' + cell(m.evidenceLevel),
         'RIR prescrito ' + cell(ev.rirPrescribed) + ' · observado ' + cell(ev.rirObserved) + ' · reps objetivo ' + cell(ev.repsTarget) + ' · ejecutadas ' + cell(ev.repsExecuted),
@@ -18908,6 +18930,11 @@ El esfuerzo no es negociable.
       return _escH('Regla ' + c.ruleId + ' · ' + c.dimension + ' → ' + raw + unit);
     });
     var notes = [];
+    if (m.coachReviewRequired) {
+      return '<span style="display:block;font-size:11px;color:#44BB88;font-weight:700">REVISIÓN DEL COACH REQUERIDA · ' + _escH(_REVIEW_BRANCH[m.coachReviewRequired.branch] || m.coachReviewRequired.branch) + '</span>'
+        + '<span style="display:block;font-size:11px;color:#888">' + _escH(_REVIEW_REASON[m.coachReviewRequired.reason] || m.coachReviewRequired.reason || '') + ' · sin candidato automático</span>'
+        + '<span style="display:block;font-size:10px;color:#888">Exposiciones comparables: ' + _escH(String(m.comparableExposureCount || 0)) + ' · prescripción original intacta</span>';
+    }
     if (m.unresolved) notes.push('Rama sin resolver: ' + m.unresolved);
     (m.coachReview || []).forEach(function(code) { notes.push(code); });
     if (!m.eligible) notes.push('Sin evidencia suficiente o bloqueada');
@@ -18928,6 +18955,7 @@ El esfuerzo no es negociable.
       var codes = (m && m.reasonCodes) || [];
       status = !m ? 'Sin decisión numérica canónica todavía'
         : codes.indexOf('SAFETY_CONFLICT') >= 0 ? 'Bloqueado: conflicto de seguridad (dolor/lesión) — revisión del Coach'
+        : m.coachReviewRequired ? 'Revisión del Coach requerida: ' + (_REVIEW_BRANCH[m.coachReviewRequired.branch] || m.coachReviewRequired.branch) + ' (sin candidato automático)'
         : m.review ? 'En revisión: dirección conflictiva entre exposiciones'
         : m.unresolved ? 'Bloqueado: rama de política sin resolver (' + m.unresolved + ')'
         : m.directionConsistency === 'UNCONFIRMED' ? 'Bloqueado: dirección no confirmada por la exposición previa'
@@ -18983,14 +19011,14 @@ El esfuerzo no es negociable.
       ALREADY_RECORDED: 'ya registrado', DIRECTION_NOT_REALIZABLE: 'el equipo no permite ese movimiento de carga', UNIT_MISMATCH: 'unidad distinta a la del incremento configurado',
       EQUIPMENT_OUT_OF_RANGE: 'fuera del rango del equipo', EQUIPMENT_INPUT_INVALID: 'entrada de equipo inválida',
       ACTIVATION_GUARD_FAILED: 'guardia de activación: un hecho requerido no se verificó', EQUIPMENT_IDENTITY_UNRESOLVED: 'equipo sin identidad canónica', SCIENCE_POLICY_UNRESOLVED: 'ciencia sin definir para esta rama (D/E)',
-      EVIDENCE_COUNT_INSUFFICIENT: 'evidencia insuficiente (menos de 2 exposiciones comparables)', DIRECTION_CONFLICTING: 'dirección contradictoria entre exposiciones',
+      COACH_REVIEW_REQUIRED: 'revisión del Coach requerida (sin aplicación automática)', EVIDENCE_COUNT_INSUFFICIENT: 'evidencia insuficiente (menos de 2 exposiciones comparables)', DIRECTION_CONFLICTING: 'dirección contradictoria entre exposiciones',
       DIRECTION_UNCONFIRMED: 'dirección no confirmada por la exposición previa', READINESS_VETO: 'veto por readiness' };
     var real = (decision.blockers || []).filter(function(b) { return b !== 'NUMERIC_APPLY_DISABLED'; });
     var o = decision.overlay;
     var pv = decision.readiness && decision.readiness.preview ? decision.readiness.preview.primary : null;
-    var pvLabels = { READY_BUT_DISABLED: 'LISTO (desactivado)', EXECUTABLE: 'EJECUTABLE', BLOCKED_EQUIPMENT_DATA: 'BLOQUEADO · datos de equipo', BLOCKED_SCIENCE_POLICY: 'BLOQUEADO · política científica',
+    var pvLabels = { READY_BUT_DISABLED: 'LISTO (desactivado)', EXECUTABLE: 'EJECUTABLE', BLOCKED_EQUIPMENT_DATA: 'BLOQUEADO · datos de equipo', COACH_REVIEW_REQUIRED: 'REVISIÓN DEL COACH', BLOCKED_POLICY_OTHER: 'BLOQUEADO · otra política',
       BLOCKED_EVIDENCE: 'BLOQUEADO · evidencia', BLOCKED_SAFETY: 'BLOQUEADO · seguridad', BLOCKED_CONTEXT: 'BLOQUEADO · contexto' };
-    var pvBadge = pv ? '<span style="display:inline-block;font-size:10px;font-weight:800;padding:1px 6px;border:1px solid #555;border-radius:4px;margin-right:6px;color:' + (pv === 'READY_BUT_DISABLED' ? '#3a9460' : '#e8a040') + '">' + _escH(pvLabels[pv] || pv) + '</span>' : '';
+    var pvBadge = pv ? '<span style="display:inline-block;font-size:10px;font-weight:800;padding:1px 6px;border:1px solid #555;border-radius:4px;margin-right:6px;color:' + (pv === 'READY_BUT_DISABLED' ? '#3a9460' : pv === 'COACH_REVIEW_REQUIRED' ? '#44BB88' : '#e8a040') + '">' + _escH(pvLabels[pv] || pv) + '</span>' : '';
     var text = decision.wouldApply && o
       ? 'Aplicaría en Sem ' + o.target.week + ' · Día ' + (o.target.dayIndex + 1) + ': ' + o.dimension + ' ' + (o.previousValue === null ? '—' : o.previousValue) + ' → ' + o.appliedValue + ' (simulación, no activo)'
       : 'No se aplicaría: ' + (real.length ? real.map(function(b) { return labels[b] || b; }).join(', ') : 'sin candidato');

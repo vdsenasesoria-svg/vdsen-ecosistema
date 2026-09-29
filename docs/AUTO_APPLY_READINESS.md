@@ -2,30 +2,45 @@
 
 Generado por `node scripts/generate-activation-docs.cjs`. **Evidencia estática / sintética / local únicamente; no hay métricas de producción.**
 
+## 1. Preparación de CÓDIGO / POLÍTICA
+
+| Elemento | Estado |
+|---|---|
+| Política de producto D/E | COACH_REVIEW_REQUIRED (1A) — sin candidato numérico |
+| Política C→E | primera ocurrencia comparable → REST +30 s; persistencia → COACH_REVIEW_REQUIRED (2B) |
+| Serie representativa | LAST_WORKING_SET · `VDSEN_PRODUCT_POLICY_LAST_WORKING_SET` |
+| Bloqueos científicos abiertos | 0 |
+| Resolvedor de equipo | listo (identidad + precedencia + rejilla física + rechazo explícito) |
+| UX de configuración de equipo | lista (editor, cola, carga masiva, vista previa de impacto, procedencia) |
+| Guardia de activación | 19 verificaciones independientes |
+| Repetición sintética | 18 escenarios: 2 READY_BUT_DISABLED · 4 COACH_REVIEW_REQUIRED · 12 bloqueados · 0 ejecutables |
+| Bloqueados por equipo / revisión del Coach / otra política | 5 / 4 / 1 |
+| Validación de plataforma (Windows T478) | NON_BLOCKING_TECHNICAL_PENDING (registro: PENDING) |
+| Bandera `NUMERIC_APPLY_ENABLED` | false (apagada en los 3 módulos) |
+| Estado APPLIED | inexistente |
+
+## 2. Preparación de DATOS REALES DE EQUIPO
+
 | Métrica | Valor |
 |---|---|
 | Cobertura de identidad de equipo (grupos) | 39 / 41 |
 | Cobertura de identidad (ejercicios del catálogo) | 69 / 71 |
 | Cobertura de incrementos (equipos con incremento) | 0 / 39 |
-| Ejercicios del catálogo listos por equipo | 0 / 71 |
-| Candidatos listos (repetición sintética) | 2 de 15 (READY_BUT_DISABLED) |
-| Candidatos bloqueados (repetición sintética) | 13 de 15 |
-| Ejecutables | 0 |
-| Bloqueados por datos de equipo / por ciencia | 5 / 2 |
-| Ciencia sin resolver | RULE_D_E_ALTERNATIVE_NOT_DEFINED, RULE_C_E_PRECEDENCE_NOT_DEFINED, REPRESENTATIVE_SET_NOT_DEFINED |
-| Validación de plataforma (Windows T478) | PENDING |
-| Bandera `NUMERIC_APPLY_ENABLED` | false (apagada en los 3 módulos) |
-| Estado APPLIED | inexistente |
+| Ejercicios del catálogo listos por equipo (LOAD) | 0 / 71 |
+| Candidatos LOAD ejecutables con el catálogo real | 0 (sin incrementos: sin redondeo implícito, sin respaldo por tipo de equipo) |
 
-## Principales motivos de bloqueo (sintético)
+**Bloqueo operativo principal restante: incrementos reales de equipo (datos del Coach).**
+
+## Principales motivos de bloqueo o revisión (sintético)
 
 | Motivo | Candidatos |
 |---|---|
-| MAGNITUDE_BRANCH_UNRESOLVED | 2 |
-| SCIENCE_POLICY_UNRESOLVED | 2 |
+| COACH_REVIEW_REQUIRED | 4 |
 | COACH_OVERRIDE | 1 |
 | DIRECTION_CONFLICTING | 1 |
 | DIRECTION_NOT_REALIZABLE | 1 |
+| DIRECTION_UNCONFIRMED | 1 |
+| EQUIPMENT_IDENTITY_UNRESOLVED | 1 |
 
 ## Equipos que más desbloquearían (ranking por uso en el catálogo)
 
@@ -40,4 +55,4 @@ Generado por `node scripts/generate-activation-docs.cjs`. **Evidencia estática 
 | 7 | Abductor / Adductor Matrix | 1 | INCREMENT_UNRESOLVED |
 | 8 | Accesorio de polea | 1 | IDENTITY_UNRESOLVED |
 
-Documentos relacionados: `docs/AUTO_APPLY_ACTIVATION_CHECKLIST.md`, `docs/EQUIPMENT_ACTIVATION_READINESS.md`, `docs/SHADOW_REPLAY_REPORT.md`, `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md`.
+Documentos relacionados: `docs/AUTO_APPLY_ACTIVATION_CHECKLIST.md`, `docs/EQUIPMENT_DATA_REQUIRED_NEXT.md`, `docs/EQUIPMENT_ACTIVATION_READINESS.md`, `docs/SHADOW_REPLAY_REPORT.md`, `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md`.

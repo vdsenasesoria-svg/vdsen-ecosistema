@@ -13,17 +13,19 @@ test('T520.1 every blocker (except the activation flag) belongs to exactly one p
   const flat = [].concat(...Object.values(consumer.PREVIEW_CLASSES));
   assert.equal(flat.length, new Set(flat).size, 'no blocker in two classes');
   for (const c of Object.values(B).filter(c => c !== 'NUMERIC_APPLY_DISABLED')) assert.ok(flat.includes(c), c);
-  assert.deepEqual(Object.keys(consumer.PREVIEW_CLASSES), ['BLOCKED_SAFETY', 'BLOCKED_CONTEXT', 'BLOCKED_EVIDENCE', 'BLOCKED_SCIENCE_POLICY', 'BLOCKED_EQUIPMENT_DATA']);
+  assert.deepEqual(Object.keys(consumer.PREVIEW_CLASSES), ['BLOCKED_SAFETY', 'BLOCKED_CONTEXT', 'BLOCKED_EVIDENCE', 'COACH_REVIEW_REQUIRED', 'BLOCKED_POLICY_OTHER', 'BLOCKED_EQUIPMENT_DATA']);
 });
 
 test('T520.2 replay scenarios classify as expected; precise blockers remain available', () => {
   const by = Object.fromEntries(R.replay().rows.map(r => [r.name, r]));
   const cls = (n) => by[n].previewClass;
   assert.equal(cls('A-load ready (synthetic shared step)'), 'READY_BUT_DISABLED');
-  assert.equal(cls('C rest ready (independent of equipment)'), 'READY_BUT_DISABLED');
+  assert.equal(cls('C rest ready, first occurrence (independent of equipment)'), 'READY_BUT_DISABLED');
   for (const n of ['A-load, equipment increment not configured', 'A-load, equipment identity unresolved (generic label)', 'A-load, increment unit mismatch', 'A-load, grid step swallows the move', 'A-load, above equipment maximum'])
     assert.equal(cls(n), 'BLOCKED_EQUIPMENT_DATA', n);
-  for (const n of ['D/E branch unresolved (science)', 'D branch unresolved (science)']) assert.equal(cls(n), 'BLOCKED_SCIENCE_POLICY', n);
+  for (const n of ['D+E: reps incomplete and effort harder (Coach review)', 'D: effort harder than prescribed (Coach review)', 'E: reps incomplete without RIR evidence (Coach review)', 'C persists at the next comparable exposure (Coach review)'])
+    assert.equal(cls(n), 'COACH_REVIEW_REQUIRED', n);
+  assert.equal(cls('Rule A with target RIR 0 (policy undefined by the source)'), 'BLOCKED_POLICY_OTHER');
   for (const n of ['single exposure only', 'direction unconfirmed by prior exposure', 'direction conflicting across exposures']) assert.equal(cls(n), 'BLOCKED_EVIDENCE', n);
   assert.equal(cls('safety conflict'), 'BLOCKED_SAFETY');
   for (const n of ['Coach override after evidence', 'target exposure already started']) assert.equal(cls(n), 'BLOCKED_CONTEXT', n);

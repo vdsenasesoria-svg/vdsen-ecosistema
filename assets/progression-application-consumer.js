@@ -29,7 +29,7 @@
     UNRESOLVED_EQUIPMENT_INCREMENT: 'UNRESOLVED_EQUIPMENT_INCREMENT', EQUIPMENT_RESOLUTION_MISMATCH: 'EQUIPMENT_RESOLUTION_MISMATCH',
     DIRECTION_NOT_REALIZABLE: 'DIRECTION_NOT_REALIZABLE', UNIT_MISMATCH: 'UNIT_MISMATCH', EQUIPMENT_OUT_OF_RANGE: 'EQUIPMENT_OUT_OF_RANGE',
     EQUIPMENT_INPUT_INVALID: 'EQUIPMENT_INPUT_INVALID',
-    ACTIVATION_GUARD_FAILED: 'ACTIVATION_GUARD_FAILED', EQUIPMENT_IDENTITY_UNRESOLVED: 'EQUIPMENT_IDENTITY_UNRESOLVED', SCIENCE_POLICY_UNRESOLVED: 'SCIENCE_POLICY_UNRESOLVED',
+    COACH_REVIEW_REQUIRED: 'COACH_REVIEW_REQUIRED', ACTIVATION_GUARD_FAILED: 'ACTIVATION_GUARD_FAILED', EQUIPMENT_IDENTITY_UNRESOLVED: 'EQUIPMENT_IDENTITY_UNRESOLVED', SCIENCE_POLICY_UNRESOLVED: 'SCIENCE_POLICY_UNRESOLVED',
     EVIDENCE_COUNT_INSUFFICIENT: 'EVIDENCE_COUNT_INSUFFICIENT', DIRECTION_CONFLICTING: 'DIRECTION_CONFLICTING',
     DIRECTION_UNCONFIRMED: 'DIRECTION_UNCONFIRMED', READINESS_VETO: 'READINESS_VETO',
     NO_ACTIONABLE_CANDIDATE: 'NO_ACTIONABLE_CANDIDATE', STRUCTURAL_DIMENSION_NOT_AUTHORIZED: 'STRUCTURAL_DIMENSION_NOT_AUTHORIZED',
@@ -46,6 +46,7 @@
     SAFETY: [BLOCKERS.SAFETY_CONFLICT, BLOCKERS.READINESS_VETO],
     EVIDENCE_COUNT: [BLOCKERS.EVIDENCE_COUNT_INSUFFICIENT],
     DIRECTION_CONSISTENCY: [BLOCKERS.DIRECTION_CONFLICTING, BLOCKERS.DIRECTION_UNCONFIRMED],
+    POLICY_REVIEW: [BLOCKERS.COACH_REVIEW_REQUIRED],
     MAGNITUDE_BRANCH: [BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED, BLOCKERS.SCIENCE_POLICY_UNRESOLVED, BLOCKERS.NOT_ELIGIBLE, BLOCKERS.NO_ACTIONABLE_CANDIDATE, BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED],
     EQUIPMENT_IDENTITY: [BLOCKERS.EQUIPMENT_IDENTITY_UNRESOLVED],
     EQUIPMENT_INCREMENT: [BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT, BLOCKERS.DIRECTION_NOT_REALIZABLE, BLOCKERS.EQUIPMENT_OUT_OF_RANGE,
@@ -56,7 +57,8 @@
   });
 
   // T520: quick-scan classes for the Coach. The precise blocker codes stay underneath (readiness.gates / blockers).
-  // Priority when several apply: SAFETY > CONTEXT > EVIDENCE > SCIENCE_POLICY > EQUIPMENT_DATA.
+  // Priority when several apply: SAFETY > CONTEXT > EVIDENCE > COACH_REVIEW > POLICY_OTHER > EQUIPMENT_DATA. COACH_REVIEW_REQUIRED is a
+  // designed product state (D/E, persistent C->E), not an error.
   var PREVIEW_CLASSES = Object.freeze({
     BLOCKED_SAFETY: [BLOCKERS.SAFETY_CONFLICT, BLOCKERS.READINESS_VETO],
     BLOCKED_CONTEXT: [BLOCKERS.NOT_CANONICAL_RECORD, BLOCKERS.CLIENT_MISMATCH, BLOCKERS.PLAN_MISMATCH, BLOCKERS.IDENTITY_UNRESOLVED, BLOCKERS.PLAN_CHANGED,
@@ -64,7 +66,8 @@
       BLOCKERS.COACH_KEEP_ORIGINAL, BLOCKERS.ACTIVATION_GUARD_FAILED, BLOCKERS.STALE_CALLBACK, BLOCKERS.REVISION_CONFLICT],
     BLOCKED_EVIDENCE: [BLOCKERS.EVIDENCE_COUNT_INSUFFICIENT, BLOCKERS.DIRECTION_CONFLICTING, BLOCKERS.DIRECTION_UNCONFIRMED, BLOCKERS.NOT_ELIGIBLE,
       BLOCKERS.NO_ACTIONABLE_CANDIDATE, BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED],
-    BLOCKED_SCIENCE_POLICY: [BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED, BLOCKERS.SCIENCE_POLICY_UNRESOLVED],
+    COACH_REVIEW_REQUIRED: [BLOCKERS.COACH_REVIEW_REQUIRED],
+    BLOCKED_POLICY_OTHER: [BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED, BLOCKERS.SCIENCE_POLICY_UNRESOLVED],
     BLOCKED_EQUIPMENT_DATA: [BLOCKERS.EQUIPMENT_IDENTITY_UNRESOLVED, BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT, BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH, BLOCKERS.DIRECTION_NOT_REALIZABLE,
       BLOCKERS.UNIT_MISMATCH, BLOCKERS.EQUIPMENT_OUT_OF_RANGE, BLOCKERS.EQUIPMENT_INPUT_INVALID]
   });
@@ -77,20 +80,22 @@
 
   // T505: science/product items that must be closed (director decision) before numeric application may be enabled.
   // Kept in sync with progression-magnitude-policy.js SCIENCE_GAPS (verified by tests).
-  var ACTIVATION_PREREQUISITES = Object.freeze(['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
+  var ACTIVATION_PREREQUISITES = Object.freeze([]);
+  var PRODUCT_POLICIES = Object.freeze(['RULE_D_E_COACH_REVIEW_ONLY', 'RULE_C_THEN_E_COACH_REVIEW', 'REPRESENTATIVE_SET_LAST_WORKING_SET']);
 
   // T512: unsupported science is LOCALIZED: only branches that need a missing rule are blocked. D and E adjustments need the
   // reps-vs-load alternative; Rule A and Rule C candidates do not. C+E is informational (E deferred, C stands).
   function _scienceGapsFor(m) {
-    var rules = (m && m.unresolved && m.unresolved.rules) || [];
-    return rules.indexOf('D') >= 0 || rules.indexOf('E') >= 0 ? ['RULE_D_E_ALTERNATIVE_NOT_DEFINED'] : [];
+    // T523: no known science gap remains (D/E, C/E precedence and the representative set are closed product policy). A FUTURE unknown
+    // branch would declare unresolved.scienceGap and would then block with SCIENCE_POLICY_UNRESOLVED.
+    return m && m.unresolved && m.unresolved.scienceGap ? [String(m.unresolved.scienceGap)] : [];
   }
 
   // T513: ACTIVATION GUARD. Defense in depth: every fact required to write an overlay is RE-VERIFIED here directly from the
   // record, the overlay and the context, independently of the blocker list. Even if NUMERIC_APPLY_ENABLED is later flipped
   // and some blocker path regresses, a candidate still fails unless all of these hold.
   var GUARD_CHECKS = Object.freeze(['exactClient', 'exactActivePlan', 'exactPid', 'validSourceExposure', 'exactTargetExposure', 'targetNotStarted',
-    'planNotChanged', 'noCoachOverride', 'noSafetyConflict', 'evidenceEligible', 'directionConsistent', 'magnitudeResolved', 'equipmentIdentityResolved',
+    'planNotChanged', 'noCoachOverride', 'noSafetyConflict', 'noPolicyReview', 'evidenceEligible', 'directionConsistent', 'magnitudeResolved', 'equipmentIdentityResolved',
     'equipmentIncrementResolved', 'unitCompatible', 'physicallyRealizable', 'idempotencyKeyValid', 'transactionContextCurrent']);
   var _SOURCES = { EXERCISE_METADATA: true, GYM_METADATA: true, COACH_CONFIGURED: true };
   function _int(v) { return typeof v === 'number' && Number.isInteger(v) && v >= 0; }
@@ -116,6 +121,7 @@
         _time(iv.decidedAt) !== null && calcAt !== null && _time(iv.decidedAt) >= calcAt && iv.action !== 'NO_CHANGE'; }) &&
       !(record.state === 'REJECTED' && record.reasonCode === 'COACH_KEEP_ORIGINAL');
     r.noSafetyConflict = ctx.safetyConflict !== true && (m.reasonCodes || []).indexOf('SAFETY_CONFLICT') < 0;
+    r.noPolicyReview = !m.coachReviewRequired;
     r.evidenceEligible = m.eligible === true && _num(m.comparableExposureCount) !== null && m.comparableExposureCount >= 2 && record.state === 'PENDING';
     r.directionConsistent = m.directionConsistency === 'CONSISTENT' || m.directionConsistency === 'NOT_APPLICABLE';
     r.magnitudeResolved = !m.unresolved && !!cand && m.mode === 'SHADOW' && m.numericApplyAllowed === false;
@@ -152,8 +158,8 @@
       gates.every(function(x) { return x.state === 'PASS' || x.state === 'NOT_APPLICABLE'; });
     return { gates: gates, readyExceptFlag: readyExceptFlag, executable: readyExceptFlag && NUMERIC_APPLY_ENABLED, numericApplyEnabled: NUMERIC_APPLY_ENABLED,
       preview: _previewClassOf(blockers, readyExceptFlag),
-      state: !readyExceptFlag ? 'BLOCKED' : (NUMERIC_APPLY_ENABLED ? 'EXECUTABLE' : 'READY_BUT_DISABLED'),
-      activationPrerequisites: ACTIVATION_PREREQUISITES.slice(), localizedScienceGaps: _scienceGapsFor(m), globalProvisional: ['REPRESENTATIVE_SET_NOT_DEFINED'] };
+      state: !readyExceptFlag ? (_previewClassOf(blockers, false).primary === 'COACH_REVIEW_REQUIRED' ? 'COACH_REVIEW_REQUIRED' : 'BLOCKED') : (NUMERIC_APPLY_ENABLED ? 'EXECUTABLE' : 'READY_BUT_DISABLED'),
+      activationPrerequisites: ACTIVATION_PREREQUISITES.slice(), localizedScienceGaps: _scienceGapsFor(m), globalProvisional: [], productPolicies: PRODUCT_POLICIES.slice() };
   }
 
   function _time(v) { return typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null; }
@@ -247,9 +253,10 @@
         if (rc.indexOf('DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE') >= 0) specific.push(BLOCKERS.DIRECTION_UNCONFIRMED);
         specific.forEach(function(b) { if (blockers.indexOf(b) < 0) blockers.push(b); });
       }
+      if (m.coachReviewRequired) blockers.push(BLOCKERS.COACH_REVIEW_REQUIRED);
       if (m.unresolved) { blockers.push(BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED); if (_scienceGapsFor(m).length) blockers.push(BLOCKERS.SCIENCE_POLICY_UNRESOLVED); }
-      else if (!m.eligible && !specific.length) blockers.push(BLOCKERS.NOT_ELIGIBLE);
-      var cand = (m.unresolved || !m.eligible) ? null : _candidateFor(m, ctx, blockers);
+      else if (!m.eligible && !specific.length && !m.coachReviewRequired) blockers.push(BLOCKERS.NOT_ELIGIBLE);
+      var cand = (m.unresolved || m.coachReviewRequired || !m.eligible) ? null : _candidateFor(m, ctx, blockers);
       var key = overlayKey(record);
       if (ctx.existingOverlays && ctx.existingOverlays[key]) blockers.push(BLOCKERS.ALREADY_RECORDED);
       if (!blockers.length && cand) {

@@ -19,6 +19,7 @@ function fn(name) {
 }
 const ctx = {}; vm.createContext(ctx);
 const esc = coach.indexOf('  function _escH(s) {'); vm.runInContext(coach.slice(esc, coach.indexOf('\n  }\n', esc) + 4), ctx);
+vm.runInContext(coach.slice(coach.indexOf('  var _REVIEW_BRANCH = {'), coach.indexOf('  function _moduloDCanonicalView(')), ctx);
 ['_dryRunLine', '_shadowAuditLines', '_renderShadowMagnitude', '_renderShadowAutoFeed'].forEach(n => vm.runInContext(fn(n), ctx));
 
 const PID = 'pid-A', T0 = Date.parse('2026-09-27T12:00:00.000Z');
@@ -56,7 +57,7 @@ test('T494.3 other blockers are explained in Spanish', () => {
     [{ existingOverlays: { ['ovl_' + rec.key]: {} } }, 'ya registrado']];
   for (const [over, text] of cases) assert.ok(feed(rec, dry(rec, over)).includes(text), text);
   const unresolved = record({ rir_real: 1 });
-  assert.ok(feed(unresolved, dry(unresolved)).includes('rama de política sin resolver'));
+  assert.ok(feed(unresolved, dry(unresolved)).includes('revisión del Coach requerida (sin aplicación automática)'));
 });
 
 test('T494.4 non-PENDING items and items without a dry-run decision show no simulation', () => {

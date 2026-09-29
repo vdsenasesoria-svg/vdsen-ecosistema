@@ -43,7 +43,7 @@ La regla C (+30 s) y su precedencia respecto a E no aparecen en ningún archivo 
 | `vdsen-cliente.html` `calculateProgression` | l.15523–15528, 15599, 15664 | El motor legado v3.1 usa el **promedio** de series (`avgReps`, `avgRIR`, carga media) | Es el motor legado congelado y degradado; las reglas A–E no citan su base | Código legado (no canónico) |
 | `docs/VDSEN_DEV_STATE.md` | RIR sign convention (l.1533–1534) | `rir_error = avgRIR − rirObj` (promedio) | Idem | Motor legado congelado |
 | `references/prompt-maestro-vdsen-coach.md` | A.12 (l.286) | La señal (retirada en T497) exigía ICS≥8, pump bueno y RIR>objetivo en **TODAS** las series | Cuantificador universal para un aviso de volumen, no regla de magnitud; retirado por decisión del director | Doctrina VDSEN histórica |
-| `assets/progression-magnitude-policy.js` | `EVIDENCE_BASIS` | El runtime canónico usa la **última serie** del Módulo D (`LAST_SET_CURRENT_RUNTIME_HEURISTIC`) | Es una heurística de implementación, no una fuente | Runtime (heurística) |
+| `assets/progression-magnitude-policy.js` (histórico, antes de T523) | `EVIDENCE_BASIS` | El runtime canónico usaba la **última serie** del Módulo D (`LAST_SET_CURRENT_RUNTIME_HEURISTIC`) | Es una heurística de implementación, no una fuente | Runtime (heurística) |
 
 Conclusión: existen dos bases en uso (promedio en el legado, última serie en el canónico) sin fuente que arbitre entre ellas. **No se implementa.**
 Ver `docs/REPRESENTATIVE_SET_SIMULATION.md` para cuánto cambia el resultado según la estrategia.
@@ -57,3 +57,10 @@ histórica desactualizada; no afecta al runtime.
 
 Ninguna de las tres reglas tiene respaldo suficiente. No se modificó `progression-magnitude-policy.js`. Las opciones de producto están en
 `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md` (no son hechos científicos).
+
+## ACTUALIZACIÓN T523 — decisiones de producto cerradas
+
+El director cerró las tres decisiones como **política de producto VDSEN** (no como hechos científicos ni reglas de Ehrenstein): D/E → revisión del Coach (1A),
+C→E → C primero y, si persiste en la siguiente exposición comparable, revisión del Coach (2B), serie representativa → última serie de trabajo válida (3A,
+`VDSEN_PRODUCT_POLICY_LAST_WORKING_SET`). Esta búsqueda se conserva como historia de por qué existían las brechas. A.12 y la guía histórica de "serie extra" son
+`LEGACY_REFERENCE_NON_AUTHORITATIVE`: no se editan y no restauran la función. Ver `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md` (ahora "DECIDIDAS").

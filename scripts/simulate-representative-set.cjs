@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // T521: ANALYSIS-ONLY simulator. Compares how the canonical magnitude policy's outcome changes under plausible
 // representative-set strategies for an exposure. It selects NO policy and is NOT connected to any runtime path:
-//   LAST_SET  - the set the current runtime heuristic uses (last executed set of the latest exposure)
+//   LAST_SET  - ADOPTED VDSEN product policy (T523: the last valid working set of the latest exposure); the others are analysis only
 //   WORST_SET - the set with the largest rep shortfall, then the lowest RIR headroom (hardest)
 //   BEST_SET  - the set with the smallest rep shortfall, then the highest RIR headroom (easiest)
 //   MEAN      - integer-rounded mean of reps / observed RIR / load across the sets (the frozen legacy v3.1 engine averages sets)
@@ -80,8 +80,8 @@ function simulate() {
 function render(sim) {
   const pct = (n, t) => (100 * n / t).toFixed(0) + '%';
   const L = ['# Simulación de serie representativa (solo análisis)', '',
-    'Generado por `node scripts/simulate-representative-set.cjs` con fixtures sintéticos deterministas. **No selecciona ninguna política y no está conectado al runtime.**',
-    'Objetivo de la fixture: 10 reps @ RIR 2. Estrategias: LAST_SET (heurística actual), WORST_SET (mayor falta de reps y menor margen RIR), BEST_SET (lo contrario),',
+    'Generado por `node scripts/simulate-representative-set.cjs` con fixtures sintéticos deterministas. **Es solo análisis: no selecciona ni cambia la política (la adoptada es LAST_SET) y no está conectado al runtime.**',
+    'Objetivo de la fixture: 10 reps @ RIR 2. Estrategias: LAST_SET (política de producto VDSEN adoptada en T523: última serie de trabajo válida), WORST_SET (mayor falta de reps y menor margen RIR), BEST_SET (lo contrario),',
     'MEAN (promedio redondeado de reps y RIR observado; el motor legado v3.1 promedia las series).', '',
     '- Exposiciones sintéticas: **' + sim.total + '** (20 patrones × historial previo igual / neutro)', '',
     '## Resultado por estrategia', '', '| Estrategia | Elegibles | Sin resolver | Dirección UP | DOWN | REST |', '|---|---|---|---|---|---|'];

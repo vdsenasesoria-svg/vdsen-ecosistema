@@ -25,8 +25,11 @@ test('T492.1 the same directional signal on two consecutive comparable exposures
   const up = run([UP, UP]);
   assert.equal(up.directionConsistency, 'CONSISTENT'); assert.equal(up.direction, 'UP'); assert.equal(up.eligible, true);
   assert.equal(up.candidates[0].rawCandidate, 102.5);
-  const rest = run([REST_C, REST_C]);
-  assert.equal(rest.direction, 'REST'); assert.equal(rest.directionConsistency, 'CONSISTENT'); assert.equal(rest.eligible, true);
+  // T523: REST (Rule C) is a FIRST-occurrence intervention: it needs no directional confirmation; a repeat goes to Coach review.
+  const rest = run([HOLD, REST_C]);
+  assert.equal(rest.direction, 'REST'); assert.equal(rest.directionConsistency, 'NOT_APPLICABLE'); assert.equal(rest.eligible, true);
+  const persists = run([REST_C, REST_C]);
+  assert.equal(persists.eligible, false); assert.equal(persists.coachReviewRequired.branch, 'C+E'); assert.deepEqual(persists.candidates, []);
 });
 
 test('T492.2 one unusually good/bad session after neutral history is not authority', () => {
@@ -41,18 +44,19 @@ test('T492.2 one unusually good/bad session after neutral history is not authori
 });
 
 test('T492.3 conflicting direction across exposures goes to explicit review and is never eligible', () => {
-  for (const signals of [[DOWN_D, UP], [UP, DOWN_D]]) {
-    const r = run(signals);
-    assert.equal(r.directionConsistency, 'CONFLICTING'); assert.equal(r.eligible, false);
-    assert.ok(r.reasonCodes.includes('CONFLICTING_DIRECTION_ACROSS_EXPOSURES'));
-    assert.equal(r.review.code, 'CONFLICTING_DIRECTION_ACROSS_EXPOSURES'); assert.equal(r.review.exposures.length, 2);
-  }
+  const r = run([DOWN_D, UP]);
+  assert.equal(r.directionConsistency, 'CONFLICTING'); assert.equal(r.eligible, false);
+  assert.ok(r.reasonCodes.includes('CONFLICTING_DIRECTION_ACROSS_EXPOSURES'));
+  assert.equal(r.review.code, 'CONFLICTING_DIRECTION_ACROSS_EXPOSURES'); assert.equal(r.review.exposures.length, 2);
+  // T523: a latest D is itself a Coach-review state (no confirmation logic, no numeric candidate)
+  const d = run([UP, DOWN_D]);
+  assert.equal(d.coachReviewRequired.branch, 'D'); assert.equal(d.eligible, false); assert.deepEqual(d.candidates, []);
 });
 
-test('T492.4 unresolved policy branches stay unresolved even when the direction is consistent', () => {
+test('T492.4 (T523) D stays Coach review (never numeric) even when the direction repeats', () => {
   const r = run([DOWN_D, DOWN_D]);
-  assert.equal(r.direction, 'DOWN'); assert.equal(r.directionConsistency, 'CONSISTENT');
-  assert.equal(r.unresolved.code, 'POLICY_BRANCH_REQUIRES_RESOLUTION'); assert.equal(r.eligible, false);
+  assert.equal(r.direction, 'DOWN'); assert.equal(r.directionConsistency, 'NOT_APPLICABLE');
+  assert.equal(r.coachReviewRequired.code, 'COACH_REVIEW_REQUIRED'); assert.equal(r.unresolved, null); assert.equal(r.eligible, false); assert.deepEqual(r.candidates, []);
 });
 
 test('T492.5 maintain has nothing to apply; no direction requirement', () => {
@@ -115,6 +119,7 @@ test('T492.10 the Coach sees why a candidate is blocked (direction, conflict, sa
       if (c === '"' || c === "'" || c === '`') { q = c; continue; } if (c === '{') d++; if (c === '}' && --d === 0) return coach.slice(st, i + 1); } };
   const ctx = {}; vm.createContext(ctx);
   const esc = coach.indexOf('  function _escH(s) {'); vm.runInContext(coach.slice(esc, coach.indexOf('\n  }\n', esc) + 4), ctx);
+  vm.runInContext(coach.slice(coach.indexOf('  var _REVIEW_BRANCH = {'), coach.indexOf('  function _moduloDCanonicalView(')), ctx); // T523 review helpers
   vm.runInContext(fn('_shadowAuditLines'), ctx);
   const item = (m) => ({ state: 'PENDING', source: { week: 1, dayIndex: 2 }, nextExposure: { week: 2, dayIndex: 0 }, prescriptionExerciseId: PID, action: 'increase_load', magnitude: m });
   const line = (m) => ctx._shadowAuditLines(item(m));

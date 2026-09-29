@@ -26,6 +26,7 @@ const ctx = {};
 vm.createContext(ctx);
 const esc = coach.indexOf('  function _escH(s) {');
 vm.runInContext(coach.slice(esc, coach.indexOf('\n  }\n', esc) + 4), ctx);
+vm.runInContext(coach.slice(coach.indexOf('  var _REVIEW_BRANCH = {'), coach.indexOf('  function _moduloDCanonicalView(')), ctx); // T523 review helpers
 ['_shadowAuditLines', '_renderShadowMagnitude', '_renderShadowAutoFeed'].forEach(n => vm.runInContext(fn(n), ctx));
 
 const T0 = Date.parse('2026-09-27T12:00:00.000Z');
@@ -51,7 +52,7 @@ test('T489.1 the AUTO item shows exercise, PID, source and next exposure, state 
 });
 
 test('T489.2 blocked/unresolved candidates state why', () => {
-  assert.ok(feed([record({ rir_real: 1 })]).includes('Bloqueado: rama de política sin resolver (POLICY_BRANCH_REQUIRES_RESOLUTION)'));
+  assert.ok(feed([record({ rir_real: 1 })]).includes('Revisión del Coach requerida: Regla D'), 'T523: D is a Coach-review state, not an unresolved branch');
   const one = record({ rir_real: 3 }); one.magnitude = policy.evaluate({ clientId: 'c', planId: 'p', prescriptionExerciseId: 'pid-A', plan, exposures: [], prescription: { prescriptionExerciseId: 'pid-A', sets: [] } });
   assert.ok(feed([one]).includes('Bloqueado: evidencia insuficiente o fuera de rango'));
 });

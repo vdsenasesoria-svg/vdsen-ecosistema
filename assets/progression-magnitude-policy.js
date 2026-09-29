@@ -8,11 +8,19 @@
  *         target RIR >= 2: +2.5% load.
  * Rule B  +2 reps over target in both of the last 2 sets -> COACH_REVIEW_VOLUME_INCREASE only.
  * Rule C  RIR correct but reps incomplete -> +30 s rest (first intervention).
- * Rule D  RIR harder than prescribed: per missing RIR -> -1 rep OR -2.5% load (alternatives).
- * Rule E  reps incomplete: per missing rep -> -2 reps OR -5% load (alternatives).
- * Load-vs-reps for D/E and the D+E / A+E / C+E collisions have no deterministic VDSEN
- * precedence in the source: they stay POLICY_BRANCH_REQUIRES_RESOLUTION. Equipment
- * increments have no contract: raw load candidates never get a finalCandidate.
+ * Rule D  RIR harder than prescribed.
+ * Rule E  reps incomplete.
+ *
+ * T523 VDSEN PRODUCT POLICY (director decisions; NOT scientific claims, NOT an Ehrenstein rule):
+ *   D and E  -> COACH_REVIEW_REQUIRED only. No source establishes a safe automatic regression magnitude, so the system
+ *               never automatically reduces load, target reps, sets or RIR (no numeric candidate).
+ *   C then E -> the FIRST comparable occurrence of C (RIR correct, reps incomplete) yields REST +30 s only; if the same
+ *               condition persists at the NEXT comparable exposure, E is reached and, by the rule above, goes to
+ *               COACH_REVIEW_REQUIRED. Never a double automatic intervention.
+ *   Representative set = the LAST valid WORKING set of the exposure (warm-ups, autofilled, express and planned drop
+ *               sets excluded; nothing substituted). Provenance VDSEN_PRODUCT_POLICY_LAST_WORKING_SET.
+ * Rule A and Rule C (first occurrence) are independent of these review branches. Equipment increments have no
+ * contract here: raw load candidates never get a finalCandidate.
  */
 (function(root, factory) {
   var api = factory();
@@ -28,20 +36,21 @@
   });
   var MIN_COMPARABLE_EXPOSURES = 2;
   var NUMERIC_APPLY_ENABLED = false;
-  var EVIDENCE_BASIS = 'LAST_SET_CURRENT_RUNTIME_HEURISTIC';
-  // T505: science/product gaps the repository does NOT settle (searched: docs/CONTEXTO_GENERADOR.md,
-  // docs/CONTEXTO_MAESTRO.md, references/*). "Double progression: reps first, then load" (CONTEXTO_GENERADOR §8) governs
-  // progression UP (Rule A) and does not select between reps and load for the D/E adjustments. Each gap keeps an explicit
-  // code and must be closed by a director decision before NUMERIC_APPLY_ENABLED may ever be true.
-  var SCIENCE_GAPS = Object.freeze([
-    Object.freeze({ id: 'RULE_D_E_ALTERNATIVE_NOT_DEFINED', rules: ['D', 'E'], surfacesAs: 'POLICY_BRANCH_REQUIRES_RESOLUTION',
-      question: 'When reps fall short and/or RIR is harder than prescribed: reduce reps or reduce load?' }),
-    Object.freeze({ id: 'RULE_C_E_PRECEDENCE_NOT_DEFINED', rules: ['C', 'E'], surfacesAs: 'collision.classification=AMBIGUOUS',
-      question: 'Correct RIR with incomplete reps: rest first (C) and E after, or E first as the runtime evaluates it?' }),
-    Object.freeze({ id: 'REPRESENTATIVE_SET_NOT_DEFINED', rules: ['A', 'C', 'D', 'E'], surfacesAs: 'evidence.basis=' + EVIDENCE_BASIS,
-      question: 'Which set represents an exposure: last set (current runtime heuristic), average, or the set with the worst signal?' })
+  var EVIDENCE_BASIS = 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET';
+  // T523: the three formerly open decisions are now CLOSED VDSEN PRODUCT POLICY (director decisions). They are product choices,
+  // never scientific claims. The historical gap ids are kept only as provenance.
+  var PRODUCT_POLICIES = Object.freeze([
+    Object.freeze({ id: 'RULE_D_E_COACH_REVIEW_ONLY', resolves: 'RULE_D_E_ALTERNATIVE_NOT_DEFINED', rules: ['D', 'E'], source: 'VDSEN_PRODUCT_POLICY', scientificClaim: false,
+      behavior: 'D and E never produce a numeric candidate; the state is COACH_REVIEW_REQUIRED.' }),
+    Object.freeze({ id: 'RULE_C_THEN_E_COACH_REVIEW', resolves: 'RULE_C_E_PRECEDENCE_NOT_DEFINED', rules: ['C', 'E'], source: 'VDSEN_PRODUCT_POLICY', scientificClaim: false,
+      behavior: 'First comparable C -> REST +30 s only; the same condition at the next comparable exposure -> COACH_REVIEW_REQUIRED.' }),
+    Object.freeze({ id: 'REPRESENTATIVE_SET_LAST_WORKING_SET', resolves: 'REPRESENTATIVE_SET_NOT_DEFINED', rules: ['A', 'C', 'D', 'E'], source: 'VDSEN_PRODUCT_POLICY', scientificClaim: false,
+      provenance: EVIDENCE_BASIS, behavior: 'The last valid executed working set of the exposure represents it.' })
   ]);
-  var PCT = Object.freeze({ A_LOAD: 2.5, D_LOAD: 2.5, E_LOAD: 5 });
+  // Genuinely UNKNOWN science branches would be listed here (and block with SCIENCE_POLICY_UNRESOLVED). None remain.
+  var SCIENCE_GAPS = Object.freeze([]);
+  var REVIEW_POLICY = 'VDSEN_PRODUCT_POLICY_COACH_REVIEW_ONLY';
+  var PCT = Object.freeze({ A_LOAD: 2.5 }); // D/E have NO automatic magnitude (T523)
   var REST_INCREMENT_SECONDS = 30;
 
   var REASONS = Object.freeze({
@@ -56,7 +65,7 @@
     EQUIPMENT_INCREMENT_POLICY_MISSING: 'EQUIPMENT_INCREMENT_POLICY_MISSING',
     REP_RANGE_UPPER_BOUND: 'REP_RANGE_UPPER_BOUND', REP_RANGE_LOWER_BOUND: 'REP_RANGE_LOWER_BOUND',
     NO_LOAD_BASE: 'NO_LOAD_BASE', NO_REST_BASE: 'NO_REST_BASE', NO_ADJUSTMENT_NEEDED: 'NO_ADJUSTMENT_NEEDED',
-    NUMERIC_ACTIVATION_DISABLED: 'NUMERIC_ACTIVATION_DISABLED',
+    NUMERIC_ACTIVATION_DISABLED: 'NUMERIC_ACTIVATION_DISABLED', COACH_REVIEW_REQUIRED: 'COACH_REVIEW_REQUIRED', NO_WORKING_SET: 'NO_WORKING_SET',
     COACH_REVIEW_VOLUME_INCREASE: 'COACH_REVIEW_VOLUME_INCREASE',
     CONFLICTING_DIRECTION_ACROSS_EXPOSURES: 'CONFLICTING_DIRECTION_ACROSS_EXPOSURES',
     DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE: 'DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE',
@@ -87,7 +96,7 @@
       methodologyFamily: PROVENANCE.methodologyFamily, ruleAuthority: PROVENANCE.ruleAuthority,
       evidenceLevel: PROVENANCE.evidenceLevel, prescriptionExerciseId: pid || null,
       eligible: false, actionable: false, ruleId: null, dimension: null,
-      evidence: null, candidates: [], unresolved: null, collision: null, coachReview: [],
+      evidence: null, candidates: [], unresolved: null, coachReviewRequired: null, collision: null, coachReview: [],
       comparableExposureCount: 0, comparableExposures: [], excludedExposures: [],
       reasonCodes: [], activationBlockers: [REASONS.NUMERIC_ACTIVATION_DISABLED],
       numericApplyAllowed: false, applied: false
@@ -113,7 +122,7 @@
         prescriptionExerciseId: pid, planId: scope && scope.planId, clientId: scope && scope.clientId, sets: [], painFlag: pain });
       g.sets.push({ setIndex: Number(m[4]), load: e.carga, reps: e.reps, unit: e.unit, done: e.done === true,
         rirPrescribed: e.rir, rirReal: e.rir_real, autoFilled: e.autoFilled === true, express: e.express === true,
-        ts: e.ts });
+        warmup: e.warmup === true || e.isWarmup === true, ts: e.ts });
     });
     Object.keys(groups).forEach(function(k) {
       groups[k].sets.sort(function(a, b) { return a.setIndex - b.setIndex; });
@@ -121,6 +130,28 @@
     });
     out.sort(function(a, b) { return a.week - b.week || a.dayIndex - b.dayIndex; });
     return out;
+  }
+
+  // T523: a WORKING set is an executed set that is not a warm-up (explicit flag on the log or on the prescribed set) and not a
+  // planned drop set (a technique set at a reduced load after the working load). Missing sets are never substituted.
+  function _isWorkingSet(s, prescription) {
+    if (!s || s.warmup === true) return false;
+    var ps = prescription && Array.isArray(prescription.sets) ? prescription.sets[s.setIndex] : null;
+    if (ps && (ps.warmup === true || ps.isWarmup === true || ps.drop === true || /^warm/i.test(String(ps.type || ps.setType || '')))) return false;
+    return true;
+  }
+
+  // T523: THE representative-set authority. Every canonical magnitude/evidence consumer selects the exposure's representative
+  // set here: the LAST valid executed working set, in the canonical (setIndex) order. Provenance
+  // VDSEN_PRODUCT_POLICY_LAST_WORKING_SET -- a product heuristic, not scientific consensus. exposure.sets are already working sets.
+  function selectRepresentativeSet(exposure, prescription) {
+    var sets = exposure && Array.isArray(exposure.sets) ? exposure.sets.filter(function(s) { return _isWorkingSet(s, prescription); }) : [];
+    if (!sets.length) return null;
+    // canonical order = ascending setIndex (stable), independent of the order the evidence arrives in
+    sets = sets.map(function(s, i) { return [s, i]; }).sort(function(a, b) { return (_num(a[0].setIndex) - _num(b[0].setIndex)) || (a[1] - b[1]); }).map(function(x) { return x[0]; });
+    var set = sets[sets.length - 1], presSets = (prescription && prescription.sets) || [];
+    var presSet = presSets[Math.min(set.setIndex, presSets.length - 1)] || presSets[presSets.length - 1] || {};
+    return { set: set, presSet: presSet, workingSets: sets, provenance: EVIDENCE_BASIS };
   }
 
   // Comparable exposure = same client/plan/PID, real (done, not autoFilled, not express)
@@ -134,18 +165,20 @@
       if (!x || x.prescriptionExerciseId !== pid) return drop(REASONS.PID_MISMATCH);
       if (x.planId !== undefined && input.planId && x.planId !== input.planId) return drop(REASONS.PLAN_MISMATCH);
       if (x.clientId !== undefined && input.clientId && x.clientId !== input.clientId) return drop(REASONS.CLIENT_MISMATCH);
-      var sets = (x.sets || []), real = [], sawAuto = false, sawExpress = false;
+      var sets = (x.sets || []), real = [], sawAuto = false, sawExpress = false, sawNonWorking = false;
       sets.forEach(function(s) {
         if (!s || s.done !== true) return;
         if (s.autoFilled === true) { sawAuto = true; return; }
         if (s.express === true) { sawExpress = true; return; }
+        if (!_isWorkingSet(s, input.prescription)) { sawNonWorking = true; return; }
         var reps = _num(s.reps);
         if (reps === null || reps <= 0) return;
         real.push(s);
       });
-      if (!real.length) return drop(sawAuto ? REASONS.AUTOFILLED_EVIDENCE : sawExpress ? REASONS.EXPRESS_EVIDENCE : REASONS.INVALID_EVIDENCE);
-      var last = real[real.length - 1], ts = _time(last.ts);
+      if (!real.length) return drop(sawAuto ? REASONS.AUTOFILLED_EVIDENCE : sawExpress ? REASONS.EXPRESS_EVIDENCE : sawNonWorking ? REASONS.NO_WORKING_SET : REASONS.INVALID_EVIDENCE);
+      var last = selectRepresentativeSet({ sets: real }, input.prescription).set, ts = _time(last.ts);
       if (planEdit !== null && (ts === null || ts < planEdit)) return drop(REASONS.PRESCRIPTION_CHANGED);
+      real = selectRepresentativeSet({ sets: real }, input.prescription).workingSets; // canonical setIndex order
       kept.push({ week: x.week, dayIndex: x.dayIndex, sets: real, unit: String(last.unit || 'KG').toUpperCase(), painFlag: x.painFlag === true });
     });
     var latestUnit = kept.length ? kept[kept.length - 1].unit : null;
@@ -213,8 +246,7 @@
   function _directionOf(rule) { return DIRECTION[rule] || 'UNKNOWN'; }
   // Decision-set values of an exposure (last executed set, same basis as the latest).
   function _decisionSet(exposure, prescription) {
-    var sets = exposure.sets, last = sets[sets.length - 1], presSets = (prescription && prescription.sets) || [];
-    var presLast = presSets[Math.min(last.setIndex, presSets.length - 1)] || presSets[presSets.length - 1] || {};
+    var rep = selectRepresentativeSet(exposure, prescription), last = rep.set, presLast = rep.presSet;
     var rirTarget = _num(last.rirPrescribed); if (rirTarget === null) rirTarget = _num(presLast.rirTarget);
     return { reps: _num(last.reps), repsTarget: _num(presLast.repsTarget), rirReal: _num(last.rirReal), rirTarget: rirTarget };
   }
@@ -238,10 +270,10 @@
     var latest = cmp.kept[cmp.kept.length - 1];
     if (!latest) { res.reasonCodes.push(REASONS.INSUFFICIENT_COMPARABLE_EXPOSURES); return res; }
 
-    // ── Decision set: last executed set of the latest exposure (same basis as Modulo D). ──
-    var sets = latest.sets, last = sets[sets.length - 1];
+    // ── Decision set: the LAST valid working set of the latest exposure (T523 product policy). ──
+    var repSet = selectRepresentativeSet(latest, input.prescription), sets = repSet.workingSets, last = repSet.set;
     var presSets = input.prescription.sets || [];
-    var presLast = presSets[Math.min(last.setIndex, presSets.length - 1)] || presSets[presSets.length - 1] || {};
+    var presLast = repSet.presSet;
     var repsTarget = _num(presLast.repsTarget);
     var repsTargets = sets.map(function(s) {
       var p = presSets[Math.min(s.setIndex, presSets.length - 1)]; return p ? _num(p.repsTarget) : null;
@@ -250,7 +282,7 @@
     var rirTarget = _num(last.rirPrescribed); if (rirTarget === null) rirTarget = _num(presLast.rirTarget);
     var rirReal = _num(last.rirReal);
     var range = _repRange(input.prescription);
-    res.evidence = { basis: EVIDENCE_BASIS, week: latest.week, dayIndex: latest.dayIndex, setIndex: last.setIndex,
+    res.evidence = { basis: EVIDENCE_BASIS, workingSetCount: sets.length, week: latest.week, dayIndex: latest.dayIndex, setIndex: last.setIndex,
       rirPrescribed: rirTarget, rirObserved: rirReal, repsTarget: repsTarget, repsExecuted: reps,
       load: load, unit: unit, repRange: range };
     res.coachReview = repsTarget === null ? [] : [_volumeReview(sets, repsTargets)].filter(Boolean);
@@ -268,38 +300,42 @@
     var rirDiff = haveRir ? rirReal - rirTarget : null;
     var cls = _classify(reps, repsTarget, rirReal, rirTarget);
 
-    function unresolved(rules, collisionClass, runtimeOrder, candidates) {
-      res.candidates = candidates;
-      res.unresolved = { code: REASONS.POLICY_BRANCH_REQUIRES_RESOLUTION, rules: rules };
-      res.reasonCodes.push(REASONS.POLICY_BRANCH_REQUIRES_RESOLUTION);
-      if (collisionClass) res.collision = { rules: rules, classification: collisionClass, runtimeOrder: runtimeOrder };
-      res.ruleId = rules.join('+');
+    // T523: previous COMPARABLE exposure's classification (same representative-set authority). "Comparable" is guaranteed by
+    // cmp.kept: stale / excluded / non-comparable exposures never count as persistence.
+    var priorCls = null;
+    if (prior) {
+      var pds = _decisionSet(prior, input.prescription);
+      priorCls = (pds.reps === null || pds.repsTarget === null) ? null : _classify(pds.reps, pds.repsTarget, pds.rirReal, pds.rirTarget);
     }
-    function eCandidates() {
-      return [_repsCandidate('E', repsTarget, -2 * missingReps, range), _loadCandidate('E', load, PCT.E_LOAD * missingReps, -1)];
-    }
-    function dCandidates() {
-      var d = Math.abs(rirDiff);
-      return [_repsCandidate('D', repsTarget, -d, range), _loadCandidate('D', load, PCT.D_LOAD * d, -1)];
+    function review(branch, reason) {
+      res.ruleId = branch; res.dimension = null; res.candidates = [];
+      res.coachReviewRequired = { code: REASONS.COACH_REVIEW_REQUIRED, branch: branch, reason: reason, policy: REVIEW_POLICY, scientificClaim: false,
+        observed: { repsExecuted: reps, rirObserved: rirReal }, prescribed: { repsTarget: repsTarget, rirTarget: rirTarget },
+        sourceExposure: { week: latest.week, dayIndex: latest.dayIndex }, previousExposure: prior ? { week: prior.week, dayIndex: prior.dayIndex } : null };
+      res.reasonCodes.push(REASONS.COACH_REVIEW_REQUIRED);
     }
 
     if (cls === 'C') {
-      // C vs E: the source text makes rest the FIRST intervention; the runtime Modulo D
-      // evaluates E first. No deterministic combination is authorized.
-      res.ruleId = 'C'; res.dimension = 'REST';
-      var restNow = _num(presLast.restSeconds);
-      res.candidates = [{ dimension: 'REST', ruleId: 'C', deltaSeconds: REST_INCREMENT_SECONDS, previousValue: restNow,
-        rawCandidate: restNow === null ? null : restNow + REST_INCREMENT_SECONDS,
-        finalCandidate: restNow === null ? null : restNow + REST_INCREMENT_SECONDS, boundState: null,
-        blockers: restNow === null ? [REASONS.NO_REST_BASE] : [] }];
-      res.collision = { rules: ['C', 'E'], classification: PRECEDENCE.AMBIGUOUS, runtimeOrder: 'E_BEFORE_C',
-        deferredRule: 'E', note: 'C recorded as first intervention; E not combined automatically' };
+      if (priorCls === 'C') {
+        // Persistent C: E is reached, and E is Coach review only. No second automatic intervention.
+        review('C+E', 'C_PERSISTS_AT_NEXT_COMPARABLE_EXPOSURE');
+        res.collision = { rules: ['C', 'E'], classification: PRECEDENCE.EXPLICIT_VDSEN_PRECEDENCE, order: 'C_THEN_E', policy: 'VDSEN_PRODUCT_POLICY' };
+      } else {
+        // First comparable occurrence: REST +30 s ONLY (E is not applied simultaneously).
+        res.ruleId = 'C'; res.dimension = 'REST';
+        var restNow = _num(presLast.restSeconds);
+        res.candidates = [{ dimension: 'REST', ruleId: 'C', deltaSeconds: REST_INCREMENT_SECONDS, previousValue: restNow,
+          rawCandidate: restNow === null ? null : restNow + REST_INCREMENT_SECONDS,
+          finalCandidate: restNow === null ? null : restNow + REST_INCREMENT_SECONDS, boundState: null,
+          blockers: restNow === null ? [REASONS.NO_REST_BASE] : [] }];
+        res.collision = { rules: ['C', 'E'], classification: PRECEDENCE.EXPLICIT_VDSEN_PRECEDENCE, order: 'C_FIRST_THEN_E_IF_PERSISTS', deferredRule: 'E', policy: 'VDSEN_PRODUCT_POLICY' };
+      }
     } else if (cls === 'D+E') {
-      unresolved(['D', 'E'], PRECEDENCE.CURRENT_RUNTIME_HEURISTIC, 'E_BEFORE_D', dCandidates().concat(eCandidates()));
+      review('D+E', 'REPS_INCOMPLETE_AND_EFFORT_HARDER_THAN_PRESCRIBED');
     } else if (cls === 'A+E') {
-      unresolved(['A', 'E'], PRECEDENCE.AMBIGUOUS, 'E_BEFORE_A', eCandidates());
+      review('A+E', 'REPS_INCOMPLETE_WITH_EASIER_EFFORT_THAN_PRESCRIBED');
     } else if (cls === 'E') {
-      unresolved(['E'], null, null, eCandidates());
+      review('E', 'REPS_INCOMPLETE_WITHOUT_RIR_EVIDENCE');
     } else if (cls === 'NO_RIR') {
       res.reasonCodes.push(REASONS.RIR_EVIDENCE_MISSING);
       return res;
@@ -318,7 +354,7 @@
       res.reasonCodes.push(REASONS.POLICY_BRANCH_REQUIRES_RESOLUTION);
       res.unresolved = { code: REASONS.POLICY_BRANCH_REQUIRES_RESOLUTION, rules: ['A'] };
     } else if (cls === 'D') {
-      unresolved(['D'], null, null, dCandidates());
+      review('D', 'EFFORT_HARDER_THAN_PRESCRIBED');
     } else {
       res.ruleId = 'MAINTAIN';
       res.reasonCodes.push(REASONS.NO_ADJUSTMENT_NEEDED);
@@ -340,7 +376,9 @@
     if (ctx.safetyConflict === true || painFlagged) {
       res.reasonCodes.push(REASONS.SAFETY_CONFLICT); threshold = false;
     }
-    if (prior && (direction === 'UP' || direction === 'DOWN' || direction === 'REST')) {
+    if (res.coachReviewRequired) {
+      res.directionConsistency = 'NOT_APPLICABLE'; // a review state is not an action: no confirmation needed
+    } else if (prior && (direction === 'UP' || direction === 'DOWN')) {
       var ps = _decisionSet(prior, input.prescription);
       var priorDirection = (ps.reps === null || ps.repsTarget === null) ? 'UNKNOWN' : _directionOf(_classify(ps.reps, ps.repsTarget, ps.rirReal, ps.rirTarget));
       res.previousExposureSignal = priorDirection;
@@ -351,7 +389,7 @@
       } else {
         res.directionConsistency = 'UNCONFIRMED'; res.reasonCodes.push(REASONS.DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE);
       }
-    } else if (direction === 'UP' || direction === 'DOWN' || direction === 'REST') {
+    } else if (direction === 'UP' || direction === 'DOWN') {
       res.directionConsistency = 'UNCONFIRMED';
     }
     var directionOk = res.directionConsistency === 'CONSISTENT' || res.directionConsistency === 'NOT_APPLICABLE';
@@ -372,6 +410,9 @@
       unresolved: decision.unresolved ? decision.unresolved.code : null,
       direction: decision.direction || null, directionConsistency: decision.directionConsistency || null,
       review: decision.review ? decision.review.code : null,
+      coachReviewRequired: decision.coachReviewRequired ? { code: decision.coachReviewRequired.code, branch: decision.coachReviewRequired.branch, reason: decision.coachReviewRequired.reason,
+        policy: decision.coachReviewRequired.policy, observed: decision.coachReviewRequired.observed, prescribed: decision.coachReviewRequired.prescribed,
+        sourceExposure: decision.coachReviewRequired.sourceExposure, previousExposure: decision.coachReviewRequired.previousExposure } : null,
       candidates: (decision.candidates || []).map(function(c) {
         return { dimension: c.dimension, ruleId: c.ruleId, rawCandidate: c.rawCandidate,
           finalCandidate: c.finalCandidate, deltaSeconds: c.deltaSeconds === undefined ? null : c.deltaSeconds,
@@ -387,6 +428,6 @@
 
   return { PROVENANCE: PROVENANCE, REASONS: REASONS, PRECEDENCE: PRECEDENCE,
     NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, MIN_COMPARABLE_EXPOSURES: MIN_COMPARABLE_EXPOSURES,
-    EVIDENCE_BASIS: EVIDENCE_BASIS, SCIENCE_GAPS: SCIENCE_GAPS, PCT: PCT, REST_INCREMENT_SECONDS: REST_INCREMENT_SECONDS,
+    EVIDENCE_BASIS: EVIDENCE_BASIS, SCIENCE_GAPS: SCIENCE_GAPS, PRODUCT_POLICIES: PRODUCT_POLICIES, REVIEW_POLICY: REVIEW_POLICY, selectRepresentativeSet: selectRepresentativeSet, PCT: PCT, REST_INCREMENT_SECONDS: REST_INCREMENT_SECONDS,
     extractExposures: extractExposures, evaluate: evaluate, reject: reject, compact: compact };
 });

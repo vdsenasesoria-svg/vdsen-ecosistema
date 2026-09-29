@@ -15,22 +15,23 @@ test('T522.1 both documents are generated and current', () => {
 
 test('T522.2 the checklist contains every required item and only claims what the facts support', () => {
   const c = read('docs/AUTO_APPLY_ACTIVATION_CHECKLIST.md');
-  for (const t of ['Identidades de equipo resueltas', 'Incrementos de equipo escritos por el Coach', 'Unidades compatibles', 'Elegibilidad de evidencia', 'Dirección consistente', 'Rama de ciencia resuelta',
-    'serie representativa resuelta', 'Exposición destino exacta y no iniciada', 'Sin override del Coach', 'Seguridad despejada', 'Canario sintético', 'Runner T478 validado en Windows',
+  for (const t of ['Identidades de equipo resueltas', 'Incrementos de equipo escritos por el Coach', 'Unidades compatibles', 'Elegibilidad de evidencia', 'Dirección consistente', 'Rama D/E y precedencia C→E resueltas',
+    'serie representativa resuelta', 'Exposición destino exacta y no iniciada', 'Sin override del Coach', 'Seguridad despejada', 'Canario sintético', 'Validación del runner T478 en Windows',
     '`NUMERIC_APPLY_ENABLED` cambiado intencionalmente', 'Reversión verificada', 'Auditoría visible para el Coach']) assert.ok(c.includes(t), t);
   const line = t => c.split('\n').find(l => l.includes(t));
   assert.ok(line('Incrementos de equipo').startsWith('- [ ]'), 'no increments are authored');
-  assert.ok(line('Rama de ciencia').startsWith('- [ ]') && line('serie representativa').startsWith('- [ ]'));
-  assert.ok(line('Runner T478').startsWith('- [ ]'));
+  assert.ok(line('Rama D/E').startsWith('- [x]') && line('serie representativa').startsWith('- [x]'), 'closed as PRODUCT POLICY');
+  assert.ok(/PRODUCT POLICY RESOLVED/.test(line('Rama D/E')) && /LAST_WORKING_SET/.test(line('serie representativa')) && /VDSEN_PRODUCT_POLICY/.test(line('serie representativa')));
+  assert.ok(line('Validación del runner T478').startsWith('- [ ]') && /NON_BLOCKING_TECHNICAL_PENDING/.test(line('Validación del runner T478')), 'Windows is never marked PASS');
   assert.ok(line('NUMERIC_APPLY_ENABLED').startsWith('- [ ]'));
   assert.ok(line('Canario').startsWith('- [x]') && line('Reversión').startsWith('- [x]'));
-  assert.ok(/8 de 15 cumplidos/.test(c) && /NO se activa/.test(c));
+  assert.ok(/10 de 15 cumplidos; pendientes bloqueantes: 4/.test(c) && /NO se activa/.test(c));
 });
 
 test('T522.3 the readiness report uses only static / synthetic evidence and states the flag', () => {
   const r = read('docs/AUTO_APPLY_READINESS.md');
   assert.ok(/no hay métricas de producción/.test(r));
-  for (const t of ['39 / 41', '69 / 71', '0 / 39', 'PENDING', 'false (apagada en los 3 módulos)', 'inexistente', 'REPRESENTATIVE_SET_NOT_DEFINED']) assert.ok(r.includes(t), t);
+  for (const t of ['39 / 41', '69 / 71', '0 / 39', 'NON_BLOCKING_TECHNICAL_PENDING', 'false (apagada en los 3 módulos)', 'inexistente', 'LAST_WORKING_SET', 'CÓDIGO / POLÍTICA', 'DATOS REALES DE EQUIPO', 'Bloqueos científicos abiertos | 0']) assert.ok(r.includes(t), t);
   const f = gen.facts();
   assert.deepEqual([f.resolvedGroups, f.groups, f.exercisesWithIdentity, f.exercises, f.configured, f.readyGroups], [39, 41, 69, 71, 0, 0]);
   assert.equal(f.rollback, true); assert.equal(f.audit, true); assert.deepEqual(f.flag, [false, false, false]);

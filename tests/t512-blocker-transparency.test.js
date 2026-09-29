@@ -34,7 +34,7 @@ const real = d => d.blockers.filter(b => b !== 'NUMERIC_APPLY_DISABLED');
 test('T512.1 every required precise blocker code exists', () => {
   for (const c of ['IDENTITY_UNRESOLVED', 'EVIDENCE_COUNT_INSUFFICIENT', 'DIRECTION_UNCONFIRMED', 'DIRECTION_CONFLICTING', 'SAFETY_CONFLICT', 'COACH_OVERRIDE', 'TARGET_ALREADY_STARTED',
     'MAGNITUDE_BRANCH_UNRESOLVED', 'EQUIPMENT_IDENTITY_UNRESOLVED', 'UNRESOLVED_EQUIPMENT_INCREMENT', 'UNIT_MISMATCH', 'DIRECTION_NOT_REALIZABLE', 'EQUIPMENT_OUT_OF_RANGE',
-    'SCIENCE_POLICY_UNRESOLVED', 'NUMERIC_APPLY_DISABLED']) assert.equal(B[c], c, c);
+    'SCIENCE_POLICY_UNRESOLVED', 'COACH_REVIEW_REQUIRED', 'NUMERIC_APPLY_DISABLED']) assert.equal(B[c], c, c);
 });
 
 test('T512.2 each fact is reachable and reported alone (no generic NOT_ELIGIBLE)', () => {
@@ -46,7 +46,8 @@ test('T512.2 each fact is reachable and reported alone (no generic NOT_ELIGIBLE)
     ['SAFETY_CONFLICT', () => plan1(rec(GOOD), { safetyConflict: true })],
     ['COACH_OVERRIDE', () => plan1(rec(GOOD), { interventions: [{ targetType: 'EXERCISE', targetId: PID, planId: 'p', decidedAt: '2026-09-27T14:00:00.000Z', action: 'CHANGE' }] })],
     ['TARGET_ALREADY_STARTED', () => plan1(rec(GOOD), { entries: { ...ents([[1, 0, {}], [1, 2, {}]]), log_2_0_0_s0: { carga: '100', done: true } } })],
-    ['MAGNITUDE_BRANCH_UNRESOLVED', () => plan1(rec([[1, 0, { reps: '10', rir_real: 0 }], [1, 2, { reps: '10', rir_real: 0 }]]))],
+    ['MAGNITUDE_BRANCH_UNRESOLVED', () => plan1(rec([[1, 0, { rir: 0, rir_real: 1 }], [1, 2, { rir: 0, rir_real: 1 }]]))], // Rule A with target RIR 0 (undefined by the source)
+    ['COACH_REVIEW_REQUIRED', () => plan1(rec([[1, 0, { reps: '10', rir_real: 0 }], [1, 2, { reps: '10', rir_real: 0 }]]))],
     ['EQUIPMENT_IDENTITY_UNRESOLVED', () => plan1(rec(GOOD), {}, {})],
     ['UNRESOLVED_EQUIPMENT_INCREMENT', () => plan1(rec(GOOD), {}, { equipmentId: 'eq' })],
     ['UNIT_MISMATCH', () => plan1(rec(GOOD), {}, { equipmentId: 'eq', loadIncrement: { ...GRID.loadIncrement, unit: 'LB' } })],
@@ -61,27 +62,31 @@ test('T512.2 each fact is reachable and reported alone (no generic NOT_ELIGIBLE)
   assert.ok(plan1(rec(GOOD)).blockers.includes('NUMERIC_APPLY_DISABLED'));
 });
 
-test('T512.3 SCIENCE_POLICY_UNRESOLVED is localized to branches that need the missing science (D / E)', () => {
-  const de = plan1(rec([[1, 0, { reps: '8', rir_real: 0 }], [1, 2, { reps: '8', rir_real: 0 }]]));
-  assert.ok(de.blockers.includes('SCIENCE_POLICY_UNRESOLVED') && de.blockers.includes('MAGNITUDE_BRANCH_UNRESOLVED'));
-  assert.deepEqual(de.audit.scienceGaps, ['RULE_D_E_ALTERNATIVE_NOT_DEFINED']);
-  const d = plan1(rec([[1, 0, { reps: '10', rir_real: 0 }], [1, 2, { reps: '10', rir_real: 0 }]]));
-  assert.ok(d.blockers.includes('SCIENCE_POLICY_UNRESOLVED')); assert.deepEqual(d.readiness.localizedScienceGaps, ['RULE_D_E_ALTERNATIVE_NOT_DEFINED']);
+test('T512.3 (T523) no known science gap remains: D/E are Coach review; SCIENCE_POLICY_UNRESOLVED stays usable for a FUTURE unknown branch', () => {
+  const d = plan1(rec([[1, 0, { reps: '8', rir_real: 0 }], [1, 2, { reps: '8', rir_real: 0 }]]));
+  assert.ok(d.blockers.includes('COACH_REVIEW_REQUIRED')); assert.ok(!d.blockers.includes('SCIENCE_POLICY_UNRESOLVED')); assert.deepEqual(d.audit.scienceGaps, []);
+  const r = rec(GOOD);
+  const future = JSON.parse(JSON.stringify(r)); future.magnitude.eligible = false; future.magnitude.candidates = [];
+  future.magnitude.unresolved = { code: 'POLICY_BRANCH_REQUIRES_RESOLUTION', rules: ['X'], scienceGap: 'FUTURE_UNKNOWN_BRANCH' };
+  const f = plan1(future);
+  assert.ok(f.blockers.includes('SCIENCE_POLICY_UNRESOLVED') && f.blockers.includes('MAGNITUDE_BRANCH_UNRESOLVED')); assert.deepEqual(f.audit.scienceGaps, ['FUTURE_UNKNOWN_BRANCH']);
 });
 
-test('T512.4 Rule A (load / reps) and Rule C (rest) candidates are NOT blocked by the unsupported science', () => {
+test('T512.4 Rule A (load / reps) and Rule C first occurrence (rest) are independent of the review branches', () => {
   const a = plan1(rec(GOOD));
   assert.deepEqual(real(a), []); assert.ok(!a.blockers.includes('SCIENCE_POLICY_UNRESOLVED')); assert.deepEqual(a.readiness.localizedScienceGaps, []); assert.equal(a.audit.scienceGaps.length, 0);
-  const c = plan1(rec([[1, 0, { reps: '8', rir_real: 2 }], [1, 2, { reps: '8', rir_real: 2 }]]));
-  assert.deepEqual(real(c), []); assert.equal(c.overlay.dimension, 'REST'); assert.deepEqual(c.audit.collision, { rules: ['C', 'E'], classification: 'AMBIGUOUS' });
-  assert.deepEqual(c.readiness.localizedScienceGaps, [], 'C+E collision is informational: E is deferred, C stands');
+  const c = plan1(rec([[1, 0, {}], [1, 2, { reps: '8', rir_real: 2 }]]));
+  assert.deepEqual(real(c), []); assert.equal(c.overlay.dimension, 'REST'); assert.deepEqual(c.audit.collision, { rules: ['C', 'E'], classification: 'EXPLICIT_VDSEN_PRECEDENCE' });
+  assert.deepEqual(c.readiness.localizedScienceGaps, []);
+  const persists = plan1(rec([[1, 0, { reps: '8', rir_real: 2 }], [1, 2, { reps: '8', rir_real: 2 }]]));
+  assert.equal(persists.readiness.state, 'COACH_REVIEW_REQUIRED'); assert.equal(persists.overlay, null);
   const reps = plan1(rec([[1, 0, { reps: '10', rir_real: 1, rir: 1 }], [1, 2, { reps: '10', rir_real: 2, rir: 1 }]]));
   assert.ok(!reps.blockers.includes('SCIENCE_POLICY_UNRESOLVED'));
 });
 
-test('T512.5 the representative-set basis is a GLOBAL provisional item, not a per-candidate blocker', () => {
+test('T512.5 (T523) the representative set is closed product policy: provenance, no provisional/global blocker', () => {
   const d = plan1(rec(GOOD));
-  assert.deepEqual(d.readiness.globalProvisional, ['REPRESENTATIVE_SET_NOT_DEFINED']);
+  assert.deepEqual(d.readiness.globalProvisional, []); assert.ok(d.readiness.productPolicies.includes('REPRESENTATIVE_SET_LAST_WORKING_SET'));
   assert.ok(!d.blockers.includes('SCIENCE_POLICY_UNRESOLVED'));
 });
 

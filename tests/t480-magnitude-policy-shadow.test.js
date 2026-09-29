@@ -54,34 +54,31 @@ test('2. RIR +1 with target RIR >= 2 -> +2.5% raw load; +2 RIR -> +5%', () => {
   assert.equal(run(two({ rirPrescribed: 3, rirReal: 4 })).candidates[0].rawCandidate, 102.5);
 });
 
-test('3. RIR harder than prescribed -> both source alternatives, no arbitrary choice', () => {
+test('3. (T523) RIR harder than prescribed -> Coach review only; no numeric candidate', () => {
   const d = run(two({ rirPrescribed: 2, rirReal: 1 }));
   assert.equal(d.ruleId, 'D'); assert.equal(d.eligible, false);
-  assert.equal(d.unresolved.code, 'POLICY_BRANCH_REQUIRES_RESOLUTION');
-  assert.equal(raw(d, 'REPS').rawCandidate, 9); assert.equal(raw(d, 'LOAD').rawCandidate, 97.5);
-  assert.equal(run(two({ rirPrescribed: 2, rirReal: 0 })).candidates.find(c => c.dimension === 'LOAD').rawCandidate, 95);
-  assert.equal(d.dimension, null, 'no dimension chosen for an alternative');
+  assert.equal(d.coachReviewRequired.code, 'COACH_REVIEW_REQUIRED'); assert.equal(d.coachReviewRequired.branch, 'D');
+  assert.equal(d.coachReviewRequired.policy, 'VDSEN_PRODUCT_POLICY_COACH_REVIEW_ONLY'); assert.equal(d.coachReviewRequired.scientificClaim, false);
+  assert.deepEqual(d.candidates, []); assert.equal(d.unresolved, null); assert.equal(d.dimension, null);
+  assert.deepEqual(run(two({ rirPrescribed: 2, rirReal: 0 })).candidates, []);
 });
 
-test('4. incomplete reps (RIR evidence absent) -> -2 reps OR -5% per missing rep, unresolved', () => {
+test('4. (T523) incomplete reps (RIR evidence absent) -> Coach review only (E)', () => {
   const d = run(two({ reps: 9, rirReal: '' }));
   assert.equal(d.ruleId, 'E'); assert.equal(d.eligible, false);
-  assert.equal(raw(d, 'REPS').rawCandidate, 8); assert.equal(raw(d, 'LOAD').rawCandidate, 95);
-  assert.equal(d.unresolved.code, 'POLICY_BRANCH_REQUIRES_RESOLUTION');
-  const two2 = run(two({ reps: 8, rirReal: '' }));
-  assert.equal(raw(two2, 'LOAD').rawCandidate, 90);
-  assert.equal(raw(two2, 'REPS').rawCandidate, 6);
-  assert.equal(raw(two2, 'REPS').boundState, 'REP_RANGE_LOWER_BOUND');
+  assert.equal(d.coachReviewRequired.branch, 'E'); assert.deepEqual(d.candidates, []);
+  const big = run(two({ reps: 8, rirReal: '' }));
+  assert.deepEqual(big.candidates, []); assert.equal(big.coachReviewRequired.branch, 'E');
 });
 
-test('5. correct RIR + incomplete reps -> +30 s rest first; E not combined', () => {
-  const d = run(pair({ reps: 9, rirReal: 2 }));
+test('5. (T523) correct RIR + incomplete reps, FIRST comparable occurrence -> REST +30 s only; E is not applied', () => {
+  const d = run(two({ reps: 9, rirReal: 2 }));
   assert.equal(d.ruleId, 'C'); assert.equal(d.dimension, 'REST');
   assert.equal(d.candidates[0].deltaSeconds, 30); assert.equal(d.candidates[0].rawCandidate, 120);
-  assert.equal(d.collision.classification, 'AMBIGUOUS');
-  assert.deepEqual(d.collision.rules, ['C', 'E']); assert.equal(d.collision.runtimeOrder, 'E_BEFORE_C');
+  assert.equal(d.collision.classification, 'EXPLICIT_VDSEN_PRECEDENCE');
+  assert.deepEqual(d.collision.rules, ['C', 'E']); assert.equal(d.collision.order, 'C_FIRST_THEN_E_IF_PERSISTS');
   assert.ok(!d.candidates.some(c => c.ruleId === 'E'));
-  assert.equal(d.eligible, true);
+  assert.equal(d.coachReviewRequired, null); assert.equal(d.eligible, true);
 });
 
 test('6. Rule B evidence -> Coach review only; never a volume candidate', () => {
@@ -257,7 +254,7 @@ test('comparability: unit mismatch and executions older than a plan edit are exc
   assert.ok(edited.excludedExposures.every(x => x.reason === 'PRESCRIPTION_CHANGED'));
 });
 
-test('remaining branches: maintain, RIR missing, target RIR 0, collisions D+E and A+E', () => {
+test('remaining branches: maintain, RIR missing, target RIR 0, D+E and A+E review (T523)', () => {
   const maintain = run(two({ rirReal: 2 }));
   assert.equal(maintain.ruleId, 'MAINTAIN'); assert.equal(maintain.candidates.length, 0);
   assert.equal(maintain.eligible, false, 'nothing to adjust');
@@ -265,11 +262,9 @@ test('remaining branches: maintain, RIR missing, target RIR 0, collisions D+E an
   const zero = run(two({ rirPrescribed: 0, rirReal: 1 }));
   assert.ok(zero.reasonCodes.includes('RULE_A_TARGET_RIR_UNDEFINED')); assert.equal(zero.eligible, false);
   const de = run(two({ reps: 9, rirReal: 1 }));
-  assert.equal(de.ruleId, 'D+E'); assert.equal(de.collision.classification, 'CURRENT_RUNTIME_HEURISTIC');
-  assert.equal(de.collision.runtimeOrder, 'E_BEFORE_D'); assert.equal(de.eligible, false);
-  assert.equal(de.candidates.length, 4);
+  assert.equal(de.ruleId, 'D+E'); assert.equal(de.coachReviewRequired.branch, 'D+E'); assert.equal(de.eligible, false); assert.deepEqual(de.candidates, []);
   const ae = run(two({ reps: 9, rirReal: 3 }));
-  assert.equal(ae.ruleId, 'A+E'); assert.equal(ae.collision.classification, 'AMBIGUOUS'); assert.equal(ae.eligible, false);
+  assert.equal(ae.ruleId, 'A+E'); assert.equal(ae.coachReviewRequired.branch, 'A+E'); assert.equal(ae.eligible, false); assert.deepEqual(ae.candidates, []);
   const sst = run(two({ rirReal: 3 }), { prescription: { prescriptionExerciseId: PID, sets: [{ setIndex: 0, repsTarget: 'SST-PROTOCOL' }] } });
   assert.ok(sst.reasonCodes.includes('TARGET_NOT_NUMERIC')); assert.equal(sst.eligible, false);
 });

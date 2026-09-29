@@ -84,12 +84,12 @@ test('T493.4 LOAD needs a resolved physical load; without equipment metadata it 
   only(plan1(rec, { equipmentResolution: stack5 }), B.DIRECTION_NOT_REALIZABLE); // T503: specific blocker instead of a generic mismatch
 });
 
-function customRecord(repsBySet, rir, rirReal, last = {}) {
+function customRecord(repsBySet, rir, rirReal, last = {}, priorLast = last) {
   const custom = structuredClone(plan);
   custom.days.forEach(d => { d.exercises[0].sets = repsBySet.map((r, i) => ({ setIndex: i, repsTarget: r, rirTarget: rir, restSeconds: 90 })); });
   const e = {};
   [[1, 0], [1, 2]].forEach(([w, d]) => repsBySet.forEach((r, s) => {
-    e['log_' + w + '_' + d + '_0_s' + s] = Object.assign({ carga: '100', reps: String(r), unit: 'KG', done: true, rir, rir_real: rirReal, prescriptionExerciseId: PID, ts: T0 + d * 1000 + s }, last);
+    e['log_' + w + '_' + d + '_0_s' + s] = Object.assign({ carga: '100', reps: String(r), unit: 'KG', done: true, rir, rir_real: rirReal, prescriptionExerciseId: PID, ts: T0 + d * 1000 + s }, d === 0 ? priorLast : last);
   }));
   const rec = shadow.buildRecord({ clientId: 'c', planId: 'p', activePlanId: 'p', plan: custom, entries: e, week: 1, dayIndex: 2, calculatedAt: '2026-09-27T12:00:00.000Z',
     sourceMatches: true, sourcePidCount: 1, recommendation: { prescriptionExerciseId: PID, exerciseId: 'e', action: 'increase_load', newLoad: 5 } }, 'x');
@@ -107,7 +107,8 @@ test('T493.5 REPS and REST canonical candidates are actionable without equipment
   const flat = customRecord([10, 10, 10], 1, 2);
   assert.equal(plan1(flat.rec, { plan: flat.custom, entries: flat.e, equipmentResolution: undefined }).wouldApply, false);
   // REST: rule C (+30 s first), base rest 90 -> 120
-  const c = customRecord([10, 10, 10], 2, 2, { reps: '9' });
+  // T523: the FIRST comparable occurrence (previous exposure met its targets); a repeat is Coach review (see t523)
+  const c = customRecord([10, 10, 10], 2, 2, { reps: '9' }, {});
   assert.equal(c.rec.magnitude.ruleId, 'C'); assert.equal(c.rec.magnitude.eligible, true);
   const rest = plan1(c.rec, { plan: c.custom, entries: c.e, equipmentResolution: undefined });
   assert.equal(rest.wouldApply, true);
@@ -122,7 +123,7 @@ test('T493.5 REPS and REST canonical candidates are actionable without equipment
 
 test('T493.6 unresolved policy branches and ineligible evidence never plan an application', () => {
   const dRec = makeRecord({ rir_real: 1 });
-  only(plan1(dRec, { entries: entriesFor({ rir_real: 1 }) }), [B.MAGNITUDE_BRANCH_UNRESOLVED, B.SCIENCE_POLICY_UNRESOLVED]); // T512: D needs the missing D/E science
+  only(plan1(dRec, { entries: entriesFor({ rir_real: 1 }) }), B.COACH_REVIEW_REQUIRED); // T523: D is Coach review only
   const unconfirmed = shadow.buildRecord({ clientId: 'c', planId: 'p', activePlanId: 'p', plan, week: 1, dayIndex: 2, calculatedAt: '2026-09-27T12:00:00.000Z', sourceMatches: true, sourcePidCount: 1,
     entries: Object.assign(entriesFor({ rir_real: 3 }), { log_1_0_0_s2: { carga: '100', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2, prescriptionExerciseId: PID, ts: T0 } }),
     recommendation: { prescriptionExerciseId: PID, exerciseId: 'e', action: 'increase_load', newLoad: 5 } }, 'x');

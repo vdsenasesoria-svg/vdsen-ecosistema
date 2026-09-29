@@ -15,7 +15,7 @@ const CITES = [
   ['references/prompt-maestro-vdsen-coach.md', '## A.11 Descansos'], ['references/prompt-maestro-vdsen-coach.md', 'Compuesto hipertrofia | 6–12 | 120–180'],
   ['references/prompt-maestro-vdsen-coach.md', 'Señal derivada en la app cliente'], ['references/prompt-maestro-vdsen-coach.md', 'TODAS las series'],
   ['vdsen-cliente.html', 'var avgReps = _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; }));'], ['vdsen-cliente.html', 'var _rirError = (avgRIR !== null) ? (avgRIR - rirObj) : 0;'],
-  ['vdsen-cliente.html', 'candidato a bajar carga ~5%'], ['assets/progression-magnitude-policy.js', "EVIDENCE_BASIS = 'LAST_SET_CURRENT_RUNTIME_HEURISTIC'"]
+  ['vdsen-cliente.html', 'candidato a bajar carga ~5%']
 ];
 test('T521.1 every cited source snippet exists in the cited file (no invented citations)', () => {
   for (const [f, needle] of CITES) assert.ok(read(f).includes(needle), f + ' :: ' + needle);
@@ -24,10 +24,11 @@ test('T521.1 every cited source snippet exists in the cited file (no invented ci
   assert.ok(!fs.existsSync(path.join(root, 'competitive_physique_update')), 'the referenced knowledge pack is not versioned in this repository');
 });
 
-test('T521.2 no unsupported rule was implemented: the policy still reports the three gaps and blocks D/E', () => {
+test('T521.2 (T523) no scientific claim was invented: the three decisions are closed as VDSEN PRODUCT POLICY, never as science', () => {
   const policy = require(path.join(root, 'assets/progression-magnitude-policy.js'));
-  assert.deepEqual(policy.SCIENCE_GAPS.map(g => g.id), ['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
-  assert.equal(policy.EVIDENCE_BASIS, 'LAST_SET_CURRENT_RUNTIME_HEURISTIC');
+  assert.ok(policy.PRODUCT_POLICIES.every(p => p.source === 'VDSEN_PRODUCT_POLICY' && p.scientificClaim === false));
+  assert.deepEqual(policy.PRODUCT_POLICIES.map(p => p.resolves), ['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
+  assert.equal(policy.EVIDENCE_BASIS, 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET');
   assert.equal(policy.NUMERIC_APPLY_ENABLED, false);
 });
 

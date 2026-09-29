@@ -39,9 +39,12 @@ const SCENARIOS = [
   ['A-load, increment unit mismatch', GOOD, { unit: 'LB' }],
   ['A-load, grid step swallows the move', GOOD, { config: { shared: { 'functional-dumbbells': step({ step: 10 }) }, gyms: {} } }],
   ['A-load, above equipment maximum', GOOD, { config: { shared: { 'functional-dumbbells': step({ max: 100 }) }, gyms: {} } }],
-  ['C rest ready (independent of equipment)', [[1, 0, { reps: '8', rir_real: 2 }], [1, 2, { reps: '8', rir_real: 2 }]], { config: null }],
-  ['D/E branch unresolved (science)', [[1, 0, { reps: '8', rir_real: 0 }], [1, 2, { reps: '8', rir_real: 0 }]], {}],
-  ['D branch unresolved (science)', [[1, 0, { reps: '10', rir_real: 0 }], [1, 2, { reps: '10', rir_real: 0 }]], {}],
+  ['C rest ready, first occurrence (independent of equipment)', [[1, 0, {}], [1, 2, { reps: '8', rir_real: 2 }]], { config: null }],
+  ['C persists at the next comparable exposure (Coach review)', [[1, 0, { reps: '8', rir_real: 2 }], [1, 2, { reps: '8', rir_real: 2 }]], {}],
+  ['D+E: reps incomplete and effort harder (Coach review)', [[1, 0, { reps: '8', rir_real: 0 }], [1, 2, { reps: '8', rir_real: 0 }]], {}],
+  ['D: effort harder than prescribed (Coach review)', [[1, 0, { reps: '10', rir_real: 0 }], [1, 2, { reps: '10', rir_real: 0 }]], {}],
+  ['E: reps incomplete without RIR evidence (Coach review)', [[1, 0, { reps: '8', rir_real: '' }], [1, 2, { reps: '8', rir_real: '' }]], {}],
+  ['Rule A with target RIR 0 (policy undefined by the source)', [[1, 0, { rir: 0, rir_real: 1 }], [1, 2, { rir: 0, rir_real: 1 }]], {}],
   ['single exposure only', [[1, 2, { rir_real: 3 }]], {}],
   ['direction unconfirmed by prior exposure', [[1, 0, { rir_real: 2 }], [1, 2, { rir_real: 3 }]], {}],
   ['direction conflicting across exposures', [[1, 0, { reps: '6', rir_real: 0 }], [1, 2, { rir_real: 3 }]], {}],
@@ -68,16 +71,18 @@ function runScenario([name, spec, o]) {
 
 const EQUIPMENT_CODES = ['EQUIPMENT_IDENTITY_UNRESOLVED', 'UNRESOLVED_EQUIPMENT_INCREMENT', 'UNIT_MISMATCH', 'DIRECTION_NOT_REALIZABLE', 'EQUIPMENT_OUT_OF_RANGE', 'EQUIPMENT_INPUT_INVALID', 'EQUIPMENT_RESOLUTION_MISMATCH'];
 const SCIENCE_CODES = ['SCIENCE_POLICY_UNRESOLVED', 'MAGNITUDE_BRANCH_UNRESOLVED'];
+const REVIEW_CODES = ['COACH_REVIEW_REQUIRED'];
 
 function replay() {
   const rows = SCENARIOS.map(runScenario);
   const byReason = {};
   rows.forEach(r => r.blockers.forEach(b => { byReason[b] = (byReason[b] || 0) + 1; }));
   const count = (f) => rows.filter(f).length;
-  return { rows, summary: { candidates: rows.length, readyButDisabled: count(r => r.state === 'READY_BUT_DISABLED'), blocked: count(r => r.state === 'BLOCKED'),
+  return { rows, summary: { candidates: rows.length, readyButDisabled: count(r => r.state === 'READY_BUT_DISABLED'), blocked: count(r => r.state === 'BLOCKED'), coachReviewState: count(r => r.state === 'COACH_REVIEW_REQUIRED'),
     executable: count(r => r.state === 'EXECUTABLE'), blockersByReason: Object.fromEntries(Object.entries(byReason).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))),
     byPreviewClass: rows.reduce((m, r) => { m[r.previewClass] = (m[r.previewClass] || 0) + 1; return m; }, {}),
-    equipmentBlocked: count(r => r.blockers.some(b => EQUIPMENT_CODES.includes(b))), scienceBlocked: count(r => r.blockers.some(b => SCIENCE_CODES.includes(b))) } };
+    equipmentBlocked: count(r => r.blockers.some(b => EQUIPMENT_CODES.includes(b))), scienceBlocked: count(r => r.blockers.some(b => SCIENCE_CODES.includes(b))),
+    coachReview: count(r => r.blockers.some(b => REVIEW_CODES.includes(b))) } };
 }
 
 function render(rp) {
@@ -85,8 +90,8 @@ function render(rp) {
   const L = ['# Reproducción en sombra: preparación de aplicación (sintética)', '',
     'Generado por `node scripts/replay-application-readiness.cjs` sobre fixtures sintéticos deterministas (sin datos de producción; la configuración de equipo es de prueba y no toca el catálogo).',
     'Responde: cuando se active la bandera, ¿por qué se aplicaría o no cada candidato?', '',
-    '- Candidatos: **' + s.candidates + '** · READY_BUT_DISABLED: **' + s.readyButDisabled + '** · BLOCKED: **' + s.blocked + '** · EXECUTABLE: **' + s.executable + '**',
-    '- Bloqueados por equipo: **' + s.equipmentBlocked + '** · por ciencia/rama sin resolver: **' + s.scienceBlocked + '**', '',
+    '- Candidatos: **' + s.candidates + '** · READY_BUT_DISABLED: **' + s.readyButDisabled + '** · REVISIÓN DEL COACH: **' + s.coachReviewState + '** · BLOCKED: **' + s.blocked + '** · EXECUTABLE: **' + s.executable + '**',
+    '- Bloqueados por equipo: **' + s.equipmentBlocked + '** · revisión del Coach (política de producto D/E, C→E): **' + s.coachReview + '** · otra política/ciencia sin resolver: **' + s.scienceBlocked + '**', '',
     '## Clases de vista rápida', '', '| Clase | Candidatos |', '|---|---|'];
   Object.entries(s.byPreviewClass).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).forEach(([k, v]) => L.push('| ' + k + ' | ' + v + ' |'));
   L.push('', '## Bloqueos por motivo', '', '| Motivo | Candidatos |', '|---|---|');

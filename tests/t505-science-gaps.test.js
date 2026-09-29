@@ -1,5 +1,6 @@
-// T505: the repository does not settle Rule D/E (reps vs load), Rule C vs E precedence or which set represents an
-// exposure. None is invented: each stays explicit (blocker code / provenance) and is listed as an activation prerequisite.
+// T505 (superseded by T523): the repository never settled Rule D/E, Rule C vs E precedence or the representative set.
+// They were closed by DIRECTOR PRODUCT POLICY (not science). The historical gap ids are preserved as `resolves` provenance;
+// nothing remains as an activation science prerequisite. Behaviour tests: t523-product-policy.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -21,44 +22,46 @@ const rec = (over) => shadow.buildRecord({ clientId: 'c', planId: 'p', activePla
 const plan1 = (r) => consumer.planApplication({ record: r, context: { clientId: 'c', planId: 'p', activePlanId: 'p', plan, entries: ents({}),
   interventions: [], existingOverlays: {}, now: '2026-09-28T00:00:00.000Z', resolveNextExposure: shadow.resolveNextExposure } });
 
-test('T505.1 the three science gaps are registered, frozen and mirrored as activation prerequisites', () => {
-  assert.deepEqual(policy.SCIENCE_GAPS.map(g => g.id), ['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
-  assert.ok(Object.isFrozen(policy.SCIENCE_GAPS) && policy.SCIENCE_GAPS.every(g => Object.isFrozen(g) && g.question.endsWith('?')));
-  assert.deepEqual([...consumer.ACTIVATION_PREREQUISITES], policy.SCIENCE_GAPS.map(g => g.id));
+test('T505.1 (T523) the three historical gaps are closed product policy, kept only as provenance', () => {
+  assert.deepEqual(policy.PRODUCT_POLICIES.map(p => p.resolves), ['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
+  assert.deepEqual(policy.PRODUCT_POLICIES.map(p => p.id), ['RULE_D_E_COACH_REVIEW_ONLY', 'RULE_C_THEN_E_COACH_REVIEW', 'REPRESENTATIVE_SET_LAST_WORKING_SET']);
+  assert.ok(Object.isFrozen(policy.PRODUCT_POLICIES) && policy.PRODUCT_POLICIES.every(p => Object.isFrozen(p) && p.source === 'VDSEN_PRODUCT_POLICY' && p.scientificClaim === false));
+  assert.deepEqual([...policy.SCIENCE_GAPS], [], 'no genuinely unknown science branch remains');
+  assert.deepEqual([...consumer.ACTIVATION_PREREQUISITES], []);
 });
 
-test('T505.2 D/E stays a named unresolved branch with both alternatives and no chosen one', () => {
+test('T505.2 D/E: Coach review, no numeric candidate, no unresolved branch, not a science blocker', () => {
   const r = rec({ reps: '8', rir_real: 0 });
   const m = r.magnitude;
-  assert.equal(m.eligible, false); assert.deepEqual(m.unresolved.rules, ['D', 'E']);
-  assert.deepEqual(m.candidates.map(c => c.dimension), ['REPS', 'LOAD', 'REPS', 'LOAD'], 'alternatives kept, none selected');
-  assert.ok(m.candidates.every(c => c.finalCandidate === null), 'no final numeric candidate for an unresolved branch');
+  assert.equal(m.eligible, false); assert.equal(m.unresolved, null); assert.deepEqual(m.candidates, []);
+  assert.equal(m.coachReviewRequired.branch, 'D+E');
   const d = plan1(r);
-  assert.ok(d.blockers.includes('MAGNITUDE_BRANCH_UNRESOLVED')); assert.deepEqual(d.audit.unresolvedRules, ['D', 'E']); assert.equal(d.overlay, null);
+  assert.ok(d.blockers.includes('COACH_REVIEW_REQUIRED')); assert.ok(!d.blockers.includes('SCIENCE_POLICY_UNRESOLVED')); assert.equal(d.overlay, null);
 });
 
-test('T505.3 C vs E stays AMBIGUOUS: rest is recorded, E is deferred and never combined', () => {
-  const r = rec({ reps: '8', rir_real: 2 });
-  assert.equal(r.magnitude.collision.classification, 'AMBIGUOUS'); assert.equal(r.magnitude.collision.deferredRule, 'E');
-  assert.deepEqual(r.magnitude.candidates.map(c => c.dimension), ['REST']);
-  assert.deepEqual(plan1(r).audit.collision, { rules: ['C', 'E'], classification: 'AMBIGUOUS' });
+test('T505.3 C then E: first comparable C -> REST only with explicit product precedence', () => {
+  const first = shadow.buildRecord({ clientId: 'c', planId: 'p', activePlanId: 'p', plan, entries: (() => { const e = ents({}); [0, 1, 2].forEach(s => { delete e['log_1_2_0_s' + s].reps; e['log_1_2_0_s' + s].reps = s === 2 ? '8' : '10'; }); return e; })(), week: 1, dayIndex: 2,
+    calculatedAt: '2026-09-27T12:00:00.000Z', sourceMatches: true, sourcePidCount: 1,
+    recommendation: { prescriptionExerciseId: PID, exerciseId: 'e', exerciseName: 'Remo', action: 'increase_load', newLoad: 5, newReps: 10 } }, '2026-09-27T13:00:00.000Z');
+  assert.equal(first.magnitude.collision.classification, 'EXPLICIT_VDSEN_PRECEDENCE'); assert.equal(first.magnitude.collision.deferredRule, 'E');
+  assert.deepEqual(first.magnitude.candidates.map(c => c.dimension), ['REST']);
+  assert.deepEqual(plan1(first).audit.collision, { rules: ['C', 'E'], classification: 'EXPLICIT_VDSEN_PRECEDENCE' });
 });
 
-test('T505.4 the representative set stays an explicit provisional basis in every decision', () => {
+test('T505.4 the representative set is the last WORKING set with product-policy provenance', () => {
   const r = rec({ rir_real: 3 });
-  assert.equal(r.magnitude.evidence.basis, 'LAST_SET_CURRENT_RUNTIME_HEURISTIC');
-  assert.equal(policy.SCIENCE_GAPS.filter(g => g.id === 'REPRESENTATIVE_SET_NOT_DEFINED')[0].surfacesAs, 'evidence.basis=LAST_SET_CURRENT_RUNTIME_HEURISTIC');
+  assert.equal(r.magnitude.evidence.basis, 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET');
+  assert.equal(policy.EVIDENCE_BASIS, 'VDSEN_PRODUCT_POLICY_LAST_WORKING_SET');
 });
 
-test('T505.5 every readiness result lists the activation prerequisites; nothing is executable', () => {
+test('T505.5 readiness lists product policies, no science prerequisites; nothing is executable while the flag is off', () => {
   const d = plan1(rec({ rir_real: 3 }));
-  assert.deepEqual(d.readiness.activationPrerequisites, policy.SCIENCE_GAPS.map(g => g.id));
+  assert.deepEqual(d.readiness.activationPrerequisites, []); assert.deepEqual(d.readiness.globalProvisional, []);
+  assert.deepEqual(d.readiness.productPolicies, ['RULE_D_E_COACH_REVIEW_ONLY', 'RULE_C_THEN_E_COACH_REVIEW', 'REPRESENTATIVE_SET_LAST_WORKING_SET']);
   assert.equal(d.readiness.executable, false); assert.equal(consumer.NUMERIC_APPLY_ENABLED, false); assert.equal(policy.NUMERIC_APPLY_ENABLED, false);
 });
 
-test('T505.6 no invented rule: the documented search finds no explicit source (double progression covers UP only)', () => {
-  const doc = fs.readFileSync(path.join(root, 'docs/CONTEXTO_GENERADOR.md'), 'utf8');
-  assert.ok(/## 8\. DOUBLE PROGRESSION/.test(doc));
-  const src = fs.readFileSync(path.join(root, 'assets/progression-magnitude-policy.js'), 'utf8');
-  assert.ok(/does not select between reps and load for the D\/E adjustments/.test(src));
+test('T505.6 the historical search documents are kept (why the gaps existed) and now point to the closed policy', () => {
+  const doc = fs.readFileSync(path.join(root, 'docs/PROGRESSION_SCIENCE_SOURCE_SEARCH.md'), 'utf8');
+  assert.ok(doc.includes('RULE_D_E_ALTERNATIVE') && doc.includes('FUENTE ENCONTRADA'));
 });

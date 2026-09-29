@@ -39,7 +39,7 @@ const blocked = d => d.readiness.gates.filter(x => x.state === 'BLOCKED').map(x 
 test('T504.1 the matrix lists every required gate in a fixed order', () => {
   const d = plan1(good());
   assert.deepEqual(d.readiness.gates.map(g => g.gate), ['IDENTITY', 'FRESHNESS', 'TARGET_EXPOSURE', 'COACH_OVERRIDE', 'SAFETY', 'EVIDENCE_COUNT',
-    'DIRECTION_CONSISTENCY', 'MAGNITUDE_BRANCH', 'EQUIPMENT_IDENTITY', 'EQUIPMENT_INCREMENT', 'UNIT', 'TARGET_STARTED', 'ACTIVATION_GUARD']);
+    'DIRECTION_CONSISTENCY', 'POLICY_REVIEW', 'MAGNITUDE_BRANCH', 'EQUIPMENT_IDENTITY', 'EQUIPMENT_INCREMENT', 'UNIT', 'TARGET_STARTED', 'ACTIVATION_GUARD']);
   assert.equal(d.readiness.executable, false, 'never executable while the flag is off');
   assert.equal(d.readiness.numericApplyEnabled, false);
 });
@@ -48,7 +48,7 @@ test('T504.2 a fully ready candidate passes every gate; only the activation flag
   const d = plan1(good());
   assert.equal(d.wouldApply, true);
   assert.deepEqual(blocked(d), []);
-  assert.deepEqual(d.readiness.gates.map(g => g.state), Array(13).fill('PASS'));
+  assert.deepEqual(d.readiness.gates.map(g => g.state), Array(14).fill('PASS'));
   assert.equal(d.readiness.readyExceptFlag, true);
 });
 
@@ -66,13 +66,13 @@ test('T504.4 direction conflict / unconfirmed direction have their own codes', (
   assert.ok(unconfirmed.blockers.includes(B.DIRECTION_UNCONFIRMED)); assert.ok(!unconfirmed.blockers.includes(B.NOT_ELIGIBLE));
 });
 
-test('T504.5 unresolved policy branches are named with their rules (D/E, D, A/E)', () => {
+test('T504.5 (T523) D/E branches are Coach-review states (own gate), not unresolved policy branches', () => {
   const de = plan1(rec([[1, 0, { reps: '8', rir_real: 0 }], [1, 2, { reps: '8', rir_real: 0 }]]));
-  assert.ok(de.blockers.includes(B.MAGNITUDE_BRANCH_UNRESOLVED));
-  assert.deepEqual(de.audit.unresolvedRules, ['D', 'E']);
-  assert.equal(gate(de, 'MAGNITUDE_BRANCH').state, 'BLOCKED');
+  assert.ok(de.blockers.includes(B.COACH_REVIEW_REQUIRED)); assert.ok(!de.blockers.includes(B.MAGNITUDE_BRANCH_UNRESOLVED));
+  assert.equal(gate(de, 'POLICY_REVIEW').state, 'BLOCKED'); assert.equal(de.readiness.state, 'COACH_REVIEW_REQUIRED');
+  assert.equal(de.readiness.preview.primary, 'COACH_REVIEW_REQUIRED'); assert.equal(de.audit.unresolvedRules, null);
   const d = plan1(rec([[1, 0, { reps: '10', rir_real: 0 }], [1, 2, { reps: '10', rir_real: 0 }]]));
-  assert.deepEqual(d.audit.unresolvedRules, ['D']);
+  assert.equal(d.readiness.state, 'COACH_REVIEW_REQUIRED');
 });
 
 test('T504.6 safety conflict, readiness veto, Coach override and started target are separate gates', () => {
@@ -91,7 +91,7 @@ test('T504.7 equipment and unit gates: unresolved increment, unit mismatch, not 
   assert.deepEqual(gate(unresolved, 'EQUIPMENT_INCREMENT').codes, [B.UNRESOLVED_EQUIPMENT_INCREMENT]);
   const lb = plan1(rec([[1, 0, { rir_real: 3, unit: 'LB' }], [1, 2, { rir_real: 3, unit: 'LB' }]]));
   assert.equal(gate(lb, 'UNIT').state, 'BLOCKED');
-  const rest = plan1(rec([[1, 0, { reps: '8', rir_real: 2 }], [1, 2, { reps: '8', rir_real: 2 }]]));
+  const rest = plan1(rec([[1, 0, {}], [1, 2, { reps: '8', rir_real: 2 }]])); // first comparable occurrence of C (T523)
   assert.equal(rest.wouldApply, true);
   assert.equal(gate(rest, 'EQUIPMENT_INCREMENT').state, 'NOT_APPLICABLE'); assert.equal(gate(rest, 'UNIT').state, 'NOT_APPLICABLE');
 });
