@@ -29,9 +29,48 @@
     UNRESOLVED_EQUIPMENT_INCREMENT: 'UNRESOLVED_EQUIPMENT_INCREMENT', EQUIPMENT_RESOLUTION_MISMATCH: 'EQUIPMENT_RESOLUTION_MISMATCH',
     DIRECTION_NOT_REALIZABLE: 'DIRECTION_NOT_REALIZABLE', UNIT_MISMATCH: 'UNIT_MISMATCH', EQUIPMENT_OUT_OF_RANGE: 'EQUIPMENT_OUT_OF_RANGE',
     EQUIPMENT_INPUT_INVALID: 'EQUIPMENT_INPUT_INVALID',
+    EVIDENCE_COUNT_INSUFFICIENT: 'EVIDENCE_COUNT_INSUFFICIENT', DIRECTION_CONFLICTING: 'DIRECTION_CONFLICTING',
+    DIRECTION_UNCONFIRMED: 'DIRECTION_UNCONFIRMED', READINESS_VETO: 'READINESS_VETO',
     NO_ACTIONABLE_CANDIDATE: 'NO_ACTIONABLE_CANDIDATE', STRUCTURAL_DIMENSION_NOT_AUTHORIZED: 'STRUCTURAL_DIMENSION_NOT_AUTHORIZED',
     ALREADY_RECORDED: 'ALREADY_RECORDED', STALE_CALLBACK: 'STALE_CALLBACK', REVISION_CONFLICT: 'REVISION_CONFLICT'
   });
+
+  // T504: every blocker belongs to exactly one readiness gate (fixed order). A candidate is executable only when
+  // every gate passes (or is not applicable) AND the activation flag is on.
+  var GATES = Object.freeze({
+    IDENTITY: [BLOCKERS.NOT_CANONICAL_RECORD, BLOCKERS.CLIENT_MISMATCH, BLOCKERS.PLAN_MISMATCH, BLOCKERS.PID_NOT_UNIQUE_IN_TARGET],
+    FRESHNESS: [BLOCKERS.PLAN_CHANGED, BLOCKERS.RECORD_NOT_PENDING, BLOCKERS.ALREADY_RECORDED],
+    TARGET_EXPOSURE: [BLOCKERS.TARGET_EXPOSURE_CHANGED],
+    COACH_OVERRIDE: [BLOCKERS.COACH_OVERRIDE, BLOCKERS.COACH_KEEP_ORIGINAL],
+    SAFETY: [BLOCKERS.SAFETY_CONFLICT, BLOCKERS.READINESS_VETO],
+    EVIDENCE_COUNT: [BLOCKERS.EVIDENCE_COUNT_INSUFFICIENT],
+    DIRECTION_CONSISTENCY: [BLOCKERS.DIRECTION_CONFLICTING, BLOCKERS.DIRECTION_UNCONFIRMED],
+    MAGNITUDE_BRANCH: [BLOCKERS.POLICY_BRANCH_REQUIRES_RESOLUTION, BLOCKERS.NOT_ELIGIBLE, BLOCKERS.NO_ACTIONABLE_CANDIDATE, BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED],
+    EQUIPMENT_INCREMENT: [BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT, BLOCKERS.DIRECTION_NOT_REALIZABLE, BLOCKERS.EQUIPMENT_OUT_OF_RANGE,
+      BLOCKERS.EQUIPMENT_INPUT_INVALID, BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH],
+    UNIT: [BLOCKERS.UNIT_MISMATCH],
+    TARGET_STARTED: [BLOCKERS.TARGET_ALREADY_STARTED]
+  });
+
+  function _readiness(out, record, m) {
+    var blockers = out.blockers, canonical = blockers.indexOf(BLOCKERS.NOT_CANONICAL_RECORD) < 0;
+    var cands = (m && m.candidates) || [];
+    var candEvaluated = canonical && m && !m.unresolved && m.eligible === true && cands.length === 1;
+    var isLoad = candEvaluated && cands[0].dimension === 'LOAD';
+    var gates = Object.keys(GATES).map(function(g) {
+      var codes = GATES[g].filter(function(c) { return blockers.indexOf(c) >= 0; });
+      var state;
+      if (!canonical && g !== 'IDENTITY') state = 'NOT_EVALUATED';
+      else if (codes.length) state = 'BLOCKED';
+      else if (g === 'EQUIPMENT_INCREMENT' || g === 'UNIT') state = !candEvaluated ? 'NOT_EVALUATED' : (isLoad ? 'PASS' : 'NOT_APPLICABLE');
+      else state = 'PASS';
+      return { gate: g, state: state, codes: codes };
+    });
+    var real = blockers.filter(function(b) { return b !== BLOCKERS.NUMERIC_APPLY_DISABLED; });
+    var readyExceptFlag = out.wouldApply === true && real.length === 0 &&
+      gates.every(function(x) { return x.state === 'PASS' || x.state === 'NOT_APPLICABLE'; });
+    return { gates: gates, readyExceptFlag: readyExceptFlag, executable: readyExceptFlag && NUMERIC_APPLY_ENABLED, numericApplyEnabled: NUMERIC_APPLY_ENABLED };
+  }
 
   function _time(v) { return typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null; }
   function _num(v) {
@@ -112,8 +151,16 @@
       // SAFETY outranks everything below
       if ((m.reasonCodes || []).indexOf('SAFETY_CONFLICT') >= 0 || ctx.safetyConflict === true) blockers.push(BLOCKERS.SAFETY_CONFLICT);
       // canonical eligibility
+      var rc = m.reasonCodes || [], specific = [];
+      if (!m.eligible) {
+        if (rc.indexOf('INSUFFICIENT_COMPARABLE_EXPOSURES') >= 0) specific.push(BLOCKERS.EVIDENCE_COUNT_INSUFFICIENT);
+        if (rc.indexOf('READINESS_VETO') >= 0) specific.push(BLOCKERS.READINESS_VETO);
+        if (rc.indexOf('CONFLICTING_DIRECTION_ACROSS_EXPOSURES') >= 0) specific.push(BLOCKERS.DIRECTION_CONFLICTING);
+        if (rc.indexOf('DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE') >= 0) specific.push(BLOCKERS.DIRECTION_UNCONFIRMED);
+        specific.forEach(function(b) { if (blockers.indexOf(b) < 0) blockers.push(b); });
+      }
       if (m.unresolved) blockers.push(BLOCKERS.POLICY_BRANCH_REQUIRES_RESOLUTION);
-      else if (!m.eligible) blockers.push(BLOCKERS.NOT_ELIGIBLE);
+      else if (!m.eligible && !specific.length) blockers.push(BLOCKERS.NOT_ELIGIBLE);
       var cand = (m.unresolved || !m.eligible) ? null : _candidateFor(m, ctx, blockers);
       var key = overlayKey(record);
       if (ctx.existingOverlays && ctx.existingOverlays[key]) blockers.push(BLOCKERS.ALREADY_RECORDED);
@@ -138,9 +185,10 @@
         roundingReason: er.roundingReason || null, incrementSource: er.incrementSource || null,
         resolutionState: er.resolutionState || null, reasons: Array.isArray(er.reasons) ? er.reasons.slice() : [] };
     }
+    out.readiness = _readiness(out, record, m);
     out.audit = { event: out.wouldApply ? 'OVERLAY_WOULD_APPLY' : 'OVERLAY_BLOCKED', at: ctx.now || null, actor: 'SYSTEM_DRY_RUN',
       recordKey: out.recordKey, revision: record && record.revision !== undefined ? record.revision : null, blockers: blockers.slice(),
-      overlayKey: out.overlay ? out.overlay.key : null };
+      overlayKey: out.overlay ? out.overlay.key : null, unresolvedRules: m && m.unresolved ? (m.unresolved.rules || []).slice() : null };
     return out;
   }
 
@@ -175,6 +223,6 @@
     return { written: true, overlayKey: decision.overlay.key, decision: decision };
   }
 
-  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, overlayKey: overlayKey,
+  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, overlayKey: overlayKey,
     targetStarted: targetStarted, planApplication: planApplication, planReversal: planReversal, applyOverlayTransaction: applyOverlayTransaction };
 });

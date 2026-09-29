@@ -30,6 +30,14 @@ LOGS (ejecución real) → evidencia comparable por PID → política canónica 
 - T482/T487: no existe escritor a `plans/` derivado de recomendaciones; solo autoría/edición explícita del Coach.
 - T483/T484/T485/T488: sin prefill, sin reducción de series, sin base de calentamiento y sin arrastre de series desde recomendaciones o historia.
 
+## Matriz de preparación de aplicación (T504)
+
+`planApplication(...).readiness` lista 11 compuertas en orden fijo: IDENTITY, FRESHNESS, TARGET_EXPOSURE, COACH_OVERRIDE, SAFETY,
+EVIDENCE_COUNT, DIRECTION_CONSISTENCY, MAGNITUDE_BRANCH, EQUIPMENT_INCREMENT, UNIT, TARGET_STARTED. Cada compuerta es PASS / BLOCKED /
+NOT_EVALUATED / NOT_APPLICABLE con códigos explícitos (`EVIDENCE_COUNT_INSUFFICIENT`, `DIRECTION_CONFLICTING`, `DIRECTION_UNCONFIRMED`,
+`POLICY_BRANCH_REQUIRES_RESOLUTION` + reglas sin resolver, `UNRESOLVED_EQUIPMENT_INCREMENT`, ...). Un candidato es ejecutable solo si todas
+pasan Y la bandera está activa (`executable=false` mientras `NUMERIC_APPLY_ENABLED=false`).
+
 ## Decisiones abiertas (no resueltas a propósito)
 
 1. ~~RIR prescrito~~ — **CERRADA (T496)**: el RIR prescrito es el del Coach (`plan.rirByWeek`/sets). `getAdjustedRIR` devuelve el RIR del Coach sin cambios (sin calendario, sin +2 reactivo, sin piso de barra libre); el RIR 0 se preserva. El estado de deload sigue como aviso informativo (`_computeDeloadTriggers`). RIR observado (`rir_real`) permanece separado.

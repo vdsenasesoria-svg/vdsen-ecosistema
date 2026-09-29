@@ -127,7 +127,7 @@ test('T493.6 unresolved policy branches and ineligible evidence never plan an ap
     entries: Object.assign(entriesFor({ rir_real: 3 }), { log_1_0_0_s2: { carga: '100', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2, prescriptionExerciseId: PID, ts: T0 } }),
     recommendation: { prescriptionExerciseId: PID, exerciseId: 'e', action: 'increase_load', newLoad: 5 } }, 'x');
   assert.equal(unconfirmed.magnitude.directionConsistency, 'UNCONFIRMED');
-  only(plan1(unconfirmed), B.NOT_ELIGIBLE);
+  only(plan1(unconfirmed), B.DIRECTION_UNCONFIRMED); // T504: specific blocker instead of the generic NOT_ELIGIBLE
 });
 
 test('T493.7 exact client / plan / PID / target-exposure guards', () => {
