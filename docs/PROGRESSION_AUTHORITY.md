@@ -46,6 +46,14 @@ Restos operativos documentados (no son autoridad de prescripción): **Temporizad
 `restSeconds`, el temporizador usa una ayuda por `fatigueCost` (solo cronómetro, no persiste); al cargar el plan se muestran valores por
 defecto de visualización cuando el Coach omitió RIR (2) o descanso (90 s).
 
+## Guardia de activación (T513)
+
+`verifyActivationPreconditions` re-verifica 18 hechos directamente (cliente exacto, plan activo exacto, PID exacto, exposición origen válida,
+exposición destino exacta, destino no iniciado, plan sin cambios, sin override del Coach, sin conflicto de seguridad, evidencia elegible,
+dirección consistente, magnitud resuelta, identidad de equipo, incremento resuelto, unidad compatible, carga físicamente realizable,
+clave de idempotencia válida, contexto de transacción vigente). `canApply` exige `guard.ok` además de la bandera y de no tener bloqueos;
+los tests con la bandera forzada en un sandbox garantizan que ningún hecho faltante puede saltarse la guardia.
+
 ## Matriz de preparación de aplicación (T504)
 
 `planApplication(...).readiness` lista 12 compuertas en orden fijo: IDENTITY, FRESHNESS, TARGET_EXPOSURE, COACH_OVERRIDE, SAFETY,

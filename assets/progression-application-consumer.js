@@ -29,7 +29,7 @@
     UNRESOLVED_EQUIPMENT_INCREMENT: 'UNRESOLVED_EQUIPMENT_INCREMENT', EQUIPMENT_RESOLUTION_MISMATCH: 'EQUIPMENT_RESOLUTION_MISMATCH',
     DIRECTION_NOT_REALIZABLE: 'DIRECTION_NOT_REALIZABLE', UNIT_MISMATCH: 'UNIT_MISMATCH', EQUIPMENT_OUT_OF_RANGE: 'EQUIPMENT_OUT_OF_RANGE',
     EQUIPMENT_INPUT_INVALID: 'EQUIPMENT_INPUT_INVALID',
-    EQUIPMENT_IDENTITY_UNRESOLVED: 'EQUIPMENT_IDENTITY_UNRESOLVED', SCIENCE_POLICY_UNRESOLVED: 'SCIENCE_POLICY_UNRESOLVED',
+    ACTIVATION_GUARD_FAILED: 'ACTIVATION_GUARD_FAILED', EQUIPMENT_IDENTITY_UNRESOLVED: 'EQUIPMENT_IDENTITY_UNRESOLVED', SCIENCE_POLICY_UNRESOLVED: 'SCIENCE_POLICY_UNRESOLVED',
     EVIDENCE_COUNT_INSUFFICIENT: 'EVIDENCE_COUNT_INSUFFICIENT', DIRECTION_CONFLICTING: 'DIRECTION_CONFLICTING',
     DIRECTION_UNCONFIRMED: 'DIRECTION_UNCONFIRMED', READINESS_VETO: 'READINESS_VETO',
     NO_ACTIONABLE_CANDIDATE: 'NO_ACTIONABLE_CANDIDATE', STRUCTURAL_DIMENSION_NOT_AUTHORIZED: 'STRUCTURAL_DIMENSION_NOT_AUTHORIZED',
@@ -51,7 +51,8 @@
     EQUIPMENT_INCREMENT: [BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT, BLOCKERS.DIRECTION_NOT_REALIZABLE, BLOCKERS.EQUIPMENT_OUT_OF_RANGE,
       BLOCKERS.EQUIPMENT_INPUT_INVALID, BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH],
     UNIT: [BLOCKERS.UNIT_MISMATCH],
-    TARGET_STARTED: [BLOCKERS.TARGET_ALREADY_STARTED]
+    TARGET_STARTED: [BLOCKERS.TARGET_ALREADY_STARTED],
+    ACTIVATION_GUARD: [BLOCKERS.ACTIVATION_GUARD_FAILED]
   });
 
   // T505: science/product items that must be closed (director decision) before numeric application may be enabled.
@@ -65,6 +66,52 @@
     return rules.indexOf('D') >= 0 || rules.indexOf('E') >= 0 ? ['RULE_D_E_ALTERNATIVE_NOT_DEFINED'] : [];
   }
 
+  // T513: ACTIVATION GUARD. Defense in depth: every fact required to write an overlay is RE-VERIFIED here directly from the
+  // record, the overlay and the context, independently of the blocker list. Even if NUMERIC_APPLY_ENABLED is later flipped
+  // and some blocker path regresses, a candidate still fails unless all of these hold.
+  var GUARD_CHECKS = Object.freeze(['exactClient', 'exactActivePlan', 'exactPid', 'validSourceExposure', 'exactTargetExposure', 'targetNotStarted',
+    'planNotChanged', 'noCoachOverride', 'noSafetyConflict', 'evidenceEligible', 'directionConsistent', 'magnitudeResolved', 'equipmentIdentityResolved',
+    'equipmentIncrementResolved', 'unitCompatible', 'physicallyRealizable', 'idempotencyKeyValid', 'transactionContextCurrent']);
+  var _SOURCES = { EXERCISE_METADATA: true, GYM_METADATA: true, COACH_CONFIGURED: true };
+  function _int(v) { return typeof v === 'number' && Number.isInteger(v) && v >= 0; }
+
+  function verifyActivationPreconditions(input) {
+    input = input || {};
+    var record = input.record || {}, overlay = input.overlay || null, ctx = input.context || {}, m = record.magnitude || {};
+    var src = record.source || {}, tgt = record.nextExposure || {}, plan = ctx.plan || {};
+    var calcAt = _time(src.calculatedAt), planAt = _time(plan.updatedAt);
+    var cands = m.candidates || [], cand = cands.length === 1 ? cands[0] : null;
+    var isLoad = !!(overlay && overlay.dimension === 'LOAD'), er = ctx.equipmentResolution || {};
+    var r = {};
+    r.exactClient = !!record.clientId && record.clientId === ctx.clientId && !!overlay && overlay.clientId === record.clientId;
+    r.exactActivePlan = !!record.planId && record.planId === ctx.planId && ctx.planId === ctx.activePlanId && !!overlay && overlay.planId === record.planId;
+    r.exactPid = typeof record.prescriptionExerciseId === 'string' && record.prescriptionExerciseId !== '' && !!overlay && overlay.prescriptionExerciseId === record.prescriptionExerciseId;
+    r.validSourceExposure = _int(src.week) && _int(src.dayIndex) && calcAt !== null && !!overlay && overlay.source && overlay.source.week === src.week && overlay.source.dayIndex === src.dayIndex;
+    r.exactTargetExposure = _int(tgt.week) && _int(tgt.dayIndex) && (tgt.week > src.week || (tgt.week === src.week && tgt.dayIndex > src.dayIndex)) &&
+      !!overlay && !!overlay.target && overlay.target.week === tgt.week && overlay.target.dayIndex === tgt.dayIndex;
+    r.targetNotStarted = _int(tgt.week) && _int(tgt.dayIndex) && !targetStarted(ctx.entries, tgt.week, tgt.dayIndex);
+    r.planNotChanged = calcAt !== null && planAt !== null && planAt <= calcAt;
+    r.noCoachOverride = !(Array.isArray(ctx.interventions) ? ctx.interventions : []).some(function(iv) {
+      return iv && iv.targetType === 'EXERCISE' && iv.targetId === record.prescriptionExerciseId && (!iv.planId || iv.planId === record.planId) &&
+        _time(iv.decidedAt) !== null && calcAt !== null && _time(iv.decidedAt) >= calcAt && iv.action !== 'NO_CHANGE'; }) &&
+      !(record.state === 'REJECTED' && record.reasonCode === 'COACH_KEEP_ORIGINAL');
+    r.noSafetyConflict = ctx.safetyConflict !== true && (m.reasonCodes || []).indexOf('SAFETY_CONFLICT') < 0;
+    r.evidenceEligible = m.eligible === true && _num(m.comparableExposureCount) !== null && m.comparableExposureCount >= 2 && record.state === 'PENDING';
+    r.directionConsistent = m.directionConsistency === 'CONSISTENT' || m.directionConsistency === 'NOT_APPLICABLE';
+    r.magnitudeResolved = !m.unresolved && !!cand && m.mode === 'SHADOW' && m.numericApplyAllowed === false;
+    r.equipmentIdentityResolved = !isLoad || (typeof er.equipmentId === 'string' && er.equipmentId !== '' && overlay.equipmentId === er.equipmentId);
+    r.equipmentIncrementResolved = !isLoad || (er.resolutionState === 'RESOLVED' && !!_SOURCES[er.incrementSource]);
+    r.unitCompatible = !isLoad || (!!er.unit && !!m.evidence && String(er.unit).toUpperCase() === String(m.evidence.unit || '').toUpperCase() && overlay.unit === er.unit);
+    r.physicallyRealizable = !!overlay && _num(overlay.appliedValue) !== null && overlay.appliedValue >= 0 &&
+      (!isLoad || (_num(er.realizableLoad) === overlay.appliedValue && overlay.appliedValue > 0 &&
+        ((m.direction === 'UP' && overlay.appliedValue > overlay.previousValue) || (m.direction === 'DOWN' && overlay.appliedValue < overlay.previousValue))));
+    r.idempotencyKeyValid = /^v1_[a-f0-9]{16}$/.test(String(record.key || '')) && !!overlay && overlay.key === 'ovl_' + record.key && overlay.sourceRecordKey === record.key;
+    r.transactionContextCurrent = ctx.transactionCurrent !== false;
+    var checks = GUARD_CHECKS.map(function(c) { return { check: c, ok: r[c] === true }; });
+    var failed = checks.filter(function(c) { return !c.ok; }).map(function(c) { return c.check; });
+    return { ok: failed.length === 0, failed: failed, checks: checks };
+  }
+
   function _readiness(out, record, m) {
     var blockers = out.blockers, canonical = blockers.indexOf(BLOCKERS.NOT_CANONICAL_RECORD) < 0;
     var cands = (m && m.candidates) || [];
@@ -75,6 +122,7 @@
       var state;
       if (!canonical && g !== 'IDENTITY') state = 'NOT_EVALUATED';
       else if (codes.length) state = 'BLOCKED';
+      else if (g === 'ACTIVATION_GUARD') state = out.guard ? 'PASS' : 'NOT_EVALUATED';
       else if (g === 'EQUIPMENT_IDENTITY' || g === 'EQUIPMENT_INCREMENT' || g === 'UNIT') state = !candEvaluated ? 'NOT_EVALUATED' : (isLoad ? 'PASS' : 'NOT_APPLICABLE');
       else state = 'PASS';
       return { gate: g, state: state, codes: codes };
@@ -191,8 +239,13 @@
             comparableExposureCount: m.comparableExposureCount, directionConsistency: m.directionConsistency || null } };
       }
     }
+    out.guard = null;
+    if (out.wouldApply) {
+      out.guard = verifyActivationPreconditions({ record: record, overlay: out.overlay, context: ctx });
+      if (!out.guard.ok) { blockers.push(BLOCKERS.ACTIVATION_GUARD_FAILED); out.wouldApply = false; out.overlay = null; }
+    }
     if (!NUMERIC_APPLY_ENABLED) blockers.push(BLOCKERS.NUMERIC_APPLY_DISABLED);
-    out.canApply = out.wouldApply && NUMERIC_APPLY_ENABLED && blockers.length === 0;
+    out.canApply = out.wouldApply && NUMERIC_APPLY_ENABLED && blockers.length === 0 && !!out.guard && out.guard.ok === true;
     var er = ctx.equipmentResolution;
     if (er && m && (m.candidates || []).some(function(cd) { return cd && cd.dimension === 'LOAD'; })) {
       out.equipment = { equipmentId: er.equipmentId || null, equipmentType: er.equipmentType || null, unit: er.unit || null,
@@ -233,13 +286,14 @@
     var meso = mesoSnap.data(), record = (meso.progressionApplications || {})[input.recordKey];
     var decision = planApplication({ record: record, context: Object.assign({}, input.context, {
       plan: planSnap.data(), interventions: clientSnap.data().coachInterventions, entries: meso.entries,
-      existingOverlays: meso.nextExposureOverlays, activePlanId: clientSnap.data().activePlanId }) });
+      existingOverlays: meso.nextExposureOverlays, activePlanId: clientSnap.data().activePlanId,
+      transactionCurrent: guards.isCurrent ? guards.isCurrent() : true }) });
     if (!decision.canApply) return { written: false, reason: decision.blockers[0], decision: decision };
     if (input.expectedRevision !== undefined && record.revision !== input.expectedRevision) return { written: false, reason: BLOCKERS.REVISION_CONFLICT };
     tx.set(refs.meso, { nextExposureOverlays: Object.assign({}, meso.nextExposureOverlays || {}, (function() { var o = {}; o[decision.overlay.key] = decision.overlay; return o; })()) }, { merge: true });
     return { written: true, overlayKey: decision.overlay.key, decision: decision };
   }
 
-  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, ACTIVATION_PREREQUISITES: ACTIVATION_PREREQUISITES, overlayKey: overlayKey,
+  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, GUARD_CHECKS: GUARD_CHECKS, verifyActivationPreconditions: verifyActivationPreconditions, ACTIVATION_PREREQUISITES: ACTIVATION_PREREQUISITES, overlayKey: overlayKey,
     targetStarted: targetStarted, planApplication: planApplication, planReversal: planReversal, applyOverlayTransaction: applyOverlayTransaction };
 });
