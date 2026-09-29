@@ -116,6 +116,14 @@
     if (b.below === null && b.above === null) {
       return _result(input, { resolutionState: STATES.OUT_OF_RANGE, incrementSource: meta.source, reasons: ['ABOVE_EQUIPMENT_MAXIMUM'] });
     }
+    // T511: beyond either end of the grid the load is OUT_OF_RANGE, never silently clamped -- except an overshoot of at most
+    // half a step on a stepped grid (ordinary nearest rounding). Lists of available loads have no such tolerance.
+    if (b.below === null || b.above === null) {
+      var overshoot = b.above === null ? _clean(desired - b.below) : _clean(b.above - desired);
+      var tol = grid.kind === 'AVAILABLE_LOADS' ? 0 : _clean(grid.step / 2);
+      if (overshoot > tol) return _result(input, { resolutionState: STATES.OUT_OF_RANGE, incrementSource: meta.source,
+        reasons: [b.above === null ? 'ABOVE_EQUIPMENT_MAXIMUM' : 'BELOW_EQUIPMENT_MINIMUM'] });
+    }
     if (b.below !== null && b.above !== null && b.below === b.above) { chosen = b.below; reason = 'EXACT'; }
     else if (mode === MODES.FLOOR) { chosen = b.below; reason = 'FLOOR'; }
     else if (mode === MODES.CEIL) { chosen = b.above; reason = 'CEIL'; }
