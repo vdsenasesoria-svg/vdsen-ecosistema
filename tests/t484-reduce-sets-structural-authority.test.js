@@ -105,7 +105,7 @@ test('T484 no code path outside the engine lets a recommendation set the set cou
   for (const h of hits) assert.ok(!/\b(numSeries|numSets|setsCount|nSeries)\s*=[^=]/.test(h.l), 'newSets assigned at ' + h.n + ': ' + h.l.trim());
   assert.equal((client.match(/action === 'reduce_sets'/g) || []).length, 0);
   assert.ok(!client.includes('_isFreshPidProgRec'), 'the legacy exact-PID freshness gate no longer exists (T487)');
-  for (const fn of ['ssCompleteRound', 'ssCompleteLastRound', 'markExpressSSDone', 'buildBoostcampExercise', '_maybeSuggestExtraSet']) {
+  for (const fn of ['ssCompleteRound', 'ssCompleteLastRound', 'markExpressSSDone', 'buildBoostcampExercise']) {
     const body = topLevelFn(client, fn);
     assert.ok(!/action === 'reduce_sets'|_pcRec|_isFreshPidProgRec\(/.test(body), fn + ' never consumes the legacy set recommendation');
   }

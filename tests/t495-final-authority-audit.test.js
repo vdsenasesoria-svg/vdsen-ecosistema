@@ -23,8 +23,8 @@ test('T495.2 residual legacy authorities are exactly the documented ones (change
   assert.equal(count(rir, '_computeDeloadTriggers'), 0, 'T496: no reactive deload rewrite of prescribed RIR');
   assert.equal(count(rir, 'base - 1'), 0);
   assert.equal(count(rir, 'Math.max(1, adj)'), 0);
-  // (2) in-session extra-set suggestion: suggestion only, athlete decides
-  assert.equal(count(client, '_showAddSetSuggestion(di, ei, \'Técnica'), 1);
+  // (2) T497: the in-session extra-set recommender no longer exists
+  assert.ok(!client.includes('_maybeSuggestExtraSet(') && !client.includes('_showAddSetSuggestion'));
   // (3) history by name fallback
   assert.ok(client.includes('return (pidKey && EXERCISE_HISTORY[pidKey]) || EXERCISE_HISTORY[exNameKey] || {};'));
   // (4) the legacy engine still produces progrec evidence

@@ -33,8 +33,7 @@ LOGS (ejecución real) → evidencia comparable por PID → política canónica 
 ## Decisiones abiertas (no resueltas a propósito)
 
 1. ~~RIR prescrito~~ — **CERRADA (T496)**: el RIR prescrito es el del Coach (`plan.rirByWeek`/sets). `getAdjustedRIR` devuelve el RIR del Coach sin cambios (sin calendario, sin +2 reactivo, sin piso de barra libre); el RIR 0 se preserva. El estado de deload sigue como aviso informativo (`_computeDeloadTriggers`). RIR observado (`rir_real`) permanece separado.
-2. **`_maybeSuggestExtraSet`** (cliente): sugiere una serie extra en sesión con umbrales fijos (ICS, pump, RIR, MRV). No es automático
-   (requiere toque del atleta) pero es un recomendador de volumen paralelo al Coach.
+2. ~~`_maybeSuggestExtraSet`~~ — **CERRADA (T497)**: eliminado (junto con `_showAddSetSuggestion`/`addExtraSetNow`). El conteo de series es prescripción estructural (Coach o futura política estructural canónica explícita); ICS/pump/RIR observado quedan solo como evidencia registrada. (`_maybeSuggestExtraSet` ya no existe.)
 3. **Historial por nombre** (`_getExerciseHistoryEntry`): PID primero, pero cae a la clave por nombre si no hay historial por PID
    (continuidad de datos legados). Alimenta referencias y la base del calentamiento.
 4. **Motor de progresión del cliente** (`calculateProgression`): sigue generando `progrec` como evidencia/señal legada; puede discrepar del

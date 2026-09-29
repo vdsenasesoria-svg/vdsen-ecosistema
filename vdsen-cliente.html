@@ -2307,7 +2307,6 @@ function goTab(i) {
     else b.removeAttribute('aria-current');
   });
   try { localStorage.setItem('vdsen_last_tab', i); } catch(e) {}
-  if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();
   // Wake Lock: activar solo en tab de entreno, liberar en todos los demás
   if (i === 1) { _acquireWakeLock(); } else { _releaseWakeLock(); }
   // Al entrar al tab de entrenamiento, volver a la semana activa
@@ -8720,123 +8719,8 @@ async function _skipPresession(di) {
 }
 window._skipPresession = _skipPresession;
 
-// ── Autorregulación intra-sesión ────────────────────────────────────────
-// A diferencia de `calculateProgression` (que recalcula recomendaciones recién
-// al cerrar la sesión, para la SIGUIENTE semana), esto evalúa en vivo, apenas
-// se completa la última serie planificada de un ejercicio: si la técnica fue
-// sólida, hubo buen pump y quedó margen de esfuerzo real, sugiere sumar una
-// serie extra HOY MISMO (sin esperar a la próxima semana), respetando el MRV
-// semanal del músculo para no proponer volumen que ya está en el techo.
-function _maybeSuggestExtraSet(di, ei, si) {
-  try {
-    var offeredKey = 'autoregOffered_'+CURRENT_WEEK+'_'+di+'_'+ei;
-    if (LOGS[offeredKey]) return;
-    var ej = (_EJERCICIOS_DIA || [])[ei];
-    if (!ej) return;
-
-    var exName = ej.nombre || ej.exerciseName || '';
-
-    // numSeries DEBE calcularse igual que _buildExCard (mismo orden de pasos), o
-    // "última serie planificada" nunca coincide con la última fila que el cliente
-    // realmente ve/completa en pantalla y esta función jamás dispara.
-    var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
-    var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
-    if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
-
-    // T488: no carry-over of last week's executed set count (see _buildExCard).
-
-    var _doneCount = 0;
-    for (var _sc = 0; _sc < 12; _sc++) {
-      if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
-    }
-    // T484: no progression recommendation changes the plan or the rendered set count; add_sets,
-    // reduce_sets and deload are informational candidates for the Coach.
-
-    // PASO 3 — nunca ocultar sets ya registrados esta sesión
-    numSeries = Math.max(numSeries, _doneCount);
-    // Y3T: la fase define el techo de series
-    if (isY3TExercise(ej)) {
-      var _effSetsEx = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
-      if (_effSetsEx.length > 0) numSeries = Math.min(numSeries, _effSetsEx.length);
-    }
-    // FST7: techo fijo de 7 sets — nunca sugerir una octava serie
-    if ((ej.technique || '').toLowerCase() === 'fst7') numSeries = Math.min(numSeries, (ej.sets || []).length || 7);
-
-    if (si !== numSeries - 1) return; // sólo tras la última serie planificada de hoy
-
-    var catData = _getCatalogData(exName);
-    if (!catData) return; // sin catálogo no hay MRV/músculo confiable → no sugerir
-
-    var sets = [];
-    for (var s = 0; s < numSeries; s++) {
-      var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
-      if (LOGS[k] && LOGS[k].done) sets.push(LOGS[k]);
-    }
-    if (sets.length < numSeries) return; // faltan series por completar todavía
-
-    var avgICS  = _avgArr(sets.map(function(x){ return parseFloat(x.ics)||0; }).filter(function(v){ return v > 0; }));
-    var avgPump = _avgArr(sets.map(function(x){ return parseFloat(x.pump) || 2; }));
-    var rirVals = sets.map(function(x){ return parseFloat(x.rir_real); }).filter(function(v){ return !isNaN(v); });
-    if (!rirVals.length) return;
-    var avgRIR  = _avgArr(rirVals);
-    var baseRIR = getAdjustedRIR(_coachRIR(ej), CURRENT_WEEK, exName);
-
-    if (!avgICS || avgICS < 8) return;   // técnica no lo suficientemente sólida
-    if (avgPump > 2) return;             // pump bajo → no forzar más volumen
-    if (avgRIR < baseRIR) return;        // sin margen real de esfuerzo
-
-    // No exceder el MRV semanal del músculo objetivo
-    var muscle = catData.targetMuscle;
-    if (muscle && typeof MEV_MRV_BY_MUSCLE !== 'undefined' && MEV_MRV_BY_MUSCLE[muscle]) {
-      var mrv = MEV_MRV_BY_MUSCLE[muscle].mrv;
-      var volNow = _getWeeklyVolumeByMuscle(muscle);
-      if (mrv && volNow + 1 > mrv) return;
-    }
-
-    LOGS[offeredKey] = true;
-    _showAddSetSuggestion(di, ei, 'Técnica sólida (ICS '+avgICS.toFixed(1)+'), buen pump y RIR por encima del objetivo — hay margen para más volumen hoy.');
-  } catch (e) { /* nunca bloquear el guardado de la serie por un error acá */ }
-}
-
-function _showAddSetSuggestion(di, ei, reasonText) {
-  var el = document.getElementById('addSetSuggestion');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'addSetSuggestion';
-    document.body.appendChild(el);
-  }
-  el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(90px + env(safe-area-inset-bottom,0px));max-width:456px;margin:0 auto;background:rgba(18,18,16,.97);border:1px solid rgba(110,154,110,.5);border-radius:14px;padding:12px 14px;z-index:3000;box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)';
-  el.innerHTML =
-    '<div style="display:flex;align-items:flex-start;gap:10px">'+
-      '<div style="font-size:22px;line-height:1">💪</div>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-family:var(--ff);font-size:12px;color:var(--grn);letter-spacing:.5px;font-weight:800">RINDIENDO BIEN — ¿SUMAR 1 SERIE?</div>'+
-        '<div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">'+reasonText+'</div>'+
-      '</div>'+
-    '</div>'+
-    '<div style="display:flex;gap:8px;margin-top:10px">'+
-      '<button onclick="_dismissAddSetSuggestion()" style="flex:0 0 auto;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">No, gracias</button>'+
-      '<button onclick="addExtraSetNow('+di+','+ei+')" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--grn);color:#06170c;font-size:13px;font-weight:800;cursor:pointer">➕ Agregar serie extra</button>'+
-    '</div>';
-  el.style.display = 'block';
-}
-
-function _dismissAddSetSuggestion() {
-  var el = document.getElementById('addSetSuggestion');
-  if (el) el.style.display = 'none';
-}
-
-function addExtraSetNow(di, ei) {
-  var key = 'exmod_'+CURRENT_WEEK+'_'+di+'_'+ei;
-  var ej = (_EJERCICIOS_DIA || [])[ei] || {};
-  var exMod = LOGS[key] || {};
-  var curNumSeries = exMod.numSeries ? parseInt(exMod.numSeries) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
-  LOGS[key] = Object.assign({}, exMod, { numSeries: curNumSeries + 1 });
-  saveLogs();
-  _dismissAddSetSuggestion();
-  _refreshExPanelOnly();
-  showToast('➕ Serie extra agregada — ¡a por ella!');
-}
+// T497: no in-session extra-set recommender. Set count is structural prescription (Coach / future explicit
+// canonical structural policy). ICS / pump / observed RIR stay logged as evidence only.
 
 async function completeSet(key, di, ei, si, unit) {
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
@@ -9003,8 +8887,6 @@ async function completeSet(key, di, ei, si, unit) {
 
     // FASE 9: autoFilled sets no inician rest timer (el cliente no hizo el esfuerzo manual)
     if (prev.autoFilled) { showToast(_grp ? 'Par SS cerrado ✓' : 'Serie ✓'); return; }
-
-    _maybeSuggestExtraSet(di, ei, si);
 
     // Calcular restTime: restSeconds del plan es fuente de verdad (FASE 9).
     // No usar heurística de nombre/catálogo — no inventar duración.
@@ -14399,7 +14281,6 @@ function showPostSessionModal(di) {
   _postSessionDi = di;
   var m = document.getElementById('postSessionModal');
   if (!m) return;
-  if (typeof _dismissAddSetSuggestion === 'function') _dismissAddSetSuggestion();
   // Reset selecciones
   ['eimd1','eimd2','eimd3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.borderColor='var(--border)'; el && (el.style.background='var(--surface)'); });
   document.getElementById('psEimd').value = '';
