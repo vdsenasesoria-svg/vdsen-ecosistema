@@ -43,7 +43,7 @@ function topLevelFn(source, name) {
 const deepFreeze = o => { Object.values(o).forEach(v => { if (v && typeof v === 'object') deepFreeze(v); }); return Object.freeze(o); };
 
 // Real set-count region of the workout card (PASO 1-3 + FST7 ceiling).
-const region = between(client, '// ── Determinar numSeries: 3 pasos en orden', '// Para FST7: siempre exactamente 7 sets') +
+const region = between(client, '// ── Determinar numSeries', '// Para FST7: siempre exactamente 7 sets') +
   "if ((ej.technique || '').toLowerCase() === 'fst7') numSeries = Math.min(numSeries, (ej.sets || []).length || 7);";
 
 function setCount({ planSets = 4, LOGS = {}, week = 2, progrec = null, ej, y3t = false, effective = [] }) {

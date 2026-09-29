@@ -5373,26 +5373,12 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var progRec = progrec; // alias PascalCase — usado en _buildSetReferenceHtml
   // T487: the recommendation is informational only (hints/labels); nothing applies it automatically.
 
-  // ── Determinar numSeries: 3 pasos en orden ──────────────────────────────
+  // ── Determinar numSeries ─────────────────────────────────────────────────
   //
-  // PASO 1 — continuidad desde la semana anterior (ya aplicado arriba: plan/exMod)
-  // Si el cliente realizó MÁS series que el plan la semana pasada (progresó),
-  // esas series deben mostrarse esta semana también — sin depender de la etiqueta
-  // de acción del progrec (que puede ser 'maintain' después de un 'add_sets').
-  // EXCEPCIÓN: en Y3T el número de sets cambia por diseño según la fase S1/S2/S3,
-  // por lo que no se hereda de la semana anterior (S2 tiene más sets que S1 por diseño,
-  // y S1 del segundo ciclo tiene menos que S3 — esto es intencional, no una reducción).
-  if (CURRENT_WEEK > 1 && !_isY3T) {
-    var _lastWeekDone = 0;
-    for (var _lsc = 0; _lsc < 12; _lsc++) {
-      if (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lsc] &&
-          LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lsc].done) {
-        _lastWeekDone = _lsc + 1;
-      }
-    }
-    numSeries = Math.max(numSeries, _lastWeekDone);
-  }
-
+  // T488: previous-week execution alone never raises the prescribed/rendered set count (weekly
+  // volume / set topology is a Coach structural decision; history is evidence, not permission).
+  // The count is the Coach-authored plan (+ explicit exmod), never less than what was already
+  // executed in this session (see PASO 3).
   // PASO 2 — (T484) las recomendaciones de series/volumen (add_sets, reduce_sets, deload) ya NO
   // fuerzan el conteo: son informativas. Aquí solo se cuentan las series ya ejecutadas.
   var _doneCount = 0;
@@ -8155,15 +8141,7 @@ function buildBoostcampExercise(ej, di, ei) {
 
 
   // ── Determinar numSeries (misma lógica de 3 pasos que _buildExCard) ──
-  // Paso 1: continuidad desde semana anterior
-  if (CURRENT_WEEK > 1) {
-    var _lwdBC = 0;
-    for (var _lscBC = 0; _lscBC < 12; _lscBC++) {
-      if (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lscBC] &&
-          LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lscBC].done) _lwdBC = _lscBC + 1;
-    }
-    numSeries = Math.max(numSeries, _lwdBC);
-  }
+  // T488: no carry-over of last week's executed set count (see _buildExCard).
   // Paso 2: (T484) ninguna recomendación de series/volumen cambia el conteo renderizado
   var _dcBC = 0;
   for (var _scBC = 0; _scBC < 12; _scBC++) {
@@ -8773,18 +8751,8 @@ function _maybeSuggestExtraSet(di, ei, si) {
     var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
     if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
 
-    // PASO 1 — continuidad desde la semana anterior
-    if (CURRENT_WEEK > 1) {
-      var _lastWeekDone = 0;
-      for (var _lsc = 0; _lsc < 12; _lsc++) {
-        if (LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lsc] && LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+_lsc].done) {
-          _lastWeekDone = _lsc + 1;
-        }
-      }
-      numSeries = Math.max(numSeries, _lastWeekDone);
-    }
+    // T488: no carry-over of last week's executed set count (see _buildExCard).
 
-    // PASO 2 — progrec sobreescribe para cambios activos de volumen
     var _doneCount = 0;
     for (var _sc = 0; _sc < 12; _sc++) {
       if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
@@ -8794,7 +8762,7 @@ function _maybeSuggestExtraSet(di, ei, si) {
 
     // PASO 3 — nunca ocultar sets ya registrados esta sesión
     numSeries = Math.max(numSeries, _doneCount);
-    // Y3T: la fase define el techo; sin esto PASO 1 inflaría con datos de S3 anterior
+    // Y3T: la fase define el techo de series
     if (isY3TExercise(ej)) {
       var _effSetsEx = getEffectiveSets(ej, CURRENT_WEEK, getTotalWeeks());
       if (_effSetsEx.length > 0) numSeries = Math.min(numSeries, _effSetsEx.length);
