@@ -38,7 +38,7 @@ test('T495.3 no other plan/exposure mutator consumes progression output (see T48
   // T533: the athlete app may only CONSUME an overlay (APPLIED -> CONSUMED); it can never plan/apply/revert/override/stale one.
   assert.ok(!client.includes('VDSEN_EQUIPMENT_RESOLVER'));
   assert.ok(!/planApplication|applyOverlayTransaction|revertOverlayTransaction|overrideOverlayTransaction|staleOverlayTransaction|planReversal/.test(client));
-  assert.ok((client.match(/window\.VDSEN_APPLICATION_CONSUMER/g) || []).length === 1 && /consumeOverlayTransaction/.test(client));
+  assert.ok((client.match(/window\.VDSEN_APPLICATION_CONSUMER/g) || []).length === 1 && /recordConsumptionReceiptTransaction/.test(client) && !/consumeOverlayTransaction/.test(client));
 });
 
 test('T495.4 the authority state document exists and lists the open decisions', () => {

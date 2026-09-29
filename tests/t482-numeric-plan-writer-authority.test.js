@@ -152,7 +152,7 @@ test('T482.12 no new numerical writer: every plans/ writer is a Coach-authored o
 
 test('T482.13 the shadow module and its transactions never write plans/', () => {
   assert.ok(!/updateDoc|setDoc|addDoc|firestore|fetch\(|'plans'/i.test(shadowSource.replace(/\/\*[\s\S]*?\*\//, '')));
-  for (const [source, fn] of [[client, '_recordShadowProgression'], [coach, '_reconcileShadowAuto'], [coach, '_onShadowAutoAction']]) {
+  for (const [source, fn] of [[coach, '_materializeShadowRecords'], [coach, '_reconcileShadowAuto'], [coach, '_onShadowAutoAction']]) {
     const body = functionSource(source, fn);
     assert.ok(!/\b(tx|t)\.(set|update)\(\s*planRef/.test(body), fn);
     assert.ok(/tx\.get\(planRef\)/.test(body), fn + ' only reads the plan');

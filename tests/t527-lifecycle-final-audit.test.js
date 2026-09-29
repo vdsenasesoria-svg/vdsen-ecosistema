@@ -15,7 +15,7 @@ test('T527.1 (superseded by T529) lifecycle states exist but APPLIED is unreacha
 });
 test('T527.2 overlays have exactly one writer (tx.set); the client never writes them', () => {
   const src = read('assets/progression-application-consumer.js');
-  assert.equal((src.match(/tx\.set\(/g) || []).length, 1);
+  assert.equal((src.match(/tx\.set\(/g) || []).length, 2);   // canonical commit (Coach) + athlete receipt
   // T533: the athlete app READS overlays (flag-gated capture) but never writes them: only the consumer module writes.
   assert.ok(!/nextExposureOverlays\s*:/.test(read('vdsen-cliente.html')));
   assert.ok(src.indexOf('if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };') < src.indexOf("status: 'APPLIED'"), 'overlays only become APPLIED behind the flag');

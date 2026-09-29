@@ -88,19 +88,21 @@ test('T533.6 rendering never consumes: resolving/presenting many times performs 
   assert.equal(e.txCalls(), 0);
 });
 
-test('T533.7 consume needs PERSISTED evidence: local-only or unconfirmed sets do not consume; a persisted first set does, exactly once', async () => {
+test('T533.7 the athlete only ACKNOWLEDGES: a persisted first set appends ONE receipt (never canonical state); local-only sets do nothing', async () => {
   const e = env({ localLogs: { [LOGKEY]: FIRST } });      // started on screen only (meso not written yet)
   await vm.runInContext('_maybeConsumeOverlays("c")', e.context);
-  assert.equal(e.store.get('logs/c/mesos/p').progressionApplications[e.sc.rec.key].state, 'APPLIED', 'not persisted => not consumed');
+  assert.equal(e.store.get('logs/c/mesos/p').consumptionReceipts, undefined, 'not persisted => no receipt');
   e.store.docs.get('logs/c/mesos/p').entries[LOGKEY] = FIRST;                     // now persisted
   await vm.runInContext('_maybeConsumeOverlays("c")', e.context);
-  const rec = e.store.get('logs/c/mesos/p').progressionApplications[e.sc.rec.key];
-  assert.deepEqual([rec.state, rec.lifecycle.shownPrescription.appliedValue, rec.events.filter(x => x.state === 'CONSUMED').length], ['CONSUMED', 102.5, 1]);
-  assert.equal(e.context.LIFECYCLE_STATE.records[e.sc.rec.key].state, 'CONSUMED', 'local state follows');
+  const m = e.store.get('logs/c/mesos/p'), rec = m.progressionApplications[e.sc.rec.key];
+  assert.deepEqual(Object.keys(m.consumptionReceipts), [e.sc.rec.key]);
+  assert.equal(m.consumptionReceipts[e.sc.rec.key].appliedValue, 102.5);
+  assert.equal(rec.state, 'APPLIED', 'the athlete never moves canonical state (Firestore rules would deny it)');
+  assert.deepEqual(e.store.log, ['logs/c/mesos/p'], 'the only document written is the meso document, receipt key only');
   const before = e.txCalls();
   await vm.runInContext('_maybeConsumeOverlays("c")', e.context);
-  assert.equal(e.txCalls(), before, 'reload / next save does not create a second consume');
-  assert.equal(resolve(e).provenance, 'CANONICAL_OVERLAY', 'the started exposure keeps its effective prescription');
+  assert.equal(e.txCalls(), before, 'reload / next save does not create a second receipt');
+  assert.equal(resolve(e).provenance, 'CANONICAL_OVERLAY', 'the started exposure keeps its effective prescription even before the Coach records CONSUMED');
 });
 
 test('T533.8 executed vs prescribed vs base stay separate: athlete enters 100 while the overlay says 102.5', async () => {
@@ -109,7 +111,7 @@ test('T533.8 executed vs prescribed vs base stay separate: athlete enters 100 wh
   const m = e.store.get('logs/c/mesos/p');
   assert.equal(m.entries[LOGKEY].carga, '100', 'LOGS keep the executed value');
   assert.equal(m.nextExposureOverlays['ovl_' + e.sc.rec.key].appliedValue, 102.5, 'overlay keeps the prescribed/effective value');
-  assert.equal(m.progressionApplications[e.sc.rec.key].lifecycle.shownPrescription.appliedValue, 102.5);
+  assert.equal(m.consumptionReceipts[e.sc.rec.key].appliedValue, 102.5, 'the receipt records what was shown, not what was executed');
   assert.deepEqual(F.baseSets().map(s => s.load), [0, 0, 0], 'base plan values are a third, independent value');
   assert.equal(e.context.LOGS[LOGKEY].carga, '100', 'client LOGS untouched');
 });

@@ -1,6 +1,40 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ── T537: canonical progression authority boundary ─────────────────────────────────────────────────────────────
+    // The athlete owns EXECUTION truth (entries, units, history, week, consumption receipts). The canonical progression state below
+    // (records, next-exposure overlays, Monitor summaries) is PRESCRIPTION authority: only the OWNER Coach (clients/{uid}.coachId)
+    // may create or change it. Rules cannot read the app's NUMERIC_APPLY_ENABLED flag: they are one layer of defense in depth
+    // next to the runtime flag, the canary scope, the activation guard and the transition matrix in the consumer.
+    function isCoachUser() {
+      return request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+    }
+    function ownsClient(clientId) {
+      return isCoachUser()
+        && get(/databases/$(database)/documents/clients/$(clientId)).data.get('coachId', '') == request.auth.uid;
+    }
+    function canonicalKeys() {
+      return ['progressionApplications', 'nextExposureOverlays', 'progressionApplicationSummary'];
+    }
+    function createsCanonical() {
+      return request.resource.data.keys().hasAny(canonicalKeys());
+    }
+    function changesCanonical() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(canonicalKeys());
+    }
+    function holdsCanonical() {
+      return resource.data.keys().hasAny(canonicalKeys());
+    }
+    // Consumption acknowledgement: an append-only map keyed by record key. Existing receipts can never be changed or removed.
+    function receiptsAppendOnly() {
+      return !('consumptionReceipts' in resource.data)
+        || ('consumptionReceipts' in request.resource.data
+            && request.resource.data.consumptionReceipts.diff(resource.data.consumptionReceipts).changedKeys().size() == 0
+            && request.resource.data.consumptionReceipts.diff(resource.data.consumptionReceipts).removedKeys().size() == 0);
+    }
+    function receiptsBounded() {
+      return !('consumptionReceipts' in request.resource.data) || request.resource.data.consumptionReceipts.size() <= 200;
+    }
     match /coaches/{coachId} {
       allow read, write: if request.auth != null && request.auth.uid == coachId;
     }
@@ -32,7 +66,14 @@ service cloud.firestore {
     }
     match /exercises/{exerciseId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+      // T537: a coach may only create exercises in its own namespace and change/delete its own (or claim a legacy one without coachId).
+      // Exercise fields such as loadIncrement feed the progression equipment resolver, so another coach can never edit them.
+      allow create: if isCoachUser() && request.resource.data.coachId == request.auth.uid;
+      allow update: if isCoachUser()
+        && (resource.data.get('coachId', '') == request.auth.uid
+            || (resource.data.get('coachId', '') == '' && request.resource.data.coachId == request.auth.uid))
+        && request.resource.data.get('coachId', '') == request.auth.uid;
+      allow delete: if isCoachUser() && resource.data.get('coachId', '') == request.auth.uid;
     }
     match /plans/{planId} {
       // Coach lee solo sus propios planes; cliente lee planes donde es el clientId.
@@ -79,13 +120,25 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
     match /logs/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow read, write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
-      // Sub-colección de rotación por mesociclo (FASE 36 — T1 dual-write)
-      // Mismo aislamiento: solo el propio cliente o cualquier coach autenticado.
+      // Reads are unchanged (the athlete and any authenticated coach: legacy, reported separately).
+      allow read: if request.auth != null && (request.auth.uid == userId || isCoachUser());
+      // ATHLETE: execution fields only. Canonical progression fields can neither be created, changed, removed nor deleted with.
+      allow create: if request.auth != null && request.auth.uid == userId && !createsCanonical();
+      allow update: if request.auth != null && request.auth.uid == userId && !changesCanonical();
+      allow delete: if request.auth != null && request.auth.uid == userId && !holdsCanonical();
+      // COACH: legacy access to non-canonical fields is unchanged; canonical fields only for the OWNER coach of this client.
+      allow create: if isCoachUser() && (!createsCanonical() || ownsClient(userId));
+      allow update: if isCoachUser() && (!changesCanonical() || ownsClient(userId));
+      allow delete: if isCoachUser() && (!holdsCanonical() || ownsClient(userId));
+      // Sub-colección de rotación por mesociclo (FASE 36 — T1 dual-write): same boundary + the athlete's append-only consumption receipts.
       match /mesos/{planId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-        allow read, write: if request.auth != null && exists(/databases/$(database)/documents/coaches/$(request.auth.uid));
+        allow read: if request.auth != null && (request.auth.uid == userId || isCoachUser());
+        allow create: if request.auth != null && request.auth.uid == userId && !createsCanonical() && receiptsBounded();
+        allow update: if request.auth != null && request.auth.uid == userId && !changesCanonical() && receiptsAppendOnly() && receiptsBounded();
+        allow delete: if request.auth != null && request.auth.uid == userId && !holdsCanonical();
+        allow create: if isCoachUser() && (!createsCanonical() || ownsClient(userId));
+        allow update: if isCoachUser() && (!changesCanonical() || ownsClient(userId));
+        allow delete: if isCoachUser() && (!holdsCanonical() || ownsClient(userId));
       }
     }
     match /fichas_onboarding/{docId} {

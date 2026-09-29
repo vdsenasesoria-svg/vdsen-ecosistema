@@ -72,7 +72,6 @@ function _updateOfflineBanner() {
   if (b) b.style.display = navigator.onLine ? 'none' : 'block';
 }
 window.addEventListener('online',  _updateOfflineBanner);
-window.addEventListener('online', function() { _drainShadowProgression().catch(function(e) { console.warn('Shadow recovery:', e); }); });
 window.addEventListener('offline', _updateOfflineBanner);
 window.addEventListener('load',    _updateOfflineBanner);
 </script>
@@ -514,7 +513,7 @@ var ACTIVE_GYM_ID = '';
 var ACTIVE_GYM_NAME = '';
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
-var LIFECYCLE_STATE = { uid: null, planId: null, planDoc: null, records: {}, overlays: {}, interventions: [], consumeBusy: {} }; // T533: solo se llena con la bandera de aplicación encendida (apagada en producción)
+var LIFECYCLE_STATE = { uid: null, planId: null, planDoc: null, records: {}, overlays: {}, receipts: {}, interventions: [], consumeBusy: {} }; // T533: solo se llena con la bandera de aplicación encendida (apagada en producción)
 var CALIB_VOLUMETRICA = null; // Módulo A Ehrenstein — calibración volumétrica {VME_individual, VMR_individual}
 var CLIENT_ADVANCED = null; // módulos opcionales, read-only y filtrados por visibilidad explícita
 var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el tab de entreno
@@ -2136,8 +2135,7 @@ async function loadPlan(user) {
     DIA_ACTIVO = _rDia;
     CURRENT_WEEK = REAL_WEEK;
     goTab(_rTab);
-    // A queued audit belongs to the persisted session, not to this page load.
-    _drainShadowProgression().catch(function(e) { console.warn('Shadow recovery:', e); });
+    try { localStorage.removeItem('vdsen_shadow_progression_queue'); } catch(_q) {}   // T537: legacy recovery queue is obsolete
     // Restaurar rest timer si un page reload interrumpió el descanso
     setTimeout(function() {
       var _savedEnd = parseInt(localStorage.getItem('vdsen_restEnd') || '0');
@@ -2231,8 +2229,6 @@ async function loadPlan(user) {
       _liveUnsubLogs = FB.onSnapshot(FB.doc(FB.db, 'logs', user.uid), function(snap) {
         if (!snap.exists()) return;
         var d = snap.data();
-        if (_readShadowQueue().some(function(item) { return item.uid === user.uid && item.planId === ACTIVE_PLAN_ID; }))
-          _drainShadowProgression().catch(function(e) { console.warn('Shadow recovery:', e); });
         var ts = d.updatedAt || 0;
         var newerRoot = _selectLogAuthority({ planId: ACTIVE_PLAN_ID, updatedAt: _logsAuthorityUpdatedAt, entries: LOGS },
           d, ACTIVE_PLAN_ID) === d;
@@ -10107,70 +10103,22 @@ async function _doSaveLogs() {
   }
 }
 
-// A bounded, user/plan-scoped recovery intent for a session already saved in
-// logs. Retain failed audits across reloads; a transaction rechecks the source.
-function _readShadowQueue() {
-  try {
-    var queue = JSON.parse(localStorage.getItem('vdsen_shadow_progression_queue') || '[]');
-    if (!Array.isArray(queue)) return [];
-    return queue.filter(function(item) { return item && item.queuedAt &&
-      Date.now() - item.queuedAt < 30 * 86400000; }).slice(-32);
-  } catch(e) { return []; }
-}
-
-function _writeShadowQueue(queue) {
-  try { localStorage.setItem('vdsen_shadow_progression_queue', JSON.stringify(queue.slice(-32))); return true; }
-  catch(e) { console.warn('Shadow recovery queue unavailable:', e); return false; }
-}
-
-function _queueShadowProgression(uid, planId, week, dayIndex, parentRec) {
-  if (!uid || !planId || !parentRec || !parentRec.calculatedAt ||
-      !Array.isArray(parentRec.recommendations) || !parentRec.recommendations.length) return false;
-  var queue = _readShadowQueue();
-  var key = JSON.stringify([uid, planId, week, dayIndex, parentRec.calculatedAt]);
-  if (!queue.some(function(item) { return item.key === key; }))
-    queue.push({ key: key, uid: uid, planId: planId, week: week, dayIndex: dayIndex,
-      parentRec: parentRec, queuedAt: Date.now() });
-  return _writeShadowQueue(queue);
-}
-
-async function _drainShadowProgression() {
-  if (window._shadowDrainInFlight) { window._shadowDrainRequested = true; return false; }
-  if (!FB || !USER || !ACTIVE_PLAN_ID) return false;
-  window._shadowDrainInFlight = true;
-  try {
-    var uid = USER.uid, planId = ACTIVE_PLAN_ID;
-    var queue = _readShadowQueue().filter(function(item) { return item.uid === uid && item.planId === planId; });
-    for (var i = 0; i < queue.length; i++) {
-      if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) break;
-      var item = queue[i];
-      try {
-        var recorded = await _recordShadowProgression(uid, planId, item.week, item.dayIndex, item.parentRec);
-        if (recorded) _writeShadowQueue(_readShadowQueue().filter(function(saved) { return saved.key !== item.key; }));
-      } catch(e) { console.warn('Shadow recovery deferred:', e); break; }
-    }
-    return true;
-  } finally {
-    window._shadowDrainInFlight = false;
-    if (window._shadowDrainRequested) {
-      window._shadowDrainRequested = false;
-      Promise.resolve().then(_drainShadowProgression).catch(function(e) { console.warn('Shadow recovery:', e); });
-    }
-  }
-}
+// T537: the athlete app NO LONGER creates progression application records (no shadow queue, no recovery drain): Firestore rules reserve every
+// canonical progression field to the owner Coach, which materializes PENDING records from the persisted progrec_* evidence.
 
 // ── T533: APPLICATION LIFECYCLE on the athlete app (behind NUMERIC_APPLY_ENABLED; false in production => every helper is a no-op) ──
 // One authority decides the effective prescription (VDSEN_EFFECTIVE_PRESCRIPTION); the only lifecycle write the athlete app can make is
-// APPLIED -> CONSUMED (VDSEN_APPLICATION_CONSUMER.consumeOverlayTransaction), and only after the first working set is PERSISTED.
+// APPLIED -> CONSUMED (VDSEN_APPLICATION_CONSUMER.recordConsumptionReceiptTransaction: an append-only receipt), and only after the first working set is PERSISTED.
 function _lifecycleEnabled() { var e = window.VDSEN_EFFECTIVE_PRESCRIPTION; return !!(e && e.NUMERIC_APPLY_ENABLED === true); }
 function _captureLifecycleState(uid, planId, planData, clientData, mesoSnap) {
-  LIFECYCLE_STATE = { uid: uid, planId: planId, planDoc: null, records: {}, overlays: {}, interventions: [], consumeBusy: {} };
+  LIFECYCLE_STATE = { uid: uid, planId: planId, planDoc: null, records: {}, overlays: {}, receipts: {}, interventions: [], consumeBusy: {} };
   if (!_lifecycleEnabled()) return;
   var m = (mesoSnap && typeof mesoSnap.exists === 'function' && mesoSnap.exists()) ? mesoSnap.data() : null;
   if (!m || m.planId !== planId) return;
   LIFECYCLE_STATE.planDoc = planData || null;
   LIFECYCLE_STATE.records = m.progressionApplications || {};
   LIFECYCLE_STATE.overlays = m.nextExposureOverlays || {};
+  LIFECYCLE_STATE.receipts = m.consumptionReceipts || {};
   LIFECYCLE_STATE.interventions = Array.isArray(clientData && clientData.coachInterventions) ? clientData.coachInterventions : [];
 }
 function _resolveOverlayForExercise(ej, di, unit) {
@@ -10198,11 +10146,11 @@ function _autoAdjustHtml(ej) {
 async function _maybeConsumeOverlays(uid) {
   var eff = window.VDSEN_EFFECTIVE_PRESCRIPTION, cons = window.VDSEN_APPLICATION_CONSUMER, st = LIFECYCLE_STATE;
   if (!_lifecycleEnabled() || !cons || !FB || !USER || USER.uid !== uid || !st || st.uid !== uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc) return;
-  var mesoRef = FB.doc(FB.db, 'logs', uid, 'mesos', st.planId);
+  var mesoRef = FB.doc(FB.db, 'logs', uid, 'mesos', st.planId), rootRef = FB.doc(FB.db, 'logs', uid);
   var keys = Object.keys(st.overlays);
   for (var i = 0; i < keys.length; i++) {
     var o = st.overlays[keys[i]], r = o && st.records[o.sourceRecordKey];
-    if (!o || !r || o.status !== 'APPLIED' || r.state !== 'APPLIED' || st.consumeBusy[r.key]) continue;
+    if (!o || !r || o.status !== 'APPLIED' || r.state !== 'APPLIED' || st.consumeBusy[r.key] || st.receipts[r.key]) continue;
     if (!eff.pidExposureStarted(LOGS, r.prescriptionExerciseId, o.target.week, o.target.dayIndex)) continue;   // never on render: persisted execution only
     var day = (st.planDoc.days || []).filter(function(d){ return d.dayIndex === o.target.dayIndex; })[0];
     var pex = ((day && day.exercises) || []).filter(function(e){ return e.prescriptionExerciseId === r.prescriptionExerciseId; })[0];
@@ -10211,117 +10159,16 @@ async function _maybeConsumeOverlays(uid) {
     if (shownEff.provenance !== 'CANONICAL_OVERLAY') continue;
     st.consumeBusy[r.key] = true;
     try {
+      // T537: the athlete can only ACKNOWLEDGE (append-only receipt); the owner Coach turns it into APPLIED -> CONSUMED.
       var res = await FB.runTransaction(FB.db, function(tx) {
-        return cons.consumeOverlayTransaction(tx, { meso: mesoRef }, { recordKey: r.key, clientId: uid, actorId: uid, now: new Date().toISOString(),
+        return cons.recordConsumptionReceiptTransaction(tx, { meso: mesoRef, root: rootRef }, { recordKey: r.key, clientId: uid, now: new Date().toISOString(),
           shown: { provenance: shownEff.provenance, overlayKey: shownEff.overlayKey, dimension: shownEff.dimension, appliedValue: shownEff.appliedValue } },
           { isCurrent: function() { return !!USER && USER.uid === uid && ACTIVE_PLAN_ID === st.planId; } });
       });
-      if (res && (res.written || res.idempotent) && LIFECYCLE_STATE === st) {
-        if (res.record) st.records[r.key] = res.record; if (res.overlay) st.overlays[o.key] = res.overlay;
-      }
-    } catch (e) { console.warn('[lifecycle] consume:', e && e.code, e && e.message); }
+      if (res && (res.written || res.idempotent) && LIFECYCLE_STATE === st) st.receipts[r.key] = res.receipt || { recordKey: r.key };
+    } catch (e) { console.warn('[lifecycle] receipt:', e && e.code, e && e.message); }
     finally { delete st.consumeBusy[r.key]; }
   }
-}
-
-
-// Phase 1: audit only. The mesocycle log owns the records; the legacy log
-// receives their compact Monitor projection in the same transaction.
-async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) {
-  var shadow = window.VDSEN_AUTO_APPLY_SHADOW;
-  if (!shadow || !FB || !USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId ||
-      !parentRec || !Array.isArray(parentRec.recommendations) || !parentRec.recommendations.length) return false;
-  var clientRef = FB.doc(FB.db, 'clients', uid);
-  var planRef = FB.doc(FB.db, 'plans', planId);
-  var mesoRef = FB.doc(FB.db, 'logs', uid, 'mesos', planId);
-  var rootRef = FB.doc(FB.db, 'logs', uid);
-  return FB.runTransaction(FB.db, async function(tx) {
-    if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId) return false;
-    // Firestore requires every transaction read before its first write.
-    var clientSnap = await tx.get(clientRef);
-    var planSnap = await tx.get(planRef);
-    var mesoSnap = await tx.get(mesoRef);
-    var rootSnap = await tx.get(rootRef);
-    if (!clientSnap.exists() || !planSnap.exists() || !rootSnap.exists()) return false;
-    var clientData = clientSnap.data(), planData = planSnap.data(), mesoData = mesoSnap.exists() ? mesoSnap.data() : {};
-    var rootData = rootSnap.data();
-    if (!USER || USER.uid !== uid || ACTIVE_PLAN_ID !== planId || clientData.activePlanId !== planId ||
-        (mesoSnap.exists() && mesoData.planId !== planId) || rootData.planId !== planId) return false;
-    var progKey = 'progrec_' + week + '_' + dayIndex;
-    function matchesSource(source) {
-      return !!(source && source.calculatedAt === parentRec.calculatedAt &&
-        Array.isArray(source.recommendations) && source.recommendations.length === parentRec.recommendations.length &&
-        source.recommendations.every(function(r, index) {
-        var scope = { clientId: uid, planId: planId, week: week, dayIndex: dayIndex,
-          calculatedAt: parentRec.calculatedAt };
-        return shadow.idempotencyKey(Object.assign({}, scope, { recommendation: r })) ===
-          shadow.idempotencyKey(Object.assign({}, scope, { recommendation: parentRec.recommendations[index] }));
-        }));
-    }
-    var mesoSource = (mesoData.entries || {})[progKey];
-    var rootSource = (rootData.entries || {})[progKey];
-    var mesoAt = Date.parse(mesoSource && mesoSource.calculatedAt) || 0;
-    var rootAt = Date.parse(rootSource && rootSource.calculatedAt) || 0;
-    var rootLogNewer = _selectLogAuthority(mesoData, rootData, planId) === rootData;
-    // A newer root log may have removed this source; never revive it from an old mirror.
-    if (rootLogNewer && (!rootSource || !Array.isArray(rootSource.recommendations) || rootAt < mesoAt)) return false;
-    // With equal log versions, conflicting evidence at the same timestamp is ambiguous.
-    if (!rootLogNewer && rootAt && rootAt === mesoAt &&
-        JSON.stringify(rootSource.recommendations) !== JSON.stringify(mesoSource.recommendations)) return false;
-    var rootNewer = rootLogNewer || rootAt > mesoAt;
-    var authoritativeSource = rootNewer ? rootSource : mesoSource;
-    var sourceMatches = matchesSource(authoritativeSource);
-    // A future parent may simply be waiting for its cached log write to sync.
-    if (!sourceMatches && Math.max(rootAt, mesoAt) < (Date.parse(parentRec.calculatedAt) || 0)) return false;
-    var repairMirror = rootNewer && Array.isArray(rootSource && rootSource.recommendations);
-    if (rootNewer && !repairMirror) return false;
-    var records = Object.assign({}, mesoData.progressionApplications || {});
-    var at = new Date().toISOString();
-    parentRec.recommendations.forEach(function(rec) {
-      if (!rec) return;
-      var input = { clientId: uid, planId: planId, activePlanId: clientData.activePlanId,
-        plan: planData, interventions: clientData.coachInterventions,
-        entries: rootLogNewer ? rootData.entries : mesoData.entries,
-        week: week, dayIndex: dayIndex, calculatedAt: parentRec.calculatedAt,
-        recommendation: rec, sourceMatches: sourceMatches,
-        sourcePidCount: rec.prescriptionExerciseId
-          ? parentRec.recommendations.filter(function(r) { return r && r.prescriptionExerciseId === rec.prescriptionExerciseId; }).length : 0 };
-      var candidate = shadow.buildRecord(input, at);
-      if (candidate.state === shadow.STATES.PENDING && candidate.nextExposure &&
-          (_getSessionLifecycleState(mesoData.entries, candidate.nextExposure.week, candidate.nextExposure.dayIndex) !== 'NOT_STARTED' ||
-           _getSessionLifecycleState(rootData.entries, candidate.nextExposure.week, candidate.nextExposure.dayIndex) !== 'NOT_STARTED'))
-        candidate = shadow.markStale(candidate, shadow.REASONS.EXPOSURE_PASSED, at);
-      if (records[candidate.key]) {
-        var prior = records[candidate.key];
-        if (prior.planId !== planId || prior.clientId !== uid ||
-            prior.prescriptionExerciseId !== candidate.prescriptionExerciseId ||
-            prior.source.calculatedAt !== candidate.source.calculatedAt) throw new Error('SHADOW_KEY_COLLISION');
-        if (prior.state === shadow.STATES.PENDING && candidate.state === shadow.STATES.STALE)
-          records[candidate.key] = shadow.markStale(prior, candidate.reasonCode, at);
-        return;
-      }
-      Object.keys(records).forEach(function(key) {
-        var old = records[key];
-        if (old && old.state === shadow.STATES.PENDING && old.prescriptionExerciseId &&
-            old.prescriptionExerciseId === candidate.prescriptionExerciseId &&
-            old.source.week === week && old.source.dayIndex === dayIndex)
-          records[key] = shadow.markStale(old, shadow.REASONS.SOURCE_MISMATCH, at);
-      });
-      records[candidate.key] = candidate;
-    });
-    var summary = shadow.summarize(records, planId);
-    if (repairMirror) {
-      var copyRootEntries = rootLogNewer;
-      var repairPayload = { planId: planId,
-        entries: copyRootEntries ? rootData.entries : Object.assign({}, mesoData.entries || {}, { [progKey]: rootSource }),
-        progressionApplications: records, progressionApplicationSummary: summary };
-      if (copyRootEntries) repairPayload.updatedAt = rootData.updatedAt;
-      tx.set(mesoRef, repairPayload, { mergeFields: Object.keys(repairPayload) });
-    }
-    else tx.set(mesoRef, { progressionApplications: records, progressionApplicationSummary: summary }, { merge: true });
-    tx.set(rootRef, { progressionApplicationSummary: summary }, { merge: true });
-    return true;
-  });
 }
 
 function _showSaveOk() {
@@ -14331,14 +14178,12 @@ async function submitPostSession() {
     // Calcular y guardar recomendaciones de progresión
     // Todo envuelto en try/catch: si el algoritmo falla, el guardado de la sesión sigue adelante.
     // Sanitizar NaN/Infinity → null (Firestore rechaza valores no-finitos).
-    var _recForShadow = null;
     try {
       var rec = calculateProgression(di, postData);
       if (rec) {
         var _sanitize = function(k, v) { return (typeof v === 'number' && !isFinite(v)) ? null : v; };
         var recSafe = JSON.parse(JSON.stringify(rec, _sanitize));
         LOGS[progKey] = recSafe;
-        _recForShadow = recSafe;
         // P5: Longitudinal Engine — engine_state persiste en logs para la próxima generación
         if (rec.engineState) {
           LOGS['engine_state'] = JSON.parse(JSON.stringify(rec.engineState, _sanitize));
@@ -14357,23 +14202,6 @@ async function submitPostSession() {
       if (hadProg) LOGS[progKey] = previousProg; else delete LOGS[progKey];
       if (hadEngineState) LOGS.engine_state = previousEngineState; else delete LOGS.engine_state;
       return false;
-    }
-    if (_recForShadow && _uidAtPostStart && _planAtPostStart) {
-      var _shadowQueued = _queueShadowProgression(_uidAtPostStart, _planAtPostStart, _weekAtPostStart, di, _recForShadow);
-      var _noDurableRetry = '⚠ Evaluación AUTO no registrada: no se pudo guardar un reintento local. Avisa a tu coach.';
-      try {
-        var _shadowSaved = await _recordShadowProgression(_uidAtPostStart, _planAtPostStart, _weekAtPostStart, di, _recForShadow);
-        if (_shadowSaved && _shadowQueued) {
-          var _shadowKey = JSON.stringify([_uidAtPostStart, _planAtPostStart, _weekAtPostStart, di, _recForShadow.calculatedAt]);
-          _writeShadowQueue(_readShadowQueue().filter(function(item) { return item.key !== _shadowKey; }));
-        }
-        if (!_shadowSaved && USER && USER.uid === _uidAtPostStart && ACTIVE_PLAN_ID === _planAtPostStart)
-          showToast(_shadowQueued ? '⚠ Evaluación AUTO pendiente de sincronización.' : _noDurableRetry, true);
-      } catch(shadowErr) {
-        console.warn('Shadow progression audit failed:', shadowErr);
-        if (USER && USER.uid === _uidAtPostStart && ACTIVE_PLAN_ID === _planAtPostStart)
-          showToast(_shadowQueued ? '⚠ Evaluación AUTO pendiente de sincronización.' : _noDurableRetry, true);
-      }
     }
     if (CURRENT_WEEK === _weekAtPostStart && DIA_ACTIVO === _dayAtPostStart) {
       if (_saved !== false) showSessionSummary(di);

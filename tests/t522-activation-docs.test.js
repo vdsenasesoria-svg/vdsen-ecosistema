@@ -25,7 +25,7 @@ test('T522.2 the checklist contains every required item and only claims what the
   assert.ok(line('Validación del runner T478').startsWith('- [ ]') && /NON_BLOCKING_TECHNICAL_PENDING/.test(line('Validación del runner T478')), 'Windows is never marked PASS');
   assert.ok(line('NUMERIC_APPLY_ENABLED').startsWith('- [ ]'));
   assert.ok(line('Canario').startsWith('- [x]') && line('Reversión').startsWith('- [x]'));
-  assert.ok(/17 de 22 cumplidos; pendientes bloqueantes: 4/.test(c) && /NO se activa/.test(c));
+  assert.ok(/18 de 23 cumplidos; pendientes bloqueantes: 4/.test(c) && /NO se activa/.test(c));
 });
 
 test('T522.3 the readiness report uses only static / synthetic evidence and states the flag', () => {

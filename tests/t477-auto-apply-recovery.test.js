@@ -68,93 +68,13 @@ function contextFor(f, storage, online = () => true) {
     _logsWriteInFlight: 0, _showSaveOk: () => {},
     document: { getElementById: () => null }, showToast: () => {}, console };
   vm.createContext(context);
-  const names = ['_doSaveLogs', '_recordShadowProgression', '_readShadowQueue',
-    '_writeShadowQueue', '_queueShadowProgression', '_drainShadowProgression',
+  const names = ['_doSaveLogs',
     '_getSessionCompletionState', '_sessionHasRealLoggedSets', '_getSessionLifecycleState',
     '_selectLogAuthority',
     'submitPostSession'];
   vm.runInContext(names.map(name => functionSource(client, name)).join('\n'), context);
   return context;
 }
-
-test('network failure keeps a scoped durable task; reconnect and reentry record it once', async () => {
-  const f = fixture(), map = new Map();
-  const storage = { getItem: key => map.get(key) || null,
-    setItem: (key, value) => map.set(key, value), removeItem: key => map.delete(key) };
-  let connected = false;
-  const first = contextFor(f, storage, () => connected);
-  assert.equal(first._queueShadowProgression('client-A', 'plan-A', 1, 0, parent), true);
-  await assert.rejects(first._recordShadowProgression('client-A', 'plan-A', 1, 0, parent));
-  assert.equal(f.docs.get('logs/client-A/mesos/plan-A').progressionApplications, undefined);
-  first.USER = { uid: 'client-B' };
-  connected = true;
-  await first._drainShadowProgression();
-  assert.equal(f.docs.get('logs/client-A/mesos/plan-A').progressionApplications, undefined);
-  first.USER = { uid: 'client-A' };
-  first.ACTIVE_PLAN_ID = 'plan-B';
-  await first._drainShadowProgression();
-  assert.equal(f.docs.get('logs/client-A/mesos/plan-A').progressionApplications, undefined);
-  const reentered = contextFor(f, storage, () => connected);
-  await reentered._drainShadowProgression();
-  await reentered._drainShadowProgression();
-  const meso = f.docs.get('logs/client-A/mesos/plan-A');
-  assert.equal(Object.keys(meso.progressionApplications).length, 1);
-  assert.equal(Object.values(meso.progressionApplications)[0].state, 'PENDING');
-  assert.equal(f.docs.get('logs/client-A').progressionApplicationSummary.autoCount, 1);
-  assert.equal(reentered._readShadowQueue().length, 0);
-  assert.equal(shadow.attemptNumericApply().reasonCode, 'MAGNITUDE_POLICY_MISSING');
-
-  const reconnectFixture = fixture(), reconnectStore = new Map();
-  let available = false;
-  const reconnect = contextFor(reconnectFixture, { getItem: key => reconnectStore.get(key) || null,
-    setItem: (key, value) => reconnectStore.set(key, value) }, () => available);
-  assert.equal(reconnect._queueShadowProgression('client-A', 'plan-A', 1, 0, parent), true);
-  await assert.rejects(reconnect._recordShadowProgression('client-A', 'plan-A', 1, 0, parent));
-  available = true;
-  await reconnect._drainShadowProgression();
-  await reconnect._drainShadowProgression();
-  assert.equal(Object.keys(reconnectFixture.docs.get('logs/client-A/mesos/plan-A').progressionApplications).length, 1);
-  assert.equal(reconnect._readShadowQueue().length, 0);
-});
-
-test('root success plus stale meso mirror repairs source without a false STALE', async () => {
-  const old = { calculatedAt: '2026-09-26T12:00:00.000Z', recommendations: [rec] };
-  const f = fixture(old), map = new Map();
-  const storage = { getItem: key => map.get(key) || null,
-    setItem: (key, value) => map.set(key, value), removeItem: key => map.delete(key) };
-  const ctx = contextFor(f, storage);
-  ctx.FB.setDoc = async (ref, value) => {
-    if (ref === 'logs/client-A/mesos/plan-A') throw new Error('mirror unavailable');
-    f.docs.set(ref, { ...f.docs.get(ref), ...structuredClone(value) });
-  };
-  assert.equal(await ctx._doSaveLogs(), true);
-  assert.equal(await ctx._recordShadowProgression('client-A', 'plan-A', 1, 0, parent), true);
-  const meso = f.docs.get('logs/client-A/mesos/plan-A');
-  assert.equal(meso.entries.progrec_1_0.calculatedAt, at);
-  assert.equal(Object.values(meso.progressionApplications)[0].state, 'PENDING');
-  assert.equal(f.docs.get('logs/client-A').progressionApplicationSummary.autoCount, 1);
-});
-
-test('reentry adopts newer root before repairing mirror and later save keeps that execution', async () => {
-  const old = { calculatedAt: '2026-09-26T12:00:00.000Z', recommendations: [rec] };
-  const f = fixture(old), map = new Map();
-  f.docs.get('logs/client-A/mesos/plan-A').updatedAt = 100;
-  f.docs.get('logs/client-A').updatedAt = 200;
-  f.docs.get('logs/client-A/mesos/plan-A').entries.done_1_0 = { ts: 100 };
-  f.docs.get('logs/client-A').entries.done_1_0 = { ts: 200 };
-  const ctx = contextFor(f, { getItem: key => map.get(key) || null,
-    setItem: (key, value) => map.set(key, value) });
-  const chosen = ctx._selectLogAuthority(f.docs.get('logs/client-A/mesos/plan-A'),
-    f.docs.get('logs/client-A'), 'plan-A');
-  assert.equal(chosen.entries.progrec_1_0.calculatedAt, at);
-  assert.ok(client.includes('var logData = _selectLogAuthority('));
-  ctx.LOGS = structuredClone(chosen.entries);
-  assert.equal(await ctx._recordShadowProgression('client-A', 'plan-A', 1, 0, parent), true);
-  assert.equal(f.docs.get('logs/client-A/mesos/plan-A').entries.done_1_0.ts, 200);
-  assert.equal(await ctx._doSaveLogs(), true);
-  assert.equal(f.docs.get('logs/client-A/mesos/plan-A').entries.progrec_1_0.calculatedAt, at);
-  assert.equal(f.docs.get('logs/client-A').entries.progrec_1_0.calculatedAt, at);
-});
 
 test('root listener adopts newer same-count entries instead of leaving LOGS stale', () => {
   const old = { calculatedAt: '2026-09-26T12:00:00.000Z', recommendations: [rec] };
@@ -177,92 +97,6 @@ test('root listener adopts newer same-count entries instead of leaving LOGS stal
   vm.runInContext('globalThis.rootListener = (' + client.slice(start, end + 8) + ')', ctx);
   ctx.rootListener({ exists: () => true, data: () => structuredClone(f.docs.get('logs/client-A')) });
   assert.equal(ctx.LOGS.progrec_1_0.calculatedAt, at);
-});
-
-test('old task cannot produce PENDING when root has a newer execution than mirror', async () => {
-  const old = { calculatedAt: '2026-09-26T12:00:00.000Z', recommendations: [rec] };
-  const f = fixture(old), map = new Map();
-  const ctx = contextFor(f, { getItem: key => map.get(key) || null,
-    setItem: (key, value) => map.set(key, value) });
-  assert.equal(await ctx._recordShadowProgression('client-A', 'plan-A', 1, 0, old), true);
-  const meso = f.docs.get('logs/client-A/mesos/plan-A');
-  assert.equal(meso.entries.progrec_1_0.calculatedAt, at);
-  assert.equal(Object.values(meso.progressionApplications)[0].state, 'STALE');
-  assert.equal(f.docs.get('logs/client-A').progressionApplicationSummary.autoCount, 0);
-});
-
-test('newer root without a source does not authorize old meso evidence', async () => {
-  const f = fixture(), map = new Map();
-  f.docs.get('logs/client-A/mesos/plan-A').updatedAt = 100;
-  f.docs.get('logs/client-A').updatedAt = 200;
-  delete f.docs.get('logs/client-A').entries.progrec_1_0;
-  const ctx = contextFor(f, { getItem: key => map.get(key) || null,
-    setItem: (key, value) => map.set(key, value) });
-  assert.equal(await ctx._recordShadowProgression('client-A', 'plan-A', 1, 0, parent), false);
-  assert.equal(f.docs.get('logs/client-A/mesos/plan-A').progressionApplications, undefined);
-});
-
-test('denied local queue reports no durable retry only if audit transaction fails', async () => {
-  const f = fixture();
-  const ctx = contextFor(f, { getItem: () => null, setItem: () => { throw new Error('quota'); } });
-  ctx.console = { warn: () => {} };
-  const messages = [];
-  ctx.document.getElementById = id => ({ value: id === 'psEimd' ? '5' : 'no' });
-  ctx.showToast = message => messages.push(message);
-  ctx.closePostSessionModal = () => {};
-  ctx.showSessionSummary = () => {};
-  ctx.calculateProgression = () => parent;
-  ctx._confirmSessionDone = async () => true;
-  ctx._postSessionDi = 0;
-  ctx.CURRENT_WEEK = 1;
-  ctx.DIA_ACTIVO = 0;
-  ctx._postSessionSubmitting = false;
-  ctx._recordShadowProgression = async () => { throw new Error('unavailable'); };
-  await ctx.submitPostSession();
-  assert.equal(messages.length, 1);
-  assert.match(messages[0], /no se pudo guardar (?:un )?reintento/i);
-  assert.doesNotMatch(messages[0], /pendiente/i);
-  messages.length = 0;
-  ctx._recordShadowProgression = async () => true;
-  await ctx.submitPostSession();
-  assert.deepEqual(messages, []);
-});
-
-test('source still lagging on both paths remains pending sync, not STALE', async () => {
-  const old = { calculatedAt: '2026-09-26T12:00:00.000Z', recommendations: [rec] };
-  const f = fixture(old), map = new Map();
-  f.docs.get('logs/client-A').entries.progrec_1_0 = structuredClone(old);
-  const ctx = contextFor(f, { getItem: key => map.get(key) || null,
-    setItem: (key, value) => map.set(key, value) });
-  assert.equal(await ctx._recordShadowProgression('client-A', 'plan-A', 1, 0, parent), false);
-  assert.equal(f.docs.get('logs/client-A/mesos/plan-A').progressionApplications, undefined);
-  assert.equal(f.docs.get('logs/client-A').progressionApplicationSummary, undefined);
-});
-
-test('late recovery cannot leave PENDING after the next exposure has started', async () => {
-  const f = fixture(), map = new Map();
-  f.docs.get('logs/client-A').entries.log_1_2_0_s0 = { done: true, ts: Date.now() };
-  const ctx = contextFor(f, { getItem: key => map.get(key) || null,
-    setItem: (key, value) => map.set(key, value) });
-  assert.equal(ctx._queueShadowProgression('client-A', 'plan-A', 1, 0, parent), true);
-  await ctx._drainShadowProgression();
-  const item = Object.values(f.docs.get('logs/client-A/mesos/plan-A').progressionApplications)[0];
-  assert.equal(item.state, 'STALE');
-  assert.equal(item.reasonCode, 'EXPOSURE_PASSED');
-  assert.equal(f.docs.get('logs/client-A').progressionApplicationSummary.autoCount, 0);
-});
-
-test('retry stales an existing PENDING record if its target started meanwhile', async () => {
-  const f = fixture(), map = new Map();
-  const ctx = contextFor(f, { getItem: key => map.get(key) || null,
-    setItem: (key, value) => map.set(key, value) });
-  assert.equal(await ctx._recordShadowProgression('client-A', 'plan-A', 1, 0, parent), true);
-  f.docs.get('logs/client-A').entries.log_1_2_0_s0 = { done: true, ts: Date.now() };
-  assert.equal(await ctx._recordShadowProgression('client-A', 'plan-A', 1, 0, parent), true);
-  const apps = Object.values(f.docs.get('logs/client-A/mesos/plan-A').progressionApplications);
-  assert.equal(apps.length, 1);
-  assert.equal(apps[0].state, 'STALE');
-  assert.equal(apps[0].reasonCode, 'EXPOSURE_PASSED');
 });
 
 test('OPEN focuses the exact row for a repeated PID on its resolved day', () => {

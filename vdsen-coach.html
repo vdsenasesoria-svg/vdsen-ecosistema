@@ -17722,6 +17722,14 @@ El esfuerzo no es negociable.
     const currentWeek = logsData.currentWeek || 1;
     const ci = entries['ci_sem_' + currentWeek] || {};
     let autoSummary = logsData.progressionApplicationSummary;
+    // T537: PENDING records are materialized HERE (owner Coach) from the athlete's persisted progrec_* evidence; the athlete app cannot write them.
+    if (c && c.activePlanId && currentCoach && c.coachId === currentCoach.uid) {
+      try {
+        const _mat = await _materializeShadowRecords(clientId, c.activePlanId);
+        if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
+        if (_mat) autoSummary = _mat;
+      } catch(e) { console.warn('AUTO shadow materialization failed:', e); }
+    }
     if (autoSummary && autoSummary.planId === (c && c.activePlanId) &&
         (autoSummary.autoCount > 0 || (autoSummary.items || []).some(function(item) {
           return item.state === 'REJECTED' && item.reasonCode === 'COACH_KEEP_ORIGINAL';
@@ -18769,6 +18777,30 @@ El esfuerzo no es negociable.
 
   var _shadowMonitorContext = null;
   var _shadowActionBusy = false;
+  // T537: the ONLY writer of PENDING progression records. Runs as the owner Coach; re-reads client/plan/logs inside the transaction; never rewrites LOGS.
+  async function _materializeShadowRecords(clientId, planId) {
+    var shadow = window.VDSEN_AUTO_APPLY_SHADOW, cons = window.VDSEN_APPLICATION_CONSUMER;
+    if (!shadow || !cons || !currentCoach) return null;
+    var actorId = currentCoach.uid;
+    return runTransaction(db, async function(tx) {
+      var clientRef = doc(db, 'clients', clientId), planRef = doc(db, 'plans', planId);
+      var mesoRef = doc(db, 'logs', clientId, 'mesos', planId), rootRef = doc(db, 'logs', clientId);
+      var clientSnap = await tx.get(clientRef), planSnap = await tx.get(planRef), mesoSnap = await tx.get(mesoRef), rootSnap = await tx.get(rootRef);
+      if (!clientSnap.exists() || !planSnap.exists() || !rootSnap.exists()) return null;
+      var clientData = clientSnap.data(), planData = planSnap.data(), mesoData = mesoSnap.exists() ? mesoSnap.data() : null, rootData = rootSnap.data();
+      if (_detailClientId !== clientId || !currentCoach || currentCoach.uid !== actorId || clientData.coachId !== actorId || clientData.activePlanId !== planId ||
+          (mesoData && mesoData.planId !== planId) || rootData.planId !== planId || (planData.clientId && planData.clientId !== clientId)) return null;
+      var auth = shadow.selectLogAuthority(mesoData, rootData, planId);
+      if (!auth) return null;
+      var out = shadow.materializeRecords({ clientId: clientId, planId: planId, activePlanId: clientData.activePlanId, plan: planData, interventions: clientData.coachInterventions,
+        entries: auth.entries || {}, records: (mesoData && mesoData.progressionApplications) || {}, at: new Date().toISOString(), isStarted: cons.targetStarted });
+      if (!out.changed) return null;
+      var summary = shadow.summarize(out.records, planId);
+      tx.set(mesoRef, { planId: planId, progressionApplications: out.records, progressionApplicationSummary: summary }, { merge: true });
+      tx.set(rootRef, { progressionApplicationSummary: summary }, { merge: true });
+      return summary;
+    });
+  }
   async function _reconcileShadowAuto(clientId, planId) {
     var shadow = window.VDSEN_AUTO_APPLY_SHADOW;
     return runTransaction(db, async function(tx) {
@@ -18961,6 +18993,9 @@ El esfuerzo no es negociable.
       var res = await runTransaction(db, async function(tx) {
         var refs = { meso: doc(db, 'logs', clientId, 'mesos', planId), root: doc(db, 'logs', clientId), plan: doc(db, 'plans', planId), client: doc(db, 'clients', clientId) };
         var input = { recordKey: keys[i], clientId: clientId, now: new Date().toISOString(), actorId: currentCoach && currentCoach.uid };
+        // receipt-backed consumption first (only when the exposure started), then Coach override, then plan/target staleness
+        var c1 = await cons.consumeOverlayTransaction(tx, refs, input, {});
+        if (c1.written) return c1;
         var o = await cons.overrideOverlayTransaction(tx, refs, input, {});
         return o.written ? o : cons.staleOverlayTransaction(tx, refs, input, {});
       });

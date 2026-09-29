@@ -23,7 +23,7 @@ test('T535.1 FLAG OFF: the four modules ship false; no source anywhere sets it t
 
 test('T535.2 SINGLE AUTHORITIES: one lifecycle writer, one effective-prescription resolver, one representative-set selector, one target-start definition', () => {
   const consumer = strip(read('assets/progression-application-consumer.js'));
-  assert.equal(consumer.split('tx.set(').length - 1, 1, 'one tx.set');
+  assert.equal(consumer.split('tx.set(').length - 1, 2, 'canonical writer + receipt writer');
   // overlays are only ever written as a map field in the consumer commit; no other source writes them
   for (const f of ['vdsen-cliente.html', 'vdsen-coach.html', 'assets/progression-auto-apply-shadow.js', 'assets/progression-effective-prescription.js', 'assets/progression-magnitude-policy.js', 'assets/equipment-context.js'])
     assert.ok(!/nextExposureOverlays\s*:/.test(strip(read(f))), f + ' never writes overlays');
@@ -105,7 +105,7 @@ test('T535.6 the generated readiness documents state the lifecycle readiness der
   for (const t of ['APPLIED LIFECYCLE | READY_BEHIND_DISABLED_FLAG', 'CLIENT OVERLAY CONSUMER | READY_BEHIND_DISABLED_FLAG', 'ROLLBACK | READY', 'CONSUMPTION | READY', 'OVERRIDE | READY', 'STALE | READY', 'false (apagada en los 4 módulos)']) assert.ok(r.includes(t), t);
   const line = t => c.split('\n').find(l => l.includes(t));
   assert.ok(line('`NUMERIC_APPLY_ENABLED` cambiado').startsWith('- [ ]') && line('Incrementos de equipo').startsWith('- [ ]'), 'flag + real data remain the open items');
-  assert.ok(/17 de 22 cumplidos; pendientes bloqueantes: 4/.test(c));
+  assert.ok(/18 de 23 cumplidos; pendientes bloqueantes: 4/.test(c));
   assert.equal(spawnSync(process.execPath, [path.join(root, 'scripts/generate-equipment-data-required.cjs'), '--check']).status, 0);
 });
 

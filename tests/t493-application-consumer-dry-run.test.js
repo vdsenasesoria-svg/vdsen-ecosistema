@@ -241,7 +241,7 @@ test('T493.13 (flag forced on) stale callbacks, revision conflicts, started targ
 test('T493.14 the consumer never writes plans/, is not wired into the apps, and reads no legacy fields', () => {
   const src = fs.readFileSync(path.join(root, 'assets/progression-application-consumer.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//, '');
   assert.ok(!/updateDoc|setDoc|addDoc|fetch\(|localStorage|document\.|Date\.now|new Date\(/.test(src));
-  assert.equal((src.match(/tx\.set\(/g) || []).length, 1);
+  assert.equal((src.match(/tx\.set\(/g) || []).length, 2, 'T537: canonical writer + receipt writer only');
   assert.ok(/function _commitLifecycle\(tx, refs, w\)/.test(src) && !/tx\.set\(refs\.(plan|client)/.test(src) && !/refs\.(plan|client)[^a-zA-Z]*,\s*\{ *progression/.test(src));
   assert.ok(!/newLoad|newReps|newSets|progrec|recommendedLoad|substituteExercise/.test(src));
   // T531: the athlete app may only ever CONSUME (never plan/apply): checked by the T532 client tests.

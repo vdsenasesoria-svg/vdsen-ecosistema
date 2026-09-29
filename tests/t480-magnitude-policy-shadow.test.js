@@ -295,7 +295,7 @@ function functionSource(source, name) {
   throw new Error('Cannot extract ' + name);
 }
 
-test('client transaction stores the shadow magnitude decision; plans/ is never written', async () => {
+test('Coach transaction stores the shadow magnitude decision; plans/ is never written (T537)', async () => {
   const at = '2026-09-27T12:00:00.000Z';
   const rec = { prescriptionExerciseId: PID, exerciseId: 'ex-A', exerciseName: 'Remo', action: 'increase_load', newLoad: 102.5, newReps: 10 };
   const parent = { calculatedAt: at, recommendations: [rec] };
@@ -315,12 +315,9 @@ test('client transaction stores the shadow magnitude decision; plans/ is never w
   const tx = { get: async ref => ({ exists: () => docs.has(ref), data: () => structuredClone(docs.get(ref)) }),
     set: (ref, value) => { writes.push(ref); docs.set(ref, { ...docs.get(ref), ...structuredClone(value) }); },
     update: ref => writes.push(ref) };
-  const context = { window: { VDSEN_AUTO_APPLY_SHADOW: shadow }, USER: { uid: 'client-A' }, ACTIVE_PLAN_ID: 'plan-A',
-    FB: { db: {}, doc: (_db, ...parts) => parts.join('/'), runTransaction: async (_db, fn) => fn(tx) } };
-  vm.createContext(context);
-  ['_getSessionCompletionState', '_sessionHasRealLoggedSets', '_getSessionLifecycleState', '_selectLogAuthority',
-    '_recordShadowProgression'].forEach(n => vm.runInContext(functionSource(client, n), context));
-  assert.equal(await context._recordShadowProgression('client-A', 'plan-A', 1, 2, parent), true);
+  const { coachMaterializer } = require('./helpers/coach-materializer.js');
+  const m = coachMaterializer(docs);
+  assert.ok(await m.run());
   const meso = docs.get('logs/client-A/mesos/plan-A');
   const record = Object.values(meso.progressionApplications)[0];
   assert.equal(record.state, 'PENDING'); assert.equal(record.reasonCode, 'MAGNITUDE_POLICY_MISSING');
@@ -331,7 +328,7 @@ test('client transaction stores the shadow magnitude decision; plans/ is never w
   const item = meso.progressionApplicationSummary.items[0];
   assert.equal(item.magnitude.primaryRaw, 102.5); assert.equal(item.magnitude.applied, false);
   assert.equal(item.magnitude.methodologyFamily, 'EHRENSTEIN_APEKS_DERIVED');
-  assert.ok(writes.every(ref => !ref.startsWith('plans/')), 'no write to plans/');
+  assert.ok(m.writes.every(ref => !ref.startsWith('plans/')), 'no write to plans/');
   assert.deepEqual(docs.get('plans/plan-A'), planDoc, 'vdsen-plan-v2 document unchanged');
   assert.equal(JSON.stringify(docs.get('logs/client-A').entries), JSON.stringify(entries), 'executed LOGS untouched');
 });

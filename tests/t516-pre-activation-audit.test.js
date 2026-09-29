@@ -55,7 +55,7 @@ test('T516.3 ATHLETE PRESCRIPTION AUTHORITY = 0: the athlete authors execution o
 });
 
 test('T516.4 CANONICAL PROGRESSION = 1 and CANONICAL APPLICATION PATH = 1', () => {
-  assert.equal(code('assets/progression-application-consumer.js').split('tx.set(').length - 1, 1, 'one overlay write');
+  assert.equal(code('assets/progression-application-consumer.js').split('tx.set(').length - 1, 2, 'one canonical (overlay/lifecycle) writer + one athlete receipt writer');
   for (const f of ['vdsen-cliente.html', 'vdsen-coach.html', 'assets/progression-auto-apply-shadow.js', 'assets/progression-magnitude-policy.js'])
     assert.ok(!/nextExposureOverlays\s*:/.test(read(f)), f + ' never writes overlays');
   assert.equal(policy.NUMERIC_APPLY_ENABLED, false);

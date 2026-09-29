@@ -346,8 +346,9 @@
   function _fail(reason, extra) { return Object.assign({ written: false, reason: reason }, extra || {}); }
 
   async function _loadLifecycle(tx, refs, input, which) {
-    var st = { meso: null, plan: null, client: null, coach: null };
+    var st = { meso: null, plan: null, client: null, coach: null, root: null };
     if (which.meso) st.meso = _read(await tx.get(refs.meso));
+    if (which.root && refs.root) st.root = _read(await tx.get(refs.root));
     if (which.plan && refs.plan) st.plan = _read(await tx.get(refs.plan));
     if (which.client && refs.client) st.client = _read(await tx.get(refs.client));
     if (which.coach && refs.coach) st.coach = _read(await tx.get(refs.coach));
@@ -366,6 +367,11 @@
       o.prescriptionExerciseId === r.prescriptionExerciseId);
   }
   // Timestamps are always supplied by the caller (this module stays deterministic and never reads a clock).
+  // Evidence (LOGS) used for target-start / safety checks = the authoritative log document (meso or legacy root, same rule as the athlete app).
+  function _entriesOf(st, planId) {
+    var sh = _shadow(), auth = sh && st.root ? sh.selectLogAuthority(st.meso, st.root, planId) : st.meso;
+    return (auth && auth.entries) || (st.meso && st.meso.entries) || {};
+  }
   function _now(input, ctx) { return (input && input.now) || (ctx && ctx.now) || null; }
 
   // One atomic commit of record + overlay (+ summary mirrors). Idempotence and every guard are decided BEFORE this is called.
@@ -392,7 +398,7 @@
     if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
     var shadow = _shadow(), eff = _effective();
     if (!shadow || !eff) return _fail('LIFECYCLE_UNAVAILABLE');
-    var st = await _loadLifecycle(tx, refs, input, { meso: true, plan: true, client: true, coach: true });
+    var st = await _loadLifecycle(tx, refs, input, { meso: true, plan: true, client: true, coach: true, root: true });
     var mesoSnapOk = !!st.meso, planOk = !!st.plan, clientOk = !!st.client;
     if (!mesoSnapOk || !planOk || !clientOk) return { written: false, reason: BLOCKERS.NOT_CANONICAL_RECORD };
     var meso = st.meso, record = (meso.progressionApplications || {})[input.recordKey];
@@ -401,7 +407,7 @@
     var ic = input.context || {};
     // Canary scope: the Coach document is authoritative when supplied (re-read INSIDE the transaction); otherwise the caller's; absent = disabled.
     var scope = refs.coach ? (st.coach && st.coach.autoApplyCanary) : ic.canaryScope;
-    var entries = meso.entries;
+    var entries = _entriesOf(st, record && record.planId);
     var safety = ic.safetyConflict === true;
     if (!safety && record && record.source && record.nextExposure) safety = eff.painReportedBetween(entries, record.source, record.nextExposure);
     var decision = planApplication({ record: record, context: Object.assign({}, ic, {
@@ -427,14 +433,46 @@
     return { written: true, overlayKey: overlay.key, decision: decision, record: t.record, overlay: overlay, summary: w1.summary };
   }
 
-  // APPLIED -> CONSUMED: only on persisted evidence (LOGS in the meso document, re-read inside the transaction), never on render.
+  // ---- consumption acknowledgement (ATHLETE) ------------------------------------------------------------------------------
+  // The athlete cannot write canonical state (Firestore rules). It may only APPEND a receipt (`consumptionReceipts.<recordKey>`) in its own
+  // meso document; the owner Coach later turns a valid receipt into APPLIED -> CONSUMED (consumeOverlayTransaction). The receipt is a
+  // non-authoritative acknowledgement of what was shown; it never carries or changes any prescription.
+  async function recordConsumptionReceiptTransaction(tx, refs, input, guards) {
+    if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
+    guards = guards || {};
+    if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
+    var eff = _effective();
+    if (!eff) return _fail('LIFECYCLE_UNAVAILABLE');
+    var st = await _loadLifecycle(tx, refs, input, { meso: true, root: true });
+    if (!st.meso) return { written: false, reason: BLOCKERS.NOT_CANONICAL_RECORD };
+    var pair = _pair(st.meso, input.recordKey);
+    if (!pair.record) return _fail(pair.reason);
+    var r = pair.record;
+    if (st.meso.consumptionReceipts && st.meso.consumptionReceipts[r.key]) return { written: false, idempotent: true, reason: 'ALREADY_ACKNOWLEDGED' };
+    if (r.clientId !== input.clientId || r.planId !== st.meso.planId) return _fail(r.clientId !== input.clientId ? BLOCKERS.CLIENT_MISMATCH : BLOCKERS.PLAN_MISMATCH);
+    if (r.state !== 'APPLIED') return _fail('INVALID_TRANSITION');
+    if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
+    var tgt = pair.overlay.target, sh = input.shown || {};
+    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex)) return _fail('TARGET_NOT_STARTED');
+    if (sh.provenance !== 'CANONICAL_OVERLAY' || sh.overlayKey !== pair.overlay.key || sh.appliedValue !== pair.overlay.appliedValue || sh.dimension !== pair.overlay.dimension) return _fail('OVERLAY_NOT_SHOWN');
+    var at = _now(input, null);
+    if (!at) return _fail('TIMESTAMP_MISSING');
+    var receipt = { recordKey: r.key, overlayKey: pair.overlay.key, dimension: sh.dimension, appliedValue: sh.appliedValue, provenance: sh.provenance, ackAt: at };
+    var payload = {}; payload.consumptionReceipts = {}; payload.consumptionReceipts[r.key] = receipt;
+    _commitReceipt(tx, refs, payload);
+    return { written: true, receipt: receipt };
+  }
+  // The athlete's only write into the lifecycle area: one receipt key, merged (never a canonical field).
+  function _commitReceipt(tx, refs, payload) { tx.set(refs.meso, payload, { merge: true }); }
+
+  // APPLIED -> CONSUMED (OWNER COACH): needs the athlete's receipt AND persisted execution evidence, both re-read inside the transaction.
   async function consumeOverlayTransaction(tx, refs, input, guards) {
     if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
     guards = guards || {};
     if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
     var shadow = _shadow(), eff = _effective();
     if (!shadow || !eff) return _fail('LIFECYCLE_UNAVAILABLE');
-    var st = await _loadLifecycle(tx, refs, input, { meso: true });
+    var st = await _loadLifecycle(tx, refs, input, { meso: true, root: true });
     if (!st.meso) return { written: false, reason: BLOCKERS.NOT_CANONICAL_RECORD };
     var pair = _pair(st.meso, input.recordKey);
     if (!pair.record) return _fail(pair.reason);
@@ -443,18 +481,21 @@
     if (r.clientId !== input.clientId || r.planId !== st.meso.planId) return _fail(r.clientId !== input.clientId ? BLOCKERS.CLIENT_MISMATCH : BLOCKERS.PLAN_MISMATCH);
     if (r.state !== 'APPLIED') return _fail('INVALID_TRANSITION');
     if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
-    var tgt = pair.overlay.target, sh = input.shown || {};
-    if (!eff.pidExposureStarted(st.meso.entries, r.prescriptionExerciseId, tgt.week, tgt.dayIndex)) return _fail('TARGET_NOT_STARTED');
-    // what the athlete was actually shown must be this overlay (otherwise the overlay was NOT consumed)
-    if (sh.provenance !== 'CANONICAL_OVERLAY' || sh.overlayKey !== pair.overlay.key || sh.appliedValue !== pair.overlay.appliedValue || sh.dimension !== pair.overlay.dimension) return _fail('OVERLAY_NOT_SHOWN');
+    var tgt = pair.overlay.target, ov = pair.overlay;
+    if (!eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, tgt.week, tgt.dayIndex)) return _fail('TARGET_NOT_STARTED');
+    var rc = st.meso.consumptionReceipts && st.meso.consumptionReceipts[r.key];
+    if (!rc) return _fail('NO_CONSUMPTION_RECEIPT');
+    // the athlete's acknowledgement must describe exactly THIS overlay; it can never supply the prescription itself
+    if (rc.provenance !== 'CANONICAL_OVERLAY' || rc.overlayKey !== ov.key || rc.recordKey !== r.key || rc.appliedValue !== ov.appliedValue || rc.dimension !== ov.dimension) return _fail('RECEIPT_MISMATCH');
     var at = _now(input, null);
     if (!at) return _fail('TIMESTAMP_MISSING');
-    var shown = { provenance: sh.provenance, overlayKey: sh.overlayKey, dimension: sh.dimension, previousValue: pair.overlay.previousValue, appliedValue: sh.appliedValue, unit: pair.overlay.unit };
-    var tr = _transition(shadow, pair, 'CONSUMED', op, Object.assign({}, input, { reasonCode: 'TARGET_STARTED' }), { consumedAt: at, shownPrescription: shown }, { consumedAt: at, shownPrescription: shown }, null);
+    var shown = { provenance: rc.provenance, overlayKey: ov.key, dimension: ov.dimension, previousValue: ov.previousValue, appliedValue: ov.appliedValue, unit: ov.unit };
+    var tr = _transition(shadow, pair, 'CONSUMED', op, Object.assign({}, input, { reasonCode: 'TARGET_STARTED' }), { consumedAt: at, acknowledgedAt: rc.ackAt || null, shownPrescription: shown },
+      { consumedAt: at, shownPrescription: shown }, null);
     if (tr.fail) return tr.fail;
-    var w2 = _lifecycleWrite(shadow, st.meso, r.key, tr.record, pair.overlay.key, tr.overlay);
+    var w2 = _lifecycleWrite(shadow, st.meso, r.key, tr.record, ov.key, tr.overlay);
     _commitLifecycle(tx, refs, w2);
-    return { written: true, overlayKey: pair.overlay.key, record: tr.record, overlay: tr.overlay, summary: w2.summary };
+    return { written: true, overlayKey: ov.key, record: tr.record, overlay: tr.overlay, summary: w2.summary };
   }
 
   // What a Coach decision / plan change would do to an APPLIED, not-yet-started overlay. Pure.
@@ -486,7 +527,7 @@
     if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
     var shadow = _shadow(), eff = _effective();
     if (!shadow || !eff) return _fail('LIFECYCLE_UNAVAILABLE');
-    var st = await _loadLifecycle(tx, refs, input, { meso: true, client: kind !== 'REVERT', plan: kind === 'STALE' });
+    var st = await _loadLifecycle(tx, refs, input, { meso: true, root: true, client: kind !== 'REVERT', plan: kind === 'STALE' });
     if (!st.meso) return { written: false, reason: BLOCKERS.NOT_CANONICAL_RECORD };
     var pair = _pair(st.meso, input.recordKey);
     if (!pair.record) return _fail(pair.reason);
@@ -496,7 +537,7 @@
     if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
     if (input.clientId !== undefined && r.clientId !== input.clientId) return _fail(BLOCKERS.CLIENT_MISMATCH);
     var t = pair.overlay.target;
-    if (eff.pidExposureStarted(st.meso.entries, r.prescriptionExerciseId, t.week, t.dayIndex)) return _fail(BLOCKERS.TARGET_ALREADY_STARTED);
+    if (eff.pidExposureStarted(_entriesOf(st, r.planId), r.prescriptionExerciseId, t.week, t.dayIndex)) return _fail(BLOCKERS.TARGET_ALREADY_STARTED);
     var at = _now(input, null), patch, reason;
     if (!at) return _fail('TIMESTAMP_MISSING');
     if (kind === 'REVERT') {
@@ -509,7 +550,7 @@
       patch = { overriddenAt: at, intervention: { id: iv.id || null, action: iv.action || null, decidedAt: iv.decidedAt } }; reason = 'COACH_OVERRIDE';
     } else {
       var plan = st.plan, activePlanId = st.client && st.client.activePlanId;
-      var rec = planLifecycleReconciliation({ record: r, overlay: pair.overlay, entries: st.meso.entries, activePlanId: activePlanId, plan: plan || {}, interventions: [] });
+      var rec = planLifecycleReconciliation({ record: r, overlay: pair.overlay, entries: _entriesOf(st, r.planId), activePlanId: activePlanId, plan: plan || {}, interventions: [] });
       if (rec.action !== 'STALE') return _fail('NOT_STALE');
       patch = { staleAt: at, staleReason: rec.reason }; reason = rec.reason;
     }
@@ -525,6 +566,6 @@
 
   return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, PREVIEW_CLASSES: PREVIEW_CLASSES, GUARD_CHECKS: GUARD_CHECKS, verifyActivationPreconditions: verifyActivationPreconditions, ACTIVATION_PREREQUISITES: ACTIVATION_PREREQUISITES, normalizeCanaryScope: normalizeCanaryScope, inCanaryScope: inCanaryScope, overlayKey: overlayKey,
     targetStarted: targetStarted, planApplication: planApplication, planReversal: planReversal, applyOverlayTransaction: applyOverlayTransaction,
-    consumeOverlayTransaction: consumeOverlayTransaction, overrideOverlayTransaction: overrideOverlayTransaction, revertOverlayTransaction: revertOverlayTransaction,
+    consumeOverlayTransaction: consumeOverlayTransaction, recordConsumptionReceiptTransaction: recordConsumptionReceiptTransaction, overrideOverlayTransaction: overrideOverlayTransaction, revertOverlayTransaction: revertOverlayTransaction,
     staleOverlayTransaction: staleOverlayTransaction, planLifecycleReconciliation: planLifecycleReconciliation };
 });

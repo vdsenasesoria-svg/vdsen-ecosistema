@@ -48,7 +48,10 @@ const refsFor = (db, f, uid) => ({ meso: doc(db, 'logs', uid || f.client.uid, 'm
 const applyInput = (f, o = {}) => Object.assign({ recordKey: f.key, expectedRevision: 1, now: new Date().toISOString(), actorId: f.coach.uid,
   context: { clientId: f.client.uid, planId: f.planId, equipmentResolution: F.equipmentFor(f.sc), resolveNextExposure: F.shadowOn.resolveNextExposure } }, o);
 const apply = (f, db, o, refs) => runTransaction(db || f.coach.db, tx => C.applyOverlayTransaction(tx, refs || refsFor(db || f.coach.db, f), applyInput(f, o), { isCurrent: () => true }));
-const consume = (f, db, o) => runTransaction(db || f.client.db, tx => C.consumeOverlayTransaction(tx, { meso: refsFor(db || f.client.db, f).meso }, Object.assign({ recordKey: f.key, clientId: f.client.uid, now: new Date().toISOString(), shown: shownOf(f) }, o), { isCurrent: () => true }));
+// T537: the athlete ACKNOWLEDGES (append-only receipt); the owner Coach records CONSUMED from a valid receipt.
+const ack = (f, db, o) => runTransaction(db || f.client.db, tx => C.recordConsumptionReceiptTransaction(tx, { meso: refsFor(db || f.client.db, f).meso, root: refsFor(db || f.client.db, f).root },
+  Object.assign({ recordKey: f.key, clientId: f.client.uid, now: new Date().toISOString(), shown: shownOf(f) }, o), { isCurrent: () => true }));
+const consume = (f, db, o) => runTransaction(db || f.coach.db, tx => C.consumeOverlayTransaction(tx, refsFor(db || f.coach.db, f), Object.assign({ recordKey: f.key, clientId: f.client.uid, now: new Date().toISOString(), actorId: f.coach.uid }, o), { isCurrent: () => true }));
 const revert = (f, o) => runTransaction(f.coach.db, tx => C.revertOverlayTransaction(tx, refsFor(f.coach.db, f), Object.assign({ recordKey: f.key, expectedRevision: 2, now: new Date().toISOString(), actorId: f.coach.uid }, o), {}));
 const override = (f) => runTransaction(f.coach.db, tx => C.overrideOverlayTransaction(tx, refsFor(f.coach.db, f), { recordKey: f.key, now: new Date().toISOString(), actorId: f.coach.uid }, {}));
 const stale = (f) => runTransaction(f.coach.db, tx => C.staleOverlayTransaction(tx, refsFor(f.coach.db, f), { recordKey: f.key, now: new Date().toISOString(), actorId: f.coach.uid }, {}));
@@ -120,11 +123,17 @@ test('4. plan replacement racing with apply: never an effective overlay for a re
   }
 });
 
-test('5. duplicate consume callbacks (two devices): one CONSUMED event, LOGS untouched', { timeout: 60000 }, async () => {
+test('5. duplicate acknowledgements (two devices) append one receipt; duplicate Coach consumes (two tabs) record one CONSUMED event', { timeout: 60000 }, async () => {
   const f = await fixture(); assert.equal((await apply(f)).written, true); await persistFirstSet(f);
   const second = await signedIn(f.client.uid);
-  const [a, b] = await Promise.all([consume(f), consume(f, second.db)]);
-  assert.equal([a, b].filter(x => x.written).length, 1, JSON.stringify([a, b].map(x => x.reason)));
+  // the losing device is either told 'already acknowledged' (re-read) or rejected by the append-only rule (its timestamp differs): both leave ONE receipt
+  const res = await Promise.allSettled([ack(f), ack(f, second.db)]);
+  assert.ok(res.filter(x => x.status === 'fulfilled' && x.value.written).length >= 1);
+  for (const x of res) if (x.status === 'rejected') assert.match(String(x.reason.code || x.reason.message), /permission|PERMISSION/i);
+  assert.deepEqual(Object.keys((await mesoDoc(f)).consumptionReceipts), [f.key]); assert.equal((await rec(f)).state, 'APPLIED', 'the athlete never moves canonical state');
+  const coach2 = await signedIn(f.coach.uid);
+  const [c, d] = await Promise.all([consume(f), consume(f, coach2.db)]);
+  assert.equal([c, d].filter(x => x.written).length, 1, JSON.stringify([c, d].map(x => x.reason)));
   const { r } = await assertCoherent(f);
   assert.deepEqual([r.state, events(r, 'CONSUMED')], ['CONSUMED', 1]);
   assert.deepEqual((await mesoDoc(f)).entries[LOGKEY], FIRST_SET);
@@ -133,10 +142,11 @@ test('5. duplicate consume callbacks (two devices): one CONSUMED event, LOGS unt
 
 test('6. late callbacks from another client are refused: wrong clientId and a stranger session change nothing', { timeout: 60000 }, async () => {
   const f = await fixture(); assert.equal((await apply(f)).written, true); await persistFirstSet(f);
-  const w = await consume(f, null, { clientId: 'someone-else' }); assert.deepEqual([w.written, w.reason], [false, 'CLIENT_MISMATCH']);
+  const w = await ack(f, null, { clientId: 'someone-else' }); assert.deepEqual([w.written, w.reason], [false, 'CLIENT_MISMATCH']);
   const stranger = await signedIn();
+  await assert.rejects(ack(f, stranger.db), /permission|PERMISSION/i);
   await assert.rejects(consume(f, stranger.db), /permission|PERMISSION/i);
-  assert.equal((await rec(f)).state, 'APPLIED');
+  assert.equal((await mesoDoc(f)).consumptionReceipts, undefined); assert.equal((await rec(f)).state, 'APPLIED');
 });
 
 test('7. late old-plan callbacks: apply for a replaced plan is refused; a started old exposure still consumes coherently inside its own plan', { timeout: 60000 }, async () => {
@@ -146,7 +156,7 @@ test('7. late old-plan callbacks: apply for a replaced plan is refused; a starte
   assert.equal((await ovs(f))[Object.keys(await ovs(f))[0]], undefined); assert.equal((await rec(f)).state, 'PENDING');
   const g = await fixture(); assert.equal((await apply(g)).written, true); await persistFirstSet(g);
   await adminDb.doc('clients/' + g.client.uid).update({ activePlanId: 'plan-new-' + g.client.uid });
-  const c = await consume(g); assert.equal(c.written, true);
+  assert.equal((await ack(g)).written, true); const c = await consume(g); assert.equal(c.written, true);
   assert.equal((await adminDb.doc('logs/' + g.client.uid + '/mesos/plan-new-' + g.client.uid).get()).exists, false, 'the new plan is never touched');
   assert.equal((await rec(g)).state, 'CONSUMED');
 });
@@ -156,6 +166,7 @@ test('8. retry after network ambiguity: apply, consume and revert replays are id
   assert.equal((await apply(f)).written, true);
   const again = await apply(f); assert.deepEqual([again.written, again.idempotent], [false, true]);
   await persistFirstSet(f);
+  assert.equal((await ack(f)).written, true); const a2 = await ack(f); assert.deepEqual([a2.written, a2.idempotent], [false, true]);
   assert.equal((await consume(f)).written, true);
   const c2 = await consume(f); assert.deepEqual([c2.written, c2.idempotent], [false, true]);
   const { r } = await assertCoherent(f); assert.deepEqual([r.state, r.revision, events(r, 'APPLIED'), events(r, 'CONSUMED')], ['CONSUMED', 3, 1, 1]);
@@ -181,7 +192,7 @@ test('10. state update denied on a second document rolls back the overlay too (n
 
 test('11. full lifecycle on the emulator: APPLIED -> CONSUMED / OVERRIDDEN / REVERTED / STALE, each terminal and never re-applicable', { timeout: 120000 }, async () => {
   const end = {};
-  { const f = await fixture(); await apply(f); await persistFirstSet(f); await consume(f); end.CONSUMED = f; }
+  { const f = await fixture(); await apply(f); await persistFirstSet(f); await ack(f); await consume(f); end.CONSUMED = f; }
   { const f = await fixture(); await apply(f); await coachDecision(f); await override(f); end.OVERRIDDEN = f; }
   { const f = await fixture(); await apply(f); await revert(f); end.REVERTED = f; }
   { const f = await fixture(); await apply(f); await adminDb.doc('clients/' + f.client.uid).update({ activePlanId: 'plan-new-' + f.client.uid }); await stale(f); end.STALE = f; }
@@ -191,4 +202,85 @@ test('11. full lifecycle on the emulator: APPLIED -> CONSUMED / OVERRIDDEN / REV
     const r = await apply(f, null, { expectedRevision: before.progressionApplications[f.key].revision });
     assert.equal(r.written, false, state); assert.deepEqual(await mesoDoc(f), before, state + ' is never resurrected');
   }
+});
+
+// ------------------------------------------------------------------------------------------------ T537 authorization races (real rules + real transactions)
+const forgedOverlay = (f) => Object.assign({}, { key: 'ovl_' + f.key, appliedValue: 999 });
+const canonicalOf = async f => { const m = await mesoDoc(f); return JSON.stringify({ p: m.progressionApplications, o: m.nextExposureOverlays, s: m.progressionApplicationSummary }); };
+
+test('12. a malicious athlete racing a legitimate Coach apply can neither forge nor alter anything; the Coach result is the only state', { timeout: 60000 }, async () => {
+  for (let i = 0; i < 4; i++) {
+    const f = await fixture();
+    const attacks = [
+      updateDoc(doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId), { 'nextExposureOverlays.ovl_forged': { appliedValue: 999, status: 'APPLIED' } }),
+      updateDoc(doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId), { ['progressionApplications.' + f.key + '.state']: 'APPLIED' }),
+      setDoc(doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId), { nextExposureOverlays: { ['ovl_' + f.key]: forgedOverlay(f) } }, { mergeFields: ['nextExposureOverlays'] })
+    ].map(p => p.then(() => 'ALLOWED', e => e.code));
+    const [applyRes, ...outcomes] = await Promise.all([apply(f), ...attacks]);
+    assert.deepEqual(outcomes, ['permission-denied', 'permission-denied', 'permission-denied']);
+    assert.equal(applyRes.written, true);
+    const { r, o } = await assertCoherent(f);
+    assert.deepEqual([r.state, Object.keys(o).length, o['ovl_' + f.key].appliedValue], ['APPLIED', 1, 102.5]);
+  }
+});
+
+test('13. payload alteration after APPLIED is denied for the athlete (load, reps, rest, PID, target, snapshot, state) and the effective prescription is unchanged', { timeout: 60000 }, async () => {
+  const f = await fixture(); assert.equal((await apply(f)).written, true);
+  const before = await canonicalOf(f), mref = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId), k = 'nextExposureOverlays.ovl_' + f.key;
+  for (const patch of [{ [k + '.appliedValue']: 999 }, { [k + '.dimension']: 'REPS' }, { [k + '.target.week']: 5 }, { [k + '.prescriptionExerciseId']: 'pid-x' }, { [k + '.equipmentSnapshot']: { source: 'FORGED' } },
+    { ['progressionApplications.' + f.key + '.state']: 'REVERTED' }, { ['progressionApplications.' + f.key + '.events']: [] }])
+    await assert.rejects(updateDoc(mref, patch), { code: 'permission-denied' });
+  assert.equal(await canonicalOf(f), before);
+  assert.equal((await effectiveFor(f)).appliedValue, 102.5);
+});
+
+test('14. athlete acknowledgement vs Coach revert: started exposure -> revert refused, receipt accepted; not started -> receipt refused, revert wins', { timeout: 60000 }, async () => {
+  const f = await fixture(); assert.equal((await apply(f)).written, true); await persistFirstSet(f);
+  const [a, rv] = await Promise.all([ack(f), revert(f)]);
+  assert.equal(a.written, true); assert.deepEqual([rv.written, rv.reason], [false, 'TARGET_ALREADY_STARTED']);
+  assert.equal((await rec(f)).state, 'APPLIED');
+  const g = await fixture(); assert.equal((await apply(g)).written, true);
+  const [a2, rv2] = await Promise.all([ack(g), revert(g)]);
+  assert.deepEqual([a2.written, a2.reason], [false, 'TARGET_NOT_STARTED']); assert.equal(rv2.written, true);
+  assert.equal((await assertCoherent(g)).r.state, 'REVERTED'); assert.equal((await mesoDoc(g)).consumptionReceipts, undefined);
+});
+
+test('15. owner Coach vs unrelated Coach racing on the same APPLIED record: only the owner changes state', { timeout: 60000 }, async () => {
+  const f = await fixture(); assert.equal((await apply(f)).written, true);
+  const intruder = await signedIn(); await adminDb.doc('coaches/' + intruder.uid).set({ role: 'coach' });
+  const attempt = runTransaction(intruder.db, tx => C.revertOverlayTransaction(tx, refsFor(intruder.db, f), { recordKey: f.key, expectedRevision: 2, now: new Date().toISOString() }, {})).then(x => x, e => ({ denied: e.code }));
+  const [own, bad] = await Promise.all([revert(f), attempt]);
+  assert.equal(own.written, true); assert.ok(bad.denied === 'permission-denied' || bad.written === false, JSON.stringify(bad));
+  const { r } = await assertCoherent(f); assert.equal(r.state, 'REVERTED'); assert.equal(events(r, 'REVERTED'), 1);
+  const g = await fixture(); await apply(g);
+  const before = await canonicalOf(g);
+  await assert.rejects(runTransaction(intruder.db, tx => C.revertOverlayTransaction(tx, refsFor(intruder.db, g), { recordKey: g.key, expectedRevision: 2, now: 'n' }, {})), { code: 'permission-denied' });
+  assert.equal(await canonicalOf(g), before);
+});
+
+test('16. old / late athlete callbacks against current state: after REVERTED or CONSUMED nothing changes', { timeout: 60000 }, async () => {
+  const f = await fixture(); assert.equal((await apply(f)).written, true); await persistFirstSet(f); assert.equal((await ack(f)).written, true); assert.equal((await consume(f)).written, true);
+  const late = await ack(f); assert.equal(late.written, false); assert.equal((await rec(f)).state, 'CONSUMED');
+  const g = await fixture(); await apply(g); await revert(g); await persistFirstSet(g);
+  const stale = await ack(g); assert.deepEqual([stale.written, stale.reason], [false, 'INVALID_TRANSITION']);
+  assert.equal((await rec(g)).state, 'REVERTED'); assert.equal((await mesoDoc(g)).consumptionReceipts, undefined);
+});
+
+test('17. terminal-state mutation attempts by the athlete are denied (REVERTED -> APPLIED, CONSUMED -> REVERTED) and leave the record untouched', { timeout: 60000 }, async () => {
+  const f = await fixture(); await apply(f); await revert(f);
+  const g = await fixture(); await apply(g); await persistFirstSet(g); await ack(g); await consume(g);
+  const before = [await canonicalOf(f), await canonicalOf(g)];
+  await assert.rejects(updateDoc(doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId), { ['progressionApplications.' + f.key + '.state']: 'APPLIED' }), { code: 'permission-denied' });
+  await assert.rejects(updateDoc(doc(g.client.db, 'logs', g.client.uid, 'mesos', g.planId), { ['progressionApplications.' + g.key + '.state']: 'REVERTED' }), { code: 'permission-denied' });
+  assert.deepEqual([await canonicalOf(f), await canonicalOf(g)], before);
+});
+
+test('18. overlay/summary mismatch attempts: the athlete cannot rewrite either summary; the Coach summaries stay identical to the record set after every transition', { timeout: 60000 }, async () => {
+  const f = await fixture(); await apply(f);
+  await assert.rejects(updateDoc(doc(f.client.db, 'logs', f.client.uid), { progressionApplicationSummary: { planId: f.planId, autoCount: 7, counts: { APPLIED: 0 }, items: [] } }), { code: 'permission-denied' });
+  await assert.rejects(updateDoc(doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId), { progressionApplicationSummary: { planId: f.planId, autoCount: 7, counts: {}, items: [] } }), { code: 'permission-denied' });
+  await persistFirstSet(f); await ack(f); await consume(f);
+  const m = await mesoDoc(f), root = (await adminDb.doc('logs/' + f.client.uid).get()).data();
+  assert.deepEqual(root.progressionApplicationSummary, m.progressionApplicationSummary);
+  assert.equal(m.progressionApplicationSummary.counts.CONSUMED, 1); assert.equal(m.progressionApplicationSummary.counts.APPLIED, 0);
 });

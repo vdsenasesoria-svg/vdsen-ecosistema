@@ -72,7 +72,8 @@ test('T534.6 reconciliation runs ONLY when the summary counts an APPLIED record 
   assert.ok(/cons\.overrideOverlayTransaction/.test(rec) && /cons\.staleOverlayTransaction/.test(rec) && !/tx\.set\(|setDoc|updateDoc/.test(rec));
   const rev = fn('_onRevertApplied', 'async function');
   assert.ok(/cons\.revertOverlayTransaction/.test(rev) && !/tx\.set\(|setDoc|updateDoc/.test(rev));
-  assert.ok(!coach.includes('applyOverlayTransaction') && !coach.includes('consumeOverlayTransaction'), 'the Coach never applies or consumes');
+  assert.ok(!coach.includes('applyOverlayTransaction') && !coach.includes('recordConsumptionReceiptTransaction'), 'the Coach never applies (T537: the athlete alone writes receipts; the Coach only turns a valid receipt into CONSUMED)');
+  assert.ok(/cons\.consumeOverlayTransaction/.test(rec));
   assert.ok(coach.includes('assets/progression-effective-prescription.js'));
 });
 

@@ -200,11 +200,67 @@
         magnitude: (r.magnitude && _policy()) ? _policy().compact(r.magnitude) : null };
     }) };
   }
+  // T537: which of the two log documents is the authoritative evidence source (same rule the athlete app uses to load its LOGS).
+  function selectLogAuthority(mesoData, rootData, planId) {
+    if (!mesoData) return rootData || null;
+    if (!rootData || (rootData.planId && rootData.planId !== planId)) return mesoData;
+    if (mesoData.planId && mesoData.planId !== planId) return rootData;
+    function clock(d) { var n = Number(d.updatedAt); return Number.isFinite(n) && n > 0 ? n : 0; }
+    function evidence(d) { return Object.keys(d.entries || {}).filter(function(k) { return k.indexOf('done_') === 0 || k.indexOf('log_') === 0; }); }
+    function dominates(a, b) {
+      var ka = evidence(a), kb = evidence(b);
+      return ka.length > kb.length && kb.every(function(k) { return Object.prototype.hasOwnProperty.call(a.entries, k); });
+    }
+    if (dominates(rootData, mesoData)) return rootData;
+    if (dominates(mesoData, rootData)) return mesoData;
+    return clock(rootData) > clock(mesoData) ? rootData : mesoData;
+  }
+
+  // T537: PENDING records are created ONLY by the owner Coach (the database security rules deny the athlete every canonical write). The athlete's
+  // persisted progrec_* entries are just EVIDENCE INPUT; the record and its magnitude are (re)computed here from persisted LOGS.
+  // input = { clientId, planId, activePlanId, plan, interventions, entries, records, at, isStarted(entries, week, dayIndex) }
+  // -> { records, changed, created: [key], staled: [key] }   (pure; never mutates its inputs)
+  function materializeRecords(input) {
+    var records = Object.assign({}, input.records || {}), entries = input.entries || {}, created = [], staled = [];
+    if (!input.clientId || !input.planId || input.activePlanId !== input.planId) return { records: records, changed: false, created: created, staled: staled };
+    var at = input.at;
+    function stale(key, reason) { var before = records[key]; records[key] = markStale(records[key], reason, at); if (records[key] !== before) staled.push(key); }
+    Object.keys(entries).sort().forEach(function(entryKey) {
+      var m = /^progrec_(\d+)_(\d+)$/.exec(entryKey), parent = entries[entryKey];
+      if (!m || !parent || !_validTime(parent.calculatedAt) || !Array.isArray(parent.recommendations) || !parent.recommendations.length) return;
+      var week = Number(m[1]), dayIndex = Number(m[2]);
+      parent.recommendations.forEach(function(rec) {
+        if (!rec) return;
+        var base = { clientId: input.clientId, planId: input.planId, activePlanId: input.activePlanId, plan: input.plan, interventions: input.interventions, entries: entries,
+          week: week, dayIndex: dayIndex, calculatedAt: parent.calculatedAt, recommendation: rec, sourceMatches: true,
+          sourcePidCount: rec.prescriptionExerciseId ? parent.recommendations.filter(function(r) { return r && r.prescriptionExerciseId === rec.prescriptionExerciseId; }).length : 0 };
+        var candidate = buildRecord(base, at);
+        if (candidate.state === STATES.PENDING && candidate.nextExposure && typeof input.isStarted === 'function' &&
+            input.isStarted(entries, candidate.nextExposure.week, candidate.nextExposure.dayIndex))
+          candidate = markStale(candidate, REASONS.EXPOSURE_PASSED, at);
+        var prior = records[candidate.key];
+        if (prior) {
+          if (prior.planId !== input.planId || prior.clientId !== input.clientId || prior.prescriptionExerciseId !== candidate.prescriptionExerciseId ||
+              prior.source.calculatedAt !== candidate.source.calculatedAt) throw new Error('SHADOW_KEY_COLLISION');
+          if (prior.state === STATES.PENDING && candidate.state === STATES.STALE) stale(candidate.key, candidate.reasonCode);
+          return;
+        }
+        Object.keys(records).forEach(function(key) {
+          var old = records[key];
+          if (old && old.state === STATES.PENDING && old.prescriptionExerciseId && old.prescriptionExerciseId === candidate.prescriptionExerciseId &&
+              old.source.week === week && old.source.dayIndex === dayIndex) stale(key, REASONS.SOURCE_MISMATCH);
+        });
+        records[candidate.key] = candidate; created.push(candidate.key);
+      });
+    });
+    return { records: records, changed: created.length > 0 || staled.length > 0, created: created, staled: staled };
+  }
+
   function attemptNumericApply() {
     return { ok: false, reasonCode: REASONS.MAGNITUDE_POLICY_MISSING, applied: false };
   }
   return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, STATES: STATES, REASONS: REASONS, ALLOWED_TRANSITIONS: ALLOWED_TRANSITIONS, lifecycleTransition: lifecycleTransition,
     resolveNextExposure: resolveNextExposure, idempotencyKey: idempotencyKey, assess: assess,
     buildRecord: buildRecord, transition: transition, markStale: markStale,
-    summarize: summarize, attemptNumericApply: attemptNumericApply };
+    summarize: summarize, selectLogAuthority: selectLogAuthority, materializeRecords: materializeRecords, attemptNumericApply: attemptNumericApply };
 });

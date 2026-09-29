@@ -73,7 +73,8 @@ test('record transitions are revision checked, idempotent and reversible without
   assert.deepEqual(reverted.record.events.map(e => e.state), ['PENDING', 'REJECTED', 'PENDING']);
 });
 
-test('client transaction persists authority and Monitor summary atomically; retries do not duplicate', async () => {
+test('Coach transaction materializes PENDING records and the Monitor summary atomically; retries do not duplicate (T537)', async () => {
+  const { coachMaterializer } = require('./helpers/coach-materializer.js');
   const parent = { calculatedAt: at, recommendations: [rec, { exerciseName: 'Legacy', action: 'increase_load', newLoad: 20 }] };
   const docs = new Map([
     ['clients/client-A', { activePlanId: 'plan-A', coachId: 'coach-A', coachInterventions: [] }],
@@ -81,49 +82,28 @@ test('client transaction persists authority and Monitor summary atomically; retr
     ['logs/client-A/mesos/plan-A', { planId: 'plan-A', entries: { progrec_1_0: parent } }],
     ['logs/client-A', { planId: 'plan-A', entries: { progrec_1_0: parent } }]
   ]);
-  const writes = [];
-  const tx = {
-    get: async ref => ({ exists: () => docs.has(ref), data: () => structuredClone(docs.get(ref)) }),
-    set: (ref, value, opts) => { writes.push({ ref, value, opts }); docs.set(ref, { ...docs.get(ref), ...structuredClone(value) }); }
-  };
-  const context = { window: { VDSEN_AUTO_APPLY_SHADOW: shadow }, USER: { uid: 'client-A' },
-    ACTIVE_PLAN_ID: 'plan-A', FB: { db: {}, doc: (_db, ...parts) => parts.join('/'), runTransaction: async (_db, fn) => fn(tx) } };
-  vm.createContext(context);
-  ['_getSessionCompletionState', '_sessionHasRealLoggedSets', '_getSessionLifecycleState', '_selectLogAuthority']
-    .forEach(name => vm.runInContext(functionSource(client, name), context));
-  vm.runInContext(functionSource(client, '_recordShadowProgression'), context);
-  assert.equal(await context._recordShadowProgression('client-A', 'plan-A', 1, 0, parent), true);
-  const meso = docs.get('logs/client-A/mesos/plan-A');
-  const rootLog = docs.get('logs/client-A');
+  const m = coachMaterializer(docs);
+  assert.ok(await m.run());
+  const meso = docs.get('logs/client-A/mesos/plan-A'), rootLog = docs.get('logs/client-A');
   assert.equal(Object.keys(meso.progressionApplications).length, 2);
   assert.equal(meso.progressionApplicationSummary.autoCount, 1);
   assert.equal(meso.progressionApplicationSummary.counts.REJECTED, 1);
   assert.deepEqual(rootLog.progressionApplicationSummary, meso.progressionApplicationSummary);
   assert.deepEqual(docs.get('plans/plan-A'), plan);
-  assert.ok(writes.every(w => w.opts && w.opts.merge === true));
-  await context._recordShadowProgression('client-A', 'plan-A', 1, 0, parent);
+  assert.equal(await m.run(), null, 'a retry with nothing new writes nothing');
   assert.equal(Object.keys(docs.get('logs/client-A/mesos/plan-A').progressionApplications).length, 2);
   const newer = { calculatedAt: '2026-09-27T12:30:00.000Z', recommendations: [rec] };
   docs.get('logs/client-A/mesos/plan-A').entries.progrec_1_0 = newer;
   docs.get('plans/plan-A').updatedAt = '2026-09-28T00:00:00.000Z';
-  await context._recordShadowProgression('client-A', 'plan-A', 1, 0, newer);
+  await m.run();
   assert.equal(docs.get('logs/client-A/mesos/plan-A').progressionApplicationSummary.counts.STALE, 2);
   assert.equal(docs.get('logs/client-A').progressionApplicationSummary.autoCount, 0);
-  context.USER = { uid: 'client-B' };
-  assert.equal(await context._recordShadowProgression('client-A', 'plan-A', 1, 0, parent), false);
-  context.USER = { uid: 'client-A' };
-  const beforeLate = writes.length;
-  context.FB.runTransaction = async (_db, fn) => fn({ ...tx,
-    get: async ref => {
-      const result = await tx.get(ref);
-      if (ref === 'logs/client-A') context.USER = { uid: 'client-B' };
-      return result;
-    }
-  });
-  assert.equal(await context._recordShadowProgression('client-A', 'plan-A', 1, 0, newer), false);
-  assert.equal(writes.length, beforeLate);
+  const other = coachMaterializer(docs, { coachUid: 'coach-B' });
+  const before = other.writes.length;
+  assert.equal(await other.run(), null); assert.equal(other.writes.length, before, 'a coach that does not own the client writes nothing');
+  const stale = coachMaterializer(docs, { detailClientId: 'client-Z' });
+  assert.equal(await stale.run(), null); assert.equal(stale.writes.length, 0, 'the Coach switched client mid-flight: nothing is written');
 });
-
 test('saveLogs merges existing application fields on both paths', async () => {
   const docs = new Map([
     ['logs/client-A/mesos/plan-A', { entries: { old_plan_set: true }, progressionApplications: { prior: { state: 'PENDING' } } }],

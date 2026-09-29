@@ -30,6 +30,7 @@ Generado por `node scripts/generate-activation-docs.cjs`. **Evidencia estática 
 | OVERRIDE | READY |
 | STALE | READY |
 | CANARY | READY_DISABLED |
+| FIRESTORE_CANONICAL_WRITE_BOUNDARY | PASS / READY (reglas en el repositorio; despliegue pendiente y no autorizado) |
 | Concurrencia (Emulator real) | cubierta (`tests/t532-lifecycle-emulator.cjs`) |
 
 ## 2. Preparación de DATOS REALES DE EQUIPO

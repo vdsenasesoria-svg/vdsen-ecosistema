@@ -64,6 +64,7 @@ futura genuinamente desconocida.
 | Progresión canónica / ruta de aplicación canónica | 1 / 1 (única escritura `tx.set` de overlays y estados de ciclo de vida: `_commitLifecycle`, en el consumidor) |
 | Aplicación numérica real | APAGADA (`NUMERIC_APPLY_ENABLED=false` en 4 módulos; `APPLIED` inalcanzable) |
 | Ciclo de vida PENDING→APPLIED→CONSUMED/OVERRIDDEN/REVERTED/STALE (T529–T535) | READY_BEHIND_DISABLED_FLAG — `docs/APPLIED_LIFECYCLE_AUDIT.md` |
+| Frontera de escritura canónica de Firestore (T536–T537) | PASS / READY en el repositorio (`docs/FIRESTORE_WRITE_BOUNDARY.md`): el atleta escribe ejecución + recibos append-only; el estado canónico solo el Coach dueño; PENDING lo materializa el Coach. **Reglas no desplegadas.** |
 | Prescripción efectiva (cliente) | plan base + overlay elegible; SEGURIDAD > override exacto del Coach > overlay > base (`progression-effective-prescription.js`) |
 | Identidad de equipo | 39 de 41 grupos con id canónico (69 de 71 ejercicios; T517 asigna cada máquina Impulse/Matrix por `exerciseId` exacto, sin fusionar por marca); sin resolver: "Máquina" genérica y el accesorio de polea (no es implemento de carga) — `docs/EQUIPMENT_INCREMENT_INVENTORY.md` |
 | Incrementos de equipo | solo valores escritos por el Coach; ninguno en el repositorio. Modelo: ejercicio > sede+equipo > equipo compartido > sin resolver, en `coaches/{uid}.equipmentIncrements` y `exercises/{id}.loadIncrement` |

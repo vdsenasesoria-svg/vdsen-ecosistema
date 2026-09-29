@@ -22,7 +22,13 @@ const JAR_URL = 'https://storage.googleapis.com/firebase-preview-drop/emulator/'
 // Test-only SDKs (not repo dependencies): the app-matched client SDK and the
 // firebase-admin version T476 was validated with.
 const TEST_PACKAGES = ['firebase@10.12.0', 'firebase-admin@13.10.0'];
-const TEST_FILES = [path.join('tests', 't476-auto-apply-emulator.cjs'), path.join('tests', 't532-lifecycle-emulator.cjs')];
+// One entry per suite so the report keeps separate counts (portable T476 / lifecycle / Firestore rules security).
+const SUITES = [
+  { name: 'T476 portable', file: path.join('tests', 't476-auto-apply-emulator.cjs') },
+  { name: 'lifecycle emulator', file: path.join('tests', 't532-lifecycle-emulator.cjs') },
+  { name: 'rules security', file: path.join('tests', 't536-rules-security.cjs') }
+].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
+const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';
 
 let runtime = null;
@@ -162,9 +168,17 @@ async function main() {
     'FIREBASE_AUTH_EMULATOR_HOST', 'FIRESTORE_PREFER_REST']) delete env[key];
   console.log('[t476] project=' + PROJECT + ' emulator=127.0.0.1:' + port +
     ' rules=firestore.rules jar=' + JAR_NAME + ' sha256=' + JAR_SHA256);
-  const result = spawnSync(process.execPath, ['--test', ...TEST_FILES],
-    { cwd: repo, env, stdio: 'inherit' });
-  return result.status === null ? 1 : result.status;
+  let pass = 0, fail = 0, status = 0;
+  for (const suite of SUITES.filter(x => !ONLY || x.name.includes(ONLY))) {
+    const r = spawnSync(process.execPath, ['--test', suite.file], { cwd: repo, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    process.stdout.write(r.stdout || ''); process.stderr.write(r.stderr || '');
+    const num = re => { const m = (r.stdout || '').match(re); return m ? Number(m[1]) : 0; };
+    const p = num(/^# pass (\d+)/m), f = num(/^# fail (\d+)/m);
+    console.log('[suite] ' + suite.name + ': pass=' + p + ' fail=' + f);
+    pass += p; fail += f; if (r.status !== 0) status = r.status === null ? 1 : r.status;
+  }
+  console.log('# pass ' + pass); console.log('# fail ' + fail);
+  return status;
 }
 
 async function shutdown() {

@@ -31,7 +31,7 @@ Registro + overlay + resumen del Monitor (meso y raíz) se escriben **siempre ju
 | Transición | Función | Compuertas |
 |---|---|---|
 | PENDING → APPLIED | `applyOverlayTransaction` | bandera, `expectedRevision`, cliente/plan activo/PID/exposición exactos, destino no iniciado (a nivel sesión, conservador), guardia de activación (19), alcance de canario re-leído del documento del Coach dentro de la transacción (ausente/deshabilitado = fuera), sin override del Coach, sin dolor reportado entre origen y destino, `operationKey = apply:<key>` |
-| APPLIED → CONSUMED | `consumeOverlayTransaction` | bandera; primera serie de trabajo **persistida** del PID exacto (LOGS del meso releídos en la transacción); lo mostrado debe ser exactamente el overlay; `consume:<key>`; registra `consumedAt` y la prescripción efectiva mostrada |
+| APPLIED → CONSUMED | `consumeOverlayTransaction` (Coach dueño) tras `recordConsumptionReceiptTransaction` (atleta, recibo append-only) | bandera; primera serie de trabajo **persistida** del PID exacto (LOGS releídos en la transacción); el recibo debe describir exactamente el overlay; `consume:<key>`; registra `consumedAt` y la prescripción efectiva mostrada |
 | APPLIED → OVERRIDDEN | `overrideOverlayTransaction` | decisión exacta del Coach (EXERCISE + PID + plan, acción ≠ NO_CHANGE) posterior al cálculo de origen; destino no iniciado; registra `overriddenAt` e intervención |
 | APPLIED → REVERTED | `revertOverlayTransaction` | Coach; `expectedRevision` obligatorio; identidad de overlay exacta; destino no iniciado; conserva el historial |
 | APPLIED → STALE | `staleOverlayTransaction` | plan reemplazado / PID o exposición destino invalidados / plan editado tras el cálculo; destino no iniciado; sin limpieza destructiva |
@@ -54,11 +54,14 @@ Dos dispositivos aplicando · carrera override↔apply · carrera primera serie�
 - Si la primera serie de trabajo se ejecuta mientras el cliente muestra un fallback (p. ej. seguridad), el overlay queda `APPLIED` (no se consume porque no se mostró) y, como la exposición ya empezó, deja de poder revertirse; se mostrará desde entonces. Es una situación rara y auditable.
 - El resumen del Monitor muestra las 8 entradas más recientes; el detalle completo vive en el registro.
 
-## Modelo de confianza (pendiente de endurecer antes de activar)
+## Modelo de confianza y frontera de escritura (T537)
 
-`firestore.rules` no cambió: el documento `logs/{uid}/mesos/{planId}` (registros + overlays + LOGS) es escribible por el propio cliente y por el Coach, igual que hoy con los registros de progresión. El resolvedor solo consume un overlay si registro y overlay son mutuamente consistentes (clave, cliente, plan, PID, estado, vínculo `lifecycle.overlayKey`), pero un cliente malicioso podría fabricar ambos para SU propia pantalla. Endurecimiento recomendado antes de la activación real: restringir en las reglas (`affectedKeys`) que solo el Coach cree/modifique `nextExposureOverlays` y transiciones distintas de CONSUMED, o mover la escritura a una función de servidor. No afecta a la bandera apagada (ningún overlay existe).
+Resuelto en el repositorio: `firestore.rules` reserva todo campo canónico al Coach dueño del cliente; el atleta solo escribe ejecución y recibos de consumo append-only. Ver `docs/FIRESTORE_WRITE_BOUNDARY.md` (inventario de escritores, matriz de autorización por transición, modelo de consumo por recibo, propiedad del Coach). **FIRESTORE_CANONICAL_WRITE_BOUNDARY: PASS / READY** (probado con reglas reales en el emulador). Las reglas **no están desplegadas**.
+
+Quién realiza cada transición: PENDING (creación), APPLIED, OVERRIDDEN, REVERTED, STALE → Coach dueño; CONSUMED → Coach dueño con el recibo del atleta; recibo → atleta.
 
 ## Qué falta para activar de verdad
 
 1. Datos reales de incrementos de equipo del Coach (bloqueo operativo principal): `docs/EQUIPMENT_DATA_REQUIRED_NEXT.md`.
-2. Decisión explícita del director de cambiar `NUMERIC_APPLY_ENABLED` (y activar el canario `autoApplyCanary` para clientes/PIDs concretos).
+2. **Despliegue de `firestore.rules`** (no autorizado en esta ejecución) antes de activar.
+3. Decisión explícita del director de cambiar `NUMERIC_APPLY_ENABLED` (y activar el canario `autoApplyCanary` para clientes/PIDs concretos).

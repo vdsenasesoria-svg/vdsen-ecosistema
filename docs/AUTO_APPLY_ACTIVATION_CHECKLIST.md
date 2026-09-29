@@ -3,7 +3,7 @@
 Generado por `node scripts/generate-activation-docs.cjs` a partir de hechos vivos del repositorio; verificado por `tests/t522-activation-docs.test.js`. `[x]` = cumplido; `[ ]` = pendiente.
 Los ítems por candidato se cumplen en tiempo de ejecución para cada candidato (guardia de activación); aquí se marcan como verificados por sus tests.
 
-**Estado: 17 de 22 cumplidos; pendientes bloqueantes: 4. La bandera NO se activa con esta lista; requiere decisión explícita del director.**
+**Estado: 18 de 23 cumplidos; pendientes bloqueantes: 4. La bandera NO se activa con esta lista; requiere decisión explícita del director.**
 
 - [ ] **Identidades de equipo resueltas para los ejercicios objetivo** — 69 de 71 ejercicios del catálogo (39 de 41 equipos). Sin resolver por evidencia del repositorio: Accesorio de polea (ATTACHMENT_NOT_LOAD_IMPLEMENT), Máquina (GENERIC_LABEL). Mecanismo verificado: t508, t517.
 - [ ] **Incrementos de equipo escritos por el Coach** — 0 de 39 equipos con identidad tienen incremento. Mecanismo verificado: t509, t518, t519. **Datos pendientes del Coach.**
@@ -25,13 +25,15 @@ Los ítems por candidato se cumplen en tiempo de ejecución para cada candidato 
 - [x] **Override del Coach tras aplicar** — OVERRIDE: **READY** — decisión exacta posterior al cálculo y antes del inicio → OVERRIDDEN (t531, t532, t534).
 - [x] **Obsolescencia tras aplicar** — STALE: **READY** — plan reemplazado / PID o exposición invalidados antes del inicio (t531, t532).
 - [x] **Concurrencia con Firestore Emulator real** — 11 escenarios transaccionales en `tests/t532-lifecycle-emulator.cjs` (dos dispositivos, carreras override/revert/plan, consumo duplicado, callbacks tardíos, reintentos, escrituras denegadas).
+- [x] **FIRESTORE_CANONICAL_WRITE_BOUNDARY** — **PASS / READY** — el atleta solo escribe EJECUCIÓN (entries, unidades, historial, semana, recibos de consumo append-only); el estado canónico (`progressionApplications`, `nextExposureOverlays`, resúmenes) solo lo escribe el Coach DUEÑO (`clients/{uid}.coachId`). Probado con reglas reales en el emulador (`tests/t536-rules-security.cjs`). **Las reglas NO están desplegadas** (el despliegue requiere autorización explícita).
 - [x] **Alcance de canario integrado al ciclo de vida** — CANARY: **READY_DISABLED** — `autoApplyCanary` se re-lee DENTRO de la transacción; fuera de alcance/ausente/deshabilitado → nunca APPLIED (t526, t531).
 - [x] **Auditoría visible para el Coach** — Línea dry-run con clase de vista rápida, cola de equipos y matriz de preparación en el Monitor (t494, t510, t520); ciclo de vida completo APPLIED/CONSUMED/OVERRIDDEN/REVERTED/STALE con antes→después, regla, equipo, marcas de tiempo y acción del Coach (t534).
 
 ## Bloqueos para activar (resumen)
 
 1. **Datos del Coach:** incrementos reales de equipo (ver `docs/EQUIPMENT_DATA_REQUIRED_NEXT.md` y `docs/EQUIPMENT_ACTIVATION_READINESS.md`). Es el bloqueo operativo principal.
-2. **Decisión intencional** de cambiar `NUMERIC_APPLY_ENABLED` (no se cambia en esta ejecución).
-3. No bloqueante: validación del runner en Windows (`NON_BLOCKING_TECHNICAL_PENDING`).
+2. **Despliegue de `firestore.rules`** a producción (la frontera de escritura canónica solo existe en el repositorio hasta entonces; no autorizado en esta ejecución) — debe ocurrir ANTES de activar.
+3. **Decisión intencional** de cambiar `NUMERIC_APPLY_ENABLED` y activar el canario `autoApplyCanary` (no se cambia en esta ejecución).
+4. No bloqueante: validación del runner en Windows (`NON_BLOCKING_TECHNICAL_PENDING`).
 
 Las decisiones D/E, C→E y serie representativa ya NO son bloqueos: están cerradas como política de producto VDSEN (ver `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md`).

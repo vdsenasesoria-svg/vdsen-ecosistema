@@ -27,6 +27,7 @@ async function applied(sc = F.scenario()) { const s = storeFor(sc); const r = aw
 const target = sc => 'log_2_0_0_s0';
 const firstSet = { carga: '102.5', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2, prescriptionExerciseId: 'pid-1', ts: 5 };
 const shownFor = a => { const o = meso(a.s).nextExposureOverlays['ovl_' + a.key]; return { provenance: 'CANONICAL_OVERLAY', overlayKey: o.key, dimension: o.dimension, appliedValue: o.appliedValue }; };
+function writeReceipt(a, o = {}) { const sh = shownFor(a); a.s.docs.get(REFS.meso).consumptionReceipts = Object.assign({}, a.s.docs.get(REFS.meso).consumptionReceipts, { [a.key]: Object.assign({ recordKey: a.key, overlayKey: sh.overlayKey, dimension: sh.dimension, appliedValue: sh.appliedValue, provenance: sh.provenance, ackAt: '2026-09-30T08:59:00.000Z' }, o) }); }
 async function persistFirstSet(a) { a.s.docs.get(REFS.meso).entries[target()] = structuredClone(firstSet); }
 
 test('T531.1 shipped flag false: nothing can be applied or consumed and the transaction is never touched', async () => {
@@ -101,29 +102,43 @@ test('T531.6 atomicity: a denied write leaves NEITHER overlay NOR record change 
   await assert.rejects(apply(C, s2, sc), /permission-denied/); assert.equal(s2.log.length, 0);
 });
 
-test('T531.7 consume: only after the first PERSISTED working set; never on render; idempotent; records what was shown', async () => {
+test('T531.7 consumption: the ATHLETE only appends a receipt (after a PERSISTED first set); the OWNER COACH turns a valid receipt into CONSUMED; idempotent', async () => {
   const a = await applied(); const now = '2026-09-30T09:00:00.000Z';
-  const consume = (o = {}) => a.s.run(tx => C.consumeOverlayTransaction(tx, REFS, Object.assign({ recordKey: a.key, clientId: 'c', now, shown: shownFor(a) }, o), { isCurrent: () => true }));
-  assert.equal((await consume()).reason, 'TARGET_NOT_STARTED', 'opening/rendering the exposure is not execution');
+  const receipt = (o = {}) => a.s.run(tx => C.recordConsumptionReceiptTransaction(tx, { meso: REFS.meso, root: REFS.root }, Object.assign({ recordKey: a.key, clientId: 'c', now: '2026-09-30T08:59:00.000Z', shown: shownFor(a) }, o), { isCurrent: () => true }));
+  const consume = (o = {}) => a.s.run(tx => C.consumeOverlayTransaction(tx, REFS, Object.assign({ recordKey: a.key, clientId: 'c', now, actorId: 'k' }, o), { isCurrent: () => true }));
+  assert.equal((await receipt()).reason, 'TARGET_NOT_STARTED', 'opening/rendering the exposure is not execution');
   a.s.docs.get(REFS.meso).entries[target()] = Object.assign({}, firstSet, { done: false });
-  assert.equal((await consume()).reason, 'TARGET_NOT_STARTED', 'an unconfirmed set is not execution');
+  assert.equal((await receipt()).reason, 'TARGET_NOT_STARTED', 'an unconfirmed set is not execution');
   await persistFirstSet(a);
-  assert.equal((await consume({ shown: { provenance: 'BASE_PLAN' } })).reason, 'OVERLAY_NOT_SHOWN');
-  assert.equal((await consume({ clientId: 'other' })).reason, B.CLIENT_MISMATCH);
-  const r = await consume(); assert.equal(r.written, true);
+  assert.equal((await receipt({ shown: { provenance: 'BASE_PLAN' } })).reason, 'OVERLAY_NOT_SHOWN');
+  assert.equal((await receipt({ clientId: 'other' })).reason, B.CLIENT_MISMATCH);
+  assert.equal((await consume()).reason, 'NO_CONSUMPTION_RECEIPT', 'the Coach never consumes without the athlete acknowledgement');
+  const r = await receipt(); assert.equal(r.written, true);
+  assert.deepEqual(a.s.log.slice(-1), [REFS.meso], 'the athlete receipt touches ONLY the meso document');
+  const m0 = meso(a.s); assert.deepEqual(Object.keys(m0.consumptionReceipts), [a.key]); assert.equal(m0.progressionApplications[a.key].state, 'APPLIED', 'a receipt never changes canonical state');
+  assert.equal((await receipt()).reason, 'ALREADY_ACKNOWLEDGED');
+  const c = await consume(); assert.equal(c.written, true);
   const m = meso(a.s), rec = m.progressionApplications[a.key], ov = m.nextExposureOverlays['ovl_' + a.key];
-  assert.deepEqual([rec.state, ov.status, rec.lifecycle.consumedAt, ov.consumedAt], ['CONSUMED', 'CONSUMED', now, now]);
+  assert.deepEqual([rec.state, ov.status, rec.lifecycle.consumedAt, ov.consumedAt, rec.lifecycle.acknowledgedAt], ['CONSUMED', 'CONSUMED', now, now, '2026-09-30T08:59:00.000Z']);
   assert.deepEqual(rec.lifecycle.shownPrescription, { provenance: 'CANONICAL_OVERLAY', overlayKey: ov.key, dimension: 'LOAD', previousValue: 100, appliedValue: 102.5, unit: 'KG' });
-  assert.equal(rec.events.filter(e => e.operationKey === 'consume:' + a.key).length, 1);
   const again = await consume(); assert.deepEqual([again.written, again.idempotent, again.reason], [false, true, 'ALREADY_CONSUMED']);
   assert.equal(meso(a.s).progressionApplications[a.key].events.filter(e => e.state === 'CONSUMED').length, 1, 'duplicate callback: no duplicate lifecycle event');
   assert.equal(m.entries[target()].carga, '102.5', 'LOGS untouched');
 });
 
+test('T531.7b a forged or mismatching receipt can never make the Coach consume (the athlete cannot author the prescription)', async () => {
+  const a = await applied(); await persistFirstSet(a);
+  const consume = () => a.s.run(tx => C.consumeOverlayTransaction(tx, REFS, { recordKey: a.key, clientId: 'c', now: 'n', actorId: 'k' }, {}));
+  for (const forged of [{ appliedValue: 999 }, { dimension: 'REPS' }, { overlayKey: 'ovl_other' }, { provenance: 'BASE_PLAN' }, { recordKey: 'v1_0000000000000000' }]) {
+    writeReceipt(a, forged); assert.equal((await consume()).reason, 'RECEIPT_MISMATCH', JSON.stringify(forged));
+  }
+  assert.equal(meso(a.s).progressionApplications[a.key].state, 'APPLIED');
+});
 test('T531.8 executed value stays separate: base 100, overlay 102.5, athlete logs 100 -> LOGS keep 100, audit keeps 102.5', async () => {
   const a = await applied();
   a.s.docs.get(REFS.meso).entries[target()] = Object.assign({}, firstSet, { carga: '100' });
-  const r = await a.s.run(tx => C.consumeOverlayTransaction(tx, REFS, { recordKey: a.key, clientId: 'c', now: 'n', shown: shownFor(a) }, {}));
+  writeReceipt(a);
+  const r = await a.s.run(tx => C.consumeOverlayTransaction(tx, REFS, { recordKey: a.key, clientId: 'c', now: 'n' }, {}));
   assert.equal(r.written, true);
   const m = meso(a.s); assert.equal(m.entries[target()].carga, '100'); assert.equal(m.progressionApplications[a.key].lifecycle.shownPrescription.appliedValue, 102.5);
 });
@@ -149,7 +164,7 @@ test('T531.10 override / revert / stale are refused once the target exposure has
   const rev = meso(a.s).progressionApplications[a.key].revision;
   for (const fn of ['overrideOverlayTransaction', 'revertOverlayTransaction', 'staleOverlayTransaction'])
     assert.equal((await a.s.run(tx => C[fn](tx, REFS, { recordKey: a.key, expectedRevision: rev, now: 'n' }, {}))).reason, B.TARGET_ALREADY_STARTED, fn);
-  await a.s.run(tx => C.consumeOverlayTransaction(tx, REFS, { recordKey: a.key, clientId: 'c', now: 'n', shown: shownFor(a) }, {}));
+  writeReceipt(a); await a.s.run(tx => C.consumeOverlayTransaction(tx, REFS, { recordKey: a.key, clientId: 'c', now: 'n' }, {}));
   const rev2 = meso(a.s).progressionApplications[a.key].revision;
   for (const fn of ['overrideOverlayTransaction', 'revertOverlayTransaction', 'staleOverlayTransaction'])
     assert.equal((await a.s.run(tx => C[fn](tx, REFS, { recordKey: a.key, expectedRevision: rev2, now: 'n' }, {}))).reason, 'INVALID_TRANSITION', 'CONSUMED is terminal: ' + fn);
@@ -201,7 +216,7 @@ test('T531.13 firewall: REVERTED / OVERRIDDEN / STALE / CONSUMED can never be re
 
 test('T531.14 full lifecycle paths on a sandbox flag-on copy: APPLIED->CONSUMED / OVERRIDDEN / REVERTED / STALE, one final state each', async () => {
   const outcomes = {};
-  { const a = await applied(); await persistFirstSet(a); await a.s.run(tx => C.consumeOverlayTransaction(tx, REFS, { recordKey: a.key, clientId: 'c', now: 'n', shown: shownFor(a) }, {})); outcomes.CONSUMED = meso(a.s).progressionApplications[a.key].state; }
+  { const a = await applied(); await persistFirstSet(a); writeReceipt(a); await a.s.run(tx => C.consumeOverlayTransaction(tx, REFS, { recordKey: a.key, clientId: 'c', now: 'n' }, {})); outcomes.CONSUMED = meso(a.s).progressionApplications[a.key].state; }
   { const a = await applied(); a.s.docs.set(REFS.client, { activePlanId: 'p', coachInterventions: [{ targetType: 'EXERCISE', targetId: 'pid-1', planId: 'p', action: 'X', decidedAt: '2026-09-28T03:00:00.000Z' }] });
     await a.s.run(tx => C.overrideOverlayTransaction(tx, REFS, { recordKey: a.key, now: 'n' }, {})); outcomes.OVERRIDDEN = meso(a.s).progressionApplications[a.key].state; }
   { const a = await applied(); await a.s.run(tx => C.revertOverlayTransaction(tx, REFS, { recordKey: a.key, expectedRevision: 2, now: 'n' }, {})); outcomes.REVERTED = meso(a.s).progressionApplications[a.key].state; }
@@ -218,7 +233,8 @@ test('T531.15 override / revert / stale remain available as safety valves with t
 
 test('T531.16 the module has ONE writer (_commitLifecycle) reached only after every guard; no plan writes; no legacy fields', () => {
   const src = fs.readFileSync(path.join(__dirname, '../assets/progression-application-consumer.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  assert.equal(src.split('tx.set(').length - 1, 1);
+  assert.equal(src.split('tx.set(').length - 1, 2);
+  assert.ok(/function _commitReceipt\(tx, refs, payload\) \{ tx\.set\(refs\.meso, payload, \{ merge: true \}\); \}/.test(src), 'the receipt writer only merges the receipt payload into the meso document');
   assert.ok(/function _commitLifecycle\(tx, refs, w\)/.test(src));
   const tail = src.slice(src.indexOf('_commitLifecycle(tx, refs, _lifecycleWrite'));
   assert.ok(!/progrec|refs\.plan,/.test(src.replace(/refs\.plan\)/g, '')) || true);

@@ -96,7 +96,21 @@ function clientContext(f) {
     .forEach(name => vm.runInContext(functionSource(clientHtml, name), context));
   vm.runInContext(functionSource(clientHtml, '_selectLogAuthority'), context);
   vm.runInContext(functionSource(clientHtml, '_doSaveLogs'), context);
-  vm.runInContext(functionSource(clientHtml, '_recordShadowProgression'), context);
+  return context;
+}
+
+// T537: PENDING records are materialized by the OWNER Coach (real Coach function, real SDK transactions, real rules).
+function materializerContext(f, coachDb) {
+  const db = coachDb || f.coach.db;
+  const context = { window: { VDSEN_AUTO_APPLY_SHADOW: shadow, VDSEN_APPLICATION_CONSUMER: require(path.join(root, 'assets/progression-application-consumer.js')) },
+    currentCoach: { uid: f.coach.uid }, _detailClientId: f.client.uid, db, doc,
+    runTransaction: (d, fn) => runTransaction(d, tx => fn({
+      get: ref => tx.get(ref),
+      set: (ref, value, opts) => tx.set(ref, structuredClone(value), opts),
+      update: (ref, value) => tx.update(ref, structuredClone(value))
+    })), console };
+  vm.createContext(context);
+  vm.runInContext(functionSource(coachHtml, '_materializeShadowRecords'), context);
   return context;
 }
 
@@ -122,13 +136,13 @@ function coachContext(f, item) {
 
 test.after(async () => { await Promise.all(apps.map(deleteApp)); await deleteAdmin(adminApp); });
 
-test('mergeFields retains audit fields and replaces the owned entries map under real Firestore rules', { timeout: 30000 }, async () => {
+test('mergeFields retains canonical fields and replaces the owned entries map under real Firestore rules', { timeout: 30000 }, async () => {
   const f = await fixture(), ctx = clientContext(f);
   const mesoRef = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId);
   const rootRef = doc(f.client.db, 'logs', f.client.uid);
-  await setDoc(mesoRef, { progressionApplications: { prior: { state: 'PENDING' } },
-    progressionApplicationSummary: { autoCount: 1 } }, { merge: true });
-  await setDoc(rootRef, { progressionApplicationSummary: { autoCount: 1 } }, { merge: true });
+  // canonical fields exist (written by the Coach side, here via admin): the athlete's save must keep them and be ALLOWED
+  await adminDb.doc(mesoRef.path).set({ progressionApplications: { prior: { state: 'PENDING' } }, progressionApplicationSummary: { autoCount: 1 } }, { merge: true });
+  await adminDb.doc(rootRef.path).set({ progressionApplicationSummary: { autoCount: 1 } }, { merge: true });
   assert.equal(await ctx._doSaveLogs(), true);
   const meso = (await getDoc(mesoRef)).data(), rootLog = (await getDoc(rootRef)).data();
   assert.deepEqual(meso.entries, { progrec_1_0: f.parent });
@@ -138,97 +152,66 @@ test('mergeFields retains audit fields and replaces the owned entries map under 
   assert.deepEqual(rootLog.entries, { progrec_1_0: f.parent });
 });
 
-test('root-only save repairs a lagging meso source atomically without false STALE', { timeout: 30000 }, async () => {
-  const f = await fixture(), ctx = clientContext(f);
+test('Coach materialization repairs nothing in LOGS and uses the newer root source when the meso mirror lags (no false STALE)', { timeout: 30000 }, async () => {
+  const f = await fixture(), ctx = materializerContext(f);
   const mesoRef = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId);
   const rootRef = doc(f.client.db, 'logs', f.client.uid);
-  const old = { calculatedAt: new Date(Date.parse(f.parent.calculatedAt) - 60000).toISOString(),
-    recommendations: f.parent.recommendations };
-  await adminDb.doc(mesoRef.path).set({ entries: { progrec_1_0: old } }, { merge: true });
-  const normalSetDoc = ctx.FB.setDoc;
-  ctx.FB.setDoc = (ref, value, opts) => ref.path === mesoRef.path
-    ? Promise.reject(new Error('mirror unavailable')) : normalSetDoc(ref, value, opts);
-  assert.equal(await ctx._doSaveLogs(), true);
-  assert.equal(await ctx._recordShadowProgression(f.client.uid, f.planId, 1, 0, f.parent), true);
+  const old = { calculatedAt: new Date(Date.parse(f.parent.calculatedAt) - 60000).toISOString(), recommendations: f.parent.recommendations };
+  await adminDb.doc(mesoRef.path).set({ planId: f.planId, entries: { progrec_1_0: old, done_1_0: { ts: 1 } }, updatedAt: 1 });
+  await adminDb.doc(rootRef.path).set({ planId: f.planId, entries: { progrec_1_0: f.parent, done_1_0: { ts: 1 } }, updatedAt: 2 });
+  const mesoEntriesBefore = (await getDoc(mesoRef)).data().entries;
+  assert.ok(await ctx._materializeShadowRecords(f.client.uid, f.planId));
   const meso = (await getDoc(mesoRef)).data(), rootLog = (await getDoc(rootRef)).data();
-  assert.deepEqual(meso.entries.progrec_1_0, f.parent);
-  assert.equal(Object.values(meso.progressionApplications)[0].state, 'PENDING');
+  const records = Object.values(meso.progressionApplications);
+  assert.equal(records.length, 1); assert.equal(records[0].state, 'PENDING'); assert.equal(records[0].source.calculatedAt, f.parent.calculatedAt);
+  assert.deepEqual(meso.entries, mesoEntriesBefore, 'the Coach never rewrites executed LOGS (no mirror repair)');
   assert.deepEqual(rootLog.progressionApplicationSummary, meso.progressionApplicationSummary);
 });
 
-test('reentry selects newer root; repair and subsequent save retain it', { timeout: 30000 }, async () => {
-  const f = await fixture(), ctx = clientContext(f);
+test('evidence older than the authoritative root cannot become PENDING; a newer calculation supersedes an older PENDING', { timeout: 30000 }, async () => {
+  const f = await fixture(), ctx = materializerContext(f);
   const mesoRef = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId);
   const rootRef = doc(f.client.db, 'logs', f.client.uid);
-  const old = { calculatedAt: new Date(Date.parse(f.parent.calculatedAt) - 30000).toISOString(),
-    recommendations: f.parent.recommendations };
-  await adminDb.doc(mesoRef.path).set({ planId: f.planId,
-    entries: { progrec_1_0: old, done_1_0: { ts: 100 } }, updatedAt: 100 });
-  await adminDb.doc(rootRef.path).set({ planId: f.planId,
-    entries: { progrec_1_0: f.parent, done_1_0: { ts: 200 } }, updatedAt: 200 });
-  const mesoBefore = (await getDoc(mesoRef)).data(), rootBefore = (await getDoc(rootRef)).data();
-  ctx.LOGS = ctx._selectLogAuthority(mesoBefore, rootBefore, f.planId).entries;
-  assert.equal(ctx.LOGS.progrec_1_0.calculatedAt, f.parent.calculatedAt);
-  assert.equal(await ctx._recordShadowProgression(f.client.uid, f.planId, 1, 0, f.parent), true);
-  assert.deepEqual((await getDoc(mesoRef)).data().entries, rootBefore.entries);
-  assert.equal(await ctx._doSaveLogs(), true);
-  assert.deepEqual((await getDoc(mesoRef)).data().entries.progrec_1_0, f.parent);
-  assert.deepEqual((await getDoc(rootRef)).data().entries.progrec_1_0, f.parent);
+  const old = { calculatedAt: new Date(Date.parse(f.parent.calculatedAt) - 30000).toISOString(), recommendations: f.parent.recommendations };
+  await adminDb.doc(mesoRef.path).set({ planId: f.planId, entries: { progrec_1_0: old }, updatedAt: 1 });
+  await adminDb.doc(rootRef.path).set({ planId: f.planId, entries: { progrec_1_0: old }, updatedAt: 1 });
+  assert.ok(await ctx._materializeShadowRecords(f.client.uid, f.planId));
+  await adminDb.doc(mesoRef.path).set({ entries: { progrec_1_0: f.parent }, updatedAt: 3 }, { merge: true });
+  await adminDb.doc(rootRef.path).set({ entries: { progrec_1_0: f.parent }, updatedAt: 3 }, { merge: true });
+  assert.ok(await ctx._materializeShadowRecords(f.client.uid, f.planId));
+  const meso = (await getDoc(mesoRef)).data(), states = Object.values(meso.progressionApplications).map(r => r.state).sort();
+  assert.deepEqual(states, ['PENDING', 'STALE']);
+  assert.equal((await getDoc(rootRef)).data().progressionApplicationSummary.autoCount, 1);
+  assert.equal(await ctx._materializeShadowRecords(f.client.uid, f.planId), null, 'nothing new => no write');
 });
 
-test('older queued evidence cannot become PENDING when root execution is newer', { timeout: 30000 }, async () => {
-  const f = await fixture(), ctx = clientContext(f);
+test('two Coach tabs materializing concurrently keep one key; a non-owner Coach and a Coach switched to another client write nothing', { timeout: 30000 }, async () => {
+  const f = await fixture(), a = materializerContext(f), b = materializerContext(f);
   const mesoRef = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId);
   const rootRef = doc(f.client.db, 'logs', f.client.uid);
-  const old = { calculatedAt: new Date(Date.parse(f.parent.calculatedAt) - 30000).toISOString(),
-    recommendations: f.parent.recommendations };
-  await adminDb.doc(mesoRef.path).set({ entries: { progrec_1_0: old } }, { merge: true });
-  assert.equal(await ctx._recordShadowProgression(f.client.uid, f.planId, 1, 0, old), true);
-  const meso = (await getDoc(mesoRef)).data(), rootLog = (await getDoc(rootRef)).data();
-  assert.deepEqual(meso.entries.progrec_1_0, f.parent);
-  assert.equal(Object.values(meso.progressionApplications)[0].state, 'STALE');
-  assert.equal(rootLog.progressionApplicationSummary.autoCount, 0);
-  assert.deepEqual(rootLog.progressionApplicationSummary, meso.progressionApplicationSummary);
-});
-
-test('concurrent client callbacks keep one key and atomically mirror the summary; late/wrong contexts do not write', { timeout: 30000 }, async () => {
-  const f = await fixture(), a = clientContext(f), b = clientContext(f);
-  const mesoRef = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId);
-  const rootRef = doc(f.client.db, 'logs', f.client.uid);
-  await Promise.all([
-    a._recordShadowProgression(f.client.uid, f.planId, 1, 0, f.parent),
-    b._recordShadowProgression(f.client.uid, f.planId, 1, 0, f.parent)
-  ]);
+  await Promise.all([a._materializeShadowRecords(f.client.uid, f.planId), b._materializeShadowRecords(f.client.uid, f.planId)]);
   let meso = (await getDoc(mesoRef)).data(), rootLog = (await getDoc(rootRef)).data();
   assert.equal(Object.keys(meso.progressionApplications).length, 1);
   assert.equal(meso.progressionApplicationSummary.autoCount, 1);
   assert.deepEqual(rootLog.progressionApplicationSummary, meso.progressionApplicationSummary);
-  assert.equal(await a._recordShadowProgression(f.client.uid, f.planId, 1, 0, f.parent), true);
-  assert.equal(Object.keys((await getDoc(mesoRef)).data().progressionApplications).length, 1);
-  const other = await fixture();
-  assert.equal(await a._recordShadowProgression(other.client.uid, other.planId, 1, 0, other.parent), false);
-  assert.equal((await getDoc(doc(other.client.db, 'logs', other.client.uid, 'mesos', other.planId)))
-    .data().progressionApplications, undefined);
-  a.FB = { ...a.FB, runTransaction: (db, fn) => runTransaction(db, async tx => {
-    const guarded = { ...tx, get: async ref => {
-      const snap = await tx.get(ref);
-      if (ref.path === rootRef.path) a.USER = { uid: other.client.uid };
-      return snap;
-    } };
-    return fn(guarded);
-  }) };
-  assert.equal(await a._recordShadowProgression(f.client.uid, f.planId, 1, 0, f.parent), false);
-  meso = (await getDoc(mesoRef)).data(); rootLog = (await getDoc(rootRef)).data();
-  assert.equal(Object.keys(meso.progressionApplications).length, 1);
-  assert.deepEqual(rootLog.progressionApplicationSummary, meso.progressionApplicationSummary);
-  a.USER = { uid: f.client.uid };
-  a.FB.runTransaction = b.FB.runTransaction;
-  await adminDb.doc('clients/' + f.client.uid).update({ activePlanId: other.planId });
-  assert.equal(await a._recordShadowProgression(f.client.uid, f.planId, 1, 0, f.parent), false);
-  assert.equal(Object.keys((await getDoc(mesoRef)).data().progressionApplications).length, 1);
-  assert.deepEqual((await getDoc(doc(f.client.db, 'plans', f.planId))).data(), f.plan);
-  assert.equal(shadow.NUMERIC_APPLY_ENABLED, false);
-  assert.equal(shadow.attemptNumericApply().reasonCode, 'MAGNITUDE_POLICY_MISSING');
+});
+
+test('a non-owner Coach, a Coach switched to another client and an athlete session with a forged Coach identity write nothing', { timeout: 30000 }, async () => {
+  const f = await fixture(), a = materializerContext(f);
+  const mesoRef = doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId);
+  await a._materializeShadowRecords(f.client.uid, f.planId);
+  const other = await signedIn();
+  await adminDb.doc('coaches/' + other.uid).set({ role: 'coach' });
+  const foreign = materializerContext(f, other.db); foreign.currentCoach = { uid: other.uid };
+  await adminDb.doc(mesoRef.path).update({ progressionApplications: {}, progressionApplicationSummary: { autoCount: 0, counts: {}, items: [] } });
+  const foreignResult = await foreign._materializeShadowRecords(f.client.uid, f.planId).then(() => 'resolved', e => e.code);
+  assert.ok(foreignResult === 'permission-denied' || foreignResult === 'resolved', 'a non-owner Coach is stopped by the rules (plan read) or by the ownership guard');
+  const switched = materializerContext(f); switched._detailClientId = 'late-context';
+  assert.equal(await switched._materializeShadowRecords(f.client.uid, f.planId), null);
+  assert.deepEqual((await getDoc(mesoRef)).data().progressionApplications, {}, 'nothing was written by either');
+  const clientDb = materializerContext(f, f.client.db); clientDb.currentCoach = { uid: f.coach.uid };
+  await assert.rejects(clientDb._materializeShadowRecords(f.client.uid, f.planId), { code: 'permission-denied' }, 'even a forged in-page Coach identity cannot write from an athlete session (rules)');
+  assert.deepEqual((await getDoc(doc(f.coach.db, 'plans', f.planId))).data(), f.plan);
 });
 
 test('a denied write rolls back both documents in one real Firestore transaction', { timeout: 30000 }, async () => {
@@ -252,8 +235,8 @@ test('a denied write rolls back both documents in one real Firestore transaction
 });
 
 test('Coach CAS is idempotent under concurrent retries; intervention and both summaries commit together', { timeout: 30000 }, async () => {
-  const f = await fixture(), clientCtx = clientContext(f);
-  assert.equal(await clientCtx._recordShadowProgression(f.client.uid, f.planId, 1, 0, f.parent), true);
+  const f = await fixture(), matCtx = materializerContext(f);
+  assert.ok(await matCtx._materializeShadowRecords(f.client.uid, f.planId));
   const mesoRef = doc(f.coach.db, 'logs', f.client.uid, 'mesos', f.planId);
   const rootRef = doc(f.coach.db, 'logs', f.client.uid);
   const first = (await getDoc(mesoRef)).data();
