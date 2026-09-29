@@ -63,6 +63,8 @@ Restos operativos CONTENIDOS (T515): **Temporizador de descanso** (`fatigueCost`
 
 Falta antes de activar: (1) el Coach carga incrementos reales de equipo, (2) decisiones de ciencia: D/E, precedencia C/E, serie representativa, (3) validar el runner en Windows.
 
+Estado detallado y verificable: `docs/AUTO_APPLY_READINESS.md`, `docs/AUTO_APPLY_ACTIVATION_CHECKLIST.md` (T522), búsqueda de fuentes `docs/PROGRESSION_SCIENCE_SOURCE_SEARCH.md` y opciones de producto `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md` (T521).
+
 ## Guardia de activación (T513)
 
 `verifyActivationPreconditions` re-verifica 18 hechos directamente (cliente exacto, plan activo exacto, PID exacto, exposición origen válida,
