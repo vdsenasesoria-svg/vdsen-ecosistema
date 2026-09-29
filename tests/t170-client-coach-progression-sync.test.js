@@ -46,7 +46,7 @@ ok(COACH.includes('return !!(p && p.updatedAt && lastRec && lastRec.calculatedAt
 ok(!CLIENT.includes('Date.parse(PLAN.updatedAt) > Date.parse(progrec.calculatedAt)'), 'T487: the client-side staleness expression was removed with the auto-apply gate (the canonical shadow layer and the Coach REVIEW gate hold the stale checks)');
 ok(COACH.includes("if (_isIdentityStale(r) || _isCoachEditStale(r)) return 'REVIEW';"), '_categorizeRec now routes BOTH identity mismatch AND coach-edit staleness into REVIEW');
 ok(COACH.includes('_isIdentityStale(r)\n            ? \'⚠️ Identidad no resuelta'), 'the REVIEW card shows the correct message for identity mismatch');
-ok(COACH.includes('Editaste el plan después de calcularse esta recomendación'), 'the REVIEW card shows a distinct, accurate message for coach-edit staleness (not the identity-mismatch text)');
+ok(COACH.includes('Editaste el plan después de calcularse esta señal'), 'the REVIEW card shows a distinct, accurate message for coach-edit staleness (not the identity-mismatch text)');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Behavioral: reimplements the exact categorization decision against

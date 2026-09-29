@@ -159,7 +159,7 @@ const PLAN_WITH_PIDS = { days: [{ dayIndex: 0, exercises: [
 
   const { sorted, _renderRecCard } = runBlock(PLAN_WITH_PIDS, { recommendations: [stale], deloadTriggers: [] });
   const html = _renderRecCard(sorted[0]);
-  ok(html.includes('Identidad no resuelta') && html.includes('No se aplica automáticamente'), 'Item 10 — the REVIEW card explicitly states identity is unresolved and nothing is auto-applied');
+  ok(html.includes('Identidad no resuelta') && html.includes('Solo referencia; no se aplica.'), 'Item 10 — the REVIEW card explicitly states identity is unresolved and nothing is auto-applied');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────

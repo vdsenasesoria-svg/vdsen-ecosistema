@@ -4491,7 +4491,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           _recOk   ? `<span style="color:#888;font-weight:600">${_recOk}=</span>` : ''
         ].filter(Boolean).join(' · ');
         html += `<div class="flex items-center gap-3 mb-2">
-          <div class="text-xs text-[#888] uppercase tracking-wide">Recomendaciones · Sem ${lastRecWeek} · Día ${lastRecDay + 1}</div>
+          <div class="text-xs text-[#888] uppercase tracking-wide">Evidencia del motor legacy (no aplicada) · Sem ${lastRecWeek} · Día ${lastRecDay + 1}</div>
           <div class="text-xs">${_recSummary}</div>
         </div>`;
         html += `<div class="space-y-2">`;
@@ -18448,7 +18448,9 @@ El esfuerzo no es negociable.
       }
 
       // ── Exceptions-first summary (PASO 2) — real states, no invented score ──
-      html += `<div class="text-xs text-[#888] mb-2 mt-3 uppercase tracking-wide font-semibold">Progresión recomendada — Sem ${lastRecW} · Día ${lastRecD+1} <span style="color:#555;text-transform:none">· Motor de progresión</span></div>`;
+      // T489: the legacy engine output is EVIDENCE (collapsed, not applied); the canonical shadow candidates
+      // (AUTO feed above and the Modulo D view) are the single progression presentation.
+      html += `<details class="mt-3" id="_legacyProgEvidence"><summary class="text-xs text-[#888] mb-2 uppercase tracking-wide font-semibold cursor-pointer">Evidencia del motor legacy — Sem ${lastRecW} · Día ${lastRecD+1} <span style="color:#555;text-transform:none">· referencia, no aplicada</span></summary>`;
       html += `<div class="flex gap-3 flex-wrap mb-2 text-xs">
         <span class="text-[#888]">EVALUADOS: <strong class="text-white">${categorized.length}</strong></span>
         ${Object.keys(CAT_META).filter(k => counts[k] > 0).map(k => `<span style="color:${CAT_META[k].color};font-weight:700">${CAT_META[k].label}: ${counts[k]}</span>`).join('')}
@@ -18467,8 +18469,8 @@ El esfuerzo no es negociable.
         const al = aL[r.action] || aL.maintain;
         if (cat === 'REVIEW') {
           const _reviewMsg = _isIdentityStale(r)
-            ? '⚠️ Identidad no resuelta — este ejercicio ya no coincide con el plan activo (posible sustitución). No se aplica automáticamente.'
-            : '⚠️ Editaste el plan después de calcularse esta recomendación — quedó desactualizada. El cliente NO la aplicará automáticamente en la próxima sesión.';
+            ? '⚠️ Identidad no resuelta — este ejercicio ya no coincide con el plan activo (posible sustitución). Solo referencia; no se aplica.'
+            : '⚠️ Editaste el plan después de calcularse esta señal — quedó desactualizada. Solo referencia; no se aplica.';
           return `<div class="card p-3" style="border-left:3px solid ${meta.color}">
             <div class="flex justify-between items-center mb-1">
               <span class="font-semibold text-sm">${r.exerciseName || '—'}</span>
@@ -18487,7 +18489,7 @@ El esfuerzo no es negociable.
             <span class="text-[#888]">Ejecutado: <strong class="text-white">RIR real ${_fmtNum(r.observedRIR)}</strong></span>
           </div>
           <div class="flex gap-3 text-xs flex-wrap mt-1">
-            <span class="text-[#888]">Siguiente: <strong class="text-white">${_fmtNum(r.newLoad,' kg')} · ${_fmtNum(r.newSets)}s${r.newReps!=null?' · '+r.newReps+' reps':''} · RIR obj ${_fmtNum(r.rirTarget)}</strong></span>
+            <span class="text-[#888]">Referencia legacy (no aplicada): <strong class="text-white">${_fmtNum(r.newLoad,' kg')} · ${_fmtNum(r.newSets)}s${r.newReps!=null?' · '+r.newReps+' reps':''} · RIR obj ${_fmtNum(r.rirTarget)}</strong></span>
           </div>
           ${r.trend?`<div class="text-xs text-[#555] mt-1">Sem anterior: ${_fmtNum(r.trend.prevLoad)} kg · ${_fmtNum(r.trend.prevSets)}s · ICS ${_fmtNum(r.trend.prevICS)}</div>`:''}
           <div class="text-xs text-[#888] mt-1">${r.reason || '—'}</div>
@@ -18507,6 +18509,7 @@ El esfuerzo no es negociable.
         keeps.forEach(item => { html += _renderRecCard(item); });
         html += `</div></details>`;
       }
+      html += `</details>`;
     } else if (!lastRec) {
       html += `<p class="text-[#888] text-sm mt-2">Sin recomendaciones de progresión aún — el cliente debe completar una sesión con check-in.</p>`;
     }
@@ -18694,6 +18697,32 @@ El esfuerzo no es negociable.
       + '<span style="display:block;font-size:10px;color:#888">Exposiciones comparables: '
       + _escH(String(m.comparableExposureCount || 0)) + ' · prescripción original intacta</span>';
   }
+  // T489: one canonical presentation. Each AUTO item tells the Coach what would change, why, from which
+  // exposure, for which exposure, its state/blocker, and any Coach decision. The legacy engine signal is
+  // shown only as evidence and never as a second actionable recommendation.
+  function _shadowAuditLines(item) {
+    function expo(e) { return e && Number.isInteger(e.week) && Number.isInteger(e.dayIndex) ? 'Sem ' + e.week + ' · Día ' + (e.dayIndex + 1) : '—'; }
+    var m = item.magnitude || null, status;
+    if (item.state === 'PENDING') {
+      status = !m ? 'Sin decisión numérica canónica todavía'
+        : m.unresolved ? 'Bloqueado: rama de política sin resolver (' + m.unresolved + ')'
+        : !m.eligible ? 'Bloqueado: evidencia insuficiente o fuera de rango'
+        : 'Candidato resuelto en shadow — no se aplica';
+    } else if (item.state === 'REJECTED' && item.reasonCode === 'COACH_KEEP_ORIGINAL') {
+      status = 'Decisión del Coach: mantener la prescripción original';
+    } else if (item.state === 'STALE') {
+      status = 'Obsoleta (' + (item.reasonCode || 'sin motivo') + ') — no es un candidato vigente';
+    } else {
+      status = 'Rechazada (' + (item.reasonCode || 'sin motivo') + ')';
+    }
+    var legacy = { increase_load: 'subir carga', reduce_load: 'bajar carga', maintain: 'mantener', freeze_load: 'congelar carga',
+      add_sets: 'agregar series', reduce_sets: 'reducir series', deload: 'descarga' }[item.action] || item.action;
+    return '<span style="display:block;font-size:11px;color:#888">Origen: ' + _escH(expo(item.source)) + ' → próxima exposición: '
+      + _escH(expo(item.nextExposure)) + ' · PID ' + _escH(item.prescriptionExerciseId || '—') + '</span>'
+      + '<span style="display:block;font-size:11px;color:#888">' + _escH(status) + '</span>'
+      + (legacy ? '<span style="display:block;font-size:10px;color:#666">Señal legacy del motor: ' + _escH(String(legacy))
+        + ' (evidencia, no aplicada)</span>' : '');
+  }
   function _renderShadowAutoFeed(summary) {
     var items = Array.isArray(summary.items) ? summary.items : [];
     var rows = items.map(function(item) {
@@ -18707,6 +18736,7 @@ El esfuerzo no es negociable.
         + '<span>' + _escH(item.exerciseNameSnapshot || 'Ejercicio sin nombre') + ' · '
         + _escH(item.dimension || 'EVALUACIÓN') + ' · ' + label + '</span>'
         + '<span style="display:block;color:#888;font-size:11px">' + _escH(item.reasonCode || '') + '</span>'
+        + _shadowAuditLines(item)
         + _renderShadowMagnitude(item)
         + '<button type="button" data-shadow-action="OPEN" data-shadow-key="' + item.key + '">Abrir ejercicio</button> '
         + button + '</li>';
