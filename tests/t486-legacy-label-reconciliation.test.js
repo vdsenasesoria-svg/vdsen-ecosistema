@@ -23,28 +23,19 @@ function fnSource(name) {
 const ctx = {};
 vm.createContext(ctx);
 vm.runInContext("var _escHTml = function(s){return String(s)};" +
-  ['_normName', '_roundUnit', '_convertCarga', '_buildNextExposureHtml', '_buildSetReferenceHtml', '_buildProgreSummaryHtml'].map(fnSource).join('\n'), ctx);
-const rec = a => ({ action: a, newLoad: 82.5, newReps: 10, exerciseName: 'Remo', prescriptionExerciseId: 'pid-A', newSets: 3, recommendations: [{ action: a, newLoad: 82.5, exerciseName: 'Remo' }] });
+  ['_normName', '_roundUnit', '_convertCarga', '_buildSetReferenceHtml', '_buildProgreSummaryHtml'].map(fnSource).join('\n'), ctx);
 
-test('T486.1 next-exposure card is a recommendation, not a prescription', () => {
-  for (const action of ['increase_load', 'freeze_load', 'maintain', 'reduce_load', 'add_sets', 'reduce_sets', 'deload']) {
-    const html = ctx._buildNextExposureHtml(rec(action), 'KG', 'Remo');
-    assert.ok(html.includes('RECOMENDACIÓN · NO APLICADA'), action);
-    assert.ok(!/>HOY<|Sugerido|Sube al siguiente|Mantén la carga|Reduce ligeramente/.test(html), action);
-  }
-  assert.ok(ctx._buildNextExposureHtml(rec('increase_load'), 'KG', 'Remo').includes('Referencia: 82.5 kg'));
-  const none = ctx._buildNextExposureHtml(null, 'KG', 'Remo');
-  assert.ok(none.includes('HOY') && none.includes('Establece una nueva referencia'), 'no recommendation keeps the neutral card');
+test('T486.1 (T500) the next-exposure recommendation card no longer exists', () => {
+  assert.ok(!client.includes('_buildNextExposureHtml'));
 });
 
-test('T486.2 per-set reference shows the legacy load as a non-applied recommendation', () => {
-  const html = ctx._buildSetReferenceHtml(rec('increase_load'), null, null, 0, 'KG', 2, 2, undefined, 'k');
-  assert.ok(html.includes('RECOMENDACIÓN · NO APLICADA') && html.includes('82.5 KG'));
-  assert.ok(!/>OBJETIVO</.test(html));
+test('T486.2 (T500) per-set reference never shows a legacy recommended load', () => {
+  const html = ctx._buildSetReferenceHtml({ carga: '80', unit: 'KG', reps: '8', rir_real: 1 }, null, 0, 'KG', 2, 2, undefined, 'k');
+  assert.ok(!html.includes('RECOMENDACIÓN') && !/>OBJETIVO</.test(html));
 });
 
 test('T486.3 no invented numeric progression suggestion remains (fixed +2.5 / +5 step)', () => {
-  const html = ctx._buildSetReferenceHtml(null, { carga: '80', unit: 'KG', reps: '8', rir_real: 1 }, null, 0, 'KG', 2, 2, undefined, 'k');
+  const html = ctx._buildSetReferenceHtml({ carga: '80', unit: 'KG', reps: '8', rir_real: 1 }, null, 0, 'KG', 2, 2, undefined, 'k');
   assert.ok(html.includes('SEM 1'), 'previous execution reference remains');
   assert.ok(!/subir|mantener\)|→ /.test(html));
   assert.ok(!/step\s*=\s*unit === 'LB' \? 5 : 2\.5/.test(client));
@@ -58,12 +49,11 @@ test('T486.4 the OBJETIVO block shows only Coach-authored reps/RIR', () => {
   assert.ok(/repsTarget\+' reps/.test(block) && /RIR '\+baseRIR/.test(block));
 });
 
-test('T486.5 header, history and post-session summary are labelled as non-applied recommendations', () => {
-  assert.ok(client.includes("'Recomendación (no aplicada): '+headerRec.newLoad"));
-  assert.ok(client.includes('ÚLTIMA RECOMENDACIÓN (NO APLICADA)'));
+test('T486.5 (T500) no athlete-facing recommendation label remains; fatigue signals are informational', () => {
+  assert.ok(!client.includes('Recomendación (no aplicada)') && !client.includes('ÚLTIMA RECOMENDACIÓN'));
   assert.ok(!client.includes('>ÚLTIMA PROGRESIÓN<') && !client.includes('>PRÓXIMA SESIÓN<'));
-  const summary = ctx._buildProgreSummaryHtml({ recommendations: [{ action: 'increase_load', newLoad: 82.5, exerciseName: 'Remo' }] });
-  assert.ok(summary.includes('RECOMENDACIÓN (NO APLICADA)') && !summary.includes('PRÓXIMA SESIÓN'));
+  const summary = ctx._buildProgreSummaryHtml({ recommendations: [{ action: 'increase_load', newLoad: 82.5, exerciseName: 'Remo' }], deloadTriggers: ['EIMD alto'] });
+  assert.ok(/INFORMATIVO/.test(summary) && !summary.includes('82.5') && !summary.includes('PRÓXIMA SESIÓN'));
 });
 
 test('T486.6 no OBJETIVO label wraps a value that comes from a recommendation', () => {

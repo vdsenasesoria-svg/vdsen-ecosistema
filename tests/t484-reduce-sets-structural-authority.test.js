@@ -101,7 +101,7 @@ test('T484.9/10/11/12 other-PID, stale, old-plan and old-client recommendations 
 test('T484 no code path outside the engine lets a recommendation set the set count', () => {
   const lines = client.split('\n'), hits = [];
   lines.forEach((l, i) => { if (/\.newSets\b/.test(l)) hits.push({ n: i + 1, l }); });
-  assert.ok(hits.length >= 3, 'the informational display sites remain');
+  assert.ok(hits.length >= 1, 'only engine-internal .newSets uses remain (T500: no athlete display sites)');
   for (const h of hits) assert.ok(!/\b(numSeries|numSets|setsCount|nSeries)\s*=[^=]/.test(h.l), 'newSets assigned at ' + h.n + ': ' + h.l.trim());
   assert.equal((client.match(/action === 'reduce_sets'/g) || []).length, 0);
   assert.ok(!client.includes('_isFreshPidProgRec'), 'the legacy exact-PID freshness gate no longer exists (T487)');
@@ -132,11 +132,9 @@ test('T484.14 explicit safety mechanisms exist and never depend on the legacy re
 });
 
 test('T484.15 the recommendation stays informational', () => {
-  assert.ok(client.includes("reduce_sets:'#FF8844'") && client.includes("reduce_sets:'-SERIES'"), 'summary chip label remains');
-  assert.ok(/reduce_sets:\s*\{ label: 'Revisar con Coach'/.test(client), 'review-with-Coach wording remains');
-  assert.ok(client.includes("action = 'reduce_sets';"), 'the engine still emits the recommendation (unchanged)');
-  assert.ok(client.includes("'💪 El algoritmo recomienda <strong>+1 serie</strong> la próxima semana. Tu coach actualizará el plan.'") ||
-    client.includes('Tu coach actualizará el plan'), 'add_sets banner stays a Coach-facing signal');
+  assert.ok(!client.includes("reduce_sets:'-SERIES'") && !client.includes('reduce_sets:  { icon'), 'T500: no athlete-facing chip for the recommendation');
+  assert.ok(!client.includes('El algoritmo recomienda'), 'T500: no athlete-facing add_sets banner');
+  assert.ok(client.includes("action = 'reduce_sets';"), 'the engine still emits the recommendation as evidence (unchanged)');
 });
 
 test('T484.16/17/18/19 numeric apply disabled; Modulo D read-only; T482 and T483 neutralizations intact', () => {
@@ -153,7 +151,7 @@ test('T484.20 no new structural auto-apply path: no recommendation field feeds s
   assert.deepEqual(writers, []);
   assert.ok(!/(updateDoc|setDoc)\([^)]*plans/.test(client));
   // other structural recommendation actions stay display-only
-  for (const banner of ['addSetsBannerHtml', 'substHtml'])
-    assert.ok(client.includes('var ' + banner), banner + ' is a rendered banner variable');
+  assert.ok(client.includes('var substHtml'), 'substHtml is a rendered banner variable');
+  assert.ok(!client.includes('addSetsBannerHtml'), 'T500: the add_sets/deload banner variable is gone');
   assert.ok(!/numSeries\s*=\s*[^;\n]*(add_sets|substituteExercise)/.test(client));
 });

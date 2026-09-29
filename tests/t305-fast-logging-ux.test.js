@@ -73,7 +73,7 @@ ok(!prefillSrc.includes('completeSet(') && !prefillSrc.includes('saveLogs('), '_
 ok(prefillSrc.includes("document.getElementById('carga_'+key)") && prefillSrc.includes("document.getElementById('reps_'+key)"),
   'fills the exact same carga_/reps_ input ids completeSet() reads from -- the prefilled value still goes through the normal validated save path');
 
-const refFnSrc = extractFunction(CLIENT, 'function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount, key) {');
+const refFnSrc = extractFunction(CLIENT, 'function _buildSetReferenceHtml(prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount, key) {');
 ok(refFnSrc.includes("onclick=\"_prefillFromReference(") && (refFnSrc.match(/↺ USAR/g) || []).length === 2,
   'the "↺ USAR" prefill action is wired on both the SEM ANTERIOR and HISTORIAL reference blocks');
 ok(refFnSrc.includes("key ? '<button onclick=") , 'the prefill button only renders when a key was passed -- both call sites already updated, no call site left broken');

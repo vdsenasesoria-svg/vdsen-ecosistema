@@ -24,7 +24,7 @@ test('T487.3 live PID helpers were kept and still have runtime callers', () => {
   assert.ok(count(coach, '_resolveExerciseRowId(') >= 2, '_resolveExerciseRowId defined and called (AUTO OPEN action)');
   assert.ok(count(coach, '_deepLinkToExercise(') >= 3, '_deepLinkToExercise defined, exported and called');
   assert.ok(coach.includes('return pidCount === 1 ? foundByPid : null;'));
-  assert.ok(count(client, '_getProgRecForExercise(') >= 3, 'informational recommendation lookup remains in use');
+  assert.equal(count(client, '_getProgRecForExercise('), 1, 'T500: compat adapter kept, no UI consumer');
 });
 
 test('T487.4 both apps still parse after the removals', () => {

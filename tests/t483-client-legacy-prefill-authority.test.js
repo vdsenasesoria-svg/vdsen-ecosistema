@@ -63,10 +63,10 @@ test('T483.1/2 a fresh legacy newLoad/newReps does not prefill the next exposure
   assert.ok(!client.includes('_progCargaConv') && !client.includes('_progRepsApply'));
 });
 
-test('T483.3 recommendations remain visible as informational hints', () => {
-  assert.ok(client.includes("var headerRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);"));
-  assert.ok(client.includes('function _buildSetReferenceHtml(progRec'));
-  assert.ok(/Referencia: '\+progrec\.newLoad/.test(client), 'labelled as a non-applied reference (T486)');
+test('T483.3 (T500) legacy recommendations are no longer presented to the athlete', () => {
+  assert.ok(!client.includes('var headerRec = _getProgRecForExercise'));
+  assert.ok(client.includes('function _buildSetReferenceHtml(prev, histEx'));
+  assert.ok(!/Referencia: '\+progrec\.newLoad/.test(client));
 });
 
 test('T483.4/5 plan-authored load and reps are untouched and remain the reference targets', () => {
@@ -145,7 +145,7 @@ test('Phase 8: remaining client consumers of progrec numerics are informational,
   const lines = client.split('\n');
   const hits = [];
   lines.forEach((line, i) => { if (/\.newLoad|\.newReps|recommendedLoad/.test(line)) hits.push({ n: i + 1, line }); });
-  assert.ok(hits.length > 8, 'scan sees the consumers');
+  assert.ok(hits.length >= 1, 'scan sees the remaining engine-internal consumers');
   // classification of every consumer by enclosing rendering/engine context: display, warm-up
   // reference, hint banner, reference block or engine internals — none writes an input value.
   const inputWriters = hits.filter(h => /_pfCM|_pfRM|getElementById\([^)]*\)\.value|\.value\s*=/.test(h.line));

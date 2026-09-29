@@ -3197,49 +3197,12 @@ function buildHistorialWidget() {
     }, 50);
   }
 
-  // ── 4) Progression recommendations history ──
-  var progHtml = '';
-  var progKeys = [];
-  Object.keys(LOGS_BY_WEEK.progrec).forEach(function(w) {
-    (LOGS_BY_WEEK.progrec[w] || []).forEach(function(k) { progKeys.push(k); });
-  });
-  progKeys.sort().reverse();
-  if (progKeys.length > 0) {
-    var latestProg = LOGS[progKeys[0]];
-    if (latestProg && latestProg.recommendations) {
-      var actionColors = {
-        deload:'var(--blue)', reduce_load:'var(--red)', reduce_sets:'#FF8844',
-        add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
-      };
-      var actionLabels = {
-        deload:'DELOAD', reduce_load:'BAJAR CARGA', reduce_sets:'-SERIES',
-        add_sets:'+SERIES', increase_load:'+CARGA', freeze_load:'MANTENER', maintain:'='
-      };
-      var recCards = latestProg.recommendations.map(function(r) {
-        var col = actionColors[r.action] || 'var(--mt)';
-        var lbl = actionLabels[r.action] || r.action;
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'
-          + '<div style="font-size:13px;color:var(--tx)">' + _escHTml(r.exerciseName||'') + '</div>'
-          + '<div style="display:flex;gap:8px;align-items:center">'
-          + '<span style="font-size:11px;color:var(--mt)">'+ r.newLoad + ' kg · ' + r.newSets + 's</span>'
-          + '<span style="font-size:10px;font-family:var(--ff);letter-spacing:1px;padding:3px 8px;border:1px solid '+col+';color:'+col+';background:rgba(0,0,0,.3)">' + lbl + '</span>'
-          + '</div></div>';
-      }).join('');
-
-      var progParts = progKeys[0].split('_');
-      progHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
-        + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">ÚLTIMA RECOMENDACIÓN (NO APLICADA)</div>'
-        + '<div style="font-size:11px;color:var(--mt);margin-bottom:8px">Sem '+progParts[1]+' · Día '+(parseInt(progParts[2])+1)+'</div>'
-        + recCards
-        + '</div>';
-    }
-  }
+  // T500: no legacy recommendation history card (the legacy engine is evidence only).
 
   return '<div id="historialSection">'
     + '<div style="font-family:var(--ff);font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:8px;margin-top:16px">HISTORIAL DE PROGRESO</div>'
     + ciTrendHtml
     + medTrendHtml
-    + progHtml
     + '<div style="font-family:var(--ff);font-size:11px;letter-spacing:2px;color:var(--mt);margin-bottom:6px">EVOLUCIÓN POR EJERCICIO</div>'
     + exHtml
     + '</div>';
@@ -5353,8 +5316,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // T161: PID-first — pasa prescriptionExerciseId para que la búsqueda intente
   // coincidencia exacta de identidad antes de caer al fallback legacy por
   // posición/nombre (ver _getProgRecForExercise).
-  var progrec = _getProgRecForExercise(di, ei, nombre, ej.prescriptionExerciseId);
-  var progRec = progrec; // alias PascalCase — usado en _buildSetReferenceHtml
   // T487: the recommendation is informational only (hints/labels); nothing applies it automatically.
 
   // ── Determinar numSeries ─────────────────────────────────────────────────
@@ -5441,7 +5402,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '</div>';
           })()
         : '')+
-      _buildNextExposureHtml(progrec, unit, nombre)+
       '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">'+
         (catData && catData.motorPattern ? '<span style="font-size:11px;color:var(--mt);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);padding:3px 9px;border-radius:6px">'+catData.motorPattern+'</span>' : '')+
       '</div>'+
@@ -5812,7 +5772,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       //   1) PROGRESIÓN (algoritmo) → card grande dorada con flecha + acción
       //   2) SEM ANTERIOR (datos reales) → badge naranja pequeño
       //   3) HISTORIAL (último mesociclo) → badge azul pequeño, sólo si NO hay sem anterior
-      var refHtml = _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIR, CURRENT_WEEK, _isY3T ? numSeries : undefined, key);
+      var refHtml = _buildSetReferenceHtml(prev, histEx, s, unit, baseRIR, CURRENT_WEEK, _isY3T ? numSeries : undefined, key);
       var prevRefHtml = refHtml;
 
       // Etiqueta de sub-fase por set: Y3T (S1/S2/S3/SST) / FST-7 (N/7) / PARCIALES (AMRAP)
@@ -8156,21 +8116,6 @@ function buildBoostcampExercise(ej, di, ei) {
   var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
   var baseRIR = getAdjustedRIR(_coachRIR(ej), CURRENT_WEEK, ej.nombre || ej.exerciseName);
 
-  // Obtener recomendación de progresión para el header del ejercicio
-  var headerRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
-  var headerRecHtml = '';
-  if (headerRec && headerRec.newLoad) {
-    var recUnit = getExUnit(di, ei);
-    var actionColors = {
-      deload:'var(--blue)', reduce_load:'var(--red)', reduce_sets:'#FF8844',
-      add_sets:'var(--grn)', increase_load:'var(--grn)', freeze_load:'var(--gold)', maintain:'var(--mt)'
-    };
-    var recCol = actionColors[headerRec.action] || 'var(--gold)';
-    var _recSetsBC = (_isY3TBC && numSeries > 0) ? numSeries : headerRec.newSets;
-    headerRecHtml = '<div style="font-size:10px;color:'+recCol+';margin-top:3px;font-weight:600">'+
-      'Recomendación (no aplicada): '+headerRec.newLoad+' '+recUnit+' · '+_recSetsBC+'s · RIR '+headerRec.rirTarget+
-    '</div>';
-  }
   // Advertencia MEV/MRV por grupo muscular (prioritario) con fallback a patrón motor
   var mrvWarnHtml = '';
   if (catData && catData.targetMuscle && MEV_MRV_BY_MUSCLE[catData.targetMuscle]) {
@@ -8195,19 +8140,6 @@ function buildBoostcampExercise(ej, di, ei) {
         mrvWarnHtml = '<div style="font-size:9px;color:var(--gold);font-weight:700;margin-top:2px">◎ '+_p+': '+_wkVolP+'/'+_mrvCap+' series sem (cerca del MRV)</div>';
       }
     }
-  }
-
-  // ── Banners de recomendación (add_sets / deload) ─────────────────────────────
-  // Ninguno auto-aplica cambios: son señales para el coach, no modificaciones del plan.
-  var addSetsBannerHtml = '';
-  if (headerRec && headerRec.action === 'add_sets') {
-    addSetsBannerHtml = '<div style="margin:0 14px 8px;padding:8px 12px;background:rgba(76,175,80,.07);'+
-      'border-left:3px solid rgba(76,175,80,.5);border-radius:0 8px 8px 0;font-size:11px;color:var(--grn);line-height:1.5">'+
-      '💪 El algoritmo recomienda <strong>+1 serie</strong> la próxima semana. Tu coach actualizará el plan.</div>';
-  } else if (headerRec && headerRec.action === 'deload') {
-    addSetsBannerHtml = '<div style="margin:0 14px 8px;padding:8px 12px;background:rgba(232,160,64,.07);'+
-      'border-left:3px solid rgba(232,160,64,.5);border-radius:0 8px 8px 0;font-size:11px;color:var(--gold);line-height:1.5">'+
-      '⚠ El algoritmo detectó señales de fatiga — <strong>semana de descarga recomendada</strong>. Tu coach ajustará el plan.</div>';
   }
 
   // ── Sustitución por ICS bajo persistente ─────────────────────────
@@ -8281,10 +8213,9 @@ function buildBoostcampExercise(ej, di, ei) {
     var rirReal = saved.rir_real|| (_prefill && prev.rir_real ? prev.rir_real : (_prefill && s===0 && histEx.rir  ? histEx.rir  : ''));
 
     // Auto-prog suggestion: buscar recomendación del algoritmo de progresión
-    var progRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
     var baseRIRforRef = getAdjustedRIR(_coachRIR(ej), CURRENT_WEEK, ej.nombre || ej.exerciseName);
     var refBlockHtml = (!completed)
-      ? _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK, _isY3TBC ? numSeries : undefined, key)
+      ? _buildSetReferenceHtml(prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK, _isY3TBC ? numSeries : undefined, key)
       : '';
 
     var borderCol = completed ? 'rgba(110,154,110,.5)' : 'var(--border)';
@@ -8414,7 +8345,6 @@ function buildBoostcampExercise(ej, di, ei) {
           '<span style="font-size:11px;font-weight:700;color:var(--rir);background:rgba(232,160,64,.1);border:1px solid rgba(232,160,64,.2);padding:2px 8px;border-radius:6px;letter-spacing:.5px">RIR '+baseRIR+'</span>'+
           (catData&&catData.motorPattern?'<span style="font-size:10px;color:var(--mt)">'+catData.motorPattern+'</span>':'')+
         '</div>'+
-        headerRecHtml+
         mrvWarnHtml+
       '</div>'+
       // Expand note button + user note button
@@ -8429,7 +8359,6 @@ function buildBoostcampExercise(ej, di, ei) {
     '<div style="padding:0 14px 2px">'+_buildTechniqueAndInstructionsHtml(ej, catData, di, ei)+'</div>'+
 
     // Banner add_sets (recomendación de serie extra, NO auto-aplicado)
-    addSetsBannerHtml+
 
     // Substitution warning (ICS bajo persistente)
     substHtml+
@@ -14693,35 +14622,6 @@ function _calcPR(exposures) {
   return { bestLoad: best };
 }
 
-// "HOY" inline block — consumes existing progrec, never recalculates.
-// unit: 'KG'|'LB'. nombre: current exercise name for stale-progrec guard.
-function _buildNextExposureHtml(progrec, unit, nombre) {
-  var _unit = (unit || 'KG').toLowerCase();
-  var newRef = '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid rgba(107,107,102,.3)">'
-    + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">HOY</div>'
-    + '<div style="font-size:12px;font-weight:700;color:var(--mt)">✦ Establece una nueva referencia</div>'
-    + '</div>';
-  if (!progrec || !progrec.action) return newRef;
-  // Stale-progrec guard: if recommendation was stored for a different exercise, ignore it.
-  if (nombre && progrec.exerciseName && _normName(progrec.exerciseName) !== _normName(nombre)) return newRef;
-  var actionMap = {
-    increase_load: { label: 'Recomendación: subir carga', color: 'var(--grn)', icon: '↑' },
-    freeze_load:   { label: 'Recomendación: mantener la carga', color: 'var(--gold)', icon: '→' },
-    maintain:      { label: 'Recomendación: mantener carga y buscar más repeticiones', color: 'var(--gold)', icon: '→' },
-    progress_reps: { label: 'Recomendación: mantener carga y buscar más repeticiones', color: 'var(--gold)', icon: '→' },
-    reduce_load:   { label: 'Recomendación: reducir ligeramente la carga', color: 'var(--red)', icon: '↓' },
-    add_sets:      { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' },
-    reduce_sets:   { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' },
-    deload:        { label: 'Revisar con Coach', color: 'var(--blue)', icon: '⚑' }
-  };
-  var act = actionMap[progrec.action] || { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' };
-  return '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid '+act.color+'">'
-    + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">RECOMENDACIÓN · NO APLICADA</div>'
-    + '<div style="font-size:12px;font-weight:700;color:'+act.color+'">'+act.icon+' '+act.label+'</div>'
-    + (progrec.newLoad ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">Referencia: '+progrec.newLoad+' '+_unit+'</div>' : '')
-    + '</div>';
-}
-
 // Minimal HTML escaper for history modal (no _escH in cliente)
 function _escHTml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -14739,54 +14639,17 @@ function _coachNoteHtml(note) {
 }
 window._coachNoteHtml = _coachNoteHtml;
 
-// FASE 19 — helper puro: genera HTML del resumen de recomendaciones de progresión
-// post-sesión. Recibe el objeto progrec_{W}_{D}. Retorna '' si no hay recomendaciones.
-// XSS: exerciseName escapado con _escHTml. No muta el input.
+// FASE 19 / T500 — helper puro: señales de fatiga post-sesión (INFORMATIVO). Recibe progrec_{W}_{D}.
+// Las recomendaciones del motor legacy ya no se muestran al atleta (solo evidencia; la recomendación
+// canónica vive en el registro shadow que revisa el Coach). Retorna '' si no hay señales.
+// XSS: texto escapado con _escHTml. No muta el input.
 function _buildProgreSummaryHtml(progrec) {
   if (!progrec) return '';
-  var recs = progrec.recommendations;
   var triggers = progrec.deloadTriggers;
-  var hasRecs = Array.isArray(recs) && recs.length > 0;
-  var hasTriggers = Array.isArray(triggers) && triggers.length > 0;
-  if (!hasRecs && !hasTriggers) return '';
-
-  var ACT = {
-    increase_load: { icon: '↑', label: 'AUMENTAR CARGA',  color: '#3a9460' },
-    add_sets:      { icon: '↑', label: '+ SERIES',        color: '#3a9460' },
-    maintain:      { icon: '=', label: 'MANTENER',         color: '#C4FF00' },
-    freeze_load:   { icon: '⏸', label: 'CONGELAR CARGA',  color: '#C4FF00' },
-    reduce_load:   { icon: '↓', label: 'REDUCIR CARGA',   color: '#e06040' },
-    reduce_sets:   { icon: '↓', label: 'REDUCIR SERIES',  color: '#FF8844' },
-    deload:        { icon: '🔄', label: 'DESCARGA ACTIVA', color: '#6488CC' }
-  };
-
-  function _fmtLoad(v) {
-    var n = parseFloat(v);
-    if (isNaN(n) || n <= 0) return null;
-    return n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1);
-  }
-
-  var rows = '';
-  if (hasRecs) {
-    recs.forEach(function(r) {
-      var cfg = ACT[r.action] || { icon: '=', label: 'MANTENER', color: '#C4FF00' };
-      var loadStr = _fmtLoad(r.newLoad);
-      rows +=
-        '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">'+
-          '<span style="font-size:12px;color:var(--tx);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escHTml(r.exerciseName||'—')+'</span>'+
-          '<span style="flex-shrink:0;font-size:10px;font-weight:800;color:'+cfg.color+';margin-left:8px;letter-spacing:.5px">'+cfg.icon+' '+cfg.label+(loadStr?' · '+loadStr+' kg':'')+'</span>'+
-        '</div>';
-    });
-  }
-
-  var triggersHtml = hasTriggers
-    ? '<div style="margin-top:8px;padding:6px 10px;background:rgba(220,80,50,.1);border:1px solid rgba(220,80,50,.4);border-radius:8px;font-size:10px;color:#e06040;font-weight:700">⚠ '+_escHTml(triggers.join(' · '))+'</div>'
-    : '';
-
+  if (!Array.isArray(triggers) || !triggers.length) return '';
   return '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px">'+
-    '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:var(--mt);margin-bottom:6px">RECOMENDACIÓN (NO APLICADA)</div>'+
-    rows+
-    triggersHtml+
+    '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:var(--mt);margin-bottom:6px">SEÑALES DE FATIGA · INFORMATIVO</div>'+
+    '<div style="padding:6px 10px;background:rgba(220,80,50,.1);border:1px solid rgba(220,80,50,.4);border-radius:8px;font-size:10px;color:#e06040;font-weight:700">⚠ '+_escHTml(triggers.join(' · '))+'</div>'+
   '</div>';
 }
 window._buildProgreSummaryHtml = _buildProgreSummaryHtml;
@@ -15417,18 +15280,10 @@ function _prefillFromReference(key, carga, reps, rir) {
   showToast('↺ Prellenado — revisá y confirmá con GUARDAR');
 }
 
-function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount, key) {
+function _buildSetReferenceHtml(prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount, key) {
   var blocks = [];
 
-  // ── 1) RECOMENDACIÓN (no aplicada): carga sugerida por el algoritmo legacy ──
-  if (progRec && progRec.newLoad) {
-    blocks.push(
-      '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
-        '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">RECOMENDACIÓN · NO APLICADA</span>'+
-        '<span style="font-size:20px;font-weight:900;color:var(--tx);line-height:1">'+progRec.newLoad+' '+unit+'</span>'+
-      '</div>'
-    );
-  }
+  // T500: no recommendation block — the legacy engine is evidence only; this shows executed history.
 
   // ── 2) SEM ANTERIOR ──
   if (prev && prev.carga) {
