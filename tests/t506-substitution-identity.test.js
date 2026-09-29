@@ -37,7 +37,7 @@ function runtime(sub) {
     function _refreshExPanelOnly() {}
     function _resolveNextWorkoutAction() { return { type: 'NONE' }; }
     function _renderNextWorkoutAction() {}
-    function isY3TExercise() { return false; }
+    function isY3TExercise() { return false; } function _withOverlayRest(ej) { return ej; }
     function getEffectiveSets(e) { return e.sets; }
     function getTotalWeeks() { return 6; }
     function showToast() {}

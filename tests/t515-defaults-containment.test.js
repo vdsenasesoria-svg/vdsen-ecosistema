@@ -56,7 +56,7 @@ function runtime(ej) {
     function _lbwTrack() {} function _recordExerciseHistoryAndPR() { recorded.push([].slice.call(arguments)); return false; }
     function _rebuildExerciseHistoryFromLogs() {} function saveLogs() {} async function _doSaveLogs() { return true; }
     function _isExerciseFullyDone() { return false; } function isTechniqueActive() { return true; } function _refreshExPanelOnly() {}
-    function _resolveNextWorkoutAction() { return { type: 'NONE' }; } function _renderNextWorkoutAction() {} function isY3TExercise() { return false; }
+    function _resolveNextWorkoutAction() { return { type: 'NONE' }; } function _renderNextWorkoutAction() {} function isY3TExercise() { return false; } function _withOverlayRest(ej) { return ej; }
     function getEffectiveSets(e) { return e.sets; } function getTotalWeeks() { return 6; } function showToast() {} function startRestTimer() {}
     function setTimeout(fn) { fn(); }
     ${completeSetSource}

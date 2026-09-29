@@ -490,6 +490,8 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var
 <script src="assets/exercise-visual-catalog.js"></script>
 <script src="assets/progression-magnitude-policy.js"></script>
 <script src="assets/progression-auto-apply-shadow.js"></script>
+<script src="assets/progression-effective-prescription.js"></script>
+<script src="assets/progression-application-consumer.js"></script>
 <script>
 // ══════════════════════════════════════════════════
 // STATE
@@ -512,6 +514,7 @@ var ACTIVE_GYM_ID = '';
 var ACTIVE_GYM_NAME = '';
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
+var LIFECYCLE_STATE = { uid: null, planId: null, planDoc: null, records: {}, overlays: {}, interventions: [], consumeBusy: {} }; // T533: solo se llena con NUMERIC_APPLY_ENABLED=true (apagado en producción)
 var CALIB_VOLUMETRICA = null; // Módulo A Ehrenstein — calibración volumétrica {VME_individual, VMR_individual}
 var CLIENT_ADVANCED = null; // módulos opcionales, read-only y filtrados por visibilidad explícita
 var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el tab de entreno
@@ -1988,6 +1991,7 @@ async function loadPlan(user) {
     const _pfRoot = FB.getDoc(FB.doc(FB.db, 'logs', user.uid)).catch(function(){ return null; });
     const [_exSnapPF, _fichaSnapPF, _mesoSnapPF, _rootSnapPF] = await Promise.all([_pfExercises, _pfFicha, _pfMeso, _pfRoot]);
     if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
+    _captureLifecycleState(user.uid, activePlanId, planData, clientData, _mesoSnapPF);
 
     var _fichaData = (_fichaSnapPF && typeof _fichaSnapPF.exists === 'function' && _fichaSnapPF.exists())
       ? ((_fichaSnapPF.data() && _fichaSnapPF.data().data) || {}) : {};
@@ -5286,6 +5290,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _exSubData = LOGS[_exSubKey] || null;
   var _originalNombre = ej.nombre || ej.exerciseName || '';
   if (_exSubData && _exSubData.nombre) ej = Object.assign({}, ej, { nombre: _exSubData.nombre, exerciseName: _exSubData.nombre });
+  // T533: effective prescription = base plan + eligible APPLIED/CONSUMED overlay (exact PID/week/day). Base plan when anything is off.
+  // A substituted or Y3T exercise never consumes an overlay. Executed LOGS are never touched by this.
+  var _ovEff = (_exSubData || isY3TExercise(ej)) ? null : _resolveOverlayForExercise(ej, di, getExUnit(di, ei));
+  if (_ovEff) ej = Object.assign({}, ej, { sets: _ovEff.sets.map(function(x){ return x.effective; }), _overlay: _ovEff });
   var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
   var machine = getMachineForExercise(nombre);
   // Metadata visual es presentación/instrucción; nunca alimenta progresión,
@@ -5308,6 +5316,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (repsTarget === 'SST-PROTOCOL') repsTarget = 'SST';
   if (repsTarget === 'SST-RIV-PROTOCOL') repsTarget = 'SST-RIV';
   if (repsTarget === 999) repsTarget = 'AMRAP';
+  if (_ovEff && _ovEff.dimension === 'REPS') repsTarget = _ovEff.appliedValue;
   var baseRIR = getAdjustedRIR(_coachRIR(ej, _firstEffSet), CURRENT_WEEK, nombre);
   var _seriesLabel = ((ej.technique||'').toLowerCase() === 'cluster') ? 'CLUSTERS' : 'SERIES';
   var unit = getExUnit(di, ei);
@@ -5378,6 +5387,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         : '')+
       // FASE 18 — Coach note visible al cliente durante workout (inmutable, solo lectura)
       _coachNoteHtml(ej.coachNote)+
+      _autoAdjustHtml(ej)+
       _buildExerciseMediaHtml(ej)+
       (function(){
         if (!_isY3T || !_y3tPhase) return '';
@@ -5677,6 +5687,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // saved execution, the previous-set copy helper below, and history/previous-week references.
     var _prevCargaConv = (_prefill && prev.carga) ? _convertCarga(prev.carga, prev.unit, unit) : '';
     var _histCargaConv = (_prefill && s===0 && histEx.load) ? _convertCarga(histEx.load, histEx.unit, unit) : '';
+    // T533: the effective (overlay) LOAD is the suggested starting value of the first set; it stays editable and never replaces what the athlete logs.
+    if (_prefill && s===0 && _ovEff && _ovEff.dimension === 'LOAD') _histCargaConv = String(_ovEff.appliedValue);
     // Auto-fill desde la serie anterior de ESTA sesión (s>0): si ya la completaron, copiar sus valores
     var _prevSesKey  = s > 0 ? 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+(s-1) : null;
     var _prevSesDat  = _prevSesKey ? (LOGS[_prevSesKey] || {}) : {};
@@ -6666,7 +6678,7 @@ function markExpressSerie(di, ei, si) {
   if (!isNaN(_rirSave) && _rirSave >= 0) expressSetRIR(expK, _rirSave);
   if (!isNaN(_pumpSave) && _pumpSave > 0) expressSetPump(expK, _pumpSave);
 
-  var _ejCur = (_EJERCICIOS_DIA || [])[ei] || null;
+  var _ejCur = _withOverlayRest((_EJERCICIOS_DIA || [])[ei] || null, di, ei);
   var _effSetsExpRest = isY3TExercise(_ejCur) ? getEffectiveSets(_ejCur, CURRENT_WEEK, getTotalWeeks()) : (_ejCur && _ejCur.sets || []);
   var _setSpec = _effSetsExpRest[si] || (_ejCur && _ejCur.sets && _ejCur.sets[si]) || null;
   var _planRest = _setSpec && parseInt(_setSpec.restSeconds) > 0 ? parseInt(_setSpec.restSeconds) : 0;
@@ -8787,7 +8799,7 @@ async function completeSet(key, di, ei, si, unit) {
     //    sin registrar → NO arrancar timer, solo recordar que pasen al partner.
     // 2. Si todos los partners ya completaron este set → arrancar timer con el
     //    restSeconds del set del plan (cierre del par), o fallback a fatigueCost.
-    var _ejCur = (_EJERCICIOS_DIA || [])[ei] || null;
+    var _ejCur = _withOverlayRest((_EJERCICIOS_DIA || [])[ei] || null, di, ei);
     var _grp   = _ejCur && _ejCur.supersetGroup ? String(_ejCur.supersetGroup).trim() : '';
     var _partnerPending = false;
     if (_grp) {
@@ -10070,6 +10082,7 @@ async function _doSaveLogs() {
     if (errEl) errEl.style.display = 'none';
     // Indicador breve de guardado exitoso
     _showSaveOk();
+    try { _maybeConsumeOverlays(_uidAtStart); } catch(_ce) {}
     return true;
   } catch(e) {
     if (!USER || USER.uid !== _uidAtStart) return false;
@@ -10145,6 +10158,72 @@ async function _drainShadowProgression() {
     }
   }
 }
+
+// ── T533: APPLICATION LIFECYCLE on the athlete app (behind NUMERIC_APPLY_ENABLED; false in production => every helper is a no-op) ──
+// One authority decides the effective prescription (VDSEN_EFFECTIVE_PRESCRIPTION); the only lifecycle write the athlete app can make is
+// APPLIED -> CONSUMED (VDSEN_APPLICATION_CONSUMER.consumeOverlayTransaction), and only after the first working set is PERSISTED.
+function _lifecycleEnabled() { var e = window.VDSEN_EFFECTIVE_PRESCRIPTION; return !!(e && e.NUMERIC_APPLY_ENABLED === true); }
+function _captureLifecycleState(uid, planId, planData, clientData, mesoSnap) {
+  LIFECYCLE_STATE = { uid: uid, planId: planId, planDoc: null, records: {}, overlays: {}, interventions: [], consumeBusy: {} };
+  if (!_lifecycleEnabled()) return;
+  var m = (mesoSnap && typeof mesoSnap.exists === 'function' && mesoSnap.exists()) ? mesoSnap.data() : null;
+  if (!m || m.planId !== planId) return;
+  LIFECYCLE_STATE.planDoc = planData || null;
+  LIFECYCLE_STATE.records = m.progressionApplications || {};
+  LIFECYCLE_STATE.overlays = m.nextExposureOverlays || {};
+  LIFECYCLE_STATE.interventions = Array.isArray(clientData && clientData.coachInterventions) ? clientData.coachInterventions : [];
+}
+function _resolveOverlayForExercise(ej, di, unit) {
+  if (!_lifecycleEnabled() || !USER || !ej || !ej.prescriptionExerciseId) return null;
+  var st = LIFECYCLE_STATE;
+  if (!st || st.uid !== USER.uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc) return null;
+  var r = window.VDSEN_EFFECTIVE_PRESCRIPTION.resolveEffective({ clientId: USER.uid, planId: ACTIVE_PLAN_ID, activePlanId: ACTIVE_PLAN_ID,
+    pid: ej.prescriptionExerciseId, week: CURRENT_WEEK, dayIndex: di, records: st.records, overlays: st.overlays, interventions: st.interventions,
+    plan: st.planDoc, entries: LOGS, baseSets: ej.sets || [], unit: unit });
+  return r.provenance === 'CANONICAL_OVERLAY' ? r : null;
+}
+// Rest timers follow the effective prescription too (REST overlay). Returns the SAME object when no overlay applies (flag off => always).
+function _withOverlayRest(ej, di, ei) {
+  if (!ej || isY3TExercise(ej) || LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei]) return ej;
+  var r = _resolveOverlayForExercise(ej, di, getExUnit(di, ei));
+  return r && r.dimension === 'REST' ? Object.assign({}, ej, { sets: r.sets.map(function(x){ return x.effective; }) }) : ej;
+}
+function _autoAdjustHtml(ej) {
+  var o = ej && ej._overlay;
+  if (!o || !o.presentation) return '';
+  return '<div data-autoadjust="1" style="margin-top:8px;display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border-radius:8px;background:rgba(0,0,0,.2);border:1.5px solid var(--accent)">'+
+    '<span style="font-size:10px;font-weight:900;letter-spacing:1px;color:var(--accent)">'+String(o.presentation.label).toUpperCase()+'</span>'+
+    '<span style="font-size:12px;font-weight:800;color:var(--tx)">'+o.presentation.text+'</span></div>';
+}
+async function _maybeConsumeOverlays(uid) {
+  var eff = window.VDSEN_EFFECTIVE_PRESCRIPTION, cons = window.VDSEN_APPLICATION_CONSUMER, st = LIFECYCLE_STATE;
+  if (!_lifecycleEnabled() || !cons || !FB || !USER || USER.uid !== uid || !st || st.uid !== uid || st.planId !== ACTIVE_PLAN_ID || !st.planDoc) return;
+  var mesoRef = FB.doc(FB.db, 'logs', uid, 'mesos', st.planId);
+  var keys = Object.keys(st.overlays);
+  for (var i = 0; i < keys.length; i++) {
+    var o = st.overlays[keys[i]], r = o && st.records[o.sourceRecordKey];
+    if (!o || !r || o.status !== 'APPLIED' || r.state !== 'APPLIED' || st.consumeBusy[r.key]) continue;
+    if (!eff.pidExposureStarted(LOGS, r.prescriptionExerciseId, o.target.week, o.target.dayIndex)) continue;   // never on render: persisted execution only
+    var day = (st.planDoc.days || []).filter(function(d){ return d.dayIndex === o.target.dayIndex; })[0];
+    var pex = ((day && day.exercises) || []).filter(function(e){ return e.prescriptionExerciseId === r.prescriptionExerciseId; })[0];
+    var shownEff = eff.resolveEffective({ clientId: uid, planId: st.planId, activePlanId: ACTIVE_PLAN_ID, pid: r.prescriptionExerciseId, week: o.target.week, dayIndex: o.target.dayIndex,
+      records: st.records, overlays: st.overlays, interventions: st.interventions, plan: st.planDoc, entries: LOGS, baseSets: (pex && pex.sets) || [] });
+    if (shownEff.provenance !== 'CANONICAL_OVERLAY') continue;
+    st.consumeBusy[r.key] = true;
+    try {
+      var res = await FB.runTransaction(FB.db, function(tx) {
+        return cons.consumeOverlayTransaction(tx, { meso: mesoRef }, { recordKey: r.key, clientId: uid, actorId: uid, now: new Date().toISOString(),
+          shown: { provenance: shownEff.provenance, overlayKey: shownEff.overlayKey, dimension: shownEff.dimension, appliedValue: shownEff.appliedValue } },
+          { isCurrent: function() { return !!USER && USER.uid === uid && ACTIVE_PLAN_ID === st.planId; } });
+      });
+      if (res && (res.written || res.idempotent) && LIFECYCLE_STATE === st) {
+        if (res.record) st.records[r.key] = res.record; if (res.overlay) st.overlays[o.key] = res.overlay;
+      }
+    } catch (e) { console.warn('[lifecycle] consume:', e && e.code, e && e.message); }
+    finally { delete st.consumeBusy[r.key]; }
+  }
+}
+
 
 // Phase 1: audit only. The mesocycle log owns the records; the legacy log
 // receives their compact Monitor projection in the same transaction.

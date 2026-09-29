@@ -45,7 +45,7 @@ function inputDefaults({ saved = {}, s = 0, progrec = null, LOGS = {}, ej, prev 
   ej = ej || { prescriptionExerciseId: 'pid-A', sets: [{ setIndex: 0, repsTarget: 10, rirTarget: 2, load: 100 }] };
   const _progAutoApply = progrec && progrec.prescriptionExerciseId === ej.prescriptionExerciseId ? progrec : null;
   const context = { saved, s, _progAutoApply, progrec, LOGS, ej, prev, histEx, unit, di: 0, ei: 0, CURRENT_WEEK: 2,
-    _isY3T: false, _effectiveSets: [], Set };
+    _isY3T: false, _effectiveSets: [], _ovEff: null, Set };
   vm.createContext(context);
   vm.runInContext(convert, context);
   vm.runInContext(cardRegion + '\nthis.__out = { carga: carga, reps: reps, _prevSesCarga: _prevSesCarga, _prevSesReps: _prevSesReps, _hasPrevSes: _hasPrevSes };', context);
