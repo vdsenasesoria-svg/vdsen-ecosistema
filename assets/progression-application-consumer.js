@@ -497,7 +497,7 @@
       if (input.overlayKey !== undefined && input.overlayKey !== pair.overlay.key) return _fail('RECORD_OVERLAY_INCONSISTENT');
       patch = { revertedAt: at }; reason = 'REVERTED_BY_COACH';
     } else if (kind === 'OVERRIDE') {
-      var iv = _latestDecision(st.client && st.client.coachInterventions, r, _time(r.lifecycle && r.lifecycle.appliedAt));
+      var iv = _latestDecision(st.client && st.client.coachInterventions, r, _time(r.source && r.source.calculatedAt));
       if (!iv) return _fail('NO_COACH_DECISION');
       patch = { overriddenAt: at, intervention: { id: iv.id || null, action: iv.action || null, decidedAt: iv.decidedAt } }; reason = 'COACH_OVERRIDE';
     } else {

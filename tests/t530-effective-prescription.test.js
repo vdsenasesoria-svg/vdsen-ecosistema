@@ -54,7 +54,8 @@ test('T530.8 exact Coach override after APPLIED -> COACH_OVERRIDE provenance, ba
   const r = R(a, { interventions: [iv] }); assert.deepEqual([r.provenance, r.reason], ['COACH_OVERRIDE', 'COACH_OVERRIDE']); assert.ok(r.sets.every(s => s.effective.load === 0));
   assert.equal(R(a, { interventions: [Object.assign({}, iv, { action: 'NO_CHANGE' })] }).provenance, 'CANONICAL_OVERLAY');
   assert.equal(R(a, { interventions: [Object.assign({}, iv, { targetId: 'other-pid' })] }).provenance, 'CANONICAL_OVERLAY');
-  assert.equal(R(a, { interventions: [Object.assign({}, iv, { decidedAt: '2026-09-28T00:30:00.000Z' })] }).provenance, 'CANONICAL_OVERLAY', 'a decision BEFORE the application is handled by the apply gate');
+  assert.equal(R(a, { interventions: [Object.assign({}, iv, { decidedAt: '2026-09-27T11:00:00.000Z' })] }).provenance, 'CANONICAL_OVERLAY', 'a decision BEFORE the source calculation is not an override');
+  assert.equal(R(a, { interventions: [Object.assign({}, iv, { decidedAt: '2026-09-28T00:30:00.000Z' })] }).provenance, 'COACH_OVERRIDE', 'any decision since the calculation counts (the apply gate refuses the visible ones)');
 });
 test('T530.9 SAFETY outranks a Coach override and an eligible overlay', () => {
   const a = A(), iv = { targetType: 'EXERCISE', targetId: 'pid-1', planId: 'p', action: 'X', decidedAt: '2026-09-28T03:00:00.000Z' };

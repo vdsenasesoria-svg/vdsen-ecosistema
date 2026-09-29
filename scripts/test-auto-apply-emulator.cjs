@@ -22,7 +22,7 @@ const JAR_URL = 'https://storage.googleapis.com/firebase-preview-drop/emulator/'
 // Test-only SDKs (not repo dependencies): the app-matched client SDK and the
 // firebase-admin version T476 was validated with.
 const TEST_PACKAGES = ['firebase@10.12.0', 'firebase-admin@13.10.0'];
-const TEST_FILE = path.join('tests', 't476-auto-apply-emulator.cjs');
+const TEST_FILES = [path.join('tests', 't476-auto-apply-emulator.cjs'), path.join('tests', 't532-lifecycle-emulator.cjs')];
 const isWin = process.platform === 'win32';
 
 let runtime = null;
@@ -162,7 +162,7 @@ async function main() {
     'FIREBASE_AUTH_EMULATOR_HOST', 'FIRESTORE_PREFER_REST']) delete env[key];
   console.log('[t476] project=' + PROJECT + ' emulator=127.0.0.1:' + port +
     ' rules=firestore.rules jar=' + JAR_NAME + ' sha256=' + JAR_SHA256);
-  const result = spawnSync(process.execPath, ['--test', TEST_FILE],
+  const result = spawnSync(process.execPath, ['--test', ...TEST_FILES],
     { cwd: repo, env, stdio: 'inherit' });
   return result.status === null ? 1 : result.status;
 }

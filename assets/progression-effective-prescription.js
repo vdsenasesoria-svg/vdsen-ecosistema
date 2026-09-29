@@ -85,7 +85,9 @@
     if (input.safetyConflict === true || painReportedBetween(input.entries, r.source, o.target)) return no('SAFETY_CONFLICT', PROVENANCE.SAFETY_FALLBACK, { state: r.state });
     // A started exposure keeps the prescription it started with: no retroactive override/stale.
     if (r.state === 'CONSUMED' || pidExposureStarted(input.entries, pid, week, day)) return ok;
-    var calcAt = _time(r.source && r.source.calculatedAt), appliedAt = _time(r.lifecycle.appliedAt), from = appliedAt !== null ? appliedAt : calcAt;
+    // Any exact Coach decision since the source calculation counts: the apply gate refused every decision it could SEE at commit, so a
+    // decision visible now was necessarily written after the commit (independent of clock skew between devices).
+    var calcAt = _time(r.source && r.source.calculatedAt), from = calcAt;
     var overridden = (Array.isArray(input.interventions) ? input.interventions : []).some(function(iv) {
       return iv && iv.targetType === 'EXERCISE' && iv.targetId === pid && (!iv.planId || iv.planId === input.planId) && _time(iv.decidedAt) !== null &&
         from !== null && _time(iv.decidedAt) >= from && iv.action !== 'NO_CHANGE';

@@ -132,8 +132,10 @@ test('T531.9 override: an exact Coach decision after APPLIED and before the targ
   const a = await applied(), iv = { id: 'iv1', targetType: 'EXERCISE', targetId: 'pid-1', planId: 'p', action: 'REDUCE_SETS', decidedAt: '2026-09-28T03:00:00.000Z' };
   const ov = (o = {}) => a.s.run(tx => C.overrideOverlayTransaction(tx, REFS, Object.assign({ recordKey: a.key, now: '2026-09-28T03:01:00.000Z', actorId: 'k' }, o), {}));
   assert.equal((await ov()).reason, 'NO_COACH_DECISION');
-  a.s.docs.set(REFS.client, { activePlanId: 'p', coachInterventions: [Object.assign({}, iv, { decidedAt: '2026-09-28T00:30:00.000Z' })] });
-  assert.equal((await ov()).reason, 'NO_COACH_DECISION', 'a decision BEFORE the application is not an override of it');
+  a.s.docs.set(REFS.client, { activePlanId: 'p', coachInterventions: [Object.assign({}, iv, { decidedAt: '2026-09-27T11:00:00.000Z' })] });
+  assert.equal((await ov()).reason, 'NO_COACH_DECISION', 'a decision BEFORE the source calculation is not an override');
+  a.s.docs.set(REFS.client, { activePlanId: 'p', coachInterventions: [Object.assign({}, iv, { action: 'NO_CHANGE' })] });
+  assert.equal((await ov()).reason, 'NO_COACH_DECISION', 'NO_CHANGE is not an override');
   a.s.docs.set(REFS.client, { activePlanId: 'p', coachInterventions: [iv] });
   const r = await ov(); assert.equal(r.written, true);
   const rec = meso(a.s).progressionApplications[a.key], o = meso(a.s).nextExposureOverlays['ovl_' + a.key];
