@@ -87,7 +87,7 @@ test('T507.8 the canonical overlay is the ONLY writer of nextExposureOverlays, a
 
 test('T507.9 flags off everywhere; no APPLIED state; legacy progrec cannot mutate targets', () => {
   assert.equal(shadow.NUMERIC_APPLY_ENABLED, false); assert.equal(policy.NUMERIC_APPLY_ENABLED, false); assert.equal(consumer.NUMERIC_APPLY_ENABLED, false);
-  assert.ok(!('APPLIED' in shadow.STATES));
+  assert.equal(shadow.lifecycleTransition({ state: 'PENDING', revision: 1, events: [] }, 'APPLIED', { expectedRevision: 1, operationKey: 'x', at: 't' }).reasonCode, 'NUMERIC_APPLY_DISABLED');
   assert.equal(count(client, '_getProgRecForExercise('), 1, 'compat adapter only, no consumer');
   assert.ok(!client.includes('_buildNextExposureHtml') && !client.includes('headerRecHtml'));
   assert.ok(/<details[^>]*id="_legacyProgEvidence"/.test(coach), 'Coach sees legacy output only as collapsed evidence');

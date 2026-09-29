@@ -139,7 +139,7 @@ test('T484.15 the recommendation stays informational', () => {
 
 test('T484.16/17/18/19 numeric apply disabled; Modulo D read-only; T482 and T483 neutralizations intact', () => {
   assert.equal(shadow.NUMERIC_APPLY_ENABLED, false); assert.equal(policy.NUMERIC_APPLY_ENABLED, false);
-  assert.ok(!('APPLIED' in shadow.STATES));
+  assert.equal(shadow.lifecycleTransition({ state: 'PENDING', revision: 1, events: [] }, 'APPLIED', { expectedRevision: 1, operationKey: 'x', at: 't' }).reasonCode, 'NUMERIC_APPLY_DISABLED');
   assert.ok(!coach.includes('_applyAllModuloD') && !coach.includes('_applyRecLoadsToMonitor'));
   assert.ok(!coach.includes('applyRecLoadsBtn') && !coach.includes('_mon-apply-single'));
   assert.ok(!client.includes('_progCargaConv') && !client.includes('_progRepsApply') && !/_progM\b/.test(client));

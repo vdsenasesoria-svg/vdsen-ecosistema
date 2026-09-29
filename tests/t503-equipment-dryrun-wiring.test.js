@@ -90,7 +90,7 @@ test('T503.8 REPS/REST candidates never need equipment; invalid equipment input 
 
 test('T503.9 flag stays off, no APPLIED state, nothing written by the wiring', () => {
   assert.equal(consumer.NUMERIC_APPLY_ENABLED, false);
-  assert.ok(!('APPLIED' in shadow.STATES));
+  assert.equal(shadow.lifecycleTransition({ state: 'PENDING', revision: 1, events: [] }, 'APPLIED', { expectedRevision: 1, operationKey: 'x', at: 't' }).reasonCode, 'NUMERIC_APPLY_DISABLED');
   const src = fs.readFileSync(path.join(root, 'assets/progression-equipment-resolver.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//, '');
   assert.ok(!/updateDoc|setDoc|addDoc|fetch\(|localStorage|document\.|window\./i.test(src));
 });

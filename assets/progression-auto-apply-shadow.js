@@ -7,7 +7,17 @@
   'use strict';
 
   var NUMERIC_APPLY_ENABLED = false;
-  var STATES = Object.freeze({ PENDING: 'PENDING', REJECTED: 'REJECTED', STALE: 'STALE' });
+  var STATES = Object.freeze({ PENDING: 'PENDING', REJECTED: 'REJECTED', STALE: 'STALE',
+    APPLIED: 'APPLIED', CONSUMED: 'CONSUMED', OVERRIDDEN: 'OVERRIDDEN', REVERTED: 'REVERTED' });
+  // T529: THE lifecycle firewall. The progression application record is the single canonical lifecycle record. Terminal states have no
+  // outgoing edge: a new candidate needs a new record identity (idempotency key), never a resurrection. REJECTED->PENDING exists only
+  // through the Coach REVERT_DECISION action (transition()), never through lifecycleTransition(). REJECTED->STALE is the pre-existing
+  // plan-change sweep (markStale).
+  var ALLOWED_TRANSITIONS = Object.freeze({
+    PENDING: Object.freeze(['APPLIED', 'REJECTED', 'STALE']),
+    APPLIED: Object.freeze(['CONSUMED', 'OVERRIDDEN', 'REVERTED', 'STALE']),
+    REJECTED: Object.freeze(['PENDING', 'STALE']), STALE: Object.freeze([]), CONSUMED: Object.freeze([]), OVERRIDDEN: Object.freeze([]), REVERTED: Object.freeze([])
+  });
   var REASONS = Object.freeze({
     MAGNITUDE_POLICY_MISSING: 'MAGNITUDE_POLICY_MISSING',
     IDENTITY_MISSING: 'IDENTITY_MISSING', IDENTITY_CONFLICT: 'IDENTITY_CONFLICT',
@@ -18,7 +28,8 @@
     UNSUPPORTED_ACTION: 'UNSUPPORTED_ACTION', NO_NUMERIC_DELTA: 'NO_NUMERIC_DELTA',
     NON_COMPARABLE_VALUE: 'NON_COMPARABLE_VALUE',
     COACH_KEEP_ORIGINAL: 'COACH_KEEP_ORIGINAL', REVISION_CONFLICT: 'REVISION_CONFLICT',
-    INVALID_TRANSITION: 'INVALID_TRANSITION', NOT_APPLIED: 'NOT_APPLIED'
+    INVALID_TRANSITION: 'INVALID_TRANSITION', NOT_APPLIED: 'NOT_APPLIED', NUMERIC_APPLY_DISABLED: 'NUMERIC_APPLY_DISABLED',
+    APPLIED_BY_POLICY: 'APPLIED_BY_POLICY', TARGET_STARTED: 'TARGET_STARTED', REVERTED_BY_COACH: 'REVERTED_BY_COACH', TARGET_INVALIDATED: 'TARGET_INVALIDATED'
   });
 
   function _validTime(value) { return typeof value === 'string' && Number.isFinite(Date.parse(value)); }
@@ -153,8 +164,24 @@
         operationKey: operationKey, actorId: actorId || null }])
     }) };
   }
+  // Generic lifecycle edge on the canonical record. p = { expectedRevision, operationKey, at, actorId, reasonCode, patch }.
+  // Idempotent by operationKey; revision-checked; APPLIED can only be created while the activation flag is on.
+  function lifecycleTransition(record, to, p) {
+    p = p || {};
+    if (!record || !p.operationKey || !STATES[to] || to === STATES.PENDING) return { ok: false, reasonCode: REASONS.INVALID_TRANSITION };
+    if ((record.events || []).some(function(e) { return e.operationKey === p.operationKey; })) return { ok: true, idempotent: true, record: record };
+    if (to === STATES.APPLIED && !NUMERIC_APPLY_ENABLED) return { ok: false, reasonCode: REASONS.NUMERIC_APPLY_DISABLED };
+    if (record.revision !== p.expectedRevision) return { ok: false, reasonCode: REASONS.REVISION_CONFLICT };
+    if (!(ALLOWED_TRANSITIONS[record.state] || []).some(function(t) { return t === to; })) return { ok: false, reasonCode: REASONS.INVALID_TRANSITION };
+    var reason = p.reasonCode || record.reasonCode;
+    return { ok: true, idempotent: false, record: Object.assign({}, record, {
+      state: to, reasonCode: reason, revision: record.revision + 1, updatedAt: p.at,
+      lifecycle: Object.assign({}, record.lifecycle || {}, p.patch || {}),
+      events: (record.events || []).concat([{ state: to, reasonCode: reason, at: p.at, operationKey: p.operationKey, actorId: p.actorId || null }])
+    }) };
+  }
   function markStale(record, reasonCode, at) {
-    if (!record || record.state === STATES.STALE) return record;
+    if (!record || (record.state !== STATES.PENDING && record.state !== STATES.APPLIED && record.state !== STATES.REJECTED)) return record;
     return Object.assign({}, record, { state: STATES.STALE, reasonCode: reasonCode,
       revision: record.revision + 1, updatedAt: at,
       events: (record.events || []).concat([{ state: STATES.STALE, reasonCode: reasonCode, at: at,
@@ -162,7 +189,7 @@
   }
   function summarize(records, planId) {
     var all = Object.keys(records || {}).map(function(k) { return records[k]; }).filter(function(r) { return r && r.planId === planId; });
-    var counts = { PENDING: 0, REJECTED: 0, STALE: 0 };
+    var counts = {}; Object.keys(STATES).forEach(function(k) { counts[k] = 0; });
     all.forEach(function(r) { if (counts[r.state] !== undefined) counts[r.state]++; });
     all.sort(function(a, b) { return String(b.updatedAt).localeCompare(String(a.updatedAt)); });
     return { planId: planId, autoCount: counts.PENDING, counts: counts, items: all.slice(0, 8).map(function(r) {
@@ -176,7 +203,7 @@
   function attemptNumericApply() {
     return { ok: false, reasonCode: REASONS.MAGNITUDE_POLICY_MISSING, applied: false };
   }
-  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, STATES: STATES, REASONS: REASONS,
+  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, STATES: STATES, REASONS: REASONS, ALLOWED_TRANSITIONS: ALLOWED_TRANSITIONS, lifecycleTransition: lifecycleTransition,
     resolveNextExposure: resolveNextExposure, idempotencyKey: idempotencyKey, assess: assess,
     buildRecord: buildRecord, transition: transition, markStale: markStale,
     summarize: summarize, attemptNumericApply: attemptNumericApply };

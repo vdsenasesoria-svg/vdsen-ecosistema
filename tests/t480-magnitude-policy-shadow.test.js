@@ -205,7 +205,7 @@ test('17. numeric apply stays disabled everywhere', () => {
     assert.equal(d.numericApplyAllowed, false); assert.equal(d.applied, false); assert.equal(d.actionable, false);
     assert.equal(d.mode, 'SHADOW'); assert.ok(d.activationBlockers.includes('NUMERIC_ACTIVATION_DISABLED'));
   }
-  assert.ok(!('APPLIED' in shadow.STATES));
+  assert.equal(shadow.lifecycleTransition({ state: 'PENDING', revision: 1, events: [] }, 'APPLIED', { expectedRevision: 1, operationKey: 'x', at: 't' }).reasonCode, 'NUMERIC_APPLY_DISABLED');
 });
 
 test('18/19. policy is pure: no plan mutation, no I/O, plan document unchanged', () => {

@@ -65,7 +65,7 @@ test('T516.4 CANONICAL PROGRESSION = 1 and CANONICAL APPLICATION PATH = 1', () =
 
 test('T516.5 REAL NUMERIC APPLICATION = OFF everywhere; no APPLIED state', () => {
   assert.deepEqual([shadow.NUMERIC_APPLY_ENABLED, policy.NUMERIC_APPLY_ENABLED, consumer.NUMERIC_APPLY_ENABLED], [false, false, false]);
-  assert.ok(!('APPLIED' in shadow.STATES));
+  assert.equal(shadow.lifecycleTransition({ state: 'PENDING', revision: 1, events: [] }, 'APPLIED', { expectedRevision: 1, operationKey: 'x', at: 't' }).reasonCode, 'NUMERIC_APPLY_DISABLED');
   assert.equal(read('assets/progression-application-consumer.js').split('var NUMERIC_APPLY_ENABLED = false;').length - 1, 1);
   for (const r of replay.rows) assert.notEqual(r.state, 'EXECUTABLE', r.name);
 });

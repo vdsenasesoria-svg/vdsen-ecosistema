@@ -79,7 +79,7 @@ test('T482.3 Modulo D remains read-only', () => {
 test('T482.4/5 numeric apply disabled; the unresolved-policy guard is intact', () => {
   assert.equal(shadow.NUMERIC_APPLY_ENABLED, false); assert.equal(policy.NUMERIC_APPLY_ENABLED, false);
   assert.deepEqual(shadow.attemptNumericApply(), { ok: false, reasonCode: 'MAGNITUDE_POLICY_MISSING', applied: false });
-  assert.ok(!('APPLIED' in shadow.STATES) && !('APPLIED' in policy.REASONS));
+  assert.ok(!('APPLIED' in policy.REASONS)); assert.equal(shadow.lifecycleTransition({ state: 'PENDING', revision: 1, events: [] }, 'APPLIED', { expectedRevision: 1, operationKey: 'x', at: 't' }).reasonCode, 'NUMERIC_APPLY_DISABLED');
   const plan = { clientId: 'c', weeks: 4, updatedAt: '2026-09-26T00:00:00.000Z', days: [
     { dayIndex: 0, exercises: [{ prescriptionExerciseId: 'p', sets: [{ repsTarget: 10 }] }] },
     { dayIndex: 2, exercises: [{ prescriptionExerciseId: 'p', sets: [{ repsTarget: 10 }] }] }] };

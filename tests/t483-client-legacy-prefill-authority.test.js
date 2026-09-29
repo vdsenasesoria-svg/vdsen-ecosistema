@@ -132,7 +132,7 @@ test('T483 superset-member prefill no longer reads a name/position-matched recom
 
 test('T483.17/18 numeric apply disabled; no APPLIED state', () => {
   assert.equal(shadow.NUMERIC_APPLY_ENABLED, false); assert.equal(policy.NUMERIC_APPLY_ENABLED, false);
-  assert.ok(!('APPLIED' in shadow.STATES) && !('APPLIED' in policy.REASONS));
+  assert.ok(!('APPLIED' in policy.REASONS)); assert.equal(shadow.lifecycleTransition({ state: 'PENDING', revision: 1, events: [] }, 'APPLIED', { expectedRevision: 1, operationKey: 'x', at: 't' }).reasonCode, 'NUMERIC_APPLY_DISABLED');
   assert.deepEqual(shadow.attemptNumericApply(), { ok: false, reasonCode: 'MAGNITUDE_POLICY_MISSING', applied: false });
 });
 

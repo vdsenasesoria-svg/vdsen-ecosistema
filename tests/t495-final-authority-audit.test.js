@@ -13,8 +13,9 @@ test('T495.1 the numeric-apply switch is off in every module and no APPLIED stat
   for (const f of ['assets/progression-auto-apply-shadow.js', 'assets/progression-magnitude-policy.js', 'assets/progression-application-consumer.js'])
     assert.ok(read(f).includes('var NUMERIC_APPLY_ENABLED = false;'), f);
   assert.ok(!read('assets/progression-equipment-resolver.js').includes('NUMERIC_APPLY_ENABLED = true'));
-  for (const f of ['assets/progression-auto-apply-shadow.js', 'assets/progression-magnitude-policy.js', 'assets/progression-application-consumer.js'])
-    assert.ok(!/['"]APPLIED['"]/.test(read(f)), f);
+  // T529: APPLIED exists ONLY behind the flag (lifecycleTransition refuses it while the flag is off); the policy never knows it.
+  assert.ok(!/['"]APPLIED['"]/.test(read('assets/progression-magnitude-policy.js')));
+  assert.ok(/to === STATES\.APPLIED && !NUMERIC_APPLY_ENABLED/.test(read('assets/progression-auto-apply-shadow.js')));
 });
 
 test('T495.2 residual legacy authorities are exactly the documented ones (change them only with a decision)', () => {

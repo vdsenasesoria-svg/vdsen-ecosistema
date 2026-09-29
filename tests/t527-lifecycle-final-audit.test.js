@@ -9,8 +9,9 @@ const shadow = require(path.join(root, 'assets/progression-auto-apply-shadow.js'
 const consumer = require(path.join(root, 'assets/progression-application-consumer.js'));
 const policy = require(path.join(root, 'assets/progression-magnitude-policy.js'));
 
-test('T527.1 no APPLIED / CONSUMED / OVERRIDDEN / REVERTED state exists in the shadow state machine', () => {
-  assert.deepEqual(Object.keys(shadow.STATES).sort(), ['PENDING', 'REJECTED', 'STALE']);
+test('T527.1 (superseded by T529) lifecycle states exist but APPLIED is unreachable with the shipped flag', () => {
+  assert.deepEqual(Object.keys(shadow.STATES).sort(), ['APPLIED', 'CONSUMED', 'OVERRIDDEN', 'PENDING', 'REJECTED', 'REVERTED', 'STALE']);
+  assert.equal(shadow.lifecycleTransition({ state: 'PENDING', revision: 1, events: [] }, 'APPLIED', { expectedRevision: 1, operationKey: 'x', at: 't' }).reasonCode, 'NUMERIC_APPLY_DISABLED');
 });
 test('T527.2 overlays have exactly one writer (tx.set) and the client never reads them', () => {
   const src = read('assets/progression-application-consumer.js');
