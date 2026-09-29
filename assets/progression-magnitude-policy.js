@@ -29,6 +29,18 @@
   var MIN_COMPARABLE_EXPOSURES = 2;
   var NUMERIC_APPLY_ENABLED = false;
   var EVIDENCE_BASIS = 'LAST_SET_CURRENT_RUNTIME_HEURISTIC';
+  // T505: science/product gaps the repository does NOT settle (searched: docs/CONTEXTO_GENERADOR.md,
+  // docs/CONTEXTO_MAESTRO.md, references/*). "Double progression: reps first, then load" (CONTEXTO_GENERADOR §8) governs
+  // progression UP (Rule A) and does not select between reps and load for the D/E adjustments. Each gap keeps an explicit
+  // code and must be closed by a director decision before NUMERIC_APPLY_ENABLED may ever be true.
+  var SCIENCE_GAPS = Object.freeze([
+    Object.freeze({ id: 'RULE_D_E_ALTERNATIVE_NOT_DEFINED', rules: ['D', 'E'], surfacesAs: 'POLICY_BRANCH_REQUIRES_RESOLUTION',
+      question: 'When reps fall short and/or RIR is harder than prescribed: reduce reps or reduce load?' }),
+    Object.freeze({ id: 'RULE_C_E_PRECEDENCE_NOT_DEFINED', rules: ['C', 'E'], surfacesAs: 'collision.classification=AMBIGUOUS',
+      question: 'Correct RIR with incomplete reps: rest first (C) and E after, or E first as the runtime evaluates it?' }),
+    Object.freeze({ id: 'REPRESENTATIVE_SET_NOT_DEFINED', rules: ['A', 'C', 'D', 'E'], surfacesAs: 'evidence.basis=' + EVIDENCE_BASIS,
+      question: 'Which set represents an exposure: last set (current runtime heuristic), average, or the set with the worst signal?' })
+  ]);
   var PCT = Object.freeze({ A_LOAD: 2.5, D_LOAD: 2.5, E_LOAD: 5 });
   var REST_INCREMENT_SECONDS = 30;
 
@@ -375,6 +387,6 @@
 
   return { PROVENANCE: PROVENANCE, REASONS: REASONS, PRECEDENCE: PRECEDENCE,
     NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, MIN_COMPARABLE_EXPOSURES: MIN_COMPARABLE_EXPOSURES,
-    EVIDENCE_BASIS: EVIDENCE_BASIS, PCT: PCT, REST_INCREMENT_SECONDS: REST_INCREMENT_SECONDS,
+    EVIDENCE_BASIS: EVIDENCE_BASIS, SCIENCE_GAPS: SCIENCE_GAPS, PCT: PCT, REST_INCREMENT_SECONDS: REST_INCREMENT_SECONDS,
     extractExposures: extractExposures, evaluate: evaluate, reject: reject, compact: compact };
 });

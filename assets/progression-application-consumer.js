@@ -52,6 +52,10 @@
     TARGET_STARTED: [BLOCKERS.TARGET_ALREADY_STARTED]
   });
 
+  // T505: science/product items that must be closed (director decision) before numeric application may be enabled.
+  // Kept in sync with progression-magnitude-policy.js SCIENCE_GAPS (verified by tests).
+  var ACTIVATION_PREREQUISITES = Object.freeze(['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
+
   function _readiness(out, record, m) {
     var blockers = out.blockers, canonical = blockers.indexOf(BLOCKERS.NOT_CANONICAL_RECORD) < 0;
     var cands = (m && m.candidates) || [];
@@ -69,7 +73,8 @@
     var real = blockers.filter(function(b) { return b !== BLOCKERS.NUMERIC_APPLY_DISABLED; });
     var readyExceptFlag = out.wouldApply === true && real.length === 0 &&
       gates.every(function(x) { return x.state === 'PASS' || x.state === 'NOT_APPLICABLE'; });
-    return { gates: gates, readyExceptFlag: readyExceptFlag, executable: readyExceptFlag && NUMERIC_APPLY_ENABLED, numericApplyEnabled: NUMERIC_APPLY_ENABLED };
+    return { gates: gates, readyExceptFlag: readyExceptFlag, executable: readyExceptFlag && NUMERIC_APPLY_ENABLED, numericApplyEnabled: NUMERIC_APPLY_ENABLED,
+      activationPrerequisites: ACTIVATION_PREREQUISITES.slice() };
   }
 
   function _time(v) { return typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null; }
@@ -188,7 +193,8 @@
     out.readiness = _readiness(out, record, m);
     out.audit = { event: out.wouldApply ? 'OVERLAY_WOULD_APPLY' : 'OVERLAY_BLOCKED', at: ctx.now || null, actor: 'SYSTEM_DRY_RUN',
       recordKey: out.recordKey, revision: record && record.revision !== undefined ? record.revision : null, blockers: blockers.slice(),
-      overlayKey: out.overlay ? out.overlay.key : null, unresolvedRules: m && m.unresolved ? (m.unresolved.rules || []).slice() : null };
+      overlayKey: out.overlay ? out.overlay.key : null, unresolvedRules: m && m.unresolved ? (m.unresolved.rules || []).slice() : null,
+      collision: m && m.collision ? { rules: (m.collision.rules || []).slice(), classification: m.collision.classification || null } : null };
     return out;
   }
 
@@ -223,6 +229,6 @@
     return { written: true, overlayKey: decision.overlay.key, decision: decision };
   }
 
-  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, overlayKey: overlayKey,
+  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, ACTIVATION_PREREQUISITES: ACTIVATION_PREREQUISITES, overlayKey: overlayKey,
     targetStarted: targetStarted, planApplication: planApplication, planReversal: planReversal, applyOverlayTransaction: applyOverlayTransaction };
 });
