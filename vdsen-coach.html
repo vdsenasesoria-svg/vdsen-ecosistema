@@ -1588,6 +1588,7 @@
   <script src="assets/exercise-visual-catalog.js"></script>
   <script src="assets/exercise-visual-metadata-editor.js"></script>
   <script src="assets/progression-magnitude-policy.js"></script>
+  <script src="assets/progression-equipment-resolver.js"></script>
   <script src="assets/progression-application-consumer.js"></script>
   <script src="assets/progression-auto-apply-shadow.js"></script>
   <script type="module">
@@ -3964,6 +3965,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
         _visualBtn.title = 'Editar metadata visual';
         _visualBtn.onclick = () => openVisualMetadataEditor(ex);
         _exRow.appendChild(_visualBtn);
+        const _incBtn = document.createElement('button');
+        _incBtn.className = 'text-lime-300 hover:text-white px-2 text-xs';
+        _incBtn.textContent = ex.loadIncrement ? 'Incr. ✓' : 'Incr.';
+        _incBtn.title = 'Configurar incremento de carga (equipo)';
+        _incBtn.onclick = () => openLoadIncrementEditor(ex);
+        _exRow.appendChild(_incBtn);
         _exRow.appendChild(_exInfo); _exRow.appendChild(_delBtn);
         container.appendChild(_exRow);
       });
@@ -4055,6 +4062,53 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     };
   }
   window.openVisualMetadataEditor = openVisualMetadataEditor;
+
+  // T502: configuración del incremento de carga realizable (paso / discos / cargas disponibles). Es un DATO de
+  // configuración del Coach, no una política de progresión: sin valor => UNRESOLVED_EQUIPMENT_INCREMENT.
+  // Escribe únicamente { loadIncrement } en el documento exercises del propio Coach.
+  function openLoadIncrementEditor(exercise) {
+    if (!exercise || !currentCoach || !exercise.id) return;
+    if (exercise.coachId && exercise.coachId !== currentCoach.uid) { showToast('Este ejercicio no es tuyo', true); return; }
+    var cur = exercise.loadIncrement || {};
+    var ov = document.createElement('div'); ov.id = 'loadIncrementEditor';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:18px';
+    var numIn = function(id, label, val) { return '<label>' + label + '<input id="' + id + '" class="input-field w-full" inputmode="decimal" value="' + _escH(val === undefined || val === null ? '' : String(val)) + '"></label>'; };
+    ov.innerHTML = '<div style="background:#171717;border:1px solid #444;max-width:520px;width:100%;max-height:90vh;overflow:auto;padding:20px;border-radius:10px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;color:#f4f4f0">Incremento de carga</h3><button id="incClose" class="btn-secondary">Cerrar</button></div>' +
+      '<p style="color:#888;font-size:12px">' + _escH(exercise.name || '') + ' · solo valores reales del equipo; sin valor = sin redondeo (no se aplica carga automática).</p>' +
+      '<label>Tipo<select id="inc-kind" class="input-field w-full"><option value="">Sin configurar</option><option value="STEP">Paso fijo (stack / placa integrada)</option><option value="PLATE_LOADED_BAR">Barra + discos</option><option value="AVAILABLE_LOADS">Cargas disponibles (mancuernas / fijos)</option></select></label>' +
+      '<label>Unidad<select id="inc-unit" class="input-field w-full"><option value="KG">KG</option><option value="LB">LB</option></select></label>' +
+      '<div id="inc-step">' + numIn('inc-step-v', 'Paso', cur.step) + numIn('inc-min', 'Mínimo (opcional)', cur.min) + numIn('inc-max', 'Máximo (opcional)', cur.max) + '</div>' +
+      '<div id="inc-bar">' + numIn('inc-bar-w', 'Peso de la barra', cur.barWeight) + numIn('inc-plate', 'Disco más pequeño', cur.smallestPlate) + numIn('inc-bar-max', 'Máximo (opcional)', cur.max) + '</div>' +
+      '<div id="inc-loads"><label>Cargas disponibles <small>(separadas por espacio, ; o salto de línea)</small><textarea id="inc-loads-v" class="input-field w-full" rows="3">' + _escH(Array.isArray(cur.loads) ? cur.loads.join(' ') : '') + '</textarea></label></div>' +
+      '<button id="incSave" class="btn-primary mt-3">Guardar incremento</button><span id="incStatus" style="margin-left:10px;color:#f08080"></span></div>';
+    document.body.appendChild(ov);
+    var kindEl = document.getElementById('inc-kind');
+    kindEl.value = cur.kind || '';
+    document.getElementById('inc-unit').value = cur.unit || 'KG';
+    var sync = function() {
+      document.getElementById('inc-step').style.display = kindEl.value === 'STEP' ? '' : 'none';
+      document.getElementById('inc-bar').style.display = kindEl.value === 'PLATE_LOADED_BAR' ? '' : 'none';
+      document.getElementById('inc-loads').style.display = kindEl.value === 'AVAILABLE_LOADS' ? '' : 'none';
+    };
+    kindEl.onchange = sync; sync();
+    var close = function() { var el = document.getElementById('loadIncrementEditor'); if (el) el.remove(); };
+    document.getElementById('incClose').onclick = close;
+    document.getElementById('incSave').onclick = async function() {
+      var status = document.getElementById('incStatus');
+      try {
+        var v = function(id) { return (document.getElementById(id) || {}).value || ''; };
+        var kind = kindEl.value;
+        var meta = window.VDSEN_EQUIPMENT_RESOLVER.normalizeLoadIncrementInput({ kind: kind, unit: v('inc-unit'),
+          step: v('inc-step-v'), min: v('inc-min'), max: kind === 'PLATE_LOADED_BAR' ? v('inc-bar-max') : v('inc-max'),
+          barWeight: v('inc-bar-w'), smallestPlate: v('inc-plate'), loads: v('inc-loads-v') });
+        var btn = document.getElementById('incSave'); btn.disabled = true; btn.textContent = 'Guardando...';
+        await updateDoc(doc(db, 'exercises', exercise.id), { loadIncrement: meta });
+        showToast(meta ? 'Incremento guardado' : 'Incremento eliminado'); close(); await loadExerciseCatalog();
+      } catch (e) { status.textContent = e.message || 'No se pudo guardar'; var b = document.getElementById('incSave'); if (b) { b.disabled = false; b.textContent = 'Guardar incremento'; } }
+    };
+  }
+  window.openLoadIncrementEditor = openLoadIncrementEditor;
   
   // FASE 15 — Helpers de navegación semanal (0 Firestore reads)
   function _coachClampSelectedWeek(selected, currentWeek, totalWeeks) {

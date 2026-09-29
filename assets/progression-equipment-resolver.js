@@ -138,6 +138,50 @@
     return res;
   }
 
+  // T502: strict Coach configuration input -> sourced metadata (or null to clear). Configuration data only:
+  // nothing is defaulted, the equipment type never fills a value, the source is always COACH_CONFIGURED.
+  var CONFIG_KINDS = { STEP: true, PLATE_LOADED_BAR: true, AVAILABLE_LOADS: true };
+  var CONFIG_MAX_LOAD = 2000;
+  function _cfgNum(v, label, required) {
+    if (v === undefined || v === null || String(v).trim() === '') {
+      if (required) throw new Error('Incremento de carga: falta ' + label + '.');
+      return null;
+    }
+    var n = typeof v === 'number' ? v : (/^\s*\d+([.,]\d+)?\s*$/.test(String(v)) ? Number(String(v).trim().replace(',', '.')) : NaN);
+    if (!Number.isFinite(n) || n < 0 || n > CONFIG_MAX_LOAD) throw new Error('Incremento de carga: ' + label + ' no es un valor válido.');
+    return n;
+  }
+  function normalizeLoadIncrementInput(input) {
+    if (!input || typeof input !== 'object') return null;
+    var kind = String(input.kind === undefined || input.kind === null ? '' : input.kind).trim();
+    if (kind === '' || kind === 'NONE') return null;
+    if (!CONFIG_KINDS[kind]) throw new Error('Incremento de carga: tipo desconocido.');
+    var unit = String(input.unit || '').trim().toUpperCase();
+    if (unit !== 'KG' && unit !== 'LB') throw new Error('Incremento de carga: la unidad debe ser KG o LB.');
+    var meta = { kind: kind };
+    if (kind === 'STEP') {
+      meta.step = _cfgNum(input.step, 'el paso', true);
+      var min = _cfgNum(input.min, 'el mínimo', false), max = _cfgNum(input.max, 'el máximo', false);
+      if (min !== null) meta.min = min;
+      if (max !== null) meta.max = max;
+    } else if (kind === 'PLATE_LOADED_BAR') {
+      meta.barWeight = _cfgNum(input.barWeight, 'el peso de la barra', true);
+      meta.smallestPlate = _cfgNum(input.smallestPlate, 'el disco más pequeño', true);
+      var pmax = _cfgNum(input.max, 'el máximo', false);
+      if (pmax !== null) meta.max = pmax;
+    } else {
+      var raw = Array.isArray(input.loads) ? input.loads : String(input.loads === undefined || input.loads === null ? '' : input.loads).split(/[\s;]+/).filter(Boolean);
+      if (!raw.length) throw new Error('Incremento de carga: indica al menos una carga disponible.');
+      meta.loads = raw.map(function(l) { return _cfgNum(l, 'una carga disponible', true); });
+      meta.loads = meta.loads.slice().sort(function(a, b) { return a - b; }).filter(function(l, i, a) { return i === 0 || l !== a[i - 1]; });
+    }
+    meta.unit = unit;
+    meta.source = 'COACH_CONFIGURED';
+    var grid = describeGrid(meta, unit);
+    if (!grid.ok) throw new Error('Incremento de carga: configuración inválida (' + grid.reason + ').');
+    return meta;
+  }
+
   // Extracts the equipment reference from an exercise-catalog entry (no increment is inferred from it).
   function equipmentRefFromCatalogEntry(entry) {
     entry = entry || {};
@@ -148,5 +192,5 @@
 
   return { STATES: STATES, MODES: MODES, SOURCES: Object.keys(SOURCES), INCREMENT_METADATA: INCREMENT_METADATA,
     lookupIncrement: lookupIncrement, describeGrid: describeGrid, resolveLoad: resolveLoad,
-    equipmentRefFromCatalogEntry: equipmentRefFromCatalogEntry };
+    equipmentRefFromCatalogEntry: equipmentRefFromCatalogEntry, normalizeLoadIncrementInput: normalizeLoadIncrementInput };
 });

@@ -126,6 +126,8 @@ test('T491.11 the resolver is pure, never applies anything and is not wired into
   const a = resolveLoad(frozen), b = resolveLoad(frozen);
   assert.deepEqual(a, b);
   assert.equal(a.numericApplyAllowed, false); assert.equal(a.applied, false);
-  for (const app of ['vdsen-cliente.html', 'vdsen-coach.html', 'assets/progression-magnitude-policy.js', 'assets/progression-auto-apply-shadow.js'])
-    assert.ok(!fs.readFileSync(path.join(__dirname, '..', app), 'utf8').includes('VDSEN_EQUIPMENT_RESOLVER'), app + ' does not consume the resolver yet');
+  // T502/T503: only the Coach (configuration editor + dry-run audit) consumes the resolver; the athlete client and
+  // the policy/shadow modules never do.
+  for (const app of ['vdsen-cliente.html', 'assets/progression-magnitude-policy.js', 'assets/progression-auto-apply-shadow.js'])
+    assert.ok(!fs.readFileSync(path.join(__dirname, '..', app), 'utf8').includes('VDSEN_EQUIPMENT_RESOLVER'), app + ' does not consume the resolver');
 });
