@@ -75,7 +75,8 @@ test('T483.4/5 plan-authored load and reps are untouched and remain the referenc
     { setIndex: 1, repsTarget: 8, rirTarget: 1, load: 100 }] });
   assert.doesNotThrow(() => inputDefaults({ ej, progrec: fresh() }));
   assert.equal(ej.sets[0].load, 100); assert.equal(ej.sets[0].repsTarget, 10); assert.equal(ej.sets[1].repsTarget, 8);
-  assert.ok(client.includes("var _planLoad = (ej.sets && ej.sets[0] && ej.sets[0].load) ? parseFloat(ej.sets[0].load) : 0;"));
+  assert.ok(client.includes('function _warmupReferenceLoad(prevWeekData, historyEntry, planSet)') &&
+    /var plan = planSet \? parseFloat\(planSet\.load\) : 0;/.test(client), 'plan-authored load stays a warm-up base (T485)');
 });
 
 test('T483.6/7/8 executed LOGS and manual athlete entries restore on resume/reload', () => {

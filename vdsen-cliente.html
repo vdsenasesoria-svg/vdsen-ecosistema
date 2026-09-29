@@ -5540,33 +5540,13 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _wuPatternKey = (catData && catData.motorPattern) ? catData.motorPattern : '';
   var _isFirstOfPattern = (ei === 0) && (_wuPatternKey !== 'Core') && (_wuPatternKey !== 'Cardio');
   if (_isFirstOfPattern) {
-    var wuRefLoad = 0;
-    if (progrec && progrec.newLoad) wuRefLoad = parseFloat(progrec.newLoad) || 0;
-    if (!wuRefLoad) {
-      var prevWuData = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
-      if (prevWuData) wuRefLoad = prevWuData.avgLoad;
-    }
-    if (!wuRefLoad) {
-      var _exNLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      var _histWu = _getExerciseHistoryEntry(_exNLower, ej.prescriptionExerciseId);
-      if (_histWu.load) wuRefLoad = parseFloat(_histWu.load) || 0;
-    }
-    // Fallback semana 1: usar la carga planificada del primer set
-    if (!wuRefLoad) {
-      var _planLoad = (ej.sets && ej.sets[0] && ej.sets[0].load) ? parseFloat(ej.sets[0].load) : 0;
-      if (_planLoad > 0) wuRefLoad = _planLoad;
-    }
-    if (wuRefLoad > 0) {
-      var wuSets = [{pct:0.50,reps:8},{pct:0.70,reps:5},{pct:0.85,reps:2}];
-      var wuRows = wuSets.map(function(ws) {
-        var wLoad = _roundUnit(wuRefLoad * ws.pct, unit);
-        return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
-          '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
-          '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' '+unit+' × '+ws.reps+' reps</span>'+
-          '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
-        '</div>';
-      }).join('');
-      var _wuId = 'wu_'+di+'_'+ei;
+    var _wuNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    var wuRef = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8),
+      _getExerciseHistoryEntry(_wuNameLower, ej.prescriptionExerciseId), ej.sets && ej.sets[0]);
+    var wuRefLoad = wuRef.load;
+    var wuRows = _warmupRowsHtml(wuRefLoad, unit);
+    var _wuId = 'wu_'+di+'_'+ei;
+    {
       wuHtml = '<div style="margin-bottom:12px;border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0;background:rgba(70,130,200,.06)">'+
         '<button class="tap-target" aria-controls="'+_wuId+'" aria-expanded="false" onclick="(function(el,btn){var open=el.style.display===\'none\';el.style.display=open?\'block\':\'none\';btn.setAttribute(\'aria-expanded\',open?\'true\':\'false\');btn.querySelector(\'span:last-child\').textContent=open?\'▾\':\'▸\';})(document.getElementById(\''+_wuId+'\'),this)" style="width:100%;text-align:left;padding:7px 12px;display:flex;align-items:center;gap:6px;border:none;background:none;cursor:pointer">'+
           '<span style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px">🔥 CALENTAMIENTO</span>'+
@@ -8186,8 +8166,6 @@ function buildBoostcampExercise(ej, di, ei) {
   var _wuPatternKey = (catData && catData.motorPattern) ? catData.motorPattern : '';
   var _isFirstOfPattern = (ei === 0) && (_wuPatternKey !== 'Core') && (_wuPatternKey !== 'Cardio');
 
-  var wuRefLoad = 0;
-  var progRecForWu = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName, ej.prescriptionExerciseId);
 
   // ── Determinar numSeries (misma lógica de 3 pasos que _buildExCard) ──
   // Paso 1: continuidad desde semana anterior
@@ -8217,45 +8195,17 @@ function buildBoostcampExercise(ej, di, ei) {
   // FST7: techo fijo de 7 sets en warm-up también
   if ((ej.technique || '').toLowerCase() === 'fst7') numSeries = Math.min(numSeries, (ej.sets || []).length || 7);
 
-  // Referencia de carga para warm-up: prog rec > semana anterior > historial
-  if (_isFirstOfPattern) {
-    if (progRecForWu && progRecForWu.newLoad) {
-      wuRefLoad = parseFloat(progRecForWu.newLoad) || 0;
-    }
-    if (!wuRefLoad) {
-      var prevWuData = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
-      if (prevWuData) wuRefLoad = prevWuData.avgLoad;
-    }
-    if (!wuRefLoad) {
-      var exNLower = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      var histWu = _getExerciseHistoryEntry(exNLower, ej.prescriptionExerciseId);
-      if (histWu.load) wuRefLoad = parseFloat(histWu.load) || 0;
-    }
-    // Fallback semana 1: usar la carga planificada del primer set
-    if (!wuRefLoad) {
-      var _bcPlanLoad = (ej.sets && ej.sets[0] && ej.sets[0].load) ? parseFloat(ej.sets[0].load) : 0;
-      if (_bcPlanLoad > 0) wuRefLoad = _bcPlanLoad;
-    }
-  }
+  // T485: warm-up base load = previous execution > history > Coach plan load (never a recommendation);
+  // without a base the warm-up is shown qualitatively.
   var wuHtml = '';
-  if (wuRefLoad > 0) {
-    var wuSets = [
-      { pct: 0.50, reps: 8 },
-      { pct: 0.70, reps: 5 },
-      { pct: 0.85, reps: 2 }
-    ];
-    var wuRows = wuSets.map(function(ws) {
-      var wLoad = _roundUnit(wuRefLoad * ws.pct, unit);
-      return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
-        '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
-        '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+wLoad+' '+unit+' × '+ws.reps+' reps</span>'+
-        '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
-      '</div>';
-    }).join('');
+  if (_isFirstOfPattern) {
+    var _wuNameBC = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    var wuRefLoad = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8),
+      _getExerciseHistoryEntry(_wuNameBC, ej.prescriptionExerciseId), ej.sets && ej.sets[0]).load;
     wuHtml = '<div id="wu_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;'+
       'background:rgba(70,130,200,.06);border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0">'+
       '<div style="font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1px;margin-bottom:6px">CALENTAMIENTO (referencia)</div>'+
-      wuRows+
+      _warmupRowsHtml(wuRefLoad, unit)+
     '</div>';
   }
   var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
@@ -8523,7 +8473,7 @@ function buildBoostcampExercise(ej, di, ei) {
         mrvWarnHtml+
       '</div>'+
       // Expand note button + user note button
-      (wuRefLoad>0?'<button class="tap-target" onclick="toggleNota(\'wu_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Calentamiento" aria-label="Mostrar calentamiento">🔥</button>':'')+
+      (wuHtml?'<button class="tap-target" onclick="toggleNota(\'wu_'+di+'_'+ei+'\')" style="background:none;border:none;color:var(--blue);font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Calentamiento" aria-label="Mostrar calentamiento">🔥</button>':'')+
       '<button class="tap-target" onclick="toggleUserNote('+di+','+ei+')" style="background:none;border:none;color:'+(_getExNote(di,ei)?'var(--accent)':'var(--mt2)')+';font-size:16px;cursor:pointer;padding:4px;flex-shrink:0" title="Mi nota" aria-label="Abrir mi nota del ejercicio">📝</button>'+
     '</div>'+
 
@@ -15899,6 +15849,34 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
 // Normalize name for semantic comparison (cosmetic differences only)
 function _normName(s) {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+// T485: warm-up base load authority. The base may come only from legitimate operational evidence:
+// the athlete's own previous execution, their exercise history, or the Coach-authored plan load.
+// A progression recommendation (legacy newLoad) is never a source. No base -> no invented number.
+function _warmupReferenceLoad(prevWeekData, historyEntry, planSet) {
+  var prev = prevWeekData ? parseFloat(prevWeekData.avgLoad) : 0;
+  if (prev > 0) return { load: prev, source: 'PREVIOUS_EXECUTION' };
+  var hist = historyEntry ? parseFloat(historyEntry.load) : 0;
+  if (hist > 0) return { load: hist, source: 'HISTORY' };
+  var plan = planSet ? parseFloat(planSet.load) : 0;
+  if (plan > 0) return { load: plan, source: 'COACH_PLAN' };
+  return { load: 0, source: 'NONE' };
+}
+
+// Warm-up rows: numeric when a legitimate base load exists, qualitative otherwise (never a made-up load).
+function _warmupRowsHtml(refLoad, unit) {
+  var wuSets = [{pct:0.50,reps:8},{pct:0.70,reps:5},{pct:0.85,reps:2}];
+  return wuSets.map(function(ws) {
+    var text = refLoad > 0
+      ? _roundUnit(refLoad * ws.pct, unit)+' '+unit+' × '+ws.reps+' reps'
+      : (ws.pct*100)+'% de tu carga de trabajo × '+ws.reps+' reps';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">'+
+      '<span style="font-size:10px;font-weight:700;color:var(--blue);width:32px;flex-shrink:0;text-align:center">'+(ws.pct*100)+'%</span>'+
+      '<span style="flex:1;font-size:13px;font-weight:600;color:var(--tx)">'+text+'</span>'+
+      '<span style="font-size:10px;color:var(--mt)">RIR ∞</span>'+
+    '</div>';
+  }).join('');
 }
 
 function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exerciseName) {
