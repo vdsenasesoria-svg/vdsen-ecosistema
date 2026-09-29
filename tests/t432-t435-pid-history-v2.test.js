@@ -35,8 +35,9 @@ test('T433: same PID keeps continuity when display name changes', () => {
   assert.equal(api.get('remo nuevo', 'pid-a').load, '100');
 });
 
-test('T434: legacy name-only history remains a deterministic fallback', () => {
+test('T434 (T498): legacy name-only history is read only when no PID exists; with a PID there is no name fallback', () => {
   const history = { press: { load: '75', reps: '8', rir: '2', unit: 'KG' } };
   const api = make(history, {}, v => String(v).toLowerCase(), v => Number(v));
-  assert.equal(api.get('press', 'pid-legacy').load, '75');
+  assert.equal(api.get('press', undefined).load, '75');
+  assert.equal(api.get('press', 'pid-legacy').load, undefined);
 });

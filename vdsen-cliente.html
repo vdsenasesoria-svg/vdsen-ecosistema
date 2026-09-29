@@ -5399,7 +5399,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   };
   var _exNameBanner = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   var _histExBanner = _getExerciseHistoryEntry(_exNameBanner, ej.prescriptionExerciseId);
-  var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8);
+  var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId, nombre);
   var _exNoteInline = _getExNote(di, ei);
   // T302 — SKIP EXERCISE: only offered while the exercise isn't already
   // resolved (done or skipped) and only in the active real week -- never a
@@ -5505,7 +5505,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _isFirstOfPattern = (ei === 0) && (_wuPatternKey !== 'Core') && (_wuPatternKey !== 'Cardio');
   if (_isFirstOfPattern) {
     var _wuNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    var wuRef = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8),
+    var wuRef = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId, nombre),
       _getExerciseHistoryEntry(_wuNameLower, ej.prescriptionExerciseId), ej.sets && ej.sets[0]);
     var wuRefLoad = wuRef.load;
     var wuRows = _warmupRowsHtml(wuRefLoad, unit);
@@ -8156,7 +8156,7 @@ function buildBoostcampExercise(ej, di, ei) {
   var wuHtml = '';
   if (_isFirstOfPattern) {
     var _wuNameBC = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    var wuRefLoad = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8),
+    var wuRefLoad = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId, ej.nombre || ej.exerciseName || ''),
       _getExerciseHistoryEntry(_wuNameBC, ej.prescriptionExerciseId), ej.sets && ej.sets[0]).load;
     wuHtml = '<div id="wu_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;'+
       'background:rgba(70,130,200,.06);border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0">'+
@@ -8515,8 +8515,11 @@ function _historyPidKey(prescriptionExerciseId) {
   return prescriptionExerciseId ? '__pid__' + String(prescriptionExerciseId) : '';
 }
 function _getExerciseHistoryEntry(exNameKey, prescriptionExerciseId) {
+  // T498: with a prescriptionExerciseId the PID entry is the only authority (no name fallback).
+  // The name-keyed entry is read only when PID identity genuinely does not exist (legacy plans).
   var pidKey = _historyPidKey(prescriptionExerciseId);
-  return (pidKey && EXERCISE_HISTORY[pidKey]) || EXERCISE_HISTORY[exNameKey] || {};
+  if (pidKey) return EXERCISE_HISTORY[pidKey] || {};
+  return EXERCISE_HISTORY[exNameKey] || {};
 }
 function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir, unit, showCelebration, prescriptionExerciseId) {
   if (!carga || parseFloat(carga) <= 0) return false;
@@ -9861,7 +9864,7 @@ async function markSessionDoneFromHistory(di) {
     // la unidad de origen si la referencia se registró en otra (kg↔lb).
     var currentUnit = getExUnit(di, ei) || 'KG';
     var refLoad = 0, refReps = 0, refRir = defaultRIR, refUnit = currentUnit;
-    var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12);
+    var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12, ej.prescriptionExerciseId, ej.nombre || ej.exerciseName || '');
     if (prev && prev.avgLoad > 0) {
       var prevSetKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0';
       var prevUnit = (LOGS[prevSetKey] && LOGS[prevSetKey].unit) ? LOGS[prevSetKey].unit : currentUnit;
@@ -9872,7 +9875,7 @@ async function markSessionDoneFromHistory(di) {
       refRir = Math.round(prev.avgRIR) || defaultRIR;
       refUnit = currentUnit;
     } else {
-      var hist = EXERCISE_HISTORY[exName] || {};
+      var hist = _getExerciseHistoryEntry(exName, ej.prescriptionExerciseId);
       if (hist.load && parseFloat(hist.load) > 0) {
         var histUnit = hist.unit || currentUnit;
         refLoad = parseFloat(_convertCarga(String(hist.load), histUnit, currentUnit)) || parseFloat(hist.load);
@@ -9904,11 +9907,7 @@ async function markSessionDoneFromHistory(di) {
       totalSetsRellenados++;
     }
 
-    // Actualizar histórico
-    EXERCISE_HISTORY[exName] = {
-      load: String(refLoad), reps: String(refReps), rir: refRir,
-      unit: refUnit, updatedAt: Date.now()
-    };
+    // T498: synthetic (autoFilled) sets never write into the history reference.
   });
 
   if (sinReferencia.length === ejercicios.length) {
@@ -10080,7 +10079,7 @@ async function markWeekCompleteFromHistory() {
       var currentUnit = getExUnit(di, ei) || 'KG';
       var refLoad = 0, refReps = 0, refRir = defaultRIR;
 
-      var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12);
+      var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12, ej.prescriptionExerciseId, ej.nombre || ej.exerciseName || '');
       if (prev && prev.avgLoad > 0) {
         var prevSetKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0';
         var prevUnit = (LOGS[prevSetKey] && LOGS[prevSetKey].unit) ? LOGS[prevSetKey].unit : currentUnit;
@@ -10089,7 +10088,7 @@ async function markWeekCompleteFromHistory() {
         refReps = Math.round(prev.avgReps);
         refRir  = Math.round(prev.avgRIR) || defaultRIR;
       } else {
-        var hist = EXERCISE_HISTORY[exName] || {};
+        var hist = _getExerciseHistoryEntry(exName, ej.prescriptionExerciseId);
         if (hist.load && parseFloat(hist.load) > 0) {
           var histUnit = hist.unit || currentUnit;
           refLoad = parseFloat(_convertCarga(String(hist.load), histUnit, currentUnit)) || parseFloat(hist.load);
@@ -10112,8 +10111,6 @@ async function markWeekCompleteFromHistory() {
         _lbwTrack(_k);
         totalFilled++;
       }
-      captureHistory(exName);
-      EXERCISE_HISTORY[exName] = { load: String(refLoad), reps: String(refReps), rir: refRir, unit: currentUnit, updatedAt: Date.now() };
     }
 
     // Use CURRENT_WEEK (not REAL_WEEK) for all key writes.
@@ -15609,7 +15606,10 @@ function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exercis
     if (candidateSets.length) { sets = candidateSets; confidence = 'HIGH'; }
   }
 
-  // LOW confidence: legacy positional fallback with name guard
+  // T498: a PID with no PID logs has no previous-week reference (no positional/name fallback).
+  if (prescriptionExerciseId && !sets.length) return null;
+
+  // LOW confidence: legacy positional fallback with name guard (only when PID identity does not exist)
   if (!sets.length) {
     var legacySets = [];
     for (var s = 0; s < maxSets; s++) {

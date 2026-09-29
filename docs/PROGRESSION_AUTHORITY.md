@@ -34,8 +34,7 @@ LOGS (ejecución real) → evidencia comparable por PID → política canónica 
 
 1. ~~RIR prescrito~~ — **CERRADA (T496)**: el RIR prescrito es el del Coach (`plan.rirByWeek`/sets). `getAdjustedRIR` devuelve el RIR del Coach sin cambios (sin calendario, sin +2 reactivo, sin piso de barra libre); el RIR 0 se preserva. El estado de deload sigue como aviso informativo (`_computeDeloadTriggers`). RIR observado (`rir_real`) permanece separado.
 2. ~~`_maybeSuggestExtraSet`~~ — **CERRADA (T497)**: eliminado (junto con `_showAddSetSuggestion`/`addExtraSetNow`). El conteo de series es prescripción estructural (Coach o futura política estructural canónica explícita); ICS/pump/RIR observado quedan solo como evidencia registrada. (`_maybeSuggestExtraSet` ya no existe.)
-3. **Historial por nombre** (`_getExerciseHistoryEntry`): PID primero, pero cae a la clave por nombre si no hay historial por PID
-   (continuidad de datos legados). Alimenta referencias y la base del calentamiento.
+3. ~~Historial por nombre~~ — **CERRADA (T498)**: con `prescriptionExerciseId`, `_getExerciseHistoryEntry` y `_getPrevWeekData` usan solo historial/logs por PID (sin fallback por nombre ni posicional). El historial por nombre (`_getExerciseHistoryEntry`) se lee solo cuando el PID genuinamente no existe (planes legados). Los rellenos exprés (sets `autoFilled`) ya no escriben en el historial.
 4. **Motor de progresión del cliente** (`calculateProgression`): sigue generando `progrec` como evidencia/señal legada; puede discrepar del
    candidato canónico (se muestran separados y etiquetados "no aplicada").
 5. **Metadatos de incremento por equipo**: no existen; sin ellos ninguna carga puede ser accionable.

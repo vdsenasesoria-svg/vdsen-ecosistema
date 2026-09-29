@@ -26,7 +26,7 @@ test('T495.2 residual legacy authorities are exactly the documented ones (change
   // (2) T497: the in-session extra-set recommender no longer exists
   assert.ok(!client.includes('_maybeSuggestExtraSet(') && !client.includes('_showAddSetSuggestion'));
   // (3) history by name fallback
-  assert.ok(client.includes('return (pidKey && EXERCISE_HISTORY[pidKey]) || EXERCISE_HISTORY[exNameKey] || {};'));
+  assert.ok(client.includes('if (pidKey) return EXERCISE_HISTORY[pidKey] || {};'), 'T498: PID history has no name fallback');
   // (4) the legacy engine still produces progrec evidence
   assert.ok(client.includes("LOGS['progrec_'+CURRENT_WEEK+'_'+di]"));
 });
