@@ -6,6 +6,17 @@ Responde: cuando se active la bandera, ¿por qué se aplicaría o no cada candid
 - Candidatos: **15** · READY_BUT_DISABLED: **2** · BLOCKED: **13** · EXECUTABLE: **0**
 - Bloqueados por equipo: **5** · por ciencia/rama sin resolver: **2**
 
+## Clases de vista rápida
+
+| Clase | Candidatos |
+|---|---|
+| BLOCKED_EQUIPMENT_DATA | 5 |
+| BLOCKED_EVIDENCE | 3 |
+| BLOCKED_CONTEXT | 2 |
+| BLOCKED_SCIENCE_POLICY | 2 |
+| READY_BUT_DISABLED | 2 |
+| BLOCKED_SAFETY | 1 |
+
 ## Bloqueos por motivo
 
 | Motivo | Candidatos |
@@ -26,20 +37,20 @@ Responde: cuando se active la bandera, ¿por qué se aplicaría o no cada candid
 
 ## Detalle
 
-| Escenario | Dimensión | Estado | Bloqueos | Ciencia |
-|---|---|---|---|---|
-| A-load ready (synthetic shared step) | LOAD | READY_BUT_DISABLED | — | — |
-| A-load, equipment increment not configured | LOAD | BLOCKED | UNRESOLVED_EQUIPMENT_INCREMENT | — |
-| A-load, equipment identity unresolved (generic label) | LOAD | BLOCKED | EQUIPMENT_IDENTITY_UNRESOLVED | — |
-| A-load, increment unit mismatch | LOAD | BLOCKED | UNIT_MISMATCH | — |
-| A-load, grid step swallows the move | LOAD | BLOCKED | DIRECTION_NOT_REALIZABLE | — |
-| A-load, above equipment maximum | LOAD | BLOCKED | EQUIPMENT_OUT_OF_RANGE | — |
-| C rest ready (independent of equipment) | REST | READY_BUT_DISABLED | — | — |
-| D/E branch unresolved (science) | — | BLOCKED | MAGNITUDE_BRANCH_UNRESOLVED, SCIENCE_POLICY_UNRESOLVED | RULE_D_E_ALTERNATIVE_NOT_DEFINED |
-| D branch unresolved (science) | — | BLOCKED | MAGNITUDE_BRANCH_UNRESOLVED, SCIENCE_POLICY_UNRESOLVED | RULE_D_E_ALTERNATIVE_NOT_DEFINED |
-| single exposure only | LOAD | BLOCKED | EVIDENCE_COUNT_INSUFFICIENT | — |
-| direction unconfirmed by prior exposure | LOAD | BLOCKED | DIRECTION_UNCONFIRMED | — |
-| direction conflicting across exposures | LOAD | BLOCKED | DIRECTION_CONFLICTING | — |
-| safety conflict | LOAD | BLOCKED | SAFETY_CONFLICT | — |
-| Coach override after evidence | LOAD | BLOCKED | COACH_OVERRIDE | — |
-| target exposure already started | LOAD | BLOCKED | TARGET_ALREADY_STARTED | — |
+| Escenario | Dimensión | Estado | Clase | Bloqueos | Ciencia |
+|---|---|---|---|---|---|
+| A-load ready (synthetic shared step) | LOAD | READY_BUT_DISABLED | READY_BUT_DISABLED | — | — |
+| A-load, equipment increment not configured | LOAD | BLOCKED | BLOCKED_EQUIPMENT_DATA | UNRESOLVED_EQUIPMENT_INCREMENT | — |
+| A-load, equipment identity unresolved (generic label) | LOAD | BLOCKED | BLOCKED_EQUIPMENT_DATA | EQUIPMENT_IDENTITY_UNRESOLVED | — |
+| A-load, increment unit mismatch | LOAD | BLOCKED | BLOCKED_EQUIPMENT_DATA | UNIT_MISMATCH | — |
+| A-load, grid step swallows the move | LOAD | BLOCKED | BLOCKED_EQUIPMENT_DATA | DIRECTION_NOT_REALIZABLE | — |
+| A-load, above equipment maximum | LOAD | BLOCKED | BLOCKED_EQUIPMENT_DATA | EQUIPMENT_OUT_OF_RANGE | — |
+| C rest ready (independent of equipment) | REST | READY_BUT_DISABLED | READY_BUT_DISABLED | — | — |
+| D/E branch unresolved (science) | — | BLOCKED | BLOCKED_SCIENCE_POLICY | MAGNITUDE_BRANCH_UNRESOLVED, SCIENCE_POLICY_UNRESOLVED | RULE_D_E_ALTERNATIVE_NOT_DEFINED |
+| D branch unresolved (science) | — | BLOCKED | BLOCKED_SCIENCE_POLICY | MAGNITUDE_BRANCH_UNRESOLVED, SCIENCE_POLICY_UNRESOLVED | RULE_D_E_ALTERNATIVE_NOT_DEFINED |
+| single exposure only | LOAD | BLOCKED | BLOCKED_EVIDENCE | EVIDENCE_COUNT_INSUFFICIENT | — |
+| direction unconfirmed by prior exposure | LOAD | BLOCKED | BLOCKED_EVIDENCE | DIRECTION_UNCONFIRMED | — |
+| direction conflicting across exposures | LOAD | BLOCKED | BLOCKED_EVIDENCE | DIRECTION_CONFLICTING | — |
+| safety conflict | LOAD | BLOCKED | BLOCKED_SAFETY | SAFETY_CONFLICT | — |
+| Coach override after evidence | LOAD | BLOCKED | BLOCKED_CONTEXT | COACH_OVERRIDE | — |
+| target exposure already started | LOAD | BLOCKED | BLOCKED_CONTEXT | TARGET_ALREADY_STARTED | — |

@@ -55,6 +55,26 @@
     ACTIVATION_GUARD: [BLOCKERS.ACTIVATION_GUARD_FAILED]
   });
 
+  // T520: quick-scan classes for the Coach. The precise blocker codes stay underneath (readiness.gates / blockers).
+  // Priority when several apply: SAFETY > CONTEXT > EVIDENCE > SCIENCE_POLICY > EQUIPMENT_DATA.
+  var PREVIEW_CLASSES = Object.freeze({
+    BLOCKED_SAFETY: [BLOCKERS.SAFETY_CONFLICT, BLOCKERS.READINESS_VETO],
+    BLOCKED_CONTEXT: [BLOCKERS.NOT_CANONICAL_RECORD, BLOCKERS.CLIENT_MISMATCH, BLOCKERS.PLAN_MISMATCH, BLOCKERS.IDENTITY_UNRESOLVED, BLOCKERS.PLAN_CHANGED,
+      BLOCKERS.RECORD_NOT_PENDING, BLOCKERS.ALREADY_RECORDED, BLOCKERS.TARGET_EXPOSURE_CHANGED, BLOCKERS.TARGET_ALREADY_STARTED, BLOCKERS.COACH_OVERRIDE,
+      BLOCKERS.COACH_KEEP_ORIGINAL, BLOCKERS.ACTIVATION_GUARD_FAILED, BLOCKERS.STALE_CALLBACK, BLOCKERS.REVISION_CONFLICT],
+    BLOCKED_EVIDENCE: [BLOCKERS.EVIDENCE_COUNT_INSUFFICIENT, BLOCKERS.DIRECTION_CONFLICTING, BLOCKERS.DIRECTION_UNCONFIRMED, BLOCKERS.NOT_ELIGIBLE,
+      BLOCKERS.NO_ACTIONABLE_CANDIDATE, BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED],
+    BLOCKED_SCIENCE_POLICY: [BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED, BLOCKERS.SCIENCE_POLICY_UNRESOLVED],
+    BLOCKED_EQUIPMENT_DATA: [BLOCKERS.EQUIPMENT_IDENTITY_UNRESOLVED, BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT, BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH, BLOCKERS.DIRECTION_NOT_REALIZABLE,
+      BLOCKERS.UNIT_MISMATCH, BLOCKERS.EQUIPMENT_OUT_OF_RANGE, BLOCKERS.EQUIPMENT_INPUT_INVALID]
+  });
+  function _previewClassOf(blockers, readyExceptFlag) {
+    var real = blockers.filter(function(b) { return b !== BLOCKERS.NUMERIC_APPLY_DISABLED; });
+    var present = Object.keys(PREVIEW_CLASSES).filter(function(c) { return PREVIEW_CLASSES[c].some(function(b) { return real.indexOf(b) >= 0; }); });
+    if (!real.length && readyExceptFlag) return { primary: NUMERIC_APPLY_ENABLED ? 'EXECUTABLE' : 'READY_BUT_DISABLED', all: [] };
+    return { primary: present[0] || 'BLOCKED_CONTEXT', all: present };
+  }
+
   // T505: science/product items that must be closed (director decision) before numeric application may be enabled.
   // Kept in sync with progression-magnitude-policy.js SCIENCE_GAPS (verified by tests).
   var ACTIVATION_PREREQUISITES = Object.freeze(['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
@@ -131,6 +151,7 @@
     var readyExceptFlag = out.wouldApply === true && real.length === 0 &&
       gates.every(function(x) { return x.state === 'PASS' || x.state === 'NOT_APPLICABLE'; });
     return { gates: gates, readyExceptFlag: readyExceptFlag, executable: readyExceptFlag && NUMERIC_APPLY_ENABLED, numericApplyEnabled: NUMERIC_APPLY_ENABLED,
+      preview: _previewClassOf(blockers, readyExceptFlag),
       state: !readyExceptFlag ? 'BLOCKED' : (NUMERIC_APPLY_ENABLED ? 'EXECUTABLE' : 'READY_BUT_DISABLED'),
       activationPrerequisites: ACTIVATION_PREREQUISITES.slice(), localizedScienceGaps: _scienceGapsFor(m), globalProvisional: ['REPRESENTATIVE_SET_NOT_DEFINED'] };
   }
@@ -300,6 +321,6 @@
     return { written: true, overlayKey: decision.overlay.key, decision: decision };
   }
 
-  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, GUARD_CHECKS: GUARD_CHECKS, verifyActivationPreconditions: verifyActivationPreconditions, ACTIVATION_PREREQUISITES: ACTIVATION_PREREQUISITES, overlayKey: overlayKey,
+  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, PREVIEW_CLASSES: PREVIEW_CLASSES, GUARD_CHECKS: GUARD_CHECKS, verifyActivationPreconditions: verifyActivationPreconditions, ACTIVATION_PREREQUISITES: ACTIVATION_PREREQUISITES, overlayKey: overlayKey,
     targetStarted: targetStarted, planApplication: planApplication, planReversal: planReversal, applyOverlayTransaction: applyOverlayTransaction };
 });

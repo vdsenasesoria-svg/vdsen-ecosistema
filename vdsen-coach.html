@@ -18987,6 +18987,10 @@ El esfuerzo no es negociable.
       DIRECTION_UNCONFIRMED: 'dirección no confirmada por la exposición previa', READINESS_VETO: 'veto por readiness' };
     var real = (decision.blockers || []).filter(function(b) { return b !== 'NUMERIC_APPLY_DISABLED'; });
     var o = decision.overlay;
+    var pv = decision.readiness && decision.readiness.preview ? decision.readiness.preview.primary : null;
+    var pvLabels = { READY_BUT_DISABLED: 'LISTO (desactivado)', EXECUTABLE: 'EJECUTABLE', BLOCKED_EQUIPMENT_DATA: 'BLOQUEADO · datos de equipo', BLOCKED_SCIENCE_POLICY: 'BLOQUEADO · política científica',
+      BLOCKED_EVIDENCE: 'BLOQUEADO · evidencia', BLOCKED_SAFETY: 'BLOQUEADO · seguridad', BLOCKED_CONTEXT: 'BLOQUEADO · contexto' };
+    var pvBadge = pv ? '<span style="display:inline-block;font-size:10px;font-weight:800;padding:1px 6px;border:1px solid #555;border-radius:4px;margin-right:6px;color:' + (pv === 'READY_BUT_DISABLED' ? '#3a9460' : '#e8a040') + '">' + _escH(pvLabels[pv] || pv) + '</span>' : '';
     var text = decision.wouldApply && o
       ? 'Aplicaría en Sem ' + o.target.week + ' · Día ' + (o.target.dayIndex + 1) + ': ' + o.dimension + ' ' + (o.previousValue === null ? '—' : o.previousValue) + ' → ' + o.appliedValue + ' (simulación, no activo)'
       : 'No se aplicaría: ' + (real.length ? real.map(function(b) { return labels[b] || b; }).join(', ') : 'sin candidato');
@@ -18996,7 +19000,7 @@ El esfuerzo no es negociable.
         + ' → realizable ' + (e.realizableLoad === null ? '—' : e.realizableLoad)
         + ' · fuente ' + (e.incrementSource || 'sin incremento configurado') + (e.roundingReason ? ' · redondeo ' + e.roundingReason : '');
     }
-    return '<span style="display:block;font-size:10px;color:#666">Simulación (dry-run): ' + _escH(text) + '</span>'
+    return '<span style="display:block;font-size:10px;color:#666">' + pvBadge + 'Simulación (dry-run): ' + _escH(text) + '</span>'
       + (eqLine ? '<span style="display:block;font-size:10px;color:#666">' + _escH(eqLine) + '</span>' : '');
   }
   function _renderShadowAutoFeed(summary, dryRuns) {

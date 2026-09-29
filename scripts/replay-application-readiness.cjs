@@ -62,7 +62,7 @@ function runScenario([name, spec, o]) {
   const entries = Object.assign(entriesFor([[1, 0, {}], [1, 2, {}]], unit), o.started ? { log_2_0_0_s0: { carga: '100', done: true } } : {});
   const d = consumer.planApplication({ record: rec, context: Object.assign({ clientId: 'c', planId: 'p', activePlanId: 'p', plan, entries, interventions: [],
     equipmentResolution: eqRes || undefined, existingOverlays: {}, now: '2026-09-28T00:00:00.000Z', resolveNextExposure: shadow.resolveNextExposure }, o.ctx || {}) });
-  return { name, dimension: d.overlay ? d.overlay.dimension : (rec.magnitude.dimension || null), state: d.readiness.state,
+  return { name, dimension: d.overlay ? d.overlay.dimension : (rec.magnitude.dimension || null), state: d.readiness.state, previewClass: d.readiness.preview.primary,
     blockers: d.blockers.filter(b => b !== 'NUMERIC_APPLY_DISABLED'), scienceGaps: d.audit.scienceGaps, appliedValue: d.overlay ? d.overlay.appliedValue : null };
 }
 
@@ -76,6 +76,7 @@ function replay() {
   const count = (f) => rows.filter(f).length;
   return { rows, summary: { candidates: rows.length, readyButDisabled: count(r => r.state === 'READY_BUT_DISABLED'), blocked: count(r => r.state === 'BLOCKED'),
     executable: count(r => r.state === 'EXECUTABLE'), blockersByReason: Object.fromEntries(Object.entries(byReason).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))),
+    byPreviewClass: rows.reduce((m, r) => { m[r.previewClass] = (m[r.previewClass] || 0) + 1; return m; }, {}),
     equipmentBlocked: count(r => r.blockers.some(b => EQUIPMENT_CODES.includes(b))), scienceBlocked: count(r => r.blockers.some(b => SCIENCE_CODES.includes(b))) } };
 }
 
@@ -86,10 +87,12 @@ function render(rp) {
     'Responde: cuando se active la bandera, ¿por qué se aplicaría o no cada candidato?', '',
     '- Candidatos: **' + s.candidates + '** · READY_BUT_DISABLED: **' + s.readyButDisabled + '** · BLOCKED: **' + s.blocked + '** · EXECUTABLE: **' + s.executable + '**',
     '- Bloqueados por equipo: **' + s.equipmentBlocked + '** · por ciencia/rama sin resolver: **' + s.scienceBlocked + '**', '',
-    '## Bloqueos por motivo', '', '| Motivo | Candidatos |', '|---|---|'];
+    '## Clases de vista rápida', '', '| Clase | Candidatos |', '|---|---|'];
+  Object.entries(s.byPreviewClass).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).forEach(([k, v]) => L.push('| ' + k + ' | ' + v + ' |'));
+  L.push('', '## Bloqueos por motivo', '', '| Motivo | Candidatos |', '|---|---|');
   Object.entries(s.blockersByReason).forEach(([k, v]) => L.push('| ' + k + ' | ' + v + ' |'));
-  L.push('', '## Detalle', '', '| Escenario | Dimensión | Estado | Bloqueos | Ciencia |', '|---|---|---|---|---|');
-  rp.rows.forEach(r => L.push('| ' + [r.name, r.dimension || '—', r.state, r.blockers.join(', ') || '—', r.scienceGaps.join(', ') || '—'].join(' | ') + ' |'));
+  L.push('', '## Detalle', '', '| Escenario | Dimensión | Estado | Clase | Bloqueos | Ciencia |', '|---|---|---|---|---|---|');
+  rp.rows.forEach(r => L.push('| ' + [r.name, r.dimension || '—', r.state, r.previewClass, r.blockers.join(', ') || '—', r.scienceGaps.join(', ') || '—'].join(' | ') + ' |'));
   L.push('');
   return L.join('\n');
 }
