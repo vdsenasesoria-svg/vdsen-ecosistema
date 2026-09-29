@@ -5383,6 +5383,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // Missing/malformed timestamps never trigger staleness (Date.parse → NaN,
   // every NaN comparison is false) — safe default for legacy plans/recs.
   var _progRecStale = !!(PLAN.updatedAt && progrec && progrec.calculatedAt && Date.parse(PLAN.updatedAt) > Date.parse(progrec.calculatedAt));
+  // T483: PID+freshness verification result only; no numerical consumer reads newLoad/newReps from it.
   var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;
 
   // ── Determinar numSeries: 3 pasos en orden ──────────────────────────────
@@ -5776,13 +5777,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // semana anterior mismo set → historial. Solo si el set aún no fue registrado.
     // Convertir KG↔LB si la unidad guardada difiere de la unidad actual del ejercicio.
     var _prefill = !saved.carga && !saved.reps;
-    // T161 — next-exposure automatic application: only _progAutoApply (verified
-    // prescriptionExerciseId match, see above) may prefill the actual input value.
-    // A loose name/position-matched progrec (legacy, no PID) never mutates this —
-    // it can still show as the "OBJETIVO" reference hint, but the client re-enters
-    // the number themselves for that case.
-    var _progCargaConv = (_prefill && s===0 && _progAutoApply && _progAutoApply.newLoad !== undefined && _progAutoApply.newLoad !== null && !isNaN(parseFloat(_progAutoApply.newLoad))) ? parseFloat(_progAutoApply.newLoad).toFixed(1) : '';
-    var _progRepsApply  = (_prefill && s===0 && _progAutoApply && typeof _progAutoApply.newReps === 'number') ? _progAutoApply.newReps : '';
+    // T483: legacy recommendation numerics (progrec.newLoad/newReps) never become operational
+    // input defaults while canonical numeric auto-apply is disabled (NUMERIC_APPLY_ENABLED=false).
+    // Recommendations stay visible as informational hints; inputs come only from the athlete's own
+    // saved execution, the previous-set copy helper below, and history/previous-week references.
     var _prevCargaConv = (_prefill && prev.carga) ? _convertCarga(prev.carga, prev.unit, unit) : '';
     var _histCargaConv = (_prefill && s===0 && histEx.load) ? _convertCarga(histEx.load, histEx.unit, unit) : '';
     // Auto-fill desde la serie anterior de ESTA sesión (s>0): si ya la completaron, copiar sus valores
@@ -5799,8 +5797,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     // Detectar ejercicio heterogéneo (distintos reps por set — Y3T o plan mixto)
     var _allSetsArr = _isY3T ? (_effectiveSets || []) : (ej.sets || []);
     var _isHeteroSets = _allSetsArr.length > 1 && (new Set(_allSetsArr.map(function(sv){ return sv ? sv.repsTarget : null; }))).size > 1;
-    var carga   = saved.carga   || _progCargaConv || '';
-    var reps    = saved.reps    || _progRepsApply || '';
+    var carga   = saved.carga   || '';
+    var reps    = saved.reps    || '';
     var rirReal = saved.rir_real|| '';
     var setNote = setSpec && setSpec.setNote ? String(setSpec.setNote).trim() : '';
     var setIsDrop = setSpec && setSpec.drop === true;
@@ -6947,10 +6945,8 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     var _prevM = LOGS['log_'+(CURRENT_WEEK-1)+'_'+di+'_'+curIdx+'_s0'] || {};
     var _histM = _getExerciseHistoryEntry(memberNames[curMIdx].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''), ejM.prescriptionExerciseId);
     var _pfCM = '', _pfRM = ejM.sets ? (ejM.sets[0] ? (ejM.sets[0].repsTarget || 10) : 10) : 10;
-    var _progM = _getProgRecForExercise(di, curIdx, memberNames[curMIdx]);
-    if (_progM && _progM.newLoad !== undefined && _progM.newLoad !== null) {
-      _pfCM = parseFloat(_progM.newLoad).toFixed(1); _pfRM = _progM.newReps || _pfRM;
-    } else if (_prevM.carga) {
+    // T483: no legacy progrec prefill (it was name/position-matched); athlete history only.
+    if (_prevM.carga) {
       _pfCM = parseFloat(_convertCarga(_prevM.carga, _prevM.unit || 'KG', unit2)).toFixed(1); _pfRM = _prevM.reps || _pfRM;
     } else if (_histM.load) {
       _pfCM = parseFloat(_convertCarga(_histM.load, _histM.unit || 'KG', unit2)).toFixed(1); _pfRM = _histM.reps || _pfRM;

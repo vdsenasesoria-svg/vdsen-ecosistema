@@ -221,58 +221,23 @@ function rebuildIndex(LOGS) {
   ok(!rec || rec.prescriptionExerciseId !== newExercisePID, 'Item 13 — after a coach substitution (new PID), the old exercise\'s stale recommendation never resolves as belonging to the new one');
 })();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Item 14 — refresh/reload does not duplicate progression application
-// (idempotency), verified structurally: the merge is strictly gated by
-// _prefill (no saved carga/reps yet), so a value already saved is always
-// read from `saved`, never re-derived from the recommendation again.
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────
+// Items 14-16 + malformed — SUPERSEDED BY T483.
+// The T161 mechanism that carried progrec.newLoad/newReps into the next exposure's input
+// defaults (_progCargaConv/_progRepsApply merged into carga/reps) is neutralized while
+// NUMERIC_APPLY_ENABLED=false. What T161 protected still holds and is asserted here: the
+// input value is the athlete's own saved execution, LOGS is never written by the render, and
+// a malformed newLoad can never reach an input.
+// ───────────────────────────────────────
 
-(function testIdempotentPrefillGating() {
-  ok(
-    CLIENT.includes("var _prefill = !saved.carga && !saved.reps;"),
-    'Item 14 prerequisite: _prefill requires BOTH carga and reps to be empty'
-  );
-  ok(
-    CLIENT.includes("var _progCargaConv = (_prefill && s===0 && _progAutoApply && _progAutoApply.newLoad !== undefined && _progAutoApply.newLoad !== null && !isNaN(parseFloat(_progAutoApply.newLoad))) ? parseFloat(_progAutoApply.newLoad).toFixed(1) : '';"),
-    'Item 14 — _progCargaConv is only computed when _prefill is true (once a set is saved, this becomes permanently \'\' on every future render/refresh/reload)'
-  );
-  ok(
-    CLIENT.includes("var carga   = saved.carga   || _progCargaConv || '';"),
-    'Item 14 — carga always prefers the already-SAVED value first; the recommendation only ever fills a genuinely empty slot, so repeated renders/refresh/reopen/listener re-fires cannot re-apply or stack the recommendation'
-  );
-})();
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Item 15 — history/logs never mutated by this mechanism: it only computes
-// a local rendering variable for an HTML input's starting value; it never
-// writes to LOGS/saveLogs/Firestore.
-// ─────────────────────────────────────────────────────────────────────────────
-
-(function testNoHistoryMutation() {
-  const applyBlock = CLIENT.slice(CLIENT.indexOf('var _progAutoApply ='), CLIENT.indexOf("var reps    = saved.reps    || _progRepsApply || '';") + 60);
-  ok(!/LOGS\[.*\]\s*=/.test(applyBlock), 'Item 15 — the auto-apply computation block never assigns into LOGS (read-only derivation of a render-time default)');
-  ok(!/saveLogs\(/.test(applyBlock), 'Item 15 — the auto-apply computation block never calls saveLogs() (no persistence side-effect)');
-})();
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Item 16 — execution load stays separate from the prescribed/suggested
-// load: `saved.carga` (what the client actually logged) always wins over
-// the suggestion once it exists; the suggestion never overwrites it.
-// ─────────────────────────────────────────────────────────────────────────────
-
-(function testExecutionLoadSeparateFromSuggestion() {
-  ok(
-    CLIENT.includes("var carga   = saved.carga   || _progCargaConv || '';"),
-    'Item 16 — saved.carga (execution) takes precedence over _progCargaConv (prescription suggestion) in the merge order'
-  );
-})();
-
-(function testMalformedNewLoadNeverPrefillsNaNString() {
-  ok(
-    CLIENT.includes("!isNaN(parseFloat(_progAutoApply.newLoad))) ? parseFloat(_progAutoApply.newLoad).toFixed(1) : '';"),
-    'UNKNOWN/malformed regression: the source guards against a non-numeric newLoad ever producing the literal string "NaN" as a prefill'
-  );
+(function testPrefillMechanismNeutralized() {
+  ok(CLIENT.includes("var _prefill = !saved.carga && !saved.reps;"), 'Item 14 prerequisite: _prefill semantics unchanged');
+  ok(CLIENT.includes("var carga   = saved.carga   || '';") && CLIENT.includes("var reps    = saved.reps    || '';"),
+    'Item 14/16 — the input value is the saved execution only; a recommendation never fills an empty slot (T483)');
+  ok(!CLIENT.includes('_progCargaConv') && !CLIENT.includes('_progRepsApply'), 'Item 14 — the legacy prefill variables are gone (T483)');
+  const region = CLIENT.slice(CLIENT.indexOf('var _prefill = !saved.carga && !saved.reps;'), CLIENT.indexOf("var reps    = saved.reps    || '';") + 60);
+  ok(!/LOGS\[.*\]\s*=/.test(region) && !/saveLogs\(/.test(region), 'Item 15 — the render-time region never assigns LOGS or persists');
+  ok(!/_progAutoApply\.(newLoad|newReps)/.test(CLIENT), 'malformed/any newLoad or newReps can never reach an input through _progAutoApply (T483)');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,60 +250,19 @@ function rebuildIndex(LOGS) {
   ok(CLIENT.includes('observedRIR: _rirRaw.length ? +avgRIR.toFixed(2) : null,'), 'Item 17 regression: observedRIR remains its own, separately-computed persisted field (T159)');
 })();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Items 1-6 — KEEP/PROGRESS_REPS/PROGRESS_LOAD/DOWN_LOAD/FREEZE/REVIEW —
-// verified against the REAL merge formula (extracted, not reimplemented),
-// run against representative recommendation shapes for each engine action.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+// Items 1-6 — SUPERSEDED BY T483: for every engine action (KEEP, PROGRESS_REPS, PROGRESS_LOAD,
+// DOWN_LOAD, FREEZE, REVIEW) no operational value is applied any more; the recommendation is
+// informational only. Verified against the real source.
+// ─────────────────────────────────────────────────────────────────
 
-function computeAppliedValues(rec) {
-  // Mirrors the exact merge formula now in _buildExCard, driven by a real
-  // recommendation object — proves what gets applied for each action.
-  const _progAutoApply = rec; // identity already verified upstream in this scenario
-  const s = 0;
-  const _prefill = true; // fresh, unsaved set
-  const _progCargaConv = (_prefill && s===0 && _progAutoApply && _progAutoApply.newLoad !== undefined && _progAutoApply.newLoad !== null && !isNaN(parseFloat(_progAutoApply.newLoad))) ? parseFloat(_progAutoApply.newLoad).toFixed(1) : '';
-  const _progRepsApply  = (_prefill && s===0 && _progAutoApply && typeof _progAutoApply.newReps === 'number') ? _progAutoApply.newReps : '';
-  const saved = {};
-  const carga = saved.carga || _progCargaConv || '';
-  const reps  = saved.reps  || _progRepsApply || '';
-  return { carga: carga, reps: reps };
-}
-
-(function testActionMatrix() {
-  // 1. KEEP (this codebase's 'maintain'): newLoad === current load -> applying it changes nothing.
-  const keep = computeAppliedValues({ action: 'maintain', newLoad: 80, newReps: 8 });
-  ok(parseFloat(keep.carga) === 80, 'Item 1 KEEP — applied load equals the unchanged prescribed load (no drift)');
-
-  // 2. PROGRESS_REPS ('maintain' with a higher newReps target, load unchanged):
-  const progressReps = computeAppliedValues({ action: 'maintain', newLoad: 80, newReps: 10 });
-  ok(parseFloat(progressReps.carga) === 80 && progressReps.reps === 10, 'Item 2 PROGRESS_REPS — reps target is applied while load stays exactly at its prior value (no simultaneous load bump the engine did not emit)');
-
-  // 3. PROGRESS_LOAD ('increase_load'):
-  const progressLoad = computeAppliedValues({ action: 'increase_load', newLoad: 82.5, newReps: 8 });
-  ok(parseFloat(progressLoad.carga) === 82.5, 'Item 3 PROGRESS_LOAD — the engine\'s recommendedNextLoad is applied verbatim');
-
-  // 4. DOWN_LOAD ('reduce_load' / 'deload'):
-  const downLoad = computeAppliedValues({ action: 'reduce_load', newLoad: 76, newReps: 8 });
-  ok(parseFloat(downLoad.carga) === 76, 'Item 4 DOWN_LOAD — a reduced load recommendation is applied (next exposure starts lighter, not at the old heavier value)');
-  const deload = computeAppliedValues({ action: 'deload', newLoad: 72, newReps: 8 });
-  ok(parseFloat(deload.carga) === 72, 'Item 4b DOWN_LOAD (deload variant) — reduced load applied');
-
-  // 5. FREEZE ('freeze_load'): engine keeps newLoad === current load by construction.
-  const freeze = computeAppliedValues({ action: 'freeze_load', newLoad: 80, newReps: 8 });
-  ok(parseFloat(freeze.carga) === 80, 'Item 5 FREEZE — no mechanical load increase is applied (newLoad unchanged, as the engine itself guarantees for freeze_load)');
-
-  // 6. REVIEW (no direct enum in this codebase; modeled as an unresolved/undefined
-  // recommendation reaching the reader — must NEVER mutate the input).
-  const review = computeAppliedValues(null);
-  ok(review.carga === '' && review.reps === '', 'Item 6 REVIEW-equivalent (no usable recommendation) — no automatic value is applied, input stays blank for the client to fill in themselves');
-
-  // UNKNOWN/malformed input safety — a non-numeric newLoad must NEVER prefill
-  // the literal string "NaN" into the input (that would be a fabricated,
-  // meaningless value shown as if it were a real number).
-  const malformed = computeAppliedValues({ action: 'increase_load', newLoad: 'not-a-number' });
-  ok(malformed.carga === '', 'UNKNOWN/malformed — a non-numeric newLoad never prefills the literal string "NaN"; falls back to blank (NO MUTATION)');
+(function testActionMatrixNeutralized() {
+  ok(!/_progM\b/.test(CLIENT), 'Items 1-5 — superset-member prefill no longer consumes a name/position-matched progrec (T483)');
+  ok(!/_pfCM = parseFloat\(_prog/.test(CLIENT), 'Item 4 — neither load increases nor reductions from progrec reach an input');
+  ok(CLIENT.includes('var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;'),
+    'Item 6 — the PID+fresh verification result still exists but has no numerical consumer');
 })();
+
 
 console.log('');
 console.log('T161 — Automatic next-exposure progression consumption: ' + pass + ' assertions PASSED');
