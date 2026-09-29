@@ -3231,7 +3231,7 @@ function buildHistorialWidget() {
 
       var progParts = progKeys[0].split('_');
       progHtml = '<div style="background:var(--card);border:1px solid var(--bd);padding:14px;margin-bottom:8px">'
-        + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">ÚLTIMA PROGRESIÓN</div>'
+        + '<div style="font-family:var(--ff);font-size:13px;letter-spacing:2px;color:var(--gold);margin-bottom:4px">ÚLTIMA RECOMENDACIÓN (NO APLICADA)</div>'
         + '<div style="font-size:11px;color:var(--mt);margin-bottom:8px">Sem '+progParts[1]+' · Día '+(parseInt(progParts[2])+1)+'</div>'
         + recCards
         + '</div>';
@@ -5686,10 +5686,10 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</div>'+
       (function(){
         if (_isY3T || !repsTarget || repsTarget === 'SST' || repsTarget === 'SST-RIV' || repsTarget === 'AMRAP') return '';
-        var _exLoad = (progrec && progrec.newLoad !== undefined && progrec.newLoad !== null) ? progrec.newLoad : null;
+        // T486: OBJETIVO = the Coach-authored prescription (reps/RIR) only; a legacy recommended load is
+        // shown separately as a non-applied recommendation, never as the target.
         return '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px;padding:5px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
           '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
-          (_exLoad !== null ? '<span style="font-size:16px;font-weight:900;color:var(--tx);line-height:1">'+_exLoad+' '+unit+'</span><span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7</span>' : '')+
           '<span style="font-size:15px;font-weight:900;color:var(--tx);line-height:1">'+repsTarget+' reps</span>'+
           '<span style="font-size:12px;font-weight:700;color:var(--mt)">\u00b7 RIR '+baseRIR+'</span>'+
         '</div>';
@@ -8223,7 +8223,7 @@ function buildBoostcampExercise(ej, di, ei) {
     var recCol = actionColors[headerRec.action] || 'var(--gold)';
     var _recSetsBC = (_isY3TBC && numSeries > 0) ? numSeries : headerRec.newSets;
     headerRecHtml = '<div style="font-size:10px;color:'+recCol+';margin-top:3px;font-weight:600">'+
-      '⚡ '+headerRec.newLoad+' '+recUnit+' · '+_recSetsBC+'s · RIR '+headerRec.rirTarget+
+      'Recomendación (no aplicada): '+headerRec.newLoad+' '+recUnit+' · '+_recSetsBC+'s · RIR '+headerRec.rirTarget+
     '</div>';
   }
   // Advertencia MEV/MRV por grupo muscular (prioritario) con fallback a patrón motor
@@ -14977,20 +14977,20 @@ function _buildNextExposureHtml(progrec, unit, nombre) {
   // Stale-progrec guard: if recommendation was stored for a different exercise, ignore it.
   if (nombre && progrec.exerciseName && _normName(progrec.exerciseName) !== _normName(nombre)) return newRef;
   var actionMap = {
-    increase_load: { label: 'Sube al siguiente incremento disponible', color: 'var(--grn)', icon: '↑' },
-    freeze_load:   { label: 'Mantén la carga', color: 'var(--gold)', icon: '→' },
-    maintain:      { label: 'Mantén carga y busca mejorar repeticiones', color: 'var(--gold)', icon: '→' },
-    progress_reps: { label: 'Mantén carga y busca mejorar repeticiones', color: 'var(--gold)', icon: '→' },
-    reduce_load:   { label: 'Reduce ligeramente la carga', color: 'var(--red)', icon: '↓' },
+    increase_load: { label: 'Recomendación: subir carga', color: 'var(--grn)', icon: '↑' },
+    freeze_load:   { label: 'Recomendación: mantener la carga', color: 'var(--gold)', icon: '→' },
+    maintain:      { label: 'Recomendación: mantener carga y buscar más repeticiones', color: 'var(--gold)', icon: '→' },
+    progress_reps: { label: 'Recomendación: mantener carga y buscar más repeticiones', color: 'var(--gold)', icon: '→' },
+    reduce_load:   { label: 'Recomendación: reducir ligeramente la carga', color: 'var(--red)', icon: '↓' },
     add_sets:      { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' },
     reduce_sets:   { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' },
     deload:        { label: 'Revisar con Coach', color: 'var(--blue)', icon: '⚑' }
   };
   var act = actionMap[progrec.action] || { label: 'Revisar con Coach', color: 'var(--mt)', icon: '⚑' };
   return '<div style="margin-top:8px;padding:7px 12px;background:rgba(107,107,102,.05);border-radius:8px;border-left:3px solid '+act.color+'">'
-    + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">HOY</div>'
+    + '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--mt2);margin-bottom:3px">RECOMENDACIÓN · NO APLICADA</div>'
     + '<div style="font-size:12px;font-weight:700;color:'+act.color+'">'+act.icon+' '+act.label+'</div>'
-    + (progrec.newLoad ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">Sugerido: '+progrec.newLoad+' '+_unit+'</div>' : '')
+    + (progrec.newLoad ? '<div style="font-size:11px;color:var(--mt);margin-top:2px">Referencia: '+progrec.newLoad+' '+_unit+'</div>' : '')
     + '</div>';
 }
 
@@ -15056,7 +15056,7 @@ function _buildProgreSummaryHtml(progrec) {
     : '';
 
   return '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px">'+
-    '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:var(--mt);margin-bottom:6px">PRÓXIMA SESIÓN</div>'+
+    '<div style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:var(--mt);margin-bottom:6px">RECOMENDACIÓN (NO APLICADA)</div>'+
     rows+
     triggersHtml+
   '</div>';
@@ -15797,11 +15797,11 @@ function _prefillFromReference(key, carga, reps, rir) {
 function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount, key) {
   var blocks = [];
 
-  // ── 1) OBJETIVO: carga recomendada por el algoritmo ──
+  // ── 1) RECOMENDACIÓN (no aplicada): carga sugerida por el algoritmo legacy ──
   if (progRec && progRec.newLoad) {
     blocks.push(
       '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:rgba(196,255,0,.06);border:1px solid rgba(196,255,0,.18)">'+
-        '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">OBJETIVO</span>'+
+        '<span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)">RECOMENDACIÓN · NO APLICADA</span>'+
         '<span style="font-size:20px;font-weight:900;color:var(--tx);line-height:1">'+progRec.newLoad+' '+unit+'</span>'+
       '</div>'
     );
@@ -15832,16 +15832,8 @@ function _buildSetReferenceHtml(progRec, prev, histEx, setIdx, unit, baseRIR, cu
     );
   }
 
-  // Sin progrec ni historial pero hay semana anterior: sugerir paso simple
-  if (blocks.length === 0 && prev && prev.carga) {
-    var pc = parseFloat(_convertCarga(prev.carga, prev.unit, unit))||0;
-    var prir = parseInt(prev.rir_real || prev.rir);
-    var step = unit === 'LB' ? 5 : 2.5;
-    var simpleSug = (!isNaN(prir) && prir <= baseRIR)
-      ? '→ '+(pc+step).toFixed(1)+' '+unit+' (subir '+step+')'
-      : '→ '+pc+' '+unit+' (mantener)';
-    blocks.push('<div style="font-size:10px;color:var(--accent);font-weight:600;margin-bottom:6px">'+simpleSug+'</div>');
-  }
+  // T486: the former 'simple step' suggestion (fixed +2.5 kg / +5 lb) was an invented numeric progression
+  // rule outside the canonical policy (and unreachable behind the previous-week block); removed.
 
   return blocks.join('');
 }

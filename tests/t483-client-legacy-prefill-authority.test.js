@@ -65,9 +65,8 @@ test('T483.1/2 a fresh legacy newLoad/newReps does not prefill the next exposure
 
 test('T483.3 recommendations remain visible as informational hints', () => {
   assert.ok(client.includes("var headerRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);"));
-  assert.ok(client.includes("'<span style=\"font-size:9px;font-weight:800;letter-spacing:1.2px;color:var(--mt2)\">OBJETIVO</span>'"));
   assert.ok(client.includes('function _buildSetReferenceHtml(progRec'));
-  assert.ok(/Sugerido: '\+progrec\.newLoad/.test(client));
+  assert.ok(/Referencia: '\+progrec\.newLoad/.test(client), 'labelled as a non-applied reference (T486)');
 });
 
 test('T483.4/5 plan-authored load and reps are untouched and remain the reference targets', () => {
