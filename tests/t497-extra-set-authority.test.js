@@ -17,9 +17,9 @@ test('T497.2 completing a set never consults MRV/ICS/pump to change the set coun
 });
 
 test('T497.3 evidence is still logged: ics, pump and observed rir_real stay on the set log', () => {
-  assert.ok(/LOGS\[key\] = \{ carga, reps, unit, done, rir: getAdjustedRIR/.test(client));
+  assert.ok(/LOGS\[key\] = \{ carga, reps, unit, done, rir: _ejMeta\.rirDefaulted === true \? undefined : getAdjustedRIR/.test(client));
   const i = client.indexOf('LOGS[key] = { carga, reps, unit, done, rir:');
-  const rec = client.slice(i, i + 220);
+  const rec = client.slice(i, i + 420);
   assert.ok(rec.includes('rir_real: rirReal') && rec.includes('ics, pump'));
 });
 

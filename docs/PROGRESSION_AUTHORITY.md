@@ -42,9 +42,7 @@ LOGS (ejecución real) → evidencia comparable por PID → política canónica 
 | EXERCISE | Coach; la sustitución del atleta es ejecución (sin PID) | ninguna | ninguna | t506 |
 | FREQUENCY / SPLIT | Coach | ninguna | ninguna | t482, t490 |
 
-Restos operativos documentados (no son autoridad de prescripción): **Temporizador de descanso** — si el set del plan no trae
-`restSeconds`, el temporizador usa una ayuda por `fatigueCost` (solo cronómetro, no persiste); al cargar el plan se muestran valores por
-defecto de visualización cuando el Coach omitió RIR (2) o descanso (90 s).
+Restos operativos CONTENIDOS (T515): **Temporizador de descanso** (`fatigueCost`) y los valores de visualización (RIR 2 / descanso 90 s cuando el Coach los omitió) son solo respaldo de UI: el conversor los marca (`rirDefaulted`/`restDefaulted`), un `restSeconds` o RIR de 0 escrito por el Coach se preserva (antes un descanso 0 de superserie se mostraba como 90), el RIR prescrito solo se registra en el log si lo escribió el Coach, el historial ya no guarda el RIR prescrito como observado y nada de esto se persiste como prescripción.
 
 ## Guardia de activación (T513)
 

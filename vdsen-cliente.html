@@ -1831,15 +1831,20 @@ async function loadPlan(user) {
           numSeries: numSets,
           repsRange: _repsRangeStr,
           rir: String(rirTarget),
+          // T515: RIR 2 / rest 90 are DISPLAY defaults for values the Coach omitted; flagged so they never become evidence.
+          rirDefaulted: !(e.sets && e.sets[0] && e.sets[0].rirTarget !== undefined && e.sets[0].rirTarget !== null),
           // Pasar TODOS los campos de los sets (setNote, drop, tempo, restSeconds)
           sets: (e.sets || []).map(function(s, si){
             return {
               setIndex: typeof s.setIndex === 'number' ? s.setIndex : si,
               // Preservar string literals tal cual (SST-PROTOCOL, SST-RIV-PROTOCOL)
               repsTarget: (s.repsTarget !== undefined && s.repsTarget !== null) ? s.repsTarget : repsTarget,
-              rirTarget:  s.rirTarget !== undefined ? s.rirTarget : rirTarget,
+              rirTarget:  (s.rirTarget !== undefined && s.rirTarget !== null) ? s.rirTarget : rirTarget,
+              rirDefaulted: !(s.rirTarget !== undefined && s.rirTarget !== null),
               load: s.load || 0,
-              restSeconds: s.restSeconds || 90,
+              // A Coach-authored 0 (superset A1: no rest) is preserved; only an omitted value is defaulted (for display).
+              restSeconds: (s.restSeconds !== undefined && s.restSeconds !== null) ? s.restSeconds : 90,
+              restDefaulted: !(s.restSeconds !== undefined && s.restSeconds !== null),
               setNote: s.setNote || '',
               drop: s.drop === true,
               tempo: s.tempo || ''
@@ -8693,7 +8698,8 @@ async function completeSet(key, di, ei, si, unit) {
   var _subEx = LOGS['exsub_'+CURRENT_WEEK+'_'+di+'_'+ei];
   var _subName = (_subEx && _subEx.nombre) ? String(_subEx.nombre) : '';
   var _logPid = _subName ? null : (_ejMeta.prescriptionExerciseId || null);
-  LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), rir_real: rirReal, ics, pump, ts: Date.now(),
+  // T515: the prescribed RIR is logged only when the Coach authored it (a display default is never evidence).
+  LOGS[key] = { carga, reps, unit, done, rir: _ejMeta.rirDefaulted === true ? undefined : getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), rir_real: rirReal, ics, pump, ts: Date.now(),
     prescriptionExerciseId: _logPid || undefined,
     exerciseId: _subName ? undefined : (_ejMeta.exerciseId || undefined),
     exerciseNameSnapshot: (_subName || _ejMetaName) || undefined
@@ -8713,7 +8719,7 @@ async function completeSet(key, di, ei, si, unit) {
   // Actualizar historial de ejercicio (peso/RIR para continuidad entre mesociclos) y
   // detectar récord personal. Solo cuenta el SET DE TRABAJO (top set): drop sets y series
   // finales con fatiga no pisan el peso real de trabajo (ver _recordExerciseHistoryAndPR).
-  var _setIsPR = done && _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), unit, false, _logPid);
+  var _setIsPR = done && _recordExerciseHistoryAndPR(exName, _exNombre || exName, carga, reps, rirReal || '', unit, false, _logPid);
   _rebuildExerciseHistoryFromLogs(exName, _logPid);
 
   // A set is execution evidence: unlike UI-only preferences, do not advance

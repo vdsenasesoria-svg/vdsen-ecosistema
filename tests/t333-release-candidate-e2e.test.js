@@ -98,7 +98,7 @@ try {
   {
     ok(COACH.includes('async function _vdsenActivatePlanInFirestore(planId, clientId) {') && COACH.includes("if (clientData.activePlanId === planId) return;"),
       'CASE A: activation is transactional and idempotent (source-level, proven in T325/T331)');
-    const loadPlanSlice = CLIENT.slice(CLIENT.indexOf('const sesiones = (planData.days || []).map'), CLIENT.indexOf('const sesiones = (planData.days || []).map') + 3000);
+    const loadPlanSlice = CLIENT.slice(CLIENT.indexOf('const sesiones = (planData.days || []).map'), CLIENT.indexOf('const sesiones = (planData.days || []).map') + 4200);
     ok(loadPlanSlice.includes('prescriptionExerciseId: e.prescriptionExerciseId || undefined'), 'CASE A: the Client faithfully reads what the Coach activated (proven field-for-field in T328)');
   }
 
@@ -240,7 +240,7 @@ try {
   // CASE R — FULL LOOP: Client evidence -> Coach decision -> next plan -> Client receives correct updated prescription
   {
     ok(COACH.includes('ctx.prescriptionTargets.muscles = _computeMuscleTargets(') , 'CASE R: the Decision Engine\'s muscle targets are computed from the SAME confidence/evidence pipeline just proven correct in CASE O');
-    const loadPlanSlice2 = CLIENT.slice(CLIENT.indexOf('const sesiones = (planData.days || []).map'), CLIENT.indexOf('const sesiones = (planData.days || []).map') + 3000);
+    const loadPlanSlice2 = CLIENT.slice(CLIENT.indexOf('const sesiones = (planData.days || []).map'), CLIENT.indexOf('const sesiones = (planData.days || []).map') + 4200);
     ok(loadPlanSlice2.includes('exerciseId: e.exerciseId || undefined'), 'CASE R: the next activated plan is received by the Client through the same exact, already-proven-faithful loadPlan path (T328) -- the loop closes without a divergent code path');
   }
 

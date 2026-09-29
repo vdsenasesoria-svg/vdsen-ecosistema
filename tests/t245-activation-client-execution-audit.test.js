@@ -99,7 +99,7 @@ ok(COACH.includes("if (planData.coachId !== coachId) throw new Error('FOREIGN_OW
 
 ok(CLIENT.includes("const activePlanId = clientData.activePlanId;"), 'client resolves the active plan via clients/{uid}.activePlanId -- same pointer the Coach app writes');
 ok(CLIENT.includes("prescriptionExerciseId: e.prescriptionExerciseId || undefined,"), 'prescriptionExerciseId is preserved verbatim when converting the plan to the renderer format -- never regenerated, never derived from name/position');
-ok(CLIENT.includes('rirTarget:  s.rirTarget !== undefined ? s.rirTarget : rirTarget,') && CLIENT.includes('load: s.load || 0,'), 'prescribed RIR and load are preserved per-set from the plan document, not recomputed');
+ok(CLIENT.includes('rirTarget:  (s.rirTarget !== undefined && s.rirTarget !== null) ? s.rirTarget : rirTarget,') && CLIENT.includes('load: s.load || 0,'), 'prescribed RIR and load are preserved per-set from the plan document, not recomputed');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prescription version executed: logs/{uid}.planId records which plan
