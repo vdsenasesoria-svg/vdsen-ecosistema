@@ -5406,23 +5406,17 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     numSeries = Math.max(numSeries, _lastWeekDone);
   }
 
-  // PASO 2 — progrec sobreescribe para cambios ACTIVOS de volumen
-  // add_sets/reduce_sets/deload son mandatos explícitos del algoritmo:
-  //   · add_sets:4   → esta semana DEBEN hacerse 4 series
-  //   · reduce_sets:2 → MÁXIMO 2 series (progrec puede bajar por debajo de la sem anterior)
-  //   · deload        → igual, reduce a la mitad
-  // maintain/increase_load/freeze_load NO fuerzan el conteo; la continuidad
-  // ya la garantiza el _lastWeekDone del paso 1.
+  // PASO 2 — (T484) las recomendaciones de series/volumen (add_sets, reduce_sets, deload) ya NO
+  // fuerzan el conteo: son informativas. Aquí solo se cuentan las series ya ejecutadas.
   var _doneCount = 0;
   for (var _sc = 0; _sc < 12; _sc++) {
     if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] &&
         LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
   }
-  // Solo reduce_sets puede ajustar series en el renderer (conservador).
-  // add_sets y deload son candidatos para el coach — no mutan el plan visual.
-  if (_isFreshPidProgRec(progrec, ej.prescriptionExerciseId) && progrec.newSets && progrec.action === 'reduce_sets') {
-    numSeries = Math.max(progrec.newSets, _doneCount);
-  }
+  // T484: no progression recommendation (add_sets, reduce_sets, deload) changes the rendered or
+  // prescribed set count. The count comes from the Coach-authored plan topology, the athlete's own
+  // execution state and legitimate continuity below; set-volume recommendations are informational
+  // candidates for the Coach until a canonical structural policy exists.
 
   // PASO 3 — nunca ocultar sets que el cliente ya registró esta sesión
   numSeries = Math.max(numSeries, _doneCount);
@@ -7053,9 +7047,7 @@ function markExpressSSDone(di, ssMembers) {
     var unit  = getExUnit(di, idx) || 'KG';
     var _ejIdx = _EJERCICIOS_DIA && _EJERCICIOS_DIA[idx] ? _EJERCICIOS_DIA[idx] : null;
     var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
-    // Progrec puede haber ajustado el nº de series
-    var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '', _ejIdx && _ejIdx.prescriptionExerciseId);
-    if (_isFreshPidProgRec(_pcRec, _ejIdx && _ejIdx.prescriptionExerciseId) && _pcRec.newSets && _pcRec.action === 'reduce_sets') numSets = _pcRec.newSets;
+    // T484: the set count is the plan's; a recommendation never changes how many sets are logged.
     LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:carga, reps:String(reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:unit, done:true, ts:now };
     for (var s = 0; s < numSets; s++) {
       var _ssKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s;
@@ -7200,8 +7192,7 @@ function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
     var lastSD = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+round+'_m'+i] || {};
     var _ejIdx = (_EJERCICIOS_DIA || [])[idx] || null;
     var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
-    var _pcRec = _getProgRecForExercise(di, idx, _ejIdx ? (_ejIdx.nombre||_ejIdx.exerciseName||'') : '', _ejIdx && _ejIdx.prescriptionExerciseId);
-    if (_isFreshPidProgRec(_pcRec, _ejIdx && _ejIdx.prescriptionExerciseId) && _pcRec.newSets && _pcRec.action === 'reduce_sets') numSets = _pcRec.newSets;
+    // T484: the set count is the plan's; a recommendation never changes how many sets are logged.
     LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:lastSD.carga||'0', reps:String(lastSD.reps||reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:lastSD.unit||unit_i, done:true, ts:now };
     for (var s = 0; s < numSets; s++) {
       var sdS = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+s+'_m'+i] || lastSD;
@@ -8208,16 +8199,13 @@ function buildBoostcampExercise(ej, di, ei) {
     }
     numSeries = Math.max(numSeries, _lwdBC);
   }
-  // Paso 2: progrec sobreescribe solo para cambios activos de volumen
+  // Paso 2: (T484) ninguna recomendación de series/volumen cambia el conteo renderizado
   var _dcBC = 0;
   for (var _scBC = 0; _scBC < 12; _scBC++) {
     if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_scBC] &&
         LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_scBC].done) _dcBC = _scBC + 1;
   }
-  // Solo reduce_sets puede ajustar series en el renderer (conservador).
-  if (_isFreshPidProgRec(progRecForWu, ej.prescriptionExerciseId) && progRecForWu.newSets && progRecForWu.action === 'reduce_sets') {
-    numSeries = Math.max(progRecForWu.newSets, _dcBC);
-  }
+  // T484: recommendations never change the rendered set count (see _buildExCard).
   // Paso 3: nunca ocultar sets ya registrados
   numSeries = Math.max(numSeries, _dcBC);
   // Para Y3T: la fase define el techo de series (igual que en _buildExCard)
@@ -8864,13 +8852,8 @@ function _maybeSuggestExtraSet(di, ei, si) {
     for (var _sc = 0; _sc < 12; _sc++) {
       if (LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc] && LOGS['log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+_sc].done) _doneCount = _sc + 1;
     }
-    var progrec = _getProgRecForExercise(di, ei, exName, ej.prescriptionExerciseId);
-    // Ninguna recomendación de progresión modifica el plan activo automáticamente.
-    // Solo reduce_sets puede ajustar series en el renderer (seguridad conservadora).
-    // add_sets y deload son candidatos: el coach decide el cambio real de programa.
-    if (_isFreshPidProgRec(progrec, ej.prescriptionExerciseId) && progrec.newSets && progrec.action === 'reduce_sets') {
-      numSeries = Math.max(progrec.newSets, _doneCount);
-    }
+    // T484: no progression recommendation changes the plan or the rendered set count; add_sets,
+    // reduce_sets and deload are informational candidates for the Coach.
 
     // PASO 3 — nunca ocultar sets ya registrados esta sesión
     numSeries = Math.max(numSeries, _doneCount);
@@ -14917,7 +14900,8 @@ function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
   return null;
 }
 
-// T471: presentation changes from reduce_sets require the same exact PID and
+// T471 (kept for exact-PID freshness checks; T484: no consumer changes set count with it any more):
+// presentation changes from reduce_sets require the same exact PID and
 // a trustworthy parent-derived timestamp used by the stale guard.
 function _isFreshPidProgRec(rec, prescriptionExerciseId) {
   if (!rec || !prescriptionExerciseId || rec.prescriptionExerciseId !== prescriptionExerciseId) return false;

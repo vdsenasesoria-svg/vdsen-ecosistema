@@ -11,11 +11,12 @@ const reader = client.slice(client.indexOf('function _getProgRecForExercise('), 
 ok(reader.includes('calculatedAt'), 'T470 reader exposes parent calculatedAt to the resolved recommendation');
 ok(reader.includes('Object.assign'), 'T470 reader returns an enriched child, not a second timestamp authority');
 
-// T471: every reduce_sets mutation must require the exact PID and freshness.
-ok(client.includes('function _isFreshPidProgRec'), 'T471 has one explicit PID/freshness gate');
-const reduceSites = (client.match(/action === 'reduce_sets'/g) || []).length;
-ok(reduceSites > 0, 'T471 reduce_sets sites exist');
-ok(client.includes('_isFreshPidProgRec('), 'T471 reduce_sets path invokes the shared gate');
+// T471 -> T484: reduce_sets used to mutate the rendered set count behind an exact-PID/freshness gate.
+// T484 removed every such mutation (legacy recommendations are informational for set count); the
+// shared gate stays defined for exact-PID freshness checks but no reduce_sets consumer remains.
+ok(client.includes('function _isFreshPidProgRec'), 'T471 keeps the explicit PID/freshness gate definition');
+ok((client.match(/action === 'reduce_sets'/g) || []).length === 0, 'T484 no reduce_sets set-count mutation site remains');
+ok(client.split('_isFreshPidProgRec(').length - 1 === 1, 'T484 the gate has no caller left (definition only)');
 
 // T472/T473: the mutating Monitor preview must never resolve by name alone.
 const previewStart = coach.indexOf('function _buildRecApplyPreview(');
