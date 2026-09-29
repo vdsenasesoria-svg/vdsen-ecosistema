@@ -707,9 +707,7 @@ function toggleExUnit(di, ei) {
   var ses = getSesiones();
   var ej  = ses && ses[di] && ses[di].exercises && ses[di].exercises[ei];
   if (ej) {
-    var numSeries = (LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {}).numSeries
-      ? parseInt(LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei].numSeries)
-      : (ej.numSeries || 3);
+    var numSeries = ej.numSeries || 3;
     for (var s = 0; s < numSeries; s++) {
       var key   = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
       var input = document.getElementById('carga_'+key);
@@ -4099,8 +4097,7 @@ function _getTodayHomeState(logs, week, sesiones) {
   var ses = sesiones[dayIndex] || {};
   (ses.exercises || []).forEach(function(ej, ei) {
     if (typeof isTechniqueActive === 'function' && !isTechniqueActive(ej, week)) return;
-    var exMod = logs['exmod_'+week+'_'+dayIndex+'_'+ei] || {};
-    totalSets += exMod.numSeries ? (parseInt(exMod.numSeries) || 0) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+    totalSets += ej.numSeries || (ej.sets ? ej.sets.length : 3);
   });
 
   var primaryAction, secondaryAction = null, canStart = false, canResume = false, canReview = false;
@@ -5351,10 +5348,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // Sesión cerrada: no se permiten ediciones una vez marcada como completada
   var sessionDone = !!LOGS['done_'+CURRENT_WEEK+'_'+di];
   // Modificaciones manuales de parámetros del ejercicio (coach-note + ajuste de sets/reps/RIR)
-  var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
-  if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
-  if (exMod.repsRange) repsTarget = exMod.repsRange;
-  if (exMod.rir !== undefined && exMod.rir !== '') baseRIR = parseInt(exMod.rir);
 
   // ── Recomendación de la sesión anterior (única llamada, reutilizada en todo el panel) ──
   // T161: PID-first — pasa prescriptionExerciseId para que la búsqueda intente
@@ -5368,7 +5361,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   //
   // T488: previous-week execution alone never raises the prescribed/rendered set count (weekly
   // volume / set topology is a Coach structural decision; history is evidence, not permission).
-  // The count is the Coach-authored plan (+ explicit exmod), never less than what was already
+  // The count is the Coach-authored plan, never less than what was already
   // executed in this session (see PASO 3).
   // PASO 2 — (T484) las recomendaciones de series/volumen (add_sets, reduce_sets, deload) ya NO
   // fuerzan el conteo: son informativas. Aquí solo se cuentan las series ya ejecutadas.
@@ -5455,14 +5448,12 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">'+
         '<button class="tap-target" onclick="toggleExUnit('+di+','+ei+')" style="font-size:11px;font-weight:700;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);padding:4px 12px;border-radius:6px;cursor:pointer">'+unit+' ⇄</button>'+
         (_exSubData?'<span style="font-size:10px;color:var(--gold);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Sustituido</span>':'')+
-        (exMod.numSeries||exMod.repsRange||exMod.rir!==undefined?'<span style="font-size:10px;color:var(--blue);background:rgba(140,140,134,.1);border:1px solid rgba(140,140,134,.3);padding:2px 8px;border-radius:4px;font-weight:600">✓ Ajustado</span>':'')+
         (_exNoteInline?'<span style="font-size:10px;color:var(--accent);background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.3);padding:2px 8px;border-radius:4px;font-weight:600">📝 Nota</span>':'')+
         '<div style="position:relative;margin-left:auto">'+
           '<button class="tap-target" id="exOpts_'+di+'_'+ei+'" aria-label="Opciones del ejercicio" onclick="toggleExOpts('+di+','+ei+')" style="font-size:13px;font-weight:700;color:var(--mt);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:4px 11px;border-radius:6px;cursor:pointer;line-height:1">⋮</button>'+
           '<div id="exOptsMenu_'+di+'_'+ei+'" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;min-width:160px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.4);overflow:hidden">'+
             '<button class="tap-target" onclick="showExHistory('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">📈 Historial</button>'+
             '<button class="tap-target" onclick="showExSubModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">🔄 Cambiar ejercicio</button>'+
-            '<button class="tap-target" onclick="showExModModal('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:var(--mt);background:none;border:none;cursor:pointer;border-bottom:1px solid var(--border)">⚙ Ajustar series/reps</button>'+
             '<button class="tap-target" onclick="toggleUserNote('+di+','+ei+');closeExOpts('+di+','+ei+')" style="display:block;width:100%;text-align:left;padding:11px 14px;font-size:13px;font-weight:700;color:'+(_exNoteInline?'var(--accent)':'var(--mt)')+';background:none;border:none;cursor:pointer">📝 '+(	_exNoteInline?'Editar nota':'Añadir nota')+'</button>'+
           '</div>'+
         '</div>'+
@@ -7560,8 +7551,7 @@ function _refreshSessionDashboard() {
   var _sesTotSets = 0;
   ejercicios.forEach(function(ej, _ei) {
     if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
-    var _exMod = LOGS['exmod_' + CURRENT_WEEK + '_' + DIA_ACTIVO + '_' + _ei] || {};
-    _sesTotSets += _exMod.numSeries ? (parseInt(_exMod.numSeries) || 0) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+    _sesTotSets += ej.numSeries || (ej.sets ? ej.sets.length : 3);
   });
   var _sesRIR = _sesStats.avgRIR !== null ? _sesStats.avgRIR : null;
   var _sesICS = _sesStats.avgICS !== null ? _sesStats.avgICS : null;
@@ -7928,8 +7918,7 @@ function renderEntrenamiento() {
     var _sesTotSets = 0;
     ejercicios.forEach(function(ej, _ei) {
       if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
-      var _exMod = LOGS['exmod_' + CURRENT_WEEK + '_' + DIA_ACTIVO + '_' + _ei] || {};
-      _sesTotSets += _exMod.numSeries ? (parseInt(_exMod.numSeries) || 0) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+      _sesTotSets += ej.numSeries || (ej.sets ? ej.sets.length : 3);
     });
     var _sesRIR = _sesStats.avgRIR !== null ? _sesStats.avgRIR : null;
     var _sesICS = _sesStats.avgICS !== null ? _sesStats.avgICS : null;
@@ -9045,77 +9034,7 @@ function toggleNota(id) {
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
-function showExModModal(di, ei) {
-  var ej = (_EJERCICIOS_DIA||[])[ei] || {};
-  var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
-  var curSeries  = exMod.numSeries || ej.numSeries || (ej.sets ? ej.sets.length : 3);
-  var curReps    = exMod.repsRange  || ej.repsRange  || (ej.sets&&ej.sets[0] ? ej.sets[0].repsTarget : '8-12') || '8-12';
-  var curRIR     = exMod.rir !== undefined ? exMod.rir : (parseInt(ej.rir)||(ej.sets&&ej.sets[0]?ej.sets[0].rirTarget:2)||2);
-  var nombre = ej.nombre || ej.exerciseName || ('Ejercicio '+(ei+1));
-
-  var overlay = document.getElementById('exModOverlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'exModOverlay';
-    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;align-items:flex-end;justify-content:center';
-    overlay.onclick = function(e){ if(e.target===overlay) overlay.style.display='none'; };
-    document.body.appendChild(overlay);
-  }
-  overlay.innerHTML =
-    '<div onclick="event.stopPropagation()" style="background:var(--surface);border-radius:20px 20px 0 0;padding:24px 18px 44px;width:100%;max-width:480px;box-sizing:border-box">'+
-      '<div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 18px"></div>'+
-      '<div style="font-size:10px;letter-spacing:2px;color:var(--accent);font-weight:700;margin-bottom:4px">⚙ AJUSTAR EJERCICIO</div>'+
-      '<div style="font-size:17px;font-weight:800;color:var(--tx);margin-bottom:18px;text-transform:uppercase">'+_escHTml(nombre)+'</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px">'+
-        '<div>'+
-          '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:6px">SERIES</div>'+
-          '<input id="exmod_ns" type="number" value="'+curSeries+'" min="1" max="10" inputmode="numeric"'+
-            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:20px;font-weight:700;padding:10px 6px;outline:none;text-align:center">'+
-        '</div>'+
-        '<div>'+
-          '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:6px">REPS</div>'+
-          '<input id="exmod_rr" type="text" value="'+curReps+'" placeholder="8-12"'+
-            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--tx);font-size:18px;font-weight:700;padding:10px 6px;outline:none;text-align:center">'+
-        '</div>'+
-        '<div>'+
-          '<div style="font-size:9px;color:var(--mt);letter-spacing:1.5px;font-weight:700;margin-bottom:6px">RIR</div>'+
-          '<input id="exmod_rir" type="number" value="'+curRIR+'" min="0" max="5" inputmode="numeric"'+
-            ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--rir);font-size:20px;font-weight:700;padding:10px 6px;outline:none;text-align:center">'+
-        '</div>'+
-      '</div>'+
-      '<div style="font-size:11px;color:var(--mt);margin-bottom:16px;padding:8px 10px;background:rgba(255,255,255,.03);border-left:2px solid var(--border);border-radius:0 6px 6px 0;line-height:1.5">'+
-        'Estos ajustes se guardan en tu bitácora y el coach los verá en el panel de monitoreo.'+
-      '</div>'+
-      '<div style="display:flex;gap:10px">'+
-        '<button onclick="clearExMod('+di+','+ei+')" style="flex:0 0 auto;padding:13px 16px;border:1px solid var(--border);border-radius:10px;background:var(--input-bg);color:var(--mt);font-size:13px;font-weight:700;cursor:pointer">Resetear</button>'+
-        '<button onclick="saveExMod('+di+','+ei+')" style="flex:1;padding:13px;border:none;border-radius:10px;background:var(--accent-fill);color:var(--on-accent);font-size:15px;font-weight:800;cursor:pointer">Guardar ajuste ✓</button>'+
-      '</div>'+
-    '</div>';
-  overlay.style.display = 'flex';
-}
-
-function saveExMod(di, ei) {
-  var ns  = parseInt(document.getElementById('exmod_ns').value)  || null;
-  var rr  = (document.getElementById('exmod_rr').value  || '').trim() || null;
-  var rir = document.getElementById('exmod_rir').value;
-  var key = 'exmod_'+CURRENT_WEEK+'_'+di+'_'+ei;
-  LOGS[key] = { numSeries: ns, repsRange: rr, rir: rir !== '' ? parseInt(rir) : null };
-  saveLogs();
-  var overlay = document.getElementById('exModOverlay');
-  if (overlay) overlay.style.display = 'none';
-  _refreshExPanelOnly();
-  showToast('⚙ Ajuste guardado');
-}
-
-function clearExMod(di, ei) {
-  var key = 'exmod_'+CURRENT_WEEK+'_'+di+'_'+ei;
-  delete LOGS[key];
-  saveLogs();
-  var overlay = document.getElementById('exModOverlay');
-  if (overlay) overlay.style.display = 'none';
-  _refreshExPanelOnly();
-  showToast('Ajuste eliminado — usando valores del plan');
-}
+// T499: no athlete editor for prescribed sets / reps target / RIR (exmod_*). The athlete authors execution only.
 
 function toggleUserNote(di, ei) {
   var el = document.getElementById('usernote_'+di+'_'+ei);
@@ -9766,8 +9685,7 @@ async function _endSessionAsPartial(di) {
   var totalSets = 0;
   (ses.exercises || []).forEach(function(ej, ei) {
     if (!isTechniqueActive(ej, CURRENT_WEEK)) return;
-    var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
-    totalSets += exMod.numSeries ? (parseInt(exMod.numSeries) || 0) : (ej.numSeries || (ej.sets ? ej.sets.length : 3));
+    totalSets += ej.numSeries || (ej.sets ? ej.sets.length : 3);
   });
 
   var weekAtStart = CURRENT_WEEK;
@@ -9855,9 +9773,6 @@ async function markSessionDoneFromHistory(di) {
     }
     var exName = (ej.nombre || ej.exerciseName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
-    // Respetar exmod (override del usuario) si existe
-    var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
-    if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
 
     // Buscar referencia: 1) semana anterior, 2) histórico
     // SIEMPRE rellenamos en la unidad actual del ejercicio, convirtiendo desde
@@ -10073,8 +9988,6 @@ async function markWeekCompleteFromHistory() {
 
       var exName = (ej.nombre || ej.exerciseName || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
       var numSeries = ej.numSeries || (ej.sets ? ej.sets.length : 3);
-      var exMod = LOGS['exmod_'+CURRENT_WEEK+'_'+di+'_'+ei] || {};
-      if (exMod.numSeries) numSeries = parseInt(exMod.numSeries) || numSeries;
 
       var currentUnit = getExUnit(di, ei) || 'KG';
       var refLoad = 0, refReps = 0, refRir = defaultRIR;

@@ -39,5 +39,5 @@ LOGS (ejecución real) → evidencia comparable por PID → política canónica 
    candidato canónico (se muestran separados y etiquetados "no aplicada").
 5. **Metadatos de incremento por equipo**: no existen; sin ellos ninguna carga puede ser accionable.
 6. **Magnitud D/E (reps vs carga)**, precedencia C/E y representatividad de la serie: siguen sin resolver por la fuente.
-7. `exmod_*` (modificación de series/reps/RIR por el atleta para su semana): función existente de autoría del atleta; decisión de producto pendiente.
+7. ~~`exmod_*`~~ — **CERRADA (T499)**: el atleta ya no puede redefinir series/reps objetivo/RIR prescritos (editor `showExModModal`/`saveExMod`/`clearExMod` eliminado; ningún lector de `exmod_*`). Los `exmod_*` ya guardados en `logs/{uid}` se conservan sin borrar pero no se leen. El atleta sigue registrando ejecución (carga/reps/RIR observado), notas (`exnote_`), omisiones (`exskip_`) y unidad.
 8. Validación del runner de emulador en Windows: pendiente.

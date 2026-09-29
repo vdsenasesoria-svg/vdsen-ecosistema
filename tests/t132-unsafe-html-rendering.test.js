@@ -63,16 +63,8 @@ assert.ok(
 // Sink 1 — showExModModal: exercise-name title in the "adjust exercise" modal
 // ─────────────────────────────────────────────────────────────────────────────
 
-const showExModModalFn = extractFunction(CLIENT, 'function showExModModal(di, ei)');
-assert.ok(showExModModalFn, 'showExModModal must exist');
-assert.ok(
-  /overlay\.innerHTML\s*=[\s\S]*?_escHTml\(nombre\)/.test(showExModModalFn),
-  'T132: showExModModal must escape the exercise name before writing overlay.innerHTML'
-);
-assert.ok(
-  !/>['"]?\s*\+\s*nombre\s*\+\s*['"]?</.test(showExModModalFn.replace(/_escHTml\(nombre\)/g, '')),
-  'T132: no remaining raw "+nombre+" interpolation should exist in showExModModal'
-);
+// T499: the athlete exercise-adjust modal was removed, so this sink no longer exists.
+assert.ok(!CLIENT.includes('function showExModModal('), 'T499: showExModModal sink is gone');
 
 console.log('Sink 1 (showExModModal exercise-name title) — escaped, OK');
 
