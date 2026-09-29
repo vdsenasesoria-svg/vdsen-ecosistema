@@ -3396,7 +3396,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     btn.disabled = true; btn.textContent = '⏳ Reparando...';
     try {
       await ensureCoachDoc();
-      const snap = await getDocs(collection(db, "clients"));
+      const snap = await getDocs(query(collection(db, "clients"), where("coachId", "==", currentCoach.uid)));   // T538: own clients only
       let fixed = 0, skipped = 0;
       for (const d of snap.docs) {
         const c = d.data();
@@ -3431,7 +3431,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     const resultBox = document.getElementById('recoverClientsResult');
     if (resultBox) resultBox.innerHTML = '<span class="text-xs text-[#888]">Escaneando…</span>';
     try {
-      const allSnap = await getDocs(collection(db, 'clients'));
+      // T538: tenant isolation — only this coach's clients are readable; other coaches' clients (and unclaimed ones) cannot be enumerated.
+      const allSnap = await getDocs(query(collection(db, 'clients'), where('coachId', '==', currentCoach.uid)));
       const foreign = [];
       allSnap.forEach(d => {
         const data = d.data();
@@ -3441,7 +3442,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       });
       if (!resultBox) return;
       if (foreign.length === 0) {
-        resultBox.innerHTML = '<span class="text-xs" style="color:#22c55e">✅ Todos los clientes ya están vinculados a tu cuenta.</span>';
+        resultBox.innerHTML = '<span class="text-xs" style="color:#22c55e">✅ Todos los clientes visibles ya están vinculados a tu cuenta. (Los clientes de otros coaches o sin coach ya no se pueden listar: reclama uno por UID con «Reparar UID».)</span>';
         return;
       }
       const rows = foreign.map(c => {
@@ -16466,6 +16467,7 @@ El esfuerzo no es negociable.
         // NOTA: requiere composite index en plans_backup: clientId ASC + backedUpAt DESC
         const q = query(
           collection(db, 'plans_backup'),
+          where('coachId', '==', currentCoach.uid),   // T538: tenant-scoped (rules) — needs the coachId+clientId+backedUpAt index
           where('clientId', '==', clientId),
           orderBy('backedUpAt', 'desc'),
           limit(1)
@@ -22950,8 +22952,8 @@ El esfuerzo no es negociable.
     if(!box || !currentCoach) return;
     box.innerHTML = '<div class="text-xs" style="color:var(--text-muted)">Cargando…</div>';
     if(_fichasUnsub){ _fichasUnsub(); _fichasUnsub = null; }
-    // Sin filtro de coachId — las reglas de Firestore ya garantizan acceso solo a coaches
-    _fichasUnsub = onSnapshot(collection(db,'fichas_publicas'), snap=>{
+    // T538: filtrado por coachId (las reglas solo permiten las fichas dirigidas a este coach)
+    _fichasUnsub = onSnapshot(query(collection(db,'fichas_publicas'), where('coachId','==',currentCoach.uid)), snap=>{
       const items = [];
       snap.forEach(d=>items.push(Object.assign({id:d.id}, d.data())));
       items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));

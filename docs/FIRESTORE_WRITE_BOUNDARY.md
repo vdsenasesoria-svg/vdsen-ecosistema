@@ -75,3 +75,34 @@ Contrato: un Coach solo muta el estado canónico de sus clientes (`clients/{uid}
 ## 9. Bandera apagada: defensa en profundidad
 
 Un cliente malicioso con el SDK no puede crear un overlay APPLIED: reglas (campo canónico), `lifecycleTransition` rechaza APPLIED con la bandera apagada, canario ausente = fuera de alcance, guardia de 19 verificaciones y matriz de transiciones.
+
+## 10. Modelo de identidad y aislamiento por inquilino (T538)
+
+**Modelo de identidad real (auditado, no se inventó una arquitectura de roles):**
+1. `coaches/{uid}` lo crean: (a) el botón «Crear cuenta» de la app Coach (registro abierto: `createUserWithEmailAndPassword` + `setDoc`), (b) `onAuthStateChanged` de la app Coach, que crea el documento para CUALQUIER usuario autenticado que abra esa app, (c) `ensureCoachDoc` (merge).
+2. Antes, una cuenta de atleta podía crear su propio `coaches/{uid}` (la regla solo exigía `auth.uid == coachId`). Ahora se deniega si existe `clients/{uid}`.
+3. No hay custom claims ni provisión desde el servidor; no existe primitiva de rol de confianza.
+4. Sí: las reglas (`exists(coaches/{uid})`) y `api/_firebaseAdmin.isAuthorizedCoach` usan la existencia del documento como única comprobación de rol.
+5. Las cuentas Coach son autocreadas (registro abierto).
+
+**Regla de inquilino:** `isCoachUser()` (autocreable) ya no concede acceso a datos privados de otro coach. El acceso a un cliente exige `clients/{clientId}.coachId == request.auth.uid` (`ownsClient`) o ser el propio atleta (`isSelfOrOwnerCoach`).
+
+| Recurso | Lectura | Escritura |
+|---|---|---|
+| `clients/{id}` | atleta o coach dueño | (sin cambios) crear con su coachId; actualizar propios; reclamar huérfano por uid |
+| `logs/{uid}`, `mesos/*` (entries, semana, historial, canónico) | atleta o coach dueño | atleta: ejecución + recibos; coach dueño: todo; nadie más |
+| `fichas_onboarding`, `fichas_renovacion` | atleta o coach dueño | ídem |
+| `phone_index` | pública (login por celular, sin cambios) | solo coach dueño del cliente al que apunta (antes y después) |
+| `compendio/{uid}` | solo ese coach | solo ese coach |
+| `templates`, `plans_backup`, `fichas_publicas` (lectura) | solo su `coachId` | crear/editar solo con su `coachId` |
+| `sessions` | cerrada (sin lectores ni escritores en ninguna app) | cerrada |
+| `exercises` | catálogo global de lectura | solo coach dueño (T537) |
+
+Cambios en la app Coach: las consultas sobre `clients`, `fichas_publicas` y `plans_backup` filtran por `coachId`; las herramientas de reparación/recuperación de clientes ya no enumeran clientes ajenos ni sin coach (se reclama por uid con «Reparar UID»). `firestore.indexes.json` añade el índice `plans_backup (coachId, clientId, backedUpAt)`: **debe desplegarse junto con las reglas**.
+
+**FIRESTORE_TENANT_ISOLATION: PASS / READY** en el repositorio (`tests/t538-tenant-isolation.cjs`; RED antes: 10 de 11 fallaban).
+
+**Riesgos residuales (fuera de esta frontera, reportados):**
+- **Registro abierto de coaches:** cualquiera puede crear una cuenta Coach nueva. No accede a datos de otros inquilinos, pero `isAuthorizedCoach` (endpoints `api/*` que consumen la API de generación) solo comprueba que el documento exista: cualquiera puede usar esos endpoints. Recomendado: lista de permitidos o custom claim de rol.
+- **Reclamar cliente huérfano:** cualquier coach puede reclamar un cliente sin `coachId` (flujo legado) y lo verá tras reclamarlo; un uid de atleta sin documento `clients/{uid}` podría ser creado por un coach con su `coachId`.
+- Índices y reglas deben desplegarse juntos; nada se desplegó.

@@ -105,7 +105,7 @@ test('T535.6 the generated readiness documents state the lifecycle readiness der
   for (const t of ['APPLIED LIFECYCLE | READY_BEHIND_DISABLED_FLAG', 'CLIENT OVERLAY CONSUMER | READY_BEHIND_DISABLED_FLAG', 'ROLLBACK | READY', 'CONSUMPTION | READY', 'OVERRIDE | READY', 'STALE | READY', 'false (apagada en los 4 módulos)']) assert.ok(r.includes(t), t);
   const line = t => c.split('\n').find(l => l.includes(t));
   assert.ok(line('`NUMERIC_APPLY_ENABLED` cambiado').startsWith('- [ ]') && line('Incrementos de equipo').startsWith('- [ ]'), 'flag + real data remain the open items');
-  assert.ok(/18 de 23 cumplidos; pendientes bloqueantes: 4/.test(c));
+  assert.ok(/19 de 24 cumplidos; pendientes bloqueantes: 4/.test(c));
   assert.equal(spawnSync(process.execPath, [path.join(root, 'scripts/generate-equipment-data-required.cjs'), '--check']).status, 0);
 });
 

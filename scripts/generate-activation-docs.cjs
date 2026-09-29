@@ -39,8 +39,10 @@ function facts() {
   const boundary = /function canonicalKeys\(\)/.test(rulesSrc) && /function ownsClient\(/.test(rulesSrc) && /function receiptsAppendOnly\(/.test(rulesSrc) &&
     fs.existsSync(path.join(repo, 'tests/t536-rules-security.cjs')) && fs.existsSync(path.join(repo, 'tests/t537-write-boundary.test.js')) &&
     !/_recordShadowProgression|progressionApplications\s*:/.test(clientSrc) && coachSrc2.includes('_materializeShadowRecords') ? 'PASS / READY' : 'NOT_READY';
+  const tenant = /function isSelfOrOwnerCoach\(/.test(rulesSrc) && /!exists\(\/databases\/\$\(database\)\/documents\/clients\/\$\(coachId\)\)/.test(rulesSrc) &&
+    fs.existsSync(path.join(repo, 'tests/t538-tenant-isolation.cjs')) && fs.existsSync(path.join(repo, 'tests/t538-tenant-boundary.test.js')) ? 'PASS / READY' : 'NOT_READY';
   const lifecycle = {
-    boundary,
+    boundary, tenant,
     states: Object.keys(shadow.STATES),
     applied: ['APPLIED', 'CONSUMED', 'OVERRIDDEN', 'REVERTED'].every(k => shadow.STATES[k]) && applyBlocked && has('x', 'applyOverlayTransaction') && T.PENDING.includes('APPLIED') ? READY : 'NOT_READY',
     clientConsumer: typeof effective.resolveEffective === 'function' && ['_resolveOverlayForExercise', '_maybeConsumeOverlays', '_autoAdjustHtml', '_withOverlayRest'].every(n => clientSrc.includes('function ' + n + '(')) ? READY : 'NOT_READY',
@@ -80,6 +82,7 @@ function checklist(f) {
     [f.lifecycle.stale === 'READY', 'Obsolescencia tras aplicar', 'STALE: **' + f.lifecycle.stale + '** — plan reemplazado / PID o exposición invalidados antes del inicio (t531, t532).'],
     [f.lifecycle.emulator, 'Concurrencia con Firestore Emulator real', '11 escenarios transaccionales en `tests/t532-lifecycle-emulator.cjs` (dos dispositivos, carreras override/revert/plan, consumo duplicado, callbacks tardíos, reintentos, escrituras denegadas).'],
     [f.lifecycle.boundary === 'PASS / READY', 'FIRESTORE_CANONICAL_WRITE_BOUNDARY', '**' + f.lifecycle.boundary + '** — el atleta solo escribe EJECUCIÓN (entries, unidades, historial, semana, recibos de consumo append-only); el estado canónico (`progressionApplications`, `nextExposureOverlays`, resúmenes) solo lo escribe el Coach DUEÑO (`clients/{uid}.coachId`). Probado con reglas reales en el emulador (`tests/t536-rules-security.cjs`). **Las reglas NO están desplegadas** (el despliegue requiere autorización explícita).'],
+    [f.lifecycle.tenant === 'PASS / READY', 'FIRESTORE_TENANT_ISOLATION', '**' + f.lifecycle.tenant + '** — un coach solo accede a datos privados de SUS clientes (`clients/{id}.coachId`): perfil, logs y mesociclos, fichas, índice de celular, compendio, plantillas, respaldos. Una cuenta de atleta no puede autopromoverse a coach y un documento de coach autocreado no concede acceso a otros inquilinos (`tests/t538-tenant-isolation.cjs`). Riesgo residual reportado: registro abierto de coaches / compuerta de `api/*` por existencia del documento.'],
     [f.lifecycle.canary === 'READY_DISABLED', 'Alcance de canario integrado al ciclo de vida', 'CANARY: **' + f.lifecycle.canary + '** — `autoApplyCanary` se re-lee DENTRO de la transacción; fuera de alcance/ausente/deshabilitado → nunca APPLIED (t526, t531).'],
     [f.audit, 'Auditoría visible para el Coach', 'Línea dry-run con clase de vista rápida, cola de equipos y matriz de preparación en el Monitor (t494, t510, t520); ciclo de vida completo APPLIED/CONSUMED/OVERRIDDEN/REVERTED/STALE con antes→después, regla, equipo, marcas de tiempo y acción del Coach (t534).']
   ];
@@ -91,7 +94,7 @@ function checklist(f) {
   items.forEach(i => L.push('- ' + box(i[0]) + ' **' + i[1] + '** — ' + i[2]));
   L.push('', '## Bloqueos para activar (resumen)', '',
     '1. **Datos del Coach:** incrementos reales de equipo (ver `docs/EQUIPMENT_DATA_REQUIRED_NEXT.md` y `docs/EQUIPMENT_ACTIVATION_READINESS.md`). Es el bloqueo operativo principal.',
-    '2. **Despliegue de `firestore.rules`** a producción (la frontera de escritura canónica solo existe en el repositorio hasta entonces; no autorizado en esta ejecución) — debe ocurrir ANTES de activar.',
+    '2. **Despliegue de `firestore.rules` + `firestore.indexes.json`** a producción (la frontera de escritura canónica solo existe en el repositorio hasta entonces; no autorizado en esta ejecución) — debe ocurrir ANTES de activar.',
     '3. **Decisión intencional** de cambiar `NUMERIC_APPLY_ENABLED` y activar el canario `autoApplyCanary` (no se cambia en esta ejecución).',
     '4. No bloqueante: validación del runner en Windows (`NON_BLOCKING_TECHNICAL_PENDING`).', '',
     'Las decisiones D/E, C→E y serie representativa ya NO son bloqueos: están cerradas como política de producto VDSEN (ver `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md`).', '');
@@ -126,6 +129,7 @@ function readiness(f) {
     '| OVERRIDE | ' + f.lifecycle.override + ' |',
     '| STALE | ' + f.lifecycle.stale + ' |',
     '| CANARY | ' + f.lifecycle.canary + ' |',
+    '| FIRESTORE_TENANT_ISOLATION | ' + f.lifecycle.tenant + ' (reglas + índice en el repositorio; despliegue pendiente y no autorizado) |',
     '| FIRESTORE_CANONICAL_WRITE_BOUNDARY | ' + f.lifecycle.boundary + ' (reglas en el repositorio; despliegue pendiente y no autorizado) |',
     '| Concurrencia (Emulator real) | ' + (f.lifecycle.emulator ? 'cubierta (`tests/t532-lifecycle-emulator.cjs`)' : 'FALTA') + ' |', '',
     '## 2. Preparación de DATOS REALES DE EQUIPO', '',

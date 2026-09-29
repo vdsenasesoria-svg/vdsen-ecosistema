@@ -171,10 +171,10 @@ test('C04 stranger (neither the client nor any coach) can read or write nothing 
   const w = await world();
   await denied(getDoc(meso(w, 'S')), 'read'); await denied(updateDoc(meso(w, 'S'), { currentWeek: 9 }), 'write'); await denied(setDoc(ref(w, 'S', w.root), { currentWeek: 9 }, { merge: true }), 'root write');
 });
-test('C05 legacy Coach log operations keep working: non-canonical fields (currentWeek/entries reset) for any coach, unchanged', { timeout: 60000 }, async () => {
+test('C05 legacy Coach log operations keep working for the OWNER coach; an unrelated coach is denied (T538 tenant isolation)', { timeout: 60000 }, async () => {
   const w = await world();
   await allowed(updateDoc(ref(w, 'O', w.root), { currentWeek: 3, updatedAt: Date.now() }), 'owner week');
-  await allowed(updateDoc(ref(w, 'U', w.root), { currentWeek: 4, updatedAt: Date.now() }), 'legacy broad access to non-canonical fields is unchanged (reported separately)');
+  await denied(updateDoc(ref(w, 'U', w.root), { currentWeek: 4, updatedAt: Date.now() }), 'unrelated coach: evidence fields are tenant-private');
 });
 
 // ------------------------------------------------------------------------------------------------ equipment metadata
