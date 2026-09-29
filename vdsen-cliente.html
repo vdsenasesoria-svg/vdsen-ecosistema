@@ -488,6 +488,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var
 </div>
 
 <script src="assets/exercise-visual-catalog.js"></script>
+<script src="assets/progression-magnitude-policy.js"></script>
 <script src="assets/progression-auto-apply-shadow.js"></script>
 <script>
 // ══════════════════════════════════════════════════
@@ -10603,6 +10604,7 @@ async function _recordShadowProgression(uid, planId, week, dayIndex, parentRec) 
       if (!rec) return;
       var input = { clientId: uid, planId: planId, activePlanId: clientData.activePlanId,
         plan: planData, interventions: clientData.coachInterventions,
+        entries: rootLogNewer ? rootData.entries : mesoData.entries,
         week: week, dayIndex: dayIndex, calculatedAt: parentRec.calculatedAt,
         recommendation: rec, sourceMatches: sourceMatches,
         sourcePidCount: rec.prescriptionExerciseId

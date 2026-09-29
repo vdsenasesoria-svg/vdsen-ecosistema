@@ -1587,6 +1587,7 @@
 
   <script src="assets/exercise-visual-catalog.js"></script>
   <script src="assets/exercise-visual-metadata-editor.js"></script>
+  <script src="assets/progression-magnitude-policy.js"></script>
   <script src="assets/progression-auto-apply-shadow.js"></script>
   <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -18692,6 +18693,26 @@ El esfuerzo no es negociable.
       return summary;
     });
   }
+  // Phase 2A: a shadow numeric candidate is an observation, never an applied adjustment.
+  function _renderShadowMagnitude(item) {
+    var m = item.state === 'PENDING' ? item.magnitude : null;
+    if (!m) return '';
+    var parts = (m.candidates || []).map(function(c) {
+      var raw = c.rawCandidate === null || c.rawCandidate === undefined ? '—' : c.rawCandidate;
+      var unit = c.dimension === 'LOAD' ? ' (carga cruda)' : c.dimension === 'REPS' ? ' reps' : c.dimension === 'REST' ? ' s descanso' : '';
+      return _escH('Regla ' + c.ruleId + ' · ' + c.dimension + ' → ' + raw + unit);
+    });
+    var notes = [];
+    if (m.unresolved) notes.push('Rama sin resolver: ' + m.unresolved);
+    (m.coachReview || []).forEach(function(code) { notes.push(code); });
+    if (!m.eligible) notes.push('Sin evidencia suficiente o bloqueada');
+    return '<span style="display:block;font-size:11px;color:#C4FF00">CANDIDATO SHADOW · NO APLICADO · '
+      + _escH((m.methodologyFamily || '') + ' · nivel ' + (m.evidenceLevel || '')) + '</span>'
+      + (parts.length ? '<span style="display:block;font-size:11px;color:#888">' + parts.join(' | ') + '</span>' : '')
+      + (notes.length ? '<span style="display:block;font-size:11px;color:#888">' + _escH(notes.join(' · ')) + '</span>' : '')
+      + '<span style="display:block;font-size:10px;color:#888">Exposiciones comparables: '
+      + _escH(String(m.comparableExposureCount || 0)) + ' · prescripción original intacta</span>';
+  }
   function _renderShadowAutoFeed(summary) {
     var items = Array.isArray(summary.items) ? summary.items : [];
     var rows = items.map(function(item) {
@@ -18705,6 +18726,7 @@ El esfuerzo no es negociable.
         + '<span>' + _escH(item.exerciseNameSnapshot || 'Ejercicio sin nombre') + ' · '
         + _escH(item.dimension || 'EVALUACIÓN') + ' · ' + label + '</span>'
         + '<span style="display:block;color:#888;font-size:11px">' + _escH(item.reasonCode || '') + '</span>'
+        + _renderShadowMagnitude(item)
         + '<button type="button" data-shadow-action="OPEN" data-shadow-key="' + item.key + '">Abrir ejercicio</button> '
         + button + '</li>';
     }).join('');

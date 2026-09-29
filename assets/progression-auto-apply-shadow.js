@@ -104,10 +104,29 @@
     if (!next) return { state: STATES.REJECTED, reasonCode: REASONS.NO_NEXT_EXPOSURE, nextExposure: null };
     return { state: STATES.PENDING, reasonCode: REASONS.MAGNITUDE_POLICY_MISSING, nextExposure: next, dimension: dimension };
   }
+  function _policy() {
+    if (typeof module === 'object' && module.exports && typeof require === 'function') {
+      try { return require('./progression-magnitude-policy.js'); } catch (e) { return null; }
+    }
+    return typeof globalThis !== 'undefined' ? globalThis.VDSEN_MAGNITUDE_POLICY || null : null;
+  }
+  // Phase 2A: shadow magnitude decision. Never applied; only computed behind the Phase 1 guards.
+  function _magnitude(input, decision) {
+    var policy = _policy(), rec = input.recommendation || {}, pid = rec.prescriptionExerciseId;
+    if (!policy) return null;
+    if (decision.state !== STATES.PENDING) return policy.reject(pid, decision.reasonCode);
+    var plan = input.plan || {}, day = (Array.isArray(plan.days) ? plan.days : []).find(function(d) { return d.dayIndex === input.dayIndex; });
+    var ex = ((day && day.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; })[0];
+    return policy.evaluate({ clientId: input.clientId, planId: input.planId, prescriptionExerciseId: pid, plan: plan,
+      prescription: ex ? { prescriptionExerciseId: pid, sets: ex.sets, repsRange: ex.repsRange } : null,
+      exposures: policy.extractExposures(input.entries, pid, { planId: input.planId, clientId: input.clientId }),
+      context: { readinessVeto: input.readinessVeto === true } });
+  }
   function buildRecord(input, at) {
     var decision = assess(input), rec = input.recommendation || {};
     var key = idempotencyKey(input);
-    return {
+    var magnitude = _magnitude(input, decision);
+    return Object.assign({
       key: key, clientId: input.clientId, planId: input.planId,
       prescriptionExerciseId: rec.prescriptionExerciseId || null,
       exerciseNameSnapshot: rec.exerciseName || '', action: rec.action || null,
@@ -116,7 +135,7 @@
       nextExposure: decision.nextExposure, state: decision.state, reasonCode: decision.reasonCode,
       revision: 1, createdAt: at, updatedAt: at,
       events: [{ state: decision.state, reasonCode: decision.reasonCode, at: at, operationKey: key }]
-    };
+    }, magnitude ? { magnitude: magnitude } : {});
   }
   function transition(record, action, expectedRevision, operationKey, at, actorId) {
     if (!record || !operationKey) return { ok: false, reasonCode: REASONS.INVALID_TRANSITION };
@@ -150,7 +169,8 @@
       return { key: r.key, revision: r.revision, state: r.state, reasonCode: r.reasonCode,
         exerciseNameSnapshot: r.exerciseNameSnapshot, prescriptionExerciseId: r.prescriptionExerciseId,
         action: r.action, dimension: r.dimension || null,
-        source: r.source, nextExposure: r.nextExposure, updatedAt: r.updatedAt };
+        source: r.source, nextExposure: r.nextExposure, updatedAt: r.updatedAt,
+        magnitude: (r.magnitude && _policy()) ? _policy().compact(r.magnitude) : null };
     }) };
   }
   function attemptNumericApply() {
