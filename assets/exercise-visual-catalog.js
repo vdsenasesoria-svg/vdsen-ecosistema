@@ -342,7 +342,28 @@
     { equipmentId:'sf-sd-eq-prensa-de-pierna', name:'Prensa de pierna', equipmentType:'machine', aliases:[] },
     { equipmentId:'sf-sd-eq-hack-squat', name:'Hack squat', equipmentType:'machine', aliases:[] },
     { equipmentId:'sf-sd-eq-extension-de-rodilla', name:'Extensión de rodilla', equipmentType:'machine', aliases:[] },
-    { equipmentId:'sf-sd-converging-lat-pulldown-plate-loaded', name:'Máquina plate-loaded · discos', equipmentType:'machine', aliases:[] }
+    { equipmentId:'sf-sd-converging-lat-pulldown-plate-loaded', name:'Máquina plate-loaded · discos', equipmentType:'machine', aliases:[] },
+    // T517: each Impulse / Matrix catalog entry names ONE specific machine (brand + movement in the exercise name and id).
+    // Identity is assigned by EXACT exerciseId, never by the shared brand/family label; distinct machines are never merged.
+    { equipmentId:'sf-sd-eq-impulse-chest-press-plate-loaded', name:'Press de Pecho discos Impulse', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-impulse-chest-press-plate-loaded'] },
+    { equipmentId:'sf-sd-eq-impulse-incline-press-plate-loaded', name:'Press Inclinado discos Impulse', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-impulse-incline-press-plate-loaded'] },
+    { equipmentId:'sf-sd-eq-impulse-shoulder-press-plate-loaded', name:'Press de Hombro discos Impulse', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-impulse-shoulder-press-plate-loaded'] },
+    { equipmentId:'sf-sd-eq-impulse-seated-chest-press', name:'Press de Pecho Sentado Impulse', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-impulse-seated-chest-press'] },
+    { equipmentId:'sf-sd-eq-impulse-vertical-chest-adduction', name:'Aducción Vertical (cross over vertical) de Pecho Impulse', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-impulse-vertical-chest-adduction'] },
+    { equipmentId:'sf-sd-eq-impulse-seated-row-plate-loaded', name:'Remo Sentado discos Impulse', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-impulse-seated-row-plate-loaded'] },
+    { equipmentId:'sf-sd-eq-impulse-chest-supported-incline-row', name:'Remo Inclinado con Apoyo de Pecho discos Impulse', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-impulse-chest-supported-incline-row'] },
+    { equipmentId:'sf-sd-eq-matrix-chest-press-selectorized', name:'Press de Pecho placas Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-chest-press-selectorized'] },
+    { equipmentId:'sf-sd-eq-matrix-pec-fly-reverse-deck', name:'Pec Fly / Reverse Pec Deck placas Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-pec-fly-reverse-deck'] },
+    { equipmentId:'sf-sd-eq-matrix-converging-shoulder-press', name:'Press de Hombro Convergente Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-converging-shoulder-press'] },
+    { equipmentId:'sf-sd-eq-matrix-diverging-seated-row', name:'Remo Sentado Divergente placas Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-diverging-seated-row'] },
+    { equipmentId:'sf-sd-eq-matrix-biceps-curl', name:'Curl de Bíceps placas Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-biceps-curl'] },
+    { equipmentId:'sf-sd-eq-matrix-seated-dip', name:'Fondos sentado Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-seated-dip'] },
+    { equipmentId:'sf-sd-eq-matrix-leg-press-selectorized', name:'Prensa de Pierna Matrix peso integrado', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-leg-press-selectorized'] },
+    { equipmentId:'sf-sd-eq-matrix-knee-extension', name:'Extensión de Rodilla Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-knee-extension'] },
+    { equipmentId:'sf-sd-eq-matrix-seated-leg-curl', name:'Curl Femoral Sentado Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-seated-leg-curl'] },
+    { equipmentId:'sf-sd-eq-matrix-abductor-adductor', name:'Abductor / Adductor Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-abductor-adductor'] },
+    { equipmentId:'sf-sd-eq-matrix-glute-machine', name:'Glute Machine Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-glute-machine'] },
+    { equipmentId:'sf-sd-eq-matrix-abdominal-machine', name:'Abdominal Machine Matrix', equipmentType:'machine', aliases:[], exerciseIds:['sf-sd-matrix-abdominal-machine'] }
   ];
   sharedGymCatalog.unresolvedEquipment = [
     { name:'Impulse · discos', reason:'FAMILY_LABEL_MULTIPLE_IMPLEMENTS' },

@@ -44,7 +44,7 @@ test('T509.4 an exercise override applies to that exercise only', () => {
 
 test('T509.5 unresolved identity: only an exercise override makes it operable (exercise:<id>), never shared/gym config', () => {
   const family = 'sf-sd-impulse-placeholder'; void family;
-  const g = catalog.gyms[GYM]; const fam = g.entries.concat(g.legacyEntries).find(e => /Matrix · placas/.test(e.equipment)).exerciseId;
+  const fam = 'legacy-press-inclinado-maquina'; // generic "Máquina": no canonical identity
   const none = C.equipmentRefForExercise({ catalog, exerciseId: fam, config: cfg({ 'Matrix · placas': step(5) }) });
   assert.equal(none.equipmentId, null); assert.equal(none.loadIncrement, null); assert.equal(none.identity.status, 'UNRESOLVED');
   const over = C.equipmentRefForExercise({ catalog, exerciseId: fam, exerciseDoc: { loadIncrement: step(5) } });

@@ -15,7 +15,7 @@ const catalog = require(path.join(repo, 'assets/exercise-visual-catalog.js'));
 const PID = 'pid-replay', T0 = Date.parse('2026-09-27T12:00:00.000Z');
 const DUMBBELL_EX = 'legacy-remo-mancuerna-unilateral';
 const g = catalog.gyms['smart-fit-san-diego'];
-const FAMILY_EX = g.entries.concat(g.legacyEntries).find(e => /Matrix · placas/.test(e.equipment)).exerciseId;
+const FAMILY_EX = 'legacy-press-inclinado-maquina'; // generic "Máquina" label: no canonical identity
 const step = (o) => Object.assign({ kind: 'STEP', step: 2.5, unit: 'KG', source: 'COACH_CONFIGURED' }, o);
 const CFG_OK = { shared: { 'functional-dumbbells': step() }, gyms: {} };
 
@@ -35,7 +35,7 @@ const GOOD = [[1, 0, { rir_real: 3 }], [1, 2, { rir_real: 3 }]];
 const SCENARIOS = [
   ['A-load ready (synthetic shared step)', GOOD, {}],
   ['A-load, equipment increment not configured', GOOD, { config: null }],
-  ['A-load, equipment identity unresolved (family label)', GOOD, { exercise: FAMILY_EX }],
+  ['A-load, equipment identity unresolved (generic label)', GOOD, { exercise: FAMILY_EX }],
   ['A-load, increment unit mismatch', GOOD, { unit: 'LB' }],
   ['A-load, grid step swallows the move', GOOD, { config: { shared: { 'functional-dumbbells': step({ step: 10 }) }, gyms: {} } }],
   ['A-load, above equipment maximum', GOOD, { config: { shared: { 'functional-dumbbells': step({ max: 100 }) }, gyms: {} } }],

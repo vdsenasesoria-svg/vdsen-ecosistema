@@ -30,7 +30,7 @@ Responde: cuando se active la bandera, ¿por qué se aplicaría o no cada candid
 |---|---|---|---|---|
 | A-load ready (synthetic shared step) | LOAD | READY_BUT_DISABLED | — | — |
 | A-load, equipment increment not configured | LOAD | BLOCKED | UNRESOLVED_EQUIPMENT_INCREMENT | — |
-| A-load, equipment identity unresolved (family label) | LOAD | BLOCKED | EQUIPMENT_IDENTITY_UNRESOLVED | — |
+| A-load, equipment identity unresolved (generic label) | LOAD | BLOCKED | EQUIPMENT_IDENTITY_UNRESOLVED | — |
 | A-load, increment unit mismatch | LOAD | BLOCKED | UNIT_MISMATCH | — |
 | A-load, grid step swallows the move | LOAD | BLOCKED | DIRECTION_NOT_REALIZABLE | — |
 | A-load, above equipment maximum | LOAD | BLOCKED | EQUIPMENT_OUT_OF_RANGE | — |

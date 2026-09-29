@@ -72,10 +72,10 @@ test('T516.5 REAL NUMERIC APPLICATION = OFF everywhere; no APPLIED state', () =>
 
 test('T516.6 EQUIPMENT IDENTITY is as complete as the repository permits; every unresolved item has a documented reason', () => {
   const resolved = queue.filter(r => r.identityStatus !== 'UNRESOLVED'), unresolved = queue.filter(r => r.identityStatus === 'UNRESOLVED');
-  assert.deepEqual([resolved.length, unresolved.length], [20, 6]);
+  assert.deepEqual([resolved.length, unresolved.length], [39, 2]);
   const g = catalog.gyms['smart-fit-san-diego'], all = g.entries.concat(g.legacyEntries);
-  assert.equal(all.length - unresolved.reduce((n, r) => n + r.exerciseCount, 0), 50, 'exercises with a canonical equipment identity');
-  for (const r of unresolved) assert.ok(['FAMILY_LABEL_MULTIPLE_IMPLEMENTS', 'GENERIC_LABEL', 'ATTACHMENT_NOT_LOAD_IMPLEMENT'].includes(r.identityReason), r.name);
+  assert.equal(all.length - unresolved.reduce((n, r) => n + r.exerciseCount, 0), 69, 'exercises with a canonical equipment identity');
+  for (const r of unresolved) assert.ok(['GENERIC_LABEL', 'ATTACHMENT_NOT_LOAD_IMPLEMENT'].includes(r.identityReason), r.name);
 });
 
 test('T516.7 EQUIPMENT INCREMENTS: only explicitly authored values exist (none shipped); unknown stays unresolved', () => {

@@ -24,7 +24,7 @@ test('T514.3 each scenario reports its precise blocker; Rule A/C candidates are 
   const by = Object.fromEntries(R.replay().rows.map(r => [r.name, r]));
   const only = (n, code) => assert.deepEqual(by[n].blockers, [].concat(code), n);
   only('A-load, equipment increment not configured', 'UNRESOLVED_EQUIPMENT_INCREMENT');
-  only('A-load, equipment identity unresolved (family label)', 'EQUIPMENT_IDENTITY_UNRESOLVED');
+  only('A-load, equipment identity unresolved (generic label)', 'EQUIPMENT_IDENTITY_UNRESOLVED');
   only('A-load, increment unit mismatch', 'UNIT_MISMATCH');
   only('A-load, grid step swallows the move', 'DIRECTION_NOT_REALIZABLE');
   only('A-load, above equipment maximum', 'EQUIPMENT_OUT_OF_RANGE');

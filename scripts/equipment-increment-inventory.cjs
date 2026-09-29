@@ -32,7 +32,7 @@ function buildInventory(cat) {
     if (seenGyms.has(gymId)) return; // bugambilias shares the San Diego catalog object
     seenGyms.add(gymId);
     (gym.entries || []).concat(gym.legacyEntries || []).forEach(entry => {
-      const id = identity.identify(index, { equipmentId: entry.equipmentId, label: entry.equipment, gymId });
+      const id = identity.identify(index, { equipmentId: entry.equipmentId, exerciseId: entry.exerciseId, label: entry.equipment, gymId });
       const key = id.equipmentId ? id.equipmentId : 'unresolved|' + gymId + '|' + identity.normalizeLabel(entry.equipment);
       const inc = incrementStatus(entry, gymId, id.equipmentId);
       const row = rows.get(key) || { gymId, gym: gym.gym, equipment: id.canonicalName || entry.equipment, equipmentType: id.equipmentType || entry.equipmentType,

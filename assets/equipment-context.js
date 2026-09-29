@@ -90,7 +90,7 @@
     var index = ctx.index || identity.buildIndex(ctx.catalog);
     var doc = ctx.exerciseDoc || null, hit = ctx.exerciseId ? _entryByExerciseId(ctx.catalog, String(ctx.exerciseId)) : null;
     var entry = hit && hit.entry, gymId = ctx.gymId || (doc && doc.gymId) || (hit && hit.gymId) || null;
-    var id = identity.identify(index, { equipmentId: (doc && doc.equipmentId) || (entry && entry.equipmentId) || null,
+    var id = identity.identify(index, { equipmentId: (doc && doc.equipmentId) || (entry && entry.equipmentId) || null, exerciseId: ctx.exerciseId ? String(ctx.exerciseId) : null,
       label: (doc && doc.equipment) || (entry && entry.equipment) || '', gymId: gymId });
     var meta = resolveIncrementMetadata({ exerciseOverride: doc && doc.loadIncrement || null, gymId: gymId, equipmentId: id.equipmentId, config: ctx.config });
     var equipmentId = id.equipmentId || (meta.scope === SCOPES.EXERCISE && ctx.exerciseId ? 'exercise:' + ctx.exerciseId : null);
@@ -114,10 +114,10 @@
       var g = catalog.gyms[k], gymId = g.gymId || k;
       if (seenGyms[gymId]) return; seenGyms[gymId] = true;
       (g.entries || []).concat(g.legacyEntries || []).forEach(function(e) {
-        var id = identity.identify(index, { equipmentId: e.equipmentId, label: e.equipment, gymId: gymId });
+        var id = identity.identify(index, { equipmentId: e.equipmentId, exerciseId: e.exerciseId, label: e.equipment, gymId: gymId });
         var key = id.equipmentId ? id.equipmentId : 'unresolved|' + gymId + '|' + identity.normalizeLabel(e.equipment);
         var r = rowFor(key, { key: key, equipmentId: id.equipmentId, name: id.canonicalName || e.equipment, equipmentType: id.equipmentType || e.equipmentType || null,
-          gymId: gymId, identityStatus: id.status, identityReason: id.reason });
+          gymId: gymId, identityStatus: id.status, identityReason: id.reason, implementRole: id.implementRole });
         r.aliases[e.equipment] = true; r.exerciseIds.push(e.exerciseId);
       });
     });
@@ -135,12 +135,13 @@
       var status = !resolved ? QUEUE_STATUS.IDENTITY_UNRESOLVED : incState === 'INVALID' ? QUEUE_STATUS.INCREMENT_INVALID : incState === 'NONE' ? QUEUE_STATUS.INCREMENT_UNRESOLVED
         : unitMismatch ? QUEUE_STATUS.UNIT_MISMATCH : QUEUE_STATUS.READY;
       var missing = [];
-      if (!resolved) missing.push('identidad canónica (' + (r.identityReason || 'NO_CANONICAL_DEFINITION') + '): solo configurable por ejercicio');
+      if (!resolved && r.implementRole === 'ATTACHMENT') missing.push('accesorio sin carga propia: la carga se configura en el implemento de polea utilizado (el repositorio no lo vincula)');
+      else if (!resolved) missing.push('identidad canónica (' + (r.identityReason || 'NO_CANONICAL_DEFINITION') + '): solo configurable por ejercicio');
       else if (incState === 'NONE') missing.push('incremento explícito (STEP: paso · PLATE_LOADED_BAR: barra + disco mínimo · AVAILABLE_LOADS: cargas) y unidad');
       else if (incState === 'INVALID') missing.push('corregir incremento inválido (' + meta.invalidReason + ')');
       else if (unitMismatch) missing.push('unidad del incremento (' + meta.meta.unit + ') distinta a la de la evidencia');
       return { key: r.key, equipmentId: r.equipmentId, name: r.name, equipmentType: r.equipmentType, gymId: r.gymId, aliases: Object.keys(r.aliases).sort(),
-        identityStatus: r.identityStatus, identityReason: r.identityReason, exerciseCount: r.exerciseIds.length, exerciseOverrideCount: overrideCount,
+        identityStatus: r.identityStatus, identityReason: r.identityReason, implementRole: r.implementRole || 'LOAD_IMPLEMENT', exerciseCount: r.exerciseIds.length, exerciseOverrideCount: overrideCount,
         incrementState: incState, incrementScope: meta.scope, incrementSource: meta.meta ? meta.meta.source : null, incrementUnit: meta.meta ? meta.meta.unit : null,
         candidatesAffected: mine.length, status: status, blocker: status === QUEUE_STATUS.READY ? null : status, missing: missing };
     });

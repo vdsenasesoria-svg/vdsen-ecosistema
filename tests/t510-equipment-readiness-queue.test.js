@@ -21,7 +21,7 @@ test('T510.1 every row exposes equipment / id / gym / identity / increment / sou
 test('T510.2 statuses: IDENTITY_UNRESOLVED / INCREMENT_UNRESOLVED / READY / UNIT_MISMATCH / INCREMENT_INVALID', () => {
   const none = q({});
   assert.equal(none.filter(r => r.status === 'READY').length, 0);
-  assert.equal(none.filter(r => r.status === 'IDENTITY_UNRESOLVED').length, 6);
+  assert.equal(none.filter(r => r.status === 'IDENTITY_UNRESOLVED').length, 2);
   assert.equal(by(none, 'functional-dumbbells').status, 'INCREMENT_UNRESOLVED');
   const cfg = { shared: { 'functional-dumbbells': step(2.5) }, gyms: {} };
   assert.equal(by(q({ config: cfg }), 'functional-dumbbells').status, 'READY');
@@ -33,10 +33,10 @@ test('T510.2 statuses: IDENTITY_UNRESOLVED / INCREMENT_UNRESOLVED / READY / UNIT
 
 test('T510.3 candidates affected are counted per equipment, incl. unresolved-identity rows by exact exerciseId', () => {
   const g = catalog.gyms['smart-fit-san-diego'];
-  const fam = g.entries.concat(g.legacyEntries).find(e => /Matrix · placas/.test(e.equipment)).exerciseId;
+  const fam = 'legacy-press-inclinado-maquina';
   const queue = q({ candidates: [{ equipmentId: 'functional-dumbbells', unit: 'KG' }, { equipmentId: 'functional-dumbbells', unit: 'KG' }, { equipmentId: null, exerciseId: fam, unit: 'KG' }] });
   assert.equal(by(queue, 'functional-dumbbells').candidatesAffected, 2);
-  assert.equal(queue.find(r => r.identityStatus === 'UNRESOLVED' && /Matrix · placas/.test(r.name)).candidatesAffected, 1);
+  assert.equal(queue.find(r => r.identityStatus === 'UNRESOLVED' && r.name === 'Máquina').candidatesAffected, 1);
   assert.equal(queue[0].candidatesAffected >= queue[1].candidatesAffected, true, 'sorted by affected candidates first');
 });
 

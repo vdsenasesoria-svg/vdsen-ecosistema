@@ -33,7 +33,7 @@ test('T508.3 shared equipment resolves to ONE canonical id across exercises', ()
   assert.equal(who('Mancuernas').equipmentId, 'functional-dumbbells');
 });
 
-test('T508.4 family / generic / attachment labels are NOT identities and keep an explicit reason', () => {
+test('T508.4 family / generic / attachment LABELS are not identities and keep an explicit reason (T517: family machines resolve only by exact exerciseId)', () => {
   const expected = { 'Impulse · discos': 'FAMILY_LABEL_MULTIPLE_IMPLEMENTS', 'Impulse · peso integrado': 'FAMILY_LABEL_MULTIPLE_IMPLEMENTS', 'Matrix · placas': 'FAMILY_LABEL_MULTIPLE_IMPLEMENTS',
     'Matrix · peso integrado': 'FAMILY_LABEL_MULTIPLE_IMPLEMENTS', 'Máquina': 'GENERIC_LABEL', 'Accesorio de polea': 'ATTACHMENT_NOT_LOAD_IMPLEMENT' };
   for (const [label, reason] of Object.entries(expected)) { const r = who(label); assert.deepEqual([r.status, r.equipmentId, r.reason], ['UNRESOLVED', null, reason], label); }
@@ -45,11 +45,14 @@ test('T508.5 identity counts: every catalog exercise is classified; only the doc
   const g = catalog.gyms[GYM], all = g.entries.concat(g.legacyEntries);
   const res = all.map(e => I.identify(idx, { equipmentId: e.equipmentId, label: e.equipment, gymId: GYM }));
   const unresolved = res.filter(r => r.status === 'UNRESOLVED');
-  assert.equal(all.length, 71); assert.equal(unresolved.length, 21);
-  assert.deepEqual([...new Set(unresolved.map(r => r.reason))].sort(), ['ATTACHMENT_NOT_LOAD_IMPLEMENT', 'FAMILY_LABEL_MULTIPLE_IMPLEMENTS', 'GENERIC_LABEL']);
+  const res2 = all.map(e => I.identify(idx, { equipmentId: e.equipmentId, exerciseId: e.exerciseId, label: e.equipment, gymId: GYM }));
+  const unresolved2 = res2.filter(r => r.status === 'UNRESOLVED');
+  assert.equal(all.length, 71); assert.equal(unresolved.length, 21, 'by label alone the 19 family machines stay unresolved');
+  assert.equal(unresolved2.length, 2, 'T517: only the generic label and the attachment remain');
+  assert.deepEqual([...new Set(unresolved2.map(r => r.reason))].sort(), ['ATTACHMENT_NOT_LOAD_IMPLEMENT', 'GENERIC_LABEL']);
   const rows = inv.buildInventory(catalog);
-  assert.equal(rows.filter(r => r.identity !== 'UNRESOLVED').length, 20);
-  assert.equal(rows.filter(r => r.identity === 'UNRESOLVED').length, 6);
+  assert.equal(rows.filter(r => r.identity !== 'UNRESOLVED').length, 39);
+  assert.equal(rows.filter(r => r.identity === 'UNRESOLVED').length, 2);
 });
 
 test('T508.6 identity carries NO increment: resolving identity never makes a load realizable', () => {

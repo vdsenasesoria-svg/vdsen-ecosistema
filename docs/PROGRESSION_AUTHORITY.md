@@ -53,7 +53,7 @@ Restos operativos CONTENIDOS (T515): **Temporizador de descanso** (`fatigueCost`
 | Autoridad de prescripción del atleta | 0 |
 | Progresión canónica / ruta de aplicación canónica | 1 / 1 (única escritura `tx.set` de overlays, en el consumidor) |
 | Aplicación numérica real | APAGADA (`NUMERIC_APPLY_ENABLED=false`, sin estado APPLIED) |
-| Identidad de equipo | 20 de 26 grupos con id canónico (50 de 71 ejercicios); 6 sin resolver con motivo (familias, "Máquina", accesorio) — `docs/EQUIPMENT_INCREMENT_INVENTORY.md` |
+| Identidad de equipo | 39 de 41 grupos con id canónico (69 de 71 ejercicios; T517 asigna cada máquina Impulse/Matrix por `exerciseId` exacto, sin fusionar por marca); sin resolver: "Máquina" genérica y el accesorio de polea (no es implemento de carga) — `docs/EQUIPMENT_INCREMENT_INVENTORY.md` |
 | Incrementos de equipo | solo valores escritos por el Coach; ninguno en el repositorio. Modelo: ejercicio > sede+equipo > equipo compartido > sin resolver, en `coaches/{uid}.equipmentIncrements` y `exercises/{id}.loadIncrement` |
 | Cola de equipos del Coach | modal "Equipos" + `docs/EQUIPMENT_ACTIVATION_READINESS.md` |
 | Candidato listo (sintético) | `READY_BUT_DISABLED`; con la bandera forzada en un sandbox → `EXECUTABLE` (T513) |
