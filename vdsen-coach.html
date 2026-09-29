@@ -1588,6 +1588,7 @@
   <script src="assets/exercise-visual-catalog.js"></script>
   <script src="assets/exercise-visual-metadata-editor.js"></script>
   <script src="assets/progression-magnitude-policy.js"></script>
+  <script src="assets/progression-application-consumer.js"></script>
   <script src="assets/progression-auto-apply-shadow.js"></script>
   <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -17577,13 +17578,13 @@ El esfuerzo no es negociable.
     }
 
     // Full canonical shadow records (Modulo D consumer); the compact summary is the fallback.
-    let _canonicalRecords = null;
+    let _canonicalRecords = null, _existingOverlays = null;
     if (c && c.activePlanId) {
       try {
         const _mesoCanon = await getDoc(doc(db, 'logs', clientId, 'mesos', c.activePlanId));
         if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
         if (_mesoCanon.exists() && _mesoCanon.data().planId === c.activePlanId)
-          _canonicalRecords = _mesoCanon.data().progressionApplications || null;
+          { _canonicalRecords = _mesoCanon.data().progressionApplications || null; _existingOverlays = _mesoCanon.data().nextExposureOverlays || null; }
       } catch(e) { console.warn('Canonical shadow records unavailable:', e); }
     }
 
@@ -17596,7 +17597,20 @@ El esfuerzo no es negociable.
         autoSummary = window.VDSEN_AUTO_APPLY_SHADOW.summarize({}, c.activePlanId);
       _shadowMonitorContext = { clientId: clientId, planId: autoSummary.planId,
         items: autoSummary.items || [] };
-      html += _renderShadowAutoFeed(autoSummary);
+      // T494: dry-run of the canonical application layer (read-only): what WOULD change for the next
+      // exposure and what blocks it. Nothing is written; NUMERIC_APPLY_ENABLED=false.
+      const _dryRuns = {};
+      try {
+        (autoSummary.items || []).forEach(function(it) {
+          var full = _canonicalRecords && _canonicalRecords[it.key];
+          if (!full || !window.VDSEN_APPLICATION_CONSUMER) return;
+          _dryRuns[it.key] = window.VDSEN_APPLICATION_CONSUMER.planApplication({ record: full, context: {
+            clientId: clientId, planId: autoSummary.planId, activePlanId: c.activePlanId, plan: p, entries: entries,
+            interventions: c.coachInterventions, existingOverlays: _existingOverlays,
+            resolveNextExposure: window.VDSEN_AUTO_APPLY_SHADOW.resolveNextExposure, now: new Date().toISOString() } });
+        });
+      } catch(e) { console.warn('Dry-run application audit unavailable:', e); }
+      html += _renderShadowAutoFeed(autoSummary, _dryRuns);
     } else {
       _shadowMonitorContext = null;
     }
@@ -18727,7 +18741,26 @@ El esfuerzo no es negociable.
       + (legacy ? '<span style="display:block;font-size:10px;color:#666">Señal legacy del motor: ' + _escH(String(legacy))
         + ' (evidencia, no aplicada)</span>' : '');
   }
-  function _renderShadowAutoFeed(summary) {
+  // T494: Spanish labels for the dry-run blockers and the would-be overlay line.
+  function _dryRunLine(decision) {
+    if (!decision) return '';
+    var labels = { NUMERIC_APPLY_DISABLED: 'aplicación numérica desactivada', NOT_CANONICAL_RECORD: 'registro no canónico',
+      RECORD_NOT_PENDING: 'registro no vigente', CLIENT_MISMATCH: 'cliente distinto', PLAN_MISMATCH: 'plan distinto',
+      PLAN_CHANGED: 'plan editado después de la evidencia', PID_NOT_UNIQUE_IN_TARGET: 'ejercicio no único/ausente en la exposición destino',
+      TARGET_EXPOSURE_CHANGED: 'la exposición destino cambió', TARGET_ALREADY_STARTED: 'la exposición destino ya empezó',
+      COACH_OVERRIDE: 'decisión del Coach posterior', COACH_KEEP_ORIGINAL: 'Coach mantuvo la original', SAFETY_CONFLICT: 'conflicto de seguridad',
+      NOT_ELIGIBLE: 'evidencia no elegible', POLICY_BRANCH_REQUIRES_RESOLUTION: 'rama de política sin resolver',
+      UNRESOLVED_EQUIPMENT_INCREMENT: 'incremento del equipo sin definir', EQUIPMENT_RESOLUTION_MISMATCH: 'resolución de equipo inconsistente',
+      NO_ACTIONABLE_CANDIDATE: 'sin candidato accionable', STRUCTURAL_DIMENSION_NOT_AUTHORIZED: 'dimensión estructural no autorizada',
+      ALREADY_RECORDED: 'ya registrado' };
+    var real = (decision.blockers || []).filter(function(b) { return b !== 'NUMERIC_APPLY_DISABLED'; });
+    var o = decision.overlay;
+    var text = decision.wouldApply && o
+      ? 'Aplicaría en Sem ' + o.target.week + ' · Día ' + (o.target.dayIndex + 1) + ': ' + o.dimension + ' ' + (o.previousValue === null ? '—' : o.previousValue) + ' → ' + o.appliedValue + ' (simulación, no activo)'
+      : 'No se aplicaría: ' + (real.length ? real.map(function(b) { return labels[b] || b; }).join(', ') : 'sin candidato');
+    return '<span style="display:block;font-size:10px;color:#666">Simulación (dry-run): ' + _escH(text) + '</span>';
+  }
+  function _renderShadowAutoFeed(summary, dryRuns) {
     var items = Array.isArray(summary.items) ? summary.items : [];
     var rows = items.map(function(item) {
       if (!/^v1_[a-f0-9]{16}$/.test(item.key || '') || !Number.isInteger(item.revision)) return '';
@@ -18742,6 +18775,7 @@ El esfuerzo no es negociable.
         + '<span style="display:block;color:#888;font-size:11px">' + _escH(item.reasonCode || '') + '</span>'
         + _shadowAuditLines(item)
         + _renderShadowMagnitude(item)
+        + (item.state === 'PENDING' && dryRuns ? _dryRunLine(dryRuns[item.key]) : '')
         + '<button type="button" data-shadow-action="OPEN" data-shadow-key="' + item.key + '">Abrir ejercicio</button> '
         + button + '</li>';
     }).join('');

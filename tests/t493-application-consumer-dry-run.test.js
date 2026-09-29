@@ -247,6 +247,7 @@ test('T493.14 the consumer never writes plans/, is not wired into the apps, and 
   assert.equal((src.match(/tx\.set\(/g) || []).length, 1);
   assert.ok(/tx\.set\(refs\.meso,/.test(src) && !/tx\.set\(refs\.(plan|client)/.test(src));
   assert.ok(!/newLoad|newReps|newSets|progrec|recommendedLoad|substituteExercise/.test(src));
-  for (const app of ['vdsen-cliente.html', 'vdsen-coach.html'])
-    assert.ok(!fs.readFileSync(path.join(root, app), 'utf8').includes('VDSEN_APPLICATION_CONSUMER'), app);
+  assert.ok(!fs.readFileSync(path.join(root, 'vdsen-cliente.html'), 'utf8').includes('VDSEN_APPLICATION_CONSUMER'), 'the athlete app never consumes it');
+  const coachSrc = fs.readFileSync(path.join(root, 'vdsen-coach.html'), 'utf8');
+  assert.ok(!coachSrc.includes('applyOverlayTransaction'), 'the Coach app only ever runs the read-only dry-run planner (T494)');
 });

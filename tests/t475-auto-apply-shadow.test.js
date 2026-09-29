@@ -147,7 +147,7 @@ test('saveLogs merges existing application fields on both paths', async () => {
 });
 
 test('Coach Monitor binds the existing deep link and requires exact PID for mutation context', () => {
-  assert.match(coach, /_renderShadowAutoFeed\(autoSummary\)/);
+  assert.match(coach, /_renderShadowAutoFeed\(autoSummary(, _dryRuns)?\)/);
   assert.match(coach, /_deepLinkToExercise\(item\.exerciseNameSnapshot, item\.prescriptionExerciseId, exposureDay\)/);
   assert.match(coach, /runTransaction\(db, async function\(tx\)/);
   assert.match(coach, /tx\.update\(clientRef, \{ coachInterventions: interventions \}\)/);
