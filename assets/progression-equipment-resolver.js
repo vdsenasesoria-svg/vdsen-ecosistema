@@ -45,7 +45,7 @@
       requestedLoad: _num(input && input.desiredLoad), currentLoad: _num(input && input.currentLoad),
       realizableLoad: null, delta: null, roundingReason: null,
       equipmentId: eq.equipmentId || null, equipmentType: eq.equipmentType || null, gymId: eq.gymId || null,
-      unit: input && input.unit || null, incrementSource: null, incrementScope: eq.incrementScope || null, resolutionState: STATES.UNRESOLVED_EQUIPMENT_INCREMENT,
+      unit: input && input.unit || null, incrementSource: null, incrementScope: eq.incrementScope || null, incrementRevision: null, incrementConfiguredAt: null, incrementKind: null, resolutionState: STATES.UNRESOLVED_EQUIPMENT_INCREMENT,
       reasons: [], numericApplyAllowed: false, applied: false
     }, extra || {});
   }
@@ -140,6 +140,7 @@
     }
     var delta = _clean(chosen - current);
     var res = _result(input, { realizableLoad: chosen, delta: delta, roundingReason: reason, incrementSource: meta.source,
+      incrementRevision: _num(meta.revision), incrementConfiguredAt: typeof meta.configuredAt === 'string' ? meta.configuredAt : null, incrementKind: meta.kind,
       roundingModeDefaulted: defaulted, resolutionState: STATES.RESOLVED });
     if ((dir === 'UP' && delta <= 0) || (dir === 'DOWN' && delta >= 0)) {
       res.resolutionState = STATES.DIRECTION_NOT_REALIZABLE;

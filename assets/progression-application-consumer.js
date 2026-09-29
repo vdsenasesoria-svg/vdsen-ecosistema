@@ -168,7 +168,11 @@
       }
       if (_num(r.requestedLoad) !== _num(c.rawCandidate) || !r.equipmentId) { blockers.push(BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH); return null; }
       return { dimension: 'LOAD', previousValue: _num(c.previousValue), requestedValue: _num(c.rawCandidate),
-        appliedValue: _num(r.realizableLoad), unit: r.unit || null, equipmentId: r.equipmentId, roundingReason: r.roundingReason || null };
+        appliedValue: _num(r.realizableLoad), unit: r.unit || null, equipmentId: r.equipmentId, roundingReason: r.roundingReason || null,
+        // T518: the increment metadata used is SNAPSHOTTED into the overlay, so a later change of the configuration can never
+        // silently alter an overlay that was already recorded (nor executed LOGS, which never reference equipment metadata).
+        equipmentSnapshot: { source: r.incrementSource || null, scope: r.incrementScope || null, revision: _num(r.incrementRevision),
+          configuredAt: r.incrementConfiguredAt || null, kind: r.incrementKind || null, unit: r.unit || null } };
     }
     if (c.dimension === 'REPS' || c.dimension === 'REST') {
       if (_num(c.finalCandidate) === null) { blockers.push(BLOCKERS.NO_ACTIONABLE_CANDIDATE); return null; }
@@ -234,6 +238,7 @@
           source: { week: record.source.week, dayIndex: record.source.dayIndex, calculatedAt: record.source.calculatedAt },
           target: { week: t.week, dayIndex: t.dayIndex }, dimension: cand.dimension, previousValue: cand.previousValue,
           requestedValue: cand.requestedValue, appliedValue: cand.appliedValue, unit: cand.unit, equipmentId: cand.equipmentId,
+          equipmentSnapshot: cand.equipmentSnapshot || null,
           roundingReason: cand.roundingReason, status: 'PLANNED', reversibleUntil: 'TARGET_EXPOSURE_START',
           provenance: { methodologyFamily: m.methodologyFamily, ruleAuthority: m.ruleAuthority, evidenceLevel: m.evidenceLevel, ruleId: m.ruleId,
             comparableExposureCount: m.comparableExposureCount, directionConsistency: m.directionConsistency || null } };
@@ -250,7 +255,8 @@
     if (er && m && (m.candidates || []).some(function(cd) { return cd && cd.dimension === 'LOAD'; })) {
       out.equipment = { equipmentId: er.equipmentId || null, equipmentType: er.equipmentType || null, unit: er.unit || null,
         requestedLoad: _num(er.requestedLoad), currentLoad: _num(er.currentLoad), realizableLoad: _num(er.realizableLoad), delta: _num(er.delta),
-        roundingReason: er.roundingReason || null, incrementSource: er.incrementSource || null,
+        roundingReason: er.roundingReason || null, incrementSource: er.incrementSource || null, incrementScope: er.incrementScope || null, incrementRevision: _num(er.incrementRevision),
+        incrementConfiguredAt: er.incrementConfiguredAt || null,
         resolutionState: er.resolutionState || null, reasons: Array.isArray(er.reasons) ? er.reasons.slice() : [] };
     }
     out.readiness = _readiness(out, record, m);
