@@ -29,6 +29,7 @@
     UNRESOLVED_EQUIPMENT_INCREMENT: 'UNRESOLVED_EQUIPMENT_INCREMENT', EQUIPMENT_RESOLUTION_MISMATCH: 'EQUIPMENT_RESOLUTION_MISMATCH',
     DIRECTION_NOT_REALIZABLE: 'DIRECTION_NOT_REALIZABLE', UNIT_MISMATCH: 'UNIT_MISMATCH', EQUIPMENT_OUT_OF_RANGE: 'EQUIPMENT_OUT_OF_RANGE',
     EQUIPMENT_INPUT_INVALID: 'EQUIPMENT_INPUT_INVALID',
+    OUT_OF_CANARY_SCOPE: 'OUT_OF_CANARY_SCOPE',
     COACH_REVIEW_REQUIRED: 'COACH_REVIEW_REQUIRED', ACTIVATION_GUARD_FAILED: 'ACTIVATION_GUARD_FAILED', EQUIPMENT_IDENTITY_UNRESOLVED: 'EQUIPMENT_IDENTITY_UNRESOLVED', SCIENCE_POLICY_UNRESOLVED: 'SCIENCE_POLICY_UNRESOLVED',
     EVIDENCE_COUNT_INSUFFICIENT: 'EVIDENCE_COUNT_INSUFFICIENT', DIRECTION_CONFLICTING: 'DIRECTION_CONFLICTING',
     DIRECTION_UNCONFIRMED: 'DIRECTION_UNCONFIRMED', READINESS_VETO: 'READINESS_VETO',
@@ -39,7 +40,7 @@
   // T504: every blocker belongs to exactly one readiness gate (fixed order). A candidate is executable only when
   // every gate passes (or is not applicable) AND the activation flag is on.
   var GATES = Object.freeze({
-    IDENTITY: [BLOCKERS.NOT_CANONICAL_RECORD, BLOCKERS.CLIENT_MISMATCH, BLOCKERS.PLAN_MISMATCH, BLOCKERS.IDENTITY_UNRESOLVED],
+    IDENTITY: [BLOCKERS.NOT_CANONICAL_RECORD, BLOCKERS.CLIENT_MISMATCH, BLOCKERS.PLAN_MISMATCH, BLOCKERS.IDENTITY_UNRESOLVED, BLOCKERS.OUT_OF_CANARY_SCOPE],
     FRESHNESS: [BLOCKERS.PLAN_CHANGED, BLOCKERS.RECORD_NOT_PENDING, BLOCKERS.ALREADY_RECORDED],
     TARGET_EXPOSURE: [BLOCKERS.TARGET_EXPOSURE_CHANGED],
     COACH_OVERRIDE: [BLOCKERS.COACH_OVERRIDE, BLOCKERS.COACH_KEEP_ORIGINAL],
@@ -61,7 +62,7 @@
   // designed product state (D/E, persistent C->E), not an error.
   var PREVIEW_CLASSES = Object.freeze({
     BLOCKED_SAFETY: [BLOCKERS.SAFETY_CONFLICT, BLOCKERS.READINESS_VETO],
-    BLOCKED_CONTEXT: [BLOCKERS.NOT_CANONICAL_RECORD, BLOCKERS.CLIENT_MISMATCH, BLOCKERS.PLAN_MISMATCH, BLOCKERS.IDENTITY_UNRESOLVED, BLOCKERS.PLAN_CHANGED,
+    BLOCKED_CONTEXT: [BLOCKERS.NOT_CANONICAL_RECORD, BLOCKERS.CLIENT_MISMATCH, BLOCKERS.PLAN_MISMATCH, BLOCKERS.IDENTITY_UNRESOLVED, BLOCKERS.OUT_OF_CANARY_SCOPE, BLOCKERS.PLAN_CHANGED,
       BLOCKERS.RECORD_NOT_PENDING, BLOCKERS.ALREADY_RECORDED, BLOCKERS.TARGET_EXPOSURE_CHANGED, BLOCKERS.TARGET_ALREADY_STARTED, BLOCKERS.COACH_OVERRIDE,
       BLOCKERS.COACH_KEEP_ORIGINAL, BLOCKERS.ACTIVATION_GUARD_FAILED, BLOCKERS.STALE_CALLBACK, BLOCKERS.REVISION_CONFLICT],
     BLOCKED_EVIDENCE: [BLOCKERS.EVIDENCE_COUNT_INSUFFICIENT, BLOCKERS.DIRECTION_CONFLICTING, BLOCKERS.DIRECTION_UNCONFIRMED, BLOCKERS.NOT_ELIGIBLE,
@@ -211,6 +212,18 @@
   }
 
   // Dry-run planner. Pure: reads its inputs, returns a decision; never writes.
+  // Additive Coach config `autoApplyCanary` = { enabled:false, clientIds:[], prescriptionExerciseIds:[] }. Anything malformed -> disabled, empty.
+  function normalizeCanaryScope(raw) {
+    var ids = function(a) { return Array.isArray(a) ? a.filter(function(x) { return typeof x === 'string' && x; }) : []; };
+    raw = raw && typeof raw === 'object' ? raw : {};
+    return { enabled: raw.enabled === true, clientIds: ids(raw.clientIds), prescriptionExerciseIds: ids(raw.prescriptionExerciseIds) };
+  }
+  // In scope only when enabled AND the client is listed AND (no PID list = every PID of that client | PID listed).
+  function inCanaryScope(raw, clientId, pid) {
+    var sc = normalizeCanaryScope(raw);
+    return sc.enabled && sc.clientIds.indexOf(clientId) >= 0 && (!sc.prescriptionExerciseIds.length || sc.prescriptionExerciseIds.indexOf(pid) >= 0);
+  }
+
   function planApplication(input) {
     input = input || {}; var record = input.record, ctx = input.context || {}, blockers = [];
     var out = { mode: 'DRY_RUN', schema: SCHEMA, canApply: false, wouldApply: false, blockers: blockers, overlay: null, equipment: null,
@@ -223,6 +236,8 @@
       // exact identity / context
       if (record.clientId !== ctx.clientId) blockers.push(BLOCKERS.CLIENT_MISMATCH);
       if (record.planId !== ctx.planId || ctx.activePlanId !== ctx.planId) blockers.push(BLOCKERS.PLAN_MISMATCH);
+      // T526: pre-live canary scope. Opt-in: an absent scope leaves behavior unchanged; a present scope is enforced (disabled = everything out).
+      if (ctx.canaryScope !== undefined && !inCanaryScope(ctx.canaryScope, record.clientId, record.prescriptionExerciseId)) blockers.push(BLOCKERS.OUT_OF_CANARY_SCOPE);
       if (record.state === 'REJECTED' && record.reasonCode === 'COACH_KEEP_ORIGINAL') blockers.push(BLOCKERS.COACH_KEEP_ORIGINAL);
       else if (record.state !== 'PENDING') blockers.push(BLOCKERS.RECORD_NOT_PENDING);
       var plan = ctx.plan || {}, calcAt = _time(record.source.calculatedAt), planAt = _time(plan.updatedAt);
@@ -328,6 +343,6 @@
     return { written: true, overlayKey: decision.overlay.key, decision: decision };
   }
 
-  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, PREVIEW_CLASSES: PREVIEW_CLASSES, GUARD_CHECKS: GUARD_CHECKS, verifyActivationPreconditions: verifyActivationPreconditions, ACTIVATION_PREREQUISITES: ACTIVATION_PREREQUISITES, overlayKey: overlayKey,
+  return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, PREVIEW_CLASSES: PREVIEW_CLASSES, GUARD_CHECKS: GUARD_CHECKS, verifyActivationPreconditions: verifyActivationPreconditions, ACTIVATION_PREREQUISITES: ACTIVATION_PREREQUISITES, normalizeCanaryScope: normalizeCanaryScope, inCanaryScope: inCanaryScope, overlayKey: overlayKey,
     targetStarted: targetStarted, planApplication: planApplication, planReversal: planReversal, applyOverlayTransaction: applyOverlayTransaction };
 });
