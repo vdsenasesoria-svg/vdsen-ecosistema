@@ -1823,7 +1823,7 @@ async function loadPlan(user) {
         var _rt0 = (e.sets && e.sets[0]) ? e.sets[0].repsTarget : 8;
         // Preservar string literals tal cual; coercionar solo valores numéricos
         var repsTarget = (_rt0 === 'SST-PROTOCOL' || _rt0 === 'SST-RIV-PROTOCOL') ? _rt0 : (_rt0 || 8);
-        var rirTarget  = (e.sets && e.sets[0]) ? (e.sets[0].rirTarget  || 2) : 2;
+        var rirTarget  = (e.sets && e.sets[0] && e.sets[0].rirTarget !== undefined && e.sets[0].rirTarget !== null) ? e.sets[0].rirTarget : 2;
         // Rango real de reps (heterogéneo Y3T: "5-10", homogéneo: "10", SST puro: "SST")
         var _repsRangeStr = _setsRepsLabel(e.sets);
         var techNorm = (function(t){ t=(t||'straight').toLowerCase().trim(); if(t==='rest_pause')return 'rest-pause'; if(t==='superset-antagonist'||t==='superset_antagonist'||t==='superset-agonist'||t==='superset_agonist')return 'superset'; return t; })(e.technique);
@@ -4483,28 +4483,20 @@ function getSemProgresion(week) {
   return 'PROGRESIÓN';
 }
 
-function _isFreeBarbell(exName) {
-  var n = (exName || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  return /sentadilla|press.{0,10}banca|press militar|peso muerto|\brdl\b|rumano|deadlift|\bsquat\b|bench press|\bohp\b/.test(n);
+// T496: Coach-authored RIR is the operational prescribed RIR. Calendar week, the reactive deload heuristic
+// (_computeDeloadTriggers) and the free-barbell heuristic are advisory only: deload/fatigue state is shown by
+// the deload banner and never rewrites the prescribed target. Observed RIR (rir_real) is logged separately.
+// Signature kept for callers; week/exName are intentionally unused. RIR 0 is a valid prescription.
+function getAdjustedRIR(baseRIR, week, exName) {
+  var base = parseInt(baseRIR);
+  return isFinite(base) ? base : 2;
 }
 
-// exName is optional — when supplied, free barbell compounds are floored at RIR 1 in any week
-// T162 — the +2 (deload/easier) adjustment now requires the SAME reactive
-// evidence _computeDeloadTriggers() uses everywhere else — never merely
-// because `week` equals the mesocycle's last one. SEMANA 6 ≠ DELOAD
-// AUTOMÁTICO: with no real fatigue signal, the last week is a normal week
-// (no +2, and explicitly excluded from the peak/intensif -1 branch too —
-// it just uses the plan's own base RIR, letting normal progression proceed).
-function getAdjustedRIR(baseRIR, week, exName) {
-  var total = getTotalWeeks();
-  const base = parseInt(baseRIR) || 2;
-  var adj;
-  var isLastWeek = week === total;
-  if (_computeDeloadTriggers(week).isDeload) adj = base + 2;              // deload (reactive, any week)
-  else if (!isLastWeek && week >= total - 2) adj = Math.max(0, base - 1); // peak/intensif (2nd/3rd-to-last week only)
-  else adj = base;                                                       // normal — includes a clean last week
-  if (exName && _isFreeBarbell(exName)) return Math.max(1, adj);
-  return adj;
+// Coach-authored prescribed RIR of an exercise: ej.rir, else the given (effective) set, else the first set.
+function _coachRIR(ej, set) {
+  var v = parseInt(ej && ej.rir);
+  if (!isFinite(v)) { var s = set || (ej && ej.sets && ej.sets[0]); v = s ? parseInt(s.rirTarget) : NaN; }
+  return isFinite(v) ? v : 2;
 }
 
 // ── Activación condicional por semana de mesociclo (Y3T / SST) ──────────
@@ -5352,7 +5344,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   if (repsTarget === 'SST-PROTOCOL') repsTarget = 'SST';
   if (repsTarget === 'SST-RIV-PROTOCOL') repsTarget = 'SST-RIV';
   if (repsTarget === 999) repsTarget = 'AMRAP';
-  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(_firstEffSet ? _firstEffSet.rirTarget : 2)||2, CURRENT_WEEK, nombre);
+  var baseRIR = getAdjustedRIR(_coachRIR(ej, _firstEffSet), CURRENT_WEEK, nombre);
   var _seriesLabel = ((ej.technique||'').toLowerCase() === 'cluster') ? 'CLUSTERS' : 'SERIES';
   var unit = getExUnit(di, ei);
   var _planRestSecs = (_firstEffSet && parseInt(_firstEffSet.restSeconds) > 0) ? parseInt(_firstEffSet.restSeconds) : (ej.restSeconds || 90);
@@ -8174,7 +8166,7 @@ function buildBoostcampExercise(ej, di, ei) {
     '</div>';
   }
   var repsTarget = ej.repsRange || (ej.sets && ej.sets[0] ? ej.sets[0].repsTarget : 8) || 8;
-  var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK, ej.nombre || ej.exerciseName);
+  var baseRIR = getAdjustedRIR(_coachRIR(ej), CURRENT_WEEK, ej.nombre || ej.exerciseName);
 
   // Obtener recomendación de progresión para el header del ejercicio
   var headerRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
@@ -8302,7 +8294,7 @@ function buildBoostcampExercise(ej, di, ei) {
 
     // Auto-prog suggestion: buscar recomendación del algoritmo de progresión
     var progRec = _getProgRecForExercise(di, ei, ej.nombre || ej.exerciseName);
-    var baseRIRforRef = getAdjustedRIR(parseInt(ej.rir)||2, CURRENT_WEEK, ej.nombre || ej.exerciseName);
+    var baseRIRforRef = getAdjustedRIR(_coachRIR(ej), CURRENT_WEEK, ej.nombre || ej.exerciseName);
     var refBlockHtml = (!completed)
       ? _buildSetReferenceHtml(progRec, prev, histEx, s, unit, baseRIRforRef, CURRENT_WEEK, _isY3TBC ? numSeries : undefined, key)
       : '';
@@ -8787,7 +8779,7 @@ function _maybeSuggestExtraSet(di, ei, si) {
     var rirVals = sets.map(function(x){ return parseFloat(x.rir_real); }).filter(function(v){ return !isNaN(v); });
     if (!rirVals.length) return;
     var avgRIR  = _avgArr(rirVals);
-    var baseRIR = getAdjustedRIR(parseInt(ej.rir)||(ej.sets && ej.sets[0] ? ej.sets[0].rirTarget : 2)||2, CURRENT_WEEK, exName);
+    var baseRIR = getAdjustedRIR(_coachRIR(ej), CURRENT_WEEK, exName);
 
     if (!avgICS || avgICS < 8) return;   // técnica no lo suficientemente sólida
     if (avgPump > 2) return;             // pump bajo → no forzar más volumen
@@ -8901,7 +8893,7 @@ async function completeSet(key, di, ei, si, unit) {
 
   var _ejMeta = (_EJERCICIOS_DIA || [])[ei] || {};
   var _ejMetaName = _ejMeta.exerciseName || _ejMeta.nombre || '';
-  var _ejMetaBase = parseInt(_ejMeta.rir) || ((_ejMeta.sets && _ejMeta.sets[0]) ? (_ejMeta.sets[0].rirTarget || 2) : 2);
+  var _ejMetaBase = _coachRIR(_ejMeta);
   LOGS[key] = { carga, reps, unit, done, rir: getAdjustedRIR(_ejMetaBase, CURRENT_WEEK, _ejMetaName), rir_real: rirReal, ics, pump, ts: Date.now(),
     prescriptionExerciseId: _ejMeta.prescriptionExerciseId || undefined,
     exerciseId: _ejMeta.exerciseId || undefined,

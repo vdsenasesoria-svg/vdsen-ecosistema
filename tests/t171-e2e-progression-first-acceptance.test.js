@@ -51,10 +51,9 @@ function extractFunction(src, decl) {
 // ── Real extracted engine/reader pieces (Client) ──────────────────────────
 const triggersSrc  = extractFunction(CLIENT, 'function _computeDeloadTriggers(week, postDataOverride)');
 const adjRirSrc     = extractFunction(CLIENT, 'function getAdjustedRIR(baseRIR, week, exName)');
-const freeBarSrc    = extractFunction(CLIENT, 'function _isFreeBarbell(exName)');
 const readerSrc     = extractFunction(CLIENT, 'function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId)');
 const normNameSrc   = extractFunction(CLIENT, 'function _normName(s)');
-ok(triggersSrc && adjRirSrc && freeBarSrc && readerSrc && normNameSrc, 'prerequisite: all real Client engine/reader functions extract cleanly');
+ok(triggersSrc && adjRirSrc && readerSrc && normNameSrc, 'prerequisite: all real Client engine/reader functions extract cleanly');
 
 // ── Real extracted stamping pieces (Coach) ─────────────────────────────────
 const genIdSrc   = extractFunction(COACH, 'function _genPrescriptionId()');
@@ -66,7 +65,7 @@ function makeClientEngine(LOGS, LOGS_BY_WEEK, CURRENT_WEEK, totalWeeks) {
   const factory = new Function(
     'LOGS', 'LOGS_BY_WEEK', 'CURRENT_WEEK', 'PLAN',
     'function getTotalWeeks(){ return (PLAN && PLAN.totalWeeks) ? PLAN.totalWeeks : 6; }\n' +
-    freeBarSrc + ';\n' + triggersSrc + ';\n' + adjRirSrc + ';\n' + normNameSrc + ';\n' + readerSrc + ';\n' +
+    triggersSrc + ';\n' + adjRirSrc + ';\n' + normNameSrc + ';\n' + readerSrc + ';\n' +
     'return { getAdjustedRIR: getAdjustedRIR, _computeDeloadTriggers: _computeDeloadTriggers, _getProgRecForExercise: _getProgRecForExercise };'
   );
   return factory(LOGS, LOGS_BY_WEEK, CURRENT_WEEK, PLAN);
@@ -148,7 +147,7 @@ function coachCategorize(planPidSet, planUpdatedAt, r) {
   var eng = makeClientEngine(LOGS_SIGNALS, { progrec: {} }, 4, 6);
   var deload = eng._computeDeloadTriggers(4);
   ok(deload.isDeload === true && deload.triggers.length >= 2, 'CASO 2 — real multimodal fatigue signals correctly trigger reactive deload (not week-based)');
-  ok(eng.getAdjustedRIR(2, 4) === 4, 'CASO 2 — RIR reactively raised (+2, easier) once real deload evidence exists');
+  ok(eng.getAdjustedRIR(2, 4) === 2, 'CASO 2 (T496) — prescribed RIR stays the Coach value even once deload evidence exists');
 
   // Engine's own recommendation reflects the deload — freeze/no progression.
   var rec = {

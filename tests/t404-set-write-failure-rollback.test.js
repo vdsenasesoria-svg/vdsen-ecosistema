@@ -32,6 +32,7 @@ function makeRuntime() {
     function getExUnit() { return 'KG'; }
     function _historyPidKey(pid) { return pid ? '__pid__' + String(pid) : ''; }
     function getAdjustedRIR() { return 2; }
+    function _coachRIR() { return 2; }
     function _lbwTrack() {}
     var celebrations = 0;
     function _recordExerciseHistoryAndPR(a, b, c, d, e, f, showCelebration) {

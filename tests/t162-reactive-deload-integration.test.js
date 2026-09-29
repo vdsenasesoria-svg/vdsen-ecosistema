@@ -113,15 +113,13 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 
 const triggersSrc   = extractFunction(CLIENT, 'function _computeDeloadTriggers(week, postDataOverride)');
 const adjustedRirSrc = extractFunction(CLIENT, 'function getAdjustedRIR(baseRIR, week, exName)');
-const isFreeBarbellSrc = extractFunction(CLIENT, 'function _isFreeBarbell(exName)');
-ok(triggersSrc && adjustedRirSrc && isFreeBarbellSrc, 'prerequisite: _computeDeloadTriggers/getAdjustedRIR/_isFreeBarbell must all be extractable');
+ok(triggersSrc && adjustedRirSrc, 'prerequisite: _computeDeloadTriggers/getAdjustedRIR must be extractable');
 
 function makeEngine(LOGS, totalWeeks) {
   const PLAN = { totalWeeks: totalWeeks };
   const factory = new Function(
     'LOGS', 'PLAN',
     'function getTotalWeeks(){ return (PLAN && PLAN.totalWeeks) ? PLAN.totalWeeks : 6; }\n' +
-    isFreeBarbellSrc + ';\n' +
     triggersSrc + ';\n' +
     adjustedRirSrc + ';\n' +
     'return { getAdjustedRIR: getAdjustedRIR, _computeDeloadTriggers: _computeDeloadTriggers };'
@@ -178,7 +176,7 @@ function makeEngine(LOGS, totalWeeks) {
   const res = eng._computeDeloadTriggers(4);
   ok(res.triggers.length >= 2, 'Item 4/5 — multimodal fatigue+sleep+performance combo accumulates multiple real triggers');
   ok(res.isDeload === true, 'Item 4/5 — with multimodal evidence, deload IS recommended (DELOAD_RECOMMENDED-equivalent)');
-  ok(eng.getAdjustedRIR(2, 4) === 4, 'Item 4/5 — getAdjustedRIR raises RIR (+2, easier) once real deload evidence exists, on a MID-cycle week (not just the last one)');
+  ok(eng.getAdjustedRIR(2, 4) === 2, 'Item 4/5 (T496) — getAdjustedRIR keeps the Coach RIR even with deload evidence (advisory only) once real deload evidence exists, on a MID-cycle week (not just the last one)');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -282,8 +280,8 @@ function makeEngine(LOGS, totalWeeks) {
 
 (function testPeakWeeksUnchanged() {
   const eng = makeEngine({}, 6);
-  ok(eng.getAdjustedRIR(2, 4) === 1, 'Regression — week 4 of 6 (total-2) still gets the peak/intensif -1 RIR adjustment');
-  ok(eng.getAdjustedRIR(2, 5) === 1, 'Regression — week 5 of 6 (total-1) still gets the peak/intensif -1 RIR adjustment');
+  ok(eng.getAdjustedRIR(2, 4) === 2, 'T496 — week 4 of 6 no longer gets a calendar -1 RIR adjustment');
+  ok(eng.getAdjustedRIR(2, 5) === 2, 'T496 — week 5 of 6 no longer gets a calendar -1 RIR adjustment');
   ok(eng.getAdjustedRIR(2, 6) === 2, 'Regression — week 6 (the last week) is explicitly excluded from the peak/intensif branch, not silently harder either');
 })();
 
@@ -294,7 +292,7 @@ function makeEngine(LOGS, totalWeeks) {
 (function testFreeBarbellFloorUnchanged() {
   const LOGS = { 'ci_sem_6': { who5: '30', energia: '2' } }; // 2 real triggers -> deload on week 6
   const eng = makeEngine(LOGS, 6);
-  ok(eng.getAdjustedRIR(0, 6, 'Sentadilla libre') >= 1, 'Regression — free-barbell RIR floor (>=1) still applies even during a genuine reactive deload');
+  ok(eng.getAdjustedRIR(0, 6, 'Sentadilla libre') === 0, 'T496 — no free-barbell RIR floor: a Coach RIR 0 stays 0 even during a reactive deload');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────

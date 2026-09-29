@@ -20,9 +20,9 @@ test('T495.1 the numeric-apply switch is off in every module and no APPLIED stat
 test('T495.2 residual legacy authorities are exactly the documented ones (change them only with a decision)', () => {
   // (1) prescribed RIR: calendar peak adjustment + reactive deload +2 + free-barbell floor
   const rir = client.slice(client.indexOf('function getAdjustedRIR('), client.indexOf('function isTechniqueActive('));
-  assert.equal(count(rir, '_computeDeloadTriggers(week).isDeload) adj = base + 2'), 1);
-  assert.equal(count(rir, 'adj = Math.max(0, base - 1)'), 1);
-  assert.equal(count(rir, 'Math.max(1, adj)'), 1);
+  assert.equal(count(rir, '_computeDeloadTriggers'), 0, 'T496: no reactive deload rewrite of prescribed RIR');
+  assert.equal(count(rir, 'base - 1'), 0);
+  assert.equal(count(rir, 'Math.max(1, adj)'), 0);
   // (2) in-session extra-set suggestion: suggestion only, athlete decides
   assert.equal(count(client, '_showAddSetSuggestion(di, ei, \'Técnica'), 1);
   // (3) history by name fallback
