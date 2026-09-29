@@ -36,6 +36,20 @@
     });
   }
 
+  // SAFETY signal readable at any time from LOGS: an articular-pain report in a session strictly AFTER the source exposure and strictly
+  // BEFORE the target exposure (same definition of pain as the magnitude policy evidence: postsession articular 'si' / articularPain.present).
+  function painReportedBetween(entries, source, target) {
+    if (!entries || !source || !target) return false;
+    function after(w, d, a) { return w > a.week || (w === a.week && d > a.dayIndex); }
+    return Object.keys(entries).some(function(k) {
+      var m = /^postsession_(\d+)_(\d+)$/.exec(k), ps = entries[k];
+      if (!m || !ps || typeof ps !== 'object') return false;
+      var w = Number(m[1]), d = Number(m[2]);
+      var pain = !!((ps.articularPain && ps.articularPain.present) || ps.articular === 'si');
+      return pain && after(w, d, source) && after(target.week, target.dayIndex, { week: w, dayIndex: d });
+    });
+  }
+
   function _values(map) { return map && typeof map === 'object' ? Object.keys(map).map(function(k) { return map[k]; }) : []; }
   function _daysWithPid(plan, pid) {
     return (Array.isArray(plan && plan.days) ? plan.days : []).filter(function(d) { return (d.exercises || []).some(function(e) { return e.prescriptionExerciseId === pid; }); })
@@ -68,7 +82,7 @@
     if (o.status !== r.state) return no('RECORD_OVERLAY_INCONSISTENT');
     if (input.planId !== input.activePlanId) return no('PLAN_MISMATCH');
     var ok = { usable: true, reason: null, provenance: PROVENANCE.CANONICAL_OVERLAY, overlay: o, record: r, state: r.state };
-    if (input.safetyConflict === true) return no('SAFETY_CONFLICT', PROVENANCE.SAFETY_FALLBACK, { state: r.state });
+    if (input.safetyConflict === true || painReportedBetween(input.entries, r.source, o.target)) return no('SAFETY_CONFLICT', PROVENANCE.SAFETY_FALLBACK, { state: r.state });
     // A started exposure keeps the prescription it started with: no retroactive override/stale.
     if (r.state === 'CONSUMED' || pidExposureStarted(input.entries, pid, week, day)) return ok;
     var calcAt = _time(r.source && r.source.calculatedAt), appliedAt = _time(r.lifecycle.appliedAt), from = appliedAt !== null ? appliedAt : calcAt;
@@ -121,5 +135,5 @@
   }
 
   return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, OVERLAY_SCHEMA: OVERLAY_SCHEMA, PROVENANCE: PROVENANCE, LABEL: LABEL,
-    pidExposureStarted: pidExposureStarted, evaluateOverlay: evaluateOverlay, resolveEffective: resolveEffective };
+    pidExposureStarted: pidExposureStarted, painReportedBetween: painReportedBetween, evaluateOverlay: evaluateOverlay, resolveEffective: resolveEffective };
 });

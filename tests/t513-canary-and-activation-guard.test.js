@@ -140,6 +140,7 @@ test('T513.8 the transaction path cannot write unless the flag is on AND the dec
 test('T513.9 the overlay write is reachable from one place only and the guard sits between planning and writing', () => {
   const src = consumerSrc.replace(/\/\*[\s\S]*?\*\//g, '');
   assert.equal(src.split('tx.set(').length - 1, 1, 'a single tx.set');
-  assert.ok(src.indexOf('if (!decision.canApply)') < src.indexOf('tx.set('));
+  const apply = src.slice(src.indexOf('async function applyOverlayTransaction'), src.indexOf('async function consumeOverlayTransaction'));
+  assert.ok(apply.indexOf('if (!decision.canApply)') < apply.indexOf('_commitLifecycle(tx, refs'), 'guard before the (single) commit');
   assert.ok(/transactionCurrent: guards\.isCurrent \? guards\.isCurrent\(\) : true/.test(src));
 });

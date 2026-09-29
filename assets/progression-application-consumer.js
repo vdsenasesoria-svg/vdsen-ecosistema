@@ -10,10 +10,10 @@
  * canApply=false, and applyOverlayTransaction() refuses to touch the transaction.
  */
 (function(root, factory) {
-  var api = factory();
+  var api = factory(typeof require === 'function' ? require : null, root);
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.VDSEN_APPLICATION_CONSUMER = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function() {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function(_req, _root) {
   'use strict';
 
   var NUMERIC_APPLY_ENABLED = false;
@@ -273,7 +273,11 @@
       else if (!m.eligible && !specific.length && !m.coachReviewRequired) blockers.push(BLOCKERS.NOT_ELIGIBLE);
       var cand = (m.unresolved || m.coachReviewRequired || !m.eligible) ? null : _candidateFor(m, ctx, blockers);
       var key = overlayKey(record);
-      if (ctx.existingOverlays && ctx.existingOverlays[key]) blockers.push(BLOCKERS.ALREADY_RECORDED);
+      // one overlay per exact target exposure, whatever its state: a new candidate never stacks on / resurrects an earlier application
+      var eo = ctx.existingOverlays;
+      if (eo && (eo[key] || Object.keys(eo).some(function(k) {
+        var x = eo[k]; return x && x.clientId === record.clientId && x.planId === record.planId && x.prescriptionExerciseId === pid && x.target && x.target.week === t.week && x.target.dayIndex === t.dayIndex; })))
+        blockers.push(BLOCKERS.ALREADY_RECORDED);
       if (!blockers.length && cand) {
         out.wouldApply = true;
         out.overlay = { key: key, schema: SCHEMA, clientId: record.clientId, planId: record.planId, prescriptionExerciseId: pid,
@@ -324,25 +328,195 @@
       audit: { event: blockers.length ? 'REVERT_BLOCKED' : 'OVERLAY_WOULD_REVERT', at: ctx.now || null, actor: 'SYSTEM_DRY_RUN', blockers: blockers.slice() } };
   }
 
-  // Transactional/idempotent write spec: every guard is re-read INSIDE the transaction by the caller-provided
-  // reader. With NUMERIC_APPLY_ENABLED=false it never touches the transaction.
+  // ---------------------------------------------------------------------------------------------------------------------
+  // T531: APPLICATION LIFECYCLE (behind NUMERIC_APPLY_ENABLED). The canonical progression application RECORD is the lifecycle record;
+  // the overlay mirrors its state. Record + overlay + Monitor summary are ALWAYS committed together, in ONE transaction, by
+  // _commitLifecycle (the only tx.set of this module) -- so "overlay written but record PENDING" and "record APPLIED but overlay missing"
+  // cannot exist. Every transition is idempotent by a deterministic operationKey and re-verifies its guards INSIDE the transaction.
+  //   PENDING -> APPLIED     applyOverlayTransaction       (flag on, activation guard, canary scope, exact context)
+  //   APPLIED -> CONSUMED    consumeOverlayTransaction     (flag on; first PERSISTED working set of the exact PID exposure)
+  //   APPLIED -> OVERRIDDEN  overrideOverlayTransaction    (exact Coach decision after APPLIED, before the target starts)
+  //   APPLIED -> REVERTED    revertOverlayTransaction      (Coach, before the target starts, expectedRevision)
+  //   APPLIED -> STALE       staleOverlayTransaction       (plan replaced / PID or target invalidated, before the target starts)
+  // Override / revert / stale are allowed with the flag off: they are safety valves that can only REMOVE effect.
+  // ---------------------------------------------------------------------------------------------------------------------
+  function _shadow() { return _req ? _req('./progression-auto-apply-shadow.js') : (_root && _root.VDSEN_AUTO_APPLY_SHADOW) || null; }
+  function _effective() { return _req ? _req('./progression-effective-prescription.js') : (_root && _root.VDSEN_EFFECTIVE_PRESCRIPTION) || null; }
+  function _read(snap) { return snap && typeof snap.exists === 'function' && snap.exists() ? snap.data() : null; }
+  function _fail(reason, extra) { return Object.assign({ written: false, reason: reason }, extra || {}); }
+
+  async function _loadLifecycle(tx, refs, input, which) {
+    var st = { meso: null, plan: null, client: null, coach: null };
+    if (which.meso) st.meso = _read(await tx.get(refs.meso));
+    if (which.plan && refs.plan) st.plan = _read(await tx.get(refs.plan));
+    if (which.client && refs.client) st.client = _read(await tx.get(refs.client));
+    if (which.coach && refs.coach) st.coach = _read(await tx.get(refs.coach));
+    return st;
+  }
+  // The pair (record, overlay) an APPLIED-state transition operates on; null + reason when it is not exactly consistent.
+  function _pair(meso, recordKey) {
+    var record = meso && meso.progressionApplications && meso.progressionApplications[recordKey];
+    if (!record) return { reason: BLOCKERS.NOT_CANONICAL_RECORD };
+    var okey = record.lifecycle && record.lifecycle.overlayKey, overlay = okey && meso.nextExposureOverlays && meso.nextExposureOverlays[okey];
+    return { record: record, overlay: overlay || null, okey: okey || null };
+  }
+  function _consistent(pair, state) {
+    var r = pair.record, o = pair.overlay;
+    return !!(o && r.state === state && o.status === state && o.sourceRecordKey === r.key && o.key === 'ovl_' + r.key && o.clientId === r.clientId && o.planId === r.planId &&
+      o.prescriptionExerciseId === r.prescriptionExerciseId);
+  }
+  // Timestamps are always supplied by the caller (this module stays deterministic and never reads a clock).
+  function _now(input, ctx) { return (input && input.now) || (ctx && ctx.now) || null; }
+
+  // One atomic commit of record + overlay (+ summary mirrors). Idempotence and every guard are decided BEFORE this is called.
+  function _lifecycleWrite(shadow, meso, key, record, overlayKey, overlay) {
+    var records = Object.assign({}, meso.progressionApplications || {}); records[key] = record;
+    var overlays = Object.assign({}, meso.nextExposureOverlays || {}); overlays[overlayKey] = overlay;
+    return { records: records, overlays: overlays, summary: shadow.summarize(records, record.planId) };
+  }
+  function _commitLifecycle(tx, refs, w) {
+    [[refs.meso, { progressionApplications: w.records, nextExposureOverlays: w.overlays, progressionApplicationSummary: w.summary }],
+     [refs.root, { progressionApplicationSummary: w.summary }]].forEach(function(x) { if (x[0]) tx.set(x[0], x[1], { merge: true }); });
+  }
+  function _transition(shadow, pair, to, op, input, patch, overlayPatch, ctx) {
+    var at = _now(input, ctx);
+    var t = shadow.lifecycleTransition(pair.record, to, { expectedRevision: pair.record.revision, operationKey: op, at: at, actorId: input.actorId || null,
+      reasonCode: input.reasonCode, patch: patch });
+    if (!t.ok) return { fail: _fail(t.reasonCode) };
+    return { record: t.record, overlay: Object.assign({}, pair.overlay, { status: to }, overlayPatch || {}) };
+  }
+
   async function applyOverlayTransaction(tx, refs, input, guards) {
     if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
     guards = guards || {};
     if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
-    var mesoSnap = await tx.get(refs.meso), planSnap = await tx.get(refs.plan), clientSnap = await tx.get(refs.client);
-    if (!mesoSnap.exists() || !planSnap.exists() || !clientSnap.exists()) return { written: false, reason: BLOCKERS.NOT_CANONICAL_RECORD };
-    var meso = mesoSnap.data(), record = (meso.progressionApplications || {})[input.recordKey];
-    var decision = planApplication({ record: record, context: Object.assign({}, input.context, {
-      plan: planSnap.data(), interventions: clientSnap.data().coachInterventions, entries: meso.entries,
-      existingOverlays: meso.nextExposureOverlays, activePlanId: clientSnap.data().activePlanId,
+    var shadow = _shadow(), eff = _effective();
+    if (!shadow || !eff) return _fail('LIFECYCLE_UNAVAILABLE');
+    var st = await _loadLifecycle(tx, refs, input, { meso: true, plan: true, client: true, coach: true });
+    var mesoSnapOk = !!st.meso, planOk = !!st.plan, clientOk = !!st.client;
+    if (!mesoSnapOk || !planOk || !clientOk) return { written: false, reason: BLOCKERS.NOT_CANONICAL_RECORD };
+    var meso = st.meso, record = (meso.progressionApplications || {})[input.recordKey];
+    var op = record ? 'apply:' + record.key : null;
+    if (record && op && (record.events || []).some(function(e) { return e.operationKey === op; })) return { written: false, idempotent: true, reason: BLOCKERS.ALREADY_RECORDED };
+    var ic = input.context || {};
+    // Canary scope: the Coach document is authoritative when supplied (re-read INSIDE the transaction); otherwise the caller's; absent = disabled.
+    var scope = refs.coach ? (st.coach && st.coach.autoApplyCanary) : ic.canaryScope;
+    var entries = meso.entries;
+    var safety = ic.safetyConflict === true;
+    if (!safety && record && record.source && record.nextExposure) safety = eff.painReportedBetween(entries, record.source, record.nextExposure);
+    var decision = planApplication({ record: record, context: Object.assign({}, ic, {
+      canaryScope: normalizeCanaryScope(scope), safetyConflict: safety,
+      plan: st.plan, interventions: st.client.coachInterventions, entries: entries,
+      existingOverlays: meso.nextExposureOverlays, activePlanId: st.client.activePlanId,
       transactionCurrent: guards.isCurrent ? guards.isCurrent() : true }) });
     if (!decision.canApply) return { written: false, reason: decision.blockers[0], decision: decision };
     if (input.expectedRevision !== undefined && record.revision !== input.expectedRevision) return { written: false, reason: BLOCKERS.REVISION_CONFLICT };
-    tx.set(refs.meso, { nextExposureOverlays: Object.assign({}, meso.nextExposureOverlays || {}, (function() { var o = {}; o[decision.overlay.key] = decision.overlay; return o; })()) }, { merge: true });
-    return { written: true, overlayKey: decision.overlay.key, decision: decision };
+    var at = _now(input, ic);
+    if (!at) return _fail('TIMESTAMP_MISSING');
+    var overlay = Object.assign({}, decision.overlay, { status: 'APPLIED', appliedAt: at, operationKey: op });
+    var t = shadow.lifecycleTransition(record, 'APPLIED', { expectedRevision: record.revision, operationKey: op, at: at, actorId: input.actorId || null,
+      reasonCode: 'APPLIED_BY_POLICY', patch: { overlayKey: overlay.key, appliedAt: at } });
+    if (!t.ok) return _fail(t.reasonCode, { decision: decision });
+    _commitLifecycle(tx, refs, _lifecycleWrite(shadow, meso, record.key, t.record, overlay.key, overlay));
+    return { written: true, overlayKey: overlay.key, decision: decision, record: t.record, overlay: overlay };
   }
 
+  // APPLIED -> CONSUMED: only on persisted evidence (LOGS in the meso document, re-read inside the transaction), never on render.
+  async function consumeOverlayTransaction(tx, refs, input, guards) {
+    if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };
+    guards = guards || {};
+    if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
+    var shadow = _shadow(), eff = _effective();
+    if (!shadow || !eff) return _fail('LIFECYCLE_UNAVAILABLE');
+    var st = await _loadLifecycle(tx, refs, input, { meso: true });
+    if (!st.meso) return { written: false, reason: BLOCKERS.NOT_CANONICAL_RECORD };
+    var pair = _pair(st.meso, input.recordKey);
+    if (!pair.record) return _fail(pair.reason);
+    var r = pair.record, op = 'consume:' + r.key;
+    if ((r.events || []).some(function(e) { return e.operationKey === op; })) return { written: false, idempotent: true, reason: 'ALREADY_CONSUMED' };
+    if (r.clientId !== input.clientId || r.planId !== st.meso.planId) return _fail(r.clientId !== input.clientId ? BLOCKERS.CLIENT_MISMATCH : BLOCKERS.PLAN_MISMATCH);
+    if (r.state !== 'APPLIED') return _fail('INVALID_TRANSITION');
+    if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
+    var tgt = pair.overlay.target, sh = input.shown || {};
+    if (!eff.pidExposureStarted(st.meso.entries, r.prescriptionExerciseId, tgt.week, tgt.dayIndex)) return _fail('TARGET_NOT_STARTED');
+    // what the athlete was actually shown must be this overlay (otherwise the overlay was NOT consumed)
+    if (sh.provenance !== 'CANONICAL_OVERLAY' || sh.overlayKey !== pair.overlay.key || sh.appliedValue !== pair.overlay.appliedValue || sh.dimension !== pair.overlay.dimension) return _fail('OVERLAY_NOT_SHOWN');
+    var at = _now(input, null);
+    if (!at) return _fail('TIMESTAMP_MISSING');
+    var shown = { provenance: sh.provenance, overlayKey: sh.overlayKey, dimension: sh.dimension, previousValue: pair.overlay.previousValue, appliedValue: sh.appliedValue, unit: pair.overlay.unit };
+    var tr = _transition(shadow, pair, 'CONSUMED', op, Object.assign({}, input, { reasonCode: 'TARGET_STARTED' }), { consumedAt: at, shownPrescription: shown }, { consumedAt: at, shownPrescription: shown }, null);
+    if (tr.fail) return tr.fail;
+    _commitLifecycle(tx, refs, _lifecycleWrite(shadow, st.meso, r.key, tr.record, pair.overlay.key, tr.overlay));
+    return { written: true, overlayKey: pair.overlay.key, record: tr.record, overlay: tr.overlay };
+  }
+
+  // What a Coach decision / plan change would do to an APPLIED, not-yet-started overlay. Pure.
+  function planLifecycleReconciliation(input) {
+    input = input || {}; var eff = _effective(), o = input.overlay, r = input.record;
+    if (!eff || !r || !o || r.state !== 'APPLIED' || o.status !== 'APPLIED') return { action: 'NONE', reason: 'NOT_APPLIED' };
+    var t = o.target;
+    if (eff.pidExposureStarted(input.entries, r.prescriptionExerciseId, t.week, t.dayIndex)) return { action: 'NONE', reason: 'TARGET_STARTED' };
+    var ev = eff.evaluateOverlay({ clientId: r.clientId, planId: r.planId, activePlanId: input.activePlanId, pid: r.prescriptionExerciseId, week: t.week, dayIndex: t.dayIndex,
+      records: { [r.key]: r }, overlays: { [o.key]: o }, interventions: input.interventions, plan: input.plan, entries: input.entries, safetyConflict: false });
+    if (ev.usable) return { action: 'NONE', reason: null };
+    if (ev.reason === 'COACH_OVERRIDE') return { action: 'OVERRIDE', reason: ev.reason };
+    if (ev.reason === 'PLAN_MISMATCH' || ev.reason === 'TARGET_INVALIDATED') return { action: 'STALE', reason: ev.reason === 'PLAN_MISMATCH' ? 'PLAN_CHANGED' : ev.reason };
+    return { action: 'NONE', reason: ev.reason };
+  }
+  function _latestDecision(interventions, record, from) {
+    var best = null;
+    (Array.isArray(interventions) ? interventions : []).forEach(function(iv) {
+      if (!iv || iv.targetType !== 'EXERCISE' || iv.targetId !== record.prescriptionExerciseId || (iv.planId && iv.planId !== record.planId) || iv.action === 'NO_CHANGE') return;
+      var t = _time(iv.decidedAt); if (t === null || from === null || t < from) return;
+      if (!best || t > _time(best.decidedAt)) best = iv;
+    });
+    return best;
+  }
+
+  // Shared body of override / revert / stale: all require an APPLIED, consistent pair and a target that has NOT started.
+  async function _removeEffectTransaction(tx, refs, input, guards, kind) {
+    guards = guards || {};
+    if (guards.isCurrent && !guards.isCurrent()) return { written: false, reason: BLOCKERS.STALE_CALLBACK };
+    var shadow = _shadow(), eff = _effective();
+    if (!shadow || !eff) return _fail('LIFECYCLE_UNAVAILABLE');
+    var st = await _loadLifecycle(tx, refs, input, { meso: true, client: kind !== 'REVERT', plan: kind === 'STALE' });
+    if (!st.meso) return { written: false, reason: BLOCKERS.NOT_CANONICAL_RECORD };
+    var pair = _pair(st.meso, input.recordKey);
+    if (!pair.record) return _fail(pair.reason);
+    var r = pair.record, op = { OVERRIDE: 'override:', REVERT: 'revert:', STALE: 'stale:' }[kind] + r.key, to = { OVERRIDE: 'OVERRIDDEN', REVERT: 'REVERTED', STALE: 'STALE' }[kind];
+    if ((r.events || []).some(function(e) { return e.operationKey === op; })) return { written: false, idempotent: true, reason: 'ALREADY_' + to };
+    if (r.state !== 'APPLIED') return _fail('INVALID_TRANSITION');
+    if (!_consistent(pair, 'APPLIED')) return _fail('RECORD_OVERLAY_INCONSISTENT');
+    if (input.clientId !== undefined && r.clientId !== input.clientId) return _fail(BLOCKERS.CLIENT_MISMATCH);
+    var t = pair.overlay.target;
+    if (eff.pidExposureStarted(st.meso.entries, r.prescriptionExerciseId, t.week, t.dayIndex)) return _fail(BLOCKERS.TARGET_ALREADY_STARTED);
+    var at = _now(input, null), patch, reason;
+    if (!at) return _fail('TIMESTAMP_MISSING');
+    if (kind === 'REVERT') {
+      if (input.expectedRevision === undefined || r.revision !== input.expectedRevision) return _fail(BLOCKERS.REVISION_CONFLICT);
+      if (input.overlayKey !== undefined && input.overlayKey !== pair.overlay.key) return _fail('RECORD_OVERLAY_INCONSISTENT');
+      patch = { revertedAt: at }; reason = 'REVERTED_BY_COACH';
+    } else if (kind === 'OVERRIDE') {
+      var iv = _latestDecision(st.client && st.client.coachInterventions, r, _time(r.lifecycle && r.lifecycle.appliedAt));
+      if (!iv) return _fail('NO_COACH_DECISION');
+      patch = { overriddenAt: at, intervention: { id: iv.id || null, action: iv.action || null, decidedAt: iv.decidedAt } }; reason = 'COACH_OVERRIDE';
+    } else {
+      var plan = st.plan, activePlanId = st.client && st.client.activePlanId;
+      var rec = planLifecycleReconciliation({ record: r, overlay: pair.overlay, entries: st.meso.entries, activePlanId: activePlanId, plan: plan || {}, interventions: [] });
+      if (rec.action !== 'STALE') return _fail('NOT_STALE');
+      patch = { staleAt: at, staleReason: rec.reason }; reason = rec.reason;
+    }
+    var tr = _transition(shadow, pair, to, op, Object.assign({}, input, { reasonCode: reason }), patch, Object.keys(patch).reduce(function(o, k) { o[k] = patch[k]; return o; }, {}), null);
+    if (tr.fail) return tr.fail;
+    _commitLifecycle(tx, refs, _lifecycleWrite(shadow, st.meso, r.key, tr.record, pair.overlay.key, tr.overlay));
+    return { written: true, overlayKey: pair.overlay.key, record: tr.record, overlay: tr.overlay };
+  }
+  function overrideOverlayTransaction(tx, refs, input, guards) { return _removeEffectTransaction(tx, refs, input, guards, 'OVERRIDE'); }
+  function revertOverlayTransaction(tx, refs, input, guards) { return _removeEffectTransaction(tx, refs, input, guards, 'REVERT'); }
+  function staleOverlayTransaction(tx, refs, input, guards) { return _removeEffectTransaction(tx, refs, input, guards, 'STALE'); }
+
   return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, SCHEMA: SCHEMA, BLOCKERS: BLOCKERS, GATES: GATES, PREVIEW_CLASSES: PREVIEW_CLASSES, GUARD_CHECKS: GUARD_CHECKS, verifyActivationPreconditions: verifyActivationPreconditions, ACTIVATION_PREREQUISITES: ACTIVATION_PREREQUISITES, normalizeCanaryScope: normalizeCanaryScope, inCanaryScope: inCanaryScope, overlayKey: overlayKey,
-    targetStarted: targetStarted, planApplication: planApplication, planReversal: planReversal, applyOverlayTransaction: applyOverlayTransaction };
+    targetStarted: targetStarted, planApplication: planApplication, planReversal: planReversal, applyOverlayTransaction: applyOverlayTransaction,
+    consumeOverlayTransaction: consumeOverlayTransaction, overrideOverlayTransaction: overrideOverlayTransaction, revertOverlayTransaction: revertOverlayTransaction,
+    staleOverlayTransaction: staleOverlayTransaction, planLifecycleReconciliation: planLifecycleReconciliation };
 });

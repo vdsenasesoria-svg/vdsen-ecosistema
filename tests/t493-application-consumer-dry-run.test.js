@@ -194,12 +194,7 @@ test('T493.11 with numeric apply disabled the transaction is never touched', asy
 });
 
 // The transactional logic is exercised on a sandbox copy with the flag forced on (never shipped that way).
-function enabledConsumer() {
-  const code = fs.readFileSync(path.join(root, 'assets/progression-application-consumer.js'), 'utf8').replace('var NUMERIC_APPLY_ENABLED = false;', 'var NUMERIC_APPLY_ENABLED = true;');
-  const sandbox = { module: { exports: {} } }; sandbox.globalThis = sandbox;
-  vm.createContext(sandbox); vm.runInContext(code, sandbox);
-  return sandbox.module.exports;
-}
+function enabledConsumer() { return require('./helpers/lifecycle-sandbox.js').build(true).consumer; }
 function store(rec, over = {}) {
   const docs = new Map([
     ['clients/c', Object.assign({ activePlanId: 'p', coachInterventions: [] }, over.client)],
@@ -210,7 +205,7 @@ function store(rec, over = {}) {
     set: (ref, value) => { writes.push(ref); docs.set(ref, Object.assign({}, docs.get(ref), structuredClone(value))); } };
   return { docs, writes, tx, refs: { client: 'clients/c', plan: 'plans/p', meso: 'logs/c/mesos/p' } };
 }
-const input = rec => ({ recordKey: rec.key, expectedRevision: rec.revision, context: { clientId: 'c', planId: 'p', equipmentResolution: resolution(), now: 'n', resolveNextExposure: shadow.resolveNextExposure } });
+const input = rec => ({ recordKey: rec.key, expectedRevision: rec.revision, context: { clientId: 'c', planId: 'p', equipmentResolution: resolution(), now: 'n', canaryScope: { enabled: true, clientIds: ['c'], prescriptionExerciseIds: [] }, resolveNextExposure: shadow.resolveNextExposure } });
 
 test('T493.12 (flag forced on in a sandbox) one atomic write, idempotent across retries and two devices; plan and LOGS untouched', async () => {
   const c = enabledConsumer(), rec = good(), s = store(rec);
@@ -222,6 +217,7 @@ test('T493.12 (flag forced on in a sandbox) one atomic write, idempotent across 
   assert.deepEqual(s.docs.get('plans/p'), plan, 'vdsen-plan-v2 untouched'); assert.deepEqual(meso.entries, entriesFor({ rir_real: 3 }));
   const r2 = await c.applyOverlayTransaction(s.tx, s.refs, input(rec), { isCurrent: () => true });
   assert.equal(r2.written, false); assert.equal(r2.reason, B.ALREADY_RECORDED); assert.equal(s.writes.length, 1, 'retry / second device: no duplicate');
+  assert.equal(meso.progressionApplications[rec.key].state, 'APPLIED', 'T531: the record moves PENDING -> APPLIED in the same write');
   const [a, b] = await Promise.all([1, 2].map(() => c.applyOverlayTransaction(store(rec).tx, store(rec).refs, input(rec), { isCurrent: () => true })));
   assert.ok(a && b);
 });
@@ -246,9 +242,9 @@ test('T493.14 the consumer never writes plans/, is not wired into the apps, and 
   const src = fs.readFileSync(path.join(root, 'assets/progression-application-consumer.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//, '');
   assert.ok(!/updateDoc|setDoc|addDoc|fetch\(|localStorage|document\.|Date\.now|new Date\(/.test(src));
   assert.equal((src.match(/tx\.set\(/g) || []).length, 1);
-  assert.ok(/tx\.set\(refs\.meso,/.test(src) && !/tx\.set\(refs\.(plan|client)/.test(src));
+  assert.ok(/function _commitLifecycle\(tx, refs, w\)/.test(src) && !/tx\.set\(refs\.(plan|client)/.test(src) && !/refs\.(plan|client)[^a-zA-Z]*,\s*\{ *progression/.test(src));
   assert.ok(!/newLoad|newReps|newSets|progrec|recommendedLoad|substituteExercise/.test(src));
-  assert.ok(!fs.readFileSync(path.join(root, 'vdsen-cliente.html'), 'utf8').includes('VDSEN_APPLICATION_CONSUMER'), 'the athlete app never consumes it');
+  // T531: the athlete app may only ever CONSUME (never plan/apply): checked by the T532 client tests.
   const coachSrc = fs.readFileSync(path.join(root, 'vdsen-coach.html'), 'utf8');
   assert.ok(!coachSrc.includes('applyOverlayTransaction'), 'the Coach app only ever runs the read-only dry-run planner (T494)');
 });
