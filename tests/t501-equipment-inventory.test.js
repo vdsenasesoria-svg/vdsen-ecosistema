@@ -36,10 +36,10 @@ test('T501.3 equipment type or label alone never resolves a load', () => {
   }
 });
 
-test('T501.4 identity is reported, never guessed: only explicit ids or exact functional-label matches get an equipmentId', () => {
+test('T501.4 identity is reported, never guessed: unresolved rows carry no equipmentId and a reason (T508)', () => {
   const rows = inv.buildInventory(catalog);
-  for (const r of rows.filter(x => x.identity === 'NO_EQUIPMENT_ID')) assert.equal(r.equipmentId, null, r.equipment);
-  assert.ok(rows.some(r => r.identity === 'NO_EQUIPMENT_ID'));
+  for (const r of rows.filter(x => x.identity === 'UNRESOLVED')) { assert.equal(r.equipmentId, null, r.equipment); assert.ok(r.identityReason, r.equipment); }
+  assert.ok(rows.some(r => r.identity === 'UNRESOLVED'));
 });
 
 test('T501.5 docs/EQUIPMENT_INCREMENT_INVENTORY.md is generated and current', () => {

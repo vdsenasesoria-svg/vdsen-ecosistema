@@ -323,6 +323,35 @@
     legacyEntry('legacy-extension-cuadriceps-maquina', 'Extensión cuádriceps máquina', 'Extensión de rodilla', 'Alinea la rodilla con el pivote y ajusta el rodillo distal.', 'Extiende y baja controlando sin golpear el tope.', 'Extensión de rodilla aislada.', ['Desalinear la rodilla.', 'Dejar caer la carga.'])
   );
   sharedGymCatalog.legacyEntries = legacyVisualEntries;
+  // T508: canonical EQUIPMENT identity for the shared Smart Fit San Diego / Bugambilias catalog. Explicit ids and
+  // explicit aliases only (matched by exact normalized label: case / accents / whitespace, never similarity). Each
+  // item is ONE physical implement named by its catalog label; the same label on several exercises is the same id.
+  // Labels that name a FAMILY of implements, a generic "Máquina" or an attachment are NOT identities and stay
+  // unresolved (listed below with the reason). No increment lives here: identity is not metadata.
+  sharedGymCatalog.equipment = [
+    { equipmentId:'sf-sd-eq-belt-squat', name:'Belt Squat', equipmentType:'machine', aliases:[] },
+    { equipmentId:'sf-sd-eq-sentadilla-pendular', name:'Sentadilla Pendular', equipmentType:'machine', aliases:[] },
+    { equipmentId:'sf-sd-eq-banco-predicador', name:'Banco predicador', equipmentType:'bench', aliases:[] },
+    { equipmentId:'sf-sd-eq-hip-thrust-machine', name:'Hip Thrust Machine', equipmentType:'machine', aliases:[] },
+    { equipmentId:'sf-sd-eq-smith', name:'Smith', equipmentType:'machine', aliases:[] },
+    { equipmentId:'sf-sd-eq-polea-ajustable', name:'Polea ajustable', equipmentType:'cable', aliases:[] },
+    { equipmentId:'sf-sd-eq-polea-alta', name:'Polea alta', equipmentType:'cable', aliases:[] },
+    { equipmentId:'sf-sd-eq-polea-baja', name:'Polea baja', equipmentType:'cable', aliases:[] },
+    { equipmentId:'sf-sd-eq-barra-fija', name:'Barra fija', equipmentType:'barbell', aliases:[] },
+    { equipmentId:'sf-sd-eq-barras-paralelas', name:'Barras paralelas', equipmentType:'barbell', aliases:[] },
+    { equipmentId:'sf-sd-eq-prensa-de-pierna', name:'Prensa de pierna', equipmentType:'machine', aliases:[] },
+    { equipmentId:'sf-sd-eq-hack-squat', name:'Hack squat', equipmentType:'machine', aliases:[] },
+    { equipmentId:'sf-sd-eq-extension-de-rodilla', name:'Extensión de rodilla', equipmentType:'machine', aliases:[] },
+    { equipmentId:'sf-sd-converging-lat-pulldown-plate-loaded', name:'Máquina plate-loaded · discos', equipmentType:'machine', aliases:[] }
+  ];
+  sharedGymCatalog.unresolvedEquipment = [
+    { name:'Impulse · discos', reason:'FAMILY_LABEL_MULTIPLE_IMPLEMENTS' },
+    { name:'Impulse · peso integrado', reason:'FAMILY_LABEL_MULTIPLE_IMPLEMENTS' },
+    { name:'Matrix · placas', reason:'FAMILY_LABEL_MULTIPLE_IMPLEMENTS' },
+    { name:'Matrix · peso integrado', reason:'FAMILY_LABEL_MULTIPLE_IMPLEMENTS' },
+    { name:'Máquina', reason:'GENERIC_LABEL' },
+    { name:'Accesorio de polea', reason:'ATTACHMENT_NOT_LOAD_IMPLEMENT' }
+  ];
   return {
     version: '2026.09.27',
     functionalEquipment: functionalEquipment,
