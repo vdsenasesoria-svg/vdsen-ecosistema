@@ -67,7 +67,7 @@ futura genuinamente desconocida.
 | Incrementos de equipo | solo valores escritos por el Coach; ninguno en el repositorio. Modelo: ejercicio > sede+equipo > equipo compartido > sin resolver, en `coaches/{uid}.equipmentIncrements` y `exercises/{id}.loadIncrement` |
 | Cola de equipos del Coach | modal "Equipos" + `docs/EQUIPMENT_ACTIVATION_READINESS.md` |
 | Candidato listo (sintético) | `READY_BUT_DISABLED`; con la bandera forzada en un sandbox → `EXECUTABLE` (T513) |
-| Guardia de activación | 18 verificaciones independientes; `canApply` exige `guard.ok` |
+| Guardia de activación | 19 verificaciones independientes; `canApply` exige `guard.ok` |
 | Reproducción en sombra | `docs/SHADOW_REPLAY_REPORT.md` (15 escenarios sintéticos, motivos de bloqueo) |
 | Ciencia sin resolver | solo bloquea ramas D/E (`SCIENCE_POLICY_UNRESOLVED`); Reglas A y C independientes; serie representativa = supuesto global provisional |
 

@@ -45,7 +45,7 @@ function checklist(f) {
     [true, 'Dirección consistente', 'Por candidato; `DIRECTION_CONFLICTING` / `DIRECTION_UNCONFIRMED` (t492, t512).'],
     [policyResolved, 'Rama D/E y precedencia C→E resueltas', '**PRODUCT POLICY RESOLVED** (fuente `VDSEN_PRODUCT_POLICY`, no ciencia): D/E → `COACH_REVIEW_REQUIRED` (1A, sin candidato numérico); C primero → REST +30 s y, si persiste en la siguiente exposición comparable, revisión del Coach (2B). Verificado por t523.'],
     [policyResolved, 'Política de serie representativa resuelta', '**LAST_WORKING_SET** — fuente `VDSEN_PRODUCT_POLICY` (procedencia `' + policy.EVIDENCE_BASIS + '`); heurística de producto, no consenso científico. El simulador `docs/REPRESENTATIVE_SET_SIMULATION.md` es solo análisis.'],
-    [true, 'Exposición destino exacta y no iniciada', 'Por candidato: `TARGET_EXPOSURE_CHANGED`, `TARGET_ALREADY_STARTED` y la guardia de 18 verificaciones (t513).'],
+    [true, 'Exposición destino exacta y no iniciada', 'Por candidato: `TARGET_EXPOSURE_CHANGED`, `TARGET_ALREADY_STARTED` y la guardia de 19 verificaciones (t513).'],
     [true, 'Sin override del Coach', 'Por candidato: `COACH_OVERRIDE` / `COACH_KEEP_ORIGINAL` (t493, t512, t513).'],
     [true, 'Seguridad despejada', 'Por candidato: `SAFETY_CONFLICT` / `READINESS_VETO` (t492, t512).'],
     [!!(f.canary && f.canary.state === 'READY_BUT_DISABLED'), 'Canario sintético `READY_BUT_DISABLED`', 'Estado del canario en esta generación: ' + (f.canary && f.canary.state) + ' (t513, `docs/SHADOW_REPLAY_REPORT.md`).'],

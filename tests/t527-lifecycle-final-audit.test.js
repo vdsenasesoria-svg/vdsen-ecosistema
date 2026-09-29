@@ -1,0 +1,34 @@
+// T527: lifecycle stays unreachable + final activation-candidate audit (flag off, single writer, no APPLIED, docs current).
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const root = path.join(__dirname, '..');
+const read = f => fs.readFileSync(path.join(root, f), 'utf8');
+const shadow = require(path.join(root, 'assets/progression-auto-apply-shadow.js'));
+const consumer = require(path.join(root, 'assets/progression-application-consumer.js'));
+const policy = require(path.join(root, 'assets/progression-magnitude-policy.js'));
+
+test('T527.1 no APPLIED / CONSUMED / OVERRIDDEN / REVERTED state exists in the shadow state machine', () => {
+  assert.deepEqual(Object.keys(shadow.STATES).sort(), ['PENDING', 'REJECTED', 'STALE']);
+});
+test('T527.2 overlays have exactly one writer (tx.set) and the client never reads them', () => {
+  const src = read('assets/progression-application-consumer.js');
+  assert.equal((src.match(/tx\.set\(/g) || []).length, 1);
+  assert.ok(!/nextExposureOverlays/.test(read('vdsen-cliente.html')));
+  assert.ok(!/status:\s*'(APPLIED|CONSUMED)'/.test(src));
+});
+test('T527.3 all three flags are false; guard has 19 checks; no science gaps remain', () => {
+  assert.deepEqual([shadow.NUMERIC_APPLY_ENABLED, policy.NUMERIC_APPLY_ENABLED, consumer.NUMERIC_APPLY_ENABLED], [false, false, false]);
+  assert.equal(consumer.GUARD_CHECKS.length, 19);
+  assert.equal(policy.SCIENCE_GAPS.length, 0);
+});
+test('T527.4 real catalog + no configured increments -> zero executable LOAD candidates (activation blocked by data)', () => {
+  const f = require(path.join(root, 'scripts/generate-activation-docs.cjs')).facts();
+  assert.equal(f.configured, 0); assert.equal(f.readyGroups, 0);
+});
+test('T527.5 lifecycle audit doc lists every missing transition; generated docs are current', () => {
+  const d = read('docs/APPLIED_LIFECYCLE_AUDIT.md');
+  for (const t of ['APPLIED', 'CONSUMED', 'OVERRIDDEN', 'REVERTED', 'STALE', 'no implementado']) assert.ok(d.includes(t), t);
+  assert.equal(spawnSync(process.execPath, [path.join(root, 'scripts/generate-activation-docs.cjs'), '--check']).status, 0);
+});
