@@ -56,11 +56,11 @@ test('client live plan listener gates on updatedAt (contract exists)', function(
     'Client plan listener updatedAt guard not found — contract reference changed');
 });
 
-test('_applyRecLoadsToMonitor includes updatedAt (reference implementation)', function() {
+test('_applyRecLoadsToMonitor no longer writes plans (T482 neutralized it)', function() {
   var body = extractFnBody(src, 'async function _applyRecLoadsToMonitor');
   assert.ok(body, '_applyRecLoadsToMonitor body not extractable');
-  assert.ok(body.indexOf('updatedAt') !== -1,
-    '_applyRecLoadsToMonitor is the reference implementation but lacks updatedAt');
+  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction/.test(body),
+    '_applyRecLoadsToMonitor must not perform any plan write (T482)');
 });
 
 console.log('\n' + PASS + '/' + (PASS + FAIL) + ' passed');

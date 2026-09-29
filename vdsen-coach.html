@@ -4504,15 +4504,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           const _monDay = _activePlanCache && _activePlanCache.days && _activePlanCache.days[lastRecDay];
           const _monEx  = _monDay && (_monDay.exercises||[]).find(x => (x.exerciseName||x.nombre||'').toLowerCase().trim().replace(/\s+/g,' ') === _rNorm);
           const _rPid   = (_monEx && _monEx.prescriptionExerciseId) || '';
-          const _isLoadAction = r.action === 'increase_load' || r.action === 'reduce_load';
-          const _recIdx = lastRec.recommendations.indexOf(r);
           html += `
             <div class="card p-3" style="border-left:3px solid ${al.color};border-radius:0 8px 8px 0">
               <div class="flex justify-between items-start mb-1.5">
                 <span class="font-semibold text-sm" style="color:#F4F4F0">${_escH(r.exerciseName)}</span>
                 <div class="flex items-center gap-2 flex-shrink-0">
                   <span class="text-xs font-bold px-2 py-1 rounded" style="background:${al.color}1A;border:1px solid ${al.color}55;color:${al.color};letter-spacing:.5px">${al.label}</span>
-                  ${_isLoadAction ? `<button class="_mon-apply-single" data-recidx="${_recIdx}" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid ${al.color}55;background:${al.color}11;color:${al.color};cursor:pointer;flex-shrink:0;font-weight:700" title="Aplicar esta carga al plan">↑ Aplicar</button>` : ''}
                   <button onclick="_deepLinkToExercise(this.dataset.exname,this.dataset.expid)" data-exname="${_escH(r.exerciseName)}" data-expid="${_escH(_rPid)}" style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid rgba(244,244,240,.18);background:transparent;color:#888;cursor:pointer;flex-shrink:0" title="Editar en plan">✏️</button>
                 </div>
               </div>
@@ -4529,11 +4526,8 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
             </div>`;
         });
         html += `</div>`;
-        // FASE 20 — botón aplicar cargas (solo para increase_load / reduce_load)
-        const _applicableRecs20 = lastRec.recommendations.filter(r => r.action === 'increase_load' || r.action === 'reduce_load');
-        if (_applicableRecs20.length) {
-          html += `<button id="applyRecLoadsBtn" class="btn-secondary text-sm mt-3" style="background:rgba(68,187,136,.1);border-color:rgba(68,187,136,.45);color:#44BB88">⚡ Aplicar cargas al plan (${_applicableRecs20.length})</button>`;
-        }
+        // T482: the FASE 20 bulk 'apply loads to plan' button is removed (recommendations are informational).
+        html += `<div class="text-xs mt-3" style="color:#888">Recomendaciones del motor: informativas · Shadow / no aplicado. El plan solo cambia por edición manual del Coach.</div>`;
       } else {
         html += `<p class="text-[#888] text-sm mt-2">Sin recomendaciones aún — el cliente debe completar al menos una sesión con check-in.</p>`;
       }
@@ -4737,30 +4731,6 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       // ── END bitácora completa ─────────────────────────────────────────────
 
       container.innerHTML = html;
-
-      // FASE 20 — aplicar cargas recomendadas al plan (bulk)
-      const _applyRecBtn = document.getElementById('applyRecLoadsBtn');
-      if (_applyRecBtn) _applyRecBtn.onclick = async () => {
-        if (_applyRecBtn.disabled) return;
-        _applyRecBtn.disabled = true;
-        try { await _applyRecLoadsToMonitor(clientData, lastRec, lastRecDay); }
-        finally { _applyRecBtn.disabled = false; }
-      };
-
-      // FASE 31 — aplicar carga individual por recomendación
-      document.querySelectorAll('._mon-apply-single').forEach(btn => {
-        btn.onclick = async () => {
-          if (btn.disabled || !lastRec || !lastRec.recommendations) return;
-          btn.disabled = true;
-          try {
-            const idx = parseInt(btn.dataset.recidx);
-            const rec = lastRec.recommendations[idx];
-            if (!rec) return;
-            const fakeRec = { recommendations: [rec], deloadTriggers: [] };
-            await _applyRecLoadsToMonitor(clientData, fakeRec, lastRecDay);
-          } finally { btn.disabled = false; }
-        };
-      });
 
       // Navegación semanal (FASE 15)
       const _prevBtn = document.getElementById('monWeekPrev');
@@ -19300,43 +19270,12 @@ El esfuerzo no es negociable.
     return -1; // sin PID y sin nombre → NO MUTATION
   }
 
-  async function _applyRecLoadsToMonitor(clientData, lastRec, lastRecDay) {
-    const planId = clientData && clientData.activePlanId;
-    if (!planId || !_activePlanCache || !lastRec || !lastRec.recommendations?.length) {
-      showToast('No hay datos suficientes.', true); return;
-    }
-    const preview = _buildRecApplyPreview(lastRec, lastRecDay, _activePlanCache);
-    if (!preview.length) {
-      showToast('Ningún ejercicio coincide con el plan activo por nombre exacto.', true); return;
-    }
-    const confirmed = await _confirmApplyRecModal(preview);
-    if (!confirmed || !confirmed.length) return;
-    try {
-      // Lectura fresca — evita race conditions si el plan fue editado mientras el modal estaba abierto
-      const planSnap = await getDoc(doc(db, 'plans', planId));
-      if (!planSnap.exists()) { showToast('Plan no encontrado.', true); return; }
-      const plan = planSnap.data();
-      let applied = 0;
-      const updatedDays = (plan.days || []).map(day => {
-        if (day.dayIndex !== lastRecDay) return day;
-        const freshExercises = day.exercises || [];
-        const updExercises = freshExercises.map((ex, ei) => {
-          const match = confirmed.find(c => _resolveExerciseInFreshPlan(c, freshExercises) === ei);
-          if (!match) return ex;
-          // Solo actualizar load; preservar repsTarget, rirTarget, restSeconds, setIndex
-          const updSets = (ex.sets || []).map(s => Object.assign({}, s, { load: match.recommendedLoad }));
-          applied++;
-          return Object.assign({}, ex, { sets: updSets });
-        });
-        return Object.assign({}, day, { exercises: updExercises });
-      });
-      if (!applied) { showToast('Ningún ejercicio pudo verificarse en el plan actualizado.', true); return; }
-      await updateDoc(doc(db, 'plans', planId), { days: updatedDays, updatedAt: new Date().toISOString() });
-      if (_activePlanCache) _activePlanCache.days = updatedDays;
-      showToast(`✅ ${applied} ejercicio(s) actualizados en el plan.`);
-      // Re-renderizar Monitor para reflejar las nuevas cargas (cache ya actualizado arriba)
-      try { _renderMonitorForWeek(); } catch(_) {}
-    } catch(e) { showToast('Error al aplicar: ' + e.message, true); console.error(e); }
+  // T482: recommendation-derived plan mutation is removed. Engine recommendations are informational;
+  // plan numerics change only through explicit Coach authoring, and (in the future) through the
+  // canonical magnitude application layer. While NUMERIC_APPLY_ENABLED=false nothing is written.
+  async function _applyRecLoadsToMonitor() {
+    showToast('Shadow / no aplicado: las recomendaciones no modifican el plan. Edita la carga manualmente si lo decides.', true);
+    return false;
   }
   window._applyRecLoadsToMonitor = _applyRecLoadsToMonitor;
 
