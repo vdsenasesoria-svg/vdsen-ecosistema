@@ -16,8 +16,21 @@ Generado por `node scripts/generate-activation-docs.cjs`. **Evidencia estática 
 | Repetición sintética | 18 escenarios: 2 READY_BUT_DISABLED · 4 COACH_REVIEW_REQUIRED · 12 bloqueados · 0 ejecutables |
 | Bloqueados por equipo / revisión del Coach / otra política | 5 / 4 / 1 |
 | Validación de plataforma (Windows T478) | NON_BLOCKING_TECHNICAL_PENDING (registro: PENDING) |
-| Bandera `NUMERIC_APPLY_ENABLED` | false (apagada en los 3 módulos) |
-| Estado APPLIED | inexistente |
+| Bandera `NUMERIC_APPLY_ENABLED` | false (apagada en los 4 módulos) |
+| Estado APPLIED | solo alcanzable con la bandera activa (sandbox de pruebas); con la bandera apagada la transición se rechaza (`NUMERIC_APPLY_DISABLED`) |
+
+### Ciclo de vida de la aplicación
+
+| Componente | Estado |
+|---|---|
+| APPLIED LIFECYCLE | READY_BEHIND_DISABLED_FLAG |
+| CLIENT OVERLAY CONSUMER | READY_BEHIND_DISABLED_FLAG |
+| ROLLBACK | READY |
+| CONSUMPTION | READY |
+| OVERRIDE | READY |
+| STALE | READY |
+| CANARY | READY_DISABLED |
+| Concurrencia (Emulator real) | cubierta (`tests/t532-lifecycle-emulator.cjs`) |
 
 ## 2. Preparación de DATOS REALES DE EQUIPO
 
@@ -29,7 +42,7 @@ Generado por `node scripts/generate-activation-docs.cjs`. **Evidencia estática 
 | Ejercicios del catálogo listos por equipo (LOAD) | 0 / 71 |
 | Candidatos LOAD ejecutables con el catálogo real | 0 (sin incrementos: sin redondeo implícito, sin respaldo por tipo de equipo) |
 
-**Bloqueo operativo principal restante: incrementos reales de equipo (datos del Coach).**
+**Bloqueo operativo principal restante: incrementos reales de equipo (datos del Coach).** Código, política, ciclo de vida, consumidor del cliente y auditoría del Coach están listos detrás de la bandera apagada.
 
 ## Principales motivos de bloqueo o revisión (sintético)
 

@@ -21,7 +21,7 @@ test('T527.2 overlays have exactly one writer (tx.set); the client never writes 
   assert.ok(src.indexOf('if (!NUMERIC_APPLY_ENABLED) return { written: false, reason: BLOCKERS.NUMERIC_APPLY_DISABLED };') < src.indexOf("status: 'APPLIED'"), 'overlays only become APPLIED behind the flag');
 });
 test('T527.3 all three flags are false; guard has 19 checks; no science gaps remain', () => {
-  assert.deepEqual([shadow.NUMERIC_APPLY_ENABLED, policy.NUMERIC_APPLY_ENABLED, consumer.NUMERIC_APPLY_ENABLED], [false, false, false]);
+  assert.deepEqual([shadow.NUMERIC_APPLY_ENABLED, policy.NUMERIC_APPLY_ENABLED, consumer.NUMERIC_APPLY_ENABLED, require('../assets/progression-effective-prescription.js').NUMERIC_APPLY_ENABLED], [false, false, false, false]);
   assert.equal(consumer.GUARD_CHECKS.length, 19);
   assert.equal(policy.SCIENCE_GAPS.length, 0);
 });
@@ -31,6 +31,6 @@ test('T527.4 real catalog + no configured increments -> zero executable LOAD can
 });
 test('T527.5 lifecycle audit doc lists every missing transition; generated docs are current', () => {
   const d = read('docs/APPLIED_LIFECYCLE_AUDIT.md');
-  for (const t of ['APPLIED', 'CONSUMED', 'OVERRIDDEN', 'REVERTED', 'STALE', 'no implementado']) assert.ok(d.includes(t), t);
+  for (const t of ['APPLIED', 'CONSUMED', 'OVERRIDDEN', 'REVERTED', 'STALE', 'READY_BEHIND_DISABLED_FLAG']) assert.ok(d.includes(t), t);
   assert.equal(spawnSync(process.execPath, [path.join(root, 'scripts/generate-activation-docs.cjs'), '--check']).status, 0);
 });

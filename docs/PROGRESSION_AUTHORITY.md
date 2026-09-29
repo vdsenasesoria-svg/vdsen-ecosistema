@@ -61,8 +61,10 @@ futura genuinamente desconocida.
 | Autoridad operativa legada | 0 |
 | Autoridad de mutación por nombre | 0 (los nombres son etiquetas; identidad = PID / ids exactos) |
 | Autoridad de prescripción del atleta | 0 |
-| Progresión canónica / ruta de aplicación canónica | 1 / 1 (única escritura `tx.set` de overlays, en el consumidor) |
-| Aplicación numérica real | APAGADA (`NUMERIC_APPLY_ENABLED=false`, sin estado APPLIED) |
+| Progresión canónica / ruta de aplicación canónica | 1 / 1 (única escritura `tx.set` de overlays y estados de ciclo de vida: `_commitLifecycle`, en el consumidor) |
+| Aplicación numérica real | APAGADA (`NUMERIC_APPLY_ENABLED=false` en 4 módulos; `APPLIED` inalcanzable) |
+| Ciclo de vida PENDING→APPLIED→CONSUMED/OVERRIDDEN/REVERTED/STALE (T529–T535) | READY_BEHIND_DISABLED_FLAG — `docs/APPLIED_LIFECYCLE_AUDIT.md` |
+| Prescripción efectiva (cliente) | plan base + overlay elegible; SEGURIDAD > override exacto del Coach > overlay > base (`progression-effective-prescription.js`) |
 | Identidad de equipo | 39 de 41 grupos con id canónico (69 de 71 ejercicios; T517 asigna cada máquina Impulse/Matrix por `exerciseId` exacto, sin fusionar por marca); sin resolver: "Máquina" genérica y el accesorio de polea (no es implemento de carga) — `docs/EQUIPMENT_INCREMENT_INVENTORY.md` |
 | Incrementos de equipo | solo valores escritos por el Coach; ninguno en el repositorio. Modelo: ejercicio > sede+equipo > equipo compartido > sin resolver, en `coaches/{uid}.equipmentIncrements` y `exercises/{id}.loadIncrement` |
 | Cola de equipos del Coach | modal "Equipos" + `docs/EQUIPMENT_ACTIVATION_READINESS.md` |
@@ -71,13 +73,13 @@ futura genuinamente desconocida.
 | Reproducción en sombra | `docs/SHADOW_REPLAY_REPORT.md` (15 escenarios sintéticos, motivos de bloqueo) |
 | Ciencia sin resolver | solo bloquea ramas D/E (`SCIENCE_POLICY_UNRESOLVED`); Reglas A y C independientes; serie representativa = supuesto global provisional |
 
-Falta antes de activar: (1) el Coach carga incrementos reales de equipo, (2) decisiones de ciencia: D/E, precedencia C/E, serie representativa, (3) validar el runner en Windows.
+Falta antes de activar: (1) el Coach carga incrementos reales de equipo (`docs/EQUIPMENT_DATA_REQUIRED_NEXT.md`), (2) decisión explícita del director de cambiar la bandera y activar el canario. Las decisiones D/E, C→E y serie representativa (última serie de trabajo ESTÁNDAR) están cerradas como política de producto; el runner de Windows es `NON_BLOCKING_TECHNICAL_PENDING`.
 
 Estado detallado y verificable: `docs/AUTO_APPLY_READINESS.md`, `docs/AUTO_APPLY_ACTIVATION_CHECKLIST.md` (T522), búsqueda de fuentes `docs/PROGRESSION_SCIENCE_SOURCE_SEARCH.md` y opciones de producto `docs/PROGRESSION_PRODUCT_DECISIONS_PENDING.md` (T521).
 
 ## Guardia de activación (T513)
 
-`verifyActivationPreconditions` re-verifica 18 hechos directamente (cliente exacto, plan activo exacto, PID exacto, exposición origen válida,
+`verifyActivationPreconditions` re-verifica 19 hechos directamente (cliente exacto, plan activo exacto, PID exacto, exposición origen válida,
 exposición destino exacta, destino no iniciado, plan sin cambios, sin override del Coach, sin conflicto de seguridad, evidencia elegible,
 dirección consistente, magnitud resuelta, identidad de equipo, incremento resuelto, unidad compatible, carga físicamente realizable,
 clave de idempotencia válida, contexto de transacción vigente). `canApply` exige `guard.ok` además de la bandera y de no tener bloqueos;

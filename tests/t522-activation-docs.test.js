@@ -25,16 +25,16 @@ test('T522.2 the checklist contains every required item and only claims what the
   assert.ok(line('Validación del runner T478').startsWith('- [ ]') && /NON_BLOCKING_TECHNICAL_PENDING/.test(line('Validación del runner T478')), 'Windows is never marked PASS');
   assert.ok(line('NUMERIC_APPLY_ENABLED').startsWith('- [ ]'));
   assert.ok(line('Canario').startsWith('- [x]') && line('Reversión').startsWith('- [x]'));
-  assert.ok(/10 de 15 cumplidos; pendientes bloqueantes: 4/.test(c) && /NO se activa/.test(c));
+  assert.ok(/17 de 22 cumplidos; pendientes bloqueantes: 4/.test(c) && /NO se activa/.test(c));
 });
 
 test('T522.3 the readiness report uses only static / synthetic evidence and states the flag', () => {
   const r = read('docs/AUTO_APPLY_READINESS.md');
   assert.ok(/no hay métricas de producción/.test(r));
-  for (const t of ['39 / 41', '69 / 71', '0 / 39', 'NON_BLOCKING_TECHNICAL_PENDING', 'false (apagada en los 3 módulos)', 'inexistente', 'LAST_STANDARD_WORKING_SET', 'CÓDIGO / POLÍTICA', 'DATOS REALES DE EQUIPO', 'Bloqueos científicos abiertos | 0']) assert.ok(r.includes(t), t);
+  for (const t of ['39 / 41', '69 / 71', '0 / 39', 'NON_BLOCKING_TECHNICAL_PENDING', 'false (apagada en los 4 módulos)', 'solo alcanzable con la bandera activa', 'LAST_STANDARD_WORKING_SET', 'CÓDIGO / POLÍTICA', 'DATOS REALES DE EQUIPO', 'Bloqueos científicos abiertos | 0']) assert.ok(r.includes(t), t);
   const f = gen.facts();
   assert.deepEqual([f.resolvedGroups, f.groups, f.exercisesWithIdentity, f.exercises, f.configured, f.readyGroups], [39, 41, 69, 71, 0, 0]);
-  assert.equal(f.rollback, true); assert.equal(f.audit, true); assert.deepEqual(f.flag, [false, false, false]);
+  assert.equal(f.rollback, true); assert.equal(f.audit, true); assert.deepEqual(f.flag, [false, false, false, false]);
 });
 
 test('T522.4 Windows validation: PENDING record; the recorder refuses to run off Windows (no emulation)', () => {
@@ -56,5 +56,5 @@ test('T522.5 the runner keeps its Windows-specific handling (static check only; 
 
 test('T522.6 the activation flag is untouched by this tooling', () => {
   for (const f of ['scripts/generate-activation-docs.cjs', 'scripts/record-windows-validation.cjs']) assert.ok(!/NUMERIC_APPLY_ENABLED\s*=\s*true/.test(read(f)), f);
-  assert.deepEqual(gen.facts().flag, [false, false, false]);
+  assert.deepEqual(gen.facts().flag, [false, false, false, false]);
 });

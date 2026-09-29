@@ -514,7 +514,7 @@ var ACTIVE_GYM_ID = '';
 var ACTIVE_GYM_NAME = '';
 var EXERCISE_HISTORY = {}; // { "nombre_lower": {load, reps, rir, unit, updatedAt} } — historial por ejercicio
 var ACTIVE_PLAN_ID   = null; // ID del plan activo en Firestore — detecta cambio de plan
-var LIFECYCLE_STATE = { uid: null, planId: null, planDoc: null, records: {}, overlays: {}, interventions: [], consumeBusy: {} }; // T533: solo se llena con NUMERIC_APPLY_ENABLED=true (apagado en producción)
+var LIFECYCLE_STATE = { uid: null, planId: null, planDoc: null, records: {}, overlays: {}, interventions: [], consumeBusy: {} }; // T533: solo se llena con la bandera de aplicación encendida (apagada en producción)
 var CALIB_VOLUMETRICA = null; // Módulo A Ehrenstein — calibración volumétrica {VME_individual, VMR_individual}
 var CLIENT_ADVANCED = null; // módulos opcionales, read-only y filtrados por visibilidad explícita
 var _wakeLock        = null; // Screen Wake Lock — mantenida solo durante el tab de entreno

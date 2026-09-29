@@ -21,6 +21,13 @@ function build() {
     '3. Importar con la herramienta masiva (todo o nada; vista previa de impacto antes de guardar).', '',
     '## Prioridad por cobertura de ejercicios', '', '| # | Equipo | Ejercicios | Cobertura acum. | Tipo de dato a completar |', '|---|---|---|---|---|'];
   ranked.forEach((r, i) => { acc += r.exerciseCount; lines.push('| ' + (i + 1) + ' | ' + r.name + ' | ' + r.exerciseCount + ' | ' + Math.round(100 * acc / total) + '% | ' + (/barra ol/i.test(r.name) ? 'barra + disco mínimo + unidad' : 'kind + paso/cargas + unidad') + ' |'); });
+  lines.push('', '## Solicitud mínima: los dos primeros equipos (' + ranked.slice(0, 2).map(r => r.name).join(' + ') + ' = ' + Math.round(100 * (ranked[0].exerciseCount + ranked[1].exerciseCount) / total) + '% de los ejercicios)', '',
+    'No se pre-llena ningún valor físico: todo debe salir de la realidad del gimnasio. Usa la plantilla (`docs/equipment-increments-template.csv`, filas `functional-dumbbells` y `functional-olympic-barbell`, `scope` = SHARED).', '',
+    '| Equipo (`equipmentId`) | `kind` | Campos obligatorios | Opcionales |', '|---|---|---|---|',
+    '| Mancuernas (`functional-dumbbells`) | `AVAILABLE_LOADS` **o** `STEP` (el que describa la realidad) | `unit` (KG o LB) + `loads` (todos los pesos de mancuerna disponibles, separados por espacio) — o, con `STEP`: `unit` + `step` (salto constante entre mancuernas consecutivas) | `min`, `max` (solo con `STEP`) |',
+    '| Barra olímpica (`functional-olympic-barbell`) | `PLATE_LOADED_BAR` | `unit` (KG o LB) + `barWeight` (barra vacía) + `smallestPlate` (el disco más pequeño que se carga POR LADO; el salto mínimo resultante es 2 × ese disco) | `max` (carga máxima) |', '',
+    'Si en algún gimnasio los valores difieren, indica `scope` = GYM y el `gymId`. Lo que no se sepa se deja en blanco (el equipo queda sin resolver y el candidato sigue bloqueado; nunca se estima).', '',
+    'Con esos dos equipos configurados, los candidatos de carga de los ejercicios que los usan pasan de `BLOCKED_EQUIPMENT_DATA` a `READY_BUT_DISABLED` (la aplicación real sigue apagada).', '');
   lines.push('', 'Prioridad inmediata: **Mancuernas**, **Barra olímpica**, y luego los equipos siguientes de la tabla. Equipos sin identidad canónica (' + ctx.buildEquipmentQueue({ catalog, config: null }).filter(r => r.identityStatus === 'UNRESOLVED').length + ' grupos) solo se configuran por ejercicio.', '');
   return { ranked, md: lines.join('\n'), csv: tpl.text };
 }

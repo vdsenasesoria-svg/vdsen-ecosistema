@@ -7,6 +7,7 @@ const path = require('node:path');
 const repo = path.resolve(__dirname, '..');
 const req = f => require(path.join(repo, f));
 const consumer = req('assets/progression-application-consumer.js'), shadow = req('assets/progression-auto-apply-shadow.js'), policy = req('assets/progression-magnitude-policy.js');
+const effective = req('assets/progression-effective-prescription.js');
 const ctxMod = req('assets/equipment-context.js'), catalog = req('assets/exercise-visual-catalog.js'), replayMod = req('scripts/replay-application-readiness.cjs');
 const readFile = f => fs.readFileSync(path.join(repo, f), 'utf8');
 const win = JSON.parse(readFile('docs/windows-validation.json'));
@@ -28,9 +29,24 @@ function facts() {
   const rollback = rb({}).wouldRevert === true && rb({ entries: { log_2_0_0_s0: { done: true } } }).wouldRevert === false;
   const coachSrc = readFile('vdsen-coach.html');
   const audit = ['_dryRunLine', 'openEquipmentReadinessQueue', 'readiness.preview'].every(s => coachSrc.includes(s));
-  const flag = [shadow.NUMERIC_APPLY_ENABLED, policy.NUMERIC_APPLY_ENABLED, consumer.NUMERIC_APPLY_ENABLED];
+  const flag = [shadow.NUMERIC_APPLY_ENABLED, policy.NUMERIC_APPLY_ENABLED, consumer.NUMERIC_APPLY_ENABLED, effective.NUMERIC_APPLY_ENABLED];
+  // T535: lifecycle readiness is DERIVED from live module facts (never asserted by hand)
+  const T = shadow.ALLOWED_TRANSITIONS, has = (k, fn) => typeof consumer[fn] === 'function';
+  const clientSrc = readFile('vdsen-cliente.html');
+  const applyBlocked = shadow.lifecycleTransition({ state: 'PENDING', revision: 1, events: [] }, 'APPLIED', { expectedRevision: 1, operationKey: 'x', at: 't' }).reasonCode === 'NUMERIC_APPLY_DISABLED';
+  const READY = 'READY_BEHIND_DISABLED_FLAG';
+  const lifecycle = {
+    states: Object.keys(shadow.STATES),
+    applied: ['APPLIED', 'CONSUMED', 'OVERRIDDEN', 'REVERTED'].every(k => shadow.STATES[k]) && applyBlocked && has('x', 'applyOverlayTransaction') && T.PENDING.includes('APPLIED') ? READY : 'NOT_READY',
+    clientConsumer: typeof effective.resolveEffective === 'function' && ['_resolveOverlayForExercise', '_maybeConsumeOverlays', '_autoAdjustHtml', '_withOverlayRest'].every(n => clientSrc.includes('function ' + n + '(')) ? READY : 'NOT_READY',
+    rollback: has('x', 'revertOverlayTransaction') && has('x', 'planReversal') && rollback ? 'READY' : 'NOT_READY',
+    consumption: has('x', 'consumeOverlayTransaction') && T.APPLIED.includes('CONSUMED') ? 'READY' : 'NOT_READY',
+    override: has('x', 'overrideOverlayTransaction') && T.APPLIED.includes('OVERRIDDEN') ? 'READY' : 'NOT_READY',
+    stale: has('x', 'staleOverlayTransaction') && T.APPLIED.includes('STALE') ? 'READY' : 'NOT_READY',
+    canary: has('x', 'planApplication') && typeof consumer.inCanaryScope === 'function' ? 'READY_DISABLED' : 'NOT_READY',
+    emulator: fs.existsSync(path.join(repo, 'tests/t532-lifecycle-emulator.cjs')), applyBlocked };
   return { queue, exercises, groups: queue.length, resolvedGroups: resolvedGroups.length, unresolvedGroups, exercisesWithIdentity, configured: configured.length,
-    readyGroups: readyGroups.length, exercisesReady, replay, canary, rollback, audit, flag, science: policy.SCIENCE_GAPS.map(x => x.id) };
+    readyGroups: readyGroups.length, exercisesReady, replay, canary, rollback, audit, flag, lifecycle, science: policy.SCIENCE_GAPS.map(x => x.id) };
 }
 
 const box = ok => ok ? '[x]' : '[ ]';
@@ -50,9 +66,16 @@ function checklist(f) {
     [true, 'Seguridad despejada', 'Por candidato: `SAFETY_CONFLICT` / `READINESS_VETO` (t492, t512).'],
     [!!(f.canary && f.canary.state === 'READY_BUT_DISABLED'), 'Canario sintético `READY_BUT_DISABLED`', 'Estado del canario en esta generación: ' + (f.canary && f.canary.state) + ' (t513, `docs/SHADOW_REPLAY_REPORT.md`).'],
     [win.status === 'VALIDATED', 'Validación del runner T478 en Windows (WINDOWS_HARNESS_VALIDATION)', (win.status === 'VALIDATED' ? '**VALIDATED**' : '**NON_BLOCKING_TECHNICAL_PENDING** (registro: ' + win.status + ')') + (win.recordedAt ? ' (' + win.recordedAt + ')' : '') + '. No bloquea la activación de producto; la validación en Linux sigue siendo obligatoria y pasa. Se valida con `node scripts/record-windows-validation.cjs` en Windows; Linux no lo emula y no se marca PASS.', true],
-    [false, '`NUMERIC_APPLY_ENABLED` cambiado intencionalmente', 'Actualmente `' + (flagOff ? 'false' : 'INESPERADO') + '` en los tres módulos. **No se cambia en esta ejecución.**'],
-    [f.rollback, 'Reversión verificada', '`planReversal` revierte antes de que empiece la exposición destino y se bloquea después (t493, verificado al generar).'],
-    [f.audit, 'Auditoría visible para el Coach', 'Línea dry-run con clase de vista rápida, cola de equipos y matriz de preparación en el Monitor (t494, t510, t520).']
+    [false, '`NUMERIC_APPLY_ENABLED` cambiado intencionalmente', 'Actualmente `' + (flagOff ? 'false' : 'INESPERADO') + '` en los cuatro módulos (política, sombra, consumidor y prescripción efectiva). **No se cambia en esta ejecución.**'],
+    [f.rollback, 'Reversión verificada', 'ROLLBACK: **' + f.lifecycle.rollback + '** — `revertOverlayTransaction` (transaccional, `expectedRevision`) revierte antes de que empiece la exposición destino y se rechaza después (t531, t532).'],
+    [f.lifecycle.applied === 'READY_BEHIND_DISABLED_FLAG', 'Ciclo de vida APPLIED (PENDING→APPLIED→CONSUMED/OVERRIDDEN/REVERTED/STALE)', 'APPLIED LIFECYCLE: **' + f.lifecycle.applied + '** — estados ' + f.lifecycle.states.join(', ') + '; transiciones explícitas y terminales; con la bandera apagada `APPLIED` no puede crearse (t529, t531).'],
+    [f.lifecycle.clientConsumer === 'READY_BEHIND_DISABLED_FLAG', 'Consumidor de overlay en el cliente', 'CLIENT OVERLAY CONSUMER: **' + f.lifecycle.clientConsumer + '** — prescripción efectiva = plan base + overlay elegible (SEGURIDAD > override exacto del Coach > overlay > base); LOGS ejecutados separados (t530, t533).'],
+    [f.lifecycle.consumption === 'READY', 'Consumo (APPLIED→CONSUMED)', 'CONSUMPTION: **' + f.lifecycle.consumption + '** — solo tras la primera serie de trabajo PERSISTIDA del PID exacto; idempotente (t531, t532).'],
+    [f.lifecycle.override === 'READY', 'Override del Coach tras aplicar', 'OVERRIDE: **' + f.lifecycle.override + '** — decisión exacta posterior al cálculo y antes del inicio → OVERRIDDEN (t531, t532, t534).'],
+    [f.lifecycle.stale === 'READY', 'Obsolescencia tras aplicar', 'STALE: **' + f.lifecycle.stale + '** — plan reemplazado / PID o exposición invalidados antes del inicio (t531, t532).'],
+    [f.lifecycle.emulator, 'Concurrencia con Firestore Emulator real', '11 escenarios transaccionales en `tests/t532-lifecycle-emulator.cjs` (dos dispositivos, carreras override/revert/plan, consumo duplicado, callbacks tardíos, reintentos, escrituras denegadas).'],
+    [f.lifecycle.canary === 'READY_DISABLED', 'Alcance de canario integrado al ciclo de vida', 'CANARY: **' + f.lifecycle.canary + '** — `autoApplyCanary` se re-lee DENTRO de la transacción; fuera de alcance/ausente/deshabilitado → nunca APPLIED (t526, t531).'],
+    [f.audit, 'Auditoría visible para el Coach', 'Línea dry-run con clase de vista rápida, cola de equipos y matriz de preparación en el Monitor (t494, t510, t520); ciclo de vida completo APPLIED/CONSUMED/OVERRIDDEN/REVERTED/STALE con antes→después, regla, equipo, marcas de tiempo y acción del Coach (t534).']
   ];
   const done = items.filter(i => i[0]).length, blocking = items.filter(i => !i[0] && !i[3]);
   const L = ['# Lista de verificación de activación de la auto-aplicación', '',
@@ -85,8 +108,18 @@ function readiness(f) {
     '| Repetición sintética | ' + s.candidates + ' escenarios: ' + s.readyButDisabled + ' READY_BUT_DISABLED · ' + s.coachReviewState + ' COACH_REVIEW_REQUIRED · ' + s.blocked + ' bloqueados · ' + s.executable + ' ejecutables |',
     '| Bloqueados por equipo / revisión del Coach / otra política | ' + s.equipmentBlocked + ' / ' + s.coachReview + ' / ' + s.scienceBlocked + ' |',
     '| Validación de plataforma (Windows T478) | NON_BLOCKING_TECHNICAL_PENDING (registro: ' + win.status + ') |',
-    '| Bandera `NUMERIC_APPLY_ENABLED` | ' + (flagOff ? 'false (apagada en los 3 módulos)' : 'INESPERADO') + ' |',
-    '| Estado APPLIED | inexistente |', '',
+    '| Bandera `NUMERIC_APPLY_ENABLED` | ' + (flagOff ? 'false (apagada en los 4 módulos)' : 'INESPERADO') + ' |',
+    '| Estado APPLIED | solo alcanzable con la bandera activa (sandbox de pruebas); con la bandera apagada la transición se rechaza (`NUMERIC_APPLY_DISABLED`) |', '',
+    '### Ciclo de vida de la aplicación', '',
+    '| Componente | Estado |', '|---|---|',
+    '| APPLIED LIFECYCLE | ' + f.lifecycle.applied + ' |',
+    '| CLIENT OVERLAY CONSUMER | ' + f.lifecycle.clientConsumer + ' |',
+    '| ROLLBACK | ' + f.lifecycle.rollback + ' |',
+    '| CONSUMPTION | ' + f.lifecycle.consumption + ' |',
+    '| OVERRIDE | ' + f.lifecycle.override + ' |',
+    '| STALE | ' + f.lifecycle.stale + ' |',
+    '| CANARY | ' + f.lifecycle.canary + ' |',
+    '| Concurrencia (Emulator real) | ' + (f.lifecycle.emulator ? 'cubierta (`tests/t532-lifecycle-emulator.cjs`)' : 'FALTA') + ' |', '',
     '## 2. Preparación de DATOS REALES DE EQUIPO', '',
     '| Métrica | Valor |', '|---|---|',
     '| Cobertura de identidad de equipo (grupos) | ' + f.resolvedGroups + ' / ' + f.groups + ' |',
@@ -94,7 +127,7 @@ function readiness(f) {
     '| Cobertura de incrementos (equipos con incremento) | ' + f.configured + ' / ' + (f.groups - f.unresolvedGroups.length) + ' |',
     '| Ejercicios del catálogo listos por equipo (LOAD) | ' + f.exercisesReady + ' / ' + f.exercises + ' |',
     '| Candidatos LOAD ejecutables con el catálogo real | 0 (sin incrementos: sin redondeo implícito, sin respaldo por tipo de equipo) |', '',
-    '**Bloqueo operativo principal restante: incrementos reales de equipo (datos del Coach).**', '',
+    '**Bloqueo operativo principal restante: incrementos reales de equipo (datos del Coach).** Código, política, ciclo de vida, consumidor del cliente y auditoría del Coach están listos detrás de la bandera apagada.', '',
     '## Principales motivos de bloqueo o revisión (sintético)', '', '| Motivo | Candidatos |', '|---|---|'];
   top.forEach(([k, v]) => L.push('| ' + k + ' | ' + v + ' |'));
   L.push('', '## Equipos que más desbloquearían (ranking por uso en el catálogo)', '', '| # | Equipo | Ejercicios | Estado |', '|---|---|---|---|');
