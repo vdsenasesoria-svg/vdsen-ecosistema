@@ -35,10 +35,12 @@ function run(exposures, extra = {}) {
     plan, prescription, exposures, context: {} }, extra));
 }
 const two = (last, first) => [exposure(1, 0, { rirReal: 2 }), exposure(1, 2, last, first)];
+// Two exposures that show the SAME signal (T492: direction must be confirmed by the previous exposure).
+const pair = (last, first) => [exposure(1, 0, last, first), exposure(1, 2, last, first)];
 const raw = (d, dim) => d.candidates.find(c => c.dimension === dim);
 
 test('1. RIR +1 with target RIR 1 -> +1 rep inside the range (shadow)', () => {
-  const d = run(two({ rirPrescribed: 1, rirReal: 2, reps: 10 }, { rirPrescribed: 1 }));
+  const d = run(pair({ rirPrescribed: 1, rirReal: 2, reps: 10 }, { rirPrescribed: 1 }));
   assert.equal(d.ruleId, 'A'); assert.equal(d.dimension, 'REPS');
   assert.equal(raw(d, 'REPS').rawCandidate, 11); assert.equal(raw(d, 'REPS').finalCandidate, 11);
   assert.equal(d.eligible, true); assert.equal(d.actionable, false);
@@ -73,7 +75,7 @@ test('4. incomplete reps (RIR evidence absent) -> -2 reps OR -5% per missing rep
 });
 
 test('5. correct RIR + incomplete reps -> +30 s rest first; E not combined', () => {
-  const d = run(two({ reps: 9, rirReal: 2 }));
+  const d = run(pair({ reps: 9, rirReal: 2 }));
   assert.equal(d.ruleId, 'C'); assert.equal(d.dimension, 'REST');
   assert.equal(d.candidates[0].deltaSeconds, 30); assert.equal(d.candidates[0].rawCandidate, 120);
   assert.equal(d.collision.classification, 'AMBIGUOUS');
@@ -100,7 +102,7 @@ test('7. one comparable exposure -> not eligible', () => {
 });
 
 test('8. two comparable exposures -> evidence threshold satisfied', () => {
-  const d = run(two({ rirReal: 3 }));
+  const d = run(pair({ rirReal: 3 }));
   assert.equal(d.comparableExposureCount, 2); assert.equal(d.eligible, true);
   assert.ok(!d.reasonCodes.includes('INSUFFICIENT_COMPARABLE_EXPOSURES'));
 });
@@ -174,15 +176,15 @@ test('13. rep bounds never expand the prescribed range', () => {
 });
 
 test('14. missing equipment increment -> raw load exists, final actionable load blocked', () => {
-  const d = run(two({ rirReal: 3 }));
+  const d = run(pair({ rirReal: 3 }));
   const c = raw(d, 'LOAD');
   assert.equal(c.rawCandidate, 102.5); assert.equal(c.finalCandidate, null);
   assert.deepEqual(c.blockers, ['EQUIPMENT_INCREMENT_POLICY_MISSING']);
   assert.ok(d.reasonCodes.includes('EQUIPMENT_INCREMENT_POLICY_MISSING'));
   assert.equal(d.actionable, false); assert.equal(d.eligible, true);
-  assert.equal(run(two({ rirReal: 3 }), { context: { equipmentIncrement: 2.5 } }).candidates[0].finalCandidate, null,
+  assert.equal(run(pair({ rirReal: 3 }), { context: { equipmentIncrement: 2.5 } }).candidates[0].finalCandidate, null,
     'no increment contract exists: a supplied value is not invented into a policy');
-  const noLoad = run(two({ rirReal: 3, load: 0 }));
+  const noLoad = run(pair({ rirReal: 3, load: 0 }));
   assert.deepEqual(raw(noLoad, 'LOAD').blockers, ['NO_LOAD_BASE']); assert.equal(noLoad.eligible, false);
   assert.ok(!/Math\.round\(.*\/ *(step|inc)/.test(policySource), 'no equipment rounding in the policy');
 });

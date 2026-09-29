@@ -18704,8 +18704,12 @@ El esfuerzo no es negociable.
     function expo(e) { return e && Number.isInteger(e.week) && Number.isInteger(e.dayIndex) ? 'Sem ' + e.week + ' · Día ' + (e.dayIndex + 1) : '—'; }
     var m = item.magnitude || null, status;
     if (item.state === 'PENDING') {
+      var codes = (m && m.reasonCodes) || [];
       status = !m ? 'Sin decisión numérica canónica todavía'
+        : codes.indexOf('SAFETY_CONFLICT') >= 0 ? 'Bloqueado: conflicto de seguridad (dolor/lesión) — revisión del Coach'
+        : m.review ? 'En revisión: dirección conflictiva entre exposiciones'
         : m.unresolved ? 'Bloqueado: rama de política sin resolver (' + m.unresolved + ')'
+        : m.directionConsistency === 'UNCONFIRMED' ? 'Bloqueado: dirección no confirmada por la exposición previa'
         : !m.eligible ? 'Bloqueado: evidencia insuficiente o fuera de rango'
         : 'Candidato resuelto en shadow — no se aplica';
     } else if (item.state === 'REJECTED' && item.reasonCode === 'COACH_KEEP_ORIGINAL') {

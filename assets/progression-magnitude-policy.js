@@ -45,7 +45,10 @@
     REP_RANGE_UPPER_BOUND: 'REP_RANGE_UPPER_BOUND', REP_RANGE_LOWER_BOUND: 'REP_RANGE_LOWER_BOUND',
     NO_LOAD_BASE: 'NO_LOAD_BASE', NO_REST_BASE: 'NO_REST_BASE', NO_ADJUSTMENT_NEEDED: 'NO_ADJUSTMENT_NEEDED',
     NUMERIC_ACTIVATION_DISABLED: 'NUMERIC_ACTIVATION_DISABLED',
-    COACH_REVIEW_VOLUME_INCREASE: 'COACH_REVIEW_VOLUME_INCREASE'
+    COACH_REVIEW_VOLUME_INCREASE: 'COACH_REVIEW_VOLUME_INCREASE',
+    CONFLICTING_DIRECTION_ACROSS_EXPOSURES: 'CONFLICTING_DIRECTION_ACROSS_EXPOSURES',
+    DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE: 'DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE',
+    SAFETY_CONFLICT: 'SAFETY_CONFLICT'
   });
   var PRECEDENCE = Object.freeze({
     EXPLICIT_VDSEN_PRECEDENCE: 'EXPLICIT_VDSEN_PRECEDENCE',
@@ -92,8 +95,10 @@
       var e = entries[key];
       if (!m || !e || typeof e !== 'object' || e.prescriptionExerciseId !== pid) return;
       var gk = m[1] + '_' + m[2] + '_' + m[3];
+      var ps = entries['postsession_' + m[1] + '_' + m[2]];
+      var pain = !!(ps && ((ps.articularPain && ps.articularPain.present) || ps.articular === 'si'));
       var g = groups[gk] || (groups[gk] = { week: Number(m[1]), dayIndex: Number(m[2]), exerciseIndex: Number(m[3]),
-        prescriptionExerciseId: pid, planId: scope && scope.planId, clientId: scope && scope.clientId, sets: [] });
+        prescriptionExerciseId: pid, planId: scope && scope.planId, clientId: scope && scope.clientId, sets: [], painFlag: pain });
       g.sets.push({ setIndex: Number(m[4]), load: e.carga, reps: e.reps, unit: e.unit, done: e.done === true,
         rirPrescribed: e.rir, rirReal: e.rir_real, autoFilled: e.autoFilled === true, express: e.express === true,
         ts: e.ts });
@@ -129,7 +134,7 @@
       if (!real.length) return drop(sawAuto ? REASONS.AUTOFILLED_EVIDENCE : sawExpress ? REASONS.EXPRESS_EVIDENCE : REASONS.INVALID_EVIDENCE);
       var last = real[real.length - 1], ts = _time(last.ts);
       if (planEdit !== null && (ts === null || ts < planEdit)) return drop(REASONS.PRESCRIPTION_CHANGED);
-      kept.push({ week: x.week, dayIndex: x.dayIndex, sets: real, unit: String(last.unit || 'KG').toUpperCase() });
+      kept.push({ week: x.week, dayIndex: x.dayIndex, sets: real, unit: String(last.unit || 'KG').toUpperCase(), painFlag: x.painFlag === true });
     });
     var latestUnit = kept.length ? kept[kept.length - 1].unit : null;
     var finalKept = kept.filter(function(x) {
@@ -176,6 +181,32 @@
       autoApplyAllowed: false, evidence: { lastSets: last2.map(function(s) { return { setIndex: s.setIndex, reps: _num(s.reps) }; }) } };
   }
 
+  // ── One classification of the executed evidence into a source rule (A/C/D/E and collisions). It is the
+  // single place the branching lives; evaluate() builds candidates from it and the direction check
+  // reuses it for the previous exposure. ────────────────────────────────────────────────────────────
+  function _classify(reps, repsTarget, rirReal, rirTarget) {
+    var haveRir = rirReal !== null && rirTarget !== null, diff = haveRir ? rirReal - rirTarget : null;
+    if (reps < repsTarget) {
+      if (haveRir && diff === 0) return 'C';
+      if (haveRir && diff < 0) return 'D+E';
+      if (haveRir && diff > 0) return 'A+E';
+      return 'E';
+    }
+    if (!haveRir) return 'NO_RIR';
+    if (diff > 0) return rirTarget >= 1 ? 'A' : 'A_TARGET_RIR_UNDEFINED';
+    if (diff < 0) return 'D';
+    return 'MAINTAIN';
+  }
+  var DIRECTION = { A: 'UP', C: 'REST', D: 'DOWN', E: 'DOWN', 'D+E': 'DOWN', MAINTAIN: 'HOLD' };
+  function _directionOf(rule) { return DIRECTION[rule] || 'UNKNOWN'; }
+  // Decision-set values of an exposure (last executed set, same basis as the latest).
+  function _decisionSet(exposure, prescription) {
+    var sets = exposure.sets, last = sets[sets.length - 1], presSets = (prescription && prescription.sets) || [];
+    var presLast = presSets[Math.min(last.setIndex, presSets.length - 1)] || presSets[presSets.length - 1] || {};
+    var rirTarget = _num(last.rirPrescribed); if (rirTarget === null) rirTarget = _num(presLast.rirTarget);
+    return { reps: _num(last.reps), repsTarget: _num(presLast.repsTarget), rirReal: _num(last.rirReal), rirTarget: rirTarget };
+  }
+
   function evaluate(input) {
     input = input || {};
     var pid = input.prescriptionExerciseId || null, ctx = input.context || {};
@@ -220,9 +251,10 @@
     var prior = cmp.kept.length >= 2 ? cmp.kept[cmp.kept.length - 2] : null;
     if (prior) res.previousExposure = { week: prior.week, dayIndex: prior.dayIndex };
 
-    var incomplete = reps < repsTarget, missingReps = repsTarget - reps;
+    var missingReps = repsTarget - reps;
     var haveRir = rirReal !== null && rirTarget !== null;
     var rirDiff = haveRir ? rirReal - rirTarget : null;
+    var cls = _classify(reps, repsTarget, rirReal, rirTarget);
 
     function unresolved(rules, collisionClass, runtimeOrder, candidates) {
       res.candidates = candidates;
@@ -239,43 +271,41 @@
       return [_repsCandidate('D', repsTarget, -d, range), _loadCandidate('D', load, PCT.D_LOAD * d, -1)];
     }
 
-    if (incomplete) {
-      if (haveRir && rirDiff === 0) {
-        // C vs E: the source text makes rest the FIRST intervention; the runtime Modulo D
-        // evaluates E first. No deterministic combination is authorized.
-        res.ruleId = 'C'; res.dimension = 'REST';
-        var restNow = _num(presLast.restSeconds);
-        res.candidates = [{ dimension: 'REST', ruleId: 'C', deltaSeconds: REST_INCREMENT_SECONDS, previousValue: restNow,
-          rawCandidate: restNow === null ? null : restNow + REST_INCREMENT_SECONDS,
-          finalCandidate: restNow === null ? null : restNow + REST_INCREMENT_SECONDS, boundState: null,
-          blockers: restNow === null ? [REASONS.NO_REST_BASE] : [] }];
-        res.collision = { rules: ['C', 'E'], classification: PRECEDENCE.AMBIGUOUS, runtimeOrder: 'E_BEFORE_C',
-          deferredRule: 'E', note: 'C recorded as first intervention; E not combined automatically' };
-      } else if (haveRir && rirDiff < 0) {
-        unresolved(['D', 'E'], PRECEDENCE.CURRENT_RUNTIME_HEURISTIC, 'E_BEFORE_D',
-          dCandidates().concat(eCandidates()));
-      } else if (haveRir && rirDiff > 0) {
-        unresolved(['A', 'E'], PRECEDENCE.AMBIGUOUS, 'E_BEFORE_A', eCandidates());
-      } else {
-        unresolved(['E'], null, null, eCandidates());
-      }
-    } else if (!haveRir) {
+    if (cls === 'C') {
+      // C vs E: the source text makes rest the FIRST intervention; the runtime Modulo D
+      // evaluates E first. No deterministic combination is authorized.
+      res.ruleId = 'C'; res.dimension = 'REST';
+      var restNow = _num(presLast.restSeconds);
+      res.candidates = [{ dimension: 'REST', ruleId: 'C', deltaSeconds: REST_INCREMENT_SECONDS, previousValue: restNow,
+        rawCandidate: restNow === null ? null : restNow + REST_INCREMENT_SECONDS,
+        finalCandidate: restNow === null ? null : restNow + REST_INCREMENT_SECONDS, boundState: null,
+        blockers: restNow === null ? [REASONS.NO_REST_BASE] : [] }];
+      res.collision = { rules: ['C', 'E'], classification: PRECEDENCE.AMBIGUOUS, runtimeOrder: 'E_BEFORE_C',
+        deferredRule: 'E', note: 'C recorded as first intervention; E not combined automatically' };
+    } else if (cls === 'D+E') {
+      unresolved(['D', 'E'], PRECEDENCE.CURRENT_RUNTIME_HEURISTIC, 'E_BEFORE_D', dCandidates().concat(eCandidates()));
+    } else if (cls === 'A+E') {
+      unresolved(['A', 'E'], PRECEDENCE.AMBIGUOUS, 'E_BEFORE_A', eCandidates());
+    } else if (cls === 'E') {
+      unresolved(['E'], null, null, eCandidates());
+    } else if (cls === 'NO_RIR') {
       res.reasonCodes.push(REASONS.RIR_EVIDENCE_MISSING);
       return res;
-    } else if (rirDiff > 0) {
+    } else if (cls === 'A') {
       res.ruleId = 'A';
       if (rirTarget >= 2) {
         res.dimension = 'LOAD';
         res.candidates = [_loadCandidate('A', load, PCT.A_LOAD * rirDiff, 1)];
-      } else if (rirTarget === 1) {
+      } else {
         res.dimension = 'REPS';
         res.candidates = [_repsCandidate('A', repsTarget, rirDiff, range)];
-      } else {
-        res.reasonCodes.push(REASONS.RULE_A_TARGET_RIR_UNDEFINED);
-        res.reasonCodes.push(REASONS.POLICY_BRANCH_REQUIRES_RESOLUTION);
-        res.unresolved = { code: REASONS.POLICY_BRANCH_REQUIRES_RESOLUTION, rules: ['A'] };
       }
-    } else if (rirDiff < 0) {
+    } else if (cls === 'A_TARGET_RIR_UNDEFINED') {
+      res.ruleId = 'A';
+      res.reasonCodes.push(REASONS.RULE_A_TARGET_RIR_UNDEFINED);
+      res.reasonCodes.push(REASONS.POLICY_BRANCH_REQUIRES_RESOLUTION);
+      res.unresolved = { code: REASONS.POLICY_BRANCH_REQUIRES_RESOLUTION, rules: ['A'] };
+    } else if (cls === 'D') {
       unresolved(['D'], null, null, dCandidates());
     } else {
       res.ruleId = 'MAINTAIN';
@@ -288,8 +318,32 @@
     res.candidates.forEach(function(c) {
       c.blockers.forEach(function(b) { if (res.reasonCodes.indexOf(b) < 0) res.reasonCodes.push(b); });
     });
-    // eligible = evidence threshold met AND one deterministic rule outcome with a candidate.
-    res.eligible = threshold && !res.unresolved && res.candidates.length > 0 && !blocked;
+    // eligible = evidence threshold met AND one deterministic rule outcome with a candidate AND the direction
+    // is confirmed by the previous comparable exposure AND no safety conflict. One unusually good/bad
+    // session never becomes structural authority; conflicting evidence goes to review, never to apply.
+    var direction = _directionOf(cls);
+    res.direction = direction;
+    res.directionConsistency = 'NOT_APPLICABLE';
+    var painFlagged = cmp.kept.slice(-2).some(function(x) { return x.painFlag === true; });
+    if (ctx.safetyConflict === true || painFlagged) {
+      res.reasonCodes.push(REASONS.SAFETY_CONFLICT); threshold = false;
+    }
+    if (prior && (direction === 'UP' || direction === 'DOWN' || direction === 'REST')) {
+      var ps = _decisionSet(prior, input.prescription);
+      var priorDirection = (ps.reps === null || ps.repsTarget === null) ? 'UNKNOWN' : _directionOf(_classify(ps.reps, ps.repsTarget, ps.rirReal, ps.rirTarget));
+      res.previousExposureSignal = priorDirection;
+      if (priorDirection === direction) res.directionConsistency = 'CONSISTENT';
+      else if ((direction === 'UP' && priorDirection === 'DOWN') || (direction === 'DOWN' && priorDirection === 'UP')) {
+        res.directionConsistency = 'CONFLICTING'; res.reasonCodes.push(REASONS.CONFLICTING_DIRECTION_ACROSS_EXPOSURES);
+        res.review = { code: REASONS.CONFLICTING_DIRECTION_ACROSS_EXPOSURES, exposures: [res.previousExposure, { week: latest.week, dayIndex: latest.dayIndex }] };
+      } else {
+        res.directionConsistency = 'UNCONFIRMED'; res.reasonCodes.push(REASONS.DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE);
+      }
+    } else if (direction === 'UP' || direction === 'DOWN' || direction === 'REST') {
+      res.directionConsistency = 'UNCONFIRMED';
+    }
+    var directionOk = res.directionConsistency === 'CONSISTENT' || res.directionConsistency === 'NOT_APPLICABLE';
+    res.eligible = threshold && directionOk && !res.unresolved && res.candidates.length > 0 && !blocked;
     res.actionable = NUMERIC_APPLY_ENABLED && res.eligible &&
       res.candidates.every(function(c) { return c.finalCandidate !== null; });
     return res;
@@ -304,6 +358,8 @@
       ruleAuthority: decision.ruleAuthority, evidenceLevel: decision.evidenceLevel,
       comparableExposureCount: decision.comparableExposureCount,
       unresolved: decision.unresolved ? decision.unresolved.code : null,
+      direction: decision.direction || null, directionConsistency: decision.directionConsistency || null,
+      review: decision.review ? decision.review.code : null,
       candidates: (decision.candidates || []).map(function(c) {
         return { dimension: c.dimension, ruleId: c.ruleId, rawCandidate: c.rawCandidate,
           finalCandidate: c.finalCandidate, deltaSeconds: c.deltaSeconds === undefined ? null : c.deltaSeconds,

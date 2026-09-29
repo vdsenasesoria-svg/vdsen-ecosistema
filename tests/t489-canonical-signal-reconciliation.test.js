@@ -35,7 +35,7 @@ function record(last, action = 'increase_load') {
   const entries = {};
   [[1, 0], [1, 2]].forEach(([w, d]) => [0, 1, 2].forEach(s => {
     entries['log_' + w + '_' + d + '_0_s' + s] = Object.assign({ carga: '100', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2,
-      prescriptionExerciseId: 'pid-A', ts: T0 + d * 1000 + s }, w === 1 && d === 2 && s === 2 ? last : {});
+      prescriptionExerciseId: 'pid-A', ts: T0 + d * 1000 + s }, s === 2 ? last : {}); // both exposures show the same signal
   }));
   return shadow.buildRecord({ clientId: 'c', planId: 'p', activePlanId: 'p', plan, entries, week: 1, dayIndex: 2,
     calculatedAt: '2026-09-27T12:00:00.000Z', sourceMatches: true, sourcePidCount: 1,
