@@ -195,7 +195,7 @@
     return { planId: planId, autoCount: counts.PENDING, counts: counts, items: all.slice(0, 8).map(function(r) {
       return { key: r.key, revision: r.revision, state: r.state, reasonCode: r.reasonCode,
         exerciseNameSnapshot: r.exerciseNameSnapshot, prescriptionExerciseId: r.prescriptionExerciseId,
-        action: r.action, dimension: r.dimension || null,
+        action: r.action, dimension: r.dimension || null, lifecycle: r.lifecycle || null,
         source: r.source, nextExposure: r.nextExposure, updatedAt: r.updatedAt,
         magnitude: (r.magnitude && _policy()) ? _policy().compact(r.magnitude) : null };
     }) };

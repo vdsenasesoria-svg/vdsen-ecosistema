@@ -1591,6 +1591,7 @@
   <script src="assets/progression-equipment-resolver.js"></script>
   <script src="assets/equipment-identity.js"></script>
   <script src="assets/equipment-context.js"></script>
+  <script src="assets/progression-effective-prescription.js"></script>
   <script src="assets/progression-application-consumer.js"></script>
   <script src="assets/progression-auto-apply-shadow.js"></script>
   <script type="module">
@@ -17732,6 +17733,14 @@ El esfuerzo no es negociable.
       }
       if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
     }
+    // T534: APPLIED overlays that a Coach decision / plan change invalidated before their target started become OVERRIDDEN / STALE
+    // (safety valves; with NUMERIC_APPLY_ENABLED=false no APPLIED record exists, so this never runs and never reads).
+    if (autoSummary && autoSummary.planId === (c && c.activePlanId) && autoSummary.counts && autoSummary.counts.APPLIED > 0) {
+      try {
+        autoSummary = await _reconcileAppliedOverlays(clientId, autoSummary.planId, autoSummary);
+      } catch(e) { console.warn('Applied overlay reconciliation failed:', e); }
+      if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
+    }
 
     // Última sesión completada
     let lastDoneW = 0, lastDoneD = 0;
@@ -18920,6 +18929,45 @@ El esfuerzo no es negociable.
       + '<div class="card p-3 mb-3" style="overflow-x:auto"><table style="width:100%;font-size:11px;border-collapse:collapse;min-width:440px"><tbody>'
       + body + '</tbody></table></div>';
   }
+  // T534: lifecycle audit (APPLIED / CONSUMED / OVERRIDDEN / REVERTED / STALE-after-apply). Compact: what changed (before -> after), why (rule), the equipment
+  // resolution used, timestamps and the Coach action. The record itself carries these facts (record.lifecycle), so the feed needs no extra reads.
+  var _LIFECYCLE_LABEL = { PENDING: 'PENDIENTE', APPLIED: 'APLICADA', CONSUMED: 'CONSUMIDA', OVERRIDDEN: 'SUPERADA POR COACH', REVERTED: 'REVERTIDA', STALE: 'OBSOLETA', REJECTED: 'RECHAZADA' };
+  var _LIFECYCLE_DIM = { LOAD: 'carga', REPS: 'reps', REST: 's de descanso' };
+  function _fmtAt(iso) { return iso ? String(iso).replace('T', ' ').slice(0, 16) : '—'; }
+  function _lifecycleLines(item) {
+    var lc = item && item.lifecycle;
+    if (!lc || !lc.overlayKey) return '';
+    var ch = lc.change || {}, tgt = lc.target;
+    var what = (_LIFECYCLE_DIM[ch.dimension] || ch.dimension || '') + ' ' + (ch.previousValue === null || ch.previousValue === undefined ? '—' : ch.previousValue) + ' \u2192 ' + (ch.appliedValue === undefined ? '—' : ch.appliedValue)
+      + (ch.dimension === 'LOAD' && ch.unit ? ' ' + String(ch.unit).toLowerCase() : '');
+    var where = tgt && Number.isInteger(tgt.week) ? 'Sem ' + tgt.week + ' \u00b7 D\u00eda ' + (tgt.dayIndex + 1) : '\u2014';
+    var eq = lc.equipment ? 'Equipo ' + lc.equipment.equipmentId + ' \u00b7 fuente ' + (lc.equipment.source || '\u2014') + (lc.equipment.roundingReason ? ' \u00b7 redondeo ' + lc.equipment.roundingReason : '') : '';
+    var when = 'aplicada ' + _fmtAt(lc.appliedAt)
+      + (lc.consumedAt ? ' \u00b7 consumida ' + _fmtAt(lc.consumedAt) : '') + (lc.overriddenAt ? ' \u00b7 superada ' + _fmtAt(lc.overriddenAt) : '')
+      + (lc.revertedAt ? ' \u00b7 revertida ' + _fmtAt(lc.revertedAt) : '') + (lc.staleAt ? ' \u00b7 obsoleta ' + _fmtAt(lc.staleAt) : '');
+    var coach = lc.intervention ? 'Decisi\u00f3n del Coach: ' + (lc.intervention.action || '\u2014') + ' (' + _fmtAt(lc.intervention.decidedAt) + ')' : lc.staleReason ? 'Motivo: ' + lc.staleReason : '';
+    return '<span style="display:block;font-size:11px;color:#C4FF00">' + _escH(_LIFECYCLE_LABEL[item.state] || item.state) + ' \u00b7 ' + _escH(where) + ' \u00b7 ' + _escH(what) + (ch.ruleId ? ' \u00b7 regla ' + _escH(ch.ruleId) : '') + '</span>'
+      + '<span style="display:block;font-size:10px;color:#888">' + _escH(when) + '</span>'
+      + (eq ? '<span style="display:block;font-size:10px;color:#888">' + _escH(eq) + '</span>' : '')
+      + (coach ? '<span style="display:block;font-size:10px;color:#888">' + _escH(coach) + '</span>' : '');
+  }
+  // Reconciles APPLIED overlays whose target has NOT started: an exact Coach decision -> OVERRIDDEN; plan replaced / target invalidated -> STALE.
+  async function _reconcileAppliedOverlays(clientId, planId, summary) {
+    var cons = window.VDSEN_APPLICATION_CONSUMER, mesoSnap = await getDoc(doc(db, 'logs', clientId, 'mesos', planId));
+    if (!cons || !mesoSnap.exists()) return summary;
+    var recs = mesoSnap.data().progressionApplications || {}, latest = summary;
+    var keys = Object.keys(recs).filter(function(k) { return recs[k] && recs[k].state === 'APPLIED'; });
+    for (var i = 0; i < keys.length; i++) {
+      var res = await runTransaction(db, async function(tx) {
+        var refs = { meso: doc(db, 'logs', clientId, 'mesos', planId), root: doc(db, 'logs', clientId), plan: doc(db, 'plans', planId), client: doc(db, 'clients', clientId) };
+        var input = { recordKey: keys[i], clientId: clientId, now: new Date().toISOString(), actorId: currentCoach && currentCoach.uid };
+        var o = await cons.overrideOverlayTransaction(tx, refs, input, {});
+        return o.written ? o : cons.staleOverlayTransaction(tx, refs, input, {});
+      });
+      if (res && res.written && res.summary) latest = res.summary;
+    }
+    return latest;
+  }
   // Phase 2A: a shadow numeric candidate is an observation, never an applied adjustment.
   function _renderShadowMagnitude(item) {
     var m = item.state === 'PENDING' ? item.magnitude : null;
@@ -18963,6 +19011,14 @@ El esfuerzo no es negociable.
         : 'Candidato resuelto en shadow — no se aplica';
     } else if (item.state === 'REJECTED' && item.reasonCode === 'COACH_KEEP_ORIGINAL') {
       status = 'Decisión del Coach: mantener la prescripción original';
+    } else if (item.state === 'APPLIED') {
+      status = 'Aplicada a la exposición destino — el atleta la ve como Autoajuste VDSEN; se puede revertir hasta que empiece';
+    } else if (item.state === 'CONSUMED') {
+      status = 'Consumida: la exposición destino ya empezó con esta prescripción efectiva (no se altera retroactivamente)';
+    } else if (item.state === 'OVERRIDDEN') {
+      status = 'Superada por una decisión del Coach: la prescripción base/Coach manda';
+    } else if (item.state === 'REVERTED') {
+      status = 'Revertida por el Coach: la prescripción base vuelve a ser la efectiva';
     } else if (item.state === 'STALE') {
       status = 'Obsoleta (' + (item.reasonCode || 'sin motivo') + ') — no es un candidato vigente';
     } else {
@@ -19035,8 +19091,10 @@ El esfuerzo no es negociable.
     var items = Array.isArray(summary.items) ? summary.items : [];
     var rows = items.map(function(item) {
       if (!/^v1_[a-f0-9]{16}$/.test(item.key || '') || !Number.isInteger(item.revision)) return '';
-      var label = item.state === 'PENDING' ? 'PENDIENTE' : item.state === 'STALE' ? 'OBSOLETA' : 'RECHAZADA';
-      var button = item.state === 'PENDING'
+      var label = _LIFECYCLE_LABEL[item.state] || 'RECHAZADA';
+      var button = item.state === 'APPLIED'
+        ? '<button type="button" data-shadow-action="REVERT_APPLIED" data-shadow-key="' + item.key + '" data-shadow-revision="' + item.revision + '">Revertir aplicaci\u00f3n</button>'
+        : item.state === 'PENDING'
         ? '<button type="button" data-shadow-action="KEEP_ORIGINAL" data-shadow-key="' + item.key + '" data-shadow-revision="' + item.revision + '">Mantener original</button>'
         : item.state === 'REJECTED' && item.reasonCode === 'COACH_KEEP_ORIGINAL'
           ? '<button type="button" data-shadow-action="REVERT_DECISION" data-shadow-key="' + item.key + '" data-shadow-revision="' + item.revision + '">Revertir decisión</button>' : '';
@@ -19045,6 +19103,7 @@ El esfuerzo no es negociable.
         + _escH(item.dimension || 'EVALUACIÓN') + ' · ' + label + '</span>'
         + '<span style="display:block;color:#888;font-size:11px">' + _escH(item.reasonCode || '') + '</span>'
         + _shadowAuditLines(item)
+        + _lifecycleLines(item)
         + _renderShadowMagnitude(item)
         + (item.state === 'PENDING' && dryRuns ? _dryRunLine(dryRuns[item.key]) : '')
         + '<button type="button" data-shadow-action="OPEN" data-shadow-key="' + item.key + '">Abrir ejercicio</button> '
@@ -19057,6 +19116,27 @@ El esfuerzo no es negociable.
         : '<p class="text-xs text-[#888]">Sin decisiones registradas.</p>') + '</section>';
   }
 
+  // T534: transactional reversal of an APPLIED overlay (only before its target exposure starts; exact revision). Removes effect, keeps the audit trail.
+  async function _onRevertApplied(ctx, item, expectedRevision, button) {
+    var cons = window.VDSEN_APPLICATION_CONSUMER, clientId = ctx.clientId, planId = ctx.planId;
+    if (!cons) return;
+    _shadowActionBusy = true; button.disabled = true;
+    try {
+      var result = await runTransaction(db, function(tx) {
+        var refs = { meso: doc(db, 'logs', clientId, 'mesos', planId), root: doc(db, 'logs', clientId), client: doc(db, 'clients', clientId) };
+        return cons.revertOverlayTransaction(tx, refs, { recordKey: item.key, clientId: clientId, expectedRevision: expectedRevision, now: new Date().toISOString(),
+          actorId: currentCoach && currentCoach.uid }, { isCurrent: function() { return _detailClientId === clientId; } });
+      });
+      showToast(result.written ? 'Aplicaci\u00f3n revertida.' : 'AUTO: ' + (result.reason || 'No se revirti\u00f3'), !result.written);
+      var cont = document.getElementById('clientDetailTabContent');
+      if (_detailClientId === clientId && _detailActiveTab === 'monitor' && cont) await _renderClientTabMonitor(cont);
+    } catch(e) {
+      if (_detailClientId === clientId) showToast('Error al revertir: ' + e.message, true);
+    } finally {
+      _shadowActionBusy = false;
+      if (_detailClientId === clientId) button.disabled = false;
+    }
+  }
   async function _onShadowAutoAction(action, key, expectedRevision, button) {
     var ctx = _shadowMonitorContext;
     if (!ctx || _detailClientId !== ctx.clientId ||
@@ -19071,7 +19151,8 @@ El esfuerzo no es negociable.
       _deepLinkToExercise(item.exerciseNameSnapshot, item.prescriptionExerciseId, exposureDay);
       return;
     }
-    if (_shadowActionBusy || (action !== 'KEEP_ORIGINAL' && action !== 'REVERT_DECISION')) return;
+    if (_shadowActionBusy || (action !== 'KEEP_ORIGINAL' && action !== 'REVERT_DECISION' && action !== 'REVERT_APPLIED')) return;
+    if (action === 'REVERT_APPLIED') return _onRevertApplied(ctx, item, expectedRevision, button);
     _shadowActionBusy = true;
     button.disabled = true;
     var shadow = window.VDSEN_AUTO_APPLY_SHADOW;

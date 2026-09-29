@@ -415,10 +415,16 @@
     if (!at) return _fail('TIMESTAMP_MISSING');
     var overlay = Object.assign({}, decision.overlay, { status: 'APPLIED', appliedAt: at, operationKey: op });
     var t = shadow.lifecycleTransition(record, 'APPLIED', { expectedRevision: record.revision, operationKey: op, at: at, actorId: input.actorId || null,
-      reasonCode: 'APPLIED_BY_POLICY', patch: { overlayKey: overlay.key, appliedAt: at } });
+      reasonCode: 'APPLIED_BY_POLICY', patch: { overlayKey: overlay.key, appliedAt: at, target: overlay.target,
+        // self-contained audit facts for the Coach feed (before -> after, and the equipment resolution used)
+        change: { dimension: overlay.dimension, previousValue: overlay.previousValue, appliedValue: overlay.appliedValue, unit: overlay.unit, ruleId: overlay.provenance && overlay.provenance.ruleId || null },
+        equipment: overlay.equipmentId ? { equipmentId: overlay.equipmentId, roundingReason: overlay.roundingReason || null,
+          source: overlay.equipmentSnapshot && overlay.equipmentSnapshot.source || null, scope: overlay.equipmentSnapshot && overlay.equipmentSnapshot.scope || null,
+          revision: overlay.equipmentSnapshot ? overlay.equipmentSnapshot.revision : null } : null } });
     if (!t.ok) return _fail(t.reasonCode, { decision: decision });
-    _commitLifecycle(tx, refs, _lifecycleWrite(shadow, meso, record.key, t.record, overlay.key, overlay));
-    return { written: true, overlayKey: overlay.key, decision: decision, record: t.record, overlay: overlay };
+    var w1 = _lifecycleWrite(shadow, meso, record.key, t.record, overlay.key, overlay);
+    _commitLifecycle(tx, refs, w1);
+    return { written: true, overlayKey: overlay.key, decision: decision, record: t.record, overlay: overlay, summary: w1.summary };
   }
 
   // APPLIED -> CONSUMED: only on persisted evidence (LOGS in the meso document, re-read inside the transaction), never on render.
@@ -446,8 +452,9 @@
     var shown = { provenance: sh.provenance, overlayKey: sh.overlayKey, dimension: sh.dimension, previousValue: pair.overlay.previousValue, appliedValue: sh.appliedValue, unit: pair.overlay.unit };
     var tr = _transition(shadow, pair, 'CONSUMED', op, Object.assign({}, input, { reasonCode: 'TARGET_STARTED' }), { consumedAt: at, shownPrescription: shown }, { consumedAt: at, shownPrescription: shown }, null);
     if (tr.fail) return tr.fail;
-    _commitLifecycle(tx, refs, _lifecycleWrite(shadow, st.meso, r.key, tr.record, pair.overlay.key, tr.overlay));
-    return { written: true, overlayKey: pair.overlay.key, record: tr.record, overlay: tr.overlay };
+    var w2 = _lifecycleWrite(shadow, st.meso, r.key, tr.record, pair.overlay.key, tr.overlay);
+    _commitLifecycle(tx, refs, w2);
+    return { written: true, overlayKey: pair.overlay.key, record: tr.record, overlay: tr.overlay, summary: w2.summary };
   }
 
   // What a Coach decision / plan change would do to an APPLIED, not-yet-started overlay. Pure.
@@ -508,8 +515,9 @@
     }
     var tr = _transition(shadow, pair, to, op, Object.assign({}, input, { reasonCode: reason }), patch, Object.keys(patch).reduce(function(o, k) { o[k] = patch[k]; return o; }, {}), null);
     if (tr.fail) return tr.fail;
-    _commitLifecycle(tx, refs, _lifecycleWrite(shadow, st.meso, r.key, tr.record, pair.overlay.key, tr.overlay));
-    return { written: true, overlayKey: pair.overlay.key, record: tr.record, overlay: tr.overlay };
+    var w3 = _lifecycleWrite(shadow, st.meso, r.key, tr.record, pair.overlay.key, tr.overlay);
+    _commitLifecycle(tx, refs, w3);
+    return { written: true, overlayKey: pair.overlay.key, record: tr.record, overlay: tr.overlay, summary: w3.summary };
   }
   function overrideOverlayTransaction(tx, refs, input, guards) { return _removeEffectTransaction(tx, refs, input, guards, 'OVERRIDE'); }
   function revertOverlayTransaction(tx, refs, input, guards) { return _removeEffectTransaction(tx, refs, input, guards, 'REVERT'); }

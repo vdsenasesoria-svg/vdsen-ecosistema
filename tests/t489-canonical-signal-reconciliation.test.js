@@ -27,7 +27,8 @@ vm.createContext(ctx);
 const esc = coach.indexOf('  function _escH(s) {');
 vm.runInContext(coach.slice(esc, coach.indexOf('\n  }\n', esc) + 4), ctx);
 vm.runInContext(coach.slice(coach.indexOf('  var _REVIEW_BRANCH = {'), coach.indexOf('  function _moduloDCanonicalView(')), ctx); // T523 review helpers
-['_shadowAuditLines', '_renderShadowMagnitude', '_renderShadowAutoFeed'].forEach(n => vm.runInContext(fn(n), ctx));
+vm.runInContext(coach.slice(coach.indexOf('  var _LIFECYCLE_LABEL ='), coach.indexOf('  function _lifecycleLines(')), ctx);
+['_lifecycleLines', '_shadowAuditLines', '_renderShadowMagnitude', '_renderShadowAutoFeed'].forEach(n => vm.runInContext(fn(n), ctx));
 
 const T0 = Date.parse('2026-09-27T12:00:00.000Z');
 const plan = { clientId: 'c', weeks: 6, updatedAt: '2026-09-26T00:00:00.000Z', days: [0, 2].map(d => ({ dayIndex: d, exercises: [
