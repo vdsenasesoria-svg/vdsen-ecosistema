@@ -48,8 +48,8 @@ defecto de visualización cuando el Coach omitió RIR (2) o descanso (90 s).
 
 ## Matriz de preparación de aplicación (T504)
 
-`planApplication(...).readiness` lista 11 compuertas en orden fijo: IDENTITY, FRESHNESS, TARGET_EXPOSURE, COACH_OVERRIDE, SAFETY,
-EVIDENCE_COUNT, DIRECTION_CONSISTENCY, MAGNITUDE_BRANCH, EQUIPMENT_INCREMENT, UNIT, TARGET_STARTED. Cada compuerta es PASS / BLOCKED /
+`planApplication(...).readiness` lista 12 compuertas en orden fijo: IDENTITY, FRESHNESS, TARGET_EXPOSURE, COACH_OVERRIDE, SAFETY,
+EVIDENCE_COUNT, DIRECTION_CONSISTENCY, MAGNITUDE_BRANCH, EQUIPMENT_IDENTITY, EQUIPMENT_INCREMENT, UNIT, TARGET_STARTED. `readiness.state` = BLOCKED | READY_BUT_DISABLED | EXECUTABLE. La ciencia sin definir se LOCALIZA (T512): `SCIENCE_POLICY_UNRESOLVED` solo bloquea ramas D/E; las Reglas A y C no se bloquean; la serie representativa es un supuesto global provisional (`globalProvisional`). Cada compuerta es PASS / BLOCKED /
 NOT_EVALUATED / NOT_APPLICABLE con códigos explícitos (`EVIDENCE_COUNT_INSUFFICIENT`, `DIRECTION_CONFLICTING`, `DIRECTION_UNCONFIRMED`,
 `POLICY_BRANCH_REQUIRES_RESOLUTION` + reglas sin resolver, `UNRESOLVED_EQUIPMENT_INCREMENT`, ...). Un candidato es ejecutable solo si todas
 pasan Y la bandera está activa (`executable=false` mientras `NUMERIC_APPLY_ENABLED=false`).

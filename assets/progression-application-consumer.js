@@ -22,13 +22,14 @@
     NUMERIC_APPLY_DISABLED: 'NUMERIC_APPLY_DISABLED',
     NOT_CANONICAL_RECORD: 'NOT_CANONICAL_RECORD', RECORD_NOT_PENDING: 'RECORD_NOT_PENDING',
     CLIENT_MISMATCH: 'CLIENT_MISMATCH', PLAN_MISMATCH: 'PLAN_MISMATCH', PLAN_CHANGED: 'PLAN_CHANGED',
-    PID_NOT_UNIQUE_IN_TARGET: 'PID_NOT_UNIQUE_IN_TARGET', TARGET_EXPOSURE_CHANGED: 'TARGET_EXPOSURE_CHANGED',
+    IDENTITY_UNRESOLVED: 'IDENTITY_UNRESOLVED', TARGET_EXPOSURE_CHANGED: 'TARGET_EXPOSURE_CHANGED',
     TARGET_ALREADY_STARTED: 'TARGET_ALREADY_STARTED', COACH_OVERRIDE: 'COACH_OVERRIDE',
     COACH_KEEP_ORIGINAL: 'COACH_KEEP_ORIGINAL', SAFETY_CONFLICT: 'SAFETY_CONFLICT',
-    NOT_ELIGIBLE: 'NOT_ELIGIBLE', POLICY_BRANCH_REQUIRES_RESOLUTION: 'POLICY_BRANCH_REQUIRES_RESOLUTION',
+    NOT_ELIGIBLE: 'NOT_ELIGIBLE', MAGNITUDE_BRANCH_UNRESOLVED: 'MAGNITUDE_BRANCH_UNRESOLVED',
     UNRESOLVED_EQUIPMENT_INCREMENT: 'UNRESOLVED_EQUIPMENT_INCREMENT', EQUIPMENT_RESOLUTION_MISMATCH: 'EQUIPMENT_RESOLUTION_MISMATCH',
     DIRECTION_NOT_REALIZABLE: 'DIRECTION_NOT_REALIZABLE', UNIT_MISMATCH: 'UNIT_MISMATCH', EQUIPMENT_OUT_OF_RANGE: 'EQUIPMENT_OUT_OF_RANGE',
     EQUIPMENT_INPUT_INVALID: 'EQUIPMENT_INPUT_INVALID',
+    EQUIPMENT_IDENTITY_UNRESOLVED: 'EQUIPMENT_IDENTITY_UNRESOLVED', SCIENCE_POLICY_UNRESOLVED: 'SCIENCE_POLICY_UNRESOLVED',
     EVIDENCE_COUNT_INSUFFICIENT: 'EVIDENCE_COUNT_INSUFFICIENT', DIRECTION_CONFLICTING: 'DIRECTION_CONFLICTING',
     DIRECTION_UNCONFIRMED: 'DIRECTION_UNCONFIRMED', READINESS_VETO: 'READINESS_VETO',
     NO_ACTIONABLE_CANDIDATE: 'NO_ACTIONABLE_CANDIDATE', STRUCTURAL_DIMENSION_NOT_AUTHORIZED: 'STRUCTURAL_DIMENSION_NOT_AUTHORIZED',
@@ -38,14 +39,15 @@
   // T504: every blocker belongs to exactly one readiness gate (fixed order). A candidate is executable only when
   // every gate passes (or is not applicable) AND the activation flag is on.
   var GATES = Object.freeze({
-    IDENTITY: [BLOCKERS.NOT_CANONICAL_RECORD, BLOCKERS.CLIENT_MISMATCH, BLOCKERS.PLAN_MISMATCH, BLOCKERS.PID_NOT_UNIQUE_IN_TARGET],
+    IDENTITY: [BLOCKERS.NOT_CANONICAL_RECORD, BLOCKERS.CLIENT_MISMATCH, BLOCKERS.PLAN_MISMATCH, BLOCKERS.IDENTITY_UNRESOLVED],
     FRESHNESS: [BLOCKERS.PLAN_CHANGED, BLOCKERS.RECORD_NOT_PENDING, BLOCKERS.ALREADY_RECORDED],
     TARGET_EXPOSURE: [BLOCKERS.TARGET_EXPOSURE_CHANGED],
     COACH_OVERRIDE: [BLOCKERS.COACH_OVERRIDE, BLOCKERS.COACH_KEEP_ORIGINAL],
     SAFETY: [BLOCKERS.SAFETY_CONFLICT, BLOCKERS.READINESS_VETO],
     EVIDENCE_COUNT: [BLOCKERS.EVIDENCE_COUNT_INSUFFICIENT],
     DIRECTION_CONSISTENCY: [BLOCKERS.DIRECTION_CONFLICTING, BLOCKERS.DIRECTION_UNCONFIRMED],
-    MAGNITUDE_BRANCH: [BLOCKERS.POLICY_BRANCH_REQUIRES_RESOLUTION, BLOCKERS.NOT_ELIGIBLE, BLOCKERS.NO_ACTIONABLE_CANDIDATE, BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED],
+    MAGNITUDE_BRANCH: [BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED, BLOCKERS.SCIENCE_POLICY_UNRESOLVED, BLOCKERS.NOT_ELIGIBLE, BLOCKERS.NO_ACTIONABLE_CANDIDATE, BLOCKERS.STRUCTURAL_DIMENSION_NOT_AUTHORIZED],
+    EQUIPMENT_IDENTITY: [BLOCKERS.EQUIPMENT_IDENTITY_UNRESOLVED],
     EQUIPMENT_INCREMENT: [BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT, BLOCKERS.DIRECTION_NOT_REALIZABLE, BLOCKERS.EQUIPMENT_OUT_OF_RANGE,
       BLOCKERS.EQUIPMENT_INPUT_INVALID, BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH],
     UNIT: [BLOCKERS.UNIT_MISMATCH],
@@ -55,6 +57,13 @@
   // T505: science/product items that must be closed (director decision) before numeric application may be enabled.
   // Kept in sync with progression-magnitude-policy.js SCIENCE_GAPS (verified by tests).
   var ACTIVATION_PREREQUISITES = Object.freeze(['RULE_D_E_ALTERNATIVE_NOT_DEFINED', 'RULE_C_E_PRECEDENCE_NOT_DEFINED', 'REPRESENTATIVE_SET_NOT_DEFINED']);
+
+  // T512: unsupported science is LOCALIZED: only branches that need a missing rule are blocked. D and E adjustments need the
+  // reps-vs-load alternative; Rule A and Rule C candidates do not. C+E is informational (E deferred, C stands).
+  function _scienceGapsFor(m) {
+    var rules = (m && m.unresolved && m.unresolved.rules) || [];
+    return rules.indexOf('D') >= 0 || rules.indexOf('E') >= 0 ? ['RULE_D_E_ALTERNATIVE_NOT_DEFINED'] : [];
+  }
 
   function _readiness(out, record, m) {
     var blockers = out.blockers, canonical = blockers.indexOf(BLOCKERS.NOT_CANONICAL_RECORD) < 0;
@@ -66,7 +75,7 @@
       var state;
       if (!canonical && g !== 'IDENTITY') state = 'NOT_EVALUATED';
       else if (codes.length) state = 'BLOCKED';
-      else if (g === 'EQUIPMENT_INCREMENT' || g === 'UNIT') state = !candEvaluated ? 'NOT_EVALUATED' : (isLoad ? 'PASS' : 'NOT_APPLICABLE');
+      else if (g === 'EQUIPMENT_IDENTITY' || g === 'EQUIPMENT_INCREMENT' || g === 'UNIT') state = !candEvaluated ? 'NOT_EVALUATED' : (isLoad ? 'PASS' : 'NOT_APPLICABLE');
       else state = 'PASS';
       return { gate: g, state: state, codes: codes };
     });
@@ -74,7 +83,8 @@
     var readyExceptFlag = out.wouldApply === true && real.length === 0 &&
       gates.every(function(x) { return x.state === 'PASS' || x.state === 'NOT_APPLICABLE'; });
     return { gates: gates, readyExceptFlag: readyExceptFlag, executable: readyExceptFlag && NUMERIC_APPLY_ENABLED, numericApplyEnabled: NUMERIC_APPLY_ENABLED,
-      activationPrerequisites: ACTIVATION_PREREQUISITES.slice() };
+      state: !readyExceptFlag ? 'BLOCKED' : (NUMERIC_APPLY_ENABLED ? 'EXECUTABLE' : 'READY_BUT_DISABLED'),
+      activationPrerequisites: ACTIVATION_PREREQUISITES.slice(), localizedScienceGaps: _scienceGapsFor(m), globalProvisional: ['REPRESENTATIVE_SET_NOT_DEFINED'] };
   }
 
   function _time(v) { return typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null; }
@@ -104,7 +114,7 @@
       if (!r || r.resolutionState !== 'RESOLVED' || _num(r.realizableLoad) === null) {
         var byState = { DIRECTION_NOT_REALIZABLE: BLOCKERS.DIRECTION_NOT_REALIZABLE, UNIT_MISMATCH: BLOCKERS.UNIT_MISMATCH,
           OUT_OF_RANGE: BLOCKERS.EQUIPMENT_OUT_OF_RANGE, INVALID_INPUT: BLOCKERS.EQUIPMENT_INPUT_INVALID,
-          UNRESOLVED_EQUIPMENT_INCREMENT: BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT };
+          UNRESOLVED_EQUIPMENT_INCREMENT: BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT, UNRESOLVED_EQUIPMENT_IDENTITY: BLOCKERS.EQUIPMENT_IDENTITY_UNRESOLVED };
         blockers.push(!r ? BLOCKERS.UNRESOLVED_EQUIPMENT_INCREMENT : (byState[r.resolutionState] || BLOCKERS.EQUIPMENT_RESOLUTION_MISMATCH));
         return null;
       }
@@ -141,7 +151,7 @@
       var t = record.nextExposure, pid = record.prescriptionExerciseId;
       var targetDay = (Array.isArray(plan.days) ? plan.days : []).filter(function(d) { return d.dayIndex === t.dayIndex; })[0];
       var matches = ((targetDay && targetDay.exercises) || []).filter(function(e) { return e.prescriptionExerciseId === pid; });
-      if (matches.length !== 1) blockers.push(BLOCKERS.PID_NOT_UNIQUE_IN_TARGET);
+      if (matches.length !== 1) blockers.push(BLOCKERS.IDENTITY_UNRESOLVED);
       if (typeof ctx.resolveNextExposure === 'function') {
         var fresh = ctx.resolveNextExposure(plan, pid, record.source.week, record.source.dayIndex);
         if (!fresh || fresh.week !== t.week || fresh.dayIndex !== t.dayIndex) blockers.push(BLOCKERS.TARGET_EXPOSURE_CHANGED);
@@ -164,7 +174,7 @@
         if (rc.indexOf('DIRECTION_NOT_CONFIRMED_BY_PRIOR_EXPOSURE') >= 0) specific.push(BLOCKERS.DIRECTION_UNCONFIRMED);
         specific.forEach(function(b) { if (blockers.indexOf(b) < 0) blockers.push(b); });
       }
-      if (m.unresolved) blockers.push(BLOCKERS.POLICY_BRANCH_REQUIRES_RESOLUTION);
+      if (m.unresolved) { blockers.push(BLOCKERS.MAGNITUDE_BRANCH_UNRESOLVED); if (_scienceGapsFor(m).length) blockers.push(BLOCKERS.SCIENCE_POLICY_UNRESOLVED); }
       else if (!m.eligible && !specific.length) blockers.push(BLOCKERS.NOT_ELIGIBLE);
       var cand = (m.unresolved || !m.eligible) ? null : _candidateFor(m, ctx, blockers);
       var key = overlayKey(record);
@@ -194,6 +204,7 @@
     out.audit = { event: out.wouldApply ? 'OVERLAY_WOULD_APPLY' : 'OVERLAY_BLOCKED', at: ctx.now || null, actor: 'SYSTEM_DRY_RUN',
       recordKey: out.recordKey, revision: record && record.revision !== undefined ? record.revision : null, blockers: blockers.slice(),
       overlayKey: out.overlay ? out.overlay.key : null, unresolvedRules: m && m.unresolved ? (m.unresolved.rules || []).slice() : null,
+      scienceGaps: _scienceGapsFor(m),
       collision: m && m.collision ? { rules: (m.collision.rules || []).slice(), classification: m.collision.classification || null } : null };
     return out;
   }

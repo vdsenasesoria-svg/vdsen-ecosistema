@@ -34,7 +34,7 @@ test('T505.2 D/E stays a named unresolved branch with both alternatives and no c
   assert.deepEqual(m.candidates.map(c => c.dimension), ['REPS', 'LOAD', 'REPS', 'LOAD'], 'alternatives kept, none selected');
   assert.ok(m.candidates.every(c => c.finalCandidate === null), 'no final numeric candidate for an unresolved branch');
   const d = plan1(r);
-  assert.ok(d.blockers.includes('POLICY_BRANCH_REQUIRES_RESOLUTION')); assert.deepEqual(d.audit.unresolvedRules, ['D', 'E']); assert.equal(d.overlay, null);
+  assert.ok(d.blockers.includes('MAGNITUDE_BRANCH_UNRESOLVED')); assert.deepEqual(d.audit.unresolvedRules, ['D', 'E']); assert.equal(d.overlay, null);
 });
 
 test('T505.3 C vs E stays AMBIGUOUS: rest is recorded, E is deferred and never combined', () => {

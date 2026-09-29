@@ -122,7 +122,7 @@ test('T493.5 REPS and REST canonical candidates are actionable without equipment
 
 test('T493.6 unresolved policy branches and ineligible evidence never plan an application', () => {
   const dRec = makeRecord({ rir_real: 1 });
-  only(plan1(dRec, { entries: entriesFor({ rir_real: 1 }) }), B.POLICY_BRANCH_REQUIRES_RESOLUTION);
+  only(plan1(dRec, { entries: entriesFor({ rir_real: 1 }) }), [B.MAGNITUDE_BRANCH_UNRESOLVED, B.SCIENCE_POLICY_UNRESOLVED]); // T512: D needs the missing D/E science
   const unconfirmed = shadow.buildRecord({ clientId: 'c', planId: 'p', activePlanId: 'p', plan, week: 1, dayIndex: 2, calculatedAt: '2026-09-27T12:00:00.000Z', sourceMatches: true, sourcePidCount: 1,
     entries: Object.assign(entriesFor({ rir_real: 3 }), { log_1_0_0_s2: { carga: '100', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: 2, prescriptionExerciseId: PID, ts: T0 } }),
     recommendation: { prescriptionExerciseId: PID, exerciseId: 'e', action: 'increase_load', newLoad: 5 } }, 'x');
@@ -138,12 +138,12 @@ test('T493.7 exact client / plan / PID / target-exposure guards', () => {
   assert.ok(plan1(rec, { plan: Object.assign({}, plan, { updatedAt: '2026-09-28T00:00:00.000Z' }) }).blockers.includes(B.PLAN_CHANGED));
   assert.ok(plan1(rec, { plan: Object.assign({}, plan, { updatedAt: null }) }).blockers.includes(B.PLAN_CHANGED));
   const dup = structuredClone(plan); dup.days[0].exercises.push(structuredClone(dup.days[0].exercises[0]));
-  assert.ok(plan1(rec, { plan: dup }).blockers.includes(B.PID_NOT_UNIQUE_IN_TARGET));
+  assert.ok(plan1(rec, { plan: dup }).blockers.includes(B.IDENTITY_UNRESOLVED));
   const gone = structuredClone(plan); gone.days[0].exercises[0].prescriptionExerciseId = 'pid-other';
-  assert.ok(plan1(rec, { plan: gone }).blockers.includes(B.PID_NOT_UNIQUE_IN_TARGET), 'same name, different PID never gains authority');
+  assert.ok(plan1(rec, { plan: gone }).blockers.includes(B.IDENTITY_UNRESOLVED), 'same name, different PID never gains authority');
   const moved = structuredClone(plan); moved.days = moved.days.filter(d => d.dayIndex !== 0);
   const dTarget = plan1(rec, { plan: moved });
-  assert.ok(dTarget.blockers.includes(B.PID_NOT_UNIQUE_IN_TARGET) || dTarget.blockers.includes(B.TARGET_EXPOSURE_CHANGED));
+  assert.ok(dTarget.blockers.includes(B.IDENTITY_UNRESOLVED) || dTarget.blockers.includes(B.TARGET_EXPOSURE_CHANGED));
   assert.ok(plan1(rec, { resolveNextExposure: () => ({ week: 2, dayIndex: 2 }) }).blockers.includes(B.TARGET_EXPOSURE_CHANGED));
 });
 

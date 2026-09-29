@@ -18931,14 +18931,15 @@ El esfuerzo no es negociable.
     if (!decision) return '';
     var labels = { NUMERIC_APPLY_DISABLED: 'aplicación numérica desactivada', NOT_CANONICAL_RECORD: 'registro no canónico',
       RECORD_NOT_PENDING: 'registro no vigente', CLIENT_MISMATCH: 'cliente distinto', PLAN_MISMATCH: 'plan distinto',
-      PLAN_CHANGED: 'plan editado después de la evidencia', PID_NOT_UNIQUE_IN_TARGET: 'ejercicio no único/ausente en la exposición destino',
+      PLAN_CHANGED: 'plan editado después de la evidencia', IDENTITY_UNRESOLVED: 'ejercicio no único/ausente en la exposición destino',
       TARGET_EXPOSURE_CHANGED: 'la exposición destino cambió', TARGET_ALREADY_STARTED: 'la exposición destino ya empezó',
       COACH_OVERRIDE: 'decisión del Coach posterior', COACH_KEEP_ORIGINAL: 'Coach mantuvo la original', SAFETY_CONFLICT: 'conflicto de seguridad',
-      NOT_ELIGIBLE: 'evidencia no elegible', POLICY_BRANCH_REQUIRES_RESOLUTION: 'rama de política sin resolver',
+      NOT_ELIGIBLE: 'evidencia no elegible', MAGNITUDE_BRANCH_UNRESOLVED: 'rama de política sin resolver',
       UNRESOLVED_EQUIPMENT_INCREMENT: 'incremento del equipo sin definir', EQUIPMENT_RESOLUTION_MISMATCH: 'resolución de equipo inconsistente',
       NO_ACTIONABLE_CANDIDATE: 'sin candidato accionable', STRUCTURAL_DIMENSION_NOT_AUTHORIZED: 'dimensión estructural no autorizada',
       ALREADY_RECORDED: 'ya registrado', DIRECTION_NOT_REALIZABLE: 'el equipo no permite ese movimiento de carga', UNIT_MISMATCH: 'unidad distinta a la del incremento configurado',
       EQUIPMENT_OUT_OF_RANGE: 'fuera del rango del equipo', EQUIPMENT_INPUT_INVALID: 'entrada de equipo inválida',
+      EQUIPMENT_IDENTITY_UNRESOLVED: 'equipo sin identidad canónica', SCIENCE_POLICY_UNRESOLVED: 'ciencia sin definir para esta rama (D/E)',
       EVIDENCE_COUNT_INSUFFICIENT: 'evidencia insuficiente (menos de 2 exposiciones comparables)', DIRECTION_CONFLICTING: 'dirección contradictoria entre exposiciones',
       DIRECTION_UNCONFIRMED: 'dirección no confirmada por la exposición previa', READINESS_VETO: 'veto por readiness' };
     var real = (decision.blockers || []).filter(function(b) { return b !== 'NUMERIC_APPLY_DISABLED'; });

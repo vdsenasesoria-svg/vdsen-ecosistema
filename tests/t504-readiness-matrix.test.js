@@ -39,7 +39,7 @@ const blocked = d => d.readiness.gates.filter(x => x.state === 'BLOCKED').map(x 
 test('T504.1 the matrix lists every required gate in a fixed order', () => {
   const d = plan1(good());
   assert.deepEqual(d.readiness.gates.map(g => g.gate), ['IDENTITY', 'FRESHNESS', 'TARGET_EXPOSURE', 'COACH_OVERRIDE', 'SAFETY', 'EVIDENCE_COUNT',
-    'DIRECTION_CONSISTENCY', 'MAGNITUDE_BRANCH', 'EQUIPMENT_INCREMENT', 'UNIT', 'TARGET_STARTED']);
+    'DIRECTION_CONSISTENCY', 'MAGNITUDE_BRANCH', 'EQUIPMENT_IDENTITY', 'EQUIPMENT_INCREMENT', 'UNIT', 'TARGET_STARTED']);
   assert.equal(d.readiness.executable, false, 'never executable while the flag is off');
   assert.equal(d.readiness.numericApplyEnabled, false);
 });
@@ -48,7 +48,7 @@ test('T504.2 a fully ready candidate passes every gate; only the activation flag
   const d = plan1(good());
   assert.equal(d.wouldApply, true);
   assert.deepEqual(blocked(d), []);
-  assert.deepEqual(d.readiness.gates.map(g => g.state), Array(11).fill('PASS'));
+  assert.deepEqual(d.readiness.gates.map(g => g.state), Array(12).fill('PASS'));
   assert.equal(d.readiness.readyExceptFlag, true);
 });
 
@@ -68,7 +68,7 @@ test('T504.4 direction conflict / unconfirmed direction have their own codes', (
 
 test('T504.5 unresolved policy branches are named with their rules (D/E, D, A/E)', () => {
   const de = plan1(rec([[1, 0, { reps: '8', rir_real: 0 }], [1, 2, { reps: '8', rir_real: 0 }]]));
-  assert.ok(de.blockers.includes(B.POLICY_BRANCH_REQUIRES_RESOLUTION));
+  assert.ok(de.blockers.includes(B.MAGNITUDE_BRANCH_UNRESOLVED));
   assert.deepEqual(de.audit.unresolvedRules, ['D', 'E']);
   assert.equal(gate(de, 'MAGNITUDE_BRANCH').state, 'BLOCKED');
   const d = plan1(rec([[1, 0, { reps: '10', rir_real: 0 }], [1, 2, { reps: '10', rir_real: 0 }]]));
