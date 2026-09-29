@@ -30,6 +30,22 @@ LOGS (ejecución real) → evidencia comparable por PID → política canónica 
 - T482/T487: no existe escritor a `plans/` derivado de recomendaciones; solo autoría/edición explícita del Coach.
 - T483/T484/T485/T488: sin prefill, sin reducción de series, sin base de calentamiento y sin arrastre de series desde recomendaciones o historia.
 
+## Matriz de autoridad final (T507)
+
+| Dimensión | Autoridad operativa | Evidencia / candidato canónico | Aplicación futura | Garantía (tests) |
+|---|---|---|---|---|
+| LOAD | Plan del Coach; el atleta registra la carga ejecutada | registro shadow canónico (Regla A) + resolvedor de equipo | overlay exacto de próxima exposición (inactivo) | t483, t485, t493, t503 |
+| REPS | Plan del Coach (rango) | Regla A (reps dentro del rango) | overlay (inactivo) | t483, t493 |
+| SETS | Plan del Coach (+ lo ya registrado hoy) | solo revisión del Coach (Regla B) | ninguna (estructural no autorizado) | t484, t488, t497, t499 |
+| RIR | RIR del Coach (`rirByWeek`/sets); RIR observado separado | señales legadas solo informativas | ninguna | t496 |
+| REST | Plan del Coach | Regla C (+30 s) | overlay (inactivo) | t493, t507 |
+| EXERCISE | Coach; la sustitución del atleta es ejecución (sin PID) | ninguna | ninguna | t506 |
+| FREQUENCY / SPLIT | Coach | ninguna | ninguna | t482, t490 |
+
+Restos operativos documentados (no son autoridad de prescripción): **Temporizador de descanso** — si el set del plan no trae
+`restSeconds`, el temporizador usa una ayuda por `fatigueCost` (solo cronómetro, no persiste); al cargar el plan se muestran valores por
+defecto de visualización cuando el Coach omitió RIR (2) o descanso (90 s).
+
 ## Matriz de preparación de aplicación (T504)
 
 `planApplication(...).readiness` lista 11 compuertas en orden fijo: IDENTITY, FRESHNESS, TARGET_EXPOSURE, COACH_OVERRIDE, SAFETY,

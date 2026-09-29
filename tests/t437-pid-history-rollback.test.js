@@ -9,7 +9,7 @@ assert.ok(start >= 0 && end > start);
 const source = client.slice(start, end);
 
 test('T437: failed set write rollback uses the PID history key', () => {
-  assert.match(source, /var _historyKey = _historyPidKey\(_ejMeta\.prescriptionExerciseId/);
+  assert.match(source, /var _historyKey = _historyPidKey\(_logPid\)/);
   assert.match(source, /_historyStore\[_historyKey\] = _previousExerciseHistory/);
   assert.match(source, /delete _historyStore\[_historyKey\]/);
 });
