@@ -51,7 +51,7 @@ function setCount({ planSets = 4, LOGS = {}, week = 2, progrec = null, ej, y3t =
   const context = { LOGS, CURRENT_WEEK: week, di: 0, ei: 0, ej, progrec, _isY3T: y3t, _effectiveSets: effective,
     numSeries: y3t ? effective.length : (ej.numSeries || ej.sets.length),
     // a recommendation-aware gate must not be reachable any more: it would throw if called
-    _isFreshPidProgRec: () => { throw new Error('legacy gate consulted for set count'); } };
+    _isFreshPidProgRec: () => { throw new Error('legacy gate consulted for set count'); } }; // must never be called
   vm.createContext(context);
   vm.runInContext(region + '\nthis.__n = numSeries; this.__done = _doneCount;', context);
   return { numSeries: context.__n, done: context.__done };
@@ -104,7 +104,7 @@ test('T484 no code path outside the engine lets a recommendation set the set cou
   assert.ok(hits.length >= 3, 'the informational display sites remain');
   for (const h of hits) assert.ok(!/\b(numSeries|numSets|setsCount|nSeries)\s*=[^=]/.test(h.l), 'newSets assigned at ' + h.n + ': ' + h.l.trim());
   assert.equal((client.match(/action === 'reduce_sets'/g) || []).length, 0);
-  assert.equal(client.split('_isFreshPidProgRec(').length - 1, 1, 'the exact-PID freshness gate has no caller (definition only)');
+  assert.ok(!client.includes('_isFreshPidProgRec'), 'the legacy exact-PID freshness gate no longer exists (T487)');
   for (const fn of ['ssCompleteRound', 'ssCompleteLastRound', 'markExpressSSDone', 'buildBoostcampExercise', '_maybeSuggestExtraSet']) {
     const body = topLevelFn(client, fn);
     assert.ok(!/action === 'reduce_sets'|_pcRec|_isFreshPidProgRec\(/.test(body), fn + ' never consumes the legacy set recommendation');
@@ -142,8 +142,7 @@ test('T484.15 the recommendation stays informational', () => {
 test('T484.16/17/18/19 numeric apply disabled; Modulo D read-only; T482 and T483 neutralizations intact', () => {
   assert.equal(shadow.NUMERIC_APPLY_ENABLED, false); assert.equal(policy.NUMERIC_APPLY_ENABLED, false);
   assert.ok(!('APPLIED' in shadow.STATES));
-  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction/.test(functionSource(coach, '_applyAllModuloD')));
-  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction/.test(functionSource(coach, '_applyRecLoadsToMonitor')));
+  assert.ok(!coach.includes('_applyAllModuloD') && !coach.includes('_applyRecLoadsToMonitor'));
   assert.ok(!coach.includes('applyRecLoadsBtn') && !coach.includes('_mon-apply-single'));
   assert.ok(!client.includes('_progCargaConv') && !client.includes('_progRepsApply') && !/_progM\b/.test(client));
   assert.ok(client.includes("var carga   = saved.carga   || '';") && client.includes("var reps    = saved.reps    || '';"));

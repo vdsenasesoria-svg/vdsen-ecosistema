@@ -56,13 +56,11 @@ const LEGIT = ['saveImportedPlan', 'saveManualPlan', '_applyTemplateToClient', '
   'duplicatePlanToClient', '_vdsenSaveDraftToFirestore', 'saveTrainingPlan', 'submitQuickAdd', 'showUpdatePlanModal',
   'extendPlanWeeks', 'planWeekHandlers'];
 
-test('T482.1/2 _applyRecLoadsToMonitor cannot write load or reps to plans', () => {
-  const body = functionSource(coach, '_applyRecLoadsToMonitor');
-  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction|batch|doc\(|days|repsTarget|newReps|recommendedLoad|load\s*:/.test(body), body);
-  assert.ok(body.includes('Shadow / no aplicado'));
-  const calls = coach.split('_applyRecLoadsToMonitor').length - 1;
-  assert.equal(calls, 3, 'definition + window export only (plus the comment); no caller remains');
-  assert.ok(!/\b_applyRecLoadsToMonitor\(/.test(coach.replace(/async function _applyRecLoadsToMonitor\(/, '')));
+test('T482.1/2 the recommendation-to-plan writers no longer exist (removed in T487)', () => {
+  for (const gone of ['_applyRecLoadsToMonitor', '_applyAllModuloD', '_buildRecApplyPreview', '_confirmApplyRecModal',
+    '_resolveExerciseInFreshPlan', '_buildPlanChangeSummary', '_moduloDPending'])
+    assert.ok(!coach.includes(gone), gone + ' must not exist');
+  assert.ok(!client.includes('_buildSessionTargetBanner'));
 });
 
 test('T482 legacy apply UI is gone: no bulk or single apply-load button, no wiring', () => {
@@ -73,7 +71,7 @@ test('T482 legacy apply UI is gone: no bulk or single apply-load button, no wiri
 });
 
 test('T482.3 Modulo D remains read-only', () => {
-  assert.ok(!/updateDoc|setDoc|addDoc|runTransaction/.test(functionSource(coach, '_applyAllModuloD')));
+  assert.ok(!coach.includes('_applyAllModuloD'));
   const block = coach.slice(coach.indexOf('// ── Módulo D — vista de decisiones shadow canónicas (T481).'), coach.indexOf('// ── Tendencias de carga por ejercicio'));
   assert.ok(!/updateDoc|setDoc|addDoc|runTransaction|'plans'/.test(block));
 });
@@ -124,8 +122,7 @@ test('T482.9/10 same-name/different-PID gains no authority; PID-first mapping re
     calculatedAt: '2026-09-27T12:00:00.000Z', sourceMatches: true, sourcePidCount: 1, recommendation: rec });
   assert.equal(a.reasonCode, 'IDENTITY_CONFLICT');
   assert.ok(coach.includes('return pidCount === 1 ? foundByPid : null;'));
-  assert.ok(functionSource(coach, '_resolveExerciseInFreshPlan') && coach.split('_resolveExerciseInFreshPlan(').length - 1 === 1,
-    'the legacy name-matching resolver has no caller left');
+  assert.ok(!coach.includes('_resolveExerciseInFreshPlan'), 'the legacy name-matching resolver was removed (T487)');
 });
 
 test('T482.11 Coach KEEP > AUTO remains', () => {
@@ -169,7 +166,7 @@ test('T482.14 the magnitude policy never writes plans/', () => {
 });
 
 test('T482.15 competitive/enhanced/PED context creates no writer and no magnitude difference', () => {
-  const inert = functionSource(coach, '_applyRecLoadsToMonitor') + functionSource(coach, '_applyAllModuloD') + shadowSource + policySource;
+  const inert = shadowSource + policySource;
   assert.ok(!/ctx\.(competitive|enhanced|ped)|context\.(competitive|enhanced|ped)|\bcompetitive\b\s*[?&|]/i.test(inert));
   const exposures = [1, 2].map(week => ({ prescriptionExerciseId: 'p', planId: 'x', clientId: 'c', week, dayIndex: 0,
     sets: [0, 1, 2].map(i => ({ setIndex: i, load: 100, reps: 10, unit: 'KG', done: true, rirPrescribed: 2, rirReal: 3, ts: Date.parse('2026-09-27T12:00:00.000Z') + week * 1000 + i })) }));

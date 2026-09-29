@@ -43,19 +43,16 @@ const src = fs.readFileSync(
 // ─── T111-C/D/E: superseded by T481 — the Modulo D apply-to-plan path is neutralized ──────────────
 // Its former updatedAt / in-flight-guard / button-restore hardening protected a plan write that no
 // longer exists. The contract now is: no plan write is reachable from _applyAllModuloD.
-(function testModuloDApplyNeutralized() {
-  const idx = src.indexOf('async function _applyAllModuloD(');
-  if (idx === -1) { console.error('FAIL T111-C: _applyAllModuloD missing'); process.exit(1); }
-  const body = src.slice(idx, src.indexOf('window._applyAllModuloD', idx));
-  if (/updateDoc|setDoc|addDoc|getDoc|runTransaction|_moduloDPending/.test(body)) {
-    console.error('FAIL T111-C: _applyAllModuloD must not write plans (T481)');
+(function testModuloDApplyRemoved() {
+  if (src.includes('_applyAllModuloD') || src.includes('_moduloDPending')) {
+    console.error('FAIL T111-C: the Modulo D apply-to-plan path must not exist (T487)');
     process.exit(1);
   }
-  if (src.includes('Aplicar ajustes al plan</button>') || src.includes('onclick="_applyAllModuloD()"')) {
-    console.error('FAIL T111-D: the Modulo D apply button must not be rendered (T481)');
+  if (src.includes('Aplicar ajustes al plan</button>')) {
+    console.error('FAIL T111-D: the Modulo D apply button must not be rendered (T487)');
     process.exit(1);
   }
-  console.log('PASS T111-C/D/E: Modulo D apply-to-plan path neutralized (T481)');
+  console.log('PASS T111-C/D/E: Modulo D apply-to-plan path removed (T487)');
 })();
 
 console.log('\nAll T111-H tests passed.');

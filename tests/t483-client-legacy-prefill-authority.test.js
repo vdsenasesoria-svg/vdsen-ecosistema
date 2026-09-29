@@ -112,7 +112,7 @@ test('T483.13 same-name/different-PID cannot affect another exercise', () => {
   const ej = { prescriptionExerciseId: 'pid-A', exerciseName: 'Remo', sets: [{ repsTarget: 10 }] };
   assert.equal(inputDefaults({ ej, progrec: other }).carga, '');
   assert.equal(inputDefaults({ ej, progrec: fresh() }).carga, '', 'even the exact-PID recommendation does not prefill');
-  assert.ok(client.includes('function _isFreshPidProgRec(rec, prescriptionExerciseId)'));
+  assert.ok(!client.includes('_isFreshPidProgRec') && !client.includes('_progAutoApply'), 'the legacy gate is removed (T487); identity and stale checks live in the canonical shadow layer');
 });
 
 test('T483.14/15/16 stale, old-plan and old-client recommendations have no operational effect', () => {
@@ -137,9 +137,7 @@ test('T483.17/18 numeric apply disabled; no APPLIED state', () => {
 });
 
 test('T483.19/20 Modulo D read-only and the T482 plan-writer neutralization remain intact', () => {
-  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction/.test(functionSource(coach, '_applyAllModuloD')));
-  const body = functionSource(coach, '_applyRecLoadsToMonitor');
-  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction/.test(body) && body.includes('Shadow / no aplicado'));
+  assert.ok(!coach.includes('_applyAllModuloD') && !coach.includes('_applyRecLoadsToMonitor'), 'plan-writer stubs removed (T487)');
   assert.ok(!coach.includes('applyRecLoadsBtn') && !coach.includes('_mon-apply-single'));
 });
 

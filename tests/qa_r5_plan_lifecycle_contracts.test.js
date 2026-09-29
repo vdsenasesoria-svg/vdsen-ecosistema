@@ -132,13 +132,12 @@ console.log('Contract 1: updatedAt in every active-plan writer');
   assert.ok(present, 'C1-H: _applyTemplateToClient addDoc must include updatedAt');
 }
 
-// 1-I _applyAllModuloD — T481: the Modulo D plan-write path is neutralized (no plan write left to
-// require updatedAt). The updatedAt contract stays enforced for every remaining plan writer.
+// 1-I _applyAllModuloD — T487: the Modulo D apply-to-plan path (and its inert stub) was removed entirely;
+// no recommendation-derived plan writer remains. The updatedAt contract stays enforced for every
+// remaining plan writer below.
 {
-  const body = extractFnBody(COACH, 'async function _applyAllModuloD(');
-  console.log('  C1-I _applyAllModuloD performs no plan write (T481):', body && !/updateDoc|setDoc|addDoc|getDoc/.test(body) ? 'PASS' : 'GAP');
-  assert.ok(body, 'C1-I: _applyAllModuloD must exist');
-  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction/.test(body), 'C1-I: _applyAllModuloD must not write plans (T481)');
+  console.log('  C1-I _applyAllModuloD removed (T487):', !COACH.includes('_applyAllModuloD') ? 'PASS' : 'GAP');
+  assert.ok(!COACH.includes('_applyAllModuloD'), 'C1-I: _applyAllModuloD must not exist (T487)');
 }
 
 // 1-J extendPlanWeeks — updateDoc

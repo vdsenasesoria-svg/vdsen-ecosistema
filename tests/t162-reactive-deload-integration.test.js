@@ -318,8 +318,8 @@ function makeEngine(LOGS, totalWeeks) {
   ok(CLIENT.includes('prescriptionExerciseId: ej.prescriptionExerciseId || undefined,'), 'T159/T161 regression: prescriptionExerciseId still persisted on each recommendation');
   // T165 added a further "&& !_progRecStale" clause to this gate (coach-edit
   // staleness) — the PID-verification intent this test checks is unchanged.
-  ok(CLIENT.includes('progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;'),
-    'T161 regression: PID-verified auto-apply gate unchanged (T165 wording)');
+  ok(!CLIENT.includes('_progAutoApply') && !CLIENT.includes('_progRecStale'),
+    'T487: the client-side auto-apply gate no longer exists (recommendations are informational; identity/stale checks live in the Coach REVIEW gate and the canonical shadow layer)');
 })();
 
 console.log('');

@@ -5371,20 +5371,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   // posición/nombre (ver _getProgRecForExercise).
   var progrec = _getProgRecForExercise(di, ei, nombre, ej.prescriptionExerciseId);
   var progRec = progrec; // alias PascalCase — usado en _buildSetReferenceHtml
-  // T161: la aplicación AUTOMÁTICA de la recomendación (prefill de carga/reps del
-  // próximo set) exige coincidencia VERIFICADA de prescriptionExerciseId — nunca el
-  // fallback legacy por nombre/posición. Ambigüedad o identidad ausente → sin
-  // aplicación automática (el hint "OBJETIVO" arriba puede seguir mostrándose para
-  // planes legacy vía el fallback, pero no muta el valor del input).
-  // T165 — coach override authority: a recommendation calculated BEFORE the
-  // coach's last plan edit predates that explicit decision (e.g. coach manually
-  // changed reps/RIR/sets for this same exercise, same PID) and must not
-  // auto-apply — the coach's edit outranks a stale automated suggestion.
-  // Missing/malformed timestamps never trigger staleness (Date.parse → NaN,
-  // every NaN comparison is false) — safe default for legacy plans/recs.
-  var _progRecStale = !!(PLAN.updatedAt && progrec && progrec.calculatedAt && Date.parse(PLAN.updatedAt) > Date.parse(progrec.calculatedAt));
-  // T483: PID+freshness verification result only; no numerical consumer reads newLoad/newReps from it.
-  var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;
+  // T487: the recommendation is informational only (hints/labels); nothing applies it automatically.
 
   // ── Determinar numSeries: 3 pasos en orden ──────────────────────────────
   //
@@ -14783,7 +14770,7 @@ function _lbwTrack(k) {
 // fallback: mejor no encontrar nada que asociar mal. Ausencia de PID en el
 // historial (ejercicio nuevo o plan legacy) sí cae al fallback existente —
 // ese resultado solo se usa para el hint informativo, nunca para mutar un
-// input automáticamente (ver _progAutoApply en _buildExCard).
+// input automáticamente (T483/T487: ninguna recomendación se aplica).
 function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
   // T470: calculatedAt is authoritative on the parent progrec_{W}_{D}
   // document. Enrich the child only when that parent timestamp exists;
@@ -14848,16 +14835,6 @@ function _getProgRecForExercise(di, ei, exName, prescriptionExerciseId) {
     }
   }
   return null;
-}
-
-// T471 (kept for exact-PID freshness checks; T484: no consumer changes set count with it any more):
-// presentation changes from reduce_sets require the same exact PID and
-// a trustworthy parent-derived timestamp used by the stale guard.
-function _isFreshPidProgRec(rec, prescriptionExerciseId) {
-  if (!rec || !prescriptionExerciseId || rec.prescriptionExerciseId !== prescriptionExerciseId) return false;
-  if (!rec.calculatedAt || isNaN(Date.parse(rec.calculatedAt))) return false;
-  if (PLAN && PLAN.updatedAt && Date.parse(PLAN.updatedAt) > Date.parse(rec.calculatedAt)) return false;
-  return true;
 }
 
 // ── FASE 6 — EXERCISE HISTORY HELPERS ──────────────────────────────────
@@ -15142,111 +15119,6 @@ function showExHistory(di, ei) {
 window.showExHistory = showExHistory;
 
 // ── END FASE 6 HISTORY HELPERS ──────────────────────────────────────────
-
-// ═══════════════════════════════════════════════════════════════
-// BANNER "OBJETIVO DE HOY" — guía clara de progresión por sesión
-// ═══════════════════════════════════════════════════════════════
-function _buildSessionTargetBanner(progrec, prevWeekData, histEx, unit, numSeries, repsTarget, baseRIR, effectiveSetsCount) {
-  var hasProgrec = progrec && progrec.action;
-  var targetLoad = null, targetSets = numSeries, targetReps = repsTarget, targetRIR = baseRIR;
-  var action = 'first', reason = '', prevRef = null;
-
-  if (hasProgrec) {
-    targetLoad = progrec.newLoad;
-    targetSets = effectiveSetsCount != null ? effectiveSetsCount : numSeries;
-    targetReps = progrec.newReps || repsTarget;
-    targetRIR  = (progrec.rirTarget !== undefined && progrec.rirTarget !== null) ? progrec.rirTarget : baseRIR;
-    action     = progrec.action || 'maintain';
-    reason     = progrec.reason || '';
-    if (progrec.trend && progrec.trend.prevLoad > 0) {
-      prevRef = { load: progrec.trend.prevLoad, sets: progrec.trend.prevSets };
-    }
-  } else if (prevWeekData && prevWeekData.avgLoad > 0) {
-    targetLoad = prevWeekData.avgLoad;
-    targetSets = prevWeekData.numSets || numSeries;
-    targetReps = prevWeekData.avgReps > 0 ? Math.round(prevWeekData.avgReps) : repsTarget;
-    targetRIR  = baseRIR;
-    action = 'reference';
-    prevRef = {
-      load: prevWeekData.avgLoad,
-      sets: prevWeekData.numSets,
-      reps: prevWeekData.avgReps > 0 ? Math.round(prevWeekData.avgReps) : null,
-      rir:  prevWeekData.avgRIR  > 0 ? Math.round(prevWeekData.avgRIR)  : null
-    };
-  } else if (histEx && histEx.load) {
-    var _hLoad = parseFloat(histEx.load) || 0;
-    if (!_hLoad) return '';
-    // Convertir al unit actual si el historial está en otra unidad
-    var _hUnit = (histEx.unit || 'KG').toUpperCase();
-    if (_hUnit !== unit) {
-      _hLoad = parseFloat(_convertCarga(String(_hLoad), _hUnit, unit)) || _hLoad;
-    }
-    targetLoad = _hLoad;
-    action = 'history';
-  }
-
-  if (!targetLoad || targetLoad <= 0) return '';
-
-  // Formatear número: sin decimales innecesarios
-  function _fmtLoad(v) {
-    var n = parseFloat(v);
-    if (isNaN(n)) return String(v);
-    return n % 1 === 0 ? String(n) : n.toFixed(1);
-  }
-
-  var cfg = {
-    increase_load: { icon:'↑', label:'AUMENTAR CARGA',   color:'#3a9460', bg:'rgba(110,154,110,.12)',   border:'rgba(110,154,110,.40)'   },
-    add_sets:      { icon:'↑', label:'AGREGAR SERIE',    color:'#3a9460', bg:'rgba(110,154,110,.12)',   border:'rgba(110,154,110,.40)'   },
-    maintain:      { icon:'=', label:'MANTENER',         color:'#C4FF00', bg:'rgba(196,255,0,.10)',  border:'rgba(196,255,0,.35)'  },
-    freeze_load:   { icon:'⏸', label:'CONGELAR CARGA',  color:'#C4FF00', bg:'rgba(196,255,0,.10)',  border:'rgba(196,255,0,.35)'  },
-    reduce_load:   { icon:'↓', label:'REDUCIR CARGA',    color:'#e06040', bg:'rgba(220,80,50,.10)',   border:'rgba(220,80,50,.40)'   },
-    reduce_sets:   { icon:'↓', label:'REDUCIR SERIES',   color:'#FF8844', bg:'rgba(255,136,68,.10)',  border:'rgba(255,136,68,.40)'  },
-    deload:        { icon:'🔄',label:'DESCARGA ACTIVA',  color:'#6488CC', bg:'rgba(100,136,204,.10)', border:'rgba(100,136,204,.40)' },
-    reference:     { icon:'📋',label:'ÚLTIMA SESIÓN',    color:'#B8BEC8', bg:'rgba(184,190,200,.07)', border:'rgba(184,190,200,.25)' },
-    history:       { icon:'📊',label:'PRIMERA SESIÓN',   color:'#6488CC', bg:'rgba(100,136,204,.10)', border:'rgba(100,136,204,.40)' },
-    first:         { icon:'🆕',label:'PRIMERA SESIÓN',   color:'#6488CC', bg:'rgba(100,136,204,.10)', border:'rgba(100,136,204,.40)' }
-  };
-
-  var c = cfg[action] || cfg.maintain;
-
-  // Reason — mostrar motivos principales, separar advertencias
-  var reasonHtml = '';
-  if (reason) {
-    var parts = reason.split(' | ');
-    var main  = parts.filter(function(p){ return p && !p.startsWith('⚠'); }).slice(0, 2).join(' · ');
-    var warns = parts.filter(function(p){ return p && p.startsWith('⚠'); }).slice(0, 1);
-    if (main)  reasonHtml += '<div style="font-size:11px;color:var(--mt);line-height:1.6;margin-top:6px">'+main+'</div>';
-    if (warns.length) reasonHtml += '<div style="font-size:11px;color:#FF8844;line-height:1.5;margin-top:4px">'+warns[0]+'</div>';
-  }
-
-  // Línea de semana anterior
-  var prevLine = '';
-  if (prevRef && prevRef.load > 0) {
-    var pParts = [_fmtLoad(prevRef.load)+' '+unit];
-    if (prevRef.sets) pParts.push(prevRef.sets+'s');
-    if (prevRef.reps) pParts.push(prevRef.reps+' reps');
-    if (prevRef.rir !== null && prevRef.rir !== undefined) pParts.push('RIR '+prevRef.rir);
-    prevLine = '<div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07);'+
-      'display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
-      '<span style="font-size:10px;font-weight:700;letter-spacing:1px;color:var(--mt2);flex-shrink:0">SEM. ANT.:</span>'+
-      '<span style="font-size:12px;color:var(--mt)">'+pParts.join(' · ')+'</span>'+
-    '</div>';
-  }
-
-  return '<div style="margin-bottom:10px;padding:9px 14px;border-radius:10px;background:'+c.bg+';border:1.5px solid '+c.border+'">'+
-    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'+
-      '<span style="font-size:16px;font-weight:900;color:'+c.color+';line-height:1">'+c.icon+'</span>'+
-      '<span style="font-size:9px;font-weight:900;letter-spacing:1.5px;color:'+c.color+';opacity:.8">OBJETIVO HOY</span>'+
-      '<span style="margin-left:auto;font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--mt2)">'+c.label+'</span>'+
-    '</div>'+
-    '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'+
-      '<span style="font-size:24px;font-weight:900;color:var(--tx);line-height:1">'+_fmtLoad(targetLoad)+' '+unit+'</span>'+
-      '<span style="font-size:14px;font-weight:700;color:'+c.color+'">'+targetSets+'s × '+targetReps+' reps · RIR '+targetRIR+'</span>'+
-    '</div>'+
-    (prevRef && prevRef.load > 0 ? prevLine : '')+
-    (reasonHtml ? '<div style="padding-top:6px;border-top:1px solid rgba(255,255,255,.06)">'+reasonHtml+'</div>' : '')+
-  '</div>';
-}
 
 function _drawSparkline(canvasId, data, color) {
   var c = document.getElementById(canvasId);

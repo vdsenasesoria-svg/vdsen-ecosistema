@@ -259,8 +259,8 @@ function rebuildIndex(LOGS) {
 (function testActionMatrixNeutralized() {
   ok(!/_progM\b/.test(CLIENT), 'Items 1-5 — superset-member prefill no longer consumes a name/position-matched progrec (T483)');
   ok(!/_pfCM = parseFloat\(_prog/.test(CLIENT), 'Item 4 — neither load increases nor reductions from progrec reach an input');
-  ok(CLIENT.includes('var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;'),
-    'Item 6 — the PID+fresh verification result still exists but has no numerical consumer');
+  ok(!CLIENT.includes('_progAutoApply') && !CLIENT.includes('_progRecStale'),
+    'Item 6 — the PID+fresh auto-apply gate itself was removed (T487): no operational consumer of a recommendation remains');
 })();
 
 

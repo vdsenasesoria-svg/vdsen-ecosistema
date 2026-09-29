@@ -78,14 +78,14 @@ function makeStamper() {
 }
 
 // Client's T165 gate — verified present verbatim, then executed identically.
-ok(CLIENT.includes('var _progRecStale = !!(PLAN.updatedAt && progrec && progrec.calculatedAt && Date.parse(PLAN.updatedAt) > Date.parse(progrec.calculatedAt));'), 'regression: Client _progRecStale expression present verbatim');
-ok(CLIENT.includes('var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;'), 'regression: Client _progAutoApply expression present verbatim');
+ok(!CLIENT.includes('_progRecStale') && !CLIENT.includes('_progAutoApply'), 'T487: the client auto-apply gate no longer exists (the client never applies a recommendation)');
+// (removed: see the assertion above)
 function clientNextExposure(planUpdatedAt, ejPid, progrec) {
-  var _progRecStale = !!(planUpdatedAt && progrec && progrec.calculatedAt && Date.parse(planUpdatedAt) > Date.parse(progrec.calculatedAt));
-  var _progAutoApply = (progrec && ejPid && progrec.prescriptionExerciseId === ejPid && !_progRecStale) ? progrec : null;
-  var carga = (_progAutoApply && _progAutoApply.newLoad != null && !isNaN(parseFloat(_progAutoApply.newLoad))) ? parseFloat(_progAutoApply.newLoad).toFixed(1) : '';
-  var reps  = (_progAutoApply && typeof _progAutoApply.newReps === 'number') ? _progAutoApply.newReps : '';
-  return { applied: !!_progAutoApply, carga: carga, reps: reps };
+  // (identity/staleness are enforced by the Coach REVIEW gate and the canonical shadow layer)
+  void planUpdatedAt; void ejPid; void progrec;
+  // T483/T487: the client never turns a recommendation into an operational value.
+  var carga = '', reps = '';
+  return { applied: false, carga: carga, reps: reps };
 }
 
 // Coach's T163/T170 categorization — verified present verbatim, then executed identically.
@@ -122,7 +122,7 @@ function coachCategorize(planPidSet, planUpdatedAt, r) {
 
   // Next exposure auto-apply (plan not edited since calc -> fresh).
   var exposure = clientNextExposure('2026-01-05T00:00:00.000Z', 'pid-bench', found);
-  ok(exposure.applied === true && exposure.carga === '82.5' && exposure.reps === 10, 'CASO 1 — Client auto-applies the fresh recommendation to the next exposure input');
+  ok(exposure.applied === false && exposure.carga === '' && exposure.reps === '', 'CASO 1 — the Client does NOT turn the fresh recommendation into an operational input (T483/T487)');
 
   // Coach sees the SAME verdict.
   var cat = coachCategorize(new Set(['pid-bench']), '2026-01-05T00:00:00.000Z', rec);
@@ -160,7 +160,7 @@ function coachCategorize(planPidSet, planUpdatedAt, r) {
   var eng2 = makeClientEngine(LOGS, { progrec: { 4: ['progrec_4_0'] } }, 5, 6);
   var found = eng2._getProgRecForExercise(0, 0, 'Sentadilla', 'pid-squat');
   var exposure = clientNextExposure('2026-01-20T00:00:00.000Z', 'pid-squat', found);
-  ok(exposure.applied === true && exposure.carga === '100.0', 'CASO 2 — Client applies the ENGINE\'s freeze_load value (same load as before) — no automatic increase during fatigue');
+  ok(exposure.applied === false && exposure.carga === '', 'CASO 2 — even the engine\'s freeze_load value is informational only: no automatic load reaches the input');
 
   var cat = coachCategorize(new Set(['pid-squat']), '2026-01-20T00:00:00.000Z', rec);
   ok(cat === 'FREEZE', 'CASO 2 — Coach sees FREEZE (an explained exception), not a silent KEEP or a fabricated PROGRESS_LOAD');

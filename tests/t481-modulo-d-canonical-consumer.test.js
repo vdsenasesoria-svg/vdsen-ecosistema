@@ -175,8 +175,7 @@ test('17. numeric apply stays disabled', () => {
 });
 
 test('18. Modulo D cannot write to plans/', () => {
-  const apply = functionSource(coach, '_applyAllModuloD');
-  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction|tx\.|batch|plans/.test(apply), 'apply path is inert');
+  assert.ok(!coach.includes('_applyAllModuloD') && !coach.includes('_moduloDPending'), 'the Modulo D apply path no longer exists (T487)');
   assert.ok(!/updateDoc|setDoc|addDoc|runTransaction|'plans'|"plans"|onclick=/.test(block + viewSource));
   assert.ok(!coach.includes('onclick="_applyAllModuloD()"') && !coach.includes('Aplicar ajustes al plan</button>'));
   assert.ok(coach.includes('Shadow / no aplicado'));

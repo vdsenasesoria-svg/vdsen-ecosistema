@@ -38,16 +38,8 @@ function extractFnBody(src, fnDecl) {
 
 console.log('T109-C — _applyAllModuloD updatedAt contract');
 
-test('_applyAllModuloD is defined', function() {
-  assert.ok(src.indexOf('async function _applyAllModuloD') !== -1,
-    '_applyAllModuloD not found in vdsen-coach.html');
-});
-
-test('_applyAllModuloD no longer writes plans (T481 neutralized it), so no updatedAt gap can exist', function() {
-  var body = extractFnBody(src, 'async function _applyAllModuloD');
-  assert.ok(body, '_applyAllModuloD body not extractable');
-  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction/.test(body),
-    '_applyAllModuloD must not perform any plan write (T481)');
+test('_applyAllModuloD is removed (T487): no Modulo D plan write exists, so no updatedAt gap can exist', function() {
+  assert.ok(src.indexOf('_applyAllModuloD') === -1, '_applyAllModuloD must not exist in vdsen-coach.html (T487)');
 });
 
 test('client live plan listener gates on updatedAt (contract exists)', function() {
@@ -56,11 +48,8 @@ test('client live plan listener gates on updatedAt (contract exists)', function(
     'Client plan listener updatedAt guard not found — contract reference changed');
 });
 
-test('_applyRecLoadsToMonitor no longer writes plans (T482 neutralized it)', function() {
-  var body = extractFnBody(src, 'async function _applyRecLoadsToMonitor');
-  assert.ok(body, '_applyRecLoadsToMonitor body not extractable');
-  assert.ok(!/updateDoc|setDoc|addDoc|getDoc|runTransaction/.test(body),
-    '_applyRecLoadsToMonitor must not perform any plan write (T482)');
+test('_applyRecLoadsToMonitor is removed (T487)', function() {
+  assert.ok(src.indexOf('_applyRecLoadsToMonitor') === -1, '_applyRecLoadsToMonitor must not exist (T487)');
 });
 
 console.log('\n' + PASS + '/' + (PASS + FAIL) + ' passed');

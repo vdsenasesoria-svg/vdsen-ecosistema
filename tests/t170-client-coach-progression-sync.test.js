@@ -43,7 +43,7 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // r.calculatedAt) was actually asserting the MISMATCHED, never-firing
 // expression -- contradicting this file's own documented intent.
 ok(COACH.includes('return !!(p && p.updatedAt && lastRec && lastRec.calculatedAt && Date.parse(p.updatedAt) > Date.parse(lastRec.calculatedAt));'), 'Coach _isCoachEditStale now reads the parent lastRec\'s calculatedAt -- genuinely the same source of truth as Client\'s T165 progrec.calculatedAt check (T249 fix)');
-ok(CLIENT.includes('Date.parse(PLAN.updatedAt) > Date.parse(progrec.calculatedAt)'), 'Client T165 staleness expression (regression check — unchanged by this ticket)');
+ok(!CLIENT.includes('Date.parse(PLAN.updatedAt) > Date.parse(progrec.calculatedAt)'), 'T487: the client-side staleness expression was removed with the auto-apply gate (the canonical shadow layer and the Coach REVIEW gate hold the stale checks)');
 ok(COACH.includes("if (_isIdentityStale(r) || _isCoachEditStale(r)) return 'REVIEW';"), '_categorizeRec now routes BOTH identity mismatch AND coach-edit staleness into REVIEW');
 ok(COACH.includes('_isIdentityStale(r)\n            ? \'⚠️ Identidad no resuelta'), 'the REVIEW card shows the correct message for identity mismatch');
 ok(COACH.includes('Editaste el plan después de calcularse esta recomendación'), 'the REVIEW card shows a distinct, accurate message for coach-edit staleness (not the identity-mismatch text)');

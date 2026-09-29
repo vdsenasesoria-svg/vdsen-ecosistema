@@ -14,16 +14,13 @@ ok(reader.includes('Object.assign'), 'T470 reader returns an enriched child, not
 // T471 -> T484: reduce_sets used to mutate the rendered set count behind an exact-PID/freshness gate.
 // T484 removed every such mutation (legacy recommendations are informational for set count); the
 // shared gate stays defined for exact-PID freshness checks but no reduce_sets consumer remains.
-ok(client.includes('function _isFreshPidProgRec'), 'T471 keeps the explicit PID/freshness gate definition');
+ok(!client.includes('_isFreshPidProgRec'), 'T487 the reduce_sets PID/freshness gate was removed together with its last consumer');
 ok((client.match(/action === 'reduce_sets'/g) || []).length === 0, 'T484 no reduce_sets set-count mutation site remains');
-ok(client.split('_isFreshPidProgRec(').length - 1 === 1, 'T484 the gate has no caller left (definition only)');
+// (no gate caller can remain: the gate itself no longer exists)
 
-// T472/T473: the mutating Monitor preview must never resolve by name alone.
-const previewStart = coach.indexOf('function _buildRecApplyPreview(');
-const previewEnd = coach.indexOf('\n  }\n  window._buildRecApplyPreview', previewStart);
-const preview = coach.slice(previewStart, previewEnd);
-ok(preview.includes('prescriptionExerciseId'), 'T472 preview resolves recommendation PID');
-ok(!preview.includes('_normN20(dayObj.exercises[j].exerciseName'), 'T472 preview no longer uses name as mutation authority');
+// T472/T473 -> T487: the mutating Monitor preview (which once resolved recommendations by PID) was
+// removed with the legacy apply-to-plan infrastructure: no recommendation can mutate a plan at all.
+ok(!coach.includes('_buildRecApplyPreview') && !coach.includes('_resolveExerciseInFreshPlan'), 'T472 no mutating recommendation preview/resolver remains (no name authority possible)');
 ok(coach.includes('PID conflict') || coach.includes('PID_CONFLICT') || coach.includes('prescriptionExerciseId'), 'T473 source retains explicit PID conflict protection');
 
 // T474: no broad Modulo D rewrite is permitted in this ticket.

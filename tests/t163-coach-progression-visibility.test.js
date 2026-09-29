@@ -262,11 +262,11 @@ const PLAN_WITH_PIDS = { days: [{ dayIndex: 0, exercises: [
 // ─────────────────────────────────────────────────────────────────────────────
 
 (function testExistingApplyFlowUntouched() {
-  ok(COACH.includes('function _buildRecApplyPreview(lastRec, lastRecDay, activePlanCache)'), 'Regression: the existing recommendation-apply-to-plan preview builder is untouched');
+  ok(!COACH.includes('_buildRecApplyPreview') && !COACH.includes('_confirmApplyRecModal'), 'T487: the recommendation-apply-to-plan preview/confirm infrastructure was removed');
   ok(COACH.includes('function _resolveExerciseRowId(exerciseName, planCache, pid, dayIndex)') &&
      COACH.includes('return pidCount === 1 ? foundByPid : null;'),
      'Regression: exercise row resolution remains PID-first and rejects stale or ambiguous PID');
-  ok(COACH.includes('window._applyAllModuloD = _applyAllModuloD;'), 'Regression: the existing apply-adjustments-to-plan action is untouched (no new override schema invented)');
+  ok(!COACH.includes('_applyAllModuloD') && !COACH.includes('_applyRecLoadsToMonitor'), 'T487: the apply-adjustments-to-plan actions were removed (plan numerics change only by explicit Coach authoring)');
 })();
 
 console.log('');

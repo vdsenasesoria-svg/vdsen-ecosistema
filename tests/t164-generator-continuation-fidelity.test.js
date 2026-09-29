@@ -259,7 +259,7 @@ function categorizeForGenerator(pidEntry) {
   const CLIENT = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'), 'utf8');
   // T165 added a further "&& !_progRecStale" clause (coach-edit staleness) —
   // the PID-verification intent this test checks is unchanged.
-  ok(CLIENT.includes('progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;'), 'T161 regression: PID-verified next-exposure auto-apply gate unchanged (T165 wording)');
+  ok(!CLIENT.includes('_progAutoApply') && !CLIENT.includes('_progRecStale'), 'T487: the client next-exposure auto-apply gate was removed (recommendations are informational)');
   ok(CLIENT.includes('function _computeDeloadTriggers(week, postDataOverride)'), 'T162 regression: shared reactive deload trigger helper unchanged (Client untouched by this ticket)');
   ok(COACH.includes("function _categorizeRec(r) {"), 'T163 regression: Coach exceptions-first categorization unchanged (Monitor untouched by this ticket)');
 })();

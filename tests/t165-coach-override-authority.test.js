@@ -40,8 +40,9 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // ─────────────────────────────────────────────────────────────────────────────
 
 ok(CLIENT.includes("updatedAt: planData.updatedAt || null"), 'PLAN now exposes the plan doc\'s updatedAt (the coach\'s last edit timestamp)');
-ok(CLIENT.includes('var _progRecStale = !!(PLAN.updatedAt && progrec && progrec.calculatedAt && Date.parse(PLAN.updatedAt) > Date.parse(progrec.calculatedAt));'), '_progRecStale computes whether the plan was edited after the recommendation was calculated');
-ok(CLIENT.includes('var _progAutoApply = (progrec && ej.prescriptionExerciseId && progrec.prescriptionExerciseId === ej.prescriptionExerciseId && !_progRecStale) ? progrec : null;'), '_progAutoApply now also requires the recommendation to NOT be stale relative to the coach\'s last plan edit');
+ok(!CLIENT.includes('_progRecStale') && !CLIENT.includes('_progAutoApply'), 'T487: the client no longer applies recommendations, so its plan-edit staleness gate was removed; the Coach REVIEW gate (_isCoachEditStale) keeps the override authority');
+const COACH = fs.readFileSync(path.join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
+ok(COACH.includes('_isCoachEditStale') && COACH.includes("if (_isIdentityStale(r) || _isCoachEditStale(r)) return 'REVIEW';"), 'Coach edit/identity staleness still routes to REVIEW');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Behavioral: reimplements the exact staleness expression against synthetic
