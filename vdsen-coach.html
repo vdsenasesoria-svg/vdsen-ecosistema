@@ -4105,6 +4105,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
           step: v('inc-step-v'), min: v('inc-min'), max: kind === 'PLATE_LOADED_BAR' ? v('inc-bar-max') : v('inc-max'),
           barWeight: v('inc-bar-w'), smallestPlate: v('inc-plate'), loads: v('inc-loads-v') });
         var btn = document.getElementById('incSave'); btn.disabled = true; btn.textContent = 'Guardando...';
+        if (meta) meta = window.VDSEN_EQUIPMENT_CONTEXT.stampProvenance(meta, { prev: exercise.loadIncrement || null, scope: 'EXERCISE', now: new Date().toISOString(), uid: currentCoach.uid });
         await updateDoc(doc(db, 'exercises', exercise.id), { loadIncrement: meta });
         showToast(meta ? 'Incremento guardado' : 'Incremento eliminado'); close(); await loadExerciseCatalog();
       } catch (e) { status.textContent = e.message || 'No se pudo guardar'; var b = document.getElementById('incSave'); if (b) { b.disabled = false; b.textContent = 'Guardar incremento'; } }
@@ -4124,12 +4125,14 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   }
   function _incFormMarkup(cur) {
     cur = cur || {};
-    var numIn = function(id, label, val) { return '<label>' + label + '<input id="' + id + '" class="input-field w-full" inputmode="decimal" value="' + _escH(val === undefined || val === null ? '' : String(val)) + '"></label>'; };
-    return '<label>Tipo<select id="ei-kind" class="input-field w-full"><option value="">Sin configurar</option><option value="STEP">Paso fijo (stack / placa integrada)</option><option value="PLATE_LOADED_BAR">Barra + discos</option><option value="AVAILABLE_LOADS">Cargas disponibles (mancuernas / fijos)</option></select></label>' +
+    var numIn = function(id, label, val, hint) { return '<label>' + label + '<input id="' + id + '" class="input-field w-full" inputmode="decimal" placeholder="' + _escH(hint || '') + '" value="' + _escH(val === undefined || val === null ? '' : String(val)) + '"></label>'; };
+    return '<label>Tipo de incremento<select id="ei-kind" class="input-field w-full"><option value="">Sin configurar</option><option value="STEP">STEP — paso fijo (stack de placas / peso integrado)</option><option value="PLATE_LOADED_BAR">PLATE_LOADED_BAR — barra + discos (2 lados)</option><option value="AVAILABLE_LOADS">AVAILABLE_LOADS — lista de cargas (mancuernas / implementos fijos)</option></select></label>' +
+      '<p id="ei-hint" style="color:#888;font-size:11px;margin:4px 0 8px">Ejemplos de formato, no valores: STEP usa el salto real entre pines; PLATE_LOADED_BAR usa el peso de la barra y el disco más pequeño (se cargan de a par); AVAILABLE_LOADS usa la lista exacta de cargas que existen en la sala.</p>' +
       '<label>Unidad<select id="ei-unit" class="input-field w-full"><option value="KG">KG</option><option value="LB">LB</option></select></label>' +
-      '<div id="ei-step">' + numIn('ei-step-v', 'Paso', cur.step) + numIn('ei-min', 'Mínimo (opcional)', cur.min) + numIn('ei-max', 'Máximo (opcional)', cur.max) + '</div>' +
-      '<div id="ei-bar">' + numIn('ei-bar-w', 'Peso de la barra', cur.barWeight) + numIn('ei-plate', 'Disco más pequeño', cur.smallestPlate) + numIn('ei-bar-max', 'Máximo (opcional)', cur.max) + '</div>' +
-      '<div id="ei-loads"><label>Cargas disponibles <small>(separadas por espacio, ; o salto de línea)</small><textarea id="ei-loads-v" class="input-field w-full" rows="3">' + _escH(Array.isArray(cur.loads) ? cur.loads.join(' ') : '') + '</textarea></label></div>';
+      '<div id="ei-step">' + numIn('ei-step-v', 'Paso (salto real de carga)', cur.step, 'número > 0') + numIn('ei-min', 'Mínimo (opcional)', cur.min, 'carga mínima real') + numIn('ei-max', 'Máximo (opcional)', cur.max, 'carga máxima real') + '</div>' +
+      '<div id="ei-bar">' + numIn('ei-bar-w', 'Peso de la barra', cur.barWeight, 'peso real de la barra vacía') + numIn('ei-plate', 'Disco más pequeño (uno)', cur.smallestPlate, 'peso del disco mínimo') + numIn('ei-bar-max', 'Máximo (opcional)', cur.max, 'carga máxima real') + '</div>' +
+      '<div id="ei-loads"><label>Cargas disponibles <small>(separadas por espacio, ; o salto de línea; coma = decimal)</small><textarea id="ei-loads-v" class="input-field w-full" rows="3" placeholder="una carga real por elemento">' + _escH(Array.isArray(cur.loads) ? cur.loads.join(' ') : '') + '</textarea></label></div>' +
+      '<div id="ei-impact" style="color:#9ab;font-size:11px;margin-top:8px"></div>';
   }
   function _incFormBind(cur) {
     var kindEl = document.getElementById('ei-kind');
@@ -4167,12 +4170,24 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     var scopeEl = document.getElementById('ei-scope');
     if (curGym && gymId) scopeEl.value = 'GYM';
     _incFormBind(scopeEl.value === 'GYM' ? curGym : curShared);
-    scopeEl.onchange = function() { var c = scopeEl.value === 'GYM' ? curGym : curShared; document.getElementById('ei-kind').value = (c && c.kind) || ''; document.getElementById('ei-kind').onchange(); };
+    scopeEl.onchange = function() { var c = scopeEl.value === 'GYM' ? curGym : curShared; document.getElementById('ei-kind').value = (c && c.kind) || ''; document.getElementById('ei-kind').onchange(); refreshImpact(); };
+    // Vista previa de impacto (datos locales; nada se escribe hasta guardar).
+    var refreshImpact = function() {
+      var box = document.getElementById('ei-impact'); if (!box) return;
+      try {
+        var meta = _incFormRead();
+        var next = window.VDSEN_EQUIPMENT_CONTEXT.setEquipmentIncrement(cfg, { scope: scopeEl.value, gymId: gymId, equipmentId: item.equipmentId, meta: meta, provenance: { now: '1970-01-01T00:00:00.000Z' } });
+        box.textContent = window.VDSEN_EQUIPMENT_CONTEXT.describeImpact(window.VDSEN_EQUIPMENT_CONTEXT.previewImpact({ catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, config: cfg, nextConfig: next, candidates: _lastLoadCandidates })).join(' ');
+      } catch (e) { box.textContent = e.message || ''; }
+    };
+    ['ei-kind', 'ei-unit', 'ei-step-v', 'ei-min', 'ei-max', 'ei-bar-w', 'ei-plate', 'ei-bar-max', 'ei-loads-v'].forEach(function(id) { var n = document.getElementById(id); if (n) { n.addEventListener('input', refreshImpact); n.addEventListener('change', refreshImpact); } });
+    refreshImpact();
     document.getElementById('eiSave').onclick = async function() {
       var status = document.getElementById('eiStatus');
       try {
         var meta = _incFormRead();
-        var next = window.VDSEN_EQUIPMENT_CONTEXT.setEquipmentIncrement(cfg, { scope: scopeEl.value, gymId: gymId, equipmentId: item.equipmentId, meta: meta });
+        var next = window.VDSEN_EQUIPMENT_CONTEXT.setEquipmentIncrement(cfg, { scope: scopeEl.value, gymId: gymId, equipmentId: item.equipmentId, meta: meta,
+          provenance: { now: new Date().toISOString(), uid: currentCoach.uid } });
         var btn = document.getElementById('eiSave'); btn.disabled = true; btn.textContent = 'Guardando...';
         await updateDoc(doc(db, 'coaches', currentCoach.uid), { equipmentIncrements: next });
         _coachEquipmentConfig = next;
@@ -4198,14 +4213,40 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       var act = r.equipmentId ? '<button type="button" class="btn-secondary text-xs" data-eq-cfg="' + i + '">Configurar</button>' : '<span style="color:#888;font-size:11px">solo por ejercicio (Incr. en el catálogo)</span>';
       return '<li style="padding:8px 0;border-top:1px solid rgba(244,244,240,.1)"><div><strong>' + _escH(r.name) + '</strong> <span style="color:' + (colors[r.status] || '#888') + ';font-size:11px;font-weight:700">' + _escH(r.status) + '</span></div>'
         + '<div style="color:#888;font-size:11px">' + _escH(r.equipmentId || 'sin equipmentId') + (r.gymId ? ' · ' + _escH(r.gymId) : '') + ' · ' + r.exerciseCount + ' ejercicios · ' + r.candidatesAffected + ' candidatos LOAD afectados</div>'
-        + '<div style="color:#888;font-size:11px">Identidad: ' + _escH(r.identityStatus + (r.identityReason ? ' (' + r.identityReason + ')' : '')) + ' · Incremento: ' + _escH(r.incrementState + (r.incrementSource ? ' · ' + r.incrementSource + ' · ' + r.incrementScope : '')) + '</div>'
+        + '<div style="color:#888;font-size:11px">Identidad: ' + _escH(r.identityStatus + (r.identityReason ? ' (' + r.identityReason + ')' : '')) + ' · Incremento: ' + _escH(r.incrementState + (r.incrementSource ? ' · ' + r.incrementSource + ' · ' + r.incrementScope + ' · ' + r.incrementUnit + (r.incrementRevision ? ' · rev ' + r.incrementRevision : '') : '')) + '</div>'
         + (r.missing.length ? '<div style="color:#e8a040;font-size:11px">Falta: ' + _escH(r.missing.join('; ')) + '</div>' : '') + '<div style="margin-top:4px">' + act + '</div></li>';
     }).join('');
     el.innerHTML = '<div style="background:#171717;border:1px solid #444;max-width:680px;width:100%;max-height:90vh;overflow:auto;padding:20px;border-radius:10px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;color:#f4f4f0">Equipos · preparación LOAD</h3><button id="eqqClose" class="btn-secondary">Cerrar</button></div>'
       + '<p style="color:#888;font-size:12px">Un candidato LOAD solo es ejecutable con identidad e incremento explícitos. Modo observación: nada se aplica.</p>'
+      + '<div style="margin:8px 0;padding:8px;border:1px solid #333;border-radius:8px"><div style="font-size:12px;color:#f4f4f0;font-weight:700">Carga masiva</div>'
+      + '<p style="color:#888;font-size:11px;margin:4px 0">Descarga la plantilla (campos en blanco), completa SOLO valores reales y vuelve a importarla. Se valida todo y se muestra una vista previa antes de guardar; si una fila falla no se guarda nada.</p>'
+      + '<button type="button" class="btn-secondary text-xs" id="eqqTplJson">Plantilla JSON</button> <button type="button" class="btn-secondary text-xs" id="eqqTplCsv">Plantilla CSV</button> '
+      + '<input type="file" id="eqqFile" accept=".json,.csv,text/csv,application/json" style="font-size:11px;margin-left:6px">'
+      + '<textarea id="eqqText" class="input-field w-full" rows="4" style="margin-top:6px;font-size:11px" placeholder="Pega aquí el JSON o CSV completado"></textarea>'
+      + '<div style="margin-top:4px"><button type="button" class="btn-secondary text-xs" id="eqqPreview">Previsualizar</button> <button type="button" class="btn-primary text-xs" id="eqqCommit" disabled>Confirmar importación</button></div>'
+      + '<div id="eqqOut" style="font-size:11px;color:#9ab;margin-top:6px;white-space:pre-wrap"></div></div>'
       + '<ul style="list-style:none;margin:0;padding:0">' + rows + '</ul></div>';
     document.getElementById('eqqClose').onclick = function() { el.remove(); };
+    var _download = function(name, text, type) { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); };
+    document.getElementById('eqqTplJson').onclick = function() { _download('vdsen-equipos-incrementos.json', window.VDSEN_EQUIPMENT_CONTEXT.exportTemplate({ catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, config: cfg }).text, 'application/json'); };
+    document.getElementById('eqqTplCsv').onclick = function() { _download('vdsen-equipos-incrementos.csv', window.VDSEN_EQUIPMENT_CONTEXT.exportTemplate({ catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, config: cfg, format: 'csv' }).text, 'text/csv'); };
+    document.getElementById('eqqFile').onchange = function(ev) { var f = ev.target.files && ev.target.files[0]; if (!f) return; var rd = new FileReader(); rd.onload = function() { document.getElementById('eqqText').value = String(rd.result || ''); }; rd.readAsText(f); };
+    var _pending = null;
+    document.getElementById('eqqPreview').onclick = function() {
+      var out = document.getElementById('eqqOut'), commit = document.getElementById('eqqCommit'); _pending = null; commit.disabled = true;
+      var r = window.VDSEN_EQUIPMENT_CONTEXT.parseImport(document.getElementById('eqqText').value, { catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, config: cfg, now: new Date().toISOString(), uid: currentCoach.uid });
+      if (!r.ok) { out.textContent = 'No se importó nada. Corrige lo siguiente:\n• ' + r.errors.join('\n• '); return; }
+      var imp = window.VDSEN_EQUIPMENT_CONTEXT.describeImpact(window.VDSEN_EQUIPMENT_CONTEXT.previewImpact({ catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, config: cfg, nextConfig: r.nextConfig, candidates: _lastLoadCandidates }));
+      out.textContent = 'Vista previa — nuevos: ' + r.counts.added + ' · cambiados: ' + r.counts.changed + ' · eliminados: ' + r.counts.removed + ' · sin cambio: ' + r.counts.unchanged + ' · filas vacías: ' + r.counts.skipped + '\n'
+        + r.rows.filter(function(x) { return x.action !== 'UNCHANGED'; }).map(function(x) { return x.action + ' · ' + x.name + (x.gymId ? ' · ' + x.gymId : ''); }).join('\n') + '\n' + imp.join('\n');
+      _pending = r.nextConfig; commit.disabled = !(r.counts.added || r.counts.changed || r.counts.removed);
+    };
+    document.getElementById('eqqCommit').onclick = async function() {
+      if (!_pending) return; var out = document.getElementById('eqqOut'); var btn = document.getElementById('eqqCommit'); btn.disabled = true;
+      try { await updateDoc(doc(db, 'coaches', currentCoach.uid), { equipmentIncrements: _pending }); _coachEquipmentConfig = _pending; showToast('Importación guardada'); openEquipmentReadinessQueue(); }
+      catch (e) { out.textContent = 'No se pudo guardar: ' + (e.message || e); btn.disabled = false; }
+    };
     el.querySelectorAll('[data-eq-cfg]').forEach(function(b) { b.onclick = function() { var r = queue[Number(b.getAttribute('data-eq-cfg'))]; openEquipmentIncrementEditor({ equipmentId: r.equipmentId, name: r.name, gymId: r.gymId }); }; });
   }
   window.openEquipmentReadinessQueue = openEquipmentReadinessQueue;
@@ -17766,8 +17807,8 @@ El esfuerzo no es negociable.
             var _eqRef = await _equipmentRefForRecord(full, p);
             if (_detailClientId !== clientId || _detailActiveTab !== 'monitor') return;
             _eqRes = window.VDSEN_EQUIPMENT_RESOLVER.resolveForCandidate({ magnitude: full.magnitude, equipment: _eqRef || { equipmentId: null } }) || undefined;
-            _lastLoadCandidates.push({ equipmentId: _eqRef && _eqRef.equipmentId || null, exerciseId: _eqRef && _eqRef.exerciseId || null,
-              unit: full.magnitude.evidence && full.magnitude.evidence.unit || null });
+            _lastLoadCandidates.push({ key: it.key, equipmentId: _eqRef && _eqRef.equipmentId || null, exerciseId: _eqRef && _eqRef.exerciseId || null,
+              exerciseDoc: _eqRef && _eqRef.exerciseDoc || null, magnitude: full.magnitude, unit: full.magnitude.evidence && full.magnitude.evidence.unit || null });
           }
           _dryRuns[it.key] = window.VDSEN_APPLICATION_CONSUMER.planApplication({ record: full, context: {
             equipmentResolution: _eqRes,
@@ -18923,8 +18964,10 @@ El esfuerzo no es negociable.
         if (snap.exists()) { var d = snap.data() || {}; if (currentCoach && (!d.coachId || d.coachId === currentCoach.uid)) exerciseDoc = d; }
       } catch (e) { exerciseDoc = null; }
       var cfg = await _loadCoachEquipmentConfig(false);
-      return window.VDSEN_EQUIPMENT_CONTEXT.equipmentRefForExercise({ catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, exerciseId: exerciseId,
+      var _ref = window.VDSEN_EQUIPMENT_CONTEXT.equipmentRefForExercise({ catalog: window.VDSEN_EXERCISE_VISUAL_CATALOG, exerciseId: exerciseId,
         exerciseDoc: exerciseDoc, config: cfg });
+      _ref.exerciseDoc = exerciseDoc; // kept for the change-impact preview (local data only)
+      return _ref;
     } catch (e) { return null; }
   }
   function _dryRunLine(decision) {

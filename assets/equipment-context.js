@@ -265,6 +265,20 @@
     return out;
   }
 
+  // Human-readable (es) lines for an impact preview.
+  function describeImpact(p) {
+    if (!p) return [];
+    var L = [];
+    if (p.mode === 'CANDIDATES') {
+      var c = p.candidates;
+      L.push('Candidatos LOAD actuales: ' + c.total + '.');
+      L.push('Bloqueado → listo (sin aplicar): ' + c.blockedToReady + ' · Listo → otra carga realizable: ' + c.readyLoadChanged + ' · Listo → bloqueado: ' + c.readyToBlocked + ' · Sin cambio: ' + (c.unchangedReady + c.unchangedBlocked) + '.');
+    } else L.push('Sin candidatos LOAD locales; impacto sobre el catálogo:');
+    var k = p.catalog;
+    L.push('Ejercicios del catálogo — nuevos con incremento: ' + k.exercisesNewlyConfigured + ' · con valor cambiado: ' + k.exercisesChangedValue + ' · que lo pierden: ' + k.exercisesLosingConfiguration + ' · equipos afectados: ' + k.equipmentTouched + '.');
+    return L;
+  }
+
   var QUEUE_STATUS = Object.freeze({ IDENTITY_UNRESOLVED: 'IDENTITY_UNRESOLVED', INCREMENT_INVALID: 'INCREMENT_INVALID', INCREMENT_UNRESOLVED: 'INCREMENT_UNRESOLVED',
     UNIT_MISMATCH: 'UNIT_MISMATCH', READY: 'READY' });
 
@@ -307,7 +321,7 @@
       else if (unitMismatch) missing.push('unidad del incremento (' + meta.meta.unit + ') distinta a la de la evidencia');
       return { key: r.key, equipmentId: r.equipmentId, name: r.name, equipmentType: r.equipmentType, gymId: r.gymId, aliases: Object.keys(r.aliases).sort(),
         identityStatus: r.identityStatus, identityReason: r.identityReason, implementRole: r.implementRole || 'LOAD_IMPLEMENT', exerciseCount: r.exerciseIds.length, exerciseOverrideCount: overrideCount,
-        incrementState: incState, incrementScope: meta.scope, incrementSource: meta.meta ? meta.meta.source : null, incrementUnit: meta.meta ? meta.meta.unit : null,
+        incrementState: incState, incrementScope: meta.scope, incrementSource: meta.meta ? meta.meta.source : null, incrementUnit: meta.meta ? meta.meta.unit : null, incrementRevision: meta.meta && Number.isInteger(meta.meta.revision) ? meta.meta.revision : null, incrementConfiguredAt: meta.meta && meta.meta.configuredAt || null,
         candidatesAffected: mine.length, status: status, blocker: status === QUEUE_STATUS.READY ? null : status, missing: missing };
     });
     return out.sort(function(a, b) { return b.candidatesAffected - a.candidatesAffected || b.exerciseCount - a.exerciseCount || a.name.localeCompare(b.name) || String(a.key).localeCompare(String(b.key)); });
@@ -316,5 +330,5 @@
   return { SCOPES: SCOPES, emptyConfig: emptyConfig, normalizeConfig: normalizeConfig, resolveIncrementMetadata: resolveIncrementMetadata,
     setEquipmentIncrement: setEquipmentIncrement, equipmentRefForExercise: equipmentRefForExercise,
     QUEUE_STATUS: QUEUE_STATUS, buildEquipmentQueue: buildEquipmentQueue, stampProvenance: stampProvenance, exportTemplate: exportTemplate, parseImport: parseImport,
-    previewImpact: previewImpact, BULK_SCHEMA: BULK_SCHEMA, BULK_FIELDS: BULK_FIELDS };
+    previewImpact: previewImpact, describeImpact: describeImpact, BULK_SCHEMA: BULK_SCHEMA, BULK_FIELDS: BULK_FIELDS };
 });

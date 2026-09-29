@@ -59,5 +59,5 @@ test('T510.6 Coach UI: a compact queue with direct navigation to configure; no n
     assert.ok(coach.includes(s), s);
   assert.ok(!/collection\(db, ['"]equipment/.test(coach));
   const fn = coach.slice(coach.indexOf('async function openEquipmentReadinessQueue'), coach.indexOf('window.openEquipmentReadinessQueue'));
-  assert.ok(!/updateDoc|setDoc|addDoc/.test(fn), 'the queue itself writes nothing');
+  assert.ok(!/setDoc|addDoc/.test(fn) && fn.split('updateDoc(').length - 1 === 1, 'T519: the only write is the confirmed bulk import (coach doc)');
 });
