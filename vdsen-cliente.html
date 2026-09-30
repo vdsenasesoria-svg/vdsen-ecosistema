@@ -550,8 +550,10 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .wkc.view.future,.wkc.view.past{box-shadow:inset 0 -3px 0 var(--st-stale)}
 .wkc-fold{flex:0 0 auto;min-width:56px;padding:4px 10px}
 :root.light-mode .wkc.real .wkc-tag{color:#245500}
-.daytabs{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(104px,1fr);overflow-x:auto;scrollbar-width:none}
-.dt{position:relative;min-height:52px;padding:9px 12px 10px;background:transparent;border:0;border-right:1px solid var(--rule);text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:8px;color:var(--mt);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.daytabs{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(120px,1fr);overflow-x:auto;scrollbar-width:none}
+.dt{position:relative;min-height:62px;padding:9px 12px 10px;background:transparent;border:0;border-right:1px solid var(--rule);text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:5px;color:var(--mt);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.dt-n{font-family:var(--font-num);font-size:12px;font-weight:800;letter-spacing:.14em;color:var(--mt)}
+.dt.on .dt-n{color:var(--tx)}
 .dt:last-child{border-right:0}
 .dt-top{display:flex;align-items:center;gap:7px;min-width:0}
 .dt-glyph{flex:0 0 auto;font-size:11px;font-weight:900;line-height:1;color:var(--mt);min-width:12px}
@@ -677,6 +679,9 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .sp-t-v{font-size:13px;color:var(--mt)}
 .sp-t-v b{font-family:var(--font-num);font-size:26px;font-weight:800;color:var(--tx);margin-right:4px;line-height:1}
 .sp-t-r{margin-left:auto;font-family:var(--font-num);font-size:17px;font-weight:800;letter-spacing:.06em;color:var(--tx);white-space:nowrap}
+.sp-note{display:flex;flex-direction:column;gap:3px;margin:-6px 0 16px;padding:9px 12px;background:var(--plate-lo);border:1px solid var(--rule);border-left:2px solid var(--accent-fill)}
+.sp-n-l{font-size:9.5px;letter-spacing:.16em;font-weight:800;color:var(--mt)}
+.sp-n-t{font-size:14px;line-height:1.4;color:var(--tx);overflow-wrap:anywhere}
 .sp-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .sp-f{display:flex;flex-direction:column;gap:6px;min-width:0}
 .sp-fl{font-size:10px;font-weight:800;letter-spacing:.14em;color:var(--mt);text-transform:uppercase}
@@ -703,6 +708,9 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .rirb small{font-size:9.5px;font-weight:600;line-height:1.1;color:var(--mt)}
 .rirb.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.1);box-shadow:inset 0 -3px 0 var(--accent-fill)}
 .rirb.on small{color:var(--tx)}
+.rirb.on.pre{border-style:dashed;background:transparent;box-shadow:none}
+.rirb.on.pre small{color:var(--mt)}
+.rir-pre{margin:8px 0 0;font-size:11.5px;line-height:1.35;color:var(--mt)}
 :root.light-mode .rirb.on{border-color:#245500;box-shadow:inset 0 -3px 0 #245500}
 .sp-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px;margin-top:18px;align-items:start}
 .pump-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
@@ -729,6 +737,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .wu-x{font-size:10px;color:var(--mt);letter-spacing:.08em}
 /* ══ REST TIMER: bottom sheet, tokens only, no glow / blur ══ */
 .rt{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.74);align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom)}
+#saveOkBadge{z-index:8900!important}   /* T545: the "✓ GUARDADO" chip (inline z-index 9999) floated over the +30s / CONTINUAR controls of the rest sheet (z 9000) */
 .rt-sheet{width:min(520px,100%);background:var(--plate);border-top:3px solid var(--accent-fill);padding:16px 16px 14px;display:flex;flex-direction:column;gap:12px;max-height:94dvh;overflow-y:auto}
 .rt-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .rt-last{min-height:18px;font-size:13px;font-weight:700;color:var(--grn);letter-spacing:.02em;text-align:center}
@@ -873,12 +882,25 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .toast.error{background:var(--plate-hi);color:var(--tx);border-color:var(--red);border-left-width:4px}
 /* ══ RESPONSIVE: 320–430 phones, desktop column ══ */
 .pump-row{grid-template-columns:repeat(3,minmax(0,1fr))}
+/* T545: at 360-389px "PERFORMANCE SYSTEM" ran under "SEM 1/6 · HIPERTROFIA" in the header */
+@media (max-width:389px){
+  .brand-sub{font-size:9.5px;letter-spacing:.08em}
+  .hdr-user{max-width:44vw}
+}
+/* T545: real 7-day plan: long session titles + the two-tier nav left the set form below the fold on phones */
+@media (max-width:430px){
+  .tr-head{padding:14px 16px 12px}
+  .tr-title{font-size:28px;margin:6px 0 4px}
+  .tr-acts{margin-top:10px}
+  .xnav{margin-top:12px}
+}
 @media (max-width:359px){
   .brand-sub{display:none}
   .hdr{padding:8px 12px}
   .hdr-user strong{font-size:14px}
   .nb-lbl{font-size:10px;letter-spacing:.03em}
-  .today-session,.tr-title{font-size:30px}
+  .today-session{font-size:30px}
+  .tr-title{font-size:26px}
   .xh-name{font-size:26px}
   .set-save-primary{font-size:17px;letter-spacing:.06em}
   .num-in{font-size:36px}
@@ -4142,8 +4164,11 @@ function renderResumen() {
     // same green checkmark as a fully-COMPLETE week.
     const _wAllComplete = _numDiasGrid > 0 && Array.from({length:_numDiasGrid}, (_,i) => _getSessionLifecycleState(LOGS, w, i) === 'COMPLETE').every(Boolean);
     const _wHasPartial = _wDone && !_wAllComplete;
-    const cls = w===semActiva?'active':(_wAllComplete?'done':(_wHasPartial?'partial':(w===_totalWeeksGrid?'deload':'')));
-    const lbl = w===_totalWeeksGrid?'DELOAD':w===semActiva?'ACTIVA':(_wHasPartial?'PARCIAL':(_wResolved&&!_wDone?'⏸':''));
+    // T545: the last week is only a DELOAD when the reactive engine's own trigger check says so (T162: SEMANA 6 ≠ DELOAD AUTOMÁTICO);
+    // the strip used to hard-code 'DELOAD' for every plan's final week, contradicting getSemProgresion() on the training tab.
+    const _wIsDeload = w===_totalWeeksGrid && _computeDeloadTriggers(w).isDeload === true;
+    const cls = w===semActiva?'active':(_wAllComplete?'done':(_wHasPartial?'partial':(_wIsDeload?'deload':'')));
+    const lbl = w===_totalWeeksGrid?(_wIsDeload?'DELOAD':'FINAL'):w===semActiva?'ACTIVA':(_wHasPartial?'PARCIAL':(_wResolved&&!_wDone?'⏸':''));
     weekHtml += `<button type="button" class="wk ${cls}" onclick="goToWeek(${w})" aria-label="Semana ${w}${lbl?': '+lbl:''}">
       <div class="wk-num">${w}</div>
       <div class="wk-lbl">${lbl||'SEM'}</div>
@@ -4627,7 +4652,7 @@ function getTodaySummary() {
       statusLine = '<div class="sess-status sess-pending">· PENDIENTE — '+home.progress.totalSets+' series previstas</div>';
   }
 
-  return `<div class="today-session">${_escHTml(hoy.dia||'')}</div>
+  return `<div class="today-session">${_escHTml(_stripDayNo(hoy.dia||''))}</div>
     ${statusLine}
     <button onclick="_goToHomeDay(${idx})" class="today-action ${btnClass}">${home.primaryAction.label}</button>
     <div class="today-meta"><span><b class="t-num">${ejercicios}</b> ejercicios</span></div>`;
@@ -5468,6 +5493,32 @@ function getSetNoteBadge(setNote) {
   return null;
 }
 
+// T545: a Coach-authored per-set instruction (setNote) that has no dedicated badge used to be dropped, so e.g. "1 bloque continuo de
+// 20–25 min · Zone 2 · RPE 3–4" never reached the athlete. Shown verbatim (escaped), only for techniques without their own set renderer.
+function _plainSetNote(ej, setNote) {
+  var n = setNote ? String(setNote).trim() : '';
+  var t = String((ej && ej.technique) || 'straight').toLowerCase();
+  return (!n || SET_NOTE_LABELS[n] || (t !== 'straight' && t !== 'iso-hold')) ? '' : n;
+}
+function _setNoteBlockHtml(notes) {
+  if (!notes.length) return '';
+  return '<div class="sp-note" role="note"><span class="sp-n-l">NOTA COACH</span>' + notes.map(function(n) { return '<span class="sp-n-t">' + _escHTml(n) + '</span>'; }).join('') + '</div>';
+}
+// T545: display-only session identity. Coach labels look like "#1 — Pecho superior + dorsal + lateral"; the "#1 —" numbering is redundant
+// with the D1..D7 chips and the long tail made every day tab read "#1 — P…". The stored label is never changed.
+function _stripDayNo(l) { return String(l == null ? '' : l).replace(/^\s*#\s*\d+\s*[—–:.-]\s*/, '').trim(); }
+function _dayShortLabel(l) {
+  var t = _stripDayNo(l);
+  var first = (t.split(/\s+[+·\/—–]\s+/)[0] || t).trim();
+  if (first.length > 22) first = first.slice(0, 22).replace(/\s+\S*$/, '');
+  return first || t;
+}
+function _exSetNotesHtml(ej) {
+  var seen = {}, out = [];
+  ((ej && ej.sets) || []).forEach(function(s) { var n = _plainSetNote(ej, s && s.setNote); if (n && !seen[n]) { seen[n] = 1; out.push(n); } });
+  return _setNoteBlockHtml(out);
+}
+
 function _instructionValue(obj, keys) {
   if (!obj || typeof obj !== 'object') return null;
   for (var i = 0; i < keys.length; i++) {
@@ -6194,7 +6245,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _rirDescs2 = ['Fallo','1 rep','2 reps','3 reps','Cómodo'];
     var _rirBtns2 = [0,1,2,3,4].map(function(rv){
       var sel2 = rv === _exPfRIR;
-      return '<button type="button" onclick="expressSetRIR(\''+_expK+'\','+rv+')" id="xrir_'+_expK+'_'+rv+'" class="rirb'+(sel2?' on':'')+'" aria-pressed="'+(sel2?'true':'false')+'" aria-label="RIR real '+rv+': '+_rirDescs2[rv]+'">'+
+      return '<button type="button" onclick="expressSetRIR(\''+_expK+'\','+rv+')" id="xrir_'+_expK+'_'+rv+'" class="rirb'+(sel2?' on pre':'')+'" aria-pressed="'+(sel2?'true':'false')+'" aria-label="RIR real '+rv+': '+_rirDescs2[rv]+'">'+
         '<b>'+rv+'</b>'+
         '<small>'+_rirDescs2[rv]+'</small>'+
         '</button>';
@@ -6267,6 +6318,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<span class="sp-t-r">RIR '+baseRIR+'</span>'+
         '</div>';
       })()+
+      (_isY3T ? '' : _exSetNotesHtml(ej))+
       '<div class="sp-fields">'+
         '<div class="sp-f">'+
           '<label class="sp-fl" for="xcarga_'+_expK+'">'+_cargaLbl+'</label>'+
@@ -6282,6 +6334,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div class="sp-grp" role="group" aria-label="RIR real de la última serie">'+
         '<div class="sp-gl"><span>RIR REAL · ÚLTIMA SERIE</span><small>reps que te quedaban</small></div>'+
         '<div class="rir-row">'+_rirBtns2+'</div>'+
+        '<div class="rir-pre" id="xrirpre_'+_expK+'">Preseleccionado = RIR objetivo. Toca tu RIR real para confirmarlo.</div>'+
         '<input type="hidden" id="xrir_val_'+_expK+'" value="'+_exPfRIR+'">'+
       '</div>'+
       '<div class="sp-row">'+
@@ -6400,6 +6453,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           _setInstrHtml+
           setSpecBadges+
           (setNote && SET_NOTE_LABELS[setNote] ? '<span style="color:var(--accent);font-weight:600">📌 '+getSetNoteBadge(setNote)+'</span>' : '')+
+          _setNoteBlockHtml(_plainSetNote(ej, setNote) ? [_plainSetNote(ej, setNote)] : [])+
         '</div>'
       : '';
 
@@ -7145,8 +7199,10 @@ function expressSetRIR(expK, val) {
     if (!btn) continue;
     var sel = rv === val;
     btn.classList.toggle('on', sel);
+    btn.classList.remove('pre');   // T545: a tap turns the preselected objective into the athlete's own observation
     btn.setAttribute('aria-pressed', sel ? 'true' : 'false');
   }
+  var pre = document.getElementById('xrirpre_'+expK); if (pre) pre.style.display = 'none';
   var h = document.getElementById('xrir_val_'+expK);
   if (h) h.value = val;
 }
@@ -8253,7 +8309,8 @@ function renderEntrenamiento() {
     // so they get their own distinct visual, never the same checkmark as done.
     var _isPartialClosed = (_st === 'AUTO_CLOSED' || _st === 'PARTIAL');
     var active = i === DIA_ACTIVO;
-    var rawLabel = (s.dia||'').replace(/^(SESI[OÓ]N\s*\d+[:\s]+|D[IÍ]A\s*\d+[:\s]+)/i,'').replace(/\([^)]+\)/,'').trim()||('DÍA '+(i+1));
+    var rawLabel = _stripDayNo((s.dia||'').replace(/^(SESI[OÓ]N\s*\d+[:\s]+|D[IÍ]A\s*\d+[:\s]+)/i,'').replace(/\([^)]+\)/,'').trim())||('DÍA '+(i+1));
+    var _dtShort = _dayShortLabel(rawLabel);
     var iconColor = active ? 'var(--accent)' : (isSkipped || _isAdminClosed) ? 'var(--mt)' : _isPartialClosed ? 'var(--sess-partial)' : done ? 'var(--grn)' : 'var(--mt)';
     var txtColor  = active ? 'var(--tx)' : (isSkipped || _isAdminClosed) ? 'rgba(160,160,160,.7)' : _isPartialClosed ? 'var(--sess-partial)' : done ? 'rgba(110,154,110,.8)' : 'var(--mt)';
     // Progreso parcial de sets
@@ -8272,7 +8329,8 @@ function renderEntrenamiento() {
     var _stCls = (isSkipped || _isAdminClosed) ? 'skipped' : _isPartialClosed ? 'partial' : done ? 'done' : (_partial ? 'live' : 'pending');
     var _glyph = (isSkipped||_isAdminClosed)?'⏸':_isPartialClosed?'◐':done?'✓':(_partial?_dSets+'/'+_tSets:'·');
     return '<button onclick="selDia('+i+')" class="dt dt-'+_stCls+(active?' on':'')+'"'+(active?' aria-current="true"':'')+' title="'+_escHTml(rawLabel)+'">'+
-      '<span class="dt-top"><span class="dt-glyph" aria-hidden="true">'+_glyph+'</span><span class="dt-lbl">'+_escHTml(rawLabel)+'</span></span>'+
+      '<span class="dt-top"><span class="dt-glyph" aria-hidden="true">'+_glyph+'</span><span class="dt-n">D'+(i+1)+'</span></span>'+
+      '<span class="dt-lbl">'+_escHTml(_dtShort)+'</span>'+
       '<span class="dt-bar"><span style="width:'+((done||_isPartialClosed)?100:_pPct)+'%"></span></span>'+
       '</button>';
   }).join('');
@@ -8460,7 +8518,7 @@ function renderEntrenamiento() {
     '<div class="tab-appear session-head tr-head">'+
       '<div class="tr-id">'+
         '<div class="kick'+(CURRENT_WEEK!==REAL_WEEK?' stale':'')+'">SEM '+CURRENT_WEEK+' · '+getSemProgresion(CURRENT_WEEK)+(CURRENT_WEEK!==REAL_WEEK?' (VISTA)':'')+'</div>'+
-        '<h2 class="tr-title">'+_escHTml((ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim())+'</h2>'+
+        '<h2 class="tr-title">'+_escHTml(_stripDayNo((ses.dia||'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim()))+'</h2>'+
         '<div class="tr-sub">'+
           (function(){var _ejAct=ejercicios.filter(function(ej){return isTechniqueActive(ej,CURRENT_WEEK);});var _tot=_ejAct.length;var _dn=ejercicios.filter(function(ej,_ei){return isTechniqueActive(ej,CURRENT_WEEK)&&_isExerciseFullyDone(DIA_ACTIVO,_ei,ej);}).length;return _dn===_tot&&_tot>0?'<span class="ok">'+_tot+'/'+_tot+' ejercicios ✓</span>':'<span>'+_dn+'/'+_tot+' ejercicios</span>';})()+'</div>'+
       '</div>'+
@@ -8481,8 +8539,6 @@ function renderEntrenamiento() {
     '</div>'+
     // Session dashboard stats (FASE 8)
     sessionStatsHtml+
-    // Week performance summary (FASE 12): all days in CURRENT_WEEK
-    _buildWeekPerfSummary()+
 
     // Rezagados banner
     rezBanner+
@@ -8494,6 +8550,9 @@ function renderEntrenamiento() {
     '<div id="exPanel" class="xpanel">'+
       _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO)+
     '</div>'+
+    // Week performance summary (FASE 12): all days in CURRENT_WEEK. T545: below the active exercise (it duplicated the session stats
+    // above and pushed the set form down by ~130px from the second session of a week on)
+    _buildWeekPerfSummary()+
     // Referencia y cierre de semana: secundarios, debajo del ejercicio activo
     closeWeekBanner+
     // Glosario RIR + ICS (colapsable)
@@ -14681,7 +14740,7 @@ function showSessionSummary(di) {
   var avgICS  = icsVals.length ? _avgArr(icsVals).toFixed(1) : '—';
   var icsColor = icsVals.length ? (parseFloat(avgICS) >= 8 ? 'var(--grn)' : parseFloat(avgICS) >= 7 ? 'var(--accent)' : 'var(--red)') : 'var(--mt)';
   var volStr  = totalVol > 999 ? (totalVol/1000).toFixed(1)+' t' : Math.round(totalVol)+' kg';
-  var sesName = (ses.dia || 'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim();
+  var sesName = _stripDayNo((ses.dia || 'Sesión').replace(/^(SESION|SESIÓN)\s*\d+[:\s]*/i,'').replace(/^(DÍA|DIA)\s*\d+\s*[—–:\s]*/i,'').trim());
 
   var old = document.getElementById('sessionSummaryOv');
   if (old) old.remove();

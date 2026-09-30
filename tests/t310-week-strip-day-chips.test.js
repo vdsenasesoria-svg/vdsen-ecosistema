@@ -45,7 +45,7 @@ ok(renderResumenSrc.includes('const _wAllComplete ='), 'renderResumen computes a
 ok(renderResumenSrc.includes('const _wHasPartial = _wDone && !_wAllComplete;'), 'a week resolved via real execution but not purely COMPLETE is flagged _wHasPartial');
 ok(renderResumenSrc.includes("cls = w===semActiva?'active':(_wAllComplete?'done':(_wHasPartial?'partial':"),
   'the "done" (green) class is now reserved for purely-COMPLETE weeks; a PARTIAL-containing week gets its own "partial" class, never "done"');
-ok(renderResumenSrc.includes("lbl = w===_totalWeeksGrid?'DELOAD':w===semActiva?'ACTIVA':(_wHasPartial?'PARCIAL':"),
+ok(renderResumenSrc.includes("lbl = w===_totalWeeksGrid?(_wIsDeload?'DELOAD':'FINAL'):w===semActiva?'ACTIVA':(_wHasPartial?'PARCIAL':"),
   'a PARTIAL-containing week shows an explicit "PARCIAL" label, distinct from a COMPLETE week\'s blank/SEM label');
 
 ok(CLIENT.includes('.wk.partial{border-color:rgba(244,244,240,.35);background:rgba(244,244,240,.04)}'), 'CSS: .wk.partial has its own border/background, distinct from .wk.done');

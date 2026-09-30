@@ -4,6 +4,10 @@ Build under test: `codex/client-app-next` (client release candidate) against **F
 purpose. Not production. Automation (`docs/client-staging-ui-results.json`, `docs/client-staging-performance-results.json`) proves the UI works; it
 cannot mark this sheet PASS — only the athlete + the Coach observer can.
 
+Automated dress rehearsal (T545, not a substitute for the human PASS): one complete session of the real cloned 7-day plan (day 1, 5 exercises, 12 sets) was
+executed through the real Client UI on staging, persisted, reloaded and re-logged-in — `docs/client-staging-real-session-results.json`
+(`scripts/client-staging-real-session.cjs`). The synthetic staging account and its session log are kept so the athlete can review the completed-session UI.
+
 Athlete: ______________  Coach observer: ______________  Device / browser: ______________  Date: ______________
 
 | # | Check (tick when true) | OK | Note |

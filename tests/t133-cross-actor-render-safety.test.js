@@ -74,7 +74,7 @@ assert.ok(
   'T133 Sink 2a: renderEntrenamiento must escape rawLabel in the day-tab short label'
 );
 assert.ok(
-  /_escHTml\(\(ses\.dia\|\|'Sesión'\)\.replace/.test(renderEntrenamientoFn),
+  /_escHTml\((?:_stripDayNo\()?\(ses\.dia\|\|'Sesión'\)\.replace/.test(renderEntrenamientoFn),
   'T133 Sink 2b: renderEntrenamiento must escape the session header title derived from ses.dia'
 );
 

@@ -70,6 +70,22 @@ keys, nested objects, HTML - is discarded. When `exerciseType` and `tipo` disagr
 absent or unknown type is `fuerza`. cardio / estacion / circuito / calistenia exercises may have `sets: []` (prescribed by exercise-level fields); a strength
 exercise without sets is still dropped and still blocks the pre-write gate. PID, ordering, sets / reps / RIR, and the `vdsen-plan-v2` schema are unchanged.
 
+## Real-plan findings (T545)
+Executing the real 7-day / 32-exercise / 80-set plan of an athlete (staging clone) exposed defects no synthetic fixture had:
+* **Coach `setNote` was dropped** unless it matched a known badge label, so the cardio instruction "1 bloque continuo de 20–25 min · Zone 2 · RPE 3–4" and
+  "Hold 15–30 s" never reached the athlete. Now shown verbatim and escaped as `NOTA COACH` (`.sp-note`) in the express form and the per-set form, only for
+  `straight` / `iso-hold` (other techniques keep their own renderers).
+* **Day tabs** read "#1 — P…" for every day; they now show `D1`…`D7` plus a short identity derived for display only (`_dayShortLabel`; the stored label is
+  untouched), and the redundant "#n —" numbering is stripped from titles (`_stripDayNo`).
+* **Week strip** hard-coded `DELOAD` for the final week; it now says `DELOAD` only when `_computeDeloadTriggers()` says so (T162), else `FINAL`.
+* **Express RIR** preselects the prescribed RIR; it now renders dashed with a one-line hint until the athlete taps (stored values unchanged — see the
+  product decision below).
+* Header overlap at 360–389px, the `✓ GUARDADO` chip floating over the rest sheet controls, and the week summary pushing the set form down were fixed.
+
+Product decisions left open (not changed here): express mode stores the preselected RIR as observed `rir_real`, and fills `ics` 8 / `pump` 1 when empty,
+for every set of the exercise; a plan imported by the Coach has no `updatedAt`, so the auto-apply shadow rejects every recommendation with
+`PLAN_TIMESTAMP_MISSING` (no PENDING is ever created for such plans).
+
 ## Residual visual debt (explicit)
 * body-map / weekly-volume widgets (legend-coloured data viz), InBody chart, PDF export
 * Coach-authored technique `detail` HTML internals (only its container is geometry-safe: constrained media, no fixed / absolute escape, wrapped
