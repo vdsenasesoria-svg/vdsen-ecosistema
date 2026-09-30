@@ -7,9 +7,10 @@ Estado: **preparado, no desplegado.** Este documento describe la secuencia para 
 | Entorno | Identificador | Fuente |
 |---|---|---|
 | PRODUCCIÓN | `vdsen-ecosistema` | `firebaseConfig.projectId` en `vdsen-coach.html` y `vdsen-cliente.html`; `scripts/migrate-ayrton-uid.js` |
-| STAGING | **STAGING_NOT_CONFIGURED** | No existe `.firebaserc`, alias, proyecto alterno, CI ni credenciales/CLI de Firebase en el entorno de trabajo |
+| STAGING | `vdsen-ecosistema-staging` (alias `staging`, `.firebaserc`) | Creado en T540: Firestore nativo `nam5` (misma ubicación que producción), Auth solo Email/Password, app web «VDSEN Staging»; config del SDK en `config/firebase-staging.config.json`. **Vacío; reglas e índices aún NO desplegados.** |
+| Otro proyecto de la cuenta | `vdsen-planes` | Fuera de alcance: nunca se toca |
 
-`firebase.json` solo declara `firestore.rules` (no declara `firestore.indexes.json`): el despliegue de índices debe indicarse explícitamente (`--only firestore:indexes`) o añadirse a `firebase.json` antes.
+`firebase.json` declara ahora `firestore.rules`, `firestore.indexes.json` y `auth.providers.emailPassword`. No hay proyecto por defecto: usar SIEMPRE `--project staging` / `--project production` (o el id explícito).
 
 ## Orden obligatorio (por qué)
 
@@ -46,4 +47,4 @@ La app nueva funciona con las reglas antiguas; la app antigua NO funciona con la
 
 ## Validación en staging
 
-Solo con un proyecto de staging explícito y credenciales que lo identifiquen sin ambigüedad. Hoy: **STAGING_NOT_CONFIGURED** → no se desplegó nada. Para habilitarlo: crear un proyecto Firebase de staging, añadir `.firebaserc` con alias `staging` y `default` explícitos, y apuntar una copia de la app (`firebaseConfig`) a ese proyecto.
+Solo con un proyecto de staging explícito y credenciales que lo identifiquen sin ambigüedad. Staging existe y está vacío (0 usuarios). Falta el ensayo: desplegar reglas e índices con `--project staging`, apuntar una copia de la app a `config/firebase-staging.config.json` y ejecutar el smoke con cuentas sintéticas.

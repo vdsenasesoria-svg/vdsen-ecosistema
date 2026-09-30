@@ -47,10 +47,9 @@ test('T539.C scripts contain no real UIDs / secrets, load firebase-admin lazily,
   assert.ok(/function protectedCoachKeys\(\)/.test(rules) && /\['apiAccessEnabled'\]/.test(rules));
 });
 
-test('T539.D deployment runbook: production id, STAGING_NOT_CONFIGURED, ordering (indexes -> app/API -> rules), rollback and smoke; nothing deployed', () => {
+test('T539.D deployment runbook: production id, staging id, ordering (indexes -> app/API -> rules), rollback and smoke; nothing deployed', () => {
   const d = fs.readFileSync(path.join(root, 'docs/FIRESTORE_DEPLOYMENT_RUNBOOK.md'), 'utf8');
-  for (const t of ['vdsen-ecosistema', 'STAGING_NOT_CONFIGURED', 'NO EJECUTADO', 'firestore:indexes', 'firestore:rules', 'Rollback', 'apiAccessEnabled', 'Enabled', '--project']) assert.ok(d.includes(t), t);
+  for (const t of ['vdsen-ecosistema', 'vdsen-ecosistema-staging', 'NO EJECUTADO', 'firestore:indexes', 'firestore:rules', 'Rollback', 'apiAccessEnabled', 'Enabled', '--project']) assert.ok(d.includes(t), t);
   assert.ok(d.indexOf('firestore:indexes') < d.indexOf('firestore:rules'), 'indexes before rules');
-  assert.ok(!fs.existsSync(path.join(root, '.firebaserc')), 'no project alias was invented');
-  const fb = JSON.parse(fs.readFileSync(path.join(root, 'firebase.json'), 'utf8')); assert.deepEqual(Object.keys(fb), ['firestore']);
+  assert.ok(!d.includes('STAGING_NOT_CONFIGURED'), 'staging exists since T540');
 });
