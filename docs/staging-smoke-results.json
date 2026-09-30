@@ -1,0 +1,951 @@
+{
+ "project": "vdsen-ecosistema-staging",
+ "ranAt": "2026-09-30",
+ "rulesCommit": "0654fb9",
+ "summary": {
+  "project": "vdsen-ecosistema-staging",
+  "checks": 116,
+  "passed": 114,
+  "failed": [],
+  "pending": [
+   "ENTITLEMENT_TRUE_FALSE_FLIP:BLOCKED_BY_STAGING_ADMIN_CREDENTIALS",
+   "ORPHAN_CLAIM_EXISTING_UNOWNED:BLOCKED_BY_STAGING_ADMIN_CREDENTIALS"
+  ],
+  "cleanup": {
+   "docsDeleted": 16,
+   "docResidueCollections": [],
+   "usersCreated": 6,
+   "usersDeleted": 6
+  }
+ },
+ "results": [
+  {
+   "id": "COACH_CREATE_OWNER",
+   "invariant": "open registration creates a normal coach doc",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "A01"
+  },
+  {
+   "id": "COACH_CREATE_OTHER",
+   "invariant": "open registration creates a normal coach doc",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "A01"
+  },
+  {
+   "id": "COACH_CREATE_SELF",
+   "invariant": "open registration (self-promoted path)",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "A01"
+  },
+  {
+   "id": "COACH_CREATE_WITH_ENTITLEMENT",
+   "invariant": "create coach doc with apiAccessEnabled=true",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "A01"
+  },
+  {
+   "id": "COACH_CREATE_WITH_ENTITLEMENT_FALSE",
+   "invariant": "create coach doc with apiAccessEnabled=false",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "A01"
+  },
+  {
+   "id": "ENTITLEMENT_DEFAULT",
+   "invariant": "new coach docs carry no entitlement",
+   "expected": "absent",
+   "actual": "absent",
+   "pass": true,
+   "emulator": "A01"
+  },
+  {
+   "id": "COACH_ADD_ENTITLEMENT_LATER",
+   "invariant": "add apiAccessEnabled to an existing coach doc",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "A02"
+  },
+  {
+   "id": "COACH_ENTITLEMENT_FALSE_LATER",
+   "invariant": "add apiAccessEnabled=false later",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "A02"
+  },
+  {
+   "id": "COACH_DELETE_RECREATE",
+   "invariant": "delete + recreate with the entitlement",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "A02 (delete of a doc WITHOUT the field is allowed)"
+  },
+  {
+   "id": "COACH_RECREATE_WITH_ENTITLEMENT",
+   "invariant": "recreate after delete with apiAccessEnabled=true",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "A02"
+  },
+  {
+   "id": "COACH_RECREATE_NORMAL",
+   "invariant": "recreate normally",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "A01"
+  },
+  {
+   "id": "ENTITLEMENT_TRUE_FALSE_FLIP",
+   "invariant": "flip / drop / delete an entitlement-bearing doc (needs an existing TRUE entitlement, provisioned only by the Admin SDK)",
+   "expected": "n/a",
+   "actual": "BLOCKED_BY_STAGING_ADMIN_CREDENTIALS",
+   "pass": null,
+   "note": "covered by emulator A02/A03"
+  },
+  {
+   "id": "COACH_PROFILE_UPDATE",
+   "invariant": "normal profile update",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "A02"
+  },
+  {
+   "id": "ATHLETE_SELF_PROMOTE_PRE",
+   "invariant": "athlete uid (no client doc yet) can register: reported product behavior",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T07"
+  },
+  {
+   "id": "CLIENT_CREATE_OWNER",
+   "invariant": "owner creates its client (legit onboarding)",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "O02"
+  },
+  {
+   "id": "CLIENT_CREATE_OTHER",
+   "invariant": "other coach creates its own client",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "O02"
+  },
+  {
+   "id": "CLIENT_CREATE_UNDER_OTHER",
+   "invariant": "create a client under another coach id",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "O02"
+  },
+  {
+   "id": "CLIENT_ADOPT_OWNED",
+   "invariant": "overwrite / adopt an existing owned client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "O02"
+  },
+  {
+   "id": "CLIENT_STEAL_UPDATE",
+   "invariant": "other coach reassigns an owned client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "O01"
+  },
+  {
+   "id": "CLIENT_OWNER_REASSIGN",
+   "invariant": "owner reassigns (immutable)",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "O01"
+  },
+  {
+   "id": "CLIENT_ATHLETE_ASSIGN",
+   "invariant": "athlete alters coachId",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "O01"
+  },
+  {
+   "id": "CLIENT_READ_ATHLETE",
+   "invariant": "athlete reads own client",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T08"
+  },
+  {
+   "id": "CLIENT_READ_OWNER",
+   "invariant": "owner reads its client",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T01"
+  },
+  {
+   "id": "CLIENT_READ_OTHER",
+   "invariant": "other coach reads owner client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T01"
+  },
+  {
+   "id": "CLIENT_READ_SELF",
+   "invariant": "self-promoted coach reads owner client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T01"
+  },
+  {
+   "id": "CLIENT_READ_UNAUTH",
+   "invariant": "unauthenticated reads a client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "M01"
+  },
+  {
+   "id": "CLIENT_READ_ATHLETE_OTHER",
+   "invariant": "athlete reads another athlete client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T08"
+  },
+  {
+   "id": "CLIENT_WRITE_OTHER",
+   "invariant": "other coach updates owner client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CLIENT_WRITE_SELF",
+   "invariant": "self-promoted coach updates owner client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CLIENT_INTERVENTIONS_ATHLETE",
+   "invariant": "athlete forges coachInterventions",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "R15"
+  },
+  {
+   "id": "CLIENT_OWNER_UPDATE",
+   "invariant": "owner updates permitted own-client fields",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "O02"
+  },
+  {
+   "id": "CLIENT_LIST_OTHER_OF_OWNER",
+   "invariant": "other coach lists the owner clients",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T01"
+  },
+  {
+   "id": "CLIENT_LIST_OWNER",
+   "invariant": "owner lists its clients",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T01"
+  },
+  {
+   "id": "CLIENT_ORPHAN_ENUM",
+   "invariant": "enumerate unowned clients",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T10"
+  },
+  {
+   "id": "ORPHAN_CLAIM_EXISTING_UNOWNED",
+   "invariant": "claim a pre-existing UNOWNED legacy client (creating an orphan needs the Admin SDK: no legitimate client-side path makes one)",
+   "expected": "n/a",
+   "actual": "BLOCKED_BY_STAGING_ADMIN_CREDENTIALS",
+   "pass": null,
+   "note": "covered by emulator O01"
+  },
+  {
+   "id": "PLAN_CREATE_OWNER",
+   "invariant": "owner creates the client plan",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "tenant"
+  },
+  {
+   "id": "CLIENT_ACTIVATE_PLAN",
+   "invariant": "owner points the client at the plan",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "O02"
+  },
+  {
+   "id": "PLAN_READ_ATHLETE",
+   "invariant": "athlete reads its plan",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "tenant"
+  },
+  {
+   "id": "PLAN_READ_OTHER",
+   "invariant": "other coach reads the plan",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "tenant"
+  },
+  {
+   "id": "EVIDENCE_ATHLETE_SAVE_MESO",
+   "invariant": "athlete saves execution (meso, mergeFields-style)",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "L01"
+  },
+  {
+   "id": "EVIDENCE_ATHLETE_SAVE_ROOT",
+   "invariant": "athlete saves execution (root log)",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "L01"
+  },
+  {
+   "id": "EVIDENCE_ATHLETE_SET",
+   "invariant": "athlete logs load / reps / observed RIR",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "L03"
+  },
+  {
+   "id": "CANON_ATHLETE_progressionApplications",
+   "invariant": "athlete writes progressionApplications",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "R01-R15"
+  },
+  {
+   "id": "CANON_OTHER_progressionApplications",
+   "invariant": "other coach writes progressionApplications",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CANON_SELF_progressionApplications",
+   "invariant": "self-promoted coach writes progressionApplications",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CANON_ATHLETE_nextExposureOverlays",
+   "invariant": "athlete writes nextExposureOverlays",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "R01-R15"
+  },
+  {
+   "id": "CANON_OTHER_nextExposureOverlays",
+   "invariant": "other coach writes nextExposureOverlays",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CANON_SELF_nextExposureOverlays",
+   "invariant": "self-promoted coach writes nextExposureOverlays",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CANON_ATHLETE_progressionApplicationSummary",
+   "invariant": "athlete writes progressionApplicationSummary",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "R01-R15"
+  },
+  {
+   "id": "CANON_OTHER_progressionApplicationSummary",
+   "invariant": "other coach writes progressionApplicationSummary",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CANON_SELF_progressionApplicationSummary",
+   "invariant": "self-promoted coach writes progressionApplicationSummary",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CANON_ATHLETE_FAKE_ROOT_SUMMARY",
+   "invariant": "athlete alters the root summary",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "R15"
+  },
+  {
+   "id": "EVIDENCE_OWNER_READ",
+   "invariant": "owner reads execution evidence",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T02"
+  },
+  {
+   "id": "EVIDENCE_OTHER_READ_META",
+   "invariant": "OTHER coach reads logs (meso)",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T02"
+  },
+  {
+   "id": "EVIDENCE_OTHER_READ_ROOT",
+   "invariant": "OTHER coach reads logs (root)",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T02"
+  },
+  {
+   "id": "EVIDENCE_OTHER_ENTRIES",
+   "invariant": "OTHER poisons entries",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_OTHER_WEEK",
+   "invariant": "OTHER changes currentWeek",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_OTHER_HISTORY",
+   "invariant": "OTHER poisons exerciseHistory",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_OTHER_PROGREC",
+   "invariant": "OTHER forges progrec evidence",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_OTHER_DELETE",
+   "invariant": "OTHER deletes logs",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_SELF_READ_META",
+   "invariant": "SELF coach reads logs (meso)",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T02"
+  },
+  {
+   "id": "EVIDENCE_SELF_READ_ROOT",
+   "invariant": "SELF coach reads logs (root)",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T02"
+  },
+  {
+   "id": "EVIDENCE_SELF_ENTRIES",
+   "invariant": "SELF poisons entries",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_SELF_WEEK",
+   "invariant": "SELF changes currentWeek",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_SELF_HISTORY",
+   "invariant": "SELF poisons exerciseHistory",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_SELF_PROGREC",
+   "invariant": "SELF forges progrec evidence",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_SELF_DELETE",
+   "invariant": "SELF deletes logs",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T04"
+  },
+  {
+   "id": "EVIDENCE_ATHLETE_OTHER_ATHLETE",
+   "invariant": "athlete writes another athlete logs",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T08"
+  },
+  {
+   "id": "EVIDENCE_UNAUTH",
+   "invariant": "unauthenticated reads logs",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "M01"
+  },
+  {
+   "id": "MATERIALIZER_ELIGIBLE",
+   "invariant": "athlete evidence in staging -> owner materializer produces a PENDING candidate (flag off)",
+   "expected": "1 PENDING",
+   "actual": "1 PENDING",
+   "pass": true,
+   "emulator": "T476 #2-4"
+  },
+  {
+   "id": "CANON_OTHER_PENDING",
+   "invariant": "other coach writes the PENDING record",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CANON_SELF_PENDING",
+   "invariant": "self-promoted coach writes the PENDING record",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T05"
+  },
+  {
+   "id": "CANON_ATHLETE_PENDING",
+   "invariant": "athlete writes the PENDING record",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "R01"
+  },
+  {
+   "id": "CANON_OWNER_PENDING",
+   "invariant": "OWNER coach materializes PENDING (meso)",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T476 #2"
+  },
+  {
+   "id": "CANON_OWNER_SUMMARY_ROOT",
+   "invariant": "owner mirrors the root summary",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T476 #2"
+  },
+  {
+   "id": "NO_APPLIED_STATE",
+   "invariant": "no APPLIED record / overlay exists (flag off)",
+   "expected": "none",
+   "actual": "none",
+   "pass": true,
+   "emulator": "T529/T535"
+  },
+  {
+   "id": "CANON_ATHLETE_RECEIPT",
+   "invariant": "athlete appends a consumption receipt (append-only)",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "L04"
+  },
+  {
+   "id": "CANON_ATHLETE_RECEIPT_EDIT",
+   "invariant": "athlete edits an existing receipt",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "L04"
+  },
+  {
+   "id": "PHONE_OWNER_CREATE",
+   "invariant": "owner creates an index entry for its client",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T06"
+  },
+  {
+   "id": "PHONE_PUBLIC_READ",
+   "invariant": "public lookup (pre-login) works unauthenticated",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T06"
+  },
+  {
+   "id": "PHONE_OTHER_REDIRECT",
+   "invariant": "other coach redirects the entry to its own client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T06"
+  },
+  {
+   "id": "PHONE_OTHER_REPOINT_TO_VICTIM",
+   "invariant": "other coach points an entry at the victim client",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T06"
+  },
+  {
+   "id": "PHONE_OTHER_DELETE",
+   "invariant": "other coach deletes the entry",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T06"
+  },
+  {
+   "id": "PHONE_OWNER_UPDATE",
+   "invariant": "owner repairs its entry",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T06"
+  },
+  {
+   "id": "TPL_OWNER_CREATE",
+   "invariant": "owner creates a template",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T09"
+  },
+  {
+   "id": "TPL_OWNER_READ",
+   "invariant": "owner reads its template",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "TPL_OTHER_READ",
+   "invariant": "other coach reads it",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "TPL_SELF_READ",
+   "invariant": "self-promoted coach reads it",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "TPL_OTHER_WRITE",
+   "invariant": "other coach edits it",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "COMPENDIO_OWNER",
+   "invariant": "owner writes / reads its compendium",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T09"
+  },
+  {
+   "id": "COMPENDIO_OTHER_READ",
+   "invariant": "other coach reads the owner compendium",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "COMPENDIO_ATHLETE_READ",
+   "invariant": "athlete reads the owner compendium",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "BACKUP_OWNER_CREATE",
+   "invariant": "owner creates a plan backup",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T09"
+  },
+  {
+   "id": "BACKUP_OTHER_READ",
+   "invariant": "other coach reads it",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "BACKUP_OTHER_CREATE_FOR_OWNER",
+   "invariant": "other coach creates a backup naming the owner",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "FICHA_ATHLETE_WRITE",
+   "invariant": "athlete writes its onboarding form",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T08"
+  },
+  {
+   "id": "FICHA_OWNER_READ",
+   "invariant": "owner reads the form",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T02"
+  },
+  {
+   "id": "FICHA_OTHER_READ",
+   "invariant": "other coach reads the form",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T02"
+  },
+  {
+   "id": "FICHA_SELF_READ",
+   "invariant": "self-promoted coach reads the form",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T02"
+  },
+  {
+   "id": "FICHA_ATHLETE2_READ",
+   "invariant": "another athlete reads the form",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T08"
+  },
+  {
+   "id": "PROSPECT_PUBLIC_CREATE",
+   "invariant": "public prospect form creation (unauthenticated)",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "public"
+  },
+  {
+   "id": "PROSPECT_OWNER_READ",
+   "invariant": "owner reads its prospect",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "PROSPECT_OTHER_READ",
+   "invariant": "other coach reads it",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "PROSPECT_UNAUTH_READ",
+   "invariant": "unauthenticated reads it",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "SESSIONS_CLOSED",
+   "invariant": "legacy sessions collection is closed",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T11"
+  },
+  {
+   "id": "EQUIP_OWNER",
+   "invariant": "owner writes its equipmentIncrements",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "E01"
+  },
+  {
+   "id": "EQUIP_OTHER",
+   "invariant": "other coach writes the owner equipmentIncrements",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "E01"
+  },
+  {
+   "id": "EQUIP_ATHLETE",
+   "invariant": "athlete writes the owner equipmentIncrements",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "E01"
+  },
+  {
+   "id": "EXERCISE_OWNER_CREATE",
+   "invariant": "owner creates an exercise in its namespace",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "E02"
+  },
+  {
+   "id": "EXERCISE_OTHER_INCREMENT",
+   "invariant": "other coach edits loadIncrement of the owner exercise",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "E02"
+  },
+  {
+   "id": "EXERCISE_OWNER_INCREMENT",
+   "invariant": "owner edits loadIncrement",
+   "expected": "ALLOW",
+   "actual": "ALLOW",
+   "pass": true,
+   "emulator": "E02"
+  },
+  {
+   "id": "EXERCISE_ATHLETE_CREATE",
+   "invariant": "athlete creates an exercise",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "E02"
+  },
+  {
+   "id": "ATHLETE_SELF_PROMOTE",
+   "invariant": "athlete WITH a client doc creates a coach doc",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T07"
+  },
+  {
+   "id": "COACH_DOC_READ_OTHER",
+   "invariant": "other coach reads the owner coach doc",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "M01"
+  },
+  {
+   "id": "PLANS_BACKUP_QUERY",
+   "invariant": "runtime backup query (coachId == uid, clientId == c, order backedUpAt desc, limit 1) runs without a missing-index error",
+   "expected": "ALLOW + 1 row",
+   "actual": "ALLOW 1 row(s)",
+   "pass": true,
+   "emulator": "T03"
+  },
+  {
+   "id": "PLANS_BACKUP_QUERY_OTHER",
+   "invariant": "other coach runs the same query for the owner coach id",
+   "expected": "DENY",
+   "actual": "DENY",
+   "pass": true,
+   "emulator": "T03"
+  }
+ ]
+}
