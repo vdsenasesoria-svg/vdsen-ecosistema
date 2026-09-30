@@ -30,6 +30,7 @@ Generado por `node scripts/generate-activation-docs.cjs`. **Evidencia estática 
 | OVERRIDE | READY |
 | STALE | READY |
 | CANARY | READY_DISABLED |
+| FIRESTORE_COACH_AUTHORITY | PASS / READY |
 | FIRESTORE_TENANT_ISOLATION | PASS / READY (reglas + índice en el repositorio; despliegue pendiente y no autorizado) |
 | FIRESTORE_CANONICAL_WRITE_BOUNDARY | PASS / READY (reglas en el repositorio; despliegue pendiente y no autorizado) |
 | Concurrencia (Emulator real) | cubierta (`tests/t532-lifecycle-emulator.cjs`) |

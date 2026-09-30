@@ -48,5 +48,5 @@ test('T538.4 client deletion removes tenant-gated documents BEFORE the client do
 
 test('T538.5 identity model audit is documented and states what is NOT solved (open coach registration / API gate)', () => {
   const d = read('docs/FIRESTORE_WRITE_BOUNDARY.md');
-  for (const t of ['Modelo de identidad', 'registro abierto', 'onAuthStateChanged', 'isAuthorizedCoach', 'FIRESTORE_TENANT_ISOLATION', 'custom claims']) assert.ok(d.includes(t), t);
+  for (const t of ['Modelo de identidad', 'registro abierto', 'onAuthStateChanged', 'isAuthorizedCoach', 'FIRESTORE_TENANT_ISOLATION', 'custom claims', 'apiAccessEnabled']) assert.ok(d.includes(t), t);
 });

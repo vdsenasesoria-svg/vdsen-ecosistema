@@ -102,7 +102,8 @@ Cambios en la app Coach: las consultas sobre `clients`, `fichas_publicas` y `pla
 
 **FIRESTORE_TENANT_ISOLATION: PASS / READY** en el repositorio (`tests/t538-tenant-isolation.cjs`; RED antes: 10 de 11 fallaban).
 
-**Riesgos residuales (fuera de esta frontera, reportados):**
-- **Registro abierto de coaches:** cualquiera puede crear una cuenta Coach nueva. No accede a datos de otros inquilinos, pero `isAuthorizedCoach` (endpoints `api/*` que consumen la API de generación) solo comprueba que el documento exista: cualquiera puede usar esos endpoints. Recomendado: lista de permitidos o custom claim de rol.
-- **Reclamar cliente huérfano:** cualquier coach puede reclamar un cliente sin `coachId` (flujo legado) y lo verá tras reclamarlo; un uid de atleta sin documento `clients/{uid}` podría ser creado por un coach con su `coachId`.
+**Actualización T539:** el registro de coach sigue abierto, pero ya NO concede acceso a la API de pago: eso requiere `apiAccessEnabled === true`, gestionado solo por el Admin SDK y protegido por las reglas (`docs/COACH_API_ENTITLEMENT.md`). La regla que permitía a cualquier coach reclamar un cliente sin `coachId` fue eliminada: `coachId` solo se asigna al crear y es inmutable; la recuperación de clientes legacy es solo administrativa (`scripts/admin-recover-client.cjs`).
+
+**Riesgos residuales (reportados):**
+- **Creación de cliente (flujo previsto):** un coach puede crear un documento `clients/{uid}` NUEVO con su `coachId`. No puede sobrescribir ni adoptar un cliente existente de otro coach. Un UID de Auth SIN documento de cliente podría ser «pre-reclamado» por un coach: la arquitectura actual no distingue esa intención de un alta legítima (haría falta una invitación firmada; no se inventó aquí).
 - Índices y reglas deben desplegarse juntos; nada se desplegó.

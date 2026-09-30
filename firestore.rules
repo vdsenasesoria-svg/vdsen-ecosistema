@@ -40,12 +40,23 @@ service cloud.firestore {
     function receiptsBounded() {
       return !('consumptionReceipts' in request.resource.data) || request.resource.data.consumptionReceipts.size() <= 200;
     }
+    // T539: server-managed Coach authority fields. Only the Admin SDK / trusted server may create, change or remove them (Admin SDK bypasses
+    // these rules). `apiAccessEnabled` = entitlement to the paid / generative API endpoints (missing or false = no access).
+    function protectedCoachKeys() {
+      return ['apiAccessEnabled'];
+    }
     match /coaches/{coachId} {
-      allow read, update, delete: if request.auth != null && request.auth.uid == coachId;
-      // T538: an existing ATHLETE account (it has a clients/{uid} document) cannot promote itself. Registration of a brand-new coach
-      // account is unchanged (product design); a self-created coach document grants no access to other coaches' tenants.
+      allow read: if request.auth != null && request.auth.uid == coachId;
+      // T538: an existing ATHLETE account (it has a clients/{uid} document) cannot promote itself. Registration of a brand-new coach account
+      // stays open (product design): it is a COACH APP account, NOT an API entitlement, and grants no access to other coaches' tenants.
       allow create: if request.auth != null && request.auth.uid == coachId
-        && !exists(/databases/$(database)/documents/clients/$(coachId));
+        && !exists(/databases/$(database)/documents/clients/$(coachId))
+        && !request.resource.data.keys().hasAny(protectedCoachKeys());
+      // Ordinary profile updates only: a coach can neither set, flip nor drop a server-managed field.
+      allow update: if request.auth != null && request.auth.uid == coachId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedCoachKeys());
+      // Deleting (then re-creating) the document must not be a way to shed or obtain an entitlement.
+      allow delete: if request.auth != null && request.auth.uid == coachId && !resource.data.keys().hasAny(protectedCoachKeys());
     }
     match /clients/{clientId} {
       // T538: the athlete or its OWNER coach. Unclaimed (no coachId) clients are readable by nobody but the athlete; a coach can still CLAIM
@@ -60,11 +71,8 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
         && resource.data.coachId == request.auth.uid
         && request.resource.data.coachId == resource.data.coachId;
-      // Coach: reclamar cliente LEGACY (coachId ausente o vacío) — solo puede asignarse a sí mismo
-      allow update: if request.auth != null
-        && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
-        && (resource.data.coachId == null || resource.data.get('coachId', '') == '')
-        && request.resource.data.coachId == request.auth.uid;
+      // T539: the legacy "claim an unowned client" branch was REMOVED. coachId is assigned only at creation and is immutable afterwards; recovering an
+      // unowned legacy client is an ADMIN (Admin SDK) operation until a signed invite / token flow exists.
       // Coach: eliminar solo clientes propios
       allow delete: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))

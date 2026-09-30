@@ -5,7 +5,7 @@
  *
  * Pure/injectable: no live Firebase Admin dependency at require-time.
  * Callers inject `deps.verifyIdToken(token) -> Promise<{uid}>` and
- * `deps.isAuthorizedCoach(uid) -> Promise<boolean>` (the real implementations
+ * `deps.isAuthorizedCoach(uid) -> Promise<boolean>` = the paid-API ENTITLEMENT (coaches/{uid}.apiAccessEnabled === true, T539) (the real implementations
  * live in ./_firebaseAdmin.js and are wired in by the endpoint's default
  * export only -- never at module load, so tests never need firebase-admin
  * installed).
@@ -56,20 +56,20 @@ async function authenticateCoachRequest(authHeader, deps) {
     return { ok: false, status: 401, errorCode: ERR.AUTH_INVALID };
   }
 
-  // Authorization: reuse the SAME contract Firestore Rules already enforce
-  // everywhere else in this app (a real coaches/{uid} doc exists) -- not a
-  // new/invented role system. Only checked when the caller wires it in.
-  if (typeof deps.isAuthorizedCoach === 'function') {
-    var isCoach;
-    try {
-      isCoach = await deps.isAuthorizedCoach(uid);
-    } catch (e) {
-      // Fail closed: an authorization-check failure is never treated as a pass.
-      return { ok: false, status: 401, errorCode: ERR.AUTH_INVALID };
-    }
-    if (!isCoach) {
-      return { ok: false, status: 403, errorCode: ERR.AUTH_FORBIDDEN };
-    }
+  // Authorization (T539): the caller must hold the server-managed API ENTITLEMENT (coaches/{uid}.apiAccessEnabled === true, evaluated by
+  // deps.isAuthorizedCoach in ./_firebaseAdmin.js). A coach app account alone is NOT enough. FAIL CLOSED everywhere: a route that forgets to
+  // wire isAuthorizedCoach is rejected (403), and a failing check is never a pass.
+  if (typeof deps.isAuthorizedCoach !== 'function') {
+    return { ok: false, status: 403, errorCode: ERR.AUTH_FORBIDDEN };
+  }
+  var entitled;
+  try {
+    entitled = await deps.isAuthorizedCoach(uid);
+  } catch (e) {
+    return { ok: false, status: 401, errorCode: ERR.AUTH_INVALID };
+  }
+  if (entitled !== true) {
+    return { ok: false, status: 403, errorCode: ERR.AUTH_FORBIDDEN };
   }
 
   return { ok: true, uid: uid };

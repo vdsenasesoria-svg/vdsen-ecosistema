@@ -50,13 +50,16 @@ async function verifyIdToken(token) {
   return { uid: decoded.uid };
 }
 
-// -> Promise<boolean>. Mirrors the exact same authorization contract
-// firestore.rules already uses everywhere: exists(/coaches/{uid}).
+// -> Promise<boolean>. PAID / GENERATIVE API entitlement (T539). Two DISTINCT concepts:
+//   * coaches/{uid} existing  = a COACH APP ACCOUNT (self-registration is open by product design; rules give it no access to other tenants)
+//   * coaches/{uid}.apiAccessEnabled === true = ENTITLEMENT to the paid endpoints; managed ONLY by the Admin SDK
+//     (firestore.rules forbid any client to create / change / drop it; see docs/COACH_API_ENTITLEMENT.md).
+// Missing document, missing field, false, or any non-boolean-true value => false. Errors propagate (the caller fails closed).
 async function isAuthorizedCoach(uid) {
   var admin = require('firebase-admin');
   var app = getAdminApp();
   var snap = await admin.firestore(app).collection('coaches').doc(uid).get();
-  return snap.exists;
+  return snap.exists === true && !!snap.data() && snap.data().apiAccessEnabled === true;
 }
 
 module.exports = {

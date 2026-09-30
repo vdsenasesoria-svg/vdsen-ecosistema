@@ -95,10 +95,10 @@ test('authenticateCoachRequest: isAuthorizedCoach throwing fails closed (never o
   return r.ok === false;
 });
 
-test('authenticateCoachRequest: no isAuthorizedCoach provided → authentication-only (ok:true on valid token)', async function() {
+test('authenticateCoachRequest: no isAuthorizedCoach wired → fail closed 403 (T539; a route can never silently skip the entitlement)', async function() {
   var deps = { verifyIdToken: function() { return Promise.resolve({ uid: 'coach-abc' }); } };
   var r = await authenticateCoachRequest('Bearer sometoken', deps);
-  return r.ok === true && r.uid === 'coach-abc';
+  return r.ok === false && r.status === 403 && r.errorCode === 'AUTH_FORBIDDEN';
 });
 
 test('authenticateCoachRequest: never echoes the raw token in its result object', async function() {

@@ -27,7 +27,8 @@ const SUITES = [
   { name: 'T476 portable', file: path.join('tests', 't476-auto-apply-emulator.cjs') },
   { name: 'lifecycle emulator', file: path.join('tests', 't532-lifecycle-emulator.cjs') },
   { name: 'rules security', file: path.join('tests', 't536-rules-security.cjs') },
-  { name: 'tenant isolation', file: path.join('tests', 't538-tenant-isolation.cjs') }
+  { name: 'tenant isolation', file: path.join('tests', 't538-tenant-isolation.cjs') },
+  { name: 'coach authority', file: path.join('tests', 't539-coach-authority.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';

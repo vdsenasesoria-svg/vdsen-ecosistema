@@ -163,13 +163,11 @@ test('T09 owner Coach operations keep working: create client, own-list, ficha/re
   await allowed(deleteDoc(R(w, 'O', 'phone_index/5215500000000')), 'phone index'); await allowed(deleteDoc(R(w, 'O', 'logs/' + w.C)), 'logs'); await allowed(deleteDoc(R(w, 'O', 'fichas_onboarding/' + w.C)), 'ficha');
   await allowed(deleteDoc(R(w, 'O', 'clients/' + w.C)), 'client');
 });
-test('T10 unclaimed (orphan) clients: a coach can CLAIM one by uid and reads it only afterwards; owned clients cannot be stolen; nobody lists across tenants', { timeout: 60000 }, async () => {
+test('T10 unclaimed (orphan) clients: NOT claimable by any coach (T539: admin recovery only), not browsable, owned clients cannot be stolen', { timeout: 60000 }, async () => {
   const w = await world();
   await denied(setDoc(R(w, 'M', 'clients/' + w.C), { coachId: w.M }, { merge: true }), 'cannot steal an owned client');
   await denied(getDoc(R(w, 'X', 'clients/' + w.ORPH)), 'unclaimed clients are not browsable');
-  await allowed(setDoc(R(w, 'X', 'clients/' + w.ORPH), { coachId: w.X }, { merge: true }), 'claim orphan (legacy recovery flow)');
-  await allowed(getDoc(R(w, 'X', 'clients/' + w.ORPH)), 'now owned');
-  await denied(getDoc(R(w, 'M', 'clients/' + w.ORPH)), 'and closed to the others');
+  await denied(setDoc(R(w, 'X', 'clients/' + w.ORPH), { coachId: w.X }, { merge: true }), 'claim orphan is no longer a Coach capability');
   await denied(getDocs(query(collection(w.db.M, 'clients'), where('coachId', '==', ''))), 'no orphan enumeration');
 });
 

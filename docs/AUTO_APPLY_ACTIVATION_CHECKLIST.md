@@ -3,7 +3,7 @@
 Generado por `node scripts/generate-activation-docs.cjs` a partir de hechos vivos del repositorio; verificado por `tests/t522-activation-docs.test.js`. `[x]` = cumplido; `[ ]` = pendiente.
 Los ítems por candidato se cumplen en tiempo de ejecución para cada candidato (guardia de activación); aquí se marcan como verificados por sus tests.
 
-**Estado: 19 de 24 cumplidos; pendientes bloqueantes: 4. La bandera NO se activa con esta lista; requiere decisión explícita del director.**
+**Estado: 20 de 25 cumplidos; pendientes bloqueantes: 4. La bandera NO se activa con esta lista; requiere decisión explícita del director.**
 
 - [ ] **Identidades de equipo resueltas para los ejercicios objetivo** — 69 de 71 ejercicios del catálogo (39 de 41 equipos). Sin resolver por evidencia del repositorio: Accesorio de polea (ATTACHMENT_NOT_LOAD_IMPLEMENT), Máquina (GENERIC_LABEL). Mecanismo verificado: t508, t517.
 - [ ] **Incrementos de equipo escritos por el Coach** — 0 de 39 equipos con identidad tienen incremento. Mecanismo verificado: t509, t518, t519. **Datos pendientes del Coach.**
@@ -27,6 +27,7 @@ Los ítems por candidato se cumplen en tiempo de ejecución para cada candidato 
 - [x] **Concurrencia con Firestore Emulator real** — 11 escenarios transaccionales en `tests/t532-lifecycle-emulator.cjs` (dos dispositivos, carreras override/revert/plan, consumo duplicado, callbacks tardíos, reintentos, escrituras denegadas).
 - [x] **FIRESTORE_CANONICAL_WRITE_BOUNDARY** — **PASS / READY** — el atleta solo escribe EJECUCIÓN (entries, unidades, historial, semana, recibos de consumo append-only); el estado canónico (`progressionApplications`, `nextExposureOverlays`, resúmenes) solo lo escribe el Coach DUEÑO (`clients/{uid}.coachId`). Probado con reglas reales en el emulador (`tests/t536-rules-security.cjs`). **Las reglas NO están desplegadas** (el despliegue requiere autorización explícita).
 - [x] **FIRESTORE_TENANT_ISOLATION** — **PASS / READY** — un coach solo accede a datos privados de SUS clientes (`clients/{id}.coachId`): perfil, logs y mesociclos, fichas, índice de celular, compendio, plantillas, respaldos. Una cuenta de atleta no puede autopromoverse a coach y un documento de coach autocreado no concede acceso a otros inquilinos (`tests/t538-tenant-isolation.cjs`). Riesgo residual reportado: registro abierto de coaches / compuerta de `api/*` por existencia del documento.
+- [x] **FIRESTORE_COACH_AUTHORITY (entitlement de API + reclamación de huérfanos)** — **PASS / READY** — `apiAccessEnabled` solo lo gestiona el Admin SDK (reglas + `isAuthorizedCoach`); el registro de coach abierto no concede API de pago; ya no hay reclamación de clientes sin coach (recuperación solo administrativa). `tests/t539-*`.
 - [x] **Alcance de canario integrado al ciclo de vida** — CANARY: **READY_DISABLED** — `autoApplyCanary` se re-lee DENTRO de la transacción; fuera de alcance/ausente/deshabilitado → nunca APPLIED (t526, t531).
 - [x] **Auditoría visible para el Coach** — Línea dry-run con clase de vista rápida, cola de equipos y matriz de preparación en el Monitor (t494, t510, t520); ciclo de vida completo APPLIED/CONSUMED/OVERRIDDEN/REVERTED/STALE con antes→después, regla, equipo, marcas de tiempo y acción del Coach (t534).
 
