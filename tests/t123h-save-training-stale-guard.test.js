@@ -78,7 +78,7 @@ test('saveTrainingPlan stale guard appears before showClientDetail', function() 
 test('saveTrainingPlan updatedAt present in updateDoc write', function() {
   assert.ok(body, 'function body present');
   assert.ok(
-    body.indexOf("updatedAt: new Date().toISOString()") > -1,
+    body.indexOf("updatedAt: new Date().toISOString()") > -1 || body.indexOf('_planRevisionPatch(') > -1,   // T546: stamped only when the prescription changed
     'updatedAt timestamp written in plan updateDoc'
   );
 });

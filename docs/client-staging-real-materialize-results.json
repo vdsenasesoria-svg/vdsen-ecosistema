@@ -13,7 +13,7 @@
     {
       "id": "OWNER_COACH_PATH_MATERIALIZED_RECORDS_WITH_EXPLICIT_STATE",
       "pass": true,
-      "note": "total=5 PENDING=0 REJECTED=5 reasons=PLAN_TIMESTAMP_MISSING"
+      "note": "total=5 PENDING=0 REJECTED=5 reasons=NO_NUMERIC_DELTA|UNSUPPORTED_ACTION"
     },
     {
       "id": "NO_APPLIED_CREATED",
@@ -33,7 +33,7 @@
     {
       "id": "PENDING_SAMPLE_SHAPE",
       "pass": true,
-      "note": "createdAt,updatedAt,source,dimension,clientId,state,nextExposure,magnitude,action,planId"
+      "note": "updatedAt,createdAt,planId,source,clientId,action,key,events,state,revision"
     },
     {
       "id": "NO_COACH_PAGE_ERRORS",

@@ -3748,7 +3748,7 @@ function _buildExerciseWeekMap() {
           if (!exerciseMap[nombre]) exerciseMap[nombre] = { weeks: {} };
           var loads = setsData.map(function(s){ return parseFloat(s.carga)||0; });
           var reps = setsData.map(function(s){ return parseFloat(s.reps)||0; });
-          var icsVals = setsData.map(function(s){ return parseFloat(s.ics)||0; });
+          var icsVals = setsData.map(function(s){ return parseFloat(s.ics)||0; }).filter(function(v){ return v > 0; });   // T546: an absent ICS is not a 0
           exerciseMap[nombre].weeks[w] = {
             maxLoad: Math.max.apply(null, loads),
             avgLoad: _avgArr(loads),
@@ -6234,7 +6234,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<button onclick="clearExpressDone('+di+','+ei+')" class="btn-mini" aria-label="Editar registro del ejercicio"><svg class="ico sm" aria-hidden="true" focusable="false"><use href="#i-note"/></svg> EDITAR</button>'+
         '</div>'+
         '<div class="setdone-v">'+_epCargaDisplay+'</div>'+
-        '<div class="setdone-m">'+_expressEntry.sets+' series · RIR real '+_expressEntry.rir_last+' · ICS '+(_expressEntry.ics||'—')+(_epLbl?' · Pump '+_epLbl:'')+'</div>'+
+        '<div class="setdone-m">'+_expressEntry.sets+' series · RIR real '+(_expressEntry.rir_last != null ? _expressEntry.rir_last : '—')+' · ICS '+(_expressEntry.ics||'—')+(_epLbl?' · Pump '+_epLbl:'')+'</div>'+
       '</div>';
   } else if (_isExpressMode) {
     // Express: series intermedias con timer + ultima con formulario
@@ -6334,8 +6334,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div class="sp-grp" role="group" aria-label="RIR real de la última serie">'+
         '<div class="sp-gl"><span>RIR REAL · ÚLTIMA SERIE</span><small>reps que te quedaban</small></div>'+
         '<div class="rir-row">'+_rirBtns2+'</div>'+
-        '<div class="rir-pre" id="xrirpre_'+_expK+'">Preseleccionado = RIR objetivo. Toca tu RIR real para confirmarlo.</div>'+
-        '<input type="hidden" id="xrir_val_'+_expK+'" value="'+_exPfRIR+'">'+
+        '<div class="rir-pre" id="xrirpre_'+_expK+'">Preseleccionado = RIR objetivo (sugerencia). Toca tu RIR real para registrarlo; si no lo tocas, no se guarda ninguno.</div>'+
+        '<input type="hidden" id="xrir_val_'+_expK+'" value="">'+   // T546: the suggestion is visual only; observed RIR starts empty
       '</div>'+
       '<div class="sp-row">'+
         '<div class="sp-f sp-ics">'+
@@ -7221,6 +7221,47 @@ function expressSetPump(expK, val) {
 }
 window.expressSetPump = expressSetPump;
 
+// ── T546 — Express evidence integrity: PRESCRIBED VALUES ARE NEVER OBSERVED VALUES ─────────────────────────────────────
+// A preselected RIR is only a visual suggestion (hidden input starts EMPTY). Observed RIR / ICS / Pump exist only after an explicit tap /
+// entry; untouched = absent. Express marks S1..S(n-1) done WITHOUT observations (their load/reps echo the final set as a volume estimate and
+// they stay tagged `express`, which the canonical policy already excludes); the LAST set is the only one that carries the athlete's
+// explicit observations and is the representative evidence set (tagged `expressFinal`, not `express`). The prescribed RIR lives in `rir`
+// only (Coach-authored, same rule as the per-set form) and is never overwritten by an observation.
+function _expressObs(rirEl, icsEl, pumpEl) {
+  var r = rirEl ? parseInt(rirEl.value) : NaN, i = icsEl ? parseInt(icsEl.value) : NaN, p = pumpEl ? parseInt(pumpEl.value) : NaN;
+  return { rir: (r >= 0 && r <= 4) ? r : null, ics: i > 0 ? i : null, pump: (p >= 1 && p <= 3) ? p : null };
+}
+function _isExpressLog(l) { return !!l && (l.express === true || l.expressFinal === true); }
+function _expressSetEntries(p) {
+  var out = [];
+  for (var s = 0; s < p.sets; s++) {
+    var d = p.setData(s), last = (s === p.sets - 1);
+    var e = { carga: d.carga, reps: String(d.reps), unit: d.unit, done: true, ts: p.ts };
+    if (p.presRir !== undefined && p.presRir !== null) e.rir = p.presRir;
+    if (p.meta) {
+      if (p.meta.prescriptionExerciseId) e.prescriptionExerciseId = p.meta.prescriptionExerciseId;
+      if (p.meta.exerciseId) e.exerciseId = p.meta.exerciseId;
+      if (p.meta.exerciseNameSnapshot) e.exerciseNameSnapshot = p.meta.exerciseNameSnapshot;
+    }
+    if (last) {
+      e.expressFinal = true;
+      if (p.obs.rir !== null) e.rir_real = p.obs.rir;
+      if (p.obs.ics !== null) e.ics = p.obs.ics;
+      if (p.obs.pump !== null) e.pump = p.obs.pump;
+    } else e.express = true;
+    out.push(e);
+  }
+  return out;
+}
+function _expressRecord(carga, reps, sets, obs, unit, ts) {
+  return { carga: carga, reps: String(reps), sets: sets, rir_last: obs.rir, ics: obs.ics, pump: obs.pump, unit: unit, done: true, ts: ts };
+}
+function _expressPrescribedRir(ej) {
+  // only a Coach-authored RIR is recorded as prescribed (a display default is never evidence, T515)
+  if (!ej || ej.rirDefaulted === true || (!isFinite(parseInt(ej.rir)) && !(ej.sets && ej.sets.length))) return undefined;
+  return getAdjustedRIR(_coachRIR(ej), CURRENT_WEEK, ej.exerciseName || ej.nombre || '');
+}
+
 function markExpressDone(di, ei) {
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   if (CURRENT_WEEK < REAL_WEEK) { showToast('Semana pasada — modo lectura', true); return; }
@@ -7236,42 +7277,36 @@ function markExpressDone(di, ei) {
   if (!reps || reps < 1) { showToast('Indica las reps realizadas en la última serie', true); return; }
   var carga   = cargaEl ? (cargaEl.value.trim() || '0') : '0';
   var sets    = setsEl  ? (parseInt(setsEl.value)  || 3) : 3;
-  var rirLast = rirEl   ? (parseInt(rirEl.value) >= 0 ? parseInt(rirEl.value) : 2) : 2;
-  var ics     = icsEl   ? (parseInt(icsEl.value)         || null) : null;
-  var pump    = pumpEl  ? (parseInt(pumpEl.value)        || null) : null;
+  var obs     = _expressObs(rirEl, icsEl, pumpEl);   // T546: null = the athlete did not observe / enter it
   var unit    = getExUnit(di, ei) || 'KG';
 
   // Guardar entrada express
   var exKey = 'exexpress_'+CURRENT_WEEK+'_'+di+'_'+ei;
-  LOGS[exKey] = { carga: carga, reps: String(reps), sets: sets, rir_last: rirLast, ics: ics, pump: pump, unit: unit, done: true, ts: Date.now() };
-
-  // Crear entradas sintéticas log_W_D_E_sN para compatibilidad con calculateProgression
   var now = Date.now();
+  LOGS[exKey] = _expressRecord(carga, reps, sets, obs, unit, now);
+
+  // Crear entradas log_W_D_E_sN: S1..S(n-1) "hechas" sin observaciones; la última serie lleva las observaciones explícitas (T546)
   var _ejExprMeta = (_EJERCICIOS_DIA || [])[ei] || {};
-  for (var s = 0; s < sets; s++) {
+  _expressSetEntries({
+    sets: sets, ts: now, obs: obs, presRir: _expressPrescribedRir(_ejExprMeta),
+    setData: function() { return { carga: carga, reps: reps, unit: unit }; },
+    meta: { prescriptionExerciseId: _ejExprMeta.prescriptionExerciseId, exerciseId: _ejExprMeta.exerciseId, exerciseNameSnapshot: _ejExprMeta.exerciseName || _ejExprMeta.nombre }
+  }).forEach(function(e, s) {
     var _eKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
-    LOGS[_eKey] = {
-      carga: carga, reps: String(reps), unit: unit, done: true,
-      rir: rirLast, rir_real: rirLast,
-      ics: ics || 8, pump: pump || 1,
-      ts: now, express: true,
-      prescriptionExerciseId: _ejExprMeta.prescriptionExerciseId || undefined,
-      exerciseId: _ejExprMeta.exerciseId || undefined,
-      exerciseNameSnapshot: _ejExprMeta.exerciseName || _ejExprMeta.nombre || undefined
-    };
+    LOGS[_eKey] = e;
     _lbwTrack(_eKey);
-  }
+  });
   // Limpiar entradas sintéticas excedentes de sesiones anteriores
   for (var s2 = sets; s2 < 12; s2++) {
     var stale = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s2;
-    if (LOGS[stale] && LOGS[stale].express) delete LOGS[stale];
+    if (_isExpressLog(LOGS[stale])) delete LOGS[stale];
   }
 
   // Actualizar historial de ejercicio + detectar récord personal (igual que en modo normal)
   var _ejExpr = (_EJERCICIOS_DIA || [])[ei] || null;
   var _exNombreExpr = (_ejExpr && (_ejExpr.nombre || _ejExpr.exerciseName)) || ('Ejercicio '+(ei+1));
   var _exNameKeyExpr = _exNombreExpr.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  _recordExerciseHistoryAndPR(_exNameKeyExpr, _exNombreExpr, carga, reps, rirLast, unit);
+  _recordExerciseHistoryAndPR(_exNameKeyExpr, _exNombreExpr, carga, reps, obs.rir === null ? '' : obs.rir, unit);
 
   saveLogs();
   // Timer de descanso tras completar el ejercicio (entre ejercicios / \u00faltima serie)
@@ -7300,7 +7335,7 @@ function clearExpressDone(di, ei) {
   delete LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+ei];
   for (var s = 0; s < 12; s++) {
     var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
-    if (LOGS[k] && LOGS[k].express) delete LOGS[k];
+    if (_isExpressLog(LOGS[k])) delete LOGS[k];
     delete LOGS['exseries_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s];
   }
   saveLogs();
@@ -7424,7 +7459,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
     var e0 = LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+ssMembers[0]] || {};
     var ep0Emoji = e0.pump===1?'· Pump BUENO':e0.pump===2?'· Pump OK':e0.pump===3?'· Pump BAJO':'';
     html +=
-      '<div style="font-size:12px;color:var(--mt);margin-bottom:14px">'+numRondas+' rondas · RIR real '+e0.rir_last+' · ICS '+(e0.ics||'—')+' '+ep0Emoji+'</div>'+
+      '<div style="font-size:12px;color:var(--mt);margin-bottom:14px">'+numRondas+' rondas · RIR real '+(e0.rir_last != null ? e0.rir_last : '—')+' · ICS '+(e0.ics||'—')+' '+ep0Emoji+'</div>'+
       '<div class="setdone-h">'+
         '<span class="chip done">✓ BISERIE REGISTRADA</span>'+
         '<button onclick="clearExpressSSDone('+di+',['+ssMembers.join(',')+'],\''+grp+'\')" class=\"btn-mini\">✏ Editar</button>'+
@@ -7543,7 +7578,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
       // Última ronda, último miembro → RIR / ICS / Pump + botón final
       var _ssRirBtns = [0,1,2,3,4].map(function(rv){
         var sel = rv === _ssRIRinit;
-        return '<button type="button" onclick="expressSetRIR(\''+_ssk+'\','+rv+')" id="xrir_'+_ssk+'_'+rv+'" class="rirb'+(sel?' on':'')+'" aria-pressed="'+(sel?'true':'false')+'" aria-label="RIR real '+rv+': '+_rirDescsss[rv]+'">'+
+        return '<button type="button" onclick="expressSetRIR(\''+_ssk+'\','+rv+')" id="xrir_'+_ssk+'_'+rv+'" class="rirb'+(sel?' on pre':'')+'" aria-pressed="'+(sel?'true':'false')+'" aria-label="RIR real '+rv+': '+_rirDescsss[rv]+'">'+
           '<b>'+rv+'</b><small>'+_rirDescsss[rv]+'</small></button>';
       }).join('');
       var _ssPumpBtns = [{v:1,l:'BUENO'},{v:2,l:'OK'},{v:3,l:'BAJO'}].map(function(p){
@@ -7553,7 +7588,8 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '<div class="sp-grp" role="group" aria-label="RIR real de la última ronda">'+
           '<div class="sp-gl"><span>RIR REAL · ÚLTIMA RONDA</span><small>reps que te quedaban</small></div>'+
           '<div class="rir-row">'+_ssRirBtns+'</div>'+
-          '<input type="hidden" id="xrir_val_'+_ssk+'" value="'+_ssRIRinit+'">'+
+          '<div class="rir-pre" id="xrirpre_'+_ssk+'">Preseleccionado como sugerencia. Toca tu RIR real para registrarlo; si no lo tocas, no se guarda ninguno.</div>'+
+          '<input type="hidden" id="xrir_val_'+_ssk+'" value="">'+
         '</div>'+
         '<div class="sp-row">'+
           '<div class="sp-f sp-ics">'+
@@ -7581,9 +7617,7 @@ function markExpressSSDone(di, ssMembers) {
   var rirEl  = document.getElementById('xrir_val_'+_ssk);
   var icsEl  = document.getElementById('xics_'+_ssk);
   var pumpEl = document.getElementById('xpump_val_'+_ssk);
-  var rirLast = rirEl  ? (parseInt(rirEl.value) >= 0 ? parseInt(rirEl.value) : 2) : 2;
-  var ics     = icsEl  ? (parseInt(icsEl.value)  || null) : null;
-  var pump    = pumpEl ? (parseInt(pumpEl.value) || null) : null;
+  var obs = _expressObs(rirEl, icsEl, pumpEl);   // T546: observations exist only after an explicit tap / entry
   var now = Date.now();
   for (var i = 0; i < ssMembers.length; i++) {
     var idx = ssMembers[i];
@@ -7597,15 +7631,16 @@ function markExpressSSDone(di, ssMembers) {
     var _ejIdx = _EJERCICIOS_DIA && _EJERCICIOS_DIA[idx] ? _EJERCICIOS_DIA[idx] : null;
     var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
     // T484: the set count is the plan's; a recommendation never changes how many sets are logged.
-    LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:carga, reps:String(reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:unit, done:true, ts:now };
-    for (var s = 0; s < numSets; s++) {
+    LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = _expressRecord(carga, reps, numSets, obs, unit, now);
+    _expressSetEntries({ sets: numSets, ts: now, obs: obs, presRir: _expressPrescribedRir(_ejIdx),
+      setData: function() { return { carga: carga, reps: reps, unit: unit }; } }).forEach(function(e, s) {
       var _ssKey = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s;
-      LOGS[_ssKey] = { carga:carga, reps:String(reps), unit:unit, done:true, rir:rirLast, rir_real:rirLast, ics:ics||8, pump:pump||1, ts:now, express:true };
+      LOGS[_ssKey] = e;
       _lbwTrack(_ssKey);
-    }
+    });
     for (var s2 = numSets; s2 < 12; s2++) {
       var stale = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s2;
-      if (LOGS[stale] && LOGS[stale].express) delete LOGS[stale];
+      if (_isExpressLog(LOGS[stale])) delete LOGS[stale];
     }
   }
   saveLogs();
@@ -7638,7 +7673,7 @@ function clearExpressSSDone(di, ssMembers, grp) {
     delete LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx];
     for (var s = 0; s < 12; s++) {
       var k = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s;
-      if (LOGS[k] && LOGS[k].express) delete LOGS[k];
+      if (_isExpressLog(LOGS[k])) delete LOGS[k];
     }
   }
   saveLogs();
@@ -7722,9 +7757,7 @@ function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
   var rirEl  = document.getElementById('xrir_val_'+_ssk);
   var icsEl  = document.getElementById('xics_'+_ssk);
   var pumpEl = document.getElementById('xpump_val_'+_ssk);
-  var rirLast = rirEl  ? (parseInt(rirEl.value) >= 0 ? parseInt(rirEl.value) : 2) : 2;
-  var ics     = icsEl  ? (parseInt(icsEl.value)  || null) : null;
-  var pump    = pumpEl ? (parseInt(pumpEl.value) || null) : null;
+  var obs = _expressObs(rirEl, icsEl, pumpEl);   // T546: observations exist only after an explicit tap / entry
   var curIdx = ssMembers[lastMIdx];
   var cargaEl = document.getElementById('xss_carga_'+di+'_'+curIdx);
   var repsEl  = document.getElementById('xss_reps_'+di+'_'+curIdx);
@@ -7742,16 +7775,16 @@ function ssCompleteLastRound(di, ssMembers, grp, lastMIdx) {
     var _ejIdx = (_EJERCICIOS_DIA || [])[idx] || null;
     var numSets = _ejIdx ? (_ejIdx.numSeries || (_ejIdx.sets ? _ejIdx.sets.length : 3)) : 3;
     // T484: the set count is the plan's; a recommendation never changes how many sets are logged.
-    LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = { carga:lastSD.carga||'0', reps:String(lastSD.reps||reps), sets:numSets, rir_last:rirLast, ics:ics, pump:pump, unit:lastSD.unit||unit_i, done:true, ts:now };
-    for (var s = 0; s < numSets; s++) {
-      var sdS = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+s+'_m'+i] || lastSD;
+    LOGS['exexpress_'+CURRENT_WEEK+'_'+di+'_'+idx] = _expressRecord(lastSD.carga||'0', lastSD.reps||reps, numSets, obs, lastSD.unit||unit_i, now);
+    _expressSetEntries({ sets: numSets, ts: now, obs: obs, presRir: _expressPrescribedRir(_ejIdx),
+      setData: function(s) { var sdS = LOGS['ss_step_'+CURRENT_WEEK+'_'+di+'_'+grp+'_r'+s+'_m'+i] || lastSD; return { carga: sdS.carga||'0', reps: sdS.reps||reps, unit: sdS.unit||unit_i }; } }).forEach(function(e, s) {
       var _ss2Key = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s;
-      LOGS[_ss2Key] = { carga:sdS.carga||'0', reps:String(sdS.reps||reps), unit:sdS.unit||unit_i, done:true, rir:rirLast, rir_real:rirLast, ics:ics||8, pump:pump||1, ts:now, express:true };
+      LOGS[_ss2Key] = e;
       _lbwTrack(_ss2Key);
-    }
+    });
     for (var s2 = numSets; s2 < 12; s2++) {
       var stale = 'log_'+CURRENT_WEEK+'_'+di+'_'+idx+'_s'+s2;
-      if (LOGS[stale] && LOGS[stale].express) delete LOGS[stale];
+      if (_isExpressLog(LOGS[stale])) delete LOGS[stale];
     }
   }
   delete window._ssStep[stateKey];

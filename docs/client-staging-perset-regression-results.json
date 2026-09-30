@@ -1,0 +1,186 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 35,
+    "failed": [],
+    "kept": false,
+    "synthetic": true
+  },
+  "results": [
+    {
+      "id": "NO_PRIOR_EXECUTION_EVIDENCE",
+      "pass": true,
+      "note": "keys=0"
+    },
+    {
+      "id": "NUMERIC_APPLY_ENABLED_FALSE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SYNTHETIC_DAY_STRUCTURE_READ",
+      "pass": true,
+      "note": "Empuje · Pecho y hombro ex=4 sets=13"
+    },
+    {
+      "id": "EXPRESS_OFF_PER_SET_MODE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "HOME_CTA_STARTS_SESSION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_PRESCRIPTION_PREFILL_IN_INPUTS",
+      "pass": true,
+      "note": "{\"c\":\"\",\"r\":\"\",\"rir\":\"\"}"
+    },
+    {
+      "id": "A11Y_SET_INPUTS_LABELLED",
+      "pass": true,
+      "note": "[\"decimal\",\"numeric\",\"numeric\"]"
+    },
+    {
+      "id": "A11Y_TOUCH_TARGETS_44",
+      "pass": true,
+      "note": "[]"
+    },
+    {
+      "id": "A11Y_RIR_BUTTONS_ARIA_PRESSED_AND_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "A11Y_REDUCED_MOTION_CONTRACT_PRESENT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "REST_TIMER_STARTS_AND_COUNTS_DOWN",
+      "pass": true,
+      "note": "2:29 -> 2:27"
+    },
+    {
+      "id": "REST_TIMER_PRESCRIBED_DURATION",
+      "pass": true,
+      "note": "prescribed 150s, shows 2:29"
+    },
+    {
+      "id": "REST_TIMER_MINIMIZES_TO_PILL",
+      "pass": true,
+      "note": "{\"ov\":false,\"n\":\"2:27\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790808218837\"}"
+    },
+    {
+      "id": "REST_TIMER_SURVIVES_TAB_NAVIGATION_NO_DUPLICATE",
+      "pass": true,
+      "note": "{\"ov\":false,\"n\":\"2:26\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790808218837\"}"
+    },
+    {
+      "id": "REST_TIMER_RESTORES",
+      "pass": true,
+      "note": "{\"ov\":true,\"n\":\"2:26\",\"pill\":false,\"overlays\":1,\"pills\":1,\"end\":\"1790808218837\"}"
+    },
+    {
+      "id": "ALL_SETS_EXECUTED_IN_UI",
+      "pass": true,
+      "note": "sets=13/13"
+    },
+    {
+      "id": "NO_SET_PENDING",
+      "pass": true,
+      "note": "pending=0"
+    },
+    {
+      "id": "POSTSESSION_OPENS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "POSTSESSION_CLOSES",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "HOME_REFLECTS_COMPLETED_SESSION",
+      "pass": true,
+      "note": "1\nSESIONES"
+    },
+    {
+      "id": "SESSION_MARKED_DONE_IN_RUNTIME",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "FIRESTORE_SETS_MATCH_UI_LOAD_REPS_RIR_ICS_PUMP",
+      "pass": true,
+      "note": "ok=13 "
+    },
+    {
+      "id": "SET_RECORD_SHAPE",
+      "pass": true,
+      "note": "ics,pump,unit,rir,reps,carga,ts,prescriptionExerciseId,rir_real,exerciseNameSnapshot,done"
+    },
+    {
+      "id": "SESSION_CLOSURE_PERSISTED",
+      "pass": true,
+      "note": "postsession_1_0,progrec_1_0,engine_state,done_1_0"
+    },
+    {
+      "id": "NO_EXTRA_SET_KEYS_OUTSIDE_DAY",
+      "pass": true,
+      "note": "13 set keys"
+    },
+    {
+      "id": "NO_CANONICAL_FIELDS_WRITTEN_BY_ATHLETE",
+      "pass": true,
+      "note": "entries,currentWeek,updatedAt,exerciseHistory,planId,exerciseUnits"
+    },
+    {
+      "id": "PROGREC_IS_ADVISORY_EVIDENCE_ONLY",
+      "pass": true,
+      "note": "recs=4"
+    },
+    {
+      "id": "PLAN_DOC_UNCHANGED_BY_EXECUTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "HARD_RELOAD_KEEPS_SESSION_AND_VALUES",
+      "pass": true,
+      "note": "{\"done\":true,\"n\":13,\"l\":{\"carga\":\"47.5\",\"reps\":\"8\",\"unit\":\"KG\",\"done\":true,\"rir\":2,\"rir_real\":\"1\",\"ics\":7,\"pump\":1,\"ts\":1790808084855,\"prescriptionExerciseId\":\"pid-h-1\",\"exerciseNameSnapshot\":\"Press banca con barra\"}}"
+    },
+    {
+      "id": "LOGOUT_TO_LOGIN",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "RELOGIN_KEEPS_SESSION_AND_VALUES",
+      "pass": true,
+      "note": "{\"unit\":\"KG\",\"reps\":\"10\",\"rir_real\":\"3\",\"ts\":1790808124086,\"ics\":9,\"exerciseNameSnapshot\":\"Extensión de tríceps en polea\",\"prescriptionExerciseId\":\"pid-h-4\",\"pump\":3,\"rir\":1,\"done\":true,\"carga\":\"75\"}"
+    },
+    {
+      "id": "DAY_VIEW_SHOWS_COMPLETED",
+      "pass": true,
+      "note": "4/4 ejercicios"
+    },
+    {
+      "id": "NO_DUPLICATE_SESSION_OR_LOG_AFTER_RELOGIN",
+      "pass": true,
+      "note": "17 vs 17"
+    },
+    {
+      "id": "PRESCRIPTION_NOT_LEAKED_INTO_EXECUTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_UNCAUGHT_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}
