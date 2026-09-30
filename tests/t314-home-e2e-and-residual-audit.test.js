@@ -54,6 +54,7 @@ var __selDiaCalls = [], __goTabCalls = [], __endPartialCalls = [];
 function getSesiones() { return PLAN.__sesiones || []; }
 function isTechniqueActive(ej, week) { return true; }
 function _escHTml(s) { return String(s == null ? '' : s); }
+function _stripDayNo(l) { return String(l == null ? '' : l).replace(/^\s*#\s*\d+\s*[—–:.-]\s*/, '').trim(); }
 function selDia(i) { __selDiaCalls.push(i); DIA_ACTIVO = i; }
 function goTab(i) { __goTabCalls.push(i); }
 function _endSessionAsPartial(di) { __endPartialCalls.push({ week: CURRENT_WEEK, di: di }); }

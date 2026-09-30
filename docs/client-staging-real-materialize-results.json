@@ -1,0 +1,44 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 7,
+    "failed": []
+  },
+  "results": [
+    {
+      "id": "NO_PROGRESSION_APPLICATIONS_BEFORE_COACH_VIEW",
+      "pass": true,
+      "note": "records=0"
+    },
+    {
+      "id": "OWNER_COACH_PATH_MATERIALIZED_RECORDS_WITH_EXPLICIT_STATE",
+      "pass": true,
+      "note": "total=5 PENDING=0 REJECTED=5 reasons=PLAN_TIMESTAMP_MISSING"
+    },
+    {
+      "id": "NO_APPLIED_CREATED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_OVERLAY_OR_APPLIED_VALUE_ON_RECORDS",
+      "pass": true,
+      "note": "withOverlayish=0"
+    },
+    {
+      "id": "NO_NEXT_EXPOSURE_OVERLAYS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "PENDING_SAMPLE_SHAPE",
+      "pass": true,
+      "note": "createdAt,updatedAt,source,dimension,clientId,state,nextExposure,magnitude,action,planId"
+    },
+    {
+      "id": "NO_COACH_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}
