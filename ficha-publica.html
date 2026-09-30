@@ -152,14 +152,7 @@ input[type=range]{flex:1;accent-color:var(--ac);height:4px;background:var(--bd);
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { initializeFirestore, persistentLocalCache, collection, addDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBlOmyQEDjjpCxkm7UBqnMJDyqV3NLnCNI",
-  authDomain: "vdsen-ecosistema.firebaseapp.com",
-  projectId: "vdsen-ecosistema",
-  storageBucket: "vdsen-ecosistema.firebasestorage.app",
-  messagingSenderId: "1066774387899",
-  appId: "1:1066774387899:web:77e7f3570636b71bf61d9e"
-};
+const firebaseConfig = {"apiKey":"AIzaSyA7bbJTgQonl98ympqW0d6DhiwA7GmUYdA","authDomain":"vdsen-ecosistema-staging.firebaseapp.com","projectId":"vdsen-ecosistema-staging","storageBucket":"vdsen-ecosistema-staging.firebasestorage.app","messagingSenderId":"436059785391","appId":"1:436059785391:web:3dcbe6ae6cf80abc092c5a"};
 const app = initializeApp(firebaseConfig);
 const db = initializeFirestore(app, { localCache: persistentLocalCache() });
 
