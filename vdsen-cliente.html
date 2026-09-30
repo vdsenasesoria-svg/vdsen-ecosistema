@@ -782,6 +782,101 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
    position:fixed rest-timer sheet / pill and clip them inside the scrolling tab. */
 .tab-in{animation:_tabIn .16s var(--ease) backwards}
 .tab-appear{animation:fadeSlideIn .22s var(--ease) backwards}
+/* ══ NUTRITION ══ */
+#tabNutr{padding:0 0 96px}
+.nu-head{padding:18px 16px 14px;border-bottom:1px solid var(--rule)}
+.nu-head .sec-kicker{font-family:var(--font-display);font-size:30px;font-weight:800;letter-spacing:.01em;text-transform:uppercase;line-height:1;margin:0}
+.nu-sub{font-size:var(--fs-small);color:var(--mt);margin-top:4px}
+.nu-goal{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-top:14px;font-size:var(--fs-small);color:var(--mt)}
+.nu-goal strong{color:var(--tx)}
+.nu-log{display:inline-flex;align-items:center;gap:4px;min-height:44px;font-size:var(--fs-micro);font-weight:800;letter-spacing:.14em;color:var(--accent);text-decoration:none}
+:root.light-mode .nu-log{color:#245500}
+#tabNutr>div:last-child{padding:16px 16px 96px!important}
+.nu-panel{padding:0 0 4px;margin-bottom:20px}
+.nu-top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:14px}
+.nu-kcal{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.nu-kcal b{font-size:52px;color:var(--tx);line-height:.9}
+.nu-kcal span{font-size:var(--fs-micro);letter-spacing:.16em;font-weight:700;color:var(--mt)}
+.nutri-targets{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-bottom:12px}
+.nutri-target{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:12px 12px 10px;border-right:1px solid var(--rule);text-align:left}
+.nt-v{font-family:var(--font-num);font-size:32px;font-weight:800;line-height:1;color:var(--tx);font-variant-numeric:tabular-nums}
+.nt-v small{font-size:14px;color:var(--mt);margin-left:2px}
+.nt-p{font-size:11px;color:var(--mt)}
+.nu-dist{display:flex;height:6px;background:var(--rule)}
+.nu-dist i,.nu-legend i{display:block}
+.nu-dist .p,.nu-legend .p{background:var(--tx)}.nu-dist .c,.nu-legend .c{background:var(--mt)}.nu-dist .g,.nu-legend .g{background:var(--ink)}
+.nu-legend{display:flex;gap:14px;margin-top:8px;font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--mt)}
+.nu-legend span{display:inline-flex;align-items:center;gap:6px}.nu-legend i{width:10px;height:6px}
+.nu-diff{display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 12px;border:1px solid var(--rule);background:var(--plate)}
+.nu-diff-t{flex:1;font-size:12px;color:var(--mt)}.nu-diff-t strong{color:var(--tx)}
+.nu-diff-v{font-family:var(--font-num);font-size:22px;font-weight:800;color:var(--tx)}
+/* meals: one flat ledger, hairline separated, no card-per-item */
+.meal{margin:0 0 22px;border-top:2px solid var(--tx)}
+.meal-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 0 10px;border-bottom:1px solid var(--rule)}
+.meal-no{font-size:var(--fs-micro);font-weight:800;letter-spacing:.16em;color:var(--mt)}
+.meal-nm{font-family:var(--font-display);font-size:26px;font-weight:800;letter-spacing:.01em;text-transform:uppercase;line-height:1.02;margin-top:4px;color:var(--tx)}
+.meal-time{font-family:var(--font-num);font-size:18px;font-weight:800;color:var(--mt);letter-spacing:.04em;white-space:nowrap}
+.meal-notes{padding:10px 0;border-bottom:1px solid var(--rule)}
+.fr{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--rule)}
+.fr-n{flex:0 0 18px;font-family:var(--font-num);font-size:15px;font-weight:800;color:var(--ink);padding-top:1px}
+.fr-b{flex:1;min-width:0}
+.fr-l{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.fr-name{flex:1;font-size:15px;color:var(--tx);line-height:1.35}
+.fr.sub .fr-name{font-weight:700}
+.fr-qty{font-family:var(--font-num);font-size:24px;font-weight:800;color:var(--tx);white-space:nowrap;letter-spacing:.01em}
+.fr-x{color:var(--mt);font-size:12px}
+.fr-m{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap}
+.mchip{display:inline-flex;gap:4px;font-size:11px;color:var(--mt);padding:1px 6px;border:1px solid var(--rule)}
+.mchip b{color:var(--tx);font-weight:800}
+.meal-tot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:12px 0 2px}
+.mt-k{font-size:12.5px;color:var(--mt);margin-right:6px}.mt-k b{font-family:var(--font-num);font-size:22px;color:var(--tx);margin-right:3px}
+/* ══ SECONDARY: profile, supplements, check-in ══ */
+.prof-sec{margin:22px 0 4px;padding-top:14px;border-top:2px solid var(--tx)}
+.sup-blk{margin:0 0 18px}
+.sup-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:0 0 8px;border-bottom:1px solid var(--rule-strong)}
+.sup-h h3{font-family:var(--font-display);font-size:19px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--tx)}
+.sup-h span{font-size:var(--fs-micro);letter-spacing:.14em;color:var(--mt);font-weight:700;text-transform:uppercase}
+.sup-blk.avoid .sup-h h3{color:var(--mt)}
+.sp-row2{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--rule)}
+.sp-main{flex:1;min-width:0}
+.sp-nm{font-size:15px;font-weight:600;color:var(--tx)}
+.sp-when{margin-top:3px;font-size:11.5px;color:var(--mt)}
+.sp-dose2{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.sp-dose2 b{font-family:var(--font-num);font-size:24px;font-weight:800;color:var(--tx);line-height:1;white-space:nowrap}
+.sp-dose2 span{font-size:9.5px;letter-spacing:.14em;color:var(--mt);font-weight:700}
+.sp-note{font-size:12px;color:var(--mt);padding:8px 0 8px 10px;border-left:2px solid var(--rule-strong);margin:6px 0;line-height:1.5}
+#tabPerfil .card-title,#tabCheckin .card-title{font-size:19px}
+/* check-in: the floating save action is a full-width bar above the nav, never overlapping fields */
+.ci-float{left:0;right:0;bottom:calc(56px + env(safe-area-inset-bottom,0px));padding:10px 16px;background:linear-gradient(to top,var(--bg) 62%,transparent)}
+.ci-float button{width:100%;min-height:52px;font-size:18px;letter-spacing:.12em;box-shadow:none;text-transform:uppercase}
+#ci_eng_row{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px!important;overflow:visible}
+#ci_eng_row>*{min-width:0;min-height:48px;width:100%!important;flex:none!important}
+/* ══ STATES: loading / waiting / updating / empty / error ══ */
+.loading{gap:22px}
+.load-bar{width:120px;height:3px;background:var(--rule-strong);overflow:hidden;position:relative}
+.load-bar span{position:absolute;inset:0 auto 0 0;width:40%;background:var(--accent-fill);animation:_ld 1.1s var(--ease) infinite}
+@keyframes _ld{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+.ring{display:none}
+.loading-txt{font-size:var(--fs-micro);letter-spacing:.2em;font-weight:700;color:var(--mt)}
+#scrOnboarding{background:var(--bg)}
+.st-screen{min-height:100dvh;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:16px;max-width:420px;margin:0 auto;padding:32px 28px}
+.st-brand{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.st-ico{color:var(--accent)}
+:root.light-mode .st-ico{color:#245500}
+.st-title{font-family:var(--font-display);font-size:38px;font-weight:800;line-height:.98;letter-spacing:.005em;color:var(--tx)}
+.st-body{font-size:var(--fs-body);line-height:1.65;color:var(--mt)}
+.st-note{margin-top:16px;padding:12px 14px;border-left:3px solid var(--st-review);background:var(--plate);font-size:13px}
+.st-acts{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:8px}
+.st-code{width:100%;margin-top:16px;padding:12px 14px;border:1px dashed var(--rule-strong)}
+.st-uid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--tx);word-break:break-all;margin:8px 0 4px}
+.st-mail{font-size:11px;color:var(--mt)}
+/* empty */
+.empty{gap:10px}
+.empty-icon{opacity:.5}
+.empty-title{font-family:var(--font-display);font-size:22px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--tx)}
+/* toast: token-only, squared, above nav */
+.toast{border-radius:var(--r-1);border:1px solid var(--rule-strong);font-size:13px;box-shadow:0 10px 28px rgba(0,0,0,.6)}
+.toast.error{background:var(--plate-hi);color:var(--tx);border-color:var(--red);border-left-width:4px}
 </style>
 </head>
 <body>
@@ -846,8 +941,9 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 
 <!-- ════════════════════════ LOADING ════════════════════════ -->
 <div class="screen on" id="scrLoading">
-  <div class="loading">
-    <div class="ring"></div>
+  <div class="loading" role="status" aria-live="polite">
+    <div class="brand"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path class="mk-v" d="M1.5 5h7.4l7.1 15.5L23.1 5H30L19.2 28.5h-6.6z"/><path class="mk-cut" d="M22.6 5.2h7.2l-3.3 7.1z"/></svg><div class="brand-txt"><span class="brand-word">VDSEN<i></i></span></div></div>
+    <div class="load-bar" aria-hidden="true"><span></span></div>
     <div class="loading-txt">CARGANDO TU PLAN</div>
   </div>
 </div>
@@ -2812,49 +2908,36 @@ function renderAll() {
 // Se guarda en Firestore colección 'fichas_onboarding'
 // ══════════════════════════════════════════════════════════════════════════
 
+// Estado de pantalla completa (espera / plan en actualización): marca + icono SVG + mensaje claro + acciones.
+function _stateScreenHtml(icon, title, bodyHtml, actionsHtml, extraHtml) {
+  return '<div class="st-screen">'
+    + '<div class="st-brand"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path class="mk-v" d="M1.5 5h7.4l7.1 15.5L23.1 5H30L19.2 28.5h-6.6z"/><path class="mk-cut" d="M22.6 5.2h7.2l-3.3 7.1z"/></svg><span class="brand-word">VDSEN<i></i></span></div>'
+    + '<div class="st-ico"><svg class="ico lg" aria-hidden="true" focusable="false"><use href="#i-' + icon + '"/></svg></div>'
+    + '<h1 class="st-title">' + title + '</h1>'
+    + '<div class="st-body">' + bodyHtml + '</div>'
+    + (actionsHtml ? '<div class="st-acts">' + actionsHtml + '</div>' : '')
+    + (extraHtml || '')
+    + '</div>';
+}
+
 function renderEspera() {
   var cont = document.getElementById('scrOnboarding');
   if (!cont) return;
   var uid = (FB.auth && FB.auth.currentUser && FB.auth.currentUser.uid) || '—';
   var email = (FB.auth && FB.auth.currentUser && FB.auth.currentUser.email) || '—';
-  cont.innerHTML =
-    '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center">'
-    + '<div style="font-family:var(--ff);font-size:52px;color:var(--gold);letter-spacing:4px;margin-bottom:8px">VDSEN</div>'
-    + '<div style="font-family:var(--fb);font-size:11px;color:var(--mt);letter-spacing:3px;margin-bottom:40px">MI PLAN · v3.2</div>'
-    + '<div style="font-size:48px;margin-bottom:20px">⏳</div>'
-    + '<div style="font-family:var(--ff);font-size:22px;color:var(--tx);letter-spacing:2px;margin-bottom:12px">FICHA ENVIADA</div>'
-    + '<div style="font-size:15px;color:var(--mt);line-height:1.7;max-width:320px;margin-bottom:32px">'
-    + 'Tu coach recibió tu información y está preparando tu plan personalizado.<br><br>'
-    + 'Te avisará cuando esté listo.'
-    + '</div>'
-    + '<div style="background:var(--card);border:1px solid rgba(107,107,102,.3);padding:16px 20px;font-size:13px;color:var(--mt);line-height:1.7;max-width:320px">'
-    + '📸 Recuerda enviar tus fotos de evaluación por WhatsApp para que tu coach pueda completar el análisis.'
-    + '</div>'
-    + '<button onclick="doLogout()" style="margin-top:40px;background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
-    + '<div style="margin-top:28px;padding:12px 16px;background:rgba(107,107,102,.1);border:1px solid rgba(107,107,102,.25);border-radius:8px;max-width:320px;width:100%;text-align:left">'
-    + '<div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:6px">CÓDIGO DE ACCESO (manda esto a tu coach)</div>'
-    + '<div style="font-size:12px;font-family:monospace;color:var(--tx);word-break:break-all;margin-bottom:4px">' + uid + '</div>'
-    + '<div style="font-size:11px;color:var(--mt)">' + email + '</div>'
-    + '</div>'
-    + '</div>';
+  cont.innerHTML = _stateScreenHtml('timer', 'FICHA ENVIADA',
+      'Tu coach recibió tu información y está preparando tu plan personalizado.<br>Te avisará cuando esté listo.'
+      + '<div class="st-note">Recuerda enviar tus fotos de evaluación por WhatsApp para que tu coach pueda completar el análisis.</div>',
+      '<button onclick="doLogout()" class="btn btn-ghost">CERRAR SESIÓN</button>',
+      '<div class="st-code"><div class="kick">CÓDIGO DE ACCESO · MÁNDALO A TU COACH</div><div class="st-uid">' + uid + '</div><div class="st-mail">' + email + '</div></div>');
 }
 
 function renderPlanRoto() {
   var cont = document.getElementById('scrOnboarding');
   if (!cont) return;
-  cont.innerHTML =
-    '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center">'
-    + '<div style="font-family:var(--ff);font-size:52px;color:var(--gold);letter-spacing:4px;margin-bottom:8px">VDSEN</div>'
-    + '<div style="font-family:var(--fb);font-size:11px;color:var(--mt);letter-spacing:3px;margin-bottom:40px">MI PLAN · v3.2</div>'
-    + '<div style="font-size:48px;margin-bottom:20px">🔄</div>'
-    + '<div style="font-family:var(--ff);font-size:22px;color:var(--tx);letter-spacing:2px;margin-bottom:12px">PLAN EN ACTUALIZACIÓN</div>'
-    + '<div style="font-size:15px;color:var(--mt);line-height:1.7;max-width:340px;margin-bottom:32px">'
-    + 'Tu coach está actualizando tu plan de entrenamiento.<br><br>'
-    + 'En unos momentos estará disponible. Vuelve a intentarlo más tarde o cierra sesión y vuelve a entrar.'
-    + '</div>'
-    + '<button onclick="location.reload()" style="margin-bottom:12px;padding:14px 32px;background:var(--accent-fill);color:var(--on-accent);font-family:var(--ff);font-weight:800;font-size:15px;letter-spacing:2px;border:none;border-radius:2px;cursor:pointer">REINTENTAR</button>'
-    + '<button onclick="doLogout()" style="background:none;border:1px solid var(--bd);color:var(--mt);font-family:var(--ff);font-size:13px;letter-spacing:2px;padding:10px 24px;cursor:pointer">CERRAR SESIÓN</button>'
-    + '</div>';
+  cont.innerHTML = _stateScreenHtml('sync', 'PLAN EN ACTUALIZACIÓN',
+      'Tu coach está actualizando tu plan de entrenamiento.<br>En unos momentos estará disponible. Vuelve a intentarlo más tarde o cierra sesión y vuelve a entrar.',
+      '<button onclick="location.reload()" class="btn btn-primary">REINTENTAR</button><button onclick="doLogout()" class="btn btn-ghost">CERRAR SESIÓN</button>');
 }
 
 function renderOnboarding(user) {
@@ -11166,10 +11249,10 @@ function renderNutricion() {
                   : '#c94a3a';                          // ❌ fuera de rango
 
   const diffBadge = diff !== null
-    ? `<div style="font-size:12px;color:${diffColor};margin-top:8px;padding:8px 12px;background:rgba(107,107,102,.06);border:1px solid rgba(107,107,102,.15);border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <span>${Math.abs(diff) <= 50 ? '✅' : Math.abs(diff) <= 100 ? '⚠️' : '❌'}</span>
-        <span style="flex:1">Objetivo: <strong>${kcalObj}</strong> kcal · Real: <strong>${kcalReal}</strong> kcal</span>
-        <span style="font-weight:800">${diff > 0 ? '+' : ''}${diff} kcal</span>
+    ? `<div class="nu-diff ${Math.abs(diff) <= 50 ? 'ok' : 'off'}" role="status">
+        <span class="chip ${Math.abs(diff) <= 50 ? 'done' : (Math.abs(diff) <= 100 ? 'partial' : 'review')}">${Math.abs(diff) <= 50 ? '✓ EN RANGO' : Math.abs(diff) <= 100 ? '◐ CERCA' : '△ FUERA DE RANGO'}</span>
+        <span class="nu-diff-t">Objetivo <strong>${kcalObj}</strong> · Real <strong>${kcalReal}</strong> kcal</span>
+        <span class="nu-diff-v">${diff > 0 ? '+' : ''}${diff}</span>
        </div>`
     : '';
 
@@ -11180,47 +11263,26 @@ function renderNutricion() {
   const pctG = totalGr ? 100 - pctP - pctC : 0;
 
   const macroPanel = `
-    <div style="background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:16px 0;margin-bottom:14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <div>
-            <div class="sec-kicker">MACROS DIARIOS</div>
-            <div style="font-size:10px;color:var(--mt);margin-top:1px">Tu objetivo nutricional</div>
-          </div>
+    <section class="nu-panel" aria-label="Macros diarios">
+      <div class="nu-top">
+        <div>
+          <div class="kick">MACROS DIARIOS</div>
+          <div class="nu-sub">Tu objetivo nutricional</div>
         </div>
-        <div style="text-align:right">
-          <div style="font-family:'Big Shoulders Display',var(--ff);font-size:32px;color:var(--accent);line-height:1;font-weight:900">${kcal||'—'}</div>
-          <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);margin-top:2px">KCAL/DÍA</div>
-        </div>
+        <div class="nu-kcal"><b class="t-num">${kcal||'—'}</b><span>KCAL / DÍA</span></div>
       </div>
       <div class="nutri-targets">
-        <div class="nutri-target">
-          <div style="font-family:var(--font-num);font-size:24px;color:var(--tx);line-height:1;font-weight:700">${prot||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
-          <div style="font-size:10px;letter-spacing:1px;color:var(--mt);margin-top:4px;font-weight:700">PROTEÍNA</div>
-          <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctP}% · ${(+prot||0)*4} kcal</div>
-        </div>
-        <div class="nutri-target">
-          <div style="font-family:var(--font-num);font-size:24px;color:var(--tx);line-height:1;font-weight:700">${carb||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
-          <div style="font-size:10px;letter-spacing:1px;color:var(--mt);margin-top:4px;font-weight:700">CARBOS</div>
-          <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctC}% · ${(+carb||0)*4} kcal</div>
-        </div>
-        <div class="nutri-target">
-          <div style="font-family:var(--font-num);font-size:24px;color:var(--tx);line-height:1;font-weight:700">${gras||'—'}<span style="font-size:11px;color:var(--mt);font-weight:600;margin-left:2px">g</span></div>
-          <div style="font-size:10px;letter-spacing:1px;color:var(--mt);margin-top:4px;font-weight:700">GRASAS</div>
-          <div style="font-size:9px;color:var(--mt);margin-top:2px">${pctG}% · ${(+gras||0)*9} kcal</div>
-        </div>
+        <div class="nutri-target"><span class="ro-l">PROTEÍNA</span><b class="nt-v">${prot||'—'}<small>g</small></b><span class="nt-p">${pctP}% · ${(+prot||0)*4} kcal</span></div>
+        <div class="nutri-target"><span class="ro-l">CARBOS</span><b class="nt-v">${carb||'—'}<small>g</small></b><span class="nt-p">${pctC}% · ${(+carb||0)*4} kcal</span></div>
+        <div class="nutri-target"><span class="ro-l">GRASAS</span><b class="nt-v">${gras||'—'}<small>g</small></b><span class="nt-p">${pctG}% · ${(+gras||0)*9} kcal</span></div>
       </div>
       ${totalGr > 0 ? `
-      <div style="margin-top:6px">
-        <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);margin-bottom:5px;font-weight:600">DISTRIBUCIÓN</div>
-        <div style="display:flex;height:8px;border-radius:6px;overflow:hidden;background:var(--dk)">
-          <div style="width:${pctP}%;background:var(--info)" title="Proteína ${pctP}%"></div>
-          <div style="width:${pctC}%;background:#6acc7e" title="Carbos ${pctC}%"></div>
-          <div style="width:${pctG}%;background:#e8a060" title="Grasas ${pctG}%"></div>
-        </div>
-      </div>` : ''}
+      <div class="nu-dist" role="img" aria-label="Distribución: proteína ${pctP}%, carbos ${pctC}%, grasas ${pctG}%">
+        <i class="p" style="width:${pctP}%"></i><i class="c" style="width:${pctC}%"></i><i class="g" style="width:${pctG}%"></i>
+      </div>
+      <div class="nu-legend"><span><i class="p"></i>P</span><span><i class="c"></i>C</span><span><i class="g"></i>G</span></div>` : ''}
       ${diffBadge}
-    </div>`;
+    </section>`;
 
   const comidasHtml = parsearYRenderComidas(texto);
 
@@ -11295,16 +11357,12 @@ function renderNutricion() {
   }
 
   cont.innerHTML = `
-    <div style="padding:14px 16px 8px;border-bottom:1px solid var(--border);margin-bottom:14px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div>
-          <div class="sec-kicker">PLAN NUTRICIONAL</div>
-          <div style="font-size:11px;color:var(--mt);margin-top:1px">Tu alimentación diaria personalizada</div>
-        </div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
-        <span style="font-size:12px;color:var(--tx)">OBJETIVO · <strong>${kcal||'—'} kcal</strong> · ${prot||'—'} g proteína</span>
-        <a href="#nl_kcal" style="font-size:11px;font-weight:800;color:var(--accent);white-space:nowrap">REGISTRAR HOY ↓</a>
+    <div class="nu-head">
+      <div class="sec-kicker">PLAN NUTRICIONAL</div>
+      <div class="nu-sub">Tu alimentación diaria personalizada</div>
+      <div class="nu-goal">
+        <span>OBJETIVO · <strong>${kcal||'—'} kcal</strong> · ${prot||'—'} g proteína</span>
+        <a href="#nl_kcal" class="nu-log">REGISTRAR HOY <svg class="ico sm" aria-hidden="true" focusable="false"><use href="#i-chev-d"/></svg></a>
       </div>
     </div>
     <div style="padding:0 14px 100px">
@@ -11939,15 +11997,14 @@ function parsearYRenderComidas(texto) {
       if (macrosBd && !isSustd) {
         // Parse "25g P · 10g C · 0g G" → 3 chips de colores
         var partes = macrosBd.split(/\s*·\s*/);
-        macrosBdHtml = '<div style="display:flex;gap:6px;margin-top:3px;flex-wrap:wrap">' +
+        macrosBdHtml = '<div class="fr-m">' +
           partes.map(function(p) {
             var mP = p.match(/(\d+(?:\.\d+)?)\s*g\s*([PCG])/i);
             if (!mP) return '';
             var v = mP[1], tipo = mP[2].toUpperCase();
             if (tipo==='P') sumP += parseFloat(v); else if (tipo==='C') sumC += parseFloat(v); else sumG += parseFloat(v);
-            var col = tipo==='P' ? 'var(--info)' : tipo==='C' ? 'var(--macro-carb)' : 'var(--macro-fat)';
             var label = tipo==='P' ? 'P' : tipo==='C' ? 'C' : 'G';
-            return '<span style="font-size:9px;color:'+col+';background:'+col+'1a;padding:1px 6px;border-radius:4px;font-weight:700;letter-spacing:.5px;font-family:var(--ff)">'+label+': '+v+'g</span>';
+            return '<span class="mchip"><b>'+label+'</b> '+v+'g</span>';
           }).join('') + '</div>';
       }
       // Render de sub-notas (aclaraciones de pesaje, etc.)
@@ -11956,20 +12013,13 @@ function parsearYRenderComidas(texto) {
           '<span style="color:var(--accent);font-style:normal;margin-right:4px">ⓘ</span>'+ sn +
         '</div>';
       }).join('') : '';
-      return '<div id="alim_' + key + '" style="' +
-        'display:flex;gap:9px;padding:8px 0;border-bottom:1px solid rgba(30,35,48,.6);' +
-        (hasSust ? 'padding-bottom:4px;' : '') + '">' +
-        '<div style="flex-shrink:0;width:18px;height:18px;border-radius:50%;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.25);display:flex;align-items:center;justify-content:center;font-family:var(--ff);font-size:9px;font-weight:700;color:var(--gold);margin-top:1px">' + (ai + 1) + '</div>' +
-        '<div style="flex:1;min-width:0">' +
-        // Main ingredient line
-        '<div style="display:flex;justify-content:space-between;align-items:center">' +
-          '<span style="font-size:13px;color:' + (isSustd ? '#4a9a6a' : 'var(--tx)') + ';line-height:1.4;flex:1;font-weight:' + (isSustd ? '600' : '400') + '">' +
-            (isSustd ? '✓ ' : '') + (qtyStr ? nameOnly : displayLabel) +
-          '</span>' +
-          (qtyStr ? '<span style="font-size:14px;font-weight:700;color:var(--accent);margin-left:8px;flex-shrink:0;font-family:var(--ff)">' + qtyStr + '</span>' : '') +
-          (!qtyStr && hasSust && !isSustd
-            ? '<span style="font-size:9px;color:var(--mt);margin-left:8px;flex-shrink:0;opacity:.6">↔</span>'
-            : '') +
+      return '<div id="alim_' + key + '" class="fr' + (isSustd ? ' sub' : '') + '">' +
+        '<span class="fr-n" aria-hidden="true">' + (ai + 1) + '</span>' +
+        '<div class="fr-b">' +
+        '<div class="fr-l">' +
+          '<span class="fr-name">' + (isSustd ? '✓ ' : '') + (qtyStr ? nameOnly : displayLabel) + '</span>' +
+          (qtyStr ? '<span class="fr-qty">' + qtyStr + '</span>' : '') +
+          (!qtyStr && hasSust && !isSustd ? '<span class="fr-x" aria-hidden="true">↔</span>' : '') +
         '</div>' +
         macrosBdHtml +
         subnotasHtml +
@@ -12022,11 +12072,11 @@ function parsearYRenderComidas(texto) {
       var cTxt = (mc && mc[1] === '0' && sumC > 0) ? fmtG(sumC) : (mc ? mc[1] : null);
       var gTxt = (mg && mg[1] === '0' && sumG > 0) ? fmtG(sumG) : (mg ? mg[1] : null);
       if (mp || mc || mg || mk) {
-        macrosHtml = '<div style="display:flex;gap:6px;padding:8px 0 2px;border-top:1px solid var(--border);margin-top:6px;flex-wrap:wrap">' +
-          (mk ? '<span style="font-size:10px;font-weight:700;color:var(--gold);font-family:var(--ff);letter-spacing:.5px">' + mk[1] + ' kcal</span>' : '') +
-          (pTxt ? '<span style="font-size:10px;color:#4488cc;font-family:var(--ff)">P: ' + pTxt + 'g</span>' : '') +
-          (cTxt ? '<span style="font-size:10px;color:var(--positive);font-family:var(--ff)">C: ' + cTxt + 'g</span>' : '') +
-          (gTxt ? '<span style="font-size:10px;color:var(--fat);font-family:var(--ff)">G: ' + gTxt + 'g</span>' : '') +
+        macrosHtml = '<div class="meal-tot">' +
+          (mk ? '<span class="mt-k"><b>' + mk[1] + '</b> kcal</span>' : '') +
+          (pTxt ? '<span class="mchip"><b>P</b> ' + pTxt + 'g</span>' : '') +
+          (cTxt ? '<span class="mchip"><b>C</b> ' + cTxt + 'g</span>' : '') +
+          (gTxt ? '<span class="mchip"><b>G</b> ' + gTxt + 'g</span>' : '') +
           '</div>';
       } else {
         macrosHtml = '<div style="font-size:10px;color:var(--gold);padding:6px 0 0;border-top:1px solid var(--border);margin-top:4px;font-family:var(--ff)">' + cm.macros + '</div>';
@@ -12042,23 +12092,21 @@ function parsearYRenderComidas(texto) {
     var timeStr = timeMatch ? timeMatch[1] : '';
     if (timeMatch) tituloNombre = tituloNombre.replace(timeMatch[0], '').trim();
 
-    return '<div style="background:var(--card);border:1px solid var(--bd);border-radius:14px;margin-bottom:10px;overflow:hidden">' +
-      // Header with meal number, name and time
-      '<div style="padding:12px 14px;background:rgba(107,107,102,.06);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between">' +
+    return '<section class="meal">' +
+      '<header class="meal-h">' +
         '<div>' +
-          '<div style="font-family:var(--ff);font-size:11px;letter-spacing:2px;color:var(--gold);font-weight:700">' + tituloNum + '</div>' +
-          (tituloNombre ? '<div style="font-size:14px;color:var(--tx);font-weight:600;margin-top:2px;line-height:1.3">' + tituloNombre + '</div>' : '') +
+          '<div class="meal-no">' + tituloNum + '</div>' +
+          (tituloNombre ? '<h3 class="meal-nm">' + tituloNombre + '</h3>' : '') +
         '</div>' +
-        (timeStr ? '<div style="font-size:11px;color:var(--mt);font-family:var(--ff);letter-spacing:1px;background:var(--dk);border:1px solid var(--bd);border-radius:8px;padding:4px 10px">' + timeStr + '</div>' : '') +
-      '</div>' +
-      // Body
-      '<div style="padding:10px 14px">' +
-      (notasHtml ? '<div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">' + notasHtml + '</div>' : '') +
+        (timeStr ? '<div class="meal-time">' + timeStr + '</div>' : '') +
+      '</header>' +
+      '<div class="meal-b">' +
+      (notasHtml ? '<div class="meal-notes">' + notasHtml + '</div>' : '') +
       alimHtml +
       macrosHtml +
       suplHtml +
       '</div>' +
-      '</div>';
+      '</section>';
   }).join('');
 }
 
@@ -12939,12 +12987,12 @@ function renderPerfil() {
     <style>#inbody-guide summary::-webkit-details-marker{display:none}#inbody-guide summary::marker{display:none}#inbody-guide[open] .ib-chevron{transform:rotate(180deg)}</style>
     <details id="inbody-guide" style="margin:12px 0">
       <summary style="cursor:pointer;padding:12px 16px;background:var(--card);border:1px solid var(--bd);border-radius:10px;display:flex;align-items:center;gap:10px;list-style:none;outline:none;-webkit-tap-highlight-color:transparent">
-        <span style="font-size:18px">⚖️</span>
+        <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-scale"/></svg>
         <div style="flex:1;min-width:0">
           <div style="font-size:9px;letter-spacing:1.5px;color:var(--mt);font-weight:700">COMPOSICIÓN CORPORAL</div>
           <div style="font-size:12px;color:var(--tx);margin-top:2px">¿Qué significa cada parámetro InBody?</div>
         </div>
-        <span class="ib-chevron" style="font-size:11px;color:var(--mt);transition:transform .2s">▼</span>
+        <svg class="ico sm ib-chevron" style="transition:transform .2s" aria-hidden="true" focusable="false"><use href="#i-chev-d"/></svg>
       </summary>
       <div style="background:var(--card);border:1px solid var(--bd);border-top:none;border-radius:0 0 10px 10px;overflow:hidden">
         ${[
@@ -12957,7 +13005,7 @@ function renderPerfil() {
           ['🫀','GRASA VISCERAL','Grasa acumulada alrededor de los órganos abdominales. Más peligrosa metabólicamente que la subcutánea; el InBody la estima por impedancia segmental.','Riesgo: &gt;10 · Alto riesgo: &gt;13']
         ].map(([icon,title,desc,ref],i)=>`<div style="padding:11px 16px;${i>0?'border-top:1px solid rgba(244,244,240,.05)':''}">
           <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px">
-            <span style="font-size:12px">${icon}</span>
+            <span aria-hidden="true" style="width:8px;height:2px;background:var(--accent-fill);align-self:center;flex:0 0 auto"></span>
             <span style="font-family:var(--ff);font-size:10px;letter-spacing:1.5px;color:var(--accent);font-weight:700">${title}</span>
           </div>
           <div style="font-size:12px;color:var(--platinum);line-height:1.6;padding-left:18px">${desc}</div>
@@ -12966,21 +13014,16 @@ function renderPerfil() {
       </div>
     </details>
 
-    <div style="margin-top:14px;padding:14px 16px 10px;background:linear-gradient(180deg,rgba(107,107,102,.04),transparent);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:24px">💊</span>
-        <div style="flex:1">
-          <div style="font-family:var(--ff);font-size:16px;letter-spacing:2px;color:var(--gold);font-weight:900">SUPLEMENTACIÓN</div>
-          <div style="font-size:10px;color:var(--mt);margin-top:1px">Stack personalizado · dosis y timing</div>
-        </div>
-      </div>
+    <div class="prof-sec">
+      <div class="kick">STACK PERSONALIZADO</div>
+      <div class="nu-sub">Dosis y timing indicados por tu coach</div>
     </div>
-    <div style="padding:14px 4px 0">${supsHtml}</div>
+    <div class="prof-sup">${supsHtml}</div>
 
     <div class="card" style="margin-top:14px">
       <div class="card-title">AJUSTES</div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
-        <div style="font-size:22px;flex-shrink:0">⏱</div>
+        <svg class="ico lg" style="flex-shrink:0;color:var(--mt)" aria-hidden="true" focusable="false"><use href="#i-timer"/></svg>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;color:var(--tx);font-weight:700">Temporizador de descanso</div>
           <div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">${isRestTimerDisabled()?'Desactivado — no aparecerá el conteo entre series.':'Activado — cuenta el descanso tras cada serie.'}</div>
@@ -12990,7 +13033,7 @@ function renderPerfil() {
         </button>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
-        <div style="font-size:22px;flex-shrink:0">☀️</div>
+        <svg class="ico lg" style="flex-shrink:0;color:var(--mt)" aria-hidden="true" focusable="false"><use href="#i-eye"/></svg>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;color:var(--tx);font-weight:700">Modo de visualización</div>
           <div style="font-size:11px;color:var(--mt);margin-top:2px">${isLightMode()?'Modo claro — fondo blanco.':'Modo oscuro — fondo negro.'}</div>
@@ -13320,38 +13363,26 @@ function formatTextoSup(texto) {
     'Colágeno':'🦴', 'Taurina':'⚡', 'Glutamina':'🧪'
   };
   return secciones.map(sec => {
-    const style = TIER_COLORS[sec.key] || TIER_COLORS.DEFAULT;
-    const tierIcon = sec.key === 'TIER 1' ? '⭐' : sec.key === 'TIER 2' ? '✦' :
-                     sec.key === 'PRE-ENTRENO' ? '⚡' : sec.key === 'EVITAR' ? '🚫' : '💊';
+    const tierCls = sec.key === 'TIER 1' ? 't1' : sec.key === 'EVITAR' ? 'avoid' : '';
     const itemsHtml = sec.items.map(item => {
       if (item.tipo === 'sup') {
-        const icon = SUP_ICON[item.nombre] || '💊';
-        const timingIcon = TIMING_ICON[item.momento] || '';
         return `
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)">
-          <div style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${style.bg};border:1px solid ${style.border};border-radius:10px;font-size:20px">${icon}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:14px;color:var(--tx);font-weight:700;line-height:1.2">${_escHTml(item.nombre)}</div>
-            ${item.momento ? `<div style="font-size:10px;color:var(--mt);margin-top:3px;letter-spacing:.5px;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.05);padding:2px 7px;border-radius:5px;font-weight:600">${timingIcon} ${item.momento}</div>` : ''}
+        <div class="sp-row2">
+          <div class="sp-main">
+            <div class="sp-nm">${_escHTml(item.nombre)}</div>
+            ${item.momento ? `<div class="sp-when">${_escHTml(item.momento)}</div>` : ''}
           </div>
-          <div style="text-align:right;flex-shrink:0">
-            <div style="font-family:var(--ff);font-size:15px;color:${style.color};letter-spacing:1px;font-weight:800;line-height:1">${item.dosis}</div>
-            <div style="font-size:9px;color:var(--mt);margin-top:2px;letter-spacing:.5px">DOSIS</div>
-          </div>
+          <div class="sp-dose2"><b>${item.dosis}</b><span>DOSIS</span></div>
         </div>`;
       }
-      return `<div style="font-size:11px;color:var(--mt);padding:6px 0;font-style:italic;line-height:1.5;border-left:2px solid ${style.border};padding-left:10px;margin:4px 0">${_escHTml(item.texto)}</div>`;
+      return `<div class="sp-note">${_escHTml(item.texto)}</div>`;
     }).join('');
     if (!itemsHtml) return '';
     return `
-      <div style="margin-bottom:14px;border:1px solid ${style.border};background:${style.bg};border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.15)">
-        <div style="padding:12px 14px;border-bottom:1px solid ${style.border};display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.15)">
-          <span style="font-size:16px">${tierIcon}</span>
-          <div style="font-family:var(--ff);font-size:12px;letter-spacing:2px;color:${style.color};font-weight:800;flex:1">${_escHTml(sec.titulo)}</div>
-          <span style="font-size:9px;color:var(--mt);letter-spacing:1px">${sec.items.filter(i=>i.tipo==='sup').length} items</span>
-        </div>
-        <div style="padding:4px 14px 8px">${itemsHtml}</div>
-      </div>`;
+      <section class="sup-blk ${tierCls}">
+        <header class="sup-h"><h3>${_escHTml(sec.titulo)}</h3><span>${sec.items.filter(i=>i.tipo==='sup').length} items</span></header>
+        <div>${itemsHtml}</div>
+      </section>`;
   }).join('') || '<div style="color:var(--mt);font-size:11px;text-align:center;padding:20px">Sin suplementos asignados</div>';
 }
 
