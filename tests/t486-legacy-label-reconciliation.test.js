@@ -46,7 +46,7 @@ test('T486.4 the OBJETIVO block shows only Coach-authored reps/RIR', () => {
   assert.ok(i > 0);
   const block = client.slice(i, client.indexOf("})()+", i));
   assert.ok(!/progrec|newLoad|_exLoad/.test(block));
-  assert.ok(/repsTarget\+' reps/.test(block) && /RIR '\+baseRIR/.test(block));
+  assert.ok(/repsTarget\+'(<\/b>)? reps/.test(block) && /RIR '\+baseRIR/.test(block));
 });
 
 test('T486.5 (T500) no athlete-facing recommendation label remains; fatigue signals are informational', () => {

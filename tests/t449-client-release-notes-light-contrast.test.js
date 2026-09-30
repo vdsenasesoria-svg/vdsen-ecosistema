@@ -41,7 +41,7 @@ ok(contrast('666666', 'FFFFFF') >= 4.5, 'light-mode muted text exceeds WCAG AA c
 
 ok(!client.includes('background:var(--accent);'), 'accent text token is never reused as a CTA or badge fill');
 ok(client.includes('background:var(--accent-fill);color:var(--on-accent)'), 'primary actions use lime fill with off-black semantic text');
-ok(client.includes("numColor = 'var(--tx)'") && client.includes("numColor = 'var(--mt)'"), 'week selector avoids white-on-white and translucent future labels');
+ok(/\.wkc\.future \.wkc-n\{[^}]*color:var\(--mt\)/.test(client) && /\.wkc\.view \.wkc-n\{[^}]*color:var\(--tx\)/.test(client) && !/\.wkc[^{]*\{[^}]*color:rgba/.test(client), 'week selector avoids white-on-white and translucent future labels (T542: token-only .wkc cells)');
 ok(!client.includes('color:#C4FF00;background:rgba(196,255,0,.1)'), 'light surfaces no longer use neon lime as foreground text');
 
 console.log('\nT449 — Client release notes + light contrast: ' + pass + ' assertions PASSED.');

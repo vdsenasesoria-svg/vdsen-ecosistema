@@ -82,7 +82,7 @@ ok(skipExerciseWithReasonSrc.includes('if (reason === null) return;'), '_skipExe
 // both go through the reason picker, not the bare functions directly. ──────
 ok(CLIENT.includes('onclick="_skipSessionWithReason(\'+DIA_ACTIVO+\')"'), 'the session "⏸ Saltar" button now goes through the reason picker');
 ok(CLIENT.includes("onclick=\"_skipExerciseWithReason('+di+','+ei+')\""), 'the exercise card exposes a "⏭ Omitir ejercicio" action wired to the reason picker');
-ok(CLIENT.includes("? '<div style=\"margin-top:6px;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:7px;background:rgba(107,107,102,.08);border:1px solid rgba(107,107,102,.25);font-size:10px;color:var(--mt);font-weight:700\">⏸ Ejercicio omitido</div>'"),
+ok(CLIENT.includes("? '<div class=\"chip stale xh-skipped\">⏸ Ejercicio omitido</div>'") || CLIENT.includes("'<div class=\"chip stale xh-skipped\">⏸ Ejercicio omitido</div>'"),
   'a skipped exercise renders its own honest "⏸ Ejercicio omitido" status, never disguised as completed');
 
 console.log('');

@@ -9,9 +9,9 @@ let pass = 0;
 function ok(condition, message) { assert.ok(condition, message); pass++; console.log('  ✓ ' + message); }
 
 ok(client.includes('.tap-target{min-height:44px;min-width:44px}'), 'reusable touch targets meet the 44px mobile minimum');
-ok(client.includes('class="tap-target" onclick="markWeekCompleteFromHistory()"')
-  && client.includes('class="tap-target" onclick="markWeekDoneWithPartialData()"'), 'week-close actions use the mobile touch target');
-ok(client.includes('<button class="tap-target" onclick="toggleExUnit('), 'exercise unit toggle is a keyboard-focusable button');
+ok(/class="tap-target[^"]*" onclick="markWeekCompleteFromHistory\(\)"/.test(client)
+  && /class="tap-target[^"]*" onclick="markWeekDoneWithPartialData\(\)"/.test(client), 'week-close actions use the mobile touch target');
+ok(/<button class="tap-target[^"]*" onclick="toggleExUnit\(/.test(client), 'exercise unit toggle is a keyboard-focusable button');
 ok(client.includes('aria-label="Opciones del ejercicio"')
   && client.includes('aria-label="Mostrar calentamiento"')
   && client.includes('aria-label="Abrir mi nota del ejercicio"'), 'compact exercise controls expose accessible names');

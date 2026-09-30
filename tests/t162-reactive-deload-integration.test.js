@@ -303,8 +303,8 @@ function makeEngine(LOGS, totalWeeks) {
 (function testGetSemProgresionAndGridLabel() {
   ok(CLIENT.includes("if (week >= total) return _computeDeloadTriggers(week).isDeload ? 'DELOAD' : 'SEMANA FINAL';"),
     'getSemProgresion: the last-week label is now reactive-gated (DELOAD only with real evidence, else SEMANA FINAL)');
-  ok(!CLIENT.includes("var deload  = w === _tw;") && CLIENT.includes("getSemProgresion(w)+'</span>'+"),
-    'Week-selector grid: the redundant calendar-only DELOAD shortcut was removed; the label always defers to getSemProgresion(w)');
+  ok(!CLIENT.includes("var deload  = w === _tw;") && CLIENT.includes("getSemProgresion(CURRENT_WEEK)"),
+    'Week-selector grid: the redundant calendar-only DELOAD shortcut was removed; the phase label always defers to getSemProgresion(CURRENT_WEEK) (T542: shown in the session head kicker, not in the week cells)');
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
