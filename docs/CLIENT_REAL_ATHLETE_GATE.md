@@ -7,6 +7,12 @@ cannot mark this sheet PASS — only the athlete + the Coach observer can.
 Automated dress rehearsal (T545, not a substitute for the human PASS): one complete session of the real cloned 7-day plan (day 1, 5 exercises, 12 sets) was
 executed through the real Client UI on staging, persisted, reloaded and re-logged-in — `docs/client-staging-real-session-results.json`
 (`scripts/client-staging-real-session.cjs`). The synthetic staging account and its session log are kept so the athlete can review the completed-session UI.
+**That rehearsed day 1 is synthetic and does NOT count as the human session:** the athlete's session is the next uncompleted day (day 2, "Lower A").
+
+Express mode (the default entry path) — observed values need an explicit athlete action (T546). A preselected RIR is only a dashed suggestion; if the athlete
+does not tap an RIR, no observed RIR is stored. Untouched ICS / Pump are stored as nothing (never 8 / 1). Express S1…S(n-1) only mark the sets done; the
+final set carries the observed RIR / ICS / Pump the athlete actually entered and is the representative evidence set. Verified by
+`scripts/client-staging-express-evidence.cjs` (`docs/client-staging-express-evidence-results.json`). Row 4 below therefore means: tap the RIR you actually had.
 
 Athlete: ______________  Coach observer: ______________  Device / browser: ______________  Date: ______________
 

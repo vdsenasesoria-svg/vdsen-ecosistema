@@ -78,13 +78,22 @@ Executing the real 7-day / 32-exercise / 80-set plan of an athlete (staging clon
 * **Day tabs** read "#1 — P…" for every day; they now show `D1`…`D7` plus a short identity derived for display only (`_dayShortLabel`; the stored label is
   untouched), and the redundant "#n —" numbering is stripped from titles (`_stripDayNo`).
 * **Week strip** hard-coded `DELOAD` for the final week; it now says `DELOAD` only when `_computeDeloadTriggers()` says so (T162), else `FINAL`.
-* **Express RIR** preselects the prescribed RIR; it now renders dashed with a one-line hint until the athlete taps (stored values unchanged — see the
-  product decision below).
+* **Express RIR** preselects the prescribed RIR; it now renders dashed with a one-line hint until the athlete taps; T546 additionally stops storing it (below).
 * Header overlap at 360–389px, the `✓ GUARDADO` chip floating over the rest sheet controls, and the week summary pushing the set form down were fixed.
 
-Product decisions left open (not changed here): express mode stores the preselected RIR as observed `rir_real`, and fills `ics` 8 / `pump` 1 when empty,
-for every set of the exercise; a plan imported by the Coach has no `updatedAt`, so the auto-apply shadow rejects every recommendation with
-`PLAN_TIMESTAMP_MISSING` (no PENDING is ever created for such plans).
+Both product decisions left open in T545 are closed in T546:
+* **Express evidence integrity (Director decision A)** — prescribed values are never observed values. The express hidden observed-RIR input starts empty; the
+  preselected RIR is a dashed visual suggestion only. Observed RIR / ICS / Pump exist only after an explicit tap / entry (untouched = absent, never 8 / 1).
+  Express S1…S(n-1) are marked done *without* observations (tag `express`, already excluded by the canonical policy); the LAST set (`expressFinal`, not
+  `express`) carries the athlete's explicit observations and is the representative evidence set (`selectRepresentativeSet`, unchanged). The prescribed RIR
+  lives only in `rir` (Coach-authored) and is never overwritten by an observation. Functions: `_expressObs`, `_expressSetEntries`, `_expressRecord`,
+  `_expressPrescribedRir`, `_isExpressLog`; writers `markExpressDone`, `markExpressSSDone`, `ssCompleteLastRound`. Legacy advisory `calculateProgression`
+  still assumes RIR = target / ICS 8 / pump 2 *when computing* a recommendation from missing values (read-side fallback, not stored evidence; untouched).
+* **Plan `updatedAt` (Director decision B)** — `updatedAt` is the LAST PRESCRIPTION REVISION timestamp, an ISO string (every consumer runs `Date.parse` on a
+  string; a Firestore `Timestamp` from `serverTimestamp()` is rejected as `PLAN_TIMESTAMP_MISSING`). All Coach creation paths stamp `createdAt` and
+  `updatedAt` from one event (the AI draft path used `serverTimestamp()` objects and is fixed); prescription edits stamp `updatedAt` only when the prescription
+  changed (`_planRevisionPatch`); athlete execution, reads, logs, the materializer, progression records and activation never touch the plan. The guard is not
+  weakened: no `updatedAt` (or a non-string) still fails closed, and there is no fallback to `createdAt`.
 
 ## Residual visual debt (explicit)
 * body-map / weekly-volume widgets (legend-coloured data viz), InBody chart, PDF export

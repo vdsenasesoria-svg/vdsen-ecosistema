@@ -39,6 +39,8 @@ Claves en `entries`:
 - `postsession_{W}_{D}` — check-in post-sesión `{ eimd, articular, patron, sleep, rpe }`
 - `progrec_{W}_{D}` — recomendaciones de progresión generadas `{ recommendations:[], deloadTriggers:[] }`
 - `ci_sem_{W}` — check-in semanal `{ peso, hrv, who5 }`
+- Express (T546): `exexpress_{W}_{D}_{E}` + `log_*` sintéticos. Valores prescritos NUNCA son observados: RIR/ICS/Pump sólo existen si el atleta los tocó (ausente ≠ 8/1). S1..S(n-1) = `express:true` sin observaciones; la última serie = `expressFinal:true` con las observaciones explícitas (serie representativa). `rir` = RIR prescrito; `rir_real` = observado.
+- `plans/{id}.updatedAt` (T546) = timestamp ISO-string de la ÚLTIMA REVISIÓN DE PRESCRIPCIÓN (campo de seguridad de progresión: sin él o no-string → `PLAN_TIMESTAMP_MISSING`, fail-closed; nunca fallback a `createdAt`). Todo plan nuevo lleva `createdAt`+`updatedAt` del mismo evento; una edición que cambia la prescripción lo actualiza; ejecución del atleta/lecturas/logs/materializador/activación nunca lo tocan.
 
 ## Algoritmo de progresión VDSEN v3.1
 

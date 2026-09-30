@@ -10549,6 +10549,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       }).join('\n');
     }
 
+    // T546: createdAt / updatedAt are ISO STRINGS from one creation event (every consumer -- the auto-apply shadow's `_validTime`, the staleness
+    // checks -- runs Date.parse() on a string; a serverTimestamp() object was rejected there as PLAN_TIMESTAMP_MISSING).
+    const _creationAt = new Date().toISOString();
     const draftDoc = {
       // Identity
       coachId:             coachId,
@@ -10559,8 +10562,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
       model:               resp.model || '',
       status:              'draft_approved',
       // Lifecycle
-      createdAt:           serverTimestamp(),
-      updatedAt:           serverTimestamp(),  // T119-H (QA-R3-02): client listener requires updatedAt
+      createdAt:           _creationAt,
+      updatedAt:           _creationAt,        // T119-H (QA-R3-02): client listener requires updatedAt
       approvedAt:          serverTimestamp(),
       approvedByCoachId:   coachId,
       // Training (flat — backward compat with client app)
@@ -21250,6 +21253,23 @@ El esfuerzo no es negociable.
   }
 
   let _savingTrainingPlan = false;
+  // T546: plan.updatedAt = the LAST PRESCRIPTION REVISION timestamp (a progression safety field: evidence older than it is stale).
+  // An edit that does not change the prescription must not invalidate evidence; createdAt is never part of an edit.
+  function _planDaysSignature(days) {
+    return JSON.stringify(days === undefined ? null : days, function(k, v) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) return Object.keys(v).sort().reduce(function(o, key) { o[key] = v[key]; return o; }, {});
+      return v;
+    });
+  }
+  function _planRevisionPatch(cur, patch, nowIso) {
+    var out = Object.assign({}, patch);
+    delete out.createdAt;
+    var changed = !cur || _planDaysSignature(cur.days) !== _planDaysSignature(patch.days) ||
+      (patch.daysPerWeek !== undefined && cur.daysPerWeek !== patch.daysPerWeek);
+    if (changed) out.updatedAt = nowIso; else delete out.updatedAt;
+    return out;
+  }
+
   async function saveTrainingPlan() {
     if (_savingTrainingPlan) return;
     if (!_editingPlanId) return;
@@ -21306,9 +21326,11 @@ El esfuerzo no es negociable.
     if (_hasEmptyName) { showToast('⚠️ Hay ejercicios sin nombre — completa todos los campos antes de guardar', true); _savingTrainingPlan = false; if (_stpBtn) { _stpBtn.disabled = false; _stpBtn.textContent = '💾 Guardar cambios'; } return; }
     try {
       // Backup pre-sobrescribir
+      let _curPlanData = null;   // T546: current doc, to tell a prescription revision from a no-op save
       try {
         const cur = await getDoc(doc(db, "plans", _editingPlanId));
         if (cur.exists()) {
+          _curPlanData = cur.data();
           await addDoc(collection(db, "plans_backup"), {
             ...cur.data(), originalPlanId: _editingPlanId,
             backedUpAt: new Date().toISOString(), backedUpBy: currentCoach.uid
@@ -21322,7 +21344,7 @@ El esfuerzo no es negociable.
         if (_g83t.status === 'REVIEW_REQUIRED' && _g83t.blockers.length) console.warn('[VDSEN F83] training plan gate REVIEW_REQUIRED:', _g83t.blockers);
         if (_g83t.warnings.length) console.warn('[VDSEN F83] training plan gate warnings:', _g83t.warnings);
       }
-      await updateDoc(doc(db, "plans", _editingPlanId), { days, daysPerWeek: days.length, coachId: currentCoach.uid, updatedAt: new Date().toISOString() });
+      await updateDoc(doc(db, "plans", _editingPlanId), _planRevisionPatch(_curPlanData, { days, daysPerWeek: days.length, coachId: currentCoach.uid }, new Date().toISOString()));
       markEditorClean();
       showToast('Plan actualizado ✅');
       toggleTrainingEditor();

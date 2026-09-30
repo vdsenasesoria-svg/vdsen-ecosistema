@@ -93,7 +93,7 @@ test('T545.6 layout: week summary sits below the active exercise; session title 
 });
 
 test('T545.7 canonical fields and data contracts are untouched by the presentation changes', () => {
-  assert.ok(client.includes("rir_last:rirLast, ics:ics, pump:pump, unit:unit, done:true, ts:now"), 'express record shape unchanged');
-  assert.ok(client.includes("LOGS[_ssKey] = { carga:carga, reps:String(reps), unit:unit, done:true, rir:rirLast, rir_real:rirLast"), 'express per-set evidence shape unchanged');
+  // T546 supersedes the T545 pin: the record keeps its shape, but observed values are explicit-only (see t546-express-evidence-integrity)
+  assert.ok(client.includes("return { carga: carga, reps: String(reps), sets: sets, rir_last: obs.rir, ics: obs.ics, pump: obs.pump, unit: unit, done: true, ts: ts };"), 'express record keeps its shape');
   assert.ok(client.includes('prescriptionExerciseId'), 'PID contract present');
 });

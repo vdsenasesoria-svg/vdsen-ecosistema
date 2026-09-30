@@ -55,7 +55,8 @@ console.log('Contract 1: updatedAt in every active-plan writer');
 // 1-A saveTrainingPlan — updateDoc
 {
   const body = extractFnBody(COACH, 'async function saveTrainingPlan(');
-  const present = body && updatedAtNearCall(body, 'updateDoc(doc(db', 2500);
+  // T546: the editor save stamps updatedAt through _planRevisionPatch (only when the prescription actually changed; no-op saves must not invalidate evidence)
+  const present = body && (updatedAtNearCall(body, 'updateDoc(doc(db', 2500) || body.indexOf('_planRevisionPatch(') !== -1);
   console.log('  C1-A saveTrainingPlan updateDoc includes updatedAt:', present ? 'PASS' : 'GAP');
   assert.ok(body, 'C1-A: saveTrainingPlan function must exist');
   assert.ok(present, 'C1-A: saveTrainingPlan updateDoc must include updatedAt');

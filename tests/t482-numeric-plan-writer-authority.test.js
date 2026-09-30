@@ -100,7 +100,7 @@ test('T482.7 explicit Coach manual plan editing remains functional', () => {
   for (const fn of ['saveTrainingPlan', 'submitQuickAdd', 'extendPlanWeeks', 'showUpdatePlanModal']) {
     const body = functionSource(coach, fn);
     assert.ok(/updateDoc\(doc\(db, ?['"]plans['"]/.test(body), fn + ' still updates plans');
-    assert.ok(/updatedAt/.test(body), fn + ' keeps updatedAt');
+    assert.ok(/updatedAt|_planRevisionPatch\(/.test(body), fn + ' keeps updatedAt');   // T546: saveTrainingPlan stamps via _planRevisionPatch
   }
   assert.ok(/coachId: currentCoach\.uid/.test(functionSource(coach, 'saveTrainingPlan')));
 });

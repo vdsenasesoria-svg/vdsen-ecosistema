@@ -99,6 +99,6 @@ ok(variantHtml.includes('pending-license.svg') && variantHtml.includes('Imagen p
 ok(client.includes("prescriptionExerciseId: e.prescriptionExerciseId || undefined") && client.includes("exerciseId: e.exerciseId || undefined"), 'plan adapter preserves both stable identity fields');
 ok(client.includes("schema: planData.schema || 'vdsen-plan-v2'"), 'vdsen-plan-v2 remains unchanged');
 ok(client.includes('openExerciseVisualSheet('+"'"+'+di+'+"'"+','+"'"+'+ei+'+"'"+')') || client.includes('openExerciseVisualSheet(\'+di+\',\'+ei+\')'), 'exercise render exposes the visual sheet from the exercise title');
-ok(client.includes('prescriptionExerciseId: _ejExprMeta.prescriptionExerciseId || undefined'), 'execution logging still persists prescription identity');
+ok(client.includes('meta: { prescriptionExerciseId: _ejExprMeta.prescriptionExerciseId, exerciseId: _ejExprMeta.exerciseId') && client.includes('if (p.meta.prescriptionExerciseId) e.prescriptionExerciseId = p.meta.prescriptionExerciseId;'), 'execution logging still persists prescription identity (T546: through _expressSetEntries)');
 
 console.log('\nT450 — Exercise visual catalog: ' + pass + ' assertions PASSED.');
