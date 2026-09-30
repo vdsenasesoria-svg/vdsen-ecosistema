@@ -13,11 +13,12 @@ const between = (a, b) => { const i = client.indexOf(a); assert.ok(i >= 0, a); c
 
 // --- the plan converter (real source) ---
 const rirLine = between("var rirTarget  = (e.sets && e.sets[0]", "\n");
+const carrySrc = between('function _carryPerfSetFields(', '\n}\n') + '\n}\n';   // T543: the set map also calls the pass-through helper (real source)
 const setsMap = between("sets: (e.sets || []).map(function(s, si){", "          coachNote: e.coachNote");
 function convert(e) {
   const ctx = { e, out: null };
   vm.createContext(ctx);
-  vm.runInContext(`var repsTarget = 8; ${rirLine}\nvar firstAuthored = !!(e.sets && e.sets[0] && e.sets[0].rirTarget !== undefined && e.sets[0].rirTarget !== null);\nvar o = { ${setsMap.replace(/\),\s*$/, ')')} };\nthis.out = o.sets; this.rirTarget = rirTarget;`, ctx);
+  vm.runInContext(carrySrc + `var repsTarget = 8; ${rirLine}\nvar firstAuthored = !!(e.sets && e.sets[0] && e.sets[0].rirTarget !== undefined && e.sets[0].rirTarget !== null);\nvar o = { ${setsMap.replace(/\),\s*$/, ')')} };\nthis.out = o.sets; this.rirTarget = rirTarget;`, ctx);
   return ctx;
 }
 

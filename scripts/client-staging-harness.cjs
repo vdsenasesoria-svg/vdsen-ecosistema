@@ -45,7 +45,7 @@ const sets = (n, reps, rir, rest, load) => Array.from({ length: n }, (_, i) => s
 const ex = (pid, name, n, reps, rir, rest, extra) => Object.assign({ prescriptionExerciseId: pid, exerciseName: name, sets: sets(n, reps, rir, rest) }, extra || {});
 function syntheticPlan(coachId, clientId) {
   return {
-    schema: 'vdsen-plan-v2', coachId, clientId, status: 'active', weeks: 6, daysPerWeek: 3, generatedBy: 'staging-harness', createdAt: new Date().toISOString(), updatedAt: '2026-09-30T00:00:00.000Z',
+    schema: 'vdsen-plan-v2', coachId, clientId, status: 'active', weeks: 6, daysPerWeek: 4, generatedBy: 'staging-harness', createdAt: new Date().toISOString(), updatedAt: '2026-09-30T00:00:00.000Z',
     days: [
       { dayIndex: 0, label: 'Empuje · Pecho y hombro', exercises: [
         ex('pid-h-1', 'Press banca con barra', 4, 6, 2, 150), ex('pid-h-2', 'Press inclinado con mancuernas', 3, 10, 2, 120),
@@ -55,7 +55,13 @@ function syntheticPlan(coachId, clientId) {
         ex('pid-h-7', 'Curl con barra Z', 3, 10, 1, 90, { supersetGroup: 'A', technique: 'superset' }) ] },
       { dayIndex: 2, label: 'Pierna · Cuádriceps y glúteo', exercises: [
         ex('pid-h-8', 'Sentadilla trasera', 4, 6, 2, 180), ex('pid-h-9', 'Prensa de pierna', 3, 12, 2, 120),
-        ex('pid-h-10', 'Curl femoral tumbado', 3, 12, 1, 90), ex('pid-h-11', 'Elevación de talones de pie', 4, 15, 1, 60) ] }
+        ex('pid-h-10', 'Curl femoral tumbado', 3, 12, 1, 90), ex('pid-h-11', 'Elevación de talones de pie', 4, 15, 1, 60) ] },
+      // T543: one synthetic day with every supported non-strength exercise type (canonical field: exerciseType).
+      { dayIndex: 3, label: 'Rendimiento · Capacidad', exercises: [
+        { prescriptionExerciseId: 'pid-h-12', exerciseName: 'Bicicleta zona 2', exerciseType: 'cardio', modo: 'z2', duracionMin: 30, fcZonaMin: 120, fcZonaMax: 140, sets: [] },
+        Object.assign(ex('pid-h-13', 'Dominadas estrictas', 3, 8, 2, 90), { exerciseType: 'calistenia', rpeTarget: 8 }),
+        Object.assign(ex('pid-h-14', 'Farmer carry', 3, 1, 2, 60), { exerciseType: 'estacion', dosis: 50, dosisUnit: 'm', tiempoObjetivoSeg: 60, sets: [0, 1, 2].map(i => Object.assign(set(i, 1, 2, 60), { dosis: 50 })) }),
+        { prescriptionExerciseId: 'pid-h-15', exerciseName: 'Finisher metabólico', exerciseType: 'circuito', estructura: 'AMRAP', timeCapMin: 10, roundsObjetivo: 4, movimientos: [{ nombre: 'Burpee', dosis: 10 }, { nombre: 'Remo con kettlebell', dosis: 12 }], sets: [] } ] }
     ]
   };
 }

@@ -49,6 +49,24 @@ solid-bordered inputs labelled `REGISTRO` / `RIR REAL`. Prescribed RIR is never 
   `NODE_PATH=$(npm root -g) NODE_USE_ENV_PROXY=1 node scripts/client-staging-browser.cjs --width 390 --shots <dir> [--light]`
 * Production defaults are unchanged; `tests/t542-staging-client-harness.test.js` proves the swap touches only the config block.
 
-## Residual visual debt
-Performance-type exercise cards (cardio / calistenia / estación / circuito), the Coach-authored technique `detail` HTML, the body-map /
-volume widgets, the InBody chart and the PDF export still carry legacy inline styling; they inherit the tokens where they use them.
+## Exercise types (T543)
+Canonical field: `exerciseType` on a plan exercise — `fuerza` (default when absent) | `calistenia` | `cardio` | `estacion` | `circuito`
+(`references/entrenamiento-funcional.md` §10.10; consumed by `_getExType()`; no name inference). `loadPlan` now passes `exerciseType` (and the
+legacy `tipo` alias) plus a whitelist of the Coach's performance prescription fields (`_PERF_RX_FIELDS`, set-level `dosis` / `rpeTarget`) through to
+the runtime exercise. Identity (`prescriptionExerciseId`, `exerciseId`), sets / reps / RIR and progression metadata are untouched, and strength /
+untyped exercises are byte-for-byte as before. Runtime path: `plans/{id}.days[].exercises[]` → `loadPlan` → `PLAN…sesiones[].exercises[]` →
+`_EJERCICIOS_DIA` → `_buildExCard` → `_build{Calistenia,Cardio,Estacion,Circuito}Card`.
+
+The four cards use the same plates: type chip, `.spec` (PRESCRIPCIÓN · COACH), a `REGISTRO` block of labelled `.num-in` fields, `.pf-check` toggles
+(48px, `aria-pressed`) or a `.set-save-primary` CTA. Prescribed targets are never used as placeholders or values. Storage keys / shapes are the
+historical ones (`log_{W}_{D}_{E}` for cardio / circuito; `log_{W}_{D}_{E}_s{S}` for calistenia / estación; `exType` marks the shape).
+
+Known product gap (not fixable in this ticket, `vdsen-coach.html` is frozen): the Coach import normalizer rebuilds each exercise from a fixed
+field list and drops `exerciseType` and the performance fields, so a plan imported through the Coach app never reaches these cards. Plans written by any path that
+keeps the field (fixtures, future Coach change) do.
+
+## Residual visual debt (explicit)
+* body-map / weekly-volume widgets (legend-coloured data viz), InBody chart, PDF export
+* Coach-authored technique `detail` HTML internals (only its container is geometry-safe: constrained media, no fixed / absolute escape, wrapped
+  text) and the exercise-guide body
+* other non-critical legacy inline styling in JS-rendered builders (history, substitution modal, readiness banner, stale-session banner, etc.)

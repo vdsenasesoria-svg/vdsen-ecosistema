@@ -19,6 +19,8 @@ function functionSource(source, name) {
   for (let i = source.indexOf('{', start); i < source.length; i++) {
     const c = source[i];
     if (quote) { if (escaped) escaped = false; else if (c === '\\') escaped = true; else if (c === quote) quote = null; continue; }
+    if (c === '/' && source[i + 1] === '/') { i = source.indexOf('\n', i); if (i < 0) break; continue; }   // T543: comments (apostrophes) must not flip quote state
+    if (c === '/' && source[i + 1] === '*') { i = source.indexOf('*/', i) + 1; continue; }
     if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
     if (c === '{') depth++;
     if (c === '}' && --depth === 0) return source.slice(start, i + 1);
