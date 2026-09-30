@@ -104,3 +104,17 @@ test('T542.14 express RIR / pump selection is class-driven in every producer (si
   const inlineRir = html.match(/id="xrir_'\+[^"]*"[^>]*style="/g) || [];
   assert.equal(inlineRir.length, 0, 'no RIR button keeps inline selection styles');
 });
+function lum(hex) { const c = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+test('T542.15 text tokens keep AA contrast on the canvas and plates (dark reference + light mode)', () => {
+  for (const bg of ['0A0A0A', '101010', '171716']) {
+    assert.ok(ratio('F4F4F0', bg) >= 12, 'bone on ' + bg);
+    assert.ok(ratio('A5A59E', bg) >= 7, 'muted on ' + bg);
+    assert.ok(ratio('86867F', bg) >= 4.5, 'tertiary (--mt2) on ' + bg);
+    assert.ok(ratio('6B6B66', bg) >= 3, 'placeholder / ink on ' + bg);
+    assert.ok(ratio('C6FF00', bg) >= 12, 'lime on ' + bg);
+  }
+  assert.ok(ds3.includes('--mt2:#86867F'));
+  assert.ok(ratio('245500', 'FFFFFF') >= 7 && ratio('245500', 'F0F0EC') >= 6, 'light-mode accent text');
+  assert.ok(ratio('0A0A0A', 'C6FF00') >= 12, 'on-accent text on lime fill');
+});

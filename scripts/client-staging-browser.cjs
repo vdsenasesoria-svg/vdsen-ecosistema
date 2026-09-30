@@ -22,7 +22,7 @@ async function restGet(cfg, email, password, docPath) {
 
 (async () => {
   const cfg = H.stagingConfig();
-  const seed = await H.seed();
+  const seed = await H.seed({ keepFile: process.env.VDSEN_UI_KEEP || null });
   const browser = await B.launch();
   try {
     if (shots) fs.mkdirSync(shots, { recursive: true });
