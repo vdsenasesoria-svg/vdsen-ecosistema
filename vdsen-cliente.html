@@ -467,7 +467,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .kick::before{content:'';width:10px;height:2px;background:var(--accent-fill);flex:0 0 auto}
 /* offline / sync banner */
 #offlineBanner{background:var(--plate-hi)!important;border-bottom:1px solid var(--st-offline)!important;color:var(--tx)!important;padding:8px 16px!important;font-size:var(--fs-label)!important;font-weight:700;letter-spacing:.1em!important;display:none;align-items:center;justify-content:center;gap:8px}
-#offlineBanner::before{content:'';width:8px;height:8px;background:var(--st-offline);flex:0 0 auto}
+#offlineBanner::before{content:'';display:inline-block;vertical-align:middle;margin-right:8px;width:8px;height:8px;background:var(--st-offline);flex:0 0 auto}
 /* ── LOGIN ── */
 #scrLogin{background:var(--bg)}
 .login-wrap{justify-content:center;align-items:stretch;max-width:420px;width:100%;margin:0 auto;padding:28px 28px 24px;gap:28px}
@@ -987,6 +987,22 @@ button[role="switch"]::after{content:'';position:absolute;inset:-8px -6px}
 .stepper button{min-height:44px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--tx);font-family:var(--font-num);font-size:18px;font-weight:800;letter-spacing:.04em;cursor:pointer}
 .stepper button:active{background:var(--plate-hi)}
 .num-in.low,#exPanel .num-in.low{border-color:var(--st-partial);color:var(--st-partial)}
+/* ══ DIALOGS + SHEETS ══ */
+.dlg{background:var(--plate-hi);border:1px solid var(--rule-strong);border-top:3px solid var(--accent-fill);border-radius:0;padding:20px;max-width:360px;width:100%;color:var(--tx);box-shadow:0 20px 50px rgba(0,0,0,.6)}
+.dlg p{color:var(--tx);font-size:14px;line-height:1.55;margin:0 0 18px}
+.dlg .btn{min-height:44px;font-size:14px;padding:0 14px}
+.dlg-opt{min-height:48px;align-items:center;justify-content:center;text-align:center}
+.sheet-ov{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:520px;background:var(--plate);border-top:3px solid var(--accent-fill);padding:20px 20px calc(24px + env(safe-area-inset-bottom));max-height:88dvh;overflow-y:auto}
+.sheet-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
+.sheet-t{font-family:var(--font-display);font-size:28px;font-weight:800;line-height:1;text-transform:uppercase;margin-top:8px;color:var(--tx)}
+.sheet-date{font-size:var(--fs-micro);font-weight:800;letter-spacing:.14em;color:var(--mt);white-space:nowrap}
+.wn-r{display:flex;gap:14px;padding:13px 0;border-top:1px solid var(--rule)}
+.wn-n{flex:0 0 26px;font-family:var(--font-num);font-size:22px;font-weight:800;color:var(--accent);line-height:1}
+:root.light-mode .wn-n{color:#245500}
+.wn-t{font-size:14px;font-weight:700;color:var(--tx);margin-bottom:3px}
+.wn-d{font-size:12.5px;color:var(--mt);line-height:1.55}.wn-d strong{color:var(--tx)}
+.sheet-go{width:100%;min-height:var(--tap-lg);margin-top:18px;font-size:19px}
 </style>
 </head>
 <body>
@@ -4150,7 +4166,7 @@ function buildStreakWidget() {
     <div class="card" style="margin-top:8px">
       <div class="card-title">RACHA DE CUMPLIMIENTO</div>
       <div style="display:flex;align-items:center;gap:16px">
-        <div style="font-size:36px;opacity:${fireOpacity}">🔥</div>
+        <svg class="ico" style="width:36px;height:36px;color:var(--accent);opacity:${fireOpacity}" aria-hidden="true" focusable="false"><use href="#i-flame"/></svg>
         <div style="flex:1">
           <div style="font-family:'Big Shoulders Display',var(--ff);font-size:42px;font-weight:800;color:var(--accent);line-height:1">${current}</div>
           <div style="font-size:11px;color:var(--mt);margin-top:4px">${msg}</div>
@@ -5823,10 +5839,12 @@ function _getExType(ej) {
 
 // Etiqueta visual + color por tipo (chip en header del ejercicio)
 function _exTypeChip(t) {
-  if (t === 'calistenia') return {label:'CALISTENIA', color:'#7ec0ff', bg:'rgba(126,192,255,.12)', border:'rgba(126,192,255,.32)', icon:'🤸'};
-  if (t === 'cardio')     return {label:'CARDIO',     color:'#ff8aa6', bg:'rgba(255,138,166,.12)', border:'rgba(255,138,166,.32)', icon:'🏃'};
-  if (t === 'estacion')   return {label:'ESTACIÓN',   color:'#ffb86b', bg:'rgba(255,184,107,.12)', border:'rgba(255,184,107,.34)', icon:'⚙️'};
-  if (t === 'circuito')   return {label:'CIRCUITO',   color:'#c89cff', bg:'rgba(200,156,255,.12)', border:'rgba(200,156,255,.34)', icon:'🔄'};
+  // Neutral chip language: the type is carried by the label, not by a rainbow of hues.
+  var base = { color:'var(--tx)', bg:'transparent', border:'var(--rule-strong)', icon:'◆' };
+  if (t === 'calistenia') return Object.assign({label:'CALISTENIA'}, base);
+  if (t === 'cardio')     return Object.assign({label:'CARDIO'}, base);
+  if (t === 'estacion')   return Object.assign({label:'ESTACIÓN'}, base);
+  if (t === 'circuito')   return Object.assign({label:'CIRCUITO'}, base);
   return null;
 }
 
@@ -14251,27 +14269,19 @@ var _WN_UPDATES = [
 ];
 function showWhatsNew() {
   if (localStorage.getItem(_WN_VERSION)) return;
-  var rows = _WN_UPDATES.map(function(u) {
-    return '<div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">'+
-      '<span style="font-size:22px;flex-shrink:0;line-height:1.2">'+u.icon+'</span>'+
-      '<div><div style="font-size:13px;font-weight:800;color:var(--tx);margin-bottom:3px">'+u.title+'</div>'+
-      '<div style="font-size:11px;color:var(--mt);line-height:1.5">'+u.desc+'</div></div></div>';
+  var rows = _WN_UPDATES.map(function(u, i) {
+    return '<div class="wn-r"><span class="wn-n" aria-hidden="true">'+(i+1<10?'0'+(i+1):i+1)+'</span>'+
+      '<div><div class="wn-t">'+u.title+'</div><div class="wn-d">'+u.desc+'</div></div></div>';
   }).join('');
   var el = document.createElement('div');
   el.id = 'wnModal';
-  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center';
+  el.className = 'sheet-ov';
   el.innerHTML =
-    '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'+
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'+
-        '<div style="font-size:18px;font-weight:900;color:var(--tx)">Novedades 🚀</div>'+
-        '<div style="font-size:10px;font-weight:700;color:var(--mt);letter-spacing:1px">'+_WN_DATE+'</div>'+
-      '</div>'+
-      '<div style="font-size:11px;color:var(--mt);margin-bottom:16px">Actualizaciones recientes de tu app</div>'+
+    '<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="wnTitle">'+
+      '<div class="sheet-h"><div><div class="kick">NOVEDADES</div><h2 id="wnTitle" class="sheet-t">Actualizaciones recientes</h2></div>'+
+        '<div class="sheet-date">'+_WN_DATE+'</div></div>'+
       rows+
-      '<button onclick="document.getElementById(\'wnModal\').remove();localStorage.setItem(\''+_WN_VERSION+'\',\'1\')" '+
-        'style="width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;cursor:pointer;background:var(--accent-fill);color:var(--on-accent);font-size:15px;font-weight:800">'+
-        '¡Entendido! →'+
-      '</button>'+
+      '<button class="btn btn-primary sheet-go" onclick="document.getElementById(\'wnModal\').remove();localStorage.setItem(\''+_WN_VERSION+'\',\'1\')">¡Entendido!</button>'+
     '</div>';
   document.body.appendChild(el);
 }
@@ -14283,26 +14293,17 @@ function showBitacoraInfoModal() {
   if (document.getElementById('biModal')) return;
   var el = document.createElement('div');
   el.id = 'biModal';
-  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center';
+  el.className = 'sheet-ov';
+  var step = function(n, html) { return '<div class="wn-r"><span class="wn-n" aria-hidden="true">0'+n+'</span><div class="wn-d" style="margin:0">'+html+'</div></div>'; };
   el.innerHTML =
-    '<div style="width:100%;max-width:480px;background:var(--card);border-radius:24px 24px 0 0;padding:24px 20px 32px;max-height:85vh;overflow-y:auto">'+
-      '<div style="font-size:18px;font-weight:900;color:var(--tx);margin-bottom:4px">📋 Llena tu bitácora cada sesión</div>'+
-      '<div style="font-size:11px;color:var(--mt);margin-bottom:16px">Es la base para que tu coach ajuste tu plan</div>'+
-      '<div style="font-size:13px;color:var(--tx);line-height:1.6;margin-bottom:16px">'+
-        'Cada serie que registras (carga, reps, RIR, ICS) le dice a tu coach cómo vas: si subir peso, mantener o bajar la intensidad. '+
-        'Sin esos datos no se puede progresar tu plan ni detectar fatiga o molestias a tiempo.'+
-      '</div>'+
-      '<div style="background:rgba(255,255,255,.04);border-radius:14px;padding:14px 16px;margin-bottom:8px">'+
-        '<div style="font-size:12px;font-weight:800;color:var(--tx);margin-bottom:10px">Cómo registrar cada serie:</div>'+
-        '<div style="display:flex;gap:10px;margin-bottom:10px"><span style="font-weight:900;color:var(--accent)">1</span><span style="font-size:12px;color:var(--mt);line-height:1.5">Entra a la pestaña <strong style="color:var(--tx)">Entrenamiento</strong> y elige tu ejercicio.</span></div>'+
-        '<div style="display:flex;gap:10px;margin-bottom:10px"><span style="font-weight:900;color:var(--accent)">2</span><span style="font-size:12px;color:var(--mt);line-height:1.5">Por cada serie anota <strong style="color:var(--tx)">carga, reps, RIR e ICS</strong> (calidad técnica 1-10).</span></div>'+
-        '<div style="display:flex;gap:10px;margin-bottom:10px"><span style="font-weight:900;color:var(--accent)">3</span><span style="font-size:12px;color:var(--mt);line-height:1.5">Marca <strong style="color:var(--tx)">✓</strong> al terminar la serie — así arranca tu descanso.</span></div>'+
-        '<div style="display:flex;gap:10px"><span style="font-weight:900;color:var(--accent)">4</span><span style="font-size:12px;color:var(--mt);line-height:1.5">Al final de la sesión presiona <strong style="color:var(--tx)">Completar sesión</strong> y responde el check-in.</span></div>'+
-      '</div>'+
-      '<button onclick="document.getElementById(\'biModal\').remove()" '+
-        'style="width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;cursor:pointer;background:var(--accent-fill);color:var(--on-accent);font-size:15px;font-weight:800">'+
-        '¡Entendido! →'+
-      '</button>'+
+    '<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="biTitle">'+
+      '<div class="sheet-h"><div><div class="kick">BITÁCORA</div><h2 id="biTitle" class="sheet-t">Llena tu bitácora cada sesión</h2></div></div>'+
+      '<div class="wn-d" style="margin:0 0 14px">Cada serie que registras (carga, reps, RIR, ICS) le dice a tu coach cómo vas: si subir peso, mantener o bajar la intensidad. Sin esos datos no se puede progresar tu plan ni detectar fatiga o molestias a tiempo.</div>'+
+      step(1,'Entra a la pestaña <strong>Entrenamiento</strong> y elige el ejercicio de tu sesión.')+
+      step(2,'Por cada serie anota <strong>carga, reps, RIR e ICS</strong>.')+
+      step(3,'Marca la serie al terminarla — así se activa tu descanso.')+
+      step(4,'Al final de la sesión presiona <strong>Completar sesión</strong> y responde el check-in.')+
+      '<button class="btn btn-primary sheet-go" onclick="document.getElementById(\'biModal\').remove()">¡Entendido!</button>'+
     '</div>';
   document.body.appendChild(el);
 }
@@ -14315,11 +14316,11 @@ function _askConfirm(msg) {
   return new Promise(function(resolve) {
     var ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:320px;width:100%;font-family:var(--ff)">'
+    ov.innerHTML = '<div class="dlg" role="dialog" aria-modal="true">'
       + '<p style="color:var(--tx);font-size:14px;line-height:1.5;margin:0 0 18px">' + msg + '</p>'
       + '<div style="display:flex;gap:10px;justify-content:flex-end">'
-      + '<button id="_ac_no" style="padding:9px 18px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mt);font-size:13px;cursor:pointer">Cancelar</button>'
-      + '<button id="_ac_si" style="padding:9px 18px;border-radius:8px;border:none;background:#c94a3a;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Confirmar</button>'
+      + '<button id="_ac_no" class="btn btn-ghost">Cancelar</button>'
+      + '<button id="_ac_si" class="btn btn-primary">Confirmar</button>'
       + '</div></div>';
     document.body.appendChild(ov);
     function done(v) { ov.remove(); resolve(v); }
@@ -14335,11 +14336,11 @@ function _askConfirmPartial(msg) {
   return new Promise(function(resolve) {
     var ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:340px;width:100%;font-family:var(--ff)">'
+    ov.innerHTML = '<div class="dlg" role="dialog" aria-modal="true">'
       + '<p style="color:var(--tx);font-size:14px;line-height:1.5;margin:0 0 18px">' + msg + '</p>'
       + '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">'
-      + '<button id="_acp_no" style="padding:9px 16px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mt);font-size:12px;font-weight:700;cursor:pointer">CANCELAR</button>'
-      + '<button id="_acp_si" style="padding:9px 16px;border-radius:8px;border:1px solid #C8A54A;background:rgba(200,165,74,.12);color:#C8A54A;font-size:12px;font-weight:800;cursor:pointer">GUARDAR COMO PARCIAL</button>'
+      + '<button id="_acp_no" class="btn btn-ghost">CANCELAR</button>'
+      + '<button id="_acp_si" class="btn btn-primary">GUARDAR COMO PARCIAL</button>'
       + '</div></div>';
     document.body.appendChild(ov);
     function done(v) { ov.remove(); resolve(v); }
@@ -14363,12 +14364,12 @@ function _showStaleSessionRecovery(staleInfo) {
   var daysAgo = Math.max(1, Math.round((Date.now() - staleInfo.lastTs) / 86400000));
   var ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-  ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:340px;width:100%;font-family:var(--ff)">'
-    + '<div style="font-size:13px;font-weight:800;letter-spacing:.5px;color:#C8A54A;margin-bottom:10px">⏳ SESIÓN ANTERIOR SIN CERRAR</div>'
+  ov.innerHTML = '<div class="dlg" role="dialog" aria-modal="true">'
+    + '<div class="kick stale" style="margin-bottom:12px">SESIÓN ANTERIOR SIN CERRAR</div>'
     + '<p style="color:var(--tx);font-size:14px;line-height:1.5;margin:0 0 18px">Tenés "'+_escHTml(label)+'" sin cerrar desde hace '+daysAgo+' día'+(daysAgo!==1?'s':'')+'. Podés continuarla o cerrarla como parcial conservando lo ya registrado.</p>'
     + '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">'
-    + '<button id="_ssr_partial" style="padding:9px 16px;border-radius:8px;border:1px solid rgba(200,165,74,.4);background:rgba(200,165,74,.08);color:#C8A54A;font-size:12px;font-weight:700;cursor:pointer">TERMINAR COMO PARCIAL</button>'
-    + '<button id="_ssr_continue" style="padding:9px 16px;border-radius:8px;border:none;background:var(--gold-gradient);color:#0a0a0a;font-size:12px;font-weight:800;cursor:pointer">CONTINUAR</button>'
+    + '<button id="_ssr_partial" class="btn btn-ghost">TERMINAR COMO PARCIAL</button>'
+    + '<button id="_ssr_continue" class="btn btn-primary">CONTINUAR</button>'
     + '</div></div>';
   document.body.appendChild(ov);
   function dismiss() { ov.remove(); }
@@ -14395,21 +14396,21 @@ function _pickSkipReason(title) {
     var ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
     var opts = [
-      { code: 'TIME', label: '⏱ Tiempo' },
-      { code: 'EQUIPMENT', label: '🏋 Equipo ocupado' },
-      { code: 'PAIN', label: '⚠ Dolor/molestia' },
-      { code: 'OTHER', label: '· Otro' }
+      { code: 'TIME', label: 'Tiempo' },
+      { code: 'EQUIPMENT', label: 'Equipo ocupado' },
+      { code: 'PAIN', label: 'Dolor / molestia' },
+      { code: 'OTHER', label: 'Otro' }
     ];
-    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:320px;width:100%;font-family:var(--ff)">'
+    ov.innerHTML = '<div class="dlg" role="dialog" aria-modal="true">'
       + '<p style="color:var(--tx);font-size:13px;font-weight:700;letter-spacing:.5px;margin:0 0 14px">'+_escHTml(title)+'</p>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'
       + opts.map(function(o){
-          return '<button data-reason="'+o.code+'" style="padding:11px 8px;border-radius:9px;border:1px solid var(--bd);background:var(--input-bg);color:var(--tx);font-size:12px;font-weight:700;cursor:pointer">'+o.label+'</button>';
+          return '<button data-reason="'+o.code+'" class="opt dlg-opt"><b>'+o.label+'</b></button>';
         }).join('')
       + '</div>'
       + '<div style="display:flex;gap:10px;justify-content:space-between">'
-      + '<button id="_psr_none" style="padding:9px 14px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mt);font-size:12px;cursor:pointer">Omitir sin razón</button>'
-      + '<button id="_psr_cancel" style="padding:9px 14px;border-radius:8px;border:none;background:transparent;color:var(--mt);font-size:12px;cursor:pointer">Cancelar</button>'
+      + '<button id="_psr_none" class="btn btn-ghost">Omitir sin razón</button>'
+      + '<button id="_psr_cancel" class="btn btn-ghost">Cancelar</button>'
       + '</div></div>';
     document.body.appendChild(ov);
     function done(v) { ov.remove(); resolve(v); }
