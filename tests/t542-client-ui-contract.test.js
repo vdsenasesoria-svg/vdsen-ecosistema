@@ -89,3 +89,18 @@ test('T542.12 service worker: no new local asset is required by the redesign (ic
   for (const src of new Set(localImgs.filter(x => !x.startsWith('assets/exercises/')))) assert.ok(sw.includes('/' + src), 'precached: ' + src);
   assert.ok(sw.includes('/assets/vdsen-logo-official.jpg'));
 });
+test('T542.13 post-session check-in keeps its field ids and uses accessible radio semantics (no emoji, no inline state colors)', () => {
+  const m = html.slice(html.indexOf('<div id="postSessionModal"'), html.indexOf('<!-- Overlay sustitución de ejercicio -->'));
+  for (const id of ['psEimd', 'psArticular', 'psArticularPatternSel', 'psSueno', 'psRpe', 'psRpeVal', 'psRpeLabel', 'eimd1', 'eimd2', 'eimd3', 'artSiBtn', 'artNoBtn', 'psSuenoGrid']) assert.ok(m.includes('id="' + id + '"'), id);
+  assert.ok(/role="dialog" aria-modal="true"/.test(m) && /role="radiogroup"/.test(m) && /aria-checked/.test(m));
+  assert.ok(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(m), 'no emoji in the check-in');
+  assert.ok(!/style="[^"]*(color|background):/.test(m.replace(/style="display:none"/g, '')), 'selection state is class-based');
+  for (const fn of ['selectEimd', 'psSuenoSel', 'psArticularSel', 'submitPostSession', 'closePostSessionModal']) assert.ok(new RegExp('function ' + fn + '\\(').test(html), fn);
+});
+test('T542.14 express RIR / pump selection is class-driven in every producer (single and superset)', () => {
+  assert.ok(/function expressSetRIR\([\s\S]*classList\.toggle\('on'/.test(html));
+  const producers = html.match(/onclick="expressSetRIR\(/g) || [];
+  assert.ok(producers.length >= 2);
+  const inlineRir = html.match(/id="xrir_'\+[^"]*"[^>]*style="/g) || [];
+  assert.equal(inlineRir.length, 0, 'no RIR button keeps inline selection styles');
+});

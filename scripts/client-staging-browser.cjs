@@ -68,11 +68,23 @@ async function restGet(cfg, email, password, docPath) {
     await p.click('.set-save-primary'); await p.waitForTimeout(1500);
     check('EXERCISE_REGISTERED', await p.isVisible('.setdone') && /82\.5/.test(await p.textContent('.setdone'))); await S('09-registered');
     if (await p.isVisible('#restTimerOverlay')) { await S('09b-rest-after-exercise'); await p.mouse.click(10, 10); await p.waitForTimeout(300); }
+    // ---- session close + post-session check-in (accessible radios, keyboard-safe)
+    await p.click('.sess-hdr-btn.sess-live'); await p.waitForTimeout(600);
+    if (await p.isVisible('#postSessionModal')) {
+      await S('09c-postsession');
+      check('POSTSESSION_MODAL_OPENS', true);
+      await p.click('#eimd2'); await p.click('#artNoBtn'); await p.click('#psSuenoGrid button[data-val="8"]');
+      check('POSTSESSION_CHOICES_STATE', (await p.getAttribute('#eimd2', 'aria-checked')) === 'true' && (await p.inputValue('#psSueno')) === '8' && (await p.inputValue('#psEimd')) === '2');
+      await p.click('.ps-go'); await p.waitForTimeout(2500);
+      check('POSTSESSION_MODAL_CLOSES', !(await p.isVisible('#postSessionModal')));
+    } else check('POSTSESSION_MODAL_OPENS', false, 'modal not visible after COMPLETAR');
+    if (await p.isVisible('#restTimerOverlay')) { await p.mouse.click(10, 10); await p.waitForTimeout(300); }
     // ---- persisted evidence (read back with the athlete's own token)
     let doc = null; for (let i = 0; i < 8 && !doc; i++) { await p.waitForTimeout(1000); const d = await restGet(cfg, seed.athlete.email, seed.athlete.password, 'logs/' + seed.athlete.uid + '/mesos/' + seed.planId); if (d && d.fields) doc = d; }
     const ent = doc && doc.fields && doc.fields.entries && doc.fields.entries.mapValue && doc.fields.entries.mapValue.fields || {};
     const keys = Object.keys(ent);
     check('EVIDENCE_PERSISTED_IN_STAGING', !!doc && keys.some(k => /^exexpress_1_0_0$|^log_1_0_0_s\d+$/.test(k)), keys.slice(0, 4).join(','));
+    check('SESSION_CLOSURE_PERSISTED', keys.some(k => /^done_1_0$/.test(k)) && keys.some(k => /^postsession_1_0$/.test(k)), keys.filter(k => /^(done|postsession|progrec)_/.test(k)).join(','));
     check('NO_CANONICAL_FIELDS_WRITTEN_BY_ATHLETE', !!doc && !doc.fields.progressionApplications && !doc.fields.nextExposureOverlays);
     // ---- tabs
     for (const [i, n] of [[2, 'nutrition'], [3, 'checkin'], [4, 'profile']]) { await p.click('#nb' + i); await p.waitForTimeout(700); await S('1' + i + '-' + n); await overflow(n); check('TAB_' + n.toUpperCase(), await p.isVisible('#nb' + i + '.on') || (await p.getAttribute('#nb' + i, 'aria-current')) === 'page'); }

@@ -51,8 +51,8 @@ function syntheticPlan(coachId, clientId) {
         ex('pid-h-1', 'Press banca con barra', 4, 6, 2, 150), ex('pid-h-2', 'Press inclinado con mancuernas', 3, 10, 2, 120),
         ex('pid-h-3', 'Elevaciones laterales', 3, 15, 1, 60), ex('pid-h-4', 'Extensión de tríceps en polea', 3, 12, 1, 75) ] },
       { dayIndex: 1, label: 'Tirón · Espalda y bíceps', exercises: [
-        ex('pid-h-5', 'Dominadas asistidas', 4, 8, 2, 120), ex('pid-h-6', 'Remo con mancuerna unilateral', 3, 10, 2, 90),
-        ex('pid-h-7', 'Curl con barra Z', 3, 10, 1, 75) ] },
+        ex('pid-h-5', 'Dominadas asistidas', 4, 8, 2, 120), ex('pid-h-6', 'Remo con mancuerna unilateral', 3, 10, 2, 0, { supersetGroup: 'A', technique: 'superset' }),
+        ex('pid-h-7', 'Curl con barra Z', 3, 10, 1, 90, { supersetGroup: 'A', technique: 'superset' }) ] },
       { dayIndex: 2, label: 'Pierna · Cuádriceps y glúteo', exercises: [
         ex('pid-h-8', 'Sentadilla trasera', 4, 6, 2, 180), ex('pid-h-9', 'Prensa de pierna', 3, 12, 2, 120),
         ex('pid-h-10', 'Curl femoral tumbado', 3, 12, 1, 90), ex('pid-h-11', 'Elevación de talones de pie', 4, 15, 1, 60) ] }
