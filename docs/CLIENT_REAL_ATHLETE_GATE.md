@@ -20,8 +20,8 @@ Athlete: ______________  Coach observer: ______________  Device / browser: _____
 | 10 | NO CONFUSING COACH VS ATHLETE VALUES — at no point did a Coach number look like something you entered, or vice versa | ☐ | |
 | 11 | NO BLOCKING UI ISSUE — nothing cut off, unreadable in the gym light, untappable, or stuck | ☐ | |
 
-Optional (only if the plan contains them): a cardio / calistenia / estación / circuito exercise saved and re-opened correctly. Note: plans imported through
-the Coach app do not carry `exerciseType` today (see `docs/CLIENT_DESIGN_SYSTEM_V3.md`), so these appear only if the Coach seeded them another way.
+Optional (any plan type the Coach import supports - fuerza, cardio, calistenia, estacion, circuito; T544): a non-strength exercise imported through the Coach
+app keeps its type and prescription, executes, and is saved and re-opened correctly. Verified end to end on staging by `scripts/client-staging-coach-import.cjs`.
 
 Blocking issues found (describe): ______________________________________________
 

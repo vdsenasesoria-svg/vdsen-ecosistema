@@ -66,6 +66,8 @@ El Motor VDSEN genera **1 solo bloque JSON** con `"schema": "vdsen-plan-v2"`. La
 }
 ```
 
+Campos de rendimiento (T544): `exerciseType` (fuerza|calistenia|cardio|estacion|circuito; alias legado `tipo`, gana `exerciseType`) y la prescripción por ejercicio (`duracionMin`, `fcZonaMin/Max`, `dosis`, `rpeTarget`, `estructura`, `timeCapMin`, `movimientos`…; set-level `dosis`, `rpeTarget`) pasan por una whitelist explícita en el Coach (`_perfCarryEx`/`_perfCarrySet`); cardio/circuito pueden llevar `sets: []`. Lo demás se descarta. Ver `docs/CLIENT_DESIGN_SYSTEM_V3.md`.
+
 Compatibilidad v1: si no hay `schema`, `_classifyBlocks()` cae a detección por shape (days[] → entrenamiento, tiers[] → suplementación, calorias → nutrición).
 
 ### vdsen-ficha-v2 — Ficha unificada del cliente (1 JSON)

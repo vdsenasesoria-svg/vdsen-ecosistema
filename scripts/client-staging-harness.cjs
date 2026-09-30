@@ -73,7 +73,7 @@ const NUTRITION_TEXT = ['COMIDA 1 — DESAYUNO', 'Huevo entero 3 pza', 'Avena en
 // seed(): creates synthetic accounts + data. With opts.keepFile (a path OUTSIDE the repo) the accounts persist between runs
 // (Firebase Auth rate-limits sign-ups): the file holds only throw-away *.invalid credentials; destroyKept() removes everything.
 async function seed(opts) {
-  const keepFile = opts && opts.keepFile;
+  const keepFile = opts && opts.keepFile, noPlan = !!(opts && opts.noPlan);   // noPlan: the plan is created by the Coach import path under test, not seeded
   const cfg = stagingConfig(), PROJECT = cfg.projectId, KEY = cfg.apiKey;
   const FS = 'https://firestore.googleapis.com/v1/projects/' + PROJECT + '/databases/(default)/documents';
   const rid = crypto.randomBytes(3).toString('hex');
@@ -112,7 +112,18 @@ async function seed(opts) {
     if (kept) for (const p of ['logs/' + athlete.uid + '/mesos/' + oldPlanId, 'plans/' + oldPlanId, 'clients/' + athlete.uid]) await del(coach.token, p);   // re-seed from clean creates under a fresh plan id (update rules are stricter than create)
     const w = async (t, p, d) => { let r; for (let i = 0; i < 4; i++) { r = await put(t, p, d); if (ok(r)) return; await new Promise(x => setTimeout(x, 1500)); } throw new Error('seed write failed ' + p + ' ' + r.status); };   // retry: rules read the just-deleted / just-created docs
     await w(coach.token, 'coaches/' + coach.uid, { role: 'coach', displayName: 'Coach UI (synthetic)', email: coach.email, createdAt: new Date().toISOString() });
-    await w(coach.token, 'clients/' + athlete.uid, { coachId: coach.uid, email: athlete.email, displayName: 'Atleta Demo', role: 'client', activePlanId: null, nutritionPlan: {}, supplementPlan: {}, objetivo: 'Hipertrofia', peso: '82', profileType: 'hipertrofia' });
+    await w(coach.token, 'clients/' + athlete.uid, { coachId: coach.uid, email: athlete.email, displayName: 'Atleta Demo', role: 'client', activePlanId: null, nutritionPlan: {}, supplementPlan: {}, objetivo: 'Hipertrofia', peso: '82', profileType: 'hipertrofia', phone: '+525500000000', phoneConfirmedAt: Date.now() });
+    if (noPlan) { if (keepFile) fs.writeFileSync(keepFile, JSON.stringify({ project: PROJECT, planId, coach: { label: 'coach', email: coach.email, password: coach.password, uid: coach.uid }, athlete: { label: 'athlete', email: athlete.email, password: athlete.password, uid: athlete.uid } }), { mode: 0o600 }); return { athlete: { email: athlete.email, password: athlete.password, uid: athlete.uid }, coach: { email: coach.email, password: coach.password, uid: coach.uid }, coachUid: coach.uid, planId: null, cleanup: async () => {
+      // The Coach path under test creates plans / catalog exercises / backups: delete everything the synthetic coach owns, then the users.
+      const r = { docsDeleted: 0, usersDeleted: 0 }, planIds = [], docs = [];
+      for (const col of ['plans', 'exercises', 'plans_backup']) {
+        const q = await req('POST', FS + ':runQuery', coach.token, { structuredQuery: { from: [{ collectionId: col }], where: { fieldFilter: { field: { fieldPath: 'coachId' }, op: 'EQUAL', value: { stringValue: coach.uid } } } } });
+        (Array.isArray(q.body) ? q.body : []).forEach(x => { if (x.document) { const id = x.document.name.split('/').pop(); docs.push(col + '/' + id); if (col === 'plans') planIds.push(id); } });
+      }
+      const paths = planIds.map(i => 'logs/' + athlete.uid + '/mesos/' + i).concat(['logs/' + athlete.uid], docs, ['clients/' + athlete.uid, 'coaches/' + coach.uid]);
+      for (const pth of paths) { const d = await del(coach.token, pth); if (ok(d) || d.status === 404) r.docsDeleted++; }
+      for (const u of [coach, athlete]) { const d = await authCall('delete', { idToken: u.token }); if (d.status === 200) r.usersDeleted++; }
+      return r; }, project: PROJECT }; }
     await w(coach.token, 'plans/' + planId, syntheticPlan(coach.uid, athlete.uid));
     await w(coach.token, 'clients/' + athlete.uid, { coachId: coach.uid, email: athlete.email, displayName: 'Atleta Demo', role: 'client', objetivo: 'Hipertrofia', peso: '82', profileType: 'hipertrofia', phone: '+525500000000', phoneConfirmedAt: Date.now(), activePlanId: planId, nutritionPlan: { calorias: 2380, proteina: 161, carbos: 250, grasas: 76, texto: NUTRITION_TEXT }, supplementPlan: { texto: 'Creatina monohidratada 5 g diarios\nVitamina D3 2000 UI con comida' } });
     if (keepFile) fs.writeFileSync(keepFile, JSON.stringify({ project: PROJECT, planId, coach: { label: 'coach', email: coach.email, password: coach.password, uid: coach.uid }, athlete: { label: 'athlete', email: athlete.email, password: athlete.password, uid: athlete.uid } }), { mode: 0o600 });

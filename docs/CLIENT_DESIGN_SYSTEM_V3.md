@@ -61,9 +61,14 @@ The four cards use the same plates: type chip, `.spec` (PRESCRIPCIÓN · COACH),
 (48px, `aria-pressed`) or a `.set-save-primary` CTA. Prescribed targets are never used as placeholders or values. Storage keys / shapes are the
 historical ones (`log_{W}_{D}_{E}` for cardio / circuito; `log_{W}_{D}_{E}_s{S}` for calistenia / estación; `exType` marks the shape).
 
-Known product gap (not fixable in this ticket, `vdsen-coach.html` is frozen): the Coach import normalizer rebuilds each exercise from a fixed
-field list and drops `exerciseType` and the performance fields, so a plan imported through the Coach app never reaches these cards. Plans written by any path that
-keeps the field (fixtures, future Coach change) do.
+Coach import contract (T544, replaces the earlier known gap): every Coach surface that rebuilds imported exercises (JSON-tab import, paste / AI / PDF
+normalizer, update-plan modal, plan editor, active-plan export) passes an **explicit whitelist** through `_perfCarryEx` / `_perfCarrySet` in `vdsen-coach.html`.
+Exercise level = the same 32 fields as the client's `_PERF_RX_FIELDS` (enforced equal by `tests/t544-*`) plus `exerciseType` (`fuerza | calistenia | cardio |
+estacion | circuito`) and the legacy alias `tipo`; set level = `dosis`, `rpeTarget`. Values are scalars only (strings capped at 120 chars); `movimientos` /
+`movements` is a list of at most 30 objects with keys `nombre, exerciseName, dosis, reps, distancia, unit, unidad`. Everything else - unknown fields, prototype
+keys, nested objects, HTML - is discarded. When `exerciseType` and `tipo` disagree the canonical `exerciseType` wins at runtime (client `_getExType`); an
+absent or unknown type is `fuerza`. cardio / estacion / circuito / calistenia exercises may have `sets: []` (prescribed by exercise-level fields); a strength
+exercise without sets is still dropped and still blocks the pre-write gate. PID, ordering, sets / reps / RIR, and the `vdsen-plan-v2` schema are unchanged.
 
 ## Residual visual debt (explicit)
 * body-map / weekly-volume widgets (legend-coloured data viz), InBody chart, PDF export

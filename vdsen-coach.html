@@ -6360,6 +6360,72 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     return base + suffix;
   }
 
+  // T544: exercise-type fidelity. The client (vdsen-cliente.html, T543) renders calistenia / cardio / estacion / circuito cards from
+  // `exerciseType` (legacy alias `tipo`) plus the Coach performance prescription fields below. Every place that rebuilds an
+  // exercise from imported / edited JSON passes exactly this explicit whitelist through (never a blind spread of the input):
+  // scalars are type-checked and capped, `movimientos` is a capped list of strings / whitelisted scalar-only objects, unknown
+  // exerciseType values are dropped. Field names are the client whitelist verbatim (tests assert equality).
+  const _PERF_TYPES = ['fuerza', 'calistenia', 'cardio', 'estacion', 'circuito'];
+  const _PERF_RX_FIELDS = ['modo', 'cardioMode', 'duracionMin', 'targetMinutes', 'distanciaKm', 'targetKm', 'fcZonaMin', 'fcMin', 'fcZonaMax', 'fcMax',
+    'ritmoObjetivo', 'targetPace', 'repeticiones', 'bloqueTrabajo', 'workInterval', 'bloqueDescanso', 'restInterval',
+    'dosis', 'targetDose', 'dosisUnit', 'doseUnit', 'tiempoObjetivoSeg', 'targetTimeSec', 'rpeTarget',
+    'estructura', 'structure', 'roundsObjetivo', 'targetRounds', 'timeCapMin', 'timecap', 'movimientos', 'movements'];
+  const _PERF_SET_FIELDS = ['dosis', 'rpeTarget'];
+  const _PERF_MOV_KEYS = ['nombre', 'exerciseName', 'dosis', 'reps', 'distancia', 'unit', 'unidad'];
+  function _perfScalar(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : undefined;
+    if (typeof v === 'string') { const t = v.trim(); return t ? t.slice(0, 120) : undefined; }
+    return undefined;
+  }
+  function _perfType(v) {
+    const t = typeof v === 'string' ? v.toLowerCase().trim() : '';
+    return _PERF_TYPES.indexOf(t) >= 0 ? t : '';
+  }
+  // Effective type mirrors the client (_getExType): exerciseType wins whenever the exercise declares one; `tipo` is only the legacy fallback.
+  function _perfEffType(ex) {
+    if (!ex || typeof ex !== 'object') return 'fuerza';
+    const declared = ex.exerciseType !== undefined && ex.exerciseType !== null && String(ex.exerciseType) !== '';
+    return (declared ? _perfType(ex.exerciseType) : _perfType(ex.tipo)) || 'fuerza';
+  }
+  function _perfHasNoSetsOk(ex) { return _perfEffType(ex) !== 'fuerza'; }
+  function _perfCarryEx(ex) {
+    const out = {};
+    if (!ex || typeof ex !== 'object') return out;
+    const t = _perfType(ex.exerciseType), l = _perfType(ex.tipo);
+    if (t) out.exerciseType = t;
+    if (l) out.tipo = l;
+    if (_perfEffType(ex) === 'fuerza') return out;
+    _PERF_RX_FIELDS.forEach(k => {
+      if (k === 'movimientos' || k === 'movements') {
+        if (!Array.isArray(ex[k])) return;
+        const list = [];
+        ex[k].slice(0, 30).forEach(m => {
+          if (typeof m === 'string' || typeof m === 'number') { const v = _perfScalar(m); if (v !== undefined) list.push(v); return; }
+          if (!m || typeof m !== 'object') return;
+          const o = {};
+          _PERF_MOV_KEYS.forEach(mk => { const v = _perfScalar(m[mk]); if (v !== undefined) o[mk] = v; });
+          if (Object.keys(o).length) list.push(o);
+        });
+        if (list.length) out[k] = list;
+        return;
+      }
+      const v = _perfScalar(ex[k]);
+      if (v !== undefined) out[k] = v;
+    });
+    return out;
+  }
+  function _perfCarrySet(s) {
+    const out = {};
+    if (!s || typeof s !== 'object') return out;
+    _PERF_SET_FIELDS.forEach(k => { const v = _perfScalar(s[k]); if (v !== undefined) out[k] = v; });
+    return out;
+  }
+  // Editor round-trip state for one stored exercise (the editor rebuilds sets from three inputs, so the type / prescription / per-set doses ride on the row).
+  function _perfRowState(e) {
+    const sets = Array.isArray(e && e.sets) ? e.sets : [];
+    return JSON.stringify({ ex: _perfCarryEx(e), sets: sets.map(_perfCarrySet), noSets: _perfHasNoSetsOk(e) && sets.length === 0 });
+  }
+
   function parsePlanFromJSON() {
     const raw = document.getElementById("planJsonInput")?.value.trim();
     const statusEl = document.getElementById("jsonPlanStatus");
@@ -6404,14 +6470,16 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                 restSeconds: parseInt(s.restSeconds ?? 90) || 90,
                 setNote: String(s.setNote || s.note || '').trim(),
                 drop: s.drop === true,
-                tempo: String(s.tempo || '').trim()
+                tempo: String(s.tempo || '').trim(),
+                ..._perfCarrySet(s)
               }))
             : []
         };
         // Preservar techniqueFromWeek para activación condicional (Y3T/SST)
         if (ex.techniqueFromWeek) normEx.techniqueFromWeek = parseInt(ex.techniqueFromWeek);
+        Object.assign(normEx, _perfCarryEx(ex));   // T544: exerciseType + Coach performance prescription (explicit whitelist)
         return normEx;
-      }).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+      }).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
     })).filter(d => d.exercises.length > 0);
 
     if (days.length === 0) {
@@ -8976,7 +9044,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const days = obj.days.map((d, di) => ({
       dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
       label: String(d.label || ('Día ' + (di + 1))),
-      exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
+      exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => Object.assign({
         exerciseName: String(ex.exerciseName || '').trim(),
         alternatives: Array.isArray(ex.alternatives) ? ex.alternatives.map(String) : [],
         technique: String(ex.technique || 'straight').toLowerCase().trim(),
@@ -8998,9 +9066,10 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           restSeconds: parseInt(s.restSeconds ?? 90) || 90,
           setNote: String(s.setNote || s.note || '').trim(),
           drop: s.drop === true,
-          tempo: String(s.tempo || '').trim()
+          tempo: String(s.tempo || '').trim(),
+          ..._perfCarrySet(s)
         })) : []
-      })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+      }, _perfCarryEx(ex))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
     })).filter(d => d.exercises.length > 0);
     if (!days.length) return null;
     const _norm = { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
@@ -15943,7 +16012,8 @@ El esfuerzo no es negociable.
             var exName = (ex.exerciseName || '').trim();
             if (!exName) warnings.push('Día ' + (di + 1) + ': ejercicio sin nombre');
             if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
-              errors.push((exName || 'ejercicio sin nombre') + ': sin series');
+              // T544: cardio/estacion/circuito/calistenia prescribe by exercise-level fields, not sets[]
+              if (!(Array.isArray(ex.sets) && _perfHasNoSetsOk(ex))) errors.push((exName || 'ejercicio sin nombre') + ': sin series');
             } else {
               ex.sets.forEach(function(s, si) {
                 if (s.repsTarget == null || Number(s.repsTarget) < 1 || isNaN(Number(s.repsTarget))) {
@@ -16178,7 +16248,7 @@ El esfuerzo no es negociable.
           var exName = (ex.exerciseName || '').trim();
           if (!exName) _review('Día ' + (di + 1) + ': ejercicio sin nombre');
           if (!Array.isArray(ex.sets) || ex.sets.length === 0) {
-            _review(dayLabel + ' / ' + (exName || '?') + ': sin series');
+            if (!(Array.isArray(ex.sets) && _perfHasNoSetsOk(ex))) _review(dayLabel + ' / ' + (exName || '?') + ': sin series');
             return;
           }
           ex.sets.forEach(function(s, si) {
@@ -20410,7 +20480,7 @@ El esfuerzo no es negociable.
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson, prescriptionId, restSeconds) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson, prescriptionId, restSeconds, perfJson) {
     const techVal = (technique || 'straight').toLowerCase();
     const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
       .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
@@ -20428,7 +20498,7 @@ El esfuerzo no es negociable.
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
       data-alternatives="${altsAttr}" data-variacion-vertical="${vvAttr}"
-      data-prescription-id="${pidAttr}"
+      data-prescription-id="${pidAttr}" data-perf="${_escH(perfJson || '{}')}"
       style="background:rgba(255,255,255,.03);${ssBorder};transition:opacity .15s">
       <div class="flex gap-2 items-center mb-2">
         <span class="text-[#555] select-none text-base cursor-grab px-0.5" title="Arrastrar para reordenar">⠿</span>
@@ -21078,7 +21148,7 @@ El esfuerzo no es negociable.
         var ssGrp = e.supersetGroup || '';
         var nivelMedio = e.nivel_medio || '';
         var vvJson = e.variacion_vertical ? JSON.stringify(e.variacion_vertical) : 'null';
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson, e.prescriptionExerciseId || '', rs0);
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson, e.prescriptionExerciseId || '', rs0, _perfRowState(e));
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -21213,6 +21283,8 @@ El esfuerzo no es negociable.
         let variacionVertical = null;
         try { variacionVertical = JSON.parse(row.dataset.variacionVertical || 'null'); } catch(e) {}
         const prescriptionExerciseId = row.dataset.prescriptionId || _genPrescriptionId();
+        let perf = { ex: {}, sets: [], noSets: false };
+        try { const pj = JSON.parse(row.dataset.perf || '{}'); perf = { ex: _perfCarryEx(pj.ex), sets: (Array.isArray(pj.sets) ? pj.sets : []).map(_perfCarrySet), noSets: pj.noSets === true }; } catch(e) {}
         if (name) exercises.push({
           exerciseName: name,
           prescriptionExerciseId,
@@ -21223,7 +21295,8 @@ El esfuerzo no es negociable.
           supersetGroup,
           ...(nivelMedio ? { nivel_medio: nivelMedio } : {}),
           ...(variacionVertical ? { variacion_vertical: variacionVertical } : {}),
-          sets: Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: restSec, setNote: '', drop: false, tempo: '' }))
+          sets: perf.noSets ? [] : Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: restSec, setNote: '', drop: false, tempo: '', ...(perf.sets[s] || {}) })),
+          ...perf.ex   // T544: exerciseType + Coach performance prescription survive an editor save
         });
       });
       days.push({ dayIndex: di, label, exercises });
@@ -21701,7 +21774,7 @@ El esfuerzo no es negociable.
       const days = obj.days.map((d, di) => ({
         dayIndex: Number.isInteger(d.dayIndex) ? d.dayIndex : di,
         label: String(d.label || `Día ${di + 1}`),
-        exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => ({
+        exercises: Array.isArray(d.exercises) ? d.exercises.map(ex => Object.assign({
           exerciseName: String(ex.exerciseName || '').trim(),
           // T119-H (QA-R3-01): carry over prescriptionExerciseId so _stampPrescriptionIds
           // preserves existing exercise identity; new/missing IDs get fresh UUIDs from stamp.
@@ -21726,9 +21799,10 @@ El esfuerzo no es negociable.
             restSeconds: parseInt(s.restSeconds ?? 90) || 90,
             setNote: String(s.setNote || s.note || '').trim(),
             drop: s.drop === true,
-            tempo: String(s.tempo || '').trim()
+            tempo: String(s.tempo || '').trim(),
+            ..._perfCarrySet(s)
           })) : []
-        })).filter(ex => ex.exerciseName.length > 1 && ex.sets.length > 0) : []
+        }, _perfCarryEx(ex))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
       })).filter(d => d.exercises.length > 0);
       if (days.length !== curDays) {
         st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;
@@ -22297,10 +22371,12 @@ El esfuerzo no es negociable.
             technique: ex.technique || 'straight',
             techniqueNote: ex.techniqueNote || '',
             coachNote: ex.coachNote || '',
+            ..._perfCarryEx(ex),   // T544: export -> re-import keeps exerciseType + performance prescription
             sets: (ex.sets || []).map(s => ({
               setIndex: s.setIndex, repsTarget: s.repsTarget, rirTarget: s.rirTarget,
               load: s.load || 0, restSeconds: s.restSeconds || 90,
-              setNote: s.setNote || '', drop: !!s.drop, tempo: s.tempo || ''
+              setNote: s.setNote || '', drop: !!s.drop, tempo: s.tempo || '',
+              ..._perfCarrySet(s)
             }))
           }))
         }))

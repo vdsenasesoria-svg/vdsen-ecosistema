@@ -1,0 +1,309 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "viewport": "390x844",
+    "checks": 59,
+    "failed": [],
+    "cleanup": {
+      "docsDeleted": 10,
+      "usersDeleted": 2
+    }
+  },
+  "results": [
+    {
+      "id": "COACH_PREVIEW_KEEPS_ALL_EXERCISES",
+      "pass": true,
+      "note": "[null,\"cardio\",\"calistenia\",\"estacion\",\"circuito\"]"
+    },
+    {
+      "id": "COACH_PREVIEW_KEEPS_PRESCRIPTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "COACH_SAVED_AND_ACTIVATED_PLAN",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SAVED_PLAN_STATUS_AND_OWNERSHIP",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SAVED_PLAN_KEEPS_TYPES",
+      "pass": true,
+      "note": "-,cardio,calistenia,estacion,circuito"
+    },
+    {
+      "id": "SAVED_PLAN_KEEPS_PRESCRIPTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SAVED_PLAN_STRENGTH_UNCHANGED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SAVED_PLAN_EMPTY_SETS_KEPT_FOR_CARDIO_CIRCUITO",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SAVED_PIDS_UNIQUE_AND_PRESENT",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "SAVED_ORDER_PRESERVED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EDITOR_OPENS_WITH_ALL_ROWS",
+      "pass": true,
+      "note": "opened=true rows=5"
+    },
+    {
+      "id": "EDIT_SAVE_KEEPS_TYPES_AND_PRESCRIPTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EDIT_SAVE_KEEPS_PIDS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EXPORT_KEEPS_TYPES_AND_PRESCRIPTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_COACH_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "RUNTIME_KEEPS_TYPE",
+      "pass": true,
+      "note": "[null,\"cardio\",\"calistenia\",\"estacion\",\"circuito\"]"
+    },
+    {
+      "id": "RUNTIME_PID_EQUALS_SAVED_PID",
+      "pass": true,
+      "note": "019d51d7-ac99-4d02-a267-cc7bc1e723a1,6d82d0cc-747f-4b9e-b0c8-50ce983d6959,56c1b4d1-7035-47e0-b2c1-43f4b161ff5f,4d590bf1-834b-49b9-a95f-4a53a5464ee9,75327835-83ed-4b50-9cba-0dd275b5379e"
+    },
+    {
+      "id": "cardio:CARD_RENDERED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "cardio:PRESCRIPTION_PLATE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "cardio:EXECUTION_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "cardio:TOUCH_FLOOR_44",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "cardio:INPUTS_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "cardio:NO_PREFILL_FROM_PRESCRIPTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "cardio:NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "cardio:COMPLETES",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "calistenia:CARD_RENDERED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "calistenia:PRESCRIPTION_PLATE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "calistenia:EXECUTION_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "calistenia:TOUCH_FLOOR_44",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "calistenia:INPUTS_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "calistenia:NO_PREFILL_FROM_PRESCRIPTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "calistenia:NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "calistenia:SET_COMPLETES",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "estacion:CARD_RENDERED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "estacion:PRESCRIPTION_PLATE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "estacion:EXECUTION_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "estacion:TOUCH_FLOOR_44",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "estacion:INPUTS_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "estacion:NO_PREFILL_FROM_PRESCRIPTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "estacion:NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "estacion:ROUND_COMPLETES",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "circuito:CARD_RENDERED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "circuito:PRESCRIPTION_PLATE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "circuito:EXECUTION_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "circuito:TOUCH_FLOOR_44",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "circuito:INPUTS_LABELLED",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "circuito:NO_PREFILL_FROM_PRESCRIPTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "circuito:NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "circuito:COMPLETES",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "TECHNIQUE_DETAIL_CONTAINED",
+      "pass": true,
+      "note": "{\"sw\":390,\"iw\":390,\"fx\":\"static\",\"tw\":true}"
+    },
+    {
+      "id": "EVIDENCE_CARDIO",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EVIDENCE_CALISTENIA",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EVIDENCE_ESTACION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EVIDENCE_CIRCUITO",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_PRESCRIPTION_IN_EVIDENCE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_CANONICAL_FIELDS_WRITTEN_BY_ATHLETE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "PRESCRIPTION_AND_PID_UNCHANGED_AFTER_EXECUTION",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_UNCAUGHT_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "FUERZA_STILL_STANDARD_CARD",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}
