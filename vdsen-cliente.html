@@ -6347,7 +6347,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div class="sp-row">'+
         '<div class="sp-f sp-ics">'+
           '<label class="sp-fl" for="xics_'+_expK+'">CALIDAD (1-10)</label>'+
-          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
+          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="1-10" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
         '</div>'+
         '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
           '<span class="sp-fl">PUMP</span>'+
@@ -6582,7 +6582,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             (function(){
               var _icsVal = saved.ics || (_prevSesIcs || '');
               var _icsNum = parseInt(_icsVal);
-              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="1-10" inputmode="numeric" min="1" max="10"'+
                 ' class="num-in sm'+((_icsNum&&_icsNum<7)?' low':'')+'" oninput="updateICSColor(\''+key+'\''+')">';
             })()+
           '</div>'+
@@ -7601,7 +7601,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '<div class="sp-row">'+
           '<div class="sp-f sp-ics">'+
             '<label class="sp-fl" for="xics_'+_ssk+'">CALIDAD (1-10)</label>'+
-            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
+            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="1-10" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
             '<div class="sp-hint" style="display:block">1-5 mala · 6-7 ok · 8-10 buena</div>'+
           '</div>'+
           '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
@@ -8857,7 +8857,7 @@ function buildBoostcampExercise(ej, di, ei) {
       : '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
           '<div style="flex:1">'+
             '<div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">Calidad (1-10)</div>'+
-            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" min="1" max="10"'+
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
             'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+
             'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box" oninput="updateICSColor(\''+key+'\')">'+

@@ -21,6 +21,22 @@ Estados: PASS / FAIL / BLOCKED / NON_BLOCKING_PENDING. Producción (`vdsen-ecosi
 | NUMERIC_APPLY_ENABLED | PASS | `false` en los 4 módulos; ningún registro APPLIED |
 | EQUIPMENT DATA | NON_BLOCKING_PENDING | 0 incrementos reales (necesarios para candidatos de carga, no para la seguridad) |
 
+## Puerta T547 (pre-producción; staging sintético, producción sin tocar)
+
+Nunca es un GO automático: la decisión de producción sigue siendo de Ayrton / el director.
+
+| Área | Estado | Evidencia |
+|---|---|---|
+| TENANT SECURITY | PASS | emulador 11/11 + `docs/staging-smoke-results.json` (116 checks, 0 fallos; 2 BLOCKED por credencial Admin, sin cambio); otro coach / atleta denegados en la edición de plan activo; adopción cross-tenant y cambio de `coachId` denegados |
+| ACTIVE PLAN OWNER EDIT | PASS | regla `plans` update: el coach dueño edita su plan `active` (y un `draft_approved` solo si es el `activePlanId` del cliente); emulador `tests/t547-active-plan-edit.cjs` 7/7; verificado en staging real con el editor del Coach |
+| PER-SET PRESCRIPTION FIDELITY | PASS | editor por serie; `scripts/client-staging-coach-editor-fidelity.cjs` 19/19 (plan con forma Ayrton 7d/32 ej/80 series: 0 diffs inesperados, 32 PID, RIR heterogéneo exacto, `createdAt`/`updatedAt` correctos) |
+| EXPRESS EVIDENCE INTEGRITY | PASS | `express` y `expressFinal` quedan fuera de la serie representativa y de la exposición comparable (`tests/t547-express-canonical-exclusion.test.js`); sigue siendo historial de ejecución |
+| LEGACY MISSING-OBSERVATION INTEGRITY | PASS | `calculateProgression` ya no fabrica RIR=objetivo / ICS=8 / Pump=2; faltante = `null` ("Sin registro"); sigue sin autoridad (sin escrituras de prescripción, overlays ni estado canónico); `tests/t547-legacy-missing-observation.test.js` |
+| REAL STANDARD SESSION | PASS (clon sintético) | `scripts/client-staging-standard-session.cjs` 42/42: día 2 "Lower A", 11/11 series por serie (NO Express), recarga + re-login, serie representativa real = seleccionada, materializador PENDING/REJECTED, APPLIED 0, overlays 0. **No** sustituye la sesión humana de Ayrton (puerta final de UX) |
+| MOBILE QA | PASS | `scripts/client-staging-mobile-qa.cjs` 48/48 a 320/360/375/390/414/430 px |
+
+Pendiente humano: la sesión real de Ayrton en su cuenta de staging (cuenta y plan conservados sin tocar). NUMERIC_APPLY_ENABLED sigue `false`.
+
 ## Antes de producción todavía falta
 
 1. Provisionar entitlements (`scripts/admin-coach-api-access.cjs`) para los coaches aprobados antes de desplegar el API endurecido.
