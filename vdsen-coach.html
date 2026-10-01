@@ -4664,7 +4664,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
                 ${r.newReps ? `<span class="text-[#888]">Reps: <strong style="color:#F4F4F0">${r.newReps}</strong></span>` : ''}
                 <span class="text-[#888]">RIR obj: <strong style="color:#F4F4F0">${r.rirTarget}</strong></span>
               </div>
-              ${r.trend ? `<div class="text-xs mb-1" style="color:#555">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets} series · ICS ${r.trend.prevICS.toFixed(1)}</div>` : ''}
+              ${r.trend ? `<div class="text-xs mb-1" style="color:#555">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets} series · ICS ${r.trend.prevICS == null ? '—' : r.trend.prevICS.toFixed(1)}</div>` : ''}
               <div class="text-xs" style="color:#999;line-height:1.5">${_escH(r.reason)}</div>
               ${r.substituteExercise ? `<div class="text-xs mt-1" style="color:#FF8844">🔄 ${_escH(r.substituteExercise)}</div>` : ''}
               ${_clientNote ? `<div class="mt-2 text-xs p-2 rounded" style="background:rgba(107,107,102,.08);border-left:2px solid rgba(107,107,102,.5);color:#d4b96a;line-height:1.45">📝 ${_escH(_clientNote.text)}<span style="color:#888;margin-left:8px">· Sem ${_clientNote.w} Día ${_clientNote.d+1}</span></div>` : ''}
