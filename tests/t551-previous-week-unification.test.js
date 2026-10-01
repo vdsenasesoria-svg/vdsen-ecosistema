@@ -128,5 +128,5 @@ test('T551.24 PRESCRIPCIÓN · COACH stays separate from TU EJECUCIÓN; the reus
 });
 test('T551.25 user-facing help no longer describes the removed chips (↩ SEM / 📋 HISTORIAL appear only in code comments)', () => {
   const lines = SRC.split('\n').filter(l => /↩ SEM|📋 HISTORIAL/.test(l)); assert.ok(lines.every(l => l.trim().startsWith('//')), lines.join(' | ').slice(0, 200));
-  assert.ok(SRC.includes('<strong>USAR CARGA/REPS</strong>') && SRC.includes('<strong>ÚLTIMA SEMANA</strong>'));
+  assert.ok(!SRC.includes('entre "SEM ANTERIOR" e "HISTORIAL"') && SRC.includes('<strong>USAR CARGA/REPS</strong>') && SRC.includes('<strong>ÚLTIMA SEMANA</strong>'));
 });
