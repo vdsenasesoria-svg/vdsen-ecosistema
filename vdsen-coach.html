@@ -4656,7 +4656,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
                 ${r.newReps ? `<span class="text-[#888]">Reps: <strong style="color:#F4F4F0">${r.newReps}</strong></span>` : ''}
                 <span class="text-[#888]">RIR obj: <strong style="color:#F4F4F0">${r.rirTarget}</strong></span>
               </div>
-              ${r.trend ? `<div class="text-xs mb-1" style="color:#555">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets} series · ICS ${r.trend.prevICS.toFixed(1)}</div>` : ''}
+              ${r.trend ? `<div class="text-xs mb-1" style="color:#555">Sem anterior: ${r.trend.prevLoad.toFixed(1)} kg · ${r.trend.prevSets} series · ICS ${r.trend.prevICS == null ? '—' : r.trend.prevICS.toFixed(1)}</div>` : ''}
               <div class="text-xs" style="color:#999;line-height:1.5">${_escH(r.reason)}</div>
               ${r.substituteExercise ? `<div class="text-xs mt-1" style="color:#FF8844">🔄 ${_escH(r.substituteExercise)}</div>` : ''}
               ${_clientNote ? `<div class="mt-2 text-xs p-2 rounded" style="background:rgba(107,107,102,.08);border-left:2px solid rgba(107,107,102,.5);color:#d4b96a;line-height:1.45">📝 ${_escH(_clientNote.text)}<span style="color:#888;margin-left:8px">· Sem ${_clientNote.w} Día ${_clientNote.d+1}</span></div>` : ''}
@@ -20475,7 +20475,7 @@ El esfuerzo no es negociable.
   // ── EDITOR DE PLAN EXISTENTE ─────────────────────────────────────────
   let _editingPlanId = null;
 
-  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson, prescriptionId, restSeconds, perfJson) {
+  function _exRowHtml(di, ei, name, numSets, reps, rir, coachNote, technique, techniqueNote, alternativesJson, ssGroup, nivelMedio, variacionVerticalJson, prescriptionId, restSeconds, perfJson, setsJson, hadCoachNote) {
     const techVal = (technique || 'straight').toLowerCase();
     const techOpts = ['straight','drop','sst','myoreps','rest-pause','cluster','superset','giant','amrap','tempo','iso-hold']
       .map(t => `<option value="${t}"${t===techVal?' selected':''}>${t}</option>`).join('');
@@ -20489,7 +20489,16 @@ El esfuerzo no es negociable.
       .map(([v,l]) => `<option value="${v}"${v===nmVal?' selected':''}>${l}</option>`).join('');
     const pidAttr = _escH(prescriptionId || '');
     const rsVal = _parseRestSeconds(restSeconds);
-    return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}"
+    // T547: per-set prescription. Stored sets (heterogeneous RIR/reps/rest) ride on the row; a new row gets a uniform seed.
+    let _setsArr = [];
+    try { _setsArr = Array.isArray(setsJson) ? setsJson : JSON.parse(setsJson || '[]'); } catch (e) { _setsArr = []; }
+    let _noSets = false; try { _noSets = JSON.parse(perfJson || '{}').noSets === true; } catch (e) {}
+    if (!_setsArr.length && !_noSets) _setsArr = Array.from({ length: parseInt(numSets, 10) || 3 }, (_, i) => ({ setIndex: i, repsTarget: reps, rirTarget: rir, restSeconds: rsVal }));
+    const _same = k => _setsArr.length && _setsArr.every(x => String((x || {})[k] ?? '') === String((_setsArr[0] || {})[k] ?? ''));
+    const _topV = k => _same(k) ? _escH(String((_setsArr[0] || {})[k] ?? '')) : '';
+    const _topPh = k => _same(k) ? '' : 'mix';
+    const setRowsHtml = _setsArr.map((st, si) => _exSetRowHtml(st, si)).join('');
+    return `<div class="mb-2 p-2 rounded-lg exrow-item" id="exrow_${di}_${ei}" data-di="${di}" data-had-coachnote="${hadCoachNote ? '1' : ''}"
       draggable="true" ondragstart="_exDragStart(event)" ondragover="_exDragOver(event)"
       ondrop="_exDrop(event)" ondragend="_exDragEnd(event)"
       data-alternatives="${altsAttr}" data-variacion-vertical="${vvAttr}"
@@ -20509,21 +20518,22 @@ El esfuerzo no es negociable.
       <div class="grid grid-cols-4 gap-2 mb-2">
         <div>
           <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Series</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#F4F4F0]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric" data-field="sets" oninput="markEditorDirty&&markEditorDirty()">
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#F4F4F0]" value="${numSets}" id="exsets_${di}_${ei}" type="number" min="1" max="10" inputmode="numeric" data-field="sets" oninput="_exSetsResize(this);markEditorDirty&&markEditorDirty()">
         </div>
         <div>
-          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Reps</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold" value="${reps}" id="exreps_${di}_${ei}" type="number" min="1" max="50" inputmode="numeric" data-field="reps" oninput="markEditorDirty&&markEditorDirty()">
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Reps (todas)</div>
+          <input class="input-field w-full text-sm py-1 text-center font-bold" value="${_topV('repsTarget')}" placeholder="${_topPh('repsTarget')}" id="exreps_${di}_${ei}" type="number" min="1" max="50" inputmode="numeric" data-field="reps" data-bulk="repsTarget" onchange="_exBulkApply(this)" oninput="markEditorDirty&&markEditorDirty()">
         </div>
         <div>
-          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">RIR</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${rir}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir" oninput="markEditorDirty&&markEditorDirty()">
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">RIR (todas)</div>
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#e8a040]" value="${_topV('rirTarget')}" placeholder="${_topPh('rirTarget')}" id="exrir_${di}_${ei}" type="number" min="0" max="5" inputmode="numeric" data-field="rir" data-bulk="rirTarget" onchange="_exBulkApply(this)" oninput="markEditorDirty&&markEditorDirty()">
         </div>
         <div>
-          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Desc (s)</div>
-          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#88ccff]" value="${rsVal}" type="number" min="0" step="5" placeholder="0" inputmode="numeric" data-field="restSeconds" oninput="markEditorDirty&&markEditorDirty()">
+          <div class="text-[10px] text-[#888] uppercase tracking-wide mb-1 text-center">Desc (s, todas)</div>
+          <input class="input-field w-full text-sm py-1 text-center font-bold text-[#88ccff]" value="${_topV('restSeconds')}" type="number" min="0" step="5" placeholder="${_topPh('restSeconds') || '0'}" inputmode="numeric" data-field="restSeconds" data-bulk="restSeconds" onchange="_exBulkApply(this)" oninput="markEditorDirty&&markEditorDirty()">
         </div>
       </div>
+      <div class="exsets mb-2" data-field="setsList" style="display:grid;gap:4px">${setRowsHtml}</div>
       <div class="grid gap-2 mb-2" style="grid-template-columns:60px 1fr 1fr 2fr">
         <div>
           <div class="text-[10px] uppercase tracking-wide mb-1" style="color:#cc66aa">Biserie</div>
@@ -20573,6 +20583,70 @@ El esfuerzo no es negociable.
     if (isNaN(n) || n < 0) return 0;
     return n;
   }
+
+  // ── T547 — per-set prescription editor ──
+  // Each set keeps its own reps / RIR / rest / tempo / note / drop (heterogeneous RIR 3/2/2 must survive an edit-save). `load` is not editable
+  // here but is carried. The Reps/RIR/Desc inputs in the exercise header are explicit "apply to all sets" bulk setters, never the source of truth.
+  function _exRaw(v) { return v === undefined || v === null ? '' : v; }
+  function _exSetRowHtml(st, si) {
+    st = st || {};
+    const f = (k, w, ph, step) => { const v = _exRaw(st[k]); return `<input class="input-field text-xs py-1 text-center" style="width:${w}" value="${_escH(String(v))}" data-sf="${k}" data-raw="${_escH(JSON.stringify(v))}" type="number" min="0" ${step ? 'step="' + step + '"' : ''} inputmode="numeric" placeholder="${ph}" oninput="markEditorDirty&&markEditorDirty()">`; };
+    const t = _exRaw(st.tempo), n = _exRaw(st.setNote);
+    return `<div class="exset" data-set-index="${si}" data-load="${_escH(JSON.stringify(_exRaw(st.load)))}" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+      <span class="text-[10px] text-[#888]" style="width:22px">S${si + 1}</span>
+      ${f('repsTarget', '48px', 'reps')}${f('rirTarget', '44px', 'RIR')}${f('restSeconds', '52px', 'desc s', 5)}
+      <input class="input-field text-xs py-1" style="width:64px" value="${_escH(String(t))}" data-sf="tempo" data-raw="${_escH(JSON.stringify(t))}" placeholder="tempo" oninput="markEditorDirty&&markEditorDirty()">
+      <input class="input-field text-xs py-1" style="flex:1;min-width:90px" value="${_escH(String(n))}" data-sf="setNote" data-raw="${_escH(JSON.stringify(n))}" placeholder="nota de serie" oninput="markEditorDirty&&markEditorDirty()">
+      <label class="text-[10px] text-[#888]" style="display:flex;align-items:center;gap:2px"><input type="checkbox" data-sf="drop" ${st.drop === true ? 'checked' : ''} onchange="markEditorDirty&&markEditorDirty()">drop</label>
+    </div>`;
+  }
+  function _exReadSetValue(el) {
+    // unchanged input => the stored raw value (keeps 0 / strings / numbers exactly); edited input => parsed number (or text for tempo/setNote)
+    let raw; try { raw = JSON.parse(el.dataset.raw); } catch (e) { raw = ''; }
+    const k = el.dataset.sf;
+    if (el.value === el.defaultValue) return raw === '' && (k === 'repsTarget' || k === 'rirTarget' || k === 'restSeconds') ? undefined : raw;
+    if (k === 'tempo' || k === 'setNote') return el.value;
+    const n = parseInt(el.value, 10);
+    return isNaN(n) || n < 0 ? undefined : n;
+  }
+  function _exCollectSets(row, perfSets) {
+    const rows = row.querySelectorAll('.exset');
+    return Array.from(rows).map((r, s) => {
+      const o = { setIndex: s, repsTarget: 8, rirTarget: 2, load: 0, restSeconds: 0, setNote: '', drop: false, tempo: '' };
+      r.querySelectorAll('[data-sf]').forEach(el => {
+        const k = el.dataset.sf;
+        if (k === 'drop') { o.drop = el.checked; return; }
+        const v = _exReadSetValue(el); if (v !== undefined) o[k] = v;
+      });
+      let ld = 0; try { ld = JSON.parse(r.dataset.load); } catch (e) {}
+      if (ld !== '' && ld !== undefined && ld !== null) o.load = ld;
+      return Object.assign(o, (perfSets && perfSets[s]) || {});
+    });
+  }
+  function _exSetsResize(inp) {
+    const row = inp.closest('.exrow-item'); if (!row) return;
+    const list = row.querySelector('.exsets'); if (!list) return;
+    const want = Math.max(1, Math.min(10, parseInt(inp.value, 10) || 0));
+    if (!parseInt(inp.value, 10)) return;
+    let rows = list.querySelectorAll('.exset');
+    while (rows.length > want) { rows[rows.length - 1].remove(); rows = list.querySelectorAll('.exset'); }
+    while (rows.length < want) {
+      const last = rows[rows.length - 1];
+      const seed = {};
+      if (last) last.querySelectorAll('[data-sf]').forEach(el => { if (el.dataset.sf !== 'drop' && el.dataset.sf !== 'setNote') seed[el.dataset.sf] = el.value === '' ? undefined : (el.dataset.sf === 'tempo' ? el.value : parseInt(el.value, 10)); });
+      const tmp = document.createElement('template');
+      tmp.innerHTML = _exSetRowHtml(seed, rows.length);
+      list.appendChild(tmp.content.firstElementChild);
+      rows = list.querySelectorAll('.exset');
+    }
+  }
+  function _exBulkApply(inp) {
+    const row = inp.closest('.exrow-item'); if (!row || inp.value === '') return;
+    const key = inp.dataset.bulk;
+    row.querySelectorAll('.exset [data-sf="' + key + '"]').forEach(el => { el.value = inp.value; el.setAttribute('value', inp.value); el.dataset.raw = JSON.stringify(parseInt(inp.value, 10)); });
+    inp.placeholder = '';
+  }
+  window._exSetsResize = _exSetsResize; window._exBulkApply = _exBulkApply; window._exCollectSets = _exCollectSets; window._exSetRowHtml = _exSetRowHtml;
   window._filterExerciseCatalog = _filterExerciseCatalog;
   window._moveArrayItem = _moveArrayItem;
   window._parseRestSeconds = _parseRestSeconds;
@@ -21143,7 +21217,7 @@ El esfuerzo no es negociable.
         var ssGrp = e.supersetGroup || '';
         var nivelMedio = e.nivel_medio || '';
         var vvJson = e.variacion_vertical ? JSON.stringify(e.variacion_vertical) : 'null';
-        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson, e.prescriptionExerciseId || '', rs0, _perfRowState(e));
+        return _exRowHtml(di, ei, e.exerciseName || '', numSets, reps, rir, coachNote, tech, techNote, altsJson, ssGrp, nivelMedio, vvJson, e.prescriptionExerciseId || '', rs0, _perfRowState(e), JSON.stringify(Array.isArray(e.sets) ? e.sets : []), Object.prototype.hasOwnProperty.call(e, 'coachNote'));
       }).join('');
       return `<div class="card p-3 mb-3" id="dayblock_${di}">
         <input class="input-field w-full text-sm font-semibold mb-3 text-[#F4F4F0]" value="${d.label || 'Día '+(di+1)}" id="daylabel_${di}" placeholder="Nombre del día">
@@ -21301,13 +21375,13 @@ El esfuerzo no es negociable.
           exerciseName: name,
           prescriptionExerciseId,
           alternatives,
-          coachNote,
+          ...((coachNote || row.dataset.hadCoachnote) ? { coachNote } : {}),
           technique,
           techniqueNote,
           supersetGroup,
           ...(nivelMedio ? { nivel_medio: nivelMedio } : {}),
           ...(variacionVertical ? { variacion_vertical: variacionVertical } : {}),
-          sets: perf.noSets ? [] : Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: restSec, setNote: '', drop: false, tempo: '', ...(perf.sets[s] || {}) })),
+          sets: perf.noSets ? [] : (row.querySelector('.exset') ? _exCollectSets(row, perf.sets) : Array.from({length: sets}, (_, s) => ({ setIndex: s, repsTarget: reps, rirTarget: rir, load: 0, restSeconds: restSec, setNote: '', drop: false, tempo: '', ...(perf.sets[s] || {}) }))),
           ...perf.ex   // T544: exerciseType + Coach performance prescription survive an editor save
         });
       });

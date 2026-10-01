@@ -3754,7 +3754,7 @@ function _buildExerciseWeekMap() {
             avgLoad: _avgArr(loads),
             avgReps: _avgArr(reps),
             totalSets: setsData.length,
-            avgICS: _avgArr(icsVals),
+            avgICS: icsVals.length ? _avgArr(icsVals) : null,
             volume: _avgArr(loads) * _avgArr(reps) * setsData.length // tonnage approx
           };
         }
@@ -3798,7 +3798,7 @@ function buildHistorialWidget() {
       var wd = data.weeks[w];
       if (wd) {
         var pct = maxLoad > 0 ? Math.round((wd.maxLoad / maxLoad)*100) : 0;
-        var icsCol = wd.avgICS >= 8 ? 'var(--grn)' : wd.avgICS >= 7 ? 'var(--gold)' : 'var(--red)';
+        var icsCol = wd.avgICS === null ? 'var(--mt)' : wd.avgICS >= 8 ? 'var(--grn)' : wd.avgICS >= 7 ? 'var(--gold)' : 'var(--red)';
         barsHtml += '<div style="flex:1;text-align:center">'
           + '<div style="height:40px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:3px">'
           + '<div style="width:100%;max-width:22px;height:'+Math.max(pct,8)+'%;background:'+icsCol+';border-radius:3px 3px 0 0;opacity:0.8"></div>'
@@ -3824,7 +3824,7 @@ function buildHistorialWidget() {
       + '<div style="display:flex;gap:12px;font-size:11px;color:var(--mt)">'
       + '<span>Sets: '+last.totalSets+'</span>'
       + '<span>Reps: '+last.avgReps.toFixed(0)+'</span>'
-      + '<span>ICS: '+last.avgICS.toFixed(1)+'</span>'
+      + '<span>ICS: '+(last.avgICS === null ? '—' : last.avgICS.toFixed(1))+'</span>'
       + '<span style="color:var(--gold)">Vol: '+Math.round(last.volume)+'</span>'
       + '</div>'
       + '</div>';
@@ -6340,7 +6340,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '<div class="sp-row">'+
         '<div class="sp-f sp-ics">'+
           '<label class="sp-fl" for="xics_'+_expK+'">CALIDAD (1-10)</label>'+
-          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="8" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
+          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="1-10" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
         '</div>'+
         '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
           '<span class="sp-fl">PUMP</span>'+
@@ -6575,7 +6575,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             (function(){
               var _icsVal = saved.ics || (_prevSesIcs || '');
               var _icsNum = parseInt(_icsVal);
-              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="1-10" inputmode="numeric" min="1" max="10"'+
                 ' class="num-in sm'+((_icsNum&&_icsNum<7)?' low':'')+'" oninput="updateICSColor(\''+key+'\''+')">';
             })()+
           '</div>'+
@@ -7594,7 +7594,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '<div class="sp-row">'+
           '<div class="sp-f sp-ics">'+
             '<label class="sp-fl" for="xics_'+_ssk+'">CALIDAD (1-10)</label>'+
-            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="8" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
+            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="1-10" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
             '<div class="sp-hint" style="display:block">1-5 mala · 6-7 ok · 8-10 buena</div>'+
           '</div>'+
           '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
@@ -8850,7 +8850,7 @@ function buildBoostcampExercise(ej, di, ei) {
       : '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
           '<div style="flex:1">'+
             '<div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">Calidad (1-10)</div>'+
-            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="8" inputmode="numeric" min="1" max="10"'+
+            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" min="1" max="10"'+
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
             'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+
             'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box" oninput="updateICSColor(\''+key+'\')">'+
@@ -15844,7 +15844,7 @@ function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exercis
   return {
     avgLoad: _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; })),
     avgReps: _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; })),
-    avgICS: (function(){ var v=sets.map(function(s){return parseFloat(s.ics);}).filter(function(x){return x>0&&!isNaN(x);}); return v.length?_avgArr(v):8; })(),
+    avgICS: (function(){ var v=sets.map(function(s){return parseFloat(s.ics);}).filter(function(x){return x>0&&!isNaN(x);}); return v.length?_avgArr(v):null; })(),
     avgRIR: (function(){ var v=sets.filter(function(s){return !s.autoFilled;}).map(function(s){return parseFloat(s.rir_real);}).filter(function(x){return !isNaN(x)&&x>=0&&x<=5;}); return v.length?_avgArr(v):null; })(),
     numSets: sets.length,
     topLoad: Math.max.apply(null, sets.map(function(s){ return parseFloat(s.carga) || 0; })),
@@ -15960,10 +15960,13 @@ function calculateProgression(di, postData) {
 
     // Solo promediar valores realmente registrados; evitar contaminar con fallbacks
     var _icsRaw  = sets.map(function(s){ return parseFloat(s.ics); }).filter(function(v){ return v > 0 && !isNaN(v); });
-    var avgICS   = _icsRaw.length  ? _avgArr(_icsRaw)  : 8;   // fallback: técnica ok
-    var avgPump  = _avgArr(sets.map(function(s){ return parseFloat(s.pump) || 2; }));
+    // T547: MISSING EVIDENCE STAYS MISSING — no fabricated ICS=8 / Pump=2 / RIR=target. null = "Sin registro / No reportado" and it never
+    // satisfies (or fails) a threshold: every gate below requires a real observation before it can fire.
+    var avgICS   = _icsRaw.length  ? _avgArr(_icsRaw)  : null;
+    var _pumpRaw = sets.map(function(s){ return parseFloat(s.pump); }).filter(function(v){ return v >= 1 && v <= 3; });
+    var avgPump  = _pumpRaw.length ? _avgArr(_pumpRaw) : null;
     var _rirRaw  = sets.map(function(s){ return parseFloat(s.rir_real); }).filter(function(v){ return !isNaN(v) && v >= 0 && v <= 5; });
-    var avgRIR   = _rirRaw.length  ? _avgArr(_rirRaw)  : rirObj; // fallback: asume en objetivo
+    var avgRIR   = _rirRaw.length  ? _avgArr(_rirRaw)  : null;
     var avgReps = _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; }));
     var load    = _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; }));
     var numSets = sets.length;
@@ -16003,12 +16006,12 @@ function calculateProgression(di, postData) {
       // Última semana sin señales suficientes → solo transición suave, no deload completo
       reasons.push('Última semana del bloque — consolida técnica, prepara el siguiente ciclo');
       // No modificar newSets ni newLoad: mantener lo que viene del algoritmo normal
-    } else if (avgICS < 6) {
+    } else if (avgICS !== null && avgICS < 6) {
       // ── ICS MUY BAJO (<6): técnica deficiente grave → bajar carga significativamente ──
       newLoad = _roundUnit(load * 0.85, unit);
       action = 'reduce_load';
       reasons.push('Técnica muy comprometida — bajamos 15% para recuperar calidad');
-    } else if (avgICS < 7) {
+    } else if (avgICS !== null && avgICS < 7) {
       // ── ICS BAJO (6-7): técnica comprometida → bajar carga moderadamente ──
       newLoad = _roundUnit(load * 0.9, unit);
       action = 'reduce_load';
@@ -16031,12 +16034,12 @@ function calculateProgression(di, postData) {
         // como `avgRIR <= 0.5` y vetaría increase_load casi siempre.
         var rirHeld    = (prevWeek.avgRIR === null || prevWeek.avgRIR === undefined)
                         ? true
-                        : (avgRIR <= prevWeek.avgRIR + 0.5);
+                        : (avgRIR !== null && avgRIR <= prevWeek.avgRIR + 0.5);   // no observed RIR => no evidence that effort was held
         var loadHeld   = load    >= prevWeek.avgLoad * 0.98;
         performedWell  = repsHeld && rirHeld && loadHeld;
       } else {
         // Sin datos previos (sem 1): requerir reps target + RIR en objetivo
-        performedWell = (avgReps >= repsTarget) && (avgRIR <= rirObj + 0.5);
+        performedWell = (avgReps >= repsTarget) && avgRIR !== null && (avgRIR <= rirObj + 0.5);
       }
 
       // MRV check: prioriza grupo muscular (targetMuscle). Fallback a patrón motor.
@@ -16060,7 +16063,7 @@ function calculateProgression(di, postData) {
         newSets = Math.max(1, numSets - 1);
         action = 'reduce_sets';
         reasons.push('Dolor muscular alto — quitamos 1 serie para recuperar bien');
-      } else if (performedWell && avgICS >= 8 && numSets < maxSets && !mrvBlocked) {
+      } else if (performedWell && avgICS !== null && avgICS >= 8 && numSets < maxSets && !mrvBlocked) {
         // Performance sostenida + técnica ok + margen de techo + MRV ok → +1 serie
         newSets = numSets + 1;
         action = 'add_sets';
@@ -16069,6 +16072,8 @@ function calculateProgression(di, postData) {
         reasons.push('Volumen semanal en el máximo para este músculo — no subir series');
       } else if (numSets >= maxSets) {
         reasons.push('Ya estás en el máximo de series para este ejercicio');
+      } else if (avgICS === null) {
+        reasons.push('Sin ICS registrado — no se puede confirmar la técnica; no agregamos series');
       } else if (avgICS < 8) {
         reasons.push('Hay margen para mejorar técnica — consolida antes de agregar series');
       } else if (!performedWell) {
@@ -16076,7 +16081,7 @@ function calculateProgression(di, postData) {
       }
 
       // Pump nulo + sin dolor → flag (NO agregar series)
-      if (avgPump === 3 && eimd === 1) {
+      if (avgPump !== null && avgPump === 3 && eimd === 1) {
         reasons.push('⚠ Sin pump — revisá amplitud de movimiento y velocidad excéntrica');
       }
 
@@ -16102,13 +16107,16 @@ function calculateProgression(di, postData) {
       // avgRIR < rirObj → esfuerzo mayor al prescrito → RIR_TOO_HARD_TREND → no progresar
       // |avgRIR - rirObj| ≤ 1 → PRESCRIPTION_MATCH → progresión de reps (double progression)
       var _rirError = (avgRIR !== null) ? (avgRIR - rirObj) : 0;
-      var _prescriptionMatch = Math.abs(_rirError) <= 1;
+      var _prescriptionMatch = avgRIR !== null && Math.abs(_rirError) <= 1;   // T547: no observed RIR => no match claimed
 
       if (_rirZeroFalsePositive && canIncreaseLoad) {
         // Un set llegó a RIR=0 fuera de la banda prescripta — el promedio normaliza el fallo.
         // Congelar carga hasta regularizar el esfuerzo entre series. [HEURÍSTICA]
         if (action === 'maintain') action = 'freeze_load';
         reasons.push('Un set llegó a fallo (RIR 0) fuera del rango prescripto — regularizar esfuerzo antes de progresar');
+      } else if (avgRIR === null) {
+        // T547: no observed RIR => effort cannot be judged; never assume "on target" to progress load.
+        reasons.push('Sin RIR registrado — no se puede evaluar el esfuerzo; mantener carga');
       } else if (!_prescriptionMatch && _rirError > 0 && canIncreaseLoad) {
         // RIR_TOO_EASY_TREND: el atleta dejó reps en el tanque → subir carga
         if (allRepsHit) {
@@ -16162,7 +16170,7 @@ function calculateProgression(di, postData) {
       }
 
       // ── Curva elongated con pump bajo = mala conexión ──
-      if (catData && catData.resistanceCurve === 'elongated' && avgPump >= 2.5) {
+      if (catData && catData.resistanceCurve === 'elongated' && avgPump !== null && avgPump >= 2.5) {
         reasons.push('⚠ Pump bajo en ejercicio de estiramiento — revisá amplitud y fase excéntrica');
       }
 
@@ -16179,7 +16187,7 @@ function calculateProgression(di, postData) {
           var diffVsPrev2 = Math.abs(prevWeek.avgLoad - prevPrev.avgLoad);
           // Tolerancia: mayor entre 2% y el mínimo incremento estándar (1.25 kg)
           var tolerance = Math.max(load * 0.02, 1.25);
-          if (diffVsPrev <= tolerance && diffVsPrev2 <= tolerance && avgICS >= 8) {
+          if (diffVsPrev <= tolerance && diffVsPrev2 <= tolerance && avgICS !== null && avgICS >= 8) {
             reasons.push('⚠ Carga estancada 2+ semanas — intentá micro-salto, cambiar variante o ajustar tempo');
           }
         }
@@ -16207,6 +16215,8 @@ function calculateProgression(di, postData) {
       // rirTarget, which is the target for the NEXT exposure.
       prescribedRIR: rirObj,
       observedRIR: _rirRaw.length ? +avgRIR.toFixed(2) : null,
+      observedICS: avgICS !== null ? +avgICS.toFixed(2) : null,
+      observedPump: avgPump !== null ? +avgPump.toFixed(2) : null,
       repRangeTarget: { low: repsLow, high: repsTarget },
       rirTarget: rirTarget,
       reason: reasons.join(' | '),

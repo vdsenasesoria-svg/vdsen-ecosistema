@@ -128,7 +128,7 @@ test('T546.J no fabricated defaults remain in any Express writer', () => {
   }
 });
 
-test('T546.K representative set: the LAST standard set carries the evidence; earlier Express sets never substitute; missing RIR stays missing', () => {
+test('T546.K (superseded by T547) Express carries honest history values but is NOT canonical evidence: neither express nor expressFinal is a representative set', () => {
   const run = rirTap => {
     const { ctx, f } = harness({ ej: PLAN_EX() });
     if (rirTap !== null) f.expressSetRIR('0_0', rirTap);
@@ -137,18 +137,18 @@ test('T546.K representative set: the LAST standard set carries the evidence; ear
     const exposures = POLICY.extractExposures(entries, 'pid-1', { planId: 'p', clientId: 'c' });
     const res = POLICY.evaluate({ prescriptionExerciseId: 'pid-1', planId: 'p', clientId: 'c', exposures, context: {}, plan: {},
       prescription: { prescriptionExerciseId: 'pid-1', sets: PLAN_EX().sets } });
-    return { exposures, res };
+    return { entries, exposures, res };
   };
-  const a = run(2);
-  assert.equal(a.res.comparableExposureCount, 1, 'the explicit final set makes the exposure comparable');
-  assert.equal(a.res.evidence.setIndex, 2, 'representative = last standard working set');
-  assert.equal(a.res.evidence.workingSetCount, 1, 'earlier Express sets are excluded, nothing substituted');
-  assert.equal(a.res.evidence.rirObserved, 2);
-  assert.equal(a.res.evidence.rirPrescribed, 3, 'prescribed RIR comes from the prescription, not from the observation');
-  const b = run(null);
-  assert.equal(b.res.evidence.setIndex, 2);
-  assert.equal(b.res.evidence.rirObserved, null, 'no explicit RIR => no observed RIR (missing evidence stays missing)');
-  assert.equal(b.res.numericApplyAllowed, false); assert.equal(b.res.applied, false);
+  for (const tap of [2, null]) {
+    const a = run(tap);
+    const sets = a.exposures[0].sets;
+    assert.ok(sets.slice(0, -1).every(s => s.express === true), 'earlier sets are express');
+    assert.equal(sets[sets.length - 1].expressFinal, true, 'the final set is expressFinal (kept as history)');
+    assert.equal(sets[sets.length - 1].rirReal, tap === null ? undefined : tap, 'T546 explicit-RIR behaviour is unchanged');
+    assert.equal(POLICY.selectRepresentativeSet(a.exposures[0], { sets: PLAN_EX().sets }), null, 'no representative set from an Express-only exposure');
+    assert.equal(a.res.comparableExposureCount, 0);
+    assert.equal(a.res.applied, false); assert.equal(a.res.numericApplyAllowed, false);
+  }
 });
 
 test('T546.L superset express: no fabricated RIR / ICS / Pump either (markExpressSSDone)', () => {

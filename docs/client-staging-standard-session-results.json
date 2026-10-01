@@ -1,16 +1,26 @@
 {
   "summary": {
     "project": "vdsen-ecosistema-staging",
-    "checks": 35,
+    "checks": 42,
     "failed": [],
     "kept": false,
     "synthetic": true
   },
   "results": [
     {
+      "id": "SYNTHETIC_AYRTON_CLONE_CREATED_AND_ACTIVE",
+      "pass": true,
+      "note": "status 200 plan-std-db43d3"
+    },
+    {
       "id": "NO_PRIOR_EXECUTION_EVIDENCE",
       "pass": true,
       "note": "keys=0"
+    },
+    {
+      "id": "CLONE_RUNTIME_7_32_80_32",
+      "pass": true,
+      "note": "{\"days\":7,\"e\":32,\"s\":80,\"pids\":32,\"label\":\"#2 — Lower A · Isquios + cuádriceps + gemelo\",\"numeric\":false}"
     },
     {
       "id": "NUMERIC_APPLY_ENABLED_FALSE",
@@ -18,9 +28,9 @@
       "note": ""
     },
     {
-      "id": "SYNTHETIC_DAY_STRUCTURE_READ",
+      "id": "STANDARD_CLONE_DAY_2_LOWER_A_11_SETS",
       "pass": true,
-      "note": "Empuje · Pecho y hombro ex=4 sets=13"
+      "note": "#2 — Lower A · Isquios + cuádriceps + gemelo ex=4 sets=11"
     },
     {
       "id": "EXPRESS_OFF_PER_SET_MODE",
@@ -60,32 +70,32 @@
     {
       "id": "REST_TIMER_STARTS_AND_COUNTS_DOWN",
       "pass": true,
-      "note": "2:29 -> 2:27"
+      "note": "1:58 -> 1:56"
     },
     {
       "id": "REST_TIMER_PRESCRIBED_DURATION",
       "pass": true,
-      "note": "prescribed 150s, shows 2:29"
+      "note": "prescribed 120s, shows 1:58"
     },
     {
       "id": "REST_TIMER_MINIMIZES_TO_PILL",
       "pass": true,
-      "note": "{\"ov\":false,\"n\":\"2:27\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790820729968\"}"
+      "note": "{\"ov\":false,\"n\":\"1:56\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790820262189\"}"
     },
     {
       "id": "REST_TIMER_SURVIVES_TAB_NAVIGATION_NO_DUPLICATE",
       "pass": true,
-      "note": "{\"ov\":false,\"n\":\"2:26\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790820729968\"}"
+      "note": "{\"ov\":false,\"n\":\"1:55\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790820262189\"}"
     },
     {
       "id": "REST_TIMER_RESTORES",
       "pass": true,
-      "note": "{\"ov\":true,\"n\":\"2:25\",\"pill\":false,\"overlays\":1,\"pills\":1,\"end\":\"1790820729968\"}"
+      "note": "{\"ov\":true,\"n\":\"1:54\",\"pill\":false,\"overlays\":1,\"pills\":1,\"end\":\"1790820262189\"}"
     },
     {
       "id": "ALL_SETS_EXECUTED_IN_UI",
       "pass": true,
-      "note": "sets=13/13"
+      "note": "sets=11/11"
     },
     {
       "id": "NO_SET_PENDING",
@@ -113,29 +123,29 @@
       "note": ""
     },
     {
-      "id": "FIRESTORE_SETS_MATCH_UI_LOAD_REPS_RIR_ICS_PUMP",
+      "id": "FIRESTORE_SETS_MATCH_EXPLICIT_LOAD_REPS_RIR_AND_NO_FABRICATED_ICS_PUMP_NO_EXPRESS_FLAGS",
       "pass": true,
-      "note": "ok=13 "
+      "note": "ok=11 "
     },
     {
       "id": "SET_RECORD_SHAPE",
       "pass": true,
-      "note": "reps,exerciseNameSnapshot,rir,prescriptionExerciseId,rir_real,ts,carga,ics,done,unit,pump"
+      "note": "pump,carga,reps,prescriptionExerciseId,done,unit,rir,exerciseNameSnapshot,ics,rir_real,ts"
     },
     {
       "id": "SESSION_CLOSURE_PERSISTED",
       "pass": true,
-      "note": "done_1_0,engine_state,progrec_1_0,postsession_1_0"
+      "note": "done_1_1,progrec_1_1,engine_state,postsession_1_1"
     },
     {
       "id": "NO_EXTRA_SET_KEYS_OUTSIDE_DAY",
       "pass": true,
-      "note": "13 set keys"
+      "note": "11 set keys"
     },
     {
       "id": "NO_CANONICAL_FIELDS_WRITTEN_BY_ATHLETE",
       "pass": true,
-      "note": "planId,exerciseUnits,entries,updatedAt,exerciseHistory,currentWeek"
+      "note": "entries,exerciseUnits,planId,updatedAt,exerciseHistory,currentWeek"
     },
     {
       "id": "PROGREC_IS_ADVISORY_EVIDENCE_ONLY",
@@ -150,7 +160,7 @@
     {
       "id": "HARD_RELOAD_KEEPS_SESSION_AND_VALUES",
       "pass": true,
-      "note": "{\"done\":true,\"n\":13,\"l\":{\"carga\":\"47.5\",\"reps\":\"8\",\"unit\":\"KG\",\"done\":true,\"rir\":2,\"rir_real\":\"1\",\"ics\":7,\"pump\":1,\"ts\":1790820596460,\"prescriptionExerciseId\":\"pid-h-1\",\"exerciseNameSnapshot\":\"Press banca con barra\"}}"
+      "note": "{\"done\":true,\"n\":11,\"l\":{\"carga\":\"45\",\"reps\":\"10\",\"unit\":\"KG\",\"done\":true,\"rir\":2,\"rir_real\":\"3\",\"ics\":null,\"pump\":null,\"ts\":1790820154110,\"prescriptionExerciseId\":\"5f6cce22-88df-43d7-8631-fe5985fdd26c\",\"exerciseNameSnapshot\":\"Curl femoral sentado máquina\"}}"
     },
     {
       "id": "LOGOUT_TO_LOGIN",
@@ -160,7 +170,7 @@
     {
       "id": "RELOGIN_KEEPS_SESSION_AND_VALUES",
       "pass": true,
-      "note": "{\"unit\":\"KG\",\"rir_real\":\"3\",\"reps\":\"10\",\"prescriptionExerciseId\":\"pid-h-4\",\"ics\":9,\"ts\":1790820635991,\"carga\":\"75\",\"pump\":3,\"rir\":1,\"done\":true,\"exerciseNameSnapshot\":\"Extensión de tríceps en polea\"}"
+      "note": "{\"ics\":null,\"rir\":2,\"pump\":null,\"prescriptionExerciseId\":\"b728b7af-c411-425a-bfef-d961bbd16e21\",\"ts\":1790820187874,\"done\":true,\"exerciseNameSnapshot\":\"Gemelo de pie\",\"reps\":\"10\",\"unit\":\"KG\",\"carga\":\"75\",\"rir_real\":\"3\"}"
     },
     {
       "id": "DAY_VIEW_SHOWS_COMPLETED",
@@ -170,7 +180,7 @@
     {
       "id": "NO_DUPLICATE_SESSION_OR_LOG_AFTER_RELOGIN",
       "pass": true,
-      "note": "17 vs 17"
+      "note": "15 vs 15"
     },
     {
       "id": "PRESCRIPTION_NOT_LEAKED_INTO_EXECUTION",
@@ -179,6 +189,31 @@
     },
     {
       "id": "NO_UNCAUGHT_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "REPRESENTATIVE_SET_ACTUAL_EQUALS_SELECTED_PER_EXERCISE",
+      "pass": true,
+      "note": "ok=4/4 "
+    },
+    {
+      "id": "MATERIALIZER_OUTCOME_EXPLICIT_NOT_FORCED",
+      "pass": true,
+      "note": "total=4 PENDING=2 REJECTED=2 STALE=0 reasons=MAGNITUDE_POLICY_MISSING|NO_NUMERIC_DELTA"
+    },
+    {
+      "id": "APPLIED_STAYS_ZERO",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_NEXT_EXPOSURE_OVERLAYS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "NO_COACH_PAGE_ERRORS",
       "pass": true,
       "note": ""
     }
