@@ -70,17 +70,17 @@
     {
       "id": "REST_TIMER_MINIMIZES_TO_PILL",
       "pass": true,
-      "note": "{\"ov\":false,\"n\":\"2:27\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790808218837\"}"
+      "note": "{\"ov\":false,\"n\":\"2:27\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790820729968\"}"
     },
     {
       "id": "REST_TIMER_SURVIVES_TAB_NAVIGATION_NO_DUPLICATE",
       "pass": true,
-      "note": "{\"ov\":false,\"n\":\"2:26\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790808218837\"}"
+      "note": "{\"ov\":false,\"n\":\"2:26\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790820729968\"}"
     },
     {
       "id": "REST_TIMER_RESTORES",
       "pass": true,
-      "note": "{\"ov\":true,\"n\":\"2:26\",\"pill\":false,\"overlays\":1,\"pills\":1,\"end\":\"1790808218837\"}"
+      "note": "{\"ov\":true,\"n\":\"2:25\",\"pill\":false,\"overlays\":1,\"pills\":1,\"end\":\"1790820729968\"}"
     },
     {
       "id": "ALL_SETS_EXECUTED_IN_UI",
@@ -120,12 +120,12 @@
     {
       "id": "SET_RECORD_SHAPE",
       "pass": true,
-      "note": "ics,pump,unit,rir,reps,carga,ts,prescriptionExerciseId,rir_real,exerciseNameSnapshot,done"
+      "note": "reps,exerciseNameSnapshot,rir,prescriptionExerciseId,rir_real,ts,carga,ics,done,unit,pump"
     },
     {
       "id": "SESSION_CLOSURE_PERSISTED",
       "pass": true,
-      "note": "postsession_1_0,progrec_1_0,engine_state,done_1_0"
+      "note": "done_1_0,engine_state,progrec_1_0,postsession_1_0"
     },
     {
       "id": "NO_EXTRA_SET_KEYS_OUTSIDE_DAY",
@@ -135,7 +135,7 @@
     {
       "id": "NO_CANONICAL_FIELDS_WRITTEN_BY_ATHLETE",
       "pass": true,
-      "note": "entries,currentWeek,updatedAt,exerciseHistory,planId,exerciseUnits"
+      "note": "planId,exerciseUnits,entries,updatedAt,exerciseHistory,currentWeek"
     },
     {
       "id": "PROGREC_IS_ADVISORY_EVIDENCE_ONLY",
@@ -150,7 +150,7 @@
     {
       "id": "HARD_RELOAD_KEEPS_SESSION_AND_VALUES",
       "pass": true,
-      "note": "{\"done\":true,\"n\":13,\"l\":{\"carga\":\"47.5\",\"reps\":\"8\",\"unit\":\"KG\",\"done\":true,\"rir\":2,\"rir_real\":\"1\",\"ics\":7,\"pump\":1,\"ts\":1790808084855,\"prescriptionExerciseId\":\"pid-h-1\",\"exerciseNameSnapshot\":\"Press banca con barra\"}}"
+      "note": "{\"done\":true,\"n\":13,\"l\":{\"carga\":\"47.5\",\"reps\":\"8\",\"unit\":\"KG\",\"done\":true,\"rir\":2,\"rir_real\":\"1\",\"ics\":7,\"pump\":1,\"ts\":1790820596460,\"prescriptionExerciseId\":\"pid-h-1\",\"exerciseNameSnapshot\":\"Press banca con barra\"}}"
     },
     {
       "id": "LOGOUT_TO_LOGIN",
@@ -160,7 +160,7 @@
     {
       "id": "RELOGIN_KEEPS_SESSION_AND_VALUES",
       "pass": true,
-      "note": "{\"unit\":\"KG\",\"reps\":\"10\",\"rir_real\":\"3\",\"ts\":1790808124086,\"ics\":9,\"exerciseNameSnapshot\":\"Extensión de tríceps en polea\",\"prescriptionExerciseId\":\"pid-h-4\",\"pump\":3,\"rir\":1,\"done\":true,\"carga\":\"75\"}"
+      "note": "{\"unit\":\"KG\",\"rir_real\":\"3\",\"reps\":\"10\",\"prescriptionExerciseId\":\"pid-h-4\",\"ics\":9,\"ts\":1790820635991,\"carga\":\"75\",\"pump\":3,\"rir\":1,\"done\":true,\"exerciseNameSnapshot\":\"Extensión de tríceps en polea\"}"
     },
     {
       "id": "DAY_VIEW_SHOWS_COMPLETED",
