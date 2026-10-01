@@ -43,7 +43,7 @@ test('T550.3 a different PID is excluded (same position, same name, other PID)',
 });
 test('T550.4 a different plan is excluded (its PID is a different identity; its notes carry another planId)', () => {
   const logs = { log_1_1_0_s0: set({ prescriptionExerciseId: 'pidOfPlanB' }), exnotepid_1_pidA: { planId: 'planB', prescriptionExerciseId: 'pidA', week: 1, day: 1, exerciseIndex: 0, text: 'otro plan', updatedAt: 1 }, log_1_1_0_s5: set({}) };
-  const w = world({ logs }); const r = ref(w); assert.equal(r.sets.length, 1); assert.equal(r.note, null, 'a note of another plan never attaches');
+  const w = world({ logs }); const r = ref(w); assert.equal(r.sets.length, 1); assert.ok(!('note' in r), 'T551: the performance reference carries no note (owned by T549)');
 });
 test('T550.5 prescribed values never appear as executed values', () => {
   const w = world({ logs: { log_1_1_0_s0: { done: true, prescriptionExerciseId: 'pidA', rir: 2, carga: '', reps: '' } } });
@@ -85,13 +85,12 @@ test('T550.11 reload preserves the display (pure function of the persisted entri
   const a = world({ logs: Object.assign(W1(), { exnotepid_1_pidA: { planId: 'planA', prescriptionExerciseId: 'pidA', week: 1, day: 1, exerciseIndex: 0, text: 'x', updatedAt: 1 } }) });
   const b = world({ logs: JSON.parse(JSON.stringify(a.LOGS)) }); assert.equal(a._prevWeekHtml(1, 0), b._prevWeekHtml(1, 0)); assert.ok(a._prevWeekHtml(1, 0).length > 100);
 });
-test('T550.12 athlete note shown inside the reference as NOTA; Coach prescription / Coach note never mixed in; no inputs, display only', () => {
+test('T550.12 (T551) the performance block carries NO note (T549 owns previous athlete notes); Coach prescription / Coach note never mixed in; no inputs, display only', () => {
   const logs = Object.assign(W1(), { exnotepid_1_pidA: { planId: 'planA', prescriptionExerciseId: 'pidA', week: 1, day: 1, exerciseIndex: 0, text: 'Me costó mantener técnica', updatedAt: 1 } });
-  const w = world({ logs }); const html = w._prevWeekHtml(1, 0);
-  assert.ok(html.includes('NOTA') && html.includes('Me costó mantener técnica')); assert.ok(!/NOTA DEL COACH|cnote|PRESCRIPCIÓN|Baja 3 s/.test(html), 'Coach note / prescription not in the block');
+  const html = world({ logs })._prevWeekHtml(1, 0);
+  assert.ok(!/NOTA|Me costó/.test(html), 'note deduplicated: it lives only in NOTAS ANTERIORES DEL ALUMNO (T549)');
+  assert.ok(!/NOTA DEL COACH|cnote|PRESCRIPCIÓN|Baja 3 s/.test(html), 'Coach note / prescription not in the block');
   assert.ok(!/<input|<textarea|contenteditable|onclick="(?!togglePrevWeek)/.test(html), 'display only');
-  assert.ok(!w._prevWeekHtml(1, 0).includes('exnotepid'), 'no raw keys');
-  const noNote = world({ logs: W1() })._prevWeekHtml(1, 0); assert.ok(!/NOTA/.test(noNote.replace('Referencia', '')), 'no note chrome without a note');
 });
 test('T550.13 many sets compact with expansion; V3 tokens only (no gradient / glow / lime)', () => {
   const logs = {}; for (let i = 0; i < 8; i++) logs['log_1_1_0_s' + i] = set({ reps: String(10 - i) });

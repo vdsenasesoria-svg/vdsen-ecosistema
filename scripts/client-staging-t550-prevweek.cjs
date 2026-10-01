@@ -42,7 +42,7 @@ const SETS = [['80', '10', 3], ['80', '9', 2], ['75', '8', 1], ['70', '8', null]
       const fs1 = SETS.every((s, i) => { const r = e1['log_1_0_0_s' + i]; return r && r.carga === s[0] && r.reps === s[1] && (s[2] === null ? (r.rir_real === '' || r.rir_real === undefined || r.rir_real === null) : String(r.rir_real) === String(s[2])) && r.prescriptionExerciseId === pid; });
       check(tag + '_RENDERED_VALUES_EQUAL_FIRESTORE_EVIDENCE', fs1);
       check(tag + '_MISSING_RIR_SHOWN_AS_DASH_NOT_PRESCRIBED', !!b && b.rows[3].endsWith('RIR —') && e1['log_1_0_0_s3'].rir !== undefined, 'prescribed rir stored=' + e1['log_1_0_0_s3'].rir + ' shown=' + (b && b.rows[3]));
-      check(tag + '_HEADING_MICROCOPY_AND_NOTE', !!b && /ÚLTIMA SEMANA/.test(b.head) && /SEM 1/.test(b.head) && b.micro === 'Referencia de tu sesión anterior' && /Me costó mantener técnica/.test(b.note || ''), JSON.stringify([b && b.head, b && b.note]));
+      check(tag + '_HEADING_MICROCOPY_NO_NOTE_IN_BLOCK', !!b && /ÚLTIMA SEMANA/.test(b.head) && /SEM 1/.test(b.head) && b.micro === 'Referencia de tu sesión anterior' && !/Me costó/.test(b.note || ''), JSON.stringify([b && b.head, b && b.note]));   // T551: the previous note is owned by the T549 history, not by this block
       check(tag + '_DISPLAY_ONLY_NO_INPUTS', !!b && b.inputs === 0);
       const pre = await p.evaluate(() => ({ c: document.getElementById('carga_log_2_0_0_s0').value, r: document.getElementById('reps_log_2_0_0_s0').value, rir: document.getElementById('rir_log_2_0_0_s0').value }));
       check(tag + '_CURRENT_INPUTS_NOT_PREFILLED', pre.c === '' && pre.r === '' && pre.rir === '', JSON.stringify(pre));

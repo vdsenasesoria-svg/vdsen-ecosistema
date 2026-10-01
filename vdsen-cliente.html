@@ -679,8 +679,10 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .pw-i{font-family:var(--font-num);font-size:15px;letter-spacing:.02em;color:var(--tx);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .pw-i[hidden]{display:none}
 .pw-more{margin-top:4px;min-height:44px;padding:0 4px;background:none;border:0;color:var(--tx);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;text-align:left}
-.pw-n{margin-top:6px;padding-top:6px;border-top:1px dashed var(--rule);font-size:12.5px;line-height:1.4;color:var(--tx);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.pw-nl{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--mt)}
+.pw-ex{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--mt)}
+.pw-use{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;width:100%;box-sizing:border-box;min-height:44px;margin:0 0 8px;padding:6px 10px;background:transparent;border:1px solid var(--rule-strong);color:var(--tx);text-align:left;font:inherit;cursor:pointer}
+.pw-use-a{font-size:11px;font-weight:800;letter-spacing:.12em}
+.pw-use-v{min-width:0;font-size:12px;color:var(--mt);overflow-wrap:anywhere}
 .un-hmore{margin-top:6px;min-height:44px;padding:0 4px;background:none;border:0;color:var(--tx);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;text-align:left}
 .xh-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:14px}
 .chipbtn{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--tx);font-family:var(--font-display);font-size:16px;font-weight:800;letter-spacing:.1em;cursor:pointer}
@@ -6141,11 +6143,38 @@ function _prevWeekRef(entries, c) {
   });
   var pos = Object.keys(byPos); if (pos.length !== 1) return null;   // none, or ambiguous identity
   var g = byPos[pos[0]]; g.sets.sort(function(a, b) { return a.n - b.n; });
-  var note = null, nv = entries[_exNotePidKey(w, c.pid)];
-  if (_exNoteValid(nv, c, c.pid) && nv.week === w) note = nv.text;
-  else { var lg = entries['exnote_' + w + '_' + g.d + '_' + g.e]; if (typeof lg === 'string' && lg.trim() && !_exNoteShadowed(entries, c, w, g.d, g.e)) note = lg; }
-  return { week: w, day: g.d, ei: g.e, sets: g.sets, note: note };
+  return { week: w, day: g.d, ei: g.e, sets: g.sets };   // performance only: the previous athlete NOTE is owned by the T549 history (_exNoteHistoryHtml)
 }
+// T551: the ONE previous-week identity model (SAME plan + SAME PID + EXACTLY week-1). The T550 display block and the explicit reuse action both read it.
+// Reuse payload = the prior set with the SAME number, load + reps only (never RIR / ICS / Pump / notes / prescription). null when there is no trustworthy PID match.
+function _prevWeekReuse(entries, c, setIndex) {
+  var r = _prevWeekRef(entries, c); if (!r) return null;
+  for (var i = 0; i < r.sets.length; i++) {
+    if (r.sets[i].n === setIndex + 1) return { n: r.sets[i].n, load: r.sets[i].load, unit: r.sets[i].unit, reps: r.sets[i].reps };
+  }
+  return null;   // the corresponding prior set does not exist: nothing is manufactured, no fan-out
+}
+function _prevWeekKeyParts(key) { var m = /^log_(\d+)_(\d+)_(\d+)_s(\d+)$/.exec(key || ''); return m ? { week: +m[1], di: +m[2], ei: +m[3], si: +m[4] } : null; }
+// Secondary, explicit action shown inside the ACTIVE set: tapping it only fills the editable draft (see _prevWeekUse).
+function _prevWeekReuseHtml(key, unit) {
+  var k = _prevWeekKeyParts(key); if (!k || k.week !== CURRENT_WEEK) return '';
+  var r = _prevWeekReuse(LOGS, _exNoteCtx(k.di, k.ei), k.si); if (!r) return '';
+  var shown = r.load === null ? null : _convertCarga(r.load, r.unit, unit);
+  var lbl = (shown === null ? '—' : _escHTml(String(shown)) + ' ' + String(unit).toLowerCase()) + ' × ' + (r.reps === null ? '—' : _escHTml(r.reps));
+  return '<button type="button" class="pw-use" onclick="_prevWeekUse(\'' + key + '\')" aria-label="Usar carga y repeticiones de la semana anterior, serie ' + r.n + ': ' + lbl + '"><span class="pw-use-a">USAR CARGA/REPS</span><span class="pw-use-v">SEM ' + (k.week - 1) + ' · S' + r.n + ' · ' + lbl + '</span></button>';
+}
+// DRAFT ONLY: copies the prior set's executed load and reps into the empty-able inputs. No RIR, no ICS, no Pump, no save, no completion, no prescription.
+function _prevWeekUse(key) {
+  var k = _prevWeekKeyParts(key); if (!k || k.week !== CURRENT_WEEK) return;
+  var r = _prevWeekReuse(LOGS, _exNoteCtx(k.di, k.ei), k.si); if (!r) return;
+  var u = (typeof getExUnit === 'function') ? getExUnit(k.di, k.ei) : r.unit;
+  var c = document.getElementById('carga_' + key), p = document.getElementById('reps_' + key);
+  if (c && r.load !== null) c.value = String(_convertCarga(r.load, r.unit, u));
+  if (p && r.reps !== null) p.value = r.reps;
+  bcProgHint(key);
+  showToast('↺ Carga/reps copiadas como borrador — revisa y confirma con GUARDAR');
+}
+window._prevWeekUse = _prevWeekUse;
 function _prevWeekHtml(di, ei) {
   var r = _prevWeekRef(LOGS, _exNoteCtx(di, ei));
   if (!r) return '';
@@ -6154,7 +6183,7 @@ function _prevWeekHtml(di, ei) {
   }).join('');
   return '<div class="pw" id="pw_' + di + '_' + ei + '"><div class="pw-h">ÚLTIMA SEMANA <span class="pw-w">· SEM ' + r.week + '</span></div><div class="pw-m">Referencia de tu sesión anterior</div><ul class="pw-l">' + rows + '</ul>' +
     (r.sets.length > 6 ? '<button type="button" class="pw-more" aria-expanded="false" onclick="togglePrevWeek(' + di + ',' + ei + ')">Ver todas (' + r.sets.length + ')</button>' : '') +
-    (r.note ? '<div class="pw-n"><span class="pw-nl">NOTA</span> ' + _escHTml(r.note) + '</div>' : '') + '</div>';
+    '</div>';
 }
 function togglePrevWeek(di, ei) {
   var box = document.getElementById('pw_' + di + '_' + ei); if (!box) return;
@@ -6596,9 +6625,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   '</div>';
   for (var s = 0; s < numSeries; s++) {
     var key = 'log_'+CURRENT_WEEK+'_'+di+'_'+ei+'_s'+s;
-    var prevKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s'+s;
     var saved = LOGS[key] || {};
-    var prev = LOGS[prevKey] || {};
+    var prev = {};   // T551: no positional previous-week record in the live card (identity = PID, resolved by _prevWeekRef)
     var exNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     var histEx = _getExerciseHistoryEntry(exNameLower, ej.prescriptionExerciseId);
     // Auto-fill: prioridad progrec (s=0 solo) → serie anterior DE ESTA SESIÓN (s>0) →
@@ -6714,7 +6742,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       //   1) PROGRESIÓN (algoritmo) → card grande dorada con flecha + acción
       //   2) SEM ANTERIOR (datos reales) → badge naranja pequeño
       //   3) HISTORIAL (último mesociclo) → badge azul pequeño, sólo si NO hay sem anterior
-      var refHtml = _buildSetReferenceHtml(prev, histEx, s, unit, baseRIR, CURRENT_WEEK, _isY3T ? numSeries : undefined, key);
+      var refHtml = _buildSetReferenceHtml(null, null, s, unit, baseRIR, CURRENT_WEEK, _isY3T ? numSeries : undefined, key);   // T551: PID-exact reuse only
       var prevRefHtml = refHtml;
 
       // Etiqueta de sub-fase por set: Y3T (S1/S2/S3/SST) / FST-7 (N/7) / PARCIALES (AMRAP)
@@ -6752,6 +6780,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       setsHtml += '<div id="setrow_'+key+'" class="workout-set workout-set-current" data-exname="'+_escHTml(nombre)+'" data-pending="1" style="padding:14px;margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'+
           '<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--accent)">'+(_ejTechLower==='cluster'?'CLUSTER':'SERIE')+' '+(s+1)+_setSubLabel+_getZonaBadge(_psReps || repsTarget)+'</div>'+
+          '<div class="pw-ex">TU EJECUCIÓN</div>'+
         '</div>'+
         (setSpecBlock ? setSpecBlock : '')+
         prevRefHtml+
@@ -15954,50 +15983,11 @@ function _getWeeklyVolumeByPattern(pattern) {
 // this only fills the editable inputs; nothing is saved/marked done until
 // the user taps GUARDAR (completeSet), same validation/persistence path as
 // any manually-typed value.
-function _prefillFromReference(key, carga, reps, rir) {
-  var c = document.getElementById('carga_'+key);
-  var r = document.getElementById('reps_'+key);
-  if (c && carga) c.value = carga;
-  if (r && reps) r.value = reps;
-  if (rir !== undefined && rir !== null && rir !== '' && !isNaN(parseInt(rir))) setRirReal(key, parseInt(rir));
-  bcProgHint(key);
-  showToast('↺ Prellenado — revisá y confirmá con GUARDAR');
-}
-
+// T551: the only previous-week control inside a set is the explicit, PID-exact "USAR CARGA/REPS" (see _prevWeekReuseHtml). The former ↩ SEM chip (positional
+// `log_{W-1}_{D}_{E}_s{S}` lookup, name/position fallback, copies RIR) and the 📋 HISTORIAL chip (name / cross-plan history) were removed: no compatibility fallback.
+// Signature kept for its callers; `prev` / `histEx` are intentionally ignored.
 function _buildSetReferenceHtml(prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount, key) {
-  var blocks = [];
-
-  // T500: no recommendation block — the legacy engine is evidence only; this shows executed history.
-
-  // ── 2) SEM ANTERIOR ──
-  if (prev && prev.carga) {
-    var prevCargaShown = _convertCarga(prev.carga, prev.unit, unit);
-    var prevConvMark = (prev.unit && prev.unit !== unit) ? ' <span style="opacity:.55">(de '+prev.unit+')</span>' : '';
-    blocks.push(
-      '<div style="margin-bottom:6px;font-size:10px;color:#FF8844;background:rgba(255,140,50,.06);border:1px solid rgba(255,140,50,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
-        '<span style="font-weight:800;letter-spacing:.8px">↩ SEM '+(curWeek-1)+'</span>'+
-        '<span style="color:var(--mt2)">'+prevCargaShown+' '+unit+prevConvMark+' × '+(prev.reps||'—')+' reps'+(prev.rir_real?' · RIR '+prev.rir_real:'')+'</span>'+
-        (key ? '<button onclick="_prefillFromReference(\''+key+'\','+JSON.stringify(String(prevCargaShown))+','+JSON.stringify(String(prev.reps||''))+','+JSON.stringify(prev.rir_real!=null?String(prev.rir_real):'')+')" style="margin-left:auto;padding:2px 8px;border-radius:5px;border:1px solid rgba(255,140,50,.4);background:rgba(255,140,50,.1);color:#FF8844;font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap">↺ USAR</button>' : '')+
-      '</div>'
-    );
-  }
-  // ── 3) HISTORIAL (solo si no hay sem anterior y es el primer set) ──
-  else if (setIdx === 0 && histEx && histEx.load) {
-    var histCargaShown = _convertCarga(histEx.load, histEx.unit, unit);
-    var histConvMark = (histEx.unit && histEx.unit !== unit) ? ' <span style="opacity:.55">(de '+histEx.unit+')</span>' : '';
-    blocks.push(
-      '<div style="margin-bottom:6px;font-size:10px;color:rgba(108,150,255,.9);background:rgba(140,140,134,.06);border:1px solid rgba(140,140,134,.2);border-radius:6px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px">'+
-        '<span style="font-weight:800;letter-spacing:.8px">📋 HISTORIAL</span>'+
-        '<span style="color:var(--mt2)">'+histCargaShown+' '+unit+histConvMark+(histEx.reps?' × '+histEx.reps+' reps':'')+(histEx.rir?' · RIR '+histEx.rir:'')+'</span>'+
-        (key ? '<button onclick="_prefillFromReference(\''+key+'\','+JSON.stringify(String(histCargaShown))+','+JSON.stringify(String(histEx.reps||''))+','+JSON.stringify(histEx.rir!=null?String(histEx.rir):'')+')" style="margin-left:auto;padding:2px 8px;border-radius:5px;border:1px solid rgba(108,150,255,.4);background:rgba(108,150,255,.1);color:rgba(108,150,255,.9);font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap">↺ USAR</button>' : '')+
-      '</div>'
-    );
-  }
-
-  // T486: the former 'simple step' suggestion (fixed +2.5 kg / +5 lb) was an invented numeric progression
-  // rule outside the canonical policy (and unreachable behind the previous-week block); removed.
-
-  return blocks.join('');
+  return key ? _prevWeekReuseHtml(key, unit) : '';
 }
 
 // Normalize name for semantic comparison (cosmetic differences only)

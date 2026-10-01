@@ -66,17 +66,15 @@ ok(completeSetSrc.includes('if (prev.autoFilled) { showToast(') , 'an autoFilled
 const editSetSrc = extractFunction(CLIENT, 'function editSet(key) {');
 ok(editSetSrc.includes('LOGS[key].done = false;'), 'editSet allows re-opening ANY saved set for correction -- "Permitido SIEMPRE" per its own comment');
 
-// ── New: one-tap prefill (the one concrete gap this phase closes). ─────────
-const prefillSrc = extractFunction(CLIENT, 'function _prefillFromReference(key, carga, reps, rir) {');
-ok(!/LOGS\[/.test(prefillSrc), '_prefillFromReference never touches LOGS -- prefill != executed, nothing is saved until GUARDAR');
-ok(!prefillSrc.includes('completeSet(') && !prefillSrc.includes('saveLogs('), '_prefillFromReference never calls completeSet/saveLogs -- purely fills the still-editable inputs');
-ok(prefillSrc.includes("document.getElementById('carga_'+key)") && prefillSrc.includes("document.getElementById('reps_'+key)"),
-  'fills the exact same carga_/reps_ input ids completeSet() reads from -- the prefilled value still goes through the normal validated save path');
-
+// ── T551 (supersedes the T305 prefill helper): the one-tap reuse is PID-exact, explicit, draft-only, load + reps only (never RIR). ──
+ok(!CLIENT.includes('function _prefillFromReference('), 'T551: the RIR-copying _prefillFromReference (positional / name / history sources) is gone');
+const useSrc = extractFunction(CLIENT, 'function _prevWeekUse(key) {');
+ok(!/LOGS\[/.test(useSrc), '_prevWeekUse never touches LOGS -- prefill != executed, nothing is saved until GUARDAR');
+ok(!useSrc.includes('completeSet(') && !useSrc.includes('saveLogs(') && !useSrc.includes('setRirReal('), '_prevWeekUse never calls completeSet/saveLogs and never copies RIR');
+ok(useSrc.includes("document.getElementById('carga_' + key)") && useSrc.includes("document.getElementById('reps_' + key)"),
+  'fills the exact same carga_/reps_ input ids completeSet() reads from -- the draft still goes through the normal validated save path');
 const refFnSrc = extractFunction(CLIENT, 'function _buildSetReferenceHtml(prev, histEx, setIdx, unit, baseRIR, curWeek, effectiveSetsCount, key) {');
-ok(refFnSrc.includes("onclick=\"_prefillFromReference(") && (refFnSrc.match(/↺ USAR/g) || []).length === 2,
-  'the "↺ USAR" prefill action is wired on both the SEM ANTERIOR and HISTORIAL reference blocks');
-ok(refFnSrc.includes("key ? '<button onclick=") , 'the prefill button only renders when a key was passed -- both call sites already updated, no call site left broken');
+ok(refFnSrc.includes('_prevWeekReuseHtml(key, unit)') && refFnSrc.includes("key ?"), 'the reuse action only renders for a concrete set key and delegates to the canonical PID resolver');
 
 console.log('');
 console.log('T305 — Fast logging UX: ' + pass + ' assertions PASSED (existing UX confirmed correct; one-tap prefill added)');
