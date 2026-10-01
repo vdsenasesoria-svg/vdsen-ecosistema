@@ -671,6 +671,16 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .un-hw{flex:none;font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--mt)}
 .un-ht{min-width:0;font-size:13px;line-height:1.4;color:var(--tx);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .un-hi:not([hidden]) .un-ht{white-space:pre-line}
+.pw{margin:0 0 10px;padding:8px 10px;border:1px solid var(--rule);background:var(--plate)}
+.pw-h{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--mt)}
+.pw-w{letter-spacing:.1em}
+.pw-m{margin-top:2px;font-size:11px;color:var(--mt)}
+.pw-l{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:3px}
+.pw-i{font-family:var(--font-num);font-size:15px;letter-spacing:.02em;color:var(--tx);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.pw-i[hidden]{display:none}
+.pw-more{margin-top:4px;min-height:44px;padding:0 4px;background:none;border:0;color:var(--tx);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;text-align:left}
+.pw-n{margin-top:6px;padding-top:6px;border-top:1px dashed var(--rule);font-size:12.5px;line-height:1.4;color:var(--tx);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pw-nl{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--mt)}
 .un-hmore{margin-top:6px;min-height:44px;padding:0 4px;background:none;border:0;color:var(--tx);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;text-align:left}
 .xh-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:14px}
 .chipbtn{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--tx);font-family:var(--font-display);font-size:16px;font-weight:800;letter-spacing:.1em;cursor:pointer}
@@ -6110,6 +6120,50 @@ function _exNoteHistoryHtml(di, ei) {
   return '<div class="un-h" id="unhist_' + di + '_' + ei + '"><div class="un-hl">NOTAS ANTERIORES DEL ALUMNO</div><ul class="un-hlist">' + rows + '</ul>' +
     (items.length > 3 ? '<button type="button" class="un-hmore" aria-expanded="false" onclick="toggleExNoteHistory(' + di + ',' + ei + ')">Ver historial completo (' + items.length + ')</button>' : '') + '</div>';
 }
+// ── T550: ÚLTIMA SEMANA — referencia de SOLO LECTURA del desempeño EJECUTADO de la semana anterior, mismo PID ───────────────────────────
+// Source of truth = executed LOGS only (log_{W-1}_{D}_{E}_s{S} whose `prescriptionExerciseId` === this exercise's PID). Never the prescription, Coach targets, defaults,
+// Express values or an assumed RIR (`rir` is the PRESCRIBED RIR and is never shown; only `rir_real`, the observed one). Names are never compared; position is never identity.
+// Standard per-set evidence only: express / expressFinal / warmup / autoFilled / undone sets are skipped. A PID that appears at several positions last week is ambiguous => no block.
+function _prevWeekRef(entries, c) {
+  if (!c.pid || !(c.week > 1)) return null;
+  if (entries['exsub_' + c.week + '_' + c.day + '_' + c.ei]) return null;   // the current exposure is a substitute exercise
+  var w = c.week - 1, re = new RegExp('^log_' + w + '_(\\d+)_(\\d+)_s(\\d+)$'), byPos = {};
+  Object.keys(entries).forEach(function(k) {
+    var m = re.exec(k); if (!m) return;
+    var s = entries[k];
+    if (!s || typeof s !== 'object' || s.done !== true || s.autoFilled || s.express === true || s.expressFinal === true || s.warmup === true || s.exType) return;
+    if (s.prescriptionExerciseId !== c.pid) return;
+    var load = (s.carga !== undefined && s.carga !== null && String(s.carga) !== '') ? String(s.carga) : null;
+    var reps = (s.reps !== undefined && s.reps !== null && String(s.reps) !== '') ? String(s.reps) : null;
+    if (load === null && reps === null) return;   // nothing executed to show
+    var rv = (s.rir_real === undefined || s.rir_real === null || s.rir_real === '') ? NaN : parseFloat(s.rir_real);
+    (byPos[m[1] + '_' + m[2]] = byPos[m[1] + '_' + m[2]] || { d: +m[1], e: +m[2], sets: [] }).sets.push({ n: +m[3] + 1, load: load, unit: (s.unit || 'KG'), reps: reps, rir: (isNaN(rv) || rv < 0 || rv > 5) ? null : rv });
+  });
+  var pos = Object.keys(byPos); if (pos.length !== 1) return null;   // none, or ambiguous identity
+  var g = byPos[pos[0]]; g.sets.sort(function(a, b) { return a.n - b.n; });
+  var note = null, nv = entries[_exNotePidKey(w, c.pid)];
+  if (_exNoteValid(nv, c, c.pid) && nv.week === w) note = nv.text;
+  else { var lg = entries['exnote_' + w + '_' + g.d + '_' + g.e]; if (typeof lg === 'string' && lg.trim() && !_exNoteShadowed(entries, c, w, g.d, g.e)) note = lg; }
+  return { week: w, day: g.d, ei: g.e, sets: g.sets, note: note };
+}
+function _prevWeekHtml(di, ei) {
+  var r = _prevWeekRef(LOGS, _exNoteCtx(di, ei));
+  if (!r) return '';
+  var rows = r.sets.map(function(st, i) {
+    return '<li class="pw-i"' + (i >= 6 ? ' data-more="1" hidden' : '') + '>S' + st.n + ' · ' + (st.load === null ? '—' : _escHTml(st.load) + ' ' + String(st.unit).toLowerCase()) + ' × ' + (st.reps === null ? '—' : _escHTml(st.reps)) + ' · RIR ' + (st.rir === null ? '—' : st.rir) + '</li>';
+  }).join('');
+  return '<div class="pw" id="pw_' + di + '_' + ei + '"><div class="pw-h">ÚLTIMA SEMANA <span class="pw-w">· SEM ' + r.week + '</span></div><div class="pw-m">Referencia de tu sesión anterior</div><ul class="pw-l">' + rows + '</ul>' +
+    (r.sets.length > 6 ? '<button type="button" class="pw-more" aria-expanded="false" onclick="togglePrevWeek(' + di + ',' + ei + ')">Ver todas (' + r.sets.length + ')</button>' : '') +
+    (r.note ? '<div class="pw-n"><span class="pw-nl">NOTA</span> ' + _escHTml(r.note) + '</div>' : '') + '</div>';
+}
+function togglePrevWeek(di, ei) {
+  var box = document.getElementById('pw_' + di + '_' + ei); if (!box) return;
+  var btn = box.querySelector('.pw-more'), open = !btn || btn.getAttribute('aria-expanded') !== 'true';
+  box.querySelectorAll('[data-more]').forEach(function(li) { li.hidden = !open; });
+  if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); btn.textContent = open ? 'Ver menos' : 'Ver todas (' + box.querySelectorAll('.pw-i').length + ')'; }
+}
+window.togglePrevWeek = togglePrevWeek;
+
 function toggleExNoteHistory(di, ei) {
   var box = document.getElementById('unhist_' + di + '_' + ei); if (!box) return;
   var btn = box.querySelector('.un-hmore'), open = !btn || btn.getAttribute('aria-expanded') !== 'true';
@@ -6892,7 +6946,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
 
   var expressTipHtml = '';
   var techInstrHtml = _buildTechniqueAndInstructionsHtml(ej, visualCatData || catData, di, ei);
-  return machineHtml + headerHtml + techInstrHtml + notaHtml + closedBannerHtml + expressTipHtml + wuHtml + setsHtml + completedBlockHtml;
+  return machineHtml + headerHtml + techInstrHtml + notaHtml + closedBannerHtml + expressTipHtml + wuHtml + _prevWeekHtml(di, ei) + setsHtml + completedBlockHtml;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
