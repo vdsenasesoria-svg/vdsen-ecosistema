@@ -36,6 +36,7 @@
 Claves en `entries`:
 - `log_{W}_{D}_{E}_s{S}` — set registrado `{ carga, reps, unit, done, rir, rir_real, ics, pump, ts }`
 - `done_{W}_{D}` — sesión completada (boolean)
+- `exnotepid_{W}_{PID}` (T549) — nota del alumno por semana `{ planId, prescriptionExerciseId, week, day, exerciseIndex, exerciseNameSnapshot, text, updatedAt }`; identidad = planId + PID + semana (NUNCA por nombre ni posición); semanas previas = historial de solo lectura. Espejo Coach-legible: `exnote_{W}_{D}_{E}` (string). `exnote_{D}_{E}` = legado sin semana, solo lectura.
 - `postsession_{W}_{D}` — check-in post-sesión `{ eimd, articular, patron, sleep, rpe }`
 - `progrec_{W}_{D}` — recomendaciones de progresión generadas `{ recommendations:[], deloadTriggers:[] }`
 - `ci_sem_{W}` — check-in semanal `{ peso, hrv, who5 }`

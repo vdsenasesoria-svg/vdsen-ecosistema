@@ -662,6 +662,16 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .cnote-t{font-size:13.5px;line-height:1.55;color:var(--tx);white-space:pre-line}
 .xh-mynote{display:flex;align-items:flex-start;gap:8px;width:100%;margin-top:10px;padding:10px 12px;background:transparent;border:1px solid var(--rule);color:var(--mt);text-align:left;font:inherit;font-size:12.5px;line-height:1.45;cursor:pointer;min-height:44px}
 .xh-mynote .ico{margin-top:1px}
+/* T549: athlete-authored read-only note history (dashed rule = athlete evidence; the Coach note keeps its solid .cnote bar) */
+.un-h{margin:0 0 10px;padding:8px 10px;border-left:3px dashed var(--mt);background:transparent}
+.un-hl{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--mt);margin-bottom:6px}
+.un-hlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.un-hi{display:flex;gap:8px;align-items:baseline;min-width:0}
+.un-hi[hidden]{display:none}
+.un-hw{flex:none;font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--mt)}
+.un-ht{min-width:0;font-size:13px;line-height:1.4;color:var(--tx);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.un-hi:not([hidden]) .un-ht{white-space:pre-line}
+.un-hmore{margin-top:6px;min-height:44px;padding:0 4px;background:none;border:0;color:var(--tx);font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;text-align:left}
 .xh-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:14px}
 .chipbtn{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--tx);font-family:var(--font-display);font-size:16px;font-weight:800;letter-spacing:.1em;cursor:pointer}
 .xh-skip{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 6px;background:transparent;border:0;color:var(--mt);font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--rule-strong);text-underline-offset:4px}
@@ -6040,17 +6050,73 @@ function _buildExPanel(ejercicios, di) {
   return html;
 }
 
-// ── Nota del cliente: clave sin semana (persistente entre semanas) ──────────
-// Lee 'exnote_di_ei' (nuevo) y cae a 'exnote_W_di_ei' por compatibilidad.
-function _getExNote(di, ei) {
-  var v = LOGS['exnote_'+di+'_'+ei];
-  if (v) return v;
-  for (var _w = CURRENT_WEEK; _w >= 1; _w--) {
-    var old = LOGS['exnote_'+_w+'_'+di+'_'+ei];
-    if (old) return old;
+// ── T549: nota del alumno POR SEMANA, atada a la identidad estable de la prescripción ───────────────────────────────────────────────────
+// Storage (additive, inside the existing logs entries; no new collection):
+//   exnotepid_{week}_{PID} = { planId, prescriptionExerciseId, week, day, exerciseIndex, exerciseNameSnapshot, text, updatedAt }   <- identity = planId + PID + week
+//   exnote_{W}_{D}_{E}     = text   per-week Coach-readable mirror (existing format the Coach monitor already parses); carries NO identity
+//   exnote_{D}_{E}         = text   pre-T549 week-less note: read-only legacy (position fallback, shown as history), never written again
+// POSITION != IDENTITY: the PID key resolves history; positions are used only for PID-less legacy evidence. Names are never compared.
+function _exNotePidKey(week, pid) { return 'exnotepid_' + week + '_' + pid; }
+function _exNoteCtx(di, ei) {
+  var ej = (_EJERCICIOS_DIA || [])[ei] || {};
+  return { planId: ACTIVE_PLAN_ID || null, pid: ej.prescriptionExerciseId || null, week: CURRENT_WEEK, day: di, ei: ei, name: ej.exerciseName || ej.nombre || '' };
+}
+function _exNoteValid(v, c, pid) { return !!v && typeof v === 'object' && v.planId === c.planId && v.prescriptionExerciseId === pid && Number.isInteger(v.week) && typeof v.text === 'string' && v.text.trim() !== ''; }
+// true when a PID note recorded this (week, day, position): the legacy string at that slot is its mirror, not independent evidence
+function _exNoteShadowed(entries, c, week, day, ei) {
+  return Object.keys(entries).some(function(k) {
+    if (k.indexOf('exnotepid_') !== 0) return false;
+    var v = entries[k]; return !!v && typeof v === 'object' && v.week === week && v.day === day && v.exerciseIndex === ei;   // any plan: the string at this slot is a mirror, never independent evidence
+  });
+}
+function _exNoteCurrent(entries, c) {
+  if (c.pid) {
+    var v = entries[_exNotePidKey(c.week, c.pid)];
+    if (_exNoteValid(v, c, c.pid) && v.week === c.week) return v.text;
   }
+  var lg = entries['exnote_' + c.week + '_' + c.day + '_' + c.ei];   // legacy position fallback (PID-less evidence; the PID mirror is skipped)
+  if (typeof lg === 'string' && lg && !(c.pid && _exNoteShadowed(entries, c, c.week, c.day, c.ei))) return lg;
   return '';
 }
+// Prior-week notes of THIS exercise (same plan, same PID, earlier week), newest first. Legacy (no PID) entries: established position fallback only.
+function _exNoteHistory(entries, c) {
+  var out = [];
+  Object.keys(entries).forEach(function(k) {
+    var v = entries[k], m;
+    if (k.indexOf('exnotepid_') === 0) {
+      if (c.pid && _exNoteValid(v, c, c.pid) && v.week < c.week) out.push({ week: v.week, day: v.day, text: v.text, updatedAt: Number(v.updatedAt) || 0, source: 'pid' });
+      return;
+    }
+    if ((m = /^exnote_(\d+)_(\d+)_(\d+)$/.exec(k))) {
+      var w = +m[1], d = +m[2], e = +m[3];
+      if (d !== c.day || e !== c.ei || w >= c.week || typeof v !== 'string' || !v.trim() || _exNoteShadowed(entries, c, w, d, e)) return;
+      out.push({ week: w, day: d, text: v, updatedAt: 0, source: 'legacy' });
+    }
+  });
+  var lw = entries['exnote_' + c.day + '_' + c.ei];
+  if (typeof lw === 'string' && lw.trim()) out.push({ week: null, day: c.day, text: lw, updatedAt: 0, source: 'legacy-noweek' });
+  out.sort(function(a, b) { var aw = a.week === null ? -1 : a.week, bw = b.week === null ? -1 : b.week; return bw - aw || b.updatedAt - a.updatedAt; });
+  return out;
+}
+function _getExNote(di, ei) { return _exNoteCurrent(LOGS, _exNoteCtx(di, ei)); }
+// Read-only history block (athlete-authored, visually distinct from the Coach prescription note). '' when there is nothing to show.
+function _exNoteHistoryHtml(di, ei) {
+  var items = _exNoteHistory(LOGS, _exNoteCtx(di, ei));
+  if (!items.length) return '';
+  var rows = items.map(function(it, i) {
+    var lbl = (it.week === null ? 'SIN SEMANA' : 'SEM ' + it.week + (Number.isInteger(it.day) ? ' · D' + (it.day + 1) : ''));
+    return '<li class="un-hi"' + (i >= 3 ? ' data-more="1" hidden' : '') + '><span class="un-hw">' + lbl + '</span><span class="un-ht">' + _escHTml(it.text) + '</span></li>';
+  }).join('');
+  return '<div class="un-h" id="unhist_' + di + '_' + ei + '"><div class="un-hl">NOTAS ANTERIORES DEL ALUMNO</div><ul class="un-hlist">' + rows + '</ul>' +
+    (items.length > 3 ? '<button type="button" class="un-hmore" aria-expanded="false" onclick="toggleExNoteHistory(' + di + ',' + ei + ')">Ver historial completo (' + items.length + ')</button>' : '') + '</div>';
+}
+function toggleExNoteHistory(di, ei) {
+  var box = document.getElementById('unhist_' + di + '_' + ei); if (!box) return;
+  var btn = box.querySelector('.un-hmore'), open = !btn || btn.getAttribute('aria-expanded') !== 'true';
+  box.querySelectorAll('[data-more]').forEach(function(li) { li.hidden = !open; });
+  if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); btn.textContent = open ? 'Ocultar historial' : 'Ver historial completo (' + box.querySelectorAll('.un-hi').length + ')'; }
+}
+window.toggleExNoteHistory = toggleExNoteHistory;
 
 // ── Tipo de ejercicio: 'fuerza' (default), 'calistenia', 'cardio', 'estacion', 'circuito' ─
 // Permite que la app dosifique distintos perfiles de cliente (hipertrofia / rendimiento / híbrido)
@@ -6257,14 +6323,15 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _noteVal  = _getExNote(di, ei);
   var notaHtml =
     '<div id="usernote_'+di+'_'+ei+'" style="display:'+(_noteVal?'block':'none')+';margin-bottom:10px">'+
-      '<div style="font-size:10px;letter-spacing:1.5px;font-weight:700;color:var(--accent);margin-bottom:4px">📝 NOTA / MENSAJE AL COACH</div>'+
+      '<div style="font-size:10px;letter-spacing:1.5px;font-weight:700;color:var(--accent);margin-bottom:4px">NOTA DEL ALUMNO</div>'+
       '<textarea id="usernote_input_'+di+'_'+ei+'" placeholder="Ej: la rodilla molestó en la fase concéntrica, reduje carga a la mitad..."'+
         ' onblur="saveUserNote('+di+','+ei+',this.value)"'+
         ' style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid rgba(107,107,102,.3);'+
         'border-radius:8px;color:var(--tx);font-size:13px;padding:10px;outline:none;resize:vertical;min-height:60px;line-height:1.5">'+
         _escHTml(_noteVal||'')+
       '</textarea>'+
-    '</div>';
+    '</div>'+
+    _exNoteHistoryHtml(di, ei);
 
   // ── D. Warm-up ─────────────────────────────────────────────────────────
   // Solo en el primer ejercicio del día; Core/Cardio nunca calientan.
@@ -9088,6 +9155,7 @@ function buildBoostcampExercise(ej, di, ei) {
         'style="width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;'+
         'color:var(--tx);font-family:var(--fb);font-size:12px;padding:8px 10px;outline:none;min-height:44px;resize:vertical;line-height:1.5">'+_escHTml(_getExNote(di,ei)||'')+'</textarea>'+
     '</div>'+
+    _exNoteHistoryHtml(di, ei)+
 
     // Column headers
     '<div style="display:flex;align-items:center;gap:8px;padding:0 14px 6px">'+
@@ -9701,11 +9769,16 @@ function toggleUserNote(di, ei) {
 }
 
 function saveUserNote(di, ei, text) {
-  var key = 'exnote_'+di+'_'+ei;
-  if (text && text.trim()) {
-    LOGS[key] = text.trim();
+  // T549: the note belongs to the CURRENT week of THIS prescribed exercise. Prior weeks are never touched (their own keys); clearing deletes the current week only.
+  var c = _exNoteCtx(di, ei), t = (text || '').trim();
+  var pidKey = c.pid ? _exNotePidKey(c.week, c.pid) : null, mirror = 'exnote_' + c.week + '_' + di + '_' + ei;
+  if (_exNoteCurrent(LOGS, c) === t) return;   // unchanged (blur without edit): no write
+  if (t) {
+    if (pidKey) LOGS[pidKey] = { planId: c.planId, prescriptionExerciseId: c.pid, week: c.week, day: di, exerciseIndex: ei, exerciseNameSnapshot: c.name, text: t, updatedAt: Date.now() };
+    LOGS[mirror] = t;
   } else {
-    delete LOGS[key];
+    if (pidKey) delete LOGS[pidKey];
+    delete LOGS[mirror];
   }
   saveLogs();
   _refreshExPanelOnly();

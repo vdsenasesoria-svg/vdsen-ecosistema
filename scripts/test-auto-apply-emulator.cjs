@@ -29,7 +29,8 @@ const SUITES = [
   { name: 'rules security', file: path.join('tests', 't536-rules-security.cjs') },
   { name: 'tenant isolation', file: path.join('tests', 't538-tenant-isolation.cjs') },
   { name: 'coach authority', file: path.join('tests', 't539-coach-authority.cjs') },
-  { name: 'active plan edit', file: path.join('tests', 't547-active-plan-edit.cjs') }
+  { name: 'active plan edit', file: path.join('tests', 't547-active-plan-edit.cjs') },
+  { name: 'athlete note isolation', file: path.join('tests', 't549-note-isolation.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';
