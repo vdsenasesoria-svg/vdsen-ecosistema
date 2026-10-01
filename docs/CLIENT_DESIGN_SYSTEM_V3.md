@@ -100,3 +100,19 @@ Both product decisions left open in T545 are closed in T546:
 * Coach-authored technique `detail` HTML internals (only its container is geometry-safe: constrained media, no fixed / absolute escape, wrapped
   text) and the exercise-guide body
 * other non-critical legacy inline styling in JS-rendered builders (history, substitution modal, readiness banner, stale-session banner, etc.)
+
+
+## Previous-week reference and reuse (T550 / T551)
+
+One canonical previous-week identity model: **same plan + same `prescriptionExerciseId` + exactly week-1**. No name, position or exercise-index fallback, no
+aggregation of older weeks, no cross-plan history. A PID found at several previous positions is ambiguous (no reference); a substituted exposure has no plan PID
+(no reference). Both the display and the reuse action read the same resolver (`_prevWeekRef`).
+
+- **ÚLTIMA SEMANA (display only):** the previous week's executed standard sets — `S1 · 80 kg × 10 · RIR 3`, observed `rir_real` only, "—" when missing.
+  Express (`express` / `expressFinal`), warm-up, autoFilled and undone sets are excluded; Express-only = no block. Performance only: it carries **no note**
+  (the previous athlete note is owned by the T549 history, "NOTAS ANTERIORES DEL ALUMNO"; Coach notes are never mixed in).
+- **USAR CARGA/REPS (explicit reuse):** secondary outlined control inside the active set, per set (S1 -> prior S1, S2 -> prior S2; no prior set = no control,
+  empty draft). Tapping copies the prior executed **load and reps only** into the editable inputs as a **draft**. Never copied: observed RIR, prescribed RIR, ICS,
+  Pump, notes, Coach target, prescription, progression. Never autosaved; the athlete confirms with the normal GUARDAR. The set card is labelled **TU EJECUCIÓN**,
+  separate from **PRESCRIPCIÓN · COACH**.
+- Removed in T551: the old `↩ SEM N-1 … ↺ USAR` chip (positional lookup, copied RIR) and the `📋 HISTORIAL` chip (name / cross-plan history).

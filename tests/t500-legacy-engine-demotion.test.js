@@ -18,14 +18,14 @@ test('T500.1 no athlete-facing legacy recommendation surface remains in the clie
     assert.ok(!client.includes(n), n);
 });
 
-test('T500.2 per-set reference shows only executed history (previous week / history), never a recommended load', () => {
-  const ctx = { _convertCarga: (v) => v };
+test('T500.2 (T551) per-set reference shows only executed PID-exact history, never a recommended load', () => {
+  const ctx = { _prevWeekReuseHtml: (key, unit) => '<button>USAR CARGA/REPS</button>' };
   vm.createContext(ctx);
   vm.runInContext(fn('_buildSetReferenceHtml') + '\nthis.f=_buildSetReferenceHtml;', ctx);
-  assert.equal(ctx.f(null, null, 0, 'kg', 2, 3, undefined, 'k'), '', 'no history -> no reference block');
+  assert.equal(ctx.f(null, null, 0, 'kg', 2, 3, undefined, ''), '', 'no key -> no reference block');
   assert.ok(!client.includes('function _buildSetReferenceHtml(progRec'), 'no recommendation parameter');
   const html = ctx.f({ carga: '80', unit: 'kg', reps: '8', rir_real: 2 }, null, 0, 'kg', 2, 3, undefined, 'k');
-  assert.ok(html.includes('SEM 2') && html.includes('80'));
+  assert.ok(html.includes('USAR CARGA/REPS') && !html.includes('80'), 'the positional `prev` argument is ignored; only the canonical resolver feeds the control');
   assert.ok(!html.includes('99'));
 });
 

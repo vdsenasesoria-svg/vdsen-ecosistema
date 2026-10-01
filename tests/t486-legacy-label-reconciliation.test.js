@@ -22,22 +22,21 @@ function fnSource(name) {
 }
 const ctx = {};
 vm.createContext(ctx);
-vm.runInContext("var _escHTml = function(s){return String(s)};" +
+vm.runInContext("var _escHTml = function(s){return String(s)}; var _prevWeekReuseHtml = function(){ return ''; };" +
   ['_normName', '_roundUnit', '_convertCarga', '_buildSetReferenceHtml', '_buildProgreSummaryHtml'].map(fnSource).join('\n'), ctx);
 
 test('T486.1 (T500) the next-exposure recommendation card no longer exists', () => {
   assert.ok(!client.includes('_buildNextExposureHtml'));
 });
 
-test('T486.2 (T500) per-set reference never shows a legacy recommended load', () => {
-  const html = ctx._buildSetReferenceHtml({ carga: '80', unit: 'KG', reps: '8', rir_real: 1 }, null, 0, 'KG', 2, 2, undefined, 'k');
+test('T486.2 (T500/T551) per-set reference never shows a legacy recommended load', () => {
+  const html = ctx._buildSetReferenceHtml({ carga: '80', unit: 'KG', reps: '8', rir_real: 1 }, null, 0, 'KG', 2, 2, undefined, '');
+  assert.equal(html, '', 'no key => nothing; the positional `prev` record is ignored (T551)');
   assert.ok(!html.includes('RECOMENDACIÓN') && !/>OBJETIVO</.test(html));
 });
 
-test('T486.3 no invented numeric progression suggestion remains (fixed +2.5 / +5 step)', () => {
-  const html = ctx._buildSetReferenceHtml({ carga: '80', unit: 'KG', reps: '8', rir_real: 1 }, null, 0, 'KG', 2, 2, undefined, 'k');
-  assert.ok(html.includes('SEM 1'), 'previous execution reference remains');
-  assert.ok(!/subir|mantener\)|→ /.test(html));
+test('T486.3 (T551) no invented numeric progression suggestion remains (fixed +2.5 / +5 step); the previous-week reference is the PID-exact block', () => {
+  assert.ok(client.includes('function _prevWeekReuseHtml(key, unit)') && client.includes('_prevWeekReuseHtml(key, unit)'), 'previous execution reference remains (PID-exact, T550/T551)');
   assert.ok(!/step\s*=\s*unit === 'LB' \? 5 : 2\.5/.test(client));
 });
 
