@@ -24,7 +24,7 @@
   function _kind(x) { var p = _policy(); return p && p.explicitSetKind ? p.explicitSetKind(x) : null; }
 
   // TARGET EXPOSURE START (single definition): the first legitimate PERSISTED working-set execution of the exact PID in the exact
-  // week/day = a done log entry for that PID that is not autofilled, not express and not an explicitly tagged warm-up / drop /
+  // week/day = a done log entry for that PID that is not autofilled, not express / expressFinal and not an explicitly tagged warm-up / drop /
   // intensification set. Rendering or opening the page never counts.
   function pidExposureStarted(entries, pid, week, dayIndex) {
     if (!pid || !entries) return false;
@@ -32,7 +32,7 @@
     return Object.keys(entries).some(function(k) {
       var e = entries[k];
       return re.test(k) && e && typeof e === 'object' && e.prescriptionExerciseId === pid && e.done === true &&
-        e.autoFilled !== true && e.express !== true && !_kind(e);
+        e.autoFilled !== true && e.express !== true && e.expressFinal !== true && !_kind(e);
     });
   }
 

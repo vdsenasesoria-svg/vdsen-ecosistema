@@ -17,7 +17,7 @@
  *   C then E -> the FIRST comparable occurrence of C (RIR correct, reps incomplete) yields REST +30 s only; if the same
  *               condition persists at the NEXT comparable exposure, E is reached and, by the rule above, goes to
  *               COACH_REVIEW_REQUIRED. Never a double automatic intervention.
- *   Representative set = the LAST valid WORKING set of the exposure (warm-ups, autofilled, express and planned drop
+ *   Representative set = the LAST valid WORKING set of the exposure (warm-ups, autofilled, express / expressFinal and planned drop
  *               sets excluded; nothing substituted). Provenance VDSEN_PRODUCT_POLICY_LAST_STANDARD_WORKING_SET.
  * Rule A and Rule C (first occurrence) are independent of these review branches. Equipment increments have no
  * contract here: raw load candidates never get a finalCandidate.
@@ -121,7 +121,7 @@
       var g = groups[gk] || (groups[gk] = { week: Number(m[1]), dayIndex: Number(m[2]), exerciseIndex: Number(m[3]),
         prescriptionExerciseId: pid, planId: scope && scope.planId, clientId: scope && scope.clientId, sets: [], painFlag: pain });
       g.sets.push({ setIndex: Number(m[4]), load: e.carga, reps: e.reps, unit: e.unit, done: e.done === true,
-        rirPrescribed: e.rir, rirReal: e.rir_real, autoFilled: e.autoFilled === true, express: e.express === true,
+        rirPrescribed: e.rir, rirReal: e.rir_real, autoFilled: e.autoFilled === true, express: e.express === true, expressFinal: e.expressFinal === true,
         warmup: e.warmup === true || e.isWarmup === true, drop: e.drop === true || e.isDrop === true || e.isDropSet === true || e.dropSet === true,
         intensification: e.intensification === true || e.isIntensification === true, setType: typeof e.setType === 'string' ? e.setType : undefined, ts: e.ts });
     });
@@ -145,8 +145,11 @@
     var t = x.setType !== undefined ? x.setType : x.type;
     return typeof t === 'string' && Object.prototype.hasOwnProperty.call(NON_STANDARD_TYPES, t) ? NON_STANDARD_TYPES[t] : null;   // exact token, no normalization
   }
+  // T547 (Director decision): EXPRESS IS NOT CANONICAL PROGRESSION EVIDENCE. Both `express` (S1..S(n-1)) and `expressFinal` (the final Express
+  // set, T546) are legitimate execution / history data but are never the representative set, never a comparable exposure.
+  function _isExpressSet(s) { return !!s && (s.express === true || s.expressFinal === true); }
   function _isWorkingSet(s, prescription) {
-    if (!s || _explicitKind(s)) return false;
+    if (!s || _isExpressSet(s) || _explicitKind(s)) return false;
     var ps = prescription && Array.isArray(prescription.sets) ? prescription.sets[s.setIndex] : null;
     return !_explicitKind(ps);
   }
@@ -164,7 +167,7 @@
     return { set: set, presSet: presSet, workingSets: sets, provenance: EVIDENCE_BASIS };
   }
 
-  // Comparable exposure = same client/plan/PID, real (done, not autoFilled, not express)
+  // Comparable exposure = same client/plan/PID, real (done, not autoFilled, not express / expressFinal: Express is NOT canonical evidence)
   // executed sets with numeric reps, one load unit, and executed after the last plan edit.
   function _comparable(exposures, input) {
     var kept = [], excluded = [], pid = input.prescriptionExerciseId;
@@ -179,7 +182,7 @@
       sets.forEach(function(s) {
         if (!s || s.done !== true) return;
         if (s.autoFilled === true) { sawAuto = true; return; }
-        if (s.express === true) { sawExpress = true; return; }
+        if (_isExpressSet(s)) { sawExpress = true; return; }
         if (!_isWorkingSet(s, input.prescription)) { sawNonWorking = true; return; }
         var reps = _num(s.reps);
         if (reps === null || reps <= 0) return;
