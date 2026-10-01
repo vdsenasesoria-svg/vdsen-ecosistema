@@ -107,19 +107,23 @@ service cloud.firestore {
         && request.resource.data.coachId == request.auth.uid
         && !('farmacologia'  in request.resource.data)
         && !('pharmacoPlan'  in request.resource.data);
-      // Actualizar plan: solo el coach dueño Y solo para planes no-aprobados (manual/legacy).
-      // Los planes draft_approved y active son inmutables — no se permiten updates de contenido.
-      // Si resource.data.status está ausente (plan legacy sin campo status), se permite.
+      // Actualizar plan (T547): SOLO el coach dueño puede revisar la prescripción de su plan, INCLUIDO el plan ACTIVO (el editor del Coach,
+      // quick-add, "actualizar plan" y extender semanas escriben todos sobre el plan activo; la regla T538 que lo hacía inmutable rompía esas rutas
+      // con PERMISSION_DENIED). Inmutables en esta ruta: coachId y clientId (propiedad / tenant). Un plan draft_approved que NO es el activo del
+      // cliente sigue siendo la fuente aprobada inmutable; un draft_approved que SÍ es el activo (clients/{clientId}.activePlanId == planId) es editable.
       allow update: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
         && resource.data.coachId == request.auth.uid
-        && resource.data.status != 'draft_approved'
-        && resource.data.status != 'active';
-      // Coach: reasignar clientId (migración de UID) — solo este campo, sin restricción de status
+        && request.resource.data.get('coachId', '') == resource.data.coachId
+        && request.resource.data.get('clientId', '') == resource.data.get('clientId', '')
+        && (resource.data.get('status', '') != 'draft_approved'
+            || get(/databases/$(database)/documents/clients/$(resource.data.clientId)).data.get('activePlanId', '') == planId);
+      // Coach: reasignar clientId (migración de UID) — solo este campo y SOLO hacia un cliente del MISMO coach (sin adopción cross-tenant)
       allow update: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
         && resource.data.coachId == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientId']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clientId'])
+        && ownsClient(request.resource.data.clientId);
       // Eliminar plan: solo el coach dueño y solo si no está aprobado/activo.
       // El historial de planes aprobados se preserva; no se permite delete desde el flujo normal.
       allow delete: if request.auth != null
