@@ -696,6 +696,14 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .num-in::-webkit-outer-spin-button,.num-in::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .sp-hint{font-size:11.5px;color:var(--grn);min-height:0;margin-top:6px}
 .sp-hint:empty{display:none}
+.sp-ics .sp-fl{white-space:normal;line-height:1.25;letter-spacing:.1em}
+.ics-help{font-size:11.5px;line-height:1.35;color:var(--mt);font-weight:600}
+/* T548: rest-complete alert. Solid brand fill, high contrast, no gradient / glow; the box is collapsed (not display:none) while idle so the assertive live region is announced reliably. */
+.rest-done{position:fixed;left:8px;right:8px;top:calc(58px + env(safe-area-inset-top,0px));z-index:2100;box-sizing:border-box;display:block;height:0;overflow:hidden;padding:0;border:0;margin:0;background:var(--accent-fill);color:var(--on-accent);text-align:center;pointer-events:none}
+.rest-done.on{height:auto;padding:14px 12px;border:2px solid var(--on-accent)}
+.rest-done .rd-t{font-family:'Big Shoulders Display',var(--ff);font-size:26px;font-weight:800;letter-spacing:.08em;line-height:1.1}
+.rest-done .rd-s{margin-top:4px;font-size:14px;font-weight:800;letter-spacing:.1em}
+.rest-done .rd-s:empty{display:none}
 .sp-plates{font-size:11.5px;color:var(--info);margin-top:4px}
 .sp-plates:empty{display:none}
 .sp-grp{margin-top:18px}
@@ -4980,6 +4988,15 @@ var _restTotalSeconds = 0;
 var _restEl = null;
 var _restEndMs = 0;
 var _restAlertFired = false;
+// T548: rest context + log-write acknowledgement (navigation safety only; never stored)
+var _restToken = 0, _restCtx = null, _logsReqSeq = 0, _logsAckedSeq = 0;
+// T548: athlete-facing ICS wording. The stored field (`ics`), the 1-10 range and every progression semantic are unchanged.
+var ICS_LABEL = 'Calidad de la serie (ICS)';
+var ICS_HELP = '¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente';
+var ICS_PLACEHOLDER = '1–10';
+function _icsHelpId(inputId) { return inputId + '_help'; }
+function _icsLabelHtml(inputId) { return '<label class="sp-fl" for="' + inputId + '">' + ICS_LABEL + '</label>'; }
+function _icsHelpHtml(inputId) { return '<div class="ics-help" id="' + _icsHelpId(inputId) + '">' + ICS_HELP + '</div>'; }
 
 // ── Preferencia: temporizador de descanso activado/desactivado ──
 function isRestTimerDisabled() {
@@ -5025,15 +5042,97 @@ function _onTimerFinished() {
   if (_restAlertFired) return;
   _restAlertFired = true;
   localStorage.removeItem('vdsen_restEnd');
-  playTimerBeep();
-  if (navigator.vibrate) navigator.vibrate([250, 100, 250, 100, 400]);
-  showToast('⏱ ¡Descanso terminado!');
+  _restFeedback();
   _notifyRestDone();
-  // FASE 9: desplazar al siguiente set pendiente
-  _scrollToNextPendingSet();
-  // Si estaba minimizado, expandir automáticamente
-  var pill = document.getElementById('timerPill');
-  if (pill && pill.style.display !== 'none') maximizeTimer();
+  _restFinishFlow();
+}
+
+// ── T548: rest-complete = obvious alert + NAVIGATION-ONLY auto-advance ──────────────────────────────────────────────────────────────────────
+// Human finding (Ayrton, real session): the end of a rest was too subtle and the athlete had to find the next set / exercise by hand.
+// At zero the app (1) vibrates / beeps when the browser allows it, (2) shows DESCANSO TERMINADO with the next step, (3) scrolls to the next
+// pending set or opens the next exercise. It NEVER completes / saves a set, never closes the session and never writes anything.
+function _restFeedback() {
+  try { if (navigator && navigator.vibrate) navigator.vibrate([180, 70, 180, 70, 320]); } catch (e) { /* unsupported / blocked: visual only */ }
+  try { playTimerBeep(); } catch (e) { /* autoplay policy: visual only */ }
+}
+function _restDoneCopy(type) {
+  var p = 'DESCANSO TERMINADO';
+  if (type === 'NEXT_SET') return { primary: p, secondary: 'SIGUIENTE SERIE LISTA' };
+  if (type === 'NEXT_EXERCISE') return { primary: p, secondary: 'SIGUIENTE EJERCICIO LISTO' };
+  if (type === 'SESSION_DONE') return { primary: p, secondary: 'SESIÓN LISTA PARA CERRAR' };
+  return { primary: p, secondary: '' };
+}
+// Live view of the state the safety rules compare against the context captured when the rest started. Read-only.
+function _restLiveState() {
+  var tab = 0; try { tab = parseInt(localStorage.getItem('vdsen_last_tab') || '0'); } catch (e) {}
+  var ae = document.activeElement;
+  var engaged = !!(ae && ae.tagName === 'INPUT' && ae.value !== '' && ae.id && /^(carga|reps|ics|rir)_/.test(ae.id));
+  return { reachedZero: _restSeconds <= 0, token: _restToken, ackedSeq: _logsAckedSeq, tab: tab, week: CURRENT_WEEK, di: DIA_ACTIVO, ei: EJ_ACTIVO,
+    sessionDone: !!(LOGS['done_' + CURRENT_WEEK + '_' + DIA_ACTIVO]), engaged: engaged, exerciseCount: (_EJERCICIOS_DIA || []).length };
+}
+// Pure decision. advance=true only when every safety rule holds; kind is what the alert says even when we do not move the athlete.
+function _restAdvanceDecision(ctx, st, action) {
+  if (!ctx) return { advance: false, reason: 'NO_CONTEXT' };
+  if (!st.reachedZero) return { advance: false, reason: 'NOT_AT_ZERO' };
+  if (ctx.token !== st.token) return { advance: false, reason: 'TIMER_CANCELLED_OR_REPLACED' };
+  if (st.ackedSeq < ctx.reqSeq) return { advance: false, reason: 'WRITE_NOT_ACKED' };
+  if (st.tab !== 1) return { advance: false, reason: 'LEFT_TRAINING' };
+  if (st.week !== ctx.week || st.di !== ctx.di) return { advance: false, reason: 'DAY_CHANGED' };
+  if (st.sessionDone) return { advance: false, reason: 'SESSION_CLOSED' };
+  // the app may itself have moved to the next exercise right after the save (completeSet); only a change AFTER the rest started is manual
+  if (st.ei !== (ctx.ejAtStart === undefined ? ctx.ei : ctx.ejAtStart)) return { advance: false, reason: 'MANUAL_NAVIGATION' };
+  if (st.engaged) return { advance: false, reason: 'ATHLETE_ENGAGED' };
+  if (!action) return { advance: false, reason: 'NO_TARGET' };
+  if (action.type === 'NEXT_SET') return ctx.noSetNav ? { advance: false, reason: 'SET_NAV_NOT_INFERABLE', kind: 'NEXT_SET' } : { advance: true, kind: 'NEXT_SET' };
+  if (action.type === 'NEXT_EXERCISE') {
+    if (!Number.isInteger(action.ei) || action.ei < 0 || action.ei >= st.exerciseCount) return { advance: false, reason: 'TARGET_GONE' };
+    return { advance: true, kind: 'NEXT_EXERCISE', ei: action.ei };
+  }
+  if (action.type === 'SESSION_DONE') return { advance: false, reason: 'SESSION_READY', kind: 'SESSION_DONE' };
+  return { advance: false, reason: 'NO_TARGET' };
+}
+function _restFinishFlow() {
+  var ctx = _restCtx;
+  if (!ctx) { var c0 = _restDoneCopy('NONE'); _restAnnounce(c0.primary, c0.secondary); return; }   // e.g. restored after a reload: alert only, never navigate
+  var action = null;
+  try { action = _resolveNextWorkoutAction(ctx.di, _EJERCICIOS_DIA, ctx.ei, ctx.si, LOGS, ctx.week, getTotalWeeks()); } catch (e) { action = null; }
+  var d = _restAdvanceDecision(ctx, _restLiveState(), action);
+  if (d.reason === 'TIMER_CANCELLED_OR_REPLACED') return;
+  if (d.reason === 'WRITE_NOT_ACKED' && (ctx.waits = (ctx.waits || 0) + 1) <= 10) { setTimeout(_restFinishFlow, 800); return; }
+  var type = d.kind || (d.reason === 'SESSION_READY' ? 'SESSION_DONE' : 'NONE');
+  var copy = _restDoneCopy(d.advance || d.reason === 'SESSION_READY' || d.reason === 'SET_NAV_NOT_INFERABLE' ? type : 'NONE');   // never name a next step we did not verify
+  if (d.advance) {
+    stopRestTimer();
+    if (d.kind === 'NEXT_EXERCISE') { if (EJ_ACTIVO !== d.ei) setEjActivo(d.ei); else _scrollToNextPendingSet(); } else _scrollToNextPendingSet();
+  } else {
+    var pill = document.getElementById('timerPill');
+    if (pill && pill.style.display !== 'none') maximizeTimer();   // legacy: bring a minimized timer back
+  }
+  _restAnnounce(copy.primary, copy.secondary);
+}
+var _restDoneTimer = null;
+function _ensureRestDoneRegion() {
+  var el = document.getElementById('restDoneLive');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'restDoneLive'; el.className = 'rest-done';
+  el.setAttribute('aria-live', 'assertive'); el.setAttribute('aria-atomic', 'true'); el.setAttribute('role', 'status');
+  document.body.appendChild(el);
+  return el;
+}
+function _hideRestDone() {
+  if (_restDoneTimer) { clearTimeout(_restDoneTimer); _restDoneTimer = null; }
+  var el = document.getElementById('restDoneLive');
+  if (el) { el.classList.remove('on'); el.textContent = ''; }
+}
+function _restAnnounce(primary, secondary) {
+  var el = _ensureRestDoneRegion();
+  if (_restDoneTimer) { clearTimeout(_restDoneTimer); _restDoneTimer = null; }
+  el.textContent = '';
+  var t = document.createElement('div'); t.className = 'rd-t'; t.textContent = primary; el.appendChild(t);
+  var s2 = document.createElement('div'); s2.className = 'rd-s'; s2.textContent = secondary || ''; el.appendChild(s2);
+  el.classList.add('on');
+  _restDoneTimer = setTimeout(_hideRestDone, 10000);
 }
 
 // Notificación real del navegador (no solo el toast interno). En Android,
@@ -6339,8 +6438,9 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
       '</div>'+
       '<div class="sp-row">'+
         '<div class="sp-f sp-ics">'+
-          '<label class="sp-fl" for="xics_'+_expK+'">CALIDAD (1-10)</label>'+
-          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="1-10" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
+          _icsLabelHtml('xics_'+_expK)+
+          '<input id="xics_'+_expK+'" type="number" value="'+(_exPfICS||'')+'" placeholder="'+ICS_PLACEHOLDER+'" aria-describedby="'+_icsHelpId('xics_'+_expK)+'" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
+          _icsHelpHtml('xics_'+_expK)+
         '</div>'+
         '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
           '<span class="sp-fl">PUMP</span>'+
@@ -6571,12 +6671,12 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
         // ICS
         '<div class="sp-row">'+
           '<div class="sp-f sp-ics">'+
-            '<label class="sp-fl" for="ics_'+key+'">CALIDAD (1-10)</label>'+
+            _icsLabelHtml('ics_'+key)+
             (function(){
               var _icsVal = saved.ics || (_prevSesIcs || '');
               var _icsNum = parseInt(_icsVal);
-              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="1-10" inputmode="numeric" min="1" max="10"'+
-                ' class="num-in sm'+((_icsNum&&_icsNum<7)?' low':'')+'" oninput="updateICSColor(\''+key+'\''+')">';
+              return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="'+ICS_PLACEHOLDER+'" aria-describedby="'+_icsHelpId('ics_'+key)+'" inputmode="numeric" min="1" max="10"'+
+                ' class="num-in sm'+((_icsNum&&_icsNum<7)?' low':'')+'" oninput="updateICSColor(\''+key+'\''+')">'+_icsHelpHtml('ics_'+key);
             })()+
           '</div>'+
           '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
@@ -6861,7 +6961,7 @@ function _buildCalisteniaCard(ejercicios, di, ei, isPartner) {
           _perfField('cal_reps_'+key, 'REPS', 'type="number" value="'+(saved.reps||'')+'" placeholder="reps" inputmode="numeric"')+
           _perfField('cal_load_'+key, 'LASTRE / ASIST (kg)', 'type="number" step="0.5" value="'+(saved.lastre!=null?saved.lastre:(saved.asistencia!=null?-saved.asistencia:''))+'" placeholder="±kg" inputmode="decimal" title="Positivo=lastre añadido. Negativo=asistencia (banda/máquina)."')+
           _perfField('cal_rpe_'+key, 'RPE', 'type="number" min="1" max="10" value="'+(saved.rpe||'')+'" placeholder="1-10" inputmode="numeric"')+
-          _perfField('cal_ics_'+key, 'CALIDAD', 'type="number" min="1" max="10" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric"')+
+          '<div class="sp-f sp-ics">'+_icsLabelHtml('cal_ics_'+key)+'<input id="cal_ics_'+key+'" type="number" min="1" max="10" value="'+(saved.ics||'')+'" placeholder="'+ICS_PLACEHOLDER+'" aria-describedby="'+_icsHelpId('cal_ics_'+key)+'" inputmode="numeric" class="num-in md" onfocus="this.select()">'+_icsHelpHtml('cal_ics_'+key)+'</div>'+
         '</div>'+
       '</div>';
   }
@@ -7593,9 +7693,9 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
         '</div>'+
         '<div class="sp-row">'+
           '<div class="sp-f sp-ics">'+
-            '<label class="sp-fl" for="xics_'+_ssk+'">CALIDAD (1-10)</label>'+
-            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="1-10" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
-            '<div class="sp-hint" style="display:block">1-5 mala · 6-7 ok · 8-10 buena</div>'+
+            _icsLabelHtml('xics_'+_ssk)+
+            '<input id="xics_'+_ssk+'" type="number" value="" placeholder="'+ICS_PLACEHOLDER+'" aria-describedby="'+_icsHelpId('xics_'+_ssk)+'" inputmode="numeric" min="1" max="10" class="num-in sm" onfocus="this.select()">'+
+            _icsHelpHtml('xics_'+_ssk)+
           '</div>'+
           '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
             '<span class="sp-fl">PUMP</span>'+
@@ -8849,11 +8949,11 @@ function buildBoostcampExercise(ej, di, ei) {
         })()
       : '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
           '<div style="flex:1">'+
-            '<div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">Calidad (1-10)</div>'+
-            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="1-10" inputmode="numeric" min="1" max="10"'+
+            '<label for="ics_'+key+'" style="display:block;font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">'+ICS_LABEL+'</label>'+
+            '<input id="ics_'+key+'" type="number" value="'+(saved.ics||'')+'" placeholder="'+ICS_PLACEHOLDER+'" aria-describedby="'+_icsHelpId('ics_'+key)+'" inputmode="numeric" min="1" max="10"'+
             ' style="width:100%;background:var(--input-bg);border:1px solid '+(saved.ics&&saved.ics<7?'var(--red)':'var(--border)')+';'+
             'border-radius:8px;color:'+(saved.ics&&saved.ics<7?'var(--red)':'var(--accent)')+';font-size:15px;font-weight:700;'+
-            'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box" oninput="updateICSColor(\''+key+'\')">'+
+            'padding:7px 6px;outline:none;text-align:center;box-sizing:border-box" oninput="updateICSColor(\''+key+'\')">'+_icsHelpHtml('ics_'+key)+
           '</div>'+
           '<div style="flex:2">'+
             '<div style="font-size:10px;color:var(--mt);letter-spacing:1px;margin-bottom:3px;font-weight:600">PUMP</div>'+
@@ -9449,6 +9549,7 @@ async function completeSet(key, di, ei, si, unit) {
     _renderNextWorkoutAction(_nextAction25);
     if (restTime > 0) {
       startRestTimer(restTime, key);
+      if (_nextAction25 && _nextAction25.type !== 'SESSION_DONE') window._nextAction25 = _nextAction25;   // T548: CONTINUAR target (startRestTimer->stopRestTimer clears it, so set it after). SESSION_DONE is deliberately not wired: CONTINUAR never closes the session
       showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
     } else {
       showToast(_grp ? 'Par SS cerrado ✓' : 'Serie ✓');
@@ -9763,14 +9864,17 @@ window._renderNextWorkoutAction = _renderNextWorkoutAction;
 function startRestTimer(seconds, lastSetKey) {
   // Si el cliente desactivó el temporizador, no mostrar overlay ni arrancar cuenta.
   if (isRestTimerDisabled()) { try { stopRestTimer(); } catch(_){} return; }
-  // Pedir permiso de notificaciones aquí (dentro de un onclick) para que
-  // cuente como gesto de usuario — los navegadores bloquean el prompt si
-  // se dispara sin interacción directa.
-  if (window.Notification && Notification.permission === 'default') {
-    try { Notification.requestPermission(); } catch(e) {}
-  }
+  // T548: no notification-permission prompt (the in-page alert + vibration are the channel).
   stopRestTimer();
+  _hideRestDone();
+  _ensureRestDoneRegion();   // the assertive live region must exist before its text changes
   _restAlertFired = false;
+  // T548: context the zero-time safety rules compare against (navigation only; never stored)
+  var _km = lastSetKey ? /^log_(\d+)_(\d+)_(\d+)_s(\d+)$/.exec(lastSetKey) : null;
+  var _ctxEi = _km ? parseInt(_km[3]) : EJ_ACTIVO;
+  var _lastSi = _km ? parseInt(_km[4]) : Math.max(0, (((_EJERCICIOS_DIA || [])[_ctxEi] || {}).sets || []).length - 1);
+  _restToken++;
+  _restCtx = { token: _restToken, week: _km ? parseInt(_km[1]) : CURRENT_WEEK, di: _km ? parseInt(_km[2]) : DIA_ACTIVO, ei: _ctxEi, ejAtStart: EJ_ACTIVO, si: _lastSi, reqSeq: _logsReqSeq, noSetNav: !_km };
   _restEndMs = Date.now() + seconds * 1000;
   _restTotalSeconds = seconds;
   localStorage.setItem('vdsen_restEnd', _restEndMs);
@@ -9893,6 +9997,7 @@ window.resetRestTimer = resetRestTimer;
 
 function stopRestTimer() {
   if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
+  _restToken++; _restCtx = null;   // T548: a cancelled / replaced rest can never auto-advance
   _restEndMs = 0;
   window._nextAction25 = null;
   localStorage.removeItem('vdsen_restEnd');
@@ -9909,6 +10014,7 @@ function stopRestTimer() {
 
 function selDia(i) {
   stopRestTimer();
+  if (typeof _hideRestDone === 'function') _hideRestDone();
   DIA_ACTIVO = i;
   EJ_ACTIVO = 0;
   try { localStorage.setItem('vdsen_last_dia', i); } catch(e) {}
@@ -10619,6 +10725,7 @@ window.markWeekCompleteFromHistory = markWeekCompleteFromHistory;
 var _saveLogsTimer = null;
 var _logsWriteInFlight = 0;
 async function saveLogs() {
+  if (typeof _logsReqSeq === 'number') _logsReqSeq++;   // T548: ack tracking for the rest auto-advance (navigation safety; not stored)
   // Debounce: si se llama varias veces rápido, solo ejecuta la última
   if (_saveLogsTimer) clearTimeout(_saveLogsTimer);
   _saveLogsTimer = setTimeout(_doSaveLogs, 400);
@@ -10654,6 +10761,7 @@ async function _doSaveLogs() {
   if (!USER || !FB) return false;
   var _uidAtStart = USER.uid;
   _saveLogsTimer = null; // limpiar ID del timer que ya disparó (evita false-positive en visibilitychange)
+  var _seqAtStart = typeof _logsReqSeq === 'number' ? _logsReqSeq : 0;
   _logsWriteInFlight++;
   try {
     // Sanear: Firestore rechaza objetos con `undefined`. JSON.parse(JSON.stringify(...))
@@ -10676,6 +10784,7 @@ async function _doSaveLogs() {
     await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });
     if (!USER || USER.uid !== _uidAtStart) return false;
     if (ACTIVE_PLAN_ID === _payload.planId) _logsAuthorityUpdatedAt = _payload.updatedAt;
+    if (typeof _logsAckedSeq === 'number') _logsAckedSeq = Math.max(_logsAckedSeq, _seqAtStart);   // T548: the server acknowledged every write requested up to this point
     // Limpiar indicador de error si estaba
     const errEl = document.getElementById('saveErrBadge');
     if (errEl) errEl.style.display = 'none';

@@ -10,7 +10,7 @@
     {
       "id": "SYNTHETIC_AYRTON_CLONE_CREATED_AND_ACTIVE",
       "pass": true,
-      "note": "status 200 plan-std-db43d3"
+      "note": "status 200 plan-std-72d4bc"
     },
     {
       "id": "NO_PRIOR_EXECUTION_EVIDENCE",
@@ -70,27 +70,27 @@
     {
       "id": "REST_TIMER_STARTS_AND_COUNTS_DOWN",
       "pass": true,
-      "note": "1:58 -> 1:56"
+      "note": "1:59 -> 1:57"
     },
     {
       "id": "REST_TIMER_PRESCRIBED_DURATION",
       "pass": true,
-      "note": "prescribed 120s, shows 1:58"
+      "note": "prescribed 120s, shows 1:59"
     },
     {
       "id": "REST_TIMER_MINIMIZES_TO_PILL",
       "pass": true,
-      "note": "{\"ov\":false,\"n\":\"1:56\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790820262189\"}"
+      "note": "{\"ov\":false,\"n\":\"1:56\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790879717921\"}"
     },
     {
       "id": "REST_TIMER_SURVIVES_TAB_NAVIGATION_NO_DUPLICATE",
       "pass": true,
-      "note": "{\"ov\":false,\"n\":\"1:55\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790820262189\"}"
+      "note": "{\"ov\":false,\"n\":\"1:55\",\"pill\":true,\"overlays\":1,\"pills\":1,\"end\":\"1790879717921\"}"
     },
     {
       "id": "REST_TIMER_RESTORES",
       "pass": true,
-      "note": "{\"ov\":true,\"n\":\"1:54\",\"pill\":false,\"overlays\":1,\"pills\":1,\"end\":\"1790820262189\"}"
+      "note": "{\"ov\":true,\"n\":\"1:55\",\"pill\":false,\"overlays\":1,\"pills\":1,\"end\":\"1790879717921\"}"
     },
     {
       "id": "ALL_SETS_EXECUTED_IN_UI",
@@ -130,12 +130,12 @@
     {
       "id": "SET_RECORD_SHAPE",
       "pass": true,
-      "note": "pump,carga,reps,prescriptionExerciseId,done,unit,rir,exerciseNameSnapshot,ics,rir_real,ts"
+      "note": "rir,exerciseNameSnapshot,carga,done,prescriptionExerciseId,pump,reps,unit,ts,rir_real,ics"
     },
     {
       "id": "SESSION_CLOSURE_PERSISTED",
       "pass": true,
-      "note": "done_1_1,progrec_1_1,engine_state,postsession_1_1"
+      "note": "done_1_1,engine_state,postsession_1_1,progrec_1_1"
     },
     {
       "id": "NO_EXTRA_SET_KEYS_OUTSIDE_DAY",
@@ -145,7 +145,7 @@
     {
       "id": "NO_CANONICAL_FIELDS_WRITTEN_BY_ATHLETE",
       "pass": true,
-      "note": "entries,exerciseUnits,planId,updatedAt,exerciseHistory,currentWeek"
+      "note": "planId,entries,currentWeek,exerciseHistory,exerciseUnits,updatedAt"
     },
     {
       "id": "PROGREC_IS_ADVISORY_EVIDENCE_ONLY",
@@ -160,7 +160,7 @@
     {
       "id": "HARD_RELOAD_KEEPS_SESSION_AND_VALUES",
       "pass": true,
-      "note": "{\"done\":true,\"n\":11,\"l\":{\"carga\":\"45\",\"reps\":\"10\",\"unit\":\"KG\",\"done\":true,\"rir\":2,\"rir_real\":\"3\",\"ics\":null,\"pump\":null,\"ts\":1790820154110,\"prescriptionExerciseId\":\"5f6cce22-88df-43d7-8631-fe5985fdd26c\",\"exerciseNameSnapshot\":\"Curl femoral sentado máquina\"}}"
+      "note": "{\"done\":true,\"n\":11,\"l\":{\"carga\":\"45\",\"reps\":\"10\",\"unit\":\"KG\",\"done\":true,\"rir\":2,\"rir_real\":\"3\",\"ics\":null,\"pump\":null,\"ts\":1790879609348,\"prescriptionExerciseId\":\"5f6cce22-88df-43d7-8631-fe5985fdd26c\",\"exerciseNameSnapshot\":\"Curl femoral sentado máquina\"}}"
     },
     {
       "id": "LOGOUT_TO_LOGIN",
@@ -170,7 +170,7 @@
     {
       "id": "RELOGIN_KEEPS_SESSION_AND_VALUES",
       "pass": true,
-      "note": "{\"ics\":null,\"rir\":2,\"pump\":null,\"prescriptionExerciseId\":\"b728b7af-c411-425a-bfef-d961bbd16e21\",\"ts\":1790820187874,\"done\":true,\"exerciseNameSnapshot\":\"Gemelo de pie\",\"reps\":\"10\",\"unit\":\"KG\",\"carga\":\"75\",\"rir_real\":\"3\"}"
+      "note": "{\"prescriptionExerciseId\":\"b728b7af-c411-425a-bfef-d961bbd16e21\",\"ts\":1790879644128,\"exerciseNameSnapshot\":\"Gemelo de pie\",\"unit\":\"KG\",\"done\":true,\"rir\":2,\"reps\":\"10\",\"rir_real\":\"3\",\"pump\":null,\"carga\":\"75\",\"ics\":null}"
     },
     {
       "id": "DAY_VIEW_SHOWS_COMPLETED",

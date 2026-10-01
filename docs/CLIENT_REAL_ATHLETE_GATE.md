@@ -14,6 +14,25 @@ does not tap an RIR, no observed RIR is stored. Untouched ICS / Pump are stored 
 final set carries the observed RIR / ICS / Pump the athlete actually entered and is the representative evidence set. Verified by
 `scripts/client-staging-express-evidence.cjs` (`docs/client-staging-express-evidence-results.json`). Row 4 below therefore means: tap the RIR you actually had.
 
+## Human gate status (T548)
+
+**FULL HUMAN SESSION = COMPLETED** — Ayrton VD executed one complete real session (Lower B) on staging. It counts as the human acceptance session.
+**TARGETED RECHECK = REQUIRED** — HUMAN UX = PARTIAL / NEEDS FIX until Ayrton confirms the four items below. Do **not** mark HUMAN UX PASS before that.
+
+Findings from the real session (all addressed in T548; automation: `scripts/client-staging-t548-rest.cjs`, `docs/client-staging-t548-rest-results.json`, `tests/t548-human-findings.test.js`):
+1. ICS was not self-explanatory -> label "Calidad de la serie (ICS)", helper "¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente", placeholder "1–10" (stored `ics`, 1–10 range and progression semantics unchanged).
+2. At the end of a rest the app did not move on -> at 00:00 it scrolls to the next pending set, or opens the next exercise, or shows SESIÓN LISTA PARA CERRAR. **Navigation only** — it never saves a set, never closes the session, never writes anything, and it does not move an athlete who already navigated elsewhere, cancelled the rest, or is typing.
+3. The rest-complete notice was too subtle -> solid lime DESCANSO TERMINADO banner (10 s, assertive live region announced once, short vibration + tone when the browser allows; silent fallback).
+
+Targeted recheck (short — no new full workout):
+
+| # | Recheck | OK | Note |
+| --- | --- | --- | --- |
+| R1 | ICS wording is immediately understandable | ☐ | |
+| R2 | one rest period advances to the next set correctly | ☐ | |
+| R3 | one exercise-boundary rest advances to the next exercise correctly | ☐ | |
+| R4 | the rest-complete alert is obvious enough | ☐ | |
+
 Athlete: ______________  Coach observer: ______________  Device / browser: ______________  Date: ______________
 
 | # | Check (tick when true) | OK | Note |
