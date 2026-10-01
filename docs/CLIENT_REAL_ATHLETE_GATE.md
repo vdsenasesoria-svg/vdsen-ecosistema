@@ -32,6 +32,8 @@ Targeted recheck (short — no new full workout):
 | R2 | one rest period advances to the next set correctly | ☐ | |
 | R3 | one exercise-boundary rest advances to the next exercise correctly | ☐ | |
 | R4 | the rest-complete alert is obvious enough | ☐ | |
+| R5 | (T549) a note written in one week is still visible in a later week of the same exercise | ☐ | |
+| R6 | (T550) in Week 2+ the ÚLTIMA SEMANA block shows last week's real sets (load × reps · observed RIR, "—" when missing) and is useful | ☐ | |
 
 Athlete: ______________  Coach observer: ______________  Device / browser: ______________  Date: ______________
 

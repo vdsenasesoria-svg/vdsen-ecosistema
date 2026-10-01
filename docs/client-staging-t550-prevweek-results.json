@@ -1,0 +1,220 @@
+{
+  "summary": {
+    "project": "vdsen-ecosistema-staging",
+    "checks": 41,
+    "failed": [],
+    "synthetic": true,
+    "viewports": [
+      "390 dark",
+      "320 dark",
+      "390 light"
+    ]
+  },
+  "results": [
+    {
+      "id": "390D_WEEK1_NO_PREVIOUS_WEEK_CHROME",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_W2_SHOWS_W1_SETS_EXACTLY",
+      "pass": true,
+      "note": "[\"S1 · 80 kg × 10 · RIR 3\",\"S2 · 80 kg × 9 · RIR 2\",\"S3 · 75 kg × 8 · RIR 1\",\"S4 · 70 kg × 8 · RIR —\"]"
+    },
+    {
+      "id": "390D_RENDERED_VALUES_EQUAL_FIRESTORE_EVIDENCE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_MISSING_RIR_SHOWN_AS_DASH_NOT_PRESCRIBED",
+      "pass": true,
+      "note": "prescribed rir stored=2 shown=S4 · 70 kg × 8 · RIR —"
+    },
+    {
+      "id": "390D_HEADING_MICROCOPY_AND_NOTE",
+      "pass": true,
+      "note": "[\"ÚLTIMA SEMANA · SEM 1\",\"NOTA Me costó mantener técnica\"]"
+    },
+    {
+      "id": "390D_DISPLAY_ONLY_NO_INPUTS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_CURRENT_INPUTS_NOT_PREFILLED",
+      "pass": true,
+      "note": "{\"c\":\"\",\"r\":\"\",\"rir\":\"\"}"
+    },
+    {
+      "id": "390D_OTHER_PID_NO_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":390,\"W\":390}"
+    },
+    {
+      "id": "390D_COMPACT_NOT_PUSHING_SETS",
+      "pass": true,
+      "note": "blockHeight=186 gapToSetControls=33"
+    },
+    {
+      "id": "390D_RELOAD_PRESERVES_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_WEEK3_WITHOUT_WEEK2_EVIDENCE_NO_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EXPRESS_ONLY_WEEK2_EXPOSURE_SHOWS_NO_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "EXPRESS_FIXTURE_PRESENT_AS_EXPRESS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_WEEK1_NO_PREVIOUS_WEEK_CHROME",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_W2_SHOWS_W1_SETS_EXACTLY",
+      "pass": true,
+      "note": "[\"S1 · 80 kg × 10 · RIR 3\",\"S2 · 80 kg × 9 · RIR 2\",\"S3 · 75 kg × 8 · RIR 1\",\"S4 · 70 kg × 8 · RIR —\"]"
+    },
+    {
+      "id": "320D_RENDERED_VALUES_EQUAL_FIRESTORE_EVIDENCE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_MISSING_RIR_SHOWN_AS_DASH_NOT_PRESCRIBED",
+      "pass": true,
+      "note": "prescribed rir stored=2 shown=S4 · 70 kg × 8 · RIR —"
+    },
+    {
+      "id": "320D_HEADING_MICROCOPY_AND_NOTE",
+      "pass": true,
+      "note": "[\"ÚLTIMA SEMANA · SEM 1\",\"NOTA Me costó mantener técnica\"]"
+    },
+    {
+      "id": "320D_DISPLAY_ONLY_NO_INPUTS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_CURRENT_INPUTS_NOT_PREFILLED",
+      "pass": true,
+      "note": "{\"c\":\"\",\"r\":\"\",\"rir\":\"\"}"
+    },
+    {
+      "id": "320D_OTHER_PID_NO_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":320,\"W\":320}"
+    },
+    {
+      "id": "320D_COMPACT_NOT_PUSHING_SETS",
+      "pass": true,
+      "note": "blockHeight=186 gapToSetControls=33"
+    },
+    {
+      "id": "320D_RELOAD_PRESERVES_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_WEEK3_WITHOUT_WEEK2_EVIDENCE_NO_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "320D_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_WEEK1_NO_PREVIOUS_WEEK_CHROME",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_W2_SHOWS_W1_SETS_EXACTLY",
+      "pass": true,
+      "note": "[\"S1 · 80 kg × 10 · RIR 3\",\"S2 · 80 kg × 9 · RIR 2\",\"S3 · 75 kg × 8 · RIR 1\",\"S4 · 70 kg × 8 · RIR —\"]"
+    },
+    {
+      "id": "390L_RENDERED_VALUES_EQUAL_FIRESTORE_EVIDENCE",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_MISSING_RIR_SHOWN_AS_DASH_NOT_PRESCRIBED",
+      "pass": true,
+      "note": "prescribed rir stored=2 shown=S4 · 70 kg × 8 · RIR —"
+    },
+    {
+      "id": "390L_HEADING_MICROCOPY_AND_NOTE",
+      "pass": true,
+      "note": "[\"ÚLTIMA SEMANA · SEM 1\",\"NOTA Me costó mantener técnica\"]"
+    },
+    {
+      "id": "390L_DISPLAY_ONLY_NO_INPUTS",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_CURRENT_INPUTS_NOT_PREFILLED",
+      "pass": true,
+      "note": "{\"c\":\"\",\"r\":\"\",\"rir\":\"\"}"
+    },
+    {
+      "id": "390L_OTHER_PID_NO_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_NO_HORIZONTAL_OVERFLOW",
+      "pass": true,
+      "note": "{\"sw\":390,\"W\":390}"
+    },
+    {
+      "id": "390L_COMPACT_NOT_PUSHING_SETS",
+      "pass": true,
+      "note": "blockHeight=186 gapToSetControls=33"
+    },
+    {
+      "id": "390L_RELOAD_PRESERVES_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_WEEK3_WITHOUT_WEEK2_EVIDENCE_NO_BLOCK",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "390L_NO_PAGE_ERRORS",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}
