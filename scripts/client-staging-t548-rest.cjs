@@ -31,7 +31,7 @@ const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y
       // ---- ICS wording
       const k0 = 'log_1_0_0_s0'; await p.waitForSelector('#ics_' + k0);
       const ics = await p.evaluate(k => { const i = document.getElementById('ics_' + k), lab = document.querySelector('label[for="ics_' + k + '"]'), d = document.getElementById(i.getAttribute('aria-describedby') || '_'); return { label: lab && lab.textContent, help: d && d.textContent, ph: i.placeholder, min: i.min, max: i.max, vis: !!(d && d.getBoundingClientRect().height > 0) }; }, k0);
-      check(tag + '_ICS_LABEL', ics.label === 'Calidad de la serie (ICS)', ics.label); check(tag + '_ICS_HELPER_ASSOCIATED_AND_VISIBLE', ics.help === '¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente' && ics.vis, ics.help); check(tag + '_ICS_PLACEHOLDER_AND_RANGE', ics.ph === '1–10' && ics.min === '1' && ics.max === '10', ics.ph);
+      check(tag + '_ICS_LABEL', ics.label === 'Calidad de la serie (ICS) opcional', ics.label); check(tag + '_ICS_HELPER_ASSOCIATED_AND_VISIBLE', ics.help === '¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente' && ics.vis, ics.help); check(tag + '_ICS_PLACEHOLDER_AND_RANGE', ics.ph === '1–10' && ics.min === '1' && ics.max === '10', ics.ph);
       await S(p, tag + '-ics');
       // ---- rest -> next set
       await p.click('.today-action').catch(() => {}); await p.waitForTimeout(400); await p.evaluate(() => selDia(0)); await p.waitForTimeout(400);
