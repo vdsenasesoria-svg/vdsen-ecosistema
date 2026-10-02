@@ -29,6 +29,8 @@ test('T394: changing day invalidates a rest CTA from the previous day', () => {
     var markedDay = null;
     function renderEntrenamiento() {}
     function stopRestTimer() { window._nextAction25 = null; }
+    function _bgStop() {}
+    function _tapGuard() {}
     function markSessionDone(di) { markedDay = di; }
     function _scrollToNextPendingSet() {}
     ${selDiaSource}

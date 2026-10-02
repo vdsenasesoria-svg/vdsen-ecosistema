@@ -30,7 +30,7 @@ async function clearTimer(p) { for (let i = 0; i < 6; i++) { if (!(await p.isVis
   try {
     check('NUMERIC_APPLY_ENABLED_FALSE', await p.evaluate(() => typeof NUMERIC_APPLY_ENABLED !== 'undefined' ? NUMERIC_APPLY_ENABLED === false : true));
     const tot = await p.evaluate(() => { let e = 0, s = 0; const pids = new Set(); for (let i = 0; i < 7; i++) { selDia(i); _EJERCICIOS_DIA.forEach(x => { e++; s += x.sets.length; pids.add(x.prescriptionExerciseId); }); } return { e, s, pids: pids.size }; });
-    check('ALL_7_DAYS_32_EX_80_SETS_32_PIDS_RENDER', tot.e === 32 && tot.s === 80 && tot.pids === 32, JSON.stringify(tot));
+    check('ALL_7_DAYS_32_EX_78_STRENGTH_SETS_PLUS_2_CARDIO_32_PIDS_RENDER', tot.e === 32 && tot.s === 78 && tot.pids === 32, JSON.stringify(tot));   // 80 prescribed sets; the 2 plain Cardio rows are cardio cards (T555), not strength sets
     await p.click('#nb0'); await p.waitForTimeout(400); await S(p, '01-home');
     check('HOME_CTA_STARTS_SESSION', /EMPEZAR ENTRENAMIENTO/i.test(await p.textContent('.today-action'))); await p.click('.today-action'); await p.waitForTimeout(800);
     await p.evaluate(d => selDia(d), DAY); await p.waitForTimeout(700); await S(p, '02-day');

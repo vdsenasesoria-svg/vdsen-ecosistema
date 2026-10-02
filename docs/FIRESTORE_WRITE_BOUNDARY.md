@@ -70,7 +70,7 @@ Contrato: un Coach solo muta el estado canónico de sus clientes (`clients/{uid}
 
 ## 8. Service worker
 
-`CACHE = vdsen-v12`; cada `<script src="assets/*.js">` del atleta debe estar en `PRECACHE` (test T537.7), incluidos `progression-auto-apply-shadow`, `progression-magnitude-policy`, `progression-effective-prescription` y `progression-application-consumer`. Sin trabajo offline adicional.
+`CACHE = vdsen-v13`; cada `<script src="assets/*.js">` del atleta debe estar en `PRECACHE` (test T537.7), incluidos `progression-auto-apply-shadow`, `progression-magnitude-policy`, `progression-effective-prescription` y `progression-application-consumer`. Sin trabajo offline adicional.
 
 ## 9. Bandera apagada: defensa en profundidad
 
