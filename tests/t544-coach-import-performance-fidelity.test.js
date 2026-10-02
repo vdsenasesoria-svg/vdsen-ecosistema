@@ -22,11 +22,11 @@ function fnSrc(src, name) {
   }
   throw new Error('unbalanced ' + name);
 }
-const consts = () => (coach.match(/const _PERF_[A-Z_]+\b[\s\S]*?;\n/g) || []).join('\n');
+const consts = () => (coach.match(/const _PERF_[A-Z_]+\b[\s\S]*?;\n/g) || []).join('\n') + '\n' + (coach.match(/const _NIVEL_MEDIO_ENUM\b[\s\S]*?;\n/g) || []).join('\n');
 function load() {
   const ctx = { console };
   vm.createContext(ctx);
-  const helpers = ['_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_perfRowState', '_normRestSeconds', '_carryPrescriptionId'].filter(n => coach.includes('function ' + n + '(')).map(n => fnSrc(coach, n)).join('\n');
+  const helpers = ['_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_perfRowState', '_normRestSeconds', '_carryPrescriptionId', '_normNivelMedio', '_normVariacionVertical', '_carryClassification'].filter(n => coach.includes('function ' + n + '(')).map(n => fnSrc(coach, n)).join('\n');
   vm.runInContext(consts() + '\n' + helpers + '\n' + fnSrc(coach, '_normalizeTrainingPlan') + '\nthis._normalizeTrainingPlan = _normalizeTrainingPlan;' + (helpers ? '\nthis._perfCarryEx = _perfCarryEx; this._perfCarrySet = _perfCarrySet; this._perfRowState = _perfRowState;' : ''), ctx);
   return ctx;
 }
@@ -122,7 +122,7 @@ function loadParse(json) {
   const el = { value: json, innerHTML: '' };
   const ctx = { console, window: {}, document: { getElementById: () => el }, showToast() {}, _escH: x => x, showParsedPreview(p) { ctx.preview = p; } };
   vm.createContext(ctx);
-  const helpers = ['_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_normRestSeconds', '_carryPrescriptionId'].map(n => fnSrc(coach, n)).join('\n');
+  const helpers = ['_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_normRestSeconds', '_carryPrescriptionId', '_normNivelMedio', '_normVariacionVertical', '_carryClassification'].map(n => fnSrc(coach, n)).join('\n');
   vm.runInContext(consts() + '\n' + helpers + '\n' + fnSrc(coach, 'parsePlanFromJSON') + '\nthis.parsePlanFromJSON = parsePlanFromJSON;', ctx);
   return { ctx, el };
 }

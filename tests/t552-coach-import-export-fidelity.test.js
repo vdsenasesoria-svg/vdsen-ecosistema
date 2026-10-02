@@ -20,7 +20,7 @@ function fnSrc(src, name) {
   }
   throw new Error('unbalanced ' + name);
 }
-const consts = () => (coach.match(/const _PERF_[A-Z_]+\b[\s\S]*?;\n/g) || []).join('\n');
+const consts = () => (coach.match(/const _PERF_[A-Z_]+\b[\s\S]*?;\n/g) || []).join('\n') + '\n' + (coach.match(/const _NIVEL_MEDIO_ENUM\b[\s\S]*?;\n/g) || []).join('\n');
 function load(docs) {
   const written = {};
   const ctx = { console, JSON, Object, Array, String, Number, Math, parseInt, parseFloat, isNaN, Date, crypto: { randomUUID: (() => { let n = 0; return () => 'gen-' + (++n); })() },
@@ -28,7 +28,7 @@ function load(docs) {
     showToast() {}, navigator: { clipboard: { writeText: async t => { written.text = t; } } }, Blob: function () {}, URL: { createObjectURL: () => 'blob:x', revokeObjectURL() {} },
     document: { createElement: () => ({ click() {}, set href(v) {}, set download(v) {} }), body: { appendChild() {}, removeChild() {} } }, written };
   vm.createContext(ctx);
-  const helpers = ['_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_genPrescriptionId', '_stampPrescriptionIds', '_normRestSeconds', '_carryPrescriptionId'].filter(n => coach.includes('function ' + n + '(')).map(n => fnSrc(coach, n)).join('\n');
+  const helpers = ['_perfScalar', '_perfType', '_perfEffType', '_perfHasNoSetsOk', '_perfCarryEx', '_perfCarrySet', '_genPrescriptionId', '_stampPrescriptionIds', '_normRestSeconds', '_carryPrescriptionId', '_normNivelMedio', '_normVariacionVertical', '_carryClassification'].filter(n => coach.includes('function ' + n + '(')).map(n => fnSrc(coach, n)).join('\n');
   vm.runInContext(consts() + '\n' + helpers + '\n' + fnSrc(coach, '_normalizeTrainingPlan') + '\n' + fnSrc(coach, 'exportActivePlanJSON') +
     '\nthis._normalizeTrainingPlan = _normalizeTrainingPlan; this.exportActivePlanJSON = exportActivePlanJSON; this._stampPrescriptionIds = _stampPrescriptionIds;' +
     (helpers.includes('function _normRestSeconds') ? ' this._normRestSeconds = _normRestSeconds;' : ''), ctx);
