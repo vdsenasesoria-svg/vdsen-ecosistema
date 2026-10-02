@@ -1,6 +1,6 @@
 {
   "purpose": "Vercel PREVIEW only. Firebase web config swapped to vdsen-ecosistema-staging in the deployed HTML. Never merge to main.",
-  "baseCommit": "5522449aefc8fc694916ce540c5fe91c5eb40761",
+  "baseCommit": "d729339b9a2ca5332ec8b76edd482028ccb80b15",
   "baseBranch": "codex/client-app-next",
   "firebaseProject": "vdsen-ecosistema-staging",
   "apiFunctionsRemoved": true
