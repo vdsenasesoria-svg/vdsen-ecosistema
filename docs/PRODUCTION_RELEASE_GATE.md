@@ -79,6 +79,19 @@ Prueba de lectura de la cuenta de Ayrton en staging (solo GET): plan 6s / 7d / 3
 
 **TECHNICAL_PREPRODUCTION_BLOCKERS_CLOSED**: los fallbacks por PID desaparecieron de las rutas de autoridad, un log sin dueño no puede ligarse a un plan nuevo y los tres campos de export hacen round trip. NUMERIC_APPLY_ENABLED = `false`; producción sin tocar y sin desplegar.
 
+## T554 (preparación para entrenar; staging, producción sin tocar)
+
+Detalle y evidencia: `docs/T554_TRAIN_READY.md`. Cuenta humana de entrenamiento limpia en staging (plan real 6s/7d/32 ej/80 series/32 PID, 0 diferencias inesperadas, sin logs); cuenta de automatización separada para las pruebas destructivas.
+
+| Fila | Estado | Evidencia |
+|---|---|---|
+| TRAIN-READY CONTRACT (login -> sesión completa -> recarga -> logout/login) | PASS | `scripts/client-staging-t554-train.cjs` (por serie, 12 series, auditoría Firestore) + escenarios S1-S10 (Semana 2 / USAR, sustitución, offline real, 6 anchos, 7 días, fugas, taps rápidos, Express completo) |
+| ICS / PUMP NO SE ARRASTRAN | PASS (corregido) | antes: el ICS / Pump de la serie previa se pre-llenaba y se guardaba como observación; ahora sin tocar = ausente; "opcional" visible |
+| ACCIÓN PRIMARIA ALCANZABLE | PASS (corregido) | GUARDAR SERIE / COMPLETAR EJERCICIO fijo sobre la navegación inferior (320-430 px) |
+| NaN EN NUTRICIÓN VACÍA | PASS (corregido) | sin plan nutricional ya no muestra "NaN kcal" |
+| CACHE / SW | PASS | `vdsen-v12`, HTML network-first; build servido verificado |
+| HUMAN UX | HUMAN_PENDING | Ayrton entrena con la cuenta de staging y reporta |
+
 ## Antes de producción todavía falta
 
 1. Provisionar entitlements (`scripts/admin-coach-api-access.cjs`) para los coaches aprobados antes de desplegar el API endurecido.

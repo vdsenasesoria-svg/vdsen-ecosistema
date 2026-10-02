@@ -1,5 +1,5 @@
-// VDSEN Service Worker — offline support
-const CACHE = 'vdsen-v11';
+// VDSEN Service Worker — offline support. T554: cache bumped to v12 so every device drops the older client build; HTML stays NETWORK-FIRST (the cache is only an offline fallback).
+const CACHE = 'vdsen-v12';
 
 // Assets to pre-cache on install (propio HTML)
 const PRECACHE = [

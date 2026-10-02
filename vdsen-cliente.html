@@ -576,6 +576,10 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .tr-sub .ok{color:var(--grn);font-weight:700}
 .tr-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .sess-hdr-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 14px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--mt);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:none}
+.workout-set-current .set-actions{position:sticky;bottom:-88px;z-index:4;margin:6px -14px -14px;padding:12px 14px 12px;background:linear-gradient(to top,var(--sa-bg,var(--card)) 80%,transparent)}
+.setpanel .set-actions{--sa-bg:var(--plate);margin:6px -16px -16px;padding:12px 16px}
+.workout-set-current .set-actions .set-save-primary{margin-top:0}
+.sp-opt{font-weight:600;letter-spacing:.06em;text-transform:lowercase;opacity:.7;margin-left:4px;font-size:.9em}
 .sess-hdr-btn.sess-live{color:var(--accent);border-color:var(--accent);text-transform:uppercase;letter-spacing:.1em;font-weight:800}
 .sess-hdr-btn.sess-partial{color:var(--sess-partial);border-color:var(--sess-partial)}
 :root.light-mode .sess-hdr-btn.sess-live{color:#245500;border-color:#245500}
@@ -5019,7 +5023,7 @@ var ICS_LABEL = 'Calidad de la serie (ICS)';
 var ICS_HELP = '¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente';
 var ICS_PLACEHOLDER = '1–10';
 function _icsHelpId(inputId) { return inputId + '_help'; }
-function _icsLabelHtml(inputId) { return '<label class="sp-fl" for="' + inputId + '">' + ICS_LABEL + '</label>'; }
+function _icsLabelHtml(inputId) { return '<label class="sp-fl" for="' + inputId + '">' + ICS_LABEL + ' <span class="sp-opt">opcional</span></label>'; }   // T554: ICS is visibly optional (untouched stays absent)
 function _icsHelpHtml(inputId) { return '<div class="ics-help" id="' + _icsHelpId(inputId) + '">' + ICS_HELP + '</div>'; }
 
 // ── Preferencia: temporizador de descanso activado/desactivado ──
@@ -6596,12 +6600,12 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           _icsHelpHtml('xics_'+_expK)+
         '</div>'+
         '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
-          '<span class="sp-fl">PUMP</span>'+
+          '<span class="sp-fl">PUMP <span class="sp-opt">opcional</span></span>'+
           '<div class="pump-row">'+_pumpBtns2+'</div>'+
           '<input type="hidden" id="xpump_val_'+_expK+'" value="">'+
         '</div>'+
       '</div>'+
-      '<button onclick="markExpressDone('+di+','+ei+')" class="set-save-primary"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-check"/></svg> COMPLETAR EJERCICIO</button>'+
+      '<div class="set-actions"><button onclick="markExpressDone('+di+','+ei+')" class="set-save-primary" style="width:100%"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-check"/></svg> COMPLETAR EJERCICIO</button></div>'+
       '</div>';
   } else {
   // Barra de progreso (modo normal: myoreps/rest-pause/cluster)
@@ -6644,8 +6648,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
     var _prevSesCarga= _hasPrevSes && _prevSesDat.carga ? _convertCarga(_prevSesDat.carga, _prevSesDat.unit, unit) : '';
     var _prevSesReps = _hasPrevSes ? (_prevSesDat.reps || '') : '';
     var _prevSesRir  = _hasPrevSes ? (_prevSesDat.rir_real || '') : '';
-    var _prevSesIcs  = _hasPrevSes ? (_prevSesDat.ics || null) : null;
-    var _prevSesPump = _hasPrevSes ? (_prevSesDat.pump || null) : null;
+    // T554: nothing from the previous set becomes an input default (an untouched ICS / Pump / RIR must stay ABSENT, not a carried observation). The explicit "=" copy button is the only carry.
     // ── Datos específicos del set (del plan): setNote, drop, tempo ──
     var setSpec = (_isY3T && _effectiveSets && _effectiveSets[s]) ? _effectiveSets[s] : (ej.sets && ej.sets[s] ? ej.sets[s] : null);
     // Detectar ejercicio heterogéneo (distintos reps por set — Y3T o plan mixto)
@@ -6826,19 +6829,19 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
           '<div class="sp-f sp-ics">'+
             _icsLabelHtml('ics_'+key)+
             (function(){
-              var _icsVal = saved.ics || (_prevSesIcs || '');
+              var _icsVal = saved.ics || '';
               var _icsNum = parseInt(_icsVal);
               return '<input id="ics_'+key+'" type="number" value="'+(_icsVal||'')+'" placeholder="'+ICS_PLACEHOLDER+'" aria-describedby="'+_icsHelpId('ics_'+key)+'" inputmode="numeric" min="1" max="10"'+
                 ' class="num-in sm'+((_icsNum&&_icsNum<7)?' low':'')+'" oninput="updateICSColor(\''+key+'\''+')">'+_icsHelpHtml('ics_'+key);
             })()+
           '</div>'+
           '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
-            '<span class="sp-fl">PUMP</span>'+
+            '<span class="sp-fl">PUMP <span class="sp-opt">opcional</span></span>'+
             '<div class="pump-row">'+
               (function(){
                 var opts=[{v:1,l:'BUENO'},{v:2,l:'OK'},{v:3,l:'BAJO'}];
-                // Usar pump guardado o, si no hay, el de la serie anterior de esta sesión
-                var _initPump = saved.pump || _prevSesPump;
+                // T554: only the set own saved pump (never the previous set's)
+                var _initPump = saved.pump || null;
                 return opts.map(function(p){
                   var a=(_initPump==p.v);
                   return '<button type="button" onclick="setPump(\''+key+'\','+p.v+')" id="pump_'+key+'_'+p.v+'" class="pumpb'+(a?' on':'')+'" aria-pressed="'+(a?'true':'false')+'" aria-label="Pump '+p.l.toLowerCase()+'">'+p.l+'</button>';
@@ -6847,8 +6850,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '</div>'+
           '</div>'+
         '</div>'+
-        // Actions
-        '<div style="display:flex;gap:8px">'+
+        // Actions (T554: sticky inside the current set card so GUARDAR stays reachable above the bottom nav without scrolling back)
+        '<div class="set-actions" style="display:flex;gap:8px">'+
           (s > 0
             ? '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" style="'+
                 'flex:0 0 auto;padding:12px 16px;border:1px solid var(--border);border-radius:10px;'+
@@ -7851,7 +7854,7 @@ function _buildExpressSupersetPanel(ejercicios, di, ssMembers, grp) {
             _icsHelpHtml('xics_'+_ssk)+
           '</div>'+
           '<div class="sp-f sp-pump" role="group" aria-label="Pump">'+
-            '<span class="sp-fl">PUMP</span>'+
+            '<span class="sp-fl">PUMP <span class="sp-opt">opcional</span></span>'+
             '<div class="pump-row">'+_ssPumpBtns+'</div>'+
             '<input type="hidden" id="xpump_val_'+_ssk+'" value="">'+
           '</div>'+
@@ -11700,9 +11703,11 @@ function renderNutricion() {
       if (!kcal) kcal = m.calorias;
     }
     // Fallback 3: calcular kcal desde macros
-    if ((!kcal || kcal === '—') && prot && carb && gras) {
+    // T554: only from real numeric macros ('—' / '' placeholders are truthy and used to render "NaN kcal")
+    if ((!kcal || kcal === '—') && isFinite(parseFloat(prot)) && isFinite(parseFloat(carb)) && isFinite(parseFloat(gras))) {
       kcal = String((+prot*4) + (+carb*4) + (+gras*9));
     }
+    if (kcal !== undefined && kcal !== null && kcal !== '—' && !isFinite(parseFloat(kcal))) kcal = '—';
   }
 
   // Objetivo guardado en Firestore (meta del coach)
@@ -16531,8 +16536,8 @@ function _detectMissingData(logs, plan, currentWeek) {
     detail: 'El motor de progresión necesita el RIR real para evaluar el esfuerzo.'
   });
   if (setsWithoutICS > 0) items.push({
-    type: 'MISSING_ICS', severity: 'attention',
-    message: setsWithoutICS + (setsWithoutICS === 1 ? ' serie sin' : ' series sin') + ' ICS',
+    type: 'MISSING_ICS', severity: 'info',   // T554: ICS is optional to save a set; it is a quiet hint, not an orange warning
+    message: setsWithoutICS + (setsWithoutICS === 1 ? ' serie sin' : ' series sin') + ' ICS (opcional)',
     detail: 'Sin ICS el coach no puede evaluar la calidad técnica de la ejecución.'
   });
 
