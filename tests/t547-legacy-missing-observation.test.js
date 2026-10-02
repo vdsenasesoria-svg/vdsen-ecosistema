@@ -28,7 +28,7 @@ test('T547.L3 no-observation reasons are explicit ("Sin ... registrado") and obs
 test('T547.L4 history/trend readers keep missing ICS as null and render a dash', () => {
   assert.ok(CLIENT.includes('avgICS: icsVals.length ? _avgArr(icsVals) : null,'));
   assert.ok(CLIENT.includes("last.avgICS === null ? '—'"));
-  assert.ok(CLIENT.includes('return v.length?_avgArr(v):null; })(),'));
+  assert.ok(CLIENT.includes('avgICS: icss.length ? _avgArr(icss) : null,'), 'T553: previous-week averages keep a missing ICS as null');
   assert.ok(fs.readFileSync('vdsen-coach.html', 'utf8').includes("r.trend.prevICS == null ? '—'"));
 });
 test('T547.L5 LEGACY AUTHORITY: calculateProgression performs no prescription write, no overlay, no canonical state', () => {

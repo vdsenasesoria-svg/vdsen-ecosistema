@@ -2847,6 +2847,8 @@ async function loadPlan(user) {
       if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
       var logData = _selectLogAuthority(_mesoSnap && _mesoSnap.exists() ? _mesoSnap.data() : null,
         rootSnap && rootSnap.exists() ? rootSnap.data() : null, activePlanId);
+      _rootLogUnbound = _isLegacyUnboundLog(rootSnap && rootSnap.exists() ? rootSnap.data() : null);
+      if (_rootLogUnbound) console.info('LEGACY_LOG_UNBOUND', 'root log has execution evidence but no planId: not attributed to plan', activePlanId);   // internal diagnostic only
       if (logData) {
         _logsAuthorityUpdatedAt = Number(logData.updatedAt) || 0;
         // Preservar siempre el historial de pesos (sobrevive a cambio de plan)
@@ -3015,6 +3017,7 @@ async function loadPlan(user) {
       _liveUnsubLogs = FB.onSnapshot(FB.doc(FB.db, 'logs', user.uid), function(snap) {
         if (!snap.exists()) return;
         var d = snap.data();
+        _rootLogUnbound = _isLegacyUnboundLog(d); if (_rootLogUnbound) return;   // T553: never adopt an unbound root as this plan's log
         var ts = d.updatedAt || 0;
         var newerRoot = _selectLogAuthority({ planId: ACTIVE_PLAN_ID, updatedAt: _logsAuthorityUpdatedAt, entries: LOGS },
           d, ACTIVE_PLAN_ID) === d;
@@ -5010,6 +5013,7 @@ var _restEndMs = 0;
 var _restAlertFired = false;
 // T548: rest context + log-write acknowledgement (navigation safety only; never stored)
 var _restToken = 0, _restCtx = null, _logsReqSeq = 0, _logsAckedSeq = 0;
+var _rootLogUnbound = false;   // T553: the root log doc is LEGACY_UNBOUND_EVIDENCE (never rewritten while true)
 // T548: athlete-facing ICS wording. The stored field (`ics`), the 1-10 range and every progression semantic are unchanged.
 var ICS_LABEL = 'Calidad de la serie (ICS)';
 var ICS_HELP = '¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente';
@@ -5186,6 +5190,7 @@ async function _refreshLogsFromFirestore(reason) {
     const snap = await FB.getDoc(ref);
     if (!snap.exists()) return;
     const data = snap.data();
+    _rootLogUnbound = _isLegacyUnboundLog(data); if (_rootLogUnbound) return;   // T553: LEGACY_UNBOUND is not this plan's evidence (and exerciseHistory / units are position-bound too)
     // T124-C: guard against stale entries from a different plan.
     // After a plan switch the legacy logs/{uid} doc may still carry planId of the previous plan
     // until the first _doSaveLogs() of the new plan updates it.  Loading those entries here
@@ -6130,7 +6135,8 @@ function _prevWeekRef(entries, c) {
     var reps = (s.reps !== undefined && s.reps !== null && String(s.reps) !== '') ? String(s.reps) : null;
     if (load === null && reps === null) return;   // nothing executed to show
     var rv = (s.rir_real === undefined || s.rir_real === null || s.rir_real === '') ? NaN : parseFloat(s.rir_real);
-    (byPos[m[1] + '_' + m[2]] = byPos[m[1] + '_' + m[2]] || { d: +m[1], e: +m[2], sets: [] }).sets.push({ n: +m[3] + 1, load: load, unit: (s.unit || 'KG'), reps: reps, rir: (isNaN(rv) || rv < 0 || rv > 5) ? null : rv });
+    var iv = parseFloat(s.ics);
+    (byPos[m[1] + '_' + m[2]] = byPos[m[1] + '_' + m[2]] || { d: +m[1], e: +m[2], sets: [] }).sets.push({ n: +m[3] + 1, load: load, unit: (s.unit || 'KG'), reps: reps, rir: (isNaN(rv) || rv < 0 || rv > 5) ? null : rv, ics: (isNaN(iv) || iv <= 0) ? null : iv });
   });
   var pos = Object.keys(byPos); if (pos.length !== 1) return null;   // none, or ambiguous identity
   var g = byPos[pos[0]]; g.sets.sort(function(a, b) { return a.n - b.n; });
@@ -6306,7 +6312,6 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   };
   var _exNameBanner = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   var _histExBanner = _getExerciseHistoryEntry(_exNameBanner, ej.prescriptionExerciseId);
-  var _prevWeekBanner = _getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId, nombre);
   var _exNoteInline = _getExNote(di, ei);
   // T302 — SKIP EXERCISE: only offered while the exercise isn't already
   // resolved (done or skipped) and only in the active real week -- never a
@@ -6414,7 +6419,7 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
   var _isFirstOfPattern = (ei === 0) && (_wuPatternKey !== 'Core') && (_wuPatternKey !== 'Cardio');
   if (_isFirstOfPattern) {
     var _wuNameLower = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    var wuRef = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId, nombre),
+    var wuRef = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId),
       _getExerciseHistoryEntry(_wuNameLower, ej.prescriptionExerciseId), ej.sets && ej.sets[0]);
     var wuRefLoad = wuRef.load;
     var wuRows = _warmupRowsHtml(wuRefLoad, unit);
@@ -8975,7 +8980,7 @@ function buildBoostcampExercise(ej, di, ei) {
   var wuHtml = '';
   if (_isFirstOfPattern) {
     var _wuNameBC = (ej.nombre||ej.exerciseName||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    var wuRefLoad = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId, ej.nombre || ej.exerciseName || ''),
+    var wuRefLoad = _warmupReferenceLoad(_getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId),
       _getExerciseHistoryEntry(_wuNameBC, ej.prescriptionExerciseId), ej.sets && ej.sets[0]).load;
     wuHtml = '<div id="wu_'+di+'_'+ei+'" style="display:none;margin:0 14px 10px;padding:10px 12px;'+
       'background:rgba(70,130,200,.06);border-left:3px solid rgba(70,130,200,.4);border-radius:0 8px 8px 0">'+
@@ -9293,11 +9298,9 @@ function _historyPidKey(prescriptionExerciseId) {
   return prescriptionExerciseId ? '__pid__' + String(prescriptionExerciseId) : '';
 }
 function _getExerciseHistoryEntry(exNameKey, prescriptionExerciseId) {
-  // T498: with a prescriptionExerciseId the PID entry is the only authority (no name fallback).
-  // The name-keyed entry is read only when PID identity genuinely does not exist (legacy plans).
+  // T553: the PID entry is the only authority; the name-keyed entry (legacy PID-less plans) is no longer read. No PID => no history reference (fail closed).
   var pidKey = _historyPidKey(prescriptionExerciseId);
-  if (pidKey) return EXERCISE_HISTORY[pidKey] || {};
-  return EXERCISE_HISTORY[exNameKey] || {};
+  return pidKey ? (EXERCISE_HISTORY[pidKey] || {}) : {};
 }
 function _recordExerciseHistoryAndPR(exNameKey, exDisplayName, carga, reps, rir, unit, showCelebration, prescriptionExerciseId) {
   if (!carga || parseFloat(carga) <= 0) return false;
@@ -10580,10 +10583,9 @@ async function markSessionDoneFromHistory(di) {
     // la unidad de origen si la referencia se registró en otra (kg↔lb).
     var currentUnit = getExUnit(di, ei) || 'KG';
     var refLoad = 0, refReps = 0, refRir = defaultRIR, refUnit = currentUnit;
-    var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12, ej.prescriptionExerciseId, ej.nombre || ej.exerciseName || '');
+    var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12, ej.prescriptionExerciseId);
     if (prev && prev.avgLoad > 0) {
-      var prevSetKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0';
-      var prevUnit = (LOGS[prevSetKey] && LOGS[prevSetKey].unit) ? LOGS[prevSetKey].unit : currentUnit;
+      var prevUnit = prev.unit || currentUnit;   // T553: unit of the same-PID previous exposure (no positional log key)
       var rawLoad = _roundUnit(prev.avgLoad, prevUnit); // fix: usar paso de redondeo correcto según unidad previa
       // Convertir si la unidad previa difiere de la actual
       refLoad = parseFloat(_convertCarga(String(rawLoad), prevUnit, currentUnit)) || rawLoad;
@@ -10793,10 +10795,9 @@ async function markWeekCompleteFromHistory() {
       var currentUnit = getExUnit(di, ei) || 'KG';
       var refLoad = 0, refReps = 0, refRir = defaultRIR;
 
-      var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12, ej.prescriptionExerciseId, ej.nombre || ej.exerciseName || '');
+      var prev = _getPrevWeekData(CURRENT_WEEK, di, ei, 12, ej.prescriptionExerciseId);
       if (prev && prev.avgLoad > 0) {
-        var prevSetKey = 'log_'+(CURRENT_WEEK-1)+'_'+di+'_'+ei+'_s0';
-        var prevUnit = (LOGS[prevSetKey] && LOGS[prevSetKey].unit) ? LOGS[prevSetKey].unit : currentUnit;
+        var prevUnit = prev.unit || currentUnit;   // T553: unit of the same-PID previous exposure (no positional log key)
         var rawLoad = _roundUnit(prev.avgLoad, prevUnit);
         refLoad = parseFloat(_convertCarga(String(rawLoad), prevUnit, currentUnit)) || rawLoad;
         refReps = Math.round(prev.avgReps);
@@ -10893,7 +10894,18 @@ async function saveLogs() {
 // updatedAt is not a pure execution clock: root-only Coach writes (week change) bump it
 // without touching entries. Executed evidence (done_*/log_* keys are never deleted) is
 // therefore compared first; the clock only decides when neither side dominates.
+// T553: LEGACY_UNBOUND_EVIDENCE. A ROOT log doc (`logs/{uid}`) or a local backup with NO usable planId that holds execution evidence cannot be attributed to any
+// plan: never infer ownership from the active plan, an exercise name / position or a matching week / day shape. It is not deleted, not rewritten with a planId and
+// not migrated; it is simply not used as evidence of the active plan (previous-week, warm-up history, recommendations, progression, completion). A meso doc is bound
+// by its PATH (`logs/{uid}/mesos/{planId}`) and is never classified here.
+function _logDocHasEvidence(d) {
+  return Object.keys((d && d.entries) || {}).some(function(k) { return k.indexOf('log_') === 0 || k.indexOf('done_') === 0; });
+}
+function _isLegacyUnboundLog(d) {
+  return !!d && !(typeof d.planId === 'string' && d.planId !== '') && _logDocHasEvidence(d);
+}
 function _selectLogAuthority(mesoData, rootData, planId) {
+  if (_isLegacyUnboundLog(rootData)) rootData = null;   // T553: LEGACY_UNBOUND never becomes the log of the active plan
   if (!mesoData) return rootData || null;
   if (!rootData || (rootData.planId && rootData.planId !== planId)) return mesoData;
   if (mesoData.planId && mesoData.planId !== planId) return rootData;
@@ -10936,13 +10948,20 @@ async function _doSaveLogs() {
     const _ownedFields = Object.keys(_payload);
     // T1 dual-write: nuevo path por mesociclo primero (future source), legacy segundo (compatibilidad coach).
     // El fallo del path nuevo es no-fatal: datos seguros en legacy y localStorage.
+    var _mesoOk = false;
     if (ACTIVE_PLAN_ID) {
-      try { await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields }); }
+      try { await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields }); _mesoOk = true; }
       catch(_me) { console.warn('[logs/mesos] write:', _me && _me.code, _me && _me.message); }
     }
     if (!USER || USER.uid !== _uidAtStart) return false;
-    const ref = FB.doc(FB.db, 'logs', _uidAtStart);
-    await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });
+    if (typeof _rootLogUnbound !== 'undefined' && _rootLogUnbound) {
+      // T553: the root doc holds LEGACY_UNBOUND_EVIDENCE: it is neither rewritten (its entries would be replaced) nor stamped with the plan id. The plan-bound meso
+      // doc is the only durable path while that is true; without it nothing durable was written => report the failure like any failed save.
+      if (!_mesoOk) throw new Error('plan-bound log write failed');
+    } else {
+      const ref = FB.doc(FB.db, 'logs', _uidAtStart);
+      await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });
+    }
     if (!USER || USER.uid !== _uidAtStart) return false;
     if (ACTIVE_PLAN_ID === _payload.planId) _logsAuthorityUpdatedAt = _payload.updatedAt;
     if (typeof _logsAckedSeq === 'number') _logsAckedSeq = Math.max(_logsAckedSeq, _seqAtStart);   // T548: the server acknowledged every write requested up to this point
@@ -11072,6 +11091,7 @@ function loadBackupLogs() {
     if (bk) {
       const data = JSON.parse(bk);
       if (data.entries) {
+        if (_isLegacyUnboundLog(data)) return false;   // T553: a backup that cannot be bound to a plan is not loaded
         // Si el backup es de un plan diferente al activo, no cargar entradas ni semana
         var bkPlanId = data.planId || null;
         var curPlanId = ACTIVE_PLAN_ID || null;
@@ -16021,65 +16041,30 @@ function _warmupRowsHtml(refLoad, unit) {
   }).join('');
 }
 
-function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exerciseName) {
-  if (week <= 1) return null;
-  var prevWeek = week - 1;
-  var sets = [];
-  var confidence = 'LOW';
-
-  // HIGH confidence: search by prescriptionExerciseId
-  if (prescriptionExerciseId) {
-    var positions = {};
-    var candidateSets = [];
-    (LOGS_BY_WEEK.log[prevWeek] || []).forEach(function(k) {
-      var entry = LOGS[k];
-      if (!entry || !entry.done || entry.autoFilled) return;
-      if (entry.prescriptionExerciseId !== prescriptionExerciseId) return;
-      var parts = k.split('_');
-      if (parts.length >= 5) { positions[parts[2]+'_'+parts[3]] = true; }
-      candidateSets.push(entry);
-    });
-    // Ambiguity: same prescriptionExerciseId on multiple (di,ei) → DUPLICATE_PRESCRIPTION_ID
-    if (candidateSets.length && Object.keys(positions).length > 1) {
-      return null; // corrupt identity — do not match silently
-    }
-    if (candidateSets.length) { sets = candidateSets; confidence = 'HIGH'; }
-  }
-
-  // T498: a PID with no PID logs has no previous-week reference (no positional/name fallback).
-  if (prescriptionExerciseId && !sets.length) return null;
-
-  // LOW confidence: legacy positional fallback with name guard (only when PID identity does not exist)
-  if (!sets.length) {
-    var legacySets = [];
-    for (var s = 0; s < maxSets; s++) {
-      var k = 'log_'+prevWeek+'_'+di+'_'+ei+'_s'+s;
-      if (LOGS[k] && LOGS[k].done && !LOGS[k].autoFilled) legacySets.push(LOGS[k]);
-    }
-    if (legacySets.length && exerciseName) {
-      // Name guard: if log has exerciseNameSnapshot, require exact normalized match
-      var logsWithSnap = legacySets.filter(function(s) { return s.exerciseNameSnapshot; });
-      if (logsWithSnap.length > 0) {
-        var normCur = _normName(exerciseName);
-        var normSnap = _normName(logsWithSnap[0].exerciseNameSnapshot);
-        if (normCur !== normSnap) {
-          return null; // name mismatch → NEW_EXERCISE_REFERENCE (no incorrect history)
-        }
-      }
-      // No snapshot in legacy logs: accept positional (legacy limitation)
-    }
-    sets = legacySets;
-  }
-
-  if (!sets.length) return null;
+// T553: PID IS THE ONLY IDENTITY. The former positional / exercise-name fallback (PID-less plans) is gone: without a PID, or with no exact same-PID evidence
+// in exactly week-1 of THIS plan, there is no prior-exposure data (fail closed). Built on the same resolver as ÚLTIMA SEMANA / USAR CARGA/REPS (`_prevWeekRef`):
+// same plan (the loader fences the log source), same PID, exactly W-1, standard executed sets only (express / expressFinal / warm-up / autoFilled / undone excluded),
+// a PID found at several positions is ambiguous, a substituted exposure carries no plan PID. Never reads the Coach prescription; old raw logs are not touched.
+function _prevWeekRefOf(week, di, ei, prescriptionExerciseId) {
+  if (!prescriptionExerciseId) return null;
+  return _prevWeekRef(LOGS, { planId: ACTIVE_PLAN_ID || null, pid: prescriptionExerciseId, week: week, day: di, ei: ei });
+}
+function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId) {
+  var r = _prevWeekRefOf(week, di, ei, prescriptionExerciseId);
+  if (!r || !r.sets.length) return null;
+  var nums = function(f) { return r.sets.map(f); };
+  var loads = nums(function(s) { return parseFloat(s.load) || 0; });
+  var rirs = r.sets.map(function(s) { return s.rir; }).filter(function(x) { return x !== null; });
+  var icss = r.sets.map(function(s) { return s.ics; }).filter(function(x) { return x !== null; });
   return {
-    avgLoad: _avgArr(sets.map(function(s){ return parseFloat(s.carga) || 0; })),
-    avgReps: _avgArr(sets.map(function(s){ return parseFloat(s.reps) || 0; })),
-    avgICS: (function(){ var v=sets.map(function(s){return parseFloat(s.ics);}).filter(function(x){return x>0&&!isNaN(x);}); return v.length?_avgArr(v):null; })(),
-    avgRIR: (function(){ var v=sets.filter(function(s){return !s.autoFilled;}).map(function(s){return parseFloat(s.rir_real);}).filter(function(x){return !isNaN(x)&&x>=0&&x<=5;}); return v.length?_avgArr(v):null; })(),
-    numSets: sets.length,
-    topLoad: Math.max.apply(null, sets.map(function(s){ return parseFloat(s.carga) || 0; })),
-    confidence: confidence
+    avgLoad: _avgArr(loads),
+    avgReps: _avgArr(nums(function(s) { return parseFloat(s.reps) || 0; })),
+    avgICS: icss.length ? _avgArr(icss) : null,
+    avgRIR: rirs.length ? _avgArr(rirs) : null,
+    numSets: r.sets.length,
+    topLoad: Math.max.apply(null, loads),
+    unit: r.sets[0].unit,
+    confidence: 'HIGH'
   };
 }
 
@@ -16207,7 +16192,7 @@ function calculateProgression(di, postData) {
     // add_sets, la condición numSets < maxSets era 4 < 4 = false → bloqueaba
     // cualquier progresión futura de volumen aunque el cliente estuviera en óptimas.
     var maxSets = _getMaxSets(catData, numSets);
-    var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId, ej.exerciseName || ej.nombre || '');
+    var prevWeek = _getPrevWeekData(CURRENT_WEEK, di, ei, 8, ej.prescriptionExerciseId);
 
     // Calcular reps target del plan — repsLow=límite inferior, repsTarget=límite superior del rango
     var repsLow = 8, repsTarget = 8;
@@ -16412,7 +16397,7 @@ function calculateProgression(di, postData) {
 
       // ── Detección de plateau: carga estancada 2+ semanas con ICS ≥ 8 ──
       if (prevWeek && CURRENT_WEEK >= 3) {
-        var prevPrev = _getPrevWeekData(CURRENT_WEEK - 1, di, ei, 8, ej.prescriptionExerciseId, ej.exerciseName || ej.nombre || '');
+        var prevPrev = _getPrevWeekData(CURRENT_WEEK - 1, di, ei, 8, ej.prescriptionExerciseId);
         if (prevPrev && prevPrev.avgLoad > 0) {
           var diffVsPrev = Math.abs(load - prevWeek.avgLoad);
           var diffVsPrev2 = Math.abs(prevWeek.avgLoad - prevPrev.avgLoad);

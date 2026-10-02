@@ -57,7 +57,7 @@ test('T507.6 exact PID identity is mandatory; names are labels only', () => {
   const src = f => read(f).replace(/\/\*[\s\S]*?\*\//g, '');
   assert.ok(!/exerciseName\b[^;\n]*(===|==|indexOf|includes)/.test(src('assets/progression-magnitude-policy.js')), 'policy never matches by name');
   assert.ok(!/toLowerCase|_normName/.test(src('assets/progression-application-consumer.js')), 'consumer never matches by name');
-  assert.ok(client.includes('if (pidKey) return EXERCISE_HISTORY[pidKey] || {};'));
+  assert.ok(client.includes('return pidKey ? (EXERCISE_HISTORY[pidKey] || {}) : {};'));
   assert.ok(coach.includes('return pidCount === 1 ? foundByPid : null;'));
   const c = consumer.planApplication({ record: { key: 'k', magnitude: { mode: 'SHADOW', schema: 'vdsen-magnitude-shadow-v1', numericApplyAllowed: false } }, context: {} });
   assert.ok(c.blockers.includes('NOT_CANONICAL_RECORD'), 'a record without PID is not canonical');

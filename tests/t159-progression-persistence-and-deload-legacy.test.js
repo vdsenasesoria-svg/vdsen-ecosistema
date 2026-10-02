@@ -161,12 +161,13 @@ console.log('All pre-existing calculateProgression() return fields unchanged —
 // ambiguity still returns null (no silent mutation), legacy name-guard intact.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const getPrevWeekFn = extractFunction(CLIENT, 'function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId, exerciseName)');
+const getPrevWeekFn = extractFunction(CLIENT, 'function _getPrevWeekData(week, di, ei, maxSets, prescriptionExerciseId) {');
 assert.ok(getPrevWeekFn, '_getPrevWeekData must exist');
-assert.ok(/if \(candidateSets\.length && Object\.keys\(positions\)\.length > 1\) \{\s*return null; \/\/ corrupt identity/.test(getPrevWeekFn), 'T159 regression: ambiguous prescriptionExerciseId across positions must still refuse to match (no silent mutation)');
-assert.ok(getPrevWeekFn.includes('return null; // name mismatch → NEW_EXERCISE_REFERENCE (no incorrect history)'), 'T159 regression: legacy positional fallback name-guard must remain (prevents cross-exercise history contamination)');
+const prevRefFn = extractFunction(CLIENT, 'function _prevWeekRef(entries, c) {');
+assert.ok(/if \(pos\.length !== 1\) return null;/.test(prevRefFn), 'T159/T553 regression: ambiguous prescriptionExerciseId across positions still returns null (no silent match)');
+assert.ok(getPrevWeekFn.includes('_prevWeekRefOf(') && !/_normName|exerciseName|legacySets/.test(getPrevWeekFn), 'T553: the positional / name fallback is gone; the helper is PID-only on the canonical resolver');
 
-console.log('_getPrevWeekData PID-first identity resolution and ambiguity/name guards unchanged — OK');
+console.log('_getPrevWeekData PID-only identity resolution (T553) and ambiguity guard — OK');
 
 console.log('');
 console.log('T159 continuation — progression persistence + deload legacy audit: ALL ASSERTIONS PASSED');

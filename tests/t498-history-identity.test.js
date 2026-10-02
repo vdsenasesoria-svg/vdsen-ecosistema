@@ -12,11 +12,11 @@ const fn = (name) => { const i = client.indexOf('function ' + name + '('); asser
 function env(EXERCISE_HISTORY, LOGS) {
   const byWeek = { log: {} };
   Object.keys(LOGS).forEach(k => { const w = +k.split('_')[1]; (byWeek.log[w] = byWeek.log[w] || []).push(k); });
-  const ctx = { EXERCISE_HISTORY, LOGS, LOGS_BY_WEEK: byWeek,
+  const ctx = { EXERCISE_HISTORY, LOGS, LOGS_BY_WEEK: byWeek, ACTIVE_PLAN_ID: 'planA', Number, Math, JSON, Object, Array, String, parseInt, parseFloat, isNaN, RegExp,
     _avgArr: a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0,
     _normName: s => String(s || '').toLowerCase().trim() };
   vm.createContext(ctx);
-  vm.runInContext(fn('_historyPidKey') + fn('_getExerciseHistoryEntry') + fn('_getPrevWeekData') +
+  vm.runInContext(['_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_prevWeekRef', '_prevWeekRefOf'].map(fn).join('\n') + fn('_historyPidKey') + fn('_getExerciseHistoryEntry') + fn('_getPrevWeekData') +
     '\nthis._h=_getExerciseHistoryEntry; this._p=_getPrevWeekData;', ctx);
   return ctx;
 }
@@ -29,10 +29,10 @@ test('T498.1 PID present: history never falls back to the name entry', () => {
   assert.equal(e._h('press', 'A').load, undefined);
 });
 
-test('T498.2 no PID (genuinely legacy): name history is still readable', () => {
+test('T498.2 (T553) no PID: there is NO history reference (the name-keyed legacy entry is not read: fail closed)', () => {
   const e = env({ press: { load: '100' } }, {});
-  assert.equal(e._h('press', undefined).load, '100');
-  assert.equal(e._h('press', null).load, '100');
+  assert.equal(e._h('press', undefined).load, undefined);
+  assert.equal(e._h('press', null).load, undefined);
 });
 
 test('T498.3 same name / different PID are isolated in history', () => {
@@ -55,16 +55,16 @@ test('T498.5 previous-week data: same name, different PID never leaks across', (
   assert.equal(e._p(2, 0, 0, 8, 'B', 'Press').avgLoad, 40);
 });
 
-test('T498.6 no PID: legacy positional fallback (with name guard) is unchanged', () => {
+test('T498.6 (T553) no PID: the legacy positional / name fallback is REMOVED (no prior-exposure data without PID identity)', () => {
   const LOGS = { 'log_1_0_0_s0': entry(undefined, 90, 'Press') };
   const e = env({}, LOGS);
-  assert.equal(e._p(2, 0, 0, 8, undefined, 'Press').avgLoad, 90);
+  assert.equal(e._p(2, 0, 0, 8, undefined, 'Press'), null);
   assert.equal(e._p(2, 0, 0, 8, undefined, 'Curl'), null);
 });
 
 test('T498.7 every _getPrevWeekData call site passes the PID', () => {
   const calls = client.match(/_getPrevWeekData\([^)]*\)/g).filter(c => !c.startsWith('_getPrevWeekData(week'));
-  assert.ok(calls.length >= 7);
+  assert.ok(calls.length >= 6);
   for (const c of calls) assert.ok(/prescriptionExerciseId/.test(c), c);
 });
 

@@ -14,7 +14,7 @@ function fnSrc(name) {
   for (let k = j; k < SRC.length; k++) { if (SRC[k] === '{') d++; else if (SRC[k] === '}' && --d === 0) return SRC.slice(i, k + 1); }
   throw new Error('unbalanced ' + name);
 }
-const FNS = ['_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_roundUnit', '_convertCarga', '_prevWeekRef', '_prevWeekHtml', '_prevWeekReuse', '_prevWeekKeyParts', '_prevWeekReuseHtml', '_selectLogAuthority', '_logsPlanChanged'];
+const FNS = ['_exNotePidKey', '_exNoteCtx', '_exNoteValid', '_exNoteShadowed', '_roundUnit', '_convertCarga', '_prevWeekRef', '_prevWeekHtml', '_prevWeekReuse', '_prevWeekKeyParts', '_prevWeekReuseHtml', '_logDocHasEvidence', '_isLegacyUnboundLog', '_selectLogAuthority', '_logsPlanChanged'];
 const SAME = 'pid-same-123';
 const pres = [{ prescriptionExerciseId: SAME, exerciseName: 'Press banca', sets: [{ rirTarget: 2, load: 100, repsTarget: 8 }] }];
 const set = o => Object.assign({ carga: '80', reps: '10', unit: 'KG', done: true, rir: 2, rir_real: '3', prescriptionExerciseId: SAME, ts: 1 }, o);

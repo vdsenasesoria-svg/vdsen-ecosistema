@@ -6412,6 +6412,26 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _PERF_SET_FIELDS.forEach(k => { const v = _perfScalar(s[k]); if (v !== undefined) out[k] = v; });
     return out;
   }
+  // T553: exercise classification fields (nivel_medio enum, variacion_vertical object) share ONE sanitizer for every import / export / editor path.
+  const _NIVEL_MEDIO_ENUM = ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'];
+  function _normNivelMedio(v) { return _NIVEL_MEDIO_ENUM.includes(v) ? v : null; }
+  function _normVariacionVertical(v) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    return {
+      semana_inicio: parseInt(v.semana_inicio) || 1,
+      semana_variacion: v.semana_variacion != null && !isNaN(parseInt(v.semana_variacion)) ? parseInt(v.semana_variacion) : null,
+      ejercicio_sustituto: v.ejercicio_sustituto ? String(v.ejercicio_sustituto).trim() : null,
+      nivel_sustituto: v.nivel_sustituto ? String(v.nivel_sustituto) : null
+    };
+  }
+  function _carryClassification(ex) {
+    const out = {};
+    if (!ex || typeof ex !== 'object') return out;
+    const nm = _normNivelMedio(ex.nivel_medio), vv = _normVariacionVertical(ex.variacion_vertical);
+    if (nm) out.nivel_medio = nm;
+    if (vv) out.variacion_vertical = vv;
+    return out;
+  }
   // Editor round-trip state for one stored exercise (the editor rebuilds sets from three inputs, so the type / prescription / per-set doses ride on the row).
   function _perfRowState(e) {
     const sets = Array.isArray(e && e.sets) ? e.sets : [];
@@ -6447,6 +6467,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
           supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
           coachNote: String(ex.coachNote || '').trim(),
+          ..._carryClassification(ex),   // T553: nivel_medio + variacion_vertical (sanitized, explicit)
           // T150-H: preserve a pre-existing prescriptionExerciseId (e.g. re-importing
           // a previously-exported plan doc) so _stampPrescriptionIds can keep it
           // instead of minting a brand-new one — new IDs would sever progression
@@ -9043,13 +9064,8 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
         techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
         coachNote: String(ex.coachNote || '').trim(),
         supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
-        nivel_medio: ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'].includes(ex.nivel_medio) ? ex.nivel_medio : null,
-        variacion_vertical: ex.variacion_vertical && typeof ex.variacion_vertical === 'object' ? {
-          semana_inicio: parseInt(ex.variacion_vertical.semana_inicio) || 1,
-          semana_variacion: ex.variacion_vertical.semana_variacion != null ? parseInt(ex.variacion_vertical.semana_variacion) : null,
-          ejercicio_sustituto: ex.variacion_vertical.ejercicio_sustituto ? String(ex.variacion_vertical.ejercicio_sustituto).trim() : null,
-          nivel_sustituto: ex.variacion_vertical.nivel_sustituto || null
-        } : null,
+        nivel_medio: _normNivelMedio(ex.nivel_medio),
+        variacion_vertical: _normVariacionVertical(ex.variacion_vertical),
         sets: Array.isArray(ex.sets) && ex.sets.length ? ex.sets.map((s, si) => ({
           setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
           repsTarget: parseInt(s.repsTarget) || 8,
@@ -21887,13 +21903,8 @@ El esfuerzo no es negociable.
           techniqueNote: String(ex.techniqueNote || ex.intensifyNote || '').trim(),
           coachNote: String(ex.coachNote || '').trim(),
           supersetGroup: String(ex.supersetGroup || ex.ssGroup || '').trim(),
-          nivel_medio: ['fundamental','suplementario','asistencia_mayor','asistencia_secundario'].includes(ex.nivel_medio) ? ex.nivel_medio : null,
-          variacion_vertical: ex.variacion_vertical && typeof ex.variacion_vertical === 'object' ? {
-            semana_inicio: parseInt(ex.variacion_vertical.semana_inicio) || 1,
-            semana_variacion: ex.variacion_vertical.semana_variacion != null ? parseInt(ex.variacion_vertical.semana_variacion) : null,
-            ejercicio_sustituto: ex.variacion_vertical.ejercicio_sustituto ? String(ex.variacion_vertical.ejercicio_sustituto).trim() : null,
-            nivel_sustituto: ex.variacion_vertical.nivel_sustituto || null
-          } : null,
+          nivel_medio: _normNivelMedio(ex.nivel_medio),
+          variacion_vertical: _normVariacionVertical(ex.variacion_vertical),
           sets: Array.isArray(ex.sets) && ex.sets.length > 0 ? ex.sets.map((s, si) => ({
             setIndex: Number.isInteger(s.setIndex) ? s.setIndex : si,
             repsTarget: parseInt(s.repsTarget) || 8,
@@ -22475,6 +22486,8 @@ El esfuerzo no es negociable.
             technique: ex.technique || 'straight',
             techniqueNote: ex.techniqueNote || '',
             coachNote: ex.coachNote || '',
+            supersetGroup: String(ex.supersetGroup || '').trim(),   // T553
+            ..._carryClassification(ex),   // T553: nivel_medio + variacion_vertical survive export -> re-import
             ..._perfCarryEx(ex),   // T544: export -> re-import keeps exerciseType + performance prescription
             sets: (ex.sets || []).map(s => ({
               setIndex: s.setIndex, repsTarget: s.repsTarget, rirTarget: s.rirTarget,
