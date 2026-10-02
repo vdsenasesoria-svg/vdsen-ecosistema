@@ -33,3 +33,7 @@ Automated evidence (real Client UI, real staging rules, synthetic **automation**
 ## Known non-blocking items (not changed)
 
 Coach root-log legacy / unbound display strategy; `EXERCISE_HISTORY` surviving plan switches; dead `buildBoostcampExercise`; staging API Admin runtime; equipment increments; auto-apply activation; production deployment. Plan data: day 6 / 7 "Cardio Zone 2" rows are authored as 1x1 strength-shaped sets (no `exerciseType: cardio`) - a Coach data decision, the prescription was not touched.
+
+## Final regression (canonical `b5efd0d` content, staging project only)
+
+Unit suite 1040/1040 - emulator: T476 7, lifecycle 18, rules security 19, tenant isolation 11, Coach authority 6, active-plan edit 7, athlete note isolation 4, plans-create ownership 8 - staging: T554 train 30/30 at 390x844 and 360x800, T554 scenarios 74/74, T553 parity 13/13, Coach import 59/59, editor fidelity 19/19, standard session 42/42, Express evidence 21/21, performance 44/44, mobile QA 48/48 (320/360/375/390/414/430), T548 54/54, T549 53/53, T550 41/41, T551 77/77, T552 28/28. Deployed-preview human-account smoke (read-only) 10/10 with the account documents unchanged.

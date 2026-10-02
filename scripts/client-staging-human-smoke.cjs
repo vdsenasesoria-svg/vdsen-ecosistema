@@ -12,10 +12,16 @@ const results = []; const check = (id, pass, note) => { results.push({ id, pass:
   const cfg = L.H.stagingConfig(), K = JSON.parse(fs.readFileSync(keepFile, 'utf8')); if (K.project !== cfg.projectId || K.kind !== 'human') throw new Error('REFUSING: not the staging human account');
   const paths = ['clients/' + K.athlete.uid, 'logs/' + K.athlete.uid, 'logs/' + K.athlete.uid + '/mesos/' + K.planId, 'plans/' + K.planId];
   const stamp = async () => { const o = {}; for (const p of paths) { const d = await restGet(cfg, K.athlete.email, K.athlete.password, p); o[p] = d && d.updateTime ? d.updateTime : (d && d.fields ? 'exists' : null); } return o; };
-  const before = await stamp(); const browser = await L.B.launch(); const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }); const p = await ctx.newPage();
+  const before = await stamp(); const browser = await L.B.launch(); const HOST = new URL(url).host;
+  // the share link sets the Vercel bypass cookie; every browser request goes through Node fetch (works behind the sandbox proxy) and the cookie is attached to the preview host only
+  const r0 = await fetch(url, { redirect: 'manual' }); const ck = r0.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, ignoreHTTPSErrors: true, serviceWorkers: 'block' });
+  await ctx.route('**/*', async route => { const rq = route.request(), u = new URL(rq.url());
+    try { const h = Object.assign({}, rq.headers()); delete h['content-length']; delete h.host; if (u.host === HOST) h.cookie = ck; const res = await fetch(rq.url(), { method: rq.method(), headers: h, body: rq.postDataBuffer() || undefined, redirect: 'manual' }); const buf = Buffer.from(await res.arrayBuffer()), hd = {}; res.headers.forEach((v, k) => { if (!/^(content-encoding|content-length|transfer-encoding|connection)$/i.test(k)) hd[k] = v; }); hd['access-control-allow-origin'] = rq.headers().origin || '*'; hd['access-control-allow-headers'] = '*'; hd['access-control-allow-methods'] = '*'; return route.fulfill({ status: res.status, headers: hd, body: buf }); } catch (e) { return route.abort(); } });
+  const p = await ctx.newPage();
   const errs = [], hosts = new Set(), bad = []; p.on('pageerror', e => errs.push(e.message)); p.on('request', r => { const u = r.url(); try { hosts.add(new URL(u).hostname); } catch (e) { /* ignore */ } if (/projects\/vdsen-ecosistema\/|vdsen-planes|vdsen-ecosistema\.firebaseapp|vdsen-ecosistema\.appspot/.test(u)) bad.push(u.slice(0, 120)); });
   try {
-    await p.goto(url, { waitUntil: 'domcontentloaded' }); await p.waitForSelector('#liEmail', { timeout: 40000 });
+    await p.goto('https://' + HOST + '/cliente', { waitUntil: 'domcontentloaded' }); await p.waitForSelector('#liEmail', { timeout: 40000 });
     const html = await p.content(); check('SERVED_BUILD_HAS_T554_MARKERS', /class="sp-opt"|sp-opt/.test(html) && /set-actions/.test(html) && /vdsen-ecosistema-staging/.test(html));
     await p.fill('#liEmail', K.athlete.email); await p.fill('#liPass', K.athlete.password); await p.click('.login-btn'); await p.waitForSelector('#scrApp.on', { timeout: 45000 }); await p.waitForTimeout(3000);
     await p.evaluate(() => { const b = document.querySelector('#wnModal button'); if (b) b.click(); }); await p.waitForTimeout(500); if (shots) await p.screenshot({ path: shots + '/human-01-home.png' });
