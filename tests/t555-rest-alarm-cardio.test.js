@@ -62,28 +62,18 @@ test('T555.8 the DESCANSO TERMINADO announcement does NOT wait for the write ack
   assert.ok(/_restAnnounce\(/.test(seg), 'announces before retrying');
 });
 
-// ---------------- 2. alarm outside the browser ----------------
-test('T555.9 background alarm: silent keep-alive audio during the rest, alarm tone at zero, stopped by any tap / stopRestTimer; opt-out switch in Perfil', () => {
-  for (const f of ['_bgAlarmEnabled', '_bgKeepAliveStart', '_bgAlarmRing', '_bgStop', '_swRestSchedule', '_swRestCancel']) assert.ok(new RegExp('function ' + f + '\\(').test(SRC), f);
-  assert.ok(/function startRestTimer[\s\S]*?_bgKeepAliveStart\(/.test(SRC), 'keep-alive starts with the rest (inside the Save tap gesture)');
-  assert.ok(/function stopRestTimer[\s\S]*?_bgStop\(/.test(SRC), 'stopRestTimer stops audio + cancels the scheduled notification');
-  assert.ok(/function _onTimerFinished[\s\S]*?_bgAlarmRing\(/.test(SRC), 'zero rings the alarm');
-  assert.ok(/setBgAlarm\(/.test(SRC) && /vdsen_bg_alarm/.test(SRC), 'Perfil switch');
+// ---------------- 2. alarm: the persistent background alarm was REVERTED (T556) ----------------
+test('T555.9 (T556) the persistent background alarm is gone: no keep-alive audio, no worker notification scheduling, no Perfil alarm switch / permission prompt', () => {
+  for (const f of ['_bgAlarmEnabled', '_bgKeepAliveStart', '_bgAlarmRing', '_bgStop', '_swRestSchedule', '_swRestCancel', 'setBgAlarm', 'testBgAlarm', 'askNotifPermission']) assert.ok(!SRC.includes(f), f + ' removed');
+  assert.ok(!/Notification\.requestPermission/.test(SRC) && !/vdsen_bg_alarm/.test(SRC));
+  assert.ok(!/VDSEN_REST_SCHEDULE|VDSEN_REST_CANCEL|addEventListener\('message'/.test(SW), 'service worker back to caching only');
 });
-test('T555.10 the rest notification prefers the service worker registration (Android Chrome forbids `new Notification`)', () => {
-  assert.ok(/registration\.showNotification|getRegistration\(\)[\s\S]{0,200}showNotification/.test(fnSrc('_notifyRestDone')));
+test('T555.10 (T556) the rest alert is the original one: vibration + beep + a notification only if the browser already granted permission', () => {
+  const n = fnSrc('_notifyRestDone'); assert.ok(/Notification\.permission !== 'granted'\) return/.test(n) && /new Notification\(/.test(n));
+  assert.ok(/playTimerBeep\(\)/.test(fnSrc('_restFeedback')) && /navigator\.vibrate/.test(fnSrc('_restFeedback')));
 });
-test('T555.11 service worker: schedules the notification for the rest end, can cancel it, and focuses the app on click', () => {
-  const calls = { notes: [], timers: [] }, listeners = {}; let now = 1000;
-  const self = { addEventListener: (t, f) => { listeners[t] = f; }, registration: { showNotification: (t, o) => { calls.notes.push([t, o]); return Promise.resolve(); } }, clients: { matchAll: () => Promise.resolve([{ focus: () => { calls.focus = true; return Promise.resolve(); } }]), openWindow: () => Promise.resolve(), claim: () => Promise.resolve() }, skipWaiting: () => Promise.resolve(), location: { hostname: 'x' } };
-  const timers = []; const ctx = { self, caches: { open: () => Promise.resolve({ addAll: () => Promise.resolve() }), keys: () => Promise.resolve([]), match: () => Promise.resolve() }, fetch: () => Promise.reject(), URL, Response, Promise, Date: { now: () => now }, Math, console,
-    setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; }, clearTimeout: id => { if (timers[id - 1]) timers[id - 1].dead = true; } };
-  vm.createContext(ctx); vm.runInContext(SW, ctx);
-  const waits = []; listeners.message({ data: { type: 'VDSEN_REST_SCHEDULE', endMs: 1000 + 90000, title: 'T', body: 'B' }, waitUntil: p => waits.push(p) });
-  assert.equal(waits.length, 1); assert.equal(timers.length, 1); assert.equal(timers[0].ms, 90000);
-  now = 91000; timers[0].f(); return waits[0].then(() => { assert.equal(calls.notes.length, 1); assert.equal(calls.notes[0][1].tag, 'vdsen-rest-timer'); assert.ok(Array.isArray(calls.notes[0][1].vibrate));
-    listeners.message({ data: { type: 'VDSEN_REST_SCHEDULE', endMs: now + 5000, title: 'T', body: 'B' }, waitUntil: p => waits.push(p) }); listeners.message({ data: { type: 'VDSEN_REST_CANCEL' }, waitUntil() {} });
-    assert.ok(timers[1].dead, 'cancel clears the pending notification'); let closed = false; listeners.notificationclick({ notification: { close: () => { closed = true; } }, waitUntil: p => p }); assert.ok(closed); });
+test('T555.11 (T556) the service worker still precaches and serves network-first (cache version bumped, no extra handlers)', () => {
+  assert.ok(/const CACHE = 'vdsen-v13';/.test(SW) && /addEventListener\('fetch'/.test(SW) && /addEventListener\('install'/.test(SW));
 });
 
 // ---------------- 4. cardio ----------------
@@ -102,7 +92,6 @@ test('T555.13 loadPlan applies the inference before the runtime exercise is buil
 test('T555.14 a cardio exercise (no sets) counts as exactly ONE series in the day total (it used to default to 3 phantom series and the day could never reach 100%)', () => {
   assert.ok(/var numSets = \(e\.sets \|\| \[\]\)\.length \|\| \(_getExType\(e\) === 'cardio' \? 1 : 3\);/.test(SRC));
 });
-test('T555.15 the minimized pill says what is next, and Perfil has a 10 s alarm test so the athlete can verify the background alarm on his own phone', () => {
+test('T555.15 the minimized pill says what is next', () => {
   assert.ok(/#timerPill \.rt-ptxt/.test(fnSrc('_renderNextWorkoutAction')) && /'Sig: S'/.test(fnSrc('_renderNextWorkoutAction')));
-  assert.ok(/function testBgAlarm\(\)[\s\S]*?startRestTimer\(10, null\)/.test(SRC) && /onclick="testBgAlarm\(\)"/.test(SRC));
 });

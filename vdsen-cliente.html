@@ -425,6 +425,9 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .brand-txt{display:flex;flex-direction:column;line-height:1;min-width:0}
 .brand-word{font-family:var(--font-display);font-weight:800;font-size:22px;letter-spacing:.14em;color:var(--tx);display:flex;align-items:flex-end;gap:3px}
 .brand-word i{display:inline-block;width:5px;height:5px;background:var(--accent-fill);margin-bottom:3px}
+.brand-line{display:flex;align-items:baseline;gap:8px;min-width:0}
+.brand-coach{font-size:9.5px;font-weight:800;letter-spacing:.1em;color:var(--accent);white-space:nowrap;text-transform:uppercase}
+:root.light-mode .brand-coach{color:#245500}
 .brand-sub{font-size:10px;letter-spacing:.24em;font-weight:600;color:var(--mt);text-transform:uppercase;margin-top:3px;white-space:nowrap}
 .hdr-user{max-width:min(50vw,230px);text-align:right}
 .hdr-user strong{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:.06em;color:var(--tx);line-height:1.05}
@@ -927,6 +930,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 /* T545: at 360-389px "PERFORMANCE SYSTEM" ran under "SEM 1/6 · HIPERTROFIA" in the header */
 @media (max-width:389px){
   .brand-sub{font-size:9.5px;letter-spacing:.08em}
+  .brand-coach{font-size:8.5px;letter-spacing:.06em}
   .hdr-user{max-width:44vw}
 }
 /* T545: real 7-day plan: long session titles + the two-tier nav left the set form below the fold on phones */
@@ -936,8 +940,11 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
   .tr-acts{margin-top:10px}
   .xnav{margin-top:12px}
 }
-@media (max-width:359px){
+@media (max-width:374px){
   .brand-sub{display:none}
+  .brand-line{flex-direction:column;align-items:flex-start;gap:1px}   /* T556: COACH AYRTON drops under the wordmark where PERFORMANCE SYSTEM is hidden */
+}
+@media (max-width:359px){
   .hdr{padding:8px 12px}
   .hdr-user strong{font-size:14px}
   .nb-lbl{font-size:10px;letter-spacing:.03em}
@@ -1199,7 +1206,7 @@ button[role="switch"]::after{content:'';position:absolute;inset:-8px -6px}
   <header class="hdr">
     <div class="brand" aria-label="VDSEN">
       <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path class="mk-v" d="M1.5 5h7.4l7.1 15.5L23.1 5H30L19.2 28.5h-6.6z"/><path class="mk-cut" d="M22.6 5.2h7.2l-3.3 7.1z"/></svg>
-      <div class="brand-txt"><span class="brand-word">VDSEN<i></i></span><span class="brand-sub">Performance System</span></div>
+      <div class="brand-txt"><div class="brand-line"><span class="brand-word">VDSEN<i></i></span><span class="brand-coach">COACH AYRTON</span></div><span class="brand-sub">Performance System</span></div>
     </div>
     <div class="hdr-user">
       <strong id="hdName">—</strong>
@@ -5058,8 +5065,9 @@ function setRestTimerDisabled(off) {
 }
 
 // ── Preferencia: modo express activado/desactivado ──
+// T556: DETAILED mode (one form per set) is the DEFAULT. Express only when the athlete turned detailed mode off in Perfil (stored '0'); unset / '1' = detailed.
 function isExpressDisabled() {
-  try { return localStorage.getItem('vdsen_express_off') === '1'; } catch(e) { return false; }
+  try { return localStorage.getItem('vdsen_express_off') !== '0'; } catch(e) { return true; }
 }
 function setExpressDisabled(off) {
   try { localStorage.setItem('vdsen_express_off', off ? '1' : '0'); } catch(e) {}
@@ -5087,91 +5095,10 @@ function playTimerBeep() {
   } catch(e) {}
 }
 
-// ── T555: an alarm that survives leaving the browser ─────────────────────────────────────────────────────────────────────────────
-// A web page cannot ring from the background by itself: the browser freezes it. Two best-effort channels (neither needs a server):
-//  (1) while a rest runs, a near-inaudible looping <audio> (started by the Save tap = a user gesture) keeps the page alive on Android / iOS; at zero the same
-//      element plays an alarm tone (AudioContext beeps are suspended in the background, an <audio> element is not). Tapping anywhere / returning to the app stops it.
-//  (2) when notifications are allowed, the service worker is told the rest end time and shows a notification (sound + vibration) even if the page is frozen.
-// Opt-out: Perfil -> "Alarma en segundo plano". Playing media can pause the athlete's music app.
-var _bgAudio = null, _bgUrls = null, _bgRingTimer = null, _bgRinging = false;
-function _bgAlarmEnabled() { try { return localStorage.getItem('vdsen_bg_alarm') !== '0'; } catch (e) { return true; } }
-function setBgAlarm(on) {
-  try { localStorage.setItem('vdsen_bg_alarm', on ? '1' : '0'); } catch (e) {}
-  if (!on) _bgStop(true);
-  if (on && window.Notification && Notification.permission === 'default') { try { Notification.requestPermission().then(function() { try { renderPerfil(); } catch (_) {} }); } catch (e) {} }
-  try { renderPerfil(); } catch (_) {}
-}
-function testBgAlarm() {
-  if (isRestTimerDisabled()) { showToast('Activa el temporizador de descanso para probar la alarma', true); return; }
-  window._nextAction25 = null; startRestTimer(10, null);
-  showToast('Prueba: sal de la app ahora — sonará en 10 s');
-}
-function askNotifPermission() { try { if (window.Notification) Notification.requestPermission().then(function() { try { renderPerfil(); } catch (_) {} }); } catch (e) {} }
-function _wavUrl(u8, rate) {
-  var n = u8.length, b = new Uint8Array(44 + n), dv = new DataView(b.buffer), w = function(o, t) { for (var i = 0; i < t.length; i++) b[o + i] = t.charCodeAt(i); };
-  w(0, 'RIFF'); dv.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
-  dv.setUint32(24, rate, true); dv.setUint32(28, rate, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true); w(36, 'data'); dv.setUint32(40, n, true); b.set(u8, 44);
-  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
-}
-function _bgBuildUrls() {
-  if (_bgUrls) return _bgUrls;
-  var rate = 8000, keep = new Uint8Array(rate * 2), i;
-  for (i = 0; i < keep.length; i++) keep[i] = 128 + Math.round(2 * Math.sin(2 * Math.PI * 30 * i / rate));   // ~1.5% amplitude at 30 Hz: not audible, not digital silence
-  var seq = [[880, 0.18], [0, 0.08], [880, 0.18], [0, 0.08], [1100, 0.35], [0, 0.5]], tones = [];
-  for (var rep = 0; rep < 2; rep++) seq.forEach(function(t) { var ns = Math.round(t[1] * rate); for (var k = 0; k < ns; k++) tones.push(t[0] ? 128 + Math.round(100 * Math.sin(2 * Math.PI * t[0] * k / rate)) : 128); });
-  _bgUrls = { keep: _wavUrl(keep, rate), alarm: _wavUrl(new Uint8Array(tones), rate) };
-  return _bgUrls;
-}
-function _swPost(msg) { try { if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage(msg); } catch (e) { /* no service worker */ } }
-function _restNotifyBody() {
-  var a = window._nextAction25;
-  if (a && a.type === 'NEXT_SET') return 'Siguiente: ' + (a.title || a.label) + ' · serie ' + a.setNo + (a.total ? '/' + a.total : '');
-  if (a && a.type === 'NEXT_EXERCISE') return 'Siguiente ejercicio: ' + (a.title || a.label);
-  return 'Lista la siguiente serie 💪';
-}
-function _swRestSchedule() {
-  if (!_bgAlarmEnabled() || !window.Notification || Notification.permission !== 'granted' || !_restEndMs) return;
-  _swPost({ type: 'VDSEN_REST_SCHEDULE', endMs: _restEndMs, title: '⏱ VDSEN — Descanso terminado', body: _restNotifyBody() });
-}
-function _swRestCancel() { _swPost({ type: 'VDSEN_REST_CANCEL' }); }
-function _bgKeepAliveStart() {
-  if (!_bgAlarmEnabled()) return;
-  try {
-    var u = _bgBuildUrls();
-    if (!_bgAudio) { _bgAudio = new Audio(); _bgAudio.setAttribute('playsinline', ''); }
-    _bgRinging = false; clearTimeout(_bgRingTimer);
-    _bgAudio.loop = true; _bgAudio.volume = 1; _bgAudio.src = u.keep;
-    var pr = _bgAudio.play(); if (pr && pr.catch) pr.catch(function() { /* autoplay blocked: notification + in-page alert still work */ });
-    if ('mediaSession' in navigator && window.MediaMetadata) navigator.mediaSession.metadata = new MediaMetadata({ title: 'Descanso en curso', artist: 'VDSEN' });
-  } catch (e) { /* cosmetic */ }
-  _swRestSchedule();
-}
-function _bgStopOnTouch() { _bgStop(true); }
-function _bgAlarmRing() {
-  _swRestCancel();   // the page is alive: it rings itself (a notification on top would double the alert)
-  if (!_bgAlarmEnabled() || !_bgAudio) return;
-  try {
-    _bgRinging = true; _bgAudio.loop = true; _bgAudio.src = _bgBuildUrls().alarm;
-    var pr = _bgAudio.play(); if (pr && pr.catch) pr.catch(function() {});
-    if ('mediaSession' in navigator && window.MediaMetadata) navigator.mediaSession.metadata = new MediaMetadata({ title: 'Descanso terminado', artist: 'VDSEN' });
-    clearTimeout(_bgRingTimer); _bgRingTimer = setTimeout(function() { _bgStop(true); }, 12000);
-    document.addEventListener('pointerdown', _bgStopOnTouch, { capture: true, once: true });
-  } catch (e) { /* cosmetic */ }
-}
-function _bgStop(force) {
-  if (_bgRinging && !force) return;   // an auto-advance must not cut the alarm short; a tap / the app coming back does
-  _bgRinging = false; clearTimeout(_bgRingTimer); _bgRingTimer = null;
-  try { document.removeEventListener('pointerdown', _bgStopOnTouch, true); } catch (e) {}
-  if (_bgAudio) { try { _bgAudio.pause(); _bgAudio.removeAttribute('src'); _bgAudio.load(); } catch (e) {} }
-  try { if ('mediaSession' in navigator) navigator.mediaSession.metadata = null; } catch (e) {}
-  _swRestCancel();
-}
-
 function _onTimerFinished() {
   if (_restAlertFired) return;
   _restAlertFired = true;
   localStorage.removeItem('vdsen_restEnd');
-  _bgAlarmRing();
   _restFeedback();
   _notifyRestDone();
   _restFinishFlow();
@@ -5274,19 +5201,16 @@ function _restAnnounce(primary, secondary) {
 // el soporte es limitado — solo funciona mientras la PWA siga activa.
 function _notifyRestDone() {
   if (!window.Notification || Notification.permission !== 'granted') return;
-  if (document.visibilityState === 'visible') return;   // T555: in the app the sheet / banner / beep are the alert; a notification is for when the app is in the background
-  var opts = { body: _restNotifyBody(), tag: 'vdsen-rest-timer', renotify: true, silent: false, vibrate: [200, 100, 200, 100, 400] };
   try {
-    if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
-      navigator.serviceWorker.getRegistration().then(function(reg) {
-        if (reg && reg.showNotification) { reg.showNotification('⏱ VDSEN — Descanso terminado', opts); return; }
-        try { var n = new Notification('⏱ VDSEN — Descanso terminado', opts); n.onclick = function() { try { window.focus(); } catch (e) {} n.close(); }; } catch (e) {}
-      });
-      return;
-    }
-    var n2 = new Notification('⏱ VDSEN — Descanso terminado', opts);
-    n2.onclick = function() { try { window.focus(); } catch (e) {} n2.close(); };
-  } catch (e) { /* visual alert only */ }
+    var n = new Notification('⏱ VDSEN — Descanso terminado', {
+      body: 'Lista la siguiente serie 💪',
+      tag: 'vdsen-rest-timer',
+      renotify: true,
+      silent: false
+    });
+    n.onclick = function() { try { window.focus(); } catch(e) {} n.close(); };
+    setTimeout(function(){ try { n.close(); } catch(e) {} }, 10000);
+  } catch(e) {}
 }
 
 // Timestamp del último 'hidden' para decidir si recargar logs al volver
@@ -5365,7 +5289,6 @@ document.addEventListener('visibilitychange', function() {
     return;
   }
   if (document.visibilityState !== 'visible') return;
-  try { _bgStop(true); } catch (e) {}   // T555: coming back to the app silences a ringing alarm
   // Re-adquirir Wake Lock si el tab activo es Entreno (el sistema lo libera al ir a background)
   try { var _curTab = parseInt(localStorage.getItem('vdsen_last_tab')||'0'); if (_curTab===1) _acquireWakeLock(); } catch(_){}
   // Al volver al primer plano: si estuvo oculta >30s, re-sincronizar logs desde
@@ -9817,7 +9740,6 @@ async function completeSet(key, di, ei, si, unit) {
       startRestTimer(restTime, key);
       _renderNextWorkoutAction(_nextAction25);   // T555: startRestTimer -> stopRestTimer wipes the hint rendered above; paint it again so the sheet says what comes next
       if (_nextAction25 && _nextAction25.type !== 'SESSION_DONE') window._nextAction25 = _nextAction25;   // T548: CONTINUAR target (startRestTimer->stopRestTimer clears it, so set it after). SESSION_DONE is deliberately not wired: CONTINUAR never closes the session
-      _swRestSchedule();   // T555: refresh the notification text with the real next step
       showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
     } else {
       showToast(_grp ? 'Par SS cerrado ✓' : 'Serie ✓');
@@ -10042,7 +9964,7 @@ function _tapGuard(ms) {
 }
 function _continueNextWorkoutAction() {
   var action = window._nextAction25;
-  _bgStop(true); stopRestTimer();   // the sheet closes (and the alarm stops) on THIS tap; the heavier navigation runs on the next frame
+  stopRestTimer();   // the sheet closes (and the alarm stops) on THIS tap; the heavier navigation runs on the next frame
   _tapGuard(350);
   var go = function() {
     if (!action) { _scrollToNextPendingSet(); return; }
@@ -10188,7 +10110,6 @@ function startRestTimer(seconds, lastSetKey) {
   localStorage.setItem('vdsen_restEnd', _restEndMs);
   localStorage.setItem('vdsen_restTotal', seconds);
   _restSeconds = seconds;
-  _bgStop(true); _bgKeepAliveStart();   // T555: background alarm channels (this runs inside the Save tap = a user gesture)
   _ensureRestTimerOverlay();
   _restEl = document.getElementById('restTimerNum');
   var overlay = document.getElementById('restTimerOverlay');
@@ -10291,7 +10212,6 @@ function adjustRestTimer(delta) {
   localStorage.setItem('vdsen_restEnd', _restEndMs);
   _restSeconds = Math.ceil((_restEndMs - Date.now()) / 1000);
   updateTimerDisplay();
-  _swRestSchedule();
 }
 
 function resetRestTimer(seconds) {
@@ -10302,14 +10222,12 @@ function resetRestTimer(seconds) {
   localStorage.setItem('vdsen_restEnd', _restEndMs);
   localStorage.setItem('vdsen_restTotal', seconds);
   updateTimerDisplay();
-  _swRestSchedule();
 }
 window.resetRestTimer = resetRestTimer;
 
 function stopRestTimer() {
   if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
   _restToken++; _restCtx = null;   // T548: a cancelled / replaced rest can never auto-advance
-  try { _bgStop(false); } catch (e) { /* T555: stops the keep-alive audio + pending notification (a ringing alarm survives an auto-advance) */ }
   _restEndMs = 0;
   window._nextAction25 = null;
   localStorage.removeItem('vdsen_restEnd');
@@ -13653,16 +13571,6 @@ function renderPerfil() {
         </div>
         <button onclick="setRestTimerDisabled(${isRestTimerDisabled()?'false':'true'})" role="switch" aria-label="Temporizador de descanso" aria-checked="${isRestTimerDisabled()?'false':'true'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isRestTimerDisabled()?'var(--bd)':'rgba(200,165,74,.5)'};background:${isRestTimerDisabled()?'var(--dk)':'var(--gold-gradient)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
           <span style="position:absolute;top:2px;left:${isRestTimerDisabled()?'2px':'24px'};width:24px;height:24px;border-radius:50%;background:${isRestTimerDisabled()?'var(--mt)':'#0a0a0a'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
-        </button>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
-        <svg class="ico lg" style="flex-shrink:0;color:var(--mt)" aria-hidden="true" focusable="false"><use href="#i-timer"/></svg>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;color:var(--tx);font-weight:700">Alarma en segundo plano</div>
-          <div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">${_bgAlarmEnabled()?'Activada — el descanso suena y vibra aunque salgas de la app. Puede pausar tu música.':'Desactivada — solo suena con la app abierta.'}${(_bgAlarmEnabled() && window.Notification && Notification.permission !== 'granted') ? ' <button type="button" onclick="askNotifPermission()" style="margin-top:6px;display:block;background:none;border:1px solid var(--accent);color:var(--accent);padding:6px 10px;font-size:11px;font-weight:800;letter-spacing:.06em;cursor:pointer">PERMITIR NOTIFICACIONES</button>' : ''}${_bgAlarmEnabled() ? ' <button type="button" onclick="testBgAlarm()" style="margin-top:6px;display:block;background:none;border:1px solid var(--rule-strong);color:var(--tx);padding:6px 10px;font-size:11px;font-weight:800;letter-spacing:.06em;cursor:pointer">PROBAR ALARMA (10 s)</button>' : ''}</div>
-        </div>
-        <button onclick="setBgAlarm(${_bgAlarmEnabled()?'false':'true'})" role="switch" aria-label="Alarma en segundo plano" aria-checked="${_bgAlarmEnabled()?'true':'false'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${_bgAlarmEnabled()?'var(--accent)':'var(--bd)'};background:${_bgAlarmEnabled()?'var(--accent)':'var(--dk)'};position:relative;cursor:pointer;transition:all .18s">
-          <span style="position:absolute;top:2px;left:${_bgAlarmEnabled()?'24px':'2px'};width:24px;height:24px;border-radius:50%;background:${_bgAlarmEnabled()?'#0a0a0a':'var(--mt)'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
         </button>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
