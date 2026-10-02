@@ -6467,7 +6467,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
                 repsTarget: (s.repsTarget === 'SST-PROTOCOL' || s.repsTarget === 'SST-RIV-PROTOCOL') ? s.repsTarget : (s.repsTarget === 999 || s.repsTarget === '999' ? 999 : (parseInt(s.repsTarget) || 8)),
                 rirTarget: parseInt(s.rirTarget ?? 2),
                 load: parseFloat(s.load ?? 0) || 0,
-                restSeconds: parseInt(s.restSeconds ?? 90) || 90,
+                restSeconds: _normRestSeconds(s.restSeconds),
                 setNote: String(s.setNote || s.note || '').trim(),
                 drop: s.drop === true,
                 tempo: String(s.tempo || '').trim(),
@@ -9063,13 +9063,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
           repsTarget: parseInt(s.repsTarget) || 8,
           rirTarget: parseInt(s.rirTarget ?? 2),
           load: parseFloat(s.load ?? 0) || 0,
-          restSeconds: parseInt(s.restSeconds ?? 90) || 90,
+          restSeconds: _normRestSeconds(s.restSeconds),
           setNote: String(s.setNote || s.note || '').trim(),
           drop: s.drop === true,
           tempo: String(s.tempo || '').trim(),
           ..._perfCarrySet(s)
         })) : []
-      }, _perfCarryEx(ex))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
+      }, _carryPrescriptionId(ex), _perfCarryEx(ex))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
     })).filter(d => d.exercises.length > 0);
     if (!days.length) return null;
     const _norm = { weeks: parseInt(obj.weeks) || 6, daysPerWeek: parseInt(obj.daysPerWeek) || days.length, days };
@@ -10083,6 +10083,21 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   // ── STABLE EXERCISE IDENTITY (FASE 5) ───────────────────────────────────
+  // T552: ONE fallback for set rest. 0 is a valid explicit value (the old `parseInt(x ?? 90) || 90` coerced it to 90); null / undefined / '' / non-numeric
+  // keep the existing 90 fallback; every other number is unchanged.
+  function _normRestSeconds(v) {
+    var n = parseInt(v ?? 90, 10);
+    return isNaN(n) ? 90 : n;
+  }
+  // T552: carry an EXISTING valid prescriptionExerciseId byte for byte (string, non-empty). Never derived from exerciseId / name / position; absent stays absent
+  // (the explicit save-time _stampPrescriptionIds is the only place that mints one).
+  function _carryPrescriptionId(ex) {
+    var v = ex && ex.prescriptionExerciseId;
+    if (!v) return {};   // same truthiness as parsePlanFromJSON: '', 0, null, undefined are "no PID"
+    if (typeof v === 'string') return { prescriptionExerciseId: v };
+    if (typeof v === 'number' && isFinite(v)) return { prescriptionExerciseId: String(v) };
+    return {};
+  }
   function _genPrescriptionId() {
     try { return crypto.randomUUID(); } catch(e) {}
     return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9);
@@ -21892,13 +21907,13 @@ El esfuerzo no es negociable.
             repsTarget: parseInt(s.repsTarget) || 8,
             rirTarget: parseInt(s.rirTarget ?? 2),
             load: parseFloat(s.load ?? 0) || 0,
-            restSeconds: parseInt(s.restSeconds ?? 90) || 90,
+            restSeconds: _normRestSeconds(s.restSeconds),
             setNote: String(s.setNote || s.note || '').trim(),
             drop: s.drop === true,
             tempo: String(s.tempo || '').trim(),
             ..._perfCarrySet(s)
           })) : []
-        }, _perfCarryEx(ex))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
+        }, _carryPrescriptionId(ex), _perfCarryEx(ex))).filter(ex => ex.exerciseName.length > 1 && (ex.sets.length > 0 || _perfHasNoSetsOk(ex))) : []
       })).filter(d => d.exercises.length > 0);
       if (days.length !== curDays) {
         st.style.color='#c94a3a'; st.textContent=`Tras normalizar quedaron ${days.length} días válidos (esperaba ${curDays}). Revisa que cada día tenga ejercicios.`;
@@ -22463,6 +22478,7 @@ El esfuerzo no es negociable.
           label: d.label,
           exercises: (d.exercises || []).map(ex => ({
             exerciseName: ex.exerciseName,
+            ..._carryPrescriptionId(ex),   // T552: PID survives export -> re-import (the identity of the prescribed exercise; NOT exerciseId)
             alternatives: ex.alternatives || [],
             technique: ex.technique || 'straight',
             techniqueNote: ex.techniqueNote || '',
@@ -22470,7 +22486,7 @@ El esfuerzo no es negociable.
             ..._perfCarryEx(ex),   // T544: export -> re-import keeps exerciseType + performance prescription
             sets: (ex.sets || []).map(s => ({
               setIndex: s.setIndex, repsTarget: s.repsTarget, rirTarget: s.rirTarget,
-              load: s.load || 0, restSeconds: s.restSeconds || 90,
+              load: s.load || 0, restSeconds: _normRestSeconds(s.restSeconds),
               setNote: s.setNote || '', drop: !!s.drop, tempo: s.tempo || '',
               ..._perfCarrySet(s)
             }))

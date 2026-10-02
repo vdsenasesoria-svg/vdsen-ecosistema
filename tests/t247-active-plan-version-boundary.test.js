@@ -41,12 +41,13 @@ function ok(cond, msg) { assert.ok(cond, msg); pass++; console.log('  ✓ ' + ms
 // verbatim and exercised directly (not just checked for presence).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const exprStart = CLIENT.indexOf('var planChanged = flagSession');
-const exprEnd   = CLIENT.indexOf(';', CLIENT.indexOf('firestorePlanId !== activePlanId'));
-const planChangedExpr = CLIENT.slice(exprStart, exprEnd).replace('var planChanged = ', '');
-ok(planChangedExpr && planChangedExpr.length > 10, 'the real planChanged detection expression extracts cleanly');
-
-const computePlanChanged = new Function('flagSession', 'localPlanId', 'firestorePlanId', 'activePlanId', 'return (' + planChangedExpr + ');');
+// T552: the expression was extracted verbatim into `_logsPlanChanged` (same logic) so the cross-plan fence is directly testable; the loader calls it.
+const fnStart = CLIENT.indexOf('function _logsPlanChanged(');
+ok(fnStart !== -1 && CLIENT.includes('var planChanged = _logsPlanChanged(logData, activePlanId, flagSession, localPlanId);'), 'the real planChanged detection (now _logsPlanChanged) extracts cleanly and is what the loader calls');
+let depth = 0, fnEnd = -1;
+for (let k = CLIENT.indexOf('{', fnStart); k < CLIENT.length; k++) { if (CLIENT[k] === '{') depth++; else if (CLIENT[k] === '}' && --depth === 0) { fnEnd = k + 1; break; } }
+const logsPlanChanged = new Function(CLIENT.slice(fnStart, fnEnd) + '\nreturn _logsPlanChanged;')();
+const computePlanChanged = (flagSession, localPlanId, firestorePlanId, activePlanId) => logsPlanChanged(firestorePlanId ? { planId: firestorePlanId } : {}, activePlanId, flagSession, localPlanId);
 
 (function testPlanChangedDetection() {
   ok(computePlanChanged(true, null, null, 'planB') === true, 'the sessionStorage flag ALONE is sufficient to detect a plan change (covers same-device same-tab reload)');
@@ -64,7 +65,7 @@ const computePlanChanged = new Function('flagSession', 'localPlanId', 'firestore
 // ─────────────────────────────────────────────────────────────────────────────
 
 const activeAssignIdx = CLIENT.indexOf('ACTIVE_PLAN_ID = activePlanId; // registrar plan activo actual');
-const planChangedDeclIdx = CLIENT.indexOf('var planChanged = flagSession');
+const planChangedDeclIdx = CLIENT.indexOf('var planChanged = _logsPlanChanged(');
 const resetBlockIdx = CLIENT.indexOf('LOGS           = {};');
 const postResetSaveIdx = CLIENT.indexOf('await _doSaveLogs(); // Guardar el estado limpio de la semana 1');
 

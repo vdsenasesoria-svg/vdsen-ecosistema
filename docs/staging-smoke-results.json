@@ -1,7 +1,7 @@
 {
   "project": "vdsen-ecosistema-staging",
-  "ranAt": "2026-10-01",
-  "rulesCommit": "0ebdee8",
+  "ranAt": "2026-10-02",
+  "rulesCommit": "T552 (plans create ownership)",
   "summary": {
     "project": "vdsen-ecosistema-staging",
     "checks": 116,
