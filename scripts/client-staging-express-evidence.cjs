@@ -18,7 +18,7 @@ async function clearTimer(p) { for (let i = 0; i < 6; i++) { if (!(await p.isVis
   const absent = x => x === undefined || x === null;
   try {
     const planBefore = await restGet(cfg, K.athlete.email, K.athlete.password, 'plans/' + K.planId);
-    let { ctx, p, errs } = await L.openReal(browser, { W: 390, Hh: 844, K });   // express ON (default)
+    let { ctx, p, errs } = await L.openReal(browser, { W: 390, Hh: 844, K, expressOff: false });   // Express ON (T556: Express is now an explicit opt-in; detailed is the default)
     check('EXPRESS_MODE_IS_ON', !(await p.evaluate(() => isExpressDisabled())));
     await p.click('#nb1'); await p.waitForTimeout(500); await p.evaluate(() => selDia(0)); await p.waitForTimeout(500);
     const plan = await p.evaluate(() => _EJERCICIOS_DIA.map(e => ({ pid: e.prescriptionExerciseId, n: e.exerciseName, sets: e.sets.length, rir: e.sets[0].rirTarget, tech: e.technique })));

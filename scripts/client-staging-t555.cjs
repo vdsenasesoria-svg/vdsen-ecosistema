@@ -1,6 +1,6 @@
 'use strict';
-// T555 (athlete findings after the T554 preview): rest sheet shows what comes next; alarm channels (background audio keep-alive + alarm tone + service-worker notification);
-// finishing the rest takes ONE tap; a plain "Cardio ..." plan row is a cardio card. AUTOMATION staging athlete only (never the human account).
+// T555 (athlete findings after the T554 preview): rest sheet shows what comes next;
+// finishing the rest takes ONE tap; T556 defaults (detailed mode + timer ON) and the COACH AYRTON header; a plain "Cardio ..." plan row is a cardio card. AUTOMATION staging athlete only (never the human account).
 // Usage: NODE_PATH=$(npm root -g) NODE_USE_ENV_PROXY=1 VDSEN_TRAIN_KEEP=<creds json outside repo> node scripts/client-staging-t555.cjs [--shots dir] [--out file]
 const fs = require('node:fs'); const L = require('./client-staging-real-lib.cjs'); const { restGet, val, stable } = require('./client-staging-performance.cjs');
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i > -1 ? process.argv[i + 1] : d; };
@@ -14,6 +14,7 @@ const shots = arg('shots', null), outFile = arg('out', null); const results = []
   const browser = await L.B.launch(); const S = async (p, n) => { if (shots) await p.screenshot({ path: shots + '/t555-' + n + '.png' }); };
   const open = async (W, Hh) => { const o = await L.openReal(browser, { W, Hh, K, expressOff: true }); await o.ctx.grantPermissions(['notifications']).catch(() => {}); return o; };
   const initSw = `window.__sw = []; try { Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { controller: { postMessage: m => window.__sw.push(m) }, getRegistration: () => Promise.resolve(null), register: () => Promise.resolve({}) } }); } catch (e) {}`;
+  const clearRest = async p => { for (let i = 0; i < 5; i++) { if (!(await p.isVisible('#restTimerOverlay'))) return; const b = await p.$('#restTimerOverlay button:has-text("CONTINUAR")'); if (b) await b.click().catch(() => {}); await p.waitForTimeout(400); } };
   const toDay = async (p, d) => { await p.click('#nb1'); await p.waitForTimeout(500); await p.evaluate(i => selDia(i), d); await p.waitForTimeout(800); };
   const restVisible = p => p.waitForFunction(() => { const o = document.getElementById('restTimerOverlay'); return o && getComputedStyle(o).display !== 'none'; }, null, { timeout: 15000 });
   try {
@@ -26,29 +27,29 @@ const shots = arg('shots', null), outFile = arg('out', null); const results = []
       const r = await p.evaluate(() => { const sh = document.querySelector('#restTimerOverlay .rt-sheet').getBoundingClientRect(), nx = document.getElementById('nextActionHint'), nr = nx.getBoundingClientRect(); return { sheetH: Math.round(sh.height), vh: innerHeight, nextVisible: getComputedStyle(nx).display !== 'none' && nr.height > 20 && nr.top >= sh.top && nr.bottom <= sh.bottom + 1, txt: nx.innerText.replace(/\n/g, ' | '), tnum: document.getElementById('restTimerNum').getBoundingClientRect().width > 0 }; });
       check('R1_' + W + '_REST_SHEET_SHOWS_WHAT_COMES_NEXT', r.nextVisible && /SIGUIENTE · SERIE 2 DE 3/.test(r.txt) && /Press Convergente Inclinado/.test(r.txt) && /8 reps · RIR \d/.test(r.txt), JSON.stringify(r));
       check('R1_' + W + '_REST_SHEET_IS_COMPACT', r.sheetH <= r.vh * (W < 360 ? 0.7 : 0.55), r.sheetH + 'px of ' + r.vh);
-      const bg = await p.evaluate(() => ({ has: !!_bgAudio, paused: _bgAudio ? _bgAudio.paused : null, loop: _bgAudio ? _bgAudio.loop : null, blob: _bgAudio ? /^blob:/.test(_bgAudio.src) : null, sw: window.__sw.slice() }));
-      check('R2_' + W + '_KEEPALIVE_AUDIO_PLAYING_DURING_REST', bg.has && bg.paused === false && bg.loop === true && bg.blob === true, JSON.stringify({ paused: bg.paused, loop: bg.loop }));
-      const sch = bg.sw.filter(m => m.type === 'VDSEN_REST_SCHEDULE'); check('R2_' + W + '_SERVICE_WORKER_NOTIFICATION_SCHEDULED_FOR_THE_REST_END', sch.length >= 1 && sch[sch.length - 1].endMs > Date.now() && /Siguiente: Press Convergente Inclinado · serie 2\/3/.test(sch[sch.length - 1].body), JSON.stringify(sch[sch.length - 1] || null).slice(0, 220));
-      await p.click('#restTimerOverlay .rt-adj button:nth-child(2)'); await p.waitForTimeout(200); const sw2 = await p.evaluate(() => window.__sw.filter(m => m.type === 'VDSEN_REST_SCHEDULE').length); check('R2_' + W + '_ADJUSTING_THE_REST_RESCHEDULES', sw2 >= 2, 'schedules=' + sw2);
-      // zero: the athlete is typing (auto-advance is blocked on purpose) so the sheet stays and CONTINUAR must work on the FIRST tap
       await p.evaluate(() => { const i = document.getElementById('carga_log_1_0_0_s1'); if (i) { i.value = '41'; i.focus(); } _restEndMs = Date.now() + 1500; }); await p.waitForFunction(() => _restSeconds <= 0, null, { timeout: 15000 }); await p.waitForTimeout(400);
-      const z = await p.evaluate(() => ({ ring: _bgRinging, playing: !!_bgAudio && !_bgAudio.paused, isAlarm: !!_bgAudio && _bgUrls && _bgAudio.src === _bgUrls.alarm, overlay: getComputedStyle(document.getElementById('restTimerOverlay')).display !== 'none', banner: !!document.querySelector('#restDoneLive.on') }));
-      check('R2_' + W + '_ALARM_TONE_RINGS_AT_ZERO_VIA_THE_AUDIO_ELEMENT', z.ring && z.playing && z.isAlarm, JSON.stringify(z)); check('R3_' + W + '_ANNOUNCEMENT_IS_IMMEDIATE_AT_ZERO', z.banner && z.overlay, JSON.stringify(z)); await S(p, 'zero-' + W);
-      const cancels0 = await p.evaluate(() => window.__sw.filter(m => m.type === 'VDSEN_REST_CANCEL').length); check('R2_' + W + '_PAGE_RINGS_ITSELF_SO_THE_PENDING_NOTIFICATION_IS_CANCELLED', cancels0 >= 1);
+      const z = await p.evaluate(() => ({ overlay: getComputedStyle(document.getElementById('restTimerOverlay')).display !== 'none', banner: !!document.querySelector('#restDoneLive.on') }));
+      check('R3_' + W + '_ANNOUNCEMENT_IS_IMMEDIATE_AT_ZERO', z.banner && z.overlay, JSON.stringify(z)); await S(p, 'zero-' + W);
       const bb = await (await p.$('#restTimerOverlay .rt-go')).boundingBox(); const t0 = Date.now(); await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
       await p.waitForFunction(() => getComputedStyle(document.getElementById('restTimerOverlay')).display === 'none', null, { timeout: 3000 }); const dt = Date.now() - t0;
-      const after = await p.evaluate(() => ({ ring: _bgRinging, paused: _bgAudio ? _bgAudio.paused : true, guard: !!document.getElementById('tapGuard') }));
-      check('R3_' + W + '_ONE_TAP_ON_CONTINUAR_CLOSES_THE_SHEET_AND_SILENCES_THE_ALARM', dt < 1200 && !after.ring && after.paused, dt + 'ms ' + JSON.stringify(after)); await p.waitForTimeout(500);
+      const after = await p.evaluate(() => ({ guard: !!document.getElementById('tapGuard') }));
+      check('R3_' + W + '_ONE_TAP_ON_CONTINUAR_CLOSES_THE_SHEET', dt < 1200, dt + 'ms ' + JSON.stringify(after)); await p.waitForTimeout(500);
       check('R3_' + W + '_TAP_GUARD_IS_TEMPORARY', !(await p.evaluate(() => !!document.getElementById('tapGuard'))));
       check('R_' + W + '_NO_PAGE_ERRORS', errs.length === 0, errs.slice(0, 2).join(' | ')); await ctx.close();
     }
-    // ============ R4: alarm stops on a tap anywhere ============
-    { await reset(); const { ctx, p } = await open(390, 844); await toDay(p, 0); const key = 'log_1_0_0_s0'; await p.evaluate(k => document.getElementById('carga_' + k).scrollIntoView({ block: 'center' }), key); await p.fill('#carga_' + key, '40'); await p.fill('#reps_' + key, '8'); await p.click('#rir_btn_' + key + '_3'); await p.click('#setrow_' + key + ' .set-save-primary'); await restVisible(p);
-      await p.evaluate(() => { _restEndMs = Date.now() + 800; }); await p.waitForFunction(() => _bgRinging, null, { timeout: 15000 }).catch(() => {}); const ring = await p.evaluate(() => _bgRinging); await p.mouse.click(200, 80); await p.waitForTimeout(300);
-      check('R4_ALARM_RINGS_THEN_A_TAP_ANYWHERE_SILENCES_IT', ring === true && (await p.evaluate(() => !_bgRinging && _bgAudio.paused))); await ctx.close(); }
-    // ============ R5: opt-out ============
-    { await reset(); const { ctx, p } = await open(390, 844); await p.evaluate(() => setBgAlarm(false)); await toDay(p, 0); const key = 'log_1_0_0_s0'; await p.evaluate(k => document.getElementById('carga_' + k).scrollIntoView({ block: 'center' }), key); await p.fill('#carga_' + key, '40'); await p.fill('#reps_' + key, '8'); await p.click('#rir_btn_' + key + '_3'); await p.click('#setrow_' + key + ' .set-save-primary'); await restVisible(p);
-      check('R5_OPT_OUT_NO_BACKGROUND_AUDIO', await p.evaluate(() => !_bgAudio || _bgAudio.paused)); await ctx.close(); }
+    // ============ D: T556 defaults + header ============
+    { await reset(); const o = await L.B.newCtx(browser, { width: 390, height: 844, transform: h => L.H.buildStagingHtml(h) }); const p = await o.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));   // NO storage preset: the app default
+      await p.goto(L.B.APP + '/'); await p.waitForSelector('#liEmail'); await p.fill('#liEmail', K.athlete.email); await p.fill('#liPass', K.athlete.password); await p.click('.login-btn'); await p.waitForSelector('#scrApp.on', { timeout: 40000 }); await p.waitForTimeout(2500); await p.evaluate(() => { const b = document.querySelector('#wnModal button'); if (b) b.click(); });
+      const hdrAt = async (W, Hh) => { await p.setViewportSize({ width: W, height: Hh }); await p.waitForTimeout(500); return p.evaluate(() => { const c = document.querySelector('.brand-coach'), rc = c.getBoundingClientRect(); const kids = [...document.querySelectorAll('.hdr-user *')].filter(e => e.children.length === 0 && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect()); const hit = kids.some(r => !(rc.right <= r.left + 1 || rc.left >= r.right - 1 || rc.bottom <= r.top + 1 || rc.top >= r.bottom - 1)); const sub = document.querySelector('.brand-sub'), rs = sub && getComputedStyle(sub).display !== 'none' ? sub.getBoundingClientRect() : null; const subHit = !!rs && !(rc.right <= rs.left + 1 || rc.left >= rs.right - 1 || rc.bottom <= rs.top + 1 || rc.top >= rs.bottom - 1); return { txt: c.textContent, visible: rc.width > 0 && rc.right <= innerWidth, overlapsUser: hit, overlapsSub: subHit, ov: document.documentElement.scrollWidth > innerWidth + 1 }; }); };
+      for (const [W, Hh] of [[430, 932], [390, 844], [375, 812], [360, 800], [320, 640]]) { const h = await hdrAt(W, Hh); check('D1_' + W + '_HEADER_SAYS_COACH_AYRTON_NO_OVERLAP', h.txt === 'COACH AYRTON' && h.visible && !h.overlapsUser && !h.overlapsSub && !h.ov, JSON.stringify(h)); if ([390, 320].includes(W)) await S(p, 'header-' + W); }
+      await p.setViewportSize({ width: 390, height: 844 });
+      await p.click('#nb1'); await p.waitForTimeout(500); await p.evaluate(() => selDia(0)); await p.waitForTimeout(900);
+      const d = await p.evaluate(() => ({ detailed: isExpressDisabled(), perSetForm: !!document.querySelector('[id^=setrow_log_1_0_0_s0]'), expressForm: !!document.querySelector('[id^=xcarga_]'), timerOff: isRestTimerDisabled() }));
+      check('D3_DEFAULT_IS_DETAILED_MODE_WITH_A_FORM_PER_SET', d.detailed && d.perSetForm && !d.expressForm && !d.timerOff, JSON.stringify(d));
+      const key = 'log_1_0_0_s0'; await p.evaluate(k => document.getElementById('carga_' + k).scrollIntoView({ block: 'center' }), key); await p.fill('#carga_' + key, '40'); await p.fill('#reps_' + key, '8'); await p.click('#rir_btn_' + key + '_3'); await p.click('#setrow_' + key + ' .set-save-primary'); await restVisible(p);
+      check('D4_REST_TIMER_IS_ACTIVE_BY_DEFAULT', true);
+      await clearRest(p); await p.click('#nb4'); await p.waitForTimeout(600); const prof = await p.evaluate(() => document.body.innerText); check('D5_PERFIL_SHOWS_BOTH_ON_BY_DEFAULT_AND_NO_ALARM_ROW', /Modo detallado[\s\S]{0,120}Activado/.test(prof) && /Temporizador de descanso[\s\S]{0,120}Activado/.test(prof) && !/Alarma en segundo plano/.test(prof));
+      check('D_NO_PAGE_ERRORS', errs.length === 0, errs.slice(0, 2).join(' | ')); await o.close(); }
     // ============ C: cardio ============
     { await reset(); const { ctx, p, errs } = await open(390, 844); const D5 = plan.days[5].exercises, ci = D5.length - 1; await toDay(p, 5);
       const rt = await p.evaluate(() => _EJERCICIOS_DIA.map(e => [e.exerciseName, e.exerciseType || null, e.sets.length])); const cardio = rt[ci];

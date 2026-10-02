@@ -173,7 +173,7 @@ async function clearTimer(p) { for (let i = 0; i < 6; i++) { if (!(await p.isVis
     }
     // ================= S10 =================
     if (want('S10')) {
-      await reset(); let { ctx, p, errs } = await open({ expressOff: false }); await toDay(p, 0); const express = await p.evaluate(() => !isExpressDisabled()); check('S10_EXPRESS_IS_THE_DEFAULT_ENTRY_PATH', express);
+      await reset(); let { ctx, p, errs } = await open({ expressOff: false }); await toDay(p, 0); const express = await p.evaluate(() => !isExpressDisabled()); check('S10_EXPRESS_IS_AN_EXPLICIT_OPT_IN_WHEN_DETAILED_MODE_IS_TURNED_OFF', express);
       for (let e = 0; e < D0.length; e++) {
         await p.evaluate(i => setEjActivo(i), e); await p.waitForTimeout(500); const n = D0[e].sets.length;
         for (let k = 0; k < n - 1; k++) { const b = await p.$('.sets-rail button.setp'); if (!b) break; await b.click(); await p.waitForTimeout(700); await clearTimer(p); }
