@@ -896,6 +896,8 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .sp-main{flex:1;min-width:0}
 .sp-nm{font-size:15px;font-weight:600;color:var(--tx)}
 .sp-when{margin-top:3px;font-size:11.5px;color:var(--mt)}
+.sp-inote{margin-top:4px;font-size:11.5px;line-height:1.4;color:var(--mt);font-style:italic;overflow-wrap:anywhere}
+.sp-dose2 b{max-width:44vw;white-space:normal!important;text-align:right;overflow-wrap:anywhere}
 .sp-dose2{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 .sp-dose2 b{font-family:var(--font-num);font-size:24px;font-weight:800;color:var(--tx);line-height:1;white-space:nowrap}
 .sp-dose2 span{font-size:9.5px;letter-spacing:.14em;color:var(--mt);font-weight:700}
@@ -2528,18 +2530,6 @@ var _PERF_RX_FIELDS = ['modo', 'cardioMode', 'duracionMin', 'targetMinutes', 'di
   'ritmoObjetivo', 'targetPace', 'repeticiones', 'bloqueTrabajo', 'workInterval', 'bloqueDescanso', 'restInterval',
   'dosis', 'targetDose', 'dosisUnit', 'doseUnit', 'tiempoObjetivoSeg', 'targetTimeSec', 'rpeTarget',
   'estructura', 'structure', 'roundsObjetivo', 'targetRounds', 'timeCapMin', 'timecap', 'movimientos', 'movements'];
-// T555: a plain "Cardio ..." plan row that declares NO type and is shaped like a strength set (<= 1 set, <= 1 rep) is presented as cardio at RUNTIME only.
-// An explicit exerciseType / tipo always wins; the Firestore plan, the PID and the prescription are never touched; a multi-set row named "cardio ..." stays strength.
-function _withInferredCardio(e) {
-  if (!e || typeof e !== 'object') return e;
-  if ((e.exerciseType !== undefined && e.exerciseType !== null && String(e.exerciseType) !== '') || (e.tipo !== undefined && e.tipo !== null && String(e.tipo) !== '')) return e;
-  var n = String(e.exerciseName || e.nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-  if (!/^cardio\b/.test(n)) return e;
-  var sets = Array.isArray(e.sets) ? e.sets : [];
-  if (sets.length > 1) return e;
-  for (var i = 0; i < sets.length; i++) { if (!(parseInt(sets[i].repsTarget) <= 1)) return e; }
-  return Object.assign({}, e, { exerciseType: 'cardio', sets: [], _cardioInferred: true });
-}
 function _carryPerfPrescription(e) {
   var out = {};
   if (!e) return out;
@@ -2643,8 +2633,7 @@ async function loadPlan(user) {
     // al formato que el renderer espera: sesiones con contenido texto + exercises estructurado
     const sesiones = (planData.days || []).map(function(d, i) {
       var exList = (d.exercises || []).map(function(e, ei) {
-        e = _withInferredCardio(e);   // T555: plain Cardio row -> cardio card (runtime only)
-        var numSets = (e.sets || []).length || (_getExType(e) === 'cardio' ? 1 : 3);   // T555: a cardio exercise has ONE log and no sets: it counts as exactly 1 series in the day total (it used to count 3 and could never reach 100%)
+        var numSets = (e.sets || []).length || (_getExType(e) === 'cardio' ? 1 : 3);   // T555: a cardio exercise (explicit exerciseType) has ONE log and no sets: it counts as exactly 1 series in the day total (it used to count 3 and could never reach 100%)
         var _rt0 = (e.sets && e.sets[0]) ? e.sets[0].repsTarget : 8;
         // Preservar string literals tal cual; coercionar solo valores numéricos
         var repsTarget = (_rt0 === 'SST-PROTOCOL' || _rt0 === 'SST-RIV-PROTOCOL') ? _rt0 : (_rt0 || 8);
@@ -12303,6 +12292,17 @@ function buildSustPanel(key, alimTxt, isInOpcion) {
     + '</div>';
 }
 
+// T557: split a Coach-authored food label into name + the WHOLE authored quantity (plural units, "(120 g)" parentheses and trailing text are kept).
+// Simple g / ml quantities keep the compact "80g" look. null = no quantity found: the label is shown exactly as authored.
+function _splitFoodQty(label) {
+  var units = 'g|ml|pzas?|piezas?|cucharadas?|cucharaditas?|tazas?|scoops?|unidades?|porci[oó]n(?:es)?|rebanadas?|platos?|latas?|vasos?|puñados?';
+  var l = String(label == null ? '' : label), m = l.match(new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(' + units + ')\\b', 'i'));
+  if (!m) return null;
+  var name = l.substring(0, m.index).replace(/[:\s]+$/, '').trim(); if (!name) return null;
+  var unit = m[2].toLowerCase(), core = (unit === 'g' || unit === 'ml') ? (m[1] + unit) : (m[1] + ' ' + m[2]);
+  var tail = l.substring(m.index + m[0].length).trim();
+  return { name: name, qty: tail ? (core + ' ' + tail) : core };
+}
 function parsearYRenderComidas(texto) {
   if (!texto) return '';
   var lines = texto.split('\n');
@@ -12357,7 +12357,7 @@ function parsearYRenderComidas(texto) {
     return /^(COMIDA\s*\d+\s*:.*(?:REDUCIR|AUMENTAR|ELIMINAR|AGREGAR)|\*{0,2}Total\s+reducci[oó]n|\*{0,2}Total\s+aumento|AJUSTE\s+DE\s+MACROS|INSTRUCCION)/i.test(lt);
   }
   function esAlimento(lt) {
-    return /\d+\s*(g|ml|pza|pieza|cucharada|taza|unidad)/i.test(lt) && lt.length > 3;
+    return /\d+\s*(g|ml|pza|pieza|cucharada|taza|unidad|scoop|plato|porci[oó]n|rebanada|lata|vaso)/i.test(lt) && lt.length > 3;   // T557: plated / portion quantities are foods too
   }
 
   // Estado para distinguir sub-bloques dentro de cada comida
@@ -12535,11 +12535,8 @@ function parsearYRenderComidas(texto) {
       var hasSust = sustList.length > 0;
       // Parse quantity from display label for better visual separation
       var nameOnly = displayLabel, qtyStr = '';
-      var qtyMatch = displayLabel.match(/[:\s]?\s*(\d+(?:\.\d+)?)\s*(g|ml|pza|pieza|cucharada|taza|scoop)\b/i);
-      if (qtyMatch && !isSustd) {
-        nameOnly = displayLabel.substring(0, qtyMatch.index).replace(/[:\s]+$/, '').trim();
-        qtyStr = qtyMatch[1] + qtyMatch[2].toLowerCase();
-      }
+      var _sq = isSustd ? null : _splitFoodQty(displayLabel);   // T557: shared, non-lossy splitter
+      if (_sq) { nameOnly = _sq.name; qtyStr = _escHTml(_sq.qty); }
       // Render de macros breakdown del alimento (P/C/G por porción)
       var macrosBdHtml = '';
       if (macrosBd && !isSustd) {
@@ -13836,6 +13833,19 @@ function showFAQModal() {
 }
 window.showFAQModal = showFAQModal;
 
+// T557: parse one Coach-authored supplement line "Nombre Dosis [descriptor] [timing] [(nota)]" without losing anything:
+// authored name (digits included), full dose (incl. a descriptor like "EPA+DHA"), authored timing, and the note. null = no dose (shown as a note line).
+function _parseSupLine(line) {
+  var s = String(line == null ? '' : line).trim().replace(/^[-–•*]\s*/, ''), nota = '';
+  var nm = s.match(/\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)\s*$/);
+  if (nm) { nota = nm[1].trim(); s = s.substring(0, nm.index).trim(); }
+  var dm = s.match(/(\d[\d.,]*\s*(?:mcg|mg|µg|ui|iu|ml|g|caps?|c[aá]psulas?|tabletas?|scoops?|porciones?|gotas)\b)/i);
+  if (!dm) return null;
+  var nombre = s.substring(0, dm.index).replace(/[-–:•*\s]+$/, '').trim(), after = s.substring(dm.index + dm[0].length), dosis = dm[0].trim();
+  var extra = after.match(/^\s+([A-Z][A-Z0-9]*(?:[+\/][A-Z0-9]+)+)/);
+  if (extra) { dosis += ' ' + extra[1]; after = after.substring(extra[0].length); }
+  return { nombre: nombre, dosis: dosis, timing: after.replace(/^[\s,;·\-–:]+/, '').trim(), nota: nota };
+}
 function formatTextoSup(texto) {
   if (!texto) return '<div style="color:var(--mt);font-size:11px">Sin suplementos</div>';
   
@@ -13876,18 +13886,23 @@ function formatTextoSup(texto) {
     }
     // Detectar suplemento con dosis
     const esSup = SUPS.some(s => lt.toLowerCase().includes(s.toLowerCase()));
-    const dosis = lt.match(/(\d[\d.,]*\s*(?:g|mg|mcg|ui|iu|caps?))/i);
-    if (esSup && dosis) {
-      let momento = '';
-      if (/pre[-\s]?entreno|antes.*entren|30.*min/i.test(lt)) momento = 'Pre-entreno';
-      else if (/post[-\s]?entreno|despu[eé]s/i.test(lt)) momento = 'Post-entreno';
-      else if (/noche|dormir|antes.*cama/i.test(lt)) momento = 'Noche';
-      else if (/ma[ñn]ana|ayunas|al\s+despertar/i.test(lt)) momento = 'Mañana';
-      else if (/comida|almuerzos?|cena/i.test(lt)) momento = 'Con comida';
-      let nombre = '';
-      SUPS.forEach(s => { if (lt.toLowerCase().includes(s.toLowerCase()) && !nombre) nombre = s; });
-      if (!nombre) nombre = lt.replace(/[-–:•*]/g,'').split(/\d/)[0].trim().substring(0,35);
-      secActual.items.push({ tipo:'sup', nombre, dosis: dosis[1].toUpperCase(), momento });
+    const ps = _parseSupLine(lt);   // T557: faithful parse (name / dose / timing / note as authored)
+    if (esSup && ps) {
+      const bare = lt.replace(/\s*\([^)]*\)\s*$/, '');   // the timing is NEVER guessed from the note
+      let momento = ps.timing ? (ps.timing.charAt(0).toUpperCase() + ps.timing.slice(1)) : '';
+      if (!momento && !ps.nombre) {
+        if (/pre[-\s]?entreno|antes.*entren|30.*min/i.test(bare)) momento = 'Pre-entreno';
+        else if (/post[-\s]?entreno|despu[eé]s/i.test(bare)) momento = 'Post-entreno';
+        else if (/noche|dormir|antes.*cama/i.test(bare)) momento = 'Noche';
+        else if (/ma[ñn]ana|ayunas|al\s+despertar/i.test(bare)) momento = 'Mañana';
+        else if (/comida|almuerzos?|cena/i.test(bare)) momento = 'Con comida';
+      }
+      let nombre = ps.nombre;
+      if (!nombre) {
+        SUPS.forEach(s => { if (lt.toLowerCase().includes(s.toLowerCase()) && !nombre) nombre = s; });
+        if (!nombre) nombre = lt.replace(/[-–:•*]/g,'').split(/\d/)[0].trim().substring(0,35);
+      }
+      secActual.items.push({ tipo:'sup', nombre, dosis: ps.dosis.toUpperCase(), momento, nota: ps.nota });
     } else if (lt.length > 4) {
       secActual.items.push({ tipo:'nota', texto: lt });
     }
@@ -13919,8 +13934,9 @@ function formatTextoSup(texto) {
           <div class="sp-main">
             <div class="sp-nm">${_escHTml(item.nombre)}</div>
             ${item.momento ? `<div class="sp-when">${_escHTml(item.momento)}</div>` : ''}
+            ${item.nota ? `<div class="sp-inote">${_escHTml(item.nota)}</div>` : ''}
           </div>
-          <div class="sp-dose2"><b>${item.dosis}</b><span>DOSIS</span></div>
+          <div class="sp-dose2"><b>${_escHTml(item.dosis)}</b><span>DOSIS</span></div>
         </div>`;
       }
       return `<div class="sp-note">${_escHTml(item.texto)}</div>`;
@@ -13928,7 +13944,7 @@ function formatTextoSup(texto) {
     if (!itemsHtml) return '';
     return `
       <section class="sup-blk ${tierCls}">
-        <header class="sup-h"><h3>${_escHTml(sec.titulo)}</h3><span>${sec.items.filter(i=>i.tipo==='sup').length} items</span></header>
+        <header class="sup-h"><h3>${_escHTml(sec.titulo)}</h3><span>${sec.items.length} ${sec.items.length === 1 ? 'item' : 'items'}</span></header>
         <div>${itemsHtml}</div>
       </section>`;
   }).join('') || '<div style="color:var(--mt);font-size:11px;text-align:center;padding:20px">Sin suplementos asignados</div>';

@@ -48,7 +48,7 @@ async function clearTimer(p) { for (let i = 0; i < 6; i++) { if (!(await p.isVis
     let { ctx, p, errs } = await L.openReal(browser, { W: 390, Hh: 844, K, expressOff: true });
     // ---- runtime plan identity
     const tot = await p.evaluate(() => { let e = 0, s = 0; const pids = new Set(); for (let i = 0; i < 7; i++) { selDia(i); _EJERCICIOS_DIA.forEach(x => { e++; s += x.sets.length; pids.add(x.prescriptionExerciseId); }); } return { days: 7, e, s, pids: pids.size, label: (function () { const e = PLAN.entrenamiento, d = e.days || e.sesiones || e; return Array.isArray(d) ? (d[1].label || d[1].titulo || d[1].nombre) : null; })(), numeric: (window.VDSEN_EFFECTIVE_PRESCRIPTION || {}).NUMERIC_APPLY_ENABLED }; });
-    check('CLONE_RUNTIME_7_32_78_32', tot.e === 32 && tot.s === 78 && tot.pids === 32, JSON.stringify(tot));   // 80 prescribed sets; the 2 plain Cardio rows are cardio cards at runtime (T555) check('NUMERIC_APPLY_ENABLED_FALSE', tot.numeric === false);
+    check('CLONE_RUNTIME_7_32_80_32', tot.e === 32 && tot.s === 80 && tot.pids === 32, JSON.stringify(tot)); check('NUMERIC_APPLY_ENABLED_FALSE', tot.numeric === false);
     const rtPids = await p.evaluate(d => { selDia(d); return _EJERCICIOS_DIA.map(e => ({ pid: e.prescriptionExerciseId, n: e.exerciseName, sets: e.sets.length, rest: e.sets[0].restSeconds })); }, DAY);
     if (SYN) EXEC = rtPids.map((x, e) => Array.from({ length: x.sets }, (_, s) => [40 + 10 * e + 2.5 * s, 8 + (s % 3), ((e + s) % 3) + 1, null, null]));
     const TOT = EXEC.flat().length, NEX = EXEC.length, LASTE = NEX - 1, LASTS = EXEC[LASTE].length - 1, FIRSTREST = rtPids[0].rest;
@@ -78,7 +78,7 @@ async function clearTimer(p) { for (let i = 0; i < 6; i++) { if (!(await p.isVis
           check('A11Y_RIR_BUTTONS_ARIA_PRESSED_AND_LABELLED', a11y.rirOk); check('A11Y_REDUCED_MOTION_CONTRACT_PRESENT', a11y.reduce);
         }
         try {
-          await p.fill('#carga_' + key, String(load)); await p.fill('#reps_' + key, String(reps)); await p.click('#rir_btn_' + key + '_' + rir, { timeout: 8000 }); 
+          await p.fill('#carga_' + key, String(load)); await p.fill('#reps_' + key, String(reps)); await p.click('#rir_btn_' + key + '_' + rir, { timeout: 8000 });
         } catch (err) {
           await S(p, 'FAIL-' + key);
           console.log('DIAG', key, JSON.stringify(await p.evaluate(k => { const b = document.getElementById('rir_btn_' + k + '_3'); const r = b && b.getBoundingClientRect(); const t = r && document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { rect: r && [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)], top: t && (t.id || t.className || t.tagName), ov: !!document.getElementById('restTimerOverlay') && getComputedStyle(document.getElementById('restTimerOverlay')).display, vh: innerHeight }; }, key)));

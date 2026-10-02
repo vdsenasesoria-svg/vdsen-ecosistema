@@ -92,6 +92,25 @@ Detalle y evidencia: `docs/T554_TRAIN_READY.md`. Cuenta humana de entrenamiento 
 | CACHE / SW | PASS | `vdsen-v12`, HTML network-first; build servido verificado |
 | HUMAN UX | HUMAN_PENDING | Ayrton entrena con la cuenta de staging y reporta |
 
+## T557 — cierre del módulo de entrenamiento del Client (staging; producción sin tocar)
+
+Detalle y tabla de evidencia: `docs/CLIENT_MODULE_STATUS.md`.
+
+| Módulo | Estado |
+|---|---|
+| CLIENT TRAINING | **FEATURE_COMPLETE** (P0 = 0, P1 = 0, puerta móvil humana = PASS, regresión = PASS) |
+| CLIENT NUTRITION | **DISPLAY_ONLY** — DISPLAY_READY |
+| CLIENT SUPPLEMENTS | **DISPLAY_ONLY** — DISPLAY_READY |
+| AUTO-APPLY | fase futura separada (`NUMERIC_APPLY_ENABLED = false`) |
+| EQUIPMENT INCREMENTS | fase futura separada |
+| GENERATOR / PLAN AUTHORING | sistema separado |
+
+- **Cardio**: "Cardio Zone 2" (Día 6 / 7 del plan de Ayrton) es **PLAN DATA** (fila con forma de fuerza, sin `exerciseType: cardio`), no un defecto del renderer: el Client ya renderiza cardio canónico con `exerciseType`. **No se infiere por nombre** (la inferencia de T555 se retiró). El plan no se modificó.
+- **Visualización corregida en T557** (solo defectos concretos): cantidades de alimentos con paréntesis / unidad plural (se mutilaban), y suplementos (se perdían los dígitos del nombre, el descriptor de dosis, el momento de la toma y las notas; el momento se adivinaba desde la nota).
+- Regresión de cierre: unitarias 1063/1063; emulador: T476 7, ciclo de vida 18, reglas 19, tenant 11, autoridad Coach 6, edición de plan activo 7, notas 4, create 8; staging: T554 train 30, T555 30, escenarios 74, nutrición + suplementos 75, standard-session 42, Express 21, T548 54, T549 53, T550 41, T551 77, mobile QA 48, performance 44, T552 28.
+- Puerta humana (móvil): Ayrton entrenó el Día 6 con el build T555 y confirmó "todo bien"; los cambios posteriores (T556) fueron los pedidos por él (alarma revertida, defaults, encabezado).
+- Siguiente paso de mayor palanca: **preparar el paquete de despliegue a producción del Client sin desplegar** (`docs/FIRESTORE_DEPLOYMENT_RUNBOOK.md`).
+
 ## Antes de producción todavía falta
 
 1. Provisionar entitlements (`scripts/admin-coach-api-access.cjs`) para los coaches aprobados antes de desplegar el API endurecido.

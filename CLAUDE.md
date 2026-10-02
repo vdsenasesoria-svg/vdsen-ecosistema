@@ -124,3 +124,9 @@ Secciones: `base` (datos personales/biométricos), `entrenamiento` (nivel/días/
 - URLs: https://vdsen-ecosistema.vercel.app/vdsen-coach.html
 - URLs amigables: /coach y /cliente
 - Push directo a main (sin PRs)
+
+## Estado del Client (cierre T557)
+
+- CLIENT TRAINING = FEATURE_COMPLETE (congelado: solo cambios por defecto real de producción, problema de uso concreto del Coach / atleta, o fase explícitamente autorizada). CLIENT NUTRITION / SUPPLEMENTS = DISPLAY_ONLY. AUTO-APPLY, EQUIPMENT INCREMENTS y el GENERATOR son fases / sistemas separados. Ver `docs/CLIENT_MODULE_STATUS.md`.
+- El cardio NUNCA se infiere por nombre de ejercicio: solo `exerciseType` / `tipo` explícito selecciona el renderer de cardio.
+- Modo detallado (un formulario por serie) y temporizador de descanso: activos por defecto; se apagan en Perfil.

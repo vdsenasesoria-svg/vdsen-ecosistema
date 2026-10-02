@@ -77,19 +77,16 @@ test('T555.11 (T556) the service worker still precaches and serves network-first
 });
 
 // ---------------- 4. cardio ----------------
-function inferSandbox() { const ctx = { console, String, Object, Array, parseInt, isNaN }; vm.createContext(ctx); vm.runInContext(fnSrc('_withInferredCardio') + '\nthis.f=_withInferredCardio;', ctx); return ctx.f; }
-test('T555.12 a plain Cardio plan row (no declared type, one 1-rep set) becomes a cardio exercise at RUNTIME only; explicit types and real strength rows are untouched', () => {
-  const f = inferSandbox(), row = { exerciseName: 'Cardio Zone 2 — post fuerza', sets: S(1, 1, 4), prescriptionExerciseId: 'p1' };
-  const out = f(row); assert.equal(out.exerciseType, 'cardio'); assert.deepEqual(JSON.parse(JSON.stringify(out.sets)), []); assert.equal(out.prescriptionExerciseId, 'p1'); assert.equal(row.sets.length, 1, 'the source plan row is not mutated');
-  assert.equal(f({ exerciseName: 'Cardio Zone 2', sets: S(1, 1, 4) }).exerciseType, 'cardio');
-  const keep = { exerciseName: 'Cardio Zone 2', exerciseType: 'fuerza', sets: S(1, 1, 4) }; assert.equal(f(keep), keep, 'an explicit type always wins');
-  const st = { exerciseName: 'Press banca', sets: S(3, 8, 2) }; assert.equal(f(st), st);
-  const many = { exerciseName: 'Cardio de piernas con barra', sets: S(4, 10, 2) }; assert.equal(f(many), many, 'a real multi-set strength row named cardio-something stays strength');
+test('T555.12 (T556 closure) cardio is NEVER inferred from the exercise name: only an explicit exerciseType / tipo selects the cardio renderer', () => {
+  assert.ok(!SRC.includes('_withInferredCardio') && !SRC.includes('_cardioInferred'), 'no name-based inference anywhere');
+  const f = fnSrc('_getExType'), ctx = { String }; vm.createContext(ctx); vm.runInContext(f + '\nthis.f=_getExType;', ctx);
+  assert.equal(ctx.f({ exerciseName: 'Cardio Zone 2', sets: S(1, 1, 4) }), 'fuerza', 'a plain Cardio-named row stays strength-shaped (plan authoring issue, not a renderer defect)');
+  assert.equal(ctx.f({ exerciseName: 'Cardio Zone 2', exerciseType: 'cardio', sets: [] }), 'cardio'); assert.equal(ctx.f({ exerciseName: 'x', tipo: 'cardio' }), 'cardio');
 });
-test('T555.13 loadPlan applies the inference before the runtime exercise is built, and the Firestore plan is never written by it', () => {
-  assert.ok(/e = _withInferredCardio\(e\);/.test(SRC)); assert.ok(!/setDoc\([^)]*plans/.test(fnSrc('_withInferredCardio')));
+test('T555.13 loadPlan passes the explicit type through and the cardio renderer exists', () => {
+  assert.ok(/Object\.assign\(ex, _carryPerfPrescription\(e\)\)/.test(SRC) && /function _buildCardioCard\(/.test(SRC) && /function completeCardio\(/.test(SRC));
 });
-test('T555.14 a cardio exercise (no sets) counts as exactly ONE series in the day total (it used to default to 3 phantom series and the day could never reach 100%)', () => {
+test('T555.14 an explicit cardio exercise (no sets) counts as exactly ONE series in the day total (it used to default to 3 phantom series and the day could never reach 100%)', () => {
   assert.ok(/var numSets = \(e\.sets \|\| \[\]\)\.length \|\| \(_getExType\(e\) === 'cardio' \? 1 : 3\);/.test(SRC));
 });
 test('T555.15 the minimized pill says what is next', () => {

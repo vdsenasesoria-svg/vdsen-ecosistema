@@ -1,6 +1,6 @@
 'use strict';
 // T555 (athlete findings after the T554 preview): rest sheet shows what comes next;
-// finishing the rest takes ONE tap; T556 defaults (detailed mode + timer ON) and the COACH AYRTON header; a plain "Cardio ..." plan row is a cardio card. AUTOMATION staging athlete only (never the human account).
+// finishing the rest takes ONE tap; T556 defaults (detailed mode + timer ON) and the COACH AYRTON header; explicit cardio renders as cardio (never inferred from the name). AUTOMATION staging athlete only (never the human account).
 // Usage: NODE_PATH=$(npm root -g) NODE_USE_ENV_PROXY=1 VDSEN_TRAIN_KEEP=<creds json outside repo> node scripts/client-staging-t555.cjs [--shots dir] [--out file]
 const fs = require('node:fs'); const L = require('./client-staging-real-lib.cjs'); const { restGet, val, stable } = require('./client-staging-performance.cjs');
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i > -1 ? process.argv[i + 1] : d; };
@@ -8,6 +8,9 @@ const shots = arg('shots', null), outFile = arg('out', null); const results = []
 (async () => {
   const cfg = L.H.stagingConfig(); if (cfg.projectId !== 'vdsen-ecosistema-staging') throw new Error('REFUSING: not staging');
   const K = JSON.parse(fs.readFileSync(process.env.VDSEN_TRAIN_KEEP, 'utf8')); if (K.project !== cfg.projectId || K.kind !== 'automation') throw new Error('REFUSING: not the automation account');
+  const FSB = 'https://firestore.googleapis.com/v1/projects/' + cfg.projectId + '/databases/(default)/documents';
+  const enc = v => v === null || v === undefined ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }) : typeof v === 'string' ? { stringValue: v } : Array.isArray(v) ? { arrayValue: { values: v.map(enc) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined).map(([k, x]) => [k, enc(x)])) } };
+  const call = async (m, u, t, b) => { const r = await fetch(u, { method: m, headers: Object.assign({ 'content-type': 'application/json' }, t ? { authorization: 'Bearer ' + t } : {}), body: b === undefined ? undefined : JSON.stringify(b) }); const x = await r.text(); let j = null; try { j = JSON.parse(x); } catch (e) { /* non-json */ } return { s: r.status, b: j }; };
   const reset = async () => { const si = await (await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + cfg.apiKey, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: K.coach.email, password: K.coach.password, returnSecureToken: true }) })).json(); const B = 'https://firestore.googleapis.com/v1/projects/' + cfg.projectId + '/databases/(default)/documents/logs/' + K.athlete.uid; for (const u of [B + '/mesos/' + K.planId, B]) await fetch(u, { method: 'DELETE', headers: { authorization: 'Bearer ' + si.idToken } }); };
   const mesoEntries = async () => { const d = await restGet(cfg, K.athlete.email, K.athlete.password, 'logs/' + K.athlete.uid + '/mesos/' + K.planId); return d && d.fields && d.fields.entries ? val(d.fields.entries) : {}; };
   const planDoc = await restGet(cfg, K.athlete.email, K.athlete.password, 'plans/' + K.planId); const plan = val({ mapValue: { fields: planDoc.fields } });
@@ -50,23 +53,29 @@ const shots = arg('shots', null), outFile = arg('out', null); const results = []
       check('D4_REST_TIMER_IS_ACTIVE_BY_DEFAULT', true);
       await clearRest(p); await p.click('#nb4'); await p.waitForTimeout(600); const prof = await p.evaluate(() => document.body.innerText); check('D5_PERFIL_SHOWS_BOTH_ON_BY_DEFAULT_AND_NO_ALARM_ROW', /Modo detallado[\s\S]{0,120}Activado/.test(prof) && /Temporizador de descanso[\s\S]{0,120}Activado/.test(prof) && !/Alarma en segundo plano/.test(prof));
       check('D_NO_PAGE_ERRORS', errs.length === 0, errs.slice(0, 2).join(' | ')); await o.close(); }
-    // ============ C: cardio ============
-    { await reset(); const { ctx, p, errs } = await open(390, 844); const D5 = plan.days[5].exercises, ci = D5.length - 1; await toDay(p, 5);
+    // ============ C: cardio renderer (explicit exerciseType only; never inferred from the name) ============
+    { await reset(); const D5 = plan.days[5].exercises, ci = D5.length - 1;
+      { const o = await open(390, 844); await toDay(o.p, 5); const rt0 = await o.p.evaluate(() => _EJERCICIOS_DIA.map(e => [e.exerciseName, e.exerciseType || null, e.sets.length])); await S(o.p, 'cardio-asauthored');
+        check('C0_PLAN_AS_AUTHORED_CARDIO_ROW_IS_STRENGTH_SHAPED_AND_RENDERED_AS_AUTHORED_NOT_INFERRED', /^cardio/i.test(rt0[ci][0]) && rt0[ci][1] === null && rt0[ci][2] === 1 && !(await o.p.evaluate(() => !!document.querySelector('[data-extype="cardio"]'))), JSON.stringify(rt0[ci])); await o.ctx.close(); }
+      // the Coach authors the type (what a correct plan carries): exerciseType 'cardio', no sets, a duration
+      const tokC = (await call('POST', 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + cfg.apiKey, null, { email: K.coach.email, password: K.coach.password, returnSecureToken: true })).b.idToken;
+      const days2 = JSON.parse(JSON.stringify(plan.days)); const cx = days2[5].exercises[ci]; cx.exerciseType = 'cardio'; cx.sets = []; cx.duracionMin = 30; cx.modo = 'z2';
+      const wr = await call('PATCH', FSB + '/plans/' + K.planId + '?updateMask.fieldPaths=days&updateMask.fieldPaths=updatedAt', tokC, { fields: enc({ days: days2, updatedAt: new Date().toISOString() }).mapValue.fields }); check('C0b_COACH_AUTHORS_EXPLICIT_CARDIO_TYPE_FOR_THE_TEST', wr.s === 200, 'status ' + wr.s);
+      const { ctx, p, errs } = await open(390, 844); await toDay(p, 5);
       const rt = await p.evaluate(() => _EJERCICIOS_DIA.map(e => [e.exerciseName, e.exerciseType || null, e.sets.length])); const cardio = rt[ci];
-      check('C1_PLAIN_CARDIO_ROW_IS_A_CARDIO_EXERCISE_AT_RUNTIME', cardio[1] === 'cardio' && cardio[2] === 0 && rt.slice(0, ci).every(x => !x[1] && x[2] > 0), JSON.stringify(rt));
-      check('C2_THE_PRESCRIPTION_IN_FIRESTORE_IS_UNCHANGED', stable((await restGet(cfg, K.athlete.email, K.athlete.password, 'plans/' + K.planId)).fields) === stable(planDoc.fields) && D5[ci].sets.length === 1 && D5[ci].exerciseType === undefined);
+      check('C1_EXPLICIT_CARDIO_TYPE_USES_THE_CARDIO_RENDERER', cardio[1] === 'cardio' && cardio[2] === 0 && rt.slice(0, ci).every(x => !x[1] && x[2] > 0), JSON.stringify(rt));
       await p.evaluate(i => setEjActivo(i), ci); await p.waitForTimeout(600); await S(p, 'cardio');
-      const card = await p.evaluate(() => ({ cardioCard: !!document.querySelector('[data-extype="cardio"]'), chip: /CARDIO/.test(document.body.innerText), dur: !!document.querySelector('[id^=card_dur_]'), strengthSet: !!document.querySelector('[id^=setrow_log_]'), rirButtons: document.querySelectorAll('.rirb').length, ov: document.documentElement.scrollWidth > innerWidth + 1 }));
-      check('C3_CARDIO_CARD_NOT_A_STRENGTH_SET', card.cardioCard && card.dur && !card.strengthSet && card.rirButtons === 0 && !card.ov, JSON.stringify(card));
+      const card = await p.evaluate(() => ({ cardioCard: !!document.querySelector('[data-extype="cardio"]'), chip: /CARDIO/.test(document.body.innerText), dur: !!document.querySelector('[id^=card_dur_]'), spec30: /30 min/.test(document.body.innerText), strengthSet: !!document.querySelector('[id^=setrow_log_]'), rirButtons: document.querySelectorAll('.rirb').length, ov: document.documentElement.scrollWidth > innerWidth + 1 }));
+      check('C3_CARDIO_CARD_NOT_A_STRENGTH_SET_WITH_THE_COACH_DURATION', card.cardioCard && card.dur && card.spec30 && !card.strengthSet && card.rirButtons === 0 && !card.ov, JSON.stringify(card));
       const id = await p.evaluate(() => document.querySelector('[id^=card_dur_]').id.replace('card_dur_', '')); await p.fill('#card_dur_' + id, '30'); await p.fill('#card_rpe_' + id, '6'); await p.click('[data-extype="cardio"] .set-save-primary, [data-extype="cardio"] .pf-cta'); await p.waitForTimeout(2500);
       const en = await (async () => { const t0 = Date.now(); let e; while (Date.now() - t0 < 12000) { e = await mesoEntries(); if (e[id]) return e; await new Promise(r => setTimeout(r, 700)); } return e; })();
       check('C4_CARDIO_LOG_PERSISTED_AS_CARDIO_NOT_AS_A_STRENGTH_SET', !!en[id] && en[id].exType === 'cardio' && +en[id].duracionMin === 30 && en[id].done === true && !Object.keys(en).some(k => /_s0$/.test(k)), JSON.stringify(en[id] || null).slice(0, 200));
-      const tot = await p.evaluate(() => (document.body.innerText.match(/\n(\d+)\/(\d+)\nSERIES/) || []).slice(1).join('/')); check('C7_DAY_SERIES_TOTAL_COUNTS_THE_CARDIO_AS_ONE_SERIES', /^1\/17$/.test(tot), tot);
-      const nav = await p.evaluate(() => ({ done: _isExerciseFullyDone(5, _EJERCICIOS_DIA.length - 1, _EJERCICIOS_DIA[_EJERCICIOS_DIA.length - 1]) })); check('C5_COMPLETION_COUNTS_THE_CARDIO_EXERCISE', nav.done);
-      // next action: after the last strength set of exercise ci-1 the next exercise is the cardio one
+      check('C5_COMPLETION_COUNTS_THE_CARDIO_EXERCISE', await p.evaluate(() => _isExerciseFullyDone(5, _EJERCICIOS_DIA.length - 1, _EJERCICIOS_DIA[_EJERCICIOS_DIA.length - 1])));
       const act = await p.evaluate(ci => { const lg = {}; _EJERCICIOS_DIA.forEach((e, ei) => { if (ei < ci) e.sets.forEach((s, si) => { lg['log_1_5_' + ei + '_s' + si] = { done: true }; }); }); return _resolveNextWorkoutAction(5, _EJERCICIOS_DIA, ci - 1, _EJERCICIOS_DIA[ci - 1].sets.length - 1, lg, 1, 6); }, ci);
       check('C6_REST_AFTER_THE_LAST_STRENGTH_SET_POINTS_AT_THE_CARDIO_EXERCISE', act.type === 'NEXT_EXERCISE' && /cardio/i.test(act.title) && act.kind === 'cardio', JSON.stringify(act));
-      check('C_NO_PAGE_ERRORS', errs.length === 0, errs.slice(0, 2).join(' | ')); await ctx.close(); }
+      const tot = await p.evaluate(() => (document.body.innerText.match(/\n(\d+)\/(\d+)\nSERIES/) || []).slice(1).join('/')); check('C7_DAY_SERIES_TOTAL_COUNTS_THE_CARDIO_AS_ONE_SERIES', /^1\/17$/.test(tot), tot);
+      check('C_NO_PAGE_ERRORS', errs.length === 0, errs.slice(0, 2).join(' | ')); await ctx.close();
+      await call('PATCH', FSB + '/plans/' + K.planId + '?updateMask.fieldPaths=days&updateMask.fieldPaths=updatedAt', tokC, { fields: enc({ days: plan.days, updatedAt: plan.updatedAt || new Date().toISOString() }).mapValue.fields }); }
   } catch (e) { check('HARNESS', false, String(e.stack || e.message).slice(0, 700)); }
   finally { await reset().catch(() => {}); await browser.close(); const summary = { project: cfg.projectId, checks: results.length, failed: results.filter(r => !r.pass).map(r => r.id), synthetic: true }; if (outFile) fs.writeFileSync(outFile, JSON.stringify({ summary, results }, null, 2)); console.log(JSON.stringify(summary)); process.exit(summary.failed.length ? 1 : 0); }
 })();
