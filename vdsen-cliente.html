@@ -2865,9 +2865,7 @@ async function loadPlan(user) {
         // Actualizar localStorage con el plan activo actual (para próximas comparaciones)
         try { localStorage.setItem('vdsen_active_plan_id', activePlanId); } catch(e2) {}
 
-        var planChanged = flagSession
-          || (localPlanId   && localPlanId   !== activePlanId)
-          || (firestorePlanId && firestorePlanId !== activePlanId);
+        var planChanged = _logsPlanChanged(logData, activePlanId, flagSession, localPlanId);   // T552: extracted unchanged so the cross-plan fence is testable
 
         if (planChanged) {
           // ── Plan nuevo asignado por el coach ──
@@ -10911,6 +10909,13 @@ function _selectLogAuthority(mesoData, rootData, planId) {
   if (dominates(rootData, mesoData)) return rootData;
   if (dominates(mesoData, rootData)) return mesoData;
   return clock(rootData) > clock(mesoData) ? rootData : mesoData;
+}
+
+// T552: the cross-plan fence of the log source. true => the log doc belongs to ANOTHER plan (or a plan switch was signalled): the loader starts from empty LOGS in
+// week 1, so no execution evidence of plan A can ever feed plan B (previous-week reference / reuse are SAME-PLAN only, even when both plans share a PID).
+function _logsPlanChanged(logData, activePlanId, flagSession, localPlanId) {
+  var firestorePlanId = (logData && logData.planId) || null;
+  return !!(flagSession || (localPlanId && localPlanId !== activePlanId) || (firestorePlanId && firestorePlanId !== activePlanId));
 }
 
 async function _doSaveLogs() {

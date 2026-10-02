@@ -37,6 +37,22 @@ Nunca es un GO automático: la decisión de producción sigue siendo de Ayrton /
 
 Pendiente humano: la sesión real de Ayrton en su cuenta de staging (cuenta y plan conservados sin tocar). NUMERIC_APPLY_ENABLED sigue `false`.
 
+## Puerta T552 (cierre técnico pre-producción; staging sintético, producción sin tocar)
+
+Estados factuales; **no** es un GO automático. La puerta humana (UX) es independiente y sigue en PARTIAL hasta el re-chequeo de Ayrton.
+
+| Hallazgo | Estado | Evidencia |
+|---|---|---|
+| PLANS CREATE OWNERSHIP | PASS | regla `plans` create exige `coachId == auth.uid` **y** `clientId` string no vacío con `ownsClient(clientId)` (cliente existente del mismo coach). Emulador `tests/t552-plans-create-ownership.cjs` 8/8 (4 en rojo antes del parche); staging real (reglas desplegadas en `vdsen-ecosistema-staging`): propio PASS, cliente de otro coach / inexistente / otro coach / coachId forjado / atleta / sin sesión DENEGADOS |
+| REST = 0 IMPORT FIDELITY | PASS | `restSeconds: 0` se conserva en import -> normalización -> guardado -> export -> re-import -> modal de actualizar plan (antes: `parseInt(x ?? 90) || 90` lo convertía en 90). 60 / 90 / 150 sin cambios; ausente / inválido siguen en 90. `tests/t552-coach-import-export-fidelity.test.js` + staging |
+| PID EXPORT FIDELITY | PASS | `exportActivePlanJSON` omitía `prescriptionExerciseId`; además `_normalizeTrainingPlan` y el modal de actualizar plan lo descartaban. Ahora los 32 PID del plan con forma Ayrton (con nombres duplicados y PID distintos) sobreviven export -> import -> guardado -> actualizar, byte a byte y en orden; nunca se deriva de `exerciseId` |
+| T551 CROSS-PLAN SAME-PID ISOLATION | PASS | plan B reimportado desde el export de A comparte TODOS los PID; en Semana 2 de B no aparece ÚLTIMA SEMANA ni USAR CARGA/REPS; control mismo plan + mismo PID + semana-1 exacta sí; la evidencia de A queda intacta. `tests/t552-cross-plan-same-pid.test.js` (la decisión `_logsPlanChanged` se extrajo sin cambio de lógica) + staging |
+| USAR CARGA/REPS CONTRACT | UNCHANGED | explícito, solo carga + reps, borrador, nunca RIR / ICS / Pump / notas / prescripción, sin autoguardado |
+| LEGACY (fuera de alcance, abierto) | OPEN | `_getPrevWeekData` conserva el fallback por nombre / posición para planes sin PID (alimenta calentamiento y recomendaciones advisory); `buildBoostcampExercise` (código muerto) |
+| EXPORT (fuera de alcance, abierto) | OPEN | el export JSON sigue sin llevar `supersetGroup`, `nivel_medio` ni `variacion_vertical` |
+
+**TECHNICAL_PREPRODUCTION_BLOCKERS_CLOSED**: los tres hallazgos conocidos y el hueco cross-plan de T551 pasan (emulador, unidad y staging). Pendiente humano: re-chequeo corto de Ayrton (ICS, descanso, notas, ÚLTIMA SEMANA / USAR). NUMERIC_APPLY_ENABLED sigue `false`; producción sin tocar y sin desplegar.
+
 ## Antes de producción todavía falta
 
 1. Provisionar entitlements (`scripts/admin-coach-api-access.cjs`) para los coaches aprobados antes de desplegar el API endurecido.

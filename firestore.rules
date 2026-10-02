@@ -100,11 +100,15 @@ service cloud.firestore {
         (exists(/databases/$(database)/documents/coaches/$(request.auth.uid)) && resource.data.coachId == request.auth.uid)
         || resource.data.clientId == request.auth.uid
       );
-      // Crear plan: coach autenticado, coachId del nuevo doc debe ser el uid del coach,
-      // y no puede incluir farmacologia ni pharmacoPlan.
+      // Crear plan: coach autenticado, coachId del nuevo doc debe ser el uid del coach, y (T552) clientId debe referenciar un cliente EXISTENTE
+      // de ese mismo coach (ownsClient): un doc de coach autocreado ya no puede entregar un plan a un cliente ajeno (el cliente lee los planes
+      // cuyo clientId == su uid). No puede incluir farmacologia ni pharmacoPlan.
       allow create: if request.auth != null
         && exists(/databases/$(database)/documents/coaches/$(request.auth.uid))
         && request.resource.data.coachId == request.auth.uid
+        && request.resource.data.get('clientId', null) is string
+        && request.resource.data.clientId != ''
+        && ownsClient(request.resource.data.clientId)
         && !('farmacologia'  in request.resource.data)
         && !('pharmacoPlan'  in request.resource.data);
       // Actualizar plan (T547): SOLO el coach dueño puede revisar la prescripción de su plan, INCLUIDO el plan ACTIVO (el editor del Coach,

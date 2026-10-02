@@ -124,8 +124,9 @@ async function seed(opts) {
       for (const pth of paths) { const d = await del(coach.token, pth); if (ok(d) || d.status === 404) r.docsDeleted++; }
       for (const u of [coach, athlete]) { const d = await authCall('delete', { idToken: u.token }); if (d.status === 200) r.usersDeleted++; }
       return r; }, project: PROJECT }; }
-    await w(coach.token, 'plans/' + planId, syntheticPlan(coach.uid, athlete.uid));
+    // T552: the plans CREATE rule requires clientId to reference an EXISTING client of the creating coach => the client doc is written first
     await w(coach.token, 'clients/' + athlete.uid, { coachId: coach.uid, email: athlete.email, displayName: 'Atleta Demo', role: 'client', objetivo: 'Hipertrofia', peso: '82', profileType: 'hipertrofia', phone: '+525500000000', phoneConfirmedAt: Date.now(), activePlanId: planId, nutritionPlan: { calorias: 2380, proteina: 161, carbos: 250, grasas: 76, texto: NUTRITION_TEXT }, supplementPlan: { texto: 'Creatina monohidratada 5 g diarios\nVitamina D3 2000 UI con comida' } });
+    await w(coach.token, 'plans/' + planId, syntheticPlan(coach.uid, athlete.uid));
     if (keepFile) fs.writeFileSync(keepFile, JSON.stringify({ project: PROJECT, planId, coach: { label: 'coach', email: coach.email, password: coach.password, uid: coach.uid }, athlete: { label: 'athlete', email: athlete.email, password: athlete.password, uid: athlete.uid } }), { mode: 0o600 });
   } catch (e) { await cleanup('destroy'); throw e; }
   return { athlete: { email: athlete.email, password: athlete.password, uid: athlete.uid }, coachUid: coach.uid, planId, cleanup, project: PROJECT };
