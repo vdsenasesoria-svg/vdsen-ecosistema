@@ -6,6 +6,9 @@
 //  S4 six phone widths: active set usable (no horizontal overflow, GUARDAR reachable above the nav, rest sheet fits)
 //  S5 all 7 days: every exercise / set renders, no overflow, technique fields readable
 //  S6 long session: DOM / timers do not grow with repeated interaction
+//  S8 every tab renders without NaN / undefined / [object] text (empty nutrition / profile data included)
+//  S9 KG/LB unit: a LB set is stored with its unit, survives reload, converts for the next set reference and never alters the prescription
+//  S10 EXPRESS (the app default entry path) full Day 1: S1..S(n-1) tap-to-mark, last set with explicit load/reps/RIR, completion, reload, Firestore truth (express flags, no fabricated observations)
 //  S7 gym-rapid interaction: quick RIR taps, navigate away right after Save, Corregir (edit a saved set) - no duplicate sets, no stale state
 // Usage: NODE_PATH=$(npm root -g) NODE_USE_ENV_PROXY=1 VDSEN_TRAIN_KEEP=<creds json outside repo> node scripts/client-staging-t554-scenarios.cjs [--only S1,S3] [--shots dir] [--out file]
 const fs = require('node:fs'), crypto = require('node:crypto'); const L = require('./client-staging-real-lib.cjs'); const { restGet, val, stable } = require('./client-staging-performance.cjs');
@@ -145,6 +148,48 @@ async function clearTimer(p) { for (let i = 0; i < 6; i++) { if (!(await p.isVis
       const en2 = await waitFor(async () => { const e = await mesoEntries(); return e[key] && e[key].carga === '72.5' ? e : null; }); check('S7_CORRECTION_UPDATES_THE_SAME_SET_NO_DUPLICATE', !!en2 && Object.keys(en2).filter(k => /^log_/.test(k)).length === 1 && +en2[key].rir_real === 1 && en2[key].prescriptionExerciseId === D0[0].prescriptionExerciseId, en2 ? JSON.stringify(en2[key]).slice(0, 200) : 'not persisted');
       check('S7_PRESCRIPTION_STILL_INTACT', stable((await restGet(cfg, K.athlete.email, K.athlete.password, 'plans/' + K.planId)).fields) === stable(planDoc.fields));
       check('S7_NO_PAGE_ERRORS', errs.length === 0, errs.slice(0, 2).join(' | ')); await ctx.close();
+    }
+    // ================= S8 =================
+    if (want('S8')) {
+      await reset(); const { ctx, p, errs } = await open(); const bad = [];
+      for (const i of [0, 1, 2, 3, 4]) { await p.click('#nb' + i); await p.waitForTimeout(800); const t = await p.evaluate(() => document.body.innerText); const m = t.match(/\bNaN\b|\bundefined\b|\[object|\bnull\b/); if (m) bad.push('tab' + i + ':' + m[0]); await S(p, 's8-tab' + i); }
+      check('S8_NO_NAN_UNDEFINED_OBJECT_TEXT_IN_ANY_TAB', bad.length === 0, bad.join(','));
+      check('S8_NO_PAGE_ERRORS', errs.length === 0, errs.slice(0, 2).join(' | ')); await ctx.close();
+    }
+    // ================= S9 =================
+    if (want('S9')) {
+      await reset(); let { ctx, p, errs } = await open(); await toDay(p, 0); const key = 'log_1_0_0_s0';
+      await p.click('button[aria-label^="Cambiar unidad"]'); await p.waitForTimeout(500);
+      const u = await p.evaluate(() => getExUnit(0, 0)); check('S9_UNIT_TOGGLES_TO_LB', u === 'LB', u);
+      await p.evaluate(k => document.getElementById('carga_' + k).scrollIntoView({ block: 'center' }), key); await p.fill('#carga_' + key, '135'); await p.fill('#reps_' + key, '8'); await p.click('#rir_btn_' + key + '_0'); await p.click('#setrow_' + key + ' .set-save-primary');
+      await p.waitForFunction(k => LOGS[k] && LOGS[k].done, key, { timeout: 15000 }); await p.waitForTimeout(2500); await clearTimer(p);
+      const en = await mesoEntries(); check('S9_LB_SET_STORED_WITH_UNIT_AND_RIR_ZERO_KEPT', !!en[key] && en[key].unit === 'LB' && en[key].carga === '135' && String(en[key].rir_real) === '0', JSON.stringify(en[key] || null).slice(0, 180));
+      await p.reload(); await p.waitForSelector('#scrApp.on', { timeout: 40000 }); await p.waitForTimeout(2500); await p.evaluate(() => { const b = document.querySelector('#wnModal button'); if (b) b.click(); }); await clearTimer(p); await toDay(p, 0);
+      const rl = await p.evaluate(k => ({ unit: getExUnit(0, 0), rec: LOGS[k] && LOGS[k].unit, shown: document.body.innerText.includes('135') }), key); check('S9_RELOAD_KEEPS_UNIT_AND_VALUE', rl.rec === 'LB' && rl.shown, JSON.stringify(rl));
+      check('S9_PRESCRIPTION_UNCHANGED', stable((await restGet(cfg, K.athlete.email, K.athlete.password, 'plans/' + K.planId)).fields) === stable(planDoc.fields));
+      check('S9_NO_PAGE_ERRORS', errs.length === 0, errs.slice(0, 2).join(' | ')); await ctx.close();
+    }
+    // ================= S10 =================
+    if (want('S10')) {
+      await reset(); let { ctx, p, errs } = await open({ expressOff: false }); await toDay(p, 0); const express = await p.evaluate(() => !isExpressDisabled()); check('S10_EXPRESS_IS_THE_DEFAULT_ENTRY_PATH', express);
+      for (let e = 0; e < D0.length; e++) {
+        await p.evaluate(i => setEjActivo(i), e); await p.waitForTimeout(500); const n = D0[e].sets.length;
+        for (let k = 0; k < n - 1; k++) { const b = await p.$('.sets-rail button.setp'); if (!b) break; await b.click(); await p.waitForTimeout(700); await clearTimer(p); }
+        const id = e => '0_' + e; await p.evaluate(x => document.getElementById('xcarga_' + x).scrollIntoView({ block: 'center' }), id(e)); await p.fill('#xcarga_' + id(e), String(50 + e * 5)); await p.fill('#xreps_' + id(e), String(8 + e)); await p.click('#xrir_' + id(e) + '_' + (e % 4));
+        if (e === 0) await S(p, 's10-express-filled');
+        await p.click('.set-actions .set-save-primary'); await p.waitForTimeout(1500); await clearTimer(p);
+      }
+      const doneN = await p.evaluate(() => Object.keys(LOGS).filter(k => /^log_1_0_/.test(k) && LOGS[k] && LOGS[k].done).length); const TOT = D0.reduce((a, x) => a + x.sets.length, 0); check('S10_EXPRESS_ALL_SETS_MARKED_DONE', doneN === TOT, doneN + '/' + TOT);
+      await p.evaluate(() => { const t = document.getElementById('tabEntr'); if (t) t.scrollTop = 0; }); await p.click('.sess-hdr-btn.sess-live'); await p.waitForTimeout(700); await p.click('#eimd2'); await p.click('#artNoBtn'); await p.click('#psSuenoGrid button[data-val="8"]'); const rpe = await p.$('#psRpeGrid button[data-val="8"]'); if (rpe) await rpe.click(); await p.click('.ps-go'); await p.waitForTimeout(3000); await clearTimer(p);
+      const en = await waitFor(async () => { const x = await mesoEntries(); return x.done_1_0 ? x : null; });
+      check('S10_EXPRESS_SESSION_COMPLETED_AND_PERSISTED', !!en && Object.keys(en).filter(k => /^log_/.test(k)).length === TOT && !!en.postsession_1_0);
+      let finals = 0, early = 0, badEv = [];
+      D0.forEach((ex, e) => ex.sets.forEach((st, i) => { const r = en && en['log_1_0_' + e + '_s' + i]; if (!r) { badEv.push(e + '.' + i); return; } if (i === ex.sets.length - 1) { if (r.expressFinal === true && String(r.rir_real) === String(e % 4) && r.carga === String(50 + e * 5) && r.ics == null && r.pump == null) finals++; else badEv.push('final ' + e + ':' + JSON.stringify(r)); } else { if (r.express === true && (r.rir_real == null || r.rir_real === '') && r.ics == null) early++; else badEv.push('early ' + e + '.' + i + ':' + JSON.stringify(r)); } }));
+      check('S10_EXPRESS_EVIDENCE_SHAPE_NO_FABRICATED_OBSERVATIONS', finals === D0.length && early === TOT - D0.length && badEv.length === 0, 'finals=' + finals + ' early=' + early + ' bad=' + badEv.slice(0, 2).join(' | '));
+      await p.reload(); await p.waitForSelector('#scrApp.on', { timeout: 40000 }); await p.waitForTimeout(2500); await p.evaluate(() => { const b = document.querySelector('#wnModal button'); if (b) b.click(); }); await clearTimer(p);
+      const rl = await p.evaluate(n => ({ done: !!LOGS['done_1_0'], n: Object.keys(LOGS).filter(k => /^log_1_0_/.test(k)).length }), TOT); check('S10_EXPRESS_RELOAD_KEEPS_COMPLETION', rl.done && rl.n === TOT, JSON.stringify(rl));
+      check('S10_PRESCRIPTION_UNCHANGED', stable((await restGet(cfg, K.athlete.email, K.athlete.password, 'plans/' + K.planId)).fields) === stable(planDoc.fields));
+      check('S10_NO_PAGE_ERRORS', errs.length === 0, errs.slice(0, 2).join(' | ')); await ctx.close();
     }
   } catch (e) { check('HARNESS', false, String(e.stack || e.message).slice(0, 700)); }
   finally { await reset().catch(() => {}); await browser.close(); const summary = { project: cfg.projectId, checks: results.length, failed: results.filter(r => !r.pass).map(r => r.id), synthetic: true }; if (outFile) fs.writeFileSync(outFile, JSON.stringify({ summary, results }, null, 2)); console.log(JSON.stringify(summary)); process.exit(summary.failed.length ? 1 : 0); }

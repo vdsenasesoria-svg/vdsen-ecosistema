@@ -13,3 +13,7 @@ test('T554.2 the explicit "=" copy action still exists (the only legitimate carr
 test('T554.3 no other previous-set default feeds the load / reps / RIR inputs of an unsaved set', () => {
   assert.ok(!/_prevSesCarga|_prevSesReps|_prevSesRir/.test(SRC.replace(/var _prevSes(Carga|Reps|Rir)\s*=[^\n]*\n/g, '')), 'the computed-but-unused previous-set load / reps / RIR defaults are not wired into any input');
 });
+test('T554.4 nutrition tab: the kcal fallback needs REAL numeric macros (an empty plan must not render "NaN kcal")', () => {
+  assert.ok(/isFinite\(parseFloat\(prot\)\) && isFinite\(parseFloat\(carb\)\) && isFinite\(parseFloat\(gras\)\)/.test(SRC));
+  assert.ok(/!isFinite\(parseFloat\(kcal\)\)\) kcal = '—';/.test(SRC));
+});
