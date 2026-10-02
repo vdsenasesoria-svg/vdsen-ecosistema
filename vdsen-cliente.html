@@ -583,6 +583,8 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .tr-sub .ok{color:var(--grn);font-weight:700}
 .tr-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .sess-hdr-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 14px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--mt);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:none}
+.workout-set-current .set-actions{position:sticky;bottom:-88px;z-index:4;margin:6px -14px -14px;padding:12px 14px 12px;background:linear-gradient(to top,var(--card) 80%,transparent)}
+.workout-set-current .set-actions .set-save-primary{margin-top:0}
 .sp-opt{font-weight:600;letter-spacing:.06em;text-transform:lowercase;opacity:.7;margin-left:4px;font-size:.9em}
 .sess-hdr-btn.sess-live{color:var(--accent);border-color:var(--accent);text-transform:uppercase;letter-spacing:.1em;font-weight:800}
 .sess-hdr-btn.sess-partial{color:var(--sess-partial);border-color:var(--sess-partial)}
@@ -6854,8 +6856,8 @@ function _buildExCard(ejercicios, di, ei, isPartner) {
             '</div>'+
           '</div>'+
         '</div>'+
-        // Actions
-        '<div style="display:flex;gap:8px">'+
+        // Actions (T554: sticky inside the current set card so GUARDAR stays reachable above the bottom nav without scrolling back)
+        '<div class="set-actions" style="display:flex;gap:8px">'+
           (s > 0
             ? '<button onclick="copiarSerie(\''+key+'\','+s+','+di+','+ei+')" style="'+
                 'flex:0 0 auto;padding:12px 16px;border:1px solid var(--border);border-radius:10px;'+
@@ -16538,8 +16540,8 @@ function _detectMissingData(logs, plan, currentWeek) {
     detail: 'El motor de progresión necesita el RIR real para evaluar el esfuerzo.'
   });
   if (setsWithoutICS > 0) items.push({
-    type: 'MISSING_ICS', severity: 'attention',
-    message: setsWithoutICS + (setsWithoutICS === 1 ? ' serie sin' : ' series sin') + ' ICS',
+    type: 'MISSING_ICS', severity: 'info',   // T554: ICS is optional to save a set; it is a quiet hint, not an orange warning
+    message: setsWithoutICS + (setsWithoutICS === 1 ? ' serie sin' : ' series sin') + ' ICS (opcional)',
     detail: 'Sin ICS el coach no puede evaluar la calidad técnica de la ejecución.'
   });
 
