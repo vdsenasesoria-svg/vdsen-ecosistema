@@ -70,7 +70,7 @@ function contextFor(f, storage, online = () => true) {
   vm.createContext(context);
   const names = ['_doSaveLogs',
     '_getSessionCompletionState', '_sessionHasRealLoggedSets', '_getSessionLifecycleState',
-    '_selectLogAuthority',
+    '_logDocHasEvidence', '_isLegacyUnboundLog', '_selectLogAuthority',
     'submitPostSession'];
   vm.runInContext(names.map(name => functionSource(client, name)).join('\n'), context);
   return context;

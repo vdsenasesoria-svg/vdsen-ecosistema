@@ -2854,6 +2854,8 @@ async function loadPlan(user) {
       if (_mySeq !== _loadPlanSeq || !USER || USER.uid !== user.uid) return;
       var logData = _selectLogAuthority(_mesoSnap && _mesoSnap.exists() ? _mesoSnap.data() : null,
         rootSnap && rootSnap.exists() ? rootSnap.data() : null, activePlanId);
+      _rootLogUnbound = _isLegacyUnboundLog(rootSnap && rootSnap.exists() ? rootSnap.data() : null);
+      if (_rootLogUnbound) console.info('LEGACY_LOG_UNBOUND', 'root log has execution evidence but no planId: not attributed to plan', activePlanId);   // internal diagnostic only
       if (logData) {
         _logsAuthorityUpdatedAt = Number(logData.updatedAt) || 0;
         // Preservar siempre el historial de pesos (sobrevive a cambio de plan)
@@ -3022,6 +3024,7 @@ async function loadPlan(user) {
       _liveUnsubLogs = FB.onSnapshot(FB.doc(FB.db, 'logs', user.uid), function(snap) {
         if (!snap.exists()) return;
         var d = snap.data();
+        _rootLogUnbound = _isLegacyUnboundLog(d); if (_rootLogUnbound) return;   // T553: never adopt an unbound root as this plan's log
         var ts = d.updatedAt || 0;
         var newerRoot = _selectLogAuthority({ planId: ACTIVE_PLAN_ID, updatedAt: _logsAuthorityUpdatedAt, entries: LOGS },
           d, ACTIVE_PLAN_ID) === d;
@@ -5017,6 +5020,7 @@ var _restEndMs = 0;
 var _restAlertFired = false;
 // T548: rest context + log-write acknowledgement (navigation safety only; never stored)
 var _restToken = 0, _restCtx = null, _logsReqSeq = 0, _logsAckedSeq = 0;
+var _rootLogUnbound = false;   // T553: the root log doc is LEGACY_UNBOUND_EVIDENCE (never rewritten while true)
 // T548: athlete-facing ICS wording. The stored field (`ics`), the 1-10 range and every progression semantic are unchanged.
 var ICS_LABEL = 'Calidad de la serie (ICS)';
 var ICS_HELP = '¿Qué tan buena fue esta serie? 1 = muy mala · 10 = excelente';
@@ -5193,6 +5197,7 @@ async function _refreshLogsFromFirestore(reason) {
     const snap = await FB.getDoc(ref);
     if (!snap.exists()) return;
     const data = snap.data();
+    _rootLogUnbound = _isLegacyUnboundLog(data); if (_rootLogUnbound) return;   // T553: LEGACY_UNBOUND is not this plan's evidence (and exerciseHistory / units are position-bound too)
     // T124-C: guard against stale entries from a different plan.
     // After a plan switch the legacy logs/{uid} doc may still carry planId of the previous plan
     // until the first _doSaveLogs() of the new plan updates it.  Loading those entries here
@@ -10896,7 +10901,18 @@ async function saveLogs() {
 // updatedAt is not a pure execution clock: root-only Coach writes (week change) bump it
 // without touching entries. Executed evidence (done_*/log_* keys are never deleted) is
 // therefore compared first; the clock only decides when neither side dominates.
+// T553: LEGACY_UNBOUND_EVIDENCE. A ROOT log doc (`logs/{uid}`) or a local backup with NO usable planId that holds execution evidence cannot be attributed to any
+// plan: never infer ownership from the active plan, an exercise name / position or a matching week / day shape. It is not deleted, not rewritten with a planId and
+// not migrated; it is simply not used as evidence of the active plan (previous-week, warm-up history, recommendations, progression, completion). A meso doc is bound
+// by its PATH (`logs/{uid}/mesos/{planId}`) and is never classified here.
+function _logDocHasEvidence(d) {
+  return Object.keys((d && d.entries) || {}).some(function(k) { return k.indexOf('log_') === 0 || k.indexOf('done_') === 0; });
+}
+function _isLegacyUnboundLog(d) {
+  return !!d && !(typeof d.planId === 'string' && d.planId !== '') && _logDocHasEvidence(d);
+}
 function _selectLogAuthority(mesoData, rootData, planId) {
+  if (_isLegacyUnboundLog(rootData)) rootData = null;   // T553: LEGACY_UNBOUND never becomes the log of the active plan
   if (!mesoData) return rootData || null;
   if (!rootData || (rootData.planId && rootData.planId !== planId)) return mesoData;
   if (mesoData.planId && mesoData.planId !== planId) return rootData;
@@ -10939,13 +10955,20 @@ async function _doSaveLogs() {
     const _ownedFields = Object.keys(_payload);
     // T1 dual-write: nuevo path por mesociclo primero (future source), legacy segundo (compatibilidad coach).
     // El fallo del path nuevo es no-fatal: datos seguros en legacy y localStorage.
+    var _mesoOk = false;
     if (ACTIVE_PLAN_ID) {
-      try { await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields }); }
+      try { await FB.setDoc(FB.doc(FB.db, 'logs', _uidAtStart, 'mesos', ACTIVE_PLAN_ID), _payload, { mergeFields: _ownedFields }); _mesoOk = true; }
       catch(_me) { console.warn('[logs/mesos] write:', _me && _me.code, _me && _me.message); }
     }
     if (!USER || USER.uid !== _uidAtStart) return false;
-    const ref = FB.doc(FB.db, 'logs', _uidAtStart);
-    await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });
+    if (typeof _rootLogUnbound !== 'undefined' && _rootLogUnbound) {
+      // T553: the root doc holds LEGACY_UNBOUND_EVIDENCE: it is neither rewritten (its entries would be replaced) nor stamped with the plan id. The plan-bound meso
+      // doc is the only durable path while that is true; without it nothing durable was written => report the failure like any failed save.
+      if (!_mesoOk) throw new Error('plan-bound log write failed');
+    } else {
+      const ref = FB.doc(FB.db, 'logs', _uidAtStart);
+      await FB.setDoc(ref, _payload, { mergeFields: _ownedFields });
+    }
     if (!USER || USER.uid !== _uidAtStart) return false;
     if (ACTIVE_PLAN_ID === _payload.planId) _logsAuthorityUpdatedAt = _payload.updatedAt;
     if (typeof _logsAckedSeq === 'number') _logsAckedSeq = Math.max(_logsAckedSeq, _seqAtStart);   // T548: the server acknowledged every write requested up to this point
@@ -11075,6 +11098,7 @@ function loadBackupLogs() {
     if (bk) {
       const data = JSON.parse(bk);
       if (data.entries) {
+        if (_isLegacyUnboundLog(data)) return false;   // T553: a backup that cannot be bound to a plan is not loaded
         // Si el backup es de un plan diferente al activo, no cargar entradas ni semana
         var bkPlanId = data.planId || null;
         var curPlanId = ACTIVE_PLAN_ID || null;

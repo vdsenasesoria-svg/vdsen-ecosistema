@@ -77,7 +77,7 @@ test('T537.5 shadow.materializeRecords: creates PENDING from persisted evidence,
 });
 
 test('T537.6 shadow.selectLogAuthority is equivalent to the athlete app selector (same evidence source on both sides)', () => {
-  const ctx = {}; vm.createContext(ctx); vm.runInContext(functionSource(client, '_selectLogAuthority'), ctx);
+  const ctx = {}; vm.createContext(ctx); ['_logDocHasEvidence', '_isLegacyUnboundLog', '_selectLogAuthority'].forEach(n => vm.runInContext(functionSource(client, n), ctx));
   const doc = (planId, updatedAt, keys) => ({ planId, updatedAt, entries: Object.fromEntries(keys.map(k => [k, { ts: 1 }])) });
   const cases = [];
   for (const m of [null, doc('p', 1, ['log_1_0_0_s0']), doc('p', 5, ['log_1_0_0_s0', 'done_1_0']), doc('q', 9, ['log_1_0_0_s0'])])

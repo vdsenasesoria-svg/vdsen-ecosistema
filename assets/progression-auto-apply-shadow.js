@@ -201,7 +201,13 @@
     }) };
   }
   // T537: which of the two log documents is the authoritative evidence source (same rule the athlete app uses to load its LOGS).
+  // T553: LEGACY_UNBOUND_EVIDENCE (identical to the athlete app): a root log with execution evidence and no usable planId is never the active plan's log.
+  function isLegacyUnboundLog(d) {
+    return !!d && !(typeof d.planId === 'string' && d.planId !== '') &&
+      Object.keys(d.entries || {}).some(function(k) { return k.indexOf('log_') === 0 || k.indexOf('done_') === 0; });
+  }
   function selectLogAuthority(mesoData, rootData, planId) {
+    if (isLegacyUnboundLog(rootData)) rootData = null;
     if (!mesoData) return rootData || null;
     if (!rootData || (rootData.planId && rootData.planId !== planId)) return mesoData;
     if (mesoData.planId && mesoData.planId !== planId) return rootData;
@@ -262,5 +268,5 @@
   return { NUMERIC_APPLY_ENABLED: NUMERIC_APPLY_ENABLED, STATES: STATES, REASONS: REASONS, ALLOWED_TRANSITIONS: ALLOWED_TRANSITIONS, lifecycleTransition: lifecycleTransition,
     resolveNextExposure: resolveNextExposure, idempotencyKey: idempotencyKey, assess: assess,
     buildRecord: buildRecord, transition: transition, markStale: markStale,
-    summarize: summarize, selectLogAuthority: selectLogAuthority, materializeRecords: materializeRecords, attemptNumericApply: attemptNumericApply };
+    summarize: summarize, selectLogAuthority: selectLogAuthority, isLegacyUnboundLog: isLegacyUnboundLog, materializeRecords: materializeRecords, attemptNumericApply: attemptNumericApply };
 });

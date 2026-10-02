@@ -45,7 +45,7 @@ function functionSource(source, name) {
 const select = (() => {
   const context = {};
   vm.createContext(context);
-  vm.runInContext(functionSource(client, '_selectLogAuthority'), context);
+  ['_logDocHasEvidence', '_isLegacyUnboundLog', '_selectLogAuthority'].forEach(n => vm.runInContext(functionSource(client, n), context));
   return context._selectLogAuthority;
 })();
 
@@ -178,7 +178,7 @@ function contextFor(f, { now = () => 1000, failMeso = () => false, failRoot = ()
   vm.createContext(context);
   ['_doSaveLogs', '_recordShadowProgression', '_readShadowQueue', '_writeShadowQueue',
     '_queueShadowProgression', '_drainShadowProgression', '_getSessionCompletionState',
-    '_sessionHasRealLoggedSets', '_getSessionLifecycleState', '_selectLogAuthority']
+    '_sessionHasRealLoggedSets', '_getSessionLifecycleState', '_logDocHasEvidence', '_isLegacyUnboundLog', '_selectLogAuthority']
     .forEach(name => vm.runInContext(functionSource(client, name), context));
   return context;
 }

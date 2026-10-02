@@ -217,10 +217,14 @@ test('12. a malicious athlete racing a legitimate Coach apply can neither forge 
       setDoc(doc(f.client.db, 'logs', f.client.uid, 'mesos', f.planId), { nextExposureOverlays: { ['ovl_' + f.key]: forgedOverlay(f) } }, { mergeFields: ['nextExposureOverlays'] })
     ].map(p => p.then(() => 'ALLOWED', e => e.code));
     const [applyRes, ...outcomes] = await Promise.all([apply(f), ...attacks]);
-    assert.deepEqual(outcomes, ['permission-denied', 'permission-denied', 'permission-denied']);
+    // Forged overlay writes are ALWAYS denied. Attack 2 writes state='APPLIED': if the Coach apply committed first, the stored value already
+    // equals it, so the write changes no canonical key (a no-op the rules correctly allow); it must never be allowed while the record is PENDING.
+    assert.equal(outcomes[0], 'permission-denied');
+    assert.equal(outcomes[2], 'permission-denied');
+    assert.ok(outcomes[1] === 'permission-denied' || outcomes[1] === 'ALLOWED', outcomes[1]);
     assert.equal(applyRes.written, true);
     const { r, o } = await assertCoherent(f);
-    assert.deepEqual([r.state, Object.keys(o).length, o['ovl_' + f.key].appliedValue], ['APPLIED', 1, 102.5]);
+    assert.deepEqual([r.state, Object.keys(o).length, o['ovl_' + f.key].appliedValue, r.revision, events(r, 'APPLIED')], ['APPLIED', 1, 102.5, 2, 1], 'the Coach result is the only state (no extra revision/event from an allowed no-op)');
   }
 });
 
