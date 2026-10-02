@@ -8,7 +8,7 @@ const client = fs.readFileSync(path.join(__dirname, '..', 'vdsen-cliente.html'),
 let pass = 0;
 function ok(condition, message) { assert.ok(condition, message); pass++; console.log('  ✓ ' + message); }
 
-ok(client.includes("return { type: 'NEXT_EXERCISE', label: nex.exerciseName || nex.nombre || '', ei: nei };"), 'next-exercise resolver carries the existing target index');
+ok(/return \{ type: 'NEXT_EXERCISE', label: nex\.exerciseName \|\| nex\.nombre \|\| '', ei: nei,/.test(client), 'next-exercise resolver carries the existing target index');
 ok(client.includes('function _continueNextWorkoutAction()'), 'one contextual continuation handler exists');
 ok(client.includes("action.type === 'NEXT_EXERCISE' && Number.isInteger(action.ei)"), 'next-exercise CTA uses the resolver target');
 ok(client.includes('setEjActivo(action.ei);'), 'next-exercise CTA reuses existing exercise navigation');

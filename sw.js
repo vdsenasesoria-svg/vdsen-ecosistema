@@ -1,5 +1,5 @@
-// VDSEN Service Worker — offline support. T554: cache bumped to v12 so every device drops the older client build; HTML stays NETWORK-FIRST (the cache is only an offline fallback).
-const CACHE = 'vdsen-v12';
+// VDSEN Service Worker — offline support. T555: cache v13 (+ rest-end notification scheduling); T554: v12 so every device drops the older client build; HTML stays NETWORK-FIRST (the cache is only an offline fallback).
+const CACHE = 'vdsen-v13';
 
 // Assets to pre-cache on install (propio HTML)
 const PRECACHE = [
@@ -80,4 +80,30 @@ self.addEventListener('fetch', e => {
       })
       .catch(() => caches.match(req))
   );
+});
+
+// ── T555: rest-end notification that works while the page is in the background / frozen ──────────────────────────────────────
+// The page posts VDSEN_REST_SCHEDULE {endMs,title,body} when a rest starts (and again when it is adjusted) and VDSEN_REST_CANCEL when it is
+// dismissed or the page rings by itself. The worker keeps the event alive until the end time and shows ONE notification (sound + vibration).
+// Best effort: browsers may stop an idle worker; the in-page alarm and the visibilitychange catch-up still cover that case.
+let _restTid = null, _restResolve = null;
+function _restClear() { if (_restTid !== null) { clearTimeout(_restTid); _restTid = null; } if (_restResolve) { const r = _restResolve; _restResolve = null; r(); } }
+self.addEventListener('message', e => {
+  const d = e.data || {};
+  if (d.type === 'VDSEN_REST_CANCEL') { _restClear(); return; }
+  if (d.type !== 'VDSEN_REST_SCHEDULE') return;
+  _restClear();
+  const delay = Math.max(0, Math.min((+d.endMs || 0) - Date.now(), 10 * 60 * 1000));
+  e.waitUntil(new Promise(resolve => {
+    _restResolve = resolve;
+    _restTid = setTimeout(() => {
+      _restTid = null; _restResolve = null;
+      Promise.resolve(self.registration.showNotification(String(d.title || 'VDSEN — Descanso terminado'), { body: String(d.body || 'Lista la siguiente serie'), tag: 'vdsen-rest-timer', renotify: true, silent: false, vibrate: [200, 100, 200, 100, 400], data: { url: '/cliente' } }))
+        .catch(() => {}).then(resolve);
+    }, delay);
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => (cs && cs[0] && cs[0].focus) ? cs[0].focus() : self.clients.openWindow('/cliente')));
 });

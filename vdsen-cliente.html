@@ -772,28 +772,36 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 /* ══ REST TIMER: bottom sheet, tokens only, no glow / blur ══ */
 .rt{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.74);align-items:flex-end;justify-content:center;padding:0 0 env(safe-area-inset-bottom)}
 #saveOkBadge{z-index:8900!important}   /* T545: the "✓ GUARDADO" chip (inline z-index 9999) floated over the +30s / CONTINUAR controls of the rest sheet (z 9000) */
-.rt-sheet{width:min(520px,100%);background:var(--plate);border-top:3px solid var(--accent-fill);padding:16px 16px 14px;display:flex;flex-direction:column;gap:12px;max-height:94dvh;overflow-y:auto}
+.rt-sheet{width:min(520px,100%);background:var(--plate);border-top:3px solid var(--accent-fill);padding:12px 16px 12px;display:flex;flex-direction:column;gap:10px;max-height:94dvh;overflow-y:auto}
 .rt-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .rt-last{min-height:18px;font-size:13px;font-weight:700;color:var(--grn);letter-spacing:.02em;text-align:center}
 .rt-last:empty{display:none}
-.rt-ring{position:relative;width:184px;height:184px;margin:0 auto}
+.rt-main{display:flex;align-items:center;gap:14px}
+.rt-ring{position:relative;width:112px;height:112px;flex:0 0 auto}
 .rt-ring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
 .rt-track{stroke:var(--rule-strong)}
 .rt-arc{stroke:var(--accent-fill);stroke-linecap:butt;transition:stroke-dashoffset .9s linear}
 .rt-arc[data-state="done"]{stroke:var(--tx)}
 .rt-read{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
-.rt-num{font-family:var(--font-num);font-size:68px;font-weight:800;line-height:.9;letter-spacing:.01em;color:var(--tx);font-variant-numeric:tabular-nums}
+.rt-num{font-family:var(--font-num);font-size:40px;font-weight:800;line-height:.9;letter-spacing:.01em;color:var(--tx);font-variant-numeric:tabular-nums}
 .rt-num[data-state="warn"]{color:var(--accent)}
 .rt-num[data-state="done"]{color:var(--accent)}
 :root.light-mode .rt-num[data-state="warn"],:root.light-mode .rt-num[data-state="done"]{color:#245500}
 :root.light-mode .rt-arc{stroke:#245500}
+.rt-ring .rt-sec{display:none}   /* T555: the number is enough; the long caption overflowed the compact ring */
 .rt-sec{font-size:var(--fs-micro);letter-spacing:.14em;font-weight:700;color:var(--mt);text-transform:uppercase}
 .rt-presets,.rt-adj{display:grid;gap:6px}
 .rt-presets{grid-template-columns:repeat(5,1fr)}
 .rt-adj{grid-template-columns:repeat(3,1fr)}
-.rt-presets button,.rt-adj button{min-height:48px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--tx);font-family:var(--font-num);font-size:20px;font-weight:800;letter-spacing:.04em;cursor:pointer}
+.rt-presets button,.rt-adj button{min-height:42px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--tx);font-family:var(--font-num);font-size:20px;font-weight:800;letter-spacing:.04em;cursor:pointer}
 .rt-presets button:active,.rt-adj button:active{background:var(--plate-hi)}
-.rt-next{font-size:12px;color:var(--mt);text-align:center;letter-spacing:.02em}
+.rt-next{flex:1;min-width:0;padding:8px 0 8px 12px;border-left:3px solid var(--accent-fill);text-align:left}
+.rt-next:empty{display:none}
+.rt-next-k{font-size:11px;font-weight:800;letter-spacing:.12em;color:var(--accent)}
+.rt-next-t{font-size:17px;font-weight:800;line-height:1.2;color:var(--tx);margin-top:3px;overflow-wrap:break-word;hyphens:auto}
+.rt-next-d{font-size:14px;font-weight:700;color:var(--mt);margin-top:3px}
+:root.light-mode .rt-next-k{color:#245500}
+.rt button,.rt-sheet button,.rtc button{touch-action:manipulation}
 .rt-go{width:100%;min-height:var(--tap-lg);font-size:20px}
 .rt-hint{text-align:center;font-size:10.5px;letter-spacing:.1em;color:var(--mt);text-transform:uppercase}
 .rt-pill{display:none;align-items:center;gap:12px;min-height:48px;padding:6px 18px;background:var(--plate-hi);border:1px solid var(--accent);border-left-width:4px;color:var(--tx);cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.6)}
@@ -802,7 +810,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .rt-pnum{font-family:var(--font-num);font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.02em}
 .rt-pnum[data-state="warn"]{color:var(--accent)}
 .rt-pill[data-state="done"] .rt-pnum{color:var(--on-accent)}
-.rt-ptxt{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mt)}
+.rt-ptxt{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mt);max-width:52vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rt-pill[data-state="done"] .rt-ptxt{color:var(--on-accent)}
 .rt-compact .rtc{display:flex;align-items:center;gap:14px;padding:12px 14px;background:var(--plate-hi);border:1px solid var(--rule-strong);border-left:4px solid var(--accent-fill);box-shadow:0 -10px 28px rgba(0,0,0,.55)}
 .rtc-ring{position:relative;width:64px;height:64px;flex:0 0 auto}
@@ -941,8 +949,8 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
   .rir-row{gap:4px}
   .spec-v{font-size:26px}
   .sp-row{grid-template-columns:96px minmax(0,1fr)}
-  .rt-num{font-size:60px}
-  .rt-ring{width:160px;height:160px}
+  .rt-num{font-size:36px}
+  .rt-ring{width:104px;height:104px}
 }
 @media (min-width:600px){
   .scroll,#tabEntr,#tabNutr{max-width:720px;margin-inline:auto;width:100%}
@@ -2506,6 +2514,18 @@ var _PERF_RX_FIELDS = ['modo', 'cardioMode', 'duracionMin', 'targetMinutes', 'di
   'ritmoObjetivo', 'targetPace', 'repeticiones', 'bloqueTrabajo', 'workInterval', 'bloqueDescanso', 'restInterval',
   'dosis', 'targetDose', 'dosisUnit', 'doseUnit', 'tiempoObjetivoSeg', 'targetTimeSec', 'rpeTarget',
   'estructura', 'structure', 'roundsObjetivo', 'targetRounds', 'timeCapMin', 'timecap', 'movimientos', 'movements'];
+// T555: a plain "Cardio ..." plan row that declares NO type and is shaped like a strength set (<= 1 set, <= 1 rep) is presented as cardio at RUNTIME only.
+// An explicit exerciseType / tipo always wins; the Firestore plan, the PID and the prescription are never touched; a multi-set row named "cardio ..." stays strength.
+function _withInferredCardio(e) {
+  if (!e || typeof e !== 'object') return e;
+  if ((e.exerciseType !== undefined && e.exerciseType !== null && String(e.exerciseType) !== '') || (e.tipo !== undefined && e.tipo !== null && String(e.tipo) !== '')) return e;
+  var n = String(e.exerciseName || e.nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  if (!/^cardio\b/.test(n)) return e;
+  var sets = Array.isArray(e.sets) ? e.sets : [];
+  if (sets.length > 1) return e;
+  for (var i = 0; i < sets.length; i++) { if (!(parseInt(sets[i].repsTarget) <= 1)) return e; }
+  return Object.assign({}, e, { exerciseType: 'cardio', sets: [], _cardioInferred: true });
+}
 function _carryPerfPrescription(e) {
   var out = {};
   if (!e) return out;
@@ -2609,7 +2629,8 @@ async function loadPlan(user) {
     // al formato que el renderer espera: sesiones con contenido texto + exercises estructurado
     const sesiones = (planData.days || []).map(function(d, i) {
       var exList = (d.exercises || []).map(function(e, ei) {
-        var numSets = (e.sets || []).length || 3;
+        e = _withInferredCardio(e);   // T555: plain Cardio row -> cardio card (runtime only)
+        var numSets = (e.sets || []).length || (_getExType(e) === 'cardio' ? 1 : 3);   // T555: a cardio exercise has ONE log and no sets: it counts as exactly 1 series in the day total (it used to count 3 and could never reach 100%)
         var _rt0 = (e.sets && e.sets[0]) ? e.sets[0].repsTarget : 8;
         // Preservar string literals tal cual; coercionar solo valores numéricos
         var repsTarget = (_rt0 === 'SST-PROTOCOL' || _rt0 === 'SST-RIV-PROTOCOL') ? _rt0 : (_rt0 || 8);
@@ -5066,10 +5087,91 @@ function playTimerBeep() {
   } catch(e) {}
 }
 
+// ── T555: an alarm that survives leaving the browser ─────────────────────────────────────────────────────────────────────────────
+// A web page cannot ring from the background by itself: the browser freezes it. Two best-effort channels (neither needs a server):
+//  (1) while a rest runs, a near-inaudible looping <audio> (started by the Save tap = a user gesture) keeps the page alive on Android / iOS; at zero the same
+//      element plays an alarm tone (AudioContext beeps are suspended in the background, an <audio> element is not). Tapping anywhere / returning to the app stops it.
+//  (2) when notifications are allowed, the service worker is told the rest end time and shows a notification (sound + vibration) even if the page is frozen.
+// Opt-out: Perfil -> "Alarma en segundo plano". Playing media can pause the athlete's music app.
+var _bgAudio = null, _bgUrls = null, _bgRingTimer = null, _bgRinging = false;
+function _bgAlarmEnabled() { try { return localStorage.getItem('vdsen_bg_alarm') !== '0'; } catch (e) { return true; } }
+function setBgAlarm(on) {
+  try { localStorage.setItem('vdsen_bg_alarm', on ? '1' : '0'); } catch (e) {}
+  if (!on) _bgStop(true);
+  if (on && window.Notification && Notification.permission === 'default') { try { Notification.requestPermission().then(function() { try { renderPerfil(); } catch (_) {} }); } catch (e) {} }
+  try { renderPerfil(); } catch (_) {}
+}
+function testBgAlarm() {
+  if (isRestTimerDisabled()) { showToast('Activa el temporizador de descanso para probar la alarma', true); return; }
+  window._nextAction25 = null; startRestTimer(10, null);
+  showToast('Prueba: sal de la app ahora — sonará en 10 s');
+}
+function askNotifPermission() { try { if (window.Notification) Notification.requestPermission().then(function() { try { renderPerfil(); } catch (_) {} }); } catch (e) {} }
+function _wavUrl(u8, rate) {
+  var n = u8.length, b = new Uint8Array(44 + n), dv = new DataView(b.buffer), w = function(o, t) { for (var i = 0; i < t.length; i++) b[o + i] = t.charCodeAt(i); };
+  w(0, 'RIFF'); dv.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true); dv.setUint32(28, rate, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true); w(36, 'data'); dv.setUint32(40, n, true); b.set(u8, 44);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+}
+function _bgBuildUrls() {
+  if (_bgUrls) return _bgUrls;
+  var rate = 8000, keep = new Uint8Array(rate * 2), i;
+  for (i = 0; i < keep.length; i++) keep[i] = 128 + Math.round(2 * Math.sin(2 * Math.PI * 30 * i / rate));   // ~1.5% amplitude at 30 Hz: not audible, not digital silence
+  var seq = [[880, 0.18], [0, 0.08], [880, 0.18], [0, 0.08], [1100, 0.35], [0, 0.5]], tones = [];
+  for (var rep = 0; rep < 2; rep++) seq.forEach(function(t) { var ns = Math.round(t[1] * rate); for (var k = 0; k < ns; k++) tones.push(t[0] ? 128 + Math.round(100 * Math.sin(2 * Math.PI * t[0] * k / rate)) : 128); });
+  _bgUrls = { keep: _wavUrl(keep, rate), alarm: _wavUrl(new Uint8Array(tones), rate) };
+  return _bgUrls;
+}
+function _swPost(msg) { try { if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage(msg); } catch (e) { /* no service worker */ } }
+function _restNotifyBody() {
+  var a = window._nextAction25;
+  if (a && a.type === 'NEXT_SET') return 'Siguiente: ' + (a.title || a.label) + ' · serie ' + a.setNo + (a.total ? '/' + a.total : '');
+  if (a && a.type === 'NEXT_EXERCISE') return 'Siguiente ejercicio: ' + (a.title || a.label);
+  return 'Lista la siguiente serie 💪';
+}
+function _swRestSchedule() {
+  if (!_bgAlarmEnabled() || !window.Notification || Notification.permission !== 'granted' || !_restEndMs) return;
+  _swPost({ type: 'VDSEN_REST_SCHEDULE', endMs: _restEndMs, title: '⏱ VDSEN — Descanso terminado', body: _restNotifyBody() });
+}
+function _swRestCancel() { _swPost({ type: 'VDSEN_REST_CANCEL' }); }
+function _bgKeepAliveStart() {
+  if (!_bgAlarmEnabled()) return;
+  try {
+    var u = _bgBuildUrls();
+    if (!_bgAudio) { _bgAudio = new Audio(); _bgAudio.setAttribute('playsinline', ''); }
+    _bgRinging = false; clearTimeout(_bgRingTimer);
+    _bgAudio.loop = true; _bgAudio.volume = 1; _bgAudio.src = u.keep;
+    var pr = _bgAudio.play(); if (pr && pr.catch) pr.catch(function() { /* autoplay blocked: notification + in-page alert still work */ });
+    if ('mediaSession' in navigator && window.MediaMetadata) navigator.mediaSession.metadata = new MediaMetadata({ title: 'Descanso en curso', artist: 'VDSEN' });
+  } catch (e) { /* cosmetic */ }
+  _swRestSchedule();
+}
+function _bgStopOnTouch() { _bgStop(true); }
+function _bgAlarmRing() {
+  _swRestCancel();   // the page is alive: it rings itself (a notification on top would double the alert)
+  if (!_bgAlarmEnabled() || !_bgAudio) return;
+  try {
+    _bgRinging = true; _bgAudio.loop = true; _bgAudio.src = _bgBuildUrls().alarm;
+    var pr = _bgAudio.play(); if (pr && pr.catch) pr.catch(function() {});
+    if ('mediaSession' in navigator && window.MediaMetadata) navigator.mediaSession.metadata = new MediaMetadata({ title: 'Descanso terminado', artist: 'VDSEN' });
+    clearTimeout(_bgRingTimer); _bgRingTimer = setTimeout(function() { _bgStop(true); }, 12000);
+    document.addEventListener('pointerdown', _bgStopOnTouch, { capture: true, once: true });
+  } catch (e) { /* cosmetic */ }
+}
+function _bgStop(force) {
+  if (_bgRinging && !force) return;   // an auto-advance must not cut the alarm short; a tap / the app coming back does
+  _bgRinging = false; clearTimeout(_bgRingTimer); _bgRingTimer = null;
+  try { document.removeEventListener('pointerdown', _bgStopOnTouch, true); } catch (e) {}
+  if (_bgAudio) { try { _bgAudio.pause(); _bgAudio.removeAttribute('src'); _bgAudio.load(); } catch (e) {} }
+  try { if ('mediaSession' in navigator) navigator.mediaSession.metadata = null; } catch (e) {}
+  _swRestCancel();
+}
+
 function _onTimerFinished() {
   if (_restAlertFired) return;
   _restAlertFired = true;
   localStorage.removeItem('vdsen_restEnd');
+  _bgAlarmRing();
   _restFeedback();
   _notifyRestDone();
   _restFinishFlow();
@@ -5126,11 +5228,14 @@ function _restFinishFlow() {
   try { action = _resolveNextWorkoutAction(ctx.di, _EJERCICIOS_DIA, ctx.ei, ctx.si, LOGS, ctx.week, getTotalWeeks()); } catch (e) { action = null; }
   var d = _restAdvanceDecision(ctx, _restLiveState(), action);
   if (d.reason === 'TIMER_CANCELLED_OR_REPLACED') return;
-  if (d.reason === 'WRITE_NOT_ACKED' && (ctx.waits = (ctx.waits || 0) + 1) <= 10) { setTimeout(_restFinishFlow, 800); return; }
+  if (d.reason === 'WRITE_NOT_ACKED' && (ctx.waits = (ctx.waits || 0) + 1) <= 10) {
+    if (ctx.waits === 1) { var c1 = _restDoneCopy('NONE'); _restAnnounce(c1.primary, c1.secondary); }   // T555: the alert never waits for the write ack; only the auto-advance does
+    setTimeout(_restFinishFlow, 800); return;
+  }
   var type = d.kind || (d.reason === 'SESSION_READY' ? 'SESSION_DONE' : 'NONE');
   var copy = _restDoneCopy(d.advance || d.reason === 'SESSION_READY' || d.reason === 'SET_NAV_NOT_INFERABLE' ? type : 'NONE');   // never name a next step we did not verify
   if (d.advance) {
-    stopRestTimer();
+    stopRestTimer(); _tapGuard(350);
     if (d.kind === 'NEXT_EXERCISE') { if (EJ_ACTIVO !== d.ei) setEjActivo(d.ei); else _scrollToNextPendingSet(); } else _scrollToNextPendingSet();
   } else {
     var pill = document.getElementById('timerPill');
@@ -5169,16 +5274,19 @@ function _restAnnounce(primary, secondary) {
 // el soporte es limitado — solo funciona mientras la PWA siga activa.
 function _notifyRestDone() {
   if (!window.Notification || Notification.permission !== 'granted') return;
+  if (document.visibilityState === 'visible') return;   // T555: in the app the sheet / banner / beep are the alert; a notification is for when the app is in the background
+  var opts = { body: _restNotifyBody(), tag: 'vdsen-rest-timer', renotify: true, silent: false, vibrate: [200, 100, 200, 100, 400] };
   try {
-    var n = new Notification('⏱ VDSEN — Descanso terminado', {
-      body: 'Lista la siguiente serie 💪',
-      tag: 'vdsen-rest-timer',
-      renotify: true,
-      silent: false
-    });
-    n.onclick = function() { try { window.focus(); } catch(e) {} n.close(); };
-    setTimeout(function(){ try { n.close(); } catch(e) {} }, 10000);
-  } catch(e) {}
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+      navigator.serviceWorker.getRegistration().then(function(reg) {
+        if (reg && reg.showNotification) { reg.showNotification('⏱ VDSEN — Descanso terminado', opts); return; }
+        try { var n = new Notification('⏱ VDSEN — Descanso terminado', opts); n.onclick = function() { try { window.focus(); } catch (e) {} n.close(); }; } catch (e) {}
+      });
+      return;
+    }
+    var n2 = new Notification('⏱ VDSEN — Descanso terminado', opts);
+    n2.onclick = function() { try { window.focus(); } catch (e) {} n2.close(); };
+  } catch (e) { /* visual alert only */ }
 }
 
 // Timestamp del último 'hidden' para decidir si recargar logs al volver
@@ -5257,6 +5365,7 @@ document.addEventListener('visibilitychange', function() {
     return;
   }
   if (document.visibilityState !== 'visible') return;
+  try { _bgStop(true); } catch (e) {}   // T555: coming back to the app silences a ringing alarm
   // Re-adquirir Wake Lock si el tab activo es Entreno (el sistema lo libera al ir a background)
   try { var _curTab = parseInt(localStorage.getItem('vdsen_last_tab')||'0'); if (_curTab===1) _acquireWakeLock(); } catch(_){}
   // Al volver al primer plano: si estuvo oculta >30s, re-sincronizar logs desde
@@ -7410,7 +7519,7 @@ function setEjActivo(ei) {
   if (panel) panel.innerHTML = _buildExPanel(_EJERCICIOS_DIA, DIA_ACTIVO);
   if (panel) {
     var top = panel.getBoundingClientRect().top + window.scrollY - 60;
-    window.scrollTo({top: top, behavior: 'smooth'});
+    window.scrollTo({top: top, behavior: 'auto'});   // T555: instant (see _scrollToNextPendingSet)
   }
 }
 window.setEjActivo = setEjActivo;
@@ -8878,15 +8987,18 @@ function renderEntrenamiento() {
           '<button onclick="event.stopPropagation();minimizeTimer()" class="btn-mini" aria-label="Minimizar temporizador"><svg class="ico sm" aria-hidden="true" focusable="false"><use href="#i-chev-d"/></svg> MINIMIZAR</button>'+
         '</div>'+
         '<div id="restLastSet" class="rt-last" aria-live="polite"></div>'+
-        '<div class="rt-ring">'+
-          '<svg viewBox="0 0 160 160" aria-hidden="true" focusable="false">'+
-            '<circle class="rt-track" cx="80" cy="80" r="70" fill="none" stroke-width="6"/>'+
-            '<circle id="restRing" class="rt-arc" cx="80" cy="80" r="70" fill="none" stroke-width="6" stroke-dasharray="439.8" stroke-dashoffset="0"/>'+
-          '</svg>'+
-          '<div class="rt-read">'+
-            '<div id="restTimerNum" class="rt-num" role="timer" aria-live="off">—</div>'+
-            '<div id="restTimerSec" class="rt-sec"></div>'+
+        '<div class="rt-main">'+
+          '<div class="rt-ring">'+
+            '<svg viewBox="0 0 160 160" aria-hidden="true" focusable="false">'+
+              '<circle class="rt-track" cx="80" cy="80" r="70" fill="none" stroke-width="8"/>'+
+              '<circle id="restRing" class="rt-arc" cx="80" cy="80" r="70" fill="none" stroke-width="8" stroke-dasharray="439.8" stroke-dashoffset="0"/>'+
+            '</svg>'+
+            '<div class="rt-read">'+
+              '<div id="restTimerNum" class="rt-num" role="timer" aria-live="off">—</div>'+
+              '<div id="restTimerSec" class="rt-sec"></div>'+
+            '</div>'+
           '</div>'+
+          '<div id="nextActionHint" class="rt-next" style="display:none" aria-live="polite"></div>'+
         '</div>'+
         '<div class="rt-presets" role="group" aria-label="Duración del descanso">'+
           [['30s',30],['1:00',60],['1:30',90],['2:00',120],['3:00',180]].map(function(p){
@@ -8898,7 +9010,6 @@ function renderEntrenamiento() {
           '<button onclick="event.stopPropagation();adjustRestTimer(15)">+15s</button>'+
           '<button onclick="event.stopPropagation();adjustRestTimer(30)">+30s</button>'+
         '</div>'+
-        '<div id="nextActionHint" class="rt-next" style="display:none"></div>'+
         '<button onclick="_continueNextWorkoutAction()" class="btn btn-primary rt-go">CONTINUAR <svg class="ico sm" aria-hidden="true" focusable="false"><use href="#i-play"/></svg></button>'+
         '<div class="rt-hint">Toca fuera para cerrar</div>'+
       '</div>'+
@@ -9704,7 +9815,9 @@ async function completeSet(key, di, ei, si, unit) {
     _renderNextWorkoutAction(_nextAction25);
     if (restTime > 0) {
       startRestTimer(restTime, key);
+      _renderNextWorkoutAction(_nextAction25);   // T555: startRestTimer -> stopRestTimer wipes the hint rendered above; paint it again so the sheet says what comes next
       if (_nextAction25 && _nextAction25.type !== 'SESSION_DONE') window._nextAction25 = _nextAction25;   // T548: CONTINUAR target (startRestTimer->stopRestTimer clears it, so set it after). SESSION_DONE is deliberately not wired: CONTINUAR never closes the session
+      _swRestSchedule();   // T555: refresh the notification text with the real next step
       showToast(_grp ? 'Par SS cerrado ✓ — descansando' : 'Serie ✓ — descansando');
     } else {
       showToast(_grp ? 'Par SS cerrado ✓' : 'Serie ✓');
@@ -9900,12 +10013,14 @@ window._ensureRestTimerOverlay = _ensureRestTimerOverlay;
 
 // FASE 9 — Desplaza suavemente al siguiente set pendiente (data-pending="1") tras el descanso.
 function _scrollToNextPendingSet() {
-  setTimeout(function() {
+  // T555: INSTANT scroll on the next frame (a smooth scroll + a 200ms delay made the first tap after a rest only stop the scroll = "I must tap twice")
+  var go = function() {
     var panel = document.getElementById('exPanel');
     if (!panel) return;
     var pendingRow = panel.querySelector('[data-pending="1"]');
-    if (pendingRow) pendingRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, 200);
+    if (pendingRow) pendingRow.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+  };
+  if (window.requestAnimationFrame) requestAnimationFrame(go); else setTimeout(go, 0);
 }
 window._scrollToNextPendingSet = _scrollToNextPendingSet;
 
@@ -9916,17 +10031,30 @@ function _nextSerie() {
 }
 window._nextSerie = _nextSerie;
 
+// T555: a transparent full-screen shield that swallows ghost / double taps for a moment right after the rest sheet closes
+function _tapGuard(ms) {
+  try {
+    var old = document.getElementById('tapGuard'); if (old) old.remove();
+    var g = document.createElement('div'); g.id = 'tapGuard'; g.setAttribute('aria-hidden', 'true');
+    g.style.cssText = 'position:fixed;inset:0;z-index:9500;background:transparent;touch-action:none';
+    document.body.appendChild(g); setTimeout(function() { try { g.remove(); } catch (e) {} }, ms || 350);
+  } catch (e) { /* cosmetic */ }
+}
 function _continueNextWorkoutAction() {
   var action = window._nextAction25;
-  stopRestTimer();
-  if (!action) { _scrollToNextPendingSet(); return; }
-  if (action.type === 'NEXT_EXERCISE' && Number.isInteger(action.ei)) {
-    setEjActivo(action.ei);
-  } else if (action.type === 'SESSION_DONE') {
-    markSessionDone(DIA_ACTIVO);
-  } else {
-    _scrollToNextPendingSet();
-  }
+  _bgStop(true); stopRestTimer();   // the sheet closes (and the alarm stops) on THIS tap; the heavier navigation runs on the next frame
+  _tapGuard(350);
+  var go = function() {
+    if (!action) { _scrollToNextPendingSet(); return; }
+    if (action.type === 'NEXT_EXERCISE' && Number.isInteger(action.ei)) {
+      setEjActivo(action.ei);
+    } else if (action.type === 'SESSION_DONE') {
+      markSessionDone(DIA_ACTIVO);
+    } else {
+      _scrollToNextPendingSet();
+    }
+  };
+  if (window.requestAnimationFrame) requestAnimationFrame(function() { setTimeout(go, 0); }); else go();
 }
 window._continueNextWorkoutAction = _continueNextWorkoutAction;
 
@@ -9958,19 +10086,28 @@ function _resolveNextWorkoutAction(di, exercises, lastEi, lastSi, logs, currentW
   if (nextSi < numSets) {
     var nextKey = 'log_' + currentWeek + '_' + di + '_' + lastEi + '_s' + nextSi;
     if (!logs[nextKey] || !logs[nextKey].done) {
-      return { type: 'NEXT_SET', label: (ej.exerciseName || ej.nombre || '') + ' – S' + (nextSi + 1) };
+      // T555: title / set n of N / targets are what the rest sheet shows (the label keeps its legacy shape)
+      var nsp = effSets[nextSi] || (ej.sets && ej.sets[nextSi]) || {};
+      return { type: 'NEXT_SET', label: (ej.exerciseName || ej.nombre || '') + ' – S' + (nextSi + 1), title: ej.exerciseName || ej.nombre || '', setNo: nextSi + 1, total: numSets, reps: nsp.repsTarget, rir: nsp.rirTarget };
     }
   }
-  // 3. NEXT_EXERCISE — ejercicio posterior con sets pendientes
+  // 3. NEXT_EXERCISE — ejercicio posterior con sets pendientes (cardio / circuito: una sola clave de log, sin sets)
   for (var nei = lastEi + 1; nei < exercises.length; nei++) {
     var nex = exercises[nei];
     if (!nex || !isTechniqueActive(nex, currentWeek)) continue;
+    var nType = _getExType(nex);
+    if (nType === 'cardio' || nType === 'circuito') {
+      var ck = 'log_' + currentWeek + '_' + di + '_' + nei;
+      if (!logs[ck] || !logs[ck].done) return { type: 'NEXT_EXERCISE', label: nex.exerciseName || nex.nombre || '', ei: nei, title: nex.exerciseName || nex.nombre || '', kind: nType };
+      continue;
+    }
     var nEff = getEffectiveSets(nex, currentWeek, totalWeeks);
     var nNum = nEff.length || (nex.sets ? nex.sets.length : 0);
     for (var ns = 0; ns < nNum; ns++) {
       var nk = 'log_' + currentWeek + '_' + di + '_' + nei + '_s' + ns;
       if (!logs[nk] || !logs[nk].done) {
-        return { type: 'NEXT_EXERCISE', label: nex.exerciseName || nex.nombre || '', ei: nei };
+        var nfs = nEff[ns] || (nex.sets && nex.sets[ns]) || {};
+        return { type: 'NEXT_EXERCISE', label: nex.exerciseName || nex.nombre || '', ei: nei, title: nex.exerciseName || nex.nombre || '', setNo: ns + 1, total: nNum, reps: nfs.repsTarget, rir: nfs.rirTarget };
       }
     }
   }
@@ -9978,6 +10115,12 @@ function _resolveNextWorkoutAction(di, exercises, lastEi, lastSi, logs, currentW
   for (var aei = 0; aei < exercises.length; aei++) {
     var aej = exercises[aei];
     if (!aej || !isTechniqueActive(aej, currentWeek)) continue;
+    var aType = _getExType(aej);
+    if (aType === 'cardio' || aType === 'circuito') {
+      var ak0 = 'log_' + currentWeek + '_' + di + '_' + aei;
+      if (!logs[ak0] || !logs[ak0].done) return { type: 'NONE', label: '' };
+      continue;
+    }
     var aEff = getEffectiveSets(aej, currentWeek, totalWeeks);
     var aNum = aEff.length || (aej.sets ? aej.sets.length : 0);
     for (var as = 0; as < aNum; as++) {
@@ -9992,32 +10135,37 @@ window._resolveNextWorkoutAction = _resolveNextWorkoutAction;
 // FASE 25 — Renderiza el hint de siguiente acción en ambas versiones del overlay.
 // Usa textContent — XSS-safe, sin innerHTML con datos de usuario.
 function _renderNextWorkoutAction(action) {
-  var prefixMap = {
-    'NEXT_SET':          '→ Siguiente serie:',
-    'NEXT_EXERCISE':     '→ Siguiente ejercicio:',
-    'SUPERSET_PARTNER':  '→ Partner SS:',
-    'SESSION_DONE':      '',
-    'NONE':              ''
-  };
-  var prefix = action ? (prefixMap[action.type] || '') : '';
-  var detail = action ? (action.label || '') : '';
+  // T555: three short lines the athlete can read at a glance on the rest sheet: kicker (what kind of step), title (which exercise), targets (reps / RIR).
+  var kick = '', title = '', targets = '';
+  if (action && action.type === 'NEXT_SET') {
+    kick = 'SIGUIENTE · SERIE ' + (action.setNo || '') + (action.total ? ' DE ' + action.total : '');
+    title = action.title || action.label || '';
+  } else if (action && action.type === 'NEXT_EXERCISE') {
+    kick = 'SIGUIENTE EJERCICIO' + (action.kind === 'cardio' ? ' · CARDIO' : (action.total ? ' · ' + action.total + (action.total === 1 ? ' SERIE' : ' SERIES') : ''));
+    title = action.title || action.label || '';
+  } else if (action && action.type === 'SUPERSET_PARTNER') {
+    kick = 'SIGUIENTE · PARTNER DE LA SUPERSERIE'; title = action.label || '';
+  } else if (action && action.type === 'SESSION_DONE') {
+    kick = ''; title = action.label || '';
+  } else { title = action ? (action.label || '') : ''; }
+  if (action && (action.type === 'NEXT_SET' || (action.type === 'NEXT_EXERCISE' && action.kind !== 'cardio')) && action.reps !== undefined && action.reps !== null && action.reps !== '') {
+    targets = action.reps + ' reps' + ((action.rir !== undefined && action.rir !== null && action.rir !== '') ? ' · RIR ' + action.rir : '');
+  } else if (action && action.kind === 'cardio') { targets = 'Registra duración / zona al terminar'; }
   ['nextActionHint', 'nextActionHintCompact'].forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
     el.textContent = '';
-    if (!prefix && !detail) { el.style.display = 'none'; return; }
+    if (!kick && !title) { el.style.display = 'none'; return; }
     el.style.display = 'block';
-    if (prefix) {
-      var s1 = document.createElement('span');
-      s1.textContent = prefix + ' ';
-      s1.style.opacity = '0.55';
-      el.appendChild(s1);
-    }
-    var s2 = document.createElement('span');
-    s2.textContent = detail;
-    s2.style.fontWeight = '700';
-    el.appendChild(s2);
+    var mk = function(cls, txt) { var d = document.createElement('div'); d.className = cls; d.textContent = txt; el.appendChild(d); };
+    if (kick) mk('rt-next-k', kick);
+    if (title) mk('rt-next-t', title);
+    if (targets) mk('rt-next-d', targets);
   });
+  // the minimized pill also says what is next (it only said "Toca para ver")
+  var pt = document.querySelector('#timerPill .rt-ptxt');
+  if (pt) pt.textContent = (action && action.type === 'NEXT_SET') ? ('Sig: S' + action.setNo + ' · ' + (action.title || ''))
+    : (action && action.type === 'NEXT_EXERCISE') ? ('Sig: ' + (action.title || '')) : 'Toca para ver';
 }
 window._renderNextWorkoutAction = _renderNextWorkoutAction;
 
@@ -10040,6 +10188,7 @@ function startRestTimer(seconds, lastSetKey) {
   localStorage.setItem('vdsen_restEnd', _restEndMs);
   localStorage.setItem('vdsen_restTotal', seconds);
   _restSeconds = seconds;
+  _bgStop(true); _bgKeepAliveStart();   // T555: background alarm channels (this runs inside the Save tap = a user gesture)
   _ensureRestTimerOverlay();
   _restEl = document.getElementById('restTimerNum');
   var overlay = document.getElementById('restTimerOverlay');
@@ -10142,6 +10291,7 @@ function adjustRestTimer(delta) {
   localStorage.setItem('vdsen_restEnd', _restEndMs);
   _restSeconds = Math.ceil((_restEndMs - Date.now()) / 1000);
   updateTimerDisplay();
+  _swRestSchedule();
 }
 
 function resetRestTimer(seconds) {
@@ -10152,12 +10302,14 @@ function resetRestTimer(seconds) {
   localStorage.setItem('vdsen_restEnd', _restEndMs);
   localStorage.setItem('vdsen_restTotal', seconds);
   updateTimerDisplay();
+  _swRestSchedule();
 }
 window.resetRestTimer = resetRestTimer;
 
 function stopRestTimer() {
   if (_restTimer) { clearInterval(_restTimer); _restTimer = null; }
   _restToken++; _restCtx = null;   // T548: a cancelled / replaced rest can never auto-advance
+  try { _bgStop(false); } catch (e) { /* T555: stops the keep-alive audio + pending notification (a ringing alarm survives an auto-advance) */ }
   _restEndMs = 0;
   window._nextAction25 = null;
   localStorage.removeItem('vdsen_restEnd');
@@ -13501,6 +13653,16 @@ function renderPerfil() {
         </div>
         <button onclick="setRestTimerDisabled(${isRestTimerDisabled()?'false':'true'})" role="switch" aria-label="Temporizador de descanso" aria-checked="${isRestTimerDisabled()?'false':'true'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${isRestTimerDisabled()?'var(--bd)':'rgba(200,165,74,.5)'};background:${isRestTimerDisabled()?'var(--dk)':'var(--gold-gradient)'};position:relative;cursor:pointer;transition:all .18s;padding:0">
           <span style="position:absolute;top:2px;left:${isRestTimerDisabled()?'2px':'24px'};width:24px;height:24px;border-radius:50%;background:${isRestTimerDisabled()?'var(--mt)':'#0a0a0a'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
+        </button>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+        <svg class="ico lg" style="flex-shrink:0;color:var(--mt)" aria-hidden="true" focusable="false"><use href="#i-timer"/></svg>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--tx);font-weight:700">Alarma en segundo plano</div>
+          <div style="font-size:11px;color:var(--mt);margin-top:2px;line-height:1.4">${_bgAlarmEnabled()?'Activada — el descanso suena y vibra aunque salgas de la app. Puede pausar tu música.':'Desactivada — solo suena con la app abierta.'}${(_bgAlarmEnabled() && window.Notification && Notification.permission !== 'granted') ? ' <button type="button" onclick="askNotifPermission()" style="margin-top:6px;display:block;background:none;border:1px solid var(--accent);color:var(--accent);padding:6px 10px;font-size:11px;font-weight:800;letter-spacing:.06em;cursor:pointer">PERMITIR NOTIFICACIONES</button>' : ''}${_bgAlarmEnabled() ? ' <button type="button" onclick="testBgAlarm()" style="margin-top:6px;display:block;background:none;border:1px solid var(--rule-strong);color:var(--tx);padding:6px 10px;font-size:11px;font-weight:800;letter-spacing:.06em;cursor:pointer">PROBAR ALARMA (10 s)</button>' : ''}</div>
+        </div>
+        <button onclick="setBgAlarm(${_bgAlarmEnabled()?'false':'true'})" role="switch" aria-label="Alarma en segundo plano" aria-checked="${_bgAlarmEnabled()?'true':'false'}" style="flex-shrink:0;width:52px;height:30px;border-radius:16px;border:1px solid ${_bgAlarmEnabled()?'var(--accent)':'var(--bd)'};background:${_bgAlarmEnabled()?'var(--accent)':'var(--dk)'};position:relative;cursor:pointer;transition:all .18s">
+          <span style="position:absolute;top:2px;left:${_bgAlarmEnabled()?'24px':'2px'};width:24px;height:24px;border-radius:50%;background:${_bgAlarmEnabled()?'#0a0a0a':'var(--mt)'};transition:all .18s;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
         </button>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">

@@ -1,0 +1,108 @@
+'use strict';
+// T555: four findings from the athlete's real use of the T554 preview:
+//  1. the rest sheet did not show what comes next (the hint was wiped by startRestTimer, and the sheet was too tall)
+//  2. the alarm did not sound after leaving the browser
+//  3. finishing the rest was slow / needed two taps (smooth auto-scroll swallows the first tap; the announcement waited for the write ack)
+//  4. a plain "Cardio ..." plan row (no exerciseType, one 1-rep strength-shaped set) was presented as a strength set
+const test = require('node:test'); const assert = require('node:assert/strict'); const fs = require('node:fs'); const vm = require('node:vm');
+const SRC = fs.readFileSync('vdsen-cliente.html', 'utf8'), SW = fs.readFileSync('sw.js', 'utf8');
+function fnSrc(name, src) {
+  src = src || SRC; const i = src.indexOf('function ' + name + '('); assert.ok(i > -1, 'missing function ' + name);
+  let d = 0, q = null, esc = false;
+  for (let k = src.indexOf('{', i); k < src.length; k++) { const c = src[k];
+    if (q) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === q) q = null; continue; }
+    if (c === '/' && src[k + 1] === '/') { k = src.indexOf('\n', k); continue; }
+    if (c === '"' || c === "'" || c === '`') { q = c; continue; }
+    if (c === '{') d++; else if (c === '}' && --d === 0) return src.slice(i, k + 1); }
+  throw new Error('unbalanced ' + name);
+}
+const S = (n, reps, rir) => Array.from({ length: n }, (_, i) => ({ setIndex: i, repsTarget: reps, rirTarget: rir, restSeconds: 150 }));
+function nextSandbox() {
+  const ctx = { console, Object, Array, String, Number, parseInt, isNaN, getEffectiveSets: e => e.sets || [], isTechniqueActive: () => true };
+  vm.createContext(ctx); vm.runInContext(fnSrc('_getExType') + '\n' + fnSrc('_resolveNextWorkoutAction') + '\nthis.f=_resolveNextWorkoutAction;', ctx); return ctx.f;
+}
+
+// ---------------- 1. what is next ----------------
+test('T555.1 NEXT_SET carries what the athlete needs on the rest sheet: exercise, set n of N, reps and RIR targets (label unchanged)', () => {
+  const f = nextSandbox(), ex = [{ exerciseName: 'Press', sets: S(3, 8, 3) }];
+  const a = f(0, ex, 0, 0, {}, 1, 6);
+  assert.equal(a.type, 'NEXT_SET'); assert.equal(a.label, 'Press – S2');
+  assert.deepEqual([a.title, a.setNo, a.total, a.reps, a.rir], ['Press', 2, 3, 8, 3]);
+});
+test('T555.2 NEXT_EXERCISE carries the exercise title, its set count and first target', () => {
+  const f = nextSandbox(), ex = [{ exerciseName: 'A', sets: S(2, 8, 3) }, { exerciseName: 'Jalón', sets: S(3, 10, 2) }];
+  const a = f(0, ex, 0, 1, { log_1_0_0_s0: { done: true }, log_1_0_0_s1: { done: true } }, 1, 6);
+  assert.equal(a.type, 'NEXT_EXERCISE'); assert.deepEqual([a.title, a.total, a.reps, a.rir, a.ei], ['Jalón', 3, 10, 2, 1]);
+});
+test('T555.3 a pending cardio / circuit exercise (single log key, no sets) is a real next exercise; once logged the session can close', () => {
+  const f = nextSandbox(), ex = [{ exerciseName: 'A', sets: S(1, 8, 3) }, { exerciseName: 'Cardio Zone 2', exerciseType: 'cardio', sets: [] }];
+  const a = f(0, ex, 0, 0, { log_1_0_0_s0: { done: true } }, 1, 6); assert.deepEqual([a.type, a.title, a.ei], ['NEXT_EXERCISE', 'Cardio Zone 2', 1]);
+  const b = f(0, ex, 0, 0, { log_1_0_0_s0: { done: true }, log_1_0_1: { done: true } }, 1, 6); assert.equal(b.type, 'SESSION_DONE');
+});
+test('T555.4 the next-up hint is re-rendered AFTER startRestTimer (stopRestTimer inside it wiped it) and shown as a prominent block', () => {
+  assert.ok(/startRestTimer\(restTime, key\);\s*\n\s*_renderNextWorkoutAction\(_nextAction25\);/.test(SRC), 'hint re-rendered right after the timer starts');
+  assert.ok(/\.rt-next-t\{[^}]*font-size:1[6-9]px/.test(SRC), 'next-up title is large and primary-coloured (it was 12px muted)');
+  const r = fnSrc('_renderNextWorkoutAction'); assert.ok(/action\.title|\.rt-next-t/.test(r) && /action\.reps|rt-next-d/.test(r), 'renders title + targets');
+});
+test('T555.5 the rest sheet is compact: ring beside the next-up block (the old 184px ring + 68px number hid what comes next)', () => {
+  assert.ok(!/\.rt-ring\{[^}]*width:184px/.test(SRC), 'no 184px ring'); assert.ok(/rt-main/.test(SRC), 'ring + next-up share one row');
+});
+
+// ---------------- 3. finishing ----------------
+test('T555.6 no smooth scroll in the rest-driven navigation (a tap during a smooth scroll only stops the scroll = the "second tap")', () => {
+  assert.ok(!/behavior: *'smooth'/.test(fnSrc('_scrollToNextPendingSet')), '_scrollToNextPendingSet instant');
+  assert.ok(!/behavior: *'smooth'/.test(fnSrc('setEjActivo')), 'setEjActivo instant');
+});
+test('T555.7 CONTINUAR responds on the first tap: the sheet closes first, navigation runs next frame, and a short tap guard swallows ghost taps', () => {
+  const c = fnSrc('_continueNextWorkoutAction'); assert.ok(/stopRestTimer\(\)/.test(c) && /requestAnimationFrame|setTimeout/.test(c) && /_tapGuard\(/.test(c));
+  assert.ok(/function _tapGuard\(/.test(SRC)); assert.ok(/\.rt button,[^{]*\{[^}]*touch-action:manipulation/.test(SRC));
+});
+test('T555.8 the DESCANSO TERMINADO announcement does NOT wait for the write ack (only the auto-advance does)', () => {
+  const f = fnSrc('_restFinishFlow'); const i = f.indexOf("d.reason === 'WRITE_NOT_ACKED'"), seg = f.slice(i, i + 400);
+  assert.ok(/_restAnnounce\(/.test(seg), 'announces before retrying');
+});
+
+// ---------------- 2. alarm outside the browser ----------------
+test('T555.9 background alarm: silent keep-alive audio during the rest, alarm tone at zero, stopped by any tap / stopRestTimer; opt-out switch in Perfil', () => {
+  for (const f of ['_bgAlarmEnabled', '_bgKeepAliveStart', '_bgAlarmRing', '_bgStop', '_swRestSchedule', '_swRestCancel']) assert.ok(new RegExp('function ' + f + '\\(').test(SRC), f);
+  assert.ok(/function startRestTimer[\s\S]*?_bgKeepAliveStart\(/.test(SRC), 'keep-alive starts with the rest (inside the Save tap gesture)');
+  assert.ok(/function stopRestTimer[\s\S]*?_bgStop\(/.test(SRC), 'stopRestTimer stops audio + cancels the scheduled notification');
+  assert.ok(/function _onTimerFinished[\s\S]*?_bgAlarmRing\(/.test(SRC), 'zero rings the alarm');
+  assert.ok(/setBgAlarm\(/.test(SRC) && /vdsen_bg_alarm/.test(SRC), 'Perfil switch');
+});
+test('T555.10 the rest notification prefers the service worker registration (Android Chrome forbids `new Notification`)', () => {
+  assert.ok(/registration\.showNotification|getRegistration\(\)[\s\S]{0,200}showNotification/.test(fnSrc('_notifyRestDone')));
+});
+test('T555.11 service worker: schedules the notification for the rest end, can cancel it, and focuses the app on click', () => {
+  const calls = { notes: [], timers: [] }, listeners = {}; let now = 1000;
+  const self = { addEventListener: (t, f) => { listeners[t] = f; }, registration: { showNotification: (t, o) => { calls.notes.push([t, o]); return Promise.resolve(); } }, clients: { matchAll: () => Promise.resolve([{ focus: () => { calls.focus = true; return Promise.resolve(); } }]), openWindow: () => Promise.resolve(), claim: () => Promise.resolve() }, skipWaiting: () => Promise.resolve(), location: { hostname: 'x' } };
+  const timers = []; const ctx = { self, caches: { open: () => Promise.resolve({ addAll: () => Promise.resolve() }), keys: () => Promise.resolve([]), match: () => Promise.resolve() }, fetch: () => Promise.reject(), URL, Response, Promise, Date: { now: () => now }, Math, console,
+    setTimeout: (f, ms) => { timers.push({ f, ms }); return timers.length; }, clearTimeout: id => { if (timers[id - 1]) timers[id - 1].dead = true; } };
+  vm.createContext(ctx); vm.runInContext(SW, ctx);
+  const waits = []; listeners.message({ data: { type: 'VDSEN_REST_SCHEDULE', endMs: 1000 + 90000, title: 'T', body: 'B' }, waitUntil: p => waits.push(p) });
+  assert.equal(waits.length, 1); assert.equal(timers.length, 1); assert.equal(timers[0].ms, 90000);
+  now = 91000; timers[0].f(); return waits[0].then(() => { assert.equal(calls.notes.length, 1); assert.equal(calls.notes[0][1].tag, 'vdsen-rest-timer'); assert.ok(Array.isArray(calls.notes[0][1].vibrate));
+    listeners.message({ data: { type: 'VDSEN_REST_SCHEDULE', endMs: now + 5000, title: 'T', body: 'B' }, waitUntil: p => waits.push(p) }); listeners.message({ data: { type: 'VDSEN_REST_CANCEL' }, waitUntil() {} });
+    assert.ok(timers[1].dead, 'cancel clears the pending notification'); let closed = false; listeners.notificationclick({ notification: { close: () => { closed = true; } }, waitUntil: p => p }); assert.ok(closed); });
+});
+
+// ---------------- 4. cardio ----------------
+function inferSandbox() { const ctx = { console, String, Object, Array, parseInt, isNaN }; vm.createContext(ctx); vm.runInContext(fnSrc('_withInferredCardio') + '\nthis.f=_withInferredCardio;', ctx); return ctx.f; }
+test('T555.12 a plain Cardio plan row (no declared type, one 1-rep set) becomes a cardio exercise at RUNTIME only; explicit types and real strength rows are untouched', () => {
+  const f = inferSandbox(), row = { exerciseName: 'Cardio Zone 2 — post fuerza', sets: S(1, 1, 4), prescriptionExerciseId: 'p1' };
+  const out = f(row); assert.equal(out.exerciseType, 'cardio'); assert.deepEqual(JSON.parse(JSON.stringify(out.sets)), []); assert.equal(out.prescriptionExerciseId, 'p1'); assert.equal(row.sets.length, 1, 'the source plan row is not mutated');
+  assert.equal(f({ exerciseName: 'Cardio Zone 2', sets: S(1, 1, 4) }).exerciseType, 'cardio');
+  const keep = { exerciseName: 'Cardio Zone 2', exerciseType: 'fuerza', sets: S(1, 1, 4) }; assert.equal(f(keep), keep, 'an explicit type always wins');
+  const st = { exerciseName: 'Press banca', sets: S(3, 8, 2) }; assert.equal(f(st), st);
+  const many = { exerciseName: 'Cardio de piernas con barra', sets: S(4, 10, 2) }; assert.equal(f(many), many, 'a real multi-set strength row named cardio-something stays strength');
+});
+test('T555.13 loadPlan applies the inference before the runtime exercise is built, and the Firestore plan is never written by it', () => {
+  assert.ok(/e = _withInferredCardio\(e\);/.test(SRC)); assert.ok(!/setDoc\([^)]*plans/.test(fnSrc('_withInferredCardio')));
+});
+test('T555.14 a cardio exercise (no sets) counts as exactly ONE series in the day total (it used to default to 3 phantom series and the day could never reach 100%)', () => {
+  assert.ok(/var numSets = \(e\.sets \|\| \[\]\)\.length \|\| \(_getExType\(e\) === 'cardio' \? 1 : 3\);/.test(SRC));
+});
+test('T555.15 the minimized pill says what is next, and Perfil has a 10 s alarm test so the athlete can verify the background alarm on his own phone', () => {
+  assert.ok(/#timerPill \.rt-ptxt/.test(fnSrc('_renderNextWorkoutAction')) && /'Sig: S'/.test(fnSrc('_renderNextWorkoutAction')));
+  assert.ok(/function testBgAlarm\(\)[\s\S]*?startRestTimer\(10, null\)/.test(SRC) && /onclick="testBgAlarm\(\)"/.test(SRC));
+});

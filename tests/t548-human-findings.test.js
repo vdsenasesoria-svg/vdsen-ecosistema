@@ -34,7 +34,7 @@ function sandbox(over) {
     saveLogs: () => { calls.writes++; }, _doSaveLogs: () => { calls.writes++; }, markSessionDone: () => { calls.writes++; }, completeSet: () => { calls.writes++; },
     showToast() {}, playTimerBeep: () => { calls.beep++; if (over && over.audioThrows) throw new Error('audio'); },
     navigator: { vibrate: () => { calls.vib++; if (over && over.vibThrows) throw new Error('vib'); return true; } },
-    setTimeout: (f) => 0, clearTimeout() {}, _notifyRestDone() {}, maximizeTimer() {},
+    setTimeout: (f) => 0, clearTimeout() {}, _notifyRestDone() {}, maximizeTimer() {}, _tapGuard() {},
   };
   ctx.window = ctx;
   vm.createContext(ctx);
@@ -138,7 +138,8 @@ test('T548.9 haptic / audio failure never throws and degrades to visual-only', (
   const r = run({ vibThrows: true, audioThrows: true, action: { type: 'NEXT_SET', label: 'x' } });
   assert.equal(r.calls.announce.length, 1, 'visual alert still shown'); assert.equal(r.calls.scroll, 1);
   const noNav = sandbox(); delete noNav.ctx.navigator.vibrate; noNav.ctx._restFeedback(); // unsupported => silent
-  assert.ok(!/Notification\.requestPermission/.test(SRC), 'no notification permission request');
+  // T555: the permission is requested ONLY from an explicit Perfil tap (setBgAlarm / askNotifPermission), never automatically while training
+  assert.ok(((SRC.match(/Notification\.requestPermission/g)) || []).length === 2 && /function setBgAlarm\([\s\S]*?requestPermission[\s\S]*?\n}/.test(SRC) && /function askNotifPermission\(\)[^\n]*requestPermission/.test(SRC), 'no automatic notification permission request');
   assert.ok(!/new Audio\(|\.mp3|\.wav|\.ogg/.test(fnSrc('playTimerBeep') + fnSrc('_restFeedback')), 'programmatic tone only, no assets');
 });
 test('T548.10 timer lifecycle: ctx captured at start, invalidated by stop / replace; reload restore never navigates', () => {

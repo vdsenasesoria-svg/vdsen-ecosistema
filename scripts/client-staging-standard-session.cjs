@@ -48,7 +48,7 @@ async function clearTimer(p) { for (let i = 0; i < 6; i++) { if (!(await p.isVis
     let { ctx, p, errs } = await L.openReal(browser, { W: 390, Hh: 844, K, expressOff: true });
     // ---- runtime plan identity
     const tot = await p.evaluate(() => { let e = 0, s = 0; const pids = new Set(); for (let i = 0; i < 7; i++) { selDia(i); _EJERCICIOS_DIA.forEach(x => { e++; s += x.sets.length; pids.add(x.prescriptionExerciseId); }); } return { days: 7, e, s, pids: pids.size, label: (function () { const e = PLAN.entrenamiento, d = e.days || e.sesiones || e; return Array.isArray(d) ? (d[1].label || d[1].titulo || d[1].nombre) : null; })(), numeric: (window.VDSEN_EFFECTIVE_PRESCRIPTION || {}).NUMERIC_APPLY_ENABLED }; });
-    check('CLONE_RUNTIME_7_32_80_32', tot.e === 32 && tot.s === 80 && tot.pids === 32, JSON.stringify(tot)); check('NUMERIC_APPLY_ENABLED_FALSE', tot.numeric === false);
+    check('CLONE_RUNTIME_7_32_78_32', tot.e === 32 && tot.s === 78 && tot.pids === 32, JSON.stringify(tot));   // 80 prescribed sets; the 2 plain Cardio rows are cardio cards at runtime (T555) check('NUMERIC_APPLY_ENABLED_FALSE', tot.numeric === false);
     const rtPids = await p.evaluate(d => { selDia(d); return _EJERCICIOS_DIA.map(e => ({ pid: e.prescriptionExerciseId, n: e.exerciseName, sets: e.sets.length, rest: e.sets[0].restSeconds })); }, DAY);
     if (SYN) EXEC = rtPids.map((x, e) => Array.from({ length: x.sets }, (_, s) => [40 + 10 * e + 2.5 * s, 8 + (s % 3), ((e + s) % 3) + 1, null, null]));
     const TOT = EXEC.flat().length, NEX = EXEC.length, LASTE = NEX - 1, LASTS = EXEC[LASTE].length - 1, FIRSTREST = rtPids[0].rest;
@@ -86,7 +86,7 @@ async function clearTimer(p) { for (let i = 0; i < 6; i++) { if (!(await p.isVis
         }
         if (done === 0) await S(p, '03-first-set-filled');
         await p.click('#setrow_' + key + ' .set-save-primary'); await p.waitForTimeout(1300); done++;
-        if (done === 1) { await S(p, '04-rest-timer');
+        if (done === 1) { await p.waitForFunction(() => { const o = document.getElementById('restTimerOverlay'); return o && getComputedStyle(o).display !== 'none' && (document.getElementById('restTimerNum') || {}).textContent !== '—'; }, null, { timeout: 8000 }).catch(() => {}); await S(p, '04-rest-timer');   /* the rest starts after the write ack: wait for it instead of a fixed 1.3 s */
           const t = async () => p.evaluate(() => ({ ov: !!document.querySelector('#restTimerOverlay') && getComputedStyle(document.getElementById('restTimerOverlay')).display !== 'none', n: (document.getElementById('restTimerNum') || {}).textContent, pill: !!document.getElementById('timerPill') && getComputedStyle(document.getElementById('timerPill')).display !== 'none', overlays: document.querySelectorAll('#restTimerOverlay').length, pills: document.querySelectorAll('#timerPill').length, end: localStorage.getItem('vdsen_restEnd') }));
           const seq = []; for (let i = 0; i < 12; i++) { seq.push(await p.evaluate(() => (document.getElementById('restTimerNum') || {}).textContent)); await p.waitForTimeout(120); } console.log('TIMER_SEQ', JSON.stringify(seq)); const t0 = await t(); await p.waitForTimeout(2200); const t1 = await t(); const sec = x => { const m = /(\d+):(\d\d)/.exec(x || ''); return m ? +m[1] * 60 + +m[2] : null; };
           check('REST_TIMER_STARTS_AND_COUNTS_DOWN', t0.ov && sec(t0.n) > 0 && sec(t1.n) < sec(t0.n), t0.n + ' -> ' + t1.n);

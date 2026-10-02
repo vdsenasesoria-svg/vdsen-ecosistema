@@ -18,6 +18,7 @@
  *   vdsen_light_mode       device-global — theme preference, must NOT be cleared
  *   vdsen_timer_off        device-global — feature toggle, must NOT be cleared
  *   vdsen_express_off      device-global — feature toggle, must NOT be cleared
+ *   vdsen_bg_alarm         device-global — feature toggle (T555 background alarm), must NOT be cleared
  *   vdsen_last_tab/dia     UI position memory (day/tab index), not sensitive data;
  *                          left as-is (no leak of operational content)
  *   vdsen_plan_changed / vdsen_plan_updated_info (sessionStorage) — self-consuming
@@ -96,7 +97,7 @@ console.log('CLIENT previously-fixed keys still cleared — OK');
 // CLIENT — device-global preferences must NEVER be touched by doLogout
 // ─────────────────────────────────────────────────────────────────────────────
 
-for (const key of ['vdsen_light_mode', 'vdsen_timer_off', 'vdsen_express_off']) {
+for (const key of ['vdsen_light_mode', 'vdsen_timer_off', 'vdsen_express_off', 'vdsen_bg_alarm']) {
   assert.ok(
     !new RegExp("removeItem\\s*\\(\\s*['\"]" + key + "['\"]").test(doLogoutFn),
     'T130: doLogout must NOT clear device-global preference ' + key
@@ -121,7 +122,7 @@ function collectKeys(src) {
 const knownClientKeys = new Set([
   'vdsen_uid', 'vdsen_active_plan_id', 'vdsen_logs_backup', 'vdsen_shadow_progression_queue', 'vdsen_menu_custom',
   'vdsen_restEnd', 'vdsen_restTotal', 'vdsen_light_mode', 'vdsen_timer_off',
-  'vdsen_express_off', 'vdsen_last_tab', 'vdsen_last_dia',
+  'vdsen_express_off', 'vdsen_bg_alarm', 'vdsen_last_tab', 'vdsen_last_dia',
   'vdsen_plan_changed', 'vdsen_plan_updated_info',
 ]);
 const knownCoachKeys = new Set(['vdsen_apikey']);

@@ -22,7 +22,7 @@ La app nueva funciona con las reglas antiguas; la app antigua NO funciona con la
    - Guardar la referencia de rollback: en Firebase Console → Firestore → Reglas → historial, anotar la versión vigente y su fecha; exportar su texto (`Copiar`) a un archivo fechado. Referencia en el repositorio: `git show 3019bda:firestore.rules` (última versión previa a T537).
 2. **Conceder el entitlement** a los coaches aprobados ANTES de activar el API endurecido (de lo contrario pierden la generación con IA): `node scripts/admin-coach-api-access.cjs --project <id> --uid <coachUid> --grant --yes` por cada UID aprobado (`--dry-run` primero).
 3. **Índices**: `firebase deploy --only firestore:indexes --project <id>`. Esperar a que `plans_backup (coachId, clientId, backedUpAt)` pase de *Building* a *Enabled* (Console → Índices). No continuar hasta que esté *Enabled*.
-4. **Aplicación + API** (Vercel): desplegar el commit aprobado. Verificar que `/coach` y `/cliente` cargan y que el service worker `vdsen-v12` instala los módulos de progresión.
+4. **Aplicación + API** (Vercel): desplegar el commit aprobado. Verificar que `/coach` y `/cliente` cargan y que el service worker `vdsen-v13` instala los módulos de progresión.
 5. **Reglas**: `firebase deploy --only firestore:rules --project <id>`.
 6. **Smoke posterior** (cuentas de prueba, sin datos personales reales):
    - Atleta: inicia sesión, lee su cliente, guarda una serie (log normal) → OK; intenta escribir `progressionApplications` → denegado.
