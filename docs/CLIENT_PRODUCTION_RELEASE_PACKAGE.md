@@ -123,16 +123,65 @@ La evidencia genérica «la API de promoción no reconstruye» NO aplica a Previ
 | Preview `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` | `READY`, `target=null` (Preview), proyecto `vdsen-ecosistema` (`prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`), equipo `team_VZc5H7Q1DBIJ3g0mwrSBz1o8`, `source=git`, ref `codex/client-app-next`, SHA `d7bb715…`; no sustituido por commits de runtime (después solo docs). |
 | Procedencia del código | PROBADA para el Preview. Tras promover, el deployment Production resultante debe mostrar `githubCommitSha = d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf`; comprobarlo. |
 | Preview → Production reconstruye | SÍ (contrato oficial arriba). Entorno Preview: contexto, **no es puerta de release**. |
-| Variables de entorno requeridas, ámbito **Production** (nombres referenciados por `api/`) | `OPENAI_API_KEY`, `OPENAI_MODEL`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` → **NOT_VERIFIED** (el conector recibió 403 al listarlas). `main` solo referencia `OPENAI_*`: las tres `FIREBASE_*` son nuevas y probablemente aún no existen en Production. Sin ellas el API falla cerrado (`FIREBASE_ADMIN_NOT_CONFIGURED`). |
-| `FIREBASE_PROJECT_ID` en Production | Debe resolverse a `vdsen-ecosistema` → **NOT_VERIFIED**. No imprimir valores secretos. |
+| Variables de entorno, ámbito **Production** (verificadas MANUALMENTE en el panel de Vercel; no se re-auditan) | `OPENAI_API_KEY` = PRESENT · `OPENAI_MODEL` = PRESENT · **`FIREBASE_PROJECT_ID` = MISSING · `FIREBASE_CLIENT_EMAIL` = MISSING · `FIREBASE_PRIVATE_KEY` = MISSING**. **PRODUCTION_FIREBASE_ENV = NOT_READY.** Clasificación: **PRODUCTION CONFIGURATION BLOCKER** (configuración de producción pendiente; NO es un defecto de código). Sin ellas el API falla cerrado (`FIREBASE_ADMIN_NOT_CONFIGURED`) y la generación con IA del Coach dejaría de funcionar tras la promoción. Procedimiento: sección 6c. |
+| `FIREBASE_PROJECT_ID` en Production | MISSING; al añadirla debe ser exactamente `vdsen-ecosistema`. No imprimir secretos. |
 | Firebase del lado cliente | PRODUCCIÓN (`projectId: "vdsen-ecosistema"` en el HTML canónico de `d7bb715`). |
 | Permiso / acción *Promote to Production* disponible para el candidato | **NOT_VERIFIED** (solo se comprueba en el panel sin pulsarla). |
-| Production Branch | **NOT_VERIFIED / NO BLOQUEANTE para la promoción de Preview** (la documentación oficial admite promover un Preview de una rama que no es la de producción). Contexto: los deployments Production recientes son Git con ref `main`. |
+| Production Branch | **`main`** (verificado manualmente en el panel). No bloqueante para la promoción de Preview. Contexto operativo: un push a `main` publicaría en Production automáticamente; este release NO lo usa. |
 | Rollback | Objetivo `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn`: `READY`, `source=git`, SHA `f6596ba5207dc158b8a9b01483cd0fe0ebeb274c`, con los alias de producción, marcado `isRollbackCandidate=true` en la lista anterior (hoy el listado de candidatos devuelve 403 al conector). **Instant Rollback = sin rebuild.** Mecanismo según la documentación oficial (NO ejecutar sin GO): Deployments → ese deployment → Instant Rollback, o `vercel rollback dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn`. Si la app vuelve a `f6596ba`, revertir TAMBIÉN las reglas. |
 
-**Condiciones restantes para `APP_DEPLOY_MECHANISM = PROVEN` (hoy GAP):** (1) las cinco variables existen en ámbito Production; (2) `FIREBASE_PROJECT_ID` de Production = `vdsen-ecosistema`; (3) *Promote to Production* está disponible/permitido para `dpl_Eucadoaj3…`; (4) el procedimiento de verificación posterior y de rollback sigue siendo ejecutable (el deployment `dpl_3RKY7…` sigue elegible y `READY`).
+**Condiciones restantes para `APP_DEPLOY_MECHANISM = PROVEN` (hoy GAP):** (1) las tres variables `FIREBASE_*` se añaden en ámbito Production (`OPENAI_*` ya están) — ver 6c; (2) `FIREBASE_PROJECT_ID` de Production = `vdsen-ecosistema`; (3) *Promote to Production* está disponible/permitido para `dpl_Eucadoaj3…`; (4) el procedimiento de verificación posterior y de rollback sigue siendo ejecutable (el deployment `dpl_3RKY7…` sigue elegible y `READY`).
 **Ya no es bloqueo:** «el entorno de servidor del Preview podría apuntar a staging» (Preview → Production reconstruye con variables de Production).
 
+
+## 6c. Bootstrap de las variables Firebase Admin en Vercel Production (PREPARADO, NO EJECUTADO)
+
+**No se añadió ninguna variable, no se creó ninguna cuenta de servicio ni clave, no se tocó IAM. NO PEGAR CREDENCIALES EN EL CHAT NI EN EL REPO.**
+
+### 6c.1 Contrato de runtime (probado en el repo)
+
+- Consumidor único: `api/_firebaseAdmin.js` (`process.env.FIREBASE_PROJECT_ID|CLIENT_EMAIL|PRIVATE_KEY`), usado solo por `api/vdsen-generate.js` (vía `api/_vdsenAuth.js`). Solo servidor (función de Vercel; nunca llega al navegador). Los scripts de operador (`scripts/admin-*.cjs`) usan credenciales propias del operador, no las de Vercel.
+- Inicialización: carga perezosa (`require('firebase-admin')` al primer uso) con `admin.credential.cert({ projectId, clientEmail, privateKey })`; no hay JSON de cuenta de servicio ni fallback (ni ADC ni valores por defecto).
+- Si falta cualquiera de las tres → `Error('FIREBASE_ADMIN_NOT_CONFIGURED')` y el API falla cerrado (probado en `api/_firebaseAdmin.test.js`).
+- Clave privada: el código hace `privateKey.replace(/\\n/g, '\n')` → acepta `\n` literales (formato del JSON) o saltos de línea reales. **No** recorta comillas: pegar el valor SIN las comillas que rodean el campo en el JSON.
+- Mismos nombres de variable en staging y producción (el repo no define otros); el valor de `FIREBASE_PROJECT_ID` decide el proyecto.
+
+### 6c.2 Fuente de cada valor
+
+| Variable | Valor / fuente | Formato | ¿Sensible? / ¿verificable a simple vista? |
+|---|---|---|---|
+| `FIREBASE_PROJECT_ID` | exactamente `vdsen-ecosistema` | texto | no sensible; visible → verificable |
+| `FIREBASE_CLIENT_EMAIL` | campo `client_email` de una cuenta de servicio autorizada del proyecto de producción (termina en `@vdsen-ecosistema.iam.gserviceaccount.com`) | email | no secreto; visible si no se marca como sensible → verificable |
+| `FIREBASE_PRIVATE_KEY` | campo `private_key` de una clave de la MISMA cuenta | PEM `-----BEGIN PRIVATE KEY-----…-----END PRIVATE KEY-----` con `\n` literales o saltos reales, sin comillas | sensible; no visible tras guardar → solo se verifica funcionalmente |
+
+**SERVICE_ACCOUNT_IDENTITY = DECISION_REQUIRED.** El repo no prueba qué cuenta usar. `.env.example` indica el origen genérico (Firebase Console → Project Settings → Service Accounts → Generate new private key). Pista no probatoria: un script local (`vdsen-push.js`) referencia un JSON de operador del tipo `vdsen-ecosistema-firebase-adminsdk-fbsvc-<keyid>.json`, lo que sugiere que ya existe la cuenta Admin SDK por defecto de Firebase; no se infiere ni se inventa su email. Decisión para Ayrton: (a) reutilizar esa cuenta por defecto (permisos amplios en Vercel) o (b) una cuenta de servicio dedicada al runtime del API con rol mínimo (recomendada por mínimo privilegio; hay que crearla y es un cambio de IAM que debe autorizarse aparte). Cualquiera que sea, `client_email` y `private_key` deben salir del mismo JSON.
+
+### 6c.3 Operaciones server-side y permisos mínimos
+
+- Auth: `verifyIdToken(token)` (firma/emisor/audiencia/expiración; sin `checkRevoked`). Sin custom claims, sin gestión de usuarios.
+- Firestore: UNA lectura, `coaches/{uid}` (campo `apiAccessEnabled === true`). Ninguna escritura. Ninguna otra operación Admin en `api/`.
+- **MINIMUM IAM = PARTIAL.** El repo prueba el conjunto de operaciones (1 lectura Firestore + verificación de token), pero NO prueba un mapeo exacto de roles IAM. Candidato a validar (no probado por el repo): un rol de solo lectura de Firestore/Datastore sobre el proyecto (p. ej. visor de Datastore); no se necesita Owner/Editor ni permisos de escritura. El rol Admin SDK por defecto es más amplio de lo necesario.
+
+### 6c.4 Procedimiento manual para Ayrton (solo Production)
+
+1. Decidir `SERVICE_ACCOUNT_IDENTITY` (6c.2) y tener la cuenta/clave listas por el canal habitual. **No pegar valores en el chat ni en commits.**
+2. Vercel → proyecto `vdsen-ecosistema` → Settings → Environment Variables → Add, **Environment = Production únicamente** (no Preview, no Development):
+   - `FIREBASE_PROJECT_ID` = `vdsen-ecosistema`.
+   - `FIREBASE_CLIENT_EMAIL` = el `client_email` de la cuenta elegida.
+   - `FIREBASE_PRIVATE_KEY` = el `private_key` de esa cuenta (marcar sensible; sin comillas; los `\n` literales o saltos reales son válidos).
+3. No tocar `OPENAI_*` ni nada más. No desplegar: un cambio de variables solo aplica a un deployment nuevo; la promoción de Preview → Production (que reconstruye con las variables de Production) las recogerá.
+
+### 6c.5 Validación posterior a la configuración y ANTES de promover
+
+1. Las tres variables existen con scope Production (y solo Production).
+2. `FIREBASE_PROJECT_ID` = `vdsen-ecosistema` (visible).
+3. El dominio del `FIREBASE_CLIENT_EMAIL` es `@vdsen-ecosistema.iam.gserviceaccount.com` y es la cuenta elegida.
+4. La clave privada es de esa misma cuenta: no verificable en el panel (sensible); se comprueba en el smoke posterior a la promoción (Coach con `apiAccessEnabled` → el API responde bien; token inválido → 401) y, si falla, rollback (6b.2).
+5. Ninguna variable apunta a staging (`vdsen-ecosistema-staging` no aparece en ningún valor).
+6. El SHA de runtime sigue siendo `d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf` (`git diff --name-status d7bb715..HEAD` = solo docs).
+7. El Preview `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` sigue `READY`.
+8. *Promote to Production* sigue disponible (sin pulsarlo).
+9. `NUMERIC_APPLY_ENABLED` sigue en `false`.
 
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
@@ -189,7 +238,7 @@ GO solo si **todas** son verdaderas; cualquier falsa = NO-GO.
 - [ ] `NUMERIC_APPLY_ENABLED=false` y 0 registros `APPLIED`.
 - [ ] Todos los clientes reales tienen `coachId` (o recuperados vía script admin).
 - [ ] Logs raíz del atleta real revisados (`planId` presente o riesgo LEGACY_UNBOUND aceptado por Ayrton).
-- [ ] `apiAccessEnabled` concedido a los Coaches aprobados; las cinco variables (`OPENAI_API_KEY`, `OPENAI_MODEL`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`) presentes en ámbito **Production** de Vercel y `FIREBASE_PROJECT_ID` = `vdsen-ecosistema` (sin imprimir secretos).
+- [ ] `apiAccessEnabled` concedido a los Coaches aprobados; `FIREBASE_PROJECT_ID` (= `vdsen-ecosistema`), `FIREBASE_CLIENT_EMAIL` y `FIREBASE_PRIVATE_KEY` añadidas en ámbito **Production** de Vercel (hoy MISSING; `OPENAI_*` ya PRESENT) siguiendo 6c, sin imprimir secretos y con `SERVICE_ACCOUNT_IDENTITY` decidida por Ayrton.
 - [ ] Referencia de rollback (versión de reglas + deployment previo de Vercel) anotada.
 - [ ] Índice `plans_backup` en estado *Enabled* antes de publicar reglas.
 - [ ] Smoke (sección 7) completo tras app y tras reglas; cualquier fallo = rollback.
