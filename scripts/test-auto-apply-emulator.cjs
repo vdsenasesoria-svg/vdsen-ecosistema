@@ -31,7 +31,8 @@ const SUITES = [
   { name: 'coach authority', file: path.join('tests', 't539-coach-authority.cjs') },
   { name: 'active plan edit', file: path.join('tests', 't547-active-plan-edit.cjs') },
   { name: 'athlete note isolation', file: path.join('tests', 't549-note-isolation.cjs') },
-  { name: 'plans create ownership', file: path.join('tests', 't552-plans-create-ownership.cjs') }
+  { name: 'plans create ownership', file: path.join('tests', 't552-plans-create-ownership.cjs') },
+  { name: 'self-coach topology', file: path.join('tests', 't558-self-coach-topology.cjs') }
 ].filter(x => fs.existsSync(path.join(__dirname, '..', x.file)));
 const ONLY = process.env.VDSEN_EMU_ONLY;   // e.g. "rules" to run a single suite (used for RED demonstrations)
 const isWin = process.platform === 'win32';
