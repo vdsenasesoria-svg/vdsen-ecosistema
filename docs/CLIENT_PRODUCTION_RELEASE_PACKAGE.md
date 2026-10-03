@@ -52,7 +52,7 @@ Auto-aplicación numérica (`NUMERIC_APPLY_ENABLED=false`; no hay registros `APP
 4. **Logs raíz sin `planId`** (`logs/{uid}`): riesgo `LEGACY_UNBOUND` (la referencia de semana previa/progreso podría reiniciar en semana 1). Revisar en Console los logs del atleta real antes de la liberación.
 5. **Entitlement del API**: conceder `apiAccessEnabled` a los Coaches aprobados ANTES de las reglas/API: `node scripts/admin-coach-api-access.cjs --project vdsen-ecosistema --uid <coachUid> --grant --dry-run` y luego `--grant --yes`.
 6. **Variables de entorno de Vercel** (sección 4) configuradas en el proyecto de producción.
-7. **Mecanismo de despliegue de la app = GAP (puerta de release; ver sección 6b).** El repo no contiene CLI/hook/CI/promoción de Vercel (sin `.github/`, `.vercel/`, scripts de deploy; `package.json` sin scripts). La única vía probada es la integración Git de Vercel: `CLAUDE.md` («auto-deploy en push a main») y los deployments *Production* de GitHub, todos con ref = commit de `main`. Esa vía exige mutar `main`, lo cual NO está aprobado. Ayrton debe elegir y autorizar por escrito el mecanismo (p. ej. si la promoción de un deployment *Preview* existente del SHA aprobado está disponible en su proyecto — no demostrado por el repo) antes de cualquier GO. Ver sección 6, paso 4.
+7. **Mecanismo de despliegue de la app = GAP (puerta de release; ver sección 6b).** La vía propuesta que NO muta `main` es *Promote to Production* del Preview `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` (SHA `d7bb715…`) desde el panel de Vercel. Sigue en GAP hasta cumplir las condiciones de la sección 6b.2. La vía por push a `main` queda RECHAZADA.
 8. **Aviso (preexistente)**: todo el repositorio se sirve públicamente en Vercel (no hay `.vercelignore`). No es bloqueante de este release; no subir secretos.
 9. **Referencia de rollback anotada** (sección 8) antes de cualquier despliegue.
 10. Verificado en repo: sin credenciales commiteadas (solo claves web públicas de Firebase).
@@ -85,13 +85,13 @@ firebase deploy --only firestore:indexes --project vdsen-ecosistema
 #    Esperar en Console → Índices: plans_backup (coachId, clientId, backedUpAt) = Enabled. No continuar antes.
 
 # 4. App + API (Vercel) — APP_DEPLOY_MECHANISM = GAP. SIN COMANDO APROBADO (ver sección 6b).
-#    `git push origin codex/client-app-next:main` está RECHAZADO. No continuar hasta que Ayrton autorice por escrito una de las dos decisiones de la sección 6b.
+#    `git push origin codex/client-app-next:main` está RECHAZADO. La vía candidata sin `main` (acción de panel, NO ejecutar sin GO explícito de Ayrton): Deployments → `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` → «…» → «Promote to Production» (equivalente CLI según la documentación de Vercel: `vercel promote <url>`; la CLI no está instalada aquí). Requiere cumplir antes la sección 6b.2.
 
 # 5. Reglas (solo cuando 3 y 4 estén verificados)
 firebase deploy --only firestore:rules --project vdsen-ecosistema
 ```
 
-Orden: los pasos de Firebase (índices, reglas) son siempre manuales (no hay CI que los dispare); el único disparador automático posible es la integración Git de Vercel (un push a `main` publica la app al instante), por lo que `main` NO debe recibir el commit antes de que el índice esté *Enabled*, y las reglas solo después de la app verificada. Nota: cada push a `codex/client-app-next` ya genera un deployment *Preview* (sin efecto en producción); ese HTML canónico apunta al Firebase de producción, no distribuir URLs de preview. Si el binding de Vercel no coincide con `vdsen-ecosistema` (`prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`): NO-GO.
+Orden: los pasos de Firebase (índices, reglas) son siempre manuales (no hay CI que los dispare). La integración Git de Vercel solo publica en Production con un push a la rama de producción (`main`); cada push a otra rama genera solo un Preview. Con la promoción de Preview, `main` no se toca y la promoción es el único cambio de app. Contexto operativo: cada push a `codex/client-app-next` sigue creando Previews nuevos (sin efecto en Production); el Preview a promover debe ser el del SHA aprobado. Si el binding de Vercel no coincide con `vdsen-ecosistema` (`prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`): NO-GO.
 
 ## 6b. Resolución del mecanismo de despliegue de la app (evidencia, sin ejecutar nada)
 
@@ -100,26 +100,39 @@ Resultado: **APP_DEPLOY_MECHANISM = GAP.** Evidencia (solo lectura, 2026-10-03):
 - Repo: sin `.vercel/`, `.github/`, scripts de deploy, hooks, `productionBranch` ni `orgId`; `package.json` sin scripts; `vercel.json` solo rewrites/headers. La CLI de Vercel NO está instalada en la máquina de trabajo y no hay sesión (`VERCEL_ACCOUNT_METADATA` por CLI = NOT_VERIFIED; los metadatos salieron del conector Vercel de solo lectura).
 - Vía probada: integración Git (todos los deployments *Production* recientes tienen `githubCommitRef=main`). Muta `main` → no aprobada.
 - Candidato A, `vercel deploy --prod` desde un checkout limpio: sin evidencia en el repo (sin `.vercel/project.json`, sin vínculo local); subiría un árbol de trabajo sin identidad de release garantizada. No aceptado.
-- Candidato B, **promover un deployment *Preview* existente**: existen deployments *Preview* `READY` del SHA exacto `d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf` (`dpl_Eucadoaj3buvedSnDNxoeLaxtf3B`, rama `codex/client-app-next`; `dpl_G9zf5FSf162wQz5cwDTc5ARMj9zT`, rama `claude/t553-authority`), con `githubCommitSha` en sus metadatos → procedencia exacta verificable; no muta `main`; el orden lo controla el operador; rollback: el deployment de producción actual (`dpl_3RKY7…`, `f6596ba`) es `isRollbackCandidate=true`. La documentación de Vercel describe `vercel promote <deployment>` / «Promote» del panel («no reconstruye»). **No es evidencia del repo ni se ha demostrado en este proyecto**, y quedan sin verificar: (i) el ámbito de las variables de entorno: un deployment Preview se construyó con las variables *Preview*, y el listado de variables devolvió 403 (no se pudo comprobar que `FIREBASE_PROJECT_ID`/`FIREBASE_CLIENT_EMAIL`/`FIREBASE_PRIVATE_KEY` existan con ámbito Production o Preview); (ii) autenticación/permiso para promover.
+- Candidato B, **promover un deployment *Preview* existente** (vía propuesta): existe un Preview `READY` del SHA exacto `d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf` (`dpl_Eucadoaj3buvedSnDNxoeLaxtf3B`, rama `codex/client-app-next`), con `githubCommitSha` fijo en sus metadatos → procedencia exacta verificable; no muta `main`; el operador controla el orden. Contrato oficial de Vercel (<https://vercel.com/docs/deployments/promoting-a-deployment>, actualizada 2026-06-26, leída en esta sesión): *Promote preview to production* se hace «through a complete rebuild»; si las variables de Preview y Production difieren, «the variables used will change … to those you have linked to the production environment. You cannot use your preview environment variables in a production deployment». Es decir, **las variables de ámbito Preview NO son la puerta de release**; la puerta son las variables de ámbito **Production**.
 - Candidato C (hook/CI): no existe evidencia en el repo. Candidato D: ninguno.
 
-**Decisión mínima que Ayrton debe tomar (no se toma en su nombre):** (1) una excepción explícita y por escrito que permita mutar `main` con el SHA aprobado (fast-forward, sin force), o (2) autorizar establecer y verificar un mecanismo sin `main` (promoción del Preview del SHA aprobado), que exige antes comprobar en el panel el ámbito de las variables `FIREBASE_*`/`OPENAI_*` y que el rollback a `dpl_3RKY7…` está disponible. Mientras tanto, el paso 4 sigue sin comando.
+**Decisión que Ayrton debe tomar (no se toma en su nombre):** autorizar por escrito la vía de promoción de Preview (candidato B) una vez cumplidas las condiciones de 6b.2, o, alternativamente, una excepción explícita para mutar `main`.
 
-### 6b.1 Verificación de la ruta de promoción (solo lectura, 2026-10-03; nada se promovió ni desplegó)
 
-| Pregunta | Resultado |
+### 6b.1 Tres operaciones distintas de Vercel (no confundir)
+
+| Operación | ¿Rebuild? | Variables de entorno |
+|---|---|---|
+| **Promote Preview → Production** (vía propuesta, `dpl_Eucadoaj3…`) | **SÍ, rebuild completo** | Se usan las de **Production**; las de Preview no |
+| **Instant Rollback** (a `dpl_3RKY7…`) | **NO** (reasigna dominios a un deployment que ya sirvió producción) | Las que ese deployment ya tenía; no se reconstruyen |
+| Promover un deployment de producción *staged* | NO | — (no aplica a esta vía) |
+
+La evidencia genérica «la API de promoción no reconstruye» NO aplica a Preview → Production.
+
+### 6b.2 Estado de la ruta de promoción (solo lectura, 2026-10-03; nada se promovió ni desplegó)
+
+| Elemento | Estado |
 |---|---|
-| Identidad del Preview `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` | `READY`, `target=null` (Preview), proyecto `vdsen-ecosistema` (`prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`), equipo `team_VZc5H7Q1DBIJ3g0mwrSBz1o8`, `source=git`, ref `codex/client-app-next`, SHA `d7bb715…`; no sustituido por ningún commit de runtime (solo docs después). |
-| Firebase del lado cliente del Preview | PRODUCCIÓN: el HTML canónico en `d7bb715` lleva `projectId: "vdsen-ecosistema"` (el swap a staging solo existe en `preview/staging-client`). |
-| Variables de entorno requeridas (nombres referenciados por `api/`) | `OPENAI_API_KEY`, `OPENAI_MODEL` (ya usadas por producción en `main`) y **nuevas** `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (`api/_firebaseAdmin.js`; `main` no las referencia: probablemente no existen hoy en Production). |
-| Disponibilidad Preview / Production de esas variables | **NOT_VERIFIED** (el conector recibió 403 al listar variables). Firebase del lado servidor del Preview: **UNKNOWN** (un Preview usa las variables de ámbito Preview; podrían faltar o apuntar a staging). Mientras no se pruebe: `PREVIEW ENV COMPATIBILITY = NOT_VERIFIED`; si resultaran apuntar a staging → `PROMOTION_PATH = UNSAFE`. |
-| `Production Branch` (Settings → Git) | **NOT_VERIFIED** (el conector no la expone). Evidencia indirecta: todos los deployments Production recientes son Git con ref `main`. |
-| Permiso de promoción / destino / rebuild | `PROMOTION_PERMISSION = NOT_VERIFIED` (no se puede probar sin ejecutar; el conector ya mostró 403 en variables y en *rollback*). Destino = target Production del proyecto: NOT_VERIFIED. Rebuild: según la documentación de Vercel la promoción no reconstruye (NO), no comprobado en este proyecto. |
-| Procedencia del código | PROBADA para el artefacto: el deployment es inmutable y sus metadatos fijan `githubCommitSha = d7bb715…`. Tras una promoción habría que releer el deployment Production y comprobar el mismo `githubCommitSha`. |
-| Orden de despliegue | GAP mientras el entorno no esté probado. Si se resuelve: ningún push a `main` ocurre (la integración Git solo crea Previews para otras ramas), así que la promoción sería el único cambio de app; índices antes, reglas después. |
-| Rollback | Objetivo `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn`: `READY`, `source=git`, SHA `f6596ba…`, con los alias de producción, y marcado `isRollbackCandidate=true` en la lista anterior (el listado de candidatos hoy devuelve 403 al conector). Mecanismo según la documentación de Vercel (NO evidencia del repo, NO ejecutar sin GO): `vercel rollback dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn` (o promover de vuelta ese deployment desde el panel). La CLI no está instalada aquí. Si la app vuelve a `f6596ba`, revertir TAMBIÉN las reglas (la app antigua no funciona con las reglas nuevas). |
+| Preview `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` | `READY`, `target=null` (Preview), proyecto `vdsen-ecosistema` (`prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`), equipo `team_VZc5H7Q1DBIJ3g0mwrSBz1o8`, `source=git`, ref `codex/client-app-next`, SHA `d7bb715…`; no sustituido por commits de runtime (después solo docs). |
+| Procedencia del código | PROBADA para el Preview. Tras promover, el deployment Production resultante debe mostrar `githubCommitSha = d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf`; comprobarlo. |
+| Preview → Production reconstruye | SÍ (contrato oficial arriba). Entorno Preview: contexto, **no es puerta de release**. |
+| Variables de entorno requeridas, ámbito **Production** (nombres referenciados por `api/`) | `OPENAI_API_KEY`, `OPENAI_MODEL`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` → **NOT_VERIFIED** (el conector recibió 403 al listarlas). `main` solo referencia `OPENAI_*`: las tres `FIREBASE_*` son nuevas y probablemente aún no existen en Production. Sin ellas el API falla cerrado (`FIREBASE_ADMIN_NOT_CONFIGURED`). |
+| `FIREBASE_PROJECT_ID` en Production | Debe resolverse a `vdsen-ecosistema` → **NOT_VERIFIED**. No imprimir valores secretos. |
+| Firebase del lado cliente | PRODUCCIÓN (`projectId: "vdsen-ecosistema"` en el HTML canónico de `d7bb715`). |
+| Permiso / acción *Promote to Production* disponible para el candidato | **NOT_VERIFIED** (solo se comprueba en el panel sin pulsarla). |
+| Production Branch | **NOT_VERIFIED / NO BLOQUEANTE para la promoción de Preview** (la documentación oficial admite promover un Preview de una rama que no es la de producción). Contexto: los deployments Production recientes son Git con ref `main`. |
+| Rollback | Objetivo `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn`: `READY`, `source=git`, SHA `f6596ba5207dc158b8a9b01483cd0fe0ebeb274c`, con los alias de producción, marcado `isRollbackCandidate=true` en la lista anterior (hoy el listado de candidatos devuelve 403 al conector). **Instant Rollback = sin rebuild.** Mecanismo según la documentación oficial (NO ejecutar sin GO): Deployments → ese deployment → Instant Rollback, o `vercel rollback dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn`. Si la app vuelve a `f6596ba`, revertir TAMBIÉN las reglas. |
 
-**Clasificación: APP_DEPLOY_MECHANISM = GAP** (entorno Preview no verificado, *Production Branch* no leída, permiso de promoción sin probar). **PROMOTION_PATH = GAP** (no se probó inseguro; tampoco seguro).
+**Condiciones restantes para `APP_DEPLOY_MECHANISM = PROVEN` (hoy GAP):** (1) las cinco variables existen en ámbito Production; (2) `FIREBASE_PROJECT_ID` de Production = `vdsen-ecosistema`; (3) *Promote to Production* está disponible/permitido para `dpl_Eucadoaj3…`; (4) el procedimiento de verificación posterior y de rollback sigue siendo ejecutable (el deployment `dpl_3RKY7…` sigue elegible y `READY`).
+**Ya no es bloqueo:** «el entorno de servidor del Preview podría apuntar a staging» (Preview → Production reconstruye con variables de Production).
+
 
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
@@ -171,12 +184,12 @@ GO solo si **todas** son verdaderas; cualquier falsa = NO-GO.
 - [ ] HEAD = SHA aprobado por Ayrton; árbol limpio; `main` intacto hasta que Ayrton autorice por escrito el mecanismo de app.
 - [ ] **APP_DEPLOY_MECHANISM probado y autorizado por Ayrton (hoy: GAP → NO-GO).**
 - [x] `PRODUCTION_BASELINE_COMMIT` = `f6596ba` — **RESOLVED_FROM_VERCEL_METADATA** (deployment `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn`; no se resolvió desde el repo). Releer justo antes del GO.
-- [ ] `--project vdsen-ecosistema` explícito; identidad del proyecto Vercel `prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN` PROBADA por metadatos (Production = deployments de Git con ref `main`); pendiente solo confirmar en el panel Settings → Git la *Production Branch* y el ámbito de las variables de entorno (listado 403 para el conector).
+- [ ] `--project vdsen-ecosistema` explícito. Vercel: PROJECT IDENTITY = PROVEN (`prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`); PRODUCTION BASELINE = PROVEN; PRODUCTION ENV VARS = NOT_VERIFIED; PROMOTION PERMISSION = NOT_VERIFIED; PRODUCTION BRANCH = NOT_VERIFIED / NO BLOQUEANTE para la promoción de Preview.
 - [ ] Suite unitaria y de emulador en verde sobre el SHA; `git diff --check` limpio.
 - [ ] `NUMERIC_APPLY_ENABLED=false` y 0 registros `APPLIED`.
 - [ ] Todos los clientes reales tienen `coachId` (o recuperados vía script admin).
 - [ ] Logs raíz del atleta real revisados (`planId` presente o riesgo LEGACY_UNBOUND aceptado por Ayrton).
-- [ ] `apiAccessEnabled` concedido a los Coaches aprobados; 3 variables `FIREBASE_*` presentes en Vercel.
+- [ ] `apiAccessEnabled` concedido a los Coaches aprobados; las cinco variables (`OPENAI_API_KEY`, `OPENAI_MODEL`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`) presentes en ámbito **Production** de Vercel y `FIREBASE_PROJECT_ID` = `vdsen-ecosistema` (sin imprimir secretos).
 - [ ] Referencia de rollback (versión de reglas + deployment previo de Vercel) anotada.
 - [ ] Índice `plans_backup` en estado *Enabled* antes de publicar reglas.
 - [ ] Smoke (sección 7) completo tras app y tras reglas; cualquier fallo = rollback.
