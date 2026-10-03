@@ -207,6 +207,30 @@ Ejecuta el **operador** (Ayrton) con su identidad humana, sin pegar valores en e
 
 Inspección segura por nombre de archivo y patrón, sin imprimir contenido: sin JSON de cuenta de servicio, sin cuerpo PEM, sin campos `private_key`/`private_key_id` de JSON, ninguna asignación real de `FIREBASE_PRIVATE_KEY` (solo valores ficticios de 4 caracteres en tests); las dos coincidencias de la cabecera PEM son una línea de test de 80 caracteres sin cuerpo y este documento. Historial: sin archivos de clave añadidos (solo `.env.example`). **CREDENTIAL LEAK CHECK = CLEAN.** Nota (no bloqueante): `vdsen-push.js` referencia una ruta local de Windows a un JSON de operador (solo el nombre del archivo; no hay secreto en el repo).
 
+## 6d. Gates de solo lectura: estado (2026-10-03)
+
+**Evidencia de pruebas (reportada por Ayrton desde su máquina Windows/Codex; no re-ejecutada aquí):**
+- El checkout de Windows con CRLF causó **13 fallos falsos** de pruebas. El checkout original con LF del **mismo SHA** pasa la suite unitaria **1063/1063**. No hay defecto de runtime ni se requiere parche de código.
+- Emulador de Firestore: **84/84 PASS** con locale inglés. El fallo anterior fue el recurso de locale `es_US` del entorno, no las reglas.
+
+**Recheck de solo lectura de Vercel (conector, esta sesión):**
+- Candidato `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B`: `READY`, Preview (`target=null`), `source=git`, ref `codex/client-app-next`, SHA `d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf`, proyecto `vdsen-ecosistema`, equipo `team_VZc5H7Q1DBIJ3g0mwrSBz1o8`.
+- Baseline `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn`: `READY`, `target=production`, SHA `f6596ba5207dc158b8a9b01483cd0fe0ebeb274c`, alias de producción, `isRollbackCandidate=true`; es el deployment de producción más reciente.
+
+**Gates sin evidencia obtenida (la sesión que escribió esto NO tiene `gcloud`/`firebase`/`vercel` ni credenciales de Google Cloud; no se intentó ninguna vía alternativa):**
+
+| Gate | Estado | Qué falta (solo lectura, para ejecutar donde `gcloud` ya está autenticado) |
+|---|---|---|
+| Cuenta `vdsen-vercel-runtime@…` existe | NO según Ayrton (reportado); no verificado aquí | `gcloud iam service-accounts list --project=vdsen-ecosistema` |
+| Creación de cuenta / clave autorizadas | UNKNOWN | revisar roles del operador: `gcloud projects get-iam-policy vdsen-ecosistema`; política de organización de claves: `gcloud org-policies describe constraints/iam.disableServiceAccountKeyCreation --project=vdsen-ecosistema` (confirmar con `--help`) |
+| B — `coachId` (criterio: todo `clients/*` real con `coachId` no vacío) | GAP (no ejecutado) | auditoría de solo lectura de `clients/*`; informar solo conteos e IDs de documento inválidos |
+| C — `planId` en `logs/{uid}` (criterio de 5, punto 4) | GAP (no ejecutado) | auditoría de solo lectura de `logs/*`; informar solo conteos e IDs |
+| Reglas actuales de producción vs `firestore.rules` | GAP | copiar el texto vigente (Console → Firestore → Reglas → historial) a un archivo fechado y compararlo con `git show d7bb715:firestore.rules`; es también la referencia de rollback |
+| Índices actuales vs `firestore.indexes.json` (`plans_backup` coachId, clientId, backedUpAt) | GAP | Console → Firestore → Índices, o `firebase firestore:indexes --project vdsen-ecosistema`; clasificar READY / MISSING / BUILDING / UNEXPECTED |
+| Identidad de smoke Coach / Client en producción | GAP: el repo solo documenta cuentas sintéticas de **staging** (`*.invalid`); ninguna de producción | decisión de Ayrton; no usar la cuenta de un atleta real ni generar evidencia canónica en su cuenta |
+
+**READY_FOR_MUTATION_WINDOW = NO** hasta cerrar los gates de la tabla.
+
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
 | # | Verificación | Resultado esperado |
