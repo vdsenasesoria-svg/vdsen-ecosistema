@@ -272,6 +272,43 @@ Solo GET / `testIamPermissions` / `getEffectiveOrgPolicy`; sin token visible, si
 
 **READY_FOR_MUTATION_WINDOW = NO** (B y C sin auditar; índice requerido ausente es una acción de la ventana, no un bloqueo por sí solo; el delta de reglas inesperado requiere revisión de Ayrton).
 
+## 6h. Cierre de B / C y auditoría de la transición real de reglas (2026-10-03; solo lectura, sin mutaciones)
+
+**B (`coachId` en `clients/*`)** — lectura de producción con máscara `coachId` únicamente (1 página, sin `nextPageToken`): `B_INSPECTED=63`, `B_VALID=63` (string no vacío), `B_INVALID=0` → **B = PASS**.
+**C (`planId` en `logs/{uid}`)** — lectura de producción con máscara `planId` únicamente: `C_INSPECTED=29`, `C_COMPLIANT=29`, `C_MISSING_PLANID=0` → **C = PASS**. (Criterio congelado = presencia de `planId` string no vacío; no se leyeron `entries` ni datos personales.)
+
+**Reglas: tres estados comparados** (A = vigente `fe11ab8f…`, 95 líneas; B = `main`/`f6596ba`; C = objetivo `d7bb715`, idéntico a HEAD).
+La A es anterior incluso a `main`: no tiene `match /logs/{uid}/mesos/{planId}` (las reglas de `logs` no son recursivas, así que `logs/*/mesos/*` está denegado por defecto en producción hoy).
+
+| Área | A: vigente | C: objetivo |
+|---|---|---|
+| `clients` lectura | atleta o **cualquier coach** | atleta o coach **dueño** (`coachId`) |
+| `clients` reclamar huérfano | permitido (coach, `coachId` vacío) | **eliminado** (solo Admin SDK) |
+| `coaches` | dueño lee/escribe todo | create solo si no existe `clients/{uid}` y sin `apiAccessEnabled`; update/delete no tocan `apiAccessEnabled` |
+| `plans` create | coach con su `coachId` | además `clientId` existente y propio (`ownsClient`) |
+| `plans` update | **bloqueado** si `active`/`draft_approved`; `coachId`/`clientId` mutables | **nuevo permitido**: dueño edita plan `active` (y `draft_approved` solo si es el `activePlanId`); `coachId`/`clientId` inmutables; reasignar `clientId` solo a cliente propio |
+| `logs/{uid}` | atleta **o cualquier coach** (lectura/escritura total) | lectura: atleta o coach dueño; atleta sin campos canónicos; coach dueño todo |
+| `logs/{uid}/mesos/{planId}` | **denegado** | **nuevo permitido**: atleta (sin canónicos, recibos append-only ≤200) y coach dueño |
+| `exercises` | cualquier coach escribe todo | solo `coachId` propio (o reclamar legado sin `coachId`) |
+| `templates`, `plans_backup`, `fichas_publicas` | cualquier coach / lectura abierta a coaches | solo `coachId` propio (las consultas deben filtrar `coachId`) |
+| `compendio` | cualquier autenticado | solo el coach con uid = id |
+| `sessions` | cualquier autenticado | **cerrada** (sin lectores ni escritores) |
+| `fichas_onboarding/renovacion` | cualquier autenticado | atleta (id) o coach dueño |
+| `phone_index` | write de cualquier coach | create/update/delete solo del coach dueño del cliente apuntado |
+| Entitlement `apiAccessEnabled` | sin protección | solo Admin SDK (reglas lo protegen) |
+
+Todo cambio material aparece en el contrato aprobado (`docs/FIRESTORE_WRITE_BOUNDARY.md`, `docs/PRODUCTION_RELEASE_GATE.md` T547/T552, `docs/COACH_API_ENTITLEMENT.md`). **RULES_TRANSITION = EXPECTED_HARDENING.** Rutas nuevas permitidas vs vigente (todas documentadas): edición de plan activo por su coach dueño (T547) y acceso a `mesos` por atleta/coach dueño.
+
+**Compatibilidad (derivada de los contratos de ambas apps, no de ejecución):**
+- **NEW_APP_WITH_LIVE_RULES = COMPATIBLE_FOR_TRANSITION.** Atleta: guardado de logs OK (`logs/{uid}` raíz, planId presente en 29/29, no `LEGACY_UNBOUND`); la escritura a `mesos` es denegada pero no fatal (`_mesoOk=false`, solo `console.warn`). Coach: con reglas vigentes quedan **denegadas** la edición de plan activo y la lectura/escritura de `mesos` (historial de mesociclos, reset), y la consulta `plans_backup (coachId, clientId, backedUpAt)` falla hasta que exista el índice; fallan cerrado, sin corrupción de datos. Es el mismo estado que ya tiene la app antigua en producción. Ventana breve entre promoción y reglas.
+- **OLD_APP_WITH_TARGET_RULES = PARTIAL.** App atleta antigua: funciona (login, lectura propia, logs raíz; `mesos` pasa a permitirse). App coach antigua: consulta `plans_backup` sin `coachId`, `getDocs(collection('clients'))` sin filtro (reparación de `phone_index`/fusión) y `onSnapshot(collection('fichas_publicas'))` sin filtro son denegadas; el resto filtra por `coachId`. Consistente con el runbook: **revertir la app implica revertir también las reglas**.
+
+**RULES_ROLLBACK = READY (no ejecutado).** Identificador: release `projects/vdsen-ecosistema/releases/cloud.firestore` → ruleset `projects/vdsen-ecosistema/rulesets/fe11ab8f-0937-4f73-add8-c9d4e5c241af` (GET 200, fuente completa recuperable; los rulesets son inmutables). Mecanismo soportado por el runbook (sección 8): Console → Reglas → historial → publicar de nuevo la versión anterior (re-release del ruleset existente, sin resubir fuente), o `firebase deploy --only firestore:rules` con el texto exportado (crea un ruleset nuevo). Limitaciones: la API de descubrimiento de `firebaserules` no se pudo leer desde la sesión (400), por lo que el método REST `releases.patch` no se verificó aquí; no se confirmó que Console liste el ruleset en el historial; no se ejecutó. Guardar una copia fechada del texto vigente antes de desplegar (lo hace el paso 1 del runbook).
+
+Índice requerido: `MISSING` (sin cambio). Candidato `dpl_Eucadoaj3bu…` y rollback `dpl_3RKY7Ui…`: READY (6g).
+
+**READY_FOR_MUTATION_WINDOW = YES** (todas las condiciones del ticket cumplidas; la ventana debe seguir el orden: servicio/clave → índice READY → promoción → reglas).
+
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
 | # | Verificación | Resultado esperado |
