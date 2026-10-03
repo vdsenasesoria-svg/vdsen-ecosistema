@@ -45,4 +45,11 @@ function noSecrets(text, file) {
   const patterns = [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s*(?:\\n)?[A-Za-z0-9+/]{32,}/, /\bgh[pousr]_[A-Za-z0-9]{30,}\b/, /\bgithub_pat_[A-Za-z0-9_]{40,}\b/, /\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b/, /\bAKIA[A-Z0-9]{16}\b/, /"type"\s*:\s*"service_account"/];
   assert.ok(!patterns.some(p => p.test(text)), 'Potential private credential in ' + file + ' (value withheld)');
 }
-module.exports = { hash, json, git, validate, indexMatches, verifyDeployment, noSecrets };
+function environmentContract(s) {
+  assert.equal(process.env.GCP_PROJECT_ID, s.firebase_project, 'GCP project mismatch');
+  assert.equal(process.env.VERCEL_PROJECT_ID, s.production_project, 'Vercel project mismatch');
+  assert.equal(process.env.VERCEL_ORG_ID, s.vercel_team, 'Vercel organization mismatch');
+  assert.equal(process.env.GCP_RELEASE_SERVICE_ACCOUNT, 'vdsen-release-bot@vdsen-ecosistema.iam.gserviceaccount.com');
+  assert.match(process.env.GCP_WORKLOAD_IDENTITY_PROVIDER || '', /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[A-Za-z0-9_-]+\/providers\/[A-Za-z0-9_-]+$/);
+}
+module.exports = { hash, json, git, validate, indexMatches, verifyDeployment, noSecrets, environmentContract };

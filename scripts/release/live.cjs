@@ -2,7 +2,7 @@
 // Only workflow jobs may call this CLI. No Admin SDK, document writes or IAM operations.
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-const { hash, json, git, validate, indexMatches, verifyDeployment } = require('./lib.cjs');
+const { hash, json, git, validate, indexMatches, verifyDeployment, environmentContract } = require('./lib.cjs');
 const { check } = require('./check.cjs');
 const state = () => validate(json('.release/vdsen-client.json'), json('.release/schema/release-state.schema.json'));
 const save = (name, data) => { fs.mkdirSync('release-output', { recursive: true }); fs.writeFileSync('release-output/' + name, JSON.stringify(data, null, 2) + '\n'); };
@@ -11,13 +11,6 @@ function workflowGuard() {
   assert.equal(process.env.GITHUB_EVENT_NAME, 'workflow_dispatch');
   assert.equal(process.env.GITHUB_REF, 'refs/heads/codex/client-app-next');
   assert.equal(process.env.PRODUCTION_RELEASE_ENABLED, 'true', 'Emergency stop is enabled');
-}
-function environmentContract(s) {
-  assert.equal(process.env.GCP_PROJECT_ID, s.firebase_project, 'GCP project mismatch');
-  assert.equal(process.env.VERCEL_PROJECT_ID, s.production_project, 'Vercel project mismatch');
-  assert.equal(process.env.VERCEL_ORG_ID, s.vercel_team, 'Vercel organization mismatch');
-  assert.equal(process.env.GCP_RELEASE_SERVICE_ACCOUNT, 'vdsen-release-bot@vdsen-ecosistema.iam.gserviceaccount.com');
-  assert.match(process.env.GCP_WORKLOAD_IDENTITY_PROVIDER || '', /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[A-Za-z0-9_-]+\/providers\/[A-Za-z0-9_-]+$/);
 }
 function testGates() {
   for (const category of ['unit', 'emulator']) {

@@ -1,5 +1,7 @@
 name: VDSEN release check
 on:
+  push:
+    branches: [codex/client-app-next]
   workflow_dispatch:
     inputs:
       runtime_sha:

@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "repository",
+    "ref",
+    "gcp_project",
+    "release_service_account",
+    "configuration",
+    "oidc_auth",
+    "project_metadata_read",
+    "firestore_index_metadata_read",
+    "firebase_rules_metadata_read",
+    "vercel_project_read",
+    "production_release_enabled",
+    "kill_switch_configuration",
+    "mutations_performed",
+    "least_privilege_verification",
+    "least_privilege_note",
+    "validation_status",
+    "error",
+    "timestamp"
+  ],
+  "properties": {
+    "repository": {
+      "const": "vdsenasesoria-svg/vdsen-ecosistema"
+    },
+    "ref": {
+      "const": "refs/heads/codex/client-app-next"
+    },
+    "gcp_project": {
+      "const": "vdsen-ecosistema"
+    },
+    "release_service_account": {
+      "const": "vdsen-release-bot@vdsen-ecosistema.iam.gserviceaccount.com"
+    },
+    "configuration": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "oidc_auth": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "project_metadata_read": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "firestore_index_metadata_read": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "firebase_rules_metadata_read": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "vercel_project_read": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "GAP"
+      ]
+    },
+    "production_release_enabled": {
+      "type": "boolean"
+    },
+    "kill_switch_configuration": {
+      "enum": [
+        "EXPECTED_FALSE",
+        "TRUE",
+        "UNSET",
+        "INVALID"
+      ]
+    },
+    "mutations_performed": {
+      "const": false
+    },
+    "least_privilege_verification": {
+      "const": "GAP"
+    },
+    "least_privilege_note": {
+      "type": "string"
+    },
+    "validation_status": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    }
+  }
+}
