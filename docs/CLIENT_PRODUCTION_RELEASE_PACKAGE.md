@@ -8,13 +8,13 @@ Autoridad de la secuencia: `docs/FIRESTORE_DEPLOYMENT_RUNBOOK.md` (no se inventa
 | Campo | Valor |
 |---|---|
 | Rama | `codex/client-app-next` |
-| Commit de código aprobado (SHA completo) | `cf9eaa9c96a5c9313806234971dc9e4be8b67c72` |
+| Último commit de código de runtime (SHA completo) | `cf9eaa9c96a5c9313806234971dc9e4be8b67c72` |
 | Commits posteriores | solo este paquete + `tests/t558-self-coach-topology.cjs` (+ su alta en la lista del runner de emulador). **Cero cambios de código de runtime** desde `cf9eaa9`. |
 | `main` (referencia, intacta) | `f6596ba5207dc158b8a9b01483cd0fe0ebeb274c` (ancestro del release: el release es fast-forward de `main`) |
 | Alcance | App Client (`vdsen-cliente.html`) + reglas/índices/API/SW requeridos por el runbook |
 | Estado congelado | CLIENT TRAINING = FEATURE_COMPLETE · NUTRICIÓN = DISPLAY_ONLY / DISPLAY_READY · SUPLEMENTOS = DISPLAY_ONLY / DISPLAY_READY · `NUMERIC_APPLY_ENABLED = false` |
 
-El SHA a desplegar es el HEAD de `codex/client-app-next` al momento de la autorización; verificarlo con `git rev-parse HEAD` y compararlo contra el SHA que Ayrton apruebe.
+El SHA a desplegar lo nombra **explícitamente Ayrton** al autorizar (no «el HEAD del momento»); verificarlo con `git rev-parse HEAD`. Los commits posteriores a `cf9eaa9` solo tocan docs/tests.
 
 ## 2. Módulos incluidos
 
@@ -28,7 +28,7 @@ Auto-aplicación numérica (`NUMERIC_APPLY_ENABLED=false`; no hay registros `APP
 
 ## 4. Delta de producción
 
-**PRODUCTION_BASELINE_COMMIT = UNKNOWN.** El commit hoy desplegado en producción no se puede probar desde el repositorio (`main` = `f6596ba` es solo una pista, no una prueba). Antes de desplegar, probarlo en el panel de Vercel (Deployments → Production → commit) y anotarlo aquí.
+**PRODUCTION_BASELINE_COMMIT = UNKNOWN (no probado).** Evidencia indicativa, no prueba del estado vivo: la API de *deployments* de GitHub (escrita por la integración `vercel[bot]`) registra como último deployment de entorno *Production* el de `f6596ba5207dc158b8a9b01483cd0fe0ebeb274c` (= `main`, estado `success`, 2026-09-08), y todo push a otras ramas genera deployments *Preview*. Eso no excluye un rollback/promoción posterior hecho en el panel. Probarlo en Vercel (Deployments → el que tiene el dominio de producción → commit) y anotarlo aquí antes del GO.
 
 | Área | Delta respecto de `main` (pista de baseline) |
 |---|---|
@@ -50,7 +50,7 @@ Auto-aplicación numérica (`NUMERIC_APPLY_ENABLED=false`; no hay registros `APP
 4. **Logs raíz sin `planId`** (`logs/{uid}`): riesgo `LEGACY_UNBOUND` (la referencia de semana previa/progreso podría reiniciar en semana 1). Revisar en Console los logs del atleta real antes de la liberación.
 5. **Entitlement del API**: conceder `apiAccessEnabled` a los Coaches aprobados ANTES de las reglas/API: `node scripts/admin-coach-api-access.cjs --project vdsen-ecosistema --uid <coachUid> --grant --dry-run` y luego `--grant --yes`.
 6. **Variables de entorno de Vercel** (sección 4) configuradas en el proyecto de producción.
-7. **Auto-deploy de Vercel**: según `CLAUDE.md` un push a `main` despliega solo. Para respetar el orden (índices → app → reglas) la app NO debe desplegarse por un push accidental: confirmar en el panel qué rama es *Production* y cuándo se mergea. Ver sección 6, paso 4.
+7. **Mecanismo de despliegue de la app = GAP (puerta de release).** El repo no contiene CLI/hook/CI/promoción de Vercel (sin `.github/`, `.vercel/`, scripts de deploy; `package.json` sin scripts). La única vía probada es la integración Git de Vercel: `CLAUDE.md` («auto-deploy en push a main») y los deployments *Production* de GitHub, todos con ref = commit de `main`. Esa vía exige mutar `main`, lo cual NO está aprobado. Ayrton debe elegir y autorizar por escrito el mecanismo (p. ej. si la promoción de un deployment *Preview* existente del SHA aprobado está disponible en su proyecto — no demostrado por el repo) antes de cualquier GO. Ver sección 6, paso 4.
 8. **Aviso (preexistente)**: todo el repositorio se sirve públicamente en Vercel (no hay `.vercelignore`). No es bloqueante de este release; no subir secretos.
 9. **Referencia de rollback anotada** (sección 8) antes de cualquier despliegue.
 10. Verificado en repo: sin credenciales commiteadas (solo claves web públicas de Firebase).
@@ -69,7 +69,7 @@ node --test tests/*.test.js
 node scripts/test-auto-apply-emulator.cjs
 git diff --check
 firebase projects:list
-firebase use                  # debe imprimir exactamente vdsen-ecosistema; si hay duda, DETENERSE
+firebase use                  # el runbook espera vdsen-ecosistema; `.firebaserc` no define alias por defecto, así que puede no haber proyecto activo: no confiar en esto y usar SIEMPRE --project vdsen-ecosistema explícito. Ante duda, DETENERSE
 
 # 1. Guardar referencia de rollback de reglas (Console → Firestore → Reglas → historial): anotar versión/fecha y copiar el texto a un archivo fechado.
 #    Referencia en repo: git show 3019bda:firestore.rules
@@ -82,15 +82,16 @@ node scripts/admin-coach-api-access.cjs --project vdsen-ecosistema --uid <coachU
 firebase deploy --only firestore:indexes --project vdsen-ecosistema
 #    Esperar en Console → Índices: plans_backup (coachId, clientId, backedUpAt) = Enabled. No continuar antes.
 
-# 4. App + API (Vercel). El runbook solo dice «desplegar el commit aprobado»; el mecanismo del repo es Vercel con auto-deploy en push a main.
-#    Con el SHA aprobado: git push origin codex/client-app-next:main   (fast-forward; sin force)   ← ESTE paso despliega producción
-#    Verificar en el panel de Vercel que el deployment Production corresponde al SHA y que /coach y /cliente cargan.
+# 4. App + API (Vercel) — APP_DEPLOY_MECHANISM = GAP. SIN COMANDO APROBADO.
+#    La única vía probada por el repo (push a main, auto-deploy de Vercel) NO está aprobada: `git push origin codex/client-app-next:main` está RECHAZADO
+#    (muta main y dispara producción de inmediato). No continuar hasta que Ayrton autorice por escrito el mecanismo exacto y se anote aquí.
+#    Cualquiera que sea: usar el SHA aprobado, sin force; verificar en Vercel que el deployment Production = SHA y que /coach y /cliente cargan.
 
 # 5. Reglas (solo cuando 3 y 4 estén verificados)
 firebase deploy --only firestore:rules --project vdsen-ecosistema
 ```
 
-Antes del paso 4 confirmar en Vercel que la rama de producción es `main` y que no existe otro proyecto enlazado al repo. Si el binding no coincide con `vdsen-ecosistema`: NO-GO.
+Orden: los pasos de Firebase (índices, reglas) son siempre manuales (no hay CI que los dispare); el único disparador automático posible es la integración Git de Vercel (un push a `main` publica la app al instante), por lo que `main` NO debe recibir el commit antes de que el índice esté *Enabled*, y las reglas solo después de la app verificada. Nota: cada push a `codex/client-app-next` ya genera un deployment *Preview* (sin efecto en producción); ese HTML canónico apunta al Firebase de producción, no distribuir URLs de preview. Si el binding de Vercel no coincide con `vdsen-ecosistema` (`prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`): NO-GO.
 
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
@@ -117,13 +118,13 @@ Antes del paso 4 confirmar en Vercel que la rama de producción es `main` y que 
 ## 8. Rollback (por separado; solo lo que el runbook soporta)
 
 - **App / API**: revertir el deployment de Vercel al anterior (el runbook dice «revertir en Vercel» al deployment previo anotado en el preflight). `apiAccessEnabled` es inocuo para el API antiguo.
-- **Reglas Firestore**: Console → Reglas → historial → publicar de nuevo la versión anotada (o `firebase deploy --only firestore:rules --project vdsen-ecosistema` con el texto exportado). La app nueva sigue funcionando con reglas antiguas. Si se revierte la app pero NO las reglas, el cliente antiguo no puede crear registros de progresión (solo afecta al modo sombra, no al registro de entrenamiento) — revertir reglas primero o junto con la app.
+- **Reglas Firestore**: Console → Reglas → historial → publicar de nuevo la versión anotada (o `firebase deploy --only firestore:rules --project vdsen-ecosistema` con el texto exportado). La app nueva sigue funcionando con reglas antiguas. Si se revierte la app, revertir TAMBIÉN las reglas: la app antigua no funciona con las reglas nuevas (razón del orden obligatorio del runbook; el runbook añade que el cliente antiguo solo pierde los registros de progresión del modo sombra, pero el Coach antiguo hace consultas que las reglas nuevas rechazan).
 - **Índices**: aditivos; no requieren rollback.
 - **Datos**: este release no migra datos; no hay rollback de datos.
 
 ## 9. Deuda conocida no bloqueante
 
-Estrategia de visualización de logs raíz legacy/unbound en el Coach · `EXERCISE_HISTORY` al cambiar de plan · `buildBoostcampExercise` muerto · runtime Admin del API en staging sin ensayar · espejo de check-in `expedientes` sin regla · repo servido públicamente (sin `.vercelignore`) · supersets solo cubiertos por tests unitarios (el plan de Ayrton no tiene) · incrementos por equipo y auto-aplicación (fases futuras).
+Estrategia de visualización de logs raíz legacy/unbound en el Coach · `EXERCISE_HISTORY` al cambiar de plan · `buildBoostcampExercise` muerto · runtime Admin del API en staging sin ensayar · espejo de check-in `expedientes` sin regla · repo servido públicamente por Vercel (sin `.vercelignore`) y repositorio GitHub con `private: false` según la API (`CLAUDE.md` dice privado; verificar visibilidad) · supersets solo cubiertos por tests unitarios (el plan de Ayrton no tiene) · incrementos por equipo y auto-aplicación (fases futuras).
 
 ## 10. Problema de datos del plan conocido
 
@@ -131,7 +132,7 @@ Filas «Cardio Zone 2» (Día 6 / Día 7) del plan de Ayrton están autoradas co
 
 ## 11. Procedencia de la validación humana
 
-- Ayrton entrenó el **Día 6** en su móvil con el build **T555** (preview de staging, cuenta humana de entrenamiento, no producción) y confirmó «todo bien».
+- Ayrton entrenó el **Día 6** con el build **T555** (preview de staging, cuenta humana de entrenamiento, no producción) y reportó fallos de UX (temporizador, alarma fuera del navegador, cardio); tras los arreglos de T555 comentó «lo demás parece que todo bien» (matiz: «parece»). Dispositivo/SO no registrados en el repo; la afirmación «móvil» procede de su reporte, no de un registro del dispositivo.
 - Cambios posteriores (T556: alarma revertida, modo detallado + temporizador activos por defecto, «COACH AYRTON» en el encabezado) fueron los pedidos por él; **no** hubo una pasada humana nueva sobre el build final `cf9eaa9`. Esa validación se cubre con la evidencia automatizada de staging (`docs/CLIENT_MODULE_STATUS.md`, `docs/T554_TRAIN_READY.md`).
 - La validación humana fue contra staging; **no hay validación humana contra producción**.
 
@@ -139,7 +140,8 @@ Filas «Cardio Zone 2» (Día 6 / Día 7) del plan de Ayrton están autoradas co
 
 GO solo si **todas** son verdaderas; cualquier falsa = NO-GO.
 
-- [ ] HEAD = SHA aprobado por Ayrton; árbol limpio; `main` intacto hasta el paso 4.
+- [ ] HEAD = SHA aprobado por Ayrton; árbol limpio; `main` intacto hasta que Ayrton autorice por escrito el mecanismo de app.
+- [ ] **APP_DEPLOY_MECHANISM probado y autorizado por Ayrton (hoy: GAP → NO-GO).**
 - [ ] `PRODUCTION_BASELINE_COMMIT` probado en el panel de Vercel y anotado (hoy: UNKNOWN).
 - [ ] `firebase use` / `--project` = `vdsen-ecosistema`; binding de Vercel = `prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`, rama Production confirmada.
 - [ ] Suite unitaria y de emulador en verde sobre el SHA; `git diff --check` limpio.

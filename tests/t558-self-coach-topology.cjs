@@ -43,4 +43,7 @@ test('T558.4 ORPHAN client (no coachId on clients/{uid}): the athlete still trai
   await allowed(setDoc(doc(w.db.U, 'logs/' + w.U + '/mesos/' + w.PLAN), { planId: w.PLAN, currentWeek: 1, entries: {} }, { mergeFields: ['planId', 'currentWeek', 'entries'] }), 'athlete writes its own meso');
   await allowed(getDoc(doc(w.db.U, 'clients/' + w.U)), 'a uid always reads its OWN client doc'); await denied(getDoc(doc(w.db.X, 'clients/' + w.U)), 'another coach never reads an unowned client');
   await denied(addDoc(collection(w.db.U, 'plans'), { coachId: w.U, clientId: w.U, status: 'active', weeks: 6, daysPerWeek: 1, days: [], createdAt: NOW(), updatedAt: NOW() }), 'plan CREATE for a client without coachId is refused (ownsClient)');
+  await denied(updateDoc(doc(w.db.X, 'clients/' + w.U), { coachId: w.X }), 'another coach cannot CLAIM an orphan client (coachId assignment)');
+  await denied(updateDoc(doc(w.db.U, 'clients/' + w.U), { coachId: w.U }), 'the orphan client uid itself (a Coach) cannot self-claim by writing coachId');
+  await denied(setDoc(doc(w.db.X, 'clients/' + w.U), { coachId: w.X, email: 'a@x.com' }), 'another coach cannot overwrite the orphan client doc to claim it');
 });
