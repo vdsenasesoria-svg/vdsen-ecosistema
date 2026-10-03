@@ -253,6 +253,25 @@ Inspección segura por nombre de archivo y patrón, sin imprimir contenido: sin 
 - **Canal seguro soportado:** guardar la credencial como secreto/variable en la configuración del entorno cloud de la sesión (menú del entorno en la barra de título → Edit → API credentials o variable de entorno), nunca en el chat; una sesión nueva la recoge. Para el token de acceso de operador, de vida corta (~1 h), generarlo en la máquina de Ayrton justo antes de la ventana de mutación. Estado de la ventana: ver 6d (`READY_FOR_MUTATION_WINDOW = NO`).
 - Recheck de Vercel (solo lectura): el deployment de producción más reciente sigue siendo `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn` (`f6596ba…`, `READY`, candidato a rollback). El recheck del Preview candidato por SHA lo denegó la capa de permisos de la plataforma y no se reintentó por otra vía; su estado es el de la verificación anterior (6d).
 
+## 6g. Gates de solo lectura vía API de Google con proxy de credencial (2026-10-03; sin mutaciones)
+
+Solo GET / `testIamPermissions` / `getEffectiveOrgPolicy`; sin token visible, sin `gcloud`. Reemplaza el estado GAP de 6d/6e/6f donde se indica.
+
+| Gate | Resultado | Evidencia |
+|---|---|---|
+| GCP_AUTH / GCP_PROJECT | **READY / PROVEN** | `cloudresourcemanager v1 GET projects/vdsen-ecosistema` → 200, `projectId=vdsen-ecosistema`, `ACTIVE`, número `1066774387899` |
+| Cuenta `vdsen-vercel-runtime@…` | **NO existe** | IAM `serviceAccounts.get` → 404 `Unknown service account` |
+| Permisos del operador (`testIamPermissions`, proyecto) | concedidos: `iam.serviceAccounts.create`, `resourcemanager.projects.setIamPolicy`, `iam.serviceAccountKeys.create` (+ `getIamPolicy`, `datastore.databases.get`, `datastore.entities.list`) | Permisos efectivos devueltos por la API (no inferidos de la propiedad). Resultado: creación de cuenta / binding de rol / creación de clave = AUTHORIZED a nivel de proyecto. No cubre denegaciones (Deny policies) ni condiciones IAM, que `testIamPermissions` sí evalúa pero no se ejercitó la acción real |
+| Política de organización de claves | **ALLOWED** | `getEffectiveOrgPolicy constraints/iam.disableServiceAccountKeyCreation` → `booleanPolicy: {}` (no enforced) |
+| Reglas vigentes | **CURRENT_RULES_BASELINE = PROVEN** | release `cloud.firestore` → ruleset `fe11ab8f-0937-4f73-add8-c9d4e5c241af` (ruleset creado 2026-09-01T02:05:13Z; release creado 2026-04-06T04:40:20Z, actualizado 2026-09-01T02:05:13Z). Texto: 95 líneas. Referencia de rollback = ese ruleset |
+| Delta de reglas | **UNEXPECTED** | vigente ≠ `main` (`f6596ba`, 125 líneas) ni = objetivo (208 líneas). Normalizado (sin comentarios/espacios) el vigente difiere de `main` solo en que **le falta** el bloque `match /mesos/{planId}` (2 reglas). Es decir, producción es anterior incluso a `main`; el delta hacia el objetivo es mayor al documentado (≈ 108 líneas normalizadas distintas entre `main` y objetivo, más `mesos`) |
+| Índice requerido `plans_backup` (coachId ASC, clientId ASC, backedUpAt DESC) | **MISSING** | único índice compuesto en producción: `plans_backup` (clientId ASC, backedUpAt DESC, `__name__` DESC) `READY` (el de `main`; se conserva). El requerido no existe |
+| B / C (`coachId` en `clients/*`, `planId` en `logs/{uid}`) | **GAP** | la lectura de documentos de producción fue denegada por la capa de permisos de la sesión; no se reintentó por otra vía |
+| Candidato `dpl_Eucadoaj3bu…` | **READY** | Preview, `target=null`, SHA `d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf`, ref `codex/client-app-next` |
+| Rollback `dpl_3RKY7Ui…` | **READY** | `target=production`, SHA `f6596ba5207dc158b8a9b01483cd0fe0ebeb274c`, alias `vdsen-ecosistema.vercel.app` |
+
+**READY_FOR_MUTATION_WINDOW = NO** (B y C sin auditar; índice requerido ausente es una acción de la ventana, no un bloqueo por sí solo; el delta de reglas inesperado requiere revisión de Ayrton).
+
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
 | # | Verificación | Resultado esperado |
