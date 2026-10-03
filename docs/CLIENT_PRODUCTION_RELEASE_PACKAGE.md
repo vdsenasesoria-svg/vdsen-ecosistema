@@ -151,37 +151,61 @@ La evidencia genérica «la API de promoción no reconstruye» NO aplica a Previ
 | Variable | Valor / fuente | Formato | ¿Sensible? / ¿verificable a simple vista? |
 |---|---|---|---|
 | `FIREBASE_PROJECT_ID` | exactamente `vdsen-ecosistema` | texto | no sensible; visible → verificable |
-| `FIREBASE_CLIENT_EMAIL` | campo `client_email` de una cuenta de servicio autorizada del proyecto de producción (termina en `@vdsen-ecosistema.iam.gserviceaccount.com`) | email | no secreto; visible si no se marca como sensible → verificable |
-| `FIREBASE_PRIVATE_KEY` | campo `private_key` de una clave de la MISMA cuenta | PEM `-----BEGIN PRIVATE KEY-----…-----END PRIVATE KEY-----` con `\n` literales o saltos reales, sin comillas | sensible; no visible tras guardar → solo se verifica funcionalmente |
+| `FIREBASE_CLIENT_EMAIL` | `client_email` de la cuenta dedicada: `vdsen-vercel-runtime@vdsen-ecosistema.iam.gserviceaccount.com` | email | no secreto; visible si no se marca como sensible → verificable |
+| `FIREBASE_PRIVATE_KEY` | campo `private_key` de la clave de la MISMA cuenta dedicada | PEM `-----BEGIN PRIVATE KEY-----…-----END PRIVATE KEY-----` con `\n` literales o saltos reales, sin comillas | sensible; no visible tras guardar → solo se verifica funcionalmente |
 
-**SERVICE_ACCOUNT_IDENTITY = DECISION_REQUIRED.** El repo no prueba qué cuenta usar. `.env.example` indica el origen genérico (Firebase Console → Project Settings → Service Accounts → Generate new private key). Pista no probatoria: un script local (`vdsen-push.js`) referencia un JSON de operador del tipo `vdsen-ecosistema-firebase-adminsdk-fbsvc-<keyid>.json`, lo que sugiere que ya existe la cuenta Admin SDK por defecto de Firebase; no se infiere ni se inventa su email. Decisión para Ayrton: (a) reutilizar esa cuenta por defecto (permisos amplios en Vercel) o (b) una cuenta de servicio dedicada al runtime del API con rol mínimo (recomendada por mínimo privilegio; hay que crearla y es un cambio de IAM que debe autorizarse aparte). Cualquiera que sea, `client_email` y `private_key` deben salir del mismo JSON.
+**SERVICE_ACCOUNT_IDENTITY = DECIDED (decisión de arquitectura de Ayrton, congelada).** No se reutiliza la cuenta Admin SDK por defecto/amplia. Se adopta una cuenta de servicio **dedicada, de mínimo privilegio, solo para el runtime de Vercel Production**:
 
-### 6c.3 Operaciones server-side y permisos mínimos
+- `SERVICE_ACCOUNT` = `vdsen-vercel-runtime@vdsen-ecosistema.iam.gserviceaccount.com`. Si ese nombre no estuviera disponible por una razón concreta de Google Cloud (p. ej. política de organización que impide crear claves de cuenta de servicio, o el ID ya está en uso): **DETENERSE y reportar**; no elegir otra identidad en silencio.
+- `RUNTIME IAM` = **`roles/datastore.viewer`** y nada más. NO conceder `roles/owner`, `roles/editor`, `roles/firebase.admin`, `roles/datastore.user`, `roles/datastore.admin` salvo que una operación de runtime concreta demuestre que hace falta.
+- Esto NO cambia el contrato de autenticación (sigue `cert({ projectId, clientEmail, privateKey })` con clave privada en variables de Vercel Production). Una arquitectura sin clave (p. ej. Workload Identity Federation) sería una fase futura de seguridad que exige cambios de runtime: fuera de este release.
+- Distinguir: (A) permisos de la cuenta de **runtime** (solo lectura) vs (B) permisos del **operador humano** que crea la cuenta y su clave (necesita rol de administración de IAM/cuentas de servicio; pertenece al operador, no a la cuenta de runtime).
 
-- Auth: `verifyIdToken(token)` (firma/emisor/audiencia/expiración; sin `checkRevoked`). Sin custom claims, sin gestión de usuarios.
-- Firestore: UNA lectura, `coaches/{uid}` (campo `apiAccessEnabled === true`). Ninguna escritura. Ninguna otra operación Admin en `api/`.
-- **MINIMUM IAM = PARTIAL.** El repo prueba el conjunto de operaciones (1 lectura Firestore + verificación de token), pero NO prueba un mapeo exacto de roles IAM. Candidato a validar (no probado por el repo): un rol de solo lectura de Firestore/Datastore sobre el proyecto (p. ej. visor de Datastore); no se necesita Owner/Editor ni permisos de escritura. El rol Admin SDK por defecto es más amplio de lo necesario.
+### 6c.3 Operaciones server-side y permisos (contrato)
 
-### 6c.4 Procedimiento manual para Ayrton (solo Production)
+- **AUTH TOKEN VERIFICATION CONTRACT = READY.** `verifyIdToken(token)` (firma, emisor, audiencia = `FIREBASE_PROJECT_ID`, expiración; sin `checkRevoked`). No requiere un rol IAM adicional sobre Firestore; sin custom claims ni gestión de usuarios.
+- **FIRESTORE READ CONTRACT = READY.** UNA lectura, `coaches/{uid}`, y la comprobación `apiAccessEnabled === true`. **WRITE PERMISSIONS = NONE.** Ninguna otra operación Admin en `api/` (sin escrituras, sin planes, sin operaciones administrativas de Firestore).
+- **MINIMUM IAM REQUIREMENTS = PROVEN FOR CURRENT FIRESTORE ACCESS.** Base: (1) el repo prueba que el runtime solo hace esa lectura y la verificación de token; (2) la documentación de IAM de Google Cloud indica que `roles/datastore.viewer` incluye permisos de lectura como `datastore.entities.get` y `datastore.entities.list` sin permisos de crear/actualizar/borrar entidades. Aún no se ha ejercitado contra producción: la primera lectura real ocurre en el smoke posterior a la promoción.
+- **Riesgo residual (honesto):** `roles/datastore.viewer` es de ámbito proyecto: una clave filtrada permitiría LEER todo Firestore del proyecto (clientes, logs, fichas), no solo `coaches`. Mitigación: variable sensible, solo Production, una única clave, rotación/eliminación de clave si hay sospecha. Esta mitigación no reduce el alcance de lectura; el repo no prueba un acotamiento por colección.
 
-1. Decidir `SERVICE_ACCOUNT_IDENTITY` (6c.2) y tener la cuenta/clave listas por el canal habitual. **No pegar valores en el chat ni en commits.**
-2. Vercel → proyecto `vdsen-ecosistema` → Settings → Environment Variables → Add, **Environment = Production únicamente** (no Preview, no Development):
-   - `FIREBASE_PROJECT_ID` = `vdsen-ecosistema`.
-   - `FIREBASE_CLIENT_EMAIL` = el `client_email` de la cuenta elegida.
-   - `FIREBASE_PRIVATE_KEY` = el `private_key` de esa cuenta (marcar sensible; sin comillas; los `\n` literales o saltos reales son válidos).
-3. No tocar `OPENAI_*` ni nada más. No desplegar: un cambio de variables solo aplica a un deployment nuevo; la promoción de Preview → Production (que reconstruye con las variables de Production) las recogerá.
+### 6c.4 Procedimiento de creación controlada (NO EJECUTADO; requiere autorización de producción aparte)
+
+Ejecuta el **operador** (Ayrton) con su identidad humana, sin pegar valores en el chat ni en el repo. Los comandos `gcloud` son la CLI oficial de Google Cloud, **no evidencia del repo**: confirmar con `--help` antes de ejecutarlos; el equivalente en consola es Google Cloud Console → IAM y administración. Nada de esto se ejecutó.
+
+1. Crear la cuenta en el proyecto `vdsen-ecosistema`:
+   `gcloud iam service-accounts create vdsen-vercel-runtime --project=vdsen-ecosistema --display-name="VDSEN Vercel runtime (read-only)"`
+2. Conceder SOLO `roles/datastore.viewer`:
+   `gcloud projects add-iam-policy-binding vdsen-ecosistema --member="serviceAccount:vdsen-vercel-runtime@vdsen-ecosistema.iam.gserviceaccount.com" --role="roles/datastore.viewer"`
+   Comprobar después que la cuenta no tiene ningún otro rol.
+3. Crear UNA clave para esa cuenta, guardada FUERA del repositorio (carpeta no sincronizada ni versionada):
+   `gcloud iam service-accounts keys create <RUTA-FUERA-DEL-REPO>/vdsen-vercel-runtime-key.json --iam-account=vdsen-vercel-runtime@vdsen-ecosistema.iam.gserviceaccount.com`
+   Si la creación de claves está bloqueada por política de organización: DETENERSE y reportar.
+4. Extraer del JSON solo `project_id`, `client_email` y `private_key` (copiar a mano; no imprimirlas en terminal, logs ni capturas).
+5. Colocarlas en Vercel → `vdsen-ecosistema` → Settings → Environment Variables, **Production únicamente**:
+   - `FIREBASE_PROJECT_ID` = `project_id` (debe ser exactamente `vdsen-ecosistema`).
+   - `FIREBASE_CLIENT_EMAIL` = `client_email` (debe ser exactamente `vdsen-vercel-runtime@vdsen-ecosistema.iam.gserviceaccount.com`).
+   - `FIREBASE_PRIVATE_KEY` = `private_key` de la MISMA clave; marcar sensible; **sin las comillas** que rodean el campo en el JSON. El runtime (`api/_firebaseAdmin.js`) hace `privateKey.replace(/\\n/g, '\n')`, así que Vercel puede recibir el PEM con saltos de línea reales o con secuencias `\n` literales.
+6. Verificar la configuración de forma independiente (6c.5). Solo entonces, y solo si Ayrton ya no necesita el JSON para recuperación, eliminar de forma segura el JSON local. Eliminar el archivo local NO revoca la clave: para revocarla hay que borrar esa clave en IAM → Cuentas de servicio → Claves.
+7. Nunca commitear el JSON ni la clave. Nunca imprimirla en terminal, Git, docs, chat ni capturas.
 
 ### 6c.5 Validación posterior a la configuración y ANTES de promover
 
 1. Las tres variables existen con scope Production (y solo Production).
 2. `FIREBASE_PROJECT_ID` = `vdsen-ecosistema` (visible).
-3. El dominio del `FIREBASE_CLIENT_EMAIL` es `@vdsen-ecosistema.iam.gserviceaccount.com` y es la cuenta elegida.
-4. La clave privada es de esa misma cuenta: no verificable en el panel (sensible); se comprueba en el smoke posterior a la promoción (Coach con `apiAccessEnabled` → el API responde bien; token inválido → 401) y, si falla, rollback (6b.2).
-5. Ninguna variable apunta a staging (`vdsen-ecosistema-staging` no aparece en ningún valor).
-6. El SHA de runtime sigue siendo `d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf` (`git diff --name-status d7bb715..HEAD` = solo docs).
-7. El Preview `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` sigue `READY`.
-8. *Promote to Production* sigue disponible (sin pulsarlo).
-9. `NUMERIC_APPLY_ENABLED` sigue en `false`.
+3. `FIREBASE_CLIENT_EMAIL` = `vdsen-vercel-runtime@vdsen-ecosistema.iam.gserviceaccount.com` (visible).
+4. La cuenta tiene solo `roles/datastore.viewer` (IAM → Principales).
+5. La clave privada es de esa misma cuenta: no verificable en el panel (sensible); se comprueba en el smoke posterior a la promoción (Coach con `apiAccessEnabled` → el API responde bien; token inválido → 401) y, si falla, rollback (6b.2).
+6. Ninguna variable apunta a staging (`vdsen-ecosistema-staging` no aparece en ningún valor).
+7. El SHA de runtime sigue siendo `d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf` (`git diff --name-status d7bb715..HEAD` = solo docs).
+8. El Preview `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` sigue `READY`.
+9. *Promote to Production* sigue disponible (sin pulsarlo).
+10. `NUMERIC_APPLY_ENABLED` sigue en `false`.
+
+**Estado:** SERVICE_ACCOUNT_IDENTITY = DECIDED · RUNTIME IAM = `roles/datastore.viewer` · **PRODUCTION_FIREBASE_ENV = NOT_READY** y **APP_DEPLOY_MECHANISM = GAP**, porque la cuenta de servicio y las variables de Vercel aún no se han creado/configurado.
+
+### 6c.6 Comprobación de credenciales en el repo (2026-10-03)
+
+Inspección segura por nombre de archivo y patrón, sin imprimir contenido: sin JSON de cuenta de servicio, sin cuerpo PEM, sin campos `private_key`/`private_key_id` de JSON, ninguna asignación real de `FIREBASE_PRIVATE_KEY` (solo valores ficticios de 4 caracteres en tests); las dos coincidencias de la cabecera PEM son una línea de test de 80 caracteres sin cuerpo y este documento. Historial: sin archivos de clave añadidos (solo `.env.example`). **CREDENTIAL LEAK CHECK = CLEAN.** Nota (no bloqueante): `vdsen-push.js` referencia una ruta local de Windows a un JSON de operador (solo el nombre del archivo; no hay secreto en el repo).
 
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
