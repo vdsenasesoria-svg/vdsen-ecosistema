@@ -8,7 +8,9 @@ Autoridad de la secuencia: `docs/FIRESTORE_DEPLOYMENT_RUNBOOK.md` (no se inventa
 | Campo | Valor |
 |---|---|
 | Rama | `codex/client-app-next` |
-| Último commit de código de runtime (SHA completo) | `cf9eaa9c96a5c9313806234971dc9e4be8b67c72` |
+| RELEASE_RUNTIME_SHA (el que tiene deployment Preview) | `d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf` — Preview `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` (`codex/client-app-next`) |
+| RELEASE_PACKAGE_SHA | HEAD de `codex/client-app-next` con este documento. `git diff --name-status d7bb715..d19bfe4` = solo `M docs/CLIENT_PRODUCTION_RELEASE_PACKAGE.md` → equivalencia de runtime PROBADA entre ambos. **Los SHA posteriores a `d7bb715` (solo docs) NO tienen deployment Preview propio ni se desplegaron.** Cada edición posterior solo de docs mantiene la equivalencia; verificarlo con `git diff --name-status d7bb715..HEAD` antes del GO. |
+| Último commit de código de runtime previo | `cf9eaa9c96a5c9313806234971dc9e4be8b67c72` |
 | Commits posteriores | solo este paquete + `tests/t558-self-coach-topology.cjs` (+ su alta en la lista del runner de emulador). **Cero cambios de código de runtime** desde `cf9eaa9`. |
 | `main` (referencia, intacta) | `f6596ba5207dc158b8a9b01483cd0fe0ebeb274c` (ancestro del release: el release es fast-forward de `main`) |
 | Alcance | App Client (`vdsen-cliente.html`) + reglas/índices/API/SW requeridos por el runbook |
@@ -103,6 +105,22 @@ Resultado: **APP_DEPLOY_MECHANISM = GAP.** Evidencia (solo lectura, 2026-10-03):
 
 **Decisión mínima que Ayrton debe tomar (no se toma en su nombre):** (1) una excepción explícita y por escrito que permita mutar `main` con el SHA aprobado (fast-forward, sin force), o (2) autorizar establecer y verificar un mecanismo sin `main` (promoción del Preview del SHA aprobado), que exige antes comprobar en el panel el ámbito de las variables `FIREBASE_*`/`OPENAI_*` y que el rollback a `dpl_3RKY7…` está disponible. Mientras tanto, el paso 4 sigue sin comando.
 
+### 6b.1 Verificación de la ruta de promoción (solo lectura, 2026-10-03; nada se promovió ni desplegó)
+
+| Pregunta | Resultado |
+|---|---|
+| Identidad del Preview `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` | `READY`, `target=null` (Preview), proyecto `vdsen-ecosistema` (`prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN`), equipo `team_VZc5H7Q1DBIJ3g0mwrSBz1o8`, `source=git`, ref `codex/client-app-next`, SHA `d7bb715…`; no sustituido por ningún commit de runtime (solo docs después). |
+| Firebase del lado cliente del Preview | PRODUCCIÓN: el HTML canónico en `d7bb715` lleva `projectId: "vdsen-ecosistema"` (el swap a staging solo existe en `preview/staging-client`). |
+| Variables de entorno requeridas (nombres referenciados por `api/`) | `OPENAI_API_KEY`, `OPENAI_MODEL` (ya usadas por producción en `main`) y **nuevas** `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (`api/_firebaseAdmin.js`; `main` no las referencia: probablemente no existen hoy en Production). |
+| Disponibilidad Preview / Production de esas variables | **NOT_VERIFIED** (el conector recibió 403 al listar variables). Firebase del lado servidor del Preview: **UNKNOWN** (un Preview usa las variables de ámbito Preview; podrían faltar o apuntar a staging). Mientras no se pruebe: `PREVIEW ENV COMPATIBILITY = NOT_VERIFIED`; si resultaran apuntar a staging → `PROMOTION_PATH = UNSAFE`. |
+| `Production Branch` (Settings → Git) | **NOT_VERIFIED** (el conector no la expone). Evidencia indirecta: todos los deployments Production recientes son Git con ref `main`. |
+| Permiso de promoción / destino / rebuild | `PROMOTION_PERMISSION = NOT_VERIFIED` (no se puede probar sin ejecutar; el conector ya mostró 403 en variables y en *rollback*). Destino = target Production del proyecto: NOT_VERIFIED. Rebuild: según la documentación de Vercel la promoción no reconstruye (NO), no comprobado en este proyecto. |
+| Procedencia del código | PROBADA para el artefacto: el deployment es inmutable y sus metadatos fijan `githubCommitSha = d7bb715…`. Tras una promoción habría que releer el deployment Production y comprobar el mismo `githubCommitSha`. |
+| Orden de despliegue | GAP mientras el entorno no esté probado. Si se resuelve: ningún push a `main` ocurre (la integración Git solo crea Previews para otras ramas), así que la promoción sería el único cambio de app; índices antes, reglas después. |
+| Rollback | Objetivo `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn`: `READY`, `source=git`, SHA `f6596ba…`, con los alias de producción, y marcado `isRollbackCandidate=true` en la lista anterior (el listado de candidatos hoy devuelve 403 al conector). Mecanismo según la documentación de Vercel (NO evidencia del repo, NO ejecutar sin GO): `vercel rollback dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn` (o promover de vuelta ese deployment desde el panel). La CLI no está instalada aquí. Si la app vuelve a `f6596ba`, revertir TAMBIÉN las reglas (la app antigua no funciona con las reglas nuevas). |
+
+**Clasificación: APP_DEPLOY_MECHANISM = GAP** (entorno Preview no verificado, *Production Branch* no leída, permiso de promoción sin probar). **PROMOTION_PATH = GAP** (no se probó inseguro; tampoco seguro).
+
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
 | # | Verificación | Resultado esperado |
@@ -152,7 +170,7 @@ GO solo si **todas** son verdaderas; cualquier falsa = NO-GO.
 
 - [ ] HEAD = SHA aprobado por Ayrton; árbol limpio; `main` intacto hasta que Ayrton autorice por escrito el mecanismo de app.
 - [ ] **APP_DEPLOY_MECHANISM probado y autorizado por Ayrton (hoy: GAP → NO-GO).**
-- [x] `PRODUCTION_BASELINE_COMMIT` probado: `f6596ba` (releer justo antes del GO).
+- [x] `PRODUCTION_BASELINE_COMMIT` = `f6596ba` — **RESOLVED_FROM_VERCEL_METADATA** (deployment `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn`; no se resolvió desde el repo). Releer justo antes del GO.
 - [ ] `--project vdsen-ecosistema` explícito; identidad del proyecto Vercel `prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN` PROBADA por metadatos (Production = deployments de Git con ref `main`); pendiente solo confirmar en el panel Settings → Git la *Production Branch* y el ámbito de las variables de entorno (listado 403 para el conector).
 - [ ] Suite unitaria y de emulador en verde sobre el SHA; `git diff --check` limpio.
 - [ ] `NUMERIC_APPLY_ENABLED=false` y 0 registros `APPLIED`.
