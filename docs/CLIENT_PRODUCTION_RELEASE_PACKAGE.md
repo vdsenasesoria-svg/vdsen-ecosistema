@@ -246,6 +246,13 @@ Inspección segura por nombre de archivo y patrón, sin imprimir contenido: sin 
 - Producción HTTP: `/cliente` y `/coach` responden 200 (baseline `dpl_3RKY7…`).
 - Cada push a la rama genera Previews nuevos de commits solo-docs; el candidato a promover sigue siendo `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` (SHA `d7bb715`), no los posteriores.
 
+## 6f. Acceso a Google Cloud desde la sesión de Claude (2026-10-03)
+
+- **GCP TOOLING = READY (local):** Google Cloud CLI 587.0.0 instalado desde `dl.google.com` en un directorio temporal de la sesión (no toca producción ni el repo).
+- **GCP AUTH = BLOCKED.** El token `CLOUDSDK_AUTH_ACCESS_TOKEN` del entorno está rechazado por Google (`invalid_token`/`401`); no se usó ni se intentó repararlo. El contenedor es sin interfaz gráfica: un inicio de sesión de navegador de Google no puede completarse sin que se pegue un código de verificación en el chat, lo que no se solicita.
+- **Canal seguro soportado:** guardar la credencial como secreto/variable en la configuración del entorno cloud de la sesión (menú del entorno en la barra de título → Edit → API credentials o variable de entorno), nunca en el chat; una sesión nueva la recoge. Para el token de acceso de operador, de vida corta (~1 h), generarlo en la máquina de Ayrton justo antes de la ventana de mutación. Estado de la ventana: ver 6d (`READY_FOR_MUTATION_WINDOW = NO`).
+- Recheck de Vercel (solo lectura): el deployment de producción más reciente sigue siendo `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn` (`f6596ba…`, `READY`, candidato a rollback). El recheck del Preview candidato por SHA lo denegó la capa de permisos de la plataforma y no se reintentó por otra vía; su estado es el de la verificación anterior (6d).
+
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
 | # | Verificación | Resultado esperado |
