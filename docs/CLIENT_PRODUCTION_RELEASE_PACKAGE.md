@@ -231,6 +231,21 @@ Inspección segura por nombre de archivo y patrón, sin imprimir contenido: sin 
 
 **READY_FOR_MUTATION_WINDOW = NO** hasta cerrar los gates de la tabla.
 
+## 6e. Capacidades de esta sesión y delta de reglas/índices derivado del repo (2026-10-03)
+
+| Capacidad | Estado |
+|---|---|
+| REPO / GITHUB | AVAILABLE |
+| VERCEL READ (conector) | AVAILABLE (deployments, proyecto, equipo). Escritura NO probada: no hay forma no destructiva de comprobarla; el listado de variables devolvió 403 |
+| GCP READ / GCP WRITE / FIRESTORE READ / FIREBASE DEPLOY | **UNAVAILABLE**: no hay `gcloud`/`firebase`/`vercel` CLI; existe un token de acceso en el entorno pero Google lo rechaza (`401 UNAUTHENTICATED`, `invalid_token`). No se intentó ninguna otra vía |
+| BROWSER | no probado |
+
+**Delta de reglas e índices (repo; idéntico en `d7bb715` y en HEAD):**
+- Reglas: `firestore.rules` difiere de `main` en 120 inserciones / 37 borrados (endurecimiento). Las reglas VIGENTES de producción no se pudieron leer: `CURRENT_RULES_BASELINE = GAP`; se asume el texto de `main` (`f6596ba`) solo como pista, no como prueba.
+- Índice requerido: `plans_backup` (COLLECTION) = `coachId ASC, clientId ASC, backedUpAt DESC`. En `main` existía `clientId ASC, backedUpAt DESC`. El único índice del archivo es ese; el índice anterior no se elimina (los índices solo se añaden). Estado en producción: `GAP`.
+- Producción HTTP: `/cliente` y `/coach` responden 200 (baseline `dpl_3RKY7…`).
+- Cada push a la rama genera Previews nuevos de commits solo-docs; el candidato a promover sigue siendo `dpl_Eucadoaj3buvedSnDNxoeLaxtf3B` (SHA `d7bb715`), no los posteriores.
+
 ## 7. Verificación posterior (smoke; cuentas de prueba, sin datos personales reales)
 
 | # | Verificación | Resultado esperado |
