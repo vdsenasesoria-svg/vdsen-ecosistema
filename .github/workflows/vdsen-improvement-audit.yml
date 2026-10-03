@@ -1,0 +1,41 @@
+name: VDSEN improvement audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/codex/client-app-next'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Repository tests
+        id: tests
+        continue-on-error: true
+        run: node --test tests/*.test.js > audit-tests.txt 2>&1
+      - name: TODO and failed CI proposals (read only)
+        run: |
+          mkdir -p audit-output
+          git grep -n -E 'TODO|FIXME' -- ':!package-lock.json' > audit-output/todo.txt || test "$?" = 1
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=failure&per_page=20" --jq '[.workflow_runs[] | {id,head_sha,name,html_url}]' > audit-output/failed-ci.json
+          mv audit-tests.txt audit-output/
+          printf '%s\n' 'A0 audit only. Review findings, then prepare an A1/A2 branch or PR. No production deployment or automatic merge.' > audit-output/proposal.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: improvement-audit-${{ github.run_id }}
+          path: audit-output
+          if-no-files-found: error
+      - name: Propagate test failure
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
