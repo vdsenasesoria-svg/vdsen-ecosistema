@@ -18,7 +18,7 @@ concurrency:
 jobs:
   rollback:
     if: github.ref == 'refs/heads/codex/client-app-next'
-    environment: production
+    environment: Production
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -26,8 +26,13 @@ jobs:
       actions: read
       id-token: write
     env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_RELEASE_SERVICE_ACCOUNT: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       PRODUCTION_RELEASE_ENABLED: ${{ vars.PRODUCTION_RELEASE_ENABLED }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_RELEASE_TOKEN }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       RELEASE_RUN_ID: ${{ inputs.release_run_id }}
       ROLLBACK_DEPLOYMENT: ${{ inputs.rollback_deployment }}
       GH_TOKEN: ${{ github.token }}
@@ -53,8 +58,9 @@ jobs:
       - id: google
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
-          workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.RELEASE_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
           token_format: access_token
           create_credentials_file: false
           access_token_scopes: https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/firebase

@@ -16,7 +16,8 @@
     "required_index",
     "release_status",
     "preconditions",
-    "observation_source"
+    "observation_source",
+    "release_mode"
   ],
   "properties": {
     "runtime_sha": {
@@ -65,7 +66,7 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "order": {
-          "const": "app_then_rules"
+          "const": "verify_current_app_then_rules"
         },
         "rollback_order": {
           "const": "rules_then_app"
@@ -144,6 +145,9 @@
     },
     "observation_source": {
       "type": "string"
+    },
+    "release_mode": {
+      "const": "rules_only"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

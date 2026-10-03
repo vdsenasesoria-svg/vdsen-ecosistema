@@ -33,7 +33,7 @@ test('deployment provenance binds project, SHA, repository and ref', () => {
   }
 });
 test('secret patterns reject private material without exposing it, allow public config and PEM documentation', () => {
-  noSecrets('AIza-public-web-key; -----BEGIN PRIVATE KEY-----…-----END PRIVATE KEY-----', 'documentation');
+  noSecrets('AIza-public-web-key; -----BEGIN PRIVATE KEY-----â€¦-----END PRIVATE KEY-----', 'documentation');
   for (const text of ['gh' + 'p_' + 'x'.repeat(36), 's' + 'k-proj-' + 'x'.repeat(40), '-----BEGIN PRIVATE KEY-----\n' + 'A'.repeat(40)]) {
     assert.throws(() => noSecrets(text, 'fixture'), /value withheld/);
   }
@@ -69,8 +69,9 @@ test('recovery never calls Vercel if restored rules verification fails', async (
   const before = global.fetch, token = process.env.GOOGLE_ACCESS_TOKEN;
   const requests = [];
   process.env.GOOGLE_ACCESS_TOKEN = 'test-only';
-  const source = { files: [{ name: 'firestore.rules', content: 'old-source' }] };
-  const snapshot = { state, old_rules: { source, sha256: hash('old-source') } };
+  const oldContent = git('show', state.rollback_runtime_sha + ':firestore.rules');
+  const source = { files: [{ name: 'firestore.rules', content: oldContent }] };
+  const snapshot = { state, old_rules: { source, sha256: hash(oldContent) } };
   try {
     global.fetch = async (url, options) => {
       requests.push([url, options.method]);
@@ -104,8 +105,9 @@ test('successful recovery verifies restored rules before switching app and compa
   const before = global.fetch, tokens = { GOOGLE_ACCESS_TOKEN: process.env.GOOGLE_ACCESS_TOKEN, VERCEL_TOKEN: process.env.VERCEL_TOKEN };
   Object.assign(process.env, { GOOGLE_ACCESS_TOKEN: 'test-only', VERCEL_TOKEN: 'test-only' });
   const requests = []; let switched = false;
-  const source = { files: [{ name: 'firestore.rules', content: 'old-source' }] };
-  const snapshot = { state, old_rules: { source, sha256: hash('old-source') } };
+  const oldContent = git('show', state.rollback_runtime_sha + ':firestore.rules');
+  const source = { files: [{ name: 'firestore.rules', content: oldContent }] };
+  const snapshot = { state, old_rules: { source, sha256: hash(oldContent) } };
   try {
     global.fetch = async (url, options = {}) => {
       requests.push([url, options.method || 'GET']);

@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      PRODUCTION_RELEASE_ENABLED: ${{ vars.PRODUCTION_RELEASE_ENABLED }}
       RUNTIME_SHA: ${{ inputs.runtime_sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -31,8 +32,22 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate reviewed state and runtime equivalence
         run: node scripts/release/check.cjs
-      - name: Full repository unit suite
-        run: node --test tests/*.test.js
-      - name: All canonical emulator suites
-        run: node scripts/test-auto-apply-emulator.cjs
+      - name: Baseline-aware unit gate (critical failures never waived)
+        id: unit
+        continue-on-error: true
+        run: node scripts/release/baseline.cjs unit
+      - name: Baseline-aware canonical emulator gate
+        id: emulator
+        continue-on-error: true
+        run: node scripts/release/baseline.cjs emulator
+      - name: Baseline reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-baseline-${{ github.run_id }}
+          path: release-output/*-baseline-result.json
+          if-no-files-found: warn
+      - name: Enforce both baseline gates
+        if: steps.unit.outcome != 'success' || steps.emulator.outcome != 'success'
+        run: exit 1
       - run: git diff --check

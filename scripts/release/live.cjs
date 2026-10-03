@@ -12,6 +12,24 @@ function workflowGuard() {
   assert.equal(process.env.GITHUB_REF, 'refs/heads/codex/client-app-next');
   assert.equal(process.env.PRODUCTION_RELEASE_ENABLED, 'true', 'Emergency stop is enabled');
 }
+function environmentContract(s) {
+  assert.equal(process.env.GCP_PROJECT_ID, s.firebase_project, 'GCP project mismatch');
+  assert.equal(process.env.VERCEL_PROJECT_ID, s.production_project, 'Vercel project mismatch');
+  assert.equal(process.env.VERCEL_ORG_ID, s.vercel_team, 'Vercel organization mismatch');
+  assert.equal(process.env.GCP_RELEASE_SERVICE_ACCOUNT, 'vdsen-release-bot@vdsen-ecosistema.iam.gserviceaccount.com');
+  assert.match(process.env.GCP_WORKLOAD_IDENTITY_PROVIDER || '', /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[A-Za-z0-9_-]+\/providers\/[A-Za-z0-9_-]+$/);
+}
+function testGates() {
+  for (const category of ['unit', 'emulator']) {
+    const r = json('release-output/' + category + '-baseline-result.json');
+    assert.equal(r.category, category);
+    assert.equal(r.package_sha, git('rev-parse', 'HEAD').trim());
+    assert.equal(r.github_run_id, process.env.GITHUB_RUN_ID);
+    assert.equal(r.gate, 'PASS', category + ' gate failed');
+    assert.equal(r.NEW_REGRESSIONS, 0);
+    assert.deepEqual(r.critical_failure_ids, []);
+  }
+}
 async function api(url, token, method = 'GET', body) {
   assert.ok(token, 'Missing workflow credential');
   const r = await fetch(url, { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000), redirect: 'error' });
@@ -62,8 +80,8 @@ async function awaitApp(s, id) {
   }
   assert.fail('Production alias did not converge');
 }
-async function switchApp(s, id, rollback = false) {
-  await vercel(s, (rollback ? '/v1' : '/v10') + '/projects/' + s.production_project + '/' + (rollback ? 'rollback' : 'promote') + '/' + encodeURIComponent(id), 'POST');
+async function switchApp(s, id) {
+  await vercel(s, '/v1/projects/' + s.production_project + '/rollback/' + encodeURIComponent(id), 'POST');
   await awaitApp(s, id);
 }
 async function restoreRules(s, snapshot) {
@@ -72,6 +90,12 @@ async function restoreRules(s, snapshot) {
   const r = await google('projects/' + s.firebase_project + '/rulesets', 'POST', { source: snapshot.old_rules.source });
   await google(releaseName(s), 'PATCH', { release: { name: releaseName(s), rulesetName: r.name }, updateMask: 'rulesetName' });
   return verifyLiveRules(s, snapshot.old_rules.sha256);
+}
+function rollbackRulesProvenance(snapshot) {
+  assert.equal(snapshot.old_rules.source.files.length, 1);
+  const content = snapshot.old_rules.source.files[0].content;
+  assert.equal(hash(content), snapshot.old_rules.sha256);
+  assert.equal(hash(content), hash(git('show', snapshot.state.rollback_runtime_sha + ':firestore.rules')), 'Captured rules incompatible with pinned rollback runtime source');
 }
 async function smoke(s, runtime) {
   // Public surfaces prove exact served bytes. They cannot prove authenticated reads/writes.
@@ -95,18 +119,21 @@ const mainSha = () => {
 };
 async function prepare() {
   workflowGuard();
+  assert.match(process.env.RUNTIME_SHA || '', /^[0-9a-f]{40}$/, 'Explicit runtime SHA required');
   const s = check();
+  environmentContract(s);
+  testGates();
   assert.equal(s.release_status, 'READY', 'Reviewed release state not READY');
   assert.ok(Object.values(s.preconditions).every(x => x === true), 'Unreviewed production preconditions');
   const r = result(s, 'release');
   try {
     r.index_status = await verifyIndex(s);
-    assert.equal(s.production_deployment, s.rollback_deployment, 'Baseline must be rollback deployment');
     assert.equal(await currentApp(s), s.production_deployment, 'Stale production baseline');
     verifyDeployment(await deployment(s, s.rollback_deployment), s, s.rollback_runtime_sha);
-    verifyDeployment(await deployment(s, s.target_deployment), s, s.runtime_sha, 'codex/client-app-next');
+    verifyDeployment(await deployment(s, s.production_deployment), s, s.runtime_sha, 'codex/client-app-next');
     const old = await liveRules(s);
     const snapshot = { release_id: process.env.GITHUB_RUN_ID, release_reason: process.env.RELEASE_REASON || '', package_sha: git('rev-parse', 'HEAD').trim(), state: s, old_rules: old, main_sha: mainSha(), captured_at: new Date().toISOString() };
+    rollbackRulesProvenance(snapshot);
     save('rollback.json', snapshot);
     r.old_ruleset = old.ruleset; r.previous_deployment = s.production_deployment;
   } catch (e) { r.error = e.message; throw e; }
@@ -114,10 +141,11 @@ async function prepare() {
 }
 async function recover(s, snapshot, r) {
   r.rollback_status = 'FAIL';
+  rollbackRulesProvenance(snapshot);
   const restored = await restoreRules(s, snapshot);
   r.new_ruleset = restored.ruleset;
   // Only after rule verification can the old app be restored.
-  if (await currentApp(s) !== snapshot.state.rollback_deployment) await switchApp(s, snapshot.state.rollback_deployment, true);
+  if (await currentApp(s) !== snapshot.state.rollback_deployment) await switchApp(s, snapshot.state.rollback_deployment);
   verifyDeployment(await deployment(s, snapshot.state.rollback_deployment), s, snapshot.state.rollback_runtime_sha);
   await smoke(s, snapshot.state.rollback_runtime_sha);
   r.production_deployment = snapshot.state.rollback_deployment;
@@ -125,7 +153,10 @@ async function recover(s, snapshot, r) {
 }
 async function apply() {
   workflowGuard();
+  assert.match(process.env.RUNTIME_SHA || '', /^[0-9a-f]{40}$/, 'Explicit runtime SHA required');
   const s = check();
+  environmentContract(s);
+  testGates();
   const snapshot = json('release-output/rollback.json');
   assert.deepEqual(snapshot.state, s);
   assert.equal(snapshot.package_sha, git('rev-parse', 'HEAD').trim());
@@ -137,13 +168,12 @@ async function apply() {
     await verifyIndex(s);
     await verifyLiveRules(s, snapshot.old_rules.sha256);
     assert.equal(await currentApp(s), s.production_deployment);
-    verifyDeployment(await deployment(s, s.target_deployment), s, s.runtime_sha, 'codex/client-app-next');
+    verifyDeployment(await deployment(s, s.production_deployment), s, s.runtime_sha, 'codex/client-app-next');
     assert.equal(mainSha(), snapshot.main_sha, 'main changed during preflight');
-    mayHaveMutated = true; // Set before POST: response failure can follow a committed mutation.
-    await switchApp(s, s.target_deployment);
-    r.production_deployment = s.target_deployment;
+    r.production_deployment = s.production_deployment; // Current approved runtime; never promote an old preview.
     const content = git('show', s.runtime_sha + ':firestore.rules');
     assert.equal(hash(content), s.rules_transition.target_sha256);
+    mayHaveMutated = true; // Set before POST: response failure can follow a committed mutation.
     const target = await google('projects/' + s.firebase_project + '/rulesets', 'POST', { source: { files: [{ name: 'firestore.rules', content }] } });
     r.new_ruleset = target.name;
     await google(releaseName(s), 'PATCH', { release: { name: releaseName(s), rulesetName: target.name }, updateMask: 'rulesetName' });
@@ -168,6 +198,7 @@ async function apply() {
 async function rollback() {
   workflowGuard();
   const s = state();
+  environmentContract(s);
   const snapshot = json('release-output/rollback.json');
   const r = result(s, 'rollback');
   const beforeMain = mainSha();
@@ -186,8 +217,7 @@ async function rollback() {
     assert.equal(snapshot.state.vercel_team, s.vercel_team);
     assert.equal(snapshot.state.production_origin, s.production_origin);
     assert.equal(process.env.ROLLBACK_DEPLOYMENT, snapshot.state.rollback_deployment);
-    assert.equal(snapshot.old_rules.source.files.length, 1);
-    assert.equal(hash(snapshot.old_rules.source.files[0].content), snapshot.old_rules.sha256);
+    rollbackRulesProvenance(snapshot);
     const live = await liveRules(s);
     assert.ok([snapshot.old_rules.sha256, snapshot.state.rules_transition.target_sha256].includes(live.sha256), 'Superseding rules; refuse stale rollback');
     assert.ok([snapshot.state.target_deployment, snapshot.state.rollback_deployment].includes(await currentApp(s)), 'Superseding app; refuse stale rollback');
@@ -220,4 +250,4 @@ if (require.main === module) {
   if (!command) { console.error('Expected prepare, apply or rollback'); process.exitCode = 1; }
   else Promise.resolve().then(command).catch(e => { console.error(e.message); process.exitCode = 1; });
 }
-module.exports = { api, liveRules, verifyIndex, verifyLiveRules, switchApp, restoreRules, smoke, recover, prepare, apply, rollback, workflowGuard };
+module.exports = { api, liveRules, verifyIndex, verifyLiveRules, switchApp, restoreRules, smoke, recover, prepare, apply, rollback, workflowGuard, environmentContract, testGates, rollbackRulesProvenance };

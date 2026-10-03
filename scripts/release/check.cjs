@@ -2,8 +2,28 @@
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const { hash, json, git, validate, noSecrets } = require('./lib.cjs');
+const { validateBaseline } = require('./baseline.cjs');
+function workflowContract() {
+  for (const name of ['vdsen-release-prod', 'vdsen-rollback']) {
+    const source = fs.readFileSync('.github/workflows/' + name + '.yml', 'utf8');
+    assert.ok(source.includes('environment: Production'), 'Canonical Environment required');
+    assert.ok(!source.includes('environment: production'), 'Duplicate lowercase Environment forbidden');
+    for (const variable of ['GCP_PROJECT_ID', 'GCP_WORKLOAD_IDENTITY_PROVIDER', 'GCP_RELEASE_SERVICE_ACCOUNT', 'VERCEL_PROJECT_ID', 'VERCEL_ORG_ID', 'PRODUCTION_RELEASE_ENABLED']) assert.ok(source.includes('vars.' + variable), 'Missing canonical variable: ' + variable);
+    assert.ok(source.includes('secrets.VERCEL_TOKEN'));
+    assert.ok(source.includes('test "$PRODUCTION_RELEASE_ENABLED" = true'));
+    const allowed = new Set(['GCP_PROJECT_ID', 'GCP_WORKLOAD_IDENTITY_PROVIDER', 'GCP_RELEASE_SERVICE_ACCOUNT', 'VERCEL_PROJECT_ID', 'VERCEL_ORG_ID', 'PRODUCTION_RELEASE_ENABLED']);
+    for (const match of source.matchAll(/vars\.([A-Z_]+)/g)) assert.ok(allowed.has(match[1]), 'Noncanonical variable');
+    for (const match of source.matchAll(/secrets\.([A-Z_]+)/g)) assert.equal(match[1], 'VERCEL_TOKEN');
+    assert.ok(!source.includes('credentials_json:'));
+  }
+  const source = fs.readFileSync('.github/workflows/vdsen-release-check.yml', 'utf8');
+  assert.ok(!/secrets\.|id-token: write|environment:|live\.cjs|google-github-actions\/auth/.test(source), 'Repo check must not need live credentials');
+  console.log('PRODUCTION_KILL_SWITCH=' + (process.env.PRODUCTION_RELEASE_ENABLED === 'true' ? 'true (repo checks only)' : 'false (disabled or unavailable; default false)'));
+}
 function check(runtime = process.env.RUNTIME_SHA) {
   const state = validate(json('.release/vdsen-client.json'), json('.release/schema/release-state.schema.json'));
+  validateBaseline(json('.release/known-baseline-failures.json'));
+  workflowContract();
   runtime ||= state.runtime_sha;
   assert.match(runtime, /^[0-9a-f]{40}$/);
   assert.equal(runtime, state.runtime_sha, 'Runtime must be the reviewed state SHA');
@@ -34,4 +54,4 @@ function check(runtime = process.env.RUNTIME_SHA) {
   return state;
 }
 if (require.main === module) { try { check(); } catch (e) { console.error(e.message); process.exitCode = 1; } }
-module.exports = { check };
+module.exports = { check, workflowContract };

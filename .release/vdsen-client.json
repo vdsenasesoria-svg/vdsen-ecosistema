@@ -1,9 +1,9 @@
 {
   "runtime_sha": "d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf",
-  "production_deployment": "dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn",
+  "production_deployment": "dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB",
   "rollback_deployment": "dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn",
   "rollback_runtime_sha": "f6596ba5207dc158b8a9b01483cd0fe0ebeb274c",
-  "target_deployment": "dpl_Eucadoaj3buvedSnDNxoeLaxtf3B",
+  "target_deployment": "dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB",
   "production_project": "prj_ZHTPi2U4f8cgpL9YpAi86bVX3FRN",
   "vercel_team": "team_VZc5H7Q1DBIJ3g0mwrSBz1o8",
   "production_origin": "https://vdsen-ecosistema.vercel.app",
@@ -11,7 +11,7 @@
   "numeric_apply_enabled": false,
   "rules_transition": {
     "target_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
-    "order": "app_then_rules",
+    "order": "verify_current_app_then_rules",
     "rollback_order": "rules_then_app"
   },
   "required_index": {
@@ -39,5 +39,6 @@
     "preview_production_env_verified": false,
     "human_ux_approved": false
   },
-  "observation_source": "docs/CLIENT_PRODUCTION_RELEASE_PACKAGE.md; historical observation 2026-10-03; always revalidate live"
+  "observation_source": "User authoritative reconciliation 2026-10-03; production and rollback deployment IDs differ; always revalidate live",
+  "release_mode": "rules_only"
 }
