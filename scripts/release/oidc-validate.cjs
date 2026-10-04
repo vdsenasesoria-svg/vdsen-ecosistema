@@ -11,11 +11,28 @@ function base(s) {
     gcp_project: s.firebase_project, release_service_account: 'vdsen-release-bot@vdsen-ecosistema.iam.gserviceaccount.com',
     configuration: 'GAP', oidc_auth: 'GAP', project_metadata_read: 'GAP', firestore_index_metadata_read: 'GAP',
     firebase_rules_metadata_read: 'GAP', vercel_project_read: 'GAP', production_release_enabled: process.env.PRODUCTION_RELEASE_ENABLED === 'true',
+    project_metadata_endpoint: 'GCP_PROJECT_METADATA', project_metadata_http_status: null, project_metadata_error: 'NONE',
+    firestore_index_metadata_endpoint: 'FIRESTORE_INDEX_METADATA', firestore_index_metadata_http_status: null, firestore_index_metadata_error: 'NONE',
+    firebase_rules_metadata_endpoint: 'FIREBASE_RULES_RELEASE_METADATA', firebase_rules_metadata_http_status: null, firebase_rules_metadata_error: 'NONE',
+    vercel_project_endpoint: 'VERCEL_PROJECT_METADATA', vercel_project_http_status: null, vercel_project_error: 'NONE',
     kill_switch_configuration: process.env.PRODUCTION_RELEASE_ENABLED === 'false' ? 'EXPECTED_FALSE' : process.env.PRODUCTION_RELEASE_ENABLED === 'true' ? 'TRUE' : process.env.PRODUCTION_RELEASE_ENABLED === undefined || process.env.PRODUCTION_RELEASE_ENABLED === '' ? 'UNSET' : 'INVALID',
     mutations_performed: false, least_privilege_verification: 'GAP',
     least_privilege_note: 'Metadata success does not prove absence of IAM/key/client-data permissions; no destructive probes or client-data reads performed',
     validation_status: 'FAIL', error: null, timestamp: new Date().toISOString()
   };
+}
+class MetadataError extends Error {
+  constructor(endpoint, httpStatus, category) {
+    super(category);
+    this.endpoint = endpoint;
+    this.httpStatus = httpStatus;
+    this.category = category;
+  }
+}
+function httpCategory(status) {
+  if ([401, 403, 404, 422].includes(status)) return 'HTTP_' + status;
+  if (status >= 500) return 'HTTP_5XX';
+  return 'NETWORK_ERROR';
 }
 function save(r) {
   validate(r, json('.release/schema/oidc-validation.schema.json'));
@@ -36,11 +53,21 @@ function init() {
   save(r);
   return r.configuration === 'PASS' ? 0 : 1;
 }
-async function get(url, token) {
-  assert.ok(token, 'Missing workflow credential');
-  const response = await fetch(url, { method: 'GET', headers: { Authorization: 'Bearer ' + token }, redirect: 'error', signal: AbortSignal.timeout(30000) });
-  assert.ok(response.ok, 'Metadata request denied');
-  return response.json(); // No response content or credentials are logged or persisted.
+async function get(endpoint, url, token) {
+  if (!token) throw new MetadataError(endpoint, null, 'HTTP_401');
+  let response;
+  try {
+    response = await fetch(url, { method: 'GET', headers: { Authorization: 'Bearer ' + token }, redirect: 'error', signal: AbortSignal.timeout(30000) });
+  } catch (error) {
+    throw new MetadataError(endpoint, null, error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK_ERROR');
+  }
+  if (!response.ok) throw new MetadataError(endpoint, response.status, httpCategory(response.status));
+  return { data: await response.json(), status: response.status }; // Failed bodies and credentials are never read, logged or persisted.
+}
+function diagnose(r, prefix, endpoint, httpStatus, error) {
+  r[prefix + '_endpoint'] = endpoint;
+  r[prefix + '_http_status'] = httpStatus;
+  r[prefix + '_error'] = error;
 }
 async function probe(s, r) {
   configuration(s);
@@ -48,30 +75,36 @@ async function probe(s, r) {
   assert.ok(process.env.GOOGLE_ACCESS_TOKEN);
   r.configuration = 'PASS'; r.oidc_auth = 'PASS';
   const attempts = [
-    ['project_metadata_read', async () => {
-      const project = await get('https://cloudresourcemanager.googleapis.com/v1/projects/' + s.firebase_project + '?fields=projectId', process.env.GOOGLE_ACCESS_TOKEN);
-      assert.equal(project.projectId, s.firebase_project);
+    ['project_metadata_read', 'project_metadata', async () => {
+      const result = await get('GCP_PROJECT_METADATA', 'https://cloudresourcemanager.googleapis.com/v1/projects/' + s.firebase_project + '?fields=projectId', process.env.GOOGLE_ACCESS_TOKEN);
+      if (result.data.projectId !== s.firebase_project) throw new MetadataError('GCP_PROJECT_METADATA', result.status, 'ASSERTION_MISMATCH');
+      return { endpoint: 'GCP_PROJECT_METADATA', status: result.status };
     }],
-    ['firestore_index_metadata_read', async () => {
-      const indexes = await get('https://firestore.googleapis.com/v1/projects/' + s.firebase_project + '/databases/(default)/collectionGroups/' + s.required_index.collectionGroup + '/indexes?pageSize=1', process.env.GOOGLE_ACCESS_TOKEN);
-      assert.ok(indexes.indexes === undefined || Array.isArray(indexes.indexes));
+    ['firestore_index_metadata_read', 'firestore_index_metadata', async () => {
+      const result = await get('FIRESTORE_INDEX_METADATA', 'https://firestore.googleapis.com/v1/projects/' + s.firebase_project + '/databases/(default)/collectionGroups/' + s.required_index.collectionGroup + '/indexes?pageSize=1', process.env.GOOGLE_ACCESS_TOKEN);
+      if (!(result.data.indexes === undefined || Array.isArray(result.data.indexes))) throw new MetadataError('FIRESTORE_INDEX_METADATA', result.status, 'ASSERTION_MISMATCH');
+      return { endpoint: 'FIRESTORE_INDEX_METADATA', status: result.status };
     }],
-    ['firebase_rules_metadata_read', async () => {
-      const release = await get('https://firebaserules.googleapis.com/v1/projects/' + s.firebase_project + '/releases/cloud.firestore?fields=name,rulesetName', process.env.GOOGLE_ACCESS_TOKEN);
-      assert.equal(typeof release.rulesetName, 'string');
-      assert.ok(new RegExp('^projects/' + s.firebase_project + '/rulesets/[A-Za-z0-9_-]+$').test(release.rulesetName));
-      const ruleset = await get('https://firebaserules.googleapis.com/v1/' + release.rulesetName + '?fields=name,metadata', process.env.GOOGLE_ACCESS_TOKEN);
-      assert.equal(ruleset.name, release.rulesetName);
+    ['firebase_rules_metadata_read', 'firebase_rules_metadata', async () => {
+      const release = await get('FIREBASE_RULES_RELEASE_METADATA', 'https://firebaserules.googleapis.com/v1/projects/' + s.firebase_project + '/releases/cloud.firestore?fields=name,rulesetName', process.env.GOOGLE_ACCESS_TOKEN);
+      if (typeof release.data.rulesetName !== 'string' || !new RegExp('^projects/' + s.firebase_project + '/rulesets/[A-Za-z0-9_-]+$').test(release.data.rulesetName)) throw new MetadataError('FIREBASE_RULES_RELEASE_METADATA', release.status, 'ASSERTION_MISMATCH');
+      const ruleset = await get('FIREBASE_RULESET_METADATA', 'https://firebaserules.googleapis.com/v1/' + release.data.rulesetName + '?fields=name,metadata', process.env.GOOGLE_ACCESS_TOKEN);
+      if (ruleset.data.name !== release.data.rulesetName) throw new MetadataError('FIREBASE_RULESET_METADATA', ruleset.status, 'ASSERTION_MISMATCH');
+      return { endpoint: 'FIREBASE_RULESET_METADATA', status: ruleset.status };
     }],
-    ['vercel_project_read', async () => {
-      const project = await get('https://api.vercel.com/v9/projects/' + s.production_project + '?teamId=' + encodeURIComponent(s.vercel_team), process.env.VERCEL_TOKEN);
-      assert.equal(project.id, s.production_project);
-      assert.equal(project.accountId, s.vercel_team);
+    ['vercel_project_read', 'vercel_project', async () => {
+      const result = await get('VERCEL_PROJECT_METADATA', 'https://api.vercel.com/v9/projects/' + s.production_project + '?teamId=' + encodeURIComponent(s.vercel_team), process.env.VERCEL_TOKEN);
+      if (result.data.id !== s.production_project || result.data.accountId !== s.vercel_team) throw new MetadataError('VERCEL_PROJECT_METADATA', result.status, 'ASSERTION_MISMATCH');
+      return { endpoint: 'VERCEL_PROJECT_METADATA', status: result.status };
     }]
   ];
-  await Promise.all(attempts.map(async ([key, run]) => {
-    try { await run(); r[key] = 'PASS'; }
-    catch { r[key] = 'FAIL'; }
+  await Promise.all(attempts.map(async ([key, prefix, run]) => {
+    try {
+      const result = await run(); r[key] = 'PASS'; diagnose(r, prefix, result.endpoint, result.status, 'NONE');
+    } catch (error) {
+      r[key] = 'FAIL';
+      diagnose(r, prefix, error instanceof MetadataError ? error.endpoint : r[prefix + '_endpoint'], error instanceof MetadataError ? error.httpStatus : null, error instanceof MetadataError ? error.category : 'NETWORK_ERROR');
+    }
   }));
   r.validation_status = attempts.every(([key]) => r[key] === 'PASS') ? 'PASS' : 'FAIL';
   if (r.validation_status === 'FAIL') r.error = 'METADATA_CAPABILITY_VALIDATION_FAILED';

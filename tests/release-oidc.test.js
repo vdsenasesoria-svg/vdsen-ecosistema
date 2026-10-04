@@ -51,6 +51,13 @@ test('read-only metadata validation passes with kill switch false and sends only
     assert.equal(r.validation_status, 'PASS'); assert.equal(r.production_release_enabled, false);
     assert.equal(r.kill_switch_configuration, 'EXPECTED_FALSE'); assert.equal(r.mutations_performed, false);
     assert.equal(r.least_privilege_verification, 'GAP');
+    for (const prefix of ['project_metadata', 'firestore_index_metadata', 'firebase_rules_metadata', 'vercel_project']) {
+      assert.equal(r[prefix + '_http_status'], 200); assert.equal(r[prefix + '_error'], 'NONE');
+    }
+    assert.equal(r.project_metadata_endpoint, 'GCP_PROJECT_METADATA');
+    assert.equal(r.firestore_index_metadata_endpoint, 'FIRESTORE_INDEX_METADATA');
+    assert.equal(r.firebase_rules_metadata_endpoint, 'FIREBASE_RULESET_METADATA');
+    assert.equal(r.vercel_project_endpoint, 'VERCEL_PROJECT_METADATA');
     assert.equal(calls.length, 5); assert.ok(calls.every(([, o]) => o.method === 'GET' && o.body === undefined));
     assert.ok(calls.every(([u]) => !/\/documents\/|\/keys|iam\.googleapis/.test(u)));
     assert.ok(!JSON.stringify(r).includes('google-test-only') && !JSON.stringify(r).includes('vercel-test-only'));
@@ -71,15 +78,54 @@ test('denied Google/index/Rules/Vercel reads fail closed without persisting deni
   const before = { ...process.env }, original = global.fetch;
   try {
     Object.assign(process.env, fixture());
-    for (const part of ['cloudresourcemanager', 'firestore.googleapis.com', '/releases/', '/rulesets/', 'api.vercel.com']) {
+    const failures = [
+      ['cloudresourcemanager', 'project_metadata', 'GCP_PROJECT_METADATA'],
+      ['firestore.googleapis.com', 'firestore_index_metadata', 'FIRESTORE_INDEX_METADATA'],
+      ['/releases/', 'firebase_rules_metadata', 'FIREBASE_RULES_RELEASE_METADATA'],
+      ['/rulesets/', 'firebase_rules_metadata', 'FIREBASE_RULESET_METADATA'],
+      ['api.vercel.com', 'vercel_project', 'VERCEL_PROJECT_METADATA']
+    ];
+    for (const [part, prefix, endpoint] of failures) {
       global.fetch = async url => url.includes(part) ? new Response('private-response-test-only', { status: 403 }) : new Response(JSON.stringify(response(url)));
       const r = await probe(state, base(state));
       assert.equal(r.validation_status, 'FAIL'); assert.equal(r.mutations_performed, false);
+      assert.equal(r[prefix + '_http_status'], 403); assert.equal(r[prefix + '_error'], 'HTTP_403'); assert.equal(r[prefix + '_endpoint'], endpoint);
       assert.ok(!JSON.stringify(r).includes('private-response-test-only'));
     }
     global.fetch = async url => new Response(JSON.stringify(url.includes('api.vercel.com') ? { id: 'other', accountId: state.vercel_team } : response(url)));
-    assert.equal((await probe(state, base(state))).vercel_project_read, 'FAIL');
+    const mismatch = await probe(state, base(state));
+    assert.equal(mismatch.vercel_project_read, 'FAIL'); assert.equal(mismatch.vercel_project_http_status, 200); assert.equal(mismatch.vercel_project_error, 'ASSERTION_MISMATCH');
     process.env.OIDC_AUTH_OUTCOME = 'failure'; await assert.rejects(probe(state, base(state)));
+  } finally { global.fetch = original; restore(before); }
+});
+test('sanitized diagnostics classify HTTP, timeout and network failures without reading denied bodies', async () => {
+  const before = { ...process.env }, original = global.fetch;
+  try {
+    Object.assign(process.env, fixture());
+    let deniedBodyReads = 0;
+    global.fetch = async url => url.includes('firestore.googleapis.com')
+      ? { ok: false, status: 503, async json() { deniedBodyReads++; throw new Error('private-body-test-only'); } }
+      : new Response(JSON.stringify(response(url)));
+    let r = await probe(state, base(state));
+    assert.equal(r.firestore_index_metadata_http_status, 503); assert.equal(r.firestore_index_metadata_error, 'HTTP_5XX'); assert.equal(deniedBodyReads, 0);
+    assert.ok(!JSON.stringify(r).includes('private-body-test-only'));
+
+    global.fetch = async url => {
+      if (url.includes('api.vercel.com')) { const error = new Error('private-timeout-test-only'); error.name = 'TimeoutError'; throw error; }
+      return new Response(JSON.stringify(response(url)));
+    };
+    r = await probe(state, base(state));
+    assert.equal(r.vercel_project_http_status, null); assert.equal(r.vercel_project_error, 'TIMEOUT');
+    assert.ok(!JSON.stringify(r).includes('private-timeout-test-only'));
+
+    global.fetch = async url => {
+      if (url.includes('cloudresourcemanager')) throw new Error('private-network-test-only');
+      return new Response(JSON.stringify(response(url)));
+    };
+    r = await probe(state, base(state));
+    assert.equal(r.project_metadata_http_status, null); assert.equal(r.project_metadata_error, 'NETWORK_ERROR');
+    assert.ok(!JSON.stringify(r).includes('private-network-test-only'));
+    validate(r, json('.release/schema/oidc-validation.schema.json'));
   } finally { global.fetch = original; restore(before); }
 });
 test('authentication failure still emits a schema-valid failure artifact through the CLI', () => {

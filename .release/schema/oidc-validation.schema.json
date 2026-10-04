@@ -10,9 +10,21 @@
     "configuration",
     "oidc_auth",
     "project_metadata_read",
+    "project_metadata_endpoint",
+    "project_metadata_http_status",
+    "project_metadata_error",
     "firestore_index_metadata_read",
+    "firestore_index_metadata_endpoint",
+    "firestore_index_metadata_http_status",
+    "firestore_index_metadata_error",
     "firebase_rules_metadata_read",
+    "firebase_rules_metadata_endpoint",
+    "firebase_rules_metadata_http_status",
+    "firebase_rules_metadata_error",
     "vercel_project_read",
+    "vercel_project_endpoint",
+    "vercel_project_http_status",
+    "vercel_project_error",
     "production_release_enabled",
     "kill_switch_configuration",
     "mutations_performed",
@@ -56,12 +68,30 @@
         "GAP"
       ]
     },
+    "project_metadata_endpoint": {
+      "const": "GCP_PROJECT_METADATA"
+    },
+    "project_metadata_http_status": {
+      "type": ["number", "null"]
+    },
+    "project_metadata_error": {
+      "enum": ["HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+    },
     "firestore_index_metadata_read": {
       "enum": [
         "PASS",
         "FAIL",
         "GAP"
       ]
+    },
+    "firestore_index_metadata_endpoint": {
+      "const": "FIRESTORE_INDEX_METADATA"
+    },
+    "firestore_index_metadata_http_status": {
+      "type": ["number", "null"]
+    },
+    "firestore_index_metadata_error": {
+      "enum": ["HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
     },
     "firebase_rules_metadata_read": {
       "enum": [
@@ -70,12 +100,30 @@
         "GAP"
       ]
     },
+    "firebase_rules_metadata_endpoint": {
+      "enum": ["FIREBASE_RULES_RELEASE_METADATA", "FIREBASE_RULESET_METADATA"]
+    },
+    "firebase_rules_metadata_http_status": {
+      "type": ["number", "null"]
+    },
+    "firebase_rules_metadata_error": {
+      "enum": ["HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+    },
     "vercel_project_read": {
       "enum": [
         "PASS",
         "FAIL",
         "GAP"
       ]
+    },
+    "vercel_project_endpoint": {
+      "const": "VERCEL_PROJECT_METADATA"
+    },
+    "vercel_project_http_status": {
+      "type": ["number", "null"]
+    },
+    "vercel_project_error": {
+      "enum": ["HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
     },
     "production_release_enabled": {
       "type": "boolean"
