@@ -103,11 +103,11 @@ test('sanitized diagnostics classify HTTP, timeout and network failures without 
   try {
     Object.assign(process.env, fixture());
     let deniedBodyReads = 0;
-    global.fetch = async url => url.includes('firestore.googleapis.com')
+    global.fetch = async url => url.includes('cloudresourcemanager')
       ? { ok: false, status: 503, async json() { deniedBodyReads++; throw new Error('private-body-test-only'); } }
       : new Response(JSON.stringify(response(url)));
     let r = await probe(state, base(state));
-    assert.equal(r.firestore_index_metadata_http_status, 503); assert.equal(r.firestore_index_metadata_error, 'HTTP_5XX'); assert.equal(deniedBodyReads, 0);
+    assert.equal(r.project_metadata_http_status, 503); assert.equal(r.project_metadata_error, 'HTTP_5XX'); assert.equal(deniedBodyReads, 0);
     assert.ok(!JSON.stringify(r).includes('private-body-test-only'));
 
     global.fetch = async url => {
@@ -142,4 +142,89 @@ test('authentication failure still emits a schema-valid failure artifact through
     assert.equal(r.oidc_auth, 'FAIL'); assert.equal(r.validation_status, 'FAIL'); assert.equal(r.mutations_performed, false);
     assert.ok(!JSON.stringify(r).includes(env.GOOGLE_ACCESS_TOKEN));
   } finally { assert.equal(path.dirname(temp), parent); assert.ok(path.basename(temp).startsWith('vdsen-oidc-test-')); fs.rmSync(temp, { recursive: true, force: true }); }
+});
+
+const SENTINELS = ['google-test-only', 'vercel-test-only', 'Bearer', 'Authorization', 'private-message-test-only', 'private-description-test-only', 'team_OTHERFOREIGNID'];
+const schema = () => json('.release/schema/oidc-validation.schema.json');
+test('HTTP 400 is HTTP_400, other statuses are never NETWORK_ERROR, and structured Firestore errors are bounded; no-pagesize control probe is read-only', async () => {
+  const before = { ...process.env }, original = global.fetch, calls = [];
+  try {
+    Object.assign(process.env, fixture());
+    const body = { error: { code: 400, message: 'private-message-test-only', status: 'INVALID_ARGUMENT', details: [{ '@type': 'type.googleapis.com/google.rpc.BadRequest', fieldViolations: [{ field: 'pageSize', description: 'private-description-test-only' }] }] } };
+    global.fetch = async (url, options) => {
+      calls.push([url, options]);
+      if (url.includes('firestore.googleapis.com')) return url.includes('pageSize=1') ? new Response(JSON.stringify(body), { status: 400 }) : new Response(JSON.stringify({ indexes: [] }));
+      return new Response(JSON.stringify(response(url)));
+    };
+    const r = await probe(state, base(state));
+    validate(r, schema());
+    assert.equal(r.firestore_index_metadata_http_status, 400); assert.equal(r.firestore_index_metadata_error, 'HTTP_400');
+    assert.equal(r.firestore_index_api_error_code, 400); assert.equal(r.firestore_index_api_error_status, 'INVALID_ARGUMENT');
+    assert.equal(r.firestore_index_api_error_reason, 'FIELD_VIOLATION'); assert.equal(r.firestore_index_api_error_field, 'pageSize');
+    assert.equal(r.firestore_index_no_pagesize_http_status, 200); assert.equal(r.firestore_index_no_pagesize_error, 'NONE');
+    assert.equal(r.firestore_index_diagnostic_finding, 'PAGESIZE_VARIANT_REJECTED');
+    const fs2 = calls.filter(([u]) => u.includes('firestore.googleapis.com'));
+    assert.equal(fs2.length, 2); assert.ok(fs2[0][0].endsWith('?pageSize=1')); assert.ok(!fs2[1][0].includes('pageSize'));
+    assert.ok(calls.every(([, o]) => o.method === 'GET' && o.body === undefined));
+    assert.equal(r.validation_status, 'FAIL'); assert.equal(r.mutations_performed, false);
+    for (const secret of SENTINELS) assert.ok(!JSON.stringify(r).includes(secret), secret);
+
+    // Control probe also rejected, non-400 failures never trigger it, and unusual statuses are HTTP_OTHER.
+    global.fetch = async url => url.includes('firestore.googleapis.com') ? new Response('not-json-private-test-only', { status: 400 }) : new Response(JSON.stringify(response(url)));
+    let r2 = await probe(state, base(state));
+    assert.equal(r2.firestore_index_no_pagesize_error, 'HTTP_400'); assert.equal(r2.firestore_index_diagnostic_finding, 'NONE');
+    assert.equal(r2.firestore_index_api_error_status, 'ABSENT'); assert.ok(!JSON.stringify(r2).includes('not-json-private-test-only'));
+    calls.length = 0;
+    global.fetch = async (url, o) => { calls.push(url); return url.includes('firestore.googleapis.com') ? new Response('{}', { status: 429 }) : new Response(JSON.stringify(response(url))); };
+    r2 = await probe(state, base(state));
+    assert.equal(r2.firestore_index_metadata_error, 'HTTP_OTHER'); assert.equal(r2.firestore_index_no_pagesize_error, 'NOT_RUN');
+    assert.equal(calls.filter(u => u.includes('firestore.googleapis.com')).length, 1);
+    // Hostile body values are reduced to bounded markers.
+    global.fetch = async url => url.includes('firestore.googleapis.com') ? new Response(JSON.stringify({ error: { code: 403, status: 'x'.repeat(5000), details: [{ reason: 'private reason with spaces', fieldViolations: [{ field: 'a b/private-message-test-only' }] }] } }), { status: 403 }) : new Response(JSON.stringify(response(url)));
+    r2 = await probe(state, base(state)); validate(r2, schema());
+    assert.equal(r2.firestore_index_api_error_status, 'OTHER'); assert.equal(r2.firestore_index_api_error_reason, 'OTHER'); assert.equal(r2.firestore_index_api_error_field, 'OTHER');
+    assert.ok(JSON.stringify(r2).length < 4000);
+  } finally { global.fetch = original; restore(before); }
+});
+test('NETWORK_ERROR is only emitted for transport failures', () => {
+  const source = fs.readFileSync('scripts/release/oidc-validate.cjs', 'utf8');
+  assert.ok(!/return 'NETWORK_ERROR'/.test(source.slice(source.indexOf('function httpCategory'), source.indexOf('const GOOGLE_STATUSES'))));
+});
+test('Vercel failures yield controlled codes and MATCH/MISMATCH/ABSENT team result without raw team IDs or bodies', async () => {
+  const before = { ...process.env }, original = global.fetch;
+  try {
+    Object.assign(process.env, fixture());
+    const cases = [
+      [{ error: { code: 'forbidden', message: 'private-message-test-only', teamId: state.vercel_team } }, 403, 'project_access_denied', 'team', 'MATCH'],
+      [{ error: { code: 'forbidden', message: 'private-message-test-only', scope: 'team_OTHERFOREIGNID' } }, 403, 'team_scope_mismatch', 'team', 'MISMATCH'],
+      [{ error: { code: 'forbidden', message: 'Not authorized: Trying to access resource under scope "x"' } }, 403, 'scope_mismatch', 'ABSENT', 'ABSENT'],
+      [{ error: { code: 'forbidden', message: 'private-message-test-only' } }, 403, 'forbidden', 'ABSENT', 'ABSENT'],
+      [{ error: { code: 'forbidden', invalidToken: true, message: 'private-message-test-only' } }, 403, 'invalid_token', 'ABSENT', 'ABSENT'],
+      [{ error: { code: 'unauthorized', message: 'private-message-test-only' } }, 401, 'unauthorized', 'ABSENT', 'ABSENT'],
+      [{ error: { code: 'weird_private_code', message: 'private-message-test-only' } }, 403, 'unknown', 'ABSENT', 'ABSENT']
+    ];
+    for (const [body, status, code, scopeType, teamMatch] of cases) {
+      global.fetch = async url => url.includes('api.vercel.com') ? new Response(JSON.stringify(body), { status }) : new Response(JSON.stringify(response(url)));
+      const r = await probe(state, base(state)); validate(r, schema());
+      assert.equal(r.vercel_project_http_status, status); assert.equal(r.vercel_project_error, 'HTTP_' + status);
+      assert.equal(r.vercel_api_error_code, code); assert.equal(r.vercel_api_error_scope_type, scopeType); assert.equal(r.vercel_api_error_team_match, teamMatch);
+      for (const secret of [...SENTINELS, 'weird_private_code']) assert.ok(!JSON.stringify(r).includes(secret), secret);
+      assert.equal(r.mutations_performed, false);
+    }
+    global.fetch = async url => url.includes('api.vercel.com') ? new Response('private-message-test-only', { status: 403 }) : new Response(JSON.stringify(response(url)));
+    const r = await probe(state, base(state));
+    assert.equal(r.vercel_api_error_code, 'ABSENT'); assert.ok(!JSON.stringify(r).includes('private-message-test-only'));
+  } finally { global.fetch = original; restore(before); }
+});
+test('diagnostics patch adds no mutation path and leaves kill switch and production workflows untouched', () => {
+  const script = fs.readFileSync('scripts/release/oidc-validate.cjs', 'utf8');
+  assert.ok(!/require\('\.\/live|child_process|method: '(?:POST|PATCH|PUT|DELETE)'|\/documents\/|\/keys|iam\.googleapis/.test(script));
+  assert.ok(!/console\.(log|error)\([^)]*(response|body|token|Authorization)/i.test(script.replace(/console\.error\('OIDC validation failed; details withheld'\)/, '')));
+  assert.equal(base(state).mutations_performed, false);
+  const before = { ...process.env };
+  try { Object.assign(process.env, fixture()); assert.equal(base(state).production_release_enabled, false); } finally { restore(before); }
+  for (const f of ['vdsen-release-prod', 'vdsen-rollback']) {
+    const source = fs.readFileSync('.github/workflows/' + f + '.yml', 'utf8');
+    assert.ok(source.includes('test "$PRODUCTION_RELEASE_ENABLED" = true'));
+  }
 });

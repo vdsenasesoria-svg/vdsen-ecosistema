@@ -16,23 +16,62 @@ function base(s) {
     firebase_rules_metadata_endpoint: 'FIREBASE_RULES_RELEASE_METADATA', firebase_rules_metadata_http_status: null, firebase_rules_metadata_error: 'NONE',
     vercel_project_endpoint: 'VERCEL_PROJECT_METADATA', vercel_project_http_status: null, vercel_project_error: 'NONE',
     kill_switch_configuration: process.env.PRODUCTION_RELEASE_ENABLED === 'false' ? 'EXPECTED_FALSE' : process.env.PRODUCTION_RELEASE_ENABLED === 'true' ? 'TRUE' : process.env.PRODUCTION_RELEASE_ENABLED === undefined || process.env.PRODUCTION_RELEASE_ENABLED === '' ? 'UNSET' : 'INVALID',
+    firestore_index_api_error_code: null, firestore_index_api_error_status: 'ABSENT', firestore_index_api_error_reason: 'ABSENT', firestore_index_api_error_field: 'ABSENT',
+    firestore_index_no_pagesize_http_status: null, firestore_index_no_pagesize_error: 'NOT_RUN', firestore_index_diagnostic_finding: 'NONE',
+    vercel_api_error_code: 'ABSENT', vercel_api_error_scope_type: 'ABSENT', vercel_api_error_team_match: 'ABSENT',
     mutations_performed: false, least_privilege_verification: 'GAP',
     least_privilege_note: 'Metadata success does not prove absence of IAM/key/client-data permissions; no destructive probes or client-data reads performed',
     validation_status: 'FAIL', error: null, timestamp: new Date().toISOString()
   };
 }
 class MetadataError extends Error {
-  constructor(endpoint, httpStatus, category) {
+  constructor(endpoint, httpStatus, category, detail = null) {
     super(category);
     this.endpoint = endpoint;
     this.httpStatus = httpStatus;
     this.category = category;
+    this.detail = detail; // Already sanitized, bounded fields only; never the response body.
   }
 }
+// NETWORK_ERROR is reserved for transport failures; every received HTTP status gets an HTTP_* category.
 function httpCategory(status) {
-  if ([401, 403, 404, 422].includes(status)) return 'HTTP_' + status;
+  if ([400, 401, 403, 404, 422].includes(status)) return 'HTTP_' + status;
   if (status >= 500) return 'HTTP_5XX';
-  return 'NETWORK_ERROR';
+  return 'HTTP_OTHER';
+}
+const GOOGLE_STATUSES = new Set(['INVALID_ARGUMENT', 'PERMISSION_DENIED', 'FAILED_PRECONDITION', 'UNAUTHENTICATED', 'NOT_FOUND', 'RESOURCE_EXHAUSTED', 'UNAVAILABLE', 'INTERNAL', 'OUT_OF_RANGE', 'ABORTED', 'ALREADY_EXISTS', 'DEADLINE_EXCEEDED', 'UNIMPLEMENTED', 'CANCELLED', 'UNKNOWN']);
+const bounded = (value, pattern) => typeof value === 'string' && pattern.test(value) ? value : null;
+// Google error body is parsed in memory only; just bounded identifiers survive (never messages, descriptions or values).
+function googleDetail(body) {
+  const e = body && typeof body === 'object' ? body.error : null;
+  if (!e || typeof e !== 'object') return null;
+  const details = Array.isArray(e.details) ? e.details.slice(0, 16).filter(d => d && typeof d === 'object') : [];
+  const violation = details.flatMap(d => Array.isArray(d.fieldViolations) ? d.fieldViolations.slice(0, 16) : []).find(v => v && typeof v === 'object');
+  const info = details.find(d => typeof d.reason === 'string');
+  const reason = bounded(info?.reason, /^[A-Z][A-Z0-9_]{0,63}$/);
+  const field = bounded(violation?.field, /^[A-Za-z][A-Za-z0-9_.]{0,63}$/);
+  return {
+    code: Number.isInteger(e.code) && e.code >= 100 && e.code <= 599 ? e.code : null,
+    status: typeof e.status === 'string' ? (GOOGLE_STATUSES.has(e.status) ? e.status : 'OTHER') : 'ABSENT',
+    reason: reason || (info ? 'OTHER' : violation ? 'FIELD_VIOLATION' : 'ABSENT'),
+    field: field || (violation ? 'OTHER' : 'ABSENT')
+  };
+}
+// Vercel error body is parsed in memory only; foreign team identifiers are compared, never stored.
+function vercelDetail(body, expectedTeam) {
+  const e = body && typeof body === 'object' ? body.error : null;
+  if (!e || typeof e !== 'object') return null;
+  const teams = [e.teamId, e.team_id, e.accountId, e.scope].filter(v => typeof v === 'string' && v.startsWith('team_'));
+  const scoped = [e.teamId, e.team_id, e.accountId, e.scope].some(v => typeof v === 'string' && v);
+  const teamMatch = teams.length === 0 ? 'ABSENT' : teams.every(t => t === expectedTeam) ? 'MATCH' : 'MISMATCH';
+  const rawCode = typeof e.code === 'string' ? e.code.toLowerCase() : '';
+  const scopeMessage = typeof e.message === 'string' && /scope/i.test(e.message);
+  let code;
+  if (e.invalidToken === true || rawCode === 'invalidtoken' || rawCode === 'invalid_token') code = 'invalid_token';
+  else if (rawCode === 'unauthorized') code = 'unauthorized';
+  else if (rawCode === 'forbidden') code = teamMatch === 'MISMATCH' ? 'team_scope_mismatch' : teamMatch === 'MATCH' ? 'project_access_denied' : scopeMessage ? 'scope_mismatch' : 'forbidden';
+  else code = rawCode ? 'unknown' : 'ABSENT';
+  return { code, scopeType: teams.length ? 'team' : scoped ? 'other' : 'ABSENT', teamMatch };
 }
 function save(r) {
   validate(r, json('.release/schema/oidc-validation.schema.json'));
@@ -53,7 +92,7 @@ function init() {
   save(r);
   return r.configuration === 'PASS' ? 0 : 1;
 }
-async function get(endpoint, url, token) {
+async function get(endpoint, url, token, sanitize) {
   if (!token) throw new MetadataError(endpoint, null, 'HTTP_401');
   let response;
   try {
@@ -61,13 +100,36 @@ async function get(endpoint, url, token) {
   } catch (error) {
     throw new MetadataError(endpoint, null, error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK_ERROR');
   }
-  if (!response.ok) throw new MetadataError(endpoint, response.status, httpCategory(response.status));
-  return { data: await response.json(), status: response.status }; // Failed bodies and credentials are never read, logged or persisted.
+  if (!response.ok) {
+    let detail = null;
+    if (sanitize) { try { detail = sanitize(await response.json()); } catch { detail = null; } } // In-memory only; raw bodies and credentials are never logged or persisted.
+    throw new MetadataError(endpoint, response.status, httpCategory(response.status), detail);
+  }
+  return { data: await response.json(), status: response.status };
 }
 function diagnose(r, prefix, endpoint, httpStatus, error) {
   r[prefix + '_endpoint'] = endpoint;
   r[prefix + '_http_status'] = httpStatus;
   r[prefix + '_error'] = error;
+}
+async function firestoreControlProbe(r, url) {
+  try {
+    const result = await get('FIRESTORE_INDEX_METADATA', url, process.env.GOOGLE_ACCESS_TOKEN);
+    r.firestore_index_no_pagesize_http_status = result.status; r.firestore_index_no_pagesize_error = 'NONE';
+    r.firestore_index_diagnostic_finding = 'PAGESIZE_VARIANT_REJECTED';
+  } catch (error) {
+    r.firestore_index_no_pagesize_http_status = error instanceof MetadataError ? error.httpStatus : null;
+    r.firestore_index_no_pagesize_error = error instanceof MetadataError ? error.category : 'NETWORK_ERROR';
+  }
+}
+function applyDetail(r, prefix, detail) {
+  if (!detail) return;
+  if (prefix === 'firestore_index_metadata') {
+    r.firestore_index_api_error_code = detail.code; r.firestore_index_api_error_status = detail.status;
+    r.firestore_index_api_error_reason = detail.reason; r.firestore_index_api_error_field = detail.field;
+  } else if (prefix === 'vercel_project') {
+    r.vercel_api_error_code = detail.code; r.vercel_api_error_scope_type = detail.scopeType; r.vercel_api_error_team_match = detail.teamMatch;
+  }
 }
 async function probe(s, r) {
   configuration(s);
@@ -81,7 +143,13 @@ async function probe(s, r) {
       return { endpoint: 'GCP_PROJECT_METADATA', status: result.status };
     }],
     ['firestore_index_metadata_read', 'firestore_index_metadata', async () => {
-      const result = await get('FIRESTORE_INDEX_METADATA', 'https://firestore.googleapis.com/v1/projects/' + s.firebase_project + '/databases/(default)/collectionGroups/' + s.required_index.collectionGroup + '/indexes?pageSize=1', process.env.GOOGLE_ACCESS_TOKEN);
+      const url = 'https://firestore.googleapis.com/v1/projects/' + s.firebase_project + '/databases/(default)/collectionGroups/' + s.required_index.collectionGroup + '/indexes';
+      let result;
+      try { result = await get('FIRESTORE_INDEX_METADATA', url + '?pageSize=1', process.env.GOOGLE_ACCESS_TOKEN, googleDetail); }
+      catch (error) {
+        if (error instanceof MetadataError && error.httpStatus === 400) await firestoreControlProbe(r, url); // One extra read-only GET, no pageSize.
+        throw error;
+      }
       if (!(result.data.indexes === undefined || Array.isArray(result.data.indexes))) throw new MetadataError('FIRESTORE_INDEX_METADATA', result.status, 'ASSERTION_MISMATCH');
       return { endpoint: 'FIRESTORE_INDEX_METADATA', status: result.status };
     }],
@@ -93,7 +161,7 @@ async function probe(s, r) {
       return { endpoint: 'FIREBASE_RULESET_METADATA', status: ruleset.status };
     }],
     ['vercel_project_read', 'vercel_project', async () => {
-      const result = await get('VERCEL_PROJECT_METADATA', 'https://api.vercel.com/v9/projects/' + s.production_project + '?teamId=' + encodeURIComponent(s.vercel_team), process.env.VERCEL_TOKEN);
+      const result = await get('VERCEL_PROJECT_METADATA', 'https://api.vercel.com/v9/projects/' + s.production_project + '?teamId=' + encodeURIComponent(s.vercel_team), process.env.VERCEL_TOKEN, body => vercelDetail(body, s.vercel_team));
       if (result.data.id !== s.production_project || result.data.accountId !== s.vercel_team) throw new MetadataError('VERCEL_PROJECT_METADATA', result.status, 'ASSERTION_MISMATCH');
       return { endpoint: 'VERCEL_PROJECT_METADATA', status: result.status };
     }]
@@ -104,6 +172,7 @@ async function probe(s, r) {
     } catch (error) {
       r[key] = 'FAIL';
       diagnose(r, prefix, error instanceof MetadataError ? error.endpoint : r[prefix + '_endpoint'], error instanceof MetadataError ? error.httpStatus : null, error instanceof MetadataError ? error.category : 'NETWORK_ERROR');
+      if (error instanceof MetadataError) applyDetail(r, prefix, error.detail);
     }
   }));
   r.validation_status = attempts.every(([key]) => r[key] === 'PASS') ? 'PASS' : 'FAIL';

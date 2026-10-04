@@ -25,6 +25,16 @@
     "vercel_project_endpoint",
     "vercel_project_http_status",
     "vercel_project_error",
+    "firestore_index_api_error_code",
+    "firestore_index_api_error_status",
+    "firestore_index_api_error_reason",
+    "firestore_index_api_error_field",
+    "firestore_index_no_pagesize_http_status",
+    "firestore_index_no_pagesize_error",
+    "firestore_index_diagnostic_finding",
+    "vercel_api_error_code",
+    "vercel_api_error_scope_type",
+    "vercel_api_error_team_match",
     "production_release_enabled",
     "kill_switch_configuration",
     "mutations_performed",
@@ -75,7 +85,7 @@
       "type": ["number", "null"]
     },
     "project_metadata_error": {
-      "enum": ["HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+      "enum": ["HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "HTTP_OTHER", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
     },
     "firestore_index_metadata_read": {
       "enum": [
@@ -91,7 +101,7 @@
       "type": ["number", "null"]
     },
     "firestore_index_metadata_error": {
-      "enum": ["HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+      "enum": ["HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "HTTP_OTHER", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
     },
     "firebase_rules_metadata_read": {
       "enum": [
@@ -107,7 +117,7 @@
       "type": ["number", "null"]
     },
     "firebase_rules_metadata_error": {
-      "enum": ["HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+      "enum": ["HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "HTTP_OTHER", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
     },
     "vercel_project_read": {
       "enum": [
@@ -123,8 +133,18 @@
       "type": ["number", "null"]
     },
     "vercel_project_error": {
-      "enum": ["HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
+      "enum": ["HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "HTTP_OTHER", "ASSERTION_MISMATCH", "TIMEOUT", "NETWORK_ERROR", "NONE"]
     },
+    "firestore_index_api_error_code": { "type": ["number", "null"] },
+    "firestore_index_api_error_status": { "enum": ["INVALID_ARGUMENT", "PERMISSION_DENIED", "FAILED_PRECONDITION", "UNAUTHENTICATED", "NOT_FOUND", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "INTERNAL", "OUT_OF_RANGE", "ABORTED", "ALREADY_EXISTS", "DEADLINE_EXCEEDED", "UNIMPLEMENTED", "CANCELLED", "UNKNOWN", "OTHER", "ABSENT"] },
+    "firestore_index_api_error_reason": { "type": "string", "pattern": "^(ABSENT|OTHER|FIELD_VIOLATION|[A-Z][A-Z0-9_]{0,63})$" },
+    "firestore_index_api_error_field": { "type": "string", "pattern": "^(ABSENT|OTHER|[A-Za-z][A-Za-z0-9_.]{0,63})$" },
+    "firestore_index_no_pagesize_http_status": { "type": ["number", "null"] },
+    "firestore_index_no_pagesize_error": { "enum": ["NOT_RUN", "HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_422", "HTTP_5XX", "HTTP_OTHER", "TIMEOUT", "NETWORK_ERROR", "NONE"] },
+    "firestore_index_diagnostic_finding": { "enum": ["NONE", "PAGESIZE_VARIANT_REJECTED"] },
+    "vercel_api_error_code": { "enum": ["forbidden", "unauthorized", "invalid_token", "scope_mismatch", "team_scope_mismatch", "project_access_denied", "unknown", "ABSENT"] },
+    "vercel_api_error_scope_type": { "enum": ["team", "other", "ABSENT"] },
+    "vercel_api_error_team_match": { "enum": ["MATCH", "MISMATCH", "ABSENT"] },
     "production_release_enabled": {
       "type": "boolean"
     },
