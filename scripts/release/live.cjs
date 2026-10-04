@@ -51,7 +51,7 @@ async function verifyIndex(s) {
   let page = '';
   const matches = [];
   do {
-    const url = 'https://firestore.googleapis.com/v1/projects/' + s.firebase_project + '/databases/(default)/collectionGroups/' + s.required_index.collectionGroup + '/indexes?pageSize=100' + (page ? '&pageToken=' + encodeURIComponent(page) : '');
+    const url = 'https://firestore.googleapis.com/v1/projects/' + s.firebase_project + '/databases/(default)/collectionGroups/' + s.required_index.collectionGroup + '/indexes' + (page ? '?pageToken=' + encodeURIComponent(page) : ''); // No pageSize: live Firestore rejects it with HTTP 400.
     const data = await api(url, process.env.GOOGLE_ACCESS_TOKEN);
     matches.push(...(data.indexes || []).filter(x => indexMatches(s.required_index, x)));
     page = data.nextPageToken || '';
@@ -132,16 +132,23 @@ async function prepare() {
   } catch (e) { r.error = e.message; throw e; }
   finally { save('result.json', r); }
 }
-async function recover(s, snapshot, r) {
+async function recover(s, snapshot, r, { restoreApp = true } = {}) {
   r.rollback_status = 'FAIL';
   rollbackRulesProvenance(snapshot);
   const restored = await restoreRules(s, snapshot);
   r.new_ruleset = restored.ruleset;
-  // Only after rule verification can the old app be restored.
-  if (await currentApp(s) !== snapshot.state.rollback_deployment) await switchApp(s, snapshot.state.rollback_deployment);
-  verifyDeployment(await deployment(s, snapshot.state.rollback_deployment), s, snapshot.state.rollback_runtime_sha);
-  await smoke(s, snapshot.state.rollback_runtime_sha);
-  r.production_deployment = snapshot.state.rollback_deployment;
+  if (restoreApp) {
+    // Only after rule verification can the old app be restored.
+    if (await currentApp(s) !== snapshot.state.rollback_deployment) await switchApp(s, snapshot.state.rollback_deployment);
+    verifyDeployment(await deployment(s, snapshot.state.rollback_deployment), s, snapshot.state.rollback_runtime_sha);
+    await smoke(s, snapshot.state.rollback_runtime_sha);
+    r.production_deployment = snapshot.state.rollback_deployment;
+  } else {
+    // rules_only release: the approved app was never changed, so the pre-release state is old rules + approved app. No Vercel mutation.
+    assert.equal(await currentApp(s), snapshot.state.production_deployment, 'Approved app changed during rules_only release');
+    await smoke(s, snapshot.state.runtime_sha);
+    r.production_deployment = snapshot.state.production_deployment;
+  }
   r.rollback_status = 'PASS';
 }
 async function apply() {
@@ -176,7 +183,7 @@ async function apply() {
   } catch (e) {
     r.error = e.message; r.release_status = 'FAIL';
     if (mayHaveMutated) {
-      try { await recover(s, snapshot, r); } catch (recovery) { r.error += '; recovery failed: ' + recovery.message; }
+      try { await recover(s, snapshot, r, { restoreApp: false }); } catch (recovery) { r.error += '; recovery failed: ' + recovery.message; }
     }
     throw e;
   } finally {

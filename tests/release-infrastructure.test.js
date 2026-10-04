@@ -58,7 +58,7 @@ test('live index preflight follows pagination and blocks BUILDING before mutatio
       return new Response(JSON.stringify(data));
     };
     assert.equal(await verifyIndex(state), 'READY');
-    assert.equal(requests.length, 2); assert.ok(requests.every(x => x[1] === 'GET'));
+    assert.equal(requests.length, 2); assert.ok(requests.every(x => x[1] === 'GET' && !x[0].includes('pageSize')));
     global.fetch = async () => new Response(JSON.stringify({ indexes: [{ ...state.required_index, state: 'CREATING' }] }));
     await assert.rejects(verifyIndex(state), /not READY/);
     global.fetch = async () => new Response(JSON.stringify({ indexes: [{ ...state.required_index, state: 'READY' }, { ...state.required_index, state: 'READY' }] }));
@@ -152,4 +152,66 @@ test('failure-result CLI emits a schema-valid artifact even when preflight never
     assert.ok(path.basename(temp).startsWith('vdsen-release-result-test-'));
     fs.rmSync(temp, { recursive: true, force: true });
   }
+});
+
+test('rules_only recovery restores verified rules without any Vercel request and fails closed if the approved app changed', async () => {
+  const before = global.fetch, tokens = { GOOGLE_ACCESS_TOKEN: process.env.GOOGLE_ACCESS_TOKEN, VERCEL_TOKEN: process.env.VERCEL_TOKEN };
+  Object.assign(process.env, { GOOGLE_ACCESS_TOKEN: 'test-only', VERCEL_TOKEN: 'test-only' });
+  const requests = []; let appDeployment = state.production_deployment;
+  const oldContent = git('show', state.rollback_runtime_sha + ':firestore.rules');
+  const source = { files: [{ name: 'firestore.rules', content: oldContent }] };
+  const snapshot = { state, old_rules: { source, sha256: hash(oldContent) } };
+  try {
+    global.fetch = async (url, options = {}) => {
+      requests.push([url, options.method || 'GET']);
+      if (url.startsWith(state.production_origin + '/')) return new Response(git('show', state.runtime_sha + ':' + new URL(url).pathname.slice(1)));
+      let data = {};
+      if (url.includes('firebaserules.googleapis.com')) {
+        if (options.method === 'POST') data = { name: 'projects/vdsen-ecosistema/rulesets/restored' };
+        else if (url.includes('/releases/') && options.method === 'GET') data = { rulesetName: 'projects/vdsen-ecosistema/rulesets/restored' };
+        else if (url.includes('/rulesets/restored')) data = { source };
+      } else if (url.includes('/aliases/')) data = { projectId: state.production_project, deployment: { id: appDeployment } };
+      return new Response(JSON.stringify(data));
+    };
+    const r = {}; await recover(state, snapshot, r, { restoreApp: false });
+    assert.equal(r.rollback_status, 'PASS'); assert.equal(r.production_deployment, state.production_deployment);
+    assert.ok(requests.every(x => !x[0].includes('/rollback/') && !/\/deployments/.test(x[0]) && (x[0].includes('api.vercel.com') ? x[1] === 'GET' : true)));
+    appDeployment = state.rollback_deployment;
+    await assert.rejects(recover(state, snapshot, {}, { restoreApp: false }), /Approved app changed/);
+  } finally {
+    global.fetch = before;
+    for (const [key, value] of Object.entries(tokens)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
+});
+test('release apply path is rules_only: pinned immutable provenance, no deploy/promote, no app restore on failure, never reads main', () => {
+  const src = fs.readFileSync('scripts/release/live.cjs', 'utf8');
+  const apply = src.slice(src.indexOf('async function apply()'), src.indexOf('async function rollback()'));
+  assert.ok(!/switchApp|\/v13\/deployments'|\/promote|\/rollback\//.test(apply));
+  assert.ok(apply.includes('restoreApp: false'));
+  assert.ok(apply.includes("git('show', s.runtime_sha + ':firestore.rules')") && apply.includes('s.rules_transition.target_sha256'));
+  assert.ok(!/main:firestore|origin\/main:|HEAD:firestore\.rules|\blatest\b/i.test(src));
+  assert.equal(state.release_mode, 'rules_only'); assert.equal(state.numeric_apply_enabled, false);
+  // Rollback order and pinned identities.
+  const rec = src.slice(src.indexOf('async function recover'), src.indexOf('async function apply()'));
+  assert.ok(rec.indexOf('restoreRules(') < rec.indexOf('switchApp('));
+  assert.equal(state.rollback_deployment, 'dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn'); assert.equal(state.rollback_runtime_sha, 'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c');
+  assert.equal(state.runtime_sha, 'd7bb71521d750eafd46a15fdd3c6ee157d4bd4cf');
+  assert.equal(state.rules_transition.rollback_order, 'rules_then_app');
+});
+test('kill switch off, missing runtime SHA or missing gate/rollback artifacts stop apply and prepare before any network request', async () => {
+  const { apply, prepare } = require('../scripts/release/live.cjs');
+  const before = { ...process.env }, original = global.fetch; let calls = 0;
+  global.fetch = async () => { calls++; throw new Error('unexpected network'); };
+  try {
+    Object.assign(process.env, { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/codex/client-app-next', RUNTIME_SHA: state.runtime_sha, GOOGLE_ACCESS_TOKEN: 'test-only', VERCEL_TOKEN: 'test-only' });
+    for (const value of ['false', '', undefined]) {
+      if (value === undefined) delete process.env.PRODUCTION_RELEASE_ENABLED; else process.env.PRODUCTION_RELEASE_ENABLED = value;
+      await assert.rejects(apply()); await assert.rejects(prepare());
+    }
+    process.env.PRODUCTION_RELEASE_ENABLED = 'true';
+    for (const sha of ['', '0'.repeat(40)]) { process.env.RUNTIME_SHA = sha; await assert.rejects(apply()); await assert.rejects(prepare()); }
+    process.env.RUNTIME_SHA = state.runtime_sha;
+    await assert.rejects(apply()); await assert.rejects(prepare()); // no gate results / rollback.json / READY state in this checkout
+    assert.equal(calls, 0);
+  } finally { global.fetch = original; for (const k of Object.keys(process.env)) if (!(k in before)) delete process.env[k]; Object.assign(process.env, before); }
 });
