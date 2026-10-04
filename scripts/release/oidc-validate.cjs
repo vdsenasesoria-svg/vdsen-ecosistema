@@ -17,7 +17,6 @@ function base(s) {
     vercel_project_endpoint: 'VERCEL_PROJECT_METADATA', vercel_project_http_status: null, vercel_project_error: 'NONE',
     kill_switch_configuration: process.env.PRODUCTION_RELEASE_ENABLED === 'false' ? 'EXPECTED_FALSE' : process.env.PRODUCTION_RELEASE_ENABLED === 'true' ? 'TRUE' : process.env.PRODUCTION_RELEASE_ENABLED === undefined || process.env.PRODUCTION_RELEASE_ENABLED === '' ? 'UNSET' : 'INVALID',
     firestore_index_api_error_code: null, firestore_index_api_error_status: 'ABSENT', firestore_index_api_error_reason: 'ABSENT', firestore_index_api_error_field: 'ABSENT',
-    firestore_index_no_pagesize_http_status: null, firestore_index_no_pagesize_error: 'NOT_RUN', firestore_index_diagnostic_finding: 'NONE',
     vercel_api_error_code: 'ABSENT', vercel_api_error_scope_type: 'ABSENT', vercel_api_error_team_match: 'ABSENT',
     mutations_performed: false, least_privilege_verification: 'GAP',
     least_privilege_note: 'Metadata success does not prove absence of IAM/key/client-data permissions; no destructive probes or client-data reads performed',
@@ -112,16 +111,6 @@ function diagnose(r, prefix, endpoint, httpStatus, error) {
   r[prefix + '_http_status'] = httpStatus;
   r[prefix + '_error'] = error;
 }
-async function firestoreControlProbe(r, url) {
-  try {
-    const result = await get('FIRESTORE_INDEX_METADATA', url, process.env.GOOGLE_ACCESS_TOKEN);
-    r.firestore_index_no_pagesize_http_status = result.status; r.firestore_index_no_pagesize_error = 'NONE';
-    r.firestore_index_diagnostic_finding = 'PAGESIZE_VARIANT_REJECTED';
-  } catch (error) {
-    r.firestore_index_no_pagesize_http_status = error instanceof MetadataError ? error.httpStatus : null;
-    r.firestore_index_no_pagesize_error = error instanceof MetadataError ? error.category : 'NETWORK_ERROR';
-  }
-}
 function applyDetail(r, prefix, detail) {
   if (!detail) return;
   if (prefix === 'firestore_index_metadata') {
@@ -143,13 +132,8 @@ async function probe(s, r) {
       return { endpoint: 'GCP_PROJECT_METADATA', status: result.status };
     }],
     ['firestore_index_metadata_read', 'firestore_index_metadata', async () => {
-      const url = 'https://firestore.googleapis.com/v1/projects/' + s.firebase_project + '/databases/(default)/collectionGroups/' + s.required_index.collectionGroup + '/indexes';
-      let result;
-      try { result = await get('FIRESTORE_INDEX_METADATA', url + '?pageSize=1', process.env.GOOGLE_ACCESS_TOKEN, googleDetail); }
-      catch (error) {
-        if (error instanceof MetadataError && error.httpStatus === 400) await firestoreControlProbe(r, url); // One extra read-only GET, no pageSize.
-        throw error;
-      }
+      // Canonical request has no pageSize parameter: the live control probe proved pageSize=1 is rejected with HTTP 400.
+      const result = await get('FIRESTORE_INDEX_METADATA', 'https://firestore.googleapis.com/v1/projects/' + s.firebase_project + '/databases/(default)/collectionGroups/' + s.required_index.collectionGroup + '/indexes', process.env.GOOGLE_ACCESS_TOKEN, googleDetail);
       if (!(result.data.indexes === undefined || Array.isArray(result.data.indexes))) throw new MetadataError('FIRESTORE_INDEX_METADATA', result.status, 'ASSERTION_MISMATCH');
       return { endpoint: 'FIRESTORE_INDEX_METADATA', status: result.status };
     }],

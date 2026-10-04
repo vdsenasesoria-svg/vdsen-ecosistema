@@ -146,40 +146,47 @@ test('authentication failure still emits a schema-valid failure artifact through
 
 const SENTINELS = ['google-test-only', 'vercel-test-only', 'Bearer', 'Authorization', 'private-message-test-only', 'private-description-test-only', 'team_OTHERFOREIGNID'];
 const schema = () => json('.release/schema/oidc-validation.schema.json');
-test('HTTP 400 is HTTP_400, other statuses are never NETWORK_ERROR, and structured Firestore errors are bounded; no-pagesize control probe is read-only', async () => {
+test('Firestore index metadata uses one canonical request without pageSize and requires HTTP 200 with a valid structure', async () => {
+  const before = { ...process.env }, original = global.fetch, calls = [];
+  try {
+    Object.assign(process.env, fixture());
+    global.fetch = async (url, options) => { calls.push([url, options]); return new Response(JSON.stringify(response(url))); };
+    let r = await probe(state, base(state));
+    const fsCalls = calls.filter(([u]) => u.includes('firestore.googleapis.com'));
+    assert.equal(fsCalls.length, 1); assert.ok(!fsCalls[0][0].includes('pageSize') && !fsCalls[0][0].includes('?'));
+    assert.ok(fsCalls[0][0].endsWith('/collectionGroups/' + state.required_index.collectionGroup + '/indexes'));
+    assert.equal(r.firestore_index_metadata_http_status, 200); assert.equal(r.validation_status, 'PASS');
+    // Malformed structure fails closed.
+    global.fetch = async url => new Response(JSON.stringify(url.includes('firestore.googleapis.com') ? { indexes: 'bad' } : response(url)));
+    r = await probe(state, base(state));
+    assert.equal(r.firestore_index_metadata_read, 'FAIL'); assert.equal(r.firestore_index_metadata_error, 'ASSERTION_MISMATCH');
+  } finally { global.fetch = original; restore(before); }
+});
+test('HTTP 400 is HTTP_400, other statuses are never NETWORK_ERROR, and structured Firestore errors are bounded', async () => {
   const before = { ...process.env }, original = global.fetch, calls = [];
   try {
     Object.assign(process.env, fixture());
     const body = { error: { code: 400, message: 'private-message-test-only', status: 'INVALID_ARGUMENT', details: [{ '@type': 'type.googleapis.com/google.rpc.BadRequest', fieldViolations: [{ field: 'pageSize', description: 'private-description-test-only' }] }] } };
     global.fetch = async (url, options) => {
       calls.push([url, options]);
-      if (url.includes('firestore.googleapis.com')) return url.includes('pageSize=1') ? new Response(JSON.stringify(body), { status: 400 }) : new Response(JSON.stringify({ indexes: [] }));
-      return new Response(JSON.stringify(response(url)));
+      return url.includes('firestore.googleapis.com') ? new Response(JSON.stringify(body), { status: 400 }) : new Response(JSON.stringify(response(url)));
     };
     const r = await probe(state, base(state));
     validate(r, schema());
     assert.equal(r.firestore_index_metadata_http_status, 400); assert.equal(r.firestore_index_metadata_error, 'HTTP_400');
     assert.equal(r.firestore_index_api_error_code, 400); assert.equal(r.firestore_index_api_error_status, 'INVALID_ARGUMENT');
     assert.equal(r.firestore_index_api_error_reason, 'FIELD_VIOLATION'); assert.equal(r.firestore_index_api_error_field, 'pageSize');
-    assert.equal(r.firestore_index_no_pagesize_http_status, 200); assert.equal(r.firestore_index_no_pagesize_error, 'NONE');
-    assert.equal(r.firestore_index_diagnostic_finding, 'PAGESIZE_VARIANT_REJECTED');
-    const fs2 = calls.filter(([u]) => u.includes('firestore.googleapis.com'));
-    assert.equal(fs2.length, 2); assert.ok(fs2[0][0].endsWith('?pageSize=1')); assert.ok(!fs2[1][0].includes('pageSize'));
+    assert.equal(calls.filter(([u]) => u.includes('firestore.googleapis.com')).length, 1);
     assert.ok(calls.every(([, o]) => o.method === 'GET' && o.body === undefined));
     assert.equal(r.validation_status, 'FAIL'); assert.equal(r.mutations_performed, false);
     for (const secret of SENTINELS) assert.ok(!JSON.stringify(r).includes(secret), secret);
 
-    // Control probe also rejected, non-400 failures never trigger it, and unusual statuses are HTTP_OTHER.
     global.fetch = async url => url.includes('firestore.googleapis.com') ? new Response('not-json-private-test-only', { status: 400 }) : new Response(JSON.stringify(response(url)));
     let r2 = await probe(state, base(state));
-    assert.equal(r2.firestore_index_no_pagesize_error, 'HTTP_400'); assert.equal(r2.firestore_index_diagnostic_finding, 'NONE');
     assert.equal(r2.firestore_index_api_error_status, 'ABSENT'); assert.ok(!JSON.stringify(r2).includes('not-json-private-test-only'));
-    calls.length = 0;
-    global.fetch = async (url, o) => { calls.push(url); return url.includes('firestore.googleapis.com') ? new Response('{}', { status: 429 }) : new Response(JSON.stringify(response(url))); };
+    global.fetch = async url => url.includes('firestore.googleapis.com') ? new Response('{}', { status: 429 }) : new Response(JSON.stringify(response(url)));
     r2 = await probe(state, base(state));
-    assert.equal(r2.firestore_index_metadata_error, 'HTTP_OTHER'); assert.equal(r2.firestore_index_no_pagesize_error, 'NOT_RUN');
-    assert.equal(calls.filter(u => u.includes('firestore.googleapis.com')).length, 1);
-    // Hostile body values are reduced to bounded markers.
+    assert.equal(r2.firestore_index_metadata_error, 'HTTP_OTHER');
     global.fetch = async url => url.includes('firestore.googleapis.com') ? new Response(JSON.stringify({ error: { code: 403, status: 'x'.repeat(5000), details: [{ reason: 'private reason with spaces', fieldViolations: [{ field: 'a b/private-message-test-only' }] }] } }), { status: 403 }) : new Response(JSON.stringify(response(url)));
     r2 = await probe(state, base(state)); validate(r2, schema());
     assert.equal(r2.firestore_index_api_error_status, 'OTHER'); assert.equal(r2.firestore_index_api_error_reason, 'OTHER'); assert.equal(r2.firestore_index_api_error_field, 'OTHER');
