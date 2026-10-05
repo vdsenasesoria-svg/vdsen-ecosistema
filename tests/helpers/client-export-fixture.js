@@ -2,7 +2,7 @@
 'use strict';
 
 var COACH_A = 'coachA', COACH_B = 'coachB';
-var A1 = 'clientA1', A2 = 'clientA2', B1 = 'clientB1';
+var A1 = 'clientA1', A2 = 'clientA2', B1 = 'clientB1', B2 = 'clientSameNameB';
 var TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 function set(carga, reps, extra) { return Object.assign({ carga: carga, reps: reps, unit: 'kg', done: true, rir: 2, rir_real: 1, ics: 8, pump: 2, ts: '2026-03-02T10:00:00.000Z' }, extra || {}); }
@@ -27,14 +27,15 @@ function build() {
     supplementPlan: { texto: 'Creatina 5g' }, supplementsRaw: { tiers: [{ nombre: 'T1', items: [{ nombre: 'Creatina', dosis: '5g' }] }] },
     inbodyResults: [{ ts: Date.parse('2026-02-01T08:00:00Z'), peso: 63, grasa: 24 }, { ts: Date.parse('2026-03-01T08:00:00Z'), peso: 62, grasa: 23 }],
     fcmToken: 'SECRET-FCM', apiKey: 'SECRET-API', nested: { accessToken: 'SECRET-AT', privateKey: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----', keep: 'ok' },
-    calibracion_volumetrica: { x: 1 }, campoFuturoDesconocido: { a: [1, 2, { b: 'ñandú' }] }, foto_frente: 'https://img.example.test/a1/front.jpg?token=SIGNEDSECRET&x=1',
+    calibracion_volumetrica: { x: 1 }, sentinel_text: 'CLIENT_A_ONLY_SECRET_TEXT', pharmacoPlan: { protocolo: 'P-SINTETICO', compuestos: [{ nombre: 'compuesto-sintetico', dosis: '100 mg' }] }, campoFuturoDesconocido: { a: [1, 2, { b: 'ñandú' }] }, foto_frente: 'https://img.example.test/a1/front.jpg?token=SIGNEDSECRET&x=1',
     foto_inline: TINY_PNG };
   db.clients[A2] = { coachId: COACH_A, displayName: 'Ana Pérez', email: 'ana2@example.test', role: 'client', activePlanId: 'P9', coachNote: 'NOTA-DE-A2-NO-FILTRAR', nutritionPlan: {}, supplementPlan: {} };
-  db.clients[B1] = { coachId: COACH_B, displayName: 'Ana Pérez', email: 'ana3@example.test', role: 'client', activePlanId: 'PB', coachNote: 'NOTA-DE-B1-SECRETA' };
+  db.clients[B1] = { coachId: COACH_B, displayName: 'Ana Pérez', email: 'ana3@example.test', role: 'client', activePlanId: 'PB', coachNote: 'NOTA-DE-B1-SECRETA', sentinel_text: 'CLIENT_B_ONLY_SECRET_TEXT', pharmacoPlan: { protocolo: 'B-SINTETICO' } };
+  db.clients[B2] = { coachId: COACH_B, displayName: 'Ana Pérez', email: 'ana4@example.test', role: 'client', activePlanId: null, coachNote: 'CLIENT_B_ONLY_SECRET_TEXT (B2)' };
   db.plans.P1 = plan('P1', A1, COACH_A, { status: 'completed', createdAt: '2025-11-01T00:00:00.000Z', weeks: 4, name: 'Meso previo' });
-  db.plans.P2 = plan('P2', A1, COACH_A, { weeks: 6, daysPerWeek: 2, createdAt: '2026-01-15T00:00:00.000Z', name: 'Meso activo' });
+  db.plans.P2 = plan('P2', A1, COACH_A, { internalMemo: 'CLIENT_A_ONLY_SECRET_TEXT', weeks: 6, daysPerWeek: 2, createdAt: '2026-01-15T00:00:00.000Z', name: 'Meso activo' });
   db.plans.P9 = plan('P9', A2, COACH_A, { name: 'Plan de A2' });
-  db.plans.PB = plan('PB', B1, COACH_B, { name: 'Plan de B1' });
+  db.plans.PB = plan('PB', B1, COACH_B, { name: 'Plan de B1', internalMemo: 'CLIENT_B_ONLY_SECRET_TEXT' });
   db.plans.PLEG = { coachId: COACH_A, weeks: 4, daysPerWeek: 2, days: [], createdAt: '2025-10-01T00:00:00.000Z', name: 'Legacy sin clientId' };
   db.plans_backup.BK1 = Object.assign(plan('P2', A1, COACH_A), { originalPlanId: 'P2', backedUpAt: '2026-02-01T00:00:00.000Z' });
   db.plans_backup.BK9 = Object.assign(plan('P9', A2, COACH_A), { originalPlanId: 'P9', backedUpAt: '2026-02-01T00:00:00.000Z' });
@@ -57,14 +58,16 @@ function build() {
     log_2_0_0_s0: set(57.5, 8, { ts: '2025-11-10T10:00:00.000Z' }), done_2_0: true } };
   db['logs/' + A1 + '/mesos'].P2 = { planId: 'P2', currentWeek: 1, updatedAt: 1700000001500, entries: { log_1_0_0_s0: set(1, 1) } }; // stale snapshot of the active plan
   db.logs[A2] = { planId: 'P9', currentWeek: 1, updatedAt: 1700000000001, entries: { log_1_0_0_s0: set(99, 9), done_1_0: true, 'exnotepid_1_P9-pid0': { text: 'NOTA-SECRETA-A2', week: 1, updatedAt: 1700000000001 } } };
-  db.logs[B1] = { planId: 'PB', currentWeek: 1, updatedAt: 1700000000001, entries: { log_1_0_0_s0: set(77, 7), done_1_0: true } };
+  db.logs[B1] = { planId: 'PB', currentWeek: 1, updatedAt: 1700000000001, entries: { log_1_0_0_s0: set(77, 7), done_1_0: true, 'exnotepid_1_PB-pid0': { text: 'CLIENT_B_ONLY_SECRET_TEXT', week: 1, updatedAt: 1700000000002 } } };
   db.fichas_onboarding[A1] = { schemaVersion: '1.1', updatedAt: Date.parse('2026-01-10T00:00:00Z'), updatedBy: 'client', data: { nombre: 'Ana Pérez', peso_kg: 63, talla_cm: 165, porcentaje_grasa: 24,
     lesiones: 'Tendinopatía rotuliana izquierda', limitaciones: 'No sentadilla profunda', dolor_actual: 'Hombro derecho leve', ejercicios_evitar: 'Peso muerto convencional', ejercicios_favoritos: 'Hip thrust',
-    alimentos_evitar: 'lácteos', restricciones_suplementos: 'ninguna', postura: 'Cifosis leve', fotometria: { circunferencias: { cintura: 70 }, pliegues: { triceps: 12 } }, campo_futuro: 'x' } };
+    alimentos_evitar: 'lácteos', restricciones_suplementos: 'ninguna', postura: 'Cifosis leve', fotometria: { circunferencias: { cintura: 70 }, pliegues: { triceps: 12 } }, campo_futuro: 'x', sentinel_text: 'CLIENT_A_ONLY_SECRET_TEXT' } };
   db.fichas_renovacion[A1] = { updatedAt: 1700000005000, updatedBy: 'coach', data: { peso_kg: 62, movilidad: 'Tobillo limitado' } };
   db.fichas_publicas.FP1 = { coachId: COACH_A, clientUid: A1, nombre: 'Ana Pérez', status: 'convertida', objetivo: 'hipertrofia' };
   db.fichas_publicas.FP2 = { coachId: COACH_A, clientUid: A2, nombre: 'Ana Pérez', status: 'convertida', objetivo: 'FP-DE-A2' };
-  db.fichas_publicas.FPB = { coachId: COACH_B, clientUid: B1, nombre: 'Ana Pérez', status: 'convertida' };
+  db.fichas_publicas.FPB = { coachId: COACH_B, clientUid: B1, nombre: 'Ana Pérez', status: 'convertida', objetivo: 'CLIENT_B_ONLY_SECRET_TEXT' };
+  db.fichas_onboarding[B1] = { schemaVersion: '1.1', updatedAt: 1700000000000, data: { nombre: 'Ana Pérez', lesiones: 'CLIENT_B_ONLY_SECRET_TEXT' } };
+  db.plans_backup.BKB = Object.assign(plan('PB', B1, COACH_B), { originalPlanId: 'PB', backedUpAt: '2026-02-01T00:00:00.000Z', internalMemo: 'CLIENT_B_ONLY_SECRET_TEXT' });
   return db;
 }
 
@@ -96,7 +99,12 @@ function makeIo(db, asUid, opts) {
       calls.getDoc++;
       if (opts.denySection === col) throw permissionError();
       var data = db[col] && db[col][id];
-      if (data === undefined) { if (col === 'logs' || col === 'plans' || col === 'clients') { if (col === 'clients' && !selfOrOwner(id)) throw permissionError(); } return null; }
+      if (data === undefined) {
+        // firestore.rules: clients/plans/plans_backup/fichas_publicas rules read resource.data (null for a missing doc -> denied);
+        // logs/fichas_onboarding/fichas_renovacion rules depend only on the id (-> readable, snapshot does not exist).
+        if (col === 'logs' || col === 'fichas_onboarding' || col === 'fichas_renovacion') { if (!selfOrOwner(id)) throw permissionError(); return null; }
+        throw permissionError();
+      }
       if (!canRead(col, id, data)) throw permissionError();
       return { id: id, data: clone(data) };
     },
@@ -157,4 +165,4 @@ function parseCsv(text) {
   return rows;
 }
 
-module.exports = { readZip: readZip, parseCsv: parseCsv, build: build, makeIo: makeIo, COACH_A: COACH_A, COACH_B: COACH_B, A1: A1, A2: A2, B1: B1, TINY_PNG: TINY_PNG, clone: clone };
+module.exports = { B2: B2, readZip: readZip, parseCsv: parseCsv, build: build, makeIo: makeIo, COACH_A: COACH_A, COACH_B: COACH_B, A1: A1, A2: A2, B1: B1, TINY_PNG: TINY_PNG, clone: clone };

@@ -215,7 +215,8 @@ test('CE.16b adherence is never guessed: unknown plan structure / no evidence ->
   const p1 = a.by_mesocycle.find(m => m.plan_id === 'P1');
   assert.equal(p1.status, 'ADHERENCE_INSUFFICIENT_DATA'); assert.equal(p1.reason, 'PLAN_STRUCTURE_UNKNOWN');
   assert.deepEqual(a.overall.excluded_mesocycles, [{ mesocycle_id: 'P1', reason: 'PLAN_STRUCTURE_UNKNOWN' }]);
-  assert.ok(r.json('manifest.json').warnings.some(w => w.code === 'REFERENCED_PLAN_NOT_FOUND'));
+  assert.ok(r.json('manifest.json').warnings.some(w => w.code === 'REFERENCED_PLAN_UNREADABLE' && w.id === 'P1'));   // real rules answer a missing plan with permission-denied
+  assert.equal(r.json('manifest.json').complete, true);
   assert.ok(r.files['adherencia.csv'].toString('utf8').includes('ADHERENCE_INSUFFICIENT_DATA'));
 });
 
@@ -329,6 +330,17 @@ test('CE.27 nutrition and supplements are exported as stored (display + raw + cl
   const a2 = await ok(db, fx.COACH_A, fx.A2); assert.equal(a2.json('nutricion.json').nutrition.present, false);
 });
 
+test('CE.27b manifest.sensitive_sections lists pharmacology only when it is actually included', async () => {
+  const db = fx.build();
+  const withPed = await ok(db, fx.COACH_A, fx.A1);
+  assert.deepEqual(withPed.json('manifest.json').sensitive_sections, ['pharmacology']);
+  assert.equal(withPed.json('additional_client_data.json').additional_client_data.pharmacology.protocolo, 'P-SINTETICO');   // not redacted
+  const without = await ok(db, fx.COACH_A, fx.A2);
+  assert.deepEqual(without.json('manifest.json').sensitive_sections, []);
+  db.clients[fx.A2].pharmacoPlan = {};
+  assert.deepEqual((await ok(db, fx.COACH_A, fx.A2)).json('manifest.json').sensitive_sections, []);
+});
+
 test('CE.28 export is read-only/local: no write, network, Admin or upload primitives in the export modules', () => {
   const dir = path.join(__dirname, '..', 'assets', 'client-export');
   for (const f of fs.readdirSync(dir)) {
@@ -374,11 +386,60 @@ test('CE.30 Coach wiring: button in the selected-client modal bound to that clie
   const html = fs.readFileSync(path.join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
   assert.ok(html.includes('id="modalExportClientBtn"') && html.includes('Exportar cliente'));
   assert.ok(html.includes("_expBtn.onclick = () => _vdsenOpenClientExport(clientId, c.displayName || c.email || clientId)"));
-  const order = ['util', 'security', 'collect', 'normalize', 'derive', 'media', 'serialize', 'zip', 'runner', 'ui'].map(n => html.indexOf('assets/client-export/' + n + '.js'));
+  const order = ['util', 'security', 'collect', 'normalize', 'derive', 'media', 'serialize', 'zip', 'firestore-io', 'runner', 'ui'].map(n => html.indexOf('assets/client-export/' + n + '.js'));
   assert.ok(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1])), 'scripts present and in dependency order');
   const glue = html.slice(html.indexOf('function _vdsenClientExportIo'), html.indexOf('window._vdsenOpenClientExport'));
   for (const bad of ['setDoc', 'updateDoc', 'addDoc', 'deleteDoc', 'fetch(']) assert.ok(!glue.includes(bad), 'glue must be read-only: ' + bad);
   assert.ok(glue.includes('coachUid: currentCoach.uid') && glue.includes('exporter: _clientExporter'));
   assert.ok(!/NUMERIC_APPLY_ENABLED\s*=\s*true/.test(html));
   for (const f of fs.readdirSync(path.join(__dirname, '..', 'assets', 'client-export'))) assert.ok(fs.existsSync(path.join(__dirname, '..', 'assets', 'client-export', f)));
+});
+
+function fakeDom() {
+  const els = [];
+  const el = tag => { const e = { tag, children: [], style: {}, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.children.push(c); return c; }, remove() { this.removed = true; }, textContent: '', disabled: false }; els.push(e); return e; };
+  return { doc: { createElement: el, getElementById: () => null, body: { appendChild(c) { return c; } } }, els };
+}
+
+test('CE.32 cancelling the confirmation performs no export; a double-click on Exportar starts exactly one job', async () => {
+  let runs = 0, release; const gate = new Promise(r => { release = r; });
+  const exporter = { busy: false, run: async () => { runs++; exporter.busy = true; await gate; exporter.busy = false; return { ok: true, filename: 'f.zip', bytes: new Uint8Array(1) }; } };
+  const d = fakeDom(), toasts = [], dl = [];
+  const env = { document: d.doc, exporter, toast: (m, e) => toasts.push([m, !!e]), download: (n) => dl.push(n) };
+  const c = UI.open({ clientId: fx.A1, clientName: 'Ana' }, env);
+  c.cancelButton.onclick();
+  assert.equal(runs, 0); assert.ok(c.overlay.removed); assert.deepEqual(dl, []); assert.deepEqual(toasts, []);
+  const c2 = UI.open({ clientId: fx.A1, clientName: 'Ana' }, env);
+  const p1 = c2.confirmButton.onclick(), p2 = c2.confirmButton.onclick(), p3 = c2.confirmButton.onclick();
+  release(); await Promise.all([p1, p2, p3]);
+  assert.equal(runs, 1); assert.deepEqual(dl, ['f.zip']);
+});
+
+test('CE.33 export request carries exactly the dialog\'s clientId; failure states show friendly text only', async () => {
+  const seen = [];
+  const exporter = { busy: false, run: async req => { seen.push(req); return { ok: false, code: 'OWNERSHIP_DENIED', message: SEC.MESSAGES.OWNERSHIP_DENIED }; } };
+  const d = fakeDom(), toasts = [];
+  const c = UI.open({ clientId: 'client-xyz', clientName: 'Zoe' }, { document: d.doc, exporter, toast: (m, e) => toasts.push([m, !!e]), download() { throw new Error('must not download'); } });
+  await c.confirmButton.onclick();
+  assert.deepEqual(seen, [{ clientId: 'client-xyz' }]);
+  assert.equal(c.statusEl.textContent, 'La exportación no pudo completarse. Este cliente no pertenece a tu cuenta de coach.');
+  assert.ok(!/Error|at |\.js|stack/i.test(c.statusEl.textContent)); assert.equal(toasts[toasts.length - 1][1], true);
+  assert.equal(c.confirmButton.disabled, false);
+});
+
+test('CE.34 button exists only in the selected-client modal: hidden by default, shown/bound only after that client loads, rebinding on navigation', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'vdsen-coach.html'), 'utf8');
+  assert.equal((html.match(/id="modalExportClientBtn"/g) || []).length, 1);
+  const tag = html.slice(html.indexOf('<button id="modalExportClientBtn"'), html.indexOf('</button>', html.indexOf('<button id="modalExportClientBtn"')));
+  assert.ok(tag.includes('display:none'));
+  const modalStart = html.indexOf('<div id="clientModal"'), modalEnd = html.indexOf('<div class="bottom-nav-mobile"');
+  assert.ok(html.indexOf('id="modalExportClientBtn"') > modalStart && html.indexOf('id="modalExportClientBtn"') < modalEnd, 'inside the client modal only');
+  assert.equal((html.match(/_vdsenOpenClientExport\(/g) || []).length, 2);          // definition + the single binding
+  const fn = html.slice(html.indexOf('async function showClientDetail('), html.indexOf('async function showClientDetail(') + 6000);
+  assert.ok(fn.indexOf('_detailClientId !== clientId') < fn.indexOf('modalExportClientBtn'), 'bound after the stale-context guard');
+  assert.ok(fn.includes("_expBtn.onclick = () => _vdsenOpenClientExport(clientId,"));
+  const nav = html.slice(html.indexOf('function navClient('), html.indexOf('function navClient(') + 800);
+  assert.ok(/showClientDetail\(/.test(nav), 'navigating to another client re-runs showClientDetail, rebinding the button to that client');
+  const glue = html.slice(html.indexOf('function _vdsenOpenClientExport('), html.indexOf('window._vdsenOpenClientExport'));
+  assert.ok(glue.includes('_clientExporterUid !== currentCoach.uid'), 'exporter is recreated when the signed-in coach changes');
 });

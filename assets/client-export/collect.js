@@ -81,7 +81,15 @@
       var pid = extraIds[i];
       if (have[pid] || seenExtra[pid]) continue;
       seenExtra[pid] = true;
-      var pd = await guarded('plans_by_reference', function() { return io.getDoc('plans', pid); }, null);
+      // firestore.rules read `resource.data.coachId`, so a deleted plan (stale activePlanId / orphan mesos snapshot) and a plan owned by someone else
+      // are BOTH answered with permission-denied. A plan this coach owns is always readable, hence a denial here means "missing or not ours": the plan is
+      // left out with a warning and the export continues (nothing foreign is read). Denials on the collection queries stay fatal.
+      var pd = null;
+      try { pd = await io.getDoc('plans', pid); }
+      catch (e) {
+        if (!S.isPermissionError(e)) { sections.plans_by_reference = { status: 'failed' }; warn(warnings, 'SECTION_READ_FAILED', 'plans_by_reference', String(e && e.code || e && e.message || 'error').slice(0, 120)); continue; }
+        warn(warnings, 'REFERENCED_PLAN_UNREADABLE', 'plans', 'missing or not owned by this coach; omitted', { id: pid }); continue;
+      }
       if (!pd) { warn(warnings, 'REFERENCED_PLAN_NOT_FOUND', 'plans', pid, { id: pid }); continue; }
       var kept = ownedOnly([pd], 'plans', true);
       if (kept.length) { plans.push(kept[0]); have[pid] = true; }

@@ -1594,6 +1594,7 @@
   <script src="assets/client-export/media.js"></script>
   <script src="assets/client-export/serialize.js"></script>
   <script src="assets/client-export/zip.js"></script>
+  <script src="assets/client-export/firestore-io.js"></script>
   <script src="assets/client-export/runner.js"></script>
   <script src="assets/client-export/ui.js"></script>
   <script src="assets/progression-magnitude-policy.js"></script>
@@ -11545,12 +11546,7 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   // Código del exportador: assets/client-export/*.js (collect → normalize → derive → serialize → ZIP). La identidad es SIEMPRE clientId.
   var _clientExporter = null, _clientExporterUid = null;
   function _vdsenClientExportIo() {
-    const rows = snap => snap.docs.map(d => ({ id: d.id, data: d.data() }));
-    return {
-      getDoc: async (col, id) => { const s = await getDoc(doc(db, col, id)); return s.exists() ? { id: s.id, data: s.data() } : null; },
-      query: async (col, conds) => rows(await getDocs(query(collection(db, col), ...conds.map(c => where(c[0], c[1], c[2]))))),
-      listSub: async (col, id, sub) => rows(await getDocs(collection(db, col, id, sub)))
-    };
+    return window.VDSEN_CE_FIRESTORE_IO.create({ db, doc, getDoc, getDocs, collection, query, where });
   }
   function _vdsenOpenClientExport(clientId, clientName) {
     if (!currentCoach || !currentCoach.uid) { showToast('La exportación no pudo completarse', true); return; }

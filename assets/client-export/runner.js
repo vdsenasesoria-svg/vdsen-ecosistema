@@ -29,6 +29,18 @@
     if (model.ficha_360.renewal && model.ficha_360.renewal.id !== clientId) bad('renewal');
   }
 
+  function hasContent(v) {
+    if (v === null || v === undefined || v === '') return false;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'object') return Object.keys(v).length > 0;
+    return true;
+  }
+  function sensitiveSections(model) {
+    var out = [];
+    if (hasContent(model.additional_client_data.pharmacology)) out.push('pharmacology');
+    return out;
+  }
+
   // Pure: raw collection -> { filename, bytes, manifest, files }.
   function buildArchive(raw, opts) {
     var now = opts && opts.now instanceof Date ? opts.now : new Date();
@@ -51,10 +63,11 @@
     // Secret scan over every JSON document; a hit blocks the whole export (fail closed).
     jsonFiles.forEach(function(f) { if (S.scanForSecrets(f[1]).length) throw S.ExportError('SECRET_SCAN_FAILED', f[0]); });
 
-    var files = jsonFiles.map(function(f) { return { path: f[0], content: Z.toJson(f[1]) }; })
-      .concat(Z.csvFiles(m2, d2).map(function(f) { return { path: f[0], content: f[1] }; }))
+    // Every text file is UTF-8 encoded exactly once; size, CRC and the ZIP all reuse those bytes (avoids 3x copies of large histories).
+    var files = jsonFiles.map(function(f) { return { path: f[0], content: ZIP.utf8(Z.toJson(f[1])) }; })
+      .concat(Z.csvFiles(m2, d2).map(function(f) { return { path: f[0], content: ZIP.utf8(f[1]) }; }))
       .concat(media.files.map(function(f) { return { path: f.path, content: f.bytes }; }));
-    files.forEach(function(f) { f.bytes = typeof f.content === 'string' ? ZIP.utf8(f.content).length : f.content.length; f.crc32 = ZIP.crc32(typeof f.content === 'string' ? ZIP.utf8(f.content) : f.content); });
+    files.forEach(function(f) { f.bytes = f.content.length; f.crc32 = ZIP.crc32(f.content); });
 
     var counts = { plans: m2.training.plans.length, plans_backup: m2.training.plans_backup.length, mesocycles: m2.training.mesocycles.length, sessions: m2.training.sessions.length,
       exercise_logs: m2.training.exercise_logs.length, body_metrics: m2.body_metrics.length, recovery: m2.recovery.length, notes: m2.notes.length,
@@ -70,12 +83,15 @@
       client_display_name: m2.client.display_name, complete: complete,
       included_sections: Object.keys(has).filter(function(k) { return has[k]; }), empty_sections: Object.keys(has).filter(function(k) { return !has[k]; }),
       record_counts: counts, data_range: Z.dataRange(m2), mesocycle_count: counts.mesocycles, session_count: counts.sessions,
+      // Sensitive client-domain data that IS included (never infrastructure secrets, which are always removed). Listed so a reader of the manifest knows
+      // the archive must be handled as confidential health data.
+      sensitive_sections: sensitiveSections(m2),
       media_status: { status: media.status, bundled_count: media.bundled_count, reference_only_count: media.reference_only_count },
       warnings: m2.warnings,
       files: files.map(function(f) { return { path: f.path, bytes: f.bytes, crc32: ('00000000' + f.crc32.toString(16)).slice(-8) }; })
     };
     if (S.scanForSecrets(manifest).length) throw S.ExportError('SECRET_SCAN_FAILED', 'manifest.json');
-    var all = [{ path: 'manifest.json', content: Z.toJson(manifest) }].concat(files.map(function(f) { return { path: f.path, content: f.content }; }));
+    var all = [{ path: 'manifest.json', content: ZIP.utf8(Z.toJson(manifest)) }].concat(files.map(function(f) { return { path: f.path, content: f.content }; }));
     var bytes = ZIP.build(all, now);
     return { filename: archiveName(m2.client.display_name, now), bytes: bytes, manifest: manifest, entries: all };
   }
