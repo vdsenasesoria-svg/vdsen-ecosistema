@@ -11542,7 +11542,13 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     body.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos...</div>`;
     modal.style.display = "flex";
 
-    const clientSnap = await getDoc(doc(db, "clients", clientId));
+    let clientSnap;
+    try { clientSnap = await getDoc(doc(db, "clients", clientId)); }
+    catch (_clientErr) {
+      // Not ours / not readable (rules): fail closed -- no data is rendered and no raw Firestore error is shown.
+      if (_detailClientId === clientId) body.innerHTML = `<p class="text-red-400">No se pudo abrir este cliente.</p>`;
+      return;
+    }
     // T127-H: stale-context guard — abort if coach navigated to a different client
     // while this fetch was in flight, preventing wrong-client globals and DOM writes.
     if (_detailClientId !== clientId) return;
@@ -11560,9 +11566,18 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailPlanData = null;
     _detailPrevPlanData = null;   // FASE 26 — reset lazy cache al abrir nuevo cliente
     if (c.activePlanId) {
-      const planSnap = await getDoc(doc(db, "plans", c.activePlanId));
-      if (_detailClientId !== clientId) return;  // T127-H
-      if (planSnap.exists()) _detailPlanData = planSnap.data();
+      // Referenced-resource read only (ownership of THIS client is already established by the clients/{id} read above). firestore.rules answer a read of
+      // a plan that is missing (deleted / stale activePlanId) or not ours with permission-denied; that must not abort the client detail. The plan area then
+      // shows the existing "Referencia de plan rota" state. Nothing is created or rewritten here (clearing the reference stays an explicit Coach action).
+      try {
+        const planSnap = await getDoc(doc(db, "plans", c.activePlanId));
+        if (_detailClientId !== clientId) return;  // T127-H
+        if (planSnap.exists()) _detailPlanData = planSnap.data();
+      } catch (_planErr) {
+        if (_detailClientId !== clientId) return;  // T127-H
+        _detailPlanData = null;
+        console.warn('showClientDetail: activePlanId not readable (missing or not owned):', _planErr && _planErr.code);
+      }
     }
 
     _detailFichaData = null;
