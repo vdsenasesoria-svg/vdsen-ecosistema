@@ -49,3 +49,12 @@ test('CN.4 session/selection state resets on auth change; the stale-plan fallbac
   assert.ok(det.indexOf("const _expBtn = document.getElementById('modalExportClientBtn')") < det.indexOf('catch (_planErr)'), 'export bound BEFORE the referenced-plan read, so a stale plan cannot hide it');
   assert.ok(HTML.includes('REFERENCED_PLAN_UNREADABLE') || fs.readFileSync(path.join(__dirname, '..', 'assets', 'client-export', 'collect.js'), 'utf8').includes('REFERENCED_PLAN_UNREADABLE'));
 });
+
+test('CN.5 logout also resets coach-private memory and every private list container of the parked shell', () => {
+  const loggedOut = HTML.slice(HTML.indexOf('Sin auto-login') - 3200, HTML.indexOf('Sin auto-login'));
+  for (const n of ['compendioText = ""', 'manualPlan = null', '_allExercises = []', '_editingPlanId = null', '_vdsenDraftPlanId = null', '_intakeCurrentClient = null', '_historicalMesoState = null', '_shadowMonitorContext = null', '_monitorUnsub', '_monitorPlanUnsub', '_monitorClientUnsub', '_fichasUnsub = null'])
+    assert.ok(loggedOut.includes(n), n);
+  const park = body('function _parkCoachShell()');
+  for (const id of ['fichasRecibidas', 'templateList', 'exerciseCatalog', 'planBuilder', 'autoGenStatus', 'intakeActions', 'intakeForm', 'intakeStatus', 'compendioStatus', 'vdsenPreviewStatus', 'accountInfoBox', 'clientList', 'modalClientBody'])
+    assert.ok(park.includes("'" + id + "'"), id);
+});

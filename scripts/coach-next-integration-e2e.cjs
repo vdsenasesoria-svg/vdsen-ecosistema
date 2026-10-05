@@ -123,6 +123,10 @@ async function main() {
   const base = fx.build();
   base.clients.clientStale = { coachId: 'coachA', displayName: 'Cliente Plan Eliminado', email: 'stale@e2e.invalid', role: 'client', activePlanId: 'PDELETED' };
   base.logs.clientStale = { planId: 'PDELETED', currentWeek: 1, updatedAt: 1700000000000, entries: { log_1_0_0_s0: { carga: 10, reps: 5, unit: 'kg', done: true, ts: '2026-02-01T10:00:00.000Z' } } };
+  // Coach-private data shown outside the client modal (Evaluación, Plantillas, Catálogo): must not survive a coach switch either.
+  base.fichas_publicas.FPU = { coachId: 'coachA', nombre: 'PROSPECTO_A_UNICO', status: 'nueva', objetivo: 'hipertrofia' };
+  base.templates = { TPL1: { coachId: 'coachA', name: 'TEMPLATE_A_UNICO', weeks: 4, daysPerWeek: 1, days: [{ label: 'D1', exercises: [] }], createdAt: '2026-01-01T00:00:00.000Z' } };
+  base.exercises = { EX1: { coachId: 'coachA', name: 'EJERCICIO_A_UNICO', motorPattern: 'push', muscleType: 'chest', equipment: 'barbell', fatigueCost: 3, resistanceCurve: 'flat' } };
   const seeded = JSON.parse(JSON.stringify(base).replace(/coachA/g, uidA).replace(/coachB/g, uidB));
   const adb = adminFs(initAdmin({ projectId: PROJECT }, 'e2e-seed'));
   for (const col of Object.keys(seeded)) for (const id of Object.keys(seeded[col])) await adb.doc(col + '/' + id).set(seeded[col][id]);
@@ -167,7 +171,7 @@ async function main() {
   const B_sleep = ms => new Promise(r => setTimeout(r, ms));
   async function readDownload(d) { const f = path.join(runtime, 'dl-' + crypto.randomBytes(4).toString('hex') + '.zip'); await d.saveAs(f); const buf = fs.readFileSync(f), files = fx.readZip(buf); return { buf, files, json: n => JSON.parse(files[n].toString('utf8')), text: buf.toString('latin1') + Object.keys(files).filter(n => !n.startsWith('media/')).map(n => files[n].toString('utf8')).join('\n') }; }
   // everything that identifies coach A / its clients, for hidden-DOM scans
-  const A_MARKERS = ['clientA1', 'clientA2', 'clientStale', 'ana1@example.test', 'ana2@example.test', 'stale@e2e.invalid', 'Cliente Plan Eliminado', uidA, 'Meso activo', 'CLIENT_A_ONLY_SECRET_TEXT', 'Revisar rodilla', emailA];
+  const A_MARKERS = ['clientA1', 'clientA2', 'clientStale', 'ana1@example.test', 'ana2@example.test', 'stale@e2e.invalid', 'Cliente Plan Eliminado', uidA, 'Meso activo', 'CLIENT_A_ONLY_SECRET_TEXT', 'Revisar rodilla', emailA, 'PROSPECTO_A_UNICO', 'TEMPLATE_A_UNICO', 'EJERCICIO_A_UNICO'];
   const leaks = (html, markers) => markers.filter(m => html.includes(m));
   const fullDom = p => p.evaluate(() => document.documentElement.outerHTML);
   const stashDom = p => p.evaluate(() => { const s = window._vdsenShellStash; if (!s) return null; const d = document.createElement('div'); d.appendChild(s.cloneNode(true)); return d.innerHTML; });
@@ -180,6 +184,12 @@ async function main() {
     // ======== CASE A: coachA selects clientA1, opens the export dialog, logs out; coachB logs in ========
     await loginUi(p, emailA);
     check('A0_LOGIN_WITHOUT_RELOAD', (await ids(p)).includes('clientA1'));
+    // sweep every section as coach A so each loader renders coach A's private data, and pick clientA1 in every client picker
+    for (const sec of ['evaluacion', 'crearPlan', 'templates', 'catalogo', 'config', 'clientes']) { await p.evaluate(x => window.showSection(x), sec); await p.waitForTimeout(1200); }
+    await p.evaluate(() => document.querySelectorAll('select').forEach(sel => { if ([...sel.options].some(o => o.value === 'clientA1')) { sel.value = 'clientA1'; sel.dispatchEvent(new Event('change', { bubbles: true })); } }));
+    await p.waitForTimeout(1500);
+    const swept = await fullDom(p);
+    check('A0b_SWEEP_RENDERED_COACH_A_PRIVATE_DATA', /PROSPECTO_A_UNICO/.test(swept) && /TEMPLATE_A_UNICO/.test(swept) && /EJERCICIO_A_UNICO/.test(swept), ['PROSPECTO_A_UNICO', 'TEMPLATE_A_UNICO', 'EJERCICIO_A_UNICO'].filter(m => swept.includes(m)).join(','));
     await openClient(p, 'clientA1'); await p.click('#modalExportClientBtn'); await p.waitForSelector('#clientExportDialog');
     await logoutUi(p);
     check('A1_EXPORT_DIALOG_DOES_NOT_SURVIVE_LOGOUT', !(await p.$('#clientExportDialog')));
