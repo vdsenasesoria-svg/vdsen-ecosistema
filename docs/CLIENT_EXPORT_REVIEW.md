@@ -18,9 +18,10 @@ Duplicate clicks are refused while a job runs (one exporter instance per coach s
 | `media.js` | inline `data:` images → `media/`; URLs → reference only |
 | `serialize.js` | canonical JSON, section files, RFC 4180 CSV |
 | `zip.js` | dependency-free STORE zip writer (CRC32, UTF-8 names, deterministic) |
+| `firestore-io.js` | read-only adapter built from the Coach's own Firestore web-SDK functions (only `getDoc`/`getDocs`) |
 | `runner.js` | `buildArchive` (pure) + `createExporter` (in-flight guard, error → `{ok:false, code, message}`) |
 | `ui.js` | confirm dialog / progress / result (DOM injected → testable) |
-`vdsen-coach.html`: 10 `<script>` tags, header button `#modalExportClientBtn`, ~25 lines of glue (`_vdsenOpenClientExport`, `_vdsenClientExportIo`) that map the adapter to the Coach's own Firestore SDK calls. No existing function was modified except the 5 lines in `showClientDetail` that bind the button.
+`vdsen-coach.html`: 11 `<script>` tags, header button `#modalExportClientBtn`, ~20 lines of glue (`_vdsenOpenClientExport`, `_vdsenClientExportIo`). No existing function was modified except the 5 lines in `showClientDetail` that bind the button.
 
 ## Data sources (authoritative, from `firestore.rules` + app writers)
 `clients/{clientId}` · `plans` (query `coachId==uid AND clientId==id`, plus `activePlanId`/mesocycle/root-log plan refs) · `plans_backup` (same query) · `logs/{clientId}` · `logs/{clientId}/mesos/{planId}` · `fichas_onboarding/{clientId}` · `fichas_renovacion/{clientId}` · `fichas_publicas` (`coachId==uid AND clientUid==id`).
@@ -46,19 +47,57 @@ Ordering: mesocycles by plan `createdAt` (else first evidence ts, else id); sess
 * trends: last − first in chronological order, direction from sign only; bodyweight change/week only when both timestamps exist.
 
 ## Tests
-`tests/client-export.test.js` (27 tests covering the 26 required items + layout, UI, wiring, read-only guard) + `tests/helpers/client-export-fixture.js` (synthetic data, rules-emulating adapter, independent ZIP reader with CRC check, RFC 4180 parser). `node --test tests/*.test.js`: 1125/1125 pass locally (incl. these 27).
+Unit (`node --test tests/*.test.js`): `tests/client-export.test.js` (31 tests: the 26 required items + layout, sensitive sections, UI contract, wiring), `tests/client-export-large.test.js` (large history), `tests/client-export-harness-dryrun.test.js` (see below), helpers `client-export-fixture.js` (synthetic data, rules-emulating adapter, independent ZIP reader with CRC check, RFC 4180 parser), `client-export-large.js`, `emulator-dryrun-preload.cjs`. Whole suite: 1131/1131 pass.
+Integration: `node scripts/client-export-emulator.cjs` → `tests/client-export-emulator.cjs` (11 tests).
+
+## Firestore Emulator validation (real emulator + repository `firestore.rules`)
+Runner `scripts/client-export-emulator.cjs` (copy of the isolated approach of `scripts/test-auto-apply-emulator.cjs`: demo project `demo-vdsen-export`, localhost-only emulator `cloud-firestore-emulator-v1.19.8.jar` with sha256 check, the repo's `firestore.rules`, private temp dir, no Auth emulator; the release runner/baseline was not modified). Seeding uses the Admin SDK (test harness only); the export itself runs the production adapter over the **Firestore web SDK 10.12.0 as an authenticated user** (`mockUserToken`), exactly like the Coach app.
+Result: **11/11 pass** on the real emulator (and the pre-existing emulator suites still pass: 84/84).
+* coachA → clientA: complete ZIP (all required sections, counts, ids, Unicode, CSV, chronological order, adherence 0.5, pharmacology listed in `sensitive_sections`).
+* coachA → clientB / clientSameNameB (coachB) **denied** (`PERMISSION_DENIED`, no bytes); coachB → clientA denied; coachB exports its own clients. Client without `coachId`, `coachId` of a ghost coach, non-existent client, the athlete themself and an unrelated uid all fail closed.
+* Same display name on 4 clients (2 per coach): exports never contain another client's sentinel (`CLIENT_A_ONLY_SECRET_TEXT` / `CLIENT_B_ONLY_SECRET_TEXT`) in JSON, CSV, manifest, file names, media metadata or ZIP payload (latin1 scan of every byte), in both directions.
+* No Admin SDK / credentials / privileged endpoint in the export path (static check + web-SDK-only run). `firestore.rules` untouched.
+* **Defect found and fixed by the real emulator**: the rules read `resource.data.coachId` for `plans`, so reading a plan that does not exist (stale `activePlanId`, orphan `logs/{id}/mesos/{planId}`) is answered with `permission-denied`, which the exporter treated as fatal. Now a denial on a plan fetched *by reference* → warning `REFERENCED_PLAN_UNREADABLE`, plan omitted, export continues (a plan this coach owns is always readable, so a denial means missing or not ours; nothing foreign is read). Denials on the collection queries/other documents stay fatal. Verified RED (EM.8 fails without the fix on the real emulator) → GREEN.
+### Real query shapes (asserted from the recorded SDK calls)
+| source | call | filters |
+|---|---|---|
+| `clients/{clientId}` | getDoc | — |
+| `logs/{clientId}` | getDoc | — |
+| `logs/{clientId}/mesos` | getDocs(collection) | — |
+| `plans` | getDocs(query) | `coachId == coachUid`, `clientId == clientId` |
+| `plans/{planId}` (active/mesocycle/root refs) | getDoc | — |
+| `plans_backup` | getDocs(query) | `coachId == coachUid`, `clientId == clientId` |
+| `fichas_onboarding/{clientId}`, `fichas_renovacion/{clientId}` | getDoc | — |
+| `fichas_publicas` | getDocs(query) | `coachId == coachUid`, `clientUid == clientId` |
+No query uses a display name; all filters are `==`. EM.7 proves with the real rules that the `coachId` filter is mandatory (a `clientId`-only query on `plans` / `plans_backup` / `fichas_publicas` is rejected, and `logs/{other}` / `mesos` / fichas of another client are denied).
+### Production indexes
+**None required.** Only equality filters on two fields (served by automatic single-field indexes), no `orderBy`. The existing composite index (`plans_backup`: coachId, clientId, backedUpAt desc) is not used by the export. `firestore.indexes.json` untouched.
+### Harness dry run
+Where the emulator JAR cannot be downloaded (it could not be through the proxy via `curl`/`gsutil`, but the Node runner's download with sha256 verification worked), `tests/client-export-harness-dryrun.test.js` runs the same integration file against a rules-*emulating* in-memory fake. It is only a self-check of the harness/adapter code and does not prove anything about the real rules.
+
+## Archive structural validation
+Programmatically on real-emulator output: JSON of every file parses; per-file CRC32 verified by an independent ZIP reader; CSV parses (RFC 4180, BOM, CRLF); UTF-8 preserved (`Tracción`, `ñandú`, `Pérez`); sessions in program order (`P1:w1:d0 … P2:w2:d1`); `record_counts` equal the seeded data; `client_id` / `coach_id` correct; `manifest.files` bytes equal the archive entries.
+## Sensitive sections
+`manifest.sensitive_sections` is always present; it lists `"pharmacology"` only when `clients.pharmacoPlan` has content (verified: A1 → `["pharmacology"]`, A2 → `[]`). The data is exported unredacted under `additional_client_data.pharmacology`; infrastructure secrets are always removed.
+## Media
+Inline `data:image|video` → bundled in `media/` (status `INCLUDED`/`PARTIAL`); http(s) URL → reference only (`REFERENCES_ONLY`, warning `MEDIA_REFERENCE_ONLY`, signed query stripped, never fetched — asserted with a `fetch` spy); none → `NOT_PRESENT`.
+## Large export benchmark (synthetic, STORE zip, Node 22, unit-test machine)
+| set records | sessions | ZIP | time | RSS delta |
+|---|---|---|---|---|
+| 7,680 | 240 | 19.6 MiB | ~0.6 s | ~125 MiB |
+| 38,400 | 1,200 | 96.8 MiB | ~4 s | ~480 MiB |
+| 76,800 | 2,400 | 193.7 MiB | ~9.4 s | ~720 MiB |
+Roughly 2.5 KiB of ZIP per set record (each set appears in the canonical JSON and in `sesiones.json`, with its raw entry, pretty-printed) and ~4× the ZIP size in RSS. A realistic client (a year of training ≈ 3–8k sets) exports in under a second and < 150 MiB. Fix applied: text files are UTF-8-encoded once (previously three times). Compression was deliberately not added; CI guards the 7.7k-set case (`CE_LARGE_SCALE=n` for ad-hoc runs). Limitation: the whole archive is built in memory (browser tab) — histories beyond ~100k sets would need streaming/compression.
 
 ## Known gaps / review points
-1. VDSEN has no Firebase Storage; media = inline data URIs (bundled) or URL references (`MEDIA_REFERENCE_ONLY`, never fetched). Real client photos are, per the app, sent outside the app (WhatsApp) and therefore not exportable.
-2. Not run against the real Firestore emulator/staging (query shapes `coachId+clientId` equality rely on `firestore.rules`; emulated only by the test adapter). Recommended: one authenticated staging export by Ayrton/Codex.
-3. No browser/E2E run (needs Coach auth); button wiring is covered by a source-contract test and the extracted module script parses (`node --check`).
-4. Set index base (`_s0` vs `_s1`) is preserved as stored; session date = earliest/latest set `ts` (null when a session has none).
-5. Plans with no `clientId` that nothing in the client's subtree references are not exported (cannot be attributed safely).
-6. STORE zip (no compression) — larger files; JSON compresses well if the user re-zips.
-7. `exerciseHistory`/progression state in the logs doc are exported verbatim in `additional_client_data` (can be large).
-8. Pharmacology (`pharmacoPlan`, PED) is Coach-visible and exported under `additional_client_data.pharmacology`; confirm that is desired for backups.
-9. `node scripts/release/check.cjs` asserts the canonical branch name and therefore fails on this feature branch by design; the unit baseline discovers `tests/client-export.test.js` automatically (no manifest change made).
-10. Local ref `codex/client-app-next` was stale (`ab8c0ac`); `origin/codex/client-app-next` = `794929c`. The branch was created from the SHA; the local ref was not touched.
+1. **No authenticated browser / staging run yet** (Coach login required). The button wiring is covered by source-contract tests + the extracted module script parses; behaviour against real data in the hosted app is unverified. Staging was not touched.
+2. VDSEN has no Firebase Storage; media = inline data URIs (bundled) or URL references (`MEDIA_REFERENCE_ONLY`, never fetched). Photos sent outside the app are not exportable.
+3. Set index base (`_s0` vs `_s1`) is preserved as stored; session date = earliest/latest set `ts` (null when a session has none).
+4. Plans with no `clientId` that nothing in the client's subtree references are not exported (cannot be attributed safely).
+5. STORE zip, in-memory build (see benchmark); `exerciseHistory`/progression state in the logs doc are exported verbatim (can be large).
+6. Pharmacology (PED) is exported on purpose and flagged in `sensitive_sections`; the archive should be handled as confidential health data.
+7. `node scripts/release/check.cjs` asserts the canonical branch name and therefore fails on this feature branch by design; the unit baseline discovers the new `tests/*.test.js` files automatically (no manifest change made); the new emulator suite lives in its own runner and is not part of the release emulator baseline.
+8. Local ref `codex/client-app-next` was stale (`ab8c0ac`); `origin/codex/client-app-next` = `794929c`. The branch was created from the SHA; the local ref was not touched.
 
 ## Files changed
-`vdsen-coach.html` (+41), `assets/client-export/{util,security,collect,normalize,derive,media,serialize,zip,runner,ui}.js`, `tests/client-export.test.js`, `tests/helpers/client-export-fixture.js`, `docs/CLIENT_EXPORT_REVIEW.md`. Dependencies added: none.
+`vdsen-coach.html`, `assets/client-export/{util,security,collect,normalize,derive,media,serialize,zip,firestore-io,runner,ui}.js`, `scripts/client-export-emulator.cjs`, `tests/client-export*.test.js`, `tests/client-export-emulator.cjs`, `tests/helpers/{client-export-fixture,client-export-large,emulator-dryrun-preload}.js|cjs`, `docs/CLIENT_EXPORT_REVIEW.md`. Dependencies added to the repo: none (the emulator runner installs `firebase@10.12.0` / `firebase-admin@13.10.0` into a private temp dir, as the existing runner does).
