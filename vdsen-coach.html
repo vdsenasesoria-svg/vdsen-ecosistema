@@ -3051,9 +3051,17 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   function _parkCoachShell() {
     if (window._vdsenShellStash || !document.getElementById('clientList')) return;       // already parked, or not a Coach shell
     document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; });
-    ['modalClientBody', 'clientList', 'dashSummary', 'clientNavBar'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = ''; });
+    ['modalClientBody', 'clientList', 'dashSummary', 'clientNavBar', 'accountInfoBox'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = ''; });
     const _t = document.getElementById('modalClientName'); if (_t) _t.textContent = '—';                       // client-detail title (kept the previous client's name)
     const _d = document.getElementById('modalDeleteClientBtn'); if (_d) { _d.style.display = 'none'; _d.onclick = null; }  // bound to the previous client
+    // Client export (Exportar cliente): dismiss an open confirmation/progress dialog (it is a body child and would otherwise be parked and restored for the
+    // next coach), drop the button's client binding and the cached per-coach exporter. Same for the per-coach client caches.
+    if (window.VDSEN_CE_UI && window.VDSEN_CE_UI.closeActive) window.VDSEN_CE_UI.closeActive();
+    const _x = document.getElementById('modalExportClientBtn'); if (_x) { _x.style.display = 'none'; _x.onclick = null; }
+    // Client pickers (<select> options "value=clientId>name", monitor/plan/evaluation dropdowns): drop every option that names one of this coach's clients.
+    const _known = new Set(_clientIdList.concat(Object.keys(_clientNameMap)));
+    if (_known.size) document.querySelectorAll('select option').forEach(o => { if (_known.has(o.value)) o.remove(); });
+    _clientExporter = null; _clientExporterUid = null; _clientIdList = []; _clientNameMap = {};
     const frag = document.createDocumentFragment();
     while (document.body.firstChild) frag.appendChild(document.body.firstChild);
     window._vdsenShellStash = frag;

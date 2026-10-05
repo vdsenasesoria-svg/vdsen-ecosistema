@@ -14,10 +14,17 @@
     success: 'Cliente exportado correctamente', failure: 'La exportación no pudo completarse'
   };
 
+  var active = null;   // the one open dialog (so a logout / coach switch can dismiss it)
+  function closeActive() {
+    var a = active; active = null;
+    if (a) { a.cancelled = true; if (a.overlay && a.overlay.remove) a.overlay.remove(); }
+  }
+
   // env: { document, exporter, download(filename, bytes), toast(msg, isError) }
   function open(req, env) {
     var d = env.document;
     if (env.exporter.busy) { env.toast(TEXT.running, false); return null; }
+    closeActive();
     var prev = d.getElementById('clientExportDialog'); if (prev && prev.remove) prev.remove();
     var overlay = d.createElement('div'); overlay.id = 'clientExportDialog';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -33,6 +40,7 @@
     row.appendChild(cancel); row.appendChild(go);
     box.appendChild(h); box.appendChild(who); box.appendChild(p); box.appendChild(status); box.appendChild(row); overlay.appendChild(box);
     d.body.appendChild(overlay);
+    var ctl = { overlay: overlay, cancelled: false }; active = ctl;
     var running = false;
     function close() { if (!running && overlay.remove) overlay.remove(); }
     cancel.onclick = close;
@@ -42,10 +50,11 @@
       var res;
       try { res = await env.exporter.run({ clientId: req.clientId }); } catch (e) { res = { ok: false, code: 'EXPORT_FAILED', message: TEXT.failure }; }
       running = false;
+      if (ctl.cancelled) return;                       // dialog was dismissed (logout / coach switch): no download, no toast, nothing for the next session
       if (res && res.ok) {
         try { env.download(res.filename, res.bytes); } catch (e) { res = { ok: false, code: 'EXPORT_FAILED', message: TEXT.failure }; }
       }
-      if (res && res.ok) { env.toast(TEXT.success, false); if (overlay.remove) overlay.remove(); return; }
+      if (res && res.ok) { env.toast(TEXT.success, false); if (active === ctl) active = null; if (overlay.remove) overlay.remove(); return; }
       status.style.color = '#e05555';
       status.textContent = TEXT.failure + (res && res.message && res.message !== TEXT.failure ? '. ' + res.message : '.');
       go.disabled = false; cancel.disabled = false; go.textContent = TEXT.confirm;
@@ -60,5 +69,5 @@
     win.setTimeout(function() { win.URL.revokeObjectURL(url); }, 4000);
   }
 
-  return { TEXT: TEXT, open: open, downloadBytes: downloadBytes };
+  return { TEXT: TEXT, open: open, closeActive: closeActive, downloadBytes: downloadBytes };
 });
