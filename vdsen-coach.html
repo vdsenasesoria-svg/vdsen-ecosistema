@@ -11571,6 +11571,9 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     const modal = document.getElementById("clientModal");
     const body  = document.getElementById("modalClientBody");
     const title = document.getElementById("modalClientName");
+    // Export button: never keep the PREVIOUS client's binding while this client is loading (or if it fails to load).
+    const _expReset = document.getElementById('modalExportClientBtn');
+    if (_expReset) { _expReset.style.display = 'none'; _expReset.onclick = null; }
     body.innerHTML = `<div class="loading-row"><span class="spinner"></span> Cargando datos...</div>`;
     modal.style.display = "flex";
 

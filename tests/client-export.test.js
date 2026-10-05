@@ -363,7 +363,7 @@ test('CE.29 UI trigger: confirmation copy, progress text, success/failure messag
   const dlg = UI.open({ clientId: fx.A1, clientName: 'Ana <b>Pérez</b>' }, { document: w.doc, exporter, toast: (m, e) => toasts.push([m, !!e]), download: (n, b) => downloads.push([n, b.length]) });
   const texts = w.els.map(e => e.textContent);
   assert.ok(texts.includes('Exportar cliente') && texts.includes('Cancelar') && texts.includes('Exportar') && texts.includes('Ana <b>Pérez</b>'));     // name as text, never HTML
-  assert.ok(texts.includes('Se generará una copia completa de la información de este cliente, incluyendo historial de entrenamiento, rendimiento, mesociclos, adherencia, ficha 360, recuperación y notas.'));
+  assert.ok(texts.includes('Se generará una copia completa de la información de este cliente. El archivo puede incluir datos sensibles como historial, métricas corporales, notas, recuperación y farmacología.'));
   const p = dlg.confirmButton.onclick(); await Promise.resolve();
   assert.equal(dlg.statusEl.textContent, 'Preparando exportación...'); assert.equal(dlg.confirmButton.disabled, true); assert.equal(dlg.cancelButton.disabled, true);
   dlg.confirmButton.onclick(); dlg.cancelButton.onclick(); assert.ok(!dlg.overlay.removed, 'cancel is inert while running');
@@ -436,8 +436,9 @@ test('CE.34 button exists only in the selected-client modal: hidden by default, 
   assert.ok(html.indexOf('id="modalExportClientBtn"') > modalStart && html.indexOf('id="modalExportClientBtn"') < modalEnd, 'inside the client modal only');
   assert.equal((html.match(/_vdsenOpenClientExport\(/g) || []).length, 2);          // definition + the single binding
   const fn = html.slice(html.indexOf('async function showClientDetail('), html.indexOf('async function showClientDetail(') + 6000);
-  assert.ok(fn.indexOf('_detailClientId !== clientId') < fn.indexOf('modalExportClientBtn'), 'bound after the stale-context guard');
+  assert.ok(fn.indexOf('_detailClientId !== clientId') < fn.indexOf("const _expBtn = document.getElementById('modalExportClientBtn')"), 'bound after the stale-context guard');
   assert.ok(fn.includes("_expBtn.onclick = () => _vdsenOpenClientExport(clientId,"));
+  assert.ok(fn.indexOf("_expReset.onclick = null") > 0 && fn.indexOf("_expReset.onclick = null") < fn.indexOf('_detailClientId !== clientId'), 'previous client binding is cleared before loading');
   const nav = html.slice(html.indexOf('function navClient('), html.indexOf('function navClient(') + 800);
   assert.ok(/showClientDetail\(/.test(nav), 'navigating to another client re-runs showClientDetail, rebinding the button to that client');
   const glue = html.slice(html.indexOf('function _vdsenOpenClientExport('), html.indexOf('window._vdsenOpenClientExport'));

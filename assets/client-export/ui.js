@@ -9,7 +9,7 @@
 
   var TEXT = {
     title: 'Exportar cliente',
-    message: 'Se generará una copia completa de la información de este cliente, incluyendo historial de entrenamiento, rendimiento, mesociclos, adherencia, ficha 360, recuperación y notas.',
+    message: 'Se generará una copia completa de la información de este cliente. El archivo puede incluir datos sensibles como historial, métricas corporales, notas, recuperación y farmacología.',
     cancel: 'Cancelar', confirm: 'Exportar', running: 'Preparando exportación...',
     success: 'Cliente exportado correctamente', failure: 'La exportación no pudo completarse'
   };
@@ -22,12 +22,12 @@
     var overlay = d.createElement('div'); overlay.id = 'clientExportDialog';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
     var box = d.createElement('div'); box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
-    box.style.cssText = 'background:#171717;border:1px solid #444;max-width:460px;width:100%;padding:20px;border-radius:10px;color:#f4f4f0';
+    box.style.cssText = 'background:#171717;border:1px solid #444;max-width:460px;width:100%;max-height:90vh;overflow:auto;box-sizing:border-box;padding:20px;border-radius:10px;color:#f4f4f0';
     var h = d.createElement('h3'); h.style.cssText = 'margin:0 0 4px;font-size:18px;font-weight:700'; h.textContent = TEXT.title;
-    var who = d.createElement('div'); who.style.cssText = 'color:#c8a54a;font-size:13px;margin-bottom:10px'; who.textContent = req.clientName || '';
+    var who = d.createElement('div'); who.style.cssText = 'color:#c8a54a;font-size:13px;margin-bottom:10px;overflow-wrap:anywhere;word-break:break-word'; who.textContent = req.clientName || '';
     var p = d.createElement('p'); p.style.cssText = 'font-size:13px;line-height:1.5;color:#ccc;margin:0 0 14px'; p.textContent = TEXT.message;
     var status = d.createElement('div'); status.style.cssText = 'font-size:13px;min-height:18px;margin-bottom:10px'; status.setAttribute('aria-live', 'polite');
-    var row = d.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+    var row = d.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap';
     var cancel = d.createElement('button'); cancel.type = 'button'; cancel.className = 'btn-secondary'; cancel.textContent = TEXT.cancel;
     var go = d.createElement('button'); go.type = 'button'; go.className = 'btn-primary'; go.textContent = TEXT.confirm;
     row.appendChild(cancel); row.appendChild(go);
