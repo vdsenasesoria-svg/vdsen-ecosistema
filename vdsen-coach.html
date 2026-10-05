@@ -3051,7 +3051,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   function _parkCoachShell() {
     if (window._vdsenShellStash || !document.getElementById('clientList')) return;       // already parked, or not a Coach shell
     document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; });
-    ['modalClientBody', 'clientList', 'dashSummary', 'clientNavBar', 'accountInfoBox'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = ''; });
+    ['modalClientBody', 'clientList', 'dashSummary', 'clientNavBar', 'accountInfoBox', 'fichasRecibidas', 'templateList', 'exerciseCatalog', 'planBuilder', 'autoGenStatus', 'intakeActions', 'intakeForm', 'intakeStatus', 'compendioStatus', 'vdsenPreviewStatus'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = ''; });
     const _t = document.getElementById('modalClientName'); if (_t) _t.textContent = '—';                       // client-detail title (kept the previous client's name)
     const _d = document.getElementById('modalDeleteClientBtn'); if (_d) { _d.style.display = 'none'; _d.onclick = null; }  // bound to the previous client
     // Client export (Exportar cliente): dismiss an open confirmation/progress dialog (it is a body child and would otherwise be parked and restored for the
@@ -3106,6 +3106,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       _detailRenovacionData = null;
       _detailLogsData = null;
       window._importedPlan = null;
+      // Coach-private memory that used to survive a coach switch (only reachable now that sign-in works without a reload): the coach's compendium text,
+      // plan drafts / editing ids, the intake client, the cached exercise catalog, the historical-mesocycle and shadow-monitor contexts, and live listeners.
+      compendioText = ""; manualPlan = null; _allExercises = []; _editingPlanId = null; _vdsenDraftPlanId = null;
+      _intakeCurrentClient = null; _historicalMesoState = null; _shadowMonitorContext = null;
+      ['_monitorUnsub', '_monitorPlanUnsub', '_monitorClientUnsub'].forEach(k => { if (typeof window[k] === 'function') { try { window[k](); } catch (_) {} } window[k] = null; });
+      if (_fichasUnsub) { try { _fichasUnsub(); } catch (_) {} _fichasUnsub = null; }
       // T130: vdsen_apikey holds the coach's personal AI API key (Motor VDSEN
       // generation). It was never cleared on logout — a second coach on the same
       // device would silently reuse the first coach's key (and billing).
