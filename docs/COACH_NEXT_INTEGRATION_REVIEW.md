@@ -36,6 +36,9 @@ Ancestry of both lists was verified against the source branches before starting 
 4. *Account box in hidden DOM.* `#accountInfoBox` held the previous coach's email and uid. Fix: cleared when parking.
 Items 3–4 are in fact gaps of the runtime-hardening scrub that only a scan of the parked fragment (new in the combined suite) could reveal; they are fixed here, not on the source branch.
 
+## Final local audit addendum (after `ffc0866`)
+A read-only audit of the integrated diff plus an extended browser sweep (every Coach section visited as coach A with private data seeded, then a coach switch and a scan of the **parked shell fragment**) found one more concrete defect, fixed in `939366b` / covered by `1626d9d`: coach-private data survived a coach switch (a) in the parked DOM — prospects (Evaluación), templates, exercise catalog, intake / plan-builder / compendium status containers — and (b) in module memory — compendium text (which feeds AI generation), plan drafts and editing ids, intake client, exercise cache, historical-mesocycle and shadow-monitor contexts, live listeners. All are now cleared on logout. Full handoff for staging: `docs/COACH_NEXT_STAGING_HANDOFF.md`.
+
 ## Combined security behaviour
 * After logout/login or a coach switch in the same tab nothing of the previous coach remains — verified by scanning **the parked shell fragment, the login screen and the DOM after the next sign-in** for client ids, names, emails, coach uid/email, notes and plan names: client name/email, modal title/body, delete binding, export binding, export dialog, selected client id (`_detailClientId` and caches reset by the logged-out branch), cached client object, client pickers, account box.
 * A restored shell never restores another coach's selected client, export binding or client metadata.
@@ -48,13 +51,13 @@ Owned client with an unreadable/missing `activePlanId`: detail opens ("Referenci
 ## Tests (all on this branch)
 | suite | result |
 |---|---|
-| `scripts/coach-next-integration-e2e.cjs` (new; real Coach UI + Auth + Firestore emulators + repo rules) cases A/B/C, stale+export, hidden-DOM scan, local-only network | 20/20 |
+| `scripts/coach-next-integration-e2e.cjs` (new; real Coach UI + Auth + Firestore emulators + repo rules) cases A/B/C, stale+export, all-sections hidden-DOM scan, local-only network | 21/21 |
 | `scripts/client-export-browser-e2e.cjs` (unchanged) | 34/34 |
 | `scripts/coach-runtime-e2e.cjs` (unchanged) | 18/18 |
 | `scripts/client-export-emulator.cjs` (real Firestore Emulator + rules) | 11/11 |
 | `scripts/test-auto-apply-emulator.cjs` (existing emulator suites) | 84/84 |
-| `tests/coach-next-integration.test.js` (new, source contracts + UI controller) | 4/4 |
-| `node --test tests/*.test.js` | 1138/1138 |
+| `tests/coach-next-integration.test.js` (new, source contracts + UI controller) | 5/5 |
+| `node --test tests/*.test.js` | 1139/1139 |
 `git diff --check`: clean. The new E2E script duplicates the emulator/browser bootstrap of the two existing ones (they live on other branches); consolidating into a shared module is a possible follow-up.
 
 ## Remaining gap / release implications
