@@ -498,6 +498,7 @@
         <button onclick="navClient(1)" class="text-[#888] hover:text-[#F4F4F0] text-lg px-2 py-1" title="Siguiente cliente">▶</button>
       </div>
       <div class="flex items-center gap-2">
+        <button id="modalExportClientBtn" type="button" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid rgba(68,187,136,.5);background:rgba(68,187,136,.1);color:#44BB88;font-size:12px;cursor:pointer" title="Exportar toda la información de este cliente (ZIP)">⬇ Exportar cliente</button>
         <button id="modalDeleteClientBtn" style="display:none;padding:4px 8px;border-radius:6px;border:1px solid #FF4444;background:rgba(255,68,68,.1);color:#FF4444;font-size:12px;cursor:pointer" title="Eliminar cliente">🗑 Eliminar</button>
         <button onclick="closeClientModal()" class="text-[#888] hover:text-white text-xl leading-none">✕</button>
       </div>
@@ -1585,6 +1586,16 @@
 
   <script src="assets/exercise-visual-catalog.js"></script>
   <script src="assets/exercise-visual-metadata-editor.js"></script>
+  <script src="assets/client-export/util.js"></script>
+  <script src="assets/client-export/security.js"></script>
+  <script src="assets/client-export/collect.js"></script>
+  <script src="assets/client-export/normalize.js"></script>
+  <script src="assets/client-export/derive.js"></script>
+  <script src="assets/client-export/media.js"></script>
+  <script src="assets/client-export/serialize.js"></script>
+  <script src="assets/client-export/zip.js"></script>
+  <script src="assets/client-export/runner.js"></script>
+  <script src="assets/client-export/ui.js"></script>
   <script src="assets/progression-magnitude-policy.js"></script>
   <script src="assets/progression-equipment-resolver.js"></script>
   <script src="assets/equipment-identity.js"></script>
@@ -11529,6 +11540,31 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
   }
 
   // opts.tab — optional tab to open instead of default 'ficha' (e.g. { tab: 'plan' } after a plan save)
+  // ── Exportar cliente (vdsen-client-export-v1) ─────────────────────────────────────────────────────────────────────────────────
+  // Local/download-only. Lecturas con el SDK del propio Coach (sujetas a firestore.rules); sin endpoint privilegiado, sin escrituras.
+  // Código del exportador: assets/client-export/*.js (collect → normalize → derive → serialize → ZIP). La identidad es SIEMPRE clientId.
+  var _clientExporter = null, _clientExporterUid = null;
+  function _vdsenClientExportIo() {
+    const rows = snap => snap.docs.map(d => ({ id: d.id, data: d.data() }));
+    return {
+      getDoc: async (col, id) => { const s = await getDoc(doc(db, col, id)); return s.exists() ? { id: s.id, data: s.data() } : null; },
+      query: async (col, conds) => rows(await getDocs(query(collection(db, col), ...conds.map(c => where(c[0], c[1], c[2]))))),
+      listSub: async (col, id, sub) => rows(await getDocs(collection(db, col, id, sub)))
+    };
+  }
+  function _vdsenOpenClientExport(clientId, clientName) {
+    if (!currentCoach || !currentCoach.uid) { showToast('La exportación no pudo completarse', true); return; }
+    if (!_clientExporter || _clientExporterUid !== currentCoach.uid) {
+      _clientExporter = window.VDSEN_CLIENT_EXPORT.createExporter({ io: _vdsenClientExportIo(), coachUid: currentCoach.uid });
+      _clientExporterUid = currentCoach.uid;
+    }
+    window.VDSEN_CE_UI.open({ clientId: clientId, clientName: clientName }, {
+      document: document, exporter: _clientExporter, toast: showToast,
+      download: (name, bytes) => window.VDSEN_CE_UI.downloadBytes(document, window, name, bytes)
+    });
+  }
+  window._vdsenOpenClientExport = _vdsenOpenClientExport;
+
   async function showClientDetail(clientId, opts) {
     var _initialTab = (opts && opts.tab) || 'ficha';
     _detailClientId   = clientId;
@@ -11556,6 +11592,11 @@ Técnicas soportadas en "technique": "straight" (normal), "drop", "sst", "myorep
     _detailClientData = clientSnap.data();
     const c = _detailClientData;
     title.textContent = c.displayName;
+    const _expBtn = document.getElementById('modalExportClientBtn');
+    if (_expBtn) {
+      _expBtn.style.display = '';
+      _expBtn.onclick = () => _vdsenOpenClientExport(clientId, c.displayName || c.email || clientId);
+    }
     const _delBtn = document.getElementById('modalDeleteClientBtn');
     if (_delBtn) {
       _delBtn.style.display = '';
