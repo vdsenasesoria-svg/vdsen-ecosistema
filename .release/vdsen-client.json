@@ -32,13 +32,13 @@
       }
     ]
   },
-  "release_status": "PENDING_EXTERNAL_SETUP",
+  "release_status": "READY",
   "preconditions": {
-    "entitlements_verified": false,
-    "legacy_data_reviewed": false,
-    "preview_production_env_verified": false,
-    "human_ux_approved": false
+    "entitlements_verified": true,
+    "legacy_data_reviewed": true,
+    "preview_production_env_verified": true,
+    "human_ux_approved": true
   },
-  "observation_source": "User authoritative reconciliation 2026-10-03; production and rollback deployment IDs differ; always revalidate live",
+  "observation_source": "Live revalidation 2026-10-06 (DeepSeek operator): production alias vdsen-ecosistema.vercel.app -> dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB (READY, githubCommitSha d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf, ref codex/client-app-next); Vercel Production scope has FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY; required index plans_backup (coachId, clientId, backedUpAt) Enabled; PRODUCTION_RELEASE_ENABLED=false; production public bytes byte-identical to the approved runtime; clients 45/45 with coachId (0 orphan); root logs 29/29 with planId. Entitlement: apiAccessEnabled granted to the single approved Coach z82EDPvsCaabfMN3eGAP3rpxeMt1 (ayrtonvd@gmail.com), verified true; eUD5y7BrdASwn5DBk1FCvD4aJVC3 (coach@vdsen.com) and bXty0kXIpjfUWBF5dd6xYf60Eny2 (phone) intentionally unchanged. Human UX approved explicitly by Ayrton for the current production Cliente and Coach experience. Governance note: Environment Production has branch_policy only (no required_reviewers); main and codex/client-app-next are not branch-protected",
   "release_mode": "rules_only"
 }
