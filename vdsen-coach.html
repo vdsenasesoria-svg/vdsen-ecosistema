@@ -1586,6 +1586,7 @@
 
   <script src="assets/exercise-visual-catalog.js"></script>
   <script src="assets/exercise-visual-metadata-editor.js"></script>
+  <script src="assets/exercise-image-upload.js"></script>
   <script src="assets/client-export/util.js"></script>
   <script src="assets/client-export/security.js"></script>
   <script src="assets/client-export/collect.js"></script>
@@ -1607,6 +1608,7 @@
   <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, signOut, updatePassword, EmailAuthProvider, reauthenticateWithCredential, signInWithEmailAndPassword, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail, setPersistence, browserLocalPersistence, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
   import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   
   // ========== CONFIGURACIÓN FIREBASE (REEMPLAZAR CON DATOS REALES) ==========
@@ -1623,6 +1625,7 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
+  const storage = getStorage(app);
 
   // Persistencia robusta: prioriza IndexedDB (sobrevive cierre de navegador en Safari/iOS), fallback a localStorage
   setPersistence(auth, indexedDBLocalPersistence).catch(() => setPersistence(auth, browserLocalPersistence)).catch(() => {});
@@ -3051,6 +3054,7 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   function _parkCoachShell() {
     if (window._vdsenShellStash || !document.getElementById('clientList')) return;       // already parked, or not a Coach shell
     document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; });
+    _visualEditorClose();                                                                    // photo editor: staged Blob/preview/object URL, upload binding, in-flight async ops
     ['modalClientBody', 'clientList', 'dashSummary', 'clientNavBar', 'accountInfoBox', 'fichasRecibidas', 'templateList', 'exerciseCatalog', 'planBuilder', 'autoGenStatus', 'intakeActions', 'intakeForm', 'intakeStatus', 'compendioStatus', 'vdsenPreviewStatus'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = ''; });
     const _t = document.getElementById('modalClientName'); if (_t) _t.textContent = '—';                       // client-detail title (kept the previous client's name)
     const _d = document.getElementById('modalDeleteClientBtn'); if (_d) { _d.style.display = 'none'; _d.onclick = null; }  // bound to the previous client
@@ -4016,7 +4020,15 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   // Editor mínimo: escribe únicamente campos visuales en el documento exercises.
   var _visualEditorExercise = null;
   function _visualEditorText(id) { return (document.getElementById(id) || {}).value || ''; }
-  function _visualEditorClose() { var el = document.getElementById('visualMetadataEditor'); if (el) el.remove(); _visualEditorExercise = null; }
+  var _visualPhoto = null;   // { controller, seq } while the editor is open; seq invalidates in-flight uploads
+  var _visualSeq = 0;
+  function _visualEditorClose() {
+    _visualSeq++;
+    if (_visualPhoto) { try { _visualPhoto.controller.invalidate(); } catch (e) { /* ignore */ } _visualPhoto = null; }
+    var el = document.getElementById('visualMetadataEditor'); if (el) el.remove();
+    _visualEditorExercise = null;
+  }
+  async function _visualDeleteObject(path) { try { await deleteObject(storageRef(storage, path)); return true; } catch (e) { return false; } }
   function openVisualMetadataEditor(exercise) {
     if (!exercise || !currentCoach || !exercise.id) return;
     _visualEditorExercise = { id: exercise.id, coachId: currentCoach.uid, exerciseId: exercise.exerciseId || exercise.id, prescriptionExerciseId: exercise.prescriptionExerciseId || null };
@@ -4029,6 +4041,12 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
       '<p style="color:#888;font-size:12px">Identidad protegida · ' + _escH(exercise.name || '') + (exercise.prescriptionExerciseId ? ' · PID: ' + _escH(exercise.prescriptionExerciseId) : '') + '</p>' +
       '<label>Sede<select id="vm-gym" class="input-field w-full">' + gyms.map(function (g) { return '<option>' + _escH(g) + '</option>'; }).join('') + '</select></label>' +
       '<label>Equipo<input id="vm-equipment" list="vm-equipment-options" class="input-field w-full"><datalist id="vm-equipment-options">' + ((window.VDSEN_EXERCISE_VISUAL_CATALOG && window.VDSEN_EXERCISE_VISUAL_CATALOG.functionalEquipment) || []).map(function (x) { return '<option value="' + _escH(x.name) + '">'; }).join('') + '</datalist></label>' +
+      '<fieldset style="border:1px solid #333;border-radius:8px;padding:10px;margin:8px 0"><legend style="color:#bbb;font-size:12px">Foto del ejercicio</legend>' +
+      '<div id="vm-photo-source" style="color:#aaa;font-size:12px;margin-bottom:6px"></div>' +
+      '<img id="vm-photo-preview" alt="Vista previa" style="display:none;max-width:100%;max-height:220px;border-radius:8px;margin-bottom:8px">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="vm-photo-pick" class="btn-secondary">Subir foto</button><button type="button" id="vm-photo-remove" class="btn-secondary" style="display:none">Eliminar foto</button><button type="button" id="vm-photo-cancel" class="btn-secondary" style="display:none">Descartar selección</button></div>' +
+      '<input type="file" id="vm-photo-file" accept="image/jpeg,image/png,image/webp" style="display:none">' +
+      '<div id="vm-photo-status" style="font-size:12px;margin-top:6px;color:#aaa" aria-live="polite"></div></fieldset>' +
       '<label>Asset local<input id="vm-asset" class="input-field w-full" placeholder="assets/exercises/pending-license.svg"></label>' +
       '<label>URL HTTPS<input id="vm-image" class="input-field w-full" placeholder="https://..."></label>' +
       '<label>Objetivo técnico<textarea id="vm-objective" class="input-field w-full" rows="2"></textarea></label>' +
@@ -4050,15 +4068,65 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
     document.getElementById('vm-errors').value = (exercise.commonErrors || []).join('\n');
     document.getElementById('vm-variants').value = variants;
     document.getElementById('visualMetaClose').onclick = _visualEditorClose;
-    document.getElementById('visualMetaSave').onclick = async function () {
+    var IMG = window.VDSEN_EXERCISE_IMAGE, VME = window.VDSEN_VISUAL_METADATA_EDITOR;
+    var seq = _visualSeq;                                    // everything async below is tied to this editor instance
+    var original = { assetRef: exercise.assetRef || '', imageUrl: exercise.imageUrl || '' };
+    var removing = false;
+    function $(id) { return document.getElementById(id); }
+    function storedPhoto() { return !removing && VME.isStorageRef(original.assetRef); }
+    function renderPhoto(st) {
+      if (seq !== _visualSeq) return;
+      var staged = st && st.hasImage, img = $('vm-photo-preview');
+      var src = staged ? st.previewUrl : (removing ? '' : (original.imageUrl || ''));
+      if (src && (staged || /^https:\/\//i.test(src))) { img.src = src; img.style.display = 'block'; } else { img.removeAttribute('src'); img.style.display = 'none'; }
+      var label = staged ? 'Foto nueva sin guardar' : removing ? 'La foto se eliminará al guardar' : storedPhoto() ? 'Foto subida' : (original.imageUrl || original.assetRef) ? 'URL externa' : 'Sin foto';
+      $('vm-photo-source').textContent = 'Origen: ' + label;
+      $('vm-photo-pick').textContent = (staged || storedPhoto() || original.imageUrl || original.assetRef) && !removing ? 'Cambiar foto' : 'Subir foto';
+      $('vm-photo-remove').style.display = !removing && !staged && (original.imageUrl || original.assetRef) ? '' : 'none';
+      $('vm-photo-cancel').style.display = staged || removing ? '' : 'none';
+      var s = $('vm-photo-status'); s.textContent = st && st.message ? st.message : ''; s.style.color = st && st.status === 'error' ? '#f08080' : '#aaa';
+      $('visualMetaSave').disabled = !!(st && st.status === 'processing');
+      $('vm-asset').disabled = $('vm-image').disabled = storedPhoto() || !!staged;
+    }
+    var controller = IMG.createController(IMG.browserEnv(window), { onChange: renderPhoto });
+    _visualPhoto = { controller: controller, seq: seq };
+    renderPhoto(controller.state());
+    $('vm-photo-pick').onclick = function () { $('vm-photo-file').value = ''; $('vm-photo-file').click(); };
+    $('vm-photo-file').onchange = async function (ev) {
+      var f = ev.target.files && ev.target.files[0]; ev.target.value = '';
+      if (!f || seq !== _visualSeq) return;
+      removing = false;
+      await controller.stage(f);
+    };
+    $('vm-photo-remove').onclick = function () { removing = true; $('vm-asset').value = ''; $('vm-image').value = ''; renderPhoto(controller.state()); };
+    $('vm-photo-cancel').onclick = function () { removing = false; $('vm-asset').value = original.assetRef; $('vm-image').value = original.imageUrl; controller.discard(); };
+    $('visualMetaSave').onclick = async function () {
       var status = document.getElementById('visualMetaStatus');
+      var uploaded = null;
       try {
-        if (!_visualEditorExercise || _visualEditorExercise.coachId !== currentCoach.uid || _visualEditorExercise.id !== exercise.id) throw new Error('El contexto del editor cambió; vuelve a abrirlo.');
+        if (seq !== _visualSeq || !_visualEditorExercise || _visualEditorExercise.coachId !== currentCoach.uid || _visualEditorExercise.id !== exercise.id) throw new Error('El contexto del editor cambió; vuelve a abrirlo.');
         var patch = window.VDSEN_VISUAL_METADATA_EDITOR.buildPatch({ gym:_visualEditorText('vm-gym'), equipment:_visualEditorText('vm-equipment'), assetRef:_visualEditorText('vm-asset'), imageUrl:_visualEditorText('vm-image'), technicalObjective:_visualEditorText('vm-objective'), setup:_visualEditorText('vm-setup'), execution:_visualEditorText('vm-execution'), instructions:_visualEditorText('vm-instructions'), commonErrors:_visualEditorText('vm-errors'), variants:_visualEditorText('vm-variants') });
         var btn = document.getElementById('visualMetaSave'); btn.disabled = true; btn.textContent = 'Guardando...';
-        await updateDoc(doc(db, 'exercises', _visualEditorExercise.id), patch);
+        var staged = controller.getStaged(), coachId = _visualEditorExercise.coachId, exId = _visualEditorExercise.id;
+        if (staged) {
+          // 1) upload under a fresh versioned name, 2) persist Firestore, 3) only then delete the previous object (best effort).
+          var path = IMG.storagePath(coachId, exId, IMG.randomHex(8));
+          $('vm-photo-status').textContent = 'Subiendo foto...';
+          await uploadBytes(storageRef(storage, path), staged.blob, { contentType: staged.mime });
+          uploaded = path;
+          var url = await getDownloadURL(storageRef(storage, path));
+          if (seq !== _visualSeq || currentCoach.uid !== coachId) { await _visualDeleteObject(path); return; }   // context changed mid-upload: nothing is persisted
+          patch.assetRef = VME.assetRef(path); patch.imageUrl = VME.mediaUrl(url);
+        } else if (removing) { patch.assetRef = ''; patch.imageUrl = ''; }
+        await updateDoc(doc(db, 'exercises', exId), patch);
+        uploaded = null;                                      // Firestore now references it
+        var old = original.assetRef;
+        if (VME.isStorageRef(old) && old !== patch.assetRef && IMG.isOwnStoragePath(old, coachId, exId)) await _visualDeleteObject(old);   // failure = orphan only; the working reference is already saved
         showToast('Metadata visual guardada'); _visualEditorClose(); await loadExerciseCatalog();
-      } catch (e) { status.textContent = e.message || 'No se pudo guardar'; }
+      } catch (e) {
+        if (uploaded) await _visualDeleteObject(uploaded);    // Firestore update failed: do not leave an unreferenced object behind
+        if (seq === _visualSeq) { var b = document.getElementById('visualMetaSave'); if (b) { b.disabled = false; b.textContent = 'Guardar metadata visual'; } status.textContent = e.message || 'No se pudo guardar'; }
+      }
     };
   }
   window.openVisualMetadataEditor = openVisualMetadataEditor;

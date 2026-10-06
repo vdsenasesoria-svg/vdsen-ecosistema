@@ -9,6 +9,13 @@
     if (/^assets\/[A-Za-z0-9_./-]+\.(svg|png|jpe?g|webp)$/i.test(v) && v.indexOf('..') === -1) return v;
     throw new Error('La imagen debe ser una URL HTTPS o un asset local válido.');
   }
+  // Canonical Firebase Storage object path written by the Coach photo upload (exercise-media/{coachId}/{exerciseId}/image-<16 hex>).
+  var STORAGE_REF = /^exercise-media\/[A-Za-z0-9_-]{1,128}\/[A-Za-z0-9_-]{1,128}\/image-[a-f0-9]{16}$/;
+  function assetRef(value) {
+    var v = trim(value);
+    if (STORAGE_REF.test(v)) return v;
+    return mediaUrl(v);
+  }
   function text(value, label) {
     var v = trim(value);
     if (v.length > MAX) throw new Error(label + ' supera el límite permitido.');
@@ -38,7 +45,7 @@
     var patch = {
       gym: text(source.gym, 'La sede'),
       equipment: text(source.equipment, 'El equipo'),
-      assetRef: mediaUrl(source.assetRef),
+      assetRef: assetRef(source.assetRef),
       imageUrl: mediaUrl(source.imageUrl),
       instructions: text(source.instructions, 'Las instrucciones'),
       setup: text(source.setup, 'La preparación'),
@@ -49,6 +56,6 @@
     };
     return patch;
   }
-  root.VDSEN_VISUAL_METADATA_EDITOR = { buildPatch: buildPatch, mediaUrl: mediaUrl };
+  root.VDSEN_VISUAL_METADATA_EDITOR = { buildPatch: buildPatch, mediaUrl: mediaUrl, assetRef: assetRef, isStorageRef: function (v) { return STORAGE_REF.test(trim(v)); } };
   if (typeof module === 'object' && module.exports) module.exports = root.VDSEN_VISUAL_METADATA_EDITOR;
 })(typeof window !== 'undefined' ? window : globalThis);
