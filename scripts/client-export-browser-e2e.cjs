@@ -71,13 +71,13 @@ function buildStaticAssets() {
   const bin = n => path.join(runtime, 'node_modules', '.bin', n), out = path.join(runtime, 'sdk');
   fs.mkdirSync(out, { recursive: true });
   spawnSync(process.execPath, [path.join(runtime, 'node_modules', 'esbuild', 'install.js')], { stdio: 'ignore' });
-  for (const [f, mod] of [['e-app.js', 'firebase/app'], ['e-auth.js', 'firebase/auth'], ['e-fs.js', 'firebase/firestore']]) fs.writeFileSync(path.join(runtime, f), "export * from '" + mod + "';\n");
-  let r = spawnSync(bin('esbuild'), [path.join(runtime, 'e-app.js'), path.join(runtime, 'e-auth.js'), path.join(runtime, 'e-fs.js'), '--bundle', '--format=esm', '--splitting', '--platform=browser', '--minify', '--outdir=' + out], { cwd: runtime, encoding: 'utf8' });
+  for (const [f, mod] of [['e-app.js', 'firebase/app'], ['e-auth.js', 'firebase/auth'], ['e-fs.js', 'firebase/firestore'], ['e-st.js', 'firebase/storage']]) fs.writeFileSync(path.join(runtime, f), "export * from '" + mod + "';\n");
+  let r = spawnSync(bin('esbuild'), [path.join(runtime, 'e-app.js'), path.join(runtime, 'e-auth.js'), path.join(runtime, 'e-fs.js'), path.join(runtime, 'e-st.js'), '--bundle', '--format=esm', '--splitting', '--platform=browser', '--minify', '--outdir=' + out], { cwd: runtime, encoding: 'utf8' });
   if (r.status !== 0) throw new Error('esbuild failed: ' + (r.stderr || '').slice(0, 300));
   fs.writeFileSync(path.join(runtime, 'tw-in.css'), '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n');
   r = spawnSync(bin('tailwindcss'), ['-i', path.join(runtime, 'tw-in.css'), '-o', path.join(runtime, 'tw.css'), '--content', path.join(repo, 'vdsen-coach.html')], { cwd: runtime, encoding: 'utf8' });
   if (r.status !== 0) throw new Error('tailwind build failed: ' + (r.stderr || '').slice(0, 300));
-  const names = { 'firebase-app.js': 'e-app.js', 'firebase-auth.js': 'e-auth.js', 'firebase-firestore.js': 'e-fs.js' };
+  const names = { 'firebase-app.js': 'e-app.js', 'firebase-auth.js': 'e-auth.js', 'firebase-firestore.js': 'e-fs.js', 'firebase-storage.js': 'e-st.js' };
   const base = 'https://www.gstatic.com/firebasejs/10.12.0/';
   const local = url => {
     if (url.startsWith(base)) { const n = url.slice(base.length).split('?')[0], f = names[n] || (/^chunk-[A-Za-z0-9]+\.js$/.test(n) ? n : null); if (f && fs.existsSync(path.join(out, f))) return { body: fs.readFileSync(path.join(out, f)), contentType: 'text/javascript' }; }
