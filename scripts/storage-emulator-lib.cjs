@@ -85,7 +85,7 @@ function patchHtml(html, ports, css) {
   rep('projectId: "vdsen-ecosistema"', 'projectId: "' + PROJECT + '"');
   rep('authDomain: "vdsen-ecosistema.firebaseapp.com"', 'authDomain: "' + PROJECT + '.firebaseapp.com"');
   rep('storageBucket: "vdsen-ecosistema.firebasestorage.app"', 'storageBucket: "' + BUCKET + '"');
-  rep('const storage = getStorage(app);', 'const storage = getStorage(app);\n  const getDownloadURL = async r => { const u = new URL(await _gdu(r)); u.protocol = "https:"; u.host = "' + FAKE_STORAGE_HOST + '"; return u.toString(); };\n  window.__vdsenStorageHits = [];\n  connectStorageEmulator(storage, "127.0.0.1", ' + ports.storage + ');');
+  rep('const storage = getStorage(app);', 'const storage = getStorage(app);\n  const getDownloadURL = async r => { const u = new URL(await _gdu(r)); u.protocol = "https:"; u.port = ""; u.hostname = "' + FAKE_STORAGE_HOST + '"; return u.toString(); };\n  window.__vdsenStorageHits = [];\n  connectStorageEmulator(storage, "127.0.0.1", ' + ports.storage + ');');
   rep('const db = getFirestore(app);', 'const db = getFirestore(app);\n  if (!/^demo-/.test(firebaseConfig.projectId)) throw new Error("E2E guard: not a demo project");\n  connectAuthEmulator(auth, "http://127.0.0.1:' + ports.auth + '", { disableWarnings: true });\n  connectFirestoreEmulator(db, "127.0.0.1", ' + ports.fs + ');');
   return h;
 }
