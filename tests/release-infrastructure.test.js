@@ -7,8 +7,44 @@ const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { validate, hash, json, git, indexMatches, verifyDeployment, noSecrets } = require('../scripts/release/lib.cjs');
 const { verifyIndex, restoreRules, recover, workflowGuard } = require('../scripts/release/live.cjs');
+const deployedProduct = require('../scripts/release/deployed-product.cjs');
 const state = json('.release/vdsen-client.json');
 const clone = x => JSON.parse(JSON.stringify(x));
+
+test('deployed product manifest is honest and the release check no longer forbids product work', () => {
+  const manifest = json(deployedProduct.MANIFEST);
+  // The manifest describes the DEPLOYED runtime, and the state agrees with it.
+  assert.equal(manifest.schema, 'vdsen-deployed-product-v1');
+  assert.equal(manifest.runtime_sha, state.runtime_sha, 'manifest must describe state.runtime_sha');
+  // It is not unverified metadata: every served path is re-hashed at that runtime.
+  assert.deepEqual(Object.keys(manifest.files).sort(), [...deployedProduct.SERVED].sort());
+  deployedProduct.verify(state.runtime_sha, deployedProduct.MANIFEST);
+  // The served surface really covers what a client downloads.
+  for (const must of ['vdsen-cliente.html', 'vdsen-coach.html', 'ficha-publica.html', 'sw.js', 'firestore.rules']) {
+    assert.ok(deployedProduct.SERVED.includes(must), 'served surface must include ' + must);
+  }
+  // The deployed rules are the reviewed target rules — independent cross-check.
+  assert.equal(manifest.files['firestore.rules'], state.rules_transition.target_sha256);
+  // DECOUPLING: check() proves provenance from the manifest, never by demanding that HEAD
+  // equal the deployed runtime. That equality is what made every product improvement
+  // require a production deploy, and it is logically impossible for an undeployed candidate.
+  const src = fs.readFileSync('scripts/release/check.cjs', 'utf8');
+  assert.ok(src.includes('deployedProduct.verify'), 'check must verify the deployed product manifest');
+  assert.ok(!src.includes('Runtime/package mismatch'), 'the runtime-vs-HEAD product ban must be gone');
+  assert.ok(!/git\('diff',\s*'--name-only',\s*runtime,\s*'HEAD'\)/.test(src), 'check must not diff the deployed runtime against HEAD');
+  // Tampering with the manifest still fails: the guard protects, it is not a rubber stamp.
+  const tampered = clone(manifest);
+  tampered.files['vdsen-cliente.html'] = 'f'.repeat(64);
+  const tmp = path.join(os.tmpdir(), 'dpm-tampered-' + process.pid + '.json');
+  fs.writeFileSync(tmp, JSON.stringify(tampered));
+  try { assert.throws(() => deployedProduct.verify(state.runtime_sha, tmp), /does not describe the deployed runtime/); }
+  finally { fs.rmSync(tmp, { force: true }); }
+  const wrongRuntime = clone(manifest); wrongRuntime.runtime_sha = '0'.repeat(40);
+  const tmp2 = path.join(os.tmpdir(), 'dpm-wrong-' + process.pid + '.json');
+  fs.writeFileSync(tmp2, JSON.stringify(wrongRuntime));
+  try { assert.throws(() => deployedProduct.verify(state.runtime_sha, tmp2), /!= deployed/); }
+  finally { fs.rmSync(tmp2, { force: true }); }
+});
 test('release state rejects numeric activation, missing gates and unknown project', () => {
   const schema = json('.release/schema/release-state.schema.json');
   validate(state, schema);
