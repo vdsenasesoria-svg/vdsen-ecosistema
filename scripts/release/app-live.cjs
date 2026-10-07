@@ -345,7 +345,18 @@ const VERCEL_CLI_VERSION = '59.11.7';
 function promoteViaCli(s, id) {
   return new Promise((resolve) => {
     const onResult = (code, stdout, stderr) => {
-      if (code !== 0) return resolve({ ok: false, detail: (stderr || stdout || '').slice(-400) });
+      if (code !== 0) {
+        // Keep the DIAGNOSTIC lines, not the tail: `npx` prints npm noise ("i@izs.me",
+        // registry metadata) at the end, and slice(-N) captured only that, hiding the actual
+        // Vercel error. Prefer lines that look like an error, longest last.
+        const all = (String(stderr) + '\n' + String(stdout))
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0 && !/^(npm |i@|added \d|package|found \d)/.test(l));
+        const errLines = all.filter((l) => /error|failed|not |cannot|unable|forbidden|denied|422|403|401|invalid|refus/i.test(l));
+        const detail = (errLines.length ? errLines : all).slice(0, 6).join(' | ');
+        return resolve({ ok: false, detail });
+      }
       const m = String(stdout).match(/dpl_[A-Za-z0-9]+/);
       resolve({ ok: true, deploymentId: m ? m[0] : id });
     };
