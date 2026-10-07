@@ -153,7 +153,44 @@ test('CN3.6 ids the old branch parked that do NOT exist in canonical are not cop
   }
 });
 
-test('CN3.7 NUMERIC_APPLY_ENABLED sigue en false', () => {
+test('CN4.1 the isolation regression found by the browser matrix stays fixed', () => {
+  // The browser matrix found a REAL leak that reading the code did not: after Coach A logged out,
+  // `planClientSelect` still held A's client OPTIONS (ids included) inside the parked shell, and the
+  // parked shell is exactly what the next coach gets back. `crearPlan` keeps rendered rows for the
+  // same reason. These two ids are the regression.
+  const park = fn('function _parkCoachShell()');
+  assert.ok(park.includes('planClientSelect'), 'las opciones de cliente del coach anterior deben limpiarse');
+  assert.ok(park.includes('crearPlan'), 'el contenido renderizado de crearPlan debe limpiarse');
+  // and the over-correction must NOT come back: `clientes` is the PARENT of clientList, so clearing
+  // it wiped the shell structure (parked length collapsed to 0) and the next coach could not render
+  // any list at all.
+  assert.ok(!/getElementById\('clientes'\)/.test(park), 'no debe vaciar el contenedor padre clientes');
+});
+
+test('CN4.2 the test-only module probe is never shipped', () => {
+  // The probe exists so the isolation test can read the runtime's MODULE LEXICAL bindings, which are
+  // not window properties. It is appended by the harness to the bytes it generates. If it ever
+  // appears in the product file, the harness has leaked into production.
+  assert.ok(!HTML.includes('__VDSEN_COACH_TEST_PROBE'), 'el probe de modulo no debe estar en el producto');
+  assert.ok(!HTML.includes('__VDSEN_COACH_TEST_SET'), 'el setter de modulo no debe estar en el producto');
+  assert.ok(!HTML.includes('__VDSEN_HARNESS__'), 'el marcador del arnes no debe estar en el producto');
+});
+
+test('CN4.3 the logout scrub cannot abort halfway', () => {
+  // Each cleanup section that can legitimately fail (a listener that is not a function, an element
+  // that is gone) must be isolated, so one throwing line cannot leave the rest of the previous
+  // coach's data in place. The listener teardown is the one that matters: it both invokes and nulls.
+  const i = HTML.indexOf('window._importedPlan = null;');
+  const block = HTML.slice(i, i + 1800);
+  assert.ok(/typeof window\[k\] === 'function'/.test(block), 'se comprueba que el unsubscribe sea invocable');
+  assert.ok(/try \{ window\[k\]\(\); \} catch/.test(block), 'invocar el unsubscribe esta protegido');
+  assert.ok(/_fichasUnsub\)? \{ try \{ _fichasUnsub\(\)/.test(block), 'cerrar fichas esta protegido');
+  // the memory assignments themselves must be OUTSIDE any try, or a thrown error there would hide
+  // the fact that the scrub never ran
+  assert.ok(/compendioText = ""; manualPlan = null;/.test(block), 'las asignaciones de memoria son directas');
+});
+
+test('CN4.4 NUMERIC_APPLY_ENABLED sigue en false', () => {
   for (const m of ['progression-effective-prescription', 'progression-application-consumer', 'progression-auto-apply-shadow', 'progression-magnitude-policy']) {
     assert.equal(require('../assets/' + m + '.js').NUMERIC_APPLY_ENABLED, false, m);
   }
