@@ -224,7 +224,14 @@ function assertPromoted(d, { runtime, project, team, productionDeploymentId }) {
   assert.equal(d.readyState, 'READY', 'Promoted deployment is not READY');
   assert.equal(d.projectId, project, 'Promoted project mismatch');
   assert.equal(d.teamId || team, team, 'Promoted team mismatch');
-  assert.equal(d.meta?.githubCommitSha, runtime, 'Promoted runtime SHA mismatch');
+  // The staged deploy stamps `-m githubCommitSha=<candidate>`, so the identity MUST be present and
+  // equal. A CLI deploy uploads a tree, not a git ref, and Vercel leaves this metadata null unless
+  // it is set explicitly - which is what made this gate fail with 'Promoted runtime SHA mismatch'
+  // after the promotion itself had already succeeded. The requirement is kept strict instead of
+  // accepting a missing value, because that value is the only server-side link between the running
+  // deployment and the approved commit.
+  assert.ok(d.meta && d.meta.githubCommitSha, 'Promoted deployment carries no commit identity');
+  assert.equal(d.meta.githubCommitSha, runtime, 'Promoted runtime SHA mismatch');
   assert.ok(productionDeploymentId, 'Resulting production deployment was not resolved');
 }
 
@@ -452,7 +459,11 @@ async function stageProduction() {
   // authentication with "Not able to load user because of unexpected error: User not found. (404)".
   // The deploy directory is a positional argument, which is the documented form.
   // `--json` so the deployment id comes straight from the CLI instead of being scraped from prose.
-  const res = await runVercelCli(['deploy', outDir, '--prod', '--skip-domain', '--yes', '--json'], outDir, {
+  // `-m githubCommitSha=<sha>` stamps the EXACT candidate identity onto the deployment. A CLI
+  // deploy uploads a tree rather than a git ref, so Vercel leaves `meta.githubCommitSha` null and
+  // the post-promotion identity gate had nothing to compare against. Stamping it keeps that gate
+  // strict rather than relaxing it.
+  const res = await runVercelCli(['deploy', outDir, '--prod', '--skip-domain', '--yes', '--json', '-m', 'githubCommitSha=' + runtime], outDir, {
     VERCEL_ORG_ID: s.vercel_team,
     VERCEL_PROJECT_ID: s.production_project,
   });
@@ -563,8 +574,11 @@ async function revertApp(s, id) {
 }
 
 async function verifyPublicBytes(s, runtime, paths) {
+  // Skip anything not reachable over HTTP (see NOT_HTTP_SERVED): those paths are still verified at
+  // the git level by verifyProductIdentity and verifyExportedTree.
+  const fetchable = paths.filter((p) => !NOT_HTTP_SERVED.has(p));
   const results = [];
-  for (const p of paths) {
+  for (const p of fetchable) {
     const expected = hash(gitBinary('show', runtime + ':' + p));
     const r = await fetch(s.production_origin + '/' + p + '?apprelease=' + runtime, {
       cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30000),
@@ -595,6 +609,18 @@ async function observeLiveRulesReadOnly(s) {
 function servedSurface() {
   const manifest = json(deployedProduct.MANIFEST);
   return Object.keys(manifest.files);
+}
+
+// Paths that are part of the deployed artifact but are NOT reachable over HTTP, so they cannot be
+// byte-compared through a public fetch. `vercel.json` is Vercel's own project configuration: it is
+// uploaded and tracked in the artifact, and `verifyProductIdentity` compares it at the git level,
+// but requesting /vercel.json answers 404. Comparing it over HTTP made the post-promotion
+// verification fail with 'Public surface HTTP failure: vercel.json' even though production was
+// serving exactly the right bytes - and because that failure happened after a successful
+// promotion, it also triggered a needless recovery.
+const NOT_HTTP_SERVED = new Set(['vercel.json']);
+function httpServedSurface() {
+  return servedSurface().filter((p) => !NOT_HTTP_SERVED.has(p));
 }
 
 // The lane runs from canonical HEAD (tooling plus whatever product is integrated there),
@@ -910,7 +936,7 @@ module.exports = {
   assertCandidateNotAlreadyProduction, assertBaseline, assertEnvironment,
   assertFirebaseProject, assertPromoted, assertRollbackArtifact,
   resolveCandidate, currentApp, listDeployments, normalizeDeployment, deployment, productionEnv, promote, revertApp,
-  verifyPublicBytes, servedSurface, verifyProductIdentity, readOnlyPreflight, preflight, apply, rollbackApp, releaseResult, preflightSummary, redactUrl, vercelUrl, preflightSummary,
+  verifyPublicBytes, servedSurface, httpServedSurface, NOT_HTTP_SERVED, verifyProductIdentity, readOnlyPreflight, preflight, apply, rollbackApp, releaseResult, preflightSummary, redactUrl, vercelUrl, preflightSummary,
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
   observeProduction, decideRecovery,
   exportCandidateTree, verifyExportedTree, assertStaged, stageProduction, runVercelCli, diagnosticLines, VERCEL_CLI_VERSION,
