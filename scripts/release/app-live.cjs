@@ -395,11 +395,11 @@ function assertStaged(d, { project, team, current }) {
 
 // Runs a Vercel CLI command in a given working directory. The CLI prints its diagnostics to
 // STDERR (not stdout), so both streams are captured and the error-looking lines are preferred.
-function runVercelCli(args, cwd) {
+function runVercelCli(args, cwd, extraEnv) {
   return new Promise((resolve) => {
     const child = spawn('npx', ['--yes', 'vercel@' + VERCEL_CLI_VERSION].concat(args), {
       cwd,
-      env: process.env,
+      env: Object.assign({}, process.env, extraEnv || {}),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '', err = '';
@@ -445,12 +445,16 @@ async function stageProduction() {
   const currentBefore = await currentApp(s);
 
   // 3. one staged production deployment, not aliased to any production domain
-  const res = await runVercelCli([
-    'deploy', '--prod', '--skip-domain', '--yes',
-    '--project', s.production_project,
-    '--scope', s.vercel_team,
-    '--cwd', outDir,
-  ], outDir);
+  //
+  // The project and team are established through VERCEL_ORG_ID / VERCEL_PROJECT_ID, which is the
+  // documented way to deploy non-interactively in CI. Passing them as flags does NOT work here:
+  // `--scope` expects a team SLUG, not the `team_...` id, and passing the id made the CLI fail in
+  // authentication with "Not able to load user because of unexpected error: User not found. (404)".
+  // The deploy directory is a positional argument, which is the documented form.
+  const res = await runVercelCli(['deploy', outDir, '--prod', '--skip-domain', '--yes'], outDir, {
+    VERCEL_ORG_ID: s.vercel_team,
+    VERCEL_PROJECT_ID: s.production_project,
+  });
   if (res.code !== 0) {
     throw new Error('staged production deploy failed: ' + diagnosticLines(res.out, res.err));
   }
@@ -512,7 +516,12 @@ async function stageProduction() {
 const VERCEL_CLI_VERSION = '59.11.7';
 
 function promoteViaCli(s, id) {
-  return runVercelCli(['promote', 'https://' + id + '.vercel.app', '--yes', '--project', s.production_project, '--scope', s.vercel_team]).then((res) => {
+  // Same reasoning as the staged deploy: project/team come from the environment, not from
+  // `--project`/`--scope` flags (`--scope` wants a slug, not the team id).
+  return runVercelCli(['promote', 'https://' + id + '.vercel.app', '--yes'], undefined, {
+    VERCEL_ORG_ID: s.vercel_team,
+    VERCEL_PROJECT_ID: s.production_project,
+  }).then((res) => {
     if (res.code !== 0) return { ok: false, detail: diagnosticLines(res.out, res.err) };
     const m = String(res.out).match(/dpl_[A-Za-z0-9]+/);
     return { ok: true, deploymentId: m ? m[0] : id };
