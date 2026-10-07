@@ -16,8 +16,10 @@ test('deployed product manifest is honest and the release check no longer forbid
   // The manifest describes the DEPLOYED runtime, and the state agrees with it.
   assert.equal(manifest.schema, 'vdsen-deployed-product-v1');
   assert.equal(manifest.runtime_sha, state.runtime_sha, 'manifest must describe state.runtime_sha');
-  // It is not unverified metadata: every served path is re-hashed at that runtime.
-  assert.deepEqual(Object.keys(manifest.files).sort(), [...deployedProduct.SERVED].sort());
+  // It is not unverified metadata: every DEPLOYED path is re-hashed at that runtime. The manifest
+  // records the deployed surface only — candidate-only paths are deliberately absent from it, which
+  // is what lets a candidate add served assets without a production deploy.
+  assert.deepEqual(Object.keys(manifest.files).sort(), [...deployedProduct.DEPLOYED].sort());
   deployedProduct.verify(state.runtime_sha, deployedProduct.MANIFEST);
   // The served surface really covers what a client downloads.
   for (const must of ['vdsen-cliente.html', 'vdsen-coach.html', 'ficha-publica.html', 'sw.js', 'firestore.rules']) {
@@ -280,4 +282,82 @@ test('kill switch off, missing runtime SHA or missing gate/rollback artifacts st
     await assert.rejects(apply()); await assert.rejects(prepare()); // no gate results / rollback.json / READY state in this checkout
     assert.equal(calls, 0);
   } finally { global.fetch = original; for (const k of Object.keys(process.env)) if (!(k in before)) delete process.env[k]; Object.assign(process.env, before); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deployed surface vs CANDIDATE surface.
+//
+// `SERVED` used to be one registry that `verify()` required entirely at the deployed runtime commit.
+// That coupled product development to a production deploy: the moment a candidate added a served
+// asset the frozen manifest could not verify, and the only way out was to regenerate the manifest
+// and pretend the new file was already live — falsifying production metadata. Adding product files
+// to canonical does not authorize a production deploy, so the concepts are separate now.
+test('deployed manifest verifies against the DEPLOYED runtime and is untouched by candidate work', () => {
+  const manifest = clone(json(deployedProduct.MANIFEST));
+  // 1. the current production manifest verifies
+  deployedProduct.verify(state.runtime_sha, deployedProduct.MANIFEST);
+  // 2. adding a candidate-only served path must NOT invalidate it
+  const realServed = [...deployedProduct.SERVED];
+  try {
+    deployedProduct.SERVED.push('assets/client-export/harness-probe.js');
+    deployedProduct.CANDIDATE_ONLY.push('assets/client-export/harness-probe.js');
+    deployedProduct.verify(state.runtime_sha, deployedProduct.MANIFEST);
+  } finally {
+    deployedProduct.SERVED.length = 0; deployedProduct.SERVED.push(...realServed);
+    deployedProduct.CANDIDATE_ONLY.length = 0;
+  }
+  // 3. nothing rewrote the manifest
+  assert.deepEqual(json(deployedProduct.MANIFEST), manifest, 'la verificacion no debe reescribir el manifiesto');
+});
+
+test('a tampered deployed manifest is rejected, and an unknown path is rejected', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vdsen-dp-'));
+  try {
+    const good = clone(json(deployedProduct.MANIFEST));
+    // 5. a tampered hash must fail
+    const bad = clone(good);
+    const first = Object.keys(bad.files)[0];
+    bad.files[first] = '0'.repeat(64);
+    fs.writeFileSync(path.join(dir, 'tampered.json'), JSON.stringify(bad));
+    assert.throws(() => deployedProduct.verify(state.runtime_sha, path.join(dir, 'tampered.json')), /does not describe the deployed runtime/);
+    // 6. a path that is no longer a recognized product path must fail
+    const unknown = clone(good);
+    unknown.files['assets/not-a-product-path.js'] = '0'.repeat(64);
+    fs.writeFileSync(path.join(dir, 'unknown.json'), JSON.stringify(unknown));
+    assert.throws(() => deployedProduct.verify(state.runtime_sha, path.join(dir, 'unknown.json')), /unknown path/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('candidate surface verification requires every registered path to exist in the candidate', () => {
+  // 3. every registered path exists at this commit, so it passes
+  const ok = deployedProduct.verifyCandidate(state.runtime_sha, { entryPoints: ['vdsen-cliente.html', 'vdsen-coach.html'] });
+  assert.equal(ok.paths, deployedProduct.SERVED.length);
+  // 4. a registry entry naming a file that does not exist must FAIL
+  const realServed = [...deployedProduct.SERVED];
+  try {
+    deployedProduct.SERVED.push('assets/client-export/definitely-missing.js');
+    assert.throws(() => deployedProduct.verifyCandidate(state.runtime_sha), /missing a registered served path/);
+  } finally { deployedProduct.SERVED.length = 0; deployedProduct.SERVED.push(...realServed); }
+  // 7. an entry point referencing a local asset the registry forgot must FAIL.
+  //    `gitBytes` always reads the REAL checkout (it shells out to git in the repo), so a throwaway
+  //    repo commit cannot be seen from here. Instead the registry is emptied and a real product
+  //    entry point is used: every `assets/...` reference in it then counts as unregistered.
+  const savedServed2 = [...deployedProduct.SERVED];
+  deployedProduct.SERVED.length = 0;
+  try {
+    assert.throws(() => deployedProduct.verifyCandidate('HEAD', { entryPoints: ['vdsen-coach.html'] }),
+      /references an unregistered browser asset: assets\//);
+  } finally { deployedProduct.SERVED.length = 0; deployedProduct.SERVED.push(...savedServed2); }
+  // and with the real registry restored the same call passes again
+  deployedProduct.verifyCandidate('HEAD', { entryPoints: ['vdsen-coach.html'] });
+});
+
+test('product CI does not require a production deploy to carry a candidate-only served path', () => {
+  // The point of the split: product work must not force production metadata to be falsified.
+  const manifest = json(deployedProduct.MANIFEST);
+  assert.equal(Object.keys(manifest.files).length, 26, 'produccion sigue sirviendo 26 rutas');
+  assert.equal(deployedProduct.DEPLOYED.length, 26);
+  assert.equal(deployedProduct.CANDIDATE_ONLY.length, 0, 'nada candidato todavia: se llena al portar el export');
+  // and the frozen surface must remain a subset of the candidate surface
+  for (const f of deployedProduct.DEPLOYED) assert.ok(deployedProduct.SERVED.includes(f), 'la superficie desplegada es subconjunto de la candidata');
 });
