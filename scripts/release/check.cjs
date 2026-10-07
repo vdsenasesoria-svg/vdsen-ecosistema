@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const { hash, json, git, validate, noSecrets } = require('./lib.cjs');
 const { validateBaseline } = require('./baseline.cjs');
+const deployedProduct = require('./deployed-product.cjs');
 function workflowContract() {
   for (const name of ['vdsen-release-prod', 'vdsen-rollback', 'vdsen-oidc-validate']) {
     const source = fs.readFileSync('.github/workflows/' + name + '.yml', 'utf8');
@@ -30,8 +31,15 @@ function check(runtime = process.env.RUNTIME_SHA) {
   const ref = process.env.GITHUB_REF;
   if (ref && process.env.GITHUB_EVENT_NAME !== 'pull_request') assert.equal(ref, 'refs/heads/codex/client-app-next');
   if (!ref) assert.equal(git('branch', '--show-current').trim(), 'codex/client-app-next');
-  const changed = git('diff', '--name-only', runtime, 'HEAD').trim().split('\n').filter(Boolean);
-  for (const file of changed) assert.ok(/^(docs\/|tests\/|scripts\/release\/|\.github\/|\.release\/|AGENTS\.md$)/.test(file), 'Runtime/package mismatch: ' + file);
+  // Provenance of the DEPLOYED ARTIFACT is proven by the frozen deployed-product manifest,
+  // not by forbidding product work on the branch. `runtime_sha` is the commit of the app
+  // that is actually deployed; requiring HEAD to equal it made every product improvement
+  // require a production deploy. The manifest pins the served surface at that deployed
+  // commit and is re-verified here. The LIVE app is verified against the real deployment
+  // inside the release workflow (live.cjs verifyDeployment + smoke), where credentials exist.
+  const deployed = json(deployedProduct.MANIFEST);
+  assert.equal(deployed.runtime_sha, state.runtime_sha, 'Deployed product manifest does not describe state.runtime_sha');
+  deployedProduct.verify(state.runtime_sha, deployedProduct.MANIFEST);
   // Check committed bytes to avoid Windows checkout line ending conversions.
   assert.equal(hash(git('show', runtime + ':firestore.rules')), state.rules_transition.target_sha256);
   assert.equal(hash(git('show', 'HEAD:firestore.rules')), state.rules_transition.target_sha256);
@@ -48,7 +56,7 @@ function check(runtime = process.env.RUNTIME_SHA) {
     const bytes = fs.readFileSync(file);
     if (!bytes.includes(0)) noSecrets(bytes.toString('utf8'), file);
   }
-  console.log('PASS release state / provenance / numeric flag / rules / index / package / tracked secret patterns');
+  console.log('PASS release state / deployed-product manifest / numeric flag / rules / index / package / tracked secret patterns');
   return state;
 }
 function resolveRuntime(requested, state) {
