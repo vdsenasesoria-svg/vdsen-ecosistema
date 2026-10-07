@@ -89,7 +89,7 @@ test('recovery never calls Vercel if restored rules verification fails', async (
   process.env.GOOGLE_ACCESS_TOKEN = 'test-only';
   const oldContent = fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8');
   const source = { files: [{ name: 'firestore.rules', content: oldContent }] };
-  const snapshot = { state, old_rules: { source, sha256: hash(oldContent) } };
+  const snapshot = { package_sha: git('rev-parse', 'HEAD').trim(), state, old_rules: { source, sha256: hash(oldContent) } };
   try {
     global.fetch = async (url, options) => {
       requests.push([url, options.method]);
@@ -126,7 +126,7 @@ test('successful recovery verifies restored rules before switching app and compa
   // RULES rollback source is the reviewed immutable reference (decoupled from the app runtime).
   const oldContent = fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8');
   const source = { files: [{ name: 'firestore.rules', content: oldContent }] };
-  const snapshot = { state, old_rules: { source, sha256: hash(oldContent) } };
+  const snapshot = { package_sha: git('rev-parse', 'HEAD').trim(), state, old_rules: { source, sha256: hash(oldContent) } };
   try {
     global.fetch = async (url, options = {}) => {
       requests.push([url, options.method || 'GET']);
@@ -179,7 +179,7 @@ test('rules_only recovery restores verified rules without any Vercel request and
   const requests = []; let appDeployment = state.production_deployment;
   const oldContent = fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8');
   const source = { files: [{ name: 'firestore.rules', content: oldContent }] };
-  const snapshot = { state, old_rules: { source, sha256: hash(oldContent) } };
+  const snapshot = { package_sha: git('rev-parse', 'HEAD').trim(), state, old_rules: { source, sha256: hash(oldContent) } };
   try {
     global.fetch = async (url, options = {}) => {
       requests.push([url, options.method || 'GET']);
