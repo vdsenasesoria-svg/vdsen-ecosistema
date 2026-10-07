@@ -54,20 +54,40 @@ const save = (name, data) => {
 // every call here uses) from a purely optional one. A blanket assertion previously killed the
 // preflight with "Missing workflow credential" whenever GOOGLE_ACCESS_TOKEN was absent — and
 // this APP-ONLY lane deliberately has no Google authentication at all.
+// Measured: the SAME read returns 200 in one run and 400 minutes later with identical
+// parameters (`/v7/deployments`, and `/v4/aliases/{hostname}` before it). The Vercel API is
+// intermittently unhealthy for these reads. Retry the transient statuses on idempotent GETs
+// with bounded backoff. NEVER retry 401/403: those are credential failures and must fail fast.
+const RETRYABLE_STATUS = new Set([400, 408, 425, 429, 500, 502, 503, 504]);
+const RETRY_ATTEMPTS = 4;
+
 async function api(url, token, method = 'GET', body, acceptStatus, required = true) {
   if (required) assert.ok(token, 'Missing workflow credential');
   else if (!token) throw new Error('credential not provided');
-  const r = await fetch(url, {
-    method,
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(30000),
-    redirect: 'error',
-  });
-  if (acceptStatus && r.status === acceptStatus) return { status: r.status };
-  assert.ok(r.ok, 'API ' + method + ' failed: HTTP ' + r.status); // Never print bodies or tokens.
-  const text = await r.text();
-  return text ? JSON.parse(text) : {};
+  let last = null;
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+    const r = await fetch(url, {
+      method,
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
+      redirect: 'error',
+    });
+    if (acceptStatus && r.status === acceptStatus) return { status: r.status };
+    if (r.ok) {
+      const text = await r.text();
+      return text ? JSON.parse(text) : {};
+    }
+    // Identify WHICH operation failed without ever printing a token or a response body.
+    // The path is not secret; query values are stripped because they carry the team id.
+    let where = url;
+    try { where = new URL(url).pathname; } catch (e) {}
+    last = new Error('API ' + method + ' ' + where + ' failed: HTTP ' + r.status);
+    const retryable = method === 'GET' && RETRYABLE_STATUS.has(r.status);
+    if (!retryable || attempt === RETRY_ATTEMPTS) throw last;
+    await new Promise((res) => setTimeout(res, 400 * attempt));
+  }
+  throw last;
 }
 const vercel = (s, p, method, body, acceptStatus) =>
   api(VERCEL_API + p + '?teamId=' + encodeURIComponent(s.vercel_team), process.env.VERCEL_TOKEN, method, body, acceptStatus);
@@ -487,7 +507,17 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((e) => { console.error(e.message); process.exitCode = 1; });
+  // Report the failing step by NAME, with the stage marker, so a gate never fails silently.
+  // This lane has twice exited non-zero with no output, which made triage impossible.
+  const stage = process.argv[2] || '(none)';
+  const fail = (e, where) => {
+    console.error('APP LANE FAILURE [' + stage + ']' + (where ? ' at ' + where : '') + ': ' + (e && e.message ? e.message : String(e)));
+    if (e && e.stack) console.error(e.stack.split('\n').slice(0, 6).join('\n'));
+    process.exitCode = 1;
+  };
+  process.on('unhandledRejection', (e) => fail(e, 'unhandledRejection'));
+  process.on('uncaughtException', (e) => fail(e, 'uncaughtException'));
+  main().catch((e) => fail(e, 'main'));
 }
 
 module.exports = {

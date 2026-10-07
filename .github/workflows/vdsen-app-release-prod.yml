@@ -86,9 +86,23 @@ jobs:
         # `continue-on-error` is used ONLY so the summary below always renders. The gate
         # outcome is re-read immediately after and the job still fails on it: nothing is
         # waived. Promotion is additionally blocked by `if: steps.preflight.outcome == 'success'`.
+        #
+        # stdout+stderr are teed to a file and echoed explicitly: this step has twice exited
+        # non-zero with NO output in the job log, which made the failing gate unidentifiable.
+        # The trace reports the failing operation NAME only (never a token or a value).
         id: preflight
         continue-on-error: true
-        run: node scripts/release/app-live.cjs preflight
+        run: |
+          set -o pipefail
+          node scripts/release/app-live.cjs preflight 2>&1 | tee /tmp/preflight.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != "0" ]; then
+            echo "::error::preflight exited $status"
+            echo "--- preflight output (repeated) ---"
+            cat /tmp/preflight.log
+            echo "--- end ---"
+          fi
+          exit "$status"
       - name: Surface preflight report
         if: always()
         run: node scripts/release/app-live.cjs preflight-summary >> "$GITHUB_STEP_SUMMARY"

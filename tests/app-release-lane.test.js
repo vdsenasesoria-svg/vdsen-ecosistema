@@ -212,7 +212,10 @@ test('A12-16 no secret values are printed', () => {
   assert.ok(!/console\.log\([^)]*TOKEN/.test(src), 'must not log tokens');
   assert.ok(!/console\.log\([^)]*PRIVATE_KEY/.test(src), 'must not log keys');
   assert.ok(!/console\.log\([^)]*envs/.test(src), 'must not log the env array');
-  assert.ok(/Never print bodies or tokens/.test(src), 'the no-print rule is documented');
+  assert.ok(/Identify WHICH operation failed/.test(src), 'the no-print rule is documented');
+  // and a failure names the ENDPOINT, so a 400 is triageable without another 25-minute run
+  assert.ok(/API ' \+ method \+ ' ' \+ where \+ ' failed: HTTP '/.test(src), 'el error debe identificar el endpoint');
+  assert.ok(/new URL\(url\)\.pathname/.test(src), 'solo el path, nunca la query con el team id');
   // the artifact guard rejects secret-looking content
   throws(() => app.assertRollbackArtifact({
     candidate_sha: RUNTIME, candidate_deployment: 'dpl_a', production_deployment: 'dpl_b',
