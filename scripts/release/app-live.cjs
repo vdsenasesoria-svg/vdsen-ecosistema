@@ -44,12 +44,19 @@ const state = () => json(STATE);
 const save = (name, data) => {
   fs.mkdirSync(OUT, { recursive: true });
   fs.writeFileSync(path.join(OUT, name), JSON.stringify(data, null, 2) + '\n');
+  return data; // callers assert on the persisted artifact, so return what was written
 };
 
 // `body` is optional on purpose: an empty body would be serialised as the literal
 // string "undefined" and rejected by the API.
-async function api(url, token, method = 'GET', body, acceptStatus) {
-  assert.ok(token, 'Missing workflow credential');
+//
+// `required` distinguishes the credential this lane genuinely needs (the Vercel token, which
+// every call here uses) from a purely optional one. A blanket assertion previously killed the
+// preflight with "Missing workflow credential" whenever GOOGLE_ACCESS_TOKEN was absent — and
+// this APP-ONLY lane deliberately has no Google authentication at all.
+async function api(url, token, method = 'GET', body, acceptStatus, required = true) {
+  if (required) assert.ok(token, 'Missing workflow credential');
+  else if (!token) throw new Error('credential not provided');
   const r = await fetch(url, {
     method,
     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -256,7 +263,8 @@ async function observeLiveRulesReadOnly(s) {
   const token = process.env.GOOGLE_ACCESS_TOKEN;
   if (!token) return 'NOT_CAPTURED_NO_GOOGLE_TOKEN';
   try {
-    const r = await api(OBSERVED_RULES_API + s.firebase_project + '/releases/cloud.firestore', token);
+    // required=false: observing live rules is a courtesy for the audit trail, never a gate.
+    const r = await api(OBSERVED_RULES_API + s.firebase_project + '/releases/cloud.firestore', token, 'GET', undefined, undefined, false);
     return r.rulesetName || 'UNKNOWN';
   } catch (e) { return 'NOT_CAPTURED_' + String(e.message).slice(0, 60); }
 }
@@ -374,6 +382,18 @@ async function apply(steps = {}) {
 async function rollbackApp() {
   assertAppOnlySources();
   const s = state();
+  // Only revert if a promotion actually happened. The workflow calls this with `if: failure()`,
+  // which also fires when an EARLIER gate (preflight, tests, kill switch) failed — in that case
+  // production was never touched, and reverting would be a pointless mutation followed by a
+  // confusing false failure.
+  let result = null;
+  try { result = json(path.join(OUT, 'app-result.json')); } catch (e) { result = null; }
+  if (!result || result.rollback_required !== true) {
+    const out = { rollback_status: 'NOT_NEEDED', reason: 'no promotion was performed in this run', rules_mutated: false };
+    save('app-rollback-result.json', out);
+    console.log('APP ROLLBACK NOT NEEDED: production was never mutated in this run');
+    return out;
+  }
   const artifact = assertRollbackArtifact(json(path.join(OUT, process.env.APP_ROLLBACK_ARTIFACT || 'app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json')));
   const id = await revertApp(s, artifact.production_deployment);
   const d = await deployment(s, id);
