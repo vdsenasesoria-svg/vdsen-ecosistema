@@ -186,11 +186,16 @@ function assertRollbackArtifact(artifact) {
 // Resolve the deployment serving production from the project's own deployment list, filtered
 // by `target=production`.
 //
-// This replaces a `GET /v4/aliases/{hostname}` lookup that returns HTTP 400 for this project.
-// That call is in the rules lane's `switchApp`, but the rules lane never changes the app
-// (release_mode is rules_only), so it had never actually run. Do not repeat that mistake.
+// Two retired/broken reads were replaced here, both previously invisible because the rules lane
+// never changes the app (release_mode is rules_only), so its code path never actually ran:
+//   - GET /v4/aliases/{hostname}  -> HTTP 400 for this project
+//   - GET /v6/deployments         -> HTTP 400: /v6 is no longer documented. The published
+//                                    OpenAPI spec lists only /v7 and /v13.
+// /v7 supports both `projectId` and `target`.
+const DEPLOYMENTS_LIST = '/v7/deployments';
+
 async function listDeployments(s, extra = '') {
-  const list = await vercel(s, '/v6/deployments?projectId=' + encodeURIComponent(s.production_project) + '&limit=100' + extra);
+  const list = await vercel(s, DEPLOYMENTS_LIST + '?projectId=' + encodeURIComponent(s.production_project) + '&limit=100' + extra);
   return list.deployments || [];
 }
 
