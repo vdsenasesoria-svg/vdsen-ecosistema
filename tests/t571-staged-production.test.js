@@ -130,6 +130,35 @@ test('T571-2c the staged deployment is resolved by ID or HOSTNAME, never by full
 
 // ── 4 & 5. staged is not current and the alias does not move ──────────────────────────────────
 
+test('T571-2d the staged deploy stamps the candidate commit identity', () => {
+  // A CLI deploy uploads a TREE, not a git ref, so Vercel leaves meta.githubCommitSha null and the
+  // post-promotion identity gate has nothing to compare - which is how 'Promoted runtime SHA
+  // mismatch' appeared AFTER the promotion had already succeeded. Stamping it at deploy time keeps
+  // the gate strict instead of accepting a missing value.
+  const body = stageBody();
+  assert.ok(/'--json', '-m', 'githubCommitSha=' \+ runtime/.test(body), 'estampa el SHA del candidato');
+  const i = SRC.indexOf('function assertPromoted(');
+  const ap = SRC.slice(i, SRC.indexOf('\nfunction assertRollbackArtifact', i));
+  assert.ok(/assert\.ok\(d\.meta && d\.meta\.githubCommitSha/.test(ap), 'exige que la identidad exista');
+  assert.ok(/assert\.equal\(d\.meta\.githubCommitSha, runtime/.test(ap), 'y que sea la del candidato');
+});
+
+test('T571-2e vercel.json is excluded from the HTTP byte check but kept everywhere else', () => {
+  // /vercel.json answers 404: it is uploaded and tracked in the artifact, but Vercel does not serve
+  // it. Comparing it over HTTP failed the post-promotion verification even when production served
+  // exactly the right bytes, and that failure triggered a needless recovery.
+  assert.ok(app.NOT_HTTP_SERVED.has('vercel.json'), 'declarado como no servido por HTTP');
+  const all = app.servedSurface();
+  const http = app.httpServedSurface();
+  assert.equal(all.length - http.length, 1, 'exactamente una ruta se excluye');
+  assert.ok(all.includes('vercel.json'), 'sigue en el manifiesto (identidad a nivel git)');
+  assert.ok(!http.includes('vercel.json'), 'fuera de la verificacion HTTP');
+  assert.ok(http.includes('vdsen-cliente.html'), 'el producto sigue verificado por HTTP');
+  const i = SRC.indexOf('async function verifyPublicBytes(');
+  const vp = SRC.slice(i, SRC.indexOf('\n// Optional, read-only', i));
+  assert.ok(/paths\.filter\(\(p\) => !NOT_HTTP_SERVED\.has\(p\)\)/.test(vp), 'el filtro se aplica en la verificacion');
+});
+
 test('T571-3 a staged deployment must NOT already be the current production deployment', () => {
   const good = { id: STAGED, projectId: PROJECT, teamId: TEAM, target: 'production', readyState: 'READY' };
   app.assertStaged(good, { project: PROJECT, team: TEAM, current: PREVIOUS });
