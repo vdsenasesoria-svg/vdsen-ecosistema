@@ -289,6 +289,21 @@ test('A12-19 candidate resolution uses exact metadata, never chronology', () => 
   assert.ok(!/most recent|latest/i.test(fn.replace(/most recently created/g, '')), 'must not select by recency alone');
 });
 
+test('A12-21 the deployment list uses uid; id must be normalised', () => {
+  // Measured against the live API: a production entry has `uid` and NO `id`. Without
+  // normalisation, `currentApp()` returns undefined and `awaitApp()` never matches.
+  const raw = { uid: 'dpl_u1d000000000000000000001', projectId: PROJECT, target: 'production', readyState: 'READY', created: 1 };
+  assert.equal(raw.id, undefined, 'el objeto crudo no trae id');
+  const n = app.normalizeDeployment(raw);
+  assert.equal(n.id, 'dpl_u1d000000000000000000001', 'id debe derivarse de uid');
+  assert.equal(n.uid, 'dpl_u1d000000000000000000001', 'uid se conserva');
+  assert.equal(app.normalizeDeployment({ id: 'dpl_real', uid: 'dpl_uid_other' }).id, 'dpl_real', 'un id existente manda');
+  assert.equal(app.normalizeDeployment(null), null);
+  assert.equal(app.normalizeDeployment(undefined), undefined);
+  const src = fs.readFileSync('scripts/release/app-live.cjs', 'utf8');
+  assert.ok(/\(list\.deployments \|\| \[\]\)\.map\(normalizeDeployment\)/.test(src), 'la lista debe normalizar');
+});
+
 test('A12-20 served surface matches the frozen deployed-product manifest', () => {
   const surface = app.servedSurface();
   assert.ok(surface.includes('vdsen-cliente.html'), 'debe cubrir la app del cliente');
