@@ -2999,7 +2999,7 @@ async function loadPlan(user) {
       else { _restSeconds = _remaining; if (_ov) _ov.style.display = 'flex'; updateTimerDisplay(); if (!_restTimer) _restTimer = setInterval(_restTimerTick, 1000); }
     }, 300);
     showWhatsNew();
-    if (_showBitacoraInfo) { setTimeout(function(){ showBitacoraInfoModal(); }, 500); }
+    if (_showBitacoraInfo) { _showBitacoraWhenClear(_showBitacoraInfo); }
     // T303: stale open-session recovery -- checked once per app load, after the
     // other startup modals so it doesn't stack on top of them.
     setTimeout(function() {
@@ -14887,6 +14887,28 @@ window.showWhatsNew = showWhatsNew;
 
 // Modal informativo: importancia de la bitácora + cómo usarla.
 // Se muestra cada vez que el coach asigna un plan nuevo o actualiza el plan activo.
+// T567 — Un solo aviso de arranque a la vez. Este aviso se programaba con un setTimeout
+// FIJO de 500ms sin comprobar si "Novedades" seguía abierto, así que se apilaba encima
+// (medido: wnModal y biModal visibles a la vez). Usa el mismo guard acotado que ya usa el
+// prompt de celular: espera a que se cierren los otros overlays, y si el cliente no cierra
+// nada se muestra igual tras el tope, para que el aviso NUNCA se pierda. El tope corta la
+// espera, así que no hay reintento indefinido.
+var _BI_MAX_WAIT_MS = 5 * 60 * 1000;
+var _biWaited = 0;
+var _biPoll = 400;
+// `aplica` viaja como parametro: _showBitacoraInfo es local a loadPlan, no global.
+function _showBitacoraWhenClear(aplica) {
+  if (!aplica) return;                              // el aviso no aplica en esta carga
+  if (document.getElementById('biModal')) return;   // ya visible: nunca duplicar
+  if (_startupModalOpen('wnModal') || _startupModalOpen('phoneConfirmOverlay')) {
+    if (_biWaited >= _BI_MAX_WAIT_MS) { showBitacoraInfoModal(); return; }
+    _biWaited += _biPoll;
+    setTimeout(function(){ _showBitacoraWhenClear(aplica); }, _biPoll);
+    return;
+  }
+  showBitacoraInfoModal();
+}
+window._showBitacoraWhenClear = _showBitacoraWhenClear;
 function showBitacoraInfoModal() {
   if (document.getElementById('biModal')) return;
   var el = document.createElement('div');
