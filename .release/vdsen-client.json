@@ -12,7 +12,9 @@
   "rules_transition": {
     "target_sha256": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
     "order": "verify_current_app_then_rules",
-    "rollback_order": "rules_then_app"
+    "rollback_order": "rules_then_app",
+    "rollback_sha256": "bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b",
+    "rollback_source_path": ".release/rollback/firestore.rules.bb4402e9b99d2d78c1f2867fa09bd75b89f9a88046189edfb0302b0635635f0b.rules"
   },
   "required_index": {
     "collectionGroup": "plans_backup",

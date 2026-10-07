@@ -58,7 +58,9 @@
       "required": [
         "target_sha256",
         "order",
-        "rollback_order"
+        "rollback_order",
+        "rollback_sha256",
+        "rollback_source_path"
       ],
       "properties": {
         "target_sha256": {
@@ -70,6 +72,14 @@
         },
         "rollback_order": {
           "const": "rules_then_app"
+        },
+        "rollback_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rollback_source_path": {
+          "type": "string",
+          "pattern": "^\\.release/rollback/firestore\\.rules\\.[0-9a-f]{64}\\.rules$"
         }
       }
     },

@@ -85,10 +85,30 @@ async function restoreRules(s, snapshot) {
   return verifyLiveRules(s, snapshot.old_rules.sha256);
 }
 function rollbackRulesProvenance(snapshot) {
+  // RULES rollback provenance is INDEPENDENT of the APP rollback runtime.
+  // Coupling the captured live rules to rollback_runtime_sha:firestore.rules was the defect:
+  // the live rules predate the hardening and exist in no commit, so that comparison could
+  // never hold, while the app rollback remains pinned separately by rollback_deployment
+  // and rollback_runtime_sha and is verified on its own.
+  //
+  // The reviewed reference is resolved from the ORIGINAL RELEASE PACKAGE COMMIT, never from
+  // the current worktree: vdsen-rollback.yml checks out codex/client-app-next at its CURRENT
+  // head, so a later branch state could remove, modify or substitute the reference file and
+  // make a historically valid rollback impossible. snapshot.package_sha is the same identity
+  // the standalone rollback already verifies against the historical workflow run head_sha.
+  const rules = snapshot.state.rules_transition;
+  assert.equal(typeof snapshot.package_sha, 'string', 'Reviewed release package SHA required for rollback rules provenance');
+  assert.match(snapshot.package_sha, /^[0-9a-f]{40}$/, 'Reviewed release package SHA required for rollback rules provenance');
+  assert.match(rules.rollback_sha256 || '', /^[0-9a-f]{64}$/, 'Reviewed rollback rules hash missing');
+  assert.equal(rules.rollback_source_path, '.release/rollback/firestore.rules.' + rules.rollback_sha256 + '.rules', 'Reviewed rollback rules source path must be content-addressed by rollback_sha256');
+
   assert.equal(snapshot.old_rules.source.files.length, 1);
   const content = snapshot.old_rules.source.files[0].content;
-  assert.equal(hash(content), snapshot.old_rules.sha256);
-  assert.equal(hash(content), hash(git('show', snapshot.state.rollback_runtime_sha + ':firestore.rules')), 'Captured rules incompatible with pinned rollback runtime source');
+  assert.equal(hash(content), snapshot.old_rules.sha256, 'Captured rules do not match their own hash');
+  assert.equal(hash(content), rules.rollback_sha256, 'Captured live rules do not match the reviewed rollback rules reference');
+
+  const committed = git('show', snapshot.package_sha + ':' + rules.rollback_source_path);
+  assert.equal(hash(committed), rules.rollback_sha256, 'Reviewed rollback rules source at the release package SHA does not match the reviewed rollback rules hash');
 }
 async function smoke(s, runtime) {
   // Public surfaces prove exact served bytes. They cannot prove authenticated reads/writes.
