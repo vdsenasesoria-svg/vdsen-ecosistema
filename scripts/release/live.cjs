@@ -85,10 +85,19 @@ async function restoreRules(s, snapshot) {
   return verifyLiveRules(s, snapshot.old_rules.sha256);
 }
 function rollbackRulesProvenance(snapshot) {
+  // RULES rollback provenance is INDEPENDENT of the APP rollback runtime.
+  // Coupling the captured live rules to rollback_runtime_sha:firestore.rules was the defect:
+  // the live rules predate the hardening and exist in no commit, so that comparison could
+  // never hold, while the app rollback remains pinned separately by rollback_deployment
+  // and rollback_runtime_sha and is verified on its own.
   assert.equal(snapshot.old_rules.source.files.length, 1);
   const content = snapshot.old_rules.source.files[0].content;
-  assert.equal(hash(content), snapshot.old_rules.sha256);
-  assert.equal(hash(content), hash(git('show', snapshot.state.rollback_runtime_sha + ':firestore.rules')), 'Captured rules incompatible with pinned rollback runtime source');
+  assert.equal(hash(content), snapshot.old_rules.sha256, 'Captured rules do not match their own hash');
+  const rules = snapshot.state.rules_transition;
+  assert.match(rules.rollback_sha256 || '', /^[0-9a-f]{64}$/, 'Reviewed rollback rules hash missing');
+  assert.equal(hash(content), rules.rollback_sha256, 'Captured live rules do not match the reviewed rollback rules reference');
+  assert.match(rules.rollback_source_path || '', /^\.release\/rollback\/firestore\.rules\.[0-9a-f]{64}\.rules$/, 'Reviewed rollback rules source path missing');
+  assert.equal(hash(fs.readFileSync(rules.rollback_source_path, 'utf8')), rules.rollback_sha256, 'Committed rollback rules source does not match the reviewed rollback rules hash');
 }
 async function smoke(s, runtime) {
   // Public surfaces prove exact served bytes. They cannot prove authenticated reads/writes.

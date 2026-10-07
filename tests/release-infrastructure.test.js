@@ -17,6 +17,24 @@ test('release state rejects numeric activation, missing gates and unknown projec
   }
   assert.throws(() => validate({}, { unknownKeyword: true }));
 });
+test('release state requires the decoupled RULES rollback provenance fields and rejects malformed values', () => {
+  const schema = json('.release/schema/release-state.schema.json');
+  validate(state, schema);
+  for (const drop of ['rollback_sha256', 'rollback_source_path']) {
+    const bad = clone(state); delete bad.rules_transition[drop];
+    assert.throws(() => validate(bad, schema), undefined, 'missing ' + drop + ' must be rejected');
+  }
+  for (const value of ['nothex', 'a'.repeat(63), 'A'.repeat(64), 'a'.repeat(65), '']) {
+    const bad = clone(state); bad.rules_transition.rollback_sha256 = value;
+    assert.throws(() => validate(bad, schema), undefined, 'malformed rollback_sha256 must be rejected: ' + value);
+  }
+  for (const value of ['firestore.rules', '.release/rollback/firestore.rules', '.release/rollback/firestore.rules.' + 'a'.repeat(64) + '.txt', '.release/rollback/' + 'a'.repeat(64) + '.rules', '']) {
+    const bad = clone(state); bad.rules_transition.rollback_source_path = value;
+    assert.throws(() => validate(bad, schema), undefined, 'malformed rollback_source_path must be rejected: ' + value);
+  }
+  assert.equal(state.rules_transition.rollback_source_path, '.release/rollback/firestore.rules.' + state.rules_transition.rollback_sha256 + '.rules');
+  assert.notEqual(state.rules_transition.rollback_sha256, hash(git('show', state.rollback_runtime_sha + ':firestore.rules')));
+});
 test('index identity is ordered, scope-specific and independent of JSON key order', () => {
   const live = clone(state.required_index);
   live.fields = live.fields.map(x => ({ order: x.order, fieldPath: x.fieldPath }));
@@ -69,7 +87,7 @@ test('recovery never calls Vercel if restored rules verification fails', async (
   const before = global.fetch, token = process.env.GOOGLE_ACCESS_TOKEN;
   const requests = [];
   process.env.GOOGLE_ACCESS_TOKEN = 'test-only';
-  const oldContent = git('show', state.rollback_runtime_sha + ':firestore.rules');
+  const oldContent = fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8');
   const source = { files: [{ name: 'firestore.rules', content: oldContent }] };
   const snapshot = { state, old_rules: { source, sha256: hash(oldContent) } };
   try {
@@ -105,7 +123,8 @@ test('successful recovery verifies restored rules before switching app and compa
   const before = global.fetch, tokens = { GOOGLE_ACCESS_TOKEN: process.env.GOOGLE_ACCESS_TOKEN, VERCEL_TOKEN: process.env.VERCEL_TOKEN };
   Object.assign(process.env, { GOOGLE_ACCESS_TOKEN: 'test-only', VERCEL_TOKEN: 'test-only' });
   const requests = []; let switched = false;
-  const oldContent = git('show', state.rollback_runtime_sha + ':firestore.rules');
+  // RULES rollback source is the reviewed immutable reference (decoupled from the app runtime).
+  const oldContent = fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8');
   const source = { files: [{ name: 'firestore.rules', content: oldContent }] };
   const snapshot = { state, old_rules: { source, sha256: hash(oldContent) } };
   try {
@@ -158,7 +177,7 @@ test('rules_only recovery restores verified rules without any Vercel request and
   const before = global.fetch, tokens = { GOOGLE_ACCESS_TOKEN: process.env.GOOGLE_ACCESS_TOKEN, VERCEL_TOKEN: process.env.VERCEL_TOKEN };
   Object.assign(process.env, { GOOGLE_ACCESS_TOKEN: 'test-only', VERCEL_TOKEN: 'test-only' });
   const requests = []; let appDeployment = state.production_deployment;
-  const oldContent = git('show', state.rollback_runtime_sha + ':firestore.rules');
+  const oldContent = fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8');
   const source = { files: [{ name: 'firestore.rules', content: oldContent }] };
   const snapshot = { state, old_rules: { source, sha256: hash(oldContent) } };
   try {

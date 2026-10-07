@@ -96,7 +96,56 @@ test('current production is distinct from rollback and advance never promotes a 
   const source = fs.readFileSync('scripts/release/live.cjs', 'utf8');
   const body = source.slice(source.indexOf('async function apply()'), source.indexOf('async function rollback()'));
   assert.ok(!body.includes('switchApp('));
-  const content = git('show', state.rollback_runtime_sha + ':firestore.rules');
+  const content = fs.readFileSync(state.rules_transition.rollback_source_path, 'utf8');
   rollbackRulesProvenance({ state, old_rules: { sha256: hash(content), source: { files: [{ content }] } } });
-  assert.throws(() => rollbackRulesProvenance({ state, old_rules: { sha256: hash('wrong'), source: { files: [{ content: 'wrong' }] } } }), /incompatible/);
+  assert.throws(() => rollbackRulesProvenance({ state, old_rules: { sha256: hash('wrong'), source: { files: [{ content: 'wrong' }] } } }), /do not match/);
+});
+
+test('rollback rules provenance is decoupled from the app rollback runtime and fails closed', () => {
+  const rules = state.rules_transition;
+  const content = fs.readFileSync(rules.rollback_source_path, 'utf8');
+  const good = { state, old_rules: { sha256: hash(content), source: { files: [{ content }] } } };
+  // correct captured rules PASS
+  rollbackRulesProvenance(good);
+  // the live rollback rules are NOT the app rollback runtime's committed rules (the original defect)
+  assert.notEqual(rules.rollback_sha256, hash(git('show', state.rollback_runtime_sha + ':firestore.rules')));
+  // the app rollback pair stays pinned and independently verifiable
+  assert.equal(state.rollback_deployment, 'dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn');
+  assert.equal(state.rollback_runtime_sha, 'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c');
+  // tampered captured rules FAIL (own hash mismatch)
+  assert.throws(() => rollbackRulesProvenance({ state, old_rules: { sha256: hash(content), source: { files: [{ content: content + '\n// tampered' }] } } }), /own hash/);
+  // captured rules that do not match the reviewed reference FAIL
+  const other = git('show', state.runtime_sha + ':firestore.rules');
+  assert.throws(() => rollbackRulesProvenance({ state, old_rules: { sha256: hash(other), source: { files: [{ content: other }] } } }), /reviewed rollback rules reference/);
+  // a wrong reviewed rollback_sha256 FAILS
+  const wrongHash = clone(state); wrongHash.rules_transition.rollback_sha256 = '0'.repeat(64);
+  assert.throws(() => rollbackRulesProvenance({ state: wrongHash, old_rules: { sha256: hash(content), source: { files: [{ content }] } } }), /reviewed rollback rules reference/);
+  // a malformed reviewed rollback_sha256 FAILS
+  const malformed = clone(state); malformed.rules_transition.rollback_sha256 = 'nothex';
+  assert.throws(() => rollbackRulesProvenance({ state: malformed, old_rules: { sha256: hash(content), source: { files: [{ content }] } } }), /missing/);
+  // a missing reviewed rollback source FAILS
+  const missing = clone(state); delete missing.rules_transition.rollback_source_path;
+  assert.throws(() => rollbackRulesProvenance({ state: missing, old_rules: { sha256: hash(content), source: { files: [{ content }] } } }), /source path missing/);
+  // a wrong committed rollback source FAILS
+  const wrongPath = clone(state); wrongPath.rules_transition.rollback_source_path = '.release/rollback/firestore.rules.' + '1'.repeat(64) + '.rules';
+  assert.throws(() => rollbackRulesProvenance({ state: wrongPath, old_rules: { sha256: hash(content), source: { files: [{ content }] } } }), /ENOENT|no such file/);
+  // the committed reference file is a real, tracked, non-empty rules file with the pinned hash
+  assert.equal(hash(fs.readFileSync(rules.rollback_source_path, 'utf8')), rules.rollback_sha256);
+  assert.match(fs.readFileSync(rules.rollback_source_path, 'utf8'), /^rules_version\s*=/);
+  const tracked = git('ls-files', '--cached', rules.rollback_source_path).trim() || git('ls-files', rules.rollback_source_path).trim();
+  assert.ok(tracked.length > 0, 'rollback rules reference must be a tracked repository file (git add it)');
+});
+
+test('rollback APP provenance stays independent: the app pair is still pinned and verified on its own', () => {
+  const src = fs.readFileSync('scripts/release/live.cjs', 'utf8');
+  // the rules gate must no longer consult the app rollback runtime's rules
+  assert.ok(!/rollback_runtime_sha\s*\+\s*':firestore\.rules'/.test(src), 'rules provenance must not be coupled to rollback_runtime_sha');
+  // the app rollback deployment is still verified against rollback_runtime_sha inside recover()
+  const rec = src.slice(src.indexOf('async function recover'), src.indexOf('async function apply()'));
+  assert.ok(rec.includes("deployment(s, snapshot.state.rollback_deployment), s, snapshot.state.rollback_runtime_sha"), 'app rollback deployment must still be verified against rollback_runtime_sha');
+  assert.ok(rec.includes('verifyDeployment('), 'app rollback verification must remain');
+  // restoreRules still restores from the captured pre-mutation source
+  assert.ok(rec.includes('restoreRules(s, snapshot)'));
+  const restore = src.slice(src.indexOf('async function restoreRules'), src.indexOf('function rollbackRulesProvenance'));
+  assert.ok(restore.includes('snapshot.old_rules.source'), 'restoration must use the captured pre-mutation source');
 });
