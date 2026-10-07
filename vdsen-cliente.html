@@ -2147,13 +2147,67 @@ waitFB(() => {
     if (user && user.email) {
       localStorage.setItem('vdsen_uid', user.uid);
       showScreen('scrLoading');
-      await loadPlan(user);
+      // T569 — loadPlan hace await de getDoc y NINGUNA lectura estaba envuelta: si fallaba
+      // (red caida, permisos, doc ilegible) la promesa rechazaba sin captura y el cliente
+      // quedaba atrapado en "CARGANDO TU PLAN", que no tiene timeout ni salida. Se captura
+      // aqui, que es el unico punto de entrada, y se ofrece reintento.
+      try {
+        await loadPlan(user);
+      } catch (_loadErr) {
+        console.warn('loadPlan no pudo completarse:', _loadErr && _loadErr.message);
+        showPlanLoadError(user);
+      }
     } else {
       localStorage.removeItem('vdsen_uid');
       showScreen('scrLogin');
     }
   });
 });
+
+// T569 — Estado de error recuperable para la carga del plan. Antes no existia ninguno: la
+// pantalla de carga era un callejon sin salida. Distingue "sin conexion" (honesto: no se pudo
+// leer) de "no se pudo cargar", y en ambos casos da un reintento real.
+function showPlanLoadError(user) {
+  var offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+  var el = document.getElementById('planLoadError');
+  if (el) el.remove();
+  var wrap = document.createElement('div');
+  wrap.id = 'planLoadError';
+  wrap.className = 'screen on';
+  wrap.setAttribute('role', 'alertdialog');
+  wrap.setAttribute('aria-labelledby', 'pleTitle');
+  wrap.style.cssText = 'z-index:4000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px';
+  wrap.innerHTML =
+    '<div class="loading" style="text-align:center;max-width:420px">' +
+      '<div class="loading-txt" id="pleTitle" style="margin-bottom:10px">' +
+        (offline ? 'SIN CONEXIÓN' : 'NO PUDIMOS CARGAR TU PLAN') +
+      '</div>' +
+      '<div style="color:var(--mt2);font-size:13px;line-height:1.55;margin-bottom:16px">' +
+        (offline
+          ? 'Tu plan ya está guardado. Vuelve a intentarlo cuando recuperes la señal.'
+          : 'Es un problema temporal de carga. Tu plan y tus series registradas están a salvo.') +
+      '</div>' +
+      '<button type="button" id="pleRetry" class="btn btn-primary" style="width:100%;min-height:50px">Reintentar</button>' +
+    '</div>';
+  document.body.appendChild(wrap);
+  var btn = document.getElementById('pleRetry');
+  if (btn) {
+    btn.addEventListener('click', async function () {
+      btn.disabled = true;
+      btn.textContent = 'REINTENTANDO…';
+      showScreen('scrLoading');
+      wrap.remove();
+      try {
+        var u = (typeof USER !== 'undefined' && USER) ? USER : user;
+        await loadPlan(u);
+      } catch (_retryErr) {
+        console.warn('reintento de loadPlan fallido:', _retryErr && _retryErr.message);
+        showPlanLoadError(user);
+      }
+    });
+  }
+}
+window.showPlanLoadError = showPlanLoadError;
 
 // ══════════════════════════════════════════════════
 // AUTH
