@@ -51,6 +51,7 @@ jobs:
         # No token, no parameter value and no response body is printed.
         env:
           APP_RUNTIME_SHA: c3e78380d3a076e643a1957203c093260851210e
+          APP_EXPECTED_MAIN_SHA: f6596ba5207dc158b8a9b01483cd0fe0ebeb274c
           APP_TRACE_READS: 'true'
         run: |
           set -o pipefail

@@ -45,6 +45,10 @@ jobs:
       APP_RELEASE_REASON: ${{ inputs.reason }}
       APP_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       APP_TEAM_ID: ${{ vars.VERCEL_ORG_ID }}
+      # Pinned on purpose: the lane refuses to release if `main` is not exactly this commit.
+      # It was missing, so the baseline check compared a real SHA against undefined and failed
+      # with 'main moved' on every attempt.
+      APP_EXPECTED_MAIN_SHA: f6596ba5207dc158b8a9b01483cd0fe0ebeb274c
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
