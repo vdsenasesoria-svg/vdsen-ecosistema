@@ -117,6 +117,17 @@ test('T571-2b the documented flags are the ones the pinned CLI actually exposes'
   assert.notEqual(cli, 'latest');
 });
 
+test('T571-2c the staged deployment is resolved by ID or HOSTNAME, never by full URL', () => {
+  // Real failure: the lane passed the whole URL, `encodeURIComponent('https://...')` became
+  // 'https%3A%2F%2F...', and /v13/deployments answered HTTP 404 - the spec wants "the unique
+  // identifier or hostname of the deployment", not a URL.
+  const body = stageBody();
+  assert.ok(/'--json'/.test(body), 'pide JSON al CLI para obtener el id');
+  assert.ok(/stagedUrl\.replace\(\/\^https:\\\/\\\/\/, ''\)/.test(body), 'si solo hay URL, quita el esquema');
+  assert.ok(!/encodeURIComponent\(stagedUrl\)/.test(body), 'nunca codifica la URL completa');
+  assert.ok(/\/v13\/deployments\/' \+ encodeURIComponent\(stagedId\)/.test(body), 'resuelve por id/hostname');
+});
+
 // ── 4 & 5. staged is not current and the alias does not move ──────────────────────────────────
 
 test('T571-3 a staged deployment must NOT already be the current production deployment', () => {
