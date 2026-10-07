@@ -134,8 +134,41 @@ jobs:
           path: release-output/app-rollback-*.json
           if-no-files-found: warn
           retention-days: 90
-      - name: Promote exact candidate to production
+      - name: Create ONE staged production deployment (not yet serving)
+        # Staged production deployment, the documented Vercel model:
+        #   vercel deploy --prod --skip-domain
+        # It is built with PRODUCTION variables but is NOT assigned the production domains, so
+        # customer traffic keeps hitting the previous deployment until the promote below. The
+        # source is `git archive` of the exact authorized SHA, so an ephemeral Preview rotating
+        # away can no longer make a release impossible.
+        id: stage
         if: steps.preflight.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node scripts/release/app-live.cjs stage 2>&1 | tee /tmp/stage.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != "0" ]; then
+            echo "::error::staged production deployment exited $status"
+            cat /tmp/stage.log
+          fi
+          exit "$status"
+      - name: Enforce the staging gate
+        if: always() && steps.preflight.outcome == 'success'
+        run: |
+          if [ "${{ steps.stage.outcome }}" != "success" ]; then
+            echo "::error::Staging failed; production was NOT promoted."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: app-staged-${{ github.run_id }}
+          path: release-output/app-staged.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Promote the staged deployment to production
+        if: steps.preflight.outcome == 'success' && steps.stage.outcome == 'success'
         run: node scripts/release/app-live.cjs apply
       - name: Recover the app if promotion or verification failed
         if: failure()

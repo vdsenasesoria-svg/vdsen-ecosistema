@@ -23,7 +23,8 @@
 //   revert  : POST /v1/projects/{projectId}/rollback/{deploymentId}   (operationId requestRollback)
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const os = require('node:os');
+const { spawn, spawnSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 const { hash, json, git } = require('./lib.cjs');
 const deployedProduct = require('./deployed-product.cjs');
@@ -319,7 +320,173 @@ async function productionEnv(s) {
   return r.envs || r;
 }
 
-// Promotion mechanism. Two documented paths, tried in order:
+// ── Staged production deployment ──────────────────────────────────────────────────────────────
+//
+// WHY THE PREVIEW MODEL WAS REPLACED
+// The lane used to promote an ephemeral Preview deployment. Run 37629216025 showed the flaw: the
+// approved candidate's Preview rotated away, so there was no artifact left to promote and the
+// release became impossible through no fault of the code. That coupled a release to the lifetime
+// of a Preview.
+//
+// THE DOCUMENTED MODEL NOW USED (verified against Vercel's own documentation AND the pinned CLI's
+// own --help output, not copied from memory):
+//
+//   vercel deploy --prod --skip-domain     a Production deployment that is NOT assigned to the
+//                                          production domains yet ("staged production")
+//   vercel promote <url|deploymentId>      makes it current
+//   vercel rollback                        restores the previous production deployment
+//
+// From Vercel's knowledge base, "Creating a staged production deployment":
+//   "you can create staged production deployments that aren't immediately assigned to your
+//    production domains ... Staged production deployments use production environment variables"
+// And `vercel deploy --help` in the pinned CLI documents `--skip-domain` as:
+//   "Disable the automatic promotion (aliasing) of [the deployment]"
+//
+// So the staged deployment is built with PRODUCTION variables (what the product needs), while the
+// public production alias keeps serving the previous deployment until promote runs. The artifact is
+// built fresh from the exact candidate tree, which removes the rotation coupling entirely.
+
+// Exports the EXACT candidate tree into a clean directory. `git archive` writes only TRACKED files
+// at that commit, so untracked release tooling or local edits can never leak into the artifact -
+// which is what the lane requires ("No untracked release tooling may enter the product artifact").
+function exportCandidateTree(sha, destDir) {
+  assert.match(sha, /^[0-9a-f]{40}$/, 'Tree export requires a full commit SHA');
+  fs.rmSync(destDir, { recursive: true, force: true });
+  fs.mkdirSync(destDir, { recursive: true });
+  const tar = spawnSync('git', ['archive', '--format=tar', sha], { encoding: 'buffer', maxBuffer: 512 * 1024 * 1024 });
+  if (tar.status !== 0) {
+    throw new Error('git archive failed for ' + sha + ': ' + String(tar.stderr || '').slice(0, 300));
+  }
+  const untar = spawnSync('tar', ['-xf', '-', '-C', destDir], { input: tar.stdout, encoding: 'buffer', maxBuffer: 512 * 1024 * 1024 });
+  if (untar.status !== 0) {
+    throw new Error('tar extract failed: ' + String(untar.stderr || '').slice(0, 300));
+  }
+  return destDir;
+}
+
+// Proves the exported directory is byte-identical to the candidate commit for every path the
+// product actually serves. A mismatch means the artifact is NOT the approved product.
+function verifyExportedTree(sha, destDir, paths) {
+  const mismatches = [];
+  for (const p of paths) {
+    const expected = hash(Buffer.from(git('show', sha + ':' + p)));
+    const file = path.join(destDir, p);
+    if (!fs.existsSync(file)) { mismatches.push(p + ' (missing)'); continue; }
+    const actual = hash(fs.readFileSync(file));
+    if (actual !== expected) mismatches.push(p + ' (hash)');
+  }
+  assert.equal(mismatches.length, 0, 'Exported tree does not match the candidate commit: ' + mismatches.join(', '));
+  return paths.length;
+}
+
+// A staged deployment must be a PRODUCTION deployment that is not yet serving. `current` is the
+// deployment the production alias resolves to right now.
+function assertStaged(d, { project, team, current }) {
+  assert.ok(d, 'Staged deployment must be readable');
+  assert.equal(d.projectId, project, 'Staged deployment belongs to another project');
+  const teamOk = d.teamId === undefined || d.teamId === null || d.teamId === team;
+  assert.ok(teamOk, 'Staged deployment belongs to another team');
+  assert.equal(d.target, 'production', 'Staged deployment must be a production-target deployment');
+  assert.equal(d.readyState || d.ready, 'READY', 'Staged deployment is not READY');
+  assert.notEqual(d.id || d.uid, current, 'Staged deployment is already the current production deployment');
+}
+
+// Runs a Vercel CLI command in a given working directory. The CLI prints its diagnostics to
+// STDERR (not stdout), so both streams are captured and the error-looking lines are preferred.
+function runVercelCli(args, cwd) {
+  return new Promise((resolve) => {
+    const child = spawn('npx', ['--yes', 'vercel@' + VERCEL_CLI_VERSION].concat(args), {
+      cwd,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '', err = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { err += d; });
+    child.on('error', (e) => resolve({ code: -1, out, err: 'spawn failed: ' + e.message }));
+    child.on('close', (code) => resolve({ code, out, err }));
+  });
+}
+
+// Keeps the DIAGNOSTIC lines and drops npm/install chatter, which npx prints last and which used
+// to hide the real error when only the tail was captured.
+function diagnosticLines(out, err) {
+  const all = (String(err) + '\n' + String(out))
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !/^(npm |i@|added \d|package|found \d|Vercel CLI \d)/.test(l));
+  const errs = all.filter((l) => /error|failed|not |cannot|unable|forbidden|denied|422|403|401|invalid|refus|missing/i.test(l));
+  return (errs.length ? errs : all).slice(0, 8).join(' | ');
+}
+
+// Creates EXACTLY ONE staged production deployment from the authorized candidate tree.
+//
+// Guarantees, all required by the lane contract:
+//  - the source is `git archive` of the EXACT candidate SHA, never the working tree or HEAD
+//  - it is built with the PRODUCTION target, and therefore production variables
+//  - `--skip-domain` keeps the production alias on the previous deployment
+//  - project and team are established explicitly, not from an accidental local link
+//  - the CLI version is pinned
+async function stageProduction() {
+  assertKillSwitch();
+  assertAppOnlySources();
+  const s = state();
+  const runtime = assertExplicitRuntime(process.env.APP_RUNTIME_SHA);
+  const outDir = path.resolve(process.env.APP_STAGE_DIR || path.join(os.tmpdir(), 'vdsen-staged-' + runtime.slice(0, 12)));
+  const surface = servedSurface();
+
+  // 1. exact tree
+  exportCandidateTree(runtime, outDir);
+  const verifiedPaths = verifyExportedTree(runtime, outDir, surface);
+
+  // 2. the production alias must still be on the previous deployment BEFORE anything is built
+  const currentBefore = await currentApp(s);
+
+  // 3. one staged production deployment, not aliased to any production domain
+  const res = await runVercelCli([
+    'deploy', '--prod', '--skip-domain', '--yes',
+    '--project', s.production_project,
+    '--scope', s.vercel_team,
+    '--cwd', outDir,
+  ], outDir);
+  if (res.code !== 0) {
+    throw new Error('staged production deploy failed: ' + diagnosticLines(res.out, res.err));
+  }
+  const all = String(res.out) + '\n' + String(res.err);
+  const urlMatch = all.match(/https:\/\/[A-Za-z0-9._-]+\.vercel\.app/);
+  assert.ok(urlMatch, 'staged deploy did not report a deployment URL');
+  const stagedUrl = urlMatch[0];
+
+  // 4. resolve it and prove it is staged: production target, READY, and NOT current
+  const d0 = await vercel(s, '/v13/deployments/' + encodeURIComponent(stagedUrl));
+  normalizeDeployment(d0);
+  assertStaged(d0, { project: s.production_project, team: s.vercel_team, current: currentBefore });
+
+  // 5. the public alias must NOT have moved
+  const currentAfter = await currentApp(s);
+  assert.equal(currentAfter, currentBefore, 'production alias moved during staging; refusing to continue');
+
+  const report = {
+    staged_deployment: d0.id || d0.uid,
+    staged_url: stagedUrl,
+    staged_target: d0.target,
+    staged_ready_state: d0.readyState || d0.ready,
+    candidate_sha: runtime,
+    production_project: s.production_project,
+    vercel_team: s.vercel_team,
+    verified_paths: verifiedPaths,
+    production_alias_before: currentBefore,
+    production_alias_after: currentAfter,
+    exported_tree: outDir,
+    cli_version: VERCEL_CLI_VERSION,
+    staged_at: new Date().toISOString(),
+  };
+  assert.ok(!/Bearer |VERCEL_TOKEN|private_key|BEGIN [A-Z ]*PRIVATE KEY/.test(JSON.stringify(report)), 'staged report must not contain secrets');
+  save('app-staged.json', report);
+  return report;
+}
+
+// Promotion mechanism. Documented paths, tried in order:
 //
 //  1. `vercel promote <url>` - the mechanism Vercel documents for promoting a preview
 //     deployment to production ("vercel promote"). The version is PINNED so a silent `latest`
@@ -343,36 +510,10 @@ async function productionEnv(s) {
 const VERCEL_CLI_VERSION = '59.11.7';
 
 function promoteViaCli(s, id) {
-  return new Promise((resolve) => {
-    const onResult = (code, stdout, stderr) => {
-      if (code !== 0) {
-        // Keep the DIAGNOSTIC lines, not the tail: `npx` prints npm noise ("i@izs.me",
-        // registry metadata) at the end, and slice(-N) captured only that, hiding the actual
-        // Vercel error. Prefer lines that look like an error, longest last.
-        const all = (String(stderr) + '\n' + String(stdout))
-          .split('\n')
-          .map((l) => l.trim())
-          .filter((l) => l.length > 0 && !/^(npm |i@|added \d|package|found \d)/.test(l));
-        const errLines = all.filter((l) => /error|failed|not |cannot|unable|forbidden|denied|422|403|401|invalid|refus/i.test(l));
-        const detail = (errLines.length ? errLines : all).slice(0, 6).join(' | ');
-        return resolve({ ok: false, detail });
-      }
-      const m = String(stdout).match(/dpl_[A-Za-z0-9]+/);
-      resolve({ ok: true, deploymentId: m ? m[0] : id });
-    };
-    try {
-      const child = spawn('npx', ['--yes', 'vercel@' + VERCEL_CLI_VERSION, 'promote', 'https://' + id + '.vercel.app'], {
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let out = '', err = '';
-      child.stdout.on('data', (d) => { out += d; });
-      child.stderr.on('data', (d) => { err += d; });
-      child.on('error', (e) => resolve({ ok: false, detail: 'spawn failed: ' + e.message }));
-      child.on('close', (code) => onResult(code, out, err));
-    } catch (e) {
-      resolve({ ok: false, detail: 'spawn threw: ' + e.message });
-    }
+  return runVercelCli(['promote', 'https://' + id + '.vercel.app', '--yes', '--project', s.production_project, '--scope', s.vercel_team]).then((res) => {
+    if (res.code !== 0) return { ok: false, detail: diagnosticLines(res.out, res.err) };
+    const m = String(res.out).match(/dpl_[A-Za-z0-9]+/);
+    return { ok: true, deploymentId: m ? m[0] : id };
   });
 }
 
@@ -511,6 +652,56 @@ async function preflight() {
   return report;
 }
 
+// Reads the CURRENT production alias after an uncertain mutation. Failure is reported, never
+// swallowed: an unreadable alias must not be mistaken for "nothing changed".
+async function observeProduction(s, currentAppFn) {
+  try {
+    const id = await currentAppFn(s);
+    return { id: id || null, error: null };
+  } catch (e) {
+    return { id: null, error: e && e.message ? e.message : String(e) };
+  }
+}
+
+// Decides whether recovery may mutate. Pure: takes only observed values, so every branch is
+// provable with a test and no network.
+//
+//   observed === previous                 -> NO_MUTATION, never call rollback
+//   observed === expectedNew              -> MUTATED, rollback required
+//   observed is some other deployment     -> UNEXPECTED, fail closed, rollback required
+//   observed unreadable                   -> UNKNOWN,       fail closed, rollback required
+//
+// `rollback_required` may only be true when a mutation is observed OR cannot be ruled out.
+function decideRecovery({ observed, observedError, previous, expectedNew }) {
+  if (!observed) {
+    return {
+      mutation_status: 'UNKNOWN',
+      rollback_required: true,
+      reason: 'production could not be read after the mutation attempt, so a change cannot be ruled out' +
+        (observedError ? ' (' + observedError + ')' : ''),
+    };
+  }
+  if (observed === previous) {
+    return {
+      mutation_status: 'NO_MUTATION',
+      rollback_required: false,
+      reason: 'the promote attempt did not move production; the capture is still current, so rollback would be a meaningless mutation',
+    };
+  }
+  if (observed === expectedNew) {
+    return {
+      mutation_status: 'MUTATED',
+      rollback_required: true,
+      reason: 'production now serves the candidate, so post-mutation verification failed and recovery is required',
+    };
+  }
+  return {
+    mutation_status: 'UNEXPECTED',
+    rollback_required: true,
+    reason: 'production serves neither the captured deployment nor the candidate, so it is unknown and must be recovered',
+  };
+}
+
 // The mutation steps are injectable so the failure path can be proven with fakes instead of
 // being asserted from source text. Production always calls this with no second argument.
 async function apply(steps = {}) {
@@ -525,9 +716,15 @@ async function apply(steps = {}) {
   const pre = json(path.join(OUT, 'app-preflight.json'));
   assert.equal(pre.runtime_sha, runtime, 'Preflight was not for this exact runtime');
   const artifact = assertRollbackArtifact(json(path.join(OUT, pre.rollback_artifact)));
-  const result = { release_id: process.env.GITHUB_RUN_ID || 'local', runtime_sha: runtime, app_release_status: 'FAIL', production_deployment: null, previous_deployment: artifact.production_deployment, rules_mutated: false, main_unchanged: true, error: null, rollback_required: false };
+  // The promotion target is the STAGED PRODUCTION deployment built from the exact candidate tree,
+  // not an ephemeral Preview. Falling back to the preview candidate keeps older runs reproducible,
+  // but the staged artifact is what the current workflow produces.
+  let staged = null;
+  try { staged = json(path.join(OUT, 'app-staged.json')); } catch (e) { staged = null; }
+  const targetDeployment = staged && staged.staged_deployment ? staged.staged_deployment : artifact.candidate_deployment;
+  const result = { release_id: process.env.GITHUB_RUN_ID || 'local', runtime_sha: runtime, app_release_status: 'FAIL', production_deployment: null, previous_deployment: artifact.production_deployment, promotion_target: targetDeployment, promotion_model: staged ? 'staged_production' : 'preview_candidate', rules_mutated: false, main_unchanged: true, error: null, rollback_required: false };
   try {
-    await promoteFn(s, artifact.candidate_deployment);
+    await promoteFn(s, targetDeployment);
     const aliasDeploymentId = await currentAppFn(s);
     const d = await deploymentFn(s, aliasDeploymentId);
     assertPromoted(d, { runtime, project: s.production_project, team: s.vercel_team, productionDeploymentId: aliasDeploymentId });
@@ -536,11 +733,28 @@ async function apply(steps = {}) {
     result.verified_surfaces = verified.length;
     result.app_release_status = 'SUCCESS';
     result.rollback_required = false;
+    result.state = 'VERIFIED';
   } catch (e) {
-    // Post-promotion verification failed: the app must go back to the captured deployment.
+    // ANY failure after the promote attempt used to set rollback_required = true unconditionally.
+    // That was the false-recovery bug: a promote that returned 422 without moving traffic - which
+    // is exactly what happened - was treated as a mutation, so recovery called rollback against a
+    // deployment that was STILL the current production one. That produced a second 422 which said
+    // nothing about whether rollback works after a REAL mutation.
+    //
+    // The invariant: an unsuccessful promote request does NOT imply production changed. Decide
+    // from the observed production state, never from the fact that we asked.
     result.error = e.message;
     result.app_release_status = 'FAIL';
-    result.rollback_required = true;
+    result.state = 'MUTATION_REQUESTED';
+    const observed = await observeProduction(s, currentAppFn);
+    result.observed_production_deployment = observed.id;
+    result.observed_error = observed.error;
+    const decision = decideRecovery({ observed: observed.id, observedError: observed.error, previous: result.previous_deployment, expectedNew: targetDeployment });
+    result.mutation_status = decision.mutation_status;
+    result.rollback_required = decision.rollback_required;
+    result.recovery_reason = decision.reason;
+    result.state = decision.rollback_required ? 'RECOVERY_REQUIRED' : 'NO_MUTATION';
+    if (result.rollback_required) result.production_deployment = observed.id;
     save('app-result.json', result);
     throw e;
   }
@@ -565,12 +779,30 @@ async function rollbackApp() {
     return out;
   }
   const artifact = assertRollbackArtifact(json(path.join(OUT, process.env.APP_ROLLBACK_ARTIFACT || 'app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json')));
+  // Final guard, independent of whatever asked for recovery: if the rollback target is ALREADY the
+  // current production deployment there is nothing to restore, and issuing the call would be a
+  // meaningless mutation whose failure would be misread as "rollback is broken". Re-read
+  // production here instead of trusting the value captured earlier in the run.
+  let currentId = null;
+  try { currentId = await currentApp(s); } catch (e) { currentId = null; }
+  if (currentId && currentId === artifact.production_deployment) {
+    const out = {
+      rollback_status: 'NOT_NEEDED',
+      state: 'NO_MUTATION',
+      reason: 'production already serves the captured deployment; no rollback was issued',
+      current_deployment: currentId,
+      rules_mutated: false,
+    };
+    save('app-rollback-result.json', out);
+    console.log('APP ROLLBACK NOT NEEDED: production already serves the captured deployment');
+    return out;
+  }
   const id = await revertApp(s, artifact.production_deployment);
   const d = await deployment(s, id);
   assert.equal(d.readyState, 'READY', 'Restored deployment is not READY');
   assert.equal(d.meta?.githubCommitSha, artifact.production_runtime_sha, 'Restored runtime identity mismatch');
   await verifyPublicBytes(s, artifact.production_runtime_sha, servedSurface());
-  const out = { rollback_status: 'PASS', restored_deployment: id, restored_runtime_sha: artifact.production_runtime_sha, rules_mutated: false };
+  const out = { rollback_status: 'PASS', state: 'RECOVERED', restored_deployment: id, restored_runtime_sha: artifact.production_runtime_sha, rules_mutated: false };
   save('app-rollback-result.json', out);
   console.log('APP ROLLBACK PASS: ' + id);
   return out;
@@ -628,9 +860,14 @@ async function main() {
     // and reported them healthy while the real path failed.
     const r = await readOnlyPreflight();
     console.log('READ-ONLY PREFLIGHT PASS: candidate ' + r.candidate.id + ' -> production ' + r.aliasDeploymentId);
+  } else if (cmd === 'stage') {
+    // Creates EXACTLY ONE staged production deployment of the authorized candidate. This does NOT
+    // move customer traffic: --skip-domain leaves the production alias on the previous deployment.
+    const r = await stageProduction();
+    console.log('APP STAGED DEPLOYMENT READY: ' + r.staged_deployment + ' (' + r.staged_url + ')');
   } else if (cmd === 'release-result') console.log(JSON.stringify(releaseResult()));
   else if (cmd === 'preflight-summary') console.log(preflightSummary());
-  else throw new Error('usage: app-live.cjs read-only-preflight|preflight|apply|rollback|verify-product-identity|preflight-summary|release-result');
+  else throw new Error('usage: app-live.cjs read-only-preflight|preflight|stage|apply|rollback|verify-product-identity|preflight-summary|release-result');
 }
 
 if (require.main === module) {
@@ -654,4 +891,6 @@ module.exports = {
   resolveCandidate, currentApp, listDeployments, normalizeDeployment, deployment, productionEnv, promote, revertApp,
   verifyPublicBytes, servedSurface, verifyProductIdentity, readOnlyPreflight, preflight, apply, rollbackApp, releaseResult, preflightSummary, redactUrl, vercelUrl, preflightSummary,
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
+  observeProduction, decideRecovery,
+  exportCandidateTree, verifyExportedTree, assertStaged, stageProduction, runVercelCli, diagnosticLines, VERCEL_CLI_VERSION,
 };

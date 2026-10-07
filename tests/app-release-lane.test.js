@@ -242,7 +242,12 @@ test('A12-18 the lane cannot mutate Firestore, rules, IAM or main', () => {
   const src = fs.readFileSync('scripts/release/app-live.cjs', 'utf8');
   const forbiddenImport = 'require(' + JSON.stringify('./li' + 've.cjs') + ')';
   assert.ok(!src.includes(forbiddenImport), 'must not import the rules lane');
-  assert.ok(!/git\('push'|git\('commit'|force/.test(src), 'must not touch git history');
+  // Precise on purpose: an earlier version matched the bare word `force`, which is also how you
+  // clean a temporary directory (`fs.rmSync(dir, { force: true })`) - a false positive that fired
+  // as soon as the lane began exporting the candidate tree. History-MUTATING git verbs are what
+  // must be absent, together with any force push.
+  assert.ok(!/git\('(push|commit|reset|checkout|switch|merge|rebase|tag|branch|clean)'/.test(src), 'must not touch git history');
+  assert.ok(!/force-with-lease|--force\b|git push/.test(src), 'must not force push');
   assert.ok(!/iam|serviceAccount|service-account|google-github-actions/.test(src), 'no IAM/credential work');
   assert.ok(!/NUMERIC_APPLY_ENABLED\s*=/.test(src), 'must not change the numeric flag');
 
