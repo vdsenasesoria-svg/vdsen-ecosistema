@@ -23,6 +23,7 @@
 //   revert  : POST /v1/projects/{projectId}/rollback/{deploymentId}   (operationId requestRollback)
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 const assert = require('node:assert/strict');
 const { hash, json, git } = require('./lib.cjs');
 const deployedProduct = require('./deployed-product.cjs');
@@ -318,10 +319,57 @@ async function productionEnv(s) {
   return r.envs || r;
 }
 
+// Promotion mechanism. Two documented paths, tried in order:
+//
+//  1. `vercel promote <url>` - the mechanism Vercel documents for promoting a preview
+//     deployment to production ("vercel promote"). The version is PINNED so a silent `latest`
+//     can never be installed. It honours VERCEL_TOKEN and VERCEL_ORG_ID from the environment,
+//     so no credential is passed on the command line.
+//  2. POST /v10/projects/{id}/promote/{id} (operationId requestPromote), which is the same
+//     operation over REST.
+//
+// The REST call answers HTTP 422 for this project even though the request matches the published
+// schema exactly (requestBody present: false) and the candidate is READY, in the right project,
+// at the right commit. 422 is a documented response of that operation, so the cause is
+// eligibility rather than a malformed request - which is precisely why the CLI is tried first:
+// it is the officially documented promotion tool and performs any additional steps the API does
+// not.
+const VERCEL_CLI_VERSION = '39.4.2';
+
+function promoteViaCli(s, id) {
+  return new Promise((resolve) => {
+    const onResult = (code, stdout, stderr) => {
+      if (code !== 0) return resolve({ ok: false, detail: (stderr || stdout || '').slice(-400) });
+      const m = String(stdout).match(/dpl_[A-Za-z0-9]+/);
+      resolve({ ok: true, deploymentId: m ? m[0] : id });
+    };
+    try {
+      const child = spawn('npx', ['--yes', 'vercel@' + VERCEL_CLI_VERSION, 'promote', 'https://' + id + '.vercel.app'], {
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let out = '', err = '';
+      child.stdout.on('data', (d) => { out += d; });
+      child.stderr.on('data', (d) => { err += d; });
+      child.on('error', (e) => resolve({ ok: false, detail: 'spawn failed: ' + e.message }));
+      child.on('close', (code) => onResult(code, out, err));
+    } catch (e) {
+      resolve({ ok: false, detail: 'spawn threw: ' + e.message });
+    }
+  });
+}
+
 async function promote(s, id) {
-  // Documented: POST /v10/projects/{projectId}/promote/{deploymentId} -> requestPromote.
-  // Does NOT rebuild; the deployment keeps its Git identity.
-  await vercel(s, '/v10/projects/' + encodeURIComponent(s.production_project) + '/promote/' + encodeURIComponent(id), 'POST');
+  const cli = await promoteViaCli(s, id);
+  if (!cli.ok) {
+    console.log('vercel CLI promotion did not succeed; falling back to the REST promote endpoint');
+    if (cli.detail) console.log('  cli detail: ' + cli.detail.replace(/[A-Za-z0-9_-]{24,}/g, '<redacted>'));
+  }
+  if (!cli.ok) {
+    // Documented: POST /v10/projects/{projectId}/promote/{deploymentId} -> requestPromote.
+    // Does NOT rebuild; the deployment keeps its Git identity.
+    await vercel(s, '/v10/projects/' + encodeURIComponent(s.production_project) + '/promote/' + encodeURIComponent(id), 'POST');
+  }
   const ok = await awaitApp(s, id);
   assert.ok(ok, 'Production alias did not converge to the promoted deployment');
   return id;
