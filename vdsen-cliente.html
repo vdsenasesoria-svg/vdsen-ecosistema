@@ -9589,6 +9589,21 @@ window._skipPresession = _skipPresession;
 async function completeSet(key, di, ei, si, unit) {
   if (CURRENT_WEEK > REAL_WEEK) { showToast('Vista previa — no puedes registrar en semanas futuras', true); return; }
   if (CURRENT_WEEK < REAL_WEEK) { showToast('Semana pasada — modo lectura', true); return; }
+  // T568 — El guardado es asíncrono (await _doSaveLogs) y el botón NO se deshabilitaba: medido,
+  // un segundo toque entraba en la función con el primero todavía en vuelo, y el cliente no
+  // recibía ninguna señal de que su toque estuviera en curso. Guard de reentrada + feedback
+  // visible. El botón se localiza por su propio onclick, acotado a la fila de esta serie.
+  var _saveBtn = null;
+  try {
+    var _row = document.getElementById('setrow_' + key);
+    _saveBtn = _row ? _row.querySelector('button[onclick*="completeSet"]') : null;
+  } catch (_e) { _saveBtn = null; }
+  if (_saveBtn && _saveBtn.disabled) return; // ya hay un guardado en vuelo para esta serie
+  if (_saveBtn) {
+    _saveBtn.disabled = true;
+    _saveBtn.setAttribute('aria-busy', 'true');
+    _saveBtn.textContent = 'GUARDANDO…';
+  }
   unit = getExUnit(di, ei); // siempre usar la unidad actual del ejercicio
   var carga = document.getElementById('carga_'+key)?.value || '';
   var reps  = document.getElementById('reps_'+key)?.value  || '';
@@ -9689,6 +9704,13 @@ async function completeSet(key, di, ei, si, unit) {
     }
     if (CURRENT_WEEK === _weekAtSetStart && DIA_ACTIVO === _dayAtSetStart && EJ_ACTIVO === _exerciseAtSetStart) {
       showToast('⚠ NO SE GUARDÓ — revisa conexión y reintenta', true);
+    }
+    // T568: en el fallo NO hay re-render que reconstruya el botón, así que hay que devolverlo a
+    // su estado utilizable o el cliente no podría reintentar.
+    if (_saveBtn) {
+      _saveBtn.disabled = false;
+      _saveBtn.removeAttribute('aria-busy');
+      _saveBtn.textContent = '✓ GUARDAR ' + (_techLower === 'cluster' ? 'CLUSTER' : 'SERIE') + ' ' + (si + 1);
     }
     return false;
   }
