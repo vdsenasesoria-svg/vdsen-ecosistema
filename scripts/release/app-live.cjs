@@ -161,7 +161,11 @@ function assertCandidate(c, { runtime, project, team }) {
   assert.match(c.id, /^dpl_/, 'Candidate id must be a Vercel deployment id');
   assert.equal(c.projectId, project, 'Candidate project mismatch');
   assert.equal(c.teamId || team, team, 'Candidate team mismatch');
-  assert.equal(c.target, 'preview', 'Candidate must be a preview deployment before promotion');
+  // Vercel only populates `target` for production (`'production'`). A preview deployment
+  // reports it as null/absent, so requiring target === 'preview' rejected a perfectly valid
+  // candidate. What matters is that the candidate is NOT already serving production.
+  assert.ok(c.target === null || c.target === undefined || c.target === 'preview',
+    'Candidate must not already be a production deployment (target=' + c.target + ')');
   assert.equal(c.readyState || c.ready, 'READY', 'Candidate deployment is not READY');
   // Exact Git identity, never chronology.
   const sha = c.meta?.githubCommitSha;

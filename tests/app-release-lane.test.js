@@ -60,7 +60,12 @@ test('A12-5 candidate already production -> FAIL unless explicitly handled', () 
   assert.equal(app.assertCandidateNotAlreadyProduction(candidate(), PROD_DEPLOYMENT), true);
   // and a production-targeted deployment is not accepted as the pre-promotion candidate
   throws(() => app.assertCandidate(candidate({ target: 'production' }), { runtime: RUNTIME, project: PROJECT, team: TEAM }),
-    /must be a preview deployment/, 'target production');
+    /must not already be a production deployment/, 'target production');
+  // MEASURED: Vercel only populates `target` for production; a preview reports null/absent.
+  // Requiring target === 'preview' rejected a valid candidate, so null must be allowed.
+  assert.equal(app.assertCandidate(candidate({ target: null }), { runtime: RUNTIME, project: PROJECT, team: TEAM }).target, null);
+  const noTarget = candidate(); delete noTarget.target;
+  assert.equal(app.assertCandidate(noTarget, { runtime: RUNTIME, project: PROJECT, team: TEAM }).target, undefined);
 });
 
 test('A12-6 production baseline deployment mismatch -> FAIL', () => {
