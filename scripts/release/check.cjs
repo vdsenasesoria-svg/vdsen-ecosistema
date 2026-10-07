@@ -40,6 +40,19 @@ function workflowContract() {
   assert.ok(!app.includes('credentials_json:'));
   const appAllowed = new Set(['VERCEL_PROJECT_ID', 'VERCEL_ORG_ID', 'CLIENT_APP_RELEASE_ENABLED']);
   for (const match of app.matchAll(/vars\.([A-Z_]+)/g)) assert.ok(appAllowed.has(match[1]), 'App lane noncanonical variable: ' + match[1]);
+  // The app lane releases through a STAGED PRODUCTION deployment, not by promoting an ephemeral
+  // Preview: the approved candidate's Preview rotated away once, which made the release impossible
+  // through no fault of the code. `vercel deploy --prod --skip-domain` builds a production-target
+  // deployment that is NOT yet assigned the production domains, so a failed staging cannot move
+  // customer traffic, and the promote step is gated on the staging having actually succeeded.
+  assert.ok(app.includes('app-live.cjs stage'), 'App lane must create a staged deployment');
+  assert.ok(app.includes('steps.stage.outcome'), 'App lane must gate promotion on the staging outcome');
+  assert.ok(/if:.*steps\.stage\.outcome == 'success'/.test(app), 'promotion only runs after a successful stage');
+  // and the staging step itself must be gated on a passing preflight
+  const stageStep = app.slice(app.indexOf('Create ONE staged production deployment'));
+  assert.ok(stageStep.length > 0, 'staging step must exist');
+  // The step carries a long explanatory comment, so the window must comfortably cover it.
+  assert.ok(/if: steps\.preflight\.outcome == 'success'/.test(stageStep.slice(0, 1200)), 'staging requires a passing preflight');
   // The diagnostics workflow is READ-ONLY by contract: no mutation endpoint, no Firestore,
   // no release kill switch (it never releases). Comments are stripped so prose cannot mask it.
   const diag = fs.readFileSync('.github/workflows/vdsen-app-diagnostics.yml', 'utf8')
