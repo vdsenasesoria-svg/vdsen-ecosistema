@@ -186,17 +186,28 @@ function assertRollbackArtifact(artifact) {
 // Resolve the deployment serving production from the project's own deployment list, filtered
 // by `target=production`.
 //
-// Two retired/broken reads were replaced here, both previously invisible because the rules lane
-// never changes the app (release_mode is rules_only), so its code path never actually ran:
+// Retired/broken reads replaced here, all previously invisible because the rules lane never
+// changes the app (release_mode is rules_only), so its code path never actually ran:
 //   - GET /v4/aliases/{hostname}  -> HTTP 400 for this project
 //   - GET /v6/deployments         -> HTTP 400: /v6 is no longer documented. The published
 //                                    OpenAPI spec lists only /v7 and /v13.
+//   - the list returns `uid`, not `id` -> every downstream comparison matched nothing.
 // /v7 supports both `projectId` and `target`.
 const DEPLOYMENTS_LIST = '/v7/deployments';
 
+// Vercel's deployment list identifies a deployment as `uid`, while the single-deployment
+// endpoint and the promote/rollback paths use `id`. Normalising here keeps every downstream
+// comparison (`currentApp`, `awaitApp`, the promoted-deployment check) meaningful.
+// Measured, not assumed: on a real production entry, `uid` is present and `id` is absent.
+function normalizeDeployment(d) {
+  if (!d) return d;
+  if (d.id === undefined && d.uid !== undefined) d.id = d.uid;
+  return d;
+}
+
 async function listDeployments(s, extra = '') {
   const list = await vercel(s, DEPLOYMENTS_LIST + '?projectId=' + encodeURIComponent(s.production_project) + '&limit=100' + extra);
-  return list.deployments || [];
+  return (list.deployments || []).map(normalizeDeployment);
 }
 
 async function currentApp(s) {
@@ -483,7 +494,7 @@ module.exports = {
   assertExplicitRuntime, assertKillSwitch, assertAppOnlySources, assertCandidate,
   assertCandidateNotAlreadyProduction, assertBaseline, assertEnvironment,
   assertFirebaseProject, assertPromoted, assertRollbackArtifact,
-  resolveCandidate, currentApp, listDeployments, deployment, productionEnv, promote, revertApp,
+  resolveCandidate, currentApp, listDeployments, normalizeDeployment, deployment, productionEnv, promote, revertApp,
   verifyPublicBytes, servedSurface, verifyProductIdentity, preflight, apply, rollbackApp, releaseResult, preflightSummary, preflightSummary,
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
 };
