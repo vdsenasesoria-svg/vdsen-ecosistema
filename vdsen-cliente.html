@@ -2443,6 +2443,39 @@ function showPhoneConfirmModal(clientRef, clientData) {
 }
 window.showPhoneConfirmModal = showPhoneConfirmModal;
 
+// Un solo modal de arranque a la vez: el prompt de celular espera a que se cierren
+// las novedades del día (y la bitácora) para no apilarse sobre el entrenamiento.
+// Si el cliente no cierra nada, se muestra igualmente tras el tope de espera para que
+// el dato nunca se pierda; si para entonces ya confirmó u omitió, no se muestra.
+// OJO: estos overlays son position:fixed, y offsetParent es null en ellos aunque estén
+// visibles — la visibilidad se decide por display/visibility calculados, nunca por offsetParent.
+function _startupModalOpen(id) {
+  var el = document.getElementById(id);
+  if (!el) return false;
+  if (el.style.display === 'none') return false;
+  var cs = window.getComputedStyle ? window.getComputedStyle(el) : null;
+  if (cs && (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0')) return false;
+  return true;
+}
+function _showPhoneConfirmWhenClear(clientRef, clientData) {
+  var waited = 0;
+  var poll = 400;
+  var maxWait = 5 * 60 * 1000;
+  function attempt() {
+    if (clientData.phoneConfirmedAt) return;
+    if (clientData.phoneSkippedAt && Date.now() - clientData.phoneSkippedAt < 7*86400000) return;
+    if (_startupModalOpen('wnModal') || _startupModalOpen('biModal') || _startupModalOpen('phoneConfirmOverlay')) {
+      if (waited >= maxWait) { showPhoneConfirmModal(clientRef, clientData); return; }
+      waited += poll;
+      setTimeout(attempt, poll);
+      return;
+    }
+    showPhoneConfirmModal(clientRef, clientData);
+  }
+  setTimeout(attempt, 900);
+}
+window._showPhoneConfirmWhenClear = _showPhoneConfirmWhenClear;
+
 // ══════════════════════════════════════════════════
 // LOAD PLAN
 // ══════════════════════════════════════════════════
@@ -2977,9 +3010,13 @@ async function loadPlan(user) {
     }, 1300);
 
     // Pedir confirmar/actualizar celular la primera vez tras esta actualización
-    // (una sola vez por cliente — se guarda phoneConfirmedAt en Firestore)
+    // (una sola vez por cliente — se guarda phoneConfirmedAt en Firestore).
+    // No se apila sobre las novedades del día: si WhatsNew (o la bitácora) sigue en
+    // pantalla, el prompt de celular espera a que el cliente las cierre. Antes se
+    // programaba a 900 ms fijos y quedaba un segundo modal sobre el primero, tapando
+    // el entrenamiento.
     if (!clientData.phoneConfirmedAt && !(clientData.phoneSkippedAt && Date.now() - clientData.phoneSkippedAt < 7*86400000)) {
-      setTimeout(function(){ showPhoneConfirmModal(clientRef, clientData); }, 900);
+      _showPhoneConfirmWhenClear(clientRef, clientData);
     }
 
     // T127-C: abort if a newer loadPlan call has already started (concurrent onAuthStateChanged).
