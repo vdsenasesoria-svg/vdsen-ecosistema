@@ -65,8 +65,31 @@ function workflowContract() {
   console.log('CLIENT_APP_KILL_SWITCH=' + (process.env.CLIENT_APP_RELEASE_ENABLED === 'true' ? 'true (release lane armed)' : 'false (disabled or unavailable; default false)'));
   console.log('PRODUCTION_KILL_SWITCH=' + (process.env.PRODUCTION_RELEASE_ENABLED === 'true' ? 'true (repo checks only)' : 'false (disabled or unavailable; default false)'));
 }
+// Cross-field coherence that JSON Schema cannot express conveniently (equalities between sibling
+// fields, and ISO-8601 validity). An `app_only` state claims a SPECIFIC release happened, so the
+// claim must be internally consistent: the block has to describe the same release the top-level
+// fields do, or the state would be describing two different deployments at once.
+function assertAppReleaseCoherence(state) {
+  if (state.release_mode !== 'app_only') return state;
+  const a = state.app_release;
+  assert.ok(a, 'release_mode app_only requires app_release');
+  assert.equal(a.runtime_sha, state.runtime_sha, 'app_release.runtime_sha must equal runtime_sha');
+  assert.equal(a.deployment, state.production_deployment, 'app_release.deployment must equal production_deployment');
+  assert.equal(a.previous_deployment, state.rollback_deployment, 'app_release.previous_deployment must equal rollback_deployment');
+  assert.equal(a.previous_runtime_sha, state.rollback_runtime_sha, 'app_release.previous_runtime_sha must equal rollback_runtime_sha');
+  assert.match(a.source_release_run, /^[0-9]+$/, 'app_release.source_release_run must be digits only');
+  assert.ok(Number.isInteger(a.verified_surfaces) && a.verified_surfaces > 0, 'app_release.verified_surfaces must be a positive integer');
+  // ISO-8601 and a real instant: `Date.parse` accepts junk like '2026-13-45', so round-trip the
+  // normalised value and require the input to be exactly that.
+  assert.match(a.completed_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/, 'app_release.completed_at must be an ISO-8601 UTC timestamp');
+  assert.ok(!Number.isNaN(Date.parse(a.completed_at)), 'app_release.completed_at must be a real instant');
+  assert.equal(new Date(a.completed_at).toISOString().replace(/\.\d+Z$/, 'Z'), a.completed_at.replace(/\.\d+Z$/, 'Z'),
+    'app_release.completed_at must survive a round trip');
+  return state;
+}
 function check(runtime = process.env.RUNTIME_SHA) {
   const state = validate(json('.release/vdsen-client.json'), json('.release/schema/release-state.schema.json'));
+  assertAppReleaseCoherence(state);
   validateBaseline(json('.release/known-baseline-failures.json'));
   workflowContract();
   runtime = resolveRuntime(runtime, state);

@@ -2,7 +2,7 @@
 // Only workflow jobs may call this CLI. No Admin SDK, document writes or IAM operations.
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-const { hash, json, git, validate, indexMatches, verifyDeployment, environmentContract } = require('./lib.cjs');
+const { hash, json, git, validate, indexMatches, assertReleaseMode, verifyDeployment, environmentContract } = require('./lib.cjs');
 const { check } = require('./check.cjs');
 const state = () => validate(json('.release/vdsen-client.json'), json('.release/schema/release-state.schema.json'));
 const save = (name, data) => { fs.mkdirSync('release-output', { recursive: true }); fs.writeFileSync('release-output/' + name, JSON.stringify(data, null, 2) + '\n'); };
@@ -134,6 +134,12 @@ async function prepare() {
   workflowGuard();
   assert.match(process.env.RUNTIME_SHA || '', /^[0-9a-f]{40}$/, 'Explicit runtime SHA required');
   const s = check();
+  // Fail closed and LOCAL, before any network work: the RULES lane may only run against a state
+  // that explicitly says a rules release is intended. After the first app release the reviewed
+  // state says `app_only`, so this gate stops an app-only baseline from being mistaken for approval
+  // to deploy Firestore rules. A future rules release must deliberately prepare a `rules_only`
+  // state - and refresh its rollback provenance - before dispatching.
+  assertReleaseMode(s, 'rules_only', 'Firestore rules release lane');
   environmentContract(s);
   testGates();
   assert.equal(s.release_status, 'READY', 'Reviewed release state not READY');
@@ -175,6 +181,9 @@ async function apply() {
   workflowGuard();
   assert.match(process.env.RUNTIME_SHA || '', /^[0-9a-f]{40}$/, 'Explicit runtime SHA required');
   const s = check();
+  // Same local, fail-closed gate as prepare(): this is the MUTATION entry point, so an app-only
+  // state must never be able to reach the rules deploy path.
+  assertReleaseMode(s, 'rules_only', 'Firestore rules release lane');
   environmentContract(s);
   testGates();
   const snapshot = json('release-output/rollback.json');

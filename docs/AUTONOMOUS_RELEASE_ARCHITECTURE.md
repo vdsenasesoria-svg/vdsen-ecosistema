@@ -27,9 +27,54 @@ Use a revocable Vercel credential isolated to the identified project/team with m
 
 ## State and rules-only forward release
 
+> **Superseded 2026-10-07.** The paragraph below records the reconciliation that preceded the first
+> Client App production release, so its identifiers are now the ROLLBACK side of that release and no
+> longer describe production. Current truth lives in `.release/vdsen-client.json` (`runtime_sha`
+> `8365410c...`, `production_deployment` `dpl_4xAS5kXuny7APpaRjozGeNdPETMj`) and its `app_release`
+> block. The rest of this section still describes the rules-only forward path.
+
 The user's authoritative reconciliation pins runtime `d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf`, current production `dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB`, rollback deployment `dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn` and rollback runtime `f6596ba5207dc158b8a9b01483cd0fe0ebeb274c`. These are supplied identifiers, not new live observations. APIs must verify them again.
 
 Forward mode is **rules_only**: verify the current app's approved SHA, capture rollback-compatible Rules, then deploy the exact pinned target Rules. Do not promote the historical preview or equate production with rollback. The canonical runbook explains why an old app cannot be paired with target Rules; recovery retains **Rules → app** ordering.
+
+### Release mode is an explicit intent record
+
+`.release/vdsen-client.json` carries `release_mode`, which records WHICH kind of release the reviewed
+state is prepared for. Both lanes read the same file, so the mode is what stops one lane from being
+driven by the other's baseline:
+
+- the **Firestore rules lane** (`live.cjs`, `prepare()` and `apply()`) requires `rules_only`. The
+  assertion is local and runs **before any network work**, so an `app_only` state can never reach the
+  rules deploy path.
+- the **Client App lane** (`app-live.cjs`) requires `app_only` at its mutation entry points (staging
+  and promote). The read-only preflight deliberately does not check it, so diagnostics still work
+  while a state is being prepared.
+
+After the first Client App production release (2026-10-07) the state therefore reads `app_only`, and
+`release_mode: app_only` **requires** an `app_release` block (JSON Schema `if`/`then`) whose fields
+must agree with the top-level ones — `runtime_sha`, `production_deployment`, `rollback_deployment`
+and `rollback_runtime_sha`. That cross-field coherence is enforced in `check.cjs`, because JSON
+Schema cannot express equality between siblings.
+
+**A future rules release must deliberately change the mode.** Setting `rules_only` is not enough on
+its own: it must also capture and review the CURRENT live rules as its new rollback baseline and
+update `rules_transition.rollback_*` before dispatch.
+
+### `rules_transition` under an app-only state is HISTORICAL
+
+While `release_mode` is `app_only`, the `rules_transition` block describes the **closed rules
+release**, not a pending one:
+
+- `target_sha256` is the rules hash that release deployed and that is still live
+  (`ba172a4f...`). It is a property of the deployed app baseline, so it is re-verified on every
+  check rather than being historical.
+- `rollback_sha256` / `rollback_source_path` refer to the rules that release captured as ITS
+  rollback baseline (`bb4402e9...`). They are **historical provenance** and are deliberately NOT
+  rewritten when an app release happens: the app release did not touch rules, so silently moving
+  those fields would destroy the evidence of what the rules release would have restored.
+
+An app-only state must therefore never be read as "ready for a new rules deployment". The mode gate
+above enforces that, and a test pins it.
 
 `.release/vdsen-client.json` and its schema bind explicit runtime/deployment/project IDs, target hash, required ordered index, false numeric flag and reviewed preconditions. Bootstrap remains pending. A separately authorized reviewed commit may eventually mark state READY after the preconditions are satisfied. The separate Environment enable variable must also be exactly `true`; missing/false/uppercase/malformed values block live entrypoints before network activity. Repo-only checks remain runnable while production is disabled.
 

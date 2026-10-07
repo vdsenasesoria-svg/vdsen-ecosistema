@@ -26,7 +26,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const assert = require('node:assert/strict');
-const { hash, json, git, gitBinary } = require('./lib.cjs');
+const { hash, json, git, gitBinary, assertReleaseMode } = require('./lib.cjs');
 const deployedProduct = require('./deployed-product.cjs');
 
 const STATE = '.release/vdsen-client.json';
@@ -139,6 +139,11 @@ function assertExplicitRuntime(runtime) {
 
 function assertKillSwitch() {
   assert.equal(process.env.CLIENT_APP_RELEASE_ENABLED, 'true', 'CLIENT_APP_RELEASE_ENABLED must be true to mutate');
+  // Symmetric with the rules lane, which requires `rules_only`. Both lanes read the same reviewed
+  // state, so the state now records WHICH release is intended and neither lane can be driven by the
+  // other's baseline. Only the mutation entry points call this (staging and promote); the read-only
+  // preflight deliberately does not, so diagnostics keep working while a state is being prepared.
+  assertReleaseMode(state(), 'app_only', 'Client App release lane');
 }
 
 // The whole point of the separate lane: no path here may MUTATE Firestore or its rules.
