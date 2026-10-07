@@ -26,7 +26,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const assert = require('node:assert/strict');
-const { hash, json, git } = require('./lib.cjs');
+const { hash, json, git, gitBinary } = require('./lib.cjs');
 const deployedProduct = require('./deployed-product.cjs');
 
 const STATE = '.release/vdsen-client.json';
@@ -369,7 +369,9 @@ function exportCandidateTree(sha, destDir) {
 function verifyExportedTree(sha, destDir, paths) {
   const mismatches = [];
   for (const p of paths) {
-    const expected = hash(Buffer.from(git('show', sha + ':' + p)));
+    // gitBinary, not git: `git()` decodes stdout as utf8 and would corrupt binary blobs (.jpg,
+    // .ttf), so the hash could never match the exported file.
+    const expected = hash(gitBinary('show', sha + ':' + p));
     const file = path.join(destDir, p);
     if (!fs.existsSync(file)) { mismatches.push(p + ' (missing)'); continue; }
     const actual = hash(fs.readFileSync(file));
@@ -544,7 +546,7 @@ async function revertApp(s, id) {
 async function verifyPublicBytes(s, runtime, paths) {
   const results = [];
   for (const p of paths) {
-    const expected = hash(Buffer.from(git('show', runtime + ':' + p)));
+    const expected = hash(gitBinary('show', runtime + ':' + p));
     const r = await fetch(s.production_origin + '/' + p + '?apprelease=' + runtime, {
       cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30000),
     });
@@ -584,8 +586,8 @@ function verifyProductIdentity(candidateSha) {
   assert.match(candidateSha, /^[0-9a-f]{40}$/, 'Explicit candidate SHA required for identity check');
   const differs = [];
   for (const p of servedSurface()) {
-    const head = hash(Buffer.from(git('show', 'HEAD:' + p)));
-    const atCandidate = hash(Buffer.from(git('show', candidateSha + ':' + p)));
+    const head = hash(gitBinary('show', 'HEAD:' + p));
+    const atCandidate = hash(gitBinary('show', candidateSha + ':' + p));
     if (head !== atCandidate) differs.push(p);
   }
   assert.deepEqual(differs, [],

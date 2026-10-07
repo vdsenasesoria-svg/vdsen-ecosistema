@@ -66,10 +66,38 @@ test('T571-1b git archive is the only way the tree is produced (tracked files on
 test('T571-1c exported bytes are verified against the commit for every served path', () => {
   const i = SRC.indexOf('function verifyExportedTree(');
   const body = SRC.slice(i, SRC.indexOf('\n// A staged deployment must be a PRODUCTION', i));
-  assert.ok(/git\('show', sha \+ ':' \+ p\)/.test(body), 'compara contra el blob del commit');
+  assert.ok(/gitBinary\('show', sha \+ ':' \+ p\)/.test(body), 'compara contra el blob del commit');
   assert.ok(/hash\(fs\.readFileSync\(file\)\)/.test(body), 'hashea el archivo exportado');
   assert.ok(/assert\.equal\(mismatches\.length, 0/.test(body), 'falla si algo no coincide');
   assert.ok(/missing/.test(body), 'y detecta archivos ausentes');
+});
+
+test('T571-1d blob reads are BINARY-SAFE (utf8 decoding corrupted every binary asset)', () => {
+  // A real defect: `git()` runs execFileSync with encoding utf8, so hashing its output for a .jpg
+  // or .ttf could never match the exported file. The staging gate failed with
+  //   'Exported tree does not match the candidate commit: assets/vdsen-logo-official.jpg (hash)'
+  // Every byte-comparing read must therefore use the binary-safe helper.
+  assert.ok(!/hash\(Buffer\.from\(git\('show'/.test(SRC), 'no debe hashear la salida utf8 de git()');
+  assert.equal((SRC.match(/gitBinary\('show'/g) || []).length, 4, 'las 4 comparaciones de blob usan gitBinary');
+  const lib = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'release', 'lib.cjs'), 'utf8');
+  assert.ok(/const gitBinary = \(\.\.\.args\) => execFileSync\('git', args, \{ maxBuffer/.test(lib), 'gitBinary sin encoding => Buffer');
+  assert.ok(/module\.exports = \{[^}]*gitBinary/.test(lib), 'gitBinary exportado');
+});
+
+test('T571-1e the export genuinely round-trips real binary assets', () => {
+  // Proves the helper against the repository itself instead of asserting on source text: export the
+  // candidate tree and verify every served path, which includes .jpg and .ttf files.
+  const { execFileSync } = require('node:child_process');
+  const os = require('node:os');
+  const sha = '8365410cf7f09427c79ead77aa4f769c16e9a803';
+  try { execFileSync('git', ['cat-file', '-e', sha + '^{commit}'], { stdio: 'ignore' }); }
+  catch { return; } // commit not reachable in this checkout: skip rather than fail
+  const paths = app.servedSurface();
+  assert.ok(paths.some((p) => /\.(jpg|png|ttf|woff2?|ico)$/i.test(p)), 'la superficie servida incluye binarios');
+  const dir = path.join(os.tmpdir(), 'vdsen-t571-export');
+  app.exportCandidateTree(sha, dir);
+  assert.equal(app.verifyExportedTree(sha, dir, paths), paths.length, 'todas las rutas verifican');
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // ── 2 & 3. production environment and skip-domain ─────────────────────────────────────────────

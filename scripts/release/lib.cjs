@@ -6,6 +6,10 @@ const assert = require('node:assert/strict');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+// Binary-safe git read. `git(...)` decodes stdout as utf8, which CORRUPTS binary blobs: hashing
+// the decoded string of a .jpg or .ttf never matches the real file. Anything comparing bytes of a
+// committed blob (not text) must use this.
+const gitBinary = (...args) => execFileSync('git', args, { maxBuffer: 64 * 1024 * 1024 });
 // Deliberately limited schema vocabulary. Unknown validation keywords fail closed.
 function validate(value, schema, path = '$') {
   const supported = new Set(['$schema', '$id', 'title', 'description', 'type', 'const', 'enum', 'pattern', 'required', 'properties', 'additionalProperties', 'items', 'minItems']);
@@ -52,4 +56,4 @@ function environmentContract(s) {
   assert.equal(process.env.GCP_RELEASE_SERVICE_ACCOUNT, 'vdsen-release-bot@vdsen-ecosistema.iam.gserviceaccount.com');
   assert.match(process.env.GCP_WORKLOAD_IDENTITY_PROVIDER || '', /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[A-Za-z0-9_-]+\/providers\/[A-Za-z0-9_-]+$/);
 }
-module.exports = { hash, json, git, validate, indexMatches, verifyDeployment, noSecrets, environmentContract };
+module.exports = { hash, json, git, gitBinary, validate, indexMatches, verifyDeployment, noSecrets, environmentContract };
