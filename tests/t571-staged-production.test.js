@@ -45,9 +45,9 @@ test('T571-1 the staged source is the exact candidate tree, never the working tr
   // exported with git archive of the candidate SHA, not the checkout
   assert.ok(/exportCandidateTree\(runtime, outDir\)/.test(body), 'exporta el arbol del candidato exacto');
   assert.ok(/verifyExportedTree\(runtime, outDir, surface\)/.test(body), 'verifica el arbol exportado');
-  // and the deploy runs INSIDE that directory
-  assert.ok(/'--cwd', outDir/.test(body), 'el deploy corre en el arbol exportado');
-  assert.ok(/\], outDir\)/.test(body), 'el cwd del proceso tambien es el arbol exportado');
+  // the deploy directory is a positional argument, and the process cwd is the same tree
+  assert.ok(/'deploy', outDir, '--prod'/.test(body), 'el deploy apunta al arbol exportado');
+  assert.ok(/\], outDir, \{/.test(body), 'el cwd del proceso tambien es el arbol exportado');
   // no HEAD / branch / latest anywhere in the staging path
   assert.ok(!/HEAD|latest|codex\/client-app-next/.test(body), 'no usa HEAD, latest ni la rama');
 });
@@ -104,7 +104,7 @@ test('T571-1e the export genuinely round-trips real binary assets', () => {
 
 test('T571-2 the deploy is a PRODUCTION build with --skip-domain', () => {
   const body = stageBody();
-  assert.ok(/'deploy', '--prod', '--skip-domain', '--yes'/.test(body), 'flags exactas de staged production');
+  assert.ok(/'deploy', outDir, '--prod', '--skip-domain', '--yes'/.test(body), 'flags exactas de staged production');
   // --prod means production target, and therefore production variables
   assert.ok(!/--target=|--target', 'preview/.test(body), 'no se fuerza un target preview');
 });
@@ -140,9 +140,9 @@ test('T571-4 the production alias is asserted unchanged around the staging step'
   assert.ok(/currentAfter = await currentApp\(s\)/.test(body), 'y DESPUES');
   assert.ok(/assert\.equal\(currentAfter, currentBefore/.test(body), 'y exige que no se haya movido');
   // the "after" read must come after the deploy
-  assert.ok(body.indexOf('currentBefore = await currentApp(s)') < body.indexOf("'deploy', '--prod'"),
+  assert.ok(body.indexOf('currentBefore = await currentApp(s)') < body.indexOf("'deploy', outDir, '--prod'"),
     'el alias se lee antes del deploy');
-  assert.ok(body.indexOf("'deploy', '--prod'") < body.indexOf('currentAfter = await currentApp(s)'),
+  assert.ok(body.indexOf("'deploy', outDir, '--prod'") < body.indexOf('currentAfter = await currentApp(s)'),
     'y se re-lee despues');
 });
 
@@ -150,8 +150,13 @@ test('T571-4 the production alias is asserted unchanged around the staging step'
 
 test('T571-5 project and team are established explicitly, not from an accidental local link', () => {
   const body = stageBody();
-  assert.ok(/'--project', s\.production_project/.test(body), 'proyecto explicito por id');
-  assert.ok(/'--scope', s\.vercel_team/.test(body), 'team/scope explicito');
+  // They are passed through the environment, which is the documented non-interactive CI form.
+  // Flags were tried first and FAILED: `--scope` expects a team SLUG, not the `team_...` id, and
+  // passing the id broke authentication with 'Not able to load user ... User not found. (404)'.
+  assert.ok(/VERCEL_PROJECT_ID: s\.production_project/.test(body), 'proyecto explicito por id');
+  assert.ok(/VERCEL_ORG_ID: s\.vercel_team/.test(body), 'team explicito por id');
+  assert.ok(!/'--scope'/.test(body), 'no usa --scope (no acepta el id del team)');
+  assert.ok(!/'--project'/.test(body), 'no depende de flags de proyecto');
   // and the id must come from reviewed state, not from the environment at call time
   assert.ok(/const s = state\(\)/.test(body), 'las coordenadas salen del estado revisado');
   // the staged report records them so a reviewer can check
@@ -175,7 +180,7 @@ test('T571-6 the staged report records source identity and lifecycle fields', ()
 test('T571-7 the deploy refuses to continue if the alias moved (candidate bytes are proven first)', () => {
   const body = stageBody();
   const exportIdx = body.indexOf('verifyExportedTree');
-  const deployIdx = body.indexOf("'deploy', '--prod'");
+  const deployIdx = body.indexOf("'deploy', outDir, '--prod'");
   assert.ok(exportIdx > -1 && deployIdx > -1 && exportIdx < deployIdx,
     'la verificacion de bytes precede al deploy');
 });
