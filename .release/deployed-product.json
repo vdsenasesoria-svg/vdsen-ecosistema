@@ -1,0 +1,33 @@
+{
+  "schema": "vdsen-deployed-product-v1",
+  "runtime_sha": "d7bb71521d750eafd46a15fdd3c6ee157d4bd4cf",
+  "note": "Frozen per-file sha256 of the served surface at the DEPLOYED runtime commit. Regenerate only as part of an authorized deploy.",
+  "files": {
+    "vdsen-cliente.html": "b27dbccdde89e777a6acaacedceffa936e76755939f5f7a776aa4cd22fca16e3",
+    "vdsen-coach.html": "30eb323d68da158ded3f643d3a3e621cb0147199026c9a0175668e3865872b57",
+    "ficha-publica.html": "d8f43e838fa494d19c9698d30e61bdab0e36e01339ee2b5fbaf71391df6d3826",
+    "sw.js": "c39bd67748c6db6628f4540f8cf23d4e19cd70292abb6fe7c9b1487bfcf58b18",
+    "vdsen-push.js": "644801509b7c7bbcd570139b43190dfa15366b4b7c23b920cbddc7c098849fbb",
+    "manifest.json": "bd5388a6301b6f4d3259d248c16b0c0e0e6a44c4e7a98c37f0d8eb5f091074bf",
+    "vercel.json": "b256d32ab5ece550ecf55c240f5ba90944ada2db4b67c2fe15111afdc3ad3543",
+    "firebase.json": "f94d667b6cbf65baf75668ae8b664c4491df11e3cfe876d04986fa1b4a3173e0",
+    ".firebaserc": "0363fde6da0a19148dcc957bb751255ecba26b761c1170c5ac8bb4ff6a09c37b",
+    "firestore.rules": "ba172a4f2e9831e55fb0a10c369b4a073193efb56eb5ea61245a0f178043e1e6",
+    "firestore.indexes.json": "accafd1ca2c708549d44e1861d1c7c5435bd68f2b4468726e610f367b44e7cf3",
+    "assets/equipment-context.js": "baa5fcf90242c58ec109a7f090575e6ad33d6e922ecaf439bdbfc438ae2eeeeb",
+    "assets/equipment-identity.js": "a728ce52b8d71e4ab70c628124f19fe7b0eee7276916030663c5f48920869d4c",
+    "assets/exercise-visual-catalog.js": "780a45bbeeaa4ccdcd1e74a1b502a04471d9bfe1d8ffb0b23a3f314d60b243bc",
+    "assets/exercise-visual-metadata-editor.js": "17b4249a64bb3ef093bc34d22899b8b72839bda2aee245a71471122e09af8c1d",
+    "assets/exercises/pending-license.svg": "565b92ebed2f0d6f0bcc4407e543e1f41914e51499aab6ab57ca8fb91cd38ab9",
+    "assets/progression-application-consumer.js": "31d87f938cf3afe74add91c283f4b5cbd943e30ecae9a81ded50dc1457740019",
+    "assets/progression-auto-apply-shadow.js": "3223478877f41c0a55e4d431edac02066a3322e28bdb1492218d183622d4b3c5",
+    "assets/progression-effective-prescription.js": "dc85b42926f877f541a015480672e3009368cafda1e63acf6e43b37c684d21b1",
+    "assets/progression-equipment-resolver.js": "5d66786816c36b0f82138b73ce66d55bdd3ae1b35b19b0043732c9d011cb5648",
+    "assets/progression-magnitude-policy.js": "6f3634ef613359fa85d4120be185e17a9ed2d9ae66f129949c6534245f685adf",
+    "assets/vdsen-logo-official.jpg": "95fc38d974cabab836aa59623781739c4cc0c585e68a784f69b82e30430d475b",
+    "fonts/BigShouldersDisplay-800.ttf": "258e70cb546dd43bac15294c4e3fc49c05990f66b4aee23f19f3b6b65d96d32b",
+    "fonts/CourierPrime-Bold.ttf": "ff1f38786c849d1c41fa8e447960abdb2bd75fdfb0cfcdeb524fad65a5af3638",
+    "fonts/CourierPrime-Regular.ttf": "72f793376f8e2841656bf21d77a5de010f2929bd6956a22ee848ad0c7eb978af",
+    "fonts/Inter-400.ttf": "6a5bd920dd5f6b9e0777d7f0f7347687ded3954f6e4cb47df1541babc2631d50"
+  }
+}
