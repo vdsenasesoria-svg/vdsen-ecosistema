@@ -59,7 +59,7 @@ const save = (name, data) => {
 // intermittently unhealthy for these reads. Retry the transient statuses on idempotent GETs
 // with bounded backoff. NEVER retry 401/403: those are credential failures and must fail fast.
 const RETRYABLE_STATUS = new Set([400, 408, 425, 429, 500, 502, 503, 504]);
-const RETRY_ATTEMPTS = 4;
+const RETRY_ATTEMPTS = 2; // the poll repeats anyway; many retries amplified load and drew HTTP 400
 
 async function api(url, token, method = 'GET', body, acceptStatus, required = true) {
   if (required) assert.ok(token, 'Missing workflow credential');
@@ -214,6 +214,7 @@ function assertRollbackArtifact(artifact) {
 //   - the list returns `uid`, not `id` -> every downstream comparison matched nothing.
 // /v7 supports both `projectId` and `target`.
 const DEPLOYMENTS_LIST = '/v7/deployments';
+const LIST_LIMIT = 40; // smaller page: a full 100-entry page is heavier than this lane needs
 
 // Vercel's deployment list identifies a deployment as `uid`, while the single-deployment
 // endpoint and the promote/rollback paths use `id`. Normalising here keeps every downstream
@@ -226,25 +227,34 @@ function normalizeDeployment(d) {
 }
 
 async function listDeployments(s, extra = '') {
-  const list = await vercel(s, DEPLOYMENTS_LIST + '?projectId=' + encodeURIComponent(s.production_project) + '&limit=100' + extra);
+  const list = await vercel(s, DEPLOYMENTS_LIST + '?projectId=' + encodeURIComponent(s.production_project) + '&limit=' + LIST_LIMIT + extra);
   return (list.deployments || []).map(normalizeDeployment);
 }
 
+// Resolve the deployment serving production in ONE request.
+//
+// History, because three different approaches were tried here and the reason matters:
+//   - GET /v6/deployments            -> retired, HTTP 400 (not in the published spec)
+//   - GET /v7/deployments + target   -> works once, then HTTP 400 under repetition
+//   - GET /v4/aliases/{hostname}     -> returns the live deployment directly
+// `currentApp()` is called inside a convergence poll, so the list endpoint was being hit
+// dozens of times per run; the alias answers the same question in a single call and never
+// repeats. This is the live production identity read, so it must be both accurate and cheap.
 async function currentApp(s) {
-  const production = (await listDeployments(s, '&target=production'))
-    .filter((d) => d.target === 'production' && (d.readyState || d.ready) === 'READY')
-    .sort((a, b) => (b.created || 0) - (a.created || 0));
-  assert.ok(production.length > 0, 'No READY production deployment found for this project');
-  const d = production[0];
-  assert.equal(d.projectId, s.production_project, 'Production deployment belongs to another project');
-  assert.ok(d.id, 'Missing production deployment id');
-  return d.id;
+  const host = new URL(s.production_origin).hostname;
+  const a = await vercel(s, '/v4/aliases/' + encodeURIComponent(host));
+  assert.ok(a.deployment && (a.deployment.id || a.deployment.uid), 'Production alias has no deployment');
+  assert.equal(a.projectId || s.production_project, s.production_project, 'Production alias belongs to another project');
+  return a.deployment.id || a.deployment.uid;
 }
 
+// Convergence poll. Kept deliberately light: the previous version hit the deployment LIST
+// endpoint up to 30 times per call, and with retries that was >100 requests, which is what the
+// upstream started rejecting with HTTP 400. One alias read per attempt is enough.
 async function awaitApp(s, id) {
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 20; i++) {
     if (await currentApp(s) === id) return true;
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 3000));
   }
   return false;
 }
