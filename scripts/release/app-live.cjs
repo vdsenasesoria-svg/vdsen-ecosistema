@@ -334,7 +334,13 @@ async function productionEnv(s) {
 // eligibility rather than a malformed request - which is precisely why the CLI is tried first:
 // it is the officially documented promotion tool and performs any additional steps the API does
 // not.
-const VERCEL_CLI_VERSION = '39.4.2';
+//
+// PINNED, and verified against the published changelog rather than guessed. The previous value
+// (39.4.2) predated the `promote` subcommand, so the CLI returned its help text and the lane had
+// to fall back to REST. 59.11.7 is the latest entry in packages/cli/CHANGELOG.md and `vercel
+// promote` is documented at vercel.com/docs/cli/promote. Pinning keeps a silent `latest` out of a
+// production release.
+const VERCEL_CLI_VERSION = '59.11.7';
 
 function promoteViaCli(s, id) {
   return new Promise((resolve) => {
