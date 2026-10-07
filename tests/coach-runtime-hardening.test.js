@@ -67,9 +67,17 @@ test('CN1.4 there is NO reload workaround', () => {
 test('CN2.1 parking clears everything the previous coach left rendered', () => {
   const park = fn('function _parkCoachShell()');
   for (const id of ['modalClientBody', 'clientList', 'dashSummary', 'clientNavBar', 'accountInfoBox',
-    'fichasRecibidas', 'templateList', 'exerciseCatalog', 'planBuilder', 'compendioStatus']) {
+    'fichasRecibidas', 'templateList', 'exerciseCatalog', 'planBuilder', 'compendioStatus',
+    // Found by the BROWSER matrix, not by reading the code: planClientSelect holds the previous
+    // coach's client OPTIONS (ids included) and was restored as-is for the next coach, while
+    // crearPlan keeps its rendered row content.
+    'planClientSelect', 'crearPlan']) {
     assert.ok(park.includes(id), 'parking debe limpiar ' + id);
   }
+  // `clientes` is the PARENT of clientList: clearing it wiped the shell structure and the next coach
+  // could not render a list at all. The browser matrix caught that immediately (parkedLen -> 0), so
+  // the regression is pinned here as well.
+  assert.ok(!/getElementById\('clientes'\)/.test(park), 'no debe vaciar el contenedor padre clientes');
   assert.ok(/modal-overlay/.test(park), 'cierra cualquier modal abierto');
   assert.ok(/modalClientName/.test(park), 'borra el titulo del cliente previo');
   assert.ok(/modalDeleteClientBtn/.test(park), 'desenlaza el boton de borrar cliente');

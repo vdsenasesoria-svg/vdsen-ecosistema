@@ -3049,11 +3049,18 @@ Cualquier duda me escribes. ¡Vamos con todo! 💪`;
   function _parkCoachShell() {
     if (window._vdsenShellStash || !document.getElementById('clientList')) return; // ya estacionado, o no es el shell del Coach
     document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; });
-    // CN3 — La auditoría encontró datos privados del coach que sobrevivían en el shell estacionado
-    // (fichas recibidas, plantillas, catálogo de ejercicios, plan builder, compendio) y en memoria.
-    // Sólo eran alcanzables una vez que el login funciona sin recargar, así que se limpian aquí.
-    // `accountInfoBox` se vacía porque contiene el email y el UID del coach anterior.
-    ['modalClientBody', 'clientList', 'dashSummary', 'clientNavBar', 'accountInfoBox', 'fichasRecibidas', 'templateList', 'exerciseCatalog', 'planBuilder', 'compendioStatus'].forEach(id => {
+    // CN3 — La auditoría encontró datos privados del coach que sobrevivían en el shell estacionado.
+    // Limpiar sólo los contenedores de la lista no alcanzaba, y el arnés lo localizó con precisión:
+    // `planClientSelect` guarda las OPCIONES de clientes del coach anterior (ids incluidos) y se
+    // restauraba tal cual para el siguiente coach; `crearPlan` conserva el contenido renderizado de
+    // sus filas; `accountInfoBox` trae el email y el UID del coach previo.
+    //
+    // `clientes` NO entra en esta lista: es el contenedor PADRE de `clientList`, así que vaciarlo
+    // borraba la estructura del shell y el coach siguiente ya no podía renderizar su lista. El arnés
+    // lo detectó de inmediato (parkedLen cayó a 0 y la lista desapareció).
+    ['modalClientBody', 'clientList', 'dashSummary', 'clientNavBar', 'accountInfoBox',
+      'fichasRecibidas', 'templateList', 'exerciseCatalog', 'planBuilder', 'compendioStatus',
+      'planClientSelect', 'crearPlan'].forEach(id => {
       const e = document.getElementById(id); if (e) e.innerHTML = '';
     });
     const _t = document.getElementById('modalClientName'); if (_t) _t.textContent = '—';
