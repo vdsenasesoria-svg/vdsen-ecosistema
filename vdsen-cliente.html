@@ -586,7 +586,7 @@ button:focus-visible,summary:focus-visible,a:focus-visible,[tabindex]:focus-visi
 .tr-sub .ok{color:var(--grn);font-weight:700}
 .tr-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .sess-hdr-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 14px;background:transparent;border:1px solid var(--rule-strong);border-radius:var(--r-1);color:var(--mt);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:none}
-.workout-set-current .set-actions{position:sticky;bottom:-88px;z-index:4;margin:6px -14px -14px;padding:12px 14px 12px;background:linear-gradient(to top,var(--sa-bg,var(--card)) 80%,transparent)}
+.workout-set-current .set-actions{position:sticky;bottom:calc(env(safe-area-inset-bottom,0px));z-index:4;margin:6px -14px -14px;padding:12px 14px 12px;background:linear-gradient(to top,var(--sa-bg,var(--card)) 80%,transparent)}
 .setpanel .set-actions{--sa-bg:var(--plate);margin:6px -16px -16px;padding:12px 16px}
 .workout-set-current .set-actions .set-save-primary{margin-top:0}
 .sp-opt{font-weight:600;letter-spacing:.06em;text-transform:lowercase;opacity:.7;margin-left:4px;font-size:.9em}
@@ -3149,6 +3149,8 @@ function _releaseWakeLock() {
 }
 
 var _tabScrollY = {}; // guarda posición de scroll por tab index
+// T566: se activa al ENTRAR al tab de entrenamiento y lo consume renderEntrenamiento.
+var _pendingSetReveal = false;
 // Header athlete context: "SEM 3/6 · objetivo". Display only; never touches plan data.
 function _updateHdrWeek() {
   var el = document.getElementById('hdWeek');
@@ -3176,7 +3178,7 @@ function goTab(i) {
   if (i === 1) { _acquireWakeLock(); } else { _releaseWakeLock(); }
   // Al entrar al tab de entrenamiento, volver a la semana activa
   // EXCEPTO cuando viene de goToWeek() que ya fijó la semana deseada.
-  if (i === 1) { if (!_goTabSkipWeekReset) CURRENT_WEEK = REAL_WEEK; _goTabSkipWeekReset = false; renderEntrenamiento(); }
+  if (i === 1) { if (!_goTabSkipWeekReset) CURRENT_WEEK = REAL_WEEK; _goTabSkipWeekReset = false; _pendingSetReveal = true; renderEntrenamiento(); }
   else if (i === 2) renderNutricion();
   else if (i === 3) renderCheckin();
   else if (i === 4) renderPerfil();
@@ -8976,6 +8978,14 @@ function renderEntrenamiento() {
       '<span id="timerPillNum" class="rt-pnum">—</span>'+
       '<span class="rt-ptxt">Toca para ver</span>'+
     '</div>';
+  // T566 — al ENTRAR a la pestaña de entrenamiento, dejar el set activo a la vista. Se consume
+  // el marcador que pone goTab, no un temporizador ni un bucle: el re-render que disparan el
+  // descanso o un snapshot no debe mover la pantalla bajo los dedos del cliente. Un intento
+  // por entrada, y sin efecto si no hay set pendiente (sesión ya completa).
+  if (_pendingSetReveal) {
+    _pendingSetReveal = false;
+    setTimeout(function(){ try { _revealActiveSet(); } catch (_) {} }, 80);
+  }
   // Session timer live update — T163-bug: never ticks for a session already
   // marked done (window._sesTimerEnd set above); its display was already
   // rendered frozen at the real duration, so there is nothing to update.
@@ -9978,6 +9988,40 @@ function _scrollToNextPendingSet() {
   if (window.requestAnimationFrame) requestAnimationFrame(go); else setTimeout(go, 0);
 }
 window._scrollToNextPendingSet = _scrollToNextPendingSet;
+
+// T566 — Al ENTRAR al ejercicio, el set activo debe quedar visible sin que el cliente
+// tenga que buscarlo a mano. Medido a 360x740: sin esto, CARGA (977px) y GUARDAR (944px)
+// quedaban por debajo del pliegue y el contenedor #tabEntr se quedaba en scrollTop=0.
+//
+// Por que no basta _scrollToNextPendingSet: usa block:'nearest' sobre una tarjeta de 569px
+// en un viewport util de 631px, y su primer borde ya esta dentro -> el navegador no desplaza
+// nada (medido: 944px antes y despues). Aqui se alinea la tarjeta al inicio del contenedor.
+//
+// Dos detalles medidos, no supuestos:
+//  - Se desplaza el CONTENEDOR, nunca window: #tabEntr es el elemento con overflow-y:auto y
+//    el body tiene overflow:hidden, asi que window.scrollY se queda en 0 (por eso el scroll
+//    por tab de goTab tampoco hacia nada).
+//  - behavior:'auto', no 'smooth': medido, el scroll suave NO completa en este contenedor
+//    (scrollTop se queda en 0). Es la misma razon por la que T555 ya usa 'auto' en
+//    _scrollToNextPendingSet; mantenerlo evita ademas el "tengo que tocar dos veces".
+function _revealActiveSet() {
+  var strip = function(el) {
+    while (el && el.nodeType === 1) {
+      if (el.hasAttribute('data-pending')) return el;
+      el = el.parentElement;
+    }
+    return null;
+  };
+  var row = strip(document.querySelector('#exPanel [data-pending="1"]'));
+  if (!row) return false;
+  try {
+    row.scrollIntoView({ behavior: 'auto', block: 'start' });
+  } catch (_) {
+    row.scrollIntoView(); // navegadores sin opciones
+  }
+  return true;
+}
+window._revealActiveSet = _revealActiveSet;
 
 // FASE 9 — Handler del botón SIGUIENTE ▶: detiene timer y desplaza al próximo set.
 function _nextSerie() {
