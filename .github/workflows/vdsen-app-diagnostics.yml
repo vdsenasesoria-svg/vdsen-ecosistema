@@ -41,8 +41,26 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Report the status of every read the app lane performs
+      - name: Probe endpoint health (independent of the lane code)
         run: node scripts/release/app-diagnostics.cjs
+      - name: Run the lane's REAL read path with a redacted read trace
+        # The critical step. A separate probe reported every read healthy while the release
+        # preflight failed on the same endpoint, because the probe was a DIFFERENT code path.
+        # This runs readOnlyPreflight() - the exact reads the release performs - with
+        # APP_TRACE_READS so each request is logged by parameter NAME and value LENGTH only.
+        # No token, no parameter value and no response body is printed.
+        env:
+          APP_RUNTIME_SHA: c3e78380d3a076e643a1957203c093260851210e
+          APP_TRACE_READS: 'true'
+        run: |
+          set -o pipefail
+          node scripts/release/app-live.cjs read-only-preflight 2>&1 | tee /tmp/rop.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" != "0" ]; then
+            echo "::error::read-only preflight exited $status"
+            cat /tmp/rop.log
+          fi
+          exit "$status"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

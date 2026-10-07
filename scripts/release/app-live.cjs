@@ -89,8 +89,20 @@ async function api(url, token, method = 'GET', body, acceptStatus, required = tr
   }
   throw last;
 }
-const vercel = (s, p, method, body, acceptStatus) =>
-  api(VERCEL_API + p + '?teamId=' + encodeURIComponent(s.vercel_team), process.env.VERCEL_TOKEN, method, body, acceptStatus);
+// Traza REDACTADA: nombres de parametros y longitudes, nunca valores. Sirve para comparar la
+// peticion que funciona (diagnostico) con la que falla (preflight) sin exponer credenciales.
+function redactUrl(url) {
+  try {
+    const u = new URL(url);
+    const params = [...u.searchParams.entries()].map(([k, v]) => k + '=' + String(v).length + 'ch');
+    return u.origin + u.pathname + '?' + params.join('&');
+  } catch (e) { return '(unparseable)'; }
+}
+const vercel = (s, p, method, body, acceptStatus) => {
+  const url = VERCEL_API + p + '?teamId=' + encodeURIComponent(s.vercel_team);
+  if (process.env.APP_TRACE_READS === 'true') console.log('VERCEL READ ' + redactUrl(url));
+  return api(url, process.env.VERCEL_TOKEN, method, body, acceptStatus);
+};
 
 // ── contract checks (pure: every one takes its data as an argument, so tests need no network)
 
@@ -352,9 +364,11 @@ function verifyProductIdentity(candidateSha) {
 
 // ── commands
 
-async function preflight() {
+// Every read the preflight performs, split out so the READ-ONLY diagnostics workflow can run
+// the EXACT same code path without arming the mutation kill switch. Duplicating these calls in
+// a separate diagnostic is what let a failing read look healthy: it was a different code path.
+async function readOnlyPreflight() {
   assertAppOnlySources();
-  assertKillSwitch();
   const s = state();
   const runtime = assertExplicitRuntime(process.env.APP_RUNTIME_SHA);
   assert.equal(process.env.APP_PROJECT_ID || s.production_project, s.production_project, 'Project mismatch');
@@ -373,6 +387,13 @@ async function preflight() {
 
   const current = await deployment(s, aliasDeploymentId);
   assert.equal(current.meta?.githubCommitSha, s.runtime_sha, 'Current production runtime does not match the recorded baseline');
+
+  return { s, runtime, candidate, aliasDeploymentId, mainSha, env, fb, current };
+}
+
+async function preflight() {
+  assertKillSwitch();
+  const { s, runtime, candidate, aliasDeploymentId, mainSha, env, fb, current } = await readOnlyPreflight();
 
   const artifact = assertRollbackArtifact(save('app-rollback-' + (process.env.GITHUB_RUN_ID || 'local') + '.json', {
     release_id: process.env.GITHUB_RUN_ID || 'local',
@@ -511,9 +532,15 @@ async function main() {
   else if (cmd === 'verify-product-identity') {
     const r = verifyProductIdentity(process.env.APP_RUNTIME_SHA);
     console.log('PRODUCT IDENTITY PASS: HEAD serves the released artifact (' + r.verified + ' paths)');
+  } else if (cmd === 'read-only-preflight') {
+    // Runs the EXACT read path the release preflight uses, without the mutation kill switch.
+    // This is what the diagnostics workflow calls: a separate probe re-implemented these reads
+    // and reported them healthy while the real path failed.
+    const r = await readOnlyPreflight();
+    console.log('READ-ONLY PREFLIGHT PASS: candidate ' + r.candidate.id + ' -> production ' + r.aliasDeploymentId);
   } else if (cmd === 'release-result') console.log(JSON.stringify(releaseResult()));
   else if (cmd === 'preflight-summary') console.log(preflightSummary());
-  else throw new Error('usage: app-live.cjs preflight|apply|rollback|verify-product-identity|preflight-summary|release-result');
+  else throw new Error('usage: app-live.cjs read-only-preflight|preflight|apply|rollback|verify-product-identity|preflight-summary|release-result');
 }
 
 if (require.main === module) {
@@ -535,6 +562,6 @@ module.exports = {
   assertCandidateNotAlreadyProduction, assertBaseline, assertEnvironment,
   assertFirebaseProject, assertPromoted, assertRollbackArtifact,
   resolveCandidate, currentApp, listDeployments, normalizeDeployment, deployment, productionEnv, promote, revertApp,
-  verifyPublicBytes, servedSurface, verifyProductIdentity, preflight, apply, rollbackApp, releaseResult, preflightSummary, preflightSummary,
+  verifyPublicBytes, servedSurface, verifyProductIdentity, readOnlyPreflight, preflight, apply, rollbackApp, releaseResult, preflightSummary, redactUrl, preflightSummary,
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
 };
