@@ -1,0 +1,52 @@
+name: VDSEN client app lane diagnostics (read-only)
+
+# READ-ONLY diagnostics for the app-only release lane.
+#
+# Reports the HTTP status of each Vercel read the app lane performs, so a failing read
+# identifies itself instead of surfacing as a bare "API GET failed: HTTP 400".
+#
+# This workflow CANNOT mutate anything: it has no promote, no rollback, no Firestore access,
+# and it does not consult any release kill switch because it never releases. It exists purely
+# to report which endpoint is unhealthy. It never prints a token, a variable value, or a
+# response body — only the operation name, HTTP status and a redacted shape summary.
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Optional note for this diagnostic run'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    environment: Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Report the status of every read the app lane performs
+        run: node scripts/release/app-diagnostics.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: app-diagnostics-${{ github.run_id }}
+          path: release-output/app-diagnostics.json
+          if-no-files-found: warn
+          retention-days: 30

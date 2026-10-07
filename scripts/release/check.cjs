@@ -40,6 +40,15 @@ function workflowContract() {
   assert.ok(!app.includes('credentials_json:'));
   const appAllowed = new Set(['VERCEL_PROJECT_ID', 'VERCEL_ORG_ID', 'CLIENT_APP_RELEASE_ENABLED']);
   for (const match of app.matchAll(/vars\.([A-Z_]+)/g)) assert.ok(appAllowed.has(match[1]), 'App lane noncanonical variable: ' + match[1]);
+  // The diagnostics workflow is READ-ONLY by contract: no mutation endpoint, no Firestore,
+  // no release kill switch (it never releases). Comments are stripped so prose cannot mask it.
+  const diag = fs.readFileSync('.github/workflows/vdsen-app-diagnostics.yml', 'utf8')
+    .split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  assert.ok(!/\/promote|\/rollback\/|firebaserules|firestore\.googleapis/.test(diag), 'Diagnostics must not reach a mutation or Firestore endpoint');
+  assert.ok(!/CLIENT_APP_RELEASE_ENABLED|PRODUCTION_RELEASE_ENABLED/.test(diag), 'Diagnostics must not consult a release kill switch');
+  assert.ok(diag.includes('app-diagnostics.cjs'), 'Diagnostics must use the read-only diagnostic tooling');
+  for (const match of diag.matchAll(/secrets\.([A-Z_]+)/g)) assert.equal(match[1], 'VERCEL_TOKEN');
+  assert.ok(!diag.includes('credentials_json:'));
   console.log('CLIENT_APP_KILL_SWITCH=' + (process.env.CLIENT_APP_RELEASE_ENABLED === 'true' ? 'true (release lane armed)' : 'false (disabled or unavailable; default false)'));
   console.log('PRODUCTION_KILL_SWITCH=' + (process.env.PRODUCTION_RELEASE_ENABLED === 'true' ? 'true (repo checks only)' : 'false (disabled or unavailable; default false)'));
 }
