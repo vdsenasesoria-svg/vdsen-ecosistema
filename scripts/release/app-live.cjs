@@ -451,7 +451,8 @@ async function stageProduction() {
   // `--scope` expects a team SLUG, not the `team_...` id, and passing the id made the CLI fail in
   // authentication with "Not able to load user because of unexpected error: User not found. (404)".
   // The deploy directory is a positional argument, which is the documented form.
-  const res = await runVercelCli(['deploy', outDir, '--prod', '--skip-domain', '--yes'], outDir, {
+  // `--json` so the deployment id comes straight from the CLI instead of being scraped from prose.
+  const res = await runVercelCli(['deploy', outDir, '--prod', '--skip-domain', '--yes', '--json'], outDir, {
     VERCEL_ORG_ID: s.vercel_team,
     VERCEL_PROJECT_ID: s.production_project,
   });
@@ -462,9 +463,18 @@ async function stageProduction() {
   const urlMatch = all.match(/https:\/\/[A-Za-z0-9._-]+\.vercel\.app/);
   assert.ok(urlMatch, 'staged deploy did not report a deployment URL');
   const stagedUrl = urlMatch[0];
+  // Prefer the id from the JSON output. `--json` is not guaranteed on every CLI version, so the
+  // URL is still parsed as a fallback - and if only the URL is available, `/v13/deployments` wants
+  // the HOSTNAME, never the full URL: passing `https%3A%2F%2F...` answers HTTP 404.
+  let stagedId = null;
+  try {
+    const parsed = JSON.parse(String(res.out).trim().split('\n').filter((l) => l.trim().startsWith('{')).pop() || 'null');
+    if (parsed && (parsed.id || parsed.uid)) stagedId = parsed.id || parsed.uid;
+  } catch (e) { stagedId = null; }
+  if (!stagedId) stagedId = stagedUrl.replace(/^https:\/\//, '');
 
   // 4. resolve it and prove it is staged: production target, READY, and NOT current
-  const d0 = await vercel(s, '/v13/deployments/' + encodeURIComponent(stagedUrl));
+  const d0 = await vercel(s, '/v13/deployments/' + encodeURIComponent(stagedId));
   normalizeDeployment(d0);
   assertStaged(d0, { project: s.production_project, team: s.vercel_team, current: currentBefore });
 
@@ -473,7 +483,7 @@ async function stageProduction() {
   assert.equal(currentAfter, currentBefore, 'production alias moved during staging; refusing to continue');
 
   const report = {
-    staged_deployment: d0.id || d0.uid,
+    staged_deployment: d0.id || d0.uid || stagedId,
     staged_url: stagedUrl,
     staged_target: d0.target,
     staged_ready_state: d0.readyState || d0.ready,
