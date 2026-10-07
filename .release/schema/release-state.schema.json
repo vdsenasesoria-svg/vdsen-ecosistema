@@ -157,7 +157,49 @@
       "type": "string"
     },
     "release_mode": {
-      "const": "rules_only"
+      "enum": ["rules_only", "app_only"]
+    },
+    "app_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_sha",
+        "deployment",
+        "promotion_model",
+        "previous_deployment",
+        "previous_runtime_sha",
+        "verified_surfaces",
+        "source_release_run",
+        "completed_at"
+      ],
+      "properties": {
+        "runtime_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "deployment": {
+          "type": "string"
+        },
+        "promotion_model": {
+          "const": "staged_production"
+        },
+        "previous_deployment": {
+          "type": "string"
+        },
+        "previous_runtime_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "verified_surfaces": {
+          "type": "number"
+        },
+        "source_release_run": {
+          "type": "string"
+        },
+        "completed_at": {
+          "type": "string"
+        }
+      }
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

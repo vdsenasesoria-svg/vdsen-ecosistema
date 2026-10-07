@@ -185,7 +185,15 @@ test('successful recovery verifies restored rules before switching app and compa
     const ruleVerified = requests.findIndex(x => x[0].includes('/rulesets/restored') && x[1] === 'GET');
     const appMutation = requests.findIndex(x => x[0].includes('/rollback/') && x[1] === 'POST');
     assert.ok(ruleVerified >= 0 && appMutation > ruleVerified);
-    assert.equal(requests.filter(x => x[0].startsWith(state.production_origin)).length, 4);
+    // The smoke surface is 4 fixed paths plus one CONDITIONAL path that is only fetched when the
+    // runtime commit actually tracks it (`assets/progression-effective-prescription.js`). The
+    // previous runtime did not, so this was a hardcoded 4; the deployed app release does, so a
+    // literal would silently pin a stale snapshot rather than the documented behaviour.
+    const smokePaths = ['vdsen-cliente.html', 'vdsen-coach.html', 'ficha-publica.html', 'sw.js'];
+    if (git('ls-tree', '-r', '--name-only', state.rollback_runtime_sha).split('\n').includes('assets/progression-effective-prescription.js')) {
+      smokePaths.push('assets/progression-effective-prescription.js');
+    }
+    assert.equal(requests.filter(x => x[0].startsWith(state.production_origin)).length, smokePaths.length);
   } finally {
     global.fetch = before;
     for (const [key, value] of Object.entries(tokens)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
@@ -245,12 +253,15 @@ test('release apply path is rules_only: pinned immutable provenance, no deploy/p
   assert.ok(apply.includes('restoreApp: false'));
   assert.ok(apply.includes("git('show', s.runtime_sha + ':firestore.rules')") && apply.includes('s.rules_transition.target_sha256'));
   assert.ok(!/main:firestore|origin\/main:|HEAD:firestore\.rules|\blatest\b/i.test(src));
-  assert.equal(state.release_mode, 'rules_only'); assert.equal(state.numeric_apply_enabled, false);
+  // The state now records an APP release, so the mode is app_only. The assertions above still prove
+  // live.cjs (the RULES lane) cannot deploy, promote switch the app or read main, so this does not
+  // relax anything: it only stops the test from pinning a stale snapshot.
+  assert.equal(state.release_mode, 'app_only'); assert.equal(state.numeric_apply_enabled, false);
   // Rollback order and pinned identities.
   const rec = src.slice(src.indexOf('async function recover'), src.indexOf('async function apply()'));
   assert.ok(rec.indexOf('restoreRules(') < rec.indexOf('switchApp('));
-  assert.equal(state.rollback_deployment, 'dpl_3RKY7UixzLDr9iK4NQ6VcKriz3Cn'); assert.equal(state.rollback_runtime_sha, 'f6596ba5207dc158b8a9b01483cd0fe0ebeb274c');
-  assert.equal(state.runtime_sha, 'd7bb71521d750eafd46a15fdd3c6ee157d4bd4cf');
+  assert.equal(state.rollback_deployment, 'dpl_FngrtpodSKHZ9aPk75aA5SS7JGnB'); assert.equal(state.rollback_runtime_sha, 'd7bb71521d750eafd46a15fdd3c6ee157d4bd4cf');
+  assert.equal(state.runtime_sha, '8365410cf7f09427c79ead77aa4f769c16e9a803');
   assert.equal(state.rules_transition.rollback_order, 'rules_then_app');
 });
 test('kill switch off, missing runtime SHA or missing gate/rollback artifacts stop apply and prepare before any network request', async () => {
