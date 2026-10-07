@@ -62,6 +62,15 @@ jobs:
             cat /tmp/rop.log
           fi
           exit "$status"
+      - name: Can the resolved candidate actually be promoted?
+        # The promote endpoint answers 422 even though the request matches its published schema
+        # (no request body, teamId in query). 422 is a documented response for that operation, so
+        # the deployment itself is likely not eligible. This reports the candidate's own flags
+        # (target, readyState, state, ready, isRollbackCandidate) as booleans/names only.
+        if: always()
+        env:
+          APP_RUNTIME_SHA: c3e78380d3a076e643a1957203c093260851210e
+        run: node scripts/release/app-candidate-check.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
