@@ -268,17 +268,19 @@ test('A12-18 the lane cannot mutate Firestore, rules, IAM or main', () => {
   // Keep this explicit. A regex with alternation is a trap here: /v(4|6|9|13)\// fails on
   // /v13 because /v1 matches first. /v10/projects/ is the prefix shared by the two mutation
   // endpoints, which are pinned separately above by their 'POST' marker.
-  const allowedReadPrefixes = ['/v13/deployments/', '/v7/deployments?projectId=', '/v9/projects/', '/v10/projects/', '/v1/projects/'];
+  const allowedReadPrefixes = ['/v4/aliases/', '/v13/deployments/', '/v7/deployments?projectId=', '/v9/projects/', '/v10/projects/', '/v1/projects/'];
   for (const m of reads) {
     assert.ok(allowedReadPrefixes.some((p) => m.startsWith(p)), 'unexpected read endpoint: ' + m);
   }
-  // The hostname-alias lookup returns HTTP 400 for this project, and the rules lane's use of it
-  // had never actually executed. Production is resolved from the project's own deployment list.
-  // Comments are stripped first: the file explains the removal, and prose must not count as use.
+  // Contract: the LIVE-production read must be ONE cheap request, because it runs inside a
+  // convergence poll. Paging the deployment list there multiplied into >100 requests and the
+  // upstream answered HTTP 400. The list endpoint is only for resolving the candidate SHA.
   const code = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  const badAliasEndpoint = '/v4/' + 'aliases/';
-  assert.ok(!code.includes(badAliasEndpoint), 'no debe usar el endpoint de alias que devuelve HTTP 400');
-  assert.ok(code.includes('&target=production'), 'production se resuelve por target=production');
+  assert.ok(/async function currentApp\(s\)[\s\S]{0,400}?\/v4\/aliases\//.test(code), 'currentApp debe resolver por alias en una sola llamada');
+  assert.ok(!code.includes('&target=production'), 'currentApp ya no debe paginar la lista de deployments');
+  // /v6 was retired (HTTP 400); the published spec lists only /v7 and /v13.
+  assert.ok(code.includes('/v7/deployments'), 'la lista de deployments debe usar /v7');
+  assert.ok(!code.includes('/v6/deployments'), 'no debe usar el endpoint retirado /v6');
   assert.equal(reads.filter((m) => m.startsWith('/v10/projects/')).length, 1, 'promote es el unico v10');
   assert.equal(reads.filter((m) => m.startsWith('/v1/projects/')).length, 1, 'rollback es el unico v1');
 });
