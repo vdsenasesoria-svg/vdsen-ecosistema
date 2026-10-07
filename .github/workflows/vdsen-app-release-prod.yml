@@ -57,6 +57,16 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        # REQUIRED. The Firestore emulator is a JVM process. Without Java it starts degraded and
+        # the emulator gate produces different results than the canonical release check: at the
+        # SAME commit d117e9d9 the canonical gate reported 84/0 PASS while this workflow reported
+        # 83/1 with a spurious new regression in t532-lifecycle-emulator.cjs. Because the
+        # emulator gate runs BEFORE the preflight, that also silently prevented the release
+        # preflight from ever executing.
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: App kill switch and trusted ref
         # Fails visibly instead of aborting: the run summary must still be produced so the
         # operator can see exactly which gate stopped the release.
