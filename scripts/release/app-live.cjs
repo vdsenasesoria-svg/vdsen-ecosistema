@@ -66,9 +66,15 @@ async function api(url, token, method = 'GET', body, acceptStatus, required = tr
   else if (!token) throw new Error('credential not provided');
   let last = null;
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+    // Only declare a JSON content type when a body is actually sent. Announcing
+    // `Content-Type: application/json` with no body makes the request semantically invalid and
+    // Vercel answers HTTP 422 - which is exactly how both the promote and the rollback failed
+    // on the first attempt that got past the preflight.
+    const headers = { Authorization: 'Bearer ' + token };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
     const r = await fetch(url, {
       method,
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(30000),
       redirect: 'error',
