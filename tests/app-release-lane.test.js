@@ -259,16 +259,23 @@ test('A12-18 the lane cannot mutate Firestore, rules, IAM or main', () => {
     'revert uses the documented rollback endpoint');
   // every other Vercel call is a read on a read endpoint
   const allCalls = [...src.matchAll(/vercel\(s, '([^']+)'/g)].map((m) => m[1]);
-  assert.ok(allCalls.length >= 6, 'las llamadas Vercel existen (' + allCalls.length + ')');
+  assert.ok(allCalls.length >= 5, 'las llamadas Vercel existen (' + allCalls.length + ')');
   const reads = allCalls.filter((p) => !p.includes('/promote/') && !p.includes('/rollback/'));
   assert.ok(reads.length >= 4, 'las lecturas existen (' + reads.length + ')');
   // Keep this explicit. A regex with alternation is a trap here: /v(4|6|9|13)\// fails on
   // /v13 because /v1 matches first. /v10/projects/ is the prefix shared by the two mutation
   // endpoints, which are pinned separately above by their 'POST' marker.
-  const allowedReadPrefixes = ['/v4/aliases/', '/v13/deployments/', '/v6/deployments?projectId=', '/v9/projects/', '/v10/projects/', '/v1/projects/'];
+  const allowedReadPrefixes = ['/v13/deployments/', '/v6/deployments?projectId=', '/v9/projects/', '/v10/projects/', '/v1/projects/'];
   for (const m of reads) {
     assert.ok(allowedReadPrefixes.some((p) => m.startsWith(p)), 'unexpected read endpoint: ' + m);
   }
+  // The hostname-alias lookup returns HTTP 400 for this project, and the rules lane's use of it
+  // had never actually executed. Production is resolved from the project's own deployment list.
+  // Comments are stripped first: the file explains the removal, and prose must not count as use.
+  const code = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const badAliasEndpoint = '/v4/' + 'aliases/';
+  assert.ok(!code.includes(badAliasEndpoint), 'no debe usar el endpoint de alias que devuelve HTTP 400');
+  assert.ok(code.includes('&target=production'), 'production se resuelve por target=production');
   assert.equal(reads.filter((m) => m.startsWith('/v10/projects/')).length, 1, 'promote es el unico v10');
   assert.equal(reads.filter((m) => m.startsWith('/v1/projects/')).length, 1, 'rollback es el unico v1');
 });

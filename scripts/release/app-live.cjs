@@ -183,12 +183,26 @@ function assertRollbackArtifact(artifact) {
 
 // ── live operations
 
+// Resolve the deployment serving production from the project's own deployment list, filtered
+// by `target=production`.
+//
+// This replaces a `GET /v4/aliases/{hostname}` lookup that returns HTTP 400 for this project.
+// That call is in the rules lane's `switchApp`, but the rules lane never changes the app
+// (release_mode is rules_only), so it had never actually run. Do not repeat that mistake.
+async function listDeployments(s, extra = '') {
+  const list = await vercel(s, '/v6/deployments?projectId=' + encodeURIComponent(s.production_project) + '&limit=100' + extra);
+  return list.deployments || [];
+}
+
 async function currentApp(s) {
-  const host = new URL(s.production_origin).hostname;
-  const a = await vercel(s, '/v4/aliases/' + host);
-  assert.equal(a.projectId, s.production_project, 'Production alias belongs to another project');
-  assert.ok(a.deployment?.id, 'Missing production alias deployment');
-  return a.deployment.id;
+  const production = (await listDeployments(s, '&target=production'))
+    .filter((d) => d.target === 'production' && (d.readyState || d.ready) === 'READY')
+    .sort((a, b) => (b.created || 0) - (a.created || 0));
+  assert.ok(production.length > 0, 'No READY production deployment found for this project');
+  const d = production[0];
+  assert.equal(d.projectId, s.production_project, 'Production deployment belongs to another project');
+  assert.ok(d.id, 'Missing production deployment id');
+  return d.id;
 }
 
 async function awaitApp(s, id) {
@@ -203,8 +217,7 @@ async function deployment(s, id) { return vercel(s, '/v13/deployments/' + encode
 
 // Resolve the candidate by EXACT metadata. Chronology is never a selection criterion.
 async function resolveCandidate(s, runtime) {
-  const list = await vercel(s, '/v6/deployments?projectId=' + encodeURIComponent(s.production_project) + '&limit=100');
-  const all = list.deployments || [];
+  const all = await listDeployments(s);
   const exact = all.filter((d) => d.meta?.githubCommitSha === runtime && (d.projectId === s.production_project));
   assert.ok(exact.length > 0, 'No deployment found for the exact candidate SHA in this project');
   const previews = exact.filter((d) => d.target !== 'production');
@@ -465,7 +478,7 @@ module.exports = {
   assertExplicitRuntime, assertKillSwitch, assertAppOnlySources, assertCandidate,
   assertCandidateNotAlreadyProduction, assertBaseline, assertEnvironment,
   assertFirebaseProject, assertPromoted, assertRollbackArtifact,
-  resolveCandidate, currentApp, deployment, productionEnv, promote, revertApp,
+  resolveCandidate, currentApp, listDeployments, deployment, productionEnv, promote, revertApp,
   verifyPublicBytes, servedSurface, verifyProductIdentity, preflight, apply, rollbackApp, releaseResult, preflightSummary, preflightSummary,
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
 };
