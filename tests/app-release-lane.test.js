@@ -309,6 +309,26 @@ test('A12-21 the deployment list uses uid; id must be normalised', () => {
   assert.ok(/\(list\.deployments \|\| \[\]\)\.map\(normalizeDeployment\)/.test(src), 'la lista debe normalizar');
 });
 
+test('A12-22 the Vercel URL separator must respect an existing query string', () => {
+  // THE bug behind every HTTP 400 in the preflight: appending '?teamId=' unconditionally
+  // produced '..?projectId=X&limit=40?teamId=Y' whenever the path already had a query, and the
+  // upstream answered 400. Paths WITHOUT a query were fine, which is exactly why the alias
+  // worked and the deployment list never did.
+  const s = { vercel_team: 'team_TEST', production_project: 'prj_TEST' };
+  const withQuery = app.vercelUrl(s, '/v7/deployments?projectId=X&limit=40');
+  const without = app.vercelUrl(s, '/v4/aliases/host.example');
+  assert.ok(withQuery.includes('limit=40&teamId='), 'una query existente usa & : ' + withQuery);
+  assert.ok(!withQuery.includes('40?teamId'), 'nunca dos separadores ?');
+  assert.equal((withQuery.match(/\?/g) || []).length, 1, 'exactamente un ?');
+  assert.ok(without.includes('?teamId='), 'sin query usa ? : ' + without);
+  assert.equal((without.match(/\?/g) || []).length, 1, 'exactamente un ?');
+  assert.ok(withQuery.includes('teamId=team_TEST') && without.includes('teamId=team_TEST'), 'toda peticion lleva el team');
+  const src = fs.readFileSync('scripts/release/app-live.cjs', 'utf8');
+  assert.ok(/function vercelUrl\(s, p\)/.test(src), 'un unico constructor de URL');
+  assert.ok(/const sep = p\.includes\('\?'\) \? '&' : '\?'/.test(src), 'el separador depende de la query existente');
+  assert.ok(!/VERCEL_API \+ p \+ '\?teamId='/.test(src), 'no debe quedar el append ciego');
+});
+
 test('A12-20 served surface matches the frozen deployed-product manifest', () => {
   const surface = app.servedSurface();
   assert.ok(surface.includes('vdsen-cliente.html'), 'debe cubrir la app del cliente');

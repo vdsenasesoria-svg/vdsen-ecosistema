@@ -98,8 +98,23 @@ function redactUrl(url) {
     return u.origin + u.pathname + '?' + params.join('&');
   } catch (e) { return '(unparseable)'; }
 }
+// Build the Vercel request URL. The query separator MUST depend on whether the path already
+// has one.
+//
+// This was the real cause of every HTTP 400 in the preflight, and it survived several rounds of
+// "fix the endpoint" because the symptom looked like a retired endpoint:
+//   path with a query   -> VERCEL_API + p + '?teamId=..'  produced  '..?projectId=X&limit=40?teamId=Y'
+//                          -> malformed, upstream answers 400
+//   path without query  -> '..?teamId=Y'                  -> fine
+// That is exactly why `/v4/aliases/{host}` worked while `/v7/deployments?...` and
+// `/v6/deployments?...` never did. The independent diagnostic missed it because it built its
+// own URLs and never used this wrapper.
+function vercelUrl(s, p) {
+  const sep = p.includes('?') ? '&' : '?';
+  return VERCEL_API + p + sep + 'teamId=' + encodeURIComponent(s.vercel_team);
+}
 const vercel = (s, p, method, body, acceptStatus) => {
-  const url = VERCEL_API + p + '?teamId=' + encodeURIComponent(s.vercel_team);
+  const url = vercelUrl(s, p);
   if (process.env.APP_TRACE_READS === 'true') console.log('VERCEL READ ' + redactUrl(url));
   return api(url, process.env.VERCEL_TOKEN, method, body, acceptStatus);
 };
@@ -562,6 +577,6 @@ module.exports = {
   assertCandidateNotAlreadyProduction, assertBaseline, assertEnvironment,
   assertFirebaseProject, assertPromoted, assertRollbackArtifact,
   resolveCandidate, currentApp, listDeployments, normalizeDeployment, deployment, productionEnv, promote, revertApp,
-  verifyPublicBytes, servedSurface, verifyProductIdentity, readOnlyPreflight, preflight, apply, rollbackApp, releaseResult, preflightSummary, redactUrl, preflightSummary,
+  verifyPublicBytes, servedSurface, verifyProductIdentity, readOnlyPreflight, preflight, apply, rollbackApp, releaseResult, preflightSummary, redactUrl, vercelUrl, preflightSummary,
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
 };
