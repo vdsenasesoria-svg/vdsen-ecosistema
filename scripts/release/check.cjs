@@ -24,7 +24,11 @@ function workflowContract() {
   const app = fs.readFileSync('.github/workflows/vdsen-app-release-prod.yml', 'utf8');
   assert.ok(app.includes('environment: Production'), 'App lane must use the canonical Environment');
   assert.ok(!app.includes('environment: production'));
-  assert.ok(app.includes('test "$CLIENT_APP_RELEASE_ENABLED" = true'), 'App lane needs its own kill switch');
+  // The lane must enforce its own switch. Accept either the plain test or the explicit
+  // negative-guard form, so hardening the message does not silently drop the check.
+  assert.ok(app.includes('test "$CLIENT_APP_RELEASE_ENABLED" = true') || app.includes('"$CLIENT_APP_RELEASE_ENABLED" != "true"'),
+    'App lane needs its own kill switch');
+  assert.ok(/\$CLIENT_APP_RELEASE_ENABLED/.test(app), 'App lane must actually read its kill switch');
   // Check actual USE, not prose: the workflow explains the rule in a comment, so the name may
   // appear as text. What must never appear is a READ of it.
   assert.ok(!/vars\.PRODUCTION_RELEASE_ENABLED/.test(app), 'App lane must not read the rules kill switch');

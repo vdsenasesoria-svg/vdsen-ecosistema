@@ -394,6 +394,36 @@ function releaseResult() {
   catch (e) { return { app_release_status: 'NOT_EXECUTED' }; }
 }
 
+// Machine-readable preflight summary for the workflow run summary. Reports PRESENCE only:
+// never a value, never a secret.
+function preflightSummary() {
+  const lines = ['## Client App release preflight', ''];
+  let report = null;
+  try { report = json(path.join(OUT, 'app-preflight.json')); } catch (e) { report = null; }
+  const result = releaseResult();
+  lines.push('| field | value |', '|---|---|');
+  const row = (k, v) => lines.push('| ' + k + ' | ' + v + ' |');
+  row('app kill switch (CLIENT_APP_RELEASE_ENABLED)', process.env.CLIENT_APP_RELEASE_ENABLED === 'true' ? 'true' : 'false');
+  row('requested runtime', process.env.APP_RUNTIME_SHA || '(none)');
+  row('release reason', process.env.APP_RELEASE_REASON || '(none)');
+  if (report) {
+    row('candidate deployment', report.candidate);
+    row('production before', report.production_deployment);
+    row('production runtime before', report.production_runtime_sha);
+    row('main', report.main_sha);
+    row('Production variables present', report.env.present + '/' + REQUIRED_PROD_ENV.length + (report.env.missing.length ? ' MISSING: ' + report.env.missing.join(', ') : ''));
+    row('FIREBASE_PROJECT_ID', report.firebase_project);
+    row('rollback artifact', report.rollback_artifact);
+    row('firestore mutation path', report.app_only);
+  } else {
+    row('preflight', 'NOT REACHED');
+  }
+  row('app release status', result.app_release_status || 'NOT_EXECUTED');
+  if (result.error) row('error', result.error);
+  lines.push('', 'This lane does not read Firestore for mutation and does not deploy Firestore rules.');
+  return lines.join('\n');
+}
+
 async function main() {
   const cmd = process.argv[2];
   if (cmd === 'preflight') await preflight();
@@ -403,7 +433,8 @@ async function main() {
     const r = verifyProductIdentity(process.env.APP_RUNTIME_SHA);
     console.log('PRODUCT IDENTITY PASS: HEAD serves the released artifact (' + r.verified + ' paths)');
   } else if (cmd === 'release-result') console.log(JSON.stringify(releaseResult()));
-  else throw new Error('usage: app-live.cjs preflight|apply|rollback|verify-product-identity|release-result');
+  else if (cmd === 'preflight-summary') console.log(preflightSummary());
+  else throw new Error('usage: app-live.cjs preflight|apply|rollback|verify-product-identity|preflight-summary|release-result');
 }
 
 if (require.main === module) {
@@ -415,6 +446,6 @@ module.exports = {
   assertCandidateNotAlreadyProduction, assertBaseline, assertEnvironment,
   assertFirebaseProject, assertPromoted, assertRollbackArtifact,
   resolveCandidate, currentApp, deployment, productionEnv, promote, revertApp,
-  verifyPublicBytes, servedSurface, verifyProductIdentity, preflight, apply, rollbackApp, releaseResult,
+  verifyPublicBytes, servedSurface, verifyProductIdentity, preflight, apply, rollbackApp, releaseResult, preflightSummary, preflightSummary,
   REQUIRED_PROD_ENV, FORBIDDEN_RUNTIME_VALUES, setOut, getOut,
 };

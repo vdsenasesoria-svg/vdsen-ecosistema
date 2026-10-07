@@ -54,9 +54,17 @@ jobs:
         with:
           node-version: '22'
       - name: App kill switch and trusted ref
+        # Fails visibly instead of aborting: the run summary must still be produced so the
+        # operator can see exactly which gate stopped the release.
         run: |
-          test "$CLIENT_APP_RELEASE_ENABLED" = true
-          test "$GITHUB_REF" = refs/heads/codex/client-app-next
+          if [ "$CLIENT_APP_RELEASE_ENABLED" != "true" ]; then
+            echo "::error::CLIENT_APP_RELEASE_ENABLED is not true; the app release lane is disarmed. Refusing to mutate production."
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/codex/client-app-next" ]; then
+            echo "::error::This lane must run from refs/heads/codex/client-app-next."
+            exit 1
+          fi
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Repo contract (no Firestore mutation, no implicit HEAD)
         run: node scripts/release/check.cjs
@@ -75,7 +83,22 @@ jobs:
         # verified below would not be the bytes being tested.
         run: node scripts/release/app-live.cjs verify-product-identity
       - name: Pre-mutation gates (candidate, baseline, env, rollback artifact)
+        # `continue-on-error` is used ONLY so the summary below always renders. The gate
+        # outcome is re-read immediately after and the job still fails on it: nothing is
+        # waived. Promotion is additionally blocked by `if: steps.preflight.outcome == 'success'`.
+        id: preflight
+        continue-on-error: true
         run: node scripts/release/app-live.cjs preflight
+      - name: Surface preflight report
+        if: always()
+        run: node scripts/release/app-live.cjs preflight-summary >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce the preflight gate
+        if: always()
+        run: |
+          if [ "${{ steps.preflight.outcome }}" != "success" ]; then
+            echo "::error::Pre-mutation gates failed; production was NOT mutated."
+            exit 1
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -84,6 +107,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
       - name: Promote exact candidate to production
+        if: steps.preflight.outcome == 'success'
         run: node scripts/release/app-live.cjs apply
       - name: Recover the app if promotion or verification failed
         if: failure()
