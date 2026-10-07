@@ -191,16 +191,35 @@
           "pattern": "^[0-9a-f]{40}$"
         },
         "verified_surfaces": {
-          "type": "number"
+          "type": "number",
+          "minimum": 1
         },
         "source_release_run": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[0-9]+$"
         },
         "completed_at": {
           "type": "string"
         }
       }
     }
+  },
+  "if": {
+    "type": "object",
+    "properties": {
+      "release_mode": {
+        "const": "app_only"
+      }
+    },
+    "required": [
+      "release_mode"
+    ]
+  },
+  "then": {
+    "type": "object",
+    "required": [
+      "app_release"
+    ]
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "VDSEN reviewed release intent, not live authority"

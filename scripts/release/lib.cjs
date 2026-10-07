@@ -12,12 +12,13 @@ const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer
 const gitBinary = (...args) => execFileSync('git', args, { maxBuffer: 64 * 1024 * 1024 });
 // Deliberately limited schema vocabulary. Unknown validation keywords fail closed.
 function validate(value, schema, path = '$') {
-  const supported = new Set(['$schema', '$id', 'title', 'description', 'type', 'const', 'enum', 'pattern', 'required', 'properties', 'additionalProperties', 'items', 'minItems']);
+  const supported = new Set(['$schema', '$id', 'title', 'description', 'type', 'const', 'enum', 'pattern', 'required', 'properties', 'additionalProperties', 'items', 'minItems', 'if', 'then', 'minimum']);
   for (const key of Object.keys(schema)) assert.ok(supported.has(key), 'Unsupported schema keyword: ' + key);
   if (schema.type) assert.ok([].concat(schema.type).some(t => t === 'null' ? value === null : t === 'array' ? Array.isArray(value) : t === 'object' ? value !== null && typeof value === 'object' && !Array.isArray(value) : typeof value === t), path + ': type');
   if ('const' in schema) assert.deepEqual(value, schema.const, path + ': const');
   if (schema.enum) assert.ok(schema.enum.includes(value), path + ': enum');
   if (schema.pattern && typeof value === 'string') assert.match(value, new RegExp(schema.pattern), path);
+  if (schema.minimum !== undefined && typeof value === 'number') assert.ok(value >= schema.minimum, path + ': minimum');
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     for (const key of schema.required || []) assert.ok(Object.hasOwn(value, key), path + ': missing ' + key);
     for (const [key, child] of Object.entries(value)) {
@@ -29,12 +30,32 @@ function validate(value, schema, path = '$') {
     if (schema.minItems) assert.ok(value.length >= schema.minItems, path + ': minItems');
     if (schema.items) value.forEach((x, i) => validate(x, schema.items, path + '[' + i + ']'));
   }
+  // Conditional requirement: when the instance satisfies `if`, `then` is enforced. Used to make
+  // `release_mode: app_only` REQUIRE the `app_release` block instead of merely allowing it.
+  // Evaluated AFTER the structural checks so a missing required key inside `then` fails with its
+  // concrete path rather than a generic condition error.
+  if (schema.if !== undefined && schema.then !== undefined) {
+    let matched = true;
+    try { validate(value, schema.if, path); } catch (e) { matched = false; }
+    if (matched) validate(value, schema.then, path);
+  }
   return value;
 }
 function indexMatches(expected, live) {
   const fields = live.fields?.filter(x => x.fieldPath !== '__name__');
   return live.queryScope === expected.queryScope && fields?.length === expected.fields.length &&
     expected.fields.every((x, i) => x.fieldPath === fields[i].fieldPath && x.order === fields[i].order && x.arrayConfig === fields[i].arrayConfig);
+}
+// Fail-closed release-mode gate. A state that records one kind of release must not be used to
+// drive the other kind: after an app release the state says `app_only`, and the Firestore rules
+// lane must refuse rather than treat that state as approval to deploy rules. Pure and local, so it
+// can be called BEFORE any network work.
+function assertReleaseMode(state, required, lane) {
+  assert.ok(state && typeof state === 'object', 'release state required');
+  assert.equal(state.release_mode, required,
+    lane + ' requires release_mode=' + required + ' but the reviewed state says ' + JSON.stringify(state.release_mode) +
+    '; prepare a reviewed ' + required + ' state before dispatching');
+  return state;
 }
 function verifyDeployment(d, state, sha, ref) {
   assert.equal(d.projectId, state.production_project);
@@ -56,4 +77,4 @@ function environmentContract(s) {
   assert.equal(process.env.GCP_RELEASE_SERVICE_ACCOUNT, 'vdsen-release-bot@vdsen-ecosistema.iam.gserviceaccount.com');
   assert.match(process.env.GCP_WORKLOAD_IDENTITY_PROVIDER || '', /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[A-Za-z0-9_-]+\/providers\/[A-Za-z0-9_-]+$/);
 }
-module.exports = { hash, json, git, gitBinary, validate, indexMatches, verifyDeployment, noSecrets, environmentContract };
+module.exports = { hash, json, git, gitBinary, validate, indexMatches, assertReleaseMode, verifyDeployment, noSecrets, environmentContract };
